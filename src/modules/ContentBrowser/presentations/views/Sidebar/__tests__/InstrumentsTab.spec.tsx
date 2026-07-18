@@ -5,14 +5,12 @@ import { TooltipProvider } from '#/components/ui/tooltip';
 
 import { InstrumentsTab } from '../InstrumentsTab';
 
-import type { Track } from '../../../../models/TrackViewTypes';
-
 const renderWithTooltip = (ui: React.ReactElement) => {
     return render(<TooltipProvider>{ui}</TooltipProvider>);
 };
 
 describe('InstrumentsTab', () => {
-    const mockTrack: Track = {
+    const mockTrack = {
         id: 'track-1',
         name: 'Track 1',
         kind: 'audio',

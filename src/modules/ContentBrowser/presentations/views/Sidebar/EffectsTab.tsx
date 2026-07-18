@@ -9,14 +9,6 @@ import { MIDI_EFFECT_FACTORIES } from '#/modules/MIDI/useCases';
 
 import { type PluginDescriptorView as PluginDescriptor } from '../../../models/PluginDescriptorViewTypes';
 import { type SoundPresetView as SoundPreset } from '../../../models/SoundPresetViewTypes';
-import { showBacteriaPanel } from '../../../useCases/panels/devicePanels/showBacteriaPanel';
-import { showCrustPanel } from '../../../useCases/panels/devicePanels/showCrustPanel';
-import { showDevicePanel } from '../../../useCases/panels/devicePanels/showDevicePanel';
-import { showDutchOvenPanel } from '../../../useCases/panels/devicePanels/showDutchOvenPanel';
-import { showGlutenPanel } from '../../../useCases/panels/devicePanels/showGlutenPanel';
-import { showProofPanel } from '../../../useCases/panels/devicePanels/showProofPanel';
-import { showScoringPanel } from '../../../useCases/panels/devicePanels/showScoringPanel';
-import { showYeastPanel } from '../../../useCases/panels/devicePanels/showYeastPanel';
 import { EmptyState } from '../../components/Sidebar/EmptyState';
 import {
     InstrumentCard,
@@ -34,7 +26,7 @@ import { SearchSummary } from '../../components/Sidebar/SearchSummary';
 import { type PreviewHandle } from '../../hooks/usePreviewAudio';
 
 import { NavCard, EffectItem, EFFECT_GROUPS, type EffectPlugin, Waves, Music2 } from './effectsTabHelpers';
-import { type SidebarRoute } from './SidebarTypes';
+import { type SidebarRoute, type SidebarPanelActions } from './SidebarTypes';
 
 const FX_PRESET_CATEGORIES = new Set(['fx', 'vocal']);
 
@@ -47,6 +39,7 @@ type EffectsTabProps = {
     favorites: Set<string>;
     onToggleFavorite: (id: string) => void;
     preview: PreviewHandle;
+    panelActions?: SidebarPanelActions;
 };
 
 export const EffectsTab = ({
@@ -58,6 +51,7 @@ export const EffectsTab = ({
     favorites,
     onToggleFavorite,
     preview,
+    panelActions,
 }: EffectsTabProps): ReactElement => {
     const isEffectPlugin = (param: EffectPlugin) => param.category !== 'instrument';
 
@@ -114,7 +108,7 @@ export const EffectsTab = ({
                         onClick={() => {
                             if (selectedTrackId) {
                                 const device = addDevice(selectedTrackId, 'Proof');
-                                showProofPanel(device?.id ?? null);
+                                panelActions?.showProof(device?.id ?? null);
                             }
                         }}
                         theme={PROOF_THEME}
@@ -130,7 +124,7 @@ export const EffectsTab = ({
                         onClick={() => {
                             if (selectedTrackId) {
                                 const device = addDevice(selectedTrackId, 'gluten');
-                                showGlutenPanel(device?.id ?? null);
+                                panelActions?.showGluten(device?.id ?? null);
                             }
                         }}
                         theme={GLUTEN_THEME}
@@ -146,7 +140,7 @@ export const EffectsTab = ({
                         onClick={() => {
                             if (selectedTrackId) {
                                 addDevice(selectedTrackId, 'crust');
-                                showCrustPanel(null);
+                                panelActions?.showCrust(null);
                             }
                         }}
                         theme={CRUST_THEME}
@@ -162,7 +156,7 @@ export const EffectsTab = ({
                         onClick={() => {
                             if (selectedTrackId) {
                                 addDevice(selectedTrackId, 'dutch-oven');
-                                showDutchOvenPanel(null);
+                                panelActions?.showDutchOven(null);
                             }
                         }}
                         theme={DUTCH_OVEN_THEME}
@@ -178,7 +172,7 @@ export const EffectsTab = ({
                         onClick={() => {
                             if (selectedTrackId) {
                                 const device = addDevice(selectedTrackId, 'native-scoring');
-                                showScoringPanel(device?.id ?? null);
+                                panelActions?.showScoring(device?.id ?? null);
                             }
                         }}
                         theme={SCORING_THEME}
@@ -194,7 +188,7 @@ export const EffectsTab = ({
                         onClick={() => {
                             if (selectedTrackId) {
                                 const device = addDevice(selectedTrackId, 'grinder');
-                                showDevicePanel('grinder', device?.id ?? null);
+                                panelActions?.showDevice('grinder', device?.id ?? null);
                             }
                         }}
                         theme={GRINDER_THEME}
@@ -210,7 +204,7 @@ export const EffectsTab = ({
                         onClick={() => {
                             if (selectedTrackId) {
                                 const device = addDevice(selectedTrackId, 'bacteria');
-                                showBacteriaPanel(device?.id ?? null);
+                                panelActions?.showBacteria(device?.id ?? null);
                             }
                         }}
                         theme={BACTERIA_THEME}
@@ -226,7 +220,7 @@ export const EffectsTab = ({
                         onClick={() => {
                             if (selectedTrackId) {
                                 addDevice(selectedTrackId, 'Yeast');
-                                showYeastPanel(null);
+                                panelActions?.showYeast(null);
                             }
                         }}
                         theme={YEAST_THEME}

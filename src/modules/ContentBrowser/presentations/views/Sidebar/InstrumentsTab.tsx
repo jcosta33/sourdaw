@@ -21,11 +21,6 @@ import { createGrandBouleTrack } from '#/modules/GrandBoule/useCases';
 import { createDrumTrackStack } from '#/modules/Toaster/useCases';
 
 import { type SoundPresetView as SoundPreset, type SoundPresetCategory } from '../../../models/SoundPresetViewTypes';
-import { showCrumbsPanel } from '../../../useCases/panels/devicePanels/showCrumbsPanel';
-import { showFermenterPanel } from '../../../useCases/panels/devicePanels/showFermenterPanel';
-import { showGrandBoulePanel } from '../../../useCases/panels/devicePanels/showGrandBoulePanel';
-import { showLevainPanel } from '../../../useCases/panels/devicePanels/showLevainPanel';
-import { showToasterPanel } from '../../../useCases/panels/devicePanels/showToasterPanel';
 import { EmptyState } from '../../components/Sidebar/EmptyState';
 import {
     InstrumentCard,
@@ -41,7 +36,7 @@ import { PRESET_CATEGORIES, CATEGORY_ICONS, CATEGORY_COLORS } from '../../compon
 import { type PreviewHandle } from '../../hooks/usePreviewAudio';
 import { NavCard } from '../Sidebar/effectsTabHelpers';
 
-import { type SidebarRoute } from './SidebarTypes';
+import { type SidebarRoute, type SidebarPanelActions } from './SidebarTypes';
 
 // ── Instrument Family Groups ────────────────────────────────────────────────
 
@@ -98,6 +93,7 @@ type InstrumentsTabProps = {
     preview: PreviewHandle;
     currentRoute: SidebarRoute;
     pushRoute: (route: SidebarRoute) => void;
+    panelActions?: SidebarPanelActions;
 };
 
 // ── Component ───────────────────────────────────────────────────────────────
@@ -111,6 +107,7 @@ export const InstrumentsTab = ({
     preview,
     currentRoute,
     pushRoute,
+    panelActions,
 }: InstrumentsTabProps): ReactElement => {
     const [showSaveForm, setShowSaveForm] = useState(false);
     const [saveFormName, setSaveFormName] = useState('');
@@ -195,21 +192,21 @@ export const InstrumentsTab = ({
         const trackId = createTrackFromPreset(preset);
         const track = trackId ? getAllTracks().find((time) => time.id === trackId) : null;
         const device = track?.devices.find((data) => data.type === 'fermenter');
-        showFermenterPanel(device?.id ?? null);
+        panelActions?.showFermenter(device?.id ?? null);
     };
 
     const handleAddToasterTrack = () => {
         const trackId = createDrumTrackStack();
         const track = trackId ? getAllTracks().find((time) => time.id === trackId) : null;
         const device = track?.devices.find((data) => data.type === 'toaster');
-        showToasterPanel(device?.id ?? null);
+        panelActions?.showToaster(device?.id ?? null);
     };
 
     const handleAddGrandBouleTrack = () => {
         const trackId = createGrandBouleTrack();
         const track = trackId ? getAllTracks().find((time) => time.id === trackId) : null;
         const device = track?.devices.find((data) => data.type === 'grand-boule');
-        showGrandBoulePanel(device?.id ?? null);
+        panelActions?.showGrandBoule(device?.id ?? null);
     };
 
     const handleAddLevainTrack = () => {
@@ -225,7 +222,7 @@ export const InstrumentsTab = ({
             isFactory: true,
         };
         createTrackFromPreset(preset);
-        showLevainPanel(null);
+        panelActions?.showLevain(null);
     };
 
     const handleAddCrumbsTrack = () => {
@@ -243,7 +240,7 @@ export const InstrumentsTab = ({
         const trackId = createTrackFromPreset(preset);
         const track = trackId ? getAllTracks().find((time) => time.id === trackId) : null;
         const device = track?.devices.find((data) => data.type === 'builtin-sampler');
-        showCrumbsPanel(device?.id ?? null);
+        panelActions?.showCrumbs(device?.id ?? null);
     };
 
     void userPresetsVersion; // Read to cause re-render when preset version bumps
