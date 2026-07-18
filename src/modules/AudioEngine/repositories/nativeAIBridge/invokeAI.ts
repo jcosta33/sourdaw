@@ -1,4 +1,4 @@
-import { isTauri } from './isTauri';
+import { isTauri } from '#/utils/tauriRuntime';
 
 export async function invokeAI(cmd: string, args?: Record<string, unknown>): Promise<unknown> {
     if (!isTauri()) {
