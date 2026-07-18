@@ -26,10 +26,10 @@
 
 /src/modules/AudioEngine/            @sourdaw/team-engine-room
 /src/modules/createWebAudioEngine/   @sourdaw/team-engine-room
-/src/modules/Plugin/                 @sourdaw/team-engine-room
+/src/modules/PluginHost/             @sourdaw/team-engine-room
 /src/modules/Synth/                  @sourdaw/team-engine-room
 /src/modules/Yeast/                  @sourdaw/team-engine-room
-/src/modules/Scoring/                @sourdaw/team-engine-room
+/src/modules/Tuner/                  @sourdaw/team-engine-room
 
 # ─── Team 3: Instrument Workshop ──────────────────────────────────────────────
 # Instrument and signal-processing modules. All follow the same minimal pattern:
@@ -43,7 +43,6 @@
 /src/modules/Levain/         @sourdaw/team-instrument-workshop
 /src/modules/Proof/          @sourdaw/team-instrument-workshop
 /src/modules/ProofChamber/   @sourdaw/team-instrument-workshop
-/src/modules/SoundLibrary/   @sourdaw/team-instrument-workshop
 
 # ─── Team 4: Session ──────────────────────────────────────────────────────────
 # Arrangement data layer and tightly coupled session modules.
@@ -56,17 +55,15 @@
 /src/modules/Collaboration/  @sourdaw/team-session
 
 # ─── Team 5: Studio Shell ─────────────────────────────────────────────────────
-# User-facing intelligence and workspace layer. Workspace is the top-level UI
+# User-facing intelligence and workspace layer. WorkspaceShell is the top-level UI
 # orchestrator. AI modules (AiGeneration ↔ AiRuntime) have a known circular
 # dependency resolved within this team.
 
-/src/modules/Workspace/        @sourdaw/team-studio-shell
+/src/modules/WorkspaceShell/   @sourdaw/team-studio-shell
 /src/modules/AiGeneration/     @sourdaw/team-studio-shell
 /src/modules/AiRuntime/        @sourdaw/team-studio-shell
 /src/modules/AudioAnalysis/    @sourdaw/team-studio-shell
 /src/modules/SampleLibrary/    @sourdaw/team-studio-shell
-/src/modules/VirtualKeyboard/  @sourdaw/team-studio-shell
-/src/modules/Extension/        @sourdaw/team-studio-shell
 /src/modules/Knead/            @sourdaw/team-studio-shell
 
 # ─── Team 6: Platform ─────────────────────────────────────────────────────────

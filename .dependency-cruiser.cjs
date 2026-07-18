@@ -927,7 +927,6 @@ module.exports = {
                     // Reachable type/helper files imported by runtime code, but
                     // currently invisible to dependency-cruiser's orphan graph.
                     '^src/utils/DOM/GestureEvent\\.ts$',
-                    '^src/modules/Workspace/presentations/views/Sidebar/SidebarTypes\\.ts$',
                     '^src/modules/Project/useCases/dawProject/dawProjectTypes\\.ts$',
                     '^src/modules/MIDI/useCases/grooveExtraction/helpers\\.ts$',
                     '^src/modules/Collaboration/useCases/collaborationQueries\\.ts$',

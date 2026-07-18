@@ -81,7 +81,7 @@ export function applyAutomation(currentBeat: number): void {
             // Audio Device Automation
             //
             // Device-param lanes carry a `${device.type}:${paramId}` parameterId
-            // (built in Workspace/presentations/helpers/automationViewHelpers.ts),
+            // (built in TimelineEditor/presentations/helpers/automationViewHelpers.ts),
             // but `device.parameterValues` is keyed by the bare paramId
             // (Arrangement/useCases/device/addDevice.ts). Strip the device-type
             // prefix before matching/forwarding, otherwise every device-param

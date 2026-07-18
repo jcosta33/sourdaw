@@ -9,7 +9,7 @@ import { saveProject } from '../../useCases/projectPersistence/saveProject/saveP
 import { createFromTemplate } from '../../useCases/projectTemplates/templateDefinitions/createFromTemplate';
 import { getTemplates } from '../../useCases/projectTemplates/templateDefinitions/getTemplates';
 
-// Inlined from Workspace/presentations/components/SourdawLogo to avoid
+// Inlined from WorkspaceShell/presentations/components/SourdawLogo to avoid
 // cross-module private-presentation import.
 type SourdawLogoProps = {
     className?: string;
