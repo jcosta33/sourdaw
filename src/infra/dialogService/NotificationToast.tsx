@@ -5,7 +5,7 @@ import { AlertTriangle, X } from 'lucide-react';
 import { Button } from '#/components/ui/button';
 import { cn } from '#/utils/Styles/cn';
 
-import { useNotificationQueue } from '../hooks/useNotificationQueue';
+import { useNotificationQueue } from './useNotificationQueue';
 
 export { notifyUser } from '#/utils/Notification/notifyUser';
 

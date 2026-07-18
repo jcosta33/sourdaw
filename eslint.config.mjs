@@ -588,6 +588,11 @@ function isApprovedReactImportFile(filename) {
     if (/^modules\/.+\/presentations\/(?:views|components|hooks|helpers)\//.test(sourceRelativePath)) return true;
     if (sourceRelativePath === 'infra/store/useStore.ts') return true;
     if (sourceRelativePath === 'infra/store/useStoreSelector.ts') return true;
+    // DialogService is an approved React UI subsystem (confirm / prompt / notify
+    // views + hooks) relocated from Workspace's presentation layer into the
+    // shared kernel at src/infra/dialogService (ADR 0011 W6.1). Same rationale as
+    // the infra/store React-binding entries above.
+    if (/^infra\/dialogService\//.test(sourceRelativePath)) return true;
 
     return sourceRelativePath === 'utils/UI/useContextMenuDismiss.ts';
 }

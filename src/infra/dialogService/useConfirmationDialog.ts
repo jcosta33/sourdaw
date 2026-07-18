@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
 
-import { type ConfirmPayload } from '../../events/WorkspaceEvents';
-import { onConfirmation } from '../../useCases/onConfirmation';
+import { type ConfirmPayload } from '#/utils/Notification/notificationEventBus';
+
+import { onConfirmation } from './onConfirmation';
 
 type UseConfirmationDialogOutput = {
     pending: ConfirmPayload | null;

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 
-import { onNotification } from '../../useCases/onNotification';
+import { onNotification } from './onNotification';
 
 type AppNotification = {
     id: string;

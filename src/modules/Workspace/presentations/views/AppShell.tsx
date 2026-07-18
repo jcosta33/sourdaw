@@ -4,6 +4,9 @@ import { X } from 'lucide-react';
 
 import { Button } from '#/components/ui/button';
 import { DragResizeHandle } from '#/components/ui/DragResizeHandle';
+import { ConfirmDialog } from '#/infra/dialogService/ConfirmDialog';
+import { NotificationToast } from '#/infra/dialogService/NotificationToast';
+import { PromptDialog } from '#/infra/dialogService/PromptDialog';
 import { useStore } from '#/infra/store/useStore';
 import { aiStore } from '#/modules/AiGeneration/stores';
 import {
@@ -67,12 +70,9 @@ import { useWorkspaceState } from '../hooks/useWorkspaceState';
 import { AnalysisPanel } from './AnalysisPanel';
 import { AutomationBottomPanel } from './AutomationBottomPanel';
 import { ClipView } from './ClipView';
-import { ConfirmDialog } from './ConfirmDialog';
 import { InspectorPanel } from './InspectorPanel';
 import { LaunchScreen } from './LaunchScreen';
 import { MixerPanel } from './MixerPanel';
-import { NotificationToast } from './NotificationToast';
-import { PromptDialog } from './PromptDialog';
 import { Sidebar } from './Sidebar';
 import { StatusBar } from './StatusBar';
 import { TransportBar } from './TransportBar';

@@ -1,10 +1,7 @@
 import { inject } from '#/infra/di/inject';
+import { NotificationEventBus, type NotifyPayload } from '#/utils/Notification/notificationEventBus';
 
-import { type NotifyPayload } from '../events/WorkspaceEvents';
-
-import { WorkspaceEventBus } from './workspaceEventBus';
-
-export const onNotification = inject({ eventBus: WorkspaceEventBus })(
+export const onNotification = inject({ eventBus: NotificationEventBus })(
     ({ eventBus }) =>
         function onNotification(handler: (payload: NotifyPayload) => void): () => void {
             return eventBus.on('ui.notify', handler);
