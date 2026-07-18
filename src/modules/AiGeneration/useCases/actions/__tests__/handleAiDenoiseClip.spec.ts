@@ -14,8 +14,14 @@ const { cacheAudioBufferMock, denoiseAudioMock, getCachedAudioBufferMock, isTaur
 
 vi.mock('#/modules/AudioEngine/useCases', () => ({
     cacheAudioBuffer: cacheAudioBufferMock,
-    denoiseAudio: denoiseAudioMock,
     getCachedAudioBuffer: getCachedAudioBufferMock,
+}));
+
+vi.mock('../../nativeAiBridge/denoiseAudio', () => ({
+    denoiseAudio: denoiseAudioMock,
+}));
+
+vi.mock('#/utils/tauriRuntime', () => ({
     isTauri: isTauriMock,
 }));
 

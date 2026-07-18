@@ -1,10 +1,11 @@
 import { addClip, addTrack, getTrackStoreState, selectClip, setTrackStoreState } from '#/modules/Arrangement/useCases';
-import { generateMidiAI, isTauri } from '#/modules/AudioEngine/useCases';
 import { pushUndoEntry } from '#/modules/Command/useCases';
 import { batchAddMidiNotes, getMidiStoreState, setMidiStoreState } from '#/modules/MIDI/useCases';
 import { getTransportState } from '#/modules/Transport/useCases';
+import { isTauri } from '#/utils/tauriRuntime';
 
 import { generateMidiViaLlm } from '../llmMidiGeneration';
+import { generateMidiAI } from '../nativeAiBridge/generateMidiAI';
 
 import { addTask } from './addTask';
 import { buildSeedNotesFromPrompt } from './buildSeedNotesFromPrompt';

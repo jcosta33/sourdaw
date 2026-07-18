@@ -5,11 +5,11 @@ import {
     resolveBackend,
     streamCloudChatCompletion,
 } from '#/modules/AiRuntime/useCases';
-import { type generateMidiAI } from '#/modules/AudioEngine/useCases';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { readBalancedObject } from '../services/readBalancedObject';
 
+import { type generateMidiAI } from './nativeAiBridge/generateMidiAI';
 import { filterTemplates } from './patternQueries/filterTemplates';
 import { PATTERN_TEMPLATES } from './patternQueries/PATTERN_TEMPLATES';
 

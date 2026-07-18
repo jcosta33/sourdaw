@@ -49,14 +49,13 @@ const {
     };
 });
 
-vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => {
-    const actual = await importOriginal<typeof import('#/modules/AudioEngine/useCases')>();
-    return {
-        ...actual,
-        generateMidiAI: vi.fn(),
-        isTauri: () => false,
-    };
-});
+vi.mock('../../nativeAiBridge/generateMidiAI', () => ({
+    generateMidiAI: vi.fn(),
+}));
+
+vi.mock('#/utils/tauriRuntime', () => ({
+    isTauri: () => false,
+}));
 
 vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => {
     const actual = await importOriginal<typeof import('#/modules/Arrangement/useCases')>();

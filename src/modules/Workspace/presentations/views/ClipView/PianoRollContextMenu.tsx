@@ -7,8 +7,8 @@ import { type ReactElement, useRef, useState } from 'react';
 import { DawContextMenuSurface } from '#/components/daw/DawContextMenuSurface';
 import { DawMenuButton, DawMenuSectionLabel, DawMenuSeparator } from '#/components/daw/DawMenuParts';
 import { logger } from '#/infra/logger/appLogger';
+import { generateMidiAI } from '#/modules/AiGeneration/useCases';
 import { copySelectedNotes, pasteNotes } from '#/modules/Arrangement/useCases';
-import { generateMidiAI } from '#/modules/AudioEngine/useCases';
 import { pushUndoEntry } from '#/modules/Command/useCases';
 import {
     addMidiNote,

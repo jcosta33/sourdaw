@@ -79,9 +79,7 @@ vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => ({
     pasteNotes: vi.fn(),
 }));
 
-vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
-    ...(await importOriginal<typeof import('#/modules/AudioEngine/useCases')>()),
-    isTauri: vi.fn(() => false),
+vi.mock('#/modules/AiGeneration/useCases', () => ({
     generateMidiAI: vi.fn(),
 }));
 
