@@ -37,8 +37,9 @@ export { syncActionReplayMetadata } from './syncActionReplayMetadata';
 export { clearUndoHistory } from './clearUndoHistory';
 export { pushUndoEntry } from './pushUndoEntry';
 export { commitActionUndoEntry } from './commitActionUndoEntry';
-export { getPitchHandlers } from './getPitchHandlers';
-export { setPitchEditDependencies } from './pitch/pitchEditDependencies';
+// Pitch-edit dispatch (`getPitchHandlers`) and dependency injection
+// (`setPitchEditDependencies`) now live in Knead/useCases — Knead owns the
+// pitch aggregate. See ADR 0011 Wave 3.
 
 export { setShortcutMapping } from './setShortcutMapping';
 export { resetShortcutMappings } from './resetShortcutMappings';
