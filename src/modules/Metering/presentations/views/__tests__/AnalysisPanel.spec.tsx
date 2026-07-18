@@ -32,7 +32,7 @@ vi.mock('#/components/ui/scroll-area', () => ({
 }));
 
 // Mock metering components
-vi.mock('../Metering/LUFSMeter', () => ({
+vi.mock('../LUFSMeter', () => ({
     LUFSMeter: ({ width, height }: { width: number; height: number }) => (
         <div data-testid="lufs-meter" style={{ width, height }}>
             LUFS Meter
@@ -40,7 +40,7 @@ vi.mock('../Metering/LUFSMeter', () => ({
     ),
 }));
 
-vi.mock('../Metering/PhaseCorrelationDisplay', () => ({
+vi.mock('../PhaseCorrelationDisplay', () => ({
     PhaseCorrelationDisplay: ({ width, height }: { width: number; height: number }) => (
         <div data-testid="phase-correlation" style={{ width, height }}>
             Phase Correlation
@@ -48,7 +48,7 @@ vi.mock('../Metering/PhaseCorrelationDisplay', () => ({
     ),
 }));
 
-vi.mock('../Metering/Oscilloscope', () => ({
+vi.mock('../Oscilloscope', () => ({
     Oscilloscope: ({ width, height }: { width: number; height: number }) => (
         <div data-testid="oscilloscope" style={{ width, height }}>
             Oscilloscope
@@ -56,7 +56,7 @@ vi.mock('../Metering/Oscilloscope', () => ({
     ),
 }));
 
-vi.mock('../Metering/SpectrumAnalyzer', () => ({
+vi.mock('../SpectrumAnalyzer', () => ({
     SpectrumAnalyzer: ({ width, height }: { width: number; height: number }) => (
         <div data-testid="spectrum-analyzer" style={{ width, height }}>
             Spectrum Analyzer
@@ -64,7 +64,7 @@ vi.mock('../Metering/SpectrumAnalyzer', () => ({
     ),
 }));
 
-vi.mock('../Metering/Spectrogram', () => ({
+vi.mock('../Spectrogram', () => ({
     Spectrogram: ({ width, height }: { width: number; height: number }) => (
         <div data-testid="spectrogram" style={{ width, height }}>
             Spectrogram
@@ -72,7 +72,7 @@ vi.mock('../Metering/Spectrogram', () => ({
     ),
 }));
 
-vi.mock('../Metering/Goniometer', () => ({
+vi.mock('../Goniometer', () => ({
     Goniometer: ({ size }: { size: number }) => (
         <div data-testid="goniometer" style={{ width: size, height: size }}>
             Goniometer
@@ -80,7 +80,7 @@ vi.mock('../Metering/Goniometer', () => ({
     ),
 }));
 
-vi.mock('../../components/SpatialPanner', () => ({
+vi.mock('../SpatialPanner', () => ({
     SpatialPanner: ({ size }: { size: number }) => (
         <div data-testid="spatial-panner" style={{ width: size, height: size }}>
             Spatial Panner
@@ -88,7 +88,7 @@ vi.mock('../../components/SpatialPanner', () => ({
     ),
 }));
 
-vi.mock('../../components/Wavetable3D', () => ({
+vi.mock('../Wavetable3D', () => ({
     Wavetable3D: ({ width, height }: { width: number; height: number }) => (
         <div data-testid="wavetable-3d" style={{ width, height }}>
             Wavetable 3D

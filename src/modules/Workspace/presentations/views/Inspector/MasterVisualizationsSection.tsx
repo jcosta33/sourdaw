@@ -2,15 +2,16 @@ import { type ReactElement } from 'react';
 
 import { DawDisplaySurface } from '#/components/daw/DawDisplaySurface';
 import { DawHeaderBand } from '#/components/daw/DawHeaderBand';
-
-import { SpatialPanner } from '../../components/SpatialPanner';
-import { Wavetable3D } from '../../components/Wavetable3D';
-import { Goniometer } from '../Metering/Goniometer';
-import { LUFSMeter } from '../Metering/LUFSMeter';
-import { Oscilloscope } from '../Metering/Oscilloscope';
-import { PhaseCorrelationDisplay } from '../Metering/PhaseCorrelationDisplay';
-import { Spectrogram } from '../Metering/Spectrogram';
-import { SpectrumAnalyzer } from '../Metering/SpectrumAnalyzer';
+import {
+    Goniometer,
+    LUFSMeter,
+    Oscilloscope,
+    PhaseCorrelationDisplay,
+    SpatialPanner,
+    Spectrogram,
+    SpectrumAnalyzer,
+    Wavetable3D,
+} from '#/modules/Metering/presentations/views';
 
 export const MasterVisualizationsSection = (): ReactElement => {
     return (
