@@ -1,13 +1,18 @@
 import { cacheAudioBuffer } from '#/modules/AudioEngine/useCases';
+import {
+    FACTORY_LIBRARY_ROOT_ID,
+    FACTORY_SEED_FLAG_KEY,
+    generateFactorySamples,
+} from '#/modules/FactorySynthesis/useCases';
 
-import { type LibraryRoot, type SampleAnalysis, type SampleRecord, toBpm } from '../../models/LibraryTypes';
-import { persistLibraryRoots } from '../../repositories/libraryPersistence/persistLibraryRoots';
-import { persistSamples } from '../../repositories/libraryPersistence/persistSamples';
-import { addLibraryRoot, addSamples, libraryStore } from '../../stores/libraryStore';
-import { buildFolderTree } from '../buildFolderTree';
+import { type LibraryRoot, type SampleAnalysis, type SampleRecord, toBpm } from '../models/LibraryTypes';
+import { persistLibraryRoots } from '../repositories/libraryPersistence/persistLibraryRoots';
+import { persistSamples } from '../repositories/libraryPersistence/persistSamples';
+import { addLibraryRoot, addSamples, libraryStore } from '../stores/libraryStore';
 
-import { generateFactorySamples } from './generateFactorySamples';
-import { FACTORY_LIBRARY_ROOT_ID, FACTORY_SEED_FLAG_KEY, type FactorySample } from './types';
+import { buildFolderTree } from './buildFolderTree';
+
+type FactorySample = ReturnType<typeof generateFactorySamples>[number];
 
 function getCategoryFolder(sample: FactorySample): string {
     const primary = sample.tags[0] ?? sample.category;
