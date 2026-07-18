@@ -1,4 +1,4 @@
-import { toggleChatPanel } from '#/modules/Workspace/useCases';
+import { toggleChatPanel } from '#/modules/WorkspaceShell/useCases';
 
 export function toggleChat(): void {
     toggleChatPanel();

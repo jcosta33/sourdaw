@@ -5,7 +5,7 @@
  * (the form callers import directly, e.g.
  * `panelToggles/clearClipSelection`). This index re-exports every one of
  * them so the package path
- * `#/modules/Workspace/useCases/togglePanel/panelToggles` resolves the same
+ * `#/modules/WorkspaceShell/useCases/togglePanel/panelToggles` resolves the same
  * symbols. There is exactly one body per function — this file declares none.
  *
  * The functions split into three structural groups:

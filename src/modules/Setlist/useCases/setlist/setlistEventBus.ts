@@ -1,6 +1,6 @@
 import { Container } from '#/infra/di/Container';
 
-import type { MidiOutPayload } from '#/modules/Workspace/events';
+import type { MidiOutPayload } from '#/modules/WorkspaceShell/events';
 
 type SetlistEvents = {
     'midi.out': MidiOutPayload;

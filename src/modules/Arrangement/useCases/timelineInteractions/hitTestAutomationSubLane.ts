@@ -1,5 +1,5 @@
 import { automationStore } from '#/modules/Automation/stores';
-import { workspaceStore } from '#/modules/Workspace/stores';
+import { workspaceStore } from '#/modules/WorkspaceShell/stores';
 
 import { AUTOMATION_SUB_LANE_HEIGHT } from '../../automationConstants';
 import { timelineViewStore } from '../../stores/timelineViewStore';

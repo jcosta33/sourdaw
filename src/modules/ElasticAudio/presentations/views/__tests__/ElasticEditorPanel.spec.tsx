@@ -127,7 +127,7 @@ vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => {
     };
 });
 
-vi.mock('#/modules/Workspace/stores', async (importOriginal) => {
+vi.mock('#/modules/WorkspaceShell/stores', async (importOriginal) => {
     const actual = await importOriginal<Record<string, unknown>>();
     return {
         ...actual,

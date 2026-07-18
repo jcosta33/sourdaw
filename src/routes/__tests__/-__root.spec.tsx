@@ -12,7 +12,7 @@ vi.mock('@tanstack/react-router', () => ({
 }));
 
 // Mock AppShell
-vi.mock('#/modules/Workspace/presentations/views', () => ({
+vi.mock('#/modules/WorkspaceShell/presentations/views', () => ({
     AppShell: ({ children }: { children: ReactNode }) => <div data-testid="app-shell">{children}</div>,
 }));
 

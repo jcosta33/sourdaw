@@ -9,7 +9,7 @@ import {
     toggleInspector,
     toggleMixer,
     toggleAutomationPanel,
-} from '#/modules/Workspace/useCases';
+} from '#/modules/WorkspaceShell/useCases';
 
 import { type CallableCommandEntry } from '../searchCommandRegistry';
 import { getSelectedClipId } from '../selectionHelpers/getSelectedClipId';

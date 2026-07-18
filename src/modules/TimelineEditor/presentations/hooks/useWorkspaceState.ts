@@ -4,7 +4,7 @@
  * shape identical to Workspace's own and avoids per-field plumbing.
  */
 import { useStore } from '#/infra/store/useStore';
-import { workspaceStore, defaultWorkspaceState, type WorkspaceState } from '#/modules/Workspace/stores';
+import { workspaceStore, defaultWorkspaceState, type WorkspaceState } from '#/modules/WorkspaceShell/stores';
 
 export const useWorkspaceState = (): WorkspaceState => {
     return useStore(workspaceStore, defaultWorkspaceState);

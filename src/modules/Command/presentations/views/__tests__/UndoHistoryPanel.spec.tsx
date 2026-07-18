@@ -17,11 +17,11 @@ vi.mock('#/modules/Command/stores/undoStore', () => ({
     undoStore: { name: 'undoStore' },
 }));
 
-vi.mock('#/modules/Workspace/stores', () => ({
+vi.mock('#/modules/WorkspaceShell/stores', () => ({
     workspaceStore: { name: 'workspaceStore' },
 }));
 
-vi.mock('#/modules/Workspace/useCases', () => ({
+vi.mock('#/modules/WorkspaceShell/useCases', () => ({
     closeUndoHistory: vi.fn(),
 }));
 
@@ -30,7 +30,7 @@ vi.mock('#/modules/Command/useCases/undoToIndex', () => ({
 }));
 
 const { useStore } = await import('#/infra/store/useStore');
-const { closeUndoHistory } = await import('#/modules/Workspace/useCases');
+const { closeUndoHistory } = await import('#/modules/WorkspaceShell/useCases');
 
 describe('UndoHistoryPanel', () => {
     beforeEach(() => {

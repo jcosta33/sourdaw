@@ -1,5 +1,5 @@
 import { setTrackGain, setTrackMute } from '#/modules/AudioEngine/useCases';
-import { workspaceStore } from '#/modules/Workspace/stores';
+import { workspaceStore } from '#/modules/WorkspaceShell/stores';
 
 import { applySoloLogic as calculateSoloLogic } from '../../services/applySoloLogic';
 import { getTrackStoreState } from '../getTrackStoreState';

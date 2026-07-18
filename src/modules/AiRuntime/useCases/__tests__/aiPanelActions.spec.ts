@@ -9,7 +9,7 @@ vi.mock('#/modules/Command/useCases', () => ({
     undo: vi.fn(),
 }));
 
-vi.mock('#/modules/Workspace/useCases', () => ({
+vi.mock('#/modules/WorkspaceShell/useCases', () => ({
     toggleChatPanel: vi.fn(),
 }));
 
@@ -36,7 +36,7 @@ describe('aiPanelActions injectables', () => {
     });
 
     it('toggleChat forwards to toggleChatPanel', async () => {
-        const { toggleChatPanel } = await import('#/modules/Workspace/useCases');
+        const { toggleChatPanel } = await import('#/modules/WorkspaceShell/useCases');
         toggleChat();
 
         expect(toggleChatPanel).toHaveBeenCalledTimes(1);

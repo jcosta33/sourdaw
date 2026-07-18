@@ -12,7 +12,7 @@ import { trackStore, timelineViewStore } from '#/modules/Arrangement/stores';
 import { scrollTimelineViewportHorizontallyFromWheel, setAutomationMode } from '#/modules/Arrangement/useCases';
 import { automationStore } from '#/modules/Automation/stores';
 import { addAutomationLane, toggleLaneCollapsed, removeAutomationLane } from '#/modules/Automation/useCases';
-import { defaultWorkspaceState, workspaceStore } from '#/modules/Workspace/stores';
+import { defaultWorkspaceState, workspaceStore } from '#/modules/WorkspaceShell/stores';
 
 import { type AutomationLane } from '../../models/AutomationViewTypes';
 import { type EditingTool } from '../../models/EditingTool';

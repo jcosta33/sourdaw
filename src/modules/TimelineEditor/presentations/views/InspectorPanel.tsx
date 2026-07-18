@@ -10,7 +10,7 @@ import { ScrollArea } from '#/components/ui/scroll-area';
 import { useStore } from '#/infra/store/useStore';
 import { clipSelectionStore, defaultClipSelectionState } from '#/modules/Arrangement/stores';
 import { clearClipSelection, selectClipWithFocus } from '#/modules/Arrangement/useCases';
-import { toggleInspector } from '#/modules/Workspace/useCases';
+import { toggleInspector } from '#/modules/WorkspaceShell/useCases';
 
 import { useTracks } from '../hooks/useTracks';
 

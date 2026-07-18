@@ -9,8 +9,8 @@ import { DawUtilityPanel } from '#/components/daw/DawUtilityPanel';
 import { Button } from '#/components/ui/button';
 import { logger } from '#/infra/logger/appLogger';
 import { useStore } from '#/infra/store/useStore';
-import { workspaceStore } from '#/modules/Workspace/stores';
-import { closeCollaborationPanel } from '#/modules/Workspace/useCases';
+import { workspaceStore } from '#/modules/WorkspaceShell/stores';
+import { closeCollaborationPanel } from '#/modules/WorkspaceShell/useCases';
 
 import { acceptAnswer } from '../../useCases/collaboration/acceptAnswer';
 import { createSession } from '../../useCases/collaboration/createSession';

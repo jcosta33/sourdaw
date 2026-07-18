@@ -39,7 +39,7 @@ vi.mock('#/modules/Transport/stores', () => ({
     },
 }));
 
-vi.mock('#/modules/Workspace/stores', () => ({
+vi.mock('#/modules/WorkspaceShell/stores', () => ({
     workspaceStore: {
         get value() {
             return mocks.workspaceStoreValue.value;

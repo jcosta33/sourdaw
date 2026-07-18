@@ -1,6 +1,6 @@
 import { getWarpState, trackStore, warpStates } from '#/modules/Arrangement/stores';
 import { pushUndoEntry } from '#/modules/Command/useCases';
-import { workspaceStore } from '#/modules/Workspace/stores';
+import { workspaceStore } from '#/modules/WorkspaceShell/stores';
 
 export type QuantizeTransientsResult =
     | { ok: true; moved: number }

@@ -29,8 +29,8 @@ vi.mock('../workspaceShortcuts/setEditingTool', () => ({ setEditingTool: vi.fn()
 vi.mock('../workspaceShortcuts/zoomToFit', () => ({ zoomToFit: vi.fn() }));
 vi.mock('../workspaceShortcuts/zoomToSelection', () => ({ zoomToSelection: vi.fn() }));
 
-vi.mock('#/modules/Workspace/stores', async (importOriginal) => {
-    const actual = await importOriginal<typeof import('#/modules/Workspace/stores')>();
+vi.mock('#/modules/WorkspaceShell/stores', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('#/modules/WorkspaceShell/stores')>();
     return {
         ...actual,
         workspaceStore: { value: { selectedClipIds: [], selectedClipId: null } },
@@ -38,7 +38,7 @@ vi.mock('#/modules/Workspace/stores', async (importOriginal) => {
     };
 });
 
-vi.mock('#/modules/Workspace/useCases', () => ({
+vi.mock('#/modules/WorkspaceShell/useCases', () => ({
     cycleAutomationVisibility: vi.fn(),
     toggleCommandPalette: vi.fn(),
     toggleWorkspaceMode: vi.fn(),

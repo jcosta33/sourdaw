@@ -6,7 +6,7 @@ const mocks = vi.hoisted(() => ({
     toggleChatPanel: vi.fn(),
 }));
 
-vi.mock('#/modules/Workspace/useCases', () => ({
+vi.mock('#/modules/WorkspaceShell/useCases', () => ({
     toggleChatPanel: mocks.toggleChatPanel,
 }));
 

@@ -13,7 +13,7 @@ import {
 } from '#/modules/Arrangement/stores';
 import { commitWarpMarkerBeatDrag, setStretchMode, updateWarpMarkerBeat } from '#/modules/Arrangement/useCases';
 import { audioBufferCache } from '#/modules/AudioEngine/stores';
-import { defaultWorkspaceState, workspaceStore } from '#/modules/Workspace/stores';
+import { defaultWorkspaceState, workspaceStore } from '#/modules/WorkspaceShell/stores';
 import { resolveToken } from '#/utils/UI/resolveToken';
 
 import { audioWarpStore, type WarpAlgorithm } from '../../stores/audioWarp';

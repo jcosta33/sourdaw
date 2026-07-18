@@ -1,5 +1,5 @@
 import { executeAppAction } from '#/modules/Command/useCases';
-import { openPreferencesDialog } from '#/modules/Workspace/useCases';
+import { openPreferencesDialog } from '#/modules/WorkspaceShell/useCases';
 
 import { type CallableCommandEntry } from '../searchCommandRegistry';
 import { getSelectedClipId } from '../selectionHelpers/getSelectedClipId';

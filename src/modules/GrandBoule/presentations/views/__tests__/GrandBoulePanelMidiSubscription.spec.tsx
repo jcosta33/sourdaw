@@ -26,9 +26,9 @@ vi.mock('#/infra/store/useStore', () => ({
 
 type TestBusEvents = {
     'track.added': import('#/modules/Arrangement/events').TrackAddedPayload;
-    'midi.noteOn': import('#/modules/Workspace/events').MidiNoteOnPayload;
-    'midi.noteOff': import('#/modules/Workspace/events').MidiNoteOffPayload;
-    'midi.pedalCc': import('#/modules/Workspace/events').MidiPedalCcPayload;
+    'midi.noteOn': import('#/modules/WorkspaceShell/events').MidiNoteOnPayload;
+    'midi.noteOff': import('#/modules/WorkspaceShell/events').MidiNoteOffPayload;
+    'midi.pedalCc': import('#/modules/WorkspaceShell/events').MidiPedalCcPayload;
 };
 
 type TestBusHandler<TEventName extends keyof TestBusEvents> = (

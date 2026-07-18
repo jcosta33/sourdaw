@@ -28,7 +28,7 @@ vi.mock('../../../stores/trackStore', () => ({
     },
 }));
 
-vi.mock('#/modules/Workspace/stores', async (importOriginal) => {
+vi.mock('#/modules/WorkspaceShell/stores', async (importOriginal) => {
     const actual = await importOriginal<any>();
     return {
         ...actual,

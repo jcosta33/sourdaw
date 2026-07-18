@@ -100,7 +100,7 @@ import {
     stopPlayback,
 } from '#/modules/Transport/useCases';
 import { updateTunerTelemetry } from '#/modules/Tuner/stores';
-import { getWorkspaceHandlers, getScratchPadHandlers, setWorkspaceEventBus } from '#/modules/Workspace/useCases';
+import { getWorkspaceHandlers, getScratchPadHandlers, setWorkspaceEventBus } from '#/modules/WorkspaceShell/useCases';
 import { setYeastEventBus } from '#/modules/Yeast/stores';
 import { configureYeastRuntime, teardownYeastRuntime } from '#/modules/Yeast/useCases';
 import { logCapabilities } from '#/utils/capabilities';

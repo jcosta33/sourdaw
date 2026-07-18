@@ -22,7 +22,7 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     setTrackMute: mocks.setTrackMute,
 }));
 
-vi.mock('#/modules/Workspace/stores', () => ({
+vi.mock('#/modules/WorkspaceShell/stores', () => ({
     workspaceStore: mocks.workspaceStore,
 }));
 

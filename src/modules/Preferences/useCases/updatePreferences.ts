@@ -1,4 +1,4 @@
-import { setSoloMode } from '#/modules/Workspace/useCases';
+import { setSoloMode } from '#/modules/WorkspaceShell/useCases';
 
 import { defaultPreferences, type Preferences } from '../models/Preferences';
 import { preferencesStore } from '../stores/preferencesStore';

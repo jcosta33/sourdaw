@@ -17,7 +17,7 @@ import {
     restoreMixerChannels,
 } from '#/modules/Arrangement/useCases';
 import { pushUndoEntry } from '#/modules/Command/useCases';
-import { cycleChannelStripWidth } from '#/modules/Workspace/useCases';
+import { cycleChannelStripWidth } from '#/modules/WorkspaceShell/useCases';
 import { useContextMenuDismiss } from '#/utils/UI/useContextMenuDismiss';
 
 import { useTracks } from '../hooks/useTracks';

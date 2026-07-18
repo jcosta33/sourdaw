@@ -18,7 +18,7 @@ import { CommandEventBus, executeAppAction, pushUndoEntry, redo, undo } from '#/
 import { loopStationStore } from '#/modules/SessionLauncher/stores';
 import { stopAllSlots, triggerPad } from '#/modules/SessionLauncher/useCases';
 import { stopPlayback, seekPlayhead, setLoopRegion } from '#/modules/Transport/useCases';
-import { type EditingTool } from '#/modules/Workspace/stores';
+import { type EditingTool } from '#/modules/WorkspaceShell/stores';
 import {
     cycleAutomationVisibility,
     openExportDialog,
@@ -32,7 +32,7 @@ import {
     toggleVirtualKeyboard,
     toggleWorkspaceMode,
     TOOL_SHORTCUTS,
-} from '#/modules/Workspace/useCases';
+} from '#/modules/WorkspaceShell/useCases';
 
 import { parseLoopStationPadCallbackId, shortcutStore, type ShortcutAction } from '../../../stores/shortcutStore';
 import { getAllClipIds } from '../../selectionHelpers/getAllClipIds';

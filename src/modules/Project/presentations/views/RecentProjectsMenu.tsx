@@ -16,7 +16,7 @@ import {
 import { DawKeycap } from '#/components/daw/DawKeycap';
 import { Button } from '#/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip';
-import { openExportDialog } from '#/modules/Workspace/useCases';
+import { openExportDialog } from '#/modules/WorkspaceShell/useCases';
 
 import { type TemplateCategory } from '../../models/ProjectTemplateTypes';
 import { exportProjectFile } from '../../useCases/projectPersistence/fileIO/exportProjectFile';

@@ -34,8 +34,8 @@ vi.mock('../../../useCases/projectPersistence/fileIO/exportProjectFile', () => (
     exportProjectFile: vi.fn(),
 }));
 
-vi.mock('#/modules/Workspace/useCases', async (importOriginal) => ({
-    ...(await importOriginal<typeof import('#/modules/Workspace/useCases')>()),
+vi.mock('#/modules/WorkspaceShell/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/WorkspaceShell/useCases')>()),
     openExportDialog: vi.fn(),
 }));
 

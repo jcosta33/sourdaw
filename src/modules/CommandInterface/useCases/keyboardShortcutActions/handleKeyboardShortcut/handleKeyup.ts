@@ -1,6 +1,6 @@
 import { inject } from '#/infra/di/inject';
 import { CommandEventBus } from '#/modules/Command/useCases';
-import { finishToolSwap } from '#/modules/Workspace/useCases';
+import { finishToolSwap } from '#/modules/WorkspaceShell/useCases';
 
 /**
  * Handles a keyup event for shortcuts that need release tracking.

@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { injectDependencies } from '#/infra/di/testing/injectDependencies';
 import { seekPlayhead } from '#/modules/Transport/useCases';
-import { setEditingTool, startToolSwap } from '#/modules/Workspace/useCases';
+import { setEditingTool, startToolSwap } from '#/modules/WorkspaceShell/useCases';
 
 import { handleKeydown, type KeyDescriptor } from '../handleKeydown';
 
@@ -68,11 +68,11 @@ vi.mock('#/modules/Transport/useCases', () => ({
     setLoopRegion: vi.fn(),
 }));
 
-vi.mock('#/modules/Workspace/stores', () => ({
+vi.mock('#/modules/WorkspaceShell/stores', () => ({
     workspaceStore: { value: { activeTool: 'select', selectedClipIds: [], selectedClipId: null } },
 }));
 
-vi.mock('#/modules/Workspace/useCases', () => ({
+vi.mock('#/modules/WorkspaceShell/useCases', () => ({
     cycleAutomationVisibility: vi.fn(),
     openExportDialog: vi.fn(),
     openPreferencesDialog: vi.fn(),

@@ -1,5 +1,5 @@
 import { newProject, pickAndImportProjectFile, saveProject } from '#/modules/Project/useCases';
-import { openExportDialog } from '#/modules/Workspace/useCases';
+import { openExportDialog } from '#/modules/WorkspaceShell/useCases';
 
 import { type CallableCommandEntry } from '../searchCommandRegistry';
 

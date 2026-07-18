@@ -77,7 +77,7 @@ vi.mock('../../../useCases/timelineInteractions/hitTestClip/hitTestTrack', () =>
 }));
 vi.mock('../../../useCases/timelineInteractions/hitTestClipEdge', () => ({ hitTestClipEdge: mocks.hitTestClipEdge }));
 vi.mock('../../../useCases/timelineInteractions/snapToGrid', () => ({ snapToGrid: mocks.snapToGrid }));
-vi.mock('#/modules/Workspace/stores', async (importOriginal) => ({
+vi.mock('#/modules/WorkspaceShell/stores', async (importOriginal) => ({
     ...(await importOriginal<any>()),
     workspaceStore: {
         get value() {
@@ -95,7 +95,7 @@ vi.mock('../../../stores/clipSelectionStore', () => ({
 vi.mock('#/modules/Preferences/stores', () => ({
     preferencesStore: { value: {} },
 }));
-vi.mock('#/modules/Workspace/useCases', async (importOriginal) => ({
+vi.mock('#/modules/WorkspaceShell/useCases', async (importOriginal) => ({
     ...(await importOriginal<any>()),
     setWorkspaceMode: mocks.setWorkspaceMode,
 }));

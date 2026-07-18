@@ -18,7 +18,7 @@ vi.mock('#/modules/Arrangement/useCases', () => ({
     getTrackStoreState: vi.fn(),
 }));
 
-vi.mock('#/modules/Workspace/useCases', () => ({
+vi.mock('#/modules/WorkspaceShell/useCases', () => ({
     selectClipWithFocus: vi.fn(),
 }));
 
