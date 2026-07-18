@@ -13,13 +13,11 @@ import { handleSetPunchOut } from '../handleSetPunchOut';
 import { handleStopPlayback } from '../handleStopPlayback';
 import { handleToggleCountIn } from '../handleToggleCountIn';
 import { handleToggleLoop } from '../handleToggleLoop';
-import { handleToggleLoopRecord } from '../handleToggleLoopRecord';
 import { handleToggleMetronome } from '../handleToggleMetronome';
 import { handleTogglePlayback } from '../handleTogglePlayback';
 import { handleTogglePreRoll } from '../handleTogglePreRoll';
 import { handleTogglePunch } from '../handleTogglePunch';
 import { handleToggleRecording } from '../handleToggleRecording';
-import { handleTriggerScene } from '../handleTriggerScene';
 
 const mocks = vi.hoisted(() => ({
     togglePlayback: vi.fn(),
@@ -39,13 +37,9 @@ const mocks = vi.hoisted(() => ({
     toggleMetronome: vi.fn(),
     togglePreRoll: vi.fn(),
     togglePunchEnabled: vi.fn(),
-    toggleRecord: vi.fn(),
     toggleRecording: vi.fn(),
-    triggerScene: vi.fn(),
 }));
 
-vi.mock('../../../useCases/loopStation/toggleRecord', () => ({ toggleRecord: mocks.toggleRecord }));
-vi.mock('../../../useCases/loopStation/triggerScene', () => ({ triggerScene: mocks.triggerScene }));
 vi.mock('../../../useCases/transportControls/togglePlayback', () => ({ togglePlayback: mocks.togglePlayback }));
 vi.mock('../../../useCases/transportControls/stopPlayback', () => ({ stopPlayback: mocks.stopPlayback }));
 vi.mock('../../../useCases/transportControls/seekPlayhead', () => ({ seekPlayhead: mocks.seekPlayhead }));
@@ -178,15 +172,5 @@ describe('Transport Handlers', () => {
     it('handleToggleRecording delegates to use case', () => {
         void handleToggleRecording.execute({ type: 'toggleRecording', payload: undefined });
         expect(mocks.toggleRecording).toHaveBeenCalled();
-    });
-
-    it('handleToggleLoopRecord delegates to use case with slot id', () => {
-        handleToggleLoopRecord.execute({ type: 'toggleLoopRecord', payload: { slotId: 'slot-1' } });
-        expect(mocks.toggleRecord).toHaveBeenCalledWith('slot-1');
-    });
-
-    it('handleTriggerScene delegates to use case with column', () => {
-        handleTriggerScene.execute({ type: 'triggerScene', payload: { column: 2 } });
-        expect(mocks.triggerScene).toHaveBeenCalledWith(2);
     });
 });

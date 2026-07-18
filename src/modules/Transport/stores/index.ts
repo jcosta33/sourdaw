@@ -12,8 +12,5 @@ export { timeSignatureMapStore } from './timeSignatureMapStore';
 export { transportStore, defaultTransportState } from './transportStore';
 export type { TransportState } from './transportStore';
 
-export { loopStationStore } from './loopStationStore';
-export type { LoopSlot, LoopSlotState, LoopLayer, LoopStationState } from './loopStationStore';
-
 export type { LinkStatus } from './linkStatusStore';
 export { linkStatusStore, defaultLinkStatus, subscribeToLinkStatus, getLinkStatusSnapshot } from './linkStatusStore';

@@ -34,6 +34,7 @@ import {
 } from '#/modules/Arrangement/useCases';
 import { decodeAudioFile } from '#/modules/AudioEngine/useCases';
 import { chordTrackStore } from '#/modules/MIDI/stores';
+import { SessionView } from '#/modules/SessionLauncher/presentations/views';
 import { transportStore } from '#/modules/Transport/stores';
 import { clamp } from '#/utils/Math/clamp';
 import { notifyUser } from '#/utils/Notification/notifyUser';
@@ -46,7 +47,6 @@ import { useTracks } from '../hooks/useTracks';
 import { useWorkspaceState } from '../hooks/useWorkspaceState';
 
 import { ArrangeEmptyStateShell } from './ArrangeEmptyStateShell';
-import { SessionView } from './SessionView';
 import { ChordTrackLane, CHORD_TRACK_LANE_HEIGHT } from './Timeline/ChordTrackLane';
 import { ScratchPadView } from './Timeline/ScratchPadView';
 

@@ -70,11 +70,8 @@ vi.mock('../../../stores/loopStationStore', () => ({
     loopStationStore: { __id: 'loop' },
 }));
 
-vi.mock('../../../stores/transportStore', () => ({
+vi.mock('#/modules/Transport/stores', () => ({
     transportStore: { __id: 'transport' },
-}));
-
-vi.mock('../../../stores/playheadPositionRef', () => ({
     playheadPositionRef: { current: 0 },
 }));
 
@@ -96,7 +93,7 @@ vi.mock('../../../useCases/loopStation/toggleRecord', () => ({ toggleRecord: moc
 vi.mock('../../../useCases/loopStation/toggleSync', () => ({ toggleSync: mocks.toggleSync }));
 vi.mock('../../../useCases/loopStation/triggerScene', () => ({ triggerScene: mocks.triggerScene }));
 vi.mock('../../../useCases/loopStation/undoLastLayer', () => ({ undoLastLayer: mocks.undoLastLayer }));
-vi.mock('../../../useCases/transportQueries/helpers', () => ({
+vi.mock('#/modules/Transport/useCases', () => ({
     defaultTransportState: { playheadPosition: 0, timeSignatureNumerator: 4 },
 }));
 

@@ -4,12 +4,6 @@
 export { ensureTrackStrips } from './ensureTrackStrips';
 export { setStopPlaybackCallback } from './playheadScheduler/setStopPlaybackCallback';
 
-export { toggleRecord } from './loopStation/toggleRecord';
-export { triggerPad } from './loopStation/triggerPad';
-export { triggerScene } from './loopStation/triggerScene';
-export { triggerSlot } from './loopStation/triggerSlot';
-export { stopAllSlots } from './loopStation/stopAllSlots';
-
 export { disableLooping } from './setLooping';
 
 export { setMasterGain } from './setMasterGain';

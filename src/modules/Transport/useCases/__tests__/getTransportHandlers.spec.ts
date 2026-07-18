@@ -26,8 +26,6 @@ describe('getTransportHandlers', () => {
             'removeTimeSignatureChange',
             'togglePreRoll',
             'setPreRollBars',
-            'toggleLoopRecord',
-            'triggerScene',
         ] as const) {
             expect(map[key]).toBeDefined();
             expect(map[key].execute).toBeDefined();
