@@ -1,4 +1,4 @@
-import { pickFiles } from '../fileDialog';
+import { pickFiles } from '#/modules/Project/useCases';
 
 import { importDawProject } from './importDawProject';
 

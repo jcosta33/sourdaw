@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
-import { type ProjectData } from '../../../models/ProjectData';
 import { parseProjectXml } from '../parseProjectXml';
+import { type ProjectData } from '../projectDataContract';
 import { serializeProjectXml } from '../serializeProjectXml';
 
 function buildProjectFixture(): ProjectData {

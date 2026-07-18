@@ -1,10 +1,10 @@
 import { logger } from '#/infra/logger/appLogger';
 import { createHandler } from '#/utils/createHandler';
 import { notifyUser } from '#/utils/Notification/notifyUser';
+import { isTauri } from '#/utils/tauriRuntime';
 
-import { exportDawProject } from '../../useCases/dawProject/exportDawProject';
-import { saveDawProjectNativeFile } from '../../useCases/dawProject/saveDawProjectNativeFile';
-import { isNativeProjectRuntimeAvailable } from '../../useCases/isNativeProjectRuntimeAvailable';
+import { exportDawProject } from '../useCases/exportDawProject';
+import { saveDawProjectNativeFile } from '../useCases/saveDawProjectNativeFile';
 
 type ShowSaveFilePicker = (opts: { suggestedName: string; types?: unknown[] }) => Promise<{
     createWritable: () => Promise<{
@@ -24,7 +24,7 @@ function getShowSaveFilePicker(): ShowSaveFilePicker | null {
 }
 
 async function saveBytes(bytes: Uint8Array, suggestedName: string): Promise<void> {
-    if (isNativeProjectRuntimeAvailable()) {
+    if (isTauri()) {
         await saveDawProjectNativeFile({ bytes, suggestedName });
         return;
     }

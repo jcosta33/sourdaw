@@ -1,8 +1,6 @@
 import { logger } from '#/infra/logger/appLogger';
+import { applyImportedProjectData, runProjectLoadTransaction } from '#/modules/Project/useCases';
 import { notifyUser } from '#/utils/Notification/notifyUser';
-
-import { applyImportedProjectData } from '../projectPersistence/fileIO/applyImportedProjectData';
-import { runProjectLoadTransaction } from '../projectPersistence/helpers/runProjectLoadTransaction';
 
 import { decodeDawProjectAssets } from './decodeDawProjectAssets';
 import { mapToProjectData } from './mapToProjectData';

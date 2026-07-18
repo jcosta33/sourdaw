@@ -11,7 +11,11 @@ import { midiStore } from '#/modules/MIDI/stores';
 import { getAllSidechainRoutes } from '#/modules/Routing/useCases';
 import { tempoMapStore, timeSignatureMapStore, transportStore } from '#/modules/Transport/stores';
 
-import { CURRENT_PROJECT_VERSION, type ProjectData } from '../../../models/ProjectData';
+import {
+    CURRENT_PROJECT_VERSION,
+    type ProjectData,
+    type ProjectExportedAudioBuffer,
+} from '../../../models/ProjectData';
 import { arrangementStore } from '../../../stores/arrangementStore';
 import { projectStore } from '../../../stores/projectStore';
 import { syncCurrentArrangementToStore } from '../../arrangement/syncCurrentArrangementToStore';
@@ -51,6 +55,14 @@ export type BuiltProjectData = {
     missingBufferCount: number;
 };
 
+type BuildProjectDataInput = {
+    /** Embed base64 PCM for every referenced buffer (default). Interchange
+     * exporters that package audio themselves pass `false` to skip the
+     * redundant encode; the snapshot shape is unchanged (`audioBuffers`
+     * simply stays unset). */
+    includeAudioBuffers?: boolean;
+};
+
 /**
  * Serialize the live module stores into the canonical {@link ProjectData}
  * snapshot — the single source of truth for the `.sourdaw` export *and* the
@@ -61,7 +73,9 @@ export type BuiltProjectData = {
  * consumes. Returns `null` when a required store is unpopulated (no live
  * project), so callers can no-op rather than write a malformed blob.
  */
-export async function buildProjectData(): Promise<BuiltProjectData | null> {
+export async function buildProjectData({
+    includeAudioBuffers = true,
+}: BuildProjectDataInput = {}): Promise<BuiltProjectData | null> {
     syncCurrentArrangementToStore();
 
     const tracks = trackStore.value;
@@ -86,10 +100,12 @@ export async function buildProjectData(): Promise<BuiltProjectData | null> {
             allBufferIds.add(id);
         }
     }
-    const audioBuffers = await exportCachedAudioBuffers({ bufferIds: [...allBufferIds] });
+    const audioBuffers: Record<string, ProjectExportedAudioBuffer> = includeAudioBuffers
+        ? await exportCachedAudioBuffers({ bufferIds: [...allBufferIds] })
+        : {};
 
     const resolvedIds = new Set(Object.keys(audioBuffers));
-    const missingBufferCount = [...allBufferIds].filter((id) => !resolvedIds.has(id)).length;
+    const missingBufferCount = includeAudioBuffers ? [...allBufferIds].filter((id) => !resolvedIds.has(id)).length : 0;
 
     const data: ProjectData = {
         version: CURRENT_PROJECT_VERSION,

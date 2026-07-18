@@ -22,6 +22,10 @@ vi.mock('#/modules/Command/useCases', () => ({
     executeAppAction: mocks.executeAppAction,
 }));
 
+vi.mock('#/modules/DawInterchange/useCases', () => ({
+    pickAndImportDawProject: mocks.pickAndImportDawProject,
+}));
+
 vi.mock('#/modules/Project/useCases', () => ({
     createFromTemplate: mocks.createFromTemplate,
     getRecentProjects: mocks.getRecentProjects,
@@ -29,7 +33,6 @@ vi.mock('#/modules/Project/useCases', () => ({
     getTemplates: mocks.getTemplates,
     loadRecentProject: mocks.loadRecentProject,
     newProject: mocks.newProject,
-    pickAndImportDawProject: mocks.pickAndImportDawProject,
 }));
 
 vi.mock('../../../useCases/importDroppedLaunchFiles', () => ({
