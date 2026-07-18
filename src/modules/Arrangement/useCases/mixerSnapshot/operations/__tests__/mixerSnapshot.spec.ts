@@ -14,7 +14,7 @@ vi.mock('../../../../repositories/track/setTrackState', () => ({ setTrackState: 
 import { saveMixerSnapshot } from '../saveMixerSnapshot';
 import { recallMixerSnapshot } from '../recallMixerSnapshot';
 import { deleteMixerSnapshot } from '../deleteMixerSnapshot';
-import { mixerSnapshotStore } from '../helpers';
+import { mixerSnapshotStore } from '../../../../stores/mixerSnapshotStore';
 
 const make_tracks = () => [
     {

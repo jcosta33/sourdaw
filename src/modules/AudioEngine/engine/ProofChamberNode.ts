@@ -3,9 +3,9 @@
  * Stereo effect: audio in → reverb processing → audio out.
  */
 
-import proofChamberProcessorUrl from '../services/proofChamberProcessor.ts?worker&url';
+import { createReadyHandshake, ensureWorkletRegistered, fetchWasmBinary } from '#/infra/audioWorklet/workletInitShared';
 
-import { createReadyHandshake, ensureWorkletRegistered, fetchWasmBinary } from './workletInitShared';
+import proofChamberProcessorUrl from '../services/proofChamberProcessor.ts?worker&url';
 
 const DEFAULT_WASM_URL = '/wasm/proof-chamber/proof_chamber_bg.wasm';
 

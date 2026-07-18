@@ -190,6 +190,7 @@ code: no (all dormant).
   `__tests__` spec),
   `src/modules/Transport/useCases/__tests__/getTransportHandlers.spec.ts`
   (precedent).
+  **RESOLVED 2026-07-18 (#428): `getSetlistHandlers` map-shape spec added at the `getTransportHandlers` precedent depth (`src/modules/Setlist/useCases/__tests__/getSetlistHandlers.spec.ts` — asserts each key + `.execute`, fresh map). `getTransportHandlers` already carried one, so the convention is now uniform. ADR-0011 W7.**
 
 ## Command
 
@@ -288,6 +289,7 @@ code: no (all dormant).
   `src/modules/MIDI/repositories/webMidi/store.ts`,
   `src/modules/MIDI/useCases/webMidiInput/helpers.ts:9`,
   `src/modules/MIDI/useCases/index.ts:118`.
+  **RESOLVED 2026-07-18 (#428): promoted to `src/modules/MIDI/stores/webMidiStore.ts` (barrel-exported public read contract); `repositories/webMidi/store.ts` kept as a thin sync adapter that seeds + subscribes (the store may not import `repositories/` or the Tauri bridge — `usecases-only-write-boundary-to-repositories` / `tauri-ipc-only-in-repositories`). `useCases/webMidiInput/helpers.ts` removed; importers repointed to `#/modules/MIDI/stores`. ADR-0011 W7.**
 
 ## Grinder
 
@@ -388,6 +390,7 @@ code: no (all dormant).
   `src/modules/Workspace/models/WorkspaceState.ts:54,104`,
   `src/modules/Workspace/presentations/hooks/useActiveDevicePanel.ts:43,85`,
   `src/modules/Workspace/presentations/views/AppShell.tsx:216,629`.
+  **ACCEPTED-INTENTIONAL 2026-07-18 (#428): keep the `scoring*` wire tokens as permanent stable aliases — renaming serialized fields breaks existing save files for zero user value. No code change. ADR-0011 W7.**
 
 ## Collaboration
 
@@ -446,6 +449,7 @@ code: no (all dormant).
   store-layer convention. Options: relocate to `Arrangement/stores/` vs accept
   the useCases-local store. Blocks code: no. Source:
   `src/modules/Arrangement/useCases/mixerSnapshot/operations/helpers.ts:9`.
+  **RESOLVED 2026-07-18 (#428): relocated to `src/modules/Arrangement/stores/mixerSnapshotStore.ts` (barrel-exported); the 5 operation importers + spec repointed via same-module relative path. ADR-0011 W7.**
 
 ## AudioEngine
 
@@ -492,6 +496,7 @@ code: no (all dormant).
   future device-node extractions. Source:
   `src/modules/AudioEngine/engine/workletInitShared.ts`,
   `src/modules/AudioEngine/wasm/daw_dsp.js`.
+  **PARTIALLY RESOLVED 2026-07-18 (#428): `workletInitShared.ts` moved to `src/infra/audioWorklet/` (hand-written, zero-import, main-thread shared init — clean infra seam; engine→infra is an existing pattern). The generated `wasm/daw_dsp.js` bindings are KEPT engine-private: they are build artifacts written by `scripts/gen-*-worklet.ts` to a hardcoded `AudioEngine/wasm/` path and consumed by worklet-scope processors, so relocating them is a build-pipeline change, not a behavior-preserving move. ADR-0011 W7.**
 
 ## ElasticAudio
 
@@ -803,6 +808,7 @@ code: no (all dormant).
   `src/modules/AiGeneration/models/MidiPatternType.ts`,
   `src/modules/AiGeneration/useCases/generateMelody/algorithm.ts:60`,
   `src/modules/AiGeneration/useCases/generateChordProgression/algorithm.ts:54-55`.
+  **ACCEPTED-INTENTIONAL 2026-07-18 (#428): keep the per-generator copies — the three tables are keyed by three distinct `ScaleType` domains (`MidiPatternType` 7 scales incl. `pentatonic-minor/major`; `GenerationStyles` 14 scales incl. `pentatonic`/`minor-pentatonic`/modes; chord-progression `'major'`/`'minor'` only), not byte-similar duplicates. Consolidating forces unifying incompatible unions and changes supported-scale sets (semantic drift). No code change. ADR-0011 W7.**
 
 ## Proof
 

@@ -7,6 +7,8 @@ import { getState } from '../getState';
 import { setMidiAccess } from '../setMidiAccess';
 import { setState } from '../setState';
 import { setTauriMode } from '../setTauriMode';
+// Side-effect: registers the store sync subscription before any setState below.
+import '../store';
 
 import { detachActiveInput } from './detachActiveInput';
 import { attachInput } from './helpers';

@@ -2,13 +2,13 @@
  * GrinderNode — AudioWorkletNode wrapper for the Grinder amp simulator.
  */
 
+import { createReadyHandshake, ensureWorkletRegistered } from '#/infra/audioWorklet/workletInitShared';
 import { logger } from '#/infra/logger/appLogger';
 
 import grinderProcessorUrl from '../services/grinderProcessor.ts?worker&url';
 
 import { requireSharedArrayBuffer } from './pluginHostingErrors';
 import { telemetryAllocator, GRINDER_IDX, type TelemetrySlot } from './telemetryAllocator';
-import { createReadyHandshake, ensureWorkletRegistered } from './workletInitShared';
 
 const DEFAULT_WASM_URL = '/wasm/daw-dsp/daw_dsp_bg.wasm';
 

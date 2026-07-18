@@ -7,11 +7,12 @@
  * Effect processor: 1 input, 1 output.
  */
 
+import { createReadyHandshake, ensureWorkletRegistered, fetchWasmBinary } from '#/infra/audioWorklet/workletInitShared';
+
 import proofProcessorUrl from '../services/proofProcessor.ts?worker&url';
 
 import { requireSharedArrayBuffer } from './pluginHostingErrors';
 import { telemetryAllocator, PROOF_IDX, TELEMETRY_SEQ_IDX } from './telemetryAllocator';
-import { createReadyHandshake, ensureWorkletRegistered, fetchWasmBinary } from './workletInitShared';
 
 const DEFAULT_WASM_URL = '/wasm/daw-dsp/daw_dsp_bg.wasm';
 

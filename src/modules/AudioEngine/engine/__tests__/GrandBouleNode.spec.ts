@@ -11,7 +11,7 @@ describe('isGrandBouleDevice', () => {
 
 // Mock worklet-init + SharedArrayBuffer guard so createGrandBouleNode resolves
 // without a real AudioContext / worklet module / cross-origin isolation.
-vi.mock('../workletInitShared', () => ({
+vi.mock('#/infra/audioWorklet/workletInitShared', () => ({
     ensureWorkletRegistered: vi.fn().mockResolvedValue(undefined),
     createReadyHandshake: vi.fn(() => ({
         promise: Promise.resolve({}),

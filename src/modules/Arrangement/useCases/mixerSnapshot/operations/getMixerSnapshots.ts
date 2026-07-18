@@ -1,6 +1,5 @@
 import { type MixerSnapshot } from '../../../models/MixerSnapshotTypes';
-
-import { mixerSnapshotStore } from './helpers';
+import { mixerSnapshotStore } from '../../../stores/mixerSnapshotStore';
 
 /**
  * Get all saved mixer snapshots.

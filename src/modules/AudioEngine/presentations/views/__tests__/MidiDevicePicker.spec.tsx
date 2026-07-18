@@ -18,10 +18,13 @@ vi.mock('#/infra/store/useStore', () => ({
 const mockInitWebMidi = vi.fn(() => Promise.resolve());
 const mockSelectMidiInput = vi.fn();
 
+vi.mock('#/modules/MIDI/stores', () => ({
+    webMidiStore: {},
+}));
+
 vi.mock('#/modules/MIDI/useCases', () => ({
     selectMidiInput: (id: string) => mockSelectMidiInput(id),
     initWebMidi: () => mockInitWebMidi(),
-    webMidiStore: {},
 }));
 
 const { useStore } = await import('#/infra/store/useStore');

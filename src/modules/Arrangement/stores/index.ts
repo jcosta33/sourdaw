@@ -49,3 +49,6 @@ export { gainEnvelopeStore, defaultGainEnvelopeStoreState } from './gainEnvelope
 export type { GainEnvelopeStoreState, ClipGainEnvelope, GainEnvelopePoint } from './gainEnvelopeStore';
 
 export { warpStates, getWarpState, addWarpMarker } from './warpStates';
+
+export { mixerSnapshotStore } from './mixerSnapshotStore';
+export type { MixerSnapshotState } from './mixerSnapshotStore';

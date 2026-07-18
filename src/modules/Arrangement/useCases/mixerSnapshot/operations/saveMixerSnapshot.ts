@@ -1,7 +1,6 @@
 import { type MixerSnapshot } from '../../../models/MixerSnapshotTypes';
 import { getTrackState } from '../../../repositories/track/getTrackState';
-
-import { mixerSnapshotStore } from './helpers';
+import { mixerSnapshotStore } from '../../../stores/mixerSnapshotStore';
 
 export function saveMixerSnapshot(name: string): MixerSnapshot | null {
     const state = getTrackState();

@@ -1,4 +1,4 @@
-import { mixerSnapshotStore } from './helpers';
+import { mixerSnapshotStore } from '../../../stores/mixerSnapshotStore';
 
 /**
  * Delete a mixer snapshot by ID.
