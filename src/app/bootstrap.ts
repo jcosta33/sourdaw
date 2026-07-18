@@ -22,6 +22,7 @@ import {
     initStalenessDetection,
     setArrangementEventBus,
     setTimeOperationDependencies,
+    getSongStructureHandlers,
 } from '#/modules/Arrangement/useCases';
 import { getAnalysisHandlers, setMixAnalysisDisplayLifecycle } from '#/modules/AudioAnalysis/useCases';
 import {
@@ -81,11 +82,7 @@ import {
     setMidiLearnDependencies,
 } from '#/modules/MIDI/useCases';
 import { getPluginHostHandlers } from '#/modules/Plugin/useCases';
-import {
-    markDirty,
-    getSongStructureHandlers,
-    setProjectIdentityTransitionDependencies,
-} from '#/modules/Project/useCases';
+import { markDirty, setProjectIdentityTransitionDependencies } from '#/modules/Project/useCases';
 import { getVersionControlHandlers } from '#/modules/ProjectVersioning/useCases';
 import { updateProofMeters } from '#/modules/Proof/stores';
 import { registerProofDevice, unregisterProofDevice, syncFullPatch } from '#/modules/Proof/useCases';

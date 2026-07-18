@@ -23,7 +23,6 @@ export { applyImportedProjectData } from './projectPersistence/fileIO/applyImpor
 export { runProjectLoadTransaction } from './projectPersistence/helpers/runProjectLoadTransaction'; // interchange contract (ADR 0011)
 
 export { verifyAudioBufferReferences } from './projectPersistence/helpers/verifyAudioBufferReferences';
-export { getSongStructureHandlers } from './getSongStructureHandlers';
 
 export { getRecentProjects } from './recentProjects/helpers';
 export { loadRecentProject } from './recentProjects/loadRecentProject';
