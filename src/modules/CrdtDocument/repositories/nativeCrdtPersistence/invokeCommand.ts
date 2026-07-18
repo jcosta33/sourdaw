@@ -1,7 +1,7 @@
-import { isTauriAvailable } from './helpers';
+import { isTauri } from '#/utils/tauriRuntime';
 
 export async function invokeCommand(command: string, args?: Record<string, unknown>): Promise<unknown> {
-    if (!isTauriAvailable()) {
+    if (!isTauri()) {
         return null;
     }
 

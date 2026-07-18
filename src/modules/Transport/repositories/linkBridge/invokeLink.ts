@@ -1,4 +1,4 @@
-import { isTauri } from './helpers';
+import { isTauri } from '#/utils/tauriRuntime';
 
 export async function invokeLink(cmd: string, args?: Record<string, unknown>): Promise<unknown> {
     if (!isTauri()) {
