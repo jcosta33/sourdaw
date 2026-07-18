@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-import type * as updateClipRepo from '../../repositories/track/updateClip';
+import type * as updateClipRepo from '../../../repositories/track/updateClip';
 
 const mocks = vi.hoisted(() => ({
     updateClip: vi.fn<(typeof updateClipRepo)['updateClip']>(),
