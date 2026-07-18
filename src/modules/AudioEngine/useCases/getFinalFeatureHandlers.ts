@@ -18,9 +18,6 @@ import { handleSetControlSurface } from '../handlers/finalFeature/handleSetContr
 import { handleSetMasterGain } from '../handlers/finalFeature/handleSetMasterGain';
 import { handleSetWarpAlgorithm } from '../handlers/finalFeature/handleSetWarpAlgorithm';
 import { handleSetWarpPitchShift } from '../handlers/finalFeature/handleSetWarpPitchShift';
-import { handleSwitchMonitor } from '../handlers/finalFeature/handleSwitchMonitor';
-import { handleToggleControlRoomDim } from '../handlers/finalFeature/handleToggleControlRoomDim';
-import { handleToggleControlRoomMono } from '../handlers/finalFeature/handleToggleControlRoomMono';
 import { handleToggleNodeView } from '../handlers/finalFeature/handleToggleNodeView';
 
 export type FinalFeatureHandlersMap = {
@@ -44,9 +41,6 @@ export type FinalFeatureHandlersMap = {
     setMasterGain: typeof handleSetMasterGain;
     setWarpAlgorithm: typeof handleSetWarpAlgorithm;
     setWarpPitchShift: typeof handleSetWarpPitchShift;
-    switchMonitor: typeof handleSwitchMonitor;
-    toggleControlRoomDim: typeof handleToggleControlRoomDim;
-    toggleControlRoomMono: typeof handleToggleControlRoomMono;
     toggleNodeView: typeof handleToggleNodeView;
 };
 
@@ -72,9 +66,6 @@ export function getFinalFeatureHandlers(): FinalFeatureHandlersMap {
         enableWarping: handleEnableWarping,
         setWarpAlgorithm: handleSetWarpAlgorithm,
         setWarpPitchShift: handleSetWarpPitchShift,
-        switchMonitor: handleSwitchMonitor,
-        toggleControlRoomDim: handleToggleControlRoomDim,
-        toggleControlRoomMono: handleToggleControlRoomMono,
         enableMpe: handleEnableMpe,
         disableMpe: handleDisableMpe,
         getLatencyReport: handleGetLatencyReport,
