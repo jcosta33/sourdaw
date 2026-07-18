@@ -5,7 +5,7 @@ import { voiceStatusStore } from '#/modules/AiRuntime/stores';
 import { isVoiceInputAvailable, toggleVoiceInput } from '#/modules/AiRuntime/useCases';
 import { trackStore } from '#/modules/Arrangement/stores';
 import { RecentProjectsMenu, ArrangementSelector } from '#/modules/Project/presentations/views';
-import { PunchRecordingControls } from '#/modules/Transport/presentations/views';
+import { PunchRecordingControls } from '#/modules/PunchRecording/presentations/views';
 
 import { type Track } from '../../models/TrackViewTypes';
 import { toggleRippleEditing } from '../../useCases/rippleEditing';

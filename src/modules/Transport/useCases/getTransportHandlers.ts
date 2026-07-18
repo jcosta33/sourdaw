@@ -18,7 +18,6 @@ import { handleToggleMetronome } from '../handlers/transport/handleToggleMetrono
 import { handleTogglePlayback } from '../handlers/transport/handleTogglePlayback';
 import { handleTogglePreRoll } from '../handlers/transport/handleTogglePreRoll';
 import { handleTogglePunch } from '../handlers/transport/handleTogglePunch';
-import { handleTogglePunchRecording } from '../handlers/transport/handleTogglePunchRecording';
 import { handleToggleRecording } from '../handlers/transport/handleToggleRecording';
 import { handleTriggerScene } from '../handlers/transport/handleTriggerScene';
 
@@ -43,7 +42,6 @@ export type TransportHandlersMap = {
     togglePreRoll: typeof handleTogglePreRoll;
     togglePunch: typeof handleTogglePunch;
     toggleLoopRecord: typeof handleToggleLoopRecord;
-    togglePunchRecording: typeof handleTogglePunchRecording;
     toggleRecording: typeof handleToggleRecording;
     triggerScene: typeof handleTriggerScene;
 };
@@ -73,7 +71,6 @@ export function getTransportHandlers(): TransportHandlersMap {
         restorePunchRegion: handleRestorePunchRegion,
         togglePreRoll: handleTogglePreRoll,
         setPreRollBars: handleSetPreRollBars,
-        togglePunchRecording: handleTogglePunchRecording,
         toggleLoopRecord: handleToggleLoopRecord,
         triggerScene: handleTriggerScene,
     };

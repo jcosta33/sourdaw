@@ -7,17 +7,15 @@ import { LatchButton } from '#/components/daw/LatchButton';
 import { Input } from '#/components/ui/input';
 import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip';
 import { useStore } from '#/infra/store/useStore';
+import { transportStore } from '#/modules/Transport/stores';
+import { defaultTransportState, setPunchIn, setPunchOut } from '#/modules/Transport/useCases';
 import { cn } from '#/utils/Styles/cn';
 
 import { punchRecordingStore, type PunchRecordingState } from '../../stores/punchRecordingStore';
-import { transportStore } from '../../stores/transportStore';
 import { definePunchRegion } from '../../useCases/punchRecording/definePunchRegion';
 import { setPostRoll } from '../../useCases/punchRecording/setPostRoll';
 import { setPreRoll } from '../../useCases/punchRecording/setPreRoll';
 import { togglePunchRecording } from '../../useCases/punchRecording/togglePunchRecording';
-import { setPunchIn } from '../../useCases/transportControls/setPunchIn';
-import { setPunchOut } from '../../useCases/transportControls/setPunchOut';
-import { defaultTransportState } from '../../useCases/transportQueries/helpers';
 
 const emptyPunchState: PunchRecordingState = {
     captures: [],
