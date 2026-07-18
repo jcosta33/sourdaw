@@ -9,10 +9,10 @@ import {
     getPlatformPlugins,
 } from '#/modules/Arrangement/useCases';
 import { MIDI_EFFECT_FACTORIES } from '#/modules/MIDI/useCases';
+import { openInspector } from '#/modules/Workspace/useCases';
 import { cn } from '#/utils/Styles/cn';
 
 import { type Track } from '../../../models/TrackViewTypes';
-import { openInspector } from '../../../useCases/togglePanel/panelToggles/openInspector';
 import { MixerInsetButton } from '../../components/Mixer/MixerInsetButton';
 import { MixerSection } from '../../components/Mixer/MixerSection';
 
