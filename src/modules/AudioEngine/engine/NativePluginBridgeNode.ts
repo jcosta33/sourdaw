@@ -11,7 +11,7 @@
  * recent available block in the meantime.
  */
 
-import { processAudioIPC, setPluginParameter } from '#/modules/Plugin/useCases';
+import { processAudioIPC, setPluginParameter } from '#/modules/PluginHost/useCases';
 
 export type NativePluginBridgeResult = {
     workletNode: AudioWorkletNode;

@@ -17,8 +17,8 @@ import {
     addExternalDevice,
     reorderDevices,
 } from '#/modules/Arrangement/useCases';
-import { pluginScanStore, defaultPluginScanState } from '#/modules/Plugin/stores';
-import { openPluginGui } from '#/modules/Plugin/useCases';
+import { pluginScanStore, defaultPluginScanState } from '#/modules/PluginHost/stores';
+import { openPluginGui } from '#/modules/PluginHost/useCases';
 import { getPlatformCapabilities, DISABLED_REASONS } from '#/utils/platformCapabilities';
 import { cn } from '#/utils/Styles/cn';
 import { menuBtnClass } from '#/utils/UI/contextMenuStyles';

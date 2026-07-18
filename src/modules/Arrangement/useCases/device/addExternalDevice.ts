@@ -1,5 +1,5 @@
 import { addDeviceToStrip } from '#/modules/AudioEngine/useCases';
-import { loadPlugin } from '#/modules/Plugin/useCases';
+import { loadPlugin } from '#/modules/PluginHost/useCases';
 
 import { getTrackState } from '../../repositories/track/getTrackState';
 import { updateTrack } from '../../repositories/track/updateTrack';

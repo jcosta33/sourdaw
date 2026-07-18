@@ -14,7 +14,7 @@ vi.mock('#/infra/logger/appLogger', () => ({
     logger: mocks.logger,
 }));
 
-vi.mock('#/modules/Plugin/useCases', () => {
+vi.mock('#/modules/PluginHost/useCases', () => {
     throw new Error('faustDeviceFactory must receive Plugin Faust operations by injection');
 });
 

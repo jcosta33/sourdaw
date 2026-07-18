@@ -1,6 +1,6 @@
 import { inject } from '#/infra/di/inject';
 import { logger } from '#/infra/logger/appLogger';
-import { compileFaustDSP, createFaustNode, isFaustModule } from '#/modules/Plugin/useCases';
+import { compileFaustDSP, createFaustNode, isFaustModule } from '#/modules/PluginHost/useCases';
 
 import { isPluginRequiresIsolationError } from '../engine/pluginHostingErrors';
 import { type Device } from '../models/TrackViewTypes';

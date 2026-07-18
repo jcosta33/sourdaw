@@ -10,8 +10,8 @@ import { DawReadoutRow } from '#/components/daw/DawReadoutRow';
 import { Button } from '#/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip';
 import { useStore } from '#/infra/store/useStore';
-import { pluginScanStore, defaultPluginScanState } from '#/modules/Plugin/stores';
-import { startPluginScan, addScanPath, removeScanPath } from '#/modules/Plugin/useCases';
+import { pluginScanStore, defaultPluginScanState } from '#/modules/PluginHost/stores';
+import { startPluginScan, addScanPath, removeScanPath } from '#/modules/PluginHost/useCases';
 import { getPlatformCapabilities, DISABLED_REASONS } from '#/utils/platformCapabilities';
 
 export const PluginScanSettings = (): ReactElement | null => {

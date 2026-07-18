@@ -29,8 +29,8 @@ vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
     updateDeviceParam: mocks.updateDeviceParam,
 }));
 
-vi.mock('#/modules/Plugin/useCases', async (importOriginal) => ({
-    ...(await importOriginal<typeof import('#/modules/Plugin/useCases')>()),
+vi.mock('#/modules/PluginHost/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/PluginHost/useCases')>()),
     compileFaustDSP: mocks.compileFaustDSP,
 }));
 

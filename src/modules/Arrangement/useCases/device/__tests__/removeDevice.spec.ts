@@ -3,7 +3,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { removeDevice } from '../removeDevice';
 
 import type { removeDeviceFromStrip } from '#/modules/AudioEngine/useCases';
-import type { unloadPlugin } from '#/modules/Plugin/useCases';
+import type { unloadPlugin } from '#/modules/PluginHost/useCases';
 import type { Device, Track } from '../../../models/Track';
 import type { getTrackState } from '../../../repositories/track/getTrackState';
 import type { mapAllTracks } from '../../../repositories/track/mapAllTracks';
@@ -28,8 +28,8 @@ vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
     removeDeviceFromStrip: mocks.removeDeviceFromStrip,
 }));
 
-vi.mock('#/modules/Plugin/useCases', async (importOriginal) => ({
-    ...(await importOriginal<typeof import('#/modules/Plugin/useCases')>()),
+vi.mock('#/modules/PluginHost/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/PluginHost/useCases')>()),
     unloadPlugin: mocks.unloadPlugin,
 }));
 

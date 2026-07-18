@@ -5,7 +5,7 @@
 import { inject } from '#/infra/di/inject';
 import { logger } from '#/infra/logger/appLogger';
 import { addDeviceToStrip, updateDeviceParam, removeDeviceFromStrip } from '#/modules/AudioEngine/useCases';
-import { compileFaustDSP } from '#/modules/Plugin/useCases';
+import { compileFaustDSP } from '#/modules/PluginHost/useCases';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { type SoundPreset, type DevicePreset } from '../../models/SoundPreset';

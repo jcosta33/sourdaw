@@ -10,7 +10,7 @@ import {
 } from '#/modules/AudioEngine/useCases';
 import { syncKneadToEngine } from '#/modules/Knead/useCases';
 import { initWebMidi } from '#/modules/MIDI/useCases';
-import { registerProModulationEffects } from '#/modules/Plugin/useCases';
+import { registerProModulationEffects } from '#/modules/PluginHost/useCases';
 import { preferencesStore } from '#/modules/Preferences/stores';
 import { loadProject, saveProject } from '#/modules/Project/useCases';
 import { restoreLibrary, seedFactoryLibrary } from '#/modules/SampleLibrary/useCases';

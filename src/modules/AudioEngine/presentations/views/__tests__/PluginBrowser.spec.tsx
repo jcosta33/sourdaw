@@ -12,8 +12,8 @@ vi.mock('#/infra/store/useStore', () => ({
     })),
 }));
 
-vi.mock('#/modules/Plugin/stores', async (importOriginal) => ({
-    ...(await importOriginal<typeof import('#/modules/Plugin/stores')>()),
+vi.mock('#/modules/PluginHost/stores', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/PluginHost/stores')>()),
     pluginScanStore: {},
     defaultPluginScanState: {
         scannedPlugins: [],
@@ -24,8 +24,8 @@ vi.mock('#/modules/Plugin/stores', async (importOriginal) => ({
     },
 }));
 
-vi.mock('#/modules/Plugin/useCases', async (importOriginal) => ({
-    ...(await importOriginal<typeof import('#/modules/Plugin/useCases')>()),
+vi.mock('#/modules/PluginHost/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/PluginHost/useCases')>()),
     startPluginScan: vi.fn(),
 }));
 
@@ -48,7 +48,7 @@ vi.mock('#/components/ui/tooltip', () => ({
 }));
 
 const { useStore } = await import('#/infra/store/useStore');
-const { startPluginScan } = await import('#/modules/Plugin/useCases');
+const { startPluginScan } = await import('#/modules/PluginHost/useCases');
 const { addExternalDevice } = await import('#/modules/Arrangement/useCases');
 const { getPlatformCapabilities } = await import('#/utils/platformCapabilities');
 

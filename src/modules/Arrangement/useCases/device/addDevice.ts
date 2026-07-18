@@ -1,5 +1,5 @@
 import { addDeviceToStrip, updateDeviceParam } from '#/modules/AudioEngine/useCases';
-import { compileFaustDSP } from '#/modules/Plugin/useCases';
+import { compileFaustDSP } from '#/modules/PluginHost/useCases';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { getTrackState } from '../../repositories/track/getTrackState';

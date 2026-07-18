@@ -16,7 +16,7 @@ vi.mock('#/infra/logger/appLogger', () => ({
     logger: { warn: vi.fn(), error: vi.fn(), info: vi.fn() },
 }));
 
-vi.mock('#/modules/Plugin/useCases', () => ({
+vi.mock('#/modules/PluginHost/useCases', () => ({
     compileFaustDSP: mocks.compileFaustDSP,
     createFaustNode: mocks.createFaustNode,
     isFaustModule: mocks.isFaustModule,

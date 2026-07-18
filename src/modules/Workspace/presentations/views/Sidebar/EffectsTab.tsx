@@ -5,7 +5,7 @@ import { Shield, Waves as WavesIcon, Gauge, Sparkles, AudioLines, Layers, Guitar
 import { DawSectionDivider } from '#/components/daw/DawSectionDivider';
 import { addDevice, getFactoryPresets, createTrackFromPreset, loadPresetToTrack } from '#/modules/Arrangement/useCases';
 import { PluginBrowser } from '#/modules/AudioEngine/presentations/views';
-import { MIDI_EFFECT_FACTORIES } from '#/modules/Plugin/useCases';
+import { MIDI_EFFECT_FACTORIES } from '#/modules/MIDI/useCases';
 
 import { type PluginDescriptorView as PluginDescriptor } from '../../../models/PluginDescriptorViewTypes';
 import { type SoundPresetView as SoundPreset } from '../../../models/SoundPresetViewTypes';

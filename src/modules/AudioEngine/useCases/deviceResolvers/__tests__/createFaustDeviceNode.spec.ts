@@ -8,7 +8,7 @@ const { mocks } = vi.hoisted(() => ({
     },
 }));
 
-vi.mock('#/modules/Plugin/useCases', () => ({
+vi.mock('#/modules/PluginHost/useCases', () => ({
     compileFaustDSP: mocks.compileFaustDSP,
     createFaustNode: mocks.createFaustNode,
 }));

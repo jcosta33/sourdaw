@@ -13,7 +13,6 @@ import { handleQuantizeTransients } from '../handlers/finalFeature/handleQuantiz
 import { handleSetMasterGain } from '../handlers/finalFeature/handleSetMasterGain';
 import { handleSetWarpAlgorithm } from '../handlers/finalFeature/handleSetWarpAlgorithm';
 import { handleSetWarpPitchShift } from '../handlers/finalFeature/handleSetWarpPitchShift';
-import { handleToggleNodeView } from '../handlers/finalFeature/handleToggleNodeView';
 
 export type FinalFeatureHandlersMap = {
     addCvOutput: typeof handleAddCvOutput;
@@ -31,7 +30,6 @@ export type FinalFeatureHandlersMap = {
     setMasterGain: typeof handleSetMasterGain;
     setWarpAlgorithm: typeof handleSetWarpAlgorithm;
     setWarpPitchShift: typeof handleSetWarpPitchShift;
-    toggleNodeView: typeof handleToggleNodeView;
 };
 
 /**
@@ -48,7 +46,6 @@ export function getFinalFeatureHandlers(): FinalFeatureHandlersMap {
         elasticRemoveMarker: handleElasticRemoveMarker,
         elasticToggleMarkerLock: handleElasticToggleMarkerLock,
         elasticSetTool: handleElasticSetTool,
-        toggleNodeView: handleToggleNodeView,
         addCvOutput: handleAddCvOutput,
         enableWarping: handleEnableWarping,
         setWarpAlgorithm: handleSetWarpAlgorithm,
