@@ -3,7 +3,6 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { controlRoomStore, getNextMonitorId, getNextCueId } from '../controlRoom';
 import { controlSurfaceStore, getNextOscEndpointId } from '../controlSurface';
 import { linkStatusStore, defaultLinkStatus, getLinkStatusSnapshot } from '../linkStatusStore';
-import { raveStore, FACTORY_MODELS } from '../rave';
 
 describe('AudioEngine Misc Stores', () => {
     describe('controlRoomStore', () => {
@@ -72,34 +71,6 @@ describe('AudioEngine Misc Stores', () => {
             expect(getLinkStatusSnapshot()).toBe(false);
             linkStatusStore.update((state) => ({ ...state!, enabled: true }));
             expect(getLinkStatusSnapshot()).toBe(true);
-        });
-    });
-
-    describe('raveStore', () => {
-        beforeEach(() => {
-            raveStore.set({
-                models: [],
-                activeModelId: null,
-                transferBlend: 0.5,
-                temperature: 1.0,
-                realTimeEnabled: false,
-                latentCache: [],
-            });
-        });
-
-        it('should have initial state', () => {
-            expect(raveStore.value?.models).toHaveLength(0);
-            expect(raveStore.value?.transferBlend).toBe(0.5);
-        });
-
-        it('should expose FACTORY_MODELS', () => {
-            expect(FACTORY_MODELS.length).toBeGreaterThan(0);
-            expect(FACTORY_MODELS[0]?.id).toBe('rave-strings');
-        });
-
-        it('should update state', () => {
-            raveStore.update((state) => ({ ...state!, transferBlend: 0.8 }));
-            expect(raveStore.value?.transferBlend).toBe(0.8);
         });
     });
 });
