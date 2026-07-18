@@ -1,6 +1,7 @@
-import { detectAndApplySongStructure } from '#/modules/Arrangement/useCases';
 import { createHandler } from '#/utils/createHandler';
 import { notifyUser } from '#/utils/Notification/notifyUser';
+
+import { detectAndApplySongStructure } from '../../useCases/detectAndApplySongStructure';
 
 export const handleDetectSongStructure = createHandler<'detectSongStructure'>({
     // eslint-disable-next-line @typescript-eslint/require-await -- handler interface requires async execute; this handler has no asynchronous operations

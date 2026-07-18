@@ -1,11 +1,11 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-import { detectAndApplySongStructure } from '#/modules/Arrangement/useCases';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
+import { detectAndApplySongStructure } from '../../../useCases/detectAndApplySongStructure';
 import { handleDetectSongStructure } from '../handleDetectSongStructure';
 
-vi.mock('#/modules/Arrangement/useCases', () => ({
+vi.mock('../../../useCases/detectAndApplySongStructure', () => ({
     detectAndApplySongStructure: vi.fn(),
 }));
 

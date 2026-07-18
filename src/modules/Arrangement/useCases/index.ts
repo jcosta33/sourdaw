@@ -228,4 +228,5 @@ export { getPluginById } from './getPluginById';
 // ── Command handler access ────────────────────────────────────────────────────
 
 export { getArrangementHandlers } from './getArrangementHandlers';
+export { getSongStructureHandlers } from './getSongStructureHandlers';
 export { initStalenessDetection } from './freezeBounce/initStalenessDetection';
