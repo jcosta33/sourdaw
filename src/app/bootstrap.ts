@@ -56,6 +56,7 @@ import {
     setCommandEventBus,
     syncActionReplayMetadata,
 } from '#/modules/Command/useCases';
+import { getControlRoomHandlers } from '#/modules/ControlRoom/useCases';
 import { actionHistoryStore } from '#/modules/CrdtDocument/stores';
 import {
     getDsoSnapshotHandlers,
@@ -255,6 +256,7 @@ registerHandlerMap(getVersionControlHandlers());
 registerHandlerMap(getDawProjectHandlers());
 registerHandlerMap(getFinalFeatureHandlers());
 registerHandlerMap(getRaveHandlers());
+registerHandlerMap(getControlRoomHandlers());
 registerHandlerMap(getDsoSnapshotHandlers());
 
 initToasterSubscribers({ eventBus, logger });
