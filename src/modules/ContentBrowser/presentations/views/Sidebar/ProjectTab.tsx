@@ -7,8 +7,8 @@ import { useStore } from '#/infra/store/useStore';
 import { projectStore } from '#/modules/Project/stores';
 import { importSclFile } from '#/modules/Project/useCases';
 
-import { ChoiceCard } from '../../components/Inspector/ChoiceCard';
-import { SectionHeader } from '../Inspector/SectionHeader';
+import { ChoiceCard } from '../../components/ChoiceCard';
+import { SectionHeader } from '../../components/ProjectSectionHeader';
 
 export const ProjectTab = (): ReactElement => {
     const project = useStore(projectStore);

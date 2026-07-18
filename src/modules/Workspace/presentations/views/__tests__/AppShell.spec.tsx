@@ -48,7 +48,7 @@ vi.mock('../TransportBar', () => ({
     TransportBar: () => <div data-testid="transport-bar">TransportBar</div>,
 }));
 
-vi.mock('../Sidebar', () => ({
+vi.mock('#/modules/ContentBrowser/presentations/views', () => ({
     Sidebar: () => <div data-testid="sidebar">Sidebar</div>,
 }));
 

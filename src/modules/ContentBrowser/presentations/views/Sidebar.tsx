@@ -12,7 +12,6 @@ import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { loadSidebarFavorites } from '../../useCases/sidebar-favorites/load-sidebar-favorites';
 import { saveSidebarFavorites } from '../../useCases/sidebar-favorites/save-sidebar-favorites';
-import { toggleSidebar } from '../../useCases/togglePanel/panelToggles/toggleSidebar';
 import { RailBackBar } from '../components/Sidebar/RailBackBar';
 import { RailTabBar } from '../components/Sidebar/RailTabBar';
 import { usePreviewAudio } from '../hooks/usePreviewAudio';
@@ -24,9 +23,9 @@ import { MacrosPanel } from './Sidebar/MacrosPanel';
 import { OnlineSampleBrowser } from './Sidebar/OnlineSampleBrowser';
 import { ProjectTab } from './Sidebar/ProjectTab';
 import { SamplesTab } from './Sidebar/SamplesTab';
-import { type SidebarRoute } from './Sidebar/SidebarTypes';
+import { type SidebarRoute, type SidebarPanelActions } from './Sidebar/SidebarTypes';
 
-export type { SidebarRoute };
+export type { SidebarRoute, SidebarPanelActions };
 
 type UserSample = {
     id: string;
@@ -39,6 +38,10 @@ type UserSample = {
 
 type SidebarProps = {
     style?: CSSProperties;
+    /** Close the browser panel. Owned by Workspace; injected by the composition shell. */
+    onClose?: () => void;
+    /** Device-panel emitters injected by the Workspace composition shell. */
+    panelActions?: SidebarPanelActions;
 };
 
 /** User-imported samples only — no placeholder data */
@@ -56,7 +59,7 @@ const TAB_ITEMS: {
     { id: 'project', label: 'Project', Icon: Settings },
 ];
 
-export const Sidebar = ({ style }: SidebarProps): ReactElement => {
+export const Sidebar = ({ style, onClose, panelActions }: SidebarProps): ReactElement => {
     const [activeTab, setActiveTab] = useState<'library' | 'instruments' | 'effects' | 'macros' | 'project'>(
         'instruments'
     );
@@ -252,7 +255,7 @@ export const Sidebar = ({ style }: SidebarProps): ReactElement => {
                     className="h-7 border-0 bg-transparent text-xs shadow-none focus-visible:ring-0 px-1"
                     aria-label="Search browser"
                 />
-                <Button variant="ghost" size="icon-xs" onClick={toggleSidebar} aria-label="Close browser">
+                <Button variant="ghost" size="icon-xs" onClick={onClose} aria-label="Close browser">
                     <X className="size-3.5" />
                 </Button>
             </div>
@@ -289,6 +292,7 @@ export const Sidebar = ({ style }: SidebarProps): ReactElement => {
                             preview={preview}
                             currentRoute={currentRoute}
                             pushRoute={pushRoute}
+                            panelActions={panelActions}
                         />
                     ) : null}
 
@@ -299,6 +303,7 @@ export const Sidebar = ({ style }: SidebarProps): ReactElement => {
                             searchQuery={searchQuery}
                             currentRoute={currentRoute}
                             pushRoute={pushRoute}
+                            panelActions={panelActions}
                             favorites={favorites}
                             onToggleFavorite={toggleFavorite}
                             preview={preview}

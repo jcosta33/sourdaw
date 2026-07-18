@@ -23,6 +23,7 @@ import { ModulationMatrix } from '#/modules/Automation/presentations/views';
 import { BacteriaPanel } from '#/modules/Bacteria/presentations/views';
 import { UndoHistoryPanel } from '#/modules/Command/presentations/views';
 import { CommandPalette, useGlobalKeyboardShortcuts } from '#/modules/CommandInterface/presentations/views';
+import { Sidebar, type SidebarPanelActions } from '#/modules/ContentBrowser/presentations/views';
 import { CrumbsPanel } from '#/modules/Crumbs/presentations/views';
 import { CrustPanel } from '#/modules/Crust/presentations/views';
 import { ElasticEditorPanel } from '#/modules/ElasticAudio/presentations/views';
@@ -51,9 +52,23 @@ import { clamp } from '#/utils/Math/clamp';
 import { alphaNoticeStore } from '../../stores/alphaNoticeStore';
 import { dismissAlphaNotice } from '../../useCases/dismissAlphaNotice';
 import { onPanelShowAutomation } from '../../useCases/panels/devicePanels/onPanelShowAutomation';
+import { showBacteriaPanel } from '../../useCases/panels/devicePanels/showBacteriaPanel';
+import { showCrumbsPanel } from '../../useCases/panels/devicePanels/showCrumbsPanel';
+import { showCrustPanel } from '../../useCases/panels/devicePanels/showCrustPanel';
+import { showDevicePanel } from '../../useCases/panels/devicePanels/showDevicePanel';
+import { showDutchOvenPanel } from '../../useCases/panels/devicePanels/showDutchOvenPanel';
+import { showFermenterPanel } from '../../useCases/panels/devicePanels/showFermenterPanel';
+import { showGlutenPanel } from '../../useCases/panels/devicePanels/showGlutenPanel';
+import { showGrandBoulePanel } from '../../useCases/panels/devicePanels/showGrandBoulePanel';
+import { showLevainPanel } from '../../useCases/panels/devicePanels/showLevainPanel';
+import { showProofPanel } from '../../useCases/panels/devicePanels/showProofPanel';
+import { showScoringPanel } from '../../useCases/panels/devicePanels/showScoringPanel';
+import { showToasterPanel } from '../../useCases/panels/devicePanels/showToasterPanel';
+import { showYeastPanel } from '../../useCases/panels/devicePanels/showYeastPanel';
 import { closeBranchManager } from '../../useCases/togglePanel/panelToggles/closeBranchManager';
 import { openMixer } from '../../useCases/togglePanel/panelToggles/openMixer';
 import { toggleMixer } from '../../useCases/togglePanel/panelToggles/toggleMixer';
+import { toggleSidebar } from '../../useCases/togglePanel/panelToggles/toggleSidebar';
 import { toggleVirtualKeyboard } from '../../useCases/togglePanel/panelToggles/toggleVirtualKeyboard';
 import { updateWorkspaceState } from '../../useCases/workspaceState';
 import { AlphaNoticeDialog } from '../components/AlphaNoticeDialog';
@@ -73,10 +88,27 @@ import { ClipView } from './ClipView';
 import { InspectorPanel } from './InspectorPanel';
 import { LaunchScreen } from './LaunchScreen';
 import { MixerPanel } from './MixerPanel';
-import { Sidebar } from './Sidebar';
 import { StatusBar } from './StatusBar';
 import { TransportBar } from './TransportBar';
 
+// Device-panel emitters injected into the ContentBrowser Sidebar. The panel
+// system is owned by Workspace; the browser only triggers it, so these stable
+// singletons are passed in as callbacks (module-level — no per-render alloc).
+const SIDEBAR_PANEL_ACTIONS: SidebarPanelActions = {
+    showBacteria: showBacteriaPanel,
+    showCrust: showCrustPanel,
+    showDevice: showDevicePanel,
+    showDutchOven: showDutchOvenPanel,
+    showGluten: showGlutenPanel,
+    showProof: showProofPanel,
+    showScoring: showScoringPanel,
+    showYeast: showYeastPanel,
+    showCrumbs: showCrumbsPanel,
+    showFermenter: showFermenterPanel,
+    showGrandBoule: showGrandBoulePanel,
+    showLevain: showLevainPanel,
+    showToaster: showToasterPanel,
+};
 const CollaborationPanelLazy = lazy(() =>
     import('#/modules/Collaboration/presentations/views').then((m) => ({
         default: m.CollaborationPanel,
@@ -359,7 +391,13 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
         );
     };
 
-    const sidebarNode = <Sidebar style={{ width: sidebarWidth, minWidth: 180 }} />;
+    const sidebarNode = (
+        <Sidebar
+            style={{ width: sidebarWidth, minWidth: 180 }}
+            onClose={toggleSidebar}
+            panelActions={SIDEBAR_PANEL_ACTIONS}
+        />
+    );
     const inspectorNode = <InspectorPanel style={{ width: inspectorWidth, minWidth: 200 }} />;
     const chatNode = <ChatPanel style={{ width: chatWidth, minWidth: 200 }} />;
     const aiNode = (side: 'left' | 'right'): ReactNode => (
