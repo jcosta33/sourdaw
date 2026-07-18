@@ -1,7 +1,6 @@
+import { type WarpAlgorithm } from '#/modules/ElasticAudio/stores';
+import { setWarpAlgorithm } from '#/modules/ElasticAudio/useCases';
 import { createHandler } from '#/utils/createHandler';
-
-import { type WarpAlgorithm } from '../../stores/audioWarp';
-import { setWarpAlgorithm } from '../../useCases/audioWarping/setWarpAlgorithm';
 
 export const handleSetWarpAlgorithm = createHandler<'setWarpAlgorithm'>({
     execute: (alpha) => {

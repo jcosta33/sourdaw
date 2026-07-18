@@ -2,20 +2,20 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { setWarpAlgorithm } from '../setWarpAlgorithm';
 
-import type { ClipWarpSettings } from '#/modules/AudioEngine/stores/audioWarp';
+import type { ClipWarpSettings } from '../../../stores/audioWarp';
 
 const mocks = vi.hoisted(() => ({
     audioWarpStoreValue: {
         value: {
-            clipSettings: new Map<string, import('#/modules/AudioEngine/stores/audioWarp').ClipWarpSettings>(),
+            clipSettings: new Map<string, import('../../../stores/audioWarp').ClipWarpSettings>(),
             defaultAlgorithm: 'complex-pro' as const,
             globalPitchShift: 0,
         },
     },
-    audioWarpStoreSet: vi.fn<(state: import('#/modules/AudioEngine/stores/audioWarp').WarpState) => void>(),
+    audioWarpStoreSet: vi.fn<(state: import('../../../stores/audioWarp').WarpState) => void>(),
 }));
 
-vi.mock('#/modules/AudioEngine/stores/audioWarp', () => ({
+vi.mock('../../../stores/audioWarp', () => ({
     audioWarpStore: {
         get value() {
             return mocks.audioWarpStoreValue.value;

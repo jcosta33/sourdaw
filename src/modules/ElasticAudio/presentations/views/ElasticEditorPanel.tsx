@@ -12,10 +12,10 @@ import {
     getWarpState,
 } from '#/modules/Arrangement/stores';
 import { commitWarpMarkerBeatDrag, setStretchMode, updateWarpMarkerBeat } from '#/modules/Arrangement/useCases';
+import { audioBufferCache } from '#/modules/AudioEngine/stores';
 import { defaultWorkspaceState, workspaceStore } from '#/modules/Workspace/stores';
 import { resolveToken } from '#/utils/UI/resolveToken';
 
-import { audioBufferCache } from '../../stores/audioBufferCache';
 import { audioWarpStore, type WarpAlgorithm } from '../../stores/audioWarp';
 import { defaultElasticAudioState, elasticAudioStore, type ElasticEditorTool } from '../../stores/elasticAudio';
 import { getAlgorithmInfo } from '../../useCases/audioWarping/getAlgorithmInfo';

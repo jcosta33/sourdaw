@@ -15,7 +15,6 @@ import {
     MixAnalysisPanel,
 } from '#/modules/AiRuntime/presentations/views';
 import { clipSelectionStore, defaultClipSelectionState, trackStore } from '#/modules/Arrangement/stores';
-import { ElasticEditorPanel } from '#/modules/AudioEngine/presentations/views';
 import { ExportDialog } from '#/modules/AudioRendering/presentations/views';
 import { ModulationMatrix } from '#/modules/Automation/presentations/views';
 import { BacteriaPanel } from '#/modules/Bacteria/presentations/views';
@@ -23,6 +22,7 @@ import { UndoHistoryPanel } from '#/modules/Command/presentations/views';
 import { CommandPalette, useGlobalKeyboardShortcuts } from '#/modules/CommandInterface/presentations/views';
 import { CrumbsPanel } from '#/modules/Crumbs/presentations/views';
 import { CrustPanel } from '#/modules/Crust/presentations/views';
+import { ElasticEditorPanel } from '#/modules/ElasticAudio/presentations/views';
 import { FermenterPanel } from '#/modules/Fermenter/presentations/views';
 import { GlutenPanel } from '#/modules/Gluten/presentations/views';
 import { GrandBoulePanel } from '#/modules/GrandBoule/presentations/views';

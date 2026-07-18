@@ -13,5 +13,4 @@ export { audioRecordingStore } from './audioRecordingStore';
 export type { AdjustmentApplicationState } from './adjustmentApplicationStore';
 export { adjustmentApplicationStore } from './adjustmentApplicationStore';
 
-export type { ElasticAudioState, ElasticEditorTool } from './elasticAudio';
-export { elasticAudioStore, defaultElasticAudioState } from './elasticAudio';
+// elasticAudio + audioWarp stores moved to ElasticAudio (ADR 0011 W4).

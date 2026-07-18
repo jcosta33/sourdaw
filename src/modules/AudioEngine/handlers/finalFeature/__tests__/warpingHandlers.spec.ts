@@ -10,15 +10,9 @@ const mocks = vi.hoisted(() => ({
     setPitchShift: vi.fn(),
 }));
 
-vi.mock('../../../useCases/audioWarping/enableWarping', () => ({
+vi.mock('#/modules/ElasticAudio/useCases', () => ({
     enableWarping: mocks.enableWarping,
-}));
-
-vi.mock('../../../useCases/audioWarping/setWarpAlgorithm', () => ({
     setWarpAlgorithm: mocks.setWarpAlgorithm,
-}));
-
-vi.mock('../../../useCases/audioWarping/setPitchShift', () => ({
     setPitchShift: mocks.setPitchShift,
 }));
 

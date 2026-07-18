@@ -1,7 +1,6 @@
+import { detectTransientsForClip } from '#/modules/ElasticAudio/useCases';
 import { createHandler } from '#/utils/createHandler';
 import { notifyUser } from '#/utils/Notification/notifyUser';
-
-import { detectTransientsForClip } from '../../useCases/elasticAudio/detectTransientsForClip';
 
 export const handleDetectTransients = createHandler<'detectTransients'>({
     execute: (a) => {

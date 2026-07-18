@@ -1,6 +1,5 @@
+import { setElasticSensitivity } from '#/modules/ElasticAudio/useCases';
 import { createHandler } from '#/utils/createHandler';
-
-import { setElasticSensitivity } from '../../useCases/elasticAudio/setElasticSensitivity';
 
 export const handleElasticSetSensitivity = createHandler<'elasticSetSensitivity'>({
     execute: async (a) => {

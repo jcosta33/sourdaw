@@ -60,7 +60,7 @@ vi.mock('#/modules/Transport/stores', () => ({
     },
 }));
 
-vi.mock('../../../stores/audioBufferCache', () => ({
+vi.mock('#/modules/AudioEngine/stores', () => ({
     audioBufferCache: {
         get: (id: string) => mocks.bufferCacheGet(id),
     },

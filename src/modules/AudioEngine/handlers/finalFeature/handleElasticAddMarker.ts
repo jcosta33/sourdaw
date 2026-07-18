@@ -1,6 +1,5 @@
+import { addManualMarker } from '#/modules/ElasticAudio/useCases';
 import { createHandler } from '#/utils/createHandler';
-
-import { addManualMarker } from '../../useCases/elasticAudio/addManualMarker';
 
 export const handleElasticAddMarker = createHandler<'elasticAddMarker'>({
     execute: (a) => {
