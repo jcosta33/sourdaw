@@ -64,7 +64,7 @@ vi.mock('#/modules/Preferences/presentations/views', () => ({
     PreferencesDialog: () => <div data-testid="preferences-dialog">Preferences</div>,
 }));
 
-vi.mock('#/modules/AudioEngine/presentations/views', () => ({
+vi.mock('#/modules/ElasticAudio/presentations/views', () => ({
     ElasticEditorPanel: elasticEditorPanelMock,
 }));
 

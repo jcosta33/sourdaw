@@ -1,6 +1,5 @@
+import { removeMarker } from '#/modules/ElasticAudio/useCases';
 import { createHandler } from '#/utils/createHandler';
-
-import { removeMarker } from '../../useCases/elasticAudio/removeMarker';
 
 export const handleElasticRemoveMarker = createHandler<'elasticRemoveMarker'>({
     execute: (a) => {

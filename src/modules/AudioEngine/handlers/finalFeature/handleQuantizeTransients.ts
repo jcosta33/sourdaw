@@ -1,7 +1,6 @@
+import { quantizeTransients } from '#/modules/ElasticAudio/useCases';
 import { createHandler } from '#/utils/createHandler';
 import { notifyUser } from '#/utils/Notification/notifyUser';
-
-import { quantizeTransients } from '../../useCases/elasticAudio/quantizeTransients';
 
 export const handleQuantizeTransients = createHandler<'quantizeTransients'>({
     execute: (a) => {

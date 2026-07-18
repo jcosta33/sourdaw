@@ -1,6 +1,5 @@
+import { openElasticEditor } from '#/modules/ElasticAudio/useCases';
 import { createHandler } from '#/utils/createHandler';
-
-import { openElasticEditor } from '../../useCases/elasticAudio/openElasticEditor';
 
 export const handleOpenElasticEditor = createHandler<'openElasticEditor'>({
     execute: (a) => {

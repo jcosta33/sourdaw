@@ -157,7 +157,7 @@ vi.mock('../../../stores/elasticAudio', () => ({
     },
 }));
 
-vi.mock('../../../stores/audioBufferCache', () => ({
+vi.mock('#/modules/AudioEngine/stores', () => ({
     audioBufferCache: {
         getWaveformPeaks: (...args: unknown[]) => mocks.getWaveformPeaks(...args),
     },

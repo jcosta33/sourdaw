@@ -7,7 +7,7 @@ const mocks = vi.hoisted(() => ({
     audioWarpStoreSet: vi.fn(),
 }));
 
-vi.mock('#/modules/AudioEngine/stores/audioWarp', () => ({
+vi.mock('../../../stores/audioWarp', () => ({
     audioWarpStore: {
         get value() {
             return mocks.audioWarpStoreValue.value;

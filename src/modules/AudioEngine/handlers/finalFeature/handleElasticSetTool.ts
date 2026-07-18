@@ -1,6 +1,5 @@
+import { setElasticTool } from '#/modules/ElasticAudio/useCases';
 import { createHandler } from '#/utils/createHandler';
-
-import { setElasticTool } from '../../useCases/elasticAudio/setElasticTool';
 
 export const handleElasticSetTool = createHandler<'elasticSetTool'>({
     execute: (a) => {

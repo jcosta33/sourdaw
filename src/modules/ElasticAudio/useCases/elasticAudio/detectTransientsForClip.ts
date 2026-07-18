@@ -1,7 +1,6 @@
 import { addWarpMarker, getWarpState, trackStore, warpStates } from '#/modules/Arrangement/stores';
+import { audioBufferCache } from '#/modules/AudioEngine/stores';
 import { transportStore } from '#/modules/Transport/stores';
-
-import { audioBufferCache } from '../../stores/audioBufferCache';
 
 import { detectTransients } from './detectTransients';
 
