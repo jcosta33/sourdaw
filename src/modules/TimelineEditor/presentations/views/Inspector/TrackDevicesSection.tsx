@@ -19,12 +19,12 @@ import {
 } from '#/modules/Arrangement/useCases';
 import { pluginScanStore, defaultPluginScanState } from '#/modules/PluginHost/stores';
 import { openPluginGui } from '#/modules/PluginHost/useCases';
+import { showDevicePanelForType } from '#/modules/Workspace/useCases';
 import { getPlatformCapabilities, DISABLED_REASONS } from '#/utils/platformCapabilities';
 import { cn } from '#/utils/Styles/cn';
 import { menuBtnClass } from '#/utils/UI/contextMenuStyles';
 
 import { type Track } from '../../../models/TrackViewTypes';
-import { showDevicePanelForType } from '../../../useCases/panels/devicePanels/showDevicePanelForType';
 import { ChoiceCard } from '../../components/Inspector/ChoiceCard';
 
 type TrackDevicesSectionProps = {

@@ -58,7 +58,7 @@ vi.mock('../Transport/PanelToggles', () => ({
     PanelToggles: () => <div data-testid="panel-toggles">Toggles</div>,
 }));
 
-vi.mock('../TempoEditor', () => ({
+vi.mock('#/modules/TimelineEditor/presentations/views', () => ({
     TempoEditor: () => <div data-testid="tempo-editor">Tempo</div>,
 }));
 

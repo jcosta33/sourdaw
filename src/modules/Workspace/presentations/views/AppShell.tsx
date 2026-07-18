@@ -44,6 +44,7 @@ import { ProofChamberPanel } from '#/modules/ProofChamber/presentations/views';
 import { RoutingMatrix } from '#/modules/Routing/presentations/views';
 import { LoopStationPanel, SessionView } from '#/modules/SessionLauncher/presentations/views';
 import { SetlistPanel } from '#/modules/Setlist/presentations/views';
+import { AutomationBottomPanel, ClipView, InspectorPanel } from '#/modules/TimelineEditor/presentations/views';
 import { ToasterPanel } from '#/modules/Toaster/presentations/views';
 import { TunerPanel } from '#/modules/Tuner/presentations/views';
 import { VirtualKeyboard } from '#/modules/VirtualKeyboard/presentations/views';
@@ -84,9 +85,6 @@ import { useAppInitialization } from '../hooks/useAppInitialization';
 import { useProjectState } from '../hooks/useProjectState';
 import { useWorkspaceState } from '../hooks/useWorkspaceState';
 
-import { AutomationBottomPanel } from './AutomationBottomPanel';
-import { ClipView } from './ClipView';
-import { InspectorPanel } from './InspectorPanel';
 import { LaunchScreen } from './LaunchScreen';
 import { StatusBar } from './StatusBar';
 import { TransportBar } from './TransportBar';

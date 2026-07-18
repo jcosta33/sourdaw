@@ -62,8 +62,9 @@ vi.mock('#/modules/Transport/stores', async (importOriginal) => ({
     transportStore: { value: { playheadPosition: 0 } },
 }));
 
-vi.mock('#/modules/Workspace/stores/workspaceStore', () => ({
+vi.mock('#/modules/Workspace/stores', () => ({
     workspaceStore: { value: { activeTool: 'pointer' } },
+    defaultWorkspaceState: { activeTool: 'pointer' },
 }));
 
 vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => ({

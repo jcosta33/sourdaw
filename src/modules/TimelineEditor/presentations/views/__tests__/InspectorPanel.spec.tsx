@@ -31,10 +31,6 @@ vi.mock('#/modules/Arrangement/stores', () => ({
     defaultClipSelectionState: { selectedClipId: null, selectedClipIds: [], marqueeSelection: null },
 }));
 
-vi.mock('#/modules/Workspace/models/WorkspaceState', () => ({
-    defaultWorkspaceState: { selectedClipId: null },
-}));
-
 const mockToggleInspector = vi.fn();
 const mockClearClipSelection = vi.fn();
 const mockSelectClipWithFocus = vi.fn();
@@ -44,7 +40,7 @@ vi.mock('#/modules/Arrangement/useCases', () => ({
     clearClipSelection: () => mockClearClipSelection(),
 }));
 
-vi.mock('../../../useCases/togglePanel/panelToggles/toggleInspector', () => ({
+vi.mock('#/modules/Workspace/useCases', () => ({
     toggleInspector: () => mockToggleInspector(),
 }));
 
