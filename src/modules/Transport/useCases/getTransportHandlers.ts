@@ -13,13 +13,11 @@ import { handleSetTimeSignature } from '../handlers/transport/handleSetTimeSigna
 import { handleStopPlayback } from '../handlers/transport/handleStopPlayback';
 import { handleToggleCountIn } from '../handlers/transport/handleToggleCountIn';
 import { handleToggleLoop } from '../handlers/transport/handleToggleLoop';
-import { handleToggleLoopRecord } from '../handlers/transport/handleToggleLoopRecord';
 import { handleToggleMetronome } from '../handlers/transport/handleToggleMetronome';
 import { handleTogglePlayback } from '../handlers/transport/handleTogglePlayback';
 import { handleTogglePreRoll } from '../handlers/transport/handleTogglePreRoll';
 import { handleTogglePunch } from '../handlers/transport/handleTogglePunch';
 import { handleToggleRecording } from '../handlers/transport/handleToggleRecording';
-import { handleTriggerScene } from '../handlers/transport/handleTriggerScene';
 
 export type TransportHandlersMap = {
     addTimeSignatureChange: typeof handleAddTimeSignatureChange;
@@ -41,9 +39,7 @@ export type TransportHandlersMap = {
     togglePlayback: typeof handleTogglePlayback;
     togglePreRoll: typeof handleTogglePreRoll;
     togglePunch: typeof handleTogglePunch;
-    toggleLoopRecord: typeof handleToggleLoopRecord;
     toggleRecording: typeof handleToggleRecording;
-    triggerScene: typeof handleTriggerScene;
 };
 
 /**
@@ -71,7 +67,5 @@ export function getTransportHandlers(): TransportHandlersMap {
         restorePunchRegion: handleRestorePunchRegion,
         togglePreRoll: handleTogglePreRoll,
         setPreRollBars: handleSetPreRollBars,
-        toggleLoopRecord: handleToggleLoopRecord,
-        triggerScene: handleTriggerScene,
     };
 }

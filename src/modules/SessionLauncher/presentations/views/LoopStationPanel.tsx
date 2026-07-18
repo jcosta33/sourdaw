@@ -10,6 +10,8 @@ import { Button } from '#/components/ui/button';
 import { Input } from '#/components/ui/input';
 import { useStore } from '#/infra/store/useStore';
 import { defaultTrackState, trackStore } from '#/modules/Arrangement/stores';
+import { playheadPositionRef, transportStore } from '#/modules/Transport/stores';
+import { defaultTransportState } from '#/modules/Transport/useCases';
 import { cn } from '#/utils/Styles/cn';
 
 import {
@@ -18,8 +20,6 @@ import {
     type LoopSlotState,
     type LoopStationState,
 } from '../../stores/loopStationStore';
-import { playheadPositionRef } from '../../stores/playheadPositionRef';
-import { transportStore } from '../../stores/transportStore';
 import { clearSlot } from '../../useCases/loopStation/clearSlot';
 import { createSlot } from '../../useCases/loopStation/createSlot';
 import { setFixedLoopLength } from '../../useCases/loopStation/setFixedLoopLength';
@@ -30,7 +30,6 @@ import { toggleRecord } from '../../useCases/loopStation/toggleRecord';
 import { toggleSync } from '../../useCases/loopStation/toggleSync';
 import { triggerScene } from '../../useCases/loopStation/triggerScene';
 import { undoLastLayer } from '../../useCases/loopStation/undoLastLayer';
-import { defaultTransportState } from '../../useCases/transportQueries/helpers';
 
 const emptyLoopState: LoopStationState = {
     slots: [],

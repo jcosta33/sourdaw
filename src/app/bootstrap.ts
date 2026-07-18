@@ -86,6 +86,7 @@ import { getVersionControlHandlers } from '#/modules/ProjectVersioning/useCases'
 import { updateProofMeters } from '#/modules/Proof/stores';
 import { registerProofDevice, unregisterProofDevice, syncFullPatch } from '#/modules/Proof/useCases';
 import { getPunchRecordingHandlers } from '#/modules/PunchRecording/useCases';
+import { getSessionLauncherHandlers } from '#/modules/SessionLauncher/useCases';
 import { getSetlistHandlers, setSetlistEventBus } from '#/modules/Setlist/useCases';
 import { initToasterSubscribers, setToasterEventBus } from '#/modules/Toaster/useCases';
 import {
@@ -231,6 +232,7 @@ configureAudioDeviceRuntimeSink({
 
 registerHandlerMap(getArrangementHandlers());
 registerHandlerMap(getTransportHandlers());
+registerHandlerMap(getSessionLauncherHandlers());
 registerHandlerMap(getSetlistHandlers());
 registerHandlerMap(getPunchRecordingHandlers());
 registerHandlerMap(getWorkspaceHandlers());

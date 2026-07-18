@@ -53,16 +53,19 @@ vi.mock('#/modules/Arrangement/useCases', () => ({
     setMarqueeSelection: vi.fn(),
 }));
 
-vi.mock('#/modules/Transport/stores', () => ({
+vi.mock('#/modules/SessionLauncher/stores', () => ({
     loopStationStore: { value: { armed: false } },
+}));
+
+vi.mock('#/modules/SessionLauncher/useCases', () => ({
+    stopAllSlots: vi.fn(),
+    triggerPad: vi.fn(),
 }));
 
 vi.mock('#/modules/Transport/useCases', () => ({
     stopPlayback: stopPlaybackMock,
     seekPlayhead: vi.fn(),
     setLoopRegion: vi.fn(),
-    stopAllSlots: vi.fn(),
-    triggerPad: vi.fn(),
 }));
 
 vi.mock('#/modules/Workspace/stores', () => ({
