@@ -135,7 +135,8 @@ function isTransportInfo(value: unknown): value is TransportInfo {
         isFiniteNumber(value.timeSigDen) &&
         typeof value.loopEnabled === 'boolean' &&
         isFiniteNumber(value.loopStartPpq) &&
-        isFiniteNumber(value.loopEndPpq)
+        isFiniteNumber(value.loopEndPpq) &&
+        (value.discontinuityEpoch === undefined || isCommandId(value.discontinuityEpoch))
     );
 }
 

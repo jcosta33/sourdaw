@@ -132,9 +132,10 @@ describe('processYeastMidi — Worker-only runtime', () => {
         expect(processRuntimeTransaction).toHaveBeenCalledTimes(1);
     });
 
-    it('publishes a route reset before bypassing an empty rack', async () => {
+    it('routes an empty rack through the runtime so default-state preview is published with audible pass-through', async () => {
         yeastStore.value = { processors: [], uiLevel: 1 };
         const events = [{ timeSamples: 0, kind: { type: 'noteOn' as const, channel: 0, note: 60, velocity: 96 } }];
+        processRuntimeTransaction.mockResolvedValueOnce(events);
 
         await expect(
             processYeastMidi({
@@ -149,11 +150,17 @@ describe('processYeastMidi — Worker-only runtime', () => {
             })
         ).resolves.toEqual(events);
 
-        expect(resetRuntimePreview).toHaveBeenCalledWith({
+        expect(processRuntimeTransaction).toHaveBeenCalledWith({
+            context,
             rackId: 'rack-a',
             routeId: 'route-a',
             trackId: 'track-a',
+            events,
+            blockStartSamples: 0,
+            blockEndSamples: 128,
+            transport,
+            projection: [],
         });
-        expect(processRuntimeTransaction).not.toHaveBeenCalled();
+        expect(resetRuntimePreview).not.toHaveBeenCalled();
     });
 });

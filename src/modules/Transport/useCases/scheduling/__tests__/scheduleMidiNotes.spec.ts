@@ -185,6 +185,11 @@ describe('scheduleMidiNotes', () => {
 
         const scheduling = scheduleMidiNotes(0, 4, 0, -1, [], defaultTransportState, 120, cancellation);
         await Promise.resolve();
+        expect(processYeastMidi).toHaveBeenCalledWith(
+            expect.objectContaining({
+                transport: expect.objectContaining({ discontinuityEpoch: 1 }),
+            })
+        );
         current = false;
         resolveYeast([
             { timeSamples: 0, kind: { type: 'noteOn', channel: 0, note: 64, velocity: 100 } },

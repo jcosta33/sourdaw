@@ -1,9 +1,4 @@
-import {
-    getYeastRuntimeError,
-    getYeastRuntimeStatus,
-    processYeastRuntimeTransaction,
-    resetYeastRuntimePreview,
-} from '../../engine/yeastRuntime';
+import { getYeastRuntimeError, getYeastRuntimeStatus, processYeastRuntimeTransaction } from '../../engine/yeastRuntime';
 import { createYeastProcessorProjection } from '../../models/YeastProcessorProjection';
 import { yeastStore } from '../../stores/yeastStore';
 
@@ -46,15 +41,6 @@ export async function processYeastMidi(input: ProcessYeastMidiInput): Promise<Mi
     }
 
     const projection = createYeastProcessorProjection(state.processors);
-    if (projection.length === 0) {
-        resetYeastRuntimePreview({
-            rackId: input.rackId ?? input.trackId,
-            routeId: input.routeId ?? input.trackId,
-            trackId: input.trackId,
-        });
-        return [...input.events];
-    }
-
     let output: MidiEvent[];
     try {
         const processed = await processYeastRuntimeTransaction({

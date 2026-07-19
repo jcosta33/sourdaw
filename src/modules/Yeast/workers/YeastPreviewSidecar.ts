@@ -77,11 +77,8 @@ export class YeastPreviewSidecar {
     private readonly routeCaptureEpoch = new Float64Array(YEAST_PREVIEW_CAPACITY);
     private readonly routeActive = new Uint8Array(YEAST_PREVIEW_CAPACITY);
     private readonly routeLastUsed = new Float64Array(YEAST_PREVIEW_CAPACITY);
-    private readonly routePreviousBlockStart = new Float64Array(YEAST_PREVIEW_CAPACITY);
-    private readonly routePreviousBlockEnd = new Float64Array(YEAST_PREVIEW_CAPACITY);
-    private readonly routePreviousPpq = new Float64Array(YEAST_PREVIEW_CAPACITY);
-    private readonly routePreviousSamplesPerBeat = new Float64Array(YEAST_PREVIEW_CAPACITY);
-    private readonly routeHasPreviousBlock = new Uint8Array(YEAST_PREVIEW_CAPACITY);
+    private readonly routeDiscontinuityEpoch = new Float64Array(YEAST_PREVIEW_CAPACITY);
+    private readonly routeHasDiscontinuityEpoch = new Uint8Array(YEAST_PREVIEW_CAPACITY);
     private readonly routeProjectionVersion = new Float64Array(YEAST_PREVIEW_CAPACITY);
     private readonly routeDeferredDrops = new Float64Array(YEAST_PREVIEW_CAPACITY);
     private readonly routeResetPending = new Uint8Array(YEAST_PREVIEW_CAPACITY);
@@ -121,6 +118,19 @@ export class YeastPreviewSidecar {
     private readonly retainedTrackId = Array.from({ length: YEAST_PREVIEW_CAPACITY }, () => '');
     private readonly retainedCaptureEpoch = new Float64Array(YEAST_PREVIEW_CAPACITY);
 
+    private readonly retainedCheckpointSlot = new Int32Array(YEAST_PREVIEW_CAPACITY);
+    private readonly retainedCheckpointActive = new Uint8Array(YEAST_PREVIEW_CAPACITY);
+    private readonly retainedCheckpointGeneration = new Float64Array(YEAST_PREVIEW_CAPACITY);
+    private readonly retainedCheckpointReferences = new Uint16Array(YEAST_PREVIEW_CAPACITY);
+    private readonly retainedCheckpointDurationSamples = new Float64Array(YEAST_PREVIEW_CAPACITY);
+    private readonly retainedCheckpointProbability = new Float64Array(YEAST_PREVIEW_CAPACITY);
+    private readonly retainedCheckpointHasProbability = new Uint8Array(YEAST_PREVIEW_CAPACITY);
+    private readonly retainedCheckpointProcessorId = Array.from({ length: YEAST_PREVIEW_CAPACITY }, () => '');
+    private readonly retainedCheckpointRackId = Array.from({ length: YEAST_PREVIEW_CAPACITY }, () => '');
+    private readonly retainedCheckpointRouteId = Array.from({ length: YEAST_PREVIEW_CAPACITY }, () => '');
+    private readonly retainedCheckpointTrackId = Array.from({ length: YEAST_PREVIEW_CAPACITY }, () => '');
+    private readonly retainedCheckpointCaptureEpoch = new Float64Array(YEAST_PREVIEW_CAPACITY);
+
     private readonly queuedPreviewEvent: Array<MidiEvent | undefined> = Array.from(
         { length: YEAST_PREVIEW_CAPACITY },
         () => undefined
@@ -159,6 +169,14 @@ export class YeastPreviewSidecar {
     private processorTransformationActive = false;
     private lineageCompromised = false;
     private queuedPreviewCount = 0;
+    private retainedCheckpointCount = 0;
+    private processorCheckpointDecisionCount = 0;
+    private processorCheckpointNextDecisionSequence = 0;
+    private processorCheckpointNextRetainedGeneration = 0;
+    private processorCheckpointPageDroppedEvents = 0;
+    private processorCheckpointDeferredDrops = 0;
+    private processorCheckpointRouteIndex = -1;
+    private processorCheckpointLineageCompromised = false;
 
     constructor() {
         this.routeProjectionVersion.fill(-1);
@@ -208,7 +226,6 @@ export class YeastPreviewSidecar {
         ) {
             this.invalidateRoutePending(rackId, routeId);
             if (routeIndex !== -1) {
-                this.routeHasPreviousBlock[routeIndex] = 0;
                 this.routeResetPending[routeIndex] = 1;
             }
             return;
@@ -221,17 +238,17 @@ export class YeastPreviewSidecar {
             this.routeCaptureEpoch[routeIndex] = captureEpoch;
         }
 
-        if (this.routeHasPreviousBlock[routeIndex] === 1) {
-            const expectedPpqPosition =
-                this.routePreviousPpq[routeIndex]! +
-                (this.routePreviousBlockEnd[routeIndex]! - this.routePreviousBlockStart[routeIndex]!) /
-                    this.routePreviousSamplesPerBeat[routeIndex]!;
-            const samplePositionChanged = blockStartSamples !== this.routePreviousBlockEnd[routeIndex];
-            const musicalPositionChanged = Math.abs(transport.ppqPosition - expectedPpqPosition) > 1e-6;
-            if (samplePositionChanged || musicalPositionChanged) {
+        if (transport.discontinuityEpoch !== undefined) {
+            if (
+                this.routeHasDiscontinuityEpoch[routeIndex] === 1 &&
+                this.routeDiscontinuityEpoch[routeIndex] !== transport.discontinuityEpoch
+            ) {
                 this.invalidateRoutePending(rackId, routeId);
+                this.invalidateRouteRetained(rackId, routeId);
                 this.routeResetPending[routeIndex] = 1;
             }
+            this.routeDiscontinuityEpoch[routeIndex] = transport.discontinuityEpoch;
+            this.routeHasDiscontinuityEpoch[routeIndex] = 1;
         }
 
         this.blockStartSamples = blockStartSamples;
@@ -243,11 +260,6 @@ export class YeastPreviewSidecar {
         this.currentRouteId = this.routeId[routeIndex]!;
         this.currentTrackId = this.routeTrackId[routeIndex]!;
         this.routeLastUsed[routeIndex] = this.nextRouteUseSequence++;
-        this.routePreviousBlockStart[routeIndex] = blockStartSamples;
-        this.routePreviousBlockEnd[routeIndex] = blockEndSamples;
-        this.routePreviousPpq[routeIndex] = transport.ppqPosition;
-        this.routePreviousSamplesPerBeat[routeIndex] = samplesPerBeat;
-        this.routeHasPreviousBlock[routeIndex] = 1;
         this.captureRequested = true;
         if (this.pageBusy) {
             return;
@@ -306,6 +318,15 @@ export class YeastPreviewSidecar {
         if (!this.captureRequested) {
             return;
         }
+        this.processorCheckpointDecisionCount = this.decisionCount;
+        this.processorCheckpointNextDecisionSequence = this.nextDecisionSequence;
+        this.processorCheckpointNextRetainedGeneration = this.nextRetainedGeneration;
+        this.processorCheckpointPageDroppedEvents = this.page.droppedEvents;
+        this.processorCheckpointRouteIndex = this.currentRouteIndex;
+        this.processorCheckpointDeferredDrops =
+            this.currentRouteIndex === -1 ? 0 : this.routeDeferredDrops[this.currentRouteIndex]!;
+        this.processorCheckpointLineageCompromised = this.lineageCompromised;
+        this.retainedCheckpointCount = 0;
         this.nextLineageCount = 0;
         this.processorTransformationActive = true;
     }
@@ -338,6 +359,7 @@ export class YeastPreviewSidecar {
             if (this.retainedActive[slot] === 1) {
                 continue;
             }
+            this.checkpointRetainedSlot(slot);
             const generation = this.nextRetainedGeneration++;
             this.retainedActive[slot] = 1;
             this.retainedGeneration[slot] = generation;
@@ -400,6 +422,7 @@ export class YeastPreviewSidecar {
             return;
         }
         const remaining = Math.max(0, this.retainedReferences[slot]! - references);
+        this.checkpointRetainedSlot(slot);
         this.retainedReferences[slot] = remaining;
         if (remaining === 0) {
             this.retainedActive[slot] = 0;
@@ -438,12 +461,66 @@ export class YeastPreviewSidecar {
         this.lineageUsesA = !this.lineageUsesA;
         this.lineageCount = this.nextLineageCount;
         this.nextLineageCount = 0;
+        this.retainedCheckpointCount = 0;
         this.processorTransformationActive = false;
     }
 
     cancelProcessorTransformation(): void {
+        if (!this.captureRequested || !this.processorTransformationActive) {
+            return;
+        }
+        this.decisionCount = this.processorCheckpointDecisionCount;
+        this.nextDecisionSequence = this.processorCheckpointNextDecisionSequence;
+        this.nextRetainedGeneration = this.processorCheckpointNextRetainedGeneration;
+        this.page.droppedEvents = this.processorCheckpointPageDroppedEvents;
+        if (this.processorCheckpointRouteIndex !== -1) {
+            this.routeDeferredDrops[this.processorCheckpointRouteIndex] = this.processorCheckpointDeferredDrops;
+        }
+        this.lineageCompromised = this.processorCheckpointLineageCompromised;
+        for (let checkpoint = this.retainedCheckpointCount - 1; checkpoint >= 0; checkpoint--) {
+            const slot = this.retainedCheckpointSlot[checkpoint]!;
+            this.retainedActive[slot] = this.retainedCheckpointActive[checkpoint]!;
+            this.retainedGeneration[slot] = this.retainedCheckpointGeneration[checkpoint]!;
+            this.retainedReferences[slot] = this.retainedCheckpointReferences[checkpoint]!;
+            this.retainedDurationSamples[slot] = this.retainedCheckpointDurationSamples[checkpoint]!;
+            this.retainedProbability[slot] = this.retainedCheckpointProbability[checkpoint]!;
+            this.retainedHasProbability[slot] = this.retainedCheckpointHasProbability[checkpoint]!;
+            this.retainedProcessorId[slot] = this.retainedCheckpointProcessorId[checkpoint]!;
+            this.retainedRackId[slot] = this.retainedCheckpointRackId[checkpoint]!;
+            this.retainedRouteId[slot] = this.retainedCheckpointRouteId[checkpoint]!;
+            this.retainedTrackId[slot] = this.retainedCheckpointTrackId[checkpoint]!;
+            this.retainedCaptureEpoch[slot] = this.retainedCheckpointCaptureEpoch[checkpoint]!;
+        }
+        this.retainedCheckpointCount = 0;
         this.nextLineageCount = 0;
         this.processorTransformationActive = false;
+    }
+
+    private checkpointRetainedSlot(slot: number): void {
+        if (!this.processorTransformationActive) {
+            return;
+        }
+        for (let checkpoint = 0; checkpoint < this.retainedCheckpointCount; checkpoint++) {
+            if (this.retainedCheckpointSlot[checkpoint] === slot) {
+                return;
+            }
+        }
+        if (this.retainedCheckpointCount === YEAST_PREVIEW_CAPACITY) {
+            return;
+        }
+        const checkpoint = this.retainedCheckpointCount++;
+        this.retainedCheckpointSlot[checkpoint] = slot;
+        this.retainedCheckpointActive[checkpoint] = this.retainedActive[slot]!;
+        this.retainedCheckpointGeneration[checkpoint] = this.retainedGeneration[slot]!;
+        this.retainedCheckpointReferences[checkpoint] = this.retainedReferences[slot]!;
+        this.retainedCheckpointDurationSamples[checkpoint] = this.retainedDurationSamples[slot]!;
+        this.retainedCheckpointProbability[checkpoint] = this.retainedProbability[slot]!;
+        this.retainedCheckpointHasProbability[checkpoint] = this.retainedHasProbability[slot]!;
+        this.retainedCheckpointProcessorId[checkpoint] = this.retainedProcessorId[slot]!;
+        this.retainedCheckpointRackId[checkpoint] = this.retainedRackId[slot]!;
+        this.retainedCheckpointRouteId[checkpoint] = this.retainedRouteId[slot]!;
+        this.retainedCheckpointTrackId[checkpoint] = this.retainedTrackId[slot]!;
+        this.retainedCheckpointCaptureEpoch[checkpoint] = this.retainedCaptureEpoch[slot]!;
     }
 
     recordProcessorEvent(event: MidiEvent, processorId: string, bypassed: boolean, failed: boolean): void {
@@ -934,13 +1011,27 @@ export class YeastPreviewSidecar {
     }
 
     private resetRouteMetadata(index: number): void {
-        this.routePreviousBlockStart[index] = 0;
-        this.routePreviousBlockEnd[index] = 0;
-        this.routePreviousPpq[index] = 0;
-        this.routePreviousSamplesPerBeat[index] = 0;
-        this.routeHasPreviousBlock[index] = 0;
+        this.routeDiscontinuityEpoch[index] = 0;
+        this.routeHasDiscontinuityEpoch[index] = 0;
         this.routeProjectionVersion[index] = -1;
         this.routeDeferredDrops[index] = 0;
+    }
+
+    private invalidateRouteRetained(rackId: string, routeId: string): void {
+        for (let index = 0; index < YEAST_PREVIEW_CAPACITY; index++) {
+            if (
+                this.retainedActive[index] === 1 &&
+                this.retainedRackId[index] === rackId &&
+                this.retainedRouteId[index] === routeId
+            ) {
+                this.retainedActive[index] = 0;
+                this.retainedReferences[index] = 0;
+                this.retainedProcessorId[index] = '';
+                this.retainedRackId[index] = '';
+                this.retainedRouteId[index] = '';
+                this.retainedTrackId[index] = '';
+            }
+        }
     }
 
     private invalidateRoutePending(rackId: string, routeId: string): void {

@@ -66,6 +66,7 @@ type TransportInfo = {
     loopEnabled: boolean;
     loopStartPpq: number;
     loopEndPpq: number;
+    discontinuityEpoch?: number;
 };
 
 export type SchedulerCancellation = {
@@ -194,6 +195,7 @@ export async function scheduleMidiNotes(
                             loopEnabled: transport.loopStart < transport.loopEnd,
                             loopStartPpq: transport.loopStart,
                             loopEndPpq: transport.loopEnd,
+                            discontinuityEpoch: cancellation?.generation,
                         };
 
                         const midiEvents: MidiEvent[] = [];

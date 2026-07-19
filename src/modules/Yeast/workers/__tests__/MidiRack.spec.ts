@@ -128,6 +128,47 @@ class ThrowingProcessor extends PassthroughProcessor {
     }
 }
 
+class DecisionThenThrowProcessor extends PassthroughProcessor {
+    override processMidi(
+        input: readonly MidiEvent[],
+        _output: MidiEvent[],
+        _transport: TransportInfo,
+        preview?: YeastPreviewDecisionSink
+    ): void {
+        const event = input.find(isNoteOn);
+        if (event?.kind.type === 'noteOn') {
+            preview?.recordDecision(
+                event.timeSamples,
+                64,
+                event.kind.note,
+                event.kind.velocity,
+                0.25,
+                false,
+                this.id,
+                event.trackId
+            );
+        }
+        throw new Error('boom after preview decision');
+    }
+}
+
+class RetainAllThenThrowProcessor extends PassthroughProcessor {
+    override processMidi(
+        input: readonly MidiEvent[],
+        _output: MidiEvent[],
+        _transport: TransportInfo,
+        preview?: YeastPreviewDecisionSink
+    ): void {
+        const source = input.find(isNoteOn);
+        if (source && preview) {
+            for (let index = 0; index < 512; index++) {
+                preview.retainDecisionLineage(source);
+            }
+        }
+        throw new Error('boom after retained lineage');
+    }
+}
+
 class PreviewProbeProcessor extends PassthroughProcessor {
     receivedPreview = false;
 
@@ -185,6 +226,7 @@ class DecisionSourceProcessor extends PassthroughProcessor {
 
 class LineageTokenProbeProcessor extends PassthroughProcessor {
     retainedType: string | undefined;
+    retainedToken: number | undefined;
 
     override processMidi(
         input: readonly MidiEvent[],
@@ -195,7 +237,8 @@ class LineageTokenProbeProcessor extends PassthroughProcessor {
         for (const event of input) {
             output.push(event);
             if (event.kind.type === 'noteOn') {
-                this.retainedType = typeof preview?.retainDecisionLineage(event);
+                this.retainedToken = preview?.retainDecisionLineage(event);
+                this.retainedType = typeof this.retainedToken;
             }
         }
     }
@@ -570,6 +613,56 @@ describe('MidiRack', () => {
             if (page) {
                 rack.releasePreviewPage(page);
             }
+        });
+
+        it('rolls back preview decisions when a processor throws after recording one', () => {
+            const rack = new MidiRack();
+            rack.addProcessor(new DecisionThenThrowProcessor('throws-after-decision'));
+
+            const output = rack.processBlock([noteOn(0, 60), noteOff(64, 60)], 0, 128, transport, 'track-a', true);
+            const preview = takePreviewBlock(rack);
+
+            expect(output).toMatchObject([noteOn(0, 60), noteOff(64, 60)]);
+            expect(preview.records).toMatchObject([
+                { phase: 'open', pitch: 60, probability: null, realized: true },
+                { phase: 'closed', pitch: 60, probability: null, realized: true },
+            ]);
+            expect(preview.records[0]?.eventId).toBe(preview.records[1]?.eventId);
+            expect(preview.provenance).toEqual([
+                { processorId: 'throws-after-decision', eventCount: 0, bypassed: false, failed: true },
+            ]);
+        });
+
+        it('restores retained-lineage capacity when a processor throws after consuming it', () => {
+            const rack = new MidiRack();
+            const probe = new LineageTokenProbeProcessor('probe');
+            rack.addProcessor(new DecisionSourceProcessor('decision-source'));
+            rack.addProcessor(new RetainAllThenThrowProcessor('throws-after-retain'));
+            rack.addProcessor(probe);
+
+            const output = rack.processBlock([noteOn(0, 60)], 0, 128, transport, 'track-a', true);
+
+            expect(output).toMatchObject([noteOn(0, 60)]);
+            expect(probe.retainedToken).toBeGreaterThan(0);
+            expect(takePreviewBlock(rack).records).toMatchObject([
+                { phase: 'open', pitch: 60, processorId: 'decision-source', realized: true },
+            ]);
+        });
+
+        it('publishes bounded preview for a default rack while passing audible events through', () => {
+            const rack = new MidiRack();
+            const input = [noteOn(0, 60), noteOff(64, 60)];
+
+            const output = rack.processBlock(input, 0, 128, transport, 'track-a', true);
+            const preview = takePreviewBlock(rack);
+
+            expect(output).toEqual(input);
+            expect(preview.records).toMatchObject([
+                { phase: 'open', pitch: 60, realized: true },
+                { phase: 'closed', pitch: 60, realized: true },
+            ]);
+            expect(preview.records).toHaveLength(2);
+            expect(preview.provenance).toEqual([]);
         });
 
         it('captures a down-strum in the same stable scheduled order as audible output', () => {
@@ -1204,6 +1297,36 @@ describe('MidiRack', () => {
             ]);
         });
 
+        it('keeps preview lineage across repeated calls that cover the same loop window', () => {
+            const rack = new MidiRack();
+            rack.addProcessor(new PassthroughProcessor('p1'));
+
+            rack.processBlock([noteOn(0, 60)], 0, 128, transport, 'track-a', true);
+            const opened = takePreviewBlock(rack);
+            rack.processBlock([noteOff(64, 60)], 0, 128, transport, 'track-a', true);
+            const closed = takePreviewBlock(rack);
+
+            expect(opened.records).toMatchObject([{ phase: 'open', pitch: 60 }]);
+            expect(closed.reset).toBe(false);
+            expect(closed.records).toMatchObject([{ phase: 'closed', pitch: 60 }]);
+            expect(closed.records[0]?.eventId).toBe(opened.records[0]?.eventId);
+        });
+
+        it('keeps preview lineage across realtime note windows separated by human timing', () => {
+            const rack = new MidiRack();
+            rack.addProcessor(new PassthroughProcessor('p1'));
+
+            rack.processBlock([noteOn(1000, 60)], 1000, 1128, transport, 'track-a', true);
+            const opened = takePreviewBlock(rack);
+            rack.processBlock([noteOff(5000, 60)], 5000, 5128, transport, 'track-a', true);
+            const closed = takePreviewBlock(rack);
+
+            expect(opened.records).toMatchObject([{ phase: 'open', pitch: 60 }]);
+            expect(closed.reset).toBe(false);
+            expect(closed.records).toMatchObject([{ phase: 'closed', pitch: 60 }]);
+            expect(closed.records[0]?.eventId).toBe(opened.records[0]?.eventId);
+        });
+
         it.each([
             {
                 discontinuity: 'seek',
@@ -1226,7 +1349,7 @@ describe('MidiRack', () => {
         ])('invalidates pending preview notes across a transport $discontinuity', (testCase) => {
             const rack = new MidiRack();
             rack.addProcessor(new PassthroughProcessor('p1'));
-            const firstTransport = { ...transport, ppqPosition: 4 };
+            const firstTransport = { ...transport, ppqPosition: 4, discontinuityEpoch: 1 };
             rack.processBlock([noteOn(0, 60)], 0, 128, firstTransport, 'track-a', true);
             expect(takePreviewBlock(rack).records).toMatchObject([{ pitch: 60, phase: 'open' }]);
 
@@ -1238,7 +1361,7 @@ describe('MidiRack', () => {
                 ],
                 testCase.nextStart,
                 testCase.nextEnd,
-                testCase.nextTransport,
+                { ...testCase.nextTransport, discontinuityEpoch: 2 },
                 'track-a',
                 true
             );
@@ -1249,14 +1372,24 @@ describe('MidiRack', () => {
         it('publishes an empty reset when a transport discontinuity invalidates open preview state', () => {
             const rack = new MidiRack('rack-a');
             rack.addProcessor(new PassthroughProcessor('p1'));
-            rack.processBlock([noteOn(0, 60)], 0, 128, transport, 'track-a', true, 'rack-a', 'route-a', 1);
+            rack.processBlock(
+                [noteOn(0, 60)],
+                0,
+                128,
+                { ...transport, discontinuityEpoch: 1 },
+                'track-a',
+                true,
+                'rack-a',
+                'route-a',
+                1
+            );
             takePreviewBlock(rack);
 
             rack.processBlock(
                 [],
                 4096,
                 4224,
-                { ...transport, ppqPosition: 10 },
+                { ...transport, ppqPosition: 10, discontinuityEpoch: 2 },
                 'track-a',
                 true,
                 'rack-a',
