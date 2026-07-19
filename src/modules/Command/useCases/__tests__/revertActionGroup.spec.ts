@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { revertActionGroup } from '../revertActionGroup';
 
-import type { UndoEntry } from '../../models/UndoEntry';
+import type { ActionUndoEntry, UndoEntry } from '../../models/UndoEntry';
 
 const mocks = vi.hoisted(() => ({
     undoStoreValue: {
@@ -46,32 +46,53 @@ function actionEntry(id: string, groupId: string | undefined): UndoEntry {
     };
 }
 
+function adjustmentEntry(id: string, mix: number, previous: number): ActionUndoEntry {
+    return {
+        kind: 'action',
+        id,
+        label: id,
+        timestamp: 0,
+        source: 'ai',
+        groupId: 'g1',
+        action: { type: 'setLayerMix', payload: { layerId: 'layer-1', mix } },
+        inverseAction: {
+            type: 'restoreAdjustmentLayerMutation',
+            payload: {
+                adjustmentMutationId: `mutation-${id}`,
+                operation: {
+                    kind: 'restore-mix',
+                    layerId: 'layer-1',
+                    previous,
+                    expected: mix,
+                },
+                staleTransitions: [],
+            },
+        },
+    };
+}
+
 describe('revertActionGroup', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         mocks.undoStoreValue.value = { past: [], future: [] };
     });
 
-    it('reverts every entry newest-first without undo or macro recording and rebuilds the split', async () => {
+    it('reverts an adjustment group through one owning aggregate inverse and rebuilds the split', async () => {
         const other = actionEntry('keep', 'g0');
-        const g1 = actionEntry('1', 'g1');
-        const g2 = actionEntry('2', 'g1');
+        const g1 = adjustmentEntry('1', 0.5, 0.25);
+        const g2 = adjustmentEntry('2', 0.75, 0.5);
         mocks.undoStoreValue.value = { past: [other, g1, g2], future: [] };
 
-        await revertActionGroup('g1');
+        await expect(revertActionGroup('g1')).resolves.toBe(true);
 
-        // Inverse replays must not push fresh undo entries or leak into macro recording.
-        expect(mocks.executeAppAction).toHaveBeenNthCalledWith(
-            1,
-            { type: 'toggleRecording' },
+        expect(mocks.executeAppAction).toHaveBeenCalledOnce();
+        expect(mocks.executeAppAction).toHaveBeenCalledWith(
+            {
+                type: 'restoreAdjustmentLayerMutationBatch',
+                payload: { mutations: [g2.inverseAction?.payload, g1.inverseAction?.payload] },
+            },
             { skipUndo: true, skipMacroRecording: true }
         );
-        expect(mocks.executeAppAction).toHaveBeenNthCalledWith(
-            2,
-            { type: 'toggleRecording' },
-            { skipUndo: true, skipMacroRecording: true }
-        );
-        expect(mocks.executeAppAction).toHaveBeenCalledTimes(2);
         // Group entries are stripped from past and prepended (in order) to future.
         expect(mocks.undoStoreSet).toHaveBeenCalledWith({
             past: [other],
@@ -85,13 +106,12 @@ describe('revertActionGroup', () => {
         const g1 = actionEntry('1', 'g1');
         mocks.undoStoreValue.value = { past: [g1], future: [] };
 
-        await revertActionGroup('g1');
+        await expect(revertActionGroup('g1')).resolves.toBe(true);
 
         expect(mocks.undoTreeMoveTo).toHaveBeenCalledWith(null);
     });
 
-    it('rolls back completed group inverses when an older inverse rejects', async () => {
-        const failure = new Error('older inverse conflict');
+    it('refuses a non-transactional multi-entry group before replay', async () => {
         const older = actionEntry('older', 'g1');
         const newer = actionEntry('newer', 'g1');
         if (older.kind !== 'action' || newer.kind !== 'action') {
@@ -107,23 +127,14 @@ describe('revertActionGroup', () => {
                 domain_value = 'partially-undone';
                 return Promise.resolve();
             }
-            if (action.type === 'toggleRecording') {
-                throw failure;
-            }
-            if (action.type === 'toggleLoop') {
-                domain_value = 'original';
-            }
             return Promise.resolve();
         });
         mocks.undoStoreValue.value = { past: [older, newer], future: [] };
 
-        await expect(revertActionGroup('g1')).rejects.toBe(failure);
+        await expect(revertActionGroup('g1')).resolves.toBe(false);
 
         expect(domain_value).toBe('original');
-        expect(mocks.executeAppAction).toHaveBeenNthCalledWith(3, newer.action, {
-            skipUndo: true,
-            skipMacroRecording: true,
-        });
+        expect(mocks.executeAppAction).not.toHaveBeenCalled();
         expect(mocks.undoStoreSet).not.toHaveBeenCalled();
         expect(mocks.undoTreeMoveTo).not.toHaveBeenCalled();
     });
@@ -141,7 +152,7 @@ describe('revertActionGroup', () => {
         };
         mocks.undoStoreValue.value = { past: [inert], future: [] };
 
-        await revertActionGroup('g1');
+        await expect(revertActionGroup('g1')).resolves.toBe(false);
 
         expect(mocks.undoStoreSet).not.toHaveBeenCalled();
         expect(mocks.undoTreeMoveTo).not.toHaveBeenCalled();
@@ -150,7 +161,7 @@ describe('revertActionGroup', () => {
     it('is a no-op when the group is absent from past', async () => {
         mocks.undoStoreValue.value = { past: [actionEntry('a', 'gX')], future: [] };
 
-        await revertActionGroup('g1');
+        await expect(revertActionGroup('g1')).resolves.toBe(false);
 
         expect(mocks.executeAppAction).not.toHaveBeenCalled();
         expect(mocks.undoStoreSet).not.toHaveBeenCalled();

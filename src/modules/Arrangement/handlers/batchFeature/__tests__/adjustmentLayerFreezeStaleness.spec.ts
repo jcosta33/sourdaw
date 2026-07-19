@@ -156,7 +156,7 @@ const adjustment_layer_mutation_cases = [
         label: 'set insertion index',
         layers: [create_layer({ affectedTrackIds: [], insertionIndex: 1 })],
         action: { type: 'setLayerInsertionIndex', payload: { layerId: 'layer-1', insertionIndex: 2 } },
-        staleTrackIds: ['track-b', 'track-c'],
+        staleTrackIds: ['track-b'],
     },
 ] satisfies AdjustmentLayerMutationCase[];
 
@@ -190,6 +190,33 @@ describe('adjustmentLayerFreezeStaleness', () => {
         await executeAppAction({ type: 'setLayerMix', payload: { layerId: 'layer-1', mix: 0.75 } });
 
         expect(get_track('track-a').freezeState.status).toBe('stale');
+        expect(get_track('track-b').freezeState.status).toBe('frozen');
+        expect(get_track('track-c').freezeState.status).toBe('frozen');
+    });
+
+    it.each([
+        {
+            label: 'a parameter edit on a disabled layer',
+            layers: [create_layer({ enabled: false })],
+            action: {
+                type: 'setLayerParameter',
+                payload: { layerId: 'layer-1', paramName: 'Gain', value: 6 },
+            } satisfies AppAction,
+        },
+        {
+            label: 'a normalized mix no-op',
+            layers: [create_layer({ mix: 1 })],
+            action: {
+                type: 'setLayerMix',
+                payload: { layerId: 'layer-1', mix: 2 },
+            } satisfies AppAction,
+        },
+    ])('does not stale frozen tracks for $label', async ({ layers, action }) => {
+        adjustmentLayerStore.set({ layers });
+
+        await executeAppAction(action);
+
+        expect(get_track('track-a').freezeState.status).toBe('frozen');
         expect(get_track('track-b').freezeState.status).toBe('frozen');
         expect(get_track('track-c').freezeState.status).toBe('frozen');
     });
@@ -273,6 +300,43 @@ describe('adjustmentLayerFreezeStaleness', () => {
         expect(get_track('track-a').freezeState.status).toBe('stale');
         expect(undoStore.value?.past).toHaveLength(1);
         expect(undoStore.value?.future).toHaveLength(0);
+
+        unsubscribe_layer();
+        unsubscribe_track();
+    });
+
+    it('undoes a multi-action adjustment group through one observable aggregate commit', async () => {
+        const group_options = {
+            groupId: 'aggregate-group',
+            groupLabel: 'Aggregate group',
+            atomicUndoGroup: true,
+        };
+        await executeAppAction({ type: 'setLayerMix', payload: { layerId: 'layer-1', mix: 0.75 } }, group_options);
+        await executeAppAction(
+            { type: 'setLayerParameter', payload: { layerId: 'layer-1', paramName: 'Gain', value: 6 } },
+            group_options
+        );
+        const observations: Array<{ mix: number; gain: number; status: Track['freezeState']['status'] }> = [];
+        const observe = (): void => {
+            observations.push({
+                mix: get_layer_state().layers[0]?.mix ?? -1,
+                gain: get_layer_state().layers[0]?.parameters[0]?.value ?? -1,
+                status: get_track('track-a').freezeState.status,
+            });
+        };
+        const unsubscribe_layer = adjustmentLayerStore.subscribe(observe);
+        const unsubscribe_track = trackStore.subscribe(observe);
+
+        await undo();
+
+        expect(get_layer_state().layers[0]?.mix).toBe(0.25);
+        expect(get_layer_state().layers[0]?.parameters[0]?.value).toBe(0);
+        expect(get_track('track-a').freezeState.status).toBe('frozen');
+        expect(observations).not.toContainEqual({ mix: 0.25, gain: 6, status: 'stale' });
+        expect(observations).not.toContainEqual({ mix: 0.75, gain: 0, status: 'stale' });
+        expect(observations.every((entry) => entry.mix === 0.25 && entry.gain === 0 && entry.status === 'frozen')).toBe(
+            true
+        );
 
         unsubscribe_layer();
         unsubscribe_track();
@@ -472,7 +536,11 @@ describe('adjustmentLayerFreezeStaleness', () => {
         'rolls back a partially applied adjustment group through %s when an older inverse conflicts',
         async (revert_method) => {
             const group_id = `group-${revert_method}`;
-            const group_options = { groupId: group_id, groupLabel: 'Adjustment group' };
+            const group_options = {
+                groupId: group_id,
+                groupLabel: 'Adjustment group',
+                atomicUndoGroup: true,
+            };
             await executeAppAction({ type: 'setLayerMix', payload: { layerId: 'layer-1', mix: 0.75 } }, group_options);
             await executeAppAction(
                 {

@@ -2,9 +2,13 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { cacheAudioBuffer } from '#/modules/AudioEngine/useCases';
 
+import { createTrack } from '../../../models/Track';
 import { updateTrack } from '../../../repositories/track/updateTrack';
+import { adjustmentLayerStore } from '../../../stores/adjustmentLayer';
 import { trackStore } from '../../../stores/trackStore';
-import { freezeTrack } from '../freezeTrack';
+import { commitAdjustmentLayerMutation } from '../../adjustmentLayer/commitAdjustmentLayerMutation';
+import { setLayerMix } from '../../adjustmentLayer/setLayerMix';
+import { activeFreezeTasks, freezeTrack } from '../freezeTrack';
 import { renderTrackOffline } from '../renderOffline';
 
 vi.mock('../../../repositories/track/updateTrack', () => ({
@@ -26,7 +30,19 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
 describe('freezeTrack', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        activeFreezeTasks.clear();
         trackStore.set({ tracks: [], selectedTrackId: null });
+        adjustmentLayerStore.set({ layers: [] });
+        vi.mocked(updateTrack).mockImplementation((track_id, updater) => {
+            const state = trackStore.value;
+            if (!state) {
+                return;
+            }
+            trackStore.set({
+                ...state,
+                tracks: state.tracks.map((track) => (track.id === track_id ? updater(track) : track)),
+            });
+        });
         vi.useFakeTimers();
         vi.setSystemTime(1234567890);
     });
@@ -120,6 +136,63 @@ describe('freezeTrack', () => {
 
         expect(cacheAudioBuffer).toHaveBeenCalledWith({ buffer: renderedBuffer, bufferId: expectedBufferId });
         expect(renderTrackOffline).toHaveBeenCalledWith(expect.any(Object), 2, 6 + 4, expect.any(Object)); // 6 end + 4 tail
+    });
+
+    it('discards an in-flight re-freeze when an adjustment layer changes', async () => {
+        const stale_track = {
+            ...createTrack({ id: 't1', name: 'Track', kind: 'audio' }),
+            frozen: true,
+            frozenBufferId: 'old-buffer',
+            freezeState: {
+                status: 'stale' as const,
+                freezeId: 'old-freeze',
+                frozenBufferId: 'old-buffer',
+                sourceContentHash: 'old-source',
+            },
+        };
+        trackStore.set({ tracks: [stale_track], selectedTrackId: null, ghostClips: [] });
+        adjustmentLayerStore.set({
+            layers: [
+                {
+                    id: 'layer-1',
+                    name: 'Layer',
+                    effectType: 'volume',
+                    parameters: [{ name: 'Gain', value: 0, min: -60, max: 12, unit: 'dB' }],
+                    affectedTrackIds: ['t1'],
+                    insertionIndex: 0,
+                    regions: [],
+                    enabled: true,
+                    mix: 0.25,
+                    color: '#fff',
+                },
+            ],
+        });
+        let complete_render!: (buffer: AudioBuffer) => void;
+        vi.mocked(renderTrackOffline).mockReturnValue(
+            new Promise<AudioBuffer>((resolve) => {
+                complete_render = resolve;
+            })
+        );
+
+        const freeze = freezeTrack('t1');
+        expect(trackStore.value?.tracks[0]?.freezeState.status).toBe('freezing');
+
+        commitAdjustmentLayerMutation({
+            adjustmentMutationId: 'adjustment-during-freeze',
+            mutation: () => setLayerMix('layer-1', 0.75),
+        });
+        complete_render({ sampleRate: 44_100, numberOfChannels: 2 } as AudioBuffer);
+        await freeze;
+
+        expect(trackStore.value?.tracks[0]).toMatchObject({
+            frozen: true,
+            frozenBufferId: 'old-buffer',
+            freezeState: {
+                status: 'stale',
+                frozenBufferId: 'old-buffer',
+            },
+        });
+        expect(cacheAudioBuffer).not.toHaveBeenCalled();
     });
 
     it('handles render failure gracefully', async () => {

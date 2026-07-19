@@ -9,6 +9,27 @@ import { renderTrackOffline } from './renderOffline';
 
 export const activeFreezeTasks = new Map<string, AbortController>();
 
+function create_freezing_state(track: NonNullable<typeof trackStore.value>['tracks'][number]) {
+    const freeze_state = { ...track.freezeState };
+    delete freeze_state.adjustmentLayerMutationId;
+    delete freeze_state.errorMessage;
+    return { ...freeze_state, status: 'freezing' as const, renderProgress: 0 };
+}
+
+function invalidate_finished_render(trackId: string): void {
+    updateTrack(trackId, (track) => {
+        if (track.freezeState.status !== 'freezing') {
+            return track;
+        }
+        if (track.frozen && track.frozenBufferId && track.freezeState.frozenBufferId) {
+            const freeze_state = { ...track.freezeState, status: 'stale' as const };
+            delete freeze_state.renderProgress;
+            return { ...track, freezeState: freeze_state };
+        }
+        return { ...track, frozen: false, freezeState: { status: 'unfrozen' } };
+    });
+}
+
 export async function freezeTrack(trackId: string): Promise<void> {
     const state = trackStore.value;
     if (!state) {
@@ -28,7 +49,7 @@ export async function freezeTrack(trackId: string): Promise<void> {
 
     updateTrack(trackId, (time) => ({
         ...time,
-        freezeState: { ...time.freezeState, status: 'freezing', renderProgress: 0 },
+        freezeState: create_freezing_state(time),
     }));
 
     try {
@@ -61,15 +82,30 @@ export async function freezeTrack(trackId: string): Promise<void> {
             onProgress: (param) => {
                 updateTrack(trackId, (time) => ({
                     ...time,
-                    freezeState: { ...time.freezeState, renderProgress: param },
+                    freezeState:
+                        activeFreezeTasks.get(trackId) === abortController && time.freezeState.status === 'freezing'
+                            ? { ...time.freezeState, renderProgress: param }
+                            : time.freezeState,
                 }));
             },
         });
 
-        activeFreezeTasks.delete(trackId);
-
         if (!renderedBuffer) {
             throw new Error('Render failed');
+        }
+
+        if (activeFreezeTasks.get(trackId) !== abortController) {
+            return;
+        }
+        const current_track = trackStore.value?.tracks.find((candidate) => candidate.id === trackId);
+        if (
+            !current_track ||
+            current_track.freezeState.status !== 'freezing' ||
+            current_track.freezeState.adjustmentLayerMutationId
+        ) {
+            activeFreezeTasks.delete(trackId);
+            invalidate_finished_render(trackId);
+            return;
         }
 
         const freezeId = `freeze-${trackId}-${Date.now()}`;
@@ -93,7 +129,19 @@ export async function freezeTrack(trackId: string): Promise<void> {
                 renderedAt: Date.now(),
             },
         }));
+        activeFreezeTasks.delete(trackId);
     } catch (error) {
+        const active_task = activeFreezeTasks.get(trackId);
+        if (active_task !== abortController) {
+            if (!active_task && abortController.signal.aborted) {
+                updateTrack(trackId, (time) =>
+                    time.freezeState.status === 'freezing'
+                        ? { ...time, frozen: false, freezeState: { status: 'unfrozen' } }
+                        : time
+                );
+            }
+            return;
+        }
         activeFreezeTasks.delete(trackId);
 
         if (abortController.signal.aborted) {

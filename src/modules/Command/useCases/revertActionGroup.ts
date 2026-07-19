@@ -10,20 +10,20 @@ import { undoTreeMoveTo } from './undoTree/undoTreeMoveTo';
  * by hand. The entries are undone newest-first, removed from `past`, and pushed
  * onto `future` so a redo re-applies them in order.
  */
-export async function revertActionGroup(groupId: string): Promise<void> {
+export async function revertActionGroup(groupId: string): Promise<boolean> {
     const state = undoStore.value;
     if (!state) {
-        return;
+        return false;
     }
 
     const groupEntries = state.past.filter((entry) => entry.groupId === groupId);
     if (groupEntries.length === 0) {
-        return;
+        return false;
     }
 
     const reverted = await revertUndoEntriesAtomically(groupEntries);
     if (!reverted) {
-        return;
+        return false;
     }
 
     const newPast = state.past.filter((entry) => entry.groupId !== groupId);
@@ -32,4 +32,5 @@ export async function revertActionGroup(groupId: string): Promise<void> {
         future: [...groupEntries, ...state.future],
     });
     undoTreeMoveTo(newPast.length > 0 ? newPast[newPast.length - 1]!.id : null);
+    return true;
 }

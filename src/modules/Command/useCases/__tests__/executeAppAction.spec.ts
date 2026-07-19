@@ -138,7 +138,9 @@ describe('executeAppAction', () => {
 
     it('executes a registered handler', async () => {
         const action: SetEditingToolAction = { type: 'setEditingTool', payload: { tool: 'marquee' } };
-        const handler = create_mock_handler<SetEditingToolAction>();
+        const handler = create_mock_handler<SetEditingToolAction>({
+            describe: () => ({ label: 'Mock Label', inverseAction: { type: 'togglePlayback' } }),
+        });
         registerHandlerMap({ [action.type]: handler });
 
         await executeAppAction(action);
@@ -163,7 +165,9 @@ describe('executeAppAction', () => {
             waitForSnapshotTransaction,
         });
         const action: SetEditingToolAction = { type: 'setEditingTool', payload: { tool: 'marquee' } };
-        const handler = create_mock_handler<SetEditingToolAction>();
+        const handler = create_mock_handler<SetEditingToolAction>({
+            describe: () => ({ label: 'Mock Label', inverseAction: { type: 'togglePlayback' } }),
+        });
         registerHandlerMap({ [action.type]: handler });
 
         const execution = executeAppAction(action);
@@ -208,7 +212,9 @@ describe('executeAppAction', () => {
 
     it('suppresses macro recording independently of undo-history recording', async () => {
         const action: SetEditingToolAction = { type: 'setEditingTool', payload: { tool: 'marquee' } };
-        const handler = create_mock_handler<SetEditingToolAction>();
+        const handler = create_mock_handler<SetEditingToolAction>({
+            describe: () => ({ label: 'Mock Label', inverseAction: { type: 'togglePlayback' } }),
+        });
         registerHandlerMap({ [action.type]: handler });
 
         await executeAppAction(action, { skipMacroRecording: true });
@@ -251,21 +257,53 @@ describe('executeAppAction', () => {
         expect(mocks.recordActionHistoryMetadata).not.toHaveBeenCalled();
     });
 
-    it('rejects an inverse-less action before it can join an atomic group', async () => {
+    it('executes a non-undoable action with group metadata outside undo history', async () => {
+        const action: ToggleSidebarAction = { type: 'toggleSidebar' };
+        const handler = create_mock_handler<ToggleSidebarAction>();
+        handler.undoable = false;
+        registerHandlerMap({ [action.type]: handler });
+
+        await executeAppAction(action, { groupId: 'display-group', groupLabel: 'Display group' });
+
+        expect(handler.execute).toHaveBeenCalledWith(action);
+        expect(mocks.recordAction).toHaveBeenCalledWith(action);
+        expect(mocks.commitUndoEntry).not.toHaveBeenCalled();
+        expect(mocks.recordActionHistoryMetadata).not.toHaveBeenCalled();
+    });
+
+    it('keeps display grouping separate from atomic undo admission', async () => {
         const action: SetSnapValueAction = { type: 'setSnapValue', payload: { value: 0.25 } };
         const handler = create_mock_handler<SetSnapValueAction>({
-            describe: () => ({ label: 'No inverse' }),
+            describe: () => ({ label: 'Grouped display', inverseAction: { type: 'togglePlayback' } }),
         });
         registerHandlerMap({ [action.type]: handler });
 
-        await expect(executeAppAction(action, { groupId: 'atomic-group', groupLabel: 'Atomic group' })).rejects.toThrow(
-            'concrete inverse'
-        );
+        await executeAppAction(action, { groupId: 'display-group', groupLabel: 'Display group' });
 
-        expect(handler.execute).not.toHaveBeenCalled();
-        expect(mocks.recordAction).not.toHaveBeenCalled();
-        expect(mocks.commitUndoEntry).not.toHaveBeenCalled();
-        expect(mocks.recordActionHistoryMetadata).not.toHaveBeenCalled();
+        expect(mocks.recordActionHistoryMetadata).toHaveBeenCalledWith(
+            expect.objectContaining({ groupId: 'display-group', groupLabel: 'Display group' })
+        );
+        const undo_entry = mocks.commitUndoEntry.mock.calls[0]?.[0];
+        expect(undo_entry?.groupId).toBeUndefined();
+        expect(undo_entry?.groupLabel).toBeUndefined();
+    });
+
+    it('admits an explicitly atomic action into its undo group', async () => {
+        const action: SetSnapValueAction = { type: 'setSnapValue', payload: { value: 0.25 } };
+        const handler = create_mock_handler<SetSnapValueAction>({
+            describe: () => ({ label: 'Atomic group', inverseAction: { type: 'togglePlayback' } }),
+        });
+        registerHandlerMap({ [action.type]: handler });
+
+        await executeAppAction(action, {
+            groupId: 'atomic-group',
+            groupLabel: 'Atomic group',
+            atomicUndoGroup: true,
+        });
+
+        expect(mocks.commitUndoEntry).toHaveBeenCalledWith(
+            expect.objectContaining({ groupId: 'atomic-group', groupLabel: 'Atomic group' })
+        );
     });
 
     it('should log and rethrow rejected registered handlers without recording side effects', async () => {
@@ -414,7 +452,7 @@ describe('executeAppAction', () => {
         const handler = create_mock_handler<SetSnapValueAction>({
             describe: () => {
                 order.push('describe');
-                return { label: 'Ordered' };
+                return { label: 'Ordered', inverseAction: { type: 'togglePlayback' } };
             },
             execute: async () => {
                 order.push('execute:start');

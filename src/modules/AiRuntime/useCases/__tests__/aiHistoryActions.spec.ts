@@ -3,7 +3,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { revertAiActionGroup } from '../aiHistoryActions';
 
 vi.mock('#/modules/Command/useCases', () => ({
-    revertActionGroup: vi.fn().mockResolvedValue(undefined),
+    revertActionGroup: vi.fn().mockResolvedValue(true),
 }));
 
 vi.mock('#/modules/AiRuntime/stores/aiActionHistoryStore', () => ({
@@ -30,5 +30,23 @@ describe('revertAiActionGroup', () => {
 
         expect(revertActionGroup).toHaveBeenCalledWith('g1');
         expect(markGroupReverted).toHaveBeenCalledWith('g1');
+    });
+
+    it('does not mark a group reverted when Command refuses the revert', async () => {
+        const { revertActionGroup } = await import('#/modules/Command/useCases');
+        const { markGroupReverted } = await import('#/modules/AiRuntime/stores/aiActionHistoryStore');
+        vi.mocked(revertActionGroup).mockResolvedValueOnce(false);
+
+        await revertAiActionGroup({
+            id: 'a1',
+            prompt: 'p',
+            actions: [],
+            groupId: 'g1',
+            timestamp: 0,
+            reverted: false,
+        });
+
+        expect(revertActionGroup).toHaveBeenCalledWith('g1');
+        expect(markGroupReverted).not.toHaveBeenCalled();
     });
 });

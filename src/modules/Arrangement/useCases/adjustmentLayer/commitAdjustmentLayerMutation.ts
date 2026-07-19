@@ -17,29 +17,41 @@ function resolve_affected_track_ids(layer: AdjustmentLayer, tracks: readonly Tra
     return tracks.slice(layer.insertionIndex).map((track) => track.id);
 }
 
-function get_changed_layers(
-    before: readonly AdjustmentLayer[],
-    after: readonly AdjustmentLayer[]
-): readonly AdjustmentLayer[] {
-    const before_by_id = new Map(before.map((layer) => [layer.id, layer]));
-    const after_by_id = new Map(after.map((layer) => [layer.id, layer]));
-    const changed_layers: AdjustmentLayer[] = [];
+function normalize_number(value: number, minimum: number, maximum: number): number {
+    return Math.max(minimum, Math.min(maximum, value));
+}
 
-    for (const layer_id of new Set([...before_by_id.keys(), ...after_by_id.keys()])) {
-        const before_layer = before_by_id.get(layer_id);
-        const after_layer = after_by_id.get(layer_id);
-        if (before_layer === after_layer) {
-            continue;
-        }
-        if (before_layer) {
-            changed_layers.push(before_layer);
-        }
-        if (after_layer) {
-            changed_layers.push(after_layer);
-        }
-    }
-
-    return changed_layers;
+function create_audible_layer_signature(
+    layers: readonly AdjustmentLayer[],
+    tracks: readonly Track[],
+    track: Track
+): string {
+    return JSON.stringify(
+        layers.flatMap((layer) => {
+            const mix = normalize_number(layer.mix, 0, 1);
+            if (!layer.enabled || mix === 0 || !resolve_affected_track_ids(layer, tracks).includes(track.id)) {
+                return [];
+            }
+            return [
+                {
+                    id: layer.id,
+                    effectType: layer.effectType,
+                    mix,
+                    parameters: layer.parameters.map((parameter) => ({
+                        name: parameter.name,
+                        value: normalize_number(parameter.value, parameter.min, parameter.max),
+                    })),
+                    regions: layer.regions.map((region) => ({
+                        startBeat: region.startBeat,
+                        endBeat: region.endBeat,
+                        blend: region.blend,
+                        fadeInBeats: Math.max(0, region.fadeInBeats),
+                        fadeOutBeats: Math.max(0, region.fadeOutBeats),
+                    })),
+                },
+            ];
+        })
+    );
 }
 
 export function commitAdjustmentLayerMutation({
@@ -61,8 +73,11 @@ export function commitAdjustmentLayerMutation({
             }
 
             const affected_track_ids = new Set(
-                get_changed_layers(before_layers, after_layers).flatMap((layer) =>
-                    resolve_affected_track_ids(layer, track_state.tracks)
+                track_state.tracks.flatMap((track) =>
+                    create_audible_layer_signature(before_layers, track_state.tracks, track) !==
+                    create_audible_layer_signature(after_layers, track_state.tracks, track)
+                        ? [track.id]
+                        : []
                 )
             );
             if (affected_track_ids.size === 0) {
@@ -72,10 +87,20 @@ export function commitAdjustmentLayerMutation({
             const tracks = track_state.tracks.map((track) => {
                 if (
                     !affected_track_ids.has(track.id) ||
-                    !track.frozen ||
-                    (track.freezeState.status !== 'frozen' && track.freezeState.status !== 'stale')
+                    (track.freezeState.status !== 'freezing' &&
+                        (!track.frozen ||
+                            (track.freezeState.status !== 'frozen' && track.freezeState.status !== 'stale')))
                 ) {
                     return track;
+                }
+                if (track.freezeState.status === 'freezing') {
+                    return {
+                        ...track,
+                        freezeState: {
+                            ...track.freezeState,
+                            adjustmentLayerMutationId: adjustmentMutationId,
+                        },
+                    };
                 }
                 return {
                     ...track,

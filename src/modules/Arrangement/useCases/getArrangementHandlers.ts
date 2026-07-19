@@ -5,6 +5,7 @@ import { handleMoveAdjustmentRegion } from '../handlers/batchFeature/handleMoveA
 import { handleRemoveAdjustmentLayer } from '../handlers/batchFeature/handleRemoveAdjustmentLayer';
 import { handleRemoveAdjustmentRegion } from '../handlers/batchFeature/handleRemoveAdjustmentRegion';
 import { handleRestoreAdjustmentLayerMutation } from '../handlers/batchFeature/handleRestoreAdjustmentLayerMutation';
+import { handleRestoreAdjustmentLayerMutationBatch } from '../handlers/batchFeature/handleRestoreAdjustmentLayerMutationBatch';
 import { handleSearchSamples } from '../handlers/batchFeature/handleSearchSamples';
 import { handleSetLayerAffectedTracks } from '../handlers/batchFeature/handleSetLayerAffectedTracks';
 import { handleSetLayerFades } from '../handlers/batchFeature/handleSetLayerFades';
@@ -180,6 +181,7 @@ export function getArrangementHandlers() {
         setLayerAffectedTracks: handleSetLayerAffectedTracks,
         setLayerInsertionIndex: handleSetLayerInsertionIndex,
         restoreAdjustmentLayerMutation: handleRestoreAdjustmentLayerMutation,
+        restoreAdjustmentLayerMutationBatch: handleRestoreAdjustmentLayerMutationBatch,
         ...clipHandlers,
     };
 }

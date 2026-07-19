@@ -150,6 +150,19 @@ export type AdjustmentLayerUndoOperation =
     | { kind: 'restore-affected-tracks'; layerId: string; previous: string[]; expected: string[] }
     | { kind: 'restore-insertion-index'; layerId: string; previous: number; expected: number };
 
+export type AdjustmentLayerStaleTransition = {
+    trackId: string;
+    previousStatus: 'frozen' | 'stale';
+    previousAdjustmentMutationId?: string;
+    frozenArtifact?: AdjustmentFrozenArtifactSnapshot;
+};
+
+export type AdjustmentLayerMutationRestorePayload = {
+    adjustmentMutationId: string;
+    operation: AdjustmentLayerUndoOperation;
+    staleTransitions: AdjustmentLayerStaleTransition[];
+};
+
 export type AutomationMode = 'read' | 'write' | 'touch' | 'latch' | 'off';
 
 type AdjustmentMutationIdentity = {
@@ -582,16 +595,11 @@ export type AppAction =
       }
     | {
           type: 'restoreAdjustmentLayerMutation';
-          payload: {
-              adjustmentMutationId: string;
-              operation: AdjustmentLayerUndoOperation;
-              staleTransitions: Array<{
-                  trackId: string;
-                  previousStatus: 'frozen' | 'stale';
-                  previousAdjustmentMutationId?: string;
-                  frozenArtifact?: AdjustmentFrozenArtifactSnapshot;
-              }>;
-          };
+          payload: AdjustmentLayerMutationRestorePayload;
+      }
+    | {
+          type: 'restoreAdjustmentLayerMutationBatch';
+          payload: { mutations: AdjustmentLayerMutationRestorePayload[] };
       }
     | { type: 'detectTransients'; payload: { clipId: string; sensitivity?: number } }
     | { type: 'quantizeTransients'; payload: { clipId: string } }
@@ -641,6 +649,9 @@ export type ActionHandler<Action extends AppAction = AppAction> = {
 export type ExecuteOptions = {
     groupId?: string;
     groupLabel?: string;
+    /** Admit a concrete inverse into the undo group identified by `groupId`.
+     *  Display/history grouping alone must not claim transactional undo. */
+    atomicUndoGroup?: boolean;
     source?: 'manual' | 'prompt' | 'voice' | 'ai';
     /** When true, skip pushing an undo entry and action history entry.
      *  Use this when the caller manages batch undo externally (e.g. executeDsoEdit). */

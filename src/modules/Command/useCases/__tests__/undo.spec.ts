@@ -59,6 +59,27 @@ function callbackEntry(overrides: Partial<CallbackUndoEntry> = {}): CallbackUndo
     };
 }
 
+function adjustmentEntry(id: string, mix: number, previous: number): ActionUndoEntry {
+    return actionEntry({
+        id,
+        groupId: 'group',
+        action: { type: 'setLayerMix', payload: { layerId: 'layer-1', mix } },
+        inverseAction: {
+            type: 'restoreAdjustmentLayerMutation',
+            payload: {
+                adjustmentMutationId: `mutation-${id}`,
+                operation: {
+                    kind: 'restore-mix',
+                    layerId: 'layer-1',
+                    previous,
+                    expected: mix,
+                },
+                staleTransitions: [],
+            },
+        },
+    });
+}
+
 describe('undo', () => {
     beforeEach(() => {
         mocks.undoStoreSet.mockReset();
@@ -99,35 +120,23 @@ describe('undo', () => {
         });
     });
 
-    it('should undo a whole group newest-first and move it to future in original order', async () => {
+    it('uses one owning aggregate inverse for an adjustment-layer group', async () => {
         const previous = actionEntry({ id: 'previous' });
-        const first = actionEntry({
-            id: 'group-1',
-            label: 'First',
-            action: { type: 'togglePlayback' },
-            inverseAction: { type: 'toggleRecording' },
-            groupId: 'group',
-        });
-        const second = actionEntry({
-            id: 'group-2',
-            label: 'Second',
-            action: { type: 'toggleLoop' },
-            inverseAction: { type: 'stopPlayback' },
-            groupId: 'group',
-        });
+        const first = adjustmentEntry('group-1', 0.5, 0.25);
+        const second = adjustmentEntry('group-2', 0.75, 0.5);
         const future = actionEntry({ id: 'future' });
         mocks.undoStoreValue.value = { past: [previous, first, second], future: [future] };
 
         await undo();
 
-        expect(mocks.executeAppAction).toHaveBeenNthCalledWith(
-            1,
-            { type: 'stopPlayback' },
-            { skipUndo: true, skipMacroRecording: true }
-        );
-        expect(mocks.executeAppAction).toHaveBeenNthCalledWith(
-            2,
-            { type: 'toggleRecording' },
+        expect(mocks.executeAppAction).toHaveBeenCalledOnce();
+        expect(mocks.executeAppAction).toHaveBeenCalledWith(
+            {
+                type: 'restoreAdjustmentLayerMutationBatch',
+                payload: {
+                    mutations: [second.inverseAction?.payload, first.inverseAction?.payload],
+                },
+            },
             { skipUndo: true, skipMacroRecording: true }
         );
         expect(mocks.undoStoreSet).toHaveBeenCalledWith({
@@ -137,8 +146,7 @@ describe('undo', () => {
         expect(mocks.undoTreeMoveTo).toHaveBeenCalledWith('previous');
     });
 
-    it('rolls back completed group inverses when an older inverse rejects', async () => {
-        const failure = new Error('older inverse conflict');
+    it('refuses a multi-entry group without a transactional aggregate before replay', async () => {
         const older = actionEntry({
             id: 'older',
             action: { type: 'togglePlayback' },
@@ -157,23 +165,14 @@ describe('undo', () => {
                 domain_value = 'partially-undone';
                 return Promise.resolve();
             }
-            if (action.type === 'toggleRecording') {
-                throw failure;
-            }
-            if (action.type === 'toggleLoop') {
-                domain_value = 'original';
-            }
             return Promise.resolve();
         });
         mocks.undoStoreValue.value = { past: [older, newer], future: [] };
 
-        await expect(undo()).rejects.toBe(failure);
+        await undo();
 
         expect(domain_value).toBe('original');
-        expect(mocks.executeAppAction).toHaveBeenNthCalledWith(3, newer.action, {
-            skipUndo: true,
-            skipMacroRecording: true,
-        });
+        expect(mocks.executeAppAction).not.toHaveBeenCalled();
         expect(mocks.undoStoreSet).not.toHaveBeenCalled();
         expect(mocks.undoTreeMoveTo).not.toHaveBeenCalled();
     });

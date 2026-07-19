@@ -72,8 +72,7 @@ describe('macro recording across punch undo', () => {
         expect_punch_region(20, 21);
     });
 
-    it('rejects a valid-then-inverse-less mixed macro before applying either action', async () => {
-        const tempo_before = getTransportState()?.tempo;
+    it('executes inverse-less macro actions outside the undoable subset', async () => {
         macroStore.set({
             macros: [
                 {
@@ -90,10 +89,15 @@ describe('macro recording across punch undo', () => {
             currentRecording: [],
         });
 
-        await expect(playMacro('mixed-macro')).rejects.toThrow('concrete inverse');
+        await playMacro('mixed-macro');
+
+        expect_punch_region(20, 21);
+        expect(getTransportState()?.tempo).toBe(140);
+        expect(undoStore.value?.past).toHaveLength(1);
+
+        await undo();
 
         expect_punch_region(0, 16);
-        expect(getTransportState()?.tempo).toBe(tempo_before);
-        expect(undoStore.value?.past).toHaveLength(0);
+        expect(getTransportState()?.tempo).toBe(140);
     });
 });

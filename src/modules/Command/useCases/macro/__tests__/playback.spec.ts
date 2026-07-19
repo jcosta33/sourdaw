@@ -6,19 +6,14 @@ import { playMacro } from '../playback';
 
 const STORAGE_KEY = 'sourdaw:macros';
 
-const { executeAppActionMock, getHandlerMock } = vi.hoisted(() => ({
+const { executeAppActionMock } = vi.hoisted(() => ({
     executeAppActionMock: vi
         .fn<typeof import('../../executeAppAction').executeAppAction>()
         .mockResolvedValue(undefined),
-    getHandlerMock: vi.fn(),
 }));
 
 vi.mock('../../executeAppAction', () => ({
     executeAppAction: executeAppActionMock,
-}));
-
-vi.mock('../../../stores/handlerRegistry', () => ({
-    getHandler: getHandlerMock,
 }));
 
 describe('playMacro', () => {
@@ -33,19 +28,13 @@ describe('playMacro', () => {
         localStorage.removeItem(STORAGE_KEY);
         macroStore.set({ macros: [macro], recording: false, currentRecording: [] });
         executeAppActionMock.mockClear();
-        getHandlerMock.mockReset();
-        getHandlerMock.mockReturnValue({
-            execute: vi.fn(),
-            describe: () => ({ label: 'Toggle', inverseAction: { type: 'togglePlayback' } }),
-            undoable: true,
-        });
     });
 
     afterEach(() => {
         localStorage.removeItem(STORAGE_KEY);
     });
 
-    it('should execute each action with a shared undo group', async () => {
+    it('should share display metadata without claiming unsupported atomic undo', async () => {
         await playMacro('play-1');
 
         expect(executeAppActionMock).toHaveBeenCalledTimes(2);
@@ -61,6 +50,8 @@ describe('playMacro', () => {
         expect(secondAction).toEqual({ type: 'toggleLoop' });
         expect(firstOptions?.groupId).toBe(secondOptions?.groupId);
         expect(firstOptions?.groupLabel).toBe('Macro: Two steps');
+        expect(firstOptions?.atomicUndoGroup).toBeUndefined();
+        expect(secondOptions?.atomicUndoGroup).toBeUndefined();
     });
 
     it('remaps dependent adjustment identities and strips recorded mutation provenance', async () => {
