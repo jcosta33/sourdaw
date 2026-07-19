@@ -4,6 +4,18 @@
 export { midiStore } from './midiStore';
 export type { MidiStoreState } from './midiStore';
 
+export {
+    GROOVE_CONSUMER_TYPES,
+    canonicalizeGrooveConsumerId,
+    defaultGrooveTemplateState,
+    grooveTemplateStore,
+    isGrooveTemplateAssignment,
+    isGrooveTemplateState,
+    sanitizeGrooveTemplateState,
+} from './grooveTemplateStore';
+export type { GrooveConsumerType, GrooveTemplateAssignment, GrooveTemplateState } from './grooveTemplateStore';
+export { grooveTemplateProjectRevisionStore } from './grooveTemplateProjectRevisionStore';
+
 export { chordTrackStore, defaultChordTrackState } from './chordTrackStore';
 export type { ChordTrackState } from './chordTrackStore';
 

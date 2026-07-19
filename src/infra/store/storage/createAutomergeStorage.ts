@@ -1,3 +1,5 @@
+import { getConflicts, type Doc } from '@automerge/automerge';
+
 import { logger } from '#/infra/logger/appLogger';
 
 import { type StorageAdapter } from './types';
@@ -34,6 +36,18 @@ type AutomergeStorageOptions<TData> = {
     fromCrdt?: (value: TData) => TData;
     /** Replacement projection value when the active document has no slot for this store. */
     hydrateMissing?: () => TData;
+    /** Deterministically reconcile concurrent whole-slot values exposed by Automerge. */
+    resolveConflicts?: (values: readonly TData[]) => TData;
+    /** Reconcile raw concurrent CRDT values before domain decoding when tombstones or schema metadata matter. */
+    resolveCrdtConflicts?: (values: readonly unknown[]) => TData;
+    /** Mutate a CRDT slot in place so domain entities retain causal identity. */
+    mutateCrdt?: (input: { doc: AutomergeStorageMutableDoc; key: string; value: TData }) => void;
+    /** Rebase a deferred local value over a newer hydrated value. */
+    rebasePending?: (input: {
+        baseValue: TData | null;
+        pendingValue: TData | null;
+        hydratedValue: TData;
+    }) => TData | null;
 };
 
 type AutomergeStorageWriteContext = {
@@ -216,7 +230,13 @@ export const createAutomergeStorage = <TData>(
     const toCrdt = options?.toCrdt;
     const fromCrdt = options?.fromCrdt;
     const hydrateMissing = options?.hydrateMissing;
+    const resolveConflicts = options?.resolveConflicts;
+    const resolveCrdtConflicts = options?.resolveCrdtConflicts;
+    const mutateCrdt = options?.mutateCrdt;
+    const rebasePending = options?.rebasePending;
     let cachedValue: TData | null = null;
+    let pendingBaseValue: TData | null = null;
+    let pendingValue: TData | null = null;
     let rafId: number | null = null;
     let pendingMessage: string | undefined;
     let pendingWrite: PendingAutomergeStorageWrite | null = null;
@@ -252,6 +272,8 @@ export const createAutomergeStorage = <TData>(
             changeFn: (doc) => {
                 if (crdtValue === null) {
                     delete doc[key];
+                } else if (mutateCrdt) {
+                    mutateCrdt({ doc, key, value: toDocSafe(crdtValue as TData) });
                 } else {
                     doc[key] = toDocSafe(crdtValue);
                 }
@@ -299,7 +321,10 @@ export const createAutomergeStorage = <TData>(
         }
         const message = pendingMessage;
         pendingMessage = undefined;
-        return createMutation(cachedValue, message, write.snapshotTransaction);
+        const value = pendingValue;
+        pendingBaseValue = null;
+        pendingValue = null;
+        return createMutation(value, message, write.snapshotTransaction);
     };
 
     const preparePendingWrite = (context: AutomergeStorageWriteContext): void => {
@@ -346,14 +371,22 @@ export const createAutomergeStorage = <TData>(
         set(value: TData | null): void {
             const context = getWriteContext();
             preparePendingWrite(context);
+            if (!pendingWrite) {
+                pendingBaseValue = cachedValue;
+            }
             cachedValue = value;
+            pendingValue = value;
             schedulePendingWrite(context);
         },
 
         clear(): void {
             const context = getWriteContext();
             preparePendingWrite(context);
+            if (!pendingWrite) {
+                pendingBaseValue = cachedValue;
+            }
             cachedValue = null;
+            pendingValue = null;
             schedulePendingWrite(context);
         },
 
@@ -374,14 +407,62 @@ export const createAutomergeStorage = <TData>(
                 // §119.2 — compare incoming against cached incoming rather
                 // than re-stringifying cachedValue; 2 JSON ops per hydrate
                 // instead of 3–4.
-                const incomingJson = JSON.stringify(value);
+                let incomingValues: readonly unknown[] = [value];
+                if (resolveConflicts || resolveCrdtConflicts) {
+                    const conflicts = getConflicts(doc as Doc<AutomergeStorageReadableDoc>, key);
+                    if (conflicts) {
+                        incomingValues = Object.entries(conflicts)
+                            .sort(([leftActor], [rightActor]) => {
+                                if (leftActor < rightActor) {
+                                    return -1;
+                                }
+                                if (leftActor > rightActor) {
+                                    return 1;
+                                }
+                                return 0;
+                            })
+                            .map(([, conflictValue]) => conflictValue);
+                    }
+                }
+                const incomingJson = JSON.stringify(incomingValues);
                 if (incomingJson === lastHydratedJson) {
                     return false;
                 }
-                const rawData = JSON.parse(incomingJson) as TData;
-                const crdtData = fromCrdt ? fromCrdt(rawData) : rawData;
+                const rawValues = JSON.parse(incomingJson) as unknown[];
+                const normalizedValues = fromCrdt
+                    ? rawValues.map((rawValue) => fromCrdt(rawValue as TData))
+                    : (rawValues as TData[]);
+                const firstValue = normalizedValues[0];
+                if (firstValue === undefined) {
+                    return false;
+                }
+                let crdtData: TData = firstValue;
+                if (resolveCrdtConflicts && rawValues.length > 1) {
+                    crdtData = resolveCrdtConflicts(rawValues);
+                } else if (resolveConflicts && normalizedValues.length > 1) {
+                    crdtData = resolveConflicts(normalizedValues);
+                }
 
-                if (toCrdt && cachedValue !== null && typeof crdtData === 'object' && crdtData !== null) {
+                if (pendingWrite) {
+                    let rebasedValue = pendingValue;
+                    if (rebasePending) {
+                        rebasedValue = rebasePending({
+                            baseValue: pendingBaseValue,
+                            pendingValue,
+                            hydratedValue: crdtData,
+                        });
+                    } else if (
+                        toCrdt &&
+                        pendingValue !== null &&
+                        typeof pendingValue === 'object' &&
+                        typeof crdtData === 'object' &&
+                        crdtData !== null
+                    ) {
+                        rebasedValue = { ...pendingValue, ...crdtData };
+                    }
+                    cachedValue = rebasedValue;
+                    pendingValue = rebasedValue;
+                } else if (toCrdt && cachedValue !== null && typeof crdtData === 'object' && crdtData !== null) {
                     cachedValue = { ...cachedValue, ...crdtData };
                 } else {
                     cachedValue = crdtData;

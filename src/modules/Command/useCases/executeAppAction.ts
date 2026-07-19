@@ -33,6 +33,10 @@ export const executeAppAction: ExecuteAppAction = inject({ logger })(
 
             await waitForAutomergeSnapshotTransaction(options?.snapshotTransaction);
 
+            if (handler.isNoop?.(action)) {
+                return;
+            }
+
             // Capture undo info BEFORE executing — this lets describe() snapshot current
             // state for destructive actions like removeTrack / removeClip.
             let undoResult: { label: string; inverseAction?: AppAction | null } | null = null;
@@ -53,7 +57,11 @@ export const executeAppAction: ExecuteAppAction = inject({ logger })(
                 const execution = runWithAutomergeStorageTransaction(options?.snapshotTransaction, () =>
                     handler.execute(action)
                 );
-                await execution;
+                const result = await execution;
+                if (result?.status === 'no-write') {
+                    clearSemanticContext();
+                    return;
+                }
             } catch (error) {
                 try {
                     clearSemanticContext();

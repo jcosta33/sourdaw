@@ -76,6 +76,7 @@ import { setEngineReady } from '#/modules/Levain/stores';
 import { registerLevainDevice, unregisterLevainDevice } from '#/modules/Levain/useCases';
 import {
     getChordTrackHandlers,
+    getMidiGrooveHandlers,
     getMidiNoteTransformHandlers,
     getPatternInstanceHandlers,
     setWebMidiRuntimeEventBus,
@@ -247,6 +248,7 @@ registerHandlerMap(getAiMidiHandlers());
 registerHandlerMap(getAiOrganizationHandlers());
 registerHandlerMap(getChordTrackHandlers());
 registerHandlerMap(getMidiNoteTransformHandlers());
+registerHandlerMap(getMidiGrooveHandlers());
 registerHandlerMap(getControlSurfaceHandlers());
 registerHandlerMap(getScratchPadHandlers());
 registerHandlerMap(getPatternInstanceHandlers());

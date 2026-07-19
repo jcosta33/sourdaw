@@ -1,7 +1,5 @@
 import { type ActionHandler, type AppAction } from '#/utils/handlerContract';
 
-import { handleApplyGroove } from '../handlers/generation/handleApplyGroove';
-import { handleExtractGroove } from '../handlers/generation/handleExtractGroove';
 import { handleGenerateAllTransitions } from '../handlers/generation/handleGenerateAllTransitions';
 import { handleGenerateChordProgression } from '../handlers/generation/handleGenerateChordProgression';
 import { handleGenerateDrumPattern } from '../handlers/generation/handleGenerateDrumPattern';
@@ -12,8 +10,6 @@ type GenerationAppAction =
     | Extract<AppAction, { type: 'generateDrumPattern' }>
     | Extract<AppAction, { type: 'generateMelody' }>
     | Extract<AppAction, { type: 'generateChordProgression' }>
-    | Extract<AppAction, { type: 'extractGroove' }>
-    | Extract<AppAction, { type: 'applyGroove' }>
     | Extract<AppAction, { type: 'generateFill' }>
     | Extract<AppAction, { type: 'generateAllTransitions' }>;
 
@@ -30,8 +26,6 @@ export function getGenerationHandlers(): GenerationHandlersMap {
         generateDrumPattern: handleGenerateDrumPattern,
         generateMelody: handleGenerateMelody,
         generateChordProgression: handleGenerateChordProgression,
-        extractGroove: handleExtractGroove,
-        applyGroove: handleApplyGroove,
         generateFill: handleGenerateFill,
         generateAllTransitions: handleGenerateAllTransitions,
     };

@@ -157,7 +157,7 @@ export const midiPresets: readonly PresetAction[] = [
         keywords: ['straight', 'straight groove', 'no swing'],
         category: 'MIDI',
         requiresSelection: 'clipMidi',
-        buildAction: clipAction('applyGroove', (id) => ({ clipId: id, grooveId: 'straight' })),
+        buildAction: clipAction('applyGroove', (id) => ({ clipId: id, grooveId: 'groove-straight' })),
     },
 
     // ─── MPE / MIDI I/O ─────────────────────────────────────────────────
