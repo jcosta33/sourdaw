@@ -142,7 +142,9 @@ export function exportPatternToTimeline(deviceId: string): ExportPatternToTimeli
                 continue;
             }
 
-            const startBeat = projected.startBeat;
+            // Live playback cannot schedule before transport start; clamp the
+            // first grid boundary while preserving early offsets after beat zero.
+            const startBeat = Math.max(0, projected.startBeat);
             const noteDuration = stepDurationBeats * 0.9;
             const velocity = projected.velocity;
 

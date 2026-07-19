@@ -148,6 +148,10 @@ export class MidiRack {
             return this.separateOutput;
         }
 
+        // Processors combine the block's musical PPQ with event-local sample
+        // deltas. Absolute sample zero is not a musical origin across tempo changes.
+        transport.blockStartSamples = blockStartSamples;
+
         // 1. Drain scheduled events directly into scratchA — avoids the
         // intermediate `drained` + spread-merge allocation (§149.1).
         const current0 = this.scratchA;

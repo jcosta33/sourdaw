@@ -15,6 +15,7 @@ export function stopSequencer(deviceId: string): void {
         clearTimeout(id);
     }
     seqState.pendingFireIds.clear();
+    seqState.preScheduledStep = null;
     const state = toasterStore.value?.[deviceId];
     if (state) {
         toasterStore.set({ ...toasterStore.value, [deviceId]: { ...state, isPlaying: false, currentStep: 0 } });

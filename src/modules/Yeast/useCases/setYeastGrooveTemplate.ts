@@ -1,9 +1,10 @@
 import { executeAppAction } from '#/modules/Command/useCases';
 import { getScopedGrooveConsumerId } from '#/modules/MIDI/useCases';
 
+import { setYeastRuntimeProjection } from '../engine/yeastRuntime';
 import { yeastStore } from '../stores/yeastStore';
 
-import { commitYeastProjection } from './commitYeastProjection';
+import { createYeastRuntimeProjection } from './createYeastRuntimeProjection';
 import { getYeastGrooveAssignment, YEAST_GROOVE_OWNER_ID } from './getYeastGrooveAssignment';
 
 export async function setYeastGrooveTemplate(processorId: string, templateId: string, amount?: number): Promise<void> {
@@ -22,5 +23,8 @@ export async function setYeastGrooveTemplate(processorId: string, templateId: st
             amount: amount ?? current?.amount ?? processor.params?.amount ?? 0.5,
         },
     });
-    commitYeastProjection(state.processors);
+    const currentState = yeastStore.value;
+    if (currentState) {
+        setYeastRuntimeProjection(createYeastRuntimeProjection(currentState.processors));
+    }
 }

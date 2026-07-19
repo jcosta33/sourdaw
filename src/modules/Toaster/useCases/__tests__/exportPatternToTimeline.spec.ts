@@ -318,6 +318,55 @@ describe('exportPatternToTimeline', () => {
         expect(calls[1]?.slice(2)).toEqual([0.2125, 0.05625, 100]);
     });
 
+    it('exports the negative-offset oracle at the same early beat used by live pre-scheduling', () => {
+        const parent = { id: 'parent', parentId: null, devices: [{ id: DEVICE_ID }] };
+        const child = { id: 'child-0', name: 'Kick', parentId: 'parent', devices: [] };
+        vi.mocked(getAllTracks).mockReturnValue([parent, child] as never);
+        vi.mocked(addClip).mockReturnValue({ id: 'clip' } as never);
+        mockStore.value = {
+            [DEVICE_ID]: {
+                kit: {
+                    swing: 0,
+                    activePatternId: 'A1',
+                    patterns: [
+                        {
+                            id: 'A1',
+                            stepsPerBar: 16,
+                            bars: 1,
+                            tracks: [
+                                {
+                                    padIndex: 0,
+                                    steps: [
+                                        makeStep(),
+                                        makeStep({ active: true, velocity: 1 }),
+                                        ...Array.from({ length: 14 }, () => makeStep()),
+                                    ],
+                                },
+                            ],
+                        },
+                    ],
+                },
+            },
+        };
+        createGrooveTemplate({
+            id: 'export-early-pocket',
+            name: 'Export early pocket',
+            subdivision: '1/16',
+            slots: [{ index: 1, timingOffset: -0.5, dynamicsOffset: 0 }],
+            provenance: { type: 'user', sourceId: 'early-live-export-oracle' },
+        });
+        assignGrooveTemplate({
+            consumerType: 'toaster-pattern',
+            consumerId: `groove-consumer:${DEVICE_ID}:A1`,
+            templateId: 'export-early-pocket',
+            amount: 1,
+        });
+
+        exportPatternToTimeline(DEVICE_ID);
+
+        expect(addMidiNote).toHaveBeenCalledWith('clip', 36, 0.125, 0.225, 127);
+    });
+
     it('rejects an unsupported assigned template before committing any timeline data', () => {
         const parent = { id: 'parent', parentId: null, devices: [{ id: DEVICE_ID }] };
         const child = { id: 'child-0', name: 'Kick', parentId: 'parent', devices: [] };

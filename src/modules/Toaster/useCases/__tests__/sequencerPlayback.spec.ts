@@ -119,6 +119,50 @@ describe('startSequencer', () => {
         expect(triggerToasterPad).toHaveBeenCalledWith(DEVICE, 0, 114);
     });
 
+    it('pre-schedules a negative groove offset at the same early beat exported to the timeline', () => {
+        vi.setSystemTime(0);
+        vi.mocked(getAudioTime).mockImplementation(() => Date.now() / 1000);
+        const kit = kitWithStep(activeStep({ active: false }));
+        kit.patterns[0] = {
+            ...kit.patterns[0]!,
+            stepsPerBar: 16,
+            tracks: [
+                {
+                    padIndex: 0,
+                    steps: [
+                        activeStep({ active: false }),
+                        activeStep(),
+                        ...Array.from({ length: 14 }, () => activeStep({ active: false })),
+                    ],
+                },
+            ],
+        };
+        toasterStore.set({
+            ...toasterStore.value,
+            [DEVICE]: { ...defaultToasterState, kit },
+        });
+        createGrooveTemplate({
+            id: 'live-early-pocket',
+            name: 'Live early pocket',
+            subdivision: '1/16',
+            slots: [{ index: 1, timingOffset: -0.5, dynamicsOffset: 0 }],
+            provenance: { type: 'user', sourceId: 'early-live-export-oracle' },
+        });
+        assignGrooveTemplate({
+            consumerType: 'toaster-pattern',
+            consumerId: 'groove-consumer:seq-device:A1',
+            templateId: 'live-early-pocket',
+            amount: 1,
+        });
+
+        startSequencer(DEVICE, 120);
+        vi.advanceTimersByTime(61);
+        expect(triggerToasterPad).not.toHaveBeenCalled();
+        vi.advanceTimersByTime(2);
+
+        expect(triggerToasterPad).toHaveBeenCalledWith(DEVICE, 0, 127);
+    });
+
     it('derives 32-step cadence, groove grid, retriggers, and loop timing from the pattern', () => {
         vi.setSystemTime(0);
         vi.mocked(getAudioTime).mockImplementation(() => Date.now() / 1000);

@@ -6,6 +6,7 @@ import { GrooveModule } from '../GrooveModule';
 const transport: TransportInfo = {
     isPlaying: true,
     ppqPosition: 0,
+    blockStartSamples: 0,
     bpm: 120,
     sampleRate: 48000,
     barIndex: 0,
@@ -16,9 +17,13 @@ const transport: TransportInfo = {
     loopStartPpq: 0,
     loopEndPpq: 0,
 };
-const note_on = (t: number, n: number, v = 100): MidiEvent => ({
-    timeSamples: t,
-    kind: { type: 'noteOn', channel: 0, note: n, velocity: v },
+const noteOn = (timeSamples: number, note: number, velocity = 100): MidiEvent => ({
+    timeSamples,
+    kind: { type: 'noteOn', channel: 0, note, velocity },
+});
+const noteOff = (timeSamples: number, note: number): MidiEvent => ({
+    timeSamples,
+    kind: { type: 'noteOff', channel: 0, note },
 });
 
 describe('GrooveModule', () => {
@@ -30,7 +35,7 @@ describe('GrooveModule', () => {
     it('passes through note on events', () => {
         const g = new GrooveModule('t2');
         const out: MidiEvent[] = [];
-        g.processMidi([note_on(0, 60)], out, transport);
+        g.processMidi([noteOn(0, 60)], out, transport);
         expect(out.length).toBeGreaterThan(0);
     });
 
@@ -42,7 +47,7 @@ describe('GrooveModule', () => {
         g.setParam('groove_timing_1', 0.2);
         g.setParam('groove_dynamics_1', -0.1);
         const out: MidiEvent[] = [];
-        g.processMidi([note_on(6000, 60)], out, transport);
+        g.processMidi([noteOn(6000, 60)], out, transport);
 
         expect(out[0]).toEqual({
             timeSamples: 7200,
@@ -60,7 +65,63 @@ describe('GrooveModule', () => {
 
     it('reset clears state', () => {
         const g = new GrooveModule('t5');
-        g.processMidi([note_on(0, 60)], [], transport);
+        g.setParam('groove_amount', 1);
+        g.setParam('groove_timing_0', 0.1);
+        g.processMidi([noteOn(0, 60)], [], transport);
         g.reset();
+        const out: MidiEvent[] = [];
+        g.processMidi([noteOff(12000, 60)], out, transport);
+        expect(out[0]?.timeSamples).toBe(12000);
+    });
+
+    it('selects the same musical slot across tempo transitions using the block origin and PPQ', () => {
+        const g = new GrooveModule('tempo-transition');
+        g.setParam('groove_amount', 1);
+        g.setParam('groove_step_beats', 0.25);
+        g.setParam('groove_slot_count', 16);
+        g.setParam('groove_timing_1', 0.2);
+        g.setParam('groove_dynamics_1', -0.1);
+
+        const blockStart = 2_400_000;
+        const at120 = { ...transport, bpm: 120, ppqPosition: 8, blockStartSamples: blockStart };
+        const at60 = { ...transport, bpm: 60, ppqPosition: 8, blockStartSamples: blockStart };
+        const out120: MidiEvent[] = [];
+        const out60: MidiEvent[] = [];
+        g.processMidi([noteOn(blockStart + 6000, 60)], out120, at120);
+        g.reset();
+        g.processMidi([noteOn(blockStart + 12000, 60)], out60, at60);
+
+        expect(out120[0]?.kind).toEqual({ type: 'noteOn', channel: 0, note: 60, velocity: 87 });
+        expect(out60[0]?.kind).toEqual(out120[0]?.kind);
+        expect((out120[0]!.timeSamples - (blockStart + 6000)) / 24000).toBeCloseTo(0.05, 10);
+        expect((out60[0]!.timeSamples - (blockStart + 12000)) / 48000).toBeCloseTo(0.05, 10);
+    });
+
+    it('matches overlapping same-pitch note offs to note-on offsets in FIFO order', () => {
+        const g = new GrooveModule('overlap');
+        g.setParam('groove_amount', 1);
+        g.setParam('groove_timing_0', 0.1);
+        g.setParam('groove_timing_1', -0.2);
+        const out: MidiEvent[] = [];
+
+        g.processMidi([noteOn(0, 60), noteOn(6000, 60), noteOff(12000, 60), noteOff(18000, 60)], out, transport);
+
+        expect(out.map((event) => event.timeSamples)).toEqual([600, 4800, 12600, 16800]);
+    });
+
+    it('bounds overlapping same-pitch offset tracking and degrades overflow note offs to no shift', () => {
+        const g = new GrooveModule('overflow');
+        g.setParam('groove_amount', 1);
+        g.setParam('groove_timing_0', 0.1);
+        const overlapCount = 33;
+        const out: MidiEvent[] = [];
+        const noteOns = Array.from({ length: overlapCount }, () => noteOn(0, 60));
+        const noteOffs = Array.from({ length: overlapCount }, (_, index) => noteOff(12000 + index * 1000, 60));
+
+        g.processMidi([...noteOns, ...noteOffs], out, transport);
+
+        const shiftedOffTimes = out.slice(overlapCount).map((event) => event.timeSamples);
+        expect(shiftedOffTimes.slice(0, 32)).toEqual(Array.from({ length: 32 }, (_, index) => 12600 + index * 1000));
+        expect(shiftedOffTimes[32]).toBe(44000);
     });
 });
