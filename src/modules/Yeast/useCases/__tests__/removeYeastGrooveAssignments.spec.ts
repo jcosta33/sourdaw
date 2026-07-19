@@ -18,8 +18,7 @@ vi.mock('#/modules/MIDI/stores', () => ({
     },
 }));
 vi.mock('#/modules/MIDI/useCases', () => ({
-    getScopedGrooveConsumerId: ({ ownerId, localId }: { ownerId: string; localId: string }) =>
-        `${ownerId}:${localId}`,
+    getScopedGrooveConsumerId: ({ ownerId, localId }: { ownerId: string; localId: string }) => `${ownerId}:${localId}`,
     restoreGrooveAssignment: mocks.restoreGrooveAssignment,
 }));
 
