@@ -1,0 +1,148 @@
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+
+import { type CollaborationState } from '../../../models/CollaborationTypes';
+import { type PeerConnectionManager } from '../../../repositories/peerConnection';
+import { collaborationStore } from '../../../stores/collaborationStore';
+
+const mockRuntime = vi.hoisted(() => ({
+    state: {
+        peerManager: null as PeerConnectionManager | null,
+        pendingInviteId: null as string | null,
+    },
+    decompressInvite: vi.fn(),
+    pickPeerColor: vi.fn(),
+}));
+
+vi.mock('../sessionManagement', () => ({ sessionRuntimePrimitives: mockRuntime }));
+
+import { acceptAnswer } from '../acceptAnswer';
+
+const baseState: CollaborationState = {
+    isEnabled: true,
+    sessionId: 'session-1',
+    localPeerId: 'host-local',
+    localName: 'Host',
+    localColor: '#3b82f6',
+    isHost: true,
+    peers: [],
+    connectionStatus: 'connecting',
+    error: null,
+};
+
+function makeAnswer(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+    return {
+        type: 'answer',
+        peerId: 'joiner-1',
+        name: 'Joiner',
+        sdp: 'answer-sdp',
+        pendingPeerId: 'pending-1',
+        ...overrides,
+    };
+}
+
+describe('acceptAnswer', () => {
+    let getPeer: ReturnType<typeof vi.fn>;
+    let acceptAnswerOnPeer: ReturnType<typeof vi.fn>;
+
+    beforeEach(() => {
+        vi.clearAllMocks();
+        collaborationStore.set({ ...baseState, peers: [] });
+        mockRuntime.state.pendingInviteId = 'stale-pending-id';
+        acceptAnswerOnPeer = vi.fn().mockResolvedValue(undefined);
+        getPeer = vi.fn().mockReturnValue({ acceptAnswer: acceptAnswerOnPeer });
+        mockRuntime.state.peerManager = { getPeer } as unknown as PeerConnectionManager;
+        mockRuntime.decompressInvite.mockImplementation(async (raw: string) => raw);
+        mockRuntime.pickPeerColor.mockReturnValue('#22c55e');
+    });
+
+    it('rejects a payload that is not an answer', async () => {
+        mockRuntime.decompressInvite.mockResolvedValueOnce(JSON.stringify(makeAnswer({ type: 'offer' })));
+        await expect(acceptAnswer('raw')).rejects.toThrow('Invalid answer');
+    });
+
+    it('rejects when there is no active session runtime', async () => {
+        mockRuntime.state.peerManager = null;
+        mockRuntime.decompressInvite.mockResolvedValueOnce(JSON.stringify(makeAnswer()));
+        await expect(acceptAnswer('raw')).rejects.toThrow('No active session');
+    });
+
+    it('rejects when no pending peer connection matches the answer', async () => {
+        getPeer.mockReturnValue(undefined);
+        mockRuntime.decompressInvite.mockResolvedValueOnce(JSON.stringify(makeAnswer()));
+        await expect(acceptAnswer('raw')).rejects.toThrow('No pending peer connection');
+    });
+
+    it('applies the SDP answer to the matching pending peer', async () => {
+        mockRuntime.decompressInvite.mockResolvedValueOnce(
+            JSON.stringify(makeAnswer({ pendingPeerId: 'pending-7', sdp: 'sdp-xyz' }))
+        );
+
+        await acceptAnswer('raw');
+
+        expect(getPeer).toHaveBeenCalledWith('pending-7');
+        expect(acceptAnswerOnPeer).toHaveBeenCalledWith('sdp-xyz');
+    });
+
+    it('clears the pending invite id after acceptance', async () => {
+        mockRuntime.decompressInvite.mockResolvedValueOnce(JSON.stringify(makeAnswer()));
+
+        await acceptAnswer('raw');
+
+        expect(mockRuntime.state.pendingInviteId).toBeNull();
+    });
+
+    it('adds the joiner to the peer list with a color excluding those already in use', async () => {
+        collaborationStore.set({
+            ...baseState,
+            localColor: '#3b82f6',
+            peers: [
+                {
+                    id: 'other',
+                    name: 'Other',
+                    color: '#ef4444',
+                    isHost: false,
+                    isConnected: true,
+                    lastSeen: 1,
+                    latencyMs: null,
+                },
+            ],
+        });
+        mockRuntime.decompressInvite.mockResolvedValueOnce(
+            JSON.stringify(makeAnswer({ peerId: 'joiner-9', name: 'Joiner Nine' }))
+        );
+
+        await acceptAnswer('raw');
+
+        expect(mockRuntime.pickPeerColor).toHaveBeenCalledWith(['#3b82f6', '#ef4444']);
+        expect(collaborationStore.value?.peers).toEqual([
+            {
+                id: 'other',
+                name: 'Other',
+                color: '#ef4444',
+                isHost: false,
+                isConnected: true,
+                lastSeen: 1,
+                latencyMs: null,
+            },
+            {
+                id: 'joiner-9',
+                name: 'Joiner Nine',
+                color: '#22c55e',
+                isHost: false,
+                isConnected: false,
+                lastSeen: expect.any(Number),
+                latencyMs: null,
+            },
+        ]);
+    });
+
+    it('still clears the pending invite id when no session is active in the store', async () => {
+        collaborationStore.set(null);
+        mockRuntime.decompressInvite.mockResolvedValueOnce(JSON.stringify(makeAnswer()));
+
+        await acceptAnswer('raw');
+
+        expect(collaborationStore.value).toBeNull();
+        expect(mockRuntime.state.pendingInviteId).toBeNull();
+    });
+});
