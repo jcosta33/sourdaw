@@ -6,6 +6,7 @@ import { clearUndoHistory, executeAppAction, redo, undo } from '#/modules/Comman
 import { type AppAction } from '#/utils/handlerContract';
 
 import { createTrack, type Track } from '../../../models/Track';
+import { createTrackFreezeSourceSignature } from '../../../services/createTrackFreezeSourceSignature';
 import { adjustmentLayerStore, type AdjustmentLayer, type AdjustmentLayerState } from '../../../stores/adjustmentLayer';
 import { trackStore } from '../../../stores/trackStore';
 import { getArrangementHandlers } from '../../../useCases/getArrangementHandlers';
@@ -272,7 +273,13 @@ describe('adjustmentLayerFreezeStaleness', () => {
             payload: {
                 layers: [createLayer()],
                 expectedLayersFingerprint: JSON.stringify([createLayer({ mix: 0.5 })]),
-                freezeTransitions: [{ trackId: 'track-a', previousStatus: 'frozen' }],
+                freezeTransitions: [
+                    {
+                        trackId: 'track-a',
+                        previousStatus: 'frozen',
+                        expectedSourceSignature: createTrackFreezeSourceSignature(getTrack('track-a')),
+                    },
+                ],
             },
         };
 
@@ -290,6 +297,47 @@ describe('adjustmentLayerFreezeStaleness', () => {
                 parameters: [expect.objectContaining({ name: 'Gain', value: 6 })],
             })
         );
+    });
+
+    it('keeps a track stale when its freeze source changes after an adjustment edit', async () => {
+        await executeAppAction({ type: 'setLayerMix', payload: { layerId: 'layer-1', mix: 0.5 } });
+        const state = trackStore.value;
+        if (!state) {
+            throw new Error('Expected track state');
+        }
+        trackStore.set({
+            ...state,
+            tracks: state.tracks.map((track) => {
+                if (track.id !== 'track-a') {
+                    return track;
+                }
+                return {
+                    ...track,
+                    clips: [
+                        ...track.clips,
+                        {
+                            id: 'later-clip',
+                            trackId: track.id,
+                            name: 'Later edit',
+                            startBeat: 0,
+                            endBeat: 4,
+                            type: 'audio' as const,
+                            fadeInBeats: 0,
+                            fadeOutBeats: 0,
+                            gain: 1,
+                            color: '#fff',
+                            locked: false,
+                            muted: false,
+                        },
+                    ],
+                };
+            }),
+        });
+
+        await undo();
+
+        expect(getLayerState().layers[0]?.mix).toBe(0.25);
+        expect(getTrack('track-a').freezeState.status).toBe('stale');
     });
 
     it('atomicUndo: commits both stores atomically and restores both through undo', async () => {

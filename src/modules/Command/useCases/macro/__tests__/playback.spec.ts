@@ -62,4 +62,66 @@ describe('playMacro', () => {
         await playMacro('play-1');
         expect(executeAppActionMock).not.toHaveBeenCalled();
     });
+
+    it('should regenerate adjustment IDs and remap later references without mutating the macro', async () => {
+        const adjustmentMacro: Macro = {
+            id: 'adjustment-1',
+            name: 'Adjustment steps',
+            actions: [
+                {
+                    type: 'createAdjustmentLayer',
+                    payload: { name: 'Layer', effectType: 'volume', layerId: 'recorded-layer' },
+                },
+                { type: 'setLayerMix', payload: { layerId: 'recorded-layer', mix: 0.5 } },
+                {
+                    type: 'addAdjustmentRegion',
+                    payload: {
+                        layerId: 'recorded-layer',
+                        startBeat: 0,
+                        endBeat: 4,
+                        regionId: 'recorded-region',
+                    },
+                },
+                {
+                    type: 'moveAdjustmentRegion',
+                    payload: { regionId: 'recorded-region', startBeat: 4, endBeat: 8 },
+                },
+            ],
+            createdAt: 0,
+        };
+        macroStore.set({ macros: [adjustmentMacro], recording: false, currentRecording: [] });
+        executeAppActionMock.mockImplementation((action) => {
+            if (action.type === 'createAdjustmentLayer') {
+                action.payload.layerId = 'replayed-layer';
+            }
+            if (action.type === 'addAdjustmentRegion') {
+                action.payload.regionId = 'replayed-region';
+            }
+            return Promise.resolve();
+        });
+
+        await playMacro('adjustment-1');
+
+        expect(executeAppActionMock.mock.calls.map(([action]) => action)).toEqual([
+            {
+                type: 'createAdjustmentLayer',
+                payload: { name: 'Layer', effectType: 'volume', layerId: 'replayed-layer' },
+            },
+            { type: 'setLayerMix', payload: { layerId: 'replayed-layer', mix: 0.5 } },
+            {
+                type: 'addAdjustmentRegion',
+                payload: {
+                    layerId: 'replayed-layer',
+                    startBeat: 0,
+                    endBeat: 4,
+                    regionId: 'replayed-region',
+                },
+            },
+            {
+                type: 'moveAdjustmentRegion',
+                payload: { regionId: 'replayed-region', startBeat: 4, endBeat: 8 },
+            },
+        ]);
+        expect(macroStore.value?.macros[0]?.actions).toEqual(adjustmentMacro.actions);
+    });
 });

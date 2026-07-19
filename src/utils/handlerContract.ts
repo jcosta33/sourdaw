@@ -505,7 +505,11 @@ export type AppAction =
           payload: {
               layers: readonly AdjustmentLayerSnapshot[];
               expectedLayersFingerprint: string;
-              freezeTransitions: Array<{ trackId: string; previousStatus: 'frozen' }>;
+              freezeTransitions: Array<{
+                  trackId: string;
+                  previousStatus: 'frozen';
+                  expectedSourceSignature: string;
+              }>;
           };
       }
     | { type: 'detectTransients'; payload: { clipId: string; sensitivity?: number } }

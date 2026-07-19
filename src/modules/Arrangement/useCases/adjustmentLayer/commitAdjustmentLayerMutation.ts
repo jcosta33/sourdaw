@@ -2,6 +2,7 @@ import { batchStoreUpdates } from '#/infra/store/createStore';
 import { type AppAction } from '#/utils/handlerContract';
 
 import { createEffectiveAdjustmentLayerSignature } from '../../services/createEffectiveAdjustmentLayerSignature';
+import { createTrackFreezeSourceSignature } from '../../services/createTrackFreezeSourceSignature';
 import { adjustmentLayerStore } from '../../stores/adjustmentLayer';
 import { trackStore } from '../../stores/trackStore';
 
@@ -62,6 +63,7 @@ export function commitAdjustmentLayerMutation(input: CommitAdjustmentLayerMutati
                 input.inverseAction.payload.freezeTransitions.push({
                     trackId: track.id,
                     previousStatus: 'frozen',
+                    expectedSourceSignature: createTrackFreezeSourceSignature(track),
                 });
                 return {
                     ...track,

@@ -2,6 +2,7 @@ import { batchStoreUpdates } from '#/infra/store/createStore';
 import { type AppAction } from '#/utils/handlerContract';
 
 import { createEffectiveAdjustmentLayerSignature } from '../../services/createEffectiveAdjustmentLayerSignature';
+import { createTrackFreezeSourceSignature } from '../../services/createTrackFreezeSourceSignature';
 import { adjustmentLayerStore, type AdjustmentLayer } from '../../stores/adjustmentLayer';
 import { trackStore } from '../../stores/trackStore';
 
@@ -35,15 +36,17 @@ export function restoreAdjustmentLayerMutation(payload: RestoreAdjustmentLayerMu
                 return;
             }
             const orderedTrackIds = trackState.tracks.map((track) => track.id);
-            const previousStatusByTrackId = new Map(
-                payload.freezeTransitions.map((transition) => [transition.trackId, transition.previousStatus])
+            const transitionByTrackId = new Map(
+                payload.freezeTransitions.map((transition) => [transition.trackId, transition])
             );
             const tracks = trackState.tracks.map((track) => {
-                const previousStatus = previousStatusByTrackId.get(track.id);
-                if (previousStatus && track.freezeState.status === 'stale') {
+                const transition = transitionByTrackId.get(track.id);
+                const sourceIsUnchanged =
+                    transition?.expectedSourceSignature === createTrackFreezeSourceSignature(track);
+                if (transition && sourceIsUnchanged && track.freezeState.status === 'stale') {
                     return {
                         ...track,
-                        freezeState: { ...track.freezeState, status: previousStatus },
+                        freezeState: { ...track.freezeState, status: transition.previousStatus },
                     };
                 }
                 if (track.freezeState.status !== 'frozen') {
