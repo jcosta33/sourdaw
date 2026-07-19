@@ -40,6 +40,12 @@ type AutomergeStorageOptions<TData> = {
     resolveConflicts?: (values: readonly TData[]) => TData;
     /** Mutate a CRDT slot in place so domain entities retain causal identity. */
     mutateCrdt?: (input: { doc: AutomergeStorageMutableDoc; key: string; value: TData }) => void;
+    /** Rebase a deferred local value over a newer hydrated value. */
+    rebasePending?: (input: {
+        baseValue: TData | null;
+        pendingValue: TData | null;
+        hydratedValue: TData;
+    }) => TData | null;
 };
 
 type AutomergeStorageWriteContext = {
@@ -224,7 +230,10 @@ export const createAutomergeStorage = <TData>(
     const hydrateMissing = options?.hydrateMissing;
     const resolveConflicts = options?.resolveConflicts;
     const mutateCrdt = options?.mutateCrdt;
+    const rebasePending = options?.rebasePending;
     let cachedValue: TData | null = null;
+    let pendingBaseValue: TData | null = null;
+    let pendingValue: TData | null = null;
     let rafId: number | null = null;
     let pendingMessage: string | undefined;
     let pendingWrite: PendingAutomergeStorageWrite | null = null;
@@ -309,7 +318,10 @@ export const createAutomergeStorage = <TData>(
         }
         const message = pendingMessage;
         pendingMessage = undefined;
-        return createMutation(cachedValue, message, write.snapshotTransaction);
+        const value = pendingValue;
+        pendingBaseValue = null;
+        pendingValue = null;
+        return createMutation(value, message, write.snapshotTransaction);
     };
 
     const preparePendingWrite = (context: AutomergeStorageWriteContext): void => {
@@ -356,14 +368,22 @@ export const createAutomergeStorage = <TData>(
         set(value: TData | null): void {
             const context = getWriteContext();
             preparePendingWrite(context);
+            if (!pendingWrite) {
+                pendingBaseValue = cachedValue;
+            }
             cachedValue = value;
+            pendingValue = value;
             schedulePendingWrite(context);
         },
 
         clear(): void {
             const context = getWriteContext();
             preparePendingWrite(context);
+            if (!pendingWrite) {
+                pendingBaseValue = cachedValue;
+            }
             cachedValue = null;
+            pendingValue = null;
             schedulePendingWrite(context);
         },
 
@@ -414,7 +434,26 @@ export const createAutomergeStorage = <TData>(
                 const crdtData =
                     resolveConflicts && normalizedValues.length > 1 ? resolveConflicts(normalizedValues) : firstValue;
 
-                if (toCrdt && cachedValue !== null && typeof crdtData === 'object' && crdtData !== null) {
+                if (pendingWrite) {
+                    let rebasedValue = pendingValue;
+                    if (rebasePending) {
+                        rebasedValue = rebasePending({
+                            baseValue: pendingBaseValue,
+                            pendingValue,
+                            hydratedValue: crdtData,
+                        });
+                    } else if (
+                        toCrdt &&
+                        pendingValue !== null &&
+                        typeof pendingValue === 'object' &&
+                        typeof crdtData === 'object' &&
+                        crdtData !== null
+                    ) {
+                        rebasedValue = { ...pendingValue, ...crdtData };
+                    }
+                    cachedValue = rebasedValue;
+                    pendingValue = rebasedValue;
+                } else if (toCrdt && cachedValue !== null && typeof crdtData === 'object' && crdtData !== null) {
                     cachedValue = { ...cachedValue, ...crdtData };
                 } else {
                     cachedValue = crdtData;

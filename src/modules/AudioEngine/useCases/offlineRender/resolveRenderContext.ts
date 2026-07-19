@@ -7,6 +7,10 @@ import {
     type TransportState,
 } from '#/modules/Transport/stores';
 
+import {
+    offlineMidiEventProjectorState,
+    type OfflineMidiEventProjector,
+} from '../../repositories/offlineScheduler/offlineMidiEventProjectorState';
 import { beatToSeconds } from '../../services/beatConversion';
 
 export type OfflineRenderContext = {
@@ -21,6 +25,7 @@ export type OfflineRenderContext = {
     durationSeconds: number;
     /** Tail seconds appended after the musical region. */
     tailSeconds: number;
+    projectMidiEvents: OfflineMidiEventProjector | null;
 };
 
 export type ResolveRenderContextInput = {
@@ -59,5 +64,6 @@ export function resolveRenderContext(input: ResolveRenderContextInput | number):
         startBeat: normalized.startBeat,
         durationSeconds,
         tailSeconds: Math.max(0, normalized.tailSeconds),
+        projectMidiEvents: offlineMidiEventProjectorState.createProjector?.() ?? null,
     };
 }

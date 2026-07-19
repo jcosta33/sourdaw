@@ -17,6 +17,7 @@ import { projectToasterPatternGroove } from './projectToasterPatternGroove';
 import { projectToasterStepEvents } from './projectToasterStepEvents';
 import { scheduleSequencerFire } from './scheduleSequencerFire';
 import { shouldTriggerSequencerStep } from './shouldTriggerSequencerStep';
+import { stopSequencer } from './stopSequencer';
 import { setPadEngineImmediate } from './toasterParamBridge/setPadEngineImmediate';
 import { setToasterPadParam } from './toasterParamBridge/setToasterPadParam';
 import { triggerToasterPad } from './triggerPad';
@@ -162,8 +163,7 @@ export function runSequencerTick({ deviceId, currentStep, bpm }: RunSequencerTic
         events: [],
     });
     if (!grooveCapability.ok) {
-        seqState.running = false;
-        toasterStore.set({ ...toasterStore.value, [deviceId]: { ...state, isPlaying: false } });
+        stopSequencer(deviceId);
         return;
     }
 
@@ -182,8 +182,7 @@ export function runSequencerTick({ deviceId, currentStep, bpm }: RunSequencerTic
             gridDelayMs: 0,
         })
     ) {
-        seqState.running = false;
-        toasterStore.set({ ...toasterStore.value, [deviceId]: { ...state, isPlaying: false } });
+        stopSequencer(deviceId);
         return;
     }
 
@@ -208,8 +207,7 @@ export function runSequencerTick({ deviceId, currentStep, bpm }: RunSequencerTic
             gridDelayMs: stepDurationMs,
         })
     ) {
-        seqState.running = false;
-        toasterStore.set({ ...toasterStore.value, [deviceId]: { ...state, isPlaying: false } });
+        stopSequencer(deviceId);
         return;
     }
     seqState.preScheduledStep = nextStep;

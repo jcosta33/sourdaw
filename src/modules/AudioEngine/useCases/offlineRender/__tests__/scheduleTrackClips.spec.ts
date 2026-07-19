@@ -60,7 +60,10 @@ const mocks = vi.hoisted(() => ({
 
 let projectedStartOffset = 0;
 let projectedVelocity: number | null = null;
-const projectOfflineMidiEvents: Parameters<typeof configureOfflineMidiEventProjection>[0]['project'] = (input) => {
+type OfflineMidiEventProjector = ReturnType<
+    Parameters<typeof configureOfflineMidiEventProjection>[0]['createProjector']
+>;
+const projectOfflineMidiEvents: OfflineMidiEventProjector = (input) => {
     mocks.projectCommittedGroove(input);
     return input.events.map((event) => ({
         ...event,
@@ -211,6 +214,7 @@ async function runSchedule(): Promise<PendingWorkletEvent[]> {
         /* durationSeconds */ 60,
         /* defaultTempo */ 120,
         /* changes */ [],
+        projectOfflineMidiEvents,
         /* onWarning */ undefined,
         pendingWorkletEvents,
         /* allTracks */ [track],
@@ -228,7 +232,7 @@ describe('scheduleTrackClips — MIDI plugin-delay compensation', () => {
         mocks.getCompensationDelay.mockReturnValue(0);
         projectedStartOffset = 0;
         projectedVelocity = null;
-        configureOfflineMidiEventProjection({ project: projectOfflineMidiEvents });
+        configureOfflineMidiEventProjection({ createProjector: () => projectOfflineMidiEvents });
         configureOfflinePpqEndpointProjection({ project: projectPpqEndpoints });
     });
 

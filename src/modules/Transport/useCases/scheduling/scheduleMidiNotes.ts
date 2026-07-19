@@ -45,6 +45,39 @@ const WORKLET_SYNTH_DEVICES: Record<string, WorkletSynthEntry> = {
     levain: { controlsKey: 'levainControls' },
 };
 
+// Groove schema bounds: the widest step is 1/8 (0.5 beat) and timingOffset is
+// clamped to ±0.5, so one assignment moves an event by at most 0.25 beat.
+const MAX_SINGLE_GROOVE_DISPLACEMENT_BEATS = 0.25;
+const MAX_CLIP_AND_SEQUENCER_DISPLACEMENT_BEATS = MAX_SINGLE_GROOVE_DISPLACEMENT_BEATS * 2;
+
+type SchedulableMidiNote = NonNullable<NonNullable<typeof midiStore.value>['notesByClipId'][string]>[number];
+
+const orderedNoteIndexes = new WeakMap<readonly SchedulableMidiNote[], readonly SchedulableMidiNote[]>();
+
+function getOrderedNoteIndex(notes: readonly SchedulableMidiNote[]): readonly SchedulableMidiNote[] {
+    const existing = orderedNoteIndexes.get(notes);
+    if (existing) {
+        return existing;
+    }
+    const created = [...notes].sort((left, right) => left.startBeat - right.startBeat);
+    orderedNoteIndexes.set(notes, created);
+    return created;
+}
+
+function lowerBoundNoteStart(notes: readonly SchedulableMidiNote[], startBeat: number): number {
+    let lower = 0;
+    let upper = notes.length;
+    while (lower < upper) {
+        const middle = lower + Math.floor((upper - lower) / 2);
+        if (notes[middle]!.startBeat < startBeat) {
+            lower = middle + 1;
+        } else {
+            upper = middle;
+        }
+    }
+    return lower;
+}
+
 // Transport-local shapes (AGENTS.md model isolation). Structurally compatible
 // with what Yeast's processors and Worker accept; we do not import Yeast's model.
 type YeastMidiEventKind =
@@ -205,30 +238,28 @@ export async function scheduleMidiNotes(
             if (!sourceNotes) {
                 continue;
             }
-            const notes = projectCommittedGroove({
-                events: sourceNotes,
-                consumerType: 'clip',
-                consumerId: clip.id,
-            });
-
+            const orderedSourceNotes = getOrderedNoteIndex(sourceNotes);
             const hasYeast = track.devices.some((data) => data.type === 'yeast');
+            const yeastLookahead = hasYeast ? getYeastSchedulingLookahead() : { earlyBeats: 0, lateBeats: 0 };
             // §2 — When the clip loops, run the Yeast Worker once per loop
             // iteration over that iteration's absolute window, so bar-aware
             // processors see iter-correct transport metadata instead of the
             // first iteration's bar replayed at every offset. The transformed
             // notes are emitted clip-relative (no iterOffset baked in), matching
             // what the per-note scheduling loop reconstructs below.
-            // `notes` is narrowed non-undefined past the guard above; deriving the
+            // `sourceNotes` is narrowed non-undefined past the guard above; deriving the
             // iteration result type from it (rather than `typeof midiState.notesByClipId`)
             // avoids a `typeof` query on the still-nullable `midiState` binding, whose
             // declared type is not narrowed inside this type position.
             let runYeastForIteration:
-                | ((iterAbsBase: number) => Promise<Array<ScheduledYeastNote<(typeof notes)[number]>> | null>)
+                | ((
+                      iterAbsBase: number
+                  ) => Promise<Array<ScheduledYeastNote<NonNullable<typeof sourceNotes>[number]>> | null>)
                 | null = null;
             const clipMidiOffset = clip.midiOffsetBeats ?? 0;
             if (hasYeast) {
-                const rawNotes = notes;
-                const { earlyBeats: sourceLookaheadBeats } = getYeastSchedulingLookahead();
+                const rawNotes = orderedSourceNotes;
+                const { earlyBeats: sourceLookaheadBeats } = yeastLookahead;
                 runYeastForIteration = async (iterAbsBase: number) => {
                     const yeastSr = getAudioContext().sampleRate;
                     const tsChanges = timeSignatureMapStore.value?.changes ?? [];
@@ -266,7 +297,32 @@ export async function scheduleMidiNotes(
                         };
 
                         const midiEvents: MidiEvent[] = [];
-                        for (const [noteIndex, node] of rawNotes.entries()) {
+                        const sourceRangeStart = lowerBoundNoteStart(
+                            rawNotes,
+                            block.fromBeat - MAX_SINGLE_GROOVE_DISPLACEMENT_BEATS - iterAbsBase
+                        );
+                        const sourceRangeEnd = lowerBoundNoteStart(
+                            rawNotes,
+                            block.toBeat + sourceLookaheadBeats + MAX_SINGLE_GROOVE_DISPLACEMENT_BEATS - iterAbsBase
+                        );
+                        for (let noteIndex = sourceRangeStart; noteIndex < sourceRangeEnd; noteIndex++) {
+                            const sourceNode = rawNotes[noteIndex]!;
+                            const rawStartBeat = iterAbsBase + sourceNode.startBeat;
+                            if (
+                                rawStartBeat < block.fromBeat - MAX_SINGLE_GROOVE_DISPLACEMENT_BEATS ||
+                                rawStartBeat >=
+                                    block.toBeat + sourceLookaheadBeats + MAX_SINGLE_GROOVE_DISPLACEMENT_BEATS
+                            ) {
+                                continue;
+                            }
+                            const [node] = projectCommittedGroove({
+                                events: [sourceNode],
+                                consumerType: 'clip',
+                                consumerId: clip.id,
+                            });
+                            if (!node) {
+                                continue;
+                            }
                             const noteStartBeat = iterAbsBase + node.startBeat;
                             if (
                                 noteStartBeat < block.fromBeat ||
@@ -359,16 +415,17 @@ export async function scheduleMidiNotes(
                     // source note as a template when present, otherwise a
                     // fully-specified default so every generated note is a
                     // complete MidiNote.
-                    const noteTemplate: NonNullable<(typeof midiState.notesByClipId)[string]>[number] = rawNotes[0] ?? {
-                        id: clip.id,
-                        pitch: 60,
-                        startBeat: 0,
-                        duration: 0,
-                        velocity: 100,
-                        probability: 100,
-                    };
+                    const noteTemplate: NonNullable<(typeof midiState.notesByClipId)[string]>[number] =
+                        sourceNotes[0] ?? {
+                            id: clip.id,
+                            pitch: 60,
+                            startBeat: 0,
+                            duration: 0,
+                            velocity: 100,
+                            probability: 100,
+                        };
 
-                    const transformedNotes: Array<ScheduledYeastNote<(typeof notes)[number]>> = [];
+                    const transformedNotes: Array<ScheduledYeastNote<NonNullable<typeof sourceNotes>[number]>> = [];
                     for (const evt of processed) {
                         if (evt.kind.type === 'noteOn') {
                             const evtNote = evt.kind.note;
@@ -437,6 +494,13 @@ export async function scheduleMidiNotes(
             const rawLoopLen = clip.loopEnabled ? (clip.loopLength ?? clipVisualLength) : clipVisualLength;
             const loopLen = rawLoopLen > 0 ? rawLoopLen : clipVisualLength;
             const maxIterations = clip.loopEnabled ? Math.ceil(clipVisualLength / loopLen) : 1;
+            const maxLateDisplacement = MAX_CLIP_AND_SEQUENCER_DISPLACEMENT_BEATS + yeastLookahead.lateBeats;
+            const firstIteration = clip.loopEnabled
+                ? Math.max(0, Math.floor((fromBeat - clip.startBeat - loopLen - maxLateDisplacement) / loopLen) + 1)
+                : 0;
+            const lastIterationExclusive = clip.loopEnabled
+                ? Math.min(maxIterations, Math.max(firstIteration, Math.ceil((toBeat - clip.startBeat) / loopLen)))
+                : 1;
             const strip = ensureTrackStrip(track.id);
             const ctx = getAudioContext();
             const sr = ctx.sampleRate;
@@ -497,7 +561,7 @@ export async function scheduleMidiNotes(
                     ? null
                     : track.devices.find((data) => data.type.startsWith('faust-'));
 
-            for (let iter = 0; iter < maxIterations; iter++) {
+            for (let iter = firstIteration; iter < lastIterationExclusive; iter++) {
                 const iterOffset = iter * loopLen;
 
                 // §2 — For a Yeast track, run the Worker per loop iteration with
@@ -506,7 +570,7 @@ export async function scheduleMidiNotes(
                 // iterOffset / midiOffset to them.
                 const iterNotes = runYeastForIteration
                     ? await runYeastForIteration(clip.startBeat + iterOffset)
-                    : notes;
+                    : orderedSourceNotes;
                 if (!isCurrent()) {
                     return;
                 }
@@ -514,8 +578,22 @@ export async function scheduleMidiNotes(
                     continue;
                 }
                 const notesAreAbsolute = runYeastForIteration !== null;
+                const iterationSourceOffset = clip.startBeat + iterOffset - clipMidiOffset;
+                const noteRangeStart = notesAreAbsolute
+                    ? 0
+                    : lowerBoundNoteStart(
+                          iterNotes,
+                          fromBeat - MAX_CLIP_AND_SEQUENCER_DISPLACEMENT_BEATS - iterationSourceOffset
+                      );
+                const noteRangeEnd = notesAreAbsolute
+                    ? iterNotes.length
+                    : lowerBoundNoteStart(
+                          iterNotes,
+                          toBeat + MAX_CLIP_AND_SEQUENCER_DISPLACEMENT_BEATS - iterationSourceOffset
+                      );
 
-                for (const note of iterNotes) {
+                for (let noteIndex = noteRangeStart; noteIndex < noteRangeEnd; noteIndex++) {
+                    const note = iterNotes[noteIndex]!;
                     if (!notesAreAbsolute && note.startBeat - clipMidiOffset >= loopLen) {
                         continue;
                     }
@@ -523,9 +601,25 @@ export async function scheduleMidiNotes(
                     const rawStartBeat = notesAreAbsolute
                         ? note.startBeat
                         : clip.startBeat + iterOffset + (note.startBeat - clipMidiOffset);
+                    if (
+                        rawStartBeat < fromBeat - MAX_CLIP_AND_SEQUENCER_DISPLACEMENT_BEATS ||
+                        rawStartBeat >= toBeat + MAX_CLIP_AND_SEQUENCER_DISPLACEMENT_BEATS
+                    ) {
+                        continue;
+                    }
+                    const [clipProjectedNote] = notesAreAbsolute
+                        ? [note]
+                        : projectCommittedGroove({
+                              events: [note],
+                              consumerType: 'clip',
+                              consumerId: clip.id,
+                          });
+                    if (!clipProjectedNote) {
+                        continue;
+                    }
                     const iterationStart = clip.startBeat + iterOffset;
                     const [projectedNote] = projectClipMidiEvents({
-                        events: [note],
+                        events: [clipProjectedNote],
                         clipId: clip.id,
                         clipStartBeat: clip.startBeat,
                         clipEndBeat: clip.endBeat,

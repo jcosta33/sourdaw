@@ -1,5 +1,8 @@
-import { offlineMidiEventProjectorState, type OfflineMidiEventProjector } from './offlineMidiEventProjectorState';
+import {
+    offlineMidiEventProjectorState,
+    type OfflineMidiEventProjectorFactory,
+} from './offlineMidiEventProjectorState';
 
-export function setOfflineMidiEventProjector(project: OfflineMidiEventProjector): void {
-    offlineMidiEventProjectorState.project = project;
+export function setOfflineMidiEventProjector(createProjector: OfflineMidiEventProjectorFactory): void {
+    offlineMidiEventProjectorState.createProjector = createProjector;
 }

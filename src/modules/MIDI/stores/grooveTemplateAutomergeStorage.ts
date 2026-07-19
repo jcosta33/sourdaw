@@ -168,6 +168,67 @@ function mutateGrooveTemplateCrdt({
     syncEntities({ current: current.assignments, desired: desiredAssignments, syncValue: syncAssignmentValue });
 }
 
+function rebaseEntities<Value>({
+    base,
+    pending,
+    hydrated,
+    getKey,
+}: {
+    base: readonly Value[];
+    pending: readonly Value[];
+    hydrated: readonly Value[];
+    getKey: (value: Value) => string;
+}): Value[] {
+    const baseByKey = new Map(base.map((value) => [getKey(value), value]));
+    const pendingByKey = new Map(pending.map((value) => [getKey(value), value]));
+    const rebasedByKey = new Map(hydrated.map((value) => [getKey(value), value]));
+    const localKeys = new Set([...baseByKey.keys(), ...pendingByKey.keys()]);
+    for (const key of localKeys) {
+        const baseValue = baseByKey.get(key);
+        const pendingValue = pendingByKey.get(key);
+        if (JSON.stringify(baseValue) === JSON.stringify(pendingValue)) {
+            continue;
+        }
+        if (pendingValue === undefined) {
+            rebasedByKey.delete(key);
+        } else {
+            rebasedByKey.set(key, pendingValue);
+        }
+    }
+    return [...rebasedByKey.values()];
+}
+
+function rebasePendingGrooveState({
+    baseValue,
+    pendingValue,
+    hydratedValue,
+}: {
+    baseValue: GrooveTemplateState | null;
+    pendingValue: GrooveTemplateState | null;
+    hydratedValue: GrooveTemplateState;
+}): GrooveTemplateState | null {
+    if (!pendingValue) {
+        return null;
+    }
+    const base = sanitizeGrooveTemplateState(baseValue);
+    const pending = sanitizeGrooveTemplateState(pendingValue);
+    const hydrated = sanitizeGrooveTemplateState(hydratedValue);
+    return sanitizeGrooveTemplateState({
+        templates: rebaseEntities({
+            base: base.templates,
+            pending: pending.templates,
+            hydrated: hydrated.templates,
+            getKey: (template) => template.id,
+        }),
+        assignments: rebaseEntities({
+            base: base.assignments,
+            pending: pending.assignments,
+            hydrated: hydrated.assignments,
+            getKey: assignmentEntityKey,
+        }),
+    });
+}
+
 export function createGrooveTemplateAutomergeStorage() {
     let shouldCollapseRootConflicts = false;
     return createAutomergeStorage<GrooveTemplateState>(DOC_PREFIX_ROOT, 'grooveTemplates', {
@@ -187,5 +248,6 @@ export function createGrooveTemplateAutomergeStorage() {
             }
             mutateGrooveTemplateCrdt(input);
         },
+        rebasePending: rebasePendingGrooveState,
     });
 }

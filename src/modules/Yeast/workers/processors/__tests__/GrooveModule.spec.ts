@@ -164,4 +164,27 @@ describe('GrooveModule', () => {
 
         expect(out.map((event) => event.timeSamples)).toEqual([600, 4_800, 10_800, 18_600]);
     });
+
+    it('fails the 2,049th identified note pair closed when the offset table is full', () => {
+        const g = new GrooveModule('instance-capacity');
+        g.setParam('groove_amount', 1);
+        g.setParam('groove_timing_0', 0.5);
+        const pairCount = 2_049;
+        const out: MidiEvent[] = [];
+        const noteOns = Array.from({ length: pairCount }, (_, index) => ({
+            ...noteOn(0, 60),
+            noteInstanceId: `voice-${index}`,
+        }));
+        const noteOffs = Array.from({ length: pairCount }, (_, index) => ({
+            ...noteOff(1, 60),
+            noteInstanceId: `voice-${index}`,
+        }));
+
+        g.processMidi([...noteOns, ...noteOffs], out, transport);
+
+        const lastNoteOn = out[pairCount - 1];
+        const lastNoteOff = out[out.length - 1];
+        expect(lastNoteOn?.timeSamples).toBe(0);
+        expect(lastNoteOff?.timeSamples).toBe(1);
+    });
 });

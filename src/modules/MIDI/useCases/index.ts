@@ -43,6 +43,7 @@ export { adaptGrooveTemplateForConsumer } from './grooveTemplates/adaptGrooveTem
 export { applyGrooveTemplate } from './grooveTemplates/applyGrooveTemplate';
 export { assignGrooveTemplate } from './grooveTemplates/assignGrooveTemplate';
 export { createGrooveTemplate } from './grooveTemplates/createGrooveTemplate';
+export { createGrooveMidiEventProjector } from './grooveTemplates/createGrooveMidiEventProjector';
 export { deleteGrooveTemplate } from './grooveTemplates/deleteGrooveTemplate';
 export { extractGrooveTemplate } from './grooveTemplates/extractGrooveTemplate';
 export { getGrooveAssignment } from './grooveTemplates/getGrooveAssignment';

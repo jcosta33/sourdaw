@@ -19,6 +19,8 @@ export type OfflineMidiEventProjector = <Event extends OfflineMidiProjectableEve
     input: OfflineMidiEventProjectionInput<Event>
 ) => readonly Event[];
 
-export const offlineMidiEventProjectorState: { project: OfflineMidiEventProjector | null } = {
-    project: null,
+export type OfflineMidiEventProjectorFactory = () => OfflineMidiEventProjector;
+
+export const offlineMidiEventProjectorState: { createProjector: OfflineMidiEventProjectorFactory | null } = {
+    createProjector: null,
 };

@@ -1,6 +1,5 @@
 import { buildDeviceChain, getAudioContext, getCachedAudioBuffer } from '#/modules/AudioEngine/useCases';
 import { midiStore } from '#/modules/MIDI/stores';
-import { projectClipMidiEvents } from '#/modules/MIDI/useCases';
 import { sidechainStore } from '#/modules/Routing/stores';
 import { tempoMapStore, transportStore } from '#/modules/Transport/stores';
 
@@ -40,9 +39,11 @@ export async function renderTrackOffline(
     options?: RenderOfflineOptions
 ): Promise<AudioBuffer | null> {
     const projectPpqEndpoints = offlineRenderDependencies?.projectPpqEndpoints;
-    if (!projectPpqEndpoints) {
+    const createMidiEventProjector = offlineRenderDependencies?.createMidiEventProjector;
+    if (!projectPpqEndpoints || !createMidiEventProjector) {
         throw new Error('Arrangement offline render dependencies are not configured');
     }
+    const projectMidiEvents = createMidiEventProjector();
     // Only audio and midi tracks produce renderable content on their own.
     // Bus / group / master tracks have no direct sound source — skip rendering.
     if (targetTrack.kind !== 'audio' && targetTrack.kind !== 'midi') {
@@ -148,7 +149,7 @@ export async function renderTrackOffline(
                     const iterations = clip.loopEnabled ? Math.ceil(clipLength / loopLength) : 1;
                     for (let iteration = 0; iteration < iterations; iteration++) {
                         const iterationStartBeat = clip.startBeat + iteration * loopLength;
-                        const notes = projectClipMidiEvents({
+                        const notes = projectMidiEvents({
                             events: sourceNotes,
                             clipId: clip.id,
                             clipStartBeat: clip.startBeat,

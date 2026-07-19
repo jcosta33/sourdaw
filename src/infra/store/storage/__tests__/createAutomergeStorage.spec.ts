@@ -130,6 +130,22 @@ describe('createAutomergeStorage', () => {
         expect(doc.state).toEqual({ count: 2 });
     });
 
+    it('commits the coalesced local value when a remote hydrate lands before the frame', () => {
+        const { doc, port } = createTestPort({ initialDoc: { state: { count: 0 } } });
+        configureAutomergeStoragePort(port);
+        const storage = createAutomergeStorage<{ count: number }>('root', 'state');
+        expect(storage.hydrate?.()).toBe(true);
+
+        storage.set({ count: 1 });
+        doc.state = { count: 2 };
+        expect(storage.hydrate?.()).toBe(true);
+
+        frameCallback?.(100);
+
+        expect(doc.state).toEqual({ count: 1 });
+        expect(storage.get()).toEqual({ count: 1 });
+    });
+
     it('should synchronously flush a pending frame before CRDT compaction', () => {
         const { doc, mutations, port } = createTestPort();
         configureAutomergeStoragePort(port);

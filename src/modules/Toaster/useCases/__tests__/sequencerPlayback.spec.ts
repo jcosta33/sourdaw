@@ -302,6 +302,59 @@ describe('startSequencer', () => {
         expect(toasterStore.value?.[DEVICE]?.isPlaying).toBe(false);
     });
 
+    it('cancels a pre-scheduled groove hit when the next tick invalidates capability', () => {
+        vi.setSystemTime(0);
+        vi.mocked(getAudioTime).mockImplementation(() => Date.now() / 1000);
+        const kit = kitWithStep(activeStep({ active: false }));
+        kit.patterns[0] = {
+            ...kit.patterns[0]!,
+            stepsPerBar: 16,
+            tracks: [
+                {
+                    padIndex: 0,
+                    steps: [
+                        activeStep({ active: false }),
+                        activeStep(),
+                        ...Array.from({ length: 14 }, () => activeStep({ active: false })),
+                    ],
+                },
+            ],
+        };
+        toasterStore.set({ ...toasterStore.value, [DEVICE]: { ...defaultToasterState, kit } });
+        createGrooveTemplate({
+            id: 'valid-delayed-pocket',
+            name: 'Valid delayed pocket',
+            subdivision: '1/16',
+            slots: [{ index: 1, timingOffset: 0.4, dynamicsOffset: 0 }],
+            provenance: { type: 'user', sourceId: 'valid-delayed-pocket' },
+        });
+        createGrooveTemplate({
+            id: 'invalidated-pocket',
+            name: 'Invalidated pocket',
+            subdivision: '1/8',
+            slots: [{ index: 1, timingOffset: 0.4, dynamicsOffset: 0 }],
+            provenance: { type: 'user', sourceId: 'invalidated-pocket' },
+        });
+        assignGrooveTemplate({
+            consumerType: 'toaster-pattern',
+            consumerId: 'groove-consumer:seq-device:A1',
+            templateId: 'valid-delayed-pocket',
+            amount: 1,
+        });
+
+        startSequencer(DEVICE, 120);
+        assignGrooveTemplate({
+            consumerType: 'toaster-pattern',
+            consumerId: 'groove-consumer:seq-device:A1',
+            templateId: 'invalidated-pocket',
+            amount: 1,
+        });
+        vi.advanceTimersByTime(1_000);
+
+        expect(triggerToasterPad).not.toHaveBeenCalled();
+        expect(toasterStore.value?.[DEVICE]?.isPlaying).toBe(false);
+    });
+
     it('scopes identical pattern IDs to their durable device owners', () => {
         for (const deviceId of [DEVICE, OTHER]) {
             const kit = kitWithStep(activeStep());

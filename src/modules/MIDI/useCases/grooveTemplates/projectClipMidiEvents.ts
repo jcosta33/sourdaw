@@ -1,4 +1,6 @@
-import { projectCommittedGroove } from './projectCommittedGroove';
+import { defaultGrooveTemplateState, grooveTemplateStore } from '../../stores/grooveTemplateStore';
+
+import { getGrooveProjection } from './getGrooveProjection';
 
 type ClipMidiEvent = {
     id: string;
@@ -30,34 +32,15 @@ export function projectClipMidiEvents<Event extends ClipMidiEvent>({
     clipGrooveAlreadyApplied = false,
     eventsAreAbsolute = false,
 }: ProjectClipMidiEventsInput<Event>): Event[] {
-    const clipProjected = clipGrooveAlreadyApplied
-        ? events
-        : projectCommittedGroove({ events, consumerType: 'clip', consumerId: clipId });
-
-    return clipProjected.flatMap((event) => {
-        const relativeStartBeat = event.startBeat - midiOffsetBeats;
-        if (!eventsAreAbsolute && relativeStartBeat >= loopLengthBeats) {
-            return [];
-        }
-        const absoluteStartBeat = eventsAreAbsolute ? event.startBeat : iterationStartBeat + relativeStartBeat;
-        const [sequencerProjected = event] = projectCommittedGroove({
-            events: [{ ...event, startBeat: absoluteStartBeat }],
-            consumerType: 'sequencer',
-            consumerId: 'project',
-        });
-        const boundedStartBeat = Math.max(iterationStartBeat, clipStartBeat, sequencerProjected.startBeat);
-        const boundedEndBeat = Math.min(clipEndBeat, boundedStartBeat + event.duration);
-        if (boundedEndBeat <= boundedStartBeat) {
-            return [];
-        }
-
-        return [
-            {
-                ...event,
-                startBeat: boundedStartBeat,
-                duration: boundedEndBeat - boundedStartBeat,
-                velocity: sequencerProjected.velocity,
-            },
-        ];
+    return getGrooveProjection(grooveTemplateStore.value ?? defaultGrooveTemplateState).projectClipMidiEvents({
+        events,
+        clipId,
+        clipStartBeat,
+        clipEndBeat,
+        iterationStartBeat,
+        loopLengthBeats,
+        midiOffsetBeats,
+        clipGrooveAlreadyApplied,
+        eventsAreAbsolute,
     });
 }

@@ -1,5 +1,7 @@
 import { describe, it, expect, vi, beforeEach, type Mock } from 'vitest';
 
+import { projectClipMidiEvents, type projectCommittedGroove } from '#/modules/MIDI/useCases';
+
 import { ClipDummy } from '../../../__tests__/ClipDummy';
 import { TrackDummy } from '../../../__tests__/TrackDummy';
 import { type Track } from '../../../models/Track';
@@ -7,7 +9,6 @@ import { setOfflineRenderDependencies } from '../offlineRenderDependencies';
 import { renderTrackOffline } from '../renderOffline';
 
 import type { buildDeviceChain, getAudioContext, getCachedAudioBuffer } from '#/modules/AudioEngine/useCases';
-import type { projectClipMidiEvents, projectCommittedGroove } from '#/modules/MIDI/useCases';
 
 type RenderOfflineMocks = {
     buildDeviceChain: Mock<typeof buildDeviceChain>;
@@ -223,7 +224,10 @@ describe('renderTrackOffline', () => {
         mocks.getAudioContext.mockReturnValue({ sampleRate: 44100 } as AudioContext);
         mocks.getCachedAudioBuffer.mockReturnValue(null);
         mocks.getUpstreamSubgraph.mockReturnValue(new Set<string>());
-        setOfflineRenderDependencies({ projectPpqEndpoints });
+        setOfflineRenderDependencies({
+            projectPpqEndpoints,
+            createMidiEventProjector: () => projectClipMidiEvents,
+        });
         mocks.projectCommittedGroove.mockImplementation(({ events }) => events);
         mocks.projectClipMidiEvents.mockImplementation((input) => {
             const clipProjected = mocks.projectCommittedGroove({

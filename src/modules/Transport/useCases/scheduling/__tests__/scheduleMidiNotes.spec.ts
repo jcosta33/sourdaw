@@ -137,11 +137,31 @@ describe('scheduleMidiNotes', () => {
         await scheduleMidiNotes(0, 4, 0, -1, [], defaultTransportState, 120);
 
         expect(projectCommittedGroove).toHaveBeenCalledWith({
-            events: source,
+            events: [source[0]],
             consumerType: 'clip',
             consumerId: 'clip-1',
         });
         expect(vi.mocked(scheduleNote).mock.calls[0]?.[5]).toBe(80);
+    });
+
+    it('bounds projection work to the active window for a dense long-loop clip', async () => {
+        const track = midiTrack({
+            clips: [midiClip({ endBeat: 4_000, loopEnabled: true, loopLength: 4 })],
+        });
+        const notes = Array.from({ length: 64 }, (_, index) => ({
+            id: `dense-${index}`,
+            pitch: 60,
+            startBeat: index / 1_000,
+            duration: 0.01,
+            velocity: 100,
+        }));
+        (trackStore as { value: unknown }).value = { tracks: [track] };
+        (midiStore as { value: unknown }).value = { notesByClipId: { 'clip-1': notes } };
+
+        await scheduleMidiNotes(2_000, 2_000.1, 2_000, -1, [], defaultTransportState, 120);
+
+        expect(projectClipMidiEvents).toHaveBeenCalledTimes(64);
+        expect(scheduleNote).toHaveBeenCalledTimes(64);
     });
 
     // §1 — Per-note probability must be deterministic so replays are identical.

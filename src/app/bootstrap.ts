@@ -83,7 +83,7 @@ import {
     getMidiGrooveHandlers,
     getMidiNoteTransformHandlers,
     getPatternInstanceHandlers,
-    projectClipMidiEvents,
+    createGrooveMidiEventProjector,
     setWebMidiRealtimeProcessor,
     setWebMidiRuntimeEventBus,
     getWebMidiInputHandlers,
@@ -140,9 +140,12 @@ actionHistoryStore.subscribe((state) => {
     syncActionReplayMetadata(state?.entries ?? []);
 });
 setRuntimeLogger(logger);
-configureOfflineMidiEventProjection({ project: projectClipMidiEvents });
+configureOfflineMidiEventProjection({ createProjector: createGrooveMidiEventProjector });
 configureOfflinePpqEndpointProjection({ project: projectPpqEndpoints });
-setOfflineRenderDependencies({ projectPpqEndpoints });
+setOfflineRenderDependencies({
+    projectPpqEndpoints,
+    createMidiEventProjector: createGrooveMidiEventProjector,
+});
 setToasterGrooveAssignmentExecutor({ execute: executeAppAction });
 setArrangementEventBus(eventBus);
 setWorkspaceEventBus(eventBus);

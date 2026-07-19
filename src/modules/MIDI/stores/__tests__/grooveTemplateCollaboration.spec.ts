@@ -1,5 +1,5 @@
 import { change, clone, from, merge, type Doc } from '@automerge/automerge';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import {
     configureAutomergeStoragePort,
@@ -25,10 +25,17 @@ function createTemplate(id: string): GrooveTemplate {
     };
 }
 
-function createPeer(initialDoc: Doc<RootDocument>): { getDoc: () => Doc<RootDocument>; port: TestPort } {
+function createPeer(initialDoc: Doc<RootDocument>): {
+    getDoc: () => Doc<RootDocument>;
+    replaceDoc: (nextDoc: Doc<RootDocument>) => void;
+    port: TestPort;
+} {
     let doc = initialDoc;
     return {
         getDoc: () => doc,
+        replaceDoc: (nextDoc) => {
+            doc = nextDoc;
+        },
         port: {
             getDoc: () => doc,
             getSemanticMessage: () => undefined,
@@ -73,6 +80,7 @@ describe('groove template collaboration storage', () => {
     afterEach(() => {
         flushAutomergeStorageWrites();
         configureAutomergeStoragePort(null);
+        vi.unstubAllGlobals();
     });
 
     it.each(['left-right', 'right-left'] as const)(
@@ -129,6 +137,44 @@ describe('groove template collaboration storage', () => {
             );
         }
     );
+
+    it('rebases a deferred local template write over a remote hydrate before the animation frame', () => {
+        const frameCallbacks: FrameRequestCallback[] = [];
+        vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback): number => {
+            frameCallbacks.push(callback);
+            return 17;
+        });
+        const baseline = createBaseline({ templates: createBuiltinGrooveTemplates(), assignments: [] });
+        const remotePeer = createPeer(clone(baseline));
+        const remoteStorage = createGrooveTemplateAutomergeStorage();
+        configureAutomergeStoragePort(remotePeer.port);
+        remoteStorage.hydrate?.();
+        remoteStorage.set({
+            templates: [...remoteStorage.get()!.templates, createTemplate('remote-before-frame')],
+            assignments: [],
+        });
+        flushAutomergeStorageWrites();
+
+        const localPeer = createPeer(clone(baseline));
+        const localStorage = createGrooveTemplateAutomergeStorage();
+        configureAutomergeStoragePort(localPeer.port);
+        localStorage.hydrate?.();
+        localStorage.set({
+            templates: [...localStorage.get()!.templates, createTemplate('local-pending')],
+            assignments: [],
+        });
+        localPeer.replaceDoc(merge(localPeer.getDoc(), remotePeer.getDoc()));
+        expect(localStorage.hydrate?.()).toBe(true);
+
+        frameCallbacks.at(-1)?.(100);
+
+        const reopened = createGrooveTemplateAutomergeStorage();
+        configureAutomergeStoragePort(localPeer.port);
+        expect(reopened.hydrate?.()).toBe(true);
+        expect(reopened.get()!.templates.map((template) => template.id)).toEqual(
+            expect.arrayContaining(['local-pending', 'remote-before-frame'])
+        );
+    });
 
     it.each(['left-right', 'right-left'] as const)(
         'reconciles concurrent first writes from a keyless legacy root and keeps later edits $0',

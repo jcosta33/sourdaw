@@ -47,7 +47,11 @@ export class GrooveModule extends BaseMidiProcessor {
                         : transport.ppqPosition + (event.timeSamples - blockStartSamples) / beatLengthSamples);
                 const stepIdx = Math.round(beatPos / this.stepBeats);
                 const templateIdx = ((stepIdx % this.slotCount) + this.slotCount) % this.slotCount;
-                const offsetBeats = this.timingOffsets[templateIdx]! * this.amount * this.stepBeats;
+                const requestedOffsetBeats = this.timingOffsets[templateIdx]! * this.amount * this.stepBeats;
+                const key = (event.kind.channel << 7) | event.kind.note;
+                const offsetBeats = event.noteInstanceId
+                    ? this.setInstanceOffset(event.trackId, event.noteInstanceId, requestedOffsetBeats)
+                    : this.enqueueOffset(event.trackId, key, requestedOffsetBeats);
                 const endpointBeatLengthSamples = (transport.sampleRate * 60) / (event.tempoBpm ?? transport.bpm);
                 const offsetSamples = Math.round(offsetBeats * endpointBeatLengthSamples);
                 const velocity = Math.max(
@@ -57,13 +61,6 @@ export class GrooveModule extends BaseMidiProcessor {
                         Math.round(event.kind.velocity + this.dynamicsOffsets[templateIdx]! * 127 * this.amount)
                     )
                 );
-
-                const key = (event.kind.channel << 7) | event.kind.note;
-                if (event.noteInstanceId) {
-                    this.setInstanceOffset(event.trackId, event.noteInstanceId, offsetBeats);
-                } else {
-                    this.enqueueOffset(event.trackId, key, offsetBeats);
-                }
 
                 output.push({
                     ...event,
@@ -91,7 +88,7 @@ export class GrooveModule extends BaseMidiProcessor {
         }
     }
 
-    private enqueueOffset(trackId: string | undefined, key: number, offset: number): void {
+    private enqueueOffset(trackId: string | undefined, key: number, offset: number): number {
         let routeMap = this.noteMap.get(trackId);
         if (!routeMap) {
             routeMap = new Map<number, PendingNoteOffsets>();
@@ -109,23 +106,25 @@ export class GrooveModule extends BaseMidiProcessor {
         }
         if (pending.overflow > 0 || pending.size === pending.values.length) {
             pending.overflow = Math.min(Number.MAX_SAFE_INTEGER, pending.overflow + 1);
-            return;
+            return 0;
         }
         const tail = (pending.head + pending.size) % pending.values.length;
         pending.values[tail] = offset;
         pending.size += 1;
+        return offset;
     }
 
     private getInstanceKey(trackId: string | undefined, noteInstanceId: string): string {
         return `${trackId ?? ''}\u0000${noteInstanceId}`;
     }
 
-    private setInstanceOffset(trackId: string | undefined, noteInstanceId: string, offset: number): void {
+    private setInstanceOffset(trackId: string | undefined, noteInstanceId: string, offset: number): number {
         const key = this.getInstanceKey(trackId, noteInstanceId);
         if (!this.noteInstanceOffsets.has(key) && this.noteInstanceOffsets.size >= MAX_PENDING_NOTE_INSTANCES) {
-            return;
+            return 0;
         }
         this.noteInstanceOffsets.set(key, offset);
+        return offset;
     }
 
     private takeInstanceOffset(trackId: string | undefined, noteInstanceId: string): number {
