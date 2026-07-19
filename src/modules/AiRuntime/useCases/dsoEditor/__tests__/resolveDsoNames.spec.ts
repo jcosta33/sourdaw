@@ -3,9 +3,10 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { type Dso } from '../../../models/DsoTypes';
 import { resolveDsoNames } from '../resolveDsoNames';
 
-const mocks = vi.hoisted(() => ({
-    trackStoreValue: { value: null as unknown },
-}));
+const mocks = vi.hoisted(() => {
+    const trackStoreValue: { value: unknown } = { value: null };
+    return { trackStoreValue };
+});
 
 vi.mock('#/modules/Arrangement/stores', () => ({
     trackStore: {
@@ -153,17 +154,32 @@ describe('resolveDsoNames', () => {
     });
 
     it('does not create or error for add_track DSOs with an unresolved track_id', () => {
-        const dso = { op: 'add_track' as const, name: 'New', kind: 'audio' as const, track_id: 'unresolved-placeholder' };
+        const dso = {
+            op: 'add_track' as const,
+            name: 'New',
+            kind: 'audio' as const,
+            track_id: 'unresolved-placeholder',
+        };
         expect(resolveDsoNames([dso])).toEqual([]);
         expect(dso.track_id).toBe('unresolved-placeholder');
     });
 
     it('resolves destination_track_id and reports an error when it cannot be found', () => {
-        const ok = { op: 'move_clip' as const, clip_id: 'c1', destination_track_id: 'bass', destination_start_beats: 0 };
+        const ok = {
+            op: 'move_clip' as const,
+            clip_id: 'c1',
+            destination_track_id: 'bass',
+            destination_start_beats: 0,
+        };
         expect(resolveDsoNames([ok])).toEqual([]);
         expect(ok.destination_track_id).toBe('t2');
 
-        const bad = { op: 'move_clip' as const, clip_id: 'c1', destination_track_id: 'nowhere', destination_start_beats: 0 };
+        const bad = {
+            op: 'move_clip' as const,
+            clip_id: 'c1',
+            destination_track_id: 'nowhere',
+            destination_start_beats: 0,
+        };
         expect(resolveDsoNames([bad])).toEqual([{ dso: bad, reason: 'Could not find destination track "nowhere"' }]);
     });
 

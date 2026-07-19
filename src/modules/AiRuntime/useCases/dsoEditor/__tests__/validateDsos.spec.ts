@@ -3,9 +3,10 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { type Dso } from '../../../models/DsoTypes';
 import { validateDsos } from '../validateDsos';
 
-const mocks = vi.hoisted(() => ({
-    trackStoreValue: { value: null as unknown },
-}));
+const mocks = vi.hoisted(() => {
+    const trackStoreValue: { value: unknown } = { value: null };
+    return { trackStoreValue };
+});
 
 vi.mock('#/modules/Arrangement/stores', () => ({
     trackStore: {
@@ -43,7 +44,11 @@ describe('validateDsos', () => {
     });
 
     const trackExistenceOps: Array<{ label: string; valid: Dso; invalid: Dso }> = [
-        { label: 'remove_track', valid: { op: 'remove_track', track_id: 'track-1' }, invalid: { op: 'remove_track', track_id: 'missing' } },
+        {
+            label: 'remove_track',
+            valid: { op: 'remove_track', track_id: 'track-1' },
+            invalid: { op: 'remove_track', track_id: 'missing' },
+        },
         {
             label: 'rename_track',
             valid: { op: 'rename_track', track_id: 'track-1', name: 'Kit' },
@@ -87,7 +92,11 @@ describe('validateDsos', () => {
     });
 
     const clipExistenceOps: Array<{ label: string; valid: Dso; invalid: Dso }> = [
-        { label: 'remove_clip', valid: { op: 'remove_clip', clip_id: 'clip-1' }, invalid: { op: 'remove_clip', clip_id: 'missing' } },
+        {
+            label: 'remove_clip',
+            valid: { op: 'remove_clip', clip_id: 'clip-1' },
+            invalid: { op: 'remove_clip', clip_id: 'missing' },
+        },
         {
             label: 'rename_clip',
             valid: { op: 'rename_clip', clip_id: 'clip-1', name: 'Loop' },
@@ -118,13 +127,45 @@ describe('validateDsos', () => {
     const generationOps: Array<{ label: string; valid: Dso; invalid: Dso }> = [
         {
             label: 'generate_melody',
-            valid: { op: 'generate_melody', track_id: 'track-1', style: 'pop', key: 'C', scale: 'major', octave: 4, bars: 4, density: 0.5 },
-            invalid: { op: 'generate_melody', track_id: 'missing', style: 'pop', key: 'C', scale: 'major', octave: 4, bars: 4, density: 0.5 },
+            valid: {
+                op: 'generate_melody',
+                track_id: 'track-1',
+                style: 'pop',
+                key: 'C',
+                scale: 'major',
+                octave: 4,
+                bars: 4,
+                density: 0.5,
+            },
+            invalid: {
+                op: 'generate_melody',
+                track_id: 'missing',
+                style: 'pop',
+                key: 'C',
+                scale: 'major',
+                octave: 4,
+                bars: 4,
+                density: 0.5,
+            },
         },
         {
             label: 'generate_chords',
-            valid: { op: 'generate_chords', track_id: 'track-1', key: 'C', progression: 'I-IV-V', bars: 4, voicing: 'close' },
-            invalid: { op: 'generate_chords', track_id: 'missing', key: 'C', progression: 'I-IV-V', bars: 4, voicing: 'close' },
+            valid: {
+                op: 'generate_chords',
+                track_id: 'track-1',
+                key: 'C',
+                progression: 'I-IV-V',
+                bars: 4,
+                voicing: 'close',
+            },
+            invalid: {
+                op: 'generate_chords',
+                track_id: 'missing',
+                key: 'C',
+                progression: 'I-IV-V',
+                bars: 4,
+                voicing: 'close',
+            },
         },
         {
             label: 'generate_drums',
@@ -139,12 +180,26 @@ describe('validateDsos', () => {
     });
 
     it('flags a missing track and an inverted beat range for add_clip', () => {
-        const dso: Dso = { op: 'add_clip', track_id: 'missing', name: 'New', type: 'audio', start_beats: 8, end_beats: 4 };
+        const dso: Dso = {
+            op: 'add_clip',
+            track_id: 'missing',
+            name: 'New',
+            type: 'audio',
+            start_beats: 8,
+            end_beats: 4,
+        };
         expect(validateDsos([dso])).toEqual([
             { dso, reason: 'Track "missing" does not exist' },
             { dso, reason: 'Clip end must be after start' },
         ]);
-        const ok: Dso = { op: 'add_clip', track_id: 'track-1', name: 'New', type: 'audio', start_beats: 0, end_beats: 4 };
+        const ok: Dso = {
+            op: 'add_clip',
+            track_id: 'track-1',
+            name: 'New',
+            type: 'audio',
+            start_beats: 0,
+            end_beats: 4,
+        };
         expect(validateDsos([ok])).toEqual([]);
     });
 
@@ -152,11 +207,21 @@ describe('validateDsos', () => {
         {
             label: 'move_clip',
             valid: { op: 'move_clip', clip_id: 'clip-1', destination_track_id: 'track-1', destination_start_beats: 0 },
-            invalid: { op: 'move_clip', clip_id: 'missing-clip', destination_track_id: 'missing-track', destination_start_beats: 0 },
+            invalid: {
+                op: 'move_clip',
+                clip_id: 'missing-clip',
+                destination_track_id: 'missing-track',
+                destination_start_beats: 0,
+            },
         },
         {
             label: 'duplicate_clip',
-            valid: { op: 'duplicate_clip', clip_id: 'clip-1', destination_track_id: 'track-1', destination_start_beats: 0 },
+            valid: {
+                op: 'duplicate_clip',
+                clip_id: 'clip-1',
+                destination_track_id: 'track-1',
+                destination_start_beats: 0,
+            },
             invalid: {
                 op: 'duplicate_clip',
                 clip_id: 'missing-clip',
@@ -226,11 +291,15 @@ describe('validateDsos', () => {
             { dso, reason: 'Source track "missing-a" does not exist' },
             { dso, reason: 'Destination track "missing-b" does not exist' },
         ]);
-        expect(validateDsos([{ op: 'create_send', from_track_id: 'track-1', to_track_id: 'track-1', gain: 0.5 }])).toEqual([]);
+        expect(
+            validateDsos([{ op: 'create_send', from_track_id: 'track-1', to_track_id: 'track-1', gain: 0.5 }])
+        ).toEqual([]);
     });
 
     it('treats "latest" as always valid for set_device_param but flags an unknown device id', () => {
-        expect(validateDsos([{ op: 'set_device_param', device_id: 'latest', param_name: 'mix', value: 0.5 }])).toEqual([]);
+        expect(validateDsos([{ op: 'set_device_param', device_id: 'latest', param_name: 'mix', value: 0.5 }])).toEqual(
+            []
+        );
         const dso: Dso = { op: 'set_device_param', device_id: 'missing', param_name: 'mix', value: 0.5 };
         expect(validateDsos([dso])).toEqual([{ dso, reason: 'Device "missing" does not exist' }]);
     });
@@ -262,7 +331,9 @@ describe('validateDsos', () => {
 
     it('delegates set_time_signature validation and surfaces the returned reason', () => {
         const dso: Dso = { op: 'set_time_signature', numerator: 7, denominator: 3 };
-        expect(validateDsos([dso])).toEqual([{ dso, reason: 'Time signature denominator 3 must be one of 2, 4, 8, or 16' }]);
+        expect(validateDsos([dso])).toEqual([
+            { dso, reason: 'Time signature denominator 3 must be one of 2, 4, 8, or 16' },
+        ]);
         expect(validateDsos([{ op: 'set_time_signature', numerator: 4, denominator: 4 }])).toEqual([]);
     });
 
