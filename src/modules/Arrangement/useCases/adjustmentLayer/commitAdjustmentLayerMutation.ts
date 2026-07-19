@@ -33,6 +33,7 @@ export function commitAdjustmentLayerMutation(input: CommitAdjustmentLayerMutati
             }
 
             const afterLayers = adjustmentLayerStore.value?.layers ?? [];
+            input.inverseAction.payload.expectedLayersFingerprint = JSON.stringify(afterLayers);
             const trackState = trackStore.value;
             if (!trackState) {
                 return;

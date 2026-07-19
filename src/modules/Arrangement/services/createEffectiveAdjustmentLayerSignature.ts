@@ -25,6 +25,9 @@ export function createEffectiveAdjustmentLayerSignature(input: CreateEffectiveAd
             if (!layer.enabled) {
                 return false;
             }
+            if (layer.mix <= 0) {
+                return false;
+            }
             if (layer.affectedTrackIds.length > 0) {
                 return layer.affectedTrackIds.includes(input.trackId);
             }

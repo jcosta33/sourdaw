@@ -222,6 +222,19 @@ describe('adjustmentLayerFreezeStaleness', () => {
         expect(getTrack('track-c').freezeState.status).toBe('frozen');
     });
 
+    it('unaffected: does not stale tracks when a zero-mix layer changes', async () => {
+        adjustmentLayerStore.set({ layers: [createLayer({ mix: 0 })] });
+
+        await executeAppAction({
+            type: 'setLayerParameter',
+            payload: { layerId: 'layer-1', paramName: 'Gain', value: 6 },
+        });
+
+        expect(getTrack('track-a').freezeState.status).toBe('frozen');
+        expect(getTrack('track-b').freezeState.status).toBe('frozen');
+        expect(getTrack('track-c').freezeState.status).toBe('frozen');
+    });
+
     it('unaffected: keeps tracks current when they remain in the changed scope', async () => {
         adjustmentLayerStore.set({
             layers: [createLayer({ affectedTrackIds: ['track-a', 'track-b'] })],
@@ -242,6 +255,7 @@ describe('adjustmentLayerFreezeStaleness', () => {
             type: 'restoreAdjustmentLayerMutation',
             payload: {
                 layers: [createLayer({ mix: 0.75 })],
+                expectedLayersFingerprint: JSON.stringify([createLayer()]),
                 freezeTransitions: [],
             },
         });
@@ -249,6 +263,33 @@ describe('adjustmentLayerFreezeStaleness', () => {
         expect(getTrack('track-a').freezeState.status).toBe('stale');
         expect(getTrack('track-b').freezeState.status).toBe('frozen');
         expect(getTrack('track-c').freezeState.status).toBe('frozen');
+    });
+
+    it('rejects an old inverse instead of overwriting a later adjustment edit', async () => {
+        await executeAppAction({ type: 'setLayerMix', payload: { layerId: 'layer-1', mix: 0.5 } });
+        const oldInverse: AppAction = {
+            type: 'restoreAdjustmentLayerMutation',
+            payload: {
+                layers: [createLayer()],
+                expectedLayersFingerprint: JSON.stringify([createLayer({ mix: 0.5 })]),
+                freezeTransitions: [{ trackId: 'track-a', previousStatus: 'frozen' }],
+            },
+        };
+
+        await executeAppAction({
+            type: 'setLayerParameter',
+            payload: { layerId: 'layer-1', paramName: 'Gain', value: 6 },
+        });
+
+        await expect(executeAppAction(oldInverse, { skipUndo: true })).rejects.toThrow(
+            'Adjustment-layer state changed after this action was committed'
+        );
+        expect(getLayerState().layers[0]).toEqual(
+            expect.objectContaining({
+                mix: 0.5,
+                parameters: [expect.objectContaining({ name: 'Gain', value: 6 })],
+            })
+        );
     });
 
     it('atomicUndo: commits both stores atomically and restores both through undo', async () => {

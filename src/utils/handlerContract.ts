@@ -504,6 +504,7 @@ export type AppAction =
           type: 'restoreAdjustmentLayerMutation';
           payload: {
               layers: readonly AdjustmentLayerSnapshot[];
+              expectedLayersFingerprint: string;
               freezeTransitions: Array<{ trackId: string; previousStatus: 'frozen' }>;
           };
       }

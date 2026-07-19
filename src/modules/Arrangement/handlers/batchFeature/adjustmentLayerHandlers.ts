@@ -51,6 +51,7 @@ function createInverseAction(): RestoreAdjustmentLayerMutationAction {
         type: 'restoreAdjustmentLayerMutation',
         payload: {
             layers: adjustmentLayerStore.value?.layers.map(cloneLayer) ?? [],
+            expectedLayersFingerprint: '',
             freezeTransitions: [],
         },
     };

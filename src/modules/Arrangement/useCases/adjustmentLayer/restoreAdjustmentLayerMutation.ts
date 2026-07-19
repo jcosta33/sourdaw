@@ -22,6 +22,10 @@ export function restoreAdjustmentLayerMutation(payload: RestoreAdjustmentLayerMu
     const beforeLayers = beforeLayerState?.layers ?? [];
     const restoredLayers = payload.layers.map(cloneLayer);
 
+    if (JSON.stringify(beforeLayers) !== payload.expectedLayersFingerprint) {
+        throw new Error('Adjustment-layer state changed after this action was committed');
+    }
+
     batchStoreUpdates(() => {
         try {
             adjustmentLayerStore.set({ layers: restoredLayers });
