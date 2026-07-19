@@ -1,3 +1,4 @@
+import { yeastPreviewTap } from '../../engine/yeastPreviewTap';
 import { getYeastRuntimeError, getYeastRuntimeStatus, processYeastRuntimeTransaction } from '../../engine/yeastRuntime';
 import { createYeastProcessorProjection } from '../../models/YeastProcessorProjection';
 import { yeastStore } from '../../stores/yeastStore';
@@ -41,12 +42,20 @@ export async function processYeastMidi(input: ProcessYeastMidiInput): Promise<Mi
     }
 
     const projection = createYeastProcessorProjection(state.processors);
+    const previewScope = {
+        rackId: input.rackId ?? input.trackId,
+        routeId: input.routeId ?? input.trackId,
+        trackId: input.trackId,
+    };
+    if (projection.length === 0 && !yeastPreviewTap.isEnabled(previewScope)) {
+        return [...input.events];
+    }
     let output: MidiEvent[];
     try {
         const processed = await processYeastRuntimeTransaction({
             ...input,
-            rackId: input.rackId ?? input.trackId,
-            routeId: input.routeId ?? input.trackId,
+            rackId: previewScope.rackId,
+            routeId: previewScope.routeId,
             projection,
         });
         publishRuntimeStatus();

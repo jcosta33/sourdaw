@@ -22,11 +22,9 @@ type YeastPreviewScope = Readonly<{
 export type YeastPreviewBinding = YeastPreviewScope & Readonly<{ captureEpoch: number }>;
 
 type RouteBuffer = {
-    readonly storage: MutableYeastPreviewEvent[];
+    readonly slots: number[];
     captureEpoch: number;
     readonly trackId: string;
-    readIndex: number;
-    size: number;
     droppedEvents: number;
     projectionVersion: number;
     reset: boolean;
@@ -55,11 +53,9 @@ function createPreviewSlot(): MutableYeastPreviewEvent {
 
 function createRouteBuffer(captureEpoch: number, trackId: string): RouteBuffer {
     return {
-        storage: Array.from({ length: YEAST_PREVIEW_CAPACITY }, createPreviewSlot),
+        slots: [],
         captureEpoch,
         trackId,
-        readIndex: 0,
-        size: 0,
         droppedEvents: 0,
         projectionVersion: 0,
         reset: false,
@@ -87,6 +83,13 @@ function copyEvent(target: MutableYeastPreviewEvent, source: YeastPreviewEvent):
 
 export class YeastPreviewTap {
     private readonly routes = new Map<string, Map<string, RouteBuffer>>();
+    /** One aggregate event pool shared by every route. No route can multiply the 512-event budget. */
+    private readonly storage = Array.from({ length: YEAST_PREVIEW_CAPACITY }, createPreviewSlot);
+    /** LIFO free list seeded in reverse so first allocation uses slot zero deterministically. */
+    private readonly freeSlots = Array.from(
+        { length: YEAST_PREVIEW_CAPACITY },
+        (_, index) => YEAST_PREVIEW_CAPACITY - index - 1
+    );
     private nextCaptureEpoch = 0;
 
     setEnabled(scope: YeastPreviewScope, enabled: boolean): YeastPreviewBinding | undefined {
@@ -107,6 +110,9 @@ export class YeastPreviewTap {
               }
             : undefined;
         const captureEpoch = this.takeNextCaptureEpoch();
+        if (existing) {
+            this.releaseRouteSlots(existing);
+        }
         if (!enabled) {
             rackRoutes?.delete(scope.routeId);
             if (rackRoutes?.size === 0) {
@@ -139,8 +145,7 @@ export class YeastPreviewTap {
         }
         const released = { ...scope, captureEpoch: route.captureEpoch };
         route.captureEpoch = this.takeNextCaptureEpoch();
-        route.readIndex = 0;
-        route.size = 0;
+        this.releaseRouteSlots(route);
         route.droppedEvents = 0;
         route.projectionVersion = 0;
         route.reset = true;
@@ -169,8 +174,7 @@ export class YeastPreviewTap {
         }
 
         if (input.reset) {
-            route.readIndex = 0;
-            route.size = 0;
+            this.releaseRouteSlots(route);
             route.droppedEvents = 0;
             route.reset = true;
         }
@@ -188,13 +192,14 @@ export class YeastPreviewTap {
                 continue;
             }
             recordRoute.projectionVersion = record.projectionVersion;
-            if (recordRoute.size === YEAST_PREVIEW_CAPACITY) {
+            const slotIndex = this.freeSlots.pop();
+            if (slotIndex === undefined) {
                 recordRoute.droppedEvents = Math.min(Number.MAX_SAFE_INTEGER, recordRoute.droppedEvents + 1);
                 continue;
             }
-            const slot = recordRoute.storage[(recordRoute.readIndex + recordRoute.size) % YEAST_PREVIEW_CAPACITY]!;
+            const slot = this.storage[slotIndex]!;
             copyEvent(slot, record);
-            recordRoute.size += 1;
+            recordRoute.slots.push(slotIndex);
         }
     }
 
@@ -202,8 +207,8 @@ export class YeastPreviewTap {
         const route = this.findRoute(scope);
         const events: YeastPreviewEvent[] = [];
         if (route) {
-            for (let index = 0; index < route.size; index++) {
-                const slot = route.storage[(route.readIndex + index) % YEAST_PREVIEW_CAPACITY]!;
+            for (const slotIndex of route.slots) {
+                const slot = this.storage[slotIndex]!;
                 events.push(Object.freeze({ ...slot }));
             }
         }
@@ -220,8 +225,7 @@ export class YeastPreviewTap {
             droppedEvents: route?.droppedEvents ?? 0,
         });
         if (route) {
-            route.readIndex = (route.readIndex + route.size) % YEAST_PREVIEW_CAPACITY;
-            route.size = 0;
+            this.releaseRouteSlots(route);
             route.droppedEvents = 0;
             route.reset = false;
         }
@@ -229,7 +233,14 @@ export class YeastPreviewTap {
     }
 
     getStorageIdentity(scope: YeastPreviewScope): object | undefined {
-        return this.findRoute(scope)?.storage;
+        return this.findRoute(scope)?.slots;
+    }
+
+    private releaseRouteSlots(route: RouteBuffer): void {
+        for (const slotIndex of route.slots) {
+            this.freeSlots.push(slotIndex);
+        }
+        route.slots.length = 0;
     }
 
     private findRoute(scope: YeastPreviewScope): RouteBuffer | undefined {

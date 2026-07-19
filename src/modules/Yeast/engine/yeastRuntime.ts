@@ -36,6 +36,10 @@ type YeastRuntimeSession = {
     projection: YeastProcessorProjection;
     processTail: Promise<void>;
     generation: number;
+    /** Semantic preview identity, independent of async request cancellation. */
+    discontinuityEpoch: number;
+    /** Last scheduler-owned semantic epoch folded into discontinuityEpoch. */
+    sourceDiscontinuityEpoch: number | undefined;
     projectionRevision: number;
     appliedProjectionRevision: number;
     status: YeastRuntimeStatus;
@@ -46,6 +50,7 @@ type YeastRuntimeSession = {
     pendingOutputPanic: boolean;
     pendingAllNotesOff: PendingAllNotesOff | null;
     activeOutputNotes: Map<string, ActiveOutputNote>;
+    previewBindings: Map<string, YeastPreviewBinding>;
 };
 
 type ActiveOutputNote = {
@@ -61,7 +66,7 @@ type PendingAllNotesOff = {
     nowSamples: number;
 };
 
-const YEAST_RUNTIME_SESSION_VERSION = 8;
+const YEAST_RUNTIME_SESSION_VERSION = 9;
 
 const session = createHmrPersistentState<YeastRuntimeSession>('yeast.runtime', () => ({
     version: YEAST_RUNTIME_SESSION_VERSION,
@@ -71,6 +76,8 @@ const session = createHmrPersistentState<YeastRuntimeSession>('yeast.runtime', (
     projection: [],
     processTail: Promise.resolve(),
     generation: 0,
+    discontinuityEpoch: 0,
+    sourceDiscontinuityEpoch: undefined,
     projectionRevision: 0,
     appliedProjectionRevision: 0,
     status: 'uninitialized',
@@ -81,9 +88,17 @@ const session = createHmrPersistentState<YeastRuntimeSession>('yeast.runtime', (
     pendingOutputPanic: false,
     pendingAllNotesOff: null,
     activeOutputNotes: new Map(),
+    previewBindings: new Map(),
 }));
 
-// Retained pre-v8 sessions either use the pitch-only host note-off contract,
+if (!Number.isSafeInteger(session.discontinuityEpoch) || session.discontinuityEpoch < 0) {
+    session.discontinuityEpoch = 0;
+}
+if (!(session.previewBindings instanceof Map)) {
+    session.previewBindings = new Map();
+}
+
+// Retained pre-v9 sessions either use the pitch-only host note-off contract,
 // predate the preview sidecar listener, or deliver preview inline with scheduler
 // replies. A same-version HMR evaluation also owns fresh listener closures, so
 // revoke any retained Worker generation instead of leaving it bound to the old
@@ -95,6 +110,8 @@ if (session.version !== YEAST_RUNTIME_SESSION_VERSION || retainedRuntimeNeedsReb
     const retainedRuntimeMayOwnOutput = session.context !== null || session.nodePromise !== null || staleNode !== null;
     const pendingNotesOff = collectActiveOutputNotes(session.generation);
     const hadActiveOutputNotes = pendingNotesOff.length > 0;
+    advanceRuntimeDiscontinuityEpoch();
+    retirePreviewBindings(staleNode);
     session.version = YEAST_RUNTIME_SESSION_VERSION;
     session.generation =
         Number.isSafeInteger(session.generation) && session.generation < Number.MAX_SAFE_INTEGER
@@ -184,17 +201,64 @@ function isLiveRuntime(node: YeastWorkerResult, generation: number): boolean {
     return session.node === node && session.generation === generation;
 }
 
-function releasePreviewBindings(bindings: readonly YeastPreviewBinding[], node = session.node): void {
-    if (!node) {
-        return;
+function advanceRuntimeDiscontinuityEpoch(): number {
+    session.discontinuityEpoch =
+        Number.isSafeInteger(session.discontinuityEpoch) && session.discontinuityEpoch < Number.MAX_SAFE_INTEGER
+            ? session.discontinuityEpoch + 1
+            : 1;
+    return session.discontinuityEpoch;
+}
+
+function previewBindingKey(binding: Pick<YeastPreviewBinding, 'rackId' | 'routeId' | 'trackId'>): string {
+    return `${binding.rackId}\u0000${binding.routeId}\u0000${binding.trackId}`;
+}
+
+function rememberPreviewBinding(binding: YeastPreviewBinding): void {
+    session.previewBindings.set(previewBindingKey(binding), binding);
+}
+
+function forgetPreviewBinding(binding: YeastPreviewBinding): void {
+    const key = previewBindingKey(binding);
+    if (session.previewBindings.get(key)?.captureEpoch === binding.captureEpoch) {
+        session.previewBindings.delete(key);
     }
+}
+
+function releasePreviewBindings(bindings: readonly YeastPreviewBinding[], node = session.node): void {
     for (const binding of bindings) {
+        forgetPreviewBinding(binding);
+        if (!node) {
+            continue;
+        }
         try {
             node.releasePreview(binding);
         } catch (error: unknown) {
             logger.warn('[Yeast] Preview binding release failed:', error);
         }
     }
+}
+
+function retirePreviewBindings(node = session.node): void {
+    const bindings = new Map<string, YeastPreviewBinding>();
+    for (const binding of session.previewBindings.values()) {
+        bindings.set(`${previewBindingKey(binding)}\u0000${binding.captureEpoch}`, binding);
+    }
+    for (const binding of yeastPreviewTap.resetAll()) {
+        bindings.set(`${previewBindingKey(binding)}\u0000${binding.captureEpoch}`, binding);
+    }
+    session.previewBindings.clear();
+    releasePreviewBindings([...bindings.values()], node);
+}
+
+function transportForRuntime(transport: TransportInfo): TransportInfo {
+    if (
+        transport.discontinuityEpoch !== undefined &&
+        transport.discontinuityEpoch !== session.sourceDiscontinuityEpoch
+    ) {
+        session.sourceDiscontinuityEpoch = transport.discontinuityEpoch;
+        advanceRuntimeDiscontinuityEpoch();
+    }
+    return { ...transport, discontinuityEpoch: session.discontinuityEpoch };
 }
 
 export function releaseYeastRuntimePreview(binding: YeastPreviewBinding): void {
@@ -342,6 +406,8 @@ function prepareRuntimeContext(context: BaseAudioContext): void {
             invalidateCurrentRuntime(previousNode);
         } else {
             settleRuntimeOutputNotes(session.generation);
+            retirePreviewBindings(null);
+            advanceRuntimeDiscontinuityEpoch();
             session.generation += 1;
             session.processTail = Promise.resolve();
             session.appliedProjectionRevision = 0;
@@ -387,6 +453,8 @@ function invalidateCurrentRuntime(node: YeastWorkerResult): boolean {
         return false;
     }
     settleRuntimeOutputNotes(session.generation);
+    retirePreviewBindings(node);
+    advanceRuntimeDiscontinuityEpoch();
     session.generation += 1;
     destroyCurrentNode();
     session.nodePromise = null;
@@ -642,11 +710,19 @@ export async function processYeastRuntimeBlock(input: ProcessYeastRuntimeBlockIn
                 throw new Error('Yeast Worker runtime changed during MIDI processing');
             }
             const previewCapture = yeastPreviewTap.getCaptureState({ rackId, routeId, trackId: input.trackId });
+            if (previewCapture.enabled) {
+                rememberPreviewBinding({
+                    rackId,
+                    routeId,
+                    trackId: input.trackId,
+                    captureEpoch: previewCapture.captureEpoch,
+                });
+            }
             const processedEvents = await node.processBlock(
                 input.events,
                 input.blockStartSamples,
                 input.blockEndSamples,
-                input.transport,
+                transportForRuntime(input.transport),
                 input.trackId,
                 previewCapture.enabled,
                 rackId,
@@ -703,11 +779,19 @@ export async function processYeastRuntimeTransaction(
             }
 
             const previewCapture = yeastPreviewTap.getCaptureState({ rackId, routeId, trackId: input.trackId });
+            if (previewCapture.enabled) {
+                rememberPreviewBinding({
+                    rackId,
+                    routeId,
+                    trackId: input.trackId,
+                    captureEpoch: previewCapture.captureEpoch,
+                });
+            }
             const processedEvents = await node.processBlock(
                 input.events,
                 input.blockStartSamples,
                 input.blockEndSamples,
-                input.transport,
+                transportForRuntime(input.transport),
                 input.trackId,
                 previewCapture.enabled,
                 rackId,
@@ -729,7 +813,7 @@ export async function processYeastRuntimeTransaction(
 }
 
 export async function sendYeastRuntimeAllNotesOff(nowSamples: number): Promise<void> {
-    releasePreviewBindings(yeastPreviewTap.resetAll());
+    retirePreviewBindings();
     const node = session.node;
     if (!node || session.status !== 'ready' || session.nodePromise) {
         if (session.context === null) {
@@ -771,13 +855,13 @@ export function setYeastRuntimeOutputPanicHandler(handler: () => void): void {
 }
 
 export function destroyYeastRuntime(): void {
-    releasePreviewBindings(yeastPreviewTap.resetAll());
     if (
         session.context === null &&
         session.node === null &&
         session.nodePromise === null &&
         session.activeOutputNotes.size === 0
     ) {
+        retirePreviewBindings(null);
         return;
     }
 
@@ -786,6 +870,8 @@ export function destroyYeastRuntime(): void {
         invalidateCurrentRuntime(node);
     } else {
         settleRuntimeOutputNotes(session.generation);
+        retirePreviewBindings(null);
+        advanceRuntimeDiscontinuityEpoch();
         session.generation += 1;
         session.nodePromise = null;
         session.processTail = Promise.resolve();

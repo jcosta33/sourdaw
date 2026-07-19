@@ -416,6 +416,61 @@ describe('yeastRuntime', () => {
         expect(nodeB.setProjection).toHaveBeenCalledWith(projectionA);
     });
 
+    it('releases and resets preview capture before destroying a terminally failed Worker', async () => {
+        const runtime = await loadRuntime();
+        const { yeastPreviewTap } = await import('../yeastPreviewTap');
+        const context = {} as BaseAudioContext;
+        const node = makeNode(context);
+        const scope = { rackId: 'rack-a', routeId: 'track-a', trackId: 'track-a' };
+        const lifecycle: string[] = [];
+        createNode.mockResolvedValueOnce(node);
+        yeastPreviewTap.setEnabled(scope, true);
+        node.releasePreview.mockImplementationOnce(() => {
+            lifecycle.push('release');
+        });
+        node.destroy.mockImplementationOnce(() => {
+            lifecycle.push('destroy');
+        });
+
+        await runtime.ensureYeastRuntime({ context, projection: projectionA });
+        await (runtime as RuntimeWithTransaction).processYeastRuntimeTransaction(makeRuntimeBlockInput(context));
+        const captureEpoch = yeastPreviewTap.getCaptureState(scope).captureEpoch;
+        yeastPreviewTap.publish({
+            ...scope,
+            captureEpoch,
+            projectionVersion: 1,
+            reset: false,
+            records: [],
+            provenance: [{ processorId: 'arp-1', bypassed: false, failed: false, eventCount: 1 }],
+            droppedEvents: 0,
+        });
+
+        node.emitTerminalError(new Error('Worker crashed'));
+
+        expect(node.releasePreview).toHaveBeenCalledWith({ ...scope, captureEpoch });
+        expect(yeastPreviewTap.read(scope)).toMatchObject({ ...scope, reset: true, events: [], provenance: [] });
+        expect(lifecycle).toEqual(['release', 'destroy']);
+    });
+
+    it('advances the delivered semantic discontinuity epoch when a failed runtime is replaced', async () => {
+        const runtime = await loadRuntime();
+        const context = {} as BaseAudioContext;
+        const nodeA = makeNode(context);
+        const nodeB = makeNode(context);
+        createNode.mockResolvedValueOnce(nodeA).mockResolvedValueOnce(nodeB);
+        const input = makeRuntimeBlockInput(context);
+        input.transport.discontinuityEpoch = 41;
+
+        await (runtime as RuntimeWithTransaction).processYeastRuntimeTransaction(input);
+        const beforeReplacement = nodeA.processBlock.mock.calls[0]?.[3].discontinuityEpoch;
+        nodeA.emitTerminalError(new Error('Worker crashed'));
+        await (runtime as RuntimeWithTransaction).processYeastRuntimeTransaction(input);
+        const afterReplacement = nodeB.processBlock.mock.calls[0]?.[3].discontinuityEpoch;
+
+        expect(beforeReplacement).toEqual(expect.any(Number));
+        expect(afterReplacement).toBeGreaterThan(beforeReplacement ?? 0);
+    });
+
     it('settles accepted output notes exactly once when the Worker becomes terminal', async () => {
         const runtime = await loadRuntime();
         const context = {} as BaseAudioContext;
@@ -553,6 +608,33 @@ describe('yeastRuntime', () => {
         expect(panicOutputNotes).toHaveBeenCalledTimes(1);
         expect(nodeA.destroy).toHaveBeenCalledTimes(1);
         expect(nodeB.destroy).not.toHaveBeenCalled();
+    });
+
+    it('releases and resets preview capture before replacing the AudioContext runtime', async () => {
+        const runtime = await loadRuntime();
+        const { yeastPreviewTap } = await import('../yeastPreviewTap');
+        const contextA = {} as BaseAudioContext;
+        const contextB = {} as BaseAudioContext;
+        const nodeA = makeNode(contextA);
+        const nodeB = makeNode(contextB);
+        const scope = { rackId: 'rack-a', routeId: 'track-a', trackId: 'track-a' };
+        const lifecycle: string[] = [];
+        createNode.mockResolvedValueOnce(nodeA).mockResolvedValueOnce(nodeB);
+        yeastPreviewTap.setEnabled(scope, true);
+        nodeA.releasePreview.mockImplementationOnce(() => {
+            lifecycle.push('release');
+        });
+        nodeA.destroy.mockImplementationOnce(() => {
+            lifecycle.push('destroy');
+        });
+
+        await (runtime as RuntimeWithTransaction).processYeastRuntimeTransaction(makeRuntimeBlockInput(contextA));
+        const captureEpoch = yeastPreviewTap.getCaptureState(scope).captureEpoch;
+        await runtime.ensureYeastRuntime({ context: contextB, projection: projectionB });
+
+        expect(nodeA.releasePreview).toHaveBeenCalledWith({ ...scope, captureEpoch });
+        expect(yeastPreviewTap.read(scope)).toMatchObject({ ...scope, reset: true, events: [], provenance: [] });
+        expect(lifecycle).toEqual(['release', 'destroy']);
     });
 
     it.each(['process', 'projection', 'command', 'panic'] as const)(

@@ -71,6 +71,8 @@ type TransportInfo = {
 
 export type SchedulerCancellation = {
     generation: number;
+    /** Semantic timeline identity; unlike generation, loop wraps and jumps advance it without cancellation. */
+    discontinuityEpoch: number;
     isCurrent: () => boolean;
 };
 
@@ -195,7 +197,7 @@ export async function scheduleMidiNotes(
                             loopEnabled: transport.loopStart < transport.loopEnd,
                             loopStartPpq: transport.loopStart,
                             loopEndPpq: transport.loopEnd,
-                            discontinuityEpoch: cancellation?.generation,
+                            discontinuityEpoch: cancellation?.discontinuityEpoch,
                         };
 
                         const midiEvents: MidiEvent[] = [];

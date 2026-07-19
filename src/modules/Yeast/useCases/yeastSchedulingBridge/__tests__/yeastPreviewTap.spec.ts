@@ -237,6 +237,47 @@ describe('AC-001 — Yeast scheduled-event preview tap', () => {
         });
     });
 
+    it('keeps the authored-event fast path for an empty projection when exact-route capture is disabled', async () => {
+        const authoredEvents = notePair(4);
+        runtime.processTransaction.mockReset();
+        yeastStore.set({ processors: [], uiLevel: 1 });
+        setYeastPreviewCaptureEnabled({ rackId: 'rack-a', trackId: 'track-a', enabled: false });
+
+        const output = await processYeastMidi({
+            context: {} as BaseAudioContext,
+            rackId: 'rack-a',
+            trackId: 'track-a',
+            events: authoredEvents,
+            blockStartSamples: 0,
+            blockEndSamples: 128,
+            transport,
+        });
+
+        expect(output).toEqual(authoredEvents);
+        expect(runtime.processTransaction).not.toHaveBeenCalled();
+    });
+
+    it('round-trips an empty projection through the Worker when exact-route capture is enabled', async () => {
+        const authoredEvents = notePair(5);
+        yeastStore.set({ processors: [], uiLevel: 1 });
+        runtime.processTransaction.mockResolvedValueOnce(authoredEvents);
+
+        await expect(
+            processYeastMidi({
+                context: {} as BaseAudioContext,
+                rackId: 'rack-a',
+                trackId: 'track-a',
+                events: authoredEvents,
+                blockStartSamples: 0,
+                blockEndSamples: 128,
+                transport,
+            })
+        ).resolves.toBe(authoredEvents);
+        expect(runtime.processTransaction).toHaveBeenCalledWith(
+            expect.objectContaining({ rackId: 'rack-a', routeId: 'track-a', trackId: 'track-a', projection: [] })
+        );
+    });
+
     it('never replaces scheduler output when preview publication fails', async () => {
         const processed = notePair(0);
         runtime.processTransaction.mockImplementationOnce(() => {
@@ -301,6 +342,50 @@ describe('AC-001 — Yeast scheduled-event preview tap', () => {
         expect(tap.read(routeA).events).toMatchObject([{ rackId: 'rack-a', trackId: 'track-a' }]);
         expect(tap.read(routeB).events).toMatchObject([{ rackId: 'rack-b', trackId: 'track-b' }]);
         expect(tap.getStorageIdentity(routeA)).not.toBe(tap.getStorageIdentity(routeB));
+    });
+
+    it('caps aggregate preview event storage at 512 records across all enabled routes', () => {
+        const tap = new YeastPreviewTap();
+        const routeA = { rackId: 'rack-a', routeId: 'track-a', trackId: 'track-a' };
+        const routeB = { rackId: 'rack-b', routeId: 'track-b', trackId: 'track-b' };
+        tap.setEnabled(routeA, true);
+        tap.setEnabled(routeB, true);
+
+        tap.publish({
+            ...routeA,
+            captureEpoch: tap.getCaptureState(routeA).captureEpoch,
+            projectionVersion: 1,
+            reset: false,
+            records: Array.from({ length: 300 }, (_, index) => ({
+                ...previewRecord(index),
+                rackId: routeA.rackId,
+                routeId: routeA.routeId,
+                trackId: routeA.trackId,
+            })),
+            provenance: [],
+            droppedEvents: 0,
+        });
+        tap.publish({
+            ...routeB,
+            captureEpoch: tap.getCaptureState(routeB).captureEpoch,
+            projectionVersion: 1,
+            reset: false,
+            records: Array.from({ length: 300 }, (_, index) => ({
+                ...previewRecord(300 + index),
+                rackId: routeB.rackId,
+                routeId: routeB.routeId,
+                trackId: routeB.trackId,
+            })),
+            provenance: [],
+            droppedEvents: 0,
+        });
+
+        const snapshotA = tap.read(routeA);
+        const snapshotB = tap.read(routeB);
+        expect(snapshotA.events).toHaveLength(300);
+        expect(snapshotB.events).toHaveLength(212);
+        expect(snapshotA.events.length + snapshotB.events.length).toBe(512);
+        expect(snapshotB.droppedEvents).toBe(88);
     });
 
     it('rejects publication from a capture epoch invalidated by a rapid disable and re-enable', () => {

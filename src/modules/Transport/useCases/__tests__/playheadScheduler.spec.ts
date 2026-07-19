@@ -4,6 +4,7 @@ import { scheduleAdjustmentLayers, stopAllScheduled } from '#/modules/AudioEngin
 import { startAutomationRecording, stopAutomationRecording } from '#/modules/Automation/useCases';
 
 import { playheadPositionRef } from '../../stores/playheadPositionRef';
+import { evaluateFollowActions } from '../evaluateFollowActions';
 import { disposePlayheadScheduler } from '../playheadScheduler/disposePlayheadScheduler';
 import { startPlayheadScheduler } from '../playheadScheduler/startPlayheadScheduler';
 import { stopPlayheadScheduler } from '../playheadScheduler/stopPlayheadScheduler';
@@ -323,6 +324,65 @@ describe('playhead scheduler tick', () => {
         expect(vi.mocked(stopAllScheduled).mock.calls.length).toBe(stopCallsBefore);
     });
 
+    it('advances a semantic discontinuity epoch on a real scheduler loop wrap', async () => {
+        harness.transport_store.value = {
+            ...playingTransport,
+            isLooping: true,
+            loopStart: 0,
+            loopEnd: 0.15,
+        };
+        startPlayheadScheduler();
+
+        harness.clock = 0.05;
+        await fireTick();
+        const beforeWrap = vi.mocked(scheduleMidiNotes).mock.calls.at(-1)?.[7];
+        const beforeWrapEpoch = beforeWrap?.discontinuityEpoch;
+
+        harness.clock = 0.1;
+        await fireTick();
+        const afterWrap = vi.mocked(scheduleMidiNotes).mock.calls.at(-1)?.[7];
+
+        expect(beforeWrapEpoch).toEqual(expect.any(Number));
+        expect(afterWrap?.discontinuityEpoch).toBeGreaterThan(beforeWrapEpoch ?? 0);
+        expect(afterWrap?.generation).toBe(beforeWrap?.generation);
+    });
+
+    it('advances a semantic discontinuity epoch on a real scheduler follow-action jump', async () => {
+        startPlayheadScheduler();
+        harness.clock = 0.05;
+        await fireTick();
+        const beforeJump = vi.mocked(scheduleMidiNotes).mock.calls.at(-1)?.[7];
+        const beforeJumpEpoch = beforeJump?.discontinuityEpoch;
+
+        vi.mocked(evaluateFollowActions).mockReturnValueOnce({ jumpToPosition: 8, shouldStop: false });
+        harness.clock = 0.1;
+        await fireTick();
+        const afterJump = vi.mocked(scheduleMidiNotes).mock.calls.at(-1)?.[7];
+
+        expect(afterJump?.discontinuityEpoch).toBeGreaterThan(beforeJumpEpoch ?? 0);
+        expect(afterJump?.generation).toBe(beforeJump?.generation);
+    });
+
+    it('uses a new semantic discontinuity epoch when the scheduler restarts', async () => {
+        startPlayheadScheduler();
+        harness.clock = 0.05;
+        await fireTick();
+        const beforeRestart = vi.mocked(scheduleMidiNotes).mock.calls.at(-1)?.[7];
+        const beforeRestartEpoch = beforeRestart?.discontinuityEpoch;
+        const beforeRestartGeneration = beforeRestart?.generation;
+
+        stopPlayheadScheduler();
+        harness.transport_store.value = { ...playingTransport };
+        harness.clock = 0.1;
+        startPlayheadScheduler();
+        harness.clock = 0.15;
+        await fireTick();
+        const afterRestart = vi.mocked(scheduleMidiNotes).mock.calls.at(-1)?.[7];
+
+        expect(afterRestart?.discontinuityEpoch).toBeGreaterThan(beforeRestartEpoch ?? 0);
+        expect(afterRestart?.generation).toBeGreaterThan(beforeRestartGeneration ?? 0);
+    });
+
     it('should cache punch-in audio completion through the AudioEngine use case and update the recording clip', async () => {
         const random_uuid = vi.spyOn(crypto, 'randomUUID').mockReturnValue('00000000-0000-4000-8000-000000000001');
         const recording_clip = {
@@ -425,10 +485,17 @@ describe('playhead scheduler tick', () => {
         harness.clock = 0.05;
         await fireTick();
 
+        const beforeDisposeEpoch = vi.mocked(scheduleMidiNotes).mock.calls.at(-1)?.[7].discontinuityEpoch;
         disposePlayheadScheduler();
 
         expect(vi.mocked(worker.terminate)).toHaveBeenCalled();
         expect(vi.mocked(disposeAudioClipScheduling)).toHaveBeenCalled();
+        startPlayheadScheduler();
+        harness.clock = 0.1;
+        await fireTick();
+        expect(vi.mocked(scheduleMidiNotes).mock.calls.at(-1)?.[7].discontinuityEpoch).toBeGreaterThan(
+            beforeDisposeEpoch ?? 0
+        );
     });
 
     // audit row 1 — `tick` is async and awaits scheduleMidiNotes (the Yeast

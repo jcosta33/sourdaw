@@ -25,6 +25,7 @@ import { scheduleAudioClips } from '../scheduling/scheduleAudioClips';
 import { scheduleMetronome } from '../scheduling/scheduleMetronome';
 import { scheduleMidiNotes, type SchedulerCancellation } from '../scheduling/scheduleMidiNotes';
 
+import { advanceSchedulerDiscontinuityEpoch } from './advanceSchedulerDiscontinuityEpoch';
 import { disposePlayheadScheduler } from './disposePlayheadScheduler';
 import { schedulerSession, stopActiveSources } from './schedulerSession';
 
@@ -54,9 +55,13 @@ export function startPlayheadScheduler(): void {
     }
 
     schedulerSession.generation += 1;
+    advanceSchedulerDiscontinuityEpoch();
     const schedulerGeneration = schedulerSession.generation;
     const cancellation: SchedulerCancellation = {
         generation: schedulerGeneration,
+        get discontinuityEpoch() {
+            return schedulerSession.discontinuityEpoch;
+        },
         isCurrent: () =>
             schedulerSession.generation === schedulerGeneration && transportStore.value?.isPlaying === true,
     };
@@ -161,6 +166,7 @@ export function startPlayheadScheduler(): void {
 
             const loopLength = current.loopEnd - current.loopStart;
             newPosition = current.loopStart + ((newPosition - current.loopStart) % loopLength);
+            advanceSchedulerDiscontinuityEpoch();
             schedulerSession.lastScheduledBeat = newPosition - 0.0001;
             resetMetronomeBeat(newPosition);
             stopAllScheduled();
@@ -184,6 +190,7 @@ export function startPlayheadScheduler(): void {
 
         if (jumpToPosition !== null) {
             newPosition = jumpToPosition;
+            advanceSchedulerDiscontinuityEpoch();
             schedulerSession.lastScheduledBeat = newPosition;
             resetMetronomeBeat(newPosition);
             stopAllScheduled();

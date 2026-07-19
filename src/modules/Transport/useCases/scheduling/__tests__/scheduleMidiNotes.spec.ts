@@ -180,6 +180,7 @@ describe('scheduleMidiNotes', () => {
         let current = true;
         const cancellation: SchedulerCancellation = {
             generation: 1,
+            discontinuityEpoch: 1,
             isCurrent: () => current,
         };
 
