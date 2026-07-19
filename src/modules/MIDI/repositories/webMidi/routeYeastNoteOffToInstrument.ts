@@ -24,24 +24,33 @@ export function routeYeastNoteOffToInstrument(
     strip: WebMidiInstrumentStrip | undefined,
     note: number,
     releaseVelocity: number,
-    emitGrandBouleEvent: (deviceId: string, midiNote: number) => void
+    emitGrandBouleEvent: (deviceId: string, midiNote: number) => void,
+    sampleFrame?: number
 ): void {
     const fDev = instrumentTrack.devices.find((data) => data.type === 'fermenter');
     if (fDev) {
         const dn = strip?.deviceNodes.find((data) => data.type === 'fermenter');
-        dn?.fermenterControls?.noteOff(note);
+        if (sampleFrame === undefined) {
+            dn?.fermenterControls?.noteOff(note);
+        } else {
+            dn?.fermenterControls?.noteOff(note, sampleFrame);
+        }
         return;
     }
     const gbDev = instrumentTrack.devices.find((data) => data.type === 'grand-boule');
     if (gbDev) {
         const dn = strip?.deviceNodes.find((data) => data.type === 'grand-boule');
-        dn?.grandBouleControls?.noteOff(note, undefined, releaseVelocity);
+        dn?.grandBouleControls?.noteOff(note, sampleFrame, releaseVelocity);
         emitGrandBouleEvent(gbDev.id, note);
         return;
     }
     const lDev = instrumentTrack.devices.find((data) => data.type === 'levain');
     if (lDev) {
         const dn = strip?.deviceNodes.find((data) => data.type === 'levain');
-        dn?.levainControls?.noteOff(note);
+        if (sampleFrame === undefined) {
+            dn?.levainControls?.noteOff(note);
+        } else {
+            dn?.levainControls?.noteOff(note, sampleFrame);
+        }
     }
 }

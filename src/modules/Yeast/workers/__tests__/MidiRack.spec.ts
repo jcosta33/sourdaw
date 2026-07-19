@@ -404,13 +404,12 @@ const voicePairingCases: readonly VoicePairingCase[] = [
         name: 'GrooveModule',
         create: () => new GrooveModule('voice-pairing'),
         configureFirst: (processor) => {
-            processor.setParam('template', 0);
-            processor.setParam('amount', 1);
+            processor.setParam('groove_amount', 1);
+            processor.setParam('groove_step_beats', 0.25);
+            processor.setParam('groove_slot_count', 16);
+            processor.setParam('groove_timing_0', 0);
         },
-        configureSecond: (processor) => {
-            processor.setParam('template', 1);
-            processor.setParam('amount', 1);
-        },
+        configureSecond: (processor) => processor.setParam('groove_timing_1', 0.12),
         expected: [['noteOn:60@0'], ['noteOn:60@8662'], ['noteOff:60@16000'], ['noteOff:60@24662']],
     },
     {
@@ -462,6 +461,61 @@ const voicePairingCases: readonly VoicePairingCase[] = [
 describe('MidiRack', () => {
     it('exports MidiRack', () => {
         expect(MidiRack).toBeDefined();
+    });
+
+    it('returns forward realtime groove events inside a widened horizon with their paired note-off', () => {
+        const rack = new MidiRack('rack-a');
+        const groove = new GrooveModule('groove-a');
+        groove.setParam('groove_step_beats', 0.25);
+        groove.setParam('groove_slot_count', 16);
+        groove.setParam('groove_timing_0', 0.2);
+        groove.setParam('groove_amount', 0.75);
+        rack.addProcessor(groove);
+        const realtimeTransport = { ...transport, sampleRate: 48_000, bpm: 120, ppqPosition: -0.3 };
+
+        const noteOnOutput = [...rack.processBlock([noteOn(7328, 60)], 128, 12_129, realtimeTransport, 'track-a')];
+        const noteOffOutput = [
+            ...rack.processBlock([noteOff(27_200, 60)], 20_000, 32_001, realtimeTransport, 'track-a'),
+        ];
+
+        expect(noteOnOutput).toEqual([
+            expect.objectContaining({
+                timeSamples: 8228,
+                kind: { type: 'noteOn', channel: 0, note: 60, velocity: 100 },
+            }),
+        ]);
+        expect(noteOffOutput).toEqual([
+            expect.objectContaining({
+                timeSamples: 28_100,
+                kind: { type: 'noteOff', channel: 0, note: 60 },
+            }),
+        ]);
+    });
+
+    it('keeps a negative realtime groove offset ahead of the live input frame', () => {
+        const rack = new MidiRack('rack-a');
+        const groove = new GrooveModule('groove-a');
+        groove.setParam('groove_step_beats', 0.25);
+        groove.setParam('groove_slot_count', 16);
+        groove.setParam('groove_timing_0', -0.4);
+        groove.setParam('groove_amount', 0.75);
+        rack.addProcessor(groove);
+
+        const result = rack.processBlock(
+            [noteOn(7328, 60)],
+            128,
+            12_129,
+            { ...transport, sampleRate: 48_000, bpm: 120, ppqPosition: -0.3 },
+            'track-a'
+        );
+
+        expect(result).toEqual([
+            expect.objectContaining({
+                timeSamples: 5528,
+                kind: { type: 'noteOn', channel: 0, note: 60, velocity: 100 },
+            }),
+        ]);
+        expect(result[0]?.timeSamples).toBeGreaterThan(128);
     });
 
     describe('overlapping same-key voice pairing', () => {

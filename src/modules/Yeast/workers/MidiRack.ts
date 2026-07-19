@@ -196,6 +196,8 @@ export class MidiRack {
             return this.separateOutput;
         }
 
+        transport.blockStartSamples = blockStartSamples;
+
         // 1. Drain scheduled events directly into scratchA — avoids the
         // intermediate `drained` + spread-merge allocation (§149.1).
         const current0 = this.scratchA;

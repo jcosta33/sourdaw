@@ -10,14 +10,19 @@ import { type ProcessorType } from '../../models/ProcessorCatalog';
 
 import type { ChordMemoryCommand } from '../../models/YeastProcessorCommand';
 
-type OnSetParam = (id: string, name: string, value: number) => void;
+type OnSetParam = (id: string, name: string, value: number, isTransient?: boolean) => void;
 type OnCommand = (id: string, command: ChordMemoryCommand) => Promise<unknown> | void;
+type GrooveTemplateOption = { id: string; name: string };
 
 type Props = {
     processorId: string;
     processorType: ProcessorType;
     onSetParam: OnSetParam;
     onCommand: OnCommand;
+    grooveTemplates?: readonly GrooveTemplateOption[];
+    selectedGrooveTemplateId?: string;
+    grooveAmount?: number;
+    onSetGrooveTemplate?: (processorId: string, templateId: string) => Promise<unknown> | void;
 };
 
 const K = ({
@@ -44,13 +49,14 @@ const K = ({
     <div className="flex flex-col items-center gap-0">
         <RotaryKnob
             value={value}
-            onChange={(value1) => onSetParam(id, name, value1)}
+            onChange={(nextValue, isTransient) => onSetParam(id, name, nextValue, isTransient)}
             min={min}
             max={max}
             step={step}
             defaultValue={value}
             size="sm"
             tone="rose"
+            aria-label={label}
         />
         <span className="text-[6px] text-muted-foreground leading-none">{label}</span>
         {unit ? (
@@ -84,7 +90,7 @@ const Sel = ({
             onChange={(event) => onSetParam(id, name, parseInt(event.target.value))}
         >
             {options.map((opt, index) => (
-                <option key={index} value={index}>
+                <option key={opt} value={index}>
                     {opt}
                 </option>
             ))}
@@ -98,6 +104,10 @@ export const ProcessorParams = ({
     processorType,
     onSetParam,
     onCommand,
+    grooveTemplates = [],
+    selectedGrooveTemplateId = '',
+    grooveAmount = 0.5,
+    onSetGrooveTemplate,
 }: Props): ReactElement | null => {
     const handleCommand = (command: ChordMemoryCommand): void => {
         const result = onCommand(pid, command);
@@ -634,19 +644,31 @@ export const ProcessorParams = ({
         case 'groove':
             return (
                 <div className="flex flex-wrap gap-2 px-1 py-1">
-                    <Sel
-                        id={pid}
-                        name="template"
-                        label="Template"
-                        options={['Straight', 'MPC Swing', 'Triplet', 'Late Back', 'Dilla', 'Push']}
-                        value={0}
-                        onSetParam={onSetParam}
-                    />
+                    <label className="flex flex-col items-center gap-0.5 text-[6px] text-muted-foreground">
+                        <select
+                            aria-label="Groove template"
+                            className="h-4 rounded border border-border/30 bg-surface-inset px-0.5 text-[6px] text-foreground"
+                            value={selectedGrooveTemplateId}
+                            onChange={(event) => {
+                                const result = onSetGrooveTemplate?.(pid, event.target.value);
+                                if (result) {
+                                    void result.catch(() => undefined);
+                                }
+                            }}
+                        >
+                            {grooveTemplates.map((template) => (
+                                <option key={template.id} value={template.id}>
+                                    {template.name}
+                                </option>
+                            ))}
+                        </select>
+                        Template
+                    </label>
                     <K
                         id={pid}
                         name="amount"
                         label="Amount"
-                        value={0.5}
+                        value={grooveAmount}
                         min={0}
                         max={1}
                         step={0.01}

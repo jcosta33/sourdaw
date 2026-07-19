@@ -23,6 +23,8 @@ export type MidiEvent = {
 export type TransportInfo = {
     sampleRate: number;
     bpm: number;
+    /** Absolute sample origin paired with ppqPosition for this processing block. */
+    blockStartSamples?: number;
     /** Current position in PPQ (pulses per quarter note). */
     ppqPosition: number;
     isPlaying: boolean;

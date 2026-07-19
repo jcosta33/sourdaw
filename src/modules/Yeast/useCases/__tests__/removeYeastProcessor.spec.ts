@@ -1,9 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const setProjection = vi.hoisted(() => vi.fn());
+const removeGrooveAssignments = vi.hoisted(() => vi.fn());
 
 vi.mock('../../engine/yeastRuntime', () => ({
     setYeastRuntimeProjection: setProjection,
+}));
+vi.mock('../removeYeastGrooveAssignments', () => ({
+    removeYeastGrooveAssignments: removeGrooveAssignments,
 }));
 
 import { yeastStore } from '../../stores/yeastStore';
@@ -28,6 +32,7 @@ describe('removeYeastProcessor', () => {
             { id: 'filter-1', type: 'filter', name: 'Note Filter', bypassed: false, params: {} },
         ]);
         expect(setProjection).toHaveBeenCalledWith([{ id: 'filter-1', type: 'filter', bypassed: false, params: {} }]);
+        expect(removeGrooveAssignments).toHaveBeenCalledWith('arp-1');
     });
 
     it('does not write or issue a runtime command for an unknown id', () => {
@@ -35,5 +40,6 @@ describe('removeYeastProcessor', () => {
 
         expect(yeastStore.value?.processors).toHaveLength(2);
         expect(setProjection).not.toHaveBeenCalled();
+        expect(removeGrooveAssignments).not.toHaveBeenCalled();
     });
 });

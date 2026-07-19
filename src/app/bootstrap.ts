@@ -79,6 +79,7 @@ import {
     getMidiGrooveHandlers,
     getMidiNoteTransformHandlers,
     getPatternInstanceHandlers,
+    setWebMidiRealtimeProcessor,
     setWebMidiRuntimeEventBus,
     getWebMidiInputHandlers,
 } from '#/modules/MIDI/useCases';
@@ -107,7 +108,7 @@ import {
 import { updateTunerTelemetry } from '#/modules/Tuner/stores';
 import { getWorkspaceHandlers, getScratchPadHandlers, setWorkspaceEventBus } from '#/modules/WorkspaceShell/useCases';
 import { setYeastEventBus } from '#/modules/Yeast/stores';
-import { configureYeastRuntime, teardownYeastRuntime } from '#/modules/Yeast/useCases';
+import { configureYeastRuntime, processRealtimeMidiInput, teardownYeastRuntime } from '#/modules/Yeast/useCases';
 import { logCapabilities } from '#/utils/capabilities';
 import { setNotificationEventBus } from '#/utils/Notification/notificationEventBus';
 
@@ -141,22 +142,32 @@ setGrandBouleEventBus(eventBus);
 setToasterEventBus(eventBus);
 setYeastEventBus(eventBus);
 configureYeastRuntime({ panicOutputNotes: stopAllScheduled });
+const disposeWebMidiRealtimeProcessor = setWebMidiRealtimeProcessor({ processor: processRealtimeMidiInput });
 setWebMidiRuntimeEventBus({ eventBus });
 setNotificationEventBus(eventBus);
 setTimeOperationDependencies({ shiftTimelineMapsAfterBeat, deleteTimelineMapsTimeRange });
 setProjectIdentityTransitionDependencies({ leaveCollaborationSession: leaveSession });
 
-window.addEventListener('beforeunload', () => {
+function disposeYeastRealtimeBridge(): void {
+    disposeWebMidiRealtimeProcessor();
     teardownYeastRuntime();
+}
+
+function handleBeforeUnload(): void {
+    disposeYeastRealtimeBridge();
     // Attempt GC on window close
     cleanupUnusedFreezeFiles().catch(() => {});
-});
+}
+
+window.addEventListener('beforeunload', handleBeforeUnload);
 
 // Funnel otherwise-silent fire-and-forget promise rejections into the logger.
 // Disposer is wired to HMR so a hot reload does not stack duplicate handlers.
 const disposeGlobalErrorHandlers = registerGlobalErrorHandlers({ logger });
 import.meta.hot?.dispose(() => {
     disposeGlobalErrorHandlers();
+    window.removeEventListener('beforeunload', handleBeforeUnload);
+    disposeYeastRealtimeBridge();
 });
 
 setFermenterDependencies({

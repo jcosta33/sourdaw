@@ -1,5 +1,7 @@
 import { transportStore } from '#/modules/Transport/stores';
 
+import { getYeastSchedulingLookahead } from '../getYeastSchedulingLookahead';
+
 import { processYeastMidi } from './processYeastMidi';
 
 import type { MidiEvent, TransportInfo } from '../../models/MidiEvent';
@@ -18,24 +20,46 @@ type ProcessRealtimeMidiInputInput = {
     blockSize?: number;
 };
 
+const REALTIME_WORKER_LOOKAHEAD_SECONDS = 0.1;
+
+function beatsToSamples(beats: number, bpm: number, sampleRate: number): number {
+    return Math.ceil((beats * 60 * sampleRate) / bpm);
+}
+
+function samplesToBeats(samples: number, bpm: number, sampleRate: number): number {
+    return (samples * bpm) / (60 * sampleRate);
+}
+
 export function processRealtimeMidiInput(input: ProcessRealtimeMidiInputInput): Promise<MidiEvent[]> {
-    const event: MidiEvent = {
-        timeSamples: input.sampleTime,
-        trackId: input.trackId,
-        kind: input.isNoteOn
-            ? { type: 'noteOn', channel: input.channel, note: input.note, velocity: input.velocity }
-            : { type: 'noteOff', channel: input.channel, note: input.note },
-    };
+    function createEvent(timeSamples: number): MidiEvent {
+        return {
+            timeSamples,
+            trackId: input.trackId,
+            kind: input.isNoteOn
+                ? { type: 'noteOn', channel: input.channel, note: input.note, velocity: input.velocity }
+                : { type: 'noteOff', channel: input.channel, note: input.note },
+        };
+    }
 
     const transport = transportStore.value;
     if (!transport) {
-        return Promise.resolve([event]);
+        return Promise.resolve([createEvent(input.sampleTime)]);
     }
+
+    const { earlyBeats, lateBeats } = getYeastSchedulingLookahead();
+    const workerLookaheadSamples = Math.ceil(input.sampleRate * REALTIME_WORKER_LOOKAHEAD_SECONDS);
+    const earlySamples = beatsToSamples(earlyBeats, transport.tempo, input.sampleRate);
+    const lateSamples = beatsToSamples(lateBeats, transport.tempo, input.sampleRate);
+    const eventSampleTime = input.sampleTime + workerLookaheadSamples + earlySamples;
+    const event = createEvent(eventSampleTime);
+    const minimumBlockEnd = input.sampleTime + (input.blockSize ?? 128);
+    const grooveBlockEnd = eventSampleTime + lateSamples + 1;
+    const schedulingDelayBeats = samplesToBeats(eventSampleTime - input.sampleTime, transport.tempo, input.sampleRate);
 
     const transportInfo: TransportInfo = {
         sampleRate: input.sampleRate,
         bpm: transport.tempo,
-        ppqPosition: transport.playheadPosition,
+        ppqPosition: transport.playheadPosition - schedulingDelayBeats,
         isPlaying: transport.isPlaying,
         barIndex: 0,
         beatInBar: 0,
@@ -53,7 +77,7 @@ export function processRealtimeMidiInput(input: ProcessRealtimeMidiInputInput): 
         trackId: input.trackId,
         events: [event],
         blockStartSamples: input.sampleTime,
-        blockEndSamples: input.sampleTime + (input.blockSize ?? 128),
+        blockEndSamples: Math.max(minimumBlockEnd, grooveBlockEnd),
         transport: transportInfo,
     });
 }

@@ -6,6 +6,9 @@ import { processYeastMidi } from '../processYeastMidi';
 vi.mock('../processYeastMidi', () => ({
     processYeastMidi: vi.fn(),
 }));
+vi.mock('../../getYeastSchedulingLookahead', () => ({
+    getYeastSchedulingLookahead: () => ({ earlyBeats: 0.1, lateBeats: 0.2 }),
+}));
 
 describe('processRealtimeMidiInput', () => {
     beforeEach(() => {
@@ -42,15 +45,16 @@ describe('processRealtimeMidiInput', () => {
                 trackId: 'track-a',
                 events: [
                     {
-                        timeSamples: 128,
+                        timeSamples: 7328,
                         trackId: 'track-a',
                         kind: { type: 'noteOn', channel: 2, note: 60, velocity: 96 },
                     },
                 ],
                 blockStartSamples: 128,
-                blockEndSamples: 192,
+                blockEndSamples: 12129,
             })
         );
+        expect(vi.mocked(processYeastMidi).mock.calls[0]?.[0].transport.ppqPosition).toBeCloseTo(-0.3, 10);
         expect(result).toBe(processed_events);
     });
 });

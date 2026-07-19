@@ -39,39 +39,56 @@ describe('GrooveModule', () => {
         expect(out.length).toBeGreaterThan(0);
     });
 
-    it('setParam selects template', () => {
+    it('should apply a canonical projected timing and dynamics slot relative to the block musical origin', () => {
         const g = new GrooveModule('t3');
-        g.setParam('template', 1); // MPC Swing: offsets [0, 0.12, 0, 0.12, ...]
-        g.setParam('amount', 1); // full effect, isolate the template's own offset
+        g.setParam('groove_step_beats', 0.25);
+        g.setParam('groove_slot_count', 16);
+        g.setParam('groove_timing_1', 0.2);
+        g.setParam('groove_dynamics_1', -0.1);
+        g.setParam('groove_amount', 0.75);
         const out: MidiEvent[] = [];
-        // 120bpm/48kHz => samplesPerBeat 24000; 16th-note stepLen 6000.
-        // timeSamples 6000 => beatPos 0.25 => stepIdx 1 => offset 0.12 * 1 * 6000 = 720.
-        g.processMidi([note_on(6000, 60)], out, transport);
+        const event = note_on(120_000, 60);
+        const blockTransport = { ...transport, ppqPosition: 8.25, blockStartSamples: 120_000 };
+
+        g.processMidi([event], out, blockTransport);
 
         expect(out).toHaveLength(1);
-        expect(out[0]?.timeSamples).toBe(6720);
+        expect(out[0]?.timeSamples).toBe(120_900);
+        expect(out[0]?.kind).toEqual({ type: 'noteOn', channel: 0, note: 60, velocity: 93 });
+        expect(event).toEqual(note_on(120_000, 60));
     });
 
-    it('setParam amount clamps to the 0-1 range', () => {
+    it('should clamp projected amount to the 0-1 range', () => {
         const g = new GrooveModule('t4');
-        g.setParam('template', 1); // MPC Swing, nonzero offset at step 1
+        g.setParam('groove_timing_1', 0.12);
 
-        g.setParam('amount', 1.5); // above range, should clamp to 1
+        g.setParam('groove_amount', 1.5);
         const overshoot: MidiEvent[] = [];
         g.processMidi([note_on(6000, 60)], overshoot, transport);
-        expect(overshoot[0]?.timeSamples).toBe(6720); // offset = 0.12 * 1 * 6000
+        expect(overshoot[0]?.timeSamples).toBe(6720);
 
-        g.setParam('amount', -0.5); // below range, should clamp to 0
+        g.setParam('groove_amount', -0.5);
         const undershoot: MidiEvent[] = [];
         g.processMidi([note_on(6000, 60)], undershoot, transport);
-        expect(undershoot[0]?.timeSamples).toBe(6000); // offset = 0.12 * 0 * 6000
+        expect(undershoot[0]?.timeSamples).toBe(6000);
     });
 
-    it('reset clears queued note-off timing state', () => {
+    it('should apply the matching canonical timing offset to note off', () => {
         const g = new GrooveModule('t5');
-        g.setParam('template', 1); // MPC Swing, nonzero offset at step 1
-        g.setParam('amount', 1);
-        // Queue a 720-sample note-off offset for note 60 via the matching note-on.
+        g.setParam('groove_timing_1', 0.12);
+        g.setParam('groove_amount', 1);
+        g.processMidi([note_on(6000, 60)], [], transport);
+
+        const out: MidiEvent[] = [];
+        g.processMidi([note_off(12_000, 60)], out, transport);
+
+        expect(out[0]?.timeSamples).toBe(12_720);
+    });
+
+    it('should clear queued note-off timing state on reset', () => {
+        const g = new GrooveModule('t5');
+        g.setParam('groove_timing_1', 0.12);
+        g.setParam('groove_amount', 1);
         g.processMidi([note_on(6000, 60)], [], transport);
 
         g.reset();
@@ -79,8 +96,6 @@ describe('GrooveModule', () => {
         const out: MidiEvent[] = [];
         g.processMidi([note_off(6000, 60)], out, transport);
 
-        // After reset the queued voice offset is gone, so the note-off falls back
-        // to an unshifted (0-offset) time instead of the pre-reset 720.
         expect(out[0]?.timeSamples).toBe(6000);
     });
 });
