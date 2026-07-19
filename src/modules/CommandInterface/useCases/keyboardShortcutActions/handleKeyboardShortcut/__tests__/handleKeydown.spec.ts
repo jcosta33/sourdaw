@@ -61,7 +61,7 @@ const {
     shortcutStoreMock: {
         value: {
             definitions: [] as MinimalDefinition[],
-            customMappings: {} as Record<string, string[]>,
+            customMappings: {},
         },
     },
     stopPlaybackMock: vi.fn(() => Promise.resolve()),
