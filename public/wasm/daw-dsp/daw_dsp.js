@@ -481,6 +481,13 @@ export class GrinderInstance {
     /**
      * @returns {number}
      */
+    get_automation_values_ptr() {
+        const ret = wasm.grinderinstance_get_automation_values_ptr(this.__wbg_ptr);
+        return ret >>> 0;
+    }
+    /**
+     * @returns {number}
+     */
     get_gate_envelope_db() {
         const ret = wasm.grinderinstance_get_gate_envelope_db(this.__wbg_ptr);
         return ret;
@@ -544,6 +551,13 @@ export class GrinderInstance {
     /**
      * @returns {number}
      */
+    get_output_left_ptr() {
+        const ret = wasm.grinderinstance_get_output_left_ptr(this.__wbg_ptr);
+        return ret >>> 0;
+    }
+    /**
+     * @returns {number}
+     */
     get_power_amp_db() {
         const ret = wasm.grinderinstance_get_power_amp_db(this.__wbg_ptr);
         return ret;
@@ -584,6 +598,14 @@ export class GrinderInstance {
      */
     process(block_size) {
         const ret = wasm.grinderinstance_process(this.__wbg_ptr, block_size);
+        return ret >>> 0;
+    }
+    /**
+     * @param {number} block_size
+     * @returns {number}
+     */
+    process_automated(block_size) {
+        const ret = wasm.grinderinstance_process_automated(this.__wbg_ptr, block_size);
         return ret >>> 0;
     }
     /**

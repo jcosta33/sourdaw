@@ -18,9 +18,12 @@ pub mod transformer;
 pub mod triode;
 
 use engine::GrinderEngine;
+use params::GRINDER_AUTOMATABLE_PARAM_COUNT;
 use wasm_bindgen::prelude::*;
 
 const MAX_GRINDER_BLOCK_SIZE: usize = 2048;
+const GRINDER_AUTOMATION_BUFFER_SIZE: usize =
+    GRINDER_AUTOMATABLE_PARAM_COUNT + GRINDER_AUTOMATABLE_PARAM_COUNT * MAX_GRINDER_BLOCK_SIZE;
 
 /// WASM-exported Grinder instance for AudioWorklet.
 #[wasm_bindgen]
@@ -30,6 +33,7 @@ pub struct GrinderInstance {
     input_right: Vec<f32>,
     output_left: Vec<f32>,
     output_right: Vec<f32>,
+    automation_values: Vec<f32>,
 }
 
 #[wasm_bindgen]
@@ -42,6 +46,7 @@ impl GrinderInstance {
             input_right: vec![0.0; MAX_GRINDER_BLOCK_SIZE],
             output_left: vec![0.0; MAX_GRINDER_BLOCK_SIZE],
             output_right: vec![0.0; MAX_GRINDER_BLOCK_SIZE],
+            automation_values: vec![0.0; GRINDER_AUTOMATION_BUFFER_SIZE],
         }
     }
 
@@ -51,6 +56,14 @@ impl GrinderInstance {
 
     pub fn get_input_right_ptr(&mut self) -> *mut f32 {
         self.input_right.as_mut_ptr()
+    }
+
+    pub fn get_output_left_ptr(&self) -> *const f32 {
+        self.output_left.as_ptr()
+    }
+
+    pub fn get_automation_values_ptr(&mut self) -> *mut f32 {
+        self.automation_values.as_mut_ptr()
     }
 
     pub fn set_param(&mut self, name: &str, value: f32) {
@@ -69,6 +82,25 @@ impl GrinderInstance {
         self.engine.process_block(
             &mut self.output_left[..size],
             &mut self.output_right[..size],
+        );
+
+        self.output_left.as_ptr()
+    }
+
+    pub fn process_automated(&mut self, block_size: u32) -> *const f32 {
+        let size = block_size as usize;
+        if size > MAX_GRINDER_BLOCK_SIZE {
+            return std::ptr::null();
+        }
+
+        self.output_left[..size].copy_from_slice(&self.input_left[..size]);
+        self.output_right[..size].copy_from_slice(&self.input_right[..size]);
+
+        self.engine.process_block_automated(
+            &mut self.output_left[..size],
+            &mut self.output_right[..size],
+            &self.automation_values,
+            MAX_GRINDER_BLOCK_SIZE,
         );
 
         self.output_left.as_ptr()
@@ -107,5 +139,117 @@ impl GrinderInstance {
     }
     pub fn get_neural_warmup_progress(&self) -> f32 {
         self.engine.neural_warmup_progress()
+    }
+}
+
+#[cfg(test)]
+mod automatable_param_contract {
+    use super::params::{
+        normalize_automatable_param, GrinderAutomatableParamDomain,
+        GRINDER_AUTOMATABLE_PARAM_CONTRACT,
+    };
+
+    #[derive(Debug, serde::Deserialize)]
+    #[serde(rename_all = "camelCase")]
+    struct WebAutomatableParamDescriptor {
+        name: String,
+        min_value: f32,
+        max_value: f32,
+        default_value: f32,
+        domain: GrinderAutomatableParamDomain,
+    }
+
+    #[test]
+    fn native_and_web_registries_match() {
+        let native = GRINDER_AUTOMATABLE_PARAM_CONTRACT
+            .iter()
+            .map(|param| {
+                (
+                    param.name,
+                    param.minimum,
+                    param.maximum,
+                    param.default,
+                    param.domain,
+                )
+            })
+            .collect::<Vec<_>>();
+        let expected = vec![
+            ("gain", 0.0, 10.0, 5.0, GrinderAutomatableParamDomain::Raw),
+            ("bass", 0.0, 10.0, 5.0, GrinderAutomatableParamDomain::Raw),
+            ("mid", 0.0, 10.0, 5.0, GrinderAutomatableParamDomain::Raw),
+            ("treble", 0.0, 10.0, 5.0, GrinderAutomatableParamDomain::Raw),
+            (
+                "presence",
+                0.0,
+                10.0,
+                5.0,
+                GrinderAutomatableParamDomain::Raw,
+            ),
+            (
+                "resonance",
+                0.0,
+                10.0,
+                5.0,
+                GrinderAutomatableParamDomain::Raw,
+            ),
+            ("master", 0.0, 10.0, 5.0, GrinderAutomatableParamDomain::Raw),
+            (
+                "inputGain",
+                -24.0,
+                24.0,
+                0.0,
+                GrinderAutomatableParamDomain::DecibelsToLinear,
+            ),
+            (
+                "outputGain",
+                -24.0,
+                24.0,
+                0.0,
+                GrinderAutomatableParamDomain::DecibelsToLinear,
+            ),
+            (
+                "transformerDrive",
+                0.0,
+                1.0,
+                0.3,
+                GrinderAutomatableParamDomain::Raw,
+            ),
+            (
+                "negFeedback",
+                0.0,
+                1.0,
+                0.5,
+                GrinderAutomatableParamDomain::Raw,
+            ),
+        ];
+
+        assert_eq!(native, expected);
+
+        let web_contract: Vec<WebAutomatableParamDescriptor> = serde_json::from_str(include_str!(
+            "../../../../src/modules/AudioEngine/services/grinderAudioParamContract.json"
+        ))
+        .expect("web Grinder AudioParam contract must remain valid JSON");
+        let web = web_contract
+            .iter()
+            .map(|param| {
+                (
+                    param.name.as_str(),
+                    param.min_value,
+                    param.max_value,
+                    param.default_value,
+                    param.domain,
+                )
+            })
+            .collect::<Vec<_>>();
+
+        assert_eq!(
+            web, native,
+            "native and web Grinder parameter registries diverged"
+        );
+        assert_eq!(normalize_automatable_param("gain", -1.0), Some(0.0));
+        assert_eq!(normalize_automatable_param("gain", 12.0), Some(10.0));
+        assert_eq!(normalize_automatable_param("inputGain", 12.0), Some(12.0));
+        assert_eq!(normalize_automatable_param("outputGain", 30.0), Some(24.0));
+        assert_eq!(normalize_automatable_param("negFeedback", f32::NAN), None);
     }
 }
