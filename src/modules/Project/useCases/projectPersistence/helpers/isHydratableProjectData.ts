@@ -1,3 +1,5 @@
+import { isGrooveTemplateState } from '#/modules/MIDI/stores';
+
 import {
     isSupportedProjectVersion,
     type ProjectAdjustmentLayers,
@@ -5,6 +7,7 @@ import {
     type ProjectAutomation,
     type ProjectClip,
     type ProjectExportedAudioBuffer,
+    type ProjectGrooveState,
     type ProjectMeta,
     type ProjectMarker,
     type ProjectMidi,
@@ -42,6 +45,7 @@ export type HydratableProjectData = {
     transport?: ProjectTransport;
     automation?: ProjectAutomation;
     midi?: ProjectMidi;
+    grooves?: ProjectGrooveState;
     markers?: ProjectMarker[];
     tempoMap?: ProjectTempoMap;
     timeSignatureMap?: ProjectTimeSignatureMap;
@@ -407,6 +411,10 @@ function isMidi(value: unknown): value is ProjectMidi {
     );
 }
 
+function isGrooves(value: unknown): value is ProjectGrooveState {
+    return isGrooveTemplateState(value);
+}
+
 function isMarker(value: unknown): value is ProjectMarker {
     return (
         isRecord(value) &&
@@ -674,6 +682,9 @@ export function isHydratableProjectData(value: unknown): value is HydratableProj
         return false;
     }
     if (value.midi !== undefined && !isMidi(value.midi)) {
+        return false;
+    }
+    if (value.grooves !== undefined && !isGrooves(value.grooves)) {
         return false;
     }
     if (value.automation !== undefined && !isAutomation(value.automation)) {

@@ -2,7 +2,7 @@ import { markerStore, takeLaneStore, trackStore } from '#/modules/Arrangement/st
 import { automationStore } from '#/modules/Automation/stores';
 import { cvGateStore } from '#/modules/CvGate/stores';
 import { hydrateKneadFromTrackStore } from '#/modules/Knead/useCases';
-import { midiStore } from '#/modules/MIDI/stores';
+import { hydrateMidiCrdtProjection } from '#/modules/MIDI/useCases';
 import { arrangementStore, projectStore } from '#/modules/Project/stores';
 import { hydrateSidechainRoutes } from '#/modules/Routing/useCases';
 import { tempoMapStore, timeSignatureMapStore, transportStore } from '#/modules/Transport/stores';
@@ -13,7 +13,6 @@ import { actionHistoryStore } from '../../stores/actionHistoryStore';
 const projectStores = [
     trackStore,
     automationStore,
-    midiStore,
     transportStore,
     tempoMapStore,
     timeSignatureMapStore,
@@ -29,6 +28,7 @@ export function projectCrdtToStores(): void {
     for (const store of projectStores) {
         store.hydrate();
     }
+    hydrateMidiCrdtProjection();
     hydrateKneadFromTrackStore();
     hydrateSidechainRoutes();
 }

@@ -3,6 +3,7 @@ export { newProject } from './projectPersistence/newProject';
 export { captureProjectTransitionAuthority } from './projectPersistence/captureProjectTransitionAuthority';
 export { saveProject } from './projectPersistence/saveProject/saveProject';
 export { markDirty } from './projectPersistence/saveProject/markDirty';
+export { initGrooveTemplateDirtyTracking } from './projectPersistence/saveProject/initGrooveTemplateDirtyTracking';
 export { loadProject } from './projectPersistence/loadProject';
 export { setProjectIdentityTransitionDependencies } from './projectPersistence/projectIdentityTransitionDependencies';
 export { renameProject } from './projectPersistence/saveProject/renameProject';

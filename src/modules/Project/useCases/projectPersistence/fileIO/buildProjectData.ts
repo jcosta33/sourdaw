@@ -7,7 +7,7 @@ import {
 } from '#/modules/Arrangement/stores';
 import { exportCachedAudioBuffers } from '#/modules/AudioEngine/useCases';
 import { automationStore } from '#/modules/Automation/stores';
-import { midiStore } from '#/modules/MIDI/stores';
+import { defaultGrooveTemplateState, grooveTemplateStore, midiStore } from '#/modules/MIDI/stores';
 import { getAllSidechainRoutes } from '#/modules/Routing/useCases';
 import { tempoMapStore, timeSignatureMapStore, transportStore } from '#/modules/Transport/stores';
 
@@ -21,6 +21,7 @@ import { projectStore } from '../../../stores/projectStore';
 import { syncCurrentArrangementToStore } from '../../arrangement/syncCurrentArrangementToStore';
 
 import { serializeArrangementTracks } from './serializeArrangementTracks';
+import { serializeProjectGrooves } from './serializeProjectGrooves';
 import { serializeProjectMidi } from './serializeProjectMidi';
 
 /** Collect every audioBufferId (clips + frozen buffers + track alternatives)
@@ -148,6 +149,7 @@ export async function buildProjectData({
             buses: [],
         },
         midi: serializeProjectMidi(midi),
+        grooves: serializeProjectGrooves(grooveTemplateStore.value ?? defaultGrooveTemplateState),
         tempoMap: tempoMapStore.value ?? undefined,
         timeSignatureMap: timeSignatureMapStore.value ?? undefined,
         markers: (markerStore.value?.markers || []).map((message) => ({
