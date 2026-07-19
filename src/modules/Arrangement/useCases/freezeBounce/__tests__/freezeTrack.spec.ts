@@ -9,6 +9,7 @@ import { adjustmentLayerStore } from '../../../stores/adjustmentLayer';
 import { trackStore } from '../../../stores/trackStore';
 import { commitAdjustmentLayerMutation } from '../../adjustmentLayer/commitAdjustmentLayerMutation';
 import { setLayerMix } from '../../adjustmentLayer/setLayerMix';
+import { cancelFreezeTasksForProjectTransition } from '../cancelFreezeTasksForProjectTransition';
 import { activeFreezeTasks, freezeTrack } from '../freezeTrack';
 import { renderTrackOffline } from '../renderOffline';
 
@@ -178,10 +179,25 @@ describe('freezeTrack', () => {
 
         const freeze = freezeTrack('t1');
         expect(trackStore.value?.tracks[0]?.freezeState.status).toBe('freezing');
+        await vi.waitFor(() => expect(renderTrackOffline).toHaveBeenCalledOnce());
 
         commitAdjustmentLayerMutation({
             adjustmentMutationId: 'adjustment-during-freeze',
             mutation: () => setLayerMix('layer-1', 0.75),
+        });
+        const render_options = vi.mocked(renderTrackOffline).mock.calls[0]?.[3];
+        if (!render_options?.abortSignal) {
+            throw new Error('Expected render abort signal');
+        }
+        expect(render_options.abortSignal.aborted).toBe(true);
+        expect(trackStore.value?.tracks[0]).toMatchObject({
+            frozen: true,
+            frozenBufferId: 'old-buffer',
+            freezeState: {
+                status: 'stale',
+                frozenBufferId: 'old-buffer',
+                adjustmentLayerMutationId: 'adjustment-during-freeze',
+            },
         });
         complete_render({ sampleRate: 44_100, numberOfChannels: 2 } as AudioBuffer);
         await freeze;
@@ -194,6 +210,45 @@ describe('freezeTrack', () => {
                 frozenBufferId: 'old-buffer',
             },
         });
+        expect(cacheAudioBuffer).not.toHaveBeenCalled();
+    });
+
+    it('cancels and awaits the prior project epoch while rejecting late render writes', async () => {
+        const track = createTrack({ id: 't1', name: 'Track', kind: 'audio' });
+        trackStore.set({ tracks: [track], selectedTrackId: null, ghostClips: [] });
+        let report_progress!: (progress: number) => void;
+        let complete_render!: (buffer: AudioBuffer) => void;
+        vi.mocked(renderTrackOffline).mockImplementation(
+            (_track, _start, _end, options) =>
+                new Promise<AudioBuffer>((resolve) => {
+                    if (!options?.onProgress) {
+                        throw new Error('Expected render progress callback');
+                    }
+                    report_progress = options.onProgress;
+                    complete_render = resolve;
+                })
+        );
+
+        const freeze = freezeTrack('t1');
+        await vi.waitFor(() => expect(renderTrackOffline).toHaveBeenCalledOnce());
+        const render_options = vi.mocked(renderTrackOffline).mock.calls[0]?.[3];
+        let transition_settled = false;
+        const transition = cancelFreezeTasksForProjectTransition().then(() => {
+            transition_settled = true;
+        });
+
+        if (!render_options?.abortSignal) {
+            throw new Error('Expected render abort signal');
+        }
+        expect(render_options.abortSignal.aborted).toBe(true);
+        expect(transition_settled).toBe(false);
+        expect(trackStore.value?.tracks[0]?.freezeState.status).toBe('unfrozen');
+
+        report_progress(0.9);
+        complete_render({ sampleRate: 44_100, numberOfChannels: 2 } as AudioBuffer);
+        await Promise.all([freeze, transition]);
+
+        expect(trackStore.value?.tracks[0]?.freezeState).toEqual({ status: 'unfrozen' });
         expect(cacheAudioBuffer).not.toHaveBeenCalled();
     });
 

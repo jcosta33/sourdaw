@@ -25,6 +25,7 @@ export { resetArrangementStoresForProject } from './resetArrangementStoresForPro
 export { reconcileAdjustmentLayerStaleness } from './adjustmentLayer/reconcileAdjustmentLayerStaleness';
 export { freezeTrack } from './freezeBounce/freezeTrack';
 export { cancelFreezeTrack } from './freezeBounce/cancelFreezeTrack';
+export { cancelFreezeTasksForProjectTransition } from './freezeBounce/cancelFreezeTasksForProjectTransition';
 export { unfreezeTrack } from './freezeBounce/unfreezeTrack';
 export { cleanupUnusedFreezeFiles } from './freezeBounce/cleanupUnusedFreezeFiles';
 export { setTrackInput } from './setTrackInput';

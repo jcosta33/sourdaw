@@ -5,7 +5,7 @@ import {
     createAutomergeStorage,
     flushAutomergeStorageWrites,
 } from '#/infra/store/storage/createAutomergeStorage';
-import { clearHandlerRegistry, registerHandlerMap } from '#/modules/Command/stores';
+import { clearHandlerRegistry, registerHandlerMap, undoStore } from '#/modules/Command/stores';
 import { clearUndoHistory, executeAppAction, redo, undo } from '#/modules/Command/useCases';
 import {
     createCrdtDoc,
@@ -20,6 +20,7 @@ import { type ActionHandler, type AppAction } from '#/utils/handlerContract';
 import { commitDsoEditPlan } from '../commitDsoEditPlan';
 
 type SetTempoAction = Extract<AppAction, { type: 'setTempo' }>;
+type SetMasterGainAction = Extract<AppAction, { type: 'setMasterGain' }>;
 
 const mocks = vi.hoisted(() => ({
     executeDsos: vi.fn(),
@@ -70,6 +71,9 @@ describe('commitDsoEditPlan snapshot ownership', () => {
             releaseDso = resolve;
         });
         const ownedStorage = createAutomergeStorage<{ value: string }>('dso-owned', 'dsoState');
+        const independentStorage = createAutomergeStorage<{ value: string }>('independent', 'userState');
+        independentStorage.set({ value: '122' });
+        flushAutomergeStorageWrites();
         const setTempoHandler: ActionHandler<SetTempoAction> = {
             execute: (action) => {
                 ownedStorage.set({ value: String(action.payload.bpm) });
@@ -83,32 +87,48 @@ describe('commitDsoEditPlan snapshot ownership', () => {
             },
             undoable: true,
         };
+        const setMasterGainHandler: ActionHandler<SetMasterGainAction> = {
+            execute: (action) => {
+                independentStorage.set({ value: String(action.payload.gain) });
+            },
+            describe: () => {
+                const current = independentStorage.get();
+                return {
+                    label: 'Set independent value',
+                    inverseAction: current ? { type: 'setMasterGain', payload: { gain: Number(current.value) } } : null,
+                };
+            },
+            undoable: true,
+        };
         registerHandlerMap({
             setTempo: setTempoHandler,
+            setMasterGain: setMasterGainHandler,
         });
 
-        mocks.executeDsos.mockImplementation(async (_dsos: unknown, snapshotTransaction: object | undefined) => {
-            expect(snapshotTransaction).toBeDefined();
-            await executeAppAction(
-                { type: 'setTempo', payload: { bpm: 121 } },
-                {
-                    skipUndo: true,
-                    source: 'ai',
-                    snapshotTransaction,
-                }
-            );
-            markDsoPaused();
-            await dsoRelease;
-            await executeAppAction(
-                { type: 'setTempo', payload: { bpm: 122 } },
-                {
-                    skipUndo: true,
-                    source: 'ai',
-                    snapshotTransaction,
-                }
-            );
-            return { summaries: ['Changed owned document'], failures: [] };
-        });
+        mocks.executeDsos.mockImplementation(
+            async (_dsos: unknown, snapshotTransaction: object | undefined, executeAction: typeof executeAppAction) => {
+                expect(snapshotTransaction).toBeDefined();
+                await executeAction(
+                    { type: 'setTempo', payload: { bpm: 121 } },
+                    {
+                        skipUndo: true,
+                        source: 'ai',
+                        snapshotTransaction,
+                    }
+                );
+                markDsoPaused();
+                await dsoRelease;
+                await executeAction(
+                    { type: 'setTempo', payload: { bpm: 122 } },
+                    {
+                        skipUndo: true,
+                        source: 'ai',
+                        snapshotTransaction,
+                    }
+                );
+                return { summaries: ['Changed owned document'], failures: [] };
+            }
+        );
 
         const commit = commitDsoEditPlan({
             plan: {
@@ -131,7 +151,7 @@ describe('commitDsoEditPlan snapshot ownership', () => {
         });
         let userActionSettled = false;
         const userAction = (async () => {
-            await executeAppAction({ type: 'setTempo', payload: { bpm: 130 } });
+            await executeAppAction({ type: 'setMasterGain', payload: { gain: 130 } });
             userActionSettled = true;
         })();
         await Promise.resolve();
@@ -143,9 +163,10 @@ describe('commitDsoEditPlan snapshot ownership', () => {
 
         expect(getCrdtDoc<Record<string, unknown>>('dso-owned')).toMatchObject({
             value: 'before',
-            dsoState: { value: '130' },
+            dsoState: { value: '122' },
         });
         expect(getCrdtDoc<Record<string, unknown>>('independent')).toMatchObject({ value: 'independent' });
+        expect(getCrdtDoc<Record<string, unknown>>('independent')).toMatchObject({ userState: { value: '130' } });
 
         await undo();
         flushAutomergeStorageWrites();
@@ -154,6 +175,7 @@ describe('commitDsoEditPlan snapshot ownership', () => {
             dsoState: { value: '122' },
         });
         expect(getCrdtDoc<Record<string, unknown>>('independent')).toMatchObject({ value: 'independent' });
+        expect(getCrdtDoc<Record<string, unknown>>('independent')).toMatchObject({ userState: { value: '122' } });
 
         await undo();
         expect(getCrdtDoc<Record<string, unknown>>('dso-owned')).toMatchObject({ value: 'before' });
@@ -169,9 +191,59 @@ describe('commitDsoEditPlan snapshot ownership', () => {
 
         await redo();
         flushAutomergeStorageWrites();
+        expect(getCrdtDoc<Record<string, unknown>>('independent')).toMatchObject({ userState: { value: '130' } });
+    });
+
+    it('refuses a non-suffix snapshot undo without changing document or history', async () => {
+        const owned_storage = createAutomergeStorage<{ value: string }>('dso-owned', 'dsoState');
+        const set_tempo_handler: ActionHandler<SetTempoAction> = {
+            execute: (action) => {
+                owned_storage.set({ value: String(action.payload.bpm) });
+            },
+            describe: () => ({ label: 'Set owned value', inverseAction: null }),
+            undoable: true,
+        };
+        registerHandlerMap({ setTempo: set_tempo_handler });
+        mocks.executeDsos.mockImplementation(
+            async (
+                _dsos: unknown,
+                snapshot_transaction: object | undefined,
+                executeAction: typeof executeAppAction
+            ) => {
+                await executeAction(
+                    { type: 'setTempo', payload: { bpm: 121 } },
+                    { skipUndo: true, source: 'ai', snapshotTransaction: snapshot_transaction }
+                );
+                return { summaries: ['Changed owned document'], failures: [] };
+            }
+        );
+
+        await commitDsoEditPlan({
+            plan: {
+                kind: 'edit_plan',
+                moderation: 'allow',
+                intent: 'change owned document',
+                dsos: [{ op: 'set_tempo', bpm: 121 }],
+            },
+            userRequest: 'change the owned document',
+            assistantMessageId: 'assistant-snapshot-conflict',
+            reasoning: undefined,
+        });
+        mutateCrdtDoc<Record<string, unknown>>({
+            id: 'dso-owned',
+            changeFn: (doc) => {
+                doc.later = 'must survive';
+            },
+        });
+        const history_before = undoStore.value;
+
+        await expect(undo()).rejects.toThrow('snapshot conflict');
+
         expect(getCrdtDoc<Record<string, unknown>>('dso-owned')).toMatchObject({
             value: 'before',
-            dsoState: { value: '130' },
+            dsoState: { value: '121' },
+            later: 'must survive',
         });
+        expect(undoStore.value).toEqual(history_before);
     });
 });

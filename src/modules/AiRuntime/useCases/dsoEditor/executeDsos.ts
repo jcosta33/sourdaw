@@ -233,6 +233,7 @@ function toDrumStyle(state: string): DrumPatternStyle {
  */
 type DsoExecContext = {
     lastInsertedDeviceId: string | null;
+    executeAppAction: typeof executeAppAction;
     executeOptions: {
         skipUndo: true;
         source: 'ai';
@@ -246,6 +247,7 @@ async function executeSingleDso(dso: Dso, context: DsoExecContext): Promise<void
     // The batch transaction handle is local to this execution, so concurrent
     // plans cannot overwrite one another's action-write ownership.
     const DSO_EXEC_OPTIONS = context.executeOptions;
+    const executeAppAction = context.executeAppAction;
     const state = trackStore.value;
     if (!state) {
         return;
@@ -694,9 +696,14 @@ type ExecuteDsosOutput = Promise<{
  * failures of any DSO that threw — callers must surface failures rather than
  * report unconditional success.
  */
-export async function executeDsos(dsos: Dso[], snapshotTransaction?: object): ExecuteDsosOutput {
+export async function executeDsos(
+    dsos: Dso[],
+    snapshotTransaction?: object,
+    executeAction: typeof executeAppAction = executeAppAction
+): ExecuteDsosOutput {
     const context: DsoExecContext = {
         lastInsertedDeviceId: null,
+        executeAppAction: executeAction,
         executeOptions: {
             skipUndo: true,
             source: 'ai',

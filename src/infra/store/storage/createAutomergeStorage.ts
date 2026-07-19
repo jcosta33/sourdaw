@@ -82,21 +82,30 @@ function commitAutomergeStorageMutations(mutations: readonly AutomergeStorageMut
     });
 }
 
+export function createAutomergeStorageCommitScope(snapshotTransaction: object | undefined) {
+    const transaction: ActiveAutomergeStorageTransaction = {
+        commitOwner: Object.freeze({}),
+        snapshotTransaction,
+    };
+
+    return function runAutomergeStorageCommit<Result>(callback: () => Result): Result {
+        const previousTransaction = activeAutomergeStorageTransaction;
+        activeAutomergeStorageTransaction = transaction;
+        try {
+            return callback();
+        } finally {
+            activeAutomergeStorageTransaction = previousTransaction;
+        }
+    };
+}
+
 /** Scope one synchronous action write path to an opaque snapshot transaction. */
 export function runWithAutomergeStorageTransaction<Result>(
     snapshotTransaction: object | undefined,
     callback: () => Result
 ): Result {
-    const previousTransaction = activeAutomergeStorageTransaction;
-    activeAutomergeStorageTransaction = {
-        commitOwner: Object.freeze({}),
-        snapshotTransaction,
-    };
-    try {
-        return callback();
-    } finally {
-        activeAutomergeStorageTransaction = previousTransaction;
-    }
+    const runCommit = createAutomergeStorageCommitScope(snapshotTransaction);
+    return runCommit(callback);
 }
 
 function flushMatchingAutomergeStorageWrites(matches: (pending: PendingAutomergeStorageWrite) => boolean): void {

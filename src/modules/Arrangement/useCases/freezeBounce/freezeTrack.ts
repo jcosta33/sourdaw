@@ -6,9 +6,11 @@ import { computeFreezeRenderInputHash } from '../../services/computeFreezeRender
 import { adjustmentLayerStore, createEffectiveAdjustmentLayerSignature } from '../../stores/adjustmentLayer';
 import { trackStore } from '../../stores/trackStore';
 
+import { freezeTaskAuthority } from './freezeTaskAuthority';
 import { renderTrackOffline } from './renderOffline';
+import { stabilizeInterruptedFreeze } from './stabilizeInterruptedFreeze';
 
-export const activeFreezeTasks = new Map<string, AbortController>();
+export const activeFreezeTasks = freezeTaskAuthority.activeTasks;
 
 function same_ordered_track_ids(left: readonly string[], right: readonly string[]): boolean {
     return left.length === right.length && left.every((track_id, index) => track_id === right[index]);
@@ -40,12 +42,7 @@ function invalidate_finished_render(trackId: string): void {
         if (track.freezeState.status !== 'freezing') {
             return track;
         }
-        if (track.frozen && track.frozenBufferId && track.freezeState.frozenBufferId) {
-            const freeze_state = { ...track.freezeState, status: 'stale' as const };
-            delete freeze_state.renderProgress;
-            return { ...track, freezeState: freeze_state };
-        }
-        return { ...track, frozen: false, freezeState: { status: 'unfrozen' } };
+        return stabilizeInterruptedFreeze(track);
     });
 }
 
@@ -60,11 +57,8 @@ export async function freezeTrack(trackId: string): Promise<void> {
         return;
     }
 
-    if (activeFreezeTasks.has(trackId)) {
-        activeFreezeTasks.get(trackId)!.abort();
-    }
-    const abortController = new AbortController();
-    activeFreezeTasks.set(trackId, abortController);
+    const task = freezeTaskAuthority.begin(trackId);
+    const abortController = task.controller;
 
     updateTrack(trackId, (time) => ({
         ...time,
@@ -104,7 +98,7 @@ export async function freezeTrack(trackId: string): Promise<void> {
                 updateTrack(trackId, (time) => ({
                     ...time,
                     freezeState:
-                        activeFreezeTasks.get(trackId) === abortController && time.freezeState.status === 'freezing'
+                        freezeTaskAuthority.isCurrent(task) && time.freezeState.status === 'freezing'
                             ? { ...time.freezeState, renderProgress: param }
                             : time.freezeState,
                 }));
@@ -115,7 +109,7 @@ export async function freezeTrack(trackId: string): Promise<void> {
             throw new Error('Render failed');
         }
 
-        if (activeFreezeTasks.get(trackId) !== abortController) {
+        if (!freezeTaskAuthority.isCurrent(task)) {
             return;
         }
         const current_track_state = trackStore.value;
@@ -127,7 +121,6 @@ export async function freezeTrack(trackId: string): Promise<void> {
             current_track.freezeState.status !== 'freezing' ||
             current_track.freezeState.adjustmentLayerMutationId
         ) {
-            activeFreezeTasks.delete(trackId);
             invalidate_finished_render(trackId);
             return;
         }
@@ -141,7 +134,7 @@ export async function freezeTrack(trackId: string): Promise<void> {
         const latest_track = latest_track_state?.tracks.find((candidate) => candidate.id === trackId);
         const latest_ordered_track_ids = latest_track_state?.tracks.map((candidate) => candidate.id) ?? [];
         if (
-            activeFreezeTasks.get(trackId) !== abortController ||
+            !freezeTaskAuthority.isCurrent(task) ||
             adjustmentLayerStore.value !== current_layer_state ||
             latest_track_state !== current_track_state ||
             latest_track !== current_track ||
@@ -150,7 +143,6 @@ export async function freezeTrack(trackId: string): Promise<void> {
             current_adjustment_signature !== initial_adjustment_signature ||
             current_hash !== hash
         ) {
-            activeFreezeTasks.delete(trackId);
             invalidate_finished_render(trackId);
             return;
         }
@@ -177,20 +169,10 @@ export async function freezeTrack(trackId: string): Promise<void> {
                 renderedAt: Date.now(),
             },
         }));
-        activeFreezeTasks.delete(trackId);
     } catch (error) {
-        const active_task = activeFreezeTasks.get(trackId);
-        if (active_task !== abortController) {
-            if (!active_task && abortController.signal.aborted) {
-                updateTrack(trackId, (time) =>
-                    time.freezeState.status === 'freezing'
-                        ? { ...time, frozen: false, freezeState: { status: 'unfrozen' } }
-                        : time
-                );
-            }
+        if (!freezeTaskAuthority.owns(task)) {
             return;
         }
-        activeFreezeTasks.delete(trackId);
 
         if (abortController.signal.aborted) {
             // User cancelled
@@ -208,5 +190,7 @@ export async function freezeTrack(trackId: string): Promise<void> {
                 errorMessage: error instanceof Error ? error.message : String(error),
             },
         }));
+    } finally {
+        freezeTaskAuthority.finish(task);
     }
 }

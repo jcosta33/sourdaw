@@ -17,7 +17,11 @@ import {
 
 import { logger } from '#/infra/logger/appLogger';
 
-import { type CrdtDocumentSnapshot } from '../models/CrdtDocumentSnapshot';
+import {
+    type CrdtDocumentSnapshot,
+    type CrdtDocumentSnapshotEntry,
+    type CrdtDocumentSnapshotExpectedState,
+} from '../models/CrdtDocumentSnapshot';
 import { type DocId, type DocumentBundle, type MergeResult, DOC_PREFIX_ROOT } from '../models/CrdtDocumentTypes';
 
 import { compareIncrementalKeys } from './crdtPersistence/compareIncrementalKeys';
@@ -47,6 +51,30 @@ function createRepositoryChangedDuringLoadError(): Error {
 
 function createSnapshotTransactionOverlapError(id: DocId): Error {
     return new Error(`[AutomergeRepository] Unowned write to ${id} overlaps the active snapshot transaction`);
+}
+
+function snapshotExpectedState(entry: CrdtDocumentSnapshotEntry): CrdtDocumentSnapshotExpectedState {
+    if (entry.state === 'absent') {
+        return { state: 'absent' };
+    }
+    return { state: 'present', heads: getHeads(load<AnyDoc>(entry.bytes)) };
+}
+
+function snapshotEntryWithExpectedCurrent(
+    entry: CrdtDocumentSnapshotEntry,
+    expectedCurrent: CrdtDocumentSnapshotExpectedState
+): CrdtDocumentSnapshotEntry {
+    return entry.state === 'present'
+        ? { state: 'present', bytes: entry.bytes, expectedCurrent }
+        : { state: 'absent', expectedCurrent };
+}
+
+function sameHeads(left: readonly string[], right: readonly string[]): boolean {
+    if (left.length !== right.length) {
+        return false;
+    }
+    const expected = new Set(right);
+    return left.every((head) => expected.has(head));
 }
 
 // ── CRDT Worker ───────────────────────────────────────────────────────────────
@@ -450,7 +478,16 @@ class AutomergeRepository {
             }
         }
 
-        return { before: txn.before, after: snapshotAfter };
+        const guardedBefore: CrdtDocumentSnapshot = new Map();
+        const guardedAfter: CrdtDocumentSnapshot = new Map();
+        for (const id of txn.dirtied) {
+            const before = txn.before.get(id)!;
+            const after = snapshotAfter.get(id)!;
+            guardedBefore.set(id, snapshotEntryWithExpectedCurrent(before, snapshotExpectedState(after)));
+            guardedAfter.set(id, snapshotEntryWithExpectedCurrent(after, snapshotExpectedState(before)));
+        }
+
+        return { before: guardedBefore, after: guardedAfter };
     }
 
     /**
@@ -463,6 +500,21 @@ class AutomergeRepository {
         for (const [id, entry] of snapshot) {
             if (entry.state === 'present') {
                 decoded.set(id, load<AnyDoc>(entry.bytes));
+            }
+        }
+
+        for (const [id, entry] of snapshot) {
+            const expected = entry.expectedCurrent;
+            if (!expected) {
+                continue;
+            }
+            const current = this.docs.get(id);
+            const matches =
+                expected.state === 'absent'
+                    ? current === undefined
+                    : current !== undefined && sameHeads(getHeads(current), expected.heads);
+            if (!matches) {
+                throw new Error(`[AutomergeRepository] snapshot conflict for ${id}`);
             }
         }
 

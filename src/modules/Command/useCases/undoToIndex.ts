@@ -1,32 +1,40 @@
 import { undoStore } from '../stores/undoStore';
 
+import { collectUndoHistoryUnits } from './collectUndoHistoryUnits';
 import { redoUnderMutation } from './redoUnderMutation';
 import { runUndoRedoExclusive } from './undoRedo';
 import { undoUnderMutation } from './undoUnderMutation';
 
-export function undoToIndex(targetIndex: number): Promise<void> {
+export function undoToIndex(targetUnitId: string): Promise<void> {
     return runUndoRedoExclusive(async () => {
-        const state = undoStore.value;
-        if (!state) {
-            return;
-        }
-
-        const currentIndex = state.past.length - 1;
-        if (targetIndex === currentIndex) {
-            return;
-        }
-
-        if (targetIndex < currentIndex) {
-            const stepsBack = currentIndex - targetIndex;
-            for (let index = 0; index < stepsBack; index++) {
-                await undoUnderMutation();
+        for (;;) {
+            const state = undoStore.value;
+            if (!state) {
+                return;
             }
-            return;
-        }
+            const pastUnits = collectUndoHistoryUnits(state.past);
+            const currentUnitId = pastUnits.at(-1)?.id;
+            if (targetUnitId === currentUnitId) {
+                return;
+            }
 
-        const stepsForward = targetIndex - currentIndex;
-        for (let index = 0; index < stepsForward; index++) {
-            await redoUnderMutation();
+            const before = `${state.past.length}:${state.future.length}:${currentUnitId ?? 'root'}`;
+            if (pastUnits.some((unit) => unit.id === targetUnitId)) {
+                await undoUnderMutation();
+            } else if (collectUndoHistoryUnits(state.future).some((unit) => unit.id === targetUnitId)) {
+                await redoUnderMutation();
+            } else {
+                return;
+            }
+
+            const current = undoStore.value;
+            const afterHead = current ? collectUndoHistoryUnits(current.past).at(-1)?.id : undefined;
+            const after = current
+                ? `${current.past.length}:${current.future.length}:${afterHead ?? 'root'}`
+                : 'unavailable';
+            if (after === before) {
+                return;
+            }
         }
     });
 }

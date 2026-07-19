@@ -1,21 +1,26 @@
 import { adjustmentLayerStore, createEffectiveAdjustmentLayerSignature } from '../../stores/adjustmentLayer';
 import { trackStore } from '../../stores/trackStore';
+import { freezeTaskAuthority } from '../freezeBounce/freezeTaskAuthority';
+import { stabilizeInterruptedFreeze } from '../freezeBounce/stabilizeInterruptedFreeze';
 
 /** Reconcile frozen-current claims after authoritative project/peer hydration. */
 export function reconcileAdjustmentLayerStaleness(): void {
     const layer_state = adjustmentLayerStore.value;
     const track_state = trackStore.value;
-    if (!layer_state || !track_state) {
+    if (!track_state) {
         return;
     }
 
     const ordered_track_ids = track_state.tracks.map((track) => track.id);
     const tracks = track_state.tracks.map((track) => {
+        if (track.freezeState.status === 'freezing' && !freezeTaskAuthority.has(track.id)) {
+            return stabilizeInterruptedFreeze(track);
+        }
         if (track.freezeState.status !== 'frozen') {
             return track;
         }
         const current_signature = createEffectiveAdjustmentLayerSignature(
-            layer_state.layers,
+            layer_state?.layers ?? [],
             ordered_track_ids,
             track.id
         );

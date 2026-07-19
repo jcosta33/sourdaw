@@ -129,14 +129,18 @@ describe('commandMutation', () => {
         expect(undoTreeStore.value?.tree.currentNodeId).toBeNull();
     });
 
-    it('holds one mutation lease while undoing to an index so a concurrent edit is not consumed', async () => {
+    it('holds one mutation lease while navigating to a history unit so a concurrent edit is not consumed', async () => {
         gated_value = Number.NaN;
         await executeAppAction({ type: 'setSnapValue', payload: { value: 1 } });
         await executeAppAction({ type: 'setSnapValue', payload: { value: 2 } });
         await executeAppAction({ type: 'setSnapValue', payload: { value: 3 } });
         gated_value = 2;
 
-        const moving = undoToIndex(0);
+        const targetEntryId = undoStore.value?.past[0]?.id;
+        if (!targetEntryId) {
+            throw new Error('Expected a stable target history entry');
+        }
+        const moving = undoToIndex(`entry:${targetEntryId}`);
         await inverse_started;
         const concurrent = executeAppAction({ type: 'setSnapValue', payload: { value: 9 } });
 

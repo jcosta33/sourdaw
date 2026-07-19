@@ -1,7 +1,7 @@
 import { inject } from '#/infra/di/inject';
 import { logger } from '#/infra/logger/appLogger';
 import {
-    runWithAutomergeStorageTransaction,
+    createAutomergeStorageCommitScope,
     waitForAutomergeSnapshotTransaction,
 } from '#/infra/store/storage/createAutomergeStorage';
 import { setSemanticContext, clearSemanticContext } from '#/modules/CrdtDocument/stores';
@@ -40,6 +40,7 @@ export const executeAppActionImpl: ExecuteAppActionImpl = inject({ logger })(
             }
 
             await waitForAutomergeSnapshotTransaction(options?.snapshotTransaction);
+            const runSynchronousProjectCommit = createAutomergeStorageCommitScope(options?.snapshotTransaction);
 
             // Capture undo info before execution so destructive actions can snapshot current state.
             let undoResult: { label: string; inverseAction?: AppAction | null } | null = null;
@@ -58,10 +59,11 @@ export const executeAppActionImpl: ExecuteAppActionImpl = inject({ logger })(
 
             let execution_result: void | ActionExecutionResult;
             try {
-                const execution = runWithAutomergeStorageTransaction(options?.snapshotTransaction, () =>
+                const execution = runSynchronousProjectCommit(() =>
                     handler.execute(action, {
                         executeAppAction: executeAppActionImpl,
                         runCommandTransition,
+                        runSynchronousProjectCommit,
                     })
                 );
                 execution_result = await execution;

@@ -1,4 +1,4 @@
-import { commitActionUndoEntry, generateGroupId } from '#/modules/Command/useCases';
+import { commitActionUndoEntry, generateGroupId, runCommandSnapshotExclusive } from '#/modules/Command/useCases';
 import { transactSnapshot } from '#/modules/CrdtDocument/useCases';
 
 import { type EditPlan } from '../../models/DsoTypes';
@@ -36,20 +36,22 @@ export async function commitDsoEditPlan(input: CommitDsoEditPlanInput): CommitDs
 
     let summaries: string[] = [];
     let failures: DsoExecutionResult['failures'] = [];
-    const { before: snapshotBefore, after: snapshotAfter } = await transactSnapshot(async (snapshotTransaction) => {
-        const result = await executeDsos(input.plan.dsos, snapshotTransaction);
-        summaries = result.summaries;
-        failures = result.failures;
-    });
-
     const { groupId, groupLabel } = generateGroupId(input.userRequest);
-    commitActionUndoEntry({
-        label: `AI: ${input.plan.intent}`,
-        action: { type: 'restoreDsoSnapshot', payload: { bundle: snapshotAfter } },
-        inverseAction: { type: 'restoreDsoSnapshot', payload: { bundle: snapshotBefore } },
-        source: 'ai',
-        groupId,
-        groupLabel,
+    await runCommandSnapshotExclusive(async (executeAction) => {
+        const { before: snapshotBefore, after: snapshotAfter } = await transactSnapshot(async (snapshotTransaction) => {
+            const result = await executeDsos(input.plan.dsos, snapshotTransaction, executeAction);
+            summaries = result.summaries;
+            failures = result.failures;
+        });
+
+        commitActionUndoEntry({
+            label: `AI: ${input.plan.intent}`,
+            action: { type: 'restoreDsoSnapshot', payload: { bundle: snapshotAfter } },
+            inverseAction: { type: 'restoreDsoSnapshot', payload: { bundle: snapshotBefore } },
+            source: 'ai',
+            groupId,
+            groupLabel,
+        });
     });
 
     pushAiActionGroup({

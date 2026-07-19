@@ -61,6 +61,7 @@ vi.mock('../helpers/runProjectLoadTransaction', () => ({
 vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/Arrangement/useCases')>()),
     addTrack: vi.fn(),
+    cancelFreezeTasksForProjectTransition: vi.fn().mockResolvedValue(undefined),
 }));
 
 vi.mock('../../../repositories/project/removeProjectJson', () => ({
@@ -86,6 +87,8 @@ describe('newProject injectable', () => {
 
         expect(activated).toBe(true);
         expect(runProjectLoadTransaction).toHaveBeenCalledTimes(1);
+        const { cancelFreezeTasksForProjectTransition } = await import('#/modules/Arrangement/useCases');
+        expect(cancelFreezeTasksForProjectTransition).toHaveBeenCalledOnce();
         expect(stopPlayback).toHaveBeenCalledTimes(1);
         expect(resetAudioGraph).toHaveBeenCalledTimes(1);
         expect(resetModuleStoresToDefault).toHaveBeenCalledTimes(1);
@@ -96,6 +99,10 @@ describe('newProject injectable', () => {
         expect(clearCachedAudioBuffers).toHaveBeenCalledTimes(1);
         expect(undoStore.value).toEqual({ past: [], future: [] });
         expect(startCrdtAutoSave).toHaveBeenCalledTimes(1);
+
+        const cancel_freeze_order = vi.mocked(cancelFreezeTasksForProjectTransition).mock.invocationCallOrder[0];
+        const create_project_order = vi.mocked(createCrdtProject).mock.invocationCallOrder[0];
+        expect(cancel_freeze_order).toBeLessThan(create_project_order!);
 
         const remove_project_json_order = vi.mocked(removeProjectJson).mock.invocationCallOrder[0];
         const clear_audio_buffers_order = vi.mocked(clearCachedAudioBuffers).mock.invocationCallOrder[0];
@@ -117,6 +124,19 @@ describe('newProject injectable', () => {
             loading: false,
             initialized: true,
         });
+    });
+
+    it('reports a committed project truthfully when post-commit projection is degraded', async () => {
+        vi.mocked(projectActionHistoryToStore).mockImplementationOnce(() => {
+            throw new Error('projection failed');
+        });
+
+        await expect(newProject('Committed Project')).resolves.toBe(true);
+
+        expect(createCrdtProject).toHaveBeenCalledWith('Committed Project');
+        expect(resetModuleStoresToDefault).toHaveBeenCalledOnce();
+        expect(addTrack).toHaveBeenCalledOnce();
+        expect(startCrdtAutoSave).toHaveBeenCalledOnce();
     });
 
     it('does not clear loading when an older activation is superseded', async () => {

@@ -26,6 +26,11 @@ const mocks = vi.hoisted(() => ({
     resetModuleStores: vi.fn(),
     stopActiveAutoSave: vi.fn(),
     setAutoSaveHandle: vi.fn(),
+    cancelFreezeTasksForProjectTransition: vi.fn(() => Promise.resolve()),
+}));
+
+vi.mock('#/modules/Arrangement/useCases', () => ({
+    cancelFreezeTasksForProjectTransition: mocks.cancelFreezeTasksForProjectTransition,
 }));
 
 vi.mock('../../../stores/projectStore', () => ({
@@ -74,9 +79,13 @@ describe('loadProject', () => {
         await expect(loadProject()).resolves.toBe(true);
 
         expect(resetActionReplayAuthority).toHaveBeenCalledTimes(1);
+        expect(mocks.cancelFreezeTasksForProjectTransition).toHaveBeenCalledOnce();
         expect(projectCrdtToStores).toHaveBeenCalledTimes(1);
         expect(undoStore.value).toEqual({ past: [], future: [] });
         expect(startCrdtAutoSave).toHaveBeenCalledTimes(1);
+        expect(mocks.cancelFreezeTasksForProjectTransition.mock.invocationCallOrder[0]).toBeLessThan(
+            vi.mocked(loadCrdtProject).mock.invocationCallOrder[0]!
+        );
     });
 
     it('should create a replacement document when persistence is empty', async () => {
@@ -122,7 +131,7 @@ describe('loadProject', () => {
         await vi.waitFor(() => expect(resetActionReplayAuthority).toHaveBeenCalledTimes(2));
         expect(loadCrdtProject).toHaveBeenCalledTimes(1);
 
-        resolveFirst?.(true);
+        resolveFirst?.(false);
         await expect(first).resolves.toBe(false);
         await vi.waitFor(() => expect(loadCrdtProject).toHaveBeenCalledTimes(2));
         resolveSecond?.(true);
@@ -142,6 +151,30 @@ describe('loadProject', () => {
         expect(loadCrdtProject).not.toHaveBeenCalled();
         expect(createCrdtProject).not.toHaveBeenCalled();
         expect(projectCrdtToStores).not.toHaveBeenCalled();
+    });
+
+    it('finishes a truthful committed projection when superseded after CRDT identity commit', async () => {
+        type PreparedBuffers = Awaited<ReturnType<typeof mocks.prepareCachedAudioBuffersFromIdb>>;
+        let resolve_first_buffers!: (value: PreparedBuffers) => void;
+        const publish_first = vi.fn();
+        mocks.prepareCachedAudioBuffersFromIdb.mockImplementationOnce(
+            () =>
+                new Promise<PreparedBuffers>((resolve) => {
+                    resolve_first_buffers = resolve;
+                })
+        );
+
+        const first = loadProject();
+        await vi.waitFor(() => expect(mocks.prepareCachedAudioBuffersFromIdb).toHaveBeenCalledTimes(1));
+        const second = loadProject();
+        await vi.waitFor(() => expect(resetActionReplayAuthority).toHaveBeenCalledTimes(2));
+
+        resolve_first_buffers({ publish: publish_first });
+
+        await expect(first).resolves.toBe(true);
+        expect(publish_first).toHaveBeenCalledOnce();
+        await expect(second).resolves.toBe(true);
+        expect(projectCrdtToStores).toHaveBeenCalledTimes(2);
     });
 
     it('waits for an in-flight action before CRDT identity publication and clears its history', async () => {

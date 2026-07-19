@@ -2,6 +2,8 @@ import { batchStoreUpdates } from '#/infra/store/createStore';
 
 import { adjustmentLayerStore, createEffectiveAdjustmentLayerSignature } from '../../stores/adjustmentLayer';
 import { trackStore } from '../../stores/trackStore';
+import { freezeTaskAuthority } from '../freezeBounce/freezeTaskAuthority';
+import { stabilizeInterruptedFreeze } from '../freezeBounce/stabilizeInterruptedFreeze';
 
 type CommitAdjustmentLayerMutationInput = {
     adjustmentMutationId: string;
@@ -56,13 +58,8 @@ export function commitAdjustmentLayerMutation({ adjustmentMutationId, mutation }
                     return track;
                 }
                 if (track.freezeState.status === 'freezing') {
-                    return {
-                        ...track,
-                        freezeState: {
-                            ...track.freezeState,
-                            adjustmentLayerMutationId: adjustmentMutationId,
-                        },
-                    };
+                    freezeTaskAuthority.abortTrack(track.id);
+                    return stabilizeInterruptedFreeze(track, adjustmentMutationId);
                 }
                 return {
                     ...track,

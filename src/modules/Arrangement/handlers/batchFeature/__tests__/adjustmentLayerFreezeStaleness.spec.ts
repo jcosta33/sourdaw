@@ -666,6 +666,41 @@ describe('adjustmentLayerFreezeStaleness', () => {
         });
     });
 
+    it('commits async adjustment undo layer and freeze restoration in one document change', async () => {
+        flushAutomergeStorageWrites();
+        const root_document: Record<string, unknown> = {};
+        const committed_snapshots: Record<string, unknown>[] = [];
+        configureAutomergeStoragePort({
+            getSemanticMessage: () => 'Restore adjustment-layer mix',
+            hasDoc: (doc_id) => doc_id === 'root',
+            getDoc: (doc_id) => (doc_id === 'root' ? root_document : undefined),
+            mutateDoc: ({ changeFn }) => {
+                changeFn(root_document);
+                committed_snapshots.push(structuredClone(root_document));
+            },
+        });
+
+        await executeAppAction({ type: 'setLayerMix', payload: { layerId: 'layer-1', mix: 0.75 } });
+        flushAutomergeStorageWrites();
+        committed_snapshots.length = 0;
+
+        await undo();
+        flushAutomergeStorageWrites();
+
+        expect(committed_snapshots).toHaveLength(1);
+        expect(committed_snapshots[0]?.adjustmentLayers).toMatchObject({
+            layers: [{ id: 'layer-1', mix: 0.25 }],
+        });
+        expect(committed_snapshots[0]?.tracks).toMatchObject({
+            tracks: expect.arrayContaining([
+                expect.objectContaining({
+                    id: 'track-a',
+                    freezeState: expect.objectContaining({ status: 'frozen' }),
+                }),
+            ]),
+        });
+    });
+
     it.each(['undo', 'revertActionGroup'] as const)(
         'rolls back a partially applied adjustment group through %s when an older inverse conflicts',
         async (revert_method) => {

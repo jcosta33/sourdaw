@@ -120,4 +120,24 @@ describe('adjustment-layer CRDT projection', () => {
             tracks: [expect.objectContaining({ freezeState: expect.objectContaining({ status: 'stale' }) })],
         });
     });
+
+    it('recovers a retained artifact left freezing by a prior runtime', () => {
+        const persisted_layer = create_layer('orphan-layer', 0.5);
+        const root_document = create_root_document(persisted_layer);
+        const tracks = root_document.tracks as { tracks: Array<Record<string, unknown>> };
+        tracks.tracks[0]!.freezeState = {
+            ...(tracks.tracks[0]!.freezeState as Record<string, unknown>),
+            status: 'freezing',
+            renderProgress: 0.5,
+        };
+        connect_document(root_document);
+
+        projectCrdtToStores();
+        flushAutomergeStorageWrites();
+
+        expect(get_track_status()).toBe('stale');
+        expect(root_document.tracks).toMatchObject({
+            tracks: [expect.objectContaining({ freezeState: expect.objectContaining({ status: 'stale' }) })],
+        });
+    });
 });

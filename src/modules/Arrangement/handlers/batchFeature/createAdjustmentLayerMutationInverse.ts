@@ -323,14 +323,17 @@ export function createAdjustmentLayerMutationInverse(
                 if (
                     !affected_track_ids.has(track.id) ||
                     !track.frozen ||
-                    (track.freezeState.status !== 'frozen' && track.freezeState.status !== 'stale')
+                    (track.freezeState.status !== 'frozen' &&
+                        track.freezeState.status !== 'stale' &&
+                        track.freezeState.status !== 'freezing')
                 ) {
                     return [];
                 }
                 return [
                     {
                         trackId: track.id,
-                        previousStatus: track.freezeState.status,
+                        previousStatus:
+                            track.freezeState.status === 'freezing' ? ('stale' as const) : track.freezeState.status,
                         ...(track.freezeState.adjustmentLayerMutationId
                             ? { previousAdjustmentMutationId: track.freezeState.adjustmentLayerMutationId }
                             : {}),

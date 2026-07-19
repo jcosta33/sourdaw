@@ -24,4 +24,14 @@ describe('createCrdtProject', () => {
         expect(mocks.resetCrdtProjectAuthority).toHaveBeenCalledWith('New Project');
         expect(mocks.compactProject).toHaveBeenCalledOnce();
     });
+
+    it('reports a committed degraded identity when post-commit compaction fails', async () => {
+        mocks.compactProject.mockRejectedValueOnce(new Error('persistence unavailable'));
+
+        await expect(createCrdtProject('Committed Project')).resolves.toEqual({
+            status: 'committed-degraded',
+        });
+
+        expect(mocks.resetCrdtProjectAuthority).toHaveBeenCalledWith('Committed Project');
+    });
 });

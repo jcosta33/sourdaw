@@ -1,8 +1,7 @@
-import { activeFreezeTasks } from './freezeTrack';
+import { freezeTaskAuthority } from './freezeTaskAuthority';
 
 export function cancelFreezeTrack(trackId: string): void {
-    if (activeFreezeTasks.has(trackId)) {
-        activeFreezeTasks.get(trackId)!.abort();
-        activeFreezeTasks.delete(trackId);
+    if (freezeTaskAuthority.activeTasks.has(trackId)) {
+        freezeTaskAuthority.activeTasks.get(trackId)!.abort();
     }
 }

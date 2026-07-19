@@ -1,5 +1,5 @@
 import { logger } from '#/infra/logger/appLogger';
-import { addTrack } from '#/modules/Arrangement/useCases';
+import { addTrack, cancelFreezeTasksForProjectTransition } from '#/modules/Arrangement/useCases';
 import { clearCachedAudioBuffers, resetAudioGraph } from '#/modules/AudioEngine/useCases';
 import { runCommandTransitionExclusive } from '#/modules/Command/useCases';
 import { createCrdtProject, projectActionHistoryToStore, startCrdtAutoSave } from '#/modules/CrdtDocument/useCases';
@@ -49,17 +49,32 @@ async function activateNewProject({
         if (!transaction.isCurrent()) {
             return failNewProjectActivation({ previousTransientState, transaction });
         }
-        resetAudioGraph();
-
-        await createCrdtProject(name);
+        await cancelFreezeTasksForProjectTransition();
         if (!transaction.isCurrent()) {
             return failNewProjectActivation({ previousTransientState, transaction });
         }
-        projectActionHistoryToStore();
-        resetModuleStoresToDefault();
-        arrangementStore.set(structuredClone(defaultArrangementStoreState));
-        addTrack({ name: 'Master', kind: 'master', select: false });
+        resetAudioGraph();
 
+        await createCrdtProject(name);
+    } catch (error) {
+        logger.warn('[newProject] Failed before project identity commit:', error);
+        return failNewProjectActivation({ previousTransientState, transaction });
+    }
+
+    const postCommitErrors: unknown[] = [];
+    const finishCommittedStep = (step: () => void): void => {
+        try {
+            step();
+        } catch (error) {
+            postCommitErrors.push(error);
+        }
+    };
+
+    finishCommittedStep(projectActionHistoryToStore);
+    finishCommittedStep(resetModuleStoresToDefault);
+    finishCommittedStep(() => arrangementStore.set(structuredClone(defaultArrangementStoreState)));
+    finishCommittedStep(() => addTrack({ name: 'Master', kind: 'master', select: false }));
+    finishCommittedStep(() =>
         projectStore.set({
             name,
             createdAt: Date.now(),
@@ -73,18 +88,22 @@ async function activateNewProject({
                 frequencies: Array.from({ length: 128 }, (_, index) => 440 * 2 ** ((index - 69) / 12)),
             },
             initialized: true,
-        });
-        removeProjectJson();
-        clearCachedAudioBuffers();
-        resetCommandHistory();
-
+        })
+    );
+    finishCommittedStep(removeProjectJson);
+    finishCommittedStep(clearCachedAudioBuffers);
+    finishCommittedStep(resetCommandHistory);
+    finishCommittedStep(() => {
         stopActiveAutoSave();
         setAutoSaveHandle(startCrdtAutoSave());
-        return true;
-    } catch (error) {
-        logger.warn('[newProject] Failed to activate project:', error);
-        return failNewProjectActivation({ previousTransientState, transaction });
+    });
+    if (postCommitErrors.length > 0) {
+        logger.warn(
+            '[newProject] Project identity committed with degraded post-commit activation:',
+            new AggregateError(postCommitErrors, 'Post-commit project activation failed')
+        );
     }
+    return true;
 }
 
 export function newProject(

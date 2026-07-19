@@ -41,7 +41,14 @@ export type RipplePlanSnapshot = {
     readonly shiftedClips: readonly RippleShiftSnapshot[];
 };
 type CommandDocumentSnapshotEntry =
-    | { readonly state: 'present'; readonly bytes: Uint8Array }
+    | {
+          readonly state: 'present';
+          readonly bytes: Uint8Array;
+          readonly expectedCurrent?: CommandDocumentSnapshotExpectedState;
+      }
+    | { readonly state: 'absent'; readonly expectedCurrent?: CommandDocumentSnapshotExpectedState };
+type CommandDocumentSnapshotExpectedState =
+    | { readonly state: 'present'; readonly heads: readonly string[] }
     | { readonly state: 'absent' };
 type CommandDocumentSnapshot = Map<string, CommandDocumentSnapshotEntry>;
 /** A pitch-shift segment carried by `commitPitchEdit`. Command cannot import Knead's
@@ -656,6 +663,8 @@ export type ActionExecutionContext = {
     executeAppAction: (action: AppAction, options?: ExecuteOptions) => Promise<void>;
     /** Run an identity transition without reacquiring the current Command mutation boundary. */
     runCommandTransition: <Output>(transition: (resetCommandHistory: () => void) => Promise<Output>) => Promise<Output>;
+    /** Re-enter this action's owner for one synchronous multi-store CRDT commit. */
+    runSynchronousProjectCommit?: <Output>(commit: () => Output) => Output;
 };
 
 /** One dispatchable action's handler. Built via `createHandler` and merged into a module

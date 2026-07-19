@@ -9,7 +9,12 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 
 import { automergeRepository } from '../automergeRepository';
 
-type TestSnapshotEntry = { readonly state: 'present'; readonly bytes: Uint8Array } | { readonly state: 'absent' };
+type TestExpectedState =
+    | { readonly state: 'present'; readonly heads: readonly string[] }
+    | { readonly state: 'absent' };
+type TestSnapshotEntry =
+    | { readonly state: 'present'; readonly bytes: Uint8Array; readonly expectedCurrent?: TestExpectedState }
+    | { readonly state: 'absent'; readonly expectedCurrent?: TestExpectedState };
 
 type TestDocumentSnapshot = Map<string, TestSnapshotEntry>;
 
@@ -23,7 +28,7 @@ function loadPresentSnapshot(snapshot: TestDocumentSnapshot, id: string): Record
 }
 
 function expectAbsentSnapshot(snapshot: TestDocumentSnapshot, id: string): void {
-    expect(snapshot.get(id)).toEqual({ state: 'absent' });
+    expect(snapshot.get(id)).toMatchObject({ state: 'absent' });
 }
 
 // The worker is unavailable in jsdom; force the synchronous fallback paths by
@@ -211,6 +216,8 @@ describe('transactSnapshot - membership-aware undo and redo', () => {
 
         expectAbsentSnapshot(before, 'created');
         expect(loadPresentSnapshot(after, 'created')).toMatchObject({ value: 'created' });
+        expect(before.get('created')?.expectedCurrent).toMatchObject({ state: 'present' });
+        expect(after.get('created')?.expectedCurrent).toEqual({ state: 'absent' });
 
         automergeRepository.restoreSnapshot(before);
         expect(automergeRepository.hasDoc('created')).toBe(false);

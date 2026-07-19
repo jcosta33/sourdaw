@@ -59,7 +59,7 @@ describe('undoToIndex', () => {
     it('should return without stepping when the undo store is unavailable', async () => {
         mocks.undoStoreValue.value = null;
 
-        await undoToIndex(0);
+        await undoToIndex('entry:missing');
 
         expect(mocks.undoUnderMutation).not.toHaveBeenCalled();
         expect(mocks.redoUnderMutation).not.toHaveBeenCalled();
@@ -71,7 +71,7 @@ describe('undoToIndex', () => {
             future: [actionEntry('three')],
         };
 
-        await undoToIndex(1);
+        await undoToIndex('entry:two');
 
         expect(mocks.undoUnderMutation).not.toHaveBeenCalled();
         expect(mocks.redoUnderMutation).not.toHaveBeenCalled();
@@ -82,8 +82,16 @@ describe('undoToIndex', () => {
             past: [actionEntry('one'), actionEntry('two'), actionEntry('three')],
             future: [],
         };
+        mocks.undoUnderMutation.mockImplementation(async () => {
+            const state = mocks.undoStoreValue.value!;
+            const entry = state.past.at(-1)!;
+            mocks.undoStoreValue.value = {
+                past: state.past.slice(0, -1),
+                future: [entry, ...state.future],
+            };
+        });
 
-        await undoToIndex(0);
+        await undoToIndex('entry:one');
 
         expect(mocks.undoUnderMutation).toHaveBeenCalledTimes(2);
         expect(mocks.redoUnderMutation).not.toHaveBeenCalled();
@@ -94,10 +102,42 @@ describe('undoToIndex', () => {
             past: [actionEntry('one')],
             future: [actionEntry('two'), actionEntry('three')],
         };
+        mocks.redoUnderMutation.mockImplementation(async () => {
+            const state = mocks.undoStoreValue.value!;
+            const entry = state.future[0]!;
+            mocks.undoStoreValue.value = {
+                past: [...state.past, entry],
+                future: state.future.slice(1),
+            };
+        });
 
-        await undoToIndex(2);
+        await undoToIndex('entry:three');
 
         expect(mocks.redoUnderMutation).toHaveBeenCalledTimes(2);
         expect(mocks.undoUnderMutation).not.toHaveBeenCalled();
+    });
+
+    it('targets a stable atomic history unit and advances from the live head', async () => {
+        const first = actionEntry('one');
+        const grouped_first = actionEntry('group-first');
+        grouped_first.transactionGroupId = 'group';
+        const grouped_second = actionEntry('group-second');
+        grouped_second.transactionGroupId = 'group';
+        const later = actionEntry('later');
+        mocks.undoStoreValue.value = {
+            past: [first, grouped_first, grouped_second, later],
+            future: [],
+        };
+        mocks.undoUnderMutation.mockImplementation(async () => {
+            mocks.undoStoreValue.value = {
+                past: [first, grouped_first, grouped_second],
+                future: [later],
+            };
+        });
+
+        await undoToIndex('transaction:group');
+
+        expect(mocks.undoUnderMutation).toHaveBeenCalledTimes(1);
+        expect(mocks.redoUnderMutation).not.toHaveBeenCalled();
     });
 });

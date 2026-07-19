@@ -48,6 +48,8 @@ vi.mock('#/modules/Arrangement/stores', () => ({
 
 vi.mock('#/modules/Command/useCases', () => ({
     executeAppAction: mocks.executeAppAction,
+    runCommandSnapshotExclusive: (operation: (executeAction: typeof mocks.executeAppAction) => Promise<unknown>) =>
+        operation(mocks.executeAppAction),
     generateGroupId: mocks.generateGroupId,
     commitActionUndoEntry: mocks.commitActionUndoEntry,
 }));

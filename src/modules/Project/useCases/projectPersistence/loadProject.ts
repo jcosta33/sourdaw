@@ -1,5 +1,7 @@
 import { logger } from '#/infra/logger/appLogger';
 import { batchStoreUpdates } from '#/infra/store/createStore';
+import { flushAutomergeStorageWrites } from '#/infra/store/storage/createAutomergeStorage';
+import { cancelFreezeTasksForProjectTransition } from '#/modules/Arrangement/useCases';
 import { getAudioContext, prepareCachedAudioBuffersFromIdb } from '#/modules/AudioEngine/useCases';
 import { runCommandTransitionExclusive } from '#/modules/Command/useCases';
 import {
@@ -35,59 +37,91 @@ export async function loadProject(
 
     return runTransition(async (resetCommandHistory) => {
         try {
-            const loaded = await loadCrdtProject({ shouldCommit: transaction.isCurrent });
+            await cancelFreezeTasksForProjectTransition();
             if (!transaction.isCurrent()) {
                 return false;
             }
+            flushAutomergeStorageWrites();
+
+            const loaded = await loadCrdtProject({ shouldCommit: transaction.isCurrent });
             if (!loaded) {
+                if (!transaction.isCurrent()) {
+                    return false;
+                }
                 await createCrdtProject('Untitled Project');
             }
         } catch (error) {
             if (!transaction.isCurrent()) {
                 return false;
             }
-            logger.error(new Error('[loadProject] CRDT load failed; preserving persisted project', { cause: error }));
+            logger.error(
+                new Error('[loadProject] Pre-commit activation failed; preserving persisted project', { cause: error })
+            );
             throw error;
-        }
-
-        if (!transaction.isCurrent()) {
-            return false;
         }
 
         const rootDoc = getCrdtDoc<{ tracks?: unknown }>(DOC_PREFIX_ROOT);
         const referencedBufferIds = collectTrackStateAudioBufferIds(rootDoc?.tracks);
-        const preparedBuffers = await prepareCachedAudioBuffersFromIdb({
-            audioContext: getAudioContext(),
-            bufferIds: referencedBufferIds,
-            shouldContinue: transaction.isCurrent,
-        });
-        if (!preparedBuffers || !transaction.isCurrent()) {
-            return false;
+        let preparedBuffers: Awaited<ReturnType<typeof prepareCachedAudioBuffersFromIdb>> = null;
+        try {
+            preparedBuffers = await prepareCachedAudioBuffersFromIdb({
+                audioContext: getAudioContext(),
+                bufferIds: referencedBufferIds,
+                shouldContinue: () => true,
+            });
+        } catch (error) {
+            logger.error(
+                new Error('[loadProject] Project committed without restoring cached audio buffers', { cause: error })
+            );
         }
 
-        batchStoreUpdates(() => {
-            preparedBuffers.publish();
-            // Reset per-device-instance stores (§13.1) before hydration so stale
-            // device state from a previously open project cannot leak into it.
-            resetModuleStoresToDefault();
-            projectCrdtToStores();
-            migrateAbsoluteMidiNotes();
-
-            const project = projectStore.value;
-            if (project?.loading) {
-                projectStore.set({ ...project, loading: false, initialized: true });
+        const postCommitErrors: unknown[] = [];
+        const finishCommittedStep = (step: () => void): void => {
+            try {
+                step();
+            } catch (error) {
+                postCommitErrors.push(error);
             }
-            resetCommandHistory();
-        });
+        };
+        try {
+            batchStoreUpdates(() => {
+                if (preparedBuffers) {
+                    finishCommittedStep(preparedBuffers.publish);
+                } else {
+                    postCommitErrors.push(new Error('Cached audio-buffer restoration did not complete'));
+                }
+                // Reset per-device-instance stores (§13.1) before hydration so stale
+                // device state from a previously open project cannot leak into it.
+                finishCommittedStep(resetModuleStoresToDefault);
+                finishCommittedStep(projectCrdtToStores);
+                finishCommittedStep(migrateAbsoluteMidiNotes);
 
-        if (!transaction.isCurrent()) {
-            return false;
+                const project = projectStore.value;
+                if (project?.loading) {
+                    finishCommittedStep(() => projectStore.set({ ...project, loading: false, initialized: true }));
+                }
+                finishCommittedStep(resetCommandHistory);
+            });
+        } catch (error) {
+            postCommitErrors.push(error);
+        }
+        if (postCommitErrors.length > 0) {
+            logger.error(
+                new AggregateError(
+                    postCommitErrors,
+                    '[loadProject] Project identity committed with degraded post-commit activation'
+                )
+            );
         }
 
         // Start debounced incremental auto-save so edits survive browser crashes.
         // Stop any previous auto-save loop first (e.g. if loadProject is called again).
-        stopActiveAutoSave();
-        setAutoSaveHandle(startCrdtAutoSave());
+        try {
+            stopActiveAutoSave();
+            setAutoSaveHandle(startCrdtAutoSave());
+        } catch (error) {
+            logger.error(new Error('[loadProject] Project committed without active auto-save', { cause: error }));
+        }
 
         return true;
     });
