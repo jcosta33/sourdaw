@@ -4,12 +4,12 @@ import { type CommitLegacyCommandUndo } from '#/utils/handlerContract';
 
 import { createCallbackUndoEntry } from '../createCallbackUndoEntry';
 
-function commit_undo(): void {}
+function commitUndo(): void {}
 
-function run_legacy_mutation<Output>(
+function runLegacyMutation<Output>(
     mutation: (commitUndo: CommitLegacyCommandUndo) => Promise<Output> | Output
 ): Promise<Output> {
-    return Promise.resolve(mutation(commit_undo));
+    return Promise.resolve(mutation(commitUndo));
 }
 
 describe('createCallbackUndoEntry', () => {
@@ -24,8 +24,8 @@ describe('createCallbackUndoEntry', () => {
         expect(entry.redo).toBe(redo);
         expect(entry.source).toBe('ai');
 
-        entry.undo(run_legacy_mutation);
-        entry.redo(run_legacy_mutation);
+        entry.undo(runLegacyMutation);
+        entry.redo(runLegacyMutation);
 
         expect(undo).toHaveBeenCalledTimes(1);
         expect(redo).toHaveBeenCalledTimes(1);

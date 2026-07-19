@@ -12,7 +12,7 @@ import { rebuildUndoTreeFromHistory } from './undoTree/rebuildUndoTreeFromHistor
  * by hand. The entries are undone newest-first, removed from `past`, and pushed
  * onto `future` so a redo re-applies them in order.
  */
-async function revert_action_group(owner: CommandMutationOwner, groupId: string): Promise<boolean> {
+async function revertActionGroupUnderMutation(owner: CommandMutationOwner, groupId: string): Promise<boolean> {
     const state = undoStore.value;
     if (!state) {
         return false;
@@ -43,5 +43,5 @@ async function revert_action_group(owner: CommandMutationOwner, groupId: string)
 }
 
 export function revertActionGroup(groupId: string): Promise<boolean> {
-    return runCommandMutationExclusive((owner) => revert_action_group(owner, groupId));
+    return runCommandMutationExclusive((owner) => revertActionGroupUnderMutation(owner, groupId));
 }

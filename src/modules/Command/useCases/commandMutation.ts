@@ -16,13 +16,13 @@ type PendingMutation = {
     reject: (error: unknown) => void;
 };
 
-const pending_mutations: PendingMutation[] = [];
-let drain_scheduled = false;
+const pendingMutations: PendingMutation[] = [];
+let drainScheduled = false;
 
 function startMutation({ operation, resolve, reject }: PendingMutation): void {
     const owner = createCommandMutationOwner();
     commandMutationRuntime.activeOwner = owner;
-    const previous_synchronous_owner = commandMutationRuntime.synchronousOwner;
+    const previousSynchronousOwner = commandMutationRuntime.synchronousOwner;
     commandMutationRuntime.synchronousOwner = owner;
     let result: Promise<unknown>;
     try {
@@ -33,7 +33,7 @@ function startMutation({ operation, resolve, reject }: PendingMutation): void {
         result = Promise.reject(toCommandMutationError(error));
     } finally {
         if (commandMutationRuntime.synchronousOwner === owner) {
-            commandMutationRuntime.synchronousOwner = previous_synchronous_owner;
+            commandMutationRuntime.synchronousOwner = previousSynchronousOwner;
         }
     }
 
@@ -80,16 +80,16 @@ function finishMutation(owner: CommandMutationOwner): void {
     if (commandMutationRuntime.activeOwner === owner) {
         commandMutationRuntime.activeOwner = null;
     }
-    if (drain_scheduled) {
+    if (drainScheduled) {
         return;
     }
-    drain_scheduled = true;
+    drainScheduled = true;
     queueMicrotask(() => {
-        drain_scheduled = false;
+        drainScheduled = false;
         if (commandMutationRuntime.activeOwner) {
             return;
         }
-        const next = pending_mutations.shift();
+        const next = pendingMutations.shift();
         if (next) {
             startMutation(next);
         }
@@ -106,7 +106,7 @@ export function runCommandMutationExclusive<Output>(
             reject,
         };
         if (commandMutationRuntime.activeOwner) {
-            pending_mutations.push(pending);
+            pendingMutations.push(pending);
             return;
         }
         startMutation(pending);

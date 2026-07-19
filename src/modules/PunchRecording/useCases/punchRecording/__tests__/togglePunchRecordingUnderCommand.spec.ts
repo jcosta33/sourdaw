@@ -8,17 +8,17 @@ import { togglePunchRecordingUnderCommand } from '../togglePunchRecordingUnderCo
 describe('togglePunchRecordingUnderCommand', () => {
     it('returns the owning runner promise so failure stays attached to the outer command', async () => {
         const failure = new Error('punch commit failed');
-        let received_mutation: unknown;
-        function run_legacy_mutation<Output>(
+        let receivedMutation: unknown;
+        function runLegacyMutation<Output>(
             mutation: (commitUndo: CommitLegacyCommandUndo) => Promise<Output> | Output
         ): Promise<Output> {
-            received_mutation = mutation;
+            receivedMutation = mutation;
             return Promise.reject(failure);
         }
 
-        const toggling = togglePunchRecordingUnderCommand(run_legacy_mutation);
+        const toggling = togglePunchRecordingUnderCommand(runLegacyMutation);
 
         await expect(toggling).rejects.toBe(failure);
-        expect(received_mutation).toBe(commitTogglePunchRecording);
+        expect(receivedMutation).toBe(commitTogglePunchRecording);
     });
 });

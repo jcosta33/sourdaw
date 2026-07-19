@@ -25,9 +25,9 @@ type TogglePlaybackAction = Extract<AppAction, { type: 'togglePlayback' }>;
 
 describe('commandMutation', () => {
     let value = 0;
-    let gated_value = 0;
-    let release_inverse!: () => void;
-    let inverse_started!: Promise<void>;
+    let gatedValue = 0;
+    let releaseInverse!: () => void;
+    let inverseStarted!: Promise<void>;
 
     beforeEach(() => {
         configureAutomergeStoragePort(null);
@@ -36,21 +36,21 @@ describe('commandMutation', () => {
         clearUndoHistory();
         undoTreeStore.set({ tree: createEmptyTree(), enabled: true });
         value = 0;
-        gated_value = 0;
+        gatedValue = 0;
 
-        let mark_inverse_started!: () => void;
-        inverse_started = new Promise<void>((resolve) => {
-            mark_inverse_started = resolve;
+        let markInverseStarted!: () => void;
+        inverseStarted = new Promise<void>((resolve) => {
+            markInverseStarted = resolve;
         });
-        const inverse_gate = new Promise<void>((resolve) => {
-            release_inverse = resolve;
+        const inverseGate = new Promise<void>((resolve) => {
+            releaseInverse = resolve;
         });
         const handler: ActionHandler<SetSnapValueAction> = {
             undoable: true,
             execute: async (action) => {
-                if (action.payload.value === gated_value) {
-                    mark_inverse_started();
-                    await inverse_gate;
+                if (action.payload.value === gatedValue) {
+                    markInverseStarted();
+                    await inverseGate;
                 }
                 value = action.payload.value;
             },
@@ -63,7 +63,7 @@ describe('commandMutation', () => {
     });
 
     afterEach(() => {
-        release_inverse();
+        releaseInverse();
         clearUndoHistory();
         clearHandlerRegistry();
         undoTreeStore.set({ tree: createEmptyTree(), enabled: false });
@@ -74,7 +74,7 @@ describe('commandMutation', () => {
         await executeAppAction({ type: 'setSnapValue', payload: { value: 1 } });
 
         const undoing = undo();
-        await inverse_started;
+        await inverseStarted;
         let concurrent_settled = false;
         const concurrent = executeAppAction({ type: 'setSnapValue', payload: { value: 2 } }).then(() => {
             concurrent_settled = true;
@@ -84,7 +84,7 @@ describe('commandMutation', () => {
         await Promise.resolve();
 
         expect(concurrent_settled).toBe(false);
-        release_inverse();
+        releaseInverse();
         await Promise.all([undoing, concurrent]);
 
         expect(value).toBe(2);
@@ -162,35 +162,35 @@ describe('commandMutation', () => {
 
     it('rejects a stale nested mutation capability after its exact owner settles', async () => {
         type LegacyRunner = NonNullable<ActionExecutionContext['runLegacyCommandMutation']>;
-        let capture_runner!: (runner: LegacyRunner) => void;
-        const captured_runner = new Promise<LegacyRunner>((resolve) => {
-            capture_runner = resolve;
+        let captureRunner!: (runner: LegacyRunner) => void;
+        const capturedRunner = new Promise<LegacyRunner>((resolve) => {
+            captureRunner = resolve;
         });
-        const capture_handler: ActionHandler<TogglePlaybackAction> = {
+        const captureHandler: ActionHandler<TogglePlaybackAction> = {
             undoable: false,
             execute: (_action, context) => {
                 if (!context?.runLegacyCommandMutation) {
                     throw new Error('Expected legacy Command mutation capability');
                 }
-                capture_runner(context.runLegacyCommandMutation);
+                captureRunner(context.runLegacyCommandMutation);
             },
             describe: () => ({ label: 'Capture owner' }),
         };
-        registerHandlerMap({ togglePlayback: capture_handler });
+        registerHandlerMap({ togglePlayback: captureHandler });
 
         await executeAppAction({ type: 'togglePlayback' });
-        const stale_runner = await captured_runner;
-        const replacement = executeAppAction({ type: 'setSnapValue', payload: { value: gated_value } });
-        await inverse_started;
+        const staleRunner = await capturedRunner;
+        const replacement = executeAppAction({ type: 'setSnapValue', payload: { value: gatedValue } });
+        await inverseStarted;
 
         await expect(
-            stale_runner(() => {
+            staleRunner(() => {
                 value = 99;
             })
         ).rejects.toThrow('owner');
 
         expect(value).toBe(0);
-        release_inverse();
+        releaseInverse();
         await replacement;
     });
 
@@ -233,7 +233,7 @@ describe('commandMutation', () => {
     it('queues a complete legacy mutation behind an in-flight async undo', async () => {
         await executeAppAction({ type: 'setSnapValue', payload: { value: 1 } });
         const undoing = undo();
-        await inverse_started;
+        await inverseStarted;
 
         let legacy_settled = false;
         const legacy = runLegacyCommandMutation((commitUndo) => {
@@ -257,7 +257,7 @@ describe('commandMutation', () => {
         expect(value).toBe(1);
         expect(legacy_settled).toBe(false);
 
-        release_inverse();
+        releaseInverse();
         await Promise.all([undoing, legacy]);
 
         expect(value).toBe(2);
@@ -266,13 +266,13 @@ describe('commandMutation', () => {
     });
 
     it('awaits detached replay work without publishing nested legacy history', async () => {
-        let release_nested!: () => void;
-        const nested_gate = new Promise<void>((resolve) => {
-            release_nested = resolve;
+        let releaseNested!: () => void;
+        const nestedGate = new Promise<void>((resolve) => {
+            releaseNested = resolve;
         });
-        let mark_nested_started!: () => void;
-        const nested_started = new Promise<void>((resolve) => {
-            mark_nested_started = resolve;
+        let markNestedStarted!: () => void;
+        const nestedStarted = new Promise<void>((resolve) => {
+            markNestedStarted = resolve;
         });
 
         await runLegacyCommandMutation((commitUndo) => {
@@ -281,8 +281,8 @@ describe('commandMutation', () => {
                 'Outer legacy edit',
                 (runReplayMutation) => {
                     void runReplayMutation(async (commitNestedUndo) => {
-                        mark_nested_started();
-                        await nested_gate;
+                        markNestedStarted();
+                        await nestedGate;
                         value = 0;
                         commitNestedUndo(
                             'Nested inverse',
@@ -301,16 +301,16 @@ describe('commandMutation', () => {
             );
         });
 
-        let undo_settled = false;
+        let undoSettled = false;
         const undoing = undo().then(() => {
-            undo_settled = true;
+            undoSettled = true;
             return undefined;
         });
-        await nested_started;
+        await nestedStarted;
         await Promise.resolve();
 
-        expect(undo_settled).toBe(false);
-        release_nested();
+        expect(undoSettled).toBe(false);
+        releaseNested();
         await undoing;
 
         expect(value).toBe(0);
@@ -320,12 +320,12 @@ describe('commandMutation', () => {
     });
 
     it('drains more than twelve thousand synchronous failures without recursion or a wedged owner', async () => {
-        let release_first!: () => void;
-        const first_gate = new Promise<void>((resolve) => {
-            release_first = resolve;
+        let releaseFirst!: () => void;
+        const firstGate = new Promise<void>((resolve) => {
+            releaseFirst = resolve;
         });
         const first = runCommandTransitionExclusive(async () => {
-            await first_gate;
+            await firstGate;
         });
         const failures = Array.from({ length: 12_001 }, (_, index) =>
             runCommandTransitionExclusive(() => {
@@ -334,7 +334,7 @@ describe('commandMutation', () => {
         );
         const final = runCommandTransitionExclusive(() => Promise.resolve('drained'));
 
-        release_first();
+        releaseFirst();
         await first;
         const results = await Promise.allSettled(failures);
 
@@ -344,21 +344,21 @@ describe('commandMutation', () => {
     });
 
     it('holds one mutation lease while navigating to a history unit so a concurrent edit is not consumed', async () => {
-        gated_value = Number.NaN;
+        gatedValue = Number.NaN;
         await executeAppAction({ type: 'setSnapValue', payload: { value: 1 } });
         await executeAppAction({ type: 'setSnapValue', payload: { value: 2 } });
         await executeAppAction({ type: 'setSnapValue', payload: { value: 3 } });
-        gated_value = 2;
+        gatedValue = 2;
 
         const targetEntryId = undoStore.value?.past[0]?.id;
         if (!targetEntryId) {
             throw new Error('Expected a stable target history entry');
         }
         const moving = undoToIndex(`entry:${targetEntryId}`);
-        await inverse_started;
+        await inverseStarted;
         const concurrent = executeAppAction({ type: 'setSnapValue', payload: { value: 9 } });
 
-        release_inverse();
+        releaseInverse();
         await Promise.all([moving, concurrent]);
 
         expect(value).toBe(9);
@@ -372,7 +372,7 @@ describe('commandMutation', () => {
     it.each(['undo', 'redo'] as const)(
         'settles the real %s AppAction and a following action without re-entering the queue',
         async (history_action) => {
-            gated_value = Number.NaN;
+            gatedValue = Number.NaN;
             registerHandlerMap(getUndoRedoHandlers());
             await executeAppAction({ type: 'setSnapValue', payload: { value: 1 } });
             if (history_action === 'redo') {

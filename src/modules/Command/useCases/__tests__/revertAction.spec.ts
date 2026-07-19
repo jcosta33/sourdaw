@@ -27,7 +27,7 @@ const mocks = vi.hoisted(() => {
 
     return {
         action_history_store,
-        execute_app_action: vi.fn<typeof import('../executeAppActionImpl').executeAppActionImpl>(),
+        executeAppAction: vi.fn<typeof import('../executeAppActionImpl').executeAppActionImpl>(),
         mark_reverted:
             vi.fn<(input: { entryId: string; expectedFingerprint: string }) => { status: 'marked' | 'unavailable' }>(),
     };
@@ -38,7 +38,7 @@ vi.mock('#/modules/CrdtDocument/stores', () => ({
 }));
 
 vi.mock('../executeAppActionImpl', () => ({
-    executeAppActionImpl: mocks.execute_app_action,
+    executeAppActionImpl: mocks.executeAppAction,
 }));
 
 vi.mock('../actionHistoryMetadataPort', () => ({
@@ -75,7 +75,7 @@ describe('revertAction', () => {
         vi.clearAllMocks();
         clearActionReplayCapabilities();
         mocks.action_history_store.value = { entries: [] };
-        mocks.execute_app_action.mockResolvedValue(undefined);
+        mocks.executeAppAction.mockResolvedValue(undefined);
         mocks.mark_reverted.mockReturnValue({ status: 'marked' });
     });
 
@@ -85,15 +85,15 @@ describe('revertAction', () => {
         expect(getActionReplayStatus('entry-1')).toEqual({ status: 'unavailable' });
         expect(await revertAction('entry-1')).toEqual({ status: 'unavailable' });
         expect(await revertAction('unknown-entry')).toEqual({ status: 'unavailable' });
-        expect(mocks.execute_app_action).not.toHaveBeenCalled();
+        expect(mocks.executeAppAction).not.toHaveBeenCalled();
     });
 
     it('should replay a claimed inverse once and mark metadata only after execution', async () => {
         const entry = create_entry();
-        const inverse_action = { type: 'setTempo', payload: { bpm: 120 } } as const;
+        const inverseAction = { type: 'setTempo', payload: { bpm: 120 } } as const;
         const order: string[] = [];
         mocks.action_history_store.value = { entries: [entry] };
-        mocks.execute_app_action.mockImplementation(() => {
+        mocks.executeAppAction.mockImplementation(() => {
             order.push('execute');
             return Promise.resolve();
         });
@@ -101,13 +101,13 @@ describe('revertAction', () => {
             order.push('mark');
             return { status: 'marked' };
         });
-        registerActionReplayCapability({ entryId: entry.id, inverseAction: inverse_action });
+        registerActionReplayCapability({ entryId: entry.id, inverseAction });
 
         expect(getActionReplayStatus(entry.id)).toEqual({ status: 'ready' });
         expect(await revertAction(entry.id)).toEqual({ status: 'executed' });
         expect(order).toEqual(['execute', 'mark']);
-        expect(mocks.execute_app_action).toHaveBeenCalledWith(
-            inverse_action,
+        expect(mocks.executeAppAction).toHaveBeenCalledWith(
+            inverseAction,
             {
                 source: entry.source,
                 groupLabel: `Reverted: ${entry.label}`,
@@ -120,16 +120,16 @@ describe('revertAction', () => {
         });
         expect(getActionReplayStatus(entry.id)).toEqual({ status: 'unavailable' });
         expect(await revertAction(entry.id)).toEqual({ status: 'unavailable' });
-        expect(mocks.execute_app_action).toHaveBeenCalledTimes(1);
+        expect(mocks.executeAppAction).toHaveBeenCalledTimes(1);
     });
 
     it('should restore the claimed capability and leave metadata active when execution fails', async () => {
         const entry = create_entry();
-        const inverse_action = { type: 'setTempo', payload: { bpm: 120 } } as const;
+        const inverseAction = { type: 'setTempo', payload: { bpm: 120 } } as const;
         const failure = new Error('replay failed');
         mocks.action_history_store.value = { entries: [entry] };
-        mocks.execute_app_action.mockRejectedValueOnce(failure);
-        registerActionReplayCapability({ entryId: entry.id, inverseAction: inverse_action });
+        mocks.executeAppAction.mockRejectedValueOnce(failure);
+        registerActionReplayCapability({ entryId: entry.id, inverseAction });
 
         await expect(revertAction(entry.id)).rejects.toBe(failure);
 
@@ -141,7 +141,7 @@ describe('revertAction', () => {
         const entry = create_entry();
         const failure = new AppActionNotDispatchedError('togglePlayback');
         mocks.action_history_store.value = { entries: [entry] };
-        mocks.execute_app_action.mockRejectedValueOnce(failure);
+        mocks.executeAppAction.mockRejectedValueOnce(failure);
         registerActionReplayCapability({ entryId: entry.id, inverseAction: { type: 'togglePlayback' } });
 
         await expect(revertAction(entry.id)).rejects.toBe(failure);
@@ -154,7 +154,7 @@ describe('revertAction', () => {
         const entry = create_entry();
         const failure = new AppActionCommittedError('togglePlayback', new Error('metadata failed'));
         mocks.action_history_store.value = { entries: [entry] };
-        mocks.execute_app_action.mockRejectedValueOnce(failure);
+        mocks.executeAppAction.mockRejectedValueOnce(failure);
         registerActionReplayCapability({ entryId: entry.id, inverseAction: { type: 'togglePlayback' } });
 
         await expect(revertAction(entry.id)).rejects.toBe(failure);
@@ -165,21 +165,21 @@ describe('revertAction', () => {
         });
         expect(getActionReplayStatus(entry.id)).toEqual({ status: 'unavailable' });
         expect(await revertAction(entry.id)).toEqual({ status: 'unavailable' });
-        expect(mocks.execute_app_action).toHaveBeenCalledTimes(1);
+        expect(mocks.executeAppAction).toHaveBeenCalledTimes(1);
     });
 
     it('should report executed-unmarked when committed execution finds replacement metadata', async () => {
         const entry = create_entry();
-        const committed_failure = new AppActionCommittedError('togglePlayback', new Error('inverse history failed'));
+        const committedFailure = new AppActionCommittedError('togglePlayback', new Error('inverse history failed'));
         mocks.action_history_store.value = { entries: [entry] };
-        mocks.execute_app_action.mockRejectedValueOnce(committed_failure);
+        mocks.executeAppAction.mockRejectedValueOnce(committedFailure);
         mocks.mark_reverted.mockReturnValue({ status: 'unavailable' });
         registerActionReplayCapability({ entryId: entry.id, inverseAction: { type: 'togglePlayback' } });
 
         await expect(revertAction(entry.id)).resolves.toEqual({ status: 'executed-unmarked' });
 
         expect(getActionReplayStatus(entry.id)).toEqual({ status: 'unavailable' });
-        expect(mocks.execute_app_action).toHaveBeenCalledTimes(1);
+        expect(mocks.executeAppAction).toHaveBeenCalledTimes(1);
     });
 
     it('should not restore a pending replay capability after history is cleared', async () => {
@@ -187,7 +187,7 @@ describe('revertAction', () => {
         const failure = new Error('replay failed after clear');
         let reject_execution: ((error: Error) => void) | undefined;
         mocks.action_history_store.value = { entries: [entry] };
-        mocks.execute_app_action.mockImplementation(
+        mocks.executeAppAction.mockImplementation(
             () =>
                 new Promise<void>((_resolve, reject) => {
                     reject_execution = (error) => reject(error);
@@ -211,7 +211,7 @@ describe('revertAction', () => {
         const entry = create_entry();
         let resolve_execution: (() => void) | undefined;
         mocks.action_history_store.value = { entries: [entry] };
-        mocks.execute_app_action.mockImplementation(
+        mocks.executeAppAction.mockImplementation(
             () =>
                 new Promise<void>((resolve) => {
                     resolve_execution = resolve;
@@ -244,7 +244,7 @@ describe('revertAction', () => {
 
         expect(getActionReplayStatus(entry.id)).toEqual({ status: 'reconcile-mark' });
         expect(await revertAction(entry.id)).toEqual({ status: 'reconciled' });
-        expect(mocks.execute_app_action).toHaveBeenCalledTimes(1);
+        expect(mocks.executeAppAction).toHaveBeenCalledTimes(1);
         expect(mocks.mark_reverted).toHaveBeenCalledTimes(2);
         expect(getActionReplayStatus(entry.id)).toEqual({ status: 'unavailable' });
     });
@@ -263,22 +263,22 @@ describe('revertAction', () => {
         mocks.mark_reverted.mockReturnValue({ status: 'unavailable' });
 
         expect(await revertAction(entry.id)).toEqual({ status: 'unavailable' });
-        expect(mocks.execute_app_action).toHaveBeenCalledTimes(1);
+        expect(mocks.executeAppAction).toHaveBeenCalledTimes(1);
         expect(mocks.mark_reverted).toHaveBeenCalledTimes(1);
     });
 
     it('should claim before awaiting so overlapping replays cannot execute twice', async () => {
         const entry = create_entry();
-        const inverse_action = { type: 'togglePlayback' } as const;
+        const inverseAction = { type: 'togglePlayback' } as const;
         mocks.action_history_store.value = { entries: [entry] };
-        registerActionReplayCapability({ entryId: entry.id, inverseAction: inverse_action });
+        registerActionReplayCapability({ entryId: entry.id, inverseAction });
 
         const first_replay = revertAction(entry.id);
         const second_result = await revertAction(entry.id);
 
         expect(second_result).toEqual({ status: 'unavailable' });
         await first_replay;
-        expect(mocks.execute_app_action).toHaveBeenCalledTimes(1);
+        expect(mocks.executeAppAction).toHaveBeenCalledTimes(1);
     });
 
     it('waits for an owning transition before reading or claiming replay authority', async () => {
@@ -303,11 +303,11 @@ describe('revertAction', () => {
         const replay = revertAction(entry.id);
         await Promise.resolve();
 
-        expect(mocks.execute_app_action).not.toHaveBeenCalled();
+        expect(mocks.executeAppAction).not.toHaveBeenCalled();
 
         release_transition();
         await transition;
         await expect(replay).resolves.toEqual({ status: 'unavailable' });
-        expect(mocks.execute_app_action).not.toHaveBeenCalled();
+        expect(mocks.executeAppAction).not.toHaveBeenCalled();
     });
 });

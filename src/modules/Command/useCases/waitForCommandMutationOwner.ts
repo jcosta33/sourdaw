@@ -2,22 +2,22 @@ import { type CommandMutationOwner } from './commandMutationOwner';
 import { toCommandMutationError } from './toCommandMutationError';
 
 export async function waitForCommandMutationOwner(owner: CommandMutationOwner): Promise<void> {
-    let observed_count = 0;
-    let first_failure: Error | null = null;
+    let observedCount = 0;
+    let firstFailure: Error | null = null;
 
-    while (observed_count < owner.pending.size) {
-        const pending = Array.from(owner.pending).slice(observed_count);
+    while (observedCount < owner.pending.size) {
+        const pending = Array.from(owner.pending).slice(observedCount);
         const results = await Promise.allSettled(pending);
-        observed_count += pending.length;
+        observedCount += pending.length;
 
         for (const result of results) {
-            if (result.status === 'rejected' && first_failure === null) {
-                first_failure = toCommandMutationError(result.reason);
+            if (result.status === 'rejected' && firstFailure === null) {
+                firstFailure = toCommandMutationError(result.reason);
             }
         }
     }
 
-    if (first_failure) {
-        throw first_failure;
+    if (firstFailure) {
+        throw firstFailure;
     }
 }

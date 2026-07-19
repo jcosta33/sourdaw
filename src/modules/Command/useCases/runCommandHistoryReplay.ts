@@ -11,46 +11,46 @@ export async function runCommandHistoryReplay<Output>(
     owner: CommandMutationOwner,
     operation: CommandHistoryReplay
 ): Promise<Output> {
-    const replay_owner = createCommandMutationOwner(owner);
-    function run_legacy_mutation<MutationOutput>(
+    const replayOwner = createCommandMutationOwner(owner);
+    function runLegacyMutation<MutationOutput>(
         mutation: LegacyCommandMutation<MutationOutput>
     ): Promise<MutationOutput> {
-        return runLegacyCommandMutationUnderOwner(replay_owner, mutation);
+        return runLegacyCommandMutationUnderOwner(replayOwner, mutation);
     }
-    const previous_synchronous_owner = commandMutationRuntime.synchronousOwner;
-    commandMutationRuntime.synchronousOwner = replay_owner;
+    const previousSynchronousOwner = commandMutationRuntime.synchronousOwner;
+    commandMutationRuntime.synchronousOwner = replayOwner;
     let result: Promise<unknown>;
     try {
-        result = Promise.resolve(operation(run_legacy_mutation));
+        result = Promise.resolve(operation(runLegacyMutation));
     } catch (error) {
         result = Promise.reject(toCommandMutationError(error));
     } finally {
-        commandMutationRuntime.synchronousOwner = previous_synchronous_owner;
+        commandMutationRuntime.synchronousOwner = previousSynchronousOwner;
     }
 
     let output: unknown;
-    let replay_failure: unknown;
-    let replay_failed = false;
+    let replayFailure: unknown;
+    let replayFailed = false;
     try {
         output = await result;
     } catch (error) {
-        replay_failed = true;
-        replay_failure = error;
+        replayFailed = true;
+        replayFailure = error;
     }
 
     try {
-        await waitForCommandMutationOwner(replay_owner);
+        await waitForCommandMutationOwner(replayOwner);
     } catch (error) {
-        if (!replay_failed) {
-            replay_failed = true;
-            replay_failure = error;
+        if (!replayFailed) {
+            replayFailed = true;
+            replayFailure = error;
         }
     } finally {
-        replay_owner.active = false;
+        replayOwner.active = false;
     }
 
-    if (replay_failed) {
-        throw toCommandMutationError(replay_failure);
+    if (replayFailed) {
+        throw toCommandMutationError(replayFailure);
     }
     return output as Output;
 }

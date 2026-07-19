@@ -9,9 +9,9 @@ import { runLegacyCommandMutationUnderOwner } from './runLegacyCommandMutationUn
  * is idle and is deferred whole when an older action/replay owns the lease.
  */
 export function runLegacyCommandMutation<Output>(mutation: LegacyCommandMutation<Output>): Promise<Output> {
-    const synchronous_owner = commandMutationRuntime.synchronousOwner;
-    if (synchronous_owner) {
-        return runLegacyCommandMutationUnderOwner(synchronous_owner, mutation);
+    const synchronousOwner = commandMutationRuntime.synchronousOwner;
+    if (synchronousOwner) {
+        return runLegacyCommandMutationUnderOwner(synchronousOwner, mutation);
     }
     return runCommandMutationExclusive((owner) => runLegacyCommandMutationUnderOwner(owner, mutation));
 }

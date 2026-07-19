@@ -72,9 +72,9 @@ export const executeAppActionImpl: ExecuteAppActionImpl = inject({ logger })(
             try {
                 const execution = runSynchronousProjectCommit(() =>
                     handler.execute(action, {
-                        executeAppAction: (nested_action, nested_options) =>
+                        executeAppAction: (nestedAction, nestedOptions) =>
                             runCommandMutationUnderOwner(owner, () =>
-                                executeAppActionImpl(nested_action, nested_options, owner)
+                                executeAppActionImpl(nestedAction, nestedOptions, owner)
                             ),
                         runCommandTransition: (transition) =>
                             runCommandMutationUnderOwner(owner, () => runCommandTransition(transition)),

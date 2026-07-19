@@ -11,7 +11,7 @@ export function runCommandMutationUnderOwner<Output>(
         return Promise.reject(new Error('Command mutation owner is no longer active'));
     }
 
-    const previous_synchronous_owner = commandMutationRuntime.synchronousOwner;
+    const previousSynchronousOwner = commandMutationRuntime.synchronousOwner;
     commandMutationRuntime.synchronousOwner = owner;
     let result: Promise<Output>;
     try {
@@ -19,7 +19,7 @@ export function runCommandMutationUnderOwner<Output>(
     } catch (error) {
         result = Promise.reject(toCommandMutationError(error));
     } finally {
-        commandMutationRuntime.synchronousOwner = previous_synchronous_owner;
+        commandMutationRuntime.synchronousOwner = previousSynchronousOwner;
     }
 
     owner.pending.add(result);

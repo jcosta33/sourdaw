@@ -38,8 +38,8 @@ async function executeUndo({ entry, owner }: ExecuteUndoInput): Promise<boolean>
 
 /** Execute one undo while the caller already owns the Command mutation lease. */
 export async function undoUnderMutation(owner?: CommandMutationOwner): Promise<void> {
-    const mutation_owner = owner ?? commandMutationRuntime.synchronousOwner ?? commandMutationRuntime.activeOwner;
-    if (!mutation_owner) {
+    const mutationOwner = owner ?? commandMutationRuntime.synchronousOwner ?? commandMutationRuntime.activeOwner;
+    if (!mutationOwner) {
         throw new Error('Undo requires an active Command mutation owner');
     }
     const state = undoStore.value;
@@ -58,7 +58,7 @@ export async function undoUnderMutation(owner?: CommandMutationOwner): Promise<v
         }
         const newPast = state.past.slice(0, index + 1);
 
-        const undone = await revertUndoEntriesAtomically(mutation_owner, groupEntries);
+        const undone = await revertUndoEntriesAtomically(mutationOwner, groupEntries);
         if (!undone) {
             return;
         }
@@ -73,7 +73,7 @@ export async function undoUnderMutation(owner?: CommandMutationOwner): Promise<v
 
     const undone = await executeUndo({
         entry: lastEntry,
-        owner: mutation_owner,
+        owner: mutationOwner,
     });
     if (!undone) {
         return;

@@ -37,7 +37,7 @@ function is_adjustment_layer_mutation(action: AppAction): action is AdjustmentLa
     return adjustment_layer_mutation_types.has(action.type);
 }
 
-async function replay_adjustment_transaction(
+async function replayAdjustmentTransaction(
     owner: CommandMutationOwner,
     entries: readonly UndoEntry[]
 ): Promise<UndoEntry[] | null> {
@@ -79,28 +79,28 @@ async function executeRedo(owner: CommandMutationOwner, entry: UndoEntry): Promi
         const result = await runCommandHistoryReplay(owner, entry.redo);
         return result !== REDO_NOT_APPLIED ? entry : null;
     }
-    const prepared_undo: { result: HandlerDescribeResult | null } = { result: null };
+    const preparedUndo: { result: HandlerDescribeResult | null } = { result: null };
     await executeAppActionImpl(
         entry.action,
         {
             skipUndo: true,
             onUndoPrepared: (result) => {
-                prepared_undo.result = result;
+                preparedUndo.result = result;
             },
         },
         owner
     );
     return {
         ...entry,
-        label: prepared_undo.result?.label ?? entry.label,
-        inverseAction: prepared_undo.result?.inverseAction ?? null,
+        label: preparedUndo.result?.label ?? entry.label,
+        inverseAction: preparedUndo.result?.inverseAction ?? null,
     };
 }
 
 /** Execute one redo while the caller already owns the Command mutation lease. */
 export async function redoUnderMutation(owner?: CommandMutationOwner): Promise<void> {
-    const mutation_owner = owner ?? commandMutationRuntime.synchronousOwner ?? commandMutationRuntime.activeOwner;
-    if (!mutation_owner) {
+    const mutationOwner = owner ?? commandMutationRuntime.synchronousOwner ?? commandMutationRuntime.activeOwner;
+    if (!mutationOwner) {
         throw new Error('Redo requires an active Command mutation owner');
     }
     const state = undoStore.value;
@@ -111,35 +111,35 @@ export async function redoUnderMutation(owner?: CommandMutationOwner): Promise<v
     const entry = state.future[0]!;
 
     if (entry.transactionGroupId) {
-        const group_entries: UndoEntry[] = [];
-        let group_end = 0;
+        const groupEntries: UndoEntry[] = [];
+        let groupEnd = 0;
         while (
-            group_end < state.future.length &&
-            state.future[group_end]!.transactionGroupId === entry.transactionGroupId
+            groupEnd < state.future.length &&
+            state.future[groupEnd]!.transactionGroupId === entry.transactionGroupId
         ) {
-            group_entries.push(state.future[group_end]!);
-            group_end += 1;
+            groupEntries.push(state.future[groupEnd]!);
+            groupEnd += 1;
         }
-        let redone_group: UndoEntry[] | null = null;
-        if (group_entries.length > 1) {
-            redone_group = await replay_adjustment_transaction(mutation_owner, group_entries);
+        let redoneGroup: UndoEntry[] | null = null;
+        if (groupEntries.length > 1) {
+            redoneGroup = await replayAdjustmentTransaction(mutationOwner, groupEntries);
         }
-        if (redone_group) {
-            const new_past = [...state.past, ...redone_group];
-            undoStore.set({ past: new_past, future: state.future.slice(group_end) });
-            undoTreeMoveTo(currentEntryId(new_past));
+        if (redoneGroup) {
+            const newPast = [...state.past, ...redoneGroup];
+            undoStore.set({ past: newPast, future: state.future.slice(groupEnd) });
+            undoTreeMoveTo(currentEntryId(newPast));
             return;
         }
     }
 
     const newFuture = state.future.slice(1);
 
-    const redone_entry = await executeRedo(mutation_owner, entry);
-    if (!redone_entry) {
+    const redoneEntry = await executeRedo(mutationOwner, entry);
+    if (!redoneEntry) {
         return;
     }
 
-    const newPast = [...state.past, redone_entry];
+    const newPast = [...state.past, redoneEntry];
     undoStore.set({
         past: newPast,
         future: newFuture,

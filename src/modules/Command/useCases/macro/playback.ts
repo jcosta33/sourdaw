@@ -68,7 +68,7 @@ function without_stale_mutation_id<Payload extends { adjustmentMutationId?: stri
     return replay_payload;
 }
 
-function create_replay_action(action: AppAction, identities: ReplayIdentityMap): AppAction {
+function createReplayAction(action: AppAction, identities: ReplayIdentityMap): AppAction {
     if (!is_adjustment_replay_action(action)) {
         return structuredClone(action);
     }
@@ -156,26 +156,26 @@ export async function playMacro({ macroId, runExecuteAppAction = executeAppActio
     }
     const { groupId, groupLabel } = generateGroupId(`Macro: ${macro.name}`);
     const identities: ReplayIdentityMap = { layerIds: new Map(), regionIds: new Map() };
-    let committed_progress = false;
+    let committedProgress = false;
 
     for (const action of macro.actions) {
-        const step_receipt = { applied: false };
+        const stepReceipt = { applied: false };
         try {
-            await runExecuteAppAction(create_replay_action(action, identities), {
+            await runExecuteAppAction(createReplayAction(action, identities), {
                 groupId,
                 groupLabel,
                 onExecuted: (result) => {
-                    step_receipt.applied = result.applied;
+                    stepReceipt.applied = result.applied;
                 },
             });
         } catch (error) {
-            if (error instanceof AppActionCommittedError || !committed_progress) {
+            if (error instanceof AppActionCommittedError || !committedProgress) {
                 throw error;
             }
             throw new AppActionCommittedError('playMacro', error);
         }
-        if (step_receipt.applied) {
-            committed_progress = true;
+        if (stepReceipt.applied) {
+            committedProgress = true;
         }
     }
 }
