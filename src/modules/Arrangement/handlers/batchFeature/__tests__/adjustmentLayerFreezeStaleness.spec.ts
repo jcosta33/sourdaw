@@ -237,6 +237,20 @@ describe('adjustmentLayerFreezeStaleness', () => {
         expect(getTrack('track-c').freezeState.status).toBe('stale');
     });
 
+    it('marks affected frozen tracks stale when an inverse action is dispatched directly', async () => {
+        await executeAppAction({
+            type: 'restoreAdjustmentLayerMutation',
+            payload: {
+                layers: [createLayer({ mix: 0.75 })],
+                freezeTransitions: [],
+            },
+        });
+
+        expect(getTrack('track-a').freezeState.status).toBe('stale');
+        expect(getTrack('track-b').freezeState.status).toBe('frozen');
+        expect(getTrack('track-c').freezeState.status).toBe('frozen');
+    });
+
     it('atomicUndo: commits both stores atomically and restores both through undo', async () => {
         const observations: Array<{ mix: number; freezeStatus: Track['freezeState']['status'] }> = [];
         const observe = (): void => {
