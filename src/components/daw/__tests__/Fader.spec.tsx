@@ -17,7 +17,7 @@ describe('Fader', () => {
             right: 40,
             bottom: 100,
             toJSON: (): void => {},
-        } as DOMRect);
+        });
     });
 
     afterEach(() => {

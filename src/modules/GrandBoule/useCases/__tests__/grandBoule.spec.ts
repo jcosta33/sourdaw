@@ -29,7 +29,7 @@ vi.mock('../../stores/grandBouleStore', () => ({
 describe('GrandBoule Use Cases', () => {
     beforeEach(() => {
         vi.clearAllMocks();
-        mocks.grandBouleStoreValue.value = { parameters: { velocityCurve: 1.0 } } as any;
+        mocks.grandBouleStoreValue.value = { parameters: { velocityCurve: 1.0 } };
     });
 
     describe('triggerGrandBouleNote', () => {

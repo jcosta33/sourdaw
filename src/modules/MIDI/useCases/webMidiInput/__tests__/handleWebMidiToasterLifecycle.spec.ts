@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { createWebMidiNoteKey } from '../../../models/WebMidiTypes';
 
-const targetTrackId = vi.hoisted(() => ({ value: 'child-a-0' as string | null }));
+const targetTrackId = vi.hoisted(() => ({ value: 'child-a-0' }));
 const ensureTrackStrip = vi.hoisted(() => vi.fn());
 const getTrackStrip = vi.hoisted(() => vi.fn());
 
@@ -105,7 +105,7 @@ function makeNoteOffDependencies(): NoteOffDependencies {
         processRealtimeMidiInput: () => Promise.resolve([]),
         stepRecordNoteOff: () => {},
         eventBus: { emit: () => Promise.resolve(), on: () => () => {} },
-    } as unknown as NoteOffDependencies;
+    };
 }
 
 function makeNoteOnDependencies(noteOff: (channel: number, note: number, velocity?: number) => Promise<void>) {

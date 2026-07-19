@@ -170,7 +170,7 @@ describe('AutomergeSync', () => {
         // Capture the change callback registered on start().
         let changeCb: ((docId?: string) => void) | undefined;
         vi.mocked(subscribeToCrdtChanges).mockImplementation((cb) => {
-            changeCb = cb as (docId?: string) => void;
+            changeCb = cb;
             return () => {};
         });
         vi.mocked(getCrdtDoc).mockReturnValue(createAmDoc());

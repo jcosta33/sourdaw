@@ -6,9 +6,7 @@ export type FaustModule = {
     compiled: boolean;
     isInstrument: boolean;
     generator:
-        | import('@grame/faustwasm').FaustMonoDspGenerator
-        | import('@grame/faustwasm').FaustPolyDspGenerator
-        | null;
+        import('@grame/faustwasm').FaustMonoDspGenerator | import('@grame/faustwasm').FaustPolyDspGenerator | null;
 };
 
 export type FaustParamDescriptor = {

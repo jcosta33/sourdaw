@@ -6,7 +6,7 @@ const mocks = vi.hoisted(() => ({
             clips: Array<{ id: string; type: string }>;
         }>,
     },
-    workspaceValue: { snapValue: 0.25 } as { snapValue: number },
+    workspaceValue: { snapValue: 0.25 },
     pushUndoEntry: vi.fn(),
     warpStates: new Map<
         string,

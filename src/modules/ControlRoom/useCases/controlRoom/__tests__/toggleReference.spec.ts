@@ -1,11 +1,9 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, type Mock } from 'vitest';
 
 import { toggleReference } from '../toggleReference';
 
-const mocks = vi.hoisted(() => ({
-    state: {
-        referenceActive: false,
-    } as { referenceActive: boolean } | null,
+const mocks: { state: { referenceActive: boolean } | null; set: Mock } = vi.hoisted(() => ({
+    state: { referenceActive: false },
     set: vi.fn(),
 }));
 

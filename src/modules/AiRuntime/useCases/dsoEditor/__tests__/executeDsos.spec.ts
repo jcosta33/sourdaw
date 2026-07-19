@@ -3,21 +3,26 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { type Dso } from '../../../models/DsoTypes';
 import { executeDsos } from '../executeDsos';
 
-const mocks = vi.hoisted(() => ({
-    trackStoreValue: { value: null } as { value: unknown },
-    transportStoreValue: { value: null } as { value: unknown },
-    midiStoreValue: { value: null } as { value: unknown },
-    transportStoreSet: vi.fn(),
-    midiStoreSet: vi.fn(),
-    addTrack: vi.fn(),
-    removeTrack: vi.fn(),
-    addClip: vi.fn(),
-    addDevice: vi.fn(),
-    setSend: vi.fn(),
-    humanizeNotes: vi.fn(),
-    executeAppAction: vi.fn(),
-    warn: vi.fn(),
-}));
+const mocks = vi.hoisted(() => {
+    const trackStoreValue: { value: unknown } = { value: null };
+    const transportStoreValue: { value: unknown } = { value: null };
+    const midiStoreValue: { value: unknown } = { value: null };
+    return {
+        trackStoreValue,
+        transportStoreValue,
+        midiStoreValue,
+        transportStoreSet: vi.fn(),
+        midiStoreSet: vi.fn(),
+        addTrack: vi.fn(),
+        removeTrack: vi.fn(),
+        addClip: vi.fn(),
+        addDevice: vi.fn(),
+        setSend: vi.fn(),
+        humanizeNotes: vi.fn(),
+        executeAppAction: vi.fn(),
+        warn: vi.fn(),
+    };
+});
 
 vi.mock('#/modules/Arrangement/useCases', () => ({
     addTrack: mocks.addTrack,

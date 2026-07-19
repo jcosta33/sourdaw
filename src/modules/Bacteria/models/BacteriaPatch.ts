@@ -9,15 +9,7 @@
 // ── Effect module types ──────────────────────────────────────────────────────
 
 export type BacteriaDistortionMode =
-    | 'soft-clip'
-    | 'hard-clip'
-    | 'foldback'
-    | 'wavefold'
-    | 'bitcrush'
-    | 'tube'
-    | 'breakdown'
-    | 'smudge'
-    | 'custom';
+    'soft-clip' | 'hard-clip' | 'foldback' | 'wavefold' | 'bitcrush' | 'tube' | 'breakdown' | 'smudge' | 'custom';
 
 export type BacteriaFilterMode = 'lowpass' | 'highpass' | 'bandpass' | 'notch' | 'formant' | 'comb';
 

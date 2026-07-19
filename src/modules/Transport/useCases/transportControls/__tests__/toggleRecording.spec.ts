@@ -30,23 +30,26 @@ type TestTrackState = {
 
 type StartAudioRecording = (trackId: string, callback: (buffer: TestRecordingBuffer) => void) => Promise<boolean>;
 
-const mocks = vi.hoisted(() => ({
-    scheduleClick: vi.fn<(...args: unknown[]) => void>(),
-    resumeEngine: vi.fn<() => Promise<void>>(),
-    notifyUser: vi.fn<(...args: unknown[]) => void>(),
-    ensureTrackStrips: vi.fn<() => void>(),
-    getAudioContext: vi.fn<() => { currentTime: number; baseLatency: number; outputLatency: number }>(),
-    getTrackStoreState: vi.fn<() => TestTrackState | null>(() => ({ tracks: [] })),
-    updateClip: vi.fn<(clipId: string, updater: (clip: TestRecordingClip) => TestRecordingClip) => void>(),
-    startRecording: vi.fn<() => TestRecordingClip[]>(() => []),
-    startPlayback: vi.fn<() => void>(),
-    stopActiveRecording: vi.fn<() => Promise<void>>(),
-    cacheAudioBuffer: vi.fn<(input: { buffer: TestRecordingBuffer; bufferId: string }) => string>(),
-    startAudioRecording: vi.fn<StartAudioRecording>(),
-    stopAudioRecording: vi.fn<() => Promise<void>>(),
-    getCompensationDelay: vi.fn<(trackId: string) => number>(() => 0),
-    timeSignatureMapStore: { value: { changes: [] } as { changes: unknown[] } },
-}));
+const mocks = vi.hoisted(() => {
+    const timeSignatureMapStore: { value: { changes: unknown[] } } = { value: { changes: [] } };
+    return {
+        scheduleClick: vi.fn<(...args: unknown[]) => void>(),
+        resumeEngine: vi.fn<() => Promise<void>>(),
+        notifyUser: vi.fn<(...args: unknown[]) => void>(),
+        ensureTrackStrips: vi.fn<() => void>(),
+        getAudioContext: vi.fn<() => { currentTime: number; baseLatency: number; outputLatency: number }>(),
+        getTrackStoreState: vi.fn<() => TestTrackState | null>(() => ({ tracks: [] })),
+        updateClip: vi.fn<(clipId: string, updater: (clip: TestRecordingClip) => TestRecordingClip) => void>(),
+        startRecording: vi.fn<() => TestRecordingClip[]>(() => []),
+        startPlayback: vi.fn<() => void>(),
+        stopActiveRecording: vi.fn<() => Promise<void>>(),
+        cacheAudioBuffer: vi.fn<(input: { buffer: TestRecordingBuffer; bufferId: string }) => string>(),
+        startAudioRecording: vi.fn<StartAudioRecording>(),
+        stopAudioRecording: vi.fn<() => Promise<void>>(),
+        getCompensationDelay: vi.fn<(trackId: string) => number>(() => 0),
+        timeSignatureMapStore,
+    };
+});
 
 vi.mock('../../../repositories/transport/getTransportState', () => ({
     getTransportState: vi.fn(),

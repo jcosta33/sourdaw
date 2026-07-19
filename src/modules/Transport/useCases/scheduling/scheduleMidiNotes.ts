@@ -141,9 +141,7 @@ export async function scheduleMidiNotes(
             if (clip.type !== 'midi') {
                 continue;
             }
-            const notes = midiState.notesByClipId[clip.id] as
-                | NonNullable<(typeof midiState.notesByClipId)[string]>
-                | undefined;
+            const notes = midiState.notesByClipId[clip.id];
             if (!notes) {
                 continue;
             }

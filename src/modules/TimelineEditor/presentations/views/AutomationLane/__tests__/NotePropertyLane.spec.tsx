@@ -5,14 +5,15 @@ import { pushUndoEntry } from '#/modules/Command/useCases';
 
 import { NotePropertyLane } from '../NotePropertyLane';
 
-const laneMocks = vi.hoisted(() => ({
-    midiState: {
-        notesByClipId: {} as Record<
-            string,
-            Array<{ id: string; pitch: number; startBeat: number; duration: number; velocity: number }>
-        >,
-    },
-}));
+const laneMocks = vi.hoisted(() => {
+    const notesByClipId: Record<
+        string,
+        Array<{ id: string; pitch: number; startBeat: number; duration: number; velocity: number }>
+    > = {};
+    return {
+        midiState: { notesByClipId },
+    };
+});
 
 vi.mock('#/modules/MIDI/stores', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/MIDI/stores')>()),

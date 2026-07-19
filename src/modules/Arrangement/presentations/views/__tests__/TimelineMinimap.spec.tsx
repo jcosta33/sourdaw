@@ -73,7 +73,7 @@ describe('TimelineMinimap', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         transportStoreMock.value = { isPlaying: false };
-        global.ResizeObserver = MockResizeObserver as unknown as typeof ResizeObserver;
+        global.ResizeObserver = MockResizeObserver;
     });
 
     it('should render without crashing', () => {

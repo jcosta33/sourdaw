@@ -1,11 +1,5 @@
 export type MentorCategory =
-    | 'frequency-balance'
-    | 'dynamics'
-    | 'stereo-field'
-    | 'gain-staging'
-    | 'arrangement'
-    | 'effects'
-    | 'general';
+    'frequency-balance' | 'dynamics' | 'stereo-field' | 'gain-staging' | 'arrangement' | 'effects' | 'general';
 
 export type MentorLesson = {
     id: string;

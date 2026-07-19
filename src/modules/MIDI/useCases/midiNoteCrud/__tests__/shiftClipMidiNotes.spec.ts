@@ -25,7 +25,7 @@ describe('shiftClipMidiNotes', () => {
             notesByClipId: {},
             ccByClipId: {},
             pitchBendByClipId: {},
-        } as unknown as MidiStoreState;
+        };
     });
 
     it('should shift notes, CCs, and pitch bends by the same beat delta', () => {
@@ -33,7 +33,7 @@ describe('shiftClipMidiNotes', () => {
             notesByClipId: { c1: [{ startBeat: 0, pitch: 60 }] },
             ccByClipId: { c1: [{ beat: 0, controller: 1, value: 100 }] },
             pitchBendByClipId: { c1: [{ beat: 0, value: 0.5 }] },
-        } as unknown as MidiStoreState;
+        };
 
         shiftClipMidiNotes('c1', 4);
 

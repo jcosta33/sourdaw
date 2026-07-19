@@ -41,8 +41,7 @@ export type RipplePlanSnapshot = {
     readonly shiftedClips: readonly RippleShiftSnapshot[];
 };
 type CommandDocumentSnapshotEntry =
-    | { readonly state: 'present'; readonly bytes: Uint8Array }
-    | { readonly state: 'absent' };
+    { readonly state: 'present'; readonly bytes: Uint8Array } | { readonly state: 'absent' };
 type CommandDocumentSnapshot = Map<string, CommandDocumentSnapshotEntry>;
 /** A pitch-shift segment carried by `commitPitchEdit`. Command cannot import Knead's
  *  segment model (model isolation), so this specifies only the structural fields the

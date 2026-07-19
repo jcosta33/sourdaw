@@ -319,7 +319,7 @@ export const VirtualKeyboard = ({ onClose }: VirtualKeyboardProps): ReactElement
 
     const onWhitePointerDown = (midiNote: number, event: React.PointerEvent<HTMLDivElement>) => {
         event.preventDefault();
-        (event.currentTarget as HTMLDivElement).setPointerCapture(event.pointerId);
+        event.currentTarget.setPointerCapture(event.pointerId);
         if (mouseNote.current !== null && mouseNote.current !== midiNote) {
             triggerNoteOff(mouseNote.current);
         }

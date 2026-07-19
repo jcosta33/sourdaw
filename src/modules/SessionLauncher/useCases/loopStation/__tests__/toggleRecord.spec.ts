@@ -47,7 +47,7 @@ describe('toggleRecord', () => {
                     fadeBeats: 0.125,
                 },
             ],
-        } as LoopStationState;
+        };
 
         toggleRecord('s1');
 

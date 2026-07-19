@@ -48,18 +48,17 @@ describe('SpectralBinEditor', () => {
         );
 
         const canvas = container.querySelector('canvas')!;
-        canvas.getBoundingClientRect = () =>
-            ({
-                left: 0,
-                top: 0,
-                width: 100,
-                height: 64,
-                right: 100,
-                bottom: 64,
-                x: 0,
-                y: 0,
-                toJSON: () => ({}),
-            }) as DOMRect;
+        canvas.getBoundingClientRect = () => ({
+            left: 0,
+            top: 0,
+            width: 100,
+            height: 64,
+            right: 100,
+            bottom: 64,
+            x: 0,
+            y: 0,
+            toJSON: () => ({}),
+        });
 
         // Edit only bin 0 (far left); commit on pointerUp.
         fireEvent.pointerDown(canvas, { clientX: 1, clientY: 0, pointerId: 1 });
@@ -90,18 +89,17 @@ describe('SpectralBinEditor', () => {
         );
 
         const canvas = container.querySelector('canvas')!;
-        canvas.getBoundingClientRect = () =>
-            ({
-                left: 0,
-                top: 0,
-                width: 100,
-                height: 64,
-                right: 100,
-                bottom: 64,
-                x: 0,
-                y: 0,
-                toJSON: () => ({}),
-            }) as DOMRect;
+        canvas.getBoundingClientRect = () => ({
+            left: 0,
+            top: 0,
+            width: 100,
+            height: 64,
+            right: 100,
+            bottom: 64,
+            x: 0,
+            y: 0,
+            toJSON: () => ({}),
+        });
 
         // Begin drawing and edit bin 0 near the top (value ≈ 1), without committing.
         fireEvent.pointerDown(canvas, { clientX: 1, clientY: 0, pointerId: 1 });
@@ -141,18 +139,17 @@ describe('SpectralBinEditor', () => {
             />
         );
         const canvas = container.querySelector('canvas')!;
-        canvas.getBoundingClientRect = () =>
-            ({
-                left: 0,
-                top: 0,
-                width: 100,
-                height: 64,
-                right: 100,
-                bottom: 64,
-                x: 0,
-                y: 0,
-                toJSON: () => ({}),
-            }) as DOMRect;
+        canvas.getBoundingClientRect = () => ({
+            left: 0,
+            top: 0,
+            width: 100,
+            height: 64,
+            right: 100,
+            bottom: 64,
+            x: 0,
+            y: 0,
+            toJSON: () => ({}),
+        });
 
         fireEvent.pointerDown(canvas, { clientX: 10, clientY: 10, pointerId: 1 });
         fireEvent.pointerCancel(canvas, { pointerId: 1 });

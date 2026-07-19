@@ -51,7 +51,7 @@ describe('initEngine', () => {
         vi.mocked(isCloudAvailable).mockReset();
         vi.mocked(llmStatusStore.set).mockReset();
         vi.mocked(isCloudAvailable).mockReturnValue(false);
-        vi.mocked(initWebLlmEngine).mockResolvedValue({} as never);
+        vi.mocked(initWebLlmEngine).mockResolvedValue({});
         delete (navigator as { gpu?: unknown }).gpu;
     });
 

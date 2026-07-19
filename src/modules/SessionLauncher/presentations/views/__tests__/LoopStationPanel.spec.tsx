@@ -19,15 +19,6 @@ type LoopSlotMock = {
     fadeBeats: number;
 };
 
-type LoopStateMock = {
-    slots: LoopSlotMock[];
-    sceneCount: number;
-    activeScene: number;
-    armed: boolean;
-    syncToTransport: boolean;
-    fixedLoopLength: number;
-};
-
 const mocks = vi.hoisted(() => ({
     loopState: {
         slots: [] as LoopSlotMock[],
@@ -36,7 +27,7 @@ const mocks = vi.hoisted(() => ({
         armed: false,
         syncToTransport: true,
         fixedLoopLength: 0,
-    } as LoopStateMock,
+    },
     trackState: { tracks: [] as Array<{ id: string; name: string; color: string | null }> },
     transportState: { playheadPosition: 0, timeSignatureNumerator: 4 },
     toggleRecord: vi.fn(),

@@ -4,7 +4,6 @@ import { trackStore } from '../../../stores/trackStore';
 import { cleanupUnusedFreezeFiles } from '../cleanupUnusedFreezeFiles';
 
 import type { Track } from '../../../models/Track';
-import type { TrackStoreState } from '../../../stores/trackStore';
 
 const mocks = vi.hoisted(() => ({
     garbageCollectFreezeAudioBuffers: vi.fn<() => Promise<void>>().mockResolvedValue(),
@@ -25,7 +24,7 @@ describe('cleanupUnusedFreezeFiles', () => {
     });
 
     it('should do nothing if store state is missing', async () => {
-        trackStore.set(null as unknown as TrackStoreState);
+        trackStore.set(null);
         await cleanupUnusedFreezeFiles();
         expect(mocks.garbageCollectFreezeAudioBuffers).not.toHaveBeenCalled();
         expect(mocks.garbageCollectCachedAudioBuffersByAge).not.toHaveBeenCalled();

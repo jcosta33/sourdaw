@@ -3,8 +3,7 @@ import { pushUndoEntry } from '#/modules/Command/useCases';
 import { workspaceStore } from '#/modules/WorkspaceShell/stores';
 
 export type QuantizeTransientsResult =
-    | { ok: true; moved: number }
-    | { ok: false; reason: 'CLIP_NOT_FOUND' | 'CLIP_NOT_AUDIO' | 'NO_MARKERS' };
+    { ok: true; moved: number } | { ok: false; reason: 'CLIP_NOT_FOUND' | 'CLIP_NOT_AUDIO' | 'NO_MARKERS' };
 
 type QuantizableClip = {
     id: string;

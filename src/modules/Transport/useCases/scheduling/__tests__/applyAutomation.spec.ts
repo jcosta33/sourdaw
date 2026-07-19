@@ -5,6 +5,8 @@ import { setTrackGain } from '#/modules/AudioEngine/useCases';
 import { applyAutomation } from '../applyAutomation/applyAutomation';
 import { applyVcaGains } from '../applyAutomation/applyVcaGains';
 
+import type { AutomationStoreState } from '#/modules/Automation/stores';
+
 vi.mock('#/modules/Arrangement/stores', async (importOriginal) => {
     const mod = await importOriginal<typeof import('#/modules/Arrangement/stores')>();
     return {
@@ -12,8 +14,8 @@ vi.mock('#/modules/Arrangement/stores', async (importOriginal) => {
         trackStore: { value: { tracks: [] } },
     };
 });
-const automationStoreMock = vi.hoisted(() => ({
-    value: { lanes: [] } as import('#/modules/Automation/stores').AutomationStoreState | null,
+const automationStoreMock = vi.hoisted((): { value: AutomationStoreState | null } => ({
+    value: { lanes: [] },
 }));
 
 vi.mock('#/modules/Automation/stores', async (importOriginal) => {

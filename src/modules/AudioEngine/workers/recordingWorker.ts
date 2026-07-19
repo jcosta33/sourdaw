@@ -202,9 +202,7 @@ async function stopWorker(): Promise<void> {
 }
 
 type WorkerMessage =
-    | { type: 'init'; sab: SharedArrayBuffer; sampleRate: number }
-    | { type: 'start' }
-    | { type: 'stop' };
+    { type: 'init'; sab: SharedArrayBuffer; sampleRate: number } | { type: 'start' } | { type: 'stop' };
 
 self.onmessage = ({ data }: MessageEvent<WorkerMessage>): void => {
     switch (data.type) {

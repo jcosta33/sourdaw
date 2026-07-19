@@ -4,7 +4,6 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { usePianoRollRenderer } from '../usePianoRollRenderer';
 
 const mocks = vi.hoisted(() => {
-    type Note = { id: string; pitch: number; startBeat: number; duration: number; velocity: number };
     type Track = {
         id: string;
         kind: string;
@@ -12,7 +11,7 @@ const mocks = vi.hoisted(() => {
         clips: Array<{ id: string; type: string; color: string }>;
     };
     return {
-        midiState: { notesByClipId: {} as Record<string, Note[]> },
+        midiState: { notesByClipId: {} },
         trackState: { tracks: [] as Track[] },
     };
 });

@@ -41,9 +41,9 @@ function makeFile(name: string): File {
 describe('decodeAudioFile', () => {
     beforeEach(() => {
         vi.clearAllMocks();
-        mocks.decodeAudioData.mockResolvedValue({ duration: 2 } as AudioBuffer);
+        mocks.decodeAudioData.mockResolvedValue({ duration: 2 });
         mocks.decodeAudioBytesWasm.mockResolvedValue(null);
-        mocks.wasmDecodedToAudioBuffer.mockReturnValue({ duration: 3 } as AudioBuffer);
+        mocks.wasmDecodedToAudioBuffer.mockReturnValue({ duration: 3 });
     });
 
     it('uses Web Audio first and caches the decoded AudioBuffer', async () => {

@@ -56,18 +56,17 @@ describe('WaveshaperEditor', () => {
             />
         );
         const canvas = container.querySelector('canvas')!;
-        canvas.getBoundingClientRect = () =>
-            ({
-                left: 0,
-                top: 0,
-                width: 100,
-                height: 100,
-                right: 100,
-                bottom: 100,
-                x: 0,
-                y: 0,
-                toJSON: () => ({}),
-            }) as DOMRect;
+        canvas.getBoundingClientRect = () => ({
+            left: 0,
+            top: 0,
+            width: 100,
+            height: 100,
+            right: 100,
+            bottom: 100,
+            x: 0,
+            y: 0,
+            toJSON: () => ({}),
+        });
 
         // p1 = (-0.5,-0.5) → canvas ((−0.5+1)*0.5*100, (1−(−0.5+1)*0.5)*100) = (25, 75).
         fireEvent.pointerDown(canvas, { clientX: 25, clientY: 75, pointerId: 1 });

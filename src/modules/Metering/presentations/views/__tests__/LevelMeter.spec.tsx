@@ -53,7 +53,7 @@ class LevelMeterResizeObserver {
                     contentRect: DOMRectReadOnly.fromRect({ width: 8, height: 100 }),
                 } as ResizeObserverEntry,
             ],
-            this as unknown as ResizeObserver
+            this
         );
     }
 
@@ -72,7 +72,7 @@ describe('LevelMeter', () => {
         mocks.getMasterPeakLevel.mockReturnValue(0);
         mocks.getTrackPeakLevel.mockReturnValue(0);
         mocks.scheduledTick = null;
-        globalThis.ResizeObserver = LevelMeterResizeObserver as unknown as typeof ResizeObserver;
+        globalThis.ResizeObserver = LevelMeterResizeObserver;
     });
 
     afterEach(() => {

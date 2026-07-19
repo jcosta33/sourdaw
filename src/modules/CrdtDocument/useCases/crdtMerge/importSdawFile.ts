@@ -14,9 +14,7 @@ import { mergeDocumentBundleFromRepo } from './helpers';
  * both of which previously collapsed to a `null` return.
  */
 export type ImportSdawResult =
-    | { status: 'merged'; result: MergeResult }
-    | { status: 'separate' }
-    | { status: 'error'; error: unknown };
+    { status: 'merged'; result: MergeResult } | { status: 'separate' } | { status: 'error'; error: unknown };
 
 export async function importSdawFile(file: File): Promise<ImportSdawResult> {
     try {

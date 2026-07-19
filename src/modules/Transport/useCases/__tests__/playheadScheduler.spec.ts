@@ -4,6 +4,7 @@ import { scheduleAdjustmentLayers, stopAllScheduled } from '#/modules/AudioEngin
 import { startAutomationRecording, stopAutomationRecording } from '#/modules/Automation/useCases';
 
 import { playheadPositionRef } from '../../stores/playheadPositionRef';
+import { type TempoMapStoreState } from '../../stores/tempoMapStore';
 import { evaluateFollowActions } from '../evaluateFollowActions';
 import { disposePlayheadScheduler } from '../playheadScheduler/disposePlayheadScheduler';
 import { startPlayheadScheduler } from '../playheadScheduler/startPlayheadScheduler';
@@ -64,7 +65,7 @@ const harness = vi.hoisted(() => ({
         set: vi.fn(),
     },
     tempo_map_store: {
-        value: { changes: [] } as import('../../stores/tempoMapStore').TempoMapStoreState,
+        value: { changes: [] as TempoMapStoreState['changes'] },
     },
     update_clip: vi.fn<UpdateClipMock>(),
 }));
@@ -165,7 +166,7 @@ beforeEach(() => {
         postMessage = vi.fn();
         terminate = vi.fn();
         constructor() {
-            harness.workers.push(this as unknown as FakeWorker);
+            harness.workers.push(this);
         }
     }
     globalThis.Worker = WorkerStub as unknown as typeof Worker;

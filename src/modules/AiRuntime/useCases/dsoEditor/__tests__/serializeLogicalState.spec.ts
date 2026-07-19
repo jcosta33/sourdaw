@@ -3,12 +3,18 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { dsoEditorState } from '../../../stores/dsoEditorState';
 import { serializeLogicalState } from '../serializeLogicalState';
 
-const mocks = vi.hoisted(() => ({
-    trackStoreValue: { value: null as unknown },
-    transportStoreValue: { value: null as unknown },
-    workspaceStoreValue: { value: null as unknown },
-    midiStoreValue: { value: null as unknown },
-}));
+const mocks = vi.hoisted(() => {
+    const trackStoreValue: { value: unknown } = { value: null };
+    const transportStoreValue: { value: unknown } = { value: null };
+    const workspaceStoreValue: { value: unknown } = { value: null };
+    const midiStoreValue: { value: unknown } = { value: null };
+    return {
+        trackStoreValue,
+        transportStoreValue,
+        workspaceStoreValue,
+        midiStoreValue,
+    };
+});
 
 vi.mock('#/modules/Arrangement/stores', () => ({
     trackStore: {

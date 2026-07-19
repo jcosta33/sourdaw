@@ -86,7 +86,7 @@ describe('useTimelineGestures', () => {
     });
 
     it('disables auto-scroll if scrolling while playing', () => {
-        mocks.transportStoreValue.value = { isPlaying: true } as any;
+        mocks.transportStoreValue.value = { isPlaying: true };
         const { getByTestId } = render(<TestComponent />);
         const canvas = getByTestId('canvas');
 
@@ -103,8 +103,8 @@ describe('useTimelineGestures', () => {
     });
 
     it('handles vertical scroll via wheel', () => {
-        mocks.timelineViewStoreValue.value = { scrollY: 100 } as any;
-        mocks.trackStoreValue.value = { tracks: [{ height: 1000 }] } as any;
+        mocks.timelineViewStoreValue.value = { scrollY: 100 };
+        mocks.trackStoreValue.value = { tracks: [{ height: 1000 }] };
 
         const { getByTestId } = render(<TestComponent />);
         const canvas = getByTestId('canvas');

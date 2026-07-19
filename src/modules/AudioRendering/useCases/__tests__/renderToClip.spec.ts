@@ -5,7 +5,7 @@ const mocks = vi.hoisted(() => ({
     addTrack: vi.fn(),
     cacheAudioBuffer: vi.fn(),
     pushUndoEntry: vi.fn(),
-    trackStoreValue: { tracks: [], selectedTrackId: null } as { tracks: unknown[]; selectedTrackId: string | null },
+    trackStoreValue: { tracks: [], selectedTrackId: null },
     trackStoreSet: vi.fn(),
 }));
 

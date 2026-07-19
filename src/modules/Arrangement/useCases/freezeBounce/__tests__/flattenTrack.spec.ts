@@ -15,7 +15,7 @@ describe('flattenTrack', () => {
     });
 
     it('does nothing if store state is missing', () => {
-        trackStore.set(null as any);
+        trackStore.set(null);
         flattenTrack('t1');
         expect(updateTrack).not.toHaveBeenCalled();
     });

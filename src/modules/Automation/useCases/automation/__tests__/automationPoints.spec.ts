@@ -29,7 +29,7 @@ vi.mock('../../../services/automationPointAlgorithms', () => ({
 describe('Automation Point Use Cases', () => {
     beforeEach(() => {
         vi.clearAllMocks();
-        mocks.automationStoreValue.value = { lanes: [] } as any;
+        mocks.automationStoreValue.value = { lanes: [] };
     });
 
     it('addAutomationPoint adds and sorts points', () => {

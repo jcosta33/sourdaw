@@ -17,20 +17,18 @@ type LibraryBrowserMocks = {
     readTauriLibrarySampleFile: ReturnType<typeof vi.fn>;
 };
 
-const mocks = vi.hoisted(
-    (): LibraryBrowserMocks => ({
-        libraryState: undefined,
-        isNativeSampleLibraryRuntimeAvailable: vi.fn(),
-        notifyUser: vi.fn(),
-        preview: {
-            playingId: null,
-            playFile: vi.fn<(id: string, file: File) => Promise<void>>(),
-            stop: vi.fn<() => void>(),
-        },
-        projectSpatialMap: vi.fn(),
-        readTauriLibrarySampleFile: vi.fn(),
-    })
-);
+const mocks = vi.hoisted((): LibraryBrowserMocks => ({
+    libraryState: undefined,
+    isNativeSampleLibraryRuntimeAvailable: vi.fn(),
+    notifyUser: vi.fn(),
+    preview: {
+        playingId: null,
+        playFile: vi.fn<(id: string, file: File) => Promise<void>>(),
+        stop: vi.fn<() => void>(),
+    },
+    projectSpatialMap: vi.fn(),
+    readTauriLibrarySampleFile: vi.fn(),
+}));
 
 vi.mock('#/infra/store/useStore', () => ({
     useStore: vi.fn((_store, defaultValue) => mocks.libraryState ?? defaultValue),

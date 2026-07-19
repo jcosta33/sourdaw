@@ -45,7 +45,7 @@ describe('nextItem', () => {
             autoAdvance: false,
             countInBars: 1,
             totalDuration: 1,
-        } as SetlistState;
+        };
 
         nextItem();
         expect(goToItem).toHaveBeenCalledWith(1);

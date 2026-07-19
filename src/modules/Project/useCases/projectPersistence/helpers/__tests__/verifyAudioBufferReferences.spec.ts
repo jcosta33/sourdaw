@@ -2,9 +2,10 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 const notifyUser = vi.fn();
 
-const trackStoreMock = vi.hoisted(() => ({
-    value: null as unknown,
-}));
+const trackStoreMock = vi.hoisted(() => {
+    const value: unknown = null;
+    return { value };
+});
 
 vi.mock('#/modules/Arrangement/stores', () => ({
     trackStore: trackStoreMock,

@@ -8,8 +8,7 @@ type ParsedTrack = {
 };
 
 type WorkerResponse =
-    | { type: 'parsed'; tracks: ParsedTrack[]; ticksPerBeat: number; tempo: number }
-    | { type: 'error'; message: string };
+    { type: 'parsed'; tracks: ParsedTrack[]; ticksPerBeat: number; tempo: number } | { type: 'error'; message: string };
 
 /**
  * §159.1 — .mid parsing runs in a dedicated Web Worker so large files don't

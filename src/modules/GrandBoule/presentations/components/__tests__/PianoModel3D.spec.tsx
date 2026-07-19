@@ -27,7 +27,7 @@ describe('PianoModel3D', () => {
             x: 0,
             y: 0,
             toJSON: () => ({}),
-        } as DOMRect);
+        });
     });
 
     afterEach(() => {

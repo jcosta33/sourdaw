@@ -57,9 +57,7 @@ export function samplesToBeats(samples: number, time: TransportInfo): number {
 
 /** Convert a musical rate (e.g., 1/8) to beat duration. */
 export type RateValue =
-    | { type: 'straight'; denom: number }
-    | { type: 'dotted'; denom: number }
-    | { type: 'triplet'; denom: number };
+    { type: 'straight'; denom: number } | { type: 'dotted'; denom: number } | { type: 'triplet'; denom: number };
 
 export function rateToBeats(rate: RateValue): number {
     const base = 4.0 / rate.denom;

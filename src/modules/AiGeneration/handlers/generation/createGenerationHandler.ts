@@ -63,12 +63,7 @@ export function createGenerationHandler<ActionType extends GenerationActionType>
                     ? Math.max(0, payload.startBeat)
                     : getPlayheadBeat();
 
-            const result = config.applyToTrack(
-                trackId,
-                alpha as Extract<AppAction, { type: ActionType }>,
-                style,
-                placementBeat
-            );
+            const result = config.applyToTrack(trackId, alpha, style, placementBeat);
             // §14.3 / G3 — after a successful generation, focus the new clip
             // (so the inspector/piano-roll surfaces see it) and surface a
             // notification. An empty-note result is still "success" in the

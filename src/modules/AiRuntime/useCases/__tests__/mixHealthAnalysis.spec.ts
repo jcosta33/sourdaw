@@ -6,7 +6,7 @@ const streamCloudChatCompletionMock = vi.fn();
 const summarizeFeaturesMock = vi.fn();
 const { mocks } = vi.hoisted(() => ({
     mocks: {
-        trackStore: { value: null as unknown },
+        trackStore: { value: null },
     },
 }));
 

@@ -275,7 +275,7 @@ export function asBaseAudioContext(ctx: MockAudioContext): BaseAudioContext {
 }
 
 export function asAudioNode(node: MockAudioNodeBase): AudioNode {
-    return node as unknown as AudioNode;
+    return node;
 }
 
 export function createMockAudioNode<Kind extends keyof MockAudioNodeKind>(kind: Kind): MockAudioNodeKind[Kind] {
@@ -394,6 +394,6 @@ export class MockAudioBuffer {
     }
 
     static create(channels: number, length: number, sampleRate: number): AudioBuffer {
-        return new MockAudioBuffer({ numberOfChannels: channels, length, sampleRate }) as unknown as AudioBuffer;
+        return new MockAudioBuffer({ numberOfChannels: channels, length, sampleRate });
     }
 }

@@ -63,8 +63,8 @@ describe('handleGenerateMelody', () => {
         void handleGenerateMelody.execute({
             type: 'generateMelody',
             payload: {
-                style: 'invalid-style' as unknown as 'simple',
-                scale: 'invalid-scale' as unknown as 'major',
+                style: 'invalid-style',
+                scale: 'invalid-scale',
                 key: -5,
                 bars: 2,
             },

@@ -108,7 +108,7 @@ describe('setPunchIn', () => {
 
     it('should not update when transport state is missing', () => {
         const update = vi.fn();
-        vi.mocked(getTransportState).mockReturnValue(null as unknown as TransportState);
+        vi.mocked(getTransportState).mockReturnValue(null);
         vi.mocked(updateTransportState).mockImplementation(update);
 
         setPunchIn(4);

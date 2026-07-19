@@ -35,7 +35,7 @@ function createAudioBuffer({
         length,
         numberOfChannels: channels,
         sampleRate,
-    } as AudioBuffer;
+    };
 }
 
 type StoredAudioBuffer = {

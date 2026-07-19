@@ -4,12 +4,15 @@ import { applyGroove } from '../applyGroove';
 
 type GrooveNote = { id: string; pitch: number; startBeat: number; duration: number; velocity: number };
 
-const mocks = vi.hoisted(() => ({
-    getAllTracks: vi.fn(),
-    setNotesForClip: vi.fn<(clipId: string, notes: GrooveNote[]) => void>(),
-    getNotesForClip: vi.fn<(clipId: string) => GrooveNote[]>(),
-    notesByClipId: {} as Record<string, GrooveNote[]>,
-}));
+const mocks = vi.hoisted(() => {
+    const notesByClipId: Record<string, GrooveNote[]> = {};
+    return {
+        getAllTracks: vi.fn(),
+        setNotesForClip: vi.fn<(clipId: string, notes: GrooveNote[]) => void>(),
+        getNotesForClip: vi.fn<(clipId: string) => GrooveNote[]>(),
+        notesByClipId,
+    };
+});
 
 vi.mock('#/modules/Arrangement/useCases', () => ({
     getAllTracks: mocks.getAllTracks,

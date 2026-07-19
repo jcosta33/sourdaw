@@ -33,7 +33,7 @@ describe('restoreStrumOriginals', () => {
             },
             ccByClipId: {},
             pitchBendByClipId: {},
-        } as unknown as MidiStoreState;
+        };
     });
 
     it('should not write when the MIDI store is null', () => {

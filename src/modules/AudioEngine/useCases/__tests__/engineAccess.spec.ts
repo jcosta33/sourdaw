@@ -7,6 +7,7 @@ const engineMocks = vi.hoisted(() => {
     const trackStrip = { trackId: 't1', analyserNode: trackAnalyser };
     const toasterControls = { ready: true, noteOn: vi.fn() };
     const engineState = { tracks: [], buses: [] };
+    const engineContext: unknown = context;
     return {
         context,
         masterAnalyser,
@@ -15,7 +16,7 @@ const engineMocks = vi.hoisted(() => {
         toasterControls,
         engineState,
         engine: {
-            context: context as unknown,
+            context: engineContext,
             masterAnalyser,
             getState: vi.fn(() => engineState),
             getMasterPeakLevel: vi.fn(() => 0.42),

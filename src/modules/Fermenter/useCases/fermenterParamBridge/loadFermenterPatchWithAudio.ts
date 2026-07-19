@@ -32,7 +32,7 @@ function flushPatch(_compositeKey: string, entry: PatchBatchEntry): void {
         updateDevicePatch(entry.ref.trackId, entry.ref.deviceId, mapFermenterPatchToDspPatch({ patch: entry.patch }));
     }
     if (persistDevicePatch) {
-        persistDevicePatch(entry.ref.deviceId, entry.patch as Record<string, unknown>);
+        persistDevicePatch(entry.ref.deviceId, entry.patch);
     }
 }
 

@@ -4,8 +4,8 @@ const mocks = vi.hoisted(() => ({
     isStemSeparationAvailable: vi.fn(() => true),
     isAudioGenerationAvailable: vi.fn(() => false),
     isAudioAiServerRunning: vi.fn().mockResolvedValue(true),
-    generateAudio: vi.fn().mockResolvedValue({} as AudioBuffer),
-    separateStems: vi.fn().mockResolvedValue({} as Record<string, AudioBuffer>),
+    generateAudio: vi.fn().mockResolvedValue({}),
+    separateStems: vi.fn().mockResolvedValue({}),
 }));
 
 vi.mock('../../repositories/isStemSeparationAvailable', () => ({
