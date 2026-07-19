@@ -234,4 +234,39 @@ describe('yeastRuntime HMR migration', () => {
 
         expect(panicOutputNotes).toHaveBeenCalledTimes(1);
     });
+
+    it('recreates a retained same-version Worker so preview listeners bind to the new module', async () => {
+        const context = {} as BaseAudioContext;
+        const retainedWorker = makeWorker(context);
+        const replacementWorker = makeWorker(context);
+        const projection: YeastProcessorProjection = [
+            { id: 'arp-1', type: 'arpeggiator', bypassed: false, params: { rate_denom: 16 } },
+        ];
+        const retainedSession: LegacyRuntimeSession = {
+            version: 8,
+            context,
+            node: retainedWorker,
+            nodePromise: null,
+            projection,
+            processTail: Promise.resolve(),
+            generation: 13,
+            projectionRevision: 3,
+            appliedProjectionRevision: 3,
+            status: 'ready',
+            error: undefined,
+            onNotesOff: null,
+            pendingAllNotesOff: null,
+            activeOutputNotes: new Map(),
+        };
+        retainedHmrState.value = retainedSession;
+        createWorker.mockResolvedValueOnce(replacementWorker);
+
+        const runtime = await import('../yeastRuntime');
+
+        expect(retainedWorker.destroy).toHaveBeenCalledTimes(1);
+        await expect(runtime.ensureYeastRuntime({ context, projection })).resolves.toBe(replacementWorker);
+        expect(replacementWorker.onPreview).toHaveBeenCalledTimes(1);
+        expect(replacementWorker.setProjection).toHaveBeenCalledWith(projection);
+        expect(retainedSession.node).toBe(replacementWorker);
+    });
 });

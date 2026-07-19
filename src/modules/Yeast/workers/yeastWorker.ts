@@ -12,10 +12,10 @@
  *   → { type: 'projectionAck', projectionId, events }
  *   → { type: 'projectionError', projectionId, error }
  *   ← { type: 'executeCommand', commandId, command }
- *   ← { type: 'processBlock', requestId, trackId, events, blockStart, blockEnd, transport, previewEnabled }
+ *   ← { type: 'processBlock', requestId, captureEpoch, trackId, events, blockStart, blockEnd, transport, previewEnabled }
  *   → { type: 'commandAck', commandId, accepted, error? }
  *   → { type: 'processed',    requestId, events }
- *   → { type: 'previewPage',  requestId, page } (lossy/deferred)
+ *   → { type: 'previewPage',  requestId, captureEpoch, page } (lossy/deferred)
  *   ← { type: 'allNotesOff',  panicId, nowSamples }
  *   → { type: 'allNotesOffAck', panicId, completed, events, error? }
  */
@@ -30,6 +30,7 @@ import type { YeastProcessorProjectionItem } from '../models/YeastProcessorProje
 type YeastProcessBlockMessage = {
     type: 'processBlock';
     requestId: number;
+    captureEpoch: number;
     trackId: string;
     events: MidiEvent[];
     blockStart: number;
@@ -140,6 +141,7 @@ function parseProcessBlock(value: unknown): YeastProcessBlockMessage | undefined
         !isPlainObject(value) ||
         value.type !== 'processBlock' ||
         !isCommandId(value.requestId) ||
+        !isCommandId(value.captureEpoch) ||
         !isTrackId(value.trackId) ||
         !isMidiEventArray(value.events) ||
         !isFiniteNumber(value.blockStart) ||
@@ -152,6 +154,7 @@ function parseProcessBlock(value: unknown): YeastProcessBlockMessage | undefined
     return {
         type: 'processBlock',
         requestId: value.requestId,
+        captureEpoch: value.captureEpoch,
         trackId: value.trackId,
         events: value.events,
         blockStart: value.blockStart,
@@ -374,7 +377,12 @@ export function handleYeastWorkerMessage({ data, rack, postMessage }: YeastWorke
         try {
             deferPreviewDelivery(() => {
                 try {
-                    postMessage({ type: 'previewPage', requestId: message.requestId, page });
+                    postMessage({
+                        type: 'previewPage',
+                        requestId: message.requestId,
+                        captureEpoch: message.captureEpoch,
+                        page,
+                    });
                 } finally {
                     rack.releasePreviewPage(page);
                 }

@@ -63,6 +63,7 @@ describe('YeastWorker', () => {
             {
                 type: 'processBlock',
                 requestId: 0,
+                captureEpoch: 0,
                 trackId: 'track-a',
                 events: [{ timeSamples: 0, kind: { type: 'noteOn', channel: 0, note: 60, velocity: 100 } }],
                 blockStart: 0,
@@ -102,6 +103,7 @@ describe('YeastWorker', () => {
             {
                 type: 'processBlock',
                 requestId: 1,
+                captureEpoch: 0,
                 trackId: 'track-a',
                 events: [{ timeSamples: 0, kind: { type: 'noteOn', channel: 0, note: 60, velocity: 100 } }],
                 blockStart: 0,
@@ -142,6 +144,7 @@ describe('YeastWorker', () => {
             {
                 type: 'processBlock',
                 requestId: 4,
+                captureEpoch: 0,
                 trackId: 'track-a',
                 events: [],
                 blockStart: 0,
@@ -183,6 +186,7 @@ describe('YeastWorker', () => {
             {
                 type: 'processBlock',
                 requestId: 7,
+                captureEpoch: 17,
                 trackId: 'track-a',
                 events,
                 blockStart: 0,
@@ -212,6 +216,7 @@ describe('YeastWorker', () => {
         const previewResponse = messages[1] as {
             type: string;
             requestId: number;
+            captureEpoch: number;
             page: {
                 count: number;
                 droppedEvents: number;
@@ -226,6 +231,7 @@ describe('YeastWorker', () => {
         };
         expect(previewResponse.type).toBe('previewPage');
         expect(previewResponse.requestId).toBe(7);
+        expect(previewResponse.captureEpoch).toBe(17);
         expect(previewResponse.page.count).toBe(1);
         expect(previewResponse.page.droppedEvents).toBe(0);
         expect(previewResponse.page.beatTime).toHaveLength(512);
@@ -273,6 +279,7 @@ describe('YeastWorker', () => {
             {
                 type: 'processBlock',
                 requestId: 8,
+                captureEpoch: 0,
                 trackId: 'track-a',
                 events: [{ timeSamples: 0, kind: { type: 'noteOn', channel: 16, note: 60, velocity: 100 } }],
                 blockStart: 0,
@@ -329,6 +336,7 @@ describe('YeastWorker', () => {
             {
                 type: 'processBlock',
                 requestId: 11,
+                captureEpoch: 0,
                 trackId: 'track-a',
                 events: [],
                 blockStart: 0,

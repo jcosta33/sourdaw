@@ -57,6 +57,7 @@ export class MidiRack {
         if (idx === -1) {
             return output;
         }
+        this.preview.invalidateProcessorPending(id);
         const emittedKeys = new Map<string, Set<number>>();
         // Capture active notes BEFORE reset/splice — once the processor is gone
         // these notes would hang with no source to terminate them.
@@ -141,7 +142,7 @@ export class MidiRack {
         trackId: string,
         previewEnabled = false
     ): MidiEvent[] {
-        this.preview.beginBlock(previewEnabled, blockStartSamples, transport);
+        this.preview.beginBlock(previewEnabled, blockStartSamples, blockEndSamples, transport);
         // 0. Reject degenerate ranges. With blockEnd < blockStart the [start,end)
         // drain window is empty (drainRangeInto drains nothing) AND the separator
         // (`event.timeSamples < blockEndSamples`) routes every real event into the
@@ -259,6 +260,7 @@ export class MidiRack {
     /** Panic: send Note Off for all active notes. */
     allNotesOff(nowSamples: number): MidiEvent[] {
         const output: MidiEvent[] = [];
+        this.preview.invalidatePending();
         // Track (channel<<7)|note of every off emitted per origin so each
         // sounding/scheduled note gets exactly one Note Off.
         const emittedKeys = new Map<string, Set<number>>();

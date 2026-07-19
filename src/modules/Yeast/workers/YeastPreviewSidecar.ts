@@ -49,27 +49,51 @@ export class YeastPreviewSidecar {
     private blockStartSamples = 0;
     private blockPpqPosition = 0;
     private samplesPerBeat = 0;
+    private previousBlockStartSamples = 0;
+    private previousBlockEndSamples = 0;
+    private previousBlockPpqPosition = 0;
+    private previousSamplesPerBeat = 0;
+    private hasPreviousBlock = false;
     private captureRequested = false;
     private captureBlock = false;
     private pageBusy = false;
 
-    beginBlock(enabled: boolean, blockStartSamples: number, transport: TransportInfo): void {
+    beginBlock(enabled: boolean, blockStartSamples: number, blockEndSamples: number, transport: TransportInfo): void {
         this.captureRequested = false;
         this.captureBlock = false;
 
         if (!enabled) {
-            this.pendingCount = 0;
+            this.invalidatePending();
+            this.hasPreviousBlock = false;
             return;
         }
 
         const samplesPerBeat = (transport.sampleRate * 60) / transport.bpm;
-        if (!Number.isFinite(samplesPerBeat) || samplesPerBeat <= 0) {
+        if (!Number.isFinite(samplesPerBeat) || samplesPerBeat <= 0 || blockEndSamples < blockStartSamples) {
+            this.invalidatePending();
+            this.hasPreviousBlock = false;
             return;
+        }
+
+        if (this.hasPreviousBlock) {
+            const expectedPpqPosition =
+                this.previousBlockPpqPosition +
+                (this.previousBlockEndSamples - this.previousBlockStartSamples) / this.previousSamplesPerBeat;
+            const samplePositionChanged = blockStartSamples !== this.previousBlockEndSamples;
+            const musicalPositionChanged = Math.abs(transport.ppqPosition - expectedPpqPosition) > 1e-6;
+            if (samplePositionChanged || musicalPositionChanged) {
+                this.invalidatePending();
+            }
         }
 
         this.blockStartSamples = blockStartSamples;
         this.blockPpqPosition = transport.ppqPosition;
         this.samplesPerBeat = samplesPerBeat;
+        this.previousBlockStartSamples = blockStartSamples;
+        this.previousBlockEndSamples = blockEndSamples;
+        this.previousBlockPpqPosition = transport.ppqPosition;
+        this.previousSamplesPerBeat = samplesPerBeat;
+        this.hasPreviousBlock = true;
         this.captureRequested = true;
         if (this.pageBusy) {
             return;
@@ -77,6 +101,21 @@ export class YeastPreviewSidecar {
         this.page.count = 0;
         this.page.droppedEvents = 0;
         this.captureBlock = true;
+    }
+
+    invalidatePending(): void {
+        this.pendingCount = 0;
+    }
+
+    invalidateProcessorPending(processorId: string): void {
+        let index = 0;
+        while (index < this.pendingCount) {
+            if (this.pendingProcessorId[index] === processorId) {
+                this.removePending(index);
+            } else {
+                index += 1;
+            }
+        }
     }
 
     recordEvents(

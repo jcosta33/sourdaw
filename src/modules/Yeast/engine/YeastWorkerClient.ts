@@ -202,11 +202,16 @@ function isPackedPreviewPage(value: unknown): value is YeastPreviewPackedPage {
 
 function parsePreviewPageMessage(
     value: Record<string, unknown>
-): { requestId: number; page: YeastPreviewPackedPage } | undefined {
-    if (value.type !== 'previewPage' || !isCommandId(value.requestId) || !isPackedPreviewPage(value.page)) {
+): { requestId: number; captureEpoch: number; page: YeastPreviewPackedPage } | undefined {
+    if (
+        value.type !== 'previewPage' ||
+        !isCommandId(value.requestId) ||
+        !isCommandId(value.captureEpoch) ||
+        !isPackedPreviewPage(value.page)
+    ) {
         return undefined;
     }
-    return { requestId: value.requestId, page: value.page };
+    return { requestId: value.requestId, captureEpoch: value.captureEpoch, page: value.page };
 }
 
 function decodePreviewPage(page: YeastPreviewPackedPage, extraDroppedEvents: number): YeastPreviewBlock | undefined {
@@ -369,12 +374,15 @@ export async function createYeastWorker(ctx: BaseAudioContext): Promise<YeastWor
     let startupReject: ((error: Error) => void) | null = null;
     let startupTimer: ReturnType<typeof setTimeout> | null = null;
     let latestSample = 0;
+    let previewCaptureEnabled = false;
+    let previewCaptureEpoch = 0;
     const readTerminalError = (): Error | null => terminalError;
     type PendingEntry = {
         resolve: (events: MidiEvent[]) => void;
         reject: (err: Error) => void;
         timer: ReturnType<typeof setTimeout>;
         previewEnabled: boolean;
+        captureEpoch: number;
     };
     const pending = new Map<number, PendingEntry>();
     type PendingCommandEntry = {
@@ -436,6 +444,8 @@ export async function createYeastWorker(ctx: BaseAudioContext): Promise<YeastWor
     const terminalErrorHandlers = new Set<(error: Error) => void>();
     const acceptedPreviewRequestIds = new Float64Array(PREVIEW_ACCEPTANCE_CAPACITY);
     acceptedPreviewRequestIds.fill(-1);
+    const acceptedPreviewCaptureEpochs = new Float64Array(PREVIEW_ACCEPTANCE_CAPACITY);
+    acceptedPreviewCaptureEpochs.fill(-1);
     let acceptedPreviewWriteIndex = 0;
     const previewQueuePages: Array<YeastPreviewPackedPage | undefined> = Array.from({
         length: PREVIEW_DELIVERY_QUEUE_CAPACITY,
@@ -446,15 +456,20 @@ export async function createYeastWorker(ctx: BaseAudioContext): Promise<YeastWor
     let unreportedPreviewDrops = 0;
     let previewDeliveryTimer: ReturnType<typeof setTimeout> | null = null;
 
-    const rememberPreviewRequest = (requestId: number): void => {
+    const rememberPreviewRequest = (requestId: number, captureEpoch: number): void => {
         acceptedPreviewRequestIds[acceptedPreviewWriteIndex] = requestId;
+        acceptedPreviewCaptureEpochs[acceptedPreviewWriteIndex] = captureEpoch;
         acceptedPreviewWriteIndex = (acceptedPreviewWriteIndex + 1) % PREVIEW_ACCEPTANCE_CAPACITY;
     };
 
-    const consumePreviewRequest = (requestId: number): boolean => {
+    const consumePreviewRequest = (requestId: number, captureEpoch: number): boolean => {
         for (let index = 0; index < acceptedPreviewRequestIds.length; index++) {
-            if (acceptedPreviewRequestIds[index] === requestId) {
+            if (
+                acceptedPreviewRequestIds[index] === requestId &&
+                acceptedPreviewCaptureEpochs[index] === captureEpoch
+            ) {
                 acceptedPreviewRequestIds[index] = -1;
+                acceptedPreviewCaptureEpochs[index] = -1;
                 return true;
             }
         }
@@ -535,6 +550,8 @@ export async function createYeastWorker(ctx: BaseAudioContext): Promise<YeastWor
         previewQueueSize = 0;
         unreportedPreviewDrops = 0;
         acceptedPreviewRequestIds.fill(-1);
+        acceptedPreviewCaptureEpochs.fill(-1);
+        acceptedPreviewWriteIndex = 0;
     };
 
     const dispatchNotesOff = (events: readonly MidiEvent[]): void => {
@@ -663,8 +680,8 @@ export async function createYeastWorker(ctx: BaseAudioContext): Promise<YeastWor
                 return;
             }
             entry.resolve(processed.events);
-            if (entry.previewEnabled) {
-                rememberPreviewRequest(processed.requestId);
+            if (entry.previewEnabled && entry.captureEpoch === previewCaptureEpoch) {
+                rememberPreviewRequest(processed.requestId, entry.captureEpoch);
             }
             return;
         }
@@ -673,7 +690,10 @@ export async function createYeastWorker(ctx: BaseAudioContext): Promise<YeastWor
             if (!parsed) {
                 return;
             }
-            if (!consumePreviewRequest(parsed.requestId)) {
+            if (parsed.captureEpoch !== previewCaptureEpoch) {
+                return;
+            }
+            if (!consumePreviewRequest(parsed.requestId, parsed.captureEpoch)) {
                 accountPreviewDrops(parsed.page.count + parsed.page.droppedEvents);
                 return;
             }
@@ -770,6 +790,12 @@ export async function createYeastWorker(ctx: BaseAudioContext): Promise<YeastWor
                 reject(terminalError);
                 return;
             }
+            if (previewEnabled !== previewCaptureEnabled) {
+                previewCaptureEnabled = previewEnabled;
+                previewCaptureEpoch += 1;
+                clearPreviewDelivery();
+            }
+            const captureEpoch = previewCaptureEpoch;
             const requestId = nextRequestId++;
             latestSample = Math.max(latestSample, blockEnd);
             // Reject if the Worker never replies (dropped 'processed' message,
@@ -779,7 +805,7 @@ export async function createYeastWorker(ctx: BaseAudioContext): Promise<YeastWor
                     reject(new Error(`YeastWorker.processBlock timed out (requestId ${requestId})`));
                 }
             }, PROCESS_BLOCK_TIMEOUT_MS);
-            pending.set(requestId, { resolve, reject, timer, previewEnabled });
+            pending.set(requestId, { resolve, reject, timer, previewEnabled, captureEpoch });
             try {
                 worker.postMessage({
                     type: 'processBlock',
@@ -790,6 +816,7 @@ export async function createYeastWorker(ctx: BaseAudioContext): Promise<YeastWor
                     transport,
                     trackId,
                     previewEnabled,
+                    captureEpoch,
                 });
             } catch (error: unknown) {
                 settle(requestId)?.reject(toError(error));

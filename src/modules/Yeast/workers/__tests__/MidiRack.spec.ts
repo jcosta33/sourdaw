@@ -156,6 +156,27 @@ describe('MidiRack', () => {
             // The unknown removal must not clear tracking — a panic still fires.
             expect(rack.allNotesOff(300).filter(isNoteOff)).toHaveLength(1);
         });
+
+        it('invalidates only the removed processor preview notes', () => {
+            const rack = new MidiRack();
+            rack.addProcessor(new PassthroughProcessor('p1'));
+            rack.addProcessor(new PassthroughProcessor('p2'));
+            rack.processBlock([noteOn(0, 60)], 0, 128, transport, 'track-a', true);
+            expect(takePreviewBlock(rack).records).toEqual([]);
+
+            rack.removeProcessor('p1', 128);
+            rack.addProcessor(new PassthroughProcessor('p1'));
+            rack.processBlock(
+                [noteOff(128, 60)],
+                128,
+                256,
+                { ...transport, ppqPosition: 128 / 22050 },
+                'track-a',
+                true
+            );
+
+            expect(takePreviewBlock(rack).records.map((record) => record.processorId)).toEqual(['p2']);
+        });
     });
 
     describe('replaceProjection', () => {
@@ -447,6 +468,77 @@ describe('MidiRack', () => {
                     failed: false,
                 },
             ]);
+        });
+
+        it.each([
+            {
+                discontinuity: 'seek',
+                nextStart: 4096,
+                nextEnd: 4224,
+                nextTransport: { ...transport, ppqPosition: 10 },
+            },
+            {
+                discontinuity: 'loop',
+                nextStart: 128,
+                nextEnd: 256,
+                nextTransport: {
+                    ...transport,
+                    ppqPosition: 0,
+                    loopEnabled: true,
+                    loopStartPpq: 0,
+                    loopEndPpq: 4,
+                },
+            },
+        ])('invalidates pending preview notes across a transport $discontinuity', (testCase) => {
+            const rack = new MidiRack();
+            rack.addProcessor(new PassthroughProcessor('p1'));
+            const firstTransport = { ...transport, ppqPosition: 4 };
+            rack.processBlock([noteOn(0, 60)], 0, 128, firstTransport, 'track-a', true);
+            expect(takePreviewBlock(rack).records).toEqual([]);
+
+            rack.processBlock(
+                [
+                    noteOff(testCase.nextStart, 60),
+                    noteOn(testCase.nextStart + 1, 62),
+                    noteOff(testCase.nextStart + 2, 62),
+                ],
+                testCase.nextStart,
+                testCase.nextEnd,
+                testCase.nextTransport,
+                'track-a',
+                true
+            );
+
+            expect(takePreviewBlock(rack).records.map((record) => record.pitch)).toEqual([62]);
+        });
+
+        it('recovers full preview capacity after allNotesOff invalidates pending notes', () => {
+            const rack = new MidiRack();
+            rack.addProcessor(new PassthroughProcessor('p1'));
+            rack.processBlock(
+                Array.from({ length: 512 }, (_, index) => noteOn(index, 60)),
+                0,
+                1024,
+                transport,
+                'track-a',
+                true
+            );
+            expect(takePreviewBlock(rack).records).toEqual([]);
+
+            rack.allNotesOff(1024);
+            rack.processBlock(
+                [noteOn(1024, 61), noteOff(1025, 61)],
+                1024,
+                1152,
+                { ...transport, ppqPosition: 1024 / 22050 },
+                'track-a',
+                true
+            );
+
+            expect(takePreviewBlock(rack)).toMatchObject({
+                records: [{ pitch: 61, processorId: 'p1' }],
+                droppedEvents: 0,
+            });
         });
 
         it('preserves the actual upstream and bypassed processor decision origins', () => {

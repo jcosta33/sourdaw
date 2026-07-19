@@ -142,8 +142,8 @@ function packPreview(records: readonly YeastPreviewEvent[], droppedEvents = 0): 
     };
 }
 
-function replyPreviewPage(worker: FakeWorker, requestId: number, page: unknown): void {
-    worker.onmessage?.({ data: { type: 'previewPage', requestId, page } } as MessageEvent);
+function replyPreviewPage(worker: FakeWorker, requestId: number, page: unknown, captureEpoch = 1): void {
+    worker.onmessage?.({ data: { type: 'previewPage', requestId, captureEpoch, page } } as MessageEvent);
 }
 
 function replyProcessedError(worker: FakeWorker, requestId: number, error: string): void {
@@ -235,6 +235,50 @@ describe('createYeastWorker — processBlock lifecycle', () => {
         await vi.advanceTimersByTimeAsync(0);
 
         expect(onPreview).toHaveBeenCalledWith({ records: [record], droppedEvents: 0 });
+    });
+
+    it('rejects a late preview page from before capture was disabled and re-enabled', async () => {
+        const node = await createYeastWorker(makeContext());
+        const worker = lastWorker();
+        const onPreview = vi.fn();
+        node.onPreview(onPreview);
+        const staleRecord: YeastPreviewEvent = {
+            beatTime: 0,
+            durationBeats: 0.5,
+            pitch: 60,
+            velocity: 90,
+            probability: null,
+            realized: true,
+            processorId: 'stale-generation',
+            bypassed: false,
+            failed: false,
+        };
+        const currentRecord: YeastPreviewEvent = {
+            ...staleRecord,
+            pitch: 62,
+            processorId: 'current-generation',
+        };
+
+        const firstEnabled = node.processBlock([], 0, 128, transport, 'track-a', true);
+        replyProcessed(worker, 0, []);
+        await firstEnabled;
+
+        const disabled = node.processBlock([], 128, 256, transport, 'track-a', false);
+        replyProcessed(worker, 1, []);
+        await disabled;
+
+        const reenabled = node.processBlock([], 256, 384, transport, 'track-a', true);
+        replyProcessed(worker, 2, []);
+        await reenabled;
+
+        replyPreviewPage(worker, 0, packPreview([staleRecord]), 1);
+        await vi.runAllTimersAsync();
+        expect(onPreview).not.toHaveBeenCalled();
+
+        replyPreviewPage(worker, 2, packPreview([currentRecord]), 3);
+        await vi.runAllTimersAsync();
+        expect(onPreview).toHaveBeenCalledOnce();
+        expect(onPreview).toHaveBeenCalledWith({ records: [currentRecord], droppedEvents: 0 });
     });
 
     it('does not inspect an embedded preview payload on the correlated scheduler reply', async () => {
@@ -387,6 +431,7 @@ describe('createYeastWorker — processBlock lifecycle', () => {
         expect(worker.postMessage).toHaveBeenCalledWith({
             type: 'processBlock',
             requestId: 0,
+            captureEpoch: 0,
             events: [],
             blockStart: 0,
             blockEnd: 128,

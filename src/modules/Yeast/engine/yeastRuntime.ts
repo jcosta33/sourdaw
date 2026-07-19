@@ -83,9 +83,12 @@ const session = createHmrPersistentState<YeastRuntimeSession>('yeast.runtime', (
 
 // Retained pre-v8 sessions either use the pitch-only host note-off contract,
 // predate the preview sidecar listener, or deliver preview inline with scheduler
-// replies. Revoke every runtime handle and defer channel-complete settlement to
-// the new sink.
-if (session.version !== YEAST_RUNTIME_SESSION_VERSION) {
+// replies. A same-version HMR evaluation also owns fresh listener closures, so
+// revoke any retained Worker generation instead of leaving it bound to the old
+// module's preview tap.
+const retainedRuntimeNeedsRebind =
+    session.version === YEAST_RUNTIME_SESSION_VERSION && (session.node !== null || session.nodePromise !== null);
+if (session.version !== YEAST_RUNTIME_SESSION_VERSION || retainedRuntimeNeedsRebind) {
     const staleNode = session.node;
     const retainedRuntimeMayOwnOutput = session.context !== null || session.nodePromise !== null || staleNode !== null;
     const pendingNotesOff = collectActiveOutputNotes(session.generation);
