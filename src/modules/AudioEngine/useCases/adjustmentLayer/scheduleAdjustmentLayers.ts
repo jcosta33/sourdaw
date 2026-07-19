@@ -1,4 +1,8 @@
-import { adjustmentLayerStore, type AdjustmentLayer } from '#/modules/Arrangement/stores';
+import {
+    adjustmentLayerStore,
+    computeAdjustmentLayerBlendAtBeat,
+    type AdjustmentLayer,
+} from '#/modules/Arrangement/stores';
 
 import { getSharedAdjustmentLayerApplier } from './sharedAdjustmentLayerApplier';
 
@@ -7,15 +11,7 @@ function readActiveLayersAtBeat(beat: number): AdjustmentLayer[] {
     if (!state) {
         return [];
     }
-    return state.layers.filter((layer) => {
-        if (!layer.enabled) {
-            return false;
-        }
-        if (layer.regions.length === 0) {
-            return true;
-        }
-        return layer.regions.some((region) => beat >= region.startBeat && beat < region.endBeat);
-    });
+    return state.layers.filter((layer) => computeAdjustmentLayerBlendAtBeat(layer, beat) > 0);
 }
 
 /**

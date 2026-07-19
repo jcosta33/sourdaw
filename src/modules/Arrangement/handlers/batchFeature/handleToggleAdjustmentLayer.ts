@@ -10,7 +10,7 @@ import {
 
 export const handleToggleAdjustmentLayer = createHandler<'toggleAdjustmentLayer'>({
     execute: (a) => {
-        commitAdjustmentLayerMutation({
+        return commitAdjustmentLayerMutation({
             adjustmentMutationId: getAdjustmentLayerMutationId(a),
             mutation: () => {
                 toggleAdjustmentLayer(a.payload.layerId);

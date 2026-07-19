@@ -136,6 +136,7 @@ describe('undoStore / pushUndo', () => {
             source: 'ai',
             groupId: 'group-1',
             groupLabel: 'Group one',
+            transactionGroupId: 'group-1',
         };
         sessionStorage.setItem(
             UNDO_SESSION_KEY,

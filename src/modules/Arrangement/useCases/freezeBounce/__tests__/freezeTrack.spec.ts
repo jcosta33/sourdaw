@@ -4,6 +4,7 @@ import { cacheAudioBuffer } from '#/modules/AudioEngine/useCases';
 
 import { createTrack } from '../../../models/Track';
 import { updateTrack } from '../../../repositories/track/updateTrack';
+import { computeTrackHash } from '../../../services/computeTrackHash';
 import { adjustmentLayerStore } from '../../../stores/adjustmentLayer';
 import { trackStore } from '../../../stores/trackStore';
 import { commitAdjustmentLayerMutation } from '../../adjustmentLayer/commitAdjustmentLayerMutation';
@@ -124,7 +125,7 @@ describe('freezeTrack', () => {
             status: 'frozen',
             freezeId: expectedBufferId,
             frozenBufferId: expectedBufferId,
-            sourceContentHash: 'mock-hash',
+            sourceContentHash: 'freeze-v2:mock-hash',
             renderSettings: {
                 sampleRate: 44100,
                 bitDepth: 32,
@@ -192,6 +193,72 @@ describe('freezeTrack', () => {
                 frozenBufferId: 'old-buffer',
             },
         });
+        expect(cacheAudioBuffer).not.toHaveBeenCalled();
+    });
+
+    it.each(['clip', 'device'] as const)('discards an in-flight freeze after a %s edit', async (edit_kind) => {
+        const track = createTrack({ id: 't1', name: 'Track', kind: 'audio' });
+        trackStore.set({ tracks: [track], selectedTrackId: null, ghostClips: [] });
+        vi.mocked(computeTrackHash).mockResolvedValueOnce('before-render').mockResolvedValueOnce('after-edit');
+        let complete_render!: (buffer: AudioBuffer) => void;
+        vi.mocked(renderTrackOffline).mockReturnValue(
+            new Promise<AudioBuffer>((resolve) => {
+                complete_render = resolve;
+            })
+        );
+
+        const freeze = freezeTrack('t1');
+        await vi.waitFor(() => expect(renderTrackOffline).toHaveBeenCalledOnce());
+        const current_state = trackStore.value;
+        if (!current_state) {
+            throw new Error('Expected track state');
+        }
+        trackStore.set({
+            ...current_state,
+            tracks: current_state.tracks.map((candidate) => {
+                if (candidate.id !== 't1') {
+                    return candidate;
+                }
+                if (edit_kind === 'clip') {
+                    return {
+                        ...candidate,
+                        clips: [
+                            {
+                                id: 'clip-1',
+                                trackId: 't1',
+                                name: 'Edited clip',
+                                startBeat: 0,
+                                endBeat: 4,
+                                type: 'audio',
+                                fadeInBeats: 0,
+                                fadeOutBeats: 0,
+                                gain: 1,
+                                color: '#fff',
+                                locked: false,
+                                muted: false,
+                            },
+                        ],
+                    };
+                }
+                return {
+                    ...candidate,
+                    devices: [
+                        {
+                            id: 'device-1',
+                            name: 'Edited device',
+                            type: 'eq',
+                            bypassed: false,
+                            parameterValues: { gain: 6 },
+                        },
+                    ],
+                };
+            }),
+        });
+        complete_render({ sampleRate: 44_100, numberOfChannels: 2 } as AudioBuffer);
+
+        await freeze;
+
+        expect(trackStore.value?.tracks[0]?.freezeState.status).toBe('unfrozen');
         expect(cacheAudioBuffer).not.toHaveBeenCalled();
     });
 

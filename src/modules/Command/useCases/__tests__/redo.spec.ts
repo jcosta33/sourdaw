@@ -60,6 +60,24 @@ function callbackEntry(overrides: Partial<CallbackUndoEntry> = {}): CallbackUndo
     };
 }
 
+function adjustmentEntry(id: string, mix: number, previous: number): ActionUndoEntry {
+    const entry = actionEntry({
+        id,
+        groupId: 'group',
+        action: { type: 'setLayerMix', payload: { layerId: 'layer-1', mix } },
+        inverseAction: {
+            type: 'restoreAdjustmentLayerMutation',
+            payload: {
+                adjustmentMutationId: `mutation-${id}`,
+                operation: { kind: 'restore-mix', layerId: 'layer-1', previous, expected: mix },
+                staleTransitions: [],
+            },
+        },
+    });
+    Object.assign(entry, { transactionGroupId: 'group' });
+    return entry;
+}
+
 describe('redo', () => {
     beforeEach(() => {
         mocks.undoStoreSet.mockReset();
@@ -106,6 +124,36 @@ describe('redo', () => {
             past: [{ ...entry, label: 'Fresh replay', inverseAction: fresh_inverse }],
             future: [],
         });
+    });
+
+    it('replays an adjustment transaction through one owning aggregate forward action', async () => {
+        const first = adjustmentEntry('first', 0.5, 0.25);
+        const second = adjustmentEntry('second', 0.75, 0.5);
+        mocks.executeAppAction.mockImplementation((_action, options) => {
+            options?.onExecuted?.({
+                applied: true,
+                inverseActions: [first.inverseAction!, second.inverseAction!],
+            });
+            return Promise.resolve();
+        });
+        mocks.undoStoreValue.value = { past: [], future: [first, second] };
+
+        await redo();
+
+        expect(mocks.executeAppAction).toHaveBeenCalledOnce();
+        expect(mocks.executeAppAction).toHaveBeenCalledWith(
+            {
+                type: 'applyAdjustmentLayerMutationBatch',
+                payload: { actions: [first.action, second.action] },
+            },
+            expect.objectContaining({
+                skipUndo: true,
+                skipMacroRecording: true,
+                onExecuted: expect.any(Function),
+            })
+        );
+        expect(mocks.undoStoreSet).toHaveBeenCalledWith({ past: [first, second], future: [] });
+        expect(mocks.undoTreeMoveTo).toHaveBeenCalledWith('second');
     });
 
     it('should run callback redo entries without action replay', async () => {

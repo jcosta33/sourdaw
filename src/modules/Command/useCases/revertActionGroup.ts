@@ -27,9 +27,13 @@ export async function revertActionGroup(groupId: string): Promise<boolean> {
     }
 
     const newPast = state.past.filter((entry) => entry.groupId !== groupId);
+    const reverted_entries =
+        groupEntries.length > 1
+            ? groupEntries.map((entry) => ({ ...entry, transactionGroupId: groupId }))
+            : groupEntries;
     undoStore.set({
         past: newPast,
-        future: [...groupEntries, ...state.future],
+        future: [...reverted_entries, ...state.future],
     });
     undoTreeMoveTo(newPast.length > 0 ? newPast[newPast.length - 1]!.id : null);
     return true;

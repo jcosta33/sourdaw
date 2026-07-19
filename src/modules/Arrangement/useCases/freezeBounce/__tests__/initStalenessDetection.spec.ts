@@ -95,7 +95,7 @@ describe('initStalenessDetection', () => {
             tracks: [
                 {
                     id: 't1',
-                    freezeState: { status: 'frozen', sourceContentHash: 'same-hash' },
+                    freezeState: { status: 'frozen', sourceContentHash: 'freeze-v2:same-hash' },
                     clips: [],
                     devices: [],
                 } as any,
@@ -112,7 +112,7 @@ describe('initStalenessDetection', () => {
             tracks: [
                 {
                     id: 't1',
-                    freezeState: { status: 'frozen', sourceContentHash: 'same-hash' },
+                    freezeState: { status: 'frozen', sourceContentHash: 'freeze-v2:same-hash' },
                     clips: [{}], // new reference
                     devices: [],
                 } as any,

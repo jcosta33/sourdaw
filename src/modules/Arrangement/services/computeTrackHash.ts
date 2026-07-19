@@ -1,29 +1,68 @@
 import { type Clip, type Device } from '../models/Track';
 
+function stable_serialize(value: unknown): string {
+    if (value === null || typeof value !== 'object') {
+        return JSON.stringify(value);
+    }
+    if (Array.isArray(value)) {
+        return `[${value.map(stable_serialize).join(',')}]`;
+    }
+    const entries = Object.entries(value)
+        .filter(([, nested_value]) => nested_value !== undefined)
+        .sort(([left], [right]) => left.localeCompare(right));
+    return `{${entries.map(([key, nested_value]) => `${JSON.stringify(key)}:${stable_serialize(nested_value)}`).join(',')}}`;
+}
+
 /**
- * Computes a SHA-256 hash of the track's content (clips and devices)
- * to detect when a frozen track becomes stale due to user edits.
+ * Computes a SHA-256 hash of canonical clip/device state plus the effective
+ * adjustment-layer signature used by freeze rendering.
  *
  * Conforms to R3: Content Hash Computation.
  */
-export async function computeTrackHash(clips: Clip[], devices: Device[]): Promise<string> {
+export async function computeTrackHash(
+    clips: readonly Clip[],
+    devices: readonly Device[],
+    adjustmentLayerSignature = ''
+): Promise<string> {
     const sortedClips = [...clips].sort(
         (alpha, buffer) => alpha.startBeat - buffer.startBeat || alpha.id.localeCompare(buffer.id)
     );
-    const clipStrings = sortedClips.map((clip) => {
-        const duration = clip.endBeat - clip.startBeat;
-        return `${clip.id}:${clip.startBeat}:${duration}:${clip.assetHash ?? ''}:${clip.gain}`;
+    const contentString = stable_serialize({
+        clips: sortedClips.map((clip) => ({
+            id: clip.id,
+            trackId: clip.trackId,
+            startBeat: clip.startBeat,
+            endBeat: clip.endBeat,
+            type: clip.type,
+            audioBufferId: clip.audioBufferId,
+            assetHash: clip.assetHash,
+            audioOffsetBeats: clip.audioOffsetBeats,
+            midiOffsetBeats: clip.midiOffsetBeats,
+            fadeInBeats: clip.fadeInBeats,
+            fadeOutBeats: clip.fadeOutBeats,
+            gain: clip.gain,
+            muted: clip.muted,
+            stretchMode: clip.stretchMode,
+            stretchRatio: clip.stretchRatio,
+            loopEnabled: clip.loopEnabled,
+            loopLength: clip.loopLength,
+            sourceKeyRoot: clip.sourceKeyRoot,
+            sourceScaleName: clip.sourceScaleName,
+            parentClipId: clip.parentClipId,
+            isLinkedInstance: clip.isLinkedInstance,
+            overrides: clip.overrides,
+            kneadState: clip.kneadState,
+        })),
+        devices: devices.map((device) => ({
+            id: device.id,
+            type: device.type,
+            bypassed: device.bypassed,
+            parameterValues: device.parameterValues,
+            externalPluginId: device.externalPluginId,
+            externalInstanceId: device.externalInstanceId,
+        })),
+        adjustmentLayerSignature,
     });
-
-    const deviceStrings = devices.map((device) => {
-        const sortedParams = Object.entries(device.parameterValues)
-            .sort(([alpha], [buffer]) => alpha.localeCompare(buffer))
-            .map(([kIndex, value]) => `${kIndex}=${value}`)
-            .join(',');
-        return `${device.id}:${device.type}:${sortedParams}:${device.bypassed}`;
-    });
-
-    const contentString = `${clipStrings.join('|')}||${deviceStrings.join('|')}`;
 
     const encoder = new TextEncoder();
     const data = encoder.encode(contentString);

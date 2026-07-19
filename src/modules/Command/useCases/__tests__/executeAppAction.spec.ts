@@ -284,14 +284,30 @@ describe('executeAppAction', () => {
             expect.objectContaining({ groupId: 'display-group', groupLabel: 'Display group' })
         );
         const undo_entry = mocks.commitUndoEntry.mock.calls[0]?.[0];
-        expect(undo_entry?.groupId).toBeUndefined();
-        expect(undo_entry?.groupLabel).toBeUndefined();
+        expect(undo_entry?.groupId).toBe('display-group');
+        expect(undo_entry?.groupLabel).toBe('Display group');
+        expect(undo_entry).not.toHaveProperty('transactionGroupId');
     });
 
     it('admits an explicitly atomic action into its undo group', async () => {
         const action: SetSnapValueAction = { type: 'setSnapValue', payload: { value: 0.25 } };
         const handler = create_mock_handler<SetSnapValueAction>({
-            describe: () => ({ label: 'Atomic group', inverseAction: { type: 'togglePlayback' } }),
+            describe: () => ({
+                label: 'Atomic group',
+                inverseAction: {
+                    type: 'restoreAdjustmentLayerMutation',
+                    payload: {
+                        adjustmentMutationId: 'mutation-1',
+                        operation: {
+                            kind: 'restore-mix',
+                            layerId: 'layer-1',
+                            previous: 0.25,
+                            expected: 0.5,
+                        },
+                        staleTransitions: [],
+                    },
+                },
+            }),
         });
         registerHandlerMap({ [action.type]: handler });
 
@@ -302,8 +318,46 @@ describe('executeAppAction', () => {
         });
 
         expect(mocks.commitUndoEntry).toHaveBeenCalledWith(
-            expect.objectContaining({ groupId: 'atomic-group', groupLabel: 'Atomic group' })
+            expect.objectContaining({
+                groupId: 'atomic-group',
+                groupLabel: 'Atomic group',
+                transactionGroupId: 'atomic-group',
+            })
         );
+    });
+
+    it('keeps an unsupported atomic request correlated but outside transaction membership', async () => {
+        const action: SetSnapValueAction = { type: 'setSnapValue', payload: { value: 0.25 } };
+        const handler = create_mock_handler<SetSnapValueAction>({
+            describe: () => ({ label: 'Unsupported atomic group', inverseAction: { type: 'togglePlayback' } }),
+        });
+        registerHandlerMap({ [action.type]: handler });
+
+        await executeAppAction(action, {
+            groupId: 'mixed-group',
+            groupLabel: 'Mixed group',
+            atomicUndoGroup: true,
+        });
+
+        const undo_entry = mocks.commitUndoEntry.mock.calls[0]?.[0];
+        expect(undo_entry?.groupId).toBe('mixed-group');
+        expect(undo_entry).not.toHaveProperty('transactionGroupId');
+    });
+
+    it('suppresses macro, history, replay, and undo records when a handler reports no change', async () => {
+        const action: SetSnapValueAction = { type: 'setSnapValue', payload: { value: 0.25 } };
+        const handler = create_mock_handler<SetSnapValueAction>({
+            describe: () => ({ label: 'No change', inverseAction: { type: 'togglePlayback' } }),
+        });
+        handler.execute.mockImplementation(() => ({ applied: false }) as never);
+        registerHandlerMap({ [action.type]: handler });
+
+        await executeAppAction(action, { groupId: 'display-group', groupLabel: 'Display group' });
+
+        expect(handler.execute).toHaveBeenCalledWith(action);
+        expect(mocks.recordAction).not.toHaveBeenCalled();
+        expect(mocks.recordActionHistoryMetadata).not.toHaveBeenCalled();
+        expect(mocks.commitUndoEntry).not.toHaveBeenCalled();
     });
 
     it('should log and rethrow rejected registered handlers without recording side effects', async () => {

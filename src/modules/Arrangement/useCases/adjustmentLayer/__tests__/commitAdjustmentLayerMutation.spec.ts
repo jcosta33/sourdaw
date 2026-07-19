@@ -14,6 +14,7 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock('../../../stores/adjustmentLayer', () => ({
+    createEffectiveAdjustmentLayerSignature: (layers: unknown) => JSON.stringify(layers),
     adjustmentLayerStore: {
         get value() {
             return mocks.layerState.value;

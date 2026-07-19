@@ -32,6 +32,36 @@ describe('computeTrackHash', () => {
         expect(hash1).not.toBe(hash2);
     });
 
+    it('includes every effective clip input, not only position and gain', async () => {
+        const base = {
+            id: 'c1',
+            trackId: 't1',
+            name: 'Clip',
+            startBeat: 0,
+            endBeat: 4,
+            type: 'audio' as const,
+            audioBufferId: 'buffer-1',
+            fadeInBeats: 0,
+            fadeOutBeats: 0,
+            gain: 1,
+            color: '#fff',
+            locked: false,
+            muted: false,
+        };
+
+        const audible = await computeTrackHash([base], []);
+        const muted = await computeTrackHash([{ ...base, muted: true }], []);
+
+        expect(audible).not.toBe(muted);
+    });
+
+    it('includes the effective adjustment-layer render signature', async () => {
+        const before = await computeTrackHash([], [], 'adjustment-mix:0.25');
+        const after = await computeTrackHash([], [], 'adjustment-mix:0.75');
+
+        expect(before).not.toBe(after);
+    });
+
     it('produces different hashes when device properties change', async () => {
         const clips: Clip[] = [];
         const devices1: Device[] = [{ id: 'd1', type: 'eq', bypassed: false, parameterValues: { freq: 1000 } } as any];

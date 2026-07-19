@@ -96,7 +96,10 @@ describe('revertActionGroup', () => {
         // Group entries are stripped from past and prepended (in order) to future.
         expect(mocks.undoStoreSet).toHaveBeenCalledWith({
             past: [other],
-            future: [g1, g2],
+            future: [
+                { ...g1, transactionGroupId: 'g1' },
+                { ...g2, transactionGroupId: 'g1' },
+            ],
         });
         // Undo-tree position follows the new top of past.
         expect(mocks.undoTreeMoveTo).toHaveBeenCalledWith('keep');

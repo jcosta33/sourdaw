@@ -1,4 +1,5 @@
 import { handleAddAdjustmentRegion } from '../handlers/batchFeature/handleAddAdjustmentRegion';
+import { handleApplyAdjustmentLayerMutationBatch } from '../handlers/batchFeature/handleApplyAdjustmentLayerMutationBatch';
 import { handleCreateAdjustmentLayer } from '../handlers/batchFeature/handleCreateAdjustmentLayer';
 import { handleCreateCompGroup } from '../handlers/batchFeature/handleCreateCompGroup';
 import { handleMoveAdjustmentRegion } from '../handlers/batchFeature/handleMoveAdjustmentRegion';
@@ -182,6 +183,7 @@ export function getArrangementHandlers() {
         setLayerInsertionIndex: handleSetLayerInsertionIndex,
         restoreAdjustmentLayerMutation: handleRestoreAdjustmentLayerMutation,
         restoreAdjustmentLayerMutationBatch: handleRestoreAdjustmentLayerMutationBatch,
+        applyAdjustmentLayerMutationBatch: handleApplyAdjustmentLayerMutationBatch,
         ...clipHandlers,
     };
 }

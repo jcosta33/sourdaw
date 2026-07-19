@@ -2,12 +2,25 @@ import { cacheAudioBuffer } from '#/modules/AudioEngine/useCases';
 import { transportStore } from '#/modules/Transport/stores';
 
 import { updateTrack } from '../../repositories/track/updateTrack';
-import { computeTrackHash } from '../../services/computeTrackHash';
+import { computeFreezeRenderInputHash } from '../../services/computeFreezeRenderInputHash';
+import { adjustmentLayerStore, createEffectiveAdjustmentLayerSignature } from '../../stores/adjustmentLayer';
 import { trackStore } from '../../stores/trackStore';
 
 import { renderTrackOffline } from './renderOffline';
 
 export const activeFreezeTasks = new Map<string, AbortController>();
+
+async function compute_render_input_hash(
+    track: NonNullable<typeof trackStore.value>['tracks'][number],
+    orderedTrackIds: readonly string[]
+): Promise<string> {
+    const adjustment_signature = createEffectiveAdjustmentLayerSignature(
+        adjustmentLayerStore.value?.layers ?? [],
+        orderedTrackIds,
+        track.id
+    );
+    return computeFreezeRenderInputHash(track.clips, track.devices, adjustment_signature);
+}
 
 function create_freezing_state(track: NonNullable<typeof trackStore.value>['tracks'][number]) {
     const freeze_state = { ...track.freezeState };
@@ -53,7 +66,10 @@ export async function freezeTrack(trackId: string): Promise<void> {
     }));
 
     try {
-        const hash = await computeTrackHash(track.clips, track.devices);
+        const hash = await compute_render_input_hash(
+            track,
+            state.tracks.map((candidate) => candidate.id)
+        );
 
         let startBeat = Infinity;
         let endBeat = -Infinity;
@@ -97,11 +113,30 @@ export async function freezeTrack(trackId: string): Promise<void> {
         if (activeFreezeTasks.get(trackId) !== abortController) {
             return;
         }
-        const current_track = trackStore.value?.tracks.find((candidate) => candidate.id === trackId);
+        const current_track_state = trackStore.value;
+        const current_layer_state = adjustmentLayerStore.value;
+        const current_track = current_track_state?.tracks.find((candidate) => candidate.id === trackId);
         if (
+            !current_track_state ||
             !current_track ||
             current_track.freezeState.status !== 'freezing' ||
             current_track.freezeState.adjustmentLayerMutationId
+        ) {
+            activeFreezeTasks.delete(trackId);
+            invalidate_finished_render(trackId);
+            return;
+        }
+        const current_hash = await compute_render_input_hash(
+            current_track,
+            current_track_state.tracks.map((candidate) => candidate.id)
+        );
+        const latest_track_state = trackStore.value;
+        const latest_track = latest_track_state?.tracks.find((candidate) => candidate.id === trackId);
+        if (
+            activeFreezeTasks.get(trackId) !== abortController ||
+            adjustmentLayerStore.value !== current_layer_state ||
+            latest_track !== current_track ||
+            current_hash !== hash
         ) {
             activeFreezeTasks.delete(trackId);
             invalidate_finished_render(trackId);

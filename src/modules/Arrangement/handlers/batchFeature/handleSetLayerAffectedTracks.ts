@@ -10,7 +10,7 @@ import {
 
 export const handleSetLayerAffectedTracks = createHandler<'setLayerAffectedTracks'>({
     execute: (a) => {
-        commitAdjustmentLayerMutation({
+        return commitAdjustmentLayerMutation({
             adjustmentMutationId: getAdjustmentLayerMutationId(a),
             mutation: () => {
                 setLayerAffectedTracks(a.payload.layerId, a.payload.trackIds);

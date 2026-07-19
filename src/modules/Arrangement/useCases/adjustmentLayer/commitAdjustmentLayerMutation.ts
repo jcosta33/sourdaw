@@ -1,81 +1,43 @@
 import { batchStoreUpdates } from '#/infra/store/createStore';
 
-import { adjustmentLayerStore, type AdjustmentLayer } from '../../stores/adjustmentLayer';
-import { trackStore, type Track } from '../../stores/trackStore';
+import { adjustmentLayerStore, createEffectiveAdjustmentLayerSignature } from '../../stores/adjustmentLayer';
+import { trackStore } from '../../stores/trackStore';
 
 type CommitAdjustmentLayerMutationInput = {
     adjustmentMutationId: string;
     mutation: () => void;
 };
 
-function resolve_affected_track_ids(layer: AdjustmentLayer, tracks: readonly Track[]): string[] {
-    if (layer.affectedTrackIds.length > 0) {
-        const track_ids = new Set(tracks.map((track) => track.id));
-        return layer.affectedTrackIds.filter((track_id) => track_ids.has(track_id));
-    }
-
-    return tracks.slice(layer.insertionIndex).map((track) => track.id);
-}
-
-function normalize_number(value: number, minimum: number, maximum: number): number {
-    return Math.max(minimum, Math.min(maximum, value));
-}
-
-function create_audible_layer_signature(
-    layers: readonly AdjustmentLayer[],
-    tracks: readonly Track[],
-    track: Track
-): string {
-    return JSON.stringify(
-        layers.flatMap((layer) => {
-            const mix = normalize_number(layer.mix, 0, 1);
-            if (!layer.enabled || mix === 0 || !resolve_affected_track_ids(layer, tracks).includes(track.id)) {
-                return [];
-            }
-            return [
-                {
-                    id: layer.id,
-                    effectType: layer.effectType,
-                    mix,
-                    parameters: layer.parameters.map((parameter) => ({
-                        name: parameter.name,
-                        value: normalize_number(parameter.value, parameter.min, parameter.max),
-                    })),
-                    regions: layer.regions.map((region) => ({
-                        startBeat: region.startBeat,
-                        endBeat: region.endBeat,
-                        blend: region.blend,
-                        fadeInBeats: Math.max(0, region.fadeInBeats),
-                        fadeOutBeats: Math.max(0, region.fadeOutBeats),
-                    })),
-                },
-            ];
-        })
-    );
-}
-
-export function commitAdjustmentLayerMutation({
-    adjustmentMutationId,
-    mutation,
-}: CommitAdjustmentLayerMutationInput): void {
+export function commitAdjustmentLayerMutation({ adjustmentMutationId, mutation }: CommitAdjustmentLayerMutationInput): {
+    applied: boolean;
+} {
     const before_layer_state = adjustmentLayerStore.value;
     const before_track_state = trackStore.value;
     const before_layers = before_layer_state?.layers ?? [];
+    let applied = false;
 
     batchStoreUpdates(() => {
         try {
             mutation();
 
             const after_layers = adjustmentLayerStore.value?.layers ?? [];
+            if (JSON.stringify(after_layers) === JSON.stringify(before_layers)) {
+                if (adjustmentLayerStore.value !== before_layer_state) {
+                    adjustmentLayerStore.set(before_layer_state);
+                }
+                return;
+            }
+            applied = true;
             const track_state = trackStore.value;
             if (!track_state) {
                 return;
             }
+            const ordered_track_ids = track_state.tracks.map((track) => track.id);
 
             const affected_track_ids = new Set(
                 track_state.tracks.flatMap((track) =>
-                    create_audible_layer_signature(before_layers, track_state.tracks, track) !==
-                    create_audible_layer_signature(after_layers, track_state.tracks, track)
+                    createEffectiveAdjustmentLayerSignature(before_layers, ordered_track_ids, track.id) !==
+                    createEffectiveAdjustmentLayerSignature(after_layers, ordered_track_ids, track.id)
                         ? [track.id]
                         : []
                 )
@@ -139,4 +101,6 @@ export function commitAdjustmentLayerMutation({
             throw error;
         }
     });
+
+    return { applied };
 }

@@ -30,7 +30,14 @@ export { updateClipInStore } from './updateClipInStore';
 export { appendClipToTrack } from './appendClipToTrack';
 export { appendTrack } from './appendTrack';
 
-export { adjustmentLayerStore, EFFECT_PRESETS, LAYER_COLORS } from './adjustmentLayer';
+export {
+    adjustmentLayerStore,
+    computeAdjustmentLayerBlendAtBeat,
+    createEffectiveAdjustmentLayerSignature,
+    resolveAdjustmentLayerTrackIds,
+    EFFECT_PRESETS,
+    LAYER_COLORS,
+} from './adjustmentLayer';
 export type {
     AdjustmentEffectType,
     AdjustmentLayer,

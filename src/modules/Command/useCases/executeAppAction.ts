@@ -5,7 +5,7 @@ import {
     waitForAutomergeSnapshotTransaction,
 } from '#/infra/store/storage/createAutomergeStorage';
 import { setSemanticContext, clearSemanticContext } from '#/modules/CrdtDocument/stores';
-import { type AppAction, type ExecuteOptions } from '#/utils/handlerContract';
+import { type ActionExecutionResult, type AppAction, type ExecuteOptions } from '#/utils/handlerContract';
 
 import { AppActionCommittedError, AppActionNotDispatchedError } from '../errors/AppActionExecutionError';
 import { registerActionReplayCapability, revokeActionReplayCapability } from '../stores/actionReplayCapabilities';
@@ -18,6 +18,13 @@ import { recordAction } from './macro/recording/recordAction';
 import { traceAppAction } from './traceAppAction';
 
 type ExecuteAppAction = (action: AppAction, options?: ExecuteOptions) => Promise<void>;
+
+function normalize_action_execution_result(result: void | ActionExecutionResult): ActionExecutionResult {
+    if (!result) {
+        return { applied: true };
+    }
+    return result;
+}
 
 export const executeAppAction: ExecuteAppAction = inject({ logger })(
     ({ logger }) =>
@@ -50,11 +57,12 @@ export const executeAppAction: ExecuteAppAction = inject({ logger })(
                 entityRefs: [],
             });
 
+            let execution_result: void | ActionExecutionResult;
             try {
                 const execution = runWithAutomergeStorageTransaction(options?.snapshotTransaction, () =>
                     handler.execute(action)
                 );
-                await execution;
+                execution_result = await execution;
             } catch (error) {
                 try {
                     clearSemanticContext();
@@ -75,6 +83,18 @@ export const executeAppAction: ExecuteAppAction = inject({ logger })(
                 const committed_error = new AppActionCommittedError(action.type, error);
                 logger.error(committed_error);
                 throw committed_error;
+            }
+
+            const action_execution_result = normalize_action_execution_result(execution_result);
+            try {
+                options?.onExecuted?.(action_execution_result);
+            } catch (error) {
+                const committed_error = new AppActionCommittedError(action.type, error);
+                logger.error(committed_error);
+                throw committed_error;
+            }
+            if (!action_execution_result.applied) {
+                return;
             }
 
             try {
@@ -118,9 +138,15 @@ export const executeAppAction: ExecuteAppAction = inject({ logger })(
                             undoResult.inverseAction,
                             options?.source ?? 'manual'
                         );
-                        if (options?.atomicUndoGroup && options.groupId) {
+                        if (options?.groupId) {
                             entry.groupId = options.groupId;
                             entry.groupLabel = options.groupLabel;
+                            if (
+                                options.atomicUndoGroup &&
+                                undoResult.inverseAction.type === 'restoreAdjustmentLayerMutation'
+                            ) {
+                                entry.transactionGroupId = options.groupId;
+                            }
                         }
                         commitUndoEntry(entry);
                     }

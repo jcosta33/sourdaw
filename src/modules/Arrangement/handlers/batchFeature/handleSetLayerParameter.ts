@@ -10,7 +10,7 @@ import {
 
 export const handleSetLayerParameter = createHandler<'setLayerParameter'>({
     execute: (a) => {
-        commitAdjustmentLayerMutation({
+        return commitAdjustmentLayerMutation({
             adjustmentMutationId: getAdjustmentLayerMutationId(a),
             mutation: () => {
                 setLayerParameter(a.payload.layerId, a.payload.paramName, a.payload.value);

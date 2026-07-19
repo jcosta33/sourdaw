@@ -10,7 +10,7 @@ import {
 
 export const handleRemoveAdjustmentRegion = createHandler<'removeAdjustmentRegion'>({
     execute: (a) => {
-        commitAdjustmentLayerMutation({
+        return commitAdjustmentLayerMutation({
             adjustmentMutationId: getAdjustmentLayerMutationId(a),
             mutation: () => {
                 removeAdjustmentRegion(a.payload.layerId, a.payload.regionId);

@@ -60,6 +60,88 @@ export type AdjustmentLayerState = {
     layers: AdjustmentLayer[];
 };
 
+function clamp_unit_interval(value: number): number {
+    return Math.max(0, Math.min(1, value));
+}
+
+export function resolveAdjustmentLayerTrackIds(layer: AdjustmentLayer, orderedTrackIds: readonly string[]): string[] {
+    if (layer.affectedTrackIds.length > 0) {
+        const available_track_ids = new Set(orderedTrackIds);
+        return layer.affectedTrackIds.filter((track_id) => available_track_ids.has(track_id));
+    }
+    return orderedTrackIds.slice(layer.insertionIndex);
+}
+
+export function computeAdjustmentLayerBlendAtBeat(layer: AdjustmentLayer, beat: number): number {
+    if (!layer.enabled) {
+        return 0;
+    }
+    const mix = clamp_unit_interval(layer.mix);
+    if (layer.regions.length === 0) {
+        return mix;
+    }
+
+    let total = 0;
+    for (const region of layer.regions) {
+        if (region.endBeat <= region.startBeat || beat < region.startBeat || beat >= region.endBeat) {
+            continue;
+        }
+        const fade_in = Math.max(0, region.fadeInBeats);
+        const fade_out = Math.max(0, region.fadeOutBeats);
+        let envelope = 1;
+        if (fade_in > 0 && beat < region.startBeat + fade_in) {
+            envelope = (beat - region.startBeat) / fade_in;
+        } else if (fade_out > 0 && beat > region.endBeat - fade_out) {
+            envelope = Math.max(0, (region.endBeat - beat) / fade_out);
+        }
+        total += clamp_unit_interval(region.blend) * envelope;
+    }
+    return clamp_unit_interval(total * mix);
+}
+
+function is_potentially_audible_region(region: AdjustmentRegion): boolean {
+    return region.endBeat > region.startBeat && clamp_unit_interval(region.blend) > 0;
+}
+
+export function createEffectiveAdjustmentLayerSignature(
+    layers: readonly AdjustmentLayer[],
+    orderedTrackIds: readonly string[],
+    trackId: string
+): string {
+    return JSON.stringify(
+        layers.flatMap((layer) => {
+            const mix = clamp_unit_interval(layer.mix);
+            const audible_regions = layer.regions.filter(is_potentially_audible_region);
+            if (
+                !layer.enabled ||
+                mix === 0 ||
+                !resolveAdjustmentLayerTrackIds(layer, orderedTrackIds).includes(trackId) ||
+                (layer.regions.length > 0 && audible_regions.length === 0)
+            ) {
+                return [];
+            }
+            return [
+                {
+                    id: layer.id,
+                    effectType: layer.effectType,
+                    mix,
+                    parameters: layer.parameters.map((parameter) => ({
+                        name: parameter.name,
+                        value: Math.max(parameter.min, Math.min(parameter.max, parameter.value)),
+                    })),
+                    regions: audible_regions.map((region) => ({
+                        startBeat: region.startBeat,
+                        endBeat: region.endBeat,
+                        blend: clamp_unit_interval(region.blend),
+                        fadeInBeats: Math.max(0, region.fadeInBeats),
+                        fadeOutBeats: Math.max(0, region.fadeOutBeats),
+                    })),
+                },
+            ];
+        })
+    );
+}
+
 export const adjustmentLayerStore = createStore<AdjustmentLayerState>({
     initialData: { layers: [] },
 });

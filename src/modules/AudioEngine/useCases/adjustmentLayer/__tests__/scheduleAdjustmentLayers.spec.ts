@@ -98,4 +98,28 @@ describe('scheduleAdjustmentLayers', () => {
             parameters: { 'High Gain': 6 },
         });
     });
+
+    it.each([
+        { blend: 0, startBeat: 4, endBeat: 8 },
+        { blend: 1, startBeat: 4, endBeat: 4 },
+    ])('excludes permanently silent region sets from runtime application', (region) => {
+        const fakeLayer = {
+            id: 'silent-layer',
+            name: 'Silent layer',
+            effectType: 'eq' as const,
+            parameters: [],
+            affectedTrackIds: ['t1'],
+            insertionIndex: 0,
+            regions: [{ id: 'r1', ...region, fadeInBeats: 0, fadeOutBeats: 0 }],
+            enabled: true,
+            mix: 1,
+            color: '#fff',
+        };
+        mocks.storeValue = { layers: [fakeLayer] };
+        mocks.applyLayers.mockReturnValue([]);
+
+        scheduleAdjustmentLayers(5);
+
+        expect(mocks.applyLayers).toHaveBeenCalledWith({ activeLayers: [], beat: 5 });
+    });
 });

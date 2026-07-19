@@ -89,6 +89,11 @@ function sanitizeStoredEntry(value: unknown): ActionUndoEntry | null {
         return null;
     }
 
+    const transactionGroupId = getOptionalString(value, 'transactionGroupId');
+    if (transactionGroupId === null) {
+        return null;
+    }
+
     const entry: ActionUndoEntry = {
         id: value.id,
         kind: 'action',
@@ -104,6 +109,9 @@ function sanitizeStoredEntry(value: unknown): ActionUndoEntry | null {
     }
     if (groupLabel !== undefined) {
         entry.groupLabel = groupLabel;
+    }
+    if (transactionGroupId !== undefined) {
+        entry.transactionGroupId = transactionGroupId;
     }
 
     return entry;

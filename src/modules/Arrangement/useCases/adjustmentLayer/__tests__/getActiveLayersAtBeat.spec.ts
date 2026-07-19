@@ -7,6 +7,15 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock('#/modules/Arrangement/stores/adjustmentLayer', () => ({
+    computeAdjustmentLayerBlendAtBeat: (
+        layer: { enabled: boolean; regions: { startBeat: number; endBeat: number }[] },
+        beat: number
+    ) =>
+        layer.enabled &&
+        (layer.regions.length === 0 ||
+            layer.regions.some((region) => beat >= region.startBeat && beat < region.endBeat))
+            ? 1
+            : 0,
     adjustmentLayerStore: {
         get value() {
             return mocks.adjustmentLayerStoreValue.value;

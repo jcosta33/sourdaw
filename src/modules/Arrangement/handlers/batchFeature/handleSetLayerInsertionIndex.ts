@@ -10,7 +10,7 @@ import {
 
 export const handleSetLayerInsertionIndex = createHandler<'setLayerInsertionIndex'>({
     execute: (a) => {
-        commitAdjustmentLayerMutation({
+        return commitAdjustmentLayerMutation({
             adjustmentMutationId: getAdjustmentLayerMutationId(a),
             mutation: () => {
                 setLayerInsertionIndex(a.payload.layerId, a.payload.insertionIndex);

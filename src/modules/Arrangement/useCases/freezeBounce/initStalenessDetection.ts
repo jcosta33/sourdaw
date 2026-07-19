@@ -1,5 +1,6 @@
 import { updateTrack } from '../../repositories/track/updateTrack';
-import { computeTrackHash } from '../../services/computeTrackHash';
+import { computeFreezeRenderInputHash } from '../../services/computeFreezeRenderInputHash';
+import { adjustmentLayerStore, createEffectiveAdjustmentLayerSignature } from '../../stores/adjustmentLayer';
 import { trackStore, type TrackStoreState } from '../../stores/trackStore';
 
 let isEvaluating = false;
@@ -34,7 +35,15 @@ export function initStalenessDetection(): () => void {
 
                     if (track.freezeState.status === 'frozen') {
                         if (track.clips !== prevTrack.clips || track.devices !== prevTrack.devices) {
-                            const hash = await computeTrackHash(track.clips, track.devices);
+                            const hash = await computeFreezeRenderInputHash(
+                                track.clips,
+                                track.devices,
+                                createEffectiveAdjustmentLayerSignature(
+                                    adjustmentLayerStore.value?.layers ?? [],
+                                    state.tracks.map((candidate) => candidate.id),
+                                    track.id
+                                )
+                            );
                             if (hash !== track.freezeState.sourceContentHash) {
                                 updateTrack(track.id, (time) => ({
                                     ...time,

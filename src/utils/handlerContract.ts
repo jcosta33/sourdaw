@@ -169,6 +169,49 @@ type AdjustmentMutationIdentity = {
     adjustmentMutationId?: string;
 };
 
+export type AdjustmentLayerMutationAction =
+    | {
+          type: 'createAdjustmentLayer';
+          payload: { name: string; effectType: string; layerId?: string } & AdjustmentMutationIdentity;
+      }
+    | { type: 'removeAdjustmentLayer'; payload: { layerId: string } & AdjustmentMutationIdentity }
+    | { type: 'toggleAdjustmentLayer'; payload: { layerId: string } & AdjustmentMutationIdentity }
+    | {
+          type: 'setLayerParameter';
+          payload: { layerId: string; paramName: string; value: number } & AdjustmentMutationIdentity;
+      }
+    | { type: 'setLayerMix'; payload: { layerId: string; mix: number } & AdjustmentMutationIdentity }
+    | {
+          type: 'addAdjustmentRegion';
+          payload: {
+              layerId: string;
+              startBeat: number;
+              endBeat: number;
+              blend?: number;
+              regionId?: string;
+          } & AdjustmentMutationIdentity;
+      }
+    | {
+          type: 'removeAdjustmentRegion';
+          payload: { layerId: string; regionId: string } & AdjustmentMutationIdentity;
+      }
+    | {
+          type: 'moveAdjustmentRegion';
+          payload: { regionId: string; startBeat: number; endBeat: number } & AdjustmentMutationIdentity;
+      }
+    | {
+          type: 'setLayerFades';
+          payload: { regionId: string; fadeInBeats: number; fadeOutBeats: number } & AdjustmentMutationIdentity;
+      }
+    | {
+          type: 'setLayerAffectedTracks';
+          payload: { layerId: string; trackIds: string[] } & AdjustmentMutationIdentity;
+      }
+    | {
+          type: 'setLayerInsertionIndex';
+          payload: { layerId: string; insertionIndex: number } & AdjustmentMutationIdentity;
+      };
+
 export type AppAction =
     | { type: 'addTrack'; payload: { id?: string; name: string; kind: TrackKind } }
     | { type: 'removeTrack'; payload: { trackId: string } }
@@ -552,47 +595,7 @@ export type AppAction =
     | { type: 'triggerScene'; payload: { column: number } }
     | { type: 'nextSetlistItem'; payload?: undefined }
     | { type: 'previousSetlistItem'; payload?: undefined }
-    | {
-          type: 'createAdjustmentLayer';
-          payload: { name: string; effectType: string; layerId?: string } & AdjustmentMutationIdentity;
-      }
-    | { type: 'removeAdjustmentLayer'; payload: { layerId: string } & AdjustmentMutationIdentity }
-    | { type: 'toggleAdjustmentLayer'; payload: { layerId: string } & AdjustmentMutationIdentity }
-    | {
-          type: 'setLayerParameter';
-          payload: { layerId: string; paramName: string; value: number } & AdjustmentMutationIdentity;
-      }
-    | { type: 'setLayerMix'; payload: { layerId: string; mix: number } & AdjustmentMutationIdentity }
-    | {
-          type: 'addAdjustmentRegion';
-          payload: {
-              layerId: string;
-              startBeat: number;
-              endBeat: number;
-              blend?: number;
-              regionId?: string;
-          } & AdjustmentMutationIdentity;
-      }
-    | {
-          type: 'removeAdjustmentRegion';
-          payload: { layerId: string; regionId: string } & AdjustmentMutationIdentity;
-      }
-    | {
-          type: 'moveAdjustmentRegion';
-          payload: { regionId: string; startBeat: number; endBeat: number } & AdjustmentMutationIdentity;
-      }
-    | {
-          type: 'setLayerFades';
-          payload: { regionId: string; fadeInBeats: number; fadeOutBeats: number } & AdjustmentMutationIdentity;
-      }
-    | {
-          type: 'setLayerAffectedTracks';
-          payload: { layerId: string; trackIds: string[] } & AdjustmentMutationIdentity;
-      }
-    | {
-          type: 'setLayerInsertionIndex';
-          payload: { layerId: string; insertionIndex: number } & AdjustmentMutationIdentity;
-      }
+    | AdjustmentLayerMutationAction
     | {
           type: 'restoreAdjustmentLayerMutation';
           payload: AdjustmentLayerMutationRestorePayload;
@@ -600,6 +603,10 @@ export type AppAction =
     | {
           type: 'restoreAdjustmentLayerMutationBatch';
           payload: { mutations: AdjustmentLayerMutationRestorePayload[] };
+      }
+    | {
+          type: 'applyAdjustmentLayerMutationBatch';
+          payload: { actions: AdjustmentLayerMutationAction[] };
       }
     | { type: 'detectTransients'; payload: { clipId: string; sensitivity?: number } }
     | { type: 'quantizeTransients'; payload: { clipId: string } }
@@ -638,10 +645,16 @@ export type HandlerDescribeResult = {
     inverseAction?: AppAction | null;
 };
 
+export type ActionExecutionResult = {
+    applied: boolean;
+    /** Fresh inverses prepared by one owning aggregate execution, in forward order. */
+    inverseActions?: AppAction[];
+};
+
 /** One dispatchable action's handler. Built via `createHandler` and merged into a module
  *  handler map by each `get<Module>Handlers` factory. */
 export type ActionHandler<Action extends AppAction = AppAction> = {
-    execute: (action: Action) => void | Promise<void>;
+    execute: (action: Action) => void | ActionExecutionResult | Promise<void | ActionExecutionResult>;
     describe: (action: Action) => HandlerDescribeResult;
     undoable: boolean;
 };
@@ -663,4 +676,6 @@ export type ExecuteOptions = {
     /** Internal redo seam: receives the pre-execution undo description while
      *  `skipUndo` prevents a duplicate history entry. */
     onUndoPrepared?: (result: HandlerDescribeResult | null) => void;
+    /** Internal aggregate-redo seam for receiving freshly prepared inverse actions. */
+    onExecuted?: (result: ActionExecutionResult) => void;
 };

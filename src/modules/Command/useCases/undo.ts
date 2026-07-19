@@ -43,10 +43,10 @@ async function undoImpl(): Promise<void> {
 
     const lastEntry = state.past[state.past.length - 1]!;
 
-    if (lastEntry.groupId) {
+    if (lastEntry.transactionGroupId) {
         const groupEntries: UndoEntry[] = [];
         let index = state.past.length - 1;
-        while (index >= 0 && state.past[index]!.groupId === lastEntry.groupId) {
+        while (index >= 0 && state.past[index]!.transactionGroupId === lastEntry.transactionGroupId) {
             groupEntries.unshift(state.past[index]!);
             index--;
         }

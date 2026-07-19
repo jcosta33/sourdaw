@@ -63,6 +63,7 @@ function adjustmentEntry(id: string, mix: number, previous: number): ActionUndoE
     return actionEntry({
         id,
         groupId: 'group',
+        transactionGroupId: 'group',
         action: { type: 'setLayerMix', payload: { layerId: 'layer-1', mix } },
         inverseAction: {
             type: 'restoreAdjustmentLayerMutation',
@@ -146,7 +147,7 @@ describe('undo', () => {
         expect(mocks.undoTreeMoveTo).toHaveBeenCalledWith('previous');
     });
 
-    it('refuses a multi-entry group without a transactional aggregate before replay', async () => {
+    it('treats correlation-only entries as individual undo operations', async () => {
         const older = actionEntry({
             id: 'older',
             action: { type: 'togglePlayback' },
@@ -171,10 +172,34 @@ describe('undo', () => {
 
         await undo();
 
-        expect(domain_value).toBe('original');
-        expect(mocks.executeAppAction).not.toHaveBeenCalled();
-        expect(mocks.undoStoreSet).not.toHaveBeenCalled();
-        expect(mocks.undoTreeMoveTo).not.toHaveBeenCalled();
+        expect(domain_value).toBe('partially-undone');
+        expect(mocks.executeAppAction).toHaveBeenCalledOnce();
+        expect(mocks.executeAppAction).toHaveBeenCalledWith(newer.inverseAction, {
+            skipUndo: true,
+            skipMacroRecording: true,
+        });
+        expect(mocks.undoStoreSet).toHaveBeenCalledWith({ past: [older], future: [newer] });
+    });
+
+    it('does not let correlation metadata turn a mixed group into a blocked transaction', async () => {
+        const adjustment = adjustmentEntry('adjustment', 0.75, 0.25);
+        Object.assign(adjustment, { transactionGroupId: 'group' });
+        const unrelated = actionEntry({
+            id: 'unrelated',
+            groupId: 'group',
+            action: { type: 'togglePlayback' },
+            inverseAction: { type: 'toggleRecording' },
+        });
+        mocks.undoStoreValue.value = { past: [adjustment, unrelated], future: [] };
+
+        await undo();
+
+        expect(mocks.executeAppAction).toHaveBeenCalledOnce();
+        expect(mocks.executeAppAction).toHaveBeenCalledWith(unrelated.inverseAction, {
+            skipUndo: true,
+            skipMacroRecording: true,
+        });
+        expect(mocks.undoStoreSet).toHaveBeenCalledWith({ past: [adjustment], future: [unrelated] });
     });
 
     it('should not consume an inert action entry without an inverseAction', async () => {

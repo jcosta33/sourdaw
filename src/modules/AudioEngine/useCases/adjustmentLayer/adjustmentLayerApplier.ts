@@ -1,4 +1,8 @@
-import { type AdjustmentLayer } from '#/modules/Arrangement/stores';
+import {
+    computeAdjustmentLayerBlendAtBeat,
+    resolveAdjustmentLayerTrackIds,
+    type AdjustmentLayer,
+} from '#/modules/Arrangement/stores';
 
 import { type AppliedLayerRecord } from '../../stores/adjustmentApplicationStore';
 
@@ -52,39 +56,6 @@ export type CreateAdjustmentLayerApplierOutput = {
 export function createAdjustmentLayerApplier(deps: AdjustmentApplierDeps): CreateAdjustmentLayerApplierOutput {
     const state: ApplierState = { activePairs: new Set() };
 
-    const resolveAffectedTrackIds = (layer: AdjustmentLayer): string[] => {
-        if (layer.affectedTrackIds.length > 0) {
-            return layer.affectedTrackIds;
-        }
-        const all = deps.getAllTrackIds();
-        return all.slice(layer.insertionIndex);
-    };
-
-    const computeRegionBlend = (layer: AdjustmentLayer, beat: number): number => {
-        if (!layer.enabled) {
-            return 0;
-        }
-        if (layer.regions.length === 0) {
-            return Math.max(0, Math.min(1, layer.mix));
-        }
-        let total = 0;
-        for (const region of layer.regions) {
-            if (beat < region.startBeat || beat >= region.endBeat) {
-                continue;
-            }
-            const fadeIn = Math.max(0, region.fadeInBeats);
-            const fadeOut = Math.max(0, region.fadeOutBeats);
-            let envelope = 1;
-            if (fadeIn > 0 && beat < region.startBeat + fadeIn) {
-                envelope = (beat - region.startBeat) / fadeIn;
-            } else if (fadeOut > 0 && beat > region.endBeat - fadeOut) {
-                envelope = Math.max(0, (region.endBeat - beat) / fadeOut);
-            }
-            total += region.blend * envelope;
-        }
-        return Math.max(0, Math.min(1, total * layer.mix));
-    };
-
     const parametersToMap = (layer: AdjustmentLayer): Record<string, number> => {
         const map: Record<string, number> = {};
         for (const p of layer.parameters) {
@@ -126,11 +97,11 @@ export function createAdjustmentLayerApplier(deps: AdjustmentApplierDeps): Creat
             const newlyActive = new Set<string>();
 
             for (const layer of activeLayers) {
-                const blend = computeRegionBlend(layer, beat);
+                const blend = computeAdjustmentLayerBlendAtBeat(layer, beat);
                 if (blend <= 0) {
                     continue;
                 }
-                const trackIds = resolveAffectedTrackIds(layer);
+                const trackIds = resolveAdjustmentLayerTrackIds(layer, deps.getAllTrackIds());
                 for (const trackId of trackIds) {
                     const key = pairKey(layer.id, trackId);
                     newlyActive.add(key);

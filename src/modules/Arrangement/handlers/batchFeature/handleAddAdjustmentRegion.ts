@@ -18,7 +18,7 @@ function ensure_region_id(action: AddAdjustmentRegionAction): string {
 
 export const handleAddAdjustmentRegion = createHandler<'addAdjustmentRegion'>({
     execute: (a) => {
-        commitAdjustmentLayerMutation({
+        return commitAdjustmentLayerMutation({
             adjustmentMutationId: getAdjustmentLayerMutationId(a),
             mutation: () => {
                 addAdjustmentRegion(

@@ -10,7 +10,7 @@ import {
 
 export const handleSetLayerMix = createHandler<'setLayerMix'>({
     execute: (a) => {
-        commitAdjustmentLayerMutation({
+        return commitAdjustmentLayerMutation({
             adjustmentMutationId: getAdjustmentLayerMutationId(a),
             mutation: () => {
                 setLayerMix(a.payload.layerId, a.payload.mix);

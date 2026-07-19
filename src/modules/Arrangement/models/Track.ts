@@ -17,7 +17,7 @@ export type FreezeState = {
     freezeId?: string; // Unique render identifier
     frozenBufferId?: string; // Reference to audioBufferCache
     frozenAudioHash?: string; // SHA-256 of rendered audio
-    sourceContentHash?: string; // Hash of clips + positions + device states
+    sourceContentHash?: string; // Hash of complete clip/device + effective adjustment render inputs
     deviceChainHash?: string; // Hash of ordered device IDs + states
     renderSettings?: {
         sampleRate: number;

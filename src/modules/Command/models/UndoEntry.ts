@@ -7,8 +7,11 @@ type UndoEntryBase = {
     label: string;
     timestamp: number;
     source: UndoSource;
+    /** Correlation identity for display/history, independent of transactional undo. */
     groupId?: string;
     groupLabel?: string;
+    /** Membership in an undo/redo group with one owning aggregate implementation. */
+    transactionGroupId?: string;
 };
 
 export type ActionUndoEntry = UndoEntryBase & {

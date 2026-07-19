@@ -211,6 +211,22 @@ describe('adjustmentLayerFreezeStaleness', () => {
                 payload: { layerId: 'layer-1', mix: 2 },
             } satisfies AppAction,
         },
+        {
+            label: 'a parameter edit behind a zero-blend region set',
+            layers: [create_layer({ regions: [{ ...region, blend: 0 }] })],
+            action: {
+                type: 'setLayerParameter',
+                payload: { layerId: 'layer-1', paramName: 'Gain', value: 6 },
+            } satisfies AppAction,
+        },
+        {
+            label: 'a parameter edit behind a zero-duration region set',
+            layers: [create_layer({ regions: [{ ...region, endBeat: region.startBeat }] })],
+            action: {
+                type: 'setLayerParameter',
+                payload: { layerId: 'layer-1', paramName: 'Gain', value: 6 },
+            } satisfies AppAction,
+        },
     ])('does not stale frozen tracks for $label', async ({ layers, action }) => {
         adjustmentLayerStore.set({ layers });
 
@@ -219,6 +235,17 @@ describe('adjustmentLayerFreezeStaleness', () => {
         expect(get_track('track-a').freezeState.status).toBe('frozen');
         expect(get_track('track-b').freezeState.status).toBe('frozen');
         expect(get_track('track-c').freezeState.status).toBe('frozen');
+    });
+
+    it('does not record a normalized adjustment no-op in undo or macro history', async () => {
+        adjustmentLayerStore.set({ layers: [create_layer({ mix: 1 })] });
+        macroStore.set({ macros: [], recording: true, currentRecording: [] });
+
+        await executeAppAction({ type: 'setLayerMix', payload: { layerId: 'layer-1', mix: 2 } });
+
+        expect(get_layer_state().layers[0]?.mix).toBe(1);
+        expect(undoStore.value?.past).toHaveLength(0);
+        expect(macroStore.value?.currentRecording).toHaveLength(0);
     });
 
     it('uses the current insertion scope when affectedTrackIds is empty', async () => {
@@ -338,11 +365,82 @@ describe('adjustmentLayerFreezeStaleness', () => {
             true
         );
 
+        adjustmentLayerStore.set({
+            layers: get_layer_state().layers.map((layer) => (layer.id === 'layer-1' ? { ...layer, mix: 0.5 } : layer)),
+        });
+        observations.length = 0;
+        await redo();
+
+        expect(get_layer_state().layers[0]?.mix).toBe(0.75);
+        expect(get_layer_state().layers[0]?.parameters[0]?.value).toBe(6);
+        expect(get_track('track-a').freezeState.status).toBe('stale');
+        expect(undoStore.value?.past).toHaveLength(2);
+        expect(undoStore.value?.future).toHaveLength(0);
+        expect(observations).not.toContainEqual({ mix: 0.75, gain: 0, status: 'stale' });
+        expect(observations).not.toContainEqual({ mix: 0.25, gain: 6, status: 'stale' });
+
+        await undo();
+        expect(get_layer_state().layers[0]?.mix).toBe(0.5);
+        expect(get_layer_state().layers[0]?.parameters[0]?.value).toBe(0);
+
         unsubscribe_layer();
         unsubscribe_track();
     });
 
-    it('undo merges its operation by stable id and preserves concurrent layers, fields, and a newer refreeze', async () => {
+    it('marks a completed re-freeze stale when undo changes its adjustment render inputs', async () => {
+        await executeAppAction({ type: 'setLayerMix', payload: { layerId: 'layer-1', mix: 0.75 } });
+        const state = trackStore.value;
+        if (!state) {
+            throw new Error('Expected track state');
+        }
+        trackStore.set({
+            ...state,
+            tracks: state.tracks.map((track) =>
+                track.id === 'track-a'
+                    ? {
+                          ...track,
+                          frozen: true,
+                          frozenBufferId: 'post-adjustment-buffer',
+                          freezeState: {
+                              status: 'frozen',
+                              freezeId: 'post-adjustment-freeze',
+                              frozenBufferId: 'post-adjustment-buffer',
+                              sourceContentHash: 'freeze-v2:post-adjustment-render-input',
+                          },
+                      }
+                    : track
+            ),
+        });
+
+        await undo();
+
+        expect(get_layer_state().layers[0]?.mix).toBe(0.25);
+        expect(get_track('track-a').freezeState).toMatchObject({
+            status: 'stale',
+            freezeId: 'post-adjustment-freeze',
+            frozenBufferId: 'post-adjustment-buffer',
+        });
+    });
+
+    it('reverts and redoes a correlation-only AI adjustment group atomically', async () => {
+        const group_options = { groupId: 'ai-correlation-group', groupLabel: 'AI correlation', source: 'ai' as const };
+        await executeAppAction({ type: 'setLayerMix', payload: { layerId: 'layer-1', mix: 0.75 } }, group_options);
+        await executeAppAction(
+            { type: 'setLayerParameter', payload: { layerId: 'layer-1', paramName: 'Gain', value: 6 } },
+            group_options
+        );
+
+        await expect(revertActionGroup('ai-correlation-group')).resolves.toBe(true);
+        expect(get_layer_state().layers[0]?.mix).toBe(0.25);
+        expect(get_layer_state().layers[0]?.parameters[0]?.value).toBe(0);
+
+        await redo();
+        expect(get_layer_state().layers[0]?.mix).toBe(0.75);
+        expect(get_layer_state().layers[0]?.parameters[0]?.value).toBe(6);
+        expect(undoStore.value?.future).toHaveLength(0);
+    });
+
+    it('undo preserves concurrent fields and marks an incompatible newer re-freeze stale', async () => {
         await executeAppAction({ type: 'setLayerMix', payload: { layerId: 'layer-1', mix: 0.75 } });
 
         const concurrent_layer = create_layer({
@@ -367,7 +465,7 @@ describe('adjustmentLayerFreezeStaleness', () => {
                               status: 'frozen',
                               freezeId: 'newer-freeze',
                               frozenBufferId: 'newer-buffer',
-                              sourceContentHash: empty_track_hash,
+                              sourceContentHash: 'freeze-v2:newer-full-render-input',
                           },
                       }
                     : track
@@ -383,10 +481,10 @@ describe('adjustmentLayerFreezeStaleness', () => {
         });
         expect(get_layer_state().layers.find((layer) => layer.id === 'layer-2')).toEqual(concurrent_layer);
         expect(get_track('track-a').freezeState).toMatchObject({
-            status: 'frozen',
+            status: 'stale',
             freezeId: 'newer-freeze',
             frozenBufferId: 'newer-buffer',
-            sourceContentHash: empty_track_hash,
+            sourceContentHash: 'freeze-v2:newer-full-render-input',
         });
 
         await redo();
@@ -394,15 +492,15 @@ describe('adjustmentLayerFreezeStaleness', () => {
             status: 'stale',
             freezeId: 'newer-freeze',
             frozenBufferId: 'newer-buffer',
-            sourceContentHash: empty_track_hash,
+            sourceContentHash: 'freeze-v2:newer-full-render-input',
         });
 
         await undo();
         expect(get_track('track-a').freezeState).toMatchObject({
-            status: 'frozen',
+            status: 'stale',
             freezeId: 'newer-freeze',
             frozenBufferId: 'newer-buffer',
-            sourceContentHash: empty_track_hash,
+            sourceContentHash: 'freeze-v2:newer-full-render-input',
         });
         expect(get_layer_state().layers.find((layer) => layer.id === 'layer-2')).toEqual(concurrent_layer);
     });

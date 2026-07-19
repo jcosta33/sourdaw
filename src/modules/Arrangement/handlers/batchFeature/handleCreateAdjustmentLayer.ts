@@ -18,7 +18,7 @@ function ensure_layer_id(action: CreateAdjustmentLayerAction): string {
 
 export const handleCreateAdjustmentLayer = createHandler<'createAdjustmentLayer'>({
     execute: (alpha) => {
-        commitAdjustmentLayerMutation({
+        return commitAdjustmentLayerMutation({
             adjustmentMutationId: getAdjustmentLayerMutationId(alpha),
             mutation: () => {
                 createAdjustmentLayer(

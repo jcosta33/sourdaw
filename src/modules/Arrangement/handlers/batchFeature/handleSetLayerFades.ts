@@ -10,7 +10,7 @@ import {
 
 export const handleSetLayerFades = createHandler<'setLayerFades'>({
     execute: (a) => {
-        commitAdjustmentLayerMutation({
+        return commitAdjustmentLayerMutation({
             adjustmentMutationId: getAdjustmentLayerMutationId(a),
             mutation: () => {
                 setLayerFades(a.payload.regionId, a.payload.fadeInBeats, a.payload.fadeOutBeats);
