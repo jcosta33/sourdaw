@@ -2,6 +2,7 @@ import { createBuiltinGrooveTemplates } from '../../models/BuiltinGrooveTemplate
 import {
     GROOVE_SUBDIVISIONS,
     GROOVE_TEMPLATE_SCHEMA_VERSION,
+    canonicalizeGrooveTemplateId,
     createStraightGrooveTemplate,
     getGrooveSubdivisionSlotCount,
     getGrooveSubdivisionStepBeats,
@@ -112,10 +113,15 @@ function calculateStableMean(values: readonly number[]): number {
     return (sum + correction) / sortedValues.length;
 }
 
-function resolveExtractedTemplateId(input: ExtractGrooveTemplateInput): string {
+type ResolveExtractedTemplateIdInput = {
+    input: ExtractGrooveTemplateInput;
+    canonicalSourceId: string;
+};
+
+function resolveExtractedTemplateId({ input, canonicalSourceId }: ResolveExtractedTemplateIdInput): string {
     const requestedTemplateId = input.templateId ? resolveGrooveTemplateIdAlias(input.templateId) : null;
     if (!requestedTemplateId || RESERVED_BUILTIN_TEMPLATE_IDS.has(requestedTemplateId)) {
-        return `groove-${input.sourceId}-v${input.analyzerVersion}`;
+        return `groove-${canonicalSourceId}-v${input.analyzerVersion}`;
     }
     return requestedTemplateId;
 }
@@ -135,6 +141,13 @@ export function extractGrooveTemplate(input: ExtractGrooveTemplateInput): Extrac
     }
     if (input.notes.length === 0) {
         return { ok: false, error: { code: 'empty-source', sourceId: input.sourceId } };
+    }
+    const canonicalSourceId = canonicalizeGrooveTemplateId(input.sourceId);
+    if (!canonicalSourceId) {
+        return {
+            ok: false,
+            error: { code: 'invalid-source', sourceId: input.sourceId, reason: 'invalid-source-id' },
+        };
     }
 
     const canonicalNotes = [...input.notes].sort(compareSourceNotes);
@@ -173,12 +186,12 @@ export function extractGrooveTemplate(input: ExtractGrooveTemplateInput): Extrac
     return {
         ok: true,
         template: {
-            id: resolveExtractedTemplateId(input),
+            id: resolveExtractedTemplateId({ input, canonicalSourceId }),
             name: `${input.sourceName.trim()} groove`,
             schemaVersion: GROOVE_TEMPLATE_SCHEMA_VERSION,
             subdivision,
             slots,
-            provenance: { type: 'midi-clip', sourceId: input.sourceId, analyzerVersion: input.analyzerVersion },
+            provenance: { type: 'midi-clip', sourceId: canonicalSourceId, analyzerVersion: input.analyzerVersion },
         },
     };
 }

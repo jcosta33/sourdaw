@@ -35,6 +35,7 @@ describe('extractGrooveTemplate', () => {
             sourceId: 'clip-1',
             analyzerVersion: 3,
         });
+        expect(isGrooveTemplate(first.template)).toBe(true);
     });
 
     it('is invariant to source-note permutation under adversarial floating-point cancellation', () => {
@@ -77,6 +78,28 @@ describe('extractGrooveTemplate', () => {
             expect(isGrooveTemplate(result.template)).toBe(true);
         }
     );
+
+    it('normalizes source identity before generating template identity and provenance', () => {
+        const result = extractGrooveTemplate({
+            sourceId: 'cafe\u0301',
+            sourceName: 'Unicode',
+            analyzerVersion: 2,
+            subdivision: '1/16',
+            notes: sourceNotes,
+        });
+
+        expect(result.ok).toBe(true);
+        if (!result.ok) {
+            throw new Error('Expected successful extraction');
+        }
+        expect(result.template.id).toBe('groove-café-v2');
+        expect(result.template.provenance).toEqual({
+            type: 'midi-clip',
+            sourceId: 'café',
+            analyzerVersion: 2,
+        });
+        expect(isGrooveTemplate(result.template)).toBe(true);
+    });
 
     it.each([
         {

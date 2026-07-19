@@ -29,8 +29,25 @@ describe('applyGrooveTemplate', () => {
 
         expect(events).toEqual(sourceSnapshot);
         expect(result.map((event) => event.id)).toEqual(['a', 'b']);
-        expect(result[0]).toEqual({ id: 'a', startBeat: 0.125, velocity: 113, pitch: 60 });
-        expect(result[1]).toEqual({ id: 'b', startBeat: 0.1875, velocity: 67, pitch: 64 });
+        expect(result[0]).toEqual({ id: 'a', startBeat: 0.125, velocity: 110, pitch: 60 });
+        expect(result[1]).toEqual({ id: 'b', startBeat: 0.1875, velocity: 72, pitch: 64 });
+    });
+
+    it('applies dynamics as a relative velocity scale for quiet notes', () => {
+        const [result] = applyGrooveTemplate({
+            events: [{ id: 'quiet', startBeat: 0, velocity: 20 }],
+            amount: 1,
+            template: {
+                id: 'quieter',
+                name: 'Quieter',
+                schemaVersion: 1,
+                subdivision: '1/16',
+                slots: [{ index: 0, timingOffset: 0, dynamicsOffset: -0.3 }],
+                provenance: { type: 'user', sourceId: 'quiet-test' },
+            },
+        });
+
+        expect(result?.velocity).toBe(14);
     });
 
     it('makes Straight a bit-for-bit no-op', () => {
