@@ -210,6 +210,19 @@ describe('createAutomergeStorage', () => {
         expect(storage.get()).toEqual({ count: 5, local: 'kept', normalized: true });
     });
 
+    it.each([
+        { label: 'false', value: false },
+        { label: 'zero', value: 0 },
+        { label: 'empty string', value: '' },
+    ])('hydrates the valid falsy value $label', ({ value }) => {
+        const { port } = createTestPort({ initialDoc: { state: value } });
+        configureAutomergeStoragePort(port);
+        const storage = createAutomergeStorage<boolean | number | string>('root', 'state');
+
+        expect(storage.hydrate?.()).toBe(true);
+        expect(storage.get()).toBe(value);
+    });
+
     it('should write cached local data into the doc when hydrate finds a missing key', () => {
         const { doc, mutations, port } = createTestPort();
         configureAutomergeStoragePort(port);

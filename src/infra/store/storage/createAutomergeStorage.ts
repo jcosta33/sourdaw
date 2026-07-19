@@ -433,7 +433,7 @@ export const createAutomergeStorage = <TData>(
                     ? rawValues.map((rawValue) => fromCrdt(rawValue as TData))
                     : (rawValues as TData[]);
                 const firstValue = normalizedValues[0];
-                if (!firstValue) {
+                if (firstValue === undefined) {
                     return false;
                 }
                 let crdtData: TData = firstValue;
