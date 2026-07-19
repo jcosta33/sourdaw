@@ -26,7 +26,7 @@ function dispatch(rack: MidiRack, data: unknown, messages: unknown[]): void {
     handleYeastWorkerMessage({
         data,
         rack,
-        postMessage: (message) => messages.push(message),
+        postMessage: (message) => messages.push(structuredClone(message)),
     });
 }
 
@@ -159,7 +159,7 @@ describe('YeastWorker', () => {
         ]);
     });
 
-    it('returns processor decision records beside unchanged scheduler events', () => {
+    it('settles scheduler output before separately posting a packed preview page', async () => {
         const rack = new MidiRack();
         const messages: unknown[] = [];
         dispatch(
@@ -197,7 +197,6 @@ describe('YeastWorker', () => {
             type: string;
             requestId: number;
             events: unknown[];
-            preview: { records: Array<Record<string, unknown>>; droppedEvents: number };
         };
         expect(response.type).toBe('processed');
         expect(response.requestId).toBe(7);
@@ -205,19 +204,38 @@ describe('YeastWorker', () => {
             { ...events[0], trackId: 'track-a' },
             { ...events[1], trackId: 'track-a' },
         ]);
-        expect(response.preview.droppedEvents).toBe(0);
-        expect(response.preview.records).toHaveLength(1);
-        expect(response.preview.records[0]).toMatchObject({
-            beatTime: 0,
-            pitch: 60,
-            velocity: 88,
-            probability: null,
-            realized: true,
-            processorId: 'filter-1',
-            bypassed: true,
-            failed: false,
-        });
-        expect(response.preview.records[0]?.durationBeats).toBeCloseTo(64 / 24000, 12);
+        expect(response).not.toHaveProperty('preview');
+        expect(messages).toHaveLength(1);
+
+        await new Promise((resolve) => setTimeout(resolve, 0));
+
+        const previewResponse = messages[1] as {
+            type: string;
+            requestId: number;
+            page: {
+                count: number;
+                droppedEvents: number;
+                beatTime: Float64Array;
+                durationBeats: Float64Array;
+                pitch: Uint8Array;
+                velocity: Float64Array;
+                probability: Float64Array;
+                flags: Uint8Array;
+                processorId: string[];
+            };
+        };
+        expect(previewResponse.type).toBe('previewPage');
+        expect(previewResponse.requestId).toBe(7);
+        expect(previewResponse.page.count).toBe(1);
+        expect(previewResponse.page.droppedEvents).toBe(0);
+        expect(previewResponse.page.beatTime).toHaveLength(512);
+        expect(previewResponse.page.beatTime[0]).toBe(0);
+        expect(previewResponse.page.durationBeats[0]).toBeCloseTo(64 / 24000, 12);
+        expect(previewResponse.page.pitch[0]).toBe(60);
+        expect(previewResponse.page.velocity[0]).toBe(88);
+        expect(previewResponse.page.probability[0]).toBeNaN();
+        expect(previewResponse.page.flags[0]).toBe(3);
+        expect(previewResponse.page.processorId[0]).toBe('filter-1');
     });
 
     it('acknowledges a valid processor command with its command id', () => {

@@ -1,25 +1,26 @@
-import { YEAST_PREVIEW_CAPACITY } from '../models/YeastPreviewSnapshot';
+import {
+    YEAST_PREVIEW_BYPASSED_FLAG,
+    YEAST_PREVIEW_CAPACITY,
+    YEAST_PREVIEW_FAILED_FLAG,
+    YEAST_PREVIEW_REALIZED_FLAG,
+} from '../models/YeastPreviewSnapshot';
 
 import type { MidiEvent, TransportInfo } from '../models/MidiEvent';
-import type { YeastPreviewBlock, YeastPreviewEvent } from '../models/YeastPreviewSnapshot';
-
-type MutableYeastPreviewEvent = {
-    -readonly [Key in keyof YeastPreviewEvent]: YeastPreviewEvent[Key];
-};
+import type { YeastPreviewPackedPage } from '../models/YeastPreviewSnapshot';
 
 export type YeastPreviewDecisionSink = Pick<YeastPreviewSidecar, 'recordDecision'>;
 
-function createPreviewRecord(): MutableYeastPreviewEvent {
+function createPreviewPage(): YeastPreviewPackedPage {
     return {
-        beatTime: 0,
-        durationBeats: 0,
-        pitch: 0,
-        velocity: 0,
-        probability: null,
-        realized: true,
-        processorId: '',
-        bypassed: false,
-        failed: false,
+        count: 0,
+        droppedEvents: 0,
+        beatTime: new Float64Array(YEAST_PREVIEW_CAPACITY),
+        durationBeats: new Float64Array(YEAST_PREVIEW_CAPACITY),
+        pitch: new Uint8Array(YEAST_PREVIEW_CAPACITY),
+        velocity: new Float64Array(YEAST_PREVIEW_CAPACITY),
+        probability: new Float64Array(YEAST_PREVIEW_CAPACITY),
+        flags: new Uint8Array(YEAST_PREVIEW_CAPACITY),
+        processorId: Array.from({ length: YEAST_PREVIEW_CAPACITY }, () => ''),
     };
 }
 
@@ -31,7 +32,7 @@ function createPreviewRecord(): MutableYeastPreviewEvent {
  * never annotated or replaced with preview data.
  */
 export class YeastPreviewSidecar {
-    private readonly completed = Array.from({ length: YEAST_PREVIEW_CAPACITY }, createPreviewRecord);
+    private readonly page = createPreviewPage();
     private readonly pendingBeatTime = new Float64Array(YEAST_PREVIEW_CAPACITY);
     private readonly pendingPitch = new Uint8Array(YEAST_PREVIEW_CAPACITY);
     private readonly pendingVelocity = new Float64Array(YEAST_PREVIEW_CAPACITY);
@@ -44,17 +45,16 @@ export class YeastPreviewSidecar {
     private readonly pendingTrackId = Array.from({ length: YEAST_PREVIEW_CAPACITY }, () => '');
     private readonly pendingProcessorId = Array.from({ length: YEAST_PREVIEW_CAPACITY }, () => '');
     private pendingCount = 0;
-    private completedCount = 0;
-    private droppedEvents = 0;
     private nextSequence = 0;
     private blockStartSamples = 0;
     private blockPpqPosition = 0;
     private samplesPerBeat = 0;
+    private captureRequested = false;
     private captureBlock = false;
+    private pageBusy = false;
 
     beginBlock(enabled: boolean, blockStartSamples: number, transport: TransportInfo): void {
-        this.completedCount = 0;
-        this.droppedEvents = 0;
+        this.captureRequested = false;
         this.captureBlock = false;
 
         if (!enabled) {
@@ -70,6 +70,12 @@ export class YeastPreviewSidecar {
         this.blockStartSamples = blockStartSamples;
         this.blockPpqPosition = transport.ppqPosition;
         this.samplesPerBeat = samplesPerBeat;
+        this.captureRequested = true;
+        if (this.pageBusy) {
+            return;
+        }
+        this.page.count = 0;
+        this.page.droppedEvents = 0;
         this.captureBlock = true;
     }
 
@@ -80,13 +86,17 @@ export class YeastPreviewSidecar {
         bypassed: boolean,
         failed: boolean
     ): void {
-        if (!this.captureBlock) {
+        if (!this.captureRequested) {
             return;
         }
 
         for (let index = 0; index < events.length; index++) {
             const event = events[index]!;
             if (event.kind.type === 'noteOn') {
+                if (!this.captureBlock) {
+                    this.recordDrop();
+                    continue;
+                }
                 this.recordNoteOn(
                     event.timeSamples,
                     event.trackId ?? fallbackTrackId,
@@ -98,6 +108,15 @@ export class YeastPreviewSidecar {
                     failed
                 );
             } else if (event.kind.type === 'noteOff') {
+                if (!this.captureBlock) {
+                    this.dropPendingNoteOff(
+                        event.trackId ?? fallbackTrackId,
+                        event.kind.channel,
+                        event.kind.note,
+                        processorId
+                    );
+                    continue;
+                }
                 this.recordNoteOff(
                     event.timeSamples,
                     event.trackId ?? fallbackTrackId,
@@ -119,34 +138,48 @@ export class YeastPreviewSidecar {
         realized: boolean,
         processorId: string
     ): void {
-        if (!this.captureBlock) {
+        if (!this.captureRequested) {
             return;
         }
-        if (this.pendingCount + this.completedCount === YEAST_PREVIEW_CAPACITY) {
-            this.droppedEvents += 1;
+        if (!this.captureBlock || this.pendingCount + this.page.count === YEAST_PREVIEW_CAPACITY) {
+            this.recordDrop();
             return;
         }
 
-        const slot = this.completed[this.completedCount++]!;
-        slot.beatTime = this.toBeatTime(timeSamples);
-        slot.durationBeats = Math.max(0, durationSamples / this.samplesPerBeat);
-        slot.pitch = pitch;
-        slot.velocity = velocity;
-        slot.probability = probability;
-        slot.realized = realized;
-        slot.processorId = processorId;
-        slot.bypassed = false;
-        slot.failed = false;
+        const slot = this.page.count++;
+        this.writeCompleted(
+            slot,
+            this.toBeatTime(timeSamples),
+            Math.max(0, durationSamples / this.samplesPerBeat),
+            pitch,
+            velocity,
+            probability,
+            realized ? YEAST_PREVIEW_REALIZED_FLAG : 0,
+            processorId
+        );
     }
 
-    takeBlock(): YeastPreviewBlock {
-        const block = {
-            records: this.completed.slice(0, this.completedCount),
-            droppedEvents: this.droppedEvents,
-        } satisfies YeastPreviewBlock;
-        this.completedCount = 0;
-        this.droppedEvents = 0;
-        return block;
+    takePage(): YeastPreviewPackedPage | undefined {
+        const completedThisBlock = this.captureBlock;
+        this.captureRequested = false;
+        this.captureBlock = false;
+        if (!completedThisBlock || this.pageBusy) {
+            return undefined;
+        }
+        if (this.page.count === 0 && this.page.droppedEvents === 0) {
+            return undefined;
+        }
+        this.pageBusy = true;
+        return this.page;
+    }
+
+    releasePage(page: YeastPreviewPackedPage): void {
+        if (page !== this.page || !this.pageBusy) {
+            return;
+        }
+        this.pageBusy = false;
+        this.page.count = 0;
+        this.page.droppedEvents = 0;
     }
 
     private recordNoteOn(
@@ -159,8 +192,8 @@ export class YeastPreviewSidecar {
         bypassed: boolean,
         failed: boolean
     ): void {
-        if (this.pendingCount + this.completedCount === YEAST_PREVIEW_CAPACITY) {
-            this.droppedEvents += 1;
+        if (this.pendingCount + this.page.count === YEAST_PREVIEW_CAPACITY) {
+            this.recordDrop();
             return;
         }
 
@@ -185,6 +218,40 @@ export class YeastPreviewSidecar {
         pitch: number,
         processorId: string
     ): void {
+        const match = this.findPendingNote(trackId, channel, pitch, processorId);
+        if (match === -1) {
+            return;
+        }
+
+        const beatTime = this.pendingBeatTime[match]!;
+        const flags =
+            YEAST_PREVIEW_REALIZED_FLAG |
+            (this.pendingBypassed[match] === 1 ? YEAST_PREVIEW_BYPASSED_FLAG : 0) |
+            (this.pendingFailed[match] === 1 ? YEAST_PREVIEW_FAILED_FLAG : 0);
+        const slot = this.page.count++;
+        this.writeCompleted(
+            slot,
+            beatTime,
+            Math.max(0, this.toBeatTime(timeSamples) - beatTime),
+            this.pendingPitch[match]!,
+            this.pendingVelocity[match]!,
+            this.pendingHasProbability[match] ? this.pendingProbability[match]! : null,
+            flags,
+            this.pendingProcessorId[match]!
+        );
+        this.removePending(match);
+    }
+
+    private dropPendingNoteOff(trackId: string, channel: number, pitch: number, processorId: string): void {
+        const match = this.findPendingNote(trackId, channel, pitch, processorId);
+        if (match === -1) {
+            return;
+        }
+        this.removePending(match);
+        this.recordDrop();
+    }
+
+    private findPendingNote(trackId: string, channel: number, pitch: number, processorId: string): number {
         let match = -1;
         let matchSequence = Number.POSITIVE_INFINITY;
         for (let index = 0; index < this.pendingCount; index++) {
@@ -199,22 +266,7 @@ export class YeastPreviewSidecar {
                 matchSequence = this.pendingSequence[index]!;
             }
         }
-        if (match === -1) {
-            return;
-        }
-
-        const slot = this.completed[this.completedCount++]!;
-        const noteOffBeatTime = this.toBeatTime(timeSamples);
-        slot.beatTime = this.pendingBeatTime[match]!;
-        slot.durationBeats = Math.max(0, noteOffBeatTime - slot.beatTime);
-        slot.pitch = this.pendingPitch[match]!;
-        slot.velocity = this.pendingVelocity[match]!;
-        slot.probability = this.pendingHasProbability[match] ? this.pendingProbability[match]! : null;
-        slot.realized = true;
-        slot.processorId = this.pendingProcessorId[match]!;
-        slot.bypassed = this.pendingBypassed[match] === 1;
-        slot.failed = this.pendingFailed[match] === 1;
-        this.removePending(match);
+        return match;
     }
 
     private removePending(index: number): void {
@@ -237,5 +289,28 @@ export class YeastPreviewSidecar {
 
     private toBeatTime(timeSamples: number): number {
         return this.blockPpqPosition + (timeSamples - this.blockStartSamples) / this.samplesPerBeat;
+    }
+
+    private writeCompleted(
+        slot: number,
+        beatTime: number,
+        durationBeats: number,
+        pitch: number,
+        velocity: number,
+        probability: number | null,
+        flags: number,
+        processorId: string
+    ): void {
+        this.page.beatTime[slot] = beatTime;
+        this.page.durationBeats[slot] = durationBeats;
+        this.page.pitch[slot] = pitch;
+        this.page.velocity[slot] = velocity;
+        this.page.probability[slot] = probability ?? Number.NaN;
+        this.page.flags[slot] = flags;
+        this.page.processorId[slot] = processorId;
+    }
+
+    private recordDrop(): void {
+        this.page.droppedEvents += 1;
     }
 }

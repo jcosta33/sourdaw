@@ -14,7 +14,8 @@
  *   ← { type: 'executeCommand', commandId, command }
  *   ← { type: 'processBlock', requestId, trackId, events, blockStart, blockEnd, transport, previewEnabled }
  *   → { type: 'commandAck', commandId, accepted, error? }
- *   → { type: 'processed',    requestId, events, preview }
+ *   → { type: 'processed',    requestId, events }
+ *   → { type: 'previewPage',  requestId, page } (lossy/deferred)
  *   ← { type: 'allNotesOff',  panicId, nowSamples }
  *   → { type: 'allNotesOffAck', panicId, completed, events, error? }
  */
@@ -256,6 +257,10 @@ export type YeastWorkerMessageHandlerInput = {
     postMessage: (message: unknown) => void;
 };
 
+function deferPreviewDelivery(delivery: () => void): void {
+    setTimeout(delivery, 0);
+}
+
 export function handleYeastWorkerMessage({ data, rack, postMessage }: YeastWorkerMessageHandlerInput): void {
     if (!isPlainObject(data)) {
         return;
@@ -361,8 +366,22 @@ export function handleYeastWorkerMessage({ data, rack, postMessage }: YeastWorke
             message.trackId,
             message.previewEnabled
         );
-        const preview = rack.takePreviewBlock();
-        postMessage({ type: 'processed', requestId: message.requestId, events: processed, preview });
+        postMessage({ type: 'processed', requestId: message.requestId, events: processed });
+        const page = rack.takePreviewPage();
+        if (!page) {
+            return;
+        }
+        try {
+            deferPreviewDelivery(() => {
+                try {
+                    postMessage({ type: 'previewPage', requestId: message.requestId, page });
+                } finally {
+                    rack.releasePreviewPage(page);
+                }
+            });
+        } catch {
+            rack.releasePreviewPage(page);
+        }
     } catch (error: unknown) {
         postMessage({
             type: 'processedError',

@@ -11,7 +11,7 @@ import { type MidiProcessor, ScheduledEventQueue } from './MidiProcessor';
 import { YeastPreviewSidecar } from './YeastPreviewSidecar';
 
 import type { ProcessorType } from '../models/ProcessorCatalog';
-import type { YeastPreviewBlock } from '../models/YeastPreviewSnapshot';
+import type { YeastPreviewPackedPage } from '../models/YeastPreviewSnapshot';
 import type { YeastProcessorCommand } from '../models/YeastProcessorCommand';
 import type { YeastProcessorProjectionItem } from '../models/YeastProcessorProjection';
 
@@ -248,8 +248,12 @@ export class MidiRack {
         return finalOutput;
     }
 
-    takePreviewBlock(): YeastPreviewBlock {
-        return this.preview.takeBlock();
+    takePreviewPage(): YeastPreviewPackedPage | undefined {
+        return this.preview.takePage();
+    }
+
+    releasePreviewPage(page: YeastPreviewPackedPage): void {
+        this.preview.releasePage(page);
     }
 
     /** Panic: send Note Off for all active notes. */

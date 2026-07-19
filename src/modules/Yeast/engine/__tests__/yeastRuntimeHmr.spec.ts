@@ -96,7 +96,7 @@ describe('yeastRuntime HMR migration', () => {
         retainedHmrState.value = undefined;
     });
 
-    it('revokes a retained Worklet generation without losing its serializable projection', async () => {
+    it('revokes a retained v7 inline-preview generation without losing its serializable projection', async () => {
         const oldContext = {} as BaseAudioContext;
         const newContext = {} as BaseAudioContext;
         const oldNode = makeLegacyNode(oldContext);
@@ -118,7 +118,7 @@ describe('yeastRuntime HMR migration', () => {
             return node;
         });
         legacySession = {
-            version: 3,
+            version: 7,
             context: oldContext,
             node: oldNode,
             nodePromise: oldNodePromise,
@@ -137,7 +137,7 @@ describe('yeastRuntime HMR migration', () => {
         const runtime = await import('../yeastRuntime');
         const panicOutputNotes = vi.fn();
 
-        expect(legacySession.version).toBe(7);
+        expect(legacySession.version).toBe(8);
         expect(legacySession.generation).toBe(oldGeneration + 1);
         expect(oldNode.destroy).toHaveBeenCalledTimes(1);
         expect(legacySession.context).toBeNull();
@@ -207,7 +207,7 @@ describe('yeastRuntime HMR migration', () => {
         const runtime = await import('../yeastRuntime');
         const panicOutputNotes = vi.fn();
 
-        expect(retainedSession.version).toBe(7);
+        expect(retainedSession.version).toBe(8);
         expect(retainedSession.generation).toBe(generation + 1);
         expect(retainedSession.projection).toBe(projection);
         expect(retainedSession.activeOutputNotes).toEqual(new Map());

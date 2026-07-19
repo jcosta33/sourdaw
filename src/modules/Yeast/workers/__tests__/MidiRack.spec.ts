@@ -2,6 +2,11 @@ import { describe, it, expect } from 'vitest';
 
 import { type MidiEvent, type MidiEventKind, type TransportInfo } from '../../models/MidiEvent';
 import { type ProcessorType } from '../../models/ProcessorCatalog';
+import {
+    YEAST_PREVIEW_BYPASSED_FLAG,
+    YEAST_PREVIEW_FAILED_FLAG,
+    YEAST_PREVIEW_REALIZED_FLAG,
+} from '../../models/YeastPreviewSnapshot';
 import { type MidiProcessor } from '../MidiProcessor';
 import { MidiRack } from '../MidiRack';
 import { ChordMemory } from '../processors/ChordMemory';
@@ -16,6 +21,27 @@ function isNoteOff(event: MidiEvent): event is NoteOffEvent {
 
 function isNoteOn(event: MidiEvent): event is NoteOnEvent {
     return event.kind.type === 'noteOn';
+}
+
+function takePreviewBlock(rack: MidiRack) {
+    const page = rack.takePreviewPage();
+    if (!page) {
+        return { records: [], droppedEvents: 0 };
+    }
+    const records = Array.from({ length: page.count }, (_, index) => ({
+        beatTime: page.beatTime[index]!,
+        durationBeats: page.durationBeats[index]!,
+        pitch: page.pitch[index]!,
+        velocity: page.velocity[index]!,
+        probability: Number.isNaN(page.probability[index]!) ? null : page.probability[index]!,
+        realized: (page.flags[index]! & YEAST_PREVIEW_REALIZED_FLAG) !== 0,
+        processorId: page.processorId[index]!,
+        bypassed: (page.flags[index]! & YEAST_PREVIEW_BYPASSED_FLAG) !== 0,
+        failed: (page.flags[index]! & YEAST_PREVIEW_FAILED_FLAG) !== 0,
+    }));
+    const droppedEvents = page.droppedEvents;
+    rack.releasePreviewPage(page);
+    return { records, droppedEvents };
 }
 
 const transport: TransportInfo = {
@@ -340,6 +366,43 @@ describe('MidiRack', () => {
     });
 
     describe('processBlock (fix #4: a throwing processor must not abort the chain)', () => {
+        it('drops and accounts capture while the reusable preview page is unavailable', () => {
+            const rack = new MidiRack();
+            rack.addProcessor(new PassthroughProcessor('upstream'));
+            rack.processBlock(
+                [
+                    { timeSamples: 0, kind: { type: 'noteOn', channel: 0, note: 60, velocity: 91 } },
+                    { timeSamples: 64, kind: { type: 'noteOff', channel: 0, note: 60 } },
+                ],
+                0,
+                128,
+                transport,
+                'track-a',
+                true
+            );
+            const busyPage = rack.takePreviewPage();
+            expect(busyPage?.count).toBe(1);
+
+            const output = rack.processBlock(
+                [
+                    { timeSamples: 128, kind: { type: 'noteOn', channel: 0, note: 62, velocity: 92 } },
+                    { timeSamples: 192, kind: { type: 'noteOff', channel: 0, note: 62 } },
+                ],
+                128,
+                256,
+                transport,
+                'track-a',
+                true
+            );
+
+            expect(output).toHaveLength(2);
+            expect(rack.takePreviewPage()).toBeUndefined();
+            expect(busyPage?.droppedEvents).toBe(1);
+            if (busyPage) {
+                rack.releasePreviewPage(busyPage);
+            }
+        });
+
         it('pairs notes across real scheduling blocks and response advances using absolute beats', () => {
             const rack = new MidiRack();
             const filter = new NoteFilter('filter-1');
@@ -360,7 +423,7 @@ describe('MidiRack', () => {
                 'track-a',
                 true
             );
-            expect(rack.takePreviewBlock().records).toEqual([]);
+            expect(takePreviewBlock(rack).records).toEqual([]);
 
             rack.processBlock(
                 [{ timeSamples: 36000, kind: { type: 'noteOff', channel: 0, note: 60 } }],
@@ -371,7 +434,7 @@ describe('MidiRack', () => {
                 true
             );
 
-            expect(rack.takePreviewBlock().records).toEqual([
+            expect(takePreviewBlock(rack).records).toEqual([
                 {
                     beatTime: 4.5,
                     durationBeats: 0.75,
@@ -405,7 +468,7 @@ describe('MidiRack', () => {
                 true
             );
 
-            expect(rack.takePreviewBlock().records).toMatchObject([
+            expect(takePreviewBlock(rack).records).toMatchObject([
                 { processorId: 'upstream', bypassed: false, failed: false },
                 { processorId: 'filter-1', bypassed: true, failed: false },
             ]);
@@ -448,7 +511,7 @@ describe('MidiRack', () => {
                     kind: { type: 'noteOff', channel: 0, note: 60 },
                 },
             ]);
-            const preview = rack.takePreviewBlock();
+            const preview = takePreviewBlock(rack);
             expect(preview.records).toHaveLength(1);
             expect(preview.records[0]).toMatchObject({
                 beatTime: 0,

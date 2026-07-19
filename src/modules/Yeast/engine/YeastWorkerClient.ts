@@ -9,7 +9,16 @@
  * the rack and processor instances; this wrapper owns only the message protocol.
  */
 
-import { type YeastPreviewBlock, YEAST_PREVIEW_CAPACITY, type YeastPreviewEvent } from '../models/YeastPreviewSnapshot';
+import {
+    YEAST_PREVIEW_BYPASSED_FLAG,
+    type YeastPreviewBlock,
+    YEAST_PREVIEW_CAPACITY,
+    type YeastPreviewEvent,
+    YEAST_PREVIEW_FAILED_FLAG,
+    type YeastPreviewPackedPage,
+    YEAST_PREVIEW_REALIZED_FLAG,
+    YEAST_PREVIEW_VALID_FLAGS,
+} from '../models/YeastPreviewSnapshot';
 
 import type { YeastNoteOffIdentity, YeastNotesOffPayload } from '../events/YeastNotesOffPayload';
 import type { MidiEvent, TransportInfo } from '../models/MidiEvent';
@@ -35,6 +44,8 @@ const PROCESS_BLOCK_TIMEOUT_MS = YEAST_WORKER_DEADLINE_MS;
 const PROJECTION_ACK_TIMEOUT_MS = YEAST_WORKER_DEADLINE_MS;
 const COMMAND_ACK_TIMEOUT_MS = 1000;
 const ALL_NOTES_OFF_ACK_TIMEOUT_MS = 1000;
+const PREVIEW_DELIVERY_QUEUE_CAPACITY = 1;
+const PREVIEW_ACCEPTANCE_CAPACITY = 16;
 
 type YeastCommandAck = {
     accepted: boolean;
@@ -149,46 +160,7 @@ function parseAcknowledgedNoteOffs(value: Record<string, unknown>, required: boo
     return events;
 }
 
-function isYeastPreviewEvent(value: unknown): value is YeastPreviewEvent {
-    if (!isPlainObject(value)) {
-        return false;
-    }
-    return (
-        isFiniteNumber(value.beatTime) &&
-        isFiniteNumber(value.durationBeats) &&
-        value.durationBeats >= 0 &&
-        isMidiNote(value.pitch) &&
-        isFiniteNumber(value.velocity) &&
-        (value.probability === null ||
-            (isFiniteNumber(value.probability) && value.probability >= 0 && value.probability <= 1)) &&
-        typeof value.realized === 'boolean' &&
-        typeof value.processorId === 'string' &&
-        value.processorId.length > 0 &&
-        typeof value.bypassed === 'boolean' &&
-        typeof value.failed === 'boolean'
-    );
-}
-
-function parsePreviewBlock(value: unknown): YeastPreviewBlock | undefined {
-    if (!isPlainObject(value) || !Array.isArray(value.records) || value.records.length > YEAST_PREVIEW_CAPACITY) {
-        return undefined;
-    }
-    if (!value.records.every(isYeastPreviewEvent)) {
-        return undefined;
-    }
-    if (
-        typeof value.droppedEvents !== 'number' ||
-        !Number.isSafeInteger(value.droppedEvents) ||
-        value.droppedEvents < 0
-    ) {
-        return undefined;
-    }
-    return { records: value.records, droppedEvents: value.droppedEvents };
-}
-
-function parseProcessedMessage(
-    value: Record<string, unknown>
-): { requestId: number; events: MidiEvent[]; preview: YeastPreviewBlock | undefined } | undefined {
+function parseProcessedMessage(value: Record<string, unknown>): { requestId: number; events: MidiEvent[] } | undefined {
     if (value.type !== 'processed' || !isCommandId(value.requestId)) {
         return undefined;
     }
@@ -196,8 +168,87 @@ function parseProcessedMessage(
     if (!Array.isArray(events) || !events.every(isMidiEvent)) {
         return undefined;
     }
-    const preview = parsePreviewBlock(value.preview);
-    return { requestId: value.requestId, events, preview };
+    return { requestId: value.requestId, events };
+}
+
+function isPackedPreviewPage(value: unknown): value is YeastPreviewPackedPage {
+    if (!isPlainObject(value)) {
+        return false;
+    }
+    return (
+        typeof value.count === 'number' &&
+        Number.isSafeInteger(value.count) &&
+        value.count >= 0 &&
+        value.count <= YEAST_PREVIEW_CAPACITY &&
+        typeof value.droppedEvents === 'number' &&
+        Number.isSafeInteger(value.droppedEvents) &&
+        value.droppedEvents >= 0 &&
+        value.beatTime instanceof Float64Array &&
+        value.beatTime.length === YEAST_PREVIEW_CAPACITY &&
+        value.durationBeats instanceof Float64Array &&
+        value.durationBeats.length === YEAST_PREVIEW_CAPACITY &&
+        value.pitch instanceof Uint8Array &&
+        value.pitch.length === YEAST_PREVIEW_CAPACITY &&
+        value.velocity instanceof Float64Array &&
+        value.velocity.length === YEAST_PREVIEW_CAPACITY &&
+        value.probability instanceof Float64Array &&
+        value.probability.length === YEAST_PREVIEW_CAPACITY &&
+        value.flags instanceof Uint8Array &&
+        value.flags.length === YEAST_PREVIEW_CAPACITY &&
+        Array.isArray(value.processorId) &&
+        value.processorId.length === YEAST_PREVIEW_CAPACITY
+    );
+}
+
+function parsePreviewPageMessage(
+    value: Record<string, unknown>
+): { requestId: number; page: YeastPreviewPackedPage } | undefined {
+    if (value.type !== 'previewPage' || !isCommandId(value.requestId) || !isPackedPreviewPage(value.page)) {
+        return undefined;
+    }
+    return { requestId: value.requestId, page: value.page };
+}
+
+function decodePreviewPage(page: YeastPreviewPackedPage, extraDroppedEvents: number): YeastPreviewBlock | undefined {
+    const records: YeastPreviewEvent[] = [];
+    for (let index = 0; index < page.count; index++) {
+        const beatTime = page.beatTime[index]!;
+        const durationBeats = page.durationBeats[index]!;
+        const pitch = page.pitch[index]!;
+        const velocity = page.velocity[index]!;
+        const packedProbability = page.probability[index]!;
+        const flags = page.flags[index]!;
+        const processorId = page.processorId[index];
+        if (
+            !Number.isFinite(beatTime) ||
+            !Number.isFinite(durationBeats) ||
+            durationBeats < 0 ||
+            pitch > 127 ||
+            !Number.isFinite(velocity) ||
+            (!Number.isNaN(packedProbability) &&
+                (!Number.isFinite(packedProbability) || packedProbability < 0 || packedProbability > 1)) ||
+            (flags & ~YEAST_PREVIEW_VALID_FLAGS) !== 0 ||
+            typeof processorId !== 'string' ||
+            processorId.length === 0
+        ) {
+            return undefined;
+        }
+        records.push({
+            beatTime,
+            durationBeats,
+            pitch,
+            velocity,
+            probability: Number.isNaN(packedProbability) ? null : packedProbability,
+            realized: (flags & YEAST_PREVIEW_REALIZED_FLAG) !== 0,
+            processorId,
+            bypassed: (flags & YEAST_PREVIEW_BYPASSED_FLAG) !== 0,
+            failed: (flags & YEAST_PREVIEW_FAILED_FLAG) !== 0,
+        });
+    }
+    return {
+        records,
+        droppedEvents: Math.min(Number.MAX_SAFE_INTEGER, page.droppedEvents + extraDroppedEvents),
+    };
 }
 
 function parseProcessedError(value: Record<string, unknown>): { requestId: number; error: string } | undefined {
@@ -323,6 +374,7 @@ export async function createYeastWorker(ctx: BaseAudioContext): Promise<YeastWor
         resolve: (events: MidiEvent[]) => void;
         reject: (err: Error) => void;
         timer: ReturnType<typeof setTimeout>;
+        previewEnabled: boolean;
     };
     const pending = new Map<number, PendingEntry>();
     type PendingCommandEntry = {
@@ -382,6 +434,108 @@ export async function createYeastWorker(ctx: BaseAudioContext): Promise<YeastWor
     const notesOffHandlers = new Set<(notesOff: YeastNotesOffPayload[]) => void>();
     const previewHandlers = new Set<(preview: YeastPreviewBlock) => void>();
     const terminalErrorHandlers = new Set<(error: Error) => void>();
+    const acceptedPreviewRequestIds = new Float64Array(PREVIEW_ACCEPTANCE_CAPACITY);
+    acceptedPreviewRequestIds.fill(-1);
+    let acceptedPreviewWriteIndex = 0;
+    const previewQueuePages: Array<YeastPreviewPackedPage | undefined> = Array.from({
+        length: PREVIEW_DELIVERY_QUEUE_CAPACITY,
+    });
+    const previewQueueExtraDropped = new Float64Array(PREVIEW_DELIVERY_QUEUE_CAPACITY);
+    let previewQueueReadIndex = 0;
+    let previewQueueSize = 0;
+    let unreportedPreviewDrops = 0;
+    let previewDeliveryTimer: ReturnType<typeof setTimeout> | null = null;
+
+    const rememberPreviewRequest = (requestId: number): void => {
+        acceptedPreviewRequestIds[acceptedPreviewWriteIndex] = requestId;
+        acceptedPreviewWriteIndex = (acceptedPreviewWriteIndex + 1) % PREVIEW_ACCEPTANCE_CAPACITY;
+    };
+
+    const consumePreviewRequest = (requestId: number): boolean => {
+        for (let index = 0; index < acceptedPreviewRequestIds.length; index++) {
+            if (acceptedPreviewRequestIds[index] === requestId) {
+                acceptedPreviewRequestIds[index] = -1;
+                return true;
+            }
+        }
+        return false;
+    };
+
+    const accountPreviewDrops = (droppedEvents: number): void => {
+        if (droppedEvents <= 0) {
+            return;
+        }
+        if (previewQueueSize > 0) {
+            const lastIndex = (previewQueueReadIndex + previewQueueSize - 1) % PREVIEW_DELIVERY_QUEUE_CAPACITY;
+            previewQueueExtraDropped[lastIndex] = Math.min(
+                Number.MAX_SAFE_INTEGER,
+                previewQueueExtraDropped[lastIndex]! + droppedEvents
+            );
+            return;
+        }
+        unreportedPreviewDrops = Math.min(Number.MAX_SAFE_INTEGER, unreportedPreviewDrops + droppedEvents);
+    };
+
+    const schedulePreviewDelivery = (): void => {
+        if (previewDeliveryTimer !== null || previewQueueSize === 0) {
+            return;
+        }
+        previewDeliveryTimer = setTimeout(() => {
+            previewDeliveryTimer = null;
+            const index = previewQueueReadIndex;
+            const page = previewQueuePages[index];
+            const extraDroppedEvents = previewQueueExtraDropped[index]!;
+            previewQueuePages[index] = undefined;
+            previewQueueExtraDropped[index] = 0;
+            previewQueueReadIndex = (previewQueueReadIndex + 1) % PREVIEW_DELIVERY_QUEUE_CAPACITY;
+            previewQueueSize -= 1;
+
+            if (page) {
+                const preview = decodePreviewPage(page, extraDroppedEvents);
+                if (preview) {
+                    const handlers = [...previewHandlers];
+                    for (const handler of handlers) {
+                        try {
+                            handler(preview);
+                        } catch {
+                            // A failed/reentrant observer cannot affect this delivery snapshot.
+                        }
+                    }
+                } else {
+                    accountPreviewDrops(page.count + page.droppedEvents + extraDroppedEvents);
+                }
+            }
+            schedulePreviewDelivery();
+        }, 0);
+    };
+
+    const enqueuePreviewPage = (page: YeastPreviewPackedPage): void => {
+        if (previewQueueSize === PREVIEW_DELIVERY_QUEUE_CAPACITY) {
+            accountPreviewDrops(page.count + page.droppedEvents);
+            return;
+        }
+        const index = (previewQueueReadIndex + previewQueueSize) % PREVIEW_DELIVERY_QUEUE_CAPACITY;
+        previewQueuePages[index] = page;
+        previewQueueExtraDropped[index] = unreportedPreviewDrops;
+        unreportedPreviewDrops = 0;
+        previewQueueSize += 1;
+        schedulePreviewDelivery();
+    };
+
+    const clearPreviewDelivery = (): void => {
+        if (previewDeliveryTimer !== null) {
+            clearTimeout(previewDeliveryTimer);
+            previewDeliveryTimer = null;
+        }
+        for (let index = 0; index < previewQueuePages.length; index++) {
+            previewQueuePages[index] = undefined;
+            previewQueueExtraDropped[index] = 0;
+        }
+        previewQueueReadIndex = 0;
+        previewQueueSize = 0;
+        unreportedPreviewDrops = 0;
+        acceptedPreviewRequestIds.fill(-1);
+    };
 
     const dispatchNotesOff = (events: readonly MidiEvent[]): void => {
         const notesOffByTrack = new Map<string, YeastNoteOffIdentity[]>();
@@ -460,6 +614,7 @@ export async function createYeastWorker(ctx: BaseAudioContext): Promise<YeastWor
         for (const projectionId of [...pendingProjections.keys()]) {
             settleProjection(projectionId)?.reject(pendingErrors.projection);
         }
+        clearPreviewDelivery();
         notesOffHandlers.clear();
         previewHandlers.clear();
 
@@ -507,16 +662,22 @@ export async function createYeastWorker(ctx: BaseAudioContext): Promise<YeastWor
             if (!entry) {
                 return;
             }
-            if (processed.preview) {
-                for (const handler of previewHandlers) {
-                    try {
-                        handler(processed.preview);
-                    } catch {
-                        // Preview observers cannot replace or reject scheduler output.
-                    }
-                }
-            }
             entry.resolve(processed.events);
+            if (entry.previewEnabled) {
+                rememberPreviewRequest(processed.requestId);
+            }
+            return;
+        }
+        if (event.data.type === 'previewPage') {
+            const parsed = parsePreviewPageMessage(event.data);
+            if (!parsed) {
+                return;
+            }
+            if (!consumePreviewRequest(parsed.requestId)) {
+                accountPreviewDrops(parsed.page.count + parsed.page.droppedEvents);
+                return;
+            }
+            enqueuePreviewPage(parsed.page);
             return;
         }
         if (event.data.type === 'processedError') {
@@ -618,7 +779,7 @@ export async function createYeastWorker(ctx: BaseAudioContext): Promise<YeastWor
                     reject(new Error(`YeastWorker.processBlock timed out (requestId ${requestId})`));
                 }
             }, PROCESS_BLOCK_TIMEOUT_MS);
-            pending.set(requestId, { resolve, reject, timer });
+            pending.set(requestId, { resolve, reject, timer, previewEnabled });
             try {
                 worker.postMessage({
                     type: 'processBlock',

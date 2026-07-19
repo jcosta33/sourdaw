@@ -59,7 +59,7 @@ type PendingAllNotesOff = {
     nowSamples: number;
 };
 
-const YEAST_RUNTIME_SESSION_VERSION = 7;
+const YEAST_RUNTIME_SESSION_VERSION = 8;
 
 const session = createHmrPersistentState<YeastRuntimeSession>('yeast.runtime', () => ({
     version: YEAST_RUNTIME_SESSION_VERSION,
@@ -81,9 +81,10 @@ const session = createHmrPersistentState<YeastRuntimeSession>('yeast.runtime', (
     activeOutputNotes: new Map(),
 }));
 
-// Retained pre-v7 sessions either use the pitch-only host note-off contract or
-// predate the preview sidecar listener. Revoke every runtime handle and defer
-// channel-complete settlement to the new sink.
+// Retained pre-v8 sessions either use the pitch-only host note-off contract,
+// predate the preview sidecar listener, or deliver preview inline with scheduler
+// replies. Revoke every runtime handle and defer channel-complete settlement to
+// the new sink.
 if (session.version !== YEAST_RUNTIME_SESSION_VERSION) {
     const staleNode = session.node;
     const retainedRuntimeMayOwnOutput = session.context !== null || session.nodePromise !== null || staleNode !== null;
