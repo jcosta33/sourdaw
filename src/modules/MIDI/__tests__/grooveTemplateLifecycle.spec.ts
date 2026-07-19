@@ -1,9 +1,11 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 
+import { handleApplyGroove } from '../handlers/groove/handleApplyGroove';
 import { handleAssignGrooveTemplate } from '../handlers/groove/handleAssignGrooveTemplate';
 import { handleCreateGrooveTemplate } from '../handlers/groove/handleCreateGrooveTemplate';
 import { handleDeleteGrooveTemplate } from '../handlers/groove/handleDeleteGrooveTemplate';
 import { handleRenameGrooveTemplate } from '../handlers/groove/handleRenameGrooveTemplate';
+import { handleRestoreGrooveTemplateName } from '../handlers/groove/handleRestoreGrooveTemplateName';
 import { STRAIGHT_GROOVE_TEMPLATE_ID } from '../models/GrooveTemplate';
 import { grooveTemplateProjectRevisionStore } from '../stores/grooveTemplateProjectRevisionStore';
 import { defaultGrooveTemplateState, grooveTemplateStore } from '../stores/grooveTemplateStore';
@@ -34,9 +36,9 @@ describe('groove template lifecycle', () => {
             provenance: { type: 'user', sourceId: 'two' },
         });
 
-        expect(first.name).toBe('Pocket');
-        expect(second.name).toBe('Pocket 2');
-        expect(renameGrooveTemplate({ templateId: second.id, name: 'Pocket' })?.name).toBe('Pocket 2');
+        expect(first.template.name).toBe('Pocket');
+        expect(second.template.name).toBe('Pocket 2');
+        expect(renameGrooveTemplate({ templateId: second.template.id, name: 'Pocket' })?.name).toBe('Pocket 2');
     });
 
     it('treats an identical canonical assignment as no project or command change', () => {
@@ -57,6 +59,42 @@ describe('groove template lifecycle', () => {
         expect(grooveTemplateStore.value).toBe(afterFirstAssignment);
         expect(grooveTemplateProjectRevisionStore.value).toBe(revision);
         expect(handleAssignGrooveTemplate.isNoop?.(action)).toBe(true);
+    });
+
+    it('treats an identical legacy apply action as no command change', () => {
+        const action = {
+            type: 'applyGroove' as const,
+            payload: { clipId: 'clip-identical', grooveId: STRAIGHT_GROOVE_TEMPLATE_ID, amount: 1 },
+        };
+
+        void handleApplyGroove.execute(action);
+
+        expect(handleApplyGroove.isNoop?.(action)).toBe(true);
+    });
+
+    it('distinguishes an idempotent create replay from an identity conflict', () => {
+        const input = {
+            id: 'stable-identity',
+            name: 'Stable identity',
+            subdivision: '1/16' as const,
+            slots: [{ index: 1, timingOffset: 0.1, dynamicsOffset: 0 }],
+            provenance: { type: 'user' as const, sourceId: 'stable-identity' },
+        };
+        const created = createGrooveTemplate(input);
+        const revisionAfterCreate = grooveTemplateProjectRevisionStore.value;
+
+        const replayed = createGrooveTemplate(input);
+
+        expect(created.status).toBe('written');
+        expect(replayed).toEqual({ status: 'no-write', template: created.template });
+        expect(grooveTemplateProjectRevisionStore.value).toBe(revisionAfterCreate);
+        expect(() =>
+            createGrooveTemplate({
+                ...input,
+                slots: [{ index: 1, timingOffset: -0.1, dynamicsOffset: 0 }],
+            })
+        ).toThrow('Groove template identity conflict: stable-identity');
+        expect(grooveTemplateProjectRevisionStore.value).toBe(revisionAfterCreate);
     });
 
     it('resolves name collisions with locale-independent Unicode normalization', () => {
@@ -89,10 +127,10 @@ describe('groove template lifecycle', () => {
             provenance: { type: 'user', sourceId: 'ascii' },
         });
 
-        expect(decomposed.name).toBe('Cafe\u0301');
-        expect(composed.name).toBe('Caf\u00E9 2');
-        expect(fullWidth.name).toBe('\uFF30\uFF2F\uFF23\uFF2B\uFF25\uFF34');
-        expect(ascii.name).toBe('pocket 2');
+        expect(decomposed.template.name).toBe('Cafe\u0301');
+        expect(composed.template.name).toBe('Caf\u00E9 2');
+        expect(fullWidth.template.name).toBe('\uFF30\uFF2F\uFF23\uFF2B\uFF25\uFF34');
+        expect(ascii.template.name).toBe('pocket 2');
     });
 
     it('hydrates lifecycle state while preserving explicit Straight', () => {
@@ -174,10 +212,18 @@ describe('groove template lifecycle', () => {
             'Renamed groove'
         );
 
-        if (renameDescription.inverseAction?.type !== 'renameGrooveTemplate') {
+        expect(renameDescription.inverseAction).toEqual({
+            type: 'restoreGrooveTemplateName',
+            payload: {
+                templateId: 'handler-groove',
+                name: 'Handler groove',
+                expectedName: 'Renamed groove',
+            },
+        });
+        if (renameDescription.inverseAction?.type !== 'restoreGrooveTemplateName') {
             throw new Error('Expected rename inverse');
         }
-        void handleRenameGrooveTemplate.execute(renameDescription.inverseAction);
+        void handleRestoreGrooveTemplateName.execute(renameDescription.inverseAction);
         expect(grooveTemplateStore.value?.templates.find((template) => template.id === 'handler-groove')?.name).toBe(
             'Handler groove'
         );
@@ -187,6 +233,33 @@ describe('groove template lifecycle', () => {
         }
         void handleDeleteGrooveTemplate.execute(createDescription.inverseAction);
         expect(grooveTemplateStore.value?.templates.some((template) => template.id === 'handler-groove')).toBe(false);
+    });
+
+    it('rejects rename undo after a collaborator changes the action result', () => {
+        createGrooveTemplate({
+            id: 'collaborative-rename',
+            name: 'Original name',
+            subdivision: '1/16',
+            slots: [],
+            provenance: { type: 'user', sourceId: 'collaborative-rename' },
+        });
+        const action = {
+            type: 'renameGrooveTemplate' as const,
+            payload: { templateId: 'collaborative-rename', name: 'Local rename' },
+        };
+        const inverse = handleRenameGrooveTemplate.describe(action).inverseAction;
+        void handleRenameGrooveTemplate.execute(action);
+        renameGrooveTemplate({ templateId: 'collaborative-rename', name: 'Collaborator rename' });
+
+        if (inverse?.type !== 'restoreGrooveTemplateName') {
+            throw new Error('Expected guarded rename inverse');
+        }
+        expect(() => handleRestoreGrooveTemplateName.execute(inverse)).toThrow(
+            'Cannot restore groove template name: current value diverged from the action result'
+        );
+        expect(
+            grooveTemplateStore.value?.templates.find((template) => template.id === 'collaborative-rename')?.name
+        ).toBe('Collaborator rename');
     });
 
     it('canonicalizes create identity before inverse capture and execution', () => {

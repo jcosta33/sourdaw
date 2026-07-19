@@ -25,15 +25,20 @@ describe('deleteGrooveTemplate', () => {
             slots: [{ index: 1, timingOffset: 0.1, dynamicsOffset: 0 }],
             provenance: { type: 'user', sourceId: 'manual' },
         });
-        assignGrooveTemplate({ consumerType: 'yeast-processor', consumerId: 'y1', templateId: template.id, amount: 1 });
+        assignGrooveTemplate({
+            consumerType: 'yeast-processor',
+            consumerId: 'y1',
+            templateId: template.template.id,
+            amount: 1,
+        });
         assignGrooveTemplate({
             consumerType: 'toaster-pattern',
             consumerId: 't1',
-            templateId: template.id,
+            templateId: template.template.id,
             amount: 0.7,
         });
 
-        const snapshot = deleteGrooveTemplate(template.id);
+        const snapshot = deleteGrooveTemplate(template.template.id);
         expect(snapshot).not.toBeNull();
         expect(grooveTemplateStore.value?.assignments.map((assignment) => assignment.templateId)).toEqual([
             STRAIGHT_GROOVE_TEMPLATE_ID,
@@ -44,7 +49,7 @@ describe('deleteGrooveTemplate', () => {
             throw new Error('Expected deletion snapshot');
         }
         restoreDeletedGrooveTemplate(snapshot);
-        expect(grooveTemplateStore.value?.templates).toContainEqual(template);
+        expect(grooveTemplateStore.value?.templates).toContainEqual(template.template);
         expect(grooveTemplateStore.value?.assignments).toEqual([
             { consumerType: 'yeast-processor', consumerId: 'y1', templateId: 'pocket', amount: 1 },
             { consumerType: 'toaster-pattern', consumerId: 't1', templateId: 'pocket', amount: 0.7 },

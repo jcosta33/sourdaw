@@ -1,8 +1,8 @@
-import { STRAIGHT_GROOVE_TEMPLATE_ID, type GrooveTemplate } from '../../models/GrooveTemplate';
+import { type GrooveTemplate } from '../../models/GrooveTemplate';
 import { grooveTemplateStore } from '../../stores/grooveTemplateStore';
 
 import { markGrooveTemplateProjectWrite } from './markGrooveTemplateProjectWrite';
-import { resolveGrooveTemplateName } from './resolveGrooveTemplateName';
+import { resolveGrooveTemplateRename } from './resolveGrooveTemplateRename';
 
 type RenameGrooveTemplateInput = {
     templateId: string;
@@ -11,17 +11,16 @@ type RenameGrooveTemplateInput = {
 
 export function renameGrooveTemplate({ templateId, name }: RenameGrooveTemplateInput): GrooveTemplate | null {
     const state = grooveTemplateStore.value;
-    const current = state?.templates.find((template) => template.id === templateId);
-    if (!state || !current || templateId === STRAIGHT_GROOVE_TEMPLATE_ID || current.provenance.type === 'builtin') {
-        return current ?? null;
+    const resolved = resolveGrooveTemplateRename({ templateId, name });
+    if (!state || !resolved) {
+        return state?.templates.find((template) => template.id === templateId) ?? null;
+    }
+    if (resolved.current.name === resolved.nextName) {
+        return resolved.current;
     }
     const renamed = {
-        ...current,
-        name: resolveGrooveTemplateName({
-            requestedName: name,
-            templates: state.templates,
-            ignoreTemplateId: templateId,
-        }),
+        ...resolved.current,
+        name: resolved.nextName,
     };
     grooveTemplateStore.set({
         ...state,

@@ -22,12 +22,12 @@ describe('groove preview and commit parity', () => {
         });
         const events = [{ id: 'n1', startBeat: 0.25, velocity: 100 }];
         const sourceSnapshot = structuredClone(events);
-        const preview = previewGrooveTemplate({ events, templateId: template.id, amount: 0.5 });
+        const preview = previewGrooveTemplate({ events, templateId: template.template.id, amount: 0.5 });
 
         assignGrooveTemplate({
             consumerType: 'clip',
             consumerId: 'clip-1',
-            templateId: template.id,
+            templateId: template.template.id,
             amount: 0.5,
         });
         const committed = projectCommittedGroove({ events, consumerType: 'clip', consumerId: 'clip-1' });
@@ -52,7 +52,7 @@ describe('groove preview and commit parity', () => {
             payload: {
                 consumerType: 'clip' as const,
                 consumerId: 'clip-undo',
-                templateId: template.id,
+                templateId: template.template.id,
                 amount: 0.75,
             },
         };
@@ -123,7 +123,7 @@ describe('groove preview and commit parity', () => {
         const assignment = assignGrooveTemplate({
             consumerType: 'clip',
             consumerId: 'clip-nan',
-            templateId: template.id,
+            templateId: template.template.id,
             amount: Number.NaN,
         });
 
@@ -132,14 +132,14 @@ describe('groove preview and commit parity', () => {
             assignment: {
                 consumerType: 'clip',
                 consumerId: 'clip-nan',
-                templateId: template.id,
+                templateId: template.template.id,
                 amount: 0,
             },
         });
         expect(grooveTemplateStore.value?.assignments).toContainEqual({
             consumerType: 'clip',
             consumerId: 'clip-nan',
-            templateId: template.id,
+            templateId: template.template.id,
             amount: 0,
         });
     });

@@ -21,7 +21,12 @@ type CreateGrooveTemplateInput = {
     provenance: GrooveTemplateProvenance;
 };
 
-export function createGrooveTemplate(input: CreateGrooveTemplateInput): GrooveTemplate {
+type CreateGrooveTemplateResult = {
+    status: 'written' | 'no-write';
+    template: GrooveTemplate;
+};
+
+export function createGrooveTemplate(input: CreateGrooveTemplateInput): CreateGrooveTemplateResult {
     const state = grooveTemplateStore.value;
     if (!state) {
         throw new Error('Groove template state is unavailable');
@@ -31,11 +36,6 @@ export function createGrooveTemplate(input: CreateGrooveTemplateInput): GrooveTe
     if (!id) {
         throw new Error('Groove template ID must be nonempty');
     }
-    const existing = state.templates.find((template) => template.id === id);
-    if (existing) {
-        return existing;
-    }
-
     const slotCount = getGrooveSubdivisionSlotCount(input.subdivision);
     const slotsByIndex = new Map<number, GrooveTemplateSlot>();
     for (const slot of input.slots) {
@@ -51,7 +51,11 @@ export function createGrooveTemplate(input: CreateGrooveTemplateInput): GrooveTe
 
     const template: GrooveTemplate = {
         id,
-        name: resolveGrooveTemplateName({ requestedName: input.name, templates: state.templates }),
+        name: resolveGrooveTemplateName({
+            requestedName: input.name,
+            templates: state.templates,
+            ignoreTemplateId: id,
+        }),
         schemaVersion: GROOVE_TEMPLATE_SCHEMA_VERSION,
         subdivision: input.subdivision,
         slots: [...slotsByIndex.values()].sort((left, right) => left.index - right.index),
@@ -60,7 +64,14 @@ export function createGrooveTemplate(input: CreateGrooveTemplateInput): GrooveTe
     if (!isGrooveTemplate(template)) {
         throw new Error('Groove template is not canonical');
     }
+    const existing = state.templates.find((candidate) => candidate.id === id);
+    if (existing) {
+        if (JSON.stringify(existing) !== JSON.stringify(template)) {
+            throw new Error(`Groove template identity conflict: ${id}`);
+        }
+        return { status: 'no-write', template: existing };
+    }
     grooveTemplateStore.set({ ...state, templates: [...state.templates, template] });
     markGrooveTemplateProjectWrite();
-    return template;
+    return { status: 'written', template };
 }

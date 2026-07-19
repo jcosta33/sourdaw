@@ -271,6 +271,52 @@ describe('groove template collaboration storage', () => {
     );
 
     it.each(['left-right', 'right-left'] as const)(
+        'preserves a legacy-root deletion while merging an unrelated first write $0',
+        (direction) => {
+            const legacyBaseline = from<RootDocument>({
+                grooveTemplates: {
+                    templates: [...createBuiltinGrooveTemplates(), createTemplate('legacy-delete-me')],
+                    assignments: [
+                        {
+                            consumerType: 'clip',
+                            consumerId: 'legacy-deleted-assignment',
+                            templateId: 'legacy-delete-me',
+                            amount: 1,
+                        },
+                    ],
+                },
+            });
+            const leftPeer = createPeer(clone(legacyBaseline));
+            const rightPeer = createPeer(clone(legacyBaseline));
+            const leftStorage = createGrooveTemplateAutomergeStorage();
+            const rightStorage = createGrooveTemplateAutomergeStorage();
+
+            configureAutomergeStoragePort(leftPeer.port);
+            expect(leftStorage.hydrate?.()).toBe(true);
+            leftStorage.set({
+                templates: leftStorage.get()!.templates.filter((template) => template.id !== 'legacy-delete-me'),
+                assignments: [],
+            });
+            flushAutomergeStorageWrites();
+
+            configureAutomergeStoragePort(rightPeer.port);
+            expect(rightStorage.hydrate?.()).toBe(true);
+            rightStorage.set({
+                ...rightStorage.get()!,
+                templates: [...rightStorage.get()!.templates, createTemplate('legacy-unrelated')],
+            });
+            flushAutomergeStorageWrites();
+
+            const mergedState = mergePeers({ leftPeer, rightPeer, direction });
+            expect(mergedState.templates.some((template) => template.id === 'legacy-delete-me')).toBe(false);
+            expect(mergedState.templates.some((template) => template.id === 'legacy-unrelated')).toBe(true);
+            expect(
+                mergedState.assignments.some((assignment) => assignment.consumerId === 'legacy-deleted-assignment')
+            ).toBe(false);
+        }
+    );
+
+    it.each(['left-right', 'right-left'] as const)(
         'keeps a deletion causal while merging an unrelated template write $0',
         (direction) => {
             const baseline = createBaseline({

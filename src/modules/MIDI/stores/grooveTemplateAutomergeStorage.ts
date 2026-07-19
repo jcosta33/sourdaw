@@ -42,6 +42,33 @@ function encodeState(state: GrooveTemplateState): GrooveTemplateCrdtState {
     };
 }
 
+function isLegacyState(value: unknown): boolean {
+    return isRecord(value) && Array.isArray(value.templates) && Array.isArray(value.assignments);
+}
+
+function encodeMigratedState(previous: unknown, desired: GrooveTemplateState): GrooveTemplateCrdtState {
+    const encoded = encodeState(desired);
+    if (!isLegacyState(previous)) {
+        return encoded;
+    }
+    const legacySnapshot = JSON.parse(JSON.stringify(previous)) as unknown;
+    const legacy = sanitizeGrooveTemplateState(legacySnapshot);
+    const desiredTemplateIds = new Set(desired.templates.map((template) => template.id));
+    for (const template of legacy.templates) {
+        if (!desiredTemplateIds.has(template.id)) {
+            encoded.templates[template.id] = { deleted: true, value: structuredClone(template) };
+        }
+    }
+    const desiredAssignmentKeys = new Set(desired.assignments.map(assignmentEntityKey));
+    for (const assignment of legacy.assignments) {
+        const key = assignmentEntityKey(assignment);
+        if (!desiredAssignmentKeys.has(key)) {
+            encoded.assignments[key] = { deleted: true, value: structuredClone(assignment) };
+        }
+    }
+    return encoded;
+}
+
 function isCrdtState(value: unknown): value is GrooveTemplateCrdtState {
     return (
         isRecord(value) &&
@@ -74,26 +101,34 @@ function decodeState(value: unknown): GrooveTemplateState {
     return sanitizeGrooveTemplateState({ templates, assignments });
 }
 
-function reconcileRootConflicts(values: readonly GrooveTemplateState[]): GrooveTemplateState {
-    const templatesById = new Map<string, GrooveTemplate>();
-    const assignmentsByConsumer = new Map<string, GrooveTemplateAssignment>();
-    for (const state of values) {
-        for (const template of state.templates) {
-            if (!templatesById.has(template.id)) {
-                templatesById.set(template.id, template);
-            }
+function mergeEntityRecords<Value>(
+    target: Record<string, { deleted: boolean; value: Value }>,
+    source: Record<string, { deleted: boolean; value: Value }>
+): void {
+    for (const key of Object.keys(source).sort(compareEntityKeys)) {
+        const incoming = source[key]!;
+        const existing = target[key];
+        if (existing?.deleted === true) {
+            continue;
         }
-        for (const assignment of state.assignments) {
-            const key = assignmentEntityKey(assignment);
-            if (!assignmentsByConsumer.has(key)) {
-                assignmentsByConsumer.set(key, assignment);
-            }
+        if (!existing || incoming.deleted === true) {
+            target[key] = structuredClone(incoming);
         }
     }
-    return sanitizeGrooveTemplateState({
-        templates: [...templatesById.values()],
-        assignments: [...assignmentsByConsumer.values()],
-    });
+}
+
+function reconcileCrdtRootConflicts(values: readonly unknown[]): GrooveTemplateState {
+    const merged: GrooveTemplateCrdtState = {
+        schemaVersion: GROOVE_CRDT_SCHEMA_VERSION,
+        templates: {},
+        assignments: {},
+    };
+    for (const value of values) {
+        const state = isCrdtState(value) ? value : encodeState(sanitizeGrooveTemplateState(value));
+        mergeEntityRecords(merged.templates, state.templates);
+        mergeEntityRecords(merged.assignments, state.assignments);
+    }
+    return decodeState(merged);
 }
 
 function replaceIfChanged(target: MutableRecord, key: string, value: unknown): void {
@@ -157,7 +192,7 @@ function mutateGrooveTemplateCrdt({
     const canonicalState = sanitizeGrooveTemplateState(value);
     const current = doc[key];
     if (!isCrdtState(current)) {
-        doc[key] = encodeState(canonicalState);
+        doc[key] = encodeMigratedState(current, canonicalState);
         return;
     }
     const desiredTemplates = new Map(canonicalState.templates.map((template) => [template.id, template]));
@@ -236,9 +271,9 @@ export function createGrooveTemplateAutomergeStorage() {
             shouldCollapseRootConflicts = false;
             return decodeState(value);
         },
-        resolveConflicts: (values) => {
+        resolveCrdtConflicts: (values) => {
             shouldCollapseRootConflicts = true;
-            return reconcileRootConflicts(values);
+            return reconcileCrdtRootConflicts(values);
         },
         mutateCrdt: (input) => {
             if (shouldCollapseRootConflicts) {

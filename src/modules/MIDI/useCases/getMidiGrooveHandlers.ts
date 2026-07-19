@@ -8,10 +8,12 @@ import { handleExtractGroove } from '../handlers/groove/handleExtractGroove';
 import { handleRenameGrooveTemplate } from '../handlers/groove/handleRenameGrooveTemplate';
 import { handleRestoreDeletedGrooveTemplate } from '../handlers/groove/handleRestoreDeletedGrooveTemplate';
 import { handleRestoreGrooveAssignment } from '../handlers/groove/handleRestoreGrooveAssignment';
+import { handleRestoreGrooveTemplateName } from '../handlers/groove/handleRestoreGrooveTemplateName';
 
 type MidiGrooveAction =
     | Extract<AppAction, { type: 'createGrooveTemplate' }>
     | Extract<AppAction, { type: 'renameGrooveTemplate' }>
+    | Extract<AppAction, { type: 'restoreGrooveTemplateName' }>
     | Extract<AppAction, { type: 'deleteGrooveTemplate' }>
     | Extract<AppAction, { type: 'restoreDeletedGrooveTemplate' }>
     | Extract<AppAction, { type: 'assignGrooveTemplate' }>
@@ -27,6 +29,7 @@ export function getMidiGrooveHandlers(): MidiGrooveHandlersMap {
     return {
         createGrooveTemplate: handleCreateGrooveTemplate,
         renameGrooveTemplate: handleRenameGrooveTemplate,
+        restoreGrooveTemplateName: handleRestoreGrooveTemplateName,
         deleteGrooveTemplate: handleDeleteGrooveTemplate,
         restoreDeletedGrooveTemplate: handleRestoreDeletedGrooveTemplate,
         assignGrooveTemplate: handleAssignGrooveTemplate,

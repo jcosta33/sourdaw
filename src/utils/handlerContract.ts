@@ -381,6 +381,10 @@ export type AppAction =
           payload: Omit<GrooveTemplateActionSnapshot, 'schemaVersion'>;
       }
     | { type: 'renameGrooveTemplate'; payload: { templateId: string; name: string } }
+    | {
+          type: 'restoreGrooveTemplateName';
+          payload: { templateId: string; name: string; expectedName: string };
+      }
     | { type: 'deleteGrooveTemplate'; payload: { templateId: string } }
     | { type: 'restoreDeletedGrooveTemplate'; payload: DeletedGrooveTemplateActionSnapshot }
     | { type: 'assignGrooveTemplate'; payload: GrooveAssignmentActionSnapshot }

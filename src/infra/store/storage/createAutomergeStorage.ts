@@ -38,6 +38,8 @@ type AutomergeStorageOptions<TData> = {
     hydrateMissing?: () => TData;
     /** Deterministically reconcile concurrent whole-slot values exposed by Automerge. */
     resolveConflicts?: (values: readonly TData[]) => TData;
+    /** Reconcile raw concurrent CRDT values before domain decoding when tombstones or schema metadata matter. */
+    resolveCrdtConflicts?: (values: readonly unknown[]) => TData;
     /** Mutate a CRDT slot in place so domain entities retain causal identity. */
     mutateCrdt?: (input: { doc: AutomergeStorageMutableDoc; key: string; value: TData }) => void;
     /** Rebase a deferred local value over a newer hydrated value. */
@@ -229,6 +231,7 @@ export const createAutomergeStorage = <TData>(
     const fromCrdt = options?.fromCrdt;
     const hydrateMissing = options?.hydrateMissing;
     const resolveConflicts = options?.resolveConflicts;
+    const resolveCrdtConflicts = options?.resolveCrdtConflicts;
     const mutateCrdt = options?.mutateCrdt;
     const rebasePending = options?.rebasePending;
     let cachedValue: TData | null = null;
@@ -405,7 +408,7 @@ export const createAutomergeStorage = <TData>(
                 // than re-stringifying cachedValue; 2 JSON ops per hydrate
                 // instead of 3–4.
                 let incomingValues: readonly unknown[] = [value];
-                if (resolveConflicts) {
+                if (resolveConflicts || resolveCrdtConflicts) {
                     const conflicts = getConflicts(doc as Doc<AutomergeStorageReadableDoc>, key);
                     if (conflicts) {
                         incomingValues = Object.entries(conflicts)
@@ -425,14 +428,20 @@ export const createAutomergeStorage = <TData>(
                 if (incomingJson === lastHydratedJson) {
                     return false;
                 }
-                const rawValues = JSON.parse(incomingJson) as TData[];
-                const normalizedValues = fromCrdt ? rawValues.map((rawValue) => fromCrdt(rawValue)) : rawValues;
+                const rawValues = JSON.parse(incomingJson) as unknown[];
+                const normalizedValues = fromCrdt
+                    ? rawValues.map((rawValue) => fromCrdt(rawValue as TData))
+                    : (rawValues as TData[]);
                 const firstValue = normalizedValues[0];
                 if (!firstValue) {
                     return false;
                 }
-                const crdtData =
-                    resolveConflicts && normalizedValues.length > 1 ? resolveConflicts(normalizedValues) : firstValue;
+                let crdtData: TData = firstValue;
+                if (resolveCrdtConflicts && rawValues.length > 1) {
+                    crdtData = resolveCrdtConflicts(rawValues);
+                } else if (resolveConflicts && normalizedValues.length > 1) {
+                    crdtData = resolveConflicts(normalizedValues);
+                }
 
                 if (pendingWrite) {
                     let rebasedValue = pendingValue;

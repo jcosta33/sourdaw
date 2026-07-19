@@ -10,7 +10,8 @@ export const handleCreateGrooveTemplate = createHandler<'createGrooveTemplate'>(
         if (!id) {
             throw new Error('Groove template ID must be nonempty');
         }
-        createGrooveTemplate({ ...action.payload, id });
+        const result = createGrooveTemplate({ ...action.payload, id });
+        return { status: result.status };
     },
     describe: (action) => {
         const id = canonicalizeGrooveTemplateId(action.payload.id);
