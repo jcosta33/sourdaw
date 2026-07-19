@@ -4,8 +4,10 @@ import { deleteGrooveTemplate } from '../../useCases/grooveTemplates/deleteGroov
 import { snapshotGrooveTemplateDeletion } from '../../useCases/grooveTemplates/snapshotGrooveTemplateDeletion';
 
 export const handleDeleteGrooveTemplate = createHandler<'deleteGrooveTemplate'>({
+    isNoop: (action) => snapshotGrooveTemplateDeletion(action.payload.templateId) === null,
     execute: (action) => {
-        deleteGrooveTemplate(action.payload.templateId);
+        const snapshot = deleteGrooveTemplate(action.payload.templateId);
+        return { status: snapshot ? 'written' : 'no-write' };
     },
     describe: (action) => {
         const snapshot = snapshotGrooveTemplateDeletion(action.payload.templateId);

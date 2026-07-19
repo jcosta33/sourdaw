@@ -10,7 +10,7 @@ export function snapshotGrooveTemplateDeletion(templateId: string): DeletedGroov
         return null;
     }
     const template = state.templates[templateIndex];
-    if (!template) {
+    if (!template || template.provenance.type === 'builtin') {
         return null;
     }
     return {

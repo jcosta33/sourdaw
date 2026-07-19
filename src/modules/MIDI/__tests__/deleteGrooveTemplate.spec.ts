@@ -17,6 +17,19 @@ import { restoreDeletedGrooveTemplate } from '../useCases/grooveTemplates/restor
 describe('deleteGrooveTemplate', () => {
     beforeEach(() => grooveTemplateStore.set(structuredClone(defaultGrooveTemplateState)));
 
+    it.each([STRAIGHT_GROOVE_TEMPLATE_ID, 'missing-template'])(
+        'reports protected or missing deletion of %s as a command no-op',
+        (templateId) => {
+            const action = { type: 'deleteGrooveTemplate' as const, payload: { templateId } };
+            const before = structuredClone(grooveTemplateStore.value);
+
+            expect(handleDeleteGrooveTemplate.isNoop?.(action)).toBe(true);
+            expect(handleDeleteGrooveTemplate.describe(action).inverseAction).toBeNull();
+            expect(handleDeleteGrooveTemplate.execute(action)).toEqual({ status: 'no-write' });
+            expect(grooveTemplateStore.value).toEqual(before);
+        }
+    );
+
     it('falls every reference back to Straight and restores template plus references deterministically', () => {
         const template = createGrooveTemplate({
             id: 'pocket',
