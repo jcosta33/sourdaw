@@ -75,12 +75,16 @@ describe('loadProject', () => {
         expect(startCrdtAutoSave).toHaveBeenCalledTimes(1);
     });
 
-    it('should create a replacement document when persistence is empty', async () => {
+    it('lands on the launch screen without creating a document when persistence is empty', async () => {
         mocks.loadCrdtProject.mockResolvedValue(false);
 
-        await expect(loadProject()).resolves.toBe(true);
+        await expect(loadProject()).resolves.toBe(false);
 
-        expect(createCrdtProject).toHaveBeenCalledWith('Untitled Project');
+        expect(createCrdtProject).not.toHaveBeenCalled();
+        expect(projectCrdtToStores).not.toHaveBeenCalled();
+        expect(startCrdtAutoSave).not.toHaveBeenCalled();
+        // Loading is cleared so AppShell can present the LaunchScreen.
+        expect(mocks.projectStoreSet).toHaveBeenCalledWith(expect.objectContaining({ loading: false }));
     });
 
     it('should preserve the current project when persistence loading fails', async () => {
