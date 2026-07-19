@@ -1,13 +1,15 @@
+import { createBuiltinGrooveTemplates } from '../../models/BuiltinGrooveTemplates';
 import {
     GROOVE_SUBDIVISIONS,
     GROOVE_TEMPLATE_SCHEMA_VERSION,
-    STRAIGHT_GROOVE_TEMPLATE_ID,
-    canonicalizeGrooveTemplateId,
     createStraightGrooveTemplate,
     getGrooveSubdivisionSlotCount,
     getGrooveSubdivisionStepBeats,
+    resolveGrooveTemplateIdAlias,
     type GrooveTemplate,
 } from '../../models/GrooveTemplate';
+
+const RESERVED_BUILTIN_TEMPLATE_IDS = new Set(createBuiltinGrooveTemplates().map((template) => template.id));
 
 type GrooveSourceNote = {
     id: string;
@@ -110,6 +112,14 @@ function calculateStableMean(values: readonly number[]): number {
     return (sum + correction) / sortedValues.length;
 }
 
+function resolveExtractedTemplateId(input: ExtractGrooveTemplateInput): string {
+    const requestedTemplateId = input.templateId ? resolveGrooveTemplateIdAlias(input.templateId) : null;
+    if (!requestedTemplateId || RESERVED_BUILTIN_TEMPLATE_IDS.has(requestedTemplateId)) {
+        return `groove-${input.sourceId}-v${input.analyzerVersion}`;
+    }
+    return requestedTemplateId;
+}
+
 export function extractGrooveTemplate(input: ExtractGrooveTemplateInput): ExtractGrooveTemplateResult {
     const subdivision = GROOVE_SUBDIVISIONS.find((candidate) => candidate === input.subdivision);
     if (!subdivision) {
@@ -160,14 +170,10 @@ export function extractGrooveTemplate(input: ExtractGrooveTemplateInput): Extrac
         return { ok: true, template: createStraightGrooveTemplate() };
     }
 
-    const requestedTemplateId = input.templateId ? canonicalizeGrooveTemplateId(input.templateId) : null;
     return {
         ok: true,
         template: {
-            id:
-                requestedTemplateId && requestedTemplateId !== STRAIGHT_GROOVE_TEMPLATE_ID
-                    ? requestedTemplateId
-                    : `groove-${input.sourceId}-v${input.analyzerVersion}`,
+            id: resolveExtractedTemplateId(input),
             name: `${input.sourceName.trim()} groove`,
             schemaVersion: GROOVE_TEMPLATE_SCHEMA_VERSION,
             subdivision,

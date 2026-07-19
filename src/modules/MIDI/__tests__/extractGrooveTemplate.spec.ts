@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
+import { createBuiltinGrooveTemplates } from '../models/BuiltinGrooveTemplates';
 import { STRAIGHT_GROOVE_TEMPLATE_ID, isGrooveTemplate } from '../models/GrooveTemplate';
 import { extractGrooveTemplate } from '../useCases/grooveTemplates/extractGrooveTemplate';
 
@@ -55,23 +56,27 @@ describe('extractGrooveTemplate', () => {
         expect(permuted).toEqual(canonical);
     });
 
-    it('never lets caller-supplied identity forge the reserved Straight template', () => {
-        const result = extractGrooveTemplate({
-            sourceId: 'forged-straight',
-            sourceName: 'Forged Straight',
-            analyzerVersion: 1,
-            subdivision: '1/16',
-            templateId: `  ${STRAIGHT_GROOVE_TEMPLATE_ID}  `,
-            notes: sourceNotes,
-        });
+    it.each([STRAIGHT_GROOVE_TEMPLATE_ID, 'straight', 'swing-light'])(
+        'never lets caller-supplied identity forge reserved template %s',
+        (templateId) => {
+            const result = extractGrooveTemplate({
+                sourceId: 'forged-template',
+                sourceName: 'Forged Template',
+                analyzerVersion: 1,
+                subdivision: '1/16',
+                templateId: `  ${templateId}  `,
+                notes: sourceNotes,
+            });
 
-        expect(result.ok).toBe(true);
-        if (!result.ok) {
-            throw new Error('Expected successful extraction');
+            expect(result.ok).toBe(true);
+            if (!result.ok) {
+                throw new Error('Expected successful extraction');
+            }
+            expect(createBuiltinGrooveTemplates().map((template) => template.id)).not.toContain(result.template.id);
+            expect(result.template.id).toBe('groove-forged-template-v1');
+            expect(isGrooveTemplate(result.template)).toBe(true);
         }
-        expect(result.template.id).not.toBe(STRAIGHT_GROOVE_TEMPLATE_ID);
-        expect(isGrooveTemplate(result.template)).toBe(true);
-    });
+    );
 
     it.each([
         {
