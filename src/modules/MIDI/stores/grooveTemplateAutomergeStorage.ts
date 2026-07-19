@@ -78,6 +78,15 @@ function isCrdtState(value: unknown): value is GrooveTemplateCrdtState {
     );
 }
 
+function assertSupportedCrdtSchema(value: unknown): void {
+    if (!isRecord(value) || !Object.hasOwn(value, 'schemaVersion')) {
+        return;
+    }
+    if (value.schemaVersion !== GROOVE_CRDT_SCHEMA_VERSION) {
+        throw new Error(`Unsupported groove CRDT schema version: ${String(value.schemaVersion)}`);
+    }
+}
+
 function compareEntityKeys(left: string, right: string): number {
     if (left < right) {
         return -1;
@@ -89,6 +98,7 @@ function compareEntityKeys(left: string, right: string): number {
 }
 
 function decodeState(value: unknown): GrooveTemplateState {
+    assertSupportedCrdtSchema(value);
     if (!isCrdtState(value)) {
         return sanitizeGrooveTemplateState(value);
     }
@@ -117,18 +127,22 @@ function mergeEntityRecords<Value>(
     }
 }
 
-function reconcileCrdtRootConflicts(values: readonly unknown[]): GrooveTemplateState {
+function reconcileCrdtRootConflicts(values: readonly unknown[]): {
+    crdtState: GrooveTemplateCrdtState;
+    grooveState: GrooveTemplateState;
+} {
     const merged: GrooveTemplateCrdtState = {
         schemaVersion: GROOVE_CRDT_SCHEMA_VERSION,
         templates: {},
         assignments: {},
     };
     for (const value of values) {
+        assertSupportedCrdtSchema(value);
         const state = isCrdtState(value) ? value : encodeState(sanitizeGrooveTemplateState(value));
         mergeEntityRecords(merged.templates, state.templates);
         mergeEntityRecords(merged.assignments, state.assignments);
     }
-    return decodeState(merged);
+    return { crdtState: merged, grooveState: decodeState(merged) };
 }
 
 function replaceIfChanged(target: MutableRecord, key: string, value: unknown): void {
@@ -191,6 +205,7 @@ function mutateGrooveTemplateCrdt({
 }): void {
     const canonicalState = sanitizeGrooveTemplateState(value);
     const current = doc[key];
+    assertSupportedCrdtSchema(current);
     if (!isCrdtState(current)) {
         doc[key] = encodeMigratedState(current, canonicalState);
         return;
@@ -265,20 +280,35 @@ function rebasePendingGrooveState({
 }
 
 export function createGrooveTemplateAutomergeStorage() {
-    let shouldCollapseRootConflicts = false;
+    let reconciledConflictState: GrooveTemplateCrdtState | null = null;
     return createAutomergeStorage<GrooveTemplateState>(DOC_PREFIX_ROOT, 'grooveTemplates', {
         fromCrdt: (value) => {
-            shouldCollapseRootConflicts = false;
+            reconciledConflictState = null;
             return decodeState(value);
         },
         resolveCrdtConflicts: (values) => {
-            shouldCollapseRootConflicts = true;
-            return reconcileCrdtRootConflicts(values);
+            const reconciliation = reconcileCrdtRootConflicts(values);
+            reconciledConflictState = reconciliation.crdtState;
+            return reconciliation.grooveState;
         },
         mutateCrdt: (input) => {
-            if (shouldCollapseRootConflicts) {
-                input.doc[input.key] = encodeState(sanitizeGrooveTemplateState(input.value));
-                shouldCollapseRootConflicts = false;
+            if (reconciledConflictState) {
+                const collapseState = structuredClone(reconciledConflictState);
+                const desired = sanitizeGrooveTemplateState(input.value);
+                syncEntities({
+                    current: collapseState.templates,
+                    desired: new Map(desired.templates.map((template) => [template.id, template])),
+                    syncValue: syncTemplateValue,
+                });
+                syncEntities({
+                    current: collapseState.assignments,
+                    desired: new Map(
+                        desired.assignments.map((assignment) => [assignmentEntityKey(assignment), assignment])
+                    ),
+                    syncValue: syncAssignmentValue,
+                });
+                input.doc[input.key] = collapseState;
+                reconciledConflictState = null;
                 return;
             }
             mutateGrooveTemplateCrdt(input);

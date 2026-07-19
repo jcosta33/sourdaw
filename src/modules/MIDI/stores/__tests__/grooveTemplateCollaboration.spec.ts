@@ -316,6 +316,81 @@ describe('groove template collaboration storage', () => {
         }
     );
 
+    it('keeps a collapsed legacy deletion causal against a later stale-peer write', () => {
+        const legacyBaseline = from<RootDocument>({
+            grooveTemplates: {
+                templates: [...createBuiltinGrooveTemplates(), createTemplate('stale-delete-me')],
+                assignments: [],
+            },
+        });
+        const deletingPeer = createPeer(clone(legacyBaseline));
+        const concurrentPeer = createPeer(clone(legacyBaseline));
+        const stalePeer = createPeer(clone(legacyBaseline));
+        const deletingStorage = createGrooveTemplateAutomergeStorage();
+        const concurrentStorage = createGrooveTemplateAutomergeStorage();
+
+        configureAutomergeStoragePort(deletingPeer.port);
+        deletingStorage.hydrate?.();
+        deletingStorage.set({
+            templates: deletingStorage.get()!.templates.filter((template) => template.id !== 'stale-delete-me'),
+            assignments: [],
+        });
+        flushAutomergeStorageWrites();
+
+        configureAutomergeStoragePort(concurrentPeer.port);
+        concurrentStorage.hydrate?.();
+        concurrentStorage.set({
+            templates: [...concurrentStorage.get()!.templates, createTemplate('first-concurrent-write')],
+            assignments: [],
+        });
+        flushAutomergeStorageWrites();
+
+        const conflictDoc = merge(deletingPeer.getDoc(), concurrentPeer.getDoc());
+        const collapsedPeer = createPeer(conflictDoc);
+        const collapsedStorage = createGrooveTemplateAutomergeStorage();
+        configureAutomergeStoragePort(collapsedPeer.port);
+        expect(collapsedStorage.hydrate?.()).toBe(true);
+        collapsedStorage.set({
+            templates: [...collapsedStorage.get()!.templates, createTemplate('collapse-write')],
+            assignments: [],
+        });
+        flushAutomergeStorageWrites();
+
+        const staleStorage = createGrooveTemplateAutomergeStorage();
+        configureAutomergeStoragePort(stalePeer.port);
+        staleStorage.hydrate?.();
+        staleStorage.set({
+            templates: [...staleStorage.get()!.templates, createTemplate('stale-unrelated-write')],
+            assignments: [],
+        });
+        flushAutomergeStorageWrites();
+
+        const finalState = mergePeers({ leftPeer: collapsedPeer, rightPeer: stalePeer, direction: 'left-right' });
+        expect(finalState.templates.some((template) => template.id === 'stale-delete-me')).toBe(false);
+        expect(finalState.templates.map((template) => template.id)).toEqual(
+            expect.arrayContaining(['collapse-write', 'stale-unrelated-write'])
+        );
+    });
+
+    it('refuses to hydrate or overwrite an unsupported CRDT schema', () => {
+        const peer = createPeer(
+            from<RootDocument>({
+                grooveTemplates: {
+                    schemaVersion: 2,
+                    templates: { future: { deleted: false, value: createTemplate('future') } },
+                    assignments: {},
+                },
+            })
+        );
+        const storage = createGrooveTemplateAutomergeStorage();
+        configureAutomergeStoragePort(peer.port);
+
+        expect(() => storage.hydrate?.()).toThrow('Unsupported groove CRDT schema version: 2');
+        storage.set({ templates: createBuiltinGrooveTemplates(), assignments: [] });
+        expect(() => flushAutomergeStorageWrites()).toThrow('Unsupported groove CRDT schema version: 2');
+        expect((peer.getDoc().grooveTemplates as { schemaVersion: number }).schemaVersion).toBe(2);
+    });
+
     it.each(['left-right', 'right-left'] as const)(
         'keeps a deletion causal while merging an unrelated template write $0',
         (direction) => {
