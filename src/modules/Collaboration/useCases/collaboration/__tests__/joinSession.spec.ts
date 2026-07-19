@@ -1,5 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+import { PEER_COLORS, type SignalingMessage } from '../../../models/CollaborationTypes';
+import { type PeerConnectionManager } from '../../../repositories/peerConnection';
+import { collaborationStore } from '../../../stores/collaborationStore';
+import { joinSession } from '../joinSession';
+
 /**
  * `joinSession` orchestrates against the WebRTC/signaling boundary exposed
  * by `sessionManagement`'s `sessionRuntimePrimitives`. Mock that boundary
@@ -7,22 +12,17 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
  * transitions without opening a real peer connection.
  */
 const mockRuntime = vi.hoisted(() => ({
-    cleanup: vi.fn(),
-    initialize: vi.fn(),
-    startPlayheadBroadcast: vi.fn(),
-    startBranchSync: vi.fn(),
-    generatePeerId: vi.fn(),
-    pickPeerColor: vi.fn(),
-    compressInvite: vi.fn(),
-    decompressInvite: vi.fn(),
+    cleanup: vi.fn<() => void>(),
+    initialize: vi.fn<() => PeerConnectionManager>(),
+    startPlayheadBroadcast: vi.fn<() => void>(),
+    startBranchSync: vi.fn<(isHost: boolean) => void>(),
+    generatePeerId: vi.fn<() => string>(),
+    pickPeerColor: vi.fn<(excludeColors: string[]) => string>(),
+    compressInvite: vi.fn<(json: string) => Promise<string>>(),
+    decompressInvite: vi.fn<(raw: string) => Promise<string>>(),
 }));
 
 vi.mock('../sessionManagement', () => ({ sessionRuntimePrimitives: mockRuntime }));
-
-import { PEER_COLORS, type SignalingMessage } from '../../../models/CollaborationTypes';
-import { type PeerConnectionManager } from '../../../repositories/peerConnection';
-import { collaborationStore } from '../../../stores/collaborationStore';
-import { joinSession } from '../joinSession';
 
 type Offer = Extract<SignalingMessage, { type: 'offer' }>;
 
@@ -154,7 +154,7 @@ describe('joinSession', () => {
         const result = await joinSession('invite', 'Alice');
 
         expect(mockRuntime.compressInvite).toHaveBeenCalledTimes(1);
-        const [sentJson] = mockRuntime.compressInvite.mock.calls[0] as [string];
+        const sentJson = mockRuntime.compressInvite.mock.calls[0]![0];
         const answer = JSON.parse(sentJson) as SignalingMessage;
         expect(answer).toMatchObject({
             type: 'answer',

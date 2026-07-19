@@ -1,20 +1,20 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-const mockRuntime = vi.hoisted(() => ({
-    state: {
-        peerManager: null as unknown,
-        pendingInviteId: null as string | null,
-    },
-    decompressInvite: vi.fn(),
-    pickPeerColor: vi.fn(),
-}));
-
-vi.mock('../sessionManagement', () => ({ sessionRuntimePrimitives: mockRuntime }));
-
 import { type CollaborationState } from '../../../models/CollaborationTypes';
 import { type PeerConnectionManager } from '../../../repositories/peerConnection';
 import { collaborationStore } from '../../../stores/collaborationStore';
 import { acceptAnswer } from '../acceptAnswer';
+
+const mockRuntime = vi.hoisted(() => ({
+    state: {
+        peerManager: null as PeerConnectionManager | null,
+        pendingInviteId: null as string | null,
+    },
+    decompressInvite: vi.fn<(raw: string) => Promise<string>>(),
+    pickPeerColor: vi.fn<(excludeColors: string[]) => string>(),
+}));
+
+vi.mock('../sessionManagement', () => ({ sessionRuntimePrimitives: mockRuntime }));
 
 const baseState: CollaborationState = {
     isEnabled: true,

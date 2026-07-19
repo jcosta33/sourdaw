@@ -1,20 +1,20 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-const mockRuntime = vi.hoisted(() => ({
-    state: {
-        peerManager: null as unknown,
-        pendingInviteId: null as string | null,
-    },
-    generatePeerId: vi.fn(),
-    compressInvite: vi.fn(),
-}));
-
-vi.mock('../sessionManagement', () => ({ sessionRuntimePrimitives: mockRuntime }));
-
 import { type SignalingMessage } from '../../../models/CollaborationTypes';
 import { type PeerConnectionManager } from '../../../repositories/peerConnection';
 import { collaborationStore } from '../../../stores/collaborationStore';
 import { generateInvite } from '../generateInvite';
+
+const mockRuntime = vi.hoisted(() => ({
+    state: {
+        peerManager: null as PeerConnectionManager | null,
+        pendingInviteId: null as string | null,
+    },
+    generatePeerId: vi.fn<() => string>(),
+    compressInvite: vi.fn<(json: string) => Promise<string>>(),
+}));
+
+vi.mock('../sessionManagement', () => ({ sessionRuntimePrimitives: mockRuntime }));
 
 describe('generateInvite', () => {
     let removePeer: ReturnType<typeof vi.fn>;
@@ -78,7 +78,7 @@ describe('generateInvite', () => {
         const result = await generateInvite();
 
         expect(mockRuntime.compressInvite).toHaveBeenCalledTimes(1);
-        const [sentJson] = mockRuntime.compressInvite.mock.calls[0] as [string];
+        const sentJson = mockRuntime.compressInvite.mock.calls[0]![0];
         const invite = JSON.parse(sentJson) as SignalingMessage;
         expect(invite).toEqual({
             type: 'offer',
