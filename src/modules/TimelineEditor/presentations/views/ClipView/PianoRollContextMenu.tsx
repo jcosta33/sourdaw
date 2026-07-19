@@ -76,10 +76,8 @@ export const PianoRollContextMenu = ({
                         ]
                 );
             const res = await generateMidiAI(seed, 16);
-            if (res?.notes) {
-                for (const note of res.notes) {
-                    addMidiNote(clipId, note.pitch, note.start_beat, note.duration_beats, note.velocity);
-                }
+            for (const note of res.notes) {
+                addMidiNote(clipId, note.pitch, note.start_beat, note.duration_beats, note.velocity);
             }
         } catch {
             logger.warn('AI Generation requires native backend');

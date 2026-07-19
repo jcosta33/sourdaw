@@ -10,10 +10,7 @@ import { getNotesForClip } from '../../useCases/midiNoteCrud/getNotesForClip';
 type ExtractGrooveAction = Extract<AppAction, { type: 'extractGroove' }>;
 
 type GrooveExtractionActionErrorCode =
-    | 'empty-source'
-    | 'unsupported-subdivision'
-    | 'invalid-source'
-    | 'template-identity-conflict';
+    'empty-source' | 'unsupported-subdivision' | 'invalid-source' | 'template-identity-conflict';
 type ExtractedGrooveTemplate = Extract<ReturnType<typeof extractGrooveTemplate>, { ok: true }>['template'];
 
 class GrooveExtractionActionError extends Error {
