@@ -18,9 +18,12 @@ pub mod transformer;
 pub mod triode;
 
 use engine::GrinderEngine;
+use params::GRINDER_AUTOMATABLE_PARAM_COUNT;
 use wasm_bindgen::prelude::*;
 
 const MAX_GRINDER_BLOCK_SIZE: usize = 2048;
+const GRINDER_AUTOMATION_BUFFER_SIZE: usize =
+    GRINDER_AUTOMATABLE_PARAM_COUNT + GRINDER_AUTOMATABLE_PARAM_COUNT * MAX_GRINDER_BLOCK_SIZE;
 
 /// WASM-exported Grinder instance for AudioWorklet.
 #[wasm_bindgen]
@@ -30,6 +33,7 @@ pub struct GrinderInstance {
     input_right: Vec<f32>,
     output_left: Vec<f32>,
     output_right: Vec<f32>,
+    automation_values: Vec<f32>,
 }
 
 #[wasm_bindgen]
@@ -42,6 +46,7 @@ impl GrinderInstance {
             input_right: vec![0.0; MAX_GRINDER_BLOCK_SIZE],
             output_left: vec![0.0; MAX_GRINDER_BLOCK_SIZE],
             output_right: vec![0.0; MAX_GRINDER_BLOCK_SIZE],
+            automation_values: vec![0.0; GRINDER_AUTOMATION_BUFFER_SIZE],
         }
     }
 
@@ -51,6 +56,14 @@ impl GrinderInstance {
 
     pub fn get_input_right_ptr(&mut self) -> *mut f32 {
         self.input_right.as_mut_ptr()
+    }
+
+    pub fn get_output_left_ptr(&self) -> *const f32 {
+        self.output_left.as_ptr()
+    }
+
+    pub fn get_automation_values_ptr(&mut self) -> *mut f32 {
+        self.automation_values.as_mut_ptr()
     }
 
     pub fn set_param(&mut self, name: &str, value: f32) {
@@ -69,6 +82,25 @@ impl GrinderInstance {
         self.engine.process_block(
             &mut self.output_left[..size],
             &mut self.output_right[..size],
+        );
+
+        self.output_left.as_ptr()
+    }
+
+    pub fn process_automated(&mut self, block_size: u32) -> *const f32 {
+        let size = block_size as usize;
+        if size > MAX_GRINDER_BLOCK_SIZE {
+            return std::ptr::null();
+        }
+
+        self.output_left[..size].copy_from_slice(&self.input_left[..size]);
+        self.output_right[..size].copy_from_slice(&self.input_right[..size]);
+
+        self.engine.process_block_automated(
+            &mut self.output_left[..size],
+            &mut self.output_right[..size],
+            &self.automation_values,
+            MAX_GRINDER_BLOCK_SIZE,
         );
 
         self.output_left.as_ptr()

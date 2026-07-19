@@ -36,12 +36,12 @@ vi.stubGlobal('registerProcessor', (name: string, processor: GrinderProcessorCon
 });
 vi.stubGlobal('sampleRate', 48_000);
 
-const WASM_HEAP = new ArrayBuffer(131_072);
+const WASM_HEAP = new ArrayBuffer(160_000);
 const INPUT_LEFT_PTR = 1_024;
-const INPUT_RIGHT_PTR = 4_096;
-const OUTPUT_LEFT_PTR = 8_192;
-const OUTPUT_RIGHT_PTR = 12_288;
-const AUTOMATION_PTR = 16_384;
+const INPUT_RIGHT_PTR = 10_240;
+const OUTPUT_LEFT_PTR = 19_456;
+const OUTPUT_RIGHT_PTR = 28_672;
+const AUTOMATION_PTR = 40_960;
 const MAX_GRINDER_BLOCK_SIZE = 2_048;
 const AUTOMATABLE_PARAM_COUNT = 11;
 

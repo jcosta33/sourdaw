@@ -2,7 +2,9 @@ import { beforeEach, describe, expect, it } from 'vitest';
 
 import {
     createReadyGrinderProcessor,
-    grinderProcessSizes,
+    getGrinderAutomationHeader,
+    getGrinderAutomationValue,
+    grinderAutomatedProcessSizes,
     grinderSetParamCalls,
     resetGrinderProcessorCalls,
 } from './grinderProcessorTestHarness';
@@ -22,7 +24,9 @@ describe('grinderAudioParamKRate', () => {
             { gain: new Float32Array([3.25]) }
         );
 
-        expect(grinderSetParamCalls.filter(({ name }) => name === 'gain')).toEqual([{ name: 'gain', value: 3.25 }]);
-        expect(grinderProcessSizes).toEqual([4]);
+        expect(grinderSetParamCalls).toEqual([]);
+        expect(getGrinderAutomationHeader(0)).toBe(1);
+        expect(getGrinderAutomationValue(0, 0)).toBe(3.25);
+        expect(grinderAutomatedProcessSizes).toEqual([frames]);
     });
 });

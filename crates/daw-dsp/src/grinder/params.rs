@@ -104,24 +104,30 @@ pub const GRINDER_AUTOMATABLE_PARAM_CONTRACT: [GrinderAutomatableParamDescriptor
     },
 ];
 
+pub const GRINDER_AUTOMATABLE_PARAM_COUNT: usize = GRINDER_AUTOMATABLE_PARAM_CONTRACT.len();
+
+pub fn get_automatable_param_index(name: &str) -> Option<usize> {
+    match name {
+        "gain" => Some(0),
+        "bass" => Some(1),
+        "mid" => Some(2),
+        "treble" => Some(3),
+        "presence" => Some(4),
+        "resonance" => Some(5),
+        "master" => Some(6),
+        "inputGain" => Some(7),
+        "outputGain" => Some(8),
+        "transformerDrive" => Some(9),
+        "negFeedback" => Some(10),
+        _ => None,
+    }
+}
+
 pub fn get_automatable_param_descriptor(
     name: &str,
 ) -> Option<&'static GrinderAutomatableParamDescriptor> {
-    let index = match name {
-        "gain" => 0,
-        "bass" => 1,
-        "mid" => 2,
-        "treble" => 3,
-        "presence" => 4,
-        "resonance" => 5,
-        "master" => 6,
-        "inputGain" => 7,
-        "outputGain" => 8,
-        "transformerDrive" => 9,
-        "negFeedback" => 10,
-        _ => return None,
-    };
-    GRINDER_AUTOMATABLE_PARAM_CONTRACT.get(index)
+    get_automatable_param_index(name)
+        .and_then(|index| GRINDER_AUTOMATABLE_PARAM_CONTRACT.get(index))
 }
 
 pub fn normalize_automatable_param(name: &str, value: f32) -> Option<f32> {
