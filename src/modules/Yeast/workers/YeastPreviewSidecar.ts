@@ -10,7 +10,16 @@ import {
 import type { MidiEvent, TransportInfo } from '../models/MidiEvent';
 import type { YeastPreviewPackedPage } from '../models/YeastPreviewSnapshot';
 
-export type YeastPreviewDecisionSink = Pick<YeastPreviewSidecar, 'recordDecision' | 'transferDecisionLineage'>;
+export type YeastPreviewDecisionLineage = Readonly<{
+    durationSamples: number;
+    probability: number | null;
+    processorId: string;
+}>;
+
+export type YeastPreviewDecisionSink = Pick<
+    YeastPreviewSidecar,
+    'recordDecision' | 'transferDecisionLineage' | 'retainDecisionLineage' | 'restoreDecisionLineage'
+>;
 
 function createPreviewPage(): YeastPreviewPackedPage {
     return {
@@ -61,6 +70,9 @@ export class YeastPreviewSidecar {
     private readonly routeRackId = Array.from({ length: YEAST_PREVIEW_CAPACITY }, () => '');
     private readonly routeId = Array.from({ length: YEAST_PREVIEW_CAPACITY }, () => '');
     private readonly routeTrackId = Array.from({ length: YEAST_PREVIEW_CAPACITY }, () => '');
+    private readonly routeCaptureEpoch = new Float64Array(YEAST_PREVIEW_CAPACITY);
+    private readonly routeActive = new Uint8Array(YEAST_PREVIEW_CAPACITY);
+    private readonly routeLastUsed = new Float64Array(YEAST_PREVIEW_CAPACITY);
     private readonly routePreviousBlockStart = new Float64Array(YEAST_PREVIEW_CAPACITY);
     private readonly routePreviousBlockEnd = new Float64Array(YEAST_PREVIEW_CAPACITY);
     private readonly routePreviousPpq = new Float64Array(YEAST_PREVIEW_CAPACITY);
@@ -106,6 +118,7 @@ export class YeastPreviewSidecar {
     private nextSequence = 0;
     private nextDecisionSequence = 0;
     private nextEventId = 0;
+    private nextRouteUseSequence = 0;
     private blockStartSamples = 0;
     private blockPpqPosition = 0;
     private samplesPerBeat = 0;
@@ -123,6 +136,7 @@ export class YeastPreviewSidecar {
 
     constructor() {
         this.routeProjectionVersion.fill(-1);
+        this.routeCaptureEpoch.fill(-1);
     }
 
     beginBlock(
@@ -133,6 +147,7 @@ export class YeastPreviewSidecar {
         rackId: string,
         routeId: string,
         trackId: string,
+        captureEpoch: number,
         projectionVersion: number
     ): void {
         this.captureRequested = false;
@@ -146,12 +161,12 @@ export class YeastPreviewSidecar {
         this.currentRackId = rackId;
         this.currentRouteId = routeId;
         this.currentTrackId = trackId;
+        this.currentRouteIndex = -1;
         const existingRoute = this.findRoute(rackId, routeId);
 
         if (!enabled) {
-            this.invalidateRoutePending(rackId, routeId);
             if (existingRoute !== -1) {
-                this.routeHasPreviousBlock[existingRoute] = 0;
+                this.retireRoute(existingRoute);
             }
             return;
         }
@@ -171,6 +186,13 @@ export class YeastPreviewSidecar {
             return;
         }
 
+        if (this.routeTrackId[routeIndex] !== trackId || this.routeCaptureEpoch[routeIndex] !== captureEpoch) {
+            this.invalidateRoutePending(rackId, routeId);
+            this.resetRouteMetadata(routeIndex);
+            this.routeTrackId[routeIndex] = trackId;
+            this.routeCaptureEpoch[routeIndex] = captureEpoch;
+        }
+
         if (this.routeHasPreviousBlock[routeIndex] === 1) {
             const expectedPpqPosition =
                 this.routePreviousPpq[routeIndex]! +
@@ -187,6 +209,10 @@ export class YeastPreviewSidecar {
         this.blockPpqPosition = transport.ppqPosition;
         this.samplesPerBeat = samplesPerBeat;
         this.currentRouteIndex = routeIndex;
+        this.currentRackId = this.routeRackId[routeIndex]!;
+        this.currentRouteId = this.routeId[routeIndex]!;
+        this.currentTrackId = this.routeTrackId[routeIndex]!;
+        this.routeLastUsed[routeIndex] = this.nextRouteUseSequence++;
         this.routePreviousBlockStart[routeIndex] = blockStartSamples;
         this.routePreviousBlockEnd[routeIndex] = blockEndSamples;
         this.routePreviousPpq[routeIndex] = transport.ppqPosition;
@@ -197,9 +223,9 @@ export class YeastPreviewSidecar {
             return;
         }
 
-        this.page.rackId = rackId;
-        this.page.routeId = routeId;
-        this.page.trackId = trackId;
+        this.page.rackId = this.currentRackId;
+        this.page.routeId = this.currentRouteId;
+        this.page.trackId = this.currentTrackId;
         this.page.projectionVersion = projectionVersion;
         this.page.reset = this.routeProjectionVersion[routeIndex] !== projectionVersion;
         this.routeProjectionVersion[routeIndex] = projectionVersion;
@@ -240,6 +266,38 @@ export class YeastPreviewSidecar {
         if (decision !== -1) {
             this.appendNextLineage(target, decision);
         }
+    }
+
+    retainDecisionLineage(source: MidiEvent): YeastPreviewDecisionLineage | undefined {
+        if (!this.captureRequested || !this.processorTransformationActive) {
+            return undefined;
+        }
+        const decision = this.findLineageDecision(source);
+        if (decision === -1) {
+            return undefined;
+        }
+        return {
+            durationSamples: this.decisionDurationSamples[decision]!,
+            probability: this.decisionHasProbability[decision] === 0 ? null : this.decisionProbability[decision]!,
+            processorId: this.decisionProcessorId[decision]!,
+        };
+    }
+
+    restoreDecisionLineage(lineage: YeastPreviewDecisionLineage, target: MidiEvent): void {
+        if (target.kind.type !== 'noteOn') {
+            return;
+        }
+        this.recordDecision(
+            target.timeSamples,
+            lineage.durationSamples,
+            target.kind.note,
+            target.kind.velocity,
+            lineage.probability,
+            true,
+            lineage.processorId,
+            target.trackId,
+            target
+        );
     }
 
     finishProcessorTransformation(output: readonly MidiEvent[]): void {
@@ -650,7 +708,11 @@ export class YeastPreviewSidecar {
 
     private findRoute(rackId: string, routeId: string): number {
         for (let index = 0; index < this.routeCount; index++) {
-            if (this.routeRackId[index] === rackId && this.routeId[index] === routeId) {
+            if (
+                this.routeActive[index] === 1 &&
+                this.routeRackId[index] === rackId &&
+                this.routeId[index] === routeId
+            ) {
                 return index;
             }
         }
@@ -662,7 +724,7 @@ export class YeastPreviewSidecar {
             return this.currentRouteIndex;
         }
         for (let index = this.routeCount - 1; index >= 0; index--) {
-            if (this.routeTrackId[index] === trackId) {
+            if (this.routeActive[index] === 1 && this.routeTrackId[index] === trackId) {
                 return index;
             }
         }
@@ -670,14 +732,66 @@ export class YeastPreviewSidecar {
     }
 
     private createRoute(rackId: string, routeId: string, trackId: string): number {
-        if (this.routeCount === YEAST_PREVIEW_CAPACITY) {
-            return -1;
+        let index = -1;
+        for (let candidate = 0; candidate < this.routeCount; candidate++) {
+            if (this.routeActive[candidate] === 0) {
+                index = candidate;
+                break;
+            }
         }
-        const index = this.routeCount++;
+        if (index === -1 && this.routeCount < YEAST_PREVIEW_CAPACITY) {
+            index = this.routeCount++;
+        }
+        if (index === -1) {
+            index = this.findOldestRoute();
+            if (index === -1) {
+                return -1;
+            }
+            this.retireRoute(index);
+        }
+        this.routeActive[index] = 1;
         this.routeRackId[index] = rackId;
         this.routeId[index] = routeId;
         this.routeTrackId[index] = trackId;
+        this.routeCaptureEpoch[index] = -1;
+        this.routeLastUsed[index] = this.nextRouteUseSequence++;
         return index;
+    }
+
+    private findOldestRoute(): number {
+        let oldestIndex = -1;
+        let oldestSequence = Number.POSITIVE_INFINITY;
+        for (let index = 0; index < this.routeCount; index++) {
+            if (this.routeActive[index] === 1 && this.routeLastUsed[index]! < oldestSequence) {
+                oldestIndex = index;
+                oldestSequence = this.routeLastUsed[index]!;
+            }
+        }
+        return oldestIndex;
+    }
+
+    private retireRoute(index: number): void {
+        if (this.routeActive[index] === 0) {
+            return;
+        }
+        this.invalidateRoutePending(this.routeRackId[index]!, this.routeId[index]!);
+        this.resetRouteMetadata(index);
+        this.routeActive[index] = 0;
+        this.routeRackId[index] = '';
+        this.routeId[index] = '';
+        this.routeTrackId[index] = '';
+        this.routeCaptureEpoch[index] = -1;
+        this.routeLastUsed[index] = 0;
+    }
+
+    private resetRouteMetadata(index: number): void {
+        this.routePreviousBlockStart[index] = 0;
+        this.routePreviousBlockEnd[index] = 0;
+        this.routePreviousPpq[index] = 0;
+        this.routePreviousSamplesPerBeat[index] = 0;
+        this.routeHasPreviousBlock[index] = 0;
+        this.routeProjectionVersion[index] = -1;
+        this.routeDeferredDrops[index] = 0;
     }
 
     private invalidateRoutePending(rackId: string, routeId: string): void {

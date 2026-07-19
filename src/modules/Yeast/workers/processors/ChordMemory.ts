@@ -9,6 +9,7 @@ import { type MidiEvent, type TransportInfo } from '../../models/MidiEvent';
 import { BaseMidiProcessor } from '../BaseMidiProcessor';
 
 import type { YeastProcessorCommand } from '../../models/YeastProcessorCommand';
+import type { YeastPreviewDecisionSink } from '../YeastPreviewSidecar';
 
 type StoredChord = {
     root: number;
@@ -32,7 +33,12 @@ export class ChordMemory extends BaseMidiProcessor {
         super(id ?? `chordmem-${Date.now()}`);
     }
 
-    processMidi(input: readonly MidiEvent[], output: MidiEvent[], _transport: TransportInfo): void {
+    processMidi(
+        input: readonly MidiEvent[],
+        output: MidiEvent[],
+        _transport: TransportInfo,
+        preview?: YeastPreviewDecisionSink
+    ): void {
         for (const event of input) {
             if (event.kind.type === 'noteOn') {
                 if (this.learning) {
@@ -54,11 +60,13 @@ export class ChordMemory extends BaseMidiProcessor {
                     for (const node of stored.notes) {
                         const note = Math.max(0, Math.min(127, node + transpose));
                         emitted.push(note);
-                        output.push({
+                        const generated: MidiEvent = {
                             timeSamples: event.timeSamples,
                             trackId: event.trackId,
                             kind: { type: 'noteOn', channel: event.kind.channel, note, velocity: event.kind.velocity },
-                        });
+                        };
+                        output.push(generated);
+                        preview?.transferDecisionLineage(event, generated);
                     }
                     const routeMap = this.activeChords.get(event.trackId) ?? new Map<number, number[]>();
                     routeMap.set(key, emitted);
@@ -88,11 +96,13 @@ export class ChordMemory extends BaseMidiProcessor {
                 const emitted = routeMap?.get(key);
                 if (routeMap && emitted) {
                     for (const note of emitted) {
-                        output.push({
+                        const noteOff: MidiEvent = {
                             timeSamples: event.timeSamples,
                             trackId: event.trackId,
                             kind: { type: 'noteOff', channel: event.kind.channel, note },
-                        });
+                        };
+                        output.push(noteOff);
+                        preview?.transferDecisionLineage(event, noteOff);
                     }
                     routeMap.delete(key);
                     if (routeMap.size === 0) {

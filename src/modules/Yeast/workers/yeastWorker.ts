@@ -375,7 +375,8 @@ export function handleYeastWorkerMessage({ data, rack, postMessage }: YeastWorke
             message.trackId,
             message.previewEnabled,
             message.rackId,
-            message.routeId
+            message.routeId,
+            message.captureEpoch
         );
         postMessage({ type: 'processed', requestId: message.requestId, events: processed });
         const page = rack.takePreviewPage();

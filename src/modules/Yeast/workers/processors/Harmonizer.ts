@@ -6,6 +6,8 @@
 import { type MidiEvent, type TransportInfo } from '../../models/MidiEvent';
 import { BaseMidiProcessor } from '../BaseMidiProcessor';
 
+import type { YeastPreviewDecisionSink } from '../YeastPreviewSidecar';
+
 const SCALE_PATTERNS: Record<string, number[]> = {
     major: [0, 2, 4, 5, 7, 9, 11],
     minor: [0, 2, 3, 5, 7, 8, 10],
@@ -42,7 +44,12 @@ export class Harmonizer extends BaseMidiProcessor {
         super(id ?? `harmonizer-${Date.now()}`);
     }
 
-    processMidi(input: readonly MidiEvent[], output: MidiEvent[], _transport: TransportInfo): void {
+    processMidi(
+        input: readonly MidiEvent[],
+        output: MidiEvent[],
+        _transport: TransportInfo,
+        preview?: YeastPreviewDecisionSink
+    ): void {
         const pattern = SCALE_PATTERNS[this.scaleName] ?? SCALE_PATTERNS.major!;
 
         for (const event of input) {
@@ -66,11 +73,13 @@ export class Harmonizer extends BaseMidiProcessor {
                     harmonyNotes.push(harmonyNote);
                     const vel = Math.max(1, Math.min(127, event.kind.velocity + voice.velocityOffset));
 
-                    output.push({
+                    const generated: MidiEvent = {
                         timeSamples: event.timeSamples + voice.timeOffsetSamples,
                         trackId: event.trackId,
                         kind: { type: 'noteOn', channel: event.kind.channel, note: harmonyNote, velocity: vel },
-                    });
+                    };
+                    output.push(generated);
+                    preview?.transferDecisionLineage(event, generated);
                 }
 
                 const routeMap = this.generatedMap.get(event.trackId) ?? new Map<number, number[]>();
@@ -82,11 +91,13 @@ export class Harmonizer extends BaseMidiProcessor {
                 const generated = routeMap?.get(key);
                 if (routeMap && generated) {
                     for (const note of generated) {
-                        output.push({
+                        const noteOff: MidiEvent = {
                             timeSamples: event.timeSamples,
                             trackId: event.trackId,
                             kind: { type: 'noteOff', channel: event.kind.channel, note },
-                        });
+                        };
+                        output.push(noteOff);
+                        preview?.transferDecisionLineage(event, noteOff);
                     }
                     routeMap.delete(key);
                     if (routeMap.size === 0) {

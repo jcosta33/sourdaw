@@ -154,7 +154,8 @@ export class MidiRack {
         trackId: string,
         previewEnabled = false,
         rackId = this.defaultRackId ?? trackId,
-        routeId = trackId
+        routeId = trackId,
+        captureEpoch = previewEnabled ? 1 : 0
     ): MidiEvent[] {
         this.preview.beginBlock(
             previewEnabled,
@@ -164,6 +165,7 @@ export class MidiRack {
             rackId,
             routeId,
             trackId,
+            captureEpoch,
             this.projectionVersion
         );
         const preview = previewEnabled ? this.preview : undefined;
