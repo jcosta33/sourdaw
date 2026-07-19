@@ -251,6 +251,8 @@ export type ProjectFreezeState = {
     renderProgress?: number;
     errorMessage?: string;
     renderedAt?: number;
+    adjustmentLayerSignature?: string;
+    adjustmentLayerMutationId?: string;
 };
 
 export type ProjectTrack = {

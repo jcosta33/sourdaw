@@ -35,9 +35,12 @@ describe('Command Macro Handlers', () => {
 
     it('handlePlayMacro should delegate to playMacro', async () => {
         const execute_app_action = vi.fn().mockResolvedValue(undefined);
+        const run_command_transition = async <Output>(
+            transition: (resetCommandHistory: () => void) => Promise<Output>
+        ): Promise<Output> => transition(() => undefined);
         await handlePlayMacro.execute(
             { type: 'playMacro', payload: { macroId: 'm1' } },
-            { executeAppAction: execute_app_action }
+            { executeAppAction: execute_app_action, runCommandTransition: run_command_transition }
         );
         expect(playMacro).toHaveBeenCalledWith({
             macroId: 'm1',

@@ -35,9 +35,33 @@ describe('Workspace Project Handlers', () => {
         vi.clearAllMocks();
     });
 
-    it('handleNewProject should delegate to newProject', () => {
-        void handleNewProject.execute({ type: 'newProject' });
-        expect(newProject).toHaveBeenCalled();
+    it('handleNewProject should await newProject', async () => {
+        let finish_activation!: (value: boolean) => void;
+        const activation = new Promise<boolean>((resolve) => {
+            finish_activation = resolve;
+        });
+        vi.mocked(newProject).mockReturnValueOnce(activation);
+        const run_command_transition = async <Output>(
+            transition: (resetCommandHistory: () => void) => Promise<Output>
+        ): Promise<Output> => transition(() => undefined);
+
+        let settled = false;
+        const execution = Promise.resolve(
+            handleNewProject.execute(
+                { type: 'newProject' },
+                { executeAppAction: vi.fn(), runCommandTransition: run_command_transition }
+            )
+        ).then(() => {
+            settled = true;
+            return undefined;
+        });
+        await Promise.resolve();
+
+        expect(newProject).toHaveBeenCalledWith('Untitled Project', run_command_transition);
+        expect(settled).toBe(false);
+
+        finish_activation(true);
+        await execution;
     });
 
     it('handleSaveProject should delegate to saveProject', () => {

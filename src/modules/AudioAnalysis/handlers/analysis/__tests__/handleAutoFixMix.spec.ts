@@ -87,6 +87,7 @@ function execute_auto_fix() {
             executeAppAction: async (action) => {
                 await mocks.executeAppAction(action);
             },
+            runCommandTransition: async (transition) => transition(() => undefined),
         }
     );
 }

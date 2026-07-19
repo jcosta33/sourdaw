@@ -605,6 +605,9 @@ describe('adjustmentLayerFreezeStaleness', () => {
                 observed_track_statuses.push(status);
             }
         });
+        flushAutomergeStorageWrites();
+        trackStore.set(trackStore.value);
+        observed_track_statuses.length = 0;
         configureAutomergeStoragePort({
             getSemanticMessage: () => undefined,
             hasDoc: () => true,
@@ -628,6 +631,39 @@ describe('adjustmentLayerFreezeStaleness', () => {
 
         configureAutomergeStoragePort(null);
         flushAutomergeStorageWrites();
+    });
+
+    it('commits adjustment-layer and freeze-staleness CRDT writes in one document change', async () => {
+        flushAutomergeStorageWrites();
+        const root_document: Record<string, unknown> = {};
+        const committed_snapshots: Record<string, unknown>[] = [];
+        configureAutomergeStoragePort({
+            getSemanticMessage: () => 'Set adjustment-layer mix',
+            hasDoc: (doc_id) => doc_id === 'root',
+            getDoc: (doc_id) => (doc_id === 'root' ? root_document : undefined),
+            mutateDoc: ({ docId, changeFn }) => {
+                expect(docId).toBe('root');
+                changeFn(root_document);
+                committed_snapshots.push(structuredClone(root_document));
+            },
+        });
+
+        await executeAppAction({ type: 'setLayerMix', payload: { layerId: 'layer-1', mix: 0.75 } });
+        flushAutomergeStorageWrites();
+
+        expect(committed_snapshots).toHaveLength(1);
+        expect(committed_snapshots[0]?.adjustmentLayers).toMatchObject({
+            layers: [{ id: 'layer-1', mix: 0.75 }],
+        });
+        const persisted_tracks = committed_snapshots[0]?.tracks;
+        expect(persisted_tracks).toMatchObject({
+            tracks: expect.arrayContaining([
+                expect.objectContaining({
+                    id: 'track-a',
+                    freezeState: expect.objectContaining({ status: 'stale' }),
+                }),
+            ]),
+        });
     });
 
     it.each(['undo', 'revertActionGroup'] as const)(

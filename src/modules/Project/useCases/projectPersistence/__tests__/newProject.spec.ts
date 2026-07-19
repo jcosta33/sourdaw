@@ -3,9 +3,11 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { Container } from '#/infra/di/Container';
 import { addTrack } from '#/modules/Arrangement/useCases';
 import { clearCachedAudioBuffers, resetAudioGraph } from '#/modules/AudioEngine/useCases';
-import { clearUndoHistory } from '#/modules/Command/useCases';
+import { clearHandlerRegistry, registerHandlerMap, undoStore } from '#/modules/Command/stores';
+import { clearUndoHistory, executeAppAction } from '#/modules/Command/useCases';
 import { createCrdtProject, projectActionHistoryToStore, startCrdtAutoSave } from '#/modules/CrdtDocument/useCases';
 import { stopPlayback } from '#/modules/Transport/useCases';
+import { type ActionHandler, type AppAction } from '#/utils/handlerContract';
 
 import { removeProjectJson } from '../../../repositories/project/removeProjectJson';
 import { defaultProjectStoreState, projectStore } from '../../../stores/projectStore';
@@ -61,10 +63,6 @@ vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => ({
     addTrack: vi.fn(),
 }));
 
-vi.mock('#/modules/Command/useCases', () => ({
-    clearUndoHistory: vi.fn(),
-}));
-
 vi.mock('../../../repositories/project/removeProjectJson', () => ({
     removeProjectJson: vi.fn(),
 }));
@@ -73,6 +71,8 @@ describe('newProject injectable', () => {
     beforeEach(() => {
         Container.clear();
         vi.clearAllMocks();
+        clearHandlerRegistry();
+        clearUndoHistory();
         projectStore.set({
             ...structuredClone(defaultProjectStoreState),
             name: 'Existing Project',
@@ -94,22 +94,16 @@ describe('newProject injectable', () => {
         expect(addTrack).toHaveBeenCalledWith({ name: 'Master', kind: 'master', select: false });
         expect(removeProjectJson).toHaveBeenCalledTimes(1);
         expect(clearCachedAudioBuffers).toHaveBeenCalledTimes(1);
-        expect(clearUndoHistory).toHaveBeenCalledTimes(1);
+        expect(undoStore.value).toEqual({ past: [], future: [] });
         expect(startCrdtAutoSave).toHaveBeenCalledTimes(1);
 
         const remove_project_json_order = vi.mocked(removeProjectJson).mock.invocationCallOrder[0];
         const clear_audio_buffers_order = vi.mocked(clearCachedAudioBuffers).mock.invocationCallOrder[0];
-        const clear_undo_history_order = vi.mocked(clearUndoHistory).mock.invocationCallOrder[0];
-        if (
-            remove_project_json_order === undefined ||
-            clear_audio_buffers_order === undefined ||
-            clear_undo_history_order === undefined
-        ) {
-            throw new Error('expected removeProjectJson, clearCachedAudioBuffers, and clearUndoHistory calls');
+        if (remove_project_json_order === undefined || clear_audio_buffers_order === undefined) {
+            throw new Error('expected removeProjectJson and clearCachedAudioBuffers calls');
         }
 
         expect(clear_audio_buffers_order).toBeGreaterThan(remove_project_json_order);
-        expect(clear_audio_buffers_order).toBeLessThan(clear_undo_history_order);
     });
 
     it('clears loading when the current activation fails', async () => {
@@ -151,5 +145,38 @@ describe('newProject injectable', () => {
 
         await expect(activation).resolves.toBe(false);
         expect(projectStore.value).toBe(newerLoadingState);
+    });
+
+    it('waits for an in-flight action before publishing the new identity and clears its history', async () => {
+        type SetSnapValueAction = Extract<AppAction, { type: 'setSnapValue' }>;
+        const action_started = createDeferred<void>();
+        const action_release = createDeferred<void>();
+        const handler: ActionHandler<SetSnapValueAction> = {
+            undoable: true,
+            describe: () => ({ label: 'Deferred edit', inverseAction: { type: 'togglePlayback' } }),
+            execute: async () => {
+                action_started.resolve(undefined);
+                await action_release.promise;
+            },
+        };
+        registerHandlerMap({ setSnapValue: handler });
+
+        const action = executeAppAction({ type: 'setSnapValue', payload: { value: 0.5 } });
+        await action_started.promise;
+        const transition = newProject('Replacement');
+        await Promise.resolve();
+        await Promise.resolve();
+
+        expect(createCrdtProject).not.toHaveBeenCalled();
+        expect(projectStore.value).toMatchObject({
+            name: 'Existing Project',
+            loading: false,
+            initialized: true,
+        });
+
+        action_release.resolve(undefined);
+        await expect(action).resolves.toBeUndefined();
+        await expect(transition).resolves.toBe(true);
+        expect(undoStore.value).toEqual({ past: [], future: [] });
     });
 });

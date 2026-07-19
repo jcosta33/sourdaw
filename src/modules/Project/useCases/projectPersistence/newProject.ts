@@ -1,7 +1,7 @@
 import { logger } from '#/infra/logger/appLogger';
 import { addTrack } from '#/modules/Arrangement/useCases';
 import { clearCachedAudioBuffers, resetAudioGraph } from '#/modules/AudioEngine/useCases';
-import { clearUndoHistory } from '#/modules/Command/useCases';
+import { runCommandTransitionExclusive } from '#/modules/Command/useCases';
 import { createCrdtProject, projectActionHistoryToStore, startCrdtAutoSave } from '#/modules/CrdtDocument/useCases';
 import { stopPlayback } from '#/modules/Transport/useCases';
 
@@ -17,6 +17,7 @@ import { stopActiveAutoSave } from './helpers/stopActiveAutoSave';
 type ActivateNewProjectInput = {
     name: string;
     previousTransientState: Pick<ProjectStoreState, 'initialized' | 'loading'> | null;
+    resetCommandHistory: () => void;
     transaction: ProjectLoadTransaction;
 };
 
@@ -36,6 +37,7 @@ function failNewProjectActivation({
 async function activateNewProject({
     name,
     previousTransientState,
+    resetCommandHistory,
     transaction,
 }: ActivateNewProjectInput): Promise<boolean> {
     try {
@@ -74,7 +76,7 @@ async function activateNewProject({
         });
         removeProjectJson();
         clearCachedAudioBuffers();
-        clearUndoHistory();
+        resetCommandHistory();
 
         stopActiveAutoSave();
         setAutoSaveHandle(startCrdtAutoSave());
@@ -85,14 +87,19 @@ async function activateNewProject({
     }
 }
 
-export function newProject(name = 'Untitled Project'): Promise<boolean> {
+export function newProject(
+    name = 'Untitled Project',
+    runTransition: typeof runCommandTransitionExclusive = runCommandTransitionExclusive
+): Promise<boolean> {
     const transaction = runProjectLoadTransaction();
-    const currentProject = projectStore.value;
-    const previousTransientState = currentProject
-        ? { initialized: currentProject.initialized, loading: currentProject.loading }
-        : null;
-    if (currentProject) {
-        projectStore.set({ ...currentProject, loading: true, initialized: false });
-    }
-    return activateNewProject({ name, previousTransientState, transaction });
+    return runTransition((resetCommandHistory) => {
+        const currentProject = projectStore.value;
+        const previousTransientState = currentProject
+            ? { initialized: currentProject.initialized, loading: currentProject.loading }
+            : null;
+        if (currentProject) {
+            projectStore.set({ ...currentProject, loading: true, initialized: false });
+        }
+        return activateNewProject({ name, previousTransientState, resetCommandHistory, transaction });
+    });
 }

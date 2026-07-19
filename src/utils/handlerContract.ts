@@ -654,6 +654,8 @@ export type ActionExecutionResult = {
 export type ActionExecutionContext = {
     /** Run a nested action inside the current Command mutation boundary. */
     executeAppAction: (action: AppAction, options?: ExecuteOptions) => Promise<void>;
+    /** Run an identity transition without reacquiring the current Command mutation boundary. */
+    runCommandTransition: <Output>(transition: (resetCommandHistory: () => void) => Promise<Output>) => Promise<Output>;
 };
 
 /** One dispatchable action's handler. Built via `createHandler` and merged into a module

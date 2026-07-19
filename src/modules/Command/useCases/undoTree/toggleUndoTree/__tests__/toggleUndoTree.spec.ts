@@ -3,7 +3,10 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { createEmptyTree } from '../../../../models/UndoTree';
 import { undoStore } from '../../../../stores/undoStore';
 import { undoTreeStore } from '../../../../stores/undoTree';
+import { commitUndoEntry } from '../../../commitUndoEntry';
+import { createCallbackUndoEntry } from '../../../createCallbackUndoEntry';
 import { createUndoEntry } from '../../../createUndoEntry';
+import { redo } from '../../../redo';
 import { toggleUndoTree } from '../toggleUndoTree';
 
 describe('toggleUndoTree', () => {
@@ -71,5 +74,35 @@ describe('toggleUndoTree', () => {
 
         expect(undoTreeStore.value?.enabled).toBe(false);
         expect(undoTreeStore.value?.tree).toBe(enabledTree);
+    });
+
+    it('rebuilds redo nodes and restores the current node before a redo then edit', async () => {
+        const first = createCallbackUndoEntry({ label: 'first', undo: () => undefined, redo: () => undefined });
+        const second = createCallbackUndoEntry({ label: 'second', undo: () => undefined, redo: () => undefined });
+        const third = createCallbackUndoEntry({ label: 'third', undo: () => undefined, redo: () => undefined });
+        undoStore.set({ past: [first], future: [second, third] });
+
+        toggleUndoTree();
+
+        const rebuilt_tree = undoTreeStore.value!.tree;
+        expect(Object.keys(rebuilt_tree.nodes)).toHaveLength(3);
+        expect(rebuilt_tree.nodes[rebuilt_tree.currentNodeId!]?.entry.id).toBe(first.id);
+
+        await redo();
+        const edit = createCallbackUndoEntry({
+            label: 'new branch',
+            undo: () => undefined,
+            redo: () => undefined,
+        });
+        commitUndoEntry(edit);
+
+        const tree = undoTreeStore.value!.tree;
+        const second_node = Object.values(tree.nodes).find((node) => node.entry.id === second.id);
+        const third_node = Object.values(tree.nodes).find((node) => node.entry.id === third.id);
+        const edit_node = Object.values(tree.nodes).find((node) => node.entry.id === edit.id);
+        expect(second_node?.children).toEqual([third_node?.id, edit_node?.id]);
+        expect(third_node?.parentId).toBe(second_node?.id);
+        expect(edit_node?.parentId).toBe(second_node?.id);
+        expect(tree.currentNodeId).toBe(edit_node?.id);
     });
 });

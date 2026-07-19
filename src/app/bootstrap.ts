@@ -20,6 +20,7 @@ import {
     setDeviceParameter,
     getArrangementHandlers,
     initStalenessDetection,
+    reconcileAdjustmentLayerStaleness,
     setArrangementEventBus,
     setTimeOperationDependencies,
     getSongStructureHandlers,
@@ -64,6 +65,7 @@ import {
     recordActionHistoryEntry,
     clearActionHistory as clearCrdtActionHistory,
     registerCrdtStorageRuntime,
+    setProjectProjectionDependencies,
 } from '#/modules/CrdtDocument/useCases';
 import { getDawProjectHandlers } from '#/modules/DawInterchange/useCases';
 import { setFermenterTelemetry } from '#/modules/Fermenter/stores';
@@ -112,6 +114,9 @@ import { registerGlobalErrorHandlers } from './registerGlobalErrorHandlers';
 logCapabilities();
 
 registerCrdtStorageRuntime();
+setProjectProjectionDependencies({
+    reconcileProjectedProjectState: reconcileAdjustmentLayerStaleness,
+});
 setActionHistoryMetadataPort({
     record: recordActionHistoryEntry,
     markReverted: markActionHistoryEntryReverted,

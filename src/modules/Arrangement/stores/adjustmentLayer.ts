@@ -5,6 +5,7 @@
  */
 
 import { createStore } from '#/infra/store/createStore';
+import { createAutomergeStorage } from '#/infra/store/storage/createAutomergeStorage';
 
 export type AdjustmentEffectType =
     | 'eq'
@@ -167,8 +168,122 @@ export function createEffectiveAdjustmentLayerSignature(
     );
 }
 
+function is_record(value: unknown): value is Record<string, unknown> {
+    return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
+function is_adjustment_effect_type(value: unknown): value is AdjustmentEffectType {
+    return (
+        value === 'eq' ||
+        value === 'compressor' ||
+        value === 'reverb' ||
+        value === 'delay' ||
+        value === 'saturation' ||
+        value === 'filter' ||
+        value === 'stereo-width' ||
+        value === 'volume' ||
+        value === 'pan'
+    );
+}
+
+function is_finite_number(value: unknown): value is number {
+    return typeof value === 'number' && Number.isFinite(value);
+}
+
+function normalize_parameter(value: unknown): AdjustmentParameter | null {
+    if (
+        !is_record(value) ||
+        typeof value.name !== 'string' ||
+        !is_finite_number(value.value) ||
+        !is_finite_number(value.min) ||
+        !is_finite_number(value.max) ||
+        typeof value.unit !== 'string'
+    ) {
+        return null;
+    }
+    return canonicalizeAdjustmentParameter({
+        name: value.name,
+        value: value.value,
+        min: value.min,
+        max: value.max,
+        unit: value.unit,
+    });
+}
+
+function normalize_region(value: unknown): AdjustmentRegion | null {
+    if (
+        !is_record(value) ||
+        typeof value.id !== 'string' ||
+        !is_finite_number(value.startBeat) ||
+        !is_finite_number(value.endBeat) ||
+        !is_finite_number(value.blend) ||
+        !is_finite_number(value.fadeInBeats) ||
+        !is_finite_number(value.fadeOutBeats)
+    ) {
+        return null;
+    }
+    return {
+        id: value.id,
+        startBeat: value.startBeat,
+        endBeat: value.endBeat,
+        blend: value.blend,
+        fadeInBeats: value.fadeInBeats,
+        fadeOutBeats: value.fadeOutBeats,
+    };
+}
+
+function normalize_layer(value: unknown): AdjustmentLayer | null {
+    if (
+        !is_record(value) ||
+        typeof value.id !== 'string' ||
+        typeof value.name !== 'string' ||
+        !is_adjustment_effect_type(value.effectType) ||
+        !Array.isArray(value.parameters) ||
+        !Array.isArray(value.affectedTrackIds) ||
+        !value.affectedTrackIds.every((track_id) => typeof track_id === 'string') ||
+        !is_finite_number(value.insertionIndex) ||
+        !Array.isArray(value.regions) ||
+        typeof value.enabled !== 'boolean' ||
+        !is_finite_number(value.mix) ||
+        typeof value.color !== 'string'
+    ) {
+        return null;
+    }
+
+    const parameters = value.parameters.map(normalize_parameter);
+    const regions = value.regions.map(normalize_region);
+    if (parameters.includes(null) || regions.includes(null)) {
+        return null;
+    }
+
+    return {
+        id: value.id,
+        name: value.name,
+        effectType: value.effectType,
+        parameters: parameters.filter((parameter): parameter is AdjustmentParameter => parameter !== null),
+        affectedTrackIds: value.affectedTrackIds,
+        insertionIndex: value.insertionIndex,
+        regions: regions.filter((region): region is AdjustmentRegion => region !== null),
+        enabled: value.enabled,
+        mix: clamp_unit_interval(value.mix),
+        color: value.color,
+    };
+}
+
+function sanitize_adjustment_layer_state(value: unknown): AdjustmentLayerState {
+    if (!is_record(value) || !Array.isArray(value.layers)) {
+        return { layers: [] };
+    }
+    return { layers: value.layers.map(normalize_layer).filter((layer): layer is AdjustmentLayer => layer !== null) };
+}
+
 export const adjustmentLayerStore = createStore<AdjustmentLayerState>({
+    storage: createAutomergeStorage('root', 'adjustmentLayers', {
+        fromCrdt: sanitize_adjustment_layer_state,
+        hydrateMissing: () => ({ layers: [] }),
+    }),
     initialData: { layers: [] },
+    sanitize: sanitize_adjustment_layer_state,
 });
 
 // §122.1 — UUID instead of module-level counters that reset on HMR

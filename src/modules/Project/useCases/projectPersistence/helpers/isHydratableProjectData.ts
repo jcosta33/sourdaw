@@ -233,6 +233,8 @@ function isFreezeState(value: unknown): boolean {
                 'sourceContentHash',
                 'deviceChainHash',
                 'errorMessage',
+                'adjustmentLayerSignature',
+                'adjustmentLayerMutationId',
             ],
             type: 'string',
         }) ||

@@ -1,4 +1,5 @@
-import { markerStore, takeLaneStore, trackStore } from '#/modules/Arrangement/stores';
+import { batchStoreUpdates } from '#/infra/store/createStore';
+import { adjustmentLayerStore, markerStore, takeLaneStore, trackStore } from '#/modules/Arrangement/stores';
 import { automationStore } from '#/modules/Automation/stores';
 import { cvGateStore } from '#/modules/CvGate/stores';
 import { hydrateKneadFromTrackStore } from '#/modules/Knead/useCases';
@@ -9,8 +10,11 @@ import { tempoMapStore, timeSignatureMapStore, transportStore } from '#/modules/
 
 import { actionHistoryStore } from '../../stores/actionHistoryStore';
 
+import { projectProjectionDependencies } from './projectProjectionDependencies';
+
 /** All project-state stores backed by AutomergeStorage. */
 const projectStores = [
+    adjustmentLayerStore,
     trackStore,
     automationStore,
     midiStore,
@@ -26,9 +30,12 @@ const projectStores = [
 ];
 
 export function projectCrdtToStores(): void {
-    for (const store of projectStores) {
-        store.hydrate();
-    }
-    hydrateKneadFromTrackStore();
-    hydrateSidechainRoutes();
+    batchStoreUpdates(() => {
+        for (const store of projectStores) {
+            store.hydrate();
+        }
+        projectProjectionDependencies.reconcileProjectedProjectState();
+        hydrateKneadFromTrackStore();
+        hydrateSidechainRoutes();
+    });
 }

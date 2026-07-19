@@ -1,8 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { projectCrdtToStores } from '../projectProjection';
+import { setProjectProjectionDependencies } from '../projectProjectionDependencies';
 
 const mocks = vi.hoisted(() => ({
+    adjustmentLayerStore: { hydrate: vi.fn() },
     trackStore: { hydrate: vi.fn() },
     automationStore: { hydrate: vi.fn() },
     midiStore: { hydrate: vi.fn() },
@@ -16,6 +18,7 @@ const mocks = vi.hoisted(() => ({
     cvGateStore: { hydrate: vi.fn() },
     actionHistoryStore: { hydrate: vi.fn() },
     hydrateSidechainRoutes: vi.fn(),
+    reconcileAdjustmentLayerStaleness: vi.fn(),
 }));
 
 vi.mock('../../../stores/actionHistoryStore', () => {
@@ -27,6 +30,7 @@ vi.mock('#/modules/Arrangement/stores', async (importOriginal) => {
     const actual = await importOriginal<typeof import('#/modules/Arrangement/stores')>();
     return {
         ...actual,
+        adjustmentLayerStore: mocks.adjustmentLayerStore,
         trackStore: mocks.trackStore,
         markerStore: mocks.markerStore,
         takeLaneStore: mocks.takeLaneStore,
@@ -91,11 +95,17 @@ vi.mock('#/modules/Transport/stores', async (importOriginal) => {
 });
 
 describe('projectCrdtToStores', () => {
-    beforeEach(() => vi.clearAllMocks());
+    beforeEach(() => {
+        vi.clearAllMocks();
+        setProjectProjectionDependencies({
+            reconcileProjectedProjectState: mocks.reconcileAdjustmentLayerStaleness,
+        });
+    });
 
     it('calls hydrate on all project stores and hydrates sidechain routes', () => {
         projectCrdtToStores();
 
+        expect(mocks.adjustmentLayerStore.hydrate).toHaveBeenCalledTimes(1);
         expect(mocks.trackStore.hydrate).toHaveBeenCalledTimes(1);
         expect(mocks.automationStore.hydrate).toHaveBeenCalledTimes(1);
         expect(mocks.midiStore.hydrate).toHaveBeenCalledTimes(1);
@@ -109,6 +119,7 @@ describe('projectCrdtToStores', () => {
         expect(mocks.cvGateStore.hydrate).toHaveBeenCalledTimes(1);
         expect(mocks.actionHistoryStore.hydrate).toHaveBeenCalledTimes(1);
 
+        expect(mocks.reconcileAdjustmentLayerStaleness).toHaveBeenCalledTimes(1);
         expect(mocks.hydrateSidechainRoutes).toHaveBeenCalledTimes(1);
     });
 });

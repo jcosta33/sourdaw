@@ -22,6 +22,7 @@ export { restoreArrangementMetadataSnapshot } from './restoreArrangementMetadata
 export { setTrackState } from './setTrackState';
 export { setTrackStoreState } from './setTrackStoreState';
 export { resetArrangementStoresForProject } from './resetArrangementStoresForProject';
+export { reconcileAdjustmentLayerStaleness } from './adjustmentLayer/reconcileAdjustmentLayerStaleness';
 export { freezeTrack } from './freezeBounce/freezeTrack';
 export { cancelFreezeTrack } from './freezeBounce/cancelFreezeTrack';
 export { unfreezeTrack } from './freezeBounce/unfreezeTrack';

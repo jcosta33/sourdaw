@@ -1,12 +1,14 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { clearUndoHistory, resetActionReplayAuthority } from '#/modules/Command/useCases';
+import { clearHandlerRegistry, registerHandlerMap, undoStore } from '#/modules/Command/stores';
+import { clearUndoHistory, executeAppAction, resetActionReplayAuthority } from '#/modules/Command/useCases';
 import {
     createCrdtProject,
     loadCrdtProject,
     projectCrdtToStores,
     startCrdtAutoSave,
 } from '#/modules/CrdtDocument/useCases';
+import { type ActionHandler, type AppAction } from '#/utils/handlerContract';
 
 import { projectStore, type ProjectStoreState } from '../../../stores/projectStore';
 import { loadProject } from '../loadProject';
@@ -47,8 +49,8 @@ vi.mock('#/modules/CrdtDocument/useCases', () => ({
     projectCrdtToStores: mocks.projectCrdtToStores,
     startCrdtAutoSave: mocks.startCrdtAutoSave,
 }));
-vi.mock('#/modules/Command/useCases', () => ({
-    clearUndoHistory: vi.fn(),
+vi.mock('#/modules/Command/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Command/useCases')>()),
     resetActionReplayAuthority: vi.fn(),
 }));
 vi.mock('#/modules/MIDI/useCases', () => ({ migrateAbsoluteMidiNotes: vi.fn() }));
@@ -59,6 +61,8 @@ vi.mock('../helpers/autoSaveHandle', () => ({ setAutoSaveHandle: mocks.setAutoSa
 describe('loadProject', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        clearHandlerRegistry();
+        clearUndoHistory();
         mocks.projectStoreValue.value = { loading: false, initialized: true } as ProjectStoreState;
         mocks.loadCrdtProject.mockResolvedValue(true);
         mocks.createCrdtProject.mockResolvedValue(undefined);
@@ -71,7 +75,7 @@ describe('loadProject', () => {
 
         expect(resetActionReplayAuthority).toHaveBeenCalledTimes(1);
         expect(projectCrdtToStores).toHaveBeenCalledTimes(1);
-        expect(clearUndoHistory).toHaveBeenCalledTimes(1);
+        expect(undoStore.value).toEqual({ past: [], future: [] });
         expect(startCrdtAutoSave).toHaveBeenCalledTimes(1);
     });
 
@@ -91,7 +95,6 @@ describe('loadProject', () => {
 
         expect(createCrdtProject).not.toHaveBeenCalled();
         expect(projectCrdtToStores).not.toHaveBeenCalled();
-        expect(clearUndoHistory).not.toHaveBeenCalled();
         expect(startCrdtAutoSave).not.toHaveBeenCalled();
         expect(projectStore.set).not.toHaveBeenCalled();
     });
@@ -116,11 +119,14 @@ describe('loadProject', () => {
         const first = loadProject();
         await vi.waitFor(() => expect(loadCrdtProject).toHaveBeenCalledTimes(1));
         const second = loadProject();
+        await vi.waitFor(() => expect(resetActionReplayAuthority).toHaveBeenCalledTimes(2));
+        expect(loadCrdtProject).toHaveBeenCalledTimes(1);
+
+        resolveFirst?.(true);
+        await expect(first).resolves.toBe(false);
         await vi.waitFor(() => expect(loadCrdtProject).toHaveBeenCalledTimes(2));
         resolveSecond?.(true);
         await expect(second).resolves.toBe(true);
-        resolveFirst?.(true);
-        await expect(first).resolves.toBe(false);
 
         expect(projectCrdtToStores).toHaveBeenCalledTimes(1);
         expect(startCrdtAutoSave).toHaveBeenCalledTimes(1);
@@ -136,5 +142,39 @@ describe('loadProject', () => {
         expect(loadCrdtProject).not.toHaveBeenCalled();
         expect(createCrdtProject).not.toHaveBeenCalled();
         expect(projectCrdtToStores).not.toHaveBeenCalled();
+    });
+
+    it('waits for an in-flight action before CRDT identity publication and clears its history', async () => {
+        type SetSnapValueAction = Extract<AppAction, { type: 'setSnapValue' }>;
+        let mark_action_started!: () => void;
+        let release_action!: () => void;
+        const action_started = new Promise<void>((resolve) => {
+            mark_action_started = resolve;
+        });
+        const action_gate = new Promise<void>((resolve) => {
+            release_action = resolve;
+        });
+        const handler: ActionHandler<SetSnapValueAction> = {
+            undoable: true,
+            describe: () => ({ label: 'Deferred edit', inverseAction: { type: 'togglePlayback' } }),
+            execute: async () => {
+                mark_action_started();
+                await action_gate;
+            },
+        };
+        registerHandlerMap({ setSnapValue: handler });
+
+        const action = executeAppAction({ type: 'setSnapValue', payload: { value: 0.5 } });
+        await action_started;
+        const transition = loadProject();
+        await Promise.resolve();
+        await Promise.resolve();
+
+        expect(loadCrdtProject).not.toHaveBeenCalled();
+
+        release_action();
+        await expect(action).resolves.toBeUndefined();
+        await expect(transition).resolves.toBe(true);
+        expect(undoStore.value).toEqual({ past: [], future: [] });
     });
 });

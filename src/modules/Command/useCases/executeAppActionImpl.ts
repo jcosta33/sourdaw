@@ -15,6 +15,7 @@ import { actionHistoryMetadataPort } from './actionHistoryMetadataPort';
 import { commitUndoEntry } from './commitUndoEntry';
 import { createUndoEntry } from './createUndoEntry';
 import { recordAction } from './macro/recording/recordAction';
+import { runCommandTransition } from './runCommandTransition';
 import { traceAppAction } from './traceAppAction';
 
 type ExecuteAppActionImpl = (action: AppAction, options?: ExecuteOptions) => Promise<void>;
@@ -58,7 +59,10 @@ export const executeAppActionImpl: ExecuteAppActionImpl = inject({ logger })(
             let execution_result: void | ActionExecutionResult;
             try {
                 const execution = runWithAutomergeStorageTransaction(options?.snapshotTransaction, () =>
-                    handler.execute(action, { executeAppAction: executeAppActionImpl })
+                    handler.execute(action, {
+                        executeAppAction: executeAppActionImpl,
+                        runCommandTransition,
+                    })
                 );
                 execution_result = await execution;
             } catch (error) {

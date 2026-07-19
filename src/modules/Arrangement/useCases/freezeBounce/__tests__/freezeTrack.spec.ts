@@ -126,6 +126,7 @@ describe('freezeTrack', () => {
             freezeId: expectedBufferId,
             frozenBufferId: expectedBufferId,
             sourceContentHash: 'freeze-v2:mock-hash',
+            adjustmentLayerSignature: '[]',
             renderSettings: {
                 sampleRate: 44100,
                 bitDepth: 32,

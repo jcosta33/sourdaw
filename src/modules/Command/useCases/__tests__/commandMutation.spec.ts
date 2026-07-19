@@ -9,14 +9,17 @@ import { undoStore } from '../../stores/undoStore';
 import { undoTreeStore } from '../../stores/undoTree';
 import { clearUndoHistory } from '../clearUndoHistory';
 import { executeAppAction } from '../executeAppAction';
+import { getUndoRedoHandlers } from '../getUndoRedoHandlers';
 import { runCommandTransitionExclusive } from '../runCommandTransitionExclusive';
 import { undo } from '../undo';
+import { undoToIndex } from '../undoToIndex';
 
 type SetSnapValueAction = Extract<AppAction, { type: 'setSnapValue' }>;
 type TogglePlaybackAction = Extract<AppAction, { type: 'togglePlayback' }>;
 
 describe('commandMutation', () => {
     let value = 0;
+    let gated_value = 0;
     let release_inverse!: () => void;
     let inverse_started!: Promise<void>;
 
@@ -26,6 +29,7 @@ describe('commandMutation', () => {
         clearUndoHistory();
         undoTreeStore.set({ tree: createEmptyTree(), enabled: true });
         value = 0;
+        gated_value = 0;
 
         let mark_inverse_started!: () => void;
         inverse_started = new Promise<void>((resolve) => {
@@ -37,7 +41,7 @@ describe('commandMutation', () => {
         const handler: ActionHandler<SetSnapValueAction> = {
             undoable: true,
             execute: async (action) => {
-                if (action.payload.value === 0) {
+                if (action.payload.value === gated_value) {
                     mark_inverse_started();
                     await inverse_gate;
                 }
@@ -124,4 +128,57 @@ describe('commandMutation', () => {
         expect(undoTreeStore.value?.tree.nodes).toEqual({});
         expect(undoTreeStore.value?.tree.currentNodeId).toBeNull();
     });
+
+    it('holds one mutation lease while undoing to an index so a concurrent edit is not consumed', async () => {
+        gated_value = Number.NaN;
+        await executeAppAction({ type: 'setSnapValue', payload: { value: 1 } });
+        await executeAppAction({ type: 'setSnapValue', payload: { value: 2 } });
+        await executeAppAction({ type: 'setSnapValue', payload: { value: 3 } });
+        gated_value = 2;
+
+        const moving = undoToIndex(0);
+        await inverse_started;
+        const concurrent = executeAppAction({ type: 'setSnapValue', payload: { value: 9 } });
+
+        release_inverse();
+        await Promise.all([moving, concurrent]);
+
+        expect(value).toBe(9);
+        expect(undoStore.value?.past.map((entry) => (entry.kind === 'action' ? entry.action : null))).toEqual([
+            { type: 'setSnapValue', payload: { value: 1 } },
+            { type: 'setSnapValue', payload: { value: 9 } },
+        ]);
+        expect(undoStore.value?.future).toEqual([]);
+    });
+
+    it.each(['undo', 'redo'] as const)(
+        'settles the real %s AppAction and a following action without re-entering the queue',
+        async (history_action) => {
+            gated_value = Number.NaN;
+            registerHandlerMap(getUndoRedoHandlers());
+            await executeAppAction({ type: 'setSnapValue', payload: { value: 1 } });
+            if (history_action === 'redo') {
+                await undo();
+            }
+
+            const queued_actions = Promise.all([
+                executeAppAction({ type: history_action }),
+                executeAppAction({ type: 'setSnapValue', payload: { value: 2 } }),
+            ]).then(() => 'settled' as const);
+            const bounded_result = await Promise.race([
+                queued_actions,
+                new Promise<'timed-out'>((resolve) => {
+                    setTimeout(() => resolve('timed-out'), 100);
+                }),
+            ]);
+
+            expect(bounded_result).toBe('settled');
+            expect(value).toBe(2);
+            expect(undoStore.value?.past.at(-1)).toMatchObject({
+                kind: 'action',
+                action: { type: 'setSnapValue', payload: { value: 2 } },
+            });
+            expect(undoStore.value?.future).toEqual([]);
+        }
+    );
 });

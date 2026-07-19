@@ -460,6 +460,9 @@ function normalize_freeze_state(value: unknown): FreezeState | null {
     if (is_finite_number(value.renderedAt)) {
         freeze_state.renderedAt = value.renderedAt;
     }
+    if (typeof value.adjustmentLayerSignature === 'string') {
+        freeze_state.adjustmentLayerSignature = value.adjustmentLayerSignature;
+    }
     if (typeof value.adjustmentLayerMutationId === 'string') {
         freeze_state.adjustmentLayerMutationId = value.adjustmentLayerMutationId;
     }

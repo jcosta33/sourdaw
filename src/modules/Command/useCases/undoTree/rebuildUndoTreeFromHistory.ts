@@ -1,6 +1,7 @@
-import { createEmptyTree, pushToTree } from '../../models/UndoTree';
 import { type UndoStoreState } from '../../stores/undoStore';
 import { undoTreeStore } from '../../stores/undoTree';
+
+import { buildUndoTreeFromHistory } from './buildUndoTreeFromHistory';
 
 /** Rebuild the enabled tree from the authoritative linear undo/redo split. */
 export function rebuildUndoTreeFromHistory(history: UndoStoreState): void {
@@ -9,17 +10,8 @@ export function rebuildUndoTreeFromHistory(history: UndoStoreState): void {
         return;
     }
 
-    let tree = createEmptyTree();
-    for (const entry of history.past) {
-        tree = pushToTree(tree, entry);
-    }
-    const currentNodeId = tree.currentNodeId;
-    for (const entry of history.future) {
-        tree = pushToTree(tree, entry);
-    }
-
     undoTreeStore.set({
         ...state,
-        tree: { ...tree, currentNodeId },
+        tree: buildUndoTreeFromHistory(history),
     });
 }

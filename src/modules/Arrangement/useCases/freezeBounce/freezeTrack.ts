@@ -14,16 +14,18 @@ function same_ordered_track_ids(left: readonly string[], right: readonly string[
     return left.length === right.length && left.every((track_id, index) => track_id === right[index]);
 }
 
-async function compute_render_input_hash(
+function create_adjustment_layer_signature(
     track: NonNullable<typeof trackStore.value>['tracks'][number],
     orderedTrackIds: readonly string[]
+): string {
+    return createEffectiveAdjustmentLayerSignature(adjustmentLayerStore.value?.layers ?? [], orderedTrackIds, track.id);
+}
+
+function compute_render_input_hash(
+    track: NonNullable<typeof trackStore.value>['tracks'][number],
+    adjustmentLayerSignature: string
 ): Promise<string> {
-    const adjustment_signature = createEffectiveAdjustmentLayerSignature(
-        adjustmentLayerStore.value?.layers ?? [],
-        orderedTrackIds,
-        track.id
-    );
-    return computeFreezeRenderInputHash(track.clips, track.devices, adjustment_signature);
+    return computeFreezeRenderInputHash(track.clips, track.devices, adjustmentLayerSignature);
 }
 
 function create_freezing_state(track: NonNullable<typeof trackStore.value>['tracks'][number]) {
@@ -71,7 +73,8 @@ export async function freezeTrack(trackId: string): Promise<void> {
 
     try {
         const initial_ordered_track_ids = state.tracks.map((candidate) => candidate.id);
-        const hash = await compute_render_input_hash(track, initial_ordered_track_ids);
+        const initial_adjustment_signature = create_adjustment_layer_signature(track, initial_ordered_track_ids);
+        const hash = await compute_render_input_hash(track, initial_adjustment_signature);
 
         let startBeat = Infinity;
         let endBeat = -Infinity;
@@ -129,7 +132,11 @@ export async function freezeTrack(trackId: string): Promise<void> {
             return;
         }
         const current_ordered_track_ids = current_track_state.tracks.map((candidate) => candidate.id);
-        const current_hash = await compute_render_input_hash(current_track, current_ordered_track_ids);
+        const current_adjustment_signature = create_adjustment_layer_signature(
+            current_track,
+            current_ordered_track_ids
+        );
+        const current_hash = await compute_render_input_hash(current_track, current_adjustment_signature);
         const latest_track_state = trackStore.value;
         const latest_track = latest_track_state?.tracks.find((candidate) => candidate.id === trackId);
         const latest_ordered_track_ids = latest_track_state?.tracks.map((candidate) => candidate.id) ?? [];
@@ -140,6 +147,7 @@ export async function freezeTrack(trackId: string): Promise<void> {
             latest_track !== current_track ||
             !same_ordered_track_ids(initial_ordered_track_ids, current_ordered_track_ids) ||
             !same_ordered_track_ids(current_ordered_track_ids, latest_ordered_track_ids) ||
+            current_adjustment_signature !== initial_adjustment_signature ||
             current_hash !== hash
         ) {
             activeFreezeTasks.delete(trackId);
@@ -159,6 +167,7 @@ export async function freezeTrack(trackId: string): Promise<void> {
                 freezeId,
                 frozenBufferId: freezeId,
                 sourceContentHash: hash,
+                adjustmentLayerSignature: current_adjustment_signature,
                 renderSettings: {
                     sampleRate: renderedBuffer.sampleRate,
                     bitDepth: 32,

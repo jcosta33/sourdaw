@@ -1,10 +1,10 @@
 import { createHandler } from '#/utils/createHandler';
 
-import { undo } from '../../useCases/undo';
+import { undoUnderMutation } from '../../useCases/undoUnderMutation';
 
 export const handleUndo = createHandler<'undo'>({
     execute: () => {
-        return undo();
+        return undoUnderMutation();
     },
     describe: () => ({ label: 'Undo' }),
     undoable: false,

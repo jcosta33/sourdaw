@@ -10,7 +10,11 @@ describe('migrateLegacyFrozenTrackStates', () => {
         legacy.freezeState = { status: 'frozen', sourceContentHash: 'legacy-hash' };
         const current = createTrack({ id: 'current', name: 'Current', kind: 'audio' });
         current.frozen = true;
-        current.freezeState = { status: 'frozen', sourceContentHash: 'freeze-v2:current-hash' };
+        current.freezeState = {
+            status: 'frozen',
+            sourceContentHash: 'freeze-v2:current-hash',
+            adjustmentLayerSignature: '[]',
+        };
         const migrated = migrateLegacyFrozenTrackStates([legacy, current]);
 
         expect(migrated.map((track) => track.freezeState.status)).toEqual(['stale', 'frozen']);

@@ -16,6 +16,7 @@ export { hasCrdtDoc } from './hasCrdtDoc';
 export { mutateCrdtDoc } from './mutateCrdtDoc';
 
 export { projectCrdtToStores } from './projection/projectProjection';
+export { setProjectProjectionDependencies } from './projection/projectProjectionDependencies';
 export { projectActionHistoryToStore } from './projection/projectActionHistoryToStore';
 export { setupProjectionBridge } from './projection/setupProjectionBridge';
 

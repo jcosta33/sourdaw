@@ -183,8 +183,8 @@ function sanitizeStoredEntries(values: unknown[]): ActionUndoEntry[] {
     return candidates.flatMap((candidate) => (candidate ? [candidate.entry] : []));
 }
 
-function collectPersistableUnits(entries: UndoEntry[]): ActionUndoEntry[][] {
-    const units: ActionUndoEntry[][] = [];
+function collectHistoryUnits(entries: UndoEntry[]): UndoEntry[][] {
+    const units: UndoEntry[][] = [];
     for (let start = 0; start < entries.length; ) {
         const groupId = entries[start]?.transactionGroupId;
         let end = start + 1;
@@ -194,13 +194,40 @@ function collectPersistableUnits(entries: UndoEntry[]): ActionUndoEntry[][] {
             }
         }
         const unit = entries.slice(start, end);
-        const persistable = unit.flatMap((entry) => (isSessionPersistableActionEntry(entry) ? [entry] : []));
-        if (persistable.length === unit.length) {
-            units.push(persistable);
-        }
+        units.push(unit);
         start = end;
     }
     return units;
+}
+
+function asPersistableUnit(unit: UndoEntry[]): ActionUndoEntry[] | null {
+    const persistable = unit.flatMap((entry) => (isSessionPersistableActionEntry(entry) ? [entry] : []));
+    return persistable.length === unit.length ? persistable : null;
+}
+
+function collectContiguousPersistableUnits(entries: UndoEntry[], edge: 'head' | 'tail'): ActionUndoEntry[][] {
+    const history_units = collectHistoryUnits(entries);
+    const persistable_units: ActionUndoEntry[][] = [];
+
+    if (edge === 'head') {
+        for (const history_unit of history_units) {
+            const persistable_unit = asPersistableUnit(history_unit);
+            if (!persistable_unit) {
+                break;
+            }
+            persistable_units.push(persistable_unit);
+        }
+        return persistable_units;
+    }
+
+    for (let index = history_units.length - 1; index >= 0; index -= 1) {
+        const persistable_unit = asPersistableUnit(history_units[index]!);
+        if (!persistable_unit) {
+            break;
+        }
+        persistable_units.unshift(persistable_unit);
+    }
+    return persistable_units;
 }
 
 function serializeUnit(unit: ActionUndoEntry[]): PersistedActionEntry[] {
@@ -216,7 +243,7 @@ function serializeUnit(unit: ActionUndoEntry[]): PersistedActionEntry[] {
 }
 
 function trimPersistableEntries(entries: UndoEntry[], edge: 'head' | 'tail'): PersistedActionEntry[] {
-    const units = collectPersistableUnits(entries);
+    const units = collectContiguousPersistableUnits(entries, edge);
     const selected: ActionUndoEntry[][] = [];
     let count = 0;
 

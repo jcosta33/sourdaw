@@ -4,9 +4,11 @@ const UNDO_SESSION_KEY = 'sourdaw-undo-session';
 
 async function loadSubject() {
     vi.resetModules();
+    const createCallbackUndoEntryModule = await import('../../useCases/createCallbackUndoEntry');
     const createUndoEntryModule = await import('../../useCases/createUndoEntry');
     const undoStoreModule = await import('../undoStore');
     return {
+        createCallbackUndoEntry: createCallbackUndoEntryModule.createCallbackUndoEntry,
         createUndoEntry: createUndoEntryModule.createUndoEntry,
         pushUndo: undoStoreModule.pushUndo,
         undoStore: undoStoreModule.undoStore,
@@ -116,6 +118,52 @@ describe('undoStore / pushUndo', () => {
         const parsed = parsePersistedUndoState(sessionStorage.getItem(UNDO_SESSION_KEY));
         expect(parsed).toEqual({ past: [], future: [] });
     });
+
+    it.each(['callback', 'dso'] as const)(
+        'treats a non-persistable %s entry as a causal barrier at both history edges',
+        async (barrierKind) => {
+            const { createCallbackUndoEntry, createUndoEntry, undoStore } = await loadSubject();
+            function actionEntry(id: string) {
+                const entry = createUndoEntry(id, { type: 'togglePlayback' }, { type: 'togglePlayback' });
+                entry.id = id;
+                return entry;
+            }
+            const barrier =
+                barrierKind === 'callback'
+                    ? createCallbackUndoEntry({
+                          label: 'callback barrier',
+                          undo: () => undefined,
+                          redo: () => undefined,
+                      })
+                    : createUndoEntry(
+                          'dso barrier',
+                          {
+                              type: 'restoreDsoSnapshot',
+                              payload: {
+                                  bundle: new Map([
+                                      ['root', { state: 'present' as const, bytes: new Uint8Array([1, 2, 3]) }],
+                                  ]),
+                              },
+                          },
+                          null
+                      );
+
+            undoStore.set({
+                past: [actionEntry('past-causally-older'), barrier, actionEntry('past-safe-suffix')],
+                future: [actionEntry('future-safe-prefix'), barrier, actionEntry('future-causally-later')],
+            });
+            await flushPersistence();
+
+            const parsed = parsePersistedUndoState(sessionStorage.getItem(UNDO_SESSION_KEY));
+            if (!Array.isArray(parsed.past) || !Array.isArray(parsed.future)) {
+                throw new TypeError('Expected persisted undo stacks to be arrays');
+            }
+            expect(parsed.past.map((entry) => (isRecord(entry) ? entry.id : undefined))).toEqual(['past-safe-suffix']);
+            expect(parsed.future.map((entry) => (isRecord(entry) ? entry.id : undefined))).toEqual([
+                'future-safe-prefix',
+            ]);
+        }
+    );
 
     it('should hydrate valid action entries and default legacy missing kind to action', async () => {
         const legacyEntry = {

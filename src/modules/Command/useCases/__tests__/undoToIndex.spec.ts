@@ -11,8 +11,8 @@ const mocks = vi.hoisted(() => ({
             future: [] as UndoEntry[],
         } as import('../../stores/undoStore').UndoStoreState | null,
     },
-    redo: vi.fn<() => Promise<void>>(),
-    undo: vi.fn<() => Promise<void>>(),
+    redoUnderMutation: vi.fn<() => Promise<void>>(),
+    undoUnderMutation: vi.fn<() => Promise<void>>(),
 }));
 
 vi.mock('../../stores/undoStore', () => ({
@@ -23,12 +23,16 @@ vi.mock('../../stores/undoStore', () => ({
     },
 }));
 
-vi.mock('../redo', () => ({
-    redo: mocks.redo,
+vi.mock('../redoUnderMutation', () => ({
+    redoUnderMutation: mocks.redoUnderMutation,
 }));
 
-vi.mock('../undo', () => ({
-    undo: mocks.undo,
+vi.mock('../undoUnderMutation', () => ({
+    undoUnderMutation: mocks.undoUnderMutation,
+}));
+
+vi.mock('../undoRedo', () => ({
+    runUndoRedoExclusive: (operation: () => Promise<void>) => operation(),
 }));
 
 function actionEntry(id: string): ActionUndoEntry {
@@ -45,10 +49,10 @@ function actionEntry(id: string): ActionUndoEntry {
 
 describe('undoToIndex', () => {
     beforeEach(() => {
-        mocks.redo.mockReset();
-        mocks.undo.mockReset();
-        mocks.redo.mockResolvedValue(undefined);
-        mocks.undo.mockResolvedValue(undefined);
+        mocks.redoUnderMutation.mockReset();
+        mocks.undoUnderMutation.mockReset();
+        mocks.redoUnderMutation.mockResolvedValue(undefined);
+        mocks.undoUnderMutation.mockResolvedValue(undefined);
         mocks.undoStoreValue.value = { past: [], future: [] };
     });
 
@@ -57,8 +61,8 @@ describe('undoToIndex', () => {
 
         await undoToIndex(0);
 
-        expect(mocks.undo).not.toHaveBeenCalled();
-        expect(mocks.redo).not.toHaveBeenCalled();
+        expect(mocks.undoUnderMutation).not.toHaveBeenCalled();
+        expect(mocks.redoUnderMutation).not.toHaveBeenCalled();
     });
 
     it('should return without stepping when target index matches the current past head', async () => {
@@ -69,8 +73,8 @@ describe('undoToIndex', () => {
 
         await undoToIndex(1);
 
-        expect(mocks.undo).not.toHaveBeenCalled();
-        expect(mocks.redo).not.toHaveBeenCalled();
+        expect(mocks.undoUnderMutation).not.toHaveBeenCalled();
+        expect(mocks.redoUnderMutation).not.toHaveBeenCalled();
     });
 
     it('should move backward by repeatedly calling undo', async () => {
@@ -81,8 +85,8 @@ describe('undoToIndex', () => {
 
         await undoToIndex(0);
 
-        expect(mocks.undo).toHaveBeenCalledTimes(2);
-        expect(mocks.redo).not.toHaveBeenCalled();
+        expect(mocks.undoUnderMutation).toHaveBeenCalledTimes(2);
+        expect(mocks.redoUnderMutation).not.toHaveBeenCalled();
     });
 
     it('should move forward by repeatedly calling redo', async () => {
@@ -93,7 +97,7 @@ describe('undoToIndex', () => {
 
         await undoToIndex(2);
 
-        expect(mocks.redo).toHaveBeenCalledTimes(2);
-        expect(mocks.undo).not.toHaveBeenCalled();
+        expect(mocks.redoUnderMutation).toHaveBeenCalledTimes(2);
+        expect(mocks.undoUnderMutation).not.toHaveBeenCalled();
     });
 });

@@ -1,7 +1,7 @@
 import { logger } from '#/infra/logger/appLogger';
 import { batchStoreUpdates } from '#/infra/store/createStore';
 import { getAudioContext, prepareCachedAudioBuffersFromIdb } from '#/modules/AudioEngine/useCases';
-import { clearUndoHistory } from '#/modules/Command/useCases';
+import { runCommandTransitionExclusive } from '#/modules/Command/useCases';
 import {
     createCrdtProject,
     DOC_PREFIX_ROOT,
@@ -20,7 +20,9 @@ import { resetModuleStoresToDefault } from './helpers/resetModuleStoresToDefault
 import { runProjectLoadTransaction } from './helpers/runProjectLoadTransaction';
 import { stopActiveAutoSave } from './helpers/stopActiveAutoSave';
 
-export async function loadProject(): Promise<boolean> {
+export async function loadProject(
+    runTransition: typeof runCommandTransitionExclusive = runCommandTransitionExclusive
+): Promise<boolean> {
     const transaction = runProjectLoadTransaction();
     try {
         if (!(await transaction.prepare()) || !transaction.activate()) {
@@ -31,60 +33,62 @@ export async function loadProject(): Promise<boolean> {
         return false;
     }
 
-    try {
-        const loaded = await loadCrdtProject({ shouldCommit: transaction.isCurrent });
+    return runTransition(async (resetCommandHistory) => {
+        try {
+            const loaded = await loadCrdtProject({ shouldCommit: transaction.isCurrent });
+            if (!transaction.isCurrent()) {
+                return false;
+            }
+            if (!loaded) {
+                await createCrdtProject('Untitled Project');
+            }
+        } catch (error) {
+            if (!transaction.isCurrent()) {
+                return false;
+            }
+            logger.error(new Error('[loadProject] CRDT load failed; preserving persisted project', { cause: error }));
+            throw error;
+        }
+
         if (!transaction.isCurrent()) {
             return false;
         }
-        if (!loaded) {
-            await createCrdtProject('Untitled Project');
+
+        const rootDoc = getCrdtDoc<{ tracks?: unknown }>(DOC_PREFIX_ROOT);
+        const referencedBufferIds = collectTrackStateAudioBufferIds(rootDoc?.tracks);
+        const preparedBuffers = await prepareCachedAudioBuffersFromIdb({
+            audioContext: getAudioContext(),
+            bufferIds: referencedBufferIds,
+            shouldContinue: transaction.isCurrent,
+        });
+        if (!preparedBuffers || !transaction.isCurrent()) {
+            return false;
         }
-    } catch (error) {
+
+        batchStoreUpdates(() => {
+            preparedBuffers.publish();
+            // Reset per-device-instance stores (§13.1) before hydration so stale
+            // device state from a previously open project cannot leak into it.
+            resetModuleStoresToDefault();
+            projectCrdtToStores();
+            migrateAbsoluteMidiNotes();
+
+            const project = projectStore.value;
+            if (project?.loading) {
+                projectStore.set({ ...project, loading: false, initialized: true });
+            }
+            resetCommandHistory();
+        });
+
         if (!transaction.isCurrent()) {
             return false;
         }
-        logger.error(new Error('[loadProject] CRDT load failed; preserving persisted project', { cause: error }));
-        throw error;
-    }
 
-    if (!transaction.isCurrent()) {
-        return false;
-    }
+        // Start debounced incremental auto-save so edits survive browser crashes.
+        // Stop any previous auto-save loop first (e.g. if loadProject is called again).
+        stopActiveAutoSave();
+        setAutoSaveHandle(startCrdtAutoSave());
 
-    const rootDoc = getCrdtDoc<{ tracks?: unknown }>(DOC_PREFIX_ROOT);
-    const referencedBufferIds = collectTrackStateAudioBufferIds(rootDoc?.tracks);
-    const preparedBuffers = await prepareCachedAudioBuffersFromIdb({
-        audioContext: getAudioContext(),
-        bufferIds: referencedBufferIds,
-        shouldContinue: transaction.isCurrent,
+        return true;
     });
-    if (!preparedBuffers || !transaction.isCurrent()) {
-        return false;
-    }
-
-    batchStoreUpdates(() => {
-        preparedBuffers.publish();
-        // Reset per-device-instance stores (§13.1) before hydration so stale
-        // device state from a previously open project cannot leak into it.
-        resetModuleStoresToDefault();
-        projectCrdtToStores();
-        migrateAbsoluteMidiNotes();
-
-        const project = projectStore.value;
-        if (project?.loading) {
-            projectStore.set({ ...project, loading: false, initialized: true });
-        }
-        clearUndoHistory();
-    });
-
-    if (!transaction.isCurrent()) {
-        return false;
-    }
-
-    // Start debounced incremental auto-save so edits survive browser crashes.
-    // Stop any previous auto-save loop first (e.g. if loadProject is called again).
-    stopActiveAutoSave();
-    setAutoSaveHandle(startCrdtAutoSave());
-
-    return true;
 }
