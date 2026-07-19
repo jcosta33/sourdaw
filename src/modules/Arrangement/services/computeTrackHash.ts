@@ -1,5 +1,7 @@
 import { type Clip, type Device } from '../models/Track';
 
+import { createTrackFreezeSourceSignature } from './createTrackFreezeSourceSignature';
+
 /**
  * Computes a SHA-256 hash of the track's content (clips and devices)
  * to detect when a frozen track becomes stale due to user edits.
@@ -7,23 +9,7 @@ import { type Clip, type Device } from '../models/Track';
  * Conforms to R3: Content Hash Computation.
  */
 export async function computeTrackHash(clips: Clip[], devices: Device[]): Promise<string> {
-    const sortedClips = [...clips].sort(
-        (alpha, buffer) => alpha.startBeat - buffer.startBeat || alpha.id.localeCompare(buffer.id)
-    );
-    const clipStrings = sortedClips.map((clip) => {
-        const duration = clip.endBeat - clip.startBeat;
-        return `${clip.id}:${clip.startBeat}:${duration}:${clip.assetHash ?? ''}:${clip.gain}`;
-    });
-
-    const deviceStrings = devices.map((device) => {
-        const sortedParams = Object.entries(device.parameterValues)
-            .sort(([alpha], [buffer]) => alpha.localeCompare(buffer))
-            .map(([kIndex, value]) => `${kIndex}=${value}`)
-            .join(',');
-        return `${device.id}:${device.type}:${sortedParams}:${device.bypassed}`;
-    });
-
-    const contentString = `${clipStrings.join('|')}||${deviceStrings.join('|')}`;
+    const contentString = createTrackFreezeSourceSignature({ clips, devices });
 
     const encoder = new TextEncoder();
     const data = encoder.encode(contentString);

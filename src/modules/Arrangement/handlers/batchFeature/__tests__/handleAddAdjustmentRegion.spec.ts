@@ -2,8 +2,11 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { handleAddAdjustmentRegion } from '../handleAddAdjustmentRegion';
 
+import type { AppAction } from '#/utils/handlerContract';
+import type { AddAdjustmentRegionInput } from '../../../useCases/adjustmentLayer/addAdjustmentRegion';
+
 const mocks = vi.hoisted(() => ({
-    addAdjustmentRegion: vi.fn(),
+    addAdjustmentRegion: vi.fn<(input: AddAdjustmentRegionInput) => void>(),
 }));
 
 vi.mock('../../../useCases/adjustmentLayer/addAdjustmentRegion', () => ({
@@ -15,19 +18,45 @@ describe('handleAddAdjustmentRegion', () => {
         vi.clearAllMocks();
     });
 
-    it('forwards layer id, startBeat, endBeat, blend', () => {
-        handleAddAdjustmentRegion.execute({
+    it('forwards the region fields with a replay-stable id', () => {
+        const action: Extract<AppAction, { type: 'addAdjustmentRegion' }> = {
             type: 'addAdjustmentRegion',
             payload: { layerId: 'L', startBeat: 0, endBeat: 8, blend: 0.75 },
+        };
+
+        void handleAddAdjustmentRegion.execute(action);
+
+        const regionId = action.payload.regionId;
+        if (!regionId) {
+            throw new Error('Expected the handler to assign a region id');
+        }
+        expect(mocks.addAdjustmentRegion).toHaveBeenCalledWith({
+            layerId: 'L',
+            startBeat: 0,
+            endBeat: 8,
+            blend: 0.75,
+            regionId,
         });
-        expect(mocks.addAdjustmentRegion).toHaveBeenCalledWith('L', 0, 8, 0.75);
     });
 
     it('omits blend when undefined', () => {
-        handleAddAdjustmentRegion.execute({
+        const action: Extract<AppAction, { type: 'addAdjustmentRegion' }> = {
             type: 'addAdjustmentRegion',
             payload: { layerId: 'L', startBeat: 0, endBeat: 8 },
+        };
+
+        void handleAddAdjustmentRegion.execute(action);
+
+        const regionId = action.payload.regionId;
+        if (!regionId) {
+            throw new Error('Expected the handler to assign a region id');
+        }
+        expect(mocks.addAdjustmentRegion).toHaveBeenCalledWith({
+            layerId: 'L',
+            startBeat: 0,
+            endBeat: 8,
+            blend: undefined,
+            regionId,
         });
-        expect(mocks.addAdjustmentRegion).toHaveBeenCalledWith('L', 0, 8, undefined);
     });
 });

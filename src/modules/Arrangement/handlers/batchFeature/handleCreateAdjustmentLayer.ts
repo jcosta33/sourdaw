@@ -1,11 +1,23 @@
 import { createHandler } from '#/utils/createHandler';
 
-import { type AdjustmentEffectType } from '../../stores/adjustmentLayer';
+import { EFFECT_PRESETS, getNextLayerId, type AdjustmentEffectType } from '../../stores/adjustmentLayer';
 import { createAdjustmentLayer } from '../../useCases/adjustmentLayer/createAdjustmentLayer';
+
+function isAdjustmentEffectType(value: string): value is AdjustmentEffectType {
+    return Object.hasOwn(EFFECT_PRESETS, value);
+}
 
 export const handleCreateAdjustmentLayer = createHandler<'createAdjustmentLayer'>({
     execute: (alpha) => {
-        createAdjustmentLayer(alpha.payload.name, alpha.payload.effectType as AdjustmentEffectType);
+        if (!isAdjustmentEffectType(alpha.payload.effectType)) {
+            throw new Error(`Unsupported adjustment effect type: ${alpha.payload.effectType}`);
+        }
+        alpha.payload.layerId ??= getNextLayerId();
+        createAdjustmentLayer({
+            name: alpha.payload.name,
+            effectType: alpha.payload.effectType,
+            layerId: alpha.payload.layerId,
+        });
     },
     describe: () => ({ label: 'Create Adjustment Layer' }),
     undoable: true,

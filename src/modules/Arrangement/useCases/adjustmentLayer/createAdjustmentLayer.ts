@@ -7,23 +7,26 @@ import {
     type AdjustmentLayer,
 } from '../../stores/adjustmentLayer';
 
-export function createAdjustmentLayer(
-    name: string,
-    effectType: AdjustmentEffectType,
-    insertionIndex: number = 0
-): void {
+export type CreateAdjustmentLayerInput = {
+    name: string;
+    effectType: AdjustmentEffectType;
+    insertionIndex?: number;
+    layerId?: string;
+};
+
+export function createAdjustmentLayer(input: CreateAdjustmentLayerInput): void {
     const state = adjustmentLayerStore.value;
     if (!state) {
         return;
     }
 
     const layer: AdjustmentLayer = {
-        id: getNextLayerId(),
-        name,
-        effectType,
-        parameters: [...(EFFECT_PRESETS[effectType] ?? [])],
+        id: input.layerId ?? getNextLayerId(),
+        name: input.name,
+        effectType: input.effectType,
+        parameters: [...EFFECT_PRESETS[input.effectType]],
         affectedTrackIds: [],
-        insertionIndex,
+        insertionIndex: input.insertionIndex ?? 0,
         regions: [],
         enabled: true,
         mix: 1,
