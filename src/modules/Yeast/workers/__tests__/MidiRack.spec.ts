@@ -451,6 +451,22 @@ describe('MidiRack', () => {
             }
         });
 
+        it('counts terminal overflow once when processor origin scratch reaches capacity', () => {
+            const rack = new MidiRack();
+            rack.addProcessor(new PassthroughProcessor('p1'));
+            const events = Array.from({ length: 600 }, (_, index) => noteOn(0, 36 + (index % 48)));
+
+            rack.processBlock(events, 0, 128, transport, 'track-a', true);
+
+            const page = rack.takePreviewPage();
+            expect(page?.count).toBe(512);
+            expect(page?.droppedEvents).toBe(88);
+            expect(page?.provenanceEventCount[0]).toBe(600);
+            if (page) {
+                rack.releasePreviewPage(page);
+            }
+        });
+
         it('does not pass the preview sidecar into processors while capture is disabled', () => {
             const rack = new MidiRack();
             const processor = new PreviewProbeProcessor('probe');

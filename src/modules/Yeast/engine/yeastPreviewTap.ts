@@ -21,6 +21,7 @@ type YeastPreviewScope = Readonly<{
 
 type RouteBuffer = {
     readonly storage: MutableYeastPreviewEvent[];
+    readonly captureEpoch: number;
     readIndex: number;
     size: number;
     droppedEvents: number;
@@ -49,9 +50,10 @@ function createPreviewSlot(): MutableYeastPreviewEvent {
     };
 }
 
-function createRouteBuffer(): RouteBuffer {
+function createRouteBuffer(captureEpoch: number): RouteBuffer {
     return {
         storage: Array.from({ length: YEAST_PREVIEW_CAPACITY }, createPreviewSlot),
+        captureEpoch,
         readIndex: 0,
         size: 0,
         droppedEvents: 0,
@@ -81,9 +83,15 @@ function copyEvent(target: MutableYeastPreviewEvent, source: YeastPreviewEvent):
 
 export class YeastPreviewTap {
     private readonly routes = new Map<string, Map<string, RouteBuffer>>();
+    private nextCaptureEpoch = 0;
 
     setEnabled(scope: YeastPreviewScope, enabled: boolean): void {
         const rackRoutes = this.routes.get(scope.rackId);
+        const wasEnabled = rackRoutes?.has(scope.routeId) ?? false;
+        if (enabled === wasEnabled) {
+            return;
+        }
+        this.nextCaptureEpoch = this.nextCaptureEpoch === Number.MAX_SAFE_INTEGER ? 1 : this.nextCaptureEpoch + 1;
         if (!enabled) {
             rackRoutes?.delete(scope.routeId);
             if (rackRoutes?.size === 0) {
@@ -91,11 +99,8 @@ export class YeastPreviewTap {
             }
             return;
         }
-        if (rackRoutes?.has(scope.routeId)) {
-            return;
-        }
         const nextRackRoutes = rackRoutes ?? new Map<string, RouteBuffer>();
-        nextRackRoutes.set(scope.routeId, createRouteBuffer());
+        nextRackRoutes.set(scope.routeId, createRouteBuffer(this.nextCaptureEpoch));
         this.routes.set(scope.rackId, nextRackRoutes);
     }
 
@@ -103,9 +108,17 @@ export class YeastPreviewTap {
         return this.routes.get(scope.rackId)?.has(scope.routeId) ?? false;
     }
 
+    getCaptureState(scope: Pick<YeastPreviewScope, 'rackId' | 'routeId'>): Readonly<{
+        enabled: boolean;
+        captureEpoch: number;
+    }> {
+        const route = this.routes.get(scope.rackId)?.get(scope.routeId);
+        return route ? { enabled: true, captureEpoch: route.captureEpoch } : { enabled: false, captureEpoch: 0 };
+    }
+
     publish(input: YeastPreviewBlock): void {
         const route = this.routes.get(input.rackId)?.get(input.routeId);
-        if (!route) {
+        if (!route || input.captureEpoch !== route.captureEpoch) {
             return;
         }
 
@@ -116,12 +129,12 @@ export class YeastPreviewTap {
             route.reset = true;
         }
         route.projectionVersion = input.projectionVersion;
-        route.provenance = input.provenance;
+        route.provenance = input.provenance.map((entry) => Object.freeze({ ...entry }));
         route.droppedEvents = Math.min(Number.MAX_SAFE_INTEGER, route.droppedEvents + input.droppedEvents);
         for (let index = 0; index < input.records.length; index++) {
             const record = input.records[index]!;
             const recordRoute = this.routes.get(record.rackId)?.get(record.routeId);
-            if (!recordRoute) {
+            if (!recordRoute || recordRoute.captureEpoch !== input.captureEpoch) {
                 continue;
             }
             recordRoute.projectionVersion = record.projectionVersion;

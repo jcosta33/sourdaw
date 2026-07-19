@@ -239,7 +239,11 @@ function parsePreviewPageMessage(
     return { requestId: value.requestId, captureEpoch: value.captureEpoch, page: value.page };
 }
 
-function decodePreviewPage(page: YeastPreviewPackedPage, extraDroppedEvents: number): YeastPreviewBlock | undefined {
+function decodePreviewPage(
+    page: YeastPreviewPackedPage,
+    extraDroppedEvents: number,
+    captureEpoch: number
+): YeastPreviewBlock | undefined {
     const records: YeastPreviewEvent[] = [];
     for (let index = 0; index < page.count; index++) {
         const eventId = page.eventId[index]!;
@@ -313,6 +317,7 @@ function decodePreviewPage(page: YeastPreviewPackedPage, extraDroppedEvents: num
         rackId: page.rackId,
         routeId: page.routeId,
         trackId: page.trackId,
+        captureEpoch,
         projectionVersion: page.projectionVersion,
         reset: page.reset,
         records,
@@ -408,7 +413,8 @@ export type YeastWorkerResult = {
         trackId: string,
         previewEnabled?: boolean,
         rackId?: string,
-        routeId?: string
+        routeId?: string,
+        captureEpoch?: number
     ) => Promise<MidiEvent[]>;
     sendCommand: (command: YeastProcessorCommand) => Promise<YeastCommandAck>;
     setProjection: (projection: readonly YeastProcessorProjectionItem[]) => Promise<void>;
@@ -449,13 +455,13 @@ export async function createYeastWorker(ctx: BaseAudioContext): Promise<YeastWor
     };
     type PreviewRouteState = {
         readonly scope: PreviewScope;
-        enabled: boolean;
-        captureEpoch: number;
+        readonly captureEpoch: number;
         readonly acceptedRequestIds: Float64Array;
         readonly acceptedCaptureEpochs: Float64Array;
         acceptedWriteIndex: number;
         readonly queuePages: Array<YeastPreviewPackedPage | undefined>;
         readonly queueExtraDropped: Float64Array;
+        readonly queueCaptureEpochs: Float64Array;
         queueReadIndex: number;
         queueSize: number;
         unreportedDrops: number;
@@ -467,7 +473,7 @@ export async function createYeastWorker(ctx: BaseAudioContext): Promise<YeastWor
         timer: ReturnType<typeof setTimeout>;
         previewEnabled: boolean;
         captureEpoch: number;
-        previewRoute: PreviewRouteState;
+        previewRoute: PreviewRouteState | undefined;
     };
     const pending = new Map<number, PendingEntry>();
     type PendingCommandEntry = {
@@ -529,20 +535,20 @@ export async function createYeastWorker(ctx: BaseAudioContext): Promise<YeastWor
     const terminalErrorHandlers = new Set<(error: Error) => void>();
     const previewRoutes = new Map<string, Map<string, PreviewRouteState>>();
 
-    const createPreviewRoute = (scope: PreviewScope): PreviewRouteState => {
+    const createPreviewRoute = (scope: PreviewScope, captureEpoch: number): PreviewRouteState => {
         const acceptedRequestIds = new Float64Array(PREVIEW_ACCEPTANCE_CAPACITY);
         acceptedRequestIds.fill(-1);
         const acceptedCaptureEpochs = new Float64Array(PREVIEW_ACCEPTANCE_CAPACITY);
         acceptedCaptureEpochs.fill(-1);
         return {
             scope,
-            enabled: false,
-            captureEpoch: 0,
+            captureEpoch,
             acceptedRequestIds,
             acceptedCaptureEpochs,
             acceptedWriteIndex: 0,
             queuePages: Array.from({ length: PREVIEW_DELIVERY_QUEUE_CAPACITY }),
             queueExtraDropped: new Float64Array(PREVIEW_DELIVERY_QUEUE_CAPACITY),
+            queueCaptureEpochs: new Float64Array(PREVIEW_DELIVERY_QUEUE_CAPACITY),
             queueReadIndex: 0,
             queueSize: 0,
             unreportedDrops: 0,
@@ -550,13 +556,16 @@ export async function createYeastWorker(ctx: BaseAudioContext): Promise<YeastWor
         };
     };
 
-    const getPreviewRoute = (scope: PreviewScope): PreviewRouteState => {
+    const getPreviewRoute = (scope: PreviewScope, captureEpoch: number): PreviewRouteState => {
         const rackRoutes = previewRoutes.get(scope.rackId);
         const existing = rackRoutes?.get(scope.routeId);
-        if (existing) {
+        if (existing?.captureEpoch === captureEpoch) {
             return existing;
         }
-        const route = createPreviewRoute(scope);
+        if (existing) {
+            clearPreviewDelivery(existing);
+        }
+        const route = createPreviewRoute(scope, captureEpoch);
         const nextRackRoutes = rackRoutes ?? new Map<string, PreviewRouteState>();
         nextRackRoutes.set(scope.routeId, route);
         previewRoutes.set(scope.rackId, nextRackRoutes);
@@ -607,13 +616,16 @@ export async function createYeastWorker(ctx: BaseAudioContext): Promise<YeastWor
             const index = route.queueReadIndex;
             const page = route.queuePages[index];
             const extraDroppedEvents = route.queueExtraDropped[index]!;
+            const captureEpoch = route.queueCaptureEpochs[index]!;
             route.queuePages[index] = undefined;
             route.queueExtraDropped[index] = 0;
+            route.queueCaptureEpochs[index] = 0;
             route.queueReadIndex = (route.queueReadIndex + 1) % PREVIEW_DELIVERY_QUEUE_CAPACITY;
             route.queueSize -= 1;
 
-            if (page) {
-                const preview = decodePreviewPage(page, extraDroppedEvents);
+            const currentRoute = findPreviewRoute(route.scope);
+            if (page && currentRoute === route && captureEpoch === route.captureEpoch) {
+                const preview = decodePreviewPage(page, extraDroppedEvents, captureEpoch);
                 if (preview) {
                     const handlers = [...previewHandlers];
                     for (const handler of handlers) {
@@ -631,7 +643,7 @@ export async function createYeastWorker(ctx: BaseAudioContext): Promise<YeastWor
         }, 0);
     };
 
-    const enqueuePreviewPage = (route: PreviewRouteState, page: YeastPreviewPackedPage): void => {
+    const enqueuePreviewPage = (route: PreviewRouteState, page: YeastPreviewPackedPage, captureEpoch: number): void => {
         if (route.queueSize === PREVIEW_DELIVERY_QUEUE_CAPACITY) {
             accountPreviewDrops(route, page.count + page.droppedEvents);
             return;
@@ -639,6 +651,7 @@ export async function createYeastWorker(ctx: BaseAudioContext): Promise<YeastWor
         const index = (route.queueReadIndex + route.queueSize) % PREVIEW_DELIVERY_QUEUE_CAPACITY;
         route.queuePages[index] = page;
         route.queueExtraDropped[index] = route.unreportedDrops;
+        route.queueCaptureEpochs[index] = captureEpoch;
         route.unreportedDrops = 0;
         route.queueSize += 1;
         schedulePreviewDelivery(route);
@@ -652,6 +665,7 @@ export async function createYeastWorker(ctx: BaseAudioContext): Promise<YeastWor
         for (let index = 0; index < route.queuePages.length; index++) {
             route.queuePages[index] = undefined;
             route.queueExtraDropped[index] = 0;
+            route.queueCaptureEpochs[index] = 0;
         }
         route.queueReadIndex = 0;
         route.queueSize = 0;
@@ -659,6 +673,19 @@ export async function createYeastWorker(ctx: BaseAudioContext): Promise<YeastWor
         route.acceptedRequestIds.fill(-1);
         route.acceptedCaptureEpochs.fill(-1);
         route.acceptedWriteIndex = 0;
+    };
+
+    const removePreviewRoute = (scope: PreviewScope): void => {
+        const rackRoutes = previewRoutes.get(scope.rackId);
+        const route = rackRoutes?.get(scope.routeId);
+        if (!rackRoutes || !route) {
+            return;
+        }
+        clearPreviewDelivery(route);
+        rackRoutes.delete(scope.routeId);
+        if (rackRoutes.size === 0) {
+            previewRoutes.delete(scope.rackId);
+        }
     };
 
     const clearAllPreviewDelivery = (): void => {
@@ -798,7 +825,8 @@ export async function createYeastWorker(ctx: BaseAudioContext): Promise<YeastWor
             entry.resolve(processed.events);
             if (
                 entry.previewEnabled &&
-                entry.previewRoute.enabled &&
+                entry.previewRoute &&
+                findPreviewRoute(entry.previewRoute.scope) === entry.previewRoute &&
                 entry.captureEpoch === entry.previewRoute.captureEpoch
             ) {
                 rememberPreviewRequest(entry.previewRoute, processed.requestId, entry.captureEpoch);
@@ -815,19 +843,14 @@ export async function createYeastWorker(ctx: BaseAudioContext): Promise<YeastWor
                 routeId: parsed.page.routeId,
                 trackId: parsed.page.trackId,
             });
-            if (
-                !route ||
-                !route.enabled ||
-                route.scope.trackId !== parsed.page.trackId ||
-                parsed.captureEpoch !== route.captureEpoch
-            ) {
+            if (!route || route.scope.trackId !== parsed.page.trackId || parsed.captureEpoch !== route.captureEpoch) {
                 return;
             }
             if (!consumePreviewRequest(route, parsed.requestId, parsed.captureEpoch)) {
                 accountPreviewDrops(route, parsed.page.count + parsed.page.droppedEvents);
                 return;
             }
-            enqueuePreviewPage(route, parsed.page);
+            enqueuePreviewPage(route, parsed.page, parsed.captureEpoch);
             return;
         }
         if (event.data.type === 'processedError') {
@@ -915,20 +938,19 @@ export async function createYeastWorker(ctx: BaseAudioContext): Promise<YeastWor
         trackId: string,
         previewEnabled = false,
         rackId = trackId,
-        routeId = trackId
+        routeId = trackId,
+        captureEpoch = previewEnabled ? 1 : 0
     ): Promise<MidiEvent[]> =>
         new Promise((resolve, reject) => {
             if (terminalError) {
                 reject(terminalError);
                 return;
             }
-            const previewRoute = getPreviewRoute({ rackId, routeId, trackId });
-            if (previewEnabled !== previewRoute.enabled) {
-                previewRoute.enabled = previewEnabled;
-                previewRoute.captureEpoch += 1;
-                clearPreviewDelivery(previewRoute);
+            const previewScope = { rackId, routeId, trackId };
+            const previewRoute = previewEnabled ? getPreviewRoute(previewScope, captureEpoch) : undefined;
+            if (!previewEnabled) {
+                removePreviewRoute(previewScope);
             }
-            const captureEpoch = previewRoute.captureEpoch;
             const requestId = nextRequestId++;
             latestSample = Math.max(latestSample, blockEnd);
             // Reject if the Worker never replies (dropped 'processed' message,

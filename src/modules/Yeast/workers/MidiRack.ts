@@ -206,11 +206,16 @@ export class MidiRack {
             output.length = 0;
             try {
                 processor.processMidi(input, output, transport, preview);
+                preview?.beginProcessorEvents();
+                let previewEventCount = 0;
                 for (const event of output) {
                     event.trackId ??= trackId;
+                    if (preview && event.kind.type === 'noteOn') {
+                        previewEventCount += 1;
+                    }
+                    preview?.recordProcessorEvent(event, processor.id, false, false);
                 }
-                preview?.recordProcessorEvents(output, processor.id, false, false);
-                preview?.recordProcessorProvenance(processor.id, false, false, this.countNoteOns(output));
+                preview?.recordProcessorProvenance(processor.id, false, false, previewEventCount);
             } catch {
                 // A throwing processor must not abort the rest of the chain (or
                 // the block). Treat it as a transparent bypass for this block:
@@ -229,8 +234,8 @@ export class MidiRack {
 
         for (const event of current) {
             event.trackId ??= trackId;
+            preview?.recordTerminalEvent(event, trackId);
         }
-        preview?.recordTerminalEvents(current, trackId);
 
         // 4. Sort final output
         current.sort((alpha, b) => alpha.timeSamples - b.timeSamples);
@@ -356,16 +361,6 @@ export class MidiRack {
         }
         proc.setBypassed(bypassed);
         this.markTopologyChanged();
-    }
-
-    private countNoteOns(events: readonly MidiEvent[]): number {
-        let count = 0;
-        for (let index = 0; index < events.length; index++) {
-            if (events[index]!.kind.type === 'noteOn') {
-                count += 1;
-            }
-        }
-        return count;
     }
 
     private markTopologyChanged(): void {

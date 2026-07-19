@@ -74,6 +74,7 @@ function publishPreview(records: readonly YeastPreviewEvent[], bypassed = false)
         rackId: 'rack-a',
         routeId: 'track-a',
         trackId: 'track-a',
+        captureEpoch: yeastPreviewTap.getCaptureState({ rackId: 'rack-a', routeId: 'track-a' }).captureEpoch,
         projectionVersion: 1,
         reset: false,
         records,
@@ -265,6 +266,7 @@ describe('AC-001 — Yeast scheduled-event preview tap', () => {
         };
         tap.publish({
             ...routeA,
+            captureEpoch: tap.getCaptureState(routeA).captureEpoch,
             projectionVersion: 1,
             reset: false,
             records: [{ ...eventA, rackId: routeA.rackId }],
@@ -273,6 +275,7 @@ describe('AC-001 — Yeast scheduled-event preview tap', () => {
         });
         tap.publish({
             ...routeB,
+            captureEpoch: tap.getCaptureState(routeB).captureEpoch,
             projectionVersion: 1,
             reset: false,
             records: [eventB],
@@ -283,5 +286,54 @@ describe('AC-001 — Yeast scheduled-event preview tap', () => {
         expect(tap.read(routeA).events).toMatchObject([{ rackId: 'rack-a', trackId: 'track-a' }]);
         expect(tap.read(routeB).events).toMatchObject([{ rackId: 'rack-b', trackId: 'track-b' }]);
         expect(tap.getStorageIdentity(routeA)).not.toBe(tap.getStorageIdentity(routeB));
+    });
+
+    it('rejects publication from a capture epoch invalidated by a rapid disable and re-enable', () => {
+        const tap = new YeastPreviewTap();
+        const route = { rackId: 'rack-a', routeId: 'track-a', trackId: 'track-a' };
+        tap.setEnabled(route, true);
+        const staleCaptureEpoch = tap.getCaptureState(route).captureEpoch;
+
+        tap.setEnabled(route, false);
+        tap.setEnabled(route, true);
+        tap.publish({
+            ...route,
+            captureEpoch: staleCaptureEpoch,
+            projectionVersion: 1,
+            reset: false,
+            records: [previewRecord(1)],
+            provenance: [],
+            droppedEvents: 0,
+        });
+
+        expect(tap.read(route).events).toEqual([]);
+    });
+
+    it('copies and freezes provenance entries at the snapshot boundary', () => {
+        const tap = new YeastPreviewTap();
+        const route = { rackId: 'rack-a', routeId: 'track-a', trackId: 'track-a' };
+        const provenance = { processorId: 'velocity-1', bypassed: false, failed: false, eventCount: 1 };
+        tap.setEnabled(route, true);
+        tap.publish({
+            ...route,
+            captureEpoch: tap.getCaptureState(route).captureEpoch,
+            projectionVersion: 1,
+            reset: false,
+            records: [previewRecord(1)],
+            provenance: [provenance],
+            droppedEvents: 0,
+        });
+
+        const snapshot = tap.read(route);
+        provenance.bypassed = true;
+        provenance.eventCount = 99;
+
+        expect(snapshot.provenance[0]).toEqual({
+            processorId: 'velocity-1',
+            bypassed: false,
+            failed: false,
+            eventCount: 1,
+        });
+        expect(Object.isFrozen(snapshot.provenance[0])).toBe(true);
     });
 });

@@ -36,6 +36,7 @@ export type YeastPreviewBlock = Readonly<{
     rackId: string;
     routeId: string;
     trackId: string;
+    captureEpoch: number;
     projectionVersion: number;
     reset: boolean;
     records: readonly YeastPreviewEvent[];

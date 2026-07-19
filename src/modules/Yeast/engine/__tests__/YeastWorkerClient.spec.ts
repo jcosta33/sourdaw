@@ -270,6 +270,7 @@ describe('createYeastWorker — processBlock lifecycle', () => {
             rackId: 'track-a',
             routeId: 'track-a',
             trackId: 'track-a',
+            captureEpoch: 1,
             projectionVersion: 1,
             reset: false,
             records: [record],
@@ -306,15 +307,15 @@ describe('createYeastWorker — processBlock lifecycle', () => {
             pitch: 62,
         };
 
-        const firstEnabled = node.processBlock([], 0, 128, transport, 'track-a', true);
+        const firstEnabled = node.processBlock([], 0, 128, transport, 'track-a', true, 'track-a', 'track-a', 1);
         replyProcessed(worker, 0, []);
         await firstEnabled;
 
-        const disabled = node.processBlock([], 128, 256, transport, 'track-a', false);
+        const disabled = node.processBlock([], 128, 256, transport, 'track-a', false, 'track-a', 'track-a', 2);
         replyProcessed(worker, 1, []);
         await disabled;
 
-        const reenabled = node.processBlock([], 256, 384, transport, 'track-a', true);
+        const reenabled = node.processBlock([], 256, 384, transport, 'track-a', true, 'track-a', 'track-a', 3);
         replyProcessed(worker, 2, []);
         await reenabled;
 
@@ -619,6 +620,32 @@ describe('createYeastWorker — processBlock lifecycle', () => {
 
         replyProcessed(worker, 0, []);
         await expect(promise).resolves.toEqual([]);
+    });
+
+    it('allocates preview route state only while capture is enabled and removes it on disable', async () => {
+        const node = await createYeastWorker(makeContext());
+        const worker = lastWorker();
+        const arrayFrom = vi.spyOn(Array, 'from');
+
+        const disabled = node.processBlock([], 0, 128, transport, 'track-a', false, 'rack-a', 'track-a', 0);
+        expect(arrayFrom).not.toHaveBeenCalled();
+        replyProcessed(worker, 0, []);
+        await disabled;
+
+        const enabled = node.processBlock([], 128, 256, transport, 'track-a', true, 'rack-a', 'track-a', 11);
+        expect(arrayFrom).toHaveBeenCalledTimes(1);
+        replyProcessed(worker, 1, []);
+        await enabled;
+
+        const disabledAgain = node.processBlock([], 256, 384, transport, 'track-a', false, 'rack-a', 'track-a', 12);
+        expect(arrayFrom).toHaveBeenCalledTimes(1);
+        replyProcessed(worker, 2, []);
+        await disabledAgain;
+
+        const reenabled = node.processBlock([], 384, 512, transport, 'track-a', true, 'rack-a', 'track-a', 13);
+        expect(arrayFrom).toHaveBeenCalledTimes(2);
+        replyProcessed(worker, 3, []);
+        await reenabled;
     });
 
     it('ignores wrong, duplicate, and late processed replies', async () => {

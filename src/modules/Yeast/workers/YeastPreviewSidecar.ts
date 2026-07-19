@@ -196,25 +196,34 @@ export class YeastPreviewSidecar {
         this.invalidatePending();
     }
 
+    beginProcessorEvents(): void {
+        if (this.captureRequested) {
+            this.originCount = 0;
+        }
+    }
+
+    recordProcessorEvent(event: MidiEvent, processorId: string, bypassed: boolean, failed: boolean): void {
+        if (
+            !this.captureRequested ||
+            this.originCount === YEAST_PREVIEW_CAPACITY ||
+            (event.kind.type !== 'noteOn' && event.kind.type !== 'noteOff')
+        ) {
+            return;
+        }
+        const slot = this.originCount++;
+        this.originEvents[slot] = event;
+        this.originProcessorId[slot] = processorId;
+        this.originFlags[slot] =
+            (bypassed ? YEAST_PREVIEW_BYPASSED_FLAG : 0) | (failed ? YEAST_PREVIEW_FAILED_FLAG : 0);
+    }
+
     recordProcessorEvents(events: readonly MidiEvent[], processorId: string, bypassed: boolean, failed: boolean): void {
         if (!this.captureRequested) {
             return;
         }
-        this.originCount = 0;
-        const flags = (bypassed ? YEAST_PREVIEW_BYPASSED_FLAG : 0) | (failed ? YEAST_PREVIEW_FAILED_FLAG : 0);
-        for (let index = 0; index < events.length; index++) {
-            const event = events[index]!;
-            if (event.kind.type !== 'noteOn' && event.kind.type !== 'noteOff') {
-                continue;
-            }
-            if (this.originCount === YEAST_PREVIEW_CAPACITY) {
-                this.recordDrop();
-                continue;
-            }
-            const slot = this.originCount++;
-            this.originEvents[slot] = event;
-            this.originProcessorId[slot] = processorId;
-            this.originFlags[slot] = flags;
+        this.beginProcessorEvents();
+        for (let index = 0; index < events.length && this.originCount < YEAST_PREVIEW_CAPACITY; index++) {
+            this.recordProcessorEvent(events[index]!, processorId, bypassed, failed);
         }
     }
 
@@ -246,26 +255,23 @@ export class YeastPreviewSidecar {
             (bypassed ? YEAST_PREVIEW_BYPASSED_FLAG : 0) | (failed ? YEAST_PREVIEW_FAILED_FLAG : 0);
     }
 
-    recordTerminalEvents(events: readonly MidiEvent[], fallbackTrackId: string): void {
+    recordTerminalEvent(event: MidiEvent, fallbackTrackId: string): void {
         if (!this.captureRequested) {
             return;
         }
-        for (let index = 0; index < events.length; index++) {
-            const event = events[index]!;
-            const trackId = event.trackId ?? fallbackTrackId;
-            if (event.kind.type === 'noteOn') {
-                if (!this.captureBlock) {
-                    this.recordDrop();
-                    continue;
-                }
-                this.recordNoteOn(event, trackId);
-            } else if (event.kind.type === 'noteOff') {
-                if (!this.captureBlock) {
-                    this.dropPendingNoteOff(trackId, event.kind.channel, event.kind.note);
-                    continue;
-                }
-                this.recordNoteOff(event.timeSamples, trackId, event.kind.channel, event.kind.note);
+        const trackId = event.trackId ?? fallbackTrackId;
+        if (event.kind.type === 'noteOn') {
+            if (!this.captureBlock) {
+                this.recordDrop();
+                return;
             }
+            this.recordNoteOn(event, trackId);
+        } else if (event.kind.type === 'noteOff') {
+            if (!this.captureBlock) {
+                this.dropPendingNoteOff(trackId, event.kind.channel, event.kind.note);
+                return;
+            }
+            this.recordNoteOff(event.timeSamples, trackId, event.kind.channel, event.kind.note);
         }
     }
 

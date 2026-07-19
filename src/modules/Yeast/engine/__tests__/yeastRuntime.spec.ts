@@ -209,6 +209,7 @@ describe('yeastRuntime', () => {
             rackId: 'rack-a',
             routeId: 'track-a',
             trackId: 'track-a',
+            captureEpoch: yeastPreviewTap.getCaptureState(previewScope).captureEpoch,
             projectionVersion: 1,
             reset: false,
             records: [

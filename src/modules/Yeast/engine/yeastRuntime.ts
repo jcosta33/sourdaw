@@ -617,15 +617,17 @@ export async function processYeastRuntimeBlock(input: ProcessYeastRuntimeBlockIn
             if (!isLiveRuntime(node, generation)) {
                 throw new Error('Yeast Worker runtime changed during MIDI processing');
             }
+            const previewCapture = yeastPreviewTap.getCaptureState({ rackId, routeId });
             const processedEvents = await node.processBlock(
                 input.events,
                 input.blockStartSamples,
                 input.blockEndSamples,
                 input.transport,
                 input.trackId,
-                yeastPreviewTap.isEnabled({ rackId, routeId }),
+                previewCapture.enabled,
                 rackId,
-                routeId
+                routeId,
+                previewCapture.captureEpoch
             );
             if (!isLiveRuntime(node, generation)) {
                 throw new Error('Yeast Worker runtime changed during MIDI processing');
@@ -676,15 +678,17 @@ export async function processYeastRuntimeTransaction(
                 session.appliedProjectionRevision = record.revision;
             }
 
+            const previewCapture = yeastPreviewTap.getCaptureState({ rackId, routeId });
             const processedEvents = await node.processBlock(
                 input.events,
                 input.blockStartSamples,
                 input.blockEndSamples,
                 input.transport,
                 input.trackId,
-                yeastPreviewTap.isEnabled({ rackId, routeId }),
+                previewCapture.enabled,
                 rackId,
-                routeId
+                routeId,
+                previewCapture.captureEpoch
             );
             if (!isLiveRuntime(node, generation)) {
                 throw new Error('Yeast Worker runtime changed during MIDI processing');
