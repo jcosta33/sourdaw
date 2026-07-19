@@ -66,4 +66,29 @@ describe('groove preview and commit parity', () => {
         void handleRestoreGrooveAssignment.execute(description.inverseAction);
         expect(grooveTemplateStore.value?.assignments).toEqual([]);
     });
+
+    it('normalizes a non-finite assignment amount consistently with projection', () => {
+        const template = createGrooveTemplate({
+            id: 'finite-assignment',
+            name: 'Finite assignment',
+            subdivision: '1/16',
+            slots: [{ index: 0, timingOffset: 0.1, dynamicsOffset: 0 }],
+            provenance: { type: 'user', sourceId: 'manual' },
+        });
+
+        const assignment = assignGrooveTemplate({
+            consumerType: 'clip',
+            consumerId: 'clip-nan',
+            templateId: template.id,
+            amount: Number.NaN,
+        });
+
+        expect(assignment?.amount).toBe(0);
+        expect(grooveTemplateStore.value?.assignments).toContainEqual({
+            consumerType: 'clip',
+            consumerId: 'clip-nan',
+            templateId: template.id,
+            amount: 0,
+        });
+    });
 });

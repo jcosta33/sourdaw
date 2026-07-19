@@ -5,6 +5,7 @@ import {
     STRAIGHT_GROOVE_TEMPLATE_ID,
     createStraightGrooveTemplate,
     isGrooveTemplate,
+    normalizeGrooveAmount,
     resolveGrooveTemplateNameCollision,
     type GrooveTemplate,
 } from '../models/GrooveTemplate';
@@ -82,7 +83,7 @@ export function sanitizeGrooveTemplateState(value: unknown): GrooveTemplateState
         assignmentsByConsumer.set(key, {
             ...assignment,
             templateId: ids.has(assignment.templateId) ? assignment.templateId : STRAIGHT_GROOVE_TEMPLATE_ID,
-            amount: Math.max(0, Math.min(1, assignment.amount)),
+            amount: normalizeGrooveAmount(assignment.amount),
         });
     }
 

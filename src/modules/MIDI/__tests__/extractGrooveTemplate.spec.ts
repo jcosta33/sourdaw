@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { STRAIGHT_GROOVE_TEMPLATE_ID } from '../models/GrooveTemplate';
+import { STRAIGHT_GROOVE_TEMPLATE_ID, isGrooveTemplate } from '../models/GrooveTemplate';
 import { extractGrooveTemplate } from '../useCases/grooveTemplates/extractGrooveTemplate';
 
 const sourceNotes = [
@@ -33,6 +33,137 @@ describe('extractGrooveTemplate', () => {
             type: 'midi-clip',
             sourceId: 'clip-1',
             analyzerVersion: 3,
+        });
+    });
+
+    it('is invariant to source-note permutation under adversarial floating-point cancellation', () => {
+        const starts = [
+            0.25000747680664065, 0.2480859375, 0.1275, 0.250059814453125, 0.24999626159667968, 0.253828125, 0.18875,
+            0.1275,
+        ];
+        const notes = starts.map((startBeat, index) => ({ id: `note-${index}`, startBeat, velocity: 96 }));
+        const input = {
+            sourceId: 'permutation',
+            sourceName: 'Permutation',
+            analyzerVersion: 1,
+            subdivision: '1/16' as const,
+        };
+
+        const canonical = extractGrooveTemplate({ ...input, notes });
+        const permuted = extractGrooveTemplate({ ...input, notes: [...notes].reverse() });
+
+        expect(permuted).toEqual(canonical);
+    });
+
+    it('never lets caller-supplied identity forge the reserved Straight template', () => {
+        const result = extractGrooveTemplate({
+            sourceId: 'forged-straight',
+            sourceName: 'Forged Straight',
+            analyzerVersion: 1,
+            subdivision: '1/16',
+            templateId: `  ${STRAIGHT_GROOVE_TEMPLATE_ID}  `,
+            notes: sourceNotes,
+        });
+
+        expect(result.ok).toBe(true);
+        if (!result.ok) {
+            throw new Error('Expected successful extraction');
+        }
+        expect(result.template.id).not.toBe(STRAIGHT_GROOVE_TEMPLATE_ID);
+        expect(isGrooveTemplate(result.template)).toBe(true);
+    });
+
+    it.each([
+        {
+            name: 'empty source ID',
+            input: { sourceId: '', sourceName: 'Source', analyzerVersion: 1, notes: sourceNotes },
+            reason: 'invalid-source-id',
+        },
+        {
+            name: 'blank source name',
+            input: { sourceId: 'source', sourceName: '   ', analyzerVersion: 1, notes: sourceNotes },
+            reason: 'invalid-source-name',
+        },
+        {
+            name: 'invalid analyzer version',
+            input: { sourceId: 'source', sourceName: 'Source', analyzerVersion: 0, notes: sourceNotes },
+            reason: 'invalid-analyzer-version',
+        },
+        {
+            name: 'blank template ID',
+            input: {
+                sourceId: 'source',
+                sourceName: 'Source',
+                analyzerVersion: 1,
+                templateId: '   ',
+                notes: sourceNotes,
+            },
+            reason: 'invalid-template-id',
+        },
+        {
+            name: 'blank note ID',
+            input: {
+                sourceId: 'source',
+                sourceName: 'Source',
+                analyzerVersion: 1,
+                notes: [{ id: '', startBeat: 0, velocity: 96 }],
+            },
+            reason: 'invalid-note-id',
+        },
+        {
+            name: 'non-finite note start',
+            input: {
+                sourceId: 'source',
+                sourceName: 'Source',
+                analyzerVersion: 1,
+                notes: [{ id: 'note', startBeat: Number.NaN, velocity: 96 }],
+            },
+            reason: 'invalid-note-start',
+        },
+        {
+            name: 'negative note start',
+            input: {
+                sourceId: 'source',
+                sourceName: 'Source',
+                analyzerVersion: 1,
+                notes: [{ id: 'note', startBeat: -0.01, velocity: 96 }],
+            },
+            reason: 'invalid-note-start',
+        },
+        {
+            name: 'unsafe note start',
+            input: {
+                sourceId: 'source',
+                sourceName: 'Source',
+                analyzerVersion: 1,
+                notes: [{ id: 'note', startBeat: Number.MAX_VALUE, velocity: 96 }],
+            },
+            reason: 'invalid-note-start',
+        },
+        {
+            name: 'non-finite note velocity',
+            input: {
+                sourceId: 'source',
+                sourceName: 'Source',
+                analyzerVersion: 1,
+                notes: [{ id: 'note', startBeat: 0, velocity: Number.POSITIVE_INFINITY }],
+            },
+            reason: 'invalid-note-velocity',
+        },
+        {
+            name: 'out-of-range note velocity',
+            input: {
+                sourceId: 'source',
+                sourceName: 'Source',
+                analyzerVersion: 1,
+                notes: [{ id: 'note', startBeat: 0, velocity: 128 }],
+            },
+            reason: 'invalid-note-velocity',
+        },
+    ])('returns typed invalid-source for $name', ({ input, reason }) => {
+        expect(extractGrooveTemplate({ ...input, subdivision: '1/16' })).toEqual({
+            ok: false,
+            error: { code: 'invalid-source', sourceId: input.sourceId, reason },
         });
     });
 

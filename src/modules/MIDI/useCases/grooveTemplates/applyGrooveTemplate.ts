@@ -2,6 +2,7 @@ import {
     STRAIGHT_GROOVE_TEMPLATE_ID,
     getGrooveSubdivisionSlotCount,
     getGrooveSubdivisionStepBeats,
+    normalizeGrooveAmount,
     type GrooveTemplate,
 } from '../../models/GrooveTemplate';
 
@@ -22,7 +23,7 @@ export function applyGrooveTemplate<Event extends GrooveProjectableEvent>({
     template,
     amount,
 }: ApplyGrooveTemplateInput<Event>): readonly Event[] {
-    const clampedAmount = Math.max(0, Math.min(1, amount));
+    const clampedAmount = normalizeGrooveAmount(amount);
     if (template.id === STRAIGHT_GROOVE_TEMPLATE_ID || clampedAmount === 0 || template.slots.length === 0) {
         return events;
     }

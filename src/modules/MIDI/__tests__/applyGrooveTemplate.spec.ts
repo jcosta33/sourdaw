@@ -38,4 +38,21 @@ describe('applyGrooveTemplate', () => {
 
         expect(result).toBe(events);
     });
+
+    it('normalizes a non-finite amount to a bit-for-bit no-op', () => {
+        const result = applyGrooveTemplate({
+            events,
+            amount: Number.NaN,
+            template: {
+                id: 'late',
+                name: 'Late',
+                schemaVersion: 1,
+                subdivision: '1/16',
+                slots: [{ index: 0, timingOffset: 0.5, dynamicsOffset: 0.1 }],
+                provenance: { type: 'user', sourceId: 'manual' },
+            },
+        });
+
+        expect(result).toBe(events);
+    });
 });

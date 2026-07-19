@@ -33,6 +33,42 @@ describe('groove template lifecycle', () => {
         expect(renameGrooveTemplate({ templateId: second.id, name: 'Pocket' })?.name).toBe('Pocket 2');
     });
 
+    it('resolves name collisions with locale-independent Unicode normalization', () => {
+        const decomposed = createGrooveTemplate({
+            id: 'decomposed',
+            name: 'Cafe\u0301',
+            subdivision: '1/16',
+            slots: [],
+            provenance: { type: 'user', sourceId: 'decomposed' },
+        });
+        const composed = createGrooveTemplate({
+            id: 'composed',
+            name: 'Caf\u00E9',
+            subdivision: '1/16',
+            slots: [],
+            provenance: { type: 'user', sourceId: 'composed' },
+        });
+        const fullWidth = createGrooveTemplate({
+            id: 'full-width',
+            name: '\uFF30\uFF2F\uFF23\uFF2B\uFF25\uFF34',
+            subdivision: '1/16',
+            slots: [],
+            provenance: { type: 'user', sourceId: 'full-width' },
+        });
+        const ascii = createGrooveTemplate({
+            id: 'ascii',
+            name: 'pocket',
+            subdivision: '1/16',
+            slots: [],
+            provenance: { type: 'user', sourceId: 'ascii' },
+        });
+
+        expect(decomposed.name).toBe('Cafe\u0301');
+        expect(composed.name).toBe('Caf\u00E9 2');
+        expect(fullWidth.name).toBe('\uFF30\uFF2F\uFF23\uFF2B\uFF25\uFF34');
+        expect(ascii.name).toBe('pocket 2');
+    });
+
     it('hydrates lifecycle state while preserving explicit Straight', () => {
         hydrateGrooveTemplates({ templates: [], assignments: [] });
 

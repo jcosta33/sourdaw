@@ -48,6 +48,10 @@ function isFiniteNumber(value: unknown): value is number {
     return typeof value === 'number' && Number.isFinite(value);
 }
 
+function createGrooveTemplateNameKey(name: string): string {
+    return name.trim().normalize('NFKC').toLowerCase();
+}
+
 function isGrooveTemplateSlot(value: unknown): value is GrooveTemplateSlot {
     return (
         isRecord(value) &&
@@ -100,17 +104,24 @@ export function resolveGrooveTemplateNameCollision({
     const occupiedNames = new Set(
         templates
             .filter((template) => template.id !== ignoreTemplateId)
-            .map((template) => template.name.toLocaleLowerCase())
+            .map((template) => createGrooveTemplateNameKey(template.name))
     );
-    if (!occupiedNames.has(baseName.toLocaleLowerCase())) {
+    if (!occupiedNames.has(createGrooveTemplateNameKey(baseName))) {
         return baseName;
     }
 
     let suffix = 2;
-    while (occupiedNames.has(`${baseName} ${suffix}`.toLocaleLowerCase())) {
+    while (occupiedNames.has(createGrooveTemplateNameKey(`${baseName} ${suffix}`))) {
         suffix += 1;
     }
     return `${baseName} ${suffix}`;
+}
+
+export function normalizeGrooveAmount(amount: number): number {
+    if (!Number.isFinite(amount)) {
+        return 0;
+    }
+    return Math.max(0, Math.min(1, amount));
 }
 
 export function isGrooveTemplate(value: unknown): value is GrooveTemplate {

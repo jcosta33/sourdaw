@@ -1,4 +1,4 @@
-import { STRAIGHT_GROOVE_TEMPLATE_ID } from '../../models/GrooveTemplate';
+import { STRAIGHT_GROOVE_TEMPLATE_ID, normalizeGrooveAmount } from '../../models/GrooveTemplate';
 import {
     type GrooveConsumerType,
     type GrooveTemplateAssignment,
@@ -23,7 +23,7 @@ export function assignGrooveTemplate(input: AssignGrooveTemplateInput): GrooveTe
         templateId: state.templates.some((template) => template.id === input.templateId)
             ? input.templateId
             : STRAIGHT_GROOVE_TEMPLATE_ID,
-        amount: Math.max(0, Math.min(1, input.amount)),
+        amount: normalizeGrooveAmount(input.amount),
     };
     const existingIndex = state.assignments.findIndex(
         (candidate) => candidate.consumerType === input.consumerType && candidate.consumerId === input.consumerId
