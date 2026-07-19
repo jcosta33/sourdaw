@@ -976,6 +976,131 @@ describe('MidiRack', () => {
             ]);
         });
 
+        it('recaptures a queued future event after a transport discontinuity resets its route', () => {
+            const rack = new MidiRack('rack-a');
+            rack.addProcessor(new PassthroughProcessor('p1'));
+            const futureNote = noteOn(192, 60);
+
+            rack.processBlock(
+                [futureNote],
+                0,
+                128,
+                { ...transport, discontinuityEpoch: 1 },
+                'track-a',
+                true,
+                'rack-a',
+                'route-a',
+                1
+            );
+            expect(takePreviewBlock(rack).records).toMatchObject([{ pitch: 60, phase: 'open' }]);
+
+            const output = rack.processBlock(
+                [],
+                128,
+                256,
+                { ...transport, ppqPosition: 128 / 22050, discontinuityEpoch: 2 },
+                'track-a',
+                true,
+                'rack-a',
+                'route-a',
+                1
+            );
+            const recaptured = takePreviewBlock(rack);
+
+            expect(output).toContain(futureNote);
+            expect(recaptured.reset).toBe(true);
+            expect(recaptured.records).toMatchObject([
+                { rackId: 'rack-a', routeId: 'route-a', trackId: 'track-a', pitch: 60, phase: 'open' },
+            ]);
+        });
+
+        it('recaptures a queued future event under a replacement capture epoch', () => {
+            const rack = new MidiRack('rack-a');
+            rack.addProcessor(new PassthroughProcessor('p1'));
+            const futureNote = noteOn(192, 61);
+
+            rack.processBlock(
+                [futureNote],
+                0,
+                128,
+                { ...transport, discontinuityEpoch: 1 },
+                'track-a',
+                true,
+                'rack-a',
+                'route-a',
+                1
+            );
+            takePreviewBlock(rack);
+
+            const output = rack.processBlock(
+                [],
+                128,
+                256,
+                { ...transport, ppqPosition: 128 / 22050, discontinuityEpoch: 1 },
+                'track-a',
+                true,
+                'rack-a',
+                'route-a',
+                2
+            );
+
+            expect(output).toContain(futureNote);
+            expect(takePreviewBlock(rack)).toMatchObject({
+                reset: true,
+                records: [expect.objectContaining({ routeId: 'route-a', trackId: 'track-a', pitch: 61 })],
+            });
+        });
+
+        it('reclaims queued future-marker capacity through 512 enable and disable lifecycles', () => {
+            const rack = new MidiRack('rack-a');
+            rack.addProcessor(new PassthroughProcessor('p1'));
+
+            for (let index = 0; index < 512; index++) {
+                const blockStart = index * 128;
+                rack.processBlock(
+                    [noteOn(1_000_000 + index, 36 + (index % 48))],
+                    blockStart,
+                    blockStart + 64,
+                    { ...transport, ppqPosition: blockStart / 22050, discontinuityEpoch: index + 1 },
+                    'track-a',
+                    true,
+                    'rack-a',
+                    'route-a',
+                    index + 1
+                );
+                expect(takePreviewBlock(rack).records).toHaveLength(1);
+                rack.processBlock(
+                    [],
+                    blockStart + 64,
+                    blockStart + 128,
+                    { ...transport, ppqPosition: (blockStart + 64) / 22050, discontinuityEpoch: index + 1 },
+                    'track-a',
+                    false,
+                    'rack-a',
+                    'route-a',
+                    index + 1
+                );
+            }
+
+            const replacementStart = 512 * 128;
+            rack.processBlock(
+                [noteOn(2_000_000, 72)],
+                replacementStart,
+                replacementStart + 64,
+                { ...transport, ppqPosition: replacementStart / 22050, discontinuityEpoch: 513 },
+                'track-a',
+                true,
+                'rack-a',
+                'route-a',
+                513
+            );
+
+            expect(takePreviewBlock(rack)).toMatchObject({
+                droppedEvents: 0,
+                records: [expect.objectContaining({ routeId: 'route-a', trackId: 'track-a', pitch: 72 })],
+            });
+        });
+
         it('closes same-note preview identities within the active rack and route scope', () => {
             const rack = new MidiRack('rack-a');
             rack.addProcessor(new PassthroughProcessor('p1'));

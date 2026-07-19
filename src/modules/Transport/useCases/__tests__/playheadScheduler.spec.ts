@@ -485,7 +485,7 @@ describe('playhead scheduler tick', () => {
         harness.clock = 0.05;
         await fireTick();
 
-        const beforeDisposeEpoch = vi.mocked(scheduleMidiNotes).mock.calls.at(-1)?.[7].discontinuityEpoch;
+        const beforeDisposeEpoch = vi.mocked(scheduleMidiNotes).mock.calls.at(-1)?.[7]?.discontinuityEpoch;
         disposePlayheadScheduler();
 
         expect(vi.mocked(worker.terminate)).toHaveBeenCalled();
@@ -493,7 +493,7 @@ describe('playhead scheduler tick', () => {
         startPlayheadScheduler();
         harness.clock = 0.1;
         await fireTick();
-        expect(vi.mocked(scheduleMidiNotes).mock.calls.at(-1)?.[7].discontinuityEpoch).toBeGreaterThan(
+        expect(vi.mocked(scheduleMidiNotes).mock.calls.at(-1)?.[7]?.discontinuityEpoch).toBeGreaterThan(
             beforeDisposeEpoch ?? 0
         );
     });

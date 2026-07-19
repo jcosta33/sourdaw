@@ -135,6 +135,11 @@ export class YeastPreviewSidecar {
         { length: YEAST_PREVIEW_CAPACITY },
         () => undefined
     );
+    private readonly queuedPreviewRackId = Array.from({ length: YEAST_PREVIEW_CAPACITY }, () => '');
+    private readonly queuedPreviewRouteId = Array.from({ length: YEAST_PREVIEW_CAPACITY }, () => '');
+    private readonly queuedPreviewTrackId = Array.from({ length: YEAST_PREVIEW_CAPACITY }, () => '');
+    private readonly queuedPreviewCaptureEpoch = new Float64Array(YEAST_PREVIEW_CAPACITY);
+    private readonly queuedPreviewRuntimeGeneration = new Float64Array(YEAST_PREVIEW_CAPACITY);
 
     private readonly originEvents: Array<MidiEvent | undefined> = Array.from(
         { length: YEAST_PREVIEW_CAPACITY },
@@ -169,6 +174,10 @@ export class YeastPreviewSidecar {
     private processorTransformationActive = false;
     private lineageCompromised = false;
     private queuedPreviewCount = 0;
+    // A Sidecar instance cannot outlive its Worker, and global resets advance
+    // this local generation so queued markers cannot cross a reset within that
+    // Worker runtime either.
+    private runtimeGeneration = 1;
     private retainedCheckpointCount = 0;
     private processorCheckpointDecisionCount = 0;
     private processorCheckpointNextDecisionSequence = 0;
@@ -282,7 +291,11 @@ export class YeastPreviewSidecar {
 
     invalidatePending(): void {
         this.pendingCount = 0;
-        this.queuedPreviewCount = 0;
+        this.clearQueuedPreview();
+        this.runtimeGeneration =
+            Number.isSafeInteger(this.runtimeGeneration) && this.runtimeGeneration < Number.MAX_SAFE_INTEGER
+                ? this.runtimeGeneration + 1
+                : 1;
         this.clearRetainedLineage();
     }
 
@@ -584,13 +597,17 @@ export class YeastPreviewSidecar {
         let unrealizedIndex = 0;
         for (let eventIndex = 0; eventIndex < events.length; eventIndex++) {
             const event = events[eventIndex]!;
-            const queuedPreview = this.findQueuedPreviewEvent(event);
+            const queuedPreview = this.findQueuedPreviewEvent(event, fallbackTrackId);
             if (queuedPreview !== -1) {
                 this.removeQueuedPreview(queuedPreview);
                 continue;
             }
             const previewableEvent = event.kind.type === 'noteOn' || event.kind.type === 'noteOff';
-            if (previewableEvent && event.timeSamples >= this.blockEndSamples && !this.appendQueuedPreview(event)) {
+            if (
+                previewableEvent &&
+                event.timeSamples >= this.blockEndSamples &&
+                !this.appendQueuedPreview(event, fallbackTrackId)
+            ) {
                 this.recordDrop();
                 continue;
             }
@@ -1043,6 +1060,7 @@ export class YeastPreviewSidecar {
                 index += 1;
             }
         }
+        this.invalidateRouteQueuedPreview(rackId, routeId);
     }
 
     private removePending(index: number): void {
@@ -1067,30 +1085,97 @@ export class YeastPreviewSidecar {
         this.pendingProcessorId[index] = this.pendingProcessorId[last]!;
     }
 
-    private appendQueuedPreview(event: MidiEvent): boolean {
+    private appendQueuedPreview(event: MidiEvent, fallbackTrackId: string): boolean {
         if (this.queuedPreviewCount === YEAST_PREVIEW_CAPACITY) {
             return false;
         }
+        const trackId = event.trackId ?? fallbackTrackId;
+        const routeIndex = this.findRouteForTrack(trackId);
         const slot = this.queuedPreviewCount++;
         this.queuedPreviewEvent[slot] = event;
+        this.queuedPreviewRackId[slot] = routeIndex === -1 ? this.currentRackId : this.routeRackId[routeIndex]!;
+        this.queuedPreviewRouteId[slot] = this.routeIdForTrack(routeIndex, trackId);
+        this.queuedPreviewTrackId[slot] = trackId;
+        this.queuedPreviewCaptureEpoch[slot] = routeIndex === -1 ? -1 : this.routeCaptureEpoch[routeIndex]!;
+        this.queuedPreviewRuntimeGeneration[slot] = this.runtimeGeneration;
         return true;
     }
 
-    private findQueuedPreviewEvent(event: MidiEvent): number {
-        for (let index = 0; index < this.queuedPreviewCount; index++) {
-            if (this.queuedPreviewEvent[index] === event) {
+    private findQueuedPreviewEvent(event: MidiEvent, fallbackTrackId: string): number {
+        const trackId = event.trackId ?? fallbackTrackId;
+        const routeIndex = this.findRouteForTrack(trackId);
+        const rackId = routeIndex === -1 ? this.currentRackId : this.routeRackId[routeIndex]!;
+        const routeId = this.routeIdForTrack(routeIndex, trackId);
+        const captureEpoch = routeIndex === -1 ? -1 : this.routeCaptureEpoch[routeIndex]!;
+        let index = 0;
+        while (index < this.queuedPreviewCount) {
+            if (this.queuedPreviewEvent[index] !== event) {
+                index += 1;
+                continue;
+            }
+            if (
+                this.queuedPreviewRackId[index] === rackId &&
+                this.queuedPreviewRouteId[index] === routeId &&
+                this.queuedPreviewTrackId[index] === trackId &&
+                this.queuedPreviewCaptureEpoch[index] === captureEpoch &&
+                this.queuedPreviewRuntimeGeneration[index] === this.runtimeGeneration
+            ) {
                 return index;
             }
+            // The same scheduled event object survived a route/runtime reset.
+            // Its old marker is no longer authoritative; reclaim the slot so the
+            // event can be captured under the current scope.
+            this.removeQueuedPreview(index);
         }
         return -1;
+    }
+
+    private routeIdForTrack(routeIndex: number, trackId: string): string {
+        if (routeIndex !== -1) {
+            return this.routeId[routeIndex]!;
+        }
+        return trackId === this.currentTrackId ? this.currentRouteId : trackId;
+    }
+
+    private invalidateRouteQueuedPreview(rackId: string, routeId: string): void {
+        let index = 0;
+        while (index < this.queuedPreviewCount) {
+            if (this.queuedPreviewRackId[index] === rackId && this.queuedPreviewRouteId[index] === routeId) {
+                this.removeQueuedPreview(index);
+            } else {
+                index += 1;
+            }
+        }
+    }
+
+    private clearQueuedPreview(): void {
+        for (let index = 0; index < this.queuedPreviewCount; index++) {
+            this.queuedPreviewEvent[index] = undefined;
+            this.queuedPreviewRackId[index] = '';
+            this.queuedPreviewRouteId[index] = '';
+            this.queuedPreviewTrackId[index] = '';
+            this.queuedPreviewCaptureEpoch[index] = 0;
+            this.queuedPreviewRuntimeGeneration[index] = 0;
+        }
+        this.queuedPreviewCount = 0;
     }
 
     private removeQueuedPreview(index: number): void {
         const last = --this.queuedPreviewCount;
         if (index !== last) {
             this.queuedPreviewEvent[index] = this.queuedPreviewEvent[last];
+            this.queuedPreviewRackId[index] = this.queuedPreviewRackId[last]!;
+            this.queuedPreviewRouteId[index] = this.queuedPreviewRouteId[last]!;
+            this.queuedPreviewTrackId[index] = this.queuedPreviewTrackId[last]!;
+            this.queuedPreviewCaptureEpoch[index] = this.queuedPreviewCaptureEpoch[last]!;
+            this.queuedPreviewRuntimeGeneration[index] = this.queuedPreviewRuntimeGeneration[last]!;
         }
         this.queuedPreviewEvent[last] = undefined;
+        this.queuedPreviewRackId[last] = '';
+        this.queuedPreviewRouteId[last] = '';
+        this.queuedPreviewTrackId[last] = '';
+        this.queuedPreviewCaptureEpoch[last] = 0;
+        this.queuedPreviewRuntimeGeneration[last] = 0;
     }
 
     private clearRetainedLineage(): void {
