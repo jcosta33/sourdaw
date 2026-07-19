@@ -34,7 +34,6 @@ export class MidiRack {
     private scratchA: MidiEvent[] = [];
     private scratchB: MidiEvent[] = [];
     private separateOutput: MidiEvent[] = [];
-    private failureFallback: MidiEvent[] = [];
     private lifecycleOutput: MidiEvent[] = [];
     private readonly preview: YeastPreviewSidecar;
     private readonly defaultRackId: string | undefined;
@@ -240,8 +239,9 @@ export class MidiRack {
             } catch {
                 // Processor state may already be mutated when it throws. Fail the
                 // whole rack generation: settle its terminal notes, discard every
-                // delayed event, reset every processor and preview route, then
-                // declare a transparent whole-rack fallback for the source block.
+                // delayed event, and reset every processor and preview route. Keep
+                // the upstream buffer as this processor's transparent-bypass output
+                // so failure recovery does not undo earlier processors in the chain.
                 preview?.cancelProcessorTransformation();
                 this.settleGeneration(lifecycleOutput, blockStartSamples);
                 this.preview.beginBlock(
@@ -255,16 +255,9 @@ export class MidiRack {
                     captureEpoch,
                     this.projectionVersion
                 );
-                const fallback = this.failureFallback;
-                fallback.length = 0;
-                for (const event of inputEvents) {
-                    event.trackId = trackId;
-                    fallback.push(event);
-                }
-                input = fallback;
-                preview?.recordProcessorEvents(fallback, processor.id, false, true);
+                preview?.recordProcessorEvents(input, processor.id, false, true);
                 preview?.recordProcessorProvenance(processor.id, false, true, 0);
-                break;
+                continue;
             }
             const tmp = input;
             input = output;

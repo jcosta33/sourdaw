@@ -261,6 +261,7 @@ class DecisionSourceProcessor extends PassthroughProcessor {
 }
 
 class LineageTokenProbeProcessor extends PassthroughProcessor {
+    processed = false;
     retainedType: string | undefined;
     retainedToken: number | undefined;
 
@@ -270,6 +271,7 @@ class LineageTokenProbeProcessor extends PassthroughProcessor {
         _transport: TransportInfo,
         preview?: YeastPreviewDecisionSink
     ): void {
+        this.processed = true;
         for (const event of input) {
             output.push(event);
             if (event.kind.type === 'noteOn') {
@@ -1087,7 +1089,7 @@ describe('MidiRack', () => {
             ]);
         });
 
-        it('clears retained lineage and skips downstream processors after a rack-generation failure', () => {
+        it('clears retained lineage and keeps downstream processors running after a rack-generation failure', () => {
             const rack = new MidiRack();
             const probe = new LineageTokenProbeProcessor('probe');
             rack.addProcessor(new DecisionSourceProcessor('decision-source'));
@@ -1097,11 +1099,15 @@ describe('MidiRack', () => {
             const output = rack.processBlock([noteOn(0, 60)], 0, 128, transport, 'track-a', true);
 
             expect(output).toMatchObject([noteOn(0, 60)]);
+            expect(probe.processed).toBe(true);
             expect(probe.retainedToken).toBeUndefined();
             expect(takePreviewBlock(rack)).toMatchObject({
                 reset: true,
-                records: [{ phase: 'open', pitch: 60, processorId: 'throws-after-retain', realized: true }],
-                provenance: [{ processorId: 'throws-after-retain', failed: true }],
+                records: [{ phase: 'open', pitch: 60, processorId: 'probe', realized: true }],
+                provenance: [
+                    { processorId: 'throws-after-retain', failed: true },
+                    { processorId: 'probe', failed: false },
+                ],
             });
         });
 
@@ -2057,6 +2063,32 @@ describe('MidiRack', () => {
             // The note survived the throw and reached the output.
             expect(out.some((event) => event.kind.type === 'noteOn' && event.kind.note === 60)).toBe(true);
         });
+
+        it.each([false, true])(
+            'preserves upstream processor output when a later processor throws with preview capture %s',
+            (previewEnabled) => {
+                const rack = new MidiRack();
+                rack.addProcessor(new DropFirstNoteProcessor('upstream'));
+                rack.addProcessor(new ThrowingProcessor('thrower'));
+
+                const output = rack.processBlock(
+                    [noteOn(0, 60), noteOn(32, 62)],
+                    0,
+                    128,
+                    transport,
+                    'track-a',
+                    previewEnabled
+                );
+
+                expect(output).toEqual([
+                    {
+                        timeSamples: 32,
+                        trackId: 'track-a',
+                        kind: { type: 'noteOn', channel: 0, note: 62, velocity: 100 },
+                    },
+                ]);
+            }
+        );
 
         it('reports transparent processor failure against the unchanged upstream events', () => {
             const rack = new MidiRack();
