@@ -6,6 +6,10 @@ import { toasterStore } from '../stores/toasterStore';
 
 import { projectToasterPatternGroove } from './projectToasterPatternGroove';
 
+type ExportPatternToTimelineResult =
+    | { ok: true }
+    | Extract<ReturnType<typeof projectToasterPatternGroove>, { ok: false }>;
+
 /**
  * Export the active pattern to the timeline as MIDI clips, one per pad lane.
  *
@@ -28,21 +32,31 @@ import { projectToasterPatternGroove } from './projectToasterPatternGroove';
  * also takes no probability argument, so a faithful export would have to widen
  * that surface; out of scope here.)
  */
-export function exportPatternToTimeline(deviceId: string): void {
+export function exportPatternToTimeline(deviceId: string): ExportPatternToTimelineResult {
     const state = toasterStore.value?.[deviceId];
     if (!state) {
-        return;
+        return { ok: true };
     }
 
     const pattern = state.kit.patterns.find((param) => param.id === state.kit.activePatternId);
     if (!pattern) {
-        return;
+        return { ok: true };
+    }
+
+    const grooveCapability = projectToasterPatternGroove({
+        deviceId,
+        patternId: pattern.id,
+        stepsPerBar: pattern.stepsPerBar,
+        events: [],
+    });
+    if (!grooveCapability.ok) {
+        return grooveCapability;
     }
 
     const tracks = getAllTracks();
     const parentTrack = tracks.find((t) => t.devices.some((d) => d.id === deviceId));
     if (!parentTrack) {
-        return;
+        return { ok: true };
     }
 
     // Child tracks in the parent's creation order. createDrumTrackStack pushes
@@ -114,9 +128,10 @@ export function exportPatternToTimeline(deviceId: string): void {
             stepsPerBar,
             events: grooveSourceEvents,
         });
-        const projectedByStep = new Map(
-            (grooveProjection.ok ? grooveProjection.events : grooveSourceEvents).map((event) => [event.stepIdx, event])
-        );
+        if (!grooveProjection.ok) {
+            return grooveProjection;
+        }
+        const projectedByStep = new Map(grooveProjection.events.map((event) => [event.stepIdx, event]));
 
         // Add MIDI notes for each active step, baking in the same micro-timing,
         // swing, shared groove, and retrigger the live sequencer applies.
@@ -145,4 +160,5 @@ export function exportPatternToTimeline(deviceId: string): void {
             }
         }
     }
+    return { ok: true };
 }

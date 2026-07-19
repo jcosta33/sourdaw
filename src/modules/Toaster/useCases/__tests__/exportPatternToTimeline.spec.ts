@@ -2,7 +2,8 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { Container } from '#/infra/di/Container';
 import { getAllTracks, addClip } from '#/modules/Arrangement/useCases';
-import { addMidiNote } from '#/modules/MIDI/useCases';
+import { defaultGrooveTemplateState, grooveTemplateStore } from '#/modules/MIDI/stores';
+import { addMidiNote, assignGrooveTemplate, createGrooveTemplate } from '#/modules/MIDI/useCases';
 
 import { exportPatternToTimeline } from '../exportPatternToTimeline';
 
@@ -56,6 +57,7 @@ describe('exportPatternToTimeline', () => {
         vi.mocked(addClip).mockReset();
         vi.mocked(addMidiNote).mockReset();
         mockStore.value = null;
+        grooveTemplateStore.set(structuredClone(defaultGrooveTemplateState));
     });
 
     it('does not add clips when there are no tracks', () => {
@@ -261,5 +263,108 @@ describe('exportPatternToTimeline', () => {
         const [, , r2Start, , r2Vel] = calls[2]!;
         expect(r2Start).toBeCloseTo(2 / 3, 10);
         expect(r2Vel).toBe(Math.round(127 * (1 - 0.24)));
+    });
+
+    it('exports the same 32-step groove grid and retrigger positions as live playback', () => {
+        const parent = { id: 'parent', parentId: null, devices: [{ id: DEVICE_ID }] };
+        const child = { id: 'child-0', name: 'Kick', parentId: 'parent', devices: [] };
+        vi.mocked(getAllTracks).mockReturnValue([parent, child] as never);
+        vi.mocked(addClip).mockReturnValue({ id: 'clip' } as never);
+        mockStore.value = {
+            [DEVICE_ID]: {
+                kit: {
+                    swing: 0,
+                    activePatternId: 'A1',
+                    patterns: [
+                        {
+                            id: 'A1',
+                            stepsPerBar: 32,
+                            bars: 1,
+                            tracks: [
+                                {
+                                    padIndex: 0,
+                                    steps: [
+                                        makeStep(),
+                                        makeStep({ active: true, velocity: 1, retriggerCount: 1 }),
+                                        ...Array.from({ length: 30 }, () => makeStep()),
+                                    ],
+                                },
+                            ],
+                        },
+                    ],
+                },
+            },
+        };
+        createGrooveTemplate({
+            id: 'export-thirty-second-pocket',
+            name: 'Export thirty-second pocket',
+            subdivision: '1/32',
+            slots: [{ index: 1, timingOffset: 0.2, dynamicsOffset: -0.1 }],
+            provenance: { type: 'user', sourceId: 'test-32' },
+        });
+        assignGrooveTemplate({
+            consumerType: 'toaster-pattern',
+            consumerId: `groove-consumer:${DEVICE_ID}:A1`,
+            templateId: 'export-thirty-second-pocket',
+            amount: 1,
+        });
+
+        exportPatternToTimeline(DEVICE_ID);
+
+        expect(addClip).toHaveBeenCalledWith(expect.objectContaining({ startBeat: 0, endBeat: 4 }));
+        const calls = vi.mocked(addMidiNote).mock.calls;
+        expect(calls).toHaveLength(2);
+        expect(calls[0]?.slice(2)).toEqual([0.15, 0.1125, 114]);
+        expect(calls[1]?.slice(2)).toEqual([0.2125, 0.05625, 100]);
+    });
+
+    it('rejects an unsupported assigned template before committing any timeline data', () => {
+        const parent = { id: 'parent', parentId: null, devices: [{ id: DEVICE_ID }] };
+        const child = { id: 'child-0', name: 'Kick', parentId: 'parent', devices: [] };
+        vi.mocked(getAllTracks).mockReturnValue([parent, child] as never);
+        vi.mocked(addClip).mockReturnValue({ id: 'clip' } as never);
+        mockStore.value = {
+            [DEVICE_ID]: {
+                kit: {
+                    swing: 0,
+                    activePatternId: 'A1',
+                    patterns: [
+                        {
+                            id: 'A1',
+                            stepsPerBar: 16,
+                            bars: 1,
+                            tracks: [{ padIndex: 0, steps: [makeStep({ active: true })] }],
+                        },
+                    ],
+                },
+            },
+        };
+        createGrooveTemplate({
+            id: 'unsupported-eighth-groove',
+            name: 'Unsupported eighth groove',
+            subdivision: '1/8',
+            slots: [{ index: 1, timingOffset: 0.1, dynamicsOffset: 0 }],
+            provenance: { type: 'user', sourceId: 'unsupported-export' },
+        });
+        assignGrooveTemplate({
+            consumerType: 'toaster-pattern',
+            consumerId: `groove-consumer:${DEVICE_ID}:A1`,
+            templateId: 'unsupported-eighth-groove',
+            amount: 1,
+        });
+
+        const result = exportPatternToTimeline(DEVICE_ID);
+
+        expect(result).toEqual({
+            ok: false,
+            status: {
+                status: 'unsupported',
+                templateId: 'unsupported-eighth-groove',
+                templateName: 'Unsupported eighth groove',
+                error: { code: 'unsupported-subdivision', consumer: 'toaster', subdivision: '1/8' },
+            },
+        });
+        expect(addClip).not.toHaveBeenCalled();
+        expect(addMidiNote).not.toHaveBeenCalled();
     });
 });

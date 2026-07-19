@@ -23,10 +23,9 @@ type RunSequencerTickInput = {
     deviceId: string;
     currentStep: number;
     bpm: number;
-    stepsPerBeat: number;
 };
 
-export function runSequencerTick({ deviceId, currentStep, bpm, stepsPerBeat }: RunSequencerTickInput): void {
+export function runSequencerTick({ deviceId, currentStep, bpm }: RunSequencerTickInput): void {
     const seqState = getSequencerPlaybackState(deviceId);
     if (!seqState.running) {
         return;
@@ -50,8 +49,23 @@ export function runSequencerTick({ deviceId, currentStep, bpm, stepsPerBeat }: R
         }
     }
 
+    if (!Number.isFinite(pattern.stepsPerBar) || pattern.stepsPerBar <= 0) {
+        return;
+    }
     const totalSteps = pattern.stepsPerBar * pattern.bars;
-    const stepDurationMs = 60_000 / bpm / stepsPerBeat;
+    const stepDurationBeats = 4 / pattern.stepsPerBar;
+    const stepDurationMs = (60_000 / bpm) * stepDurationBeats;
+    const grooveCapability = projectToasterPatternGroove({
+        deviceId,
+        patternId: sourcePattern.id,
+        stepsPerBar: pattern.stepsPerBar,
+        events: [],
+    });
+    if (!grooveCapability.ok) {
+        seqState.running = false;
+        toasterStore.set({ ...toasterStore.value, [deviceId]: { ...state, isPlaying: false } });
+        return;
+    }
 
     for (const track of pattern.tracks) {
         const trackSteps = track.stepsOverride ?? totalSteps;
@@ -64,7 +78,6 @@ export function runSequencerTick({ deviceId, currentStep, bpm, stepsPerBeat }: R
             continue;
         }
 
-        const stepDurationBeats = 1 / stepsPerBeat;
         const gridStartBeat = stepIdx * stepDurationBeats;
         const microOffsetBeats = step.microTiming * stepDurationBeats;
         const swingBeats = stepIdx % 2 === 1 ? state.kit.swing * stepDurationBeats * 0.5 : 0;
@@ -79,7 +92,12 @@ export function runSequencerTick({ deviceId, currentStep, bpm, stepsPerBeat }: R
             stepsPerBar: pattern.stepsPerBar,
             events: [sourceEvent],
         });
-        const projectedEvent = grooveProjection.ok ? (grooveProjection.events[0] ?? sourceEvent) : sourceEvent;
+        if (!grooveProjection.ok) {
+            seqState.running = false;
+            toasterStore.set({ ...toasterStore.value, [deviceId]: { ...state, isPlaying: false } });
+            return;
+        }
+        const projectedEvent = grooveProjection.events[0] ?? sourceEvent;
         const vel = projectedEvent.velocity;
 
         const pad = state.kit.pads[track.padIndex];
@@ -148,8 +166,5 @@ export function runSequencerTick({ deviceId, currentStep, bpm, stepsPerBeat }: R
     const now = getAudioTime();
     const delayMs = Math.max(1, (seqState.nextTickTime - now) * 1000);
 
-    seqState.timeoutId = setTimeout(
-        () => runSequencerTick({ deviceId, currentStep: nextStep, bpm, stepsPerBeat }),
-        delayMs
-    );
+    seqState.timeoutId = setTimeout(() => runSequencerTick({ deviceId, currentStep: nextStep, bpm }), delayMs);
 }

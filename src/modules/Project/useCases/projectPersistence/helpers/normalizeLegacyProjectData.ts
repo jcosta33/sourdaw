@@ -1,12 +1,17 @@
 import {
     GROOVE_CONSUMER_TYPES,
+    canonicalizeGrooveConsumerId,
     defaultGrooveTemplateState,
     isGrooveTemplateState,
     sanitizeGrooveTemplateState,
     type GrooveConsumerType,
     type GrooveTemplateAssignment,
 } from '#/modules/MIDI/stores';
-import { getCanonicalGrooveTemplateKey, getStraightGrooveTemplateId } from '#/modules/MIDI/useCases';
+import {
+    getCanonicalGrooveTemplateKey,
+    getScopedGrooveConsumerId,
+    getStraightGrooveTemplateId,
+} from '#/modules/MIDI/useCases';
 
 type UnknownRecord = Record<string, unknown>;
 
@@ -135,6 +140,83 @@ type NormalizedLegacyGrooveTemplate = {
     template: UnknownRecord;
 };
 
+const LEGACY_YEAST_PROCESSOR_GROOVES = [
+    { name: 'Straight', offsets: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0] },
+    { name: 'MPC Swing', offsets: [0, 0.12, 0, 0.12, 0, 0.12, 0, 0.12, 0, 0.12, 0, 0.12, 0, 0.12, 0, 0.12] },
+    {
+        name: 'Triplet Shuffle',
+        offsets: [0, 0.167, 0, 0.167, 0, 0.167, 0, 0.167, 0, 0.167, 0, 0.167, 0, 0.167, 0, 0.167],
+    },
+    { name: 'Late Backbeat', offsets: [0, 0, 0, 0, 0.05, 0, 0, 0, 0, 0, 0, 0, 0.05, 0, 0, 0] },
+    {
+        name: 'Dilla Pocket',
+        offsets: [0, 0.08, -0.03, 0.15, 0, 0.06, -0.02, 0.12, 0, 0.09, -0.04, 0.14, 0, 0.07, -0.03, 0.11],
+    },
+    { name: 'Push', offsets: [-0.03, 0, -0.03, 0, -0.03, 0, -0.03, 0, -0.03, 0, -0.03, 0, -0.03, 0, -0.03, 0] },
+] as const;
+
+type LegacyYeastProcessorGroove = {
+    processorId: string;
+    templateIndex: number;
+    amount: number;
+};
+
+function getLegacyYeastProcessorGrooves(value: UnknownRecord): LegacyYeastProcessorGroove[] {
+    if (!isRecord(value.yeast) || !Array.isArray(value.yeast.processors)) {
+        return [];
+    }
+    return value.yeast.processors.flatMap((processor): LegacyYeastProcessorGroove[] => {
+        if (
+            !isRecord(processor) ||
+            processor.type !== 'groove' ||
+            typeof processor.id !== 'string' ||
+            !isRecord(processor.params)
+        ) {
+            return [];
+        }
+        const hasTemplate = typeof processor.params.template === 'number' && Number.isFinite(processor.params.template);
+        const hasAmount = typeof processor.params.amount === 'number' && Number.isFinite(processor.params.amount);
+        if (!hasTemplate && !hasAmount) {
+            return [];
+        }
+        const processorId = canonicalizeGrooveConsumerId(processor.id);
+        if (!processorId) {
+            return [];
+        }
+        const rawTemplateIndex = hasTemplate ? Number(processor.params.template) : 0;
+        const templateIndex = Math.max(
+            0,
+            Math.min(LEGACY_YEAST_PROCESSOR_GROOVES.length - 1, Math.round(rawTemplateIndex))
+        );
+        const amount = hasAmount ? Math.max(0, Math.min(1, Number(processor.params.amount))) : 0.5;
+        return [{ processorId, templateIndex, amount }];
+    });
+}
+
+function stripLegacyYeastProcessorGrooveParams(value: unknown): unknown {
+    if (!isRecord(value) || !Array.isArray(value.processors)) {
+        return value;
+    }
+    return {
+        ...value,
+        processors: value.processors.map((processor): unknown => {
+            if (!isRecord(processor) || processor.type !== 'groove' || !isRecord(processor.params)) {
+                return processor;
+            }
+            if (!Object.hasOwn(processor.params, 'template') && !Object.hasOwn(processor.params, 'amount')) {
+                return processor;
+            }
+            const params = Object.fromEntries(
+                Object.entries(processor.params).filter(([key]) => key !== 'template' && key !== 'amount')
+            );
+            const processorWithoutParams = Object.fromEntries(
+                Object.entries(processor).filter(([key]) => key !== 'params')
+            );
+            return Object.keys(params).length > 0 ? { ...processorWithoutParams, params } : processorWithoutParams;
+        }),
+    };
+}
+
 function normalizeLegacyGrooveTemplate(
     value: unknown,
     source: 'yeast' | 'toaster',
@@ -222,25 +304,36 @@ function normalizeLegacyGrooveAssignment({
 }
 
 function normalizeGrooveFields(value: UnknownRecord): UnknownRecord {
-    if (isRecord(value.grooves) && Array.isArray(value.grooves.templates) && Array.isArray(value.grooves.assignments)) {
+    const legacyYeastProcessorGrooves = getLegacyYeastProcessorGrooves(value);
+    if (
+        legacyYeastProcessorGrooves.length === 0 &&
+        isRecord(value.grooves) &&
+        Array.isArray(value.grooves.templates) &&
+        Array.isArray(value.grooves.assignments)
+    ) {
         const grooves = isGrooveTemplateState(value.grooves)
             ? value.grooves
             : migrateLegacyStraightAssignmentAlias(value.grooves);
         return stripIdentifiedLegacyGrooveSources(grooves === value.grooves ? value : { ...value, grooves });
     }
 
-    const hasIdentifiedLegacyGrooveFields = ['yeast', 'toaster'].some((source) => {
-        const sourceState = value[source];
-        return (
-            isRecord(sourceState) &&
-            (Array.isArray(sourceState.grooveTemplates) || Array.isArray(sourceState.assignments))
-        );
-    });
+    const hasIdentifiedLegacyGrooveFields =
+        legacyYeastProcessorGrooves.length > 0 ||
+        ['yeast', 'toaster'].some((source) => {
+            const sourceState = value[source];
+            return (
+                isRecord(sourceState) &&
+                (Array.isArray(sourceState.grooveTemplates) || Array.isArray(sourceState.assignments))
+            );
+        });
     if (!hasIdentifiedLegacyGrooveFields) {
         return value;
     }
 
-    const templates: UnknownRecord[] = structuredClone(defaultGrooveTemplateState.templates).filter(isRecord);
+    const initialGrooves = isRecord(value.grooves)
+        ? sanitizeGrooveTemplateState(migrateLegacyStraightAssignmentAlias(value.grooves))
+        : structuredClone(defaultGrooveTemplateState);
+    const templates: UnknownRecord[] = structuredClone(initialGrooves.templates).filter(isRecord);
     const templateIdByFingerprint = new Map<string, string>(
         templates.map((template) => [JSON.stringify([template.subdivision, template.slots]), String(template.id)])
     );
@@ -249,43 +342,66 @@ function normalizeGrooveFields(value: UnknownRecord): UnknownRecord {
     );
     const occupiedIds = new Set<string>(templates.map((template) => String(template.id)));
     const templateIdMappings = new Map<string, string>();
+    function registerLegacyTemplate(value: unknown, source: 'yeast' | 'toaster', index: number): void {
+        const normalized = normalizeLegacyGrooveTemplate(value, source, index, occupiedNames);
+        if (!normalized) {
+            return;
+        }
+        const { sourceId, template } = normalized;
+        if (template.id === getStraightGrooveTemplateId()) {
+            templateIdMappings.set(`${source}:${sourceId}`, getStraightGrooveTemplateId());
+            return;
+        }
+        const fingerprint = JSON.stringify([template.subdivision, template.slots]);
+        const equivalentTemplateId = templateIdByFingerprint.get(fingerprint);
+        if (equivalentTemplateId) {
+            templateIdMappings.set(`${source}:${sourceId}`, equivalentTemplateId);
+            return;
+        }
+        occupiedNames.add(getCanonicalGrooveTemplateKey(String(template.name)));
+        const baseId = String(template.id);
+        let id = baseId;
+        let suffix = 2;
+        while (occupiedIds.has(id)) {
+            id = `${baseId}-${suffix}`;
+            suffix += 1;
+        }
+        occupiedIds.add(id);
+        templateIdByFingerprint.set(fingerprint, id);
+        templateIdMappings.set(`${source}:${sourceId}`, id);
+        templates.push({ ...template, id });
+    }
+
     for (const source of ['yeast', 'toaster'] as const) {
         const sourceState = value[source];
         if (!isRecord(sourceState) || !Array.isArray(sourceState.grooveTemplates)) {
             continue;
         }
         for (const [index, legacyTemplate] of sourceState.grooveTemplates.entries()) {
-            const normalized = normalizeLegacyGrooveTemplate(legacyTemplate, source, index, occupiedNames);
-            if (!normalized) {
-                continue;
-            }
-            const { sourceId, template } = normalized;
-            if (template.id === getStraightGrooveTemplateId()) {
-                templateIdMappings.set(`${source}:${sourceId}`, getStraightGrooveTemplateId());
-                continue;
-            }
-            const fingerprint = JSON.stringify([template.subdivision, template.slots]);
-            const equivalentTemplateId = templateIdByFingerprint.get(fingerprint);
-            if (equivalentTemplateId) {
-                templateIdMappings.set(`${source}:${sourceId}`, equivalentTemplateId);
-                continue;
-            }
-            occupiedNames.add(getCanonicalGrooveTemplateKey(String(template.name)));
-            const baseId = String(template.id);
-            let id = baseId;
-            let suffix = 2;
-            while (occupiedIds.has(id)) {
-                id = `${baseId}-${suffix}`;
-                suffix += 1;
-            }
-            occupiedIds.add(id);
-            templateIdByFingerprint.set(fingerprint, id);
-            templateIdMappings.set(`${source}:${sourceId}`, id);
-            templates.push({ ...template, id });
+            registerLegacyTemplate(legacyTemplate, source, index);
         }
     }
 
-    const assignmentsByConsumer = new Map<string, GrooveTemplateAssignment>();
+    const legacyProcessorTemplateIndices = [
+        ...new Set(legacyYeastProcessorGrooves.map((entry) => entry.templateIndex)),
+    ].sort((left, right) => left - right);
+    for (const templateIndex of legacyProcessorTemplateIndices) {
+        registerLegacyTemplate(
+            {
+                id: `processor-template-${templateIndex}`,
+                ...LEGACY_YEAST_PROCESSOR_GROOVES[templateIndex],
+            },
+            'yeast',
+            templateIndex
+        );
+    }
+
+    const assignmentsByConsumer = new Map<string, GrooveTemplateAssignment>(
+        initialGrooves.assignments.map((assignment) => [
+            `${assignment.consumerType}:${assignment.consumerId}`,
+            assignment,
+        ])
+    );
     for (const source of ['yeast', 'toaster'] as const) {
         const sourceState = value[source];
         if (!isRecord(sourceState) || !Array.isArray(sourceState.assignments)) {
@@ -304,6 +420,24 @@ function normalizeGrooveFields(value: UnknownRecord): UnknownRecord {
         }
     }
 
+    for (const legacyProcessorGroove of legacyYeastProcessorGrooves) {
+        const templateId = templateIdMappings.get(`yeast:processor-template-${legacyProcessorGroove.templateIndex}`);
+        if (!templateId) {
+            continue;
+        }
+        const consumerId = getScopedGrooveConsumerId({
+            ownerId: 'yeast-rack',
+            localId: legacyProcessorGroove.processorId,
+        });
+        const assignment: GrooveTemplateAssignment = {
+            consumerType: 'yeast-processor',
+            consumerId,
+            templateId,
+            amount: legacyProcessorGroove.amount,
+        };
+        assignmentsByConsumer.set(`${assignment.consumerType}:${assignment.consumerId}`, assignment);
+    }
+
     const grooves = sanitizeGrooveTemplateState({
         templates,
         assignments: [...assignmentsByConsumer.values()],
@@ -311,7 +445,7 @@ function normalizeGrooveFields(value: UnknownRecord): UnknownRecord {
 
     return {
         ...value,
-        yeast: stripLegacyGrooveFields(value.yeast),
+        yeast: stripLegacyYeastProcessorGrooveParams(stripLegacyGrooveFields(value.yeast)),
         toaster: stripLegacyGrooveFields(value.toaster),
         grooves,
     };

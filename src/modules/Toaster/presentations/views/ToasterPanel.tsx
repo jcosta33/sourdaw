@@ -10,6 +10,7 @@ import { RotaryKnob } from '#/components/daw/RotaryKnob';
 import { useStore } from '#/infra/store/useStore';
 import { defaultTrackState, trackStore } from '#/modules/Arrangement/stores';
 import { getAllTracks } from '#/modules/Arrangement/useCases';
+import { defaultGrooveTemplateState, grooveTemplateStore } from '#/modules/MIDI/stores';
 import { transportStore } from '#/modules/Transport/stores';
 
 import { type PadState, withActivePatternId } from '../../models/ToasterKit';
@@ -24,6 +25,7 @@ import {
 } from '../../stores/toasterStore';
 import { applyEuclideanToTrack } from '../../useCases/applyEuclidean';
 import { exportPatternToTimeline } from '../../useCases/exportPatternToTimeline';
+import { getToasterPatternGrooveStatus } from '../../useCases/getToasterPatternGrooveStatus';
 import { getToasterPresetKit } from '../../useCases/getToasterPresetKit';
 import { getToasterPresetSummaries } from '../../useCases/getToasterPresetSummaries';
 import { loadToasterKitPreset } from '../../useCases/loadToasterKit';
@@ -98,6 +100,7 @@ export const ToasterPanel = ({ deviceId }: { deviceId: string }): ReactElement =
     const instances = useStore(toasterStore, {});
     const state = instances[deviceId] ?? defaultToasterState;
     const trackState = useStore(trackStore, defaultTrackState);
+    const grooveState = useStore(grooveTemplateStore, defaultGrooveTemplateState);
     const selectedTrackId = trackState?.selectedTrackId ?? null;
     const [presetQuery, setPresetQuery] = useState('');
     const [eucHits, setEucHits] = useState(4);
@@ -152,6 +155,27 @@ export const ToasterPanel = ({ deviceId }: { deviceId: string }): ReactElement =
     }
 
     const activePattern = kit.patterns.find((pattern) => pattern.id === kit.activePatternId);
+    const grooveStatus = activePattern
+        ? getToasterPatternGrooveStatus({
+              deviceId,
+              patternId: activePattern.id,
+              stepsPerBar: activePattern.stepsPerBar,
+              grooveState,
+          })
+        : { status: 'unassigned' as const };
+    const isGrooveAvailable = grooveStatus.status === 'unassigned' || grooveStatus.status === 'ready';
+    let grooveStatusMessage: string | undefined;
+    if (grooveStatus.status === 'unsupported') {
+        const detail =
+            grooveStatus.error.code === 'unsupported-subdivision' ? grooveStatus.error.subdivision : 'dynamic accents';
+        grooveStatusMessage = `${grooveStatus.templateName} uses ${detail}, which this pattern cannot play or export.`;
+    } else if (grooveStatus.status === 'missing-template') {
+        grooveStatusMessage = `Assigned groove ${grooveStatus.templateId} is missing and cannot be played or exported.`;
+    } else if (grooveStatus.status === 'invalid-consumer') {
+        grooveStatusMessage = 'This pattern has an invalid groove identity and cannot be played or exported.';
+    } else if (grooveStatus.status === 'state-unavailable') {
+        grooveStatusMessage = 'Groove state is unavailable; playback and export are disabled.';
+    }
     const presetSearch = presetQuery.trim().toLowerCase();
     const visiblePresets = TOASTER_PRESET_SUMMARIES.filter((preset) => {
         if (presetSearch.length === 0) {
@@ -425,6 +449,7 @@ export const ToasterPanel = ({ deviceId }: { deviceId: string }): ReactElement =
                         <div className="flex items-center gap-2">
                             <DawPluginChip
                                 active={isPlaying}
+                                disabled={!isGrooveAvailable}
                                 tone="peach"
                                 size="sm"
                                 onClick={() => {
@@ -441,6 +466,7 @@ export const ToasterPanel = ({ deviceId }: { deviceId: string }): ReactElement =
                             </DawPluginChip>
                             <DawPluginChip
                                 type="button"
+                                disabled={!isGrooveAvailable}
                                 tone="peach"
                                 size="sm"
                                 onClick={() => exportPatternToTimeline(deviceId)}
@@ -449,6 +475,16 @@ export const ToasterPanel = ({ deviceId }: { deviceId: string }): ReactElement =
                                 To timeline
                             </DawPluginChip>
                         </div>
+                        {grooveStatusMessage ? (
+                            <div
+                                role="status"
+                                className="rounded-lg border border-[var(--color-state-danger)]/30 bg-[var(--color-state-danger)]/8 px-2 py-1.5 text-[9px] leading-4 text-[var(--color-state-danger)]"
+                            >
+                                {grooveStatusMessage}
+                            </div>
+                        ) : (
+                            <span className="sr-only">The assigned groove is compatible with this pattern.</span>
+                        )}
                         <DawPluginLed tone="peach" className="flex items-center gap-1">
                             <Cpu className="size-3" />
                             {activeVoices} voices

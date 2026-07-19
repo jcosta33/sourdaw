@@ -86,7 +86,7 @@ describe('startSequencer', () => {
 
     it('reads the audio clock when starting', () => {
         seedDevice(DEVICE, activeStep({ active: false }));
-        startSequencer(DEVICE, 120, 4);
+        startSequencer(DEVICE, 120);
         stopSequencer(DEVICE);
 
         expect(getAudioTime).toHaveBeenCalled();
@@ -113,10 +113,88 @@ describe('startSequencer', () => {
             amount: 1,
         });
 
-        startSequencer(DEVICE, 120, 4);
+        startSequencer(DEVICE, 120);
         expect(triggerToasterPad).not.toHaveBeenCalled();
         vi.advanceTimersByTime(25);
         expect(triggerToasterPad).toHaveBeenCalledWith(DEVICE, 0, 114);
+    });
+
+    it('derives 32-step cadence, groove grid, retriggers, and loop timing from the pattern', () => {
+        vi.setSystemTime(0);
+        vi.mocked(getAudioTime).mockImplementation(() => Date.now() / 1000);
+        const kit = kitWithStep(activeStep({ active: false }));
+        kit.patterns[0] = {
+            ...kit.patterns[0]!,
+            stepsPerBar: 32,
+            tracks: [
+                {
+                    padIndex: 0,
+                    steps: [
+                        activeStep({ active: false }),
+                        activeStep({ retriggerCount: 1 }),
+                        ...Array.from({ length: 30 }, () => activeStep({ active: false })),
+                    ],
+                },
+            ],
+        };
+        toasterStore.set({
+            ...toasterStore.value,
+            [DEVICE]: { ...defaultToasterState, kit },
+        });
+        createGrooveTemplate({
+            id: 'live-thirty-second-pocket',
+            name: 'Live thirty-second pocket',
+            subdivision: '1/32',
+            slots: [{ index: 1, timingOffset: 0.2, dynamicsOffset: -0.1 }],
+            provenance: { type: 'user', sourceId: 'test-32' },
+        });
+        assignGrooveTemplate({
+            consumerType: 'toaster-pattern',
+            consumerId: 'groove-consumer:seq-device:A1',
+            templateId: 'live-thirty-second-pocket',
+            amount: 1,
+        });
+
+        startSequencer(DEVICE, 120);
+        vi.advanceTimersByTime(61);
+        expect(triggerToasterPad).not.toHaveBeenCalled();
+        vi.advanceTimersByTime(15);
+        expect(triggerToasterPad).toHaveBeenNthCalledWith(1, DEVICE, 0, 114);
+        vi.advanceTimersByTime(31);
+        expect(triggerToasterPad).toHaveBeenNthCalledWith(2, DEVICE, 0, 100);
+
+        vi.advanceTimersByTime(1831);
+        expect(toasterStore.value?.[DEVICE]?.currentStep).toBe(31);
+        vi.advanceTimersByTime(62);
+        expect(toasterStore.value?.[DEVICE]?.currentStep).toBe(0);
+    });
+
+    it('rejects unsupported groove capability instead of triggering an unmodified live event', () => {
+        const kit = kitWithStep(activeStep());
+        kit.patterns[0]!.stepsPerBar = 16;
+        toasterStore.set({
+            ...toasterStore.value,
+            [DEVICE]: { ...defaultToasterState, kit },
+        });
+        createGrooveTemplate({
+            id: 'unsupported-live-eighth',
+            name: 'Unsupported live eighth',
+            subdivision: '1/8',
+            slots: [{ index: 0, timingOffset: 0.2, dynamicsOffset: -0.1 }],
+            provenance: { type: 'user', sourceId: 'unsupported-live' },
+        });
+        assignGrooveTemplate({
+            consumerType: 'toaster-pattern',
+            consumerId: 'groove-consumer:seq-device:A1',
+            templateId: 'unsupported-live-eighth',
+            amount: 1,
+        });
+
+        startSequencer(DEVICE, 120);
+        vi.runAllTimers();
+
+        expect(triggerToasterPad).not.toHaveBeenCalled();
+        expect(toasterStore.value?.[DEVICE]?.isPlaying).toBe(false);
     });
 
     it('scopes identical pattern IDs to their durable device owners', () => {
@@ -153,8 +231,8 @@ describe('startSequencer', () => {
             amount: 1,
         });
 
-        startSequencer(DEVICE, 120, 4);
-        startSequencer(OTHER, 120, 4);
+        startSequencer(DEVICE, 120);
+        startSequencer(OTHER, 120);
 
         expect(triggerToasterPad).toHaveBeenCalledWith(DEVICE, 0, 114);
         expect(triggerToasterPad).toHaveBeenCalledWith(OTHER, 0, 102);
@@ -168,7 +246,7 @@ describe('startSequencer', () => {
         seedDevice(OTHER, activeStep({ active: false })); // a "first" device that must not be touched
         seedDevice(DEVICE, activeStep({ soundLock: 'snare-808' }));
 
-        startSequencer(DEVICE, 120, 4);
+        startSequencer(DEVICE, 120);
 
         // Trigger fired on the sequencer's own device.
         expect(triggerToasterPad).toHaveBeenCalledWith(DEVICE, 0, 127);
@@ -185,13 +263,13 @@ describe('startSequencer', () => {
     it('defers the sound-lock engine swap until the microtiming fire', () => {
         seedDevice(DEVICE, activeStep({ soundLock: 'snare-808', microTiming: 0.4 }));
 
-        startSequencer(DEVICE, 120, 4);
+        startSequencer(DEVICE, 120);
 
         // Before the microtiming delay: no engine swap and no trigger yet.
         expect(setPadEngineImmediate).not.toHaveBeenCalled();
         expect(triggerToasterPad).not.toHaveBeenCalled();
 
-        vi.advanceTimersByTime(200); // elapse the microtiming offset
+        vi.advanceTimersByTime(800); // 1-step/bar grid: 0.4 * 4 beats at 120 BPM
 
         // Now the swap-trigger-revert sequence has run.
         expect(triggerToasterPad).toHaveBeenCalledWith(DEVICE, 0, 127);
@@ -203,7 +281,7 @@ describe('startSequencer', () => {
     it('cancels pending microtiming fires on stop (no ghost hits)', () => {
         seedDevice(DEVICE, activeStep({ microTiming: 0.4, retriggerCount: 3 }));
 
-        startSequencer(DEVICE, 120, 4);
+        startSequencer(DEVICE, 120);
         expect(triggerToasterPad).not.toHaveBeenCalled(); // all deferred
 
         stopSequencer(DEVICE);

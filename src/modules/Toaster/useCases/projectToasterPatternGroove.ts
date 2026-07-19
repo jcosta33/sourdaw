@@ -1,17 +1,13 @@
-import {
-    adaptGrooveTemplateForConsumer,
-    applyGrooveTemplate,
-    getScopedGrooveAssignment,
-    getGrooveTemplate,
-} from '#/modules/MIDI/useCases';
+import { grooveTemplateStore } from '#/modules/MIDI/stores';
+import { applyGrooveTemplate, getGrooveTemplate } from '#/modules/MIDI/useCases';
+
+import { getToasterPatternGrooveStatus, type ToasterPatternGrooveStatus } from './getToasterPatternGrooveStatus';
 
 type ToasterGrooveEvent = {
     id: string;
     startBeat: number;
     velocity: number;
 };
-
-type AdapterFailure = Extract<ReturnType<typeof adaptGrooveTemplateForConsumer>, { ok: false }>;
 
 type ProjectToasterPatternGrooveInput<Event extends ToasterGrooveEvent> = {
     deviceId: string;
@@ -21,20 +17,12 @@ type ProjectToasterPatternGrooveInput<Event extends ToasterGrooveEvent> = {
 };
 
 type ProjectToasterPatternGrooveResult<Event extends ToasterGrooveEvent> =
-    | { ok: true; events: readonly Event[] }
-    | AdapterFailure;
-
-function getSupportedSubdivisions(
-    stepsPerBar: number
-): Parameters<typeof adaptGrooveTemplateForConsumer>[0]['supportedSubdivisions'] {
-    if (stepsPerBar === 16) {
-        return ['1/16'];
-    }
-    if (stepsPerBar === 32) {
-        return ['1/32'];
-    }
-    return [];
-}
+    | {
+          ok: true;
+          events: readonly Event[];
+          status: Extract<ToasterPatternGrooveStatus, { status: 'unassigned' | 'ready' }>;
+      }
+    | { ok: false; status: Exclude<ToasterPatternGrooveStatus, { status: 'unassigned' | 'ready' }> };
 
 export function projectToasterPatternGroove<Event extends ToasterGrooveEvent>({
     deviceId,
@@ -42,26 +30,25 @@ export function projectToasterPatternGroove<Event extends ToasterGrooveEvent>({
     stepsPerBar,
     events,
 }: ProjectToasterPatternGrooveInput<Event>): ProjectToasterPatternGrooveResult<Event> {
-    const assignment = getScopedGrooveAssignment({
-        consumerType: 'toaster-pattern',
-        ownerId: deviceId,
-        localId: patternId,
+    const status = getToasterPatternGrooveStatus({
+        deviceId,
+        patternId,
+        stepsPerBar,
+        grooveState: grooveTemplateStore.value ?? undefined,
     });
-    const template = assignment ? getGrooveTemplate(assignment.templateId) : undefined;
-    if (!assignment || !template) {
-        return { ok: true, events };
+    if (status.status === 'unassigned') {
+        return { ok: true, events, status };
     }
-
-    const supportedSubdivisions = getSupportedSubdivisions(stepsPerBar);
-    const adaptation = adaptGrooveTemplateForConsumer({
-        consumer: 'toaster',
-        template,
-        supportsDynamics: true,
-        supportedSubdivisions,
-    });
-    if (!adaptation.ok) {
-        return adaptation;
+    if (status.status !== 'ready') {
+        return { ok: false, status };
     }
-
-    return { ok: true, events: applyGrooveTemplate({ events, template, amount: assignment.amount }) };
+    const template = getGrooveTemplate(status.templateId);
+    if (!template) {
+        return { ok: false, status: { status: 'missing-template', templateId: status.templateId } };
+    }
+    return {
+        ok: true,
+        events: applyGrooveTemplate({ events, template, amount: status.amount }),
+        status,
+    };
 }
