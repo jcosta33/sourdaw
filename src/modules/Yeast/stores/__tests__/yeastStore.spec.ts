@@ -5,6 +5,7 @@ import {
     flushAutomergeStorageWrites,
 } from '#/infra/store/storage/createAutomergeStorage';
 
+import { hydrateYeastState } from '../../useCases/hydrateYeastState';
 import { yeastStore } from '../yeastStore';
 
 describe('yeastStore', () => {
@@ -81,26 +82,41 @@ describe('yeastStore', () => {
 
         expect(document.yeast).toEqual({
             processors: [{ id: 'groove-durable-id', type: 'groove', name: 'Groove', bypassed: false }],
-            uiLevel: 1,
         });
+        expect(document.yeast).not.toHaveProperty('uiLevel');
     });
 
     it('hydrates persisted processor identity before a pending reset can replace it', () => {
         document.yeast = {
             processors: [{ id: 'persisted-groove', type: 'groove', name: 'Persisted groove', bypassed: false }],
-            uiLevel: 3,
         };
+        yeastStore.set({ processors: [], uiLevel: 4 });
 
         yeastStore.hydrate();
         expect(yeastStore.value).toEqual({
             processors: [{ id: 'persisted-groove', type: 'groove', name: 'Persisted groove', bypassed: false }],
-            uiLevel: 3,
+            uiLevel: 4,
         });
 
         flushAutomergeStorageWrites();
         expect(document.yeast).toEqual({
             processors: [{ id: 'persisted-groove', type: 'groove', name: 'Persisted groove', bypassed: false }],
-            uiLevel: 3,
         });
+        expect(document.yeast).not.toHaveProperty('uiLevel');
+    });
+
+    it('keeps the local UI level when project processor truth is hydrated', () => {
+        yeastStore.set({ processors: [], uiLevel: 5 });
+
+        hydrateYeastState({
+            processors: [{ id: 'loaded-processor', type: 'groove', name: 'Loaded', bypassed: false }],
+        });
+
+        expect(yeastStore.value).toEqual({
+            processors: [{ id: 'loaded-processor', type: 'groove', name: 'Loaded', bypassed: false }],
+            uiLevel: 5,
+        });
+        flushAutomergeStorageWrites();
+        expect(document.yeast).not.toHaveProperty('uiLevel');
     });
 });

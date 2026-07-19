@@ -259,7 +259,6 @@ export type ProjectYeastProcessor = {
 
 export type ProjectYeastState = {
     processors: ProjectYeastProcessor[];
-    uiLevel: 1 | 2 | 3 | 4 | 5;
 };
 
 export type ProjectDevice = {

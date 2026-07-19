@@ -20,13 +20,21 @@ import { hydrateYeastState } from '#/modules/Yeast/useCases';
 
 import { arrangementStore, defaultArrangementStoreState } from '../../../stores/arrangementStore';
 
-export function resetModuleStoresToDefault(): void {
+type ResetModuleStoresToDefaultInput = {
+    resetGrooveTemplates?: boolean;
+};
+
+export function resetModuleStoresToDefault({
+    resetGrooveTemplates = true,
+}: ResetModuleStoresToDefaultInput = {}): void {
     resetArrangementStoresForProject();
     arrangementStore.set(structuredClone(defaultArrangementStoreState));
     transportStore.set(defaultTransportState);
     automationStore.set({ lanes: [] });
     midiStore.set({ notesByClipId: {}, ccByClipId: {}, pitchBendByClipId: {} });
-    hydrateGrooveTemplates({ templates: [], assignments: [] });
+    if (resetGrooveTemplates) {
+        hydrateGrooveTemplates({ templates: [], assignments: [] });
+    }
     hydrateYeastState(undefined);
     tempoMapStore.set({ changes: [] });
     timeSignatureMapStore.set({ changes: [] });

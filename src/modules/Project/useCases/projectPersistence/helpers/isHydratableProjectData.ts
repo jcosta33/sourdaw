@@ -92,12 +92,8 @@ const PROJECT_YEAST_PROCESSOR_TYPES = new Set([
 function isYeastState(value: unknown): value is ProjectYeastState {
     if (
         !isRecord(value) ||
-        Object.keys(value).some((key) => key !== 'processors' && key !== 'uiLevel') ||
-        !Array.isArray(value.processors) ||
-        !Number.isInteger(value.uiLevel) ||
-        typeof value.uiLevel !== 'number' ||
-        value.uiLevel < 1 ||
-        value.uiLevel > 5
+        Object.keys(value).some((key) => key !== 'processors') ||
+        !Array.isArray(value.processors)
     ) {
         return false;
     }

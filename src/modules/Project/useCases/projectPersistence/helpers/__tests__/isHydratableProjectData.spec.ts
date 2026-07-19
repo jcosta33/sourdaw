@@ -103,12 +103,23 @@ describe('isHydratableProjectData groove invariants', () => {
             ...createProject(createValidGrooves()),
             yeast: {
                 processors: [{ id: 'groove-1', type: 'groove', name: 'Groove', bypassed: false }],
-                uiLevel: 2,
             },
         };
         expect(isHydratableProjectData(project)).toBe(true);
 
         project.yeast.processors[0]!.id = ' groove-1 ';
+        expect(isHydratableProjectData(project)).toBe(false);
+    });
+
+    it('rejects local Yeast view state in collaborative project data', () => {
+        const project = {
+            ...createProject(createValidGrooves()),
+            yeast: {
+                processors: [],
+                uiLevel: 3,
+            },
+        };
+
         expect(isHydratableProjectData(project)).toBe(false);
     });
 });

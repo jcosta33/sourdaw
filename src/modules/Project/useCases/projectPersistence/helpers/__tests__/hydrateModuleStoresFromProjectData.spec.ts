@@ -157,7 +157,6 @@ describe('hydrateModuleStoresFromProjectData', () => {
     it('hydrates durable Yeast processor identities through the owning use case', () => {
         const yeast = {
             processors: [{ id: 'durable-groove', type: 'groove', name: 'Groove', bypassed: false }],
-            uiLevel: 2,
         } satisfies NonNullable<HydratableProjectData['yeast']>;
 
         hydrateModuleStoresFromProjectData(createHydratableProjectData({ yeast }));

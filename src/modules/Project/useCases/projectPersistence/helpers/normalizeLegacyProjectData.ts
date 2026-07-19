@@ -92,6 +92,17 @@ function stripLegacyGrooveFields(value: unknown): unknown {
     );
 }
 
+function stripLegacyYeastViewState(value: UnknownRecord): UnknownRecord {
+    if (!isRecord(value.yeast) || !Object.hasOwn(value.yeast, 'uiLevel')) {
+        return value;
+    }
+    const yeast = Object.fromEntries(Object.entries(value.yeast).filter(([key]) => key !== 'uiLevel'));
+    if (Object.keys(yeast).length === 0) {
+        return Object.fromEntries(Object.entries(value).filter(([key]) => key !== 'yeast'));
+    }
+    return { ...value, yeast };
+}
+
 function migrateLegacyStraightAssignmentAlias(value: UnknownRecord): UnknownRecord {
     if (!Array.isArray(value.assignments)) {
         return value;
@@ -467,10 +478,15 @@ function normalizeGrooveFields(value: UnknownRecord): UnknownRecord {
         templates,
         assignments: [...assignmentsByConsumer.values()],
     });
+    const strippedYeast = stripLegacyYeastProcessorGrooveParams(stripLegacyGrooveFields(value.yeast));
+    let yeast: UnknownRecord | undefined;
+    if (isRecord(strippedYeast) && Array.isArray(strippedYeast.processors)) {
+        yeast = { processors: strippedYeast.processors };
+    }
 
     return {
         ...value,
-        yeast: stripLegacyYeastProcessorGrooveParams(stripLegacyGrooveFields(value.yeast)),
+        yeast,
         toaster: stripLegacyGrooveFields(value.toaster),
         grooves,
     };
@@ -482,7 +498,7 @@ export function normalizeLegacyProjectData(value: unknown): NormalizeLegacyProje
     if (!isRecord(value) || value.version !== 1) {
         return value;
     }
-    const normalizedGrooves = normalizeGrooveFields(value);
+    const normalizedGrooves = normalizeGrooveFields(stripLegacyYeastViewState(value));
     if (normalizedGrooves.meta !== undefined || normalizedGrooves.arrangement !== undefined) {
         return normalizeAutomationFields(normalizedGrooves);
     }

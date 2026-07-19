@@ -110,10 +110,9 @@ export async function buildProjectData({
     const resolvedIds = new Set(Object.keys(audioBuffers));
     const missingBufferCount = includeAudioBuffers ? [...allBufferIds].filter((id) => !resolvedIds.has(id)).length : 0;
     let yeast: ProjectData['yeast'];
-    if (yeastState && (yeastState.processors.length > 0 || yeastState.uiLevel !== 1)) {
+    if (yeastState && yeastState.processors.length > 0) {
         yeast = {
             processors: structuredClone(yeastState.processors),
-            uiLevel: yeastState.uiLevel,
         };
     }
 

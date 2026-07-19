@@ -66,8 +66,8 @@ describe('buildProjectData', () => {
 
         expect(built?.data.yeast).toEqual({
             processors: [{ id: 'durable-groove', type: 'groove', name: 'Groove', bypassed: false }],
-            uiLevel: 3,
         });
+        expect(built?.data.yeast).not.toHaveProperty('uiLevel');
     });
 
     it('does not throw on sanitizer-accepted minimal track rows inside an INACTIVE arrangement', async () => {

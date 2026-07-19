@@ -122,6 +122,7 @@ describe('groove template project migration', () => {
                 params: { retained: template + 10 },
             }))
         );
+        expect(migrated.yeast).not.toHaveProperty('uiLevel');
         expect(migrated.grooves.assignments).toHaveLength(legacyTemplateNames.length);
 
         for (const [templateIndex, templateName] of legacyTemplateNames.entries()) {
@@ -183,7 +184,6 @@ describe('groove template project migration', () => {
         }
         expect(migrated.yeast).toEqual({
             processors: [{ id: 'flat-groove', type: 'groove', name: 'Flat groove', bypassed: false }],
-            uiLevel: 2,
         });
         expect(migrated.grooves.assignments).toEqual([
             expect.objectContaining({
@@ -280,7 +280,7 @@ describe('groove template project migration', () => {
                 }),
             ])
         );
-        expect(once.yeast).toEqual({ retained: 'yeast-state' });
+        expect(once.yeast).toBeUndefined();
         expect(once.toaster).toEqual({ retained: 'toaster-state' });
     });
 

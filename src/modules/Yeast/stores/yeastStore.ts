@@ -87,13 +87,13 @@ function normalizeYeastStateFromCrdt(value: unknown): YeastState {
             processorsById.set(processor.id, processor);
         }
     }
-    const uiLevel = ([1, 2, 3, 4, 5] as const).find((level) => level === value.uiLevel) ?? 1;
+    const uiLevel = yeastStore.value?.uiLevel ?? 1;
     return { processors: [...processorsById.values()], uiLevel };
 }
 
 export const yeastStore = createStore<YeastState>({
     storage: createAutomergeStorage('root', 'yeast', {
-        toCrdt: ({ processors, uiLevel }) => ({ processors, uiLevel }),
+        toCrdt: ({ processors }) => ({ processors }),
         fromCrdt: normalizeYeastStateFromCrdt,
     }),
     initialData: defaultState,
