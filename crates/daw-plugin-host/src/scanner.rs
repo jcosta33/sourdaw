@@ -4,7 +4,7 @@ use std::fs;
 use std::path::Path;
 
 use clap_sys::entry::clap_plugin_entry;
-use clap_sys::plugin_factory::{clap_plugin_factory, CLAP_PLUGIN_FACTORY_ID};
+use clap_sys::factory::plugin_factory::{clap_plugin_factory, CLAP_PLUGIN_FACTORY_ID};
 use libloading::Library;
 use std::ffi::{CStr, CString};
 

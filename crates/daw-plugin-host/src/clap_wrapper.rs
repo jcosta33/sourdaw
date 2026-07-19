@@ -32,9 +32,9 @@ use clap_sys::ext::params::{
     CLAP_PARAM_IS_HIDDEN, CLAP_PARAM_IS_READONLY,
 };
 use clap_sys::ext::state::{clap_plugin_state, CLAP_EXT_STATE};
+use clap_sys::factory::plugin_factory::{clap_plugin_factory, CLAP_PLUGIN_FACTORY_ID};
 use clap_sys::host::clap_host;
 use clap_sys::plugin::clap_plugin;
-use clap_sys::plugin_factory::{clap_plugin_factory, CLAP_PLUGIN_FACTORY_ID};
 use clap_sys::process::clap_process;
 use clap_sys::stream::{clap_istream, clap_ostream};
 use libloading::Library;
@@ -774,7 +774,7 @@ impl ClapWrapper {
             ];
 
             let input_buffer = clap_audio_buffer {
-                data32: in_ptrs.as_ptr() as *const *const f32,
+                data32: in_ptrs.as_ptr() as *mut *mut f32,
                 data64: ptr::null_mut(),
                 channel_count: n_ch as u32,
                 latency: 0,
@@ -782,7 +782,7 @@ impl ClapWrapper {
             };
 
             let mut output_buffer = clap_audio_buffer {
-                data32: out_ptrs.as_ptr() as *const *const f32,
+                data32: out_ptrs.as_ptr() as *mut *mut f32,
                 data64: ptr::null_mut(),
                 channel_count: n_ch as u32,
                 latency: 0,
