@@ -11,6 +11,21 @@ export type UndoStoreState = {
     future: UndoEntry[];
 };
 
+type StoredTransactionMarker = {
+    index: number;
+    size: number;
+};
+
+type SanitizedStoredEntry = {
+    entry: ActionUndoEntry;
+    transactionMarker?: StoredTransactionMarker;
+};
+
+type PersistedActionEntry = ActionUndoEntry & {
+    transactionGroupIndex?: number;
+    transactionGroupSize?: number;
+};
+
 function isRecord(value: unknown): value is Record<string, unknown> {
     return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
@@ -50,7 +65,7 @@ function getOptionalString(value: Record<string, unknown>, key: string): string 
     return maybeString;
 }
 
-function sanitizeStoredEntry(value: unknown): ActionUndoEntry | null {
+function sanitizeStoredEntry(value: unknown): SanitizedStoredEntry | null {
     if (!isRecord(value)) {
         return null;
     }
@@ -90,7 +105,7 @@ function sanitizeStoredEntry(value: unknown): ActionUndoEntry | null {
     }
 
     const transactionGroupId = getOptionalString(value, 'transactionGroupId');
-    if (transactionGroupId === null) {
+    if (transactionGroupId === null || transactionGroupId === '') {
         return null;
     }
 
@@ -114,14 +129,117 @@ function sanitizeStoredEntry(value: unknown): ActionUndoEntry | null {
         entry.transactionGroupId = transactionGroupId;
     }
 
-    return entry;
+    const transactionGroupIndex = value.transactionGroupIndex;
+    const transactionGroupSize = value.transactionGroupSize;
+    const hasValidTransactionMarker =
+        transactionGroupId !== undefined &&
+        typeof transactionGroupIndex === 'number' &&
+        Number.isInteger(transactionGroupIndex) &&
+        transactionGroupIndex >= 0 &&
+        typeof transactionGroupSize === 'number' &&
+        Number.isInteger(transactionGroupSize) &&
+        transactionGroupSize > 0;
+
+    return {
+        entry,
+        ...(hasValidTransactionMarker
+            ? { transactionMarker: { index: transactionGroupIndex, size: transactionGroupSize } }
+            : {}),
+    };
 }
 
 function sanitizeStoredEntries(values: unknown[]): ActionUndoEntry[] {
-    return values.flatMap((value) => {
-        const entry = sanitizeStoredEntry(value);
-        return entry === null ? [] : [entry];
-    });
+    const candidates = values.map(sanitizeStoredEntry);
+
+    for (let start = 0; start < candidates.length; ) {
+        const groupId = candidates[start]?.entry.transactionGroupId;
+        if (!groupId) {
+            start += 1;
+            continue;
+        }
+
+        let end = start + 1;
+        while (candidates[end]?.entry.transactionGroupId === groupId) {
+            end += 1;
+        }
+        const groupSize = end - start;
+        const complete = candidates
+            .slice(start, end)
+            .every(
+                (candidate, index) =>
+                    candidate?.transactionMarker?.index === index && candidate.transactionMarker.size === groupSize
+            );
+        if (!complete) {
+            for (let index = start; index < end; index += 1) {
+                const candidate = candidates[index];
+                if (candidate) {
+                    delete candidate.entry.transactionGroupId;
+                }
+            }
+        }
+        start = end;
+    }
+
+    return candidates.flatMap((candidate) => (candidate ? [candidate.entry] : []));
+}
+
+function collectPersistableUnits(entries: UndoEntry[]): ActionUndoEntry[][] {
+    const units: ActionUndoEntry[][] = [];
+    for (let start = 0; start < entries.length; ) {
+        const groupId = entries[start]?.transactionGroupId;
+        let end = start + 1;
+        if (groupId) {
+            while (entries[end]?.transactionGroupId === groupId) {
+                end += 1;
+            }
+        }
+        const unit = entries.slice(start, end);
+        const persistable = unit.flatMap((entry) => (isSessionPersistableActionEntry(entry) ? [entry] : []));
+        if (persistable.length === unit.length) {
+            units.push(persistable);
+        }
+        start = end;
+    }
+    return units;
+}
+
+function serializeUnit(unit: ActionUndoEntry[]): PersistedActionEntry[] {
+    const transactionGroupId = unit[0]?.transactionGroupId;
+    if (!transactionGroupId) {
+        return unit;
+    }
+    return unit.map((entry, index) => ({
+        ...entry,
+        transactionGroupIndex: index,
+        transactionGroupSize: unit.length,
+    }));
+}
+
+function trimPersistableEntries(entries: UndoEntry[], edge: 'head' | 'tail'): PersistedActionEntry[] {
+    const units = collectPersistableUnits(entries);
+    const selected: ActionUndoEntry[][] = [];
+    let count = 0;
+
+    if (edge === 'head') {
+        for (const unit of units) {
+            if (count + unit.length > MAX_UNDO_PERSIST) {
+                break;
+            }
+            selected.push(unit);
+            count += unit.length;
+        }
+    } else {
+        for (let index = units.length - 1; index >= 0; index -= 1) {
+            const unit = units[index]!;
+            if (count + unit.length > MAX_UNDO_PERSIST) {
+                break;
+            }
+            selected.unshift(unit);
+            count += unit.length;
+        }
+    }
+
+    return selected.flatMap(serializeUnit);
 }
 
 function loadFromSession(): UndoStoreState {
@@ -164,12 +282,9 @@ undoStore.subscribe((value) => {
             return;
         }
         try {
-            function serializableOnly(entries: UndoEntry[]) {
-                return entries.filter(isSessionPersistableActionEntry).slice(-MAX_UNDO_PERSIST);
-            }
             const trimmed: UndoStoreState = {
-                past: serializableOnly(current.past),
-                future: serializableOnly(current.future),
+                past: trimPersistableEntries(current.past, 'tail'),
+                future: trimPersistableEntries(current.future, 'head'),
             };
             sessionStorage.setItem(UNDO_SESSION_KEY, JSON.stringify(trimmed));
         } catch {

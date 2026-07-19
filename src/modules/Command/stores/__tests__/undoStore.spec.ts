@@ -138,11 +138,16 @@ describe('undoStore / pushUndo', () => {
             groupLabel: 'Group one',
             transactionGroupId: 'group-1',
         };
+        const storedFutureEntry = {
+            ...futureEntry,
+            transactionGroupIndex: 0,
+            transactionGroupSize: 1,
+        };
         sessionStorage.setItem(
             UNDO_SESSION_KEY,
             JSON.stringify({
                 past: [legacyEntry],
-                future: [futureEntry],
+                future: [storedFutureEntry],
             })
         );
 
@@ -152,6 +157,109 @@ describe('undoStore / pushUndo', () => {
             past: [{ ...legacyEntry, kind: 'action' }],
             future: [futureEntry],
         });
+    });
+
+    it('keeps the past tail and future head without persisting a partial transaction group', async () => {
+        const { createUndoEntry, undoStore } = await loadSubject();
+        function entry(id: string, transactionGroupId?: string) {
+            const result = createUndoEntry(id, { type: 'togglePlayback' }, { type: 'togglePlayback' });
+            result.id = id;
+            result.transactionGroupId = transactionGroupId;
+            return result;
+        }
+        const boundaryGroup = ['group-1', 'group-2', 'group-3'].map((id) => entry(id, 'boundary-group'));
+        const pastTail = Array.from({ length: 98 }, (_, index) => entry(`past-${index}`));
+        const futureHead = Array.from({ length: 98 }, (_, index) => entry(`future-${index}`));
+
+        undoStore.set({
+            past: [entry('past-old'), ...boundaryGroup, ...pastTail],
+            future: [...futureHead, ...boundaryGroup, entry('future-old')],
+        });
+        await flushPersistence();
+
+        const parsed = parsePersistedUndoState(sessionStorage.getItem(UNDO_SESSION_KEY));
+        if (!Array.isArray(parsed.past) || !Array.isArray(parsed.future)) {
+            throw new TypeError('Expected persisted undo stacks to be arrays');
+        }
+        expect(parsed.past.map((value) => (isRecord(value) ? value.id : undefined))).toEqual(
+            pastTail.map((value) => value.id)
+        );
+        expect(parsed.future.map((value) => (isRecord(value) ? value.id : undefined))).toEqual(
+            futureHead.map((value) => value.id)
+        );
+    });
+
+    it('persists complete transaction boundary metadata that survives hydration', async () => {
+        const { createUndoEntry, undoStore } = await loadSubject();
+        const first = createUndoEntry('first', { type: 'togglePlayback' }, { type: 'togglePlayback' });
+        first.id = 'group-first';
+        first.transactionGroupId = 'complete-group';
+        const second = createUndoEntry('second', { type: 'toggleLoop' }, { type: 'toggleLoop' });
+        second.id = 'group-second';
+        second.transactionGroupId = 'complete-group';
+
+        undoStore.set({ past: [first, second], future: [] });
+        await flushPersistence();
+
+        const parsed = parsePersistedUndoState(sessionStorage.getItem(UNDO_SESSION_KEY));
+        expect(parsed.past).toEqual([
+            expect.objectContaining({
+                id: 'group-first',
+                transactionGroupIndex: 0,
+                transactionGroupSize: 2,
+            }),
+            expect.objectContaining({
+                id: 'group-second',
+                transactionGroupIndex: 1,
+                transactionGroupSize: 2,
+            }),
+        ]);
+
+        const reloaded = await loadSubject();
+        expect(reloaded.undoStore.value?.past.map((entry) => entry.transactionGroupId)).toEqual([
+            'complete-group',
+            'complete-group',
+        ]);
+    });
+
+    it('hydrates only transaction markers proven complete by contiguous boundary metadata', async () => {
+        function storedEntry(id: string, transactionGroupId?: string, index?: number, size?: number) {
+            return {
+                id,
+                kind: 'action',
+                label: id,
+                action: { type: 'togglePlayback' },
+                inverseAction: { type: 'togglePlayback' },
+                timestamp: 1000,
+                source: 'manual',
+                transactionGroupId,
+                transactionGroupIndex: index,
+                transactionGroupSize: size,
+            };
+        }
+        sessionStorage.setItem(
+            UNDO_SESSION_KEY,
+            JSON.stringify({
+                past: [
+                    storedEntry('complete-1', 'complete', 0, 2),
+                    storedEntry('complete-2', 'complete', 1, 2),
+                    storedEntry('partial', 'partial', 0, 2),
+                    storedEntry('legacy-unproven', 'legacy-unproven'),
+                ],
+                future: [],
+            })
+        );
+
+        const { undoStore } = await loadSubject();
+
+        expect(
+            undoStore.value?.past.map((value) => ({ id: value.id, transactionGroupId: value.transactionGroupId }))
+        ).toEqual([
+            { id: 'complete-1', transactionGroupId: 'complete' },
+            { id: 'complete-2', transactionGroupId: 'complete' },
+            { id: 'partial', transactionGroupId: undefined },
+            { id: 'legacy-unproven', transactionGroupId: undefined },
+        ]);
     });
 
     it('should drop malformed stored undo entries before hydration', async () => {

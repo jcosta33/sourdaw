@@ -1,5 +1,5 @@
 import { getAudioContext, prepareCachedAudioBuffersFromIdb } from '#/modules/AudioEngine/useCases';
-import { clearUndoHistory } from '#/modules/Command/useCases';
+import { runCommandTransitionExclusive } from '#/modules/Command/useCases';
 import { stopPlayback } from '#/modules/Transport/useCases';
 
 import { type ArrangementSnapshot, arrangementStore } from '../../stores/arrangementStore';
@@ -59,35 +59,40 @@ export async function switchArrangement(id: string): Promise<void> {
         return;
     }
 
-    // A shutdown failure aborts the switch before target buffers or state are published.
-    await stopPlayback();
+    await runCommandTransitionExclusive(async (resetUndoHistory) => {
+        const stateBeforeStop = arrangementStore.value;
+        const targetBeforeStop = stateBeforeStop?.arrangements.find((arrangement) => arrangement.id === id);
+        if (
+            request !== latestSwitchRequest ||
+            sourceProjectLoadEpoch !== projectLoadEpoch.current ||
+            stateBeforeStop?.activeArrangementId !== sourceArrangementId ||
+            !targetBeforeStop
+        ) {
+            return;
+        }
 
-    const currentStateAfterStop = arrangementStore.value;
-    const currentTargetAfterStop = currentStateAfterStop?.arrangements.find((arrangement) => arrangement.id === id);
-    if (
-        request !== latestSwitchRequest ||
-        sourceProjectLoadEpoch !== projectLoadEpoch.current ||
-        currentStateAfterStop?.activeArrangementId !== sourceArrangementId ||
-        !currentTargetAfterStop
-    ) {
-        return;
-    }
+        // A shutdown failure aborts before target buffers or state are published.
+        await stopPlayback();
 
-    preparedBuffers.publish();
+        const currentStateAfterStop = arrangementStore.value;
+        const currentTargetAfterStop = currentStateAfterStop?.arrangements.find((arrangement) => arrangement.id === id);
+        if (
+            request !== latestSwitchRequest ||
+            sourceProjectLoadEpoch !== projectLoadEpoch.current ||
+            currentStateAfterStop?.activeArrangementId !== sourceArrangementId ||
+            !currentTargetAfterStop
+        ) {
+            return;
+        }
 
-    // Save current
-    syncCurrentArrangementToStore();
-
-    // Load target
-    loadSnapshot(currentTargetAfterStop);
-
-    // Clear undo history because IDs might have been reused or destroyed
-    clearUndoHistory();
-
-    arrangementStore.set({
-        ...arrangementStore.value!,
-        activeArrangementId: id,
+        preparedBuffers.publish();
+        syncCurrentArrangementToStore();
+        loadSnapshot(currentTargetAfterStop);
+        resetUndoHistory();
+        arrangementStore.set({
+            ...arrangementStore.value!,
+            activeArrangementId: id,
+        });
+        markDirty();
     });
-
-    markDirty();
 }

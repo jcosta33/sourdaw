@@ -62,10 +62,16 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     prepareCachedAudioBuffersFromIdb: vi.fn().mockResolvedValue({ publish: () => 0 }),
     restoreCachedAudioBuffersFromIdb: vi.fn().mockResolvedValue(undefined),
 }));
-vi.mock('#/modules/Command/useCases', () => ({
-    clearUndoHistory: vi.fn(),
-    resetActionReplayAuthority: vi.fn(),
-}));
+vi.mock('#/modules/Command/useCases', () => {
+    const clearUndoHistory = vi.fn();
+    return {
+        clearUndoHistory,
+        resetActionReplayAuthority: vi.fn(),
+        runCommandTransitionExclusive: <Output>(
+            transition: (resetUndoHistory: () => void) => Promise<Output>
+        ): Promise<Output> => transition(clearUndoHistory),
+    };
+});
 vi.mock('#/modules/AudioEngine/stores', () => ({
     audioBufferCache: { restoreFromIdb: vi.fn().mockResolvedValue(undefined) },
 }));

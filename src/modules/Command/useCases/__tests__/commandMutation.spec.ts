@@ -9,6 +9,7 @@ import { undoStore } from '../../stores/undoStore';
 import { undoTreeStore } from '../../stores/undoTree';
 import { clearUndoHistory } from '../clearUndoHistory';
 import { executeAppAction } from '../executeAppAction';
+import { runCommandTransitionExclusive } from '../runCommandTransitionExclusive';
 import { undo } from '../undo';
 
 type SetSnapValueAction = Extract<AppAction, { type: 'setSnapValue' }>;
@@ -107,5 +108,20 @@ describe('commandMutation', () => {
         expect(value).toBe(3);
         expect(undoStore.value?.past).toHaveLength(1);
         expect(undoStore.value?.future).toEqual([]);
+    });
+
+    it('resets linear and tree history inside one exclusive transition', async () => {
+        await executeAppAction({ type: 'setSnapValue', payload: { value: 1 } });
+        expect(undoStore.value?.past).toHaveLength(1);
+        expect(Object.keys(undoTreeStore.value?.tree.nodes ?? {})).toHaveLength(1);
+
+        await runCommandTransitionExclusive((resetHistory) => {
+            resetHistory();
+            return Promise.resolve();
+        });
+
+        expect(undoStore.value).toEqual({ past: [], future: [] });
+        expect(undoTreeStore.value?.tree.nodes).toEqual({});
+        expect(undoTreeStore.value?.tree.currentNodeId).toBeNull();
     });
 });

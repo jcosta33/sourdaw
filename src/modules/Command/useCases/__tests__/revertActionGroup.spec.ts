@@ -15,7 +15,7 @@ const mocks = vi.hoisted(() => ({
     executeAppAction: vi
         .fn<typeof import('../executeAppActionImpl').executeAppActionImpl>()
         .mockResolvedValue(undefined),
-    undoTreeMoveTo: vi.fn<(id: string | null) => void>(),
+    rebuildUndoTreeFromHistory: vi.fn(),
 }));
 
 vi.mock('../../stores/undoStore', () => ({
@@ -31,8 +31,8 @@ vi.mock('../executeAppActionImpl', () => ({
     executeAppActionImpl: mocks.executeAppAction,
 }));
 
-vi.mock('../undoTree/undoTreeMoveTo', () => ({
-    undoTreeMoveTo: mocks.undoTreeMoveTo,
+vi.mock('../undoTree/rebuildUndoTreeFromHistory', () => ({
+    rebuildUndoTreeFromHistory: mocks.rebuildUndoTreeFromHistory,
 }));
 
 function actionEntry(id: string, groupId: string | undefined): UndoEntry {
@@ -103,8 +103,13 @@ describe('revertActionGroup', () => {
                 { ...g2, transactionGroupId: 'g1' },
             ],
         });
-        // Undo-tree position follows the new top of past.
-        expect(mocks.undoTreeMoveTo).toHaveBeenCalledWith('keep');
+        expect(mocks.rebuildUndoTreeFromHistory).toHaveBeenCalledWith({
+            past: [other],
+            future: [
+                { ...g1, transactionGroupId: 'g1' },
+                { ...g2, transactionGroupId: 'g1' },
+            ],
+        });
     });
 
     it('moves the undo tree to root when the group was the entire past stack', async () => {
@@ -113,7 +118,10 @@ describe('revertActionGroup', () => {
 
         await expect(revertActionGroup('g1')).resolves.toBe(true);
 
-        expect(mocks.undoTreeMoveTo).toHaveBeenCalledWith(null);
+        expect(mocks.rebuildUndoTreeFromHistory).toHaveBeenCalledWith({
+            past: [],
+            future: [g1],
+        });
     });
 
     it('refuses a non-transactional multi-entry group before replay', async () => {
@@ -141,7 +149,7 @@ describe('revertActionGroup', () => {
         expect(domain_value).toBe('original');
         expect(mocks.executeAppAction).not.toHaveBeenCalled();
         expect(mocks.undoStoreSet).not.toHaveBeenCalled();
-        expect(mocks.undoTreeMoveTo).not.toHaveBeenCalled();
+        expect(mocks.rebuildUndoTreeFromHistory).not.toHaveBeenCalled();
     });
 
     it('leaves the store untouched when no member of the group could be undone', async () => {
@@ -160,7 +168,7 @@ describe('revertActionGroup', () => {
         await expect(revertActionGroup('g1')).resolves.toBe(false);
 
         expect(mocks.undoStoreSet).not.toHaveBeenCalled();
-        expect(mocks.undoTreeMoveTo).not.toHaveBeenCalled();
+        expect(mocks.rebuildUndoTreeFromHistory).not.toHaveBeenCalled();
     });
 
     it('is a no-op when the group is absent from past', async () => {

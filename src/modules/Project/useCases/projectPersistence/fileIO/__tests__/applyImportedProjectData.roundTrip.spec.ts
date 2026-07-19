@@ -1,6 +1,8 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 import { adjustmentLayerStore, trackStore } from '#/modules/Arrangement/stores';
+import { clearHandlerRegistry, registerHandlerMap, undoStore } from '#/modules/Command/stores';
+import { clearUndoHistory, executeAppAction } from '#/modules/Command/useCases';
 import { midiStore } from '#/modules/MIDI/stores';
 import { defaultTransportState, transportStore } from '#/modules/Transport/stores';
 
@@ -107,10 +109,6 @@ vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => {
     const actual = await importOriginal<typeof import('#/modules/Arrangement/useCases')>();
     return { ...actual, stopRecording };
 });
-vi.mock('#/modules/Command/useCases', () => ({
-    clearUndoHistory: vi.fn(),
-    resetActionReplayAuthority: vi.fn(),
-}));
 vi.mock('#/modules/CrdtDocument/useCases', () => ({
     compactProject,
     persistCrdtProject,
@@ -265,6 +263,8 @@ function makeProject(): ProjectData {
 describe('applyImportedProjectData round-trip hydration', () => {
     beforeEach(() => {
         setProjectIdentityTransitionDependencies({ leaveCollaborationSession: () => Promise.resolve() });
+        clearHandlerRegistry();
+        clearUndoHistory();
         projectStore.set({ ...structuredClone(defaultProjectStoreState), loading: false, initialized: true });
         engineGraph.value = 'old-project';
         crdtAuthority.value = 'Old Project';
@@ -295,6 +295,8 @@ describe('applyImportedProjectData round-trip hydration', () => {
         trackStore.set({ tracks: [], selectedTrackId: null });
         adjustmentLayerStore.set({ layers: [] });
         arrangementStore.set(structuredClone(defaultArrangementStoreState));
+        clearHandlerRegistry();
+        clearUndoHistory();
     });
 
     it('resolves clip bufferIds and stages them before project publication', async () => {
@@ -316,6 +318,46 @@ describe('applyImportedProjectData round-trip hydration', () => {
             audioBufferId: 'buf-alt',
             audioOffsetBeats: 1,
         });
+    });
+
+    it('waits behind an in-flight action and clears its history in the project replacement transition', async () => {
+        trackStore.set({ tracks: [baseTrack('old-track', [])], selectedTrackId: null });
+        let releaseAction: (() => void) | undefined;
+        let markActionStarted: (() => void) | undefined;
+        const actionGate = new Promise<void>((resolve) => {
+            releaseAction = resolve;
+        });
+        const actionStarted = new Promise<void>((resolve) => {
+            markActionStarted = resolve;
+        });
+        registerHandlerMap({
+            setEditingTool: {
+                undoable: true,
+                describe: () => ({
+                    label: 'Gated project edit',
+                    inverseAction: { type: 'setEditingTool', payload: { tool: 'select' } },
+                }),
+                execute: async () => {
+                    markActionStarted?.();
+                    await actionGate;
+                },
+            },
+        });
+
+        const actionExecution = executeAppAction({ type: 'setEditingTool', payload: { tool: 'draw' } });
+        await actionStarted;
+        const applying = applyImportedProjectData({ data: makeProject() });
+        await vi.waitFor(() => expect(prepareCachedAudioBuffersFromIdb).toHaveBeenCalledOnce());
+
+        const transitionWaitedForAction =
+            resetAudioGraph.mock.calls.length === 0 && trackStore.value?.tracks[0]?.id === 'old-track';
+        releaseAction?.();
+        await Promise.all([actionExecution, applying]);
+
+        expect(transitionWaitedForAction).toBe(true);
+        expect(trackStore.value?.tracks[0]?.id).toBe('track-audio');
+        expect(undoStore.value?.past).toEqual([]);
+        expect(undoStore.value?.future).toEqual([]);
     });
 
     it('publishes imported tracks only after their cached audio buffers finish restoring', async () => {

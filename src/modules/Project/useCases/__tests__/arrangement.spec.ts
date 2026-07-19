@@ -1,7 +1,9 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { Container } from '#/infra/di/Container';
 import { trackStore } from '#/modules/Arrangement/stores';
+import { clearHandlerRegistry, registerHandlerMap, undoStore } from '#/modules/Command/stores';
+import { clearUndoHistory, executeAppAction } from '#/modules/Command/useCases';
 import { stopPlayback } from '#/modules/Transport/useCases';
 
 import {
@@ -34,14 +36,6 @@ vi.mock('#/modules/Transport/useCases', async (importOriginal) => {
     };
 });
 vi.mock('../projectPersistence/saveProject/markDirty', () => ({ markDirty: vi.fn() }));
-vi.mock('#/modules/Command/useCases', async (importOriginal) => {
-    const actual = await importOriginal<typeof import('#/modules/Command/useCases')>();
-    return {
-        ...actual,
-        clearUndoHistory: vi.fn(),
-    };
-});
-
 type SnapshotTrack = ArrangementSnapshot['tracks']['tracks'][number];
 
 function create_snapshot_track(overrides: Partial<SnapshotTrack> = {}): SnapshotTrack {
@@ -86,10 +80,17 @@ describe('switchArrangement', () => {
     beforeEach(() => {
         Container.clear();
         vi.clearAllMocks();
+        clearHandlerRegistry();
+        clearUndoHistory();
         setProjectIdentityTransitionDependencies({ leaveCollaborationSession: () => Promise.resolve() });
         arrangementStore.set(structuredClone(defaultArrangementStoreState));
         trackStore.set({ tracks: [], selectedTrackId: null, ghostClips: [] });
         prepareCachedAudioBuffersFromIdb.mockResolvedValue({ publish: publishPreparedBuffers });
+    });
+
+    afterEach(() => {
+        clearHandlerRegistry();
+        clearUndoHistory();
     });
 
     it('does not call transport or persistence collaborators when switching to the active arrangement', async () => {
@@ -98,6 +99,52 @@ describe('switchArrangement', () => {
 
         expect(stopPlayback).not.toHaveBeenCalled();
         expect(markDirty).not.toHaveBeenCalled();
+    });
+
+    it('waits behind an in-flight action and clears its history in the arrangement transition', async () => {
+        const state = structuredClone(defaultArrangementStoreState);
+        const target = structuredClone(state.arrangements[0]!);
+        target.id = 'target-behind-command';
+        state.arrangements.push(target);
+        arrangementStore.set(state);
+
+        let releaseAction: (() => void) | undefined;
+        let markActionStarted: (() => void) | undefined;
+        const actionGate = new Promise<void>((resolve) => {
+            releaseAction = resolve;
+        });
+        const actionStarted = new Promise<void>((resolve) => {
+            markActionStarted = resolve;
+        });
+        registerHandlerMap({
+            setEditingTool: {
+                undoable: true,
+                describe: () => ({
+                    label: 'Gated project edit',
+                    inverseAction: { type: 'setEditingTool', payload: { tool: 'select' } },
+                }),
+                execute: async () => {
+                    markActionStarted?.();
+                    await actionGate;
+                },
+            },
+        });
+
+        const actionExecution = executeAppAction({ type: 'setEditingTool', payload: { tool: 'draw' } });
+        await actionStarted;
+        const switching = switchArrangement(target.id);
+        await vi.waitFor(() => expect(prepareCachedAudioBuffersFromIdb).toHaveBeenCalledOnce());
+
+        const transitionWaitedForAction =
+            vi.mocked(stopPlayback).mock.calls.length === 0 &&
+            arrangementStore.value?.activeArrangementId === state.activeArrangementId;
+        releaseAction?.();
+        await Promise.all([actionExecution, switching]);
+
+        expect(transitionWaitedForAction).toBe(true);
+        expect(arrangementStore.value?.activeArrangementId).toBe(target.id);
+        expect(undoStore.value?.past).toEqual([]);
+        expect(undoStore.value?.future).toEqual([]);
     });
 
     it('waits for playback to stop before publishing and switching to a saved arrangement', async () => {

@@ -6,7 +6,7 @@ import {
     prepareCachedAudioBuffersFromIdb,
     resetAudioGraph,
 } from '#/modules/AudioEngine/useCases';
-import { clearUndoHistory } from '#/modules/Command/useCases';
+import { runCommandTransitionExclusive } from '#/modules/Command/useCases';
 import {
     compactProject,
     projectActionHistoryToStore,
@@ -101,41 +101,6 @@ export async function replaceProjectData({
         return { status: 'aborted' };
     }
 
-    try {
-        await stopPlayback();
-        if (!transaction.isCurrent()) {
-            return { status: 'aborted' };
-        }
-        resetAudioGraph();
-    } catch (error) {
-        logPreparationFailure(context, error);
-        restorePreviousAudioGraph(context);
-        return { status: 'aborted' };
-    }
-
-    let previousPersistenceStopped = false;
-    try {
-        stopActiveAutoSave();
-        previousPersistenceStopped = true;
-        resetCrdtProjectAuthority(data.meta.name);
-        projectActionHistoryToStore();
-    } catch (error) {
-        logPreparationFailure(context, error);
-        restorePreviousAudioGraph(context);
-        if (previousPersistenceStopped) {
-            try {
-                setAutoSaveHandle(startCrdtAutoSave());
-            } catch (restartError) {
-                logger.error(
-                    new Error(`[${context}] Previous CRDT durability lifecycle restart failed`, {
-                        cause: restartError,
-                    })
-                );
-            }
-        }
-        return { status: 'aborted' };
-    }
-
     let degraded = false;
     function runCommittedStep(step: string, operation: () => void): void {
         try {
@@ -148,41 +113,87 @@ export async function replaceProjectData({
         }
     }
 
-    // Playback has stopped, the old graph is gone, and CRDT authority now owns
-    // the incoming project. Remaining operations cannot become an abort.
+    const transitionStatus = await runCommandTransitionExclusive(async (resetUndoHistory) => {
+        if (!transaction.isCurrent()) {
+            return 'aborted' as const;
+        }
 
-    try {
-        // Notification coalescing only: each write remains independently fallible
-        // and is guarded so one owner failure cannot prevent later owner steps.
-        batchStoreUpdates(() => {
-            runCommittedStep('stored audio buffer publication', preparedStoredBuffers.publish);
-            runCommittedStep('embedded audio buffer publication', preparedEmbeddedBuffers.publish);
-            runCommittedStep('module store reset', resetModuleStoresToDefault);
-            runCommittedStep('arrangement hydration', () =>
-                hydrateArrangementStoreFromProjectData({ data, preserveSavedArrangements: true })
-            );
-            runCommittedStep('module store hydration', () => hydrateModuleStoresFromProjectData(data));
-            runCommittedStep('project metadata publication', () => {
-                projectStore.set({
-                    name: data.meta.name,
-                    createdAt: data.meta.createdAt,
-                    updatedAt: data.meta.updatedAt,
-                    keyRoot: data.meta.keyRoot,
-                    scaleName: data.meta.scaleName,
-                    tuning: data.meta.tuning,
-                    dirty: false,
-                    loading: false,
-                    initialized: true,
+        try {
+            await stopPlayback();
+            if (!transaction.isCurrent()) {
+                return 'aborted' as const;
+            }
+            resetAudioGraph();
+        } catch (error) {
+            logPreparationFailure(context, error);
+            restorePreviousAudioGraph(context);
+            return 'aborted' as const;
+        }
+
+        let previousPersistenceStopped = false;
+        try {
+            stopActiveAutoSave();
+            previousPersistenceStopped = true;
+            resetCrdtProjectAuthority(data.meta.name);
+            projectActionHistoryToStore();
+        } catch (error) {
+            logPreparationFailure(context, error);
+            restorePreviousAudioGraph(context);
+            if (previousPersistenceStopped) {
+                try {
+                    setAutoSaveHandle(startCrdtAutoSave());
+                } catch (restartError) {
+                    logger.error(
+                        new Error(`[${context}] Previous CRDT durability lifecycle restart failed`, {
+                            cause: restartError,
+                        })
+                    );
+                }
+            }
+            return 'aborted' as const;
+        }
+
+        // Playback has stopped, the old graph is gone, and CRDT authority now
+        // owns the incoming project. Remaining operations cannot become an abort.
+        try {
+            // Notification coalescing only: each write remains independently fallible
+            // and is guarded so one owner failure cannot prevent later owner steps.
+            batchStoreUpdates(() => {
+                runCommittedStep('stored audio buffer publication', preparedStoredBuffers.publish);
+                runCommittedStep('embedded audio buffer publication', preparedEmbeddedBuffers.publish);
+                runCommittedStep('module store reset', resetModuleStoresToDefault);
+                runCommittedStep('arrangement hydration', () =>
+                    hydrateArrangementStoreFromProjectData({ data, preserveSavedArrangements: true })
+                );
+                runCommittedStep('module store hydration', () => hydrateModuleStoresFromProjectData(data));
+                runCommittedStep('project metadata publication', () => {
+                    projectStore.set({
+                        name: data.meta.name,
+                        createdAt: data.meta.createdAt,
+                        updatedAt: data.meta.updatedAt,
+                        keyRoot: data.meta.keyRoot,
+                        scaleName: data.meta.scaleName,
+                        tuning: data.meta.tuning,
+                        dirty: false,
+                        loading: false,
+                        initialized: true,
+                    });
                 });
+                runCommittedStep('audio buffer verification', verifyAudioBufferReferences);
+                runCommittedStep('undo history reset', resetUndoHistory);
             });
-            runCommittedStep('audio buffer verification', verifyAudioBufferReferences);
-            runCommittedStep('undo history reset', clearUndoHistory);
-        });
-    } catch (error) {
-        degraded = true;
-        logger.error(
-            new Error(`[${context}] Committed project replacement notification flush failed`, { cause: error })
-        );
+        } catch (error) {
+            degraded = true;
+            logger.error(
+                new Error(`[${context}] Committed project replacement notification flush failed`, { cause: error })
+            );
+        }
+
+        return 'committed' as const;
+    });
+
+    if (transitionStatus === 'aborted') {
+        return { status: 'aborted' };
     }
 
     if (afterCommit) {

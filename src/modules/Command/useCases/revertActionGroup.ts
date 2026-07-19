@@ -2,7 +2,7 @@ import { undoStore } from '../stores/undoStore';
 
 import { runCommandMutationExclusive } from './commandMutation';
 import { revertUndoEntriesAtomically } from './revertUndoEntriesAtomically';
-import { undoTreeMoveTo } from './undoTree/undoTreeMoveTo';
+import { rebuildUndoTreeFromHistory } from './undoTree/rebuildUndoTreeFromHistory';
 
 /**
  * Revert every undo entry tagged with `groupId`, owning the undo-store write
@@ -32,11 +32,12 @@ async function revert_action_group(groupId: string): Promise<boolean> {
         groupEntries.length > 1
             ? groupEntries.map((entry) => ({ ...entry, transactionGroupId: groupId }))
             : groupEntries;
-    undoStore.set({
+    const nextHistory = {
         past: newPast,
         future: [...reverted_entries, ...state.future],
-    });
-    undoTreeMoveTo(newPast.length > 0 ? newPast[newPast.length - 1]!.id : null);
+    };
+    undoStore.set(nextHistory);
+    rebuildUndoTreeFromHistory(nextHistory);
     return true;
 }
 
