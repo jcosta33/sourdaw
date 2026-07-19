@@ -1,25 +1,36 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-import type * as trackStateRepo from '../../../repositories/track/getTrackState';
-import type * as mapAllTracksRepo from '../../../repositories/track/mapAllTracks';
-
 const mocks = vi.hoisted(() => ({
-    getTrackState: vi.fn<() => (typeof trackStateRepo)['getTrackState'] extends () => infer R ? R : never>(),
+    getTrackState: vi.fn<(typeof trackStateRepo)['getTrackState']>(),
     mapAllTracks: vi.fn<(typeof mapAllTracksRepo)['mapAllTracks']>(),
 }));
 
 vi.mock('../../../repositories/track/getTrackState', () => ({ getTrackState: mocks.getTrackState }));
 vi.mock('../../../repositories/track/mapAllTracks', () => ({ mapAllTracks: mocks.mapAllTracks }));
 
+import { ClipDummy } from '../../../__tests__/ClipDummy';
+import { TrackDummy } from '../../../__tests__/TrackDummy';
+import { type Clip, type Track } from '../../../models/Track';
 import { crossfadeClips } from '../crossfadeClips';
 
-const make_clip = (id: string, start: number, end: number) => ({
-    id,
-    startBeat: start,
-    endBeat: end,
-    name: id,
-    type: 'audio',
-});
+import type * as trackStateRepo from '../../../repositories/track/getTrackState';
+import type * as mapAllTracksRepo from '../../../repositories/track/mapAllTracks';
+
+function makeClip(id: string, start: number, end: number): Clip {
+    return ClipDummy.create({ id, name: id, startBeat: start, endBeat: end });
+}
+
+function makeTrack(clips: Clip[]): Track {
+    return TrackDummy.create({ id: 't1', clips });
+}
+
+function capturedMapper(): (track: Track) => Track {
+    const mapper = mocks.mapAllTracks.mock.calls[0]?.[0];
+    if (!mapper) {
+        throw new Error('expected mapAllTracks to receive a mapper');
+    }
+    return mapper;
+}
 
 describe('crossfadeClips', () => {
     beforeEach(() => vi.clearAllMocks());
@@ -31,54 +42,60 @@ describe('crossfadeClips', () => {
     });
 
     it('does nothing when clips not found', () => {
-        mocks.getTrackState.mockReturnValue({ tracks: [{ id: 't1', clips: [] }], selectedTrackId: 't1' } as never);
+        mocks.getTrackState.mockReturnValue({ tracks: [makeTrack([])], selectedTrackId: 't1' });
         crossfadeClips('missing-a', 'missing-b');
         expect(mocks.mapAllTracks).not.toHaveBeenCalled();
     });
 
-    it('extends clip A endBeat and clip B startBeat', () => {
-        mocks.getTrackState.mockReturnValue({
-            tracks: [
-                {
-                    id: 't1',
-                    clips: [make_clip('a', 0, 4), make_clip('b', 4, 8)],
-                },
-            ],
-            selectedTrackId: 't1',
-        } as never);
-        mocks.mapAllTracks.mockImplementation((fn: (t: { clips: unknown[] }) => unknown) => fn({ clips: [] }) as never);
+    it('extends clip A endBeat and clip B startBeat by half the duration each', () => {
+        const clips = [makeClip('a', 0, 4), makeClip('b', 4, 8)];
+        mocks.getTrackState.mockReturnValue({ tracks: [makeTrack(clips)], selectedTrackId: 't1' });
 
         crossfadeClips('a', 'b', 1.0);
 
         expect(mocks.mapAllTracks).toHaveBeenCalledTimes(1);
-        const mapper = mocks.mapAllTracks.mock.calls[0]![0] as (t: { clips: unknown[] }) => unknown;
+        const result = capturedMapper()(makeTrack([makeClip('a', 0, 4), makeClip('b', 4, 8)]));
 
-        const input_track = { id: 't1', clips: [make_clip('a', 0, 4), make_clip('b', 4, 8)] };
-        const result = mapper(input_track as never) as {
-            clips: { id: string; endBeat: number; startBeat: number; fadeOutBeats?: number; fadeInBeats?: number }[];
-        };
-
-        const clip_a = result.clips.find((c) => c.id === 'a')!;
-        const clip_b = result.clips.find((c) => c.id === 'b')!;
-        expect(clip_a.endBeat).toBe(4.5);
-        expect(clip_b.startBeat).toBe(3.5);
-        expect(clip_a.fadeOutBeats).toBe(1);
-        expect(clip_b.fadeInBeats).toBe(1);
+        const clipA = result.clips.find((context) => context.id === 'a');
+        const clipB = result.clips.find((context) => context.id === 'b');
+        expect(clipA).toMatchObject({ startBeat: 0, endBeat: 4.5, fadeOutBeats: 1 });
+        expect(clipB).toMatchObject({ startBeat: 3.5, endBeat: 8, fadeInBeats: 1 });
     });
 
     it('uses default duration of 0.5 beats', () => {
-        mocks.getTrackState.mockReturnValue({
-            tracks: [{ id: 't1', clips: [make_clip('a', 0, 4), make_clip('b', 4, 8)] }],
-            selectedTrackId: 't1',
-        } as never);
-        mocks.mapAllTracks.mockImplementation((fn: (t: { clips: unknown[] }) => unknown) => fn({ clips: [] }) as never);
+        const clips = [makeClip('a', 0, 4), makeClip('b', 4, 8)];
+        mocks.getTrackState.mockReturnValue({ tracks: [makeTrack(clips)], selectedTrackId: 't1' });
 
         crossfadeClips('a', 'b');
 
-        const mapper = mocks.mapAllTracks.mock.calls[0]![0] as (t: { clips: unknown[] }) => unknown;
-        const input_track = { id: 't1', clips: [make_clip('a', 0, 4), make_clip('b', 4, 8)] };
-        const result = mapper(input_track as never) as { clips: { id: string; endBeat: number; startBeat: number }[] };
-        const clip_a = result.clips.find((c) => c.id === 'a')!;
-        expect(clip_a.endBeat).toBe(4.25);
+        const result = capturedMapper()(makeTrack([makeClip('a', 0, 4), makeClip('b', 4, 8)]));
+        const clipA = result.clips.find((context) => context.id === 'a');
+        const clipB = result.clips.find((context) => context.id === 'b');
+        expect(clipA).toMatchObject({ endBeat: 4.25, fadeOutBeats: 0.5 });
+        expect(clipB).toMatchObject({ startBeat: 3.75, fadeInBeats: 0.5 });
+    });
+
+    it('clamps clip B start at 0 and widens the overlap accordingly', () => {
+        const clips = [makeClip('a', 0, 0.25), makeClip('b', 0.25, 4)];
+        mocks.getTrackState.mockReturnValue({ tracks: [makeTrack(clips)], selectedTrackId: 't1' });
+
+        crossfadeClips('a', 'b', 1.0);
+
+        const result = capturedMapper()(makeTrack([makeClip('a', 0, 0.25), makeClip('b', 0.25, 4)]));
+        const clipA = result.clips.find((context) => context.id === 'a');
+        const clipB = result.clips.find((context) => context.id === 'b');
+        expect(clipB).toMatchObject({ startBeat: 0, fadeInBeats: 0.75 });
+        expect(clipA).toMatchObject({ endBeat: 0.75, fadeOutBeats: 0.75 });
+    });
+
+    it('leaves unrelated clips untouched', () => {
+        const clips = [makeClip('a', 0, 4), makeClip('b', 4, 8)];
+        mocks.getTrackState.mockReturnValue({ tracks: [makeTrack(clips)], selectedTrackId: 't1' });
+
+        crossfadeClips('a', 'b', 1.0);
+
+        const other = makeClip('other', 10, 12);
+        const result = capturedMapper()(makeTrack([other]));
+        expect(result.clips).toEqual([other]);
     });
 });
