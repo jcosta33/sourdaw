@@ -56,7 +56,7 @@ afterEach(() => {
 });
 
 function onnxWorker(): FakeWorker {
-    const worker = installedWorkers.filter((w) => w.url.includes('onnxInferenceWorker')).at(-1);
+    const worker = installedWorkers.findLast((w) => w.url.includes('onnxInferenceWorker'));
     if (!worker) {
         throw new Error('no ONNX worker was constructed');
     }
@@ -64,7 +64,7 @@ function onnxWorker(): FakeWorker {
 }
 
 function tfjsWorker(): FakeWorker {
-    const worker = installedWorkers.filter((w) => w.url.includes('tfjsInferenceWorker')).at(-1);
+    const worker = installedWorkers.findLast((w) => w.url.includes('tfjsInferenceWorker'));
     if (!worker) {
         throw new Error('no TF.js worker was constructed');
     }
@@ -78,7 +78,7 @@ async function flush(): Promise<void> {
     }
 }
 
-function lastCall(worker: FakeWorker): [WorkerRequest, Transferable[] | undefined] {
+function lastCall(worker: FakeWorker): [WorkerRequest, Transferable[]?] {
     const call = worker.postMessage.mock.calls.at(-1);
     if (!call) {
         throw new Error('worker.postMessage was not called');
@@ -258,7 +258,12 @@ describe('inferenceWorkerBridge — TF.js idle-destroy lifecycle', () => {
         await vi.advanceTimersByTimeAsync(60_000); // well past the original deadline
         expect(worker.terminate).not.toHaveBeenCalled();
 
-        reply(worker, { type: 'ddsp-result', requestId: 'second', audio: new Float32Array(2), nativeSampleRate: 16000 });
+        reply(worker, {
+            type: 'ddsp-result',
+            requestId: 'second',
+            audio: new Float32Array(2),
+            nativeSampleRate: 16000,
+        });
         await expect(second).resolves.toMatchObject({ requestId: 'second' });
     });
 });
@@ -485,6 +490,7 @@ describe('inferenceWorkerBridge — worker message routing', () => {
         let settled = false;
         void promise.then(() => {
             settled = true;
+            return undefined;
         });
         await flush();
         expect(settled).toBe(false);
