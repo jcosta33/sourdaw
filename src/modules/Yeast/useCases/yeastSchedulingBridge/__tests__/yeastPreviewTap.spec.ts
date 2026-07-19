@@ -91,6 +91,9 @@ describe('AC-001 — Yeast scheduled-event preview tap', () => {
         expect(yeastPreviewTap.getStorageIdentity()).toBe(storageIdentity);
 
         const snapshot = readYeastPreviewSnapshot();
+        expect(Object.isFrozen(snapshot)).toBe(true);
+        expect(Object.isFrozen(snapshot.events)).toBe(true);
+        expect(Object.isFrozen(snapshot.events[0])).toBe(true);
         expect(snapshot.capacity).toBe(512);
         expect(snapshot.events).toHaveLength(512);
         expect(snapshot.droppedEvents).toBe(2);
@@ -104,9 +107,9 @@ describe('AC-001 — Yeast scheduled-event preview tap', () => {
             processorId: 'velocity-1',
             bypassed: false,
         });
-        expect(snapshot.events.map((event) => event.beatTime)).toEqual(
-            Array.from({ length: 512 }, (_, index) => 4 + index * 0.01)
-        );
+        for (let index = 0; index < snapshot.events.length; index++) {
+            expect(snapshot.events[index]!.beatTime).toBeCloseTo(4 + index * 0.01, 10);
+        }
 
         const afterReaderAdvance = notePair(600);
         runtime.processTransaction.mockResolvedValue(afterReaderAdvance);
@@ -153,5 +156,26 @@ describe('AC-001 — Yeast scheduled-event preview tap', () => {
             })
         ).toBe(processed);
         expect(readYeastPreviewSnapshot()).toMatchObject({ events: [], droppedEvents: 0 });
+    });
+
+    it('never replaces scheduler output when preview publication fails', async () => {
+        const processed = notePair(0);
+        runtime.processTransaction.mockResolvedValue(processed);
+        const previewFailure = vi.spyOn(yeastPreviewTap, 'publish').mockImplementationOnce(() => {
+            throw new Error('preview unavailable');
+        });
+
+        const output = await processYeastMidi({
+            context: {} as BaseAudioContext,
+            trackId: 'track-a',
+            events: [],
+            blockStartSamples: 0,
+            blockEndSamples: 128,
+            transport,
+        });
+
+        expect(output).toBe(processed);
+        expect(output).toEqual(processed);
+        previewFailure.mockRestore();
     });
 });

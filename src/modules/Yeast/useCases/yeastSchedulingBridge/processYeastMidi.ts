@@ -1,3 +1,4 @@
+import { yeastPreviewTap } from '../../engine/yeastPreviewTap';
 import { getYeastRuntimeError, getYeastRuntimeStatus, processYeastRuntimeTransaction } from '../../engine/yeastRuntime';
 import { createYeastProcessorProjection } from '../../models/YeastProcessorProjection';
 import { yeastStore } from '../../stores/yeastStore';
@@ -43,12 +44,27 @@ export async function processYeastMidi(input: ProcessYeastMidiInput): Promise<Mi
         return [...input.events];
     }
 
+    let output: MidiEvent[];
     try {
         const processed = await processYeastRuntimeTransaction({ ...input, projection });
         publishRuntimeStatus();
-        return processed ?? [...input.events];
+        output = processed ?? [...input.events];
     } catch {
         publishRuntimeStatus();
-        return [...input.events];
+        output = [...input.events];
     }
+
+    const previewOrigin = projection[projection.length - 1]!;
+    try {
+        yeastPreviewTap.publish({
+            events: output,
+            blockStartSamples: input.blockStartSamples,
+            transport: input.transport,
+            processorId: previewOrigin.id,
+            bypassed: previewOrigin.bypassed,
+        });
+    } catch {
+        // Preview is best-effort and can never replace scheduler output.
+    }
+    return output;
 }
