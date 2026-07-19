@@ -113,6 +113,13 @@ function calculateStableMean(values: readonly number[]): number {
     return (sum + correction) / sortedValues.length;
 }
 
+function calculateRelativeDynamicsOffset(velocity: number, meanVelocity: number): number {
+    if (meanVelocity === 0) {
+        return 0;
+    }
+    return Math.max(-1, Math.min(1, (velocity - meanVelocity) / meanVelocity));
+}
+
 type ResolveExtractedTemplateIdInput = {
     input: ExtractGrooveTemplateInput;
     canonicalSourceId: string;
@@ -160,7 +167,7 @@ export function extractGrooveTemplate(input: ExtractGrooveTemplateInput): Extrac
         const nearestStep = Math.round(note.startBeat / stepBeats);
         const slotIndex = ((nearestStep % slotCount) + slotCount) % slotCount;
         const timingOffset = Math.max(-0.5, Math.min(0.5, (note.startBeat - nearestStep * stepBeats) / stepBeats));
-        const dynamicsOffset = Math.max(-1, Math.min(1, (note.velocity - meanVelocity) / 127));
+        const dynamicsOffset = calculateRelativeDynamicsOffset(note.velocity, meanVelocity);
         const timings = timingBySlot.get(slotIndex) ?? [];
         timings.push(timingOffset);
         timingBySlot.set(slotIndex, timings);

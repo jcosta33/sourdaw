@@ -101,6 +101,48 @@ describe('extractGrooveTemplate', () => {
         expect(isGrooveTemplate(result.template)).toBe(true);
     });
 
+    it('extracts dynamics as velocity-relative multipliers', () => {
+        const result = extractGrooveTemplate({
+            sourceId: 'relative-dynamics',
+            sourceName: 'Relative Dynamics',
+            analyzerVersion: 1,
+            subdivision: '1/16',
+            notes: [
+                { id: 'quiet', startBeat: 0, velocity: 50 },
+                { id: 'loud', startBeat: 0.25, velocity: 100 },
+            ],
+        });
+
+        expect(result.ok).toBe(true);
+        if (!result.ok) {
+            throw new Error('Expected successful extraction');
+        }
+        expect(result.template.slots).toEqual([
+            { index: 0, timingOffset: 0, dynamicsOffset: -1 / 3 },
+            { index: 1, timingOffset: 0, dynamicsOffset: 1 / 3 },
+        ]);
+    });
+
+    it('treats an all-zero-velocity source as having no dynamics deviation', () => {
+        const result = extractGrooveTemplate({
+            sourceId: 'silent-source',
+            sourceName: 'Silent Source',
+            analyzerVersion: 1,
+            subdivision: '1/16',
+            notes: [
+                { id: 'silent-1', startBeat: 0, velocity: 0 },
+                { id: 'silent-2', startBeat: 0.25, velocity: 0 },
+            ],
+        });
+
+        expect(result.ok).toBe(true);
+        if (!result.ok) {
+            throw new Error('Expected successful extraction');
+        }
+        expect(result.template.id).toBe(STRAIGHT_GROOVE_TEMPLATE_ID);
+        expect(result.template.slots).toEqual([]);
+    });
+
     it.each([
         {
             name: 'empty source ID',
