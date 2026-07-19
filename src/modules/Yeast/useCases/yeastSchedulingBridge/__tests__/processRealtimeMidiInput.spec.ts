@@ -31,6 +31,7 @@ describe('processRealtimeMidiInput', () => {
             isNoteOn: true,
             sampleTime: 128,
             sampleRate: 48000,
+            clock: { ppqPosition: 0, bpm: 120 },
             blockSize: 64,
         });
 
@@ -67,9 +68,38 @@ describe('processRealtimeMidiInput', () => {
             isNoteOn: true,
             sampleTime: 128,
             sampleRate: 48_000,
+            clock: { ppqPosition: 0, bpm: 120 },
             blockSize: 64,
         });
 
         expect(vi.mocked(processYeastMidi).mock.calls[0]?.[0].blockEndSamples).toBeGreaterThan(192);
+    });
+
+    it('uses the Transport clock projection for advanced-playhead and tempo-changed input', async () => {
+        vi.mocked(processYeastMidi).mockResolvedValue([]);
+
+        await processRealtimeMidiInput({
+            context: {} as BaseAudioContext,
+            trackId: 'track-a',
+            note: 67,
+            velocity: 100,
+            channel: 1,
+            isNoteOn: true,
+            sampleTime: 240_000,
+            sampleRate: 48_000,
+            clock: { ppqPosition: 8.75, bpm: 90 },
+        });
+
+        expect(processYeastMidi).toHaveBeenCalledWith(
+            expect.objectContaining({
+                events: [
+                    expect.objectContaining({
+                        timePpq: 8.75,
+                        tempoBpm: 90,
+                    }),
+                ],
+                transport: expect.objectContaining({ ppqPosition: 8.75, bpm: 90 }),
+            })
+        );
     });
 });

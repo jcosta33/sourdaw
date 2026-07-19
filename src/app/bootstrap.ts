@@ -35,6 +35,7 @@ import {
     getFinalFeatureHandlers,
     commitPitchEdit,
     configureAudioDeviceRuntimeSink,
+    configureOfflineMidiEventProjection,
     stopAllScheduled,
 } from '#/modules/AudioEngine/useCases';
 import {
@@ -79,6 +80,7 @@ import {
     getMidiGrooveHandlers,
     getMidiNoteTransformHandlers,
     getPatternInstanceHandlers,
+    projectCommittedGroove,
     setWebMidiRealtimeProcessor,
     setWebMidiRuntimeEventBus,
     getWebMidiInputHandlers,
@@ -104,6 +106,7 @@ import {
     setStopPlaybackCallback,
     shiftTimelineMapsAfterBeat,
     stopPlayback,
+    resolveRealtimeMusicalClock,
 } from '#/modules/Transport/useCases';
 import { updateTunerTelemetry } from '#/modules/Tuner/stores';
 import { getWorkspaceHandlers, getScratchPadHandlers, setWorkspaceEventBus } from '#/modules/WorkspaceShell/useCases';
@@ -128,6 +131,7 @@ actionHistoryStore.subscribe((state) => {
     syncActionReplayMetadata(state?.entries ?? []);
 });
 setRuntimeLogger(logger);
+configureOfflineMidiEventProjection({ project: projectCommittedGroove });
 setArrangementEventBus(eventBus);
 setWorkspaceEventBus(eventBus);
 setCommandEventBus(eventBus);
@@ -142,7 +146,13 @@ setGrandBouleEventBus(eventBus);
 setToasterEventBus(eventBus);
 setYeastEventBus(eventBus);
 configureYeastRuntime({ panicOutputNotes: stopAllScheduled });
-setWebMidiRealtimeProcessor({ processor: processRealtimeMidiInput });
+setWebMidiRealtimeProcessor({
+    processor: (input) =>
+        processRealtimeMidiInput({
+            ...input,
+            clock: resolveRealtimeMusicalClock(input),
+        }),
+});
 setWebMidiRuntimeEventBus({ eventBus });
 setNotificationEventBus(eventBus);
 setTimeOperationDependencies({ shiftTimelineMapsAfterBeat, deleteTimelineMapsTimeRange });

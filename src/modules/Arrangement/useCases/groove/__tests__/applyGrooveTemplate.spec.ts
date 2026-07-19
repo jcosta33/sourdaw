@@ -1,17 +1,18 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 
-import { getGrooveOffsetAtBeat } from '#/modules/Arrangement/useCases/groove/applyGrooveTemplate';
 import { defaultGrooveTemplateState, grooveTemplateStore } from '#/modules/MIDI/stores';
 import { assignGrooveTemplate, createGrooveTemplate } from '#/modules/MIDI/useCases';
 
-describe('getGrooveOffsetAtBeat', () => {
+import { projectSequencerGroove } from '../applyGrooveTemplate';
+
+describe('projectSequencerGroove', () => {
     beforeEach(() => {
         grooveTemplateStore.set(structuredClone(defaultGrooveTemplateState));
         createGrooveTemplate({
             id: 'swing',
             name: 'Swing',
             subdivision: '1/8',
-            slots: [1, 3, 5, 7].map((index) => ({ index, timingOffset: 0.2, dynamicsOffset: 0 })),
+            slots: [1, 3, 5, 7].map((index) => ({ index, timingOffset: 0.2, dynamicsOffset: 0.2 })),
             provenance: { type: 'user', sourceId: 'test' },
         });
         assignGrooveTemplate({
@@ -22,17 +23,25 @@ describe('getGrooveOffsetAtBeat', () => {
         });
     });
 
-    it('should return 0 if no groove is active', () => {
+    it('returns the complete event unchanged if no groove is active', () => {
         grooveTemplateStore.set({ ...grooveTemplateStore.value!, assignments: [] });
-        expect(getGrooveOffsetAtBeat(0.5)).toBe(0);
+        const event = { id: 'note-1', startBeat: 0.5, velocity: 80, pitch: 60 };
+
+        expect(projectSequencerGroove(event)).toBe(event);
     });
 
-    it('should compute offset based on resolution and intensity', () => {
+    it('projects timing and dynamics based on resolution and intensity', () => {
         // resolution 0.5. beat 0 is step 0, beat 0.5 is step 1.
-        expect(getGrooveOffsetAtBeat(0)).toBe(0);
-        expect(getGrooveOffsetAtBeat(0.5)).toBeCloseTo(0.1);
-        expect(getGrooveOffsetAtBeat(1.0)).toBe(0);
-        expect(getGrooveOffsetAtBeat(1.5)).toBeCloseTo(0.1);
+        expect(projectSequencerGroove({ id: 'a', startBeat: 0, velocity: 80 })).toEqual({
+            id: 'a',
+            startBeat: 0,
+            velocity: 80,
+        });
+        expect(projectSequencerGroove({ id: 'b', startBeat: 0.5, velocity: 80 })).toEqual({
+            id: 'b',
+            startBeat: 0.6,
+            velocity: 105,
+        });
 
         // Intensity 0.5
         assignGrooveTemplate({
@@ -41,6 +50,10 @@ describe('getGrooveOffsetAtBeat', () => {
             templateId: 'swing',
             amount: 0.5,
         });
-        expect(getGrooveOffsetAtBeat(0.5)).toBeCloseTo(0.05);
+        expect(projectSequencerGroove({ id: 'c', startBeat: 0.5, velocity: 80 })).toEqual({
+            id: 'c',
+            startBeat: 0.55,
+            velocity: 93,
+        });
     });
 });

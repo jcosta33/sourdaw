@@ -40,7 +40,7 @@ export function applyGrooveTemplate<Event extends GrooveProjectableEvent>({
         }
         return {
             ...event,
-            startBeat: Math.max(0, event.startBeat + slot.timingOffset * stepBeats * clampedAmount),
+            startBeat: event.startBeat + slot.timingOffset * stepBeats * clampedAmount,
             velocity: Math.max(
                 1,
                 Math.min(127, Math.round(event.velocity + slot.dynamicsOffset * 127 * clampedAmount))

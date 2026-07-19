@@ -1,5 +1,9 @@
 import { trackStore } from '#/modules/Arrangement/stores';
-import { resolveClipsWithComping, getSynthParamsForTrack, getGrooveOffsetAtBeat } from '#/modules/Arrangement/useCases';
+import {
+    resolveClipsWithComping,
+    getSynthParamsForTrack,
+    projectSequencerGroove,
+} from '#/modules/Arrangement/useCases';
 import {
     ensureTrackStrip,
     getAudioContext,
@@ -60,9 +64,34 @@ type MidiEvent = {
 type ScheduledYeastNote<Note> = Note & {
     yeastStartSamples: number;
     yeastEndSamples: number;
+    yeastStartPpq?: number;
+    yeastEndPpq?: number;
 };
 
-function getScheduledYeastSamples(note: object): { start: number; end: number } | null {
+type GetScheduledYeastSamplesInput = {
+    note: object;
+    changes: Parameters<typeof beatToSamples>[0];
+    defaultTempo: number;
+    sampleRate: number;
+};
+
+function getScheduledYeastSamples({
+    note,
+    changes,
+    defaultTempo,
+    sampleRate,
+}: GetScheduledYeastSamplesInput): { start: number; end: number } | null {
+    if (
+        'yeastStartPpq' in note &&
+        typeof note.yeastStartPpq === 'number' &&
+        'yeastEndPpq' in note &&
+        typeof note.yeastEndPpq === 'number'
+    ) {
+        return {
+            start: beatToSamples(changes, note.yeastStartPpq, defaultTempo, sampleRate),
+            end: beatToSamples(changes, note.yeastEndPpq, defaultTempo, sampleRate),
+        };
+    }
     if (
         'yeastStartSamples' in note &&
         typeof note.yeastStartSamples === 'number' &&
@@ -283,15 +312,15 @@ export async function scheduleMidiNotes(
                     // so a single forward pass produces stacks of pending-off
                     // timeSamples per pitch. A noteOn then pops the earliest
                     // noteOff whose time > startTime.
-                    const noteOffsByKey = new Map<number, number[]>();
+                    const noteOffsByKey = new Map<number, Array<{ timeSamples: number; timePpq?: number }>>();
                     for (const evt of processed) {
                         if (evt.kind.type === 'noteOff') {
                             const noteKey = evt.kind.channel * 128 + evt.kind.note;
                             const existing = noteOffsByKey.get(noteKey);
                             if (existing) {
-                                existing.push(evt.timeSamples);
+                                existing.push({ timeSamples: evt.timeSamples, timePpq: evt.timePpq });
                             } else {
-                                noteOffsByKey.set(noteKey, [evt.timeSamples]);
+                                noteOffsByKey.set(noteKey, [{ timeSamples: evt.timeSamples, timePpq: evt.timePpq }]);
                             }
                         }
                     }
@@ -326,26 +355,29 @@ export async function scheduleMidiNotes(
                             // re-apply iterOffset / midiOffset, since this
                             // iteration's run already placed them.
                             const startBeat =
-                                samplesToBeat(changes, evt.timeSamples, transport.tempo, yeastSr) - clipMidiOffset;
+                                (evt.timePpq ?? samplesToBeat(changes, evt.timeSamples, transport.tempo, yeastSr)) -
+                                clipMidiOffset;
 
                             const noteKey = evt.kind.channel * 128 + evtNote;
                             const offs = noteOffsByKey.get(noteKey);
-                            let offTime: number | null = null;
+                            let offEvent: { timeSamples: number; timePpq?: number } | null = null;
                             if (offs) {
                                 let cursor = noteOffCursor.get(noteKey) ?? 0;
-                                while (cursor < offs.length && offs[cursor]! <= evt.timeSamples) {
+                                while (cursor < offs.length && offs[cursor]!.timeSamples <= evt.timeSamples) {
                                     cursor++;
                                 }
                                 if (cursor < offs.length) {
-                                    offTime = offs[cursor]!;
+                                    offEvent = offs[cursor]!;
                                     noteOffCursor.set(noteKey, cursor + 1);
                                 } else {
                                     noteOffCursor.set(noteKey, cursor);
                                 }
                             }
                             const endBeat =
-                                offTime !== null
-                                    ? samplesToBeat(changes, offTime, transport.tempo, yeastSr) - clipMidiOffset
+                                offEvent !== null
+                                    ? (offEvent.timePpq ??
+                                          samplesToBeat(changes, offEvent.timeSamples, transport.tempo, yeastSr)) -
+                                      clipMidiOffset
                                     : startBeat + 0.25;
                             transformedNotes.push({
                                 ...noteTemplate,
@@ -356,8 +388,10 @@ export async function scheduleMidiNotes(
                                 duration: endBeat - startBeat,
                                 yeastStartSamples: evt.timeSamples,
                                 yeastEndSamples:
-                                    offTime ??
+                                    offEvent?.timeSamples ??
                                     beatToSamples(changes, endBeat + clipMidiOffset, transport.tempo, yeastSr),
+                                yeastStartPpq: evt.timePpq,
+                                yeastEndPpq: offEvent?.timePpq,
                             });
                         }
                     }
@@ -456,21 +490,25 @@ export async function scheduleMidiNotes(
                     const rawStartBeat = notesAreAbsolute
                         ? note.startBeat
                         : clip.startBeat + iterOffset + (note.startBeat - clipMidiOffset);
-                    const grooveOffset = getGrooveOffsetAtBeat(rawStartBeat);
+                    const sequencerProjection = projectSequencerGroove({
+                        id: note.id,
+                        startBeat: rawStartBeat,
+                        velocity: note.velocity,
+                    });
                     const iterationStart = clip.startBeat + iterOffset;
                     // A negative groove offset can move a note earlier than the
                     // iteration start. Clamp it to the iteration boundary rather
                     // than dropping it — silently skipping loses the note. Notes
                     // pushed past the clip end are genuinely out of range and stay
                     // dropped.
-                    const noteStartBeat = Math.max(rawStartBeat + grooveOffset, iterationStart);
+                    const noteStartBeat = Math.max(sequencerProjection.startBeat, iterationStart);
 
                     if (noteStartBeat >= clip.endBeat) {
                         continue;
                     }
 
                     const inSchedulingWindow = notesAreAbsolute
-                        ? noteStartBeat < toBeat
+                        ? noteStartBeat >= fromBeat && noteStartBeat < toBeat
                         : noteStartBeat >= fromBeat && noteStartBeat < toBeat && noteStartBeat > lastScheduledBeat;
                     if (inSchedulingWindow) {
                         if (!isCurrent()) {
@@ -489,14 +527,20 @@ export async function scheduleMidiNotes(
                         }
 
                         const noteEndBeat = Math.min(noteStartBeat + note.duration, clip.endBeat);
-                        const returnedSamples = getScheduledYeastSamples(note);
+                        const returnedSamples = getScheduledYeastSamples({
+                            note,
+                            changes,
+                            defaultTempo: transport.tempo,
+                            sampleRate: sr,
+                        });
+                        const sequencerTimingUnchanged = sequencerProjection.startBeat === rawStartBeat;
                         const noteStartSamples =
-                            returnedSamples !== null && grooveOffset === 0
+                            returnedSamples !== null && sequencerTimingUnchanged
                                 ? returnedSamples.start
                                 : beatToSamples(changes, noteStartBeat, transport.tempo, sr);
                         const clipEndSamples = beatToSamples(changes, clip.endBeat, transport.tempo, sr);
                         const noteEndSamples = Math.min(
-                            returnedSamples !== null && grooveOffset === 0
+                            returnedSamples !== null && sequencerTimingUnchanged
                                 ? returnedSamples.end
                                 : beatToSamples(changes, noteEndBeat, transport.tempo, sr),
                             clipEndSamples
@@ -519,11 +563,19 @@ export async function scheduleMidiNotes(
                                 pitchNote = toasterRoute.pitchFallback;
                             }
                             if (pad >= 0 && pad < 16) {
-                                const safeVelocity = note.velocity ?? 100;
+                                const safeVelocity = sequencerProjection.velocity;
                                 toasterRoute.controls.noteOn(pad, safeVelocity, pitchNote, sampleFrame);
                             }
                         } else if (drumKitDef) {
-                            scheduleDrumKitNote(ctx, strip.gainNode, drumKitDef, pitch, time, note.velocity, clip.gain);
+                            scheduleDrumKitNote(
+                                ctx,
+                                strip.gainNode,
+                                drumKitDef,
+                                pitch,
+                                time,
+                                sequencerProjection.velocity,
+                                clip.gain
+                            );
                         } else if (drumKit) {
                             scheduleKitNote(
                                 ctx,
@@ -532,11 +584,11 @@ export async function scheduleMidiNotes(
                                 pitch,
                                 time,
                                 duration,
-                                note.velocity,
+                                sequencerProjection.velocity,
                                 clip.gain
                             );
                         } else if (workletSynthControls && workletSynthEntry) {
-                            const rawVel = note.velocity ?? 100;
+                            const rawVel = sequencerProjection.velocity;
                             const vel = workletSynthEntry.velocityTransform
                                 ? workletSynthEntry.velocityTransform(rawVel)
                                 : rawVel;
@@ -549,7 +601,7 @@ export async function scheduleMidiNotes(
                                 pitch,
                                 time,
                                 duration,
-                                note.velocity,
+                                sequencerProjection.velocity,
                                 clip.gain
                             );
                         } else {
@@ -563,7 +615,7 @@ export async function scheduleMidiNotes(
                                 pitch,
                                 time,
                                 duration,
-                                note.velocity,
+                                sequencerProjection.velocity,
                                 synthParams!,
                                 mpe,
                                 clip.gain

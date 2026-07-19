@@ -11,6 +11,7 @@ export { setTempo } from './setTempo';
 export { setTimeSignature } from './setTimeSignature';
 export { restoreTransportSnapshot } from './restoreTransportSnapshot';
 export { restoreTimelineMapSnapshot } from './restoreTimelineMapSnapshot';
+export { resolveRealtimeMusicalClock } from './resolveRealtimeMusicalClock';
 
 export { addTempoChange } from './tempoMap/addTempoChange';
 export { deleteTimelineMapsTimeRange } from './tempoMap/deleteTimelineMapsTimeRange';

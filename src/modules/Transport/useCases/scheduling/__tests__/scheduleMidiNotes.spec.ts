@@ -1,12 +1,17 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { trackStore } from '#/modules/Arrangement/stores';
-import { resolveClipsWithComping, getSynthParamsForTrack, getGrooveOffsetAtBeat } from '#/modules/Arrangement/useCases';
+import {
+    resolveClipsWithComping,
+    getSynthParamsForTrack,
+    projectSequencerGroove,
+} from '#/modules/Arrangement/useCases';
 import { midiStore } from '#/modules/MIDI/stores';
 import { projectCommittedGroove } from '#/modules/MIDI/useCases';
 import { scheduleNote } from '#/modules/Synth/useCases';
 import { processYeastMidi } from '#/modules/Yeast/useCases';
 
+import { beatToSamples } from '../../../models/TempoMap';
 import { defaultTransportState } from '../../../models/TransportState';
 import { tempoMapStore } from '../../../stores/tempoMapStore';
 import { timeSignatureMapStore } from '../../../stores/timeSignatureMapStore';
@@ -27,7 +32,7 @@ vi.mock('../../../stores/timeSignatureMapStore', () => ({
 vi.mock('#/modules/Arrangement/useCases', () => ({
     resolveClipsWithComping: vi.fn((_trackId, clips) => clips),
     getSynthParamsForTrack: vi.fn(() => ({})),
-    getGrooveOffsetAtBeat: vi.fn(() => 0),
+    projectSequencerGroove: vi.fn((event) => event),
 }));
 vi.mock('#/modules/AudioEngine/useCases', () => ({
     getCompensationDelay: vi.fn(() => 0),
@@ -93,7 +98,7 @@ describe('scheduleMidiNotes', () => {
         vi.mocked(resolveClipsWithComping).mockImplementation((_trackId, clips) =>
             clips.map((clip) => ({ ...clip, regionStartBeat: clip.startBeat, regionEndBeat: clip.endBeat }))
         );
-        vi.mocked(getGrooveOffsetAtBeat).mockReturnValue(0);
+        vi.mocked(projectSequencerGroove).mockImplementation((event) => event);
         vi.mocked(projectCommittedGroove).mockImplementation(({ events }) => events);
         vi.mocked(processYeastMidi).mockImplementation(async (input) => [...input.events]);
     });
@@ -322,6 +327,57 @@ describe('scheduleMidiNotes', () => {
         expect(vi.mocked(scheduleNote).mock.calls[0]![4]).toBe(0.75);
     });
 
+    it.each([
+        {
+            label: 'instant',
+            changes: [
+                { id: 'tempo-0', beat: 0, tempo: 120, curve: 'instant' as const },
+                { id: 'tempo-1', beat: 4, tempo: 240, curve: 'instant' as const },
+            ],
+        },
+        {
+            label: 'ramp',
+            changes: [
+                { id: 'tempo-0', beat: 0, tempo: 120, curve: 'linear' as const },
+                { id: 'tempo-1', beat: 8, tempo: 240, curve: 'instant' as const },
+            ],
+        },
+    ])('maps worker-adjusted PPQ through the full $label tempo map', async ({ changes }) => {
+        const track = midiTrack({ clips: [midiClip({ endBeat: 8 })], devices: [{ id: 'y', type: 'yeast' }] });
+        (trackStore as { value: unknown }).value = { tracks: [track] };
+        (midiStore as { value: unknown }).value = {
+            notesByClipId: { 'clip-1': [{ id: 'n-ppq', pitch: 60, startBeat: 3.5, duration: 1, velocity: 100 }] },
+        };
+        (tempoMapStore as { value: unknown }).value = { changes };
+        let emitted = false;
+        vi.mocked(processYeastMidi).mockImplementation(async () => {
+            if (emitted) {
+                return [];
+            }
+            emitted = true;
+            return [
+                {
+                    timeSamples: 1_000,
+                    timePpq: 3.75,
+                    kind: { type: 'noteOn' as const, channel: 0, note: 60, velocity: 100 },
+                },
+                {
+                    timeSamples: 2_000,
+                    timePpq: 4.25,
+                    kind: { type: 'noteOff' as const, channel: 0, note: 60 },
+                },
+            ];
+        });
+
+        await scheduleMidiNotes(3, 5, 3, -1, [], defaultTransportState, 120);
+
+        const startSamples = beatToSamples(changes, 3.75, 120, 48_000);
+        const endSamples = beatToSamples(changes, 4.25, 120, 48_000);
+        const accumulatedSamples = beatToSamples(changes, 3, 120, 48_000);
+        expect(vi.mocked(scheduleNote).mock.calls[0]?.[3]).toBeCloseTo((startSamples - accumulatedSamples) / 48_000, 8);
+        expect(vi.mocked(scheduleNote).mock.calls[0]?.[4]).toBeCloseTo((endSamples - startSamples) / 48_000, 8);
+    });
+
     it('admits a future source note early enough for a negative Yeast projection and schedules it once', async () => {
         const track = midiTrack({ clips: [midiClip()], devices: [{ id: 'y', type: 'yeast' }] });
         (trackStore as { value: unknown }).value = { tracks: [track] };
@@ -336,7 +392,7 @@ describe('scheduleMidiNotes', () => {
                     return [];
                 }
                 return [
-                    { ...event, timeSamples: 21_600 },
+                    { ...event, timeSamples: 21_600, timePpq: 0.9 },
                     {
                         timeSamples: 27_600,
                         trackId: event.trackId,
@@ -361,6 +417,58 @@ describe('scheduleMidiNotes', () => {
             })
         );
         expect(scheduleNote).toHaveBeenCalledTimes(1);
+    });
+
+    it('rejects an absolute Yeast output below the lower half-open bound after a source epoch change', async () => {
+        const track = midiTrack({ clips: [midiClip()], devices: [{ id: 'y', type: 'yeast' }] });
+        (trackStore as { value: unknown }).value = { tracks: [track] };
+        (midiStore as { value: unknown }).value = {
+            notesByClipId: {
+                'clip-1': [{ id: 'n-seek-regression', pitch: 60, startBeat: 1.2, duration: 0.25, velocity: 100 }],
+            },
+        };
+        let admittedSourceId: string | undefined;
+        vi.mocked(processYeastMidi).mockImplementation(async (input) => {
+            admittedSourceId = input.events.find((event) => event.kind.type === 'noteOn')?.sourceEventId;
+            return [
+                {
+                    timeSamples: 18_000,
+                    timePpq: 0.75,
+                    kind: { type: 'noteOn' as const, channel: 0, note: 60, velocity: 100 },
+                },
+                {
+                    timeSamples: 24_000,
+                    timePpq: 1,
+                    kind: { type: 'noteOff' as const, channel: 0, note: 60 },
+                },
+            ];
+        });
+        const cancellation: SchedulerCancellation = {
+            generation: 3,
+            isCurrent: () => true,
+            sourceEpoch: () => 9,
+        };
+
+        await scheduleMidiNotes(1, 2, 1, 1, [], defaultTransportState, 120, cancellation);
+
+        expect(admittedSourceId).toMatch(/^9:/);
+        expect(scheduleNote).not.toHaveBeenCalled();
+    });
+
+    it('preserves project-sequencer dynamics through the instrument sink', async () => {
+        const track = midiTrack({ clips: [midiClip()] });
+        (trackStore as { value: unknown }).value = { tracks: [track] };
+        (midiStore as { value: unknown }).value = {
+            notesByClipId: { 'clip-1': [{ id: 'n-dynamics', pitch: 60, startBeat: 1, duration: 0.25, velocity: 100 }] },
+        };
+        vi.mocked(projectSequencerGroove).mockImplementation((event) => ({ ...event, velocity: 37 }));
+
+        await scheduleMidiNotes(0, 2, 0, -1, [], defaultTransportState, 120);
+
+        expect(projectSequencerGroove).toHaveBeenCalledWith(
+            expect.objectContaining({ id: 'n-dynamics', startBeat: 1, velocity: 100 })
+        );
+        expect(vi.mocked(scheduleNote).mock.calls[0]?.[5]).toBe(37);
     });
 
     // audit row 2 — The Yeast transport metadata (bar index, beat-in-bar, time
@@ -407,7 +515,10 @@ describe('scheduleMidiNotes', () => {
             notesByClipId: { 'clip-1': [{ id: 'n0', pitch: 60, startBeat: 0, duration: 1, velocity: 100 }] },
         };
         // Groove pushes the note to beat -1, before the iteration start (beat 0).
-        vi.mocked(getGrooveOffsetAtBeat).mockReturnValue(-1);
+        vi.mocked(projectSequencerGroove).mockImplementation((event) => ({
+            ...event,
+            startBeat: event.startBeat - 1,
+        }));
 
         await scheduleMidiNotes(0, 4, 0, -1, [], defaultTransportState, 120);
 

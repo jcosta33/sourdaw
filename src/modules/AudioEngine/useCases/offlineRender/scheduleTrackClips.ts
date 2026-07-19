@@ -11,6 +11,7 @@ import {
 import { type TempoMapStoreState } from '#/modules/Transport/stores';
 
 import { scheduleTrackAutomation } from '../../repositories/offlineScheduler/automationScheduling';
+import { offlineMidiEventProjectorState } from '../../repositories/offlineScheduler/offlineMidiEventProjectorState';
 import { beatToSeconds } from '../../services/beatConversion';
 import { resolveDrumKit } from '../../services/deviceResolution';
 import { audioBufferCache } from '../../stores/audioBufferCache';
@@ -213,10 +214,19 @@ export async function scheduleTrackClips(
         const maxIterations = clip.loopEnabled ? Math.ceil(clipVisualLength / loopLen) : 1;
 
         if (clip.type === 'midi') {
-            const notes = midi.notesByClipId[clip.id];
-            if (!notes) {
+            const sourceNotes = midi.notesByClipId[clip.id];
+            if (!sourceNotes) {
                 continue;
             }
+            const projectMidiEvents = offlineMidiEventProjectorState.project;
+            if (!projectMidiEvents) {
+                throw new Error('Offline MIDI event projection is not configured');
+            }
+            const notes = projectMidiEvents({
+                events: sourceNotes,
+                consumerType: 'clip',
+                consumerId: clip.id,
+            });
 
             const drumKit = resolveDrumKit(track.devices);
             const drumKitDevice = track.devices.find(

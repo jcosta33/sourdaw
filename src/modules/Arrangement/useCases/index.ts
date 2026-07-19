@@ -62,7 +62,7 @@ export { trimClipEnd } from './clipEditing/trimClipEnd';
 export { trimClipStart } from './clipEditing/trimClipStart';
 export { toggleInlineEditing } from './clipEditing/toggleInlineEditing';
 export { resetOverride } from './clipEditing/resetOverride';
-export { getGrooveOffsetAtBeat } from './groove/applyGrooveTemplate';
+export { projectSequencerGroove } from './groove/applyGrooveTemplate';
 export { deleteTimeRange } from './clipEditing/deleteTimeRange';
 export { glueClips } from './clipEditing/glueClips';
 export { slipClipContent } from './clipEditing/slipClipContent';

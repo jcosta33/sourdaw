@@ -1,9 +1,14 @@
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { handleDeleteGrooveTemplate } from '../handlers/groove/handleDeleteGrooveTemplate';
 import { handleRestoreDeletedGrooveTemplate } from '../handlers/groove/handleRestoreDeletedGrooveTemplate';
 import { STRAIGHT_GROOVE_TEMPLATE_ID } from '../models/GrooveTemplate';
-import { defaultGrooveTemplateState, grooveTemplateStore } from '../stores/grooveTemplateStore';
+import {
+    defaultGrooveTemplateState,
+    grooveTemplateStore,
+    isGrooveTemplateState,
+    sanitizeGrooveTemplateState,
+} from '../stores/grooveTemplateStore';
 import { assignGrooveTemplate } from '../useCases/grooveTemplates/assignGrooveTemplate';
 import { createGrooveTemplate } from '../useCases/grooveTemplates/createGrooveTemplate';
 import { deleteGrooveTemplate } from '../useCases/grooveTemplates/deleteGrooveTemplate';
@@ -145,5 +150,34 @@ describe('deleteGrooveTemplate', () => {
             templateId: 'collaborator-template',
             amount: 0.9,
         });
+    });
+
+    it('resolves collaborative canonical-name reuse before serializing the restore candidate', () => {
+        createGrooveTemplate({
+            id: 'deleted-pocket',
+            name: 'Pocket',
+            subdivision: '1/16',
+            slots: [{ index: 1, timingOffset: 0.1, dynamicsOffset: 0 }],
+            provenance: { type: 'user', sourceId: 'deleted' },
+        });
+        const snapshot = deleteGrooveTemplate('deleted-pocket');
+        if (!snapshot) {
+            throw new Error('Expected deletion snapshot');
+        }
+        createGrooveTemplate({
+            id: 'collaborator-pocket',
+            name: 'Pocket',
+            subdivision: '1/16',
+            slots: [{ index: 2, timingOffset: -0.1, dynamicsOffset: 0 }],
+            provenance: { type: 'user', sourceId: 'collaborator' },
+        });
+        const setSpy = vi.spyOn(grooveTemplateStore, 'set');
+
+        restoreDeletedGrooveTemplate(snapshot);
+
+        const candidate = setSpy.mock.calls.at(-1)?.[0];
+        expect(isGrooveTemplateState(candidate)).toBe(true);
+        expect(sanitizeGrooveTemplateState(candidate)).toEqual(candidate);
+        expect(candidate?.templates.find((template) => template.id === 'deleted-pocket')?.name).toBe('Pocket 2');
     });
 });

@@ -4,6 +4,7 @@ import { type Track } from '#/modules/Arrangement/stores';
 import { type MidiStoreState } from '#/modules/MIDI/stores';
 
 import { type DeviceNodeEntry } from '../../buildDeviceChain';
+import { configureOfflineMidiEventProjection } from '../../configureOfflineMidiEventProjection';
 import { scheduleTrackClips } from '../scheduleTrackClips';
 import { type PendingWorkletEvent } from '../types';
 
@@ -53,7 +54,22 @@ const mocks = vi.hoisted(() => ({
     takeLaneValue: { value: null as unknown },
     automationValue: { value: null as unknown },
     audioBufferCache: { get: vi.fn(() => undefined) },
+    projectCommittedGroove: vi.fn(),
 }));
+
+let projectedStartOffset = 0;
+let projectedVelocity: number | null = null;
+const projectOfflineMidiEvents: Parameters<typeof configureOfflineMidiEventProjection>[0]['project'] = (input) => {
+    mocks.projectCommittedGroove(input);
+    if (projectedStartOffset === 0 && projectedVelocity === null) {
+        return input.events;
+    }
+    return input.events.map((event) => ({
+        ...event,
+        startBeat: event.startBeat + projectedStartOffset,
+        velocity: projectedVelocity ?? event.velocity,
+    }));
+};
 
 vi.mock('../../latencyCompensation/compensation/getCompensationDelay', () => ({
     getCompensationDelay: mocks.getCompensationDelay,
@@ -189,6 +205,9 @@ describe('scheduleTrackClips — MIDI plugin-delay compensation', () => {
         mocks.takeLaneValue.value = null;
         mocks.automationValue.value = null;
         mocks.getCompensationDelay.mockReturnValue(0);
+        projectedStartOffset = 0;
+        projectedVelocity = null;
+        configureOfflineMidiEventProjection({ project: projectOfflineMidiEvents });
     });
 
     it('shifts instrument note on/off times by the track compensation delay', async () => {
@@ -219,5 +238,22 @@ describe('scheduleTrackClips — MIDI plugin-delay compensation', () => {
 
         expect(onEvt!.time).toBeCloseTo(0.5, 6);
         expect(offEvt!.time).toBeCloseTo(1.0, 6);
+    });
+
+    it('projects committed clip timing and dynamics before offline scheduling', async () => {
+        projectedStartOffset = 0.5;
+        projectedVelocity = 40;
+
+        const events = await runSchedule();
+
+        expect(mocks.projectCommittedGroove).toHaveBeenCalledWith({
+            events: makeMidi().notesByClipId['clip-1'],
+            consumerType: 'clip',
+            consumerId: 'clip-1',
+        });
+        const onEvt = events.find((event) => event.type === 'on');
+        const offEvt = events.find((event) => event.type === 'off');
+        expect(onEvt).toMatchObject({ time: 0.75, velocity: 40 });
+        expect(offEvt).toMatchObject({ time: 1.25 });
     });
 });

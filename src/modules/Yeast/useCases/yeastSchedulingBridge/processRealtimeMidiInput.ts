@@ -15,14 +15,16 @@ type ProcessRealtimeMidiInputInput = {
     isNoteOn: boolean;
     sampleTime: number;
     sampleRate: number;
+    clock: { ppqPosition: number; bpm: number } | null;
     blockSize?: number;
 };
 
 export function processRealtimeMidiInput(input: ProcessRealtimeMidiInputInput): Promise<MidiEvent[]> {
+    const clock = input.clock;
     const event: MidiEvent = {
         timeSamples: input.sampleTime,
-        timePpq: transportStore.value?.playheadPosition,
-        tempoBpm: transportStore.value?.tempo,
+        timePpq: clock?.ppqPosition,
+        tempoBpm: clock?.bpm,
         sourceEventId: `${input.trackId}:${input.channel}:${input.note}:${input.isNoteOn ? 'on' : 'off'}:${input.sampleTime}`,
         trackId: input.trackId,
         kind: input.isNoteOn
@@ -31,14 +33,14 @@ export function processRealtimeMidiInput(input: ProcessRealtimeMidiInputInput): 
     };
 
     const transport = transportStore.value;
-    if (!transport) {
+    if (!transport || !clock) {
         return Promise.resolve([event]);
     }
 
     const transportInfo: TransportInfo = {
         sampleRate: input.sampleRate,
-        bpm: transport.tempo,
-        ppqPosition: transport.playheadPosition,
+        bpm: clock.bpm,
+        ppqPosition: clock.ppqPosition,
         isPlaying: transport.isPlaying,
         barIndex: 0,
         beatInBar: 0,
@@ -50,7 +52,7 @@ export function processRealtimeMidiInput(input: ProcessRealtimeMidiInputInput): 
     };
 
     const { lateBeats } = getYeastSchedulingLookahead();
-    const clockedHorizonSamples = Math.ceil(((input.sampleRate * 60) / transport.tempo) * lateBeats) + 1;
+    const clockedHorizonSamples = Math.ceil(((input.sampleRate * 60) / clock.bpm) * lateBeats) + 1;
 
     return processYeastMidi({
         context: input.context,

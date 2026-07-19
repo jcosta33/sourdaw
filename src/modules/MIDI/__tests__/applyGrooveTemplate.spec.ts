@@ -55,4 +55,21 @@ describe('applyGrooveTemplate', () => {
 
         expect(result).toBe(events);
     });
+
+    it('keeps negative projected time additive for the consumer to wrap or clip', () => {
+        const result = applyGrooveTemplate({
+            events: [{ id: 'early', startBeat: 0, velocity: 100 }],
+            amount: 1,
+            template: {
+                id: 'early',
+                name: 'Early',
+                schemaVersion: 1,
+                subdivision: '1/16',
+                slots: [{ index: 0, timingOffset: -0.5, dynamicsOffset: 0 }],
+                provenance: { type: 'user', sourceId: 'negative-time-test' },
+            },
+        });
+
+        expect(result[0]?.startBeat).toBe(-0.125);
+    });
 });

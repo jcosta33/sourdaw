@@ -1,8 +1,10 @@
 import { STRAIGHT_GROOVE_TEMPLATE_ID, isGrooveTemplate } from '../../models/GrooveTemplate';
+import { isGrooveTemplateState, sanitizeGrooveTemplateState } from '../../models/GrooveTemplateState';
 import { isGrooveTemplateAssignment, grooveTemplateStore } from '../../stores/grooveTemplateStore';
 
 import { type DeletedGrooveTemplateSnapshot } from './deleteGrooveTemplate';
 import { markGrooveTemplateProjectWrite } from './markGrooveTemplateProjectWrite';
+import { resolveGrooveTemplateName } from './resolveGrooveTemplateName';
 
 export function restoreDeletedGrooveTemplate(snapshot: DeletedGrooveTemplateSnapshot): void {
     const state = grooveTemplateStore.value;
@@ -24,11 +26,14 @@ export function restoreDeletedGrooveTemplate(snapshot: DeletedGrooveTemplateSnap
 
     const templates = [...state.templates];
     if (!existingTemplate) {
-        templates.splice(
-            Math.max(0, Math.min(snapshot.templateIndex, templates.length)),
-            0,
-            structuredClone(snapshot.template)
-        );
+        const restoredTemplate = {
+            ...structuredClone(snapshot.template),
+            name: resolveGrooveTemplateName({
+                requestedName: snapshot.template.name,
+                templates,
+            }),
+        };
+        templates.splice(Math.max(0, Math.min(snapshot.templateIndex, templates.length)), 0, restoredTemplate);
     }
     const assignments = [...state.assignments];
     for (const prior of [...snapshot.assignments].sort((left, right) => left.index - right.index)) {
@@ -45,6 +50,13 @@ export function restoreDeletedGrooveTemplate(snapshot: DeletedGrooveTemplateSnap
             assignments[existingIndex] = structuredClone(prior.assignment);
         }
     }
-    grooveTemplateStore.set({ templates, assignments });
+    const candidate = sanitizeGrooveTemplateState({ templates, assignments });
+    if (
+        !isGrooveTemplateState(candidate) ||
+        !candidate.templates.some((template) => template.id === snapshot.template.id)
+    ) {
+        throw new Error(`Cannot restore groove template "${snapshot.template.id}": candidate is not canonical`);
+    }
+    grooveTemplateStore.set(candidate);
     markGrooveTemplateProjectWrite();
 }

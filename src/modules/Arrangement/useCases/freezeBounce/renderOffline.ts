@@ -1,5 +1,6 @@
 import { buildDeviceChain, getAudioContext, getCachedAudioBuffer } from '#/modules/AudioEngine/useCases';
 import { midiStore } from '#/modules/MIDI/stores';
+import { projectCommittedGroove } from '#/modules/MIDI/useCases';
 import { sidechainStore } from '#/modules/Routing/stores';
 import { transportStore } from '#/modules/Transport/stores';
 
@@ -112,10 +113,15 @@ export async function renderTrackOffline(
                     if (clip.type !== 'midi') {
                         continue;
                     }
-                    const notes = midi.notesByClipId[clip.id];
-                    if (!notes) {
+                    const sourceNotes = midi.notesByClipId[clip.id];
+                    if (!sourceNotes) {
                         continue;
                     }
+                    const notes = projectCommittedGroove({
+                        events: sourceNotes,
+                        consumerType: 'clip',
+                        consumerId: clip.id,
+                    });
                     for (const note of notes) {
                         const noteStart = ((clip.startBeat - startBeat + note.startBeat) / tempo) * 60;
                         const noteDur = (note.duration / tempo) * 60;

@@ -1,5 +1,9 @@
 import { canonicalizeGrooveConsumerId, type GrooveTemplateState } from '#/modules/MIDI/stores';
-import { adaptGrooveTemplateForConsumer, getScopedGrooveConsumerId } from '#/modules/MIDI/useCases';
+import {
+    adaptGrooveTemplateForConsumer,
+    getScopedGrooveConsumerId,
+    getStraightGrooveTemplateId,
+} from '#/modules/MIDI/useCases';
 
 type AdapterFailureError = Extract<ReturnType<typeof adaptGrooveTemplateForConsumer>, { ok: false }>['error'];
 
@@ -74,6 +78,14 @@ export function getToasterPatternGrooveStatus({
     const template = grooveState.templates.find((candidate) => candidate.id === assignment.templateId);
     if (!template) {
         return { status: 'missing-template', templateId: assignment.templateId };
+    }
+    if (assignment.amount === 0 || template.id === getStraightGrooveTemplateId()) {
+        return {
+            status: 'ready',
+            templateId: template.id,
+            templateName: template.name,
+            amount: assignment.amount,
+        };
     }
     const adaptation = adaptGrooveTemplateForConsumer({
         consumer: 'toaster',
