@@ -94,6 +94,7 @@ export const handleWebMidiNoteOff = inject(midiMessageHandlerDependencies)((deps
             function emitGrandBouleOff(deviceId: string, midiNote: number): void {
                 void deps.eventBus.emit('midi.noteOff', { deviceId, midiNote, releaseVelocity });
             }
+            const earliestDispatchFrame = Math.round(context.currentTime * context.sampleRate);
             for (const event of processedEvents) {
                 if (event.kind.type !== 'noteOff') {
                     continue;
@@ -104,7 +105,7 @@ export const handleWebMidiNoteOff = inject(midiMessageHandlerDependencies)((deps
                     event.kind.note,
                     releaseVelocity,
                     emitGrandBouleOff,
-                    Math.round(event.timeSamples)
+                    Math.max(earliestDispatchFrame, Math.round(event.timeSamples))
                 );
             }
         }

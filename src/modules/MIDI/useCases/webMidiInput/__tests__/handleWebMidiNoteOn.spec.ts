@@ -151,6 +151,39 @@ describe('handleWebMidiNoteOn', () => {
         expect(grand_boule_note_on).toHaveBeenCalledWith(67, 100 / 127, 96_240);
     });
 
+    it('dispatches a missed Yeast deadline at the current AudioContext frame', async () => {
+        const grand_boule_note_on = vi.fn<(note: number, velocity: number, sampleFrame?: number) => void>();
+        const fn = handleWebMidiNoteOn._factory(
+            make_dependencies({
+                getTrackStoreState: () => ({
+                    tracks: [
+                        {
+                            id: 'track-1',
+                            devices: [
+                                { id: 'yeast-1', type: 'yeast' },
+                                { id: 'gb-1', type: 'grand-boule' },
+                            ],
+                        },
+                    ],
+                    selectedTrackId: 'track-1',
+                }),
+                processRealtimeMidiInput: async () => [
+                    { timeSamples: 95_000, kind: { type: 'noteOn' as const, channel: 0, note: 67, velocity: 100 } },
+                ],
+            })
+        );
+        ensure_track_strip.mockReturnValue({
+            gainNode: {},
+            deviceNodes: [
+                { type: 'grand-boule', deviceId: 'gb-1', grandBouleControls: { noteOn: grand_boule_note_on } },
+            ],
+        });
+
+        await fn(0, 60, 100);
+
+        expect(grand_boule_note_on).toHaveBeenCalledWith(67, 100 / 127, 96_000);
+    });
+
     it('releases an existing same-channel pitch before retriggering it', async () => {
         const key = createWebMidiNoteKey(1, 60);
         activeNotes.set(key, {

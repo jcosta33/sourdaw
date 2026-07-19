@@ -97,8 +97,9 @@ export const handleWebMidiNoteOn = inject({
                     }
                     throw error;
                 }
+                const earliestDispatchFrame = Math.round(engine.context.currentTime * engine.context.sampleRate);
                 for (const event of processedEvents) {
-                    const eventSampleFrame = Math.round(event.timeSamples);
+                    const eventSampleFrame = Math.max(earliestDispatchFrame, Math.round(event.timeSamples));
                     if (event.kind.type === 'noteOn') {
                         const eventNote = event.kind.note;
                         const eventVelocity = event.kind.velocity;
@@ -132,7 +133,7 @@ export const handleWebMidiNoteOn = inject({
                             engine.context,
                             strip.gainNode,
                             eventNote,
-                            event.timeSamples / engine.context.sampleRate,
+                            eventSampleFrame / engine.context.sampleRate,
                             0.5,
                             eventVelocity,
                             synthParams

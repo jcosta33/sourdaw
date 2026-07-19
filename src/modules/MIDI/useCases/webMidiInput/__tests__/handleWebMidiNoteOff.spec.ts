@@ -157,6 +157,47 @@ describe('handleWebMidiNoteOff', () => {
         expect(fermenter_note_off).toHaveBeenCalledWith(67, 96_360);
     });
 
+    it('dispatches a missed Yeast note-off deadline at the current AudioContext frame', async () => {
+        const fermenter_note_off = vi.fn<(note: number, sampleFrame?: number) => void>();
+        const fn = handleWebMidiNoteOff._factory(
+            make_dependencies({
+                getTrackStoreState: () => ({
+                    tracks: [
+                        {
+                            id: 'track-1',
+                            devices: [
+                                { id: 'yeast-1', type: 'yeast' },
+                                { id: 'ferm-1', type: 'fermenter' },
+                            ],
+                        },
+                    ],
+                    selectedTrackId: 'track-1',
+                }),
+                getTransportStoreValue: () => ({ isRecording: false }),
+                processRealtimeMidiInput: async (): Promise<TestMidiEvent[]> => [
+                    { timeSamples: 95_000, kind: { type: 'noteOff', channel: 0, note: 67 } },
+                ],
+            })
+        );
+        get_track_strip.mockReturnValue({
+            deviceNodes: [
+                { type: 'fermenter', deviceId: 'ferm-1', fermenterControls: { noteOff: fermenter_note_off } },
+            ],
+        });
+        activeNotes.set(createWebMidiNoteKey(0, 60), {
+            channel: 0,
+            note: 60,
+            trackId: 'track-1',
+            instrumentTrackId: 'track-1',
+            startTime: 0,
+            startBeat: 0,
+        });
+
+        await fn(0, 60);
+
+        expect(fermenter_note_off).toHaveBeenCalledWith(67, 96_000);
+    });
+
     it('releases a Yeast note on its originating track after selection changes', async () => {
         const fermenter_note_off = vi.fn<(note: number, sampleFrame?: number) => void>();
         const process_realtime_midi_input = vi.fn(async (): Promise<TestMidiEvent[]> => [
