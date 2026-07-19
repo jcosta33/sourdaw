@@ -6,95 +6,33 @@
  */
 
 import { createStore } from '#/infra/store/createStore';
-import { createAutomergeStorage } from '#/infra/store/storage/createAutomergeStorage';
+import { type Store } from '#/infra/store/types';
 
-import { PROCESSOR_TYPES, type ProcessorType } from '../models/ProcessorCatalog';
+import { type YeastState } from '../models/YeastState';
 
-import type { YeastRuntimeStatus } from '../models/YeastProcessorProjection';
+import { createYeastAutomergeStorage } from './yeastAutomergeStorage';
 
-export type YeastProcessorType = ProcessorType;
-
-export type YeastProcessorInfo = {
-    id: string;
-    type: YeastProcessorType;
-    name: string;
-    bypassed: boolean;
-    params?: Record<string, number>;
-};
-
-export type YeastState = {
-    processors: YeastProcessorInfo[];
-    uiLevel: 1 | 2 | 3 | 4 | 5;
-    runtimeStatus?: YeastRuntimeStatus;
-    runtimeError?: string;
-};
+export type { YeastProcessorInfo, YeastProcessorType, YeastState } from '../models/YeastState';
 
 const defaultState: YeastState = {
     processors: [],
     uiLevel: 1,
 };
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-    return value !== null && typeof value === 'object' && !Array.isArray(value);
+function readInitialYeastState(): YeastState | null {
+    return null;
 }
 
-function normalizeProcessor(value: unknown): YeastProcessorInfo | null {
-    if (
-        !isRecord(value) ||
-        typeof value.id !== 'string' ||
-        typeof value.type !== 'string' ||
-        typeof value.name !== 'string' ||
-        typeof value.bypassed !== 'boolean'
-    ) {
-        return null;
-    }
-    const id = value.id.normalize('NFKC').trim();
-    const type = PROCESSOR_TYPES.find((candidate) => candidate.type === value.type)?.type;
-    if (!id || !type) {
-        return null;
-    }
-    let params: Record<string, number> | undefined;
-    if (isRecord(value.params)) {
-        const normalizedParams = Object.fromEntries(
-            Object.entries(value.params).filter(
-                (entry): entry is [string, number] => typeof entry[1] === 'number' && Number.isFinite(entry[1])
-            )
-        );
-        if (Object.keys(normalizedParams).length > 0) {
-            params = normalizedParams;
-        }
-    }
-    const processor: YeastProcessorInfo = {
-        id,
-        type,
-        name: value.name,
-        bypassed: value.bypassed,
-    };
-    if (params) {
-        processor.params = params;
-    }
-    return processor;
-}
+const localStateReader: { read: () => YeastState | null } = { read: readInitialYeastState };
+const yeastStorage = createYeastAutomergeStorage((): YeastState | null => localStateReader.read());
 
-function normalizeYeastStateFromCrdt(value: unknown): YeastState {
-    if (!isRecord(value) || !Array.isArray(value.processors)) {
-        return structuredClone(defaultState);
-    }
-    const processorsById = new Map<string, YeastProcessorInfo>();
-    for (const rawProcessor of value.processors) {
-        const processor = normalizeProcessor(rawProcessor);
-        if (processor) {
-            processorsById.set(processor.id, processor);
-        }
-    }
-    const uiLevel = yeastStore.value?.uiLevel ?? 1;
-    return { processors: [...processorsById.values()], uiLevel };
-}
-
-export const yeastStore = createStore<YeastState>({
-    storage: createAutomergeStorage('root', 'yeast', {
-        toCrdt: ({ processors }) => ({ processors }),
-        fromCrdt: normalizeYeastStateFromCrdt,
-    }),
+export const yeastStore: Store<YeastState> = createStore<YeastState>({
+    storage: yeastStorage,
     initialData: defaultState,
 });
+
+function readCurrentYeastState(): YeastState | null {
+    return yeastStore.value;
+}
+
+localStateReader.read = readCurrentYeastState;

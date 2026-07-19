@@ -1,3 +1,4 @@
+import { change, from, type Doc } from '@automerge/automerge';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import {
@@ -9,15 +10,17 @@ import { hydrateYeastState } from '../../useCases/hydrateYeastState';
 import { yeastStore } from '../yeastStore';
 
 describe('yeastStore', () => {
-    let document: Record<string, unknown>;
+    let document: Doc<{ yeast?: unknown }>;
 
     beforeEach(() => {
-        document = {};
+        document = from({});
         configureAutomergeStoragePort({
             getDoc: () => document,
             getSemanticMessage: () => undefined,
             hasDoc: () => true,
-            mutateDoc: ({ changeFn }) => changeFn(document),
+            mutateDoc: ({ changeFn }) => {
+                document = change(document, (draft) => changeFn(draft as unknown as Record<string, unknown>));
+            },
         });
         yeastStore.set({ processors: [], uiLevel: 1 });
     });
@@ -81,15 +84,23 @@ describe('yeastStore', () => {
         flushAutomergeStorageWrites();
 
         expect(document.yeast).toEqual({
-            processors: [{ id: 'groove-durable-id', type: 'groove', name: 'Groove', bypassed: false }],
+            schemaVersion: 1,
+            processors: {
+                'groove-durable-id': {
+                    deleted: false,
+                    value: { id: 'groove-durable-id', type: 'groove', name: 'Groove', bypassed: false },
+                },
+            },
         });
         expect(document.yeast).not.toHaveProperty('uiLevel');
     });
 
     it('hydrates persisted processor identity before a pending reset can replace it', () => {
-        document.yeast = {
-            processors: [{ id: 'persisted-groove', type: 'groove', name: 'Persisted groove', bypassed: false }],
-        };
+        document = change(document, (draft) => {
+            draft.yeast = {
+                processors: [{ id: 'persisted-groove', type: 'groove', name: 'Persisted groove', bypassed: false }],
+            };
+        });
         yeastStore.set({ processors: [], uiLevel: 4 });
 
         yeastStore.hydrate();
@@ -100,7 +111,18 @@ describe('yeastStore', () => {
 
         flushAutomergeStorageWrites();
         expect(document.yeast).toEqual({
-            processors: [{ id: 'persisted-groove', type: 'groove', name: 'Persisted groove', bypassed: false }],
+            schemaVersion: 1,
+            processors: {
+                'persisted-groove': {
+                    deleted: false,
+                    value: {
+                        id: 'persisted-groove',
+                        type: 'groove',
+                        name: 'Persisted groove',
+                        bypassed: false,
+                    },
+                },
+            },
         });
         expect(document.yeast).not.toHaveProperty('uiLevel');
     });
@@ -117,6 +139,12 @@ describe('yeastStore', () => {
             uiLevel: 5,
         });
         flushAutomergeStorageWrites();
+        expect(document.yeast).toMatchObject({
+            schemaVersion: 1,
+            processors: {
+                'loaded-processor': { deleted: false },
+            },
+        });
         expect(document.yeast).not.toHaveProperty('uiLevel');
     });
 });
