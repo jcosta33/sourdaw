@@ -268,10 +268,10 @@ describe('startSequencer', () => {
         toasterStore.set({ ...toasterStore.value, [DEVICE]: { ...defaultToasterState, kit } });
 
         startSequencer(DEVICE, 120);
+        vi.advanceTimersByTime(2_100);
+        expect(triggerToasterPad).toHaveBeenCalledTimes(5);
         vi.advanceTimersByTime(2_000);
-        expect(triggerToasterPad).toHaveBeenCalledTimes(3);
-        vi.advanceTimersByTime(2_000);
-        expect(triggerToasterPad).toHaveBeenCalledTimes(6);
+        expect(triggerToasterPad).toHaveBeenCalledTimes(10);
     });
 
     it('rejects unsupported groove capability instead of triggering an unmodified live event', () => {

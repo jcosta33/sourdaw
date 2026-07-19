@@ -2,8 +2,6 @@ import { type Step } from '../models/ToasterKit';
 
 import { projectToasterPatternGroove } from './projectToasterPatternGroove';
 
-const LOOP_EDGE_EPSILON_BEATS = 1 / 960;
-
 type ProjectToasterStepEventsInput = {
     deviceId: string;
     patternId: string;
@@ -22,7 +20,7 @@ export function projectToasterStepEvents(input: ProjectToasterStepEventsInput) {
     const swingBeats = input.stepIndex % 2 === 1 ? input.swing * stepDurationBeats * 0.5 : 0;
     const sourceEvent = {
         id: `${input.padIndex}:${input.stepIndex}`,
-        startBeat: Math.max(0, gridStartBeat + microOffsetBeats + swingBeats),
+        startBeat: gridStartBeat + microOffsetBeats + swingBeats,
         velocity: Math.round(input.step.velocity * 127),
     };
     const grooveProjection = projectToasterPatternGroove({
@@ -36,31 +34,70 @@ export function projectToasterStepEvents(input: ProjectToasterStepEventsInput) {
     }
 
     const projectedEvent = grooveProjection.events[0] ?? sourceEvent;
-    const latestStartBeat = Math.max(0, input.loopLengthBeats - LOOP_EDGE_EPSILON_BEATS);
-    function projectHit(startBeat: number, durationBeats: number, velocity: number, retriggerIndex: number) {
-        const boundedStartBeat = Math.max(0, Math.min(latestStartBeat, startBeat));
-        return {
-            startBeat: boundedStartBeat,
-            durationBeats: Math.max(0, Math.min(durationBeats, input.loopLengthBeats - boundedStartBeat)),
-            velocity,
-            retriggerIndex,
-        };
+    const hits: Array<{
+        startBeat: number;
+        durationBeats: number;
+        velocity: number;
+        retriggerIndex: number;
+        loopOffsetBeats: number;
+    }> = [];
+    function appendHitSegments(
+        startBeat: number,
+        durationBeats: number,
+        velocity: number,
+        retriggerIndex: number
+    ): void {
+        if (input.loopLengthBeats <= 0 || durationBeats <= 0) {
+            return;
+        }
+        const sourceLoopIndex = Math.floor(startBeat / input.loopLengthBeats);
+        let wrappedStartBeat = startBeat;
+        if (startBeat < 0 || startBeat >= input.loopLengthBeats) {
+            wrappedStartBeat = ((startBeat % input.loopLengthBeats) + input.loopLengthBeats) % input.loopLengthBeats;
+        }
+        const firstLoopOffsetBeats = Math.max(0, sourceLoopIndex) * input.loopLengthBeats;
+        const preservedDuration = Math.min(durationBeats, input.loopLengthBeats);
+        const firstDuration = Math.min(preservedDuration, input.loopLengthBeats - wrappedStartBeat);
+        const remainingDuration = preservedDuration - firstDuration;
+        if (remainingDuration > 0) {
+            hits.push({
+                startBeat: 0,
+                durationBeats: remainingDuration,
+                velocity,
+                retriggerIndex,
+                loopOffsetBeats: sourceLoopIndex < 0 ? 0 : (sourceLoopIndex + 1) * input.loopLengthBeats,
+            });
+        }
+        if (firstDuration > 0) {
+            hits.push({
+                startBeat: wrappedStartBeat,
+                durationBeats: firstDuration,
+                velocity,
+                retriggerIndex,
+                loopOffsetBeats: firstLoopOffsetBeats,
+            });
+        }
     }
-    const hits = [projectHit(projectedEvent.startBeat, stepDurationBeats * 0.9, projectedEvent.velocity, 0)];
+    appendHitSegments(projectedEvent.startBeat, stepDurationBeats * 0.9, projectedEvent.velocity, 0);
 
     if (input.step.retriggerCount > 0) {
         const subInterval = stepDurationBeats / (input.step.retriggerCount + 1);
         for (let retrigger = 1; retrigger <= input.step.retriggerCount; retrigger++) {
-            hits.push(
-                projectHit(
-                    projectedEvent.startBeat + subInterval * retrigger,
-                    subInterval * 0.9,
-                    Math.max(20, Math.round(projectedEvent.velocity * (1 - retrigger * 0.12))),
-                    retrigger
-                )
+            appendHitSegments(
+                projectedEvent.startBeat + subInterval * retrigger,
+                subInterval * 0.9,
+                Math.max(20, Math.round(projectedEvent.velocity * (1 - retrigger * 0.12))),
+                retrigger
             );
         }
     }
+
+    hits.sort(
+        (alpha, beta) =>
+            alpha.loopOffsetBeats - beta.loopOffsetBeats ||
+            alpha.startBeat - beta.startBeat ||
+            alpha.retriggerIndex - beta.retriggerIndex
+    );
 
     return { ok: true as const, hits, status: grooveProjection.status };
 }

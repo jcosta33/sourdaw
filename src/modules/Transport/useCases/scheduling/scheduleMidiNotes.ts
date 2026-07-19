@@ -618,7 +618,7 @@ export async function scheduleMidiNotes(
                         continue;
                     }
                     const iterationStart = clip.startBeat + iterOffset;
-                    const [projectedNote] = projectClipMidiEvents({
+                    const projectedNotes = projectClipMidiEvents({
                         events: [clipProjectedNote],
                         clipId: clip.id,
                         clipStartBeat: clip.startBeat,
@@ -626,23 +626,24 @@ export async function scheduleMidiNotes(
                         iterationStartBeat: iterationStart,
                         loopLengthBeats: loopLen,
                         midiOffsetBeats: clipMidiOffset,
+                        loopEnabled: clip.loopEnabled ?? false,
                         clipGrooveAlreadyApplied: true,
                         eventsAreAbsolute: notesAreAbsolute,
                     });
-                    if (!projectedNote) {
-                        continue;
-                    }
-                    const noteStartBeat = projectedNote.startBeat;
+                    for (const projectedNote of projectedNotes) {
+                        const noteStartBeat = projectedNote.startBeat;
 
-                    const inSchedulingWindow = notesAreAbsolute
-                        ? noteStartBeat >= fromBeat && noteStartBeat < toBeat
-                        : noteStartBeat >= fromBeat && noteStartBeat < toBeat && noteStartBeat > lastScheduledBeat;
-                    if (inSchedulingWindow) {
+                        const inSchedulingWindow = notesAreAbsolute
+                            ? noteStartBeat >= fromBeat && noteStartBeat < toBeat
+                            : noteStartBeat >= fromBeat && noteStartBeat < toBeat && noteStartBeat > lastScheduledBeat;
+                        if (!inSchedulingWindow) {
+                            continue;
+                        }
                         if (!isCurrent()) {
                             return;
                         }
                         const probability = note.probability ?? 100;
-                        if (probability < 100 && seededRandom(clip.id, noteStartBeat) * 100 >= probability) {
+                        if (probability < 100 && seededRandom(clip.id, rawStartBeat) * 100 >= probability) {
                             continue;
                         }
 

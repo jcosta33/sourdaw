@@ -16,7 +16,14 @@ type ProcessRealtimeMidiInputInput = {
     sampleTime: number;
     sampleRate: number;
     noteInstanceId?: string;
-    clock: { ppqPosition: number; bpm: number } | null;
+    clock: {
+        ppqPosition: number;
+        bpm: number;
+        barIndex: number;
+        beatInBar: number;
+        timeSigNum: number;
+        timeSigDen: number;
+    } | null;
     blockSize?: number;
 };
 
@@ -44,10 +51,10 @@ export function processRealtimeMidiInput(input: ProcessRealtimeMidiInputInput): 
         bpm: clock.bpm,
         ppqPosition: clock.ppqPosition,
         isPlaying: transport.isPlaying,
-        barIndex: 0,
-        beatInBar: 0,
-        timeSigNum: transport.timeSignatureNumerator,
-        timeSigDen: transport.timeSignatureDenominator,
+        barIndex: clock.barIndex,
+        beatInBar: clock.beatInBar,
+        timeSigNum: clock.timeSigNum,
+        timeSigDen: clock.timeSigDen,
         loopEnabled: transport.loopStart < transport.loopEnd,
         loopStartPpq: transport.loopStart,
         loopEndPpq: transport.loopEnd,

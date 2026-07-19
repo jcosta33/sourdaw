@@ -17,6 +17,7 @@ type ProjectClipMidiEventsInput<Event extends ClipMidiEvent> = {
     iterationStartBeat: number;
     loopLengthBeats: number;
     midiOffsetBeats: number;
+    loopEnabled?: boolean;
     clipGrooveAlreadyApplied?: boolean;
     eventsAreAbsolute?: boolean;
 };
@@ -29,6 +30,7 @@ export function projectClipMidiEvents<Event extends ClipMidiEvent>({
     iterationStartBeat,
     loopLengthBeats,
     midiOffsetBeats,
+    loopEnabled = false,
     clipGrooveAlreadyApplied = false,
     eventsAreAbsolute = false,
 }: ProjectClipMidiEventsInput<Event>): Event[] {
@@ -40,6 +42,7 @@ export function projectClipMidiEvents<Event extends ClipMidiEvent>({
         iterationStartBeat,
         loopLengthBeats,
         midiOffsetBeats,
+        loopEnabled,
         clipGrooveAlreadyApplied,
         eventsAreAbsolute,
     });

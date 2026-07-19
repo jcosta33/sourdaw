@@ -1,4 +1,9 @@
-import { buildDeviceChain, getAudioContext, getCachedAudioBuffer } from '#/modules/AudioEngine/useCases';
+import {
+    buildDeviceChain,
+    getAudioContext,
+    getCachedAudioBuffer,
+    projectOfflineYeastNotes,
+} from '#/modules/AudioEngine/useCases';
 import { midiStore } from '#/modules/MIDI/stores';
 import { sidechainStore } from '#/modules/Routing/stores';
 import { tempoMapStore, transportStore } from '#/modules/Transport/stores';
@@ -40,10 +45,12 @@ export async function renderTrackOffline(
 ): Promise<AudioBuffer | null> {
     const projectPpqEndpoints = offlineRenderDependencies?.projectPpqEndpoints;
     const createMidiEventProjector = offlineRenderDependencies?.createMidiEventProjector;
-    if (!projectPpqEndpoints || !createMidiEventProjector) {
+    const createYeastMidiProcessor = offlineRenderDependencies?.createYeastMidiProcessor;
+    if (!projectPpqEndpoints || !createMidiEventProjector || !createYeastMidiProcessor) {
         throw new Error('Arrangement offline render dependencies are not configured');
     }
     const projectMidiEvents = createMidiEventProjector();
+    const processYeastMidi = createYeastMidiProcessor();
     // Only audio and midi tracks produce renderable content on their own.
     // Bus / group / master tracks have no direct sound source — skip rendering.
     if (targetTrack.kind !== 'audio' && targetTrack.kind !== 'midi') {
@@ -157,17 +164,55 @@ export async function renderTrackOffline(
                             iterationStartBeat,
                             loopLengthBeats: loopLength,
                             midiOffsetBeats: clip.midiOffsetBeats ?? 0,
+                            loopEnabled: clip.loopEnabled ?? false,
                         });
-                        for (const note of notes) {
-                            const endpoint = projectPpqEndpoints({
-                                startPpq: note.startBeat,
-                                endPpq: note.startBeat + note.duration,
-                                defaultTempo: tempo,
+                        let scheduledNotes: Array<{
+                            id: string;
+                            pitch: number;
+                            velocity: number;
+                            startSamples: number;
+                            endSamples: number;
+                        }>;
+                        if (time.devices.some((device) => device.type === 'yeast')) {
+                            scheduledNotes = projectOfflineYeastNotes({
+                                trackId: time.id,
+                                notes,
                                 sampleRate,
-                                changes: tempoChanges,
+                                blockEndSamples: renderEndpoints.startSamples + offlineCtx.length,
+                                projectPpqEndpoints: ({ startPpq, endPpq }) =>
+                                    projectPpqEndpoints({
+                                        startPpq,
+                                        endPpq,
+                                        defaultTempo: tempo,
+                                        sampleRate,
+                                        changes: tempoChanges,
+                                    }),
+                                processYeastMidi,
                             });
-                            const noteStart = Math.max(0, endpoint.startSeconds - renderEndpoints.startSeconds);
-                            const noteEnd = endpoint.endSeconds - renderEndpoints.startSeconds;
+                        } else {
+                            scheduledNotes = notes.map((note) => {
+                                const endpoint = projectPpqEndpoints({
+                                    startPpq: note.startBeat,
+                                    endPpq: note.startBeat + note.duration,
+                                    defaultTempo: tempo,
+                                    sampleRate,
+                                    changes: tempoChanges,
+                                });
+                                return {
+                                    id: note.id,
+                                    pitch: note.pitch,
+                                    velocity: note.velocity,
+                                    startSamples: endpoint.startSamples,
+                                    endSamples: endpoint.endSamples,
+                                };
+                            });
+                        }
+                        for (const note of scheduledNotes) {
+                            const noteStart = Math.max(
+                                0,
+                                note.startSamples / sampleRate - renderEndpoints.startSeconds
+                            );
+                            const noteEnd = note.endSamples / sampleRate - renderEndpoints.startSeconds;
                             const noteDur = noteEnd - noteStart;
                             if (noteStart >= durationSeconds || noteDur <= 0) {
                                 continue;

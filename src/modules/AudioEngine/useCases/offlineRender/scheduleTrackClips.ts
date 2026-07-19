@@ -13,6 +13,7 @@ import { type TempoMapStoreState } from '#/modules/Transport/stores';
 import { scheduleTrackAutomation } from '../../repositories/offlineScheduler/automationScheduling';
 import { type OfflineMidiEventProjector } from '../../repositories/offlineScheduler/offlineMidiEventProjectorState';
 import { offlinePpqEndpointProjectorState } from '../../repositories/offlineScheduler/offlinePpqEndpointProjectorState';
+import { type OfflineYeastMidiProcessor } from '../../repositories/offlineScheduler/offlineYeastMidiProcessorState';
 import { beatToSeconds } from '../../services/beatConversion';
 import { resolveDrumKit } from '../../services/deviceResolution';
 import { audioBufferCache } from '../../stores/audioBufferCache';
@@ -20,6 +21,7 @@ import { type DeviceNodeEntry, buildDeviceChain } from '../buildDeviceChain';
 import { getCompensationDelay } from '../latencyCompensation/compensation/getCompensationDelay';
 
 import { MICRO_FADE_SECONDS, YIELD_EVERY_N_NOTES } from './constants';
+import { projectOfflineYeastNotes } from './projectOfflineYeastNotes';
 import { type PendingWorkletEvent } from './types';
 import { yieldToMain } from './yieldToMain';
 
@@ -133,7 +135,8 @@ export async function scheduleTrackClips(
     pendingWorkletEvents?: PendingWorkletEvent[],
     allTracks?: ReadonlyArray<Track>,
     deviceEntriesByTrack?: Map<string, DeviceNodeEntry[]>,
-    regionStartBeat: number = 0
+    regionStartBeat: number = 0,
+    processYeastMidi: OfflineYeastMidiProcessor | null = null
 ): Promise<void> {
     const regionStartSec = projectPpqEndpoints({
         startPpq: regionStartBeat,
@@ -254,6 +257,7 @@ export async function scheduleTrackClips(
 
             const synthParams =
                 drumKit || kitDef || instrumentControls ? null : getSynthParamsFromDevices(track.devices);
+            const hasYeast = track.devices.some((device) => device.type === 'yeast');
 
             let noteCount = 0;
 
@@ -270,27 +274,60 @@ export async function scheduleTrackClips(
                     iterationStartBeat: clip.startBeat + iterOffset,
                     loopLengthBeats: loopLen,
                     midiOffsetBeats: clip.midiOffsetBeats ?? 0,
+                    loopEnabled: clip.loopEnabled ?? false,
                 });
+                let scheduledNotes: Array<{
+                    id: string;
+                    pitch: number;
+                    velocity: number;
+                    startSamples: number;
+                    endSamples: number;
+                }>;
+                if (hasYeast && processYeastMidi) {
+                    scheduledNotes = projectOfflineYeastNotes({
+                        trackId: track.id,
+                        notes,
+                        sampleRate: offlineCtx.sampleRate,
+                        blockEndSamples: Math.ceil((regionStartSec + durationSeconds) * offlineCtx.sampleRate),
+                        projectPpqEndpoints: ({ startPpq, endPpq }) =>
+                            projectPpqEndpoints({
+                                startPpq,
+                                endPpq,
+                                defaultTempo,
+                                sampleRate: offlineCtx.sampleRate,
+                                changes,
+                            }),
+                        processYeastMidi,
+                    });
+                } else {
+                    scheduledNotes = notes.map((note) => {
+                        const endpoint = projectPpqEndpoints({
+                            startPpq: note.startBeat,
+                            endPpq: note.startBeat + note.duration,
+                            defaultTempo,
+                            sampleRate: offlineCtx.sampleRate,
+                            changes,
+                        });
+                        return {
+                            id: note.id,
+                            pitch: note.pitch,
+                            velocity: note.velocity,
+                            startSamples: endpoint.startSamples,
+                            endSamples: endpoint.endSamples,
+                        };
+                    });
+                }
 
-                for (const note of notes) {
-                    const noteAbsStart = note.startBeat;
-                    const noteEndBeat = note.startBeat + note.duration;
-                    if (noteEndBeat <= regionStartBeat) {
+                for (const note of scheduledNotes) {
+                    if (note.endSamples <= regionStartSec * offlineCtx.sampleRate) {
                         continue;
                     }
 
                     // Apply plugin-delay compensation symmetrically with the audio
                     // branch (see the `+ compensationDelay` on the audio iteration
                     // below) so instrument notes stay aligned with audio clips.
-                    const endpoint = projectPpqEndpoints({
-                        startPpq: noteAbsStart,
-                        endPpq: noteEndBeat,
-                        defaultTempo,
-                        sampleRate: offlineCtx.sampleRate,
-                        changes,
-                    });
-                    const rawStartSec = endpoint.startSeconds + compensationDelay;
-                    const rawEndSec = endpoint.endSeconds + compensationDelay;
+                    const rawStartSec = note.startSamples / offlineCtx.sampleRate + compensationDelay;
+                    const rawEndSec = note.endSamples / offlineCtx.sampleRate + compensationDelay;
                     const startTime = Math.max(0, rawStartSec - regionStartSec);
                     const endTime = rawEndSec - regionStartSec;
                     const duration = endTime - startTime;

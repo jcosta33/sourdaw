@@ -12,6 +12,8 @@ export { setTimeSignature } from './setTimeSignature';
 export { restoreTransportSnapshot } from './restoreTransportSnapshot';
 export { restoreTimelineMapSnapshot } from './restoreTimelineMapSnapshot';
 export { resolveRealtimeMusicalClock } from './resolveRealtimeMusicalClock';
+export { projectRealtimeMidiEventSampleTime } from './projectRealtimeMidiEventSampleTime';
+export { createMusicalPositionProjector } from './createMusicalPositionProjector';
 export { projectPpqEndpoints } from './projectPpqEndpoints';
 
 export { addTempoChange } from './tempoMap/addTempoChange';

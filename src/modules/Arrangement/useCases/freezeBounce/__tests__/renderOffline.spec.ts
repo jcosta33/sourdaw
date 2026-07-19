@@ -40,6 +40,7 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     buildDeviceChain: mocks.buildDeviceChain,
     getAudioContext: mocks.getAudioContext,
     getCachedAudioBuffer: mocks.getCachedAudioBuffer,
+    projectOfflineYeastNotes: vi.fn(),
 }));
 
 vi.mock('#/modules/MIDI/stores', () => ({
@@ -227,6 +228,10 @@ describe('renderTrackOffline', () => {
         setOfflineRenderDependencies({
             projectPpqEndpoints,
             createMidiEventProjector: () => projectClipMidiEvents,
+            createYeastMidiProcessor:
+                () =>
+                ({ events }) =>
+                    events,
         });
         mocks.projectCommittedGroove.mockImplementation(({ events }) => events);
         mocks.projectClipMidiEvents.mockImplementation((input) => {

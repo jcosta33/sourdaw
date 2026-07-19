@@ -11,6 +11,10 @@ import {
     offlineMidiEventProjectorState,
     type OfflineMidiEventProjector,
 } from '../../repositories/offlineScheduler/offlineMidiEventProjectorState';
+import {
+    offlineYeastMidiProcessorState,
+    type OfflineYeastMidiProcessor,
+} from '../../repositories/offlineScheduler/offlineYeastMidiProcessorState';
 import { beatToSeconds } from '../../services/beatConversion';
 
 export type OfflineRenderContext = {
@@ -26,6 +30,7 @@ export type OfflineRenderContext = {
     /** Tail seconds appended after the musical region. */
     tailSeconds: number;
     projectMidiEvents: OfflineMidiEventProjector | null;
+    processYeastMidi: OfflineYeastMidiProcessor | null;
 };
 
 export type ResolveRenderContextInput = {
@@ -65,5 +70,6 @@ export function resolveRenderContext(input: ResolveRenderContextInput | number):
         durationSeconds,
         tailSeconds: Math.max(0, normalized.tailSeconds),
         projectMidiEvents: offlineMidiEventProjectorState.createProjector?.() ?? null,
+        processYeastMidi: offlineYeastMidiProcessorState.createProcessor?.() ?? null,
     };
 }

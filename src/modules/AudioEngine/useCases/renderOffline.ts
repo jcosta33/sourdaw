@@ -54,7 +54,7 @@ export const renderOffline: RenderOfflineFn = async function renderOffline(
             );
         }
 
-        const { tracks, midi, transport, defaultTempo, changes, durationSeconds, projectMidiEvents } =
+        const { tracks, midi, transport, defaultTempo, changes, durationSeconds, projectMidiEvents, processYeastMidi } =
             resolveRenderContext({
                 durationBeats,
                 startBeat,
@@ -161,7 +161,8 @@ export const renderOffline: RenderOfflineFn = async function renderOffline(
                 pendingWorkletEvents,
                 sourceTracks,
                 deviceEntriesByTrack,
-                startBeat
+                startBeat,
+                processYeastMidi
             );
 
             scheduled++;

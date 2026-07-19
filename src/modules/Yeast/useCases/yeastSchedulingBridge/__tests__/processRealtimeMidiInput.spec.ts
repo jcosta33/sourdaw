@@ -31,7 +31,14 @@ describe('processRealtimeMidiInput', () => {
             isNoteOn: true,
             sampleTime: 128,
             sampleRate: 48000,
-            clock: { ppqPosition: 0, bpm: 120 },
+            clock: {
+                ppqPosition: 0,
+                bpm: 120,
+                barIndex: 0,
+                beatInBar: 0,
+                timeSigNum: 4,
+                timeSigDen: 4,
+            },
             blockSize: 64,
         });
 
@@ -68,7 +75,14 @@ describe('processRealtimeMidiInput', () => {
             isNoteOn: true,
             sampleTime: 128,
             sampleRate: 48_000,
-            clock: { ppqPosition: 0, bpm: 120 },
+            clock: {
+                ppqPosition: 0,
+                bpm: 120,
+                barIndex: 0,
+                beatInBar: 0,
+                timeSigNum: 4,
+                timeSigDen: 4,
+            },
             blockSize: 64,
         });
 
@@ -87,7 +101,14 @@ describe('processRealtimeMidiInput', () => {
             isNoteOn: true,
             sampleTime: 240_000,
             sampleRate: 48_000,
-            clock: { ppqPosition: 8.75, bpm: 90 },
+            clock: {
+                ppqPosition: 8.75,
+                bpm: 90,
+                barIndex: 2,
+                beatInBar: 0.75,
+                timeSigNum: 4,
+                timeSigDen: 4,
+            },
         });
 
         expect(processYeastMidi).toHaveBeenCalledWith(
@@ -99,6 +120,40 @@ describe('processRealtimeMidiInput', () => {
                     }),
                 ],
                 transport: expect.objectContaining({ ppqPosition: 8.75, bpm: 90 }),
+            })
+        );
+    });
+
+    it('passes map-derived bar and meter position into realtime processing', async () => {
+        vi.mocked(processYeastMidi).mockResolvedValue([]);
+
+        await processRealtimeMidiInput({
+            context: {} as BaseAudioContext,
+            trackId: 'track-a',
+            note: 67,
+            velocity: 100,
+            channel: 1,
+            isNoteOn: true,
+            sampleTime: 240_000,
+            sampleRate: 48_000,
+            clock: {
+                ppqPosition: 8.75,
+                bpm: 90,
+                barIndex: 2,
+                beatInBar: 5.5,
+                timeSigNum: 7,
+                timeSigDen: 8,
+            },
+        });
+
+        expect(processYeastMidi).toHaveBeenCalledWith(
+            expect.objectContaining({
+                transport: expect.objectContaining({
+                    barIndex: 2,
+                    beatInBar: 5.5,
+                    timeSigNum: 7,
+                    timeSigDen: 8,
+                }),
             })
         );
     });

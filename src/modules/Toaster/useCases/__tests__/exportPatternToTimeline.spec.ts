@@ -300,12 +300,17 @@ describe('exportPatternToTimeline', () => {
         exportPatternToTimeline(DEVICE_ID);
 
         const notes = vi.mocked(addMidiNote).mock.calls;
-        expect(notes).toHaveLength(3);
+        expect(notes).toHaveLength(5);
         for (const [, , startBeat, duration] of notes) {
             expect(startBeat).toBeLessThan(4);
             expect(startBeat + duration).toBeLessThanOrEqual(4);
         }
-        expect(notes.map(([, , startBeat]) => startBeat)).toEqual([3.5, 3.5 + 1 / 3, 4 - 1 / 960]);
+        const startBeats = notes.map(([, , startBeat]) => startBeat);
+        expect(startBeats[0]).toBeCloseTo(3.5, 12);
+        expect(startBeats[1]).toBeCloseTo(3.5 + 1 / 3, 12);
+        expect(startBeats[2]).toBeCloseTo(0, 12);
+        expect(startBeats[3]).toBeCloseTo(0, 12);
+        expect(startBeats[4]).toBeCloseTo(1 / 6, 12);
     });
 
     it('exports the same 32-step groove grid and retrigger positions as live playback', () => {

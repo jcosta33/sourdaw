@@ -45,11 +45,12 @@ export const exportStems: ExportStemsFn = async function exportStems(
             throw createExportError(`Invalid export duration: ${durationBeats} beats.`);
         }
 
-        const { tracks, midi, defaultTempo, changes, durationSeconds, projectMidiEvents } = resolveRenderContext({
-            durationBeats,
-            startBeat,
-            tailSeconds,
-        });
+        const { tracks, midi, defaultTempo, changes, durationSeconds, projectMidiEvents, processYeastMidi } =
+            resolveRenderContext({
+                durationBeats,
+                startBeat,
+                tailSeconds,
+            });
         const stems = new Map<string, AudioBuffer>();
 
         if (!tracks || !midi) {
@@ -106,7 +107,8 @@ export const exportStems: ExportStemsFn = async function exportStems(
                 pendingWorkletEvents,
                 [track],
                 deviceEntriesByTrack,
-                startBeat
+                startBeat,
+                processYeastMidi
             );
 
             schedulePendingSuspends(offlineCtx, pendingWorkletEvents, durationSeconds);

@@ -1,6 +1,8 @@
 import { beatToSamples, getTempoAtBeat, samplesToBeat } from '../models/TempoMap';
+import { getBarBeatAtPosition, getTimeSignatureAtBeat } from '../models/TimeSignatureMap';
 import { playheadPositionRef } from '../stores/playheadPositionRef';
 import { tempoMapStore } from '../stores/tempoMapStore';
+import { timeSignatureMapStore } from '../stores/timeSignatureMapStore';
 import { transportStore } from '../stores/transportStore';
 
 import { schedulerSession } from './playheadScheduler/schedulerSession';
@@ -38,8 +40,27 @@ export function resolveRealtimeMusicalClock(input: ResolveRealtimeMusicalClockIn
         ppqPosition = transport.loopStart + ((ppqPosition - transport.loopStart) % loopLength);
     }
 
+    const timeSignatureChanges = timeSignatureMapStore.value?.changes ?? [];
+    const barBeat = getBarBeatAtPosition(
+        timeSignatureChanges,
+        ppqPosition,
+        transport.timeSignatureNumerator,
+        transport.timeSignatureDenominator
+    );
+    const timeSignature = getTimeSignatureAtBeat(
+        timeSignatureChanges,
+        ppqPosition,
+        transport.timeSignatureNumerator,
+        transport.timeSignatureDenominator
+    );
+
     return {
+        sampleTime: input.sampleTime,
         ppqPosition,
         bpm: getTempoAtBeat(changes, ppqPosition, transport.tempo),
+        barIndex: barBeat.bar - 1,
+        beatInBar: barBeat.beat - 1 + barBeat.tick / 480,
+        timeSigNum: timeSignature.numerator,
+        timeSigDen: timeSignature.denominator,
     };
 }

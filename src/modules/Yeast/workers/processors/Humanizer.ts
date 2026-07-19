@@ -17,6 +17,23 @@ type HumanizePreset = 'tight' | 'loose' | 'drunk' | 'rushed' | 'laidBack';
  * evict the oldest to keep the map from growing unbounded across a session.
  */
 const MAX_TRACKED_NOTES = 16 * 128;
+const MAX_PENDING_OFFSETS_PER_NOTE = 64;
+
+type PendingTimingOffsets = {
+    values: Float64Array;
+    head: number;
+    size: number;
+    overflow: number;
+};
+
+function hashIdentity(value: string): number {
+    let hash = 0x811c9dc5;
+    for (let index = 0; index < value.length; index++) {
+        hash ^= value.charCodeAt(index);
+        hash = Math.imul(hash, 0x01000193);
+    }
+    return hash & 0x7fffffff;
+}
 
 const PRESETS: Record<HumanizePreset, { timingMeanMs: number; timingSigmaMs: number; velSigma: number }> = {
     tight: { timingMeanMs: 0, timingSigmaMs: 3, velSigma: 5 },
@@ -35,7 +52,8 @@ export class Humanizer extends BaseMidiProcessor {
     private rngState = 0xcafe;
     // Track timing offsets for matching Note Offs.
     // Numeric key (channel << 7) | note matches MidiRack/ScaleQuantizer.
-    private noteTimingMap = new Map<string | undefined, Map<number, number>>();
+    private noteTimingMap = new Map<string | undefined, Map<number, PendingTimingOffsets>>();
+    private noteInstanceTimingMap = new Map<string, number>();
 
     constructor(id?: string) {
         super(id ?? `humanize-${Date.now()}`);
@@ -44,31 +62,34 @@ export class Humanizer extends BaseMidiProcessor {
     processMidi(input: readonly MidiEvent[], output: MidiEvent[], transport: TransportInfo): void {
         for (const event of input) {
             if (event.kind.type === 'noteOn') {
-                const timingOffsetMs = this.gaussian(this.timingMeanMs, this.timingSigmaMs);
+                let timingOffsetMs: number;
+                let velOffsetValue: number;
+                if (event.noteInstanceId) {
+                    const identity = `${this.id}\u0000${event.trackId ?? ''}\u0000${event.noteInstanceId}`;
+                    const timingResult = gaussianLcg(hashIdentity(identity), this.timingMeanMs, this.timingSigmaMs);
+                    const velocityResult = gaussianLcg(timingResult.state, 0, this.velSigma);
+                    timingOffsetMs = timingResult.value;
+                    velOffsetValue = velocityResult.value;
+                } else {
+                    timingOffsetMs = this.gaussian(this.timingMeanMs, this.timingSigmaMs);
+                    velOffsetValue = this.gaussian(0, this.velSigma);
+                }
                 const timingOffsetSamples = Math.round(timingOffsetMs * 0.001 * transport.sampleRate);
-                const velOffset = Math.round(this.gaussian(0, this.velSigma));
+                const velOffset = Math.round(velOffsetValue);
 
                 const key = (event.kind.channel << 7) | event.kind.note;
-                // Bound the map: a dropped Note Off (e.g. a transport seek before
-                // panic) would otherwise leave a stale entry forever. Evict the
-                // oldest tracked note once we exceed the live-note ceiling.
-                const routeMap = this.noteTimingMap.get(event.trackId) ?? new Map<number, number>();
-                if (!routeMap.has(key) && routeMap.size >= MAX_TRACKED_NOTES) {
-                    // size >= ceiling (> 0) ⇒ the map is non-empty, so the iterator
-                    // yields a real oldest key (insertion order). Evict it. The
-                    // `!== undefined` guard narrows the IteratorResult value type;
-                    // it can never actually be undefined given the size check.
-                    const oldest = routeMap.keys().next().value;
-                    if (oldest !== undefined) {
-                        routeMap.delete(oldest);
-                    }
+                let acceptedOffset: number;
+                if (event.noteInstanceId) {
+                    acceptedOffset = this.setInstanceOffset(event.trackId, event.noteInstanceId, timingOffsetSamples);
+                } else {
+                    acceptedOffset = this.enqueueOffset(event.trackId, key, timingOffsetSamples);
                 }
-                routeMap.set(key, timingOffsetSamples);
-                this.noteTimingMap.set(event.trackId, routeMap);
+                const timingOffsetBeats = (acceptedOffset * transport.bpm) / (transport.sampleRate * 60);
 
                 output.push({
-                    timeSamples: event.timeSamples + timingOffsetSamples,
-                    trackId: event.trackId,
+                    ...event,
+                    timeSamples: event.timeSamples + acceptedOffset,
+                    timePpq: event.timePpq === undefined ? undefined : event.timePpq + timingOffsetBeats,
                     kind: {
                         type: 'noteOn',
                         channel: event.kind.channel,
@@ -78,22 +99,99 @@ export class Humanizer extends BaseMidiProcessor {
                 });
             } else if (event.kind.type === 'noteOff') {
                 const key = (event.kind.channel << 7) | event.kind.note;
-                const routeMap = this.noteTimingMap.get(event.trackId);
-                const offset = routeMap?.get(key) ?? 0;
-                routeMap?.delete(key);
-                if (routeMap?.size === 0) {
-                    this.noteTimingMap.delete(event.trackId);
+                let offset: number;
+                if (event.noteInstanceId) {
+                    offset = this.takeInstanceOffset(event.trackId, event.noteInstanceId);
+                } else {
+                    offset = this.dequeueOffset(event.trackId, key);
                 }
+                const timingOffsetBeats = (offset * transport.bpm) / (transport.sampleRate * 60);
 
                 output.push({
+                    ...event,
                     timeSamples: event.timeSamples + offset,
-                    trackId: event.trackId,
+                    timePpq: event.timePpq === undefined ? undefined : event.timePpq + timingOffsetBeats,
                     kind: event.kind,
                 });
             } else {
                 output.push(event);
             }
         }
+    }
+
+    private instanceKey(trackId: string | undefined, noteInstanceId: string): string {
+        return `${trackId ?? ''}\u0000${noteInstanceId}`;
+    }
+
+    private setInstanceOffset(trackId: string | undefined, noteInstanceId: string, offset: number): number {
+        const key = this.instanceKey(trackId, noteInstanceId);
+        if (!this.noteInstanceTimingMap.has(key) && this.noteInstanceTimingMap.size >= MAX_TRACKED_NOTES) {
+            return 0;
+        }
+        this.noteInstanceTimingMap.set(key, offset);
+        return offset;
+    }
+
+    private takeInstanceOffset(trackId: string | undefined, noteInstanceId: string): number {
+        const key = this.instanceKey(trackId, noteInstanceId);
+        const offset = this.noteInstanceTimingMap.get(key) ?? 0;
+        this.noteInstanceTimingMap.delete(key);
+        return offset;
+    }
+
+    private enqueueOffset(trackId: string | undefined, key: number, offset: number): number {
+        let routeMap = this.noteTimingMap.get(trackId);
+        if (!routeMap) {
+            routeMap = new Map<number, PendingTimingOffsets>();
+            this.noteTimingMap.set(trackId, routeMap);
+        }
+        let pending = routeMap.get(key);
+        if (!pending) {
+            if (routeMap.size >= MAX_TRACKED_NOTES) {
+                const oldest = routeMap.keys().next().value;
+                if (oldest !== undefined) {
+                    routeMap.delete(oldest);
+                }
+            }
+            pending = {
+                values: new Float64Array(MAX_PENDING_OFFSETS_PER_NOTE),
+                head: 0,
+                size: 0,
+                overflow: 0,
+            };
+            routeMap.set(key, pending);
+        }
+        if (pending.overflow > 0 || pending.size === pending.values.length) {
+            pending.overflow = Math.min(Number.MAX_SAFE_INTEGER, pending.overflow + 1);
+            return 0;
+        }
+        const tail = (pending.head + pending.size) % pending.values.length;
+        pending.values[tail] = offset;
+        pending.size += 1;
+        return offset;
+    }
+
+    private dequeueOffset(trackId: string | undefined, key: number): number {
+        const routeMap = this.noteTimingMap.get(trackId);
+        const pending = routeMap?.get(key);
+        if (!routeMap || !pending) {
+            return 0;
+        }
+        let offset = 0;
+        if (pending.size > 0) {
+            offset = pending.values[pending.head] ?? 0;
+            pending.head = (pending.head + 1) % pending.values.length;
+            pending.size -= 1;
+        } else if (pending.overflow > 0) {
+            pending.overflow -= 1;
+        }
+        if (pending.size === 0 && pending.overflow === 0) {
+            routeMap.delete(key);
+            if (routeMap.size === 0) {
+                this.noteTimingMap.delete(trackId);
+            }
+        }
+        return offset;
     }
 
     private gaussian(mean: number, sigma: number): number {
@@ -104,6 +202,7 @@ export class Humanizer extends BaseMidiProcessor {
 
     reset(): void {
         this.noteTimingMap.clear();
+        this.noteInstanceTimingMap.clear();
     }
 
     protected resetParams(): void {

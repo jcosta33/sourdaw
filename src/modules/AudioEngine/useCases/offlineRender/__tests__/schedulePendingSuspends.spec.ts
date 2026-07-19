@@ -94,4 +94,29 @@ describe('schedulePendingSuspends', () => {
         const onCall = noteOn.mock.invocationCallOrder[0]!;
         expect(offCall).toBeLessThan(onCall);
     });
+
+    it('preserves insertion order for equal-time events of the same type', () => {
+        const callOrder: number[] = [];
+        const instrumentControls = {
+            noteOn: (pitch: number) => callOrder.push(pitch),
+            noteOff: vi.fn(),
+        };
+        const event = (pitch: number): PendingWorkletEvent => ({
+            time: 1,
+            type: 'on',
+            pitch,
+            velocity: 1,
+            instrumentControls,
+            isToaster: false,
+            toasterPadIndex: -1,
+        });
+
+        schedulePendingSuspends(
+            { sampleRate: 48_000 } as unknown as OfflineAudioContext,
+            [event(60), event(61), event(62)],
+            10
+        );
+
+        expect(callOrder).toEqual([60, 61, 62]);
+    });
 });

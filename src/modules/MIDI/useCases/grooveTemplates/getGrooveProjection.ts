@@ -17,6 +17,7 @@ type ProjectClipMidiEventsInput<Event extends ClipMidiEvent> = {
     iterationStartBeat: number;
     loopLengthBeats: number;
     midiOffsetBeats: number;
+    loopEnabled?: boolean;
     clipGrooveAlreadyApplied?: boolean;
     eventsAreAbsolute?: boolean;
 };
@@ -53,6 +54,7 @@ export function getGrooveProjection(state: GrooveTemplateState): GrooveProjectio
         iterationStartBeat,
         loopLengthBeats,
         midiOffsetBeats,
+        loopEnabled = false,
         clipGrooveAlreadyApplied = false,
         eventsAreAbsolute = false,
     }: ProjectClipMidiEventsInput<Event>): Event[] => {
@@ -71,20 +73,43 @@ export function getGrooveProjection(state: GrooveTemplateState): GrooveProjectio
                 consumerType: 'sequencer',
                 consumerId: 'project',
             });
-            const boundedStartBeat = Math.max(iterationStartBeat, clipStartBeat, sequencerProjected.startBeat);
-            const boundedEndBeat = Math.min(clipEndBeat, boundedStartBeat + event.duration);
-            if (boundedEndBeat <= boundedStartBeat) {
-                return [];
+            const intervalStartBeat = sequencerProjected.startBeat;
+            const intervalDurationBeats = sequencerProjected.duration;
+            const intervalEndBeat = intervalStartBeat + intervalDurationBeats;
+            const iterationEndBeat = Math.min(clipEndBeat, iterationStartBeat + loopLengthBeats);
+
+            const createSegment = (startBeat: number, endBeat: number): Event[] => {
+                const clippedStartBeat = Math.max(iterationStartBeat, clipStartBeat, startBeat);
+                const clippedEndBeat = Math.min(iterationEndBeat, endBeat);
+                if (clippedEndBeat <= clippedStartBeat) {
+                    return [];
+                }
+                return [
+                    {
+                        ...event,
+                        startBeat: clippedStartBeat,
+                        duration: clippedEndBeat - clippedStartBeat,
+                        velocity: sequencerProjected.velocity,
+                    },
+                ];
+            };
+
+            if (!loopEnabled || loopLengthBeats <= 0) {
+                return createSegment(intervalStartBeat, intervalEndBeat);
             }
 
-            return [
-                {
-                    ...event,
-                    startBeat: boundedStartBeat,
-                    duration: boundedEndBeat - boundedStartBeat,
-                    velocity: sequencerProjected.velocity,
-                },
-            ];
+            const offsetFromIteration = intervalStartBeat - iterationStartBeat;
+            const wrappedOffset = ((offsetFromIteration % loopLengthBeats) + loopLengthBeats) % loopLengthBeats;
+            const wrappedStartBeat = iterationStartBeat + wrappedOffset;
+            const preservedDuration = Math.min(intervalDurationBeats, loopLengthBeats);
+            const firstEndBeat = Math.min(iterationStartBeat + loopLengthBeats, wrappedStartBeat + preservedDuration);
+            const firstSegments = createSegment(wrappedStartBeat, firstEndBeat);
+            const remainingDuration = preservedDuration - (firstEndBeat - wrappedStartBeat);
+            if (remainingDuration <= 0) {
+                return firstSegments;
+            }
+            const wrappedSegments = createSegment(iterationStartBeat, iterationStartBeat + remainingDuration);
+            return [...wrappedSegments, ...firstSegments];
         });
     };
     const created = { projectCommittedGroove, projectClipMidiEvents };

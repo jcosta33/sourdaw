@@ -95,7 +95,8 @@ function schedulePatternStep({
         }
 
         for (const hit of projection.hits) {
-            const totalDelayMs = Math.max(0, gridDelayMs + (hit.startBeat - gridStartBeat) * (60_000 / bpm));
+            const projectedStartBeat = hit.startBeat + hit.loopOffsetBeats;
+            const totalDelayMs = Math.max(0, gridDelayMs + (projectedStartBeat - gridStartBeat) * (60_000 / bpm));
             const fire =
                 hit.retriggerIndex === 0
                     ? () => fireBase(hit.velocity)

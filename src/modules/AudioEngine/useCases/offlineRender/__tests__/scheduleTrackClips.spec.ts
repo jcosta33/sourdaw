@@ -49,6 +49,8 @@ const TrackDummy = {
     }),
 };
 
+type OfflineYeastMidiProcessor = NonNullable<Parameters<typeof scheduleTrackClips>[16]>;
+
 const mocks = vi.hoisted(() => ({
     getCompensationDelay: vi.fn<(trackId: string) => number>(() => 0),
     scheduleTrackAutomation: vi.fn(),
@@ -56,6 +58,7 @@ const mocks = vi.hoisted(() => ({
     automationValue: { value: null as unknown },
     audioBufferCache: { get: vi.fn(() => undefined) },
     projectCommittedGroove: vi.fn(),
+    processOfflineYeastMidi: vi.fn<OfflineYeastMidiProcessor>(),
 }));
 
 let projectedStartOffset = 0;
@@ -191,9 +194,12 @@ function makeMidi(): NonNullable<MidiStoreState> {
     };
 }
 
-async function runSchedule(): Promise<PendingWorkletEvent[]> {
+async function runSchedule({ withYeast = false }: { withYeast?: boolean } = {}): Promise<PendingWorkletEvent[]> {
     const offlineCtx = makeOfflineCtx();
     const track = makeMidiTrack();
+    if (withYeast) {
+        track.devices.push({ id: 'yeast-1', name: 'Yeast', type: 'yeast', bypassed: false, parameterValues: {} });
+    }
     const entry = makeInstrumentEntry();
     const deviceEntriesByTrack = new Map<string, DeviceNodeEntry[]>([[track.id, [entry]]]);
     const pendingWorkletEvents: PendingWorkletEvent[] = [];
@@ -218,7 +224,9 @@ async function runSchedule(): Promise<PendingWorkletEvent[]> {
         /* onWarning */ undefined,
         pendingWorkletEvents,
         /* allTracks */ [track],
-        deviceEntriesByTrack
+        deviceEntriesByTrack,
+        /* regionStartBeat */ 0,
+        mocks.processOfflineYeastMidi
     );
 
     return pendingWorkletEvents;
@@ -232,6 +240,14 @@ describe('scheduleTrackClips — MIDI plugin-delay compensation', () => {
         mocks.getCompensationDelay.mockReturnValue(0);
         projectedStartOffset = 0;
         projectedVelocity = null;
+        mocks.processOfflineYeastMidi.mockImplementation((input) =>
+            input.events.map((event) => {
+                if (event.kind.type !== 'noteOn' && event.kind.type !== 'noteOff') {
+                    return event;
+                }
+                return { ...event, kind: { ...event.kind, note: (event.kind.note ?? 0) + 12 } };
+            })
+        );
         configureOfflineMidiEventProjection({ createProjector: () => projectOfflineMidiEvents });
         configureOfflinePpqEndpointProjection({ project: projectPpqEndpoints });
     });
@@ -280,10 +296,19 @@ describe('scheduleTrackClips — MIDI plugin-delay compensation', () => {
             iterationStartBeat: 0,
             loopLengthBeats: 4,
             midiOffsetBeats: 0,
+            loopEnabled: false,
         });
         const onEvt = events.find((event) => event.type === 'on');
         const offEvt = events.find((event) => event.type === 'off');
         expect(onEvt).toMatchObject({ time: 0.75, velocity: 40 });
         expect(offEvt).toMatchObject({ time: 1.25 });
+    });
+
+    it('runs the snapshotted Yeast projection before offline instrument scheduling', async () => {
+        const events = await runSchedule({ withYeast: true });
+
+        expect(mocks.processOfflineYeastMidi).toHaveBeenCalledTimes(1);
+        expect(events.find((event) => event.type === 'on')).toMatchObject({ pitch: 72 });
+        expect(events.find((event) => event.type === 'off')).toMatchObject({ pitch: 72 });
     });
 });

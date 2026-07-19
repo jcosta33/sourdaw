@@ -43,7 +43,40 @@ describe('projectClipMidiEvents', () => {
             midiOffsetBeats: 0,
         });
         expect(projected).toEqual(expect.objectContaining({ id: 'n1', startBeat: 4, velocity: 106 }));
-        expect(projected?.duration).toBeCloseTo(0.25, 12);
+        expect(projected?.duration).toBeCloseTo(0.05, 12);
+    });
+
+    it('wraps a looping interval across the loop edge without losing either segment', () => {
+        const projected = projectClipMidiEvents({
+            events: [{ id: 'wrapped', startBeat: 0, duration: 0.25, velocity: 80 }],
+            clipId: 'clip-a',
+            clipStartBeat: 4,
+            clipEndBeat: 8,
+            iterationStartBeat: 4,
+            loopLengthBeats: 4,
+            midiOffsetBeats: 0,
+            loopEnabled: true,
+        });
+
+        expect(projected).toHaveLength(2);
+        expect(projected[0]).toEqual(expect.objectContaining({ id: 'wrapped', startBeat: 4 }));
+        expect(projected[0]?.duration).toBeCloseTo(0.05, 12);
+        expect(projected[1]).toEqual(expect.objectContaining({ id: 'wrapped', startBeat: 7.8 }));
+        expect(projected[1]?.duration).toBeCloseTo(0.2, 12);
+    });
+
+    it('drops a non-looping interval moved completely before the clip', () => {
+        expect(
+            projectClipMidiEvents({
+                events: [{ id: 'outside', startBeat: 0, duration: 0.1, velocity: 80 }],
+                clipId: 'clip-a',
+                clipStartBeat: 4,
+                clipEndBeat: 8,
+                iterationStartBeat: 4,
+                loopLengthBeats: 4,
+                midiOffsetBeats: 0,
+            })
+        ).toEqual([]);
     });
 
     it('uses the identical end clamp for projected notes at the far clip edge', () => {

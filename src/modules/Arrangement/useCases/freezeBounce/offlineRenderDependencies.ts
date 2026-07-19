@@ -37,11 +37,35 @@ type MidiEventProjector = <Event extends MidiProjectableEvent>(input: {
     iterationStartBeat: number;
     loopLengthBeats: number;
     midiOffsetBeats: number;
+    loopEnabled?: boolean;
 }) => readonly Event[];
+
+type OfflineYeastMidiEvent = {
+    timeSamples: number;
+    trackId?: string;
+    sourceEventId?: string;
+    noteInstanceId?: string;
+    timePpq?: number;
+    tempoBpm?: number;
+    kind:
+        | { type: 'noteOn'; channel: number; note: number; velocity: number }
+        | { type: 'noteOff'; channel: number; note: number }
+        | { type: 'cc'; channel: number; cc: number; value: number }
+        | { type: 'pitchBend'; channel: number; value: number }
+        | { type: 'channelPressure'; channel: number; value: number };
+};
+type OfflineYeastMidiProcessor = (input: {
+    trackId: string;
+    sampleRate: number;
+    blockStartSamples: number;
+    blockEndSamples: number;
+    events: readonly OfflineYeastMidiEvent[];
+}) => readonly OfflineYeastMidiEvent[];
 
 type OfflineRenderDependencies = {
     projectPpqEndpoints: (input: PpqEndpointProjectionInput) => PpqEndpointProjection;
     createMidiEventProjector: () => MidiEventProjector;
+    createYeastMidiProcessor: () => OfflineYeastMidiProcessor;
 };
 
 export let offlineRenderDependencies: OfflineRenderDependencies | null = null;

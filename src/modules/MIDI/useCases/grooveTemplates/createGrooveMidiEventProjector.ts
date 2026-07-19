@@ -11,6 +11,7 @@ type GrooveMidiEventProjector = <Event extends GrooveMidiEvent>(input: {
     iterationStartBeat: number;
     loopLengthBeats: number;
     midiOffsetBeats: number;
+    loopEnabled?: boolean;
     clipGrooveAlreadyApplied?: boolean;
     eventsAreAbsolute?: boolean;
 }) => Event[];

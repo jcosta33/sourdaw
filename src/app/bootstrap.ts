@@ -37,6 +37,7 @@ import {
     commitPitchEdit,
     configureAudioDeviceRuntimeSink,
     configureOfflineMidiEventProjection,
+    configureOfflineYeastMidiProcessing,
     configureOfflinePpqEndpointProjection,
     stopAllScheduled,
 } from '#/modules/AudioEngine/useCases';
@@ -116,11 +117,18 @@ import {
     stopPlayback,
     resolveRealtimeMusicalClock,
     projectPpqEndpoints,
+    projectRealtimeMidiEventSampleTime,
+    createMusicalPositionProjector,
 } from '#/modules/Transport/useCases';
 import { updateTunerTelemetry } from '#/modules/Tuner/stores';
 import { getWorkspaceHandlers, getScratchPadHandlers, setWorkspaceEventBus } from '#/modules/WorkspaceShell/useCases';
 import { setYeastEventBus } from '#/modules/Yeast/stores';
-import { configureYeastRuntime, processRealtimeMidiInput, teardownYeastRuntime } from '#/modules/Yeast/useCases';
+import {
+    configureYeastRuntime,
+    createOfflineYeastMidiProcessor,
+    processRealtimeMidiInput,
+    teardownYeastRuntime,
+} from '#/modules/Yeast/useCases';
 import { logCapabilities } from '#/utils/capabilities';
 import { setNotificationEventBus } from '#/utils/Notification/notificationEventBus';
 
@@ -140,11 +148,15 @@ actionHistoryStore.subscribe((state) => {
     syncActionReplayMetadata(state?.entries ?? []);
 });
 setRuntimeLogger(logger);
+const createOfflineYeastProcessor = () =>
+    createOfflineYeastMidiProcessor({ resolveMusicalPosition: createMusicalPositionProjector() });
 configureOfflineMidiEventProjection({ createProjector: createGrooveMidiEventProjector });
+configureOfflineYeastMidiProcessing({ createProcessor: createOfflineYeastProcessor });
 configureOfflinePpqEndpointProjection({ project: projectPpqEndpoints });
 setOfflineRenderDependencies({
     projectPpqEndpoints,
     createMidiEventProjector: createGrooveMidiEventProjector,
+    createYeastMidiProcessor: createOfflineYeastProcessor,
 });
 setToasterGrooveAssignmentExecutor({ execute: executeAppAction });
 setArrangementEventBus(eventBus);
@@ -163,22 +175,29 @@ setYeastEventBus(eventBus);
 configureYeastRuntime({ panicOutputNotes: stopAllScheduled });
 setWebMidiRealtimeProcessor({
     processor: async (input) => {
+        const clock = resolveRealtimeMusicalClock(input);
         const events = await processRealtimeMidiInput({
             ...input,
-            clock: resolveRealtimeMusicalClock(input),
+            clock,
         });
         return events.map((event) => {
-            if (event.timePpq === undefined) {
+            if (event.timePpq === undefined || !clock) {
                 return event;
             }
-            const endpoint = projectPpqEndpoints({
-                startPpq: event.timePpq,
-                endPpq: event.timePpq,
-                defaultTempo: transportStore.value?.tempo ?? 120,
-                sampleRate: input.sampleRate,
-                changes: tempoMapStore.value?.changes ?? [],
+            const timeSamples = projectRealtimeMidiEventSampleTime({
+                inputSampleTime: clock.sampleTime,
+                inputPpq: clock.ppqPosition,
+                eventPpq: event.timePpq,
+                projectPpqToSamples: (ppq) =>
+                    projectPpqEndpoints({
+                        startPpq: ppq,
+                        endPpq: ppq,
+                        defaultTempo: transportStore.value?.tempo ?? 120,
+                        sampleRate: input.sampleRate,
+                        changes: tempoMapStore.value?.changes ?? [],
+                    }).startSamples,
             });
-            return { ...event, timeSamples: endpoint.startSamples };
+            return { ...event, timeSamples };
         });
     },
 });

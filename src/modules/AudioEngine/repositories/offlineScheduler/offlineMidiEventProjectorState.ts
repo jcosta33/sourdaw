@@ -13,6 +13,7 @@ type OfflineMidiEventProjectionInput<Event extends OfflineMidiProjectableEvent> 
     iterationStartBeat: number;
     loopLengthBeats: number;
     midiOffsetBeats: number;
+    loopEnabled?: boolean;
 };
 
 export type OfflineMidiEventProjector = <Event extends OfflineMidiProjectableEvent>(
