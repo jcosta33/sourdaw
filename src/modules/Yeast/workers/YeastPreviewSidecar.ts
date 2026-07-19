@@ -10,7 +10,7 @@ import {
 import type { MidiEvent, TransportInfo } from '../models/MidiEvent';
 import type { YeastPreviewPackedPage } from '../models/YeastPreviewSnapshot';
 
-export type YeastPreviewDecisionSink = Pick<YeastPreviewSidecar, 'recordDecision'>;
+export type YeastPreviewDecisionSink = Pick<YeastPreviewSidecar, 'recordDecision' | 'transferDecisionLineage'>;
 
 function createPreviewPage(): YeastPreviewPackedPage {
     return {
@@ -75,9 +75,22 @@ export class YeastPreviewSidecar {
     private readonly decisionVelocity = new Float64Array(YEAST_PREVIEW_CAPACITY);
     private readonly decisionProbability = new Float64Array(YEAST_PREVIEW_CAPACITY);
     private readonly decisionHasProbability = new Uint8Array(YEAST_PREVIEW_CAPACITY);
-    private readonly decisionConsumed = new Uint8Array(YEAST_PREVIEW_CAPACITY);
+    private readonly decisionRealized = new Uint8Array(YEAST_PREVIEW_CAPACITY);
+    private readonly decisionSequence = new Float64Array(YEAST_PREVIEW_CAPACITY);
     private readonly decisionTrackId = Array.from({ length: YEAST_PREVIEW_CAPACITY }, () => '');
     private readonly decisionProcessorId = Array.from({ length: YEAST_PREVIEW_CAPACITY }, () => '');
+    private readonly unrealizedOrder = new Int32Array(YEAST_PREVIEW_CAPACITY);
+
+    private readonly lineageEventA: Array<MidiEvent | undefined> = Array.from(
+        { length: YEAST_PREVIEW_CAPACITY },
+        () => undefined
+    );
+    private readonly lineageEventB: Array<MidiEvent | undefined> = Array.from(
+        { length: YEAST_PREVIEW_CAPACITY },
+        () => undefined
+    );
+    private readonly lineageDecisionA = new Int32Array(YEAST_PREVIEW_CAPACITY);
+    private readonly lineageDecisionB = new Int32Array(YEAST_PREVIEW_CAPACITY);
 
     private readonly originEvents: Array<MidiEvent | undefined> = Array.from(
         { length: YEAST_PREVIEW_CAPACITY },
@@ -91,6 +104,7 @@ export class YeastPreviewSidecar {
     private decisionCount = 0;
     private originCount = 0;
     private nextSequence = 0;
+    private nextDecisionSequence = 0;
     private nextEventId = 0;
     private blockStartSamples = 0;
     private blockPpqPosition = 0;
@@ -102,6 +116,10 @@ export class YeastPreviewSidecar {
     private captureRequested = false;
     private captureBlock = false;
     private pageBusy = false;
+    private lineageUsesA = true;
+    private lineageCount = 0;
+    private nextLineageCount = 0;
+    private processorTransformationActive = false;
 
     constructor() {
         this.routeProjectionVersion.fill(-1);
@@ -121,6 +139,10 @@ export class YeastPreviewSidecar {
         this.captureBlock = false;
         this.decisionCount = 0;
         this.originCount = 0;
+        this.lineageUsesA = true;
+        this.lineageCount = 0;
+        this.nextLineageCount = 0;
+        this.processorTransformationActive = false;
         this.currentRackId = rackId;
         this.currentRouteId = routeId;
         this.currentTrackId = trackId;
@@ -202,6 +224,49 @@ export class YeastPreviewSidecar {
         }
     }
 
+    beginProcessorTransformation(): void {
+        if (!this.captureRequested) {
+            return;
+        }
+        this.nextLineageCount = 0;
+        this.processorTransformationActive = true;
+    }
+
+    transferDecisionLineage(source: MidiEvent, target: MidiEvent): void {
+        if (!this.captureRequested || !this.processorTransformationActive) {
+            return;
+        }
+        const decision = this.findLineageDecision(source);
+        if (decision !== -1) {
+            this.appendNextLineage(target, decision);
+        }
+    }
+
+    finishProcessorTransformation(output: readonly MidiEvent[]): void {
+        if (!this.captureRequested || !this.processorTransformationActive) {
+            return;
+        }
+        for (let index = 0; index < output.length; index++) {
+            const event = output[index]!;
+            if (this.findNextLineageDecision(event) !== -1) {
+                continue;
+            }
+            const decision = this.findLineageDecision(event);
+            if (decision !== -1) {
+                this.appendNextLineage(event, decision);
+            }
+        }
+        this.lineageUsesA = !this.lineageUsesA;
+        this.lineageCount = this.nextLineageCount;
+        this.nextLineageCount = 0;
+        this.processorTransformationActive = false;
+    }
+
+    cancelProcessorTransformation(): void {
+        this.nextLineageCount = 0;
+        this.processorTransformationActive = false;
+    }
+
     recordProcessorEvent(event: MidiEvent, processorId: string, bypassed: boolean, failed: boolean): void {
         if (
             !this.captureRequested ||
@@ -255,17 +320,40 @@ export class YeastPreviewSidecar {
             (bypassed ? YEAST_PREVIEW_BYPASSED_FLAG : 0) | (failed ? YEAST_PREVIEW_FAILED_FLAG : 0);
     }
 
-    recordTerminalEvent(event: MidiEvent, fallbackTrackId: string): void {
+    recordTerminalEvents(events: readonly MidiEvent[], fallbackTrackId: string): void {
         if (!this.captureRequested) {
             return;
         }
+        const unrealizedCount = this.sortUnrealizedDecisions();
+        let unrealizedIndex = 0;
+        for (let eventIndex = 0; eventIndex < events.length; eventIndex++) {
+            const event = events[eventIndex]!;
+            const decision = this.findLineageDecision(event);
+            const eventSequence = decision === -1 ? this.nextDecisionSequence++ : this.decisionSequence[decision]!;
+            while (unrealizedIndex < unrealizedCount) {
+                const unrealizedDecision = this.unrealizedOrder[unrealizedIndex]!;
+                if (!this.decisionPrecedesEvent(unrealizedDecision, event.timeSamples, eventSequence)) {
+                    break;
+                }
+                this.recordUnrealizedDecision(unrealizedDecision);
+                unrealizedIndex += 1;
+            }
+            this.recordTerminalEvent(event, fallbackTrackId, decision);
+        }
+        while (unrealizedIndex < unrealizedCount) {
+            this.recordUnrealizedDecision(this.unrealizedOrder[unrealizedIndex]!);
+            unrealizedIndex += 1;
+        }
+    }
+
+    private recordTerminalEvent(event: MidiEvent, fallbackTrackId: string, decision: number): void {
         const trackId = event.trackId ?? fallbackTrackId;
         if (event.kind.type === 'noteOn') {
             if (!this.captureBlock) {
                 this.recordDrop();
                 return;
             }
-            this.recordNoteOn(event, trackId);
+            this.recordNoteOn(event, trackId, decision);
         } else if (event.kind.type === 'noteOff') {
             if (!this.captureBlock) {
                 this.dropPendingNoteOff(trackId, event.kind.channel, event.kind.note);
@@ -283,33 +371,10 @@ export class YeastPreviewSidecar {
         probability: number | null,
         realized: boolean,
         processorId: string,
-        trackId = this.currentTrackId
+        trackId = this.currentTrackId,
+        event?: MidiEvent
     ): void {
         if (!this.captureRequested) {
-            return;
-        }
-        if (!realized) {
-            if (!this.captureBlock || this.page.count === YEAST_PREVIEW_CAPACITY) {
-                this.recordDrop();
-                return;
-            }
-            const routeIndex = this.findRouteForTrack(trackId);
-            const slot = this.page.count++;
-            this.writeEvent(
-                slot,
-                this.nextEventId++,
-                YEAST_PREVIEW_CLOSED_PHASE,
-                this.toBeatTime(timeSamples),
-                Math.max(0, durationSamples / this.samplesPerBeat),
-                pitch,
-                velocity,
-                probability,
-                false,
-                processorId,
-                0,
-                routeIndex,
-                trackId
-            );
             return;
         }
         if (this.decisionCount === YEAST_PREVIEW_CAPACITY) {
@@ -323,9 +388,13 @@ export class YeastPreviewSidecar {
         this.decisionVelocity[slot] = velocity;
         this.decisionProbability[slot] = probability ?? 0;
         this.decisionHasProbability[slot] = probability === null ? 0 : 1;
-        this.decisionConsumed[slot] = 0;
+        this.decisionRealized[slot] = realized ? 1 : 0;
+        this.decisionSequence[slot] = this.nextDecisionSequence++;
         this.decisionTrackId[slot] = trackId;
         this.decisionProcessorId[slot] = processorId;
+        if (realized && event && this.processorTransformationActive) {
+            this.appendNextLineage(event, slot);
+        }
     }
 
     takePage(): YeastPreviewPackedPage | undefined {
@@ -358,7 +427,7 @@ export class YeastPreviewSidecar {
         this.page.reset = false;
     }
 
-    private recordNoteOn(event: MidiEvent, trackId: string): void {
+    private recordNoteOn(event: MidiEvent, trackId: string, decision: number): void {
         if (event.kind.type !== 'noteOn') {
             return;
         }
@@ -369,7 +438,6 @@ export class YeastPreviewSidecar {
 
         const eventId = this.nextEventId++;
         const beatTime = this.toBeatTime(event.timeSamples);
-        const decision = this.findDecision(event.timeSamples, event.kind.note, trackId);
         const origin = this.findOrigin(event);
         const probability =
             decision === -1 || this.decisionHasProbability[decision] === 0 ? null : this.decisionProbability[decision]!;
@@ -480,21 +548,6 @@ export class YeastPreviewSidecar {
         return match;
     }
 
-    private findDecision(timeSamples: number, pitch: number, trackId: string): number {
-        for (let index = this.decisionCount - 1; index >= 0; index--) {
-            if (
-                this.decisionConsumed[index] === 0 &&
-                this.decisionTimeSamples[index] === timeSamples &&
-                this.decisionPitch[index] === pitch &&
-                this.decisionTrackId[index] === trackId
-            ) {
-                this.decisionConsumed[index] = 1;
-                return index;
-            }
-        }
-        return -1;
-    }
-
     private findOrigin(event: MidiEvent): number {
         for (let index = this.originCount - 1; index >= 0; index--) {
             if (this.originEvents[index] === event) {
@@ -502,6 +555,97 @@ export class YeastPreviewSidecar {
             }
         }
         return -1;
+    }
+
+    private findLineageDecision(event: MidiEvent): number {
+        const events = this.lineageUsesA ? this.lineageEventA : this.lineageEventB;
+        const decisions = this.lineageUsesA ? this.lineageDecisionA : this.lineageDecisionB;
+        for (let index = this.lineageCount - 1; index >= 0; index--) {
+            if (events[index] === event) {
+                return decisions[index]!;
+            }
+        }
+        return -1;
+    }
+
+    private findNextLineageDecision(event: MidiEvent): number {
+        const events = this.lineageUsesA ? this.lineageEventB : this.lineageEventA;
+        const decisions = this.lineageUsesA ? this.lineageDecisionB : this.lineageDecisionA;
+        for (let index = this.nextLineageCount - 1; index >= 0; index--) {
+            if (events[index] === event) {
+                return decisions[index]!;
+            }
+        }
+        return -1;
+    }
+
+    private appendNextLineage(event: MidiEvent, decision: number): void {
+        if (this.nextLineageCount === YEAST_PREVIEW_CAPACITY) {
+            this.recordDrop();
+            return;
+        }
+        const events = this.lineageUsesA ? this.lineageEventB : this.lineageEventA;
+        const decisions = this.lineageUsesA ? this.lineageDecisionB : this.lineageDecisionA;
+        const slot = this.nextLineageCount++;
+        events[slot] = event;
+        decisions[slot] = decision;
+    }
+
+    private sortUnrealizedDecisions(): number {
+        let count = 0;
+        for (let decision = 0; decision < this.decisionCount; decision++) {
+            if (this.decisionRealized[decision] === 0) {
+                this.unrealizedOrder[count++] = decision;
+            }
+        }
+        for (let index = 1; index < count; index++) {
+            const decision = this.unrealizedOrder[index]!;
+            let insertion = index;
+            while (insertion > 0 && this.compareDecisions(decision, this.unrealizedOrder[insertion - 1]!) < 0) {
+                this.unrealizedOrder[insertion] = this.unrealizedOrder[insertion - 1]!;
+                insertion -= 1;
+            }
+            this.unrealizedOrder[insertion] = decision;
+        }
+        return count;
+    }
+
+    private compareDecisions(alpha: number, beta: number): number {
+        const timeDifference = this.decisionTimeSamples[alpha]! - this.decisionTimeSamples[beta]!;
+        if (timeDifference !== 0) {
+            return timeDifference;
+        }
+        return this.decisionSequence[alpha]! - this.decisionSequence[beta]!;
+    }
+
+    private decisionPrecedesEvent(decision: number, eventTimeSamples: number, eventSequence: number): boolean {
+        const timeDifference = this.decisionTimeSamples[decision]! - eventTimeSamples;
+        return timeDifference < 0 || (timeDifference === 0 && this.decisionSequence[decision]! < eventSequence);
+    }
+
+    private recordUnrealizedDecision(decision: number): void {
+        if (!this.captureBlock || this.page.count === YEAST_PREVIEW_CAPACITY) {
+            this.recordDrop();
+            return;
+        }
+        const trackId = this.decisionTrackId[decision]!;
+        const routeIndex = this.findRouteForTrack(trackId);
+        const slot = this.page.count++;
+        this.writeEvent(
+            slot,
+            this.nextEventId++,
+            YEAST_PREVIEW_CLOSED_PHASE,
+            this.toBeatTime(this.decisionTimeSamples[decision]!),
+            Math.max(0, this.decisionDurationSamples[decision]! / this.samplesPerBeat),
+            this.decisionPitch[decision]!,
+            this.decisionVelocity[decision]!,
+            this.decisionHasProbability[decision] === 0 ? null : this.decisionProbability[decision]!,
+            false,
+            this.decisionProcessorId[decision]!,
+            0,
+            routeIndex,
+            trackId
+        );
     }
 
     private findRoute(rackId: string, routeId: string): number {

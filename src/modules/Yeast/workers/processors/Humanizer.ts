@@ -7,6 +7,8 @@ import { type MidiEvent, type TransportInfo } from '../../models/MidiEvent';
 import { BaseMidiProcessor } from '../BaseMidiProcessor';
 import { gaussianLcg } from '../lcgRandom';
 
+import type { YeastPreviewDecisionSink } from '../YeastPreviewSidecar';
+
 type HumanizePreset = 'tight' | 'loose' | 'drunk' | 'rushed' | 'laidBack';
 
 /**
@@ -41,7 +43,12 @@ export class Humanizer extends BaseMidiProcessor {
         super(id ?? `humanize-${Date.now()}`);
     }
 
-    processMidi(input: readonly MidiEvent[], output: MidiEvent[], transport: TransportInfo): void {
+    processMidi(
+        input: readonly MidiEvent[],
+        output: MidiEvent[],
+        transport: TransportInfo,
+        preview?: YeastPreviewDecisionSink
+    ): void {
         for (const event of input) {
             if (event.kind.type === 'noteOn') {
                 const timingOffsetMs = this.gaussian(this.timingMeanMs, this.timingSigmaMs);
@@ -66,7 +73,7 @@ export class Humanizer extends BaseMidiProcessor {
                 routeMap.set(key, timingOffsetSamples);
                 this.noteTimingMap.set(event.trackId, routeMap);
 
-                output.push({
+                const transformed: MidiEvent = {
                     timeSamples: event.timeSamples + timingOffsetSamples,
                     trackId: event.trackId,
                     kind: {
@@ -75,7 +82,9 @@ export class Humanizer extends BaseMidiProcessor {
                         note: event.kind.note,
                         velocity: Math.max(1, Math.min(127, event.kind.velocity + velOffset)),
                     },
-                });
+                };
+                output.push(transformed);
+                preview?.transferDecisionLineage(event, transformed);
             } else if (event.kind.type === 'noteOff') {
                 const key = (event.kind.channel << 7) | event.kind.note;
                 const routeMap = this.noteTimingMap.get(event.trackId);
@@ -85,11 +94,13 @@ export class Humanizer extends BaseMidiProcessor {
                     this.noteTimingMap.delete(event.trackId);
                 }
 
-                output.push({
+                const transformed: MidiEvent = {
                     timeSamples: event.timeSamples + offset,
                     trackId: event.trackId,
                     kind: event.kind,
-                });
+                };
+                output.push(transformed);
+                preview?.transferDecisionLineage(event, transformed);
             } else {
                 output.push(event);
             }
@@ -125,7 +136,7 @@ export class Humanizer extends BaseMidiProcessor {
                 break;
             case 'preset': {
                 const preset = (['tight', 'loose', 'drunk', 'rushed', 'laidBack'] as const)[Math.round(value)];
-                if (preset && PRESETS[preset]) {
+                if (preset) {
                     const param = PRESETS[preset];
                     this.timingMeanMs = param.timingMeanMs;
                     this.timingSigmaMs = param.timingSigmaMs;

@@ -204,8 +204,10 @@ export class MidiRack {
                 continue;
             }
             output.length = 0;
+            preview?.beginProcessorTransformation();
             try {
                 processor.processMidi(input, output, transport, preview);
+                preview?.finishProcessorTransformation(output);
                 preview?.beginProcessorEvents();
                 let previewEventCount = 0;
                 for (const event of output) {
@@ -222,6 +224,7 @@ export class MidiRack {
                 // skip the buffer swap so the upstream events flow through
                 // unchanged. The happy path takes no exception, so try/catch adds
                 // no per-block allocation on the audio thread.
+                preview?.cancelProcessorTransformation();
                 preview?.recordProcessorEvents(input, processor.id, false, true);
                 preview?.recordProcessorProvenance(processor.id, false, true, 0);
                 continue;
@@ -232,13 +235,12 @@ export class MidiRack {
         }
         const current = input;
 
-        for (const event of current) {
-            event.trackId ??= trackId;
-            preview?.recordTerminalEvent(event, trackId);
-        }
-
         // 4. Sort final output
         current.sort((alpha, b) => alpha.timeSamples - b.timeSamples);
+        for (const event of current) {
+            event.trackId ??= trackId;
+        }
+        preview?.recordTerminalEvents(current, trackId);
 
         // 5. Track active notes for panic with route-scoped numeric keys.
         for (const event of current) {

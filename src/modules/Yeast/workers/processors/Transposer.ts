@@ -6,6 +6,8 @@ import { type MidiEvent, type TransportInfo } from '../../models/MidiEvent';
 import { BaseMidiProcessor } from '../BaseMidiProcessor';
 import { nextLcg } from '../lcgRandom';
 
+import type { YeastPreviewDecisionSink } from '../YeastPreviewSidecar';
+
 export class Transposer extends BaseMidiProcessor {
     readonly name = 'Transposer';
 
@@ -23,7 +25,12 @@ export class Transposer extends BaseMidiProcessor {
         super(id ?? `transpose-${Date.now()}`);
     }
 
-    processMidi(input: readonly MidiEvent[], output: MidiEvent[], _transport: TransportInfo): void {
+    processMidi(
+        input: readonly MidiEvent[],
+        output: MidiEvent[],
+        _transport: TransportInfo,
+        preview?: YeastPreviewDecisionSink
+    ): void {
         for (const event of input) {
             if (event.kind.type === 'noteOn') {
                 let offset = this.semitones + this.octaves * 12;
@@ -37,11 +44,13 @@ export class Transposer extends BaseMidiProcessor {
                 routeMap.set((event.kind.channel << 7) | event.kind.note, note);
                 this.noteMap.set(event.trackId, routeMap);
 
-                output.push({
+                const transformed: MidiEvent = {
                     timeSamples: event.timeSamples,
                     trackId: event.trackId,
                     kind: { type: 'noteOn', channel: event.kind.channel, note, velocity: event.kind.velocity },
-                });
+                };
+                output.push(transformed);
+                preview?.transferDecisionLineage(event, transformed);
             } else if (event.kind.type === 'noteOff') {
                 const key = (event.kind.channel << 7) | event.kind.note;
                 const routeMap = this.noteMap.get(event.trackId);
@@ -51,11 +60,13 @@ export class Transposer extends BaseMidiProcessor {
                     this.noteMap.delete(event.trackId);
                 }
 
-                output.push({
+                const transformed: MidiEvent = {
                     timeSamples: event.timeSamples,
                     trackId: event.trackId,
                     kind: { type: 'noteOff', channel: event.kind.channel, note },
-                });
+                };
+                output.push(transformed);
+                preview?.transferDecisionLineage(event, transformed);
             } else {
                 output.push(event);
             }

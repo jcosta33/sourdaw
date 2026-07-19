@@ -329,6 +329,57 @@ describe('createYeastWorker — processBlock lifecycle', () => {
         expect(onPreview).toHaveBeenCalledWith(expect.objectContaining({ records: [currentRecord], droppedEvents: 0 }));
     });
 
+    it('invalidates queued delivery when one route identity is rebound to another track', async () => {
+        const node = await createYeastWorker(makeContext());
+        const worker = lastWorker();
+        const onPreview = vi.fn<(preview: YeastPreviewBlock) => void>();
+        node.onPreview(onPreview);
+        const recordA: YeastPreviewEvent = {
+            eventId: 1,
+            rackId: 'rack-a',
+            routeId: 'shared-route',
+            trackId: 'track-a',
+            projectionVersion: 1,
+            phase: 'open',
+            beatTime: 0,
+            durationBeats: 0.5,
+            pitch: 60,
+            velocity: 90,
+            probability: null,
+            realized: true,
+            processorId: null,
+            bypassed: false,
+            failed: false,
+        };
+        const recordB: YeastPreviewEvent = {
+            ...recordA,
+            eventId: 2,
+            trackId: 'track-b',
+            pitch: 67,
+        };
+
+        const trackA = node.processBlock([], 0, 128, transport, 'track-a', true, 'rack-a', 'shared-route', 1);
+        replyProcessed(worker, 0, []);
+        await trackA;
+        replyPreviewPage(worker, 0, packPreview([recordA]), 1);
+
+        const trackB = node.processBlock([], 128, 256, transport, 'track-b', true, 'rack-a', 'shared-route', 1);
+        replyProcessed(worker, 1, []);
+        await trackB;
+        replyPreviewPage(worker, 1, packPreview([recordB]), 1);
+        await vi.runAllTimersAsync();
+
+        expect(onPreview).toHaveBeenCalledOnce();
+        expect(onPreview).toHaveBeenCalledWith(
+            expect.objectContaining({
+                rackId: 'rack-a',
+                routeId: 'shared-route',
+                trackId: 'track-b',
+                records: [recordB],
+            })
+        );
+    });
+
     it('keeps an enabled route accepted when another route disables capture', async () => {
         const node = await createYeastWorker(makeContext());
         const worker = lastWorker();

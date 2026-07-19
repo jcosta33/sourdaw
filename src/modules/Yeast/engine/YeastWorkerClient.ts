@@ -559,7 +559,7 @@ export async function createYeastWorker(ctx: BaseAudioContext): Promise<YeastWor
     const getPreviewRoute = (scope: PreviewScope, captureEpoch: number): PreviewRouteState => {
         const rackRoutes = previewRoutes.get(scope.rackId);
         const existing = rackRoutes?.get(scope.routeId);
-        if (existing?.captureEpoch === captureEpoch) {
+        if (existing?.captureEpoch === captureEpoch && existing.scope.trackId === scope.trackId) {
             return existing;
         }
         if (existing) {

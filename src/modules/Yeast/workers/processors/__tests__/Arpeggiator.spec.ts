@@ -145,4 +145,50 @@ describe('Arpeggiator', () => {
             },
         ]);
     });
+
+    it('stable-merges realized and rejected decisions without changing audible output', () => {
+        const createRack = () => {
+            const nextArp = new Arpeggiator('test-arp');
+            nextArp.setParam('mode', 7);
+            nextArp.setPattern([
+                { ...defaultStep(), probability: 1 },
+                { ...defaultStep(), probability: 0 },
+            ]);
+            const rack = new MidiRack();
+            rack.addProcessor(nextArp, 'arpeggiator');
+            return rack;
+        };
+        const enabledRack = createRack();
+        const disabledRack = createRack();
+        const input = [{ timeSamples: 0, kind: { type: 'noteOn' as const, channel: 0, note: 60, velocity: 100 } }];
+        enabledRack.processBlock(
+            input.map((event) => structuredClone(event)),
+            0,
+            128,
+            transport,
+            'track-a',
+            true
+        );
+        disabledRack.processBlock(
+            input.map((event) => structuredClone(event)),
+            0,
+            128,
+            transport,
+            'track-a',
+            false
+        );
+        takePreviewRecords(enabledRack);
+
+        const nextTransport = { ...transport, ppqPosition: 1.1 };
+        const audibleWithCapture = enabledRack.processBlock([], 0, 25000, nextTransport, 'track-a', true);
+        const audibleWithoutCapture = disabledRack.processBlock([], 0, 25000, nextTransport, 'track-a', false);
+        const preview = takePreviewRecords(enabledRack);
+
+        expect(audibleWithCapture).toEqual(audibleWithoutCapture);
+        expect(preview).toMatchObject([
+            { beatTime: 1.6, pitch: 60, probability: 1, realized: true, processorId: 'test-arp' },
+            { beatTime: 1.6, pitch: 60, probability: 1, realized: true, processorId: 'test-arp' },
+            { beatTime: 2.1, pitch: 60, probability: 0, realized: false, processorId: 'test-arp' },
+        ]);
+    });
 });

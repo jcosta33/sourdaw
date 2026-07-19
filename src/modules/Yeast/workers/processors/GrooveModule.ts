@@ -6,6 +6,8 @@
 import { type MidiEvent, type TransportInfo, samplesPerBeat } from '../../models/MidiEvent';
 import { BaseMidiProcessor } from '../BaseMidiProcessor';
 
+import type { YeastPreviewDecisionSink } from '../YeastPreviewSidecar';
+
 type GrooveTemplate = {
     name: string;
     /** Normalized timing offsets per step (-0.5 to +0.5 of step duration). */
@@ -42,7 +44,12 @@ export class GrooveModule extends BaseMidiProcessor {
         super(id ?? `groove-${Date.now()}`);
     }
 
-    processMidi(input: readonly MidiEvent[], output: MidiEvent[], transport: TransportInfo): void {
+    processMidi(
+        input: readonly MidiEvent[],
+        output: MidiEvent[],
+        transport: TransportInfo,
+        preview?: YeastPreviewDecisionSink
+    ): void {
         const template = GROOVE_TEMPLATES[this.templateIndex] ?? GROOVE_TEMPLATES[0]!;
         const stepLen = samplesPerBeat(transport) * (4 / this.subdivision);
 
@@ -60,11 +67,13 @@ export class GrooveModule extends BaseMidiProcessor {
                 routeMap.set(key, offsetSamples);
                 this.noteMap.set(event.trackId, routeMap);
 
-                output.push({
+                const transformed: MidiEvent = {
                     timeSamples: event.timeSamples + offsetSamples,
                     trackId: event.trackId,
                     kind: event.kind,
-                });
+                };
+                output.push(transformed);
+                preview?.transferDecisionLineage(event, transformed);
             } else if (event.kind.type === 'noteOff') {
                 const key = (event.kind.channel << 7) | event.kind.note;
                 const routeMap = this.noteMap.get(event.trackId);
@@ -74,11 +83,13 @@ export class GrooveModule extends BaseMidiProcessor {
                     this.noteMap.delete(event.trackId);
                 }
 
-                output.push({
+                const transformed: MidiEvent = {
                     timeSamples: event.timeSamples + offset,
                     trackId: event.trackId,
                     kind: event.kind,
-                });
+                };
+                output.push(transformed);
+                preview?.transferDecisionLineage(event, transformed);
             } else {
                 output.push(event);
             }

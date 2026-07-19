@@ -221,11 +221,12 @@ export class Arpeggiator extends BaseMidiProcessor {
                         ? patternStep.velocity
                         : this.computeVelocity(sn.velocity);
 
-                    output.push({
+                    const noteOn: MidiEvent = {
                         timeSamples: ratchetTime,
                         trackId: sn.trackId,
                         kind: { type: 'noteOn', channel: sn.channel, note: sn.note, velocity: vel },
-                    });
+                    };
+                    output.push(noteOn);
 
                     preview?.recordDecision(
                         ratchetTime,
@@ -235,7 +236,8 @@ export class Arpeggiator extends BaseMidiProcessor {
                         patternStep?.probability ?? null,
                         true,
                         this.id,
-                        sn.trackId
+                        sn.trackId,
+                        noteOn
                     );
 
                     // Schedule Note Off

@@ -309,6 +309,58 @@ describe('AC-001 — Yeast scheduled-event preview tap', () => {
         expect(tap.read(route).events).toEqual([]);
     });
 
+    it('rebinds a shared route to one authoritative track scope and rejects stale publication', () => {
+        const tap = new YeastPreviewTap();
+        const routeA = { rackId: 'rack-a', routeId: 'shared-route', trackId: 'track-a' };
+        const routeB = { rackId: 'rack-a', routeId: 'shared-route', trackId: 'track-b' };
+        tap.setEnabled(routeA, true);
+        const staleEpoch = tap.getCaptureState(routeA).captureEpoch;
+        tap.publish({
+            ...routeA,
+            captureEpoch: staleEpoch,
+            projectionVersion: 1,
+            reset: false,
+            records: [{ ...previewRecord(1), routeId: routeA.routeId }],
+            provenance: [],
+            droppedEvents: 0,
+        });
+
+        tap.setEnabled(routeB, true);
+        const currentEpoch = tap.getCaptureState(routeB).captureEpoch;
+        expect(currentEpoch).toBeGreaterThan(staleEpoch);
+        tap.publish({
+            ...routeA,
+            captureEpoch: staleEpoch,
+            projectionVersion: 1,
+            reset: false,
+            records: [{ ...previewRecord(2), routeId: routeA.routeId }],
+            provenance: [],
+            droppedEvents: 0,
+        });
+        const recordB = {
+            ...previewRecord(3),
+            routeId: routeB.routeId,
+            trackId: routeB.trackId,
+            pitch: 67,
+        };
+        tap.publish({
+            ...routeB,
+            captureEpoch: currentEpoch,
+            projectionVersion: 1,
+            reset: false,
+            records: [recordB],
+            provenance: [],
+            droppedEvents: 0,
+        });
+
+        expect(tap.read(routeA)).toMatchObject({
+            rackId: routeB.rackId,
+            routeId: routeB.routeId,
+            trackId: routeB.trackId,
+            events: [expect.objectContaining({ trackId: routeB.trackId, pitch: 67 })],
+        });
+    });
+
     it('copies and freezes provenance entries at the snapshot boundary', () => {
         const tap = new YeastPreviewTap();
         const route = { rackId: 'rack-a', routeId: 'track-a', trackId: 'track-a' };

@@ -10,8 +10,12 @@ import {
 } from '../../models/YeastPreviewSnapshot';
 import { type MidiProcessor } from '../MidiProcessor';
 import { MidiRack } from '../MidiRack';
+import { Arpeggiator } from '../processors/Arpeggiator';
+import { ChordGenerator } from '../processors/ChordGenerator';
 import { ChordMemory } from '../processors/ChordMemory';
+import { Humanizer } from '../processors/Humanizer';
 import { NoteFilter } from '../processors/NoteFilter';
+import { Transposer } from '../processors/Transposer';
 
 import type { YeastPreviewDecisionSink } from '../YeastPreviewSidecar';
 
@@ -134,6 +138,19 @@ class PreviewProbeProcessor extends PassthroughProcessor {
     ): void {
         this.receivedPreview = preview !== undefined;
         super.processMidi(input, output, _transport, preview);
+    }
+}
+
+class DropFirstNoteProcessor extends PassthroughProcessor {
+    override processMidi(input: readonly MidiEvent[], output: MidiEvent[]): void {
+        let dropped = false;
+        for (const event of input) {
+            if (!dropped && event.kind.type === 'noteOn') {
+                dropped = true;
+                continue;
+            }
+            output.push(event);
+        }
     }
 }
 
@@ -449,6 +466,87 @@ describe('MidiRack', () => {
             if (page) {
                 rack.releasePreviewPage(page);
             }
+        });
+
+        it('captures a down-strum in the same stable scheduled order as audible output', () => {
+            const enabledRack = new MidiRack();
+            const enabledChord = new ChordGenerator('chord');
+            enabledChord.setParam('strum_ms', 10);
+            enabledChord.setParam('strum_direction', 1);
+            enabledRack.addProcessor(enabledChord, 'chord');
+            const disabledRack = new MidiRack();
+            const disabledChord = new ChordGenerator('chord');
+            disabledChord.setParam('strum_ms', 10);
+            disabledChord.setParam('strum_direction', 1);
+            disabledRack.addProcessor(disabledChord, 'chord');
+            const input = [noteOn(0, 60), noteOff(4096, 60)];
+
+            const audibleWithCapture = enabledRack.processBlock(
+                input.map((event) => structuredClone(event)),
+                0,
+                8192,
+                transport,
+                'track-a',
+                true
+            );
+            const audibleWithoutCapture = disabledRack.processBlock(
+                input.map((event) => structuredClone(event)),
+                0,
+                8192,
+                transport,
+                'track-a',
+                false
+            );
+            const audiblePitches = audibleWithCapture.filter(isNoteOn).map((event) => event.kind.note);
+            const previewPitches = takePreviewBlock(enabledRack)
+                .records.filter((record) => record.phase === 'open')
+                .map((record) => record.pitch);
+
+            expect(audibleWithCapture).toEqual(audibleWithoutCapture);
+            expect(audiblePitches).toEqual([67, 64, 60]);
+            expect(previewPitches).toEqual(audiblePitches);
+        });
+
+        it('keeps arpeggiator lineage across duplicate pitches produced by transposition', () => {
+            const rack = new MidiRack();
+            const arp = new Arpeggiator('arp');
+            arp.setParam('mode', 6);
+            const transposer = new Transposer('transpose');
+            transposer.setParam('semitones', 12);
+            rack.addProcessor(arp, 'arpeggiator');
+            rack.addProcessor(transposer, 'transposer');
+            rack.processBlock([noteOn(0, 126), noteOn(0, 127)], 0, 128, transport, 'track-a', true);
+            takePreviewBlock(rack);
+
+            const output = rack.processBlock([], 13230, 13358, { ...transport, ppqPosition: 0.6 }, 'track-a', true);
+            const preview = takePreviewBlock(rack).records.filter((record) => record.phase === 'open');
+
+            expect(output.filter(isNoteOn).map((event) => event.kind.note)).toEqual([127, 127]);
+            expect(preview).toMatchObject([
+                { pitch: 127, processorId: 'arp', realized: true },
+                { pitch: 127, processorId: 'arp', realized: true },
+            ]);
+        });
+
+        it('keeps surviving arpeggiator lineage after humanization and a downstream drop', () => {
+            const rack = new MidiRack();
+            const arp = new Arpeggiator('arp');
+            arp.setParam('mode', 6);
+            const humanizer = new Humanizer('human');
+            humanizer.setParam('timing_mean_ms', 10);
+            humanizer.setParam('timing_sigma_ms', 0);
+            humanizer.setParam('vel_sigma', 0);
+            rack.addProcessor(arp, 'arpeggiator');
+            rack.addProcessor(humanizer, 'humanizer');
+            rack.addProcessor(new DropFirstNoteProcessor('drop-first'));
+            rack.processBlock([noteOn(0, 60), noteOn(0, 64)], 0, 128, transport, 'track-a', true);
+            takePreviewBlock(rack);
+
+            const output = rack.processBlock([], 13230, 14000, { ...transport, ppqPosition: 0.6 }, 'track-a', true);
+            const preview = takePreviewBlock(rack).records.filter((record) => record.phase === 'open');
+
+            expect(output.filter(isNoteOn)).toMatchObject([{ timeSamples: 11466, kind: { note: 64 } }]);
+            expect(preview).toMatchObject([{ pitch: 64, processorId: 'arp', realized: true }]);
         });
 
         it('counts terminal overflow once when processor origin scratch reaches capacity', () => {
