@@ -3,6 +3,7 @@ import { getAudioContext } from '#/modules/AudioEngine/useCases';
 import { disposeAudioClipScheduling } from '../scheduling/disposeAudioClipScheduling';
 import { resetMetronomeBeat } from '../scheduling/resetMetronomeBeat';
 
+import { advanceSchedulerDiscontinuityEpoch } from './advanceSchedulerDiscontinuityEpoch';
 import { schedulerSession, stopActiveSources } from './schedulerSession';
 
 /**
@@ -22,6 +23,7 @@ import { schedulerSession, stopActiveSources } from './schedulerSession';
  */
 export function disposePlayheadScheduler(): void {
     schedulerSession.generation += 1;
+    advanceSchedulerDiscontinuityEpoch();
     if (schedulerSession.worker) {
         schedulerSession.worker.postMessage({ type: 'stop' });
         schedulerSession.worker.terminate();

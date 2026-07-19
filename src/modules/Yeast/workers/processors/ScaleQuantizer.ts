@@ -5,6 +5,9 @@
 
 import { type MidiEvent, type TransportInfo } from '../../models/MidiEvent';
 import { BaseMidiProcessor } from '../BaseMidiProcessor';
+import { BoundedNoteVoiceQueue } from '../BoundedNoteVoiceQueue';
+
+import type { YeastPreviewDecisionSink } from '../YeastPreviewSidecar';
 
 const SCALE_PATTERNS: Record<string, number[]> = {
     major: [0, 2, 4, 5, 7, 9, 11],
@@ -34,13 +37,18 @@ export class ScaleQuantizer extends BaseMidiProcessor {
     private remapMode: RemapMode = 'nearest';
     private transpose = 0; // diatonic degrees
     // Track note mapping for proper Note Off
-    private noteMap = new Map<string | undefined, Map<number, number>>(); // ch*128+inNote → outNote
+    private noteVoices = new BoundedNoteVoiceQueue<number>(); // ch*128+inNote → FIFO outNote voices
 
     constructor(id?: string) {
         super(id ?? `scale-${Date.now()}`);
     }
 
-    processMidi(input: readonly MidiEvent[], output: MidiEvent[], _transport: TransportInfo): void {
+    processMidi(
+        input: readonly MidiEvent[],
+        output: MidiEvent[],
+        _transport: TransportInfo,
+        preview?: YeastPreviewDecisionSink
+    ): void {
         const pattern = SCALE_PATTERNS[this.scaleName] ?? SCALE_PATTERNS.major!;
 
         for (const event of input) {
@@ -51,27 +59,24 @@ export class ScaleQuantizer extends BaseMidiProcessor {
                 }
                 note = Math.max(0, Math.min(127, note));
 
-                const routeMap = this.noteMap.get(event.trackId) ?? new Map<number, number>();
-                routeMap.set(event.kind.channel * 128 + event.kind.note, note);
-                this.noteMap.set(event.trackId, routeMap);
-                output.push({
+                this.noteVoices.push(event.trackId, event.kind.channel * 128 + event.kind.note, note);
+                const transformed: MidiEvent = {
                     timeSamples: event.timeSamples,
                     trackId: event.trackId,
                     kind: { type: 'noteOn', channel: event.kind.channel, note, velocity: event.kind.velocity },
-                });
+                };
+                output.push(transformed);
+                preview?.transferDecisionLineage(event, transformed);
             } else if (event.kind.type === 'noteOff') {
                 const key = event.kind.channel * 128 + event.kind.note;
-                const routeMap = this.noteMap.get(event.trackId);
-                const mappedNote = routeMap?.get(key) ?? event.kind.note;
-                routeMap?.delete(key);
-                if (routeMap?.size === 0) {
-                    this.noteMap.delete(event.trackId);
-                }
-                output.push({
+                const mappedNote = this.noteVoices.shift(event.trackId, key) ?? event.kind.note;
+                const transformed: MidiEvent = {
                     timeSamples: event.timeSamples,
                     trackId: event.trackId,
                     kind: { type: 'noteOff', channel: event.kind.channel, note: mappedNote },
-                });
+                };
+                output.push(transformed);
+                preview?.transferDecisionLineage(event, transformed);
             } else {
                 output.push(event);
             }
@@ -148,7 +153,7 @@ export class ScaleQuantizer extends BaseMidiProcessor {
     }
 
     reset(): void {
-        this.noteMap.clear();
+        this.noteVoices.clear();
     }
 
     protected resetParams(): void {

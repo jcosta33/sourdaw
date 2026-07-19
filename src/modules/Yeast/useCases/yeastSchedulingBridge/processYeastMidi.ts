@@ -1,3 +1,4 @@
+import { yeastPreviewTap } from '../../engine/yeastPreviewTap';
 import { getYeastRuntimeError, getYeastRuntimeStatus, processYeastRuntimeTransaction } from '../../engine/yeastRuntime';
 import { createYeastProcessorProjection } from '../../models/YeastProcessorProjection';
 import { yeastStore } from '../../stores/yeastStore';
@@ -6,6 +7,8 @@ import type { MidiEvent, TransportInfo } from '../../models/MidiEvent';
 
 type ProcessYeastMidiInput = {
     context: BaseAudioContext;
+    rackId?: string;
+    routeId?: string;
     trackId: string;
     events: readonly MidiEvent[];
     blockStartSamples: number;
@@ -39,16 +42,28 @@ export async function processYeastMidi(input: ProcessYeastMidiInput): Promise<Mi
     }
 
     const projection = createYeastProcessorProjection(state.processors);
-    if (projection.length === 0) {
+    const previewScope = {
+        rackId: input.rackId ?? input.trackId,
+        routeId: input.routeId ?? input.trackId,
+        trackId: input.trackId,
+    };
+    if (projection.length === 0 && !yeastPreviewTap.isEnabled(previewScope)) {
         return [...input.events];
     }
-
+    let output: MidiEvent[];
     try {
-        const processed = await processYeastRuntimeTransaction({ ...input, projection });
+        const processed = await processYeastRuntimeTransaction({
+            ...input,
+            rackId: previewScope.rackId,
+            routeId: previewScope.routeId,
+            projection,
+        });
         publishRuntimeStatus();
-        return processed ?? [...input.events];
+        output = processed ?? [...input.events];
     } catch {
         publishRuntimeStatus();
-        return [...input.events];
+        output = [...input.events];
     }
+
+    return output;
 }

@@ -6,7 +6,8 @@ import {
     YEAST_WORKER_DEADLINE_MS,
 } from '../YeastWorkerClient';
 
-import type { TransportInfo } from '../../models/MidiEvent';
+import type { MidiEvent, TransportInfo } from '../../models/MidiEvent';
+import type { YeastPreviewBlock, YeastPreviewEvent } from '../../models/YeastPreviewSnapshot';
 import type { YeastProcessorCommand } from '../../models/YeastProcessorCommand';
 import type { YeastProcessorProjection } from '../../models/YeastProcessorProjection';
 
@@ -104,8 +105,71 @@ function triggerWorkerFailure(worker: FakeWorker, kind: 'error' | 'messageerror'
 }
 
 /** Simulate the Worker replying 'processed' for a given requestId. */
-function replyProcessed(worker: FakeWorker, requestId: number, events: unknown[] = []): void {
-    worker.onmessage?.({ data: { type: 'processed', requestId, events } } as MessageEvent);
+function replyProcessed(worker: FakeWorker, requestId: number, events: unknown[] = [], preview?: unknown): void {
+    worker.onmessage?.({ data: { type: 'processed', requestId, events, preview } } as MessageEvent);
+}
+
+function packPreview(records: readonly YeastPreviewEvent[], droppedEvents = 0): Record<string, unknown> {
+    const capacity = 512;
+    const eventId = new Float64Array(capacity);
+    const phase = new Uint8Array(capacity);
+    const beatTime = new Float64Array(capacity);
+    const durationBeats = new Float64Array(capacity);
+    const pitch = new Uint8Array(capacity);
+    const velocity = new Float64Array(capacity);
+    const probability = new Float64Array(capacity);
+    probability.fill(Number.NaN);
+    const flags = new Uint8Array(capacity);
+    const rackIds = Array.from({ length: capacity }, () => '');
+    const routeIds = Array.from({ length: capacity }, () => '');
+    const trackIds = Array.from({ length: capacity }, () => '');
+    const processorId = Array.from({ length: capacity }, () => '');
+    const provenanceProcessorId = Array.from({ length: capacity }, () => '');
+    for (let index = 0; index < records.length; index++) {
+        const record = records[index]!;
+        eventId[index] = record.eventId;
+        phase[index] = record.phase === 'open' ? 0 : 1;
+        beatTime[index] = record.beatTime;
+        durationBeats[index] = record.durationBeats;
+        pitch[index] = record.pitch;
+        velocity[index] = record.velocity;
+        probability[index] = record.probability ?? Number.NaN;
+        flags[index] = (record.realized ? 1 : 0) | (record.bypassed ? 2 : 0) | (record.failed ? 4 : 0);
+        rackIds[index] = record.rackId;
+        routeIds[index] = record.routeId;
+        trackIds[index] = record.trackId;
+        processorId[index] = record.processorId ?? '';
+    }
+    const first = records[0];
+    return {
+        rackId: first?.rackId ?? 'track-a',
+        routeId: first?.routeId ?? 'track-a',
+        trackId: first?.trackId ?? 'track-a',
+        projectionVersion: first?.projectionVersion ?? 1,
+        reset: false,
+        count: records.length,
+        provenanceCount: 0,
+        droppedEvents,
+        eventId,
+        phase,
+        beatTime,
+        durationBeats,
+        pitch,
+        velocity,
+        probability,
+        flags,
+        rackIds,
+        routeIds,
+        trackIds,
+        processorId,
+        provenanceEventCount: new Uint16Array(capacity),
+        provenanceFlags: new Uint8Array(capacity),
+        provenanceProcessorId,
+    };
+}
+
+function replyPreviewPage(worker: FakeWorker, requestId: number, page: unknown, captureEpoch = 1): void {
+    worker.onmessage?.({ data: { type: 'previewPage', requestId, captureEpoch, page } } as MessageEvent);
 }
 
 function replyProcessedError(worker: FakeWorker, requestId: number, error: string): void {
@@ -168,6 +232,504 @@ describe('createYeastWorker — processBlock lifecycle', () => {
         await expect(promise).resolves.toEqual([]);
     });
 
+    it('settles scheduler output before separately validating and dispatching preview', async () => {
+        const node = await createYeastWorker(makeContext());
+        const worker = lastWorker();
+        const onPreview = vi.fn<(preview: YeastPreviewBlock) => void>();
+        node.onPreview(onPreview);
+        const events: MidiEvent[] = [{ timeSamples: 0, kind: { type: 'noteOn', channel: 0, note: 60, velocity: 90 } }];
+        const record: YeastPreviewEvent = {
+            eventId: 1,
+            rackId: 'track-a',
+            routeId: 'track-a',
+            trackId: 'track-a',
+            projectionVersion: 1,
+            phase: 'closed',
+            beatTime: 0,
+            durationBeats: 0.5,
+            pitch: 60,
+            velocity: 90,
+            probability: 0.5,
+            realized: true,
+            processorId: 'arp-1',
+            bypassed: false,
+            failed: false,
+        };
+
+        const promise = node.processBlock(events, 0, 128, transport, 'track-a', true);
+        replyProcessed(worker, 0, events);
+
+        await expect(promise).resolves.toBe(events);
+        expect(onPreview).not.toHaveBeenCalled();
+
+        replyPreviewPage(worker, 0, packPreview([record]));
+        expect(onPreview).not.toHaveBeenCalled();
+        await vi.advanceTimersByTimeAsync(0);
+
+        expect(onPreview).toHaveBeenCalledWith({
+            rackId: 'track-a',
+            routeId: 'track-a',
+            trackId: 'track-a',
+            captureEpoch: 1,
+            projectionVersion: 1,
+            reset: false,
+            records: [record],
+            provenance: [],
+            droppedEvents: 0,
+        });
+    });
+
+    it('rejects a late preview page from before capture was disabled and re-enabled', async () => {
+        const node = await createYeastWorker(makeContext());
+        const worker = lastWorker();
+        const onPreview = vi.fn();
+        node.onPreview(onPreview);
+        const staleRecord: YeastPreviewEvent = {
+            eventId: 1,
+            rackId: 'track-a',
+            routeId: 'track-a',
+            trackId: 'track-a',
+            projectionVersion: 1,
+            phase: 'closed',
+            beatTime: 0,
+            durationBeats: 0.5,
+            pitch: 60,
+            velocity: 90,
+            probability: null,
+            realized: true,
+            processorId: null,
+            bypassed: false,
+            failed: false,
+        };
+        const currentRecord: YeastPreviewEvent = {
+            ...staleRecord,
+            eventId: 2,
+            pitch: 62,
+        };
+
+        const firstEnabled = node.processBlock([], 0, 128, transport, 'track-a', true, 'track-a', 'track-a', 1);
+        replyProcessed(worker, 0, []);
+        await firstEnabled;
+
+        const disabled = node.processBlock([], 128, 256, transport, 'track-a', false, 'track-a', 'track-a', 2);
+        replyProcessed(worker, 1, []);
+        await disabled;
+
+        const reenabled = node.processBlock([], 256, 384, transport, 'track-a', true, 'track-a', 'track-a', 3);
+        replyProcessed(worker, 2, []);
+        await reenabled;
+
+        replyPreviewPage(worker, 0, packPreview([staleRecord]), 1);
+        await vi.runAllTimersAsync();
+        expect(onPreview).not.toHaveBeenCalled();
+
+        replyPreviewPage(worker, 2, packPreview([currentRecord]), 3);
+        await vi.runAllTimersAsync();
+        expect(onPreview).toHaveBeenCalledOnce();
+        expect(onPreview).toHaveBeenCalledWith(expect.objectContaining({ records: [currentRecord], droppedEvents: 0 }));
+    });
+
+    it('explicitly releases a disabled preview binding and rejects its in-flight page', async () => {
+        const node = await createYeastWorker(makeContext());
+        const worker = lastWorker();
+        const onPreview = vi.fn();
+        node.onPreview(onPreview);
+        const route = { rackId: 'rack-a', routeId: 'route-a', trackId: 'track-a', captureEpoch: 7 };
+        const processing = node.processBlock(
+            [],
+            0,
+            128,
+            transport,
+            route.trackId,
+            true,
+            route.rackId,
+            route.routeId,
+            route.captureEpoch
+        );
+        replyProcessed(worker, 0, []);
+        await processing;
+
+        node.releasePreview(route);
+        replyPreviewPage(
+            worker,
+            0,
+            packPreview([
+                {
+                    eventId: 1,
+                    rackId: route.rackId,
+                    routeId: route.routeId,
+                    trackId: route.trackId,
+                    projectionVersion: 1,
+                    phase: 'open',
+                    beatTime: 0,
+                    durationBeats: 0.5,
+                    pitch: 60,
+                    velocity: 90,
+                    probability: null,
+                    realized: true,
+                    processorId: null,
+                    bypassed: false,
+                    failed: false,
+                },
+            ]),
+            route.captureEpoch
+        );
+        await vi.runAllTimersAsync();
+
+        expect(worker.postMessage).toHaveBeenCalledWith({ type: 'releasePreview', ...route });
+        expect(onPreview).not.toHaveBeenCalled();
+    });
+
+    it('bounds retained preview routes and rejects a page for the evicted oldest binding', async () => {
+        const node = await createYeastWorker(makeContext());
+        const worker = lastWorker();
+        const onPreview = vi.fn();
+        node.onPreview(onPreview);
+
+        for (let index = 0; index <= 512; index++) {
+            const trackId = `track-${index}`;
+            const processing = node.processBlock([], 0, 128, transport, trackId, true, 'rack-a', trackId, 1);
+            replyProcessed(worker, index, []);
+            await processing;
+        }
+
+        replyPreviewPage(
+            worker,
+            0,
+            packPreview([
+                {
+                    eventId: 1,
+                    rackId: 'rack-a',
+                    routeId: 'track-0',
+                    trackId: 'track-0',
+                    projectionVersion: 1,
+                    phase: 'open',
+                    beatTime: 0,
+                    durationBeats: 0,
+                    pitch: 60,
+                    velocity: 90,
+                    probability: null,
+                    realized: true,
+                    processorId: null,
+                    bypassed: false,
+                    failed: false,
+                },
+            ])
+        );
+        await vi.runAllTimersAsync();
+
+        expect(onPreview).not.toHaveBeenCalled();
+    });
+
+    it('invalidates queued delivery when one route identity is rebound to another track', async () => {
+        const node = await createYeastWorker(makeContext());
+        const worker = lastWorker();
+        const onPreview = vi.fn<(preview: YeastPreviewBlock) => void>();
+        node.onPreview(onPreview);
+        const recordA: YeastPreviewEvent = {
+            eventId: 1,
+            rackId: 'rack-a',
+            routeId: 'shared-route',
+            trackId: 'track-a',
+            projectionVersion: 1,
+            phase: 'open',
+            beatTime: 0,
+            durationBeats: 0.5,
+            pitch: 60,
+            velocity: 90,
+            probability: null,
+            realized: true,
+            processorId: null,
+            bypassed: false,
+            failed: false,
+        };
+        const recordB: YeastPreviewEvent = {
+            ...recordA,
+            eventId: 2,
+            trackId: 'track-b',
+            pitch: 67,
+        };
+
+        const trackA = node.processBlock([], 0, 128, transport, 'track-a', true, 'rack-a', 'shared-route', 1);
+        replyProcessed(worker, 0, []);
+        await trackA;
+        replyPreviewPage(worker, 0, packPreview([recordA]), 1);
+
+        const trackB = node.processBlock([], 128, 256, transport, 'track-b', true, 'rack-a', 'shared-route', 1);
+        replyProcessed(worker, 1, []);
+        await trackB;
+        replyPreviewPage(worker, 1, packPreview([recordB]), 1);
+        await vi.runAllTimersAsync();
+
+        expect(onPreview).toHaveBeenCalledOnce();
+        expect(onPreview).toHaveBeenCalledWith(
+            expect.objectContaining({
+                rackId: 'rack-a',
+                routeId: 'shared-route',
+                trackId: 'track-b',
+                records: [recordB],
+            })
+        );
+    });
+
+    it('keeps an enabled route accepted when another route disables capture', async () => {
+        const node = await createYeastWorker(makeContext());
+        const worker = lastWorker();
+        const onPreview = vi.fn();
+        node.onPreview(onPreview);
+        const routeARecord: YeastPreviewEvent = {
+            eventId: 1,
+            rackId: 'track-a',
+            routeId: 'track-a',
+            trackId: 'track-a',
+            projectionVersion: 1,
+            phase: 'closed',
+            beatTime: 0,
+            durationBeats: 0.5,
+            pitch: 60,
+            velocity: 90,
+            probability: null,
+            realized: true,
+            processorId: null,
+            bypassed: false,
+            failed: false,
+        };
+
+        const routeA = node.processBlock([], 0, 128, transport, 'track-a', true);
+        replyProcessed(worker, 0, []);
+        await routeA;
+
+        const disabledRouteB = node.processBlock([], 0, 128, transport, 'track-b', false);
+        replyProcessed(worker, 1, []);
+        await disabledRouteB;
+
+        replyPreviewPage(worker, 0, packPreview([routeARecord]), 1);
+        await vi.runAllTimersAsync();
+
+        expect(onPreview).toHaveBeenCalledOnce();
+        expect(onPreview).toHaveBeenCalledWith(expect.objectContaining({ records: [routeARecord] }));
+    });
+
+    it('queues deferred preview pages independently for enabled routes', async () => {
+        const node = await createYeastWorker(makeContext());
+        const worker = lastWorker();
+        const onPreview = vi.fn<(preview: YeastPreviewBlock) => void>();
+        node.onPreview(onPreview);
+        const routeARecord: YeastPreviewEvent = {
+            eventId: 1,
+            rackId: 'track-a',
+            routeId: 'track-a',
+            trackId: 'track-a',
+            projectionVersion: 1,
+            phase: 'closed',
+            beatTime: 0,
+            durationBeats: 0.5,
+            pitch: 60,
+            velocity: 90,
+            probability: null,
+            realized: true,
+            processorId: null,
+            bypassed: false,
+            failed: false,
+        };
+        const routeBRecord: YeastPreviewEvent = {
+            ...routeARecord,
+            eventId: 2,
+            rackId: 'track-b',
+            routeId: 'track-b',
+            trackId: 'track-b',
+            pitch: 67,
+        };
+
+        const routeA = node.processBlock([], 0, 128, transport, 'track-a', true);
+        const routeB = node.processBlock([], 0, 128, transport, 'track-b', true);
+        replyProcessed(worker, 0, []);
+        replyProcessed(worker, 1, []);
+        await Promise.all([routeA, routeB]);
+
+        replyPreviewPage(worker, 0, packPreview([routeARecord]), 1);
+        replyPreviewPage(worker, 1, packPreview([routeBRecord]), 1);
+        await vi.runAllTimersAsync();
+
+        expect(onPreview).toHaveBeenCalledTimes(2);
+        expect(onPreview.mock.calls.map(([block]) => block.routeId)).toEqual(['track-a', 'track-b']);
+    });
+
+    it('rejects a deferred preview page whose route does not match its accepted request', async () => {
+        const node = await createYeastWorker(makeContext());
+        const worker = lastWorker();
+        const onPreview = vi.fn();
+        node.onPreview(onPreview);
+        const mismatchedRecord: YeastPreviewEvent = {
+            eventId: 1,
+            rackId: 'track-b',
+            routeId: 'track-b',
+            trackId: 'track-b',
+            projectionVersion: 1,
+            phase: 'closed',
+            beatTime: 0,
+            durationBeats: 0.5,
+            pitch: 60,
+            velocity: 90,
+            probability: null,
+            realized: true,
+            processorId: null,
+            bypassed: false,
+            failed: false,
+        };
+
+        const routeA = node.processBlock([], 0, 128, transport, 'track-a', true);
+        replyProcessed(worker, 0, []);
+        await routeA;
+
+        replyPreviewPage(worker, 0, packPreview([mismatchedRecord]), 1);
+        await vi.runAllTimersAsync();
+
+        expect(onPreview).not.toHaveBeenCalled();
+    });
+
+    it('does not inspect an embedded preview payload on the correlated scheduler reply', async () => {
+        const node = await createYeastWorker(makeContext());
+        const worker = lastWorker();
+        const events: MidiEvent[] = [{ timeSamples: 0, kind: { type: 'noteOn', channel: 0, note: 60, velocity: 90 } }];
+        let previewFieldReads = 0;
+        const embeddedRecord = {
+            get beatTime() {
+                previewFieldReads += 1;
+                return 0;
+            },
+            durationBeats: 0.5,
+            pitch: 60,
+            velocity: 90,
+            probability: null,
+            realized: true,
+            processorId: 'legacy-preview',
+            bypassed: false,
+            failed: false,
+        };
+
+        const promise = node.processBlock(events, 0, 128, transport, 'track-a', true);
+        replyProcessed(worker, 0, events, { records: [embeddedRecord], droppedEvents: 0 });
+
+        await expect(promise).resolves.toBe(events);
+        expect(previewFieldReads).toBe(0);
+    });
+
+    it('discards a malformed deferred preview page without delaying scheduler output', async () => {
+        const node = await createYeastWorker(makeContext());
+        const worker = lastWorker();
+        const onPreview = vi.fn();
+        node.onPreview(onPreview);
+        const events: MidiEvent[] = [{ timeSamples: 0, kind: { type: 'noteOn', channel: 0, note: 60, velocity: 90 } }];
+
+        const promise = node.processBlock(events, 0, 128, transport, 'track-a', true);
+        replyProcessed(worker, 0, events);
+        await expect(promise).resolves.toBe(events);
+
+        replyPreviewPage(worker, 0, { count: 1, droppedEvents: 0 });
+        await vi.advanceTimersByTimeAsync(0);
+        expect(onPreview).not.toHaveBeenCalled();
+    });
+
+    it('snapshots observers and accounts preview queue overload without reentrancy', async () => {
+        const node = await createYeastWorker(makeContext());
+        const worker = lastWorker();
+        const lateObserver = vi.fn();
+        const stableObserver = vi.fn();
+        let unsubscribeFirst = (): void => {};
+        const firstObserver = vi.fn(() => {
+            unsubscribeFirst();
+            node.onPreview(lateObserver);
+            throw new Error('observer failed');
+        });
+        unsubscribeFirst = node.onPreview(firstObserver);
+        node.onPreview(stableObserver);
+        const record: YeastPreviewEvent = {
+            eventId: 1,
+            rackId: 'track-a',
+            routeId: 'track-a',
+            trackId: 'track-a',
+            projectionVersion: 1,
+            phase: 'closed',
+            beatTime: 0,
+            durationBeats: 0.5,
+            pitch: 60,
+            velocity: 90,
+            probability: null,
+            realized: true,
+            processorId: null,
+            bypassed: false,
+            failed: false,
+        };
+
+        const requests = [
+            node.processBlock([], 0, 128, transport, 'track-a', true),
+            node.processBlock([], 128, 256, transport, 'track-a', true),
+            node.processBlock([], 256, 384, transport, 'track-a', true),
+        ];
+        replyProcessed(worker, 0, []);
+        replyProcessed(worker, 1, []);
+        replyProcessed(worker, 2, []);
+        await Promise.all(requests);
+
+        replyPreviewPage(worker, 0, packPreview([record]));
+        replyPreviewPage(worker, 1, packPreview([record]));
+        replyPreviewPage(worker, 2, packPreview([record]));
+        expect(firstObserver).not.toHaveBeenCalled();
+        expect(stableObserver).not.toHaveBeenCalled();
+
+        await vi.runAllTimersAsync();
+
+        expect(firstObserver).toHaveBeenCalledTimes(1);
+        expect(stableObserver).toHaveBeenCalledTimes(1);
+        expect(lateObserver).not.toHaveBeenCalled();
+        expect(stableObserver.mock.calls[0]?.[0]).toMatchObject({ droppedEvents: 2 });
+
+        const nextRequest = node.processBlock([], 384, 512, transport, 'track-a', true);
+        replyProcessed(worker, 3, []);
+        await nextRequest;
+        replyPreviewPage(worker, 3, packPreview([record]));
+        await vi.runAllTimersAsync();
+
+        expect(firstObserver).toHaveBeenCalledTimes(1);
+        expect(stableObserver).toHaveBeenCalledTimes(2);
+        expect(lateObserver).toHaveBeenCalledTimes(1);
+    });
+
+    it('drops a queued preview delivery when the client becomes stale', async () => {
+        const node = await createYeastWorker(makeContext());
+        const worker = lastWorker();
+        const onPreview = vi.fn();
+        node.onPreview(onPreview);
+        const record: YeastPreviewEvent = {
+            eventId: 1,
+            rackId: 'track-a',
+            routeId: 'track-a',
+            trackId: 'track-a',
+            projectionVersion: 1,
+            phase: 'closed',
+            beatTime: 0,
+            durationBeats: 0.5,
+            pitch: 60,
+            velocity: 90,
+            probability: null,
+            realized: true,
+            processorId: null,
+            bypassed: false,
+            failed: false,
+        };
+
+        const promise = node.processBlock([], 0, 128, transport, 'track-a', true);
+        replyProcessed(worker, 0, []);
+        await promise;
+        replyPreviewPage(worker, 0, packPreview([record]));
+        node.destroy();
+        await vi.runAllTimersAsync();
+
+        expect(onPreview).not.toHaveBeenCalled();
+        expect(vi.getTimerCount()).toBe(0);
+    });
+
     it('rejects processBlock immediately on a correlated worker error', async () => {
         const node = await createYeastWorker(makeContext());
         const worker = lastWorker();
@@ -188,15 +750,45 @@ describe('createYeastWorker — processBlock lifecycle', () => {
         expect(worker.postMessage).toHaveBeenCalledWith({
             type: 'processBlock',
             requestId: 0,
+            captureEpoch: 0,
             events: [],
             blockStart: 0,
             blockEnd: 128,
             transport,
+            rackId: 'track-a',
+            routeId: 'track-a',
             trackId: 'track-a',
+            previewEnabled: false,
         });
 
         replyProcessed(worker, 0, []);
         await expect(promise).resolves.toEqual([]);
+    });
+
+    it('allocates preview route state only while capture is enabled and removes it on disable', async () => {
+        const node = await createYeastWorker(makeContext());
+        const worker = lastWorker();
+        const arrayFrom = vi.spyOn(Array, 'from');
+
+        const disabled = node.processBlock([], 0, 128, transport, 'track-a', false, 'rack-a', 'track-a', 0);
+        expect(arrayFrom).not.toHaveBeenCalled();
+        replyProcessed(worker, 0, []);
+        await disabled;
+
+        const enabled = node.processBlock([], 128, 256, transport, 'track-a', true, 'rack-a', 'track-a', 11);
+        expect(arrayFrom).toHaveBeenCalledTimes(1);
+        replyProcessed(worker, 1, []);
+        await enabled;
+
+        const disabledAgain = node.processBlock([], 256, 384, transport, 'track-a', false, 'rack-a', 'track-a', 12);
+        expect(arrayFrom).toHaveBeenCalledTimes(1);
+        replyProcessed(worker, 2, []);
+        await disabledAgain;
+
+        const reenabled = node.processBlock([], 384, 512, transport, 'track-a', true, 'rack-a', 'track-a', 13);
+        expect(arrayFrom).toHaveBeenCalledTimes(2);
+        replyProcessed(worker, 3, []);
+        await reenabled;
     });
 
     it('ignores wrong, duplicate, and late processed replies', async () => {

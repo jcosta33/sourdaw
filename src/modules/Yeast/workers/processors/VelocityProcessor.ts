@@ -6,6 +6,8 @@ import { type MidiEvent, type TransportInfo } from '../../models/MidiEvent';
 import { BaseMidiProcessor } from '../BaseMidiProcessor';
 import { nextLcg } from '../lcgRandom';
 
+import type { YeastPreviewDecisionSink } from '../YeastPreviewSidecar';
+
 type VelCurve = 'linear' | 'soft' | 'hard' | 'sCurve';
 
 export class VelocityProcessor extends BaseMidiProcessor {
@@ -23,15 +25,22 @@ export class VelocityProcessor extends BaseMidiProcessor {
         super(id ?? `vel-${Date.now()}`);
     }
 
-    processMidi(input: readonly MidiEvent[], output: MidiEvent[], _transport: TransportInfo): void {
+    processMidi(
+        input: readonly MidiEvent[],
+        output: MidiEvent[],
+        _transport: TransportInfo,
+        preview?: YeastPreviewDecisionSink
+    ): void {
         for (const event of input) {
             if (event.kind.type === 'noteOn') {
                 const vel = this.processVelocity(event.kind.velocity);
-                output.push({
+                const transformed: MidiEvent = {
                     timeSamples: event.timeSamples,
                     trackId: event.trackId,
                     kind: { type: 'noteOn', channel: event.kind.channel, note: event.kind.note, velocity: vel },
-                });
+                };
+                output.push(transformed);
+                preview?.transferDecisionLineage(event, transformed);
             } else {
                 output.push(event);
             }

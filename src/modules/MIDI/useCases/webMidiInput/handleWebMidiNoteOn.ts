@@ -71,13 +71,15 @@ export const handleWebMidiNoteOn = inject({
 
             const strip = engine.ensureTrackStrip(instrumentTrackId);
 
-            const hasYeast = instrumentTrack?.devices.some((device) => device.type === 'yeast');
-            if (hasYeast) {
+            const yeastDevice = instrumentTrack?.devices.find((device) => device.type === 'yeast');
+            if (yeastDevice) {
                 const sampleTime = Math.round(now * engine.context.sampleRate);
                 let processedEvents;
                 try {
                     processedEvents = await deps.processRealtimeMidiInput({
                         context: engine.context,
+                        rackId: yeastDevice.id,
+                        routeId: instrumentTrackId,
                         trackId: instrumentTrackId,
                         note,
                         velocity,

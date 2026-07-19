@@ -33,6 +33,12 @@ export type TransportInfo = {
     loopEnabled: boolean;
     loopStartPpq: number;
     loopEndPpq: number;
+    /**
+     * Explicit transport discontinuity identity. Scheduler restarts/seeks use a
+     * new value; realtime input may omit it because its AudioContext windows are
+     * not a chronological transport stream.
+     */
+    discontinuityEpoch?: number;
 };
 
 // ── Utility functions ────────────────────────────────────────────────────────

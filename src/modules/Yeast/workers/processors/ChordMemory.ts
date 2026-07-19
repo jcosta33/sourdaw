@@ -7,8 +7,10 @@
 
 import { type MidiEvent, type TransportInfo } from '../../models/MidiEvent';
 import { BaseMidiProcessor } from '../BaseMidiProcessor';
+import { BoundedNoteVoiceQueue } from '../BoundedNoteVoiceQueue';
 
 import type { YeastProcessorCommand } from '../../models/YeastProcessorCommand';
+import type { YeastPreviewDecisionSink } from '../YeastPreviewSidecar';
 
 type StoredChord = {
     root: number;
@@ -26,13 +28,18 @@ export class ChordMemory extends BaseMidiProcessor {
     // Track active chords for Note Off.
     // Numeric key (channel << 7) | triggerNote matches MidiRack/ScaleQuantizer and
     // avoids a per-event template-literal allocation on the audio thread.
-    private activeChords = new Map<string | undefined, Map<number, number[]>>();
+    private activeChordVoices = new BoundedNoteVoiceQueue<number[]>();
 
     constructor(id?: string) {
         super(id ?? `chordmem-${Date.now()}`);
     }
 
-    processMidi(input: readonly MidiEvent[], output: MidiEvent[], _transport: TransportInfo): void {
+    processMidi(
+        input: readonly MidiEvent[],
+        output: MidiEvent[],
+        _transport: TransportInfo,
+        preview?: YeastPreviewDecisionSink
+    ): void {
         for (const event of input) {
             if (event.kind.type === 'noteOn') {
                 if (this.learning) {
@@ -54,15 +61,15 @@ export class ChordMemory extends BaseMidiProcessor {
                     for (const node of stored.notes) {
                         const note = Math.max(0, Math.min(127, node + transpose));
                         emitted.push(note);
-                        output.push({
+                        const generated: MidiEvent = {
                             timeSamples: event.timeSamples,
                             trackId: event.trackId,
                             kind: { type: 'noteOn', channel: event.kind.channel, note, velocity: event.kind.velocity },
-                        });
+                        };
+                        output.push(generated);
+                        preview?.transferDecisionLineage(event, generated);
                     }
-                    const routeMap = this.activeChords.get(event.trackId) ?? new Map<number, number[]>();
-                    routeMap.set(key, emitted);
-                    this.activeChords.set(event.trackId, routeMap);
+                    this.activeChordVoices.push(event.trackId, key, emitted);
                 } else {
                     // No memory for this key — pass through
                     output.push(event);
@@ -84,19 +91,16 @@ export class ChordMemory extends BaseMidiProcessor {
                 }
 
                 const key = (event.kind.channel << 7) | event.kind.note;
-                const routeMap = this.activeChords.get(event.trackId);
-                const emitted = routeMap?.get(key);
-                if (routeMap && emitted) {
+                const emitted = this.activeChordVoices.shift(event.trackId, key);
+                if (emitted) {
                     for (const note of emitted) {
-                        output.push({
+                        const noteOff: MidiEvent = {
                             timeSamples: event.timeSamples,
                             trackId: event.trackId,
                             kind: { type: 'noteOff', channel: event.kind.channel, note },
-                        });
-                    }
-                    routeMap.delete(key);
-                    if (routeMap.size === 0) {
-                        this.activeChords.delete(event.trackId);
+                        };
+                        output.push(noteOff);
+                        preview?.transferDecisionLineage(event, noteOff);
                     }
                 } else {
                     output.push(event);
@@ -108,7 +112,7 @@ export class ChordMemory extends BaseMidiProcessor {
     }
 
     reset(): void {
-        this.activeChords.clear();
+        this.activeChordVoices.clear();
         this.learnBuffer = [];
         this.learnRoot = -1;
         this.learning = false;

@@ -12,9 +12,11 @@
  *   → { type: 'projectionAck', projectionId, events }
  *   → { type: 'projectionError', projectionId, error }
  *   ← { type: 'executeCommand', commandId, command }
- *   ← { type: 'processBlock', requestId, trackId, events, blockStart, blockEnd, transport }
+ *   ← { type: 'processBlock', requestId, captureEpoch, rackId, routeId, trackId, events, blockStart, blockEnd, transport, previewEnabled }
  *   → { type: 'commandAck', commandId, accepted, error? }
  *   → { type: 'processed',    requestId, events }
+ *   → { type: 'previewPage',  requestId, captureEpoch, page } (lossy/deferred)
+ *   ← { type: 'releasePreview', captureEpoch, rackId, routeId, trackId }
  *   ← { type: 'allNotesOff',  panicId, nowSamples }
  *   → { type: 'allNotesOffAck', panicId, completed, events, error? }
  */
@@ -29,11 +31,15 @@ import type { YeastProcessorProjectionItem } from '../models/YeastProcessorProje
 type YeastProcessBlockMessage = {
     type: 'processBlock';
     requestId: number;
+    captureEpoch: number;
+    rackId: string;
+    routeId: string;
     trackId: string;
     events: MidiEvent[];
     blockStart: number;
     blockEnd: number;
     transport: TransportInfo;
+    previewEnabled: boolean;
 };
 
 type ParsedExecuteCommand = {
@@ -129,7 +135,8 @@ function isTransportInfo(value: unknown): value is TransportInfo {
         isFiniteNumber(value.timeSigDen) &&
         typeof value.loopEnabled === 'boolean' &&
         isFiniteNumber(value.loopStartPpq) &&
-        isFiniteNumber(value.loopEndPpq)
+        isFiniteNumber(value.loopEndPpq) &&
+        (value.discontinuityEpoch === undefined || isCommandId(value.discontinuityEpoch))
     );
 }
 
@@ -138,22 +145,30 @@ function parseProcessBlock(value: unknown): YeastProcessBlockMessage | undefined
         !isPlainObject(value) ||
         value.type !== 'processBlock' ||
         !isCommandId(value.requestId) ||
+        !isCommandId(value.captureEpoch) ||
+        !isTrackId(value.rackId) ||
+        !isTrackId(value.routeId) ||
         !isTrackId(value.trackId) ||
         !isMidiEventArray(value.events) ||
         !isFiniteNumber(value.blockStart) ||
         !isFiniteNumber(value.blockEnd) ||
-        !isTransportInfo(value.transport)
+        !isTransportInfo(value.transport) ||
+        (value.previewEnabled !== undefined && typeof value.previewEnabled !== 'boolean')
     ) {
         return undefined;
     }
     return {
         type: 'processBlock',
         requestId: value.requestId,
+        captureEpoch: value.captureEpoch,
+        rackId: value.rackId,
+        routeId: value.routeId,
         trackId: value.trackId,
         events: value.events,
         blockStart: value.blockStart,
         blockEnd: value.blockEnd,
         transport: value.transport,
+        previewEnabled: value.previewEnabled === true,
     };
 }
 
@@ -224,6 +239,27 @@ function parseAllNotesOff(value: unknown): { panicId: number; nowSamples: number
     return { panicId: value.panicId, nowSamples: value.nowSamples };
 }
 
+function parseReleasePreview(
+    value: unknown
+): { rackId: string; routeId: string; trackId: string; captureEpoch: number } | undefined {
+    if (
+        !isPlainObject(value) ||
+        value.type !== 'releasePreview' ||
+        !isTrackId(value.rackId) ||
+        !isTrackId(value.routeId) ||
+        !isTrackId(value.trackId) ||
+        !isCommandId(value.captureEpoch)
+    ) {
+        return undefined;
+    }
+    return {
+        rackId: value.rackId,
+        routeId: value.routeId,
+        trackId: value.trackId,
+        captureEpoch: value.captureEpoch,
+    };
+}
+
 function parseExecuteCommand(value: unknown): ParsedExecuteCommand | undefined {
     if (!isPlainObject(value) || value.type !== 'executeCommand' || !isCommandId(value.commandId)) {
         return undefined;
@@ -252,6 +288,10 @@ export type YeastWorkerMessageHandlerInput = {
     rack: MidiRack;
     postMessage: (message: unknown) => void;
 };
+
+function deferPreviewDelivery(delivery: () => void): void {
+    setTimeout(delivery, 0);
+}
 
 export function handleYeastWorkerMessage({ data, rack, postMessage }: YeastWorkerMessageHandlerInput): void {
     if (!isPlainObject(data)) {
@@ -345,6 +385,14 @@ export function handleYeastWorkerMessage({ data, rack, postMessage }: YeastWorke
         return;
     }
 
+    if (data.type === 'releasePreview') {
+        const parsed = parseReleasePreview(data);
+        if (parsed) {
+            rack.releasePreview(parsed.rackId, parsed.routeId, parsed.trackId, parsed.captureEpoch);
+        }
+        return;
+    }
+
     const message = parseProcessBlock(data);
     if (!message) {
         return;
@@ -355,9 +403,33 @@ export function handleYeastWorkerMessage({ data, rack, postMessage }: YeastWorke
             message.blockStart,
             message.blockEnd,
             message.transport,
-            message.trackId
+            message.trackId,
+            message.previewEnabled,
+            message.rackId,
+            message.routeId,
+            message.captureEpoch
         );
         postMessage({ type: 'processed', requestId: message.requestId, events: processed });
+        const page = rack.takePreviewPage();
+        if (!page) {
+            return;
+        }
+        try {
+            deferPreviewDelivery(() => {
+                try {
+                    postMessage({
+                        type: 'previewPage',
+                        requestId: message.requestId,
+                        captureEpoch: message.captureEpoch,
+                        page,
+                    });
+                } finally {
+                    rack.releasePreviewPage(page);
+                }
+            });
+        } catch {
+            rack.releasePreviewPage(page);
+        }
     } catch (error: unknown) {
         postMessage({
             type: 'processedError',

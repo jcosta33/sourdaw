@@ -10,6 +10,8 @@ import { type MidiEvent, type TransportInfo } from '../../models/MidiEvent';
 import { BaseMidiProcessor } from '../BaseMidiProcessor';
 import { gaussianLcg } from '../lcgRandom';
 
+import type { YeastPreviewDecisionSink } from '../YeastPreviewSidecar';
+
 type MutationTarget = {
     name: string;
     value: number;
@@ -39,7 +41,12 @@ export class MutationEngine extends BaseMidiProcessor {
         super(id ?? `mutation-${Date.now()}`);
     }
 
-    processMidi(input: readonly MidiEvent[], output: MidiEvent[], _transport: TransportInfo): void {
+    processMidi(
+        input: readonly MidiEvent[],
+        output: MidiEvent[],
+        _transport: TransportInfo,
+        preview?: YeastPreviewDecisionSink
+    ): void {
         // Mutation doesn't transform events directly — it modifies its own target values
         // which other processors can read. For now, apply velocity mutation to passing notes.
         this.stepCounter++;
@@ -53,11 +60,13 @@ export class MutationEngine extends BaseMidiProcessor {
         for (const event of input) {
             if (event.kind.type === 'noteOn') {
                 const vel = Math.max(1, Math.min(127, Math.round(event.kind.velocity + velOffset)));
-                output.push({
+                const transformed: MidiEvent = {
                     timeSamples: event.timeSamples,
                     trackId: event.trackId,
                     kind: { type: 'noteOn', channel: event.kind.channel, note: event.kind.note, velocity: vel },
-                });
+                };
+                output.push(transformed);
+                preview?.transferDecisionLineage(event, transformed);
             } else {
                 output.push(event);
             }

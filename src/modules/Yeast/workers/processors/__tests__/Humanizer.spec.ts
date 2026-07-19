@@ -98,17 +98,11 @@ describe('Humanizer', () => {
         expect(first.some((value) => value !== 0)).toBe(true); // and it actually varies
     });
 
-    it('bounds noteTimingMap by evicting oldest entries when Note Offs are dropped', () => {
-        // Regression: noteTimingMap was deleted only on a matching Note Off (or
-        // reset). A transport seek before panic drops Note Offs, so the map grew
-        // with every distinct un-released note. Feed strictly distinct, ever-
-        // increasing keys (no Note Offs) past the ceiling and assert the map stays
-        // bounded and the oldest entry was actually evicted (pruning happened).
+    it('fails before mutating its bounded voice queue when Note Offs are dropped', () => {
         human.setParam('timing_sigma_ms', 5);
 
         const ceiling = 16 * 128;
-        const firstKey = 0; // (channel 0 << 7) | note 0
-        for (let note = 0; note < ceiling * 2; note++) {
+        for (let note = 0; note < ceiling; note++) {
             const out: MidiEvent[] = [];
             human.processMidi(
                 [{ timeSamples: note, kind: { type: 'noteOn', channel: 0, note, velocity: 100 } }],
@@ -117,8 +111,14 @@ describe('Humanizer', () => {
             );
         }
 
-        const map = (human as unknown as { noteTimingMap: Map<number, number> }).noteTimingMap;
-        expect(map.size).toBeLessThanOrEqual(ceiling);
-        expect(map.has(firstKey)).toBe(false); // oldest entry evicted, not retained forever
+        expect(() => {
+            human.processMidi(
+                [{ timeSamples: ceiling, kind: { type: 'noteOn', channel: 0, note: ceiling, velocity: 100 } }],
+                [],
+                transport
+            );
+        }).toThrow('Yeast note voice capacity exceeded');
+        const queue = (human as unknown as { noteTimingVoices: { size: number } }).noteTimingVoices;
+        expect(queue.size).toBe(ceiling);
     });
 });

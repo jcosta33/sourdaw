@@ -36,4 +36,12 @@ describe('Yeast runtime architecture', () => {
         expect(readFileSync(workerClient, 'utf8')).toMatch(/new Worker/);
         expect(readFileSync(workerEntrypoint, 'utf8')).toMatch(/self\.onmessage/);
     });
+
+    it('keeps delayed preview lineage in fixed-capacity storage', () => {
+        const repeater = readFileSync(join(yeastRoot, 'workers', 'processors', 'NoteRepeater.ts'), 'utf8');
+        const sidecar = readFileSync(join(yeastRoot, 'workers', 'YeastPreviewSidecar.ts'), 'utf8');
+
+        expect(repeater).not.toMatch(/new Map<MidiEvent, YeastPreviewDecisionLineage>/);
+        expect(sidecar).not.toMatch(/return \{\s*durationSamples:/);
+    });
 });

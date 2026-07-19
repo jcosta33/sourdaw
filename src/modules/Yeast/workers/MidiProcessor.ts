@@ -7,6 +7,7 @@
 
 import { type MidiEvent, type TransportInfo } from '../models/MidiEvent';
 
+import type { YeastPreviewDecisionSink } from './YeastPreviewSidecar';
 import type { YeastProcessorCommand } from '../models/YeastProcessorCommand';
 
 export type MidiProcessorParams = Readonly<Record<string, number>>;
@@ -14,9 +15,15 @@ export type MidiProcessorParams = Readonly<Record<string, number>>;
 export type MidiProcessor = {
     readonly id: string;
     readonly name: string;
+    readonly providesPreviewDecisions?: boolean;
 
     /** Process a block of MIDI events. Append output events to `output`. */
-    processMidi(input: readonly MidiEvent[], output: MidiEvent[], transport: TransportInfo): void;
+    processMidi(
+        input: readonly MidiEvent[],
+        output: MidiEvent[],
+        transport: TransportInfo,
+        preview?: YeastPreviewDecisionSink
+    ): void;
 
     /** Reset all internal state (on transport stop, panic, etc.). */
     reset(): void;
@@ -67,9 +74,9 @@ export class ScheduledEventQueue {
     }
 
     /** Drain all events whose time falls within [start, end). Returns sorted. */
-    drainRange(startSamples: number, endSamples: number): MidiEvent[] {
+    drainRange(startSamples: number, endSamples: number, trackId?: string): MidiEvent[] {
         const drained: MidiEvent[] = [];
-        this.drainRangeInto(startSamples, endSamples, drained);
+        this.drainRangeInto(startSamples, endSamples, drained, trackId);
         return drained;
     }
 
@@ -79,12 +86,16 @@ export class ScheduledEventQueue {
      * `this.events` in place to avoid the `remaining` array allocation in the
      * original `drainRange` (§149.1).
      */
-    drainRangeInto(startSamples: number, endSamples: number, out: MidiEvent[]): MidiEvent[] {
+    drainRangeInto(startSamples: number, endSamples: number, out: MidiEvent[], trackId?: string): MidiEvent[] {
         const src = this.events;
         let writeIdx = 0;
         for (let index = 0; index < src.length; index++) {
             const event = src[index]!;
-            if (event.timeSamples >= startSamples && event.timeSamples < endSamples) {
+            if (
+                event.timeSamples >= startSamples &&
+                event.timeSamples < endSamples &&
+                (trackId === undefined || event.trackId === trackId)
+            ) {
                 out.push(event);
             } else {
                 src[writeIdx++] = event;

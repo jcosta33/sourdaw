@@ -9,6 +9,7 @@ import { type MidiEvent, type TransportInfo } from '../models/MidiEvent';
 
 import { type MidiProcessor, type MidiProcessorParams } from './MidiProcessor';
 
+import type { YeastPreviewDecisionSink } from './YeastPreviewSidecar';
 import type { YeastProcessorCommand } from '../models/YeastProcessorCommand';
 
 export abstract class BaseMidiProcessor implements MidiProcessor {
@@ -22,7 +23,12 @@ export abstract class BaseMidiProcessor implements MidiProcessor {
         this.id = id;
     }
 
-    abstract processMidi(input: readonly MidiEvent[], output: MidiEvent[], transport: TransportInfo): void;
+    abstract processMidi(
+        input: readonly MidiEvent[],
+        output: MidiEvent[],
+        transport: TransportInfo,
+        preview?: YeastPreviewDecisionSink
+    ): void;
     abstract reset(): void;
     abstract setParam(name: string, value: number): void;
     /** Reset only fields controlled by setParam; live processor state must survive. */

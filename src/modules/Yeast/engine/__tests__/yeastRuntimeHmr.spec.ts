@@ -33,6 +33,7 @@ type LegacyWorkletNode = {
     sendCommand: (command: YeastProcessorCommand) => Promise<{ accepted: boolean }>;
     setProjection: (projection: YeastProcessorProjection) => Promise<void>;
     allNotesOff: (nowSamples: number) => Promise<void>;
+    releasePreview?: (binding: { rackId: string; routeId: string; trackId: string; captureEpoch: number }) => void;
     onNotesOff: (handler: (notesOff: YeastNotesOffPayload[]) => void) => () => void;
     destroy: Mock<() => void>;
 };
@@ -53,6 +54,7 @@ type LegacyRuntimeSession = {
     pendingNotesOff?: YeastNotesOffPayload[];
     pendingAllNotesOff: { context: BaseAudioContext; generation: number; nowSamples: number } | null;
     activeOutputNotes?: Map<string, { generation: number; trackId: string; channel: number; note: number }>;
+    previewBindings?: Map<string, { rackId: string; routeId: string; trackId: string; captureEpoch: number }>;
 };
 
 function deferred<T>(): Deferred<T> {
@@ -82,7 +84,9 @@ function makeWorker(context: BaseAudioContext) {
         sendCommand: vi.fn(() => Promise.resolve({ accepted: true })),
         setProjection: vi.fn(() => Promise.resolve()),
         allNotesOff: vi.fn(() => Promise.resolve()),
+        releasePreview: vi.fn(),
         onNotesOff: vi.fn(() => () => {}),
+        onPreview: vi.fn(() => () => {}),
         onTerminalError: vi.fn(() => () => {}),
         destroy: vi.fn<() => void>(),
     };
@@ -95,7 +99,7 @@ describe('yeastRuntime HMR migration', () => {
         retainedHmrState.value = undefined;
     });
 
-    it('revokes a retained Worklet generation without losing its serializable projection', async () => {
+    it('revokes a retained v7 inline-preview generation without losing its serializable projection', async () => {
         const oldContext = {} as BaseAudioContext;
         const newContext = {} as BaseAudioContext;
         const oldNode = makeLegacyNode(oldContext);
@@ -117,7 +121,7 @@ describe('yeastRuntime HMR migration', () => {
             return node;
         });
         legacySession = {
-            version: 3,
+            version: 7,
             context: oldContext,
             node: oldNode,
             nodePromise: oldNodePromise,
@@ -136,7 +140,7 @@ describe('yeastRuntime HMR migration', () => {
         const runtime = await import('../yeastRuntime');
         const panicOutputNotes = vi.fn();
 
-        expect(legacySession.version).toBe(6);
+        expect(legacySession.version).toBe(10);
         expect(legacySession.generation).toBe(oldGeneration + 1);
         expect(oldNode.destroy).toHaveBeenCalledTimes(1);
         expect(legacySession.context).toBeNull();
@@ -206,7 +210,7 @@ describe('yeastRuntime HMR migration', () => {
         const runtime = await import('../yeastRuntime');
         const panicOutputNotes = vi.fn();
 
-        expect(retainedSession.version).toBe(6);
+        expect(retainedSession.version).toBe(10);
         expect(retainedSession.generation).toBe(generation + 1);
         expect(retainedSession.projection).toBe(projection);
         expect(retainedSession.activeOutputNotes).toEqual(new Map());
@@ -232,5 +236,75 @@ describe('yeastRuntime HMR migration', () => {
         runtime.setYeastRuntimeOutputPanicHandler(panicOutputNotes);
 
         expect(panicOutputNotes).toHaveBeenCalledTimes(1);
+    });
+
+    it('recreates a retained same-version Worker so preview listeners bind to the new module', async () => {
+        const context = {} as BaseAudioContext;
+        const retainedWorker = makeWorker(context);
+        const replacementWorker = makeWorker(context);
+        const projection: YeastProcessorProjection = [
+            { id: 'arp-1', type: 'arpeggiator', bypassed: false, params: { rate_denom: 16 } },
+        ];
+        const retainedSession: LegacyRuntimeSession = {
+            version: 10,
+            context,
+            node: retainedWorker,
+            nodePromise: null,
+            projection,
+            processTail: Promise.resolve(),
+            generation: 13,
+            projectionRevision: 3,
+            appliedProjectionRevision: 3,
+            status: 'ready',
+            error: undefined,
+            onNotesOff: null,
+            pendingAllNotesOff: null,
+            activeOutputNotes: new Map(),
+        };
+        retainedHmrState.value = retainedSession;
+        createWorker.mockResolvedValueOnce(replacementWorker);
+
+        const runtime = await import('../yeastRuntime');
+
+        expect(retainedWorker.destroy).toHaveBeenCalledTimes(1);
+        await expect(runtime.ensureYeastRuntime({ context, projection })).resolves.toBe(replacementWorker);
+        expect(replacementWorker.onPreview).toHaveBeenCalledTimes(1);
+        expect(replacementWorker.setProjection).toHaveBeenCalledWith(projection);
+        expect(retainedSession.node).toBe(replacementWorker);
+    });
+
+    it('releases retained preview bindings before destroying a same-version HMR Worker', async () => {
+        const context = {} as BaseAudioContext;
+        const retainedWorker = makeWorker(context);
+        const binding = { rackId: 'rack-a', routeId: 'track-a', trackId: 'track-a', captureEpoch: 7 };
+        const lifecycle: string[] = [];
+        retainedWorker.releasePreview.mockImplementationOnce(() => {
+            lifecycle.push('release');
+        });
+        retainedWorker.destroy.mockImplementationOnce(() => {
+            lifecycle.push('destroy');
+        });
+        retainedHmrState.value = {
+            version: 10,
+            context,
+            node: retainedWorker,
+            nodePromise: null,
+            projection: [],
+            processTail: Promise.resolve(),
+            generation: 17,
+            projectionRevision: 0,
+            appliedProjectionRevision: 0,
+            status: 'ready',
+            error: undefined,
+            onNotesOff: null,
+            pendingAllNotesOff: null,
+            activeOutputNotes: new Map(),
+            previewBindings: new Map([['rack-a\u0000track-a\u0000track-a', binding]]),
+        } satisfies LegacyRuntimeSession;
+
+        await import('../yeastRuntime');
+
+        expect(retainedWorker.releasePreview).toHaveBeenCalledWith(binding);
+        expect(lifecycle).toEqual(['release', 'destroy']);
     });
 });

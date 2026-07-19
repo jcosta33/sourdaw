@@ -74,11 +74,14 @@ export const handleWebMidiNoteOff = inject(midiMessageHandlerDependencies)((deps
         const instrumentTrackState = deps.getTrackStoreState();
         const instrumentTrack = instrumentTrackState?.tracks.find((candidate) => candidate.id === instrumentTrackId);
 
-        if (instrumentTrack?.devices.some((device) => device.type === 'yeast')) {
+        const yeastDevice = instrumentTrack?.devices.find((device) => device.type === 'yeast');
+        if (instrumentTrack && yeastDevice) {
             const context = audioEngine.context;
             const sampleTime = Math.round(context.currentTime * context.sampleRate);
             const processedEvents = await deps.processRealtimeMidiInput({
                 context,
+                rackId: yeastDevice.id,
+                routeId: instrumentTrack.id,
                 trackId: instrumentTrack.id,
                 note,
                 velocity: 0,

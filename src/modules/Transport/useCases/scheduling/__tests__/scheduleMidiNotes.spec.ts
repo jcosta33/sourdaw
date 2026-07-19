@@ -148,6 +148,8 @@ describe('scheduleMidiNotes', () => {
 
         expect(processYeastMidi).toHaveBeenCalledWith(
             expect.objectContaining({
+                rackId: 'y',
+                routeId: 'track-1',
                 trackId: 'track-1',
             })
         );
@@ -160,6 +162,63 @@ describe('scheduleMidiNotes', () => {
         expect(call[2]).toBe(64); // pitch from the generator
         expect(call[5]).toBe(90); // velocity carried through, not garbled
         // Probability defaults to 100 from the template, so the note is not gated out.
+    });
+
+    it('pairs an equal-sample Note Off only when it follows the Note On in stable event order', async () => {
+        const track = midiTrack({ clips: [midiClip()], devices: [{ id: 'y', type: 'yeast' }] });
+        (trackStore as { value: unknown }).value = { tracks: [track] };
+        (midiStore as { value: unknown }).value = {
+            notesByClipId: { 'clip-1': [{ id: 'n0', pitch: 60, startBeat: 1, duration: 1, velocity: 100 }] },
+        };
+        vi.mocked(processYeastMidi).mockResolvedValue([
+            { timeSamples: 24000, kind: { type: 'noteOn', channel: 0, note: 60, velocity: 100 } },
+            { timeSamples: 24000, kind: { type: 'noteOff', channel: 0, note: 60 } },
+        ]);
+
+        await scheduleMidiNotes(0, 4, 0, -1, [], defaultTransportState, 120);
+
+        expect(scheduleNote).toHaveBeenCalledTimes(1);
+        expect(vi.mocked(scheduleNote).mock.calls[0]![4]).toBe(0);
+    });
+
+    it('does not pair an equal-sample Note Off that precedes its Note On', async () => {
+        const track = midiTrack({ clips: [midiClip()], devices: [{ id: 'y', type: 'yeast' }] });
+        (trackStore as { value: unknown }).value = { tracks: [track] };
+        (midiStore as { value: unknown }).value = {
+            notesByClipId: { 'clip-1': [{ id: 'n0', pitch: 60, startBeat: 1, duration: 1, velocity: 100 }] },
+        };
+        vi.mocked(processYeastMidi).mockResolvedValue([
+            { timeSamples: 24000, kind: { type: 'noteOff', channel: 0, note: 60 } },
+            { timeSamples: 24000, kind: { type: 'noteOn', channel: 0, note: 60, velocity: 100 } },
+        ]);
+
+        await scheduleMidiNotes(0, 4, 0, -1, [], defaultTransportState, 120);
+
+        expect(scheduleNote).toHaveBeenCalledTimes(1);
+        expect(vi.mocked(scheduleNote).mock.calls[0]![4]).toBe(0.125);
+    });
+
+    it('preserves the ChordGenerator strum boundary when an off shares the latest on sample', async () => {
+        const track = midiTrack({ clips: [midiClip()], devices: [{ id: 'y', type: 'yeast' }] });
+        (trackStore as { value: unknown }).value = { tracks: [track] };
+        (midiStore as { value: unknown }).value = {
+            notesByClipId: { 'clip-1': [{ id: 'n0', pitch: 60, startBeat: 1, duration: 1, velocity: 100 }] },
+        };
+        vi.mocked(processYeastMidi).mockResolvedValue([
+            { timeSamples: 24000, kind: { type: 'noteOn', channel: 0, note: 67, velocity: 100 } },
+            { timeSamples: 24240, kind: { type: 'noteOn', channel: 0, note: 64, velocity: 100 } },
+            { timeSamples: 24480, kind: { type: 'noteOn', channel: 0, note: 60, velocity: 100 } },
+            { timeSamples: 24480, kind: { type: 'noteOff', channel: 0, note: 60 } },
+            { timeSamples: 24480, kind: { type: 'noteOff', channel: 0, note: 64 } },
+            { timeSamples: 24480, kind: { type: 'noteOff', channel: 0, note: 67 } },
+        ]);
+
+        await scheduleMidiNotes(0, 4, 0, -1, [], defaultTransportState, 120);
+
+        const durationByPitch = new Map(vi.mocked(scheduleNote).mock.calls.map((call) => [call[2], call[4]] as const));
+        expect(durationByPitch.get(60)).toBe(0);
+        expect(durationByPitch.get(64)).toBeCloseTo(0.005, 12);
+        expect(durationByPitch.get(67)).toBeCloseTo(0.01, 12);
     });
 
     it('drops transformed MIDI when the scheduler generation is cancelled during Yeast processing', async () => {
@@ -178,11 +237,17 @@ describe('scheduleMidiNotes', () => {
         let current = true;
         const cancellation: SchedulerCancellation = {
             generation: 1,
+            discontinuityEpoch: 1,
             isCurrent: () => current,
         };
 
         const scheduling = scheduleMidiNotes(0, 4, 0, -1, [], defaultTransportState, 120, cancellation);
         await Promise.resolve();
+        expect(processYeastMidi).toHaveBeenCalledWith(
+            expect.objectContaining({
+                transport: expect.objectContaining({ discontinuityEpoch: 1 }),
+            })
+        );
         current = false;
         resolveYeast([
             { timeSamples: 0, kind: { type: 'noteOn', channel: 0, note: 64, velocity: 100 } },
