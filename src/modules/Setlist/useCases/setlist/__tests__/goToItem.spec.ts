@@ -74,6 +74,35 @@ describe('goToItem', () => {
         expect(setlistStore.set).not.toHaveBeenCalled();
     });
 
+    it('should not wrap to the first item when index is past the last item', () => {
+        const items = [baseItem({ id: 'a' }), baseItem({ id: 'b' })];
+        setlistStoreMock.value = baseState(items, 1);
+
+        const eventBus = createMock<EventBusShape>();
+        eventBus.emit.mockResolvedValue(undefined);
+        injectDependencies(goToItem, { eventBus, setlistStore });
+
+        goToItem(items.length);
+
+        expect(eventBus.emit).not.toHaveBeenCalled();
+        expect(setlistStore.set).not.toHaveBeenCalled();
+        expect(setlistStore.value?.currentIndex).toBe(1);
+    });
+
+    it('should not wrap to the last item when index goes below zero', () => {
+        const items = [baseItem({ id: 'a' }), baseItem({ id: 'b' })];
+        setlistStoreMock.value = baseState(items, 0);
+
+        const eventBus = createMock<EventBusShape>();
+        eventBus.emit.mockResolvedValue(undefined);
+        injectDependencies(goToItem, { eventBus, setlistStore });
+
+        goToItem(-1);
+
+        expect(setlistStore.set).not.toHaveBeenCalled();
+        expect(setlistStore.value?.currentIndex).toBe(0);
+    });
+
     it('should update setlist index and emit midi.out program change when configured', () => {
         const items = [
             baseItem({
