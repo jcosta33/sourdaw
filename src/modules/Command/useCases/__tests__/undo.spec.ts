@@ -137,6 +137,47 @@ describe('undo', () => {
         expect(mocks.undoTreeMoveTo).toHaveBeenCalledWith('previous');
     });
 
+    it('rolls back completed group inverses when an older inverse rejects', async () => {
+        const failure = new Error('older inverse conflict');
+        const older = actionEntry({
+            id: 'older',
+            action: { type: 'togglePlayback' },
+            inverseAction: { type: 'toggleRecording' },
+            groupId: 'group',
+        });
+        const newer = actionEntry({
+            id: 'newer',
+            action: { type: 'toggleLoop' },
+            inverseAction: { type: 'stopPlayback' },
+            groupId: 'group',
+        });
+        let domain_value = 'original';
+        mocks.executeAppAction.mockImplementation((action) => {
+            if (action.type === 'stopPlayback') {
+                domain_value = 'partially-undone';
+                return Promise.resolve();
+            }
+            if (action.type === 'toggleRecording') {
+                throw failure;
+            }
+            if (action.type === 'toggleLoop') {
+                domain_value = 'original';
+            }
+            return Promise.resolve();
+        });
+        mocks.undoStoreValue.value = { past: [older, newer], future: [] };
+
+        await expect(undo()).rejects.toBe(failure);
+
+        expect(domain_value).toBe('original');
+        expect(mocks.executeAppAction).toHaveBeenNthCalledWith(3, newer.action, {
+            skipUndo: true,
+            skipMacroRecording: true,
+        });
+        expect(mocks.undoStoreSet).not.toHaveBeenCalled();
+        expect(mocks.undoTreeMoveTo).not.toHaveBeenCalled();
+    });
+
     it('should not consume an inert action entry without an inverseAction', async () => {
         const entry = actionEntry({ inverseAction: null });
         mocks.undoStoreValue.value = { past: [entry], future: [] };

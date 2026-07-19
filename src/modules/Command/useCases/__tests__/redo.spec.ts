@@ -64,6 +64,10 @@ describe('redo', () => {
     beforeEach(() => {
         mocks.undoStoreSet.mockReset();
         mocks.executeAppAction.mockReset();
+        mocks.executeAppAction.mockImplementation((_action, options) => {
+            options?.onUndoPrepared?.({ label: 'Test', inverseAction: { type: 'toggleRecording' } });
+            return Promise.resolve();
+        });
         mocks.undoTreeMoveTo.mockReset();
         mocks.undoStoreValue.value = { past: [], future: [] };
     });
@@ -74,12 +78,34 @@ describe('redo', () => {
 
         await redo();
 
-        expect(mocks.executeAppAction).toHaveBeenCalledWith({ type: 'togglePlayback' });
+        expect(mocks.executeAppAction).toHaveBeenCalledOnce();
+        expect(mocks.executeAppAction.mock.calls[0]?.[0]).toEqual({ type: 'togglePlayback' });
+        const redo_options = mocks.executeAppAction.mock.calls[0]?.[1];
+        expect(redo_options?.skipUndo).toBe(true);
+        expect(typeof redo_options?.onUndoPrepared).toBe('function');
         expect(mocks.undoStoreSet).toHaveBeenCalledWith({
             past: [entry],
             future: [],
         });
         expect(mocks.undoTreeMoveTo).toHaveBeenCalledWith('e1');
+    });
+
+    it('replaces the stale inverse with the pre-redo inverse without adding a second past entry', async () => {
+        const entry = actionEntry();
+        const fresh_inverse = { type: 'setTempo', payload: { bpm: 90 } } as const;
+        mocks.executeAppAction.mockImplementation((_action, options) => {
+            options?.onUndoPrepared?.({ label: 'Fresh replay', inverseAction: fresh_inverse });
+            return Promise.resolve();
+        });
+        mocks.undoStoreValue.value = { past: [], future: [entry] };
+
+        await redo();
+
+        expect(mocks.undoStoreSet).toHaveBeenCalledOnce();
+        expect(mocks.undoStoreSet).toHaveBeenCalledWith({
+            past: [{ ...entry, label: 'Fresh replay', inverseAction: fresh_inverse }],
+            future: [],
+        });
     });
 
     it('should run callback redo entries without action replay', async () => {

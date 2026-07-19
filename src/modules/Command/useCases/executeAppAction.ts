@@ -39,6 +39,7 @@ export const executeAppAction: ExecuteAppAction = inject({ logger })(
             if (handler.undoable) {
                 undoResult = handler.describe(action);
             }
+            options?.onUndoPrepared?.(undoResult);
 
             // Set semantic context so AutomergeStorage attaches a message to the CRDT change.
             // This makes `Automerge.getHistory()` return readable change descriptions.

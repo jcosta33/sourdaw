@@ -10,13 +10,18 @@ vi.mock('../../../useCases/adjustmentLayer/removeAdjustmentLayer', () => ({
     removeAdjustmentLayer: mocks.removeAdjustmentLayer,
 }));
 
+vi.mock('../createAdjustmentLayerMutationInverse', () => ({
+    createAdjustmentLayerMutationInverse: vi.fn(() => null),
+    getAdjustmentLayerMutationId: vi.fn(() => 'mutation-id'),
+}));
+
 describe('handleRemoveAdjustmentLayer', () => {
     beforeEach(() => {
         vi.clearAllMocks();
     });
 
     it('invokes removeAdjustmentLayer with the payload layer id', () => {
-        handleRemoveAdjustmentLayer.execute({
+        void handleRemoveAdjustmentLayer.execute({
             type: 'removeAdjustmentLayer',
             payload: { layerId: 'layer-42' },
         });

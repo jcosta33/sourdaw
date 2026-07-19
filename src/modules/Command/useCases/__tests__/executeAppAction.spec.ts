@@ -232,6 +232,25 @@ describe('executeAppAction', () => {
         expect(mocks.recordActionHistoryMetadata).not.toHaveBeenCalled();
     });
 
+    it('reports the prepared inverse while suppressing duplicate undo/history writes', async () => {
+        const action: SetSnapValueAction = { type: 'setSnapValue', payload: { value: 0.25 } };
+        const prepared_inverse: AppAction = { type: 'setSnapValue', payload: { value: 0.5 } };
+        const on_undo_prepared = vi.fn<(result: HandlerDescribeResult | null) => void>();
+        const handler = create_mock_handler<SetSnapValueAction>({
+            describe: () => ({ label: 'Fresh inverse', inverseAction: prepared_inverse }),
+        });
+        registerHandlerMap({ [action.type]: handler });
+
+        await executeAppAction(action, { skipUndo: true, onUndoPrepared: on_undo_prepared });
+
+        expect(on_undo_prepared).toHaveBeenCalledWith({
+            label: 'Fresh inverse',
+            inverseAction: prepared_inverse,
+        });
+        expect(mocks.commitUndoEntry).not.toHaveBeenCalled();
+        expect(mocks.recordActionHistoryMetadata).not.toHaveBeenCalled();
+    });
+
     it('should log and rethrow rejected registered handlers without recording side effects', async () => {
         const action: ToggleSidebarAction = { type: 'toggleSidebar' };
         const cause = new Error('handler failed');

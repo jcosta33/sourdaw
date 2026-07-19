@@ -62,6 +62,14 @@ function get_unique_layer(layers: readonly AdjustmentLayer[], layer_id: string):
     return matches[0];
 }
 
+function require_unique_layer(layers: readonly AdjustmentLayer[], layer_id: string): AdjustmentLayer {
+    const layer = get_unique_layer(layers, layer_id);
+    if (!layer) {
+        throw new Error(`Adjustment layer not found: ${layer_id}`);
+    }
+    return layer;
+}
+
 function get_unique_region_location(layers: readonly AdjustmentLayer[], region_id: string): RegionLocation | undefined {
     const matches = layers.flatMap((layer) =>
         layer.regions.flatMap((region, regionIndex) =>
@@ -72,6 +80,14 @@ function get_unique_region_location(layers: readonly AdjustmentLayer[], region_i
         throw new Error(`Ambiguous adjustment region id: ${region_id}`);
     }
     return matches[0];
+}
+
+function require_unique_region_location(layers: readonly AdjustmentLayer[], region_id: string): RegionLocation {
+    const location = get_unique_region_location(layers, region_id);
+    if (!location) {
+        throw new Error(`Adjustment region not found: ${region_id}`);
+    }
+    return location;
 }
 
 function add_affected_tracks(target: Set<string>, layer: AdjustmentLayer, tracks: readonly Track[]): void {
@@ -89,7 +105,7 @@ function create_undo_operation(
     layers: readonly AdjustmentLayer[],
     tracks: readonly Track[],
     affected_track_ids: Set<string>
-): AdjustmentLayerUndoOperation | null {
+): AdjustmentLayerUndoOperation {
     switch (action.type) {
         case 'createAdjustmentLayer': {
             const layer_id = action.payload.layerId;
@@ -100,7 +116,7 @@ function create_undo_operation(
                 throw new Error(`Adjustment layer id collision: ${layer_id}`);
             }
             if (!is_adjustment_effect_type(action.payload.effectType)) {
-                return null;
+                throw new Error(`Unsupported adjustment effect type: ${action.payload.effectType}`);
             }
             const effect_type = action.payload.effectType;
             const parameters = EFFECT_PRESETS[effect_type];
@@ -120,10 +136,7 @@ function create_undo_operation(
             return { kind: 'remove-created-layer', layerId: layer_id, expectedLayer: expected_layer };
         }
         case 'removeAdjustmentLayer': {
-            const layer = get_unique_layer(layers, action.payload.layerId);
-            if (!layer) {
-                return null;
-            }
+            const layer = require_unique_layer(layers, action.payload.layerId);
             add_affected_tracks(affected_track_ids, layer, tracks);
             return {
                 kind: 'restore-removed-layer',
@@ -132,18 +145,17 @@ function create_undo_operation(
             };
         }
         case 'toggleAdjustmentLayer': {
-            const layer = get_unique_layer(layers, action.payload.layerId);
-            if (!layer) {
-                return null;
-            }
+            const layer = require_unique_layer(layers, action.payload.layerId);
             add_affected_tracks(affected_track_ids, layer, tracks);
             return { kind: 'restore-enabled', layerId: layer.id, previous: layer.enabled, expected: !layer.enabled };
         }
         case 'setLayerParameter': {
-            const layer = get_unique_layer(layers, action.payload.layerId);
-            const parameter = layer?.parameters.find((candidate) => candidate.name === action.payload.paramName);
-            if (!layer || !parameter) {
-                return null;
+            const layer = require_unique_layer(layers, action.payload.layerId);
+            const parameter = layer.parameters.find((candidate) => candidate.name === action.payload.paramName);
+            if (!parameter) {
+                throw new Error(
+                    `Adjustment parameter not found: ${action.payload.paramName} on ${action.payload.layerId}`
+                );
             }
             add_affected_tracks(affected_track_ids, layer, tracks);
             return {
@@ -155,10 +167,7 @@ function create_undo_operation(
             };
         }
         case 'setLayerMix': {
-            const layer = get_unique_layer(layers, action.payload.layerId);
-            if (!layer) {
-                return null;
-            }
+            const layer = require_unique_layer(layers, action.payload.layerId);
             add_affected_tracks(affected_track_ids, layer, tracks);
             return {
                 kind: 'restore-mix',
@@ -168,10 +177,10 @@ function create_undo_operation(
             };
         }
         case 'addAdjustmentRegion': {
-            const layer = get_unique_layer(layers, action.payload.layerId);
+            const layer = require_unique_layer(layers, action.payload.layerId);
             const region_id = action.payload.regionId;
-            if (!layer || !region_id) {
-                return null;
+            if (!region_id) {
+                throw new Error('Adjustment region id is required before execution');
             }
             if (get_unique_region_location(layers, region_id)) {
                 throw new Error(`Adjustment region id collision: ${region_id}`);
@@ -192,10 +201,12 @@ function create_undo_operation(
             };
         }
         case 'removeAdjustmentRegion': {
-            const layer = get_unique_layer(layers, action.payload.layerId);
-            const location = get_unique_region_location(layers, action.payload.regionId);
-            if (!layer || !location || location.layer.id !== layer.id) {
-                return null;
+            const layer = require_unique_layer(layers, action.payload.layerId);
+            const location = require_unique_region_location(layers, action.payload.regionId);
+            if (location.layer.id !== layer.id) {
+                throw new Error(
+                    `Adjustment region ${action.payload.regionId} not found in layer ${action.payload.layerId}`
+                );
             }
             add_affected_tracks(affected_track_ids, layer, tracks);
             return {
@@ -206,10 +217,7 @@ function create_undo_operation(
             };
         }
         case 'moveAdjustmentRegion': {
-            const location = get_unique_region_location(layers, action.payload.regionId);
-            if (!location) {
-                return null;
-            }
+            const location = require_unique_region_location(layers, action.payload.regionId);
             get_unique_layer(layers, location.layer.id);
             add_affected_tracks(affected_track_ids, location.layer, tracks);
             const expected_start = Math.max(0, Math.min(action.payload.startBeat, action.payload.endBeat));
@@ -224,10 +232,7 @@ function create_undo_operation(
             };
         }
         case 'setLayerFades': {
-            const location = get_unique_region_location(layers, action.payload.regionId);
-            if (!location) {
-                return null;
-            }
+            const location = require_unique_region_location(layers, action.payload.regionId);
             get_unique_layer(layers, location.layer.id);
             add_affected_tracks(affected_track_ids, location.layer, tracks);
             return {
@@ -241,10 +246,7 @@ function create_undo_operation(
             };
         }
         case 'setLayerAffectedTracks': {
-            const layer = get_unique_layer(layers, action.payload.layerId);
-            if (!layer) {
-                return null;
-            }
+            const layer = require_unique_layer(layers, action.payload.layerId);
             const expected = Array.from(new Set(action.payload.trackIds));
             add_affected_tracks(affected_track_ids, layer, tracks);
             add_affected_tracks(affected_track_ids, { ...layer, affectedTrackIds: expected }, tracks);
@@ -256,10 +258,7 @@ function create_undo_operation(
             };
         }
         case 'setLayerInsertionIndex': {
-            const layer = get_unique_layer(layers, action.payload.layerId);
-            if (!layer) {
-                return null;
-            }
+            const layer = require_unique_layer(layers, action.payload.layerId);
             const expected = Math.max(0, Math.floor(action.payload.insertionIndex));
             add_affected_tracks(affected_track_ids, layer, tracks);
             add_affected_tracks(affected_track_ids, { ...layer, insertionIndex: expected }, tracks);
@@ -284,18 +283,15 @@ export function getAdjustmentLayerMutationId(action: AdjustmentLayerMutationActi
 
 export function createAdjustmentLayerMutationInverse(
     action: AdjustmentLayerMutationAction
-): RestoreAdjustmentLayerMutationAction | null {
+): RestoreAdjustmentLayerMutationAction {
     const layer_state = adjustmentLayerStore.value;
     const track_state = trackStore.value;
     if (!layer_state || !track_state) {
-        return null;
+        throw new Error('Adjustment-layer state is unavailable');
     }
 
     const affected_track_ids = new Set<string>();
     const operation = create_undo_operation(action, layer_state.layers, track_state.tracks, affected_track_ids);
-    if (!operation) {
-        return null;
-    }
 
     const adjustment_mutation_id = getAdjustmentLayerMutationId(action);
     return {

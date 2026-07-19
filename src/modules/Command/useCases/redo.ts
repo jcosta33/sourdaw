@@ -1,3 +1,5 @@
+import { type HandlerDescribeResult } from '#/utils/handlerContract';
+
 import { type UndoEntry } from '../models/UndoEntry';
 import { undoStore } from '../stores/undoStore';
 
@@ -11,12 +13,22 @@ function currentEntryId(past: readonly UndoEntry[]): string | null {
     return past.length > 0 ? past[past.length - 1]!.id : null;
 }
 
-async function executeRedo(entry: UndoEntry): Promise<boolean> {
+async function executeRedo(entry: UndoEntry): Promise<UndoEntry | null> {
     if (entry.kind === 'callback') {
-        return entry.redo() !== REDO_NOT_APPLIED;
+        return entry.redo() !== REDO_NOT_APPLIED ? entry : null;
     }
-    await executeAppAction(entry.action);
-    return true;
+    const prepared_undo: { result: HandlerDescribeResult | null } = { result: null };
+    await executeAppAction(entry.action, {
+        skipUndo: true,
+        onUndoPrepared: (result) => {
+            prepared_undo.result = result;
+        },
+    });
+    return {
+        ...entry,
+        label: prepared_undo.result?.label ?? entry.label,
+        inverseAction: prepared_undo.result?.inverseAction ?? null,
+    };
 }
 
 async function redoImpl(): Promise<void> {
@@ -28,12 +40,12 @@ async function redoImpl(): Promise<void> {
     const entry = state.future[0]!;
     const newFuture = state.future.slice(1);
 
-    const applied = await executeRedo(entry);
-    if (!applied) {
+    const redone_entry = await executeRedo(entry);
+    if (!redone_entry) {
         return;
     }
 
-    const newPast = [...state.past, entry];
+    const newPast = [...state.past, redone_entry];
     undoStore.set({
         past: newPast,
         future: newFuture,

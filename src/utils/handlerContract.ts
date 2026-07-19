@@ -632,4 +632,7 @@ export type ExecuteOptions = {
     snapshotTransaction?: object;
     /** When true, do not capture this execution in an active macro recording. */
     skipMacroRecording?: boolean;
+    /** Internal redo seam: receives the pre-execution undo description while
+     *  `skipUndo` prevents a duplicate history entry. */
+    onUndoPrepared?: (result: HandlerDescribeResult | null) => void;
 };

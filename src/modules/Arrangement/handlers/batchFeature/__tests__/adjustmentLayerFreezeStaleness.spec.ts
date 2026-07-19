@@ -1,8 +1,15 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { configureAutomergeStoragePort } from '#/infra/store/storage/createAutomergeStorage';
-import { clearHandlerRegistry, registerHandlerMap, undoStore } from '#/modules/Command/stores';
-import { clearUndoHistory, executeAppAction, redo, undo } from '#/modules/Command/useCases';
+import { clearHandlerRegistry, macroStore, registerHandlerMap, undoStore } from '#/modules/Command/stores';
+import {
+    clearUndoHistory,
+    executeAppAction,
+    getMacroHandlers,
+    redo,
+    revertActionGroup,
+    undo,
+} from '#/modules/Command/useCases';
 import { type AppAction } from '#/utils/handlerContract';
 
 import { createTrack, type Track } from '../../../models/Track';
@@ -147,6 +154,7 @@ describe('adjustmentLayerFreezeStaleness', () => {
         clearHandlerRegistry();
         registerHandlerMap(getArrangementHandlers());
         clearUndoHistory();
+        macroStore.set({ macros: [], recording: false, currentRecording: [] });
         trackStore.set({
             tracks: [create_frozen_track('track-a'), create_frozen_track('track-b'), create_frozen_track('track-c')],
             selectedTrackId: null,
@@ -159,6 +167,7 @@ describe('adjustmentLayerFreezeStaleness', () => {
         adjustmentLayerStore.set({ layers: [] });
         trackStore.set({ tracks: [], selectedTrackId: null, ghostClips: [] });
         clearUndoHistory();
+        macroStore.set({ macros: [], recording: false, currentRecording: [] });
         clearHandlerRegistry();
         configureAutomergeStoragePort(null);
     });
@@ -331,6 +340,140 @@ describe('adjustmentLayerFreezeStaleness', () => {
         expect(get_layer_state().layers[0]?.mix).toBe(0.5);
         expect(undoStore.value?.past).toHaveLength(1);
         expect(undoStore.value?.future).toHaveLength(0);
+    });
+
+    it('captures a fresh inverse on redo so the next undo restores concurrent pre-redo state', async () => {
+        await executeAppAction({ type: 'setLayerMix', payload: { layerId: 'layer-1', mix: 0.75 } });
+        await undo();
+        adjustmentLayerStore.set({
+            layers: get_layer_state().layers.map((layer) => (layer.id === 'layer-1' ? { ...layer, mix: 0.5 } : layer)),
+        });
+
+        await redo();
+        await undo();
+
+        expect(get_layer_state().layers[0]?.mix).toBe(0.5);
+        expect(undoStore.value?.past).toHaveLength(0);
+        expect(undoStore.value?.future).toHaveLength(1);
+    });
+
+    it.each(['undo', 'revertActionGroup'] as const)(
+        'rolls back a partially applied adjustment group through %s when an older inverse conflicts',
+        async (revert_method) => {
+            const group_id = `group-${revert_method}`;
+            const group_options = { groupId: group_id, groupLabel: 'Adjustment group' };
+            await executeAppAction({ type: 'setLayerMix', payload: { layerId: 'layer-1', mix: 0.75 } }, group_options);
+            await executeAppAction(
+                {
+                    type: 'setLayerParameter',
+                    payload: { layerId: 'layer-1', paramName: 'Gain', value: 6 },
+                },
+                group_options
+            );
+            adjustmentLayerStore.set({
+                layers: get_layer_state().layers.map((layer) =>
+                    layer.id === 'layer-1' ? { ...layer, mix: 0.5 } : layer
+                ),
+            });
+
+            const reversion = revert_method === 'undo' ? undo() : revertActionGroup(group_id);
+            await expect(reversion).rejects.toThrow('newer adjustment-layer state');
+
+            expect(get_layer_state().layers[0]?.mix).toBe(0.5);
+            expect(get_layer_state().layers[0]?.parameters[0]?.value).toBe(6);
+            expect(get_track('track-a').freezeState.status).toBe('stale');
+            expect(undoStore.value?.past).toHaveLength(2);
+            expect(undoStore.value?.future).toHaveLength(0);
+        }
+    );
+
+    it('rejects missing layer and region targets without blocking an earlier valid undo', async () => {
+        await executeAppAction({ type: 'setLayerMix', payload: { layerId: 'layer-1', mix: 0.75 } });
+
+        await expect(
+            executeAppAction({ type: 'setLayerMix', payload: { layerId: 'missing-layer', mix: 0.5 } })
+        ).rejects.toThrow('missing-layer');
+        await expect(
+            executeAppAction({
+                type: 'moveAdjustmentRegion',
+                payload: { regionId: 'missing-region', startBeat: 2, endBeat: 4 },
+            })
+        ).rejects.toThrow('missing-region');
+
+        expect(undoStore.value?.past).toHaveLength(1);
+        await undo();
+        expect(get_layer_state().layers[0]?.mix).toBe(0.25);
+        expect(undoStore.value?.past).toHaveLength(0);
+    });
+
+    it('gives every create-layer macro playback a fresh entity identity', async () => {
+        adjustmentLayerStore.set({ layers: [] });
+        registerHandlerMap(getMacroHandlers());
+        macroStore.set({
+            macros: [
+                {
+                    id: 'create-layer-macro',
+                    name: 'Create layer',
+                    actions: [
+                        {
+                            type: 'createAdjustmentLayer',
+                            payload: {
+                                name: 'Macro layer',
+                                effectType: 'volume',
+                                layerId: 'recorded-layer-id',
+                                adjustmentMutationId: 'recorded-mutation-id',
+                            },
+                        },
+                    ],
+                    createdAt: 0,
+                },
+            ],
+            recording: false,
+            currentRecording: [],
+        });
+
+        await executeAppAction({ type: 'playMacro', payload: { macroId: 'create-layer-macro' } });
+        await executeAppAction({ type: 'playMacro', payload: { macroId: 'create-layer-macro' } });
+
+        const layer_ids = get_layer_state().layers.map((layer) => layer.id);
+        expect(layer_ids).toHaveLength(2);
+        expect(new Set(layer_ids).size).toBe(2);
+        expect(layer_ids).not.toContain('recorded-layer-id');
+    });
+
+    it('gives every add-region macro playback a fresh entity identity', async () => {
+        registerHandlerMap(getMacroHandlers());
+        macroStore.set({
+            macros: [
+                {
+                    id: 'add-region-macro',
+                    name: 'Add region',
+                    actions: [
+                        {
+                            type: 'addAdjustmentRegion',
+                            payload: {
+                                layerId: 'layer-1',
+                                startBeat: 4,
+                                endBeat: 8,
+                                regionId: 'recorded-region-id',
+                                adjustmentMutationId: 'recorded-mutation-id',
+                            },
+                        },
+                    ],
+                    createdAt: 0,
+                },
+            ],
+            recording: false,
+            currentRecording: [],
+        });
+
+        await executeAppAction({ type: 'playMacro', payload: { macroId: 'add-region-macro' } });
+        await executeAppAction({ type: 'playMacro', payload: { macroId: 'add-region-macro' } });
+
+        const region_ids = get_layer_state().layers[0]?.regions.map((candidate) => candidate.id) ?? [];
+        expect(region_ids).toHaveLength(2);
+        expect(new Set(region_ids).size).toBe(2);
+        expect(region_ids).not.toContain('recorded-region-id');
     });
 
     it('restores nested stale-transition provenance in LIFO order', async () => {

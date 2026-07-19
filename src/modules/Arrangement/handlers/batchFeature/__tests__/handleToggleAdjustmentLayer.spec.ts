@@ -10,13 +10,18 @@ vi.mock('../../../useCases/adjustmentLayer/toggleAdjustmentLayer', () => ({
     toggleAdjustmentLayer: mocks.toggleAdjustmentLayer,
 }));
 
+vi.mock('../createAdjustmentLayerMutationInverse', () => ({
+    createAdjustmentLayerMutationInverse: vi.fn(() => null),
+    getAdjustmentLayerMutationId: vi.fn(() => 'mutation-id'),
+}));
+
 describe('handleToggleAdjustmentLayer', () => {
     beforeEach(() => {
         vi.clearAllMocks();
     });
 
     it('invokes toggleAdjustmentLayer with the payload layer id', () => {
-        handleToggleAdjustmentLayer.execute({
+        void handleToggleAdjustmentLayer.execute({
             type: 'toggleAdjustmentLayer',
             payload: { layerId: 'layer-1' },
         });

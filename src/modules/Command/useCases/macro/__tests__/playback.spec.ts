@@ -52,6 +52,73 @@ describe('playMacro', () => {
         expect(firstOptions?.groupLabel).toBe('Macro: Two steps');
     });
 
+    it('remaps dependent adjustment identities and strips recorded mutation provenance', async () => {
+        macroStore.set({
+            macros: [
+                {
+                    id: 'adjustment-chain',
+                    name: 'Adjustment chain',
+                    actions: [
+                        {
+                            type: 'createAdjustmentLayer',
+                            payload: {
+                                name: 'Layer',
+                                effectType: 'volume',
+                                layerId: 'recorded-layer',
+                                adjustmentMutationId: 'recorded-create',
+                            },
+                        },
+                        {
+                            type: 'addAdjustmentRegion',
+                            payload: {
+                                layerId: 'recorded-layer',
+                                regionId: 'recorded-region',
+                                startBeat: 0,
+                                endBeat: 4,
+                                adjustmentMutationId: 'recorded-add',
+                            },
+                        },
+                        {
+                            type: 'moveAdjustmentRegion',
+                            payload: {
+                                regionId: 'recorded-region',
+                                startBeat: 2,
+                                endBeat: 6,
+                                adjustmentMutationId: 'recorded-move',
+                            },
+                        },
+                    ],
+                    createdAt: 0,
+                },
+            ],
+            recording: false,
+            currentRecording: [],
+        });
+
+        await playMacro('adjustment-chain');
+
+        const create_action = executeAppActionMock.mock.calls[0]?.[0];
+        const add_action = executeAppActionMock.mock.calls[1]?.[0];
+        const move_action = executeAppActionMock.mock.calls[2]?.[0];
+        expect(create_action?.type).toBe('createAdjustmentLayer');
+        expect(add_action?.type).toBe('addAdjustmentRegion');
+        expect(move_action?.type).toBe('moveAdjustmentRegion');
+        if (
+            create_action?.type !== 'createAdjustmentLayer' ||
+            add_action?.type !== 'addAdjustmentRegion' ||
+            move_action?.type !== 'moveAdjustmentRegion'
+        ) {
+            throw new Error('Expected adjustment replay actions');
+        }
+        expect(create_action.payload.layerId).not.toBe('recorded-layer');
+        expect(add_action.payload.layerId).toBe(create_action.payload.layerId);
+        expect(add_action.payload.regionId).not.toBe('recorded-region');
+        expect(move_action.payload.regionId).toBe(add_action.payload.regionId);
+        expect(create_action.payload.adjustmentMutationId).toBeUndefined();
+        expect(add_action.payload.adjustmentMutationId).toBeUndefined();
+        expect(move_action.payload.adjustmentMutationId).toBeUndefined();
+    });
+
     it('should no-op when macro id is missing', async () => {
         await playMacro('missing');
         expect(executeAppActionMock).not.toHaveBeenCalled();

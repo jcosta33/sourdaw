@@ -2,6 +2,7 @@ import { type UndoEntry } from '../models/UndoEntry';
 import { undoStore } from '../stores/undoStore';
 
 import { executeAppAction } from './executeAppAction';
+import { revertUndoEntriesAtomically } from './revertUndoEntriesAtomically';
 import { runUndoRedoExclusive } from './undoRedo';
 import { undoTreeMoveTo } from './undoTree/undoTreeMoveTo';
 
@@ -51,16 +52,8 @@ async function undoImpl(): Promise<void> {
         }
         const newPast = state.past.slice(0, index + 1);
 
-        let anyUndone = false;
-        for (let groupIndex = groupEntries.length - 1; groupIndex >= 0; groupIndex--) {
-            const undone = await executeUndo({
-                entry: groupEntries[groupIndex]!,
-                runExecuteAppAction: executeAppAction,
-            });
-            anyUndone = anyUndone || undone;
-        }
-
-        if (!anyUndone) {
+        const undone = await revertUndoEntriesAtomically(groupEntries);
+        if (!undone) {
             return;
         }
 
