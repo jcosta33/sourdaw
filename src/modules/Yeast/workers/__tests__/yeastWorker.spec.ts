@@ -133,6 +133,84 @@ describe('YeastWorker', () => {
         ]);
     });
 
+    it('carries transformed Note Offs in bypass and reorder projection acknowledgements', () => {
+        const rack = new MidiRack();
+        const messages: unknown[] = [];
+        const projection = [
+            { id: 'transpose-1', type: 'transposer', bypassed: false, params: { semitones: 12 } },
+            { id: 'scale-1', type: 'scale', bypassed: false, params: { transpose: 1 } },
+        ];
+        dispatch(rack, { type: 'setProjection', projectionId: 20, nowSamples: 0, processors: projection }, messages);
+        messages.length = 0;
+        dispatch(
+            rack,
+            {
+                type: 'processBlock',
+                requestId: 20,
+                captureEpoch: 0,
+                trackId: 'track-a',
+                events: [{ timeSamples: 0, kind: { type: 'noteOn', channel: 0, note: 60, velocity: 100 } }],
+                blockStart: 0,
+                blockEnd: 128,
+                transport,
+            },
+            messages
+        );
+        messages.length = 0;
+
+        dispatch(
+            rack,
+            {
+                type: 'setProjection',
+                projectionId: 21,
+                nowSamples: 256,
+                processors: [projection[1], projection[0]],
+            },
+            messages
+        );
+        expect(messages).toEqual([
+            {
+                type: 'projectionAck',
+                projectionId: 21,
+                events: [{ timeSamples: 256, trackId: 'track-a', kind: { type: 'noteOff', channel: 0, note: 74 } }],
+            },
+        ]);
+
+        messages.length = 0;
+        dispatch(
+            rack,
+            {
+                type: 'processBlock',
+                requestId: 21,
+                captureEpoch: 0,
+                trackId: 'track-a',
+                events: [{ timeSamples: 512, kind: { type: 'noteOn', channel: 0, note: 60, velocity: 100 } }],
+                blockStart: 512,
+                blockEnd: 640,
+                transport,
+            },
+            messages
+        );
+        messages.length = 0;
+        dispatch(
+            rack,
+            {
+                type: 'setProjection',
+                projectionId: 22,
+                nowSamples: 768,
+                processors: [{ ...projection[1], bypassed: true }, projection[0]],
+            },
+            messages
+        );
+        expect(messages).toEqual([
+            {
+                type: 'projectionAck',
+                projectionId: 22,
+                events: [{ timeSamples: 768, trackId: 'track-a', kind: { type: 'noteOff', channel: 0, note: 74 } }],
+            },
+        ]);
+    });
+
     it('preserves exact message ordering through projection, process, and panic', () => {
         const rack = new MidiRack();
         const messages: unknown[] = [];

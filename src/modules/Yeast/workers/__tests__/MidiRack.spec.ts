@@ -8,16 +8,21 @@ import {
     YEAST_PREVIEW_FAILED_FLAG,
     YEAST_PREVIEW_OPEN_PHASE,
 } from '../../models/YeastPreviewSnapshot';
-import { type MidiProcessor } from '../MidiProcessor';
 import { MidiRack } from '../MidiRack';
 import { createProcessor } from '../processorFactory';
 import { Arpeggiator } from '../processors/Arpeggiator';
 import { ChordGenerator } from '../processors/ChordGenerator';
 import { ChordMemory } from '../processors/ChordMemory';
+import { GrooveModule } from '../processors/GrooveModule';
+import { Harmonizer } from '../processors/Harmonizer';
 import { Humanizer } from '../processors/Humanizer';
 import { NoteFilter } from '../processors/NoteFilter';
+import { NoteRepeater } from '../processors/NoteRepeater';
+import { ScaleQuantizer } from '../processors/ScaleQuantizer';
 import { Transposer } from '../processors/Transposer';
 
+import type { YeastProcessorProjectionItem } from '../../models/YeastProcessorProjection';
+import type { MidiProcessor } from '../MidiProcessor';
 import type { YeastPreviewDecisionSink } from '../YeastPreviewSidecar';
 
 type NoteOffEvent = MidiEvent & { kind: Extract<MidiEventKind, { type: 'noteOff' }> };
@@ -125,6 +130,37 @@ class PassthroughProcessor implements MidiProcessor {
 class ThrowingProcessor extends PassthroughProcessor {
     override processMidi(): void {
         throw new Error('boom');
+    }
+}
+
+class StatefulOffThenThrowProcessor extends PassthroughProcessor {
+    resetCount = 0;
+    private active = false;
+
+    override processMidi(input: readonly MidiEvent[], output: MidiEvent[]): void {
+        for (const event of input) {
+            if (event.kind.type === 'noteOn') {
+                this.active = true;
+                output.push({
+                    ...event,
+                    kind: { ...event.kind, note: event.kind.note + 12 },
+                });
+            } else if (event.kind.type === 'noteOff' && this.active) {
+                this.active = false;
+                output.push({
+                    ...event,
+                    kind: { ...event.kind, note: event.kind.note + 12 },
+                });
+                throw new Error('boom after mutating the note-off mapping');
+            } else {
+                output.push(event);
+            }
+        }
+    }
+
+    override reset(): void {
+        this.active = false;
+        this.resetCount += 1;
     }
 }
 
@@ -301,9 +337,215 @@ const processorLineageCases = [
     params?: Readonly<Record<string, number>>;
 }[];
 
+type NoteSignature = `${'noteOn' | 'noteOff'}:${number}@${number}`;
+
+type VoicePairingCase = {
+    name: string;
+    create: () => MidiProcessor;
+    configureFirst: (processor: MidiProcessor) => void;
+    configureSecond: (processor: MidiProcessor) => void;
+    expected: readonly [NoteSignature[], NoteSignature[], NoteSignature[], NoteSignature[]];
+};
+
+function noteSignatures(events: readonly MidiEvent[]): NoteSignature[] {
+    return events.flatMap((event) => {
+        if (event.kind.type !== 'noteOn' && event.kind.type !== 'noteOff') {
+            return [];
+        }
+        return [`${event.kind.type}:${event.kind.note}@${event.timeSamples}` as const];
+    });
+}
+
+function createLearnedChordMemory(): ChordMemory {
+    const processor = new ChordMemory('voice-pairing');
+    const output: MidiEvent[] = [];
+    processor.executeCommand({ processorId: processor.id, type: 'chordMemory.learn' });
+    processor.processMidi([noteOn(0, 60), noteOn(0, 64), noteOn(0, 67)], output, transport);
+    processor.processMidi([noteOff(1, 60)], output, transport);
+    processor.reset();
+    return processor;
+}
+
+const voicePairingCases: readonly VoicePairingCase[] = [
+    {
+        name: 'ChordGenerator',
+        create: () => new ChordGenerator('voice-pairing'),
+        configureFirst: (processor) => processor.setParam('chord_type', 0),
+        configureSecond: (processor) => processor.setParam('chord_type', 1),
+        expected: [
+            ['noteOn:60@0', 'noteOn:64@0', 'noteOn:67@0'],
+            ['noteOn:60@8000', 'noteOn:63@8000', 'noteOn:67@8000'],
+            ['noteOff:60@16000', 'noteOff:64@16000', 'noteOff:67@16000'],
+            ['noteOff:60@24000', 'noteOff:63@24000', 'noteOff:67@24000'],
+        ],
+    },
+    {
+        name: 'ChordMemory',
+        create: createLearnedChordMemory,
+        configureFirst: () => undefined,
+        configureSecond: (processor) => {
+            const chordMemory = processor as ChordMemory;
+            const learningOutput: MidiEvent[] = [];
+            chordMemory.executeCommand({ processorId: chordMemory.id, type: 'chordMemory.clear' });
+            chordMemory.executeCommand({ processorId: chordMemory.id, type: 'chordMemory.learn' });
+            chordMemory.processMidi([noteOn(2, 60), noteOn(2, 63), noteOn(2, 67)], learningOutput, transport);
+            chordMemory.processMidi([noteOff(3, 60)], learningOutput, transport);
+        },
+        expected: [
+            ['noteOn:60@0', 'noteOn:64@0', 'noteOn:67@0'],
+            ['noteOn:60@8000', 'noteOn:63@8000', 'noteOn:67@8000'],
+            ['noteOff:60@16000', 'noteOff:64@16000', 'noteOff:67@16000'],
+            ['noteOff:60@24000', 'noteOff:63@24000', 'noteOff:67@24000'],
+        ],
+    },
+    {
+        name: 'GrooveModule',
+        create: () => new GrooveModule('voice-pairing'),
+        configureFirst: (processor) => {
+            processor.setParam('template', 0);
+            processor.setParam('amount', 1);
+        },
+        configureSecond: (processor) => {
+            processor.setParam('template', 1);
+            processor.setParam('amount', 1);
+        },
+        expected: [['noteOn:60@0'], ['noteOn:60@8662'], ['noteOff:60@16000'], ['noteOff:60@24662']],
+    },
+    {
+        name: 'Harmonizer',
+        create: () => new Harmonizer('voice-pairing'),
+        configureFirst: (processor) => processor.setParam('voice0_degrees', 2),
+        configureSecond: (processor) => processor.setParam('voice0_degrees', 4),
+        expected: [
+            ['noteOn:60@0', 'noteOn:64@0'],
+            ['noteOn:60@8000', 'noteOn:67@8000'],
+            ['noteOff:60@16000', 'noteOff:64@16000'],
+            ['noteOff:60@24000', 'noteOff:67@24000'],
+        ],
+    },
+    {
+        name: 'Humanizer',
+        create: () => new Humanizer('voice-pairing'),
+        configureFirst: (processor) => {
+            processor.setParam('timing_mean_ms', 0);
+            processor.setParam('timing_sigma_ms', 0);
+            processor.setParam('vel_sigma', 0);
+        },
+        configureSecond: (processor) => processor.setParam('timing_mean_ms', 10),
+        expected: [['noteOn:60@0'], ['noteOn:60@8441'], ['noteOff:60@16000'], ['noteOff:60@24441']],
+    },
+    {
+        name: 'NoteFilter',
+        create: () => new NoteFilter('voice-pairing'),
+        configureFirst: (processor) => processor.setParam('note_min', 0),
+        configureSecond: (processor) => processor.setParam('note_min', 61),
+        expected: [['noteOn:60@0'], [], ['noteOff:60@16000'], []],
+    },
+    {
+        name: 'ScaleQuantizer',
+        create: () => new ScaleQuantizer('voice-pairing'),
+        configureFirst: (processor) => processor.setParam('transpose', 1),
+        configureSecond: (processor) => processor.setParam('transpose', 2),
+        expected: [['noteOn:62@0'], ['noteOn:64@8000'], ['noteOff:62@16000'], ['noteOff:64@24000']],
+    },
+    {
+        name: 'Transposer',
+        create: () => new Transposer('voice-pairing'),
+        configureFirst: (processor) => processor.setParam('semitones', 12),
+        configureSecond: (processor) => processor.setParam('semitones', 24),
+        expected: [['noteOn:72@0'], ['noteOn:84@8000'], ['noteOff:72@16000'], ['noteOff:84@24000']],
+    },
+];
+
 describe('MidiRack', () => {
     it('exports MidiRack', () => {
         expect(MidiRack).toBeDefined();
+    });
+
+    describe('overlapping same-key voice pairing', () => {
+        for (const testCase of voicePairingCases) {
+            it(`pairs ${testCase.name} note-offs with note-ons in FIFO order`, () => {
+                const rack = new MidiRack('rack-a');
+                const processor = testCase.create();
+                rack.addProcessor(processor);
+
+                testCase.configureFirst(processor);
+                const firstOn = rack.processBlock(
+                    [noteOn(0, 60)],
+                    0,
+                    4096,
+                    { ...transport, discontinuityEpoch: 1 },
+                    'track-a',
+                    true,
+                    'rack-a',
+                    'track-a',
+                    1
+                );
+                const firstOnSignatures = noteSignatures(firstOn);
+                const firstOnPitches = firstOn.filter(isNoteOn).map((event) => event.kind.note);
+                const firstOnPreview = takePreviewBlock(rack);
+
+                testCase.configureSecond(processor);
+                const secondOn = rack.processBlock(
+                    [noteOn(8000, 60)],
+                    8000,
+                    12096,
+                    { ...transport, ppqPosition: 8000 / 22050, discontinuityEpoch: 1 },
+                    'track-a',
+                    true,
+                    'rack-a',
+                    'track-a',
+                    1
+                );
+                const secondOnSignatures = noteSignatures(secondOn);
+                const secondOnPitches = secondOn.filter(isNoteOn).map((event) => event.kind.note);
+                const secondOnPreview = takePreviewBlock(rack);
+                const firstOff = rack.processBlock(
+                    [noteOff(16000, 60)],
+                    16000,
+                    20096,
+                    { ...transport, ppqPosition: 16000 / 22050, discontinuityEpoch: 1 },
+                    'track-a',
+                    true,
+                    'rack-a',
+                    'track-a',
+                    1
+                );
+                const firstOffSignatures = noteSignatures(firstOff);
+                const firstOffPitches = firstOff.filter(isNoteOff).map((event) => event.kind.note);
+                const firstOffPreview = takePreviewBlock(rack);
+                const secondOff = rack.processBlock(
+                    [noteOff(24000, 60)],
+                    24000,
+                    28096,
+                    { ...transport, ppqPosition: 24000 / 22050, discontinuityEpoch: 1 },
+                    'track-a',
+                    true,
+                    'rack-a',
+                    'track-a',
+                    1
+                );
+                const secondOffSignatures = noteSignatures(secondOff);
+                const secondOffPitches = secondOff.filter(isNoteOff).map((event) => event.kind.note);
+                const secondOffPreview = takePreviewBlock(rack);
+
+                expect([firstOnSignatures, secondOnSignatures, firstOffSignatures, secondOffSignatures]).toEqual(
+                    testCase.expected
+                );
+                expect(
+                    firstOnPreview.records.filter((record) => record.phase === 'open').map((record) => record.pitch)
+                ).toEqual(firstOnPitches);
+                expect(
+                    secondOnPreview.records.filter((record) => record.phase === 'open').map((record) => record.pitch)
+                ).toEqual(secondOnPitches);
+                expect(
+                    firstOffPreview.records.filter((record) => record.phase === 'closed').map((record) => record.pitch)
+                ).toEqual(firstOffPitches);
+                expect(
+                    secondOffPreview.records.filter((record) => record.phase === 'closed').map((record) => record.pitch)
+                ).toEqual(secondOffPitches);
+            });
+        }
     });
 
     describe('removeProcessor (fix #1: hung notes on mid-playback removal)', () => {
@@ -389,6 +631,102 @@ describe('MidiRack', () => {
     });
 
     describe('replaceProjection', () => {
+        it('settles transformed output before acknowledging a bypass change, independent of preview capture', () => {
+            const enabledRack = new MidiRack('rack-a');
+            const disabledRack = new MidiRack('rack-a');
+            const activeProjection = [
+                { id: 'transpose-1', type: 'transposer' as const, bypassed: false, params: { semitones: 12 } },
+            ];
+            const bypassedProjection = [{ ...activeProjection[0]!, bypassed: true }];
+            const factory = (_type: ProcessorType, id: string): MidiProcessor => new Transposer(id);
+            enabledRack.replaceProjection(activeProjection, factory);
+            disabledRack.replaceProjection(activeProjection, factory);
+
+            const audibleWithPreview = enabledRack.processBlock(
+                [noteOn(0, 60)],
+                0,
+                128,
+                { ...transport, discontinuityEpoch: 1 },
+                'track-a',
+                true,
+                'rack-a',
+                'track-a',
+                1
+            );
+            const audibleWithoutPreview = disabledRack.processBlock(
+                [noteOn(0, 60)],
+                0,
+                128,
+                { ...transport, discontinuityEpoch: 1 },
+                'track-a'
+            );
+            expect(audibleWithPreview).toEqual(audibleWithoutPreview);
+            expect(takePreviewBlock(enabledRack).records).toMatchObject([{ phase: 'open', pitch: 72 }]);
+
+            const enabledAck = enabledRack.replaceProjection(bypassedProjection, factory, 128);
+            const disabledAck = disabledRack.replaceProjection(bypassedProjection, factory, 128);
+            expect(enabledAck).toEqual(disabledAck);
+            expect(enabledAck).toEqual([
+                { timeSamples: 128, trackId: 'track-a', kind: { type: 'noteOff', channel: 0, note: 72 } },
+            ]);
+
+            const enabledSourceOff = enabledRack.processBlock(
+                [noteOff(128, 60)],
+                128,
+                256,
+                { ...transport, ppqPosition: 128 / 22050, discontinuityEpoch: 1 },
+                'track-a',
+                true,
+                'rack-a',
+                'track-a',
+                1
+            );
+            const disabledSourceOff = disabledRack.processBlock(
+                [noteOff(128, 60)],
+                128,
+                256,
+                { ...transport, ppqPosition: 128 / 22050, discontinuityEpoch: 1 },
+                'track-a'
+            );
+            expect(enabledSourceOff).toEqual(disabledSourceOff);
+            expect(enabledSourceOff).toEqual([
+                { timeSamples: 128, trackId: 'track-a', kind: { type: 'noteOff', channel: 0, note: 60 } },
+            ]);
+            expect(takePreviewBlock(enabledRack)).toMatchObject({ reset: true, records: [] });
+        });
+
+        it('settles and resets transformed output before acknowledging a reorder', () => {
+            const rack = new MidiRack('rack-a');
+            const factory = (type: ProcessorType, id: string): MidiProcessor => {
+                if (type === 'transposer') {
+                    return new Transposer(id);
+                }
+                return new ScaleQuantizer(id);
+            };
+            const firstProjection: YeastProcessorProjectionItem[] = [
+                { id: 'transpose-1', type: 'transposer' as const, bypassed: false, params: { semitones: 12 } },
+                { id: 'scale-1', type: 'scale' as const, bypassed: false, params: { transpose: 1 } },
+            ];
+            rack.replaceProjection(firstProjection, factory);
+            expect(
+                rack.processBlock([noteOn(0, 60)], 0, 128, { ...transport, discontinuityEpoch: 1 }, 'track-a')
+            ).toMatchObject([{ kind: { type: 'noteOn', note: 74 } }]);
+
+            const reordered = [firstProjection[1]!, firstProjection[0]!];
+            expect(rack.replaceProjection(reordered, factory, 128)).toEqual([
+                { timeSamples: 128, trackId: 'track-a', kind: { type: 'noteOff', channel: 0, note: 74 } },
+            ]);
+            expect(
+                rack.processBlock(
+                    [noteOff(128, 60)],
+                    128,
+                    256,
+                    { ...transport, ppqPosition: 128 / 22050, discontinuityEpoch: 1 },
+                    'track-a'
+                )
+            ).toEqual([{ timeSamples: 128, trackId: 'track-a', kind: { type: 'noteOff', channel: 0, note: 60 } }]);
+        });
+
         it('reconciles ownership, order, and removal note-offs from one projection', () => {
             const rack = new MidiRack();
             rack.addProcessor(new PassthroughProcessor('arp-1'), 'arpeggiator');
@@ -595,6 +933,122 @@ describe('MidiRack', () => {
         });
     });
 
+    describe('rack lifecycle generations', () => {
+        it('panics audible state and clears NoteRepeater delay queues before a new discontinuity epoch', () => {
+            const enabledRack = new MidiRack('rack-a');
+            const disabledRack = new MidiRack('rack-a');
+            for (const rack of [enabledRack, disabledRack]) {
+                const repeater = new NoteRepeater('repeat-1');
+                repeater.setParam('repeat_count', 1);
+                rack.addProcessor(repeater, 'repeater');
+            }
+
+            const firstWithPreview = enabledRack.processBlock(
+                [noteOn(0, 60)],
+                0,
+                128,
+                { ...transport, discontinuityEpoch: 1 },
+                'track-a',
+                true,
+                'rack-a',
+                'track-a',
+                1
+            );
+            const firstWithoutPreview = disabledRack.processBlock(
+                [noteOn(0, 60)],
+                0,
+                128,
+                { ...transport, discontinuityEpoch: 1 },
+                'track-a'
+            );
+            expect(firstWithPreview).toEqual(firstWithoutPreview);
+            expect(takePreviewBlock(enabledRack).records).toEqual(
+                expect.arrayContaining([expect.objectContaining({ phase: 'open', pitch: 60 })])
+            );
+
+            const nextWithPreview = enabledRack.processBlock(
+                [],
+                1000,
+                1128,
+                { ...transport, ppqPosition: 1000 / 22050, discontinuityEpoch: 2 },
+                'track-a',
+                true,
+                'rack-a',
+                'track-a',
+                1
+            );
+            const nextWithoutPreview = disabledRack.processBlock(
+                [],
+                1000,
+                1128,
+                { ...transport, ppqPosition: 1000 / 22050, discontinuityEpoch: 2 },
+                'track-a'
+            );
+
+            expect(nextWithPreview).toEqual(nextWithoutPreview);
+            expect(nextWithPreview).toEqual([
+                { timeSamples: 1000, trackId: 'track-a', kind: { type: 'noteOff', channel: 0, note: 60 } },
+            ]);
+            expect(takePreviewBlock(enabledRack)).toMatchObject({ reset: true, records: [] });
+            expect(
+                enabledRack.processBlock(
+                    [],
+                    5000,
+                    9000,
+                    { ...transport, ppqPosition: 5000 / 22050, discontinuityEpoch: 2 },
+                    'track-a'
+                )
+            ).toEqual([]);
+        });
+
+        it('atomically settles, resets, and preview-resets when a stateful note-off mutates then throws', () => {
+            const rack = new MidiRack('rack-a');
+            const processor = new StatefulOffThenThrowProcessor('stateful-thrower');
+            rack.addProcessor(processor);
+
+            expect(
+                rack.processBlock(
+                    [noteOn(0, 60)],
+                    0,
+                    128,
+                    { ...transport, discontinuityEpoch: 1 },
+                    'track-a',
+                    true,
+                    'rack-a',
+                    'track-a',
+                    1
+                )
+            ).toEqual([
+                { timeSamples: 0, trackId: 'track-a', kind: { type: 'noteOn', channel: 0, note: 72, velocity: 100 } },
+            ]);
+            expect(takePreviewBlock(rack).records).toMatchObject([{ phase: 'open', pitch: 72 }]);
+
+            const failureOutput = rack.processBlock(
+                [noteOff(128, 60)],
+                128,
+                256,
+                { ...transport, ppqPosition: 128 / 22050, discontinuityEpoch: 1 },
+                'track-a',
+                true,
+                'rack-a',
+                'track-a',
+                1
+            );
+
+            expect(failureOutput).toEqual([
+                { timeSamples: 128, trackId: 'track-a', kind: { type: 'noteOff', channel: 0, note: 72 } },
+                { timeSamples: 128, trackId: 'track-a', kind: { type: 'noteOff', channel: 0, note: 60 } },
+            ]);
+            expect(processor.resetCount).toBe(1);
+            expect(takePreviewBlock(rack)).toMatchObject({
+                reset: true,
+                records: [],
+                provenance: [{ processorId: 'stateful-thrower', failed: true }],
+            });
+            expect(rack.allNotesOff(512)).toEqual([]);
+        });
+    });
+
     describe('processBlock (fix #4: a throwing processor must not abort the chain)', () => {
         it('captures the terminal rack stream once and transports processor provenance separately', () => {
             const rack = new MidiRack();
@@ -633,7 +1087,7 @@ describe('MidiRack', () => {
             ]);
         });
 
-        it('restores retained-lineage capacity when a processor throws after consuming it', () => {
+        it('clears retained lineage and skips downstream processors after a rack-generation failure', () => {
             const rack = new MidiRack();
             const probe = new LineageTokenProbeProcessor('probe');
             rack.addProcessor(new DecisionSourceProcessor('decision-source'));
@@ -643,10 +1097,12 @@ describe('MidiRack', () => {
             const output = rack.processBlock([noteOn(0, 60)], 0, 128, transport, 'track-a', true);
 
             expect(output).toMatchObject([noteOn(0, 60)]);
-            expect(probe.retainedToken).toBeGreaterThan(0);
-            expect(takePreviewBlock(rack).records).toMatchObject([
-                { phase: 'open', pitch: 60, processorId: 'decision-source', realized: true },
-            ]);
+            expect(probe.retainedToken).toBeUndefined();
+            expect(takePreviewBlock(rack)).toMatchObject({
+                reset: true,
+                records: [{ phase: 'open', pitch: 60, processorId: 'throws-after-retain', realized: true }],
+                provenance: [{ processorId: 'throws-after-retain', failed: true }],
+            });
         });
 
         it('publishes bounded preview for a default rack while passing audible events through', () => {
@@ -976,7 +1432,7 @@ describe('MidiRack', () => {
             ]);
         });
 
-        it('recaptures a queued future event after a transport discontinuity resets its route', () => {
+        it('drops a queued future event when a transport discontinuity resets the rack generation', () => {
             const rack = new MidiRack('rack-a');
             rack.addProcessor(new PassthroughProcessor('p1'));
             const futureNote = noteOn(192, 60);
@@ -1007,11 +1463,9 @@ describe('MidiRack', () => {
             );
             const recaptured = takePreviewBlock(rack);
 
-            expect(output).toContain(futureNote);
+            expect(output).toEqual([]);
             expect(recaptured.reset).toBe(true);
-            expect(recaptured.records).toMatchObject([
-                { rackId: 'rack-a', routeId: 'route-a', trackId: 'track-a', pitch: 60, phase: 'open' },
-            ]);
+            expect(recaptured.records).toEqual([]);
         });
 
         it('recaptures a queued future event under a replacement capture epoch', () => {
@@ -1669,7 +2123,7 @@ describe('MidiRack', () => {
             expect(note60Offs).toHaveLength(1); // exactly one, not duplicated
         });
 
-        it('emits exactly one Note Off per distinct scheduled note', () => {
+        it('drops future notes that never became audible without emitting phantom Note Offs', () => {
             const rack = new MidiRack();
             rack.addProcessor(new PassthroughProcessor('p1'));
             // Two future Note Ons for the same (channel, note) both land in the queue.
@@ -1685,7 +2139,27 @@ describe('MidiRack', () => {
             );
             const offs = rack.allNotesOff(500).filter(isNoteOff);
             const note67Offs = offs.filter((event) => event.kind.note === 67 && event.kind.channel === 0);
-            expect(note67Offs).toHaveLength(1);
+            expect(note67Offs).toHaveLength(0);
+        });
+
+        it('emits one Note Off for each overlapping audible same-key voice', () => {
+            const rack = new MidiRack();
+            rack.addProcessor(new PassthroughProcessor('p1'));
+            rack.processBlock(
+                [
+                    { timeSamples: 0, kind: { type: 'noteOn', channel: 0, note: 60, velocity: 100 } },
+                    { timeSamples: 1, kind: { type: 'noteOn', channel: 0, note: 60, velocity: 90 } },
+                ],
+                0,
+                128,
+                transport,
+                'track-a'
+            );
+
+            expect(rack.allNotesOff(500).filter(isNoteOff)).toEqual([
+                { timeSamples: 500, trackId: 'track-a', kind: { type: 'noteOff', channel: 0, note: 60 } },
+                { timeSamples: 500, trackId: 'track-a', kind: { type: 'noteOff', channel: 0, note: 60 } },
+            ]);
         });
 
         it('emits one Note Off per active note across channels', () => {

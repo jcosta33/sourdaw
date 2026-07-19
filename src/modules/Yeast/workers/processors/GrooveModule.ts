@@ -5,6 +5,7 @@
 
 import { type MidiEvent, type TransportInfo, samplesPerBeat } from '../../models/MidiEvent';
 import { BaseMidiProcessor } from '../BaseMidiProcessor';
+import { BoundedNoteVoiceQueue } from '../BoundedNoteVoiceQueue';
 
 import type { YeastPreviewDecisionSink } from '../YeastPreviewSidecar';
 
@@ -38,7 +39,7 @@ export class GrooveModule extends BaseMidiProcessor {
     // Track timing offset for Note Off. Numeric key (channel << 7) | note matches
     // MidiRack/ScaleQuantizer and avoids a per-event template-literal allocation
     // on the audio thread.
-    private noteMap = new Map<string | undefined, Map<number, number>>();
+    private noteVoices = new BoundedNoteVoiceQueue<number>();
 
     constructor(id?: string) {
         super(id ?? `groove-${Date.now()}`);
@@ -63,9 +64,7 @@ export class GrooveModule extends BaseMidiProcessor {
                 const offsetSamples = Math.round(offset);
 
                 const key = (event.kind.channel << 7) | event.kind.note;
-                const routeMap = this.noteMap.get(event.trackId) ?? new Map<number, number>();
-                routeMap.set(key, offsetSamples);
-                this.noteMap.set(event.trackId, routeMap);
+                this.noteVoices.push(event.trackId, key, offsetSamples);
 
                 const transformed: MidiEvent = {
                     timeSamples: event.timeSamples + offsetSamples,
@@ -76,12 +75,7 @@ export class GrooveModule extends BaseMidiProcessor {
                 preview?.transferDecisionLineage(event, transformed);
             } else if (event.kind.type === 'noteOff') {
                 const key = (event.kind.channel << 7) | event.kind.note;
-                const routeMap = this.noteMap.get(event.trackId);
-                const offset = routeMap?.get(key) ?? 0;
-                routeMap?.delete(key);
-                if (routeMap?.size === 0) {
-                    this.noteMap.delete(event.trackId);
-                }
+                const offset = this.noteVoices.shift(event.trackId, key) ?? 0;
 
                 const transformed: MidiEvent = {
                     timeSamples: event.timeSamples + offset,
@@ -97,7 +91,7 @@ export class GrooveModule extends BaseMidiProcessor {
     }
 
     reset(): void {
-        this.noteMap.clear();
+        this.noteVoices.clear();
     }
 
     protected resetParams(): void {

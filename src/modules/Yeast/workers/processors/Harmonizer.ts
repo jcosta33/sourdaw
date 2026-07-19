@@ -5,6 +5,7 @@
 
 import { type MidiEvent, type TransportInfo } from '../../models/MidiEvent';
 import { BaseMidiProcessor } from '../BaseMidiProcessor';
+import { BoundedNoteVoiceQueue } from '../BoundedNoteVoiceQueue';
 
 import type { YeastPreviewDecisionSink } from '../YeastPreviewSidecar';
 
@@ -38,7 +39,7 @@ export class Harmonizer extends BaseMidiProcessor {
     // Track generated harmony notes for proper Note Off.
     // Numeric key (channel << 7) | note matches MidiRack/ScaleQuantizer and avoids a
     // per-event template-literal allocation on the audio thread.
-    private generatedMap = new Map<string | undefined, Map<number, number[]>>();
+    private generatedVoices = new BoundedNoteVoiceQueue<number[]>();
 
     constructor(id?: string) {
         super(id ?? `harmonizer-${Date.now()}`);
@@ -82,14 +83,11 @@ export class Harmonizer extends BaseMidiProcessor {
                     preview?.transferDecisionLineage(event, generated);
                 }
 
-                const routeMap = this.generatedMap.get(event.trackId) ?? new Map<number, number[]>();
-                routeMap.set(key, harmonyNotes);
-                this.generatedMap.set(event.trackId, routeMap);
+                this.generatedVoices.push(event.trackId, key, harmonyNotes);
             } else if (event.kind.type === 'noteOff') {
                 const key = (event.kind.channel << 7) | event.kind.note;
-                const routeMap = this.generatedMap.get(event.trackId);
-                const generated = routeMap?.get(key);
-                if (routeMap && generated) {
+                const generated = this.generatedVoices.shift(event.trackId, key);
+                if (generated) {
                     for (const note of generated) {
                         const noteOff: MidiEvent = {
                             timeSamples: event.timeSamples,
@@ -98,10 +96,6 @@ export class Harmonizer extends BaseMidiProcessor {
                         };
                         output.push(noteOff);
                         preview?.transferDecisionLineage(event, noteOff);
-                    }
-                    routeMap.delete(key);
-                    if (routeMap.size === 0) {
-                        this.generatedMap.delete(event.trackId);
                     }
                 }
             }
@@ -130,7 +124,7 @@ export class Harmonizer extends BaseMidiProcessor {
     }
 
     reset(): void {
-        this.generatedMap.clear();
+        this.generatedVoices.clear();
     }
 
     protected resetParams(): void {

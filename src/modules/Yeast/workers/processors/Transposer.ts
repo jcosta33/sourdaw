@@ -4,6 +4,7 @@
 
 import { type MidiEvent, type TransportInfo } from '../../models/MidiEvent';
 import { BaseMidiProcessor } from '../BaseMidiProcessor';
+import { BoundedNoteVoiceQueue } from '../BoundedNoteVoiceQueue';
 import { nextLcg } from '../lcgRandom';
 
 import type { YeastPreviewDecisionSink } from '../YeastPreviewSidecar';
@@ -19,7 +20,7 @@ export class Transposer extends BaseMidiProcessor {
     private rngState = 0xface;
     // Numeric key (channel << 7) | inNote → outNote. Matches MidiRack/ScaleQuantizer
     // and avoids a per-event template-literal allocation on the audio thread.
-    private noteMap = new Map<string | undefined, Map<number, number>>();
+    private noteVoices = new BoundedNoteVoiceQueue<number>();
 
     constructor(id?: string) {
         super(id ?? `transpose-${Date.now()}`);
@@ -40,9 +41,7 @@ export class Transposer extends BaseMidiProcessor {
                 }
 
                 const note = Math.max(this.clampMin, Math.min(this.clampMax, event.kind.note + offset));
-                const routeMap = this.noteMap.get(event.trackId) ?? new Map<number, number>();
-                routeMap.set((event.kind.channel << 7) | event.kind.note, note);
-                this.noteMap.set(event.trackId, routeMap);
+                this.noteVoices.push(event.trackId, (event.kind.channel << 7) | event.kind.note, note);
 
                 const transformed: MidiEvent = {
                     timeSamples: event.timeSamples,
@@ -53,12 +52,7 @@ export class Transposer extends BaseMidiProcessor {
                 preview?.transferDecisionLineage(event, transformed);
             } else if (event.kind.type === 'noteOff') {
                 const key = (event.kind.channel << 7) | event.kind.note;
-                const routeMap = this.noteMap.get(event.trackId);
-                const note = routeMap?.get(key) ?? event.kind.note;
-                routeMap?.delete(key);
-                if (routeMap?.size === 0) {
-                    this.noteMap.delete(event.trackId);
-                }
+                const note = this.noteVoices.shift(event.trackId, key) ?? event.kind.note;
 
                 const transformed: MidiEvent = {
                     timeSamples: event.timeSamples,
@@ -74,7 +68,7 @@ export class Transposer extends BaseMidiProcessor {
     }
 
     reset(): void {
-        this.noteMap.clear();
+        this.noteVoices.clear();
     }
 
     protected resetParams(): void {

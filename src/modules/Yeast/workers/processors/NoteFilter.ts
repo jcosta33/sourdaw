@@ -5,6 +5,7 @@
 
 import { type MidiEvent, type TransportInfo } from '../../models/MidiEvent';
 import { BaseMidiProcessor } from '../BaseMidiProcessor';
+import { BoundedNoteVoiceQueue } from '../BoundedNoteVoiceQueue';
 
 export class NoteFilter extends BaseMidiProcessor {
     readonly name = 'Note Filter';
@@ -15,10 +16,11 @@ export class NoteFilter extends BaseMidiProcessor {
     private velMax = 127;
     private allowedPitchClasses = new Set([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]); // all by default
     private invert = false;
-    // Track filtered Note Ons to suppress matching Note Offs.
+    // Track every Note On decision so overlapping equal-key voices consume the
+    // matching FIFO decision and suppress only the offs whose ons were filtered.
     // Numeric key (channel << 7) | note matches MidiRack/ScaleQuantizer/Humanizer
     // and avoids a per-event template-literal allocation on the audio thread.
-    private filteredNotes = new Map<string | undefined, Set<number>>();
+    private noteDecisions = new BoundedNoteVoiceQueue<boolean>();
 
     constructor(id?: string) {
         super(id ?? `filter-${Date.now()}`);
@@ -34,22 +36,15 @@ export class NoteFilter extends BaseMidiProcessor {
                 }
 
                 if (passes) {
+                    this.noteDecisions.push(event.trackId, key, true);
                     output.push(event);
                 } else {
-                    const routeSet = this.filteredNotes.get(event.trackId) ?? new Set<number>();
-                    routeSet.add(key);
-                    this.filteredNotes.set(event.trackId, routeSet);
+                    this.noteDecisions.push(event.trackId, key, false);
                 }
             } else if (event.kind.type === 'noteOff') {
                 const key = (event.kind.channel << 7) | event.kind.note;
-                const routeSet = this.filteredNotes.get(event.trackId);
-                if (routeSet?.has(key)) {
-                    routeSet.delete(key);
-                    if (routeSet.size === 0) {
-                        this.filteredNotes.delete(event.trackId);
-                    }
-                    // Suppress the Note Off for a filtered Note On
-                } else {
+                const passed = this.noteDecisions.shift(event.trackId, key);
+                if (passed !== false) {
                     output.push(event);
                 }
             } else {
@@ -81,7 +76,7 @@ export class NoteFilter extends BaseMidiProcessor {
         // note. Clearing on reset closes that window; legitimately filtered Note
         // On/Off pairs within a single playback span still match because they arrive
         // without an intervening reset.
-        this.filteredNotes.clear();
+        this.noteDecisions.clear();
     }
 
     protected resetParams(): void {

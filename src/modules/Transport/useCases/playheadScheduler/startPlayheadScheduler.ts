@@ -24,6 +24,7 @@ import { resetMetronomeBeat } from '../scheduling/resetMetronomeBeat';
 import { scheduleAudioClips } from '../scheduling/scheduleAudioClips';
 import { scheduleMetronome } from '../scheduling/scheduleMetronome';
 import { scheduleMidiNotes, type SchedulerCancellation } from '../scheduling/scheduleMidiNotes';
+import { panicYeastRuntime } from '../transportControls/panicYeastRuntime';
 
 import { advanceSchedulerDiscontinuityEpoch } from './advanceSchedulerDiscontinuityEpoch';
 import { disposePlayheadScheduler } from './disposePlayheadScheduler';
@@ -142,6 +143,7 @@ export function startPlayheadScheduler(): void {
         const beatsPerSecond = currentTempo / 60;
         const deltaBeats = deltaSec * beatsPerSecond;
         let newPosition = schedulerSession.accumulatedPosition + deltaBeats;
+        let rackDiscontinuity = false;
 
         if (current.isLooping && current.loopEnd > current.loopStart && newPosition >= current.loopEnd) {
             if (current.isRecording) {
@@ -167,6 +169,7 @@ export function startPlayheadScheduler(): void {
             const loopLength = current.loopEnd - current.loopStart;
             newPosition = current.loopStart + ((newPosition - current.loopStart) % loopLength);
             advanceSchedulerDiscontinuityEpoch();
+            rackDiscontinuity = true;
             schedulerSession.lastScheduledBeat = newPosition - 0.0001;
             resetMetronomeBeat(newPosition);
             stopAllScheduled();
@@ -191,12 +194,20 @@ export function startPlayheadScheduler(): void {
         if (jumpToPosition !== null) {
             newPosition = jumpToPosition;
             advanceSchedulerDiscontinuityEpoch();
+            rackDiscontinuity = true;
             schedulerSession.lastScheduledBeat = newPosition;
             resetMetronomeBeat(newPosition);
             stopAllScheduled();
             stopActiveSources(schedulerSession.activeAudioSources, ctx);
             schedulerSession.scheduledAudioClips.clear();
             schedulerSession.scheduledFrozenTracks.clear();
+        }
+
+        if (rackDiscontinuity) {
+            await panicYeastRuntime();
+            if (!cancellation.isCurrent()) {
+                return;
+            }
         }
 
         schedulerSession.accumulatedPosition = newPosition;

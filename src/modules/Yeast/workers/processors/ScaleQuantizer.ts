@@ -5,6 +5,7 @@
 
 import { type MidiEvent, type TransportInfo } from '../../models/MidiEvent';
 import { BaseMidiProcessor } from '../BaseMidiProcessor';
+import { BoundedNoteVoiceQueue } from '../BoundedNoteVoiceQueue';
 
 import type { YeastPreviewDecisionSink } from '../YeastPreviewSidecar';
 
@@ -36,7 +37,7 @@ export class ScaleQuantizer extends BaseMidiProcessor {
     private remapMode: RemapMode = 'nearest';
     private transpose = 0; // diatonic degrees
     // Track note mapping for proper Note Off
-    private noteMap = new Map<string | undefined, Map<number, number>>(); // ch*128+inNote → outNote
+    private noteVoices = new BoundedNoteVoiceQueue<number>(); // ch*128+inNote → FIFO outNote voices
 
     constructor(id?: string) {
         super(id ?? `scale-${Date.now()}`);
@@ -58,9 +59,7 @@ export class ScaleQuantizer extends BaseMidiProcessor {
                 }
                 note = Math.max(0, Math.min(127, note));
 
-                const routeMap = this.noteMap.get(event.trackId) ?? new Map<number, number>();
-                routeMap.set(event.kind.channel * 128 + event.kind.note, note);
-                this.noteMap.set(event.trackId, routeMap);
+                this.noteVoices.push(event.trackId, event.kind.channel * 128 + event.kind.note, note);
                 const transformed: MidiEvent = {
                     timeSamples: event.timeSamples,
                     trackId: event.trackId,
@@ -70,12 +69,7 @@ export class ScaleQuantizer extends BaseMidiProcessor {
                 preview?.transferDecisionLineage(event, transformed);
             } else if (event.kind.type === 'noteOff') {
                 const key = event.kind.channel * 128 + event.kind.note;
-                const routeMap = this.noteMap.get(event.trackId);
-                const mappedNote = routeMap?.get(key) ?? event.kind.note;
-                routeMap?.delete(key);
-                if (routeMap?.size === 0) {
-                    this.noteMap.delete(event.trackId);
-                }
+                const mappedNote = this.noteVoices.shift(event.trackId, key) ?? event.kind.note;
                 const transformed: MidiEvent = {
                     timeSamples: event.timeSamples,
                     trackId: event.trackId,
@@ -159,7 +153,7 @@ export class ScaleQuantizer extends BaseMidiProcessor {
     }
 
     reset(): void {
-        this.noteMap.clear();
+        this.noteVoices.clear();
     }
 
     protected resetParams(): void {

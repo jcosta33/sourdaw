@@ -50,6 +50,7 @@ type YeastRuntimeSession = {
     pendingOutputPanic: boolean;
     pendingAllNotesOff: PendingAllNotesOff | null;
     activeOutputNotes: Map<string, ActiveOutputNote>;
+    activeOutputVoiceCount: number;
     previewBindings: Map<string, YeastPreviewBinding>;
 };
 
@@ -58,6 +59,7 @@ type ActiveOutputNote = {
     trackId: string;
     channel: number;
     note: number;
+    voiceCount: number;
 };
 
 type PendingAllNotesOff = {
@@ -66,7 +68,8 @@ type PendingAllNotesOff = {
     nowSamples: number;
 };
 
-const YEAST_RUNTIME_SESSION_VERSION = 9;
+const MAX_ACTIVE_OUTPUT_VOICES = 4096;
+const YEAST_RUNTIME_SESSION_VERSION = 10;
 
 const session = createHmrPersistentState<YeastRuntimeSession>('yeast.runtime', () => ({
     version: YEAST_RUNTIME_SESSION_VERSION,
@@ -88,6 +91,7 @@ const session = createHmrPersistentState<YeastRuntimeSession>('yeast.runtime', (
     pendingOutputPanic: false,
     pendingAllNotesOff: null,
     activeOutputNotes: new Map(),
+    activeOutputVoiceCount: 0,
     previewBindings: new Map(),
 }));
 
@@ -131,6 +135,7 @@ if (session.version !== YEAST_RUNTIME_SESSION_VERSION || retainedRuntimeNeedsReb
     session.pendingOutputPanic = retainedRuntimeMayOwnOutput || hadActiveOutputNotes;
     session.pendingAllNotesOff = null;
     session.activeOutputNotes = new Map();
+    session.activeOutputVoiceCount = 0;
     if (staleNode) {
         try {
             staleNode.destroy();
@@ -256,6 +261,7 @@ function transportForRuntime(transport: TransportInfo): TransportInfo {
         transport.discontinuityEpoch !== session.sourceDiscontinuityEpoch
     ) {
         session.sourceDiscontinuityEpoch = transport.discontinuityEpoch;
+        retirePreviewBindings();
         advanceRuntimeDiscontinuityEpoch();
     }
     return { ...transport, discontinuityEpoch: session.discontinuityEpoch };
@@ -310,25 +316,24 @@ function collectActiveOutputNotes(generation: number): YeastNotesOffPayload[] {
     const activeOutputNotes = session.activeOutputNotes;
     if (!(activeOutputNotes instanceof Map) || activeOutputNotes.size === 0) {
         session.activeOutputNotes = new Map();
+        session.activeOutputVoiceCount = 0;
         return [];
     }
 
-    const notesByTrackAndChannel = new Map<string, Map<number, Set<number>>>();
+    const notesByTrack = new Map<string, Array<{ channel: number; note: number }>>();
     for (const activeNote of activeOutputNotes.values()) {
         if (activeNote.generation !== generation) {
             continue;
         }
-        const notesByChannel = notesByTrackAndChannel.get(activeNote.trackId) ?? new Map<number, Set<number>>();
-        const notes = notesByChannel.get(activeNote.channel) ?? new Set<number>();
-        notes.add(activeNote.note);
-        notesByChannel.set(activeNote.channel, notes);
-        notesByTrackAndChannel.set(activeNote.trackId, notesByChannel);
+        const notes = notesByTrack.get(activeNote.trackId) ?? [];
+        for (let voice = 0; voice < activeNote.voiceCount; voice++) {
+            notes.push({ channel: activeNote.channel, note: activeNote.note });
+        }
+        notesByTrack.set(activeNote.trackId, notes);
     }
     session.activeOutputNotes = new Map();
-    return [...notesByTrackAndChannel].map(([trackId, notesByChannel]) => ({
-        trackId,
-        noteOffs: [...notesByChannel].flatMap(([channel, notes]) => [...notes].map((note) => ({ channel, note }))),
-    }));
+    session.activeOutputVoiceCount = 0;
+    return [...notesByTrack].map(([trackId, noteOffs]) => ({ trackId, noteOffs }));
 }
 
 function settleActiveOutputNotes(generation: number): boolean {
@@ -372,14 +377,31 @@ function recordAcceptedOutputNotes(events: readonly MidiEvent[], generation: num
         const trackId = event.trackId ?? fallbackTrackId;
         const key = activeOutputNoteKey(trackId, event.kind.channel, event.kind.note);
         if (event.kind.type === 'noteOn' && event.kind.velocity > 0) {
-            session.activeOutputNotes.set(key, {
-                generation,
-                trackId,
-                channel: event.kind.channel,
-                note: event.kind.note,
-            });
+            if (session.activeOutputVoiceCount >= MAX_ACTIVE_OUTPUT_VOICES) {
+                throw new Error(`Yeast active output voice capacity exceeded (${MAX_ACTIVE_OUTPUT_VOICES})`);
+            }
+            const activeNote = session.activeOutputNotes.get(key);
+            if (activeNote?.generation === generation) {
+                activeNote.voiceCount += 1;
+            } else {
+                session.activeOutputNotes.set(key, {
+                    generation,
+                    trackId,
+                    channel: event.kind.channel,
+                    note: event.kind.note,
+                    voiceCount: 1,
+                });
+            }
+            session.activeOutputVoiceCount += 1;
         } else {
-            session.activeOutputNotes.delete(key);
+            const activeNote = session.activeOutputNotes.get(key);
+            if (activeNote?.generation === generation) {
+                activeNote.voiceCount -= 1;
+                session.activeOutputVoiceCount = Math.max(0, session.activeOutputVoiceCount - 1);
+                if (activeNote.voiceCount === 0) {
+                    session.activeOutputNotes.delete(key);
+                }
+            }
         }
     }
 }
@@ -393,7 +415,11 @@ function recordWorkerNotesOff(notesOff: readonly YeastNotesOffPayload[], generat
             const key = activeOutputNoteKey(payload.trackId, noteOff.channel, noteOff.note);
             const activeNote = session.activeOutputNotes.get(key);
             if (activeNote?.generation === generation) {
-                session.activeOutputNotes.delete(key);
+                activeNote.voiceCount -= 1;
+                session.activeOutputVoiceCount = Math.max(0, session.activeOutputVoiceCount - 1);
+                if (activeNote.voiceCount === 0) {
+                    session.activeOutputNotes.delete(key);
+                }
             }
         }
     }

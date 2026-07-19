@@ -23,7 +23,7 @@ export function stopPlayback(): Promise<void> {
     // recorder kept capturing, the audio buffer never flushed, and the clip
     // stayed empty. Route through `stopActiveRecording` so the recording
     // pipeline commits the buffer to the clip before we halt the transport.
-    panicYeastRuntime();
+    void panicYeastRuntime();
     stopPlayheadScheduler();
     stopAllScheduled();
     resetMidiState();

@@ -42,7 +42,7 @@ export function pausePlayback(): void {
             if (getTransportState()?.isPlaying) {
                 return undefined;
             }
-            panicYeastRuntime();
+            void panicYeastRuntime();
             stopPlayheadScheduler();
             stopAllScheduled();
             resetMidiState();

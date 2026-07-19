@@ -13,6 +13,7 @@ import { applyVcaGains } from '../scheduling/applyAutomation/applyVcaGains';
 import { disposeAudioClipScheduling } from '../scheduling/disposeAudioClipScheduling';
 import { scheduleAudioClips } from '../scheduling/scheduleAudioClips';
 import { scheduleMidiNotes } from '../scheduling/scheduleMidiNotes';
+import { panicYeastRuntime } from '../transportControls/panicYeastRuntime';
 
 type FakeWorker = {
     onmessage: ((e: MessageEvent<unknown>) => void) | null;
@@ -55,6 +56,7 @@ const harness = vi.hoisted(() => ({
     start_recording: vi.fn<() => TestRecordingClip[]>(() => []),
     stop_audio_recording: vi.fn<() => Promise<void>>(() => Promise.resolve()),
     stop_recording: vi.fn<() => void>(),
+    panic_yeast_runtime: vi.fn<() => Promise<void>>(() => Promise.resolve()),
     workers: [] as FakeWorker[],
     track_store: { value: { tracks: [] as { id: string; kind: 'audio' | 'midi'; armed: boolean }[] } },
     transport_store: {
@@ -92,6 +94,9 @@ vi.mock('#/modules/Arrangement/useCases', () => ({
 }));
 vi.mock('../evaluateFollowActions', () => ({
     evaluateFollowActions: vi.fn(() => ({ jumpToPosition: null, shouldStop: false })),
+}));
+vi.mock('../transportControls/panicYeastRuntime', () => ({
+    panicYeastRuntime: harness.panic_yeast_runtime,
 }));
 vi.mock('#/modules/AudioEngine/useCases', () => ({
     cacheAudioBuffer: harness.cache_audio_buffer,
@@ -345,6 +350,10 @@ describe('playhead scheduler tick', () => {
         expect(beforeWrapEpoch).toEqual(expect.any(Number));
         expect(afterWrap?.discontinuityEpoch).toBeGreaterThan(beforeWrapEpoch ?? 0);
         expect(afterWrap?.generation).toBe(beforeWrap?.generation);
+        expect(panicYeastRuntime).toHaveBeenCalledTimes(1);
+        expect(vi.mocked(panicYeastRuntime).mock.invocationCallOrder[0]).toBeLessThan(
+            vi.mocked(scheduleMidiNotes).mock.invocationCallOrder.at(-1) ?? Number.POSITIVE_INFINITY
+        );
     });
 
     it('advances a semantic discontinuity epoch on a real scheduler follow-action jump', async () => {
@@ -361,6 +370,10 @@ describe('playhead scheduler tick', () => {
 
         expect(afterJump?.discontinuityEpoch).toBeGreaterThan(beforeJumpEpoch ?? 0);
         expect(afterJump?.generation).toBe(beforeJump?.generation);
+        expect(panicYeastRuntime).toHaveBeenCalledTimes(1);
+        expect(vi.mocked(panicYeastRuntime).mock.invocationCallOrder[0]).toBeLessThan(
+            vi.mocked(scheduleMidiNotes).mock.invocationCallOrder.at(-1) ?? Number.POSITIVE_INFINITY
+        );
     });
 
     it('uses a new semantic discontinuity epoch when the scheduler restarts', async () => {

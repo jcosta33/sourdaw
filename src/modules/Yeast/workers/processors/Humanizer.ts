@@ -5,6 +5,7 @@
 
 import { type MidiEvent, type TransportInfo } from '../../models/MidiEvent';
 import { BaseMidiProcessor } from '../BaseMidiProcessor';
+import { BoundedNoteVoiceQueue } from '../BoundedNoteVoiceQueue';
 import { gaussianLcg } from '../lcgRandom';
 
 import type { YeastPreviewDecisionSink } from '../YeastPreviewSidecar';
@@ -37,7 +38,7 @@ export class Humanizer extends BaseMidiProcessor {
     private rngState = 0xcafe;
     // Track timing offsets for matching Note Offs.
     // Numeric key (channel << 7) | note matches MidiRack/ScaleQuantizer.
-    private noteTimingMap = new Map<string | undefined, Map<number, number>>();
+    private noteTimingVoices = new BoundedNoteVoiceQueue<number>(MAX_TRACKED_NOTES);
 
     constructor(id?: string) {
         super(id ?? `humanize-${Date.now()}`);
@@ -56,22 +57,7 @@ export class Humanizer extends BaseMidiProcessor {
                 const velOffset = Math.round(this.gaussian(0, this.velSigma));
 
                 const key = (event.kind.channel << 7) | event.kind.note;
-                // Bound the map: a dropped Note Off (e.g. a transport seek before
-                // panic) would otherwise leave a stale entry forever. Evict the
-                // oldest tracked note once we exceed the live-note ceiling.
-                const routeMap = this.noteTimingMap.get(event.trackId) ?? new Map<number, number>();
-                if (!routeMap.has(key) && routeMap.size >= MAX_TRACKED_NOTES) {
-                    // size >= ceiling (> 0) ⇒ the map is non-empty, so the iterator
-                    // yields a real oldest key (insertion order). Evict it. The
-                    // `!== undefined` guard narrows the IteratorResult value type;
-                    // it can never actually be undefined given the size check.
-                    const oldest = routeMap.keys().next().value;
-                    if (oldest !== undefined) {
-                        routeMap.delete(oldest);
-                    }
-                }
-                routeMap.set(key, timingOffsetSamples);
-                this.noteTimingMap.set(event.trackId, routeMap);
+                this.noteTimingVoices.push(event.trackId, key, timingOffsetSamples);
 
                 const transformed: MidiEvent = {
                     timeSamples: event.timeSamples + timingOffsetSamples,
@@ -87,12 +73,7 @@ export class Humanizer extends BaseMidiProcessor {
                 preview?.transferDecisionLineage(event, transformed);
             } else if (event.kind.type === 'noteOff') {
                 const key = (event.kind.channel << 7) | event.kind.note;
-                const routeMap = this.noteTimingMap.get(event.trackId);
-                const offset = routeMap?.get(key) ?? 0;
-                routeMap?.delete(key);
-                if (routeMap?.size === 0) {
-                    this.noteTimingMap.delete(event.trackId);
-                }
+                const offset = this.noteTimingVoices.shift(event.trackId, key) ?? 0;
 
                 const transformed: MidiEvent = {
                     timeSamples: event.timeSamples + offset,
@@ -114,7 +95,7 @@ export class Humanizer extends BaseMidiProcessor {
     }
 
     reset(): void {
-        this.noteTimingMap.clear();
+        this.noteTimingVoices.clear();
     }
 
     protected resetParams(): void {

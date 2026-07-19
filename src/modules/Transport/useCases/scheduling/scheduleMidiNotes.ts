@@ -244,26 +244,6 @@ export async function scheduleMidiNotes(
                         processed.push(...blockProcessed);
                     }
 
-                    // §154.1 — Build a per-note index of noteOff events so the
-                    // noteOn → noteOff match is O(1) instead of O(N) per noteOn.
-                    // Events within `processed` are time-ordered by construction,
-                    // so a single forward pass produces stacks of pending-off
-                    // timeSamples per pitch. A noteOn then pops the earliest
-                    // noteOff whose time > startTime.
-                    const noteOffsByKey = new Map<number, number[]>();
-                    for (const evt of processed) {
-                        if (evt.kind.type === 'noteOff') {
-                            const noteKey = evt.kind.channel * 128 + evt.kind.note;
-                            const existing = noteOffsByKey.get(noteKey);
-                            if (existing) {
-                                existing.push(evt.timeSamples);
-                            } else {
-                                noteOffsByKey.set(noteKey, [evt.timeSamples]);
-                            }
-                        }
-                    }
-                    const noteOffCursor = new Map<number, number>();
-
                     // §6 — A Yeast generator (e.g. EuclideanGenerator) can emit
                     // notes even when the source clip has none. In that case
                     // `rawNotes[0]` is undefined and spreading it would yield
@@ -281,7 +261,13 @@ export async function scheduleMidiNotes(
                     };
 
                     const transformedNotes: NonNullable<(typeof midiState.notesByClipId)[string]> = [];
-                    for (const evt of processed) {
+                    const pendingNotesByKey = new Map<number, { indices: number[]; cursor: number }>();
+                    const orderedProcessed = processed.map((event, ordinal) => ({ event, ordinal }));
+                    orderedProcessed.sort(
+                        (alpha, beta) =>
+                            alpha.event.timeSamples - beta.event.timeSamples || alpha.ordinal - beta.ordinal
+                    );
+                    for (const { event: evt, ordinal } of orderedProcessed) {
                         if (evt.kind.type === 'noteOn') {
                             const evtNote = evt.kind.note;
                             const evtVel = evt.kind.velocity;
@@ -296,32 +282,32 @@ export async function scheduleMidiNotes(
                                 samplesToBeat(changes, evt.timeSamples, transport.tempo, yeastSr) - clipMidiOffset;
 
                             const noteKey = evt.kind.channel * 128 + evtNote;
-                            const offs = noteOffsByKey.get(noteKey);
-                            let offTime: number | null = null;
-                            if (offs) {
-                                let cursor = noteOffCursor.get(noteKey) ?? 0;
-                                while (cursor < offs.length && offs[cursor]! <= evt.timeSamples) {
-                                    cursor++;
-                                }
-                                if (cursor < offs.length) {
-                                    offTime = offs[cursor]!;
-                                    noteOffCursor.set(noteKey, cursor + 1);
-                                } else {
-                                    noteOffCursor.set(noteKey, cursor);
-                                }
-                            }
-                            const endBeat =
-                                offTime !== null
-                                    ? samplesToBeat(changes, offTime, transport.tempo, yeastSr) - clipMidiOffset
-                                    : startBeat + 0.25;
+                            const pending = pendingNotesByKey.get(noteKey) ?? { indices: [], cursor: 0 };
+                            const noteIndex = transformedNotes.length;
+                            pending.indices.push(noteIndex);
+                            pendingNotesByKey.set(noteKey, pending);
                             transformedNotes.push({
                                 ...noteTemplate,
-                                id: `${noteTemplate.id}:yeast:${evtNote}:${evt.timeSamples}`,
+                                id: `${noteTemplate.id}:yeast:${evtNote}:${evt.timeSamples}:${ordinal}`,
                                 pitch: evtNote,
                                 velocity: evtVel,
                                 startBeat,
-                                duration: endBeat - startBeat,
+                                duration: 0.25,
                             });
+                        } else if (evt.kind.type === 'noteOff') {
+                            const noteKey = evt.kind.channel * 128 + evt.kind.note;
+                            const pending = pendingNotesByKey.get(noteKey);
+                            if (!pending || pending.cursor >= pending.indices.length) {
+                                continue;
+                            }
+                            const noteIndex = pending.indices[pending.cursor++]!;
+                            const note = transformedNotes[noteIndex]!;
+                            const endBeat =
+                                samplesToBeat(changes, evt.timeSamples, transport.tempo, yeastSr) - clipMidiOffset;
+                            transformedNotes[noteIndex] = {
+                                ...note,
+                                duration: Math.max(0, endBeat - note.startBeat),
+                            };
                         }
                     }
                     return transformedNotes;

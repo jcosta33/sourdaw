@@ -24,7 +24,7 @@ export function seekPlayhead(beat: number): void {
 
     function finishSeek(): void {
         advanceSchedulerDiscontinuityEpoch();
-        panicYeastRuntime();
+        void panicYeastRuntime();
         if (wasPlaying) {
             stopPlayheadScheduler();
             stopAllScheduled();

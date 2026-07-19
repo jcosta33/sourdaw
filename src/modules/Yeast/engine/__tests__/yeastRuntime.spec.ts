@@ -549,6 +549,46 @@ describe('yeastRuntime', () => {
         expect(panicOutputNotes).not.toHaveBeenCalled();
     });
 
+    it('settles the remaining overlapping same-key output voice after one accepted Note Off', async () => {
+        const runtime = await loadRuntime();
+        const context = {} as BaseAudioContext;
+        const node = makeNode(context);
+        const onNotesOff = vi.fn();
+        const panicOutputNotes = vi.fn();
+        node.processBlock
+            .mockResolvedValueOnce([
+                {
+                    timeSamples: 0,
+                    trackId: 'track-a',
+                    kind: { type: 'noteOn' as const, channel: 2, note: 67, velocity: 100 },
+                },
+                {
+                    timeSamples: 1,
+                    trackId: 'track-a',
+                    kind: { type: 'noteOn' as const, channel: 2, note: 67, velocity: 90 },
+                },
+            ])
+            .mockResolvedValueOnce([
+                {
+                    timeSamples: 128,
+                    trackId: 'track-a',
+                    kind: { type: 'noteOff' as const, channel: 2, note: 67 },
+                },
+            ]);
+        createNode.mockResolvedValueOnce(node);
+        const input = makeRuntimeBlockInput(context);
+
+        await runtime.ensureYeastRuntime({ context, projection: projectionA });
+        runtime.setYeastRuntimeNotesOffHandler(onNotesOff);
+        runtime.setYeastRuntimeOutputPanicHandler(panicOutputNotes);
+        await (runtime as RuntimeWithTransaction).processYeastRuntimeTransaction(input);
+        await (runtime as RuntimeWithTransaction).processYeastRuntimeTransaction(input);
+        node.emitTerminalError(new Error('Worker crashed with one duplicate voice active'));
+
+        expect(onNotesOff).toHaveBeenCalledWith([{ trackId: 'track-a', noteOffs: [{ channel: 2, note: 67 }] }]);
+        expect(panicOutputNotes).toHaveBeenCalledTimes(1);
+    });
+
     it('settles accepted output notes on explicit runtime teardown without duplicates', async () => {
         const runtime = await loadRuntime();
         const context = {} as BaseAudioContext;
