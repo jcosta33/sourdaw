@@ -42,4 +42,24 @@ describe('Factory Presets', () => {
             })
         ).toBe(false);
     });
+
+    it('all factory preset ids are unique', () => {
+        const ids = FACTORY_PRESETS.map((preset) => preset.id);
+        expect(new Set(ids).size).toBe(ids.length);
+    });
+
+    it('every factory preset carries well-formed devices and metadata', () => {
+        for (const preset of FACTORY_PRESETS) {
+            expect(preset.isFactory).toBe(true);
+            expect(['midi', 'audio']).toContain(preset.trackKind);
+            expect(preset.tags.length).toBeGreaterThan(0);
+            for (const device of preset.devices) {
+                expect(device.type.length).toBeGreaterThan(0);
+                expect(device.name.length).toBeGreaterThan(0);
+                for (const value of Object.values(device.parameterValues)) {
+                    expect(Number.isFinite(value)).toBe(true);
+                }
+            }
+        }
+    });
 });

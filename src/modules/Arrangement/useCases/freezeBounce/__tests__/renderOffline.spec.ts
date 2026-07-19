@@ -7,12 +7,15 @@ import { renderTrackOffline } from '../renderOffline';
 
 import type { buildDeviceChain, getAudioContext, getCachedAudioBuffer } from '#/modules/AudioEngine/useCases';
 
+type MidiStoreNote = { id: string; pitch: number; startBeat: number; duration: number; velocity: number };
+
 type RenderOfflineMocks = {
     buildDeviceChain: Mock<typeof buildDeviceChain>;
     getAudioContext: Mock<typeof getAudioContext>;
     getCachedAudioBuffer: Mock<typeof getCachedAudioBuffer>;
     getUpstreamSubgraph: Mock<() => Set<string>>;
     trackStore: { value: unknown };
+    midiStore: { value: { notesByClipId: Record<string, MidiStoreNote[]> } | null };
 };
 
 const mocks = vi.hoisted<RenderOfflineMocks>(() => ({
@@ -21,6 +24,7 @@ const mocks = vi.hoisted<RenderOfflineMocks>(() => ({
     getCachedAudioBuffer: vi.fn<typeof getCachedAudioBuffer>(),
     getUpstreamSubgraph: vi.fn<() => Set<string>>(),
     trackStore: { value: null },
+    midiStore: { value: null },
 }));
 
 vi.mock('#/modules/AudioEngine/useCases', () => ({
@@ -30,7 +34,7 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
 }));
 
 vi.mock('#/modules/MIDI/stores', () => ({
-    midiStore: { value: null },
+    midiStore: mocks.midiStore,
 }));
 
 vi.mock('#/modules/Transport/stores', () => ({
@@ -67,7 +71,16 @@ type FakeSourceNode = FakeConnectableNode & {
     stop: (when?: number) => void;
 };
 
+type FakeOscillatorNode = FakeConnectableNode & {
+    type: string;
+    frequency: FakeAudioParam;
+    start: (when?: number) => void;
+    stop: (when?: number) => void;
+};
+
 const createdSources: FakeSourceNode[] = [];
+const createdOscillators: FakeOscillatorNode[] = [];
+let renderedBuffer: AudioBuffer | null = null;
 
 function createFakeAudioParam(): FakeAudioParam {
     return {
@@ -102,6 +115,38 @@ function createFakeAudioBuffer(duration = 1): AudioBuffer {
     };
 }
 
+/** Minimal AudioBuffer constructor stand-in for normalize/trim paths that allocate fresh buffers. */
+class FakeAudioBufferCtor {
+    readonly length: number;
+    readonly numberOfChannels: number;
+    readonly sampleRate: number;
+    private readonly channels: Float32Array[];
+
+    constructor(options: { length: number; numberOfChannels: number; sampleRate: number }) {
+        this.length = options.length;
+        this.numberOfChannels = options.numberOfChannels;
+        this.sampleRate = options.sampleRate;
+        this.channels = Array.from({ length: options.numberOfChannels }, () => new Float32Array(options.length));
+    }
+
+    get duration(): number {
+        return this.length / this.sampleRate;
+    }
+
+    getChannelData(channel: number): Float32Array {
+        return this.channels[channel] ?? new Float32Array(this.length);
+    }
+
+    copyToChannel(source: Float32Array, channel: number, startInChannel = 0): void {
+        this.channels[channel]?.set(source, startInChannel);
+    }
+
+    copyFromChannel(destination: Float32Array, channel: number, startInChannel = 0): void {
+        const data = this.getChannelData(channel);
+        destination.set(data.subarray(startInChannel, startInChannel + destination.length));
+    }
+}
+
 class FakeOfflineAudioContext {
     readonly destination = createFakeConnectableNode();
 
@@ -131,12 +176,24 @@ class FakeOfflineAudioContext {
         return source;
     }
 
+    createOscillator(): FakeOscillatorNode {
+        const oscillator = {
+            ...createFakeConnectableNode(),
+            type: 'sine',
+            frequency: createFakeAudioParam(),
+            start: vi.fn(),
+            stop: vi.fn(),
+        };
+        createdOscillators.push(oscillator);
+        return oscillator;
+    }
+
     resume(): Promise<void> {
         return Promise.resolve();
     }
 
     startRendering(): Promise<AudioBuffer> {
-        return Promise.resolve(createFakeAudioBuffer());
+        return Promise.resolve(renderedBuffer ?? createFakeAudioBuffer());
     }
 
     suspend(): Promise<void> {
@@ -148,8 +205,12 @@ describe('renderTrackOffline', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         vi.stubGlobal('OfflineAudioContext', FakeOfflineAudioContext);
+        vi.stubGlobal('AudioBuffer', FakeAudioBufferCtor);
         createdSources.length = 0;
+        createdOscillators.length = 0;
+        renderedBuffer = null;
         mocks.trackStore.value = null;
+        mocks.midiStore.value = null;
         mocks.buildDeviceChain.mockResolvedValue([]);
         mocks.getAudioContext.mockReturnValue({ sampleRate: 44100 } as AudioContext);
         mocks.getCachedAudioBuffer.mockReturnValue(null);
@@ -181,5 +242,83 @@ describe('renderTrackOffline', () => {
         expect(createdSources).toHaveLength(1);
         expect(createdSources[0]?.buffer).toBe(frozenBuffer);
         expect(createdSources[0]?.start).toHaveBeenCalledWith(0.5);
+    });
+
+    it('schedules cached audio clips at clip-relative offsets and skips uncached ones', async () => {
+        const clipBuffer = createFakeAudioBuffer(2);
+        const cached = ClipDummy.create({ id: 'c1', startBeat: 1, endBeat: 3, audioBufferId: 'buffer-1' });
+        const uncached = ClipDummy.create({ id: 'c2', startBeat: 3, endBeat: 4, audioBufferId: 'missing' });
+        const track = TrackDummy.create({ id: 'track-1', kind: 'audio', clips: [cached, uncached] });
+        mocks.trackStore.value = { tracks: [track], selectedTrackId: 'track-1', ghostClips: [] };
+        mocks.getCachedAudioBuffer.mockImplementation(({ bufferId }) => (bufferId === 'buffer-1' ? clipBuffer : null));
+
+        await renderTrackOffline(track, 0, 4, { includeInserts: false });
+
+        expect(createdSources).toHaveLength(1);
+        expect(createdSources[0]?.buffer).toBe(clipBuffer);
+        // 120 bpm: clip start at beat 1 = 0.5s, clip length 2 beats = 1s (shorter than the 2s buffer).
+        expect(createdSources[0]?.start).toHaveBeenCalledWith(0.5, 0, 1);
+    });
+
+    it('schedules a fallback synth voice for midi notes', async () => {
+        const clip = ClipDummy.create({ id: 'clip-m', startBeat: 1, endBeat: 3, type: 'midi' });
+        const track = TrackDummy.create({ id: 'track-1', kind: 'midi', clips: [clip] });
+        mocks.trackStore.value = { tracks: [track], selectedTrackId: 'track-1', ghostClips: [] };
+        mocks.midiStore.value = {
+            notesByClipId: {
+                'clip-m': [{ id: 'n1', pitch: 69, startBeat: 0, duration: 1, velocity: 127 }],
+            },
+        };
+
+        await renderTrackOffline(track, 0, 4, { includeInserts: false });
+
+        expect(createdOscillators).toHaveLength(1);
+        const oscillator = createdOscillators[0];
+        // A4 (MIDI 69) = 440 Hz; note starts at beat 1 = 0.5s and lasts 0.5s at 120 bpm.
+        expect(oscillator?.frequency.value).toBeCloseTo(440, 5);
+        expect(oscillator?.start).toHaveBeenCalledWith(0.5);
+        expect(oscillator?.stop).toHaveBeenCalledWith(1.01);
+    });
+
+    it('applies full normalization to the rendered buffer', async () => {
+        const raw = createFakeAudioBuffer(1);
+        raw.getChannelData(0)[0] = 0.5;
+        raw.getChannelData(0)[10] = -0.25;
+        renderedBuffer = raw;
+
+        const track = TrackDummy.create({ id: 'track-1', kind: 'audio', clips: [] });
+        mocks.trackStore.value = { tracks: [track], selectedTrackId: 'track-1', ghostClips: [] };
+
+        const result = await renderTrackOffline(track, 0, 4, { includeInserts: false, normalization: 'full' });
+
+        // Peak 0.5 is scaled to -0.1 dB (0.99), other samples proportionally.
+        expect(result).not.toBe(raw);
+        expect(result?.getChannelData(0)[0]).toBeCloseTo(0.99, 5);
+        expect(result?.getChannelData(0)[10]).toBeCloseTo(-0.495, 5);
+    });
+
+    it('returns the buffer untouched when protection normalization sees a safe peak', async () => {
+        const raw = createFakeAudioBuffer(1);
+        raw.getChannelData(0)[0] = 0.5;
+        renderedBuffer = raw;
+
+        const track = TrackDummy.create({ id: 'track-1', kind: 'audio', clips: [] });
+        mocks.trackStore.value = { tracks: [track], selectedTrackId: 'track-1', ghostClips: [] };
+
+        const result = await renderTrackOffline(track, 0, 4, { includeInserts: false, normalization: 'protection' });
+
+        expect(result).toBe(raw);
+    });
+
+    it('rejects when the abort signal is already aborted', async () => {
+        const controller = new AbortController();
+        controller.abort();
+
+        const track = TrackDummy.create({ id: 'track-1', kind: 'audio', clips: [] });
+        mocks.trackStore.value = { tracks: [track], selectedTrackId: 'track-1', ghostClips: [] };
+
+        await expect(
+            renderTrackOffline(track, 0, 4, { includeInserts: false, abortSignal: controller.signal })
+        ).rejects.toThrow('Render aborted');
     });
 });
