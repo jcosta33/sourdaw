@@ -18,20 +18,43 @@ vi.mock('../../hooks/usePreviewAudio', () => ({
     })),
 }));
 
+const mockPlatformPlugins = [
+    { id: 'p1', name: 'Reverb Hall', vendor: 'Sourdaw', format: 'builtin', category: 'effect', parameters: [], hasCustomUI: false },
+    { id: 'p2', name: 'Delay Line', vendor: 'Sourdaw', format: 'builtin', category: 'effect', parameters: [], hasCustomUI: false },
+    { id: 'p3', name: 'Grain Synth', vendor: 'Sourdaw', format: 'builtin', category: 'instrument', parameters: [], hasCustomUI: false },
+];
+
+vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Arrangement/useCases')>()),
+    getPlatformPlugins: vi.fn(() => mockPlatformPlugins),
+}));
 // Mock child components
 vi.mock('../Sidebar/InstrumentsTab', () => ({
-    InstrumentsTab: ({ favorites }: { favorites: Set<unknown> }) => (
+    InstrumentsTab: ({
+        favorites,
+        onToggleFavorite,
+    }: {
+        favorites: Set<unknown>;
+        onToggleFavorite: (id: string) => void;
+    }) => (
         <div
             data-testid="instruments-tab"
             data-favorites={Array.from(favorites, (favorite) => String(favorite)).join('|')}
         >
             Instruments
+            <button type="button" onClick={() => onToggleFavorite('instrument-1')}>
+                toggle favorite
+            </button>
         </div>
     ),
 }));
 
 vi.mock('../Sidebar/EffectsTab', () => ({
-    EffectsTab: () => <div data-testid="effects-tab">Effects</div>,
+    EffectsTab: ({ plugins }: { plugins: { name: string }[] }) => (
+        <div data-testid="effects-tab" data-plugin-names={plugins.map((plugin) => plugin.name).join('|')}>
+            Effects
+        </div>
+    ),
 }));
 
 vi.mock('../Sidebar/SamplesTab', () => ({
@@ -92,5 +115,42 @@ describe('Sidebar', () => {
     it('should show search input', () => {
         render(<Sidebar />);
         expect(screen.getByPlaceholderText(/Search/)).toBeInTheDocument();
+    });
+
+    it('should filter effects tab plugins by the search query, case-insensitively against the plugin name', () => {
+        render(<Sidebar />);
+        fireEvent.click(screen.getByText('Effects'));
+
+        const searchInput = screen.getByPlaceholderText(/Search/);
+        fireEvent.change(searchInput, { target: { value: 'REVERB' } });
+
+        expect(screen.getByTestId('effects-tab')).toHaveAttribute('data-plugin-names', 'Reverb Hall');
+    });
+
+    it('should pass through all platform plugins to the effects tab when the search query is blank', () => {
+        render(<Sidebar />);
+        fireEvent.click(screen.getByText('Effects'));
+
+        expect(screen.getByTestId('effects-tab')).toHaveAttribute(
+            'data-plugin-names',
+            'Reverb Hall|Delay Line|Grain Synth'
+        );
+    });
+
+    it('should persist a toggled favorite under the sourdaw-favorites storage key', () => {
+        render(<Sidebar />);
+
+        fireEvent.click(screen.getByText('toggle favorite'));
+
+        expect(window.localStorage.getItem('sourdaw-favorites')).toBe('["instrument-1"]');
+    });
+
+    it('should remove a favorite from the sourdaw-favorites storage key when toggled again', () => {
+        render(<Sidebar />);
+
+        fireEvent.click(screen.getByText('toggle favorite'));
+        fireEvent.click(screen.getByText('toggle favorite'));
+
+        expect(window.localStorage.getItem('sourdaw-favorites')).toBe('[]');
     });
 });
