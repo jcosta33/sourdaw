@@ -12,6 +12,7 @@ import { toasterStore } from '../stores/toasterStore';
 import { getSequencerPlaybackState } from './getSequencerPlaybackState';
 import { TOASTER_ENGINE_MAP } from './loadToasterKit';
 import { morphPatterns } from './patternMorph';
+import { projectToasterPatternGroove } from './projectToasterPatternGroove';
 import { scheduleSequencerFire } from './scheduleSequencerFire';
 import { shouldTriggerSequencerStep } from './shouldTriggerSequencerStep';
 import { setPadEngineImmediate } from './toasterParamBridge/setPadEngineImmediate';
@@ -63,7 +64,22 @@ export function runSequencerTick({ deviceId, currentStep, bpm, stepsPerBeat }: R
             continue;
         }
 
-        const vel = Math.round(step.velocity * 127);
+        const stepDurationBeats = 1 / stepsPerBeat;
+        const gridStartBeat = stepIdx * stepDurationBeats;
+        const microOffsetBeats = step.microTiming * stepDurationBeats;
+        const swingBeats = stepIdx % 2 === 1 ? state.kit.swing * stepDurationBeats * 0.5 : 0;
+        const sourceEvent = {
+            id: `${track.padIndex}:${stepIdx}`,
+            startBeat: Math.max(0, gridStartBeat + microOffsetBeats + swingBeats),
+            velocity: Math.round(step.velocity * 127),
+        };
+        const grooveProjection = projectToasterPatternGroove({
+            patternId: sourcePattern.id,
+            stepsPerBar: pattern.stepsPerBar,
+            events: [sourceEvent],
+        });
+        const projectedEvent = grooveProjection.ok ? (grooveProjection.events[0] ?? sourceEvent) : sourceEvent;
+        const vel = projectedEvent.velocity;
 
         const pad = state.kit.pads[track.padIndex];
 
@@ -84,9 +100,7 @@ export function runSequencerTick({ deviceId, currentStep, bpm, stepsPerBeat }: R
         const lockedEngineIdx = step.soundLock ? (TOASTER_ENGINE_MAP[step.soundLock] ?? 0) : null;
         const defaultEngineIdx = pad ? (TOASTER_ENGINE_MAP[pad.engineType] ?? 0) : null;
 
-        const microOffsetMs = step.microTiming * stepDurationMs;
-        const swingMs = stepIdx % 2 === 1 ? state.kit.swing * stepDurationMs * 0.5 : 0;
-        const totalDelayMs = Math.max(0, swingMs + microOffsetMs);
+        const totalDelayMs = Math.max(0, (projectedEvent.startBeat - gridStartBeat) * (60_000 / bpm));
 
         const padIndex = track.padIndex;
         function fire(): void {

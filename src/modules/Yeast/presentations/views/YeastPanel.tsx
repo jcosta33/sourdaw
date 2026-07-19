@@ -18,13 +18,16 @@ import { DawPluginToggle } from '#/components/daw/DawPluginToggle';
 import { RotaryKnob } from '#/components/daw/RotaryKnob';
 import { Row, Stack, Grid } from '#/components/layout';
 import { useStore } from '#/infra/store/useStore';
+import { grooveTemplateStore } from '#/modules/MIDI/stores';
+import { getStraightGrooveTemplateId } from '#/modules/MIDI/useCases';
 
 import { createDefaultPattern, type ArpStep } from '../../models/ArpPattern';
 import { PROCESSOR_TYPES } from '../../models/ProcessorCatalog';
-import { yeastStore, type YeastState } from '../../stores/yeastStore';
+import { yeastStore, type YeastProcessorInfo, type YeastState } from '../../stores/yeastStore';
 import { addYeastProcessor } from '../../useCases/addYeastProcessor';
 import { removeYeastProcessor } from '../../useCases/removeYeastProcessor';
 import { sendYeastProcessorCommand } from '../../useCases/sendYeastProcessorCommand';
+import { setYeastGrooveTemplate } from '../../useCases/setYeastGrooveTemplate';
 import { setYeastProcessorBypass } from '../../useCases/setYeastProcessorBypass';
 import { setYeastProcessorParam } from '../../useCases/setYeastProcessorParam';
 import { setYeastUiLevel } from '../../useCases/setYeastUiLevel';
@@ -178,6 +181,25 @@ const NoteFlowHero = ({ state }: { state: YeastState }): ReactElement => {
 const defaultYeastState: YeastState = {
     processors: [],
     uiLevel: 1,
+};
+
+const GrooveAwareProcessorParams = ({ processor }: { processor: YeastProcessorInfo }): ReactElement => {
+    const grooveState = useStore(grooveTemplateStore);
+    const assignment = grooveState.assignments.find(
+        (candidate) => candidate.consumerType === 'yeast-processor' && candidate.consumerId === processor.id
+    );
+    return (
+        <ProcessorParams
+            processorId={processor.id}
+            processorType={processor.type}
+            onSetParam={setYeastProcessorParam}
+            onCommand={sendYeastProcessorCommand}
+            grooveTemplates={grooveState.templates.map(({ id, name }) => ({ id, name }))}
+            selectedGrooveTemplateId={assignment?.templateId ?? getStraightGrooveTemplateId()}
+            grooveAmount={assignment?.amount ?? processor.params?.amount ?? 0.5}
+            onSetGrooveTemplate={setYeastGrooveTemplate}
+        />
+    );
 };
 
 export const YeastPanel = (): ReactElement => {
@@ -522,12 +544,7 @@ const Level3Build = ({ state }: { state: YeastState }): ReactElement => {
                         {/* Expanded parameter panel */}
                         {expandedId === proc.id ? (
                             <div className="border-t border-border/10 bg-surface-app/30">
-                                <ProcessorParams
-                                    processorId={proc.id}
-                                    processorType={proc.type}
-                                    onSetParam={setYeastProcessorParam}
-                                    onCommand={sendYeastProcessorCommand}
-                                />
+                                <GrooveAwareProcessorParams processor={proc} />
                             </div>
                         ) : null}
                     </div>
@@ -617,12 +634,7 @@ const Level4Route = ({ state }: { state: YeastState }): ReactElement => {
                         </Row>
                         {expandedId === proc.id ? (
                             <div className="border-t border-border/10 bg-surface-app/30">
-                                <ProcessorParams
-                                    processorId={proc.id}
-                                    processorType={proc.type}
-                                    onSetParam={setYeastProcessorParam}
-                                    onCommand={sendYeastProcessorCommand}
-                                />
+                                <GrooveAwareProcessorParams processor={proc} />
                             </div>
                         ) : null}
                     </div>
@@ -699,12 +711,7 @@ const Level5Lab = ({ state }: { state: YeastState }): ReactElement => {
                             </Row>
                             {expandedId === proc.id ? (
                                 <div className="border-t border-border/10 bg-surface-app/30">
-                                    <ProcessorParams
-                                        processorId={proc.id}
-                                        processorType={proc.type}
-                                        onSetParam={setYeastProcessorParam}
-                                        onCommand={sendYeastProcessorCommand}
-                                    />
+                                    <GrooveAwareProcessorParams processor={proc} />
                                 </div>
                             ) : null}
                         </div>

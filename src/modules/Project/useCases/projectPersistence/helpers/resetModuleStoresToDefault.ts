@@ -9,6 +9,7 @@ import { grinderStore, grinderTelemetryStore } from '#/modules/Grinder/stores';
 import { kneadStore, defaultKneadState } from '#/modules/Knead/stores';
 import { levainStore } from '#/modules/Levain/stores';
 import { midiStore } from '#/modules/MIDI/stores';
+import { hydrateGrooveTemplates } from '#/modules/MIDI/useCases';
 import { proofStore } from '#/modules/Proof/stores';
 import { setSidechainRoutes } from '#/modules/Routing/useCases';
 import { toasterStore } from '#/modules/Toaster/stores';
@@ -24,6 +25,7 @@ export function resetModuleStoresToDefault(): void {
     transportStore.set(defaultTransportState);
     automationStore.set({ lanes: [] });
     midiStore.set({ notesByClipId: {}, ccByClipId: {}, pitchBendByClipId: {} });
+    hydrateGrooveTemplates({ templates: [], assignments: [] });
     tempoMapStore.set({ changes: [] });
     timeSignatureMapStore.set({ changes: [] });
     setSidechainRoutes([]);

@@ -13,7 +13,8 @@ vi.mock('#/modules/Arrangement/stores', () => ({
     adjustmentLayerStore: { value: { layers: [] } },
 }));
 vi.mock('#/modules/Automation/stores', () => ({ automationStore: { value: { lanes: [] } } }));
-vi.mock('#/modules/MIDI/stores', () => ({
+vi.mock('#/modules/MIDI/stores', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/MIDI/stores')>()),
     midiStore: { value: { notesByClipId: {}, ccByClipId: {}, pitchBendByClipId: {} } },
 }));
 vi.mock('#/modules/Transport/stores', () => ({

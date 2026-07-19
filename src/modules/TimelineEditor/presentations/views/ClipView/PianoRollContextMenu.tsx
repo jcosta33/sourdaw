@@ -9,7 +9,7 @@ import { DawMenuButton, DawMenuSectionLabel, DawMenuSeparator } from '#/componen
 import { logger } from '#/infra/logger/appLogger';
 import { generateMidiAI } from '#/modules/AiGeneration/useCases';
 import { copySelectedNotes, pasteNotes } from '#/modules/Arrangement/useCases';
-import { pushUndoEntry } from '#/modules/Command/useCases';
+import { executeAppAction, pushUndoEntry } from '#/modules/Command/useCases';
 import {
     addMidiNote,
     removeMidiNote,
@@ -22,9 +22,8 @@ import {
     strumNotes,
     restoreStrumOriginals,
     snapClipToScale,
-    extractGrooveFromClip,
-    applyGrooveToClip,
-    restoreGrooveOriginals,
+    getGrooveTemplate,
+    getStraightGrooveTemplateId,
 } from '#/modules/MIDI/useCases';
 import { isTauri } from '#/utils/tauriRuntime';
 import { useContextMenuDismiss } from '#/utils/UI/useContextMenuDismiss';
@@ -55,7 +54,7 @@ export const PianoRollContextMenu = ({
 }: PianoRollContextMenuProps): ReactElement => {
     const ref = useRef<HTMLDivElement>(null);
     useContextMenuDismiss(ref, onClose);
-    const [grooveTemplate, setGrooveTemplate] = useState<Parameters<typeof applyGrooveToClip>[1] | null>(null);
+    const [grooveTemplateId, setGrooveTemplateId] = useState<string | null>(null);
 
     const act = (fn: () => void) => () => {
         fn();
@@ -85,6 +84,23 @@ export const PianoRollContextMenu = ({
         } catch {
             logger.warn('AI Generation requires native backend');
         }
+    };
+
+    const handleExtractGroove = async (): Promise<void> => {
+        const templateId = `groove-${clipId}-v1`;
+        await executeAppAction({ type: 'extractGroove', payload: { clipId, templateId } });
+        const extractedTemplateId = getGrooveTemplate(templateId)?.id ?? getStraightGrooveTemplateId();
+        setGrooveTemplateId(extractedTemplateId);
+    };
+
+    const handleApplyGroove = async (): Promise<void> => {
+        if (!grooveTemplateId) {
+            return;
+        }
+        await executeAppAction({
+            type: 'applyGroove',
+            payload: { clipId, grooveId: grooveTemplateId, amount: 0.5 },
+        });
     };
 
     return (
@@ -326,30 +342,19 @@ export const PianoRollContextMenu = ({
             </DawMenuSectionLabel>
             <DawMenuButton
                 role="menuitem"
-                onClick={act(() => {
-                    const groove = extractGrooveFromClip(clipId);
-                    if (groove) {
-                        setGrooveTemplate(groove);
-                    }
-                })}
+                onClick={() => {
+                    void handleExtractGroove().catch(() => logger.warn('Could not extract groove'));
+                }}
             >
                 Extract Groove
             </DawMenuButton>
             <DawMenuButton
                 role="menuitem"
-                disabled={!grooveTemplate}
-                onClick={act(() => {
-                    if (grooveTemplate) {
-                        const originals = applyGrooveToClip(clipId, grooveTemplate, 0.5);
-                        if (originals) {
-                            pushUndoEntry(
-                                'Apply groove',
-                                () => restoreGrooveOriginals(clipId, originals),
-                                () => applyGrooveToClip(clipId, grooveTemplate, 0.5)
-                            );
-                        }
-                    }
-                })}
+                disabled={!grooveTemplateId}
+                onClick={() => {
+                    void handleApplyGroove().catch(() => logger.warn('Could not assign groove'));
+                    onClose();
+                }}
             >
                 Apply Groove (50%)
             </DawMenuButton>

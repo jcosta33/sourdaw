@@ -41,5 +41,16 @@ describe('GrooveTemplate schema', () => {
                 deviceId: 'yeast-1',
             })
         ).toBe(false);
+        expect(isGrooveTemplate({ ...createStraightGrooveTemplate(), name: 'Fake Straight' })).toBe(false);
+        expect(
+            isGrooveTemplate({
+                id: 'out-of-range',
+                name: 'Out of range',
+                schemaVersion: GROOVE_TEMPLATE_SCHEMA_VERSION,
+                subdivision: '1/16',
+                slots: [{ index: 16, timingOffset: 0, dynamicsOffset: 0 }],
+                provenance: { type: 'user', sourceId: 'bad-slot' },
+            })
+        ).toBe(false);
     });
 });

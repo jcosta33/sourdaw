@@ -39,9 +39,22 @@ export { glueMidiClipData } from './midiClipData/glueMidiClipData';
 export { removeMidiClipData } from './midiClipData/removeMidiClipData';
 export { restoreMidiClipData } from './midiClipData/restoreMidiClipData';
 
-export { extractGrooveFromClip } from './grooveExtraction/extractGrooveFromClip';
-export { applyGrooveToClip } from './grooveExtraction/applyGrooveToClip';
-export { restoreGrooveOriginals } from './grooveExtraction/restoreGrooveOriginals';
+export { adaptGrooveTemplateForConsumer } from './grooveTemplates/adaptGrooveTemplateForConsumer';
+export { applyGrooveTemplate } from './grooveTemplates/applyGrooveTemplate';
+export { assignGrooveTemplate } from './grooveTemplates/assignGrooveTemplate';
+export { createGrooveTemplate } from './grooveTemplates/createGrooveTemplate';
+export { deleteGrooveTemplate } from './grooveTemplates/deleteGrooveTemplate';
+export { extractGrooveTemplate } from './grooveTemplates/extractGrooveTemplate';
+export { getGrooveAssignment } from './grooveTemplates/getGrooveAssignment';
+export { getGrooveTemplate } from './grooveTemplates/getGrooveTemplate';
+export { getStraightGrooveTemplateId } from './grooveTemplates/getStraightGrooveTemplateId';
+export { hydrateGrooveTemplates } from './grooveTemplates/hydrateGrooveTemplates';
+export { previewGrooveTemplate } from './grooveTemplates/previewGrooveTemplate';
+export { projectCommittedGroove } from './grooveTemplates/projectCommittedGroove';
+export { renameGrooveTemplate } from './grooveTemplates/renameGrooveTemplate';
+export { restoreDeletedGrooveTemplate } from './grooveTemplates/restoreDeletedGrooveTemplate';
+export { restoreGrooveAssignment } from './grooveTemplates/restoreGrooveAssignment';
+export { snapshotGrooveTemplateDeletion } from './grooveTemplates/snapshotGrooveTemplateDeletion';
 
 // ── MIDI Events ───────────────────────────────────────────────────────────────
 export { addMidiCC } from './midiEvent/addMidiCC';
@@ -99,6 +112,7 @@ export { setStepRecordBeat } from './stepRecording/setStepRecordBeat';
 export { toggleStepRecordingForClip } from './stepRecording/toggleStepRecordingForClip';
 
 export { getMidiNoteTransformHandlers } from './getMidiNoteTransformHandlers';
+export { getMidiGrooveHandlers } from './getMidiGrooveHandlers';
 
 // ── Pattern Instances ─────────────────────────────────────────────────────────
 export { getPatternInstanceHandlers } from './getPatternInstanceHandlers';
@@ -112,6 +126,7 @@ export { transposeForChordTrack } from './transposeForChordTrack';
 // ── WebMIDI Note Input ────────────────────────────────────────────────────────
 export { initWebMidi } from './webMidiInput/initWebMidi';
 export { setWebMidiRuntimeEventBus } from './webMidiInput/setWebMidiRuntimeEventBus';
+export { setWebMidiRealtimeProcessor } from './webMidiInput/setWebMidiRealtimeProcessor';
 export { setMidiInputTrack } from './webMidiInput/setMidiInputTrack';
 export { selectMidiInput } from './webMidiInput/selectMidiInput';
 export { resetMidiState } from './webMidiInput/resetMidiState';

@@ -8,7 +8,7 @@ import {
     scheduleFaustNote,
 } from '#/modules/AudioEngine/useCases';
 import { midiStore } from '#/modules/MIDI/stores';
-import { getChordAtBeat, transposeForChordTrack } from '#/modules/MIDI/useCases';
+import { getChordAtBeat, projectCommittedGroove, transposeForChordTrack } from '#/modules/MIDI/useCases';
 import { scheduleDrumKitNote, scheduleKitNote, scheduleNote } from '#/modules/Synth/useCases';
 import { processYeastMidi } from '#/modules/Yeast/useCases';
 
@@ -138,12 +138,17 @@ export async function scheduleMidiNotes(
             if (clip.type !== 'midi') {
                 continue;
             }
-            const notes = midiState.notesByClipId[clip.id] as
+            const sourceNotes = midiState.notesByClipId[clip.id] as
                 | NonNullable<(typeof midiState.notesByClipId)[string]>
                 | undefined;
-            if (!notes) {
+            if (!sourceNotes) {
                 continue;
             }
+            const notes = projectCommittedGroove({
+                events: sourceNotes,
+                consumerType: 'clip',
+                consumerId: clip.id,
+            });
 
             const hasYeast = track.devices.some((data) => data.type === 'yeast');
             // §2 — When the clip loops, run the Yeast Worker once per loop

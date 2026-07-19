@@ -76,8 +76,10 @@ import { setEngineReady } from '#/modules/Levain/stores';
 import { registerLevainDevice, unregisterLevainDevice } from '#/modules/Levain/useCases';
 import {
     getChordTrackHandlers,
+    getMidiGrooveHandlers,
     getMidiNoteTransformHandlers,
     getPatternInstanceHandlers,
+    setWebMidiRealtimeProcessor,
     setWebMidiRuntimeEventBus,
     getWebMidiInputHandlers,
 } from '#/modules/MIDI/useCases';
@@ -102,7 +104,7 @@ import {
 import { updateTunerTelemetry } from '#/modules/Tuner/stores';
 import { getWorkspaceHandlers, getScratchPadHandlers, setWorkspaceEventBus } from '#/modules/WorkspaceShell/useCases';
 import { setYeastEventBus } from '#/modules/Yeast/stores';
-import { configureYeastRuntime, teardownYeastRuntime } from '#/modules/Yeast/useCases';
+import { configureYeastRuntime, processRealtimeMidiInput, teardownYeastRuntime } from '#/modules/Yeast/useCases';
 import { logCapabilities } from '#/utils/capabilities';
 import { setNotificationEventBus } from '#/utils/Notification/notificationEventBus';
 
@@ -136,6 +138,7 @@ setGrandBouleEventBus(eventBus);
 setToasterEventBus(eventBus);
 setYeastEventBus(eventBus);
 configureYeastRuntime({ panicOutputNotes: stopAllScheduled });
+setWebMidiRealtimeProcessor({ processor: processRealtimeMidiInput });
 setWebMidiRuntimeEventBus({ eventBus });
 setNotificationEventBus(eventBus);
 setTimeOperationDependencies({ shiftTimelineMapsAfterBeat, deleteTimelineMapsTimeRange });
@@ -247,6 +250,7 @@ registerHandlerMap(getAiMidiHandlers());
 registerHandlerMap(getAiOrganizationHandlers());
 registerHandlerMap(getChordTrackHandlers());
 registerHandlerMap(getMidiNoteTransformHandlers());
+registerHandlerMap(getMidiGrooveHandlers());
 registerHandlerMap(getControlSurfaceHandlers());
 registerHandlerMap(getScratchPadHandlers());
 registerHandlerMap(getPatternInstanceHandlers());

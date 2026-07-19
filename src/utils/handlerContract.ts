@@ -72,6 +72,31 @@ export type PitchContourSnapshot = {
 
 export type AutomationMode = 'read' | 'write' | 'touch' | 'latch' | 'off';
 
+export type GrooveConsumerSnapshot = 'clip' | 'yeast-processor' | 'toaster-pattern' | 'arpeggiator' | 'sequencer';
+export type GrooveTemplateActionSnapshot = {
+    id: string;
+    name: string;
+    schemaVersion: 1;
+    subdivision: '1/8' | '1/16' | '1/32' | '1/16T';
+    slots: Array<{ index: number; timingOffset: number; dynamicsOffset: number }>;
+    provenance:
+        | { type: 'builtin'; sourceId: string }
+        | { type: 'user'; sourceId: string }
+        | { type: 'midi-clip'; sourceId: string; analyzerVersion: number }
+        | { type: 'legacy'; sourceId: string };
+};
+export type GrooveAssignmentActionSnapshot = {
+    consumerType: GrooveConsumerSnapshot;
+    consumerId: string;
+    templateId: string;
+    amount: number;
+};
+export type DeletedGrooveTemplateActionSnapshot = {
+    template: GrooveTemplateActionSnapshot;
+    templateIndex: number;
+    assignments: Array<{ index: number; assignment: GrooveAssignmentActionSnapshot }>;
+};
+
 export type AppAction =
     | { type: 'addTrack'; payload: { id?: string; name: string; kind: TrackKind } }
     | { type: 'removeTrack'; payload: { trackId: string } }
@@ -326,7 +351,26 @@ export type AppAction =
       }
     | { type: 'setClipLoop'; payload: { clipId: string; enabled: boolean } }
     | { type: 'setClipLoopLength'; payload: { clipId: string; loopLength: number } }
-    | { type: 'extractGroove'; payload: { clipId: string } }
+    | {
+          type: 'createGrooveTemplate';
+          payload: Omit<GrooveTemplateActionSnapshot, 'schemaVersion'>;
+      }
+    | { type: 'renameGrooveTemplate'; payload: { templateId: string; name: string } }
+    | { type: 'deleteGrooveTemplate'; payload: { templateId: string } }
+    | { type: 'restoreDeletedGrooveTemplate'; payload: DeletedGrooveTemplateActionSnapshot }
+    | { type: 'assignGrooveTemplate'; payload: GrooveAssignmentActionSnapshot }
+    | {
+          type: 'restoreGrooveAssignment';
+          payload: {
+              consumerType: GrooveConsumerSnapshot;
+              consumerId: string;
+              assignment: GrooveAssignmentActionSnapshot | null;
+          };
+      }
+    | {
+          type: 'extractGroove';
+          payload: { clipId: string; templateId?: string; sourceName?: string; subdivision?: string };
+      }
     | { type: 'applyGroove'; payload: { clipId: string; grooveId: string; amount?: number } }
     | { type: 'setClipStretchMode'; payload: { clipId: string; mode: 'off' | 'repitch' | 'timestretch' } }
     | { type: 'setClipStretchRatio'; payload: { clipId: string; ratio: number } }

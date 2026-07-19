@@ -3,6 +3,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { trackStore } from '#/modules/Arrangement/stores';
 import { resolveClipsWithComping, getSynthParamsForTrack, getGrooveOffsetAtBeat } from '#/modules/Arrangement/useCases';
 import { midiStore } from '#/modules/MIDI/stores';
+import { projectCommittedGroove } from '#/modules/MIDI/useCases';
 import { scheduleNote } from '#/modules/Synth/useCases';
 import { processYeastMidi } from '#/modules/Yeast/useCases';
 
@@ -50,6 +51,7 @@ vi.mock('#/modules/Yeast/useCases', () => ({
 }));
 vi.mock('#/modules/MIDI/useCases', () => ({
     getChordAtBeat: vi.fn(),
+    projectCommittedGroove: vi.fn(({ events }) => events),
     transposeForChordTrack: vi.fn((param) => param),
 }));
 
@@ -91,6 +93,7 @@ describe('scheduleMidiNotes', () => {
             clips.map((clip) => ({ ...clip, regionStartBeat: clip.startBeat, regionEndBeat: clip.endBeat }))
         );
         vi.mocked(getGrooveOffsetAtBeat).mockReturnValue(0);
+        vi.mocked(projectCommittedGroove).mockImplementation(({ events }) => events);
         vi.mocked(processYeastMidi).mockImplementation(async (input) => [...input.events]);
     });
 
@@ -98,6 +101,23 @@ describe('scheduleMidiNotes', () => {
         await scheduleMidiNotes(0, 4, 0, 0, [], defaultTransportState, 120);
 
         expect(getSynthParamsForTrack).not.toHaveBeenCalled();
+    });
+
+    it('projects the clip assignment before committed playback scheduling', async () => {
+        const track = midiTrack({ clips: [midiClip()] });
+        const source = [{ id: 'n1', pitch: 60, startBeat: 0.25, duration: 0.25, velocity: 100 }];
+        (trackStore as { value: unknown }).value = { tracks: [track] };
+        (midiStore as { value: unknown }).value = { notesByClipId: { 'clip-1': source } };
+        vi.mocked(projectCommittedGroove).mockReturnValue([{ ...source[0]!, startBeat: 0.3, velocity: 80 }]);
+
+        await scheduleMidiNotes(0, 4, 0, -1, [], defaultTransportState, 120);
+
+        expect(projectCommittedGroove).toHaveBeenCalledWith({
+            events: source,
+            consumerType: 'clip',
+            consumerId: 'clip-1',
+        });
+        expect(vi.mocked(scheduleNote).mock.calls[0]?.[5]).toBe(80);
     });
 
     // §1 — Per-note probability must be deterministic so replays are identical.

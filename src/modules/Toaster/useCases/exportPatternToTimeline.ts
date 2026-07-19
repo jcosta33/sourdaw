@@ -4,6 +4,8 @@ import { playheadPositionRef } from '#/modules/Transport/stores';
 
 import { toasterStore } from '../stores/toasterStore';
 
+import { projectToasterPatternGroove } from './projectToasterPatternGroove';
+
 /**
  * Export the active pattern to the timeline as MIDI clips, one per pad lane.
  *
@@ -91,19 +93,42 @@ export function exportPatternToTimeline(deviceId: string): void {
         const clipId = clip.id;
         const midiNote = 36 + track.padIndex;
 
+        const grooveSourceEvents = track.steps.slice(0, numSteps).flatMap((step, stepIdx) => {
+            if (!step.active) {
+                return [];
+            }
+            const microOffsetBeats = step.microTiming * stepDurationBeats;
+            const swingBeats = stepIdx % 2 === 1 ? swing * stepDurationBeats * 0.5 : 0;
+            return [
+                {
+                    id: `${track.padIndex}:${stepIdx}`,
+                    startBeat: Math.max(0, stepIdx * stepDurationBeats + microOffsetBeats + swingBeats),
+                    velocity: Math.round(step.velocity * 127),
+                    stepIdx,
+                },
+            ];
+        });
+        const grooveProjection = projectToasterPatternGroove({
+            patternId: pattern.id,
+            stepsPerBar,
+            events: grooveSourceEvents,
+        });
+        const projectedByStep = new Map(
+            (grooveProjection.ok ? grooveProjection.events : grooveSourceEvents).map((event) => [event.stepIdx, event])
+        );
+
         // Add MIDI notes for each active step, baking in the same micro-timing,
-        // swing, retrigger and probability the live sequencer applies.
+        // swing, shared groove, and retrigger the live sequencer applies.
         for (let stepIdx = 0; stepIdx < numSteps; stepIdx++) {
             const step = track.steps[stepIdx];
-            if (!step?.active) {
+            const projected = projectedByStep.get(stepIdx);
+            if (!step?.active || !projected) {
                 continue;
             }
 
-            const microOffsetBeats = step.microTiming * stepDurationBeats;
-            const swingBeats = stepIdx % 2 === 1 ? swing * stepDurationBeats * 0.5 : 0;
-            const startBeat = Math.max(0, stepIdx * stepDurationBeats + microOffsetBeats + swingBeats);
+            const startBeat = projected.startBeat;
             const noteDuration = stepDurationBeats * 0.9;
-            const velocity = Math.round(step.velocity * 127);
+            const velocity = projected.velocity;
 
             addMidiNote(clipId, midiNote, startBeat, noteDuration, velocity);
 

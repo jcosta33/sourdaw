@@ -13,8 +13,8 @@ import {
     scheduleNote,
 } from '#/modules/Synth/useCases';
 import { playheadPositionRef, transportStore } from '#/modules/Transport/stores';
-import { processRealtimeMidiInput } from '#/modules/Yeast/useCases';
 
+import { processRealtimeMidiInput } from '../../repositories/webMidi/processRealtimeMidiInput';
 import { WebMidiEventBus } from '../../repositories/webMidi/webMidiEventBus';
 import { appendRecordedMidiNote } from '../appendRecordedMidiNote';
 import { createMidiNote } from '../createMidiNote';

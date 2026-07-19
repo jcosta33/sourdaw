@@ -1,5 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 
+import { handleAssignGrooveTemplate } from '../handlers/groove/handleAssignGrooveTemplate';
+import { handleRestoreGrooveAssignment } from '../handlers/groove/handleRestoreGrooveAssignment';
 import { defaultGrooveTemplateState, grooveTemplateStore } from '../stores/grooveTemplateStore';
 import { assignGrooveTemplate } from '../useCases/grooveTemplates/assignGrooveTemplate';
 import { createGrooveTemplate } from '../useCases/grooveTemplates/createGrooveTemplate';
@@ -34,5 +36,34 @@ describe('groove preview and commit parity', () => {
         expect(grooveTemplateStore.value?.assignments).toEqual([
             { consumerType: 'clip', consumerId: 'clip-1', templateId: 'shuffle', amount: 0.5 },
         ]);
+    });
+
+    it('makes assignment one undoable reference-only action', () => {
+        const template = createGrooveTemplate({
+            id: 'undoable',
+            name: 'Undoable',
+            subdivision: '1/16',
+            slots: [],
+            provenance: { type: 'user', sourceId: 'manual' },
+        });
+        const action = {
+            type: 'assignGrooveTemplate' as const,
+            payload: {
+                consumerType: 'clip' as const,
+                consumerId: 'clip-undo',
+                templateId: template.id,
+                amount: 0.75,
+            },
+        };
+        const description = handleAssignGrooveTemplate.describe(action);
+        expect(handleAssignGrooveTemplate.undoable).toBe(true);
+        void handleAssignGrooveTemplate.execute(action);
+        expect(grooveTemplateStore.value?.assignments).toContainEqual(action.payload);
+
+        if (description.inverseAction?.type !== 'restoreGrooveAssignment') {
+            throw new Error('Expected assignment inverse');
+        }
+        void handleRestoreGrooveAssignment.execute(description.inverseAction);
+        expect(grooveTemplateStore.value?.assignments).toEqual([]);
     });
 });
