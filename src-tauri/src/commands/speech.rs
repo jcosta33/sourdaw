@@ -1,6 +1,8 @@
+use audioadapter_buffers::direct::SequentialSliceOfVecs;
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use rubato::{
-    Resampler, SincFixedIn, SincInterpolationParameters, SincInterpolationType, WindowFunction,
+    Async, FixedAsync, Resampler, SincInterpolationParameters, SincInterpolationType,
+    WindowFunction,
 };
 use serde::{Deserialize, Serialize};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -217,7 +219,7 @@ fn record_mic(stop: &AtomicBool) -> Result<(Vec<f32>, u32, u16), String> {
         .default_input_config()
         .map_err(|e| format!("Failed to get mic config: {e}"))?;
 
-    let sample_rate = config.sample_rate().0;
+    let sample_rate = config.sample_rate();
     let channels = config.channels();
     let buffer: Arc<Mutex<Vec<f32>>> = Arc::new(Mutex::new(Vec::with_capacity(
         sample_rate as usize * 15 * channels as usize,
@@ -226,7 +228,7 @@ fn record_mic(stop: &AtomicBool) -> Result<(Vec<f32>, u32, u16), String> {
     let buf_writer = buffer.clone();
     let stream = device
         .build_input_stream(
-            &config.into(),
+            config.into(),
             move |data: &[f32], _: &cpal::InputCallbackInfo| {
                 if let Ok(mut buf) = buf_writer.lock() {
                     buf.extend_from_slice(data);
@@ -276,47 +278,28 @@ fn resample_to_16k(input: &[f32], src_rate: u32) -> Result<Vec<f32>, String> {
 
     let params = SincInterpolationParameters {
         sinc_len: 256,
-        f_cutoff: 0.95,
+        f_cutoff: Some(0.95),
         interpolation: SincInterpolationType::Linear,
         oversampling_factor: 256,
         window: WindowFunction::BlackmanHarris2,
     };
 
     let ratio = 16_000f64 / f64::from(src_rate);
-    let chunk_size = 1024;
 
-    let mut resampler = SincFixedIn::<f64>::new(
-        ratio, 2.0, params, chunk_size, 1, // mono
-    )
-    .map_err(|e| format!("Failed to create resampler: {e}"))?;
+    let mut resampler = Async::<f64>::new_sinc(ratio, 2.0, &params, 1024, 1, FixedAsync::Input)
+        .map_err(|e| format!("Failed to create resampler: {e}"))?;
 
-    let mut output = Vec::with_capacity((input.len() as f64 * ratio) as usize + 1024);
+    let input_f64: Vec<f64> = input.iter().map(|&s| s as f64).collect();
+    let frames = input_f64.len();
+    let channels = [input_f64];
+    let adapter = SequentialSliceOfVecs::new(&channels, 1, frames)
+        .map_err(|e| format!("Resampler buffer error: {e}"))?;
 
-    // Process in chunks
-    let mut pos = 0;
-    while pos < input.len() {
-        let end = (pos + chunk_size).min(input.len());
-        let mut chunk: Vec<f64> = input[pos..end].iter().map(|&s| s as f64).collect();
+    let resampled = resampler
+        .process_all(&adapter, frames, None)
+        .map_err(|e| format!("Resample error: {e}"))?;
 
-        // Pad last chunk if needed
-        if chunk.len() < chunk_size {
-            chunk.resize(chunk_size, 0.0);
-        }
-
-        let waves_in = vec![chunk];
-        match resampler.process(&waves_in, None) {
-            Ok(waves_out) => {
-                for &s in &waves_out[0] {
-                    output.push(s as f32);
-                }
-            }
-            Err(e) => return Err(format!("Resample error: {e}")),
-        }
-
-        pos += chunk_size;
-    }
-
-    Ok(output)
+    Ok(resampled.take_data().iter().map(|&s| s as f32).collect())
 }
 
 /// Run Whisper inference on 16 kHz mono f32 audio.

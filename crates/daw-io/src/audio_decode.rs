@@ -1,11 +1,11 @@
 use serde::{Deserialize, Serialize};
 use std::io::Cursor;
-use symphonia::core::audio::SampleBuffer;
-use symphonia::core::codecs::DecoderOptions;
-use symphonia::core::formats::FormatOptions;
+use symphonia::core::codecs::audio::AudioDecoderOptions;
+use symphonia::core::codecs::CodecParameters;
+use symphonia::core::formats::probe::Hint;
+use symphonia::core::formats::{FormatOptions, TrackType};
 use symphonia::core::io::MediaSourceStream;
 use symphonia::core::meta::MetadataOptions;
-use symphonia::core::probe::Hint;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct DecodedAudio {
@@ -38,48 +38,44 @@ fn decode_from_stream(mss: MediaSourceStream) -> Result<DecodedAudio, String> {
     let hint = Hint::new();
     let format_opts = FormatOptions::default();
     let metadata_opts = MetadataOptions::default();
-    let decoder_opts = DecoderOptions::default();
+    let decoder_opts = AudioDecoderOptions::default();
 
-    let probed = symphonia::default::get_probe()
-        .format(&hint, mss, &format_opts, &metadata_opts)
+    let mut format_reader = symphonia::default::get_probe()
+        .probe(&hint, mss, format_opts, metadata_opts)
         .map_err(|e| format!("Failed to probe audio format: {e}"))?;
 
-    let mut format_reader = probed.format;
-
     let track = format_reader
-        .default_track()
+        .default_track(TrackType::Audio)
         .ok_or("No audio track found")?;
 
-    let codec_name = track.codec_params.codec.to_string();
-    let sample_rate = track
-        .codec_params
-        .sample_rate
-        .ok_or("Unknown sample rate")?;
-    let channels = track
-        .codec_params
+    let audio_params = match &track.codec_params {
+        Some(CodecParameters::Audio(params)) => params,
+        _ => return Err("Audio track has no audio codec parameters".to_string()),
+    };
+
+    let codec_name = audio_params.codec.to_string();
+    let sample_rate = audio_params.sample_rate.ok_or("Unknown sample rate")?;
+    let channels = audio_params
         .channels
+        .as_ref()
         .map(|c| c.count() as u32)
         .unwrap_or(2);
     let track_id = track.id;
 
     let mut decoder = symphonia::default::get_codecs()
-        .make(&track.codec_params, &decoder_opts)
+        .make_audio_decoder(audio_params, &decoder_opts)
         .map_err(|e| format!("Failed to create decoder: {e}"))?;
 
     let mut channel_samples: Vec<Vec<f32>> = (0..channels).map(|_| Vec::new()).collect();
 
     loop {
         let packet = match format_reader.next_packet() {
-            Ok(p) => p,
-            Err(symphonia::core::errors::Error::IoError(ref e))
-                if e.kind() == std::io::ErrorKind::UnexpectedEof =>
-            {
-                break;
-            }
+            Ok(Some(p)) => p,
+            Ok(None) => break,
             Err(e) => return Err(format!("Read error: {e}")),
         };
 
-        if packet.track_id() != track_id {
+        if packet.track_id != track_id {
             continue;
         }
 
@@ -87,12 +83,10 @@ fn decode_from_stream(mss: MediaSourceStream) -> Result<DecodedAudio, String> {
             .decode(&packet)
             .map_err(|e| format!("Decode error: {e}"))?;
 
-        let spec = *decoded.spec();
-        let num_frames = decoded.frames();
-        let mut sample_buf = SampleBuffer::<f32>::new(num_frames as u64, spec);
-        sample_buf.copy_interleaved_ref(decoded);
+        let mut interleaved: Vec<f32> = Vec::new();
+        decoded.copy_to_vec_interleaved(&mut interleaved);
 
-        for chunk in sample_buf.samples().chunks(channels as usize) {
+        for chunk in interleaved.chunks(channels as usize) {
             for (ch, &s) in chunk.iter().enumerate() {
                 if ch < channel_samples.len() {
                     channel_samples[ch].push(s);

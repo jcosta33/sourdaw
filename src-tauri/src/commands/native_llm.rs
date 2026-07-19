@@ -162,16 +162,17 @@ pub async fn init_native_llm(
 
     // Step 2: Load from the verified cache directory. mistralrs resolves GGUF
     // files as `model_id` + `files`, so `model_id` must be the local directory.
-    let model: mistralrs::Model = GgufModelBuilder::new(
-        gguf_load_target.model_id,
-        gguf_load_target.files,
-    )
-        .with_logging()
-        .with_paged_attn(|| PagedAttentionMetaBuilder::default().build())
-        .map_err(|e| format!("PagedAttention config error: {e}"))?
+    let paged_attn_cfg = PagedAttentionMetaBuilder::default()
         .build()
-        .await
-        .map_err(|e| format!("Failed to load model: {e}"))?;
+        .map_err(|e| format!("PagedAttention config error: {e}"))?;
+
+    let model: mistralrs::Model =
+        GgufModelBuilder::new(gguf_load_target.model_id, gguf_load_target.files)
+            .with_logging()
+            .with_paged_attn(paged_attn_cfg)
+            .build()
+            .await
+            .map_err(|e| format!("Failed to load model: {e}"))?;
 
     let _ = app.emit(
         "llm-progress",

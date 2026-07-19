@@ -27,7 +27,7 @@ pub fn spawn_audio_thread(command_rx: Consumer<GraphCommand>) -> Result<AudioThr
         .default_output_config()
         .map_err(|e| format!("Failed to get default output config: {}", e))?;
 
-    let sample_rate = config.sample_rate().0 as f32;
+    let sample_rate = config.sample_rate() as f32;
     let mut scheduler = AudioScheduler::new(command_rx, sample_rate);
 
     // We strictly use f32 streams
@@ -40,7 +40,7 @@ pub fn spawn_audio_thread(command_rx: Consumer<GraphCommand>) -> Result<AudioThr
 
             device
                 .build_output_stream(
-                    &config.into(),
+                    config.into(),
                     move |data: &mut [f32], _: &cpal::OutputCallbackInfo| {
                         // 1. Process pending commands lock-free
                         scheduler.update_graph();

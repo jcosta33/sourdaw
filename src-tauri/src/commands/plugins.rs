@@ -137,7 +137,7 @@ pub async fn load_plugin(
             let sample_rate = cpal::default_host()
                 .default_output_device()
                 .and_then(|d| d.default_output_config().ok())
-                .map(|c| c.sample_rate().0 as f64)
+                .map(|c| c.sample_rate() as f64)
                 .unwrap_or(48000.0);
 
             let wrapper = ClapWrapper::new(&entry.path, &clap_id, sample_rate)?;
