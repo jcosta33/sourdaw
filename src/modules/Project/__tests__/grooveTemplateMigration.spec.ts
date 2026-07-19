@@ -163,4 +163,52 @@ describe('groove template project migration', () => {
         expect(JSON.stringify(migrated)).toContain('legacy-yeast-i');
         expect(JSON.stringify(migrated)).not.toContain('legacy-yeast-0');
     });
+
+    it('preserves legacy assignments through template dedupe and slug suffix collisions', () => {
+        const migrated = normalizeLegacyProjectData({
+            version: 1,
+            meta: {},
+            arrangement: {},
+            midi: { notesByClipId: {}, ccByClipId: {}, pitchBendByClipId: {} },
+            yeast: {
+                grooveTemplates: [
+                    { id: 'A B', name: 'First pocket', offsets: [0, 0.1] },
+                    { id: 'duplicate-shape', name: 'Duplicate pocket', offsets: [0, 0.1] },
+                    { id: 'a-b', name: 'Second pocket', offsets: [0, 0.2] },
+                ],
+                assignments: [
+                    {
+                        consumerType: 'yeast-processor',
+                        consumerId: 'deduped-consumer',
+                        templateId: 'duplicate-shape',
+                        amount: 0.6,
+                    },
+                    {
+                        consumerType: 'yeast-processor',
+                        consumerId: 'suffixed-consumer',
+                        templateId: 'a-b',
+                        amount: 0.7,
+                    },
+                ],
+            },
+        });
+
+        if (!isRecord(migrated) || !isRecord(migrated.grooves) || !Array.isArray(migrated.grooves.assignments)) {
+            throw new Error('Expected migrated groove assignments');
+        }
+        expect(migrated.grooves.assignments).toEqual([
+            {
+                consumerType: 'yeast-processor',
+                consumerId: 'deduped-consumer',
+                templateId: 'legacy-yeast-a-b',
+                amount: 0.6,
+            },
+            {
+                consumerType: 'yeast-processor',
+                consumerId: 'suffixed-consumer',
+                templateId: 'legacy-yeast-a-b-2',
+                amount: 0.7,
+            },
+        ]);
+    });
 });

@@ -6,6 +6,7 @@ const mocks = vi.hoisted(() => ({
     trackStore: { hydrate: vi.fn() },
     automationStore: { hydrate: vi.fn() },
     midiStore: { hydrate: vi.fn() },
+    grooveTemplateStore: { hydrate: vi.fn() },
     transportStore: { hydrate: vi.fn() },
     tempoMapStore: { hydrate: vi.fn() },
     timeSignatureMapStore: { hydrate: vi.fn() },
@@ -48,6 +49,7 @@ vi.mock('#/modules/MIDI/stores', async (importOriginal) => {
     return {
         ...actual,
         midiStore: mocks.midiStore,
+        grooveTemplateStore: mocks.grooveTemplateStore,
     };
 });
 
@@ -99,6 +101,7 @@ describe('projectCrdtToStores', () => {
         expect(mocks.trackStore.hydrate).toHaveBeenCalledTimes(1);
         expect(mocks.automationStore.hydrate).toHaveBeenCalledTimes(1);
         expect(mocks.midiStore.hydrate).toHaveBeenCalledTimes(1);
+        expect(mocks.grooveTemplateStore.hydrate).toHaveBeenCalledTimes(1);
         expect(mocks.transportStore.hydrate).toHaveBeenCalledTimes(1);
         expect(mocks.tempoMapStore.hydrate).toHaveBeenCalledTimes(1);
         expect(mocks.timeSignatureMapStore.hydrate).toHaveBeenCalledTimes(1);

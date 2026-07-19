@@ -2,7 +2,7 @@ import { markerStore, takeLaneStore, trackStore } from '#/modules/Arrangement/st
 import { automationStore } from '#/modules/Automation/stores';
 import { cvGateStore } from '#/modules/CvGate/stores';
 import { hydrateKneadFromTrackStore } from '#/modules/Knead/useCases';
-import { midiStore } from '#/modules/MIDI/stores';
+import { grooveTemplateStore, midiStore } from '#/modules/MIDI/stores';
 import { arrangementStore, projectStore } from '#/modules/Project/stores';
 import { hydrateSidechainRoutes } from '#/modules/Routing/useCases';
 import { tempoMapStore, timeSignatureMapStore, transportStore } from '#/modules/Transport/stores';
@@ -14,6 +14,7 @@ const projectStores = [
     trackStore,
     automationStore,
     midiStore,
+    grooveTemplateStore,
     transportStore,
     tempoMapStore,
     timeSignatureMapStore,

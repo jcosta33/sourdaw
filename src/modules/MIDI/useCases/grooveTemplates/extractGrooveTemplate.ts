@@ -2,6 +2,7 @@ import {
     GROOVE_SUBDIVISIONS,
     GROOVE_TEMPLATE_SCHEMA_VERSION,
     STRAIGHT_GROOVE_TEMPLATE_ID,
+    canonicalizeGrooveTemplateId,
     createStraightGrooveTemplate,
     getGrooveSubdivisionSlotCount,
     getGrooveSubdivisionStepBeats,
@@ -159,7 +160,7 @@ export function extractGrooveTemplate(input: ExtractGrooveTemplateInput): Extrac
         return { ok: true, template: createStraightGrooveTemplate() };
     }
 
-    const requestedTemplateId = input.templateId?.trim();
+    const requestedTemplateId = input.templateId ? canonicalizeGrooveTemplateId(input.templateId) : null;
     return {
         ok: true,
         template: {

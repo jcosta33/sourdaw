@@ -4,7 +4,13 @@
 export { midiStore } from './midiStore';
 export type { MidiStoreState } from './midiStore';
 
-export { defaultGrooveTemplateState, grooveTemplateStore } from './grooveTemplateStore';
+export {
+    GROOVE_CONSUMER_TYPES,
+    defaultGrooveTemplateState,
+    grooveTemplateStore,
+    isGrooveTemplateState,
+    sanitizeGrooveTemplateState,
+} from './grooveTemplateStore';
 export type { GrooveConsumerType, GrooveTemplateAssignment, GrooveTemplateState } from './grooveTemplateStore';
 export { grooveTemplateProjectRevisionStore } from './grooveTemplateProjectRevisionStore';
 

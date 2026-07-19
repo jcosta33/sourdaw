@@ -1,3 +1,5 @@
+import { getConflicts, type Doc } from '@automerge/automerge';
+
 import { logger } from '#/infra/logger/appLogger';
 
 import { type StorageAdapter } from './types';
@@ -34,6 +36,8 @@ type AutomergeStorageOptions<TData> = {
     fromCrdt?: (value: TData) => TData;
     /** Replacement projection value when the active document has no slot for this store. */
     hydrateMissing?: () => TData;
+    /** Deterministically reconcile concurrent whole-slot values exposed by Automerge. */
+    resolveConflicts?: (values: readonly TData[]) => TData;
 };
 
 type AutomergeStorageWriteContext = {
@@ -216,6 +220,7 @@ export const createAutomergeStorage = <TData>(
     const toCrdt = options?.toCrdt;
     const fromCrdt = options?.fromCrdt;
     const hydrateMissing = options?.hydrateMissing;
+    const resolveConflicts = options?.resolveConflicts;
     let cachedValue: TData | null = null;
     let rafId: number | null = null;
     let pendingMessage: string | undefined;
@@ -374,12 +379,35 @@ export const createAutomergeStorage = <TData>(
                 // §119.2 — compare incoming against cached incoming rather
                 // than re-stringifying cachedValue; 2 JSON ops per hydrate
                 // instead of 3–4.
-                const incomingJson = JSON.stringify(value);
+                let incomingValues: readonly unknown[] = [value];
+                if (resolveConflicts) {
+                    const conflicts = getConflicts(doc as Doc<AutomergeStorageReadableDoc>, key);
+                    if (conflicts) {
+                        incomingValues = Object.entries(conflicts)
+                            .sort(([leftActor], [rightActor]) => {
+                                if (leftActor < rightActor) {
+                                    return -1;
+                                }
+                                if (leftActor > rightActor) {
+                                    return 1;
+                                }
+                                return 0;
+                            })
+                            .map(([, conflictValue]) => conflictValue);
+                    }
+                }
+                const incomingJson = JSON.stringify(incomingValues);
                 if (incomingJson === lastHydratedJson) {
                     return false;
                 }
-                const rawData = JSON.parse(incomingJson) as TData;
-                const crdtData = fromCrdt ? fromCrdt(rawData) : rawData;
+                const rawValues = JSON.parse(incomingJson) as TData[];
+                const normalizedValues = fromCrdt ? rawValues.map((rawValue) => fromCrdt(rawValue)) : rawValues;
+                const firstValue = normalizedValues[0];
+                if (!firstValue) {
+                    return false;
+                }
+                const crdtData =
+                    resolveConflicts && normalizedValues.length > 1 ? resolveConflicts(normalizedValues) : firstValue;
 
                 if (toCrdt && cachedValue !== null && typeof crdtData === 'object' && crdtData !== null) {
                     cachedValue = { ...cachedValue, ...crdtData };

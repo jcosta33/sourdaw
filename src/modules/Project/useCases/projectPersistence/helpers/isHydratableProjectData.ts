@@ -1,4 +1,4 @@
-import { getCanonicalGrooveTemplateKey } from '#/modules/MIDI/useCases';
+import { isGrooveTemplateState } from '#/modules/MIDI/stores';
 
 import {
     isSupportedProjectVersion,
@@ -411,132 +411,8 @@ function isMidi(value: unknown): value is ProjectMidi {
     );
 }
 
-function hasExactKeys(value: UnknownRecord, keys: readonly string[]): boolean {
-    const allowed = new Set(keys);
-    return Object.keys(value).every((key) => allowed.has(key)) && keys.every((key) => Object.hasOwn(value, key));
-}
-
-function isGrooveProvenance(value: unknown): boolean {
-    if (!isRecord(value) || typeof value.sourceId !== 'string') {
-        return false;
-    }
-    if (value.type === 'midi-clip') {
-        return (
-            hasExactKeys(value, ['type', 'sourceId', 'analyzerVersion']) &&
-            Number.isInteger(value.analyzerVersion) &&
-            Number(value.analyzerVersion) > 0
-        );
-    }
-    return ['builtin', 'user', 'legacy'].includes(String(value.type)) && hasExactKeys(value, ['type', 'sourceId']);
-}
-
-function getGrooveSlotCount(subdivision: unknown): number {
-    switch (subdivision) {
-        case '1/8':
-            return 8;
-        case '1/32':
-            return 32;
-        case '1/16T':
-            return 24;
-        default:
-            return 16;
-    }
-}
-
-function isGrooveTemplate(value: unknown): boolean {
-    if (
-        !(
-            isRecord(value) &&
-            hasExactKeys(value, ['id', 'name', 'schemaVersion', 'subdivision', 'slots', 'provenance']) &&
-            typeof value.id === 'string' &&
-            value.id.length > 0 &&
-            typeof value.name === 'string' &&
-            value.name.trim().length > 0 &&
-            value.schemaVersion === 1 &&
-            ['1/8', '1/16', '1/32', '1/16T'].includes(String(value.subdivision)) &&
-            Array.isArray(value.slots) &&
-            value.slots.every(
-                (slot) =>
-                    isRecord(slot) &&
-                    hasExactKeys(slot, ['index', 'timingOffset', 'dynamicsOffset']) &&
-                    Number.isInteger(slot.index) &&
-                    Number(slot.index) >= 0 &&
-                    hasType({ record: slot, keys: ['timingOffset', 'dynamicsOffset'], type: 'number' })
-            ) &&
-            isGrooveProvenance(value.provenance)
-        )
-    ) {
-        return false;
-    }
-    const slotCount = getGrooveSlotCount(value.subdivision);
-    if (
-        value.slots.some(
-            (slot) =>
-                isRecord(slot) &&
-                (Number(slot.index) >= slotCount ||
-                    Number(slot.timingOffset) < -0.5 ||
-                    Number(slot.timingOffset) > 0.5 ||
-                    Number(slot.dynamicsOffset) < -1 ||
-                    Number(slot.dynamicsOffset) > 1)
-        )
-    ) {
-        return false;
-    }
-    if (value.id !== 'groove-straight') {
-        return true;
-    }
-    return (
-        value.name === 'Straight' &&
-        value.subdivision === '1/16' &&
-        value.slots.length === 0 &&
-        isRecord(value.provenance) &&
-        value.provenance.type === 'builtin' &&
-        value.provenance.sourceId === 'straight'
-    );
-}
-
-function isGrooveAssignment(value: unknown): boolean {
-    return (
-        isRecord(value) &&
-        hasExactKeys(value, ['consumerType', 'consumerId', 'templateId', 'amount']) &&
-        ['clip', 'yeast-processor', 'toaster-pattern', 'arpeggiator', 'sequencer'].includes(
-            String(value.consumerType)
-        ) &&
-        hasType({ record: value, keys: ['consumerId', 'templateId'], type: 'string' }) &&
-        typeof value.amount === 'number' &&
-        Number.isFinite(value.amount) &&
-        value.amount >= 0 &&
-        value.amount <= 1
-    );
-}
-
 function isGrooves(value: unknown): value is ProjectGrooveState {
-    if (
-        !isRecord(value) ||
-        !hasExactKeys(value, ['templates', 'assignments']) ||
-        !Array.isArray(value.templates) ||
-        !value.templates.every(isGrooveTemplate) ||
-        !Array.isArray(value.assignments) ||
-        !value.assignments.every(isGrooveAssignment)
-    ) {
-        return false;
-    }
-    const templateIds = value.templates.map((template) => (isRecord(template) ? String(template.id) : ''));
-    const templateNames = value.templates.map((template) =>
-        isRecord(template) ? getCanonicalGrooveTemplateKey(String(template.name)) : ''
-    );
-    const assignmentKeys = value.assignments.map((assignment) =>
-        isRecord(assignment) ? `${String(assignment.consumerType)}:${String(assignment.consumerId)}` : ''
-    );
-    return (
-        templateIds.filter((id) => id === 'groove-straight').length === 1 &&
-        new Set(templateIds).size === templateIds.length &&
-        new Set(templateNames).size === templateNames.length &&
-        new Set(assignmentKeys).size === assignmentKeys.length &&
-        value.assignments.every(
-            (assignment) => isRecord(assignment) && templateIds.includes(String(assignment.templateId))
-        )
-    );
+    return isGrooveTemplateState(value);
 }
 
 function isMarker(value: unknown): value is ProjectMarker {

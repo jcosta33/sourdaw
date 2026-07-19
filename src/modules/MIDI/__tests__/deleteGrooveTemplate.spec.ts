@@ -73,4 +73,37 @@ describe('deleteGrooveTemplate', () => {
         expect(grooveTemplateStore.value?.templates.some((template) => template.id === 'delete-handler')).toBe(true);
         expect(grooveTemplateStore.value?.assignments[0]?.templateId).toBe('delete-handler');
     });
+
+    it('surfaces a deterministic conflict when a collaborator recreates the deleted identity', () => {
+        createGrooveTemplate({
+            id: 'colliding-restore',
+            name: 'Original',
+            subdivision: '1/16',
+            slots: [{ index: 1, timingOffset: 0.1, dynamicsOffset: 0 }],
+            provenance: { type: 'user', sourceId: 'original' },
+        });
+        assignGrooveTemplate({
+            consumerType: 'clip',
+            consumerId: 'collision-clip',
+            templateId: 'colliding-restore',
+            amount: 0.5,
+        });
+        const snapshot = deleteGrooveTemplate('colliding-restore');
+        if (!snapshot) {
+            throw new Error('Expected deletion snapshot');
+        }
+        createGrooveTemplate({
+            id: 'colliding-restore',
+            name: 'Collaborator replacement',
+            subdivision: '1/16',
+            slots: [{ index: 2, timingOffset: -0.2, dynamicsOffset: 0.1 }],
+            provenance: { type: 'user', sourceId: 'collaborator' },
+        });
+        const beforeRestore = structuredClone(grooveTemplateStore.value);
+
+        expect(() => restoreDeletedGrooveTemplate(snapshot)).toThrow(
+            'Cannot restore groove template "colliding-restore": identity was recreated with different content'
+        );
+        expect(grooveTemplateStore.value).toEqual(beforeRestore);
+    });
 });

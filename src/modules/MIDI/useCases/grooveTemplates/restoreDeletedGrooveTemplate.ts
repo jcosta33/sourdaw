@@ -5,15 +5,24 @@ import { markGrooveTemplateProjectWrite } from './markGrooveTemplateProjectWrite
 
 export function restoreDeletedGrooveTemplate(snapshot: DeletedGrooveTemplateSnapshot): void {
     const state = grooveTemplateStore.value;
-    if (!state || state.templates.some((template) => template.id === snapshot.template.id)) {
-        return;
+    if (!state) {
+        throw new Error('Cannot restore groove template: state is unavailable');
     }
+    const existingTemplate = state.templates.find((template) => template.id === snapshot.template.id);
+    if (existingTemplate && JSON.stringify(existingTemplate) !== JSON.stringify(snapshot.template)) {
+        throw new Error(
+            `Cannot restore groove template "${snapshot.template.id}": identity was recreated with different content`
+        );
+    }
+
     const templates = [...state.templates];
-    templates.splice(
-        Math.max(0, Math.min(snapshot.templateIndex, templates.length)),
-        0,
-        structuredClone(snapshot.template)
-    );
+    if (!existingTemplate) {
+        templates.splice(
+            Math.max(0, Math.min(snapshot.templateIndex, templates.length)),
+            0,
+            structuredClone(snapshot.template)
+        );
+    }
     const assignments = [...state.assignments];
     for (const prior of [...snapshot.assignments].sort((left, right) => left.index - right.index)) {
         const existingIndex = assignments.findIndex(
