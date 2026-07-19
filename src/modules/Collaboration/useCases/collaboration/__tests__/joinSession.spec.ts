@@ -1,9 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-import { PEER_COLORS, type SignalingMessage } from '../../../models/CollaborationTypes';
-import { type PeerConnectionManager } from '../../../repositories/peerConnection';
-import { collaborationStore } from '../../../stores/collaborationStore';
-
 /**
  * `joinSession` orchestrates against the WebRTC/signaling boundary exposed
  * by `sessionManagement`'s `sessionRuntimePrimitives`. Mock that boundary
@@ -23,6 +19,9 @@ const mockRuntime = vi.hoisted(() => ({
 
 vi.mock('../sessionManagement', () => ({ sessionRuntimePrimitives: mockRuntime }));
 
+import { PEER_COLORS, type SignalingMessage } from '../../../models/CollaborationTypes';
+import { type PeerConnectionManager } from '../../../repositories/peerConnection';
+import { collaborationStore } from '../../../stores/collaborationStore';
 import { joinSession } from '../joinSession';
 
 type Offer = Extract<SignalingMessage, { type: 'offer' }>;
@@ -62,8 +61,8 @@ describe('joinSession', () => {
         mockRuntime.initialize.mockReturnValue({ createPeer } as unknown as PeerConnectionManager);
         mockRuntime.generatePeerId.mockReturnValue('local-peer-id');
         mockRuntime.pickPeerColor.mockReturnValue(PEER_COLORS[3]);
-        mockRuntime.decompressInvite.mockImplementation(async (raw: string) => raw);
-        mockRuntime.compressInvite.mockImplementation(async (json: string) => `z:${json}`);
+        mockRuntime.decompressInvite.mockImplementation((raw: string) => Promise.resolve(raw));
+        mockRuntime.compressInvite.mockImplementation((json: string) => Promise.resolve(`z:${json}`));
     });
 
     it('cleans up any prior session runtime even before the invite is validated', async () => {

@@ -1,12 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-import { type CollaborationState } from '../../../models/CollaborationTypes';
-import { type PeerConnectionManager } from '../../../repositories/peerConnection';
-import { collaborationStore } from '../../../stores/collaborationStore';
-
 const mockRuntime = vi.hoisted(() => ({
     state: {
-        peerManager: null as PeerConnectionManager | null,
+        peerManager: null as unknown,
         pendingInviteId: null as string | null,
     },
     decompressInvite: vi.fn(),
@@ -15,6 +11,9 @@ const mockRuntime = vi.hoisted(() => ({
 
 vi.mock('../sessionManagement', () => ({ sessionRuntimePrimitives: mockRuntime }));
 
+import { type CollaborationState } from '../../../models/CollaborationTypes';
+import { type PeerConnectionManager } from '../../../repositories/peerConnection';
+import { collaborationStore } from '../../../stores/collaborationStore';
 import { acceptAnswer } from '../acceptAnswer';
 
 const baseState: CollaborationState = {
@@ -51,7 +50,7 @@ describe('acceptAnswer', () => {
         acceptAnswerOnPeer = vi.fn().mockResolvedValue(undefined);
         getPeer = vi.fn().mockReturnValue({ acceptAnswer: acceptAnswerOnPeer });
         mockRuntime.state.peerManager = { getPeer } as unknown as PeerConnectionManager;
-        mockRuntime.decompressInvite.mockImplementation(async (raw: string) => raw);
+        mockRuntime.decompressInvite.mockImplementation((raw: string) => Promise.resolve(raw));
         mockRuntime.pickPeerColor.mockReturnValue('#22c55e');
     });
 

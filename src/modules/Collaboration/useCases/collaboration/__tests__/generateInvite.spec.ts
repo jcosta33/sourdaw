@@ -1,12 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-import { type SignalingMessage } from '../../../models/CollaborationTypes';
-import { type PeerConnectionManager } from '../../../repositories/peerConnection';
-import { collaborationStore } from '../../../stores/collaborationStore';
-
 const mockRuntime = vi.hoisted(() => ({
     state: {
-        peerManager: null as PeerConnectionManager | null,
+        peerManager: null as unknown,
         pendingInviteId: null as string | null,
     },
     generatePeerId: vi.fn(),
@@ -15,6 +11,9 @@ const mockRuntime = vi.hoisted(() => ({
 
 vi.mock('../sessionManagement', () => ({ sessionRuntimePrimitives: mockRuntime }));
 
+import { type SignalingMessage } from '../../../models/CollaborationTypes';
+import { type PeerConnectionManager } from '../../../repositories/peerConnection';
+import { collaborationStore } from '../../../stores/collaborationStore';
 import { generateInvite } from '../generateInvite';
 
 describe('generateInvite', () => {
@@ -30,7 +29,7 @@ describe('generateInvite', () => {
         removePeer = vi.fn();
         mockRuntime.state.peerManager = { createPeer, removePeer } as unknown as PeerConnectionManager;
         mockRuntime.generatePeerId.mockReturnValue('joiner-new');
-        mockRuntime.compressInvite.mockImplementation(async (json: string) => `z:${json}`);
+        mockRuntime.compressInvite.mockImplementation((json: string) => Promise.resolve(`z:${json}`));
 
         collaborationStore.set({
             isEnabled: true,
