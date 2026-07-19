@@ -1,6 +1,7 @@
-import { stringify } from 'superjson';
+import { parse, stringify } from 'superjson';
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 
+import { defaultPreferences } from '../../models/Preferences';
 import { preferencesStore } from '../preferencesStore';
 
 describe('preferencesStore', () => {
@@ -64,5 +65,39 @@ describe('preferencesStore — present-but-corrupt persisted blob', () => {
         const persisted = window.localStorage.getItem(STORAGE_KEY);
         expect(persisted).not.toBeNull();
         expect(persisted).not.toContain('"theme":null');
+    });
+});
+
+describe('preferencesStore — empty persisted storage (first run)', () => {
+    const STORAGE_KEY = 'sourdaw-preferences';
+
+    beforeEach(() => {
+        window.localStorage.clear();
+    });
+
+    afterEach(() => {
+        window.localStorage.clear();
+    });
+
+    it('seeds localStorage under the "sourdaw-preferences" wire key with defaultPreferences on first load', async () => {
+        vi.resetModules();
+        const fresh = (await import('../preferencesStore')).preferencesStore;
+
+        expect(fresh.value).toEqual(defaultPreferences);
+
+        const persisted = window.localStorage.getItem(STORAGE_KEY);
+        expect(persisted).not.toBeNull();
+        expect(parse(persisted as string)).toEqual(defaultPreferences);
+    });
+
+    it('persists a subsequent set() under the same wire key in superjson format', async () => {
+        vi.resetModules();
+        const fresh = (await import('../preferencesStore')).preferencesStore;
+
+        fresh.set({ ...defaultPreferences, theme: 'light', bufferSize: 1024 });
+
+        const persisted = window.localStorage.getItem(STORAGE_KEY);
+        expect(persisted).not.toBeNull();
+        expect(parse(persisted as string)).toMatchObject({ theme: 'light', bufferSize: 1024 });
     });
 });
