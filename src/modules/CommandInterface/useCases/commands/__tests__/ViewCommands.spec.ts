@@ -56,33 +56,31 @@ describe('viewCommands', () => {
     });
 
     it('exposes the view commands with their ids, labels, and categories', () => {
-        expect(viewCommands.map((entry) => ({ id: entry.id, label: entry.label, category: entry.category }))).toEqual(
-            [
-                { id: 'zoom-to-fit', label: 'Zoom to Fit', category: 'View' },
-                { id: 'zoom-to-selection', label: 'Zoom to Selection', category: 'View' },
-                { id: 'zoom-in', label: 'Zoom In', category: 'View' },
-                { id: 'zoom-out', label: 'Zoom Out', category: 'View' },
-                { id: 'toggle-sidebar', label: 'Toggle Sidebar', category: 'View' },
-                { id: 'toggle-inspector', label: 'Toggle Inspector', category: 'View' },
-                { id: 'toggle-chat-panel', label: 'Toggle AI Chat', category: 'View' },
-                { id: 'toggle-mixer', label: 'Toggle Mixer', category: 'View' },
-                { id: 'toggle-automation-panel', label: 'Toggle Automation Panel', category: 'View' },
-                { id: 'arrange-mode', label: 'Arrange Mode', category: 'View' },
-                { id: 'clip-mode', label: 'Clip Mode', category: 'View' },
-                { id: 'delete-time', label: 'Delete Time (Loop Region)', category: 'Editing' },
-                { id: 'insert-time', label: 'Insert Time at Playhead', category: 'Editing' },
-                { id: 'duplicate-time-range', label: 'Duplicate Time Range (Loop Region)', category: 'Editing' },
-                { id: 'strip-silence', label: 'Strip Silence', category: 'Editing' },
-                { id: 'add-marker', label: 'Add Marker', category: 'Timeline' },
-                { id: 'tool-select', label: 'Select Tool', category: 'Tools' },
-                { id: 'tool-cut', label: 'Cut Tool', category: 'Tools' },
-                { id: 'tool-draw', label: 'Draw Tool', category: 'Tools' },
-                { id: 'tool-automation', label: 'Automation Tool', category: 'Tools' },
-                { id: 'tool-stretch', label: 'Stretch Tool', category: 'Tools' },
-                { id: 'toggle-node-view', label: 'Toggle Node-Based Routing', category: 'View' },
-                { id: 'show-onboarding-tour', label: 'Show Tour Again', category: 'Help' },
-            ]
-        );
+        expect(viewCommands.map((entry) => ({ id: entry.id, label: entry.label, category: entry.category }))).toEqual([
+            { id: 'zoom-to-fit', label: 'Zoom to Fit', category: 'View' },
+            { id: 'zoom-to-selection', label: 'Zoom to Selection', category: 'View' },
+            { id: 'zoom-in', label: 'Zoom In', category: 'View' },
+            { id: 'zoom-out', label: 'Zoom Out', category: 'View' },
+            { id: 'toggle-sidebar', label: 'Toggle Sidebar', category: 'View' },
+            { id: 'toggle-inspector', label: 'Toggle Inspector', category: 'View' },
+            { id: 'toggle-chat-panel', label: 'Toggle AI Chat', category: 'View' },
+            { id: 'toggle-mixer', label: 'Toggle Mixer', category: 'View' },
+            { id: 'toggle-automation-panel', label: 'Toggle Automation Panel', category: 'View' },
+            { id: 'arrange-mode', label: 'Arrange Mode', category: 'View' },
+            { id: 'clip-mode', label: 'Clip Mode', category: 'View' },
+            { id: 'delete-time', label: 'Delete Time (Loop Region)', category: 'Editing' },
+            { id: 'insert-time', label: 'Insert Time at Playhead', category: 'Editing' },
+            { id: 'duplicate-time-range', label: 'Duplicate Time Range (Loop Region)', category: 'Editing' },
+            { id: 'strip-silence', label: 'Strip Silence', category: 'Editing' },
+            { id: 'add-marker', label: 'Add Marker', category: 'Timeline' },
+            { id: 'tool-select', label: 'Select Tool', category: 'Tools' },
+            { id: 'tool-cut', label: 'Cut Tool', category: 'Tools' },
+            { id: 'tool-draw', label: 'Draw Tool', category: 'Tools' },
+            { id: 'tool-automation', label: 'Automation Tool', category: 'Tools' },
+            { id: 'tool-stretch', label: 'Stretch Tool', category: 'Tools' },
+            { id: 'toggle-node-view', label: 'Toggle Node-Based Routing', category: 'View' },
+            { id: 'show-onboarding-tour', label: 'Show Tour Again', category: 'Help' },
+        ]);
     });
 
     it('dispatches the declarative action for each non-callable view command', () => {
