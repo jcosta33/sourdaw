@@ -32,4 +32,11 @@ describe('ToasterPanel', () => {
         const buttons = screen.queryAllByRole('button');
         expect(buttons.length).toBeGreaterThanOrEqual(0);
     });
+
+    it('exposes labeled pattern groove assignment controls', () => {
+        render(<ToasterPanel deviceId="toaster-test" />);
+
+        expect(screen.getByRole('combobox', { name: 'Pattern groove template' })).toBeEnabled();
+        expect(screen.getByRole('slider', { name: 'Pattern groove amount' })).toBeEnabled();
+    });
 });

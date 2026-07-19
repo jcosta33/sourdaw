@@ -4,6 +4,12 @@ import { playheadPositionRef } from '#/modules/Transport/stores';
 
 import { toasterStore } from '../stores/toasterStore';
 
+import { projectToasterPatternGroove } from './projectToasterPatternGroove';
+import { projectToasterStepEvents } from './projectToasterStepEvents';
+
+type ExportPatternToTimelineResult =
+    { ok: true } | Extract<ReturnType<typeof projectToasterPatternGroove>, { ok: false }>;
+
 /**
  * Export the active pattern to the timeline as MIDI clips, one per pad lane.
  *
@@ -26,21 +32,31 @@ import { toasterStore } from '../stores/toasterStore';
  * also takes no probability argument, so a faithful export would have to widen
  * that surface; out of scope here.)
  */
-export function exportPatternToTimeline(deviceId: string): void {
+export function exportPatternToTimeline(deviceId: string): ExportPatternToTimelineResult {
     const state = toasterStore.value?.[deviceId];
     if (!state) {
-        return;
+        return { ok: true };
     }
 
     const pattern = state.kit.patterns.find((param) => param.id === state.kit.activePatternId);
     if (!pattern) {
-        return;
+        return { ok: true };
+    }
+
+    const grooveCapability = projectToasterPatternGroove({
+        deviceId,
+        patternId: pattern.id,
+        stepsPerBar: pattern.stepsPerBar,
+        events: [],
+    });
+    if (!grooveCapability.ok) {
+        return grooveCapability;
     }
 
     const tracks = getAllTracks();
     const parentTrack = tracks.find((t) => t.devices.some((d) => d.id === deviceId));
     if (!parentTrack) {
-        return;
+        return { ok: true };
     }
 
     // Child tracks in the parent's creation order. createDrumTrackStack pushes
@@ -91,32 +107,30 @@ export function exportPatternToTimeline(deviceId: string): void {
         const clipId = clip.id;
         const midiNote = 36 + track.padIndex;
 
-        // Add MIDI notes for each active step, baking in the same micro-timing,
-        // swing, retrigger and probability the live sequencer applies.
+        // Add MIDI notes for each active step using the same projection as the
+        // live sequencer so timing, dynamics, swing, and retriggers stay in sync.
         for (let stepIdx = 0; stepIdx < numSteps; stepIdx++) {
             const step = track.steps[stepIdx];
             if (!step?.active) {
                 continue;
             }
-
-            const microOffsetBeats = step.microTiming * stepDurationBeats;
-            const swingBeats = stepIdx % 2 === 1 ? swing * stepDurationBeats * 0.5 : 0;
-            const startBeat = Math.max(0, stepIdx * stepDurationBeats + microOffsetBeats + swingBeats);
-            const noteDuration = stepDurationBeats * 0.9;
-            const velocity = Math.round(step.velocity * 127);
-
-            addMidiNote(clipId, midiNote, startBeat, noteDuration, velocity);
-
-            // Ratchets: extra notes within the step, matching the player's
-            // even sub-division and decaying velocity (floored at 20).
-            if (step.retriggerCount > 0) {
-                const subInterval = stepDurationBeats / (step.retriggerCount + 1);
-                for (let r = 1; r <= step.retriggerCount; r++) {
-                    const retrigVel = Math.max(20, Math.round(velocity * (1 - r * 0.12)));
-                    const retrigStart = Math.max(0, startBeat + subInterval * r);
-                    addMidiNote(clipId, midiNote, retrigStart, subInterval * 0.9, retrigVel);
-                }
+            const projection = projectToasterStepEvents({
+                deviceId,
+                patternId: pattern.id,
+                stepsPerBar,
+                loopLengthBeats: clipLength,
+                padIndex: track.padIndex,
+                stepIndex: stepIdx,
+                step,
+                swing,
+            });
+            if (!projection.ok) {
+                return projection;
+            }
+            for (const hit of projection.hits) {
+                addMidiNote(clipId, midiNote, hit.startBeat, hit.durationBeats, hit.velocity);
             }
         }
     }
+    return { ok: true };
 }

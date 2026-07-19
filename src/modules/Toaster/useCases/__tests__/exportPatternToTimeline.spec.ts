@@ -2,7 +2,8 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { Container } from '#/infra/di/Container';
 import { getAllTracks, addClip } from '#/modules/Arrangement/useCases';
-import { addMidiNote } from '#/modules/MIDI/useCases';
+import { defaultGrooveTemplateState, grooveTemplateStore } from '#/modules/MIDI/stores';
+import { addMidiNote, assignGrooveTemplate, createGrooveTemplate } from '#/modules/MIDI/useCases';
 
 import { exportPatternToTimeline } from '../exportPatternToTimeline';
 
@@ -56,6 +57,7 @@ describe('exportPatternToTimeline', () => {
         vi.mocked(addClip).mockReset();
         vi.mocked(addMidiNote).mockReset();
         mockStore.value = null;
+        grooveTemplateStore.set(structuredClone(defaultGrooveTemplateState));
     });
 
     it('does not add clips when there are no tracks', () => {
@@ -208,6 +210,46 @@ describe('exportPatternToTimeline', () => {
         const starts = vi.mocked(addMidiNote).mock.calls.map(([, , startBeat]) => startBeat);
         expect(starts[0]).toBeCloseTo(0, 10);
         expect(starts[1]).toBeCloseTo(1.35, 10);
+    });
+
+    it('uses the same MIDI-owned groove projection for exported timing and dynamics', () => {
+        const parent = { id: 'parent', parentId: null, devices: [{ id: DEVICE_ID }] };
+        const child = { id: 'child-0', name: 'Kick', parentId: 'parent', devices: [] };
+        vi.mocked(getAllTracks).mockReturnValue([parent, child] as never);
+        vi.mocked(addClip).mockReturnValue({ id: 'clip' } as never);
+        mockStore.value = {
+            [DEVICE_ID]: {
+                kit: {
+                    swing: 0,
+                    activePatternId: 'A1',
+                    patterns: [
+                        {
+                            id: 'A1',
+                            stepsPerBar: 16,
+                            bars: 1,
+                            tracks: [{ padIndex: 0, steps: [makeStep({ active: true, velocity: 1 })] }],
+                        },
+                    ],
+                },
+            },
+        };
+        createGrooveTemplate({
+            id: 'export-pocket',
+            name: 'Export pocket',
+            subdivision: '1/16',
+            slots: [{ index: 0, timingOffset: 0.2, dynamicsOffset: -0.1 }],
+            provenance: { type: 'user', sourceId: 'test' },
+        });
+        assignGrooveTemplate({
+            consumerType: 'toaster-pattern',
+            consumerId: 'groove-consumer:tstr-1:A1',
+            templateId: 'export-pocket',
+            amount: 1,
+        });
+
+        exportPatternToTimeline(DEVICE_ID);
+
+        expect(addMidiNote).toHaveBeenCalledWith('clip', 36, 0.05, 0.225, 114);
     });
 
     it('emits retrigger notes with the player decay-velocity model', () => {

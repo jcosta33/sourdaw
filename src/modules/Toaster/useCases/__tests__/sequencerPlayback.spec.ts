@@ -2,6 +2,8 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 import { Container } from '#/infra/di/Container';
 import { getAudioTime } from '#/modules/AudioEngine/useCases';
+import { defaultGrooveTemplateState, grooveTemplateStore } from '#/modules/MIDI/stores';
+import { assignGrooveTemplate, createGrooveTemplate } from '#/modules/MIDI/useCases';
 
 import { type Step, type ToasterKit, createDefaultKit } from '../../models/ToasterKit';
 import { toasterStore, defaultToasterState } from '../../stores/toasterStore';
@@ -72,6 +74,7 @@ describe('startSequencer', () => {
         vi.mocked(getAudioTime).mockReturnValue(0);
         vi.clearAllMocks();
         toasterStore.set({});
+        grooveTemplateStore.set(structuredClone(defaultGrooveTemplateState));
     });
 
     afterEach(() => {
@@ -83,10 +86,38 @@ describe('startSequencer', () => {
 
     it('reads the audio clock when starting', () => {
         seedDevice(DEVICE, activeStep({ active: false }));
-        startSequencer(DEVICE, 120, 4);
+        startSequencer(DEVICE, 120);
         stopSequencer(DEVICE);
 
         expect(getAudioTime).toHaveBeenCalled();
+    });
+
+    it('adapts the MIDI-owned pattern groove into live trigger timing and dynamics', () => {
+        const kit = kitWithStep(activeStep());
+        kit.patterns[0]!.stepsPerBar = 16;
+        toasterStore.set({
+            ...toasterStore.value,
+            [DEVICE]: { ...defaultToasterState, kit },
+        });
+        createGrooveTemplate({
+            id: 'live-pocket',
+            name: 'Live pocket',
+            subdivision: '1/16',
+            slots: [{ index: 0, timingOffset: 0.2, dynamicsOffset: -0.1 }],
+            provenance: { type: 'user', sourceId: 'test' },
+        });
+        assignGrooveTemplate({
+            consumerType: 'toaster-pattern',
+            consumerId: 'groove-consumer:seq-device:A1',
+            templateId: 'live-pocket',
+            amount: 1,
+        });
+
+        startSequencer(DEVICE, 120);
+
+        expect(triggerToasterPad).not.toHaveBeenCalled();
+        vi.advanceTimersByTime(25);
+        expect(triggerToasterPad).toHaveBeenCalledWith(DEVICE, 0, 114);
     });
 
     // Regression — tick must trigger and route locks to ITS OWN deviceId, not
@@ -97,7 +128,7 @@ describe('startSequencer', () => {
         seedDevice(OTHER, activeStep({ active: false })); // a "first" device that must not be touched
         seedDevice(DEVICE, activeStep({ soundLock: 'snare-808' }));
 
-        startSequencer(DEVICE, 120, 4);
+        startSequencer(DEVICE, 120);
 
         // Trigger fired on the sequencer's own device.
         expect(triggerToasterPad).toHaveBeenCalledWith(DEVICE, 0, 127);
@@ -114,13 +145,13 @@ describe('startSequencer', () => {
     it('defers the sound-lock engine swap until the microtiming fire', () => {
         seedDevice(DEVICE, activeStep({ soundLock: 'snare-808', microTiming: 0.4 }));
 
-        startSequencer(DEVICE, 120, 4);
+        startSequencer(DEVICE, 120);
 
         // Before the microtiming delay: no engine swap and no trigger yet.
         expect(setPadEngineImmediate).not.toHaveBeenCalled();
         expect(triggerToasterPad).not.toHaveBeenCalled();
 
-        vi.advanceTimersByTime(200); // elapse the microtiming offset
+        vi.advanceTimersByTime(800); // 0.4 of the four-beat, one-step pattern grid
 
         // Now the swap-trigger-revert sequence has run.
         expect(triggerToasterPad).toHaveBeenCalledWith(DEVICE, 0, 127);
@@ -132,7 +163,7 @@ describe('startSequencer', () => {
     it('cancels pending microtiming fires on stop (no ghost hits)', () => {
         seedDevice(DEVICE, activeStep({ microTiming: 0.4, retriggerCount: 3 }));
 
-        startSequencer(DEVICE, 120, 4);
+        startSequencer(DEVICE, 120);
         expect(triggerToasterPad).not.toHaveBeenCalled(); // all deferred
 
         stopSequencer(DEVICE);

@@ -95,7 +95,7 @@ describe('disposeToasterDevice', () => {
     // and stays silent.
     it('stops the running sequencer so a re-seeded store fires no ghost tick', () => {
         seedDevice(DEVICE, activeStep());
-        startSequencer(DEVICE, 120, 4);
+        startSequencer(DEVICE, 120);
 
         // The first tick fired (and stored isPlaying:true).
         expect(triggerToasterPad).toHaveBeenCalledWith(DEVICE, 0, 127);
