@@ -1,0 +1,327 @@
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+
+import { type Track, type TrackStoreState } from '#/modules/Arrangement/stores';
+import { type MidiStoreState } from '#/modules/MIDI/stores';
+import { type TransportState } from '#/modules/Transport/stores';
+
+import { MAX_OFFLINE_FRAMES } from '../offlineRender/constants';
+import { type OfflineRenderContext } from '../offlineRender/resolveRenderContext';
+import { type OfflineTrackStrip } from '../offlineRender/types';
+import { renderOffline } from '../renderOffline';
+
+// Local, field-identical replica of Arrangement's TrackDummy fixture — foreign
+// test fixtures have no compliant cross-module path (models are not re-exported).
+const TrackDummy = {
+    create: (overrides?: Partial<Track>): Track => ({
+        id: 'track-1',
+        name: 'Track 1',
+        kind: 'audio',
+        muted: false,
+        soloed: false,
+        armed: false,
+        gain: 0.8,
+        pan: 0,
+        color: '#ff0000',
+        clips: [],
+        devices: [],
+        sends: [],
+        frozen: false,
+        freezeState: { status: 'unfrozen' },
+        parentId: null,
+        collapsed: false,
+        inputMonitoring: 'auto',
+        hidden: false,
+        disabled: false,
+        height: 80,
+        outputId: 'hw_out',
+        automationMode: 'read',
+        groupId: null,
+        soloSafe: false,
+        notes: '',
+        inputId: null,
+        activeAlternativeId: 'alt-1',
+        alternatives: [{ id: 'alt-1', name: 'Alternative 1', clips: [] }],
+        vcaGroupId: null,
+        midiOutputTrackId: null,
+        followChordTrack: false,
+        midiFx: [],
+        ...overrides,
+    }),
+};
+
+const emptyMidi: NonNullable<MidiStoreState> = {
+    notesByClipId: {},
+    ccByClipId: {},
+    pitchBendByClipId: {},
+};
+const projectMidiEvents: NonNullable<OfflineRenderContext['projectMidiEvents']> = ({ events }) => [...events];
+
+const mocks = vi.hoisted(() => ({
+    resolveRenderContext: vi.fn(),
+    createOfflineTrackStrip: vi.fn(),
+    scheduleTrackClips: vi.fn<(...args: unknown[]) => Promise<void>>(() => Promise.resolve()),
+    schedulePendingSuspends: vi.fn(),
+    renderWithTimeout: vi.fn(),
+}));
+
+vi.mock('../offlineRender/resolveRenderContext', () => ({
+    resolveRenderContext: mocks.resolveRenderContext,
+}));
+vi.mock('../offlineRender/createOfflineTrackStrip', () => ({
+    createOfflineTrackStrip: mocks.createOfflineTrackStrip,
+}));
+vi.mock('../offlineRender/scheduleTrackClips', () => ({
+    scheduleTrackClips: mocks.scheduleTrackClips,
+}));
+vi.mock('../offlineRender/schedulePendingSuspends', () => ({
+    schedulePendingSuspends: mocks.schedulePendingSuspends,
+}));
+vi.mock('../offlineRender/renderWithTimeout', () => ({
+    renderWithTimeout: mocks.renderWithTimeout,
+}));
+
+type FakeGain = {
+    gain: { value: number };
+    connect: ReturnType<typeof vi.fn>;
+};
+
+const createdContexts: Array<{
+    channels: number;
+    frames: number;
+    sampleRate: number;
+    gains: FakeGain[];
+    destination: object;
+}> = [];
+
+class FakeOfflineAudioContext {
+    gains: FakeGain[] = [];
+    destination = {};
+
+    constructor(channels: number, frames: number, sampleRate: number) {
+        createdContexts.push({ channels, frames, sampleRate, gains: this.gains, destination: this.destination });
+    }
+
+    createGain(): FakeGain {
+        const gain: FakeGain = { gain: { value: 1 }, connect: vi.fn() };
+        this.gains.push(gain);
+        return gain;
+    }
+}
+
+function makeStrip(): OfflineTrackStrip {
+    const makeNode = () => ({ connect: vi.fn(), gain: { value: 1 } });
+    return {
+        inputNode: makeNode() as unknown as GainNode,
+        preFaderTap: makeNode() as unknown as GainNode,
+        faderNode: makeNode() as unknown as GainNode,
+        postFaderGain: makeNode() as unknown as GainNode,
+        panNode: { connect: vi.fn(), pan: { value: 0 } } as unknown as StereoPannerNode,
+        outputNode: makeNode() as unknown as GainNode,
+        deviceEntries: [],
+    };
+}
+
+function makeContext(overrides?: Partial<OfflineRenderContext>): OfflineRenderContext {
+    return {
+        tracks: { tracks: [] } as unknown as TrackStoreState,
+        midi: emptyMidi,
+        transport: { masterGain: 50 } as TransportState,
+        defaultTempo: 120,
+        changes: [],
+        startBeat: 0,
+        durationSeconds: 2,
+        tailSeconds: 0,
+        ...overrides,
+        projectMidiEvents: overrides?.projectMidiEvents ?? projectMidiEvents,
+        processYeastMidi: overrides?.processYeastMidi ?? null,
+    };
+}
+
+const renderedBuffer = { length: 42 } as unknown as AudioBuffer;
+
+describe('renderOffline — graph construction and lifecycle', () => {
+    beforeEach(() => {
+        vi.clearAllMocks();
+        createdContexts.length = 0;
+        vi.stubGlobal('OfflineAudioContext', FakeOfflineAudioContext);
+        mocks.resolveRenderContext.mockReturnValue(makeContext());
+        mocks.createOfflineTrackStrip.mockImplementation(() => Promise.resolve(makeStrip()));
+        mocks.renderWithTimeout.mockResolvedValue(renderedBuffer);
+    });
+
+    afterEach(() => {
+        vi.unstubAllGlobals();
+    });
+
+    it('rejects a non-finite duration with an export error before resolving any project state', async () => {
+        await expect(renderOffline(Number.NaN)).rejects.toThrow(/Invalid export duration/);
+        expect(mocks.resolveRenderContext).not.toHaveBeenCalled();
+    });
+
+    it('creates a stereo context sized from duration and sample rate and applies the project master gain', async () => {
+        mocks.resolveRenderContext.mockReturnValue(makeContext({ durationSeconds: 2 }));
+
+        const buffer = await renderOffline({ durationBeats: 4, sampleRate: 48_000 });
+
+        expect(buffer).toBe(renderedBuffer);
+        expect(createdContexts).toHaveLength(1);
+        expect(createdContexts[0]!.channels).toBe(2);
+        expect(createdContexts[0]!.frames).toBe(96_000);
+        expect(createdContexts[0]!.sampleRate).toBe(48_000);
+        // masterGain is the first gain created; project masterGain 50/100 → 0.5.
+        const masterGain = createdContexts[0]!.gains[0]!;
+        expect(masterGain.gain.value).toBe(0.5);
+        expect(masterGain.connect).toHaveBeenCalledWith(createdContexts[0]!.destination);
+    });
+
+    it('clamps the frame count to the browser-safe maximum for absurd durations', async () => {
+        mocks.resolveRenderContext.mockReturnValue(makeContext({ durationSeconds: 10 ** 9 }));
+
+        await renderOffline({ durationBeats: 4, sampleRate: 48_000 });
+
+        expect(createdContexts[0]!.frames).toBe(MAX_OFFLINE_FRAMES);
+    });
+
+    it('clamps an out-of-range project master gain into 0..1 and defaults to 80% when transport is missing', async () => {
+        mocks.resolveRenderContext.mockReturnValue(makeContext({ transport: { masterGain: 150 } as TransportState }));
+        await renderOffline(4);
+        expect(createdContexts[0]!.gains[0]!.gain.value).toBe(1);
+
+        mocks.resolveRenderContext.mockReturnValue(makeContext({ transport: null }));
+        await renderOffline(4);
+        expect(createdContexts[1]!.gains[0]!.gain.value).toBeCloseTo(0.8, 6);
+    });
+
+    it('routes strips to master, buses, other track inputs, or master fallback by outputId', async () => {
+        const hwTrack = TrackDummy.create({ id: 't-hw', outputId: 'hw_out' });
+        const busTrack = TrackDummy.create({ id: 'bus-1', kind: 'bus', gain: 0.9, outputId: 'hw_out' });
+        const toBusTrack = TrackDummy.create({ id: 't-bus', outputId: 'bus-1' });
+        const toTrackTrack = TrackDummy.create({ id: 't-chain', outputId: 't-hw' });
+        const orphanTrack = TrackDummy.create({ id: 't-orphan', outputId: 'ghost' });
+        mocks.resolveRenderContext.mockReturnValue(
+            makeContext({
+                tracks: {
+                    tracks: [hwTrack, busTrack, toBusTrack, toTrackTrack, orphanTrack],
+                } as unknown as TrackStoreState,
+            })
+        );
+        const stripsByTrack = new Map<string, OfflineTrackStrip>();
+        mocks.createOfflineTrackStrip.mockImplementation((_ctx: OfflineAudioContext, track: Track) => {
+            const strip = makeStrip();
+            stripsByTrack.set(track.id, strip);
+            return Promise.resolve(strip);
+        });
+
+        await renderOffline(4);
+
+        const masterGain = createdContexts[0]!.gains[0]!;
+        const busGain = createdContexts[0]!.gains[1]!;
+        // Bus strip: clamped project gain, summed into master.
+        expect(busGain.gain.value).toBe(0.9);
+        expect(busGain.connect).toHaveBeenCalledWith(masterGain);
+
+        expect(stripsByTrack.get('t-hw')!.outputNode.connect).toHaveBeenCalledWith(masterGain);
+        expect(stripsByTrack.get('t-bus')!.outputNode.connect).toHaveBeenCalledWith(busGain);
+        expect(stripsByTrack.get('t-chain')!.outputNode.connect).toHaveBeenCalledWith(
+            stripsByTrack.get('t-hw')!.inputNode
+        );
+        expect(stripsByTrack.get('t-orphan')!.outputNode.connect).toHaveBeenCalledWith(masterGain);
+    });
+
+    it('wires sends from the right tap with a clamped level and drops sends to unknown buses', async () => {
+        const busTrack = TrackDummy.create({ id: 'bus-1', kind: 'bus' });
+        const sender = TrackDummy.create({
+            id: 't-send',
+            sends: [
+                { busId: 'bus-1', level: 2, preFader: true },
+                { busId: 'bus-1', level: 0.4, preFader: false },
+                { busId: 'missing-bus', level: 1, preFader: false },
+            ] as Track['sends'],
+        });
+        mocks.resolveRenderContext.mockReturnValue(
+            makeContext({ tracks: { tracks: [busTrack, sender] } as unknown as TrackStoreState })
+        );
+        const stripsByTrack = new Map<string, OfflineTrackStrip>();
+        mocks.createOfflineTrackStrip.mockImplementation((_ctx: OfflineAudioContext, track: Track) => {
+            const strip = makeStrip();
+            stripsByTrack.set(track.id, strip);
+            return Promise.resolve(strip);
+        });
+
+        await renderOffline(4);
+
+        const busGain = createdContexts[0]!.gains[1]!;
+        const senderStrip = stripsByTrack.get('t-send')!;
+        // Two send gains created (unknown bus creates none): master, bus, send, send.
+        expect(createdContexts[0]!.gains).toHaveLength(4);
+        const preFaderSendGain = createdContexts[0]!.gains[2]!;
+        const postFaderSendGain = createdContexts[0]!.gains[3]!;
+
+        expect(preFaderSendGain.gain.value).toBe(1); // clamped from 2
+        expect(senderStrip.preFaderTap.connect).toHaveBeenCalledWith(preFaderSendGain);
+        expect(preFaderSendGain.connect).toHaveBeenCalledWith(busGain);
+
+        expect(postFaderSendGain.gain.value).toBe(0.4);
+        expect(senderStrip.outputNode.connect).toHaveBeenCalledWith(postFaderSendGain);
+        expect(postFaderSendGain.connect).toHaveBeenCalledWith(busGain);
+    });
+
+    it('builds strips for muted tracks to keep routing alive but never schedules their clips', async () => {
+        const audible = TrackDummy.create({ id: 't-live' });
+        const muted = TrackDummy.create({ id: 't-muted', muted: true });
+        const disabled = TrackDummy.create({ id: 't-disabled', disabled: true });
+        mocks.resolveRenderContext.mockReturnValue(
+            makeContext({ tracks: { tracks: [audible, muted, disabled] } as unknown as TrackStoreState })
+        );
+
+        await renderOffline(4);
+
+        // Disabled tracks get no strip at all; muted tracks get one.
+        expect(mocks.createOfflineTrackStrip).toHaveBeenCalledTimes(2);
+        expect(mocks.scheduleTrackClips).toHaveBeenCalledTimes(1);
+        const scheduledTrack = mocks.scheduleTrackClips.mock.calls[0]![1] as Track;
+        expect(scheduledTrack.id).toBe('t-live');
+        expect(mocks.schedulePendingSuspends).toHaveBeenCalledTimes(1);
+    });
+
+    it('reports scheduling progress up to 50% and completion at 100%', async () => {
+        const trackA = TrackDummy.create({ id: 't-a' });
+        const trackB = TrackDummy.create({ id: 't-b' });
+        mocks.resolveRenderContext.mockReturnValue(
+            makeContext({ tracks: { tracks: [trackA, trackB] } as unknown as TrackStoreState })
+        );
+        const onProgress = vi.fn();
+
+        await renderOffline({ durationBeats: 4, onProgress });
+
+        expect(onProgress).toHaveBeenCalledWith(0.25);
+        expect(onProgress).toHaveBeenCalledWith(0.5);
+        expect(onProgress).toHaveBeenLastCalledWith(1);
+    });
+
+    it('holds the render lock while active and releases it when the render fails', async () => {
+        let resolveRender: ((buffer: AudioBuffer) => void) | undefined;
+        mocks.renderWithTimeout.mockImplementation(
+            () =>
+                new Promise<AudioBuffer>((resolve) => {
+                    resolveRender = resolve;
+                })
+        );
+
+        const inFlight = renderOffline(4);
+        await vi.waitFor(() => expect(mocks.renderWithTimeout).toHaveBeenCalledTimes(1));
+
+        // A second export while one is active must be refused.
+        await expect(renderOffline(4)).rejects.toThrow(/already in progress/);
+
+        resolveRender!(renderedBuffer);
+        await expect(inFlight).resolves.toBe(renderedBuffer);
+
+        // A failing render must still release the lock for the next attempt.
+        mocks.renderWithTimeout.mockRejectedValueOnce(new Error('render timed out'));
+        await expect(renderOffline(4)).rejects.toThrow('render timed out');
+
+        mocks.renderWithTimeout.mockResolvedValue(renderedBuffer);
+        await expect(renderOffline(4)).resolves.toBe(renderedBuffer);
+    });
+});

@@ -34,7 +34,7 @@ test.describe('AI Features', () => {
         await page.waitForTimeout(500);
 
         const panel_content = page.getByText(/action history|no actions|history/i);
-        const visible = await panel_content.first().isVisible().catch(() => false);
+        await expect(panel_content.first()).toBeVisible();
     });
 
     test('Voice command button is clickable', async ({ page }) => {

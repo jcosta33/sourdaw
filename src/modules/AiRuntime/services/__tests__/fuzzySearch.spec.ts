@@ -23,7 +23,7 @@ describe('getAvailablePresets', () => {
             // Categories should be in defined order
             const categories = result.map((p) => p.category);
             for (let i = 1; i < categories.length; i++) {
-                expect(categories.indexOf(categories[i])).toBeGreaterThanOrEqual(
+                expect(categories.indexOf(categories[i]!)).toBeGreaterThanOrEqual(
                     categories.indexOf(categories[i - 1]!)
                 );
             }
@@ -34,6 +34,7 @@ describe('getAvailablePresets', () => {
         const empty_ctx: PresetContext = {
             selectedTrackId: undefined,
             selectedClipId: undefined,
+            selectedClipType: undefined,
             trackCount: 0,
         };
         const result = getAvailablePresets(empty_ctx);
