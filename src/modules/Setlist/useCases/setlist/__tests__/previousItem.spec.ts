@@ -53,4 +53,12 @@ describe('previousItem', () => {
         previousItem();
         expect(goToItem).toHaveBeenCalledWith(0);
     });
+
+    it('does nothing when the store has no value', () => {
+        mockSetlistStore.value = null;
+
+        previousItem();
+
+        expect(goToItem).not.toHaveBeenCalled();
+    });
 });

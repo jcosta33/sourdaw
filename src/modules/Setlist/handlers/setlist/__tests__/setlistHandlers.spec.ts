@@ -23,4 +23,18 @@ describe('Setlist Handlers', () => {
         handlePreviousSetlistItem.execute({ type: 'previousSetlistItem', payload: undefined });
         expect(mocks.previousItem).toHaveBeenCalledTimes(1);
     });
+
+    it('handleNextSetlistItem describes itself and is not undoable', () => {
+        expect(handleNextSetlistItem.describe({ type: 'nextSetlistItem', payload: undefined })).toEqual({
+            label: 'Next Setlist Item',
+        });
+        expect(handleNextSetlistItem.undoable).toBe(false);
+    });
+
+    it('handlePreviousSetlistItem describes itself and is not undoable', () => {
+        expect(handlePreviousSetlistItem.describe({ type: 'previousSetlistItem', payload: undefined })).toEqual({
+            label: 'Previous Setlist Item',
+        });
+        expect(handlePreviousSetlistItem.undoable).toBe(false);
+    });
 });

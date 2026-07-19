@@ -40,7 +40,7 @@ beforeEach(() => {
         terminate = vi.fn();
         constructor(url: string | URL) {
             this.url = String(url);
-            installedWorkers.push(this as unknown as FakeWorker);
+            installedWorkers.push(this);
         }
     }
     globalThis.Worker = WorkerStub as unknown as typeof Worker;
