@@ -301,7 +301,15 @@
 
 ## Final Coverage Summary
 
-**Total: 47 spec files, 294 tests — ALL PASSING (100%, exit 0).**
+**Total: 48 spec files, 296 tests.**
+
+> **Status 2026-07-19:** 295/296 pass. One known flake under full-parallel load
+> (`launchFlows.spec.ts` "browse demos and load Nebula Drift" — the heaviest demo;
+> passes in isolation and on CI retries). A fresh-boot regression that had the launch
+> harness timing out suite-wide was fixed (loadProject now lands on the LaunchScreen for
+> fresh profiles). Four tautological / assertion-free tests (uncoveredControls,
+> mixerAdvanced, dynamicAndEdge, aiFeatures) were upgraded to real assertions. The depth
+> table below predates these changes and is approximate.
 
 ### Test depth distribution
 | Category | Count | % |

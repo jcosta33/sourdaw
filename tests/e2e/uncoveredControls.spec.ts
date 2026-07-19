@@ -44,11 +44,10 @@ test.describe('Overlay Close & Dismiss Buttons', () => {
 
     test('Browser has tab navigation controls', async ({ page }) => {
         const browser = page.getByRole('complementary', { name: 'Browser panel' });
-        const scroll_left = browser.getByRole('button', { name: 'Scroll tabs left' });
-        const scroll_right = browser.getByRole('button', { name: 'Scroll tabs right' });
-        const left_visible = await scroll_left.isVisible().catch(() => false);
-        const right_visible = await scroll_right.isVisible().catch(() => false);
-        expect(left_visible || right_visible || true).toBe(true);
+        // Panel renders with a stable search control; tab-overflow scroll buttons
+        // ('Scroll tabs left/right') surface only when the tab strip overflows.
+        await expect(browser).toBeVisible();
+        await expect(browser.getByRole('searchbox', { name: /Search browser/i })).toBeVisible();
     });
 });
 

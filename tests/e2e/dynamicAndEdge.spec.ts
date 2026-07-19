@@ -24,6 +24,7 @@ test.describe('Dynamic Track Header Elements', () => {
             await monitor.first().click();
             await page.waitForTimeout(300);
             const label_after = await monitor.first().getAttribute('aria-label');
+            expect(label_after).not.toBe(label_before);
         }
     });
 
