@@ -32,6 +32,8 @@ import { KeyboardSplit } from '../components/KeyboardSplit';
 import { ProcessorParams } from '../components/ProcessorParams';
 import { StepPatternEditor } from '../components/StepPatternEditor';
 
+import { YeastPreviewCanvas } from './YeastPreviewCanvas';
+
 const LEVEL_OPTIONS = [
     { level: 1 as const, label: 'Play', detail: 'Sprout' },
     { level: 2 as const, label: 'Shape', detail: 'Drift' },
@@ -136,43 +138,6 @@ function renderDeck(state: YeastState): ReactElement {
     return <Level5Lab state={state} />;
 }
 
-const NoteFlowHero = ({ state }: { state: YeastState }): ReactElement => {
-    const laneCount = Math.max(3, Math.min(7, state.processors.length + 2));
-
-    return (
-        <Stack gap={3} className="yeast-window p-3">
-            <Row justify="between" gap={3}>
-                <Stack>
-                    <div className="text-[10px] font-medium text-foreground">Phrase view</div>
-                    <div className="text-[9px] text-muted-foreground">
-                        A quick motion sketch for whatever the rack is doing right now.
-                    </div>
-                </Stack>
-                <YeastLed>{state.processors.length} modules</YeastLed>
-            </Row>
-
-            <Stack gap={2}>
-                {Array.from({ length: laneCount }, (_, index) => {
-                    const width = 24 + ((index * 17 + state.uiLevel * 11) % 68);
-                    const offset = (index * 9 + state.uiLevel * 7) % 36;
-                    return (
-                        <div key={index} className="h-4 rounded-full bg-white/5 px-1 py-1">
-                            <div
-                                className="h-full rounded-full bg-[linear-gradient(90deg,var(--color-accent-peach),var(--color-accent-cyan))]"
-                                style={{
-                                    width: `${width}%`,
-                                    marginLeft: `${offset}%`,
-                                    opacity: 0.8 - index * 0.07,
-                                }}
-                            />
-                        </div>
-                    );
-                })}
-            </Stack>
-        </Stack>
-    );
-};
-
 // ── Component ────────────────────────────────────────────────────────────────
 
 const defaultYeastState: YeastState = {
@@ -180,7 +145,7 @@ const defaultYeastState: YeastState = {
     uiLevel: 1,
 };
 
-export const YeastPanel = (): ReactElement => {
+export const YeastPanel = ({ trackId = null }: { trackId?: string | null }): ReactElement => {
     const state = useStore(yeastStore, defaultYeastState);
 
     const { uiLevel } = state;
@@ -268,7 +233,7 @@ export const YeastPanel = (): ReactElement => {
                         </Row>
                     </div>
 
-                    <NoteFlowHero state={state} />
+                    <YeastPreviewCanvas trackId={trackId} />
 
                     <div className="yeast-window min-h-0 flex-1 overflow-auto p-3">{renderDeck(state)}</div>
                 </Stack>

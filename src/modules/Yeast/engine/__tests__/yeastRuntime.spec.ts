@@ -193,27 +193,37 @@ describe('yeastRuntime', () => {
     it('publishes worker preview sidecars without changing the scheduler result', async () => {
         const runtime = (await loadRuntime()) as RuntimeWithTransaction;
         const { yeastPreviewTap } = await import('../yeastPreviewTap');
-        yeastPreviewTap.setEnabled(false);
-        yeastPreviewTap.setEnabled(true);
+        const previewScope = { rackId: 'yeast-runtime', routeId: 'track-a', trackId: 'track-a' };
+        yeastPreviewTap.setEnabled(previewScope, false);
+        yeastPreviewTap.setEnabled(previewScope, true);
         const context = {} as BaseAudioContext;
         const node = makeNode(context);
         const events: MidiEvent[] = [
             { timeSamples: 0, trackId: 'track-a', kind: { type: 'noteOn', channel: 0, note: 60, velocity: 90 } },
         ];
         const preview = {
+            rackId: 'yeast-runtime',
+            routeId: 'track-a',
+            trackId: 'track-a',
+            projectionVersion: 1,
+            reset: false,
             records: [
                 {
+                    eventId: 1,
+                    rackId: 'yeast-runtime',
+                    routeId: 'track-a',
+                    trackId: 'track-a',
+                    projectionVersion: 1,
+                    phase: 'closed' as const,
                     beatTime: 0,
                     durationBeats: 0.5,
                     pitch: 60,
                     velocity: 90,
                     probability: null,
                     realized: true,
-                    processorId: 'filter-1',
-                    bypassed: true,
-                    failed: false,
                 },
             ],
+            provenance: [{ processorId: 'filter-1', bypassed: true, failed: false, eventCount: 0 }],
             droppedEvents: 0,
         };
         node.processBlock.mockImplementationOnce(() => {
@@ -225,7 +235,7 @@ describe('yeastRuntime', () => {
         const output = await runtime.processYeastRuntimeTransaction(makeRuntimeBlockInput(context));
 
         expect(output).toBe(events);
-        expect(yeastPreviewTap.read().events).toEqual(preview.records);
+        expect(yeastPreviewTap.read(previewScope).events).toEqual(preview.records);
         expect(node.onPreview).toHaveBeenCalledTimes(1);
     });
 

@@ -13,9 +13,12 @@ import {
     YEAST_PREVIEW_BYPASSED_FLAG,
     type YeastPreviewBlock,
     YEAST_PREVIEW_CAPACITY,
+    YEAST_PREVIEW_CLOSED_PHASE,
     type YeastPreviewEvent,
     YEAST_PREVIEW_FAILED_FLAG,
+    YEAST_PREVIEW_OPEN_PHASE,
     type YeastPreviewPackedPage,
+    type YeastPreviewProcessorProvenance,
     YEAST_PREVIEW_REALIZED_FLAG,
     YEAST_PREVIEW_VALID_FLAGS,
 } from '../models/YeastPreviewSnapshot';
@@ -176,13 +179,23 @@ function isPackedPreviewPage(value: unknown): value is YeastPreviewPackedPage {
         return false;
     }
     return (
-        typeof value.count === 'number' &&
-        Number.isSafeInteger(value.count) &&
+        isTrackId(value.rackId) &&
+        isTrackId(value.routeId) &&
+        isTrackId(value.trackId) &&
+        isCommandId(value.projectionVersion) &&
+        typeof value.reset === 'boolean' &&
+        isCommandId(value.count) &&
         value.count >= 0 &&
         value.count <= YEAST_PREVIEW_CAPACITY &&
+        isCommandId(value.provenanceCount) &&
+        value.provenanceCount <= YEAST_PREVIEW_CAPACITY &&
         typeof value.droppedEvents === 'number' &&
         Number.isSafeInteger(value.droppedEvents) &&
         value.droppedEvents >= 0 &&
+        value.eventId instanceof Float64Array &&
+        value.eventId.length === YEAST_PREVIEW_CAPACITY &&
+        value.phase instanceof Uint8Array &&
+        value.phase.length === YEAST_PREVIEW_CAPACITY &&
         value.beatTime instanceof Float64Array &&
         value.beatTime.length === YEAST_PREVIEW_CAPACITY &&
         value.durationBeats instanceof Float64Array &&
@@ -195,8 +208,12 @@ function isPackedPreviewPage(value: unknown): value is YeastPreviewPackedPage {
         value.probability.length === YEAST_PREVIEW_CAPACITY &&
         value.flags instanceof Uint8Array &&
         value.flags.length === YEAST_PREVIEW_CAPACITY &&
-        Array.isArray(value.processorId) &&
-        value.processorId.length === YEAST_PREVIEW_CAPACITY
+        value.provenanceEventCount instanceof Uint16Array &&
+        value.provenanceEventCount.length === YEAST_PREVIEW_CAPACITY &&
+        value.provenanceFlags instanceof Uint8Array &&
+        value.provenanceFlags.length === YEAST_PREVIEW_CAPACITY &&
+        Array.isArray(value.provenanceProcessorId) &&
+        value.provenanceProcessorId.length === YEAST_PREVIEW_CAPACITY
     );
 }
 
@@ -217,14 +234,18 @@ function parsePreviewPageMessage(
 function decodePreviewPage(page: YeastPreviewPackedPage, extraDroppedEvents: number): YeastPreviewBlock | undefined {
     const records: YeastPreviewEvent[] = [];
     for (let index = 0; index < page.count; index++) {
+        const eventId = page.eventId[index]!;
+        const phase = page.phase[index]!;
         const beatTime = page.beatTime[index]!;
         const durationBeats = page.durationBeats[index]!;
         const pitch = page.pitch[index]!;
         const velocity = page.velocity[index]!;
         const packedProbability = page.probability[index]!;
         const flags = page.flags[index]!;
-        const processorId = page.processorId[index];
         if (
+            !Number.isSafeInteger(eventId) ||
+            eventId < 0 ||
+            (phase !== YEAST_PREVIEW_OPEN_PHASE && phase !== YEAST_PREVIEW_CLOSED_PHASE) ||
             !Number.isFinite(beatTime) ||
             !Number.isFinite(durationBeats) ||
             durationBeats < 0 ||
@@ -232,26 +253,51 @@ function decodePreviewPage(page: YeastPreviewPackedPage, extraDroppedEvents: num
             !Number.isFinite(velocity) ||
             (!Number.isNaN(packedProbability) &&
                 (!Number.isFinite(packedProbability) || packedProbability < 0 || packedProbability > 1)) ||
-            (flags & ~YEAST_PREVIEW_VALID_FLAGS) !== 0 ||
-            typeof processorId !== 'string' ||
-            processorId.length === 0
+            (flags & ~YEAST_PREVIEW_VALID_FLAGS) !== 0
         ) {
             return undefined;
         }
         records.push({
+            eventId,
+            rackId: page.rackId,
+            routeId: page.routeId,
+            trackId: page.trackId,
+            projectionVersion: page.projectionVersion,
+            phase: phase === YEAST_PREVIEW_OPEN_PHASE ? 'open' : 'closed',
             beatTime,
             durationBeats,
             pitch,
             velocity,
             probability: Number.isNaN(packedProbability) ? null : packedProbability,
             realized: (flags & YEAST_PREVIEW_REALIZED_FLAG) !== 0,
+        });
+    }
+    const provenance: YeastPreviewProcessorProvenance[] = [];
+    for (let index = 0; index < page.provenanceCount; index++) {
+        const processorId = page.provenanceProcessorId[index];
+        const flags = page.provenanceFlags[index]!;
+        if (
+            typeof processorId !== 'string' ||
+            processorId.length === 0 ||
+            (flags & ~(YEAST_PREVIEW_BYPASSED_FLAG | YEAST_PREVIEW_FAILED_FLAG)) !== 0
+        ) {
+            return undefined;
+        }
+        provenance.push({
             processorId,
             bypassed: (flags & YEAST_PREVIEW_BYPASSED_FLAG) !== 0,
             failed: (flags & YEAST_PREVIEW_FAILED_FLAG) !== 0,
+            eventCount: page.provenanceEventCount[index]!,
         });
     }
     return {
+        rackId: page.rackId,
+        routeId: page.routeId,
+        trackId: page.trackId,
+        projectionVersion: page.projectionVersion,
+        reset: page.reset,
         records,
+        provenance,
         droppedEvents: Math.min(Number.MAX_SAFE_INTEGER, page.droppedEvents + extraDroppedEvents),
     };
 }

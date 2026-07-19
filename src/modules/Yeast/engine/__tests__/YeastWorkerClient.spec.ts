@@ -111,6 +111,8 @@ function replyProcessed(worker: FakeWorker, requestId: number, events: unknown[]
 
 function packPreview(records: readonly YeastPreviewEvent[], droppedEvents = 0): Record<string, unknown> {
     const capacity = 512;
+    const eventId = new Float64Array(capacity);
+    const phase = new Uint8Array(capacity);
     const beatTime = new Float64Array(capacity);
     const durationBeats = new Float64Array(capacity);
     const pitch = new Uint8Array(capacity);
@@ -118,27 +120,39 @@ function packPreview(records: readonly YeastPreviewEvent[], droppedEvents = 0): 
     const probability = new Float64Array(capacity);
     probability.fill(Number.NaN);
     const flags = new Uint8Array(capacity);
-    const processorId = Array.from({ length: capacity }, () => '');
+    const provenanceProcessorId = Array.from({ length: capacity }, () => '');
     for (let index = 0; index < records.length; index++) {
         const record = records[index]!;
+        eventId[index] = record.eventId;
+        phase[index] = record.phase === 'open' ? 0 : 1;
         beatTime[index] = record.beatTime;
         durationBeats[index] = record.durationBeats;
         pitch[index] = record.pitch;
         velocity[index] = record.velocity;
         probability[index] = record.probability ?? Number.NaN;
-        flags[index] = (record.realized ? 1 : 0) | (record.bypassed ? 2 : 0) | (record.failed ? 4 : 0);
-        processorId[index] = record.processorId;
+        flags[index] = record.realized ? 1 : 0;
     }
+    const first = records[0];
     return {
+        rackId: first?.rackId ?? 'yeast-runtime',
+        routeId: first?.routeId ?? 'track-a',
+        trackId: first?.trackId ?? 'track-a',
+        projectionVersion: first?.projectionVersion ?? 1,
+        reset: false,
         count: records.length,
+        provenanceCount: 0,
         droppedEvents,
+        eventId,
+        phase,
         beatTime,
         durationBeats,
         pitch,
         velocity,
         probability,
         flags,
-        processorId,
+        provenanceEventCount: new Uint16Array(capacity),
+        provenanceFlags: new Uint8Array(capacity),
+        provenanceProcessorId,
     };
 }
 
@@ -213,15 +227,18 @@ describe('createYeastWorker — processBlock lifecycle', () => {
         node.onPreview(onPreview);
         const events: MidiEvent[] = [{ timeSamples: 0, kind: { type: 'noteOn', channel: 0, note: 60, velocity: 90 } }];
         const record: YeastPreviewEvent = {
+            eventId: 1,
+            rackId: 'yeast-runtime',
+            routeId: 'track-a',
+            trackId: 'track-a',
+            projectionVersion: 1,
+            phase: 'closed',
             beatTime: 0,
             durationBeats: 0.5,
             pitch: 60,
             velocity: 90,
             probability: 0.5,
             realized: true,
-            processorId: 'arp-1',
-            bypassed: false,
-            failed: false,
         };
 
         const promise = node.processBlock(events, 0, 128, transport, 'track-a', true);
@@ -234,7 +251,16 @@ describe('createYeastWorker — processBlock lifecycle', () => {
         expect(onPreview).not.toHaveBeenCalled();
         await vi.advanceTimersByTimeAsync(0);
 
-        expect(onPreview).toHaveBeenCalledWith({ records: [record], droppedEvents: 0 });
+        expect(onPreview).toHaveBeenCalledWith({
+            rackId: 'yeast-runtime',
+            routeId: 'track-a',
+            trackId: 'track-a',
+            projectionVersion: 1,
+            reset: false,
+            records: [record],
+            provenance: [],
+            droppedEvents: 0,
+        });
     });
 
     it('rejects a late preview page from before capture was disabled and re-enabled', async () => {
@@ -243,20 +269,23 @@ describe('createYeastWorker — processBlock lifecycle', () => {
         const onPreview = vi.fn();
         node.onPreview(onPreview);
         const staleRecord: YeastPreviewEvent = {
+            eventId: 1,
+            rackId: 'yeast-runtime',
+            routeId: 'track-a',
+            trackId: 'track-a',
+            projectionVersion: 1,
+            phase: 'closed',
             beatTime: 0,
             durationBeats: 0.5,
             pitch: 60,
             velocity: 90,
             probability: null,
             realized: true,
-            processorId: 'stale-generation',
-            bypassed: false,
-            failed: false,
         };
         const currentRecord: YeastPreviewEvent = {
             ...staleRecord,
+            eventId: 2,
             pitch: 62,
-            processorId: 'current-generation',
         };
 
         const firstEnabled = node.processBlock([], 0, 128, transport, 'track-a', true);
@@ -278,7 +307,7 @@ describe('createYeastWorker — processBlock lifecycle', () => {
         replyPreviewPage(worker, 2, packPreview([currentRecord]), 3);
         await vi.runAllTimersAsync();
         expect(onPreview).toHaveBeenCalledOnce();
-        expect(onPreview).toHaveBeenCalledWith({ records: [currentRecord], droppedEvents: 0 });
+        expect(onPreview).toHaveBeenCalledWith(expect.objectContaining({ records: [currentRecord], droppedEvents: 0 }));
     });
 
     it('does not inspect an embedded preview payload on the correlated scheduler reply', async () => {
@@ -338,15 +367,18 @@ describe('createYeastWorker — processBlock lifecycle', () => {
         unsubscribeFirst = node.onPreview(firstObserver);
         node.onPreview(stableObserver);
         const record: YeastPreviewEvent = {
+            eventId: 1,
+            rackId: 'yeast-runtime',
+            routeId: 'track-a',
+            trackId: 'track-a',
+            projectionVersion: 1,
+            phase: 'closed',
             beatTime: 0,
             durationBeats: 0.5,
             pitch: 60,
             velocity: 90,
             probability: null,
             realized: true,
-            processorId: 'filter-1',
-            bypassed: false,
-            failed: false,
         };
 
         const requests = [
@@ -389,15 +421,18 @@ describe('createYeastWorker — processBlock lifecycle', () => {
         const onPreview = vi.fn();
         node.onPreview(onPreview);
         const record: YeastPreviewEvent = {
+            eventId: 1,
+            rackId: 'yeast-runtime',
+            routeId: 'track-a',
+            trackId: 'track-a',
+            projectionVersion: 1,
+            phase: 'closed',
             beatTime: 0,
             durationBeats: 0.5,
             pitch: 60,
             velocity: 90,
             probability: null,
             realized: true,
-            processorId: 'filter-1',
-            bypassed: false,
-            failed: false,
         };
 
         const promise = node.processBlock([], 0, 128, transport, 'track-a', true);

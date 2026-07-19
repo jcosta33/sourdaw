@@ -1,6 +1,8 @@
 import { logger } from '#/infra/logger/appLogger';
 import { createHmrPersistentState } from '#/utils/HMR/createHmrPersistentState';
 
+import { YEAST_PREVIEW_RACK_ID } from '../models/YeastPreviewSnapshot';
+
 import { yeastPreviewTap } from './yeastPreviewTap';
 import { createYeastWorker, type YeastWorkerResult } from './YeastWorkerClient';
 
@@ -619,7 +621,7 @@ export async function processYeastRuntimeBlock(input: ProcessYeastRuntimeBlockIn
                 input.blockEndSamples,
                 input.transport,
                 input.trackId,
-                yeastPreviewTap.isEnabled()
+                yeastPreviewTap.isEnabled({ rackId: YEAST_PREVIEW_RACK_ID, routeId: input.trackId })
             );
             if (!isLiveRuntime(node, generation)) {
                 throw new Error('Yeast Worker runtime changed during MIDI processing');
@@ -674,7 +676,7 @@ export async function processYeastRuntimeTransaction(
                 input.blockEndSamples,
                 input.transport,
                 input.trackId,
-                yeastPreviewTap.isEnabled()
+                yeastPreviewTap.isEnabled({ rackId: YEAST_PREVIEW_RACK_ID, routeId: input.trackId })
             );
             if (!isLiveRuntime(node, generation)) {
                 throw new Error('Yeast Worker runtime changed during MIDI processing');

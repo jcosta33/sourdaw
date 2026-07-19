@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { yeastPreviewTap } from '../../../engine/yeastPreviewTap';
+import { YeastPreviewTap, yeastPreviewTap } from '../../../engine/yeastPreviewTap';
 import { yeastStore } from '../../../stores/yeastStore';
 import { processYeastMidi } from '../processYeastMidi';
 import { readYeastPreviewSnapshot } from '../readYeastPreviewSnapshot';
@@ -49,18 +49,34 @@ function notePair(index: number): MidiEvent[] {
     ];
 }
 
-function previewRecord(index: number, bypassed = false): YeastPreviewEvent {
+function previewRecord(index: number): YeastPreviewEvent {
     return {
+        eventId: index,
+        rackId: 'yeast-runtime',
+        routeId: 'track-a',
+        trackId: 'track-a',
+        projectionVersion: 1,
+        phase: 'closed',
         beatTime: 4 + index * 0.01,
         durationBeats: 0.005,
         pitch: 36 + (index % 48),
         velocity: 64 + (index % 32),
         probability: null,
         realized: true,
-        processorId: 'velocity-1',
-        bypassed,
-        failed: false,
     };
+}
+
+function publishPreview(records: readonly YeastPreviewEvent[], bypassed = false): void {
+    yeastPreviewTap.publish({
+        rackId: 'yeast-runtime',
+        routeId: 'track-a',
+        trackId: 'track-a',
+        projectionVersion: 1,
+        reset: false,
+        records,
+        provenance: [{ processorId: 'velocity-1', bypassed, failed: false, eventCount: records.length }],
+        droppedEvents: 0,
+    });
 }
 
 function setProcessorBypass(bypassed: boolean): void {
@@ -81,21 +97,19 @@ function setProcessorBypass(bypassed: boolean): void {
 describe('AC-001 — Yeast scheduled-event preview tap', () => {
     beforeEach(() => {
         vi.clearAllMocks();
-        setYeastPreviewCaptureEnabled(false);
-        setYeastPreviewCaptureEnabled(true);
+        setYeastPreviewCaptureEnabled({ trackId: 'track-a', enabled: false });
+        setYeastPreviewCaptureEnabled({ trackId: 'track-a', enabled: true });
         setProcessorBypass(false);
     });
 
     it('publishes an ordered 512-event read-only ring without changing scheduler output or progress', async () => {
         const processed = Array.from({ length: 514 }, (_, index) => notePair(index)).flat();
         runtime.processTransaction.mockImplementationOnce(() => {
-            yeastPreviewTap.publish({
-                records: Array.from({ length: 514 }, (_, index) => previewRecord(index)),
-                droppedEvents: 0,
-            });
+            publishPreview(Array.from({ length: 514 }, (_, index) => previewRecord(index)));
             return Promise.resolve(processed);
         });
-        const storageIdentity = yeastPreviewTap.getStorageIdentity();
+        const previewScope = { rackId: 'yeast-runtime', routeId: 'track-a' };
+        const storageIdentity = yeastPreviewTap.getStorageIdentity(previewScope);
 
         const output = await processYeastMidi({
             context: {} as BaseAudioContext,
@@ -109,9 +123,9 @@ describe('AC-001 — Yeast scheduled-event preview tap', () => {
         expect(output).toBe(processed);
         expect(output).toEqual(processed);
         expect(runtime.processTransaction).toHaveBeenCalledTimes(1);
-        expect(yeastPreviewTap.getStorageIdentity()).toBe(storageIdentity);
+        expect(yeastPreviewTap.getStorageIdentity(previewScope)).toBe(storageIdentity);
 
-        const snapshot = readYeastPreviewSnapshot();
+        const snapshot = readYeastPreviewSnapshot({ trackId: 'track-a' });
         expect(Object.isFrozen(snapshot)).toBe(true);
         expect(Object.isFrozen(snapshot.events)).toBe(true);
         expect(Object.isFrozen(snapshot.events[0])).toBe(true);
@@ -119,15 +133,23 @@ describe('AC-001 — Yeast scheduled-event preview tap', () => {
         expect(snapshot.events).toHaveLength(512);
         expect(snapshot.droppedEvents).toBe(2);
         expect(snapshot.events[0]).toEqual({
+            eventId: 0,
+            rackId: 'yeast-runtime',
+            routeId: 'track-a',
+            trackId: 'track-a',
+            projectionVersion: 1,
+            phase: 'closed',
             beatTime: 4,
             durationBeats: 0.005,
             pitch: 36,
             velocity: 64,
             probability: null,
             realized: true,
-            processorId: 'velocity-1',
-            bypassed: false,
-            failed: false,
+        });
+        expect(snapshot.events[0]).toMatchObject({
+            rackId: 'yeast-runtime',
+            routeId: 'track-a',
+            trackId: 'track-a',
         });
         for (let index = 0; index < snapshot.events.length; index++) {
             expect(snapshot.events[index]!.beatTime).toBeCloseTo(4 + index * 0.01, 10);
@@ -135,7 +157,7 @@ describe('AC-001 — Yeast scheduled-event preview tap', () => {
 
         const afterReaderAdvance = notePair(600);
         runtime.processTransaction.mockImplementationOnce(() => {
-            yeastPreviewTap.publish({ records: [previewRecord(600)], droppedEvents: 0 });
+            publishPreview([previewRecord(600)]);
             return Promise.resolve(afterReaderAdvance);
         });
         const nextOutput = await processYeastMidi({
@@ -148,14 +170,14 @@ describe('AC-001 — Yeast scheduled-event preview tap', () => {
         });
 
         expect(nextOutput).toBe(afterReaderAdvance);
-        expect(readYeastPreviewSnapshot().events).toHaveLength(1);
-        expect(yeastPreviewTap.getStorageIdentity()).toBe(storageIdentity);
+        expect(readYeastPreviewSnapshot({ trackId: 'track-a' }).events).toHaveLength(1);
+        expect(yeastPreviewTap.getStorageIdentity(previewScope)).toBe(storageIdentity);
     });
 
     it('keeps bypass state visible and capture disabled as a bit-for-bit no-op', async () => {
         const processed = notePair(0);
         runtime.processTransaction.mockImplementation(() => {
-            yeastPreviewTap.publish({ records: [previewRecord(0, true)], droppedEvents: 0 });
+            publishPreview([previewRecord(0)], true);
             return Promise.resolve(processed);
         });
         setProcessorBypass(true);
@@ -170,9 +192,9 @@ describe('AC-001 — Yeast scheduled-event preview tap', () => {
                 transport,
             })
         ).toBe(processed);
-        expect(readYeastPreviewSnapshot().events[0]?.bypassed).toBe(true);
+        expect(readYeastPreviewSnapshot({ trackId: 'track-a' }).provenance[0]?.bypassed).toBe(true);
 
-        setYeastPreviewCaptureEnabled(false);
+        setYeastPreviewCaptureEnabled({ trackId: 'track-a', enabled: false });
         expect(
             await processYeastMidi({
                 context: {} as BaseAudioContext,
@@ -183,14 +205,14 @@ describe('AC-001 — Yeast scheduled-event preview tap', () => {
                 transport,
             })
         ).toBe(processed);
-        expect(readYeastPreviewSnapshot()).toMatchObject({ events: [], droppedEvents: 0 });
+        expect(readYeastPreviewSnapshot({ trackId: 'track-a' })).toMatchObject({ events: [], droppedEvents: 0 });
     });
 
     it('never replaces scheduler output when preview publication fails', async () => {
         const processed = notePair(0);
         runtime.processTransaction.mockImplementationOnce(() => {
             try {
-                yeastPreviewTap.publish({ records: [previewRecord(0)], droppedEvents: 0 });
+                publishPreview([previewRecord(0)]);
             } catch {
                 // Mirrors the runtime's observer isolation.
             }
@@ -212,5 +234,40 @@ describe('AC-001 — Yeast scheduled-event preview tap', () => {
         expect(output).toBe(processed);
         expect(output).toEqual(processed);
         previewFailure.mockRestore();
+    });
+
+    it('keeps independent rack and track routes readable without advancing each other', () => {
+        const tap = new YeastPreviewTap();
+        const routeA = { rackId: 'rack-a', routeId: 'track-a', trackId: 'track-a' };
+        const routeB = { rackId: 'rack-b', routeId: 'track-b', trackId: 'track-b' };
+        tap.setEnabled(routeA, true);
+        tap.setEnabled(routeB, true);
+        const eventA = previewRecord(1);
+        const eventB: YeastPreviewEvent = {
+            ...previewRecord(2),
+            rackId: routeB.rackId,
+            routeId: routeB.routeId,
+            trackId: routeB.trackId,
+        };
+        tap.publish({
+            ...routeA,
+            projectionVersion: 1,
+            reset: false,
+            records: [{ ...eventA, rackId: routeA.rackId }],
+            provenance: [],
+            droppedEvents: 0,
+        });
+        tap.publish({
+            ...routeB,
+            projectionVersion: 1,
+            reset: false,
+            records: [eventB],
+            provenance: [],
+            droppedEvents: 0,
+        });
+
+        expect(tap.read(routeA).events).toMatchObject([{ rackId: 'rack-a', trackId: 'track-a' }]);
+        expect(tap.read(routeB).events).toMatchObject([{ rackId: 'rack-b', trackId: 'track-b' }]);
+        expect(tap.getStorageIdentity(routeA)).not.toBe(tap.getStorageIdentity(routeB));
     });
 });

@@ -218,30 +218,49 @@ describe('YeastWorker', () => {
             requestId: number;
             captureEpoch: number;
             page: {
+                rackId: string;
+                routeId: string;
+                trackId: string;
                 count: number;
+                provenanceCount: number;
                 droppedEvents: number;
+                eventId: Float64Array;
+                phase: Uint8Array;
                 beatTime: Float64Array;
                 durationBeats: Float64Array;
                 pitch: Uint8Array;
                 velocity: Float64Array;
                 probability: Float64Array;
                 flags: Uint8Array;
-                processorId: string[];
+                provenanceFlags: Uint8Array;
+                provenanceEventCount: Uint16Array;
+                provenanceProcessorId: string[];
             };
         };
         expect(previewResponse.type).toBe('previewPage');
         expect(previewResponse.requestId).toBe(7);
         expect(previewResponse.captureEpoch).toBe(17);
-        expect(previewResponse.page.count).toBe(1);
+        expect(previewResponse.page).toMatchObject({
+            rackId: 'yeast-runtime',
+            routeId: 'track-a',
+            trackId: 'track-a',
+            count: 2,
+            provenanceCount: 1,
+        });
         expect(previewResponse.page.droppedEvents).toBe(0);
         expect(previewResponse.page.beatTime).toHaveLength(512);
         expect(previewResponse.page.beatTime[0]).toBe(0);
-        expect(previewResponse.page.durationBeats[0]).toBeCloseTo(64 / 24000, 12);
+        expect(previewResponse.page.durationBeats[0]).toBe(0);
+        expect(previewResponse.page.durationBeats[1]).toBeCloseTo(64 / 24000, 12);
+        expect(previewResponse.page.eventId[0]).toBe(previewResponse.page.eventId[1]);
+        expect([...previewResponse.page.phase.slice(0, 2)]).toEqual([0, 1]);
         expect(previewResponse.page.pitch[0]).toBe(60);
         expect(previewResponse.page.velocity[0]).toBe(88);
         expect(previewResponse.page.probability[0]).toBeNaN();
-        expect(previewResponse.page.flags[0]).toBe(3);
-        expect(previewResponse.page.processorId[0]).toBe('filter-1');
+        expect(previewResponse.page.flags[0]).toBe(1);
+        expect(previewResponse.page.provenanceProcessorId[0]).toBe('filter-1');
+        expect(previewResponse.page.provenanceFlags[0]).toBe(2);
+        expect(previewResponse.page.provenanceEventCount[0]).toBe(0);
     });
 
     it('acknowledges a valid processor command with its command id', () => {

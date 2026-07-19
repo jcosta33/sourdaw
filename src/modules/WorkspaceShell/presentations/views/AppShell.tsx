@@ -246,6 +246,7 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
     const scoringDeviceId = activePanel?.kind === 'scoring' ? activePanel.deviceId : null;
     const proofDeviceId = activePanel?.kind === 'proof' ? activePanel.deviceId : null;
     const yeastOpen = activePanel?.kind === 'yeast';
+    const yeastTrackId = activePanel?.kind === 'yeast' ? activePanel.trackId : null;
     const crustDeviceId = activePanel?.kind === 'crust' ? activePanel.deviceId : null;
     const samplerDeviceId = activePanel?.kind === 'sampler' ? activePanel.deviceId : null;
     const grandBouleDeviceId = activePanel?.kind === 'grandBoule' ? activePanel.deviceId : null;
@@ -677,7 +678,7 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
                                 onClose={closeActivePanel}
                             >
                                 <ErrorBoundary>
-                                    <YeastPanel />
+                                    <YeastPanel trackId={yeastTrackId} />
                                 </ErrorBoundary>
                             </InstrumentBottomPanel>
                         ) : null}

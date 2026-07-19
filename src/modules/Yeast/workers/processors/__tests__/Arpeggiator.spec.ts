@@ -2,11 +2,6 @@ import { describe, it, expect, beforeEach } from 'vitest';
 
 import { defaultStep } from '../../../models/ArpPattern';
 import { type MidiEvent, type MidiEventKind, type TransportInfo } from '../../../models/MidiEvent';
-import {
-    YEAST_PREVIEW_BYPASSED_FLAG,
-    YEAST_PREVIEW_FAILED_FLAG,
-    YEAST_PREVIEW_REALIZED_FLAG,
-} from '../../../models/YeastPreviewSnapshot';
 import { MidiRack } from '../../MidiRack';
 import { Arpeggiator } from '../Arpeggiator';
 
@@ -27,10 +22,7 @@ function takePreviewRecords(rack: MidiRack) {
         pitch: page.pitch[index]!,
         velocity: page.velocity[index]!,
         probability: Number.isNaN(page.probability[index]!) ? null : page.probability[index]!,
-        realized: (page.flags[index]! & YEAST_PREVIEW_REALIZED_FLAG) !== 0,
-        processorId: page.processorId[index]!,
-        bypassed: (page.flags[index]! & YEAST_PREVIEW_BYPASSED_FLAG) !== 0,
-        failed: (page.flags[index]! & YEAST_PREVIEW_FAILED_FLAG) !== 0,
+        realized: (page.flags[index]! & 1) !== 0,
     }));
     rack.releasePreviewPage(page);
     return records;
@@ -122,7 +114,7 @@ describe('Arpeggiator', () => {
         expect(noteOn?.kind.velocity).toBe(127);
     });
 
-    it('publishes the actual rejected probability decision without emitting MIDI', () => {
+    it('keeps rejected probability decisions out of the terminal audible preview', () => {
         arp.setParam('mode', 7);
         arp.setPattern([{ ...defaultStep(), probability: 0 }]);
         const rack = new MidiRack();
@@ -142,18 +134,6 @@ describe('Arpeggiator', () => {
         const output = rack.processBlock([], 13230, 13358, transport, 'track-a', true);
 
         expect(output.filter(isNoteOn)).toEqual([]);
-        expect(takePreviewRecords(rack)).toEqual([
-            {
-                beatTime: 0.5,
-                durationBeats: 0.4,
-                pitch: 60,
-                velocity: 100,
-                probability: 0,
-                realized: false,
-                processorId: 'test-arp',
-                bypassed: false,
-                failed: false,
-            },
-        ]);
+        expect(takePreviewRecords(rack)).toEqual([]);
     });
 });

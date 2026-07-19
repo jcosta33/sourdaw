@@ -1,6 +1,11 @@
 import { YEAST_PREVIEW_CAPACITY } from '../models/YeastPreviewSnapshot';
 
-import type { YeastPreviewBlock, YeastPreviewEvent, YeastPreviewSnapshot } from '../models/YeastPreviewSnapshot';
+import type {
+    YeastPreviewBlock,
+    YeastPreviewEvent,
+    YeastPreviewProcessorProvenance,
+    YeastPreviewSnapshot,
+} from '../models/YeastPreviewSnapshot';
 
 export { YEAST_PREVIEW_CAPACITY } from '../models/YeastPreviewSnapshot';
 
@@ -8,104 +13,149 @@ type MutableYeastPreviewEvent = {
     -readonly [Key in keyof YeastPreviewEvent]: YeastPreviewEvent[Key];
 };
 
+type YeastPreviewScope = Readonly<{
+    rackId: string;
+    routeId: string;
+    trackId: string;
+}>;
+
+type RouteBuffer = {
+    readonly storage: MutableYeastPreviewEvent[];
+    readIndex: number;
+    size: number;
+    droppedEvents: number;
+    projectionVersion: number;
+    reset: boolean;
+    provenance: readonly YeastPreviewProcessorProvenance[];
+};
+
 function createPreviewSlot(): MutableYeastPreviewEvent {
     return {
+        eventId: 0,
+        rackId: '',
+        routeId: '',
+        trackId: '',
+        projectionVersion: 0,
+        phase: 'open',
         beatTime: 0,
         durationBeats: 0,
         pitch: 0,
         velocity: 0,
         probability: null,
         realized: true,
-        processorId: '',
-        bypassed: false,
-        failed: false,
     };
 }
 
+function createRouteBuffer(): RouteBuffer {
+    return {
+        storage: Array.from({ length: YEAST_PREVIEW_CAPACITY }, createPreviewSlot),
+        readIndex: 0,
+        size: 0,
+        droppedEvents: 0,
+        projectionVersion: 0,
+        reset: false,
+        provenance: [],
+    };
+}
+
+function copyEvent(target: MutableYeastPreviewEvent, source: YeastPreviewEvent): void {
+    target.eventId = source.eventId;
+    target.rackId = source.rackId;
+    target.routeId = source.routeId;
+    target.trackId = source.trackId;
+    target.projectionVersion = source.projectionVersion;
+    target.phase = source.phase;
+    target.beatTime = source.beatTime;
+    target.durationBeats = source.durationBeats;
+    target.pitch = source.pitch;
+    target.velocity = source.velocity;
+    target.probability = source.probability;
+    target.realized = source.realized;
+}
+
 export class YeastPreviewTap {
-    private readonly storage: MutableYeastPreviewEvent[];
-    private readIndex = 0;
-    private size = 0;
-    private droppedEvents = 0;
-    private enabled = false;
+    private readonly routes = new Map<string, Map<string, RouteBuffer>>();
 
-    constructor() {
-        this.storage = Array.from({ length: YEAST_PREVIEW_CAPACITY }, createPreviewSlot);
-    }
-
-    setEnabled(enabled: boolean): void {
-        if (this.enabled === enabled) {
+    setEnabled(scope: YeastPreviewScope, enabled: boolean): void {
+        const rackRoutes = this.routes.get(scope.rackId);
+        if (!enabled) {
+            rackRoutes?.delete(scope.routeId);
+            if (rackRoutes?.size === 0) {
+                this.routes.delete(scope.rackId);
+            }
             return;
         }
-        this.enabled = enabled;
-        this.readIndex = 0;
-        this.size = 0;
-        this.droppedEvents = 0;
+        if (rackRoutes?.has(scope.routeId)) {
+            return;
+        }
+        const nextRackRoutes = rackRoutes ?? new Map<string, RouteBuffer>();
+        nextRackRoutes.set(scope.routeId, createRouteBuffer());
+        this.routes.set(scope.rackId, nextRackRoutes);
     }
 
-    isEnabled(): boolean {
-        return this.enabled;
+    isEnabled(scope: Pick<YeastPreviewScope, 'rackId' | 'routeId'>): boolean {
+        return this.routes.get(scope.rackId)?.has(scope.routeId) ?? false;
     }
 
     publish(input: YeastPreviewBlock): void {
-        if (!this.enabled) {
+        const route = this.routes.get(input.rackId)?.get(input.routeId);
+        if (!route) {
             return;
         }
 
-        this.droppedEvents += input.droppedEvents;
+        if (input.reset) {
+            route.readIndex = 0;
+            route.size = 0;
+            route.droppedEvents = 0;
+            route.reset = true;
+        }
+        route.projectionVersion = input.projectionVersion;
+        route.provenance = input.provenance;
+        route.droppedEvents = Math.min(Number.MAX_SAFE_INTEGER, route.droppedEvents + input.droppedEvents);
         for (let index = 0; index < input.records.length; index++) {
-            if (this.size === YEAST_PREVIEW_CAPACITY) {
-                this.droppedEvents += 1;
+            if (route.size === YEAST_PREVIEW_CAPACITY) {
+                route.droppedEvents = Math.min(Number.MAX_SAFE_INTEGER, route.droppedEvents + 1);
                 continue;
             }
             const record = input.records[index]!;
-            const slot = this.storage[(this.readIndex + this.size) % YEAST_PREVIEW_CAPACITY]!;
-            slot.beatTime = record.beatTime;
-            slot.durationBeats = record.durationBeats;
-            slot.pitch = record.pitch;
-            slot.velocity = record.velocity;
-            slot.probability = record.probability;
-            slot.realized = record.realized;
-            slot.processorId = record.processorId;
-            slot.bypassed = record.bypassed;
-            slot.failed = record.failed;
-            this.size += 1;
+            const slot = route.storage[(route.readIndex + route.size) % YEAST_PREVIEW_CAPACITY]!;
+            copyEvent(slot, record);
+            route.size += 1;
         }
     }
 
-    read(): YeastPreviewSnapshot {
+    read(scope: YeastPreviewScope): YeastPreviewSnapshot {
+        const route = this.routes.get(scope.rackId)?.get(scope.routeId);
         const events: YeastPreviewEvent[] = [];
-        for (let index = 0; index < this.size; index++) {
-            const slot = this.storage[(this.readIndex + index) % YEAST_PREVIEW_CAPACITY]!;
-            events.push(
-                Object.freeze({
-                    beatTime: slot.beatTime,
-                    durationBeats: slot.durationBeats,
-                    pitch: slot.pitch,
-                    velocity: slot.velocity,
-                    probability: slot.probability,
-                    realized: slot.realized,
-                    processorId: slot.processorId,
-                    bypassed: slot.bypassed,
-                    failed: slot.failed,
-                })
-            );
+        if (route) {
+            for (let index = 0; index < route.size; index++) {
+                const slot = route.storage[(route.readIndex + index) % YEAST_PREVIEW_CAPACITY]!;
+                events.push(Object.freeze({ ...slot }));
+            }
         }
 
-        const droppedEvents = this.droppedEvents;
-        this.readIndex = (this.readIndex + this.size) % YEAST_PREVIEW_CAPACITY;
-        this.size = 0;
-        this.droppedEvents = 0;
-
-        return Object.freeze({
+        const snapshot = Object.freeze({
+            rackId: scope.rackId,
+            routeId: scope.routeId,
+            trackId: scope.trackId,
+            projectionVersion: route?.projectionVersion ?? 0,
+            reset: route?.reset ?? false,
             capacity: YEAST_PREVIEW_CAPACITY,
             events: Object.freeze(events),
-            droppedEvents,
+            provenance: Object.freeze([...(route?.provenance ?? [])]),
+            droppedEvents: route?.droppedEvents ?? 0,
         });
+        if (route) {
+            route.readIndex = (route.readIndex + route.size) % YEAST_PREVIEW_CAPACITY;
+            route.size = 0;
+            route.droppedEvents = 0;
+            route.reset = false;
+        }
+        return snapshot;
     }
 
-    getStorageIdentity(): object {
-        return this.storage;
+    getStorageIdentity(scope: Pick<YeastPreviewScope, 'rackId' | 'routeId'>): object | undefined {
+        return this.routes.get(scope.rackId)?.get(scope.routeId)?.storage;
     }
 }
 
