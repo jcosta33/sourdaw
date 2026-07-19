@@ -26,7 +26,9 @@ describe('transportCommands', () => {
     });
 
     it('exposes the transport commands under the Transport category', () => {
-        expect(transportCommands.map((entry) => ({ id: entry.id, label: entry.label, category: entry.category }))).toEqual([
+        expect(
+            transportCommands.map((entry) => ({ id: entry.id, label: entry.label, category: entry.category }))
+        ).toEqual([
             { id: 'toggle-playback', label: 'Play / Pause', category: 'Transport' },
             { id: 'stop', label: 'Stop', category: 'Transport' },
             { id: 'toggle-recording', label: 'Toggle Recording', category: 'Transport' },

@@ -9,7 +9,13 @@ vi.mock('#/modules/Command/useCases', () => ({ executeAppAction: vi.fn().mockRes
 vi.mock('#/utils/Notification/notifyUser', () => ({ notifyUser: vi.fn() }));
 vi.mock('../../selectionHelpers/getSelectedClipId', () => ({ getSelectedClipId: vi.fn() }));
 
-const REQUIRE_MIDI_CLIP_IDS = ['generate-bassline', 'complete-midi', 'variation-midi', 'variation-midi-subtle', 'variation-midi-wild'];
+const REQUIRE_MIDI_CLIP_IDS = [
+    'generate-bassline',
+    'complete-midi',
+    'variation-midi',
+    'variation-midi-subtle',
+    'variation-midi-wild',
+];
 const SELECTED_CLIP_IDS = ['detect-tempo', 'detect-key', 'audio-to-midi', 'apply-groove'];
 
 function runAction(id: string): void {
@@ -83,11 +89,20 @@ describe('aiCommands', () => {
 
     it('dispatches the correct action for each MIDI-clip-required command when a clip is selected', () => {
         const requireMidiClipEntries = [
-            { id: 'generate-bassline', action: { type: 'generateBassline', payload: { clipId: 'clip-1', style: 'root-fifth' } } },
+            {
+                id: 'generate-bassline',
+                action: { type: 'generateBassline', payload: { clipId: 'clip-1', style: 'root-fifth' } },
+            },
             { id: 'complete-midi', action: { type: 'completeMidi', payload: { clipId: 'clip-1', bars: 4 } } },
             { id: 'variation-midi', action: { type: 'variationMidi', payload: { clipId: 'clip-1', amount: 0.3 } } },
-            { id: 'variation-midi-subtle', action: { type: 'variationMidi', payload: { clipId: 'clip-1', amount: 0.1 } } },
-            { id: 'variation-midi-wild', action: { type: 'variationMidi', payload: { clipId: 'clip-1', amount: 0.6 } } },
+            {
+                id: 'variation-midi-subtle',
+                action: { type: 'variationMidi', payload: { clipId: 'clip-1', amount: 0.1 } },
+            },
+            {
+                id: 'variation-midi-wild',
+                action: { type: 'variationMidi', payload: { clipId: 'clip-1', amount: 0.6 } },
+            },
         ];
 
         for (const { id, action } of requireMidiClipEntries) {
@@ -114,7 +129,10 @@ describe('aiCommands', () => {
             { id: 'detect-tempo', action: { type: 'detectTempo', payload: { clipId: 'clip-1' } } },
             { id: 'detect-key', action: { type: 'detectKey', payload: { clipId: 'clip-1' } } },
             { id: 'audio-to-midi', action: { type: 'audioToMidi', payload: { clipId: 'clip-1' } } },
-            { id: 'apply-groove', action: { type: 'applyGroove', payload: { clipId: 'clip-1', grooveId: 'swing-light' } } },
+            {
+                id: 'apply-groove',
+                action: { type: 'applyGroove', payload: { clipId: 'clip-1', grooveId: 'swing-light' } },
+            },
         ];
 
         for (const { id, action } of selectedClipEntries) {

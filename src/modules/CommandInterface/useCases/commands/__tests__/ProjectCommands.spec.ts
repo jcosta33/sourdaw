@@ -26,7 +26,9 @@ describe('projectCommands', () => {
     });
 
     it('exposes the project commands under the Project category', () => {
-        expect(projectCommands.map((entry) => ({ id: entry.id, label: entry.label, category: entry.category }))).toEqual([
+        expect(
+            projectCommands.map((entry) => ({ id: entry.id, label: entry.label, category: entry.category }))
+        ).toEqual([
             { id: 'new-project', label: 'New Project', category: 'Project' },
             { id: 'save-project', label: 'Save Project', category: 'Project' },
             { id: 'export-audio', label: 'Export Audio', category: 'Project' },
