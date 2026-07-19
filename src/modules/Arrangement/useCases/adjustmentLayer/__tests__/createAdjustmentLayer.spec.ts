@@ -1,12 +1,11 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+import { type AdjustmentLayerState } from '../../../stores/adjustmentLayer';
 import { createAdjustmentLayer } from '../createAdjustmentLayer';
-
-import type { AdjustmentEffectType } from '../../../stores/adjustmentLayer';
 
 const mocks = vi.hoisted(() => ({
     adjustmentLayerStoreValue: { value: { layers: [] } },
-    adjustmentLayerStoreSet: vi.fn(),
+    adjustmentLayerStoreSet: vi.fn<(value: AdjustmentLayerState | null) => void>(),
     getNextLayerId: vi.fn(() => 'layer-123'),
 }));
 
@@ -18,7 +17,7 @@ vi.mock('../../../stores/adjustmentLayer', () => ({
         set: mocks.adjustmentLayerStoreSet,
     },
     getNextLayerId: mocks.getNextLayerId,
-    EFFECT_PRESETS: { EQ: [{ name: 'Freq', value: 1000, min: 20, max: 20000 }] },
+    EFFECT_PRESETS: { eq: [{ name: 'Freq', value: 1000, min: 20, max: 20000 }] },
     LAYER_COLORS: ['#f00'],
 }));
 
@@ -29,7 +28,7 @@ describe('createAdjustmentLayer', () => {
     });
 
     it('creates a new adjustment layer', () => {
-        createAdjustmentLayer('Master EQ', 'EQ' as unknown as AdjustmentEffectType);
+        createAdjustmentLayer({ name: 'Master EQ', effectType: 'eq' });
 
         expect(mocks.adjustmentLayerStoreSet).toHaveBeenCalledTimes(1);
         const setCall = mocks.adjustmentLayerStoreSet.mock.calls[0];
@@ -37,11 +36,14 @@ describe('createAdjustmentLayer', () => {
             throw new Error('expected adjustmentLayerStore.set to be called');
         }
         const newState = setCall[0];
+        if (!newState) {
+            throw new Error('expected a non-null adjustment-layer state');
+        }
         expect(newState.layers).toHaveLength(1);
         expect(newState.layers[0]).toMatchObject({
             id: 'layer-123',
             name: 'Master EQ',
-            effectType: 'EQ',
+            effectType: 'eq',
             parameters: [{ name: 'Freq', value: 1000 }],
         });
     });

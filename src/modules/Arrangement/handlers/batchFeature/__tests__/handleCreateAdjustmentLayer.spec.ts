@@ -2,8 +2,11 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { handleCreateAdjustmentLayer } from '../handleCreateAdjustmentLayer';
 
+import type { AppAction } from '#/utils/handlerContract';
+import type { CreateAdjustmentLayerInput } from '../../../useCases/adjustmentLayer/createAdjustmentLayer';
+
 const mocks = vi.hoisted(() => ({
-    createAdjustmentLayer: vi.fn(),
+    createAdjustmentLayer: vi.fn<(input: CreateAdjustmentLayerInput) => void>(),
 }));
 
 vi.mock('../../../useCases/adjustmentLayer/createAdjustmentLayer', () => ({
@@ -15,13 +18,23 @@ describe('handleCreateAdjustmentLayer', () => {
         vi.clearAllMocks();
     });
 
-    it('executes createAdjustmentLayer with name and effectType', () => {
-        void handleCreateAdjustmentLayer.execute({
+    it('executes createAdjustmentLayer with a replay-stable layer id', () => {
+        const action: Extract<AppAction, { type: 'createAdjustmentLayer' }> = {
             type: 'createAdjustmentLayer',
-            payload: { name: 'Master EQ', effectType: 'EQ' },
-        });
+            payload: { name: 'Master EQ', effectType: 'eq' },
+        };
 
-        expect(mocks.createAdjustmentLayer).toHaveBeenCalledWith('Master EQ', 'EQ');
+        void handleCreateAdjustmentLayer.execute(action);
+
+        const layerId = action.payload.layerId;
+        if (!layerId) {
+            throw new Error('Expected the handler to assign a layer id');
+        }
+        expect(mocks.createAdjustmentLayer).toHaveBeenCalledWith({
+            name: 'Master EQ',
+            effectType: 'eq',
+            layerId,
+        });
     });
 
     it('provides a description', () => {

@@ -40,6 +40,32 @@ export type RipplePlanSnapshot = {
     readonly removedClips: readonly ClipSnapshot[];
     readonly shiftedClips: readonly RippleShiftSnapshot[];
 };
+export type AdjustmentLayerSnapshot = {
+    readonly id: string;
+    readonly name: string;
+    readonly effectType:
+        'eq' | 'compressor' | 'reverb' | 'delay' | 'saturation' | 'filter' | 'stereo-width' | 'volume' | 'pan';
+    readonly parameters: readonly {
+        readonly name: string;
+        readonly value: number;
+        readonly min: number;
+        readonly max: number;
+        readonly unit: string;
+    }[];
+    readonly affectedTrackIds: readonly string[];
+    readonly insertionIndex: number;
+    readonly regions: readonly {
+        readonly id: string;
+        readonly startBeat: number;
+        readonly endBeat: number;
+        readonly blend: number;
+        readonly fadeInBeats: number;
+        readonly fadeOutBeats: number;
+    }[];
+    readonly enabled: boolean;
+    readonly mix: number;
+    readonly color: string;
+};
 type CommandDocumentSnapshotEntry =
     { readonly state: 'present'; readonly bytes: Uint8Array } | { readonly state: 'absent' };
 type CommandDocumentSnapshot = Map<string, CommandDocumentSnapshotEntry>;
@@ -454,17 +480,33 @@ export type AppAction =
     | { type: 'triggerScene'; payload: { column: number } }
     | { type: 'nextSetlistItem'; payload?: undefined }
     | { type: 'previousSetlistItem'; payload?: undefined }
-    | { type: 'createAdjustmentLayer'; payload: { name: string; effectType: string } }
+    | { type: 'createAdjustmentLayer'; payload: { name: string; effectType: string; layerId?: string } }
     | { type: 'removeAdjustmentLayer'; payload: { layerId: string } }
     | { type: 'toggleAdjustmentLayer'; payload: { layerId: string } }
     | { type: 'setLayerParameter'; payload: { layerId: string; paramName: string; value: number } }
     | { type: 'setLayerMix'; payload: { layerId: string; mix: number } }
-    | { type: 'addAdjustmentRegion'; payload: { layerId: string; startBeat: number; endBeat: number; blend?: number } }
+    | {
+          type: 'addAdjustmentRegion';
+          payload: {
+              layerId: string;
+              startBeat: number;
+              endBeat: number;
+              blend?: number;
+              regionId?: string;
+          };
+      }
     | { type: 'removeAdjustmentRegion'; payload: { layerId: string; regionId: string } }
     | { type: 'moveAdjustmentRegion'; payload: { regionId: string; startBeat: number; endBeat: number } }
     | { type: 'setLayerFades'; payload: { regionId: string; fadeInBeats: number; fadeOutBeats: number } }
     | { type: 'setLayerAffectedTracks'; payload: { layerId: string; trackIds: string[] } }
     | { type: 'setLayerInsertionIndex'; payload: { layerId: string; insertionIndex: number } }
+    | {
+          type: 'restoreAdjustmentLayerMutation';
+          payload: {
+              layers: readonly AdjustmentLayerSnapshot[];
+              freezeTransitions: Array<{ trackId: string; previousStatus: 'frozen' }>;
+          };
+      }
     | { type: 'detectTransients'; payload: { clipId: string; sensitivity?: number } }
     | { type: 'quantizeTransients'; payload: { clipId: string } }
     | { type: 'openElasticEditor'; payload: { clipId: string } }

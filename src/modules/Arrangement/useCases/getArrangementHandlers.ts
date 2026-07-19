@@ -1,16 +1,6 @@
-import { handleAddAdjustmentRegion } from '../handlers/batchFeature/handleAddAdjustmentRegion';
-import { handleCreateAdjustmentLayer } from '../handlers/batchFeature/handleCreateAdjustmentLayer';
+import { adjustmentLayerHandlers } from '../handlers/batchFeature/adjustmentLayerHandlers';
 import { handleCreateCompGroup } from '../handlers/batchFeature/handleCreateCompGroup';
-import { handleMoveAdjustmentRegion } from '../handlers/batchFeature/handleMoveAdjustmentRegion';
-import { handleRemoveAdjustmentLayer } from '../handlers/batchFeature/handleRemoveAdjustmentLayer';
-import { handleRemoveAdjustmentRegion } from '../handlers/batchFeature/handleRemoveAdjustmentRegion';
 import { handleSearchSamples } from '../handlers/batchFeature/handleSearchSamples';
-import { handleSetLayerAffectedTracks } from '../handlers/batchFeature/handleSetLayerAffectedTracks';
-import { handleSetLayerFades } from '../handlers/batchFeature/handleSetLayerFades';
-import { handleSetLayerInsertionIndex } from '../handlers/batchFeature/handleSetLayerInsertionIndex';
-import { handleSetLayerMix } from '../handlers/batchFeature/handleSetLayerMix';
-import { handleSetLayerParameter } from '../handlers/batchFeature/handleSetLayerParameter';
-import { handleToggleAdjustmentLayer } from '../handlers/batchFeature/handleToggleAdjustmentLayer';
 import { clipHandlers } from '../handlers/clip/clipHandlers';
 import { handleFitClipToBeats } from '../handlers/clipStretch/handleFitClipToBeats';
 import { handleSetClipStretchMode } from '../handlers/clipStretch/handleSetClipStretchMode';
@@ -167,17 +157,7 @@ export function getArrangementHandlers() {
         removeSidechainRoute: handleRemoveSidechainRoute,
         searchSamples: handleSearchSamples,
         createCompGroup: handleCreateCompGroup,
-        createAdjustmentLayer: handleCreateAdjustmentLayer,
-        removeAdjustmentLayer: handleRemoveAdjustmentLayer,
-        toggleAdjustmentLayer: handleToggleAdjustmentLayer,
-        setLayerParameter: handleSetLayerParameter,
-        setLayerMix: handleSetLayerMix,
-        addAdjustmentRegion: handleAddAdjustmentRegion,
-        removeAdjustmentRegion: handleRemoveAdjustmentRegion,
-        moveAdjustmentRegion: handleMoveAdjustmentRegion,
-        setLayerFades: handleSetLayerFades,
-        setLayerAffectedTracks: handleSetLayerAffectedTracks,
-        setLayerInsertionIndex: handleSetLayerInsertionIndex,
+        ...adjustmentLayerHandlers,
         ...clipHandlers,
     };
 }
