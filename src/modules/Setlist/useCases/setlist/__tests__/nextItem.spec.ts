@@ -50,4 +50,12 @@ describe('nextItem', () => {
         nextItem();
         expect(goToItem).toHaveBeenCalledWith(1);
     });
+
+    it('does nothing when the store has no value', () => {
+        mockSetlistStore.value = null;
+
+        nextItem();
+
+        expect(goToItem).not.toHaveBeenCalled();
+    });
 });
