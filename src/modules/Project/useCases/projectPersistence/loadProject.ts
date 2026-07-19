@@ -3,7 +3,6 @@ import { batchStoreUpdates } from '#/infra/store/createStore';
 import { getAudioContext, prepareCachedAudioBuffersFromIdb } from '#/modules/AudioEngine/useCases';
 import { clearUndoHistory } from '#/modules/Command/useCases';
 import {
-    createCrdtProject,
     DOC_PREFIX_ROOT,
     getCrdtDoc,
     loadCrdtProject,
@@ -13,6 +12,7 @@ import {
 import { migrateAbsoluteMidiNotes } from '#/modules/MIDI/useCases';
 
 import { projectStore } from '../../stores/projectStore';
+import { finishProjectLoading } from '../finishProjectLoading';
 
 import { setAutoSaveHandle } from './helpers/autoSaveHandle';
 import { collectTrackStateAudioBufferIds } from './helpers/collectTrackStateAudioBufferIds';
@@ -37,7 +37,12 @@ export async function loadProject(): Promise<boolean> {
             return false;
         }
         if (!loaded) {
-            await createCrdtProject('Untitled Project');
+            // No persisted project (fresh profile): clear the loading state and
+            // land on the LaunchScreen (initialized stays false) instead of
+            // silently auto-creating a project. New / template / demo selections
+            // run the unified createCrdtProject path from the launch flow.
+            finishProjectLoading();
+            return false;
         }
     } catch (error) {
         if (!transaction.isCurrent()) {
