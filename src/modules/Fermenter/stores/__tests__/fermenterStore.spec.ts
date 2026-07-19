@@ -2,10 +2,6 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { DEFAULT_PATCH } from '../../models/FermenterPatch';
 import {
-    fermenterStore as barrelFermenterStore,
-    setFermenterTelemetry as barrelSetFermenterTelemetry,
-} from '../index';
-import {
     fermenterStore,
     getFermenterState,
     loadFermenterPatch,
@@ -13,6 +9,7 @@ import {
     setFermenterTelemetry,
     setFermenterUiLevel,
 } from '../fermenterStore';
+import { fermenterStore as barrelFermenterStore, setFermenterTelemetry as barrelSetFermenterTelemetry } from '../index';
 
 async function flushPendingFrame(): Promise<void> {
     await new Promise<void>((resolve) => {
