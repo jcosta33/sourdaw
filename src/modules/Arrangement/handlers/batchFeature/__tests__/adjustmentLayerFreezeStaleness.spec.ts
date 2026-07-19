@@ -137,7 +137,7 @@ const mutationCases = [
         label: 'set insertion index',
         layers: [createLayer({ affectedTrackIds: [], insertionIndex: 1 })],
         action: { type: 'setLayerInsertionIndex', payload: { layerId: 'layer-1', insertionIndex: 2 } },
-        staleTrackIds: ['track-b', 'track-c'],
+        staleTrackIds: ['track-b'],
     },
 ] satisfies MutationCase[];
 
@@ -220,6 +220,21 @@ describe('adjustmentLayerFreezeStaleness', () => {
         expect(getTrack('track-a').freezeState.status).toBe('frozen');
         expect(getTrack('track-b').freezeState.status).toBe('frozen');
         expect(getTrack('track-c').freezeState.status).toBe('frozen');
+    });
+
+    it('unaffected: keeps tracks current when they remain in the changed scope', async () => {
+        adjustmentLayerStore.set({
+            layers: [createLayer({ affectedTrackIds: ['track-a', 'track-b'] })],
+        });
+
+        await executeAppAction({
+            type: 'setLayerAffectedTracks',
+            payload: { layerId: 'layer-1', trackIds: ['track-a', 'track-c'] },
+        });
+
+        expect(getTrack('track-a').freezeState.status).toBe('frozen');
+        expect(getTrack('track-b').freezeState.status).toBe('stale');
+        expect(getTrack('track-c').freezeState.status).toBe('stale');
     });
 
     it('atomicUndo: commits both stores atomically and restores both through undo', async () => {

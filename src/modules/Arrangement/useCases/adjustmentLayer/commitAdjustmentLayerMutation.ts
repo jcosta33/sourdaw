@@ -21,15 +21,22 @@ function createEffectiveLayerSignature(
         return '[]';
     }
 
-    const effectiveLayers = layers.filter((layer) => {
-        if (!layer.enabled) {
-            return false;
-        }
-        if (layer.affectedTrackIds.length > 0) {
-            return layer.affectedTrackIds.includes(trackId);
-        }
-        return trackIndex >= layer.insertionIndex;
-    });
+    const effectiveLayers = layers
+        .filter((layer) => {
+            if (!layer.enabled) {
+                return false;
+            }
+            if (layer.affectedTrackIds.length > 0) {
+                return layer.affectedTrackIds.includes(trackId);
+            }
+            return trackIndex >= layer.insertionIndex;
+        })
+        .map((layer) => ({
+            effectType: layer.effectType,
+            parameters: layer.parameters,
+            regions: layer.regions,
+            mix: layer.mix,
+        }));
     return JSON.stringify(effectiveLayers);
 }
 
