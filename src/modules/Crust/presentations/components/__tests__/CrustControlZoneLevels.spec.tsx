@@ -1,5 +1,4 @@
 import { render, screen, fireEvent } from '@testing-library/react';
-import { type ReactElement } from 'react';
 import { describe, it, expect, vi } from 'vitest';
 
 import { type CrustPatch, DEFAULT_CRUST_PATCH } from '../../../models/CrustPatch';
