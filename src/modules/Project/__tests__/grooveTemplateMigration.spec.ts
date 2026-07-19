@@ -158,6 +158,42 @@ describe('groove template project migration', () => {
         }
     });
 
+    it('preserves migrated Yeast processors when converting a flat legacy project', () => {
+        const migrated = normalizeLegacyProjectData({
+            version: 1,
+            name: 'Flat legacy project',
+            tracks: { tracks: [] },
+            midi: { notesByClipId: {}, ccByClipId: {}, pitchBendByClipId: {} },
+            yeast: {
+                processors: [
+                    {
+                        id: 'flat-groove',
+                        type: 'groove',
+                        name: 'Flat groove',
+                        bypassed: false,
+                        params: { template: 1, amount: 0.75 },
+                    },
+                ],
+                uiLevel: 2,
+            },
+        });
+
+        if (!isRecord(migrated) || !isRecord(migrated.yeast) || !isRecord(migrated.grooves)) {
+            throw new Error('Expected canonical Yeast and groove state');
+        }
+        expect(migrated.yeast).toEqual({
+            processors: [{ id: 'flat-groove', type: 'groove', name: 'Flat groove', bypassed: false }],
+            uiLevel: 2,
+        });
+        expect(migrated.grooves.assignments).toEqual([
+            expect.objectContaining({
+                consumerType: 'yeast-processor',
+                consumerId: 'groove-consumer:yeast-rack:flat-groove',
+                amount: 0.75,
+            }),
+        ]);
+    });
+
     it('reconciles mixed canonical and legacy catalogs with canonical assignment precedence once', () => {
         const transitional = {
             version: 1,
@@ -190,7 +226,7 @@ describe('groove template project migration', () => {
                 assignments: [
                     {
                         consumerType: 'yeast-processor',
-                        consumerId: 'shared-consumer',
+                        consumerId: '  \uFF53hared-consumer  ',
                         templateId: 'yeast-pocket',
                         amount: 0.2,
                     },
@@ -390,5 +426,36 @@ describe('groove template project migration', () => {
                 amount: 0.7,
             },
         ]);
+    });
+
+    it('preserves velocity indices when malformed legacy entries are ignored', () => {
+        const migrated = normalizeLegacyProjectData({
+            version: 1,
+            meta: {},
+            arrangement: {},
+            midi: { notesByClipId: {}, ccByClipId: {}, pitchBendByClipId: {} },
+            yeast: {
+                grooveTemplates: [
+                    {
+                        id: 'sparse-velocity',
+                        name: 'Sparse velocity',
+                        offsets: [0, 0, 0],
+                        velocities: [1, 'invalid', 0.5],
+                    },
+                ],
+            },
+        });
+
+        if (!isRecord(migrated) || !isRecord(migrated.grooves) || !Array.isArray(migrated.grooves.templates)) {
+            throw new Error('Expected migrated groove templates');
+        }
+        expect(migrated.grooves.templates).toEqual(
+            expect.arrayContaining([
+                expect.objectContaining({
+                    name: 'Sparse velocity',
+                    slots: [{ index: 2, timingOffset: 0, dynamicsOffset: -0.5 }],
+                }),
+            ])
+        );
     });
 });

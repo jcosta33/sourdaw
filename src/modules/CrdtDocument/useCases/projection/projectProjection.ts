@@ -6,6 +6,7 @@ import { hydrateMidiCrdtProjection } from '#/modules/MIDI/useCases';
 import { arrangementStore, projectStore } from '#/modules/Project/stores';
 import { hydrateSidechainRoutes } from '#/modules/Routing/useCases';
 import { tempoMapStore, timeSignatureMapStore, transportStore } from '#/modules/Transport/stores';
+import { hydrateYeastCrdtProjection } from '#/modules/Yeast/useCases';
 
 import { actionHistoryStore } from '../../stores/actionHistoryStore';
 
@@ -29,6 +30,7 @@ export function projectCrdtToStores(): void {
         store.hydrate();
     }
     hydrateMidiCrdtProjection();
+    hydrateYeastCrdtProjection();
     hydrateKneadFromTrackStore();
     hydrateSidechainRoutes();
 }

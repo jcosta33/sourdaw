@@ -229,17 +229,15 @@ function normalizeLegacyGrooveTemplate(
     if (offsets.length === 0 || offsets.length !== value.offsets.length) {
         return null;
     }
-    let velocities: number[] = [];
+    let velocities: unknown[] = [];
     if (Array.isArray(value.velocities)) {
-        velocities = value.velocities.filter(
-            (velocity): velocity is number => typeof velocity === 'number' && Number.isFinite(velocity)
-        );
+        velocities = value.velocities;
     }
     const slots: Array<{ index: number; timingOffset: number; dynamicsOffset: number }> = [];
     for (const [slotIndex, offset] of offsets.entries()) {
         let dynamicsOffset = 0;
         const velocity = velocities[slotIndex];
-        if (velocity !== undefined) {
+        if (typeof velocity === 'number' && Number.isFinite(velocity)) {
             dynamicsOffset = Math.max(-1, Math.min(1, velocity - 1));
         }
         const timingOffset = Math.max(-0.5, Math.min(0.5, offset));
@@ -300,6 +298,10 @@ function normalizeLegacyGrooveAssignment({
     ) {
         return null;
     }
+    const consumerId = canonicalizeGrooveConsumerId(value.consumerId);
+    if (!consumerId) {
+        return null;
+    }
     const mappedTemplateId = templateIdMappings.get(`${source}:${value.templateId}`);
     let templateId = mappedTemplateId;
     if (!templateId && templateIds.has(value.templateId)) {
@@ -310,7 +312,7 @@ function normalizeLegacyGrooveAssignment({
     }
     return {
         consumerType: value.consumerType as GrooveConsumerType,
-        consumerId: value.consumerId,
+        consumerId,
         templateId,
         amount: Math.max(0, Math.min(1, value.amount)),
     };
@@ -527,6 +529,7 @@ export function normalizeLegacyProjectData(value: unknown): NormalizeLegacyProje
         automation: normalizedGrooves.automation,
         midi: normalizedGrooves.midi,
         grooves: normalizedGrooves.grooves,
+        yeast: normalizedGrooves.yeast,
         mixer: { master: { gain: 0.8, pan: 0 }, buses: [] },
         markers,
         tempoMap: normalizedGrooves.tempoMap,

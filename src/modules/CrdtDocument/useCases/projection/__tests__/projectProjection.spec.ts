@@ -17,6 +17,7 @@ const mocks = vi.hoisted(() => ({
     cvGateStore: { hydrate: vi.fn() },
     actionHistoryStore: { hydrate: vi.fn() },
     hydrateMidiCrdtProjection: vi.fn(),
+    hydrateYeastCrdtProjection: vi.fn(),
     hydrateSidechainRoutes: vi.fn(),
 }));
 
@@ -56,6 +57,10 @@ vi.mock('#/modules/MIDI/stores', async (importOriginal) => {
 
 vi.mock('#/modules/MIDI/useCases', () => ({
     hydrateMidiCrdtProjection: mocks.hydrateMidiCrdtProjection,
+}));
+
+vi.mock('#/modules/Yeast/useCases', () => ({
+    hydrateYeastCrdtProjection: mocks.hydrateYeastCrdtProjection,
 }));
 
 // Mock Project
@@ -117,6 +122,7 @@ describe('projectCrdtToStores', () => {
         expect(mocks.projectStore.hydrate).toHaveBeenCalledTimes(1);
         expect(mocks.cvGateStore.hydrate).toHaveBeenCalledTimes(1);
         expect(mocks.actionHistoryStore.hydrate).toHaveBeenCalledTimes(1);
+        expect(mocks.hydrateYeastCrdtProjection).toHaveBeenCalledTimes(1);
 
         expect(mocks.hydrateSidechainRoutes).toHaveBeenCalledTimes(1);
     });

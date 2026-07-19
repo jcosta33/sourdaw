@@ -84,4 +84,23 @@ describe('yeastStore', () => {
             uiLevel: 1,
         });
     });
+
+    it('hydrates persisted processor identity before a pending reset can replace it', () => {
+        document.yeast = {
+            processors: [{ id: 'persisted-groove', type: 'groove', name: 'Persisted groove', bypassed: false }],
+            uiLevel: 3,
+        };
+
+        yeastStore.hydrate();
+        expect(yeastStore.value).toEqual({
+            processors: [{ id: 'persisted-groove', type: 'groove', name: 'Persisted groove', bypassed: false }],
+            uiLevel: 3,
+        });
+
+        flushAutomergeStorageWrites();
+        expect(document.yeast).toEqual({
+            processors: [{ id: 'persisted-groove', type: 'groove', name: 'Persisted groove', bypassed: false }],
+            uiLevel: 3,
+        });
+    });
 });
