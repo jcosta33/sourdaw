@@ -1,10 +1,29 @@
-import { beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+
+import {
+    configureAutomergeStoragePort,
+    flushAutomergeStorageWrites,
+} from '#/infra/store/storage/createAutomergeStorage';
 
 import { yeastStore } from '../yeastStore';
 
 describe('yeastStore', () => {
+    let document: Record<string, unknown>;
+
     beforeEach(() => {
+        document = {};
+        configureAutomergeStoragePort({
+            getDoc: () => document,
+            getSemanticMessage: () => undefined,
+            hasDoc: () => true,
+            mutateDoc: ({ changeFn }) => changeFn(document),
+        });
         yeastStore.set({ processors: [], uiLevel: 1 });
+    });
+
+    afterEach(() => {
+        flushAutomergeStorageWrites();
+        configureAutomergeStoragePort(null);
     });
 
     it('stores the serializable processor projection and runtime availability only', () => {
@@ -50,6 +69,19 @@ describe('yeastStore', () => {
             type: 'arpeggiator',
             name: 'Arpeggiator',
             bypassed: false,
+        });
+    });
+
+    it('persists processor identity in project CRDT state', () => {
+        yeastStore.set({
+            processors: [{ id: 'groove-durable-id', type: 'groove', name: 'Groove', bypassed: false }],
+            uiLevel: 1,
+        });
+        flushAutomergeStorageWrites();
+
+        expect(document.yeast).toEqual({
+            processors: [{ id: 'groove-durable-id', type: 'groove', name: 'Groove', bypassed: false }],
+            uiLevel: 1,
         });
     });
 });

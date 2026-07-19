@@ -97,6 +97,20 @@ describe('isHydratableProjectData groove invariants', () => {
         expect(normalized).toEqual(currentProject);
         expect(isHydratableProjectData(normalized)).toBe(false);
     });
+
+    it('accepts durable Yeast processor identity and rejects noncanonical IDs', () => {
+        const project = {
+            ...createProject(createValidGrooves()),
+            yeast: {
+                processors: [{ id: 'groove-1', type: 'groove', name: 'Groove', bypassed: false }],
+                uiLevel: 2,
+            },
+        };
+        expect(isHydratableProjectData(project)).toBe(true);
+
+        project.yeast.processors[0]!.id = ' groove-1 ';
+        expect(isHydratableProjectData(project)).toBe(false);
+    });
 });
 
 const validMeta: ProjectMeta = {
