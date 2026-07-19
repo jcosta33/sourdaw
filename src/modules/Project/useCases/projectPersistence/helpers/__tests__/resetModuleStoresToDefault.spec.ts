@@ -115,11 +115,11 @@ describe('resetModuleStoresToDefault', () => {
         expect(mocks.hydrateYeastState).toHaveBeenCalledWith(undefined);
     });
 
-    it('preserves groove CRDT truth before projecting a loaded document', () => {
-        resetModuleStoresToDefault({ resetGrooveTemplates: false });
+    it('preserves collaborative groove CRDT truth before projecting a loaded document', () => {
+        resetModuleStoresToDefault({ resetGrooveTemplates: false, resetYeastState: false });
 
         expect(mocks.hydrateGrooveTemplates).not.toHaveBeenCalled();
-        expect(mocks.hydrateYeastState).toHaveBeenCalledWith(undefined);
+        expect(mocks.hydrateYeastState).not.toHaveBeenCalled();
     });
 
     it('should clear per-device Grinder telemetry so prior-project meters do not linger', () => {

@@ -22,10 +22,12 @@ import { arrangementStore, defaultArrangementStoreState } from '../../../stores/
 
 type ResetModuleStoresToDefaultInput = {
     resetGrooveTemplates?: boolean;
+    resetYeastState?: boolean;
 };
 
 export function resetModuleStoresToDefault({
     resetGrooveTemplates = true,
+    resetYeastState = true,
 }: ResetModuleStoresToDefaultInput = {}): void {
     resetArrangementStoresForProject();
     arrangementStore.set(structuredClone(defaultArrangementStoreState));
@@ -35,7 +37,9 @@ export function resetModuleStoresToDefault({
     if (resetGrooveTemplates) {
         hydrateGrooveTemplates({ templates: [], assignments: [] });
     }
-    hydrateYeastState(undefined);
+    if (resetYeastState) {
+        hydrateYeastState(undefined);
+    }
     tempoMapStore.set({ changes: [] });
     timeSignatureMapStore.set({ changes: [] });
     setSidechainRoutes([]);
