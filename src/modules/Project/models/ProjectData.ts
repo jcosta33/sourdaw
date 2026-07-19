@@ -59,15 +59,7 @@ export type ProjectData = {
 };
 
 export type ProjectAdjustmentEffectType =
-    | 'eq'
-    | 'compressor'
-    | 'reverb'
-    | 'delay'
-    | 'saturation'
-    | 'filter'
-    | 'stereo-width'
-    | 'volume'
-    | 'pan';
+    'eq' | 'compressor' | 'reverb' | 'delay' | 'saturation' | 'filter' | 'stereo-width' | 'volume' | 'pan';
 
 export type ProjectAdjustmentParameter = {
     name: string;

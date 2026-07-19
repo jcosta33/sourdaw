@@ -22,7 +22,7 @@ describe('TrackNode', () => {
     let deps: TrackNodeDeps;
 
     beforeEach(() => {
-        ctx = createMockAudioContext() as any;
+        ctx = createMockAudioContext();
 
         (global as any).AudioWorkletNode = class {
             port = { postMessage: vi.fn() };

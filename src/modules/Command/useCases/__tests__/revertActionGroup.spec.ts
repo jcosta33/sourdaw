@@ -9,7 +9,7 @@ const mocks = vi.hoisted(() => ({
         value: {
             past: [] as UndoEntry[],
             future: [] as UndoEntry[],
-        } as import('../../stores/undoStore').UndoStoreState | null,
+        },
     },
     undoStoreSet: vi.fn<(state: import('../../stores/undoStore').UndoStoreState) => void>(),
     executeAppAction: vi.fn<typeof import('../executeAppAction').executeAppAction>().mockResolvedValue(undefined),

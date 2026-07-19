@@ -24,7 +24,7 @@ describe('applyGrooveToClip', () => {
             { id: 'n1', startBeat: 0, velocity: 100, pitch: 60 }, // On grid (step 0)
             { id: 'n2', startBeat: 0.5, velocity: 100, pitch: 64 }, // On grid (step 2 if division is 0.25)
         ];
-        mocks.midiStoreValue.value = { notesByClipId: { c1: mockNotes } } as any;
+        mocks.midiStoreValue.value = { notesByClipId: { c1: mockNotes } };
 
         const mockGroove = {
             gridDivision: 0.25,
@@ -53,7 +53,7 @@ describe('applyGrooveToClip', () => {
     });
 
     it('respects the amount parameter', () => {
-        mocks.midiStoreValue.value = { notesByClipId: { c1: [{ id: 'n1', startBeat: 0, velocity: 100 }] } } as any;
+        mocks.midiStoreValue.value = { notesByClipId: { c1: [{ id: 'n1', startBeat: 0, velocity: 100 }] } };
         const mockGroove = {
             gridDivision: 0.25,
             offsets: [{ gridPosition: 0, timingOffset: 0.2, velocityScale: 1.5 }],

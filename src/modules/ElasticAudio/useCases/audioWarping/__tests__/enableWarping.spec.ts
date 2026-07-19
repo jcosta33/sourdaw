@@ -20,7 +20,7 @@ vi.mock('../../../stores/audioWarp', () => ({
 describe('enableWarping', () => {
     beforeEach(() => {
         vi.clearAllMocks();
-        mocks.audioWarpStoreValue.value = { clipSettings: new Map(), defaultAlgorithm: 'beats' } as any;
+        mocks.audioWarpStoreValue.value = { clipSettings: new Map(), defaultAlgorithm: 'beats' };
     });
 
     it('enables warping for a clip and initializes settings if missing', () => {

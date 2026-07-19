@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-import { defaultTransportState, type TransportState } from '../../../models/TransportState';
+import { defaultTransportState } from '../../../models/TransportState';
 import { getTransportState } from '../../../repositories/transport/getTransportState';
 import { updateTransportState } from '../../../repositories/transport/updateTransportState';
 import { setPreRollBars } from '../setPreRollBars';
@@ -30,7 +30,7 @@ describe('setPreRollBars', () => {
 
     it('should not update when transport state is missing', () => {
         const update = vi.fn();
-        vi.mocked(getTransportState).mockReturnValue(null as unknown as TransportState);
+        vi.mocked(getTransportState).mockReturnValue(null);
         vi.mocked(updateTransportState).mockImplementation(update);
 
         setPreRollBars(2);

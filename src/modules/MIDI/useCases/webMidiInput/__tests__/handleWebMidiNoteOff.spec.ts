@@ -69,7 +69,7 @@ function make_dependencies(
         stepRecordNoteOff: () => {},
         eventBus: { emit: () => Promise.resolve(), on: () => () => {} },
         ...overrides,
-    } as unknown as HandleWebMidiNoteOffDependencies;
+    };
 }
 
 describe('handleWebMidiNoteOff', () => {
@@ -116,9 +116,9 @@ describe('handleWebMidiNoteOff', () => {
 
     it('should route Yeast note-off events through the rack to the instrument', async () => {
         const fermenter_note_off = vi.fn<(note: number) => void>();
-        const process_realtime_midi_input = vi.fn(
-            async (): Promise<TestMidiEvent[]> => [{ timeSamples: 0, kind: { type: 'noteOff', channel: 0, note: 67 } }]
-        );
+        const process_realtime_midi_input = vi.fn(async (): Promise<TestMidiEvent[]> => [
+            { timeSamples: 0, kind: { type: 'noteOff', channel: 0, note: 67 } },
+        ]);
         const fn = handleWebMidiNoteOff._factory(
             make_dependencies({
                 getTrackStoreState: () => ({
@@ -159,9 +159,9 @@ describe('handleWebMidiNoteOff', () => {
 
     it('releases a Yeast note on its originating track after selection changes', async () => {
         const fermenter_note_off = vi.fn<(note: number) => void>();
-        const process_realtime_midi_input = vi.fn(
-            async (): Promise<TestMidiEvent[]> => [{ timeSamples: 0, kind: { type: 'noteOff', channel: 0, note: 67 } }]
-        );
+        const process_realtime_midi_input = vi.fn(async (): Promise<TestMidiEvent[]> => [
+            { timeSamples: 0, kind: { type: 'noteOff', channel: 0, note: 67 } },
+        ]);
         const fn = handleWebMidiNoteOff._factory(
             make_dependencies({
                 getTrackStoreState: () => ({

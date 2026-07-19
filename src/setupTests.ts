@@ -171,7 +171,7 @@ function createMinimalBaseAudioContext(): {
     suspend: () => Promise<void>;
 } {
     const stubNode = {
-        connect: (): AudioNode => stubNode as unknown as AudioNode,
+        connect: (): AudioNode => stubNode,
         disconnect: (): void => {},
     } as unknown as AudioNode;
 
@@ -206,7 +206,7 @@ function createMinimalBaseAudioContext(): {
     return {
         state: 'running',
         destination: stubNode as unknown as AudioDestinationNode,
-        audioWorklet: { addModule: async (): Promise<void> => {} } as unknown as AudioWorklet,
+        audioWorklet: { addModule: async (): Promise<void> => {} },
         createGain,
         createAnalyser,
         resume: async (): Promise<void> => {},
@@ -216,13 +216,13 @@ function createMinimalBaseAudioContext(): {
 
 globalThis.AudioContext = class AudioContextMock {
     constructor(_options?: AudioContextOptions) {
-        return createMinimalBaseAudioContext() as unknown as AudioContext;
+        return createMinimalBaseAudioContext();
     }
 } as unknown as typeof AudioContext;
 
 globalThis.OfflineAudioContext = class OfflineAudioContextMock {
     constructor(_channels?: number, _length?: number, _sampleRate?: number) {
-        return createMinimalBaseAudioContext() as unknown as OfflineAudioContext;
+        return createMinimalBaseAudioContext();
     }
 } as unknown as typeof OfflineAudioContext;
 

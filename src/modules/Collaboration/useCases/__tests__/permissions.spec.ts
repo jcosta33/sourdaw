@@ -2,9 +2,10 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 type StoreShape = { isHost: boolean; localPeerId: string; peers: { id: string; isHost: boolean }[] };
 
-const storeState = vi.hoisted(() => ({
-    value: { isHost: true, localPeerId: 'local', peers: [] } as StoreShape,
-}));
+const storeState = vi.hoisted(() => {
+    const value: StoreShape = { isHost: true, localPeerId: 'local', peers: [] };
+    return { value };
+});
 
 vi.mock('../../stores/collaborationStore', () => ({
     collaborationStore: {

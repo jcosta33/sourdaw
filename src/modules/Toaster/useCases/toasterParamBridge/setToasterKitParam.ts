@@ -46,7 +46,7 @@ export function setToasterKitParam<Key extends keyof typeof KIT_PARAM_MAP>(
     key: Key,
     value: ToasterKit[Key]
 ): void {
-    updateKit(deviceId, { [key]: value } as Partial<ToasterKit>);
+    updateKit(deviceId, { [key]: value });
 
     const ref = findDeviceRef(deviceId);
     if (!ref) {
@@ -59,7 +59,7 @@ export function setToasterKitParam<Key extends keyof typeof KIT_PARAM_MAP>(
     // already holds the authoritative latest value (updateKit above); only the
     // last value sampled before the frame fires reaches the worklet.
     const cacheKey = `${deviceId}_${key}`;
-    kitLatest.set(cacheKey, { paramName, value: value as number });
+    kitLatest.set(cacheKey, { paramName, value });
     if (!kitPending.has(cacheKey)) {
         kitPending.set(
             cacheKey,

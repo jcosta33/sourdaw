@@ -23,7 +23,7 @@ describe('scratchPadCrud', () => {
     });
 
     it('addScratchPadSection appends a section', () => {
-        mockValue = { sections: [] } as unknown as ScratchPadStoreState;
+        mockValue = { sections: [] };
         addScratchPadSection(0, 4, 'A', '#fff');
         expect(mockSet).toHaveBeenCalledTimes(1);
         const next = mockSet.mock.calls[0]![0] as ScratchPadStoreState;

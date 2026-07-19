@@ -28,7 +28,7 @@ describe('InputSelector', () => {
 
     beforeEach(() => {
         vi.clearAllMocks();
-        vi.mocked(getAudioDevices).mockResolvedValue(mockDevices as never);
+        vi.mocked(getAudioDevices).mockResolvedValue(mockDevices);
     });
 
     it('should render correctly after fetching devices', async () => {

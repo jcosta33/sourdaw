@@ -92,9 +92,7 @@ export const InspectorPanel = ({ style }: InspectorPanelProps): ReactElement => 
             className="transition-[width,min-width] duration-200 ease-out"
             style={{
                 ...style,
-                width: isDeviceView
-                    ? Math.max((style?.width as number) ?? 260, 320)
-                    : ((style?.width as number) ?? 260),
+                width: isDeviceView ? Math.max((style?.width as number) ?? 260, 320) : (style?.width ?? 260),
                 minWidth: isDeviceView ? 300 : 200,
             }}
             aria-label="Inspector panel"

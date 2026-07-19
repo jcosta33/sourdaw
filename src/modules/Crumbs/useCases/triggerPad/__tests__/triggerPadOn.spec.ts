@@ -1,15 +1,15 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-const mocks = vi.hoisted(() => ({
-    padStoreValue: {
-        value: { inst1: { pads: [{ midiNote: 60 }, { midiNote: 62 }] } } as Record<
-            string,
-            { pads: Array<{ midiNote: number }> }
-        > | null,
-    },
-    crumbsNoteOn: vi.fn(),
-    warn: vi.fn(),
-}));
+const mocks = vi.hoisted(() => {
+    const padStoreValue: { value: Record<string, { pads: Array<{ midiNote: number }> }> | null } = {
+        value: { inst1: { pads: [{ midiNote: 60 }, { midiNote: 62 }] } },
+    };
+    return {
+        padStoreValue,
+        crumbsNoteOn: vi.fn(),
+        warn: vi.fn(),
+    };
+});
 
 vi.mock('../../../stores/padStore', () => ({
     padStore: {

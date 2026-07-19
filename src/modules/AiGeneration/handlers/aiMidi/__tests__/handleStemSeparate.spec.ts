@@ -197,7 +197,7 @@ describe('handleStemSeparate', () => {
         });
 
         const vocalsBuffer = {} as AudioBuffer;
-        mocks.getCachedAudioBuffer.mockReturnValue({} as AudioBuffer);
+        mocks.getCachedAudioBuffer.mockReturnValue({});
         mocks.audioBufferToWav.mockReturnValue(new ArrayBuffer(10));
         mocks.separateStems.mockResolvedValue({ vocals: vocalsBuffer });
         mocks.addTrack.mockReturnValue({ id: 't-new' });
@@ -220,7 +220,7 @@ describe('handleStemSeparate', () => {
         mocks.getTrackStoreState.mockReturnValue({
             tracks: [{ clips: [{ id: 'c1', type: 'audio', audioBufferId: 'buf1' }] }],
         });
-        mocks.getCachedAudioBuffer.mockReturnValue({} as AudioBuffer);
+        mocks.getCachedAudioBuffer.mockReturnValue({});
         mocks.separateStems.mockRejectedValue(new Error('Oops'));
 
         await expect(handleStemSeparate.execute({ type: 'stemSeparate', payload: { clipId: 'c1' } })).rejects.toThrow(

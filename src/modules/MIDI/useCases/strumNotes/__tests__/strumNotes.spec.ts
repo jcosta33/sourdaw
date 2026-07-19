@@ -25,7 +25,7 @@ describe('strumNotes', () => {
             { id: 'nMid', pitch: 64, startBeat: 4 },
             { id: 'nLow', pitch: 60, startBeat: 4 },
         ];
-        mocks.midiStoreValue.value = { notesByClipId: { c1: mockNotes } } as any;
+        mocks.midiStoreValue.value = { notesByClipId: { c1: mockNotes } };
 
         strumNotes('c1', ['nHigh', 'nMid', 'nLow'], 0.1, 'up');
 
@@ -52,7 +52,7 @@ describe('strumNotes', () => {
             { id: 'nHigh', pitch: 72, startBeat: 0 },
             { id: 'nLow', pitch: 60, startBeat: 0 },
         ];
-        mocks.midiStoreValue.value = { notesByClipId: { c1: mockNotes } } as any;
+        mocks.midiStoreValue.value = { notesByClipId: { c1: mockNotes } };
 
         strumNotes('c1', ['nHigh', 'nLow'], 0.05, 'down');
 
@@ -71,7 +71,7 @@ describe('strumNotes', () => {
     });
 
     it('bails if less than 2 notes provided', () => {
-        mocks.midiStoreValue.value = { notesByClipId: { c1: [{ id: 'n1' }] } } as any;
+        mocks.midiStoreValue.value = { notesByClipId: { c1: [{ id: 'n1' }] } };
         expect(strumNotes('c1', ['n1'])).toBeNull();
     });
 });

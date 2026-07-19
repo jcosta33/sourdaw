@@ -3,11 +3,14 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { dsoEditorState } from '../../../stores/dsoEditorState';
 import { buildProjectSummary } from '../buildProjectSummary';
 
-const mocks = vi.hoisted(() => ({
-    trackStoreValue: { value: null as unknown },
-    transportStoreValue: { value: null as unknown },
-    workspaceStoreValue: { value: null as unknown },
-}));
+const mocks = vi.hoisted(() => {
+    const trackStoreValue: { value: unknown } = { value: null };
+    return {
+        trackStoreValue,
+        transportStoreValue: { value: null },
+        workspaceStoreValue: { value: null },
+    };
+});
 
 vi.mock('#/modules/Arrangement/stores', () => ({
     trackStore: {

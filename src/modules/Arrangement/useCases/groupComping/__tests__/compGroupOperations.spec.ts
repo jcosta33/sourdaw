@@ -26,7 +26,7 @@ describe('compGroupOperations', () => {
     });
 
     it('createCompGroup appends a group using injected id generation', () => {
-        mockValue = { groups: [], activeGroupId: null, defaultCrossfade: 0.125 } as GroupCompingState;
+        mockValue = { groups: [], activeGroupId: null, defaultCrossfade: 0.125 };
 
         createCompGroup('My Group', ['a', 'b']);
 

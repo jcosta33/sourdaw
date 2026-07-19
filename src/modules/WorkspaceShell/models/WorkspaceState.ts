@@ -88,7 +88,7 @@ export const defaultWorkspaceState: WorkspaceState = {
     rippleEditing: false,
     dualViewOpen: false,
     sessionViewWidth: 320,
-    automationVisibility: 'hidden' as AutomationVisibility,
+    automationVisibility: 'hidden',
     automationSubLanes: {},
     scratchPadOpen: false,
     scratchPadHeight: 120,

@@ -160,12 +160,12 @@ describe('KneadEditor', () => {
 
         afterEach(() => {
             // Restore the default useStore stub for the outer suite's tests.
-            vi.mocked(useStore).mockImplementation(((_store: unknown, fallback: unknown) => fallback ?? {}) as never);
+            vi.mocked(useStore).mockImplementation((_store: unknown, fallback: unknown) => fallback ?? {});
             vi.mocked(useTracks).mockReturnValue({ tracks: [] } as never);
         });
 
         it('does not re-trigger analysis once a contour exists but blobs are empty', () => {
-            vi.mocked(useStore).mockImplementation(((_store: unknown, fallback: unknown) => {
+            vi.mocked(useStore).mockImplementation((_store: unknown, fallback: unknown) => {
                 // The kneadStore read: analysed-but-empty terminal state.
                 if (fallback && typeof fallback === 'object' && 'isAnalyzing' in fallback) {
                     return {
@@ -177,7 +177,7 @@ describe('KneadEditor', () => {
                     };
                 }
                 return fallback ?? {};
-            }) as never);
+            });
 
             render(<KneadEditor {...defaultProps} />);
 
@@ -186,7 +186,7 @@ describe('KneadEditor', () => {
         });
 
         it('triggers analysis when no contour has been computed yet', () => {
-            vi.mocked(useStore).mockImplementation(((_store: unknown, fallback: unknown) => {
+            vi.mocked(useStore).mockImplementation((_store: unknown, fallback: unknown) => {
                 if (fallback && typeof fallback === 'object' && 'isAnalyzing' in fallback) {
                     return {
                         activeClipId: null,
@@ -197,7 +197,7 @@ describe('KneadEditor', () => {
                     };
                 }
                 return fallback ?? {};
-            }) as never);
+            });
 
             render(<KneadEditor {...defaultProps} />);
 
@@ -243,7 +243,7 @@ describe('KneadEditor', () => {
         });
 
         const installAnalyzedState = (clipState: KneadClipState): void => {
-            vi.mocked(useStore).mockImplementation(((_store: unknown, fallback: unknown) => {
+            vi.mocked(useStore).mockImplementation((_store: unknown, fallback: unknown) => {
                 if (fallback && typeof fallback === 'object' && 'isAnalyzing' in fallback) {
                     return {
                         activeClipId: null,
@@ -258,7 +258,7 @@ describe('KneadEditor', () => {
                 }
                 // projectStore read (no fallback provided by the component)
                 return { keyRoot: 0, scaleName: 'major' };
-            }) as never);
+            });
         };
 
         const lastUpdater = (): ((state: KneadClipState) => KneadClipState) => {
@@ -273,7 +273,7 @@ describe('KneadEditor', () => {
         });
 
         afterEach(() => {
-            vi.mocked(useStore).mockImplementation(((_store: unknown, fallback: unknown) => fallback ?? {}) as never);
+            vi.mocked(useStore).mockImplementation((_store: unknown, fallback: unknown) => fallback ?? {});
             vi.mocked(useTracks).mockReturnValue({ tracks: [] } as never);
         });
 

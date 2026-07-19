@@ -39,7 +39,7 @@ function make_dependencies(overrides: Partial<HandleWebMidiCCDependencies> = {})
         getTrackStoreState: () => ({ tracks: [], selectedTrackId: null }),
         eventBus: { emit: () => Promise.resolve(), on: () => () => {} },
         ...overrides,
-    } as unknown as HandleWebMidiCCDependencies;
+    };
 }
 
 describe('handleWebMidiCC', () => {

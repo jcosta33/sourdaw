@@ -69,9 +69,7 @@ describe('removeTrack', () => {
     });
 
     it('should return early when track id is unknown', () => {
-        vi.mocked(getTrackState).mockReturnValue({ tracks: [], selectedTrackId: null } as unknown as ReturnType<
-            typeof getTrackState
-        >);
+        vi.mocked(getTrackState).mockReturnValue({ tracks: [], selectedTrackId: null });
         vi.mocked(getTrackById).mockReturnValue(undefined);
 
         removeTrack('missing');
@@ -94,7 +92,7 @@ describe('removeTrack', () => {
         vi.mocked(getTrackState).mockReturnValue({
             tracks: [track as never],
             selectedTrackId: 't1',
-        } as unknown as ReturnType<typeof getTrackState>);
+        });
         vi.mocked(getTrackById).mockReturnValue(track as never);
 
         removeTrack('t1');
@@ -119,7 +117,7 @@ describe('removeTrack', () => {
         vi.mocked(getTrackState).mockReturnValue({
             tracks: [bus as never],
             selectedTrackId: null,
-        } as unknown as ReturnType<typeof getTrackState>);
+        });
         vi.mocked(getTrackById).mockReturnValue(bus as never);
 
         removeTrack('bus-1');
@@ -150,7 +148,7 @@ describe('removeTrack', () => {
         vi.mocked(getTrackState).mockReturnValue({
             tracks: [master as never],
             selectedTrackId: null,
-        } as unknown as ReturnType<typeof getTrackState>);
+        });
         vi.mocked(getTrackById).mockReturnValue(master as never);
 
         removeTrack('master');
@@ -170,7 +168,7 @@ describe('removeTrack', () => {
         vi.mocked(getTrackState).mockReturnValue({
             tracks: [folder as never],
             selectedTrackId: null,
-        } as unknown as ReturnType<typeof getTrackState>);
+        });
         vi.mocked(getTrackById).mockReturnValue(folder as never);
 
         removeTrack('folder-1');
@@ -190,7 +188,7 @@ describe('removeTrack', () => {
         vi.mocked(getTrackState).mockReturnValue({
             tracks: [track as never],
             selectedTrackId: null,
-        } as unknown as ReturnType<typeof getTrackState>);
+        });
         vi.mocked(getTrackById).mockReturnValue(track as never);
 
         removeTrack('legacy-track');

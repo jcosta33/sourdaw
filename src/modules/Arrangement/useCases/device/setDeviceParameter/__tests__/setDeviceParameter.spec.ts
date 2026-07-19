@@ -5,13 +5,16 @@ import { setDeviceParameter } from '../setDeviceParameter';
 import type { Track } from '#/modules/Arrangement/models/Track';
 import type { TrackState } from '../../../../repositories/track/getTrackState';
 
-const mocks = vi.hoisted(() => ({
-    getTrackState: vi.fn<typeof import('../../../../repositories/track/getTrackState').getTrackState>(),
-    updateTrack: vi.fn<typeof import('../../../../repositories/track/updateTrack').updateTrack>(),
-    transportStoreValue: { isPlaying: false } as unknown,
-    updateDeviceParam: vi.fn<typeof import('#/modules/AudioEngine/useCases').updateDeviceParam>(),
-    recordAutomationValue: vi.fn<typeof import('#/modules/Automation/useCases').recordAutomationValue>(),
-}));
+const mocks = vi.hoisted(() => {
+    const transportStoreValue: unknown = { isPlaying: false };
+    return {
+        getTrackState: vi.fn<typeof import('../../../../repositories/track/getTrackState').getTrackState>(),
+        updateTrack: vi.fn<typeof import('../../../../repositories/track/updateTrack').updateTrack>(),
+        transportStoreValue,
+        updateDeviceParam: vi.fn<typeof import('#/modules/AudioEngine/useCases').updateDeviceParam>(),
+        recordAutomationValue: vi.fn<typeof import('#/modules/Automation/useCases').recordAutomationValue>(),
+    };
+});
 
 vi.mock('../../../../repositories/track/getTrackState', () => ({
     getTrackState: mocks.getTrackState,

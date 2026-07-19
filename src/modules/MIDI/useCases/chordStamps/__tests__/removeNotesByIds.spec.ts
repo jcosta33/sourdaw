@@ -11,16 +11,19 @@ type MidiStoreValue = {
     pitchBendByClipId: Record<string, unknown>;
 };
 
-const mocks = vi.hoisted(() => ({
-    midiStoreValue: {
+const mocks = vi.hoisted(() => {
+    const midiStoreValue: { value: MidiStoreValue | null } = {
         value: {
             notesByClipId: {},
             ccByClipId: {},
             pitchBendByClipId: {},
-        } as MidiStoreValue | null,
-    },
-    midiStoreSet: vi.fn<(newState: MidiStoreValue) => void>(),
-}));
+        },
+    };
+    return {
+        midiStoreValue,
+        midiStoreSet: vi.fn<(newState: MidiStoreValue) => void>(),
+    };
+});
 
 vi.mock('../../../stores/midiStore', () => ({
     midiStore: {

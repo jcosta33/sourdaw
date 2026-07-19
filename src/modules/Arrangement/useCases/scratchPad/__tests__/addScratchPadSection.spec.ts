@@ -5,7 +5,7 @@ import { addScratchPadSection } from '../scratchPadCrud/addScratchPadSection';
 import type { ScratchPadStoreState } from '../../../stores/scratchPadStore';
 
 const mocks = vi.hoisted(() => ({
-    scratchPadStoreValue: { value: { sections: [] } as { sections: unknown[] } | null },
+    scratchPadStoreValue: { value: { sections: [] } },
     scratchPadStoreSet: vi.fn<(...args: unknown[]) => void>(),
 }));
 

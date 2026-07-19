@@ -1,6 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-import { type Preferences } from '../../models/Preferences';
 import { setTrackHeight } from '../setTrackHeight';
 
 const mocks = vi.hoisted(() => ({
@@ -21,7 +20,7 @@ describe('setTrackHeight', () => {
     beforeEach(() => vi.clearAllMocks());
 
     it('updates trackHeight in preferencesStore', () => {
-        mocks.preferencesStoreValue.value = { trackHeight: 'normal' } as unknown as Preferences;
+        mocks.preferencesStoreValue.value = { trackHeight: 'normal' };
 
         setTrackHeight('compact');
 

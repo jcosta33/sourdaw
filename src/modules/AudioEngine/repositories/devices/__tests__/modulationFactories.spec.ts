@@ -11,7 +11,7 @@ describe('modulationFactories', () => {
     let ctx: ReturnType<typeof createMockAudioContext>;
 
     beforeEach(() => {
-        ctx = createMockAudioContext() as any;
+        ctx = createMockAudioContext();
         vi.clearAllMocks();
     });
 

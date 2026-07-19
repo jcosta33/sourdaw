@@ -2,9 +2,10 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { getActiveLayersAtBeat } from '../getActiveLayersAtBeat';
 
-const mocks = vi.hoisted(() => ({
-    adjustmentLayerStoreValue: { value: { layers: [] } as { layers: unknown[] } | null },
-}));
+const mocks = vi.hoisted(() => {
+    const adjustmentLayerStoreValue: { value: { layers: unknown[] } | null } = { value: { layers: [] } };
+    return { adjustmentLayerStoreValue };
+});
 
 vi.mock('#/modules/Arrangement/stores/adjustmentLayer', () => ({
     adjustmentLayerStore: {
@@ -27,7 +28,7 @@ describe('getActiveLayersAtBeat', () => {
                 { id: 'l3', enabled: true, regions: [{ startBeat: 16, endBeat: 32 }] }, // Covers 16-32
                 { id: 'l4', enabled: false, regions: [] }, // Disabled
             ],
-        } as any;
+        };
 
         const activeAt4 = getActiveLayersAtBeat(4);
         expect(activeAt4.map((length) => length.id)).toEqual(['l1', 'l2']);

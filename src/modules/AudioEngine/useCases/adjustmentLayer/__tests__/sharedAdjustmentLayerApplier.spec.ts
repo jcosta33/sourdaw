@@ -59,7 +59,7 @@ function makeLayer(overrides?: Partial<AdjustmentLayer>): AdjustmentLayer {
         mix: 1,
         color: 'oklch(0.4 0.1 180)',
         ...overrides,
-    } as AdjustmentLayer;
+    };
 }
 
 function setTracks(tracks: Array<{ id: string; gain: number; pan: number }>): void {
@@ -125,7 +125,7 @@ describe('getSharedAdjustmentLayerApplier', () => {
             id: 'layer-pan',
             effectType: 'pan',
             parameters: [{ name: 'Pan', value: 100, min: -100, max: 100, unit: '%' }],
-        } as Partial<AdjustmentLayer>);
+        });
 
         applier.applyLayers({ activeLayers: [panLayer], beat: 0 });
 
@@ -138,15 +138,15 @@ describe('getSharedAdjustmentLayerApplier', () => {
         applier.applyLayers({ activeLayers: [makeLayer()], beat: 0 });
         mocks.engine.setTrackGain.mockClear();
 
-        applier.applyLayers({ activeLayers: [makeLayer({ enabled: false } as Partial<AdjustmentLayer>)], beat: 1 });
+        applier.applyLayers({ activeLayers: [makeLayer({ enabled: false })], beat: 1 });
 
         expect(mocks.engine.setTrackGain).toHaveBeenCalledWith('t1', 0.8);
     });
 
     it('multiplies stacked volume layers over the same track', () => {
         const applier = getSharedAdjustmentLayerApplier();
-        const first = makeLayer({ id: 'layer-a' } as Partial<AdjustmentLayer>);
-        const second = makeLayer({ id: 'layer-b' } as Partial<AdjustmentLayer>);
+        const first = makeLayer({ id: 'layer-a' });
+        const second = makeLayer({ id: 'layer-b' });
 
         applier.applyLayers({ activeLayers: [first, second], beat: 0 });
 
@@ -162,7 +162,7 @@ describe('getSharedAdjustmentLayerApplier', () => {
             { id: 't3', gain: 1, pan: 0 },
         ]);
         const applier = getSharedAdjustmentLayerApplier();
-        const layer = makeLayer({ affectedTrackIds: [], insertionIndex: 1 } as Partial<AdjustmentLayer>);
+        const layer = makeLayer({ affectedTrackIds: [], insertionIndex: 1 });
 
         const records = applier.applyLayers({ activeLayers: [layer], beat: 0 });
 
@@ -176,7 +176,7 @@ describe('getSharedAdjustmentLayerApplier', () => {
             id: 'layer-eq',
             effectType: 'eq',
             parameters: [{ name: 'High Gain', value: 4, min: -12, max: 12, unit: 'dB' }],
-        } as Partial<AdjustmentLayer>);
+        });
 
         applier.applyLayers({ activeLayers: [eqLayer, makeLayer()], beat: 5 });
 

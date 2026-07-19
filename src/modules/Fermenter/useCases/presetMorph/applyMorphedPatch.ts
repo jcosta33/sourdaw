@@ -25,10 +25,10 @@ function getFindDeviceRef() {
 function flushMorph(_compositeKey: string, entry: MorphBatchEntry): void {
     const { updateDevicePatch, persistDevicePatch } = getFermenterDependencies();
     if (updateDevicePatch) {
-        updateDevicePatch(entry.ref.trackId, entry.ref.deviceId, entry.patch as Record<string, unknown>);
+        updateDevicePatch(entry.ref.trackId, entry.ref.deviceId, entry.patch);
     }
     if (persistDevicePatch) {
-        persistDevicePatch(entry.ref.deviceId, entry.patch as Record<string, unknown>);
+        persistDevicePatch(entry.ref.deviceId, entry.patch);
     }
 }
 

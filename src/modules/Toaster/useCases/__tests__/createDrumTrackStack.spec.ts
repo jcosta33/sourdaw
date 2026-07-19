@@ -67,7 +67,7 @@ describe('createDrumTrackStack', () => {
         const committed: { tracks: Array<{ id: string; kind: string; parentId: string | null }> }[] = [];
         vi.mocked(getTrackStoreState).mockReturnValue({ tracks: [], selectedTrackId: null });
         vi.mocked(setTrackStoreState).mockImplementation((next) => {
-            committed.push(next as (typeof committed)[number]);
+            committed.push(next);
         });
 
         const eventBus = createMock<EventBusShape>();

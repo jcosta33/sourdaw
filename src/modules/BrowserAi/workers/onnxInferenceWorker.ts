@@ -489,7 +489,7 @@ self.onmessage = async (event: MessageEvent<WorkerRequest>): Promise<void> => {
                 } else if (val.data instanceof Uint8Array) {
                     dataType = 'bool';
                 }
-                resultOutputs[key] = { data: val.data as Float32Array, dims: val.dims, type: dataType };
+                resultOutputs[key] = { data: val.data, dims: val.dims, type: dataType };
             }
             const response: WorkerResponse = {
                 type: 'inference-result',

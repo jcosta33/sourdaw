@@ -159,7 +159,7 @@ describe('grinderStore', () => {
                     name: 'Scene',
                     // engineMode is a string enum on the patch; a numeric override must not
                     // overwrite it with a raw number. gain is numeric and must apply.
-                    paramOverrides: { gain: 8, engineMode: 2 as unknown as number },
+                    paramOverrides: { gain: 8, engineMode: 2 },
                     bypassStates: {},
                 },
             ],

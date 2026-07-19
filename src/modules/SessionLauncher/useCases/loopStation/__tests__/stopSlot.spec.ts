@@ -47,7 +47,7 @@ describe('stopSlot', () => {
                     fadeBeats: 0.125,
                 },
             ],
-        } as LoopStationState;
+        };
 
         stopSlot('s1');
 

@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, type Mock } from 'vitest';
 
 import { addChordEvent } from '../addChordEvent';
 
@@ -7,8 +7,8 @@ type ChordTrackState = {
     events: Array<{ id: string; beat: number; root: number; quality: string; duration: number }>;
 };
 
-const mocks = vi.hoisted(() => ({
-    state: { enabled: true, events: [] } as ChordTrackState | null,
+const mocks = vi.hoisted((): { state: ChordTrackState | null; set: Mock<(newState: ChordTrackState) => void> } => ({
+    state: { enabled: true, events: [] },
     set: vi.fn<(newState: ChordTrackState) => void>(),
 }));
 

@@ -1,18 +1,20 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, type Mock } from 'vitest';
 
 import { moveChordEvent } from '../moveChordEvent';
 
-const mocks = vi.hoisted(() => ({
+type ChordTrackState = {
+    enabled: boolean;
+    events: Array<{ id: string; beat: number; root: number; quality: 'major'; duration: number }>;
+};
+
+const mocks = vi.hoisted((): { state: ChordTrackState | null; set: Mock } => ({
     state: {
         enabled: true,
         events: [
-            { id: 'a', beat: 4, root: 0, quality: 'major' as const, duration: 4 },
-            { id: 'b', beat: 8, root: 2, quality: 'major' as const, duration: 4 },
+            { id: 'a', beat: 4, root: 0, quality: 'major', duration: 4 },
+            { id: 'b', beat: 8, root: 2, quality: 'major', duration: 4 },
         ],
-    } as {
-        enabled: boolean;
-        events: Array<{ id: string; beat: number; root: number; quality: 'major'; duration: number }>;
-    } | null,
+    },
     set: vi.fn(),
 }));
 

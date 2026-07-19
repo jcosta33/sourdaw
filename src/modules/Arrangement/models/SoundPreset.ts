@@ -5,16 +5,7 @@ export type DevicePreset = {
 };
 
 export type SoundPresetCategory =
-    | 'synth'
-    | 'bass'
-    | 'pad'
-    | 'lead'
-    | 'keys'
-    | 'drums'
-    | 'fx'
-    | 'vocal'
-    | 'guitar'
-    | 'strings';
+    'synth' | 'bass' | 'pad' | 'lead' | 'keys' | 'drums' | 'fx' | 'vocal' | 'guitar' | 'strings';
 
 export type SoundPreset = {
     id: string;

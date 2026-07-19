@@ -17,12 +17,10 @@ describe('createHmrPersistentState', () => {
     });
 
     it('returns a freshly-constructed state on first call', () => {
-        const factory = vi.fn(
-            (): TestState => ({
-                counter: 7,
-                label: 'first',
-            })
-        );
+        const factory = vi.fn((): TestState => ({
+            counter: 7,
+            label: 'first',
+        }));
 
         const state = createHmrPersistentState<TestState>('test.first', factory);
 

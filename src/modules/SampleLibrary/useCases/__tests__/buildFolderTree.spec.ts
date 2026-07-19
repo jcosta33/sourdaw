@@ -56,7 +56,7 @@ describe('buildFolderTree', () => {
     });
 
     it('bails if root not found', () => {
-        mocks.libraryStoreValue.value = { roots: [], samples: [] } as any;
+        mocks.libraryStoreValue.value = { roots: [], samples: [] };
         buildFolderTree('r1');
         expect(mocks.setFolderTree).not.toHaveBeenCalled();
     });

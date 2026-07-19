@@ -8,7 +8,7 @@
  * To add a new preset, add it to the appropriate category file under ./presets/.
  */
 
-import { type SoundPreset, type DevicePreset } from '../../models/SoundPreset';
+import { type SoundPreset } from '../../models/SoundPreset';
 
 import { bassPresets } from './bassPresets';
 import { EXPANDED_FX_PRESETS, EXPANDED_SYNTH_PRESETS } from './expandedPresets';
@@ -32,7 +32,7 @@ const DRUM_KIT_PRESETS: SoundPreset[] = [
         description: 'Classic 808-style drum kit with deep kick, snappy snare, and crisp hats',
         trackKind: 'midi',
         devices: [
-            { type: 'builtin-drum-kit', name: '808 Kit', parameterValues: { kit: 0 } } as DevicePreset,
+            { type: 'builtin-drum-kit', name: '808 Kit', parameterValues: { kit: 0 } },
             comp('Drum Comp', { 'comp-threshold': -15, 'comp-ratio': 4, 'comp-attack': 1, 'comp-release': 80 }),
         ],
         tags: ['808', 'trap', 'hip-hop', 'electronic', 'drum-kit'],
@@ -47,7 +47,7 @@ const DRUM_KIT_PRESETS: SoundPreset[] = [
         description: 'Warm analog-style drum kit with round kick and soft hats',
         trackKind: 'midi',
         devices: [
-            { type: 'builtin-drum-kit', name: 'Analog Kit', parameterValues: { kit: 1 } } as DevicePreset,
+            { type: 'builtin-drum-kit', name: 'Analog Kit', parameterValues: { kit: 1 } },
             eq('Drum EQ', { 'eq-low-gain': 3, 'eq-low-freq': 80, 'eq-high-gain': 2, 'eq-high-freq': 10000 }),
         ],
         tags: ['analog', 'vintage', 'warm', 'drum-kit'],
@@ -62,7 +62,7 @@ const DRUM_KIT_PRESETS: SoundPreset[] = [
         description: 'Aggressive electronic drum kit with high resonance and punchy transients',
         trackKind: 'midi',
         devices: [
-            { type: 'builtin-drum-kit', name: 'Electronic Kit', parameterValues: { kit: 2 } } as DevicePreset,
+            { type: 'builtin-drum-kit', name: 'Electronic Kit', parameterValues: { kit: 2 } },
             comp('Punch Comp', { 'comp-threshold': -10, 'comp-ratio': 6, 'comp-attack': 0.5, 'comp-release': 60 }),
             eq('Presence EQ', { 'eq-mid-gain': 3, 'eq-mid-freq': 3000, 'eq-high-gain': 4, 'eq-high-freq': 8000 }),
         ],
@@ -78,7 +78,7 @@ const DRUM_KIT_PRESETS: SoundPreset[] = [
         description: 'Natural-sounding synthesized acoustic drum kit with room character',
         trackKind: 'midi',
         devices: [
-            { type: 'builtin-drum-kit', name: 'Acoustic Kit', parameterValues: { kit: 3 } } as DevicePreset,
+            { type: 'builtin-drum-kit', name: 'Acoustic Kit', parameterValues: { kit: 3 } },
             reverb('Room', { 'rev-size': 0.3, 'rev-decay': 1.2, 'rev-mix': 0.15 }),
             eq('Natural EQ', { 'eq-low-gain': 2, 'eq-low-freq': 100, 'eq-mid-gain': -1, 'eq-mid-freq': 500 }),
         ],

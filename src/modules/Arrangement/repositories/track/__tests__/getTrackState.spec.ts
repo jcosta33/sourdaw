@@ -28,7 +28,7 @@ describe('getTrackState', () => {
 
     it('should return the whole track store state', () => {
         const state = { tracks: [], selectedTrackId: 't1' };
-        trackStore.set(state as { tracks: []; selectedTrackId: string });
+        trackStore.set(state);
         expect(getTrackState()).toEqual(state);
     });
 });

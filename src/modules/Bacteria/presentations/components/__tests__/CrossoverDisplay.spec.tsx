@@ -102,18 +102,17 @@ describe('CrossoverDisplay', () => {
             />
         );
         const root = container.firstChild as HTMLElement;
-        root.getBoundingClientRect = () =>
-            ({
-                left: 0,
-                top: 0,
-                width: 400,
-                height: 80,
-                right: 400,
-                bottom: 80,
-                x: 0,
-                y: 0,
-                toJSON: () => ({}),
-            }) as DOMRect;
+        root.getBoundingClientRect = () => ({
+            left: 0,
+            top: 0,
+            width: 400,
+            height: 80,
+            right: 400,
+            bottom: 80,
+            x: 0,
+            y: 0,
+            toJSON: () => ({}),
+        });
 
         const handle = container.querySelector('.cursor-ew-resize') as HTMLElement;
         fireEvent.pointerDown(handle, { clientX: 100, clientY: 10, pointerId: 1 });

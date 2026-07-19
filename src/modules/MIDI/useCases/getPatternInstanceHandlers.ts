@@ -4,8 +4,7 @@ import { handleCreatePatternInstance } from '../handlers/patternInstance/handleC
 import { handleDetachPatternInstance } from '../handlers/patternInstance/handleDetachPatternInstance';
 
 type PatternInstanceAppAction =
-    | Extract<AppAction, { type: 'createPatternInstance' }>
-    | Extract<AppAction, { type: 'detachPatternInstance' }>;
+    Extract<AppAction, { type: 'createPatternInstance' }> | Extract<AppAction, { type: 'detachPatternInstance' }>;
 
 export type PatternInstanceHandlersMap = {
     [Action in PatternInstanceAppAction as Action['type']]: ActionHandler<Action>;

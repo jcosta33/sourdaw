@@ -265,7 +265,7 @@ export const handleWebMidiNoteOn = inject({
                             engine.context.currentTime,
                             60,
                             velocity
-                        ) as OscillatorNode & { _env?: GainNode };
+                        );
                     }
                 }
             } else {

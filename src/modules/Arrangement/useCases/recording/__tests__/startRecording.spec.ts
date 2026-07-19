@@ -2,15 +2,18 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { startRecording } from '../startRecording';
 
-const mocks = vi.hoisted(() => ({
-    getTrackState: vi.fn(),
-    setTrackState: vi.fn(),
-    transportStoreValue: null as unknown,
-    addTakeLane: vi.fn(),
-    addTake: vi.fn(),
-    getTakeLaneForTrack: vi.fn(),
-    activeRecordingRef: { current: [] },
-}));
+const mocks = vi.hoisted(() => {
+    const transportStoreValue: unknown = null;
+    return {
+        getTrackState: vi.fn(),
+        setTrackState: vi.fn(),
+        transportStoreValue,
+        addTakeLane: vi.fn(),
+        addTake: vi.fn(),
+        getTakeLaneForTrack: vi.fn(),
+        activeRecordingRef: { current: [] },
+    };
+});
 
 vi.mock('../../../repositories/track/getTrackState', () => ({
     getTrackState: mocks.getTrackState,

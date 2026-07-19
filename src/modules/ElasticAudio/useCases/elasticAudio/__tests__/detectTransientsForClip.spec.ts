@@ -4,7 +4,7 @@ const SAMPLE_RATE = 44100;
 
 const mocks = vi.hoisted(() => ({
     bufferCacheGet: vi.fn(),
-    transportValue: { tempo: 120 } as { tempo: number } | null,
+    transportValue: { tempo: 120 },
     trackStoreValue: { tracks: [] as Array<{ clips: Array<unknown> }> },
     addWarpMarkerCalls: [] as Array<{ clipId: string; originalBeat: number; options?: unknown }>,
     warpStates: new Map<

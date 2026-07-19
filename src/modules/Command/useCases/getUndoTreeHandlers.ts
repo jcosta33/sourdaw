@@ -4,8 +4,7 @@ import { handleLabelUndoBranch } from '../handlers/undoTree/handleLabelUndoBranc
 import { handleToggleUndoTree } from '../handlers/undoTree/handleToggleUndoTree';
 
 type UndoTreeAppAction =
-    | Extract<AppAction, { type: 'toggleUndoTree' }>
-    | Extract<AppAction, { type: 'labelUndoBranch' }>;
+    Extract<AppAction, { type: 'toggleUndoTree' }> | Extract<AppAction, { type: 'labelUndoBranch' }>;
 
 export type UndoTreeHandlersMap = {
     [Action in UndoTreeAppAction as Action['type']]: ActionHandler<Action>;

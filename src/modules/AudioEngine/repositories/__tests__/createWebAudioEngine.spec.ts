@@ -608,7 +608,7 @@ describe('AudioEngine', () => {
                 deviceId,
                 type: 'builtin-sidechain-compressor',
                 inputNode: makeStripNode() as unknown as AudioNode,
-            } as never);
+            });
         }
 
         it('wiring the same route twice creates exactly one sidechain connection', () => {

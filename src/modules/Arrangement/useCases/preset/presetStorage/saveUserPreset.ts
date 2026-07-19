@@ -4,16 +4,7 @@ import { readStoredPresets } from './readStoredPresets';
 import { writeStoredPresets } from './writeStoredPresets';
 
 type SaveUserPresetCategory =
-    | 'synth'
-    | 'bass'
-    | 'pad'
-    | 'lead'
-    | 'keys'
-    | 'drums'
-    | 'fx'
-    | 'vocal'
-    | 'guitar'
-    | 'strings';
+    'synth' | 'bass' | 'pad' | 'lead' | 'keys' | 'drums' | 'fx' | 'vocal' | 'guitar' | 'strings';
 
 type SaveUserPresetDevice = {
     type: string;

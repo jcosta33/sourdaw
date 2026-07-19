@@ -52,7 +52,7 @@ beforeEach(() => {
                 message.type === 'initialize'
             ) {
                 void Promise.resolve().then(() => {
-                    this.onmessage?.({ data: { type: 'ready', protocolVersion: 1 } } as MessageEvent);
+                    this.onmessage?.(new MessageEvent('message', { data: { type: 'ready', protocolVersion: 1 } }));
                     return undefined;
                 });
             }
@@ -63,7 +63,7 @@ beforeEach(() => {
         terminate = vi.fn();
 
         constructor() {
-            installedWorkers.push(this as unknown as FakeWorker);
+            installedWorkers.push(this);
         }
     } as unknown as typeof Worker;
 });

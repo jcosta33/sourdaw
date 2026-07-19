@@ -2,11 +2,14 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { Container } from '#/infra/di/Container';
 
-const { mockUpdateDeviceParam, mockPersistDeviceParam, mockTrackStoreValue } = vi.hoisted(() => ({
-    mockUpdateDeviceParam: vi.fn(),
-    mockPersistDeviceParam: vi.fn(),
-    mockTrackStoreValue: { value: null as unknown },
-}));
+const { mockUpdateDeviceParam, mockPersistDeviceParam, mockTrackStoreValue } = vi.hoisted(() => {
+    const mockTrackStoreValue: { value: unknown } = { value: null };
+    return {
+        mockUpdateDeviceParam: vi.fn(),
+        mockPersistDeviceParam: vi.fn(),
+        mockTrackStoreValue,
+    };
+});
 
 vi.mock('#/modules/AudioEngine/useCases', () => ({
     updateDeviceParam: mockUpdateDeviceParam,
