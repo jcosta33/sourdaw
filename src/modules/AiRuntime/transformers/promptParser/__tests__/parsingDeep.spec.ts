@@ -1,18 +1,53 @@
 import { describe, it, expect } from 'vitest';
 
-import { buildPresetContext, tryParameterizedPath } from '../parsing';
+import { type ProjectContext } from '../../../models/ProjectContext';
+import { type RuntimeAction } from '../../../models/RuntimeAction';
+import { buildPresetContext, findTrack, isComplexPrompt, requiresConfirmation, tryParameterizedPath } from '../parsing';
 
-const ctx = {
-    tracks: [
-        { id: 't1', name: 'Drums', kind: 'audio', clips: [{ id: 'c1', type: 'midi', name: 'Beat' }] },
-        { id: 't2', name: 'Bass', kind: 'midi', clips: [] },
-    ],
-    selectedTrackId: 't1',
-    selectedClipId: 'c1',
-    tempo: 120,
-    scale: 'major',
-    key: 'C',
-} as never;
+function makeCtx(overrides: Partial<ProjectContext> = {}): ProjectContext {
+    return {
+        tempo: 120,
+        timeSignature: [4, 4],
+        tracks: [
+            {
+                id: 't1',
+                name: 'Drums',
+                kind: 'audio',
+                muted: false,
+                soloed: false,
+                armed: false,
+                gain: 1,
+                pan: 0,
+                clipCount: 1,
+                deviceCount: 0,
+                clips: [{ id: 'c1', name: 'Beat', type: 'midi', startBeat: 0, endBeat: 4, noteCount: 8 }],
+                devices: [],
+            },
+            {
+                id: 't2',
+                name: 'Bass',
+                kind: 'midi',
+                muted: false,
+                soloed: false,
+                armed: false,
+                gain: 1,
+                pan: 0,
+                clipCount: 0,
+                deviceCount: 0,
+                clips: [],
+                devices: [],
+            },
+        ],
+        selectedTrackId: 't1',
+        selectedClipId: 'c1',
+        selectedClipIds: ['c1'],
+        activeView: 'arrange',
+        playheadPosition: 0,
+        ...overrides,
+    };
+}
+
+const ctx = makeCtx();
 
 describe('tryParameterizedPath', () => {
     it('parses tempo command', () => {
@@ -93,12 +128,12 @@ describe('tryParameterizedPath', () => {
     });
 
     it('returns empty when no track selected for gain', () => {
-        const result = tryParameterizedPath('set gain to 50%', { ...ctx, selectedTrackId: null } as never);
+        const result = tryParameterizedPath('set gain to 50%', makeCtx({ selectedTrackId: null }));
         expect(result).toEqual([]);
     });
 
     it('returns empty when no clip selected for transpose', () => {
-        const result = tryParameterizedPath('transpose up 3', { ...ctx, selectedClipId: null } as never);
+        const result = tryParameterizedPath('transpose up 3', makeCtx({ selectedClipId: null }));
         expect(result).toEqual([]);
     });
 
@@ -123,9 +158,64 @@ describe('buildPresetContext', () => {
     });
 
     it('handles no selection', () => {
-        const result = buildPresetContext({ ...ctx, selectedTrackId: null, selectedClipId: null } as never);
+        const result = buildPresetContext(makeCtx({ selectedTrackId: null, selectedClipId: null }));
         expect(result.selectedTrackId).toBeUndefined();
         expect(result.selectedClipId).toBeUndefined();
         expect(result.trackCount).toBe(2);
+    });
+});
+
+describe('isComplexPrompt', () => {
+    it('flags numeric track counts', () => {
+        expect(isComplexPrompt('add 4 tracks')).toBe(true);
+    });
+
+    it('flags sequential "then" prompts', () => {
+        expect(isComplexPrompt('set tempo to 120 then add a track')).toBe(true);
+    });
+
+    it('flags sound-design descriptors', () => {
+        expect(isComplexPrompt('make it sound warm and lo-fi')).toBe(true);
+    });
+
+    it('treats a single parameter command as simple', () => {
+        expect(isComplexPrompt('set tempo to 120')).toBe(false);
+    });
+});
+
+describe('findTrack', () => {
+    it('matches by exact name (case-insensitive)', () => {
+        expect(findTrack(ctx, 'drums')?.id).toBe('t1');
+    });
+
+    it('strips a trailing "track" suffix', () => {
+        expect(findTrack(ctx, 'Bass track')?.id).toBe('t2');
+    });
+
+    it('falls back to a partial match', () => {
+        expect(findTrack(ctx, 'Dru')?.id).toBe('t1');
+    });
+
+    it('returns undefined when nothing matches', () => {
+        expect(findTrack(ctx, 'Strings')).toBeUndefined();
+    });
+});
+
+describe('requiresConfirmation', () => {
+    it('is false for an empty action list', () => {
+        expect(requiresConfirmation([])).toBe(false);
+    });
+
+    it('is false for non-destructive actions', () => {
+        const actions: RuntimeAction[] = [{ type: 'setTempo', payload: { bpm: 120 } }];
+        expect(requiresConfirmation(actions)).toBe(false);
+    });
+
+    it('is true when a destructive action is present', () => {
+        const actions: RuntimeAction[] = [
+            { type: 'setTempo', payload: { bpm: 120 } },
+            { type: 'removeClip', payload: { clipId: 'c1' } },
+        ];
+        expect(requiresConfirmation(actions)).toBe(true);
     });
 });
