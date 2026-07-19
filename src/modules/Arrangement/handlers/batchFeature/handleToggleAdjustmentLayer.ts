@@ -1,11 +1,21 @@
 import { createHandler } from '#/utils/createHandler';
 
+import { commitAdjustmentLayerMutation } from '../../useCases/adjustmentLayer/commitAdjustmentLayerMutation';
 import { toggleAdjustmentLayer } from '../../useCases/adjustmentLayer/toggleAdjustmentLayer';
+
+import { createAdjustmentLayerMutationInverse } from './createAdjustmentLayerMutationInverse';
 
 export const handleToggleAdjustmentLayer = createHandler<'toggleAdjustmentLayer'>({
     execute: (a) => {
-        toggleAdjustmentLayer(a.payload.layerId);
+        commitAdjustmentLayerMutation({
+            mutation: () => {
+                toggleAdjustmentLayer(a.payload.layerId);
+            },
+        });
     },
-    describe: () => ({ label: 'Toggle Adjustment Layer' }),
+    describe: (action) => ({
+        label: 'Toggle Adjustment Layer',
+        inverseAction: createAdjustmentLayerMutationInverse(action),
+    }),
     undoable: true,
 });

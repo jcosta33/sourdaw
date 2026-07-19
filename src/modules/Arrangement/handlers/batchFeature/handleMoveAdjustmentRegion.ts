@@ -1,11 +1,21 @@
 import { createHandler } from '#/utils/createHandler';
 
+import { commitAdjustmentLayerMutation } from '../../useCases/adjustmentLayer/commitAdjustmentLayerMutation';
 import { moveAdjustmentRegion } from '../../useCases/adjustmentLayer/moveAdjustmentRegion';
+
+import { createAdjustmentLayerMutationInverse } from './createAdjustmentLayerMutationInverse';
 
 export const handleMoveAdjustmentRegion = createHandler<'moveAdjustmentRegion'>({
     execute: (a) => {
-        moveAdjustmentRegion(a.payload.regionId, a.payload.startBeat, a.payload.endBeat);
+        commitAdjustmentLayerMutation({
+            mutation: () => {
+                moveAdjustmentRegion(a.payload.regionId, a.payload.startBeat, a.payload.endBeat);
+            },
+        });
     },
-    describe: () => ({ label: 'Move Adjustment Region' }),
+    describe: (action) => ({
+        label: 'Move Adjustment Region',
+        inverseAction: createAdjustmentLayerMutationInverse(action),
+    }),
     undoable: true,
 });

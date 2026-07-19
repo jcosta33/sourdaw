@@ -21,7 +21,7 @@ describe('handleCreateAdjustmentLayer', () => {
             payload: { name: 'Master EQ', effectType: 'EQ' },
         });
 
-        expect(mocks.createAdjustmentLayer).toHaveBeenCalledWith('Master EQ', 'EQ');
+        expect(mocks.createAdjustmentLayer).toHaveBeenCalledWith('Master EQ', 'EQ', 0, expect.any(String));
     });
 
     it('provides a description', () => {

@@ -10,7 +10,8 @@ import {
 export function createAdjustmentLayer(
     name: string,
     effectType: AdjustmentEffectType,
-    insertionIndex: number = 0
+    insertionIndex: number = 0,
+    layerId: string = getNextLayerId()
 ): void {
     const state = adjustmentLayerStore.value;
     if (!state) {
@@ -18,10 +19,10 @@ export function createAdjustmentLayer(
     }
 
     const layer: AdjustmentLayer = {
-        id: getNextLayerId(),
+        id: layerId,
         name,
         effectType,
-        parameters: [...(EFFECT_PRESETS[effectType] ?? [])],
+        parameters: [...EFFECT_PRESETS[effectType]],
         affectedTrackIds: [],
         insertionIndex,
         regions: [],
