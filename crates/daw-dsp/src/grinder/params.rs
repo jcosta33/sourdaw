@@ -46,3 +46,65 @@ pub fn linear_to_db(linear: f32) -> f32 {
         20.0 * linear.log10()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::{GrinderAutomatableParamDomain, GRINDER_AUTOMATABLE_PARAM_CONTRACT};
+
+    #[test]
+    fn automatable_param_contract() {
+        let actual = GRINDER_AUTOMATABLE_PARAM_CONTRACT
+            .iter()
+            .map(|param| {
+                (
+                    param.name,
+                    param.minimum,
+                    param.maximum,
+                    param.default,
+                    param.domain,
+                )
+            })
+            .collect::<Vec<_>>();
+
+        assert_eq!(
+            actual,
+            vec![
+                ("gain", 0.0, 10.0, 5.0, GrinderAutomatableParamDomain::Raw),
+                ("bass", 0.0, 10.0, 5.0, GrinderAutomatableParamDomain::Raw),
+                ("mid", 0.0, 10.0, 5.0, GrinderAutomatableParamDomain::Raw),
+                ("treble", 0.0, 10.0, 5.0, GrinderAutomatableParamDomain::Raw),
+                ("presence", 0.0, 10.0, 5.0, GrinderAutomatableParamDomain::Raw),
+                ("resonance", 0.0, 10.0, 5.0, GrinderAutomatableParamDomain::Raw),
+                ("master", 0.0, 10.0, 5.0, GrinderAutomatableParamDomain::Raw),
+                (
+                    "inputGain",
+                    -24.0,
+                    24.0,
+                    0.0,
+                    GrinderAutomatableParamDomain::DecibelsToLinear,
+                ),
+                (
+                    "outputGain",
+                    -24.0,
+                    24.0,
+                    0.0,
+                    GrinderAutomatableParamDomain::DecibelsToLinear,
+                ),
+                (
+                    "transformerDrive",
+                    0.0,
+                    1.0,
+                    0.3,
+                    GrinderAutomatableParamDomain::Raw,
+                ),
+                (
+                    "negFeedback",
+                    0.0,
+                    1.0,
+                    0.5,
+                    GrinderAutomatableParamDomain::Raw,
+                ),
+            ]
+        );
+    }
+}
