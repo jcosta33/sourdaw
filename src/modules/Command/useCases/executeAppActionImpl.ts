@@ -12,13 +12,20 @@ import { registerActionReplayCapability, revokeActionReplayCapability } from '..
 import { getHandler } from '../stores/handlerRegistry';
 
 import { actionHistoryMetadataPort } from './actionHistoryMetadataPort';
+import { type CommandMutationOwner } from './commandMutationOwner';
 import { commitUndoEntry } from './commitUndoEntry';
 import { createUndoEntry } from './createUndoEntry';
 import { recordAction } from './macro/recording/recordAction';
+import { runCommandMutationUnderOwner } from './runCommandMutationUnderOwner';
 import { runCommandTransition } from './runCommandTransition';
+import { runLegacyCommandMutationUnderOwner } from './runLegacyCommandMutationUnderOwner';
 import { traceAppAction } from './traceAppAction';
 
-type ExecuteAppActionImpl = (action: AppAction, options?: ExecuteOptions) => Promise<void>;
+type ExecuteAppActionImpl = (
+    action: AppAction,
+    options: ExecuteOptions | undefined,
+    owner: CommandMutationOwner
+) => Promise<void>;
 
 function normalize_action_execution_result(result: void | ActionExecutionResult): ActionExecutionResult {
     if (!result) {
@@ -29,7 +36,11 @@ function normalize_action_execution_result(result: void | ActionExecutionResult)
 
 export const executeAppActionImpl: ExecuteAppActionImpl = inject({ logger })(
     ({ logger }) =>
-        async function executeAppActionImpl(action: AppAction, options?: ExecuteOptions): Promise<void> {
+        async function executeAppActionImpl(
+            action: AppAction,
+            options: ExecuteOptions | undefined,
+            owner: CommandMutationOwner
+        ): Promise<void> {
             traceAppAction(action.type, options?.source ?? 'manual');
 
             const handler = getHandler(action);
@@ -61,8 +72,13 @@ export const executeAppActionImpl: ExecuteAppActionImpl = inject({ logger })(
             try {
                 const execution = runSynchronousProjectCommit(() =>
                     handler.execute(action, {
-                        executeAppAction: executeAppActionImpl,
-                        runCommandTransition,
+                        executeAppAction: (nested_action, nested_options) =>
+                            runCommandMutationUnderOwner(owner, () =>
+                                executeAppActionImpl(nested_action, nested_options, owner)
+                            ),
+                        runCommandTransition: (transition) =>
+                            runCommandMutationUnderOwner(owner, () => runCommandTransition(transition)),
+                        runLegacyCommandMutation: (mutation) => runLegacyCommandMutationUnderOwner(owner, mutation),
                         runSynchronousProjectCommit,
                     })
                 );

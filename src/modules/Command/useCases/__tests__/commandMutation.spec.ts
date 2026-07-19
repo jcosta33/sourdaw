@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { configureAutomergeStoragePort } from '#/infra/store/storage/createAutomergeStorage';
-import { type ActionHandler, type AppAction } from '#/utils/handlerContract';
+import { type ActionExecutionContext, type ActionHandler, type AppAction } from '#/utils/handlerContract';
 
 import { createEmptyTree } from '../../models/UndoTree';
 import {
@@ -17,7 +17,6 @@ import { executeAppAction } from '../executeAppAction';
 import { getUndoRedoHandlers } from '../getUndoRedoHandlers';
 import { runCommandTransitionExclusive } from '../runCommandTransitionExclusive';
 import { runLegacyCommandMutation } from '../runLegacyCommandMutation';
-import { runLegacyCommandMutationUnderOwner } from '../runLegacyCommandMutationUnderOwner';
 import { undo } from '../undo';
 import { undoToIndex } from '../undoToIndex';
 
@@ -106,8 +105,8 @@ describe('commandMutation', () => {
         const composite_handler: ActionHandler<TogglePlaybackAction> = {
             undoable: false,
             execute: async (_action, context) => {
-                if (!context) {
-                    throw new Error('Expected Command execution context');
+                if (!context?.runLegacyCommandMutation) {
+                    throw new Error('Expected legacy Command mutation capability');
                 }
                 await context.executeAppAction({ type: 'setSnapValue', payload: { value: 3 } });
             },
@@ -122,12 +121,15 @@ describe('commandMutation', () => {
         expect(undoStore.value?.future).toEqual([]);
     });
 
-    it('lets an async handler commit legacy mutation and history through its existing lease', async () => {
+    it('lets an async handler commit legacy mutation and history through its exact owner', async () => {
         const composite_handler: ActionHandler<TogglePlaybackAction> = {
             undoable: false,
-            execute: async () => {
+            execute: async (_action, context) => {
+                if (!context?.runLegacyCommandMutation) {
+                    throw new Error('Expected legacy Command mutation capability');
+                }
                 await Promise.resolve();
-                await runLegacyCommandMutationUnderOwner((commitUndo) => {
+                await context.runLegacyCommandMutation((commitUndo) => {
                     const previous = value;
                     value = 4;
                     commitUndo(
@@ -156,6 +158,40 @@ describe('commandMutation', () => {
         expect(value).toBe(4);
         expect(undoStore.value?.past).toHaveLength(1);
         expect(undoStore.value?.past[0]?.label).toBe('Async handler legacy edit');
+    });
+
+    it('rejects a stale nested mutation capability after its exact owner settles', async () => {
+        type LegacyRunner = NonNullable<ActionExecutionContext['runLegacyCommandMutation']>;
+        let capture_runner!: (runner: LegacyRunner) => void;
+        const captured_runner = new Promise<LegacyRunner>((resolve) => {
+            capture_runner = resolve;
+        });
+        const capture_handler: ActionHandler<TogglePlaybackAction> = {
+            undoable: false,
+            execute: (_action, context) => {
+                if (!context?.runLegacyCommandMutation) {
+                    throw new Error('Expected legacy Command mutation capability');
+                }
+                capture_runner(context.runLegacyCommandMutation);
+            },
+            describe: () => ({ label: 'Capture owner' }),
+        };
+        registerHandlerMap({ togglePlayback: capture_handler });
+
+        await executeAppAction({ type: 'togglePlayback' });
+        const stale_runner = await captured_runner;
+        const replacement = executeAppAction({ type: 'setSnapValue', payload: { value: gated_value } });
+        await inverse_started;
+
+        await expect(
+            stale_runner(() => {
+                value = 99;
+            })
+        ).rejects.toThrow('owner');
+
+        expect(value).toBe(0);
+        release_inverse();
+        await replacement;
     });
 
     it('resets linear and tree history inside one exclusive transition', async () => {
@@ -214,6 +250,7 @@ describe('commandMutation', () => {
             );
         }).then(() => {
             legacy_settled = true;
+            return undefined;
         });
 
         await Promise.resolve();
@@ -228,13 +265,24 @@ describe('commandMutation', () => {
         expect(undoStore.value?.past[0]?.label).toBe('Legacy snap edit');
     });
 
-    it('does not publish nested legacy history while replaying a callback entry', async () => {
+    it('awaits detached replay work without publishing nested legacy history', async () => {
+        let release_nested!: () => void;
+        const nested_gate = new Promise<void>((resolve) => {
+            release_nested = resolve;
+        });
+        let mark_nested_started!: () => void;
+        const nested_started = new Promise<void>((resolve) => {
+            mark_nested_started = resolve;
+        });
+
         await runLegacyCommandMutation((commitUndo) => {
             value = 1;
             commitUndo(
                 'Outer legacy edit',
-                () => {
-                    void runLegacyCommandMutation((commitNestedUndo) => {
+                (runReplayMutation) => {
+                    void runReplayMutation(async (commitNestedUndo) => {
+                        mark_nested_started();
+                        await nested_gate;
                         value = 0;
                         commitNestedUndo(
                             'Nested inverse',
@@ -253,12 +301,46 @@ describe('commandMutation', () => {
             );
         });
 
-        await undo();
+        let undo_settled = false;
+        const undoing = undo().then(() => {
+            undo_settled = true;
+            return undefined;
+        });
+        await nested_started;
+        await Promise.resolve();
+
+        expect(undo_settled).toBe(false);
+        release_nested();
+        await undoing;
 
         expect(value).toBe(0);
         expect(undoStore.value?.past).toEqual([]);
         expect(undoStore.value?.future).toHaveLength(1);
         expect(undoStore.value?.future[0]?.label).toBe('Outer legacy edit');
+    });
+
+    it('drains more than twelve thousand synchronous failures without recursion or a wedged owner', async () => {
+        let release_first!: () => void;
+        const first_gate = new Promise<void>((resolve) => {
+            release_first = resolve;
+        });
+        const first = runCommandTransitionExclusive(async () => {
+            await first_gate;
+        });
+        const failures = Array.from({ length: 12_001 }, (_, index) =>
+            runCommandTransitionExclusive(() => {
+                throw new Error(`failure-${index}`);
+            })
+        );
+        const final = runCommandTransitionExclusive(() => Promise.resolve('drained'));
+
+        release_first();
+        await first;
+        const results = await Promise.allSettled(failures);
+
+        expect(results.every((result) => result.status === 'rejected')).toBe(true);
+        await expect(final).resolves.toBe('drained');
+        await expect(runCommandTransitionExclusive(() => Promise.resolve('still-live'))).resolves.toBe('still-live');
     });
 
     it('holds one mutation lease while navigating to a history unit so a concurrent edit is not consumed', async () => {

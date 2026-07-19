@@ -7,6 +7,8 @@ import {
 import { type UndoEntry } from '../models/UndoEntry';
 import { undoStore } from '../stores/undoStore';
 
+import { type CommandMutationOwner } from './commandMutationOwner';
+import { commandMutationRuntime } from './commandMutationRuntime';
 import { executeAppActionImpl } from './executeAppActionImpl';
 import { recordAction } from './macro/recording/recordAction';
 import { REDO_NOT_APPLIED } from './redoResult';
@@ -35,7 +37,10 @@ function is_adjustment_layer_mutation(action: AppAction): action is AdjustmentLa
     return adjustment_layer_mutation_types.has(action.type);
 }
 
-async function replay_adjustment_transaction(entries: readonly UndoEntry[]): Promise<UndoEntry[] | null> {
+async function replay_adjustment_transaction(
+    owner: CommandMutationOwner,
+    entries: readonly UndoEntry[]
+): Promise<UndoEntry[] | null> {
     const actions: AdjustmentLayerMutationAction[] = [];
     for (const entry of entries) {
         if (entry.kind !== 'action' || !is_adjustment_layer_mutation(entry.action)) {
@@ -52,7 +57,8 @@ async function replay_adjustment_transaction(entries: readonly UndoEntry[]): Pro
             onExecuted: (result) => {
                 inverse_actions = result.inverseActions;
             },
-        }
+        },
+        owner
     );
     if (!inverse_actions || inverse_actions.length !== entries.length) {
         throw new Error('Adjustment-layer batch redo did not prepare a complete inverse');
@@ -68,17 +74,22 @@ async function replay_adjustment_transaction(entries: readonly UndoEntry[]): Pro
     });
 }
 
-async function executeRedo(entry: UndoEntry): Promise<UndoEntry | null> {
+async function executeRedo(owner: CommandMutationOwner, entry: UndoEntry): Promise<UndoEntry | null> {
     if (entry.kind === 'callback') {
-        return runCommandHistoryReplay(entry.redo) !== REDO_NOT_APPLIED ? entry : null;
+        const result = await runCommandHistoryReplay(owner, entry.redo);
+        return result !== REDO_NOT_APPLIED ? entry : null;
     }
     const prepared_undo: { result: HandlerDescribeResult | null } = { result: null };
-    await executeAppActionImpl(entry.action, {
-        skipUndo: true,
-        onUndoPrepared: (result) => {
-            prepared_undo.result = result;
+    await executeAppActionImpl(
+        entry.action,
+        {
+            skipUndo: true,
+            onUndoPrepared: (result) => {
+                prepared_undo.result = result;
+            },
         },
-    });
+        owner
+    );
     return {
         ...entry,
         label: prepared_undo.result?.label ?? entry.label,
@@ -87,7 +98,11 @@ async function executeRedo(entry: UndoEntry): Promise<UndoEntry | null> {
 }
 
 /** Execute one redo while the caller already owns the Command mutation lease. */
-export async function redoUnderMutation(): Promise<void> {
+export async function redoUnderMutation(owner?: CommandMutationOwner): Promise<void> {
+    const mutation_owner = owner ?? commandMutationRuntime.synchronousOwner ?? commandMutationRuntime.activeOwner;
+    if (!mutation_owner) {
+        throw new Error('Redo requires an active Command mutation owner');
+    }
     const state = undoStore.value;
     if (!state || state.future.length === 0) {
         return;
@@ -105,7 +120,10 @@ export async function redoUnderMutation(): Promise<void> {
             group_entries.push(state.future[group_end]!);
             group_end += 1;
         }
-        const redone_group = group_entries.length > 1 ? await replay_adjustment_transaction(group_entries) : null;
+        let redone_group: UndoEntry[] | null = null;
+        if (group_entries.length > 1) {
+            redone_group = await replay_adjustment_transaction(mutation_owner, group_entries);
+        }
         if (redone_group) {
             const new_past = [...state.past, ...redone_group];
             undoStore.set({ past: new_past, future: state.future.slice(group_end) });
@@ -116,7 +134,7 @@ export async function redoUnderMutation(): Promise<void> {
 
     const newFuture = state.future.slice(1);
 
-    const redone_entry = await executeRedo(entry);
+    const redone_entry = await executeRedo(mutation_owner, entry);
     if (!redone_entry) {
         return;
     }

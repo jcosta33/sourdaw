@@ -658,11 +658,30 @@ export type ActionExecutionResult = {
     inverseActions?: AppAction[];
 };
 
+export type LegacyCommandMutationRunner = <Output>(
+    mutation: (commitUndo: CommitLegacyCommandUndo) => Promise<Output> | Output
+) => Promise<Output>;
+
+export type CommandHistoryReplay = (runLegacyCommandMutation: LegacyCommandMutationRunner) => unknown;
+
+export type CommitLegacyCommandUndo = (
+    label: string,
+    undo: CommandHistoryReplay,
+    redo: CommandHistoryReplay,
+    options?: {
+        groupId?: string;
+        groupLabel?: string;
+        source?: 'manual' | 'prompt' | 'voice' | 'ai';
+    }
+) => void;
+
 export type ActionExecutionContext = {
     /** Run a nested action inside the current Command mutation boundary. */
     executeAppAction: (action: AppAction, options?: ExecuteOptions) => Promise<void>;
     /** Run an identity transition without reacquiring the current Command mutation boundary. */
     runCommandTransition: <Output>(transition: (resetCommandHistory: () => void) => Promise<Output>) => Promise<Output>;
+    /** Run a legacy mutation through this exact Command owner, including after await. */
+    runLegacyCommandMutation?: LegacyCommandMutationRunner;
     /** Re-enter this action's owner for one synchronous multi-store CRDT commit. */
     runSynchronousProjectCommit?: <Output>(commit: () => Output) => Output;
 };

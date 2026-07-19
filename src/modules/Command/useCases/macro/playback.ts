@@ -1,5 +1,6 @@
 import { type AppAction } from '#/utils/handlerContract';
 
+import { AppActionCommittedError } from '../../errors/AppActionExecutionError';
 import { macroStore } from '../../stores/macroStore';
 import { executeAppAction } from '../executeAppAction';
 import { generateGroupId } from '../generateGroupId';
@@ -155,8 +156,26 @@ export async function playMacro({ macroId, runExecuteAppAction = executeAppActio
     }
     const { groupId, groupLabel } = generateGroupId(`Macro: ${macro.name}`);
     const identities: ReplayIdentityMap = { layerIds: new Map(), regionIds: new Map() };
+    let committed_progress = false;
 
     for (const action of macro.actions) {
-        await runExecuteAppAction(create_replay_action(action, identities), { groupId, groupLabel });
+        const step_receipt = { applied: false };
+        try {
+            await runExecuteAppAction(create_replay_action(action, identities), {
+                groupId,
+                groupLabel,
+                onExecuted: (result) => {
+                    step_receipt.applied = result.applied;
+                },
+            });
+        } catch (error) {
+            if (error instanceof AppActionCommittedError || !committed_progress) {
+                throw error;
+            }
+            throw new AppActionCommittedError('playMacro', error);
+        }
+        if (step_receipt.applied) {
+            committed_progress = true;
+        }
     }
 }

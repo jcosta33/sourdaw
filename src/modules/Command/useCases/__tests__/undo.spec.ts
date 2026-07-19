@@ -97,7 +97,8 @@ describe('undo', () => {
 
         expect(mocks.executeAppAction).toHaveBeenCalledWith(
             { type: 'toggleRecording' },
-            { skipUndo: true, skipMacroRecording: true }
+            { skipUndo: true, skipMacroRecording: true },
+            expect.any(Object)
         );
         expect(mocks.undoStoreSet).toHaveBeenCalledWith({
             past: [],
@@ -138,7 +139,8 @@ describe('undo', () => {
                     mutations: [second.inverseAction?.payload, first.inverseAction?.payload],
                 },
             },
-            { skipUndo: true, skipMacroRecording: true }
+            { skipUndo: true, skipMacroRecording: true },
+            expect.any(Object)
         );
         expect(mocks.undoStoreSet).toHaveBeenCalledWith({
             past: [previous],
@@ -174,10 +176,14 @@ describe('undo', () => {
 
         expect(domain_value).toBe('partially-undone');
         expect(mocks.executeAppAction).toHaveBeenCalledOnce();
-        expect(mocks.executeAppAction).toHaveBeenCalledWith(newer.inverseAction, {
-            skipUndo: true,
-            skipMacroRecording: true,
-        });
+        expect(mocks.executeAppAction).toHaveBeenCalledWith(
+            newer.inverseAction,
+            {
+                skipUndo: true,
+                skipMacroRecording: true,
+            },
+            expect.any(Object)
+        );
         expect(mocks.undoStoreSet).toHaveBeenCalledWith({ past: [older], future: [newer] });
     });
 
@@ -195,10 +201,14 @@ describe('undo', () => {
         await undo();
 
         expect(mocks.executeAppAction).toHaveBeenCalledOnce();
-        expect(mocks.executeAppAction).toHaveBeenCalledWith(unrelated.inverseAction, {
-            skipUndo: true,
-            skipMacroRecording: true,
-        });
+        expect(mocks.executeAppAction).toHaveBeenCalledWith(
+            unrelated.inverseAction,
+            {
+                skipUndo: true,
+                skipMacroRecording: true,
+            },
+            expect.any(Object)
+        );
         expect(mocks.undoStoreSet).toHaveBeenCalledWith({ past: [adjustment], future: [unrelated] });
     });
 

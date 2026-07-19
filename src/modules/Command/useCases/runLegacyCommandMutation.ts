@@ -1,7 +1,7 @@
 import { runCommandMutationExclusive } from './commandMutation';
-import { isCommandMutationExecutingSynchronously } from './isCommandMutationExecutingSynchronously';
+import { commandMutationRuntime } from './commandMutationRuntime';
 import { type LegacyCommandMutation } from './legacyCommandMutationContract';
-import { runLegacyCommandMutationImpl } from './runLegacyCommandMutationImpl';
+import { runLegacyCommandMutationUnderOwner } from './runLegacyCommandMutationUnderOwner';
 
 /**
  * Own a legacy synchronous domain mutation and its history publication under
@@ -9,8 +9,9 @@ import { runLegacyCommandMutationImpl } from './runLegacyCommandMutationImpl';
  * is idle and is deferred whole when an older action/replay owns the lease.
  */
 export function runLegacyCommandMutation<Output>(mutation: LegacyCommandMutation<Output>): Promise<Output> {
-    if (isCommandMutationExecutingSynchronously()) {
-        return runLegacyCommandMutationImpl(mutation);
+    const synchronous_owner = commandMutationRuntime.synchronousOwner;
+    if (synchronous_owner) {
+        return runLegacyCommandMutationUnderOwner(synchronous_owner, mutation);
     }
-    return runCommandMutationExclusive(() => runLegacyCommandMutationImpl(mutation));
+    return runCommandMutationExclusive((owner) => runLegacyCommandMutationUnderOwner(owner, mutation));
 }

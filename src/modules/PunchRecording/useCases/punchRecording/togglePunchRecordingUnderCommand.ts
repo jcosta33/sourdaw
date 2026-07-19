@@ -1,7 +1,7 @@
-import { runLegacyCommandMutationUnderOwner } from '#/modules/Command/useCases';
+import { type LegacyCommandMutationRunner } from '#/utils/handlerContract';
 
 import { commitTogglePunchRecording } from './commitTogglePunchRecording';
 
-export function togglePunchRecordingUnderCommand(): void {
-    void runLegacyCommandMutationUnderOwner(commitTogglePunchRecording);
+export function togglePunchRecordingUnderCommand(runLegacyCommandMutation: LegacyCommandMutationRunner): Promise<void> {
+    return runLegacyCommandMutation(commitTogglePunchRecording);
 }

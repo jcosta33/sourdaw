@@ -1,11 +1,13 @@
-import { runLegacyCommandMutationUnderOwner } from '#/modules/Command/useCases';
 import { quantizeTransients } from '#/modules/ElasticAudio/useCases';
 import { createHandler } from '#/utils/createHandler';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
 export const handleQuantizeTransients = createHandler<'quantizeTransients'>({
-    execute: async (a) => {
-        const result = await quantizeTransients(a.payload.clipId, runLegacyCommandMutationUnderOwner);
+    execute: async (a, context) => {
+        if (!context?.runLegacyCommandMutation) {
+            throw new Error('Command execution context is required to quantize transients');
+        }
+        const result = await quantizeTransients(a.payload.clipId, context.runLegacyCommandMutation);
         if (!result.ok) {
             const messages: Record<typeof result.reason, string> = {
                 CLIP_NOT_FOUND: 'Clip not found',

@@ -1,9 +1,11 @@
+import { type CommandHistoryReplay } from '#/utils/handlerContract';
+
 import { type CallbackUndoEntry, type UndoSource } from '../models/UndoEntry';
 
 type CreateCallbackUndoEntryInput = {
     label: string;
-    undo: () => void;
-    redo: () => unknown;
+    undo: CommandHistoryReplay;
+    redo: CommandHistoryReplay;
     source?: UndoSource;
 };
 

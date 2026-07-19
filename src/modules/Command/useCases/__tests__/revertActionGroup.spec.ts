@@ -93,7 +93,8 @@ describe('revertActionGroup', () => {
                 type: 'restoreAdjustmentLayerMutationBatch',
                 payload: { mutations: [g2.inverseAction?.payload, g1.inverseAction?.payload] },
             },
-            { skipUndo: true, skipMacroRecording: true }
+            { skipUndo: true, skipMacroRecording: true },
+            expect.any(Object)
         );
         // Group entries are stripped from past and prepended (in order) to future.
         expect(mocks.undoStoreSet).toHaveBeenCalledWith({

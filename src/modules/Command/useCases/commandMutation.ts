@@ -1,4 +1,7 @@
+import { createCommandMutationOwner, type CommandMutationOwner } from './commandMutationOwner';
 import { commandMutationRuntime } from './commandMutationRuntime';
+import { toCommandMutationError } from './toCommandMutationError';
+import { waitForCommandMutationOwner } from './waitForCommandMutationOwner';
 
 /**
  * Command operations read domain/history state, may await handler work, then
@@ -8,51 +11,101 @@ import { commandMutationRuntime } from './commandMutationRuntime';
  * operation instead of reacquiring this lock.
  */
 type PendingMutation = {
-    operation: () => unknown;
+    operation: (owner: CommandMutationOwner) => unknown;
     resolve: (value: unknown) => void;
     reject: (error: unknown) => void;
 };
 
 const pending_mutations: PendingMutation[] = [];
+let drain_scheduled = false;
 
 function startMutation({ operation, resolve, reject }: PendingMutation): void {
-    commandMutationRuntime.mutationActive = true;
-    let result: unknown;
+    const owner = createCommandMutationOwner();
+    commandMutationRuntime.activeOwner = owner;
+    const previous_synchronous_owner = commandMutationRuntime.synchronousOwner;
+    commandMutationRuntime.synchronousOwner = owner;
+    let result: Promise<unknown>;
     try {
         // Start synchronously. Legacy UI mutations historically publish in the
         // initiating turn when no older Command owner is active.
-        commandMutationRuntime.synchronousOwnerDepth += 1;
-        try {
-            result = operation();
-        } finally {
-            commandMutationRuntime.synchronousOwnerDepth -= 1;
-        }
+        result = Promise.resolve(operation(owner));
     } catch (error) {
-        reject(error);
-        finishMutation();
-        return;
+        result = Promise.reject(toCommandMutationError(error));
+    } finally {
+        if (commandMutationRuntime.synchronousOwner === owner) {
+            commandMutationRuntime.synchronousOwner = previous_synchronous_owner;
+        }
     }
 
-    void Promise.resolve(result).then(resolve, reject).finally(finishMutation);
+    void settleMutation({ owner, result, resolve, reject });
 }
 
-function finishMutation(): void {
-    const next = pending_mutations.shift();
-    if (!next) {
-        commandMutationRuntime.mutationActive = false;
+type SettleMutationInput = {
+    owner: CommandMutationOwner;
+    result: Promise<unknown>;
+    resolve: (value: unknown) => void;
+    reject: (error: unknown) => void;
+};
+
+async function settleMutation({ owner, result, resolve, reject }: SettleMutationInput): Promise<void> {
+    let output: unknown;
+    let failure: unknown;
+    let failed = false;
+    try {
+        output = await result;
+    } catch (error) {
+        failed = true;
+        failure = error;
+    }
+
+    try {
+        await waitForCommandMutationOwner(owner);
+    } catch (error) {
+        if (!failed) {
+            failed = true;
+            failure = error;
+        }
+    }
+
+    if (failed) {
+        reject(failure);
+    } else {
+        resolve(output);
+    }
+    finishMutation(owner);
+}
+
+function finishMutation(owner: CommandMutationOwner): void {
+    owner.active = false;
+    if (commandMutationRuntime.activeOwner === owner) {
+        commandMutationRuntime.activeOwner = null;
+    }
+    if (drain_scheduled) {
         return;
     }
-    startMutation(next);
+    drain_scheduled = true;
+    queueMicrotask(() => {
+        drain_scheduled = false;
+        if (commandMutationRuntime.activeOwner) {
+            return;
+        }
+        const next = pending_mutations.shift();
+        if (next) {
+            startMutation(next);
+        }
+    });
 }
 
-export function runCommandMutationExclusive<Output>(operation: () => Promise<Output> | Output): Promise<Output> {
+export function runCommandMutationExclusive<Output>(
+    operation: (owner: CommandMutationOwner) => Promise<Output> | Output
+): Promise<Output> {
     return new Promise<Output>((resolve, reject) => {
         const pending: PendingMutation = {
             operation,
             resolve: (value) => resolve(value as Output),
             reject,
         };
-        if (commandMutationRuntime.mutationActive) {
+        if (commandMutationRuntime.activeOwner) {
             pending_mutations.push(pending);
             return;
         }

@@ -13,6 +13,7 @@ import {
 
 import { actionHistoryMetadataPort } from './actionHistoryMetadataPort';
 import { runCommandMutationExclusive } from './commandMutation';
+import { type CommandMutationOwner } from './commandMutationOwner';
 import { executeAppActionImpl } from './executeAppActionImpl';
 
 type ActionReplayClaim = NonNullable<ReturnType<typeof claimActionReplayCapability>>;
@@ -63,7 +64,7 @@ type RevertActionOutput = Promise<
     { status: 'executed' } | { status: 'executed-unmarked' } | { status: 'reconciled' } | { status: 'unavailable' }
 >;
 
-async function revertActionUnderMutation(entryId: string): RevertActionOutput {
+async function revertActionUnderMutation(owner: CommandMutationOwner, entryId: string): RevertActionOutput {
     const entry = actionHistoryStore.value?.entries.find((history_entry) => history_entry.id === entryId);
     if (!entry) {
         return { status: 'unavailable' };
@@ -93,10 +94,14 @@ async function revertActionUnderMutation(entryId: string): RevertActionOutput {
     }
 
     try {
-        await executeAppActionImpl(claim.inverseAction, {
-            source: entry.source,
-            groupLabel: `Reverted: ${entry.label}`,
-        });
+        await executeAppActionImpl(
+            claim.inverseAction,
+            {
+                source: entry.source,
+                groupLabel: `Reverted: ${entry.label}`,
+            },
+            owner
+        );
     } catch (error) {
         if (error instanceof AppActionCommittedError) {
             let mark_outcome: 'marked' | 'unavailable';
@@ -124,5 +129,5 @@ async function revertActionUnderMutation(entryId: string): RevertActionOutput {
 }
 
 export function revertAction(entryId: string): RevertActionOutput {
-    return runCommandMutationExclusive(() => revertActionUnderMutation(entryId));
+    return runCommandMutationExclusive((owner) => revertActionUnderMutation(owner, entryId));
 }

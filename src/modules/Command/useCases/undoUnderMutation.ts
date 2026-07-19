@@ -1,6 +1,8 @@
 import { type UndoEntry } from '../models/UndoEntry';
 import { undoStore } from '../stores/undoStore';
 
+import { type CommandMutationOwner } from './commandMutationOwner';
+import { commandMutationRuntime } from './commandMutationRuntime';
 import { executeAppActionImpl } from './executeAppActionImpl';
 import { revertUndoEntriesAtomically } from './revertUndoEntriesAtomically';
 import { runCommandHistoryReplay } from './runCommandHistoryReplay';
@@ -12,26 +14,34 @@ function currentEntryId(past: readonly UndoEntry[]): string | null {
 
 type ExecuteUndoInput = {
     entry: UndoEntry;
-    runExecuteAppAction: typeof executeAppActionImpl;
+    owner: CommandMutationOwner;
 };
 
-async function executeUndo({ entry, runExecuteAppAction }: ExecuteUndoInput): Promise<boolean> {
+async function executeUndo({ entry, owner }: ExecuteUndoInput): Promise<boolean> {
     if (entry.kind === 'callback') {
-        runCommandHistoryReplay(entry.undo);
+        await runCommandHistoryReplay(owner, entry.undo);
         return true;
     }
     if (entry.inverseAction) {
-        await runExecuteAppAction(entry.inverseAction, {
-            skipUndo: true,
-            skipMacroRecording: true,
-        });
+        await executeAppActionImpl(
+            entry.inverseAction,
+            {
+                skipUndo: true,
+                skipMacroRecording: true,
+            },
+            owner
+        );
         return true;
     }
     return false;
 }
 
 /** Execute one undo while the caller already owns the Command mutation lease. */
-export async function undoUnderMutation(): Promise<void> {
+export async function undoUnderMutation(owner?: CommandMutationOwner): Promise<void> {
+    const mutation_owner = owner ?? commandMutationRuntime.synchronousOwner ?? commandMutationRuntime.activeOwner;
+    if (!mutation_owner) {
+        throw new Error('Undo requires an active Command mutation owner');
+    }
     const state = undoStore.value;
     if (!state || state.past.length === 0) {
         return;
@@ -48,7 +58,7 @@ export async function undoUnderMutation(): Promise<void> {
         }
         const newPast = state.past.slice(0, index + 1);
 
-        const undone = await revertUndoEntriesAtomically(groupEntries);
+        const undone = await revertUndoEntriesAtomically(mutation_owner, groupEntries);
         if (!undone) {
             return;
         }
@@ -63,7 +73,7 @@ export async function undoUnderMutation(): Promise<void> {
 
     const undone = await executeUndo({
         entry: lastEntry,
-        runExecuteAppAction: executeAppActionImpl,
+        owner: mutation_owner,
     });
     if (!undone) {
         return;

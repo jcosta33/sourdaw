@@ -1,6 +1,16 @@
 import { describe, expect, it, vi } from 'vitest';
 
+import { type CommitLegacyCommandUndo } from '#/utils/handlerContract';
+
 import { createCallbackUndoEntry } from '../createCallbackUndoEntry';
+
+function commit_undo(): void {}
+
+function run_legacy_mutation<Output>(
+    mutation: (commitUndo: CommitLegacyCommandUndo) => Promise<Output> | Output
+): Promise<Output> {
+    return Promise.resolve(mutation(commit_undo));
+}
 
 describe('createCallbackUndoEntry', () => {
     it('should build a callback undo entry with undo and redo functions', () => {
@@ -14,8 +24,8 @@ describe('createCallbackUndoEntry', () => {
         expect(entry.redo).toBe(redo);
         expect(entry.source).toBe('ai');
 
-        entry.undo();
-        entry.redo();
+        entry.undo(run_legacy_mutation);
+        entry.redo(run_legacy_mutation);
 
         expect(undo).toHaveBeenCalledTimes(1);
         expect(redo).toHaveBeenCalledTimes(1);

@@ -106,10 +106,14 @@ describe('revertAction', () => {
         expect(getActionReplayStatus(entry.id)).toEqual({ status: 'ready' });
         expect(await revertAction(entry.id)).toEqual({ status: 'executed' });
         expect(order).toEqual(['execute', 'mark']);
-        expect(mocks.execute_app_action).toHaveBeenCalledWith(inverse_action, {
-            source: entry.source,
-            groupLabel: `Reverted: ${entry.label}`,
-        });
+        expect(mocks.execute_app_action).toHaveBeenCalledWith(
+            inverse_action,
+            {
+                source: entry.source,
+                groupLabel: `Reverted: ${entry.label}`,
+            },
+            expect.any(Object)
+        );
         expect(mocks.mark_reverted).toHaveBeenCalledWith({
             entryId: entry.id,
             expectedFingerprint: '["entry-1","Set tempo","setTempo","manual",10,null,null]',

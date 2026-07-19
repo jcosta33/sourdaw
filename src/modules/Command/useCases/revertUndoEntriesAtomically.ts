@@ -2,18 +2,19 @@ import { type AppAction } from '#/utils/handlerContract';
 
 import { type UndoEntry } from '../models/UndoEntry';
 
+import { type CommandMutationOwner } from './commandMutationOwner';
 import { executeAppActionImpl } from './executeAppActionImpl';
 import { runCommandHistoryReplay } from './runCommandHistoryReplay';
 
 const replay_options = { skipUndo: true, skipMacroRecording: true } as const;
 
-async function apply_inverse(entry: UndoEntry): Promise<void> {
+async function apply_inverse(owner: CommandMutationOwner, entry: UndoEntry): Promise<void> {
     if (entry.kind === 'callback') {
-        runCommandHistoryReplay(entry.undo);
+        await runCommandHistoryReplay(owner, entry.undo);
         return;
     }
     if (entry.inverseAction) {
-        await executeAppActionImpl(entry.inverseAction, replay_options);
+        await executeAppActionImpl(entry.inverseAction, replay_options, owner);
     }
 }
 
@@ -35,7 +36,10 @@ function create_adjustment_aggregate_inverse(entries: readonly UndoEntry[]): App
  * onto one aggregate inverse that preflights every operation before one store batch.
  * Other multi-entry groups are refused before any inverse can become observable.
  */
-export async function revertUndoEntriesAtomically(entries: readonly UndoEntry[]): Promise<boolean> {
+export async function revertUndoEntriesAtomically(
+    owner: CommandMutationOwner,
+    entries: readonly UndoEntry[]
+): Promise<boolean> {
     if (entries.length === 0) {
         return false;
     }
@@ -45,7 +49,7 @@ export async function revertUndoEntriesAtomically(entries: readonly UndoEntry[])
         if (entry.kind === 'action' && !entry.inverseAction) {
             return false;
         }
-        await apply_inverse(entry);
+        await apply_inverse(owner, entry);
         return true;
     }
 
@@ -53,7 +57,7 @@ export async function revertUndoEntriesAtomically(entries: readonly UndoEntry[])
     if (!aggregate_inverse) {
         return false;
     }
-    await executeAppActionImpl(aggregate_inverse, replay_options);
+    await executeAppActionImpl(aggregate_inverse, replay_options, owner);
 
     return true;
 }

@@ -1,6 +1,7 @@
 import { undoStore } from '../stores/undoStore';
 
 import { runCommandMutationExclusive } from './commandMutation';
+import { type CommandMutationOwner } from './commandMutationOwner';
 import { revertUndoEntriesAtomically } from './revertUndoEntriesAtomically';
 import { rebuildUndoTreeFromHistory } from './undoTree/rebuildUndoTreeFromHistory';
 
@@ -11,7 +12,7 @@ import { rebuildUndoTreeFromHistory } from './undoTree/rebuildUndoTreeFromHistor
  * by hand. The entries are undone newest-first, removed from `past`, and pushed
  * onto `future` so a redo re-applies them in order.
  */
-async function revert_action_group(groupId: string): Promise<boolean> {
+async function revert_action_group(owner: CommandMutationOwner, groupId: string): Promise<boolean> {
     const state = undoStore.value;
     if (!state) {
         return false;
@@ -22,7 +23,7 @@ async function revert_action_group(groupId: string): Promise<boolean> {
         return false;
     }
 
-    const reverted = await revertUndoEntriesAtomically(groupEntries);
+    const reverted = await revertUndoEntriesAtomically(owner, groupEntries);
     if (!reverted) {
         return false;
     }
@@ -42,5 +43,5 @@ async function revert_action_group(groupId: string): Promise<boolean> {
 }
 
 export function revertActionGroup(groupId: string): Promise<boolean> {
-    return runCommandMutationExclusive(() => revert_action_group(groupId));
+    return runCommandMutationExclusive((owner) => revert_action_group(owner, groupId));
 }

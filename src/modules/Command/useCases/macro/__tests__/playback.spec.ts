@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
+import { AppActionCommittedError } from '../../../errors/AppActionExecutionError';
 import { type Macro } from '../../../models/Macro';
 import { macroStore } from '../../../stores/macroStore';
 import { playMacro } from '../playback';
@@ -130,5 +131,20 @@ describe('playMacro', () => {
         macroStore.set(null);
         await playMacro({ macroId: 'play-1' });
         expect(executeAppActionMock).not.toHaveBeenCalled();
+    });
+
+    it('reports committed progress when a later macro step fails', async () => {
+        const failure = new Error('second step failed');
+        executeAppActionMock
+            .mockImplementationOnce((_action, options) => {
+                options?.onExecuted?.({ applied: true });
+                return Promise.resolve();
+            })
+            .mockRejectedValueOnce(failure);
+
+        const playback = playMacro({ macroId: 'play-1' });
+
+        await expect(playback).rejects.toBeInstanceOf(AppActionCommittedError);
+        await expect(playback).rejects.toMatchObject({ cause: failure });
     });
 });

@@ -1,5 +1,9 @@
-export const commandMutationRuntime = {
-    mutationActive: false,
-    synchronousOwnerDepth: 0,
-    historyReplayDepth: 0,
+import { type CommandMutationOwner } from './commandMutationOwner';
+
+export const commandMutationRuntime: {
+    activeOwner: CommandMutationOwner | null;
+    synchronousOwner: CommandMutationOwner | null;
+} = {
+    activeOwner: null,
+    synchronousOwner: null,
 };

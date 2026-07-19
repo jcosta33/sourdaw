@@ -150,7 +150,8 @@ describe('redo', () => {
                 skipUndo: true,
                 skipMacroRecording: true,
                 onExecuted: expect.any(Function),
-            })
+            }),
+            expect.any(Object)
         );
         expect(mocks.undoStoreSet).toHaveBeenCalledWith({ past: [first, second], future: [] });
         expect(mocks.undoTreeMoveTo).toHaveBeenCalledWith('second');

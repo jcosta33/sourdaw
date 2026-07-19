@@ -6,7 +6,7 @@ import { runUndoRedoExclusive } from './undoRedo';
 import { undoUnderMutation } from './undoUnderMutation';
 
 export function undoToIndex(targetUnitId: string): Promise<void> {
-    return runUndoRedoExclusive(async () => {
+    return runUndoRedoExclusive(async (owner) => {
         for (;;) {
             const state = undoStore.value;
             if (!state) {
@@ -20,9 +20,9 @@ export function undoToIndex(targetUnitId: string): Promise<void> {
 
             const before = `${state.past.length}:${state.future.length}:${currentUnitId ?? 'root'}`;
             if (pastUnits.some((unit) => unit.id === targetUnitId)) {
-                await undoUnderMutation();
+                await undoUnderMutation(owner);
             } else if (collectUndoHistoryUnits(state.future).some((unit) => unit.id === targetUnitId)) {
-                await redoUnderMutation();
+                await redoUnderMutation(owner);
             } else {
                 return;
             }

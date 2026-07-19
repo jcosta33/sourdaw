@@ -1,15 +1,17 @@
-import { runLegacyCommandMutationUnderOwner } from '#/modules/Command/useCases';
 import { createHandler } from '#/utils/createHandler';
 
 import { bounceSelection } from '../../useCases/freezeBounce/bounceSelection';
 
 export const handleConsolidateSelection = createHandler<'consolidateSelection'>({
-    execute: async (alpha) => {
+    execute: async (alpha, context) => {
+        if (!context?.runLegacyCommandMutation) {
+            throw new Error('Command execution context is required to consolidate a selection');
+        }
         await bounceSelection(
             alpha.payload.trackId,
             alpha.payload.startBeat,
             alpha.payload.endBeat,
-            runLegacyCommandMutationUnderOwner
+            context.runLegacyCommandMutation
         );
     },
     describe: () => ({ label: 'Consolidate selection' }),

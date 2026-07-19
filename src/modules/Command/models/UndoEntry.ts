@@ -1,4 +1,4 @@
-import { type AppAction } from '#/utils/handlerContract';
+import { type AppAction, type CommandHistoryReplay } from '#/utils/handlerContract';
 
 export type UndoSource = 'manual' | 'prompt' | 'voice' | 'ai';
 
@@ -22,8 +22,8 @@ export type ActionUndoEntry = UndoEntryBase & {
 
 export type CallbackUndoEntry = UndoEntryBase & {
     kind: 'callback';
-    undo: () => void;
-    redo: () => unknown;
+    undo: CommandHistoryReplay;
+    redo: CommandHistoryReplay;
 };
 
 export type UndoEntry = ActionUndoEntry | CallbackUndoEntry;
