@@ -26,6 +26,10 @@ function beatsToSamples(beats: number, bpm: number, sampleRate: number): number 
     return Math.ceil((beats * 60 * sampleRate) / bpm);
 }
 
+function samplesToBeats(samples: number, bpm: number, sampleRate: number): number {
+    return (samples * bpm) / (60 * sampleRate);
+}
+
 export function processRealtimeMidiInput(input: ProcessRealtimeMidiInputInput): Promise<MidiEvent[]> {
     function createEvent(timeSamples: number): MidiEvent {
         return {
@@ -50,11 +54,12 @@ export function processRealtimeMidiInput(input: ProcessRealtimeMidiInputInput): 
     const event = createEvent(eventSampleTime);
     const minimumBlockEnd = input.sampleTime + (input.blockSize ?? 128);
     const grooveBlockEnd = eventSampleTime + lateSamples + 1;
+    const schedulingDelayBeats = samplesToBeats(eventSampleTime - input.sampleTime, transport.tempo, input.sampleRate);
 
     const transportInfo: TransportInfo = {
         sampleRate: input.sampleRate,
         bpm: transport.tempo,
-        ppqPosition: transport.playheadPosition,
+        ppqPosition: transport.playheadPosition - schedulingDelayBeats,
         isPlaying: transport.isPlaying,
         barIndex: 0,
         beatInBar: 0,

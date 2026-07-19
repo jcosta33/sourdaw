@@ -468,10 +468,10 @@ describe('MidiRack', () => {
         const groove = new GrooveModule('groove-a');
         groove.setParam('groove_step_beats', 0.25);
         groove.setParam('groove_slot_count', 16);
-        groove.setParam('groove_timing_1', 0.2);
+        groove.setParam('groove_timing_0', 0.2);
         groove.setParam('groove_amount', 0.75);
         rack.addProcessor(groove);
-        const realtimeTransport = { ...transport, sampleRate: 48_000, bpm: 120, ppqPosition: 0 };
+        const realtimeTransport = { ...transport, sampleRate: 48_000, bpm: 120, ppqPosition: -0.3 };
 
         const noteOnOutput = [...rack.processBlock([noteOn(7328, 60)], 128, 12_129, realtimeTransport, 'track-a')];
         const noteOffOutput = [
@@ -497,7 +497,7 @@ describe('MidiRack', () => {
         const groove = new GrooveModule('groove-a');
         groove.setParam('groove_step_beats', 0.25);
         groove.setParam('groove_slot_count', 16);
-        groove.setParam('groove_timing_1', -0.4);
+        groove.setParam('groove_timing_0', -0.4);
         groove.setParam('groove_amount', 0.75);
         rack.addProcessor(groove);
 
@@ -505,7 +505,7 @@ describe('MidiRack', () => {
             [noteOn(7328, 60)],
             128,
             12_129,
-            { ...transport, sampleRate: 48_000, bpm: 120, ppqPosition: 0 },
+            { ...transport, sampleRate: 48_000, bpm: 120, ppqPosition: -0.3 },
             'track-a'
         );
 

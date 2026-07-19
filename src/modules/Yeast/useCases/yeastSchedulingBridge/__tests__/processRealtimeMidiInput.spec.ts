@@ -54,6 +54,7 @@ describe('processRealtimeMidiInput', () => {
                 blockEndSamples: 12129,
             })
         );
+        expect(vi.mocked(processYeastMidi).mock.calls[0]?.[0].transport.ppqPosition).toBeCloseTo(-0.3, 10);
         expect(result).toBe(processed_events);
     });
 });
