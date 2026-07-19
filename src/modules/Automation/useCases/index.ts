@@ -29,6 +29,7 @@ export { releaseTouchAutomation } from './automationRecording/releaseTouchAutoma
 export { beginDrawSession } from './beginDrawSession';
 export { paintDrawPoint } from './paintDrawPoint';
 export { endDrawSession } from './endDrawSession';
+export { endDrawSessionUnderCommand } from './endDrawSessionUnderCommand';
 export { selectPointsInRange } from './automationSelection/selectPointsInRange';
 
 export { applyModulation } from './modulation/applyModulation';

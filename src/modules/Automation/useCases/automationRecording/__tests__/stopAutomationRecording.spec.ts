@@ -62,11 +62,14 @@ vi.mock('#/modules/Arrangement/stores', async (importOriginal) => {
 
 vi.mock('#/modules/Command/useCases', async (importOriginal) => {
     const actual = await importOriginal<typeof import('#/modules/Command/useCases')>();
+    const commitUndo = (label: string, undo: () => void, redo: () => void): void => {
+        undoEntries.push({ label, undo, redo });
+    };
     return {
         ...actual,
-        pushUndoEntry: (label: string, undo: () => void, redo: () => void) => {
-            undoEntries.push({ label, undo, redo });
-        },
+        pushUndoEntry: commitUndo,
+        runLegacyCommandMutation: (mutation: (publishUndo: typeof commitUndo) => unknown) =>
+            Promise.resolve(mutation(commitUndo)),
     };
 });
 

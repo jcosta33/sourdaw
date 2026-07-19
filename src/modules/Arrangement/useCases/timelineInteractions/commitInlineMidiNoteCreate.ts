@@ -1,4 +1,4 @@
-import { pushUndoEntry } from '#/modules/Command/useCases';
+import { runLegacyCommandMutation } from '#/modules/Command/useCases';
 import { addMidiNote, getNotesForClip, setNotesForClip } from '#/modules/MIDI/useCases';
 
 type CommitInlineMidiNoteCreateInput = {
@@ -9,16 +9,18 @@ type CommitInlineMidiNoteCreateInput = {
     velocity: number;
 };
 
-export function commitInlineMidiNoteCreate(input: CommitInlineMidiNoteCreateInput): boolean {
-    const previousNotes = getNotesForClip(input.clipId);
-    addMidiNote(input.clipId, input.pitch, input.startBeat, input.duration, input.velocity);
-    const nextNotes = getNotesForClip(input.clipId);
+export function commitInlineMidiNoteCreate(input: CommitInlineMidiNoteCreateInput): Promise<boolean> {
+    return runLegacyCommandMutation((pushUndoEntry) => {
+        const previousNotes = getNotesForClip(input.clipId);
+        addMidiNote(input.clipId, input.pitch, input.startBeat, input.duration, input.velocity);
+        const nextNotes = getNotesForClip(input.clipId);
 
-    pushUndoEntry(
-        'Draw MIDI note',
-        () => setNotesForClip(input.clipId, previousNotes),
-        () => setNotesForClip(input.clipId, nextNotes)
-    );
+        pushUndoEntry(
+            'Draw MIDI note',
+            () => setNotesForClip(input.clipId, previousNotes),
+            () => setNotesForClip(input.clipId, nextNotes)
+        );
 
-    return nextNotes.length !== previousNotes.length;
+        return nextNotes.length !== previousNotes.length;
+    });
 }

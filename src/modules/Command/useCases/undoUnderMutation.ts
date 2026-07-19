@@ -3,6 +3,7 @@ import { undoStore } from '../stores/undoStore';
 
 import { executeAppActionImpl } from './executeAppActionImpl';
 import { revertUndoEntriesAtomically } from './revertUndoEntriesAtomically';
+import { runCommandHistoryReplay } from './runCommandHistoryReplay';
 import { undoTreeMoveTo } from './undoTree/undoTreeMoveTo';
 
 function currentEntryId(past: readonly UndoEntry[]): string | null {
@@ -16,7 +17,7 @@ type ExecuteUndoInput = {
 
 async function executeUndo({ entry, runExecuteAppAction }: ExecuteUndoInput): Promise<boolean> {
     if (entry.kind === 'callback') {
-        entry.undo();
+        runCommandHistoryReplay(entry.undo);
         return true;
     }
     if (entry.inverseAction) {

@@ -9,7 +9,7 @@ import { DawMenuButton, DawMenuSectionLabel, DawMenuSeparator } from '#/componen
 import { logger } from '#/infra/logger/appLogger';
 import { generateMidiAI } from '#/modules/AiGeneration/useCases';
 import { copySelectedNotes, pasteNotes } from '#/modules/Arrangement/useCases';
-import { pushUndoEntry } from '#/modules/Command/useCases';
+import { runLegacyCommandMutation } from '#/modules/Command/useCases';
 import {
     addMidiNote,
     removeMidiNote,
@@ -107,26 +107,30 @@ export const PianoRollContextMenu = ({
                 shortcut="⌘X"
                 disabled={selectedNoteIds.size === 0}
                 onClick={act(() => {
-                    const cutNotes = notes.filter((node) => selectedNoteIds.has(node.id)).map((node) => ({ ...node }));
-                    copySelectedNotes(clipId, [...selectedNoteIds]);
-                    for (const id of selectedNoteIds) {
-                        removeMidiNote(clipId, id);
-                    }
-                    if (cutNotes.length > 0) {
-                        pushUndoEntry(
-                            `Cut ${cutNotes.length} note${cutNotes.length > 1 ? 's' : ''}`,
-                            () => {
-                                for (const node of cutNotes) {
-                                    addMidiNote(clipId, node.pitch, node.startBeat, node.duration, node.velocity);
+                    void runLegacyCommandMutation((pushUndoEntry) => {
+                        const cutNotes = notes
+                            .filter((node) => selectedNoteIds.has(node.id))
+                            .map((node) => ({ ...node }));
+                        copySelectedNotes(clipId, [...selectedNoteIds]);
+                        for (const id of selectedNoteIds) {
+                            removeMidiNote(clipId, id);
+                        }
+                        if (cutNotes.length > 0) {
+                            pushUndoEntry(
+                                `Cut ${cutNotes.length} note${cutNotes.length > 1 ? 's' : ''}`,
+                                () => {
+                                    for (const node of cutNotes) {
+                                        addMidiNote(clipId, node.pitch, node.startBeat, node.duration, node.velocity);
+                                    }
+                                },
+                                () => {
+                                    for (const node of cutNotes) {
+                                        removeMidiNote(clipId, node.id);
+                                    }
                                 }
-                            },
-                            () => {
-                                for (const node of cutNotes) {
-                                    removeMidiNote(clipId, node.id);
-                                }
-                            }
-                        );
-                    }
+                            );
+                        }
+                    });
                     onClearSelection();
                 })}
             >
@@ -147,22 +151,24 @@ export const PianoRollContextMenu = ({
                         key={g}
                         className={pillBtnClass}
                         onClick={act(() => {
-                            const before = getNotesForClip(clipId).map((node) => ({ ...node }));
-                            quantizeNotes(clipId, g);
-                            const after = getNotesForClip(clipId).map((node) => ({ ...node }));
-                            pushUndoEntry(
-                                `Quantize notes (${{ 1: '1/1', 0.5: '1/2', 0.25: '1/4', 0.125: '1/8' }[g]})`,
-                                () => {
-                                    for (const node of before) {
-                                        moveMidiNote(clipId, node.id, node.pitch, node.startBeat);
+                            void runLegacyCommandMutation((pushUndoEntry) => {
+                                const before = getNotesForClip(clipId).map((node) => ({ ...node }));
+                                quantizeNotes(clipId, g);
+                                const after = getNotesForClip(clipId).map((node) => ({ ...node }));
+                                pushUndoEntry(
+                                    `Quantize notes (${{ 1: '1/1', 0.5: '1/2', 0.25: '1/4', 0.125: '1/8' }[g]})`,
+                                    () => {
+                                        for (const node of before) {
+                                            moveMidiNote(clipId, node.id, node.pitch, node.startBeat);
+                                        }
+                                    },
+                                    () => {
+                                        for (const node of after) {
+                                            moveMidiNote(clipId, node.id, node.pitch, node.startBeat);
+                                        }
                                     }
-                                },
-                                () => {
-                                    for (const node of after) {
-                                        moveMidiNote(clipId, node.id, node.pitch, node.startBeat);
-                                    }
-                                }
-                            );
+                                );
+                            });
                         })}
                     >
                         {{ 1: '1/1', 0.5: '1/2', 0.25: '1/4', 0.125: '1/8' }[g]}
@@ -181,12 +187,14 @@ export const PianoRollContextMenu = ({
                         key={semi}
                         className={pillBtnClass}
                         onClick={act(() => {
-                            transposeNotes(clipId, semi);
-                            pushUndoEntry(
-                                `Transpose ${semi > 0 ? '+' : ''}${semi} semitone${Math.abs(semi) !== 1 ? 's' : ''}`,
-                                () => transposeNotes(clipId, -semi),
-                                () => transposeNotes(clipId, semi)
-                            );
+                            void runLegacyCommandMutation((pushUndoEntry) => {
+                                transposeNotes(clipId, semi);
+                                pushUndoEntry(
+                                    `Transpose ${semi > 0 ? '+' : ''}${semi} semitone${Math.abs(semi) !== 1 ? 's' : ''}`,
+                                    () => transposeNotes(clipId, -semi),
+                                    () => transposeNotes(clipId, semi)
+                                );
+                            });
                         })}
                     >
                         {{ '-12': '-Oct', '-1': '-1', '1': '+1', '12': '+Oct' }[semi]}
@@ -201,22 +209,24 @@ export const PianoRollContextMenu = ({
             <DawMenuButton
                 role="menuitem"
                 onClick={act(() => {
-                    const before = getNotesForClip(clipId).map((node) => ({ ...node }));
-                    snapClipToScale(clipId);
-                    const after = getNotesForClip(clipId).map((node) => ({ ...node }));
-                    pushUndoEntry(
-                        'Snap notes to scale',
-                        () => {
-                            for (const node of before) {
-                                moveMidiNote(clipId, node.id, node.pitch, node.startBeat);
+                    void runLegacyCommandMutation((pushUndoEntry) => {
+                        const before = getNotesForClip(clipId).map((node) => ({ ...node }));
+                        snapClipToScale(clipId);
+                        const after = getNotesForClip(clipId).map((node) => ({ ...node }));
+                        pushUndoEntry(
+                            'Snap notes to scale',
+                            () => {
+                                for (const node of before) {
+                                    moveMidiNote(clipId, node.id, node.pitch, node.startBeat);
+                                }
+                            },
+                            () => {
+                                for (const node of after) {
+                                    moveMidiNote(clipId, node.id, node.pitch, node.startBeat);
+                                }
                             }
-                        },
-                        () => {
-                            for (const node of after) {
-                                moveMidiNote(clipId, node.id, node.pitch, node.startBeat);
-                            }
-                        }
-                    );
+                        );
+                    });
                 })}
             >
                 Snap to Scale
@@ -233,42 +243,44 @@ export const PianoRollContextMenu = ({
                     key={label}
                     role="menuitem"
                     onClick={act(() => {
-                        const before = getNotesForClip(clipId).map((node) => ({
-                            id: node.id,
-                            startBeat: node.startBeat,
-                            velocity: node.velocity,
-                        }));
-                        humanizeNotes(clipId, amount);
-                        const after = getNotesForClip(clipId).map((node) => ({
-                            id: node.id,
-                            startBeat: node.startBeat,
-                            velocity: node.velocity,
-                        }));
-                        pushUndoEntry(
-                            `Humanize (${label})`,
-                            () => {
-                                for (const node of before) {
-                                    moveMidiNote(
-                                        clipId,
-                                        node.id,
-                                        notes.find((output) => output.id === node.id)?.pitch ?? 60,
-                                        node.startBeat
-                                    );
-                                    setNoteVelocity(clipId, node.id, node.velocity);
+                        void runLegacyCommandMutation((pushUndoEntry) => {
+                            const before = getNotesForClip(clipId).map((node) => ({
+                                id: node.id,
+                                startBeat: node.startBeat,
+                                velocity: node.velocity,
+                            }));
+                            humanizeNotes(clipId, amount);
+                            const after = getNotesForClip(clipId).map((node) => ({
+                                id: node.id,
+                                startBeat: node.startBeat,
+                                velocity: node.velocity,
+                            }));
+                            pushUndoEntry(
+                                `Humanize (${label})`,
+                                () => {
+                                    for (const node of before) {
+                                        moveMidiNote(
+                                            clipId,
+                                            node.id,
+                                            notes.find((output) => output.id === node.id)?.pitch ?? 60,
+                                            node.startBeat
+                                        );
+                                        setNoteVelocity(clipId, node.id, node.velocity);
+                                    }
+                                },
+                                () => {
+                                    for (const node of after) {
+                                        moveMidiNote(
+                                            clipId,
+                                            node.id,
+                                            notes.find((output) => output.id === node.id)?.pitch ?? 60,
+                                            node.startBeat
+                                        );
+                                        setNoteVelocity(clipId, node.id, node.velocity);
+                                    }
                                 }
-                            },
-                            () => {
-                                for (const node of after) {
-                                    moveMidiNote(
-                                        clipId,
-                                        node.id,
-                                        notes.find((output) => output.id === node.id)?.pitch ?? 60,
-                                        node.startBeat
-                                    );
-                                    setNoteVelocity(clipId, node.id, node.velocity);
-                                }
-                            }
-                        );
+                            );
+                        });
                     })}
                 >
                     Humanize ({label})
@@ -287,15 +299,17 @@ export const PianoRollContextMenu = ({
                         className={`${pillBtnClass} disabled:opacity-40`}
                         disabled={selectedNoteIds.size < 2}
                         onClick={act(() => {
-                            const ids = [...selectedNoteIds];
-                            const originals = strumNotes(clipId, ids, 0.04, dir);
-                            if (originals) {
-                                pushUndoEntry(
-                                    `Strum ${dir}`,
-                                    () => restoreStrumOriginals(clipId, originals),
-                                    () => strumNotes(clipId, ids, 0.04, dir)
-                                );
-                            }
+                            void runLegacyCommandMutation((pushUndoEntry) => {
+                                const ids = [...selectedNoteIds];
+                                const originals = strumNotes(clipId, ids, 0.04, dir);
+                                if (originals) {
+                                    pushUndoEntry(
+                                        `Strum ${dir}`,
+                                        () => restoreStrumOriginals(clipId, originals),
+                                        () => strumNotes(clipId, ids, 0.04, dir)
+                                    );
+                                }
+                            });
                         })}
                     >
                         {dir === 'up' ? '↑ Up' : '↓ Down'}
@@ -339,16 +353,18 @@ export const PianoRollContextMenu = ({
                 role="menuitem"
                 disabled={!grooveTemplate}
                 onClick={act(() => {
-                    if (grooveTemplate) {
-                        const originals = applyGrooveToClip(clipId, grooveTemplate, 0.5);
-                        if (originals) {
-                            pushUndoEntry(
-                                'Apply groove',
-                                () => restoreGrooveOriginals(clipId, originals),
-                                () => applyGrooveToClip(clipId, grooveTemplate, 0.5)
-                            );
+                    void runLegacyCommandMutation((pushUndoEntry) => {
+                        if (grooveTemplate) {
+                            const originals = applyGrooveToClip(clipId, grooveTemplate, 0.5);
+                            if (originals) {
+                                pushUndoEntry(
+                                    'Apply groove',
+                                    () => restoreGrooveOriginals(clipId, originals),
+                                    () => applyGrooveToClip(clipId, grooveTemplate, 0.5)
+                                );
+                            }
                         }
-                    }
+                    });
                 })}
             >
                 Apply Groove (50%)
@@ -361,27 +377,29 @@ export const PianoRollContextMenu = ({
                 shortcut="⌫"
                 disabled={selectedNoteIds.size === 0}
                 onClick={act(() => {
-                    const deletedNotes = notes
-                        .filter((node) => selectedNoteIds.has(node.id))
-                        .map((node) => ({ ...node }));
-                    for (const id of selectedNoteIds) {
-                        removeMidiNote(clipId, id);
-                    }
-                    if (deletedNotes.length > 0) {
-                        pushUndoEntry(
-                            `Delete ${deletedNotes.length} note${deletedNotes.length > 1 ? 's' : ''}`,
-                            () => {
-                                for (const node of deletedNotes) {
-                                    addMidiNote(clipId, node.pitch, node.startBeat, node.duration, node.velocity);
+                    void runLegacyCommandMutation((pushUndoEntry) => {
+                        const deletedNotes = notes
+                            .filter((node) => selectedNoteIds.has(node.id))
+                            .map((node) => ({ ...node }));
+                        for (const id of selectedNoteIds) {
+                            removeMidiNote(clipId, id);
+                        }
+                        if (deletedNotes.length > 0) {
+                            pushUndoEntry(
+                                `Delete ${deletedNotes.length} note${deletedNotes.length > 1 ? 's' : ''}`,
+                                () => {
+                                    for (const node of deletedNotes) {
+                                        addMidiNote(clipId, node.pitch, node.startBeat, node.duration, node.velocity);
+                                    }
+                                },
+                                () => {
+                                    for (const node of deletedNotes) {
+                                        removeMidiNote(clipId, node.id);
+                                    }
                                 }
-                            },
-                            () => {
-                                for (const node of deletedNotes) {
-                                    removeMidiNote(clipId, node.id);
-                                }
-                            }
-                        );
-                    }
+                            );
+                        }
+                    });
                     onClearSelection();
                 })}
             >

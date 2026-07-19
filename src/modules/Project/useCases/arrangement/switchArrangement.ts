@@ -1,3 +1,7 @@
+import {
+    cancelFreezeTasksForProjectTransition,
+    reconcileAdjustmentLayerStaleness,
+} from '#/modules/Arrangement/useCases';
 import { getAudioContext, prepareCachedAudioBuffersFromIdb } from '#/modules/AudioEngine/useCases';
 import { runCommandTransitionExclusive } from '#/modules/Command/useCases';
 import { stopPlayback } from '#/modules/Transport/useCases';
@@ -73,6 +77,7 @@ export async function switchArrangement(id: string): Promise<void> {
 
         // A shutdown failure aborts before target buffers or state are published.
         await stopPlayback();
+        await cancelFreezeTasksForProjectTransition();
 
         const currentStateAfterStop = arrangementStore.value;
         const currentTargetAfterStop = currentStateAfterStop?.arrangements.find((arrangement) => arrangement.id === id);
@@ -88,6 +93,7 @@ export async function switchArrangement(id: string): Promise<void> {
         preparedBuffers.publish();
         syncCurrentArrangementToStore();
         loadSnapshot(currentTargetAfterStop);
+        reconcileAdjustmentLayerStaleness();
         resetUndoHistory();
         arrangementStore.set({
             ...arrangementStore.value!,

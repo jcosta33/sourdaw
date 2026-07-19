@@ -21,7 +21,7 @@ describe('handleConsolidateSelection', () => {
             payload: { trackId: 't1', startBeat: 0, endBeat: 4 },
         });
 
-        expect(mocks.bounceSelection).toHaveBeenCalledWith('t1', 0, 4);
+        expect(mocks.bounceSelection).toHaveBeenCalledWith('t1', 0, 4, expect.any(Function));
     });
 
     it('provides a description', () => {

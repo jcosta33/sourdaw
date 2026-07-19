@@ -6,6 +6,8 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock('#/modules/Command/useCases', () => ({
     pushUndoEntry: mocks.pushUndoEntry,
+    runLegacyCommandMutation: (mutation: (commitUndo: typeof mocks.pushUndoEntry) => unknown) =>
+        Promise.resolve(mutation(mocks.pushUndoEntry)),
 }));
 
 import { warpStates } from '../../../stores/warpStates';

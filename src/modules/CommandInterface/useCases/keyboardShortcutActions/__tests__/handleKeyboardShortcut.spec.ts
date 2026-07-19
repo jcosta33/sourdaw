@@ -74,13 +74,18 @@ vi.mock('#/modules/Arrangement/useCases', () => ({
     setMarqueeSelection: vi.fn(),
 }));
 
-vi.mock('#/modules/Command/useCases', async (importOriginal) => ({
-    ...(await importOriginal<typeof import('#/modules/Command/useCases')>()),
-    redo: vi.fn(),
-    undo: vi.fn(),
-    pushUndoEntry: vi.fn(),
-    executeAppAction: vi.fn(),
-}));
+vi.mock('#/modules/Command/useCases', async (importOriginal) => {
+    const commitUndo = vi.fn();
+    return {
+        ...(await importOriginal<typeof import('#/modules/Command/useCases')>()),
+        redo: vi.fn(),
+        undo: vi.fn(),
+        pushUndoEntry: commitUndo,
+        runLegacyCommandMutation: (mutation: (publishUndo: typeof commitUndo) => unknown) =>
+            Promise.resolve(mutation(commitUndo)),
+        executeAppAction: vi.fn(),
+    };
+});
 
 vi.mock('../../../stores/shortcutStore', () => ({
     shortcutStore: { value: { definitions: [], customMappings: {} } },

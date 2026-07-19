@@ -56,6 +56,8 @@ vi.mock('#/modules/MIDI/useCases', async (importOriginal) => ({
 vi.mock('#/modules/Command/useCases', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/Command/useCases')>()),
     pushUndoEntry: pushUndoEntryMock,
+    runLegacyCommandMutation: (mutation: (commitUndo: typeof pushUndoEntryMock) => unknown) =>
+        Promise.resolve(mutation(pushUndoEntryMock)),
 }));
 
 import { generateMidiVariations } from '../generateMidiVariations';

@@ -1,6 +1,6 @@
 import { addClip, addTrack, removeClip, removeTrack } from '#/modules/Arrangement/useCases';
 import { cacheAudioBuffer } from '#/modules/AudioEngine/useCases';
-import { pushUndoEntry } from '#/modules/Command/useCases';
+import { runLegacyCommandMutation } from '#/modules/Command/useCases';
 
 export type RenderToClipInput = {
     /** Target track id, or the literal 'new' to create a fresh audio track. */
@@ -17,60 +17,62 @@ export type RenderToClipOutput = {
     audioBufferId: string;
 };
 
-export function renderToClip(input: RenderToClipInput): RenderToClipOutput | null {
-    const audioBufferId = `rendered-${crypto.randomUUID()}`;
-    cacheAudioBuffer({ buffer: input.buffer, bufferId: audioBufferId });
+export function renderToClip(input: RenderToClipInput): Promise<RenderToClipOutput | null> {
+    return runLegacyCommandMutation((pushUndoEntry) => {
+        const audioBufferId = `rendered-${crypto.randomUUID()}`;
+        cacheAudioBuffer({ buffer: input.buffer, bufferId: audioBufferId });
 
-    const createdNewTrack = input.targetTrackId === 'new';
-    let trackId: string;
-    if (createdNewTrack) {
-        const created = addTrack({ name: input.name, kind: 'audio' });
-        if (!created) {
-            return null;
-        }
-        trackId = created.id;
-    } else {
-        trackId = input.targetTrackId;
-    }
-
-    const clip = addClip({
-        trackId,
-        startBeat: input.startBeat,
-        endBeat: input.endBeat,
-        name: input.name,
-        type: 'audio',
-        audioBufferId,
-    });
-
-    if (!clip) {
+        const createdNewTrack = input.targetTrackId === 'new';
+        let trackId: string;
         if (createdNewTrack) {
-            removeTrack(trackId);
+            const created = addTrack({ name: input.name, kind: 'audio' });
+            if (!created) {
+                return null;
+            }
+            trackId = created.id;
+        } else {
+            trackId = input.targetTrackId;
         }
-        return null;
-    }
 
-    pushUndoEntry(
-        'Render to clip',
-        () => {
-            removeClip(clip.id);
+        const clip = addClip({
+            trackId,
+            startBeat: input.startBeat,
+            endBeat: input.endBeat,
+            name: input.name,
+            type: 'audio',
+            audioBufferId,
+        });
+
+        if (!clip) {
             if (createdNewTrack) {
                 removeTrack(trackId);
             }
-        },
-        () => {
-            if (createdNewTrack) {
-                addTrack({ id: trackId, name: input.name, kind: 'audio' });
-            }
-            addClip({
-                trackId,
-                startBeat: input.startBeat,
-                endBeat: input.endBeat,
-                name: input.name,
-                type: 'audio',
-                audioBufferId,
-            });
+            return null;
         }
-    );
 
-    return { trackId, clipId: clip.id, audioBufferId };
+        pushUndoEntry(
+            'Render to clip',
+            () => {
+                removeClip(clip.id);
+                if (createdNewTrack) {
+                    removeTrack(trackId);
+                }
+            },
+            () => {
+                if (createdNewTrack) {
+                    addTrack({ id: trackId, name: input.name, kind: 'audio' });
+                }
+                addClip({
+                    trackId,
+                    startBeat: input.startBeat,
+                    endBeat: input.endBeat,
+                    name: input.name,
+                    type: 'audio',
+                    audioBufferId,
+                });
+            }
+        );
+
+        return { trackId, clipId: clip.id, audioBufferId };
+    });
 }

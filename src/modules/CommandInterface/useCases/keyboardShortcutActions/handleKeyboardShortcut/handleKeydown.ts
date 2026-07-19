@@ -14,7 +14,7 @@ import {
     selectClipWithFocus,
     setMarqueeSelection,
 } from '#/modules/Arrangement/useCases';
-import { CommandEventBus, executeAppAction, pushUndoEntry, redo, undo } from '#/modules/Command/useCases';
+import { CommandEventBus, executeAppAction, redo, runLegacyCommandMutation, undo } from '#/modules/Command/useCases';
 import { loopStationStore } from '#/modules/SessionLauncher/stores';
 import { stopAllSlots, triggerPad } from '#/modules/SessionLauncher/useCases';
 import { stopPlayback, seekPlayhead, setLoopRegion } from '#/modules/Transport/useCases';
@@ -174,14 +174,16 @@ function getSelectedGhostClipId(): string | null {
 }
 
 function executeDuplicateTimeRange(startBeat: number, endBeat: number): void {
-    const duration = endBeat - startBeat;
-    const trackIdsAtAction = (trackStore.value?.tracks ?? []).map((time) => time.id);
-    duplicateTimeRange(startBeat, endBeat);
-    pushUndoEntry(
-        'Duplicate Time Range',
-        () => deleteTimeRange(endBeat, endBeat + duration, trackIdsAtAction),
-        () => duplicateTimeRange(startBeat, endBeat)
-    );
+    void runLegacyCommandMutation((pushUndoEntry) => {
+        const duration = endBeat - startBeat;
+        const trackIdsAtAction = (trackStore.value?.tracks ?? []).map((time) => time.id);
+        duplicateTimeRange(startBeat, endBeat);
+        pushUndoEntry(
+            'Duplicate Time Range',
+            () => deleteTimeRange(endBeat, endBeat + duration, trackIdsAtAction),
+            () => duplicateTimeRange(startBeat, endBeat)
+        );
+    });
 }
 
 export const handleKeydown = inject({ eventBus: CommandEventBus })(({ eventBus }) => {
@@ -385,15 +387,17 @@ export const handleKeydown = inject({ eventBus: CommandEventBus })(({ eventBus }
                     if (!sel) {
                         return false;
                     }
-                    const duration = sel.endBeat - sel.startBeat;
-                    const atBeat = sel.startBeat;
-                    const trackIdsAtAction = (trackStore.value?.tracks ?? []).map((time) => time.id);
-                    insertTime(atBeat, duration);
-                    pushUndoEntry(
-                        'Insert Silence',
-                        () => deleteTimeRange(atBeat, atBeat + duration, trackIdsAtAction),
-                        () => insertTime(atBeat, duration)
-                    );
+                    void runLegacyCommandMutation((pushUndoEntry) => {
+                        const duration = sel.endBeat - sel.startBeat;
+                        const atBeat = sel.startBeat;
+                        const trackIdsAtAction = (trackStore.value?.tracks ?? []).map((time) => time.id);
+                        insertTime(atBeat, duration);
+                        pushUndoEntry(
+                            'Insert Silence',
+                            () => deleteTimeRange(atBeat, atBeat + duration, trackIdsAtAction),
+                            () => insertTime(atBeat, duration)
+                        );
+                    });
                     return true;
                 }
                 case 'duplicateTimeRange': {
@@ -482,33 +486,35 @@ export const handleKeydown = inject({ eventBus: CommandEventBus })(({ eventBus }
             return false;
         }
 
-        const allClips = trackStore.value?.tracks.flatMap((time) => time.clips) ?? [];
-        const deletedClips = ids
-            .map((id) => allClips.find((clip) => clip.id === id))
-            .filter((clip): clip is NonNullable<typeof clip> => clip !== undefined);
+        void runLegacyCommandMutation((pushUndoEntry) => {
+            const allClips = trackStore.value?.tracks.flatMap((time) => time.clips) ?? [];
+            const deletedClips = ids
+                .map((id) => allClips.find((clip) => clip.id === id))
+                .filter((clip): clip is NonNullable<typeof clip> => clip !== undefined);
 
-        if (deletedClips.length === 0) {
-            return false;
-        }
-
-        pushUndoEntry(
-            `Delete ${deletedClips.length} clip${deletedClips.length === 1 ? '' : 's'}`,
-            () => {
-                for (const clip of deletedClips) {
-                    addClip(clip);
-                }
-            },
-            () => {
-                for (const clip of deletedClips) {
-                    removeClip(clip.id);
-                }
-                clearClipSelection();
+            if (deletedClips.length === 0) {
+                return;
             }
-        );
 
-        for (const clip of deletedClips) {
-            removeClip(clip.id);
-        }
+            pushUndoEntry(
+                `Delete ${deletedClips.length} clip${deletedClips.length === 1 ? '' : 's'}`,
+                () => {
+                    for (const clip of deletedClips) {
+                        addClip(clip);
+                    }
+                },
+                () => {
+                    for (const clip of deletedClips) {
+                        removeClip(clip.id);
+                    }
+                    clearClipSelection();
+                }
+            );
+
+            for (const clip of deletedClips) {
+                removeClip(clip.id);
+            }
+        });
         clearClipSelection();
         return true;
     }

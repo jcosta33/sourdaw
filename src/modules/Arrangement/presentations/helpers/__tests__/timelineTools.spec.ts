@@ -25,7 +25,14 @@ vi.mock('#/modules/Automation/useCases', () => ({
     stretchAutomationTime: vi.fn(),
     thinAutomationPoints: vi.fn(),
 }));
-vi.mock('#/modules/Command/useCases', () => ({ pushUndoEntry: vi.fn() }));
+vi.mock('#/modules/Command/useCases', () => {
+    const commitUndo = vi.fn();
+    return {
+        pushUndoEntry: commitUndo,
+        runLegacyCommandMutation: (mutation: (publishUndo: typeof commitUndo) => unknown) =>
+            Promise.resolve(mutation(commitUndo)),
+    };
+});
 vi.mock('../../../useCases/timelineInteractions/commitInlineMidiNoteCreate', () => ({
     commitInlineMidiNoteCreate: vi.fn(),
 }));

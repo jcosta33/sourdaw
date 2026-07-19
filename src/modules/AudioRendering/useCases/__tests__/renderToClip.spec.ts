@@ -29,6 +29,8 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
 
 vi.mock('#/modules/Command/useCases', () => ({
     pushUndoEntry: mocks.pushUndoEntry,
+    runLegacyCommandMutation: (mutation: (commitUndo: typeof mocks.pushUndoEntry) => unknown) =>
+        Promise.resolve(mutation(mocks.pushUndoEntry)),
 }));
 
 describe('renderToClip', () => {
@@ -43,7 +45,7 @@ describe('renderToClip', () => {
         const buffer = { length: 44100, numberOfChannels: 2, sampleRate: 44100 } as unknown as AudioBuffer;
         mocks.addClip.mockReturnValue({ id: 'clip-new', trackId: 'track-1' });
 
-        const result = renderToClip({
+        const result = await renderToClip({
             targetTrackId: 'track-1',
             startBeat: 4,
             endBeat: 12,
@@ -76,7 +78,7 @@ describe('renderToClip', () => {
         mocks.addTrack.mockReturnValue({ id: 'track-fresh', name: 'Rendered', kind: 'audio' });
         mocks.addClip.mockReturnValue({ id: 'clip-fresh', trackId: 'track-fresh' });
 
-        const result = renderToClip({
+        const result = await renderToClip({
             targetTrackId: 'new',
             startBeat: 0,
             endBeat: 8,

@@ -24,6 +24,8 @@ vi.mock('#/modules/Automation/useCases', () => ({
 
 vi.mock('#/modules/Command/useCases', () => ({
     pushUndoEntry: mocks.pushUndoEntry,
+    runLegacyCommandMutation: (mutation: (commitUndo: typeof mocks.pushUndoEntry) => unknown) =>
+        Promise.resolve(mutation(mocks.pushUndoEntry)),
 }));
 
 describe('commitInlineAutomationPaint', () => {
@@ -40,7 +42,7 @@ describe('commitInlineAutomationPaint', () => {
         ]);
     });
 
-    it('should batch painted points through the automation use case and own undo', () => {
+    it('should batch painted points through the automation use case and own undo', async () => {
         const points: AutomationPoint[] = [
             { beat: 1, value: 0.25, curve: 'linear', tension: 0 },
             { beat: 2, value: 0.5, curve: 'linear', tension: 0 },
@@ -65,7 +67,7 @@ describe('commitInlineAutomationPaint', () => {
                 },
             ]);
 
-        const committed = commitInlineAutomationPaint({
+        const committed = await commitInlineAutomationPaint({
             laneId: 'lane-1',
             trackId: 'track-1',
             parameterId: 'gain',
@@ -91,7 +93,7 @@ describe('commitInlineAutomationPaint', () => {
         expect(mocks.replaceAutomationLanePoints).toHaveBeenCalledWith({ laneId: 'lane-1', points });
     });
 
-    it('should restore overwritten points on undo when paint merges with existing automation', () => {
+    it('should restore overwritten points on undo when paint merges with existing automation', async () => {
         const previousPoints = [
             { beat: 1, value: 0.2, curve: 'linear', tension: 0 },
             { beat: 3, value: 0.7, curve: 'linear', tension: 0 },
@@ -117,7 +119,7 @@ describe('commitInlineAutomationPaint', () => {
                 },
             ]);
 
-        const committed = commitInlineAutomationPaint({
+        const committed = await commitInlineAutomationPaint({
             laneId: 'lane-1',
             trackId: 'track-1',
             parameterId: 'gain',
@@ -147,7 +149,7 @@ describe('commitInlineAutomationPaint', () => {
         expect(mocks.removeAutomationPoint).not.toHaveBeenCalled();
     });
 
-    it('should create the target lane through Automation before committing when needed', () => {
+    it('should create the target lane through Automation before committing when needed', async () => {
         mocks.getAutomationLanes
             .mockReturnValueOnce([])
             .mockReturnValueOnce([
@@ -169,7 +171,7 @@ describe('commitInlineAutomationPaint', () => {
                 },
             ]);
 
-        const committed = commitInlineAutomationPaint({
+        const committed = await commitInlineAutomationPaint({
             trackId: 'track-1',
             parameterId: 'gain',
             parameterName: 'Gain',

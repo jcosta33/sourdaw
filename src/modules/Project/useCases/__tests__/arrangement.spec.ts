@@ -16,10 +16,24 @@ import { runProjectLoadTransaction } from '../projectPersistence/helpers/runProj
 import { setProjectIdentityTransitionDependencies } from '../projectPersistence/projectIdentityTransitionDependencies';
 import { markDirty } from '../projectPersistence/saveProject/markDirty';
 
-const { cancelPendingAudioBufferImport, prepareCachedAudioBuffersFromIdb, publishPreparedBuffers } = vi.hoisted(() => ({
+const {
+    cancelFreezeTasksForProjectTransition,
+    cancelPendingAudioBufferImport,
+    prepareCachedAudioBuffersFromIdb,
+    publishPreparedBuffers,
+    reconcileAdjustmentLayerStaleness,
+} = vi.hoisted(() => ({
+    cancelFreezeTasksForProjectTransition: vi.fn(() => Promise.resolve()),
     cancelPendingAudioBufferImport: vi.fn(),
     prepareCachedAudioBuffersFromIdb: vi.fn(),
     publishPreparedBuffers: vi.fn(() => 1),
+    reconcileAdjustmentLayerStaleness: vi.fn(),
+}));
+
+vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Arrangement/useCases')>()),
+    cancelFreezeTasksForProjectTransition,
+    reconcileAdjustmentLayerStaleness,
 }));
 
 vi.mock('#/modules/AudioEngine/useCases', () => ({
@@ -86,6 +100,7 @@ describe('switchArrangement', () => {
         arrangementStore.set(structuredClone(defaultArrangementStoreState));
         trackStore.set({ tracks: [], selectedTrackId: null, ghostClips: [] });
         prepareCachedAudioBuffersFromIdb.mockResolvedValue({ publish: publishPreparedBuffers });
+        cancelFreezeTasksForProjectTransition.mockResolvedValue(undefined);
     });
 
     afterEach(() => {
@@ -232,6 +247,35 @@ describe('switchArrangement', () => {
         );
         expect(setArrangement).toHaveBeenCalledTimes(2);
         expect(arrangementStore.value?.activeArrangementId).toBe(target.id);
+    });
+
+    it('revokes and awaits source freeze tasks before snapshotting or publishing the target arrangement', async () => {
+        const state = structuredClone(defaultArrangementStoreState);
+        const target = structuredClone(state.arrangements[0]!);
+        target.id = 'target-after-freeze-settlement';
+        state.arrangements.push(target);
+        arrangementStore.set(state);
+        let settle_freezes!: () => void;
+        cancelFreezeTasksForProjectTransition.mockReturnValueOnce(
+            new Promise<void>((resolve) => {
+                settle_freezes = resolve;
+            })
+        );
+
+        const switching = switchArrangement(target.id);
+        await vi.waitFor(() => expect(cancelFreezeTasksForProjectTransition).toHaveBeenCalledOnce());
+
+        expect(publishPreparedBuffers).not.toHaveBeenCalled();
+        expect(arrangementStore.value?.activeArrangementId).toBe(state.activeArrangementId);
+
+        settle_freezes();
+        await switching;
+
+        expect(publishPreparedBuffers).toHaveBeenCalledOnce();
+        expect(reconcileAdjustmentLayerStaleness).toHaveBeenCalledOnce();
+        expect(cancelFreezeTasksForProjectTransition.mock.invocationCallOrder[0]).toBeLessThan(
+            publishPreparedBuffers.mock.invocationCallOrder[0]!
+        );
     });
 
     it('switches to a legacy frozen arrangement without ever publishing it as current', async () => {

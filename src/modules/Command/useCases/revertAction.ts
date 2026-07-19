@@ -12,7 +12,8 @@ import {
 } from '../stores/actionReplayCapabilities';
 
 import { actionHistoryMetadataPort } from './actionHistoryMetadataPort';
-import { executeAppAction } from './executeAppAction';
+import { runCommandMutationExclusive } from './commandMutation';
+import { executeAppActionImpl } from './executeAppActionImpl';
 
 type ActionReplayClaim = NonNullable<ReturnType<typeof claimActionReplayCapability>>;
 
@@ -62,7 +63,7 @@ type RevertActionOutput = Promise<
     { status: 'executed' } | { status: 'executed-unmarked' } | { status: 'reconciled' } | { status: 'unavailable' }
 >;
 
-export async function revertAction(entryId: string): RevertActionOutput {
+async function revertActionUnderMutation(entryId: string): RevertActionOutput {
     const entry = actionHistoryStore.value?.entries.find((history_entry) => history_entry.id === entryId);
     if (!entry) {
         return { status: 'unavailable' };
@@ -85,8 +86,14 @@ export async function revertAction(entryId: string): RevertActionOutput {
         return { status: 'unavailable' };
     }
 
+    // Capability generations can be revoked by non-replay audit/reset paths.
+    // Recheck at the last synchronous boundary before the inverse write.
+    if (!isActionReplayClaimCurrent({ entryId, claim })) {
+        return { status: 'unavailable' };
+    }
+
     try {
-        await executeAppAction(claim.inverseAction, {
+        await executeAppActionImpl(claim.inverseAction, {
             source: entry.source,
             groupLabel: `Reverted: ${entry.label}`,
         });
@@ -114,4 +121,8 @@ export async function revertAction(entryId: string): RevertActionOutput {
 
     const mark_outcome = markCommittedReplay({ entryId, claim });
     return mark_outcome === 'marked' ? { status: 'executed' } : { status: 'executed-unmarked' };
+}
+
+export function revertAction(entryId: string): RevertActionOutput {
+    return runCommandMutationExclusive(() => revertActionUnderMutation(entryId));
 }

@@ -37,7 +37,8 @@ export { syncActionReplayMetadata } from './syncActionReplayMetadata';
 export { clearUndoHistory } from './clearUndoHistory';
 export { runCommandTransitionExclusive } from './runCommandTransitionExclusive';
 export { runCommandSnapshotExclusive } from './runCommandSnapshotExclusive';
-export { pushUndoEntry } from './pushUndoEntry';
+export { runLegacyCommandMutation } from './runLegacyCommandMutation';
+export { runLegacyCommandMutationUnderOwner } from './runLegacyCommandMutationUnderOwner';
 export { commitActionUndoEntry } from './commitActionUndoEntry';
 // Pitch-edit dispatch (`getPitchHandlers`) and dependency injection
 // (`setPitchEditDependencies`) now live in Knead/useCases — Knead owns the

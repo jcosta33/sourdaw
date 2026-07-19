@@ -15,6 +15,8 @@ vi.mock('#/modules/MIDI/useCases', () => ({
 
 vi.mock('#/modules/Command/useCases', () => ({
     pushUndoEntry: mocks.pushUndoEntry,
+    runLegacyCommandMutation: (mutation: (commitUndo: typeof mocks.pushUndoEntry) => unknown) =>
+        Promise.resolve(mutation(mocks.pushUndoEntry)),
 }));
 
 describe('commitInlineMidiNoteMove', () => {
@@ -22,14 +24,14 @@ describe('commitInlineMidiNoteMove', () => {
         vi.clearAllMocks();
     });
 
-    it('should commit one MIDI note move with a coalesced undo entry', () => {
+    it('should commit one MIDI note move with a coalesced undo entry', async () => {
         const originalNotes = [
             { id: 'note-1', pitch: 60, startBeat: 1, duration: 0.5, velocity: 100 },
             { id: 'note-2', pitch: 64, startBeat: 2, duration: 0.5, velocity: 100 },
         ];
         mocks.getNotesForClip.mockReturnValue(originalNotes);
 
-        const committed = commitInlineMidiNoteMove({
+        const committed = await commitInlineMidiNoteMove({
             clipId: 'clip-1',
             noteId: 'note-1',
             pitch: 72,
@@ -61,12 +63,12 @@ describe('commitInlineMidiNoteMove', () => {
         ]);
     });
 
-    it('should not write history when the note did not move', () => {
+    it('should not write history when the note did not move', async () => {
         mocks.getNotesForClip.mockReturnValue([
             { id: 'note-1', pitch: 60, startBeat: 1, duration: 0.5, velocity: 100 },
         ]);
 
-        const committed = commitInlineMidiNoteMove({
+        const committed = await commitInlineMidiNoteMove({
             clipId: 'clip-1',
             noteId: 'note-1',
             pitch: 60,

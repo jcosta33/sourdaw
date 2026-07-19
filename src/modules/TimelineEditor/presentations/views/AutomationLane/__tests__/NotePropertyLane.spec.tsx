@@ -13,9 +13,14 @@ vi.mock('#/modules/Arrangement/stores', async (importOriginal) => ({
     trackStore: { value: { tracks: [] } },
 }));
 
-vi.mock('#/modules/Command/useCases', () => ({
-    pushUndoEntry: vi.fn(),
-}));
+vi.mock('#/modules/Command/useCases', () => {
+    const commitUndo = vi.fn();
+    return {
+        pushUndoEntry: commitUndo,
+        runLegacyCommandMutation: (mutation: (publishUndo: typeof commitUndo) => unknown) =>
+            Promise.resolve(mutation(commitUndo)),
+    };
+});
 
 vi.mock('#/utils/UI/resolveToken', () => ({
     resolveToken: vi.fn(() => '#151515'),

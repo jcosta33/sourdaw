@@ -376,7 +376,7 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                 }
                 const endBeat = startBeat + durationBeats;
                 const clipName = `Render ${new Date(ts).toLocaleTimeString()}`;
-                const result = renderToClip({
+                const result = await renderToClip({
                     targetTrackId: renderTargetTrackId,
                     startBeat,
                     endBeat,

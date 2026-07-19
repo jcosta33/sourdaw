@@ -1,4 +1,4 @@
-import { pushUndoEntry } from '#/modules/Command/useCases';
+import { runLegacyCommandMutation } from '#/modules/Command/useCases';
 
 import { warpStates } from '../../stores/warpStates';
 
@@ -40,33 +40,38 @@ type CommitWarpMarkerBeatDragInput = {
 };
 
 export function commitWarpMarkerBeatDrag(input: CommitWarpMarkerBeatDragInput): void {
-    const current = warpStates.get(input.clipId);
-    if (!current) {
-        return;
-    }
-    const marker = current.markers.find((candidate) => candidate.id === input.markerId);
-    if (!marker) {
-        return;
-    }
-    const beforeValues = {
-        originalBeat: input.beforeOriginalBeat,
-        warpedBeat: input.beforeWarpedBeat,
-    };
-    const afterValues = {
-        originalBeat: marker.originalBeat,
-        warpedBeat: marker.warpedBeat,
-    };
-    if (beforeValues.originalBeat === afterValues.originalBeat && beforeValues.warpedBeat === afterValues.warpedBeat) {
-        return;
-    }
-
-    pushUndoEntry(
-        'Move elastic marker',
-        () => {
-            setMarkerBeatValues({ clipId: input.clipId, markerId: input.markerId, values: beforeValues });
-        },
-        () => {
-            setMarkerBeatValues({ clipId: input.clipId, markerId: input.markerId, values: afterValues });
+    void runLegacyCommandMutation((pushUndoEntry) => {
+        const current = warpStates.get(input.clipId);
+        if (!current) {
+            return;
         }
-    );
+        const marker = current.markers.find((candidate) => candidate.id === input.markerId);
+        if (!marker) {
+            return;
+        }
+        const beforeValues = {
+            originalBeat: input.beforeOriginalBeat,
+            warpedBeat: input.beforeWarpedBeat,
+        };
+        const afterValues = {
+            originalBeat: marker.originalBeat,
+            warpedBeat: marker.warpedBeat,
+        };
+        if (
+            beforeValues.originalBeat === afterValues.originalBeat &&
+            beforeValues.warpedBeat === afterValues.warpedBeat
+        ) {
+            return;
+        }
+
+        pushUndoEntry(
+            'Move elastic marker',
+            () => {
+                setMarkerBeatValues({ clipId: input.clipId, markerId: input.markerId, values: beforeValues });
+            },
+            () => {
+                setMarkerBeatValues({ clipId: input.clipId, markerId: input.markerId, values: afterValues });
+            }
+        );
+    });
 }

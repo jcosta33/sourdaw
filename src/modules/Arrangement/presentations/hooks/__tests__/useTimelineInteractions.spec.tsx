@@ -130,6 +130,8 @@ vi.mock('#/modules/Automation/useCases', async (importOriginal) => ({
 vi.mock('#/modules/Command/useCases', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/Command/useCases')>()),
     pushUndoEntry: mocks.pushUndoEntry,
+    runLegacyCommandMutation: (mutation: (commitUndo: typeof mocks.pushUndoEntry) => unknown) =>
+        Promise.resolve(mutation(mocks.pushUndoEntry)),
 }));
 vi.mock('#/modules/MIDI/stores', () => ({
     midiStore: {

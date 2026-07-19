@@ -10,6 +10,7 @@ import { undoStore } from '../stores/undoStore';
 import { executeAppActionImpl } from './executeAppActionImpl';
 import { recordAction } from './macro/recording/recordAction';
 import { REDO_NOT_APPLIED } from './redoResult';
+import { runCommandHistoryReplay } from './runCommandHistoryReplay';
 import { undoTreeMoveTo } from './undoTree/undoTreeMoveTo';
 
 function currentEntryId(past: readonly UndoEntry[]): string | null {
@@ -69,7 +70,7 @@ async function replay_adjustment_transaction(entries: readonly UndoEntry[]): Pro
 
 async function executeRedo(entry: UndoEntry): Promise<UndoEntry | null> {
     if (entry.kind === 'callback') {
-        return entry.redo() !== REDO_NOT_APPLIED ? entry : null;
+        return runCommandHistoryReplay(entry.redo) !== REDO_NOT_APPLIED ? entry : null;
     }
     const prepared_undo: { result: HandlerDescribeResult | null } = { result: null };
     await executeAppActionImpl(entry.action, {

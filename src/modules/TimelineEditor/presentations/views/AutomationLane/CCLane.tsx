@@ -2,7 +2,7 @@ import { type ReactElement, type MouseEvent, useState, useRef } from 'react';
 
 import { DawBlockedState } from '#/components/daw/DawBlockedState';
 import { useStore } from '#/infra/store/useStore';
-import { pushUndoEntry } from '#/modules/Command/useCases';
+import { runLegacyCommandMutation } from '#/modules/Command/useCases';
 import { midiStore } from '#/modules/MIDI/stores';
 import { addMidiCC, removeMidiCC, moveMidiCC } from '#/modules/MIDI/useCases';
 import { cn } from '#/utils/Styles/cn';
@@ -59,12 +59,14 @@ export const CCLane = ({ clipId, controller, beatWidth }: CCLaneProps): ReactEle
         const beat = Math.max(0, (x - 8) / beatWidth);
         const value = Math.round(Math.max(0, Math.min(127, ((height - y - 4) / (height - 8)) * 127)));
 
-        const cc = addMidiCC(clipId, controller, value, beat);
-        pushUndoEntry(
-            'Add CC point',
-            () => removeMidiCC(clipId, cc.id),
-            () => addMidiCC(clipId, controller, value, beat)
-        );
+        void runLegacyCommandMutation((pushUndoEntry) => {
+            const cc = addMidiCC(clipId, controller, value, beat);
+            pushUndoEntry(
+                'Add CC point',
+                () => removeMidiCC(clipId, cc.id),
+                () => addMidiCC(clipId, controller, value, beat)
+            );
+        });
     };
 
     const handlePointMouseDown = (ccId: string, event: MouseEvent<HTMLDivElement>) => {
@@ -80,38 +82,49 @@ export const CCLane = ({ clipId, controller, beatWidth }: CCLaneProps): ReactEle
         const origBeat = origPoint?.beat ?? 0;
         const origValue = origPoint?.value ?? 0;
 
-        setDragId(ccId);
         const rect = container.getBoundingClientRect();
         const height = rect.height;
 
-        const onMove = (me: globalThis.MouseEvent) => {
-            const mx = me.clientX - rect.left;
-            const my = me.clientY - rect.top;
+        void runLegacyCommandMutation(
+            (pushUndoEntry) =>
+                new Promise<void>((resolve) => {
+                    setDragId(ccId);
+                    const onMove = (me: globalThis.MouseEvent) => {
+                        const mx = me.clientX - rect.left;
+                        const my = me.clientY - rect.top;
 
-            const beat = Math.max(0, (mx - 8) / beatWidth);
-            const value = Math.round(Math.max(0, Math.min(127, ((height - my - 4) / (height - 8)) * 127)));
+                        const beat = Math.max(0, (mx - 8) / beatWidth);
+                        const value = Math.round(Math.max(0, Math.min(127, ((height - my - 4) / (height - 8)) * 127)));
 
-            moveMidiCC(clipId, ccId, beat, value);
-        };
+                        moveMidiCC(clipId, ccId, beat, value);
+                    };
 
-        const onUp = () => {
-            setDragId(null);
-            window.removeEventListener('mousemove', onMove);
-            window.removeEventListener('mouseup', onUp);
-            const finalPoint = (midiStore.value?.ccByClipId[clipId] ?? []).find((context) => context.id === ccId);
-            if (finalPoint && (finalPoint.beat !== origBeat || finalPoint.value !== origValue)) {
-                const finalBeat = finalPoint.beat;
-                const finalValue = finalPoint.value;
-                pushUndoEntry(
-                    'Move CC point',
-                    () => moveMidiCC(clipId, ccId, origBeat, origValue),
-                    () => moveMidiCC(clipId, ccId, finalBeat, finalValue)
-                );
-            }
-        };
+                    const onUp = () => {
+                        try {
+                            setDragId(null);
+                            window.removeEventListener('mousemove', onMove);
+                            window.removeEventListener('mouseup', onUp);
+                            const finalPoint = (midiStore.value?.ccByClipId[clipId] ?? []).find(
+                                (context) => context.id === ccId
+                            );
+                            if (finalPoint && (finalPoint.beat !== origBeat || finalPoint.value !== origValue)) {
+                                const finalBeat = finalPoint.beat;
+                                const finalValue = finalPoint.value;
+                                pushUndoEntry(
+                                    'Move CC point',
+                                    () => moveMidiCC(clipId, ccId, origBeat, origValue),
+                                    () => moveMidiCC(clipId, ccId, finalBeat, finalValue)
+                                );
+                            }
+                        } finally {
+                            resolve();
+                        }
+                    };
 
-        window.addEventListener('mousemove', onMove);
-        window.addEventListener('mouseup', onUp);
+                    window.addEventListener('mousemove', onMove);
+                    window.addEventListener('mouseup', onUp);
+                })
+        );
     };
 
     const handlePointDoubleClick = (ccId: string, event: MouseEvent<HTMLDivElement>) => {
@@ -119,18 +132,20 @@ export const CCLane = ({ clipId, controller, beatWidth }: CCLaneProps): ReactEle
         if (!clipId) {
             return;
         }
-        const point = points.find((param) => param.id === ccId);
-        if (point) {
-            const { controller: ctrl, value, beat, channel } = point;
-            removeMidiCC(clipId, ccId);
-            pushUndoEntry(
-                'Remove CC point',
-                () => addMidiCC(clipId, ctrl, value, beat, channel),
-                () => removeMidiCC(clipId, ccId)
-            );
-        } else {
-            removeMidiCC(clipId, ccId);
-        }
+        void runLegacyCommandMutation((pushUndoEntry) => {
+            const point = (midiStore.value?.ccByClipId[clipId] ?? []).find((param) => param.id === ccId);
+            if (point) {
+                const { controller: ctrl, value, beat, channel } = point;
+                removeMidiCC(clipId, ccId);
+                pushUndoEntry(
+                    'Remove CC point',
+                    () => addMidiCC(clipId, ctrl, value, beat, channel),
+                    () => removeMidiCC(clipId, ccId)
+                );
+            } else {
+                removeMidiCC(clipId, ccId);
+            }
+        });
     };
 
     if (!clipId) {

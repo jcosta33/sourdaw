@@ -95,10 +95,13 @@ vi.mock('#/infra/logger/appLogger', () => ({ logger: loggerMock }));
 
 vi.mock('#/modules/Command/useCases', async (importOriginal) => {
     const actual: typeof import('#/modules/Command/useCases') = await importOriginal();
+    const commitUndo = vi.fn();
     return {
         ...actual,
         executeAppAction: vi.fn(),
-        pushUndoEntry: vi.fn(),
+        pushUndoEntry: commitUndo,
+        runLegacyCommandMutation: (mutation: (publishUndo: typeof commitUndo) => unknown) =>
+            Promise.resolve(mutation(commitUndo)),
         redo: vi.fn(),
         undo: vi.fn(),
     };

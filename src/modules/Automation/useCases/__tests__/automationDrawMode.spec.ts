@@ -18,6 +18,8 @@ vi.mock('#/modules/Command/useCases', async (importOriginal) => {
     return {
         ...actual,
         pushUndoEntry: mocks.pushUndoEntry,
+        runLegacyCommandMutation: (mutation: (commitUndo: typeof mocks.pushUndoEntry) => unknown) =>
+            Promise.resolve(mutation(mocks.pushUndoEntry)),
     };
 });
 

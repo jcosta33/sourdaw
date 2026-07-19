@@ -19,6 +19,8 @@ const { pushUndoEntryMock, takeLaneStoreMock } = vi.hoisted(() => ({
 
 vi.mock('#/modules/Command/useCases', () => ({
     pushUndoEntry: pushUndoEntryMock,
+    runLegacyCommandMutation: (mutation: (commitUndo: typeof pushUndoEntryMock) => unknown) =>
+        Promise.resolve(mutation(pushUndoEntryMock)),
 }));
 
 vi.mock('../../../stores/takeLaneStore', () => ({

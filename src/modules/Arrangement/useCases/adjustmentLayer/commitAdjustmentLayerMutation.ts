@@ -16,6 +16,7 @@ export function commitAdjustmentLayerMutation({ adjustmentMutationId, mutation }
     const before_layer_state = adjustmentLayerStore.value;
     const before_track_state = trackStore.value;
     const before_layers = before_layer_state?.layers ?? [];
+    const freeze_tasks_to_abort = new Set<string>();
     let applied = false;
 
     batchStoreUpdates(() => {
@@ -58,7 +59,7 @@ export function commitAdjustmentLayerMutation({ adjustmentMutationId, mutation }
                     return track;
                 }
                 if (track.freezeState.status === 'freezing') {
-                    freezeTaskAuthority.abortTrack(track.id);
+                    freeze_tasks_to_abort.add(track.id);
                     return stabilizeInterruptedFreeze(track, adjustmentMutationId);
                 }
                 return {
@@ -98,6 +99,10 @@ export function commitAdjustmentLayerMutation({ adjustmentMutationId, mutation }
             throw error;
         }
     });
+
+    for (const track_id of freeze_tasks_to_abort) {
+        freezeTaskAuthority.abortTrack(track_id);
+    }
 
     return { applied };
 }

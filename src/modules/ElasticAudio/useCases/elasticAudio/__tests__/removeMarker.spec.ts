@@ -15,6 +15,8 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock('#/modules/Command/useCases', () => ({
     pushUndoEntry: (...args: unknown[]) => mocks.pushUndoEntry(...args),
+    runLegacyCommandMutation: (mutation: (commitUndo: typeof mocks.pushUndoEntry) => unknown) =>
+        Promise.resolve(mutation(mocks.pushUndoEntry)),
 }));
 
 vi.mock('#/modules/Arrangement/stores', () => ({

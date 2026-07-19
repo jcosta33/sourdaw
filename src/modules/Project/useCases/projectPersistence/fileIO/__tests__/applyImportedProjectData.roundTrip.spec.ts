@@ -35,12 +35,14 @@ type PreparedImportedAudioBuffers = PreparedAudioBuffers & { persist: () => Prom
 
 const {
     audioContext,
+    cancelFreezeTasksForProjectTransition,
     compactProject,
     crdtAuthority,
     engineGraph,
     importCachedAudioBuffers,
     notifyUser,
     prepareCachedAudioBuffersFromIdb,
+    reconcileAdjustmentLayerStaleness,
     persistCrdtProject,
     resetAudioGraph,
     resetCrdtProjectAuthority,
@@ -68,6 +70,7 @@ const {
     });
     return {
         audioContext: {},
+        cancelFreezeTasksForProjectTransition: vi.fn(() => Promise.resolve()),
         compactProject: vi.fn().mockResolvedValue(undefined),
         crdtAuthority,
         engineGraph,
@@ -78,6 +81,7 @@ const {
         prepareCachedAudioBuffersFromIdb: vi
             .fn<(input: PrepareCachedAudioBuffersInput) => Promise<PreparedAudioBuffers | null>>()
             .mockResolvedValue(prepared()),
+        reconcileAdjustmentLayerStaleness: vi.fn(),
         persistCrdtProject: vi.fn().mockResolvedValue(undefined),
         resetAudioGraph,
         resetCrdtProjectAuthority,
@@ -107,7 +111,12 @@ vi.mock('#/modules/MIDI/useCases', async (importOriginal) => {
 });
 vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => {
     const actual = await importOriginal<typeof import('#/modules/Arrangement/useCases')>();
-    return { ...actual, stopRecording };
+    return {
+        ...actual,
+        cancelFreezeTasksForProjectTransition,
+        reconcileAdjustmentLayerStaleness,
+        stopRecording,
+    };
 });
 vi.mock('#/modules/CrdtDocument/useCases', () => ({
     compactProject,
@@ -273,6 +282,9 @@ describe('applyImportedProjectData round-trip hydration', () => {
         prepareCachedAudioBuffersFromIdb.mockClear();
         setSidechainRoutes.mockClear();
         compactProject.mockClear();
+        cancelFreezeTasksForProjectTransition.mockClear();
+        cancelFreezeTasksForProjectTransition.mockResolvedValue(undefined);
+        reconcileAdjustmentLayerStaleness.mockClear();
         resetCrdtProjectAuthority.mockClear();
         resetAudioGraph.mockClear();
         restoreOldAudioGraph.mockClear();
@@ -707,6 +719,31 @@ describe('applyImportedProjectData round-trip hydration', () => {
         expect(resetAudioGraph).toHaveBeenCalledOnce();
         expect(trackStore.value?.tracks[0]?.id).toBe('track-audio');
         expect(crdtAuthority.value).toBe('Round Trip');
+    });
+
+    it('awaits revoked freeze tasks before resetting the old graph or hydrating new truth', async () => {
+        let settle_freezes!: () => void;
+        cancelFreezeTasksForProjectTransition.mockReturnValueOnce(
+            new Promise<void>((resolve) => {
+                settle_freezes = resolve;
+            })
+        );
+        trackStore.set({ tracks: [baseTrack('old-track', [])], selectedTrackId: null });
+
+        const applying = applyImportedProjectData({ data: makeProject() });
+        await vi.waitFor(() => expect(cancelFreezeTasksForProjectTransition).toHaveBeenCalledOnce());
+
+        expect(resetAudioGraph).not.toHaveBeenCalled();
+        expect(trackStore.value?.tracks[0]?.id).toBe('old-track');
+
+        settle_freezes();
+        await expect(applying).resolves.toBe(true);
+
+        expect(cancelFreezeTasksForProjectTransition.mock.invocationCallOrder[0]).toBeLessThan(
+            resetAudioGraph.mock.invocationCallOrder[0]!
+        );
+        expect(trackStore.value?.tracks[0]?.id).toBe('track-audio');
+        expect(reconcileAdjustmentLayerStaleness).toHaveBeenCalledOnce();
     });
 
     it('does not replace project truth when superseded during recording delivery', async () => {

@@ -1,5 +1,6 @@
 import { logger } from '#/infra/logger/appLogger';
 import { batchStoreUpdates } from '#/infra/store/createStore';
+import { cancelFreezeTasksForProjectTransition } from '#/modules/Arrangement/useCases';
 import {
     getAudioContext,
     importCachedAudioBuffers,
@@ -120,6 +121,10 @@ export async function replaceProjectData({
 
         try {
             await stopPlayback();
+            if (!transaction.isCurrent()) {
+                return 'aborted' as const;
+            }
+            await cancelFreezeTasksForProjectTransition();
             if (!transaction.isCurrent()) {
                 return 'aborted' as const;
             }

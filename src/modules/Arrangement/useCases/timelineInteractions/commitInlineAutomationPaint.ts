@@ -5,7 +5,7 @@ import {
     removeAutomationLane,
     replaceAutomationLanePoints,
 } from '#/modules/Automation/useCases';
-import { pushUndoEntry } from '#/modules/Command/useCases';
+import { runLegacyCommandMutation } from '#/modules/Command/useCases';
 
 import { type AutomationPoint } from '../../models/AutomationViewTypes';
 
@@ -55,53 +55,55 @@ function createTargetLane(input: CommitInlineAutomationPaintInput): AutomationLa
     return findTargetLane(input);
 }
 
-export function commitInlineAutomationPaint(input: CommitInlineAutomationPaintInput): boolean {
-    if (input.points.length === 0) {
-        return false;
-    }
-
-    const previousLane = findTargetLane(input);
-    if (!previousLane && input.laneId) {
-        return false;
-    }
-
-    const targetLane = previousLane ?? createTargetLane(input);
-    if (!targetLane) {
-        return false;
-    }
-
-    const points = input.points.map((point) => ({ ...point }));
-    const previousSnapshot = previousLane ? cloneLane(previousLane) : null;
-    let activeLaneId = targetLane.id;
-
-    batchAddAutomationPoints(activeLaneId, points);
-
-    const nextLane = getAutomationLanes().find((lane) => lane.id === activeLaneId);
-    const nextPoints = nextLane ? clonePoints(nextLane.points) : points;
-
-    pushUndoEntry(
-        `Draw ${points.length} automation point${points.length > 1 ? 's' : ''}`,
-        () => {
-            if (previousSnapshot) {
-                replaceAutomationLanePoints({ laneId: previousSnapshot.id, points: previousSnapshot.points });
-                return;
-            }
-            removeAutomationLane(activeLaneId);
-        },
-        () => {
-            if (previousSnapshot) {
-                replaceAutomationLanePoints({ laneId: previousSnapshot.id, points: nextPoints });
-                return;
-            }
-
-            const redoneLane = createTargetLane(input);
-            if (!redoneLane) {
-                return;
-            }
-            activeLaneId = redoneLane.id;
-            replaceAutomationLanePoints({ laneId: activeLaneId, points: nextPoints });
+export function commitInlineAutomationPaint(input: CommitInlineAutomationPaintInput): Promise<boolean> {
+    return runLegacyCommandMutation((pushUndoEntry) => {
+        if (input.points.length === 0) {
+            return false;
         }
-    );
 
-    return true;
+        const previousLane = findTargetLane(input);
+        if (!previousLane && input.laneId) {
+            return false;
+        }
+
+        const targetLane = previousLane ?? createTargetLane(input);
+        if (!targetLane) {
+            return false;
+        }
+
+        const points = input.points.map((point) => ({ ...point }));
+        const previousSnapshot = previousLane ? cloneLane(previousLane) : null;
+        let activeLaneId = targetLane.id;
+
+        batchAddAutomationPoints(activeLaneId, points);
+
+        const nextLane = getAutomationLanes().find((lane) => lane.id === activeLaneId);
+        const nextPoints = nextLane ? clonePoints(nextLane.points) : points;
+
+        pushUndoEntry(
+            `Draw ${points.length} automation point${points.length > 1 ? 's' : ''}`,
+            () => {
+                if (previousSnapshot) {
+                    replaceAutomationLanePoints({ laneId: previousSnapshot.id, points: previousSnapshot.points });
+                    return;
+                }
+                removeAutomationLane(activeLaneId);
+            },
+            () => {
+                if (previousSnapshot) {
+                    replaceAutomationLanePoints({ laneId: previousSnapshot.id, points: nextPoints });
+                    return;
+                }
+
+                const redoneLane = createTargetLane(input);
+                if (!redoneLane) {
+                    return;
+                }
+                activeLaneId = redoneLane.id;
+                replaceAutomationLanePoints({ laneId: activeLaneId, points: nextPoints });
+            }
+        );
+
+        return true;
+    });
 }

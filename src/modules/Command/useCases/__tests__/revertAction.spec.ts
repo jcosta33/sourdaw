@@ -7,6 +7,7 @@ import {
 } from '../../stores/actionReplayCapabilities';
 import { getActionReplayStatus } from '../getActionReplayStatus';
 import { revertAction } from '../revertAction';
+import { runCommandTransitionExclusive } from '../runCommandTransitionExclusive';
 
 type TestHistoryEntry = {
     id: string;
@@ -26,7 +27,7 @@ const mocks = vi.hoisted(() => {
 
     return {
         action_history_store,
-        execute_app_action: vi.fn<typeof import('../executeAppAction').executeAppAction>(),
+        execute_app_action: vi.fn<typeof import('../executeAppActionImpl').executeAppActionImpl>(),
         mark_reverted:
             vi.fn<(input: { entryId: string; expectedFingerprint: string }) => { status: 'marked' | 'unavailable' }>(),
     };
@@ -36,8 +37,8 @@ vi.mock('#/modules/CrdtDocument/stores', () => ({
     actionHistoryStore: mocks.action_history_store,
 }));
 
-vi.mock('../executeAppAction', () => ({
-    executeAppAction: mocks.execute_app_action,
+vi.mock('../executeAppActionImpl', () => ({
+    executeAppActionImpl: mocks.execute_app_action,
 }));
 
 vi.mock('../actionHistoryMetadataPort', () => ({
@@ -274,5 +275,35 @@ describe('revertAction', () => {
         expect(second_result).toEqual({ status: 'unavailable' });
         await first_replay;
         expect(mocks.execute_app_action).toHaveBeenCalledTimes(1);
+    });
+
+    it('waits for an owning transition before reading or claiming replay authority', async () => {
+        const entry = create_entry();
+        let release_transition!: () => void;
+        let mark_transition_started!: () => void;
+        const transition_started = new Promise<void>((resolve) => {
+            mark_transition_started = resolve;
+        });
+        const transition_gate = new Promise<void>((resolve) => {
+            release_transition = resolve;
+        });
+        mocks.action_history_store.value = { entries: [entry] };
+        registerActionReplayCapability({ entryId: entry.id, inverseAction: { type: 'togglePlayback' } });
+
+        const transition = runCommandTransitionExclusive(async (resetHistory) => {
+            mark_transition_started();
+            await transition_gate;
+            resetHistory();
+        });
+        await transition_started;
+        const replay = revertAction(entry.id);
+        await Promise.resolve();
+
+        expect(mocks.execute_app_action).not.toHaveBeenCalled();
+
+        release_transition();
+        await transition;
+        await expect(replay).resolves.toEqual({ status: 'unavailable' });
+        expect(mocks.execute_app_action).not.toHaveBeenCalled();
     });
 });

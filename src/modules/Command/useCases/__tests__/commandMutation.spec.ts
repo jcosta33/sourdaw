@@ -4,6 +4,11 @@ import { configureAutomergeStoragePort } from '#/infra/store/storage/createAutom
 import { type ActionHandler, type AppAction } from '#/utils/handlerContract';
 
 import { createEmptyTree } from '../../models/UndoTree';
+import {
+    clearActionReplayCapabilities,
+    hasActionReplayCapability,
+    registerActionReplayCapability,
+} from '../../stores/actionReplayCapabilities';
 import { clearHandlerRegistry, registerHandlerMap } from '../../stores/handlerRegistry';
 import { undoStore } from '../../stores/undoStore';
 import { undoTreeStore } from '../../stores/undoTree';
@@ -11,6 +16,8 @@ import { clearUndoHistory } from '../clearUndoHistory';
 import { executeAppAction } from '../executeAppAction';
 import { getUndoRedoHandlers } from '../getUndoRedoHandlers';
 import { runCommandTransitionExclusive } from '../runCommandTransitionExclusive';
+import { runLegacyCommandMutation } from '../runLegacyCommandMutation';
+import { runLegacyCommandMutationUnderOwner } from '../runLegacyCommandMutationUnderOwner';
 import { undo } from '../undo';
 import { undoToIndex } from '../undoToIndex';
 
@@ -26,6 +33,7 @@ describe('commandMutation', () => {
     beforeEach(() => {
         configureAutomergeStoragePort(null);
         clearHandlerRegistry();
+        clearActionReplayCapabilities();
         clearUndoHistory();
         undoTreeStore.set({ tree: createEmptyTree(), enabled: true });
         value = 0;
@@ -114,6 +122,42 @@ describe('commandMutation', () => {
         expect(undoStore.value?.future).toEqual([]);
     });
 
+    it('lets an async handler commit legacy mutation and history through its existing lease', async () => {
+        const composite_handler: ActionHandler<TogglePlaybackAction> = {
+            undoable: false,
+            execute: async () => {
+                await Promise.resolve();
+                await runLegacyCommandMutationUnderOwner((commitUndo) => {
+                    const previous = value;
+                    value = 4;
+                    commitUndo(
+                        'Async handler legacy edit',
+                        () => {
+                            value = previous;
+                        },
+                        () => {
+                            value = 4;
+                        }
+                    );
+                });
+            },
+            describe: () => ({ label: 'Composite action' }),
+        };
+        registerHandlerMap({ togglePlayback: composite_handler });
+
+        const settled = await Promise.race([
+            executeAppAction({ type: 'togglePlayback' }).then(() => true),
+            new Promise<false>((resolve) => {
+                setTimeout(() => resolve(false), 100);
+            }),
+        ]);
+
+        expect(settled).toBe(true);
+        expect(value).toBe(4);
+        expect(undoStore.value?.past).toHaveLength(1);
+        expect(undoStore.value?.past[0]?.label).toBe('Async handler legacy edit');
+    });
+
     it('resets linear and tree history inside one exclusive transition', async () => {
         await executeAppAction({ type: 'setSnapValue', payload: { value: 1 } });
         expect(undoStore.value?.past).toHaveLength(1);
@@ -127,6 +171,94 @@ describe('commandMutation', () => {
         expect(undoStore.value).toEqual({ past: [], future: [] });
         expect(undoTreeStore.value?.tree.nodes).toEqual({});
         expect(undoTreeStore.value?.tree.currentNodeId).toBeNull();
+    });
+
+    it('revokes replay authority while preserving audit metadata when a transition resets history', async () => {
+        registerActionReplayCapability({
+            entryId: 'old-arrangement-entry',
+            inverseAction: { type: 'togglePlayback' },
+            metadata: {
+                id: 'old-arrangement-entry',
+                label: 'Old arrangement action',
+                actionKind: 'togglePlayback',
+                source: 'manual',
+                timestamp: 10,
+            },
+        });
+
+        await runCommandTransitionExclusive((resetHistory) => {
+            resetHistory();
+            return Promise.resolve();
+        });
+
+        expect(hasActionReplayCapability('old-arrangement-entry')).toBe(false);
+    });
+
+    it('queues a complete legacy mutation behind an in-flight async undo', async () => {
+        await executeAppAction({ type: 'setSnapValue', payload: { value: 1 } });
+        const undoing = undo();
+        await inverse_started;
+
+        let legacy_settled = false;
+        const legacy = runLegacyCommandMutation((commitUndo) => {
+            const previous = value;
+            value = 2;
+            commitUndo(
+                'Legacy snap edit',
+                () => {
+                    value = previous;
+                },
+                () => {
+                    value = 2;
+                }
+            );
+        }).then(() => {
+            legacy_settled = true;
+        });
+
+        await Promise.resolve();
+        expect(value).toBe(1);
+        expect(legacy_settled).toBe(false);
+
+        release_inverse();
+        await Promise.all([undoing, legacy]);
+
+        expect(value).toBe(2);
+        expect(undoStore.value?.past).toHaveLength(1);
+        expect(undoStore.value?.past[0]?.label).toBe('Legacy snap edit');
+    });
+
+    it('does not publish nested legacy history while replaying a callback entry', async () => {
+        await runLegacyCommandMutation((commitUndo) => {
+            value = 1;
+            commitUndo(
+                'Outer legacy edit',
+                () => {
+                    void runLegacyCommandMutation((commitNestedUndo) => {
+                        value = 0;
+                        commitNestedUndo(
+                            'Nested inverse',
+                            () => {
+                                value = 1;
+                            },
+                            () => {
+                                value = 0;
+                            }
+                        );
+                    });
+                },
+                () => {
+                    value = 1;
+                }
+            );
+        });
+
+        await undo();
+
+        expect(value).toBe(0);
+        expect(undoStore.value?.past).toEqual([]);
+        expect(undoStore.value?.future).toHaveLength(1);
+        expect(undoStore.value?.future[0]?.label).toBe('Outer legacy edit');
     });
 
     it('holds one mutation lease while navigating to a history unit so a concurrent edit is not consumed', async () => {

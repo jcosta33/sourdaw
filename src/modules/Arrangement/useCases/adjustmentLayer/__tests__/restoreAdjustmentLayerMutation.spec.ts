@@ -180,4 +180,63 @@ describe('restoreAdjustmentLayerMutation', () => {
             expect(undoStore.value?.future).toEqual([]);
         }
     );
+
+    it('rolls back the track store when the layer-store half of undo fails', async () => {
+        const before_track_state = trackStore.value;
+        const layer_failure = new Error('layer restore failed');
+        const layer_set = vi.spyOn(adjustmentLayerStore, 'set').mockImplementationOnce(() => {
+            throw layer_failure;
+        });
+
+        await expect(
+            restoreAdjustmentLayerMutation({
+                adjustmentMutationId: 'mutation-1',
+                operation: { kind: 'restore-mix', layerId: 'layer-1', previous: 0.25, expected: 0.75 },
+                staleTransitions: [
+                    {
+                        trackId: 'track-a',
+                        previousStatus: 'stale',
+                        previousAdjustmentMutationId: 'older-mutation',
+                    },
+                ],
+            })
+        ).rejects.toBe(layer_failure);
+
+        expect(trackStore.value).toBe(before_track_state);
+        layer_set.mockRestore();
+    });
+
+    it('reports both the store failure and a failed track rollback', async () => {
+        const layer_failure = new Error('layer restore failed');
+        const rollback_failure = new Error('track rollback failed');
+        const original_track_set = trackStore.set.bind(trackStore);
+        const track_set = vi
+            .spyOn(trackStore, 'set')
+            .mockImplementationOnce(original_track_set)
+            .mockImplementationOnce(() => {
+                throw rollback_failure;
+            });
+        const layer_set = vi.spyOn(adjustmentLayerStore, 'set').mockImplementationOnce(() => {
+            throw layer_failure;
+        });
+
+        const restoring = restoreAdjustmentLayerMutation({
+            adjustmentMutationId: 'mutation-1',
+            operation: { kind: 'restore-mix', layerId: 'layer-1', previous: 0.25, expected: 0.75 },
+            staleTransitions: [
+                {
+                    trackId: 'track-a',
+                    previousStatus: 'stale',
+                    previousAdjustmentMutationId: 'older-mutation',
+                },
+            ],
+        });
+
+        await expect(restoring).rejects.toMatchObject({
+            errors: [layer_failure, rollback_failure],
+            message: 'Adjustment-layer undo rollback failed',
+        });
+        layer_set.mockRestore();
+        track_set.mockRestore();
+    });
 });

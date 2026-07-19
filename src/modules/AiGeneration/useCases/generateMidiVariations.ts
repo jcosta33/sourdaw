@@ -10,7 +10,7 @@ import {
     getTrackStoreState as getTrackState,
     setTrackStoreState,
 } from '#/modules/Arrangement/useCases';
-import { pushUndoEntry } from '#/modules/Command/useCases';
+import { runLegacyCommandMutation } from '#/modules/Command/useCases';
 import { getMidiStoreState as getMidiState, getNotesForClip, setMidiStoreState } from '#/modules/MIDI/useCases';
 
 import { createAiGenerationError } from '../errors/AiGenerationError';
@@ -185,36 +185,38 @@ ONLY output raw JSON, no markdown blocks.`;
         );
     }
 
-    // Snapshot both stores before mutation so the undo entry can restore them
-    const trackSnapshotBefore = getTrackState();
-    const midiSnapshotBefore = getMidiState();
+    return runLegacyCommandMutation((pushUndoEntry) => {
+        // Snapshot both stores before mutation so the undo entry can restore them
+        const trackSnapshotBefore = getTrackState();
+        const midiSnapshotBefore = getMidiState();
 
-    createAlternativeClips(targetClip.id, variations);
+        createAlternativeClips(targetClip.id, variations);
 
-    const trackSnapshotAfter = getTrackState();
-    const midiSnapshotAfter = getMidiState();
+        const trackSnapshotAfter = getTrackState();
+        const midiSnapshotAfter = getMidiState();
 
-    pushUndoEntry(
-        `AI Variations: ${clipId}`,
-        () => {
-            if (trackSnapshotBefore) {
-                setTrackStoreState(trackSnapshotBefore);
-            }
-            if (midiSnapshotBefore) {
-                setMidiStoreState(midiSnapshotBefore);
-            }
-        },
-        () => {
-            if (trackSnapshotAfter) {
-                setTrackStoreState(trackSnapshotAfter);
-            }
-            if (midiSnapshotAfter) {
-                setMidiStoreState(midiSnapshotAfter);
-            }
-        },
-        { source: 'ai' }
-    );
-    return variations.length;
+        pushUndoEntry(
+            `AI Variations: ${clipId}`,
+            () => {
+                if (trackSnapshotBefore) {
+                    setTrackStoreState(trackSnapshotBefore);
+                }
+                if (midiSnapshotBefore) {
+                    setMidiStoreState(midiSnapshotBefore);
+                }
+            },
+            () => {
+                if (trackSnapshotAfter) {
+                    setTrackStoreState(trackSnapshotAfter);
+                }
+                if (midiSnapshotAfter) {
+                    setMidiStoreState(midiSnapshotAfter);
+                }
+            },
+            { source: 'ai' }
+        );
+        return variations.length;
+    });
 }
 
 /**

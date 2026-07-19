@@ -2,7 +2,10 @@ import { createEmptyTree } from '../models/UndoTree';
 import { clearUndoHistory } from '../stores/clearUndoHistory';
 import { undoTreeStore } from '../stores/undoTree';
 
+import { resetActionReplayAuthority } from './resetActionReplayAuthority';
+
 function resetCommandHistory(): void {
+    resetActionReplayAuthority();
     clearUndoHistory();
     const treeState = undoTreeStore.value;
     if (treeState) {

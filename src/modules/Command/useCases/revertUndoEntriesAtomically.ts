@@ -3,12 +3,13 @@ import { type AppAction } from '#/utils/handlerContract';
 import { type UndoEntry } from '../models/UndoEntry';
 
 import { executeAppActionImpl } from './executeAppActionImpl';
+import { runCommandHistoryReplay } from './runCommandHistoryReplay';
 
 const replay_options = { skipUndo: true, skipMacroRecording: true } as const;
 
 async function apply_inverse(entry: UndoEntry): Promise<void> {
     if (entry.kind === 'callback') {
-        entry.undo();
+        runCommandHistoryReplay(entry.undo);
         return;
     }
     if (entry.inverseAction) {

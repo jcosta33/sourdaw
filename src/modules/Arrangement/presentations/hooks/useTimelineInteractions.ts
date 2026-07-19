@@ -2,7 +2,7 @@ import { type MouseEvent, type DragEvent, useEffect, useRef, useState } from 're
 
 import { collaborationStore } from '#/modules/Collaboration/stores';
 import { broadcastPresence } from '#/modules/Collaboration/useCases';
-import { pushUndoEntry } from '#/modules/Command/useCases';
+import { runLegacyCommandMutation } from '#/modules/Command/useCases';
 import { midiStore } from '#/modules/MIDI/stores';
 import { preferencesStore } from '#/modules/Preferences/stores';
 import { toggleLoop, getTransportState, setLoopRegion } from '#/modules/Transport/useCases';
@@ -535,7 +535,7 @@ export const useTimelineInteractions = (canvasRef: React.RefObject<HTMLCanvasEle
             inlineMidiNotePreviewRef.current = null;
             previewDirtyFlag.value = true;
             if (preview && preview.clipId === drag.clipId && preview.noteId === drag.noteId) {
-                commitInlineMidiNoteMove({
+                void commitInlineMidiNoteMove({
                     clipId: preview.clipId,
                     noteId: preview.noteId,
                     pitch: preview.pitch,
@@ -555,12 +555,14 @@ export const useTimelineInteractions = (canvasRef: React.RefObject<HTMLCanvasEle
                 const deltaBeats = (x - startX) / view.pixelsPerBeat;
                 if (Math.abs(deltaBeats) > 0.001) {
                     const newOffset = originalOffset + deltaBeats;
-                    slipClipContent(clipId, clipType, newOffset);
-                    pushUndoEntry(
-                        'Slip clip content',
-                        () => slipClipContent(clipId, clipType, originalOffset),
-                        () => slipClipContent(clipId, clipType, newOffset)
-                    );
+                    void runLegacyCommandMutation((pushUndoEntry) => {
+                        slipClipContent(clipId, clipType, newOffset);
+                        pushUndoEntry(
+                            'Slip clip content',
+                            () => slipClipContent(clipId, clipType, originalOffset),
+                            () => slipClipContent(clipId, clipType, newOffset)
+                        );
+                    });
                 }
             }
             return;
@@ -572,7 +574,7 @@ export const useTimelineInteractions = (canvasRef: React.RefObject<HTMLCanvasEle
         }
 
         if (autoDragRef.current) {
-            commitInlineAutomationPaint(autoDragRef.current);
+            void commitInlineAutomationPaint(autoDragRef.current);
             autoDragRef.current = null;
             return;
         }
@@ -584,46 +586,75 @@ export const useTimelineInteractions = (canvasRef: React.RefObject<HTMLCanvasEle
             const state1 = Math.min(startBeat, endBeat);
             const length = Math.max(1, Math.max(startBeat, endBeat) - state1);
 
-            const rippleEnabled = workspaceStore.value?.rippleEditing ?? false;
-            if (rippleEnabled) {
-                // Ripple insert: compute plan BEFORE adding the clip so it doesn't include the new clip
-                const ripplePlan = planRippleInsert({
-                    trackId: drawTrackId,
-                    insertBeat: state1,
-                    insertDuration: length,
-                });
-                const clip = addClip({
-                    trackId: drawTrackId,
-                    startBeat: state1,
-                    endBeat: state1 + length,
-                    name: `Clip ${state1}`,
-                    type: drawClipType,
-                });
-                if (clip) {
-                    if (ripplePlan && ripplePlan.shiftedClips.length > 0) {
-                        rippleInsertClip({ trackId: drawTrackId, insertDuration: length, plan: ripplePlan });
-                        const clipId = clip.id;
-                        const savedPlan = ripplePlan;
-                        pushUndoEntry(
-                            'Draw clip (ripple)',
-                            () => {
-                                removeClip(clipId);
-                                undoRippleInsertClip({ trackId: drawTrackId, plan: savedPlan });
-                            },
-                            () => {
-                                const redrawn = addClip({
-                                    trackId: drawTrackId,
-                                    startBeat: state1,
-                                    endBeat: state1 + length,
-                                    name: `Clip ${state1}`,
-                                    type: drawClipType,
-                                });
-                                if (redrawn) {
-                                    rippleInsertClip({ trackId: drawTrackId, insertDuration: length, plan: savedPlan });
+            void runLegacyCommandMutation((pushUndoEntry) => {
+                const rippleEnabled = workspaceStore.value?.rippleEditing ?? false;
+                if (rippleEnabled) {
+                    // Ripple insert: compute plan BEFORE adding the clip so it doesn't include the new clip
+                    const ripplePlan = planRippleInsert({
+                        trackId: drawTrackId,
+                        insertBeat: state1,
+                        insertDuration: length,
+                    });
+                    const clip = addClip({
+                        trackId: drawTrackId,
+                        startBeat: state1,
+                        endBeat: state1 + length,
+                        name: `Clip ${state1}`,
+                        type: drawClipType,
+                    });
+                    if (clip) {
+                        if (ripplePlan && ripplePlan.shiftedClips.length > 0) {
+                            rippleInsertClip({ trackId: drawTrackId, insertDuration: length, plan: ripplePlan });
+                            const clipId = clip.id;
+                            const savedPlan = ripplePlan;
+                            pushUndoEntry(
+                                'Draw clip (ripple)',
+                                () => {
+                                    removeClip(clipId);
+                                    undoRippleInsertClip({ trackId: drawTrackId, plan: savedPlan });
+                                },
+                                () => {
+                                    const redrawn = addClip({
+                                        trackId: drawTrackId,
+                                        startBeat: state1,
+                                        endBeat: state1 + length,
+                                        name: `Clip ${state1}`,
+                                        type: drawClipType,
+                                    });
+                                    if (redrawn) {
+                                        rippleInsertClip({
+                                            trackId: drawTrackId,
+                                            insertDuration: length,
+                                            plan: savedPlan,
+                                        });
+                                    }
                                 }
-                            }
-                        );
-                    } else {
+                            );
+                        } else {
+                            const clipId = clip.id;
+                            pushUndoEntry(
+                                'Draw clip',
+                                () => removeClip(clipId),
+                                () =>
+                                    addClip({
+                                        trackId: drawTrackId,
+                                        startBeat: state1,
+                                        endBeat: state1 + length,
+                                        name: `Clip ${state1}`,
+                                        type: drawClipType,
+                                    })
+                            );
+                        }
+                    }
+                } else {
+                    const clip = addClip({
+                        trackId: drawTrackId,
+                        startBeat: state1,
+                        endBeat: state1 + length,
+                        name: `Clip ${state1}`,
+                        type: drawClipType,
+                    });
+                    if (clip) {
                         const clipId = clip.id;
                         pushUndoEntry(
                             'Draw clip',
@@ -639,30 +670,7 @@ export const useTimelineInteractions = (canvasRef: React.RefObject<HTMLCanvasEle
                         );
                     }
                 }
-            } else {
-                const clip = addClip({
-                    trackId: drawTrackId,
-                    startBeat: state1,
-                    endBeat: state1 + length,
-                    name: `Clip ${state1}`,
-                    type: drawClipType,
-                });
-                if (clip) {
-                    const clipId = clip.id;
-                    pushUndoEntry(
-                        'Draw clip',
-                        () => removeClip(clipId),
-                        () =>
-                            addClip({
-                                trackId: drawTrackId,
-                                startBeat: state1,
-                                endBeat: state1 + length,
-                                name: `Clip ${state1}`,
-                                type: drawClipType,
-                            })
-                    );
-                }
-            }
+            });
             drawDragRef.current = null;
             return;
         }
@@ -728,184 +736,188 @@ export const useTimelineInteractions = (canvasRef: React.RefObject<HTMLCanvasEle
             clipDragPreviewRef.current = null;
             previewDirtyFlag.value = true;
 
-            if (preview && preview.positions.size > 0) {
-                const primaryPos = preview.positions.get(dragClipId);
-                const primaryOrig = preview.originals.get(dragClipId);
+            void runLegacyCommandMutation((pushUndoEntry) => {
+                if (preview && preview.positions.size > 0) {
+                    const primaryPos = preview.positions.get(dragClipId);
+                    const primaryOrig = preview.originals.get(dragClipId);
 
-                if (dragMode === 'duplicate') {
-                    // Alt+drag duplicate: originals stay, create copies at drop positions (R-B1)
-                    const copiedIds: string[] = [];
-                    for (const [clipId, pos] of preview.positions) {
-                        duplicateClipCore(clipId, () => pos.startBeat);
-                        // Track created clip for undo — duplicateClipCore adds to the track
-                        const state = trackStore.value;
-                        if (state) {
-                            for (const time of state.tracks) {
-                                if (time.id === pos.trackId) {
-                                    const created = time.clips.at(-1);
-                                    if (created && created.id !== clipId) {
-                                        copiedIds.push(created.id);
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    if (copiedIds.length > 0) {
-                        pushUndoEntry(
-                            `Duplicate ${copiedIds.length} clip${copiedIds.length > 1 ? 's' : ''}`,
-                            () => {
-                                for (const id of copiedIds) {
-                                    removeClip(id);
-                                }
-                            },
-                            () => {
-                                // Redo: re-run duplication at saved positions
-                                for (const [clipId, pos] of preview.positions) {
-                                    duplicateClipCore(clipId, () => pos.startBeat);
-                                }
-                            }
-                        );
-                    }
-                } else if (dragMode === 'move') {
-                    const rippleEnabled = workspaceStore.value?.rippleEditing ?? false;
-                    let usedRipple = false;
-                    let ripplePlan: ReturnType<typeof planRippleMove> = null;
-
-                    for (const [clipId, pos] of preview.positions) {
-                        const orig = preview.originals.get(clipId);
-                        if (rippleEnabled && orig && orig.trackId === pos.trackId) {
+                    if (dragMode === 'duplicate') {
+                        // Alt+drag duplicate: originals stay, create copies at drop positions (R-B1)
+                        const copiedIds: string[] = [];
+                        for (const [clipId, pos] of preview.positions) {
+                            duplicateClipCore(clipId, () => pos.startBeat);
+                            // Track created clip for undo — duplicateClipCore adds to the track
                             const state = trackStore.value;
                             if (state) {
-                                const track = state.tracks.find((time) => time.id === pos.trackId);
-                                const clip = track?.clips.find((context) => context.id === clipId);
-                                if (clip) {
-                                    const duration = clip.endBeat - clip.startBeat;
-                                    ripplePlan = planRippleMove({
-                                        trackId: pos.trackId,
-                                        clipId,
-                                        oldStartBeat: orig.startBeat,
-                                        newStartBeat: pos.startBeat,
-                                        clipDuration: duration,
-                                    });
-                                    if (ripplePlan) {
-                                        rippleMoveClip({
-                                            trackId: pos.trackId,
-                                            clipId,
-                                            newStartBeat: pos.startBeat,
-                                            clipDuration: duration,
-                                            plan: ripplePlan,
-                                        });
-                                        usedRipple = true;
-                                        continue;
+                                for (const time of state.tracks) {
+                                    if (time.id === pos.trackId) {
+                                        const created = time.clips.at(-1);
+                                        if (created && created.id !== clipId) {
+                                            copiedIds.push(created.id);
+                                        }
                                     }
                                 }
                             }
                         }
-                        moveClip(clipId, pos.trackId, pos.startBeat, orig?.startBeat);
-                    }
+                        if (copiedIds.length > 0) {
+                            pushUndoEntry(
+                                `Duplicate ${copiedIds.length} clip${copiedIds.length > 1 ? 's' : ''}`,
+                                () => {
+                                    for (const id of copiedIds) {
+                                        removeClip(id);
+                                    }
+                                },
+                                () => {
+                                    // Redo: re-run duplication at saved positions
+                                    for (const [clipId, pos] of preview.positions) {
+                                        duplicateClipCore(clipId, () => pos.startBeat);
+                                    }
+                                }
+                            );
+                        }
+                    } else if (dragMode === 'move') {
+                        const rippleEnabled = workspaceStore.value?.rippleEditing ?? false;
+                        let usedRipple = false;
+                        let ripplePlan: ReturnType<typeof planRippleMove> = null;
 
-                    if (primaryPos && primaryOrig) {
-                        const { trackId: newTrackId, startBeat: newStart } = primaryPos;
-                        if (newStart !== primaryOrig.startBeat || newTrackId !== primaryOrig.trackId) {
-                            if (usedRipple && ripplePlan) {
-                                // Ripple move undo: restore clip and all shifted clips
-                                const savedPlan = ripplePlan;
-                                const savedDuration = origEnd - origStart;
-                                pushUndoEntry(
-                                    'Move clip (ripple)',
-                                    () => {
-                                        // Restore moved clip to original position
-                                        moveClip(dragClipId, origTrackId, origStart);
-                                        // Restore ripple-shifted clips to original positions
-                                        const state2 = getTrackStoreState();
-                                        if (state2) {
-                                            const allShifted = [
-                                                ...savedPlan.gapClosedClips,
-                                                ...savedPlan.destinationOpenedClips,
-                                            ];
-                                            const shiftMap = new Map(
-                                                allShifted.map((state1) => [state1.clipId, state1])
-                                            );
-                                            const updatedTracks = state2.tracks.map((time) => {
-                                                if (time.id !== origTrackId) {
-                                                    return time;
-                                                }
-                                                return {
-                                                    ...time,
-                                                    clips: time.clips.map((context) => {
-                                                        const orig2 = shiftMap.get(context.id);
-                                                        if (!orig2) {
-                                                            return context;
-                                                        }
-                                                        return {
-                                                            ...context,
-                                                            startBeat: orig2.origStartBeat,
-                                                            endBeat: orig2.origEndBeat,
-                                                        };
-                                                    }),
-                                                };
+                        for (const [clipId, pos] of preview.positions) {
+                            const orig = preview.originals.get(clipId);
+                            if (rippleEnabled && orig && orig.trackId === pos.trackId) {
+                                const state = trackStore.value;
+                                if (state) {
+                                    const track = state.tracks.find((time) => time.id === pos.trackId);
+                                    const clip = track?.clips.find((context) => context.id === clipId);
+                                    if (clip) {
+                                        const duration = clip.endBeat - clip.startBeat;
+                                        ripplePlan = planRippleMove({
+                                            trackId: pos.trackId,
+                                            clipId,
+                                            oldStartBeat: orig.startBeat,
+                                            newStartBeat: pos.startBeat,
+                                            clipDuration: duration,
+                                        });
+                                        if (ripplePlan) {
+                                            rippleMoveClip({
+                                                trackId: pos.trackId,
+                                                clipId,
+                                                newStartBeat: pos.startBeat,
+                                                clipDuration: duration,
+                                                plan: ripplePlan,
                                             });
-                                            setTrackState({ ...state2, tracks: updatedTracks });
-                                        }
-                                    },
-                                    () => {
-                                        const state2 = trackStore.value;
-                                        if (state2) {
-                                            const track2 = state2.tracks.find((time) => time.id === newTrackId);
-                                            const clip2 = track2?.clips.find((context) => context.id === dragClipId);
-                                            const dur = clip2 ? clip2.endBeat - clip2.startBeat : savedDuration;
-                                            const redoPlan = planRippleMove({
-                                                trackId: newTrackId,
-                                                clipId: dragClipId,
-                                                oldStartBeat: origStart,
-                                                newStartBeat: newStart,
-                                                clipDuration: dur,
-                                            });
-                                            if (redoPlan) {
-                                                rippleMoveClip({
-                                                    trackId: newTrackId,
-                                                    clipId: dragClipId,
-                                                    newStartBeat: newStart,
-                                                    clipDuration: dur,
-                                                    plan: redoPlan,
-                                                });
-                                            } else {
-                                                moveClip(dragClipId, newTrackId, newStart);
-                                            }
+                                            usedRipple = true;
+                                            continue;
                                         }
                                     }
-                                );
-                            } else {
-                                pushUndoEntry(
-                                    'Move clip',
-                                    () => moveClip(dragClipId, origTrackId, origStart),
-                                    () => moveClip(dragClipId, newTrackId, newStart)
-                                );
+                                }
+                            }
+                            moveClip(clipId, pos.trackId, pos.startBeat, orig?.startBeat);
+                        }
+
+                        if (primaryPos && primaryOrig) {
+                            const { trackId: newTrackId, startBeat: newStart } = primaryPos;
+                            if (newStart !== primaryOrig.startBeat || newTrackId !== primaryOrig.trackId) {
+                                if (usedRipple && ripplePlan) {
+                                    // Ripple move undo: restore clip and all shifted clips
+                                    const savedPlan = ripplePlan;
+                                    const savedDuration = origEnd - origStart;
+                                    pushUndoEntry(
+                                        'Move clip (ripple)',
+                                        () => {
+                                            // Restore moved clip to original position
+                                            moveClip(dragClipId, origTrackId, origStart);
+                                            // Restore ripple-shifted clips to original positions
+                                            const state2 = getTrackStoreState();
+                                            if (state2) {
+                                                const allShifted = [
+                                                    ...savedPlan.gapClosedClips,
+                                                    ...savedPlan.destinationOpenedClips,
+                                                ];
+                                                const shiftMap = new Map(
+                                                    allShifted.map((state1) => [state1.clipId, state1])
+                                                );
+                                                const updatedTracks = state2.tracks.map((time) => {
+                                                    if (time.id !== origTrackId) {
+                                                        return time;
+                                                    }
+                                                    return {
+                                                        ...time,
+                                                        clips: time.clips.map((context) => {
+                                                            const orig2 = shiftMap.get(context.id);
+                                                            if (!orig2) {
+                                                                return context;
+                                                            }
+                                                            return {
+                                                                ...context,
+                                                                startBeat: orig2.origStartBeat,
+                                                                endBeat: orig2.origEndBeat,
+                                                            };
+                                                        }),
+                                                    };
+                                                });
+                                                setTrackState({ ...state2, tracks: updatedTracks });
+                                            }
+                                        },
+                                        () => {
+                                            const state2 = trackStore.value;
+                                            if (state2) {
+                                                const track2 = state2.tracks.find((time) => time.id === newTrackId);
+                                                const clip2 = track2?.clips.find(
+                                                    (context) => context.id === dragClipId
+                                                );
+                                                const dur = clip2 ? clip2.endBeat - clip2.startBeat : savedDuration;
+                                                const redoPlan = planRippleMove({
+                                                    trackId: newTrackId,
+                                                    clipId: dragClipId,
+                                                    oldStartBeat: origStart,
+                                                    newStartBeat: newStart,
+                                                    clipDuration: dur,
+                                                });
+                                                if (redoPlan) {
+                                                    rippleMoveClip({
+                                                        trackId: newTrackId,
+                                                        clipId: dragClipId,
+                                                        newStartBeat: newStart,
+                                                        clipDuration: dur,
+                                                        plan: redoPlan,
+                                                    });
+                                                } else {
+                                                    moveClip(dragClipId, newTrackId, newStart);
+                                                }
+                                            }
+                                        }
+                                    );
+                                } else {
+                                    pushUndoEntry(
+                                        'Move clip',
+                                        () => moveClip(dragClipId, origTrackId, origStart),
+                                        () => moveClip(dragClipId, newTrackId, newStart)
+                                    );
+                                }
                             }
                         }
-                    }
-                } else if (dragMode === 'trim-start' && primaryPos) {
-                    trimClipStart(dragClipId, primaryPos.startBeat);
-                    if (primaryOrig && primaryPos.startBeat !== primaryOrig.startBeat) {
-                        const newStart = primaryPos.startBeat;
-                        pushUndoEntry(
-                            'Trim clip start',
-                            () => trimClipStart(dragClipId, origStart),
-                            () => trimClipStart(dragClipId, newStart)
-                        );
-                    }
-                } else if (dragMode === 'stretch' && primaryPos) {
-                    trimClipEnd(dragClipId, primaryPos.endBeat);
-                    if (primaryOrig && primaryPos.endBeat !== primaryOrig.endBeat) {
-                        const newEnd = primaryPos.endBeat;
-                        pushUndoEntry(
-                            'Trim clip end',
-                            () => trimClipEnd(dragClipId, origEnd),
-                            () => trimClipEnd(dragClipId, newEnd)
-                        );
+                    } else if (dragMode === 'trim-start' && primaryPos) {
+                        trimClipStart(dragClipId, primaryPos.startBeat);
+                        if (primaryOrig && primaryPos.startBeat !== primaryOrig.startBeat) {
+                            const newStart = primaryPos.startBeat;
+                            pushUndoEntry(
+                                'Trim clip start',
+                                () => trimClipStart(dragClipId, origStart),
+                                () => trimClipStart(dragClipId, newStart)
+                            );
+                        }
+                    } else if (dragMode === 'stretch' && primaryPos) {
+                        trimClipEnd(dragClipId, primaryPos.endBeat);
+                        if (primaryOrig && primaryPos.endBeat !== primaryOrig.endBeat) {
+                            const newEnd = primaryPos.endBeat;
+                            pushUndoEntry(
+                                'Trim clip end',
+                                () => trimClipEnd(dragClipId, origEnd),
+                                () => trimClipEnd(dragClipId, newEnd)
+                            );
+                        }
                     }
                 }
-            }
+            });
 
             setDragState(null);
             if (canvasRef.current) {

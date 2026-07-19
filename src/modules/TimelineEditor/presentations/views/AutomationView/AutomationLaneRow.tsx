@@ -13,7 +13,7 @@ import {
     zoomToUsedRange,
     toggleVirginTerritory,
 } from '#/modules/Automation/useCases';
-import { pushUndoEntry } from '#/modules/Command/useCases';
+import { runLegacyCommandMutation } from '#/modules/Command/useCases';
 import { transportStore } from '#/modules/Transport/stores';
 import { defaultTransportState } from '#/modules/Transport/useCases';
 import { defaultWorkspaceState, workspaceStore, type WorkspaceState } from '#/modules/WorkspaceShell/stores';
@@ -197,21 +197,23 @@ export const AutomationLaneRow = ({
 
     const handlePointDoubleClick = (pointBeat: number, event: MouseEvent<SVGCircleElement>) => {
         event.stopPropagation();
-        const point = lane.points.find((param) => param.beat === pointBeat);
-        if (!point) {
-            return;
-        }
-        const savedPoint = { ...point };
-        removeAutomationPoint(lane.id, pointBeat);
-        pushUndoEntry(
-            'Delete automation point',
-            () => {
-                addAutomationPoint(lane.id, savedPoint);
-            },
-            () => {
-                removeAutomationPoint(lane.id, pointBeat);
+        void runLegacyCommandMutation((pushUndoEntry) => {
+            const point = lane.points.find((param) => param.beat === pointBeat);
+            if (!point) {
+                return;
             }
-        );
+            const savedPoint = { ...point };
+            removeAutomationPoint(lane.id, pointBeat);
+            pushUndoEntry(
+                'Delete automation point',
+                () => {
+                    addAutomationPoint(lane.id, savedPoint);
+                },
+                () => {
+                    removeAutomationPoint(lane.id, pointBeat);
+                }
+            );
+        });
         setSelectedPoints((prev) => prev.filter((b) => b !== pointBeat));
     };
 

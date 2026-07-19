@@ -35,9 +35,14 @@ vi.mock('#/modules/MIDI/stores', async (importOriginal) => ({
     midiStore: { value: { ccByClipId: {} } },
 }));
 
-vi.mock('#/modules/Command/useCases', () => ({
-    pushUndoEntry: vi.fn(),
-}));
+vi.mock('#/modules/Command/useCases', () => {
+    const commitUndo = vi.fn();
+    return {
+        pushUndoEntry: commitUndo,
+        runLegacyCommandMutation: (mutation: (publishUndo: typeof commitUndo) => unknown) =>
+            Promise.resolve(mutation(commitUndo)),
+    };
+});
 
 vi.mock('#/modules/MIDI/useCases', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/MIDI/useCases')>()),

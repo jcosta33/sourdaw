@@ -1,5 +1,5 @@
 import { getWarpState, trackStore, warpStates } from '#/modules/Arrangement/stores';
-import { pushUndoEntry } from '#/modules/Command/useCases';
+import { runLegacyCommandMutation } from '#/modules/Command/useCases';
 import { workspaceStore } from '#/modules/WorkspaceShell/stores';
 
 export type QuantizeTransientsResult =
@@ -44,64 +44,69 @@ function findClip(clipId: string): QuantizableClip | null {
  * stretched. One grouped undo entry covers both the marker rewrite and the
  * stretch-mode change.
  */
-export function quantizeTransients(clipId: string): QuantizeTransientsResult {
-    const clip = findClip(clipId);
-    if (!clip) {
-        return { ok: false, reason: 'CLIP_NOT_FOUND' };
-    }
-    if (clip.type !== 'audio') {
-        return { ok: false, reason: 'CLIP_NOT_AUDIO' };
-    }
-
-    const before = getWarpState(clipId);
-    const grid = workspaceStore.value?.snapValue ?? 1;
-
-    if (before.markers.length === 0) {
-        return { ok: false, reason: 'NO_MARKERS' };
-    }
-
-    const after: QuantizedMarker[] = before.markers.map((m) => {
-        if (m.locked) {
-            return m;
+export function quantizeTransients(
+    clipId: string,
+    runMutation: typeof runLegacyCommandMutation = runLegacyCommandMutation
+): Promise<QuantizeTransientsResult> {
+    return runMutation((pushUndoEntry) => {
+        const clip = findClip(clipId);
+        if (!clip) {
+            return { ok: false, reason: 'CLIP_NOT_FOUND' };
         }
-        const snapped = snapBeat(m.originalBeat, grid);
-        if (snapped === m.warpedBeat) {
-            return m;
+        if (clip.type !== 'audio') {
+            return { ok: false, reason: 'CLIP_NOT_AUDIO' };
         }
-        return { ...m, warpedBeat: snapped, origin: 'grid-snap' };
+
+        const before = getWarpState(clipId);
+        const grid = workspaceStore.value?.snapValue ?? 1;
+
+        if (before.markers.length === 0) {
+            return { ok: false, reason: 'NO_MARKERS' };
+        }
+
+        const after: QuantizedMarker[] = before.markers.map((m) => {
+            if (m.locked) {
+                return m;
+            }
+            const snapped = snapBeat(m.originalBeat, grid);
+            if (snapped === m.warpedBeat) {
+                return m;
+            }
+            return { ...m, warpedBeat: snapped, origin: 'grid-snap' };
+        });
+
+        const moved = after.reduce(
+            (count, m, idx) => (m.warpedBeat !== before.markers[idx]!.warpedBeat ? count + 1 : count),
+            0
+        );
+
+        if (moved === 0 && before.stretchMode !== 'repitch') {
+            return { ok: true, moved: 0 };
+        }
+
+        const beforeStretch = before.stretchMode;
+        const nextStretch: typeof before.stretchMode = beforeStretch === 'repitch' ? 'complex' : beforeStretch;
+
+        const previousState = before;
+        const nextState = {
+            ...before,
+            markers: after.sort((a, b) => a.originalBeat - b.originalBeat),
+            stretchMode: nextStretch,
+            enabled: true,
+        };
+
+        warpStates.set(clipId, nextState);
+
+        pushUndoEntry(
+            'Quantize transients',
+            () => {
+                warpStates.set(clipId, previousState);
+            },
+            () => {
+                warpStates.set(clipId, nextState);
+            }
+        );
+
+        return { ok: true, moved };
     });
-
-    const moved = after.reduce(
-        (count, m, idx) => (m.warpedBeat !== before.markers[idx]!.warpedBeat ? count + 1 : count),
-        0
-    );
-
-    if (moved === 0 && before.stretchMode !== 'repitch') {
-        return { ok: true, moved: 0 };
-    }
-
-    const beforeStretch = before.stretchMode;
-    const nextStretch: typeof before.stretchMode = beforeStretch === 'repitch' ? 'complex' : beforeStretch;
-
-    const previousState = before;
-    const nextState = {
-        ...before,
-        markers: after.sort((a, b) => a.originalBeat - b.originalBeat),
-        stretchMode: nextStretch,
-        enabled: true,
-    };
-
-    warpStates.set(clipId, nextState);
-
-    pushUndoEntry(
-        'Quantize transients',
-        () => {
-            warpStates.set(clipId, previousState);
-        },
-        () => {
-            warpStates.set(clipId, nextState);
-        }
-    );
-
-    return { ok: true, moved };
 }

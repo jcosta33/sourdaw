@@ -10,7 +10,11 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock('../../../repositories/track/getTrackState', () => ({ getTrackState: mocks.getTrackState }));
 vi.mock('../../../repositories/track/setTrackState', () => ({ setTrackState: mocks.setTrackState }));
-vi.mock('#/modules/Command/useCases', () => ({ pushUndoEntry: mocks.pushUndoEntry }));
+vi.mock('#/modules/Command/useCases', () => ({
+    pushUndoEntry: mocks.pushUndoEntry,
+    runLegacyCommandMutation: (mutation: (commitUndo: typeof mocks.pushUndoEntry) => unknown) =>
+        Promise.resolve(mutation(mocks.pushUndoEntry)),
+}));
 vi.mock('#/modules/MIDI/useCases', () => ({
     removeMidiClipData: mocks.removeMidiClipData,
     splitMidiNotesAtBeat: mocks.splitMidiNotesAtBeat,

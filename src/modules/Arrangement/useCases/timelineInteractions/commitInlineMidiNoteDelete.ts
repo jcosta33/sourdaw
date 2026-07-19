@@ -1,4 +1,4 @@
-import { pushUndoEntry } from '#/modules/Command/useCases';
+import { runLegacyCommandMutation } from '#/modules/Command/useCases';
 import { getNotesForClip, setNotesForClip } from '#/modules/MIDI/useCases';
 
 type CommitInlineMidiNoteDeleteInput = {
@@ -6,20 +6,22 @@ type CommitInlineMidiNoteDeleteInput = {
     noteId: string;
 };
 
-export function commitInlineMidiNoteDelete(input: CommitInlineMidiNoteDeleteInput): boolean {
-    const previousNotes = getNotesForClip(input.clipId);
-    const targetNote = previousNotes.find((note) => note.id === input.noteId);
-    if (!targetNote) {
-        return false;
-    }
+export function commitInlineMidiNoteDelete(input: CommitInlineMidiNoteDeleteInput): Promise<boolean> {
+    return runLegacyCommandMutation((pushUndoEntry) => {
+        const previousNotes = getNotesForClip(input.clipId);
+        const targetNote = previousNotes.find((note) => note.id === input.noteId);
+        if (!targetNote) {
+            return false;
+        }
 
-    const nextNotes = previousNotes.filter((note) => note.id !== input.noteId);
-    setNotesForClip(input.clipId, nextNotes);
-    pushUndoEntry(
-        'Delete MIDI note',
-        () => setNotesForClip(input.clipId, previousNotes),
-        () => setNotesForClip(input.clipId, nextNotes)
-    );
+        const nextNotes = previousNotes.filter((note) => note.id !== input.noteId);
+        setNotesForClip(input.clipId, nextNotes);
+        pushUndoEntry(
+            'Delete MIDI note',
+            () => setNotesForClip(input.clipId, previousNotes),
+            () => setNotesForClip(input.clipId, nextNotes)
+        );
 
-    return true;
+        return true;
+    });
 }

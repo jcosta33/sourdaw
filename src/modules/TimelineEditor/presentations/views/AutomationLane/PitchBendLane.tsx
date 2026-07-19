@@ -2,7 +2,7 @@ import { type ReactElement, type MouseEvent, useState, useRef } from 'react';
 
 import { DawBlockedState } from '#/components/daw/DawBlockedState';
 import { useStore } from '#/infra/store/useStore';
-import { pushUndoEntry } from '#/modules/Command/useCases';
+import { runLegacyCommandMutation } from '#/modules/Command/useCases';
 import { midiStore } from '#/modules/MIDI/stores';
 import { addPitchBend, removePitchBend, movePitchBend } from '#/modules/MIDI/useCases';
 import { cn } from '#/utils/Styles/cn';
@@ -59,12 +59,14 @@ export const PitchBendLane = ({ clipId, beatWidth }: PitchBendLaneProps): ReactE
         const beat = Math.max(0, (x - 8) / beatWidth);
         const value = Math.round(Math.max(0, Math.min(127, ((height - y - 4) / (height - 8)) * 127)));
 
-        const pb = addPitchBend(clipId, value, beat);
-        pushUndoEntry(
-            'Add pitch bend point',
-            () => removePitchBend(clipId, pb.id),
-            () => addPitchBend(clipId, value, beat)
-        );
+        void runLegacyCommandMutation((pushUndoEntry) => {
+            const pb = addPitchBend(clipId, value, beat);
+            pushUndoEntry(
+                'Add pitch bend point',
+                () => removePitchBend(clipId, pb.id),
+                () => addPitchBend(clipId, value, beat)
+            );
+        });
     };
 
     const handlePointMouseDown = (pbId: string, event: MouseEvent<HTMLDivElement>) => {
@@ -81,38 +83,49 @@ export const PitchBendLane = ({ clipId, beatWidth }: PitchBendLaneProps): ReactE
         const origBeat = origPoint?.beat ?? 0;
         const origValue = origPoint?.value ?? 0;
 
-        setDragId(pbId);
         const rect = container.getBoundingClientRect();
         const height = rect.height;
 
-        const onMove = (me: globalThis.MouseEvent) => {
-            const mx = me.clientX - rect.left;
-            const my = me.clientY - rect.top;
+        void runLegacyCommandMutation(
+            (pushUndoEntry) =>
+                new Promise<void>((resolve) => {
+                    setDragId(pbId);
+                    const onMove = (me: globalThis.MouseEvent) => {
+                        const mx = me.clientX - rect.left;
+                        const my = me.clientY - rect.top;
 
-            const beat = Math.max(0, (mx - 8) / beatWidth);
-            const value = Math.round(Math.max(0, Math.min(127, ((height - my - 4) / (height - 8)) * 127)));
+                        const beat = Math.max(0, (mx - 8) / beatWidth);
+                        const value = Math.round(Math.max(0, Math.min(127, ((height - my - 4) / (height - 8)) * 127)));
 
-            movePitchBend(clipId, pbId, beat, value);
-        };
+                        movePitchBend(clipId, pbId, beat, value);
+                    };
 
-        const onUp = () => {
-            setDragId(null);
-            window.removeEventListener('mousemove', onMove);
-            window.removeEventListener('mouseup', onUp);
-            const finalPoint = (midiStore.value?.pitchBendByClipId[clipId] ?? []).find((param) => param.id === pbId);
-            if (finalPoint && (finalPoint.beat !== origBeat || finalPoint.value !== origValue)) {
-                const finalBeat = finalPoint.beat;
-                const finalValue = finalPoint.value;
-                pushUndoEntry(
-                    'Move pitch bend point',
-                    () => movePitchBend(clipId, pbId, origBeat, origValue),
-                    () => movePitchBend(clipId, pbId, finalBeat, finalValue)
-                );
-            }
-        };
+                    const onUp = () => {
+                        try {
+                            setDragId(null);
+                            window.removeEventListener('mousemove', onMove);
+                            window.removeEventListener('mouseup', onUp);
+                            const finalPoint = (midiStore.value?.pitchBendByClipId[clipId] ?? []).find(
+                                (param) => param.id === pbId
+                            );
+                            if (finalPoint && (finalPoint.beat !== origBeat || finalPoint.value !== origValue)) {
+                                const finalBeat = finalPoint.beat;
+                                const finalValue = finalPoint.value;
+                                pushUndoEntry(
+                                    'Move pitch bend point',
+                                    () => movePitchBend(clipId, pbId, origBeat, origValue),
+                                    () => movePitchBend(clipId, pbId, finalBeat, finalValue)
+                                );
+                            }
+                        } finally {
+                            resolve();
+                        }
+                    };
 
-        window.addEventListener('mousemove', onMove);
-        window.addEventListener('mouseup', onUp);
+                    window.addEventListener('mousemove', onMove);
+                    window.addEventListener('mouseup', onUp);
+                })
+        );
     };
 
     const handlePointDoubleClick = (pbId: string, event: MouseEvent<HTMLDivElement>) => {
@@ -120,18 +133,20 @@ export const PitchBendLane = ({ clipId, beatWidth }: PitchBendLaneProps): ReactE
         if (!clipId) {
             return;
         }
-        const point = points.find((param) => param.id === pbId);
-        if (point) {
-            const { value, beat, channel } = point;
-            removePitchBend(clipId, pbId);
-            pushUndoEntry(
-                'Remove pitch bend point',
-                () => addPitchBend(clipId, value, beat, channel),
-                () => removePitchBend(clipId, pbId)
-            );
-        } else {
-            removePitchBend(clipId, pbId);
-        }
+        void runLegacyCommandMutation((pushUndoEntry) => {
+            const point = (midiStore.value?.pitchBendByClipId[clipId] ?? []).find((param) => param.id === pbId);
+            if (point) {
+                const { value, beat, channel } = point;
+                removePitchBend(clipId, pbId);
+                pushUndoEntry(
+                    'Remove pitch bend point',
+                    () => addPitchBend(clipId, value, beat, channel),
+                    () => removePitchBend(clipId, pbId)
+                );
+            } else {
+                removePitchBend(clipId, pbId);
+            }
+        });
     };
 
     if (!clipId) {

@@ -13,10 +13,10 @@ import {
     setAutomationPointCurve,
     beginDrawSession,
     paintDrawPoint,
-    endDrawSession,
+    endDrawSessionUnderCommand,
     selectPointsInRange,
 } from '#/modules/Automation/useCases';
-import { pushUndoEntry } from '#/modules/Command/useCases';
+import { runLegacyCommandMutation } from '#/modules/Command/useCases';
 
 import { type AutomationLane, type AutomationPoint, type AutomationCurveType } from '../../models/AutomationViewTypes';
 
@@ -44,15 +44,27 @@ export const onDrawMouseDown = (
     }
     const x = event.clientX - rect.left;
     const y = event.clientY - rect.top;
-    beginDrawSession(lane.id, snapValue, event.shiftKey);
-    paintDrawPoint(Math.max(0, coords.xToBeat(x)), coords.yToValue(y));
-    startMouseDrag(
-        (me) => {
-            paintDrawPoint(Math.max(0, coords.xToBeat(me.clientX - rect.left)), coords.yToValue(me.clientY - rect.top));
-        },
-        () => {
-            endDrawSession();
-        }
+    void runLegacyCommandMutation(
+        (commitUndo) =>
+            new Promise<void>((resolve) => {
+                beginDrawSession(lane.id, snapValue, event.shiftKey);
+                paintDrawPoint(Math.max(0, coords.xToBeat(x)), coords.yToValue(y));
+                startMouseDrag(
+                    (me) => {
+                        paintDrawPoint(
+                            Math.max(0, coords.xToBeat(me.clientX - rect.left)),
+                            coords.yToValue(me.clientY - rect.top)
+                        );
+                    },
+                    () => {
+                        try {
+                            endDrawSessionUnderCommand(commitUndo);
+                        } finally {
+                            resolve();
+                        }
+                    }
+                );
+            })
     );
 };
 
@@ -123,16 +135,18 @@ export const onRubberBandStart = (
                 const beat = Math.max(0, coords.xToBeat(x));
                 const value = coords.yToValue(y);
                 const point: AutomationPoint = { beat, value, curve: 'linear', tension: 0 };
-                addAutomationPoint(lane.id, point);
-                pushUndoEntry(
-                    'Add automation point',
-                    () => {
-                        removeAutomationPoint(lane.id, beat);
-                    },
-                    () => {
-                        addAutomationPoint(lane.id, point);
-                    }
-                );
+                void runLegacyCommandMutation((pushUndoEntry) => {
+                    addAutomationPoint(lane.id, point);
+                    pushUndoEntry(
+                        'Add automation point',
+                        () => {
+                            removeAutomationPoint(lane.id, beat);
+                        },
+                        () => {
+                            addAutomationPoint(lane.id, point);
+                        }
+                    );
+                });
             }
             setRubberBand(null);
         }
@@ -196,45 +210,56 @@ export const onPointMouseDown = (
     const origBeat = origPoint.beat;
     const origValue = origPoint.value;
     let currentBeat = pointBeat;
-    setDragPointBeat(pointBeat);
-
-    startMouseDrag(
-        (me) => {
-            let newBeat = Math.max(0, coords.xToBeat(me.clientX - rect.left));
-            let newValue = coords.yToValue(me.clientY - rect.top);
-            if (me.shiftKey) {
-                const dx = Math.abs(newBeat - origBeat);
-                const dy = Math.abs(newValue - origValue);
-                if (dx > dy) {
-                    newValue = origValue;
-                } else {
-                    newBeat = origBeat;
-                }
-            }
-            updateAutomationPoint(lane.id, currentBeat, newValue, newBeat);
-            currentBeat = newBeat;
-            setDragPointBeat(newBeat);
-        },
-        () => {
-            setDragPointBeat(null);
-            const finalLane = automationStore.value?.lanes.find((length) => length.id === lane.id);
-            const finalPoint = finalLane?.points.find((param) => Math.abs(param.beat - currentBeat) < 0.05);
-            const hasMoved =
-                finalPoint !== undefined && (finalPoint.beat !== origBeat || finalPoint.value !== origValue);
-            if (hasMoved) {
-                const finalBeat = finalPoint.beat;
-                const finalValue = finalPoint.value;
-                pushUndoEntry(
-                    'Move automation point',
-                    () => {
-                        updateAutomationPoint(lane.id, finalBeat, origValue, origBeat);
+    void runLegacyCommandMutation(
+        (pushUndoEntry) =>
+            new Promise<void>((resolve) => {
+                setDragPointBeat(pointBeat);
+                startMouseDrag(
+                    (me) => {
+                        let newBeat = Math.max(0, coords.xToBeat(me.clientX - rect.left));
+                        let newValue = coords.yToValue(me.clientY - rect.top);
+                        if (me.shiftKey) {
+                            const dx = Math.abs(newBeat - origBeat);
+                            const dy = Math.abs(newValue - origValue);
+                            if (dx > dy) {
+                                newValue = origValue;
+                            } else {
+                                newBeat = origBeat;
+                            }
+                        }
+                        updateAutomationPoint(lane.id, currentBeat, newValue, newBeat);
+                        currentBeat = newBeat;
+                        setDragPointBeat(newBeat);
                     },
                     () => {
-                        updateAutomationPoint(lane.id, origBeat, finalValue, finalBeat);
+                        try {
+                            setDragPointBeat(null);
+                            const finalLane = automationStore.value?.lanes.find((length) => length.id === lane.id);
+                            const finalPoint = finalLane?.points.find(
+                                (param) => Math.abs(param.beat - currentBeat) < 0.05
+                            );
+                            const hasMoved =
+                                finalPoint !== undefined &&
+                                (finalPoint.beat !== origBeat || finalPoint.value !== origValue);
+                            if (hasMoved) {
+                                const finalBeat = finalPoint.beat;
+                                const finalValue = finalPoint.value;
+                                pushUndoEntry(
+                                    'Move automation point',
+                                    () => {
+                                        updateAutomationPoint(lane.id, finalBeat, origValue, origBeat);
+                                    },
+                                    () => {
+                                        updateAutomationPoint(lane.id, origBeat, finalValue, finalBeat);
+                                    }
+                                );
+                            }
+                        } finally {
+                            resolve();
+                        }
                     }
                 );
-            }
-        }
+            })
     );
 };
 

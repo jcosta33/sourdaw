@@ -1,4 +1,4 @@
-import { pushUndoEntry } from '#/modules/Command/useCases';
+import { runLegacyCommandMutation } from '#/modules/Command/useCases';
 import { getNotesForClip, setNotesForClip } from '#/modules/MIDI/useCases';
 
 type CommitInlineMidiNoteMoveInput = {
@@ -8,29 +8,31 @@ type CommitInlineMidiNoteMoveInput = {
     startBeat: number;
 };
 
-export function commitInlineMidiNoteMove(input: CommitInlineMidiNoteMoveInput): boolean {
-    const previousNotes = getNotesForClip(input.clipId);
-    const targetNote = previousNotes.find((note) => note.id === input.noteId);
-    if (!targetNote) {
-        return false;
-    }
-    if (targetNote.pitch === input.pitch && targetNote.startBeat === input.startBeat) {
-        return false;
-    }
-
-    const nextNotes = previousNotes.map((note) => {
-        if (note.id !== input.noteId) {
-            return note;
+export function commitInlineMidiNoteMove(input: CommitInlineMidiNoteMoveInput): Promise<boolean> {
+    return runLegacyCommandMutation((pushUndoEntry) => {
+        const previousNotes = getNotesForClip(input.clipId);
+        const targetNote = previousNotes.find((note) => note.id === input.noteId);
+        if (!targetNote) {
+            return false;
         }
-        return { ...note, pitch: input.pitch, startBeat: input.startBeat };
+        if (targetNote.pitch === input.pitch && targetNote.startBeat === input.startBeat) {
+            return false;
+        }
+
+        const nextNotes = previousNotes.map((note) => {
+            if (note.id !== input.noteId) {
+                return note;
+            }
+            return { ...note, pitch: input.pitch, startBeat: input.startBeat };
+        });
+
+        setNotesForClip(input.clipId, nextNotes);
+        pushUndoEntry(
+            'Move MIDI note',
+            () => setNotesForClip(input.clipId, previousNotes),
+            () => setNotesForClip(input.clipId, nextNotes)
+        );
+
+        return true;
     });
-
-    setNotesForClip(input.clipId, nextNotes);
-    pushUndoEntry(
-        'Move MIDI note',
-        () => setNotesForClip(input.clipId, previousNotes),
-        () => setNotesForClip(input.clipId, nextNotes)
-    );
-
-    return true;
 }

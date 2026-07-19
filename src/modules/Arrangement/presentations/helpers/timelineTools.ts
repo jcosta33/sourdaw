@@ -7,7 +7,7 @@
 import { type RefObject } from 'react';
 
 import { getAutomationLanes } from '#/modules/Automation/useCases';
-import { pushUndoEntry } from '#/modules/Command/useCases';
+import { runLegacyCommandMutation } from '#/modules/Command/useCases';
 
 import { type AutomationPoint } from '../../models/AutomationViewTypes';
 import { timelineViewStore } from '../../stores/timelineViewStore';
@@ -41,41 +41,43 @@ export const handleCutTool = (x: number, y: number, beat: number): boolean => {
     if (!hit) {
         return true; // consumed, no clip hit
     }
-    const origClip = trackStore.value?.tracks
-        .flatMap((time) => time.clips)
-        .find((context) => context.id === hit.clipId);
-    if (origClip) {
-        const savedClip = { ...origClip };
-        splitClip(hit.clipId, beat);
-        const newClips =
-            trackStore.value?.tracks
-                .flatMap((time) => time.clips)
-                .filter(
-                    (context) =>
-                        context.id !== hit.clipId &&
-                        (context.startBeat === savedClip.startBeat || context.startBeat === beat) &&
-                        context.endBeat <= savedClip.endBeat &&
-                        context.startBeat >= savedClip.startBeat
-                ) ?? [];
-        const newClipIds = newClips.map((context) => context.id);
-        pushUndoEntry(
-            'Split clip',
-            () => {
-                for (const id of newClipIds) {
-                    removeClip(id);
-                }
-                addClip({
-                    trackId: savedClip.trackId,
-                    startBeat: savedClip.startBeat,
-                    endBeat: savedClip.endBeat,
-                    name: savedClip.name,
-                    type: savedClip.type,
-                    audioBufferId: savedClip.audioBufferId,
-                });
-            },
-            () => splitClip(hit.clipId, beat)
-        );
-    }
+    void runLegacyCommandMutation((pushUndoEntry) => {
+        const origClip = trackStore.value?.tracks
+            .flatMap((time) => time.clips)
+            .find((context) => context.id === hit.clipId);
+        if (origClip) {
+            const savedClip = { ...origClip };
+            splitClip(hit.clipId, beat);
+            const newClips =
+                trackStore.value?.tracks
+                    .flatMap((time) => time.clips)
+                    .filter(
+                        (context) =>
+                            context.id !== hit.clipId &&
+                            (context.startBeat === savedClip.startBeat || context.startBeat === beat) &&
+                            context.endBeat <= savedClip.endBeat &&
+                            context.startBeat >= savedClip.startBeat
+                    ) ?? [];
+            const newClipIds = newClips.map((context) => context.id);
+            pushUndoEntry(
+                'Split clip',
+                () => {
+                    for (const id of newClipIds) {
+                        removeClip(id);
+                    }
+                    addClip({
+                        trackId: savedClip.trackId,
+                        startBeat: savedClip.startBeat,
+                        endBeat: savedClip.endBeat,
+                        name: savedClip.name,
+                        type: savedClip.type,
+                        audioBufferId: savedClip.audioBufferId,
+                    });
+                },
+                () => splitClip(hit.clipId, beat)
+            );
+        }
+    });
     return true;
 };
 
@@ -89,7 +91,7 @@ export const handleDrawTool = (x: number, y: number, beat: number, drawDragRef: 
         // Hitting a note with draw tool: delete it (logic pro style)
         const noteId = hit.noteId;
         const clipId = hit.clipId;
-        commitInlineMidiNoteDelete({ clipId, noteId });
+        void commitInlineMidiNoteDelete({ clipId, noteId });
         return true;
     }
 
@@ -100,7 +102,7 @@ export const handleDrawTool = (x: number, y: number, beat: number, drawDragRef: 
             // Draw a new note inside the inline clip
             const pitch = hit.pitch ?? 60;
             const startBeat = snapToGrid(beat);
-            commitInlineMidiNoteCreate({
+            void commitInlineMidiNoteCreate({
                 clipId: hit.clipId,
                 pitch,
                 startBeat,

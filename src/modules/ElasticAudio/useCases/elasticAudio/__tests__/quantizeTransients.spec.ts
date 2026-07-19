@@ -46,6 +46,8 @@ vi.mock('#/modules/WorkspaceShell/stores', () => ({
 
 vi.mock('#/modules/Command/useCases', () => ({
     pushUndoEntry: (...args: unknown[]) => mocks.pushUndoEntry(...args),
+    runLegacyCommandMutation: (mutation: (commitUndo: typeof mocks.pushUndoEntry) => unknown) =>
+        Promise.resolve(mutation(mocks.pushUndoEntry)),
 }));
 
 import { quantizeTransients } from '../quantizeTransients';
@@ -60,12 +62,12 @@ describe('quantizeTransients', () => {
         };
     });
 
-    it('returns NO_MARKERS if there are no warp markers yet', () => {
-        const result = quantizeTransients('c1');
+    it('returns NO_MARKERS if there are no warp markers yet', async () => {
+        const result = await quantizeTransients('c1');
         expect(result).toEqual({ ok: false, reason: 'NO_MARKERS' });
     });
 
-    it('snaps non-locked markers to the nearest grid position', () => {
+    it('snaps non-locked markers to the nearest grid position', async () => {
         mocks.warpStates.set('c1', {
             enabled: true,
             stretchMode: 'complex',
@@ -77,14 +79,14 @@ describe('quantizeTransients', () => {
             ],
         });
 
-        const result = quantizeTransients('c1');
+        const result = await quantizeTransients('c1');
         expect(result).toEqual({ ok: true, moved: 3 });
         const after = mocks.warpStates.get('c1')!;
         expect(after.markers.map((m) => m.warpedBeat)).toEqual([0.25, 0.75, 1.25]);
         expect(after.markers.every((m) => m.origin === 'grid-snap')).toBe(true);
     });
 
-    it('preserves locked markers', () => {
+    it('preserves locked markers', async () => {
         mocks.warpStates.set('c1', {
             enabled: true,
             stretchMode: 'complex',
@@ -95,7 +97,7 @@ describe('quantizeTransients', () => {
             ],
         });
 
-        const result = quantizeTransients('c1');
+        const result = await quantizeTransients('c1');
         expect(result).toEqual({ ok: true, moved: 1 });
         const after = mocks.warpStates.get('c1')!;
         const locked = after.markers.find((m) => m.id === 'm2')!;
@@ -103,7 +105,7 @@ describe('quantizeTransients', () => {
         expect(locked.locked).toBe(true);
     });
 
-    it('flips repitch stretchMode to complex on quantize', () => {
+    it('flips repitch stretchMode to complex on quantize', async () => {
         mocks.warpStates.set('c1', {
             enabled: true,
             stretchMode: 'repitch',
@@ -111,12 +113,12 @@ describe('quantizeTransients', () => {
             markers: [{ id: 'm1', originalBeat: 0.3, warpedBeat: 0.3, origin: 'transient-auto' }],
         });
 
-        quantizeTransients('c1');
+        await quantizeTransients('c1');
         const after = mocks.warpStates.get('c1')!;
         expect(after.stretchMode).toBe('complex');
     });
 
-    it('pushes a single undo entry for the whole quantize op', () => {
+    it('pushes a single undo entry for the whole quantize op', async () => {
         mocks.warpStates.set('c1', {
             enabled: true,
             stretchMode: 'complex',
@@ -127,15 +129,15 @@ describe('quantizeTransients', () => {
             ],
         });
 
-        quantizeTransients('c1');
+        await quantizeTransients('c1');
         expect(mocks.pushUndoEntry).toHaveBeenCalledTimes(1);
     });
 
-    it('returns CLIP_NOT_AUDIO for MIDI clips', () => {
+    it('returns CLIP_NOT_AUDIO for MIDI clips', async () => {
         mocks.trackStoreValue = {
             tracks: [{ clips: [{ id: 'c1', type: 'midi' }] }],
         };
-        const result = quantizeTransients('c1');
+        const result = await quantizeTransients('c1');
         expect(result).toEqual({ ok: false, reason: 'CLIP_NOT_AUDIO' });
     });
 });

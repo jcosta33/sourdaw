@@ -1,4 +1,4 @@
-import { pushUndoEntry } from '#/modules/Command/useCases';
+import { runLegacyCommandMutation } from '#/modules/Command/useCases';
 
 import { getTrackState } from '../../repositories/track/getTrackState';
 import { updateClip } from '../../repositories/track/updateClip';
@@ -7,36 +7,38 @@ import { removeClip } from '../clip/removeClip';
 import { splitClip } from './splitClip';
 
 export function splitClipWithUndo(clipId: string, splitBeat: number): void {
-    const origClip = getTrackState()
-        ?.tracks.flatMap((time) => time.clips)
-        .find((context) => context.id === clipId);
-    if (!origClip) {
-        return;
-    }
+    void runLegacyCommandMutation((pushUndoEntry) => {
+        const origClip = getTrackState()
+            ?.tracks.flatMap((time) => time.clips)
+            .find((context) => context.id === clipId);
+        if (!origClip) {
+            return;
+        }
 
-    // Freeze the fields splitClip mutates on the left clip
-    const savedEndBeat = origClip.endBeat;
-    const savedName = origClip.name;
-    const savedFadeOut = origClip.fadeOutBeats;
+        // Freeze the fields splitClip mutates on the left clip
+        const savedEndBeat = origClip.endBeat;
+        const savedName = origClip.name;
+        const savedFadeOut = origClip.fadeOutBeats;
 
-    const rightClipId = splitClip(clipId, splitBeat);
+        const rightClipId = splitClip(clipId, splitBeat);
 
-    if (!rightClipId) {
-        // splitBeat was out of range or snapping collapsed the split — nothing to undo
-        return;
-    }
+        if (!rightClipId) {
+            // splitBeat was out of range or snapping collapsed the split — nothing to undo
+            return;
+        }
 
-    pushUndoEntry(
-        'Split clip',
-        () => {
-            removeClip(rightClipId);
-            updateClip(clipId, (context) => ({
-                ...context,
-                endBeat: savedEndBeat,
-                name: savedName,
-                fadeOutBeats: savedFadeOut,
-            }));
-        },
-        () => splitClip(clipId, splitBeat)
-    );
+        pushUndoEntry(
+            'Split clip',
+            () => {
+                removeClip(rightClipId);
+                updateClip(clipId, (context) => ({
+                    ...context,
+                    endBeat: savedEndBeat,
+                    name: savedName,
+                    fadeOutBeats: savedFadeOut,
+                }));
+            },
+            () => splitClip(clipId, splitBeat)
+        );
+    });
 }

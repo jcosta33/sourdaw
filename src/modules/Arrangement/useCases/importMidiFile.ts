@@ -1,5 +1,5 @@
 import { batchStoreUpdates } from '#/infra/store/createStore';
-import { pushUndoEntry, REDO_NOT_APPLIED } from '#/modules/Command/useCases';
+import { REDO_NOT_APPLIED, runLegacyCommandMutation } from '#/modules/Command/useCases';
 import { mergeImportedMidiClipNotes, readMidiFile } from '#/modules/MIDI/useCases';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
@@ -106,11 +106,6 @@ export async function importMidiFile(
         return 'completed';
     }
 
-    const state = getTrackStoreState();
-    if (!state) {
-        return 'completed';
-    }
-
     const newMidiData: Record<string, (typeof parsedTracks)[number]['notes']> = {};
 
     const tracksWithClips = parsedTracks.map((parsedTrack) => {
@@ -141,93 +136,98 @@ export async function importMidiFile(
         return { ...track, clips: [clip] };
     });
 
-    const identities = getImportedTrackIdentities(tracksWithClips);
-    if (!identities || !canApplyImportedTracks(identities)) {
-        notifyUser(`Failed to import "${file.name}" - generated track or clip IDs conflict with the project`, 'error');
-        return 'completed';
-    }
-    if (shouldContinue?.() === false) {
-        return 'superseded';
-    }
+    return runLegacyCommandMutation((pushUndoEntry) => {
+        const identities = getImportedTrackIdentities(tracksWithClips);
+        if (!identities || !canApplyImportedTracks(identities)) {
+            notifyUser(
+                `Failed to import "${file.name}" - generated track or clip IDs conflict with the project`,
+                'error'
+            );
+            return 'completed';
+        }
+        if (shouldContinue?.() === false) {
+            return 'superseded';
+        }
 
-    let midiChange: ReturnType<typeof mergeImportedMidiClipNotes>;
-    try {
-        midiChange = batchStoreUpdates(() => {
-            const change = mergeImportedMidiClipNotes({
-                notesByClipId: newMidiData,
-            });
-            try {
-                if (!applyImportedTracks({ tracks: tracksWithClips, identities })) {
-                    throw new Error('Imported track or clip IDs conflict with the project');
-                }
-            } catch (error) {
-                try {
-                    change.undo();
-                } catch {
-                    // The MIDI owner already attempted to restore its previous state.
-                }
-                throw error;
-            }
-
-            return change;
-        });
-    } catch {
-        notifyUser(`Failed to import "${file.name}" - project state could not be updated`, 'error');
-        return 'completed';
-    }
-
-    if (shouldContinue?.() === false) {
-        batchStoreUpdates(() => {
-            removeImportedTracks(identities);
-            midiChange.undo();
-        });
-        return 'superseded';
-    }
-
-    const importedName =
-        parsedTracks.length === 1 ? (parsedTracks[0]?.name ?? 'MIDI file') : `${parsedTracks.length} MIDI tracks`;
-
-    pushUndoEntry(
-        `Import MIDI: ${importedName}`,
-        () => {
-            batchStoreUpdates(() => {
-                removeImportedTracks(identities);
-                try {
-                    midiChange.undo();
-                } catch (error) {
-                    applyImportedTracks({ tracks: tracksWithClips, identities });
-                    throw error;
-                }
-            });
-        },
-        () => {
-            return batchStoreUpdates(() => {
-                if (!canApplyImportedTracks(identities)) {
-                    notifyUser(
-                        `Failed to redo MIDI import for "${file.name}" - track or clip IDs now conflict`,
-                        'error'
-                    );
-                    return REDO_NOT_APPLIED;
-                }
-
-                midiChange.redo();
+        let midiChange: ReturnType<typeof mergeImportedMidiClipNotes>;
+        try {
+            midiChange = batchStoreUpdates(() => {
+                const change = mergeImportedMidiClipNotes({
+                    notesByClipId: newMidiData,
+                });
                 try {
                     if (!applyImportedTracks({ tracks: tracksWithClips, identities })) {
-                        throw new Error('Cannot redo MIDI import because its track or clip IDs now conflict');
+                        throw new Error('Imported track or clip IDs conflict with the project');
                     }
-                } catch {
+                } catch (error) {
                     try {
-                        midiChange.undo();
+                        change.undo();
                     } catch {
                         // The MIDI owner already attempted to restore its previous state.
                     }
-                    notifyUser(`Failed to redo MIDI import for "${file.name}"`, 'error');
-                    return REDO_NOT_APPLIED;
+                    throw error;
                 }
-                return undefined;
-            });
-        }
-    );
 
-    return 'completed';
+                return change;
+            });
+        } catch {
+            notifyUser(`Failed to import "${file.name}" - project state could not be updated`, 'error');
+            return 'completed';
+        }
+
+        if (shouldContinue?.() === false) {
+            batchStoreUpdates(() => {
+                removeImportedTracks(identities);
+                midiChange.undo();
+            });
+            return 'superseded';
+        }
+
+        const importedName =
+            parsedTracks.length === 1 ? (parsedTracks[0]?.name ?? 'MIDI file') : `${parsedTracks.length} MIDI tracks`;
+
+        pushUndoEntry(
+            `Import MIDI: ${importedName}`,
+            () => {
+                batchStoreUpdates(() => {
+                    removeImportedTracks(identities);
+                    try {
+                        midiChange.undo();
+                    } catch (error) {
+                        applyImportedTracks({ tracks: tracksWithClips, identities });
+                        throw error;
+                    }
+                });
+            },
+            () => {
+                return batchStoreUpdates(() => {
+                    if (!canApplyImportedTracks(identities)) {
+                        notifyUser(
+                            `Failed to redo MIDI import for "${file.name}" - track or clip IDs now conflict`,
+                            'error'
+                        );
+                        return REDO_NOT_APPLIED;
+                    }
+
+                    midiChange.redo();
+                    try {
+                        if (!applyImportedTracks({ tracks: tracksWithClips, identities })) {
+                            throw new Error('Cannot redo MIDI import because its track or clip IDs now conflict');
+                        }
+                    } catch {
+                        try {
+                            midiChange.undo();
+                        } catch {
+                            // The MIDI owner already attempted to restore its previous state.
+                        }
+                        notifyUser(`Failed to redo MIDI import for "${file.name}"`, 'error');
+                        return REDO_NOT_APPLIED;
+                    }
+                    return undefined;
+                });
+            }
+        );
+
+        return 'completed';
+    });
 }

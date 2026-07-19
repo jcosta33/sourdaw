@@ -16,7 +16,7 @@ import {
     renameMixerSnapshot,
     restoreMixerChannels,
 } from '#/modules/Arrangement/useCases';
-import { pushUndoEntry } from '#/modules/Command/useCases';
+import { runLegacyCommandMutation } from '#/modules/Command/useCases';
 import { cycleChannelStripWidth } from '#/modules/WorkspaceShell/useCases';
 import { useContextMenuDismiss } from '#/utils/UI/useContextMenuDismiss';
 
@@ -64,14 +64,16 @@ export const MixerPanel = ({ style }: MixerPanelProps): ReactElement => {
     };
 
     const handleRecallSnapshot = (id: string) => {
-        const previous = recallMixerSnapshot(id);
-        if (previous) {
-            pushUndoEntry(
-                'Recall mixer snapshot',
-                () => restoreMixerChannels(previous),
-                () => recallMixerSnapshot(id)
-            );
-        }
+        void runLegacyCommandMutation((pushUndoEntry) => {
+            const previous = recallMixerSnapshot(id);
+            if (previous) {
+                pushUndoEntry(
+                    'Recall mixer snapshot',
+                    () => restoreMixerChannels(previous),
+                    () => recallMixerSnapshot(id)
+                );
+            }
+        });
         setShowSnapshots(false);
     };
 
