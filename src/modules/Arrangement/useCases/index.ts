@@ -110,20 +110,12 @@ export { createCompGroup } from './groupComping/compGroupOperations/createCompGr
 
 // ── Adjustment Layer ──────────────────────────────────────────────────────────
 
-export { createAdjustmentLayer } from './adjustmentLayer/createAdjustmentLayer';
 export { restoreAdjustmentLayerSnapshot } from './adjustmentLayer/restoreAdjustmentLayerSnapshot';
-export { removeAdjustmentLayer } from './adjustmentLayer/removeAdjustmentLayer';
-export { toggleAdjustmentLayer } from './adjustmentLayer/toggleAdjustmentLayer';
-export { setLayerParameter } from './adjustmentLayer/setLayerParameter';
-export { setLayerMix } from './adjustmentLayer/setLayerMix';
-export { addAdjustmentRegion } from './adjustmentLayer/addAdjustmentRegion';
-export { removeAdjustmentRegion } from './adjustmentLayer/removeAdjustmentRegion';
-export { moveAdjustmentRegion } from './adjustmentLayer/moveAdjustmentRegion';
-export { setLayerFades } from './adjustmentLayer/setLayerFades';
-export { setLayerAffectedTracks } from './adjustmentLayer/setLayerAffectedTracks';
-export { setLayerInsertionIndex } from './adjustmentLayer/setLayerInsertionIndex';
 export { getActiveLayersAtBeat } from './adjustmentLayer/getActiveLayersAtBeat';
 export { getLayerCount } from './adjustmentLayer/getLayerCount';
+
+// Mutation writers stay private to the registered handlers so every public edit
+// passes through the atomic freeze-staleness and undo boundary.
 
 // ── Device ────────────────────────────────────────────────────────────────────
 
