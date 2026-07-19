@@ -1,6 +1,7 @@
 import { markerStore, vcaGroupStore, trackStore } from '#/modules/Arrangement/stores';
 import { createTrack } from '#/modules/Arrangement/useCases';
 import { chordTrackStore } from '#/modules/MIDI/stores';
+import { hydrateGrooveTemplates } from '#/modules/MIDI/useCases';
 import { transportStore, defaultTransportState } from '#/modules/Transport/stores';
 
 import { projectStore } from '../../../stores/projectStore';
@@ -22,6 +23,7 @@ export function initProject(input: InitProjectInput): Track {
 
     trackStore.set({ tracks: [], selectedTrackId: null });
     chordTrackStore.set({ enabled: false, events: [] });
+    hydrateGrooveTemplates({ templates: [], assignments: [] });
     markerStore.set({ markers: [], sections: [] });
     vcaGroupStore.set({ groups: [] });
 

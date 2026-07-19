@@ -83,7 +83,11 @@ import {
     getWebMidiInputHandlers,
 } from '#/modules/MIDI/useCases';
 import { getPluginHostHandlers } from '#/modules/PluginHost/useCases';
-import { markDirty, setProjectIdentityTransitionDependencies } from '#/modules/Project/useCases';
+import {
+    initGrooveTemplateDirtyTracking,
+    markDirty,
+    setProjectIdentityTransitionDependencies,
+} from '#/modules/Project/useCases';
 import { getVersionControlHandlers } from '#/modules/ProjectVersioning/useCases';
 import { updateProofMeters } from '#/modules/Proof/stores';
 import { registerProofDevice, unregisterProofDevice, syncFullPatch } from '#/modules/Proof/useCases';
@@ -270,6 +274,7 @@ initToasterSubscribers({ eventBus, logger });
 initStalenessDetection();
 
 trackStore.subscribe(() => markDirty());
+initGrooveTemplateDirtyTracking();
 
 // Initialize browser AI module asynchronously — non-blocking, non-fatal.
 // Detects WebGPU capability and populates model registry from OPFS cache.

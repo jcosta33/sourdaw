@@ -6,30 +6,33 @@
  */
 
 import { createStore } from '#/infra/store/createStore';
+import { type Store } from '#/infra/store/types';
 
-import type { ProcessorType } from '../models/ProcessorCatalog';
-import type { YeastRuntimeStatus } from '../models/YeastProcessorProjection';
+import { type YeastState } from '../models/YeastState';
 
-export type YeastProcessorType = ProcessorType;
+import { createYeastAutomergeStorage } from './yeastAutomergeStorage';
 
-export type YeastProcessorInfo = {
-    id: string;
-    type: YeastProcessorType;
-    name: string;
-    bypassed: boolean;
-    params?: Record<string, number>;
-};
-
-export type YeastState = {
-    processors: YeastProcessorInfo[];
-    uiLevel: 1 | 2 | 3 | 4 | 5;
-    runtimeStatus?: YeastRuntimeStatus;
-    runtimeError?: string;
-};
+export type { YeastProcessorInfo, YeastProcessorType, YeastState } from '../models/YeastState';
 
 const defaultState: YeastState = {
     processors: [],
     uiLevel: 1,
 };
 
-export const yeastStore = createStore<YeastState>({ initialData: defaultState });
+function readInitialYeastState(): YeastState | null {
+    return null;
+}
+
+const localStateReader: { read: () => YeastState | null } = { read: readInitialYeastState };
+const yeastStorage = createYeastAutomergeStorage((): YeastState | null => localStateReader.read());
+
+export const yeastStore: Store<YeastState> = createStore<YeastState>({
+    storage: yeastStorage,
+    initialData: defaultState,
+});
+
+function readCurrentYeastState(): YeastState | null {
+    return yeastStore.value;
+}
+
+localStateReader.read = readCurrentYeastState;

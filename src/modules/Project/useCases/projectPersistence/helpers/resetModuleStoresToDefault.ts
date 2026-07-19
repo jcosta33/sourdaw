@@ -9,21 +9,37 @@ import { grinderStore, grinderTelemetryStore } from '#/modules/Grinder/stores';
 import { kneadStore, defaultKneadState } from '#/modules/Knead/stores';
 import { levainStore } from '#/modules/Levain/stores';
 import { midiStore } from '#/modules/MIDI/stores';
+import { hydrateGrooveTemplates } from '#/modules/MIDI/useCases';
 import { proofStore } from '#/modules/Proof/stores';
 import { setSidechainRoutes } from '#/modules/Routing/useCases';
 import { toasterStore } from '#/modules/Toaster/stores';
 import { tempoMapStore, timeSignatureMapStore, transportStore } from '#/modules/Transport/stores';
 import { defaultTransportState } from '#/modules/Transport/useCases';
 import { tunerStore } from '#/modules/Tuner/stores';
+import { hydrateYeastState } from '#/modules/Yeast/useCases';
 
 import { arrangementStore, defaultArrangementStoreState } from '../../../stores/arrangementStore';
 
-export function resetModuleStoresToDefault(): void {
+type ResetModuleStoresToDefaultInput = {
+    resetGrooveTemplates?: boolean;
+    resetYeastState?: boolean;
+};
+
+export function resetModuleStoresToDefault({
+    resetGrooveTemplates = true,
+    resetYeastState = true,
+}: ResetModuleStoresToDefaultInput = {}): void {
     resetArrangementStoresForProject();
     arrangementStore.set(structuredClone(defaultArrangementStoreState));
     transportStore.set(defaultTransportState);
     automationStore.set({ lanes: [] });
     midiStore.set({ notesByClipId: {}, ccByClipId: {}, pitchBendByClipId: {} });
+    if (resetGrooveTemplates) {
+        hydrateGrooveTemplates({ templates: [], assignments: [] });
+    }
+    if (resetYeastState) {
+        hydrateYeastState(undefined);
+    }
     tempoMapStore.set({ changes: [] });
     timeSignatureMapStore.set({ changes: [] });
     setSidechainRoutes([]);

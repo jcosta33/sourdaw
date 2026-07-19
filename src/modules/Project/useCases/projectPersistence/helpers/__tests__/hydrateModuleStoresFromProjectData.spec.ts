@@ -7,6 +7,8 @@ const mocks = vi.hoisted(() => ({
     automationStoreSet: vi.fn(),
     markerStoreSet: vi.fn(),
     restoreAdjustmentLayerSnapshot: vi.fn(),
+    hydrateGrooveTemplates: vi.fn(),
+    hydrateYeastState: vi.fn(),
     setSidechainRoutes: vi.fn(),
     trackStoreSet: vi.fn(),
     restoreTransportSnapshot: vi.fn(),
@@ -25,6 +27,10 @@ vi.mock('#/modules/Automation/stores', () => ({
     automationStore: { set: mocks.automationStoreSet },
 }));
 
+vi.mock('#/modules/MIDI/useCases', () => ({
+    hydrateGrooveTemplates: mocks.hydrateGrooveTemplates,
+}));
+
 vi.mock('#/modules/Routing/useCases', () => ({
     setSidechainRoutes: mocks.setSidechainRoutes,
 }));
@@ -33,9 +39,13 @@ vi.mock('#/modules/Transport/useCases', () => ({
     restoreTransportSnapshot: mocks.restoreTransportSnapshot,
 }));
 
+vi.mock('#/modules/Yeast/useCases', () => ({
+    hydrateYeastState: mocks.hydrateYeastState,
+}));
+
 type HydratableProjectDataOverrides = Pick<
     HydratableProjectData,
-    'adjustmentLayers' | 'automation' | 'markers' | 'sidechainRoutes' | 'transport'
+    'adjustmentLayers' | 'automation' | 'grooves' | 'markers' | 'sidechainRoutes' | 'transport' | 'yeast'
 >;
 
 function createHydratableProjectData(overrides: HydratableProjectDataOverrides = {}): HydratableProjectData {
@@ -119,7 +129,39 @@ describe('hydrateModuleStoresFromProjectData', () => {
 
         expect(mocks.restoreTransportSnapshot).not.toHaveBeenCalled();
         expect(mocks.restoreAdjustmentLayerSnapshot).toHaveBeenCalledWith(undefined);
+        expect(mocks.hydrateGrooveTemplates).toHaveBeenCalledWith({ templates: [], assignments: [] });
+        expect(mocks.hydrateYeastState).toHaveBeenCalledWith(undefined);
         expect(mocks.setSidechainRoutes).toHaveBeenCalledWith([]);
+    });
+
+    it('hydrates persisted groove state through the owning MIDI use case', () => {
+        const grooves = {
+            templates: [
+                {
+                    id: 'persisted-groove',
+                    name: 'Persisted groove',
+                    schemaVersion: 1,
+                    subdivision: '1/16',
+                    slots: [],
+                    provenance: { type: 'user', sourceId: 'project-load' },
+                },
+            ],
+            assignments: [],
+        } satisfies NonNullable<HydratableProjectData['grooves']>;
+
+        hydrateModuleStoresFromProjectData(createHydratableProjectData({ grooves }));
+
+        expect(mocks.hydrateGrooveTemplates).toHaveBeenCalledWith(grooves);
+    });
+
+    it('hydrates durable Yeast processor identities through the owning use case', () => {
+        const yeast = {
+            processors: [{ id: 'durable-groove', type: 'groove', name: 'Groove', bypassed: false }],
+        } satisfies NonNullable<HydratableProjectData['yeast']>;
+
+        hydrateModuleStoresFromProjectData(createHydratableProjectData({ yeast }));
+
+        expect(mocks.hydrateYeastState).toHaveBeenCalledWith(yeast);
     });
 
     it('leaves active arrangement and automation stores to the active-snapshot hydrator', () => {

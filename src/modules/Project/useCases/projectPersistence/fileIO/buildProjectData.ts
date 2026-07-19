@@ -7,9 +7,10 @@ import {
 } from '#/modules/Arrangement/stores';
 import { exportCachedAudioBuffers } from '#/modules/AudioEngine/useCases';
 import { automationStore } from '#/modules/Automation/stores';
-import { midiStore } from '#/modules/MIDI/stores';
+import { defaultGrooveTemplateState, grooveTemplateStore, midiStore } from '#/modules/MIDI/stores';
 import { getAllSidechainRoutes } from '#/modules/Routing/useCases';
 import { tempoMapStore, timeSignatureMapStore, transportStore } from '#/modules/Transport/stores';
+import { yeastStore } from '#/modules/Yeast/stores';
 
 import {
     CURRENT_PROJECT_VERSION,
@@ -21,6 +22,7 @@ import { projectStore } from '../../../stores/projectStore';
 import { syncCurrentArrangementToStore } from '../../arrangement/syncCurrentArrangementToStore';
 
 import { serializeArrangementTracks } from './serializeArrangementTracks';
+import { serializeProjectGrooves } from './serializeProjectGrooves';
 import { serializeProjectMidi } from './serializeProjectMidi';
 
 /** Collect every audioBufferId (clips + frozen buffers + track alternatives)
@@ -84,6 +86,7 @@ export async function buildProjectData({
     const midi = midiStore.value;
     const project = projectStore.value;
     const arrState = arrangementStore.value;
+    const yeastState = yeastStore.value;
 
     if (!tracks || !transport || !automation || !midi || !project || !arrState) {
         return null;
@@ -106,6 +109,12 @@ export async function buildProjectData({
 
     const resolvedIds = new Set(Object.keys(audioBuffers));
     const missingBufferCount = includeAudioBuffers ? [...allBufferIds].filter((id) => !resolvedIds.has(id)).length : 0;
+    let yeast: ProjectData['yeast'];
+    if (yeastState && yeastState.processors.length > 0) {
+        yeast = {
+            processors: structuredClone(yeastState.processors),
+        };
+    }
 
     const data: ProjectData = {
         version: CURRENT_PROJECT_VERSION,
@@ -148,6 +157,8 @@ export async function buildProjectData({
             buses: [],
         },
         midi: serializeProjectMidi(midi),
+        grooves: serializeProjectGrooves(grooveTemplateStore.value ?? defaultGrooveTemplateState),
+        yeast,
         tempoMap: tempoMapStore.value ?? undefined,
         timeSignatureMap: timeSignatureMapStore.value ?? undefined,
         markers: (markerStore.value?.markers || []).map((message) => ({

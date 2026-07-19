@@ -9,12 +9,14 @@ const mocks = vi.hoisted(() => ({
     transportStoreSet: vi.fn(),
     automationStoreSet: vi.fn(),
     midiStoreSet: vi.fn(),
+    hydrateGrooveTemplates: vi.fn(),
     tempoMapStoreSet: vi.fn(),
     timeSignatureMapStoreSet: vi.fn(),
     setSidechainRoutes: vi.fn(),
     grinderStoreSet: vi.fn(),
     grinderTelemetryStoreSet: vi.fn(),
     arrangementStoreSet: vi.fn(),
+    hydrateYeastState: vi.fn(),
 }));
 
 vi.mock('#/modules/Arrangement/useCases', () => ({
@@ -29,6 +31,16 @@ vi.mock('#/modules/Automation/stores', async (importOriginal) => {
 vi.mock('#/modules/MIDI/stores', async (importOriginal) => {
     const actual = await importOriginal<typeof import('#/modules/MIDI/stores')>();
     return { ...actual, midiStore: { set: mocks.midiStoreSet } };
+});
+
+vi.mock('#/modules/MIDI/useCases', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('#/modules/MIDI/useCases')>();
+    return { ...actual, hydrateGrooveTemplates: mocks.hydrateGrooveTemplates };
+});
+
+vi.mock('#/modules/Yeast/useCases', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('#/modules/Yeast/useCases')>();
+    return { ...actual, hydrateYeastState: mocks.hydrateYeastState };
 });
 
 vi.mock('#/modules/Routing/useCases', async (importOriginal) => {
@@ -71,12 +83,14 @@ describe('resetModuleStoresToDefault', () => {
         mocks.transportStoreSet.mockClear();
         mocks.automationStoreSet.mockClear();
         mocks.midiStoreSet.mockClear();
+        mocks.hydrateGrooveTemplates.mockClear();
         mocks.tempoMapStoreSet.mockClear();
         mocks.timeSignatureMapStoreSet.mockClear();
         mocks.setSidechainRoutes.mockClear();
         mocks.grinderStoreSet.mockClear();
         mocks.grinderTelemetryStoreSet.mockClear();
         mocks.arrangementStoreSet.mockClear();
+        mocks.hydrateYeastState.mockClear();
     });
 
     it('should reset arrangement, transport, automation, MIDI, and routing stores', () => {
@@ -97,6 +111,15 @@ describe('resetModuleStoresToDefault', () => {
             arrangements: [],
             activeArrangementId: 'default-arrangement',
         });
+        expect(mocks.hydrateGrooveTemplates).toHaveBeenCalledWith({ templates: [], assignments: [] });
+        expect(mocks.hydrateYeastState).toHaveBeenCalledWith(undefined);
+    });
+
+    it('preserves collaborative groove CRDT truth before projecting a loaded document', () => {
+        resetModuleStoresToDefault({ resetGrooveTemplates: false, resetYeastState: false });
+
+        expect(mocks.hydrateGrooveTemplates).not.toHaveBeenCalled();
+        expect(mocks.hydrateYeastState).not.toHaveBeenCalled();
     });
 
     it('should clear per-device Grinder telemetry so prior-project meters do not linger', () => {

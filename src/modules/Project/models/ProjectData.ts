@@ -45,6 +45,8 @@ export type ProjectData = {
     arrangement: ProjectArrangement;
     automation: ProjectAutomation;
     midi: ProjectMidi;
+    grooves?: ProjectGrooveState;
+    yeast?: ProjectYeastState;
     mixer: ProjectMixer;
     markers: ProjectMarker[];
     tempoMap?: ProjectTempoMap;
@@ -201,6 +203,62 @@ export type ProjectMidiNote = {
     pressure?: number;
     slide?: number;
     pitchBend?: number;
+};
+
+export type ProjectGrooveSubdivision = '1/8' | '1/16' | '1/32' | '1/16T';
+
+export type ProjectGrooveTemplate = {
+    id: string;
+    name: string;
+    schemaVersion: 1;
+    subdivision: ProjectGrooveSubdivision;
+    slots: Array<{ index: number; timingOffset: number; dynamicsOffset: number }>;
+    provenance:
+        | { type: 'builtin'; sourceId: string }
+        | { type: 'user'; sourceId: string }
+        | { type: 'midi-clip'; sourceId: string; analyzerVersion: number }
+        | { type: 'legacy'; sourceId: string };
+};
+
+export type ProjectGrooveAssignment = {
+    consumerType: 'clip' | 'yeast-processor' | 'toaster-pattern' | 'arpeggiator' | 'sequencer';
+    consumerId: string;
+    templateId: string;
+    amount: number;
+};
+
+export type ProjectGrooveState = {
+    templates: ProjectGrooveTemplate[];
+    assignments: ProjectGrooveAssignment[];
+};
+
+export type ProjectYeastProcessorType =
+    | 'arpeggiator'
+    | 'chord'
+    | 'chordMemory'
+    | 'scale'
+    | 'harmonizer'
+    | 'repeater'
+    | 'velocity'
+    | 'humanizer'
+    | 'filter'
+    | 'transposer'
+    | 'groove'
+    | 'ccGenerator'
+    | 'euclidean'
+    | 'markov'
+    | 'mutation';
+
+export type ProjectYeastProcessor = {
+    id: string;
+    type: ProjectYeastProcessorType;
+    name: string;
+    bypassed: boolean;
+    params?: Record<string, number>;
+};
+
+export type ProjectYeastState = {
+    processors: ProjectYeastProcessor[];
 };
 
 export type ProjectDevice = {

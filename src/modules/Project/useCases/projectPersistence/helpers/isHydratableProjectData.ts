@@ -1,3 +1,5 @@
+import { isGrooveTemplateState } from '#/modules/MIDI/stores';
+
 import {
     isSupportedProjectVersion,
     type ProjectAdjustmentLayers,
@@ -5,6 +7,7 @@ import {
     type ProjectAutomation,
     type ProjectClip,
     type ProjectExportedAudioBuffer,
+    type ProjectGrooveState,
     type ProjectMeta,
     type ProjectMarker,
     type ProjectMidi,
@@ -15,6 +18,7 @@ import {
     type ProjectTrack,
     type ProjectTrackAlternative,
     type ProjectTransport,
+    type ProjectYeastState,
 } from '../../../models/ProjectData';
 
 export type HydratableProjectTrack = Pick<ProjectTrack, 'id' | 'name' | 'kind' | 'clips'> &
@@ -42,6 +46,8 @@ export type HydratableProjectData = {
     transport?: ProjectTransport;
     automation?: ProjectAutomation;
     midi?: ProjectMidi;
+    grooves?: ProjectGrooveState;
+    yeast?: ProjectYeastState;
     markers?: ProjectMarker[];
     tempoMap?: ProjectTempoMap;
     timeSignatureMap?: ProjectTimeSignatureMap;
@@ -63,6 +69,60 @@ function isRecord(value: unknown): value is UnknownRecord {
 
 function hasOnlyNumbers(values: unknown): boolean {
     return Array.isArray(values) && values.every((value) => typeof value === 'number' && Number.isFinite(value));
+}
+
+const PROJECT_YEAST_PROCESSOR_TYPES = new Set([
+    'arpeggiator',
+    'chord',
+    'chordMemory',
+    'scale',
+    'harmonizer',
+    'repeater',
+    'velocity',
+    'humanizer',
+    'filter',
+    'transposer',
+    'groove',
+    'ccGenerator',
+    'euclidean',
+    'markov',
+    'mutation',
+]);
+
+function isYeastState(value: unknown): value is ProjectYeastState {
+    if (
+        !isRecord(value) ||
+        Object.keys(value).some((key) => key !== 'processors') ||
+        !Array.isArray(value.processors)
+    ) {
+        return false;
+    }
+    const ids = new Set<string>();
+    return value.processors.every((processor) => {
+        if (
+            !isRecord(processor) ||
+            Object.keys(processor).some(
+                (key) => key !== 'id' && key !== 'type' && key !== 'name' && key !== 'bypassed' && key !== 'params'
+            ) ||
+            typeof processor.id !== 'string' ||
+            processor.id.normalize('NFKC').trim() !== processor.id ||
+            ids.has(processor.id) ||
+            typeof processor.type !== 'string' ||
+            !PROJECT_YEAST_PROCESSOR_TYPES.has(processor.type) ||
+            typeof processor.name !== 'string' ||
+            processor.name.trim().length === 0 ||
+            typeof processor.bypassed !== 'boolean' ||
+            (processor.params !== undefined &&
+                (!isRecord(processor.params) ||
+                    !Object.values(processor.params).every(
+                        (parameter) => typeof parameter === 'number' && Number.isFinite(parameter)
+                    )))
+        ) {
+            return false;
+        }
+        ids.add(processor.id);
+        return true;
+    });
 }
 
 function hasOptionalType({
@@ -407,6 +467,10 @@ function isMidi(value: unknown): value is ProjectMidi {
     );
 }
 
+function isGrooves(value: unknown): value is ProjectGrooveState {
+    return isGrooveTemplateState(value);
+}
+
 function isMarker(value: unknown): value is ProjectMarker {
     return (
         isRecord(value) &&
@@ -674,6 +738,12 @@ export function isHydratableProjectData(value: unknown): value is HydratableProj
         return false;
     }
     if (value.midi !== undefined && !isMidi(value.midi)) {
+        return false;
+    }
+    if (value.grooves !== undefined && !isGrooves(value.grooves)) {
+        return false;
+    }
+    if (value.yeast !== undefined && !isYeastState(value.yeast)) {
         return false;
     }
     if (value.automation !== undefined && !isAutomation(value.automation)) {

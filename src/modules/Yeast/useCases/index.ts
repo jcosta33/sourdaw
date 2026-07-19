@@ -4,5 +4,7 @@ export { readYeastPreviewSnapshot } from './yeastSchedulingBridge/readYeastPrevi
 export { setYeastPreviewCaptureEnabled } from './yeastSchedulingBridge/setYeastPreviewCaptureEnabled';
 export { yeastPanic } from './yeastSchedulingBridge/yeastPanic';
 export { configureYeastRuntime } from './configureYeastRuntime';
+export { hydrateYeastState } from './hydrateYeastState';
+export { hydrateYeastCrdtProjection } from './hydrateYeastCrdtProjection';
 export { sendYeastProcessorCommand } from './sendYeastProcessorCommand';
 export { teardownYeastRuntime } from './teardownYeastRuntime';

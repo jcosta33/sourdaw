@@ -34,6 +34,7 @@ export { formatChordName } from './formatChordName';
 export { getMidiStoreState } from './getMidiStoreState';
 export { mergeImportedMidiClipNotes } from './mergeImportedMidiClipNotes';
 export { setMidiStoreState } from './setMidiStoreState';
+export { hydrateMidiCrdtProjection } from './hydrateMidiCrdtProjection';
 export { duplicateMidiClipData } from './midiClipData/duplicateMidiClipData';
 export { glueMidiClipData } from './midiClipData/glueMidiClipData';
 export { removeMidiClipData } from './midiClipData/removeMidiClipData';

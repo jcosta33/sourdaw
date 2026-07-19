@@ -70,6 +70,10 @@ describe('loadProject', () => {
         await expect(loadProject()).resolves.toBe(true);
 
         expect(resetActionReplayAuthority).toHaveBeenCalledTimes(1);
+        expect(mocks.resetModuleStores).toHaveBeenCalledWith({
+            resetGrooveTemplates: false,
+            resetYeastState: false,
+        });
         expect(projectCrdtToStores).toHaveBeenCalledTimes(1);
         expect(clearUndoHistory).toHaveBeenCalledTimes(1);
         expect(startCrdtAutoSave).toHaveBeenCalledTimes(1);
