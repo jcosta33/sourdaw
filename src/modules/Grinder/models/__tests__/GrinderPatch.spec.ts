@@ -6,8 +6,10 @@ import {
     isSupportedGrinderChainPedalType,
     migrateGrinderPatch,
     SUPPORTED_GRINDER_CHAIN_PEDAL_TYPES,
+    type GrinderMic,
     type GrinderNeuralProfile,
     type GrinderPedal,
+    type GrinderSnapshot,
 } from '../GrinderPatch';
 
 describe('isSupportedGrinderChainPedalType', () => {
@@ -155,7 +157,7 @@ describe('migrateGrinderPatch', () => {
 
     it('should default a pedal missing its id to a positional id and preserve its params', () => {
         const migrated = migrateGrinderPatch({
-            prePedals: [{ type: 'fuzz', enabled: true, params: { fuzz: 7 } }],
+            prePedals: [{ type: 'fuzz', enabled: true, params: { fuzz: 7 } } as Partial<GrinderPedal> as GrinderPedal],
         });
 
         expect(migrated.prePedals).toEqual([{ id: 'pedal-0', type: 'fuzz', enabled: true, params: { fuzz: 7 } }]);
@@ -175,7 +177,12 @@ describe('migrateGrinderPatch', () => {
     it('should default a snapshot missing id and name to positional values and clone its records', () => {
         const source_overrides = { gain: 5 };
         const migrated = migrateGrinderPatch({
-            snapshots: [{ paramOverrides: source_overrides, bypassStates: { 'od-1': true } }],
+            snapshots: [
+                {
+                    paramOverrides: source_overrides,
+                    bypassStates: { 'od-1': true },
+                } as Partial<GrinderSnapshot> as GrinderSnapshot,
+            ],
         });
 
         source_overrides.gain = 42;
@@ -187,7 +194,7 @@ describe('migrateGrinderPatch', () => {
 
     it('should merge a partial mic1 with mic defaults rather than replacing it wholesale', () => {
         const migrated = migrateGrinderPatch({
-            mic1: { gain: 6 },
+            mic1: { gain: 6 } as GrinderMic,
         });
 
         expect(migrated.mic1).toEqual({ ...DEFAULT_PATCH.mic1, gain: 6 });
@@ -195,7 +202,7 @@ describe('migrateGrinderPatch', () => {
 
     it('should merge a partial mic2 with its own defaults, independent of mic1', () => {
         const migrated = migrateGrinderPatch({
-            mic2: { distance: 0.8 },
+            mic2: { distance: 0.8 } as GrinderMic,
         });
 
         expect(migrated.mic2).toEqual({ ...DEFAULT_PATCH.mic2, distance: 0.8 });

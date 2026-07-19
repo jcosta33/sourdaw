@@ -9,14 +9,11 @@ describe('classifyGrinderNeuralPersistenceError', () => {
         expect(result).toEqual({ code: 'quota_exceeded', message: 'full' });
     });
 
-    it.each(['VersionError', 'ConstraintError'])(
-        'should classify a %s DOMException as schema_mismatch',
-        (name) => {
-            const result = classifyGrinderNeuralPersistenceError(new DOMException('bad schema', name));
+    it.each(['VersionError', 'ConstraintError'])('should classify a %s DOMException as schema_mismatch', (name) => {
+        const result = classifyGrinderNeuralPersistenceError(new DOMException('bad schema', name));
 
-            expect(result).toEqual({ code: 'schema_mismatch', message: 'bad schema' });
-        }
-    );
+        expect(result).toEqual({ code: 'schema_mismatch', message: 'bad schema' });
+    });
 
     it.each(['SecurityError', 'NotAllowedError', 'InvalidStateError'])(
         'should classify a %s DOMException as permission_denied',
