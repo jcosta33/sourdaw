@@ -633,10 +633,10 @@ export async function scheduleMidiNotes(
                     for (const projectedNote of projectedNotes) {
                         const noteStartBeat = projectedNote.startBeat;
 
-                        const inSchedulingWindow = notesAreAbsolute
-                            ? noteStartBeat >= fromBeat && noteStartBeat < toBeat
-                            : noteStartBeat >= fromBeat && noteStartBeat < toBeat && noteStartBeat > lastScheduledBeat;
-                        if (!inSchedulingWindow) {
+                        if (noteStartBeat < fromBeat || noteStartBeat >= toBeat) {
+                            continue;
+                        }
+                        if (!notesAreAbsolute && noteStartBeat <= lastScheduledBeat) {
                             continue;
                         }
                         if (!isCurrent()) {
