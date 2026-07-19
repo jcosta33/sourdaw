@@ -1,5 +1,4 @@
 export const YEAST_PREVIEW_CAPACITY = 512;
-export const YEAST_PREVIEW_RACK_ID = 'yeast-runtime';
 export const YEAST_PREVIEW_OPEN_PHASE = 0;
 export const YEAST_PREVIEW_CLOSED_PHASE = 1;
 export const YEAST_PREVIEW_REALIZED_FLAG = 1;
@@ -21,6 +20,9 @@ export type YeastPreviewEvent = Readonly<{
     velocity: number;
     probability: number | null;
     realized: boolean;
+    processorId: string | null;
+    bypassed: boolean;
+    failed: boolean;
 }>;
 
 export type YeastPreviewProcessorProvenance = Readonly<{
@@ -60,6 +62,10 @@ export type YeastPreviewPackedPage = {
     /** NaN encodes a null probability. */
     readonly probability: Float64Array;
     readonly flags: Uint8Array;
+    readonly rackIds: string[];
+    readonly routeIds: string[];
+    readonly trackIds: string[];
+    readonly processorId: string[];
     readonly provenanceEventCount: Uint16Array;
     readonly provenanceFlags: Uint8Array;
     readonly provenanceProcessorId: string[];

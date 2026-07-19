@@ -13,6 +13,8 @@ import { MidiRack } from '../MidiRack';
 import { ChordMemory } from '../processors/ChordMemory';
 import { NoteFilter } from '../processors/NoteFilter';
 
+import type { YeastPreviewDecisionSink } from '../YeastPreviewSidecar';
+
 type NoteOffEvent = MidiEvent & { kind: Extract<MidiEventKind, { type: 'noteOff' }> };
 type NoteOnEvent = MidiEvent & { kind: Extract<MidiEventKind, { type: 'noteOn' }> };
 
@@ -41,9 +43,9 @@ function takePreviewBlock(rack: MidiRack) {
     }
     const records = Array.from({ length: page.count }, (_, index) => ({
         eventId: page.eventId[index]!,
-        rackId: page.rackId,
-        routeId: page.routeId,
-        trackId: page.trackId,
+        rackId: page.rackIds[index]!,
+        routeId: page.routeIds[index]!,
+        trackId: page.trackIds[index]!,
         projectionVersion: page.projectionVersion,
         phase: previewPhase(page.phase[index]!),
         beatTime: page.beatTime[index]!,
@@ -52,6 +54,9 @@ function takePreviewBlock(rack: MidiRack) {
         velocity: page.velocity[index]!,
         probability: Number.isNaN(page.probability[index]!) ? null : page.probability[index]!,
         realized: (page.flags[index]! & 1) !== 0,
+        processorId: page.processorId[index] || null,
+        bypassed: (page.flags[index]! & YEAST_PREVIEW_BYPASSED_FLAG) !== 0,
+        failed: (page.flags[index]! & YEAST_PREVIEW_FAILED_FLAG) !== 0,
     }));
     const provenance = Array.from({ length: page.provenanceCount }, (_, index) => ({
         processorId: page.provenanceProcessorId[index]!,
@@ -87,7 +92,12 @@ class PassthroughProcessor implements MidiProcessor {
     constructor(id: string) {
         this.id = id;
     }
-    processMidi(input: readonly MidiEvent[], output: MidiEvent[]): void {
+    processMidi(
+        input: readonly MidiEvent[],
+        output: MidiEvent[],
+        _transport: TransportInfo,
+        _preview?: YeastPreviewDecisionSink
+    ): void {
         for (const event of input) {
             output.push(event);
         }
@@ -110,6 +120,20 @@ class PassthroughProcessor implements MidiProcessor {
 class ThrowingProcessor extends PassthroughProcessor {
     override processMidi(): void {
         throw new Error('boom');
+    }
+}
+
+class PreviewProbeProcessor extends PassthroughProcessor {
+    receivedPreview = false;
+
+    override processMidi(
+        input: readonly MidiEvent[],
+        output: MidiEvent[],
+        _transport: TransportInfo,
+        preview?: YeastPreviewDecisionSink
+    ): void {
+        this.receivedPreview = preview !== undefined;
+        super.processMidi(input, output, _transport, preview);
     }
 }
 
@@ -427,6 +451,67 @@ describe('MidiRack', () => {
             }
         });
 
+        it('does not pass the preview sidecar into processors while capture is disabled', () => {
+            const rack = new MidiRack();
+            const processor = new PreviewProbeProcessor('probe');
+            rack.addProcessor(processor);
+
+            rack.processBlock([noteOn(0, 60)], 0, 128, transport, 'track-a', false);
+
+            expect(processor.receivedPreview).toBe(false);
+        });
+
+        it('keeps future scheduled events on their originating route', () => {
+            const rack = new MidiRack('rack-a');
+            rack.addProcessor(new PassthroughProcessor('p1'));
+
+            rack.processBlock([noteOn(192, 60)], 0, 128, transport, 'track-a', true);
+            takePreviewBlock(rack);
+
+            const routeBOutput = rack.processBlock(
+                [],
+                128,
+                256,
+                { ...transport, ppqPosition: 128 / 22050 },
+                'track-b',
+                true
+            );
+            expect(routeBOutput).toEqual([]);
+            takePreviewBlock(rack);
+            const routeAOutput = rack.processBlock(
+                [],
+                128,
+                256,
+                { ...transport, ppqPosition: 128 / 22050 },
+                'track-a',
+                true
+            );
+
+            expect(routeAOutput).toMatchObject([{ trackId: 'track-a', kind: { type: 'noteOn', note: 60 } }]);
+            expect(takePreviewBlock(rack).records).toMatchObject([
+                { rackId: 'rack-a', routeId: 'track-a', trackId: 'track-a', pitch: 60 },
+            ]);
+        });
+
+        it('encodes processor and bypass provenance on every terminal record', () => {
+            const rack = new MidiRack();
+            const processor = new PassthroughProcessor('p1');
+            processor.setBypassed(true);
+            rack.addProcessor(processor);
+
+            rack.processBlock([noteOn(0, 60), noteOff(64, 60)], 0, 128, transport, 'track-a', true);
+
+            const page = rack.takePreviewPage();
+            const processorIds: unknown = Reflect.get(page ?? {}, 'processorId');
+            expect(processorIds).toBeInstanceOf(Array);
+            if (page) {
+                expect((processorIds as string[]).slice(0, page.count)).toEqual(['p1', 'p1']);
+                expect(page.flags[0]! & YEAST_PREVIEW_BYPASSED_FLAG).toBe(YEAST_PREVIEW_BYPASSED_FLAG);
+                expect(page.flags[1]! & YEAST_PREVIEW_BYPASSED_FLAG).toBe(YEAST_PREVIEW_BYPASSED_FLAG);
+                rack.releasePreviewPage(page);
+            }
+        });
+
         it('publishes an open terminal note at onset before its Note Off arrives', () => {
             const rack = new MidiRack();
             rack.addProcessor(new PassthroughProcessor('p1'));
@@ -694,6 +779,10 @@ describe('MidiRack', () => {
 
             const preview = takePreviewBlock(rack);
             expect(preview.records).toHaveLength(2);
+            expect(preview.records).toMatchObject([
+                { processorId: 'filter-1', bypassed: true, failed: false },
+                { processorId: 'filter-1', bypassed: true, failed: false },
+            ]);
             expect(preview.provenance).toMatchObject([
                 { processorId: 'upstream', bypassed: false, failed: false, eventCount: 1 },
                 { processorId: 'filter-1', bypassed: true, failed: false, eventCount: 0 },
@@ -746,6 +835,9 @@ describe('MidiRack', () => {
                 velocity: 91,
                 probability: null,
                 realized: true,
+                processorId: 'thrower',
+                bypassed: false,
+                failed: true,
             });
             expect(preview.records[1]!.durationBeats).toBeCloseTo(64 / 22050, 12);
             expect(preview.provenance).toEqual([

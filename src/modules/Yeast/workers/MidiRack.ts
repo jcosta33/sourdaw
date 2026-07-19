@@ -6,7 +6,7 @@
  */
 
 import { type MidiEvent, type TransportInfo } from '../models/MidiEvent';
-import { YEAST_PREVIEW_RACK_ID, type YeastPreviewPackedPage } from '../models/YeastPreviewSnapshot';
+import { type YeastPreviewPackedPage } from '../models/YeastPreviewSnapshot';
 
 import { type MidiProcessor, ScheduledEventQueue } from './MidiProcessor';
 import { YeastPreviewSidecar } from './YeastPreviewSidecar';
@@ -29,10 +29,12 @@ export class MidiRack {
     private scratchB: MidiEvent[] = [];
     private separateOutput: MidiEvent[] = [];
     private readonly preview: YeastPreviewSidecar;
+    private readonly defaultRackId: string | undefined;
     private projectionVersion = 0;
 
-    constructor(rackId = YEAST_PREVIEW_RACK_ID) {
-        this.preview = new YeastPreviewSidecar(rackId);
+    constructor(rackId?: string) {
+        this.defaultRackId = rackId;
+        this.preview = new YeastPreviewSidecar();
     }
 
     /** Add a processor to the end of the chain. */
@@ -150,16 +152,21 @@ export class MidiRack {
         blockEndSamples: number,
         transport: TransportInfo,
         trackId: string,
-        previewEnabled = false
+        previewEnabled = false,
+        rackId = this.defaultRackId ?? trackId,
+        routeId = trackId
     ): MidiEvent[] {
         this.preview.beginBlock(
             previewEnabled,
             blockStartSamples,
             blockEndSamples,
             transport,
+            rackId,
+            routeId,
             trackId,
             this.projectionVersion
         );
+        const preview = previewEnabled ? this.preview : undefined;
         // 0. Reject degenerate ranges. With blockEnd < blockStart the [start,end)
         // drain window is empty (drainRangeInto drains nothing) AND the separator
         // (`event.timeSamples < blockEndSamples`) routes every real event into the
@@ -175,7 +182,7 @@ export class MidiRack {
         // intermediate `drained` + spread-merge allocation (§149.1).
         const current0 = this.scratchA;
         current0.length = 0;
-        this.scheduled.drainRangeInto(blockStartSamples, blockEndSamples, current0);
+        this.scheduled.drainRangeInto(blockStartSamples, blockEndSamples, current0, trackId);
 
         // 2. Merge with input events.
         for (let index = 0; index < inputEvents.length; index++) {
@@ -192,23 +199,26 @@ export class MidiRack {
         for (const processor of this.processors) {
             processor.setTrackId?.(trackId);
             if (processor.isBypassed()) {
-                this.preview.recordProcessorProvenance(processor.id, true, false, 0);
+                preview?.recordProcessorEvents(input, processor.id, true, false);
+                preview?.recordProcessorProvenance(processor.id, true, false, 0);
                 continue;
             }
             output.length = 0;
             try {
-                processor.processMidi(input, output, transport, this.preview);
+                processor.processMidi(input, output, transport, preview);
                 for (const event of output) {
                     event.trackId ??= trackId;
                 }
-                this.preview.recordProcessorProvenance(processor.id, false, false, this.countNoteOns(output));
+                preview?.recordProcessorEvents(output, processor.id, false, false);
+                preview?.recordProcessorProvenance(processor.id, false, false, this.countNoteOns(output));
             } catch {
                 // A throwing processor must not abort the rest of the chain (or
                 // the block). Treat it as a transparent bypass for this block:
                 // skip the buffer swap so the upstream events flow through
                 // unchanged. The happy path takes no exception, so try/catch adds
                 // no per-block allocation on the audio thread.
-                this.preview.recordProcessorProvenance(processor.id, false, true, 0);
+                preview?.recordProcessorEvents(input, processor.id, false, true);
+                preview?.recordProcessorProvenance(processor.id, false, true, 0);
                 continue;
             }
             const tmp = input;
@@ -220,7 +230,7 @@ export class MidiRack {
         for (const event of current) {
             event.trackId ??= trackId;
         }
-        this.preview.recordTerminalEvents(current, trackId);
+        preview?.recordTerminalEvents(current, trackId);
 
         // 4. Sort final output
         current.sort((alpha, b) => alpha.timeSamples - b.timeSamples);

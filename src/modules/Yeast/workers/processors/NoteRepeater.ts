@@ -63,7 +63,7 @@ export class NoteRepeater extends BaseMidiProcessor {
         // Use a generous range since we don't know exact block boundaries here
         const now = input.length > 0 ? input[0]!.timeSamples : 0;
         const blockEnd = now + 8192; // generous window
-        const drained = this.scheduled.drainRange(0, blockEnd);
+        const drained = this.scheduled.drainRange(0, blockEnd, this.trackId);
         for (const event1 of drained) {
             output.push(event1);
         }

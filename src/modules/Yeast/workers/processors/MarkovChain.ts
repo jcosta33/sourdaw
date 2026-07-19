@@ -195,7 +195,7 @@ export class MarkovChain extends BaseMidiProcessor {
             this.lastStepTime = stepTime;
         }
 
-        const drained = this.scheduled.drainRange(0, blockEnd);
+        const drained = this.scheduled.drainRange(0, blockEnd, this.trackId);
         for (const event1 of drained) {
             output.push(event1);
         }

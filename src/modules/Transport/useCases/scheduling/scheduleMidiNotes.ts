@@ -145,7 +145,7 @@ export async function scheduleMidiNotes(
                 continue;
             }
 
-            const hasYeast = track.devices.some((data) => data.type === 'yeast');
+            const yeastDevice = track.devices.find((data) => data.type === 'yeast');
             // §2 — When the clip loops, run the Yeast Worker once per loop
             // iteration over that iteration's absolute window, so bar-aware
             // processors see iter-correct transport metadata instead of the
@@ -158,7 +158,7 @@ export async function scheduleMidiNotes(
             // declared type is not narrowed inside this type position.
             let runYeastForIteration: ((iterAbsBase: number) => Promise<typeof notes | null>) | null = null;
             const clipMidiOffset = clip.midiOffsetBeats ?? 0;
-            if (hasYeast) {
+            if (yeastDevice) {
                 const rawNotes = notes;
                 runYeastForIteration = async (iterAbsBase: number) => {
                     const yeastSr = getAudioContext().sampleRate;
@@ -226,6 +226,8 @@ export async function scheduleMidiNotes(
 
                         const blockProcessed = await processYeastMidi({
                             context: ctx,
+                            rackId: yeastDevice.id,
+                            routeId: track.id,
                             trackId: track.id,
                             events: midiEvents,
                             blockStartSamples: beatToSamples(changes, block.fromBeat, transport.tempo, yeastSr),

@@ -208,6 +208,14 @@ function isPackedPreviewPage(value: unknown): value is YeastPreviewPackedPage {
         value.probability.length === YEAST_PREVIEW_CAPACITY &&
         value.flags instanceof Uint8Array &&
         value.flags.length === YEAST_PREVIEW_CAPACITY &&
+        Array.isArray(value.rackIds) &&
+        value.rackIds.length === YEAST_PREVIEW_CAPACITY &&
+        Array.isArray(value.routeIds) &&
+        value.routeIds.length === YEAST_PREVIEW_CAPACITY &&
+        Array.isArray(value.trackIds) &&
+        value.trackIds.length === YEAST_PREVIEW_CAPACITY &&
+        Array.isArray(value.processorId) &&
+        value.processorId.length === YEAST_PREVIEW_CAPACITY &&
         value.provenanceEventCount instanceof Uint16Array &&
         value.provenanceEventCount.length === YEAST_PREVIEW_CAPACITY &&
         value.provenanceFlags instanceof Uint8Array &&
@@ -242,6 +250,10 @@ function decodePreviewPage(page: YeastPreviewPackedPage, extraDroppedEvents: num
         const velocity = page.velocity[index]!;
         const packedProbability = page.probability[index]!;
         const flags = page.flags[index]!;
+        const rackId = page.rackIds[index];
+        const routeId = page.routeIds[index];
+        const trackId = page.trackIds[index];
+        const processorId = page.processorId[index];
         if (
             !Number.isSafeInteger(eventId) ||
             eventId < 0 ||
@@ -253,15 +265,19 @@ function decodePreviewPage(page: YeastPreviewPackedPage, extraDroppedEvents: num
             !Number.isFinite(velocity) ||
             (!Number.isNaN(packedProbability) &&
                 (!Number.isFinite(packedProbability) || packedProbability < 0 || packedProbability > 1)) ||
-            (flags & ~YEAST_PREVIEW_VALID_FLAGS) !== 0
+            (flags & ~YEAST_PREVIEW_VALID_FLAGS) !== 0 ||
+            !isTrackId(rackId) ||
+            !isTrackId(routeId) ||
+            !isTrackId(trackId) ||
+            typeof processorId !== 'string'
         ) {
             return undefined;
         }
         records.push({
             eventId,
-            rackId: page.rackId,
-            routeId: page.routeId,
-            trackId: page.trackId,
+            rackId,
+            routeId,
+            trackId,
             projectionVersion: page.projectionVersion,
             phase: phase === YEAST_PREVIEW_OPEN_PHASE ? 'open' : 'closed',
             beatTime,
@@ -270,6 +286,9 @@ function decodePreviewPage(page: YeastPreviewPackedPage, extraDroppedEvents: num
             velocity,
             probability: Number.isNaN(packedProbability) ? null : packedProbability,
             realized: (flags & YEAST_PREVIEW_REALIZED_FLAG) !== 0,
+            processorId: processorId.length === 0 ? null : processorId,
+            bypassed: (flags & YEAST_PREVIEW_BYPASSED_FLAG) !== 0,
+            failed: (flags & YEAST_PREVIEW_FAILED_FLAG) !== 0,
         });
     }
     const provenance: YeastPreviewProcessorProvenance[] = [];
@@ -387,7 +406,9 @@ export type YeastWorkerResult = {
         blockEnd: number,
         transport: TransportInfo,
         trackId: string,
-        previewEnabled?: boolean
+        previewEnabled?: boolean,
+        rackId?: string,
+        routeId?: string
     ) => Promise<MidiEvent[]>;
     sendCommand: (command: YeastProcessorCommand) => Promise<YeastCommandAck>;
     setProjection: (projection: readonly YeastProcessorProjectionItem[]) => Promise<void>;
@@ -420,15 +441,33 @@ export async function createYeastWorker(ctx: BaseAudioContext): Promise<YeastWor
     let startupReject: ((error: Error) => void) | null = null;
     let startupTimer: ReturnType<typeof setTimeout> | null = null;
     let latestSample = 0;
-    let previewCaptureEnabled = false;
-    let previewCaptureEpoch = 0;
     const readTerminalError = (): Error | null => terminalError;
+    type PreviewScope = {
+        rackId: string;
+        routeId: string;
+        trackId: string;
+    };
+    type PreviewRouteState = {
+        readonly scope: PreviewScope;
+        enabled: boolean;
+        captureEpoch: number;
+        readonly acceptedRequestIds: Float64Array;
+        readonly acceptedCaptureEpochs: Float64Array;
+        acceptedWriteIndex: number;
+        readonly queuePages: Array<YeastPreviewPackedPage | undefined>;
+        readonly queueExtraDropped: Float64Array;
+        queueReadIndex: number;
+        queueSize: number;
+        unreportedDrops: number;
+        deliveryTimer: ReturnType<typeof setTimeout> | null;
+    };
     type PendingEntry = {
         resolve: (events: MidiEvent[]) => void;
         reject: (err: Error) => void;
         timer: ReturnType<typeof setTimeout>;
         previewEnabled: boolean;
         captureEpoch: number;
+        previewRoute: PreviewRouteState;
     };
     const pending = new Map<number, PendingEntry>();
     type PendingCommandEntry = {
@@ -488,68 +527,90 @@ export async function createYeastWorker(ctx: BaseAudioContext): Promise<YeastWor
     const notesOffHandlers = new Set<(notesOff: YeastNotesOffPayload[]) => void>();
     const previewHandlers = new Set<(preview: YeastPreviewBlock) => void>();
     const terminalErrorHandlers = new Set<(error: Error) => void>();
-    const acceptedPreviewRequestIds = new Float64Array(PREVIEW_ACCEPTANCE_CAPACITY);
-    acceptedPreviewRequestIds.fill(-1);
-    const acceptedPreviewCaptureEpochs = new Float64Array(PREVIEW_ACCEPTANCE_CAPACITY);
-    acceptedPreviewCaptureEpochs.fill(-1);
-    let acceptedPreviewWriteIndex = 0;
-    const previewQueuePages: Array<YeastPreviewPackedPage | undefined> = Array.from({
-        length: PREVIEW_DELIVERY_QUEUE_CAPACITY,
-    });
-    const previewQueueExtraDropped = new Float64Array(PREVIEW_DELIVERY_QUEUE_CAPACITY);
-    let previewQueueReadIndex = 0;
-    let previewQueueSize = 0;
-    let unreportedPreviewDrops = 0;
-    let previewDeliveryTimer: ReturnType<typeof setTimeout> | null = null;
+    const previewRoutes = new Map<string, Map<string, PreviewRouteState>>();
 
-    const rememberPreviewRequest = (requestId: number, captureEpoch: number): void => {
-        acceptedPreviewRequestIds[acceptedPreviewWriteIndex] = requestId;
-        acceptedPreviewCaptureEpochs[acceptedPreviewWriteIndex] = captureEpoch;
-        acceptedPreviewWriteIndex = (acceptedPreviewWriteIndex + 1) % PREVIEW_ACCEPTANCE_CAPACITY;
+    const createPreviewRoute = (scope: PreviewScope): PreviewRouteState => {
+        const acceptedRequestIds = new Float64Array(PREVIEW_ACCEPTANCE_CAPACITY);
+        acceptedRequestIds.fill(-1);
+        const acceptedCaptureEpochs = new Float64Array(PREVIEW_ACCEPTANCE_CAPACITY);
+        acceptedCaptureEpochs.fill(-1);
+        return {
+            scope,
+            enabled: false,
+            captureEpoch: 0,
+            acceptedRequestIds,
+            acceptedCaptureEpochs,
+            acceptedWriteIndex: 0,
+            queuePages: Array.from({ length: PREVIEW_DELIVERY_QUEUE_CAPACITY }),
+            queueExtraDropped: new Float64Array(PREVIEW_DELIVERY_QUEUE_CAPACITY),
+            queueReadIndex: 0,
+            queueSize: 0,
+            unreportedDrops: 0,
+            deliveryTimer: null,
+        };
     };
 
-    const consumePreviewRequest = (requestId: number, captureEpoch: number): boolean => {
-        for (let index = 0; index < acceptedPreviewRequestIds.length; index++) {
-            if (
-                acceptedPreviewRequestIds[index] === requestId &&
-                acceptedPreviewCaptureEpochs[index] === captureEpoch
-            ) {
-                acceptedPreviewRequestIds[index] = -1;
-                acceptedPreviewCaptureEpochs[index] = -1;
+    const getPreviewRoute = (scope: PreviewScope): PreviewRouteState => {
+        const rackRoutes = previewRoutes.get(scope.rackId);
+        const existing = rackRoutes?.get(scope.routeId);
+        if (existing) {
+            return existing;
+        }
+        const route = createPreviewRoute(scope);
+        const nextRackRoutes = rackRoutes ?? new Map<string, PreviewRouteState>();
+        nextRackRoutes.set(scope.routeId, route);
+        previewRoutes.set(scope.rackId, nextRackRoutes);
+        return route;
+    };
+
+    const findPreviewRoute = (scope: PreviewScope): PreviewRouteState | undefined =>
+        previewRoutes.get(scope.rackId)?.get(scope.routeId);
+
+    const rememberPreviewRequest = (route: PreviewRouteState, requestId: number, captureEpoch: number): void => {
+        route.acceptedRequestIds[route.acceptedWriteIndex] = requestId;
+        route.acceptedCaptureEpochs[route.acceptedWriteIndex] = captureEpoch;
+        route.acceptedWriteIndex = (route.acceptedWriteIndex + 1) % PREVIEW_ACCEPTANCE_CAPACITY;
+    };
+
+    const consumePreviewRequest = (route: PreviewRouteState, requestId: number, captureEpoch: number): boolean => {
+        for (let index = 0; index < route.acceptedRequestIds.length; index++) {
+            if (route.acceptedRequestIds[index] === requestId && route.acceptedCaptureEpochs[index] === captureEpoch) {
+                route.acceptedRequestIds[index] = -1;
+                route.acceptedCaptureEpochs[index] = -1;
                 return true;
             }
         }
         return false;
     };
 
-    const accountPreviewDrops = (droppedEvents: number): void => {
+    const accountPreviewDrops = (route: PreviewRouteState, droppedEvents: number): void => {
         if (droppedEvents <= 0) {
             return;
         }
-        if (previewQueueSize > 0) {
-            const lastIndex = (previewQueueReadIndex + previewQueueSize - 1) % PREVIEW_DELIVERY_QUEUE_CAPACITY;
-            previewQueueExtraDropped[lastIndex] = Math.min(
+        if (route.queueSize > 0) {
+            const lastIndex = (route.queueReadIndex + route.queueSize - 1) % PREVIEW_DELIVERY_QUEUE_CAPACITY;
+            route.queueExtraDropped[lastIndex] = Math.min(
                 Number.MAX_SAFE_INTEGER,
-                previewQueueExtraDropped[lastIndex]! + droppedEvents
+                route.queueExtraDropped[lastIndex]! + droppedEvents
             );
             return;
         }
-        unreportedPreviewDrops = Math.min(Number.MAX_SAFE_INTEGER, unreportedPreviewDrops + droppedEvents);
+        route.unreportedDrops = Math.min(Number.MAX_SAFE_INTEGER, route.unreportedDrops + droppedEvents);
     };
 
-    const schedulePreviewDelivery = (): void => {
-        if (previewDeliveryTimer !== null || previewQueueSize === 0) {
+    const schedulePreviewDelivery = (route: PreviewRouteState): void => {
+        if (route.deliveryTimer !== null || route.queueSize === 0) {
             return;
         }
-        previewDeliveryTimer = setTimeout(() => {
-            previewDeliveryTimer = null;
-            const index = previewQueueReadIndex;
-            const page = previewQueuePages[index];
-            const extraDroppedEvents = previewQueueExtraDropped[index]!;
-            previewQueuePages[index] = undefined;
-            previewQueueExtraDropped[index] = 0;
-            previewQueueReadIndex = (previewQueueReadIndex + 1) % PREVIEW_DELIVERY_QUEUE_CAPACITY;
-            previewQueueSize -= 1;
+        route.deliveryTimer = setTimeout(() => {
+            route.deliveryTimer = null;
+            const index = route.queueReadIndex;
+            const page = route.queuePages[index];
+            const extraDroppedEvents = route.queueExtraDropped[index]!;
+            route.queuePages[index] = undefined;
+            route.queueExtraDropped[index] = 0;
+            route.queueReadIndex = (route.queueReadIndex + 1) % PREVIEW_DELIVERY_QUEUE_CAPACITY;
+            route.queueSize -= 1;
 
             if (page) {
                 const preview = decodePreviewPage(page, extraDroppedEvents);
@@ -563,41 +624,50 @@ export async function createYeastWorker(ctx: BaseAudioContext): Promise<YeastWor
                         }
                     }
                 } else {
-                    accountPreviewDrops(page.count + page.droppedEvents + extraDroppedEvents);
+                    accountPreviewDrops(route, page.count + page.droppedEvents + extraDroppedEvents);
                 }
             }
-            schedulePreviewDelivery();
+            schedulePreviewDelivery(route);
         }, 0);
     };
 
-    const enqueuePreviewPage = (page: YeastPreviewPackedPage): void => {
-        if (previewQueueSize === PREVIEW_DELIVERY_QUEUE_CAPACITY) {
-            accountPreviewDrops(page.count + page.droppedEvents);
+    const enqueuePreviewPage = (route: PreviewRouteState, page: YeastPreviewPackedPage): void => {
+        if (route.queueSize === PREVIEW_DELIVERY_QUEUE_CAPACITY) {
+            accountPreviewDrops(route, page.count + page.droppedEvents);
             return;
         }
-        const index = (previewQueueReadIndex + previewQueueSize) % PREVIEW_DELIVERY_QUEUE_CAPACITY;
-        previewQueuePages[index] = page;
-        previewQueueExtraDropped[index] = unreportedPreviewDrops;
-        unreportedPreviewDrops = 0;
-        previewQueueSize += 1;
-        schedulePreviewDelivery();
+        const index = (route.queueReadIndex + route.queueSize) % PREVIEW_DELIVERY_QUEUE_CAPACITY;
+        route.queuePages[index] = page;
+        route.queueExtraDropped[index] = route.unreportedDrops;
+        route.unreportedDrops = 0;
+        route.queueSize += 1;
+        schedulePreviewDelivery(route);
     };
 
-    const clearPreviewDelivery = (): void => {
-        if (previewDeliveryTimer !== null) {
-            clearTimeout(previewDeliveryTimer);
-            previewDeliveryTimer = null;
+    const clearPreviewDelivery = (route: PreviewRouteState): void => {
+        if (route.deliveryTimer !== null) {
+            clearTimeout(route.deliveryTimer);
+            route.deliveryTimer = null;
         }
-        for (let index = 0; index < previewQueuePages.length; index++) {
-            previewQueuePages[index] = undefined;
-            previewQueueExtraDropped[index] = 0;
+        for (let index = 0; index < route.queuePages.length; index++) {
+            route.queuePages[index] = undefined;
+            route.queueExtraDropped[index] = 0;
         }
-        previewQueueReadIndex = 0;
-        previewQueueSize = 0;
-        unreportedPreviewDrops = 0;
-        acceptedPreviewRequestIds.fill(-1);
-        acceptedPreviewCaptureEpochs.fill(-1);
-        acceptedPreviewWriteIndex = 0;
+        route.queueReadIndex = 0;
+        route.queueSize = 0;
+        route.unreportedDrops = 0;
+        route.acceptedRequestIds.fill(-1);
+        route.acceptedCaptureEpochs.fill(-1);
+        route.acceptedWriteIndex = 0;
+    };
+
+    const clearAllPreviewDelivery = (): void => {
+        for (const rackRoutes of previewRoutes.values()) {
+            for (const route of rackRoutes.values()) {
+                clearPreviewDelivery(route);
+            }
+        }
+        previewRoutes.clear();
     };
 
     const dispatchNotesOff = (events: readonly MidiEvent[]): void => {
@@ -677,7 +747,7 @@ export async function createYeastWorker(ctx: BaseAudioContext): Promise<YeastWor
         for (const projectionId of [...pendingProjections.keys()]) {
             settleProjection(projectionId)?.reject(pendingErrors.projection);
         }
-        clearPreviewDelivery();
+        clearAllPreviewDelivery();
         notesOffHandlers.clear();
         previewHandlers.clear();
 
@@ -726,8 +796,12 @@ export async function createYeastWorker(ctx: BaseAudioContext): Promise<YeastWor
                 return;
             }
             entry.resolve(processed.events);
-            if (entry.previewEnabled && entry.captureEpoch === previewCaptureEpoch) {
-                rememberPreviewRequest(processed.requestId, entry.captureEpoch);
+            if (
+                entry.previewEnabled &&
+                entry.previewRoute.enabled &&
+                entry.captureEpoch === entry.previewRoute.captureEpoch
+            ) {
+                rememberPreviewRequest(entry.previewRoute, processed.requestId, entry.captureEpoch);
             }
             return;
         }
@@ -736,14 +810,24 @@ export async function createYeastWorker(ctx: BaseAudioContext): Promise<YeastWor
             if (!parsed) {
                 return;
             }
-            if (parsed.captureEpoch !== previewCaptureEpoch) {
+            const route = findPreviewRoute({
+                rackId: parsed.page.rackId,
+                routeId: parsed.page.routeId,
+                trackId: parsed.page.trackId,
+            });
+            if (
+                !route ||
+                !route.enabled ||
+                route.scope.trackId !== parsed.page.trackId ||
+                parsed.captureEpoch !== route.captureEpoch
+            ) {
                 return;
             }
-            if (!consumePreviewRequest(parsed.requestId, parsed.captureEpoch)) {
-                accountPreviewDrops(parsed.page.count + parsed.page.droppedEvents);
+            if (!consumePreviewRequest(route, parsed.requestId, parsed.captureEpoch)) {
+                accountPreviewDrops(route, parsed.page.count + parsed.page.droppedEvents);
                 return;
             }
-            enqueuePreviewPage(parsed.page);
+            enqueuePreviewPage(route, parsed.page);
             return;
         }
         if (event.data.type === 'processedError') {
@@ -829,19 +913,22 @@ export async function createYeastWorker(ctx: BaseAudioContext): Promise<YeastWor
         blockEnd: number,
         transport: TransportInfo,
         trackId: string,
-        previewEnabled = false
+        previewEnabled = false,
+        rackId = trackId,
+        routeId = trackId
     ): Promise<MidiEvent[]> =>
         new Promise((resolve, reject) => {
             if (terminalError) {
                 reject(terminalError);
                 return;
             }
-            if (previewEnabled !== previewCaptureEnabled) {
-                previewCaptureEnabled = previewEnabled;
-                previewCaptureEpoch += 1;
-                clearPreviewDelivery();
+            const previewRoute = getPreviewRoute({ rackId, routeId, trackId });
+            if (previewEnabled !== previewRoute.enabled) {
+                previewRoute.enabled = previewEnabled;
+                previewRoute.captureEpoch += 1;
+                clearPreviewDelivery(previewRoute);
             }
-            const captureEpoch = previewCaptureEpoch;
+            const captureEpoch = previewRoute.captureEpoch;
             const requestId = nextRequestId++;
             latestSample = Math.max(latestSample, blockEnd);
             // Reject if the Worker never replies (dropped 'processed' message,
@@ -851,7 +938,7 @@ export async function createYeastWorker(ctx: BaseAudioContext): Promise<YeastWor
                     reject(new Error(`YeastWorker.processBlock timed out (requestId ${requestId})`));
                 }
             }, PROCESS_BLOCK_TIMEOUT_MS);
-            pending.set(requestId, { resolve, reject, timer, previewEnabled, captureEpoch });
+            pending.set(requestId, { resolve, reject, timer, previewEnabled, captureEpoch, previewRoute });
             try {
                 worker.postMessage({
                     type: 'processBlock',
@@ -860,6 +947,8 @@ export async function createYeastWorker(ctx: BaseAudioContext): Promise<YeastWor
                     blockStart,
                     blockEnd,
                     transport,
+                    rackId,
+                    routeId,
                     trackId,
                     previewEnabled,
                     captureEpoch,

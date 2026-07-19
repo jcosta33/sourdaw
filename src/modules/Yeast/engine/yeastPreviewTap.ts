@@ -43,6 +43,9 @@ function createPreviewSlot(): MutableYeastPreviewEvent {
         velocity: 0,
         probability: null,
         realized: true,
+        processorId: null,
+        bypassed: false,
+        failed: false,
     };
 }
 
@@ -71,6 +74,9 @@ function copyEvent(target: MutableYeastPreviewEvent, source: YeastPreviewEvent):
     target.velocity = source.velocity;
     target.probability = source.probability;
     target.realized = source.realized;
+    target.processorId = source.processorId;
+    target.bypassed = source.bypassed;
+    target.failed = source.failed;
 }
 
 export class YeastPreviewTap {
@@ -113,14 +119,19 @@ export class YeastPreviewTap {
         route.provenance = input.provenance;
         route.droppedEvents = Math.min(Number.MAX_SAFE_INTEGER, route.droppedEvents + input.droppedEvents);
         for (let index = 0; index < input.records.length; index++) {
-            if (route.size === YEAST_PREVIEW_CAPACITY) {
-                route.droppedEvents = Math.min(Number.MAX_SAFE_INTEGER, route.droppedEvents + 1);
+            const record = input.records[index]!;
+            const recordRoute = this.routes.get(record.rackId)?.get(record.routeId);
+            if (!recordRoute) {
                 continue;
             }
-            const record = input.records[index]!;
-            const slot = route.storage[(route.readIndex + route.size) % YEAST_PREVIEW_CAPACITY]!;
+            recordRoute.projectionVersion = record.projectionVersion;
+            if (recordRoute.size === YEAST_PREVIEW_CAPACITY) {
+                recordRoute.droppedEvents = Math.min(Number.MAX_SAFE_INTEGER, recordRoute.droppedEvents + 1);
+                continue;
+            }
+            const slot = recordRoute.storage[(recordRoute.readIndex + recordRoute.size) % YEAST_PREVIEW_CAPACITY]!;
             copyEvent(slot, record);
-            route.size += 1;
+            recordRoute.size += 1;
         }
     }
 

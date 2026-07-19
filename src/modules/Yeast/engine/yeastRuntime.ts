@@ -1,8 +1,6 @@
 import { logger } from '#/infra/logger/appLogger';
 import { createHmrPersistentState } from '#/utils/HMR/createHmrPersistentState';
 
-import { YEAST_PREVIEW_RACK_ID } from '../models/YeastPreviewSnapshot';
-
 import { yeastPreviewTap } from './yeastPreviewTap';
 import { createYeastWorker, type YeastWorkerResult } from './YeastWorkerClient';
 
@@ -17,6 +15,8 @@ import type {
 
 type ProcessYeastRuntimeBlockInput = {
     context: BaseAudioContext;
+    rackId?: string;
+    routeId?: string;
     trackId: string;
     events: readonly MidiEvent[];
     blockStartSamples: number;
@@ -610,6 +610,8 @@ export async function processYeastRuntimeBlock(input: ProcessYeastRuntimeBlockIn
     }
 
     const generation = session.generation;
+    const rackId = input.rackId ?? input.trackId;
+    const routeId = input.routeId ?? input.trackId;
     try {
         return await enqueueRuntimeOperation(async () => {
             if (!isLiveRuntime(node, generation)) {
@@ -621,7 +623,9 @@ export async function processYeastRuntimeBlock(input: ProcessYeastRuntimeBlockIn
                 input.blockEndSamples,
                 input.transport,
                 input.trackId,
-                yeastPreviewTap.isEnabled({ rackId: YEAST_PREVIEW_RACK_ID, routeId: input.trackId })
+                yeastPreviewTap.isEnabled({ rackId, routeId }),
+                rackId,
+                routeId
             );
             if (!isLiveRuntime(node, generation)) {
                 throw new Error('Yeast Worker runtime changed during MIDI processing');
@@ -641,6 +645,8 @@ export async function processYeastRuntimeTransaction(
     input: ProcessYeastRuntimeTransactionInput
 ): Promise<MidiEvent[] | null> {
     const record = recordProjection(input.projection);
+    const rackId = input.rackId ?? input.trackId;
+    const routeId = input.routeId ?? input.trackId;
     prepareRuntimeContext(input.context);
     const transactionGeneration = session.generation;
 
@@ -676,7 +682,9 @@ export async function processYeastRuntimeTransaction(
                 input.blockEndSamples,
                 input.transport,
                 input.trackId,
-                yeastPreviewTap.isEnabled({ rackId: YEAST_PREVIEW_RACK_ID, routeId: input.trackId })
+                yeastPreviewTap.isEnabled({ rackId, routeId }),
+                rackId,
+                routeId
             );
             if (!isLiveRuntime(node, generation)) {
                 throw new Error('Yeast Worker runtime changed during MIDI processing');

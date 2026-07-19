@@ -148,6 +148,8 @@ describe('scheduleMidiNotes', () => {
 
         expect(processYeastMidi).toHaveBeenCalledWith(
             expect.objectContaining({
+                rackId: 'y',
+                routeId: 'track-1',
                 trackId: 'track-1',
             })
         );

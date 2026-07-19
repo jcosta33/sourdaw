@@ -23,8 +23,16 @@ const transport: TransportInfo = {
 };
 
 function dispatch(rack: MidiRack, data: unknown, messages: unknown[]): void {
+    const routedData =
+        typeof data === 'object' && data !== null && Reflect.get(data, 'type') === 'processBlock'
+            ? {
+                  rackId: 'rack-a',
+                  routeId: Reflect.get(data, 'trackId'),
+                  ...data,
+              }
+            : data;
     handleYeastWorkerMessage({
-        data,
+        data: routedData,
         rack,
         postMessage: (message) => messages.push(structuredClone(message)),
     });
@@ -232,6 +240,10 @@ describe('YeastWorker', () => {
                 velocity: Float64Array;
                 probability: Float64Array;
                 flags: Uint8Array;
+                rackIds: string[];
+                routeIds: string[];
+                trackIds: string[];
+                processorId: string[];
                 provenanceFlags: Uint8Array;
                 provenanceEventCount: Uint16Array;
                 provenanceProcessorId: string[];
@@ -241,7 +253,7 @@ describe('YeastWorker', () => {
         expect(previewResponse.requestId).toBe(7);
         expect(previewResponse.captureEpoch).toBe(17);
         expect(previewResponse.page).toMatchObject({
-            rackId: 'yeast-runtime',
+            rackId: 'rack-a',
             routeId: 'track-a',
             trackId: 'track-a',
             count: 2,
@@ -257,7 +269,11 @@ describe('YeastWorker', () => {
         expect(previewResponse.page.pitch[0]).toBe(60);
         expect(previewResponse.page.velocity[0]).toBe(88);
         expect(previewResponse.page.probability[0]).toBeNaN();
-        expect(previewResponse.page.flags[0]).toBe(1);
+        expect(previewResponse.page.flags[0]).toBe(3);
+        expect(previewResponse.page.rackIds[0]).toBe('rack-a');
+        expect(previewResponse.page.routeIds[0]).toBe('track-a');
+        expect(previewResponse.page.trackIds[0]).toBe('track-a');
+        expect(previewResponse.page.processorId[0]).toBe('filter-1');
         expect(previewResponse.page.provenanceProcessorId[0]).toBe('filter-1');
         expect(previewResponse.page.provenanceFlags[0]).toBe(2);
         expect(previewResponse.page.provenanceEventCount[0]).toBe(0);

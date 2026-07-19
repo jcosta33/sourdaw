@@ -21,6 +21,8 @@ type Deferred<T> = {
 
 type RuntimeBlockInput = {
     context: BaseAudioContext;
+    rackId?: string;
+    routeId?: string;
     trackId: string;
     projection: YeastProcessorProjection;
     events: readonly MidiEvent[];
@@ -117,6 +119,8 @@ const projectionB: YeastProcessorProjection = [
 function makeRuntimeBlockInput(context: BaseAudioContext): RuntimeBlockInput {
     return {
         context,
+        rackId: 'rack-a',
+        routeId: 'track-a',
         trackId: 'track-a',
         projection: projectionA,
         events: [],
@@ -193,7 +197,7 @@ describe('yeastRuntime', () => {
     it('publishes worker preview sidecars without changing the scheduler result', async () => {
         const runtime = (await loadRuntime()) as RuntimeWithTransaction;
         const { yeastPreviewTap } = await import('../yeastPreviewTap');
-        const previewScope = { rackId: 'yeast-runtime', routeId: 'track-a', trackId: 'track-a' };
+        const previewScope = { rackId: 'rack-a', routeId: 'track-a', trackId: 'track-a' };
         yeastPreviewTap.setEnabled(previewScope, false);
         yeastPreviewTap.setEnabled(previewScope, true);
         const context = {} as BaseAudioContext;
@@ -202,7 +206,7 @@ describe('yeastRuntime', () => {
             { timeSamples: 0, trackId: 'track-a', kind: { type: 'noteOn', channel: 0, note: 60, velocity: 90 } },
         ];
         const preview = {
-            rackId: 'yeast-runtime',
+            rackId: 'rack-a',
             routeId: 'track-a',
             trackId: 'track-a',
             projectionVersion: 1,
@@ -210,7 +214,7 @@ describe('yeastRuntime', () => {
             records: [
                 {
                     eventId: 1,
-                    rackId: 'yeast-runtime',
+                    rackId: 'rack-a',
                     routeId: 'track-a',
                     trackId: 'track-a',
                     projectionVersion: 1,
@@ -221,6 +225,9 @@ describe('yeastRuntime', () => {
                     velocity: 90,
                     probability: null,
                     realized: true,
+                    processorId: 'filter-1',
+                    bypassed: true,
+                    failed: false,
                 },
             ],
             provenance: [{ processorId: 'filter-1', bypassed: true, failed: false, eventCount: 0 }],

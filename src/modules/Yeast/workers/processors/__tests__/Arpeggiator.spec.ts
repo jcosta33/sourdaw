@@ -23,6 +23,7 @@ function takePreviewRecords(rack: MidiRack) {
         velocity: page.velocity[index]!,
         probability: Number.isNaN(page.probability[index]!) ? null : page.probability[index]!,
         realized: (page.flags[index]! & 1) !== 0,
+        processorId: page.processorId[index]!,
     }));
     rack.releasePreviewPage(page);
     return records;
@@ -114,7 +115,7 @@ describe('Arpeggiator', () => {
         expect(noteOn?.kind.velocity).toBe(127);
     });
 
-    it('keeps rejected probability decisions out of the terminal audible preview', () => {
+    it('captures rejected probability decisions without adding MIDI output', () => {
         arp.setParam('mode', 7);
         arp.setPattern([{ ...defaultStep(), probability: 0 }]);
         const rack = new MidiRack();
@@ -134,6 +135,14 @@ describe('Arpeggiator', () => {
         const output = rack.processBlock([], 13230, 13358, transport, 'track-a', true);
 
         expect(output.filter(isNoteOn)).toEqual([]);
-        expect(takePreviewRecords(rack)).toEqual([]);
+        expect(takePreviewRecords(rack)).toMatchObject([
+            {
+                pitch: 60,
+                velocity: 100,
+                probability: 0,
+                realized: false,
+                processorId: 'test-arp',
+            },
+        ]);
     });
 });

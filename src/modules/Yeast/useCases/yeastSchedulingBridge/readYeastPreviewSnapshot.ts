@@ -1,12 +1,17 @@
 import { yeastPreviewTap } from '../../engine/yeastPreviewTap';
-import { YEAST_PREVIEW_RACK_ID } from '../../models/YeastPreviewSnapshot';
 
 import type { YeastPreviewSnapshot } from '../../models/YeastPreviewSnapshot';
 
 type ReadYeastPreviewSnapshotInput = {
+    rackId: string;
+    routeId?: string;
     trackId: string;
 };
 
-export function readYeastPreviewSnapshot({ trackId }: ReadYeastPreviewSnapshotInput): YeastPreviewSnapshot {
-    return yeastPreviewTap.read({ rackId: YEAST_PREVIEW_RACK_ID, routeId: trackId, trackId });
+export function readYeastPreviewSnapshot({
+    rackId,
+    trackId,
+    routeId = trackId,
+}: ReadYeastPreviewSnapshotInput): YeastPreviewSnapshot {
+    return yeastPreviewTap.read({ rackId, routeId, trackId });
 }

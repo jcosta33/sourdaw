@@ -78,6 +78,8 @@ describe('processYeastMidi — Worker-only runtime', () => {
 
         expect(processRuntimeTransaction).toHaveBeenCalledWith({
             context,
+            rackId: 'track-a',
+            routeId: 'track-a',
             trackId: 'track-a',
             events,
             blockStartSamples: 0,

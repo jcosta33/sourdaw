@@ -6,6 +6,8 @@ import type { MidiEvent, TransportInfo } from '../../models/MidiEvent';
 
 type ProcessYeastMidiInput = {
     context: BaseAudioContext;
+    rackId?: string;
+    routeId?: string;
     trackId: string;
     events: readonly MidiEvent[];
     blockStartSamples: number;
@@ -45,7 +47,12 @@ export async function processYeastMidi(input: ProcessYeastMidiInput): Promise<Mi
 
     let output: MidiEvent[];
     try {
-        const processed = await processYeastRuntimeTransaction({ ...input, projection });
+        const processed = await processYeastRuntimeTransaction({
+            ...input,
+            rackId: input.rackId ?? input.trackId,
+            routeId: input.routeId ?? input.trackId,
+            projection,
+        });
         publishRuntimeStatus();
         output = processed ?? [...input.events];
     } catch {

@@ -52,7 +52,7 @@ function notePair(index: number): MidiEvent[] {
 function previewRecord(index: number): YeastPreviewEvent {
     return {
         eventId: index,
-        rackId: 'yeast-runtime',
+        rackId: 'rack-a',
         routeId: 'track-a',
         trackId: 'track-a',
         projectionVersion: 1,
@@ -63,12 +63,15 @@ function previewRecord(index: number): YeastPreviewEvent {
         velocity: 64 + (index % 32),
         probability: null,
         realized: true,
+        processorId: 'velocity-1',
+        bypassed: false,
+        failed: false,
     };
 }
 
 function publishPreview(records: readonly YeastPreviewEvent[], bypassed = false): void {
     yeastPreviewTap.publish({
-        rackId: 'yeast-runtime',
+        rackId: 'rack-a',
         routeId: 'track-a',
         trackId: 'track-a',
         projectionVersion: 1,
@@ -97,8 +100,8 @@ function setProcessorBypass(bypassed: boolean): void {
 describe('AC-001 — Yeast scheduled-event preview tap', () => {
     beforeEach(() => {
         vi.clearAllMocks();
-        setYeastPreviewCaptureEnabled({ trackId: 'track-a', enabled: false });
-        setYeastPreviewCaptureEnabled({ trackId: 'track-a', enabled: true });
+        setYeastPreviewCaptureEnabled({ rackId: 'rack-a', trackId: 'track-a', enabled: false });
+        setYeastPreviewCaptureEnabled({ rackId: 'rack-a', trackId: 'track-a', enabled: true });
         setProcessorBypass(false);
     });
 
@@ -108,11 +111,12 @@ describe('AC-001 — Yeast scheduled-event preview tap', () => {
             publishPreview(Array.from({ length: 514 }, (_, index) => previewRecord(index)));
             return Promise.resolve(processed);
         });
-        const previewScope = { rackId: 'yeast-runtime', routeId: 'track-a' };
+        const previewScope = { rackId: 'rack-a', routeId: 'track-a' };
         const storageIdentity = yeastPreviewTap.getStorageIdentity(previewScope);
 
         const output = await processYeastMidi({
             context: {} as BaseAudioContext,
+            rackId: 'rack-a',
             trackId: 'track-a',
             events: [],
             blockStartSamples: 0,
@@ -125,7 +129,7 @@ describe('AC-001 — Yeast scheduled-event preview tap', () => {
         expect(runtime.processTransaction).toHaveBeenCalledTimes(1);
         expect(yeastPreviewTap.getStorageIdentity(previewScope)).toBe(storageIdentity);
 
-        const snapshot = readYeastPreviewSnapshot({ trackId: 'track-a' });
+        const snapshot = readYeastPreviewSnapshot({ rackId: 'rack-a', trackId: 'track-a' });
         expect(Object.isFrozen(snapshot)).toBe(true);
         expect(Object.isFrozen(snapshot.events)).toBe(true);
         expect(Object.isFrozen(snapshot.events[0])).toBe(true);
@@ -134,7 +138,7 @@ describe('AC-001 — Yeast scheduled-event preview tap', () => {
         expect(snapshot.droppedEvents).toBe(2);
         expect(snapshot.events[0]).toEqual({
             eventId: 0,
-            rackId: 'yeast-runtime',
+            rackId: 'rack-a',
             routeId: 'track-a',
             trackId: 'track-a',
             projectionVersion: 1,
@@ -145,9 +149,12 @@ describe('AC-001 — Yeast scheduled-event preview tap', () => {
             velocity: 64,
             probability: null,
             realized: true,
+            processorId: 'velocity-1',
+            bypassed: false,
+            failed: false,
         });
         expect(snapshot.events[0]).toMatchObject({
-            rackId: 'yeast-runtime',
+            rackId: 'rack-a',
             routeId: 'track-a',
             trackId: 'track-a',
         });
@@ -162,6 +169,7 @@ describe('AC-001 — Yeast scheduled-event preview tap', () => {
         });
         const nextOutput = await processYeastMidi({
             context: {} as BaseAudioContext,
+            rackId: 'rack-a',
             trackId: 'track-a',
             events: [],
             blockStartSamples: 0,
@@ -170,7 +178,7 @@ describe('AC-001 — Yeast scheduled-event preview tap', () => {
         });
 
         expect(nextOutput).toBe(afterReaderAdvance);
-        expect(readYeastPreviewSnapshot({ trackId: 'track-a' }).events).toHaveLength(1);
+        expect(readYeastPreviewSnapshot({ rackId: 'rack-a', trackId: 'track-a' }).events).toHaveLength(1);
         expect(yeastPreviewTap.getStorageIdentity(previewScope)).toBe(storageIdentity);
     });
 
@@ -185,6 +193,7 @@ describe('AC-001 — Yeast scheduled-event preview tap', () => {
         expect(
             await processYeastMidi({
                 context: {} as BaseAudioContext,
+                rackId: 'rack-a',
                 trackId: 'track-a',
                 events: [],
                 blockStartSamples: 0,
@@ -192,12 +201,13 @@ describe('AC-001 — Yeast scheduled-event preview tap', () => {
                 transport,
             })
         ).toBe(processed);
-        expect(readYeastPreviewSnapshot({ trackId: 'track-a' }).provenance[0]?.bypassed).toBe(true);
+        expect(readYeastPreviewSnapshot({ rackId: 'rack-a', trackId: 'track-a' }).provenance[0]?.bypassed).toBe(true);
 
-        setYeastPreviewCaptureEnabled({ trackId: 'track-a', enabled: false });
+        setYeastPreviewCaptureEnabled({ rackId: 'rack-a', trackId: 'track-a', enabled: false });
         expect(
             await processYeastMidi({
                 context: {} as BaseAudioContext,
+                rackId: 'rack-a',
                 trackId: 'track-a',
                 events: [],
                 blockStartSamples: 0,
@@ -205,7 +215,10 @@ describe('AC-001 — Yeast scheduled-event preview tap', () => {
                 transport,
             })
         ).toBe(processed);
-        expect(readYeastPreviewSnapshot({ trackId: 'track-a' })).toMatchObject({ events: [], droppedEvents: 0 });
+        expect(readYeastPreviewSnapshot({ rackId: 'rack-a', trackId: 'track-a' })).toMatchObject({
+            events: [],
+            droppedEvents: 0,
+        });
     });
 
     it('never replaces scheduler output when preview publication fails', async () => {
@@ -224,6 +237,7 @@ describe('AC-001 — Yeast scheduled-event preview tap', () => {
 
         const output = await processYeastMidi({
             context: {} as BaseAudioContext,
+            rackId: 'rack-a',
             trackId: 'track-a',
             events: [],
             blockStartSamples: 0,
