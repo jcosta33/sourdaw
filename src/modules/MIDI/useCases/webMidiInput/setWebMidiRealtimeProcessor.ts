@@ -4,6 +4,6 @@ type SetWebMidiRealtimeProcessorInput = {
     processor: Parameters<typeof setRealtimeMidiProcessor>[0];
 };
 
-export function setWebMidiRealtimeProcessor({ processor }: SetWebMidiRealtimeProcessorInput): void {
-    setRealtimeMidiProcessor(processor);
+export function setWebMidiRealtimeProcessor({ processor }: SetWebMidiRealtimeProcessorInput): () => void {
+    return setRealtimeMidiProcessor(processor);
 }

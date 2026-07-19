@@ -37,7 +37,12 @@ function previewYeastProcessorParam(id: string, name: string, value: number): vo
     );
 }
 
-export function setYeastProcessorParam(id: string, name: string, value: number, isTransient = false): void {
+export async function setYeastProcessorParam(
+    id: string,
+    name: string,
+    value: number,
+    isTransient = false
+): Promise<void> {
     const state = yeastStore.value;
     if (!state) {
         return;
@@ -57,7 +62,7 @@ export function setYeastProcessorParam(id: string, name: string, value: number, 
     if (processor.type === 'groove' && name === 'amount') {
         const assignment = getYeastGrooveAssignment(id);
         const clampedAmount = Math.max(0, Math.min(1, value));
-        void setYeastGrooveTemplate(id, assignment?.templateId ?? getStraightGrooveTemplateId(), clampedAmount);
+        await setYeastGrooveTemplate(id, assignment?.templateId ?? getStraightGrooveTemplateId(), clampedAmount);
         return;
     }
     commitYeastProjection(

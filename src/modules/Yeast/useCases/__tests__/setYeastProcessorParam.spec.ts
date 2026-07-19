@@ -56,15 +56,15 @@ describe('setYeastProcessorParam', () => {
         vi.clearAllMocks();
     });
 
-    it.each(['learn', 'clear'])('does not persist the Chord Memory %s command as a parameter', (name) => {
-        setYeastProcessorParam('cm-1', name, 1);
+    it.each(['learn', 'clear'])('does not persist the Chord Memory %s command as a parameter', async (name) => {
+        await setYeastProcessorParam('cm-1', name, 1);
 
         expect(commit).not.toHaveBeenCalled();
         expect(store.value.processors[0]?.params).toEqual({ transpose_mode: 1 });
     });
 
-    it('still persists durable Chord Memory parameters', () => {
-        setYeastProcessorParam('cm-1', 'transpose_mode', 0);
+    it('still persists durable Chord Memory parameters', async () => {
+        await setYeastProcessorParam('cm-1', 'transpose_mode', 0);
 
         expect(commit).toHaveBeenCalledWith([
             {
@@ -75,16 +75,23 @@ describe('setYeastProcessorParam', () => {
         ]);
     });
 
-    it('should route groove amount through the MIDI-owned assignment without changing Yeast storage', () => {
-        setYeastProcessorParam('groove-1', 'amount', 0.75);
+    it('should route groove amount through the MIDI-owned assignment without changing Yeast storage', async () => {
+        await setYeastProcessorParam('groove-1', 'amount', 0.75);
 
         expect(grooveMocks.setYeastGrooveTemplate).toHaveBeenCalledWith('groove-1', 'pocket-1', 0.75);
         expect(commit).not.toHaveBeenCalled();
         expect(store.value.processors[1]?.params).toEqual({});
     });
 
-    it('previews a transient groove amount without creating an assignment or durable store write', () => {
-        setYeastProcessorParam('groove-1', 'amount', 0.75, true);
+    it('returns a rejected groove assignment so the caller can observe the failure', async () => {
+        const error = new Error('assignment failed');
+        grooveMocks.setYeastGrooveTemplate.mockRejectedValueOnce(error);
+
+        await expect(setYeastProcessorParam('groove-1', 'amount', 0.75)).rejects.toBe(error);
+    });
+
+    it('previews a transient groove amount without creating an assignment or durable store write', async () => {
+        await setYeastProcessorParam('groove-1', 'amount', 0.75, true);
 
         expect(runtimeMocks.setYeastRuntimeProjection).toHaveBeenCalledWith([
             {

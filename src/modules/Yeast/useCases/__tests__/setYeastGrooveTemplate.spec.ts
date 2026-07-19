@@ -13,11 +13,13 @@ import { yeastStore, type YeastState } from '../../stores/yeastStore';
 import { setYeastGrooveTemplate } from '../setYeastGrooveTemplate';
 
 const mocks = vi.hoisted(() => ({
+    loggerError: vi.fn(),
     mutateDoc: vi.fn(),
     setYeastRuntimeProjection: vi.fn(),
     waitForSnapshotTransaction: vi.fn<() => Promise<void>>(),
 }));
 
+vi.mock('#/infra/logger/appLogger', () => ({ logger: { error: mocks.loggerError } }));
 vi.mock('../../engine/yeastRuntime', () => ({
     setYeastRuntimeProjection: mocks.setYeastRuntimeProjection,
 }));
@@ -110,5 +112,18 @@ describe('setYeastGrooveTemplate', () => {
         expect(undoStore.value?.past.map((entry) => entry.label)).toEqual(['Assign groove template']);
         expect(undoStore.value?.future).toEqual([]);
         expect(yeastStore.value).toEqual(initialYeastState);
+    });
+
+    it('should restore the committed runtime projection and surface a rejected assignment', async () => {
+        clearHandlerRegistry();
+
+        await expect(setYeastGrooveTemplate('groove-1', 'test-pocket', 0.75)).rejects.toThrow();
+
+        expect(mocks.loggerError).toHaveBeenLastCalledWith(
+            expect.objectContaining({ message: 'Failed to assign the Yeast groove template' })
+        );
+        expect(mocks.setYeastRuntimeProjection).toHaveBeenLastCalledWith([
+            expect.objectContaining({ id: 'groove-1', type: 'groove' }),
+        ]);
     });
 });

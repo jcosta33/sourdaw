@@ -44,6 +44,10 @@ const LEVEL_OPTIONS = [
     { level: 5 as const, label: 'Lab', detail: 'Mutate' },
 ];
 
+function handleSetYeastProcessorParam(id: string, name: string, value: number, isTransient?: boolean): void {
+    void setYeastProcessorParam(id, name, value, isTransient).catch(() => undefined);
+}
+
 const MetricTile = ({ label, value, detail }: { label: string; value: string; detail: string }): ReactElement => (
     <DawPluginMetricTile className="yeast-window min-w-[92px]" label={label} value={value} detail={detail} />
 );
@@ -192,7 +196,7 @@ const GrooveAwareProcessorParams = ({ processor }: { processor: YeastProcessorIn
         <ProcessorParams
             processorId={processor.id}
             processorType={processor.type}
-            onSetParam={setYeastProcessorParam}
+            onSetParam={handleSetYeastProcessorParam}
             onCommand={sendYeastProcessorCommand}
             grooveTemplates={grooveState.templates.map(({ id, name }) => ({ id, name }))}
             selectedGrooveTemplateId={assignment?.templateId ?? getStraightGrooveTemplateId()}
@@ -376,7 +380,7 @@ const Level1Play = ({ state }: { state: YeastState }): ReactElement => {
                     onChange={(event) => {
                         const arp = state.processors.find((param) => param.type === 'arpeggiator');
                         if (arp) {
-                            setYeastProcessorParam(arp.id, 'mode', parseInt(event.target.value));
+                            handleSetYeastProcessorParam(arp.id, 'mode', parseInt(event.target.value));
                         }
                     }}
                     defaultValue={0}
@@ -399,7 +403,7 @@ const Level1Play = ({ state }: { state: YeastState }): ReactElement => {
                     onChange={(value) => {
                         const arp = state.processors.find((param) => param.type === 'arpeggiator');
                         if (arp) {
-                            setYeastProcessorParam(arp.id, 'rate_denom', Math.round(value));
+                            handleSetYeastProcessorParam(arp.id, 'rate_denom', Math.round(value));
                         }
                     }}
                     min={1}
@@ -419,7 +423,7 @@ const Level1Play = ({ state }: { state: YeastState }): ReactElement => {
                     const next = !latchOn;
                     setLatchOn(next);
                     if (arp) {
-                        setYeastProcessorParam(arp.id, 'latch', next ? 1 : 0);
+                        handleSetYeastProcessorParam(arp.id, 'latch', next ? 1 : 0);
                     }
                 }}
             >
@@ -439,7 +443,12 @@ const Level2Shape = ({ state }: { state: YeastState }): ReactElement => {
             <KnobCol
                 label="Gate"
                 value={0.8}
-                onChange={(value) => arp && setYeastProcessorParam(arp.id, 'gate', value)}
+                onChange={(value) => {
+                    if (!arp) {
+                        return;
+                    }
+                    handleSetYeastProcessorParam(arp.id, 'gate', value);
+                }}
                 min={0.01}
                 max={2}
                 unit="%"
@@ -447,7 +456,12 @@ const Level2Shape = ({ state }: { state: YeastState }): ReactElement => {
             <KnobCol
                 label="Swing"
                 value={0}
-                onChange={(value) => arp && setYeastProcessorParam(arp.id, 'swing', value)}
+                onChange={(value) => {
+                    if (!arp) {
+                        return;
+                    }
+                    handleSetYeastProcessorParam(arp.id, 'swing', value);
+                }}
                 min={0}
                 max={1}
                 unit="%"
@@ -455,7 +469,12 @@ const Level2Shape = ({ state }: { state: YeastState }): ReactElement => {
             <KnobCol
                 label="Octaves"
                 value={1}
-                onChange={(value) => arp && setYeastProcessorParam(arp.id, 'octave_range', value)}
+                onChange={(value) => {
+                    if (!arp) {
+                        return;
+                    }
+                    handleSetYeastProcessorParam(arp.id, 'octave_range', value);
+                }}
                 min={1}
                 max={4}
                 unit=""
@@ -463,7 +482,12 @@ const Level2Shape = ({ state }: { state: YeastState }): ReactElement => {
             <KnobCol
                 label="Velocity"
                 value={100}
-                onChange={(value) => arp && setYeastProcessorParam(arp.id, 'fixed_velocity', value)}
+                onChange={(value) => {
+                    if (!arp) {
+                        return;
+                    }
+                    handleSetYeastProcessorParam(arp.id, 'fixed_velocity', value);
+                }}
                 min={1}
                 max={127}
                 unit=""

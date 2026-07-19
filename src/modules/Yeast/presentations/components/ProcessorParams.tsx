@@ -90,7 +90,7 @@ const Sel = ({
             onChange={(event) => onSetParam(id, name, parseInt(event.target.value))}
         >
             {options.map((opt, index) => (
-                <option key={index} value={index}>
+                <option key={opt} value={index}>
                     {opt}
                 </option>
             ))}

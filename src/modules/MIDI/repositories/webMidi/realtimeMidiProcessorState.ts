@@ -25,7 +25,7 @@ export type RealtimeMidiEvent = {
 
 export type RealtimeMidiProcessor = (input: RealtimeMidiInput) => Promise<RealtimeMidiEvent[]>;
 
-function passThroughRealtimeMidi(input: RealtimeMidiInput): Promise<RealtimeMidiEvent[]> {
+export function passThroughRealtimeMidi(input: RealtimeMidiInput): Promise<RealtimeMidiEvent[]> {
     return Promise.resolve([
         {
             timeSamples: input.sampleTime,

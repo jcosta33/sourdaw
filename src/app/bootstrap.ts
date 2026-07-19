@@ -142,23 +142,32 @@ setGrandBouleEventBus(eventBus);
 setToasterEventBus(eventBus);
 setYeastEventBus(eventBus);
 configureYeastRuntime({ panicOutputNotes: stopAllScheduled });
-setWebMidiRealtimeProcessor({ processor: processRealtimeMidiInput });
+const disposeWebMidiRealtimeProcessor = setWebMidiRealtimeProcessor({ processor: processRealtimeMidiInput });
 setWebMidiRuntimeEventBus({ eventBus });
 setNotificationEventBus(eventBus);
 setTimeOperationDependencies({ shiftTimelineMapsAfterBeat, deleteTimelineMapsTimeRange });
 setProjectIdentityTransitionDependencies({ leaveCollaborationSession: leaveSession });
 
-window.addEventListener('beforeunload', () => {
+function disposeYeastRealtimeBridge(): void {
+    disposeWebMidiRealtimeProcessor();
     teardownYeastRuntime();
+}
+
+function handleBeforeUnload(): void {
+    disposeYeastRealtimeBridge();
     // Attempt GC on window close
     cleanupUnusedFreezeFiles().catch(() => {});
-});
+}
+
+window.addEventListener('beforeunload', handleBeforeUnload);
 
 // Funnel otherwise-silent fire-and-forget promise rejections into the logger.
 // Disposer is wired to HMR so a hot reload does not stack duplicate handlers.
 const disposeGlobalErrorHandlers = registerGlobalErrorHandlers({ logger });
 import.meta.hot?.dispose(() => {
     disposeGlobalErrorHandlers();
+    window.removeEventListener('beforeunload', handleBeforeUnload);
+    disposeYeastRealtimeBridge();
 });
 
 setFermenterDependencies({
