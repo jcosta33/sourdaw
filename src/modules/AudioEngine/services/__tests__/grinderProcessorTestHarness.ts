@@ -36,14 +36,19 @@ vi.stubGlobal('registerProcessor', (name: string, processor: GrinderProcessorCon
 });
 vi.stubGlobal('sampleRate', 48_000);
 
-const WASM_HEAP = new ArrayBuffer(32_768);
+const WASM_HEAP = new ArrayBuffer(131_072);
 const INPUT_LEFT_PTR = 1_024;
 const INPUT_RIGHT_PTR = 4_096;
 const OUTPUT_LEFT_PTR = 8_192;
 const OUTPUT_RIGHT_PTR = 12_288;
+const AUTOMATION_PTR = 16_384;
+const MAX_GRINDER_BLOCK_SIZE = 2_048;
+const AUTOMATABLE_PARAM_COUNT = 11;
 
 export const grinderSetParamCalls: Array<{ name: string; value: number }> = [];
 export const grinderProcessSizes: number[] = [];
+export const grinderAutomatedProcessSizes: number[] = [];
+export let grinderRightPtrCalls = 0;
 
 class GrinderInstanceMock {
     get_input_left_ptr(): number {
@@ -55,7 +60,16 @@ class GrinderInstanceMock {
     }
 
     get_right_ptr(): number {
+        grinderRightPtrCalls++;
         return OUTPUT_RIGHT_PTR;
+    }
+
+    get_output_left_ptr(): number {
+        return OUTPUT_LEFT_PTR;
+    }
+
+    get_automation_values_ptr(): number {
+        return AUTOMATION_PTR;
     }
 
     set_param(name: string, value: number): void {
@@ -64,6 +78,15 @@ class GrinderInstanceMock {
 
     process(frames: number): number {
         grinderProcessSizes.push(frames);
+        const inputLeft = new Float32Array(WASM_HEAP, INPUT_LEFT_PTR, frames);
+        const inputRight = new Float32Array(WASM_HEAP, INPUT_RIGHT_PTR, frames);
+        new Float32Array(WASM_HEAP, OUTPUT_LEFT_PTR, frames).set(inputLeft);
+        new Float32Array(WASM_HEAP, OUTPUT_RIGHT_PTR, frames).set(inputRight);
+        return OUTPUT_LEFT_PTR;
+    }
+
+    process_automated(frames: number): number {
+        grinderAutomatedProcessSizes.push(frames);
         const inputLeft = new Float32Array(WASM_HEAP, INPUT_LEFT_PTR, frames);
         const inputRight = new Float32Array(WASM_HEAP, INPUT_RIGHT_PTR, frames);
         new Float32Array(WASM_HEAP, OUTPUT_LEFT_PTR, frames).set(inputLeft);
@@ -138,4 +161,15 @@ export async function createReadyGrinderProcessor(): Promise<GrinderProcessorLik
 export function resetGrinderProcessorCalls(): void {
     grinderSetParamCalls.length = 0;
     grinderProcessSizes.length = 0;
+    grinderAutomatedProcessSizes.length = 0;
+    grinderRightPtrCalls = 0;
+}
+
+export function getGrinderAutomationHeader(paramIndex: number): number {
+    return new Float32Array(WASM_HEAP, AUTOMATION_PTR, AUTOMATABLE_PARAM_COUNT)[paramIndex] ?? 0;
+}
+
+export function getGrinderAutomationValue(paramIndex: number, frame: number): number {
+    const valueIndex = AUTOMATABLE_PARAM_COUNT + paramIndex * MAX_GRINDER_BLOCK_SIZE + frame;
+    return new Float32Array(WASM_HEAP, AUTOMATION_PTR, valueIndex + 1)[valueIndex] ?? 0;
 }
