@@ -6,7 +6,10 @@
 use super::cabinet::{CabinetConvolver, SpeakerModel};
 use super::input::{InputConditioner, NoiseGate};
 use super::neural::{CapturePlacement, EngineMode, NeuralCapture};
-use super::params::{db_to_linear, linear_to_db, SmoothedParam};
+use super::params::{
+    db_to_linear, get_automatable_param_index, linear_to_db, SmoothedParam,
+    GRINDER_AUTOMATABLE_PARAM_CONTRACT, GRINDER_AUTOMATABLE_PARAM_COUNT,
+};
 use super::pedals::{CompressorPedal, DistortionPedal, FuzzPedal, OverdrivePedal};
 use super::power_amp::PowerAmp;
 use super::tone_stack::ToneStack;
@@ -181,9 +184,14 @@ impl GrinderEngine {
     }
 
     pub fn set_param(&mut self, name: &str, value: f32) {
+        if let Some(index) = get_automatable_param_index(name) {
+            self.set_automatable_param(index, value);
+            return;
+        }
+
         match name {
             // Input
-            "inputGain" | "inputImpedance" | "inputMode" => self.input_cond.set_param(name, value),
+            "inputImpedance" | "inputMode" => self.input_cond.set_param(name, value),
 
             // Gate
             "gateEnabled" | "gateThreshold" | "gateAttack" | "gateRelease" => {
@@ -191,33 +199,23 @@ impl GrinderEngine {
             }
 
             // Preamp
-            "gain" | "channel" | "bright" | "fat" | "tubeBias" | "tubeAge"
-            | "millerCapacitance" | "gridConduction" | "couplingCapCharge" | "ampModel" => {
+            "channel" | "bright" | "fat" | "tubeBias" | "tubeAge" | "millerCapacitance"
+            | "gridConduction" | "couplingCapCharge" | "ampModel" => {
                 self.preamp.set_param(name, value)
             }
 
             // Tone stack
-            "toneStackType" | "bass" | "mid" | "treble" | "brightCap" => {
-                self.tone_stack.set_param(name, value)
-            }
+            "toneStackType" | "brightCap" => self.tone_stack.set_param(name, value),
 
             // Power amp
-            "master" | "powerTubeType" | "rectifierType" | "sagAmount" | "sagRecovery"
-            | "negFeedback" | "powerAmpBias" => {
+            "powerTubeType" | "rectifierType" | "sagAmount" | "sagRecovery" | "powerAmpBias" => {
                 self.power_amp.set_param(name, value);
                 self.dual_power_amp.set_param(name, value);
                 self.refresh_dual_branch_variation();
             }
 
-            // Presence/Resonance (power amp negative feedback EQ)
-            "presence" | "resonance" => {
-                // These map to power amp NFB characteristics
-                self.power_amp.set_param(name, value);
-                self.dual_power_amp.set_param(name, value);
-            }
-
             // Transformer
-            "transformerDrive" | "transformerHysteresis" | "transformerLfSaturation" => {
+            "transformerHysteresis" | "transformerLfSaturation" => {
                 self.transformer.set_param(name, value);
                 self.dual_transformer.set_param(name, value);
             }
@@ -257,7 +255,6 @@ impl GrinderEngine {
             | "postFuzzOrder" => self.set_supported_pedal_order(name, value),
 
             // Output
-            "outputGain" => self.output_gain.set_target(db_to_linear(value)),
             "outputMix" => self.output_mix.set_target(value),
             "cleanBlend" => self.clean_blend.set_target(value),
             "limiterEnabled" => self.limiter_enabled = value > 0.5,
@@ -302,14 +299,110 @@ impl GrinderEngine {
         }
     }
 
+    fn set_automatable_param(&mut self, index: usize, value: f32) {
+        let Some(value) = GRINDER_AUTOMATABLE_PARAM_CONTRACT
+            .get(index)
+            .and_then(|param| param.clamp(value))
+        else {
+            return;
+        };
+
+        match index {
+            0 => self.preamp.set_param("gain", value),
+            1 => self.tone_stack.set_param("bass", value),
+            2 => self.tone_stack.set_param("mid", value),
+            3 => self.tone_stack.set_param("treble", value),
+            4 => {
+                self.power_amp.set_param("presence", value);
+                self.dual_power_amp.set_param("presence", value);
+            }
+            5 => {
+                self.power_amp.set_param("resonance", value);
+                self.dual_power_amp.set_param("resonance", value);
+            }
+            6 => {
+                self.power_amp.set_param("master", value);
+                self.dual_power_amp.set_param("master", value);
+            }
+            7 => self.input_cond.set_param("inputGain", value),
+            8 => self.output_gain.set_target(db_to_linear(value)),
+            9 => {
+                self.transformer.set_param("transformerDrive", value);
+                self.dual_transformer.set_param("transformerDrive", value);
+            }
+            10 => {
+                self.power_amp.set_param("negFeedback", value);
+                self.dual_power_amp.set_param("negFeedback", value);
+            }
+            _ => {}
+        }
+    }
+
+    fn apply_automatable_constants(&mut self, automation: &[f32], stride: usize) {
+        for index in 0..GRINDER_AUTOMATABLE_PARAM_COUNT {
+            if automation.get(index).copied().unwrap_or_default() != 1.0 {
+                continue;
+            }
+            let value_index = GRINDER_AUTOMATABLE_PARAM_COUNT + index * stride;
+            if let Some(value) = automation.get(value_index).copied() {
+                self.set_automatable_param(index, value);
+            }
+        }
+    }
+
+    fn apply_automatable_frame(&mut self, automation: &[f32], stride: usize, frame: usize) {
+        for index in 0..GRINDER_AUTOMATABLE_PARAM_COUNT {
+            let value_count = automation.get(index).copied().unwrap_or_default() as usize;
+            if value_count <= 1 || frame >= value_count {
+                continue;
+            }
+            let value_index = GRINDER_AUTOMATABLE_PARAM_COUNT + index * stride + frame;
+            if let Some(value) = automation.get(value_index).copied() {
+                self.set_automatable_param(index, value);
+            }
+        }
+    }
+
     pub fn process_block(&mut self, left: &mut [f32], right: &mut [f32]) {
+        self.process_block_inner(left, right, &[], 0);
+    }
+
+    pub fn process_block_automated(
+        &mut self,
+        left: &mut [f32],
+        right: &mut [f32],
+        automation: &[f32],
+        stride: usize,
+    ) {
+        self.process_block_inner(left, right, automation, stride);
+    }
+
+    fn process_block_inner(
+        &mut self,
+        left: &mut [f32],
+        right: &mut [f32],
+        automation: &[f32],
+        stride: usize,
+    ) {
+        let has_automation = !automation.is_empty() && stride > 0;
+        if has_automation {
+            self.apply_automatable_constants(automation, stride);
+        }
+
         if self.bypassed {
+            if has_automation {
+                let last_frame = left.len().min(right.len()).saturating_sub(1);
+                self.apply_automatable_frame(automation, stride, last_frame);
+            }
             return;
         }
 
         let len = left.len().min(right.len());
 
         for i in 0..len {
+            if has_automation {
+                self.apply_automatable_frame(automation, stride, i);
+            }
             let dry = left[i];
 
             // Mono processing (guitar is typically mono until cab/effects)

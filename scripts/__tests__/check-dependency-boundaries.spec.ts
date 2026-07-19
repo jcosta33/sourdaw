@@ -331,17 +331,17 @@ describe('check-dependency-boundaries', () => {
         const reactRule = mainConfig.forbidden.find(
             (candidate: { name: string }) => candidate.name === 'react-only-in-presentation'
         );
+        const reactPathPatterns = Array.isArray(reactRule.to.path) ? reactRule.to.path : [reactRule.to.path];
+
+        function matchesReactPath(path: string): boolean {
+            return reactPathPatterns.some((pattern: string) => new RegExp(pattern).test(path));
+        }
 
         expect(new RegExp(viewRule.from.path).test('src/components/SharedControl.tsx')).toBe(true);
         expect(new RegExp(viewRule.from.path).test('src/modules/Foo/presentations/components/Leaf.tsx')).toBe(true);
-        // to.path is an any-of pattern array (dependency-cruiser matches when ANY entry
-        // matches); the rule deliberately covers /react/index AND the automatic-runtime
-        // react/jsx-(dev-)runtime entries (see the rule comment in .dependency-cruiser.cjs).
-        const reactPathPatterns: string[] = [reactRule.to.path].flat();
-        const matchesReactPath = (candidate: string) =>
-            reactPathPatterns.some((pattern) => new RegExp(pattern).test(candidate));
         expect(matchesReactPath('/node_modules/react/index.js')).toBe(true);
         expect(matchesReactPath('/node_modules/react/jsx-runtime.js')).toBe(true);
+        expect(matchesReactPath('/node_modules/react/jsx-dev-runtime.js')).toBe(true);
         expect(matchesReactPath('/node_modules/react-dom/index.js')).toBe(false);
     });
 
