@@ -7,6 +7,7 @@ import { readYeastPreviewSnapshot } from '../readYeastPreviewSnapshot';
 import { setYeastPreviewCaptureEnabled } from '../setYeastPreviewCaptureEnabled';
 
 import type { MidiEvent, TransportInfo } from '../../../models/MidiEvent';
+import type { YeastPreviewEvent } from '../../../models/YeastPreviewSnapshot';
 
 const runtime = vi.hoisted(() => ({
     processTransaction: vi.fn(),
@@ -48,6 +49,20 @@ function notePair(index: number): MidiEvent[] {
     ];
 }
 
+function previewRecord(index: number, bypassed = false): YeastPreviewEvent {
+    return {
+        beatTime: 4 + index * 0.01,
+        durationBeats: 0.005,
+        pitch: 36 + (index % 48),
+        velocity: 64 + (index % 32),
+        probability: null,
+        realized: true,
+        processorId: 'velocity-1',
+        bypassed,
+        failed: false,
+    };
+}
+
 function setProcessorBypass(bypassed: boolean): void {
     yeastStore.set({
         processors: [
@@ -73,7 +88,13 @@ describe('AC-001 — Yeast scheduled-event preview tap', () => {
 
     it('publishes an ordered 512-event read-only ring without changing scheduler output or progress', async () => {
         const processed = Array.from({ length: 514 }, (_, index) => notePair(index)).flat();
-        runtime.processTransaction.mockResolvedValue(processed);
+        runtime.processTransaction.mockImplementationOnce(() => {
+            yeastPreviewTap.publish({
+                records: Array.from({ length: 514 }, (_, index) => previewRecord(index)),
+                droppedEvents: 0,
+            });
+            return Promise.resolve(processed);
+        });
         const storageIdentity = yeastPreviewTap.getStorageIdentity();
 
         const output = await processYeastMidi({
@@ -106,13 +127,17 @@ describe('AC-001 — Yeast scheduled-event preview tap', () => {
             realized: true,
             processorId: 'velocity-1',
             bypassed: false,
+            failed: false,
         });
         for (let index = 0; index < snapshot.events.length; index++) {
             expect(snapshot.events[index]!.beatTime).toBeCloseTo(4 + index * 0.01, 10);
         }
 
         const afterReaderAdvance = notePair(600);
-        runtime.processTransaction.mockResolvedValue(afterReaderAdvance);
+        runtime.processTransaction.mockImplementationOnce(() => {
+            yeastPreviewTap.publish({ records: [previewRecord(600)], droppedEvents: 0 });
+            return Promise.resolve(afterReaderAdvance);
+        });
         const nextOutput = await processYeastMidi({
             context: {} as BaseAudioContext,
             trackId: 'track-a',
@@ -129,7 +154,10 @@ describe('AC-001 — Yeast scheduled-event preview tap', () => {
 
     it('keeps bypass state visible and capture disabled as a bit-for-bit no-op', async () => {
         const processed = notePair(0);
-        runtime.processTransaction.mockResolvedValue(processed);
+        runtime.processTransaction.mockImplementation(() => {
+            yeastPreviewTap.publish({ records: [previewRecord(0, true)], droppedEvents: 0 });
+            return Promise.resolve(processed);
+        });
         setProcessorBypass(true);
 
         expect(
@@ -160,7 +188,14 @@ describe('AC-001 — Yeast scheduled-event preview tap', () => {
 
     it('never replaces scheduler output when preview publication fails', async () => {
         const processed = notePair(0);
-        runtime.processTransaction.mockResolvedValue(processed);
+        runtime.processTransaction.mockImplementationOnce(() => {
+            try {
+                yeastPreviewTap.publish({ records: [previewRecord(0)], droppedEvents: 0 });
+            } catch {
+                // Mirrors the runtime's observer isolation.
+            }
+            return Promise.resolve(processed);
+        });
         const previewFailure = vi.spyOn(yeastPreviewTap, 'publish').mockImplementationOnce(() => {
             throw new Error('preview unavailable');
         });

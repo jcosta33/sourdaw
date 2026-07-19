@@ -1,3 +1,5 @@
+export const YEAST_PREVIEW_CAPACITY = 512;
+
 export type YeastPreviewEvent = Readonly<{
     beatTime: number;
     durationBeats: number;
@@ -7,6 +9,12 @@ export type YeastPreviewEvent = Readonly<{
     realized: boolean;
     processorId: string;
     bypassed: boolean;
+    failed: boolean;
+}>;
+
+export type YeastPreviewBlock = Readonly<{
+    records: readonly YeastPreviewEvent[];
+    droppedEvents: number;
 }>;
 
 export type YeastPreviewSnapshot = Readonly<{

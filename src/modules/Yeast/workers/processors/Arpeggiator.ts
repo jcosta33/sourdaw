@@ -18,6 +18,8 @@ import { BaseMidiProcessor } from '../BaseMidiProcessor';
 import { LCG_MAX, nextLcg } from '../lcgRandom';
 import { type ActiveNote, ScheduledEventQueue } from '../MidiProcessor';
 
+import type { YeastPreviewDecisionSink } from '../YeastPreviewSidecar';
+
 // ── Types ────────────────────────────────────────────────────────────────────
 
 type HeldNote = {
@@ -40,6 +42,7 @@ type OctaveDirection = 'up' | 'down' | 'upDown';
 
 export class Arpeggiator extends BaseMidiProcessor {
     readonly name = 'Arpeggiator';
+    readonly providesPreviewDecisions = true;
 
     // Parameters
     private mode: ArpMode = 'up';
@@ -69,7 +72,12 @@ export class Arpeggiator extends BaseMidiProcessor {
 
     // ── MidiProcessor interface ──────────────────────────────────────────
 
-    processMidi(input: readonly MidiEvent[], output: MidiEvent[], transport: TransportInfo): void {
+    processMidi(
+        input: readonly MidiEvent[],
+        output: MidiEvent[],
+        transport: TransportInfo,
+        preview?: YeastPreviewDecisionSink
+    ): void {
         // Handle incoming Note On/Off to update held notes
         for (const event of input) {
             if (event.kind.type === 'noteOn') {
@@ -161,16 +169,6 @@ export class Arpeggiator extends BaseMidiProcessor {
                 continue;
             }
 
-            // Probability check (pattern or global)
-            if (patternStep && patternStep.probability < 1.0) {
-                this.rngState = nextLcg(this.rngState);
-                if (this.rngState / LCG_MAX > patternStep.probability) {
-                    this.advanceStep(pool.length);
-                    this.lastStepTimeSamples = stepTime;
-                    continue;
-                }
-            }
-
             // Get the note(s) for this step
             const expandedPool = this.expandOctaves(pool);
             let stepNotes = patternStep?.stepType === 'chord' ? expandedPool : this.selectStepNotes(expandedPool);
@@ -190,6 +188,32 @@ export class Arpeggiator extends BaseMidiProcessor {
             const baseGate = patternStep ? this.gate * patternStep.gateMul : this.gate;
             const noteDuration = ratchetInterval * baseGate;
 
+            // Resolve the candidate notes before the probability decision so a
+            // rejected step can report the exact pitches, timing, and source
+            // velocities it declined to realize without changing MIDI output.
+            if (patternStep && patternStep.probability < 1.0) {
+                this.rngState = nextLcg(this.rngState);
+                if (this.rngState / LCG_MAX > patternStep.probability) {
+                    for (let ratchetIdx = 0; ratchetIdx < ratchetCount; ratchetIdx++) {
+                        const ratchetTime = actualTime + ratchetIdx * ratchetInterval;
+                        for (const sn of stepNotes) {
+                            preview?.recordDecision(
+                                ratchetTime,
+                                noteDuration,
+                                sn.note,
+                                this.previewVelocity(sn.velocity, patternStep),
+                                patternStep.probability,
+                                false,
+                                this.id
+                            );
+                        }
+                    }
+                    this.advanceStep(expandedPool.length);
+                    this.lastStepTimeSamples = stepTime;
+                    continue;
+                }
+            }
+
             for (let ratchetIdx = 0; ratchetIdx < ratchetCount; ratchetIdx++) {
                 const ratchetTime = actualTime + ratchetIdx * ratchetInterval;
 
@@ -203,6 +227,16 @@ export class Arpeggiator extends BaseMidiProcessor {
                         trackId: sn.trackId,
                         kind: { type: 'noteOn', channel: sn.channel, note: sn.note, velocity: vel },
                     });
+
+                    preview?.recordDecision(
+                        ratchetTime,
+                        noteDuration,
+                        sn.note,
+                        vel,
+                        patternStep?.probability ?? null,
+                        true,
+                        this.id
+                    );
 
                     // Schedule Note Off
                     const offTime = ratchetTime + noteDuration;
@@ -446,6 +480,16 @@ export class Arpeggiator extends BaseMidiProcessor {
             }
         }
         return inputVel;
+    }
+
+    private previewVelocity(inputVelocity: number, step: ArpStep): number {
+        if (step.velocityOverride) {
+            return step.velocity;
+        }
+        if (this.velocityMode === 'fixed') {
+            return this.fixedVelocity;
+        }
+        return inputVelocity;
     }
 
     private killActiveNotes(output: MidiEvent[], now: number): void {

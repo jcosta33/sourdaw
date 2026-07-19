@@ -340,6 +340,77 @@ describe('MidiRack', () => {
     });
 
     describe('processBlock (fix #4: a throwing processor must not abort the chain)', () => {
+        it('pairs notes across real scheduling blocks and response advances using absolute beats', () => {
+            const rack = new MidiRack();
+            const filter = new NoteFilter('filter-1');
+            filter.setBypassed(true);
+            rack.addProcessor(filter, 'filter');
+            const firstTransport: TransportInfo = {
+                ...transport,
+                sampleRate: 48000,
+                bpm: 120,
+                ppqPosition: 4,
+            };
+
+            rack.processBlock(
+                [{ timeSamples: 12000, kind: { type: 'noteOn', channel: 0, note: 60, velocity: 96 } }],
+                0,
+                24000,
+                firstTransport,
+                'track-a',
+                true
+            );
+            expect(rack.takePreviewBlock().records).toEqual([]);
+
+            rack.processBlock(
+                [{ timeSamples: 36000, kind: { type: 'noteOff', channel: 0, note: 60 } }],
+                24000,
+                48000,
+                { ...firstTransport, bpm: 60, ppqPosition: 5 },
+                'track-a',
+                true
+            );
+
+            expect(rack.takePreviewBlock().records).toEqual([
+                {
+                    beatTime: 4.5,
+                    durationBeats: 0.75,
+                    pitch: 60,
+                    velocity: 96,
+                    probability: null,
+                    realized: true,
+                    processorId: 'filter-1',
+                    bypassed: true,
+                    failed: false,
+                },
+            ]);
+        });
+
+        it('preserves the actual upstream and bypassed processor decision origins', () => {
+            const rack = new MidiRack();
+            const bypassed = new NoteFilter('filter-1');
+            bypassed.setBypassed(true);
+            rack.addProcessor(new PassthroughProcessor('upstream'));
+            rack.addProcessor(bypassed);
+
+            rack.processBlock(
+                [
+                    { timeSamples: 0, kind: { type: 'noteOn', channel: 0, note: 60, velocity: 91 } },
+                    { timeSamples: 64, kind: { type: 'noteOff', channel: 0, note: 60 } },
+                ],
+                0,
+                128,
+                transport,
+                'track-a',
+                true
+            );
+
+            expect(rack.takePreviewBlock().records).toMatchObject([
+                { processorId: 'upstream', bypassed: false, failed: false },
+                { processorId: 'filter-1', bypassed: true, failed: false },
+            ]);
+        });
+
         it('passes events through a throwing processor and keeps downstream processors running', () => {
             const rack = new MidiRack();
             rack.addProcessor(new ThrowingProcessor('thrower'));
@@ -353,6 +424,43 @@ describe('MidiRack', () => {
             );
             // The note survived the throw and reached the output.
             expect(out.some((event) => event.kind.type === 'noteOn' && event.kind.note === 60)).toBe(true);
+        });
+
+        it('reports transparent processor failure against the unchanged upstream events', () => {
+            const rack = new MidiRack();
+            rack.addProcessor(new ThrowingProcessor('thrower'));
+            const input: MidiEvent[] = [
+                { timeSamples: 0, kind: { type: 'noteOn', channel: 0, note: 60, velocity: 91 } },
+                { timeSamples: 64, kind: { type: 'noteOff', channel: 0, note: 60 } },
+            ];
+
+            const output = rack.processBlock(input, 0, 128, transport, 'track-a', true);
+
+            expect(output).toEqual([
+                {
+                    timeSamples: 0,
+                    trackId: 'track-a',
+                    kind: { type: 'noteOn', channel: 0, note: 60, velocity: 91 },
+                },
+                {
+                    timeSamples: 64,
+                    trackId: 'track-a',
+                    kind: { type: 'noteOff', channel: 0, note: 60 },
+                },
+            ]);
+            const preview = rack.takePreviewBlock();
+            expect(preview.records).toHaveLength(1);
+            expect(preview.records[0]).toMatchObject({
+                beatTime: 0,
+                pitch: 60,
+                velocity: 91,
+                probability: null,
+                realized: true,
+                processorId: 'thrower',
+                bypassed: false,
+                failed: true,
+            });
+            expect(preview.records[0]!.durationBeats).toBeCloseTo(64 / 22050, 12);
         });
     });
 

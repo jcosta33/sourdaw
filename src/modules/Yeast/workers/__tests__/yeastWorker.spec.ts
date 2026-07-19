@@ -159,6 +159,67 @@ describe('YeastWorker', () => {
         ]);
     });
 
+    it('returns processor decision records beside unchanged scheduler events', () => {
+        const rack = new MidiRack();
+        const messages: unknown[] = [];
+        dispatch(
+            rack,
+            {
+                type: 'setProjection',
+                projectionId: 6,
+                nowSamples: 0,
+                processors: [{ id: 'filter-1', type: 'filter', bypassed: true, params: {} }],
+            },
+            messages
+        );
+        messages.length = 0;
+        const events = [
+            { timeSamples: 0, kind: { type: 'noteOn', channel: 0, note: 60, velocity: 88 } },
+            { timeSamples: 64, kind: { type: 'noteOff', channel: 0, note: 60 } },
+        ];
+
+        dispatch(
+            rack,
+            {
+                type: 'processBlock',
+                requestId: 7,
+                trackId: 'track-a',
+                events,
+                blockStart: 0,
+                blockEnd: 128,
+                transport,
+                previewEnabled: true,
+            },
+            messages
+        );
+
+        const response = messages[0] as {
+            type: string;
+            requestId: number;
+            events: unknown[];
+            preview: { records: Array<Record<string, unknown>>; droppedEvents: number };
+        };
+        expect(response.type).toBe('processed');
+        expect(response.requestId).toBe(7);
+        expect(response.events).toEqual([
+            { ...events[0], trackId: 'track-a' },
+            { ...events[1], trackId: 'track-a' },
+        ]);
+        expect(response.preview.droppedEvents).toBe(0);
+        expect(response.preview.records).toHaveLength(1);
+        expect(response.preview.records[0]).toMatchObject({
+            beatTime: 0,
+            pitch: 60,
+            velocity: 88,
+            probability: null,
+            realized: true,
+            processorId: 'filter-1',
+            bypassed: true,
+            failed: false,
+        });
+        expect(response.preview.records[0]?.durationBeats).toBeCloseTo(64 / 24000, 12);
+    });
+
     it('acknowledges a valid processor command with its command id', () => {
         const rack = new MidiRack();
         const messages: unknown[] = [];

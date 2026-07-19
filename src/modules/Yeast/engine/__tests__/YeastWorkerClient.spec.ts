@@ -6,7 +6,7 @@ import {
     YEAST_WORKER_DEADLINE_MS,
 } from '../YeastWorkerClient';
 
-import type { TransportInfo } from '../../models/MidiEvent';
+import type { MidiEvent, TransportInfo } from '../../models/MidiEvent';
 import type { YeastProcessorCommand } from '../../models/YeastProcessorCommand';
 import type { YeastProcessorProjection } from '../../models/YeastProcessorProjection';
 
@@ -104,8 +104,8 @@ function triggerWorkerFailure(worker: FakeWorker, kind: 'error' | 'messageerror'
 }
 
 /** Simulate the Worker replying 'processed' for a given requestId. */
-function replyProcessed(worker: FakeWorker, requestId: number, events: unknown[] = []): void {
-    worker.onmessage?.({ data: { type: 'processed', requestId, events } } as MessageEvent);
+function replyProcessed(worker: FakeWorker, requestId: number, events: unknown[] = [], preview?: unknown): void {
+    worker.onmessage?.({ data: { type: 'processed', requestId, events, preview } } as MessageEvent);
 }
 
 function replyProcessedError(worker: FakeWorker, requestId: number, error: string): void {
@@ -168,6 +168,50 @@ describe('createYeastWorker — processBlock lifecycle', () => {
         await expect(promise).resolves.toEqual([]);
     });
 
+    it('dispatches validated preview sidecars without changing the process result', async () => {
+        const node = await createYeastWorker(makeContext());
+        const worker = lastWorker();
+        const onPreview = vi.fn();
+        node.onPreview(onPreview);
+        const events: MidiEvent[] = [{ timeSamples: 0, kind: { type: 'noteOn', channel: 0, note: 60, velocity: 90 } }];
+        const preview = {
+            records: [
+                {
+                    beatTime: 0,
+                    durationBeats: 0.5,
+                    pitch: 60,
+                    velocity: 90,
+                    probability: 0.5,
+                    realized: true,
+                    processorId: 'arp-1',
+                    bypassed: false,
+                    failed: false,
+                },
+            ],
+            droppedEvents: 0,
+        };
+
+        const promise = node.processBlock(events, 0, 128, transport, 'track-a', true);
+        replyProcessed(worker, 0, events, preview);
+
+        await expect(promise).resolves.toBe(events);
+        expect(onPreview).toHaveBeenCalledWith(preview);
+    });
+
+    it('discards a malformed preview sidecar without delaying valid scheduler output', async () => {
+        const node = await createYeastWorker(makeContext());
+        const worker = lastWorker();
+        const onPreview = vi.fn();
+        node.onPreview(onPreview);
+        const events: MidiEvent[] = [{ timeSamples: 0, kind: { type: 'noteOn', channel: 0, note: 60, velocity: 90 } }];
+
+        const promise = node.processBlock(events, 0, 128, transport, 'track-a', true);
+        replyProcessed(worker, 0, events, { records: [{ processorId: 'invalid' }], droppedEvents: 0 });
+
+        await expect(promise).resolves.toBe(events);
+        expect(onPreview).not.toHaveBeenCalled();
+    });
+
     it('rejects processBlock immediately on a correlated worker error', async () => {
         const node = await createYeastWorker(makeContext());
         const worker = lastWorker();
@@ -193,6 +237,7 @@ describe('createYeastWorker — processBlock lifecycle', () => {
             blockEnd: 128,
             transport,
             trackId: 'track-a',
+            previewEnabled: false,
         });
 
         replyProcessed(worker, 0, []);

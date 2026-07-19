@@ -1,6 +1,7 @@
 import { logger } from '#/infra/logger/appLogger';
 import { createHmrPersistentState } from '#/utils/HMR/createHmrPersistentState';
 
+import { yeastPreviewTap } from './yeastPreviewTap';
 import { createYeastWorker, type YeastWorkerResult } from './YeastWorkerClient';
 
 import type { YeastNotesOffPayload } from '../events/YeastNotesOffPayload';
@@ -58,7 +59,7 @@ type PendingAllNotesOff = {
     nowSamples: number;
 };
 
-const YEAST_RUNTIME_SESSION_VERSION = 6;
+const YEAST_RUNTIME_SESSION_VERSION = 7;
 
 const session = createHmrPersistentState<YeastRuntimeSession>('yeast.runtime', () => ({
     version: YEAST_RUNTIME_SESSION_VERSION,
@@ -80,8 +81,9 @@ const session = createHmrPersistentState<YeastRuntimeSession>('yeast.runtime', (
     activeOutputNotes: new Map(),
 }));
 
-// Retained pre-v6 sessions use the pitch-only host note-off contract. Revoke
-// every runtime handle and defer channel-complete settlement to the new sink.
+// Retained pre-v7 sessions either use the pitch-only host note-off contract or
+// predate the preview sidecar listener. Revoke every runtime handle and defer
+// channel-complete settlement to the new sink.
 if (session.version !== YEAST_RUNTIME_SESSION_VERSION) {
     const staleNode = session.node;
     const retainedRuntimeMayOwnOutput = session.context !== null || session.nodePromise !== null || staleNode !== null;
@@ -517,6 +519,16 @@ async function ensureYeastRuntimeInternal(
                 recordWorkerNotesOff(notes, generation);
                 emitNotesOff(notes);
             });
+            node.onPreview((preview) => {
+                if (!isLiveRuntime(node, generation)) {
+                    return;
+                }
+                try {
+                    yeastPreviewTap.publish(preview);
+                } catch {
+                    // Preview capture is observational and cannot fail runtime work.
+                }
+            });
             try {
                 const projectionToApply = initializationProjection ?? {
                     projection: session.projection,
@@ -602,7 +614,8 @@ export async function processYeastRuntimeBlock(input: ProcessYeastRuntimeBlockIn
                 input.blockStartSamples,
                 input.blockEndSamples,
                 input.transport,
-                input.trackId
+                input.trackId,
+                yeastPreviewTap.isEnabled()
             );
             if (!isLiveRuntime(node, generation)) {
                 throw new Error('Yeast Worker runtime changed during MIDI processing');
@@ -656,7 +669,8 @@ export async function processYeastRuntimeTransaction(
                 input.blockStartSamples,
                 input.blockEndSamples,
                 input.transport,
-                input.trackId
+                input.trackId,
+                yeastPreviewTap.isEnabled()
             );
             if (!isLiveRuntime(node, generation)) {
                 throw new Error('Yeast Worker runtime changed during MIDI processing');

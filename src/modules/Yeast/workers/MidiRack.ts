@@ -8,8 +8,10 @@
 import { type MidiEvent, type TransportInfo } from '../models/MidiEvent';
 
 import { type MidiProcessor, ScheduledEventQueue } from './MidiProcessor';
+import { YeastPreviewSidecar } from './YeastPreviewSidecar';
 
 import type { ProcessorType } from '../models/ProcessorCatalog';
+import type { YeastPreviewBlock } from '../models/YeastPreviewSnapshot';
 import type { YeastProcessorCommand } from '../models/YeastProcessorCommand';
 import type { YeastProcessorProjectionItem } from '../models/YeastProcessorProjection';
 
@@ -26,6 +28,7 @@ export class MidiRack {
     private scratchA: MidiEvent[] = [];
     private scratchB: MidiEvent[] = [];
     private separateOutput: MidiEvent[] = [];
+    private readonly preview = new YeastPreviewSidecar();
 
     /** Add a processor to the end of the chain. */
     addProcessor(processor: MidiProcessor, type?: ProcessorType): void {
@@ -135,8 +138,10 @@ export class MidiRack {
         blockStartSamples: number,
         blockEndSamples: number,
         transport: TransportInfo,
-        trackId: string
+        trackId: string,
+        previewEnabled = false
     ): MidiEvent[] {
+        this.preview.beginBlock(previewEnabled, blockStartSamples, transport);
         // 0. Reject degenerate ranges. With blockEnd < blockStart the [start,end)
         // drain window is empty (drainRangeInto drains nothing) AND the separator
         // (`event.timeSamples < blockEndSamples`) routes every real event into the
@@ -169,13 +174,17 @@ export class MidiRack {
         for (const processor of this.processors) {
             processor.setTrackId?.(trackId);
             if (processor.isBypassed()) {
+                this.preview.recordEvents(input, trackId, processor.id, true, false);
                 continue;
             }
             output.length = 0;
             try {
-                processor.processMidi(input, output, transport);
+                processor.processMidi(input, output, transport, this.preview);
                 for (const event of output) {
                     event.trackId ??= trackId;
+                }
+                if (!processor.providesPreviewDecisions) {
+                    this.preview.recordEvents(output, trackId, processor.id, false, false);
                 }
             } catch {
                 // A throwing processor must not abort the rest of the chain (or
@@ -183,6 +192,7 @@ export class MidiRack {
                 // skip the buffer swap so the upstream events flow through
                 // unchanged. The happy path takes no exception, so try/catch adds
                 // no per-block allocation on the audio thread.
+                this.preview.recordEvents(input, trackId, processor.id, false, true);
                 continue;
             }
             const tmp = input;
@@ -236,6 +246,10 @@ export class MidiRack {
         }
 
         return finalOutput;
+    }
+
+    takePreviewBlock(): YeastPreviewBlock {
+        return this.preview.takeBlock();
     }
 
     /** Panic: send Note Off for all active notes. */

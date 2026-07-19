@@ -83,6 +83,7 @@ function makeWorker(context: BaseAudioContext) {
         setProjection: vi.fn(() => Promise.resolve()),
         allNotesOff: vi.fn(() => Promise.resolve()),
         onNotesOff: vi.fn(() => () => {}),
+        onPreview: vi.fn(() => () => {}),
         onTerminalError: vi.fn(() => () => {}),
         destroy: vi.fn<() => void>(),
     };
@@ -136,7 +137,7 @@ describe('yeastRuntime HMR migration', () => {
         const runtime = await import('../yeastRuntime');
         const panicOutputNotes = vi.fn();
 
-        expect(legacySession.version).toBe(6);
+        expect(legacySession.version).toBe(7);
         expect(legacySession.generation).toBe(oldGeneration + 1);
         expect(oldNode.destroy).toHaveBeenCalledTimes(1);
         expect(legacySession.context).toBeNull();
@@ -206,7 +207,7 @@ describe('yeastRuntime HMR migration', () => {
         const runtime = await import('../yeastRuntime');
         const panicOutputNotes = vi.fn();
 
-        expect(retainedSession.version).toBe(6);
+        expect(retainedSession.version).toBe(7);
         expect(retainedSession.generation).toBe(generation + 1);
         expect(retainedSession.projection).toBe(projection);
         expect(retainedSession.activeOutputNotes).toEqual(new Map());

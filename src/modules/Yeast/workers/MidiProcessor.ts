@@ -7,6 +7,7 @@
 
 import { type MidiEvent, type TransportInfo } from '../models/MidiEvent';
 
+import type { YeastPreviewDecisionSink } from './YeastPreviewSidecar';
 import type { YeastProcessorCommand } from '../models/YeastProcessorCommand';
 
 export type MidiProcessorParams = Readonly<Record<string, number>>;
@@ -14,9 +15,15 @@ export type MidiProcessorParams = Readonly<Record<string, number>>;
 export type MidiProcessor = {
     readonly id: string;
     readonly name: string;
+    readonly providesPreviewDecisions?: boolean;
 
     /** Process a block of MIDI events. Append output events to `output`. */
-    processMidi(input: readonly MidiEvent[], output: MidiEvent[], transport: TransportInfo): void;
+    processMidi(
+        input: readonly MidiEvent[],
+        output: MidiEvent[],
+        transport: TransportInfo,
+        preview?: YeastPreviewDecisionSink
+    ): void;
 
     /** Reset all internal state (on transport stop, panic, etc.). */
     reset(): void;

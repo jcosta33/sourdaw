@@ -9,6 +9,8 @@
  * the rack and processor instances; this wrapper owns only the message protocol.
  */
 
+import { type YeastPreviewBlock, YEAST_PREVIEW_CAPACITY, type YeastPreviewEvent } from '../models/YeastPreviewSnapshot';
+
 import type { YeastNoteOffIdentity, YeastNotesOffPayload } from '../events/YeastNotesOffPayload';
 import type { MidiEvent, TransportInfo } from '../models/MidiEvent';
 import type { YeastProcessorCommand } from '../models/YeastProcessorCommand';
@@ -147,7 +149,46 @@ function parseAcknowledgedNoteOffs(value: Record<string, unknown>, required: boo
     return events;
 }
 
-function parseProcessedMessage(value: Record<string, unknown>): { requestId: number; events: MidiEvent[] } | undefined {
+function isYeastPreviewEvent(value: unknown): value is YeastPreviewEvent {
+    if (!isPlainObject(value)) {
+        return false;
+    }
+    return (
+        isFiniteNumber(value.beatTime) &&
+        isFiniteNumber(value.durationBeats) &&
+        value.durationBeats >= 0 &&
+        isMidiNote(value.pitch) &&
+        isFiniteNumber(value.velocity) &&
+        (value.probability === null ||
+            (isFiniteNumber(value.probability) && value.probability >= 0 && value.probability <= 1)) &&
+        typeof value.realized === 'boolean' &&
+        typeof value.processorId === 'string' &&
+        value.processorId.length > 0 &&
+        typeof value.bypassed === 'boolean' &&
+        typeof value.failed === 'boolean'
+    );
+}
+
+function parsePreviewBlock(value: unknown): YeastPreviewBlock | undefined {
+    if (!isPlainObject(value) || !Array.isArray(value.records) || value.records.length > YEAST_PREVIEW_CAPACITY) {
+        return undefined;
+    }
+    if (!value.records.every(isYeastPreviewEvent)) {
+        return undefined;
+    }
+    if (
+        typeof value.droppedEvents !== 'number' ||
+        !Number.isSafeInteger(value.droppedEvents) ||
+        value.droppedEvents < 0
+    ) {
+        return undefined;
+    }
+    return { records: value.records, droppedEvents: value.droppedEvents };
+}
+
+function parseProcessedMessage(
+    value: Record<string, unknown>
+): { requestId: number; events: MidiEvent[]; preview: YeastPreviewBlock | undefined } | undefined {
     if (value.type !== 'processed' || !isCommandId(value.requestId)) {
         return undefined;
     }
@@ -155,7 +196,8 @@ function parseProcessedMessage(value: Record<string, unknown>): { requestId: num
     if (!Array.isArray(events) || !events.every(isMidiEvent)) {
         return undefined;
     }
-    return { requestId: value.requestId, events };
+    const preview = parsePreviewBlock(value.preview);
+    return { requestId: value.requestId, events, preview };
 }
 
 function parseProcessedError(value: Record<string, unknown>): { requestId: number; error: string } | undefined {
@@ -242,7 +284,8 @@ export type YeastWorkerResult = {
         blockStart: number,
         blockEnd: number,
         transport: TransportInfo,
-        trackId: string
+        trackId: string,
+        previewEnabled?: boolean
     ) => Promise<MidiEvent[]>;
     sendCommand: (command: YeastProcessorCommand) => Promise<YeastCommandAck>;
     setProjection: (projection: readonly YeastProcessorProjectionItem[]) => Promise<void>;
@@ -254,6 +297,8 @@ export type YeastWorkerResult = {
      * unsubscribe function. Multiple listeners are supported.
      */
     onNotesOff: (handler: (notesOff: YeastNotesOffPayload[]) => void) => () => void;
+    /** Register a best-effort listener for complete processor preview records. */
+    onPreview: (handler: (preview: YeastPreviewBlock) => void) => () => void;
     /** Register for an unrecoverable Worker startup/runtime failure. */
     onTerminalError: (handler: (error: Error) => void) => () => void;
     destroy: () => void;
@@ -335,6 +380,7 @@ export async function createYeastWorker(ctx: BaseAudioContext): Promise<YeastWor
     };
 
     const notesOffHandlers = new Set<(notesOff: YeastNotesOffPayload[]) => void>();
+    const previewHandlers = new Set<(preview: YeastPreviewBlock) => void>();
     const terminalErrorHandlers = new Set<(error: Error) => void>();
 
     const dispatchNotesOff = (events: readonly MidiEvent[]): void => {
@@ -415,6 +461,7 @@ export async function createYeastWorker(ctx: BaseAudioContext): Promise<YeastWor
             settleProjection(projectionId)?.reject(pendingErrors.projection);
         }
         notesOffHandlers.clear();
+        previewHandlers.clear();
 
         const handlers = input.notifyTerminalHandlers ? [...terminalErrorHandlers] : [];
         terminalErrorHandlers.clear();
@@ -456,7 +503,20 @@ export async function createYeastWorker(ctx: BaseAudioContext): Promise<YeastWor
         }
         const processed = parseProcessedMessage(event.data);
         if (processed) {
-            settle(processed.requestId)?.resolve(processed.events);
+            const entry = settle(processed.requestId);
+            if (!entry) {
+                return;
+            }
+            if (processed.preview) {
+                for (const handler of previewHandlers) {
+                    try {
+                        handler(processed.preview);
+                    } catch {
+                        // Preview observers cannot replace or reject scheduler output.
+                    }
+                }
+            }
+            entry.resolve(processed.events);
             return;
         }
         if (event.data.type === 'processedError') {
@@ -541,7 +601,8 @@ export async function createYeastWorker(ctx: BaseAudioContext): Promise<YeastWor
         blockStart: number,
         blockEnd: number,
         transport: TransportInfo,
-        trackId: string
+        trackId: string,
+        previewEnabled = false
     ): Promise<MidiEvent[]> =>
         new Promise((resolve, reject) => {
             if (terminalError) {
@@ -567,6 +628,7 @@ export async function createYeastWorker(ctx: BaseAudioContext): Promise<YeastWor
                     blockEnd,
                     transport,
                     trackId,
+                    previewEnabled,
                 });
             } catch (error: unknown) {
                 settle(requestId)?.reject(toError(error));
@@ -681,6 +743,15 @@ export async function createYeastWorker(ctx: BaseAudioContext): Promise<YeastWor
             notesOffHandlers.add(handler);
             return () => {
                 notesOffHandlers.delete(handler);
+            };
+        },
+        onPreview: (handler) => {
+            if (terminalError) {
+                return () => {};
+            }
+            previewHandlers.add(handler);
+            return () => {
+                previewHandlers.delete(handler);
             };
         },
         onTerminalError: (handler) => {

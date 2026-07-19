@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { YeastNotesOffPayload } from '../../events/YeastNotesOffPayload';
 import type { MidiEvent, TransportInfo } from '../../models/MidiEvent';
+import type { YeastPreviewBlock } from '../../models/YeastPreviewSnapshot';
 import type { YeastProcessorCommand } from '../../models/YeastProcessorCommand';
 import type { YeastProcessorProjection } from '../../models/YeastProcessorProjection';
 import type { YeastWorkerResult } from '../YeastWorkerClient';
@@ -51,6 +52,7 @@ async function flushRuntimeQueue(): Promise<void> {
 function makeNode(context: BaseAudioContext) {
     let terminalErrorHandler: ((error: Error) => void) | null = null;
     let notesOffHandler: ((notesOff: YeastNotesOffPayload[]) => void) | null = null;
+    let previewHandler: ((preview: YeastPreviewBlock) => void) | null = null;
     return {
         context,
         processBlock: vi.fn<
@@ -59,7 +61,8 @@ function makeNode(context: BaseAudioContext) {
                 blockStart: number,
                 blockEnd: number,
                 transport: TransportInfo,
-                trackId: string
+                trackId: string,
+                previewEnabled?: boolean
             ) => Promise<MidiEvent[]>
         >(() => Promise.resolve([])),
         setProjection: vi.fn(),
@@ -72,6 +75,14 @@ function makeNode(context: BaseAudioContext) {
             return () => {
                 if (notesOffHandler === handler) {
                     notesOffHandler = null;
+                }
+            };
+        }),
+        onPreview: vi.fn((handler: (preview: YeastPreviewBlock) => void) => {
+            previewHandler = handler;
+            return () => {
+                if (previewHandler === handler) {
+                    previewHandler = null;
                 }
             };
         }),
@@ -88,6 +99,9 @@ function makeNode(context: BaseAudioContext) {
         },
         emitNotesOff: (notesOff: YeastNotesOffPayload[]) => {
             notesOffHandler?.(notesOff);
+        },
+        emitPreview: (preview: YeastPreviewBlock) => {
+            previewHandler?.(preview);
         },
         destroy: vi.fn(),
     };
@@ -174,6 +188,45 @@ describe('yeastRuntime', () => {
         pendingProjection.resolve();
         await expect(initialization).resolves.toBe(node);
         expect(runtime.getYeastRuntimeStatus()).toBe('ready');
+    });
+
+    it('publishes worker preview sidecars without changing the scheduler result', async () => {
+        const runtime = (await loadRuntime()) as RuntimeWithTransaction;
+        const { yeastPreviewTap } = await import('../yeastPreviewTap');
+        yeastPreviewTap.setEnabled(false);
+        yeastPreviewTap.setEnabled(true);
+        const context = {} as BaseAudioContext;
+        const node = makeNode(context);
+        const events: MidiEvent[] = [
+            { timeSamples: 0, trackId: 'track-a', kind: { type: 'noteOn', channel: 0, note: 60, velocity: 90 } },
+        ];
+        const preview = {
+            records: [
+                {
+                    beatTime: 0,
+                    durationBeats: 0.5,
+                    pitch: 60,
+                    velocity: 90,
+                    probability: null,
+                    realized: true,
+                    processorId: 'filter-1',
+                    bypassed: true,
+                    failed: false,
+                },
+            ],
+            droppedEvents: 0,
+        };
+        node.processBlock.mockImplementationOnce(() => {
+            node.emitPreview(preview);
+            return Promise.resolve(events);
+        });
+        createNode.mockResolvedValueOnce(node);
+
+        const output = await runtime.processYeastRuntimeTransaction(makeRuntimeBlockInput(context));
+
+        expect(output).toBe(events);
+        expect(yeastPreviewTap.read().events).toEqual(preview.records);
+        expect(node.onPreview).toHaveBeenCalledTimes(1);
     });
 
     it('invalidates the current runtime and releases notes when a dynamic projection rejects', async () => {

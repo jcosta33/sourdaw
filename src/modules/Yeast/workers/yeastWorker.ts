@@ -12,9 +12,9 @@
  *   → { type: 'projectionAck', projectionId, events }
  *   → { type: 'projectionError', projectionId, error }
  *   ← { type: 'executeCommand', commandId, command }
- *   ← { type: 'processBlock', requestId, trackId, events, blockStart, blockEnd, transport }
+ *   ← { type: 'processBlock', requestId, trackId, events, blockStart, blockEnd, transport, previewEnabled }
  *   → { type: 'commandAck', commandId, accepted, error? }
- *   → { type: 'processed',    requestId, events }
+ *   → { type: 'processed',    requestId, events, preview }
  *   ← { type: 'allNotesOff',  panicId, nowSamples }
  *   → { type: 'allNotesOffAck', panicId, completed, events, error? }
  */
@@ -34,6 +34,7 @@ type YeastProcessBlockMessage = {
     blockStart: number;
     blockEnd: number;
     transport: TransportInfo;
+    previewEnabled: boolean;
 };
 
 type ParsedExecuteCommand = {
@@ -142,7 +143,8 @@ function parseProcessBlock(value: unknown): YeastProcessBlockMessage | undefined
         !isMidiEventArray(value.events) ||
         !isFiniteNumber(value.blockStart) ||
         !isFiniteNumber(value.blockEnd) ||
-        !isTransportInfo(value.transport)
+        !isTransportInfo(value.transport) ||
+        (value.previewEnabled !== undefined && typeof value.previewEnabled !== 'boolean')
     ) {
         return undefined;
     }
@@ -154,6 +156,7 @@ function parseProcessBlock(value: unknown): YeastProcessBlockMessage | undefined
         blockStart: value.blockStart,
         blockEnd: value.blockEnd,
         transport: value.transport,
+        previewEnabled: value.previewEnabled === true,
     };
 }
 
@@ -355,9 +358,11 @@ export function handleYeastWorkerMessage({ data, rack, postMessage }: YeastWorke
             message.blockStart,
             message.blockEnd,
             message.transport,
-            message.trackId
+            message.trackId,
+            message.previewEnabled
         );
-        postMessage({ type: 'processed', requestId: message.requestId, events: processed });
+        const preview = rack.takePreviewBlock();
+        postMessage({ type: 'processed', requestId: message.requestId, events: processed, preview });
     } catch (error: unknown) {
         postMessage({
             type: 'processedError',

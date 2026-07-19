@@ -1,6 +1,8 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 
+import { defaultStep } from '../../../models/ArpPattern';
 import { type MidiEvent, type MidiEventKind, type TransportInfo } from '../../../models/MidiEvent';
+import { MidiRack } from '../../MidiRack';
 import { Arpeggiator } from '../Arpeggiator';
 
 type NoteOnEvent = MidiEvent & { kind: Extract<MidiEventKind, { type: 'noteOn' }> };
@@ -93,5 +95,40 @@ describe('Arpeggiator', () => {
 
         const noteOn = output.find(isNoteOn);
         expect(noteOn?.kind.velocity).toBe(127);
+    });
+
+    it('publishes the actual rejected probability decision without emitting MIDI', () => {
+        arp.setParam('mode', 7);
+        arp.setPattern([{ ...defaultStep(), probability: 0 }]);
+        const rack = new MidiRack();
+        rack.addProcessor(arp, 'arpeggiator');
+
+        rack.processBlock(
+            [{ timeSamples: 0, kind: { type: 'noteOn', channel: 0, note: 60, velocity: 100 } }],
+            0,
+            128,
+            transport,
+            'track-a',
+            true
+        );
+        expect(rack.takePreviewBlock().records).toEqual([]);
+
+        transport.ppqPosition = 0.6;
+        const output = rack.processBlock([], 13230, 13358, transport, 'track-a', true);
+
+        expect(output.filter(isNoteOn)).toEqual([]);
+        expect(rack.takePreviewBlock().records).toEqual([
+            {
+                beatTime: 0.5,
+                durationBeats: 0.4,
+                pitch: 60,
+                velocity: 100,
+                probability: 0,
+                realized: false,
+                processorId: 'test-arp',
+                bypassed: false,
+                failed: false,
+            },
+        ]);
     });
 });
