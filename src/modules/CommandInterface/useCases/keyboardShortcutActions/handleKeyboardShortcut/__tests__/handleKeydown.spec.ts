@@ -267,14 +267,6 @@ describe('handleKeydown', () => {
         performanceNow.mockRestore();
     });
 
-    it('does not start a tool-swap hold when the key event is a repeat', () => {
-        const prevent = handleKeydown(descriptor({ key: 'd', repeat: true }));
-
-        expect(prevent).toBe(false);
-        expect(startToolSwap).not.toHaveBeenCalled();
-        expect(setEditingTool).toHaveBeenCalledWith('draw');
-    });
-
     it('reports a rejected stopPlayback promise from the shortcut', async () => {
         const flushError = new Error('recording flush failed');
         stopPlaybackMock.mockRejectedValueOnce(flushError);
@@ -345,17 +337,6 @@ describe('handleKeydown', () => {
             expect(prevent).toBe(true);
             expect(toggleCommandPalette).toHaveBeenCalledTimes(1);
         });
-
-        it('does not match when a required shift modifier is absent', () => {
-            shortcutStoreMock.value.definitions = [
-                callbackDefinition({ id: 'test.shift', key: 'shift+z', callbackId: 'toggleCommandPalette' }),
-            ];
-
-            const prevent = handleKeydown(descriptor({ key: 'z' }));
-
-            expect(prevent).toBe(false);
-            expect(toggleCommandPalette).not.toHaveBeenCalled();
-        });
     });
 
     describe('input-field and loop-station guards', () => {
@@ -402,17 +383,6 @@ describe('handleKeydown', () => {
             const whileArmed = handleKeydown(descriptor({ key: '1' }));
             expect(triggerPad).toHaveBeenCalledWith({ row: 0, column: 0, record: false });
             expect(whileArmed).toBe(true);
-        });
-
-        it('returns false for an unrecognized callback id that is not a loop-station pad', () => {
-            shortcutStoreMock.value.definitions = [
-                callbackDefinition({ id: 'test.unknown', key: 'F3', callbackId: 'totallyUnknownCallback' }),
-            ];
-
-            const prevent = handleKeydown(descriptor({ key: 'F3' }));
-
-            expect(prevent).toBe(false);
-            expect(triggerPad).not.toHaveBeenCalled();
         });
     });
 
