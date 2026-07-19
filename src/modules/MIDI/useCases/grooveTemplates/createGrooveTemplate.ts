@@ -1,5 +1,6 @@
 import {
     GROOVE_TEMPLATE_SCHEMA_VERSION,
+    canonicalizeGrooveTemplateId,
     getGrooveSubdivisionSlotCount,
     type GrooveSubdivision,
     type GrooveTemplate,
@@ -8,10 +9,11 @@ import {
 } from '../../models/GrooveTemplate';
 import { grooveTemplateStore } from '../../stores/grooveTemplateStore';
 
+import { markGrooveTemplateProjectWrite } from './markGrooveTemplateProjectWrite';
 import { resolveGrooveTemplateName } from './resolveGrooveTemplateName';
 
 type CreateGrooveTemplateInput = {
-    id?: string;
+    id: string;
     name: string;
     subdivision: GrooveSubdivision;
     slots: GrooveTemplateSlot[];
@@ -24,7 +26,10 @@ export function createGrooveTemplate(input: CreateGrooveTemplateInput): GrooveTe
         throw new Error('Groove template state is unavailable');
     }
 
-    const id = input.id?.trim() || `groove-${crypto.randomUUID()}`;
+    const id = canonicalizeGrooveTemplateId(input.id);
+    if (!id) {
+        throw new Error('Groove template ID must be nonempty');
+    }
     const existing = state.templates.find((template) => template.id === id);
     if (existing) {
         return existing;
@@ -52,5 +57,6 @@ export function createGrooveTemplate(input: CreateGrooveTemplateInput): GrooveTe
         provenance: structuredClone(input.provenance),
     };
     grooveTemplateStore.set({ ...state, templates: [...state.templates, template] });
+    markGrooveTemplateProjectWrite();
     return template;
 }

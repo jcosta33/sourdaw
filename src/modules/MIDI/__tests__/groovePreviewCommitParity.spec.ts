@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 
+import { handleApplyGroove } from '../handlers/groove/handleApplyGroove';
 import { handleAssignGrooveTemplate } from '../handlers/groove/handleAssignGrooveTemplate';
 import { handleRestoreGrooveAssignment } from '../handlers/groove/handleRestoreGrooveAssignment';
 import { defaultGrooveTemplateState, grooveTemplateStore } from '../stores/grooveTemplateStore';
@@ -83,12 +84,52 @@ describe('groove preview and commit parity', () => {
             amount: Number.NaN,
         });
 
-        expect(assignment?.amount).toBe(0);
+        expect(assignment).toEqual({
+            ok: true,
+            assignment: {
+                consumerType: 'clip',
+                consumerId: 'clip-nan',
+                templateId: template.id,
+                amount: 0,
+            },
+        });
         expect(grooveTemplateStore.value?.assignments).toContainEqual({
             consumerType: 'clip',
             consumerId: 'clip-nan',
             templateId: template.id,
             amount: 0,
         });
+    });
+
+    it.each(['swing-light', 'swing-heavy', 'mpc-60', 'sp-1200'])('resolves the %s command preset', (grooveId) => {
+        void handleApplyGroove.execute({ type: 'applyGroove', payload: { clipId: 'factory-clip', grooveId } });
+
+        expect(grooveTemplateStore.value?.assignments).toContainEqual({
+            consumerType: 'clip',
+            consumerId: 'factory-clip',
+            templateId: grooveId,
+            amount: 1,
+        });
+    });
+
+    it('returns a typed failure without mutating state for an explicit missing template', () => {
+        const before = structuredClone(grooveTemplateStore.value);
+
+        expect(
+            assignGrooveTemplate({
+                consumerType: 'clip',
+                consumerId: 'missing-clip',
+                templateId: 'missing-template',
+                amount: 1,
+            })
+        ).toEqual({ ok: false, error: { code: 'missing-template', templateId: 'missing-template' } });
+        expect(grooveTemplateStore.value).toEqual(before);
+        expect(() =>
+            handleApplyGroove.execute({
+                type: 'applyGroove',
+                payload: { clipId: 'missing-clip', grooveId: 'missing-template' },
+            })
+        ).toThrow('Groove assignment rejected: missing-template');
+        expect(grooveTemplateStore.value).toEqual(before);
     });
 });

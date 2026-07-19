@@ -1,6 +1,8 @@
 import { STRAIGHT_GROOVE_TEMPLATE_ID, type GrooveTemplate } from '../../models/GrooveTemplate';
 import { type GrooveTemplateAssignment, grooveTemplateStore } from '../../stores/grooveTemplateStore';
 
+import { markGrooveTemplateProjectWrite } from './markGrooveTemplateProjectWrite';
+
 export type DeletedGrooveTemplateSnapshot = {
     template: GrooveTemplate;
     templateIndex: number;
@@ -17,6 +19,9 @@ export function deleteGrooveTemplate(templateId: string): DeletedGrooveTemplateS
     if (!template) {
         return null;
     }
+    if (template.provenance.type === 'builtin') {
+        return null;
+    }
     const assignments = state.assignments.flatMap((assignment, index) =>
         assignment.templateId === templateId ? [{ index, assignment: structuredClone(assignment) }] : []
     );
@@ -28,5 +33,6 @@ export function deleteGrooveTemplate(templateId: string): DeletedGrooveTemplateS
                 : assignment
         ),
     });
+    markGrooveTemplateProjectWrite();
     return { template: structuredClone(template), templateIndex, assignments };
 }

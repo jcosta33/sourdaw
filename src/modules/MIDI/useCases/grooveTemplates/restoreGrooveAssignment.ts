@@ -4,6 +4,8 @@ import {
     grooveTemplateStore,
 } from '../../stores/grooveTemplateStore';
 
+import { markGrooveTemplateProjectWrite } from './markGrooveTemplateProjectWrite';
+
 type RestoreGrooveAssignmentInput = {
     consumerType: GrooveConsumerType;
     consumerId: string;
@@ -25,6 +27,7 @@ export function restoreGrooveAssignment({ consumerType, consumerId, assignment }
                 (candidate) => candidate.consumerType !== consumerType || candidate.consumerId !== consumerId
             ),
         });
+        markGrooveTemplateProjectWrite();
         return;
     }
     const assignments = [...state.assignments];
@@ -34,4 +37,5 @@ export function restoreGrooveAssignment({ consumerType, consumerId, assignment }
         assignments[existingIndex] = structuredClone(assignment);
     }
     grooveTemplateStore.set({ ...state, assignments });
+    markGrooveTemplateProjectWrite();
 }

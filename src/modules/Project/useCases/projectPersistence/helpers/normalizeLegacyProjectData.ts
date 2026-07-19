@@ -1,4 +1,5 @@
-import { getStraightGrooveTemplateId } from '#/modules/MIDI/useCases';
+import { defaultGrooveTemplateState } from '#/modules/MIDI/stores';
+import { getCanonicalGrooveTemplateKey, getStraightGrooveTemplateId } from '#/modules/MIDI/useCases';
 
 type UnknownRecord = Record<string, unknown>;
 
@@ -77,24 +78,13 @@ function stripLegacyGrooveTemplates(value: unknown): unknown {
     return Object.fromEntries(Object.entries(value).filter(([key]) => key !== 'grooveTemplates'));
 }
 
-function createStraightGrooveTemplate(): UnknownRecord {
-    return {
-        id: getStraightGrooveTemplateId(),
-        name: 'Straight',
-        schemaVersion: 1,
-        subdivision: '1/16',
-        slots: [],
-        provenance: { type: 'builtin', sourceId: 'straight' },
-    };
-}
-
 function nextAvailableName(name: string, occupiedNames: Set<string>): string {
     const baseName = name.trim() || 'Untitled groove';
-    if (!occupiedNames.has(baseName.toLocaleLowerCase())) {
+    if (!occupiedNames.has(getCanonicalGrooveTemplateKey(baseName))) {
         return baseName;
     }
     let suffix = 2;
-    while (occupiedNames.has(`${baseName} ${suffix}`.toLocaleLowerCase())) {
+    while (occupiedNames.has(getCanonicalGrooveTemplateKey(`${baseName} ${suffix}`))) {
         suffix += 1;
     }
     return `${baseName} ${suffix}`;
@@ -127,14 +117,16 @@ function normalizeLegacyGrooveTemplate(
         return timingOffset === 0 && dynamicsOffset === 0 ? [] : [{ index: slotIndex, timingOffset, dynamicsOffset }];
     });
     if (slots.length === 0) {
-        return createStraightGrooveTemplate();
+        const straight = defaultGrooveTemplateState.templates.find(
+            (template) => template.id === getStraightGrooveTemplateId()
+        );
+        return straight ? { ...structuredClone(straight) } : null;
     }
     const requestedName = typeof value.name === 'string' ? value.name : `${source} groove`;
     const name = nextAvailableName(requestedName, occupiedNames);
     const sourceId = typeof value.id === 'string' ? value.id : `${source}-${index}`;
     const slug =
-        sourceId
-            .toLocaleLowerCase()
+        getCanonicalGrooveTemplateKey(sourceId)
             .replaceAll(/[^a-z0-9]+/g, '-')
             .replaceAll(/^-|-$/g, '') || String(index);
     return {
@@ -156,10 +148,14 @@ function normalizeGrooveFields(value: UnknownRecord): UnknownRecord {
         };
     }
 
-    const templates: UnknownRecord[] = [createStraightGrooveTemplate()];
-    const fingerprints = new Set<string>(['straight']);
-    const occupiedNames = new Set<string>(['straight']);
-    const occupiedIds = new Set<string>([getStraightGrooveTemplateId()]);
+    const templates: UnknownRecord[] = structuredClone(defaultGrooveTemplateState.templates).filter(isRecord);
+    const fingerprints = new Set<string>(
+        templates.map((template) => JSON.stringify([template.subdivision, template.slots]))
+    );
+    const occupiedNames = new Set<string>(
+        templates.map((template) => getCanonicalGrooveTemplateKey(String(template.name)))
+    );
+    const occupiedIds = new Set<string>(templates.map((template) => String(template.id)));
     for (const source of ['yeast', 'toaster'] as const) {
         const sourceState = value[source];
         if (!isRecord(sourceState) || !Array.isArray(sourceState.grooveTemplates)) {
@@ -175,7 +171,7 @@ function normalizeGrooveFields(value: UnknownRecord): UnknownRecord {
                 continue;
             }
             fingerprints.add(fingerprint);
-            occupiedNames.add(String(normalized.name).toLocaleLowerCase());
+            occupiedNames.add(getCanonicalGrooveTemplateKey(String(normalized.name)));
             const baseId = String(normalized.id);
             let id = baseId;
             let suffix = 2;

@@ -48,8 +48,13 @@ function isFiniteNumber(value: unknown): value is number {
     return typeof value === 'number' && Number.isFinite(value);
 }
 
-function createGrooveTemplateNameKey(name: string): string {
+export function getCanonicalGrooveTemplateKey(name: string): string {
     return name.trim().normalize('NFKC').toLowerCase();
+}
+
+export function canonicalizeGrooveTemplateId(id: string): string | null {
+    const canonicalId = id.normalize('NFKC').trim();
+    return canonicalId.length > 0 ? canonicalId : null;
 }
 
 function isGrooveTemplateSlot(value: unknown): value is GrooveTemplateSlot {
@@ -104,14 +109,14 @@ export function resolveGrooveTemplateNameCollision({
     const occupiedNames = new Set(
         templates
             .filter((template) => template.id !== ignoreTemplateId)
-            .map((template) => createGrooveTemplateNameKey(template.name))
+            .map((template) => getCanonicalGrooveTemplateKey(template.name))
     );
-    if (!occupiedNames.has(createGrooveTemplateNameKey(baseName))) {
+    if (!occupiedNames.has(getCanonicalGrooveTemplateKey(baseName))) {
         return baseName;
     }
 
     let suffix = 2;
-    while (occupiedNames.has(createGrooveTemplateNameKey(`${baseName} ${suffix}`))) {
+    while (occupiedNames.has(getCanonicalGrooveTemplateKey(`${baseName} ${suffix}`))) {
         suffix += 1;
     }
     return `${baseName} ${suffix}`;

@@ -6,6 +6,7 @@ import {
     createStraightGrooveTemplate,
     isGrooveTemplate,
 } from '../models/GrooveTemplate';
+import { defaultGrooveTemplateState } from '../stores/grooveTemplateStore';
 
 describe('GrooveTemplate schema', () => {
     it('defines a stable, device-neutral Straight identity', () => {
@@ -52,5 +53,54 @@ describe('GrooveTemplate schema', () => {
                 provenance: { type: 'user', sourceId: 'bad-slot' },
             })
         ).toBe(false);
+    });
+
+    it('preserves the canonical factory catalog identities and normalized feel', () => {
+        expect(defaultGrooveTemplateState.templates.map((template) => template.id)).toEqual([
+            STRAIGHT_GROOVE_TEMPLATE_ID,
+            'swing-light',
+            'swing-heavy',
+            'mpc-60',
+            'sp-1200',
+        ]);
+        const legacySemantics = [
+            {
+                id: 'swing-light',
+                offsets: [0, 0.03, 0, 0.03, 0, 0.03, 0, 0.03, 0, 0.03, 0, 0.03, 0, 0.03, 0, 0.03],
+                velocities: [1, 0.7, 0.9, 0.7, 1, 0.7, 0.9, 0.7, 1, 0.7, 0.9, 0.7, 1, 0.7, 0.9, 0.7],
+            },
+            {
+                id: 'swing-heavy',
+                offsets: [0, 0.08, 0, 0.08, 0, 0.08, 0, 0.08, 0, 0.08, 0, 0.08, 0, 0.08, 0, 0.08],
+                velocities: [1, 0.6, 0.85, 0.6, 1, 0.6, 0.85, 0.6, 1, 0.6, 0.85, 0.6, 1, 0.6, 0.85, 0.6],
+            },
+            {
+                id: 'mpc-60',
+                offsets: [0, 0.04, 0, 0.02, 0, 0.04, 0, 0.03, 0, 0.04, 0, 0.02, 0, 0.04, 0, 0.03],
+                velocities: [1.15, 0.75, 0.9, 0.7, 1.1, 0.75, 0.85, 0.7, 1.15, 0.75, 0.9, 0.7, 1.1, 0.75, 0.85, 0.7],
+            },
+            {
+                id: 'sp-1200',
+                offsets: [0, -0.03, 0, -0.01, 0, -0.03, 0, -0.02, 0, -0.03, 0, -0.01, 0, -0.03, 0, -0.02],
+                velocities: [1.1, 0.8, 0.95, 0.8, 1.05, 0.8, 0.9, 0.8, 1.1, 0.8, 0.95, 0.8, 1.05, 0.8, 0.9, 0.8],
+            },
+        ];
+        for (const legacy of legacySemantics) {
+            const template = defaultGrooveTemplateState.templates.find((candidate) => candidate.id === legacy.id);
+            if (!template) {
+                throw new Error(`Missing factory groove ${legacy.id}`);
+            }
+            const timingOffsets = Array.from(
+                { length: 16 },
+                (_value, index) => (template.slots.find((slot) => slot.index === index)?.timingOffset ?? 0) * 0.25
+            );
+            const velocityScales = Array.from(
+                { length: 16 },
+                (_value, index) => 1 + (template.slots.find((slot) => slot.index === index)?.dynamicsOffset ?? 0)
+            );
+            expect(timingOffsets).toEqual(legacy.offsets);
+            expect(velocityScales).toEqual(legacy.velocities);
+        }
+        expect(defaultGrooveTemplateState.templates.every(isGrooveTemplate)).toBe(true);
     });
 });

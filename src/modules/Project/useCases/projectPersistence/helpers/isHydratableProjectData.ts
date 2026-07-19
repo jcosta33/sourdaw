@@ -1,3 +1,5 @@
+import { getCanonicalGrooveTemplateKey } from '#/modules/MIDI/useCases';
+
 import {
     isSupportedProjectVersion,
     type ProjectAdjustmentLayers,
@@ -521,7 +523,7 @@ function isGrooves(value: unknown): value is ProjectGrooveState {
     }
     const templateIds = value.templates.map((template) => (isRecord(template) ? String(template.id) : ''));
     const templateNames = value.templates.map((template) =>
-        isRecord(template) ? String(template.name).toLocaleLowerCase() : ''
+        isRecord(template) ? getCanonicalGrooveTemplateKey(String(template.name)) : ''
     );
     const assignmentKeys = value.assignments.map((assignment) =>
         isRecord(assignment) ? `${String(assignment.consumerType)}:${String(assignment.consumerId)}` : ''

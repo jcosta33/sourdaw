@@ -1,9 +1,9 @@
 import { createStore } from '#/infra/store/createStore';
 import { createAutomergeStorage } from '#/infra/store/storage/createAutomergeStorage';
 
+import { createBuiltinGrooveTemplates } from '../models/BuiltinGrooveTemplates';
 import {
     STRAIGHT_GROOVE_TEMPLATE_ID,
-    createStraightGrooveTemplate,
     isGrooveTemplate,
     normalizeGrooveAmount,
     resolveGrooveTemplateNameCollision,
@@ -35,7 +35,7 @@ export type GrooveTemplateState = {
 };
 
 export const defaultGrooveTemplateState: GrooveTemplateState = {
-    templates: [createStraightGrooveTemplate()],
+    templates: createBuiltinGrooveTemplates(),
     assignments: [],
 };
 
@@ -60,8 +60,8 @@ function isGrooveTemplateAssignment(value: unknown): value is GrooveTemplateAssi
 
 export function sanitizeGrooveTemplateState(value: unknown): GrooveTemplateState {
     const rawTemplates = isRecord(value) && Array.isArray(value.templates) ? value.templates : [];
-    const templates: GrooveTemplate[] = [createStraightGrooveTemplate()];
-    const ids = new Set<string>([STRAIGHT_GROOVE_TEMPLATE_ID]);
+    const templates = createBuiltinGrooveTemplates();
+    const ids = new Set<string>(templates.map((template) => template.id));
     for (const template of rawTemplates) {
         if (!isGrooveTemplate(template) || ids.has(template.id)) {
             continue;

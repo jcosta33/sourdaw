@@ -5,7 +5,10 @@ import { getGrooveAssignment } from '../../useCases/grooveTemplates/getGrooveAss
 
 export const handleAssignGrooveTemplate = createHandler<'assignGrooveTemplate'>({
     execute: (action) => {
-        assignGrooveTemplate(action.payload);
+        const result = assignGrooveTemplate(action.payload);
+        if (!result.ok) {
+            throw new Error(`Groove assignment rejected: ${result.error.code}`);
+        }
     },
     describe: (action) => ({
         label: 'Assign groove template',

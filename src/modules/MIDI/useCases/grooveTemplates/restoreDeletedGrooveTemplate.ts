@@ -1,6 +1,7 @@
 import { grooveTemplateStore } from '../../stores/grooveTemplateStore';
 
 import { type DeletedGrooveTemplateSnapshot } from './deleteGrooveTemplate';
+import { markGrooveTemplateProjectWrite } from './markGrooveTemplateProjectWrite';
 
 export function restoreDeletedGrooveTemplate(snapshot: DeletedGrooveTemplateSnapshot): void {
     const state = grooveTemplateStore.value;
@@ -31,4 +32,5 @@ export function restoreDeletedGrooveTemplate(snapshot: DeletedGrooveTemplateSnap
         }
     }
     grooveTemplateStore.set({ templates, assignments });
+    markGrooveTemplateProjectWrite();
 }

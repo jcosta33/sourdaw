@@ -72,9 +72,9 @@ describe('groove template lifecycle', () => {
     it('hydrates lifecycle state while preserving explicit Straight', () => {
         hydrateGrooveTemplates({ templates: [], assignments: [] });
 
-        expect(grooveTemplateStore.value?.templates).toEqual([
-            expect.objectContaining({ id: STRAIGHT_GROOVE_TEMPLATE_ID, name: 'Straight' }),
-        ]);
+        expect(grooveTemplateStore.value?.templates).toEqual(
+            expect.arrayContaining([expect.objectContaining({ id: STRAIGHT_GROOVE_TEMPLATE_ID, name: 'Straight' })])
+        );
     });
 
     it('sanitizes collaboration name collisions with the lowest available suffix', () => {
@@ -103,6 +103,10 @@ describe('groove template lifecycle', () => {
 
         expect(grooveTemplateStore.value?.templates.map((template) => template.name)).toEqual([
             'Straight',
+            'Light Swing',
+            'Heavy Swing',
+            'MPC 60 Feel',
+            'SP-1200 Feel',
             'Pocket',
             'Pocket 2',
         ]);
@@ -151,5 +155,44 @@ describe('groove template lifecycle', () => {
         }
         void handleDeleteGrooveTemplate.execute(createDescription.inverseAction);
         expect(grooveTemplateStore.value?.templates.some((template) => template.id === 'handler-groove')).toBe(false);
+    });
+
+    it('canonicalizes create identity before inverse capture and execution', () => {
+        const action = {
+            type: 'createGrooveTemplate' as const,
+            payload: {
+                id: '  canonical-id  ',
+                name: 'Canonical ID',
+                subdivision: '1/16' as const,
+                slots: [],
+                provenance: { type: 'user' as const, sourceId: 'canonical-id' },
+            },
+        };
+
+        expect(handleCreateGrooveTemplate.describe(action).inverseAction).toEqual({
+            type: 'deleteGrooveTemplate',
+            payload: { templateId: 'canonical-id' },
+        });
+        void handleCreateGrooveTemplate.execute(action);
+        expect(grooveTemplateStore.value?.templates).toContainEqual(expect.objectContaining({ id: 'canonical-id' }));
+        expect(grooveTemplateStore.value?.templates.some((template) => template.id === action.payload.id)).toBe(false);
+    });
+
+    it('rejects blank create identity without generating hidden undo identity', () => {
+        const action = {
+            type: 'createGrooveTemplate' as const,
+            payload: {
+                id: '   ',
+                name: 'Invalid ID',
+                subdivision: '1/16' as const,
+                slots: [],
+                provenance: { type: 'user' as const, sourceId: 'invalid-id' },
+            },
+        };
+        const before = structuredClone(grooveTemplateStore.value);
+
+        expect(() => handleCreateGrooveTemplate.describe(action)).toThrow('Groove template ID must be nonempty');
+        expect(() => handleCreateGrooveTemplate.execute(action)).toThrow('Groove template ID must be nonempty');
+        expect(grooveTemplateStore.value).toEqual(before);
     });
 });
