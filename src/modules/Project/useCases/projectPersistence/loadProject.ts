@@ -5,7 +5,6 @@ import { cancelFreezeTasksForProjectTransition } from '#/modules/Arrangement/use
 import { getAudioContext, prepareCachedAudioBuffersFromIdb } from '#/modules/AudioEngine/useCases';
 import { runCommandTransitionExclusive } from '#/modules/Command/useCases';
 import {
-    createCrdtProject,
     DOC_PREFIX_ROOT,
     getCrdtDoc,
     loadCrdtProject,
@@ -15,6 +14,7 @@ import {
 import { migrateAbsoluteMidiNotes } from '#/modules/MIDI/useCases';
 
 import { projectStore } from '../../stores/projectStore';
+import { finishProjectLoading } from '../finishProjectLoading';
 
 import { setAutoSaveHandle } from './helpers/autoSaveHandle';
 import { collectTrackStateAudioBufferIds } from './helpers/collectTrackStateAudioBufferIds';
@@ -44,18 +44,25 @@ export async function loadProject(
             flushAutomergeStorageWrites();
 
             const loaded = await loadCrdtProject({ shouldCommit: transaction.isCurrent });
+            if (!transaction.isCurrent()) {
+                return false;
+            }
             if (!loaded) {
-                if (!transaction.isCurrent()) {
-                    return false;
-                }
-                await createCrdtProject('Untitled Project');
+                // No persisted project (fresh profile): clear the loading state and
+                // land on the LaunchScreen (initialized stays false) instead of
+                // silently auto-creating a project. New / template / demo selections
+                // run the unified createCrdtProject path from the launch flow.
+                finishProjectLoading();
+                return false;
             }
         } catch (error) {
             if (!transaction.isCurrent()) {
                 return false;
             }
             logger.error(
-                new Error('[loadProject] Pre-commit activation failed; preserving persisted project', { cause: error })
+                new Error('[loadProject] Pre-commit activation failed; preserving current project state', {
+                    cause: error,
+                })
             );
             throw error;
         }
@@ -76,13 +83,13 @@ export async function loadProject(
         }
 
         const postCommitErrors: unknown[] = [];
-        const finishCommittedStep = (step: () => void): void => {
+        function finishCommittedStep(step: () => void): void {
             try {
                 step();
             } catch (error) {
                 postCommitErrors.push(error);
             }
-        };
+        }
         try {
             batchStoreUpdates(() => {
                 if (preparedBuffers) {

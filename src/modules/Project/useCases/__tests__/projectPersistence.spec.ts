@@ -52,6 +52,9 @@ vi.mock('#/modules/CrdtDocument/useCases', () => ({
 vi.mock('#/modules/Command/useCases', () => ({
     clearUndoHistory: mocks.clearUndoHistory,
     resetActionReplayAuthority: mocks.resetActionReplayAuthority,
+    runCommandTransitionExclusive: <Output>(
+        transition: (resetCommandHistory: () => void) => Promise<Output>
+    ): Promise<Output> => transition(mocks.clearUndoHistory),
 }));
 vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => {
     const actual = await importOriginal<typeof import('#/modules/AudioEngine/useCases')>();
@@ -92,15 +95,24 @@ describe('Project Persistence Use Cases', () => {
     });
 
     describe('loadProject', () => {
-        it('creates a new project only after the authoritative load reports absence', async () => {
+        it('lands on the launch screen without auto-creating when persistence reports absence', async () => {
+            mocks.projectStoreValue.value = {
+                loading: true,
+                dirty: false,
+                name: 'Untitled Project',
+                initialized: false,
+            } as unknown as ProjectStoreState;
             mocks.loadCrdtProject.mockResolvedValue(false);
 
-            await expect(loadProject()).resolves.toBe(true);
+            await expect(loadProject()).resolves.toBe(false);
 
             expect(mocks.loadCrdtProject).toHaveBeenCalledOnce();
             expect(mocks.loadCrdtProject.mock.calls[0]?.[0]?.shouldCommit).toBeTypeOf('function');
-            expect(mocks.createCrdtProject).toHaveBeenCalledWith('Untitled Project');
-            expect(mocks.projectCrdtToStores).toHaveBeenCalled();
+            expect(mocks.createCrdtProject).not.toHaveBeenCalled();
+            expect(mocks.projectCrdtToStores).not.toHaveBeenCalled();
+            // Loading clears so AppShell renders the LaunchScreen; initialized stays false.
+            expect(mocks.projectStoreSet).toHaveBeenCalledWith(expect.objectContaining({ loading: false }));
+            expect(mocks.projectStoreSet).not.toHaveBeenCalledWith(expect.objectContaining({ initialized: true }));
         });
 
         it('loads CRDT and hydrates stores without publishing an abortable loading state', async () => {

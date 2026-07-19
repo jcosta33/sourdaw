@@ -1,16 +1,28 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-vi.mock('#/infra/di/inject', () => ({
-    inject: (deps: Record<string, unknown>) => (factory: (d: Record<string, unknown>) => unknown) =>
-        factory(
-            Object.fromEntries(Object.entries(deps).map(([k]) => [k, { emit: vi.fn(), on: vi.fn(() => () => {}) }]))
-        ),
+const mocks = vi.hoisted(() => ({
+    addTrack: vi.fn(),
 }));
-vi.mock('#/utils/createHandler', () => ({ createHandler: (config: unknown) => config }));
+
+vi.mock('../../../useCases/addTrack', () => ({ addTrack: mocks.addTrack }));
+
 import { handleAddTrack } from '../handleAddTrack';
 
 describe('handleAddTrack', () => {
-    it('is defined', () => {
-        expect(handleAddTrack).toBeDefined();
+    beforeEach(() => vi.clearAllMocks());
+
+    it('is undoable', () => {
+        expect(handleAddTrack.undoable).toBe(true);
+    });
+
+    it('executes by delegating the payload to the addTrack use case', () => {
+        void handleAddTrack.execute({ type: 'addTrack', payload: { name: 'Bass', kind: 'audio' } });
+        expect(mocks.addTrack).toHaveBeenCalledTimes(1);
+        expect(mocks.addTrack).toHaveBeenCalledWith({ name: 'Bass', kind: 'audio' });
+    });
+
+    it('describes the action with track kind and name', () => {
+        const described = handleAddTrack.describe({ type: 'addTrack', payload: { name: 'Keys', kind: 'midi' } });
+        expect(described).toEqual({ label: 'Add midi track "Keys"' });
     });
 });

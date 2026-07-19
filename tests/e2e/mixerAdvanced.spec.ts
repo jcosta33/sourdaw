@@ -60,7 +60,7 @@ test.describe('Mixer Advanced', () => {
         if (await master_group.isVisible().catch(() => false)) {
             const fader = master_group.getByRole('slider').or(master_group.locator('[role="slider"]'));
             const has_fader = await fader.first().isVisible().catch(() => false);
-            expect(has_fader || true).toBe(true);
+            expect(has_fader).toBe(true);
         }
     });
 
