@@ -1,4 +1,5 @@
-import { grooveTemplateStore } from '../../stores/grooveTemplateStore';
+import { STRAIGHT_GROOVE_TEMPLATE_ID, isGrooveTemplate } from '../../models/GrooveTemplate';
+import { isGrooveTemplateAssignment, grooveTemplateStore } from '../../stores/grooveTemplateStore';
 
 import { type DeletedGrooveTemplateSnapshot } from './deleteGrooveTemplate';
 import { markGrooveTemplateProjectWrite } from './markGrooveTemplateProjectWrite';
@@ -7,6 +8,12 @@ export function restoreDeletedGrooveTemplate(snapshot: DeletedGrooveTemplateSnap
     const state = grooveTemplateStore.value;
     if (!state) {
         throw new Error('Cannot restore groove template: state is unavailable');
+    }
+    if (
+        !isGrooveTemplate(snapshot.template) ||
+        snapshot.assignments.some((prior) => !isGrooveTemplateAssignment(prior.assignment))
+    ) {
+        throw new Error('Cannot restore groove template: snapshot is not canonical');
     }
     const existingTemplate = state.templates.find((template) => template.id === snapshot.template.id);
     if (existingTemplate && JSON.stringify(existingTemplate) !== JSON.stringify(snapshot.template)) {
@@ -30,13 +37,11 @@ export function restoreDeletedGrooveTemplate(snapshot: DeletedGrooveTemplateSnap
                 candidate.consumerType === prior.assignment.consumerType &&
                 candidate.consumerId === prior.assignment.consumerId
         );
-        if (existingIndex === -1) {
-            assignments.splice(
-                Math.max(0, Math.min(prior.index, assignments.length)),
-                0,
-                structuredClone(prior.assignment)
-            );
-        } else {
+        const existingAssignment = existingIndex === -1 ? undefined : assignments[existingIndex];
+        if (
+            existingAssignment?.templateId === STRAIGHT_GROOVE_TEMPLATE_ID &&
+            existingAssignment.amount === prior.assignment.amount
+        ) {
             assignments[existingIndex] = structuredClone(prior.assignment);
         }
     }

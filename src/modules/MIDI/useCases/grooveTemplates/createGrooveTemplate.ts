@@ -2,6 +2,7 @@ import {
     GROOVE_TEMPLATE_SCHEMA_VERSION,
     canonicalizeGrooveTemplateId,
     getGrooveSubdivisionSlotCount,
+    isGrooveTemplate,
     type GrooveSubdivision,
     type GrooveTemplate,
     type GrooveTemplateProvenance,
@@ -56,6 +57,9 @@ export function createGrooveTemplate(input: CreateGrooveTemplateInput): GrooveTe
         slots: [...slotsByIndex.values()].sort((left, right) => left.index - right.index),
         provenance: structuredClone(input.provenance),
     };
+    if (!isGrooveTemplate(template)) {
+        throw new Error('Groove template is not canonical');
+    }
     grooveTemplateStore.set({ ...state, templates: [...state.templates, template] });
     markGrooveTemplateProjectWrite();
     return template;

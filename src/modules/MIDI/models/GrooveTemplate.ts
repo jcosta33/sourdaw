@@ -1,5 +1,6 @@
 export const GROOVE_TEMPLATE_SCHEMA_VERSION = 1 as const;
 export const STRAIGHT_GROOVE_TEMPLATE_ID = 'groove-straight';
+export const LEGACY_STRAIGHT_GROOVE_TEMPLATE_ID = 'straight';
 
 export const GROOVE_SUBDIVISIONS = ['1/8', '1/16', '1/32', '1/16T'] as const;
 
@@ -57,6 +58,11 @@ export function canonicalizeGrooveTemplateId(id: string): string | null {
     return canonicalId.length > 0 ? canonicalId : null;
 }
 
+export function resolveGrooveTemplateIdAlias(id: string): string | null {
+    const canonicalId = canonicalizeGrooveTemplateId(id);
+    return canonicalId === LEGACY_STRAIGHT_GROOVE_TEMPLATE_ID ? STRAIGHT_GROOVE_TEMPLATE_ID : canonicalId;
+}
+
 function isGrooveTemplateSlot(value: unknown): value is GrooveTemplateSlot {
     return (
         isRecord(value) &&
@@ -73,7 +79,7 @@ function isGrooveTemplateSlot(value: unknown): value is GrooveTemplateSlot {
 }
 
 function isGrooveTemplateProvenance(value: unknown): value is GrooveTemplateProvenance {
-    if (!isRecord(value) || typeof value.sourceId !== 'string' || value.sourceId.length === 0) {
+    if (!isRecord(value) || typeof value.sourceId !== 'string' || value.sourceId.trim().length === 0) {
         return false;
     }
     if (value.type === 'midi-clip') {
@@ -135,6 +141,8 @@ export function isGrooveTemplate(value: unknown): value is GrooveTemplate {
         !hasExactKeys(value, TEMPLATE_KEYS) ||
         typeof value.id !== 'string' ||
         value.id.length === 0 ||
+        canonicalizeGrooveTemplateId(value.id) !== value.id ||
+        value.id === LEGACY_STRAIGHT_GROOVE_TEMPLATE_ID ||
         typeof value.name !== 'string' ||
         value.name.trim().length === 0 ||
         value.schemaVersion !== GROOVE_TEMPLATE_SCHEMA_VERSION ||

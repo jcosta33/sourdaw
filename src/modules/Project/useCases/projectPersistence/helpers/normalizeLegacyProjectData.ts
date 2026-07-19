@@ -1,6 +1,7 @@
 import {
     GROOVE_CONSUMER_TYPES,
     defaultGrooveTemplateState,
+    isGrooveTemplateState,
     sanitizeGrooveTemplateState,
     type GrooveConsumerType,
     type GrooveTemplateAssignment,
@@ -77,11 +78,44 @@ function normalizeAutomationFields(value: UnknownRecord): UnknownRecord {
     };
 }
 
-function stripLegacyGrooveTemplates(value: unknown): unknown {
-    if (!isRecord(value) || !Object.hasOwn(value, 'grooveTemplates')) {
+function stripLegacyGrooveFields(value: unknown): unknown {
+    if (!isRecord(value) || (!Object.hasOwn(value, 'grooveTemplates') && !Object.hasOwn(value, 'assignments'))) {
         return value;
     }
-    return Object.fromEntries(Object.entries(value).filter(([key]) => key !== 'grooveTemplates'));
+    return Object.fromEntries(
+        Object.entries(value).filter(([key]) => key !== 'grooveTemplates' && key !== 'assignments')
+    );
+}
+
+function migrateLegacyStraightAssignmentAlias(value: UnknownRecord): UnknownRecord {
+    if (!Array.isArray(value.assignments)) {
+        return value;
+    }
+    const foundAlias = value.assignments.some(
+        (assignment) => isRecord(assignment) && assignment.templateId === 'straight'
+    );
+    if (!foundAlias) {
+        return value;
+    }
+    const assignments = value.assignments.map((assignment): unknown => {
+        if (!isRecord(assignment) || assignment.templateId !== 'straight') {
+            return assignment;
+        }
+        return { ...assignment, templateId: getStraightGrooveTemplateId() };
+    });
+    return { ...value, assignments };
+}
+
+function stripIdentifiedLegacyGrooveSources(value: UnknownRecord): UnknownRecord {
+    let normalized = value;
+    for (const source of ['yeast', 'toaster'] as const) {
+        const sourceState = value[source];
+        const stripped = stripLegacyGrooveFields(sourceState);
+        if (stripped !== sourceState) {
+            normalized = { ...normalized, [source]: stripped };
+        }
+    }
+    return normalized;
 }
 
 function nextAvailableName(name: string, occupiedNames: Set<string>): string {
@@ -189,12 +223,21 @@ function normalizeLegacyGrooveAssignment({
 
 function normalizeGrooveFields(value: UnknownRecord): UnknownRecord {
     if (isRecord(value.grooves) && Array.isArray(value.grooves.templates) && Array.isArray(value.grooves.assignments)) {
-        return {
-            ...value,
-            grooves: sanitizeGrooveTemplateState(value.grooves),
-            yeast: stripLegacyGrooveTemplates(value.yeast),
-            toaster: stripLegacyGrooveTemplates(value.toaster),
-        };
+        const grooves = isGrooveTemplateState(value.grooves)
+            ? value.grooves
+            : migrateLegacyStraightAssignmentAlias(value.grooves);
+        return stripIdentifiedLegacyGrooveSources(grooves === value.grooves ? value : { ...value, grooves });
+    }
+
+    const hasIdentifiedLegacyGrooveFields = ['yeast', 'toaster'].some((source) => {
+        const sourceState = value[source];
+        return (
+            isRecord(sourceState) &&
+            (Array.isArray(sourceState.grooveTemplates) || Array.isArray(sourceState.assignments))
+        );
+    });
+    if (!hasIdentifiedLegacyGrooveFields) {
+        return value;
     }
 
     const templates: UnknownRecord[] = structuredClone(defaultGrooveTemplateState.templates).filter(isRecord);
@@ -268,8 +311,8 @@ function normalizeGrooveFields(value: UnknownRecord): UnknownRecord {
 
     return {
         ...value,
-        yeast: stripLegacyGrooveTemplates(value.yeast),
-        toaster: stripLegacyGrooveTemplates(value.toaster),
+        yeast: stripLegacyGrooveFields(value.yeast),
+        toaster: stripLegacyGrooveFields(value.toaster),
         grooves,
     };
 }

@@ -46,6 +46,7 @@ export type ProjectData = {
     automation: ProjectAutomation;
     midi: ProjectMidi;
     grooves?: ProjectGrooveState;
+    yeast?: ProjectYeastState;
     mixer: ProjectMixer;
     markers: ProjectMarker[];
     tempoMap?: ProjectTempoMap;
@@ -237,6 +238,36 @@ export type ProjectGrooveAssignment = {
 export type ProjectGrooveState = {
     templates: ProjectGrooveTemplate[];
     assignments: ProjectGrooveAssignment[];
+};
+
+export type ProjectYeastProcessorType =
+    | 'arpeggiator'
+    | 'chord'
+    | 'chordMemory'
+    | 'scale'
+    | 'harmonizer'
+    | 'repeater'
+    | 'velocity'
+    | 'humanizer'
+    | 'filter'
+    | 'transposer'
+    | 'groove'
+    | 'ccGenerator'
+    | 'euclidean'
+    | 'markov'
+    | 'mutation';
+
+export type ProjectYeastProcessor = {
+    id: string;
+    type: ProjectYeastProcessorType;
+    name: string;
+    bypassed: boolean;
+    params?: Record<string, number>;
+};
+
+export type ProjectYeastState = {
+    processors: ProjectYeastProcessor[];
+    uiLevel: 1 | 2 | 3 | 4 | 5;
 };
 
 export type ProjectDevice = {

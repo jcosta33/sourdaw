@@ -108,7 +108,7 @@ describe('startSequencer', () => {
         });
         assignGrooveTemplate({
             consumerType: 'toaster-pattern',
-            consumerId: 'A1',
+            consumerId: 'groove-consumer:seq-device:A1',
             templateId: 'live-pocket',
             amount: 1,
         });
@@ -117,6 +117,47 @@ describe('startSequencer', () => {
         expect(triggerToasterPad).not.toHaveBeenCalled();
         vi.advanceTimersByTime(25);
         expect(triggerToasterPad).toHaveBeenCalledWith(DEVICE, 0, 114);
+    });
+
+    it('scopes identical pattern IDs to their durable device owners', () => {
+        for (const deviceId of [DEVICE, OTHER]) {
+            const kit = kitWithStep(activeStep());
+            kit.patterns[0]!.stepsPerBar = 16;
+            toasterStore.set({
+                ...toasterStore.value,
+                [deviceId]: { ...defaultToasterState, kit },
+            });
+        }
+        for (const [id, dynamicsOffset] of [
+            ['device-pocket', -0.1],
+            ['other-pocket', -0.2],
+        ] as const) {
+            createGrooveTemplate({
+                id,
+                name: id,
+                subdivision: '1/16',
+                slots: [{ index: 0, timingOffset: 0, dynamicsOffset }],
+                provenance: { type: 'user', sourceId: id },
+            });
+        }
+        assignGrooveTemplate({
+            consumerType: 'toaster-pattern',
+            consumerId: 'groove-consumer:seq-device:A1',
+            templateId: 'device-pocket',
+            amount: 1,
+        });
+        assignGrooveTemplate({
+            consumerType: 'toaster-pattern',
+            consumerId: 'groove-consumer:other-device:A1',
+            templateId: 'other-pocket',
+            amount: 1,
+        });
+
+        startSequencer(DEVICE, 120, 4);
+        startSequencer(OTHER, 120, 4);
+
+        expect(triggerToasterPad).toHaveBeenCalledWith(DEVICE, 0, 114);
+        expect(triggerToasterPad).toHaveBeenCalledWith(OTHER, 0, 102);
     });
 
     // Regression — tick must trigger and route locks to ITS OWN deviceId, not

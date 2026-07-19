@@ -6,8 +6,10 @@ export type { MidiStoreState } from './midiStore';
 
 export {
     GROOVE_CONSUMER_TYPES,
+    canonicalizeGrooveConsumerId,
     defaultGrooveTemplateState,
     grooveTemplateStore,
+    isGrooveTemplateAssignment,
     isGrooveTemplateState,
     sanitizeGrooveTemplateState,
 } from './grooveTemplateStore';

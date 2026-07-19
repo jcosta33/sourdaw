@@ -74,6 +74,7 @@ export function runSequencerTick({ deviceId, currentStep, bpm, stepsPerBeat }: R
             velocity: Math.round(step.velocity * 127),
         };
         const grooveProjection = projectToasterPatternGroove({
+            deviceId,
             patternId: sourcePattern.id,
             stepsPerBar: pattern.stepsPerBar,
             events: [sourceEvent],

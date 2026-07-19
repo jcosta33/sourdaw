@@ -106,4 +106,44 @@ describe('deleteGrooveTemplate', () => {
         );
         expect(grooveTemplateStore.value).toEqual(beforeRestore);
     });
+
+    it('restores a deleted template without overwriting a newer collaborator assignment', () => {
+        for (const id of ['deleted-template', 'collaborator-template']) {
+            createGrooveTemplate({
+                id,
+                name: id,
+                subdivision: '1/16',
+                slots: [],
+                provenance: { type: 'user', sourceId: id },
+            });
+        }
+        assignGrooveTemplate({
+            consumerType: 'clip',
+            consumerId: 'shared-delete-clip',
+            templateId: 'deleted-template',
+            amount: 0.5,
+        });
+        const snapshot = deleteGrooveTemplate('deleted-template');
+        if (!snapshot) {
+            throw new Error('Expected deletion snapshot');
+        }
+        assignGrooveTemplate({
+            consumerType: 'clip',
+            consumerId: 'shared-delete-clip',
+            templateId: 'collaborator-template',
+            amount: 0.9,
+        });
+
+        restoreDeletedGrooveTemplate(snapshot);
+
+        expect(grooveTemplateStore.value?.templates).toContainEqual(
+            expect.objectContaining({ id: 'deleted-template' })
+        );
+        expect(grooveTemplateStore.value?.assignments).toContainEqual({
+            consumerType: 'clip',
+            consumerId: 'shared-delete-clip',
+            templateId: 'collaborator-template',
+            amount: 0.9,
+        });
+    });
 });

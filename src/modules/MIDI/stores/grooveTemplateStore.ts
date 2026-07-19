@@ -10,7 +10,9 @@ import { createGrooveTemplateAutomergeStorage } from './grooveTemplateAutomergeS
 
 export {
     GROOVE_CONSUMER_TYPES,
+    canonicalizeGrooveConsumerId,
     defaultGrooveTemplateState,
+    isGrooveTemplateAssignment,
     isGrooveTemplateState,
     sanitizeGrooveTemplateState,
     type GrooveConsumerType,

@@ -10,6 +10,7 @@ import { automationStore } from '#/modules/Automation/stores';
 import { defaultGrooveTemplateState, grooveTemplateStore, midiStore } from '#/modules/MIDI/stores';
 import { getAllSidechainRoutes } from '#/modules/Routing/useCases';
 import { tempoMapStore, timeSignatureMapStore, transportStore } from '#/modules/Transport/stores';
+import { yeastStore } from '#/modules/Yeast/stores';
 
 import {
     CURRENT_PROJECT_VERSION,
@@ -85,6 +86,7 @@ export async function buildProjectData({
     const midi = midiStore.value;
     const project = projectStore.value;
     const arrState = arrangementStore.value;
+    const yeast = yeastStore.value;
 
     if (!tracks || !transport || !automation || !midi || !project || !arrState) {
         return null;
@@ -150,6 +152,10 @@ export async function buildProjectData({
         },
         midi: serializeProjectMidi(midi),
         grooves: serializeProjectGrooves(grooveTemplateStore.value ?? defaultGrooveTemplateState),
+        yeast:
+            yeast && (yeast.processors.length > 0 || yeast.uiLevel !== 1)
+                ? { processors: structuredClone(yeast.processors), uiLevel: yeast.uiLevel }
+                : undefined,
         tempoMap: tempoMapStore.value ?? undefined,
         timeSignatureMap: timeSignatureMapStore.value ?? undefined,
         markers: (markerStore.value?.markers || []).map((message) => ({

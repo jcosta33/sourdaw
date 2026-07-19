@@ -1,10 +1,10 @@
-import { normalizeGrooveAmount } from '../../models/GrooveTemplate';
 import {
     type GrooveConsumerType,
     type GrooveTemplateAssignment,
     grooveTemplateStore,
 } from '../../stores/grooveTemplateStore';
 
+import { canonicalizeGrooveTemplateAssignment } from './canonicalizeGrooveTemplateAssignment';
 import { markGrooveTemplateProjectWrite } from './markGrooveTemplateProjectWrite';
 
 type AssignGrooveTemplateInput = {
@@ -25,20 +25,15 @@ export function assignGrooveTemplate(input: AssignGrooveTemplateInput): AssignGr
     if (!state) {
         return { ok: false, error: { code: 'state-unavailable' } };
     }
-    if (input.consumerId.length === 0) {
+    const assignment = canonicalizeGrooveTemplateAssignment(input);
+    if (!assignment) {
         return { ok: false, error: { code: 'invalid-consumer-id' } };
     }
-    if (!state.templates.some((template) => template.id === input.templateId)) {
+    if (!state.templates.some((template) => template.id === assignment.templateId)) {
         return { ok: false, error: { code: 'missing-template', templateId: input.templateId } };
     }
-    const assignment: GrooveTemplateAssignment = {
-        consumerType: input.consumerType,
-        consumerId: input.consumerId,
-        templateId: input.templateId,
-        amount: normalizeGrooveAmount(input.amount),
-    };
     const existingIndex = state.assignments.findIndex(
-        (candidate) => candidate.consumerType === input.consumerType && candidate.consumerId === input.consumerId
+        (candidate) => candidate.consumerType === input.consumerType && candidate.consumerId === assignment.consumerId
     );
     const assignments = [...state.assignments];
     if (existingIndex === -1) {

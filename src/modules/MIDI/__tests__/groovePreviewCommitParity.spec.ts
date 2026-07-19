@@ -68,6 +68,49 @@ describe('groove preview and commit parity', () => {
         expect(grooveTemplateStore.value?.assignments).toEqual([]);
     });
 
+    it('refuses assignment undo when a collaborator changed the expected post-action value', () => {
+        for (const id of ['local-assignment', 'collaborator-assignment']) {
+            createGrooveTemplate({
+                id,
+                name: id,
+                subdivision: '1/16',
+                slots: [],
+                provenance: { type: 'user', sourceId: id },
+            });
+        }
+        const action = {
+            type: 'assignGrooveTemplate' as const,
+            payload: {
+                consumerType: 'clip' as const,
+                consumerId: 'shared-clip',
+                templateId: 'local-assignment',
+                amount: 0.5,
+            },
+        };
+        const description = handleAssignGrooveTemplate.describe(action);
+        void handleAssignGrooveTemplate.execute(action);
+        assignGrooveTemplate({
+            consumerType: 'clip',
+            consumerId: 'shared-clip',
+            templateId: 'collaborator-assignment',
+            amount: 0.9,
+        });
+        const inverseAction = description.inverseAction;
+        if (inverseAction?.type !== 'restoreGrooveAssignment') {
+            throw new Error('Expected assignment inverse');
+        }
+
+        expect(() => handleRestoreGrooveAssignment.execute(inverseAction)).toThrow(
+            'Cannot restore groove assignment: current value diverged from the action result'
+        );
+        expect(grooveTemplateStore.value?.assignments).toContainEqual({
+            consumerType: 'clip',
+            consumerId: 'shared-clip',
+            templateId: 'collaborator-assignment',
+            amount: 0.9,
+        });
+    });
+
     it('normalizes a non-finite assignment amount consistently with projection', () => {
         const template = createGrooveTemplate({
             id: 'finite-assignment',

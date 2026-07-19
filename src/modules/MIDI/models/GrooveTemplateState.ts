@@ -4,6 +4,7 @@ import {
     getCanonicalGrooveTemplateKey,
     isGrooveTemplate,
     normalizeGrooveAmount,
+    resolveGrooveTemplateIdAlias,
     resolveGrooveTemplateNameCollision,
     type GrooveTemplate,
 } from './GrooveTemplate';
@@ -44,41 +45,59 @@ function hasExactKeys(value: Record<string, unknown>, keys: readonly string[]): 
     return Object.keys(value).every((key) => allowed.has(key)) && keys.every((key) => Object.hasOwn(value, key));
 }
 
-function isGrooveTemplateAssignment(value: unknown): value is GrooveTemplateAssignment {
+export function canonicalizeGrooveConsumerId(consumerId: string): string | null {
+    const canonicalId = consumerId.normalize('NFKC').trim();
+    return canonicalId.length > 0 ? canonicalId : null;
+}
+
+export function isGrooveTemplateAssignment(value: unknown): value is GrooveTemplateAssignment {
     return (
         isRecord(value) &&
         hasExactKeys(value, ['consumerType', 'consumerId', 'templateId', 'amount']) &&
         GROOVE_CONSUMER_TYPES.includes(value.consumerType as GrooveConsumerType) &&
         typeof value.consumerId === 'string' &&
-        value.consumerId.trim().length > 0 &&
+        canonicalizeGrooveConsumerId(value.consumerId) === value.consumerId &&
         typeof value.templateId === 'string' &&
-        value.templateId.length > 0 &&
+        resolveGrooveTemplateIdAlias(value.templateId) === value.templateId &&
         typeof value.amount === 'number' &&
-        Number.isFinite(value.amount)
+        Number.isFinite(value.amount) &&
+        value.amount >= 0 &&
+        value.amount <= 1
     );
 }
 
-function hasCanonicalBuiltins(templates: readonly GrooveTemplate[]): boolean {
-    return createBuiltinGrooveTemplates().every((builtin) => {
-        const template = templates.find((candidate) => candidate.id === builtin.id);
-        return (
-            template !== undefined &&
-            template.name === builtin.name &&
-            template.subdivision === builtin.subdivision &&
-            template.provenance.type === 'builtin' &&
-            template.provenance.sourceId === builtin.provenance.sourceId &&
-            template.slots.length === builtin.slots.length &&
-            template.slots.every((slot, index) => {
-                const builtinSlot = builtin.slots[index];
-                return (
-                    builtinSlot !== undefined &&
-                    slot.index === builtinSlot.index &&
-                    slot.timingOffset === builtinSlot.timingOffset &&
-                    slot.dynamicsOffset === builtinSlot.dynamicsOffset
-                );
-            })
-        );
-    });
+function isCanonicalBuiltin(template: GrooveTemplate, builtin: GrooveTemplate): boolean {
+    return (
+        template.name === builtin.name &&
+        template.subdivision === builtin.subdivision &&
+        template.provenance.type === 'builtin' &&
+        template.provenance.sourceId === builtin.provenance.sourceId &&
+        template.slots.length === builtin.slots.length &&
+        template.slots.every((slot, index) => {
+            const builtinSlot = builtin.slots[index];
+            return (
+                builtinSlot !== undefined &&
+                slot.index === builtinSlot.index &&
+                slot.timingOffset === builtinSlot.timingOffset &&
+                slot.dynamicsOffset === builtinSlot.dynamicsOffset
+            );
+        })
+    );
+}
+
+function hasCanonicalBuiltinValues(templates: readonly GrooveTemplate[]): boolean {
+    const builtinById = new Map(createBuiltinGrooveTemplates().map((builtin) => [builtin.id, builtin]));
+    const straight = templates.find((template) => template.id === STRAIGHT_GROOVE_TEMPLATE_ID);
+    const canonicalStraight = builtinById.get(STRAIGHT_GROOVE_TEMPLATE_ID);
+    return (
+        straight !== undefined &&
+        canonicalStraight !== undefined &&
+        isCanonicalBuiltin(straight, canonicalStraight) &&
+        templates.every((template) => {
+            const builtin = builtinById.get(template.id);
+            return builtin === undefined || isCanonicalBuiltin(template, builtin);
+        })
+    );
 }
 
 export function isGrooveTemplateState(value: unknown): value is GrooveTemplateState {
@@ -88,8 +107,7 @@ export function isGrooveTemplateState(value: unknown): value is GrooveTemplateSt
         !Array.isArray(value.templates) ||
         !value.templates.every(isGrooveTemplate) ||
         !Array.isArray(value.assignments) ||
-        !value.assignments.every(isGrooveTemplateAssignment) ||
-        value.assignments.some((assignment) => assignment.amount < 0 || assignment.amount > 1)
+        !value.assignments.every(isGrooveTemplateAssignment)
     ) {
         return false;
     }
@@ -100,7 +118,7 @@ export function isGrooveTemplateState(value: unknown): value is GrooveTemplateSt
     const assignmentKeys = value.assignments.map((assignment) => `${assignment.consumerType}:${assignment.consumerId}`);
     const knownTemplateIds = new Set(templateIds);
     return (
-        hasCanonicalBuiltins(templates) &&
+        hasCanonicalBuiltinValues(templates) &&
         new Set(templateIds).size === templateIds.length &&
         new Set(templateNames).size === templateNames.length &&
         new Set(assignmentKeys).size === assignmentKeys.length &&
@@ -112,37 +130,55 @@ export function sanitizeGrooveTemplateState(value: unknown): GrooveTemplateState
     const rawTemplates = isRecord(value) && Array.isArray(value.templates) ? value.templates : [];
     const templates = createBuiltinGrooveTemplates();
     const ids = new Set<string>(templates.map((template) => template.id));
+    const templateIdMappings = new Map<string, string>(templates.map((template) => [template.id, template.id]));
+    templateIdMappings.set('straight', STRAIGHT_GROOVE_TEMPLATE_ID);
     for (const template of rawTemplates) {
-        if (!isGrooveTemplate(template) || ids.has(template.id)) {
+        if (!isRecord(template) || typeof template.id !== 'string') {
             continue;
         }
-        ids.add(template.id);
+        const canonicalId = resolveGrooveTemplateIdAlias(template.id);
+        if (!canonicalId) {
+            continue;
+        }
+        templateIdMappings.set(template.id, canonicalId);
+        const canonicalTemplate = { ...structuredClone(template), id: canonicalId };
+        if (!isGrooveTemplate(canonicalTemplate) || ids.has(canonicalId)) {
+            continue;
+        }
+        ids.add(canonicalId);
         templates.push({
-            ...structuredClone(template),
-            name: resolveGrooveTemplateNameCollision({ requestedName: template.name, templates }),
+            ...canonicalTemplate,
+            name: resolveGrooveTemplateNameCollision({ requestedName: canonicalTemplate.name, templates }),
         });
     }
 
     const rawAssignments = isRecord(value) && Array.isArray(value.assignments) ? value.assignments : [];
     const assignmentsByConsumer = new Map<string, GrooveTemplateAssignment>();
     for (const assignment of rawAssignments) {
-        if (!isGrooveTemplateAssignment(assignment)) {
+        if (
+            !isRecord(assignment) ||
+            typeof assignment.consumerId !== 'string' ||
+            typeof assignment.templateId !== 'string' ||
+            typeof assignment.amount !== 'number' ||
+            !Number.isFinite(assignment.amount)
+        ) {
             continue;
         }
-        const key = `${assignment.consumerType}:${assignment.consumerId}`;
-        assignmentsByConsumer.set(key, {
+        const consumerId = canonicalizeGrooveConsumerId(assignment.consumerId);
+        const templateId =
+            templateIdMappings.get(assignment.templateId) ?? resolveGrooveTemplateIdAlias(assignment.templateId);
+        const canonicalAssignment = {
             ...assignment,
-            templateId: ids.has(assignment.templateId) ? assignment.templateId : STRAIGHT_GROOVE_TEMPLATE_ID,
+            consumerId: consumerId ?? '',
+            templateId: templateId && ids.has(templateId) ? templateId : STRAIGHT_GROOVE_TEMPLATE_ID,
             amount: normalizeGrooveAmount(assignment.amount),
-        });
+        };
+        if (!isGrooveTemplateAssignment(canonicalAssignment)) {
+            continue;
+        }
+        const key = `${canonicalAssignment.consumerType}:${canonicalAssignment.consumerId}`;
+        assignmentsByConsumer.set(key, canonicalAssignment);
     }
 
     return { templates, assignments: [...assignmentsByConsumer.values()] };
-}
-
-export function reconcileGrooveTemplateStateConflicts(states: readonly GrooveTemplateState[]): GrooveTemplateState {
-    return sanitizeGrooveTemplateState({
-        templates: states.flatMap((state) => state.templates),
-        assignments: states.flatMap((state) => state.assignments),
-    });
 }

@@ -5,6 +5,7 @@ import { handleDeleteGrooveTemplate } from '../handlers/groove/handleDeleteGroov
 import { handleRenameGrooveTemplate } from '../handlers/groove/handleRenameGrooveTemplate';
 import { STRAIGHT_GROOVE_TEMPLATE_ID } from '../models/GrooveTemplate';
 import { defaultGrooveTemplateState, grooveTemplateStore } from '../stores/grooveTemplateStore';
+import { assignGrooveTemplate } from '../useCases/grooveTemplates/assignGrooveTemplate';
 import { createGrooveTemplate } from '../useCases/grooveTemplates/createGrooveTemplate';
 import { hydrateGrooveTemplates } from '../useCases/grooveTemplates/hydrateGrooveTemplates';
 import { renameGrooveTemplate } from '../useCases/grooveTemplates/renameGrooveTemplate';
@@ -194,5 +195,62 @@ describe('groove template lifecycle', () => {
         expect(() => handleCreateGrooveTemplate.describe(action)).toThrow('Groove template ID must be nonempty');
         expect(() => handleCreateGrooveTemplate.execute(action)).toThrow('Groove template ID must be nonempty');
         expect(grooveTemplateStore.value).toEqual(before);
+    });
+
+    it('rejects non-finite template slots and blank assignment consumers at the write boundary', () => {
+        const before = structuredClone(grooveTemplateStore.value);
+
+        expect(() =>
+            createGrooveTemplate({
+                id: 'nan-template',
+                name: 'NaN template',
+                subdivision: '1/16',
+                slots: [{ index: 1, timingOffset: Number.NaN, dynamicsOffset: 0 }],
+                provenance: { type: 'user', sourceId: 'nan-template' },
+            })
+        ).toThrow('Groove template is not canonical');
+        expect(
+            assignGrooveTemplate({
+                consumerType: 'clip',
+                consumerId: '   ',
+                templateId: STRAIGHT_GROOVE_TEMPLATE_ID,
+                amount: 1,
+            })
+        ).toEqual({ ok: false, error: { code: 'invalid-consumer-id' } });
+        expect(grooveTemplateStore.value).toEqual(before);
+    });
+
+    it('canonicalizes hydrated IDs before resolving collisions and assignment references', () => {
+        hydrateGrooveTemplates({
+            templates: [
+                ...defaultGrooveTemplateState.templates,
+                {
+                    id: ' pocket ',
+                    name: 'Pocket spaced',
+                    schemaVersion: 1,
+                    subdivision: '1/16',
+                    slots: [],
+                    provenance: { type: 'user', sourceId: 'spaced' },
+                },
+                {
+                    id: '\uFF50ocket',
+                    name: 'Pocket full width',
+                    schemaVersion: 1,
+                    subdivision: '1/16',
+                    slots: [],
+                    provenance: { type: 'user', sourceId: 'full-width' },
+                },
+            ],
+            assignments: [
+                { consumerType: 'clip', consumerId: 'one', templateId: ' pocket ', amount: 1 },
+                { consumerType: 'clip', consumerId: 'two', templateId: '\uFF50ocket', amount: 1 },
+            ],
+        });
+
+        expect(grooveTemplateStore.value?.templates.filter((template) => template.id === 'pocket')).toHaveLength(1);
+        expect(grooveTemplateStore.value?.assignments.map((assignment) => assignment.templateId)).toEqual([
+            'pocket',
+            'pocket',
+        ]);
     });
 });

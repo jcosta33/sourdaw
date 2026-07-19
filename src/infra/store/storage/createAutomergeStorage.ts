@@ -38,6 +38,8 @@ type AutomergeStorageOptions<TData> = {
     hydrateMissing?: () => TData;
     /** Deterministically reconcile concurrent whole-slot values exposed by Automerge. */
     resolveConflicts?: (values: readonly TData[]) => TData;
+    /** Mutate a CRDT slot in place so domain entities retain causal identity. */
+    mutateCrdt?: (input: { doc: AutomergeStorageMutableDoc; key: string; value: TData }) => void;
 };
 
 type AutomergeStorageWriteContext = {
@@ -221,6 +223,7 @@ export const createAutomergeStorage = <TData>(
     const fromCrdt = options?.fromCrdt;
     const hydrateMissing = options?.hydrateMissing;
     const resolveConflicts = options?.resolveConflicts;
+    const mutateCrdt = options?.mutateCrdt;
     let cachedValue: TData | null = null;
     let rafId: number | null = null;
     let pendingMessage: string | undefined;
@@ -257,6 +260,8 @@ export const createAutomergeStorage = <TData>(
             changeFn: (doc) => {
                 if (crdtValue === null) {
                     delete doc[key];
+                } else if (mutateCrdt) {
+                    mutateCrdt({ doc, key, value: toDocSafe(crdtValue as TData) });
                 } else {
                     doc[key] = toDocSafe(crdtValue);
                 }

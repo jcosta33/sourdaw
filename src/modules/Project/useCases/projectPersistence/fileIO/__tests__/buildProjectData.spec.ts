@@ -22,6 +22,8 @@ vi.mock('#/modules/Transport/stores', () => ({
     tempoMapStore: { value: undefined },
     timeSignatureMapStore: { value: undefined },
 }));
+const yeastStoreMock = vi.hoisted((): { value: unknown } => ({ value: { processors: [], uiLevel: 1 } }));
+vi.mock('#/modules/Yeast/stores', () => ({ yeastStore: yeastStoreMock }));
 vi.mock('../../../../stores/projectStore', () => ({
     projectStore: {
         value: {
@@ -49,6 +51,25 @@ import { sanitize_arrangement_store_state } from '../../../../stores/arrangement
 import { buildProjectData } from '../buildProjectData';
 
 describe('buildProjectData', () => {
+    it('persists durable Yeast processor identities without runtime state', async () => {
+        arrangementStoreMock.value = sanitize_arrangement_store_state({
+            arrangements: [],
+            activeArrangementId: null,
+        });
+        yeastStoreMock.value = {
+            processors: [{ id: 'durable-groove', type: 'groove', name: 'Groove', bypassed: false }],
+            uiLevel: 3,
+            runtimeStatus: 'ready',
+        };
+
+        const built = await buildProjectData();
+
+        expect(built?.data.yeast).toEqual({
+            processors: [{ id: 'durable-groove', type: 'groove', name: 'Groove', bypassed: false }],
+            uiLevel: 3,
+        });
+    });
+
     it('does not throw on sanitizer-accepted minimal track rows inside an INACTIVE arrangement', async () => {
         // Inactive arrangements never pass through loadSnapshot()'s deep
         // validators, yet buildProjectData() iterates EVERY arrangement and

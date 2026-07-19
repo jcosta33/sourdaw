@@ -1,6 +1,7 @@
 import { createHandler } from '#/utils/createHandler';
 
 import { assignGrooveTemplate } from '../../useCases/grooveTemplates/assignGrooveTemplate';
+import { canonicalizeGrooveTemplateAssignment } from '../../useCases/grooveTemplates/canonicalizeGrooveTemplateAssignment';
 import { getGrooveAssignment } from '../../useCases/grooveTemplates/getGrooveAssignment';
 
 export const handleAssignGrooveTemplate = createHandler<'assignGrooveTemplate'>({
@@ -10,16 +11,22 @@ export const handleAssignGrooveTemplate = createHandler<'assignGrooveTemplate'>(
             throw new Error(`Groove assignment rejected: ${result.error.code}`);
         }
     },
-    describe: (action) => ({
-        label: 'Assign groove template',
-        inverseAction: {
-            type: 'restoreGrooveAssignment',
-            payload: {
-                consumerType: action.payload.consumerType,
-                consumerId: action.payload.consumerId,
-                assignment: getGrooveAssignment(action.payload) ?? null,
-            },
-        },
-    }),
+    describe: (action) => {
+        const expectedAssignment = canonicalizeGrooveTemplateAssignment(action.payload);
+        return {
+            label: 'Assign groove template',
+            inverseAction: expectedAssignment
+                ? {
+                      type: 'restoreGrooveAssignment',
+                      payload: {
+                          consumerType: action.payload.consumerType,
+                          consumerId: action.payload.consumerId,
+                          assignment: getGrooveAssignment(action.payload) ?? null,
+                          expectedAssignment,
+                      },
+                  }
+                : null,
+        };
+    },
     undoable: true,
 });

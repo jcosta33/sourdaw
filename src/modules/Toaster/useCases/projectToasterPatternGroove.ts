@@ -1,7 +1,7 @@
 import {
     adaptGrooveTemplateForConsumer,
     applyGrooveTemplate,
-    getGrooveAssignment,
+    getScopedGrooveAssignment,
     getGrooveTemplate,
 } from '#/modules/MIDI/useCases';
 
@@ -14,6 +14,7 @@ type ToasterGrooveEvent = {
 type AdapterFailure = Extract<ReturnType<typeof adaptGrooveTemplateForConsumer>, { ok: false }>;
 
 type ProjectToasterPatternGrooveInput<Event extends ToasterGrooveEvent> = {
+    deviceId: string;
     patternId: string;
     stepsPerBar: number;
     events: readonly Event[];
@@ -36,11 +37,16 @@ function getSupportedSubdivisions(
 }
 
 export function projectToasterPatternGroove<Event extends ToasterGrooveEvent>({
+    deviceId,
     patternId,
     stepsPerBar,
     events,
 }: ProjectToasterPatternGrooveInput<Event>): ProjectToasterPatternGrooveResult<Event> {
-    const assignment = getGrooveAssignment({ consumerType: 'toaster-pattern', consumerId: patternId });
+    const assignment = getScopedGrooveAssignment({
+        consumerType: 'toaster-pattern',
+        ownerId: deviceId,
+        localId: patternId,
+    });
     const template = assignment ? getGrooveTemplate(assignment.templateId) : undefined;
     if (!assignment || !template) {
         return { ok: true, events };

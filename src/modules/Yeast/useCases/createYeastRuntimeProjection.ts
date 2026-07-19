@@ -1,11 +1,12 @@
 import {
     adaptGrooveTemplateForConsumer,
-    getGrooveAssignment,
     getGrooveTemplate,
     getStraightGrooveTemplateId,
 } from '#/modules/MIDI/useCases';
 
 import { createYeastProcessorProjection } from '../models/YeastProcessorProjection';
+
+import { getYeastGrooveAssignment } from './getYeastGrooveAssignment';
 
 import type { YeastProcessorProjection } from '../models/YeastProcessorProjection';
 import type { YeastProcessorInfo } from '../stores/yeastStore';
@@ -29,10 +30,7 @@ export function createYeastRuntimeProjection(processors: readonly YeastProcessor
             return processor;
         }
 
-        const assignment = getGrooveAssignment({
-            consumerType: 'yeast-processor',
-            consumerId: processor.id,
-        });
+        const assignment = getYeastGrooveAssignment(processor.id);
         const template = getGrooveTemplate(assignment?.templateId ?? getStraightGrooveTemplateId());
         if (!template) {
             return processor;

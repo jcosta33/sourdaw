@@ -4,4 +4,5 @@ export { yeastPanic } from './yeastSchedulingBridge/yeastPanic';
 export { configureYeastRuntime } from './configureYeastRuntime';
 export { sendYeastProcessorCommand } from './sendYeastProcessorCommand';
 export { setYeastGrooveTemplate } from './setYeastGrooveTemplate';
+export { hydrateYeastState } from './hydrateYeastState';
 export { teardownYeastRuntime } from './teardownYeastRuntime';

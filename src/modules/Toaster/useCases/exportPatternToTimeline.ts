@@ -109,6 +109,7 @@ export function exportPatternToTimeline(deviceId: string): void {
             ];
         });
         const grooveProjection = projectToasterPatternGroove({
+            deviceId,
             patternId: pattern.id,
             stepsPerBar,
             events: grooveSourceEvents,

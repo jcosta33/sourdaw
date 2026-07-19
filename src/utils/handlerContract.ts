@@ -365,6 +365,7 @@ export type AppAction =
               consumerType: GrooveConsumerSnapshot;
               consumerId: string;
               assignment: GrooveAssignmentActionSnapshot | null;
+              expectedAssignment?: GrooveAssignmentActionSnapshot;
           };
       }
     | {

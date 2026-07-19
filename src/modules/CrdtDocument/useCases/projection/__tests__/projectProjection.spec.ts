@@ -16,6 +16,7 @@ const mocks = vi.hoisted(() => ({
     projectStore: { hydrate: vi.fn() },
     cvGateStore: { hydrate: vi.fn() },
     actionHistoryStore: { hydrate: vi.fn() },
+    yeastStore: { hydrate: vi.fn() },
     hydrateSidechainRoutes: vi.fn(),
 }));
 
@@ -92,6 +93,11 @@ vi.mock('#/modules/Transport/stores', async (importOriginal) => {
     };
 });
 
+vi.mock('#/modules/Yeast/stores', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('#/modules/Yeast/stores')>();
+    return { ...actual, yeastStore: mocks.yeastStore };
+});
+
 describe('projectCrdtToStores', () => {
     beforeEach(() => vi.clearAllMocks());
 
@@ -111,6 +117,7 @@ describe('projectCrdtToStores', () => {
         expect(mocks.projectStore.hydrate).toHaveBeenCalledTimes(1);
         expect(mocks.cvGateStore.hydrate).toHaveBeenCalledTimes(1);
         expect(mocks.actionHistoryStore.hydrate).toHaveBeenCalledTimes(1);
+        expect(mocks.yeastStore.hydrate).toHaveBeenCalledTimes(1);
 
         expect(mocks.hydrateSidechainRoutes).toHaveBeenCalledTimes(1);
     });

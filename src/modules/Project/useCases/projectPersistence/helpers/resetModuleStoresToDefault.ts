@@ -16,6 +16,7 @@ import { toasterStore } from '#/modules/Toaster/stores';
 import { tempoMapStore, timeSignatureMapStore, transportStore } from '#/modules/Transport/stores';
 import { defaultTransportState } from '#/modules/Transport/useCases';
 import { tunerStore } from '#/modules/Tuner/stores';
+import { hydrateYeastState } from '#/modules/Yeast/useCases';
 
 import { arrangementStore, defaultArrangementStoreState } from '../../../stores/arrangementStore';
 
@@ -26,6 +27,7 @@ export function resetModuleStoresToDefault(): void {
     automationStore.set({ lanes: [] });
     midiStore.set({ notesByClipId: {}, ccByClipId: {}, pitchBendByClipId: {} });
     hydrateGrooveTemplates({ templates: [], assignments: [] });
+    hydrateYeastState(undefined);
     tempoMapStore.set({ changes: [] });
     timeSignatureMapStore.set({ changes: [] });
     setSidechainRoutes([]);

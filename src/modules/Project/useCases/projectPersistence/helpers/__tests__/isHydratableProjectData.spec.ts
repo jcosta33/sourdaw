@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { defaultGrooveTemplateState, isGrooveTemplateState, sanitizeGrooveTemplateState } from '#/modules/MIDI/stores';
 
 import { isHydratableProjectData } from '../isHydratableProjectData';
+import { normalizeLegacyProjectData } from '../normalizeLegacyProjectData';
 
 function createProject(grooves: unknown): Record<string, unknown> {
     return {
@@ -79,5 +80,30 @@ describe('isHydratableProjectData groove invariants', () => {
 
         expect(isGrooveTemplateState(grooves)).toBe(false);
         expect(isHydratableProjectData(createProject(grooves))).toBe(false);
+    });
+
+    it('does not coerce malformed current-schema groove data into validity', () => {
+        const grooves = createValidGrooves();
+        grooves.templates.at(-1)!.slots[0]!.timingOffset = Number.NaN;
+        const currentProject = createProject(grooves);
+
+        const normalized = normalizeLegacyProjectData(currentProject);
+
+        expect(normalized).toEqual(currentProject);
+        expect(isHydratableProjectData(normalized)).toBe(false);
+    });
+
+    it('accepts durable Yeast processor identity and rejects noncanonical IDs', () => {
+        const project = {
+            ...createProject(createValidGrooves()),
+            yeast: {
+                processors: [{ id: 'groove-1', type: 'groove', name: 'Groove', bypassed: false }],
+                uiLevel: 2,
+            },
+        };
+        expect(isHydratableProjectData(project)).toBe(true);
+
+        project.yeast.processors[0]!.id = ' groove-1 ';
+        expect(isHydratableProjectData(project)).toBe(false);
     });
 });

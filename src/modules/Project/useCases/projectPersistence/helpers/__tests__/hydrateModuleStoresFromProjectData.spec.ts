@@ -10,6 +10,7 @@ const mocks = vi.hoisted(() => ({
     setSidechainRoutes: vi.fn(),
     trackStoreSet: vi.fn(),
     restoreTransportSnapshot: vi.fn(),
+    hydrateYeastState: vi.fn(),
 }));
 
 vi.mock('#/modules/Arrangement/stores', () => ({
@@ -33,9 +34,13 @@ vi.mock('#/modules/Transport/useCases', () => ({
     restoreTransportSnapshot: mocks.restoreTransportSnapshot,
 }));
 
+vi.mock('#/modules/Yeast/useCases', () => ({
+    hydrateYeastState: mocks.hydrateYeastState,
+}));
+
 type HydratableProjectDataOverrides = Pick<
     HydratableProjectData,
-    'adjustmentLayers' | 'automation' | 'markers' | 'sidechainRoutes' | 'transport'
+    'adjustmentLayers' | 'automation' | 'markers' | 'sidechainRoutes' | 'transport' | 'yeast'
 >;
 
 function createHydratableProjectData(overrides: HydratableProjectDataOverrides = {}): HydratableProjectData {
@@ -120,6 +125,18 @@ describe('hydrateModuleStoresFromProjectData', () => {
         expect(mocks.restoreTransportSnapshot).not.toHaveBeenCalled();
         expect(mocks.restoreAdjustmentLayerSnapshot).toHaveBeenCalledWith(undefined);
         expect(mocks.setSidechainRoutes).toHaveBeenCalledWith([]);
+        expect(mocks.hydrateYeastState).toHaveBeenCalledWith(undefined);
+    });
+
+    it('hydrates durable Yeast processor identities through the owning use case', () => {
+        const yeast = {
+            processors: [{ id: 'durable-groove', type: 'groove', name: 'Groove', bypassed: false }],
+            uiLevel: 2,
+        } satisfies NonNullable<HydratableProjectData['yeast']>;
+
+        hydrateModuleStoresFromProjectData(createHydratableProjectData({ yeast }));
+
+        expect(mocks.hydrateYeastState).toHaveBeenCalledWith(yeast);
     });
 
     it('leaves active arrangement and automation stores to the active-snapshot hydrator', () => {

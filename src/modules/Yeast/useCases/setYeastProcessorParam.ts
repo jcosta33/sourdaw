@@ -1,8 +1,9 @@
-import { getGrooveAssignment, getStraightGrooveTemplateId } from '#/modules/MIDI/useCases';
+import { getStraightGrooveTemplateId } from '#/modules/MIDI/useCases';
 
 import { yeastStore } from '../stores/yeastStore';
 
 import { commitYeastProjection } from './commitYeastProjection';
+import { getYeastGrooveAssignment } from './getYeastGrooveAssignment';
 import { setYeastGrooveTemplate } from './setYeastGrooveTemplate';
 
 export function setYeastProcessorParam(id: string, name: string, value: number): void {
@@ -19,7 +20,7 @@ export function setYeastProcessorParam(id: string, name: string, value: number):
         return;
     }
     if (processor.type === 'groove' && name === 'amount') {
-        const assignment = getGrooveAssignment({ consumerType: 'yeast-processor', consumerId: id });
+        const assignment = getYeastGrooveAssignment(id);
         void setYeastGrooveTemplate(
             id,
             assignment?.templateId ?? getStraightGrooveTemplateId(),
