@@ -21,7 +21,7 @@ export class MidiRack {
     private scheduled = new ScheduledEventQueue();
     // Route-scoped numeric keys preserve same-note voices from different tracks
     // without allocating composite string keys on the block path.
-    private activeNotes: Map<string, Map<number, MidiEvent>> = new Map();
+    private activeNotes: Map<string, Map<string, MidiEvent>> = new Map();
     // Scratch buffers reused across blocks to avoid per-processor array
     // allocation (§149.1). Ping-pong between scratchA / scratchB during the
     // processor chain loop. `separateOutput` is the persistent return buffer.
@@ -65,12 +65,13 @@ export class MidiRack {
         for (const [trackId, notes] of this.activeNotes) {
             const trackKeys = new Set<number>();
             emittedKeys.set(trackId, trackKeys);
-            for (const [key, event] of notes) {
+            for (const event of notes.values()) {
                 if (event.kind.type === 'noteOn') {
-                    trackKeys.add(key);
+                    trackKeys.add((event.kind.channel << 7) | event.kind.note);
                     output.push({
                         timeSamples: nowSamples,
                         trackId,
+                        noteInstanceId: event.noteInstanceId,
                         kind: { type: 'noteOff', channel: event.kind.channel, note: event.kind.note },
                     });
                 }
@@ -247,16 +248,18 @@ export class MidiRack {
         // 5. Track active notes for panic with route-scoped numeric keys.
         for (const event of current) {
             if (event.kind.type === 'noteOn') {
-                const key = (event.kind.channel << 7) | event.kind.note;
+                const pitchKey = (event.kind.channel << 7) | event.kind.note;
+                const key = event.noteInstanceId ? `instance:${event.noteInstanceId}` : `legacy:${pitchKey}`;
                 const eventTrackId = event.trackId ?? trackId;
                 let trackNotes = this.activeNotes.get(eventTrackId);
                 if (!trackNotes) {
-                    trackNotes = new Map<number, MidiEvent>();
+                    trackNotes = new Map<string, MidiEvent>();
                     this.activeNotes.set(eventTrackId, trackNotes);
                 }
                 trackNotes.set(key, event);
             } else if (event.kind.type === 'noteOff') {
-                const key = (event.kind.channel << 7) | event.kind.note;
+                const pitchKey = (event.kind.channel << 7) | event.kind.note;
+                const key = event.noteInstanceId ? `instance:${event.noteInstanceId}` : `legacy:${pitchKey}`;
                 const eventTrackId = event.trackId ?? trackId;
                 const trackNotes = this.activeNotes.get(eventTrackId);
                 trackNotes?.delete(key);
@@ -297,12 +300,13 @@ export class MidiRack {
         for (const [trackId, notes] of this.activeNotes) {
             const trackKeys = new Set<number>();
             emittedKeys.set(trackId, trackKeys);
-            for (const [key, event] of notes) {
+            for (const event of notes.values()) {
                 if (event.kind.type === 'noteOn') {
-                    trackKeys.add(key);
+                    trackKeys.add((event.kind.channel << 7) | event.kind.note);
                     output.push({
                         timeSamples: nowSamples,
                         trackId,
+                        noteInstanceId: event.noteInstanceId,
                         kind: { type: 'noteOff', channel: event.kind.channel, note: event.kind.note },
                     });
                 }

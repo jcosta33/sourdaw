@@ -54,6 +54,7 @@ export { getStraightGrooveTemplateId } from './grooveTemplates/getStraightGroove
 export { hydrateGrooveTemplates } from './grooveTemplates/hydrateGrooveTemplates';
 export { previewGrooveTemplate } from './grooveTemplates/previewGrooveTemplate';
 export { projectCommittedGroove } from './grooveTemplates/projectCommittedGroove';
+export { projectClipMidiEvents } from './grooveTemplates/projectClipMidiEvents';
 export { renameGrooveTemplate } from './grooveTemplates/renameGrooveTemplate';
 export { restoreDeletedGrooveTemplate } from './grooveTemplates/restoreDeletedGrooveTemplate';
 export { restoreGrooveAssignment } from './grooveTemplates/restoreGrooveAssignment';

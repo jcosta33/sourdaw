@@ -20,6 +20,7 @@ import {
     setDeviceParameter,
     getArrangementHandlers,
     initStalenessDetection,
+    setOfflineRenderDependencies,
     setArrangementEventBus,
     setTimeOperationDependencies,
     getSongStructureHandlers,
@@ -36,6 +37,7 @@ import {
     commitPitchEdit,
     configureAudioDeviceRuntimeSink,
     configureOfflineMidiEventProjection,
+    configureOfflinePpqEndpointProjection,
     stopAllScheduled,
 } from '#/modules/AudioEngine/useCases';
 import {
@@ -52,6 +54,7 @@ import {
     getMacroHandlers,
     getUndoRedoHandlers,
     getUndoTreeHandlers,
+    executeAppAction,
     setActionHistoryMetadataPort,
     setCommandEventBus,
     syncActionReplayMetadata,
@@ -80,7 +83,7 @@ import {
     getMidiGrooveHandlers,
     getMidiNoteTransformHandlers,
     getPatternInstanceHandlers,
-    projectCommittedGroove,
+    projectClipMidiEvents,
     setWebMidiRealtimeProcessor,
     setWebMidiRuntimeEventBus,
     getWebMidiInputHandlers,
@@ -98,7 +101,12 @@ import { getPunchRecordingHandlers } from '#/modules/PunchRecording/useCases';
 import { getNodeViewHandlers } from '#/modules/Routing/useCases';
 import { getSessionLauncherHandlers } from '#/modules/SessionLauncher/useCases';
 import { getSetlistHandlers, setSetlistEventBus } from '#/modules/Setlist/useCases';
-import { initToasterSubscribers, setToasterEventBus } from '#/modules/Toaster/useCases';
+import {
+    initToasterSubscribers,
+    setToasterEventBus,
+    setToasterGrooveAssignmentExecutor,
+} from '#/modules/Toaster/useCases';
+import { tempoMapStore, transportStore } from '#/modules/Transport/stores';
 import {
     getTransportHandlers,
     getTransportState,
@@ -107,6 +115,7 @@ import {
     shiftTimelineMapsAfterBeat,
     stopPlayback,
     resolveRealtimeMusicalClock,
+    projectPpqEndpoints,
 } from '#/modules/Transport/useCases';
 import { updateTunerTelemetry } from '#/modules/Tuner/stores';
 import { getWorkspaceHandlers, getScratchPadHandlers, setWorkspaceEventBus } from '#/modules/WorkspaceShell/useCases';
@@ -131,7 +140,10 @@ actionHistoryStore.subscribe((state) => {
     syncActionReplayMetadata(state?.entries ?? []);
 });
 setRuntimeLogger(logger);
-configureOfflineMidiEventProjection({ project: projectCommittedGroove });
+configureOfflineMidiEventProjection({ project: projectClipMidiEvents });
+configureOfflinePpqEndpointProjection({ project: projectPpqEndpoints });
+setOfflineRenderDependencies({ projectPpqEndpoints });
+setToasterGrooveAssignmentExecutor({ execute: executeAppAction });
 setArrangementEventBus(eventBus);
 setWorkspaceEventBus(eventBus);
 setCommandEventBus(eventBus);
@@ -147,11 +159,25 @@ setToasterEventBus(eventBus);
 setYeastEventBus(eventBus);
 configureYeastRuntime({ panicOutputNotes: stopAllScheduled });
 setWebMidiRealtimeProcessor({
-    processor: (input) =>
-        processRealtimeMidiInput({
+    processor: async (input) => {
+        const events = await processRealtimeMidiInput({
             ...input,
             clock: resolveRealtimeMusicalClock(input),
-        }),
+        });
+        return events.map((event) => {
+            if (event.timePpq === undefined) {
+                return event;
+            }
+            const endpoint = projectPpqEndpoints({
+                startPpq: event.timePpq,
+                endPpq: event.timePpq,
+                defaultTempo: transportStore.value?.tempo ?? 120,
+                sampleRate: input.sampleRate,
+                changes: tempoMapStore.value?.changes ?? [],
+            });
+            return { ...event, timeSamples: endpoint.startSamples };
+        });
+    },
 });
 setWebMidiRuntimeEventBus({ eventBus });
 setNotificationEventBus(eventBus);

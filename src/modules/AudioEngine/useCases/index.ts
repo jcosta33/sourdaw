@@ -95,6 +95,7 @@ export { getAutoDetectedTailSeconds } from './offlineRender/getAutoDetectedTailS
 export { renderOffline } from './renderOffline';
 export { exportStems } from './exportStems';
 export { configureOfflineMidiEventProjection } from './configureOfflineMidiEventProjection';
+export { configureOfflinePpqEndpointProjection } from './configureOfflinePpqEndpointProjection';
 // Audio encoders (audioBufferToWav/Mp3/Flac) moved to AudioRendering (ADR 0011 W4).
 
 export { scheduleAdjustmentLayers } from './adjustmentLayer/scheduleAdjustmentLayers';

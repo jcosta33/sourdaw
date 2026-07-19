@@ -11,6 +11,8 @@ import { defaultProjectStoreState, projectStore } from '../../../../stores/proje
 import { resetModuleStoresToDefault } from '../../helpers/resetModuleStoresToDefault';
 import { initGrooveTemplateDirtyTracking } from '../initGrooveTemplateDirtyTracking';
 
+import type { HandlerExecutionResult } from '#/utils/handlerContract';
+
 describe('groove template project dirty lifecycle', () => {
     let unsubscribe: (() => void) | undefined;
 
@@ -23,7 +25,9 @@ describe('groove template project dirty lifecycle', () => {
 
     afterEach(() => unsubscribe?.());
 
-    function expectDirtyAfter(operation: () => void | Promise<void>): Promise<void> {
+    function expectDirtyAfter(
+        operation: () => void | HandlerExecutionResult | Promise<void | HandlerExecutionResult>
+    ): Promise<void> {
         projectStore.set({ ...projectStore.value!, dirty: false });
         return Promise.resolve(operation()).then(() => expect(projectStore.value?.dirty).toBe(true));
     }

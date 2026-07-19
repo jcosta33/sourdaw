@@ -53,5 +53,55 @@ export function createBuiltinGrooveTemplates(): GrooveTemplate[] {
                 0.1, -0.2, -0.05, -0.2, 0.05, -0.2, -0.1, -0.2, 0.1, -0.2, -0.05, -0.2, 0.05, -0.2, -0.1, -0.2,
             ],
         }),
+        createFactoryGrooveTemplate({
+            id: 'tr-808-shuffle',
+            name: 'TR-808 Shuffle',
+            timingOffsets: [0, 0.24, 0, 0.24, 0, 0.24, 0, 0.24, 0, 0.24, 0, 0.24, 0, 0.24, 0, 0.24],
+            dynamicsOffsets: [
+                0.12, -0.18, -0.04, -0.22, 0.08, -0.18, -0.04, -0.22, 0.12, -0.18, -0.04, -0.22, 0.08, -0.18, -0.04,
+                -0.22,
+            ],
+        }),
+        createFactoryGrooveTemplate({
+            id: 'tr-909-swing-58',
+            name: 'TR-909 Swing 58%',
+            timingOffsets: [0, 0.16, 0, 0.16, 0, 0.16, 0, 0.16, 0, 0.16, 0, 0.16, 0, 0.16, 0, 0.16],
+            dynamicsOffsets: [
+                0.08, -0.12, 0, -0.16, 0.08, -0.12, 0, -0.16, 0.08, -0.12, 0, -0.16, 0.08, -0.12, 0, -0.16,
+            ],
+        }),
+        createFactoryGrooveTemplate({
+            id: 'mpc-swing-54',
+            name: 'MPC Swing 54%',
+            timingOffsets: [0, 0.08, 0, 0.08, 0, 0.08, 0, 0.08, 0, 0.08, 0, 0.08, 0, 0.08, 0, 0.08],
+            dynamicsOffsets: [
+                0.1, -0.12, -0.04, -0.16, 0.06, -0.12, -0.04, -0.16, 0.1, -0.12, -0.04, -0.16, 0.06, -0.12, -0.04,
+                -0.16,
+            ],
+        }),
+        createFactoryGrooveTemplate({
+            id: 'mpc-swing-62',
+            name: 'MPC Swing 62%',
+            timingOffsets: [0, 0.24, 0, 0.24, 0, 0.24, 0, 0.24, 0, 0.24, 0, 0.24, 0, 0.24, 0, 0.24],
+            dynamicsOffsets: [
+                0.12, -0.18, -0.06, -0.2, 0.08, -0.18, -0.06, -0.2, 0.12, -0.18, -0.06, -0.2, 0.08, -0.18, -0.06, -0.2,
+            ],
+        }),
+        createFactoryGrooveTemplate({
+            id: 'sp-1200-straight',
+            name: 'SP-1200 Straight',
+            timingOffsets: [0, -0.04, 0, 0.02, 0, -0.04, 0, -0.02, 0, -0.04, 0, 0.02, 0, -0.04, 0, -0.02],
+            dynamicsOffsets: [
+                0.08, -0.08, -0.02, -0.1, 0.04, -0.08, -0.04, -0.1, 0.08, -0.08, -0.02, -0.1, 0.04, -0.08, -0.04, -0.1,
+            ],
+        }),
+        createFactoryGrooveTemplate({
+            id: 'j-dilla-late-snare',
+            name: 'J-Dilla Late Snare',
+            timingOffsets: [0, -0.04, 0, 0.04, 0.28, -0.04, 0, 0.04, 0, -0.04, 0, 0.04, 0.28, -0.04, 0, 0.04],
+            dynamicsOffsets: [
+                0.08, -0.18, -0.08, -0.2, 0.12, -0.18, -0.08, -0.2, 0.08, -0.18, -0.08, -0.2, 0.12, -0.18, -0.08, -0.2,
+            ],
+        }),
     ];
 }

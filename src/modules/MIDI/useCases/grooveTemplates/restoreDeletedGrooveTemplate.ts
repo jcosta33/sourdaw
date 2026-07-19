@@ -1,5 +1,5 @@
 import { STRAIGHT_GROOVE_TEMPLATE_ID, isGrooveTemplate } from '../../models/GrooveTemplate';
-import { isGrooveTemplateState, sanitizeGrooveTemplateState } from '../../models/GrooveTemplateState';
+import { isGrooveTemplateState } from '../../models/GrooveTemplateState';
 import { isGrooveTemplateAssignment, grooveTemplateStore } from '../../stores/grooveTemplateStore';
 
 import { type DeletedGrooveTemplateSnapshot } from './deleteGrooveTemplate';
@@ -13,9 +13,15 @@ export function restoreDeletedGrooveTemplate(snapshot: DeletedGrooveTemplateSnap
     }
     if (
         !isGrooveTemplate(snapshot.template) ||
-        snapshot.assignments.some((prior) => !isGrooveTemplateAssignment(prior.assignment))
+        !Number.isInteger(snapshot.templateIndex) ||
+        snapshot.assignments.some(
+            (prior) =>
+                !Number.isInteger(prior.index) ||
+                !isGrooveTemplateAssignment(prior.assignment) ||
+                prior.assignment.templateId !== snapshot.template.id
+        )
     ) {
-        throw new Error('Cannot restore groove template: snapshot is not canonical');
+        throw new Error('Cannot restore groove template: snapshot references a different template or is not canonical');
     }
     const existingTemplate = state.templates.find((template) => template.id === snapshot.template.id);
     if (existingTemplate && JSON.stringify(existingTemplate) !== JSON.stringify(snapshot.template)) {
@@ -50,7 +56,7 @@ export function restoreDeletedGrooveTemplate(snapshot: DeletedGrooveTemplateSnap
             assignments[existingIndex] = structuredClone(prior.assignment);
         }
     }
-    const candidate = sanitizeGrooveTemplateState({ templates, assignments });
+    const candidate = { templates, assignments };
     if (
         !isGrooveTemplateState(candidate) ||
         !candidate.templates.some((template) => template.id === snapshot.template.id)

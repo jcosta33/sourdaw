@@ -5,6 +5,7 @@ import { type MidiStoreState } from '#/modules/MIDI/stores';
 
 import { type DeviceNodeEntry } from '../../buildDeviceChain';
 import { configureOfflineMidiEventProjection } from '../../configureOfflineMidiEventProjection';
+import { configureOfflinePpqEndpointProjection } from '../../configureOfflinePpqEndpointProjection';
 import { scheduleTrackClips } from '../scheduleTrackClips';
 import { type PendingWorkletEvent } from '../types';
 
@@ -61,14 +62,34 @@ let projectedStartOffset = 0;
 let projectedVelocity: number | null = null;
 const projectOfflineMidiEvents: Parameters<typeof configureOfflineMidiEventProjection>[0]['project'] = (input) => {
     mocks.projectCommittedGroove(input);
-    if (projectedStartOffset === 0 && projectedVelocity === null) {
-        return input.events;
-    }
     return input.events.map((event) => ({
         ...event,
-        startBeat: event.startBeat + projectedStartOffset,
+        startBeat: input.iterationStartBeat + event.startBeat - input.midiOffsetBeats + projectedStartOffset,
         velocity: projectedVelocity ?? event.velocity,
     }));
+};
+
+const projectPpqEndpoints = ({
+    startPpq,
+    endPpq,
+    defaultTempo,
+    sampleRate,
+}: {
+    startPpq: number;
+    endPpq: number;
+    defaultTempo: number;
+    sampleRate: number;
+}) => {
+    const startSamples = Math.round((startPpq / defaultTempo) * 60 * sampleRate);
+    const endSamples = Math.round((endPpq / defaultTempo) * 60 * sampleRate);
+    return {
+        startSamples,
+        endSamples,
+        durationSamples: endSamples - startSamples,
+        startSeconds: startSamples / sampleRate,
+        endSeconds: endSamples / sampleRate,
+        durationSeconds: (endSamples - startSamples) / sampleRate,
+    };
 };
 
 vi.mock('../../latencyCompensation/compensation/getCompensationDelay', () => ({
@@ -208,6 +229,7 @@ describe('scheduleTrackClips — MIDI plugin-delay compensation', () => {
         projectedStartOffset = 0;
         projectedVelocity = null;
         configureOfflineMidiEventProjection({ project: projectOfflineMidiEvents });
+        configureOfflinePpqEndpointProjection({ project: projectPpqEndpoints });
     });
 
     it('shifts instrument note on/off times by the track compensation delay', async () => {
@@ -248,8 +270,12 @@ describe('scheduleTrackClips — MIDI plugin-delay compensation', () => {
 
         expect(mocks.projectCommittedGroove).toHaveBeenCalledWith({
             events: makeMidi().notesByClipId['clip-1'],
-            consumerType: 'clip',
-            consumerId: 'clip-1',
+            clipId: 'clip-1',
+            clipStartBeat: 0,
+            clipEndBeat: 4,
+            iterationStartBeat: 0,
+            loopLengthBeats: 4,
+            midiOffsetBeats: 0,
         });
         const onEvt = events.find((event) => event.type === 'on');
         const offEvt = events.find((event) => event.type === 'off');

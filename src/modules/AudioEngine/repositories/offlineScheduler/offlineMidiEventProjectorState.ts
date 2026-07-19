@@ -1,13 +1,18 @@
 type OfflineMidiProjectableEvent = {
     id: string;
     startBeat: number;
+    duration: number;
     velocity: number;
 };
 
 type OfflineMidiEventProjectionInput<Event extends OfflineMidiProjectableEvent> = {
     events: readonly Event[];
-    consumerType: 'clip';
-    consumerId: string;
+    clipId: string;
+    clipStartBeat: number;
+    clipEndBeat: number;
+    iterationStartBeat: number;
+    loopLengthBeats: number;
+    midiOffsetBeats: number;
 };
 
 export type OfflineMidiEventProjector = <Event extends OfflineMidiProjectableEvent>(

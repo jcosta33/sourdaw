@@ -11,6 +11,7 @@ import { useStore } from '#/infra/store/useStore';
 import { defaultTrackState, trackStore } from '#/modules/Arrangement/stores';
 import { getAllTracks } from '#/modules/Arrangement/useCases';
 import { defaultGrooveTemplateState, grooveTemplateStore } from '#/modules/MIDI/stores';
+import { getStraightGrooveTemplateId } from '#/modules/MIDI/useCases';
 import { transportStore } from '#/modules/Transport/stores';
 
 import { type PadState, withActivePatternId } from '../../models/ToasterKit';
@@ -24,6 +25,7 @@ import {
     updatePad,
 } from '../../stores/toasterStore';
 import { applyEuclideanToTrack } from '../../useCases/applyEuclidean';
+import { assignToasterPatternGroove } from '../../useCases/assignToasterPatternGroove';
 import { exportPatternToTimeline } from '../../useCases/exportPatternToTimeline';
 import { getToasterPatternGrooveStatus } from '../../useCases/getToasterPatternGrooveStatus';
 import { getToasterPresetKit } from '../../useCases/getToasterPresetKit';
@@ -164,6 +166,12 @@ export const ToasterPanel = ({ deviceId }: { deviceId: string }): ReactElement =
           })
         : { status: 'unassigned' as const };
     const isGrooveAvailable = grooveStatus.status === 'unassigned' || grooveStatus.status === 'ready';
+    const assignedGrooveTemplateId =
+        grooveStatus.status === 'ready' || grooveStatus.status === 'unsupported'
+            ? grooveStatus.templateId
+            : getStraightGrooveTemplateId();
+    const assignedGrooveAmount =
+        grooveStatus.status === 'ready' || grooveStatus.status === 'unsupported' ? grooveStatus.amount : 1;
     let grooveStatusMessage: string | undefined;
     if (grooveStatus.status === 'unsupported') {
         const detail =
@@ -215,6 +223,13 @@ export const ToasterPanel = ({ deviceId }: { deviceId: string }): ReactElement =
         }
 
         loadToasterKitPreset(deviceId, presetKit);
+    }
+
+    function handleAssignGroove(templateId: string, amount: number): void {
+        if (!activePattern) {
+            return;
+        }
+        void assignToasterPatternGroove({ deviceId, patternId: activePattern.id, templateId, amount });
     }
 
     return (
@@ -525,67 +540,100 @@ export const ToasterPanel = ({ deviceId }: { deviceId: string }): ReactElement =
                     </SectionCard>
 
                     <SectionCard title="Groove" detail="Master motion and room live together on the right rail.">
-                        <div className="grid grid-cols-2 gap-x-2 gap-y-3">
-                            <Knob
-                                value={kit.swing}
-                                onChange={(value) => setToasterKitParam(deviceId, 'swing', value)}
-                                label="Swing"
-                                min={0}
-                                max={1}
-                                step={0.01}
-                                defaultValue={0}
-                                readout={`${Math.round(kit.swing * 100)}%`}
-                            />
-                            <Knob
-                                value={kit.masterGain}
-                                onChange={(value) => setToasterKitParam(deviceId, 'masterGain', value)}
-                                label="Master"
-                                min={0}
-                                max={2}
-                                step={0.01}
-                                defaultValue={1}
-                                readout={`${Math.round(kit.masterGain * 100)}%`}
-                            />
-                            <Knob
-                                value={kit.reverbMix}
-                                onChange={(value) => setToasterKitParam(deviceId, 'reverbMix', value)}
-                                label="Space"
-                                min={0}
-                                max={1}
-                                step={0.01}
-                                defaultValue={0.15}
-                                readout={`${Math.round(kit.reverbMix * 100)}%`}
-                            />
-                            <Knob
-                                value={kit.delayMix}
-                                onChange={(value) => setToasterKitParam(deviceId, 'delayMix', value)}
-                                label="Spray"
-                                min={0}
-                                max={1}
-                                step={0.01}
-                                defaultValue={0}
-                                readout={`${Math.round(kit.delayMix * 100)}%`}
-                            />
-                            <Knob
-                                value={kit.lofiBits}
-                                onChange={(value) => setToasterKitParam(deviceId, 'lofiBits', value)}
-                                label="Bits"
-                                min={4}
-                                max={16}
-                                step={1}
-                                defaultValue={16}
-                                readout={`${kit.lofiBits.toFixed(0)} bit`}
-                            />
-                            <Knob
-                                value={kit.lofiMix}
-                                onChange={(value) => setToasterKitParam(deviceId, 'lofiMix', value)}
-                                label="Dust"
-                                min={0}
-                                max={1}
-                                step={0.01}
-                                defaultValue={0}
-                                readout={`${Math.round(kit.lofiMix * 100)}%`}
-                            />
+                        <div className="flex flex-col gap-3">
+                            <label className="flex flex-col gap-1 text-[9px] uppercase tracking-[0.16em] text-muted-foreground">
+                                Template
+                                <select
+                                    aria-label="Pattern groove template"
+                                    value={assignedGrooveTemplateId}
+                                    disabled={!activePattern}
+                                    onChange={(event) => handleAssignGroove(event.target.value, assignedGrooveAmount)}
+                                    className="toaster-window h-8 px-2 text-[10px] normal-case tracking-normal text-foreground outline-none"
+                                >
+                                    {grooveState.templates.map((template) => (
+                                        <option key={template.id} value={template.id}>
+                                            {template.name}
+                                        </option>
+                                    ))}
+                                </select>
+                            </label>
+                            <label className="flex flex-col gap-1 text-[9px] uppercase tracking-[0.16em] text-muted-foreground">
+                                Amount {Math.round(assignedGrooveAmount * 100)}%
+                                <input
+                                    aria-label="Pattern groove amount"
+                                    type="range"
+                                    min={0}
+                                    max={1}
+                                    step={0.01}
+                                    value={assignedGrooveAmount}
+                                    disabled={!activePattern}
+                                    onChange={(event) =>
+                                        handleAssignGroove(assignedGrooveTemplateId, Number(event.target.value))
+                                    }
+                                />
+                            </label>
+                            <div className="grid grid-cols-2 gap-x-2 gap-y-3">
+                                <Knob
+                                    value={kit.swing}
+                                    onChange={(value) => setToasterKitParam(deviceId, 'swing', value)}
+                                    label="Swing"
+                                    min={0}
+                                    max={1}
+                                    step={0.01}
+                                    defaultValue={0}
+                                    readout={`${Math.round(kit.swing * 100)}%`}
+                                />
+                                <Knob
+                                    value={kit.masterGain}
+                                    onChange={(value) => setToasterKitParam(deviceId, 'masterGain', value)}
+                                    label="Master"
+                                    min={0}
+                                    max={2}
+                                    step={0.01}
+                                    defaultValue={1}
+                                    readout={`${Math.round(kit.masterGain * 100)}%`}
+                                />
+                                <Knob
+                                    value={kit.reverbMix}
+                                    onChange={(value) => setToasterKitParam(deviceId, 'reverbMix', value)}
+                                    label="Space"
+                                    min={0}
+                                    max={1}
+                                    step={0.01}
+                                    defaultValue={0.15}
+                                    readout={`${Math.round(kit.reverbMix * 100)}%`}
+                                />
+                                <Knob
+                                    value={kit.delayMix}
+                                    onChange={(value) => setToasterKitParam(deviceId, 'delayMix', value)}
+                                    label="Spray"
+                                    min={0}
+                                    max={1}
+                                    step={0.01}
+                                    defaultValue={0}
+                                    readout={`${Math.round(kit.delayMix * 100)}%`}
+                                />
+                                <Knob
+                                    value={kit.lofiBits}
+                                    onChange={(value) => setToasterKitParam(deviceId, 'lofiBits', value)}
+                                    label="Bits"
+                                    min={4}
+                                    max={16}
+                                    step={1}
+                                    defaultValue={16}
+                                    readout={`${kit.lofiBits.toFixed(0)} bit`}
+                                />
+                                <Knob
+                                    value={kit.lofiMix}
+                                    onChange={(value) => setToasterKitParam(deviceId, 'lofiMix', value)}
+                                    label="Dust"
+                                    min={0}
+                                    max={1}
+                                    step={0.01}
+                                    defaultValue={0}
+                                    readout={`${Math.round(kit.lofiMix * 100)}%`}
+                                />
+                            </div>
                         </div>
                     </SectionCard>
                 </aside>

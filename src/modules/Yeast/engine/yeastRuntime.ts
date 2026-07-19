@@ -50,6 +50,7 @@ type ActiveOutputNote = {
     trackId: string;
     channel: number;
     note: number;
+    noteInstanceId?: string;
 };
 
 type PendingAllNotesOff = {
@@ -176,8 +177,10 @@ function isLiveRuntime(node: YeastWorkerResult, generation: number): boolean {
     return session.node === node && session.generation === generation;
 }
 
-function activeOutputNoteKey(trackId: string, channel: number, note: number): string {
-    return `${trackId}\u0000${channel}\u0000${note}`;
+function activeOutputNoteKey(trackId: string, channel: number, note: number, noteInstanceId?: string): string {
+    return noteInstanceId
+        ? `${trackId}\u0000instance\u0000${noteInstanceId}`
+        : `${trackId}\u0000legacy\u0000${channel}\u0000${note}`;
 }
 
 function emitNotesOff(notesOff: YeastNotesOffPayload[]): void {
@@ -217,22 +220,21 @@ function collectActiveOutputNotes(generation: number): YeastNotesOffPayload[] {
         return [];
     }
 
-    const notesByTrackAndChannel = new Map<string, Map<number, Set<number>>>();
+    const notesByTrack = new Map<string, YeastNotesOffPayload['noteOffs']>();
     for (const activeNote of activeOutputNotes.values()) {
         if (activeNote.generation !== generation) {
             continue;
         }
-        const notesByChannel = notesByTrackAndChannel.get(activeNote.trackId) ?? new Map<number, Set<number>>();
-        const notes = notesByChannel.get(activeNote.channel) ?? new Set<number>();
-        notes.add(activeNote.note);
-        notesByChannel.set(activeNote.channel, notes);
-        notesByTrackAndChannel.set(activeNote.trackId, notesByChannel);
+        const notes = notesByTrack.get(activeNote.trackId) ?? [];
+        notes.push({
+            channel: activeNote.channel,
+            note: activeNote.note,
+            noteInstanceId: activeNote.noteInstanceId,
+        });
+        notesByTrack.set(activeNote.trackId, notes);
     }
     session.activeOutputNotes = new Map();
-    return [...notesByTrackAndChannel].map(([trackId, notesByChannel]) => ({
-        trackId,
-        noteOffs: [...notesByChannel].flatMap(([channel, notes]) => [...notes].map((note) => ({ channel, note }))),
-    }));
+    return [...notesByTrack].map(([trackId, noteOffs]) => ({ trackId, noteOffs }));
 }
 
 function settleActiveOutputNotes(generation: number): boolean {
@@ -274,13 +276,14 @@ function recordAcceptedOutputNotes(events: readonly MidiEvent[], generation: num
             continue;
         }
         const trackId = event.trackId ?? fallbackTrackId;
-        const key = activeOutputNoteKey(trackId, event.kind.channel, event.kind.note);
+        const key = activeOutputNoteKey(trackId, event.kind.channel, event.kind.note, event.noteInstanceId);
         if (event.kind.type === 'noteOn' && event.kind.velocity > 0) {
             session.activeOutputNotes.set(key, {
                 generation,
                 trackId,
                 channel: event.kind.channel,
                 note: event.kind.note,
+                noteInstanceId: event.noteInstanceId,
             });
         } else {
             session.activeOutputNotes.delete(key);
@@ -294,7 +297,7 @@ function recordWorkerNotesOff(notesOff: readonly YeastNotesOffPayload[], generat
     }
     for (const payload of notesOff) {
         for (const noteOff of payload.noteOffs) {
-            const key = activeOutputNoteKey(payload.trackId, noteOff.channel, noteOff.note);
+            const key = activeOutputNoteKey(payload.trackId, noteOff.channel, noteOff.note, noteOff.noteInstanceId);
             const activeNote = session.activeOutputNotes.get(key);
             if (activeNote?.generation === generation) {
                 session.activeOutputNotes.delete(key);

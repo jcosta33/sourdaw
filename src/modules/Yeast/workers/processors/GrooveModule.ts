@@ -7,6 +7,7 @@ import { type MidiEvent, type TransportInfo, samplesPerBeat } from '../../models
 import { BaseMidiProcessor } from '../BaseMidiProcessor';
 
 const MAX_PENDING_OFFSETS_PER_NOTE = 32;
+const MAX_PENDING_NOTE_INSTANCES = 2_048;
 
 type PendingNoteOffsets = {
     values: Float64Array;
@@ -27,6 +28,7 @@ export class GrooveModule extends BaseMidiProcessor {
     // MidiRack/ScaleQuantizer and avoids a per-event template-literal allocation
     // on the audio thread.
     private noteMap = new Map<string | undefined, Map<number, PendingNoteOffsets>>();
+    private noteInstanceOffsets = new Map<string, number>();
 
     constructor(id?: string) {
         super(id ?? `groove-${Date.now()}`);
@@ -57,7 +59,11 @@ export class GrooveModule extends BaseMidiProcessor {
                 );
 
                 const key = (event.kind.channel << 7) | event.kind.note;
-                this.enqueueOffset(event.trackId, key, offsetBeats);
+                if (event.noteInstanceId) {
+                    this.setInstanceOffset(event.trackId, event.noteInstanceId, offsetBeats);
+                } else {
+                    this.enqueueOffset(event.trackId, key, offsetBeats);
+                }
 
                 output.push({
                     ...event,
@@ -67,7 +73,9 @@ export class GrooveModule extends BaseMidiProcessor {
                 });
             } else if (event.kind.type === 'noteOff') {
                 const key = (event.kind.channel << 7) | event.kind.note;
-                const offsetBeats = this.dequeueOffset(event.trackId, key);
+                const offsetBeats = event.noteInstanceId
+                    ? this.takeInstanceOffset(event.trackId, event.noteInstanceId)
+                    : this.dequeueOffset(event.trackId, key);
                 const endpointBeatLengthSamples = (transport.sampleRate * 60) / (event.tempoBpm ?? transport.bpm);
                 const offsetSamples = Math.round(offsetBeats * endpointBeatLengthSamples);
 
@@ -108,6 +116,25 @@ export class GrooveModule extends BaseMidiProcessor {
         pending.size += 1;
     }
 
+    private getInstanceKey(trackId: string | undefined, noteInstanceId: string): string {
+        return `${trackId ?? ''}\u0000${noteInstanceId}`;
+    }
+
+    private setInstanceOffset(trackId: string | undefined, noteInstanceId: string, offset: number): void {
+        const key = this.getInstanceKey(trackId, noteInstanceId);
+        if (!this.noteInstanceOffsets.has(key) && this.noteInstanceOffsets.size >= MAX_PENDING_NOTE_INSTANCES) {
+            return;
+        }
+        this.noteInstanceOffsets.set(key, offset);
+    }
+
+    private takeInstanceOffset(trackId: string | undefined, noteInstanceId: string): number {
+        const key = this.getInstanceKey(trackId, noteInstanceId);
+        const offset = this.noteInstanceOffsets.get(key) ?? 0;
+        this.noteInstanceOffsets.delete(key);
+        return offset;
+    }
+
     private dequeueOffset(trackId: string | undefined, key: number): number {
         const routeMap = this.noteMap.get(trackId);
         const pending = routeMap?.get(key);
@@ -133,6 +160,7 @@ export class GrooveModule extends BaseMidiProcessor {
 
     reset(): void {
         this.noteMap.clear();
+        this.noteInstanceOffsets.clear();
     }
 
     protected resetParams(): void {

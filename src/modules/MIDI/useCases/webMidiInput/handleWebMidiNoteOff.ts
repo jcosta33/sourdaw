@@ -86,6 +86,7 @@ export const handleWebMidiNoteOff = inject(midiMessageHandlerDependencies)((deps
                 isNoteOn: false,
                 sampleTime,
                 sampleRate: context.sampleRate,
+                noteInstanceId: noteData.noteInstanceId,
             });
             const strip = audioEngine.getTrackStrip(instrumentTrack.id);
             function emitGrandBouleOff(deviceId: string, midiNote: number): void {

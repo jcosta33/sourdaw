@@ -41,20 +41,21 @@ describe('handleExtractGroove', () => {
         expect(grooveTemplateStore.value?.templates).toContainEqual(expect.objectContaining({ id: 'extracted-id' }));
     });
 
-    it('emits no inverse when extraction fails or resolves to Straight', () => {
+    it('propagates typed extraction failure and marks Straight as a true no-write', () => {
         const action = createAction('unused-id');
 
         mocks.notes = [];
-        expect(handleExtractGroove.describe(action).inverseAction).toBeNull();
-        void handleExtractGroove.execute(action);
+        expect(handleExtractGroove.isNoop?.(action)).toBe(false);
+        expect(() => handleExtractGroove.execute(action)).toThrow(
+            expect.objectContaining({ code: 'empty-source', name: 'GrooveExtractionActionError' })
+        );
         expect(grooveTemplateStore.value).toEqual(defaultGrooveTemplateState);
 
         mocks.notes = [
             { id: 'one', startBeat: 0, velocity: 96 },
             { id: 'two', startBeat: 0.25, velocity: 96 },
         ];
-        expect(handleExtractGroove.describe(action).inverseAction).toBeNull();
-        void handleExtractGroove.execute(action);
+        expect(handleExtractGroove.isNoop?.(action)).toBe(true);
         expect(grooveTemplateStore.value).toEqual(defaultGrooveTemplateState);
     });
 
@@ -67,6 +68,10 @@ describe('handleExtractGroove', () => {
             provenance: { type: 'user', sourceId: 'existing' },
         });
 
-        expect(handleExtractGroove.describe(createAction('  existing-id  ')).inverseAction).toBeNull();
+        const conflicting = createAction('  existing-id  ');
+        expect(handleExtractGroove.isNoop?.(conflicting)).toBe(false);
+        expect(() => handleExtractGroove.execute(conflicting)).toThrow(
+            expect.objectContaining({ code: 'template-identity-conflict', name: 'GrooveExtractionActionError' })
+        );
     });
 });

@@ -180,4 +180,26 @@ describe('deleteGrooveTemplate', () => {
         expect(sanitizeGrooveTemplateState(candidate)).toEqual(candidate);
         expect(candidate?.templates.find((template) => template.id === 'deleted-pocket')?.name).toBe('Pocket 2');
     });
+
+    it('rejects a collaborative restore snapshot with a missing referent atomically', () => {
+        createGrooveTemplate({
+            id: 'deleted-valid',
+            name: 'Deleted valid',
+            subdivision: '1/16',
+            slots: [],
+            provenance: { type: 'user', sourceId: 'deleted-valid' },
+        });
+        const snapshot = deleteGrooveTemplate('deleted-valid');
+        if (!snapshot) {
+            throw new Error('Expected deletion snapshot');
+        }
+        snapshot.assignments.push({
+            index: 0,
+            assignment: { consumerType: 'clip', consumerId: 'missing-ref', templateId: 'missing-template', amount: 1 },
+        });
+        const before = structuredClone(grooveTemplateStore.value);
+
+        expect(() => restoreDeletedGrooveTemplate(snapshot)).toThrow('snapshot references a different template');
+        expect(grooveTemplateStore.value).toEqual(before);
+    });
 });

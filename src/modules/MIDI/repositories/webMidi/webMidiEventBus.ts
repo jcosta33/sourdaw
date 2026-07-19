@@ -8,7 +8,7 @@ import { Container } from '#/infra/di/Container';
 type MidiNoteOnPayload = { deviceId?: string; midiNote: number; velocity: number };
 type MidiNoteOffPayload = { deviceId?: string; midiNote: number; releaseVelocity?: number };
 type MidiPedalCcPayload = { deviceId?: string; cc: number; value: number | boolean };
-type YeastNoteOffIdentity = { channel: number; note: number };
+type YeastNoteOffIdentity = { channel: number; note: number; noteInstanceId?: string };
 type YeastNotesOffPayload = { trackId: string; noteOffs: YeastNoteOffIdentity[] };
 
 type WebMidiEvents = {

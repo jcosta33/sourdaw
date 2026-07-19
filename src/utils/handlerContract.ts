@@ -548,10 +548,12 @@ export type HandlerDescribeResult = {
     inverseAction?: AppAction | null;
 };
 
+export type HandlerExecutionResult = { status: 'written' } | { status: 'no-write' };
+
 /** One dispatchable action's handler. Built via `createHandler` and merged into a module
  *  handler map by each `get<Module>Handlers` factory. */
 export type ActionHandler<Action extends AppAction = AppAction> = {
-    execute: (action: Action) => void | Promise<void>;
+    execute: (action: Action) => void | HandlerExecutionResult | Promise<void | HandlerExecutionResult>;
     describe: (action: Action) => HandlerDescribeResult;
     /** True when the canonical action is already reflected in project truth. */
     isNoop?: (action: Action) => boolean;

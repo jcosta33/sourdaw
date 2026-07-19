@@ -14,7 +14,7 @@ import { createAppActionCommittedError } from '../createAppActionCommittedError'
 import { executeAppAction } from '../executeAppAction';
 import { isAppActionCommittedError } from '../isAppActionCommittedError';
 
-import type { ActionHandler, AppAction, HandlerDescribeResult } from '#/utils/handlerContract';
+import type { ActionHandler, AppAction, HandlerDescribeResult, HandlerExecutionResult } from '#/utils/handlerContract';
 import type { ActionHistoryMetadata } from '../actionHistoryMetadataPort';
 
 type CrdtStoresModule = typeof import('#/modules/CrdtDocument/stores');
@@ -26,13 +26,13 @@ type SetSnapValueAction = Extract<AppAction, { type: 'setSnapValue' }>;
 type ToggleSidebarAction = Extract<AppAction, { type: 'toggleSidebar' }>;
 
 type MockCommandHandler<Action extends AppAction> = ActionHandler<Action> & {
-    execute: Mock<(action: Action) => void | Promise<void>>;
+    execute: Mock<(action: Action) => void | HandlerExecutionResult | Promise<void | HandlerExecutionResult>>;
     describe: Mock<(action: Action) => HandlerDescribeResult>;
 };
 
 type CreateMockHandlerInput<Action extends AppAction> = {
     label?: string;
-    execute?: (action: Action) => void | Promise<void>;
+    execute?: (action: Action) => void | HandlerExecutionResult | Promise<void | HandlerExecutionResult>;
     describe?: (action: Action) => HandlerDescribeResult;
     isNoop?: (action: Action) => boolean;
 };
@@ -46,7 +46,8 @@ function create_mock_handler<Action extends AppAction>({
     isNoop,
 }: CreateMockHandlerInput<Action> = {}): CreateMockHandlerOutput<Action> {
     return {
-        execute: vi.fn<(action: Action) => void | Promise<void>>(execute),
+        execute:
+            vi.fn<(action: Action) => void | HandlerExecutionResult | Promise<void | HandlerExecutionResult>>(execute),
         describe: vi.fn<(action: Action) => HandlerDescribeResult>(describe),
         undoable: true,
         isNoop,
@@ -162,6 +163,21 @@ describe('executeAppAction', () => {
         expect(handler.describe).not.toHaveBeenCalled();
         expect(handler.execute).not.toHaveBeenCalled();
         expect(mocks.setSemanticContext).not.toHaveBeenCalled();
+        expect(mocks.recordAction).not.toHaveBeenCalled();
+        expect(mocks.recordActionHistoryMetadata).not.toHaveBeenCalled();
+        expect(mocks.commitUndoEntry).not.toHaveBeenCalled();
+    });
+
+    it('drops history and undo when execution discovers a concurrent no-write', async () => {
+        const action: SetEditingToolAction = { type: 'setEditingTool', payload: { tool: 'marquee' } };
+        const handler = create_mock_handler<SetEditingToolAction>({ execute: () => ({ status: 'no-write' }) });
+        registerHandlerMap({ [action.type]: handler });
+
+        await executeAppAction(action);
+
+        expect(handler.describe).toHaveBeenCalledOnce();
+        expect(handler.execute).toHaveBeenCalledOnce();
+        expect(mocks.clearSemanticContext).toHaveBeenCalledOnce();
         expect(mocks.recordAction).not.toHaveBeenCalled();
         expect(mocks.recordActionHistoryMetadata).not.toHaveBeenCalled();
         expect(mocks.commitUndoEntry).not.toHaveBeenCalled();

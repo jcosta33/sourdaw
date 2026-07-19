@@ -12,6 +12,7 @@ import { type TempoMapStoreState } from '#/modules/Transport/stores';
 
 import { scheduleTrackAutomation } from '../../repositories/offlineScheduler/automationScheduling';
 import { offlineMidiEventProjectorState } from '../../repositories/offlineScheduler/offlineMidiEventProjectorState';
+import { offlinePpqEndpointProjectorState } from '../../repositories/offlineScheduler/offlinePpqEndpointProjectorState';
 import { beatToSeconds } from '../../services/beatConversion';
 import { resolveDrumKit } from '../../services/deviceResolution';
 import { audioBufferCache } from '../../stores/audioBufferCache';
@@ -26,6 +27,14 @@ type ResolvedClip = Track['clips'][number] & {
     regionStartBeat: number;
     regionEndBeat: number;
 };
+
+function projectPpqEndpoints(input: Parameters<NonNullable<typeof offlinePpqEndpointProjectorState.project>>[0]) {
+    const project = offlinePpqEndpointProjectorState.project;
+    if (!project) {
+        throw new Error('Offline PPQ endpoint projector is not configured');
+    }
+    return project(input);
+}
 
 function resolveTrackClipsWithComping(trackId: string, clips: Track['clips']): ResolvedClip[] {
     const laneState = takeLaneStore.value;
@@ -125,7 +134,13 @@ export async function scheduleTrackClips(
     deviceEntriesByTrack?: Map<string, DeviceNodeEntry[]>,
     regionStartBeat: number = 0
 ): Promise<void> {
-    const regionStartSec = regionStartBeat > 0 ? beatToSeconds(regionStartBeat, defaultTempo, changes) : 0;
+    const regionStartSec = projectPpqEndpoints({
+        startPpq: regionStartBeat,
+        endPpq: regionStartBeat,
+        defaultTempo,
+        sampleRate: offlineCtx.sampleRate,
+        changes,
+    }).startSeconds;
     const compensationDelay = getCompensationDelay(track.id);
 
     const automationLanes = automationStore.value?.lanes ?? [];
@@ -222,12 +237,6 @@ export async function scheduleTrackClips(
             if (!projectMidiEvents) {
                 throw new Error('Offline MIDI event projection is not configured');
             }
-            const notes = projectMidiEvents({
-                events: sourceNotes,
-                consumerType: 'clip',
-                consumerId: clip.id,
-            });
-
             const drumKit = resolveDrumKit(track.devices);
             const drumKitDevice = track.devices.find(
                 (data) => data.type === 'builtin-drum-kit' || data.type === 'drum-kit'
@@ -256,21 +265,19 @@ export async function scheduleTrackClips(
 
             for (let iter = 0; iter < maxIterations; iter++) {
                 const iterOffset = iter * loopLen;
+                const notes = projectMidiEvents({
+                    events: sourceNotes,
+                    clipId: clip.id,
+                    clipStartBeat: clip.startBeat,
+                    clipEndBeat: clip.endBeat,
+                    iterationStartBeat: clip.startBeat + iterOffset,
+                    loopLengthBeats: loopLen,
+                    midiOffsetBeats: clip.midiOffsetBeats ?? 0,
+                });
 
                 for (const note of notes) {
-                    if (note.startBeat >= loopLen) {
-                        continue;
-                    }
-                    if (note.startBeat + note.duration <= 0) {
-                        continue;
-                    }
-
-                    const noteAbsStart = clip.startBeat + iterOffset + note.startBeat;
-                    if (noteAbsStart >= clip.endBeat) {
-                        continue;
-                    }
-
-                    const noteEndBeat = Math.min(noteAbsStart + note.duration, clip.endBeat);
+                    const noteAbsStart = note.startBeat;
+                    const noteEndBeat = note.startBeat + note.duration;
                     if (noteEndBeat <= regionStartBeat) {
                         continue;
                     }
@@ -278,8 +285,15 @@ export async function scheduleTrackClips(
                     // Apply plugin-delay compensation symmetrically with the audio
                     // branch (see the `+ compensationDelay` on the audio iteration
                     // below) so instrument notes stay aligned with audio clips.
-                    const rawStartSec = beatToSeconds(noteAbsStart, defaultTempo, changes) + compensationDelay;
-                    const rawEndSec = beatToSeconds(noteEndBeat, defaultTempo, changes) + compensationDelay;
+                    const endpoint = projectPpqEndpoints({
+                        startPpq: noteAbsStart,
+                        endPpq: noteEndBeat,
+                        defaultTempo,
+                        sampleRate: offlineCtx.sampleRate,
+                        changes,
+                    });
+                    const rawStartSec = endpoint.startSeconds + compensationDelay;
+                    const rawEndSec = endpoint.endSeconds + compensationDelay;
                     const startTime = Math.max(0, rawStartSec - regionStartSec);
                     const endTime = rawEndSec - regionStartSec;
                     const duration = endTime - startTime;

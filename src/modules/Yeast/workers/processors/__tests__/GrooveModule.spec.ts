@@ -143,4 +143,25 @@ describe('GrooveModule', () => {
 
         expect(out.map((event) => event.timeSamples)).toEqual([6_000, 99_000]);
     });
+
+    it('pairs overlapping same-pitch note offs by stable note-instance identity before legacy FIFO order', () => {
+        const g = new GrooveModule('identity-overlap');
+        g.setParam('groove_amount', 1);
+        g.setParam('groove_timing_0', 0.1);
+        g.setParam('groove_timing_1', -0.2);
+        const out: MidiEvent[] = [];
+
+        g.processMidi(
+            [
+                { ...noteOn(0, 60), noteInstanceId: 'voice-a' },
+                { ...noteOn(6_000, 60), noteInstanceId: 'voice-b' },
+                { ...noteOff(12_000, 60), noteInstanceId: 'voice-b' },
+                { ...noteOff(18_000, 60), noteInstanceId: 'voice-a' },
+            ],
+            out,
+            transport
+        );
+
+        expect(out.map((event) => event.timeSamples)).toEqual([600, 4_800, 10_800, 18_600]);
+    });
 });

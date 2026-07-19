@@ -20,6 +20,8 @@ export type MidiEvent = {
     trackId?: string;
     /** Stable authored identity used to deduplicate overlapping source lookahead windows. */
     sourceEventId?: string;
+    /** Shared identity for one note-on/note-off pair, independent of pitch overlap. */
+    noteInstanceId?: string;
     /** Worker-internal resume stage for final output carried across block boundaries. */
     processingStage?: number;
     /** Canonical beat-domain endpoint before/after musical timing projection. */

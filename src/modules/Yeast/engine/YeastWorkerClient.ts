@@ -339,22 +339,25 @@ export async function createYeastWorker(ctx: BaseAudioContext): Promise<YeastWor
 
     const dispatchNotesOff = (events: readonly MidiEvent[]): void => {
         const notesOffByTrack = new Map<string, YeastNoteOffIdentity[]>();
-        const seenByTrackAndChannel = new Map<string, Map<number, Set<number>>>();
+        const seenLegacyNotes = new Set<string>();
         for (const evt of events) {
             if (evt.kind.type !== 'noteOff' || !evt.trackId) {
                 continue;
             }
-            const seenByChannel = seenByTrackAndChannel.get(evt.trackId) ?? new Map<number, Set<number>>();
-            const seenNotes = seenByChannel.get(evt.kind.channel) ?? new Set<number>();
-            if (seenNotes.has(evt.kind.note)) {
-                continue;
+            if (!evt.noteInstanceId) {
+                const legacyKey = `${evt.trackId}\u0000${evt.kind.channel}\u0000${evt.kind.note}`;
+                if (seenLegacyNotes.has(legacyKey)) {
+                    continue;
+                }
+                seenLegacyNotes.add(legacyKey);
             }
-            seenNotes.add(evt.kind.note);
-            seenByChannel.set(evt.kind.channel, seenNotes);
-            seenByTrackAndChannel.set(evt.trackId, seenByChannel);
 
             const noteOffs = notesOffByTrack.get(evt.trackId) ?? [];
-            noteOffs.push({ channel: evt.kind.channel, note: evt.kind.note });
+            noteOffs.push({
+                channel: evt.kind.channel,
+                note: evt.kind.note,
+                noteInstanceId: evt.noteInstanceId,
+            });
             notesOffByTrack.set(evt.trackId, noteOffs);
         }
         if (notesOffByTrack.size === 0) {

@@ -133,6 +133,12 @@ describe('groove template lifecycle', () => {
             'Heavy Swing',
             'MPC 60 Feel',
             'SP-1200 Feel',
+            'TR-808 Shuffle',
+            'TR-909 Swing 58%',
+            'MPC Swing 54%',
+            'MPC Swing 62%',
+            'SP-1200 Straight',
+            'J-Dilla Late Snare',
             'Pocket',
             'Pocket 2',
         ]);

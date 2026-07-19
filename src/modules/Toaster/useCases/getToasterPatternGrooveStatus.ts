@@ -16,6 +16,7 @@ export type ToasterPatternGrooveStatus =
           status: 'unsupported';
           templateId: string;
           templateName: string;
+          amount: number;
           error: AdapterFailureError;
       }
     | {
@@ -98,6 +99,7 @@ export function getToasterPatternGrooveStatus({
             status: 'unsupported',
             templateId: template.id,
             templateName: template.name,
+            amount: assignment.amount,
             error: adaptation.error,
         };
     }

@@ -1,4 +1,9 @@
-import { type ActionHandler, type AppAction, type HandlerDescribeResult } from './handlerContract';
+import {
+    type ActionHandler,
+    type AppAction,
+    type HandlerDescribeResult,
+    type HandlerExecutionResult,
+} from './handlerContract';
 
 /**
  * Build an `ActionHandler` for one `AppAction` discriminant. Use **only** in `handlers/`.
@@ -7,7 +12,9 @@ import { type ActionHandler, type AppAction, type HandlerDescribeResult } from '
  */
 export function createHandler<ActionType extends AppAction['type']>(config: {
     undoable: boolean;
-    execute: (action: Extract<AppAction, { type: ActionType }>) => void | Promise<void>;
+    execute: (
+        action: Extract<AppAction, { type: ActionType }>
+    ) => void | HandlerExecutionResult | Promise<void | HandlerExecutionResult>;
     describe: (action: Extract<AppAction, { type: ActionType }>) => HandlerDescribeResult;
     isNoop?: (action: Extract<AppAction, { type: ActionType }>) => boolean;
 }): ActionHandler<Extract<AppAction, { type: ActionType }>> {

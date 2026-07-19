@@ -41,6 +41,7 @@ describe('getToasterPatternGrooveStatus', () => {
             status: 'unsupported',
             templateId: `unsupported-${subdivision}`,
             templateName: `Unsupported ${subdivision}`,
+            amount: 1,
             error: { code: 'unsupported-subdivision', consumer: 'toaster', subdivision },
         });
     });

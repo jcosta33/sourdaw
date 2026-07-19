@@ -453,6 +453,7 @@ describe('exportPatternToTimeline', () => {
                 status: 'unsupported',
                 templateId: 'unsupported-eighth-groove',
                 templateName: 'Unsupported eighth groove',
+                amount: 1,
                 error: { code: 'unsupported-subdivision', consumer: 'toaster', subdivision: '1/8' },
             },
         });

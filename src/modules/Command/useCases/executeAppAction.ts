@@ -57,7 +57,11 @@ export const executeAppAction: ExecuteAppAction = inject({ logger })(
                 const execution = runWithAutomergeStorageTransaction(options?.snapshotTransaction, () =>
                     handler.execute(action)
                 );
-                await execution;
+                const result = await execution;
+                if (result?.status === 'no-write') {
+                    clearSemanticContext();
+                    return;
+                }
             } catch (error) {
                 try {
                     clearSemanticContext();

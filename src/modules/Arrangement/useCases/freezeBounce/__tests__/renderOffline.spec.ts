@@ -3,10 +3,11 @@ import { describe, it, expect, vi, beforeEach, type Mock } from 'vitest';
 import { ClipDummy } from '../../../__tests__/ClipDummy';
 import { TrackDummy } from '../../../__tests__/TrackDummy';
 import { type Track } from '../../../models/Track';
+import { setOfflineRenderDependencies } from '../offlineRenderDependencies';
 import { renderTrackOffline } from '../renderOffline';
 
 import type { buildDeviceChain, getAudioContext, getCachedAudioBuffer } from '#/modules/AudioEngine/useCases';
-import type { projectCommittedGroove } from '#/modules/MIDI/useCases';
+import type { projectClipMidiEvents, projectCommittedGroove } from '#/modules/MIDI/useCases';
 
 type RenderOfflineMocks = {
     buildDeviceChain: Mock<typeof buildDeviceChain>;
@@ -16,6 +17,8 @@ type RenderOfflineMocks = {
     trackStore: { value: unknown };
     midiStore: { value: unknown };
     transportStore: { value: unknown };
+    tempoMapStore: { value: unknown };
+    projectClipMidiEvents: Mock<typeof projectClipMidiEvents>;
     projectCommittedGroove: Mock<typeof projectCommittedGroove>;
 };
 
@@ -27,6 +30,8 @@ const mocks = vi.hoisted<RenderOfflineMocks>(() => ({
     trackStore: { value: null },
     midiStore: { value: null },
     transportStore: { value: null },
+    tempoMapStore: { value: { changes: [] } },
+    projectClipMidiEvents: vi.fn<typeof projectClipMidiEvents>(),
     projectCommittedGroove: vi.fn<typeof projectCommittedGroove>(),
 }));
 
@@ -41,12 +46,37 @@ vi.mock('#/modules/MIDI/stores', () => ({
 }));
 
 vi.mock('#/modules/MIDI/useCases', () => ({
+    projectClipMidiEvents: mocks.projectClipMidiEvents,
     projectCommittedGroove: mocks.projectCommittedGroove,
 }));
 
 vi.mock('#/modules/Transport/stores', () => ({
     transportStore: mocks.transportStore,
+    tempoMapStore: mocks.tempoMapStore,
 }));
+
+const projectPpqEndpoints = ({
+    startPpq,
+    endPpq,
+    defaultTempo,
+    sampleRate,
+}: {
+    startPpq: number;
+    endPpq: number;
+    defaultTempo: number;
+    sampleRate: number;
+}) => {
+    const startSamples = Math.round((startPpq / defaultTempo) * 60 * sampleRate);
+    const endSamples = Math.round((endPpq / defaultTempo) * 60 * sampleRate);
+    return {
+        startSamples,
+        endSamples,
+        durationSamples: endSamples - startSamples,
+        startSeconds: startSamples / sampleRate,
+        endSeconds: endSamples / sampleRate,
+        durationSeconds: (endSamples - startSamples) / sampleRate,
+    };
+};
 
 vi.mock('#/modules/Routing/stores', () => ({
     sidechainStore: { value: null },
@@ -193,7 +223,23 @@ describe('renderTrackOffline', () => {
         mocks.getAudioContext.mockReturnValue({ sampleRate: 44100 } as AudioContext);
         mocks.getCachedAudioBuffer.mockReturnValue(null);
         mocks.getUpstreamSubgraph.mockReturnValue(new Set<string>());
+        setOfflineRenderDependencies({ projectPpqEndpoints });
         mocks.projectCommittedGroove.mockImplementation(({ events }) => events);
+        mocks.projectClipMidiEvents.mockImplementation((input) => {
+            const clipProjected = mocks.projectCommittedGroove({
+                events: input.events,
+                consumerType: 'clip',
+                consumerId: input.clipId,
+            });
+            return input.events.flatMap((event, index) => {
+                const grooveEvent = clipProjected[index] ?? event;
+                const projectedStart = input.iterationStartBeat + grooveEvent.startBeat - input.midiOffsetBeats;
+                const startBeat = Math.max(input.iterationStartBeat, input.clipStartBeat, projectedStart);
+                const endBeat = Math.min(input.clipEndBeat, projectedStart + event.duration);
+                const duration = Math.max(0, endBeat - startBeat);
+                return duration > 0 ? [{ ...event, startBeat, duration, velocity: grooveEvent.velocity }] : [];
+            });
+        });
     });
 
     it('should not build a device chain for non-audio non-midi tracks', async () => {

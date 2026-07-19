@@ -7,6 +7,7 @@ export type RealtimeMidiInput = {
     isNoteOn: boolean;
     sampleTime: number;
     sampleRate: number;
+    noteInstanceId?: string;
     blockSize?: number;
 };
 
@@ -14,6 +15,7 @@ export type RealtimeMidiEvent = {
     timeSamples: number;
     trackId?: string;
     sourceEventId?: string;
+    noteInstanceId?: string;
     timePpq?: number;
     tempoBpm?: number;
     kind:
@@ -31,6 +33,7 @@ function passThroughRealtimeMidi(input: RealtimeMidiInput): Promise<RealtimeMidi
         {
             timeSamples: input.sampleTime,
             trackId: input.trackId,
+            noteInstanceId: input.noteInstanceId,
             kind: input.isNoteOn
                 ? { type: 'noteOn', channel: input.channel, note: input.note, velocity: input.velocity }
                 : { type: 'noteOff', channel: input.channel, note: input.note },

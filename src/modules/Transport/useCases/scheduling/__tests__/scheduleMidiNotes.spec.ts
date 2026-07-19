@@ -7,7 +7,7 @@ import {
     projectSequencerGroove,
 } from '#/modules/Arrangement/useCases';
 import { midiStore } from '#/modules/MIDI/stores';
-import { projectCommittedGroove } from '#/modules/MIDI/useCases';
+import { projectClipMidiEvents, projectCommittedGroove } from '#/modules/MIDI/useCases';
 import { scheduleNote } from '#/modules/Synth/useCases';
 import { processYeastMidi } from '#/modules/Yeast/useCases';
 
@@ -58,6 +58,7 @@ vi.mock('#/modules/Yeast/useCases', () => ({
 vi.mock('#/modules/MIDI/useCases', () => ({
     getChordAtBeat: vi.fn(),
     projectCommittedGroove: vi.fn(({ events }) => events),
+    projectClipMidiEvents: vi.fn(),
     transposeForChordTrack: vi.fn((param) => param),
 }));
 
@@ -99,6 +100,23 @@ describe('scheduleMidiNotes', () => {
             clips.map((clip) => ({ ...clip, regionStartBeat: clip.startBeat, regionEndBeat: clip.endBeat }))
         );
         vi.mocked(projectSequencerGroove).mockImplementation((event) => event);
+        vi.mocked(projectClipMidiEvents).mockImplementation((input) =>
+            input.events.flatMap((event) => {
+                const rawStartBeat = input.eventsAreAbsolute
+                    ? event.startBeat
+                    : input.iterationStartBeat + (event.startBeat - input.midiOffsetBeats);
+                const projected = projectSequencerGroove({
+                    id: event.id,
+                    startBeat: rawStartBeat,
+                    velocity: event.velocity,
+                });
+                const startBeat = Math.max(input.iterationStartBeat, input.clipStartBeat, projected.startBeat);
+                const endBeat = Math.min(input.clipEndBeat, startBeat + event.duration);
+                return endBeat <= startBeat
+                    ? []
+                    : [{ ...event, startBeat, duration: endBeat - startBeat, velocity: projected.velocity }];
+            })
+        );
         vi.mocked(projectCommittedGroove).mockImplementation(({ events }) => events);
         vi.mocked(processYeastMidi).mockImplementation(async (input) => [...input.events]);
     });

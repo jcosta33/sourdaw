@@ -62,6 +62,12 @@ describe('GrooveTemplate schema', () => {
             'swing-heavy',
             'mpc-60',
             'sp-1200',
+            'tr-808-shuffle',
+            'tr-909-swing-58',
+            'mpc-swing-54',
+            'mpc-swing-62',
+            'sp-1200-straight',
+            'j-dilla-late-snare',
         ]);
         const legacySemantics = [
             {
