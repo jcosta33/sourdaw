@@ -334,8 +334,15 @@ describe('check-dependency-boundaries', () => {
 
         expect(new RegExp(viewRule.from.path).test('src/components/SharedControl.tsx')).toBe(true);
         expect(new RegExp(viewRule.from.path).test('src/modules/Foo/presentations/components/Leaf.tsx')).toBe(true);
-        expect(new RegExp(reactRule.to.path).test('/node_modules/react/index.js')).toBe(true);
-        expect(new RegExp(reactRule.to.path).test('/node_modules/react/jsx-runtime.js')).toBe(false);
+        // to.path is an any-of pattern array (dependency-cruiser matches when ANY entry
+        // matches); the rule deliberately covers /react/index AND the automatic-runtime
+        // react/jsx-(dev-)runtime entries (see the rule comment in .dependency-cruiser.cjs).
+        const reactPathPatterns: string[] = [reactRule.to.path].flat();
+        const matchesReactPath = (candidate: string) =>
+            reactPathPatterns.some((pattern) => new RegExp(pattern).test(candidate));
+        expect(matchesReactPath('/node_modules/react/index.js')).toBe(true);
+        expect(matchesReactPath('/node_modules/react/jsx-runtime.js')).toBe(true);
+        expect(matchesReactPath('/node_modules/react-dom/index.js')).toBe(false);
     });
 
     it('should enforce Tauri IPC origins against resolved packages and bridge laundering', () => {

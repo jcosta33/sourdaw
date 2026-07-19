@@ -77,7 +77,7 @@ describe('timelineTools', () => {
             trackStoreMock.state = { tracks: [track] };
             const ref = { current: null };
 
-            handleDrawTool(0, 10, 4.5, ref as any);
+            handleDrawTool(0, 10, 4.5, ref);
 
             expect(ref.current).toEqual({ trackId: 't1', startBeat: 4, clipType: 'audio' });
             expect(selectTrack).toHaveBeenCalledWith('t1');
@@ -90,7 +90,7 @@ describe('timelineTools', () => {
             vi.mocked(hitTestAutomationSubLane).mockReturnValue(hit as any);
             const ref = { current: null };
 
-            const result = handleAutomationTool(10, 10, 4, 0, ref as any);
+            const result = handleAutomationTool(10, 10, 4, 0, ref);
 
             expect(result).toBe(true);
             expect(ref.current).toEqual({
@@ -116,7 +116,7 @@ describe('timelineTools', () => {
             vi.mocked(hitTestAutomationSubLane).mockReturnValue(hit as any);
             const ref = { current: null };
 
-            const result = tryPaintSubLane(10, 10, ref as any);
+            const result = tryPaintSubLane(10, 10, ref);
 
             expect(result).toBe(true);
             expect(ref.current).toEqual({

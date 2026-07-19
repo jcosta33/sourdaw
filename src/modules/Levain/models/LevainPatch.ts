@@ -105,14 +105,7 @@ export type ArticulationEntry = {
 // ---------------------------------------------------------------------------
 
 export type MicPositionType =
-    | 'close'
-    | 'decca-tree'
-    | 'room'
-    | 'outrigger'
-    | 'balcony'
-    | 'leader'
-    | 'spot'
-    | 'surround';
+    'close' | 'decca-tree' | 'room' | 'outrigger' | 'balcony' | 'leader' | 'spot' | 'surround';
 
 export type MicPositionState = {
     type: MicPositionType;

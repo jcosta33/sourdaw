@@ -9,7 +9,7 @@ const mocks = vi.hoisted(() => ({
     switchCrumbsMode:
         vi.fn<(instanceId: string, mode: import('../../models/CrumbsTypes').CrumbsMode) => Promise<void>>(),
     crumbsStore: {
-        value: null as unknown as Record<
+        value: null as Record<
             string,
             { activeSample: { category: import('../../models/CrumbsTypes').SampleCategory } | null }
         > | null,

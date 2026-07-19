@@ -2,10 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
     padStoreValue: {
-        value: { inst1: { pads: [{ midiNote: 60 }, { midiNote: 62 }] } } as Record<
-            string,
-            { pads: Array<{ midiNote: number }> }
-        >,
+        value: { inst1: { pads: [{ midiNote: 60 }, { midiNote: 62 }] } },
     },
     crumbsNoteOn: vi.fn(),
     crumbsNoteOff: vi.fn(),

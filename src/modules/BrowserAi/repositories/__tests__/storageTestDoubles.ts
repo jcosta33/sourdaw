@@ -75,6 +75,6 @@ export function installStorage(root: FakeDir, overrides?: Partial<StorageManager
             persisted: vi.fn(() => Promise.resolve(false)),
             persist: vi.fn(() => Promise.resolve(false)),
             ...overrides,
-        } as unknown as StorageManager,
+        },
     });
 }

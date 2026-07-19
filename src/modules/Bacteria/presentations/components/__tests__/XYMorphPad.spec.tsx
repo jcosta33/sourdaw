@@ -37,18 +37,17 @@ describe('XYMorphPad', () => {
             />
         );
         const pad = container.firstChild as HTMLElement;
-        pad.getBoundingClientRect = () =>
-            ({
-                left: 0,
-                top: 0,
-                width: 120,
-                height: 120,
-                right: 120,
-                bottom: 120,
-                x: 0,
-                y: 0,
-                toJSON: () => ({}),
-            }) as DOMRect;
+        pad.getBoundingClientRect = () => ({
+            left: 0,
+            top: 0,
+            width: 120,
+            height: 120,
+            right: 120,
+            bottom: 120,
+            x: 0,
+            y: 0,
+            toJSON: () => ({}),
+        });
 
         fireEvent.pointerDown(pad, { clientX: 60, clientY: 60, pointerId: 1 });
         onChangeX.mockClear();

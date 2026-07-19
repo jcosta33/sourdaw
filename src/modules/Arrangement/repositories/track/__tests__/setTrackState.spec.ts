@@ -28,7 +28,7 @@ describe('setTrackState', () => {
 
     it('should set the whole track store state', () => {
         const state = { tracks: [], selectedTrackId: 't1' };
-        setTrackState(state as { tracks: []; selectedTrackId: string });
+        setTrackState(state);
         expect(trackStore.set).toHaveBeenCalledWith(state);
         expect(trackStore.value).toEqual(state);
     });

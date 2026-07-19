@@ -7,16 +7,7 @@
 import { createStore } from '#/infra/store/createStore';
 
 export type ProcessingNodeType =
-    | 'input'
-    | 'output'
-    | 'effect'
-    | 'instrument'
-    | 'mixer'
-    | 'splitter'
-    | 'merger'
-    | 'send'
-    | 'return'
-    | 'sidechain';
+    'input' | 'output' | 'effect' | 'instrument' | 'mixer' | 'splitter' | 'merger' | 'send' | 'return' | 'sidechain';
 
 export type ProcessingNode = {
     id: string;

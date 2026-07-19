@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-import { type Track, type InputMonitoring } from '../../../models/Track';
+import { type InputMonitoring } from '../../../models/Track';
 import { INPUT_MONITORING_CYCLE, toggleInputMonitoring } from '../toggleInputMonitoring';
 
 const mocks = vi.hoisted(() => ({
@@ -44,7 +44,7 @@ describe('toggleInputMonitoring', () => {
     });
 
     function advance(from: InputMonitoring): InputMonitoring {
-        mocks.getTrackById.mockReturnValue({ id: 't1', inputMonitoring: from } as unknown as Track);
+        mocks.getTrackById.mockReturnValue({ id: 't1', inputMonitoring: from });
         toggleInputMonitoring('t1');
         const patch = mocks.updateTrack.mock.calls.at(-1)![1] as (t: { inputMonitoring: InputMonitoring }) => {
             inputMonitoring: InputMonitoring;

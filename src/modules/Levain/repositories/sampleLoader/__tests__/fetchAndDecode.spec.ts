@@ -3,9 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 type AudioBufferSlice = Pick<AudioBuffer, 'getChannelData' | 'length' | 'numberOfChannels' | 'sampleRate'>;
 
 type DecodePlan =
-    | { kind: 'resolve'; audioBuffer: AudioBufferSlice }
-    | { kind: 'manual' }
-    | { kind: 'reject'; error: unknown };
+    { kind: 'resolve'; audioBuffer: AudioBufferSlice } | { kind: 'manual' } | { kind: 'reject'; error: unknown };
 
 type DecodeRequest = {
     arrayBuffer: ArrayBuffer;

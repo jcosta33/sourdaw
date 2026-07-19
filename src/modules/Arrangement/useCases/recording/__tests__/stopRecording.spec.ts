@@ -1,19 +1,29 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, type Mock } from 'vitest';
 
 import { stopRecording } from '../stopRecording';
 
-import type { TakeLaneStoreState } from '#/modules/Arrangement/stores/takeLaneStore';
+import type { TakeLaneStoreState, takeLaneStore } from '#/modules/Arrangement/stores/takeLaneStore';
 import type { TransportState } from '#/modules/Transport/stores';
-import type { TrackState } from '../../../repositories/track/getTrackState';
+import type { TrackState, getTrackState } from '../../../repositories/track/getTrackState';
+import type { setTrackState } from '../../../repositories/track/setTrackState';
 
-const mocks = vi.hoisted(() => ({
-    getTrackState: vi.fn<typeof import('../../../repositories/track/getTrackState').getTrackState>(),
-    setTrackState: vi.fn<typeof import('../../../repositories/track/setTrackState').setTrackState>(),
-    transportStoreValue: null as TransportState | null,
-    takeLaneStoreValue: { value: { lanes: [] } as TakeLaneStoreState | null },
-    takeLaneStoreSet: vi.fn<typeof import('#/modules/Arrangement/stores/takeLaneStore').takeLaneStore.set>(),
-    activeRecordingRef: { current: ['c1'] },
-}));
+const mocks = vi.hoisted(
+    (): {
+        getTrackState: Mock<typeof getTrackState>;
+        setTrackState: Mock<typeof setTrackState>;
+        transportStoreValue: TransportState | null;
+        takeLaneStoreValue: { value: TakeLaneStoreState | null };
+        takeLaneStoreSet: Mock<typeof takeLaneStore.set>;
+        activeRecordingRef: { current: string[] };
+    } => ({
+        getTrackState: vi.fn<typeof import('../../../repositories/track/getTrackState').getTrackState>(),
+        setTrackState: vi.fn<typeof import('../../../repositories/track/setTrackState').setTrackState>(),
+        transportStoreValue: null,
+        takeLaneStoreValue: { value: { lanes: [] } },
+        takeLaneStoreSet: vi.fn<typeof import('#/modules/Arrangement/stores/takeLaneStore').takeLaneStore.set>(),
+        activeRecordingRef: { current: ['c1'] },
+    })
+);
 
 vi.mock('../../../repositories/track/getTrackState', () => ({
     getTrackState: mocks.getTrackState,

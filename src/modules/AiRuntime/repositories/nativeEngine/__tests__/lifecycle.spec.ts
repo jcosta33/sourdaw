@@ -26,7 +26,7 @@ describe('nativeEngine lifecycle injectables', () => {
     const originalFetch = globalThis.fetch;
 
     beforeEach(() => {
-        globalThis.fetch = vi.fn().mockResolvedValue({ ok: true } as Response);
+        globalThis.fetch = vi.fn().mockResolvedValue({ ok: true });
         vi.clearAllMocks();
     });
 

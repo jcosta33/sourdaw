@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { createWebMidiNoteKey } from '../../../models/WebMidiTypes';
 
-const target_track_id = vi.hoisted(() => ({ value: 'track-1' as string | null }));
+const target_track_id = vi.hoisted(() => ({ value: 'track-1' }));
 const mpe_enabled = vi.hoisted(() => ({ value: false }));
 const ensure_track_strip = vi.hoisted(() => vi.fn());
 
@@ -54,7 +54,7 @@ function make_dependencies(overrides: Partial<HandleWebMidiNoteOnDependencies> =
         eventBus: { emit: () => Promise.resolve(), on: () => () => {} },
         handleWebMidiNoteOff: async () => {},
         ...overrides,
-    } as unknown as HandleWebMidiNoteOnDependencies;
+    };
 }
 
 describe('handleWebMidiNoteOn', () => {

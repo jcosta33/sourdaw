@@ -32,7 +32,7 @@ describe('freezeTrack', () => {
     });
 
     it('does nothing if store state is missing', async () => {
-        trackStore.set(null as any);
+        trackStore.set(null);
         await freezeTrack('t1');
         expect(updateTrack).not.toHaveBeenCalled();
     });

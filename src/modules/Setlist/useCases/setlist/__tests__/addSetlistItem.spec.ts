@@ -46,7 +46,7 @@ describe('addSetlistItem', () => {
                     }) as unknown as import('../../../stores/setlistStore').SetlistItem,
                 ]) as unknown as import('../../../stores/setlistStore').SetlistItem[],
                 totalDuration: 60,
-            }) as unknown as SetlistState
+            })
         );
     });
 });

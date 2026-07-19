@@ -11,11 +11,11 @@ const mocks = vi.hoisted(() => ({
     destination: {},
     buffer: {},
     source: {
-        buffer: null as unknown,
+        buffer: null,
         connect: vi.fn(),
         start: vi.fn(),
         stop: vi.fn(),
-        onended: null as unknown,
+        onended: null,
     },
 }));
 

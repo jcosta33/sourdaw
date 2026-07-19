@@ -15,7 +15,7 @@ describe('unfreezeTrack', () => {
     });
 
     it('does nothing if store state is missing', () => {
-        trackStore.set(null as any);
+        trackStore.set(null);
         unfreezeTrack('t1');
         expect(updateTrack).not.toHaveBeenCalled();
     });

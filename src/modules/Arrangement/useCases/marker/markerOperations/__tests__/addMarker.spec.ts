@@ -4,10 +4,13 @@ import { addMarker } from '../addMarker';
 
 import type { MarkerStoreState } from '../../../../stores/markerStore';
 
-const mocks = vi.hoisted(() => ({
-    markerStoreValue: { value: { markers: [] } as { markers: unknown[] } | null },
-    markerStoreSet: vi.fn<(...args: unknown[]) => void>(),
-}));
+const mocks = vi.hoisted(() => {
+    const markerStoreValue: { value: { markers: unknown[] } | null } = { value: { markers: [] } };
+    return {
+        markerStoreValue,
+        markerStoreSet: vi.fn<(...args: unknown[]) => void>(),
+    };
+});
 
 vi.mock('../../../../stores/markerStore', () => ({
     markerStore: {

@@ -87,7 +87,7 @@ const AUDIO_SYNC_KEYS: readonly (keyof GrinderPatch)[] = [
 ] as const;
 
 function getOptionIndex<TOptions extends readonly string[]>(options: TOptions, value: string): number | null {
-    const index = options.indexOf(value as TOptions[number]);
+    const index = options.indexOf(value);
     return index >= 0 ? index : null;
 }
 

@@ -19,11 +19,11 @@ describe('timelineViewStore view helpers', () => {
             pixelsPerBeat: 12,
             autoScrollEnabled: true,
         });
-        trackStore.set({ tracks: [], selectedTrackId: null } as any);
+        trackStore.set({ tracks: [], selectedTrackId: null });
     });
 
     afterEach(() => {
-        trackStore.set({ tracks: [], selectedTrackId: null } as any);
+        trackStore.set({ tracks: [], selectedTrackId: null });
     });
 
     it('should clamp zoomTimeline pixelsPerBeat between 2 and 80', () => {
@@ -66,7 +66,7 @@ describe('timelineViewStore view helpers', () => {
         trackStore.set({
             tracks: [{ id: 'a', kind: 'audio', height: 100 } as any, { id: 'b', kind: 'audio', height: 100 } as any],
             selectedTrackId: null,
-        } as any);
+        });
 
         // total content height = 200, viewport = 50 → maxY = 150.
         setScrollY(500, 50);

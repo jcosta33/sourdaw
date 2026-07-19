@@ -1,9 +1,9 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, type Mock } from 'vitest';
 
 import { removeChordEvent } from '../removeChordEvent';
 
-const mocks = vi.hoisted(() => ({
-    state: { enabled: true, events: [] } as { enabled: boolean; events: unknown[] } | null,
+const mocks = vi.hoisted((): { state: { enabled: boolean; events: unknown[] } | null; set: Mock } => ({
+    state: { enabled: true, events: [] },
     set: vi.fn(),
 }));
 

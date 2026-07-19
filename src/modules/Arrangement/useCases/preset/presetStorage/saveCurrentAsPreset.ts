@@ -3,16 +3,7 @@ import { type SoundPreset } from '../../../models/SoundPreset';
 import { saveUserPreset } from './saveUserPreset';
 
 type SaveCurrentAsPresetCategory =
-    | 'synth'
-    | 'bass'
-    | 'pad'
-    | 'lead'
-    | 'keys'
-    | 'drums'
-    | 'fx'
-    | 'vocal'
-    | 'guitar'
-    | 'strings';
+    'synth' | 'bass' | 'pad' | 'lead' | 'keys' | 'drums' | 'fx' | 'vocal' | 'guitar' | 'strings';
 
 type SaveCurrentAsPresetDevice = {
     type: string;

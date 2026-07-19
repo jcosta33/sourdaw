@@ -6,8 +6,7 @@ import {
 } from './classifyGrinderNeuralPersistenceError';
 
 export type GrinderNeuralRestoreResult =
-    | { ok: true; entries: GrinderImportedNeuralModel[] }
-    | { ok: false; error: GrinderNeuralPersistenceError };
+    { ok: true; entries: GrinderImportedNeuralModel[] } | { ok: false; error: GrinderNeuralPersistenceError };
 
 function normalize_imported_entry(entry: GrinderImportedNeuralModel): GrinderImportedNeuralModel {
     return {

@@ -10,7 +10,7 @@ describe('reverbDelayFactories', () => {
     let ctx: ReturnType<typeof createMockAudioContext>;
 
     beforeEach(() => {
-        ctx = createMockAudioContext() as unknown as ReturnType<typeof createMockAudioContext>;
+        ctx = createMockAudioContext();
         vi.clearAllMocks();
     });
 

@@ -8,9 +8,7 @@ export type RecentProjectEntry = {
     updatedAt: number;
 };
 
-export const recentProjectsStorage = createLocalStorage<RecentProjectEntry[]>(
-    RECENT_PROJECTS_KEY as 'sourdaw:recent-projects'
-);
+export const recentProjectsStorage = createLocalStorage<RecentProjectEntry[]>(RECENT_PROJECTS_KEY);
 
 function has_recent_project_entry_fields(value: unknown): value is { name: unknown; key: unknown; updatedAt: unknown } {
     return typeof value === 'object' && value !== null && 'name' in value && 'key' in value && 'updatedAt' in value;

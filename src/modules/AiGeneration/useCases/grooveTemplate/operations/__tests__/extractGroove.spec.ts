@@ -2,11 +2,14 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { extractGroove } from '../extractGroove';
 
-const mocks = vi.hoisted(() => ({
-    getAllTracks: vi.fn(),
-    getNotesForClip: vi.fn(),
-    notesByClipId: {} as Record<string, unknown[]>,
-}));
+const mocks = vi.hoisted(() => {
+    const notesByClipId: Record<string, unknown[]> = {};
+    return {
+        getAllTracks: vi.fn(),
+        getNotesForClip: vi.fn(),
+        notesByClipId,
+    };
+});
 
 vi.mock('#/modules/Arrangement/useCases', () => ({
     getAllTracks: mocks.getAllTracks,

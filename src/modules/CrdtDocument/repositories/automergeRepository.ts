@@ -281,7 +281,7 @@ class AutomergeRepository {
     /** Insert or replace a document (used by branching). */
     insertDoc(docId: DocId, doc: Doc<unknown>, snapshotTransaction?: object): void {
         this.captureBeforeMutation(docId, snapshotTransaction);
-        this.docs.set(docId, doc as Doc<AnyDoc>);
+        this.docs.set(docId, doc);
         this.markDocumentIdentityMutation();
     }
 
@@ -305,7 +305,7 @@ class AutomergeRepository {
 
         this.captureBeforeMutation(id, snapshotTransaction);
         const updated = message ? change(doc, { message }, changeFn) : change(doc, changeFn);
-        this.docs.set(id, updated as Doc<AnyDoc>);
+        this.docs.set(id, updated);
         this.markMutation();
         this.notifyListeners(id);
     }
@@ -316,7 +316,7 @@ class AutomergeRepository {
      */
     replaceDoc(id: DocId, doc: Doc<unknown>, snapshotTransaction?: object): void {
         this.captureBeforeMutation(id, snapshotTransaction);
-        this.docs.set(id, doc as Doc<AnyDoc>);
+        this.docs.set(id, doc);
         this.markDocumentIdentityMutation();
         this.notifyListeners(id);
     }

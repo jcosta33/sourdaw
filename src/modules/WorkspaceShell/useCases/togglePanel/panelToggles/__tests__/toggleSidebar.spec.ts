@@ -38,7 +38,7 @@ describe('toggleSidebar', () => {
     });
 
     it('can open the sidebar when it was closed', () => {
-        mocks.getWorkspaceState.mockReturnValue({ sidebarOpen: false } as any);
+        mocks.getWorkspaceState.mockReturnValue({ sidebarOpen: false });
 
         toggleSidebar();
 

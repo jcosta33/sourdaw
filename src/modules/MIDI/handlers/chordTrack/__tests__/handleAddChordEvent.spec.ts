@@ -25,7 +25,7 @@ describe('handleAddChordEvent', () => {
     it('falls back to default quality if invalid', () => {
         void handleAddChordEvent.execute({
             type: 'addChordEvent',
-            payload: { beat: 0, root: 2, quality: 'garbage' as unknown as 'minor' },
+            payload: { beat: 0, root: 2, quality: 'garbage' },
         });
 
         expect(mocks.addChordEvent).toHaveBeenCalledWith(0, 2, 'major', 4);

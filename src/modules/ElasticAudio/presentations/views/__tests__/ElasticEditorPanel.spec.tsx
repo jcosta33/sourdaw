@@ -3,6 +3,35 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => {
     const callOrder: string[] = [];
+    const trackStoreValue: {
+        tracks: { id: string; clips: { id: string; type: string; audioBufferId: string | undefined }[] }[];
+        selectedTrackId: string;
+    } = {
+        tracks: [
+            {
+                id: 't1',
+                clips: [{ id: 'c1', type: 'audio', audioBufferId: 'buf-1' }],
+            },
+        ],
+        selectedTrackId: 't1',
+    };
+    const workspaceStoreValue: { selectedClipId: string | null; snapValue: number } = {
+        selectedClipId: 'c1',
+        snapValue: 0.25,
+    };
+    const elasticStoreValue: {
+        openClipId: string | null;
+        tool: 'select';
+        sensitivity: number;
+        selectedMarkerIds: unknown[];
+        detected: boolean;
+    } = {
+        openClipId: 'c1',
+        tool: 'select' as const,
+        sensitivity: 0.5,
+        selectedMarkerIds: [],
+        detected: true,
+    };
     return {
         callOrder,
         setElasticTool: vi.fn(),
@@ -23,26 +52,9 @@ const mocks = vi.hoisted(() => {
         commitWarpMarkerBeatDrag: vi.fn(),
         setDefaultAlgorithm: vi.fn(),
         getWaveformPeaks: vi.fn((..._args: unknown[]) => new Float32Array(200).fill(0.3)),
-        trackStoreValue: {
-            tracks: [
-                {
-                    id: 't1',
-                    clips: [{ id: 'c1', type: 'audio', audioBufferId: 'buf-1' as string | undefined }],
-                },
-            ],
-            selectedTrackId: 't1',
-        },
-        workspaceStoreValue: {
-            selectedClipId: 'c1' as string | null,
-            snapValue: 0.25,
-        },
-        elasticStoreValue: {
-            openClipId: 'c1' as string | null,
-            tool: 'select' as const,
-            sensitivity: 0.5,
-            selectedMarkerIds: [],
-            detected: true,
-        },
+        trackStoreValue,
+        workspaceStoreValue,
+        elasticStoreValue,
         warpStates: new Map<
             string,
             {

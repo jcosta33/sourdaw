@@ -29,13 +29,14 @@ const { TUNER_STORE_SENTINEL, fixtureInstances, fixtureState } = vi.hoisted(() =
         a4Reference: 440,
         frequency: 440,
     };
+    // Fixture record the tunerStore subscription resolves against. The
+    // component selects `instances[deviceId]`, so the mock runs the real
+    // selector against this record rather than returning a flat fixture.
+    const fixtureInstances: Record<string, typeof fixtureState> = { 'device-123': fixtureState };
     return {
         TUNER_STORE_SENTINEL: { name: 'tunerStore' },
         fixtureState,
-        // Fixture record the tunerStore subscription resolves against. The
-        // component selects `instances[deviceId]`, so the mock runs the real
-        // selector against this record rather than returning a flat fixture.
-        fixtureInstances: { 'device-123': fixtureState } as Record<string, typeof fixtureState>,
+        fixtureInstances,
     };
 });
 

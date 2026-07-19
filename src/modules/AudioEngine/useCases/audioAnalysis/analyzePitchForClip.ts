@@ -27,8 +27,7 @@ export type PitchSegment = {
 };
 
 type AnalyzePitchForClipOutput =
-    | { status: 'analyzed'; contour: PitchContour }
-    | { status: 'no-buffer'; reason: 'missing-clip-or-buffer' };
+    { status: 'analyzed'; contour: PitchContour } | { status: 'no-buffer'; reason: 'missing-clip-or-buffer' };
 
 type AnalyzePitchForClipInput = {
     clipId: string;

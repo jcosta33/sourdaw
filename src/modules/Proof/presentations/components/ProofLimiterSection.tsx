@@ -168,7 +168,7 @@ export const ProofLimiterSection = ({
                         size="micro"
                         tone="inset"
                         className="text-[7px]"
-                        value={DITHER_VALUES.indexOf(patch.ditherMode as (typeof DITHER_VALUES)[number])}
+                        value={DITHER_VALUES.indexOf(patch.ditherMode)}
                         onChange={(event) => {
                             const modeIndex = Number.parseInt(event.target.value, 10);
                             const mode = DITHER_VALUES[modeIndex]!;

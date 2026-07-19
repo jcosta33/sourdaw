@@ -1,8 +1,7 @@
 export type RuntimeTrackKind = 'audio' | 'midi' | 'bus' | 'master' | 'folder';
 
 type RuntimeDocumentSnapshotEntry =
-    | { readonly state: 'present'; readonly bytes: Uint8Array }
-    | { readonly state: 'absent' };
+    { readonly state: 'present'; readonly bytes: Uint8Array } | { readonly state: 'absent' };
 type RuntimeDocumentSnapshot = Map<string, RuntimeDocumentSnapshotEntry>;
 
 export type RuntimeAction =

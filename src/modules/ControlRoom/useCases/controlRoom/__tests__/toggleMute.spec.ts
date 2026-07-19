@@ -1,11 +1,11 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, type Mock } from 'vitest';
 
 import { toggleMute } from '../toggleMute';
 
-const mocks = vi.hoisted(() => ({
+const mocks = vi.hoisted((): { state: { muted: boolean } | null; set: Mock } => ({
     state: {
         muted: false,
-    } as { muted: boolean } | null,
+    },
     set: vi.fn(),
 }));
 

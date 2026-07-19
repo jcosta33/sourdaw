@@ -9,11 +9,14 @@ import { createGrandBouleTrack } from '../createGrandBouleTrack';
 
 import type { Track } from '#/modules/Arrangement/stores';
 
-const mocks = vi.hoisted(() => ({
-    trackStoreValue: null as unknown,
-    appendTrack: vi.fn(),
-    warn: vi.fn(),
-}));
+const mocks = vi.hoisted(() => {
+    const trackStoreValue: unknown = null;
+    return {
+        trackStoreValue,
+        appendTrack: vi.fn(),
+        warn: vi.fn(),
+    };
+});
 
 vi.mock('#/infra/logger/appLogger', () => ({
     logger: { info: vi.fn(), warn: mocks.warn, error: vi.fn(), debug: vi.fn() },

@@ -439,8 +439,7 @@ export function setYeastRuntimeProjection(projection: readonly YeastProcessorPro
 }
 
 type YeastRuntimeCommandResult =
-    | { delivered: true }
-    | { delivered: false; reason: 'runtime-unavailable' | 'delivery-failed' };
+    { delivered: true } | { delivered: false; reason: 'runtime-unavailable' | 'delivery-failed' };
 
 /**
  * Commands are delivered only to the ready node; they are never retained for

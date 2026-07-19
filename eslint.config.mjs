@@ -2331,7 +2331,8 @@ export default defineConfig(
     tseslint.configs.recommendedTypeChecked,
     eslintPluginPromise.configs['flat/recommended'],
     eslintPluginComments.recommended,
-    eslintPluginJsxA11yX.flatConfigs.recommended,
+    // eslint-plugin-jsx-a11y-x 0.2.0 removed `flatConfigs`; `configs` is now the flat-config surface (same 34 recommended rules).
+    eslintPluginJsxA11yX.configs.recommended,
     eslintPluginReact.configs['recommended-type-checked'],
     eslintPluginReactHooks.configs.flat['recommended-latest'],
     eslintPluginQuery.configs['flat/recommended'],
@@ -2476,7 +2477,8 @@ export default defineConfig(
             'unicorn/prefer-dom-node-text-content': 'warn',
             'unicorn/prefer-type-error': 'error',
             'unicorn/throw-new-error': 'error',
-            'unicorn/no-array-for-each': 'error',
+            // Renamed from 'unicorn/no-array-for-each' in eslint-plugin-unicorn v66 — same rule, same severity.
+            'unicorn/no-for-each': 'error',
             'unicorn/explicit-length-check': 'error',
             'unicorn/no-new-array': 'error',
             'unicorn/no-useless-length-check': 'error',
@@ -2655,6 +2657,11 @@ export default defineConfig(
 
             // React 19: no forwardRef needed
             '@eslint-react/no-forward-ref': 'error',
+
+            // New in @eslint-react v5 preset. False positive for the registry-lookup pattern
+            // (DeviceInspector: `resolveDeviceLayout()` returns a stable component from a Map,
+            // so no per-render state reset occurs). Matches pre-upgrade (v4) behavior.
+            '@eslint-react/static-components': 'off',
 
             // Naming conventions
             '@eslint-react/naming-convention-context-name': 'error',

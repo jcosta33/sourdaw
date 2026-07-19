@@ -55,7 +55,7 @@ describe('undoLastLayer', () => {
                     fadeBeats: 0.125,
                 },
             ],
-        } as LoopStationState;
+        };
 
         undoLastLayer('s1');
 

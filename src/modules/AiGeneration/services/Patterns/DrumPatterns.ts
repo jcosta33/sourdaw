@@ -1,4 +1,4 @@
-import { type PatternTemplate, type PatternNote, type PatternGenre } from '../../models/MidiPatternType';
+import { type PatternTemplate, type PatternNote } from '../../models/MidiPatternType';
 
 // GM drum constants
 const KK = 36,
@@ -37,7 +37,7 @@ export const drumPatterns: PatternTemplate[] = [
         id: 'dr-breakbeat',
         name: 'Breakbeat',
         category: 'drums',
-        genres: ['hip-hop', 'funk', 'breakbeat' as PatternGenre],
+        genres: ['hip-hop', 'funk', 'breakbeat'],
         tags: ['funky', 'classic'],
         description: 'Classic breakbeat groove',
         lengthBeats: 4,

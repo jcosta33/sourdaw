@@ -11,16 +11,7 @@ type FermenterFactoryDevicePreset = {
 };
 
 type FermenterFactoryPresetCategory =
-    | 'synth'
-    | 'bass'
-    | 'pad'
-    | 'lead'
-    | 'keys'
-    | 'drums'
-    | 'fx'
-    | 'vocal'
-    | 'guitar'
-    | 'strings';
+    'synth' | 'bass' | 'pad' | 'lead' | 'keys' | 'drums' | 'fx' | 'vocal' | 'guitar' | 'strings';
 
 type FermenterFactoryPreset = {
     id: string;

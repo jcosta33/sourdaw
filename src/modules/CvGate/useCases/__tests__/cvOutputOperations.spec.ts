@@ -66,7 +66,7 @@ describe('cvOutputOperations', () => {
     });
 
     it('addCvOutput appends a new channel with default range', () => {
-        addCvOutput('Pitch', 0, 'cv-pitch' as never);
+        addCvOutput('Pitch', 0, 'cv-pitch');
         expect(setMock).toHaveBeenCalled();
         const next = setMock.mock.calls[0]![0]!;
         expect(next.outputs).toHaveLength(1);

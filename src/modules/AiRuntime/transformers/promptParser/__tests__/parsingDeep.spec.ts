@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 
-import { isComplexPrompt, buildPresetContext, tryParameterizedPath, requiresConfirmation, findTrack } from '../parsing';
+import { buildPresetContext, tryParameterizedPath } from '../parsing';
 
 const ctx = {
     tracks: [

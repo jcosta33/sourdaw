@@ -6,7 +6,7 @@ const mocks = vi.hoisted(() => {
     type Group = { id: string; name: string; trackIds: string[] };
     type State = { groups: Group[]; activeGroupId: string | null };
     return {
-        groupCompingStoreValue: { value: { groups: [], activeGroupId: null } as State },
+        groupCompingStoreValue: { value: { groups: [], activeGroupId: null } },
         groupCompingStoreSet: vi.fn<(state: State) => void>(),
         getNextGroupId: vi.fn<() => string>(() => 'grp-123'),
     };

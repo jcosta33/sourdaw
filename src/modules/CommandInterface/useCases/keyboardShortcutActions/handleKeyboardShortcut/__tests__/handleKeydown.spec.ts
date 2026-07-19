@@ -25,7 +25,7 @@ const {
                 defaultKeys: string[];
                 action: { type: 'callback'; id: string };
             }>,
-            customMappings: {} as Record<string, string[]>,
+            customMappings: {},
         },
     },
     stopPlaybackMock: vi.fn(() => Promise.resolve()),

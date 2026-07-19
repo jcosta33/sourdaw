@@ -12,7 +12,7 @@ export function createHandler<ActionType extends AppAction['type']>(config: {
 }): ActionHandler<Extract<AppAction, { type: ActionType }>> {
     return {
         undoable: config.undoable,
-        execute: config.execute as ActionHandler<Extract<AppAction, { type: ActionType }>>['execute'],
-        describe: config.describe as ActionHandler<Extract<AppAction, { type: ActionType }>>['describe'],
+        execute: config.execute,
+        describe: config.describe,
     };
 }

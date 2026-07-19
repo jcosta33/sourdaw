@@ -10,7 +10,7 @@ describe('persistDeviceParam (stores)', () => {
 
     it('is a no-op when value is not finite', () => {
         const set = vi.spyOn(trackStore, 'set');
-        trackStore.set({ tracks: [], selectedTrackId: null } as any);
+        trackStore.set({ tracks: [], selectedTrackId: null });
         set.mockClear();
 
         persistDeviceParam('d1', 'gain', Number.NaN);
@@ -31,7 +31,7 @@ describe('persistDeviceParam (stores)', () => {
         trackStore.set({
             tracks: [{ id: 't1', devices: [], clips: [] }] as any,
             selectedTrackId: null,
-        } as any);
+        });
         const set = vi.spyOn(trackStore, 'set');
         set.mockClear();
 
@@ -58,7 +58,7 @@ describe('persistDeviceParam (stores)', () => {
                 },
             ] as any,
             selectedTrackId: null,
-        } as any);
+        });
 
         persistDeviceParam('d1', 'gain', 0.8);
 

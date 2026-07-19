@@ -1,9 +1,13 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, type Mock } from 'vitest';
 
-const mocks = vi.hoisted(() => ({
+const mocks: {
+    detectOnsets: Mock;
+    setMarkers: Mock;
+    activeSample: { sampleId: number } | null;
+} = vi.hoisted(() => ({
     detectOnsets: vi.fn(),
     setMarkers: vi.fn(),
-    activeSample: { sampleId: 7 } as { sampleId: number } | null,
+    activeSample: { sampleId: 7 },
 }));
 
 vi.mock('../../../repositories/crumbsBridge/detectOnsets', () => ({

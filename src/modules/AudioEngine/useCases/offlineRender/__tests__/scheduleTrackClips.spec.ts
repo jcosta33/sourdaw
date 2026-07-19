@@ -50,8 +50,8 @@ const TrackDummy = {
 const mocks = vi.hoisted(() => ({
     getCompensationDelay: vi.fn<(trackId: string) => number>(() => 0),
     scheduleTrackAutomation: vi.fn(),
-    takeLaneValue: { value: null as unknown },
-    automationValue: { value: null as unknown },
+    takeLaneValue: { value: null },
+    automationValue: { value: null },
     audioBufferCache: { get: vi.fn(() => undefined) },
 }));
 

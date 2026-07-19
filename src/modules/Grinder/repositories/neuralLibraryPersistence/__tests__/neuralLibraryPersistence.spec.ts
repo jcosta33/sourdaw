@@ -139,7 +139,7 @@ describe('neuralLibraryPersistence', () => {
             vi.useFakeTimers();
             const createObjectURL = vi.fn(() => 'blob:fake-url');
             const revokeObjectURL = vi.fn();
-            vi.stubGlobal('URL', { createObjectURL, revokeObjectURL } as unknown as typeof URL);
+            vi.stubGlobal('URL', { createObjectURL, revokeObjectURL });
             const click = vi.fn();
             vi.spyOn(document, 'createElement').mockReturnValue({
                 href: '',

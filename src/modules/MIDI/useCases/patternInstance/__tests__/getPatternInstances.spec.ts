@@ -2,9 +2,10 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { getPatternInstances } from '../getPatternInstances';
 
-const mocks = vi.hoisted(() => ({
-    trackStore: { value: null as unknown },
-}));
+const mocks = vi.hoisted(() => {
+    const trackStore: { value: unknown } = { value: null };
+    return { trackStore };
+});
 
 vi.mock('#/modules/Arrangement/stores', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/Arrangement/stores')>()),

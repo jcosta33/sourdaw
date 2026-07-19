@@ -23,7 +23,7 @@ type SetPadParamImmediateInput = {
 export function setPadParamImmediate(input: SetPadParamImmediateInput): void {
     const { deviceId, padIndex, key, value } = input;
 
-    updatePad(deviceId, padIndex, { [key]: value } as Partial<PadState>);
+    updatePad(deviceId, padIndex, { [key]: value });
 
     const ref = findDeviceRef(deviceId);
     if (!ref) {

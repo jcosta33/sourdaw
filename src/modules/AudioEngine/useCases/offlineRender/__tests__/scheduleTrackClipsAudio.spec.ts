@@ -64,17 +64,21 @@ function makeAudioClip(overrides?: Partial<Clip>): Clip {
         locked: false,
         muted: false,
         ...overrides,
-    } as Clip;
+    };
 }
 
-const mocks = vi.hoisted(() => ({
-    getCompensationDelay: vi.fn<(trackId: string) => number>(() => 0),
-    scheduleTrackAutomation: vi.fn(),
-    takeLaneValue: { value: null as unknown },
-    automationValue: { value: null as unknown },
-    audioBufferCache: { get: vi.fn<(id: string) => AudioBuffer | undefined>(() => undefined) },
-    buildDeviceChain: vi.fn(() => Promise.resolve([])),
-}));
+const mocks = vi.hoisted(() => {
+    const takeLaneValue: { value: unknown } = { value: null };
+    const automationValue: { value: unknown } = { value: null };
+    return {
+        getCompensationDelay: vi.fn<(trackId: string) => number>(() => 0),
+        scheduleTrackAutomation: vi.fn(),
+        takeLaneValue,
+        automationValue,
+        audioBufferCache: { get: vi.fn<(id: string) => AudioBuffer | undefined>(() => undefined) },
+        buildDeviceChain: vi.fn(() => Promise.resolve([])),
+    };
+});
 
 vi.mock('../../latencyCompensation/compensation/getCompensationDelay', () => ({
     getCompensationDelay: mocks.getCompensationDelay,
@@ -311,9 +315,7 @@ describe('scheduleTrackClips — audio clip scheduling', () => {
         mocks.audioBufferCache.get.mockReturnValue(makeBuffer(0.4));
         const { ctx, sources } = makeRecordingOfflineCtx();
         const track = TrackDummy.create({
-            clips: [
-                makeAudioClip({ startBeat: 0, endBeat: 2, stretchMode: 'repitch', stretchRatio: 2 } as Partial<Clip>),
-            ],
+            clips: [makeAudioClip({ startBeat: 0, endBeat: 2, stretchMode: 'repitch', stretchRatio: 2 })],
         });
 
         await run({ track, ctx });
@@ -327,9 +329,7 @@ describe('scheduleTrackClips — audio clip scheduling', () => {
         mocks.audioBufferCache.get.mockReturnValue(makeBuffer(10));
         const { ctx, sources } = makeRecordingOfflineCtx();
         const track = TrackDummy.create({
-            clips: [
-                makeAudioClip({ startBeat: 0, endBeat: 2, stretchMode: 'repitch', stretchRatio: 0 } as Partial<Clip>),
-            ],
+            clips: [makeAudioClip({ startBeat: 0, endBeat: 2, stretchMode: 'repitch', stretchRatio: 0 })],
         });
 
         await run({ track, ctx });
@@ -341,7 +341,7 @@ describe('scheduleTrackClips — audio clip scheduling', () => {
         mocks.audioBufferCache.get.mockReturnValue(makeBuffer(10));
         const { ctx, sources } = makeRecordingOfflineCtx();
         const track = TrackDummy.create({
-            clips: [makeAudioClip({ startBeat: 0, endBeat: 2, stretchMode: 'off', stretchRatio: 2 } as Partial<Clip>)],
+            clips: [makeAudioClip({ startBeat: 0, endBeat: 2, stretchMode: 'off', stretchRatio: 2 })],
         });
 
         await run({ track, ctx });
@@ -354,7 +354,7 @@ describe('scheduleTrackClips — audio clip scheduling', () => {
         mocks.audioBufferCache.get.mockReturnValue(makeBuffer(10));
         const { ctx, sources } = makeRecordingOfflineCtx();
         const track = TrackDummy.create({
-            clips: [makeAudioClip({ startBeat: 0, endBeat: 4, loopEnabled: true, loopLength: 1 } as Partial<Clip>)],
+            clips: [makeAudioClip({ startBeat: 0, endBeat: 4, loopEnabled: true, loopLength: 1 })],
         });
 
         await run({ track, ctx });
@@ -370,7 +370,7 @@ describe('scheduleTrackClips — audio clip scheduling', () => {
         mocks.audioBufferCache.get.mockReturnValue(makeBuffer(10));
         const { ctx, sources } = makeRecordingOfflineCtx();
         const track = TrackDummy.create({
-            clips: [makeAudioClip({ startBeat: 0, endBeat: 2, loopEnabled: true, loopLength: 0 } as Partial<Clip>)],
+            clips: [makeAudioClip({ startBeat: 0, endBeat: 2, loopEnabled: true, loopLength: 0 })],
         });
 
         await run({ track, ctx });
@@ -427,8 +427,8 @@ describe('scheduleTrackClips — frozen tracks', () => {
         mocks.audioBufferCache.get.mockImplementation((id) => (id === 'frozen-buf' ? frozenBuffer : undefined));
         const { ctx, sources } = makeRecordingOfflineCtx();
         const track = TrackDummy.create({
-            freezeState: { status: 'frozen', frozenBufferId: 'frozen-buf' } as Track['freezeState'],
-            clips: [makeAudioClip({ audioBufferId: 'other-buf' } as Partial<Clip>)],
+            freezeState: { status: 'frozen', frozenBufferId: 'frozen-buf' },
+            clips: [makeAudioClip({ audioBufferId: 'other-buf' })],
         });
 
         const { trackGainNode } = await run({ track, ctx });
@@ -450,7 +450,7 @@ describe('scheduleTrackClips — frozen tracks', () => {
         const onWarning = vi.fn();
         const track = TrackDummy.create({
             name: 'Pad',
-            freezeState: { status: 'frozen', frozenBufferId: 'frozen-buf' } as Track['freezeState'],
+            freezeState: { status: 'frozen', frozenBufferId: 'frozen-buf' },
         });
 
         await run({ track, ctx, onWarning });

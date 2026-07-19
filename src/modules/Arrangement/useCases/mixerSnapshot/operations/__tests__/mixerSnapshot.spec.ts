@@ -1,5 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+import { mixerSnapshotStore } from '../../../../stores/mixerSnapshotStore';
+import { deleteMixerSnapshot } from '../deleteMixerSnapshot';
+import { recallMixerSnapshot } from '../recallMixerSnapshot';
+import { saveMixerSnapshot } from '../saveMixerSnapshot';
+
 import type * as trackStateRepo from '../../../../repositories/track/getTrackState';
 import type * as trackSetRepo from '../../../../repositories/track/setTrackState';
 
@@ -10,11 +15,6 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock('../../../../repositories/track/getTrackState', () => ({ getTrackState: mocks.getTrackState }));
 vi.mock('../../../../repositories/track/setTrackState', () => ({ setTrackState: mocks.setTrackState }));
-
-import { saveMixerSnapshot } from '../saveMixerSnapshot';
-import { recallMixerSnapshot } from '../recallMixerSnapshot';
-import { deleteMixerSnapshot } from '../deleteMixerSnapshot';
-import { mixerSnapshotStore } from '../../../../stores/mixerSnapshotStore';
 
 const make_tracks = () => [
     {

@@ -21,7 +21,7 @@ export const generateWebLlmToolCalls = inject({ logger })(
         ): Promise<ToolCallResult[]> {
             const toolDescriptions = tools
                 .map((time) => {
-                    const params = time.function.parameters as Record<string, unknown> | undefined;
+                    const params = time.function.parameters;
                     const paramStr = params ? ` Parameters: ${JSON.stringify(params)}` : '';
                     return `- ${time.function.name}: ${time.function.description ?? ''}${paramStr}`;
                 })

@@ -32,9 +32,11 @@ const { mocks } = vi.hoisted(() => {
     const trackStrips = new Map<string, MockTrackStrip>();
     const ensureTrackStrip = vi.fn((trackId: string) => trackStrips.get(trackId) ?? defaultTrackStrip);
 
+    const trackStoreValue: unknown = null;
+
     return {
         mocks: {
-            trackStoreValue: null as unknown,
+            trackStoreValue,
             audioContext,
             synthParams,
             defaultTrackStrip,
