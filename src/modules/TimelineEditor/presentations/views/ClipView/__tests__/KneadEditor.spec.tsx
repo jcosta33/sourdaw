@@ -1,9 +1,11 @@
-import { render, screen } from '@testing-library/react';
+import { render, screen, fireEvent } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 import { injectDependencies } from '#/infra/di/testing/injectDependencies';
 import { useStore } from '#/infra/store/useStore';
-import { analyzeClipPitch } from '#/modules/Knead/useCases';
+import { type KneadClipState, type NoteBlob } from '#/modules/Knead/stores';
+import { analyzeClipPitch, updateClipKneadState } from '#/modules/Knead/useCases';
+import { setProjectKeyRoot, setProjectScaleName } from '#/modules/Project/useCases';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { useTracks } from '../../../hooks/useTracks';
@@ -97,6 +99,11 @@ vi.mock('../../../hooks/useTracks', () => ({
 vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/Arrangement/useCases')>()),
     addDevice: vi.fn(),
+}));
+
+vi.mock('#/modules/Project/useCases', () => ({
+    setProjectKeyRoot: vi.fn(),
+    setProjectScaleName: vi.fn(),
 }));
 
 describe('KneadEditor', () => {
@@ -195,6 +202,210 @@ describe('KneadEditor', () => {
             render(<KneadEditor {...defaultProps} />);
 
             expect(analyzeClipPitch).toHaveBeenCalledWith('clip-1');
+        });
+    });
+
+    describe('analyzed clip editing', () => {
+        const kneadTrack = {
+            id: 'track-1',
+            devices: [{ type: 'Knead' }],
+            clips: [{ id: 'clip-1' }],
+        };
+
+        // Geometry: zoom 1 → 300 px/s; canvas height 0 in jsdom → the blob row
+        // centre sits at y = 0 (single blob ⇒ avgCents = its own cents).
+        // blob: startTime 0.1 → x 30, endTime 0.5 → x 150, rowHeight 24 → y ±12.
+        const makeBlob = (overrides: Partial<NoteBlob> = {}): NoteBlob => ({
+            id: 'blob-1',
+            startTime: 0.1,
+            endTime: 0.5,
+            pitchCenterCents: 6000,
+            originalPitchCenterCents: 6000,
+            pitchCurveCents: [],
+            voicedConfidence: 0.9,
+            driftPercent: 0,
+            vibratoDepthPercent: 0,
+            vibratoRateHz: 0,
+            formantShiftCents: 0,
+            gainDb: 0,
+            muted: false,
+            ...overrides,
+        });
+
+        const makeClipState = (blobs: NoteBlob[]): KneadClipState => ({
+            clipId: 'clip-1',
+            blobs,
+            retuneSpeedMs: 25,
+            toleranceCents: 0,
+            toleranceTimeMs: 0,
+            humanizePercent: 40,
+            formantPreserve: true,
+        });
+
+        const installAnalyzedState = (clipState: KneadClipState): void => {
+            vi.mocked(useStore).mockImplementation(((_store: unknown, fallback: unknown) => {
+                if (fallback && typeof fallback === 'object' && 'isAnalyzing' in fallback) {
+                    return {
+                        activeClipId: null,
+                        clips: { 'clip-1': clipState },
+                        contours: {},
+                        isAnalyzing: false,
+                        analysisProgress: 0,
+                    };
+                }
+                if (fallback && typeof fallback === 'object' && 'isPlaying' in fallback) {
+                    return fallback;
+                }
+                // projectStore read (no fallback provided by the component)
+                return { keyRoot: 0, scaleName: 'major' };
+            }) as never);
+        };
+
+        const lastUpdater = (): ((state: KneadClipState) => KneadClipState) => {
+            const call = vi.mocked(updateClipKneadState).mock.lastCall;
+            expect(call).toBeDefined();
+            return call![1];
+        };
+
+        beforeEach(() => {
+            vi.mocked(useTracks).mockReturnValue({ tracks: [kneadTrack] } as never);
+            installAnalyzedState(makeClipState([makeBlob()]));
+        });
+
+        afterEach(() => {
+            vi.mocked(useStore).mockImplementation(((_store: unknown, fallback: unknown) => fallback ?? {}) as never);
+            vi.mocked(useTracks).mockReturnValue({ tracks: [] } as never);
+        });
+
+        describe('toolbar', () => {
+            it('retune and humanize sliders write through updateClipKneadState', () => {
+                render(<KneadEditor {...defaultProps} />);
+                const sliders = screen.getAllByRole('slider');
+
+                fireEvent.change(sliders[0]!, { target: { value: '80' } });
+                expect(lastUpdater()(makeClipState([makeBlob()])).retuneSpeedMs).toBe(80);
+
+                fireEvent.change(sliders[1]!, { target: { value: '70' } });
+                expect(lastUpdater()(makeClipState([makeBlob()])).humanizePercent).toBe(70);
+            });
+
+            it('key and scale selects write the project settings', () => {
+                render(<KneadEditor {...defaultProps} />);
+                const selects = screen.getAllByRole('combobox');
+
+                fireEvent.change(selects[0]!, { target: { value: '2' } });
+                expect(setProjectKeyRoot).toHaveBeenCalledWith(2);
+
+                fireEvent.change(selects[1]!, { target: { value: 'minor' } });
+                expect(setProjectScaleName).toHaveBeenCalledWith('minor');
+            });
+
+            it('Correct All quantizes every blob to the project scale', () => {
+                installAnalyzedState(makeClipState([makeBlob({ pitchCenterCents: 6100 })]));
+                render(<KneadEditor {...defaultProps} />);
+
+                fireEvent.click(screen.getByText('Correct All'));
+
+                // 6100 cents = C#4 → nearest C-major degree is C (6000) with root C
+                const next = lastUpdater()(makeClipState([makeBlob({ pitchCenterCents: 6100 })]));
+                expect(next.blobs[0]?.pitchCenterCents).toBe(6000);
+            });
+
+            it('the formants checkbox toggles formantPreserve', () => {
+                render(<KneadEditor {...defaultProps} />);
+
+                fireEvent.click(screen.getByRole('checkbox'));
+
+                expect(lastUpdater()(makeClipState([makeBlob()])).formantPreserve).toBe(false);
+            });
+        });
+
+        describe('blob pointer interactions', () => {
+            const getCanvas = (): HTMLCanvasElement => {
+                const canvas = document.querySelector('canvas');
+                expect(canvas).not.toBeNull();
+                return canvas!;
+            };
+
+            it('hover reports resize, retune, and move affordances via the cursor', () => {
+                render(<KneadEditor {...defaultProps} />);
+                const canvas = getCanvas();
+
+                fireEvent.pointerMove(canvas, { clientX: 35, clientY: 2 });
+                expect(canvas.style.cursor).toBe('ew-resize');
+
+                fireEvent.pointerMove(canvas, { clientX: 90, clientY: -6 });
+                expect(canvas.style.cursor).toBe('ns-resize');
+
+                fireEvent.pointerMove(canvas, { clientX: 90, clientY: -2 });
+                expect(canvas.style.cursor).toBe('pointer');
+
+                fireEvent.pointerMove(canvas, { clientX: 90, clientY: 2 });
+                expect(canvas.style.cursor).toBe('move');
+
+                fireEvent.pointerMove(canvas, { clientX: 300, clientY: 2 });
+                expect(canvas.style.cursor).toBe('crosshair');
+            });
+
+            it('dragging the lower centre shifts pitch freely in cents', () => {
+                render(<KneadEditor {...defaultProps} />);
+                const canvas = getCanvas();
+
+                fireEvent.pointerDown(canvas, { pointerId: 1, clientX: 90, clientY: 2 });
+                fireEvent.pointerMove(canvas, { pointerId: 1, clientX: 90, clientY: -10 });
+
+                // dy = -12 px over a 24 px row → +50 cents, unquantized
+                const next = lastUpdater()(makeClipState([makeBlob()]));
+                expect(next.blobs[0]?.pitchCenterCents).toBe(6050);
+            });
+
+            it('dragging the upper centre snaps the shift to whole semitones', () => {
+                render(<KneadEditor {...defaultProps} />);
+                const canvas = getCanvas();
+
+                fireEvent.pointerDown(canvas, { pointerId: 1, clientX: 90, clientY: -2 });
+                fireEvent.pointerMove(canvas, { pointerId: 1, clientX: 90, clientY: -14 });
+
+                // +50 cents quantized to the nearest semitone → +100
+                const next = lastUpdater()(makeClipState([makeBlob()]));
+                expect(next.blobs[0]?.pitchCenterCents).toBe(6100);
+            });
+
+            it('dragging the left edge trims the start time with a minimum span', () => {
+                render(<KneadEditor {...defaultProps} />);
+                const canvas = getCanvas();
+
+                fireEvent.pointerDown(canvas, { pointerId: 1, clientX: 32, clientY: 2 });
+                fireEvent.pointerMove(canvas, { pointerId: 1, clientX: 62, clientY: 2 });
+
+                // +30 px at 300 px/s → +0.1 s
+                const next = lastUpdater()(makeClipState([makeBlob()]));
+                expect(next.blobs[0]?.startTime).toBeCloseTo(0.2);
+            });
+
+            it('dragging the right edge extends the end time', () => {
+                render(<KneadEditor {...defaultProps} />);
+                const canvas = getCanvas();
+
+                fireEvent.pointerDown(canvas, { pointerId: 1, clientX: 145, clientY: 2 });
+                fireEvent.pointerMove(canvas, { pointerId: 1, clientX: 175, clientY: 2 });
+
+                const next = lastUpdater()(makeClipState([makeBlob()]));
+                expect(next.blobs[0]?.endTime).toBeCloseTo(0.6);
+            });
+
+            it('pointer-up ends the drag: further movement only updates hover state', () => {
+                render(<KneadEditor {...defaultProps} />);
+                const canvas = getCanvas();
+
+                fireEvent.pointerDown(canvas, { pointerId: 1, clientX: 90, clientY: 2 });
+                fireEvent.pointerUp(canvas, { pointerId: 1, clientX: 90, clientY: 2 });
+                vi.mocked(updateClipKneadState).mockClear();
+
+                fireEvent.pointerMove(canvas, { pointerId: 1, clientX: 90, clientY: -10 });
+
+                expect(updateClipKneadState).not.toHaveBeenCalled();
+            });
         });
     });
 });
