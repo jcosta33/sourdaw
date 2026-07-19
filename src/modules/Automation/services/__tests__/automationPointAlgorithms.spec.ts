@@ -191,11 +191,7 @@ describe('simplifyAutomationPoints', () => {
     });
 
     it('falls back to direct euclidean distance for a zero-length baseline (first and last points coincide)', () => {
-        const farMiddle = [
-            point({ beat: 0, value: 0 }),
-            point({ beat: 5, value: 100 }),
-            point({ beat: 0, value: 0 }),
-        ];
+        const farMiddle = [point({ beat: 0, value: 0 }), point({ beat: 5, value: 100 }), point({ beat: 0, value: 0 })];
         expect(simplifyAutomationPoints({ points: farMiddle, tolerance: 1 })).toEqual(farMiddle);
 
         const closeMiddle = [
