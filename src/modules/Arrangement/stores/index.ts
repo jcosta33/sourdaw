@@ -32,8 +32,10 @@ export { appendTrack } from './appendTrack';
 
 export {
     adjustmentLayerStore,
+    canonicalizeAdjustmentParameter,
     computeAdjustmentLayerBlendAtBeat,
     createEffectiveAdjustmentLayerSignature,
+    resolveAdjustmentParameterValue,
     resolveAdjustmentLayerTrackIds,
     EFFECT_PRESETS,
     LAYER_COLORS,

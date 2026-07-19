@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
-import { trackStore } from '#/modules/Arrangement/stores';
+import { adjustmentLayerStore, trackStore } from '#/modules/Arrangement/stores';
 import { midiStore } from '#/modules/MIDI/stores';
 import { defaultTransportState, transportStore } from '#/modules/Transport/stores';
 
@@ -293,6 +293,7 @@ describe('applyImportedProjectData round-trip hydration', () => {
         transportStore.set({ ...defaultTransportState });
         midiStore.set({ notesByClipId: {}, ccByClipId: {}, pitchBendByClipId: {} });
         trackStore.set({ tracks: [], selectedTrackId: null });
+        adjustmentLayerStore.set({ layers: [] });
         arrangementStore.set(structuredClone(defaultArrangementStoreState));
     });
 
@@ -523,6 +524,75 @@ describe('applyImportedProjectData round-trip hydration', () => {
         expect(engineGraph.value).toBe('empty');
         expect(crdtAuthority.value).toBe('Round Trip');
         expect(startCrdtAutoSave).toHaveBeenCalledOnce();
+    });
+
+    it('publishes imported legacy frozen tracks as stale after adjustment layers hydrate', async () => {
+        const project = makeProject();
+        const imported_track = project.arrangement.tracks[0]!;
+        imported_track.freezeState = {
+            status: 'frozen',
+            freezeId: 'legacy-freeze',
+            frozenBufferId: 'buf-frozen',
+            sourceContentHash: 'legacy-content-hash',
+        };
+        project.adjustmentLayers = {
+            layers: [
+                {
+                    id: 'imported-layer',
+                    name: 'Imported volume',
+                    effectType: 'volume',
+                    parameters: [{ name: 'Gain', value: 6, min: -60, max: 12, unit: 'dB' }],
+                    affectedTrackIds: ['track-audio'],
+                    insertionIndex: 0,
+                    regions: [],
+                    enabled: true,
+                    mix: 1,
+                    color: '#fff',
+                },
+            ],
+        };
+        const published_statuses: string[] = [];
+        const unsubscribe = trackStore.subscribe((state) => {
+            const status = state?.tracks.find((track) => track.id === 'track-audio')?.freezeState.status;
+            if (status) {
+                published_statuses.push(status);
+            }
+        });
+
+        await expect(applyImportedProjectData({ data: project })).resolves.toBe(true);
+        unsubscribe();
+
+        expect(trackStore.value?.tracks[0]?.freezeState).toMatchObject({
+            status: 'stale',
+            sourceContentHash: 'legacy-content-hash',
+        });
+        expect(published_statuses).toEqual(['stale']);
+    });
+
+    it('canonicalizes imported adjustment parameter bounds and values', async () => {
+        const project = makeProject();
+        project.adjustmentLayers = {
+            layers: [
+                {
+                    id: 'imported-layer',
+                    name: 'Imported volume',
+                    effectType: 'volume',
+                    parameters: [{ name: 'Gain', value: 100, min: 12, max: -60, unit: 'dB' }],
+                    affectedTrackIds: ['track-audio'],
+                    insertionIndex: 0,
+                    regions: [],
+                    enabled: true,
+                    mix: 1,
+                    color: '#fff',
+                },
+            ],
+        };
+
+        await expect(applyImportedProjectData({ data: project })).resolves.toBe(true);
+
+        expect(adjustmentLayerStore.value?.layers[0]?.parameters).toEqual([
+            { name: 'Gain', value: 12, min: -60, max: 12, unit: 'dB' },
+        ]);
     });
 
     it('keeps durability retries active when the initial CRDT snapshot fails', async () => {

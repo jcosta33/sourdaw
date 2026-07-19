@@ -64,6 +64,31 @@ function clamp_unit_interval(value: number): number {
     return Math.max(0, Math.min(1, value));
 }
 
+function canonical_parameter_bounds(parameter: AdjustmentParameter): { min: number; max: number } {
+    const first_bound = Number.isFinite(parameter.min) ? parameter.min : 0;
+    const second_bound = Number.isFinite(parameter.max) ? parameter.max : first_bound;
+    return {
+        min: Math.min(first_bound, second_bound),
+        max: Math.max(first_bound, second_bound),
+    };
+}
+
+export function resolveAdjustmentParameterValue(parameter: AdjustmentParameter): number {
+    const { min, max } = canonical_parameter_bounds(parameter);
+    const value = Number.isFinite(parameter.value) ? parameter.value : min;
+    return Math.max(min, Math.min(max, value));
+}
+
+export function canonicalizeAdjustmentParameter(parameter: AdjustmentParameter): AdjustmentParameter {
+    const { min, max } = canonical_parameter_bounds(parameter);
+    return {
+        ...parameter,
+        min,
+        max,
+        value: resolveAdjustmentParameterValue(parameter),
+    };
+}
+
 export function resolveAdjustmentLayerTrackIds(layer: AdjustmentLayer, orderedTrackIds: readonly string[]): string[] {
     if (layer.affectedTrackIds.length > 0) {
         const available_track_ids = new Set(orderedTrackIds);
@@ -127,7 +152,7 @@ export function createEffectiveAdjustmentLayerSignature(
                     mix,
                     parameters: layer.parameters.map((parameter) => ({
                         name: parameter.name,
-                        value: Math.max(parameter.min, Math.min(parameter.max, parameter.value)),
+                        value: resolveAdjustmentParameterValue(parameter),
                     })),
                     regions: audible_regions.map((region) => ({
                         startBeat: region.startBeat,

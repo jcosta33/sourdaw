@@ -111,6 +111,7 @@ export { createCompGroup } from './groupComping/compGroupOperations/createCompGr
 // ── Adjustment Layer ──────────────────────────────────────────────────────────
 
 export { restoreAdjustmentLayerSnapshot } from './adjustmentLayer/restoreAdjustmentLayerSnapshot';
+export { migrateLegacyFrozenTrackStates } from './freezeBounce/migrateLegacyFrozenTrackStates';
 export { getActiveLayersAtBeat } from './adjustmentLayer/getActiveLayersAtBeat';
 export { getLayerCount } from './adjustmentLayer/getLayerCount';
 

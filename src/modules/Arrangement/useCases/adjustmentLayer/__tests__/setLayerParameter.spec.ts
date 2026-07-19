@@ -13,6 +13,11 @@ const mocks = vi.hoisted(() => {
 });
 
 vi.mock('#/modules/Arrangement/stores/adjustmentLayer', () => ({
+    resolveAdjustmentParameterValue: (parameter: { value: number; min: number; max: number }) => {
+        const min = Math.min(parameter.min, parameter.max);
+        const max = Math.max(parameter.min, parameter.max);
+        return Math.max(min, Math.min(max, parameter.value));
+    },
     adjustmentLayerStore: {
         get value() {
             return mocks.adjustmentLayerStoreValue.value;

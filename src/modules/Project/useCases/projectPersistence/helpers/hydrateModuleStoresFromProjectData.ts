@@ -1,4 +1,4 @@
-import { restoreAdjustmentLayerSnapshot } from '#/modules/Arrangement/useCases';
+import { migrateLegacyFrozenTrackStates, restoreAdjustmentLayerSnapshot } from '#/modules/Arrangement/useCases';
 import { setSidechainRoutes } from '#/modules/Routing/useCases';
 import { restoreTransportSnapshot } from '#/modules/Transport/useCases';
 
@@ -11,6 +11,7 @@ export function hydrateModuleStoresFromProjectData(data: HydratableProjectData):
 
     // Adjustment layers hydrate after the active arrangement so affectedTrackIds resolve.
     restoreAdjustmentLayerSnapshot(data.adjustmentLayers);
+    migrateLegacyFrozenTrackStates();
 
     setSidechainRoutes(data.sidechainRoutes ?? []);
 }

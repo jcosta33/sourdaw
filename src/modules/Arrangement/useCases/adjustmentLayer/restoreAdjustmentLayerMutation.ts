@@ -122,6 +122,11 @@ type FrozenRestoreEvaluation = {
     inputsMatch: boolean;
 };
 
+type FrozenRestoreEvaluationResult = {
+    evaluations: Map<string, FrozenRestoreEvaluation>;
+    trackState: NonNullable<typeof trackStore.value> | null;
+};
+
 function frozen_restore_evaluation_key(adjustment_mutation_id: string, track_id: string): string {
     return `${adjustment_mutation_id}:${track_id}`;
 }
@@ -129,11 +134,11 @@ function frozen_restore_evaluation_key(adjustment_mutation_id: string, track_id:
 async function evaluate_frozen_restores(
     payloads: readonly RestoreAdjustmentLayerMutationPayload[],
     restoredLayers: readonly AdjustmentLayer[]
-): Promise<Map<string, FrozenRestoreEvaluation>> {
+): Promise<FrozenRestoreEvaluationResult> {
     const evaluations = new Map<string, FrozenRestoreEvaluation>();
     const track_state = trackStore.value;
     if (!track_state) {
-        return evaluations;
+        return { evaluations, trackState: null };
     }
     const ordered_track_ids = track_state.tracks.map((track) => track.id);
 
@@ -174,7 +179,7 @@ async function evaluate_frozen_restores(
             })
         )
     );
-    return evaluations;
+    return { evaluations, trackState: track_state };
 }
 
 function restore_operation(
@@ -357,9 +362,12 @@ export async function restoreAdjustmentLayerMutation(
         }
         restored_layers = restored.layers;
     }
-    const frozen_restore_evaluations = await evaluate_frozen_restores(payloads, restored_layers);
+    const frozen_restore_result = await evaluate_frozen_restores(payloads, restored_layers);
     if (adjustmentLayerStore.value !== current_layer_state) {
         throw new Error('Cannot undo adjustment-layer mutation over newer adjustment-layer state');
+    }
+    if (frozen_restore_result.trackState && trackStore.value !== frozen_restore_result.trackState) {
+        throw new Error('Cannot undo adjustment-layer mutation over newer ordered track state');
     }
 
     batchStoreUpdates(() => {
@@ -375,7 +383,7 @@ export async function restoreAdjustmentLayerMutation(
                     if (!stale_transition) {
                         return track;
                     }
-                    const frozen_evaluation = frozen_restore_evaluations.get(
+                    const frozen_evaluation = frozen_restore_result.evaluations.get(
                         frozen_restore_evaluation_key(current_payload.adjustmentMutationId, track.id)
                     );
                     if (

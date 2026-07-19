@@ -76,6 +76,26 @@ describe('createAdjustmentLayerApplier', () => {
         expect(lastCall.trackId).toBe('t1');
     });
 
+    it('applies the same canonical parameter value used by freeze signatures', () => {
+        const gainPan = makeGainPanApplierMock();
+        const onApplied = vi.fn();
+        const applier = createAdjustmentLayerApplier({
+            gainPanApplier: gainPan,
+            getAllTrackIds: () => ['t1'],
+            onApplied,
+        });
+        const layer = baseLayer({
+            effectType: 'volume',
+            parameters: [{ name: 'Gain', value: 100, min: 12, max: -60, unit: 'dB' }],
+            affectedTrackIds: ['t1'],
+        });
+
+        applier.applyLayers({ activeLayers: [layer], beat: 0 });
+
+        expect(gainPan.calls[0]?.value).toBeCloseTo(10 ** (12 / 20), 3);
+        expect(onApplied).toHaveBeenCalledWith(expect.objectContaining({ parameters: { Gain: 12 } }));
+    });
+
     it('computes a linear fade-in envelope across fadeInBeats', () => {
         const gainPan = makeGainPanApplierMock();
         const applied: Array<{ beat: number; blend: number }> = [];

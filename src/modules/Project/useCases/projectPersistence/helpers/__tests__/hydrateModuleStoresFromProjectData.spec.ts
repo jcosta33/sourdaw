@@ -6,6 +6,7 @@ import { type HydratableProjectData } from '../isHydratableProjectData';
 const mocks = vi.hoisted(() => ({
     automationStoreSet: vi.fn(),
     markerStoreSet: vi.fn(),
+    migrateLegacyFrozenTrackStates: vi.fn(),
     restoreAdjustmentLayerSnapshot: vi.fn(),
     setSidechainRoutes: vi.fn(),
     trackStoreSet: vi.fn(),
@@ -18,6 +19,7 @@ vi.mock('#/modules/Arrangement/stores', () => ({
 }));
 
 vi.mock('#/modules/Arrangement/useCases', () => ({
+    migrateLegacyFrozenTrackStates: mocks.migrateLegacyFrozenTrackStates,
     restoreAdjustmentLayerSnapshot: mocks.restoreAdjustmentLayerSnapshot,
 }));
 
@@ -111,6 +113,10 @@ describe('hydrateModuleStoresFromProjectData', () => {
 
         expect(mocks.restoreTransportSnapshot).toHaveBeenCalledWith(transport);
         expect(mocks.restoreAdjustmentLayerSnapshot).toHaveBeenCalledWith(adjustmentLayers);
+        expect(mocks.migrateLegacyFrozenTrackStates).toHaveBeenCalledOnce();
+        expect(mocks.restoreAdjustmentLayerSnapshot.mock.invocationCallOrder[0]).toBeLessThan(
+            mocks.migrateLegacyFrozenTrackStates.mock.invocationCallOrder[0]!
+        );
         expect(mocks.setSidechainRoutes).toHaveBeenCalledWith(sidechainRoutes);
     });
 

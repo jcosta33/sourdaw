@@ -262,6 +262,49 @@ describe('freezeTrack', () => {
         expect(cacheAudioBuffer).not.toHaveBeenCalled();
     });
 
+    it('discards an in-flight freeze when ordered track scope changes during final hash validation', async () => {
+        const target = createTrack({ id: 't1', name: 'Target', kind: 'audio' });
+        const other = createTrack({ id: 't2', name: 'Other', kind: 'audio' });
+        trackStore.set({ tracks: [target, other], selectedTrackId: null, ghostClips: [] });
+        adjustmentLayerStore.set({
+            layers: [
+                {
+                    id: 'layer-1',
+                    name: 'Scoped layer',
+                    effectType: 'volume',
+                    parameters: [{ name: 'Gain', value: 0, min: -60, max: 12, unit: 'dB' }],
+                    affectedTrackIds: [],
+                    insertionIndex: 0,
+                    regions: [],
+                    enabled: true,
+                    mix: 1,
+                    color: '#fff',
+                },
+            ],
+        });
+        let finish_final_hash!: (hash: string) => void;
+        vi.mocked(computeTrackHash)
+            .mockResolvedValueOnce('same-hash')
+            .mockReturnValueOnce(new Promise<string>((resolve) => (finish_final_hash = resolve)));
+        vi.mocked(renderTrackOffline).mockResolvedValue({
+            sampleRate: 44_100,
+            numberOfChannels: 2,
+        } as AudioBuffer);
+
+        const freeze = freezeTrack('t1');
+        await vi.waitFor(() => expect(computeTrackHash).toHaveBeenCalledTimes(2));
+        const validating_state = trackStore.value;
+        if (!validating_state) {
+            throw new Error('Expected validating track state');
+        }
+        trackStore.set({ ...validating_state, tracks: [...validating_state.tracks].reverse() });
+        finish_final_hash('same-hash');
+        await freeze;
+
+        expect(trackStore.value?.tracks.find((track) => track.id === 't1')?.freezeState.status).toBe('unfrozen');
+        expect(cacheAudioBuffer).not.toHaveBeenCalled();
+    });
+
     it('handles render failure gracefully', async () => {
         trackStore.set({
             tracks: [

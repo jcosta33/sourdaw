@@ -1,4 +1,4 @@
-import { adjustmentLayerStore } from '../../stores/adjustmentLayer';
+import { adjustmentLayerStore, resolveAdjustmentParameterValue } from '../../stores/adjustmentLayer';
 
 export function setLayerParameter(layerIdVal: string, paramName: string, value: number): void {
     const state = adjustmentLayerStore.value;
@@ -12,7 +12,7 @@ export function setLayerParameter(layerIdVal: string, paramName: string, value: 
                       ...length,
                       parameters: length.parameters.map((param) =>
                           param.name === paramName
-                              ? { ...param, value: Math.max(param.min, Math.min(param.max, value)) }
+                              ? { ...param, value: resolveAdjustmentParameterValue({ ...param, value }) }
                               : param
                       ),
                   }

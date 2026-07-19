@@ -1,5 +1,6 @@
 import {
     computeAdjustmentLayerBlendAtBeat,
+    resolveAdjustmentParameterValue,
     resolveAdjustmentLayerTrackIds,
     type AdjustmentLayer,
 } from '#/modules/Arrangement/stores';
@@ -59,21 +60,23 @@ export function createAdjustmentLayerApplier(deps: AdjustmentApplierDeps): Creat
     const parametersToMap = (layer: AdjustmentLayer): Record<string, number> => {
         const map: Record<string, number> = {};
         for (const p of layer.parameters) {
-            map[p.name] = p.value;
+            map[p.name] = resolveAdjustmentParameterValue(p);
         }
         return map;
     };
 
     const applyVolumePan = (layer: AdjustmentLayer, trackId: string, blend: number): void => {
         if (layer.effectType === 'volume') {
-            const gainDb = layer.parameters.find((p) => p.name === 'Gain')?.value ?? 0;
+            const gain_parameter = layer.parameters.find((parameter) => parameter.name === 'Gain');
+            const gainDb = gain_parameter ? resolveAdjustmentParameterValue(gain_parameter) : 0;
             const target = dbToLinear(gainDb);
             const blended = 1 + (target - 1) * blend;
             deps.gainPanApplier.setGainOverride(trackId, layer.id, blended);
             return;
         }
         if (layer.effectType === 'pan') {
-            const panPct = layer.parameters.find((p) => p.name === 'Pan')?.value ?? 0;
+            const pan_parameter = layer.parameters.find((parameter) => parameter.name === 'Pan');
+            const panPct = pan_parameter ? resolveAdjustmentParameterValue(pan_parameter) : 0;
             const blended = (panPct / 100) * blend;
             deps.gainPanApplier.setPanOverride(trackId, layer.id, blended);
             return;

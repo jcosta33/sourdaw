@@ -10,6 +10,10 @@ import { renderTrackOffline } from './renderOffline';
 
 export const activeFreezeTasks = new Map<string, AbortController>();
 
+function same_ordered_track_ids(left: readonly string[], right: readonly string[]): boolean {
+    return left.length === right.length && left.every((track_id, index) => track_id === right[index]);
+}
+
 async function compute_render_input_hash(
     track: NonNullable<typeof trackStore.value>['tracks'][number],
     orderedTrackIds: readonly string[]
@@ -66,10 +70,8 @@ export async function freezeTrack(trackId: string): Promise<void> {
     }));
 
     try {
-        const hash = await compute_render_input_hash(
-            track,
-            state.tracks.map((candidate) => candidate.id)
-        );
+        const initial_ordered_track_ids = state.tracks.map((candidate) => candidate.id);
+        const hash = await compute_render_input_hash(track, initial_ordered_track_ids);
 
         let startBeat = Infinity;
         let endBeat = -Infinity;
@@ -126,16 +128,18 @@ export async function freezeTrack(trackId: string): Promise<void> {
             invalidate_finished_render(trackId);
             return;
         }
-        const current_hash = await compute_render_input_hash(
-            current_track,
-            current_track_state.tracks.map((candidate) => candidate.id)
-        );
+        const current_ordered_track_ids = current_track_state.tracks.map((candidate) => candidate.id);
+        const current_hash = await compute_render_input_hash(current_track, current_ordered_track_ids);
         const latest_track_state = trackStore.value;
         const latest_track = latest_track_state?.tracks.find((candidate) => candidate.id === trackId);
+        const latest_ordered_track_ids = latest_track_state?.tracks.map((candidate) => candidate.id) ?? [];
         if (
             activeFreezeTasks.get(trackId) !== abortController ||
             adjustmentLayerStore.value !== current_layer_state ||
+            latest_track_state !== current_track_state ||
             latest_track !== current_track ||
+            !same_ordered_track_ids(initial_ordered_track_ids, current_ordered_track_ids) ||
+            !same_ordered_track_ids(current_ordered_track_ids, latest_ordered_track_ids) ||
             current_hash !== hash
         ) {
             activeFreezeTasks.delete(trackId);
