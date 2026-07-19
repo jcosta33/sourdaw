@@ -9,6 +9,26 @@
 
 import { initSync, GrinderInstance } from '../wasm/daw_dsp.js';
 
+import grinderAudioParamContract from './grinderAudioParamContract.json';
+
+type GrinderAudioParamDescriptor = {
+    name: string;
+    defaultValue: number;
+    minValue: number;
+    maxValue: number;
+    automationRate: 'a-rate';
+};
+
+const GRINDER_AUDIO_PARAM_DESCRIPTORS: readonly GrinderAudioParamDescriptor[] = grinderAudioParamContract.map(
+    ({ name, defaultValue, minValue, maxValue }) => ({
+        name,
+        defaultValue,
+        minValue,
+        maxValue,
+        automationRate: 'a-rate',
+    })
+);
+
 const PARAM_MAP: Record<string, string> = {
     engineMode: 'engineMode',
     gain: 'gain',
@@ -212,17 +232,7 @@ function applyNeuralPatch(instance: GrinderInstance, patch: Record<string, unkno
 
 class GrinderProcessor extends AudioWorkletProcessor {
     static get parameterDescriptors() {
-        return [
-            { name: 'gain', defaultValue: 5, minValue: 0, maxValue: 10 },
-            { name: 'bass', defaultValue: 5, minValue: 0, maxValue: 10 },
-            { name: 'mid', defaultValue: 5, minValue: 0, maxValue: 10 },
-            { name: 'treble', defaultValue: 5, minValue: 0, maxValue: 10 },
-            { name: 'presence', defaultValue: 5, minValue: 0, maxValue: 10 },
-            { name: 'resonance', defaultValue: 5, minValue: 0, maxValue: 10 },
-            { name: 'master', defaultValue: 5, minValue: 0, maxValue: 10 },
-            { name: 'inputGain', defaultValue: 0, minValue: -24, maxValue: 24 },
-            { name: 'outputGain', defaultValue: 0, minValue: -24, maxValue: 24 },
-        ];
+        return GRINDER_AUDIO_PARAM_DESCRIPTORS;
     }
 
     _instance: GrinderInstance | null = null;
@@ -316,16 +326,6 @@ class GrinderProcessor extends AudioWorkletProcessor {
                 return true;
             }
 
-            for (const name in parameters) {
-                const values = parameters[name];
-                if (!values || values.length === 0) {
-                    continue;
-                }
-                const value = values.length > 1 ? (values[frames - 1] ?? 0) : (values[0] ?? 0);
-                const rustName = PARAM_MAP[name] ?? name;
-                inst.set_param(rustName, value);
-            }
-
             const in0 = input[0];
             if (!in0) {
                 this._passthrough(input, output);
@@ -339,20 +339,75 @@ class GrinderProcessor extends AudioWorkletProcessor {
                 return true;
             }
 
-            new Float32Array(mem, inLeftPtr, frames).set(in0);
-            new Float32Array(mem, inRightPtr, frames).set(input[1] ?? in0);
-
-            const outLeftPtr = inst.process(frames);
-            const outRightPtr = inst.get_right_ptr();
-            if (!outLeftPtr || !outRightPtr) {
-                this._passthrough(input, output);
-                return true;
+            const out1 = output[1];
+            let hasAudioRateValues = false;
+            for (const name in parameters) {
+                const values = parameters[name];
+                if (values && values.length > 1) {
+                    hasAudioRateValues = true;
+                    break;
+                }
             }
 
-            out0.set(new Float32Array(mem, outLeftPtr, frames));
-            const out1 = output[1];
-            if (out1) {
-                out1.set(new Float32Array(mem, outRightPtr, frames));
+            if (!hasAudioRateValues) {
+                for (const name in parameters) {
+                    const value = parameters[name]?.[0];
+                    if (value === undefined) {
+                        continue;
+                    }
+                    inst.set_param(PARAM_MAP[name] ?? name, value);
+                }
+
+                new Float32Array(mem, inLeftPtr, frames).set(in0);
+                new Float32Array(mem, inRightPtr, frames).set(input[1] ?? in0);
+
+                const outLeftPtr = inst.process(frames);
+                const outRightPtr = inst.get_right_ptr();
+                if (!outLeftPtr || !outRightPtr) {
+                    this._passthrough(input, output);
+                    return true;
+                }
+
+                out0.set(new Float32Array(mem, outLeftPtr, frames));
+                if (out1) {
+                    out1.set(new Float32Array(mem, outRightPtr, frames));
+                }
+            } else {
+                const wasmInputLeft = new Float32Array(mem, inLeftPtr, 1);
+                const wasmInputRight = new Float32Array(mem, inRightPtr, 1);
+                let wasmOutputLeft: Float32Array | null = null;
+                let wasmOutputRight: Float32Array | null = null;
+                const in1 = input[1] ?? in0;
+
+                for (let frame = 0; frame < frames; frame++) {
+                    for (const name in parameters) {
+                        const values = parameters[name];
+                        if (!values || values.length === 0) {
+                            continue;
+                        }
+                        const value = values.length === 1 ? values[0] : values[frame];
+                        if (value === undefined) {
+                            continue;
+                        }
+                        inst.set_param(PARAM_MAP[name] ?? name, value);
+                    }
+
+                    wasmInputLeft[0] = in0[frame] ?? 0;
+                    wasmInputRight[0] = in1[frame] ?? 0;
+                    const outLeftPtr = inst.process(1);
+                    const outRightPtr = inst.get_right_ptr();
+                    if (!outLeftPtr || !outRightPtr) {
+                        this._passthrough(input, output);
+                        return true;
+                    }
+
+                    wasmOutputLeft ??= new Float32Array(mem, outLeftPtr, 1);
+                    wasmOutputRight ??= new Float32Array(mem, outRightPtr, 1);
+                    out0[frame] = wasmOutputLeft[0] ?? 0;
+                    if (out1) {
+                        out1[frame] = wasmOutputRight[0] ?? 0;
+                    }
+                }
             }
 
             this._meterCounter++;

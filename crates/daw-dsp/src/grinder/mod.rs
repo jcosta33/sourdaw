@@ -109,3 +109,115 @@ impl GrinderInstance {
         self.engine.neural_warmup_progress()
     }
 }
+
+#[cfg(test)]
+mod automatable_param_contract {
+    use super::params::{
+        normalize_automatable_param, GrinderAutomatableParamDomain,
+        GRINDER_AUTOMATABLE_PARAM_CONTRACT,
+    };
+
+    #[derive(Debug, serde::Deserialize)]
+    #[serde(rename_all = "camelCase")]
+    struct WebAutomatableParamDescriptor {
+        name: String,
+        min_value: f32,
+        max_value: f32,
+        default_value: f32,
+        domain: GrinderAutomatableParamDomain,
+    }
+
+    #[test]
+    fn native_and_web_registries_match() {
+        let native = GRINDER_AUTOMATABLE_PARAM_CONTRACT
+            .iter()
+            .map(|param| {
+                (
+                    param.name,
+                    param.minimum,
+                    param.maximum,
+                    param.default,
+                    param.domain,
+                )
+            })
+            .collect::<Vec<_>>();
+        let expected = vec![
+            ("gain", 0.0, 10.0, 5.0, GrinderAutomatableParamDomain::Raw),
+            ("bass", 0.0, 10.0, 5.0, GrinderAutomatableParamDomain::Raw),
+            ("mid", 0.0, 10.0, 5.0, GrinderAutomatableParamDomain::Raw),
+            ("treble", 0.0, 10.0, 5.0, GrinderAutomatableParamDomain::Raw),
+            (
+                "presence",
+                0.0,
+                10.0,
+                5.0,
+                GrinderAutomatableParamDomain::Raw,
+            ),
+            (
+                "resonance",
+                0.0,
+                10.0,
+                5.0,
+                GrinderAutomatableParamDomain::Raw,
+            ),
+            ("master", 0.0, 10.0, 5.0, GrinderAutomatableParamDomain::Raw),
+            (
+                "inputGain",
+                -24.0,
+                24.0,
+                0.0,
+                GrinderAutomatableParamDomain::DecibelsToLinear,
+            ),
+            (
+                "outputGain",
+                -24.0,
+                24.0,
+                0.0,
+                GrinderAutomatableParamDomain::DecibelsToLinear,
+            ),
+            (
+                "transformerDrive",
+                0.0,
+                1.0,
+                0.3,
+                GrinderAutomatableParamDomain::Raw,
+            ),
+            (
+                "negFeedback",
+                0.0,
+                1.0,
+                0.5,
+                GrinderAutomatableParamDomain::Raw,
+            ),
+        ];
+
+        assert_eq!(native, expected);
+
+        let web_contract: Vec<WebAutomatableParamDescriptor> = serde_json::from_str(include_str!(
+            "../../../../src/modules/AudioEngine/services/grinderAudioParamContract.json"
+        ))
+        .expect("web Grinder AudioParam contract must remain valid JSON");
+        let web = web_contract
+            .iter()
+            .map(|param| {
+                (
+                    param.name.as_str(),
+                    param.min_value,
+                    param.max_value,
+                    param.default_value,
+                    param.domain,
+                )
+            })
+            .collect::<Vec<_>>();
+
+        assert_eq!(
+            web, native,
+            "native and web Grinder parameter registries diverged"
+        );
+        assert_eq!(normalize_automatable_param("gain", -1.0), Some(0.0));
+        assert_eq!(normalize_automatable_param("gain", 12.0), Some(10.0));
+        assert_eq!(normalize_automatable_param("inputGain", 12.0), Some(12.0));
+        assert_eq!(normalize_automatable_param("outputGain", 30.0), Some(24.0));
+        assert_eq!(normalize_automatable_param("negFeedback", f32::NAN), None);
+    }
+}

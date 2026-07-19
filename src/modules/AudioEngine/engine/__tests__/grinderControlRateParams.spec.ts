@@ -81,9 +81,11 @@ describe('grinderControlRateParams', () => {
         grinder.setParam('transformerHysteresis', 0.7);
         grinder.setParam('cabIrSlot', 3);
         grinder.setParam('neuralCpuBudget', Number.NaN);
+        grinder.setParam('transformerDrive', 0.6);
 
         expect(workletNodeCreations).toBe(1);
-        expect(setTargetAtTime).not.toHaveBeenCalled();
+        expect(setTargetAtTime).toHaveBeenCalledOnce();
+        expect(setTargetAtTime).toHaveBeenCalledWith(0.6, 2, 0.01);
         expect(postMessage).not.toHaveBeenCalled();
 
         const callbacks = rafCallbacks.splice(0);

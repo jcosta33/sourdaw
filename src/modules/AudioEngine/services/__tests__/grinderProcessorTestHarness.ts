@@ -13,11 +13,7 @@ export type GrinderProcessorLike = {
         onmessage: ((event: { data: unknown }) => void) | null;
         postMessage: ReturnType<typeof vi.fn>;
     };
-    process(
-        inputs: Float32Array[][],
-        outputs: Float32Array[][],
-        parameters: Record<string, Float32Array>
-    ): boolean;
+    process(inputs: Float32Array[][], outputs: Float32Array[][], parameters: Record<string, Float32Array>): boolean;
 };
 
 type GrinderProcessorConstructor = {

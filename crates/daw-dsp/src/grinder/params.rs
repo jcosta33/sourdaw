@@ -1,5 +1,133 @@
 //! Parameter smoothing and utility functions for Grinder.
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum GrinderAutomatableParamDomain {
+    Raw,
+    DecibelsToLinear,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct GrinderAutomatableParamDescriptor {
+    pub name: &'static str,
+    pub minimum: f32,
+    pub maximum: f32,
+    pub default: f32,
+    pub domain: GrinderAutomatableParamDomain,
+}
+
+impl GrinderAutomatableParamDescriptor {
+    pub fn clamp(self, value: f32) -> Option<f32> {
+        value
+            .is_finite()
+            .then(|| value.clamp(self.minimum, self.maximum))
+    }
+}
+
+pub const GRINDER_AUTOMATABLE_PARAM_CONTRACT: [GrinderAutomatableParamDescriptor; 11] = [
+    GrinderAutomatableParamDescriptor {
+        name: "gain",
+        minimum: 0.0,
+        maximum: 10.0,
+        default: 5.0,
+        domain: GrinderAutomatableParamDomain::Raw,
+    },
+    GrinderAutomatableParamDescriptor {
+        name: "bass",
+        minimum: 0.0,
+        maximum: 10.0,
+        default: 5.0,
+        domain: GrinderAutomatableParamDomain::Raw,
+    },
+    GrinderAutomatableParamDescriptor {
+        name: "mid",
+        minimum: 0.0,
+        maximum: 10.0,
+        default: 5.0,
+        domain: GrinderAutomatableParamDomain::Raw,
+    },
+    GrinderAutomatableParamDescriptor {
+        name: "treble",
+        minimum: 0.0,
+        maximum: 10.0,
+        default: 5.0,
+        domain: GrinderAutomatableParamDomain::Raw,
+    },
+    GrinderAutomatableParamDescriptor {
+        name: "presence",
+        minimum: 0.0,
+        maximum: 10.0,
+        default: 5.0,
+        domain: GrinderAutomatableParamDomain::Raw,
+    },
+    GrinderAutomatableParamDescriptor {
+        name: "resonance",
+        minimum: 0.0,
+        maximum: 10.0,
+        default: 5.0,
+        domain: GrinderAutomatableParamDomain::Raw,
+    },
+    GrinderAutomatableParamDescriptor {
+        name: "master",
+        minimum: 0.0,
+        maximum: 10.0,
+        default: 5.0,
+        domain: GrinderAutomatableParamDomain::Raw,
+    },
+    GrinderAutomatableParamDescriptor {
+        name: "inputGain",
+        minimum: -24.0,
+        maximum: 24.0,
+        default: 0.0,
+        domain: GrinderAutomatableParamDomain::DecibelsToLinear,
+    },
+    GrinderAutomatableParamDescriptor {
+        name: "outputGain",
+        minimum: -24.0,
+        maximum: 24.0,
+        default: 0.0,
+        domain: GrinderAutomatableParamDomain::DecibelsToLinear,
+    },
+    GrinderAutomatableParamDescriptor {
+        name: "transformerDrive",
+        minimum: 0.0,
+        maximum: 1.0,
+        default: 0.3,
+        domain: GrinderAutomatableParamDomain::Raw,
+    },
+    GrinderAutomatableParamDescriptor {
+        name: "negFeedback",
+        minimum: 0.0,
+        maximum: 1.0,
+        default: 0.5,
+        domain: GrinderAutomatableParamDomain::Raw,
+    },
+];
+
+pub fn get_automatable_param_descriptor(
+    name: &str,
+) -> Option<&'static GrinderAutomatableParamDescriptor> {
+    let index = match name {
+        "gain" => 0,
+        "bass" => 1,
+        "mid" => 2,
+        "treble" => 3,
+        "presence" => 4,
+        "resonance" => 5,
+        "master" => 6,
+        "inputGain" => 7,
+        "outputGain" => 8,
+        "transformerDrive" => 9,
+        "negFeedback" => 10,
+        _ => return None,
+    };
+    GRINDER_AUTOMATABLE_PARAM_CONTRACT.get(index)
+}
+
+pub fn normalize_automatable_param(name: &str, value: f32) -> Option<f32> {
+    get_automatable_param_descriptor(name).and_then(|param| param.clamp(value))
+}
+
 /// One-pole smoothing filter for parameter changes.
 pub struct SmoothedParam {
     current: f32,
@@ -44,67 +172,5 @@ pub fn linear_to_db(linear: f32) -> f32 {
         -100.0
     } else {
         20.0 * linear.log10()
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::{GrinderAutomatableParamDomain, GRINDER_AUTOMATABLE_PARAM_CONTRACT};
-
-    #[test]
-    fn automatable_param_contract() {
-        let actual = GRINDER_AUTOMATABLE_PARAM_CONTRACT
-            .iter()
-            .map(|param| {
-                (
-                    param.name,
-                    param.minimum,
-                    param.maximum,
-                    param.default,
-                    param.domain,
-                )
-            })
-            .collect::<Vec<_>>();
-
-        assert_eq!(
-            actual,
-            vec![
-                ("gain", 0.0, 10.0, 5.0, GrinderAutomatableParamDomain::Raw),
-                ("bass", 0.0, 10.0, 5.0, GrinderAutomatableParamDomain::Raw),
-                ("mid", 0.0, 10.0, 5.0, GrinderAutomatableParamDomain::Raw),
-                ("treble", 0.0, 10.0, 5.0, GrinderAutomatableParamDomain::Raw),
-                ("presence", 0.0, 10.0, 5.0, GrinderAutomatableParamDomain::Raw),
-                ("resonance", 0.0, 10.0, 5.0, GrinderAutomatableParamDomain::Raw),
-                ("master", 0.0, 10.0, 5.0, GrinderAutomatableParamDomain::Raw),
-                (
-                    "inputGain",
-                    -24.0,
-                    24.0,
-                    0.0,
-                    GrinderAutomatableParamDomain::DecibelsToLinear,
-                ),
-                (
-                    "outputGain",
-                    -24.0,
-                    24.0,
-                    0.0,
-                    GrinderAutomatableParamDomain::DecibelsToLinear,
-                ),
-                (
-                    "transformerDrive",
-                    0.0,
-                    1.0,
-                    0.3,
-                    GrinderAutomatableParamDomain::Raw,
-                ),
-                (
-                    "negFeedback",
-                    0.0,
-                    1.0,
-                    0.5,
-                    GrinderAutomatableParamDomain::Raw,
-                ),
-            ]
-        );
     }
 }

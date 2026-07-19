@@ -6,7 +6,7 @@
 use super::cabinet::{CabinetConvolver, SpeakerModel};
 use super::input::{InputConditioner, NoiseGate};
 use super::neural::{CapturePlacement, EngineMode, NeuralCapture};
-use super::params::{db_to_linear, linear_to_db, SmoothedParam};
+use super::params::{db_to_linear, get_automatable_param_descriptor, linear_to_db, SmoothedParam};
 use super::pedals::{CompressorPedal, DistortionPedal, FuzzPedal, OverdrivePedal};
 use super::power_amp::PowerAmp;
 use super::tone_stack::ToneStack;
@@ -181,6 +181,14 @@ impl GrinderEngine {
     }
 
     pub fn set_param(&mut self, name: &str, value: f32) {
+        let value = match get_automatable_param_descriptor(name) {
+            Some(param) => match param.clamp(value) {
+                Some(value) => value,
+                None => return,
+            },
+            None => value,
+        };
+
         match name {
             // Input
             "inputGain" | "inputImpedance" | "inputMode" => self.input_cond.set_param(name, value),
