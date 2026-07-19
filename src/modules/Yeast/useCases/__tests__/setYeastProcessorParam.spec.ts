@@ -24,9 +24,26 @@ const store = vi.hoisted(() => ({
 
 const commit = vi.hoisted(() => vi.fn());
 const grooveMocks = vi.hoisted(() => ({ setYeastGrooveTemplate: vi.fn() }));
+const runtimeMocks = vi.hoisted(() => ({
+    createYeastRuntimeProjection: vi.fn(() => [
+        {
+            id: 'groove-1',
+            type: 'groove',
+            bypassed: false,
+            params: { groove_amount: 0.5 },
+        },
+    ]),
+    setYeastRuntimeProjection: vi.fn(),
+}));
 
 vi.mock('../../stores/yeastStore', () => ({ yeastStore: store }));
+vi.mock('../../engine/yeastRuntime', () => ({
+    setYeastRuntimeProjection: runtimeMocks.setYeastRuntimeProjection,
+}));
 vi.mock('../commitYeastProjection', () => ({ commitYeastProjection: commit }));
+vi.mock('../createYeastRuntimeProjection', () => ({
+    createYeastRuntimeProjection: runtimeMocks.createYeastRuntimeProjection,
+}));
 vi.mock('../getYeastGrooveAssignment', () => ({
     getYeastGrooveAssignment: () => ({ templateId: 'pocket-1', amount: 0.5 }),
 }));
@@ -62,6 +79,22 @@ describe('setYeastProcessorParam', () => {
         setYeastProcessorParam('groove-1', 'amount', 0.75);
 
         expect(grooveMocks.setYeastGrooveTemplate).toHaveBeenCalledWith('groove-1', 'pocket-1', 0.75);
+        expect(commit).not.toHaveBeenCalled();
+        expect(store.value.processors[1]?.params).toEqual({});
+    });
+
+    it('previews a transient groove amount without creating an assignment or durable store write', () => {
+        setYeastProcessorParam('groove-1', 'amount', 0.75, true);
+
+        expect(runtimeMocks.setYeastRuntimeProjection).toHaveBeenCalledWith([
+            {
+                id: 'groove-1',
+                type: 'groove',
+                bypassed: false,
+                params: { groove_amount: 0.75 },
+            },
+        ]);
+        expect(grooveMocks.setYeastGrooveTemplate).not.toHaveBeenCalled();
         expect(commit).not.toHaveBeenCalled();
         expect(store.value.processors[1]?.params).toEqual({});
     });

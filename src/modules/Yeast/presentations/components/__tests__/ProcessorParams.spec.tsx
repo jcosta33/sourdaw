@@ -54,6 +54,15 @@ describe('ProcessorParams', () => {
             target: { value: 'pocket-1' },
         });
 
+        const amountSlider = screen.getByRole('slider', { name: 'Amount' });
+        fireEvent.pointerDown(amountSlider, { button: 0, pointerId: 1, clientY: 100 });
+        fireEvent.pointerMove(amountSlider, { pointerId: 1, clientY: 80 });
+
+        expect(onSetParam).toHaveBeenCalledWith('groove-1', 'amount', expect.any(Number), true);
+
+        fireEvent.pointerUp(amountSlider, { pointerId: 1 });
+
+        expect(onSetParam).toHaveBeenLastCalledWith('groove-1', 'amount', expect.any(Number), false);
         expect(onSetGrooveTemplate).toHaveBeenCalledWith('groove-1', 'pocket-1');
         expect(onSetParam).not.toHaveBeenCalledWith('groove-1', 'template', expect.any(Number));
     });

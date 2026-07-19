@@ -1,12 +1,43 @@
 import { getStraightGrooveTemplateId } from '#/modules/MIDI/useCases';
 
+import { setYeastRuntimeProjection } from '../engine/yeastRuntime';
 import { yeastStore } from '../stores/yeastStore';
 
 import { commitYeastProjection } from './commitYeastProjection';
+import { createYeastRuntimeProjection } from './createYeastRuntimeProjection';
 import { getYeastGrooveAssignment } from './getYeastGrooveAssignment';
 import { setYeastGrooveTemplate } from './setYeastGrooveTemplate';
 
-export function setYeastProcessorParam(id: string, name: string, value: number): void {
+function previewYeastProcessorParam(id: string, name: string, value: number): void {
+    const state = yeastStore.value;
+    if (!state) {
+        return;
+    }
+
+    const processors = state.processors.map((entry) => {
+        if (entry.id !== id) {
+            return entry;
+        }
+        return { ...entry, params: { ...entry.params, [name]: value } };
+    });
+    const projection = createYeastRuntimeProjection(processors);
+    if (name !== 'amount') {
+        setYeastRuntimeProjection(projection);
+        return;
+    }
+
+    const clampedAmount = Math.max(0, Math.min(1, value));
+    setYeastRuntimeProjection(
+        projection.map((entry) => {
+            if (entry.id !== id || entry.type !== 'groove') {
+                return entry;
+            }
+            return { ...entry, params: { ...entry.params, groove_amount: clampedAmount } };
+        })
+    );
+}
+
+export function setYeastProcessorParam(id: string, name: string, value: number, isTransient = false): void {
     const state = yeastStore.value;
     if (!state) {
         return;
@@ -17,6 +48,10 @@ export function setYeastProcessorParam(id: string, name: string, value: number):
         return;
     }
     if (processor.type === 'chordMemory' && (name === 'learn' || name === 'clear')) {
+        return;
+    }
+    if (isTransient) {
+        previewYeastProcessorParam(id, name, value);
         return;
     }
     if (processor.type === 'groove' && name === 'amount') {

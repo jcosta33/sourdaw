@@ -10,7 +10,7 @@ import { type ProcessorType } from '../../models/ProcessorCatalog';
 
 import type { ChordMemoryCommand } from '../../models/YeastProcessorCommand';
 
-type OnSetParam = (id: string, name: string, value: number) => void;
+type OnSetParam = (id: string, name: string, value: number, isTransient?: boolean) => void;
 type OnCommand = (id: string, command: ChordMemoryCommand) => Promise<unknown> | void;
 type GrooveTemplateOption = { id: string; name: string };
 
@@ -49,13 +49,14 @@ const K = ({
     <div className="flex flex-col items-center gap-0">
         <RotaryKnob
             value={value}
-            onChange={(value1) => onSetParam(id, name, value1)}
+            onChange={(nextValue, isTransient) => onSetParam(id, name, nextValue, isTransient)}
             min={min}
             max={max}
             step={step}
             defaultValue={value}
             size="sm"
             tone="rose"
+            aria-label={label}
         />
         <span className="text-[6px] text-muted-foreground leading-none">{label}</span>
         {unit ? (
