@@ -45,16 +45,20 @@ export const exportStems: ExportStemsFn = async function exportStems(
             throw createExportError(`Invalid export duration: ${durationBeats} beats.`);
         }
 
-        const { tracks, midi, defaultTempo, changes, durationSeconds } = resolveRenderContext({
-            durationBeats,
-            startBeat,
-            tailSeconds,
-        });
+        const { tracks, midi, defaultTempo, changes, durationSeconds, projectMidiEvents, processYeastMidi } =
+            resolveRenderContext({
+                durationBeats,
+                startBeat,
+                tailSeconds,
+            });
         const stems = new Map<string, AudioBuffer>();
 
         if (!tracks || !midi) {
             onProgress?.(1);
             return stems;
+        }
+        if (!projectMidiEvents) {
+            throw new Error('Offline MIDI event projection is not configured');
         }
 
         // Exclude disabled and structural tracks (unless they host a Toaster); muted tracks are included as stems
@@ -98,11 +102,13 @@ export const exportStems: ExportStemsFn = async function exportStems(
                 durationSeconds,
                 defaultTempo,
                 changes,
+                projectMidiEvents,
                 onWarning,
                 pendingWorkletEvents,
                 [track],
                 deviceEntriesByTrack,
-                startBeat
+                startBeat,
+                processYeastMidi
             );
 
             schedulePendingSuspends(offlineCtx, pendingWorkletEvents, durationSeconds);

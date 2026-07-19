@@ -1,8 +1,11 @@
 import { describe, it, expect, vi, beforeEach, type Mock } from 'vitest';
 
+import { projectClipMidiEvents } from '#/modules/MIDI/useCases';
+
 import { ClipDummy } from '../../../__tests__/ClipDummy';
 import { TrackDummy } from '../../../__tests__/TrackDummy';
 import { type Track } from '../../../models/Track';
+import { setOfflineRenderDependencies } from '../offlineRenderDependencies';
 import { renderTrackOffline } from '../renderOffline';
 
 import type { buildDeviceChain, getAudioContext, getCachedAudioBuffer } from '#/modules/AudioEngine/useCases';
@@ -16,6 +19,9 @@ type RenderOfflineMocks = {
     getUpstreamSubgraph: Mock<() => Set<string>>;
     trackStore: { value: unknown };
     midiStore: { value: { notesByClipId: Record<string, MidiStoreNote[]> } | null };
+    transportStore: { value: unknown };
+    tempoMapStore: { value: unknown };
+    projectClipMidiEvents: Mock<typeof projectClipMidiEvents>;
 };
 
 const mocks = vi.hoisted<RenderOfflineMocks>(() => ({
@@ -25,20 +31,29 @@ const mocks = vi.hoisted<RenderOfflineMocks>(() => ({
     getUpstreamSubgraph: vi.fn<() => Set<string>>(),
     trackStore: { value: null },
     midiStore: { value: null },
+    transportStore: { value: null },
+    tempoMapStore: { value: { changes: [] } },
+    projectClipMidiEvents: vi.fn<typeof projectClipMidiEvents>(),
 }));
 
 vi.mock('#/modules/AudioEngine/useCases', () => ({
     buildDeviceChain: mocks.buildDeviceChain,
     getAudioContext: mocks.getAudioContext,
     getCachedAudioBuffer: mocks.getCachedAudioBuffer,
+    projectOfflineYeastNotes: vi.fn(),
 }));
 
 vi.mock('#/modules/MIDI/stores', () => ({
     midiStore: mocks.midiStore,
 }));
 
+vi.mock('#/modules/MIDI/useCases', () => ({
+    projectClipMidiEvents: mocks.projectClipMidiEvents,
+}));
+
 vi.mock('#/modules/Transport/stores', () => ({
-    transportStore: { value: null },
+    transportStore: mocks.transportStore,
+    tempoMapStore: mocks.tempoMapStore,
 }));
 
 vi.mock('#/modules/Routing/stores', () => ({
@@ -79,6 +94,7 @@ type FakeOscillatorNode = FakeConnectableNode & {
 };
 
 const createdSources: FakeSourceNode[] = [];
+const createdGains: Array<FakeConnectableNode & { gain: FakeAudioParam }> = [];
 const createdOscillators: FakeOscillatorNode[] = [];
 let renderedBuffer: AudioBuffer | null = null;
 
@@ -157,7 +173,9 @@ class FakeOfflineAudioContext {
     ) {}
 
     createGain() {
-        return { ...createFakeConnectableNode(), gain: createFakeAudioParam() };
+        const gain = { ...createFakeConnectableNode(), gain: createFakeAudioParam() };
+        createdGains.push(gain);
+        return gain;
     }
 
     createStereoPanner() {
@@ -207,14 +225,38 @@ describe('renderTrackOffline', () => {
         vi.stubGlobal('OfflineAudioContext', FakeOfflineAudioContext);
         vi.stubGlobal('AudioBuffer', FakeAudioBufferCtor);
         createdSources.length = 0;
+        createdGains.length = 0;
         createdOscillators.length = 0;
         renderedBuffer = null;
         mocks.trackStore.value = null;
         mocks.midiStore.value = null;
+        mocks.transportStore.value = null;
         mocks.buildDeviceChain.mockResolvedValue([]);
         mocks.getAudioContext.mockReturnValue({ sampleRate: 44100 } as AudioContext);
         mocks.getCachedAudioBuffer.mockReturnValue(null);
         mocks.getUpstreamSubgraph.mockReturnValue(new Set<string>());
+        setOfflineRenderDependencies({
+            projectPpqEndpoints: ({ startPpq, endPpq, defaultTempo, sampleRate }) => {
+                const startSamples = Math.round((startPpq / defaultTempo) * 60 * sampleRate);
+                const endSamples = Math.round((endPpq / defaultTempo) * 60 * sampleRate);
+                return {
+                    startSamples,
+                    endSamples,
+                    durationSamples: endSamples - startSamples,
+                    startSeconds: startSamples / sampleRate,
+                    endSeconds: endSamples / sampleRate,
+                    durationSeconds: (endSamples - startSamples) / sampleRate,
+                };
+            },
+            createMidiEventProjector: () => projectClipMidiEvents,
+            createYeastMidiProcessor: () => (input) => input.events,
+        });
+        mocks.projectClipMidiEvents.mockImplementation((input) =>
+            input.events.map((event) => ({
+                ...event,
+                startBeat: input.iterationStartBeat + event.startBeat - input.midiOffsetBeats,
+            }))
+        );
     });
 
     it('should not build a device chain for non-audio non-midi tracks', async () => {
@@ -242,6 +284,42 @@ describe('renderTrackOffline', () => {
         expect(createdSources).toHaveLength(1);
         expect(createdSources[0]?.buffer).toBe(frozenBuffer);
         expect(createdSources[0]?.start).toHaveBeenCalledWith(0.5);
+    });
+
+    it('should project committed groove timing and dynamics for freeze and bounce renders', async () => {
+        const midiClip = ClipDummy.create({
+            id: 'clip-midi',
+            trackId: 'track-midi',
+            type: 'midi',
+            startBeat: 0,
+            endBeat: 4,
+        });
+        const midiTrack = TrackDummy.create({
+            id: 'track-midi',
+            kind: 'midi',
+            clips: [midiClip],
+            devices: [],
+        });
+        const sourceNotes = [{ id: 'note-1', pitch: 60, startBeat: 1, duration: 1, velocity: 100 }];
+        mocks.trackStore.value = { tracks: [midiTrack], selectedTrackId: 'track-midi', ghostClips: [] };
+        mocks.midiStore.value = { notesByClipId: { 'clip-midi': sourceNotes } };
+        mocks.transportStore.value = { tempo: 120 };
+        mocks.projectClipMidiEvents.mockReturnValue([{ ...sourceNotes[0]!, startBeat: 1.5, velocity: 40 }]);
+
+        await renderTrackOffline(midiTrack, 0, 4, { includeInserts: false });
+
+        expect(mocks.projectClipMidiEvents).toHaveBeenCalledWith({
+            events: sourceNotes,
+            clipId: 'clip-midi',
+            clipStartBeat: 0,
+            clipEndBeat: 4,
+            iterationStartBeat: 0,
+            loopLengthBeats: 4,
+            midiOffsetBeats: 0,
+            loopEnabled: false,
+        });
+        expect(createdOscillators[0]?.start).toHaveBeenCalledWith(0.75);
+        expect(createdGains.at(-1)?.gain.linearRampToValueAtTime).toHaveBeenCalledWith((40 / 127) * 0.3, 0.755);
     });
 
     it('schedules cached audio clips at clip-relative offsets and skips uncached ones', async () => {

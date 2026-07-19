@@ -38,33 +38,39 @@ export class GrooveModule extends BaseMidiProcessor {
         for (const event of input) {
             if (event.kind.type === 'noteOn') {
                 const beatPosition =
-                    blockStartSamples === undefined
+                    event.timePpq ??
+                    (blockStartSamples === undefined
                         ? event.timeSamples / beatLengthSamples
-                        : transport.ppqPosition + (event.timeSamples - blockStartSamples) / beatLengthSamples;
+                        : transport.ppqPosition + (event.timeSamples - blockStartSamples) / beatLengthSamples);
                 const stepIndex = Math.round(beatPosition / this.stepBeats);
                 const templateIndex = ((stepIndex % this.slotCount) + this.slotCount) % this.slotCount;
                 const offsetBeats = this.timingOffsets[templateIndex]! * this.amount * this.stepBeats;
-                const offsetSamples = Math.round(offsetBeats * beatLengthSamples);
+                const endpointBeatLengthSamples = (transport.sampleRate * 60) / (event.tempoBpm ?? transport.bpm);
+                const offsetSamples = Math.round(offsetBeats * endpointBeatLengthSamples);
                 const velocityScale = 1 + this.dynamicsOffsets[templateIndex]! * this.amount;
                 const velocity = Math.max(1, Math.min(127, Math.round(event.kind.velocity * velocityScale)));
 
                 const key = (event.kind.channel << 7) | event.kind.note;
-                this.noteVoices.push(event.trackId, key, offsetSamples);
+                this.noteVoices.push(event.trackId, key, offsetBeats);
 
                 const transformed: MidiEvent = {
                     ...event,
                     timeSamples: event.timeSamples + offsetSamples,
+                    timePpq: event.timePpq === undefined ? undefined : event.timePpq + offsetBeats,
                     kind: { ...event.kind, velocity },
                 };
                 output.push(transformed);
                 preview?.transferDecisionLineage(event, transformed);
             } else if (event.kind.type === 'noteOff') {
                 const key = (event.kind.channel << 7) | event.kind.note;
-                const offset = this.noteVoices.shift(event.trackId, key) ?? 0;
+                const offsetBeats = this.noteVoices.shift(event.trackId, key) ?? 0;
+                const endpointBeatLengthSamples = (transport.sampleRate * 60) / (event.tempoBpm ?? transport.bpm);
+                const offsetSamples = Math.round(offsetBeats * endpointBeatLengthSamples);
 
                 const transformed: MidiEvent = {
                     ...event,
-                    timeSamples: event.timeSamples + offset,
+                    timeSamples: event.timeSamples + offsetSamples,
+                    timePpq: event.timePpq === undefined ? undefined : event.timePpq + offsetBeats,
                     kind: event.kind,
                 };
                 output.push(transformed);

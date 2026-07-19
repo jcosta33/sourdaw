@@ -130,6 +130,8 @@ function makeContext(overrides?: Partial<OfflineRenderContext>): OfflineRenderCo
         startBeat: 0,
         durationSeconds: 2,
         tailSeconds: 0,
+        projectMidiEvents: ({ events }) => events,
+        processYeastMidi: null,
         ...overrides,
     };
 }

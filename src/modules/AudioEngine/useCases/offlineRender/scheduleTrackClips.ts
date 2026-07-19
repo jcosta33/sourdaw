@@ -11,6 +11,9 @@ import {
 import { type TempoMapStoreState } from '#/modules/Transport/stores';
 
 import { scheduleTrackAutomation } from '../../repositories/offlineScheduler/automationScheduling';
+import { type OfflineMidiEventProjector } from '../../repositories/offlineScheduler/offlineMidiEventProjectorState';
+import { offlinePpqEndpointProjectorState } from '../../repositories/offlineScheduler/offlinePpqEndpointProjectorState';
+import { type OfflineYeastMidiProcessor } from '../../repositories/offlineScheduler/offlineYeastMidiProcessorState';
 import { beatToSeconds } from '../../services/beatConversion';
 import { resolveDrumKit } from '../../services/deviceResolution';
 import { audioBufferCache } from '../../stores/audioBufferCache';
@@ -18,6 +21,7 @@ import { type DeviceNodeEntry, buildDeviceChain } from '../buildDeviceChain';
 import { getCompensationDelay } from '../latencyCompensation/compensation/getCompensationDelay';
 
 import { MICRO_FADE_SECONDS, YIELD_EVERY_N_NOTES } from './constants';
+import { projectOfflineYeastNotes } from './projectOfflineYeastNotes';
 import { type PendingWorkletEvent } from './types';
 import { yieldToMain } from './yieldToMain';
 
@@ -25,6 +29,14 @@ type ResolvedClip = Track['clips'][number] & {
     regionStartBeat: number;
     regionEndBeat: number;
 };
+
+function projectPpqEndpoints(input: Parameters<NonNullable<typeof offlinePpqEndpointProjectorState.project>>[0]) {
+    const project = offlinePpqEndpointProjectorState.project;
+    if (!project) {
+        throw new Error('Offline PPQ endpoint projector is not configured');
+    }
+    return project(input);
+}
 
 function resolveTrackClipsWithComping(trackId: string, clips: Track['clips']): ResolvedClip[] {
     const laneState = takeLaneStore.value;
@@ -118,13 +130,21 @@ export async function scheduleTrackClips(
     durationSeconds: number,
     defaultTempo: number,
     changes: TempoMapStoreState['changes'],
+    projectMidiEvents: OfflineMidiEventProjector,
     onWarning?: (message: string) => void,
     pendingWorkletEvents?: PendingWorkletEvent[],
     allTracks?: ReadonlyArray<Track>,
     deviceEntriesByTrack?: Map<string, DeviceNodeEntry[]>,
-    regionStartBeat: number = 0
+    regionStartBeat: number = 0,
+    processYeastMidi: OfflineYeastMidiProcessor | null = null
 ): Promise<void> {
-    const regionStartSec = regionStartBeat > 0 ? beatToSeconds(regionStartBeat, defaultTempo, changes) : 0;
+    const regionStartSec = projectPpqEndpoints({
+        startPpq: regionStartBeat,
+        endPpq: regionStartBeat,
+        defaultTempo,
+        sampleRate: offlineCtx.sampleRate,
+        changes,
+    }).startSeconds;
     const compensationDelay = getCompensationDelay(track.id);
 
     const automationLanes = automationStore.value?.lanes ?? [];
@@ -213,8 +233,8 @@ export async function scheduleTrackClips(
         const maxIterations = clip.loopEnabled ? Math.ceil(clipVisualLength / loopLen) : 1;
 
         if (clip.type === 'midi') {
-            const notes = midi.notesByClipId[clip.id];
-            if (!notes) {
+            const sourceNotes = midi.notesByClipId[clip.id];
+            if (!sourceNotes) {
                 continue;
             }
 
@@ -238,6 +258,7 @@ export async function scheduleTrackClips(
 
             const synthParams =
                 drumKit || kitDef || instrumentControls ? null : getSynthParamsFromDevices(track.devices);
+            const hasYeast = track.devices.some((device) => device.type === 'yeast');
 
             let noteCount = 0;
 
@@ -246,30 +267,68 @@ export async function scheduleTrackClips(
 
             for (let iter = 0; iter < maxIterations; iter++) {
                 const iterOffset = iter * loopLen;
+                const notes = projectMidiEvents({
+                    events: sourceNotes,
+                    clipId: clip.id,
+                    clipStartBeat: clip.startBeat,
+                    clipEndBeat: clip.endBeat,
+                    iterationStartBeat: clip.startBeat + iterOffset,
+                    loopLengthBeats: loopLen,
+                    midiOffsetBeats: clip.midiOffsetBeats ?? 0,
+                    loopEnabled: clip.loopEnabled ?? false,
+                });
+                let scheduledNotes: Array<{
+                    id: string;
+                    pitch: number;
+                    velocity: number;
+                    startSamples: number;
+                    endSamples: number;
+                }>;
+                if (hasYeast && processYeastMidi) {
+                    scheduledNotes = projectOfflineYeastNotes({
+                        trackId: track.id,
+                        notes,
+                        sampleRate: offlineCtx.sampleRate,
+                        blockEndSamples: Math.ceil((regionStartSec + durationSeconds) * offlineCtx.sampleRate),
+                        projectPpqEndpoints: ({ startPpq, endPpq }) =>
+                            projectPpqEndpoints({
+                                startPpq,
+                                endPpq,
+                                defaultTempo,
+                                sampleRate: offlineCtx.sampleRate,
+                                changes,
+                            }),
+                        processYeastMidi,
+                    });
+                } else {
+                    scheduledNotes = notes.map((note) => {
+                        const endpoints = projectPpqEndpoints({
+                            startPpq: note.startBeat,
+                            endPpq: note.startBeat + note.duration,
+                            defaultTempo,
+                            sampleRate: offlineCtx.sampleRate,
+                            changes,
+                        });
+                        return {
+                            id: note.id,
+                            pitch: note.pitch,
+                            velocity: note.velocity,
+                            startSamples: endpoints.startSamples,
+                            endSamples: endpoints.endSamples,
+                        };
+                    });
+                }
 
-                for (const note of notes) {
-                    if (note.startBeat >= loopLen) {
-                        continue;
-                    }
-                    if (note.startBeat + note.duration <= 0) {
-                        continue;
-                    }
-
-                    const noteAbsStart = clip.startBeat + iterOffset + note.startBeat;
-                    if (noteAbsStart >= clip.endBeat) {
-                        continue;
-                    }
-
-                    const noteEndBeat = Math.min(noteAbsStart + note.duration, clip.endBeat);
-                    if (noteEndBeat <= regionStartBeat) {
+                for (const note of scheduledNotes) {
+                    if (note.endSamples <= regionStartSec * offlineCtx.sampleRate) {
                         continue;
                     }
 
                     // Apply plugin-delay compensation symmetrically with the audio
                     // branch (see the `+ compensationDelay` on the audio iteration
                     // below) so instrument notes stay aligned with audio clips.
-                    const rawStartSec = beatToSeconds(noteAbsStart, defaultTempo, changes) + compensationDelay;
-                    const rawEndSec = beatToSeconds(noteEndBeat, defaultTempo, changes) + compensationDelay;
+                    const rawStartSec = note.startSamples / offlineCtx.sampleRate + compensationDelay;
+                    const rawEndSec = note.endSamples / offlineCtx.sampleRate + compensationDelay;
                     const startTime = Math.max(0, rawStartSec - regionStartSec);
                     const endTime = rawEndSec - regionStartSec;
                     const duration = endTime - startTime;

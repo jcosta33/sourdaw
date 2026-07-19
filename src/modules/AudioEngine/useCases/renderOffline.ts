@@ -54,11 +54,15 @@ export const renderOffline: RenderOfflineFn = async function renderOffline(
             );
         }
 
-        const { tracks, midi, transport, defaultTempo, changes, durationSeconds } = resolveRenderContext({
-            durationBeats,
-            startBeat,
-            tailSeconds,
-        });
+        const { tracks, midi, transport, defaultTempo, changes, durationSeconds, projectMidiEvents, processYeastMidi } =
+            resolveRenderContext({
+                durationBeats,
+                startBeat,
+                tailSeconds,
+            });
+        if (!projectMidiEvents) {
+            throw new Error('Offline MIDI event projection is not configured');
+        }
 
         // Clamp frame count to browser-safe maximum to avoid context creation error.
         const frameCount = Math.min(Math.ceil(durationSeconds * sampleRate), MAX_OFFLINE_FRAMES);
@@ -152,11 +156,13 @@ export const renderOffline: RenderOfflineFn = async function renderOffline(
                 durationSeconds,
                 defaultTempo,
                 changes,
+                projectMidiEvents,
                 onWarning,
                 pendingWorkletEvents,
                 sourceTracks,
                 deviceEntriesByTrack,
-                startBeat
+                startBeat,
+                processYeastMidi
             );
 
             scheduled++;

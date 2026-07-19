@@ -1,8 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { trackStore } from '#/modules/Arrangement/stores';
-import { resolveClipsWithComping, getSynthParamsForTrack, getGrooveOffsetAtBeat } from '#/modules/Arrangement/useCases';
+import { resolveClipsWithComping, getSynthParamsForTrack } from '#/modules/Arrangement/useCases';
 import { midiStore } from '#/modules/MIDI/stores';
+import { projectClipMidiEvents } from '#/modules/MIDI/useCases';
 import { scheduleNote } from '#/modules/Synth/useCases';
 import { processYeastMidi } from '#/modules/Yeast/useCases';
 
@@ -26,7 +27,6 @@ vi.mock('../../../stores/timeSignatureMapStore', () => ({
 vi.mock('#/modules/Arrangement/useCases', () => ({
     resolveClipsWithComping: vi.fn((_trackId, clips) => clips),
     getSynthParamsForTrack: vi.fn(() => ({})),
-    getGrooveOffsetAtBeat: vi.fn(() => 0),
 }));
 vi.mock('#/modules/AudioEngine/useCases', () => ({
     getCompensationDelay: vi.fn(() => 0),
@@ -47,10 +47,13 @@ vi.mock('#/modules/Synth/useCases', () => ({
 }));
 vi.mock('#/modules/Yeast/useCases', () => ({
     processYeastMidi: vi.fn(),
+    getYeastSchedulingLookahead: vi.fn(() => ({ earlyBeats: 0, lateBeats: 0 })),
 }));
 vi.mock('#/modules/MIDI/useCases', () => ({
     getChordAtBeat: vi.fn(),
-    transposeForChordTrack: vi.fn((param) => param),
+    projectClipMidiEvents: vi.fn(),
+    projectCommittedGroove: vi.fn(({ events }: { events: readonly unknown[] }) => events),
+    transposeForChordTrack: vi.fn((param: unknown) => param),
 }));
 
 function midiTrack(overrides: Record<string, unknown> = {}) {
@@ -90,14 +93,46 @@ describe('scheduleMidiNotes', () => {
         vi.mocked(resolveClipsWithComping).mockImplementation((_trackId, clips) =>
             clips.map((clip) => ({ ...clip, regionStartBeat: clip.startBeat, regionEndBeat: clip.endBeat }))
         );
-        vi.mocked(getGrooveOffsetAtBeat).mockReturnValue(0);
-        vi.mocked(processYeastMidi).mockImplementation(async (input) => [...input.events]);
+        vi.mocked(projectClipMidiEvents).mockImplementation((input) =>
+            input.events.map((event) => ({
+                ...event,
+                startBeat: input.eventsAreAbsolute
+                    ? event.startBeat
+                    : input.iterationStartBeat + event.startBeat - input.midiOffsetBeats,
+            }))
+        );
+        vi.mocked(processYeastMidi).mockImplementation((input) => Promise.resolve([...input.events]));
     });
 
     it('does not schedule synth when MIDI store is uninitialized', async () => {
         await scheduleMidiNotes(0, 4, 0, 0, [], defaultTransportState, 120);
 
         expect(getSynthParamsForTrack).not.toHaveBeenCalled();
+    });
+
+    it('should project the canonical clip assignment before transport scheduling', async () => {
+        const track = midiTrack({ clips: [midiClip()] });
+        const source = [{ id: 'n1', pitch: 60, startBeat: 0.25, duration: 0.25, velocity: 100 }];
+        (trackStore as { value: unknown }).value = { tracks: [track] };
+        (midiStore as { value: unknown }).value = { notesByClipId: { 'clip-1': source } };
+        vi.mocked(projectClipMidiEvents).mockReturnValue([{ ...source[0]!, startBeat: 0.5, velocity: 40 }]);
+
+        await scheduleMidiNotes(0, 4, 0, -1, [], defaultTransportState, 120);
+
+        expect(projectClipMidiEvents).toHaveBeenCalledWith({
+            events: [source[0]],
+            clipId: 'clip-1',
+            clipStartBeat: 0,
+            clipEndBeat: 4,
+            iterationStartBeat: 0,
+            loopLengthBeats: 4,
+            midiOffsetBeats: 0,
+            loopEnabled: false,
+            clipGrooveAlreadyApplied: false,
+            eventsAreAbsolute: false,
+        });
+        expect(vi.mocked(scheduleNote).mock.calls[0]?.[3]).toBe(0.25);
+        expect(vi.mocked(scheduleNote).mock.calls[0]?.[5]).toBe(40);
     });
 
     // §1 — Per-note probability must be deterministic so replays are identical.
@@ -409,8 +444,9 @@ describe('scheduleMidiNotes', () => {
         (midiStore as { value: unknown }).value = {
             notesByClipId: { 'clip-1': [{ id: 'n0', pitch: 60, startBeat: 0, duration: 1, velocity: 100 }] },
         };
-        // Groove pushes the note to beat -1, before the iteration start (beat 0).
-        vi.mocked(getGrooveOffsetAtBeat).mockReturnValue(-1);
+        vi.mocked(projectClipMidiEvents).mockImplementation((input) =>
+            input.events.map((event) => ({ ...event, startBeat: input.iterationStartBeat }))
+        );
 
         await scheduleMidiNotes(0, 4, 0, -1, [], defaultTransportState, 120);
 

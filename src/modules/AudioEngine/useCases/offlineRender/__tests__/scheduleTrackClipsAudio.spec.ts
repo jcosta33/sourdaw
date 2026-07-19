@@ -3,6 +3,7 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { type Track } from '#/modules/Arrangement/stores';
 import { type MidiStoreState } from '#/modules/MIDI/stores';
 
+import { configureOfflinePpqEndpointProjection } from '../../configureOfflinePpqEndpointProjection';
 import { MICRO_FADE_SECONDS } from '../constants';
 import { scheduleTrackClips } from '../scheduleTrackClips';
 
@@ -185,6 +186,28 @@ const emptyMidi: NonNullable<MidiStoreState> = {
     pitchBendByClipId: {},
 };
 
+type ProjectableMidiEvent = {
+    id: string;
+    startBeat: number;
+    duration: number;
+    velocity: number;
+};
+
+function projectMidiEvents<Event extends ProjectableMidiEvent>({
+    events,
+}: {
+    events: readonly Event[];
+    clipId: string;
+    clipStartBeat: number;
+    clipEndBeat: number;
+    iterationStartBeat: number;
+    loopLengthBeats: number;
+    midiOffsetBeats: number;
+    loopEnabled?: boolean;
+}): readonly Event[] {
+    return events;
+}
+
 type RunInput = {
     track: Track;
     ctx: OfflineAudioContext;
@@ -215,6 +238,7 @@ async function run({ track, ctx, onWarning, regionStartBeat = 0, withPrebuiltCha
         /* durationSeconds */ 60,
         /* defaultTempo */ 120,
         /* changes */ [],
+        projectMidiEvents,
         onWarning,
         [],
         [track],
@@ -233,6 +257,20 @@ describe('scheduleTrackClips — audio clip scheduling', () => {
         mocks.getCompensationDelay.mockReturnValue(0);
         mocks.audioBufferCache.get.mockReturnValue(undefined);
         mocks.buildDeviceChain.mockResolvedValue([]);
+        configureOfflinePpqEndpointProjection({
+            project: ({ startPpq, endPpq, defaultTempo, sampleRate }) => {
+                const startSamples = Math.round((startPpq / defaultTempo) * 60 * sampleRate);
+                const endSamples = Math.round((endPpq / defaultTempo) * 60 * sampleRate);
+                return {
+                    startSamples,
+                    endSamples,
+                    durationSamples: endSamples - startSamples,
+                    startSeconds: startSamples / sampleRate,
+                    endSeconds: endSamples / sampleRate,
+                    durationSeconds: (endSamples - startSamples) / sampleRate,
+                };
+            },
+        });
     });
 
     it('schedules a plain clip at its beat-converted start with micro fades on both edges', async () => {

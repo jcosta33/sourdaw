@@ -18,6 +18,10 @@ export type MidiEvent = {
     kind: MidiEventKind;
     /** Originating instrument track for runtime routing and panic recovery. */
     trackId?: string;
+    /** Musical position retained when a tempo map is available. */
+    timePpq?: number;
+    /** Tempo at this event endpoint, used to project beat offsets to samples. */
+    tempoBpm?: number;
 };
 
 export type TransportInfo = {

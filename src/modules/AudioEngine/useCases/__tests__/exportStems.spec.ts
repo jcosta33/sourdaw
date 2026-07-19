@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 
+import { configureOfflineMidiEventProjection } from '../configureOfflineMidiEventProjection';
 import { exportStems } from '../exportStems';
 
 const offlineRenderMocks = vi.hoisted(() => ({
@@ -90,6 +91,12 @@ vi.mock('../../repositories/offlineScheduler/automationScheduling', () => ({
 describe('exportStems', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        configureOfflineMidiEventProjection({
+            createProjector:
+                () =>
+                ({ events }) =>
+                    events,
+        });
     });
 
     it('returns empty map when track or midi state is missing', async () => {

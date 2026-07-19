@@ -85,6 +85,32 @@ describe('GrooveModule', () => {
         expect(out[0]?.timeSamples).toBe(12_720);
     });
 
+    it('should project one musical offset independently at each endpoint tempo', () => {
+        const groove = new GrooveModule('tempo-map');
+        groove.setParam('groove_step_beats', 0.25);
+        groove.setParam('groove_slot_count', 16);
+        groove.setParam('groove_timing_1', 0.5);
+        groove.setParam('groove_amount', 1);
+        const noteOn = {
+            timeSamples: 6_000,
+            timePpq: 0.25,
+            tempoBpm: 120,
+            kind: { type: 'noteOn' as const, channel: 0, note: 60, velocity: 100 },
+        } satisfies MidiEvent;
+        const noteOff = {
+            timeSamples: 24_000,
+            timePpq: 1,
+            tempoBpm: 240,
+            kind: { type: 'noteOff' as const, channel: 0, note: 60 },
+        } satisfies MidiEvent;
+        const output: MidiEvent[] = [];
+
+        groove.processMidi([noteOn, noteOff], output, transport);
+
+        expect(output.map((event) => event.timeSamples)).toEqual([9_000, 25_500]);
+        expect(output.map((event) => event.timePpq)).toEqual([0.375, 1.125]);
+    });
+
     it('should clear queued note-off timing state on reset', () => {
         const g = new GrooveModule('t5');
         g.setParam('groove_timing_1', 0.12);
