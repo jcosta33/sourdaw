@@ -312,6 +312,13 @@ function flushPendingNotesOff(): void {
     }
 }
 
+function resolveActiveOutputVoiceCount(voiceCount: number): number {
+    if (!Number.isSafeInteger(voiceCount) || voiceCount < 1) {
+        return 1;
+    }
+    return Math.min(voiceCount, MAX_ACTIVE_OUTPUT_VOICES);
+}
+
 function collectActiveOutputNotes(generation: number): YeastNotesOffPayload[] {
     const activeOutputNotes = session.activeOutputNotes;
     if (!(activeOutputNotes instanceof Map) || activeOutputNotes.size === 0) {
@@ -326,7 +333,8 @@ function collectActiveOutputNotes(generation: number): YeastNotesOffPayload[] {
             continue;
         }
         const notes = notesByTrack.get(activeNote.trackId) ?? [];
-        for (let voice = 0; voice < activeNote.voiceCount; voice++) {
+        const voiceCount = resolveActiveOutputVoiceCount(activeNote.voiceCount);
+        for (let voice = 0; voice < voiceCount; voice++) {
             notes.push({ channel: activeNote.channel, note: activeNote.note });
         }
         notesByTrack.set(activeNote.trackId, notes);

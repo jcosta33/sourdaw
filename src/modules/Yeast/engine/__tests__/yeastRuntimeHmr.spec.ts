@@ -140,7 +140,7 @@ describe('yeastRuntime HMR migration', () => {
         const runtime = await import('../yeastRuntime');
         const panicOutputNotes = vi.fn();
 
-        expect(legacySession.version).toBe(9);
+        expect(legacySession.version).toBe(10);
         expect(legacySession.generation).toBe(oldGeneration + 1);
         expect(oldNode.destroy).toHaveBeenCalledTimes(1);
         expect(legacySession.context).toBeNull();
@@ -210,7 +210,7 @@ describe('yeastRuntime HMR migration', () => {
         const runtime = await import('../yeastRuntime');
         const panicOutputNotes = vi.fn();
 
-        expect(retainedSession.version).toBe(9);
+        expect(retainedSession.version).toBe(10);
         expect(retainedSession.generation).toBe(generation + 1);
         expect(retainedSession.projection).toBe(projection);
         expect(retainedSession.activeOutputNotes).toEqual(new Map());
@@ -246,7 +246,7 @@ describe('yeastRuntime HMR migration', () => {
             { id: 'arp-1', type: 'arpeggiator', bypassed: false, params: { rate_denom: 16 } },
         ];
         const retainedSession: LegacyRuntimeSession = {
-            version: 9,
+            version: 10,
             context,
             node: retainedWorker,
             nodePromise: null,
@@ -285,7 +285,7 @@ describe('yeastRuntime HMR migration', () => {
             lifecycle.push('destroy');
         });
         retainedHmrState.value = {
-            version: 9,
+            version: 10,
             context,
             node: retainedWorker,
             nodePromise: null,
