@@ -19,9 +19,33 @@ vi.mock('../../hooks/usePreviewAudio', () => ({
 }));
 
 const mockPlatformPlugins = [
-    { id: 'p1', name: 'Reverb Hall', vendor: 'Sourdaw', format: 'builtin', category: 'effect', parameters: [], hasCustomUI: false },
-    { id: 'p2', name: 'Delay Line', vendor: 'Sourdaw', format: 'builtin', category: 'effect', parameters: [], hasCustomUI: false },
-    { id: 'p3', name: 'Grain Synth', vendor: 'Sourdaw', format: 'builtin', category: 'instrument', parameters: [], hasCustomUI: false },
+    {
+        id: 'p1',
+        name: 'Reverb Hall',
+        vendor: 'Sourdaw',
+        format: 'builtin',
+        category: 'effect',
+        parameters: [],
+        hasCustomUI: false,
+    },
+    {
+        id: 'p2',
+        name: 'Delay Line',
+        vendor: 'Sourdaw',
+        format: 'builtin',
+        category: 'effect',
+        parameters: [],
+        hasCustomUI: false,
+    },
+    {
+        id: 'p3',
+        name: 'Grain Synth',
+        vendor: 'Sourdaw',
+        format: 'builtin',
+        category: 'instrument',
+        parameters: [],
+        hasCustomUI: false,
+    },
 ];
 
 vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => ({
