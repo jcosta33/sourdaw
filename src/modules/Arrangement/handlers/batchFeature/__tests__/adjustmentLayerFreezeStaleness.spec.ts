@@ -1,6 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import { configureAutomergeStoragePort } from '#/infra/store/storage/createAutomergeStorage';
+import {
+    configureAutomergeStoragePort,
+    flushAutomergeStorageWrites,
+} from '#/infra/store/storage/createAutomergeStorage';
 import { clearHandlerRegistry, macroStore, registerHandlerMap, undoStore } from '#/modules/Command/stores';
 import {
     clearUndoHistory,
@@ -12,10 +15,13 @@ import {
 } from '#/modules/Command/useCases';
 import { type AppAction } from '#/utils/handlerContract';
 
-import { createTrack, type Track } from '../../../models/Track';
+import { createTrack, type Clip, type Track } from '../../../models/Track';
+import { computeTrackHash } from '../../../services/computeTrackHash';
 import { adjustmentLayerStore, type AdjustmentLayer, type AdjustmentLayerState } from '../../../stores/adjustmentLayer';
 import { trackStore } from '../../../stores/trackStore';
 import { getArrangementHandlers } from '../../../useCases/getArrangementHandlers';
+
+let empty_track_hash = '';
 
 function create_frozen_track(id: string): Track {
     return {
@@ -26,7 +32,13 @@ function create_frozen_track(id: string): Track {
             status: 'frozen',
             freezeId: `freeze-${id}`,
             frozenBufferId: `buffer-${id}`,
-            sourceContentHash: `hash-${id}`,
+            sourceContentHash: empty_track_hash,
+            renderSettings: {
+                sampleRate: 48_000,
+                bitDepth: 32,
+                channelCount: 2,
+                tailLengthSeconds: 2,
+            },
         },
     };
 }
@@ -149,8 +161,9 @@ const adjustment_layer_mutation_cases = [
 ] satisfies AdjustmentLayerMutationCase[];
 
 describe('adjustmentLayerFreezeStaleness', () => {
-    beforeEach(() => {
+    beforeEach(async () => {
         configureAutomergeStoragePort(null);
+        empty_track_hash = await computeTrackHash([], []);
         clearHandlerRegistry();
         registerHandlerMap(getArrangementHandlers());
         clearUndoHistory();
@@ -170,6 +183,7 @@ describe('adjustmentLayerFreezeStaleness', () => {
         macroStore.set({ macros: [], recording: false, currentRecording: [] });
         clearHandlerRegistry();
         configureAutomergeStoragePort(null);
+        flushAutomergeStorageWrites();
     });
 
     it('unaffected: marks explicitly affected frozen tracks stale and leaves unaffected tracks current', async () => {
@@ -289,7 +303,7 @@ describe('adjustmentLayerFreezeStaleness', () => {
                               status: 'frozen',
                               freezeId: 'newer-freeze',
                               frozenBufferId: 'newer-buffer',
-                              sourceContentHash: 'newer-hash',
+                              sourceContentHash: empty_track_hash,
                           },
                       }
                     : track
@@ -308,7 +322,7 @@ describe('adjustmentLayerFreezeStaleness', () => {
             status: 'frozen',
             freezeId: 'newer-freeze',
             frozenBufferId: 'newer-buffer',
-            sourceContentHash: 'newer-hash',
+            sourceContentHash: empty_track_hash,
         });
 
         await redo();
@@ -316,7 +330,7 @@ describe('adjustmentLayerFreezeStaleness', () => {
             status: 'stale',
             freezeId: 'newer-freeze',
             frozenBufferId: 'newer-buffer',
-            sourceContentHash: 'newer-hash',
+            sourceContentHash: empty_track_hash,
         });
 
         await undo();
@@ -324,7 +338,7 @@ describe('adjustmentLayerFreezeStaleness', () => {
             status: 'frozen',
             freezeId: 'newer-freeze',
             frozenBufferId: 'newer-buffer',
-            sourceContentHash: 'newer-hash',
+            sourceContentHash: empty_track_hash,
         });
         expect(get_layer_state().layers.find((layer) => layer.id === 'layer-2')).toEqual(concurrent_layer);
     });
@@ -355,6 +369,103 @@ describe('adjustmentLayerFreezeStaleness', () => {
         expect(get_layer_state().layers[0]?.mix).toBe(0.5);
         expect(undoStore.value?.past).toHaveLength(0);
         expect(undoStore.value?.future).toHaveLength(1);
+    });
+
+    it.each([
+        {
+            label: 'track content',
+            edit: (track: Track): Track => {
+                const clip: Clip = {
+                    id: 'content-edit',
+                    trackId: track.id,
+                    name: 'Content edit',
+                    startBeat: 0,
+                    endBeat: 4,
+                    type: 'audio',
+                    fadeInBeats: 0,
+                    fadeOutBeats: 0,
+                    gain: 1,
+                    color: '#fff',
+                    locked: false,
+                    muted: false,
+                };
+                return { ...track, clips: [clip] };
+            },
+        },
+        {
+            label: 'render inputs',
+            edit: (track: Track): Track => ({
+                ...track,
+                freezeState: {
+                    ...track.freezeState,
+                    renderSettings: {
+                        sampleRate: 96_000,
+                        bitDepth: 32,
+                        channelCount: 2,
+                        tailLengthSeconds: 4,
+                    },
+                },
+            }),
+        },
+    ])('does not restore frozen after competing $label changes while adjustment-stale', async ({ edit }) => {
+        await executeAppAction({ type: 'setLayerMix', payload: { layerId: 'layer-1', mix: 0.75 } });
+        const mutation_id = get_track('track-a').freezeState.adjustmentLayerMutationId;
+        const track_state = trackStore.value;
+        if (!track_state) {
+            throw new Error('Expected track state');
+        }
+        trackStore.set({
+            ...track_state,
+            tracks: track_state.tracks.map((track) => (track.id === 'track-a' ? edit(track) : track)),
+        });
+        expect(get_track('track-a').freezeState.adjustmentLayerMutationId).toBe(mutation_id);
+
+        await undo();
+
+        expect(get_layer_state().layers[0]?.mix).toBe(0.25);
+        expect(get_track('track-a').freezeState.status).toBe('stale');
+        expect(get_track('track-a').freezeState.adjustmentLayerMutationId).toBeUndefined();
+    });
+
+    it('rolls back the layer mutation when an Automerge track write rejects before history commit', async () => {
+        const storage_failure = new Error('track CRDT commit failed');
+        const observed_layer_mixes: number[] = [];
+        const observed_track_statuses: Array<'frozen' | 'stale'> = [];
+        const unsubscribe_layers = adjustmentLayerStore.subscribe((state) => {
+            const mix = state?.layers[0]?.mix;
+            if (mix !== undefined) {
+                observed_layer_mixes.push(mix);
+            }
+        });
+        const unsubscribe_tracks = trackStore.subscribe((state) => {
+            const status = state?.tracks.find((track) => track.id === 'track-a')?.freezeState.status;
+            if (status === 'frozen' || status === 'stale') {
+                observed_track_statuses.push(status);
+            }
+        });
+        configureAutomergeStoragePort({
+            getSemanticMessage: () => undefined,
+            hasDoc: () => true,
+            getDoc: () => ({}),
+            mutateDoc: () => {
+                throw storage_failure;
+            },
+        });
+
+        await expect(
+            executeAppAction({ type: 'setLayerMix', payload: { layerId: 'layer-1', mix: 0.75 } })
+        ).rejects.toBe(storage_failure);
+        unsubscribe_layers();
+        unsubscribe_tracks();
+
+        expect(get_layer_state().layers[0]?.mix).toBe(0.25);
+        expect(get_track('track-a').freezeState.status).toBe('frozen');
+        expect(observed_layer_mixes).toEqual([0.25]);
+        expect(observed_track_statuses).toEqual([]);
+        expect(undoStore.value?.past).toHaveLength(0);
+
+        configureAutomergeStoragePort(null);
+        flushAutomergeStorageWrites();
     });
 
     it.each(['undo', 'revertActionGroup'] as const)(

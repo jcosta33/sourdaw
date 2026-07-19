@@ -5,6 +5,7 @@ import { getTransportHandlers, getTransportState, setPunchIn, setPunchOut } from
 
 import { clearHandlerRegistry, registerHandlerMap } from '../../../stores/handlerRegistry';
 import { macroStore } from '../../../stores/macroStore';
+import { undoStore } from '../../../stores/undoStore';
 import { clearUndoHistory } from '../../clearUndoHistory';
 import { executeAppAction } from '../../executeAppAction';
 import { undo } from '../../undo';
@@ -69,5 +70,30 @@ describe('macro recording across punch undo', () => {
         await playMacro(macro.id);
 
         expect_punch_region(20, 21);
+    });
+
+    it('rejects a valid-then-inverse-less mixed macro before applying either action', async () => {
+        const tempo_before = getTransportState()?.tempo;
+        macroStore.set({
+            macros: [
+                {
+                    id: 'mixed-macro',
+                    name: 'Mixed macro',
+                    actions: [
+                        { type: 'setPunchIn', payload: { beat: 20 } },
+                        { type: 'setTempo', payload: { bpm: 140 } },
+                    ],
+                    createdAt: 0,
+                },
+            ],
+            recording: false,
+            currentRecording: [],
+        });
+
+        await expect(playMacro('mixed-macro')).rejects.toThrow('concrete inverse');
+
+        expect_punch_region(0, 16);
+        expect(getTransportState()?.tempo).toBe(tempo_before);
+        expect(undoStore.value?.past).toHaveLength(0);
     });
 });

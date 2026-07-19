@@ -46,46 +46,72 @@ export function commitAdjustmentLayerMutation({
     adjustmentMutationId,
     mutation,
 }: CommitAdjustmentLayerMutationInput): void {
-    const before_layers = adjustmentLayerStore.value?.layers ?? [];
+    const before_layer_state = adjustmentLayerStore.value;
+    const before_track_state = trackStore.value;
+    const before_layers = before_layer_state?.layers ?? [];
 
     batchStoreUpdates(() => {
-        mutation();
+        try {
+            mutation();
 
-        const after_layers = adjustmentLayerStore.value?.layers ?? [];
-        const track_state = trackStore.value;
-        if (!track_state) {
-            return;
-        }
-
-        const affected_track_ids = new Set(
-            get_changed_layers(before_layers, after_layers).flatMap((layer) =>
-                resolve_affected_track_ids(layer, track_state.tracks)
-            )
-        );
-        if (affected_track_ids.size === 0) {
-            return;
-        }
-
-        const tracks = track_state.tracks.map((track) => {
-            if (
-                !affected_track_ids.has(track.id) ||
-                !track.frozen ||
-                (track.freezeState.status !== 'frozen' && track.freezeState.status !== 'stale')
-            ) {
-                return track;
+            const after_layers = adjustmentLayerStore.value?.layers ?? [];
+            const track_state = trackStore.value;
+            if (!track_state) {
+                return;
             }
-            return {
-                ...track,
-                freezeState: {
-                    ...track.freezeState,
-                    status: 'stale' as const,
-                    adjustmentLayerMutationId: adjustmentMutationId,
-                },
-            };
-        });
 
-        if (tracks.some((track, index) => track !== track_state.tracks[index])) {
-            trackStore.set({ ...track_state, tracks });
+            const affected_track_ids = new Set(
+                get_changed_layers(before_layers, after_layers).flatMap((layer) =>
+                    resolve_affected_track_ids(layer, track_state.tracks)
+                )
+            );
+            if (affected_track_ids.size === 0) {
+                return;
+            }
+
+            const tracks = track_state.tracks.map((track) => {
+                if (
+                    !affected_track_ids.has(track.id) ||
+                    !track.frozen ||
+                    (track.freezeState.status !== 'frozen' && track.freezeState.status !== 'stale')
+                ) {
+                    return track;
+                }
+                return {
+                    ...track,
+                    freezeState: {
+                        ...track.freezeState,
+                        status: 'stale' as const,
+                        adjustmentLayerMutationId: adjustmentMutationId,
+                    },
+                };
+            });
+
+            if (tracks.some((track, index) => track !== track_state.tracks[index])) {
+                trackStore.set({ ...track_state, tracks });
+            }
+        } catch (error) {
+            const rollback_errors: unknown[] = [];
+            if (adjustmentLayerStore.value !== before_layer_state) {
+                try {
+                    adjustmentLayerStore.set(before_layer_state);
+                } catch (rollback_error) {
+                    rollback_errors.push(rollback_error);
+                }
+            }
+            if (trackStore.value !== before_track_state) {
+                try {
+                    trackStore.set(before_track_state);
+                } catch (rollback_error) {
+                    rollback_errors.push(rollback_error);
+                }
+            }
+            if (rollback_errors.length > 0) {
+                throw new AggregateError([error, ...rollback_errors], 'Adjustment-layer mutation rollback failed', {
+                    cause: error,
+                });
+            }
+            throw error;
         }
     });
 }

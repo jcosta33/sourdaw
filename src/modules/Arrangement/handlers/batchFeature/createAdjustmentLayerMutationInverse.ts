@@ -100,6 +100,26 @@ function is_adjustment_effect_type(value: string): value is AdjustmentEffectType
     return Object.prototype.hasOwnProperty.call(EFFECT_PRESETS, value);
 }
 
+function create_frozen_artifact_snapshot(
+    track: Track
+): NonNullable<
+    Extract<
+        AppAction,
+        { type: 'restoreAdjustmentLayerMutation' }
+    >['payload']['staleTransitions'][number]['frozenArtifact']
+> {
+    return {
+        ...(track.frozenBufferId ? { trackFrozenBufferId: track.frozenBufferId } : {}),
+        ...(track.freezeState.freezeId ? { freezeId: track.freezeState.freezeId } : {}),
+        ...(track.freezeState.frozenBufferId ? { frozenBufferId: track.freezeState.frozenBufferId } : {}),
+        ...(track.freezeState.frozenAudioHash ? { frozenAudioHash: track.freezeState.frozenAudioHash } : {}),
+        ...(track.freezeState.sourceContentHash ? { sourceContentHash: track.freezeState.sourceContentHash } : {}),
+        ...(track.freezeState.deviceChainHash ? { deviceChainHash: track.freezeState.deviceChainHash } : {}),
+        ...(track.freezeState.renderSettings ? { renderSettings: { ...track.freezeState.renderSettings } } : {}),
+        ...(track.freezeState.renderedAt !== undefined ? { renderedAt: track.freezeState.renderedAt } : {}),
+    };
+}
+
 function create_undo_operation(
     action: AdjustmentLayerMutationAction,
     layers: readonly AdjustmentLayer[],
@@ -313,6 +333,9 @@ export function createAdjustmentLayerMutationInverse(
                         previousStatus: track.freezeState.status,
                         ...(track.freezeState.adjustmentLayerMutationId
                             ? { previousAdjustmentMutationId: track.freezeState.adjustmentLayerMutationId }
+                            : {}),
+                        ...(track.freezeState.status === 'frozen'
+                            ? { frozenArtifact: create_frozen_artifact_snapshot(track) }
                             : {}),
                     },
                 ];

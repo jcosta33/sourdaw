@@ -1,11 +1,14 @@
 import { batchStoreUpdates } from '#/infra/store/createStore';
 import { type AppAction } from '#/utils/handlerContract';
 
+import { computeTrackHash } from '../../services/computeTrackHash';
 import { adjustmentLayerStore, type AdjustmentLayer, type AdjustmentRegion } from '../../stores/adjustmentLayer';
-import { trackStore } from '../../stores/trackStore';
+import { trackStore, type Track } from '../../stores/trackStore';
 
 type RestoreAdjustmentLayerMutationPayload = Extract<AppAction, { type: 'restoreAdjustmentLayerMutation' }>['payload'];
 type AdjustmentLayerUndoOperation = RestoreAdjustmentLayerMutationPayload['operation'];
+type StaleTransition = RestoreAdjustmentLayerMutationPayload['staleTransitions'][number];
+type FrozenArtifact = NonNullable<StaleTransition['frozenArtifact']>;
 
 type RestoreOperationResult = {
     applied: boolean;
@@ -73,6 +76,79 @@ function get_unique_layer_index(layers: readonly AdjustmentLayer[], layer_id: st
 
 function replace_layer(layers: readonly AdjustmentLayer[], index: number, layer: AdjustmentLayer): AdjustmentLayer[] {
     return layers.map((current, current_index) => (current_index === index ? layer : current));
+}
+
+function same_render_settings(
+    left: Track['freezeState']['renderSettings'],
+    right: FrozenArtifact['renderSettings']
+): boolean {
+    if (!left || !right) {
+        return left === right;
+    }
+    return (
+        left.sampleRate === right.sampleRate &&
+        left.bitDepth === right.bitDepth &&
+        left.channelCount === right.channelCount &&
+        left.tailLengthSeconds === right.tailLengthSeconds
+    );
+}
+
+function same_frozen_artifact(track: Track, artifact: FrozenArtifact): boolean {
+    return (
+        track.frozen &&
+        track.frozenBufferId === artifact.trackFrozenBufferId &&
+        track.freezeState.freezeId === artifact.freezeId &&
+        track.freezeState.frozenBufferId === artifact.frozenBufferId &&
+        track.freezeState.frozenAudioHash === artifact.frozenAudioHash &&
+        track.freezeState.sourceContentHash === artifact.sourceContentHash &&
+        track.freezeState.deviceChainHash === artifact.deviceChainHash &&
+        same_render_settings(track.freezeState.renderSettings, artifact.renderSettings) &&
+        track.freezeState.renderedAt === artifact.renderedAt
+    );
+}
+
+type FrozenRestoreEvaluation = {
+    artifact: FrozenArtifact;
+    clips: Track['clips'];
+    devices: Track['devices'];
+    inputsMatch: boolean;
+};
+
+async function evaluate_frozen_restores(
+    payload: RestoreAdjustmentLayerMutationPayload
+): Promise<Map<string, FrozenRestoreEvaluation>> {
+    const evaluations = new Map<string, FrozenRestoreEvaluation>();
+    const track_state = trackStore.value;
+    if (!track_state) {
+        return evaluations;
+    }
+
+    await Promise.all(
+        payload.staleTransitions.map(async (transition) => {
+            if (transition.previousStatus !== 'frozen' || !transition.frozenArtifact) {
+                return;
+            }
+            const track = track_state.tracks.find((candidate) => candidate.id === transition.trackId);
+            if (
+                !track ||
+                track.freezeState.status !== 'stale' ||
+                track.freezeState.adjustmentLayerMutationId !== payload.adjustmentMutationId
+            ) {
+                return;
+            }
+            const current_hash = await computeTrackHash(track.clips, track.devices);
+            evaluations.set(track.id, {
+                artifact: transition.frozenArtifact,
+                clips: track.clips,
+                devices: track.devices,
+                inputsMatch:
+                    transition.frozenArtifact.sourceContentHash !== undefined &&
+                    current_hash === transition.frozenArtifact.sourceContentHash &&
+                    same_frozen_artifact(track, transition.frozenArtifact),
+            });
+        })
+    );
+    return evaluations;
 }
 
 function restore_operation(
@@ -239,12 +315,13 @@ function restore_operation(
     }
 }
 
-export function restoreAdjustmentLayerMutation(payload: RestoreAdjustmentLayerMutationPayload): void {
-    const layer_state = adjustmentLayerStore.value;
-    if (!layer_state) {
+export async function restoreAdjustmentLayerMutation(payload: RestoreAdjustmentLayerMutationPayload): Promise<void> {
+    const frozen_restore_evaluations = await evaluate_frozen_restores(payload);
+    const current_layer_state = adjustmentLayerStore.value;
+    if (!current_layer_state) {
         return;
     }
-    const restored = restore_operation(layer_state.layers, payload.operation);
+    const restored = restore_operation(current_layer_state.layers, payload.operation);
     if (!restored.applied) {
         throw new Error('Cannot undo adjustment-layer mutation over newer adjustment-layer state');
     }
@@ -262,9 +339,17 @@ export function restoreAdjustmentLayerMutation(payload: RestoreAdjustmentLayerMu
                 ) {
                     return track;
                 }
+                const frozen_evaluation = frozen_restore_evaluations.get(track.id);
+                const can_restore_frozen =
+                    stale_transition.previousStatus !== 'frozen' ||
+                    (frozen_evaluation !== undefined &&
+                        frozen_evaluation.inputsMatch &&
+                        track.clips === frozen_evaluation.clips &&
+                        track.devices === frozen_evaluation.devices &&
+                        same_frozen_artifact(track, frozen_evaluation.artifact));
                 const freeze_state = {
                     ...track.freezeState,
-                    status: stale_transition.previousStatus,
+                    status: can_restore_frozen ? stale_transition.previousStatus : ('stale' as const),
                 };
                 if (stale_transition.previousAdjustmentMutationId) {
                     freeze_state.adjustmentLayerMutationId = stale_transition.previousAdjustmentMutationId;

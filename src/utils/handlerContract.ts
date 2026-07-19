@@ -87,6 +87,22 @@ export type AdjustmentRegionSnapshot = {
     fadeOutBeats: number;
 };
 
+export type AdjustmentFrozenArtifactSnapshot = {
+    trackFrozenBufferId?: string;
+    freezeId?: string;
+    frozenBufferId?: string;
+    frozenAudioHash?: string;
+    sourceContentHash?: string;
+    deviceChainHash?: string;
+    renderSettings?: {
+        sampleRate: number;
+        bitDepth: number;
+        channelCount: number;
+        tailLengthSeconds: number;
+    };
+    renderedAt?: number;
+};
+
 export type AdjustmentLayerSnapshot = {
     id: string;
     name: string;
@@ -573,6 +589,7 @@ export type AppAction =
                   trackId: string;
                   previousStatus: 'frozen' | 'stale';
                   previousAdjustmentMutationId?: string;
+                  frozenArtifact?: AdjustmentFrozenArtifactSnapshot;
               }>;
           };
       }

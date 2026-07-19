@@ -39,6 +39,9 @@ export const executeAppAction: ExecuteAppAction = inject({ logger })(
             if (handler.undoable) {
                 undoResult = handler.describe(action);
             }
+            if (options?.groupId && (!handler.undoable || !undoResult?.inverseAction)) {
+                throw new Error(`Action ${action.type} cannot join an atomic group without a concrete inverse`);
+            }
             options?.onUndoPrepared?.(undoResult);
 
             // Set semantic context so AutomergeStorage attaches a message to the CRDT change.

@@ -1,5 +1,6 @@
 import { type AppAction } from '#/utils/handlerContract';
 
+import { getHandler } from '../../stores/handlerRegistry';
 import { macroStore } from '../../stores/macroStore';
 import { executeAppAction } from '../executeAppAction';
 import { generateGroupId } from '../generateGroupId';
@@ -131,6 +132,20 @@ function create_replay_action(action: AppAction, identities: ReplayIdentityMap):
     }
 }
 
+function assert_macro_actions_admitted(actions: readonly AppAction[]): void {
+    for (const action of actions) {
+        if (is_adjustment_replay_action(action)) {
+            continue;
+        }
+        const admission_action = structuredClone(action);
+        const handler = getHandler(admission_action);
+        const undo_result = handler?.undoable ? handler.describe(admission_action) : null;
+        if (!handler?.undoable || !undo_result?.inverseAction) {
+            throw new Error(`Action ${action.type} cannot join an atomic group without a concrete inverse`);
+        }
+    }
+}
+
 /**
  * Replay a saved macro by dispatching each action in sequence.
  * All actions share a single undo group so the entire macro can be
@@ -146,6 +161,7 @@ export async function playMacro(macroId: string): Promise<void> {
     if (!macro) {
         return;
     }
+    assert_macro_actions_admitted(macro.actions);
 
     const { groupId, groupLabel } = generateGroupId(`Macro: ${macro.name}`);
     const identities: ReplayIdentityMap = { layerIds: new Map(), regionIds: new Map() };

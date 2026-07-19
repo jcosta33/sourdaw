@@ -251,6 +251,23 @@ describe('executeAppAction', () => {
         expect(mocks.recordActionHistoryMetadata).not.toHaveBeenCalled();
     });
 
+    it('rejects an inverse-less action before it can join an atomic group', async () => {
+        const action: SetSnapValueAction = { type: 'setSnapValue', payload: { value: 0.25 } };
+        const handler = create_mock_handler<SetSnapValueAction>({
+            describe: () => ({ label: 'No inverse' }),
+        });
+        registerHandlerMap({ [action.type]: handler });
+
+        await expect(executeAppAction(action, { groupId: 'atomic-group', groupLabel: 'Atomic group' })).rejects.toThrow(
+            'concrete inverse'
+        );
+
+        expect(handler.execute).not.toHaveBeenCalled();
+        expect(mocks.recordAction).not.toHaveBeenCalled();
+        expect(mocks.commitUndoEntry).not.toHaveBeenCalled();
+        expect(mocks.recordActionHistoryMetadata).not.toHaveBeenCalled();
+    });
+
     it('should log and rethrow rejected registered handlers without recording side effects', async () => {
         const action: ToggleSidebarAction = { type: 'toggleSidebar' };
         const cause = new Error('handler failed');

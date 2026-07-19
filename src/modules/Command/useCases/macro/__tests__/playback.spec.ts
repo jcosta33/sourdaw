@@ -6,14 +6,19 @@ import { playMacro } from '../playback';
 
 const STORAGE_KEY = 'sourdaw:macros';
 
-const { executeAppActionMock } = vi.hoisted(() => ({
+const { executeAppActionMock, getHandlerMock } = vi.hoisted(() => ({
     executeAppActionMock: vi
         .fn<typeof import('../../executeAppAction').executeAppAction>()
         .mockResolvedValue(undefined),
+    getHandlerMock: vi.fn(),
 }));
 
 vi.mock('../../executeAppAction', () => ({
     executeAppAction: executeAppActionMock,
+}));
+
+vi.mock('../../../stores/handlerRegistry', () => ({
+    getHandler: getHandlerMock,
 }));
 
 describe('playMacro', () => {
@@ -28,6 +33,12 @@ describe('playMacro', () => {
         localStorage.removeItem(STORAGE_KEY);
         macroStore.set({ macros: [macro], recording: false, currentRecording: [] });
         executeAppActionMock.mockClear();
+        getHandlerMock.mockReset();
+        getHandlerMock.mockReturnValue({
+            execute: vi.fn(),
+            describe: () => ({ label: 'Toggle', inverseAction: { type: 'togglePlayback' } }),
+            undoable: true,
+        });
     });
 
     afterEach(() => {
