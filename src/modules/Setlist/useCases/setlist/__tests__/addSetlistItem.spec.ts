@@ -91,7 +91,7 @@ describe('addSetlistItem', () => {
         expect(mockSetlistStore.set).toHaveBeenCalledWith(
             expect.objectContaining({
                 totalDuration: 180,
-            }) as unknown as SetlistState
+            })
         );
     });
 
