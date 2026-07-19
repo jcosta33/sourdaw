@@ -102,7 +102,9 @@ describe('isHydratableProjectData', () => {
                         parameters: [{ name: 'gain', value: 0, min: -12, max: 12, unit: 'db' }],
                         affectedTrackIds: ['track-1'],
                         insertionIndex: 0,
-                        regions: [{ id: 'region-1', startBeat: 0, endBeat: 4, blend: 1, fadeInBeats: 0, fadeOutBeats: 0 }],
+                        regions: [
+                            { id: 'region-1', startBeat: 0, endBeat: 4, blend: 1, fadeInBeats: 0, fadeOutBeats: 0 },
+                        ],
                         enabled: true,
                         mix: 1,
                         color: '#ffffff',
@@ -186,9 +188,7 @@ describe('isHydratableProjectData', () => {
                     tracks: [
                         {
                             ...validTrack,
-                            alternatives: [
-                                { id: 'alt-1', name: 'Alt 1', clips: [{ ...validClip, gain: 'loud' }] },
-                            ],
+                            alternatives: [{ id: 'alt-1', name: 'Alt 1', clips: [{ ...validClip, gain: 'loud' }] }],
                         },
                     ],
                 },

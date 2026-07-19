@@ -13,10 +13,10 @@ const transactionSentinel: ProjectLoadTransaction = {
 
 const mocks = vi.hoisted(() => ({
     pickFiles: vi.fn<() => Promise<File[] | null>>(),
-    runProjectLoadTransaction: vi.fn(),
+    runProjectLoadTransaction: vi.fn<() => ProjectLoadTransaction>(),
     applyImportedProjectData: vi.fn<() => Promise<boolean>>(),
-    notifyUser: vi.fn(),
-    loggerError: vi.fn(),
+    notifyUser: vi.fn<(message: string, level?: 'info' | 'success' | 'warning' | 'error') => void>(),
+    loggerError: vi.fn<(error: Error) => void>(),
 }));
 
 vi.mock('../../../fileDialog', () => ({

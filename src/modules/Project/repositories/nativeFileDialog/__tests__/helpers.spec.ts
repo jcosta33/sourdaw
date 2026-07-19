@@ -7,9 +7,9 @@ function createFileList(files: File[]): FileList {
         length: files.length,
         item: (index: number) => files[index] ?? null,
     };
-    files.forEach((file, index) => {
+    for (const [index, file] of files.entries()) {
         fileList[index] = file;
-    });
+    }
     return fileList as unknown as FileList;
 }
 
@@ -49,11 +49,16 @@ describe('openViaBrowser', () => {
     });
 
     it('configures multiple selection and the accept filter from the requested extensions', () => {
+        const realCreateElement = document.createElement.bind(document);
         let capturedInput: HTMLInputElement | undefined;
-        vi.spyOn(HTMLInputElement.prototype, 'click').mockImplementation(function (this: HTMLInputElement) {
-            capturedInput = this;
-            this.dispatchEvent(new Event('cancel'));
+        vi.spyOn(document, 'createElement').mockImplementation((tagName: string) => {
+            const element = realCreateElement(tagName);
+            if (element instanceof HTMLInputElement) {
+                capturedInput = element;
+            }
+            return element;
         });
+        vi.spyOn(HTMLInputElement.prototype, 'click').mockImplementation(() => undefined);
 
         void openViaBrowser({ multiple: true, filters: [{ name: 'Audio', extensions: ['wav', 'mp3'] }] });
 
