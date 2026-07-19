@@ -1,6 +1,6 @@
 /**
  * Groove / Swing Module — applies timing offset templates to notes.
- * Supports built-in groove presets and custom templates.
+ * Receives canonical groove projections from MIDI through numeric runtime params.
  */
 
 import { type MidiEvent, type TransportInfo, samplesPerBeat } from '../../models/MidiEvent';
@@ -9,33 +9,14 @@ import { BoundedNoteVoiceQueue } from '../BoundedNoteVoiceQueue';
 
 import type { YeastPreviewDecisionSink } from '../YeastPreviewSidecar';
 
-type GrooveTemplate = {
-    name: string;
-    /** Normalized timing offsets per step (-0.5 to +0.5 of step duration). */
-    offsets: number[];
-};
-
-const GROOVE_TEMPLATES: GrooveTemplate[] = [
-    { name: 'Straight', offsets: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0] },
-    { name: 'MPC Swing', offsets: [0, 0.12, 0, 0.12, 0, 0.12, 0, 0.12, 0, 0.12, 0, 0.12, 0, 0.12, 0, 0.12] },
-    {
-        name: 'Triplet Shuffle',
-        offsets: [0, 0.167, 0, 0.167, 0, 0.167, 0, 0.167, 0, 0.167, 0, 0.167, 0, 0.167, 0, 0.167],
-    },
-    { name: 'Late Backbeat', offsets: [0, 0, 0, 0, 0.05, 0, 0, 0, 0, 0, 0, 0, 0.05, 0, 0, 0] },
-    {
-        name: 'Dilla Pocket',
-        offsets: [0, 0.08, -0.03, 0.15, 0, 0.06, -0.02, 0.12, 0, 0.09, -0.04, 0.14, 0, 0.07, -0.03, 0.11],
-    },
-    { name: 'Push', offsets: [-0.03, 0, -0.03, 0, -0.03, 0, -0.03, 0, -0.03, 0, -0.03, 0, -0.03, 0, -0.03, 0] },
-];
-
 export class GrooveModule extends BaseMidiProcessor {
     readonly name = 'Groove';
 
-    private templateIndex = 0;
     private amount = 0.5; // 0–1 blend
-    private subdivision = 16; // quantize grid (16 = 16th notes)
+    private stepBeats = 0.25;
+    private slotCount = 16;
+    private readonly timingOffsets = new Float64Array(32);
+    private readonly dynamicsOffsets = new Float64Array(32);
     // Track timing offset for Note Off. Numeric key (channel << 7) | note matches
     // MidiRack/ScaleQuantizer and avoids a per-event template-literal allocation
     // on the audio thread.
@@ -51,25 +32,29 @@ export class GrooveModule extends BaseMidiProcessor {
         transport: TransportInfo,
         preview?: YeastPreviewDecisionSink
     ): void {
-        const template = GROOVE_TEMPLATES[this.templateIndex] ?? GROOVE_TEMPLATES[0]!;
-        const stepLen = samplesPerBeat(transport) * (4 / this.subdivision);
+        const beatLengthSamples = samplesPerBeat(transport);
+        const blockStartSamples = transport.blockStartSamples;
 
         for (const event of input) {
             if (event.kind.type === 'noteOn') {
-                // Determine which step this note falls on
-                const beatPos = event.timeSamples / samplesPerBeat(transport);
-                const stepIdx = Math.round(beatPos * (this.subdivision / 4));
-                const templateIdx = stepIdx % template.offsets.length;
-                const offset = template.offsets[templateIdx]! * this.amount * stepLen;
-                const offsetSamples = Math.round(offset);
+                const beatPosition =
+                    blockStartSamples === undefined
+                        ? event.timeSamples / beatLengthSamples
+                        : transport.ppqPosition + (event.timeSamples - blockStartSamples) / beatLengthSamples;
+                const stepIndex = Math.round(beatPosition / this.stepBeats);
+                const templateIndex = ((stepIndex % this.slotCount) + this.slotCount) % this.slotCount;
+                const offsetBeats = this.timingOffsets[templateIndex]! * this.amount * this.stepBeats;
+                const offsetSamples = Math.round(offsetBeats * beatLengthSamples);
+                const velocityScale = 1 + this.dynamicsOffsets[templateIndex]! * this.amount;
+                const velocity = Math.max(1, Math.min(127, Math.round(event.kind.velocity * velocityScale)));
 
                 const key = (event.kind.channel << 7) | event.kind.note;
                 this.noteVoices.push(event.trackId, key, offsetSamples);
 
                 const transformed: MidiEvent = {
+                    ...event,
                     timeSamples: event.timeSamples + offsetSamples,
-                    trackId: event.trackId,
-                    kind: event.kind,
+                    kind: { ...event.kind, velocity },
                 };
                 output.push(transformed);
                 preview?.transferDecisionLineage(event, transformed);
@@ -78,8 +63,8 @@ export class GrooveModule extends BaseMidiProcessor {
                 const offset = this.noteVoices.shift(event.trackId, key) ?? 0;
 
                 const transformed: MidiEvent = {
+                    ...event,
                     timeSamples: event.timeSamples + offset,
-                    trackId: event.trackId,
                     kind: event.kind,
                 };
                 output.push(transformed);
@@ -95,26 +80,42 @@ export class GrooveModule extends BaseMidiProcessor {
     }
 
     protected resetParams(): void {
-        this.templateIndex = 0;
         this.amount = 0.5;
-        this.subdivision = 16;
+        this.stepBeats = 0.25;
+        this.slotCount = 16;
+        this.timingOffsets.fill(0);
+        this.dynamicsOffsets.fill(0);
     }
 
     setParam(name: string, value: number): void {
+        if (!Number.isFinite(value)) {
+            return;
+        }
         switch (name) {
-            case 'template':
-                this.templateIndex = Math.max(0, Math.min(GROOVE_TEMPLATES.length - 1, Math.round(value)));
-                break;
-            case 'amount':
+            case 'groove_amount':
                 this.amount = Math.max(0, Math.min(1, value));
                 break;
-            case 'subdivision':
-                this.subdivision = Math.max(4, Math.min(32, Math.round(value)));
+            case 'groove_step_beats':
+                this.stepBeats = Math.max(1 / 32, Math.min(1, value));
                 break;
+            case 'groove_slot_count':
+                this.slotCount = Math.max(1, Math.min(this.timingOffsets.length, Math.round(value)));
+                break;
+            default:
+                this.setProjectionOffset(name, value);
         }
     }
 
-    static getTemplateNames(): string[] {
-        return GROOVE_TEMPLATES.map((time) => time.name);
+    private setProjectionOffset(name: string, value: number): void {
+        const timingIndex = name.startsWith('groove_timing_') ? Number(name.slice('groove_timing_'.length)) : -1;
+        if (Number.isInteger(timingIndex) && timingIndex >= 0 && timingIndex < this.timingOffsets.length) {
+            this.timingOffsets[timingIndex] = Math.max(-0.5, Math.min(0.5, value));
+            return;
+        }
+
+        const dynamicsIndex = name.startsWith('groove_dynamics_') ? Number(name.slice('groove_dynamics_'.length)) : -1;
+        if (Number.isInteger(dynamicsIndex) && dynamicsIndex >= 0 && dynamicsIndex < this.dynamicsOffsets.length) {
+            this.dynamicsOffsets[dynamicsIndex] = Math.max(-1, Math.min(1, value));
+        }
     }
 }

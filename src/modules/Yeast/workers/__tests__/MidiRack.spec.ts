@@ -404,13 +404,12 @@ const voicePairingCases: readonly VoicePairingCase[] = [
         name: 'GrooveModule',
         create: () => new GrooveModule('voice-pairing'),
         configureFirst: (processor) => {
-            processor.setParam('template', 0);
-            processor.setParam('amount', 1);
+            processor.setParam('groove_amount', 1);
+            processor.setParam('groove_step_beats', 0.25);
+            processor.setParam('groove_slot_count', 16);
+            processor.setParam('groove_timing_0', 0);
         },
-        configureSecond: (processor) => {
-            processor.setParam('template', 1);
-            processor.setParam('amount', 1);
-        },
+        configureSecond: (processor) => processor.setParam('groove_timing_1', 0.12),
         expected: [['noteOn:60@0'], ['noteOn:60@8662'], ['noteOff:60@16000'], ['noteOff:60@24662']],
     },
     {

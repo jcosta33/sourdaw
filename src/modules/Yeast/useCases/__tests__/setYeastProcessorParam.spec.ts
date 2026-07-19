@@ -10,15 +10,27 @@ const store = vi.hoisted(() => ({
                 bypassed: false,
                 params: { transpose_mode: 1 },
             },
+            {
+                id: 'groove-1',
+                type: 'groove' as const,
+                name: 'Groove',
+                bypassed: false,
+                params: {},
+            },
         ],
         uiLevel: 2 as const,
     },
 }));
 
 const commit = vi.hoisted(() => vi.fn());
+const grooveMocks = vi.hoisted(() => ({ setYeastGrooveTemplate: vi.fn() }));
 
 vi.mock('../../stores/yeastStore', () => ({ yeastStore: store }));
 vi.mock('../commitYeastProjection', () => ({ commitYeastProjection: commit }));
+vi.mock('../getYeastGrooveAssignment', () => ({
+    getYeastGrooveAssignment: () => ({ templateId: 'pocket-1', amount: 0.5 }),
+}));
+vi.mock('../setYeastGrooveTemplate', () => ({ setYeastGrooveTemplate: grooveMocks.setYeastGrooveTemplate }));
 
 const { setYeastProcessorParam } = await import('../setYeastProcessorParam');
 
@@ -42,6 +54,15 @@ describe('setYeastProcessorParam', () => {
                 ...store.value.processors[0],
                 params: { transpose_mode: 0 },
             },
+            store.value.processors[1],
         ]);
+    });
+
+    it('should route groove amount through the MIDI-owned assignment without changing Yeast storage', () => {
+        setYeastProcessorParam('groove-1', 'amount', 0.75);
+
+        expect(grooveMocks.setYeastGrooveTemplate).toHaveBeenCalledWith('groove-1', 'pocket-1', 0.75);
+        expect(commit).not.toHaveBeenCalled();
+        expect(store.value.processors[1]?.params).toEqual({});
     });
 });

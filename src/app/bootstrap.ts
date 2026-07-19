@@ -79,6 +79,7 @@ import {
     getMidiGrooveHandlers,
     getMidiNoteTransformHandlers,
     getPatternInstanceHandlers,
+    setWebMidiRealtimeProcessor,
     setWebMidiRuntimeEventBus,
     getWebMidiInputHandlers,
 } from '#/modules/MIDI/useCases';
@@ -107,7 +108,7 @@ import {
 import { updateTunerTelemetry } from '#/modules/Tuner/stores';
 import { getWorkspaceHandlers, getScratchPadHandlers, setWorkspaceEventBus } from '#/modules/WorkspaceShell/useCases';
 import { setYeastEventBus } from '#/modules/Yeast/stores';
-import { configureYeastRuntime, teardownYeastRuntime } from '#/modules/Yeast/useCases';
+import { configureYeastRuntime, processRealtimeMidiInput, teardownYeastRuntime } from '#/modules/Yeast/useCases';
 import { logCapabilities } from '#/utils/capabilities';
 import { setNotificationEventBus } from '#/utils/Notification/notificationEventBus';
 
@@ -141,6 +142,7 @@ setGrandBouleEventBus(eventBus);
 setToasterEventBus(eventBus);
 setYeastEventBus(eventBus);
 configureYeastRuntime({ panicOutputNotes: stopAllScheduled });
+setWebMidiRealtimeProcessor({ processor: processRealtimeMidiInput });
 setWebMidiRuntimeEventBus({ eventBus });
 setNotificationEventBus(eventBus);
 setTimeOperationDependencies({ shiftTimelineMapsAfterBeat, deleteTimelineMapsTimeRange });

@@ -115,9 +115,9 @@ describe('handleWebMidiNoteOff', () => {
     });
 
     it('should route Yeast note-off events through the rack to the instrument', async () => {
-        const fermenter_note_off = vi.fn<(note: number) => void>();
+        const fermenter_note_off = vi.fn<(note: number, sampleFrame?: number) => void>();
         const process_realtime_midi_input = vi.fn(async (): Promise<TestMidiEvent[]> => [
-            { timeSamples: 0, kind: { type: 'noteOff', channel: 0, note: 67 } },
+            { timeSamples: 96_360, kind: { type: 'noteOff', channel: 0, note: 67 } },
         ]);
         const fn = handleWebMidiNoteOff._factory(
             make_dependencies({
@@ -154,13 +154,13 @@ describe('handleWebMidiNoteOff', () => {
         await fn(0, 60);
 
         expect(process_realtime_midi_input).toHaveBeenCalledTimes(1);
-        expect(fermenter_note_off).toHaveBeenCalledWith(67);
+        expect(fermenter_note_off).toHaveBeenCalledWith(67, 96_360);
     });
 
     it('releases a Yeast note on its originating track after selection changes', async () => {
-        const fermenter_note_off = vi.fn<(note: number) => void>();
+        const fermenter_note_off = vi.fn<(note: number, sampleFrame?: number) => void>();
         const process_realtime_midi_input = vi.fn(async (): Promise<TestMidiEvent[]> => [
-            { timeSamples: 0, kind: { type: 'noteOff', channel: 0, note: 67 } },
+            { timeSamples: 96_480, kind: { type: 'noteOff', channel: 0, note: 67 } },
         ]);
         const fn = handleWebMidiNoteOff._factory(
             make_dependencies({
@@ -199,7 +199,7 @@ describe('handleWebMidiNoteOff', () => {
 
         expect(process_realtime_midi_input).toHaveBeenCalledWith(expect.objectContaining({ trackId: 'track-a' }));
         expect(get_track_strip).toHaveBeenCalledWith('track-a');
-        expect(fermenter_note_off).toHaveBeenCalledWith(67);
+        expect(fermenter_note_off).toHaveBeenCalledWith(67, 96_480);
     });
 
     it('should release a live synth oscillator through its envelope', async () => {

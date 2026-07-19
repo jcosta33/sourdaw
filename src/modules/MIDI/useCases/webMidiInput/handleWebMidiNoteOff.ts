@@ -103,7 +103,8 @@ export const handleWebMidiNoteOff = inject(midiMessageHandlerDependencies)((deps
                     strip,
                     event.kind.note,
                     releaseVelocity,
-                    emitGrandBouleOff
+                    emitGrandBouleOff,
+                    Math.round(event.timeSamples)
                 );
             }
         }

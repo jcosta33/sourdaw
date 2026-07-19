@@ -1,7 +1,7 @@
 import { yeastPreviewTap } from '../../engine/yeastPreviewTap';
 import { getYeastRuntimeError, getYeastRuntimeStatus, processYeastRuntimeTransaction } from '../../engine/yeastRuntime';
-import { createYeastProcessorProjection } from '../../models/YeastProcessorProjection';
 import { yeastStore } from '../../stores/yeastStore';
+import { createYeastRuntimeProjection } from '../createYeastRuntimeProjection';
 
 import type { MidiEvent, TransportInfo } from '../../models/MidiEvent';
 
@@ -41,7 +41,7 @@ export async function processYeastMidi(input: ProcessYeastMidiInput): Promise<Mi
         return [...input.events];
     }
 
-    const projection = createYeastProcessorProjection(state.processors);
+    const projection = createYeastRuntimeProjection(state.processors);
     const previewScope = {
         rackId: input.rackId ?? input.trackId,
         routeId: input.routeId ?? input.trackId,

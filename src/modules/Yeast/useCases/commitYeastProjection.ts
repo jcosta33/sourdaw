@@ -1,6 +1,8 @@
 import { setYeastRuntimeProjection } from '../engine/yeastRuntime';
-import { createDurableYeastProcessorParams, createYeastProcessorProjection } from '../models/YeastProcessorProjection';
+import { createDurableYeastProcessorParams } from '../models/YeastProcessorProjection';
 import { yeastStore, type YeastProcessorInfo } from '../stores/yeastStore';
+
+import { createYeastRuntimeProjection } from './createYeastRuntimeProjection';
 
 export function commitYeastProjection(processors: readonly YeastProcessorInfo[]): void {
     const state = yeastStore.value;
@@ -16,5 +18,5 @@ export function commitYeastProjection(processors: readonly YeastProcessorInfo[])
         ...state,
         processors: nextProcessors,
     });
-    setYeastRuntimeProjection(createYeastProcessorProjection(nextProcessors));
+    setYeastRuntimeProjection(createYeastRuntimeProjection(nextProcessors));
 }

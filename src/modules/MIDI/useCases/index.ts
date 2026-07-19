@@ -131,6 +131,7 @@ export { transposeForChordTrack } from './transposeForChordTrack';
 
 // ── WebMIDI Note Input ────────────────────────────────────────────────────────
 export { initWebMidi } from './webMidiInput/initWebMidi';
+export { setWebMidiRealtimeProcessor } from './webMidiInput/setWebMidiRealtimeProcessor';
 export { setWebMidiRuntimeEventBus } from './webMidiInput/setWebMidiRuntimeEventBus';
 export { setMidiInputTrack } from './webMidiInput/setMidiInputTrack';
 export { selectMidiInput } from './webMidiInput/selectMidiInput';
