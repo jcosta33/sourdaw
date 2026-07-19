@@ -131,6 +131,100 @@ describe('groove template collaboration storage', () => {
     );
 
     it.each(['left-right', 'right-left'] as const)(
+        'reconciles concurrent first writes from a keyless legacy root and keeps later edits $0',
+        (direction) => {
+            const legacyBaseline = from<RootDocument>({
+                grooveTemplates: {
+                    templates: createBuiltinGrooveTemplates(),
+                    assignments: [],
+                },
+            });
+            const leftPeer = createPeer(clone(legacyBaseline));
+            const rightPeer = createPeer(clone(legacyBaseline));
+            const leftStorage = createGrooveTemplateAutomergeStorage();
+            const rightStorage = createGrooveTemplateAutomergeStorage();
+
+            configureAutomergeStoragePort(leftPeer.port);
+            expect(leftStorage.hydrate?.()).toBe(true);
+            leftStorage.set({
+                templates: [...leftStorage.get()!.templates, createTemplate('legacy-left')],
+                assignments: [
+                    {
+                        consumerType: 'sequencer',
+                        consumerId: 'legacy-left-consumer',
+                        templateId: 'legacy-left',
+                        amount: 0.4,
+                    },
+                ],
+            });
+            flushAutomergeStorageWrites();
+
+            configureAutomergeStoragePort(rightPeer.port);
+            expect(rightStorage.hydrate?.()).toBe(true);
+            rightStorage.set({
+                templates: [...rightStorage.get()!.templates, createTemplate('legacy-right')],
+                assignments: [
+                    {
+                        consumerType: 'clip',
+                        consumerId: 'legacy-right-consumer',
+                        templateId: 'legacy-right',
+                        amount: 0.6,
+                    },
+                ],
+            });
+            flushAutomergeStorageWrites();
+
+            const mergedDoc =
+                direction === 'left-right'
+                    ? merge(leftPeer.getDoc(), rightPeer.getDoc())
+                    : merge(rightPeer.getDoc(), leftPeer.getDoc());
+            const mergedPeer = createPeer(mergedDoc);
+            const mergedStorage = createGrooveTemplateAutomergeStorage();
+            configureAutomergeStoragePort(mergedPeer.port);
+            expect(mergedStorage.hydrate?.()).toBe(true);
+            expect(mergedStorage.get()!.templates.map((template) => template.id)).toEqual(
+                expect.arrayContaining(['legacy-left', 'legacy-right'])
+            );
+            expect(mergedStorage.get()!.assignments.map((assignment) => assignment.consumerId)).toEqual(
+                expect.arrayContaining(['legacy-left-consumer', 'legacy-right-consumer'])
+            );
+
+            mergedStorage.set({
+                templates: mergedStorage
+                    .get()!
+                    .templates.filter((template) => template.id !== 'legacy-right')
+                    .map((template) =>
+                        template.id === 'legacy-left' ? { ...template, name: 'Edited after merge' } : template
+                    ),
+                assignments: mergedStorage
+                    .get()!
+                    .assignments.filter((assignment) => assignment.consumerId !== 'legacy-right-consumer'),
+            });
+            flushAutomergeStorageWrites();
+
+            const reopenedPeer = createPeer(clone(mergedPeer.getDoc()));
+            const reopenedStorage = createGrooveTemplateAutomergeStorage();
+            configureAutomergeStoragePort(reopenedPeer.port);
+            expect(reopenedStorage.hydrate?.()).toBe(true);
+            expect(reopenedStorage.get()!.templates.find((template) => template.id === 'legacy-left')?.name).toBe(
+                'Edited after merge'
+            );
+            expect(reopenedStorage.get()!.templates.some((template) => template.id === 'legacy-right')).toBe(false);
+            expect(reopenedStorage.get()!.assignments).toContainEqual({
+                consumerType: 'sequencer',
+                consumerId: 'legacy-left-consumer',
+                templateId: 'legacy-left',
+                amount: 0.4,
+            });
+            expect(
+                reopenedStorage
+                    .get()!
+                    .assignments.some((assignment) => assignment.consumerId === 'legacy-right-consumer')
+            ).toBe(false);
+        }
+    );
+
+    it.each(['left-right', 'right-left'] as const)(
         'keeps a deletion causal while merging an unrelated template write $0',
         (direction) => {
             const baseline = createBaseline({

@@ -153,6 +153,96 @@ describe('groove template project migration', () => {
         }
     });
 
+    it('reconciles mixed canonical and legacy catalogs with canonical assignment precedence once', () => {
+        const transitional = {
+            version: 1,
+            meta: {},
+            arrangement: {},
+            midi: { notesByClipId: {}, ccByClipId: {}, pitchBendByClipId: {} },
+            grooves: {
+                templates: [
+                    {
+                        id: 'canonical-pocket',
+                        name: 'Canonical pocket',
+                        schemaVersion: 1,
+                        subdivision: '1/16',
+                        slots: [{ index: 1, timingOffset: 0.05, dynamicsOffset: 0 }],
+                        provenance: { type: 'user', sourceId: 'canonical' },
+                    },
+                ],
+                assignments: [
+                    {
+                        consumerType: 'yeast-processor',
+                        consumerId: 'shared-consumer',
+                        templateId: 'canonical-pocket',
+                        amount: 0.9,
+                    },
+                ],
+            },
+            yeast: {
+                retained: 'yeast-state',
+                grooveTemplates: [{ id: 'yeast-pocket', name: 'Yeast pocket', offsets: [0, 0.1] }],
+                assignments: [
+                    {
+                        consumerType: 'yeast-processor',
+                        consumerId: 'shared-consumer',
+                        templateId: 'yeast-pocket',
+                        amount: 0.2,
+                    },
+                ],
+            },
+            toaster: {
+                retained: 'toaster-state',
+                grooveTemplates: [{ id: 'toaster-push', name: 'Toaster push', offsets: [-0.1, 0] }],
+                assignments: [
+                    {
+                        consumerType: 'clip',
+                        consumerId: 'legacy-only-consumer',
+                        templateId: 'toaster-push',
+                        amount: 0.7,
+                    },
+                ],
+            },
+        };
+
+        const once = normalizeLegacyProjectData(transitional);
+        const twice = normalizeLegacyProjectData(once);
+        if (
+            !isRecord(once) ||
+            !isRecord(once.grooves) ||
+            !Array.isArray(once.grooves.templates) ||
+            !Array.isArray(once.grooves.assignments)
+        ) {
+            throw new Error('Expected reconciled canonical groove state');
+        }
+
+        expect(twice).toEqual(once);
+        expect(once.grooves.templates).toEqual(
+            expect.arrayContaining([
+                expect.objectContaining({ id: 'canonical-pocket' }),
+                expect.objectContaining({ name: 'Yeast pocket' }),
+                expect.objectContaining({ name: 'Toaster push' }),
+            ])
+        );
+        expect(once.grooves.assignments).toEqual(
+            expect.arrayContaining([
+                {
+                    consumerType: 'yeast-processor',
+                    consumerId: 'shared-consumer',
+                    templateId: 'canonical-pocket',
+                    amount: 0.9,
+                },
+                expect.objectContaining({
+                    consumerType: 'clip',
+                    consumerId: 'legacy-only-consumer',
+                    amount: 0.7,
+                }),
+            ])
+        );
+        expect(once.yeast).toEqual({ retained: 'yeast-state' });
+        expect(once.toaster).toEqual({ retained: 'toaster-state' });
+    });
+
     it('preserves identity, provenance, lifecycle, and assignments across save/load and replay', () => {
         createGrooveTemplate({
             id: 'saved-pocket',

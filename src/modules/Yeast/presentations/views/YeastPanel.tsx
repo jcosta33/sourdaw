@@ -25,6 +25,7 @@ import { createDefaultPattern, type ArpStep } from '../../models/ArpPattern';
 import { PROCESSOR_TYPES } from '../../models/ProcessorCatalog';
 import { yeastStore, type YeastProcessorInfo, type YeastState } from '../../stores/yeastStore';
 import { addYeastProcessor } from '../../useCases/addYeastProcessor';
+import { getYeastGrooveAssignment } from '../../useCases/getYeastGrooveAssignment';
 import { removeYeastProcessor } from '../../useCases/removeYeastProcessor';
 import { sendYeastProcessorCommand } from '../../useCases/sendYeastProcessorCommand';
 import { setYeastGrooveTemplate } from '../../useCases/setYeastGrooveTemplate';
@@ -185,9 +186,7 @@ const defaultYeastState: YeastState = {
 
 const GrooveAwareProcessorParams = ({ processor }: { processor: YeastProcessorInfo }): ReactElement => {
     const grooveState = useStore(grooveTemplateStore);
-    const assignment = grooveState.assignments.find(
-        (candidate) => candidate.consumerType === 'yeast-processor' && candidate.consumerId === processor.id
-    );
+    const assignment = getYeastGrooveAssignment(processor.id);
     return (
         <ProcessorParams
             processorId={processor.id}

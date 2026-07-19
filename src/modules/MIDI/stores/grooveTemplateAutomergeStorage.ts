@@ -74,6 +74,28 @@ function decodeState(value: unknown): GrooveTemplateState {
     return sanitizeGrooveTemplateState({ templates, assignments });
 }
 
+function reconcileRootConflicts(values: readonly GrooveTemplateState[]): GrooveTemplateState {
+    const templatesById = new Map<string, GrooveTemplate>();
+    const assignmentsByConsumer = new Map<string, GrooveTemplateAssignment>();
+    for (const state of values) {
+        for (const template of state.templates) {
+            if (!templatesById.has(template.id)) {
+                templatesById.set(template.id, template);
+            }
+        }
+        for (const assignment of state.assignments) {
+            const key = assignmentEntityKey(assignment);
+            if (!assignmentsByConsumer.has(key)) {
+                assignmentsByConsumer.set(key, assignment);
+            }
+        }
+    }
+    return sanitizeGrooveTemplateState({
+        templates: [...templatesById.values()],
+        assignments: [...assignmentsByConsumer.values()],
+    });
+}
+
 function replaceIfChanged(target: MutableRecord, key: string, value: unknown): void {
     if (JSON.stringify(target[key]) !== JSON.stringify(value)) {
         target[key] = value;
@@ -147,8 +169,23 @@ function mutateGrooveTemplateCrdt({
 }
 
 export function createGrooveTemplateAutomergeStorage() {
+    let shouldCollapseRootConflicts = false;
     return createAutomergeStorage<GrooveTemplateState>(DOC_PREFIX_ROOT, 'grooveTemplates', {
-        fromCrdt: (value) => decodeState(value),
-        mutateCrdt: mutateGrooveTemplateCrdt,
+        fromCrdt: (value) => {
+            shouldCollapseRootConflicts = false;
+            return decodeState(value);
+        },
+        resolveConflicts: (values) => {
+            shouldCollapseRootConflicts = true;
+            return reconcileRootConflicts(values);
+        },
+        mutateCrdt: (input) => {
+            if (shouldCollapseRootConflicts) {
+                input.doc[input.key] = encodeState(sanitizeGrooveTemplateState(input.value));
+                shouldCollapseRootConflicts = false;
+                return;
+            }
+            mutateGrooveTemplateCrdt(input);
+        },
     });
 }

@@ -111,18 +111,6 @@ function migrateLegacyStraightAssignmentAlias(value: UnknownRecord): UnknownReco
     return { ...value, assignments };
 }
 
-function stripIdentifiedLegacyGrooveSources(value: UnknownRecord): UnknownRecord {
-    let normalized = value;
-    for (const source of ['yeast', 'toaster'] as const) {
-        const sourceState = value[source];
-        const stripped = stripLegacyGrooveFields(sourceState);
-        if (stripped !== sourceState) {
-            normalized = { ...normalized, [source]: stripped };
-        }
-    }
-    return normalized;
-}
-
 function nextAvailableName(name: string, occupiedNames: Set<string>): string {
     const baseName = name.trim() || 'Untitled groove';
     if (!occupiedNames.has(getCanonicalGrooveTemplateKey(baseName))) {
@@ -305,18 +293,6 @@ function normalizeLegacyGrooveAssignment({
 
 function normalizeGrooveFields(value: UnknownRecord): UnknownRecord {
     const legacyYeastProcessorGrooves = getLegacyYeastProcessorGrooves(value);
-    if (
-        legacyYeastProcessorGrooves.length === 0 &&
-        isRecord(value.grooves) &&
-        Array.isArray(value.grooves.templates) &&
-        Array.isArray(value.grooves.assignments)
-    ) {
-        const grooves = isGrooveTemplateState(value.grooves)
-            ? value.grooves
-            : migrateLegacyStraightAssignmentAlias(value.grooves);
-        return stripIdentifiedLegacyGrooveSources(grooves === value.grooves ? value : { ...value, grooves });
-    }
-
     const hasIdentifiedLegacyGrooveFields =
         legacyYeastProcessorGrooves.length > 0 ||
         ['yeast', 'toaster'].some((source) => {
@@ -327,6 +303,16 @@ function normalizeGrooveFields(value: UnknownRecord): UnknownRecord {
             );
         });
     if (!hasIdentifiedLegacyGrooveFields) {
+        if (
+            isRecord(value.grooves) &&
+            Array.isArray(value.grooves.templates) &&
+            Array.isArray(value.grooves.assignments)
+        ) {
+            const grooves = isGrooveTemplateState(value.grooves)
+                ? value.grooves
+                : migrateLegacyStraightAssignmentAlias(value.grooves);
+            return grooves === value.grooves ? value : { ...value, grooves };
+        }
         return value;
     }
 
@@ -402,6 +388,7 @@ function normalizeGrooveFields(value: UnknownRecord): UnknownRecord {
             assignment,
         ])
     );
+    const canonicalAssignmentKeys = new Set(assignmentsByConsumer.keys());
     for (const source of ['yeast', 'toaster'] as const) {
         const sourceState = value[source];
         if (!isRecord(sourceState) || !Array.isArray(sourceState.assignments)) {
@@ -415,7 +402,10 @@ function normalizeGrooveFields(value: UnknownRecord): UnknownRecord {
                 templateIds: occupiedIds,
             });
             if (assignment) {
-                assignmentsByConsumer.set(`${assignment.consumerType}:${assignment.consumerId}`, assignment);
+                const key = `${assignment.consumerType}:${assignment.consumerId}`;
+                if (!canonicalAssignmentKeys.has(key)) {
+                    assignmentsByConsumer.set(key, assignment);
+                }
             }
         }
     }
@@ -435,7 +425,10 @@ function normalizeGrooveFields(value: UnknownRecord): UnknownRecord {
             templateId,
             amount: legacyProcessorGroove.amount,
         };
-        assignmentsByConsumer.set(`${assignment.consumerType}:${assignment.consumerId}`, assignment);
+        const key = `${assignment.consumerType}:${assignment.consumerId}`;
+        if (!canonicalAssignmentKeys.has(key)) {
+            assignmentsByConsumer.set(key, assignment);
+        }
     }
 
     const grooves = sanitizeGrooveTemplateState({
