@@ -1,6 +1,6 @@
 import { logger } from '#/infra/logger/appLogger';
 import { getTrackStoreState } from '#/modules/Arrangement/useCases';
-import { createAppActionCommittedError, executeAppAction, isAppActionCommittedError } from '#/modules/Command/useCases';
+import { createAppActionCommittedError, isAppActionCommittedError } from '#/modules/Command/useCases';
 import { createHandler } from '#/utils/createHandler';
 
 import { analyzeMix } from '../../useCases/analyzeMix';
@@ -27,7 +27,11 @@ function settleDelay(ms: number): Promise<void> {
 }
 
 export const handleAutoFixMix = createHandler<'autoFixMix'>({
-    execute: async () => {
+    execute: async (_action, context) => {
+        if (!context) {
+            throw new Error('Command execution context is required to auto-fix a mix');
+        }
+        const { executeAppAction } = context;
         const token = mixAnalysisDisplayLifecycle.begin();
         if (token === null) {
             return;

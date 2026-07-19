@@ -1,14 +1,9 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vitest';
 
 import { createTrack } from '../../../models/Track';
-import { trackStore } from '../../../stores/trackStore';
 import { migrateLegacyFrozenTrackStates } from '../migrateLegacyFrozenTrackStates';
 
 describe('migrateLegacyFrozenTrackStates', () => {
-    afterEach(() => {
-        trackStore.set({ tracks: [], selectedTrackId: null, ghostClips: [] });
-    });
-
     it('marks legacy frozen inputs stale while preserving versioned frozen inputs', () => {
         const legacy = createTrack({ id: 'legacy', name: 'Legacy', kind: 'audio' });
         legacy.frozen = true;
@@ -16,11 +11,9 @@ describe('migrateLegacyFrozenTrackStates', () => {
         const current = createTrack({ id: 'current', name: 'Current', kind: 'audio' });
         current.frozen = true;
         current.freezeState = { status: 'frozen', sourceContentHash: 'freeze-v2:current-hash' };
-        trackStore.set({ tracks: [legacy, current], selectedTrackId: null, ghostClips: [] });
+        const migrated = migrateLegacyFrozenTrackStates([legacy, current]);
 
-        migrateLegacyFrozenTrackStates();
-
-        expect(trackStore.value?.tracks.map((track) => track.freezeState.status)).toEqual(['stale', 'frozen']);
-        expect(trackStore.value?.tracks[0]?.freezeState.sourceContentHash).toBe('legacy-hash');
+        expect(migrated.map((track) => track.freezeState.status)).toEqual(['stale', 'frozen']);
+        expect(migrated[0]?.freezeState.sourceContentHash).toBe('legacy-hash');
     });
 });

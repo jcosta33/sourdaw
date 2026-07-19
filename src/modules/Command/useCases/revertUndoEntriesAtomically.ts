@@ -2,7 +2,7 @@ import { type AppAction } from '#/utils/handlerContract';
 
 import { type UndoEntry } from '../models/UndoEntry';
 
-import { executeAppAction } from './executeAppAction';
+import { executeAppActionImpl } from './executeAppActionImpl';
 
 const replay_options = { skipUndo: true, skipMacroRecording: true } as const;
 
@@ -12,7 +12,7 @@ async function apply_inverse(entry: UndoEntry): Promise<void> {
         return;
     }
     if (entry.inverseAction) {
-        await executeAppAction(entry.inverseAction, replay_options);
+        await executeAppActionImpl(entry.inverseAction, replay_options);
     }
 }
 
@@ -52,7 +52,7 @@ export async function revertUndoEntriesAtomically(entries: readonly UndoEntry[])
     if (!aggregate_inverse) {
         return false;
     }
-    await executeAppAction(aggregate_inverse, replay_options);
+    await executeAppActionImpl(aggregate_inverse, replay_options);
 
     return true;
 }

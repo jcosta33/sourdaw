@@ -1,5 +1,6 @@
 import {
     type ActionExecutionResult,
+    type ActionExecutionContext,
     type ActionHandler,
     type AppAction,
     type HandlerDescribeResult,
@@ -13,7 +14,8 @@ import {
 export function createHandler<ActionType extends AppAction['type']>(config: {
     undoable: boolean;
     execute: (
-        action: Extract<AppAction, { type: ActionType }>
+        action: Extract<AppAction, { type: ActionType }>,
+        context?: ActionExecutionContext
     ) => void | ActionExecutionResult | Promise<void | ActionExecutionResult>;
     describe: (action: Extract<AppAction, { type: ActionType }>) => HandlerDescribeResult;
 }): ActionHandler<Extract<AppAction, { type: ActionType }>> {

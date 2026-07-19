@@ -41,11 +41,6 @@ vi.mock('../../../useCases/analyzeMix', () => ({
     analyzeMix: vi.fn(),
 }));
 
-vi.mock('#/modules/Command/useCases', async (import_original) => ({
-    ...(await import_original<typeof import('#/modules/Command/useCases')>()),
-    executeAppAction: mocks.executeAppAction,
-}));
-
 function create_track_level(input: Partial<TrackLevel> & Pick<TrackLevel, 'trackId'>): TrackLevel {
     return {
         trackId: input.trackId,
@@ -85,6 +80,17 @@ function create_analysis_result(input: CreateAnalysisResultInput = {}): AnalyzeM
     };
 }
 
+function execute_auto_fix() {
+    return handleAutoFixMix.execute(
+        { type: 'autoFixMix' },
+        {
+            executeAppAction: async (action) => {
+                await mocks.executeAppAction(action);
+            },
+        }
+    );
+}
+
 describe('handleAutoFixMix', () => {
     beforeEach(() => {
         mocks.beginLifecycle.mockReset();
@@ -100,7 +106,7 @@ describe('handleAutoFixMix', () => {
 
     it('should do nothing if store state is missing', async () => {
         mocks.beginLifecycle.mockReturnValue(null);
-        await handleAutoFixMix.execute({ type: 'autoFixMix' });
+        await execute_auto_fix();
         expect(analyzeMix).not.toHaveBeenCalled();
         expect(mocks.completeLifecycle).not.toHaveBeenCalled();
     });
@@ -108,7 +114,7 @@ describe('handleAutoFixMix', () => {
     it('should set analyzing state and call analyzeMix', async () => {
         vi.mocked(analyzeMix).mockResolvedValue(create_analysis_result());
 
-        await handleAutoFixMix.execute({ type: 'autoFixMix' });
+        await execute_auto_fix();
 
         expect(mocks.beginLifecycle).toHaveBeenCalled();
         expect(analyzeMix).toHaveBeenCalled();
@@ -138,7 +144,7 @@ describe('handleAutoFixMix', () => {
             })
         );
 
-        await handleAutoFixMix.execute({ type: 'autoFixMix' });
+        await execute_auto_fix();
 
         const actions = mocks.executeAppAction.mock.calls.map(([action]) => action);
         const track_gain_action = actions.find(
@@ -182,7 +188,7 @@ describe('handleAutoFixMix', () => {
         );
         vi.mocked(analyzeMix).mockResolvedValueOnce(create_analysis_result());
 
-        await handleAutoFixMix.execute({ type: 'autoFixMix' });
+        await execute_auto_fix();
 
         const gainCalls = mocks.executeAppAction.mock.calls
             .map(([action]) => action)
@@ -216,7 +222,7 @@ describe('handleAutoFixMix', () => {
 
             vi.mocked(analyzeMix).mockResolvedValueOnce(initial_result).mockResolvedValueOnce(refreshed_result);
 
-            const done = handleAutoFixMix.execute({ type: 'autoFixMix' });
+            const done = execute_auto_fix();
 
             // Let the initial analyze + gain dispatches flush, but do NOT advance
             // wall-clock time yet. The refresh must be gated behind the settle
@@ -241,7 +247,7 @@ describe('handleAutoFixMix', () => {
         const failure = new Error('crash');
         vi.mocked(analyzeMix).mockRejectedValue(failure);
 
-        await expect(handleAutoFixMix.execute({ type: 'autoFixMix' })).rejects.toBe(failure);
+        await expect(execute_auto_fix()).rejects.toBe(failure);
 
         expect(mocks.loggerError).toHaveBeenCalledWith(failure);
         expect(mocks.failLifecycle).toHaveBeenCalledWith({ token: 11 });
@@ -267,7 +273,7 @@ describe('handleAutoFixMix', () => {
 
         let reported_error: unknown;
         try {
-            await handleAutoFixMix.execute({ type: 'autoFixMix' });
+            await execute_auto_fix();
         } catch (error) {
             reported_error = error;
         }

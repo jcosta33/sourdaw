@@ -67,7 +67,7 @@ describe('macro recording across punch undo', () => {
         set_punch_region(4, 12);
         clearUndoHistory();
 
-        await playMacro(macro.id);
+        await playMacro({ macroId: macro.id });
 
         expect_punch_region(20, 21);
     });
@@ -89,7 +89,7 @@ describe('macro recording across punch undo', () => {
             currentRecording: [],
         });
 
-        await playMacro('mixed-macro');
+        await playMacro({ macroId: 'mixed-macro' });
 
         expect_punch_region(20, 21);
         expect(getTransportState()?.tempo).toBe(140);

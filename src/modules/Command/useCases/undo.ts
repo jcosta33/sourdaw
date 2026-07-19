@@ -1,7 +1,7 @@
 import { type UndoEntry } from '../models/UndoEntry';
 import { undoStore } from '../stores/undoStore';
 
-import { executeAppAction } from './executeAppAction';
+import { executeAppActionImpl } from './executeAppActionImpl';
 import { revertUndoEntriesAtomically } from './revertUndoEntriesAtomically';
 import { runUndoRedoExclusive } from './undoRedo';
 import { undoTreeMoveTo } from './undoTree/undoTreeMoveTo';
@@ -13,7 +13,7 @@ function currentEntryId(past: readonly UndoEntry[]): string | null {
 
 type ExecuteUndoInput = {
     entry: UndoEntry;
-    runExecuteAppAction: typeof executeAppAction;
+    runExecuteAppAction: typeof executeAppActionImpl;
 };
 
 /**
@@ -67,7 +67,7 @@ async function undoImpl(): Promise<void> {
 
     const undone = await executeUndo({
         entry: lastEntry,
-        runExecuteAppAction: executeAppAction,
+        runExecuteAppAction: executeAppActionImpl,
     });
     if (!undone) {
         return;

@@ -1,11 +1,7 @@
-import { trackStore } from '../../stores/trackStore';
+import { type Track } from '../../stores/trackStore';
 
-export function migrateLegacyFrozenTrackStates(): void {
-    const state = trackStore.value;
-    if (!state) {
-        return;
-    }
-    const tracks = state.tracks.map((track) => {
+export function migrateLegacyFrozenTrackStates(tracks: readonly Track[]): Track[] {
+    return tracks.map((track) => {
         if (
             track.freezeState.status !== 'frozen' ||
             track.freezeState.sourceContentHash?.startsWith('freeze-v2:') === true
@@ -20,7 +16,4 @@ export function migrateLegacyFrozenTrackStates(): void {
             },
         };
     });
-    if (tracks.some((track, index) => track !== state.tracks[index])) {
-        trackStore.set({ ...state, tracks });
-    }
 }

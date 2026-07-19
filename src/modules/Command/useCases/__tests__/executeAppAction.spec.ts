@@ -14,7 +14,7 @@ import { createAppActionCommittedError } from '../createAppActionCommittedError'
 import { executeAppAction } from '../executeAppAction';
 import { isAppActionCommittedError } from '../isAppActionCommittedError';
 
-import type { ActionHandler, AppAction, HandlerDescribeResult } from '#/utils/handlerContract';
+import type { ActionExecutionContext, ActionHandler, AppAction, HandlerDescribeResult } from '#/utils/handlerContract';
 import type { ActionHistoryMetadata } from '../actionHistoryMetadataPort';
 
 type CrdtStoresModule = typeof import('#/modules/CrdtDocument/stores');
@@ -26,7 +26,7 @@ type SetSnapValueAction = Extract<AppAction, { type: 'setSnapValue' }>;
 type ToggleSidebarAction = Extract<AppAction, { type: 'toggleSidebar' }>;
 
 type MockCommandHandler<Action extends AppAction> = ActionHandler<Action> & {
-    execute: Mock<(action: Action) => void | Promise<void>>;
+    execute: Mock<(action: Action, context?: ActionExecutionContext) => void | Promise<void>>;
     describe: Mock<(action: Action) => HandlerDescribeResult>;
 };
 
@@ -44,10 +44,16 @@ function create_mock_handler<Action extends AppAction>({
     describe = () => ({ label }),
 }: CreateMockHandlerInput<Action> = {}): CreateMockHandlerOutput<Action> {
     return {
-        execute: vi.fn<(action: Action) => void | Promise<void>>(execute),
+        execute: vi.fn<(action: Action, context?: ActionExecutionContext) => void | Promise<void>>(execute),
         describe: vi.fn<(action: Action) => HandlerDescribeResult>(describe),
         undoable: true,
     };
+}
+
+function expect_handler_executed<Action extends AppAction>(handler: MockCommandHandler<Action>, action: Action): void {
+    const call = handler.execute.mock.calls[0];
+    expect(call?.[0]).toEqual(action);
+    expect(typeof call?.[1]?.executeAppAction).toBe('function');
 }
 
 const mocks = vi.hoisted(() => ({
@@ -145,7 +151,7 @@ describe('executeAppAction', () => {
 
         await executeAppAction(action);
 
-        expect(handler.execute).toHaveBeenCalledWith(action);
+        expect_handler_executed(handler, action);
         expect(mocks.setSemanticContext).toHaveBeenCalledWith(expect.objectContaining({ message: 'Mock Label' }));
         expect(mocks.commitUndoEntry).toHaveBeenCalled();
         expect(mocks.recordActionHistoryMetadata).toHaveBeenCalled();
@@ -180,7 +186,7 @@ describe('executeAppAction', () => {
         releaseWait();
         await execution;
         expect(handler.describe).toHaveBeenCalledOnce();
-        expect(handler.execute).toHaveBeenCalledWith(action);
+        expect_handler_executed(handler, action);
     });
 
     it('scopes the snapshot transaction to storage writes made by the action', async () => {
@@ -219,7 +225,7 @@ describe('executeAppAction', () => {
 
         await executeAppAction(action, { skipMacroRecording: true });
 
-        expect(handler.execute).toHaveBeenCalledWith(action);
+        expect_handler_executed(handler, action);
         expect(mocks.recordAction).not.toHaveBeenCalled();
         expect(mocks.commitUndoEntry).toHaveBeenCalled();
         expect(mocks.recordActionHistoryMetadata).toHaveBeenCalled();
@@ -232,7 +238,7 @@ describe('executeAppAction', () => {
 
         await executeAppAction(action, { skipUndo: true });
 
-        expect(handler.execute).toHaveBeenCalledWith(action);
+        expect_handler_executed(handler, action);
         expect(mocks.recordAction).toHaveBeenCalledWith(action);
         expect(mocks.commitUndoEntry).not.toHaveBeenCalled();
         expect(mocks.recordActionHistoryMetadata).not.toHaveBeenCalled();
@@ -265,7 +271,7 @@ describe('executeAppAction', () => {
 
         await executeAppAction(action, { groupId: 'display-group', groupLabel: 'Display group' });
 
-        expect(handler.execute).toHaveBeenCalledWith(action);
+        expect_handler_executed(handler, action);
         expect(mocks.recordAction).toHaveBeenCalledWith(action);
         expect(mocks.commitUndoEntry).not.toHaveBeenCalled();
         expect(mocks.recordActionHistoryMetadata).not.toHaveBeenCalled();
@@ -354,7 +360,7 @@ describe('executeAppAction', () => {
 
         await executeAppAction(action, { groupId: 'display-group', groupLabel: 'Display group' });
 
-        expect(handler.execute).toHaveBeenCalledWith(action);
+        expect_handler_executed(handler, action);
         expect(mocks.recordAction).not.toHaveBeenCalled();
         expect(mocks.recordActionHistoryMetadata).not.toHaveBeenCalled();
         expect(mocks.commitUndoEntry).not.toHaveBeenCalled();

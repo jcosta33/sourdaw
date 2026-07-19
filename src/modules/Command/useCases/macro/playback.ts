@@ -136,7 +136,14 @@ function create_replay_action(action: AppAction, identities: ReplayIdentityMap):
  * Actions share display/history correlation metadata. Undoable actions retain
  * individual undo entries; inverse-less actions execute outside undo history.
  */
-export async function playMacro(macroId: string): Promise<void> {
+type MacroActionExecutor = typeof executeAppAction;
+
+type PlayMacroInput = {
+    macroId: string;
+    runExecuteAppAction?: MacroActionExecutor;
+};
+
+export async function playMacro({ macroId, runExecuteAppAction = executeAppAction }: PlayMacroInput): Promise<void> {
     const state = macroStore.value;
     if (!state) {
         return;
@@ -150,6 +157,6 @@ export async function playMacro(macroId: string): Promise<void> {
     const identities: ReplayIdentityMap = { layerIds: new Map(), regionIds: new Map() };
 
     for (const action of macro.actions) {
-        await executeAppAction(create_replay_action(action, identities), { groupId, groupLabel });
+        await runExecuteAppAction(create_replay_action(action, identities), { groupId, groupLabel });
     }
 }

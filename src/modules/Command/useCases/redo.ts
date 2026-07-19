@@ -7,7 +7,7 @@ import {
 import { type UndoEntry } from '../models/UndoEntry';
 import { undoStore } from '../stores/undoStore';
 
-import { executeAppAction } from './executeAppAction';
+import { executeAppActionImpl } from './executeAppActionImpl';
 import { recordAction } from './macro/recording/recordAction';
 import { REDO_NOT_APPLIED } from './redoResult';
 import { runUndoRedoExclusive } from './undoRedo';
@@ -45,7 +45,7 @@ async function replay_adjustment_transaction(entries: readonly UndoEntry[]): Pro
         actions.push(entry.action);
     }
     let inverse_actions: AppAction[] | undefined;
-    await executeAppAction(
+    await executeAppActionImpl(
         { type: 'applyAdjustmentLayerMutationBatch', payload: { actions } },
         {
             skipUndo: true,
@@ -74,7 +74,7 @@ async function executeRedo(entry: UndoEntry): Promise<UndoEntry | null> {
         return entry.redo() !== REDO_NOT_APPLIED ? entry : null;
     }
     const prepared_undo: { result: HandlerDescribeResult | null } = { result: null };
-    await executeAppAction(entry.action, {
+    await executeAppActionImpl(entry.action, {
         skipUndo: true,
         onUndoPrepared: (result) => {
             prepared_undo.result = result;

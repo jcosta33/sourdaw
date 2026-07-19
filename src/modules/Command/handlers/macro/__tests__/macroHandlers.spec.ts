@@ -34,8 +34,15 @@ describe('Command Macro Handlers', () => {
     });
 
     it('handlePlayMacro should delegate to playMacro', async () => {
-        await handlePlayMacro.execute({ type: 'playMacro', payload: { macroId: 'm1' } });
-        expect(playMacro).toHaveBeenCalledWith('m1');
+        const execute_app_action = vi.fn().mockResolvedValue(undefined);
+        await handlePlayMacro.execute(
+            { type: 'playMacro', payload: { macroId: 'm1' } },
+            { executeAppAction: execute_app_action }
+        );
+        expect(playMacro).toHaveBeenCalledWith({
+            macroId: 'm1',
+            runExecuteAppAction: execute_app_action,
+        });
     });
 
     it('handleDeleteMacro should delegate to deleteMacro', () => {

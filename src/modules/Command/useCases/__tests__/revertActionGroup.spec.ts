@@ -12,7 +12,9 @@ const mocks = vi.hoisted(() => ({
         } as import('../../stores/undoStore').UndoStoreState | null,
     },
     undoStoreSet: vi.fn<(state: import('../../stores/undoStore').UndoStoreState) => void>(),
-    executeAppAction: vi.fn<typeof import('../executeAppAction').executeAppAction>().mockResolvedValue(undefined),
+    executeAppAction: vi
+        .fn<typeof import('../executeAppActionImpl').executeAppActionImpl>()
+        .mockResolvedValue(undefined),
     undoTreeMoveTo: vi.fn<(id: string | null) => void>(),
 }));
 
@@ -25,8 +27,8 @@ vi.mock('../../stores/undoStore', () => ({
     },
 }));
 
-vi.mock('../executeAppAction', () => ({
-    executeAppAction: mocks.executeAppAction,
+vi.mock('../executeAppActionImpl', () => ({
+    executeAppActionImpl: mocks.executeAppAction,
 }));
 
 vi.mock('../undoTree/undoTreeMoveTo', () => ({

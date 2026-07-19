@@ -651,10 +651,18 @@ export type ActionExecutionResult = {
     inverseActions?: AppAction[];
 };
 
+export type ActionExecutionContext = {
+    /** Run a nested action inside the current Command mutation boundary. */
+    executeAppAction: (action: AppAction, options?: ExecuteOptions) => Promise<void>;
+};
+
 /** One dispatchable action's handler. Built via `createHandler` and merged into a module
  *  handler map by each `get<Module>Handlers` factory. */
 export type ActionHandler<Action extends AppAction = AppAction> = {
-    execute: (action: Action) => void | ActionExecutionResult | Promise<void | ActionExecutionResult>;
+    execute: (
+        action: Action,
+        context?: ActionExecutionContext
+    ) => void | ActionExecutionResult | Promise<void | ActionExecutionResult>;
     describe: (action: Action) => HandlerDescribeResult;
     undoable: boolean;
 };

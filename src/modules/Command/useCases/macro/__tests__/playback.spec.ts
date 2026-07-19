@@ -35,7 +35,7 @@ describe('playMacro', () => {
     });
 
     it('should share display metadata without claiming unsupported atomic undo', async () => {
-        await playMacro('play-1');
+        await playMacro({ macroId: 'play-1' });
 
         expect(executeAppActionMock).toHaveBeenCalledTimes(2);
         const [firstAction, firstOptions] = executeAppActionMock.mock.calls[0] as [
@@ -97,7 +97,7 @@ describe('playMacro', () => {
             currentRecording: [],
         });
 
-        await playMacro('adjustment-chain');
+        await playMacro({ macroId: 'adjustment-chain' });
 
         const create_action = executeAppActionMock.mock.calls[0]?.[0];
         const add_action = executeAppActionMock.mock.calls[1]?.[0];
@@ -122,13 +122,13 @@ describe('playMacro', () => {
     });
 
     it('should no-op when macro id is missing', async () => {
-        await playMacro('missing');
+        await playMacro({ macroId: 'missing' });
         expect(executeAppActionMock).not.toHaveBeenCalled();
     });
 
     it('should no-op when macroStore value is null', async () => {
         macroStore.set(null);
-        await playMacro('play-1');
+        await playMacro({ macroId: 'play-1' });
         expect(executeAppActionMock).not.toHaveBeenCalled();
     });
 });

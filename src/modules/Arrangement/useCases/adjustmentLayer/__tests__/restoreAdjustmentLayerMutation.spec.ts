@@ -1,12 +1,18 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+import { configureAutomergeStoragePort } from '#/infra/store/storage/createAutomergeStorage';
+import { clearHandlerRegistry, registerHandlerMap, undoStore } from '#/modules/Command/stores';
+import { clearUndoHistory, executeAppAction, revertActionGroup, undo } from '#/modules/Command/useCases';
 
 import { createTrack } from '../../../models/Track';
 import { adjustmentLayerStore, type AdjustmentLayer } from '../../../stores/adjustmentLayer';
 import { trackStore } from '../../../stores/trackStore';
+import { getArrangementHandlers } from '../../getArrangementHandlers';
 import { restoreAdjustmentLayerMutation } from '../restoreAdjustmentLayerMutation';
 
 const mocks = vi.hoisted(() => ({
     computeFreezeRenderInputHash: vi.fn<() => Promise<string>>(),
+    concurrentValues: [] as number[],
 }));
 
 vi.mock('../../../services/computeFreezeRenderInputHash', () => ({
@@ -39,6 +45,23 @@ function create_layer(mix: number): AdjustmentLayer {
 describe('restoreAdjustmentLayerMutation', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        mocks.concurrentValues.length = 0;
+        configureAutomergeStoragePort(null);
+        clearHandlerRegistry();
+        registerHandlerMap(getArrangementHandlers());
+        registerHandlerMap({
+            setSnapValue: {
+                undoable: true,
+                execute: (action) => {
+                    mocks.concurrentValues.push(action.payload.value);
+                },
+                describe: () => ({
+                    label: 'Set concurrent value',
+                    inverseAction: { type: 'setSnapValue', payload: { value: -1 } },
+                }),
+            },
+        });
+        clearUndoHistory();
         adjustmentLayerStore.set({ layers: [create_layer(0.75)] });
         const target = {
             ...createTrack({ id: 'track-a', name: 'Target', kind: 'audio' }),
@@ -54,6 +77,15 @@ describe('restoreAdjustmentLayerMutation', () => {
         };
         const other = createTrack({ id: 'track-b', name: 'Other', kind: 'audio' });
         trackStore.set({ tracks: [target, other], selectedTrackId: null, ghostClips: [] });
+        clearUndoHistory();
+    });
+
+    afterEach(() => {
+        clearUndoHistory();
+        clearHandlerRegistry();
+        adjustmentLayerStore.set({ layers: [] });
+        trackStore.set({ tracks: [], selectedTrackId: null, ghostClips: [] });
+        configureAutomergeStoragePort(null);
     });
 
     it('rejects undo when ordered track scope changes during frozen-input validation', async () => {
@@ -91,4 +123,61 @@ describe('restoreAdjustmentLayerMutation', () => {
         expect(adjustmentLayerStore.value?.layers[0]?.mix).toBe(0.75);
         expect(trackStore.value?.tracks.find((track) => track.id === 'track-a')?.freezeState.status).toBe('stale');
     });
+
+    it.each(['undo', 'revertActionGroup'] as const)(
+        'serializes concurrent executeAppAction behind deferred-hash %s and preserves coherent history',
+        async (revert_method) => {
+            adjustmentLayerStore.set({ layers: [create_layer(0.25)] });
+            const state = trackStore.value;
+            if (!state) {
+                throw new Error('Expected track state');
+            }
+            trackStore.set({
+                ...state,
+                tracks: state.tracks.map((track) =>
+                    track.id === 'track-a'
+                        ? {
+                              ...track,
+                              freezeState: {
+                                  status: 'frozen',
+                                  freezeId: 'freeze-id',
+                                  frozenBufferId: 'frozen-buffer',
+                                  sourceContentHash: 'freeze-v2:current-hash',
+                              },
+                          }
+                        : track
+                ),
+            });
+            const group_id = `deferred-${revert_method}`;
+            await executeAppAction(
+                { type: 'setLayerMix', payload: { layerId: 'layer-1', mix: 0.75 } },
+                { groupId: group_id, groupLabel: 'Deferred group' }
+            );
+            let finish_hash!: (hash: string) => void;
+            mocks.computeFreezeRenderInputHash.mockReturnValueOnce(
+                new Promise<string>((resolve) => {
+                    finish_hash = resolve;
+                })
+            );
+
+            const reverting = revert_method === 'undo' ? undo() : revertActionGroup(group_id);
+            await vi.waitFor(() => expect(mocks.computeFreezeRenderInputHash).toHaveBeenCalledOnce());
+            let concurrent_settled = false;
+            const concurrent = executeAppAction({ type: 'setSnapValue', payload: { value: 1 } }).then(() => {
+                concurrent_settled = true;
+                return undefined;
+            });
+            await Promise.resolve();
+            await Promise.resolve();
+            const settled_before_hash = concurrent_settled;
+            finish_hash('freeze-v2:current-hash');
+            await Promise.all([reverting, concurrent]);
+
+            expect(settled_before_hash).toBe(false);
+            expect(mocks.concurrentValues).toEqual([1]);
+            expect(adjustmentLayerStore.value?.layers[0]?.mix).toBe(0.25);
+            expect(undoStore.value?.past.map((entry) => entry.label)).toEqual(['Set concurrent value']);
+            expect(undoStore.value?.future).toEqual([]);
+        }
+    );
 });

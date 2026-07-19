@@ -1,9 +1,14 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { Container } from '#/infra/di/Container';
+import { trackStore } from '#/modules/Arrangement/stores';
 import { stopPlayback } from '#/modules/Transport/useCases';
 
-import { arrangementStore, defaultArrangementStoreState } from '../../stores/arrangementStore';
+import {
+    type ArrangementSnapshot,
+    arrangementStore,
+    defaultArrangementStoreState,
+} from '../../stores/arrangementStore';
 import { switchArrangement } from '../arrangement/switchArrangement';
 import { runProjectLoadTransaction } from '../projectPersistence/helpers/runProjectLoadTransaction';
 import { setProjectIdentityTransitionDependencies } from '../projectPersistence/projectIdentityTransitionDependencies';
@@ -37,12 +42,53 @@ vi.mock('#/modules/Command/useCases', async (importOriginal) => {
     };
 });
 
+type SnapshotTrack = ArrangementSnapshot['tracks']['tracks'][number];
+
+function create_snapshot_track(overrides: Partial<SnapshotTrack> = {}): SnapshotTrack {
+    return {
+        id: 'track-1',
+        name: 'Track 1',
+        kind: 'audio',
+        muted: false,
+        soloed: false,
+        armed: false,
+        gain: 1,
+        pan: 0,
+        color: '#fff',
+        clips: [],
+        devices: [],
+        sends: [],
+        midiFx: [],
+        frozen: false,
+        freezeState: { status: 'unfrozen' },
+        parentId: null,
+        collapsed: false,
+        inputMonitoring: 'auto',
+        hidden: false,
+        disabled: false,
+        height: 80,
+        outputId: 'master',
+        automationMode: 'read',
+        groupId: null,
+        soloSafe: false,
+        notes: '',
+        inputId: null,
+        activeAlternativeId: 'alt-1',
+        alternatives: [],
+        vcaGroupId: null,
+        midiOutputTrackId: null,
+        followChordTrack: false,
+        ...overrides,
+    };
+}
+
 describe('switchArrangement', () => {
     beforeEach(() => {
         Container.clear();
         vi.clearAllMocks();
         setProjectIdentityTransitionDependencies({ leaveCollaborationSession: () => Promise.resolve() });
         arrangementStore.set(structuredClone(defaultArrangementStoreState));
+        trackStore.set({ tracks: [], selectedTrackId: null, ghostClips: [] });
         prepareCachedAudioBuffersFromIdb.mockResolvedValue({ publish: publishPreparedBuffers });
     });
 
@@ -139,6 +185,42 @@ describe('switchArrangement', () => {
         );
         expect(setArrangement).toHaveBeenCalledTimes(2);
         expect(arrangementStore.value?.activeArrangementId).toBe(target.id);
+    });
+
+    it('switches to a legacy frozen arrangement without ever publishing it as current', async () => {
+        const state = structuredClone(defaultArrangementStoreState);
+        const target = structuredClone(state.arrangements[0]!);
+        target.id = 'legacy-target';
+        target.tracks.tracks = [
+            create_snapshot_track({
+                id: 'legacy-frozen-track',
+                frozen: true,
+                frozenBufferId: 'legacy-buffer',
+                freezeState: {
+                    status: 'frozen',
+                    frozenBufferId: 'legacy-buffer',
+                    sourceContentHash: 'legacy-content-hash',
+                },
+            }),
+        ];
+        state.arrangements.push(target);
+        arrangementStore.set(state);
+        const published_statuses: string[] = [];
+        const unsubscribe = trackStore.subscribe((track_state) => {
+            const status = track_state?.tracks.find((track) => track.id === 'legacy-frozen-track')?.freezeState.status;
+            if (status) {
+                published_statuses.push(status);
+            }
+        });
+
+        await switchArrangement(target.id);
+        unsubscribe();
+
+        expect(trackStore.value?.tracks[0]?.freezeState).toMatchObject({
+            status: 'stale',
+            sourceContentHash: 'legacy-content-hash',
+        });
+        expect(published_statuses).toEqual(['stale']);
     });
 
     it('propagates a playback stop failure without mutating the arrangement', async () => {
