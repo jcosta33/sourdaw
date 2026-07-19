@@ -5,6 +5,10 @@ export function moveAdjustmentRegion(regionId: string, startBeat: number, endBea
     if (!state) {
         return;
     }
+    const matching_layers = state.layers.filter((layer) => layer.regions.some((region) => region.id === regionId));
+    if (matching_layers.length > 1) {
+        throw new Error(`Ambiguous adjustment region id: ${regionId}`);
+    }
 
     const clampedStart = Math.max(0, Math.min(startBeat, endBeat));
     const clampedEnd = Math.max(clampedStart, endBeat);

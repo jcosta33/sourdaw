@@ -3,11 +3,15 @@ import { createHandler } from '#/utils/createHandler';
 import { commitAdjustmentLayerMutation } from '../../useCases/adjustmentLayer/commitAdjustmentLayerMutation';
 import { toggleAdjustmentLayer } from '../../useCases/adjustmentLayer/toggleAdjustmentLayer';
 
-import { createAdjustmentLayerMutationInverse } from './createAdjustmentLayerMutationInverse';
+import {
+    createAdjustmentLayerMutationInverse,
+    getAdjustmentLayerMutationId,
+} from './createAdjustmentLayerMutationInverse';
 
 export const handleToggleAdjustmentLayer = createHandler<'toggleAdjustmentLayer'>({
     execute: (a) => {
         commitAdjustmentLayerMutation({
+            adjustmentMutationId: getAdjustmentLayerMutationId(a),
             mutation: () => {
                 toggleAdjustmentLayer(a.payload.layerId);
             },

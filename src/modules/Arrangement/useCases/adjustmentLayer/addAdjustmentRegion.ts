@@ -11,6 +11,16 @@ export function addAdjustmentRegion(
     if (!state) {
         return;
     }
+    const target_layers = state.layers.filter((layer) => layer.id === layerIdVal);
+    if (target_layers.length > 1) {
+        throw new Error(`Ambiguous adjustment layer id: ${layerIdVal}`);
+    }
+    if (target_layers.length === 0) {
+        return;
+    }
+    if (state.layers.some((layer) => layer.regions.some((candidate) => candidate.id === regionId))) {
+        throw new Error(`Adjustment region id collision: ${regionId}`);
+    }
 
     const region: AdjustmentRegion = {
         id: regionId,

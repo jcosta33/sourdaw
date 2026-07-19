@@ -28,6 +28,8 @@ export type FreezeState = {
     renderProgress?: number; // 0.0-1.0 during freezing
     errorMessage?: string; // Set when status is 'error'
     renderedAt?: number; // Unix epoch ms
+    /** Identifies the adjustment-layer command that most recently made this frozen render stale. */
+    adjustmentLayerMutationId?: string;
 };
 
 export type Track = {

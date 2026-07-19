@@ -5,6 +5,10 @@ export function setLayerFades(regionId: string, fadeInBeats: number, fadeOutBeat
     if (!state) {
         return;
     }
+    const matching_layers = state.layers.filter((layer) => layer.regions.some((region) => region.id === regionId));
+    if (matching_layers.length > 1) {
+        throw new Error(`Ambiguous adjustment region id: ${regionId}`);
+    }
 
     const safeFadeIn = Math.max(0, fadeInBeats);
     const safeFadeOut = Math.max(0, fadeOutBeats);

@@ -17,6 +17,9 @@ export function createAdjustmentLayer(
     if (!state) {
         return;
     }
+    if (state.layers.some((layer) => layer.id === layerId)) {
+        throw new Error(`Adjustment layer id collision: ${layerId}`);
+    }
 
     const layer: AdjustmentLayer = {
         id: layerId,

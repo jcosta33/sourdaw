@@ -4,6 +4,7 @@ import { adjustmentLayerStore, type AdjustmentLayer } from '../../stores/adjustm
 import { trackStore, type Track } from '../../stores/trackStore';
 
 type CommitAdjustmentLayerMutationInput = {
+    adjustmentMutationId: string;
     mutation: () => void;
 };
 
@@ -41,7 +42,10 @@ function get_changed_layers(
     return changed_layers;
 }
 
-export function commitAdjustmentLayerMutation({ mutation }: CommitAdjustmentLayerMutationInput): void {
+export function commitAdjustmentLayerMutation({
+    adjustmentMutationId,
+    mutation,
+}: CommitAdjustmentLayerMutationInput): void {
     const before_layers = adjustmentLayerStore.value?.layers ?? [];
 
     batchStoreUpdates(() => {
@@ -63,12 +67,20 @@ export function commitAdjustmentLayerMutation({ mutation }: CommitAdjustmentLaye
         }
 
         const tracks = track_state.tracks.map((track) => {
-            if (!affected_track_ids.has(track.id) || track.freezeState.status !== 'frozen') {
+            if (
+                !affected_track_ids.has(track.id) ||
+                !track.frozen ||
+                (track.freezeState.status !== 'frozen' && track.freezeState.status !== 'stale')
+            ) {
                 return track;
             }
             return {
                 ...track,
-                freezeState: { ...track.freezeState, status: 'stale' as const },
+                freezeState: {
+                    ...track.freezeState,
+                    status: 'stale' as const,
+                    adjustmentLayerMutationId: adjustmentMutationId,
+                },
             };
         });
 

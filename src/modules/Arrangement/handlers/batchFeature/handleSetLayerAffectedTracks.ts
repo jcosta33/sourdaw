@@ -3,11 +3,15 @@ import { createHandler } from '#/utils/createHandler';
 import { commitAdjustmentLayerMutation } from '../../useCases/adjustmentLayer/commitAdjustmentLayerMutation';
 import { setLayerAffectedTracks } from '../../useCases/adjustmentLayer/setLayerAffectedTracks';
 
-import { createAdjustmentLayerMutationInverse } from './createAdjustmentLayerMutationInverse';
+import {
+    createAdjustmentLayerMutationInverse,
+    getAdjustmentLayerMutationId,
+} from './createAdjustmentLayerMutationInverse';
 
 export const handleSetLayerAffectedTracks = createHandler<'setLayerAffectedTracks'>({
     execute: (a) => {
         commitAdjustmentLayerMutation({
+            adjustmentMutationId: getAdjustmentLayerMutationId(a),
             mutation: () => {
                 setLayerAffectedTracks(a.payload.layerId, a.payload.trackIds);
             },

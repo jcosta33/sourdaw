@@ -70,45 +70,75 @@ export type PitchContourSnapshot = {
     algorithm?: string;
 };
 
-export type AdjustmentLayerFreezeStateSnapshot = {
-    status: 'unfrozen' | 'freezing' | 'frozen' | 'stale' | 'error';
-    freezeId?: string;
-    frozenBufferId?: string;
-    frozenAudioHash?: string;
-    sourceContentHash?: string;
-    deviceChainHash?: string;
-    renderSettings?: {
-        sampleRate: number;
-        bitDepth: number;
-        channelCount: number;
-        tailLengthSeconds: number;
-    };
-    renderProgress?: number;
-    errorMessage?: string;
-    renderedAt?: number;
+export type AdjustmentParameterSnapshot = {
+    name: string;
+    value: number;
+    min: number;
+    max: number;
+    unit: string;
+};
+
+export type AdjustmentRegionSnapshot = {
+    id: string;
+    startBeat: number;
+    endBeat: number;
+    blend: number;
+    fadeInBeats: number;
+    fadeOutBeats: number;
 };
 
 export type AdjustmentLayerSnapshot = {
     id: string;
     name: string;
     effectType: 'eq' | 'compressor' | 'reverb' | 'delay' | 'saturation' | 'filter' | 'stereo-width' | 'volume' | 'pan';
-    parameters: Array<{ name: string; value: number; min: number; max: number; unit: string }>;
+    parameters: AdjustmentParameterSnapshot[];
     affectedTrackIds: string[];
     insertionIndex: number;
-    regions: Array<{
-        id: string;
-        startBeat: number;
-        endBeat: number;
-        blend: number;
-        fadeInBeats: number;
-        fadeOutBeats: number;
-    }>;
+    regions: AdjustmentRegionSnapshot[];
     enabled: boolean;
     mix: number;
     color: string;
 };
 
+export type AdjustmentLayerUndoOperation =
+    | { kind: 'remove-created-layer'; layerId: string; expectedLayer: AdjustmentLayerSnapshot }
+    | { kind: 'restore-removed-layer'; layer: AdjustmentLayerSnapshot; layerIndex: number }
+    | { kind: 'restore-enabled'; layerId: string; previous: boolean; expected: boolean }
+    | { kind: 'restore-parameter'; layerId: string; parameterName: string; previous: number; expected: number }
+    | { kind: 'restore-mix'; layerId: string; previous: number; expected: number }
+    | {
+          kind: 'remove-added-region';
+          layerId: string;
+          regionId: string;
+          expectedRegion: AdjustmentRegionSnapshot;
+      }
+    | { kind: 'restore-removed-region'; layerId: string; region: AdjustmentRegionSnapshot; regionIndex: number }
+    | {
+          kind: 'restore-region-position';
+          layerId: string;
+          regionId: string;
+          previousStartBeat: number;
+          previousEndBeat: number;
+          expectedStartBeat: number;
+          expectedEndBeat: number;
+      }
+    | {
+          kind: 'restore-region-fades';
+          layerId: string;
+          regionId: string;
+          previousFadeInBeats: number;
+          previousFadeOutBeats: number;
+          expectedFadeInBeats: number;
+          expectedFadeOutBeats: number;
+      }
+    | { kind: 'restore-affected-tracks'; layerId: string; previous: string[]; expected: string[] }
+    | { kind: 'restore-insertion-index'; layerId: string; previous: number; expected: number };
+
 export type AutomationMode = 'read' | 'write' | 'touch' | 'latch' | 'off';
+
+type AdjustmentMutationIdentity = {
+    adjustmentMutationId?: string;
+};
 
 export type AppAction =
     | { type: 'addTrack'; payload: { id?: string; name: string; kind: TrackKind } }
@@ -493,25 +523,57 @@ export type AppAction =
     | { type: 'triggerScene'; payload: { column: number } }
     | { type: 'nextSetlistItem'; payload?: undefined }
     | { type: 'previousSetlistItem'; payload?: undefined }
-    | { type: 'createAdjustmentLayer'; payload: { name: string; effectType: string; layerId?: string } }
-    | { type: 'removeAdjustmentLayer'; payload: { layerId: string } }
-    | { type: 'toggleAdjustmentLayer'; payload: { layerId: string } }
-    | { type: 'setLayerParameter'; payload: { layerId: string; paramName: string; value: number } }
-    | { type: 'setLayerMix'; payload: { layerId: string; mix: number } }
+    | {
+          type: 'createAdjustmentLayer';
+          payload: { name: string; effectType: string; layerId?: string } & AdjustmentMutationIdentity;
+      }
+    | { type: 'removeAdjustmentLayer'; payload: { layerId: string } & AdjustmentMutationIdentity }
+    | { type: 'toggleAdjustmentLayer'; payload: { layerId: string } & AdjustmentMutationIdentity }
+    | {
+          type: 'setLayerParameter';
+          payload: { layerId: string; paramName: string; value: number } & AdjustmentMutationIdentity;
+      }
+    | { type: 'setLayerMix'; payload: { layerId: string; mix: number } & AdjustmentMutationIdentity }
     | {
           type: 'addAdjustmentRegion';
-          payload: { layerId: string; startBeat: number; endBeat: number; blend?: number; regionId?: string };
+          payload: {
+              layerId: string;
+              startBeat: number;
+              endBeat: number;
+              blend?: number;
+              regionId?: string;
+          } & AdjustmentMutationIdentity;
       }
-    | { type: 'removeAdjustmentRegion'; payload: { layerId: string; regionId: string } }
-    | { type: 'moveAdjustmentRegion'; payload: { regionId: string; startBeat: number; endBeat: number } }
-    | { type: 'setLayerFades'; payload: { regionId: string; fadeInBeats: number; fadeOutBeats: number } }
-    | { type: 'setLayerAffectedTracks'; payload: { layerId: string; trackIds: string[] } }
-    | { type: 'setLayerInsertionIndex'; payload: { layerId: string; insertionIndex: number } }
+    | {
+          type: 'removeAdjustmentRegion';
+          payload: { layerId: string; regionId: string } & AdjustmentMutationIdentity;
+      }
+    | {
+          type: 'moveAdjustmentRegion';
+          payload: { regionId: string; startBeat: number; endBeat: number } & AdjustmentMutationIdentity;
+      }
+    | {
+          type: 'setLayerFades';
+          payload: { regionId: string; fadeInBeats: number; fadeOutBeats: number } & AdjustmentMutationIdentity;
+      }
+    | {
+          type: 'setLayerAffectedTracks';
+          payload: { layerId: string; trackIds: string[] } & AdjustmentMutationIdentity;
+      }
+    | {
+          type: 'setLayerInsertionIndex';
+          payload: { layerId: string; insertionIndex: number } & AdjustmentMutationIdentity;
+      }
     | {
           type: 'restoreAdjustmentLayerMutation';
           payload: {
-              layerState: { layers: AdjustmentLayerSnapshot[] };
-              freezeStates: Array<{ trackId: string; freezeState: AdjustmentLayerFreezeStateSnapshot }>;
+              adjustmentMutationId: string;
+              operation: AdjustmentLayerUndoOperation;
+              staleTransitions: Array<{
+                  trackId: string;
+                  previousStatus: 'frozen' | 'stale';
+                  previousAdjustmentMutationId?: string;
+              }>;
           };
       }
     | { type: 'detectTransients'; payload: { clipId: string; sensitivity?: number } }

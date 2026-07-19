@@ -4,7 +4,10 @@ import { getNextLayerId, type AdjustmentEffectType } from '../../stores/adjustme
 import { commitAdjustmentLayerMutation } from '../../useCases/adjustmentLayer/commitAdjustmentLayerMutation';
 import { createAdjustmentLayer } from '../../useCases/adjustmentLayer/createAdjustmentLayer';
 
-import { createAdjustmentLayerMutationInverse } from './createAdjustmentLayerMutationInverse';
+import {
+    createAdjustmentLayerMutationInverse,
+    getAdjustmentLayerMutationId,
+} from './createAdjustmentLayerMutationInverse';
 
 type CreateAdjustmentLayerAction = { payload: { layerId?: string } };
 
@@ -16,6 +19,7 @@ function ensure_layer_id(action: CreateAdjustmentLayerAction): string {
 export const handleCreateAdjustmentLayer = createHandler<'createAdjustmentLayer'>({
     execute: (alpha) => {
         commitAdjustmentLayerMutation({
+            adjustmentMutationId: getAdjustmentLayerMutationId(alpha),
             mutation: () => {
                 createAdjustmentLayer(
                     alpha.payload.name,

@@ -254,4 +254,155 @@ describe('adjustmentLayerFreezeStaleness', () => {
         unsubscribe_layer();
         unsubscribe_track();
     });
+
+    it('undo merges its operation by stable id and preserves concurrent layers, fields, and a newer refreeze', async () => {
+        await executeAppAction({ type: 'setLayerMix', payload: { layerId: 'layer-1', mix: 0.75 } });
+
+        const concurrent_layer = create_layer({
+            id: 'layer-2',
+            name: 'Concurrent layer',
+            affectedTrackIds: ['track-b'],
+        });
+        adjustmentLayerStore.set({
+            layers: [{ ...get_layer_state().layers[0]!, name: 'Remote rename' }, concurrent_layer],
+        });
+        const state = trackStore.value;
+        if (!state) {
+            throw new Error('Expected track state');
+        }
+        trackStore.set({
+            ...state,
+            tracks: state.tracks.map((track) =>
+                track.id === 'track-a'
+                    ? {
+                          ...track,
+                          freezeState: {
+                              status: 'frozen',
+                              freezeId: 'newer-freeze',
+                              frozenBufferId: 'newer-buffer',
+                              sourceContentHash: 'newer-hash',
+                          },
+                      }
+                    : track
+            ),
+        });
+
+        await undo();
+
+        expect(get_layer_state().layers).toHaveLength(2);
+        expect(get_layer_state().layers.find((layer) => layer.id === 'layer-1')).toMatchObject({
+            name: 'Remote rename',
+            mix: 0.25,
+        });
+        expect(get_layer_state().layers.find((layer) => layer.id === 'layer-2')).toEqual(concurrent_layer);
+        expect(get_track('track-a').freezeState).toMatchObject({
+            status: 'frozen',
+            freezeId: 'newer-freeze',
+            frozenBufferId: 'newer-buffer',
+            sourceContentHash: 'newer-hash',
+        });
+
+        await redo();
+        expect(get_track('track-a').freezeState).toMatchObject({
+            status: 'stale',
+            freezeId: 'newer-freeze',
+            frozenBufferId: 'newer-buffer',
+            sourceContentHash: 'newer-hash',
+        });
+
+        await undo();
+        expect(get_track('track-a').freezeState).toMatchObject({
+            status: 'frozen',
+            freezeId: 'newer-freeze',
+            frozenBufferId: 'newer-buffer',
+            sourceContentHash: 'newer-hash',
+        });
+        expect(get_layer_state().layers.find((layer) => layer.id === 'layer-2')).toEqual(concurrent_layer);
+    });
+
+    it('keeps a conflicted undo in history so stale redo metadata cannot overwrite the newer target value', async () => {
+        await executeAppAction({ type: 'setLayerMix', payload: { layerId: 'layer-1', mix: 0.75 } });
+        adjustmentLayerStore.set({
+            layers: get_layer_state().layers.map((layer) => (layer.id === 'layer-1' ? { ...layer, mix: 0.5 } : layer)),
+        });
+
+        await expect(undo()).rejects.toThrow('newer adjustment-layer state');
+
+        expect(get_layer_state().layers[0]?.mix).toBe(0.5);
+        expect(undoStore.value?.past).toHaveLength(1);
+        expect(undoStore.value?.future).toHaveLength(0);
+    });
+
+    it('restores nested stale-transition provenance in LIFO order', async () => {
+        await executeAppAction({ type: 'setLayerMix', payload: { layerId: 'layer-1', mix: 0.75 } });
+        const first_mutation_id = get_track('track-a').freezeState.adjustmentLayerMutationId;
+        await executeAppAction({
+            type: 'setLayerParameter',
+            payload: { layerId: 'layer-1', paramName: 'Gain', value: 6 },
+        });
+        const second_mutation_id = get_track('track-a').freezeState.adjustmentLayerMutationId;
+
+        expect(second_mutation_id).not.toBe(first_mutation_id);
+        await undo();
+
+        expect(get_track('track-a').freezeState).toMatchObject({
+            status: 'stale',
+            adjustmentLayerMutationId: first_mutation_id,
+        });
+        expect(get_layer_state().layers[0]?.parameters[0]?.value).toBe(0);
+
+        await undo();
+
+        expect(get_track('track-a').freezeState.status).toBe('frozen');
+        expect(get_track('track-a').freezeState.adjustmentLayerMutationId).toBeUndefined();
+        expect(get_layer_state().layers[0]?.mix).toBe(0.25);
+    });
+
+    it('rejects caller-supplied layer and region id collisions without changing layer or freeze state', async () => {
+        const layer_with_region = create_layer({
+            id: 'layer-2',
+            affectedTrackIds: ['track-b'],
+            regions: [region],
+        });
+        adjustmentLayerStore.set({ layers: [create_layer(), layer_with_region] });
+
+        await expect(
+            executeAppAction({
+                type: 'createAdjustmentLayer',
+                payload: { name: 'Collision', effectType: 'volume', layerId: 'layer-1' },
+            })
+        ).rejects.toThrow('layer id');
+        await expect(
+            executeAppAction({
+                type: 'addAdjustmentRegion',
+                payload: { layerId: 'layer-1', startBeat: 8, endBeat: 16, regionId: 'region-1' },
+            })
+        ).rejects.toThrow('region id');
+
+        expect(get_layer_state().layers).toEqual([create_layer(), layer_with_region]);
+        expect(get_track('track-a').freezeState.status).toBe('frozen');
+        expect(get_track('track-b').freezeState.status).toBe('frozen');
+        expect(undoStore.value?.past).toHaveLength(0);
+    });
+
+    it('rejects an ambiguous legacy region id instead of mutating multiple layer scopes', async () => {
+        adjustmentLayerStore.set({
+            layers: [
+                create_layer({ regions: [region] }),
+                create_layer({ id: 'layer-2', affectedTrackIds: ['track-b'], regions: [region] }),
+            ],
+        });
+
+        await expect(
+            executeAppAction({
+                type: 'moveAdjustmentRegion',
+                payload: { regionId: 'region-1', startBeat: 4, endBeat: 12 },
+            })
+        ).rejects.toThrow('region id');
+
+        expect(get_layer_state().layers.every((layer) => layer.regions[0]?.startBeat === 0)).toBe(true);
+        expect(get_track('track-a').freezeState.status).toBe('frozen');
+        expect(get_track('track-b').freezeState.status).toBe('frozen');
+        expect(undoStore.value?.past).toHaveLength(0);
+    });
 });

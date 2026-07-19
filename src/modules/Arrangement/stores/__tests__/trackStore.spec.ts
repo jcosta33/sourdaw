@@ -149,6 +149,31 @@ describe('trackStore', () => {
         ]);
     });
 
+    it('should preserve adjustment-layer stale-transition provenance during CRDT hydration', () => {
+        const durable_track = TrackDummy.create({ id: 'track-stale', name: 'Stale Track' });
+        fake_doc.tracks = {
+            tracks: [
+                {
+                    ...durable_track,
+                    frozen: true,
+                    freezeState: {
+                        status: 'stale',
+                        freezeId: 'freeze-stale',
+                        adjustmentLayerMutationId: 'adjustment-mutation-1',
+                    },
+                },
+            ],
+        };
+
+        trackStore.hydrate();
+
+        expect(trackStore.value?.tracks[0]?.freezeState).toMatchObject({
+            status: 'stale',
+            freezeId: 'freeze-stale',
+            adjustmentLayerMutationId: 'adjustment-mutation-1',
+        });
+    });
+
     it('should ignore legacy persisted transient fields while preserving cached live transients', () => {
         const live_ghost = create_valid_clip({ id: 'ghost-live', trackId: 'track-live' });
         const legacy_ghost = create_valid_clip({ id: 'ghost-legacy', trackId: 'track-legacy' });
