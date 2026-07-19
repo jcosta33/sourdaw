@@ -2,15 +2,18 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { setTrackGain } from '../setTrackGain';
 
-const mocks = vi.hoisted(() => ({
-    updateTrack: vi.fn(),
-    engineSetTrackGain: vi.fn(),
-    updateDeviceParam: vi.fn(),
-    getAllTracks: vi.fn(),
-    transportStoreValue: { isPlaying: false } as unknown,
-    getTrackById: vi.fn(),
-    recordAutomationValue: vi.fn(),
-}));
+const mocks = vi.hoisted(() => {
+    const transportStoreValue: unknown = { isPlaying: false };
+    return {
+        updateTrack: vi.fn(),
+        engineSetTrackGain: vi.fn(),
+        updateDeviceParam: vi.fn(),
+        getAllTracks: vi.fn(),
+        transportStoreValue,
+        getTrackById: vi.fn(),
+        recordAutomationValue: vi.fn(),
+    };
+});
 
 vi.mock('../../../repositories/track/updateTrack', () => ({
     updateTrack: mocks.updateTrack,

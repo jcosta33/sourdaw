@@ -49,4 +49,59 @@ describe('reorderSetlistItems', () => {
         const next = mockSetlistStore.set.mock.calls[0]![0];
         expect(next.items.map((index) => index.id)).toEqual(['b', 'a']);
     });
+
+    it('moves the last item back to the front', () => {
+        const state: SetlistState = {
+            name: 'S',
+            items: [item('a'), item('b'), item('c')],
+            currentIndex: 0,
+            autoAdvance: false,
+            countInBars: 1,
+            totalDuration: 3,
+        };
+        mockSetlistStore.value = state;
+
+        reorderSetlistItems(2, 0);
+
+        const next = mockSetlistStore.set.mock.calls[0]![0];
+        expect(next.items.map((entry) => entry.id)).toEqual(['c', 'a', 'b']);
+    });
+
+    it('does nothing when the store has no value', () => {
+        mockSetlistStore.value = null;
+
+        reorderSetlistItems(0, 1);
+
+        expect(mockSetlistStore.set).not.toHaveBeenCalled();
+    });
+
+    it('does nothing when fromIndex equals toIndex', () => {
+        mockSetlistStore.value = {
+            name: 'S',
+            items: [item('a'), item('b')],
+            currentIndex: 0,
+            autoAdvance: false,
+            countInBars: 1,
+            totalDuration: 2,
+        };
+
+        reorderSetlistItems(1, 1);
+
+        expect(mockSetlistStore.set).not.toHaveBeenCalled();
+    });
+
+    it('does nothing when fromIndex is out of range', () => {
+        mockSetlistStore.value = {
+            name: 'S',
+            items: [item('a'), item('b')],
+            currentIndex: 0,
+            autoAdvance: false,
+            countInBars: 1,
+            totalDuration: 2,
+        };
+
+        reorderSetlistItems(5, 0);
+
+        expect(mockSetlistStore.set).not.toHaveBeenCalled();
+    });
 });

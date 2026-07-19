@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { createWebMidiNoteKey } from '../../../models/WebMidiTypes';
 
 const mpe_enabled = vi.hoisted(() => ({ value: true }));
-const target_track_id = vi.hoisted(() => ({ value: 'track-1' as string | null }));
+const target_track_id = vi.hoisted(() => ({ value: 'track-1' }));
 
 vi.mock('../../../repositories/webMidi/getMpeEnabled', () => ({
     getMpeEnabled: () => mpe_enabled.value,
@@ -32,7 +32,7 @@ function make_dependencies(
     return {
         getSynthParamsForTrack: () => ({ detune: 5 }),
         ...overrides,
-    } as unknown as HandleWebMidiPitchBendDependencies;
+    };
 }
 
 describe('handleWebMidiPitchBend', () => {

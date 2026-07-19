@@ -14,9 +14,7 @@ vi.mock('../../repositories/automergeRepository', () => ({
 
 describe('getCrdtDoc', () => {
     it('delegates to automergeRepository', () => {
-        mocks.getDoc.mockReturnValue({ some: 'data' } as unknown as ReturnType<
-            typeof import('../../repositories/automergeRepository').automergeRepository.getDoc
-        >);
+        mocks.getDoc.mockReturnValue({ some: 'data' });
         const result = getCrdtDoc('doc-1');
         expect(mocks.getDoc).toHaveBeenCalledWith('doc-1');
         expect(result).toEqual({ some: 'data' });

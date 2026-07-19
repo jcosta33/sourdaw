@@ -1,11 +1,4 @@
-import {
-    type Doc,
-    type SyncState,
-    type SyncMessage,
-    initSyncState,
-    generateSyncMessage,
-    receiveSyncMessage,
-} from '@automerge/automerge';
+import { type Doc, type SyncState, initSyncState, generateSyncMessage, receiveSyncMessage } from '@automerge/automerge';
 
 import { logger } from '#/infra/logger/appLogger';
 import { resetActionReplayAuthority } from '#/modules/Command/useCases';
@@ -181,7 +174,7 @@ export class AutomergeSync {
         let newSyncState: SyncState;
         try {
             const syncMessage = base64ToBytes(syncMessageBase64);
-            [newDoc, newSyncState] = receiveSyncMessage(doc, syncState, syncMessage as SyncMessage);
+            [newDoc, newSyncState] = receiveSyncMessage(doc, syncState, syncMessage);
         } catch (error) {
             logger.warn('[AutomergeSync] Malformed sync message from peer', peerId, error);
             return;

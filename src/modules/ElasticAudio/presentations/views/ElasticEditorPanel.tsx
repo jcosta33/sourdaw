@@ -96,7 +96,7 @@ export const ElasticEditorPanel = (): ReactElement => {
     const isAudioClip = clip !== null && clip.type === 'audio';
 
     const [warpState, setWarpState] = useState<WarpStateView>(() =>
-        clipId === null ? emptyWarpState() : (getWarpState(clipId) as WarpStateView)
+        clipId === null ? emptyWarpState() : getWarpState(clipId)
     );
     const [zoom, setZoom] = useState(1);
     const [viewScrollLeft, setViewScrollLeft] = useState(0);
@@ -107,13 +107,13 @@ export const ElasticEditorPanel = (): ReactElement => {
 
     const refreshWarp = (): void => {
         if (clipId !== null) {
-            setWarpState(getWarpState(clipId) as WarpStateView);
+            setWarpState(getWarpState(clipId));
         }
     };
 
     useEffect(() => {
         if (clipId !== null) {
-            setWarpState(getWarpState(clipId) as WarpStateView);
+            setWarpState(getWarpState(clipId));
         }
     }, [clipId]);
 

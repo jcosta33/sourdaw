@@ -13,7 +13,7 @@ describe('fermenterParamBridge', () => {
         vi.clearAllMocks();
         getAllTracks.mockReturnValue([]);
         setFermenterDependencies({
-            getAllTracks: getAllTracks as never,
+            getAllTracks,
             persistDeviceParam: persistDeviceParam as never,
             updateDeviceParam: updateDeviceParam as never,
         });

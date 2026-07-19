@@ -14,9 +14,12 @@ import {
     rateToBeats,
     samplesPerBeat,
 } from '../../models/MidiEvent';
+import { YEAST_PREVIEW_CAPACITY } from '../../models/YeastPreviewSnapshot';
 import { BaseMidiProcessor } from '../BaseMidiProcessor';
 import { LCG_MAX, nextLcg } from '../lcgRandom';
 import { type ActiveNote, ScheduledEventQueue } from '../MidiProcessor';
+
+import type { YeastPreviewDecisionSink } from '../YeastPreviewSidecar';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -40,6 +43,7 @@ type OctaveDirection = 'up' | 'down' | 'upDown';
 
 export class Arpeggiator extends BaseMidiProcessor {
     readonly name = 'Arpeggiator';
+    readonly providesPreviewDecisions = true;
 
     // Parameters
     private mode: ArpMode = 'up';
@@ -62,6 +66,14 @@ export class Arpeggiator extends BaseMidiProcessor {
     private activeGenerated: ActiveNote[] = [];
     private scheduled = new ScheduledEventQueue();
     private rngState = 0xdead;
+    private readonly rejectedPitch = new Uint8Array(YEAST_PREVIEW_CAPACITY);
+    private readonly rejectedVelocity = new Float64Array(YEAST_PREVIEW_CAPACITY);
+    private readonly rejectedChannel = new Uint8Array(YEAST_PREVIEW_CAPACITY);
+    private readonly rejectedTrackId: Array<string | undefined> = Array.from(
+        { length: YEAST_PREVIEW_CAPACITY },
+        () => undefined
+    );
+    private rejectedCandidateCount = 0;
 
     constructor(id?: string) {
         super(id ?? `arp-${Date.now()}`);
@@ -69,7 +81,12 @@ export class Arpeggiator extends BaseMidiProcessor {
 
     // ── MidiProcessor interface ──────────────────────────────────────────
 
-    processMidi(input: readonly MidiEvent[], output: MidiEvent[], transport: TransportInfo): void {
+    processMidi(
+        input: readonly MidiEvent[],
+        output: MidiEvent[],
+        transport: TransportInfo,
+        preview?: YeastPreviewDecisionSink
+    ): void {
         // Handle incoming Note On/Off to update held notes
         for (const event of input) {
             if (event.kind.type === 'noteOn') {
@@ -161,11 +178,17 @@ export class Arpeggiator extends BaseMidiProcessor {
                 continue;
             }
 
-            // Probability check (pattern or global)
+            // Keep the probability rejection ahead of candidate materialization.
+            // Disabled capture takes the original allocation-free fast path;
+            // enabled capture writes rejected candidates through fixed scratch.
             if (patternStep && patternStep.probability < 1.0) {
                 this.rngState = nextLcg(this.rngState);
                 if (this.rngState / LCG_MAX > patternStep.probability) {
-                    this.advanceStep(pool.length);
+                    const expandedCount = this.countExpandedNotes(pool);
+                    if (preview) {
+                        this.recordRejectedStep(preview, pool, patternStep, actualTime, stepLenSamples);
+                    }
+                    this.advanceStep(expandedCount);
                     this.lastStepTimeSamples = stepTime;
                     continue;
                 }
@@ -198,11 +221,24 @@ export class Arpeggiator extends BaseMidiProcessor {
                         ? patternStep.velocity
                         : this.computeVelocity(sn.velocity);
 
-                    output.push({
+                    const noteOn: MidiEvent = {
                         timeSamples: ratchetTime,
                         trackId: sn.trackId,
                         kind: { type: 'noteOn', channel: sn.channel, note: sn.note, velocity: vel },
-                    });
+                    };
+                    output.push(noteOn);
+
+                    preview?.recordDecision(
+                        ratchetTime,
+                        noteDuration,
+                        sn.note,
+                        vel,
+                        patternStep?.probability ?? null,
+                        true,
+                        this.id,
+                        sn.trackId,
+                        noteOn
+                    );
 
                     // Schedule Note Off
                     const offTime = ratchetTime + noteDuration;
@@ -227,7 +263,7 @@ export class Arpeggiator extends BaseMidiProcessor {
         }
 
         // Drain scheduled Note Offs that fall in this block
-        const drained = this.scheduled.drainRange(0, blockEnd);
+        const drained = this.scheduled.drainRange(0, blockEnd, this.trackId);
         for (const event1 of drained) {
             output.push(event1);
         }
@@ -446,6 +482,136 @@ export class Arpeggiator extends BaseMidiProcessor {
             }
         }
         return inputVel;
+    }
+
+    private previewVelocity(inputVelocity: number, step: ArpStep): number {
+        if (step.velocityOverride) {
+            return step.velocity;
+        }
+        if (this.velocityMode === 'fixed') {
+            return this.fixedVelocity;
+        }
+        return inputVelocity;
+    }
+
+    private countExpandedNotes(pool: readonly HeldNote[]): number {
+        let count = 0;
+        if (this.octaveDirection === 'down') {
+            for (let octave = 0; octave > -this.octaveRange; octave--) {
+                count += this.countExpandedNotesAtOctave(pool, octave);
+            }
+            return count;
+        }
+        for (let octave = 0; octave < this.octaveRange; octave++) {
+            count += this.countExpandedNotesAtOctave(pool, octave);
+        }
+        if (this.octaveDirection === 'upDown') {
+            for (let octave = this.octaveRange - 2; octave > 0; octave--) {
+                count += this.countExpandedNotesAtOctave(pool, octave);
+            }
+        }
+        return count;
+    }
+
+    private countExpandedNotesAtOctave(pool: readonly HeldNote[], octave: number): number {
+        let count = 0;
+        for (let index = 0; index < pool.length; index++) {
+            const pitch = pool[index]!.note + octave * 12;
+            if (pitch >= 0 && pitch <= 127) {
+                count += 1;
+            }
+        }
+        return count;
+    }
+
+    private recordRejectedStep(
+        preview: YeastPreviewDecisionSink,
+        pool: readonly HeldNote[],
+        step: ArpStep,
+        actualTime: number,
+        stepLenSamples: number
+    ): void {
+        this.fillRejectedCandidates(pool);
+        this.sortRejectedCandidates();
+        const ratchetCount = step.ratchet;
+        const ratchetInterval = stepLenSamples / ratchetCount;
+        const noteDuration = ratchetInterval * this.gate * step.gateMul;
+        const candidateStart = step.stepType === 'chord' ? 0 : this.stepIndex % this.rejectedCandidateCount;
+        const candidateEnd = step.stepType === 'chord' ? this.rejectedCandidateCount : candidateStart + 1;
+        const pitchOffset = step.octaveOffset * 12 + step.semitoneOffset;
+
+        for (let ratchetIndex = 0; ratchetIndex < ratchetCount; ratchetIndex++) {
+            const ratchetTime = actualTime + ratchetIndex * ratchetInterval;
+            for (let index = candidateStart; index < candidateEnd; index++) {
+                preview.recordDecision(
+                    ratchetTime,
+                    noteDuration,
+                    Math.max(0, Math.min(127, this.rejectedPitch[index]! + pitchOffset)),
+                    this.previewVelocity(this.rejectedVelocity[index]!, step),
+                    step.probability,
+                    false,
+                    this.id,
+                    this.rejectedTrackId[index]
+                );
+            }
+        }
+    }
+
+    private fillRejectedCandidates(pool: readonly HeldNote[]): void {
+        this.rejectedCandidateCount = 0;
+        if (this.octaveDirection === 'down') {
+            for (let octave = 0; octave > -this.octaveRange; octave--) {
+                this.appendRejectedOctave(pool, octave);
+            }
+            return;
+        }
+        for (let octave = 0; octave < this.octaveRange; octave++) {
+            this.appendRejectedOctave(pool, octave);
+        }
+        if (this.octaveDirection === 'upDown') {
+            for (let octave = this.octaveRange - 2; octave > 0; octave--) {
+                this.appendRejectedOctave(pool, octave);
+            }
+        }
+    }
+
+    private appendRejectedOctave(pool: readonly HeldNote[], octave: number): void {
+        for (let index = 0; index < pool.length; index++) {
+            if (this.rejectedCandidateCount === YEAST_PREVIEW_CAPACITY) {
+                return;
+            }
+            const held = pool[index]!;
+            const pitch = held.note + octave * 12;
+            if (pitch < 0 || pitch > 127) {
+                continue;
+            }
+            const slot = this.rejectedCandidateCount++;
+            this.rejectedPitch[slot] = pitch;
+            this.rejectedVelocity[slot] = held.velocity;
+            this.rejectedChannel[slot] = held.channel;
+            this.rejectedTrackId[slot] = held.trackId;
+        }
+    }
+
+    private sortRejectedCandidates(): void {
+        for (let index = 1; index < this.rejectedCandidateCount; index++) {
+            let cursor = index;
+            while (cursor > 0 && this.rejectedPitch[cursor - 1]! > this.rejectedPitch[cursor]!) {
+                const previousPitch = this.rejectedPitch[cursor - 1]!;
+                const previousVelocity = this.rejectedVelocity[cursor - 1]!;
+                const previousChannel = this.rejectedChannel[cursor - 1]!;
+                const previousTrackId = this.rejectedTrackId[cursor - 1];
+                this.rejectedPitch[cursor - 1] = this.rejectedPitch[cursor]!;
+                this.rejectedVelocity[cursor - 1] = this.rejectedVelocity[cursor]!;
+                this.rejectedChannel[cursor - 1] = this.rejectedChannel[cursor]!;
+                this.rejectedTrackId[cursor - 1] = this.rejectedTrackId[cursor];
+                this.rejectedPitch[cursor] = previousPitch;
+                this.rejectedVelocity[cursor] = previousVelocity;
+                this.rejectedChannel[cursor] = previousChannel;
+                this.rejectedTrackId[cursor] = previousTrackId;
+                cursor -= 1;
+            }
+        }
     }
 
     private killActiveNotes(output: MidiEvent[], now: number): void {

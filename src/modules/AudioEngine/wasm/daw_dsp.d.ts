@@ -12,11 +12,7 @@ export type WasmExports = {
 export declare function initSync(input: InitSyncInput | InitSyncModule): WasmExports;
 export declare function default_init(
     module_or_path?:
-        | InitSyncInput
-        | string
-        | URL
-        | Response
-        | { module_or_path?: InitSyncInput | string | URL | Response }
+        InitSyncInput | string | URL | Response | { module_or_path?: InitSyncInput | string | URL | Response }
 ): Promise<WasmExports>;
 
 export declare class BacteriaInstance {
@@ -89,6 +85,7 @@ export declare class GrinderInstance {
     constructor(sample_rate: number);
     free(): void;
     [Symbol.dispose](): void;
+    get_automation_values_ptr(): number;
     get_gate_envelope_db(): number;
     get_gate_open(): number;
     get_input_db(): number;
@@ -98,11 +95,13 @@ export declare class GrinderInstance {
     get_neural_cpu_percent(): number;
     get_neural_warmup_progress(): number;
     get_output_db(): number;
+    get_output_left_ptr(): number;
     get_power_amp_db(): number;
     get_preamp_db(): number;
     get_right_ptr(): number;
     get_sag_voltage(): number;
     process(block_size: number): number;
+    process_automated(block_size: number): number;
     set_param(name: string, value: number): void;
 }
 

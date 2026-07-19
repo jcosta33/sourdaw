@@ -1,7 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const mocks = vi.hoisted(() => ({
-    tempoMapStoreValue: {
+import { deleteTimelineMapsTimeRange } from '../deleteTimelineMapsTimeRange';
+
+import type { TempoMapStoreState } from '../../../stores/tempoMapStore';
+
+const mocks = vi.hoisted(() => {
+    const tempoMapStoreValue: { value: TempoMapStoreState | null } = {
         value: {
             changes: [
                 { id: 'tempo-before', beat: 2, tempo: 110, curve: 'instant' },
@@ -10,22 +14,25 @@ const mocks = vi.hoisted(() => ({
                 { id: 'tempo-end', beat: 6, tempo: 130, curve: 'instant' },
                 { id: 'tempo-after', beat: 8, tempo: 140, curve: 'linear' },
             ],
-        } as import('../../../stores/tempoMapStore').TempoMapStoreState | null,
-    },
-    timeSignatureMapStoreValue: {
-        value: {
-            changes: [
-                { id: 'sig-before', beat: 2, numerator: 3, denominator: 4 },
-                { id: 'sig-at', beat: 3, numerator: 4, denominator: 4 },
-                { id: 'sig-inside', beat: 4, numerator: 5, denominator: 4 },
-                { id: 'sig-end', beat: 6, numerator: 6, denominator: 8 },
-                { id: 'sig-after', beat: 8, numerator: 7, denominator: 8 },
-            ],
         },
-    },
-    tempoMapStoreSet: vi.fn(),
-    timeSignatureMapStoreSet: vi.fn(),
-}));
+    };
+    return {
+        tempoMapStoreValue,
+        timeSignatureMapStoreValue: {
+            value: {
+                changes: [
+                    { id: 'sig-before', beat: 2, numerator: 3, denominator: 4 },
+                    { id: 'sig-at', beat: 3, numerator: 4, denominator: 4 },
+                    { id: 'sig-inside', beat: 4, numerator: 5, denominator: 4 },
+                    { id: 'sig-end', beat: 6, numerator: 6, denominator: 8 },
+                    { id: 'sig-after', beat: 8, numerator: 7, denominator: 8 },
+                ],
+            },
+        },
+        tempoMapStoreSet: vi.fn(),
+        timeSignatureMapStoreSet: vi.fn(),
+    };
+});
 
 vi.mock('../../../stores/tempoMapStore', () => ({
     tempoMapStore: {
@@ -43,8 +50,6 @@ vi.mock('../../../stores/timeSignatureMapStore', () => ({
         set: mocks.timeSignatureMapStoreSet,
     },
 }));
-
-import { deleteTimelineMapsTimeRange } from '../deleteTimelineMapsTimeRange';
 
 describe('deleteTimelineMapsTimeRange', () => {
     beforeEach(() => {

@@ -79,7 +79,7 @@ describe('useTimelineFileDrop', () => {
         vi.clearAllMocks();
         mocks.buildTimelineRenderModel.mockReturnValue({ tempo: 120 });
         mocks.getAssetTransfer.mockReturnValue({ addLocalAsset: vi.fn().mockResolvedValue('hash') });
-        mocks.trackStoreValue.value = { tracks: [], selectedTrackId: null } as any;
+        mocks.trackStoreValue.value = { tracks: [], selectedTrackId: null };
         // Default: nothing in the buffer cache → drops take the file-read/decode path.
         mocks.getCachedAudioBuffer.mockReturnValue(null);
         mocks.resolveDroppedSampleFile.mockResolvedValue({ status: 'unresolved' });
@@ -164,7 +164,7 @@ describe('useTimelineFileDrop', () => {
         const { result } = renderHook(() => useTimelineFileDrop({ getCanvasCoords, getBeatFromX }));
 
         // Buffer present in the cache keyed by the sample id.
-        mocks.getCachedAudioBuffer.mockReturnValue({ duration: 2 } as AudioBuffer);
+        mocks.getCachedAudioBuffer.mockReturnValue({ duration: 2 });
 
         const mockEvent = {
             preventDefault: vi.fn(),

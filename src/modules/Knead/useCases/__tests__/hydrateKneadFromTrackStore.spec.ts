@@ -1,9 +1,10 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, type Mock } from 'vitest';
 
-const mocks = vi.hoisted(() => ({
-    trackStore: { value: null as unknown },
-    kneadStore: { value: null as unknown, set: vi.fn() },
-}));
+const mocks = vi.hoisted(() => {
+    const trackStore: { value: unknown } = { value: null };
+    const kneadStore: { value: unknown; set: Mock } = { value: null, set: vi.fn() };
+    return { trackStore, kneadStore };
+});
 
 vi.mock('#/modules/Arrangement/stores', async (importOriginal) => ({
     ...(await importOriginal<Record<string, unknown>>()),

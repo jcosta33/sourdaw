@@ -78,7 +78,7 @@ describe('TransportBar', () => {
                 return voiceStatus;
             }
 
-            return (defaultValue ?? {}) as typeof defaultValue;
+            return defaultValue ?? {};
         });
     });
 

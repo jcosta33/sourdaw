@@ -1,11 +1,11 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, type Mock } from 'vitest';
 
 import { toggleMono } from '../toggleMono';
 
-const mocks = vi.hoisted(() => ({
+const mocks = vi.hoisted((): { state: { monoActive: boolean } | null; set: Mock } => ({
     state: {
         monoActive: false,
-    } as { monoActive: boolean } | null,
+    },
     set: vi.fn(),
 }));
 

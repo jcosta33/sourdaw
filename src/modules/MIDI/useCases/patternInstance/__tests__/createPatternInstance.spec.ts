@@ -2,12 +2,15 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { createPatternInstance } from '../createPatternInstance';
 
-const mocks = vi.hoisted(() => ({
-    trackStoreValue: null as unknown,
-    appendClipToTrack: vi.fn<(...args: unknown[]) => void>(),
-    getNotesForClip: vi.fn<() => unknown[]>(() => []),
-    setNotesForClip: vi.fn<(...args: unknown[]) => void>(),
-}));
+const mocks = vi.hoisted(() => {
+    const trackStoreValue: unknown = null;
+    return {
+        trackStoreValue,
+        appendClipToTrack: vi.fn<(...args: unknown[]) => void>(),
+        getNotesForClip: vi.fn<() => unknown[]>(() => []),
+        setNotesForClip: vi.fn<(...args: unknown[]) => void>(),
+    };
+});
 
 vi.mock('#/modules/Arrangement/stores', () => ({
     trackStore: {

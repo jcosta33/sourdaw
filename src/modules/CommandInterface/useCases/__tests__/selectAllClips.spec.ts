@@ -1,9 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-const mocks = vi.hoisted(() => ({
-    selectAllClipsInArrangement: vi.fn(),
-    trackStoreValue: null as unknown,
-}));
+const mocks = vi.hoisted(() => {
+    const trackStoreValue: unknown = null;
+    return { selectAllClipsInArrangement: vi.fn(), trackStoreValue };
+});
 
 vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/Arrangement/useCases')>()),

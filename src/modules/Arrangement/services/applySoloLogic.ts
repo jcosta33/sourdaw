@@ -3,8 +3,7 @@ import { type Track } from '../models/Track';
 export type SoloMode = 'sip' | 'afl' | 'pfl';
 
 export type SoloLogicAction =
-    | { type: 'setGain'; trackId: string; gain: number }
-    | { type: 'setMute'; trackId: string; muted: boolean };
+    { type: 'setGain'; trackId: string; gain: number } | { type: 'setMute'; trackId: string; muted: boolean };
 
 export type ApplySoloLogicInput = {
     tracks: readonly Track[];

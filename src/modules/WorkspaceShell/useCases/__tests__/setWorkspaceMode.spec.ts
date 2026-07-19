@@ -14,7 +14,7 @@ vi.mock('../../repositories/updateWorkspaceState', () => ({
 
 describe('setWorkspaceMode', () => {
     it('should not update when workspace state is missing', () => {
-        vi.mocked(getWorkspaceState).mockReturnValue(null as any);
+        vi.mocked(getWorkspaceState).mockReturnValue(null);
 
         setWorkspaceMode('clip');
 

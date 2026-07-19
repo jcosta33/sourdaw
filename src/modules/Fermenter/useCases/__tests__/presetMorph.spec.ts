@@ -41,7 +41,7 @@ describe('presetMorph', () => {
         persistDevicePatch.mockClear();
         getAllTracks.mockReturnValue([{ id: 't1', devices: [{ id: 'd1' }] }] as never);
         setFermenterDependencies({
-            getAllTracks: getAllTracks as never,
+            getAllTracks,
             updateDeviceParam: updateDeviceParam as never,
             persistDeviceParam: persistDeviceParam as never,
             updateDevicePatch: updateDevicePatch as never,

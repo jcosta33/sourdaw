@@ -7,15 +7,7 @@
 import { createStore } from '#/infra/store/createStore';
 
 export type AdjustmentEffectType =
-    | 'eq'
-    | 'compressor'
-    | 'reverb'
-    | 'delay'
-    | 'saturation'
-    | 'filter'
-    | 'stereo-width'
-    | 'volume'
-    | 'pan';
+    'eq' | 'compressor' | 'reverb' | 'delay' | 'saturation' | 'filter' | 'stereo-width' | 'volume' | 'pan';
 
 export type AdjustmentParameter = {
     name: string;

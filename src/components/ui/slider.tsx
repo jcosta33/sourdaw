@@ -135,7 +135,7 @@ function SliderThumbNode({
                     event.preventDefault();
                     event.stopPropagation();
                     if (defaultValue && onValueChange) {
-                        onValueChange(Array.isArray(defaultValue) ? defaultValue : [defaultValue as number]);
+                        onValueChange(Array.isArray(defaultValue) ? defaultValue : [defaultValue]);
                     }
                 }
             }}

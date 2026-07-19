@@ -196,4 +196,4 @@ export const renderOffline: RenderOfflineFn = async function renderOffline(
     } finally {
         releaseLock();
     }
-} as RenderOfflineFn;
+};

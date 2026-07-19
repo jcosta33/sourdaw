@@ -6,8 +6,9 @@ const mocks = vi.hoisted(() => {
     type Parameter = { name: string; value: number; min: number; max: number };
     type Layer = { id: string; parameters: Parameter[] };
     type State = { layers: Layer[] };
+    const adjustmentLayerStoreValue: { value: State } = { value: { layers: [] } };
     return {
-        adjustmentLayerStoreValue: { value: { layers: [] } as State },
+        adjustmentLayerStoreValue,
         adjustmentLayerStoreSet: vi.fn<(newState: State) => void>(),
     };
 });

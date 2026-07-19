@@ -79,12 +79,12 @@ function pushControllerDevice(
     track.strip.deviceNodes.push({
         deviceId: 'dev-1',
         type: 'test-device',
-        nodes: [node as unknown as AudioNode],
-        inputNode: node as unknown as AudioNode,
-        outputNode: node as unknown as AudioNode,
+        nodes: [node],
+        inputNode: node,
+        outputNode: node,
         controller,
         ...overrides,
-    } as BuiltinDeviceNode);
+    });
     return { node, controller };
 }
 
@@ -214,11 +214,11 @@ describe('TrackNode — metering, devices, sends, and teardown', () => {
             track.strip.deviceNodes.push({
                 deviceId: 'dev-raw',
                 type: 'builtin-gain',
-                nodes: [node as unknown as AudioNode],
-                inputNode: node as unknown as AudioNode,
-                outputNode: node as unknown as AudioNode,
+                nodes: [node],
+                inputNode: node,
+                outputNode: node,
                 dispose,
-            } as BuiltinDeviceNode);
+            });
 
             track.removeDevice('dev-raw');
             expect(dispose).toHaveBeenCalledTimes(1);
@@ -395,9 +395,9 @@ describe('TrackNode — metering, devices, sends, and teardown', () => {
             const placeholder: BuiltinDeviceNode = {
                 deviceId: 'wasm-1',
                 type: 'levain',
-                nodes: [placeholderNode as unknown as AudioNode],
-                inputNode: placeholderNode as unknown as AudioNode,
-                outputNode: placeholderNode as unknown as AudioNode,
+                nodes: [placeholderNode],
+                inputNode: placeholderNode,
+                outputNode: placeholderNode,
             };
             let capturedOnLoaded: ((finalDn: BuiltinDeviceNode) => void) | undefined;
             let resolveLoad: (() => void) | undefined;
@@ -425,9 +425,9 @@ describe('TrackNode — metering, devices, sends, and teardown', () => {
             const finalDn: BuiltinDeviceNode = {
                 deviceId: 'wasm-1',
                 type: 'levain',
-                nodes: [loadedNode as unknown as AudioNode],
-                inputNode: loadedNode as unknown as AudioNode,
-                outputNode: loadedNode as unknown as AudioNode,
+                nodes: [loadedNode],
+                inputNode: loadedNode,
+                outputNode: loadedNode,
             };
             capturedOnLoaded!(finalDn);
             expect(track.strip.deviceNodes[0]).toBe(finalDn);

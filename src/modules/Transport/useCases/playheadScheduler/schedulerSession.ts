@@ -45,6 +45,10 @@ export const schedulerSession = {
     // async tick may still resume after its worker is terminated, so post-await
     // work must prove it belongs to the live generation before it schedules.
     generation: 0,
+    // Semantic timeline identity is deliberately independent of async work
+    // cancellation. Loop wraps and jumps advance this without cancelling the
+    // live scheduler generation; restarts/replacements advance both.
+    discontinuityEpoch: 0,
     // Last-seen tempo-map identity and loop-region signature. A mid-playback edit
     // to either changes the beat→time alignment of already-scheduled clips, but
     // the dedup Set would keep them suppressed; we detect the change and invalidate.

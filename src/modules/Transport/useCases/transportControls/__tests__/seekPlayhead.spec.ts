@@ -8,6 +8,7 @@ import { defaultTransportState } from '../../../models/TransportState';
 import { getTransportState } from '../../../repositories/transport/getTransportState';
 import { updateTransportState } from '../../../repositories/transport/updateTransportState';
 import { playheadPositionRef } from '../../../stores/playheadPositionRef';
+import { schedulerSession } from '../../playheadScheduler/schedulerSession';
 import { startPlayheadScheduler } from '../../playheadScheduler/startPlayheadScheduler';
 import { stopPlayheadScheduler } from '../../playheadScheduler/stopPlayheadScheduler';
 import { seekPlayhead } from '../seekPlayhead';
@@ -62,6 +63,7 @@ describe('seekPlayhead', () => {
 
     it('should clamp beat and update transport when stopped', () => {
         const update = vi.fn();
+        const beforeSeekEpoch = schedulerSession.discontinuityEpoch;
         vi.mocked(getTransportState).mockReturnValue({
             ...defaultTransportState,
             isPlaying: false,
@@ -76,6 +78,7 @@ describe('seekPlayhead', () => {
         expect(update).toHaveBeenCalledWith({ playheadPosition: 10 });
         expect(playheadPositionRef.current).toBe(10);
         expect(startPlayheadScheduler).not.toHaveBeenCalled();
+        expect(schedulerSession.discontinuityEpoch).toBeGreaterThan(beforeSeekEpoch);
     });
 
     it('should restart scheduler when seeking while playing', () => {

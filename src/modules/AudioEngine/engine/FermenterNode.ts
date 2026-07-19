@@ -57,8 +57,7 @@ export async function createFermenterNode(ctx: BaseAudioContext, wasmUrl?: strin
     const telemetryListeners = new Set<(data: { peakL: number; peakR: number; scopeBuffer: Float32Array }) => void>();
     node.port.onmessage = (event: MessageEvent) => {
         const payload = event.data as
-            | { type?: string; peakL: number; peakR: number; scopeBuffer: Float32Array }
-            | undefined;
+            { type?: string; peakL: number; peakR: number; scopeBuffer: Float32Array } | undefined;
         if (payload?.type === 'telemetry') {
             const data = { peakL: payload.peakL, peakR: payload.peakR, scopeBuffer: payload.scopeBuffer };
             for (const listener of telemetryListeners) {

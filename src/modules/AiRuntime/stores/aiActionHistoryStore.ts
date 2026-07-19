@@ -2,8 +2,7 @@ import { createStore } from '#/infra/store/createStore';
 import { createLocalStorage } from '#/infra/store/storage/createLocalStorage';
 
 export type AiActionEntry =
-    | { kind: 'appAction'; actionType: string; label: string }
-    | { kind: 'jsonEdit'; label: string };
+    { kind: 'appAction'; actionType: string; label: string } | { kind: 'jsonEdit'; label: string };
 
 export type AiActionGroup = {
     id: string;

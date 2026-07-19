@@ -11,11 +11,7 @@ export type WasmExports = {
 export declare function initSync(input: InitSyncInput | InitSyncModule): WasmExports;
 export declare function default_init(
     module_or_path?:
-        | InitSyncInput
-        | string
-        | URL
-        | Response
-        | { module_or_path?: InitSyncInput | string | URL | Response }
+        InitSyncInput | string | URL | Response | { module_or_path?: InitSyncInput | string | URL | Response }
 ): Promise<WasmExports>;
 
 export declare class ProofChamberInstance {

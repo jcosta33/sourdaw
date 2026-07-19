@@ -4,10 +4,13 @@ import { toggleAdjustmentLayer } from '../toggleAdjustmentLayer';
 
 import type { AdjustmentLayer, AdjustmentLayerState } from '#/modules/Arrangement/stores/adjustmentLayer';
 
-const mocks = vi.hoisted(() => ({
-    adjustmentLayerStoreValue: { value: { layers: [] } as AdjustmentLayerState },
-    adjustmentLayerStoreSet: vi.fn<(state: AdjustmentLayerState) => void>(),
-}));
+const mocks = vi.hoisted(() => {
+    const adjustmentLayerStoreValue: { value: AdjustmentLayerState } = { value: { layers: [] } };
+    return {
+        adjustmentLayerStoreValue,
+        adjustmentLayerStoreSet: vi.fn<(state: AdjustmentLayerState) => void>(),
+    };
+});
 
 vi.mock('#/modules/Arrangement/stores/adjustmentLayer', () => ({
     adjustmentLayerStore: {

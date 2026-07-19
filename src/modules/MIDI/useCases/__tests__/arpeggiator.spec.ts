@@ -5,10 +5,13 @@ import { arpeggiate } from '../arpeggiator';
 
 type StoreValue = { notesByClipId: Record<string, Partial<MidiNote>[]> };
 
-const mocks = vi.hoisted(() => ({
-    midiStoreValue: { value: { notesByClipId: {} } as StoreValue },
-    midiStoreSet: vi.fn<(next: StoreValue) => void>(),
-}));
+const mocks = vi.hoisted(() => {
+    const midiStoreValue: { value: StoreValue } = { value: { notesByClipId: {} } };
+    return {
+        midiStoreValue,
+        midiStoreSet: vi.fn<(next: StoreValue) => void>(),
+    };
+});
 
 vi.mock('../../stores/midiStore', () => ({
     midiStore: {

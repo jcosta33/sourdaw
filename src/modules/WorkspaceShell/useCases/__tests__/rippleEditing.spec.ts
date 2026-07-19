@@ -2,10 +2,10 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { toggleRippleEditing } from '../rippleEditing';
 
-const mocks = vi.hoisted(() => ({
-    workspaceStoreValue: { value: { rippleEditing: false } as { rippleEditing: boolean } | null },
-    workspaceStoreSet: vi.fn(),
-}));
+const mocks = vi.hoisted(() => {
+    const workspaceStoreValue: { value: { rippleEditing: boolean } | null } = { value: { rippleEditing: false } };
+    return { workspaceStoreValue, workspaceStoreSet: vi.fn() };
+});
 
 vi.mock('../../stores/workspaceStore', () => ({
     workspaceStore: {

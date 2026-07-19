@@ -1,11 +1,14 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-const mocks = vi.hoisted(() => ({
-    scanBrowserDirectory: vi.fn(),
-    scanTauriDirectory: vi.fn(),
-    updateLibraryRootStatus: vi.fn(),
-    storeValue: { value: null as unknown },
-}));
+const mocks = vi.hoisted(() => {
+    const storeValue: { value: unknown } = { value: null };
+    return {
+        scanBrowserDirectory: vi.fn(),
+        scanTauriDirectory: vi.fn(),
+        updateLibraryRootStatus: vi.fn(),
+        storeValue,
+    };
+});
 
 vi.mock('../scanBrowserDirectory', () => ({ scanBrowserDirectory: mocks.scanBrowserDirectory }));
 vi.mock('../scanTauriDirectory', () => ({ scanTauriDirectory: mocks.scanTauriDirectory }));

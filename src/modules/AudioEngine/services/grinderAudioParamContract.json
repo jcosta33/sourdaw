@@ -1,0 +1,13 @@
+[
+    { "name": "gain", "defaultValue": 5, "minValue": 0, "maxValue": 10, "automationRate": "a-rate", "domain": "raw" },
+    { "name": "bass", "defaultValue": 5, "minValue": 0, "maxValue": 10, "automationRate": "a-rate", "domain": "raw" },
+    { "name": "mid", "defaultValue": 5, "minValue": 0, "maxValue": 10, "automationRate": "a-rate", "domain": "raw" },
+    { "name": "treble", "defaultValue": 5, "minValue": 0, "maxValue": 10, "automationRate": "a-rate", "domain": "raw" },
+    { "name": "presence", "defaultValue": 5, "minValue": 0, "maxValue": 10, "automationRate": "a-rate", "domain": "raw" },
+    { "name": "resonance", "defaultValue": 5, "minValue": 0, "maxValue": 10, "automationRate": "a-rate", "domain": "raw" },
+    { "name": "master", "defaultValue": 5, "minValue": 0, "maxValue": 10, "automationRate": "a-rate", "domain": "raw" },
+    { "name": "inputGain", "defaultValue": 0, "minValue": -24, "maxValue": 24, "automationRate": "a-rate", "domain": "decibels-to-linear" },
+    { "name": "outputGain", "defaultValue": 0, "minValue": -24, "maxValue": 24, "automationRate": "a-rate", "domain": "decibels-to-linear" },
+    { "name": "transformerDrive", "defaultValue": 0.3, "minValue": 0, "maxValue": 1, "automationRate": "a-rate", "domain": "raw" },
+    { "name": "negFeedback", "defaultValue": 0.5, "minValue": 0, "maxValue": 1, "automationRate": "a-rate", "domain": "raw" }
+]

@@ -13,6 +13,10 @@ import {
 import { BaseMidiProcessor } from '../BaseMidiProcessor';
 import { ScheduledEventQueue } from '../MidiProcessor';
 
+import type { YeastPreviewDecisionSink } from '../YeastPreviewSidecar';
+
+const SCHEDULED_LINEAGE_CAPACITY = 512;
+
 export class NoteRepeater extends BaseMidiProcessor {
     readonly name = 'Note Repeater';
 
@@ -22,12 +26,26 @@ export class NoteRepeater extends BaseMidiProcessor {
     private gate = 0.5; // note length as fraction of interval
     private pitchStep = 0; // semitones per repeat
     private scheduled = new ScheduledEventQueue();
+    private readonly scheduledLineageEvent: Array<MidiEvent | undefined> = Array.from(
+        { length: SCHEDULED_LINEAGE_CAPACITY },
+        () => undefined
+    );
+    private readonly scheduledLineageToken = new Float64Array(SCHEDULED_LINEAGE_CAPACITY);
+    private readonly scheduledLineageDuration = new Float64Array(SCHEDULED_LINEAGE_CAPACITY);
+    private scheduledLineageCount = 0;
+    private scheduledLineageCompromised = false;
+    private lineageOwner: YeastPreviewDecisionSink | undefined;
 
     constructor(id?: string) {
         super(id ?? `repeater-${Date.now()}`);
     }
 
-    processMidi(input: readonly MidiEvent[], output: MidiEvent[], transport: TransportInfo): void {
+    processMidi(
+        input: readonly MidiEvent[],
+        output: MidiEvent[],
+        transport: TransportInfo,
+        preview?: YeastPreviewDecisionSink
+    ): void {
         const intervalSamples = rateToBeats(this.rate) * samplesPerBeat(transport);
         const noteLenSamples = intervalSamples * this.gate;
 
@@ -36,6 +54,12 @@ export class NoteRepeater extends BaseMidiProcessor {
             output.push(event);
 
             if (event.kind.type === 'noteOn') {
+                const availableLineageSlots = SCHEDULED_LINEAGE_CAPACITY - this.scheduledLineageCount;
+                const storedRepeats = Math.min(this.repeatCount, availableLineageSlots);
+                const lineage = preview?.retainDecisionLineage(event, storedRepeats);
+                if (lineage !== undefined) {
+                    this.lineageOwner = preview;
+                }
                 // Generate repeats
                 for (let r = 1; r <= this.repeatCount; r++) {
                     const time = event.timeSamples + r * intervalSamples;
@@ -43,11 +67,20 @@ export class NoteRepeater extends BaseMidiProcessor {
                     const note = Math.max(0, Math.min(127, event.kind.note + r * this.pitchStep));
 
                     // Schedule Note On
-                    this.scheduled.push({
+                    const noteOn: MidiEvent = {
                         timeSamples: time,
                         trackId: event.trackId,
                         kind: { type: 'noteOn', channel: event.kind.channel, note, velocity: vel },
-                    });
+                    };
+                    this.scheduled.push(noteOn);
+                    if (lineage !== undefined && this.scheduledLineageCount < SCHEDULED_LINEAGE_CAPACITY) {
+                        const slot = this.scheduledLineageCount++;
+                        this.scheduledLineageEvent[slot] = noteOn;
+                        this.scheduledLineageToken[slot] = lineage;
+                        this.scheduledLineageDuration[slot] = noteLenSamples;
+                    } else if (lineage !== undefined) {
+                        this.scheduledLineageCompromised = true;
+                    }
 
                     // Schedule Note Off
                     this.scheduled.push({
@@ -63,14 +96,52 @@ export class NoteRepeater extends BaseMidiProcessor {
         // Use a generous range since we don't know exact block boundaries here
         const now = input.length > 0 ? input[0]!.timeSamples : 0;
         const blockEnd = now + 8192; // generous window
-        const drained = this.scheduled.drainRange(0, blockEnd);
+        const drained = this.scheduled.drainRange(0, blockEnd, this.trackId);
         for (const event1 of drained) {
             output.push(event1);
+            const lineageIndex = this.findScheduledLineage(event1);
+            if (lineageIndex !== -1) {
+                const lineage = this.scheduledLineageToken[lineageIndex]!;
+                if (preview) {
+                    preview.restoreDecisionLineage(lineage, event1, this.scheduledLineageDuration[lineageIndex]);
+                } else {
+                    this.lineageOwner?.releaseDecisionLineage(lineage);
+                }
+                this.removeScheduledLineage(lineageIndex);
+            } else if (event1.kind.type === 'noteOn' && this.scheduledLineageCompromised) {
+                preview?.restoreDecisionLineage(-1, event1, noteLenSamples);
+            }
         }
     }
 
     reset(): void {
         this.scheduled.clear();
+        for (let index = 0; index < this.scheduledLineageCount; index++) {
+            this.lineageOwner?.releaseDecisionLineage(this.scheduledLineageToken[index]!);
+            this.scheduledLineageEvent[index] = undefined;
+        }
+        this.scheduledLineageCount = 0;
+        this.scheduledLineageCompromised = false;
+        this.lineageOwner = undefined;
+    }
+
+    private findScheduledLineage(event: MidiEvent): number {
+        for (let index = this.scheduledLineageCount - 1; index >= 0; index--) {
+            if (this.scheduledLineageEvent[index] === event) {
+                return index;
+            }
+        }
+        return -1;
+    }
+
+    private removeScheduledLineage(index: number): void {
+        const last = --this.scheduledLineageCount;
+        if (index !== last) {
+            this.scheduledLineageEvent[index] = this.scheduledLineageEvent[last];
+            this.scheduledLineageToken[index] = this.scheduledLineageToken[last]!;
+            this.scheduledLineageDuration[index] = this.scheduledLineageDuration[last]!;
+        }
+        this.scheduledLineageEvent[last] = undefined;
     }
 
     protected resetParams(): void {

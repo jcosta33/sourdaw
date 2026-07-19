@@ -63,7 +63,7 @@ describe('InstrumentsTab', () => {
                 favorites={new Set()}
                 onToggleFavorite={vi.fn()}
                 preview={mockPreview as any}
-                currentRoute={mockRoute as any}
+                currentRoute={mockRoute}
                 pushRoute={vi.fn()}
             />
         );
@@ -79,7 +79,7 @@ describe('InstrumentsTab', () => {
                 favorites={new Set()}
                 onToggleFavorite={vi.fn()}
                 preview={mockPreview as any}
-                currentRoute={mockRoute as any}
+                currentRoute={mockRoute}
                 pushRoute={vi.fn()}
             />
         );
@@ -95,7 +95,7 @@ describe('InstrumentsTab', () => {
                 favorites={new Set()}
                 onToggleFavorite={vi.fn()}
                 preview={mockPreview as any}
-                currentRoute={mockRoute as any}
+                currentRoute={mockRoute}
                 pushRoute={vi.fn()}
             />
         );

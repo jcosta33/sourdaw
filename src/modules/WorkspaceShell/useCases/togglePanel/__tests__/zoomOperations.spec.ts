@@ -9,19 +9,23 @@ import { onZoomToSelection } from '../zoomOperations/onZoomToSelection';
 import { zoomToFit } from '../zoomOperations/zoomToFit';
 import { zoomToSelection } from '../zoomOperations/zoomToSelection';
 
-const mocks = vi.hoisted(() => ({
-    mockEventBus: {
-        emit: vi.fn().mockResolvedValue(undefined),
-        on: vi.fn(),
-    },
-    clipSelectionStore: {
-        value: { selectedClipId: null, selectedClipIds: [], marqueeSelection: null } as {
-            selectedClipId: string | null;
-            selectedClipIds: string[];
-            marqueeSelection: null;
-        } | null,
-    },
-}));
+const mocks = vi.hoisted(() => {
+    type ClipSelectionValue = {
+        selectedClipId: string | null;
+        selectedClipIds: string[];
+        marqueeSelection: null;
+    } | null;
+    const clipSelectionStore: { value: ClipSelectionValue } = {
+        value: { selectedClipId: null, selectedClipIds: [], marqueeSelection: null },
+    };
+    return {
+        mockEventBus: {
+            emit: vi.fn().mockResolvedValue(undefined),
+            on: vi.fn(),
+        },
+        clipSelectionStore,
+    };
+});
 
 // We also need to mock trackStore because zoomToSelection uses it
 vi.mock('#/modules/Arrangement/stores', () => ({

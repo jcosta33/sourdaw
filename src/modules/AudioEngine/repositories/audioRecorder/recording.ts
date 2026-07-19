@@ -119,9 +119,7 @@ export const startAudioRecording = inject({ logger })(
                 // Wire up the PCM-complete handler before sending 'start'.
                 recordingWorker.onmessage = ({ data }: MessageEvent): void => {
                     const msg = data as
-                        | { type: 'ready' }
-                        | { type: 'wav'; buffer: ArrayBuffer }
-                        | { type: 'error'; message: string };
+                        { type: 'ready' } | { type: 'wav'; buffer: ArrayBuffer } | { type: 'error'; message: string };
 
                     if (msg.type === 'ready') {
                         if (activeSessions.get(trackId) !== session || session.status !== 'starting') {

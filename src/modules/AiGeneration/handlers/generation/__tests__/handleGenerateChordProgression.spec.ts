@@ -64,10 +64,10 @@ describe('handleGenerateChordProgression', () => {
         void handleGenerateChordProgression.execute({
             type: 'generateChordProgression',
             payload: {
-                style: 'invalid-style' as unknown as 'pop',
-                scale: 'invalid-scale' as unknown as 'major',
+                style: 'invalid-style',
+                scale: 'invalid-scale',
                 key: 99,
-                voicing: 'invalid-voicing' as unknown as 'close',
+                voicing: 'invalid-voicing',
                 bars: 8,
             },
         });

@@ -48,4 +48,49 @@ describe('removeSetlistItem', () => {
         removeSetlistItem('x');
         expect(mockSetlistStore.set).toHaveBeenCalledWith(expect.objectContaining({ items: [], totalDuration: 0 }));
     });
+
+    it('does nothing when the store has no value', () => {
+        mockSetlistStore.value = null;
+
+        removeSetlistItem('x');
+
+        expect(mockSetlistStore.set).not.toHaveBeenCalled();
+    });
+
+    it('does nothing when the id does not match any item', () => {
+        const state: SetlistState = {
+            name: 'S',
+            items: [item('x', 30)],
+            currentIndex: 0,
+            autoAdvance: false,
+            countInBars: 1,
+            totalDuration: 30,
+        };
+        mockSetlistStore.value = state;
+
+        removeSetlistItem('missing');
+
+        expect(mockSetlistStore.set).not.toHaveBeenCalled();
+    });
+
+    it('removes only the matching item, keeping the rest and their order', () => {
+        const state: SetlistState = {
+            name: 'S',
+            items: [item('a', 10), item('b', 20), item('c', 5)],
+            currentIndex: 0,
+            autoAdvance: false,
+            countInBars: 1,
+            totalDuration: 35,
+        };
+        mockSetlistStore.value = state;
+
+        removeSetlistItem('b');
+
+        expect(mockSetlistStore.set).toHaveBeenCalledWith(
+            expect.objectContaining({
+                items: [item('a', 10), item('c', 5)],
+                totalDuration: 15,
+            })
+        );
+    });
 });

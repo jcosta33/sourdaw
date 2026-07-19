@@ -2,10 +2,10 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { getTimeSignatureChanges } from '../getTimeSignatureChanges';
 
-const mocks = vi.hoisted(() => ({
+const mocks = vi.hoisted((): { storeValue: { changes: unknown[] } | null } => ({
     storeValue: {
         changes: [{ beat: 0, numerator: 4, denominator: 4 }],
-    } as { changes: unknown[] } | null,
+    },
 }));
 
 vi.mock('../../../stores/timeSignatureMapStore', () => ({

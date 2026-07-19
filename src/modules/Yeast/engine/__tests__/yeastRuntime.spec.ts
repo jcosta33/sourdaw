@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { YeastNotesOffPayload } from '../../events/YeastNotesOffPayload';
 import type { MidiEvent, TransportInfo } from '../../models/MidiEvent';
+import type { YeastPreviewBlock } from '../../models/YeastPreviewSnapshot';
 import type { YeastProcessorCommand } from '../../models/YeastProcessorCommand';
 import type { YeastProcessorProjection } from '../../models/YeastProcessorProjection';
 import type { YeastWorkerResult } from '../YeastWorkerClient';
@@ -20,6 +21,8 @@ type Deferred<T> = {
 
 type RuntimeBlockInput = {
     context: BaseAudioContext;
+    rackId?: string;
+    routeId?: string;
     trackId: string;
     projection: YeastProcessorProjection;
     events: readonly MidiEvent[];
@@ -51,6 +54,7 @@ async function flushRuntimeQueue(): Promise<void> {
 function makeNode(context: BaseAudioContext) {
     let terminalErrorHandler: ((error: Error) => void) | null = null;
     let notesOffHandler: ((notesOff: YeastNotesOffPayload[]) => void) | null = null;
+    let previewHandler: ((preview: YeastPreviewBlock) => void) | null = null;
     return {
         context,
         processBlock: vi.fn<
@@ -59,7 +63,8 @@ function makeNode(context: BaseAudioContext) {
                 blockStart: number,
                 blockEnd: number,
                 transport: TransportInfo,
-                trackId: string
+                trackId: string,
+                previewEnabled?: boolean
             ) => Promise<MidiEvent[]>
         >(() => Promise.resolve([])),
         setProjection: vi.fn(),
@@ -67,11 +72,20 @@ function makeNode(context: BaseAudioContext) {
             Promise.resolve({ accepted: true })
         ),
         allNotesOff: vi.fn(),
+        releasePreview: vi.fn(),
         onNotesOff: vi.fn((handler: (notesOff: YeastNotesOffPayload[]) => void) => {
             notesOffHandler = handler;
             return () => {
                 if (notesOffHandler === handler) {
                     notesOffHandler = null;
+                }
+            };
+        }),
+        onPreview: vi.fn((handler: (preview: YeastPreviewBlock) => void) => {
+            previewHandler = handler;
+            return () => {
+                if (previewHandler === handler) {
+                    previewHandler = null;
                 }
             };
         }),
@@ -89,6 +103,9 @@ function makeNode(context: BaseAudioContext) {
         emitNotesOff: (notesOff: YeastNotesOffPayload[]) => {
             notesOffHandler?.(notesOff);
         },
+        emitPreview: (preview: YeastPreviewBlock) => {
+            previewHandler?.(preview);
+        },
         destroy: vi.fn(),
     };
 }
@@ -103,6 +120,8 @@ const projectionB: YeastProcessorProjection = [
 function makeRuntimeBlockInput(context: BaseAudioContext): RuntimeBlockInput {
     return {
         context,
+        rackId: 'rack-a',
+        routeId: 'track-a',
         trackId: 'track-a',
         projection: projectionA,
         events: [],
@@ -174,6 +193,107 @@ describe('yeastRuntime', () => {
         pendingProjection.resolve();
         await expect(initialization).resolves.toBe(node);
         expect(runtime.getYeastRuntimeStatus()).toBe('ready');
+    });
+
+    it('publishes worker preview sidecars without changing the scheduler result', async () => {
+        const runtime = (await loadRuntime()) as RuntimeWithTransaction;
+        const { yeastPreviewTap } = await import('../yeastPreviewTap');
+        const previewScope = { rackId: 'rack-a', routeId: 'track-a', trackId: 'track-a' };
+        yeastPreviewTap.setEnabled(previewScope, false);
+        yeastPreviewTap.setEnabled(previewScope, true);
+        const context = {} as BaseAudioContext;
+        const node = makeNode(context);
+        const events: MidiEvent[] = [
+            { timeSamples: 0, trackId: 'track-a', kind: { type: 'noteOn', channel: 0, note: 60, velocity: 90 } },
+        ];
+        const preview = {
+            rackId: 'rack-a',
+            routeId: 'track-a',
+            trackId: 'track-a',
+            captureEpoch: yeastPreviewTap.getCaptureState(previewScope).captureEpoch,
+            projectionVersion: 1,
+            reset: false,
+            records: [
+                {
+                    eventId: 1,
+                    rackId: 'rack-a',
+                    routeId: 'track-a',
+                    trackId: 'track-a',
+                    projectionVersion: 1,
+                    phase: 'closed' as const,
+                    beatTime: 0,
+                    durationBeats: 0.5,
+                    pitch: 60,
+                    velocity: 90,
+                    probability: null,
+                    realized: true,
+                    processorId: 'filter-1',
+                    bypassed: true,
+                    failed: false,
+                },
+            ],
+            provenance: [{ processorId: 'filter-1', bypassed: true, failed: false, eventCount: 0 }],
+            droppedEvents: 0,
+        };
+        node.processBlock.mockImplementationOnce(() => {
+            node.emitPreview(preview);
+            return Promise.resolve(events);
+        });
+        createNode.mockResolvedValueOnce(node);
+
+        const output = await runtime.processYeastRuntimeTransaction(makeRuntimeBlockInput(context));
+
+        expect(output).toBe(events);
+        expect(yeastPreviewTap.read(previewScope).events).toEqual(preview.records);
+        expect(node.onPreview).toHaveBeenCalledTimes(1);
+    });
+
+    it('retires preview bindings and publishes an empty reset before panic acknowledgement', async () => {
+        const runtime = await loadRuntime();
+        const { yeastPreviewTap } = await import('../yeastPreviewTap');
+        const context = {} as BaseAudioContext;
+        const node = makeNode(context);
+        const scope = { rackId: 'rack-a', routeId: 'track-a', trackId: 'track-a' };
+        createNode.mockResolvedValueOnce(node);
+        await runtime.ensureYeastRuntime({ context, projection: projectionA });
+        yeastPreviewTap.setEnabled(scope, true);
+        const captureEpoch = yeastPreviewTap.getCaptureState(scope).captureEpoch;
+        yeastPreviewTap.publish({
+            ...scope,
+            captureEpoch,
+            projectionVersion: 1,
+            reset: false,
+            records: [],
+            provenance: [{ processorId: 'arp-1', bypassed: false, failed: false, eventCount: 1 }],
+            droppedEvents: 0,
+        });
+
+        await runtime.sendYeastRuntimeAllNotesOff(512);
+
+        expect(node.releasePreview).toHaveBeenCalledWith({ ...scope, captureEpoch });
+        expect(yeastPreviewTap.read(scope)).toMatchObject({ ...scope, reset: true, events: [], provenance: [] });
+        expect(node.allNotesOff).toHaveBeenCalledWith(512);
+    });
+
+    it('publishes an empty preview reset on teardown even without a live runtime', async () => {
+        const runtime = await loadRuntime();
+        const { yeastPreviewTap } = await import('../yeastPreviewTap');
+        const scope = { rackId: 'rack-a', routeId: 'track-a', trackId: 'track-a' };
+        yeastPreviewTap.setEnabled(scope, true);
+        const captureEpoch = yeastPreviewTap.getCaptureState(scope).captureEpoch;
+        yeastPreviewTap.publish({
+            ...scope,
+            captureEpoch,
+            projectionVersion: 1,
+            reset: false,
+            records: [],
+            provenance: [{ processorId: 'arp-1', bypassed: false, failed: false, eventCount: 1 }],
+            droppedEvents: 0,
+        });
+
+        runtime.destroyYeastRuntime();
+
+        expect(yeastPreviewTap.read(scope)).toMatchObject({ ...scope, reset: true, events: [], provenance: [] });
     });
 
     it('invalidates the current runtime and releases notes when a dynamic projection rejects', async () => {
@@ -296,6 +416,61 @@ describe('yeastRuntime', () => {
         expect(nodeB.setProjection).toHaveBeenCalledWith(projectionA);
     });
 
+    it('releases and resets preview capture before destroying a terminally failed Worker', async () => {
+        const runtime = await loadRuntime();
+        const { yeastPreviewTap } = await import('../yeastPreviewTap');
+        const context = {} as BaseAudioContext;
+        const node = makeNode(context);
+        const scope = { rackId: 'rack-a', routeId: 'track-a', trackId: 'track-a' };
+        const lifecycle: string[] = [];
+        createNode.mockResolvedValueOnce(node);
+        yeastPreviewTap.setEnabled(scope, true);
+        node.releasePreview.mockImplementationOnce(() => {
+            lifecycle.push('release');
+        });
+        node.destroy.mockImplementationOnce(() => {
+            lifecycle.push('destroy');
+        });
+
+        await runtime.ensureYeastRuntime({ context, projection: projectionA });
+        await (runtime as RuntimeWithTransaction).processYeastRuntimeTransaction(makeRuntimeBlockInput(context));
+        const captureEpoch = yeastPreviewTap.getCaptureState(scope).captureEpoch;
+        yeastPreviewTap.publish({
+            ...scope,
+            captureEpoch,
+            projectionVersion: 1,
+            reset: false,
+            records: [],
+            provenance: [{ processorId: 'arp-1', bypassed: false, failed: false, eventCount: 1 }],
+            droppedEvents: 0,
+        });
+
+        node.emitTerminalError(new Error('Worker crashed'));
+
+        expect(node.releasePreview).toHaveBeenCalledWith({ ...scope, captureEpoch });
+        expect(yeastPreviewTap.read(scope)).toMatchObject({ ...scope, reset: true, events: [], provenance: [] });
+        expect(lifecycle).toEqual(['release', 'destroy']);
+    });
+
+    it('advances the delivered semantic discontinuity epoch when a failed runtime is replaced', async () => {
+        const runtime = await loadRuntime();
+        const context = {} as BaseAudioContext;
+        const nodeA = makeNode(context);
+        const nodeB = makeNode(context);
+        createNode.mockResolvedValueOnce(nodeA).mockResolvedValueOnce(nodeB);
+        const input = makeRuntimeBlockInput(context);
+        input.transport.discontinuityEpoch = 41;
+
+        await (runtime as RuntimeWithTransaction).processYeastRuntimeTransaction(input);
+        const beforeReplacement = nodeA.processBlock.mock.calls[0]?.[3].discontinuityEpoch;
+        nodeA.emitTerminalError(new Error('Worker crashed'));
+        await (runtime as RuntimeWithTransaction).processYeastRuntimeTransaction(input);
+        const afterReplacement = nodeB.processBlock.mock.calls[0]?.[3].discontinuityEpoch;
+
+        expect(beforeReplacement).toEqual(expect.any(Number));
+        expect(afterReplacement).toBeGreaterThan(beforeReplacement ?? 0);
+    });
+
     it('settles accepted output notes exactly once when the Worker becomes terminal', async () => {
         const runtime = await loadRuntime();
         const context = {} as BaseAudioContext;
@@ -374,6 +549,46 @@ describe('yeastRuntime', () => {
         expect(panicOutputNotes).not.toHaveBeenCalled();
     });
 
+    it('settles the remaining overlapping same-key output voice after one accepted Note Off', async () => {
+        const runtime = await loadRuntime();
+        const context = {} as BaseAudioContext;
+        const node = makeNode(context);
+        const onNotesOff = vi.fn();
+        const panicOutputNotes = vi.fn();
+        node.processBlock
+            .mockResolvedValueOnce([
+                {
+                    timeSamples: 0,
+                    trackId: 'track-a',
+                    kind: { type: 'noteOn' as const, channel: 2, note: 67, velocity: 100 },
+                },
+                {
+                    timeSamples: 1,
+                    trackId: 'track-a',
+                    kind: { type: 'noteOn' as const, channel: 2, note: 67, velocity: 90 },
+                },
+            ])
+            .mockResolvedValueOnce([
+                {
+                    timeSamples: 128,
+                    trackId: 'track-a',
+                    kind: { type: 'noteOff' as const, channel: 2, note: 67 },
+                },
+            ]);
+        createNode.mockResolvedValueOnce(node);
+        const input = makeRuntimeBlockInput(context);
+
+        await runtime.ensureYeastRuntime({ context, projection: projectionA });
+        runtime.setYeastRuntimeNotesOffHandler(onNotesOff);
+        runtime.setYeastRuntimeOutputPanicHandler(panicOutputNotes);
+        await (runtime as RuntimeWithTransaction).processYeastRuntimeTransaction(input);
+        await (runtime as RuntimeWithTransaction).processYeastRuntimeTransaction(input);
+        node.emitTerminalError(new Error('Worker crashed with one duplicate voice active'));
+
+        expect(onNotesOff).toHaveBeenCalledWith([{ trackId: 'track-a', noteOffs: [{ channel: 2, note: 67 }] }]);
+        expect(panicOutputNotes).toHaveBeenCalledTimes(1);
+    });
+
     it('settles accepted output notes on explicit runtime teardown without duplicates', async () => {
         const runtime = await loadRuntime();
         const context = {} as BaseAudioContext;
@@ -433,6 +648,33 @@ describe('yeastRuntime', () => {
         expect(panicOutputNotes).toHaveBeenCalledTimes(1);
         expect(nodeA.destroy).toHaveBeenCalledTimes(1);
         expect(nodeB.destroy).not.toHaveBeenCalled();
+    });
+
+    it('releases and resets preview capture before replacing the AudioContext runtime', async () => {
+        const runtime = await loadRuntime();
+        const { yeastPreviewTap } = await import('../yeastPreviewTap');
+        const contextA = {} as BaseAudioContext;
+        const contextB = {} as BaseAudioContext;
+        const nodeA = makeNode(contextA);
+        const nodeB = makeNode(contextB);
+        const scope = { rackId: 'rack-a', routeId: 'track-a', trackId: 'track-a' };
+        const lifecycle: string[] = [];
+        createNode.mockResolvedValueOnce(nodeA).mockResolvedValueOnce(nodeB);
+        yeastPreviewTap.setEnabled(scope, true);
+        nodeA.releasePreview.mockImplementationOnce(() => {
+            lifecycle.push('release');
+        });
+        nodeA.destroy.mockImplementationOnce(() => {
+            lifecycle.push('destroy');
+        });
+
+        await (runtime as RuntimeWithTransaction).processYeastRuntimeTransaction(makeRuntimeBlockInput(contextA));
+        const captureEpoch = yeastPreviewTap.getCaptureState(scope).captureEpoch;
+        await runtime.ensureYeastRuntime({ context: contextB, projection: projectionB });
+
+        expect(nodeA.releasePreview).toHaveBeenCalledWith({ ...scope, captureEpoch });
+        expect(yeastPreviewTap.read(scope)).toMatchObject({ ...scope, reset: true, events: [], provenance: [] });
+        expect(lifecycle).toEqual(['release', 'destroy']);
     });
 
     it.each(['process', 'projection', 'command', 'panic'] as const)(

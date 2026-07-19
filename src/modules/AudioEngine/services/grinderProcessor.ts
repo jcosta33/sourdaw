@@ -9,6 +9,26 @@
 
 import { initSync, GrinderInstance } from '../wasm/daw_dsp.js';
 
+import grinderAudioParamContract from './grinderAudioParamContract.json';
+
+type GrinderAudioParamDescriptor = {
+    name: string;
+    defaultValue: number;
+    minValue: number;
+    maxValue: number;
+    automationRate: 'a-rate';
+};
+
+const GRINDER_AUDIO_PARAM_DESCRIPTORS: readonly GrinderAudioParamDescriptor[] = grinderAudioParamContract.map(
+    ({ name, defaultValue, minValue, maxValue }) => ({
+        name,
+        defaultValue,
+        minValue,
+        maxValue,
+        automationRate: 'a-rate',
+    })
+);
+
 const PARAM_MAP: Record<string, string> = {
     engineMode: 'engineMode',
     gain: 'gain',
@@ -116,6 +136,9 @@ const PARAM_MAP: Record<string, string> = {
 };
 
 const MAX_GRINDER_BLOCK_SIZE = 2048;
+const GRINDER_AUTOMATABLE_PARAM_COUNT = 11;
+const GRINDER_AUTOMATION_BUFFER_SIZE =
+    GRINDER_AUTOMATABLE_PARAM_COUNT + GRINDER_AUTOMATABLE_PARAM_COUNT * MAX_GRINDER_BLOCK_SIZE;
 
 type GrinderMsg =
     | { type: 'init'; wasmBytes: BufferSource }
@@ -212,21 +235,17 @@ function applyNeuralPatch(instance: GrinderInstance, patch: Record<string, unkno
 
 class GrinderProcessor extends AudioWorkletProcessor {
     static get parameterDescriptors() {
-        return [
-            { name: 'gain', defaultValue: 5, minValue: 0, maxValue: 10 },
-            { name: 'bass', defaultValue: 5, minValue: 0, maxValue: 10 },
-            { name: 'mid', defaultValue: 5, minValue: 0, maxValue: 10 },
-            { name: 'treble', defaultValue: 5, minValue: 0, maxValue: 10 },
-            { name: 'presence', defaultValue: 5, minValue: 0, maxValue: 10 },
-            { name: 'resonance', defaultValue: 5, minValue: 0, maxValue: 10 },
-            { name: 'master', defaultValue: 5, minValue: 0, maxValue: 10 },
-            { name: 'inputGain', defaultValue: 0, minValue: -24, maxValue: 24 },
-            { name: 'outputGain', defaultValue: 0, minValue: -24, maxValue: 24 },
-        ];
+        return GRINDER_AUDIO_PARAM_DESCRIPTORS;
     }
 
     _instance: GrinderInstance | null = null;
-    _memory: WebAssembly.Memory | null = null;
+    _wasmInputLeft: Float32Array | null = null;
+    _wasmInputRight: Float32Array | null = null;
+    _wasmOutputLeft: Float32Array | null = null;
+    _wasmOutputRight: Float32Array | null = null;
+    _wasmAutomationValues: Float32Array | null = null;
+    _wasmMemory: WebAssembly.Memory | null = null;
+    _wasmMemoryBuffer: ArrayBuffer | null = null;
     _ready = false;
     _faulted = false;
     _meterCounter = 0;
@@ -249,6 +268,7 @@ class GrinderProcessor extends AudioWorkletProcessor {
                     const oldLatency = this._instance.get_latency_samples();
                     this._instance.set_param(rustName, msg.value);
                     const newLatency = this._instance.get_latency_samples();
+                    this._refreshWasmViewsIfMemoryChanged();
                     if (newLatency !== oldLatency) {
                         this.port.postMessage({ type: 'latency-changed', latency: newLatency });
                     }
@@ -256,6 +276,7 @@ class GrinderProcessor extends AudioWorkletProcessor {
                     const oldLatency = this._instance.get_latency_samples();
                     applyNeuralPatch(this._instance, msg.patch);
                     const newLatency = this._instance.get_latency_samples();
+                    this._refreshWasmViewsIfMemoryChanged();
                     if (newLatency !== oldLatency) {
                         this.port.postMessage({ type: 'latency-changed', latency: newLatency });
                     }
@@ -268,10 +289,46 @@ class GrinderProcessor extends AudioWorkletProcessor {
 
     _initWasm(wasmBytes: BufferSource): void {
         const wasmExports = initSync({ module: new WebAssembly.Module(wasmBytes) });
-        this._memory = wasmExports.memory;
         this._instance = new GrinderInstance(sampleRate);
+        this._wasmMemory = wasmExports.memory;
+        this._cacheWasmViews();
         this._ready = true;
         this.port.postMessage({ type: 'ready', latency: this._instance.get_latency_samples() });
+    }
+
+    _cacheWasmViews(): void {
+        const instance = this._instance;
+        const memory = this._wasmMemory;
+        if (!instance || !memory) {
+            throw new Error('Grinder WASM instance is unavailable');
+        }
+
+        const inputLeftPtr = instance.get_input_left_ptr();
+        const inputRightPtr = instance.get_input_right_ptr();
+        const outputLeftPtr = instance.get_output_left_ptr();
+        const outputRightPtr = instance.get_right_ptr();
+        const automationValuesPtr = instance.get_automation_values_ptr();
+        if (!inputLeftPtr || !inputRightPtr || !outputLeftPtr || !outputRightPtr || !automationValuesPtr) {
+            throw new Error('Grinder WASM buffers are unavailable');
+        }
+
+        const memoryBuffer = memory.buffer;
+        this._wasmInputLeft = new Float32Array(memoryBuffer, inputLeftPtr, MAX_GRINDER_BLOCK_SIZE);
+        this._wasmInputRight = new Float32Array(memoryBuffer, inputRightPtr, MAX_GRINDER_BLOCK_SIZE);
+        this._wasmOutputLeft = new Float32Array(memoryBuffer, outputLeftPtr, MAX_GRINDER_BLOCK_SIZE);
+        this._wasmOutputRight = new Float32Array(memoryBuffer, outputRightPtr, MAX_GRINDER_BLOCK_SIZE);
+        this._wasmAutomationValues = new Float32Array(
+            memoryBuffer,
+            automationValuesPtr,
+            GRINDER_AUTOMATION_BUFFER_SIZE
+        );
+        this._wasmMemoryBuffer = memoryBuffer;
+    }
+
+    _refreshWasmViewsIfMemoryChanged(): void {
+        if (this._wasmMemory?.buffer !== this._wasmMemoryBuffer) {
+            this._cacheWasmViews();
+        }
     }
 
     _passthrough(input: Float32Array[], output: Float32Array[]): void {
@@ -311,19 +368,20 @@ class GrinderProcessor extends AudioWorkletProcessor {
 
         try {
             const inst = this._instance;
-            const mem = this._memory?.buffer;
-            if (!inst || !mem) {
+            const wasmInputLeft = this._wasmInputLeft;
+            const wasmInputRight = this._wasmInputRight;
+            const wasmOutputLeft = this._wasmOutputLeft;
+            const wasmOutputRight = this._wasmOutputRight;
+            const wasmAutomationValues = this._wasmAutomationValues;
+            if (
+                !inst ||
+                !wasmInputLeft ||
+                !wasmInputRight ||
+                !wasmOutputLeft ||
+                !wasmOutputRight ||
+                !wasmAutomationValues
+            ) {
                 return true;
-            }
-
-            for (const name in parameters) {
-                const values = parameters[name];
-                if (!values || values.length === 0) {
-                    continue;
-                }
-                const value = values.length > 1 ? (values[frames - 1] ?? 0) : (values[0] ?? 0);
-                const rustName = PARAM_MAP[name] ?? name;
-                inst.set_param(rustName, value);
             }
 
             const in0 = input[0];
@@ -332,27 +390,41 @@ class GrinderProcessor extends AudioWorkletProcessor {
                 return true;
             }
 
-            const inLeftPtr = inst.get_input_left_ptr();
-            const inRightPtr = inst.get_input_right_ptr();
-            if (!inLeftPtr || !inRightPtr) {
-                this._passthrough(input, output);
-                return true;
-            }
-
-            new Float32Array(mem, inLeftPtr, frames).set(in0);
-            new Float32Array(mem, inRightPtr, frames).set(input[1] ?? in0);
-
-            const outLeftPtr = inst.process(frames);
-            const outRightPtr = inst.get_right_ptr();
-            if (!outLeftPtr || !outRightPtr) {
-                this._passthrough(input, output);
-                return true;
-            }
-
-            out0.set(new Float32Array(mem, outLeftPtr, frames));
+            const in1 = input[1] ?? in0;
             const out1 = output[1];
-            if (out1) {
-                out1.set(new Float32Array(mem, outRightPtr, frames));
+            wasmInputLeft.set(in0);
+            wasmInputRight.set(in1);
+
+            for (let paramIndex = 0; paramIndex < GRINDER_AUTOMATABLE_PARAM_COUNT; paramIndex++) {
+                const descriptor = GRINDER_AUDIO_PARAM_DESCRIPTORS[paramIndex];
+                const values = descriptor ? parameters[descriptor.name] : undefined;
+                if (!values || values.length === 0) {
+                    wasmAutomationValues[paramIndex] = 0;
+                    continue;
+                }
+
+                const valueCount = values.length === 1 ? 1 : Math.min(values.length, frames);
+                wasmAutomationValues[paramIndex] = valueCount;
+                const valueOffset = GRINDER_AUTOMATABLE_PARAM_COUNT + paramIndex * MAX_GRINDER_BLOCK_SIZE;
+                if (valueCount === 1) {
+                    wasmAutomationValues[valueOffset] = values[0] ?? 0;
+                    continue;
+                }
+                for (let frame = 0; frame < valueCount; frame++) {
+                    wasmAutomationValues[valueOffset + frame] = values[frame] ?? 0;
+                }
+            }
+
+            if (!inst.process_automated(frames)) {
+                this._passthrough(input, output);
+                return true;
+            }
+
+            for (let frame = 0; frame < frames; frame++) {
+                out0[frame] = wasmOutputLeft[frame] ?? 0;
+                if (out1) {
+                    out1[frame] = wasmOutputRight[frame] ?? 0;
+                }
             }
 
             this._meterCounter++;

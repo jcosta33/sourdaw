@@ -5,6 +5,7 @@ import { resetMidiState } from '#/modules/MIDI/useCases';
 import { getTransportState } from '../../repositories/transport/getTransportState';
 import { updateTransportState } from '../../repositories/transport/updateTransportState';
 import { playheadPositionRef } from '../../stores/playheadPositionRef';
+import { advanceSchedulerDiscontinuityEpoch } from '../playheadScheduler/advanceSchedulerDiscontinuityEpoch';
 import { startPlayheadScheduler } from '../playheadScheduler/startPlayheadScheduler';
 import { stopPlayheadScheduler } from '../playheadScheduler/stopPlayheadScheduler';
 
@@ -22,7 +23,8 @@ export function seekPlayhead(beat: number): void {
     const targetBeat = Math.max(0, beat);
 
     function finishSeek(): void {
-        panicYeastRuntime();
+        advanceSchedulerDiscontinuityEpoch();
+        void panicYeastRuntime();
         if (wasPlaying) {
             stopPlayheadScheduler();
             stopAllScheduled();

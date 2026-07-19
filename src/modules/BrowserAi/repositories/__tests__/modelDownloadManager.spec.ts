@@ -112,7 +112,7 @@ beforeEach(() => {
     channelConstructions = 0;
     openChannels = 0;
     lastWritable = null;
-    vi.stubGlobal('BroadcastChannel', FakeBroadcastChannel as unknown as typeof BroadcastChannel);
+    vi.stubGlobal('BroadcastChannel', FakeBroadcastChannel);
     installStorage();
 });
 

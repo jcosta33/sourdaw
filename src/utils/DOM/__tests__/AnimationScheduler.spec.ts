@@ -7,7 +7,7 @@ describe('animationScheduler', () => {
         vi.spyOn(globalThis.performance, 'now').mockReturnValue(1000);
         vi.spyOn(globalThis, 'requestAnimationFrame').mockImplementation((cb: FrameRequestCallback) => {
             queueMicrotask(() => {
-                cb(1000 as DOMHighResTimeStamp);
+                cb(1000);
             });
             return 1;
         });

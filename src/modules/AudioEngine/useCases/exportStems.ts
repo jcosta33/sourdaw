@@ -171,4 +171,4 @@ export const exportStems: ExportStemsFn = async function exportStems(
     } finally {
         releaseLock();
     }
-} as ExportStemsFn;
+};

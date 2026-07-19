@@ -103,7 +103,7 @@ function humanizeActionType(type: string): string {
  */
 export function describeAction(action: AppAction): string {
     const base = ACTION_LABELS[action.type] ?? humanizeActionType(action.type);
-    const param = action.payload as Record<string, unknown> | undefined;
+    const param = action.payload;
     if (!param) {
         return base;
     }
@@ -123,10 +123,10 @@ export function describeAction(action: AppAction): string {
         return `${base}: ${param.paramId} = ${param.value}`;
     }
     if ('semitones' in param) {
-        return `${base}: ${(param.semitones as number) > 0 ? '+' : ''}${param.semitones}st`;
+        return `${base}: ${param.semitones > 0 ? '+' : ''}${param.semitones}st`;
     }
     if ('gain' in param) {
-        return `${base}: ${Math.round((param.gain as number) * 100)}%`;
+        return `${base}: ${Math.round(param.gain * 100)}%`;
     }
     if ('tool' in param) {
         return `${base}: ${param.tool}`;

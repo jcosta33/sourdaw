@@ -1,17 +1,5 @@
 export type GridSnapOption =
-    | 'bar'
-    | 'beat'
-    | '1/2'
-    | '1/4'
-    | '1/8'
-    | '1/16'
-    | '1/32'
-    | '1/4T'
-    | '1/8T'
-    | '1/16T'
-    | '1/4D'
-    | '1/8D'
-    | 'off';
+    'bar' | 'beat' | '1/2' | '1/4' | '1/8' | '1/16' | '1/32' | '1/4T' | '1/8T' | '1/16T' | '1/4D' | '1/8D' | 'off';
 
 export const GRID_SNAP_OPTIONS: { value: GridSnapOption; label: string; beats: number }[] = [
     { value: 'bar', label: 'Bar', beats: 4 },

@@ -45,18 +45,17 @@ describe('StepSequencerEditor', () => {
         );
 
         const canvas = container.querySelector('canvas')!;
-        canvas.getBoundingClientRect = () =>
-            ({
-                left: 0,
-                top: 0,
-                width: 200,
-                height: 48,
-                right: 200,
-                bottom: 48,
-                x: 0,
-                y: 0,
-                toJSON: () => ({}),
-            }) as DOMRect;
+        canvas.getBoundingClientRect = () => ({
+            left: 0,
+            top: 0,
+            width: 200,
+            height: 48,
+            right: 200,
+            bottom: 48,
+            x: 0,
+            y: 0,
+            toJSON: () => ({}),
+        });
 
         // Edit only step 0; commit on pointerUp.
         fireEvent.pointerDown(canvas, { clientX: 1, clientY: 0, pointerId: 1 });
@@ -99,18 +98,17 @@ describe('StepSequencerEditor', () => {
         const { container, rerender } = render(view);
 
         const canvas = container.querySelector('canvas')!;
-        canvas.getBoundingClientRect = () =>
-            ({
-                left: 0,
-                top: 0,
-                width: 200,
-                height: 48,
-                right: 200,
-                bottom: 48,
-                x: 0,
-                y: 0,
-                toJSON: () => ({}),
-            }) as DOMRect;
+        canvas.getBoundingClientRect = () => ({
+            left: 0,
+            top: 0,
+            width: 200,
+            height: 48,
+            right: 200,
+            bottom: 48,
+            x: 0,
+            y: 0,
+            toJSON: () => ({}),
+        });
 
         // Begin drawing and edit step 0 near the top (value ≈ +1), without committing.
         fireEvent.pointerDown(canvas, { clientX: 1, clientY: 0, pointerId: 1 });
@@ -134,18 +132,17 @@ describe('StepSequencerEditor', () => {
             <StepSequencerEditor width={200} height={48} steps={[]} numSteps={8} onStepsChange={onStepsChange} />
         );
         const canvas = container.querySelector('canvas')!;
-        canvas.getBoundingClientRect = () =>
-            ({
-                left: 0,
-                top: 0,
-                width: 200,
-                height: 48,
-                right: 200,
-                bottom: 48,
-                x: 0,
-                y: 0,
-                toJSON: () => ({}),
-            }) as DOMRect;
+        canvas.getBoundingClientRect = () => ({
+            left: 0,
+            top: 0,
+            width: 200,
+            height: 48,
+            right: 200,
+            bottom: 48,
+            x: 0,
+            y: 0,
+            toJSON: () => ({}),
+        });
 
         fireEvent.pointerDown(canvas, { clientX: 10, clientY: 10, pointerId: 1 });
         fireEvent.pointerCancel(canvas, { pointerId: 1 });

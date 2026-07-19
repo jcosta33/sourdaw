@@ -121,17 +121,17 @@ function isDocumentSnapshot(
 const validators = {
     // Track lifecycle
     addTrack: (param): param is PayloadOf<'addTrack'> => isObj(param) && isString(param.name) && isString(param.kind),
-    removeTrack: hasTrackId as PayloadValidator<'removeTrack'>,
+    removeTrack: hasTrackId,
     renameTrack: (param): param is PayloadOf<'renameTrack'> =>
         isObj(param) && isString(param.trackId) && isString(param.name),
-    duplicateTrack: hasTrackId as PayloadValidator<'duplicateTrack'>,
+    duplicateTrack: hasTrackId,
     deleteTrackAlternative: (param): param is PayloadOf<'deleteTrackAlternative'> =>
         isObj(param) && isString(param.trackId) && isString(param.alternativeId),
-    freezeTrack: hasTrackId as PayloadValidator<'freezeTrack'>,
-    unfreezeTrack: hasTrackId as PayloadValidator<'unfreezeTrack'>,
-    flattenTrack: hasTrackId as PayloadValidator<'flattenTrack'>,
-    bounceInPlace: hasTrackId as PayloadValidator<'bounceInPlace'>,
-    bounceToNewTrack: hasTrackId as PayloadValidator<'bounceToNewTrack'>,
+    freezeTrack: hasTrackId,
+    unfreezeTrack: hasTrackId,
+    flattenTrack: hasTrackId,
+    bounceInPlace: hasTrackId,
+    bounceToNewTrack: hasTrackId,
 
     // Clip lifecycle
     addClip: (param): param is PayloadOf<'addClip'> =>
@@ -140,12 +140,12 @@ const validators = {
         isNumber(param.startBeat) &&
         isNumber(param.endBeat) &&
         isString(param.name),
-    removeClip: hasClipId as PayloadValidator<'removeClip'>,
+    removeClip: hasClipId,
     splitClip: (param): param is PayloadOf<'splitClip'> =>
         isObj(param) && isString(param.clipId) && isNumber(param.beat),
     moveClip: (param): param is PayloadOf<'moveClip'> =>
         isObj(param) && isString(param.clipId) && isString(param.trackId) && isNumber(param.startBeat),
-    duplicateClip: hasClipId as PayloadValidator<'duplicateClip'>,
+    duplicateClip: hasClipId,
 
     // Device lifecycle
     addDevice: (param): param is PayloadOf<'addDevice'> =>
@@ -223,7 +223,7 @@ const validators = {
     // UI / workspace toggles — no payload validation needed for legacy view
     // state only actions. New payloadless AI-reachable meta actions still get
     // an explicit undefined guard so malformed model output is rejected.
-    openPreferencesDialog: hasNoPayload as PayloadValidator<'openPreferencesDialog'>,
+    openPreferencesDialog: hasNoPayload,
     openMixer: 'unchecked',
     closeMixer: 'unchecked',
     toggleSidebar: 'unchecked',
@@ -439,8 +439,8 @@ const validators = {
     stopMacroRecording: 'unchecked',
     playMacro: 'unchecked',
     deleteMacro: 'unchecked',
-    undo: hasNoPayload as PayloadValidator<'undo'>,
-    redo: hasNoPayload as PayloadValidator<'redo'>,
+    undo: hasNoPayload,
+    redo: hasNoPayload,
     toggleUndoTree: 'unchecked',
     labelUndoBranch: 'unchecked',
 

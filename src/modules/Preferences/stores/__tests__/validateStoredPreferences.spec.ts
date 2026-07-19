@@ -59,3 +59,193 @@ describe('validateStoredPreferences', () => {
         expect(defaultPreferences.bufferSize).toBe(bufferSizeBefore);
     });
 });
+
+describe('validateStoredPreferences — per-field schema guards', () => {
+    beforeEach(() => {
+        vi.spyOn(logger, 'warn').mockImplementation(() => {});
+    });
+
+    it('replaces an out-of-range numeric-enum recordCountIn with its default', () => {
+        const result = validateStoredPreferences({ ...defaultPreferences, recordCountIn: 3 });
+
+        expect(result.recordCountIn).toBe(defaultPreferences.recordCountIn);
+    });
+
+    it('preserves a valid recordCountIn from its allowed set', () => {
+        const result = validateStoredPreferences({ ...defaultPreferences, recordCountIn: 4 });
+
+        expect(result.recordCountIn).toBe(4);
+    });
+
+    it('replaces an out-of-range preRollBars with its default', () => {
+        const result = validateStoredPreferences({ ...defaultPreferences, preRollBars: 3 });
+
+        expect(result.preRollBars).toBe(defaultPreferences.preRollBars);
+    });
+
+    it('preserves a valid preRollBars from its allowed set', () => {
+        const result = validateStoredPreferences({ ...defaultPreferences, preRollBars: 4 });
+
+        expect(result.preRollBars).toBe(4);
+    });
+
+    it('accepts midiInputChannel as the literal "all"', () => {
+        const result = validateStoredPreferences({ ...defaultPreferences, midiInputChannel: 'all' });
+
+        expect(result.midiInputChannel).toBe('all');
+    });
+
+    it('accepts midiInputChannel as a finite channel number', () => {
+        const result = validateStoredPreferences({ ...defaultPreferences, midiInputChannel: 7 });
+
+        expect(result.midiInputChannel).toBe(7);
+    });
+
+    it('replaces a non-finite midiInputChannel with its default', () => {
+        const result = validateStoredPreferences({
+            ...defaultPreferences,
+            midiInputChannel: Number.POSITIVE_INFINITY,
+        });
+
+        expect(result.midiInputChannel).toBe(defaultPreferences.midiInputChannel);
+    });
+
+    it('replaces an unknown soloMode value with its default', () => {
+        const result = validateStoredPreferences({ ...defaultPreferences, soloMode: 'invalid-mode' });
+
+        expect(result.soloMode).toBe(defaultPreferences.soloMode);
+    });
+
+    it('preserves each valid soloMode value', () => {
+        expect(validateStoredPreferences({ ...defaultPreferences, soloMode: 'afl' }).soloMode).toBe('afl');
+        expect(validateStoredPreferences({ ...defaultPreferences, soloMode: 'pfl' }).soloMode).toBe('pfl');
+    });
+
+    it('replaces an invalid panel placement with its default, per panel', () => {
+        const result = validateStoredPreferences({
+            ...defaultPreferences,
+            panelPlacementSidebar: 'center',
+            panelPlacementInspector: 'center',
+            panelPlacementChat: 'center',
+            panelPlacementAi: 'center',
+        });
+
+        expect(result.panelPlacementSidebar).toBe(defaultPreferences.panelPlacementSidebar);
+        expect(result.panelPlacementInspector).toBe(defaultPreferences.panelPlacementInspector);
+        expect(result.panelPlacementChat).toBe(defaultPreferences.panelPlacementChat);
+        expect(result.panelPlacementAi).toBe(defaultPreferences.panelPlacementAi);
+    });
+
+    it('preserves a valid non-default panel placement', () => {
+        const result = validateStoredPreferences({ ...defaultPreferences, panelPlacementSidebar: 'right' });
+
+        expect(result.panelPlacementSidebar).toBe('right');
+    });
+
+    it('replaces a gridSubdivision outside the known option set with its default', () => {
+        const result = validateStoredPreferences({ ...defaultPreferences, gridSubdivision: 'triplet' });
+
+        expect(result.gridSubdivision).toBe(defaultPreferences.gridSubdivision);
+    });
+
+    it('preserves a valid gridSubdivision override', () => {
+        const result = validateStoredPreferences({ ...defaultPreferences, gridSubdivision: '1/16' });
+
+        expect(result.gridSubdivision).toBe('1/16');
+    });
+
+    it('replaces non-boolean values for every boolean field with their defaults', () => {
+        const result = validateStoredPreferences({
+            ...defaultPreferences,
+            colorblindMode: 'yes',
+            snapToGrid: 1,
+            snapToZeroCrossing: null,
+            showMinimap: 'true',
+            metronomeEnabled: 0,
+            preRollEnabled: 'false',
+        });
+
+        expect(result.colorblindMode).toBe(defaultPreferences.colorblindMode);
+        expect(result.snapToGrid).toBe(defaultPreferences.snapToGrid);
+        expect(result.snapToZeroCrossing).toBe(defaultPreferences.snapToZeroCrossing);
+        expect(result.showMinimap).toBe(defaultPreferences.showMinimap);
+        expect(result.metronomeEnabled).toBe(defaultPreferences.metronomeEnabled);
+        expect(result.preRollEnabled).toBe(defaultPreferences.preRollEnabled);
+    });
+
+    it('preserves true boolean overrides that differ from the defaults', () => {
+        const result = validateStoredPreferences({
+            ...defaultPreferences,
+            colorblindMode: true,
+            showMinimap: true,
+            metronomeEnabled: true,
+            preRollEnabled: true,
+        });
+
+        expect(result.colorblindMode).toBe(true);
+        expect(result.showMinimap).toBe(true);
+        expect(result.metronomeEnabled).toBe(true);
+        expect(result.preRollEnabled).toBe(true);
+    });
+
+    it('replaces non-finite numeric fields with their defaults', () => {
+        const result = validateStoredPreferences({
+            ...defaultPreferences,
+            autoSaveIntervalMs: 'soon',
+            metronomeVolume: Number.NaN,
+            defaultVelocity: undefined,
+        });
+
+        expect(result.autoSaveIntervalMs).toBe(defaultPreferences.autoSaveIntervalMs);
+        expect(result.metronomeVolume).toBe(defaultPreferences.metronomeVolume);
+        expect(result.defaultVelocity).toBe(defaultPreferences.defaultVelocity);
+    });
+
+    it('preserves valid finite numeric overrides', () => {
+        const result = validateStoredPreferences({
+            ...defaultPreferences,
+            autoSaveIntervalMs: 60_000,
+            metronomeVolume: 0.9,
+            defaultVelocity: 64,
+        });
+
+        expect(result.autoSaveIntervalMs).toBe(60_000);
+        expect(result.metronomeVolume).toBe(0.9);
+        expect(result.defaultVelocity).toBe(64);
+    });
+
+    it('replaces a non-string voiceCommandKey with its default', () => {
+        const result = validateStoredPreferences({ ...defaultPreferences, voiceCommandKey: 42 });
+
+        expect(result.voiceCommandKey).toBe(defaultPreferences.voiceCommandKey);
+    });
+
+    it('preserves a valid voiceCommandKey override', () => {
+        const result = validateStoredPreferences({ ...defaultPreferences, voiceCommandKey: 'm' });
+
+        expect(result.voiceCommandKey).toBe('m');
+    });
+});
+
+describe('validateStoredPreferences — fields absent from a partial stored blob', () => {
+    beforeEach(() => {
+        vi.spyOn(logger, 'warn').mockImplementation(() => {});
+    });
+
+    it('falls back to defaults for keys missing from an older/partial persisted blob', () => {
+        // Simulates an upgrade: an older persisted blob only carries a subset of the
+        // current schema's keys. Every absent key must fall through to its default
+        // (not become `undefined`), while present valid keys are preserved as-is.
+        const result = validateStoredPreferences({ theme: 'light', bufferSize: 1024 });
+
+        expect(result.theme).toBe('light');
+        expect(result.bufferSize).toBe(1024);
+        expect(result.autoSave).toBe(defaultPreferences.autoSave);
+        expect(result.soloMode).toBe(defaultPreferences.soloMode);
+        expect(result.panelPlacementSidebar).toBe(defaultPreferences.panelPlacementSidebar);
+    });
+
+    it('returns the full default set for an empty stored object', () => {
+        expect(validateStoredPreferences({})).toEqual(defaultPreferences);
+    });
+});

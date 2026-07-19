@@ -19,18 +19,13 @@ type StoreValue = {
     }>;
 };
 
-type TrackStoreValue = {
-    tracks: Array<{
-        id: string;
-        name: string;
-        devices: Array<{ id: string; name: string; type: string }>;
-    }>;
-};
-
-const mocks = vi.hoisted(() => ({
-    modState: { modulators: [] } as StoreValue,
-    trackState: { tracks: [] } as TrackStoreValue,
-}));
+const mocks = vi.hoisted(() => {
+    const modState: StoreValue = { modulators: [] };
+    return {
+        modState,
+        trackState: { tracks: [] },
+    };
+});
 
 vi.mock('#/infra/store/useStore', () => ({
     useStore: (store: { __id?: string }, defaultValue: unknown) => {

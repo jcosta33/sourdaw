@@ -37,18 +37,17 @@ describe('BezierLfoEditor', () => {
             />
         );
         const canvas = container.querySelector('canvas')!;
-        canvas.getBoundingClientRect = () =>
-            ({
-                left: 0,
-                top: 0,
-                width: 100,
-                height: 100,
-                right: 100,
-                bottom: 100,
-                x: 0,
-                y: 0,
-                toJSON: () => ({}),
-            }) as DOMRect;
+        canvas.getBoundingClientRect = () => ({
+            left: 0,
+            top: 0,
+            width: 100,
+            height: 100,
+            right: 100,
+            bottom: 100,
+            x: 0,
+            y: 0,
+            toJSON: () => ({}),
+        });
 
         // Grab the first point (canvas x=0, y=(1-0.5)*100=50).
         fireEvent.pointerDown(canvas, { clientX: 0, clientY: 50, pointerId: 1 });

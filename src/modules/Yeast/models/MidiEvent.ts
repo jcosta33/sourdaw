@@ -33,6 +33,12 @@ export type TransportInfo = {
     loopEnabled: boolean;
     loopStartPpq: number;
     loopEndPpq: number;
+    /**
+     * Explicit transport discontinuity identity. Scheduler restarts/seeks use a
+     * new value; realtime input may omit it because its AudioContext windows are
+     * not a chronological transport stream.
+     */
+    discontinuityEpoch?: number;
 };
 
 // ── Utility functions ────────────────────────────────────────────────────────
@@ -51,9 +57,7 @@ export function samplesToBeats(samples: number, time: TransportInfo): number {
 
 /** Convert a musical rate (e.g., 1/8) to beat duration. */
 export type RateValue =
-    | { type: 'straight'; denom: number }
-    | { type: 'dotted'; denom: number }
-    | { type: 'triplet'; denom: number };
+    { type: 'straight'; denom: number } | { type: 'dotted'; denom: number } | { type: 'triplet'; denom: number };
 
 export function rateToBeats(rate: RateValue): number {
     const base = 4.0 / rate.denom;

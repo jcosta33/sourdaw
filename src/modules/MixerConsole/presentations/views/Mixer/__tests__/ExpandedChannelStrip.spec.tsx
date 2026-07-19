@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { TooltipProvider } from '#/components/ui/tooltip';
@@ -7,9 +7,48 @@ import { ExpandedChannelStrip } from '../ExpandedChannelStrip';
 
 import type { Track } from '../../../../models/TrackViewTypes';
 
-const renderWithTooltip = (ui: React.ReactElement) => {
-    return render(<TooltipProvider>{ui}</TooltipProvider>);
-};
+// `VcaGroup` is a use-case-private shape (not re-exported from the barrel);
+// duplicate the fields this suite needs rather than reaching into `vca/getVcaGroups`.
+type TestVcaGroup = { id: string; name: string; gain: number; muted: boolean; trackIds: string[] };
+
+const mocks = vi.hoisted(() => ({
+    muteTrack: vi.fn(),
+    soloTrack: vi.fn(),
+    soloTrackExclusive: vi.fn(),
+    toggleInputMonitoring: vi.fn(),
+    selectTrack: vi.fn(),
+    armTrack: vi.fn(),
+    removeTrack: vi.fn(),
+    renameTrack: vi.fn(),
+    toggleVcaMembership: vi.fn(),
+    createAndAssignVcaGroup: vi.fn(),
+    getVcaGroups: vi.fn<() => TestVcaGroup[]>(() => []),
+    confirmUser: vi.fn<() => Promise<boolean>>(),
+}));
+
+vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Arrangement/useCases')>()),
+    muteTrack: mocks.muteTrack,
+    soloTrack: mocks.soloTrack,
+    soloTrackExclusive: mocks.soloTrackExclusive,
+    toggleInputMonitoring: mocks.toggleInputMonitoring,
+    selectTrack: mocks.selectTrack,
+    armTrack: mocks.armTrack,
+    removeTrack: mocks.removeTrack,
+    renameTrack: mocks.renameTrack,
+    toggleVcaMembership: mocks.toggleVcaMembership,
+    createAndAssignVcaGroup: mocks.createAndAssignVcaGroup,
+    getVcaGroups: mocks.getVcaGroups,
+}));
+
+vi.mock('#/utils/Notification/confirmUser', () => ({
+    confirmUser: mocks.confirmUser,
+}));
+
+const renderWithTooltip = (ui: React.ReactElement) => render(<TooltipProvider>{ui}</TooltipProvider>);
+
+const openContextMenu = () =>
+    fireEvent.contextMenu(screen.getByRole('group', { name: 'Track 1 channel' }), { clientX: 0, clientY: 0 });
 
 describe('ExpandedChannelStrip', () => {
     const mockTrack: Track = {
@@ -49,21 +88,102 @@ describe('ExpandedChannelStrip', () => {
 
     beforeEach(() => {
         vi.clearAllMocks();
+        mocks.getVcaGroups.mockReturnValue([{ id: 'vca-1', name: 'Drums VCA', gain: 1, muted: false, trackIds: [] }]);
+        mocks.confirmUser.mockResolvedValue(true);
     });
 
-    it('should render without crashing', () => {
+    it('renders identity, gain readout, and pan readout', () => {
         renderWithTooltip(<ExpandedChannelStrip track={mockTrack} isSelected={false} widthClass="w-40" />);
-        expect(document.body).toBeTruthy();
+
+        expect(screen.getByRole('group', { name: 'Track 1 channel' })).not.toHaveClass('ring-1');
+        expect(screen.getByText('Track 1')).toBeInTheDocument();
+        expect(screen.getByText('audio')).toBeInTheDocument();
+        expect(screen.getByText('0.0 dB')).toBeInTheDocument();
+        expect(screen.getByText('C')).toBeInTheDocument();
     });
 
-    it('should render with useCase bindings', () => {
-        renderWithTooltip(<ExpandedChannelStrip track={mockTrack} isSelected={false} widthClass="w-40" />);
-        expect(document.body).toBeTruthy();
+    it('applies the selection ring when isSelected is true', () => {
+        renderWithTooltip(<ExpandedChannelStrip track={mockTrack} isSelected widthClass="w-40" />);
+        expect(screen.getByRole('group', { name: 'Track 1 channel' })).toHaveClass('ring-1');
     });
 
-    it('should have interactive elements', () => {
+    it('selects the track when the strip background is clicked', () => {
         renderWithTooltip(<ExpandedChannelStrip track={mockTrack} isSelected={false} widthClass="w-40" />);
-        const buttons = screen.queryAllByRole('button');
-        expect(buttons.length).toBeGreaterThanOrEqual(0);
+        fireEvent.click(screen.getByRole('group', { name: 'Track 1 channel' }));
+        expect(mocks.selectTrack).toHaveBeenCalledWith('track-1');
+    });
+
+    it('toggles mute, solo (exclusive and additive), arm, and monitoring without selecting the track', () => {
+        renderWithTooltip(<ExpandedChannelStrip track={mockTrack} isSelected={false} widthClass="w-40" />);
+
+        fireEvent.click(screen.getByRole('button', { name: 'Mute' }));
+        expect(mocks.muteTrack).toHaveBeenCalledWith('track-1', true);
+
+        fireEvent.click(screen.getByRole('button', { name: 'Solo' }));
+        expect(mocks.soloTrackExclusive).toHaveBeenCalledWith('track-1');
+
+        fireEvent.click(screen.getByRole('button', { name: 'Solo' }), { metaKey: true });
+        expect(mocks.soloTrack).toHaveBeenCalledWith('track-1', true);
+
+        fireEvent.click(screen.getByRole('button', { name: 'Arm' }));
+        expect(mocks.armTrack).toHaveBeenCalledWith('track-1', true);
+
+        fireEvent.click(screen.getByRole('button', { name: 'Enable monitoring' }));
+        expect(mocks.toggleInputMonitoring).toHaveBeenCalledWith('track-1');
+
+        expect(mocks.selectTrack).not.toHaveBeenCalled();
+    });
+
+    it('renames the track on Enter, and Escape cancels without persisting', () => {
+        renderWithTooltip(<ExpandedChannelStrip track={mockTrack} isSelected={false} widthClass="w-40" />);
+
+        fireEvent.doubleClick(screen.getByText('Track 1'));
+        fireEvent.keyDown(screen.getByDisplayValue('Track 1'), { key: 'Escape' });
+        expect(screen.queryByDisplayValue('Track 1')).not.toBeInTheDocument();
+        expect(mocks.renameTrack).not.toHaveBeenCalled();
+
+        fireEvent.doubleClick(screen.getByText('Track 1'));
+        const input = screen.getByDisplayValue('Track 1');
+        fireEvent.change(input, { target: { value: 'Kick In' } });
+        fireEvent.keyDown(input, { key: 'Enter' });
+        expect(mocks.renameTrack).toHaveBeenCalledWith('track-1', 'Kick In');
+        expect(screen.queryByDisplayValue('Kick In')).not.toBeInTheDocument();
+    });
+
+    it('opens a context menu at the click position and closes it after choosing Mute', () => {
+        renderWithTooltip(<ExpandedChannelStrip track={mockTrack} isSelected={false} widthClass="w-40" />);
+
+        fireEvent.contextMenu(screen.getByRole('group', { name: 'Track 1 channel' }), { clientX: 42, clientY: 17 });
+        expect(screen.getByRole('menu')).toHaveStyle({ left: '42px', top: '17px' });
+
+        fireEvent.click(screen.getByRole('menuitem', { name: 'Mute' }));
+        expect(mocks.muteTrack).toHaveBeenCalledWith('track-1', true);
+        expect(screen.queryByRole('menu')).not.toBeInTheDocument();
+    });
+
+    it('assigns the track to a VCA group and creates a new one from the context menu', () => {
+        renderWithTooltip(<ExpandedChannelStrip track={mockTrack} isSelected={false} widthClass="w-40" />);
+
+        openContextMenu();
+        fireEvent.click(screen.getByRole('menuitem', { name: 'Drums VCA' }));
+        expect(mocks.toggleVcaMembership).toHaveBeenCalledWith('track-1', 'vca-1');
+
+        openContextMenu();
+        fireEvent.click(screen.getByRole('menuitem', { name: '+ New VCA Group' }));
+        expect(mocks.createAndAssignVcaGroup).toHaveBeenCalledWith('track-1');
+    });
+
+    it('removes the channel only after the user confirms', async () => {
+        mocks.confirmUser.mockResolvedValueOnce(false);
+        renderWithTooltip(<ExpandedChannelStrip track={mockTrack} isSelected={false} widthClass="w-40" />);
+
+        openContextMenu();
+        fireEvent.click(screen.getByRole('menuitem', { name: 'Remove Channel' }));
+        await waitFor(() => expect(mocks.confirmUser).toHaveBeenCalledTimes(1));
+        expect(mocks.removeTrack).not.toHaveBeenCalled();
+
+        openContextMenu();
+        fireEvent.click(screen.getByRole('menuitem', { name: 'Remove Channel' }));
+        await waitFor(() => expect(mocks.removeTrack).toHaveBeenCalledWith('track-1'));
     });
 });

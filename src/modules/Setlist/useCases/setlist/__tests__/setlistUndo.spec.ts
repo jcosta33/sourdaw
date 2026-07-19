@@ -140,4 +140,43 @@ describe('setlist undo entries', () => {
         (undoFn as () => void)();
         expect(mockSetlistStore.set).toHaveBeenLastCalledWith(initial);
     });
+
+    it('addSetlistItem redo callback reapplies the item after an undo', () => {
+        const initial = baseState();
+        mockSetlistStore.value = initial;
+        addSetlistItem('Opener', 60);
+        const [, undoFn, redoFn] = pushUndoEntryMock.mock.calls[0]!;
+        (undoFn as () => void)();
+        (redoFn as () => void)();
+        const applied = mockSetlistStore.set.mock.calls.at(-1)![0] as SetlistState;
+        expect(applied.items.map((entry) => entry.name)).toEqual(['Opener']);
+    });
+
+    it('removeSetlistItem undo callback restores the removed item, redo re-removes it', () => {
+        const withItem = baseState({ items: [baseItem('x')], totalDuration: 10 });
+        mockSetlistStore.value = withItem;
+        removeSetlistItem('x');
+        const [, undoFn, redoFn] = pushUndoEntryMock.mock.calls[0]!;
+
+        (undoFn as () => void)();
+        expect(mockSetlistStore.set).toHaveBeenLastCalledWith(withItem);
+
+        (redoFn as () => void)();
+        const afterRedo = mockSetlistStore.set.mock.calls.at(-1)![0] as SetlistState;
+        expect(afterRedo.items).toEqual([]);
+    });
+
+    it('reorderSetlistItems undo callback restores original order, redo re-applies the move', () => {
+        const original = baseState({ items: [baseItem('a'), baseItem('b')] });
+        mockSetlistStore.value = original;
+        reorderSetlistItems(0, 1);
+        const [, undoFn, redoFn] = pushUndoEntryMock.mock.calls[0]!;
+
+        (undoFn as () => void)();
+        expect(mockSetlistStore.set).toHaveBeenLastCalledWith(original);
+
+        (redoFn as () => void)();
+        const afterRedo = mockSetlistStore.set.mock.calls.at(-1)![0] as SetlistState;
+        expect(afterRedo.items.map((entry) => entry.id)).toEqual(['b', 'a']);
+    });
 });

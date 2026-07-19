@@ -6,12 +6,20 @@
  */
 
 import { type MidiEvent, type TransportInfo } from '../models/MidiEvent';
+import { type YeastPreviewPackedPage } from '../models/YeastPreviewSnapshot';
 
+import { BoundedNoteVoiceQueue } from './BoundedNoteVoiceQueue';
 import { type MidiProcessor, ScheduledEventQueue } from './MidiProcessor';
+import { YeastPreviewSidecar } from './YeastPreviewSidecar';
 
 import type { ProcessorType } from '../models/ProcessorCatalog';
 import type { YeastProcessorCommand } from '../models/YeastProcessorCommand';
 import type { YeastProcessorProjectionItem } from '../models/YeastProcessorProjection';
+
+type ActiveRackVoice = {
+    event: MidiEvent;
+    generation: number;
+};
 
 export class MidiRack {
     private processors: MidiProcessor[] = [];
@@ -19,13 +27,24 @@ export class MidiRack {
     private scheduled = new ScheduledEventQueue();
     // Route-scoped numeric keys preserve same-note voices from different tracks
     // without allocating composite string keys on the block path.
-    private activeNotes: Map<string, Map<number, MidiEvent>> = new Map();
+    private activeNotes = new BoundedNoteVoiceQueue<ActiveRackVoice>();
     // Scratch buffers reused across blocks to avoid per-processor array
     // allocation (§149.1). Ping-pong between scratchA / scratchB during the
     // processor chain loop. `separateOutput` is the persistent return buffer.
     private scratchA: MidiEvent[] = [];
     private scratchB: MidiEvent[] = [];
     private separateOutput: MidiEvent[] = [];
+    private lifecycleOutput: MidiEvent[] = [];
+    private readonly preview: YeastPreviewSidecar;
+    private readonly defaultRackId: string | undefined;
+    private projectionVersion = 0;
+    private generation = 0;
+    private lastDiscontinuityEpoch: number | undefined;
+
+    constructor(rackId?: string) {
+        this.defaultRackId = rackId;
+        this.preview = new YeastPreviewSidecar();
+    }
 
     /** Add a processor to the end of the chain. */
     addProcessor(processor: MidiProcessor, type?: ProcessorType): void {
@@ -33,6 +52,7 @@ export class MidiRack {
         if (type) {
             this.processorTypes.set(processor.id, type);
         }
+        this.markTopologyChanged();
     }
 
     /**
@@ -54,28 +74,10 @@ export class MidiRack {
         if (idx === -1) {
             return output;
         }
-        const emittedKeys = new Map<string, Set<number>>();
-        // Capture active notes BEFORE reset/splice — once the processor is gone
-        // these notes would hang with no source to terminate them.
-        for (const [trackId, notes] of this.activeNotes) {
-            const trackKeys = new Set<number>();
-            emittedKeys.set(trackId, trackKeys);
-            for (const [key, event] of notes) {
-                if (event.kind.type === 'noteOn') {
-                    trackKeys.add(key);
-                    output.push({
-                        timeSamples: nowSamples,
-                        trackId,
-                        kind: { type: 'noteOff', channel: event.kind.channel, note: event.kind.note },
-                    });
-                }
-            }
-        }
-        this.activeNotes.clear();
-        this.scheduled.flushAllNotesOff(output, nowSamples, emittedKeys);
-        this.processors[idx]!.reset();
+        this.settleGeneration(output, nowSamples);
         this.processors.splice(idx, 1);
         this.processorTypes.delete(id);
+        this.markTopologyChanged();
         return output;
     }
 
@@ -87,12 +89,20 @@ export class MidiRack {
     ): MidiEvent[] {
         const desiredById = new Map(projection.map((processor) => [processor.id, processor]));
         const hangingOffs: MidiEvent[] = [];
+        const topologyChanged = !this.topologyMatches(projection);
 
-        for (const processor of [...this.processors]) {
+        if (topologyChanged) {
+            this.settleGeneration(hangingOffs, nowSamples);
+        }
+
+        for (let index = this.processors.length - 1; index >= 0; index--) {
+            const processor = this.processors[index]!;
             const desired = desiredById.get(processor.id);
             const currentType = this.processorTypes.get(processor.id);
             if (!desired || currentType !== desired.type) {
-                hangingOffs.push(...this.removeProcessor(processor.id, nowSamples));
+                processor.reset();
+                this.processors.splice(index, 1);
+                this.processorTypes.delete(processor.id);
             }
         }
 
@@ -100,7 +110,8 @@ export class MidiRack {
             let current = this.processors.find((processor) => processor.id === desired.id);
             if (!current) {
                 current = createProcessor(desired.type, desired.id);
-                this.addProcessor(current, desired.type);
+                this.processors.push(current);
+                this.processorTypes.set(current.id, desired.type);
             }
             current.replaceParams(desired.params);
             current.setBypassed(desired.bypassed);
@@ -110,23 +121,35 @@ export class MidiRack {
             const desiredId = projection[targetIndex]!.id;
             const currentIndex = this.processors.findIndex((processor) => processor.id === desiredId);
             if (currentIndex !== -1 && currentIndex !== targetIndex) {
-                this.reorder(currentIndex, targetIndex);
+                const [processor] = this.processors.splice(currentIndex, 1);
+                this.processors.splice(targetIndex, 0, processor!);
             }
+        }
+
+        if (topologyChanged) {
+            this.markTopologyChanged();
         }
 
         return hangingOffs;
     }
 
     /** Reorder: move processor from fromIdx to toIdx. */
-    reorder(fromIdx: number, toIdx: number): void {
+    reorder(fromIdx: number, toIdx: number, nowSamples = 0): MidiEvent[] {
+        const output: MidiEvent[] = [];
         if (fromIdx < 0 || fromIdx >= this.processors.length) {
-            return;
+            return output;
         }
         if (toIdx < 0 || toIdx >= this.processors.length) {
-            return;
+            return output;
         }
+        if (fromIdx === toIdx) {
+            return output;
+        }
+        this.settleGeneration(output, nowSamples);
         const [proc] = this.processors.splice(fromIdx, 1);
         this.processors.splice(toIdx, 0, proc!);
+        this.markTopologyChanged();
+        return output;
     }
 
     /** Process a block of MIDI events through the chain. */
@@ -135,8 +158,33 @@ export class MidiRack {
         blockStartSamples: number,
         blockEndSamples: number,
         transport: TransportInfo,
-        trackId: string
+        trackId: string,
+        previewEnabled = false,
+        rackId = this.defaultRackId ?? trackId,
+        routeId = trackId,
+        captureEpoch = previewEnabled ? 1 : 0
     ): MidiEvent[] {
+        const lifecycleOutput = this.lifecycleOutput;
+        lifecycleOutput.length = 0;
+        const discontinuityEpoch = transport.discontinuityEpoch;
+        if (discontinuityEpoch !== undefined) {
+            if (this.lastDiscontinuityEpoch !== undefined && this.lastDiscontinuityEpoch !== discontinuityEpoch) {
+                this.settleGeneration(lifecycleOutput, blockStartSamples);
+            }
+            this.lastDiscontinuityEpoch = discontinuityEpoch;
+        }
+        this.preview.beginBlock(
+            previewEnabled,
+            blockStartSamples,
+            blockEndSamples,
+            transport,
+            rackId,
+            routeId,
+            trackId,
+            captureEpoch,
+            this.projectionVersion
+        );
+        const preview = previewEnabled ? this.preview : undefined;
         // 0. Reject degenerate ranges. With blockEnd < blockStart the [start,end)
         // drain window is empty (drainRangeInto drains nothing) AND the separator
         // (`event.timeSamples < blockEndSamples`) routes every real event into the
@@ -152,7 +200,7 @@ export class MidiRack {
         // intermediate `drained` + spread-merge allocation (§149.1).
         const current0 = this.scratchA;
         current0.length = 0;
-        this.scheduled.drainRangeInto(blockStartSamples, blockEndSamples, current0);
+        this.scheduled.drainRangeInto(blockStartSamples, blockEndSamples, current0, trackId);
 
         // 2. Merge with input events.
         for (let index = 0; index < inputEvents.length; index++) {
@@ -169,20 +217,46 @@ export class MidiRack {
         for (const processor of this.processors) {
             processor.setTrackId?.(trackId);
             if (processor.isBypassed()) {
+                preview?.recordProcessorEvents(input, processor.id, true, false);
+                preview?.recordProcessorProvenance(processor.id, true, false, 0);
                 continue;
             }
             output.length = 0;
+            preview?.beginProcessorTransformation();
             try {
-                processor.processMidi(input, output, transport);
+                processor.processMidi(input, output, transport, preview);
+                preview?.finishProcessorTransformation(output);
+                preview?.beginProcessorEvents();
+                let previewEventCount = 0;
                 for (const event of output) {
                     event.trackId ??= trackId;
+                    if (preview && event.kind.type === 'noteOn') {
+                        previewEventCount += 1;
+                    }
+                    preview?.recordProcessorEvent(event, processor.id, false, false);
                 }
+                preview?.recordProcessorProvenance(processor.id, false, false, previewEventCount);
             } catch {
-                // A throwing processor must not abort the rest of the chain (or
-                // the block). Treat it as a transparent bypass for this block:
-                // skip the buffer swap so the upstream events flow through
-                // unchanged. The happy path takes no exception, so try/catch adds
-                // no per-block allocation on the audio thread.
+                // Processor state may already be mutated when it throws. Fail the
+                // whole rack generation: settle its terminal notes, discard every
+                // delayed event, and reset every processor and preview route. Keep
+                // the upstream buffer as this processor's transparent-bypass output
+                // so failure recovery does not undo earlier processors in the chain.
+                preview?.cancelProcessorTransformation();
+                this.settleGeneration(lifecycleOutput, blockStartSamples);
+                this.preview.beginBlock(
+                    previewEnabled,
+                    blockStartSamples,
+                    blockEndSamples,
+                    transport,
+                    rackId,
+                    routeId,
+                    trackId,
+                    captureEpoch,
+                    this.projectionVersion
+                );
+                preview?.recordProcessorEvents(input, processor.id, false, true);
+                preview?.recordProcessorProvenance(processor.id, false, true, 0);
                 continue;
             }
             const tmp = input;
@@ -191,42 +265,23 @@ export class MidiRack {
         }
         const current = input;
 
+        // 4. Sort final output
+        current.sort((alpha, b) => alpha.timeSamples - b.timeSamples);
         for (const event of current) {
             event.trackId ??= trackId;
         }
+        preview?.recordTerminalEvents(current, trackId);
 
-        // 4. Sort final output
-        current.sort((alpha, b) => alpha.timeSamples - b.timeSamples);
-
-        // 5. Track active notes for panic with route-scoped numeric keys.
-        for (const event of current) {
-            if (event.kind.type === 'noteOn') {
-                const key = (event.kind.channel << 7) | event.kind.note;
-                const eventTrackId = event.trackId ?? trackId;
-                let trackNotes = this.activeNotes.get(eventTrackId);
-                if (!trackNotes) {
-                    trackNotes = new Map<number, MidiEvent>();
-                    this.activeNotes.set(eventTrackId, trackNotes);
-                }
-                trackNotes.set(key, event);
-            } else if (event.kind.type === 'noteOff') {
-                const key = (event.kind.channel << 7) | event.kind.note;
-                const eventTrackId = event.trackId ?? trackId;
-                const trackNotes = this.activeNotes.get(eventTrackId);
-                trackNotes?.delete(key);
-                if (trackNotes?.size === 0) {
-                    this.activeNotes.delete(eventTrackId);
-                }
-            }
-        }
-
-        // 6. Separate: events in this block go to output, future events go to
+        // 5. Separate: events in this block go to output, future events go to
         // the scheduled queue. `separateOutput` is a persistent scratch buffer;
         // the caller consumes it synchronously before the next processBlock
         // call (the Yeast Worker posts it via structuredClone, and the
         // main-thread fallback iterates it before returning).
         const finalOutput = this.separateOutput;
         finalOutput.length = 0;
+        for (const event of lifecycleOutput) {
+            finalOutput.push(event);
+        }
         for (const event of current) {
             if (event.timeSamples < blockEndSamples) {
                 finalOutput.push(event);
@@ -235,42 +290,70 @@ export class MidiRack {
             }
         }
 
+        // 6. Track only events that have actually reached the host. Future
+        // events remain inaudible in the scheduled queue and must be dropped,
+        // not released, when a generation is reset.
+        for (const event of finalOutput) {
+            if (event.kind.type !== 'noteOn' && event.kind.type !== 'noteOff') {
+                continue;
+            }
+            const key = (event.kind.channel << 7) | event.kind.note;
+            const eventTrackId = event.trackId ?? trackId;
+            if (event.kind.type === 'noteOn' && event.kind.velocity > 0) {
+                this.activeNotes.push(eventTrackId, key, { event, generation: this.generation });
+            } else {
+                this.activeNotes.shift(eventTrackId, key);
+            }
+        }
+
         return finalOutput;
+    }
+
+    takePreviewPage(): YeastPreviewPackedPage | undefined {
+        return this.preview.takePage();
+    }
+
+    releasePreviewPage(page: YeastPreviewPackedPage): void {
+        this.preview.releasePage(page);
+    }
+
+    releasePreview(rackId: string, routeId: string, trackId: string, captureEpoch: number): void {
+        this.preview.releaseRoute(rackId, routeId, trackId, captureEpoch);
     }
 
     /** Panic: send Note Off for all active notes. */
     allNotesOff(nowSamples: number): MidiEvent[] {
         const output: MidiEvent[] = [];
-        // Track (channel<<7)|note of every off emitted per origin so each
-        // sounding/scheduled note gets exactly one Note Off.
-        const emittedKeys = new Map<string, Set<number>>();
+        this.settleGeneration(output, nowSamples);
+        return output;
+    }
 
-        // Kill tracked active notes
-        for (const [trackId, notes] of this.activeNotes) {
-            const trackKeys = new Set<number>();
-            emittedKeys.set(trackId, trackKeys);
-            for (const [key, event] of notes) {
-                if (event.kind.type === 'noteOn') {
-                    trackKeys.add(key);
-                    output.push({
-                        timeSamples: nowSamples,
-                        trackId,
-                        kind: { type: 'noteOff', channel: event.kind.channel, note: event.kind.note },
-                    });
-                }
+    private settleGeneration(output: MidiEvent[], nowSamples: number): void {
+        this.preview.resetAll();
+        const generation = this.generation;
+        this.activeNotes.visit((voice, routeId) => {
+            if (voice.generation !== generation || voice.event.kind.type !== 'noteOn' || routeId === undefined) {
+                return;
             }
-        }
+            output.push({
+                timeSamples: nowSamples,
+                trackId: routeId,
+                kind: { type: 'noteOff', channel: voice.event.kind.channel, note: voice.event.kind.note },
+            });
+        });
         this.activeNotes.clear();
-
-        // Flush scheduled queue, de-duped against the active-note offs above.
-        this.scheduled.flushAllNotesOff(output, nowSamples, emittedKeys);
+        this.scheduled.clear();
 
         // Reset all processors
         for (const processor of this.processors) {
             processor.reset();
         }
+        if (!Number.isSafeInteger(this.generation) || this.generation >= Number.MAX_SAFE_INTEGER) {
+            this.generation = 1;
+            return;
+        }
 
-        return output;
+        this.generation += 1;
     }
 
     /** Get the list of processor IDs in order. */
@@ -303,8 +386,38 @@ export class MidiRack {
     }
 
     /** Toggle bypass on a specific processor. */
-    setProcessorBypass(processorId: string, bypassed: boolean): void {
+    setProcessorBypass(processorId: string, bypassed: boolean, nowSamples = 0): MidiEvent[] {
+        const output: MidiEvent[] = [];
         const proc = this.processors.find((param) => param.id === processorId);
-        proc?.setBypassed(bypassed);
+        if (!proc || proc.isBypassed() === bypassed) {
+            return output;
+        }
+        this.settleGeneration(output, nowSamples);
+        proc.setBypassed(bypassed);
+        this.markTopologyChanged();
+        return output;
+    }
+
+    private topologyMatches(projection: readonly YeastProcessorProjectionItem[]): boolean {
+        if (projection.length !== this.processors.length) {
+            return false;
+        }
+        for (let index = 0; index < projection.length; index++) {
+            const desired = projection[index]!;
+            const current = this.processors[index]!;
+            if (
+                current.id !== desired.id ||
+                this.processorTypes.get(current.id) !== desired.type ||
+                current.isBypassed() !== desired.bypassed
+            ) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private markTopologyChanged(): void {
+        this.projectionVersion += 1;
+        this.preview.invalidatePending();
     }
 }
