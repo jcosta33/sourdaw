@@ -1,0 +1,287 @@
+import { beforeEach, describe, expect, it } from 'vitest';
+
+import { handleAssignGrooveTemplate } from '../handlers/groove/handleAssignGrooveTemplate';
+import { handleCreateGrooveTemplate } from '../handlers/groove/handleCreateGrooveTemplate';
+import { handleDeleteGrooveTemplate } from '../handlers/groove/handleDeleteGrooveTemplate';
+import { handleRenameGrooveTemplate } from '../handlers/groove/handleRenameGrooveTemplate';
+import { STRAIGHT_GROOVE_TEMPLATE_ID } from '../models/GrooveTemplate';
+import { grooveTemplateProjectRevisionStore } from '../stores/grooveTemplateProjectRevisionStore';
+import { defaultGrooveTemplateState, grooveTemplateStore } from '../stores/grooveTemplateStore';
+import { assignGrooveTemplate } from '../useCases/grooveTemplates/assignGrooveTemplate';
+import { createGrooveTemplate } from '../useCases/grooveTemplates/createGrooveTemplate';
+import { hydrateGrooveTemplates } from '../useCases/grooveTemplates/hydrateGrooveTemplates';
+import { renameGrooveTemplate } from '../useCases/grooveTemplates/renameGrooveTemplate';
+
+describe('groove template lifecycle', () => {
+    beforeEach(() => {
+        grooveTemplateStore.set(structuredClone(defaultGrooveTemplateState));
+        grooveTemplateProjectRevisionStore.set(0);
+    });
+
+    it('keeps lifecycle writes in MIDI and resolves generated-name collisions deterministically', () => {
+        const first = createGrooveTemplate({
+            id: 'one',
+            name: 'Pocket',
+            subdivision: '1/16',
+            slots: [],
+            provenance: { type: 'user', sourceId: 'one' },
+        });
+        const second = createGrooveTemplate({
+            id: 'two',
+            name: 'Pocket',
+            subdivision: '1/16',
+            slots: [],
+            provenance: { type: 'user', sourceId: 'two' },
+        });
+
+        expect(first.name).toBe('Pocket');
+        expect(second.name).toBe('Pocket 2');
+        expect(renameGrooveTemplate({ templateId: second.id, name: 'Pocket' })?.name).toBe('Pocket 2');
+    });
+
+    it('treats an identical canonical assignment as no project or command change', () => {
+        const input = {
+            consumerType: 'clip' as const,
+            consumerId: 'clip-identical',
+            templateId: STRAIGHT_GROOVE_TEMPLATE_ID,
+            amount: 1,
+        };
+        const action = { type: 'assignGrooveTemplate' as const, payload: input };
+
+        expect(assignGrooveTemplate(input).ok).toBe(true);
+        const afterFirstAssignment = grooveTemplateStore.value;
+        const revision = grooveTemplateProjectRevisionStore.value;
+
+        expect(assignGrooveTemplate(input).ok).toBe(true);
+
+        expect(grooveTemplateStore.value).toBe(afterFirstAssignment);
+        expect(grooveTemplateProjectRevisionStore.value).toBe(revision);
+        expect(handleAssignGrooveTemplate.isNoop?.(action)).toBe(true);
+    });
+
+    it('resolves name collisions with locale-independent Unicode normalization', () => {
+        const decomposed = createGrooveTemplate({
+            id: 'decomposed',
+            name: 'Cafe\u0301',
+            subdivision: '1/16',
+            slots: [],
+            provenance: { type: 'user', sourceId: 'decomposed' },
+        });
+        const composed = createGrooveTemplate({
+            id: 'composed',
+            name: 'Caf\u00E9',
+            subdivision: '1/16',
+            slots: [],
+            provenance: { type: 'user', sourceId: 'composed' },
+        });
+        const fullWidth = createGrooveTemplate({
+            id: 'full-width',
+            name: '\uFF30\uFF2F\uFF23\uFF2B\uFF25\uFF34',
+            subdivision: '1/16',
+            slots: [],
+            provenance: { type: 'user', sourceId: 'full-width' },
+        });
+        const ascii = createGrooveTemplate({
+            id: 'ascii',
+            name: 'pocket',
+            subdivision: '1/16',
+            slots: [],
+            provenance: { type: 'user', sourceId: 'ascii' },
+        });
+
+        expect(decomposed.name).toBe('Cafe\u0301');
+        expect(composed.name).toBe('Caf\u00E9 2');
+        expect(fullWidth.name).toBe('\uFF30\uFF2F\uFF23\uFF2B\uFF25\uFF34');
+        expect(ascii.name).toBe('pocket 2');
+    });
+
+    it('hydrates lifecycle state while preserving explicit Straight', () => {
+        hydrateGrooveTemplates({ templates: [], assignments: [] });
+
+        expect(grooveTemplateStore.value?.templates).toEqual(
+            expect.arrayContaining([expect.objectContaining({ id: STRAIGHT_GROOVE_TEMPLATE_ID, name: 'Straight' })])
+        );
+    });
+
+    it('sanitizes collaboration name collisions with the lowest available suffix', () => {
+        hydrateGrooveTemplates({
+            templates: [
+                ...defaultGrooveTemplateState.templates,
+                {
+                    id: 'collision-one',
+                    name: 'Pocket',
+                    schemaVersion: 1,
+                    subdivision: '1/16',
+                    slots: [],
+                    provenance: { type: 'user', sourceId: 'one' },
+                },
+                {
+                    id: 'collision-two',
+                    name: 'Pocket',
+                    schemaVersion: 1,
+                    subdivision: '1/16',
+                    slots: [],
+                    provenance: { type: 'user', sourceId: 'two' },
+                },
+            ],
+            assignments: [],
+        });
+
+        expect(grooveTemplateStore.value?.templates.map((template) => template.name)).toEqual([
+            'Straight',
+            'Light Swing',
+            'Heavy Swing',
+            'MPC 60 Feel',
+            'SP-1200 Feel',
+            'TR-808 Shuffle',
+            'TR-909 Swing 58%',
+            'MPC Swing 54%',
+            'MPC Swing 62%',
+            'SP-1200 Straight',
+            'J-Dilla Late Snare',
+            'Pocket',
+            'Pocket 2',
+        ]);
+    });
+
+    it('routes create and rename lifecycle writes through undoable handlers', () => {
+        const createAction = {
+            type: 'createGrooveTemplate' as const,
+            payload: {
+                id: 'handler-groove',
+                name: 'Handler groove',
+                subdivision: '1/16' as const,
+                slots: [{ index: 1, timingOffset: 0.1, dynamicsOffset: 0 }],
+                provenance: { type: 'user' as const, sourceId: 'handler' },
+            },
+        };
+        const createDescription = handleCreateGrooveTemplate.describe(createAction);
+        expect(handleCreateGrooveTemplate.undoable).toBe(true);
+        expect(createDescription.inverseAction).toEqual({
+            type: 'deleteGrooveTemplate',
+            payload: { templateId: 'handler-groove' },
+        });
+        void handleCreateGrooveTemplate.execute(createAction);
+
+        const renameAction = {
+            type: 'renameGrooveTemplate' as const,
+            payload: { templateId: 'handler-groove', name: 'Renamed groove' },
+        };
+        const renameDescription = handleRenameGrooveTemplate.describe(renameAction);
+        expect(handleRenameGrooveTemplate.undoable).toBe(true);
+        void handleRenameGrooveTemplate.execute(renameAction);
+        expect(grooveTemplateStore.value?.templates.find((template) => template.id === 'handler-groove')?.name).toBe(
+            'Renamed groove'
+        );
+
+        if (renameDescription.inverseAction?.type !== 'renameGrooveTemplate') {
+            throw new Error('Expected rename inverse');
+        }
+        void handleRenameGrooveTemplate.execute(renameDescription.inverseAction);
+        expect(grooveTemplateStore.value?.templates.find((template) => template.id === 'handler-groove')?.name).toBe(
+            'Handler groove'
+        );
+
+        if (createDescription.inverseAction?.type !== 'deleteGrooveTemplate') {
+            throw new Error('Expected create inverse');
+        }
+        void handleDeleteGrooveTemplate.execute(createDescription.inverseAction);
+        expect(grooveTemplateStore.value?.templates.some((template) => template.id === 'handler-groove')).toBe(false);
+    });
+
+    it('canonicalizes create identity before inverse capture and execution', () => {
+        const action = {
+            type: 'createGrooveTemplate' as const,
+            payload: {
+                id: '  canonical-id  ',
+                name: 'Canonical ID',
+                subdivision: '1/16' as const,
+                slots: [],
+                provenance: { type: 'user' as const, sourceId: 'canonical-id' },
+            },
+        };
+
+        expect(handleCreateGrooveTemplate.describe(action).inverseAction).toEqual({
+            type: 'deleteGrooveTemplate',
+            payload: { templateId: 'canonical-id' },
+        });
+        void handleCreateGrooveTemplate.execute(action);
+        expect(grooveTemplateStore.value?.templates).toContainEqual(expect.objectContaining({ id: 'canonical-id' }));
+        expect(grooveTemplateStore.value?.templates.some((template) => template.id === action.payload.id)).toBe(false);
+    });
+
+    it('rejects blank create identity without generating hidden undo identity', () => {
+        const action = {
+            type: 'createGrooveTemplate' as const,
+            payload: {
+                id: '   ',
+                name: 'Invalid ID',
+                subdivision: '1/16' as const,
+                slots: [],
+                provenance: { type: 'user' as const, sourceId: 'invalid-id' },
+            },
+        };
+        const before = structuredClone(grooveTemplateStore.value);
+
+        expect(() => handleCreateGrooveTemplate.describe(action)).toThrow('Groove template ID must be nonempty');
+        expect(() => handleCreateGrooveTemplate.execute(action)).toThrow('Groove template ID must be nonempty');
+        expect(grooveTemplateStore.value).toEqual(before);
+    });
+
+    it('rejects non-finite template slots and blank assignment consumers at the write boundary', () => {
+        const before = structuredClone(grooveTemplateStore.value);
+
+        expect(() =>
+            createGrooveTemplate({
+                id: 'nan-template',
+                name: 'NaN template',
+                subdivision: '1/16',
+                slots: [{ index: 1, timingOffset: Number.NaN, dynamicsOffset: 0 }],
+                provenance: { type: 'user', sourceId: 'nan-template' },
+            })
+        ).toThrow('Groove template is not canonical');
+        expect(
+            assignGrooveTemplate({
+                consumerType: 'clip',
+                consumerId: '   ',
+                templateId: STRAIGHT_GROOVE_TEMPLATE_ID,
+                amount: 1,
+            })
+        ).toEqual({ ok: false, error: { code: 'invalid-consumer-id' } });
+        expect(grooveTemplateStore.value).toEqual(before);
+    });
+
+    it('canonicalizes hydrated IDs before resolving collisions and assignment references', () => {
+        hydrateGrooveTemplates({
+            templates: [
+                ...defaultGrooveTemplateState.templates,
+                {
+                    id: ' pocket ',
+                    name: 'Pocket spaced',
+                    schemaVersion: 1,
+                    subdivision: '1/16',
+                    slots: [],
+                    provenance: { type: 'user', sourceId: 'spaced' },
+                },
+                {
+                    id: '\uFF50ocket',
+                    name: 'Pocket full width',
+                    schemaVersion: 1,
+                    subdivision: '1/16',
+                    slots: [],
+                    provenance: { type: 'user', sourceId: 'full-width' },
+                },
+            ],
+            assignments: [
+                { consumerType: 'clip', consumerId: 'one', templateId: ' pocket ', amount: 1 },
+                { consumerType: 'clip', consumerId: 'two', templateId: '\uFF50ocket', amount: 1 },
+            ],
+        });
+
+        expect(grooveTemplateStore.value?.templates.filter((template) => template.id === 'pocket')).toHaveLength(1);
+        expect(grooveTemplateStore.value?.assignments.map((assignment) => assignment.templateId)).toEqual([
+            'pocket',
+            'pocket',
+        ]);
+    });
+});

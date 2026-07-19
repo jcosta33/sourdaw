@@ -76,7 +76,13 @@ function withFreezeStaleness<Action extends AdjustmentLayerMutationAction>(
             try {
                 commitAdjustmentLayerMutation({
                     inverseAction,
-                    mutation: () => handler.execute(action),
+                    mutation: () => {
+                        const result = handler.execute(action);
+                        if (result instanceof Promise) {
+                            return result.then(() => undefined);
+                        }
+                        return undefined;
+                    },
                 });
             } finally {
                 pendingInverseActions.delete(action);
