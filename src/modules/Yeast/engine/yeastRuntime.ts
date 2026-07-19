@@ -1,7 +1,7 @@
 import { logger } from '#/infra/logger/appLogger';
 import { createHmrPersistentState } from '#/utils/HMR/createHmrPersistentState';
 
-import { yeastPreviewTap } from './yeastPreviewTap';
+import { yeastPreviewTap, type YeastPreviewBinding } from './yeastPreviewTap';
 import { createYeastWorker, type YeastWorkerResult } from './YeastWorkerClient';
 
 import type { YeastNotesOffPayload } from '../events/YeastNotesOffPayload';
@@ -182,6 +182,30 @@ function recordProjection(projection: readonly YeastProcessorProjectionItem[]): 
 
 function isLiveRuntime(node: YeastWorkerResult, generation: number): boolean {
     return session.node === node && session.generation === generation;
+}
+
+function releasePreviewBindings(bindings: readonly YeastPreviewBinding[], node = session.node): void {
+    if (!node) {
+        return;
+    }
+    for (const binding of bindings) {
+        try {
+            node.releasePreview(binding);
+        } catch (error: unknown) {
+            logger.warn('[Yeast] Preview binding release failed:', error);
+        }
+    }
+}
+
+export function releaseYeastRuntimePreview(binding: YeastPreviewBinding): void {
+    releasePreviewBindings([binding]);
+}
+
+export function resetYeastRuntimePreview(scope: Readonly<{ rackId: string; routeId: string; trackId: string }>): void {
+    const binding = yeastPreviewTap.reset(scope);
+    if (binding) {
+        releaseYeastRuntimePreview(binding);
+    }
 }
 
 function activeOutputNoteKey(trackId: string, channel: number, note: number): string {
@@ -617,7 +641,7 @@ export async function processYeastRuntimeBlock(input: ProcessYeastRuntimeBlockIn
             if (!isLiveRuntime(node, generation)) {
                 throw new Error('Yeast Worker runtime changed during MIDI processing');
             }
-            const previewCapture = yeastPreviewTap.getCaptureState({ rackId, routeId });
+            const previewCapture = yeastPreviewTap.getCaptureState({ rackId, routeId, trackId: input.trackId });
             const processedEvents = await node.processBlock(
                 input.events,
                 input.blockStartSamples,
@@ -678,7 +702,7 @@ export async function processYeastRuntimeTransaction(
                 session.appliedProjectionRevision = record.revision;
             }
 
-            const previewCapture = yeastPreviewTap.getCaptureState({ rackId, routeId });
+            const previewCapture = yeastPreviewTap.getCaptureState({ rackId, routeId, trackId: input.trackId });
             const processedEvents = await node.processBlock(
                 input.events,
                 input.blockStartSamples,
@@ -705,6 +729,7 @@ export async function processYeastRuntimeTransaction(
 }
 
 export async function sendYeastRuntimeAllNotesOff(nowSamples: number): Promise<void> {
+    releasePreviewBindings(yeastPreviewTap.resetAll());
     const node = session.node;
     if (!node || session.status !== 'ready' || session.nodePromise) {
         if (session.context === null) {
@@ -746,6 +771,7 @@ export function setYeastRuntimeOutputPanicHandler(handler: () => void): void {
 }
 
 export function destroyYeastRuntime(): void {
+    releasePreviewBindings(yeastPreviewTap.resetAll());
     if (
         session.context === null &&
         session.node === null &&

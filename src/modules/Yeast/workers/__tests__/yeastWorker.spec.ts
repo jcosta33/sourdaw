@@ -279,6 +279,27 @@ describe('YeastWorker', () => {
         expect(previewResponse.page.provenanceEventCount[0]).toBe(0);
     });
 
+    it('releases one exact preview binding without an acknowledgement allocation', () => {
+        const rack = new MidiRack();
+        const releasePreview = vi.spyOn(rack, 'releasePreview');
+        const messages: unknown[] = [];
+
+        dispatch(
+            rack,
+            {
+                type: 'releasePreview',
+                rackId: 'rack-a',
+                routeId: 'route-a',
+                trackId: 'track-a',
+                captureEpoch: 7,
+            },
+            messages
+        );
+
+        expect(releasePreview).toHaveBeenCalledWith('rack-a', 'route-a', 'track-a', 7);
+        expect(messages).toEqual([]);
+    });
+
     it('acknowledges a valid processor command with its command id', () => {
         const rack = new MidiRack();
         const messages: unknown[] = [];

@@ -72,6 +72,7 @@ function makeNode(context: BaseAudioContext) {
             Promise.resolve({ accepted: true })
         ),
         allNotesOff: vi.fn(),
+        releasePreview: vi.fn(),
         onNotesOff: vi.fn((handler: (notesOff: YeastNotesOffPayload[]) => void) => {
             notesOffHandler = handler;
             return () => {
@@ -245,6 +246,54 @@ describe('yeastRuntime', () => {
         expect(output).toBe(events);
         expect(yeastPreviewTap.read(previewScope).events).toEqual(preview.records);
         expect(node.onPreview).toHaveBeenCalledTimes(1);
+    });
+
+    it('retires preview bindings and publishes an empty reset before panic acknowledgement', async () => {
+        const runtime = await loadRuntime();
+        const { yeastPreviewTap } = await import('../yeastPreviewTap');
+        const context = {} as BaseAudioContext;
+        const node = makeNode(context);
+        const scope = { rackId: 'rack-a', routeId: 'track-a', trackId: 'track-a' };
+        createNode.mockResolvedValueOnce(node);
+        await runtime.ensureYeastRuntime({ context, projection: projectionA });
+        yeastPreviewTap.setEnabled(scope, true);
+        const captureEpoch = yeastPreviewTap.getCaptureState(scope).captureEpoch;
+        yeastPreviewTap.publish({
+            ...scope,
+            captureEpoch,
+            projectionVersion: 1,
+            reset: false,
+            records: [],
+            provenance: [{ processorId: 'arp-1', bypassed: false, failed: false, eventCount: 1 }],
+            droppedEvents: 0,
+        });
+
+        await runtime.sendYeastRuntimeAllNotesOff(512);
+
+        expect(node.releasePreview).toHaveBeenCalledWith({ ...scope, captureEpoch });
+        expect(yeastPreviewTap.read(scope)).toMatchObject({ ...scope, reset: true, events: [], provenance: [] });
+        expect(node.allNotesOff).toHaveBeenCalledWith(512);
+    });
+
+    it('publishes an empty preview reset on teardown even without a live runtime', async () => {
+        const runtime = await loadRuntime();
+        const { yeastPreviewTap } = await import('../yeastPreviewTap');
+        const scope = { rackId: 'rack-a', routeId: 'track-a', trackId: 'track-a' };
+        yeastPreviewTap.setEnabled(scope, true);
+        const captureEpoch = yeastPreviewTap.getCaptureState(scope).captureEpoch;
+        yeastPreviewTap.publish({
+            ...scope,
+            captureEpoch,
+            projectionVersion: 1,
+            reset: false,
+            records: [],
+            provenance: [{ processorId: 'arp-1', bypassed: false, failed: false, eventCount: 1 }],
+            droppedEvents: 0,
+        });
+
+        runtime.destroyYeastRuntime();
+
+        expect(yeastPreviewTap.read(scope)).toMatchObject({ ...scope, reset: true, events: [], provenance: [] });
     });
 
     it('invalidates the current runtime and releases notes when a dynamic projection rejects', async () => {

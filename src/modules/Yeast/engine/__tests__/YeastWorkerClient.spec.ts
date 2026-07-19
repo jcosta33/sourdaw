@@ -329,6 +329,98 @@ describe('createYeastWorker — processBlock lifecycle', () => {
         expect(onPreview).toHaveBeenCalledWith(expect.objectContaining({ records: [currentRecord], droppedEvents: 0 }));
     });
 
+    it('explicitly releases a disabled preview binding and rejects its in-flight page', async () => {
+        const node = await createYeastWorker(makeContext());
+        const worker = lastWorker();
+        const onPreview = vi.fn();
+        node.onPreview(onPreview);
+        const route = { rackId: 'rack-a', routeId: 'route-a', trackId: 'track-a', captureEpoch: 7 };
+        const processing = node.processBlock(
+            [],
+            0,
+            128,
+            transport,
+            route.trackId,
+            true,
+            route.rackId,
+            route.routeId,
+            route.captureEpoch
+        );
+        replyProcessed(worker, 0, []);
+        await processing;
+
+        node.releasePreview(route);
+        replyPreviewPage(
+            worker,
+            0,
+            packPreview([
+                {
+                    eventId: 1,
+                    rackId: route.rackId,
+                    routeId: route.routeId,
+                    trackId: route.trackId,
+                    projectionVersion: 1,
+                    phase: 'open',
+                    beatTime: 0,
+                    durationBeats: 0.5,
+                    pitch: 60,
+                    velocity: 90,
+                    probability: null,
+                    realized: true,
+                    processorId: null,
+                    bypassed: false,
+                    failed: false,
+                },
+            ]),
+            route.captureEpoch
+        );
+        await vi.runAllTimersAsync();
+
+        expect(worker.postMessage).toHaveBeenCalledWith({ type: 'releasePreview', ...route });
+        expect(onPreview).not.toHaveBeenCalled();
+    });
+
+    it('bounds retained preview routes and rejects a page for the evicted oldest binding', async () => {
+        const node = await createYeastWorker(makeContext());
+        const worker = lastWorker();
+        const onPreview = vi.fn();
+        node.onPreview(onPreview);
+
+        for (let index = 0; index <= 512; index++) {
+            const trackId = `track-${index}`;
+            const processing = node.processBlock([], 0, 128, transport, trackId, true, 'rack-a', trackId, 1);
+            replyProcessed(worker, index, []);
+            await processing;
+        }
+
+        replyPreviewPage(
+            worker,
+            0,
+            packPreview([
+                {
+                    eventId: 1,
+                    rackId: 'rack-a',
+                    routeId: 'track-0',
+                    trackId: 'track-0',
+                    projectionVersion: 1,
+                    phase: 'open',
+                    beatTime: 0,
+                    durationBeats: 0,
+                    pitch: 60,
+                    velocity: 90,
+                    probability: null,
+                    realized: true,
+                    processorId: null,
+                    bypassed: false,
+                    failed: false,
+                },
+            ])
+        );
+        await vi.runAllTimersAsync();
+
+        expect(onPreview).not.toHaveBeenCalled();
+    });
+
     it('invalidates queued delivery when one route identity is rebound to another track', async () => {
         const node = await createYeastWorker(makeContext());
         const worker = lastWorker();

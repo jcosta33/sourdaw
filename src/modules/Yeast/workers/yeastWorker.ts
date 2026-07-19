@@ -16,6 +16,7 @@
  *   → { type: 'commandAck', commandId, accepted, error? }
  *   → { type: 'processed',    requestId, events }
  *   → { type: 'previewPage',  requestId, captureEpoch, page } (lossy/deferred)
+ *   ← { type: 'releasePreview', captureEpoch, rackId, routeId, trackId }
  *   ← { type: 'allNotesOff',  panicId, nowSamples }
  *   → { type: 'allNotesOffAck', panicId, completed, events, error? }
  */
@@ -237,6 +238,27 @@ function parseAllNotesOff(value: unknown): { panicId: number; nowSamples: number
     return { panicId: value.panicId, nowSamples: value.nowSamples };
 }
 
+function parseReleasePreview(
+    value: unknown
+): { rackId: string; routeId: string; trackId: string; captureEpoch: number } | undefined {
+    if (
+        !isPlainObject(value) ||
+        value.type !== 'releasePreview' ||
+        !isTrackId(value.rackId) ||
+        !isTrackId(value.routeId) ||
+        !isTrackId(value.trackId) ||
+        !isCommandId(value.captureEpoch)
+    ) {
+        return undefined;
+    }
+    return {
+        rackId: value.rackId,
+        routeId: value.routeId,
+        trackId: value.trackId,
+        captureEpoch: value.captureEpoch,
+    };
+}
+
 function parseExecuteCommand(value: unknown): ParsedExecuteCommand | undefined {
     if (!isPlainObject(value) || value.type !== 'executeCommand' || !isCommandId(value.commandId)) {
         return undefined;
@@ -358,6 +380,14 @@ export function handleYeastWorkerMessage({ data, rack, postMessage }: YeastWorke
                 completed: false,
                 error: error instanceof Error ? error.message : String(error),
             });
+        }
+        return;
+    }
+
+    if (data.type === 'releasePreview') {
+        const parsed = parseReleasePreview(data);
+        if (parsed) {
+            rack.releasePreview(parsed.rackId, parsed.routeId, parsed.trackId, parsed.captureEpoch);
         }
         return;
     }

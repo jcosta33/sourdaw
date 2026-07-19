@@ -49,6 +49,7 @@ const COMMAND_ACK_TIMEOUT_MS = 1000;
 const ALL_NOTES_OFF_ACK_TIMEOUT_MS = 1000;
 const PREVIEW_DELIVERY_QUEUE_CAPACITY = 1;
 const PREVIEW_ACCEPTANCE_CAPACITY = 16;
+const PREVIEW_ROUTE_CAPACITY = YEAST_PREVIEW_CAPACITY;
 
 type YeastCommandAck = {
     accepted: boolean;
@@ -419,6 +420,14 @@ export type YeastWorkerResult = {
     sendCommand: (command: YeastProcessorCommand) => Promise<YeastCommandAck>;
     setProjection: (projection: readonly YeastProcessorProjectionItem[]) => Promise<void>;
     allNotesOff: (nowSamples: number) => Promise<void>;
+    releasePreview: (
+        binding: Readonly<{
+            rackId: string;
+            routeId: string;
+            trackId: string;
+            captureEpoch: number;
+        }>
+    ) => void;
     /**
      * Register a listener for Note Offs a projection change left hanging in the
      * Worker rack. The Worker computes them and posts them back here; without
@@ -534,6 +543,7 @@ export async function createYeastWorker(ctx: BaseAudioContext): Promise<YeastWor
     const previewHandlers = new Set<(preview: YeastPreviewBlock) => void>();
     const terminalErrorHandlers = new Set<(error: Error) => void>();
     const previewRoutes = new Map<string, Map<string, PreviewRouteState>>();
+    let previewRouteCount = 0;
 
     const createPreviewRoute = (scope: PreviewScope, captureEpoch: number): PreviewRouteState => {
         const acceptedRequestIds = new Float64Array(PREVIEW_ACCEPTANCE_CAPACITY);
@@ -564,16 +574,23 @@ export async function createYeastWorker(ctx: BaseAudioContext): Promise<YeastWor
         }
         if (existing) {
             clearPreviewDelivery(existing);
+        } else if (previewRouteCount === PREVIEW_ROUTE_CAPACITY) {
+            evictOldestPreviewRoute();
         }
         const route = createPreviewRoute(scope, captureEpoch);
         const nextRackRoutes = rackRoutes ?? new Map<string, PreviewRouteState>();
         nextRackRoutes.set(scope.routeId, route);
         previewRoutes.set(scope.rackId, nextRackRoutes);
+        if (!existing) {
+            previewRouteCount += 1;
+        }
         return route;
     };
 
-    const findPreviewRoute = (scope: PreviewScope): PreviewRouteState | undefined =>
-        previewRoutes.get(scope.rackId)?.get(scope.routeId);
+    const findPreviewRoute = (scope: PreviewScope): PreviewRouteState | undefined => {
+        const route = previewRoutes.get(scope.rackId)?.get(scope.routeId);
+        return route?.scope.trackId === scope.trackId ? route : undefined;
+    };
 
     const rememberPreviewRequest = (route: PreviewRouteState, requestId: number, captureEpoch: number): void => {
         route.acceptedRequestIds[route.acceptedWriteIndex] = requestId;
@@ -675,16 +692,38 @@ export async function createYeastWorker(ctx: BaseAudioContext): Promise<YeastWor
         route.acceptedWriteIndex = 0;
     };
 
-    const removePreviewRoute = (scope: PreviewScope): void => {
+    const removePreviewRoute = (scope: PreviewScope, captureEpoch?: number): void => {
         const rackRoutes = previewRoutes.get(scope.rackId);
         const route = rackRoutes?.get(scope.routeId);
-        if (!rackRoutes || !route) {
+        if (
+            !rackRoutes ||
+            !route ||
+            route.scope.trackId !== scope.trackId ||
+            (captureEpoch !== undefined && route.captureEpoch !== captureEpoch)
+        ) {
             return;
         }
         clearPreviewDelivery(route);
         rackRoutes.delete(scope.routeId);
+        previewRouteCount -= 1;
         if (rackRoutes.size === 0) {
             previewRoutes.delete(scope.rackId);
+        }
+    };
+
+    const evictOldestPreviewRoute = (): void => {
+        for (const [rackId, rackRoutes] of previewRoutes) {
+            const oldest = rackRoutes.entries().next().value;
+            if (!oldest) {
+                continue;
+            }
+            clearPreviewDelivery(oldest[1]);
+            rackRoutes.delete(oldest[0]);
+            previewRouteCount -= 1;
+            if (rackRoutes.size === 0) {
+                previewRoutes.delete(rackId);
+            }
+            return;
         }
     };
 
@@ -695,6 +734,7 @@ export async function createYeastWorker(ctx: BaseAudioContext): Promise<YeastWor
             }
         }
         previewRoutes.clear();
+        previewRouteCount = 0;
     };
 
     const dispatchNotesOff = (events: readonly MidiEvent[]): void => {
@@ -1023,6 +1063,18 @@ export async function createYeastWorker(ctx: BaseAudioContext): Promise<YeastWor
             }
         });
 
+    const releasePreview: YeastWorkerResult['releasePreview'] = (binding): void => {
+        if (terminalError) {
+            return;
+        }
+        removePreviewRoute(binding, binding.captureEpoch);
+        try {
+            worker.postMessage({ type: 'releasePreview', ...binding });
+        } catch {
+            // Preview retirement is best effort and cannot affect scheduler output.
+        }
+    };
+
     const setProjection = (projection: readonly YeastProcessorProjectionItem[]): Promise<void> =>
         new Promise((resolve, reject) => {
             if (terminalError) {
@@ -1081,6 +1133,7 @@ export async function createYeastWorker(ctx: BaseAudioContext): Promise<YeastWor
         sendCommand,
         setProjection,
         allNotesOff,
+        releasePreview,
         onNotesOff: (handler) => {
             if (terminalError) {
                 return () => {};

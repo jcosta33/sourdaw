@@ -10,16 +10,19 @@ import {
 import type { MidiEvent, TransportInfo } from '../models/MidiEvent';
 import type { YeastPreviewPackedPage } from '../models/YeastPreviewSnapshot';
 
-export type YeastPreviewDecisionLineage = Readonly<{
-    durationSamples: number;
-    probability: number | null;
-    processorId: string;
-}>;
+export type YeastPreviewDecisionLineage = number;
 
 export type YeastPreviewDecisionSink = Pick<
     YeastPreviewSidecar,
-    'recordDecision' | 'transferDecisionLineage' | 'retainDecisionLineage' | 'restoreDecisionLineage'
+    | 'recordDecision'
+    | 'transferDecisionLineage'
+    | 'retainDecisionLineage'
+    | 'restoreDecisionLineage'
+    | 'releaseDecisionLineage'
 >;
+
+const LOST_DECISION = -2;
+const LOST_LINEAGE_TOKEN = -1;
 
 function createPreviewPage(): YeastPreviewPackedPage {
     return {
@@ -62,6 +65,7 @@ export class YeastPreviewSidecar {
     private readonly pendingHasProbability = new Uint8Array(YEAST_PREVIEW_CAPACITY);
     private readonly pendingDurationBeats = new Float64Array(YEAST_PREVIEW_CAPACITY);
     private readonly pendingFlags = new Uint8Array(YEAST_PREVIEW_CAPACITY);
+    private readonly pendingCaptureEpoch = new Float64Array(YEAST_PREVIEW_CAPACITY);
     private readonly pendingRackId = Array.from({ length: YEAST_PREVIEW_CAPACITY }, () => '');
     private readonly pendingRouteId = Array.from({ length: YEAST_PREVIEW_CAPACITY }, () => '');
     private readonly pendingTrackId = Array.from({ length: YEAST_PREVIEW_CAPACITY }, () => '');
@@ -80,6 +84,7 @@ export class YeastPreviewSidecar {
     private readonly routeHasPreviousBlock = new Uint8Array(YEAST_PREVIEW_CAPACITY);
     private readonly routeProjectionVersion = new Float64Array(YEAST_PREVIEW_CAPACITY);
     private readonly routeDeferredDrops = new Float64Array(YEAST_PREVIEW_CAPACITY);
+    private readonly routeResetPending = new Uint8Array(YEAST_PREVIEW_CAPACITY);
 
     private readonly decisionTimeSamples = new Float64Array(YEAST_PREVIEW_CAPACITY);
     private readonly decisionDurationSamples = new Float64Array(YEAST_PREVIEW_CAPACITY);
@@ -104,6 +109,23 @@ export class YeastPreviewSidecar {
     private readonly lineageDecisionA = new Int32Array(YEAST_PREVIEW_CAPACITY);
     private readonly lineageDecisionB = new Int32Array(YEAST_PREVIEW_CAPACITY);
 
+    private readonly retainedActive = new Uint8Array(YEAST_PREVIEW_CAPACITY);
+    private readonly retainedGeneration = new Float64Array(YEAST_PREVIEW_CAPACITY);
+    private readonly retainedReferences = new Uint16Array(YEAST_PREVIEW_CAPACITY);
+    private readonly retainedDurationSamples = new Float64Array(YEAST_PREVIEW_CAPACITY);
+    private readonly retainedProbability = new Float64Array(YEAST_PREVIEW_CAPACITY);
+    private readonly retainedHasProbability = new Uint8Array(YEAST_PREVIEW_CAPACITY);
+    private readonly retainedProcessorId = Array.from({ length: YEAST_PREVIEW_CAPACITY }, () => '');
+    private readonly retainedRackId = Array.from({ length: YEAST_PREVIEW_CAPACITY }, () => '');
+    private readonly retainedRouteId = Array.from({ length: YEAST_PREVIEW_CAPACITY }, () => '');
+    private readonly retainedTrackId = Array.from({ length: YEAST_PREVIEW_CAPACITY }, () => '');
+    private readonly retainedCaptureEpoch = new Float64Array(YEAST_PREVIEW_CAPACITY);
+
+    private readonly queuedPreviewEvent: Array<MidiEvent | undefined> = Array.from(
+        { length: YEAST_PREVIEW_CAPACITY },
+        () => undefined
+    );
+
     private readonly originEvents: Array<MidiEvent | undefined> = Array.from(
         { length: YEAST_PREVIEW_CAPACITY },
         () => undefined
@@ -119,7 +141,9 @@ export class YeastPreviewSidecar {
     private nextDecisionSequence = 0;
     private nextEventId = 0;
     private nextRouteUseSequence = 0;
+    private nextRetainedGeneration = 1;
     private blockStartSamples = 0;
+    private blockEndSamples = 0;
     private blockPpqPosition = 0;
     private samplesPerBeat = 0;
     private currentRouteIndex = -1;
@@ -133,6 +157,8 @@ export class YeastPreviewSidecar {
     private lineageCount = 0;
     private nextLineageCount = 0;
     private processorTransformationActive = false;
+    private lineageCompromised = false;
+    private queuedPreviewCount = 0;
 
     constructor() {
         this.routeProjectionVersion.fill(-1);
@@ -158,6 +184,7 @@ export class YeastPreviewSidecar {
         this.lineageCount = 0;
         this.nextLineageCount = 0;
         this.processorTransformationActive = false;
+        this.lineageCompromised = false;
         this.currentRackId = rackId;
         this.currentRouteId = routeId;
         this.currentTrackId = trackId;
@@ -182,6 +209,7 @@ export class YeastPreviewSidecar {
             this.invalidateRoutePending(rackId, routeId);
             if (routeIndex !== -1) {
                 this.routeHasPreviousBlock[routeIndex] = 0;
+                this.routeResetPending[routeIndex] = 1;
             }
             return;
         }
@@ -202,10 +230,12 @@ export class YeastPreviewSidecar {
             const musicalPositionChanged = Math.abs(transport.ppqPosition - expectedPpqPosition) > 1e-6;
             if (samplePositionChanged || musicalPositionChanged) {
                 this.invalidateRoutePending(rackId, routeId);
+                this.routeResetPending[routeIndex] = 1;
             }
         }
 
         this.blockStartSamples = blockStartSamples;
+        this.blockEndSamples = blockEndSamples;
         this.blockPpqPosition = transport.ppqPosition;
         this.samplesPerBeat = samplesPerBeat;
         this.currentRouteIndex = routeIndex;
@@ -227,7 +257,9 @@ export class YeastPreviewSidecar {
         this.page.routeId = this.currentRouteId;
         this.page.trackId = this.currentTrackId;
         this.page.projectionVersion = projectionVersion;
-        this.page.reset = this.routeProjectionVersion[routeIndex] !== projectionVersion;
+        this.page.reset =
+            this.routeProjectionVersion[routeIndex] !== projectionVersion || this.routeResetPending[routeIndex] === 1;
+        this.routeResetPending[routeIndex] = 0;
         this.routeProjectionVersion[routeIndex] = projectionVersion;
         this.page.count = 0;
         this.page.provenanceCount = 0;
@@ -238,6 +270,26 @@ export class YeastPreviewSidecar {
 
     invalidatePending(): void {
         this.pendingCount = 0;
+        this.queuedPreviewCount = 0;
+        this.clearRetainedLineage();
+    }
+
+    resetAll(): void {
+        this.invalidatePending();
+        for (let index = 0; index < this.routeCount; index++) {
+            this.retireRoute(index);
+        }
+    }
+
+    releaseRoute(rackId: string, routeId: string, trackId: string, captureEpoch: number): void {
+        const routeIndex = this.findRoute(rackId, routeId);
+        if (
+            routeIndex !== -1 &&
+            this.routeTrackId[routeIndex] === trackId &&
+            this.routeCaptureEpoch[routeIndex] === captureEpoch
+        ) {
+            this.retireRoute(routeIndex);
+        }
     }
 
     invalidateProcessorPending(_processorId: string): void {
@@ -268,35 +320,104 @@ export class YeastPreviewSidecar {
         }
     }
 
-    retainDecisionLineage(source: MidiEvent): YeastPreviewDecisionLineage | undefined {
+    retainDecisionLineage(source: MidiEvent, references = 1): YeastPreviewDecisionLineage | undefined {
         if (!this.captureRequested || !this.processorTransformationActive) {
             return undefined;
         }
         const decision = this.findLineageDecision(source);
         if (decision === -1) {
-            return undefined;
+            return this.lineageCompromised ? LOST_LINEAGE_TOKEN : undefined;
         }
-        return {
-            durationSamples: this.decisionDurationSamples[decision]!,
-            probability: this.decisionHasProbability[decision] === 0 ? null : this.decisionProbability[decision]!,
-            processorId: this.decisionProcessorId[decision]!,
-        };
+        if (decision === LOST_DECISION) {
+            return LOST_LINEAGE_TOKEN;
+        }
+        if (references <= 0) {
+            return LOST_LINEAGE_TOKEN;
+        }
+        for (let slot = 0; slot < YEAST_PREVIEW_CAPACITY; slot++) {
+            if (this.retainedActive[slot] === 1) {
+                continue;
+            }
+            const generation = this.nextRetainedGeneration++;
+            this.retainedActive[slot] = 1;
+            this.retainedGeneration[slot] = generation;
+            this.retainedReferences[slot] = Math.max(1, Math.min(65535, references));
+            this.retainedDurationSamples[slot] = this.decisionDurationSamples[decision]!;
+            this.retainedProbability[slot] = this.decisionProbability[decision]!;
+            this.retainedHasProbability[slot] = this.decisionHasProbability[decision]!;
+            this.retainedProcessorId[slot] = this.decisionProcessorId[decision]!;
+            this.retainedRackId[slot] = this.currentRackId;
+            this.retainedRouteId[slot] = this.currentRouteId;
+            this.retainedTrackId[slot] = this.currentTrackId;
+            this.retainedCaptureEpoch[slot] =
+                this.currentRouteIndex === -1 ? -1 : this.routeCaptureEpoch[this.currentRouteIndex]!;
+            return generation * YEAST_PREVIEW_CAPACITY + slot + 1;
+        }
+        return LOST_LINEAGE_TOKEN;
     }
 
-    restoreDecisionLineage(lineage: YeastPreviewDecisionLineage, target: MidiEvent): void {
+    restoreDecisionLineage(lineage: YeastPreviewDecisionLineage, target: MidiEvent, durationSamples?: number): void {
         if (target.kind.type !== 'noteOn') {
+            return;
+        }
+        if (lineage === LOST_LINEAGE_TOKEN) {
+            this.appendNextLineage(target, LOST_DECISION);
+            return;
+        }
+        const slot = (lineage - 1) % YEAST_PREVIEW_CAPACITY;
+        const generation = Math.floor((lineage - 1) / YEAST_PREVIEW_CAPACITY);
+        if (
+            slot < 0 ||
+            this.retainedActive[slot] !== 1 ||
+            this.retainedGeneration[slot] !== generation ||
+            !this.retainedLineageMatchesCurrentRoute(slot, target.trackId ?? this.currentTrackId)
+        ) {
+            this.releaseDecisionLineage(lineage);
+            this.appendNextLineage(target, LOST_DECISION);
             return;
         }
         this.recordDecision(
             target.timeSamples,
-            lineage.durationSamples,
+            durationSamples ?? this.retainedDurationSamples[slot]!,
             target.kind.note,
             target.kind.velocity,
-            lineage.probability,
+            this.retainedHasProbability[slot] === 0 ? null : this.retainedProbability[slot]!,
             true,
-            lineage.processorId,
+            this.retainedProcessorId[slot]!,
             target.trackId,
             target
+        );
+        this.releaseDecisionLineage(lineage);
+    }
+
+    releaseDecisionLineage(lineage: YeastPreviewDecisionLineage, references = 1): void {
+        if (lineage <= 0) {
+            return;
+        }
+        const slot = (lineage - 1) % YEAST_PREVIEW_CAPACITY;
+        const generation = Math.floor((lineage - 1) / YEAST_PREVIEW_CAPACITY);
+        if (this.retainedActive[slot] !== 1 || this.retainedGeneration[slot] !== generation) {
+            return;
+        }
+        const remaining = Math.max(0, this.retainedReferences[slot]! - references);
+        this.retainedReferences[slot] = remaining;
+        if (remaining === 0) {
+            this.retainedActive[slot] = 0;
+            this.retainedProcessorId[slot] = '';
+            this.retainedRackId[slot] = '';
+            this.retainedRouteId[slot] = '';
+            this.retainedTrackId[slot] = '';
+        }
+    }
+
+    private retainedLineageMatchesCurrentRoute(slot: number, trackId: string): boolean {
+        const routeIndex = this.findRouteForTrack(trackId);
+        return (
+            routeIndex !== -1 &&
+            this.retainedRackId[slot] === this.routeRackId[routeIndex] &&
+            this.retainedRouteId[slot] === this.routeId[routeIndex] &&
+            this.retainedTrackId[slot] === trackId &&
+            this.retainedCaptureEpoch[slot] === this.routeCaptureEpoch[routeIndex]
         );
     }
 
@@ -386,8 +507,18 @@ export class YeastPreviewSidecar {
         let unrealizedIndex = 0;
         for (let eventIndex = 0; eventIndex < events.length; eventIndex++) {
             const event = events[eventIndex]!;
+            const queuedPreview = this.findQueuedPreviewEvent(event);
+            if (queuedPreview !== -1) {
+                this.removeQueuedPreview(queuedPreview);
+                continue;
+            }
+            const previewableEvent = event.kind.type === 'noteOn' || event.kind.type === 'noteOff';
+            if (previewableEvent && event.timeSamples >= this.blockEndSamples && !this.appendQueuedPreview(event)) {
+                this.recordDrop();
+                continue;
+            }
             const decision = this.findLineageDecision(event);
-            const eventSequence = decision === -1 ? this.nextDecisionSequence++ : this.decisionSequence[decision]!;
+            const eventSequence = decision < 0 ? this.nextDecisionSequence++ : this.decisionSequence[decision]!;
             while (unrealizedIndex < unrealizedCount) {
                 const unrealizedDecision = this.unrealizedOrder[unrealizedIndex]!;
                 if (!this.decisionPrecedesEvent(unrealizedDecision, event.timeSamples, eventSequence)) {
@@ -407,6 +538,10 @@ export class YeastPreviewSidecar {
     private recordTerminalEvent(event: MidiEvent, fallbackTrackId: string, decision: number): void {
         const trackId = event.trackId ?? fallbackTrackId;
         if (event.kind.type === 'noteOn') {
+            if (decision === LOST_DECISION || (decision === -1 && this.lineageCompromised)) {
+                this.recordDrop();
+                return;
+            }
             if (!this.captureBlock) {
                 this.recordDrop();
                 return;
@@ -436,7 +571,12 @@ export class YeastPreviewSidecar {
             return;
         }
         if (this.decisionCount === YEAST_PREVIEW_CAPACITY) {
-            this.recordDrop();
+            if (realized && event && this.processorTransformationActive) {
+                this.lineageCompromised = true;
+                this.appendNextLineage(event, LOST_DECISION);
+            } else {
+                this.recordDrop();
+            }
             return;
         }
         const slot = this.decisionCount++;
@@ -528,6 +668,7 @@ export class YeastPreviewSidecar {
         this.pendingHasProbability[pendingSlot] = probability === null ? 0 : 1;
         this.pendingDurationBeats[pendingSlot] = durationBeats;
         this.pendingFlags[pendingSlot] = flags;
+        this.pendingCaptureEpoch[pendingSlot] = routeIndex === -1 ? -1 : this.routeCaptureEpoch[routeIndex]!;
         this.pendingRackId[pendingSlot] = rackId;
         this.pendingRouteId[pendingSlot] = routeId;
         this.pendingTrackId[pendingSlot] = trackId;
@@ -590,6 +731,10 @@ export class YeastPreviewSidecar {
     }
 
     private findPendingNote(trackId: string, channel: number, pitch: number): number {
+        const routeIndex = this.findRouteForTrack(trackId);
+        const rackId = routeIndex === -1 ? this.currentRackId : this.routeRackId[routeIndex]!;
+        const routeId = routeIndex === -1 ? this.currentRouteId : this.routeId[routeIndex]!;
+        const captureEpoch = routeIndex === -1 ? -1 : this.routeCaptureEpoch[routeIndex]!;
         let match = -1;
         let matchSequence = Number.POSITIVE_INFINITY;
         for (let index = 0; index < this.pendingCount; index++) {
@@ -597,6 +742,9 @@ export class YeastPreviewSidecar {
                 this.pendingPitch[index] === pitch &&
                 this.pendingChannel[index] === channel &&
                 this.pendingTrackId[index] === trackId &&
+                this.pendingRackId[index] === rackId &&
+                this.pendingRouteId[index] === routeId &&
+                this.pendingCaptureEpoch[index] === captureEpoch &&
                 this.pendingSequence[index]! < matchSequence
             ) {
                 match = index;
@@ -639,7 +787,7 @@ export class YeastPreviewSidecar {
 
     private appendNextLineage(event: MidiEvent, decision: number): void {
         if (this.nextLineageCount === YEAST_PREVIEW_CAPACITY) {
-            this.recordDrop();
+            this.lineageCompromised = true;
             return;
         }
         const events = this.lineageUsesA ? this.lineageEventB : this.lineageEventA;
@@ -782,6 +930,7 @@ export class YeastPreviewSidecar {
         this.routeTrackId[index] = '';
         this.routeCaptureEpoch[index] = -1;
         this.routeLastUsed[index] = 0;
+        this.routeResetPending[index] = 0;
     }
 
     private resetRouteMetadata(index: number): void {
@@ -820,10 +969,42 @@ export class YeastPreviewSidecar {
         this.pendingHasProbability[index] = this.pendingHasProbability[last]!;
         this.pendingDurationBeats[index] = this.pendingDurationBeats[last]!;
         this.pendingFlags[index] = this.pendingFlags[last]!;
+        this.pendingCaptureEpoch[index] = this.pendingCaptureEpoch[last]!;
         this.pendingRackId[index] = this.pendingRackId[last]!;
         this.pendingRouteId[index] = this.pendingRouteId[last]!;
         this.pendingTrackId[index] = this.pendingTrackId[last]!;
         this.pendingProcessorId[index] = this.pendingProcessorId[last]!;
+    }
+
+    private appendQueuedPreview(event: MidiEvent): boolean {
+        if (this.queuedPreviewCount === YEAST_PREVIEW_CAPACITY) {
+            return false;
+        }
+        const slot = this.queuedPreviewCount++;
+        this.queuedPreviewEvent[slot] = event;
+        return true;
+    }
+
+    private findQueuedPreviewEvent(event: MidiEvent): number {
+        for (let index = 0; index < this.queuedPreviewCount; index++) {
+            if (this.queuedPreviewEvent[index] === event) {
+                return index;
+            }
+        }
+        return -1;
+    }
+
+    private removeQueuedPreview(index: number): void {
+        const last = --this.queuedPreviewCount;
+        if (index !== last) {
+            this.queuedPreviewEvent[index] = this.queuedPreviewEvent[last];
+        }
+        this.queuedPreviewEvent[last] = undefined;
+    }
+
+    private clearRetainedLineage(): void {
+        this.retainedActive.fill(0);
+        this.retainedReferences.fill(0);
     }
 
     private toBeatTime(timeSamples: number): number {

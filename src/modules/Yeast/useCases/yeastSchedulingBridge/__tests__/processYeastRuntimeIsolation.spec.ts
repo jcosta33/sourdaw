@@ -23,6 +23,7 @@ const processRuntimeTransaction = vi.hoisted(() =>
 );
 const runtimeStatus = vi.hoisted(() => vi.fn(() => 'ready' as const));
 const runtimeError = vi.hoisted(() => vi.fn(() => undefined));
+const resetRuntimePreview = vi.hoisted(() => vi.fn());
 
 vi.mock('../../../stores/yeastStore', () => ({
     yeastStore,
@@ -35,6 +36,7 @@ vi.mock('../../../engine/yeastRuntime', () => ({
     getYeastRuntimeError: runtimeError,
     getYeastRuntimeStatus: runtimeStatus,
     processYeastRuntimeTransaction: processRuntimeTransaction,
+    resetYeastRuntimePreview: resetRuntimePreview,
 }));
 
 const { processYeastMidi } = await import('../processYeastMidi');
@@ -128,5 +130,30 @@ describe('processYeastMidi — Worker-only runtime', () => {
             })
         ).resolves.toEqual(events);
         expect(processRuntimeTransaction).toHaveBeenCalledTimes(1);
+    });
+
+    it('publishes a route reset before bypassing an empty rack', async () => {
+        yeastStore.value = { processors: [], uiLevel: 1 };
+        const events = [{ timeSamples: 0, kind: { type: 'noteOn' as const, channel: 0, note: 60, velocity: 96 } }];
+
+        await expect(
+            processYeastMidi({
+                context,
+                rackId: 'rack-a',
+                routeId: 'route-a',
+                trackId: 'track-a',
+                events,
+                blockStartSamples: 0,
+                blockEndSamples: 128,
+                transport,
+            })
+        ).resolves.toEqual(events);
+
+        expect(resetRuntimePreview).toHaveBeenCalledWith({
+            rackId: 'rack-a',
+            routeId: 'route-a',
+            trackId: 'track-a',
+        });
+        expect(processRuntimeTransaction).not.toHaveBeenCalled();
     });
 });

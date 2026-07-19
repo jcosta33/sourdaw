@@ -292,10 +292,14 @@ export class MidiRack {
         this.preview.releasePage(page);
     }
 
+    releasePreview(rackId: string, routeId: string, trackId: string, captureEpoch: number): void {
+        this.preview.releaseRoute(rackId, routeId, trackId, captureEpoch);
+    }
+
     /** Panic: send Note Off for all active notes. */
     allNotesOff(nowSamples: number): MidiEvent[] {
         const output: MidiEvent[] = [];
-        this.preview.invalidatePending();
+        this.preview.resetAll();
         // Track (channel<<7)|note of every off emitted per origin so each
         // sounding/scheduled note gets exactly one Note Off.
         const emittedKeys = new Map<string, Set<number>>();

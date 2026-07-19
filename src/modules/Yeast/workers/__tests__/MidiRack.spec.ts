@@ -183,6 +183,59 @@ class DecisionSourceProcessor extends PassthroughProcessor {
     }
 }
 
+class LineageTokenProbeProcessor extends PassthroughProcessor {
+    retainedType: string | undefined;
+
+    override processMidi(
+        input: readonly MidiEvent[],
+        output: MidiEvent[],
+        _transport: TransportInfo,
+        preview?: YeastPreviewDecisionSink
+    ): void {
+        for (const event of input) {
+            output.push(event);
+            if (event.kind.type === 'noteOn') {
+                this.retainedType = typeof preview?.retainDecisionLineage(event);
+            }
+        }
+    }
+}
+
+class KeepLastNoteProcessor extends PassthroughProcessor {
+    override processMidi(input: readonly MidiEvent[], output: MidiEvent[]): void {
+        for (let index = input.length - 1; index >= 0; index--) {
+            const event = input[index]!;
+            if (event.kind.type === 'noteOn') {
+                output.push(event);
+                return;
+            }
+        }
+    }
+}
+
+class RetainedLineageExhaustionProcessor extends PassthroughProcessor {
+    override processMidi(
+        input: readonly MidiEvent[],
+        output: MidiEvent[],
+        _transport: TransportInfo,
+        preview?: YeastPreviewDecisionSink
+    ): void {
+        const source = input.find(isNoteOn);
+        if (!source || !preview) {
+            return;
+        }
+        let exhaustedToken: number | undefined;
+        for (let index = 0; index <= 512; index++) {
+            exhaustedToken = preview.retainDecisionLineage(source);
+        }
+        const target = noteOn(source.timeSamples, source.kind.note);
+        output.push(target);
+        if (exhaustedToken !== undefined) {
+            preview.restoreDecisionLineage(exhaustedToken, target);
+        }
+    }
+}
+
 const processorLineageCases = [
     { type: 'arpeggiator', behavior: 'drop' },
     { type: 'chord', behavior: 'fan-out and reorder', params: { strum_ms: 10, strum_direction: 1 } },
@@ -685,8 +738,78 @@ describe('MidiRack', () => {
 
             expect(output.filter(isNoteOn)).toMatchObject([{ timeSamples: 88200, kind: { note: 60 } }]);
             expect(previewNotes).toMatchObject([
-                { pitch: 60, processorId: 'decision-source', probability: 0.75, realized: true },
+                {
+                    pitch: 60,
+                    durationBeats: 2,
+                    processorId: 'decision-source',
+                    probability: 0.75,
+                    realized: true,
+                },
             ]);
+        });
+
+        it('rejects delayed lineage retained by an obsolete capture epoch', () => {
+            const rack = new MidiRack('rack-a');
+            rack.addProcessor(new DecisionSourceProcessor('decision-source'));
+            const repeater = createProcessor('repeater', 'repeater');
+            repeater.setParam('repeat_count', 1);
+            repeater.setParam('rate_denom', 1);
+            rack.addProcessor(repeater, 'repeater');
+            rack.processBlock([noteOn(0, 60)], 0, 128, transport, 'track-a', true, 'rack-a', 'route-a', 1);
+            takePreviewBlock(rack);
+
+            const output = rack.processBlock(
+                [{ timeSamples: 88000, kind: { type: 'cc', channel: 0, cc: 1, value: 64 } }],
+                88000,
+                97000,
+                { ...transport, ppqPosition: 88000 / 22050 },
+                'track-a',
+                true,
+                'rack-a',
+                'route-a',
+                2
+            );
+
+            expect(output.filter(isNoteOn)).toMatchObject([{ timeSamples: 88200, kind: { note: 60 } }]);
+            expect(takePreviewBlock(rack)).toMatchObject({ records: [], droppedEvents: 1, reset: true });
+        });
+
+        it('retains delayed lineage as a bounded numeric token', () => {
+            const rack = new MidiRack();
+            const probe = new LineageTokenProbeProcessor('probe');
+            rack.addProcessor(new DecisionSourceProcessor('decision-source'));
+            rack.addProcessor(probe);
+
+            rack.processBlock([noteOn(0, 60)], 0, 128, transport, 'track-a', true);
+
+            expect(probe.retainedType).toBe('number');
+        });
+
+        it('counts realized decision overflow once without publishing fabricated lineage', () => {
+            const rack = new MidiRack();
+            rack.addProcessor(new DecisionSourceProcessor('decision-source'));
+            rack.addProcessor(new KeepLastNoteProcessor('keep-last'));
+
+            rack.processBlock(
+                Array.from({ length: 513 }, (_, index) => noteOn(index, 36 + (index % 48))),
+                0,
+                1024,
+                transport,
+                'track-a',
+                true
+            );
+
+            expect(takePreviewBlock(rack)).toMatchObject({ records: [], droppedEvents: 1 });
+        });
+
+        it('drops preview evidence when bounded retained-lineage tokens are exhausted', () => {
+            const rack = new MidiRack();
+            rack.addProcessor(new DecisionSourceProcessor('decision-source'));
+            rack.addProcessor(new RetainedLineageExhaustionProcessor('exhaust-retained'));
+
+            rack.processBlock([noteOn(0, 60)], 0, 128, transport, 'track-a', true);
+
+            expect(takePreviewBlock(rack)).toMatchObject({ records: [], droppedEvents: 1 });
         });
 
         it('counts terminal overflow once when processor origin scratch reaches capacity', () => {
@@ -720,7 +843,10 @@ describe('MidiRack', () => {
             rack.addProcessor(new PassthroughProcessor('p1'));
 
             rack.processBlock([noteOn(192, 60)], 0, 128, transport, 'track-a', true);
-            takePreviewBlock(rack);
+            const upcoming = takePreviewBlock(rack);
+            expect(upcoming.records).toMatchObject([
+                { rackId: 'rack-a', routeId: 'track-a', trackId: 'track-a', pitch: 60, phase: 'open' },
+            ]);
 
             const routeBOutput = rack.processBlock(
                 [],
@@ -742,8 +868,45 @@ describe('MidiRack', () => {
             );
 
             expect(routeAOutput).toMatchObject([{ trackId: 'track-a', kind: { type: 'noteOn', note: 60 } }]);
+            expect(takePreviewBlock(rack).records).toEqual([]);
+
+            rack.processBlock(
+                [noteOff(256, 60)],
+                256,
+                384,
+                { ...transport, ppqPosition: 256 / 22050 },
+                'track-a',
+                true
+            );
             expect(takePreviewBlock(rack).records).toMatchObject([
-                { rackId: 'rack-a', routeId: 'track-a', trackId: 'track-a', pitch: 60 },
+                { eventId: upcoming.records[0]?.eventId, routeId: 'track-a', pitch: 60, phase: 'closed' },
+            ]);
+        });
+
+        it('closes same-note preview identities within the active rack and route scope', () => {
+            const rack = new MidiRack('rack-a');
+            rack.addProcessor(new PassthroughProcessor('p1'));
+
+            rack.processBlock([noteOn(0, 60)], 0, 128, transport, 'track-a', true, 'rack-a', 'route-a', 1);
+            const routeAOpen = takePreviewBlock(rack).records[0]!;
+            rack.processBlock([noteOn(128, 60)], 128, 256, transport, 'track-a', true, 'rack-a', 'route-b', 1);
+            const routeBOpen = takePreviewBlock(rack).records[0]!;
+
+            rack.processBlock(
+                [noteOff(256, 60)],
+                256,
+                384,
+                { ...transport, ppqPosition: 128 / 22050 },
+                'track-a',
+                true,
+                'rack-a',
+                'route-b',
+                1
+            );
+
+            expect(routeBOpen.eventId).not.toBe(routeAOpen.eventId);
+            expect(takePreviewBlock(rack).records).toMatchObject([
+                { eventId: routeBOpen.eventId, rackId: 'rack-a', routeId: 'route-b', phase: 'closed' },
             ]);
         });
 
@@ -1083,6 +1246,27 @@ describe('MidiRack', () => {
             expect(takePreviewBlock(rack).records.map((record) => record.pitch)).toEqual([62, 62]);
         });
 
+        it('publishes an empty reset when a transport discontinuity invalidates open preview state', () => {
+            const rack = new MidiRack('rack-a');
+            rack.addProcessor(new PassthroughProcessor('p1'));
+            rack.processBlock([noteOn(0, 60)], 0, 128, transport, 'track-a', true, 'rack-a', 'route-a', 1);
+            takePreviewBlock(rack);
+
+            rack.processBlock(
+                [],
+                4096,
+                4224,
+                { ...transport, ppqPosition: 10 },
+                'track-a',
+                true,
+                'rack-a',
+                'route-a',
+                1
+            );
+
+            expect(takePreviewBlock(rack)).toMatchObject({ records: [], droppedEvents: 0, reset: true });
+        });
+
         it('recovers full preview capacity after allNotesOff invalidates pending notes', () => {
             const rack = new MidiRack();
             rack.addProcessor(new PassthroughProcessor('p1'));
@@ -1107,6 +1291,7 @@ describe('MidiRack', () => {
             );
 
             expect(takePreviewBlock(rack)).toMatchObject({
+                reset: true,
                 records: [
                     { pitch: 61, phase: 'open' },
                     { pitch: 61, phase: 'closed' },
