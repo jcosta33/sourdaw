@@ -130,6 +130,7 @@ export { transposeForChordTrack } from './transposeForChordTrack';
 export { initWebMidi } from './webMidiInput/initWebMidi';
 export { setWebMidiRuntimeEventBus } from './webMidiInput/setWebMidiRuntimeEventBus';
 export { setWebMidiRealtimeProcessor } from './webMidiInput/setWebMidiRealtimeProcessor';
+export { hydrateMidiCrdtProjection } from './hydrateMidiCrdtProjection';
 export { setMidiInputTrack } from './webMidiInput/setMidiInputTrack';
 export { selectMidiInput } from './webMidiInput/selectMidiInput';
 export { resetMidiState } from './webMidiInput/resetMidiState';

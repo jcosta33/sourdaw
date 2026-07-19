@@ -42,13 +42,34 @@ describe('processRealtimeMidiInput', () => {
                     {
                         timeSamples: 128,
                         trackId: 'track-a',
+                        sourceEventId: 'track-a:2:60:on:128',
+                        timePpq: 0,
+                        tempoBpm: 120,
                         kind: { type: 'noteOn', channel: 2, note: 60, velocity: 96 },
                     },
                 ],
                 blockStartSamples: 128,
-                blockEndSamples: 192,
+                blockEndSamples: 12129,
             })
         );
         expect(result).toBe(processed_events);
+    });
+
+    it('pumps a bounded positive-offset horizon so realtime final output can be scheduled ahead', async () => {
+        vi.mocked(processYeastMidi).mockResolvedValue([]);
+
+        await processRealtimeMidiInput({
+            context: {} as BaseAudioContext,
+            trackId: 'track-a',
+            note: 60,
+            velocity: 96,
+            channel: 0,
+            isNoteOn: true,
+            sampleTime: 128,
+            sampleRate: 48_000,
+            blockSize: 64,
+        });
+
+        expect(vi.mocked(processYeastMidi).mock.calls[0]?.[0].blockEndSamples).toBeGreaterThan(192);
     });
 });

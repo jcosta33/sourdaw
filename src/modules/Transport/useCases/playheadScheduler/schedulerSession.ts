@@ -45,6 +45,9 @@ export const schedulerSession = {
     // async tick may still resume after its worker is terminated, so post-await
     // work must prove it belongs to the live generation before it schedules.
     generation: 0,
+    // Stable across adjacent lookahead windows, advanced on transport discontinuities
+    // so authored source identities can repeat on the next loop/seek epoch.
+    sourceEpoch: 0,
     // Last-seen tempo-map identity and loop-region signature. A mid-playback edit
     // to either changes the beat→time alignment of already-scheduled clips, but
     // the dedup Set would keep them suppressed; we detect the change and invalidate.

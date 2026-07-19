@@ -9,6 +9,7 @@ export function startSequencer(deviceId: string, bpm: number): void {
     const seqState = getSequencerPlaybackState(deviceId);
     seqState.running = true;
     seqState.playCount = 0;
+    seqState.lastBpm = null;
     seqState.nextTickTime = getAudioTime();
     runSequencerTick({ deviceId, currentStep: 0, bpm });
 }

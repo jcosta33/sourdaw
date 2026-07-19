@@ -34,6 +34,7 @@ type CreateMockHandlerInput<Action extends AppAction> = {
     label?: string;
     execute?: (action: Action) => void | Promise<void>;
     describe?: (action: Action) => HandlerDescribeResult;
+    isNoop?: (action: Action) => boolean;
 };
 
 type CreateMockHandlerOutput<Action extends AppAction> = MockCommandHandler<Action>;
@@ -42,11 +43,13 @@ function create_mock_handler<Action extends AppAction>({
     label = 'Mock Label',
     execute = () => undefined,
     describe = () => ({ label }),
+    isNoop,
 }: CreateMockHandlerInput<Action> = {}): CreateMockHandlerOutput<Action> {
     return {
         execute: vi.fn<(action: Action) => void | Promise<void>>(execute),
         describe: vi.fn<(action: Action) => HandlerDescribeResult>(describe),
         undoable: true,
+        isNoop,
     };
 }
 
@@ -147,6 +150,21 @@ describe('executeAppAction', () => {
         expect(mocks.setSemanticContext).toHaveBeenCalledWith(expect.objectContaining({ message: 'Mock Label' }));
         expect(mocks.commitUndoEntry).toHaveBeenCalled();
         expect(mocks.recordActionHistoryMetadata).toHaveBeenCalled();
+    });
+
+    it('skips execution, macro recording, history metadata, and undo for a semantic no-op', async () => {
+        const action: SetEditingToolAction = { type: 'setEditingTool', payload: { tool: 'marquee' } };
+        const handler = create_mock_handler<SetEditingToolAction>({ isNoop: () => true });
+        registerHandlerMap({ [action.type]: handler });
+
+        await executeAppAction(action);
+
+        expect(handler.describe).not.toHaveBeenCalled();
+        expect(handler.execute).not.toHaveBeenCalled();
+        expect(mocks.setSemanticContext).not.toHaveBeenCalled();
+        expect(mocks.recordAction).not.toHaveBeenCalled();
+        expect(mocks.recordActionHistoryMetadata).not.toHaveBeenCalled();
+        expect(mocks.commitUndoEntry).not.toHaveBeenCalled();
     });
 
     it('waits for snapshot ownership before describing or executing an action', async () => {

@@ -9,10 +9,12 @@ export function createHandler<ActionType extends AppAction['type']>(config: {
     undoable: boolean;
     execute: (action: Extract<AppAction, { type: ActionType }>) => void | Promise<void>;
     describe: (action: Extract<AppAction, { type: ActionType }>) => HandlerDescribeResult;
+    isNoop?: (action: Extract<AppAction, { type: ActionType }>) => boolean;
 }): ActionHandler<Extract<AppAction, { type: ActionType }>> {
     return {
         undoable: config.undoable,
         execute: config.execute as ActionHandler<Extract<AppAction, { type: ActionType }>>['execute'],
         describe: config.describe as ActionHandler<Extract<AppAction, { type: ActionType }>>['describe'],
+        isNoop: config.isNoop as ActionHandler<Extract<AppAction, { type: ActionType }>>['isNoop'],
     };
 }

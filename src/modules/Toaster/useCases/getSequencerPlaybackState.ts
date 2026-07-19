@@ -6,6 +6,7 @@ export type SequencerPlaybackState = {
     timeoutId: ReturnType<typeof setTimeout> | null;
     /** Next grid step whose events were already scheduled by one-step lookahead. */
     preScheduledStep: number | null;
+    lastBpm: number | null;
     // Microtiming / retrigger fires scheduled by ticks. Tracked per device so
     // stopSequencer can cancel ghost hits that would otherwise fire after Stop
     // (clearing the next-tick timeoutId alone leaves these armed).
@@ -24,6 +25,7 @@ export function getSequencerPlaybackState(deviceId: string): SequencerPlaybackSt
             nextTickTime: 0,
             timeoutId: null,
             preScheduledStep: null,
+            lastBpm: null,
             pendingFireIds: new Set(),
         };
         sequencerPlaybackStates.set(deviceId, state);

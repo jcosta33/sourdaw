@@ -107,7 +107,14 @@ function isMidiEvent(value: unknown): value is MidiEvent {
     if (!isPlainObject(value) || !isFiniteNumber(value.timeSamples) || !isMidiEventKind(value.kind)) {
         return false;
     }
-    return value.trackId === undefined || isTrackId(value.trackId);
+    return (
+        (value.trackId === undefined || isTrackId(value.trackId)) &&
+        (value.sourceEventId === undefined || typeof value.sourceEventId === 'string') &&
+        (value.processingStage === undefined ||
+            (Number.isSafeInteger(value.processingStage) && Number(value.processingStage) >= 0)) &&
+        (value.timePpq === undefined || isFiniteNumber(value.timePpq)) &&
+        (value.tempoBpm === undefined || (isFiniteNumber(value.tempoBpm) && Number(value.tempoBpm) > 0))
+    );
 }
 
 function isMidiEventArray(value: unknown): value is MidiEvent[] {

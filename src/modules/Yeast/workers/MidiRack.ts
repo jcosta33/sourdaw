@@ -13,6 +13,8 @@ import type { ProcessorType } from '../models/ProcessorCatalog';
 import type { YeastProcessorCommand } from '../models/YeastProcessorCommand';
 import type { YeastProcessorProjectionItem } from '../models/YeastProcessorProjection';
 
+const FINAL_OUTPUT_STAGE = Number.MAX_SAFE_INTEGER;
+
 export class MidiRack {
     private processors: MidiProcessor[] = [];
     private processorTypes: Map<string, ProcessorType> = new Map();
@@ -25,7 +27,10 @@ export class MidiRack {
     // processor chain loop. `separateOutput` is the persistent return buffer.
     private scratchA: MidiEvent[] = [];
     private scratchB: MidiEvent[] = [];
+    private stageInput: MidiEvent[] = [];
     private separateOutput: MidiEvent[] = [];
+    private admittedSourceEvents = new Map<string, true>();
+    private static readonly MAX_ADMITTED_SOURCE_EVENTS = 16_384;
 
     /** Add a processor to the end of the chain. */
     addProcessor(processor: MidiProcessor, type?: ProcessorType): void {
@@ -156,12 +161,27 @@ export class MidiRack {
         // intermediate `drained` + spread-merge allocation (§149.1).
         const current0 = this.scratchA;
         current0.length = 0;
-        this.scheduled.drainRangeInto(blockStartSamples, blockEndSamples, current0);
+        this.scheduled.drainDueInto(blockEndSamples, current0);
 
         // 2. Merge with input events.
         for (let index = 0; index < inputEvents.length; index++) {
             const event = inputEvents[index]!;
+            const sourceEventId = event.sourceEventId;
+            if (sourceEventId) {
+                const admissionKey = `${trackId}\u0000${sourceEventId}`;
+                if (this.admittedSourceEvents.has(admissionKey)) {
+                    continue;
+                }
+                if (this.admittedSourceEvents.size >= MidiRack.MAX_ADMITTED_SOURCE_EVENTS) {
+                    const oldestKey = this.admittedSourceEvents.keys().next().value;
+                    if (oldestKey !== undefined) {
+                        this.admittedSourceEvents.delete(oldestKey);
+                    }
+                }
+                this.admittedSourceEvents.set(admissionKey, true);
+            }
             event.trackId = trackId;
+            event.processingStage = 0;
             current0.push(event);
         }
         current0.sort((alpha, b) => alpha.timeSamples - b.timeSamples);
@@ -170,24 +190,46 @@ export class MidiRack {
         // so each hop reuses the same two buffers (§149.1).
         let input: MidiEvent[] = current0;
         let output: MidiEvent[] = this.scratchB;
-        for (const processor of this.processors) {
+        for (let processorIndex = 0; processorIndex < this.processors.length; processorIndex++) {
+            const processor = this.processors[processorIndex]!;
             processor.setTrackId?.(trackId);
             if (processor.isBypassed()) {
+                for (const event of input) {
+                    if ((event.processingStage ?? 0) <= processorIndex) {
+                        event.processingStage = processorIndex + 1;
+                    }
+                }
                 continue;
             }
             output.length = 0;
+            const stageInput = this.stageInput;
+            stageInput.length = 0;
+            for (const event of input) {
+                if ((event.processingStage ?? 0) <= processorIndex) {
+                    stageInput.push(event);
+                } else {
+                    output.push(event);
+                }
+            }
+            const carriedCount = output.length;
             try {
-                processor.processMidi(input, output, transport);
-                for (const event of output) {
+                processor.processMidi(stageInput, output, transport);
+                for (let index = carriedCount; index < output.length; index++) {
+                    const event = output[index]!;
                     event.trackId ??= trackId;
+                    event.processingStage = processorIndex + 1;
                 }
             } catch {
                 // A throwing processor must not abort the rest of the chain (or
                 // the block). Treat it as a transparent bypass for this block:
-                // skip the buffer swap so the upstream events flow through
+                // discard any partial output and carry the upstream events through
                 // unchanged. The happy path takes no exception, so try/catch adds
                 // no per-block allocation on the audio thread.
-                continue;
+                output.length = carriedCount;
+                for (const event of stageInput) {
+                    event.processingStage = processorIndex + 1;
+                    output.push(event);
+                }
             }
             const tmp = input;
             input = output;
@@ -233,8 +275,10 @@ export class MidiRack {
         finalOutput.length = 0;
         for (const event of current) {
             if (event.timeSamples < blockEndSamples) {
+                delete event.processingStage;
                 finalOutput.push(event);
             } else {
+                event.processingStage = FINAL_OUTPUT_STAGE;
                 this.scheduled.push(event);
             }
         }
@@ -265,6 +309,7 @@ export class MidiRack {
             }
         }
         this.activeNotes.clear();
+        this.admittedSourceEvents.clear();
 
         // Flush scheduled queue, de-duped against the active-note offs above.
         this.scheduled.flushAllNotesOff(output, nowSamples, emittedKeys);

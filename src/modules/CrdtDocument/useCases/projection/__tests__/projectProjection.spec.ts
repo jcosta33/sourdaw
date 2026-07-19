@@ -17,6 +17,8 @@ const mocks = vi.hoisted(() => ({
     cvGateStore: { hydrate: vi.fn() },
     actionHistoryStore: { hydrate: vi.fn() },
     yeastStore: { hydrate: vi.fn() },
+    hydrateMidiCrdtProjection: vi.fn(),
+    hydrateYeastCrdtProjection: vi.fn(),
     hydrateSidechainRoutes: vi.fn(),
 }));
 
@@ -53,6 +55,10 @@ vi.mock('#/modules/MIDI/stores', async (importOriginal) => {
         grooveTemplateStore: mocks.grooveTemplateStore,
     };
 });
+
+vi.mock('#/modules/MIDI/useCases', () => ({
+    hydrateMidiCrdtProjection: mocks.hydrateMidiCrdtProjection,
+}));
 
 // Mock Project
 vi.mock('#/modules/Project/stores', async (importOriginal) => {
@@ -98,6 +104,10 @@ vi.mock('#/modules/Yeast/stores', async (importOriginal) => {
     return { ...actual, yeastStore: mocks.yeastStore };
 });
 
+vi.mock('#/modules/Yeast/useCases', () => ({
+    hydrateYeastCrdtProjection: mocks.hydrateYeastCrdtProjection,
+}));
+
 describe('projectCrdtToStores', () => {
     beforeEach(() => vi.clearAllMocks());
 
@@ -106,8 +116,9 @@ describe('projectCrdtToStores', () => {
 
         expect(mocks.trackStore.hydrate).toHaveBeenCalledTimes(1);
         expect(mocks.automationStore.hydrate).toHaveBeenCalledTimes(1);
-        expect(mocks.midiStore.hydrate).toHaveBeenCalledTimes(1);
-        expect(mocks.grooveTemplateStore.hydrate).toHaveBeenCalledTimes(1);
+        expect(mocks.midiStore.hydrate).not.toHaveBeenCalled();
+        expect(mocks.grooveTemplateStore.hydrate).not.toHaveBeenCalled();
+        expect(mocks.hydrateMidiCrdtProjection).toHaveBeenCalledTimes(1);
         expect(mocks.transportStore.hydrate).toHaveBeenCalledTimes(1);
         expect(mocks.tempoMapStore.hydrate).toHaveBeenCalledTimes(1);
         expect(mocks.timeSignatureMapStore.hydrate).toHaveBeenCalledTimes(1);
@@ -117,7 +128,8 @@ describe('projectCrdtToStores', () => {
         expect(mocks.projectStore.hydrate).toHaveBeenCalledTimes(1);
         expect(mocks.cvGateStore.hydrate).toHaveBeenCalledTimes(1);
         expect(mocks.actionHistoryStore.hydrate).toHaveBeenCalledTimes(1);
-        expect(mocks.yeastStore.hydrate).toHaveBeenCalledTimes(1);
+        expect(mocks.yeastStore.hydrate).not.toHaveBeenCalled();
+        expect(mocks.hydrateYeastCrdtProjection).toHaveBeenCalledTimes(1);
 
         expect(mocks.hydrateSidechainRoutes).toHaveBeenCalledTimes(1);
     });

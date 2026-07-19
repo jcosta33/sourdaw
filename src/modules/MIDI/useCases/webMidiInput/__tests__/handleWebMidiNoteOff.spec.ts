@@ -154,7 +154,48 @@ describe('handleWebMidiNoteOff', () => {
         await fn(0, 60);
 
         expect(process_realtime_midi_input).toHaveBeenCalledTimes(1);
-        expect(fermenter_note_off).toHaveBeenCalledWith(67);
+        expect(fermenter_note_off).toHaveBeenCalledWith(67, 0);
+    });
+
+    it('passes the returned sample frame to Yeast-routed note-off controls', async () => {
+        const fermenter_note_off = vi.fn<(note: number, sampleFrame?: number) => void>();
+        const fn = handleWebMidiNoteOff._factory(
+            make_dependencies({
+                getTrackStoreState: () => ({
+                    tracks: [
+                        {
+                            id: 'track-1',
+                            devices: [
+                                { id: 'yeast-1', type: 'yeast' },
+                                { id: 'ferm-1', type: 'fermenter' },
+                            ],
+                        },
+                    ],
+                    selectedTrackId: 'track-1',
+                }),
+                getTransportStoreValue: () => ({ isRecording: false }),
+                processRealtimeMidiInput: async (): Promise<TestMidiEvent[]> => [
+                    { timeSamples: 120_000, kind: { type: 'noteOff', channel: 0, note: 67 } },
+                ],
+            })
+        );
+        get_track_strip.mockReturnValue({
+            deviceNodes: [
+                { type: 'fermenter', deviceId: 'ferm-1', fermenterControls: { noteOff: fermenter_note_off } },
+            ],
+        });
+        activeNotes.set(createWebMidiNoteKey(0, 60), {
+            channel: 0,
+            note: 60,
+            trackId: 'track-1',
+            instrumentTrackId: 'track-1',
+            startTime: 0,
+            startBeat: 0,
+        });
+
+        await fn(0, 60);
+
+        expect(fermenter_note_off).toHaveBeenCalledWith(67, 120_000);
     });
 
     it('releases a Yeast note on its originating track after selection changes', async () => {
@@ -199,7 +240,7 @@ describe('handleWebMidiNoteOff', () => {
 
         expect(process_realtime_midi_input).toHaveBeenCalledWith(expect.objectContaining({ trackId: 'track-a' }));
         expect(get_track_strip).toHaveBeenCalledWith('track-a');
-        expect(fermenter_note_off).toHaveBeenCalledWith(67);
+        expect(fermenter_note_off).toHaveBeenCalledWith(67, 0);
     });
 
     it('should release a live synth oscillator through its envelope', async () => {

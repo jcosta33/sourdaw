@@ -5,6 +5,17 @@ import { canonicalizeGrooveTemplateAssignment } from '../../useCases/grooveTempl
 import { getGrooveAssignment } from '../../useCases/grooveTemplates/getGrooveAssignment';
 
 export const handleAssignGrooveTemplate = createHandler<'assignGrooveTemplate'>({
+    isNoop: (action) => {
+        const expected = canonicalizeGrooveTemplateAssignment(action.payload);
+        const current = getGrooveAssignment(action.payload);
+        return (
+            expected !== null &&
+            current?.consumerType === expected.consumerType &&
+            current.consumerId === expected.consumerId &&
+            current.templateId === expected.templateId &&
+            current.amount === expected.amount
+        );
+    },
     execute: (action) => {
         const result = assignGrooveTemplate(action.payload);
         if (!result.ok) {

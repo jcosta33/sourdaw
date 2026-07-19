@@ -5,6 +5,7 @@ import { playheadPositionRef } from '#/modules/Transport/stores';
 import { toasterStore } from '../stores/toasterStore';
 
 import { projectToasterPatternGroove } from './projectToasterPatternGroove';
+import { projectToasterStepEvents } from './projectToasterStepEvents';
 
 type ExportPatternToTimelineResult =
     | { ok: true }
@@ -107,58 +108,28 @@ export function exportPatternToTimeline(deviceId: string): ExportPatternToTimeli
         const clipId = clip.id;
         const midiNote = 36 + track.padIndex;
 
-        const grooveSourceEvents = track.steps.slice(0, numSteps).flatMap((step, stepIdx) => {
-            if (!step.active) {
-                return [];
-            }
-            const microOffsetBeats = step.microTiming * stepDurationBeats;
-            const swingBeats = stepIdx % 2 === 1 ? swing * stepDurationBeats * 0.5 : 0;
-            return [
-                {
-                    id: `${track.padIndex}:${stepIdx}`,
-                    startBeat: Math.max(0, stepIdx * stepDurationBeats + microOffsetBeats + swingBeats),
-                    velocity: Math.round(step.velocity * 127),
-                    stepIdx,
-                },
-            ];
-        });
-        const grooveProjection = projectToasterPatternGroove({
-            deviceId,
-            patternId: pattern.id,
-            stepsPerBar,
-            events: grooveSourceEvents,
-        });
-        if (!grooveProjection.ok) {
-            return grooveProjection;
-        }
-        const projectedByStep = new Map(grooveProjection.events.map((event) => [event.stepIdx, event]));
-
         // Add MIDI notes for each active step, baking in the same micro-timing,
         // swing, shared groove, and retrigger the live sequencer applies.
         for (let stepIdx = 0; stepIdx < numSteps; stepIdx++) {
             const step = track.steps[stepIdx];
-            const projected = projectedByStep.get(stepIdx);
-            if (!step?.active || !projected) {
+            if (!step?.active) {
                 continue;
             }
-
-            // Live playback cannot schedule before transport start; clamp the
-            // first grid boundary while preserving early offsets after beat zero.
-            const startBeat = Math.max(0, projected.startBeat);
-            const noteDuration = stepDurationBeats * 0.9;
-            const velocity = projected.velocity;
-
-            addMidiNote(clipId, midiNote, startBeat, noteDuration, velocity);
-
-            // Ratchets: extra notes within the step, matching the player's
-            // even sub-division and decaying velocity (floored at 20).
-            if (step.retriggerCount > 0) {
-                const subInterval = stepDurationBeats / (step.retriggerCount + 1);
-                for (let r = 1; r <= step.retriggerCount; r++) {
-                    const retrigVel = Math.max(20, Math.round(velocity * (1 - r * 0.12)));
-                    const retrigStart = Math.max(0, startBeat + subInterval * r);
-                    addMidiNote(clipId, midiNote, retrigStart, subInterval * 0.9, retrigVel);
-                }
+            const projection = projectToasterStepEvents({
+                deviceId,
+                patternId: pattern.id,
+                stepsPerBar,
+                loopLengthBeats: clipLength,
+                padIndex: track.padIndex,
+                stepIndex: stepIdx,
+                step,
+                swing,
+            });
+            if (!projection.ok) {
+                return projection;
+            }
+            for (const hit of projection.hits) {
+                addMidiNote(clipId, midiNote, hit.startBeat, hit.durationBeats, hit.velocity);
             }
         }
     }

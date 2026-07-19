@@ -553,6 +553,8 @@ export type HandlerDescribeResult = {
 export type ActionHandler<Action extends AppAction = AppAction> = {
     execute: (action: Action) => void | Promise<void>;
     describe: (action: Action) => HandlerDescribeResult;
+    /** True when the canonical action is already reflected in project truth. */
+    isNoop?: (action: Action) => boolean;
     undoable: boolean;
 };
 

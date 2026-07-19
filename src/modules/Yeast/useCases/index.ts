@@ -5,4 +5,6 @@ export { configureYeastRuntime } from './configureYeastRuntime';
 export { sendYeastProcessorCommand } from './sendYeastProcessorCommand';
 export { setYeastGrooveTemplate } from './setYeastGrooveTemplate';
 export { hydrateYeastState } from './hydrateYeastState';
+export { hydrateYeastCrdtProjection } from './hydrateYeastCrdtProjection';
+export { getYeastSchedulingLookahead } from './getYeastSchedulingLookahead';
 export { teardownYeastRuntime } from './teardownYeastRuntime';

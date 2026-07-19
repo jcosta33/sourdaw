@@ -4,6 +4,7 @@ import { Container } from '#/infra/di/Container';
 import { getAudioTime } from '#/modules/AudioEngine/useCases';
 import { defaultGrooveTemplateState, grooveTemplateStore } from '#/modules/MIDI/stores';
 import { assignGrooveTemplate, createGrooveTemplate } from '#/modules/MIDI/useCases';
+import { defaultTransportState, transportStore } from '#/modules/Transport/stores';
 
 import { type Step, type ToasterKit, createDefaultKit } from '../../models/ToasterKit';
 import { toasterStore, defaultToasterState } from '../../stores/toasterStore';
@@ -75,6 +76,7 @@ describe('startSequencer', () => {
         vi.clearAllMocks();
         toasterStore.set({});
         grooveTemplateStore.set(structuredClone(defaultGrooveTemplateState));
+        transportStore.set({ ...defaultTransportState, tempo: 120 });
     });
 
     afterEach(() => {
@@ -82,6 +84,7 @@ describe('startSequencer', () => {
         stopSequencer(OTHER);
         vi.useRealTimers();
         toasterStore.set({});
+        transportStore.set({ ...defaultTransportState });
     });
 
     it('reads the audio clock when starting', () => {
@@ -211,6 +214,64 @@ describe('startSequencer', () => {
         expect(toasterStore.value?.[DEVICE]?.currentStep).toBe(31);
         vi.advanceTimersByTime(62);
         expect(toasterStore.value?.[DEVICE]?.currentStep).toBe(0);
+    });
+
+    it('uses the current transport tempo for each scheduling window', () => {
+        vi.setSystemTime(0);
+        vi.mocked(getAudioTime).mockImplementation(() => Date.now() / 1000);
+        const kit = kitWithStep(activeStep({ active: false }));
+        kit.patterns[0] = {
+            ...kit.patterns[0]!,
+            stepsPerBar: 4,
+            tracks: [
+                {
+                    padIndex: 0,
+                    steps: [
+                        activeStep({ active: false }),
+                        activeStep(),
+                        activeStep({ active: false }),
+                        activeStep({ active: false }),
+                    ],
+                },
+            ],
+        };
+        toasterStore.set({ ...toasterStore.value, [DEVICE]: { ...defaultToasterState, kit } });
+        transportStore.set({ ...defaultTransportState, tempo: 240 });
+
+        startSequencer(DEVICE, 120);
+        vi.advanceTimersByTime(249);
+        expect(triggerToasterPad).not.toHaveBeenCalled();
+        vi.advanceTimersByTime(2);
+
+        expect(triggerToasterPad).toHaveBeenCalledTimes(1);
+    });
+
+    it('clamps final-step retrigger spill inside every live loop', () => {
+        vi.setSystemTime(0);
+        vi.mocked(getAudioTime).mockImplementation(() => Date.now() / 1000);
+        const kit = kitWithStep(activeStep({ active: false }));
+        kit.patterns[0] = {
+            ...kit.patterns[0]!,
+            stepsPerBar: 4,
+            tracks: [
+                {
+                    padIndex: 0,
+                    steps: [
+                        activeStep({ active: false }),
+                        activeStep({ active: false }),
+                        activeStep({ active: false }),
+                        activeStep({ microTiming: 0.5, retriggerCount: 2 }),
+                    ],
+                },
+            ],
+        };
+        toasterStore.set({ ...toasterStore.value, [DEVICE]: { ...defaultToasterState, kit } });
+
+        startSequencer(DEVICE, 120);
+        vi.advanceTimersByTime(2_000);
+        expect(triggerToasterPad).toHaveBeenCalledTimes(3);
+        vi.advanceTimersByTime(2_000);
+        expect(triggerToasterPad).toHaveBeenCalledTimes(6);
     });
 
     it('rejects unsupported groove capability instead of triggering an unmodified live event', () => {

@@ -265,6 +265,49 @@ describe('exportPatternToTimeline', () => {
         expect(r2Vel).toBe(Math.round(127 * (1 - 0.24)));
     });
 
+    it('clamps final-step base and retrigger spill inside the exported MIDI clip', () => {
+        const parent = { id: 'parent', parentId: null, devices: [{ id: DEVICE_ID }] };
+        const child = { id: 'child-0', name: 'Kick', parentId: 'parent', devices: [] };
+        vi.mocked(getAllTracks).mockReturnValue([parent, child] as never);
+        vi.mocked(addClip).mockReturnValue({ id: 'clip' } as never);
+        mockStore.value = {
+            [DEVICE_ID]: {
+                kit: {
+                    swing: 0,
+                    activePatternId: 'A1',
+                    patterns: [
+                        {
+                            id: 'A1',
+                            stepsPerBar: 4,
+                            bars: 1,
+                            tracks: [
+                                {
+                                    padIndex: 0,
+                                    steps: [
+                                        makeStep(),
+                                        makeStep(),
+                                        makeStep(),
+                                        makeStep({ active: true, microTiming: 0.5, retriggerCount: 2 }),
+                                    ],
+                                },
+                            ],
+                        },
+                    ],
+                },
+            },
+        };
+
+        exportPatternToTimeline(DEVICE_ID);
+
+        const notes = vi.mocked(addMidiNote).mock.calls;
+        expect(notes).toHaveLength(3);
+        for (const [, , startBeat, duration] of notes) {
+            expect(startBeat).toBeLessThan(4);
+            expect(startBeat + duration).toBeLessThanOrEqual(4);
+        }
+        expect(notes.map(([, , startBeat]) => startBeat)).toEqual([3.5, 3.5 + 1 / 3, 4 - 1 / 960]);
+    });
+
     it('exports the same 32-step groove grid and retrigger positions as live playback', () => {
         const parent = { id: 'parent', parentId: null, devices: [{ id: DEVICE_ID }] };
         const child = { id: 'child-0', name: 'Kick', parentId: 'parent', devices: [] };

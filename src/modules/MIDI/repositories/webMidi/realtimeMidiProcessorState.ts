@@ -13,6 +13,9 @@ export type RealtimeMidiInput = {
 export type RealtimeMidiEvent = {
     timeSamples: number;
     trackId?: string;
+    sourceEventId?: string;
+    timePpq?: number;
+    tempoBpm?: number;
     kind:
         | { type: 'noteOn'; channel: number; note: number; velocity: number }
         | { type: 'noteOff'; channel: number; note: number }

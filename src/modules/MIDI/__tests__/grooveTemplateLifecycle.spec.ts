@@ -1,9 +1,11 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 
+import { handleAssignGrooveTemplate } from '../handlers/groove/handleAssignGrooveTemplate';
 import { handleCreateGrooveTemplate } from '../handlers/groove/handleCreateGrooveTemplate';
 import { handleDeleteGrooveTemplate } from '../handlers/groove/handleDeleteGrooveTemplate';
 import { handleRenameGrooveTemplate } from '../handlers/groove/handleRenameGrooveTemplate';
 import { STRAIGHT_GROOVE_TEMPLATE_ID } from '../models/GrooveTemplate';
+import { grooveTemplateProjectRevisionStore } from '../stores/grooveTemplateProjectRevisionStore';
 import { defaultGrooveTemplateState, grooveTemplateStore } from '../stores/grooveTemplateStore';
 import { assignGrooveTemplate } from '../useCases/grooveTemplates/assignGrooveTemplate';
 import { createGrooveTemplate } from '../useCases/grooveTemplates/createGrooveTemplate';
@@ -11,7 +13,10 @@ import { hydrateGrooveTemplates } from '../useCases/grooveTemplates/hydrateGroov
 import { renameGrooveTemplate } from '../useCases/grooveTemplates/renameGrooveTemplate';
 
 describe('groove template lifecycle', () => {
-    beforeEach(() => grooveTemplateStore.set(structuredClone(defaultGrooveTemplateState)));
+    beforeEach(() => {
+        grooveTemplateStore.set(structuredClone(defaultGrooveTemplateState));
+        grooveTemplateProjectRevisionStore.set(0);
+    });
 
     it('keeps lifecycle writes in MIDI and resolves generated-name collisions deterministically', () => {
         const first = createGrooveTemplate({
@@ -32,6 +37,26 @@ describe('groove template lifecycle', () => {
         expect(first.name).toBe('Pocket');
         expect(second.name).toBe('Pocket 2');
         expect(renameGrooveTemplate({ templateId: second.id, name: 'Pocket' })?.name).toBe('Pocket 2');
+    });
+
+    it('treats an identical canonical assignment as no project or command change', () => {
+        const input = {
+            consumerType: 'clip' as const,
+            consumerId: 'clip-identical',
+            templateId: STRAIGHT_GROOVE_TEMPLATE_ID,
+            amount: 1,
+        };
+        const action = { type: 'assignGrooveTemplate' as const, payload: input };
+
+        expect(assignGrooveTemplate(input).ok).toBe(true);
+        const afterFirstAssignment = grooveTemplateStore.value;
+        const revision = grooveTemplateProjectRevisionStore.value;
+
+        expect(assignGrooveTemplate(input).ok).toBe(true);
+
+        expect(grooveTemplateStore.value).toBe(afterFirstAssignment);
+        expect(grooveTemplateProjectRevisionStore.value).toBe(revision);
+        expect(handleAssignGrooveTemplate.isNoop?.(action)).toBe(true);
     });
 
     it('resolves name collisions with locale-independent Unicode normalization', () => {

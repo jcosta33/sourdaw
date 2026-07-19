@@ -5,6 +5,7 @@ import { type ProcessorType } from '../../models/ProcessorCatalog';
 import { type MidiProcessor } from '../MidiProcessor';
 import { MidiRack } from '../MidiRack';
 import { ChordMemory } from '../processors/ChordMemory';
+import { GrooveModule } from '../processors/GrooveModule';
 import { NoteFilter } from '../processors/NoteFilter';
 
 type NoteOffEvent = MidiEvent & { kind: Extract<MidiEventKind, { type: 'noteOff' }> };
@@ -63,6 +64,15 @@ class PassthroughProcessor implements MidiProcessor {
 class ThrowingProcessor extends PassthroughProcessor {
     override processMidi(): void {
         throw new Error('boom');
+    }
+}
+
+class PartiallyThrowingProcessor extends PassthroughProcessor {
+    override processMidi(input: readonly MidiEvent[], output: MidiEvent[]): void {
+        if (input[0]) {
+            output.push(input[0]);
+        }
+        throw new Error('boom after partial output');
     }
 }
 
@@ -339,6 +349,66 @@ describe('MidiRack', () => {
         });
     });
 
+    describe('cross-block final output scheduling', () => {
+        it('drains overdue final output without applying Groove a second time', () => {
+            const rack = new MidiRack();
+            const groove = new GrooveModule('groove-1');
+            groove.setParam('groove_amount', 1);
+            groove.setParam('groove_step_beats', 0.25);
+            groove.setParam('groove_timing_0', 0.5);
+            rack.addProcessor(groove, 'groove');
+
+            expect(
+                rack.processBlock(
+                    [
+                        {
+                            timeSamples: 120,
+                            sourceEventId: 'clip-1:note-1:on',
+                            kind: { type: 'noteOn', channel: 0, note: 60, velocity: 100 },
+                        },
+                    ],
+                    0,
+                    128,
+                    { ...transport, sampleRate: 48_000, bpm: 120 },
+                    'track-a'
+                )
+            ).toEqual([]);
+
+            const addedAfterQueueing = new GrooveModule('groove-2');
+            addedAfterQueueing.setParam('groove_amount', 1);
+            addedAfterQueueing.setParam('groove_step_beats', 0.25);
+            addedAfterQueueing.setParam('groove_timing_0', 0.5);
+            rack.addProcessor(addedAfterQueueing, 'groove');
+
+            const overdue = rack.processBlock(
+                [],
+                4_000,
+                4_128,
+                { ...transport, sampleRate: 48_000, bpm: 120 },
+                'track-a'
+            );
+
+            expect(overdue).toHaveLength(1);
+            expect(overdue[0]?.timeSamples).toBe(3_120);
+        });
+
+        it('deduplicates one stable source event admitted by overlapping lookahead windows', () => {
+            const rack = new MidiRack();
+            rack.addProcessor(new PassthroughProcessor('p1'));
+            const event = {
+                timeSamples: 200,
+                sourceEventId: 'clip-1:loop-0:note-1:on',
+                kind: { type: 'noteOn' as const, channel: 0, note: 60, velocity: 100 },
+            };
+
+            const first = [...rack.processBlock([event], 0, 256, transport, 'track-a')];
+            const duplicateAcrossBoundary = rack.processBlock([{ ...event }], 128, 384, transport, 'track-a');
+
+            expect(first).toHaveLength(1);
+            expect(duplicateAcrossBoundary).toEqual([]);
+        });
+    });
+
     describe('processBlock (fix #4: a throwing processor must not abort the chain)', () => {
         it('passes events through a throwing processor and keeps downstream processors running', () => {
             const rack = new MidiRack();
@@ -353,6 +423,17 @@ describe('MidiRack', () => {
             );
             // The note survived the throw and reached the output.
             expect(out.some((event) => event.kind.type === 'noteOn' && event.kind.note === 60)).toBe(true);
+        });
+
+        it('discards partial output from a throwing processor before transparent bypass', () => {
+            const rack = new MidiRack();
+            rack.addProcessor(new PartiallyThrowingProcessor('thrower'));
+            rack.addProcessor(new PassthroughProcessor('downstream'));
+
+            const out = rack.processBlock([noteOn(0, 60)], 0, 128, transport, 'track-a');
+
+            expect(out).toHaveLength(1);
+            expect(out[0]?.kind).toEqual({ type: 'noteOn', channel: 0, note: 60, velocity: 100 });
         });
     });
 

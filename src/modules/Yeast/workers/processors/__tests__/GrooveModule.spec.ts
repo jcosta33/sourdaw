@@ -124,4 +124,23 @@ describe('GrooveModule', () => {
         expect(shiftedOffTimes.slice(0, 32)).toEqual(Array.from({ length: 32 }, (_, index) => 12600 + index * 1000));
         expect(shiftedOffTimes[32]).toBe(44000);
     });
+
+    it('projects the shared beat offset independently at each endpoint tempo', () => {
+        const g = new GrooveModule('tempo-endpoints');
+        g.setParam('groove_amount', 1);
+        g.setParam('groove_step_beats', 0.5);
+        g.setParam('groove_timing_0', 0.5);
+        const out: MidiEvent[] = [];
+
+        g.processMidi(
+            [
+                { ...noteOn(0, 60), timePpq: 0, tempoBpm: 120 },
+                { ...noteOff(96_000, 60), timePpq: 4, tempoBpm: 240 },
+            ],
+            out,
+            { ...transport, sampleRate: 48_000, bpm: 120 }
+        );
+
+        expect(out.map((event) => event.timeSamples)).toEqual([6_000, 99_000]);
+    });
 });

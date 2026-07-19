@@ -54,11 +54,13 @@ export function startPlayheadScheduler(): void {
     }
 
     schedulerSession.generation += 1;
+    schedulerSession.sourceEpoch += 1;
     const schedulerGeneration = schedulerSession.generation;
     const cancellation: SchedulerCancellation = {
         generation: schedulerGeneration,
         isCurrent: () =>
             schedulerSession.generation === schedulerGeneration && transportStore.value?.isPlaying === true,
+        sourceEpoch: () => schedulerSession.sourceEpoch,
     };
 
     startAutomationRecording();
@@ -125,6 +127,7 @@ export function startPlayheadScheduler(): void {
         const tempoMapChanged = schedulerSession.lastTempoMapChanges !== liveChanges;
         const loopChanged = schedulerSession.lastLoopSignature !== loopSignature;
         if (tempoMapChanged || loopChanged) {
+            schedulerSession.sourceEpoch += 1;
             schedulerSession.lastTempoMapChanges = liveChanges;
             schedulerSession.lastLoopSignature = loopSignature;
             stopAllScheduled();
@@ -139,6 +142,7 @@ export function startPlayheadScheduler(): void {
         let newPosition = schedulerSession.accumulatedPosition + deltaBeats;
 
         if (current.isLooping && current.loopEnd > current.loopStart && newPosition >= current.loopEnd) {
+            schedulerSession.sourceEpoch += 1;
             if (current.isRecording) {
                 const armedTracks = trackStore.value?.tracks.filter((time) => time.armed) ?? [];
                 for (const track of armedTracks) {
@@ -183,6 +187,7 @@ export function startPlayheadScheduler(): void {
         }
 
         if (jumpToPosition !== null) {
+            schedulerSession.sourceEpoch += 1;
             newPosition = jumpToPosition;
             schedulerSession.lastScheduledBeat = newPosition;
             resetMetronomeBeat(newPosition);

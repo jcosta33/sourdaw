@@ -59,11 +59,42 @@ export type ActiveNote = {
  * Used by processors that emit delayed events (arp, repeater, strum, etc.).
  */
 export class ScheduledEventQueue {
+    private static readonly MAX_EVENTS = 16_384;
     private events: MidiEvent[] = [];
 
     /** Schedule a future event. */
     push(event: MidiEvent): void {
+        if (this.events.length >= ScheduledEventQueue.MAX_EVENTS) {
+            let furthestIndex = 0;
+            for (let index = 1; index < this.events.length; index++) {
+                if (this.events[index]!.timeSamples > this.events[furthestIndex]!.timeSamples) {
+                    furthestIndex = index;
+                }
+            }
+            if (this.events[furthestIndex]!.timeSamples <= event.timeSamples) {
+                return;
+            }
+            this.events[furthestIndex] = event;
+            return;
+        }
         this.events.push(event);
+    }
+
+    /** Drain every event due before `endSamples`, including overdue output. */
+    drainDueInto(endSamples: number, out: MidiEvent[]): MidiEvent[] {
+        const src = this.events;
+        let writeIndex = 0;
+        for (let index = 0; index < src.length; index++) {
+            const event = src[index]!;
+            if (event.timeSamples < endSamples) {
+                out.push(event);
+            } else {
+                src[writeIndex++] = event;
+            }
+        }
+        src.length = writeIndex;
+        out.sort((left, right) => left.timeSamples - right.timeSamples);
+        return out;
     }
 
     /** Drain all events whose time falls within [start, end). Returns sorted. */

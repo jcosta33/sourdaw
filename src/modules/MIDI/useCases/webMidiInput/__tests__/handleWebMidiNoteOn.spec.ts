@@ -104,7 +104,7 @@ describe('handleWebMidiNoteOn', () => {
 
         await fn(0, 60, 100);
 
-        expect(grand_boule_note_on).toHaveBeenCalledWith(67, 100 / 127);
+        expect(grand_boule_note_on).toHaveBeenCalledWith(67, 100 / 127, 0);
         expect(emitted).toContainEqual({
             type: 'midi.noteOn',
             payload: { deviceId: 'gb-1', midiNote: 67, velocity: 100 / 127 },
@@ -141,7 +141,61 @@ describe('handleWebMidiNoteOn', () => {
 
         await fn(0, 60, 100);
 
-        expect(grand_boule_note_on).toHaveBeenCalledWith(67, 100 / 127);
+        expect(grand_boule_note_on).toHaveBeenCalledWith(67, 100 / 127, 0);
+    });
+
+    it('schedules Yeast-routed note-ons at the returned absolute sample time', async () => {
+        const schedule_note = vi.fn();
+        const fn = handleWebMidiNoteOn._factory(
+            make_dependencies({
+                getTrackStoreState: () => ({
+                    tracks: [{ id: 'track-1', devices: [{ id: 'yeast-1', type: 'yeast' }] }],
+                    selectedTrackId: 'track-1',
+                }),
+                processRealtimeMidiInput: async (): Promise<TestMidiEvent[]> => [
+                    { timeSamples: 120_000, kind: { type: 'noteOn', channel: 0, note: 67, velocity: 100 } },
+                ],
+                scheduleNote: schedule_note,
+            })
+        );
+        ensure_track_strip.mockReturnValue({ gainNode: {}, deviceNodes: [] });
+
+        await fn(0, 60, 100);
+
+        expect(schedule_note.mock.calls[0]?.[3]).toBe(2.5);
+    });
+
+    it('passes the returned sample frame to Yeast-routed worklet controls', async () => {
+        const grand_boule_note_on = vi.fn();
+        const fn = handleWebMidiNoteOn._factory(
+            make_dependencies({
+                getTrackStoreState: () => ({
+                    tracks: [
+                        {
+                            id: 'track-1',
+                            devices: [
+                                { id: 'yeast-1', type: 'yeast' },
+                                { id: 'gb-1', type: 'grand-boule' },
+                            ],
+                        },
+                    ],
+                    selectedTrackId: 'track-1',
+                }),
+                processRealtimeMidiInput: async (): Promise<TestMidiEvent[]> => [
+                    { timeSamples: 120_000, kind: { type: 'noteOn', channel: 0, note: 67, velocity: 100 } },
+                ],
+            })
+        );
+        ensure_track_strip.mockReturnValue({
+            gainNode: {},
+            deviceNodes: [
+                { type: 'grand-boule', deviceId: 'gb-1', grandBouleControls: { noteOn: grand_boule_note_on } },
+            ],
+        });
+
+        await fn(0, 60, 100);
+
+        expect(grand_boule_note_on).toHaveBeenCalledWith(67, 100 / 127, 120_000);
     });
 
     it('releases an existing same-channel pitch before retriggering it', async () => {

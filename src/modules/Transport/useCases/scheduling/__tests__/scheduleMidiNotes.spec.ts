@@ -48,6 +48,7 @@ vi.mock('#/modules/Synth/useCases', () => ({
 }));
 vi.mock('#/modules/Yeast/useCases', () => ({
     processYeastMidi: vi.fn(),
+    getYeastSchedulingLookahead: vi.fn(() => ({ earlyBeats: 0.5, lateBeats: 0.5 })),
 }));
 vi.mock('#/modules/MIDI/useCases', () => ({
     getChordAtBeat: vi.fn(),
@@ -319,6 +320,47 @@ describe('scheduleMidiNotes', () => {
         expect(retained).toEqual([]);
         expect(scheduleNote).toHaveBeenCalledTimes(1);
         expect(vi.mocked(scheduleNote).mock.calls[0]![4]).toBe(0.75);
+    });
+
+    it('admits a future source note early enough for a negative Yeast projection and schedules it once', async () => {
+        const track = midiTrack({ clips: [midiClip()], devices: [{ id: 'y', type: 'yeast' }] });
+        (trackStore as { value: unknown }).value = { tracks: [track] };
+        (midiStore as { value: unknown }).value = {
+            notesByClipId: {
+                'clip-1': [{ id: 'n-lookahead', pitch: 60, startBeat: 1.2, duration: 0.25, velocity: 100 }],
+            },
+        };
+        vi.mocked(processYeastMidi).mockImplementation(async (input) =>
+            input.events.flatMap((event) => {
+                if (event.kind.type !== 'noteOn' || event.sourceEventId === undefined) {
+                    return [];
+                }
+                return [
+                    { ...event, timeSamples: 21_600 },
+                    {
+                        timeSamples: 27_600,
+                        trackId: event.trackId,
+                        sourceEventId: `${event.sourceEventId}:projected-off`,
+                        kind: { type: 'noteOff' as const, channel: event.kind.channel, note: event.kind.note },
+                    },
+                ];
+            })
+        );
+
+        await scheduleMidiNotes(0, 1, 0, -1, [], defaultTransportState, 120);
+
+        expect(processYeastMidi).toHaveBeenCalledWith(
+            expect.objectContaining({
+                events: expect.arrayContaining([
+                    expect.objectContaining({
+                        sourceEventId: expect.stringContaining('n-lookahead'),
+                        timePpq: 1.2,
+                        tempoBpm: 120,
+                    }),
+                ]),
+            })
+        );
+        expect(scheduleNote).toHaveBeenCalledTimes(1);
     });
 
     // audit row 2 — The Yeast transport metadata (bar index, beat-in-bar, time

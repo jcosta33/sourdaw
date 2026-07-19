@@ -21,4 +21,5 @@ export function stopSequencer(deviceId: string): void {
         toasterStore.set({ ...toasterStore.value, [deviceId]: { ...state, isPlaying: false, currentStep: 0 } });
     }
     seqState.playCount = 0;
+    seqState.lastBpm = null;
 }

@@ -18,6 +18,14 @@ export type MidiEvent = {
     kind: MidiEventKind;
     /** Originating instrument track for runtime routing and panic recovery. */
     trackId?: string;
+    /** Stable authored identity used to deduplicate overlapping source lookahead windows. */
+    sourceEventId?: string;
+    /** Worker-internal resume stage for final output carried across block boundaries. */
+    processingStage?: number;
+    /** Canonical beat-domain endpoint before/after musical timing projection. */
+    timePpq?: number;
+    /** Tempo segment applicable to this endpoint. */
+    tempoBpm?: number;
 };
 
 export type TransportInfo = {

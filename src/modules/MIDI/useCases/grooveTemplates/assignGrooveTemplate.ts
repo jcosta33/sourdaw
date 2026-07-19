@@ -35,6 +35,15 @@ export function assignGrooveTemplate(input: AssignGrooveTemplateInput): AssignGr
     const existingIndex = state.assignments.findIndex(
         (candidate) => candidate.consumerType === input.consumerType && candidate.consumerId === assignment.consumerId
     );
+    const existingAssignment = existingIndex === -1 ? undefined : state.assignments[existingIndex];
+    if (
+        existingAssignment?.consumerType === assignment.consumerType &&
+        existingAssignment.consumerId === assignment.consumerId &&
+        existingAssignment.templateId === assignment.templateId &&
+        existingAssignment.amount === assignment.amount
+    ) {
+        return { ok: true, assignment };
+    }
     const assignments = [...state.assignments];
     if (existingIndex === -1) {
         assignments.push(assignment);
