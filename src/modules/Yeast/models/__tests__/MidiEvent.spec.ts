@@ -1,12 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import {
-    ppqToSamples,
-    projectPpqToSamples,
-    rateToBeats,
-    samplesToBeats,
-    type TransportInfo,
-} from '../MidiEvent';
+import { ppqToSamples, projectPpqToSamples, rateToBeats, samplesToBeats, type TransportInfo } from '../MidiEvent';
 
 const transport: TransportInfo = {
     isPlaying: true,

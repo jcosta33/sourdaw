@@ -346,7 +346,13 @@ describe('Humanizer', () => {
         // ...and its matching identified note-off short-circuits as well.
         const disabledOffOutput: MidiEvent[] = [];
         human.processMidi(
-            [{ timeSamples: ceiling + 100, noteInstanceId: 'voice-disabled', kind: { type: 'noteOff', channel: 0, note: 61 } }],
+            [
+                {
+                    timeSamples: ceiling + 100,
+                    noteInstanceId: 'voice-disabled',
+                    kind: { type: 'noteOff', channel: 0, note: 61 },
+                },
+            ],
             disabledOffOutput,
             transport
         );
