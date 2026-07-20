@@ -202,6 +202,7 @@ export { zoomTimelineBy } from './zoomTimelineBy';
 export { assignToVca } from './vca/assignToVca';
 export { createAndAssignVcaGroup } from './vca/createAndAssignVcaGroup';
 export { createVcaGroup } from './vca/createVcaGroup';
+export { commitLegacyVcaTemplateState } from './vca/commitLegacyVcaTemplateState';
 export { getEffectiveGain } from './vca/getEffectiveGain';
 export { getVcaGroups } from './vca/getVcaGroups';
 export { removeFromVca } from './vca/removeFromVca';

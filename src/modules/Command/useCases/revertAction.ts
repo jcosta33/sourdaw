@@ -1,6 +1,6 @@
 import { actionHistoryStore } from '#/modules/CrdtDocument/stores';
 
-import { AppActionCommittedError } from '../errors/AppActionExecutionError';
+import { AppActionCommittedError, AppActionConflictError } from '../errors/AppActionExecutionError';
 import {
     claimActionReplayCapability,
     completeActionReplayMarkReconciliation,
@@ -59,7 +59,11 @@ function retryActionReplayMark({ entryId, claim }: RetryActionReplayMarkInput): 
 }
 
 type RevertActionOutput = Promise<
-    { status: 'executed' } | { status: 'executed-unmarked' } | { status: 'reconciled' } | { status: 'unavailable' }
+    | { status: 'executed' }
+    | { status: 'executed-unmarked' }
+    | { status: 'reconciled' }
+    | { status: 'unavailable' }
+    | { status: 'conflict' }
 >;
 
 export async function revertAction(entryId: string): RevertActionOutput {
@@ -91,6 +95,10 @@ export async function revertAction(entryId: string): RevertActionOutput {
             groupLabel: `Reverted: ${entry.label}`,
         });
     } catch (error) {
+        if (error instanceof AppActionConflictError) {
+            restoreActionReplayCapability({ entryId, claim });
+            return { status: 'conflict' };
+        }
         if (error instanceof AppActionCommittedError) {
             let mark_outcome: 'marked' | 'unavailable';
             try {

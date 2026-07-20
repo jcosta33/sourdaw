@@ -46,6 +46,9 @@ function isObj(value: unknown): value is Record<string, unknown> {
 function isString(value: unknown): value is string {
     return typeof value === 'string';
 }
+function isNonEmptyString(value: unknown): value is string {
+    return isString(value) && value.trim().length > 0;
+}
 function isNumber(value: unknown): value is number {
     return typeof value === 'number' && Number.isFinite(value);
 }
@@ -64,6 +67,14 @@ function isOptional<Value>(value: unknown, check: (value: unknown) => value is V
 
 function hasExactKeys(value: Record<string, unknown>, keys: readonly string[]): boolean {
     return Reflect.ownKeys(value).length === keys.length && keys.every((key) => Object.hasOwn(value, key));
+}
+
+function isUniqueNonEmptyStringArray(value: unknown): value is string[] {
+    if (!Array.isArray(value) || !value.every(isNonEmptyString)) {
+        return false;
+    }
+
+    return new Set(value).size === value.length;
 }
 
 function hasFinitePunchBeat(param: unknown): param is PayloadOf<'setPunchIn'> {
@@ -400,10 +411,23 @@ const validators = {
 
     // CV / VCA
     addCvOutput: 'unchecked',
-    createVcaGroup: 'unchecked',
-    assignToVca: 'unchecked',
-    removeFromVca: 'unchecked',
-    setVcaGain: 'unchecked',
+    createVcaGroup: (param): param is PayloadOf<'createVcaGroup'> =>
+        isObj(param) &&
+        hasExactKeys(param, ['name', 'trackIds']) &&
+        isNonEmptyString(param.name) &&
+        isUniqueNonEmptyStringArray(param.trackIds),
+    assignToVca: (param): param is PayloadOf<'assignToVca'> =>
+        isObj(param) &&
+        hasExactKeys(param, ['trackId', 'vcaGroupId']) &&
+        isNonEmptyString(param.trackId) &&
+        isNonEmptyString(param.vcaGroupId),
+    removeFromVca: (param): param is PayloadOf<'removeFromVca'> =>
+        isObj(param) && hasExactKeys(param, ['trackId']) && isNonEmptyString(param.trackId),
+    setVcaGain: (param): param is PayloadOf<'setVcaGain'> =>
+        isObj(param) &&
+        hasExactKeys(param, ['vcaGroupId', 'gain']) &&
+        isNonEmptyString(param.vcaGroupId) &&
+        isInRange(param.gain, 0, 2),
 
     // Groove
     extractGroove: 'unchecked',
