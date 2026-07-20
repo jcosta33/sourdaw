@@ -1,0 +1,19 @@
+src/modules/Knead/useCases/clearClipPitchContour.ts
+  s_c28df7d3dde4b9::t_f16676eabe53ba 6
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "6cd5c6ebb405bd2177789b6064d8528b2eb70efa",
+  "prompts": {},
+  "sessions": {
+    "s_c28df7d3dde4b9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f80f4-c597-7162-a337-9e68c16e3fb4",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
