@@ -1,5 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
+import { logger } from '#/infra/logger/appLogger';
+
 import { createGrinderNode, isGrinderDevice } from '../GrinderNode';
 
 // Mock the worklet-init helpers so createGrinderNode resolves without a real
@@ -21,11 +23,12 @@ vi.mock('../pluginHostingErrors', () => ({
     requireSharedArrayBuffer: vi.fn(),
 }));
 
-// No telemetry slot needed for the param-coalescing path.
-vi.mock('../telemetryAllocator', () => ({
-    telemetryAllocator: { allocateSlot: vi.fn(() => null), releaseSlot: vi.fn() },
-    GRINDER_IDX: {},
-}));
+// No telemetry slot by default; individual tests override allocateSlot to
+// exercise the slot-present branches (init-sab post, meter polling).
+vi.mock('../telemetryAllocator', async () => {
+    const actual = await vi.importActual<typeof import('../telemetryAllocator')>('../telemetryAllocator');
+    return { ...actual, telemetryAllocator: { allocateSlot: vi.fn(() => null), releaseSlot: vi.fn() } };
+});
 
 vi.mock('../../services/grinderProcessor.ts?worker&url', () => ({ default: 'grinder-processor-url' }));
 
@@ -33,6 +36,246 @@ describe('isGrinderDevice', () => {
     it('should return true only for the grinder device type string', () => {
         expect(isGrinderDevice('grinder')).toBe(true);
         expect(isGrinderDevice('proof')).toBe(false);
+    });
+});
+
+describe('createGrinderNode', () => {
+    let postMessage: ReturnType<typeof vi.fn>;
+    let disconnect: ReturnType<typeof vi.fn>;
+    let connect: ReturnType<typeof vi.fn>;
+    let close: ReturnType<typeof vi.fn>;
+    let resume: ReturnType<typeof vi.fn>;
+
+    beforeEach(async () => {
+        postMessage = vi.fn();
+        disconnect = vi.fn();
+        connect = vi.fn();
+        close = vi.fn();
+        resume = vi.fn().mockResolvedValue(undefined);
+
+        class FakeWorkletNode {
+            port = { postMessage, onmessage: null as ((e: MessageEvent) => void) | null, close };
+            parameters = new Map<string, unknown>();
+            connect = connect;
+            disconnect = disconnect;
+        }
+        vi.stubGlobal('AudioWorkletNode', FakeWorkletNode);
+        vi.stubGlobal(
+            'fetch',
+            vi.fn().mockResolvedValue({ ok: true, status: 200, arrayBuffer: () => Promise.resolve(new ArrayBuffer(8)) })
+        );
+
+        const { telemetryAllocator } = await import('../telemetryAllocator');
+        vi.mocked(telemetryAllocator.allocateSlot).mockReturnValue(null);
+    });
+
+    afterEach(() => {
+        vi.unstubAllGlobals();
+        vi.clearAllMocks();
+    });
+
+    function makeCtx(state: 'running' | 'suspended' = 'running') {
+        class FakeAudioContext {
+            state = state;
+            currentTime = 0;
+            resume = resume;
+        }
+        vi.stubGlobal('AudioContext', FakeAudioContext);
+        return new FakeAudioContext() as unknown as BaseAudioContext;
+    }
+
+    it('should resume the context only when it starts out suspended', async () => {
+        await createGrinderNode(makeCtx('suspended'));
+        expect(resume).toHaveBeenCalledTimes(1);
+
+        resume.mockClear();
+        await createGrinderNode(makeCtx('running'));
+        expect(resume).not.toHaveBeenCalled();
+    });
+
+    it('should reject when the Grinder WASM fetch response is not ok', async () => {
+        vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false, status: 500 }));
+
+        await expect(createGrinderNode(makeCtx())).rejects.toThrow('Failed to fetch Grinder WASM: 500');
+    });
+
+    it('should guard on SharedArrayBuffer availability and post init-sab only when a slot was allocated', async () => {
+        const { requireSharedArrayBuffer } = await import('../pluginHostingErrors');
+        const { telemetryAllocator } = await import('../telemetryAllocator');
+
+        await createGrinderNode(makeCtx());
+        expect(requireSharedArrayBuffer).toHaveBeenCalledWith('Grinder');
+        expect(postMessage.mock.calls.some((c) => (c[0] as { type?: string }).type === 'init-sab')).toBe(false);
+
+        vi.mocked(telemetryAllocator.allocateSlot).mockReturnValueOnce({
+            sab: {} as SharedArrayBuffer,
+            byteOffset: 64,
+            view: new Float32Array(32),
+            seqView: new Int32Array(32),
+        });
+        postMessage.mockClear();
+
+        await createGrinderNode(makeCtx());
+
+        expect(postMessage).toHaveBeenCalledWith({ type: 'init-sab', sab: expect.anything(), byteOffset: 64 });
+    });
+
+    it('should forward setPatch and setBypass messages', async () => {
+        const node = await createGrinderNode(makeCtx());
+        postMessage.mockClear();
+
+        node.setPatch({ drive: 0.5 });
+        expect(postMessage).toHaveBeenCalledWith({ type: 'patch', patch: { drive: 0.5 } });
+
+        node.setBypass(true);
+        expect(postMessage).toHaveBeenCalledWith({ type: 'param', name: 'bypass', value: 1 });
+
+        node.setBypass(false);
+        expect(postMessage).toHaveBeenCalledWith({ type: 'param', name: 'bypass', value: 0 });
+    });
+
+    it('should invoke the latency callback only for a latency-changed message with a numeric latency', async () => {
+        const node = await createGrinderNode(makeCtx());
+        const cb = vi.fn();
+        node.onLatencyChanged(cb);
+
+        node.workletNode.port.onmessage?.({ data: { type: 'other-thing' } } as MessageEvent);
+        expect(cb).not.toHaveBeenCalled();
+
+        node.workletNode.port.onmessage?.({ data: { type: 'latency-changed', latency: 42 } } as MessageEvent);
+        expect(cb).toHaveBeenCalledWith(42);
+    });
+
+    it('should log a runtime fault for a late error event, defaulting the message when absent, and ignore other late events', async () => {
+        const { createReadyHandshake } = await import('#/infra/audioWorklet/workletInitShared');
+        vi.spyOn(logger, 'warn').mockImplementation(() => {});
+        vi.mocked(createReadyHandshake).mockReturnValueOnce({
+            promise: Promise.resolve({}),
+            onMessage: () => 'late' as const,
+            isSettled: () => true,
+        });
+
+        const node = await createGrinderNode(makeCtx());
+
+        node.workletNode.port.onmessage?.({ data: { type: 'ping' } } as MessageEvent);
+        expect(logger.warn).not.toHaveBeenCalled();
+
+        node.workletNode.port.onmessage?.({ data: { type: 'error' } } as MessageEvent);
+        expect(logger.warn).toHaveBeenCalledWith(
+            'GrinderNode runtime fault (WASM panic — processor faulted):',
+            'Unknown error'
+        );
+
+        node.workletNode.port.onmessage?.({ data: { type: 'error', message: 'panic' } } as MessageEvent);
+        expect(logger.warn).toHaveBeenCalledWith(
+            'GrinderNode runtime fault (WASM panic — processor faulted):',
+            'panic'
+        );
+    });
+
+    it('should schedule a meter poll only once a telemetry slot is available, defaulting missing fields to 0', async () => {
+        const { telemetryAllocator, GRINDER_IDX } = await import('../telemetryAllocator');
+        const raf = vi.fn();
+        vi.stubGlobal('requestAnimationFrame', raf);
+
+        const noSlotNode = await createGrinderNode(makeCtx());
+        noSlotNode.onMeterData(vi.fn());
+        expect(raf).not.toHaveBeenCalled();
+
+        const view = new Float32Array(6); // shorter than a full slot: exercises the ?? 0 fallback
+        view[GRINDER_IDX.inputDb] = -12;
+        view[GRINDER_IDX.preampDb] = 3;
+        view[GRINDER_IDX.powerAmpDb] = 1.5;
+        view[GRINDER_IDX.outputDb] = -2;
+        view[GRINDER_IDX.gateOpen] = 1;
+        vi.mocked(telemetryAllocator.allocateSlot).mockReturnValue({
+            sab: {} as SharedArrayBuffer,
+            byteOffset: 0,
+            view,
+            seqView: new Int32Array(6),
+        });
+        const rafCallbacks: FrameRequestCallback[] = [];
+        vi.stubGlobal('requestAnimationFrame', (cb: FrameRequestCallback) => {
+            rafCallbacks.push(cb);
+            return rafCallbacks.length;
+        });
+        vi.stubGlobal('cancelAnimationFrame', vi.fn());
+
+        const node = await createGrinderNode(makeCtx());
+        const cb = vi.fn();
+        node.onMeterData(cb);
+        rafCallbacks[0]!(0);
+
+        expect(cb).toHaveBeenCalledWith({
+            inputDb: -12,
+            preampDb: 3,
+            powerAmpDb: 1.5,
+            outputDb: -2,
+            gateOpen: 1,
+            gateEnvelopeDb: 0,
+            sagVoltage: 0,
+            latency: 0,
+            neuralCpuPercent: 0,
+            neuralWarmupProgress: 0,
+        });
+    });
+
+    it('should connect to the destination and swallow a disconnect error instead of throwing', async () => {
+        disconnect.mockImplementation(() => {
+            throw new Error('already disconnected');
+        });
+        const node = await createGrinderNode(makeCtx());
+        const dest = {} as AudioNode;
+
+        node.connect(dest);
+        expect(connect).toHaveBeenCalledWith(dest);
+        expect(() => node.disconnect()).not.toThrow();
+    });
+
+    it('should release the telemetry slot, cancel the meter poll and pending param flush, disconnect and close the port on destroy', async () => {
+        const { telemetryAllocator } = await import('../telemetryAllocator');
+        vi.mocked(telemetryAllocator.allocateSlot).mockReturnValue({
+            sab: {} as SharedArrayBuffer,
+            byteOffset: 96,
+            view: new Float32Array(32),
+            seqView: new Int32Array(32),
+        });
+        let nextId = 10;
+        vi.stubGlobal('requestAnimationFrame', () => nextId++);
+        const cancelRaf = vi.fn();
+        vi.stubGlobal('cancelAnimationFrame', cancelRaf);
+
+        const node = await createGrinderNode(makeCtx());
+        node.onMeterData(vi.fn()); // schedules a meter poll (meterRafId = 10)
+        node.onMeterData(vi.fn()); // cancels 10, reschedules (meterRafId = 11)
+        node.setParam('unmapped-param', 0.5); // queues a param flush (paramFlushRafId = 12)
+
+        node.destroy();
+
+        expect(cancelRaf).toHaveBeenCalledWith(10);
+        expect(cancelRaf).toHaveBeenCalledWith(11);
+        expect(cancelRaf).toHaveBeenCalledWith(12);
+        expect(telemetryAllocator.releaseSlot).toHaveBeenCalledWith(96);
+        expect(disconnect).toHaveBeenCalled();
+        expect(close).toHaveBeenCalled();
+    });
+
+    it('should post message-port params immediately when requestAnimationFrame is unavailable', async () => {
+        vi.stubGlobal('requestAnimationFrame', undefined);
+
+        const node = await createGrinderNode(makeCtx());
+        postMessage.mockClear();
+
+        node.setParam('unmapped-param', 0.42);
+
+        expect(postMessage).toHaveBeenCalledWith({ type: 'param', name: 'unmapped-param', value: 0.42 });
+    });
+
+    it('should expose the underlying worklet node and a ready promise', async () => {
+        const node = await createGrinderNode(makeCtx());
+
+        expect(node.workletNode).toBeDefined();
+        await expect(node.ready).resolves.toEqual({});
     });
 });
 
