@@ -77,7 +77,7 @@ describe('createKneadNode', () => {
 
         await createKneadNode(ctx, sab);
 
-        const initPost = postMessage.mock.calls.find((c) => (c[0] as { type?: string })?.type === 'init');
+        const initPost = postMessage.mock.calls.find((c) => (c[0] as { type?: string }).type === 'init');
         expect(initPost).toBeDefined();
         expect((initPost![0] as { transportSAB?: unknown }).transportSAB).toBe(sab);
     });
