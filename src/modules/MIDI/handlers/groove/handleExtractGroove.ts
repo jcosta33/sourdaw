@@ -1,27 +1,14 @@
 import { createHandler } from '#/utils/createHandler';
 import { type AppAction } from '#/utils/handlerContract';
 
-import { STRAIGHT_GROOVE_TEMPLATE_ID } from '../../models/GrooveTemplate';
+import { GrooveExtractionActionError } from '../../errors/GrooveExtractionActionError';
 import { createGrooveTemplate } from '../../useCases/grooveTemplates/createGrooveTemplate';
-import { extractGrooveTemplate } from '../../useCases/grooveTemplates/extractGrooveTemplate';
 import { getGrooveTemplate } from '../../useCases/grooveTemplates/getGrooveTemplate';
-import { getNotesForClip } from '../../useCases/midiNoteCrud/getNotesForClip';
+import { prepareGrooveExtraction } from '../../useCases/grooveTemplates/prepareGrooveExtraction';
 
 type ExtractGrooveAction = Extract<AppAction, { type: 'extractGroove' }>;
 
-type GrooveExtractionActionErrorCode =
-    'empty-source' | 'unsupported-subdivision' | 'invalid-source' | 'template-identity-conflict';
-type ExtractedGrooveTemplate = Extract<ReturnType<typeof extractGrooveTemplate>, { ok: true }>['template'];
-
-class GrooveExtractionActionError extends Error {
-    readonly code: GrooveExtractionActionErrorCode;
-
-    constructor(code: GrooveExtractionActionErrorCode, message: string) {
-        super(message);
-        this.name = 'GrooveExtractionActionError';
-        this.code = code;
-    }
-}
+type ExtractedGrooveTemplate = Extract<ReturnType<typeof prepareGrooveExtraction>, { status: 'extracted' }>['template'];
 
 type ExtractGroovePlan =
     | { outcome: 'create'; template: ExtractedGrooveTemplate }
@@ -30,35 +17,60 @@ type ExtractGroovePlan =
     | { outcome: 'failure'; error: GrooveExtractionActionError }
     | { outcome: 'conflict'; error: GrooveExtractionActionError };
 
-function templatesEqual(
-    left: NonNullable<ReturnType<typeof getGrooveTemplate>>,
-    right: ExtractedGrooveTemplate
-): boolean {
+function templatesEqual(left: ExtractedGrooveTemplate, right: ExtractedGrooveTemplate): boolean {
     return JSON.stringify(left) === JSON.stringify(right);
 }
 
 function planExtractGroove(action: ExtractGrooveAction): ExtractGroovePlan {
-    const result = extractGrooveTemplate({
-        sourceId: action.payload.clipId,
+    const result = prepareGrooveExtraction({
+        clipId: action.payload.clipId,
         sourceName: action.payload.sourceName ?? action.payload.clipId,
-        analyzerVersion: 1,
         subdivision: action.payload.subdivision ?? '1/16',
         templateId: action.payload.templateId ?? `groove-${action.payload.clipId}-v1`,
-        notes: getNotesForClip(action.payload.clipId),
     });
-    if (!result.ok) {
+    if (action.payload.proposal && action.payload.sourceRevision !== result.sourceRevision) {
         return {
             outcome: 'failure',
             error: new GrooveExtractionActionError(
-                result.error.code,
-                `Groove extraction rejected: ${result.error.code}`
+                'source-revision-mismatch',
+                `Groove extraction source changed: ${action.payload.clipId}`
             ),
         };
     }
-    const template = result.template;
-    if (template.id === STRAIGHT_GROOVE_TEMPLATE_ID) {
+    if (result.status === 'empty') {
+        return {
+            outcome: 'failure',
+            error: new GrooveExtractionActionError('empty-source', 'Groove extraction rejected: empty-source'),
+        };
+    }
+    if (result.status === 'unsupported') {
+        return {
+            outcome: 'failure',
+            error: new GrooveExtractionActionError(
+                'unsupported-subdivision',
+                'Groove extraction rejected: unsupported-subdivision'
+            ),
+        };
+    }
+    if (result.status === 'invalid-source') {
+        return {
+            outcome: 'failure',
+            error: new GrooveExtractionActionError('invalid-source', 'Groove extraction rejected: invalid-source'),
+        };
+    }
+    if (result.status === 'straight') {
         return { outcome: 'straight' };
     }
+    if (action.payload.proposal && !templatesEqual(result.template, action.payload.proposal)) {
+        return {
+            outcome: 'failure',
+            error: new GrooveExtractionActionError(
+                'proposal-mismatch',
+                `Groove extraction proposal is stale: ${action.payload.clipId}`
+            ),
+        };
+    }
+    const template = action.payload.proposal ?? result.template;
     const existing = getGrooveTemplate(template.id);
     if (!existing) {
         return { outcome: 'create', template };
@@ -93,12 +105,15 @@ export const handleExtractGroove = createHandler<'extractGroove'>({
     },
     describe: (action) => {
         const plan = planExtractGroove(action);
+        if (plan.outcome === 'create') {
+            return {
+                label: 'Extract groove template',
+                inverseAction: { type: 'deleteGrooveTemplate', payload: { templateId: plan.template.id } },
+            };
+        }
         return {
             label: 'Extract groove template',
-            inverseAction:
-                plan.outcome === 'create'
-                    ? { type: 'deleteGrooveTemplate', payload: { templateId: plan.template.id } }
-                    : null,
+            inverseAction: null,
         };
     },
     undoable: true,

@@ -7,6 +7,7 @@ const mocks = vi.hoisted(() => ({
     updateClip: vi.fn(),
     getCachedAudioBuffer: vi.fn(),
     cacheAudioBuffer: vi.fn(),
+    clearClipPitchContour: vi.fn(),
 }));
 
 vi.mock('#/modules/Arrangement/repositories/track/getTrackState', () => ({
@@ -20,6 +21,10 @@ vi.mock('#/modules/Arrangement/repositories/track/updateClip', () => ({
 vi.mock('#/modules/AudioEngine/useCases', () => ({
     getCachedAudioBuffer: mocks.getCachedAudioBuffer,
     cacheAudioBuffer: mocks.cacheAudioBuffer,
+}));
+
+vi.mock('#/modules/Knead/useCases', () => ({
+    clearClipPitchContour: mocks.clearClipPitchContour,
 }));
 
 describe('reverseClip', () => {
@@ -91,6 +96,38 @@ describe('reverseClip', () => {
         // Verify the math
         expect(reversedData[0]).toBe(0.5);
         expect(reversedData[99]).toBe(1.0);
+    });
+
+    it('clears the clip pitch contour after a successful reverse because the audio changed', () => {
+        const mockClip = { id: 'c1', type: 'audio', audioBufferId: 'buf1', name: 'Sample' };
+        mocks.getTrackState.mockReturnValue({
+            tracks: [{ clips: [mockClip] }],
+        });
+        mocks.getCachedAudioBuffer.mockReturnValue({
+            numberOfChannels: 1,
+            length: 4,
+            sampleRate: 44100,
+            getChannelData: vi.fn(() => new Float32Array(4)),
+        });
+        mockCtx.createBuffer.mockReturnValue({
+            numberOfChannels: 1,
+            length: 4,
+            getChannelData: vi.fn(() => new Float32Array(4)),
+        });
+
+        reverseClip('c1');
+
+        expect(mocks.clearClipPitchContour).toHaveBeenCalledWith('c1');
+    });
+
+    it('keeps the pitch contour when the clip cannot be reversed', () => {
+        mocks.getTrackState.mockReturnValue({
+            tracks: [{ clips: [{ id: 'c1', type: 'midi' }] }],
+        });
+
+        reverseClip('c1');
+
+        expect(mocks.clearClipPitchContour).not.toHaveBeenCalled();
     });
 
     it('bails if clip is not found or not audio', () => {

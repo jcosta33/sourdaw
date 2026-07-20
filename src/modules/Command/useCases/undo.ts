@@ -17,7 +17,10 @@ type ExecuteUndoInput = {
 
 /**
  * Performs the undo side-effect for one entry and reports whether anything was
- * actually undone. Inert action entries stay in `past` so redo cannot double-apply.
+ * actually undone. Action entries without an `inverseAction` are inert: undoing
+ * them is a no-op, so the caller drops them instead of leaving them to wedge
+ * the stack above older undoable entries. Dropped inert entries never reach
+ * `future` — nothing was undone, so redo must not re-apply their action.
  */
 async function executeUndo({ entry, runExecuteAppAction }: ExecuteUndoInput): Promise<boolean> {
     if (entry.kind === 'callback') {
@@ -35,57 +38,74 @@ async function executeUndo({ entry, runExecuteAppAction }: ExecuteUndoInput): Pr
 }
 
 async function undoImpl(): Promise<void> {
-    const state = undoStore.value;
-    if (!state || state.past.length === 0) {
+    const initial = undoStore.value;
+    if (!initial || initial.past.length === 0) {
         return;
     }
 
-    const lastEntry = state.past[state.past.length - 1]!;
+    let past = initial.past;
+    const future = initial.future;
 
-    if (lastEntry.groupId) {
-        const groupEntries: UndoEntry[] = [];
-        let index = state.past.length - 1;
-        while (index >= 0 && state.past[index]!.groupId === lastEntry.groupId) {
-            groupEntries.unshift(state.past[index]!);
-            index--;
+    // Scan downwards until something is actually undone. Inert entries (action
+    // entries without an inverseAction) are dropped along the way so they can
+    // never wedge the undoable entries beneath them.
+    while (past.length > 0) {
+        const lastEntry = past[past.length - 1]!;
+
+        if (lastEntry.groupId) {
+            const groupEntries: UndoEntry[] = [];
+            let index = past.length - 1;
+            while (index >= 0 && past[index]!.groupId === lastEntry.groupId) {
+                groupEntries.unshift(past[index]!);
+                index--;
+            }
+            past = past.slice(0, index + 1);
+
+            const undoneEntries: UndoEntry[] = [];
+            for (let groupIndex = groupEntries.length - 1; groupIndex >= 0; groupIndex--) {
+                const entry = groupEntries[groupIndex]!;
+                const undone = await executeUndo({
+                    entry,
+                    runExecuteAppAction: executeAppAction,
+                });
+                if (undone) {
+                    undoneEntries.unshift(entry);
+                }
+            }
+
+            if (undoneEntries.length > 0) {
+                undoStore.set({
+                    past,
+                    future: [...undoneEntries, ...future],
+                });
+                undoTreeMoveTo(currentEntryId(past));
+                return;
+            }
+            // The whole group was inert: it is dropped; keep scanning.
+            continue;
         }
-        const newPast = state.past.slice(0, index + 1);
 
-        let anyUndone = false;
-        for (let groupIndex = groupEntries.length - 1; groupIndex >= 0; groupIndex--) {
-            const undone = await executeUndo({
-                entry: groupEntries[groupIndex]!,
-                runExecuteAppAction: executeAppAction,
+        const undone = await executeUndo({
+            entry: lastEntry,
+            runExecuteAppAction: executeAppAction,
+        });
+        past = past.slice(0, -1);
+        if (undone) {
+            undoStore.set({
+                past,
+                future: [lastEntry, ...future],
             });
-            anyUndone = anyUndone || undone;
-        }
-
-        if (!anyUndone) {
+            undoTreeMoveTo(currentEntryId(past));
             return;
         }
-
-        undoStore.set({
-            past: newPast,
-            future: [...groupEntries, ...state.future],
-        });
-        undoTreeMoveTo(currentEntryId(newPast));
-        return;
+        // Inert entry: dropped without reaching future; keep scanning.
     }
 
-    const undone = await executeUndo({
-        entry: lastEntry,
-        runExecuteAppAction: executeAppAction,
-    });
-    if (!undone) {
-        return;
+    // The stack held only inert entries: persist the purge so the wedge is gone.
+    if (past.length !== initial.past.length) {
+        undoStore.set({ past, future });
+        undoTreeMoveTo(currentEntryId(past));
     }
-
-    const newPast = state.past.slice(0, -1);
-    undoStore.set({
-        past: newPast,
-        future: [lastEntry, ...state.future],
-    });
-    undoTreeMoveTo(currentEntryId(newPast));
 }
 
 export function undo(): Promise<void> {

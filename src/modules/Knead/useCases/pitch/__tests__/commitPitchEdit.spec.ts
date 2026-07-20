@@ -9,6 +9,7 @@ import { clearUndoHistory, executeAppAction, redo, undo } from '#/modules/Comman
 import { type AppAction } from '#/utils/handlerContract';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
+import { defaultKneadState, kneadStore, type PitchContour } from '../../../stores/kneadStore';
 import { getPitchHandlers } from '../../getPitchHandlers';
 import { setPitchEditDependencies } from '../pitchEditDependencies';
 
@@ -98,6 +99,12 @@ function getFirstClipFileId(): string | undefined {
 const contour = { points: [], sample_rate: 44100, hop_size: 256, algorithm: 'pyin' };
 const segments = [{ start_time_ms: 0, end_time_ms: 100, shift_semitones: 1 }];
 
+const storedContour: PitchContour = {
+    points: [{ time_ms: 0, frequency_hz: 220, confidence: 0.9, voiced: true }],
+    sample_rate: 48000,
+    hop_size: 256,
+};
+
 function commitAction(clipId: string): Extract<AppAction, { type: 'commitPitchEdit' }> {
     return { type: 'commitPitchEdit', payload: { clipId, segments, contour } };
 }
@@ -127,6 +134,7 @@ describe('commitPitchEdit through action dispatch', () => {
             ghostClips: [],
         } satisfies TrackStoreState;
         trackStore.set(state);
+        kneadStore.set({ ...defaultKneadState, contours: { c1: storedContour } });
     });
 
     afterEach(() => {
@@ -173,6 +181,23 @@ describe('commitPitchEdit through action dispatch', () => {
         expect(undoStore.value?.future).toHaveLength(0);
         // Redo re-ran the forward render, confirming action-based (not callback) undo.
         expect(commitPitchEditMock).toHaveBeenCalledTimes(2);
+    });
+
+    it('clears the clip pitch contour after a successful commit so the editor gate re-opens', async () => {
+        expect(kneadStore.value?.contours.c1).toEqual(storedContour);
+
+        await executeAppAction(commitAction('c1'));
+
+        expect(commitPitchEditMock).toHaveBeenCalled();
+        expect(kneadStore.value?.contours.c1).toBeUndefined();
+    });
+
+    it('keeps the clip pitch contour when the render fails', async () => {
+        commitPitchEditMock.mockRejectedValueOnce(new Error('test error'));
+
+        await expect(executeAppAction(commitAction('c1'))).rejects.toThrow('test error');
+
+        expect(kneadStore.value?.contours.c1).toEqual(storedContour);
     });
 
     it('notifies the user and records no undo entry when the render fails', async () => {

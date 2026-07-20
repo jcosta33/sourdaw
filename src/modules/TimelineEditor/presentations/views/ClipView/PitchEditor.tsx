@@ -7,6 +7,7 @@ import { executeAppAction } from '#/modules/Command/useCases';
 import { kneadStore, defaultKneadState } from '#/modules/Knead/stores';
 import { analyzeClipPitch } from '#/modules/Knead/useCases';
 import { notifyUser } from '#/utils/Notification/notifyUser';
+import { cn } from '#/utils/Styles/cn';
 import { resolveToken } from '#/utils/UI/resolveToken';
 
 type PitchEditorProps = {
@@ -26,18 +27,26 @@ export const PitchEditor = ({ clipId }: PitchEditorProps): ReactElement => {
     const dragRef = useRef<{ startY: number; initialShift: number; segmentIndex: number } | null>(null);
 
     const contour = kneadState.contours[clipId];
+    // A contour with no points (e.g. silent or fully unvoiced audio) is truthy but
+    // offers nothing to edit: hit-testing, the Analyze button, and the commit button
+    // must all treat it as "no contour" so the waveform beneath stays interactive.
+    const hasContourPoints = (contour?.points.length ?? 0) > 0;
 
-    // Generate segments from contour if none exist yet.
+    // Regenerate segments whenever the contour identity changes. A contour clear
+    // (commit, audio replacement) followed by re-analysis must not inherit stale
+    // drags — otherwise a second commit would double-bake the previous shift.
     useEffect(() => {
-        if (contour && shifts.length === 0) {
-            // Simplistic segmentation: one segment per 100ms
-            const newShifts = [];
-            const duration = contour.points[contour.points.length - 1]?.time_ms || 0;
-            for (let index = 0; index < duration; index += 100) {
-                newShifts.push({ start_time_ms: index, end_time_ms: index + 100, shift_semitones: 0 });
-            }
-            setShifts(newShifts);
+        if (!contour) {
+            setShifts([]);
+            return;
         }
+        // Simplistic segmentation: one segment per 100ms
+        const newShifts = [];
+        const duration = contour.points[contour.points.length - 1]?.time_ms || 0;
+        for (let index = 0; index < duration; index += 100) {
+            newShifts.push({ start_time_ms: index, end_time_ms: index + 100, shift_semitones: 0 });
+        }
+        setShifts(newShifts);
     }, [contour]);
 
     const draw = () => {
@@ -247,7 +256,7 @@ export const PitchEditor = ({ clipId }: PitchEditorProps): ReactElement => {
 
     return (
         <div className="absolute inset-0 pointer-events-none flex flex-col z-10">
-            {!contour && !kneadState.isAnalyzing ? (
+            {!hasContourPoints && !kneadState.isAnalyzing ? (
                 <div className="absolute top-2 right-2 pointer-events-auto flex gap-2">
                     <Button
                         size="xs"
@@ -260,7 +269,7 @@ export const PitchEditor = ({ clipId }: PitchEditorProps): ReactElement => {
                 </div>
             ) : null}
 
-            {contour ? (
+            {hasContourPoints ? (
                 <div className="absolute top-2 right-2 pointer-events-auto flex gap-2">
                     <Button
                         size="xs"
@@ -290,7 +299,12 @@ export const PitchEditor = ({ clipId }: PitchEditorProps): ReactElement => {
             <div ref={containerRef} className="flex-1 w-full h-full relative">
                 <canvas
                     ref={canvasRef}
-                    className="absolute inset-0 w-full h-full pointer-events-auto cursor-ns-resize"
+                    className={cn(
+                        'absolute inset-0 w-full h-full cursor-ns-resize',
+                        // Only capture hit-testing while pitch editing is possible; otherwise the
+                        // transparent overlay would swallow every waveform interaction beneath it.
+                        hasContourPoints ? 'pointer-events-auto' : 'pointer-events-none'
+                    )}
                     onPointerDown={handlePointerDown}
                     onPointerMove={handlePointerMove}
                     onPointerUp={handlePointerUp}

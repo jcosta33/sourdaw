@@ -1,4 +1,5 @@
 import { cacheAudioBuffer, getCachedAudioBuffer } from '#/modules/AudioEngine/useCases';
+import { clearClipPitchContour } from '#/modules/Knead/useCases';
 
 import { getTrackState } from '../../repositories/track/getTrackState';
 import { updateClip } from '../../repositories/track/updateClip';
@@ -29,6 +30,9 @@ export function reverseClip(clipId: string): void {
         const newId = `reversed-${clip.audioBufferId}-${Date.now()}`;
         cacheAudioBuffer({ buffer: reversed, bufferId: newId });
         updateClip(clipId, (context) => ({ ...context, audioBufferId: newId, name: `${context.name} (reversed)` }));
+        // The reversed buffer replaces the clip's audio, invalidating any analyzed
+        // pitch contour — drop it so the PitchEditor gate re-opens.
+        clearClipPitchContour(clipId);
         return;
     }
 }

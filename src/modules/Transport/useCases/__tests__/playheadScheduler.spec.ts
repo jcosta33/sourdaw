@@ -7,6 +7,7 @@ import { playheadPositionRef } from '../../stores/playheadPositionRef';
 import { type TempoMapStoreState } from '../../stores/tempoMapStore';
 import { evaluateFollowActions } from '../evaluateFollowActions';
 import { disposePlayheadScheduler } from '../playheadScheduler/disposePlayheadScheduler';
+import { schedulerSession } from '../playheadScheduler/schedulerSession';
 import { startPlayheadScheduler } from '../playheadScheduler/startPlayheadScheduler';
 import { stopPlayheadScheduler } from '../playheadScheduler/stopPlayheadScheduler';
 import { applyAutomation } from '../scheduling/applyAutomation/applyAutomation';
@@ -233,6 +234,28 @@ describe('startPlayheadScheduler', () => {
 
         expect(startAutomationRecording).not.toHaveBeenCalled();
     });
+
+    it('clears stale dedup Sets and stops orphaned sources from a skipped teardown', () => {
+        // Pause's recording-flush continuation deliberately skips scheduler
+        // teardown when a play landed during the flush. The fresh session must
+        // not inherit the old one's dedup Sets (a stale frozen entry would
+        // suppress rescheduling for the whole session) or its still-playing
+        // sources (they would play out of sync with the restarted playhead).
+        harness.transport_store.value = { ...playingTransport };
+        const orphanSource = { stop: vi.fn() } as unknown as AudioBufferSourceNode;
+        schedulerSession.activeAudioSources.push(orphanSource);
+        schedulerSession.scheduledAudioClips.add('stale-clip');
+        schedulerSession.scheduledFrozenTracks.add('stale-track');
+
+        startPlayheadScheduler();
+
+        expect(schedulerSession.scheduledAudioClips.size).toBe(0);
+        expect(schedulerSession.scheduledFrozenTracks.size).toBe(0);
+        expect(orphanSource.stop).toHaveBeenCalled();
+        expect(schedulerSession.activeAudioSources).toHaveLength(0);
+
+        disposePlayheadScheduler();
+    });
 });
 
 describe('stopPlayheadScheduler', () => {
@@ -341,12 +364,12 @@ describe('playhead scheduler tick', () => {
 
         harness.clock = 0.05;
         await fireTick();
-        const beforeWrap = vi.mocked(scheduleMidiNotes).mock.calls.at(-1)?.[7];
+        const beforeWrap = vi.mocked(scheduleMidiNotes).mock.calls.at(-1)?.[8];
         const beforeWrapEpoch = beforeWrap?.discontinuityEpoch;
 
         harness.clock = 0.1;
         await fireTick();
-        const afterWrap = vi.mocked(scheduleMidiNotes).mock.calls.at(-1)?.[7];
+        const afterWrap = vi.mocked(scheduleMidiNotes).mock.calls.at(-1)?.[8];
 
         expect(beforeWrapEpoch).toEqual(expect.any(Number));
         expect(afterWrap?.discontinuityEpoch).toBeGreaterThan(beforeWrapEpoch ?? 0);
@@ -361,13 +384,13 @@ describe('playhead scheduler tick', () => {
         startPlayheadScheduler();
         harness.clock = 0.05;
         await fireTick();
-        const beforeJump = vi.mocked(scheduleMidiNotes).mock.calls.at(-1)?.[7];
+        const beforeJump = vi.mocked(scheduleMidiNotes).mock.calls.at(-1)?.[8];
         const beforeJumpEpoch = beforeJump?.discontinuityEpoch;
 
         vi.mocked(evaluateFollowActions).mockReturnValueOnce({ jumpToPosition: 8, shouldStop: false });
         harness.clock = 0.1;
         await fireTick();
-        const afterJump = vi.mocked(scheduleMidiNotes).mock.calls.at(-1)?.[7];
+        const afterJump = vi.mocked(scheduleMidiNotes).mock.calls.at(-1)?.[8];
 
         expect(afterJump?.discontinuityEpoch).toBeGreaterThan(beforeJumpEpoch ?? 0);
         expect(afterJump?.generation).toBe(beforeJump?.generation);
@@ -381,7 +404,7 @@ describe('playhead scheduler tick', () => {
         startPlayheadScheduler();
         harness.clock = 0.05;
         await fireTick();
-        const beforeRestart = vi.mocked(scheduleMidiNotes).mock.calls.at(-1)?.[7];
+        const beforeRestart = vi.mocked(scheduleMidiNotes).mock.calls.at(-1)?.[8];
         const beforeRestartEpoch = beforeRestart?.discontinuityEpoch;
         const beforeRestartGeneration = beforeRestart?.generation;
 
@@ -391,7 +414,7 @@ describe('playhead scheduler tick', () => {
         startPlayheadScheduler();
         harness.clock = 0.15;
         await fireTick();
-        const afterRestart = vi.mocked(scheduleMidiNotes).mock.calls.at(-1)?.[7];
+        const afterRestart = vi.mocked(scheduleMidiNotes).mock.calls.at(-1)?.[8];
 
         expect(afterRestart?.discontinuityEpoch).toBeGreaterThan(beforeRestartEpoch ?? 0);
         expect(afterRestart?.generation).toBeGreaterThan(beforeRestartGeneration ?? 0);
@@ -499,7 +522,7 @@ describe('playhead scheduler tick', () => {
         harness.clock = 0.05;
         await fireTick();
 
-        const beforeDisposeEpoch = vi.mocked(scheduleMidiNotes).mock.calls.at(-1)?.[7]?.discontinuityEpoch;
+        const beforeDisposeEpoch = vi.mocked(scheduleMidiNotes).mock.calls.at(-1)?.[8]?.discontinuityEpoch;
         disposePlayheadScheduler();
 
         expect(vi.mocked(worker.terminate)).toHaveBeenCalled();
@@ -507,7 +530,7 @@ describe('playhead scheduler tick', () => {
         startPlayheadScheduler();
         harness.clock = 0.1;
         await fireTick();
-        expect(vi.mocked(scheduleMidiNotes).mock.calls.at(-1)?.[7]?.discontinuityEpoch).toBeGreaterThan(
+        expect(vi.mocked(scheduleMidiNotes).mock.calls.at(-1)?.[8]?.discontinuityEpoch).toBeGreaterThan(
             beforeDisposeEpoch ?? 0
         );
     });

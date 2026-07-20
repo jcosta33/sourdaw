@@ -1,4 +1,5 @@
 export { analyzeClipPitch } from './analyzeClipPitch';
+export { clearClipPitchContour } from './clearClipPitchContour';
 export { hydrateKneadFromTrackStore } from './hydrateKneadFromTrackStore';
 export { syncKneadToEngine } from './syncKneadToEngine';
 export { updateClipKneadState } from './updateClipKneadState';
