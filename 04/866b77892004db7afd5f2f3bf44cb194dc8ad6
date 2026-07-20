@@ -1,0 +1,19 @@
+crates/daw-engine/src/midi/mpe_allocator.rs
+  s_4a3a9ac19de269::t_a9cbc235c1d9b4 1-4,7-54,101,125-126,168-169,177,197-198,222,225-230,241-275,287-290
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "04866b77892004db7afd5f2f3bf44cb194dc8ad6",
+  "prompts": {},
+  "sessions": {
+    "s_4a3a9ac19de269": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "4a1953fb-b074-451f-a9e0-2edbbc4fbbf3",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
