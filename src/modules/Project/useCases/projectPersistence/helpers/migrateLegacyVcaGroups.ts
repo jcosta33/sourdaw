@@ -24,6 +24,7 @@ type LegacyVcaGroupInput = Omit<LegacyVcaGroup, 'soloed' | 'color'> & {
 type InvalidMigration = Extract<VcaGroupMigrationResult, { status: 'invalid' }>;
 type MigrationError = InvalidMigration['errors'][number];
 type MigrationCollection = Extract<VcaGroupMigrationResult, { status: 'ready' }>['collections'][number];
+type MigrationTrackCollection = MigrateLegacyVcaGroupsInput['trackCollections'][number];
 
 function invalid(error: MigrationError): InvalidMigration {
     return { status: 'invalid', errors: [error] };
@@ -93,7 +94,6 @@ function parseLegacyGroups(legacyGroups: unknown): LegacyVcaGroup[] | InvalidMig
 
     const parsedGroups: LegacyVcaGroup[] = [];
     const groupIds = new Set<string>();
-    const memberOwners = new Map<string, string>();
 
     for (let groupIndex = 0; groupIndex < legacyGroups.length; groupIndex += 1) {
         const parsedGroup = parseLegacyGroup(legacyGroups[groupIndex], groupIndex);
@@ -104,19 +104,149 @@ function parseLegacyGroups(legacyGroups: unknown): LegacyVcaGroup[] | InvalidMig
             return invalid({ code: 'duplicate-group-id', groupIndex, field: 'id', value: parsedGroup.id });
         }
 
-        for (const trackId of parsedGroup.trackIds) {
-            const owner = memberOwners.get(trackId);
-            if (owner !== undefined && owner !== parsedGroup.id) {
-                return invalid({ code: 'ambiguous-membership', groupIndex, field: 'trackIds', value: trackId });
-            }
-            memberOwners.set(trackId, parsedGroup.id);
-        }
-
         groupIds.add(parsedGroup.id);
         parsedGroups.push(parsedGroup);
     }
 
     return parsedGroups;
+}
+
+function mergeSourceGroups({
+    parsedGroups,
+    existingCandidates,
+}: {
+    parsedGroups: LegacyVcaGroup[];
+    existingCandidates: readonly DormantVcaTrackCandidate[];
+}): LegacyVcaGroup[] | InvalidMigration {
+    const parsedGroupById = new Map(parsedGroups.map((group) => [group.id, group]));
+    const remainingParsedGroupIds = new Set(parsedGroupById.keys());
+    const existingGroupIds = new Set<string>();
+    const sourceGroups: LegacyVcaGroup[] = [];
+
+    for (let candidateIndex = 0; candidateIndex < existingCandidates.length; candidateIndex += 1) {
+        const candidate = existingCandidates[candidateIndex];
+        if (candidate === undefined) {
+            continue;
+        }
+        if (existingGroupIds.has(candidate.legacyGroupId)) {
+            return invalid({
+                code: 'duplicate-group-id',
+                groupIndex: candidateIndex,
+                field: 'existingCandidates',
+                value: candidate.legacyGroupId,
+            });
+        }
+
+        const parsedGroup = parsedGroupById.get(candidate.legacyGroupId);
+        if (parsedGroup !== undefined) {
+            sourceGroups.push({ ...parsedGroup, trackIds: [...parsedGroup.trackIds] });
+            remainingParsedGroupIds.delete(candidate.legacyGroupId);
+        } else {
+            sourceGroups.push({
+                id: candidate.legacyGroupId,
+                name: candidate.name,
+                gain: candidate.gain,
+                muted: candidate.muted,
+                soloed: candidate.soloed,
+                color: candidate.color,
+                trackIds: [...candidate.memberTrackIds],
+            });
+        }
+        existingGroupIds.add(candidate.legacyGroupId);
+    }
+
+    for (const parsedGroup of parsedGroups) {
+        if (!remainingParsedGroupIds.has(parsedGroup.id)) {
+            continue;
+        }
+        sourceGroups.push({ ...parsedGroup, trackIds: [...parsedGroup.trackIds] });
+    }
+
+    return sourceGroups;
+}
+
+function reconcileTrackMemberships({
+    sourceGroups,
+    trackCollections,
+}: {
+    sourceGroups: LegacyVcaGroup[];
+    trackCollections: readonly MigrationTrackCollection[];
+}): LegacyVcaGroup[] | InvalidMigration {
+    const groupIndexById = new Map<string, number>();
+    const ownerByTrackId = new Map<string, string>();
+
+    for (const [groupIndex, group] of sourceGroups.entries()) {
+        groupIndexById.set(group.id, groupIndex);
+        for (const trackId of group.trackIds) {
+            const existingOwner = ownerByTrackId.get(trackId);
+            if (existingOwner !== undefined && existingOwner !== group.id) {
+                return invalid({ code: 'ambiguous-membership', groupIndex, field: 'trackIds', value: trackId });
+            }
+            ownerByTrackId.set(trackId, group.id);
+        }
+    }
+
+    for (const collection of trackCollections) {
+        const trackReferences = collection.legacyVcaGroupIdByTrackId;
+        if (trackReferences === undefined) {
+            continue;
+        }
+
+        for (const trackId of collection.trackIds) {
+            const referencedGroupId = trackReferences[trackId];
+            if (referencedGroupId === undefined || referencedGroupId === null) {
+                continue;
+            }
+
+            const referencedGroupIndex = groupIndexById.get(referencedGroupId);
+            if (referencedGroupIndex === undefined) {
+                return invalid({
+                    code: 'unknown-membership-group',
+                    collectionId: collection.collectionId,
+                    field: 'legacyVcaGroupIdByTrackId',
+                    value: trackId,
+                    reference: referencedGroupId,
+                });
+            }
+
+            const existingOwner = ownerByTrackId.get(trackId);
+            if (existingOwner !== undefined && existingOwner !== referencedGroupId) {
+                return invalid({
+                    code: 'ambiguous-membership',
+                    groupIndex: referencedGroupIndex,
+                    collectionId: collection.collectionId,
+                    field: 'legacyVcaGroupIdByTrackId',
+                    value: trackId,
+                });
+            }
+            if (existingOwner !== undefined) {
+                continue;
+            }
+
+            const referencedGroup = sourceGroups[referencedGroupIndex];
+            if (referencedGroup === undefined) {
+                return invalid({
+                    code: 'unknown-membership-group',
+                    collectionId: collection.collectionId,
+                    field: 'legacyVcaGroupIdByTrackId',
+                    value: trackId,
+                    reference: referencedGroupId,
+                });
+            }
+            referencedGroup.trackIds.push(trackId);
+            ownerByTrackId.set(trackId, referencedGroupId);
+        }
+    }
+
+    return sourceGroups;
+}
+
+function isExplicitlyUnassigned(collection: MigrationTrackCollection, trackId: string): boolean {
+    const trackReferences = collection.legacyVcaGroupIdByTrackId;
+    if (trackReferences === undefined || !Object.hasOwn(trackReferences, trackId)) {
+        return false;
+    }
+    return trackReferences[trackId] === null;
 }
 
 function allocateCandidateId(groupId: string, occupiedIds: Set<string>): string {
@@ -146,20 +276,22 @@ export function migrateLegacyVcaGroups({
         return parsedGroups;
     }
 
-    let sourceGroups = parsedGroups;
-    if (sourceGroups.length === 0) {
-        sourceGroups = existingCandidates.map((candidate) => ({
-            ...candidate,
-            id: candidate.legacyGroupId,
-            trackIds: [...candidate.memberTrackIds],
-        }));
+    const mergedSourceGroups = mergeSourceGroups({ parsedGroups, existingCandidates });
+    if ('status' in mergedSourceGroups) {
+        return mergedSourceGroups;
+    }
+    const sourceGroups = reconcileTrackMemberships({
+        sourceGroups: mergedSourceGroups,
+        trackCollections,
+    });
+    if ('status' in sourceGroups) {
+        return sourceGroups;
     }
 
     const occupiedIds = new Set(trackCollections.flatMap((collection) => collection.trackIds));
 
     const existingCandidateByGroupId = new Map<string, DormantVcaTrackCandidate>();
     for (const candidate of existingCandidates) {
-        occupiedIds.add(candidate.id);
         existingCandidateByGroupId.set(candidate.legacyGroupId, candidate);
     }
 
@@ -168,8 +300,13 @@ export function migrateLegacyVcaGroups({
     for (const [order, group] of sourceGroups.entries()) {
         const existingCandidate = existingCandidateByGroupId.get(group.id);
         let candidateId: string;
-        if (existingCandidate !== undefined) {
+        if (
+            existingCandidate !== undefined &&
+            existingCandidate.id.length > 0 &&
+            !occupiedIds.has(existingCandidate.id)
+        ) {
             candidateId = existingCandidate.id;
+            occupiedIds.add(candidateId);
         } else {
             candidateId = allocateCandidateId(group.id, occupiedIds);
         }
@@ -207,11 +344,14 @@ export function migrateLegacyVcaGroups({
                 continue;
             }
             for (const trackId of group.trackIds) {
-                if (presentTrackIds.has(trackId)) {
-                    assignments.push({ trackId, vcaTrackId: candidateId });
+                if (!presentTrackIds.has(trackId)) {
+                    missingMembers.push({ legacyGroupId: group.id, trackId });
                     continue;
                 }
-                missingMembers.push({ legacyGroupId: group.id, trackId });
+                if (isExplicitlyUnassigned(collection, trackId)) {
+                    continue;
+                }
+                assignments.push({ trackId, vcaTrackId: candidateId });
             }
         }
 

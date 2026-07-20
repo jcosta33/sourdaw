@@ -22,6 +22,7 @@ export type VcaMigrationTrackCollection = {
     collectionId: string;
     selectedTrackId: string | null;
     trackIds: readonly string[];
+    legacyVcaGroupIdByTrackId?: Readonly<Record<string, string | null>>;
 };
 export type MigrateLegacyVcaGroupsInput = {
     legacyGroups: unknown;
@@ -49,9 +50,12 @@ export type VcaGroupMigrationResult =
                   | 'invalid-group'
                   | 'invalid-gain'
                   | 'duplicate-group-id'
-                  | 'ambiguous-membership';
-              groupIndex: number;
+                  | 'ambiguous-membership'
+                  | 'unknown-membership-group';
+              groupIndex?: number;
+              collectionId?: string;
               field: string;
               value?: string;
+              reference?: string;
           }>;
       };

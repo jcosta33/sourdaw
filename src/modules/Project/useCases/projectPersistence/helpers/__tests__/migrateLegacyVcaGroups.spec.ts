@@ -105,6 +105,55 @@ describe('migrateLegacyVcaGroups', () => {
         expect(result.collections[0]?.trackIds).toEqual(['track-drums']);
     });
 
+    it('should reconcile track-side legacy membership and reject conflicting sources', () => {
+        const legacyGroups = [
+            { id: 'vca-drums', name: 'Drums', gain: 1, muted: false, trackIds: ['track-drums'] },
+            { id: 'vca-bass', name: 'Bass', gain: 1, muted: false, trackIds: ['track-bass'] },
+        ];
+        const reconciled = requireReady(
+            migrateLegacyVcaGroups({
+                legacyGroups,
+                trackCollections: [
+                    {
+                        ...trackCollection('root', ['track-drums', 'track-drums-copy', 'track-bass']),
+                        legacyVcaGroupIdByTrackId: {
+                            'track-drums': 'vca-drums',
+                            'track-drums-copy': 'vca-drums',
+                            'track-bass': null,
+                        },
+                    },
+                ],
+            })
+        );
+        const conflicting = migrateLegacyVcaGroups({
+            legacyGroups,
+            trackCollections: [
+                {
+                    ...rootCollection,
+                    legacyVcaGroupIdByTrackId: { 'track-drums': 'vca-bass' },
+                },
+            ],
+        });
+
+        expect(reconciled.candidates[0]?.memberTrackIds).toEqual(['track-drums', 'track-drums-copy']);
+        expect(reconciled.collections[0]?.assignments).toEqual([
+            { trackId: 'track-drums', vcaTrackId: 'vca-drums' },
+            { trackId: 'track-drums-copy', vcaTrackId: 'vca-drums' },
+        ]);
+        expect(conflicting).toEqual({
+            status: 'invalid',
+            errors: [
+                {
+                    code: 'ambiguous-membership',
+                    groupIndex: 1,
+                    collectionId: 'root',
+                    field: 'legacyVcaGroupIdByTrackId',
+                    value: 'track-drums',
+                },
+            ],
+        });
+    });
+
     it('should allocate one deterministic identity when a legacy group ID collides', () => {
         const input = {
             legacyGroups: [{ id: 'track-drums', name: 'Drums', gain: 1, muted: false, trackIds: ['track-bass'] }],
@@ -125,15 +174,23 @@ describe('migrateLegacyVcaGroups', () => {
         ]);
     });
 
-    it('should reuse an existing dormant candidate and remain idempotent', () => {
+    it('should merge partial legacy input with existing candidates and remain idempotent', () => {
         const input = {
-            legacyGroups: [{ id: 'vca-drums', name: 'Drums', gain: 0.7, muted: false, trackIds: ['track-drums'] }],
+            legacyGroups: [
+                { id: 'vca-drums', name: 'Drums', gain: 0.7, muted: false, trackIds: ['track-drums'] },
+                { id: 'vca-bass', name: 'Bass', gain: 0.8, muted: true, trackIds: ['track-bass'] },
+            ],
             trackCollections: [rootCollection],
         };
         const first = requireReady(migrateLegacyVcaGroups(input));
 
         const second = migrateLegacyVcaGroups({
             ...input,
+            existingCandidates: first.candidates,
+        });
+        const partialLegacyInput = migrateLegacyVcaGroups({
+            ...input,
+            legacyGroups: [input.legacyGroups[1]],
             existingCandidates: first.candidates,
         });
         const withoutLegacyInput = migrateLegacyVcaGroups({
@@ -143,7 +200,56 @@ describe('migrateLegacyVcaGroups', () => {
         });
 
         expect(second).toEqual(first);
+        expect(partialLegacyInput).toEqual(first);
         expect(withoutLegacyInput).toEqual(first);
+    });
+
+    it('should deterministically repair existing candidate identity collisions', () => {
+        const trackCollections = [trackCollection('root', ['track-a', 'track-b'])];
+        const initial = requireReady(
+            migrateLegacyVcaGroups({
+                legacyGroups: [
+                    { id: 'vca-a', name: 'A', gain: 1, muted: false, trackIds: ['track-a'] },
+                    { id: 'vca-b', name: 'B', gain: 1, muted: false, trackIds: ['track-b'] },
+                ],
+                trackCollections,
+            })
+        );
+        const trackCollision = requireReady(
+            migrateLegacyVcaGroups({
+                legacyGroups: undefined,
+                existingCandidates: [{ ...initial.candidates[0]!, id: 'track-a' }, initial.candidates[1]!],
+                trackCollections,
+            })
+        );
+        const duplicateIds = requireReady(
+            migrateLegacyVcaGroups({
+                legacyGroups: undefined,
+                existingCandidates: initial.candidates.map((candidate) => ({ ...candidate, id: 'shared-vca' })),
+                trackCollections,
+            })
+        );
+
+        expect(trackCollision.candidates.map((candidate) => candidate.id)).toEqual(['vca-a', 'vca-b']);
+        expect(
+            migrateLegacyVcaGroups({
+                legacyGroups: undefined,
+                existingCandidates: trackCollision.candidates,
+                trackCollections,
+            })
+        ).toEqual(trackCollision);
+        expect(duplicateIds.candidates.map((candidate) => candidate.id)).toEqual(['shared-vca', 'vca-b']);
+        expect(duplicateIds.collections[0]?.assignments).toEqual([
+            { trackId: 'track-a', vcaTrackId: 'shared-vca' },
+            { trackId: 'track-b', vcaTrackId: 'vca-b' },
+        ]);
+        expect(
+            migrateLegacyVcaGroups({
+                legacyGroups: undefined,
+                existingCandidates: duplicateIds.candidates,
+                trackCollections,
+            })
+        ).toEqual(duplicateIds);
     });
 
     it('should preserve group, member, and saved collection order without changing selection', () => {
