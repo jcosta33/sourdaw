@@ -8,6 +8,9 @@
  *   { type: 'init', wasmBytes: ArrayBuffer }
  *   { type: 'noteOn', pad, velocity, note, sampleFrame? }
  *   { type: 'noteOff', pad, sampleFrame? }
+ *   { type: 'scheduledHit', pad, velocity, note, sampleFrame, padParams, restoreEngineType? }
+ *   { type: 'cancelScheduled' }
+ *   { type: 'fillState', active }
  *   { type: 'param', name, value }
  *   { type: 'padParam', pad, name, value }
  */
@@ -54,13 +57,35 @@ type ToasterMsg =
     | { type: 'init'; wasmBytes: BufferSource }
     | { type: 'noteOn'; pad: number; velocity: number; note?: number; sampleFrame?: number }
     | { type: 'noteOff'; pad: number; sampleFrame?: number }
+    | {
+          type: 'scheduledHit';
+          pad: number;
+          velocity: number;
+          note?: number;
+          sampleFrame: number;
+          padParams: Array<{ name: string; value: number }>;
+          restoreEngineType?: number;
+          fillCondition?: 'fill' | 'not-fill';
+      }
+    | { type: 'cancelScheduled' }
+    | { type: 'fillState'; active: boolean }
     | { type: 'allNotesOff' }
     | { type: 'param'; name: string; value: number }
     | { type: 'padParam'; pad: number; name: string; value: number };
 
 type ToasterQueued =
     | { type: 'noteOn'; pad: number; velocity: number; note?: number; sampleFrame: number }
-    | { type: 'noteOff'; pad: number; sampleFrame: number };
+    | { type: 'noteOff'; pad: number; sampleFrame: number }
+    | {
+          type: 'scheduledHit';
+          pad: number;
+          velocity: number;
+          note?: number;
+          sampleFrame: number;
+          padParams: Array<{ name: string; value: number }>;
+          restoreEngineType?: number;
+          fillCondition?: 'fill' | 'not-fill';
+      };
 
 class ToasterProcessor extends AudioWorkletProcessor {
     _instance: ToasterInstance | null = null;
@@ -69,6 +94,7 @@ class ToasterProcessor extends AudioWorkletProcessor {
     _faulted = false;
     _queue: ToasterQueued[] = [];
     _queueHead = 0;
+    _fillActive = false;
 
     constructor() {
         super();
@@ -119,7 +145,7 @@ class ToasterProcessor extends AudioWorkletProcessor {
     }
 
     _handleMessage(msg: ToasterMsg): void {
-        if (msg.type === 'noteOn' || msg.type === 'noteOff') {
+        if (msg.type === 'noteOn' || msg.type === 'noteOff' || msg.type === 'scheduledHit') {
             if (msg.sampleFrame !== undefined && msg.sampleFrame > currentFrame) {
                 this._enqueue({ ...msg, sampleFrame: msg.sampleFrame });
                 return;
@@ -141,6 +167,39 @@ class ToasterProcessor extends AudioWorkletProcessor {
                 break;
             case 'noteOff':
                 inst.note_off(msg.pad);
+                break;
+            case 'scheduledHit':
+                if (msg.fillCondition === 'fill' && !this._fillActive) {
+                    break;
+                }
+                if (msg.fillCondition === 'not-fill' && this._fillActive) {
+                    break;
+                }
+                for (const param of msg.padParams) {
+                    inst.set_pad_param(msg.pad, PAD_PARAM_MAP[param.name] ?? param.name, param.value);
+                }
+                inst.note_on(msg.pad, msg.velocity, msg.note ?? 60);
+                if (msg.restoreEngineType !== undefined) {
+                    inst.set_pad_param(msg.pad, 'engine_type', msg.restoreEngineType);
+                }
+                break;
+            case 'cancelScheduled': {
+                // Fill/tempo edits invalidate sequencer hits, but must not erase
+                // timestamped MIDI note-on/off events sharing this instrument.
+                let writeIndex = 0;
+                for (let readIndex = this._queueHead; readIndex < this._queue.length; readIndex++) {
+                    const queued = this._queue[readIndex];
+                    if (queued && queued.type !== 'scheduledHit') {
+                        this._queue[writeIndex] = queued;
+                        writeIndex++;
+                    }
+                }
+                this._queue.length = writeIndex;
+                this._queueHead = 0;
+                break;
+            }
+            case 'fillState':
+                this._fillActive = msg.active;
                 break;
             case 'allNotesOff':
                 // Release every pad in one message instead of the main thread

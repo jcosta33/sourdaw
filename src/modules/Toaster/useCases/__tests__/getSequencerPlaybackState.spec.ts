@@ -12,7 +12,8 @@ describe('getSequencerPlaybackState', () => {
             playCount: 0,
             nextTickTime: 0,
             timeoutId: null,
-            pendingFireIds: new Set(),
+            preScheduledStep: null,
+            lastBpm: null,
         });
     });
 

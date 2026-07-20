@@ -11,10 +11,24 @@ import toasterProcessorUrl from '../services/toasterProcessor.ts?worker&url';
 
 const DEFAULT_WASM_URL = '/wasm/daw-dsp/daw_dsp_bg.wasm';
 
+type ScheduleToasterHitInput = {
+    pad: number;
+    velocity: number;
+    midiNote?: number;
+    sampleFrame: number;
+    padParams: Array<{ name: string; value: number }>;
+    restoreEngineType?: number;
+    fillCondition?: 'fill' | 'not-fill';
+};
+
 export type ToasterNodeResult = {
     workletNode: AudioWorkletNode;
     noteOn: (pad: number, velocity: number, midiNote?: number, sampleFrame?: number) => void;
     noteOff: (pad: number, sampleFrame?: number) => void;
+    scheduleHit: (input: ScheduleToasterHitInput) => void;
+    cancelScheduled: () => void;
+    allNotesOff: () => void;
+    setFillActive: (active: boolean) => void;
     setParam: (name: string, value: number) => void;
     setPadParam: (pad: number, name: string, value: number) => void;
     setBypass: (bypassed: boolean) => void;
@@ -70,6 +84,30 @@ export async function createToasterNode(ctx: BaseAudioContext, wasmUrl?: string)
         },
         noteOff(pad: number, sampleFrame?: number) {
             node.port.postMessage({ type: 'noteOff', pad, sampleFrame });
+        },
+        scheduleHit({ pad, velocity, midiNote = 60, sampleFrame, padParams, restoreEngineType, fillCondition }) {
+            if (bypassed) {
+                return;
+            }
+            node.port.postMessage({
+                type: 'scheduledHit',
+                pad,
+                velocity: Math.min(127, Math.max(0, velocity)),
+                note: midiNote,
+                sampleFrame,
+                padParams,
+                restoreEngineType,
+                fillCondition,
+            });
+        },
+        cancelScheduled() {
+            node.port.postMessage({ type: 'cancelScheduled' });
+        },
+        allNotesOff() {
+            node.port.postMessage({ type: 'allNotesOff' });
+        },
+        setFillActive(active) {
+            node.port.postMessage({ type: 'fillState', active });
         },
         setParam(name: string, value: number) {
             if (Number.isFinite(value)) {
