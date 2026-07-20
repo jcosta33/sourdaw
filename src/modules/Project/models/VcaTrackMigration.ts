@@ -50,6 +50,8 @@ export type VcaGroupMigrationResult =
                   | 'invalid-group'
                   | 'invalid-gain'
                   | 'duplicate-group-id'
+                  | 'invalid-candidate-order'
+                  | 'duplicate-candidate-order'
                   | 'ambiguous-membership'
                   | 'unknown-membership-group';
               groupIndex?: number;

@@ -198,10 +198,60 @@ describe('migrateLegacyVcaGroups', () => {
             legacyGroups: undefined,
             existingCandidates: first.candidates,
         });
+        const reversedExistingCandidates = migrateLegacyVcaGroups({
+            ...input,
+            legacyGroups: undefined,
+            existingCandidates: [...first.candidates].reverse(),
+        });
+        const mixedSubsetInput = migrateLegacyVcaGroups({
+            ...input,
+            legacyGroups: [input.legacyGroups[0]],
+            existingCandidates: [first.candidates[1]!],
+        });
 
         expect(second).toEqual(first);
         expect(partialLegacyInput).toEqual(first);
         expect(withoutLegacyInput).toEqual(first);
+        expect(reversedExistingCandidates).toEqual(first);
+        expect(mixedSubsetInput).toEqual(first);
+    });
+
+    it('should reject duplicate or invalid existing candidate orders', () => {
+        const trackCollections = [trackCollection('root', ['track-a', 'track-b'])];
+        const initial = requireReady(
+            migrateLegacyVcaGroups({
+                legacyGroups: [
+                    { id: 'vca-a', name: 'A', gain: 1, muted: false, trackIds: ['track-a'] },
+                    { id: 'vca-b', name: 'B', gain: 1, muted: false, trackIds: ['track-b'] },
+                ],
+                trackCollections,
+            })
+        );
+        const firstCandidate = initial.candidates[0];
+        const secondCandidate = initial.candidates[1];
+        if (firstCandidate === undefined || secondCandidate === undefined) {
+            throw new Error('Expected two dormant VCA candidates');
+        }
+
+        const duplicateOrder = migrateLegacyVcaGroups({
+            legacyGroups: undefined,
+            existingCandidates: [firstCandidate, { ...secondCandidate, order: firstCandidate.order }],
+            trackCollections,
+        });
+        const invalidOrder = migrateLegacyVcaGroups({
+            legacyGroups: undefined,
+            existingCandidates: [{ ...firstCandidate, order: -1 }],
+            trackCollections,
+        });
+
+        expect(duplicateOrder).toEqual({
+            status: 'invalid',
+            errors: [{ code: 'duplicate-candidate-order', groupIndex: 1, field: 'order', value: '0' }],
+        });
+        expect(invalidOrder).toEqual({
+            status: 'invalid',
+            errors: [{ code: 'invalid-candidate-order', groupIndex: 0, field: 'order', value: '-1' }],
+        });
     });
 
     it('should deterministically repair existing candidate identity collisions', () => {

@@ -8,6 +8,7 @@ const DEFAULT_VCA_COLORS = ['#7C3AED', '#2563EB', '#0891B2', '#059669', '#CA8A04
 
 type LegacyVcaGroup = {
     id: string;
+    order: number;
     name: string;
     gain: number;
     muted: boolean;
@@ -16,7 +17,7 @@ type LegacyVcaGroup = {
     trackIds: string[];
 };
 
-type LegacyVcaGroupInput = Omit<LegacyVcaGroup, 'soloed' | 'color'> & {
+type LegacyVcaGroupInput = Omit<LegacyVcaGroup, 'order' | 'soloed' | 'color'> & {
     soloed?: boolean;
     color?: string;
 };
@@ -75,6 +76,7 @@ function parseLegacyGroup(value: unknown, groupIndex: number): LegacyVcaGroup | 
 
     return {
         id: value.id,
+        order: groupIndex,
         name: value.name,
         gain: value.gain,
         muted: value.muted,
@@ -121,6 +123,7 @@ function mergeSourceGroups({
     const parsedGroupById = new Map(parsedGroups.map((group) => [group.id, group]));
     const remainingParsedGroupIds = new Set(parsedGroupById.keys());
     const existingGroupIds = new Set<string>();
+    const existingOrders = new Set<number>();
     const sourceGroups: LegacyVcaGroup[] = [];
 
     for (let candidateIndex = 0; candidateIndex < existingCandidates.length; candidateIndex += 1) {
@@ -136,14 +139,31 @@ function mergeSourceGroups({
                 value: candidate.legacyGroupId,
             });
         }
+        if (!Number.isSafeInteger(candidate.order) || candidate.order < 0) {
+            return invalid({
+                code: 'invalid-candidate-order',
+                groupIndex: candidateIndex,
+                field: 'order',
+                value: String(candidate.order),
+            });
+        }
+        if (existingOrders.has(candidate.order)) {
+            return invalid({
+                code: 'duplicate-candidate-order',
+                groupIndex: candidateIndex,
+                field: 'order',
+                value: String(candidate.order),
+            });
+        }
 
         const parsedGroup = parsedGroupById.get(candidate.legacyGroupId);
         if (parsedGroup !== undefined) {
-            sourceGroups.push({ ...parsedGroup, trackIds: [...parsedGroup.trackIds] });
+            sourceGroups.push({ ...parsedGroup, order: candidate.order, trackIds: [...parsedGroup.trackIds] });
             remainingParsedGroupIds.delete(candidate.legacyGroupId);
         } else {
             sourceGroups.push({
                 id: candidate.legacyGroupId,
+                order: candidate.order,
                 name: candidate.name,
                 gain: candidate.gain,
                 muted: candidate.muted,
@@ -153,15 +173,23 @@ function mergeSourceGroups({
             });
         }
         existingGroupIds.add(candidate.legacyGroupId);
+        existingOrders.add(candidate.order);
     }
 
+    let nextLegacyOrder = 0;
     for (const parsedGroup of parsedGroups) {
         if (!remainingParsedGroupIds.has(parsedGroup.id)) {
             continue;
         }
-        sourceGroups.push({ ...parsedGroup, trackIds: [...parsedGroup.trackIds] });
+        while (existingOrders.has(nextLegacyOrder)) {
+            nextLegacyOrder += 1;
+        }
+        sourceGroups.push({ ...parsedGroup, order: nextLegacyOrder, trackIds: [...parsedGroup.trackIds] });
+        existingOrders.add(nextLegacyOrder);
+        nextLegacyOrder += 1;
     }
 
+    sourceGroups.sort((left, right) => left.order - right.order);
     return sourceGroups;
 }
 
@@ -297,7 +325,7 @@ export function migrateLegacyVcaGroups({
 
     const candidates: DormantVcaTrackCandidate[] = [];
     const candidateIdByGroupId = new Map<string, string>();
-    for (const [order, group] of sourceGroups.entries()) {
+    for (const group of sourceGroups) {
         const existingCandidate = existingCandidateByGroupId.get(group.id);
         let candidateId: string;
         if (
@@ -316,7 +344,7 @@ export function migrateLegacyVcaGroups({
             id: candidateId,
             legacyGroupId: group.id,
             kind: 'vca',
-            order,
+            order: group.order,
             name: group.name,
             color: group.color,
             gain: group.gain,
