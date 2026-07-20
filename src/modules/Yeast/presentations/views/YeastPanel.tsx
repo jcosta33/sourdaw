@@ -37,6 +37,8 @@ import { KeyboardSplit } from '../components/KeyboardSplit';
 import { ProcessorParams } from '../components/ProcessorParams';
 import { StepPatternEditor } from '../components/StepPatternEditor';
 
+import { GrooveDropTarget } from './GrooveDropTarget';
+import { GrooveTemplateLifecycleControls } from './GrooveTemplateLifecycleControls';
 import { YeastPreviewSurface } from './YeastPreviewSurface';
 
 import type { YeastPreviewScope, YeastPreviewUnavailableReason } from '../YeastPreviewTypes';
@@ -194,18 +196,33 @@ const defaultYeastState: YeastState = {
 const GrooveAwareProcessorParams = ({ processor }: { processor: YeastProcessorInfo }): ReactElement => {
     const grooveState = useStore(grooveTemplateStore, defaultGrooveTemplateState);
     const assignment = getYeastGrooveAssignment(processor.id);
+    const selectedGrooveTemplateId = assignment?.templateId ?? getStraightGrooveTemplateId();
+    const selectedGrooveTemplate = grooveState.templates.find((template) => template.id === selectedGrooveTemplateId);
+    const canEditSelectedGroove =
+        selectedGrooveTemplate !== undefined &&
+        selectedGrooveTemplate.id !== getStraightGrooveTemplateId() &&
+        selectedGrooveTemplate.provenance.type !== 'builtin';
 
     return (
-        <ProcessorParams
-            processorId={processor.id}
-            processorType={processor.type}
-            onSetParam={handleSetYeastProcessorParam}
-            onCommand={sendYeastProcessorCommand}
-            grooveTemplates={grooveState.templates.map(({ id, name }) => ({ id, name }))}
-            selectedGrooveTemplateId={assignment?.templateId ?? getStraightGrooveTemplateId()}
-            grooveAmount={assignment?.amount ?? processor.params?.amount ?? 0.5}
-            onSetGrooveTemplate={setYeastGrooveTemplate}
-        />
+        <>
+            <ProcessorParams
+                processorId={processor.id}
+                processorType={processor.type}
+                onSetParam={handleSetYeastProcessorParam}
+                onCommand={sendYeastProcessorCommand}
+                grooveTemplates={grooveState.templates.map(({ id, name }) => ({ id, name }))}
+                selectedGrooveTemplateId={selectedGrooveTemplateId}
+                grooveAmount={assignment?.amount ?? processor.params?.amount ?? 0.5}
+                onSetGrooveTemplate={setYeastGrooveTemplate}
+            />
+            {processor.type === 'groove' ? <GrooveDropTarget /> : null}
+            {processor.type === 'groove' && canEditSelectedGroove ? (
+                <GrooveTemplateLifecycleControls
+                    templateId={selectedGrooveTemplate.id}
+                    templateName={selectedGrooveTemplate.name}
+                />
+            ) : null}
+        </>
     );
 };
 
