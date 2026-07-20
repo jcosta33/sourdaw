@@ -1,0 +1,45 @@
+src/modules/Arrangement/handlers/track/__tests__/armTrack.spec.ts
+  s_75f59e6653feee::t_0cd75bc04315f9 7,14-17,21,47-76
+src/modules/Arrangement/handlers/track/__tests__/foldTrack.spec.ts
+  s_75f59e6653feee::t_29c7cc819879f9 7,14-17,21,47-76
+src/modules/Arrangement/handlers/track/__tests__/hideTrack.spec.ts
+  s_75f59e6653feee::t_ff5c1f076bdd10 7,14-17,21,47-76
+src/modules/Arrangement/handlers/track/__tests__/renameTrack.spec.ts
+  s_75f59e6653feee::t_dc77eedb7dc634 7,14-17,21,39-53
+src/modules/Arrangement/handlers/track/__tests__/reorderTrack.spec.ts
+  s_75f59e6653feee::t_ac57ab3c77ed24 7,14-17,21,39-55
+src/modules/Arrangement/handlers/track/__tests__/setTrackHeight.spec.ts
+  s_75f59e6653feee::t_465db1493aae4b 7,14-17,21,39-55
+src/modules/Arrangement/handlers/track/__tests__/setTrackNotes.spec.ts
+  s_75f59e6653feee::t_0e6ae4103f6310 7,14-17,21,39-53
+src/modules/Arrangement/handlers/track/armTrack.ts
+  s_75f59e6653feee::t_98fc591fe039b4 3,10-18
+src/modules/Arrangement/handlers/track/foldTrack.ts
+  s_75f59e6653feee::t_8f953b20c836ea 3,10-19
+src/modules/Arrangement/handlers/track/hideTrack.ts
+  s_75f59e6653feee::t_4879fe7523e2ed 3,10-18
+src/modules/Arrangement/handlers/track/renameTrack.ts
+  s_75f59e6653feee::t_d41bb17f0d8f1d 3,10-16
+src/modules/Arrangement/handlers/track/reorderTrack.ts
+  s_75f59e6653feee::t_abdeff8b9d1245 3,10-22
+src/modules/Arrangement/handlers/track/setTrackHeight.ts
+  s_75f59e6653feee::t_a9dcc1984158aa 3,10-18
+src/modules/Arrangement/handlers/track/setTrackNotes.ts
+  s_75f59e6653feee::t_44aa5ce9f123e3 3,10-16
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "df48a7ae93521086af80d48e7d159ef6e1c2dacb",
+  "prompts": {},
+  "sessions": {
+    "s_75f59e6653feee": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f819a-2ddc-70b3-ab04-f29a50e9a71d",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
