@@ -1,0 +1,35 @@
+src/modules/SampleLibrary/repositories/libraryPersistence/__tests__/libraryPersistence.spec.ts
+  s_b88cd3730a9eeb::t_7af4dafa87739d 8,12,25,187-224,450-526
+src/modules/SampleLibrary/stores/__tests__/embeddingStore.spec.ts
+  s_b88cd3730a9eeb::t_2bff24b1ae14f6 1-59
+src/modules/SampleLibrary/useCases/connectFolder/__tests__/classifyScanError.spec.ts
+  s_b88cd3730a9eeb::t_15663ca586190f 1-55
+src/modules/SampleLibrary/useCases/connectFolder/__tests__/disconnectLibraryRoot.spec.ts
+  s_b88cd3730a9eeb::t_592e581ef41bb4 1-46
+src/modules/SampleLibrary/useCases/connectFolder/__tests__/reconcileScannedRoot.spec.ts
+  s_7dcffeb429d6d4::t_23a019e2d030a5 1-161
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "9d9c26c2ee0a8cf5e23bb2d18ce1aa903b35d7ee",
+  "prompts": {},
+  "sessions": {
+    "s_7dcffeb429d6d4": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f80f5-a629-7381-aec3-cd4152ac2318",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_b88cd3730a9eeb": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-a4ea6569dcdcfb772",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
