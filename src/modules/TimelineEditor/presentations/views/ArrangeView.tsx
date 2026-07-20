@@ -153,9 +153,10 @@ export const ArrangeView = (): ReactElement => {
         });
     }
 
-    const activeMinimapHeight = minimapTruthChanged
-        ? persistedMinimapHeight
-        : (minimapResizeState.previewHeight ?? persistedMinimapHeight);
+    let activeMinimapHeight = minimapResizeState.previewHeight ?? persistedMinimapHeight;
+    if (minimapTruthChanged) {
+        activeMinimapHeight = persistedMinimapHeight;
+    }
 
     const handleMinimapResizePreview = (height: number): void => {
         setMinimapResizeState((current) => ({
