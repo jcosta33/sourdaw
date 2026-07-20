@@ -1,0 +1,45 @@
+.agents/skills/architecture-violations/SKILL.md
+  s_e7d7bf8e4ba5cd::t_3fee552e9ed504 8,14,42,44
+.agents/skills/architecture/SKILL.md
+  s_e7d7bf8e4ba5cd::t_721013d99a295e 8-9,14,51,93
+.agents/skills/llm-action-bridge/SKILL.md
+  s_e7d7bf8e4ba5cd::t_9ec174cd9e3876 8-9,52
+.agents/skills/playwright-ui-bridge/SKILL.md
+  s_e7d7bf8e4ba5cd::t_178bbcb495ddaf 8-10,33
+.agents/skills/plugin-hosting/SKILL.md
+  s_e7d7bf8e4ba5cd::t_8fc12cfd2efb67 8-9,14,20-22,30,48,52
+.agents/skills/state-and-write-paths/SKILL.md
+  s_c28df7d3dde4b9::t_5ba0e7f45b841e 8-9,43
+.agents/skills/tauri-platform/SKILL.md
+  s_c28df7d3dde4b9::t_83be6a93b730a1 8-10,15,19,21-27,29,31,33,35,37,39,41,43,49,55
+.agents/skills/testing-file-layout/SKILL.md
+  s_c28df7d3dde4b9::t_b3ba8e18c651f8 8-9,14,49
+.agents/skills/ui-patterns/SKILL.md
+  s_c28df7d3dde4b9::t_e8095a9166d146 10-11,22,40,46
+.agents/skills/web-audio-engine/SKILL.md
+  s_c28df7d3dde4b9::t_7a2230cf17937e 8-9,14,75
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "812d0b03241cb988688735e2e4bc16989e29aff2",
+  "prompts": {},
+  "sessions": {
+    "s_c28df7d3dde4b9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f80f4-c597-7162-a337-9e68c16e3fb4",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_e7d7bf8e4ba5cd": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8173-de4f-7680-b8e6-98f783cee08f",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
