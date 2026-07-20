@@ -255,18 +255,28 @@ type RunScheduleInput = {
     withYeast?: boolean;
     loopLengthBeats?: number;
     includeSecondClip?: boolean;
+    emptyNotes?: boolean;
+    removeClips?: boolean;
 };
 
 async function runSchedule({
     withYeast = false,
     loopLengthBeats,
     includeSecondClip = false,
+    emptyNotes = false,
+    removeClips = false,
 }: RunScheduleInput = {}): Promise<PendingWorkletEvent[]> {
     const offlineCtx = makeOfflineCtx();
     const track = makeMidiTrack();
     const midi = makeMidi();
     if (withYeast) {
         track.devices.push({ id: 'yeast-1', name: 'Yeast', type: 'yeast', bypassed: false, parameterValues: {} });
+    }
+    if (emptyNotes) {
+        midi.notesByClipId['clip-1'] = [];
+    }
+    if (removeClips) {
+        track.clips = [];
     }
     if (loopLengthBeats !== undefined) {
         track.clips[0]!.loopEnabled = true;
@@ -404,5 +414,13 @@ describe('scheduleTrackClips — MIDI plugin-delay compensation', () => {
             ],
         });
         expect(events.filter((event) => event.type === 'on')).toHaveLength(3);
+    });
+
+    it('drives source-free generators for an empty clip but not when no clip is eligible', async () => {
+        await runSchedule({ withYeast: true, removeClips: true });
+        expect(mocks.processYeastMidi).not.toHaveBeenCalled();
+
+        await runSchedule({ withYeast: true, emptyNotes: true });
+        expect(mocks.processYeastMidi).toHaveBeenCalledTimes(1);
     });
 });

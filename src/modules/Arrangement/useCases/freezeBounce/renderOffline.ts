@@ -82,6 +82,7 @@ export async function renderTrackOffline(
         Math.ceil((durationSeconds + (options?.autoTail ? 10 : 0)) * sampleRate),
         sampleRate
     );
+    const scheduledDurationSeconds = options?.autoTail ? offlineCtx.length / sampleRate : durationSeconds;
 
     // Map trackId -> { input, output, devices }
     const nodes = new Map<string, { input: AudioNode; output: AudioNode; devices: DeviceNodeEntry[] }>();
@@ -177,7 +178,7 @@ export async function renderTrackOffline(
                     startSamples: number;
                     endSamples: number;
                 }>;
-                if (hasYeast) {
+                if (hasYeast && clipIterations.length > 0) {
                     scheduledNotes = projectOfflineYeastTrackNotes({
                         trackId: time.id,
                         iterations: clipIterations,
@@ -225,11 +226,11 @@ export async function renderTrackOffline(
                 for (const note of scheduledNotes) {
                     const noteStart = Math.max(0, note.startSamples / sampleRate - renderEndpoints.startSeconds);
                     const noteEnd = Math.min(
-                        durationSeconds,
+                        scheduledDurationSeconds,
                         note.endSamples / sampleRate - renderEndpoints.startSeconds
                     );
                     const noteDuration = noteEnd - noteStart;
-                    if (noteStart >= durationSeconds || noteDuration <= 0) {
+                    if (noteStart >= scheduledDurationSeconds || noteDuration <= 0) {
                         continue;
                     }
 

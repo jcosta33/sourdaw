@@ -8,7 +8,12 @@ import { type Track } from '../../../models/Track';
 import { setOfflineRenderDependencies } from '../offlineRenderDependencies';
 import { renderTrackOffline } from '../renderOffline';
 
-import type { buildDeviceChain, getAudioContext, getCachedAudioBuffer } from '#/modules/AudioEngine/useCases';
+import type {
+    buildDeviceChain,
+    getAudioContext,
+    getCachedAudioBuffer,
+    projectOfflineYeastTrackNotes,
+} from '#/modules/AudioEngine/useCases';
 
 type MidiStoreNote = { id: string; pitch: number; startBeat: number; duration: number; velocity: number };
 
@@ -22,6 +27,7 @@ type RenderOfflineMocks = {
     transportStore: { value: unknown };
     tempoMapStore: { value: unknown };
     projectClipMidiEvents: Mock<typeof projectClipMidiEvents>;
+    projectOfflineYeastTrackNotes: Mock<typeof projectOfflineYeastTrackNotes>;
 };
 
 const mocks = vi.hoisted<RenderOfflineMocks>(() => ({
@@ -34,13 +40,14 @@ const mocks = vi.hoisted<RenderOfflineMocks>(() => ({
     transportStore: { value: null },
     tempoMapStore: { value: { changes: [] } },
     projectClipMidiEvents: vi.fn<typeof projectClipMidiEvents>(),
+    projectOfflineYeastTrackNotes: vi.fn<typeof projectOfflineYeastTrackNotes>(() => []),
 }));
 
 vi.mock('#/modules/AudioEngine/useCases', () => ({
     buildDeviceChain: mocks.buildDeviceChain,
     getAudioContext: mocks.getAudioContext,
     getCachedAudioBuffer: mocks.getCachedAudioBuffer,
-    projectOfflineYeastTrackNotes: vi.fn(() => []),
+    projectOfflineYeastTrackNotes: mocks.projectOfflineYeastTrackNotes,
 }));
 
 vi.mock('#/modules/MIDI/stores', () => ({
@@ -263,6 +270,7 @@ describe('renderTrackOffline', () => {
                 startBeat: input.iterationStartBeat + event.startBeat - input.midiOffsetBeats,
             }))
         );
+        mocks.projectOfflineYeastTrackNotes.mockReturnValue([]);
     });
 
     it('should not build a device chain for non-audio non-midi tracks', async () => {
@@ -327,6 +335,59 @@ describe('renderTrackOffline', () => {
         });
         expect(createdOscillators[0]?.start).toHaveBeenCalledWith(0.75);
         expect(createdGains.at(-1)?.gain.linearRampToValueAtTime).toHaveBeenCalledWith((40 / 127) * 0.3, 0.755);
+    });
+
+    it('drives a source-free Yeast generator for an empty clip but not without an eligible clip', async () => {
+        const emptyTrack = TrackDummy.create({
+            id: 'track-midi',
+            kind: 'midi',
+            clips: [],
+            devices: [{ id: 'yeast', name: 'Yeast', type: 'yeast', bypassed: false, parameterValues: {} }],
+        });
+        mocks.trackStore.value = { tracks: [emptyTrack], selectedTrackId: emptyTrack.id, ghostClips: [] };
+        mocks.midiStore.value = { notesByClipId: {} };
+
+        await renderTrackOffline(emptyTrack, 0, 4, { includeInserts: false });
+        expect(mocks.projectOfflineYeastTrackNotes).not.toHaveBeenCalled();
+
+        const clip = ClipDummy.create({ id: 'empty-clip', trackId: emptyTrack.id, type: 'midi' });
+        const trackWithEmptyClip = { ...emptyTrack, clips: [clip] };
+        mocks.trackStore.value = {
+            tracks: [trackWithEmptyClip],
+            selectedTrackId: trackWithEmptyClip.id,
+            ghostClips: [],
+        };
+        mocks.midiStore.value = { notesByClipId: { 'empty-clip': [] } };
+
+        await renderTrackOffline(trackWithEmptyClip, 0, 4, { includeInserts: false });
+        expect(mocks.projectOfflineYeastTrackNotes).toHaveBeenCalledTimes(1);
+    });
+
+    it('schedules delayed Yeast notes inside the requested auto-tail window', async () => {
+        const clip = ClipDummy.create({ id: 'empty-clip', trackId: 'track-midi', type: 'midi' });
+        const track = TrackDummy.create({
+            id: 'track-midi',
+            kind: 'midi',
+            clips: [clip],
+            devices: [{ id: 'yeast', name: 'Yeast', type: 'yeast', bypassed: false, parameterValues: {} }],
+        });
+        mocks.trackStore.value = { tracks: [track], selectedTrackId: track.id, ghostClips: [] };
+        mocks.midiStore.value = { notesByClipId: { 'empty-clip': [] } };
+        mocks.projectOfflineYeastTrackNotes.mockReturnValue([
+            {
+                id: 'delayed-note',
+                pitch: 69,
+                velocity: 100,
+                startSamples: Math.round(2.5 * 44_100),
+                endSamples: Math.round(3 * 44_100),
+                toasterPadIndex: -1,
+            },
+        ]);
+
+        await renderTrackOffline(track, 0, 4, { includeInserts: false, autoTail: true });
+
+        expect(createdOscillators[0]?.start).toHaveBeenCalledWith(2.5);
+        expect(createdOscillators[0]?.stop).toHaveBeenCalledWith(3.01);
     });
 
     it('schedules cached audio clips at clip-relative offsets and skips uncached ones', async () => {

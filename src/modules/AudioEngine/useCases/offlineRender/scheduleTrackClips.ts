@@ -340,19 +340,21 @@ export async function scheduleTrackClips({
                 });
             }
         }
-        const scheduledNotes = projectOfflineYeastTrackNotes({
-            trackId: track.id,
-            iterations,
-            sampleRate: offlineCtx.sampleRate,
-            blockStartSamples: Math.floor(regionStartSec * offlineCtx.sampleRate),
-            blockEndSamples: Math.ceil((regionStartSec + durationSeconds) * offlineCtx.sampleRate),
-            defaultTempo,
-            changes,
-            projectMidiEvents,
-            projectPpqEndpoints,
-            processYeastMidi,
-        });
-        await scheduleMidiNoteBatch(scheduledNotes);
+        if (iterations.length > 0) {
+            const scheduledNotes = projectOfflineYeastTrackNotes({
+                trackId: track.id,
+                iterations,
+                sampleRate: offlineCtx.sampleRate,
+                blockStartSamples: Math.floor(regionStartSec * offlineCtx.sampleRate),
+                blockEndSamples: Math.ceil((regionStartSec + durationSeconds) * offlineCtx.sampleRate),
+                defaultTempo,
+                changes,
+                projectMidiEvents,
+                projectPpqEndpoints,
+                processYeastMidi,
+            });
+            await scheduleMidiNoteBatch(scheduledNotes);
+        }
     }
 
     for (const { clip, padIndex: toasterPadIndex } of clipsToProcess) {
