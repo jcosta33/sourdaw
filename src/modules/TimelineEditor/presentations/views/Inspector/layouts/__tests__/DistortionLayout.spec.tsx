@@ -87,9 +87,7 @@ describe('DistortionLayout', () => {
         const device = makeDevice({ parameterValues: { 'dist-drive': 60, 'dist-mix': 0.8 } });
         render(<Layout device={device} trackId="track-1" parameters={PARAM_IDS.map(makeParam)} />);
 
-        expect(mockDistortionCurve).toHaveBeenCalledWith(
-            expect.objectContaining({ drive: 60, tone: 4000, mix: 0.8 })
-        );
+        expect(mockDistortionCurve).toHaveBeenCalledWith(expect.objectContaining({ drive: 60, tone: 4000, mix: 0.8 }));
     });
 
     it('forwards DistortionCurve parameter changes to setDeviceParameter scoped to the device', () => {

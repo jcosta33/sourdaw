@@ -87,9 +87,7 @@ describe('DelayLayout', () => {
         const device = makeDevice({ parameterValues: { 'delay-time': 500, 'delay-mix': 0.6 } });
         render(<Layout device={device} trackId="track-1" parameters={PARAM_IDS.map(makeParam)} />);
 
-        expect(mockDelayTaps).toHaveBeenCalledWith(
-            expect.objectContaining({ time: 500, feedback: 0.4, mix: 0.6 })
-        );
+        expect(mockDelayTaps).toHaveBeenCalledWith(expect.objectContaining({ time: 500, feedback: 0.4, mix: 0.6 }));
     });
 
     it('forwards DelayTaps parameter changes to setDeviceParameter scoped to the device', () => {
