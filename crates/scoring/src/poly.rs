@@ -107,6 +107,17 @@ impl PolyStringTracker {
     fn set_strings(&mut self, targets: &[StringTarget]) {
         let n = targets.len().min(MAX_STRINGS);
         self.strings = targets[..n].to_vec();
+        // Per-string analysis buffer scaled to the sample rate so the lowest
+        // string band always spans at least two full periods (the detector
+        // clamps max_tau to len / 2). 4096 samples at 44.1–48 kHz, 8192 at
+        // 88.2–96 kHz for bass E1.
+        let lowest_lo = targets[..n]
+            .iter()
+            .map(|t| t.lo_hz)
+            .fold(f32::INFINITY, f32::min);
+        self.buf_size = ((2.0 * self.sample_rate / lowest_lo) as usize)
+            .next_power_of_two()
+            .clamp(4096, 16384);
         self.filters = targets[..n]
             .iter()
             .map(|t| {
@@ -263,6 +274,28 @@ mod tests {
         assert!(
             r.cents.abs() < 30.0,
             "E1 string cents {:.1}, expected |cents| < 30",
+            r.cents
+        );
+    }
+
+    /// Regression (PR #513 review): with a fixed 4096-sample buffer the
+    /// detector floor at 96 kHz was 46.9 Hz, so bass E1 (41.2 Hz) could
+    /// never report. The buffer now scales with sample rate and string band.
+    #[test]
+    fn bass_4_reports_active_low_e_at_96k() {
+        let mut tracker = PolyStringTracker::new(96000.0);
+        tracker.set_bass_4();
+        tracker.enabled = true;
+        feed_sine(&mut tracker, 41.20, 4.0);
+        let r = &tracker.results[0];
+        assert!(
+            r.active,
+            "E1 string never reported active at 96 kHz (freq={:.2}, conf={:.2})",
+            r.freq, r.confidence
+        );
+        assert!(
+            r.cents.abs() < 30.0,
+            "E1 string cents at 96 kHz {:.1}, expected |cents| < 30",
             r.cents
         );
     }

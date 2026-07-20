@@ -24,21 +24,32 @@ use yin::YinDetector;
 // Analysis ring buffer
 // ---------------------------------------------------------------------------
 
-const ANALYSIS_BUF_SIZE: usize = 8192;
-const ANALYSIS_WINDOW: usize = 4096;
 const GATE_THRESHOLD: f32 = 0.005; // -46 dBFS noise gate
+const ANALYSIS_MIN_WINDOW: usize = 4096;
+const ANALYSIS_MAX_WINDOW: usize = 16384;
+const ANALYSIS_FMIN: f32 = 40.0; // lowest supported fundamental
+
+/// Analysis window scaled to the sample rate so the lowest supported
+/// fundamental always spans at least two full periods (the detectors clamp
+/// max_tau to len / 2). 4096 samples at 44.1–48 kHz, 8192 at 88.2–96 kHz.
+fn analysis_window_len(sample_rate: f32) -> usize {
+    let needed = (2.0 * sample_rate / ANALYSIS_FMIN) as usize;
+    needed
+        .next_power_of_two()
+        .clamp(ANALYSIS_MIN_WINDOW, ANALYSIS_MAX_WINDOW)
+}
 
 struct AnalysisBuffer {
-    data: [f32; ANALYSIS_BUF_SIZE],
+    data: Vec<f32>,
     write_pos: usize,
     samples_since_analysis: usize,
     hop_size: usize,
 }
 
 impl AnalysisBuffer {
-    fn new(hop_size: usize) -> Self {
+    fn new(hop_size: usize, capacity: usize) -> Self {
         Self {
-            data: [0.0; ANALYSIS_BUF_SIZE],
+            data: vec![0.0; capacity],
             write_pos: 0,
             samples_since_analysis: 0,
             hop_size,
@@ -47,7 +58,7 @@ impl AnalysisBuffer {
 
     fn push(&mut self, sample: f32) -> bool {
         self.data[self.write_pos] = sample;
-        self.write_pos = (self.write_pos + 1) % ANALYSIS_BUF_SIZE;
+        self.write_pos = (self.write_pos + 1) % self.data.len();
         self.samples_since_analysis += 1;
         if self.samples_since_analysis >= self.hop_size {
             self.samples_since_analysis = 0;
@@ -59,9 +70,10 @@ impl AnalysisBuffer {
 
     /// Extract the last `len` samples into a contiguous buffer.
     fn extract(&self, output: &mut [f32], len: usize) {
-        let len = len.min(ANALYSIS_BUF_SIZE).min(output.len());
+        let capacity = self.data.len();
+        let len = len.min(capacity).min(output.len());
         for i in 0..len {
-            let idx = (self.write_pos + ANALYSIS_BUF_SIZE - len + i) % ANALYSIS_BUF_SIZE;
+            let idx = (self.write_pos + capacity - len + i) % capacity;
             output[i] = self.data[idx];
         }
     }
@@ -236,14 +248,15 @@ pub struct ScoringEngine {
 impl ScoringEngine {
     pub fn new(sample_rate: f32) -> Self {
         let hop = (sample_rate / 30.0) as usize; // ~30 Hz analysis rate
+        let window = analysis_window_len(sample_rate);
 
         Self {
             sample_rate,
             dc_blocker: DcBlocker::new(sample_rate),
             bandpass: Bandpass::new(500.0, 0.5, sample_rate), // wide bandpass
             rms: RmsTracker::new(sample_rate, 0.03),
-            analysis_buf: AnalysisBuffer::new(hop),
-            analysis_window: vec![0.0; ANALYSIS_WINDOW],
+            analysis_buf: AnalysisBuffer::new(hop, window),
+            analysis_window: vec![0.0; window],
             yin: YinDetector::new(sample_rate, 40.0, 5000.0),
             mpm: MpmDetector::new(sample_rate, 40.0, 5000.0),
             poly: PolyStringTracker::new(sample_rate),
@@ -302,8 +315,9 @@ impl ScoringEngine {
                 // autocorrelation-based and a window makes r(τ) decay with
                 // the window autocorrelation, destroying the period dip/peak
                 // for any fundamental beyond a few hundred Hz.
+                let window_len = self.analysis_window.len();
                 self.analysis_buf
-                    .extract(&mut self.analysis_window, ANALYSIS_WINDOW);
+                    .extract(&mut self.analysis_window, window_len);
                 normalize(&mut self.analysis_window);
 
                 // Run YIN (primary)
@@ -545,6 +559,59 @@ mod tests {
             engine.poly.results[0].active,
             "poly E2 string never reported active (freq={:.2}, conf={:.2})",
             engine.poly.results[0].freq, engine.poly.results[0].confidence
+        );
+    }
+
+    /// Regression (PR #513 review): with a fixed 4096-sample window the
+    /// detector floor at 96 kHz was 46.9 Hz, so bass E1 (41.2 Hz) was
+    /// undetectable. The window now scales with sample rate.
+    #[test]
+    fn tunes_bass_e1_at_96k() {
+        assert_tunes(41.20, 96000.0, 28); // E1
+    }
+
+    /// Regression (PR #513 review): noisy low input must not fall back to a
+    /// ~5 kHz MPM min_tau lock.
+    #[test]
+    fn tunes_low_e_under_noise() {
+        let sr = 44100.0_f32;
+        let freq = 82.41_f32;
+        let mut engine = ScoringEngine::new(sr);
+        let mut rng = 0x9E37_79B9_u32;
+        let mut noise = move || {
+            rng ^= rng << 13;
+            rng ^= rng >> 17;
+            rng ^= rng << 5;
+            (rng as f32 / u32::MAX as f32) * 2.0 - 1.0
+        };
+        let blocks = (sr * 2.0) as usize / 128;
+        let mut n = 0usize;
+        for _ in 0..blocks {
+            let mut left = [0.0_f32; 128];
+            let mut right = [0.0_f32; 128];
+            for i in 0..128 {
+                let s = (TAU * freq * n as f32 / sr).sin() * 0.8 + noise() * 0.24;
+                left[i] = s;
+                right[i] = s;
+                n += 1;
+            }
+            engine.process(&mut left, &mut right);
+        }
+        assert!(
+            engine.active,
+            "engine inactive for noisy {freq} Hz input (freq={:.2}, conf={:.2})",
+            engine.frequency, engine.confidence
+        );
+        assert!(
+            engine.frequency < 1000.0,
+            "engine locked to ~5 kHz under noise: {:.2} Hz",
+            engine.frequency
+        );
+        let err_cents = 1200.0 * (engine.frequency / freq).log2().abs();
+        assert!(
+            err_cents < 30.0,
+            "engine noisy {freq} Hz -> {:.2} Hz ({:.1} cents off)",
+            engine.frequency, err_cents
         );
     }
 }
