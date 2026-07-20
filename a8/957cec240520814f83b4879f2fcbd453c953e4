@@ -1,0 +1,33 @@
+src/modules/Arrangement/useCases/recording/__tests__/armTrack.spec.ts
+  s_75f59e6653feee::t_fd950ff7ccd05d 9,22,26-29,49,54-89
+src/modules/Arrangement/useCases/recording/armTrack.ts
+  s_75f59e6653feee::t_ac78dc91d07c73 1,14-21
+src/modules/MIDI/useCases/index.ts
+  s_75f59e6653feee::t_79de0adddcf0e0 140
+src/modules/MIDI/useCases/webMidiInput/getMidiInputTrack.ts
+  s_c2fca615e81f34::t_6def38f96d26f1 1-5
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "a8957cec240520814f83b4879f2fcbd453c953e4",
+  "prompts": {},
+  "sessions": {
+    "s_75f59e6653feee": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f819a-2ddc-70b3-ab04-f29a50e9a71d",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_c2fca615e81f34": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f74e9-e1c5-7142-85d2-4c577b3973c0",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
