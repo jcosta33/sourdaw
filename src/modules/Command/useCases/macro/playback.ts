@@ -7,6 +7,7 @@ import { generateGroupId } from '../generateGroupId';
 type ReplayIdMappings = {
     layerIds: Map<string, string>;
     regionIds: Map<string, string>;
+    vcaGroupIds: Map<string, string>;
 };
 
 function remapLayerId(layerId: string, mappings: ReplayIdMappings): string {
@@ -15,6 +16,16 @@ function remapLayerId(layerId: string, mappings: ReplayIdMappings): string {
 
 function remapRegionId(regionId: string, mappings: ReplayIdMappings): string {
     return mappings.regionIds.get(regionId) ?? regionId;
+}
+
+function remapVcaGroupId(vcaGroupId: string, mappings: ReplayIdMappings): string {
+    return mappings.vcaGroupIds.get(vcaGroupId) ?? vcaGroupId;
+}
+
+function remapVcaReferences(action: AppAction, mappings: ReplayIdMappings): void {
+    if (action.type === 'assignToVca' || action.type === 'setVcaGain') {
+        action.payload.vcaGroupId = remapVcaGroupId(action.payload.vcaGroupId, mappings);
+    }
 }
 
 function remapAdjustmentReferences(action: AppAction, mappings: ReplayIdMappings): void {
@@ -47,6 +58,13 @@ function getGeneratedRegionId(action: AppAction): string | undefined {
     return action.type === 'addAdjustmentRegion' ? action.payload.regionId : undefined;
 }
 
+function getGeneratedVcaGroupId(action: AppAction): string | undefined {
+    if (action.type === 'createVcaGroup') {
+        return action.payload.vcaGroupId;
+    }
+    return undefined;
+}
+
 async function executeMacroAction(
     action: AppAction,
     mappings: ReplayIdMappings,
@@ -76,7 +94,19 @@ async function executeMacroAction(
         return;
     }
 
+    if (replayAction.type === 'createVcaGroup') {
+        const recordedVcaGroupId = replayAction.payload.vcaGroupId;
+        delete replayAction.payload.vcaGroupId;
+        await executeAppAction(replayAction, options);
+        const generatedVcaGroupId = getGeneratedVcaGroupId(replayAction);
+        if (recordedVcaGroupId && generatedVcaGroupId) {
+            mappings.vcaGroupIds.set(recordedVcaGroupId, generatedVcaGroupId);
+        }
+        return;
+    }
+
     remapAdjustmentReferences(replayAction, mappings);
+    remapVcaReferences(replayAction, mappings);
     await executeAppAction(replayAction, options);
 }
 
@@ -100,6 +130,7 @@ export async function playMacro(macroId: string): Promise<void> {
     const replayIdMappings: ReplayIdMappings = {
         layerIds: new Map(),
         regionIds: new Map(),
+        vcaGroupIds: new Map(),
     };
 
     for (const action of macro.actions) {
