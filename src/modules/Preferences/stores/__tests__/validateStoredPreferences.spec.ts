@@ -278,6 +278,20 @@ describe('validateStoredPreferences — timeline minimap migration', () => {
         expect(result.timelineMinimapHeight).toBe(72);
     });
 
+    it.each([1.5, Number.NaN, Number.POSITIVE_INFINITY, '1', null])(
+        'migrates hidden state to visible when the schema version %s is corrupt',
+        (preferencesSchemaVersion) => {
+            const result = validateStoredPreferences({
+                ...defaultPreferences,
+                preferencesSchemaVersion,
+                showMinimap: false,
+            });
+
+            expect(result.preferencesSchemaVersion).toBe(1);
+            expect(result.showMinimap).toBe(true);
+        }
+    );
+
     it.each([
         { input: 72.7, expected: 73 },
         { input: -10, expected: 28 },

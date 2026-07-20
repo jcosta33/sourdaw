@@ -28,6 +28,10 @@ function isFiniteNumber(value: unknown): boolean {
     return typeof value === 'number' && Number.isFinite(value);
 }
 
+function isValidPreferencesSchemaVersion(value: unknown): value is number {
+    return typeof value === 'number' && Number.isFinite(value) && Number.isInteger(value) && value >= 1;
+}
+
 function isOneOf(...allowed: unknown[]): (value: unknown) => boolean {
     return (value: unknown): boolean => allowed.includes(value);
 }
@@ -39,8 +43,7 @@ function isOneOf(...allowed: unknown[]): (value: unknown) => boolean {
  * from storage fall through to defaults too.
  */
 const PREFERENCES_SCHEMA: { [K in keyof Preferences]: (value: unknown) => boolean } = {
-    preferencesSchemaVersion: (value) =>
-        typeof value === 'number' && Number.isFinite(value) && Number.isInteger(value) && value >= 1,
+    preferencesSchemaVersion: isValidPreferencesSchemaVersion,
     trackHeight: isOneOf('compact', 'normal', 'large'),
     colorblindMode: (value) => typeof value === 'boolean',
     autoSave: (value) => typeof value === 'boolean',
@@ -88,8 +91,7 @@ export function validateStoredPreferences(stored: unknown): Preferences {
     const result = { ...defaultPreferences };
     const rejected: string[] = [];
     const storedSchemaVersion = record.preferencesSchemaVersion;
-    const visibilityChoiceIsAuthoritative =
-        typeof storedSchemaVersion === 'number' && Number.isFinite(storedSchemaVersion) && storedSchemaVersion >= 1;
+    const visibilityChoiceIsAuthoritative = isValidPreferencesSchemaVersion(storedSchemaVersion);
 
     for (const key of PREFERENCE_KEYS) {
         if (!(key in record)) {
