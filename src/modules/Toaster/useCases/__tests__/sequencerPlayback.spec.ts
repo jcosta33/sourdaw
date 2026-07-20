@@ -205,4 +205,51 @@ describe('startSequencer', () => {
 
         expect(cancelScheduledToasterHits).toHaveBeenCalledWith(DEVICE);
     });
+
+    it('anchors lookahead hits to logical tick deadlines when a callback runs late', () => {
+        const kit = kitWithStep(activeStep());
+        kit.patterns[0]!.stepsPerBar = 16;
+        kit.patterns[0]!.tracks[0]!.steps = Array.from({ length: 16 }, () => activeStep());
+        toasterStore.set({
+            ...toasterStore.value,
+            [DEVICE]: { ...defaultToasterState, kit },
+        });
+
+        startSequencer(DEVICE, 120);
+        vi.mocked(scheduleToasterHit).mockClear();
+        vi.mocked(getAudioTime).mockReturnValue(0.175);
+
+        vi.advanceTimersByTime(125);
+
+        expect(scheduleToasterHit).toHaveBeenCalledWith(
+            expect.objectContaining({
+                deviceId: DEVICE,
+                targetTimeSeconds: 0.25,
+            })
+        );
+    });
+
+    it('skips genuinely missed deadlines and schedules the first future step', () => {
+        const kit = kitWithStep(activeStep());
+        kit.patterns[0]!.stepsPerBar = 16;
+        kit.patterns[0]!.tracks[0]!.steps = Array.from({ length: 16 }, () => activeStep());
+        toasterStore.set({
+            ...toasterStore.value,
+            [DEVICE]: { ...defaultToasterState, kit },
+        });
+
+        startSequencer(DEVICE, 120);
+        vi.mocked(scheduleToasterHit).mockClear();
+        vi.mocked(getAudioTime).mockReturnValue(0.4);
+
+        vi.advanceTimersByTime(125);
+
+        expect(scheduleToasterHit).toHaveBeenCalledTimes(1);
+        expect(scheduleToasterHit).toHaveBeenCalledWith(
+            expect.objectContaining({
+                deviceId: DEVICE,
+                targetTimeSeconds: 0.5,
+            })
+        );
+    });
 });

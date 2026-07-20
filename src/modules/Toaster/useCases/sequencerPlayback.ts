@@ -190,10 +190,15 @@ export function runSequencerTick({ deviceId, currentStep, bpm }: RunSequencerTic
 
     toasterStore.set({ ...toasterStore.value, [deviceId]: { ...state, currentStep, isPlaying: true } });
 
-    const nextStep = (currentStep + 1) % totalSteps;
-    if (nextStep === 0) {
-        seqState.playCount++;
-    }
+    let nextStep = currentStep;
+    let nextTickTime = seqState.nextTickTime;
+    do {
+        nextStep = (nextStep + 1) % totalSteps;
+        if (nextStep === 0) {
+            seqState.playCount++;
+        }
+        nextTickTime += stepDurationMs / 1000;
+    } while (nextTickTime <= now);
 
     const scheduledNextStep = schedulePatternStep({
         deviceId,
@@ -203,7 +208,7 @@ export function runSequencerTick({ deviceId, currentStep, bpm }: RunSequencerTic
         currentStep: nextStep,
         bpm: currentBpm,
         loopIndex: seqState.playCount,
-        gridDelayMs: stepDurationMs,
+        gridDelayMs: (nextTickTime - now) * 1000,
         audioTimeSeconds: now,
     });
     if (!scheduledNextStep) {
@@ -212,8 +217,8 @@ export function runSequencerTick({ deviceId, currentStep, bpm }: RunSequencerTic
     }
     seqState.preScheduledStep = nextStep;
 
-    seqState.nextTickTime += stepDurationMs / 1000;
-    const delayMs = Math.max(1, (seqState.nextTickTime - now) * 1000);
+    seqState.nextTickTime = nextTickTime;
+    const delayMs = Math.max(1, (nextTickTime - now) * 1000);
 
     seqState.timeoutId = setTimeout(
         () => runSequencerTick({ deviceId, currentStep: nextStep, bpm: currentBpm }),
