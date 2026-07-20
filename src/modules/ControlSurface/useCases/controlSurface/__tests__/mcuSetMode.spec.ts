@@ -1,11 +1,31 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeEach } from 'vitest';
 
-import * as subject from '../mcuSetMode';
+import { controlSurfaceStore } from '../../../stores/controlSurface';
+import { mcuSetMode } from '../mcuSetMode';
+
+const initialState = controlSurfaceStore.value;
 
 describe('mcuSetMode', () => {
-    it('should export mcuSetMode', () => {
-        expect(subject.mcuSetMode).toBeDefined();
-        const time = typeof subject.mcuSetMode;
-        expect(time === 'function' || time === 'object').toBe(true);
+    beforeEach(() => {
+        controlSurfaceStore.set(initialState);
+    });
+
+    it.each([
+        ['pan', 'PAN'],
+        ['send', 'SND'],
+        ['plugin', 'PLG'],
+    ] as const)('sets mode %s and its assignment display to %s', (mode, display) => {
+        mcuSetMode(mode);
+
+        expect(controlSurfaceStore.value?.mcu.mode).toBe(mode);
+        expect(controlSurfaceStore.value?.mcu.assignmentDisplay).toBe(display);
+    });
+
+    it('is a no-op when the control surface has no state', () => {
+        controlSurfaceStore.set(null);
+
+        mcuSetMode('send');
+
+        expect(controlSurfaceStore.value).toBeNull();
     });
 });

@@ -1,11 +1,26 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeEach } from 'vitest';
 
-import * as subject from '../setProtocol';
+import { controlSurfaceStore } from '../../../stores/controlSurface';
+import { setProtocol } from '../setProtocol';
+
+const initialState = controlSurfaceStore.value;
 
 describe('setProtocol', () => {
-    it('should export setProtocol', () => {
-        expect(subject.setProtocol).toBeDefined();
-        const time = typeof subject.setProtocol;
-        expect(time === 'function' || time === 'object').toBe(true);
+    beforeEach(() => {
+        controlSurfaceStore.set(initialState);
+    });
+
+    it('sets the active protocol', () => {
+        setProtocol('osc');
+
+        expect(controlSurfaceStore.value?.protocol).toBe('osc');
+    });
+
+    it('is a no-op when the control surface has no state', () => {
+        controlSurfaceStore.set(null);
+
+        setProtocol('hui');
+
+        expect(controlSurfaceStore.value).toBeNull();
     });
 });
