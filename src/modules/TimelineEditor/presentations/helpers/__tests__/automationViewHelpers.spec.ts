@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { type AutomationPoint } from '../../../models/AutomationViewTypes';
-import { AUTOMATION_MODE_CONFIG, LANE_HEIGHT, buildCurvePath } from '../automationViewHelpers';
+import { AUTOMATION_MODE_CONFIG, LANE_HEIGHT, buildCurvePath, getAutomatableParams } from '../automationViewHelpers';
 
 const beatToX = (beat: number): number => beat * 10;
 const valueToY = (value: number): number => 100 - value * 100;
@@ -32,6 +32,35 @@ describe('AUTOMATION_MODE_CONFIG', () => {
     });
 });
 
+describe('getAutomatableParams', () => {
+    it('should return the base volume and pan params when a track has no devices', () => {
+        expect(getAutomatableParams('track-1', [])).toEqual([
+            { id: 'gain', name: 'Volume', min: 0, max: 1 },
+            { id: 'pan', name: 'Pan', min: -1, max: 1 },
+        ]);
+    });
+
+    it('should append only the automatable params of a known device, skipping non-automatable ones', () => {
+        const params = getAutomatableParams('track-1', [{ type: 'levain', name: 'Strings' }]);
+        expect(params).toEqual([
+            { id: 'gain', name: 'Volume', min: 0, max: 1 },
+            { id: 'pan', name: 'Pan', min: -1, max: 1 },
+            { id: 'levain:masterGain', name: 'Strings → Master', min: 0, max: 2 },
+            { id: 'levain:humanize', name: 'Strings → Humanize', min: 0, max: 1 },
+            { id: 'levain:vibratoDepth', name: 'Strings → Vibrato', min: 0, max: 1 },
+            { id: 'levain:legatoEnabled', name: 'Strings → Legato', min: 0, max: 1 },
+        ]);
+    });
+
+    it('should ignore a device whose type does not match any built-in plugin', () => {
+        const params = getAutomatableParams('track-1', [{ type: 'not-a-real-plugin', name: 'Mystery' }]);
+        expect(params).toEqual([
+            { id: 'gain', name: 'Volume', min: 0, max: 1 },
+            { id: 'pan', name: 'Pan', min: -1, max: 1 },
+        ]);
+    });
+});
+
 describe('buildCurvePath', () => {
     it('should emit a straight segment for linear curves', () => {
         const p1 = pt(0, 0, 'linear');
@@ -53,5 +82,55 @@ describe('buildCurvePath', () => {
         const path = buildCurvePath(p1, p2, beatToX, valueToY);
         expect(path.length).toBeGreaterThan(0);
         expect(path.startsWith('L')).toBe(true);
+    });
+
+    it('should interpolate a Catmull-Rom spline for smooth curves and honor neighbor context', () => {
+        const p1 = pt(0, 0, 'smooth');
+        const p2 = pt(1, 1, 'smooth');
+        const withoutNeighbors = buildCurvePath(p1, p2, beatToX, valueToY);
+        const withNeighbors = buildCurvePath(p1, p2, beatToX, valueToY, pt(-1, -1, 'smooth'), pt(2, 2, 'smooth'));
+
+        expect(withoutNeighbors.match(/L /g)).toHaveLength(20);
+        expect(withoutNeighbors.endsWith('L 10 0')).toBe(true);
+        expect(withNeighbors.endsWith('L 10 0')).toBe(true);
+        expect(withNeighbors).not.toBe(withoutNeighbors);
+    });
+
+    it('should build a default cubic bezier when no control points are given', () => {
+        const p1 = pt(0, 0, 'bezier');
+        const p2 = pt(1, 1, 'bezier');
+        const path = buildCurvePath(p1, p2, beatToX, valueToY);
+        expect(path).toBe(`C ${0 + 0.33 * 10} 100, ${0 + 0.66 * 10} 0, 10 0`);
+    });
+
+    it('should honor explicit bezier control points', () => {
+        const p1: AutomationPoint = {
+            beat: 0,
+            value: 0,
+            curve: 'bezier',
+            tension: 0,
+            cp1: { x: 0.2, y: 0.5 },
+            cp2: { x: 0.8, y: 0.5 },
+        };
+        const p2 = pt(1, 1, 'bezier');
+        const path = buildCurvePath(p1, p2, beatToX, valueToY);
+        expect(path).toBe('C 2 50, 8 50, 10 0');
+    });
+
+    it('should ease in with a power curve for exponential segments once tension moves away from zero', () => {
+        const linear = buildCurvePath(pt(0, 0, 'exponential', 0), pt(1, 1, 'exponential', 0), beatToX, valueToY);
+        const bent = buildCurvePath(pt(0, 0, 'exponential', 0.5), pt(1, 1, 'exponential', 0.5), beatToX, valueToY);
+
+        expect(linear.match(/L /g)).toHaveLength(16);
+        expect(linear.endsWith('L 10 0')).toBe(true);
+        expect(bent.endsWith('L 10 0')).toBe(true);
+        expect(bent).not.toBe(linear);
+    });
+
+    it('should draw a symmetric ease curve for s-curve segments using tension', () => {
+        const p1 = pt(0, 0, 's-curve', 0.3);
+        const p2 = pt(1, 1, 's-curve', 0.3);
+        const path = buildCurvePath(p1, p2, beatToX, valueToY);
+        expect(path).toBe('C 3 100, 7 0, 10 0');
     });
 });
