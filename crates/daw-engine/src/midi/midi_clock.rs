@@ -1,5 +1,8 @@
 pub const MIDI_CLOCK_PPQN: u32 = 24;
 pub const MIDI_CLOCK_EVENT_CAPACITY: usize = 128;
+const SUBSAMPLE_BITS: u32 = 32;
+const SUBSAMPLE_SCALE: u128 = 1u128 << SUBSAMPLE_BITS;
+const MAX_PULSE_INTERVAL_TICKS: u128 = u64::MAX as u128;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum MidiClockEventKind {
@@ -112,7 +115,8 @@ pub enum MidiClockError {
 
 pub struct MidiClock {
     is_playing: bool,
-    fraction_until_next_pulse: f64,
+    ticks_until_next_pulse: u128,
+    pulse_interval_ticks: Option<u128>,
     expected_timeline_sample: Option<u64>,
 }
 
@@ -120,7 +124,8 @@ impl MidiClock {
     pub const fn new() -> Self {
         Self {
             is_playing: false,
-            fraction_until_next_pulse: 0.0,
+            ticks_until_next_pulse: 0,
+            pulse_interval_ticks: None,
             expected_timeline_sample: None,
         }
     }
@@ -129,7 +134,7 @@ impl MidiClock {
         &mut self,
         input: MidiClockBlockInput,
     ) -> Result<MidiClockEventBuffer, MidiClockError> {
-        let samples_per_pulse = Self::samples_per_pulse(input)?;
+        let pulse_interval_ticks = Self::pulse_interval_ticks(input)?;
         let block_sample_count = input.block_sample_count as u64;
         let next_timeline_sample = input
             .timeline_sample
@@ -137,12 +142,13 @@ impl MidiClock {
             .ok_or(MidiClockError::TimelineOverflow)?;
 
         self.validate_timeline(input)?;
+        self.update_pulse_interval(pulse_interval_ticks);
 
         let mut output = MidiClockEventBuffer::new();
         self.apply_transition(input.transition, &mut output);
 
         if self.is_playing {
-            self.schedule_pulses(input.block_sample_count, samples_per_pulse, &mut output);
+            self.schedule_pulses(input.block_sample_count, pulse_interval_ticks, &mut output);
         }
 
         self.expected_timeline_sample = Some(next_timeline_sample);
@@ -153,7 +159,7 @@ impl MidiClock {
         self.is_playing
     }
 
-    fn samples_per_pulse(input: MidiClockBlockInput) -> Result<f64, MidiClockError> {
+    fn pulse_interval_ticks(input: MidiClockBlockInput) -> Result<u128, MidiClockError> {
         if input.sample_rate == 0 {
             return Err(MidiClockError::InvalidSampleRate);
         }
@@ -167,14 +173,22 @@ impl MidiClock {
             return Err(MidiClockError::InvalidTempo);
         }
 
-        Ok(samples_per_pulse)
+        let interval_ticks = (samples_per_pulse * SUBSAMPLE_SCALE as f64).round();
+        if !interval_ticks.is_finite()
+            || interval_ticks < 1.0
+            || interval_ticks >= MAX_PULSE_INTERVAL_TICKS as f64
+        {
+            return Err(MidiClockError::InvalidTempo);
+        }
+
+        Ok(interval_ticks as u128)
     }
 
     fn validate_timeline(&self, input: MidiClockBlockInput) -> Result<(), MidiClockError> {
-        if !self.is_playing {
-            return Ok(());
-        }
-        if input.transition != MidiClockTransportTransition::None {
+        if matches!(
+            input.transition,
+            MidiClockTransportTransition::Start | MidiClockTransportTransition::Seek
+        ) {
             return Ok(());
         }
 
@@ -191,6 +205,26 @@ impl MidiClock {
         })
     }
 
+    fn update_pulse_interval(&mut self, pulse_interval_ticks: u128) {
+        let Some(previous_interval_ticks) = self.pulse_interval_ticks else {
+            self.pulse_interval_ticks = Some(pulse_interval_ticks);
+            return;
+        };
+        if previous_interval_ticks == pulse_interval_ticks {
+            return;
+        }
+
+        let scaled_remaining_ticks = self.ticks_until_next_pulse * pulse_interval_ticks;
+        let rounding_ticks = previous_interval_ticks / 2;
+        self.ticks_until_next_pulse =
+            (scaled_remaining_ticks + rounding_ticks) / previous_interval_ticks;
+        if self.ticks_until_next_pulse > pulse_interval_ticks {
+            self.ticks_until_next_pulse = pulse_interval_ticks;
+        }
+
+        self.pulse_interval_ticks = Some(pulse_interval_ticks);
+    }
+
     fn apply_transition(
         &mut self,
         transition: MidiClockTransportTransition,
@@ -200,7 +234,7 @@ impl MidiClock {
             MidiClockTransportTransition::None => {}
             MidiClockTransportTransition::Start => {
                 self.is_playing = true;
-                self.fraction_until_next_pulse = 0.0;
+                self.ticks_until_next_pulse = 0;
                 output.push(MidiClockEvent {
                     sample_offset: 0,
                     kind: MidiClockEventKind::Start,
@@ -221,7 +255,7 @@ impl MidiClock {
                 });
             }
             MidiClockTransportTransition::Seek => {
-                self.fraction_until_next_pulse = 0.0;
+                self.ticks_until_next_pulse = 0;
                 if self.is_playing {
                     output.push(MidiClockEvent {
                         sample_offset: 0,
@@ -235,30 +269,33 @@ impl MidiClock {
     fn schedule_pulses(
         &mut self,
         block_sample_count: usize,
-        samples_per_pulse: f64,
+        pulse_interval_ticks: u128,
         output: &mut MidiClockEventBuffer,
     ) {
-        let block_sample_count = block_sample_count as f64;
-        let mut pulse_offset = self.fraction_until_next_pulse * samples_per_pulse;
+        let block_ticks = (block_sample_count as u128) << SUBSAMPLE_BITS;
+        let mut pulse_offset_ticks = self.ticks_until_next_pulse;
 
-        while pulse_offset < block_sample_count && !output.is_full() {
+        while pulse_offset_ticks < block_ticks && !output.is_full() {
             output.push(MidiClockEvent {
-                sample_offset: pulse_offset.floor() as usize,
+                sample_offset: (pulse_offset_ticks >> SUBSAMPLE_BITS) as usize,
                 kind: MidiClockEventKind::TimingClock,
             });
-            pulse_offset += samples_per_pulse;
+            pulse_offset_ticks += pulse_interval_ticks;
         }
 
-        if pulse_offset < block_sample_count {
-            let remaining_samples = block_sample_count - pulse_offset;
-            let dropped_pulse_count = (remaining_samples / samples_per_pulse).ceil();
-            output.record_dropped_events(dropped_pulse_count as u64);
-            pulse_offset += dropped_pulse_count * samples_per_pulse;
+        if pulse_offset_ticks < block_ticks {
+            let remaining_ticks = block_ticks - pulse_offset_ticks;
+            let dropped_pulse_count =
+                (remaining_ticks + pulse_interval_ticks - 1) / pulse_interval_ticks;
+            let bounded_dropped_count = match u64::try_from(dropped_pulse_count) {
+                Ok(count) => count,
+                Err(_) => u64::MAX,
+            };
+            output.record_dropped_events(bounded_dropped_count);
+            pulse_offset_ticks += dropped_pulse_count * pulse_interval_ticks;
         }
 
-        let remaining_samples = pulse_offset - block_sample_count;
-        let remaining_fraction = remaining_samples / samples_per_pulse;
-        self.fraction_until_next_pulse = remaining_fraction.clamp(0.0, 1.0);
+        self.ticks_until_next_pulse = pulse_offset_ticks - block_ticks;
     }
 }
 
@@ -314,6 +351,45 @@ mod tests {
             .filter(|event| event.kind == MidiClockEventKind::TimingClock)
             .map(|event| event.sample_offset)
             .collect()
+    }
+
+    fn collect_timing_clock_samples(
+        tempo_bpm: f64,
+        total_samples: u64,
+        block_sizes: &[usize],
+    ) -> Vec<u64> {
+        let mut clock = MidiClock::new();
+        let mut timeline_sample = 0u64;
+        let mut block_index = 0usize;
+        let mut pulse_samples = Vec::new();
+
+        while timeline_sample < total_samples {
+            let remaining = (total_samples - timeline_sample) as usize;
+            let block_sample_count = block_sizes[block_index % block_sizes.len()].min(remaining);
+            let transition = if timeline_sample == 0 {
+                MidiClockTransportTransition::Start
+            } else {
+                MidiClockTransportTransition::None
+            };
+            let events = process(
+                &mut clock,
+                timeline_sample,
+                block_sample_count,
+                tempo_bpm,
+                transition,
+            );
+
+            for event in events.iter() {
+                if event.kind == MidiClockEventKind::TimingClock {
+                    pulse_samples.push(timeline_sample + event.sample_offset as u64);
+                }
+            }
+
+            timeline_sample += block_sample_count as u64;
+            block_index += 1;
+        }
+
+        pulse_samples
     }
 
     #[test]
@@ -454,6 +530,53 @@ mod tests {
     }
 
     #[test]
+    fn stop_and_continue_must_not_hide_timeline_discontinuities() {
+        let mut clock = MidiClock::new();
+        let _ = process(
+            &mut clock,
+            0,
+            128,
+            TEMPO_BPM,
+            MidiClockTransportTransition::Start,
+        );
+
+        let stop_result = clock.process_block(input(
+            1_024,
+            0,
+            TEMPO_BPM,
+            MidiClockTransportTransition::Stop,
+        ));
+        assert_eq!(
+            stop_result,
+            Err(MidiClockError::TimelineDiscontinuity {
+                expected_sample: 128,
+                received_sample: 1_024,
+            })
+        );
+
+        let _ = process(
+            &mut clock,
+            128,
+            128,
+            TEMPO_BPM,
+            MidiClockTransportTransition::Stop,
+        );
+        let continue_result = clock.process_block(input(
+            1_024,
+            128,
+            TEMPO_BPM,
+            MidiClockTransportTransition::Continue,
+        ));
+        assert_eq!(
+            continue_result,
+            Err(MidiClockError::TimelineDiscontinuity {
+                expected_sample: 256,
+                received_sample: 1_024,
+            })
+        );
+    }
+
+    #[test]
     fn tempo_changes_preserve_fractional_pulse_phase() {
         let mut clock = MidiClock::new();
         let start_events = process(
@@ -521,6 +644,39 @@ mod tests {
 
         let expected: Vec<u64> = (0..48).map(|index| index * SAMPLES_PER_CLOCK).collect();
         assert_eq!(pulse_samples, expected);
+    }
+
+    #[test]
+    fn variable_blocks_do_not_move_integer_interval_pulses_early() {
+        let pulse_samples =
+            collect_timing_clock_samples(48.0, 5_001, &[127, 511, 64, 257, 1_024, 17, 333]);
+
+        assert_eq!(pulse_samples, vec![0, 2_500, 5_000]);
+    }
+
+    #[test]
+    fn non_integer_pulse_phase_is_invariant_to_block_partitioning() {
+        let total_samples = SAMPLE_RATE as u64 * 2;
+        let one_block =
+            collect_timing_clock_samples(123.0, total_samples, &[total_samples as usize]);
+        let variable_blocks = collect_timing_clock_samples(
+            123.0,
+            total_samples,
+            &[127, 511, 64, 257, 1_024, 17, 333],
+        );
+
+        assert_eq!(variable_blocks, one_block);
+    }
+
+    #[test]
+    fn sixty_second_end_exclusive_window_has_exact_pulse_count() {
+        let total_samples = SAMPLE_RATE as u64 * 60;
+        let pulse_samples =
+            collect_timing_clock_samples(32.0, total_samples, &[127, 511, 64, 257, 1_024, 17, 333]);
+
+        assert_eq!(pulse_samples.len(), 768);
+        assert_eq!(pulse_samples.last(), Some(&2_876_250));
+        assert!(pulse_samples.iter().all(|sample| *sample < total_samples));
     }
 
     #[test]
