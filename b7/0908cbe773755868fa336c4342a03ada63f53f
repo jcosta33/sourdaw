@@ -1,0 +1,19 @@
+src/modules/Yeast/presentations/views/GrooveTemplateLifecycleControls.tsx
+  s_c2fca615e81f34::t_649f3105550b64 17,20-30,40,50,53-57,59-67,74,90,98-105,118-123
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "b70908cbe773755868fa336c4342a03ada63f53f",
+  "prompts": {},
+  "sessions": {
+    "s_c2fca615e81f34": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f74e9-e1c5-7142-85d2-4c577b3973c0",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
