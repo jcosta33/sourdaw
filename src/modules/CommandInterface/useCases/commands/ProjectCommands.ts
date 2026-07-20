@@ -1,5 +1,5 @@
 import { newProject, pickAndImportProjectFile, saveProject } from '#/modules/Project/useCases';
-import { openExportDialog } from '#/modules/WorkspaceShell/useCases';
+import { openExportDialog, toggleBranchManager } from '#/modules/WorkspaceShell/useCases';
 
 import { type CallableCommandEntry } from '../searchCommandRegistry';
 
@@ -77,6 +77,15 @@ export const projectCommands: CallableCommandEntry[] = [
         description: 'Create a new branch to experiment with an alternative direction',
         category: 'Project',
         action: { type: 'createVersionBranch', payload: { name: 'Experiment' } },
+    },
+    {
+        id: 'open-branch-manager',
+        label: 'Open Branch Manager',
+        description: 'Manage project branches — switch, fork, merge, or delete',
+        category: 'Project',
+        action: () => {
+            toggleBranchManager();
+        },
     },
     {
         id: 'export-dawproject',
