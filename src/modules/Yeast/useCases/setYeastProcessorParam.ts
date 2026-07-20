@@ -1,6 +1,7 @@
 import { getStraightGrooveTemplateId } from '#/modules/MIDI/useCases';
 
 import { setYeastRuntimeProjection } from '../engine/yeastRuntime';
+import { publishYeastPreviewRevision } from '../stores/yeastPreviewRevision';
 import { yeastStore } from '../stores/yeastStore';
 
 import { commitYeastProjection } from './commitYeastProjection';
@@ -57,12 +58,14 @@ export async function setYeastProcessorParam(
     }
     if (isTransient) {
         previewYeastProcessorParam(id, name, value);
+        publishYeastPreviewRevision({ processorId: id, parameterName: name, transient: true });
         return;
     }
     if (processor.type === 'groove' && name === 'amount') {
         const assignment = getYeastGrooveAssignment(id);
         const clampedAmount = Math.max(0, Math.min(1, value));
         await setYeastGrooveTemplate(id, assignment?.templateId ?? getStraightGrooveTemplateId(), clampedAmount);
+        publishYeastPreviewRevision({ processorId: id, parameterName: name, transient: false });
         return;
     }
     commitYeastProjection(
@@ -70,4 +73,5 @@ export async function setYeastProcessorParam(
             entry.id === id ? { ...entry, params: { ...entry.params, [name]: value } } : entry
         )
     );
+    publishYeastPreviewRevision({ processorId: id, parameterName: name, transient: false });
 }

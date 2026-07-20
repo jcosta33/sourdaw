@@ -50,4 +50,32 @@ describe('Yeast preview geometry', () => {
 
         expect(render).toHaveBeenLastCalledWith(expect.objectContaining({ lookaheadBeats: 8 }));
     });
+
+    it('invalidates stale events on a processor revision before the first 16 ms frame', () => {
+        const frames: FrameRequestCallback[] = [];
+        const render = vi.fn();
+        const feedback = vi.fn();
+        const presenter = createYeastPreviewPresenter({
+            renderer: { backend: 'canvas2d', render, resize: vi.fn(), dispose: vi.fn() },
+            requestFrame: (callback) => {
+                frames.push(callback);
+                return frames.length;
+            },
+            cancelFrame: vi.fn(),
+            setTimer: vi.fn(() => 1),
+            clearTimer: vi.fn(),
+            now: () => 0,
+            readPlayheadBeat: () => 0,
+            onFeedback: feedback,
+        });
+
+        presenter.acceptSnapshot(createPreviewSnapshot([createPreviewEvent()]), 0);
+        frames.shift()!(0);
+        presenter.invalidateProcessorRevision(1);
+        expect(frames).toHaveLength(1);
+        frames.shift()!(16);
+
+        expect(render).toHaveBeenLastCalledWith(expect.objectContaining({ events: [] }));
+        expect(feedback).toHaveBeenLastCalledWith(expect.objectContaining({ active: false, visibleEvents: 0 }));
+    });
 });

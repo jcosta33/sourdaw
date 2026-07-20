@@ -1,5 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import type { YeastPreviewRevision } from '../../stores/yeastPreviewRevision';
+
 const store = vi.hoisted(() => ({
     value: {
         processors: [
@@ -50,6 +52,7 @@ vi.mock('../getYeastGrooveAssignment', () => ({
 vi.mock('../setYeastGrooveTemplate', () => ({ setYeastGrooveTemplate: grooveMocks.setYeastGrooveTemplate }));
 
 const { setYeastProcessorParam } = await import('../setYeastProcessorParam');
+const { subscribeYeastPreviewRevision } = await import('../../stores/yeastPreviewRevision');
 
 describe('setYeastProcessorParam', () => {
     beforeEach(() => {
@@ -104,5 +107,30 @@ describe('setYeastProcessorParam', () => {
         expect(grooveMocks.setYeastGrooveTemplate).not.toHaveBeenCalled();
         expect(commit).not.toHaveBeenCalled();
         expect(store.value.processors[1]?.params).toEqual({});
+    });
+
+    it('publishes durable and transient preview revisions before the polling interval', async () => {
+        const revisions: YeastPreviewRevision[] = [];
+        const unsubscribe = subscribeYeastPreviewRevision((revision) => {
+            revisions.push(revision);
+        });
+
+        await setYeastProcessorParam('cm-1', 'transpose_mode', 0);
+        await setYeastProcessorParam('groove-1', 'amount', 0.75, true);
+        unsubscribe();
+
+        expect(revisions).toHaveLength(2);
+        expect(revisions[0]).toMatchObject({
+            processorId: 'cm-1',
+            parameterName: 'transpose_mode',
+            transient: false,
+        });
+        expect(revisions[1]).toMatchObject({
+            processorId: 'groove-1',
+            parameterName: 'amount',
+            transient: true,
+        });
+        expect(revisions[0]!.revision).toBeGreaterThan(0);
+        expect(revisions[1]!.revision).toBe(revisions[0]!.revision + 1);
     });
 });

@@ -75,4 +75,46 @@ describe('Yeast preview performance', () => {
             expect.objectContaining({ visibleEvents: 512, droppedVisualEvents: 1 })
         );
     });
+
+    it('clears scope-local work and metrics before publishing a blank frame', () => {
+        const frames: FrameRequestCallback[] = [];
+        const render = vi.fn();
+        const feedback = vi.fn();
+        const cancelFrame = vi.fn();
+        const clearTimer = vi.fn();
+        const presenter = createYeastPreviewPresenter({
+            renderer: { backend: 'canvas2d', render, resize: vi.fn(), dispose: vi.fn() },
+            requestFrame: (callback) => {
+                frames.push(callback);
+                return frames.length;
+            },
+            cancelFrame,
+            setTimer: vi.fn(() => 7),
+            clearTimer,
+            now: () => 0,
+            readPlayheadBeat: () => 0,
+            onFeedback: feedback,
+        });
+
+        presenter.acceptSnapshot(createPreviewSnapshot([createPreviewEvent()], { droppedEvents: 4 }), 0);
+        frames.shift()!(32);
+        presenter.acceptSnapshot(createPreviewSnapshot([createPreviewEvent({ eventId: 2 })]), 40);
+        presenter.acceptSnapshot(createPreviewSnapshot([createPreviewEvent({ eventId: 3 })]), 40);
+
+        presenter.resetForScope();
+
+        expect(cancelFrame).toHaveBeenCalledOnce();
+        expect(clearTimer).toHaveBeenCalledWith(7);
+        expect(render).toHaveBeenLastCalledWith(expect.objectContaining({ events: [] }));
+        expect(feedback).toHaveBeenLastCalledWith({
+            hasSample: false,
+            active: false,
+            latencyP95Ms: null,
+            visibleEvents: 0,
+            droppedEvents: 0,
+            droppedFrames: 0,
+            droppedVisualEvents: 0,
+            summary: '0 upcoming events',
+        });
+    });
 });

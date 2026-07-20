@@ -16,6 +16,8 @@ type PresenterDependencies = {
 
 type YeastPreviewPresenter = {
     acceptSnapshot(snapshot: YeastPreviewSnapshot, sampledAt?: number): void;
+    resetForScope(): void;
+    invalidateProcessorRevision(revision: number): void;
     updateView(input: { lookaheadBeats?: number }): void;
     resize(width: number, height: number): void;
     dispose(): void;
@@ -81,7 +83,51 @@ export function createYeastPreviewPresenter(deps: PresenterDependencies): YeastP
     let droppedEvents = 0;
     let droppedFrames = 0;
     let droppedVisualEvents = 0;
+    let lastProcessorRevision = 0;
     let disposed = false;
+
+    function cancelPendingFrame(): void {
+        if (frameHandle === null) {
+            return;
+        }
+        deps.cancelFrame(frameHandle);
+        frameHandle = null;
+    }
+
+    function clearProjectionState(resetDropMetrics: boolean): void {
+        events.clear();
+        latencySamples.length = 0;
+        latestSampleAt = null;
+        lastActivityAt = null;
+        sampleRevision = 0;
+        renderedSampleRevision = -1;
+        hasSample = false;
+        if (silenceTimer !== null) {
+            deps.clearTimer(silenceTimer);
+            silenceTimer = null;
+        }
+        if (!resetDropMetrics) {
+            return;
+        }
+        droppedEvents = 0;
+        droppedFrames = 0;
+        droppedVisualEvents = 0;
+    }
+
+    function publishBlankFrame(): void {
+        const playheadBeat = deps.readPlayheadBeat();
+        deps.renderer.render({ events: [], playheadBeat, lookaheadBeats, width, height });
+        deps.onFeedback({
+            hasSample: false,
+            active: false,
+            latencyP95Ms: null,
+            visibleEvents: 0,
+            droppedEvents,
+            droppedFrames,
+            droppedVisualEvents,
+            summary: createYeastPreviewSummary([]),
+        });
+    }
 
     function pruneExpired(playheadBeat: number): void {
         for (const [eventId, event] of events) {
@@ -133,12 +179,14 @@ export function createYeastPreviewPresenter(deps: PresenterDependencies): YeastP
         });
     }
 
-    function scheduleFrame(): void {
+    function scheduleFrame(countPendingAsDropped = true): void {
         if (disposed) {
             return;
         }
         if (frameHandle !== null) {
-            droppedFrames += 1;
+            if (countPendingAsDropped) {
+                droppedFrames += 1;
+            }
             return;
         }
         frameHandle = deps.requestFrame((timestamp) => publishFrame(timestamp));
@@ -151,7 +199,7 @@ export function createYeastPreviewPresenter(deps: PresenterDependencies): YeastP
         const delay = Math.max(0, sampledAt + SILENCE_THRESHOLD_MS - deps.now());
         silenceTimer = deps.setTimer(() => {
             silenceTimer = null;
-            scheduleFrame();
+            scheduleFrame(false);
         }, delay);
     }
 
@@ -183,26 +231,42 @@ export function createYeastPreviewPresenter(deps: PresenterDependencies): YeastP
         scheduleFrame();
     }
 
+    function resetForScope(): void {
+        if (disposed) {
+            return;
+        }
+        cancelPendingFrame();
+        clearProjectionState(true);
+        lastProcessorRevision = 0;
+        publishBlankFrame();
+    }
+
+    function invalidateProcessorRevision(revision: number): void {
+        if (disposed || !Number.isSafeInteger(revision) || revision < 1 || revision === lastProcessorRevision) {
+            return;
+        }
+        lastProcessorRevision = revision;
+        clearProjectionState(false);
+        scheduleFrame(false);
+    }
+
     function updateView(input: { lookaheadBeats?: number }): void {
         if (input.lookaheadBeats !== undefined) {
             lookaheadBeats = Math.max(0.25, Math.min(64, input.lookaheadBeats));
         }
-        scheduleFrame();
+        scheduleFrame(false);
     }
 
     function resize(nextWidth: number, nextHeight: number): void {
         width = Math.max(1, nextWidth);
         height = Math.max(1, nextHeight);
         deps.renderer.resize(width, height);
-        scheduleFrame();
+        scheduleFrame(false);
     }
 
     function dispose(): void {
         disposed = true;
-        if (frameHandle !== null) {
-            deps.cancelFrame(frameHandle);
-            frameHandle = null;
-        }
+        cancelPendingFrame();
         if (silenceTimer !== null) {
             deps.clearTimer(silenceTimer);
             silenceTimer = null;
@@ -211,5 +275,5 @@ export function createYeastPreviewPresenter(deps: PresenterDependencies): YeastP
         deps.renderer.dispose();
     }
 
-    return { acceptSnapshot, updateView, resize, dispose };
+    return { acceptSnapshot, resetForScope, invalidateProcessorRevision, updateView, resize, dispose };
 }

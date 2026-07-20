@@ -3,6 +3,7 @@ import { type ReactElement, useEffect, useRef, useState } from 'react';
 import { playheadPositionRef } from '#/modules/Transport/stores';
 
 import { type YeastRuntimeStatus } from '../../models/YeastProcessorProjection';
+import { subscribeYeastPreviewRevision } from '../../stores/yeastPreviewRevision';
 import { subscribeYeastPreview } from '../../useCases/subscribeYeastPreview';
 import { createYeastPreviewCanvasRenderer } from '../createYeastPreviewCanvasRenderer';
 import { createYeastPreviewPresenter } from '../createYeastPreviewPresenter';
@@ -108,6 +109,7 @@ export function YeastPreviewSurface({
 }: YeastPreviewSurfaceProps): ReactElement {
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const presenterRef = useRef<ReturnType<typeof createYeastPreviewPresenter> | null>(null);
+    const processorsRef = useRef(processors);
     const [rendererUnavailable] = useState(isCanvasRendererUnavailable);
     const [feedback, setFeedback] = useState<YeastPreviewFeedback>(initialFeedback);
 
@@ -148,20 +150,47 @@ export function YeastPreviewSurface({
         };
     }, []);
 
+    useEffect(() => {
+        processorsRef.current = processors;
+    }, [processors]);
+
     const rackId = scope?.rackId;
     const routeId = scope?.routeId;
     const trackId = scope?.trackId;
     useEffect(() => {
-        if (!rackId || !routeId || !trackId || !presenterRef.current) {
+        const presenter = presenterRef.current;
+        if (!presenter) {
             return undefined;
         }
-        return subscribeYeastPreview({
+        presenter.resetForScope();
+        if (!rackId || !routeId || !trackId) {
+            return undefined;
+        }
+        const unsubscribe = subscribeYeastPreview({
             rackId,
             routeId,
             trackId,
-            onSnapshot: (snapshot, sampledAt) => presenterRef.current?.acceptSnapshot(snapshot, sampledAt),
+            onSnapshot: (snapshot, sampledAt) => presenter.acceptSnapshot(snapshot, sampledAt),
         });
+        return () => {
+            unsubscribe();
+            presenter.resetForScope();
+        };
     }, [rackId, routeId, trackId]);
+
+    useEffect(() => {
+        const presenter = presenterRef.current;
+        if (!presenter) {
+            return undefined;
+        }
+        return subscribeYeastPreviewRevision(({ processorId, revision }) => {
+            const ownsProcessor = processorsRef.current.some((processor) => processor.id === processorId);
+            if (!ownsProcessor) {
+                return;
+            }
+            presenter.invalidateProcessorRevision(revision);
+        });
+    }, []);
 
     useEffect(() => {
         if (!presenterRef.current) {
@@ -169,7 +198,7 @@ export function YeastPreviewSurface({
         }
         presenterRef.current.updateView({ lookaheadBeats });
         return undefined;
-    }, [lookaheadBeats, processors]);
+    }, [lookaheadBeats]);
 
     const status = resolveSurfaceStatus({
         scope,

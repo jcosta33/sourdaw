@@ -1,6 +1,7 @@
 import { act, render, screen } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { publishYeastPreviewRevision } from '../../stores/yeastPreviewRevision';
 import { YeastPreviewSurface } from '../views/YeastPreviewSurface';
 
 import { createPreviewEvent, createPreviewSnapshot } from './yeastPreviewFixtures';
@@ -45,7 +46,9 @@ describe('Yeast preview accessibility', () => {
             previewMocks.frames.push(callback);
             return previewMocks.frames.length;
         });
-        vi.stubGlobal('cancelAnimationFrame', vi.fn());
+        vi.stubGlobal('cancelAnimationFrame', (handle: number) => {
+            previewMocks.frames.splice(handle - 1, 1);
+        });
     });
 
     it('uses one Canvas surface and exposes a keyboard-readable event summary', () => {
@@ -73,5 +76,104 @@ describe('Yeast preview accessibility', () => {
         expect(canvas).toHaveAttribute('aria-label', expect.stringContaining('1 non-deterministic'));
         expect(document.querySelectorAll('canvas')).toHaveLength(1);
         expect(document.querySelectorAll('[data-preview-event]')).toHaveLength(0);
+    });
+
+    it('clears route activity before unbinding and rebinding the preview scope', () => {
+        const { rerender } = render(
+            <YeastPreviewSurface
+                scope={{ rackId: 'rack-a', routeId: 'track-a', trackId: 'track-a' }}
+                processors={[]}
+                runtimeStatus="ready"
+            />
+        );
+
+        act(() => {
+            previewMocks.onSnapshot?.(
+                createPreviewSnapshot([
+                    createPreviewEvent({ rackId: 'rack-a', routeId: 'track-a', trackId: 'track-a' }),
+                ]),
+                performance.now()
+            );
+            previewMocks.frames.shift()?.(performance.now());
+        });
+        expect(screen.getByRole('img', { name: /1 upcoming event/i })).toBeInTheDocument();
+
+        rerender(
+            <YeastPreviewSurface
+                scope={null}
+                unavailableReason={{ code: 'no-track', message: 'Select a MIDI track.' }}
+                processors={[]}
+                runtimeStatus="ready"
+            />
+        );
+        expect(screen.getByRole('img', { name: '0 upcoming events' })).toBeInTheDocument();
+
+        rerender(
+            <YeastPreviewSurface
+                scope={{ rackId: 'rack-b', routeId: 'track-b', trackId: 'track-b' }}
+                processors={[]}
+                runtimeStatus="ready"
+            />
+        );
+        expect(screen.getByRole('img', { name: '0 upcoming events' })).toBeInTheDocument();
+        expect(previewMocks.subscribe).toHaveBeenLastCalledWith(expect.objectContaining({ rackId: 'rack-b' }));
+    });
+
+    it('ignores unrelated revisions and clears its processor before the next preview poll', () => {
+        const { rerender } = render(
+            <YeastPreviewSurface
+                scope={{ rackId: 'rack-1', routeId: 'track-1', trackId: 'track-1' }}
+                processors={[{ id: 'processor-1', bypassed: false }]}
+                runtimeStatus="ready"
+            />
+        );
+
+        act(() => {
+            previewMocks.onSnapshot?.(createPreviewSnapshot([createPreviewEvent()]), performance.now());
+            previewMocks.frames.shift()?.(0);
+        });
+        expect(screen.getByRole('img', { name: /1 upcoming event/i })).toBeInTheDocument();
+
+        act(() => {
+            publishYeastPreviewRevision({
+                processorId: 'another-processor',
+                parameterName: 'amount',
+                transient: false,
+            });
+        });
+        expect(previewMocks.frames).toHaveLength(0);
+        expect(screen.getByRole('img', { name: /1 upcoming event/i })).toBeInTheDocument();
+
+        rerender(
+            <YeastPreviewSurface
+                scope={{ rackId: 'rack-1', routeId: 'track-1', trackId: 'track-1' }}
+                processors={[{ id: 'processor-2', bypassed: false }]}
+                runtimeStatus="ready"
+            />
+        );
+
+        act(() => {
+            publishYeastPreviewRevision({
+                processorId: 'processor-1',
+                parameterName: 'amount',
+                transient: false,
+            });
+        });
+        expect(previewMocks.frames).toHaveLength(0);
+        expect(screen.getByRole('img', { name: /1 upcoming event/i })).toBeInTheDocument();
+
+        act(() => {
+            publishYeastPreviewRevision({
+                processorId: 'processor-2',
+                parameterName: 'amount',
+                transient: true,
+            });
+        });
+        expect(previewMocks.frames).toHaveLength(1);
+
+        act(() => {
+            previewMocks.frames.shift()?.(16);
+        });
+        expect(screen.getByRole('img', { name: '0 upcoming events' })).toBeInTheDocument();
     });
 });
