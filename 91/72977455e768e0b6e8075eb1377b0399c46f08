@@ -1,0 +1,21 @@
+src/modules/Command/useCases/macro/__tests__/playback.spec.ts
+  s_7475f7f4c58c43::t_5a9b92d297bf26 127-170
+src/modules/Command/useCases/macro/playback.ts
+  s_7475f7f4c58c43::t_e006b1197b4152 10,21-30,61-67,97-107,109,133
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "9172977455e768e0b6e8075eb1377b0399c46f08",
+  "prompts": {},
+  "sessions": {
+    "s_7475f7f4c58c43": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f80f5-432b-7962-b884-92c9a0f55e05",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
