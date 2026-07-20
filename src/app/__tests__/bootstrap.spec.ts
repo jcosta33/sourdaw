@@ -1,0 +1,353 @@
+import { describe, it, expect, vi } from 'vitest';
+
+// bootstrap.ts is the app's composition root: it imports ~40 module barrels
+// and, at import time (not inside a callable function), wires their runtime
+// dependencies and hands every module's `get<Module>Handlers()` result to the
+// shared `registerHandlerMap` registry. There is no exported function to call
+// — the only way to exercise the wiring is to import the module and observe
+// the side effects it performs while doing so.
+//
+// Every module bootstrap.ts imports from is mocked here so importing it stays
+// hermetic (no real AudioContext, storage, or engine wiring runs). The
+// `get<Module>Handlers` factories return a small sentinel object instead of a
+// real handler map — the mocking boundary this spec is scoped to (see
+// ledger #429) — so the test can assert on *which* modules got registered and
+// in what order without depending on any module's internal action-type keys.
+
+type HandlerMapSentinel = { moduleId: string };
+
+const {
+    noop,
+    sentinelHandlers,
+    registerHandlerMapMock,
+    initBrowserAiMock,
+    registerGlobalErrorHandlersMock,
+    eventBusMock,
+    loggerMock,
+    actionHistoryStoreMock,
+    trackStoreMock,
+} = vi.hoisted(() => {
+    const noop = vi.fn();
+    const sentinelHandlers = (moduleId: string) => vi.fn<() => HandlerMapSentinel>(() => ({ moduleId }));
+    return {
+        noop,
+        sentinelHandlers,
+        registerHandlerMapMock: vi.fn<(map: HandlerMapSentinel) => void>(),
+        initBrowserAiMock: vi.fn(() => Promise.resolve()),
+        registerGlobalErrorHandlersMock: vi.fn(() => vi.fn()),
+        eventBusMock: { emit: vi.fn(), on: vi.fn(), off: vi.fn() },
+        loggerMock: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn(), setWriters: vi.fn() },
+        actionHistoryStoreMock: { value: { entries: [] as unknown[] }, subscribe: vi.fn() },
+        trackStoreMock: { subscribe: vi.fn() },
+    };
+});
+
+vi.mock('#/infra/logger/runtimeLogger', () => ({ setRuntimeLogger: noop }));
+
+vi.mock('#/modules/AiGeneration/useCases', () => ({
+    getGenerationHandlers: sentinelHandlers('AiGeneration'),
+    getAiMidiHandlers: sentinelHandlers('AiMidi'),
+}));
+
+vi.mock('#/modules/AiRuntime/useCases', () => ({
+    beginMixAnalysis: noop,
+    completeMixAnalysis: noop,
+    failMixAnalysis: noop,
+    getAiOrganizationHandlers: sentinelHandlers('AiOrganization'),
+    setVoiceToggleEventBus: noop,
+}));
+
+vi.mock('#/modules/Arrangement/stores', () => ({
+    persistDeviceParam: noop,
+    trackStore: trackStoreMock,
+}));
+
+vi.mock('#/modules/Arrangement/useCases', () => ({
+    getAllTracks: noop,
+    getPluginById: noop,
+    persistDevicePatch: noop,
+    cleanupUnusedFreezeFiles: noop,
+    setTrackGain: noop,
+    setTrackPan: noop,
+    setDeviceParameter: noop,
+    getArrangementHandlers: sentinelHandlers('Arrangement'),
+    initStalenessDetection: noop,
+    setArrangementEventBus: noop,
+    setOfflineRenderDependencies: noop,
+    setTimeOperationDependencies: noop,
+    getSongStructureHandlers: sentinelHandlers('SongStructure'),
+}));
+
+vi.mock('#/modules/AudioAnalysis/useCases', () => ({
+    getAnalysisHandlers: sentinelHandlers('AudioAnalysis'),
+    setMixAnalysisDisplayLifecycle: noop,
+}));
+
+vi.mock('#/modules/AudioEngine/useCases', () => ({
+    updateDeviceParam: noop,
+    updateDevicePatch: noop,
+    setTrackGain: noop,
+    setTrackPan: noop,
+    getAudioContext: noop,
+    getCompensationDelay: noop,
+    getFinalFeatureHandlers: sentinelHandlers('FinalFeature'),
+    commitPitchEdit: noop,
+    configureAudioDeviceRuntimeSink: noop,
+    configureOfflineMidiEventProjection: noop,
+    configureOfflinePpqEndpointProjection: noop,
+    configureOfflineYeastMidiProcessing: noop,
+    stopAllScheduled: noop,
+}));
+
+vi.mock('#/modules/Automation/useCases', () => ({
+    getAutomationHandlers: sentinelHandlers('Automation'),
+    recordAutomationValue: noop,
+    setAutomationRecordingDependencies: noop,
+    setModulationDependencies: noop,
+}));
+
+vi.mock('#/modules/Bacteria/stores', () => ({ updateBacteriaMeters: noop }));
+
+vi.mock('#/modules/BrowserAi/useCases', () => ({
+    initBrowserAi: initBrowserAiMock,
+    getRaveHandlers: sentinelHandlers('Rave'),
+}));
+
+vi.mock('#/modules/Collaboration/useCases', () => ({
+    getCollaborationHandlers: sentinelHandlers('Collaboration'),
+    leaveSession: noop,
+}));
+
+vi.mock('#/modules/Command/stores', () => ({ registerHandlerMap: registerHandlerMapMock }));
+
+vi.mock('#/modules/Command/useCases', () => ({
+    executeAppAction: noop,
+    getMacroHandlers: sentinelHandlers('Macro'),
+    getUndoRedoHandlers: sentinelHandlers('UndoRedo'),
+    getUndoTreeHandlers: sentinelHandlers('UndoTree'),
+    setActionHistoryMetadataPort: noop,
+    setCommandEventBus: noop,
+    syncActionReplayMetadata: noop,
+}));
+
+vi.mock('#/modules/ControlRoom/useCases', () => ({
+    getControlRoomHandlers: sentinelHandlers('ControlRoom'),
+}));
+
+vi.mock('#/modules/ControlSurface/useCases', () => ({
+    getControlSurfaceHandlers: sentinelHandlers('ControlSurface'),
+    setMidiLearnDependencies: noop,
+}));
+
+vi.mock('#/modules/CrdtDocument/stores', () => ({ actionHistoryStore: actionHistoryStoreMock }));
+
+vi.mock('#/modules/CrdtDocument/useCases', () => ({
+    getDsoSnapshotHandlers: sentinelHandlers('DsoSnapshot'),
+    markActionHistoryEntryReverted: noop,
+    recordActionHistoryEntry: noop,
+    clearActionHistory: noop,
+    registerCrdtStorageRuntime: noop,
+}));
+
+vi.mock('#/modules/DawInterchange/useCases', () => ({
+    getDawProjectHandlers: sentinelHandlers('DawProject'),
+}));
+
+vi.mock('#/modules/Fermenter/stores', () => ({ setFermenterTelemetry: noop }));
+
+vi.mock('#/modules/Fermenter/useCases', () => ({
+    setFermenterMappedParam: noop,
+    setFermenterDependencies: noop,
+}));
+
+vi.mock('#/modules/Gluten/stores', () => ({
+    updateGlutenMeters: noop,
+    deleteGlutenMeters: noop,
+}));
+
+vi.mock('#/modules/GrandBoule/useCases', () => ({ setGrandBouleEventBus: noop }));
+
+vi.mock('#/modules/Grinder/stores', () => ({ updateGrinderTelemetry: noop }));
+
+vi.mock('#/modules/Knead/useCases', () => ({
+    getPitchHandlers: sentinelHandlers('Pitch'),
+    setPitchEditDependencies: noop,
+}));
+
+vi.mock('#/modules/Levain/stores', () => ({ setEngineReady: noop }));
+
+vi.mock('#/modules/Levain/useCases', () => ({
+    registerLevainDevice: noop,
+    unregisterLevainDevice: noop,
+}));
+
+vi.mock('#/modules/MIDI/useCases', () => ({
+    getChordTrackHandlers: sentinelHandlers('ChordTrack'),
+    getMidiGrooveHandlers: sentinelHandlers('MidiGroove'),
+    getMidiNoteTransformHandlers: sentinelHandlers('MidiNoteTransform'),
+    getPatternInstanceHandlers: sentinelHandlers('PatternInstance'),
+    createGrooveMidiEventProjector: noop,
+    setWebMidiRealtimeProcessor: noop,
+    setWebMidiRuntimeEventBus: noop,
+    getWebMidiInputHandlers: sentinelHandlers('WebMidiInput'),
+}));
+
+vi.mock('#/modules/PluginHost/useCases', () => ({
+    getPluginHostHandlers: sentinelHandlers('PluginHost'),
+}));
+
+vi.mock('#/modules/Project/useCases', () => ({
+    initGrooveTemplateDirtyTracking: noop,
+    markDirty: noop,
+    setProjectIdentityTransitionDependencies: noop,
+}));
+
+vi.mock('#/modules/ProjectVersioning/useCases', () => ({
+    getVersionControlHandlers: sentinelHandlers('VersionControl'),
+}));
+
+vi.mock('#/modules/Proof/stores', () => ({ updateProofMeters: noop }));
+
+vi.mock('#/modules/Proof/useCases', () => ({
+    registerProofDevice: noop,
+    unregisterProofDevice: noop,
+    syncFullPatch: noop,
+}));
+
+vi.mock('#/modules/PunchRecording/useCases', () => ({
+    getPunchRecordingHandlers: sentinelHandlers('PunchRecording'),
+}));
+
+vi.mock('#/modules/Routing/useCases', () => ({
+    getNodeViewHandlers: sentinelHandlers('NodeView'),
+}));
+
+vi.mock('#/modules/SessionLauncher/useCases', () => ({
+    getSessionLauncherHandlers: sentinelHandlers('SessionLauncher'),
+}));
+
+vi.mock('#/modules/Setlist/useCases', () => ({
+    getSetlistHandlers: sentinelHandlers('Setlist'),
+    setSetlistEventBus: noop,
+}));
+
+vi.mock('#/modules/Toaster/useCases', () => ({
+    initToasterSubscribers: noop,
+    setToasterEventBus: noop,
+    setToasterGrooveAssignmentExecutor: noop,
+}));
+
+vi.mock('#/modules/Transport/useCases', () => ({
+    getTransportHandlers: sentinelHandlers('Transport'),
+    getTransportState: noop,
+    deleteTimelineMapsTimeRange: noop,
+    createMusicalPositionProjector: noop,
+    createSamplePositionProjector: noop,
+    projectPpqEndpoints: noop,
+    setStopPlaybackCallback: noop,
+    shiftTimelineMapsAfterBeat: noop,
+    stopPlayback: noop,
+}));
+
+vi.mock('#/modules/Tuner/stores', () => ({ updateTunerTelemetry: noop }));
+
+vi.mock('#/modules/WorkspaceShell/useCases', () => ({
+    getWorkspaceHandlers: sentinelHandlers('Workspace'),
+    getScratchPadHandlers: sentinelHandlers('ScratchPad'),
+    setWorkspaceEventBus: noop,
+}));
+
+vi.mock('#/modules/Yeast/stores', () => ({ setYeastEventBus: noop }));
+
+vi.mock('#/modules/Yeast/useCases', () => ({
+    configureYeastRuntime: noop,
+    createOfflineYeastMidiProcessor: noop,
+    processRealtimeMidiInput: noop,
+    teardownYeastRuntime: noop,
+}));
+
+vi.mock('#/utils/capabilities', () => ({ logCapabilities: noop }));
+
+vi.mock('#/utils/Notification/notificationEventBus', () => ({ setNotificationEventBus: noop }));
+
+vi.mock('../registerDependencies', () => ({
+    eventBus: eventBusMock,
+    logger: loggerMock,
+}));
+
+vi.mock('../registerGlobalErrorHandlers', () => ({
+    registerGlobalErrorHandlers: registerGlobalErrorHandlersMock,
+}));
+
+// Side-effect import: this is what runs the composition root under test.
+// `vi.mock` calls above are hoisted above this import by Vitest, so every
+// dependency bootstrap.ts pulls in is already mocked by the time it runs.
+import '../bootstrap';
+
+describe('bootstrap', () => {
+    // The exact order bootstrap.ts calls registerHandlerMap(get<Module>Handlers())
+    // (src/app/bootstrap.ts lines 283-314). This list IS the assertion: every
+    // module bootstrap wires into the shared handler registry must appear here
+    // exactly once, in registration order — proving the wiring is both complete
+    // (nothing missing) and idempotent (nothing registered twice).
+    const expectedRegistrationOrder = [
+        'Arrangement',
+        'Transport',
+        'SessionLauncher',
+        'Setlist',
+        'PunchRecording',
+        'Workspace',
+        'Automation',
+        'AiGeneration',
+        'AudioAnalysis',
+        'Collaboration',
+        'PluginHost',
+        'AiMidi',
+        'AiOrganization',
+        'ChordTrack',
+        'MidiNoteTransform',
+        'MidiGroove',
+        'ControlSurface',
+        'ScratchPad',
+        'PatternInstance',
+        'Macro',
+        'UndoRedo',
+        'UndoTree',
+        'Pitch',
+        'SongStructure',
+        'VersionControl',
+        'DawProject',
+        'FinalFeature',
+        'NodeView',
+        'WebMidiInput',
+        'Rave',
+        'ControlRoom',
+        'DsoSnapshot',
+    ];
+
+    it('registers every module handler map exactly once, in bootstrap wiring order', () => {
+        const registeredModuleIds = registerHandlerMapMock.mock.calls.map((call) => call[0].moduleId);
+
+        expect(registeredModuleIds).toEqual(expectedRegistrationOrder);
+    });
+
+    it('registers a complete, duplicate-free set of handler maps', () => {
+        // Complete: exactly one registerHandlerMap call per expected module.
+        expect(registerHandlerMapMock).toHaveBeenCalledTimes(expectedRegistrationOrder.length);
+
+        // Idempotent: no module's handler map is handed to registerHandlerMap
+        // more than once — deduping the recorded module ids must not drop any.
+        const registeredModuleIds = registerHandlerMapMock.mock.calls.map((call) => call[0].moduleId);
+        expect(new Set(registeredModuleIds).size).toBe(expectedRegistrationOrder.length);
+    });
+
+    it('wires global error handlers to the app runtime logger', () => {
+        expect(registerGlobalErrorHandlersMock).toHaveBeenCalledExactlyOnceWith({ logger: loggerMock });
+    });
+
+    it('kicks off browser AI initialization exactly once as a non-blocking boot step', () => {
+        // initBrowserAi() is fire-and-forget (`.catch(...)`, no await) — assert
+        // it was invoked rather than that bootstrap awaits or returns it.
+        expect(initBrowserAiMock).toHaveBeenCalledExactlyOnceWith();
+    });
+});
