@@ -1,0 +1,48 @@
+src/modules/Yeast/presentations/views/YeastPanel.tsx
+  s_c2fca615e81f34::t_db0c887a52477b 40-41,199-204,207-225
+src/modules/Yeast/presentations/views/GrooveDropTarget.tsx
+  s_c2fca615e81f34::t_db0c887a52477b 1-109
+src/modules/Yeast/presentations/views/GrooveTemplateLifecycleControls.tsx
+  s_c2fca615e81f34::t_db0c887a52477b 1-53
+src/modules/Yeast/presentations/__tests__/GrooveDropTarget.spec.tsx
+  s_c2fca615e81f34::t_db0c887a52477b 1-165,189
+  s_c2fca615e81f34::t_af9aab230dc96f 166-188
+src/modules/Yeast/__tests__/applyGrooveTemplate.spec.ts
+  s_c2fca615e81f34::t_db0c887a52477b 1-129
+src/modules/Yeast/__tests__/extractGrooveTemplate.spec.ts
+  s_4a3a9ac19de269::t_5718a3a4354552 1-148
+src/modules/Yeast/useCases/proposeYeastGrooveExtraction.ts
+  s_4a3a9ac19de269::t_f3f465178e89f5 1-59
+src/modules/Yeast/__tests__/grooveTemplateLifecycle.spec.ts
+  s_c2fca615e81f34::t_b4b1d63bbd1643 1-130
+src/modules/Yeast/useCases/commitYeastGrooveExtraction.ts
+  s_c2fca615e81f34::t_94982eabaa0150 1-25
+src/modules/Yeast/useCases/deleteYeastGrooveTemplate.ts
+  s_c2fca615e81f34::t_4d6afc6d58856a 1-8
+src/modules/Yeast/useCases/renameYeastGrooveTemplate.ts
+  s_c2fca615e81f34::t_1fca0ad25795e0 1-8
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "4e2dd4b1268e5e2ae2090f2829f1f92820c37729",
+  "prompts": {},
+  "sessions": {
+    "s_4a3a9ac19de269": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "4a1953fb-b074-451f-a9e0-2edbbc4fbbf3",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_c2fca615e81f34": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f74e9-e1c5-7142-85d2-4c577b3973c0",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
