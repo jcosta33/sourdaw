@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 
-import { generateDrumPattern } from '../algorithm';
+import { generateDrumPattern, DRUM_PATTERN_STYLES } from '../algorithm';
 
 describe('generateDrumPattern (algorithm)', () => {
     it('generates a deterministically seeded pattern', () => {
@@ -49,5 +49,21 @@ describe('generateDrumPattern (algorithm)', () => {
 
         expect(allStraightNotes).toBe(true);
         expect(hasSwungNote).toBe(true);
+    });
+
+    it.each(DRUM_PATTERN_STYLES)('produces valid notes for style "%s" at max density', (style) => {
+        // Exercises every buildPatternForBar switch arm — the base tests above
+        // only drove 'house', 'trap', and 'four-on-floor'. Known GM percussion
+        // pitches used across all pattern maps (kick/snare/clap/hihat/open-hh/tom/ride).
+        const knownPitches = new Set([36, 38, 40, 42, 45, 46, 51]);
+        const result = generateDrumPattern({ style, bars: 2, density: 1, seed: 3 });
+
+        expect(result.notes.length).toBeGreaterThan(0);
+        for (const note of result.notes) {
+            expect(knownPitches.has(note.pitch)).toBe(true);
+            expect(note.duration).toBe(0.25);
+            expect(note.velocity).toBeGreaterThanOrEqual(1);
+            expect(note.velocity).toBeLessThanOrEqual(127);
+        }
     });
 });
