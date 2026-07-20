@@ -1,6 +1,56 @@
-pub const LOWER_ZONE_FIRST_MEMBER_CHANNEL: u8 = 2;
-pub const LOWER_ZONE_LAST_MEMBER_CHANNEL: u8 = 16;
+const LOWER_ZONE_FIRST_HUMAN_MEMBER_NUMBER: u8 = 2;
+const LOWER_ZONE_LAST_HUMAN_MEMBER_NUMBER: u8 = 16;
+const LOWER_ZONE_FIRST_ENGINE_EVENT_INDEX: u8 = 1;
+const LOWER_ZONE_LAST_ENGINE_EVENT_INDEX: u8 = 15;
 pub const LOWER_ZONE_MEMBER_CHANNEL_COUNT: usize = 15;
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[repr(transparent)]
+pub struct MpeMemberChannel {
+    allocator_index: u8,
+}
+
+impl MpeMemberChannel {
+    pub const fn from_human_member_number(member_number: u8) -> Option<Self> {
+        if member_number < LOWER_ZONE_FIRST_HUMAN_MEMBER_NUMBER
+            || member_number > LOWER_ZONE_LAST_HUMAN_MEMBER_NUMBER
+        {
+            return None;
+        }
+
+        Some(Self {
+            allocator_index: member_number - LOWER_ZONE_FIRST_HUMAN_MEMBER_NUMBER,
+        })
+    }
+
+    pub const fn from_engine_event_index(event_index: u8) -> Option<Self> {
+        if event_index < LOWER_ZONE_FIRST_ENGINE_EVENT_INDEX
+            || event_index > LOWER_ZONE_LAST_ENGINE_EVENT_INDEX
+        {
+            return None;
+        }
+
+        Some(Self {
+            allocator_index: event_index - LOWER_ZONE_FIRST_ENGINE_EVENT_INDEX,
+        })
+    }
+
+    pub const fn human_member_number(self) -> u8 {
+        self.allocator_index + LOWER_ZONE_FIRST_HUMAN_MEMBER_NUMBER
+    }
+
+    pub const fn engine_event_index(self) -> u8 {
+        self.allocator_index + LOWER_ZONE_FIRST_ENGINE_EVENT_INDEX
+    }
+
+    const fn from_allocator_index(allocator_index: u8) -> Self {
+        Self { allocator_index }
+    }
+
+    const fn allocator_index(self) -> usize {
+        self.allocator_index as usize
+    }
+}
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum MpeAllocationError {
@@ -48,7 +98,7 @@ impl MpeAllocator {
         }
     }
 
-    pub fn allocate_note(&mut self, note: u8) -> Result<u8, MpeAllocationError> {
+    pub fn allocate_note(&mut self, note: u8) -> Result<MpeMemberChannel, MpeAllocationError> {
         let mut available_lru_position = None;
 
         for lru_position in 0..LOWER_ZONE_MEMBER_CHANNEL_COUNT {
@@ -72,10 +122,8 @@ impl MpeAllocator {
         Ok(Self::channel_for_index(channel_index))
     }
 
-    pub fn release_note(&mut self, channel: u8) -> NoteRelease {
-        let Some(channel_index) = Self::index_for_channel(channel) else {
-            return NoteRelease::NotLive;
-        };
+    pub fn release_note(&mut self, channel: MpeMemberChannel) -> NoteRelease {
+        let channel_index = channel.allocator_index();
 
         match self.channels[channel_index] {
             ChannelState::Idle => NoteRelease::NotLive,
@@ -117,8 +165,8 @@ impl MpeAllocator {
         self.sustain_active
     }
 
-    pub fn active_note(&self, channel: u8) -> Option<u8> {
-        let channel_index = Self::index_for_channel(channel)?;
+    pub fn active_note(&self, channel: MpeMemberChannel) -> Option<u8> {
+        let channel_index = channel.allocator_index();
 
         match self.channels[channel_index] {
             ChannelState::Idle => None,
@@ -126,7 +174,7 @@ impl MpeAllocator {
         }
     }
 
-    pub fn is_live(&self, channel: u8) -> bool {
+    pub fn is_live(&self, channel: MpeMemberChannel) -> bool {
         self.active_note(channel).is_some()
     }
 
@@ -146,16 +194,8 @@ impl MpeAllocator {
         self.diagnostics
     }
 
-    fn index_for_channel(channel: u8) -> Option<usize> {
-        if !(LOWER_ZONE_FIRST_MEMBER_CHANNEL..=LOWER_ZONE_LAST_MEMBER_CHANNEL).contains(&channel) {
-            return None;
-        }
-
-        Some((channel - LOWER_ZONE_FIRST_MEMBER_CHANNEL) as usize)
-    }
-
-    fn channel_for_index(channel_index: usize) -> u8 {
-        LOWER_ZONE_FIRST_MEMBER_CHANNEL + channel_index as u8
+    fn channel_for_index(channel_index: usize) -> MpeMemberChannel {
+        MpeMemberChannel::from_allocator_index(channel_index as u8)
     }
 
     fn mark_as_most_recently_used(&mut self, lru_position: usize) {
@@ -179,11 +219,15 @@ impl Default for MpeAllocator {
 mod tests {
     use super::*;
 
-    const EXPECTED_MEMBER_CHANNELS: [u8; LOWER_ZONE_MEMBER_CHANNEL_COUNT] =
+    const EXPECTED_HUMAN_MEMBER_NUMBERS: [u8; LOWER_ZONE_MEMBER_CHANNEL_COUNT] =
         [2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16];
 
-    fn fill_allocator(allocator: &mut MpeAllocator) -> [u8; LOWER_ZONE_MEMBER_CHANNEL_COUNT] {
-        let mut channels = [0; LOWER_ZONE_MEMBER_CHANNEL_COUNT];
+    fn fill_allocator(
+        allocator: &mut MpeAllocator,
+    ) -> [MpeMemberChannel; LOWER_ZONE_MEMBER_CHANNEL_COUNT] {
+        let first_member_channel = MpeMemberChannel::from_human_member_number(2)
+            .expect("first lower-zone member channel should be valid");
+        let mut channels = [first_member_channel; LOWER_ZONE_MEMBER_CHANNEL_COUNT];
 
         for (index, channel) in channels.iter_mut().enumerate() {
             *channel = allocator
@@ -195,19 +239,55 @@ mod tests {
     }
 
     #[test]
+    fn member_channel_checks_and_maps_human_numbers_to_engine_event_indices() {
+        assert_eq!(
+            std::mem::size_of::<MpeMemberChannel>(),
+            std::mem::size_of::<u8>()
+        );
+
+        for allocator_index in 0..LOWER_ZONE_MEMBER_CHANNEL_COUNT {
+            let human_member_number = allocator_index as u8 + 2;
+            let engine_event_index = allocator_index as u8 + 1;
+            let channel = MpeMemberChannel::from_human_member_number(human_member_number)
+                .expect("lower-zone member number should be valid");
+
+            assert_eq!(channel.human_member_number(), human_member_number);
+            assert_eq!(channel.engine_event_index(), engine_event_index);
+            assert_eq!(
+                MpeMemberChannel::from_engine_event_index(engine_event_index),
+                Some(channel)
+            );
+        }
+
+        for invalid_member_number in [0, 1, 17, u8::MAX] {
+            assert_eq!(
+                MpeMemberChannel::from_human_member_number(invalid_member_number),
+                None
+            );
+        }
+        for invalid_event_index in [0, 16, u8::MAX] {
+            assert_eq!(
+                MpeMemberChannel::from_engine_event_index(invalid_event_index),
+                None
+            );
+        }
+    }
+
+    #[test]
     fn normal_allocation_uses_lower_zone_member_channels_two_through_sixteen() {
         let mut allocator = MpeAllocator::new();
         let channels = fill_allocator(&mut allocator);
 
-        assert_eq!(channels, EXPECTED_MEMBER_CHANNELS);
         assert_eq!(
             allocator.live_channel_count(),
             LOWER_ZONE_MEMBER_CHANNEL_COUNT
         );
-        assert_eq!(LOWER_ZONE_FIRST_MEMBER_CHANNEL, 2);
-        assert_eq!(LOWER_ZONE_LAST_MEMBER_CHANNEL, 16);
 
         for (index, channel) in channels.into_iter().enumerate() {
+            assert_eq!(
+                channel.human_member_number(),
+                EXPECTED_HUMAN_MEMBER_NUMBERS[index]
+            );
             assert_eq!(allocator.active_note(channel), Some(48 + index as u8));
         }
     }
