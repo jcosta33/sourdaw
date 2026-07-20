@@ -1,0 +1,19 @@
+crates/daw-engine/src/midi/midi_clock.rs
+  s_ab44d00b33ab9f::t_2abdde788208c6 3-5,118-119,127-128,137,145,151,162,176-184,188-191,208-227,237,258,272,275-276,278,280,283,286-295,298,356-394,532-578,649-681
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "d24941effb309425bd5428c2effc8fed380a53b4",
+  "prompts": {},
+  "sessions": {
+    "s_ab44d00b33ab9f": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8132-eefa-71e3-a80e-a76770a6734d",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
