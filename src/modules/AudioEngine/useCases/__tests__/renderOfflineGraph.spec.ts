@@ -55,10 +55,12 @@ const emptyMidi: NonNullable<MidiStoreState> = {
     pitchBendByClipId: {},
 };
 
+type ScheduleTrackClipsInput = { track: Track };
+
 const mocks = vi.hoisted(() => ({
     resolveRenderContext: vi.fn(),
     createOfflineTrackStrip: vi.fn(),
-    scheduleTrackClips: vi.fn<(...args: unknown[]) => Promise<void>>(() => Promise.resolve()),
+    scheduleTrackClips: vi.fn<(input: ScheduleTrackClipsInput) => Promise<void>>(() => Promise.resolve()),
     schedulePendingSuspends: vi.fn(),
     renderWithTimeout: vi.fn(),
 }));
@@ -131,6 +133,14 @@ function makeContext(overrides?: Partial<OfflineRenderContext>): OfflineRenderCo
         durationSeconds: 2,
         tailSeconds: 0,
         projectMidiEvents: ({ events }) => events,
+        projectPpqEndpoints: ({ startPpq, endPpq, sampleRate }) => ({
+            startSamples: startPpq * sampleRate,
+            endSamples: endPpq * sampleRate,
+            durationSamples: (endPpq - startPpq) * sampleRate,
+            startSeconds: startPpq,
+            endSeconds: endPpq,
+            durationSeconds: endPpq - startPpq,
+        }),
         processYeastMidi: null,
         ...overrides,
     };
@@ -278,7 +288,7 @@ describe('renderOffline — graph construction and lifecycle', () => {
         // Disabled tracks get no strip at all; muted tracks get one.
         expect(mocks.createOfflineTrackStrip).toHaveBeenCalledTimes(2);
         expect(mocks.scheduleTrackClips).toHaveBeenCalledTimes(1);
-        const scheduledTrack = mocks.scheduleTrackClips.mock.calls[0]![1] as Track;
+        const scheduledTrack = mocks.scheduleTrackClips.mock.calls[0]![0].track;
         expect(scheduledTrack.id).toBe('t-live');
         expect(mocks.schedulePendingSuspends).toHaveBeenCalledTimes(1);
     });

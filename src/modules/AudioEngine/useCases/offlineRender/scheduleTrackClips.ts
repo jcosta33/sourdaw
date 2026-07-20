@@ -12,7 +12,7 @@ import { type TempoMapStoreState } from '#/modules/Transport/stores';
 
 import { scheduleTrackAutomation } from '../../repositories/offlineScheduler/automationScheduling';
 import { type OfflineMidiEventProjector } from '../../repositories/offlineScheduler/offlineMidiEventProjectorState';
-import { offlinePpqEndpointProjectorState } from '../../repositories/offlineScheduler/offlinePpqEndpointProjectorState';
+import { type OfflinePpqEndpointProjector } from '../../repositories/offlineScheduler/offlinePpqEndpointProjectorState';
 import { type OfflineYeastMidiProcessor } from '../../repositories/offlineScheduler/offlineYeastMidiProcessorState';
 import { beatToSeconds } from '../../services/beatConversion';
 import { resolveDrumKit } from '../../services/deviceResolution';
@@ -29,14 +29,6 @@ type ResolvedClip = Track['clips'][number] & {
     regionStartBeat: number;
     regionEndBeat: number;
 };
-
-function projectPpqEndpoints(input: Parameters<NonNullable<typeof offlinePpqEndpointProjectorState.project>>[0]) {
-    const project = offlinePpqEndpointProjectorState.project;
-    if (!project) {
-        throw new Error('Offline PPQ endpoint projector is not configured');
-    }
-    return project(input);
-}
 
 function resolveTrackClipsWithComping(trackId: string, clips: Track['clips']): ResolvedClip[] {
     const laneState = takeLaneStore.value;
@@ -119,25 +111,50 @@ function resolveTrackClipsWithComping(trackId: string, clips: Track['clips']): R
  * rather than scheduling suspend() directly — the caller must invoke
  * `schedulePendingSuspends()` once after all tracks are processed.
  */
-export async function scheduleTrackClips(
-    offlineCtx: OfflineAudioContext,
-    track: Track,
-    midi: NonNullable<MidiStoreState>,
-    trackInputNode: GainNode,
-    trackGainNode: GainNode,
-    trackPanNode: StereoPannerNode,
-    destination: AudioNode,
-    durationSeconds: number,
-    defaultTempo: number,
-    changes: TempoMapStoreState['changes'],
-    projectMidiEvents: OfflineMidiEventProjector,
-    onWarning?: (message: string) => void,
-    pendingWorkletEvents?: PendingWorkletEvent[],
-    allTracks?: ReadonlyArray<Track>,
-    deviceEntriesByTrack?: Map<string, DeviceNodeEntry[]>,
-    regionStartBeat: number = 0,
-    processYeastMidi: OfflineYeastMidiProcessor | null = null
-): Promise<void> {
+type OfflineProjectionDependencies = {
+    projectMidiEvents: OfflineMidiEventProjector;
+    projectPpqEndpoints: OfflinePpqEndpointProjector;
+    processYeastMidi: OfflineYeastMidiProcessor | null;
+};
+
+export type ScheduleTrackClipsInput = {
+    offlineCtx: OfflineAudioContext;
+    track: Track;
+    midi: NonNullable<MidiStoreState>;
+    trackInputNode: GainNode;
+    trackGainNode: GainNode;
+    trackPanNode: StereoPannerNode;
+    destination: AudioNode;
+    durationSeconds: number;
+    defaultTempo: number;
+    changes: TempoMapStoreState['changes'];
+    projections: OfflineProjectionDependencies;
+    onWarning?: (message: string) => void;
+    pendingWorkletEvents?: PendingWorkletEvent[];
+    allTracks?: ReadonlyArray<Track>;
+    deviceEntriesByTrack?: Map<string, DeviceNodeEntry[]>;
+    regionStartBeat?: number;
+};
+
+export async function scheduleTrackClips({
+    offlineCtx,
+    track,
+    midi,
+    trackInputNode,
+    trackGainNode,
+    trackPanNode,
+    destination,
+    durationSeconds,
+    defaultTempo,
+    changes,
+    projections,
+    onWarning,
+    pendingWorkletEvents,
+    allTracks,
+    deviceEntriesByTrack,
+    regionStartBeat = 0,
+}: ScheduleTrackClipsInput): Promise<void> {
+    const { projectMidiEvents, projectPpqEndpoints, processYeastMidi } = projections;
     const regionStartSec = projectPpqEndpoints({
         startPpq: regionStartBeat,
         endPpq: regionStartBeat,

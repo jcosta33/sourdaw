@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 
 import { configureOfflineMidiEventProjection } from '../configureOfflineMidiEventProjection';
+import { configureOfflinePpqEndpointProjection } from '../configureOfflinePpqEndpointProjection';
 import { exportStems } from '../exportStems';
 
 const offlineRenderMocks = vi.hoisted(() => ({
@@ -96,6 +97,16 @@ describe('exportStems', () => {
                 () =>
                 ({ events }) =>
                     events,
+        });
+        configureOfflinePpqEndpointProjection({
+            project: ({ startPpq, endPpq, sampleRate }) => ({
+                startSamples: startPpq * sampleRate,
+                endSamples: endPpq * sampleRate,
+                durationSamples: (endPpq - startPpq) * sampleRate,
+                startSeconds: startPpq,
+                endSeconds: endPpq,
+                durationSeconds: endPpq - startPpq,
+            }),
         });
     });
 

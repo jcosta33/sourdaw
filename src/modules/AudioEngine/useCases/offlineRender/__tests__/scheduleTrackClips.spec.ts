@@ -5,7 +5,6 @@ import { type MidiStoreState } from '#/modules/MIDI/stores';
 
 import { type OfflineYeastMidiProcessor } from '../../../repositories/offlineScheduler/offlineYeastMidiProcessorState';
 import { type DeviceNodeEntry } from '../../buildDeviceChain';
-import { configureOfflinePpqEndpointProjection } from '../../configureOfflinePpqEndpointProjection';
 import { scheduleTrackClips } from '../scheduleTrackClips';
 import { type PendingWorkletEvent } from '../types';
 
@@ -247,25 +246,23 @@ async function runSchedule({ withYeast = false }: { withYeast?: boolean } = {}):
     const panNode = {} as StereoPannerNode;
     const destination = {} as AudioNode;
 
-    await scheduleTrackClips(
+    await scheduleTrackClips({
         offlineCtx,
         track,
-        makeMidi(),
-        inputNode,
-        gainNode,
-        panNode,
+        midi: makeMidi(),
+        trackInputNode: inputNode,
+        trackGainNode: gainNode,
+        trackPanNode: panNode,
         destination,
-        /* durationSeconds */ 60,
-        /* defaultTempo */ 120,
-        /* changes */ [],
-        projectMidiEvents,
-        /* onWarning */ undefined,
+        durationSeconds: 60,
+        defaultTempo: 120,
+        changes: [],
+        projections: { projectMidiEvents, projectPpqEndpoints, processYeastMidi },
         pendingWorkletEvents,
-        /* allTracks */ [track],
+        allTracks: [track],
         deviceEntriesByTrack,
-        /* regionStartBeat */ 0,
-        processYeastMidi
-    );
+        regionStartBeat: 0,
+    });
 
     return pendingWorkletEvents;
 }
@@ -279,7 +276,6 @@ describe('scheduleTrackClips — MIDI plugin-delay compensation', () => {
         mocks.projection.startOffset = 0;
         mocks.projection.velocity = null;
         mocks.projection.yeastTranspose = 0;
-        configureOfflinePpqEndpointProjection({ project: projectPpqEndpoints });
     });
 
     it('shifts instrument note on/off times by the track compensation delay', async () => {

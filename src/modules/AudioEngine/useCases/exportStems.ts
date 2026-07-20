@@ -45,20 +45,28 @@ export const exportStems: ExportStemsFn = async function exportStems(
             throw createExportError(`Invalid export duration: ${durationBeats} beats.`);
         }
 
-        const { tracks, midi, defaultTempo, changes, durationSeconds, projectMidiEvents, processYeastMidi } =
-            resolveRenderContext({
-                durationBeats,
-                startBeat,
-                tailSeconds,
-            });
+        const {
+            tracks,
+            midi,
+            defaultTempo,
+            changes,
+            durationSeconds,
+            projectMidiEvents,
+            projectPpqEndpoints,
+            processYeastMidi,
+        } = resolveRenderContext({
+            durationBeats,
+            startBeat,
+            tailSeconds,
+        });
         const stems = new Map<string, AudioBuffer>();
 
         if (!tracks || !midi) {
             onProgress?.(1);
             return stems;
         }
-        if (!projectMidiEvents) {
-            throw new Error('Offline MIDI event projection is not configured');
+        if (!projectMidiEvents || !projectPpqEndpoints) {
+            throw new Error('Offline musical projection is not configured');
         }
 
         // Exclude disabled and structural tracks (unless they host a Toaster); muted tracks are included as stems
@@ -91,25 +99,24 @@ export const exportStems: ExportStemsFn = async function exportStems(
             deviceEntriesByTrack.set(track.id, strip.deviceEntries);
             strip.outputNode.connect(offlineCtx.destination);
 
-            await scheduleTrackClips(
+            await scheduleTrackClips({
                 offlineCtx,
                 track,
                 midi,
-                strip.inputNode,
-                strip.faderNode,
-                strip.panNode,
-                offlineCtx.destination,
+                trackInputNode: strip.inputNode,
+                trackGainNode: strip.faderNode,
+                trackPanNode: strip.panNode,
+                destination: offlineCtx.destination,
                 durationSeconds,
                 defaultTempo,
                 changes,
-                projectMidiEvents,
+                projections: { projectMidiEvents, projectPpqEndpoints, processYeastMidi },
                 onWarning,
                 pendingWorkletEvents,
-                [track],
+                allTracks: [track],
                 deviceEntriesByTrack,
-                startBeat,
-                processYeastMidi
-            );
+                regionStartBeat: startBeat,
+            });
 
             schedulePendingSuspends(offlineCtx, pendingWorkletEvents, durationSeconds);
 

@@ -12,6 +12,10 @@ import {
     type OfflineMidiEventProjector,
 } from '../../repositories/offlineScheduler/offlineMidiEventProjectorState';
 import {
+    offlinePpqEndpointProjectorState,
+    type OfflinePpqEndpointProjector,
+} from '../../repositories/offlineScheduler/offlinePpqEndpointProjectorState';
+import {
     offlineYeastMidiProcessorState,
     type OfflineYeastMidiProcessor,
 } from '../../repositories/offlineScheduler/offlineYeastMidiProcessorState';
@@ -30,6 +34,7 @@ export type OfflineRenderContext = {
     /** Tail seconds appended after the musical region. */
     tailSeconds: number;
     projectMidiEvents: OfflineMidiEventProjector | null;
+    projectPpqEndpoints: OfflinePpqEndpointProjector | null;
     processYeastMidi: OfflineYeastMidiProcessor | null;
 };
 
@@ -70,6 +75,7 @@ export function resolveRenderContext(input: ResolveRenderContextInput | number):
         durationSeconds,
         tailSeconds: Math.max(0, normalized.tailSeconds),
         projectMidiEvents: offlineMidiEventProjectorState.createProjector?.() ?? null,
+        projectPpqEndpoints: offlinePpqEndpointProjectorState.project,
         processYeastMidi: offlineYeastMidiProcessorState.createProcessor?.() ?? null,
     };
 }

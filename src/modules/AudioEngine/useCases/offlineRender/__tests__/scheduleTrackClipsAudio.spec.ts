@@ -3,7 +3,6 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { type Track } from '#/modules/Arrangement/stores';
 import { type MidiStoreState } from '#/modules/MIDI/stores';
 
-import { configureOfflinePpqEndpointProjection } from '../../configureOfflinePpqEndpointProjection';
 import { MICRO_FADE_SECONDS } from '../constants';
 import { scheduleTrackClips } from '../scheduleTrackClips';
 
@@ -48,6 +47,29 @@ const TrackDummy = {
 };
 
 type Clip = Track['clips'][number];
+
+function projectPpqEndpoints({
+    startPpq,
+    endPpq,
+    defaultTempo,
+    sampleRate,
+}: {
+    startPpq: number;
+    endPpq: number;
+    defaultTempo: number;
+    sampleRate: number;
+}) {
+    const startSamples = Math.round((startPpq / defaultTempo) * 60 * sampleRate);
+    const endSamples = Math.round((endPpq / defaultTempo) * 60 * sampleRate);
+    return {
+        startSamples,
+        endSamples,
+        durationSamples: endSamples - startSamples,
+        startSeconds: startSamples / sampleRate,
+        endSeconds: endSamples / sampleRate,
+        durationSeconds: (endSamples - startSamples) / sampleRate,
+    };
+}
 
 function makeAudioClip(overrides?: Partial<Clip>): Clip {
     return {
@@ -227,24 +249,24 @@ async function run({ track, ctx, onWarning, regionStartBeat = 0, withPrebuiltCha
     const trackPanNode = { connect: vi.fn() } as unknown as StereoPannerNode;
     const destination = { connect: vi.fn() } as unknown as AudioNode;
 
-    await scheduleTrackClips(
-        ctx,
+    await scheduleTrackClips({
+        offlineCtx: ctx,
         track,
-        emptyMidi,
+        midi: emptyMidi,
         trackInputNode,
         trackGainNode,
         trackPanNode,
         destination,
-        /* durationSeconds */ 60,
-        /* defaultTempo */ 120,
-        /* changes */ [],
-        projectMidiEvents,
+        durationSeconds: 60,
+        defaultTempo: 120,
+        changes: [],
+        projections: { projectMidiEvents, projectPpqEndpoints, processYeastMidi: null },
         onWarning,
-        [],
-        [track],
-        withPrebuiltChain ? new Map([[track.id, []]]) : undefined,
-        regionStartBeat
-    );
+        pendingWorkletEvents: [],
+        allTracks: [track],
+        deviceEntriesByTrack: withPrebuiltChain ? new Map([[track.id, []]]) : undefined,
+        regionStartBeat,
+    });
 
     return { trackInputNode, trackGainNode, trackPanNode, destination };
 }
@@ -257,20 +279,6 @@ describe('scheduleTrackClips — audio clip scheduling', () => {
         mocks.getCompensationDelay.mockReturnValue(0);
         mocks.audioBufferCache.get.mockReturnValue(undefined);
         mocks.buildDeviceChain.mockResolvedValue([]);
-        configureOfflinePpqEndpointProjection({
-            project: ({ startPpq, endPpq, defaultTempo, sampleRate }) => {
-                const startSamples = Math.round((startPpq / defaultTempo) * 60 * sampleRate);
-                const endSamples = Math.round((endPpq / defaultTempo) * 60 * sampleRate);
-                return {
-                    startSamples,
-                    endSamples,
-                    durationSamples: endSamples - startSamples,
-                    startSeconds: startSamples / sampleRate,
-                    endSeconds: endSamples / sampleRate,
-                    durationSeconds: (endSamples - startSamples) / sampleRate,
-                };
-            },
-        });
     });
 
     it('schedules a plain clip at its beat-converted start with micro fades on both edges', async () => {
