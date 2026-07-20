@@ -3,7 +3,7 @@ import { kneadStore } from '../stores/kneadStore';
 /**
  * Drop the stored pitch contour for a clip. Called when the contour no longer
  * describes the clip's audio — after a successful pitch commit, and whenever the
- * clip's audio is replaced (file drop, normalize, reverse) — so the PitchEditor
+ * clip's audio is replaced (file drop, reverse) — so the PitchEditor
  * gate re-opens: the overlay canvas stops swallowing waveform interactions and
  * the Analyze Pitch button is offered again. No-op when the clip has no contour.
  */

@@ -196,4 +196,63 @@ describe('PitchEditor', () => {
             payload: { clipId: 'clip-1', segments, contour },
         });
     });
+
+    it('should reset dragged shifts when a cleared contour is re-analyzed so a recommit does not double-bake', () => {
+        const contourA = makeContour(300);
+        vi.mocked(useStore).mockReturnValue({ ...IDLE_STATE, contours: { 'clip-1': contourA } });
+        const { rerender } = render(<PitchEditor clipId="clip-1" />);
+
+        const canvas = document.querySelector('canvas')!;
+        vi.spyOn(canvas, 'getBoundingClientRect').mockReturnValue({
+            left: 0,
+            width: 300,
+            top: 0,
+            height: 100,
+            right: 300,
+            bottom: 100,
+            x: 0,
+            y: 0,
+            toJSON: (): unknown => ({}),
+        });
+
+        fireEvent.pointerDown(canvas, { pointerId: 1, clientX: 150, clientY: 100 });
+        fireEvent.pointerMove(canvas, { pointerId: 1, clientX: 150, clientY: 70 });
+        fireEvent.pointerUp(canvas, { pointerId: 1, clientX: 150, clientY: 70 });
+        fireEvent.click(screen.getByText('Bounce & Commit'));
+
+        expect(executeAppAction).toHaveBeenNthCalledWith(1, {
+            type: 'commitPitchEdit',
+            payload: {
+                clipId: 'clip-1',
+                segments: [
+                    { start_time_ms: 0, end_time_ms: 100, shift_semitones: 0 },
+                    { start_time_ms: 100, end_time_ms: 200, shift_semitones: 3 },
+                    { start_time_ms: 200, end_time_ms: 300, shift_semitones: 0 },
+                ],
+                contour: contourA,
+            },
+        });
+
+        // The commit clears the stored contour; re-analysis stores a fresh one.
+        vi.mocked(useStore).mockReturnValue(IDLE_STATE);
+        rerender(<PitchEditor clipId="clip-1" />);
+        const contourB = makeContour(300);
+        vi.mocked(useStore).mockReturnValue({ ...IDLE_STATE, contours: { 'clip-1': contourB } });
+        rerender(<PitchEditor clipId="clip-1" />);
+
+        fireEvent.click(screen.getByText('Bounce & Commit'));
+
+        expect(executeAppAction).toHaveBeenNthCalledWith(2, {
+            type: 'commitPitchEdit',
+            payload: {
+                clipId: 'clip-1',
+                segments: [
+                    { start_time_ms: 0, end_time_ms: 100, shift_semitones: 0 },
+                    { start_time_ms: 100, end_time_ms: 200, shift_semitones: 0 },
+                    { start_time_ms: 200, end_time_ms: 300, shift_semitones: 0 },
+                ],
+                contour: contourB,
+            },
+        });
+    });
 });

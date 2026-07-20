@@ -32,17 +32,21 @@ export const PitchEditor = ({ clipId }: PitchEditorProps): ReactElement => {
     // must all treat it as "no contour" so the waveform beneath stays interactive.
     const hasContourPoints = (contour?.points.length ?? 0) > 0;
 
-    // Generate segments from contour if none exist yet.
+    // Regenerate segments whenever the contour identity changes. A contour clear
+    // (commit, audio replacement) followed by re-analysis must not inherit stale
+    // drags — otherwise a second commit would double-bake the previous shift.
     useEffect(() => {
-        if (contour && shifts.length === 0) {
-            // Simplistic segmentation: one segment per 100ms
-            const newShifts = [];
-            const duration = contour.points[contour.points.length - 1]?.time_ms || 0;
-            for (let index = 0; index < duration; index += 100) {
-                newShifts.push({ start_time_ms: index, end_time_ms: index + 100, shift_semitones: 0 });
-            }
-            setShifts(newShifts);
+        if (!contour) {
+            setShifts([]);
+            return;
         }
+        // Simplistic segmentation: one segment per 100ms
+        const newShifts = [];
+        const duration = contour.points[contour.points.length - 1]?.time_ms || 0;
+        for (let index = 0; index < duration; index += 100) {
+            newShifts.push({ start_time_ms: index, end_time_ms: index + 100, shift_semitones: 0 });
+        }
+        setShifts(newShifts);
     }, [contour]);
 
     const draw = () => {
