@@ -1,0 +1,41 @@
+.oxlintrc.json
+  s_c2fca615e81f34::t_59664831d6097a 1-411
+AGENTS.md
+  s_c2fca615e81f34::t_9ee85779bf885c 10-11
+docs/06-testing.md
+  s_c2fca615e81f34::t_10d322c6796db5 669
+docs/modern-primitives.md
+  s_c2fca615e81f34::t_bdcb0c46e51a9f 23
+eslint.config.mjs
+  s_c2fca615e81f34::t_914ef4f330b05a 2-7,9-11,2330-2334,2365-2369,2372,2376,2378-2379,2389,2406-2420,2430-2431,2449-2454,2456-2459,2467-2469,2472-2474,2480-2481,2544-2553,2738-2739
+src/modules/SessionLauncher/useCases/loopStation/__tests__/loopStationUndo.spec.ts
+  s_8e41f0d0168250::t_43830cd82e852e 136-137,196-197,201-202,214-215,219-220
+tsconfig.app.json
+  s_c2fca615e81f34::t_5c190dc1739fe5 1-9
+tsconfig.json
+  s_c2fca615e81f34::t_2b2fc34ef71260 2-6,31
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "a2eb3f1fd1b9dcb2f80d0a7682c5e3ac54bfca1f",
+  "prompts": {},
+  "sessions": {
+    "s_8e41f0d0168250": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f818b-41bb-76c3-bfd4-a7974c36dfd0",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_c2fca615e81f34": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f74e9-e1c5-7142-85d2-4c577b3973c0",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
