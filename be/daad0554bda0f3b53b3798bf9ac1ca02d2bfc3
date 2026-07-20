@@ -1,0 +1,31 @@
+crates/daw-engine/src/lib.rs
+  s_4a3a9ac19de269::t_2655c23aba17f8 3
+crates/daw-engine/src/midi/mod.rs
+  s_4a3a9ac19de269::t_63e204cb65ef65 1
+crates/daw-engine/src/midi/mpe_allocator.rs
+  s_7dcffeb429d6d4::t_50fbc4584a0f1f 1-326
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "bedaad0554bda0f3b53b3798bf9ac1ca02d2bfc3",
+  "prompts": {},
+  "sessions": {
+    "s_4a3a9ac19de269": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "4a1953fb-b074-451f-a9e0-2edbbc4fbbf3",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_7dcffeb429d6d4": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f80f5-a629-7381-aec3-cd4152ac2318",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
