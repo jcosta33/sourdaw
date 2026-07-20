@@ -205,4 +205,53 @@ describe('generateMidiVariations', () => {
         await expect(generateMidiVariations('clip-1')).rejects.toThrow(/zero or negative duration/);
         expect(streamCloudChatCompletionMock).not.toHaveBeenCalled();
     });
+
+    it('throws when the target clip is not a MIDI clip', async () => {
+        trackStateMock.value = {
+            tracks: [{ clips: [{ id: 'clip-1', type: 'audio', startBeat: 0, endBeat: 4 }] }],
+        };
+
+        await expect(generateMidiVariations('clip-1')).rejects.toThrow(/must be a MIDI clip/);
+        expect(streamCloudChatCompletionMock).not.toHaveBeenCalled();
+    });
+
+    it('throws when the MIDI clip has no notes to vary', async () => {
+        trackStateMock.value = midiClipState;
+        getNotesForClipMock.mockReturnValue([]);
+
+        await expect(generateMidiVariations('clip-1')).rejects.toThrow(/no notes to vary/);
+        expect(streamCloudChatCompletionMock).not.toHaveBeenCalled();
+    });
+
+    it('throws when no AI backend is available', async () => {
+        trackStateMock.value = midiClipState;
+        resolveBackendMock.mockReturnValue('none');
+
+        await expect(generateMidiVariations('clip-1')).rejects.toThrow(/No AI backend available/);
+        expect(streamCloudChatCompletionMock).not.toHaveBeenCalled();
+    });
+
+    it('throws when the model response contains no JSON object', async () => {
+        trackStateMock.value = midiClipState;
+        streamCloudChatCompletionMock.mockImplementation((_messages: unknown, onToken: (token: string) => void) => {
+            onToken('sorry, I cannot help with that.');
+            return Promise.resolve();
+        });
+
+        await expect(generateMidiVariations('clip-1')).rejects.toThrow(/No JSON object found/);
+    });
+
+    it('throws when every variation entry is malformed (non-array or non-object notes)', async () => {
+        trackStateMock.value = midiClipState;
+        // "not-an-array" fails the Array.isArray guard; [null] fails the object/null guard.
+        // Both are rejected by isVariationNoteArray, leaving zero valid variations.
+        const allInvalidJson = JSON.stringify({ variations: ['not-an-array', [null]] });
+        streamCloudChatCompletionMock.mockImplementation((_messages: unknown, onToken: (token: string) => void) => {
+            onToken(allInvalidJson);
+            return Promise.resolve();
+        });
+
+        await expect(generateMidiVariations('clip-1')).rejects.toThrow(/no valid variation note arrays/);
+        expect(createAlternativeClipsMock).not.toHaveBeenCalled();
+    });
 });
