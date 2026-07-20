@@ -45,6 +45,10 @@ vi.mock('../../stores/sidechainStore', () => ({
     },
 }));
 
+function scRoute(id: string, sourceTrackId: string, targetTrackId: string, targetDeviceId: string) {
+    return { id, sourceTrackId, targetTrackId, targetDeviceId, targetParameterId: 'threshold' };
+}
+
 describe('sidechain use cases', () => {
     beforeEach(() => {
         vi.clearAllMocks();
@@ -91,6 +95,24 @@ describe('sidechain use cases', () => {
         expect(mocks.wireSidechainRoute).not.toHaveBeenCalled();
     });
 
+    it('addSidechainRoute does not falsely detect a cycle when a node is reachable via two paths', () => {
+        // d branches into b and c, which both converge back on e. The BFS
+        // must revisit e (already visited via b) without looping forever or
+        // misreporting a cycle, since e never leads back to the new source.
+        mockStoreValue.value = {
+            routes: [
+                scRoute('r1', 'd', 'b', 'devD1'),
+                scRoute('r2', 'd', 'c', 'devD2'),
+                scRoute('r3', 'b', 'e', 'devB'),
+                scRoute('r4', 'c', 'e', 'devC'),
+            ],
+        };
+
+        expect(() => addSidechainRoute('z', 'd', 'devZ')).not.toThrow();
+        expect(mocks.createSidechainRoute).toHaveBeenCalledWith('z', 'd', 'devZ', 'threshold');
+        expect(mocks.wireSidechainRoute).toHaveBeenCalledWith('z', 'd', 'devZ');
+    });
+
     it('addSidechainRoute is idempotent for duplicates', () => {
         const existing = {
             id: 'r1',
@@ -107,6 +129,16 @@ describe('sidechain use cases', () => {
         expect(mocks.wireSidechainRoute).not.toHaveBeenCalled();
     });
 
+    it('addSidechainRoute is a no-op when the store has no value', () => {
+        mockStoreValue.value = null;
+
+        addSidechainRoute('src', 'dst', 'dev1');
+
+        expect(mocks.storeSet).not.toHaveBeenCalled();
+        expect(mocks.wireSidechainRoute).not.toHaveBeenCalled();
+        expect(mocks.createSidechainRoute).not.toHaveBeenCalled();
+    });
+
     it('removeSidechainRoute unwires and removes the route', () => {
         const route = {
             id: 'r1',
@@ -121,6 +153,31 @@ describe('sidechain use cases', () => {
 
         expect(mocks.unwireSidechainRoute).toHaveBeenCalledWith('src', 'dev1');
         expect(mocks.storeSet).toHaveBeenCalledWith({ routes: [] });
+    });
+
+    it('removeSidechainRoute is a no-op when the route id is not found', () => {
+        const route = {
+            id: 'r1',
+            sourceTrackId: 'src',
+            targetTrackId: 'dst',
+            targetDeviceId: 'dev1',
+            targetParameterId: 'threshold',
+        };
+        mockStoreValue.value = { routes: [route] };
+
+        removeSidechainRoute('does-not-exist');
+
+        expect(mocks.unwireSidechainRoute).not.toHaveBeenCalled();
+        expect(mocks.storeSet).toHaveBeenCalledWith({ routes: [route] });
+    });
+
+    it('removeSidechainRoute is a no-op when the store has no value', () => {
+        mockStoreValue.value = null;
+
+        removeSidechainRoute('r1');
+
+        expect(mocks.unwireSidechainRoute).not.toHaveBeenCalled();
+        expect(mocks.storeSet).not.toHaveBeenCalled();
     });
 
     it('setSidechainRoutes replaces all routes (unwire old, wire new)', () => {
@@ -147,10 +204,56 @@ describe('sidechain use cases', () => {
         expect(mocks.wireSidechainRoute).toHaveBeenCalledWith('c', 'd', 'devB');
     });
 
+    it('setSidechainRoutes only wires new routes when there is no prior store state to unwire', () => {
+        mockStoreValue.value = null;
+        const newRoute = {
+            id: 'r2',
+            sourceTrackId: 'c',
+            targetTrackId: 'd',
+            targetDeviceId: 'devB',
+            targetParameterId: 'threshold',
+        };
+
+        setSidechainRoutes([newRoute] as unknown as Parameters<typeof setSidechainRoutes>[0]);
+
+        expect(mocks.unwireSidechainRoute).not.toHaveBeenCalled();
+        expect(mocks.storeSet).toHaveBeenCalledWith({ routes: [newRoute] });
+        expect(mocks.wireSidechainRoute).toHaveBeenCalledWith('c', 'd', 'devB');
+    });
+
     it('getSidechainRoutesForTrack and getAllSidechainRoutes read raw store', () => {
         mockStoreValue.value = null;
         // Sanity-check they don't throw on a missing store value.
         expect(getSidechainRoutesForTrack('nope')).toEqual([]);
         expect(getAllSidechainRoutes()).toEqual([]);
+    });
+
+    it('getSidechainRoutesForTrack filters by source or target track id', () => {
+        const asSource = {
+            id: 'r1',
+            sourceTrackId: 'trackA',
+            targetTrackId: 'trackB',
+            targetDeviceId: 'dev1',
+            targetParameterId: 'threshold',
+        };
+        const asTarget = {
+            id: 'r2',
+            sourceTrackId: 'trackC',
+            targetTrackId: 'trackA',
+            targetDeviceId: 'dev2',
+            targetParameterId: 'threshold',
+        };
+        const unrelated = {
+            id: 'r3',
+            sourceTrackId: 'trackC',
+            targetTrackId: 'trackD',
+            targetDeviceId: 'dev3',
+            targetParameterId: 'threshold',
+        };
+        mockStoreValue.value = { routes: [asSource, asTarget, unrelated] };
+
+        expect(getSidechainRoutesForTrack('trackA')).toEqual([asSource, asTarget]);
+        expect(getSidechainRoutesForTrack('trackD')).toEqual([unrelated]);
+        expect(getSidechainRoutesForTrack('trackZ')).toEqual([]);
     });
 });

@@ -18,4 +18,14 @@ describe('handleToggleNodeView', () => {
 
         expect(toggleNodeView).toHaveBeenCalledTimes(1);
     });
+
+    it('describes itself with a human-readable label', () => {
+        expect(handleToggleNodeView.describe({ type: 'toggleNodeView', payload: undefined })).toEqual({
+            label: 'Toggle Node-Based View',
+        });
+    });
+
+    it('is not undoable', () => {
+        expect(handleToggleNodeView.undoable).toBe(false);
+    });
 });
