@@ -137,6 +137,7 @@ export { initWebMidi } from './webMidiInput/initWebMidi';
 export { setWebMidiRealtimeProcessor } from './webMidiInput/setWebMidiRealtimeProcessor';
 export { setWebMidiRuntimeEventBus } from './webMidiInput/setWebMidiRuntimeEventBus';
 export { setMidiInputTrack } from './webMidiInput/setMidiInputTrack';
+export { getMidiInputTrack } from './webMidiInput/getMidiInputTrack';
 export { selectMidiInput } from './webMidiInput/selectMidiInput';
 export { resetMidiState } from './webMidiInput/resetMidiState';
 export { triggerLiveNoteOn } from './triggerLiveNoteOn';
