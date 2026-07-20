@@ -1,7 +1,23 @@
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { TooltipProvider } from '#/components/ui/tooltip';
+import { generateMidiAI } from '#/modules/AiGeneration/useCases';
+import { copySelectedNotes, pasteNotes } from '#/modules/Arrangement/useCases';
+import { executeAppAction, pushUndoEntry } from '#/modules/Command/useCases';
+import {
+    addMidiNote,
+    getNotesForClip,
+    humanizeNotes,
+    moveMidiNote,
+    quantizeNotes,
+    removeMidiNote,
+    restoreStrumOriginals,
+    setNoteVelocity,
+    snapClipToScale,
+    strumNotes,
+    transposeNotes,
+} from '#/modules/MIDI/useCases';
 
 import { PianoRollContextMenu } from '../PianoRollContextMenu';
 
@@ -54,6 +70,7 @@ vi.mock('#/utils/UI/useContextMenuDismiss', () => ({
 
 vi.mock('#/modules/Command/useCases', () => ({
     pushUndoEntry: vi.fn(),
+    executeAppAction: vi.fn().mockResolvedValue(undefined),
 }));
 
 vi.mock('#/modules/MIDI/useCases', async (importOriginal) => ({
@@ -71,6 +88,7 @@ vi.mock('#/modules/MIDI/useCases', async (importOriginal) => ({
     restoreGrooveOriginals: vi.fn(),
     applyGrooveToClip: vi.fn(),
     extractGrooveFromClip: vi.fn(),
+    snapClipToScale: vi.fn(),
 }));
 
 vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => ({
@@ -178,5 +196,192 @@ describe('PianoRollContextMenu', () => {
         renderWithTooltip(<PianoRollContextMenu {...defaultProps} selectedNoteIds={new Set()} />);
         const copyButton = screen.getByText('Copy');
         expect(copyButton).toBeDisabled();
+    });
+
+    it('should copy the selected note ids and close the menu', () => {
+        renderWithTooltip(<PianoRollContextMenu {...defaultProps} selectedNoteIds={new Set(['n1', 'n2'])} />);
+        fireEvent.click(screen.getByText('Copy'));
+        expect(copySelectedNotes).toHaveBeenCalledWith('clip-1', ['n1', 'n2']);
+        expect(defaultProps.onClose).toHaveBeenCalled();
+    });
+
+    it('should paste at the menu beat', () => {
+        renderWithTooltip(<PianoRollContextMenu {...defaultProps} />);
+        fireEvent.click(screen.getByText('Paste'));
+        expect(pasteNotes).toHaveBeenCalledWith('clip-1', 4);
+    });
+
+    it('should cut the selected notes and restore them on undo', () => {
+        const notes = [
+            { id: 'n1', pitch: 60, startBeat: 0, duration: 1, velocity: 100 },
+            { id: 'n2', pitch: 64, startBeat: 1, duration: 0.5, velocity: 90 },
+        ];
+        renderWithTooltip(
+            <PianoRollContextMenu {...defaultProps} notes={notes} selectedNoteIds={new Set(['n1', 'n2'])} />
+        );
+        fireEvent.click(screen.getByText('Cut'));
+
+        expect(copySelectedNotes).toHaveBeenCalledWith('clip-1', ['n1', 'n2']);
+        expect(removeMidiNote).toHaveBeenCalledWith('clip-1', 'n1');
+        expect(removeMidiNote).toHaveBeenCalledWith('clip-1', 'n2');
+        expect(defaultProps.onClearSelection).toHaveBeenCalled();
+        expect(pushUndoEntry).toHaveBeenCalledWith('Cut 2 notes', expect.any(Function), expect.any(Function));
+
+        const [, undo, redo] = vi.mocked(pushUndoEntry).mock.calls[0]!;
+        undo();
+        expect(addMidiNote).toHaveBeenCalledWith('clip-1', 60, 0, 1, 100);
+        expect(addMidiNote).toHaveBeenCalledWith('clip-1', 64, 1, 0.5, 90);
+
+        vi.mocked(removeMidiNote).mockClear();
+        redo();
+        expect(removeMidiNote).toHaveBeenCalledWith('clip-1', 'n1');
+        expect(removeMidiNote).toHaveBeenCalledWith('clip-1', 'n2');
+    });
+
+    it('should quantize notes and restore prior beats on undo', () => {
+        vi.mocked(getNotesForClip)
+            .mockReturnValueOnce([{ id: 'n1', pitch: 60, startBeat: 0.1, duration: 1, velocity: 100 }])
+            .mockReturnValueOnce([{ id: 'n1', pitch: 60, startBeat: 0, duration: 1, velocity: 100 }]);
+        renderWithTooltip(<PianoRollContextMenu {...defaultProps} />);
+        fireEvent.click(screen.getByText('1/4'));
+
+        expect(quantizeNotes).toHaveBeenCalledWith('clip-1', 0.25);
+        expect(pushUndoEntry).toHaveBeenCalledWith('Quantize notes (1/4)', expect.any(Function), expect.any(Function));
+
+        const [, undo, redo] = vi.mocked(pushUndoEntry).mock.calls[0]!;
+        undo();
+        expect(moveMidiNote).toHaveBeenCalledWith('clip-1', 'n1', 60, 0.1);
+        redo();
+        expect(moveMidiNote).toHaveBeenCalledWith('clip-1', 'n1', 60, 0);
+    });
+
+    it('should transpose notes up an octave and invert on undo', () => {
+        renderWithTooltip(<PianoRollContextMenu {...defaultProps} />);
+        fireEvent.click(screen.getByText('+Oct'));
+
+        expect(transposeNotes).toHaveBeenCalledWith('clip-1', 12);
+        expect(pushUndoEntry).toHaveBeenCalledWith(
+            'Transpose +12 semitones',
+            expect.any(Function),
+            expect.any(Function)
+        );
+
+        const [, undo, redo] = vi.mocked(pushUndoEntry).mock.calls[0]!;
+        undo();
+        expect(transposeNotes).toHaveBeenLastCalledWith('clip-1', -12);
+        redo();
+        expect(transposeNotes).toHaveBeenLastCalledWith('clip-1', 12);
+    });
+
+    it('should snap notes to scale and restore original pitches on undo', () => {
+        vi.mocked(getNotesForClip)
+            .mockReturnValueOnce([{ id: 'n1', pitch: 61, startBeat: 0, duration: 1, velocity: 100 }])
+            .mockReturnValueOnce([{ id: 'n1', pitch: 60, startBeat: 0, duration: 1, velocity: 100 }]);
+        renderWithTooltip(<PianoRollContextMenu {...defaultProps} />);
+        fireEvent.click(screen.getByText('Snap to Scale'));
+        expect(snapClipToScale).toHaveBeenCalledWith('clip-1');
+        expect(pushUndoEntry).toHaveBeenCalledWith('Snap notes to scale', expect.any(Function), expect.any(Function));
+
+        const [, undo, redo] = vi.mocked(pushUndoEntry).mock.calls[0]!;
+        undo();
+        expect(moveMidiNote).toHaveBeenCalledWith('clip-1', 'n1', 61, 0);
+        redo();
+        expect(moveMidiNote).toHaveBeenCalledWith('clip-1', 'n1', 60, 0);
+    });
+
+    it('should humanize notes by the subtle amount', () => {
+        vi.mocked(getNotesForClip)
+            .mockReturnValueOnce([{ id: 'n1', pitch: 60, startBeat: 0, duration: 1, velocity: 100 }])
+            .mockReturnValueOnce([{ id: 'n1', pitch: 60, startBeat: 0.03, duration: 1, velocity: 105 }]);
+        renderWithTooltip(<PianoRollContextMenu {...defaultProps} />);
+        fireEvent.click(screen.getByText('Humanize (subtle)'));
+        expect(humanizeNotes).toHaveBeenCalledWith('clip-1', 0.02);
+        expect(pushUndoEntry).toHaveBeenCalledWith('Humanize (subtle)', expect.any(Function), expect.any(Function));
+
+        const [, undo, redo] = vi.mocked(pushUndoEntry).mock.calls[0]!;
+        undo();
+        expect(moveMidiNote).toHaveBeenCalledWith('clip-1', 'n1', 60, 0);
+        expect(setNoteVelocity).toHaveBeenCalledWith('clip-1', 'n1', 100);
+        redo();
+        expect(moveMidiNote).toHaveBeenCalledWith('clip-1', 'n1', 60, 0.03);
+        expect(setNoteVelocity).toHaveBeenCalledWith('clip-1', 'n1', 105);
+    });
+
+    it('should disable strum buttons with fewer than two selected notes', () => {
+        renderWithTooltip(<PianoRollContextMenu {...defaultProps} selectedNoteIds={new Set(['n1'])} />);
+        expect(screen.getByText('↑ Up')).toBeDisabled();
+    });
+
+    it('should strum the selected notes and push an undo entry when originals are returned', () => {
+        vi.mocked(strumNotes).mockReturnValueOnce(new Map([['n1', 0]]));
+        renderWithTooltip(<PianoRollContextMenu {...defaultProps} selectedNoteIds={new Set(['n1', 'n2'])} />);
+        fireEvent.click(screen.getByText('↑ Up'));
+
+        expect(strumNotes).toHaveBeenCalledWith('clip-1', ['n1', 'n2'], 0.04, 'up');
+        expect(pushUndoEntry).toHaveBeenCalledWith('Strum up', expect.any(Function), expect.any(Function));
+
+        const [, undo, redo] = vi.mocked(pushUndoEntry).mock.calls[0]!;
+        undo();
+        expect(restoreStrumOriginals).toHaveBeenCalledWith('clip-1', new Map([['n1', 0]]));
+        redo();
+        expect(strumNotes).toHaveBeenCalledTimes(2);
+    });
+
+    it('should generate notes from AI and add each returned note to the clip', async () => {
+        vi.mocked(getNotesForClip).mockReturnValueOnce([
+            { id: 'n1', pitch: 60.6, startBeat: 0, duration: 1, velocity: 100 },
+        ]);
+        vi.mocked(generateMidiAI).mockResolvedValueOnce({
+            notes: [{ pitch: 62, velocity: 80, start_beat: 2, duration_beats: 1 }],
+            model_used: 'test-model',
+            generation_time_ms: 5,
+        });
+        renderWithTooltip(<PianoRollContextMenu {...defaultProps} />);
+        fireEvent.click(screen.getByText('AI Auto-Complete'));
+
+        expect(defaultProps.onClose).toHaveBeenCalled();
+        expect(generateMidiAI).toHaveBeenCalledWith([[60, 100, 0, 1]], 16);
+        await waitFor(() => expect(addMidiNote).toHaveBeenCalledWith('clip-1', 62, 2, 1, 80));
+    });
+
+    it('should extract a groove template and then enable applying it', async () => {
+        renderWithTooltip(<PianoRollContextMenu {...defaultProps} clipId="clip-9" />);
+        const applyButton = screen.getByText('Apply Groove (50%)');
+        expect(applyButton).toBeDisabled();
+
+        fireEvent.click(screen.getByText('Extract Groove'));
+        await waitFor(() =>
+            expect(executeAppAction).toHaveBeenCalledWith({
+                type: 'extractGroove',
+                payload: { clipId: 'clip-9', templateId: 'groove-clip-9-v1' },
+            })
+        );
+        await waitFor(() => expect(applyButton).not.toBeDisabled());
+
+        fireEvent.click(applyButton);
+        await waitFor(() =>
+            expect(executeAppAction).toHaveBeenCalledWith({
+                type: 'applyGroove',
+                payload: { clipId: 'clip-9', grooveId: 'groove-straight', amount: 0.5 },
+            })
+        );
+    });
+
+    it('should delete the selected notes and restore them on undo', () => {
+        const notes = [{ id: 'n1', pitch: 60, startBeat: 0, duration: 1, velocity: 100 }];
+        renderWithTooltip(<PianoRollContextMenu {...defaultProps} notes={notes} selectedNoteIds={new Set(['n1'])} />);
+        fireEvent.click(screen.getByText('Delete Selected'));
+
+        expect(removeMidiNote).toHaveBeenCalledWith('clip-1', 'n1');
+        expect(defaultProps.onClearSelection).toHaveBeenCalled();
+        expect(pushUndoEntry).toHaveBeenCalledWith('Delete 1 note', expect.any(Function), expect.any(Function));
+
+        const [, undo, redo] = vi.mocked(pushUndoEntry).mock.calls[0]!;
+        undo();
+        expect(addMidiNote).toHaveBeenCalledWith('clip-1', 60, 0, 1, 100);
+
+        vi.mocked(removeMidiNote).mockClear();
+        redo();
+        expect(removeMidiNote).toHaveBeenCalledWith('clip-1', 'n1');
     });
 });

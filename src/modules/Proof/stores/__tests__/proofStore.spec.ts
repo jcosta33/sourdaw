@@ -5,9 +5,11 @@ import {
     proofStore,
     getProofState,
     updateProofPatch,
+    updateProofMeters,
     loadProofPatch,
     setProofAbBypass,
     DEFAULT_PROOF_STATE,
+    type ProofMeterData,
 } from '../proofStore';
 
 beforeEach(() => {
@@ -79,5 +81,57 @@ describe('setProofAbBypass', () => {
         expect(getProofState('dev').abBypass).toBe(true);
         // Runtime-only: the patch (and its preset identity) is unchanged.
         expect(getProofState('dev').patch.presetId).toBe('streaming');
+    });
+});
+
+describe('updateProofMeters', () => {
+    const meters: ProofMeterData = {
+        inputLufs: -12.5,
+        outputLufs: -10.2,
+        outputStLufs: -9.8,
+        integratedLufs: -14.1,
+        truePeakDb: -0.3,
+        lra: 6.5,
+        correlation: 0.8,
+        limiterGrDb: -2.1,
+        dynGr: [-1, -2, -3, -4],
+        tapPeaks: [{ peakL: -6, peakR: -5 }],
+        latency: 12,
+    };
+
+    it('overwrites every metering field from the pushed data', () => {
+        updateProofMeters('dev', meters);
+
+        const state = getProofState('dev');
+        expect(state.inputLufs).toBe(-12.5);
+        expect(state.outputLufs).toBe(-10.2);
+        expect(state.outputStLufs).toBe(-9.8);
+        expect(state.integratedLufs).toBe(-14.1);
+        expect(state.truePeakDb).toBe(-0.3);
+        expect(state.lra).toBe(6.5);
+        expect(state.correlation).toBe(0.8);
+        expect(state.limiterGrDb).toBe(-2.1);
+        expect(state.dynGr).toEqual([-1, -2, -3, -4]);
+        expect(state.tapPeaks).toEqual([{ peakL: -6, peakR: -5 }]);
+        expect(state.latency).toBe(12);
+    });
+
+    it('creates a default-backed state for a device seen for the first time', () => {
+        updateProofMeters('brand-new', meters);
+
+        const state = getProofState('brand-new');
+        expect(state.patch.name).toBe(DEFAULT_PATCH.name);
+        expect(state.inputLufs).toBe(-12.5);
+        expect(state.uiLevel).toBe(1);
+    });
+
+    it('leaves the patch and unrelated runtime state untouched', () => {
+        loadProofPatch({ deviceId: 'dev', patch: { ...DEFAULT_PATCH, limCeiling: -3 } });
+        setProofAbBypass({ deviceId: 'dev', abBypass: true });
+
+        updateProofMeters('dev', meters);
+
+        expect(getProofState('dev').patch.limCeiling).toBe(-3);
+        expect(getProofState('dev').abBypass).toBe(true);
     });
 });
