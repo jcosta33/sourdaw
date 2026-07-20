@@ -106,7 +106,7 @@ export class Arpeggiator extends BaseMidiProcessor {
         // If no notes held (and no latch), kill active notes and stop
         const pool = this.getEffectivePool();
         if (pool.length === 0) {
-            this.killActiveNotes(output, input[0]?.timeSamples ?? 0);
+            this.killActiveNotes(output, transport.blockStartSamples ?? input[0]?.timeSamples ?? 0);
             return;
         }
 
@@ -116,24 +116,12 @@ export class Arpeggiator extends BaseMidiProcessor {
         }
 
         const stepLenSamples = rateToBeats(this.rate) * samplesPerBeat(transport);
-        // Audio-thread: avoid allocation from .map() + spread into Math.max
-        let blockEnd: number;
-        if (input.length > 0) {
-            let maxTime = input[0]!.timeSamples;
-            for (let index = 1; index < input.length; index++) {
-                const time = input[index]!.timeSamples;
-                if (time > maxTime) {
-                    maxTime = time;
-                }
-            }
-            blockEnd = maxTime + 128;
-        } else {
-            blockEnd = transport.ppqPosition * samplesPerBeat(transport) + 128;
-        }
+        const blockStart = transport.blockStartSamples ?? transport.ppqPosition * samplesPerBeat(transport);
+        const blockEnd = transport.blockEndSamples ?? blockStart + 128;
 
         // Initialize lastStepTime if needed
         if (this.lastStepTimeSamples === -Infinity) {
-            this.lastStepTimeSamples = input[0]?.timeSamples ?? transport.ppqPosition * samplesPerBeat(transport);
+            this.lastStepTimeSamples = input[0]?.timeSamples ?? blockStart;
         }
 
         let safety = 0;

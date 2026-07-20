@@ -9,3 +9,5 @@ export { hydrateYeastState } from './hydrateYeastState';
 export { hydrateYeastCrdtProjection } from './hydrateYeastCrdtProjection';
 export { sendYeastProcessorCommand } from './sendYeastProcessorCommand';
 export { teardownYeastRuntime } from './teardownYeastRuntime';
+export { getYeastSchedulingLookahead } from './getYeastSchedulingLookahead';
+export { createOfflineYeastMidiProcessor } from './createOfflineYeastMidiProcessor';

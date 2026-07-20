@@ -53,7 +53,7 @@ export abstract class BaseMidiProcessor implements MidiProcessor {
         return this.bypassed;
     }
 
-    setTrackId(trackId: string): void {
+    setTrackId(trackId: string | undefined): void {
         this.trackId = trackId;
     }
 

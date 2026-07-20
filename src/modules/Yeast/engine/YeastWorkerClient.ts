@@ -415,7 +415,8 @@ export type YeastWorkerResult = {
         previewEnabled?: boolean,
         rackId?: string,
         routeId?: string,
-        captureEpoch?: number
+        captureEpoch?: number,
+        preserveInputTrackIds?: boolean
     ) => Promise<MidiEvent[]>;
     sendCommand: (command: YeastProcessorCommand) => Promise<YeastCommandAck>;
     setProjection: (projection: readonly YeastProcessorProjectionItem[]) => Promise<void>;
@@ -979,7 +980,8 @@ export async function createYeastWorker(ctx: BaseAudioContext): Promise<YeastWor
         previewEnabled = false,
         rackId = trackId,
         routeId = trackId,
-        captureEpoch = previewEnabled ? 1 : 0
+        captureEpoch = previewEnabled ? 1 : 0,
+        preserveInputTrackIds = false
     ): Promise<MidiEvent[]> =>
         new Promise((resolve, reject) => {
             if (terminalError) {
@@ -1014,6 +1016,7 @@ export async function createYeastWorker(ctx: BaseAudioContext): Promise<YeastWor
                     trackId,
                     previewEnabled,
                     captureEpoch,
+                    preserveInputTrackIds,
                 });
             } catch (error: unknown) {
                 settle(requestId)?.reject(toError(error));

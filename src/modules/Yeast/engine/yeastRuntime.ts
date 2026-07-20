@@ -22,6 +22,7 @@ type ProcessYeastRuntimeBlockInput = {
     blockStartSamples: number;
     blockEndSamples: number;
     transport: TransportInfo;
+    preserveInputTrackIds?: boolean;
 };
 
 type ProcessYeastRuntimeTransactionInput = ProcessYeastRuntimeBlockInput & {
@@ -760,7 +761,8 @@ export async function processYeastRuntimeBlock(input: ProcessYeastRuntimeBlockIn
                 previewCapture.enabled,
                 rackId,
                 routeId,
-                previewCapture.captureEpoch
+                previewCapture.captureEpoch,
+                input.preserveInputTrackIds
             );
             if (!isLiveRuntime(node, generation)) {
                 throw new Error('Yeast Worker runtime changed during MIDI processing');
@@ -829,7 +831,8 @@ export async function processYeastRuntimeTransaction(
                 previewCapture.enabled,
                 rackId,
                 routeId,
-                previewCapture.captureEpoch
+                previewCapture.captureEpoch,
+                input.preserveInputTrackIds
             );
             if (!isLiveRuntime(node, generation)) {
                 throw new Error('Yeast Worker runtime changed during MIDI processing');

@@ -153,6 +153,28 @@ export class MidiRack {
     }
 
     /** Process a block of MIDI events through the chain. */
+    processOfflineBlock(
+        inputEvents: readonly MidiEvent[],
+        blockStartSamples: number,
+        blockEndSamples: number,
+        transport: TransportInfo,
+        trackId: string
+    ): MidiEvent[] {
+        return this.processBlock(
+            inputEvents,
+            blockStartSamples,
+            blockEndSamples,
+            transport,
+            trackId,
+            false,
+            trackId,
+            trackId,
+            0,
+            true
+        );
+    }
+
+    /** Process a realtime block, normalizing every input event to its route track. */
     processBlock(
         inputEvents: readonly MidiEvent[],
         blockStartSamples: number,
@@ -162,7 +184,8 @@ export class MidiRack {
         previewEnabled = false,
         rackId = this.defaultRackId ?? trackId,
         routeId = trackId,
-        captureEpoch = previewEnabled ? 1 : 0
+        captureEpoch = previewEnabled ? 1 : 0,
+        preserveInputTrackIds = false
     ): MidiEvent[] {
         const lifecycleOutput = this.lifecycleOutput;
         lifecycleOutput.length = 0;
@@ -197,17 +220,23 @@ export class MidiRack {
         }
 
         transport.blockStartSamples = blockStartSamples;
+        transport.blockEndSamples = blockEndSamples;
 
         // 1. Drain scheduled events directly into scratchA — avoids the
         // intermediate `drained` + spread-merge allocation (§149.1).
         const current0 = this.scratchA;
         current0.length = 0;
-        this.scheduled.drainRangeInto(blockStartSamples, blockEndSamples, current0, trackId);
+        const scheduledTrackId = preserveInputTrackIds ? undefined : trackId;
+        this.scheduled.drainRangeInto(blockStartSamples, blockEndSamples, current0, scheduledTrackId);
 
         // 2. Merge with input events.
         for (let index = 0; index < inputEvents.length; index++) {
             const event = inputEvents[index]!;
-            event.trackId = trackId;
+            if (preserveInputTrackIds) {
+                event.trackId ??= trackId;
+            } else {
+                event.trackId = trackId;
+            }
             current0.push(event);
         }
         current0.sort((alpha, b) => alpha.timeSamples - b.timeSamples);
@@ -217,7 +246,7 @@ export class MidiRack {
         let input: MidiEvent[] = current0;
         let output: MidiEvent[] = this.scratchB;
         for (const processor of this.processors) {
-            processor.setTrackId?.(trackId);
+            processor.setTrackId?.(preserveInputTrackIds ? undefined : trackId);
             if (processor.isBypassed()) {
                 preview?.recordProcessorEvents(input, processor.id, true, false);
                 preview?.recordProcessorProvenance(processor.id, true, false, 0);

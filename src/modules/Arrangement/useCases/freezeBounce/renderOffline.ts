@@ -1,11 +1,18 @@
-import { buildDeviceChain, getAudioContext, getCachedAudioBuffer } from '#/modules/AudioEngine/useCases';
+import {
+    buildDeviceChain,
+    getAudioContext,
+    getCachedAudioBuffer,
+    projectOfflineYeastTrackNotes,
+} from '#/modules/AudioEngine/useCases';
 import { midiStore } from '#/modules/MIDI/stores';
 import { sidechainStore } from '#/modules/Routing/stores';
-import { transportStore } from '#/modules/Transport/stores';
+import { tempoMapStore, transportStore } from '#/modules/Transport/stores';
 
 import { type Track } from '../../models/Track';
 import { getUpstreamSubgraph } from '../../services/getUpstreamSubgraph';
 import { trackStore } from '../../stores/trackStore';
+
+import { offlineRenderDependencies } from './offlineRenderDependencies';
 
 // Local shape of the entries buildDeviceChain() returns, limited to the fields this
 // renderer reads. buildDeviceChain is an injected use case whose return type erases
@@ -36,6 +43,15 @@ export async function renderTrackOffline(
     endBeat: number,
     options?: RenderOfflineOptions
 ): Promise<AudioBuffer | null> {
+    const projectPpqEndpoints = offlineRenderDependencies?.projectPpqEndpoints;
+    const createMidiEventProjector = offlineRenderDependencies?.createMidiEventProjector;
+    const createYeastMidiProcessor = offlineRenderDependencies?.createYeastMidiProcessor;
+    if (!projectPpqEndpoints || !createMidiEventProjector || !createYeastMidiProcessor) {
+        throw new Error('Arrangement offline render dependencies are not configured');
+    }
+    const projectMidiEvents = createMidiEventProjector();
+    const processYeastMidi = createYeastMidiProcessor();
+
     // Only audio and midi tracks produce renderable content on their own.
     // Bus / group / master tracks have no direct sound source — skip rendering.
     if (targetTrack.kind !== 'audio' && targetTrack.kind !== 'midi') {
@@ -47,11 +63,18 @@ export async function renderTrackOffline(
     const upstreamIds = getUpstreamSubgraph(targetTrack.id, allTracks, allSidechainRoutes);
     const renderTracks = allTracks.filter((time) => upstreamIds.has(time.id) || time.id === targetTrack.id);
 
-    const durationBeats = endBeat - startBeat;
     const transport = transportStore.value;
     const tempo = transport?.tempo ?? 120;
     const sampleRate = getAudioContext().sampleRate;
-    const durationSeconds = (durationBeats / tempo) * 60;
+    const tempoChanges = tempoMapStore.value?.changes ?? [];
+    const renderEndpoints = projectPpqEndpoints({
+        startPpq: startBeat,
+        endPpq: endBeat,
+        defaultTempo: tempo,
+        sampleRate,
+        changes: tempoChanges,
+    });
+    const durationSeconds = renderEndpoints.durationSeconds;
     const midi = midiStore.value;
 
     const offlineCtx = new OfflineAudioContext(
@@ -59,6 +82,7 @@ export async function renderTrackOffline(
         Math.ceil((durationSeconds + (options?.autoTail ? 10 : 0)) * sampleRate),
         sampleRate
     );
+    const scheduledDurationSeconds = options?.autoTail ? offlineCtx.length / sampleRate : durationSeconds;
 
     // Map trackId -> { input, output, devices }
     const nodes = new Map<string, { input: AudioNode; output: AudioNode; devices: DeviceNodeEntry[] }>();
@@ -102,42 +126,129 @@ export async function renderTrackOffline(
                 // clip startBeat. Offset it relative to this render's startBeat.
                 const trackStartBeat =
                     time.clips.length > 0 ? Math.min(...time.clips.map((context) => context.startBeat)) : 0;
-                const offsetSeconds = Math.max(0, ((trackStartBeat - startBeat) / tempo) * 60);
+                const offsetSeconds = Math.max(
+                    0,
+                    projectPpqEndpoints({
+                        startPpq: startBeat,
+                        endPpq: trackStartBeat,
+                        defaultTempo: tempo,
+                        sampleRate,
+                        changes: tempoChanges,
+                    }).durationSeconds
+                );
                 source.start(offsetSeconds);
             }
         } else {
             // Schedule individual clips
             if (time.kind === 'midi' && midi) {
+                const clipIterations: Parameters<typeof projectOfflineYeastTrackNotes>[0]['iterations'][number][] = [];
                 for (const clip of time.clips) {
                     if (clip.type !== 'midi') {
                         continue;
                     }
-                    const notes = midi.notesByClipId[clip.id];
-                    if (!notes) {
+                    const sourceNotes = midi.notesByClipId[clip.id];
+                    if (!sourceNotes) {
                         continue;
                     }
-                    for (const note of notes) {
-                        const noteStart = ((clip.startBeat - startBeat + note.startBeat) / tempo) * 60;
-                        const noteDur = (note.duration / tempo) * 60;
-                        if (noteStart >= durationSeconds || noteStart < 0) {
-                            continue;
-                        }
-
-                        // Simple synth fallback for MIDI rendering if no instrument in chain
-                        const freq = MIDI_FREQUENCIES[note.pitch] ?? 440;
-                        const osc = offlineCtx.createOscillator();
-                        const env = offlineCtx.createGain();
-                        osc.type = 'triangle';
-                        osc.frequency.value = freq;
-                        env.gain.setValueAtTime(0, noteStart);
-                        env.gain.linearRampToValueAtTime((note.velocity / 127) * 0.3, noteStart + 0.005);
-                        env.gain.setValueAtTime((note.velocity / 127) * 0.3, noteStart + noteDur - 0.01);
-                        env.gain.exponentialRampToValueAtTime(0.001, noteStart + noteDur);
-                        osc.connect(env);
-                        env.connect(gainNode);
-                        osc.start(noteStart);
-                        osc.stop(noteStart + noteDur + 0.01);
+                    const clipLength = clip.endBeat - clip.startBeat;
+                    if (clipLength <= 0) {
+                        continue;
                     }
+                    const rawLoopLength = clip.loopEnabled ? (clip.loopLength ?? clipLength) : clipLength;
+                    const loopLength = rawLoopLength > 0 ? rawLoopLength : clipLength;
+                    const iterations = clip.loopEnabled ? Math.ceil(clipLength / loopLength) : 1;
+                    for (let iteration = 0; iteration < iterations; iteration++) {
+                        clipIterations.push({
+                            sourceNotes,
+                            clipId: clip.id,
+                            clipStartBeat: clip.startBeat,
+                            clipEndBeat: clip.endBeat,
+                            iterationStartBeat: clip.startBeat + iteration * loopLength,
+                            loopLengthBeats: loopLength,
+                            midiOffsetBeats: clip.midiOffsetBeats ?? 0,
+                            loopEnabled: clip.loopEnabled ?? false,
+                        });
+                    }
+                }
+                const hasYeast = time.devices.some((device) => device.type === 'yeast');
+                let scheduledNotes: Array<{
+                    id: string;
+                    pitch: number;
+                    velocity: number;
+                    startSamples: number;
+                    endSamples: number;
+                }>;
+                if (hasYeast && clipIterations.length > 0) {
+                    scheduledNotes = projectOfflineYeastTrackNotes({
+                        trackId: time.id,
+                        iterations: clipIterations,
+                        sampleRate,
+                        blockStartSamples: renderEndpoints.startSamples,
+                        blockEndSamples: renderEndpoints.startSamples + offlineCtx.length,
+                        defaultTempo: tempo,
+                        changes: tempoChanges,
+                        projectMidiEvents,
+                        projectPpqEndpoints,
+                        processYeastMidi,
+                    });
+                } else {
+                    scheduledNotes = clipIterations.flatMap((iteration) => {
+                        const notes = projectMidiEvents({
+                            events: iteration.sourceNotes,
+                            clipId: iteration.clipId,
+                            clipStartBeat: iteration.clipStartBeat,
+                            clipEndBeat: iteration.clipEndBeat,
+                            iterationStartBeat: iteration.iterationStartBeat,
+                            loopLengthBeats: iteration.loopLengthBeats,
+                            midiOffsetBeats: iteration.midiOffsetBeats,
+                            loopEnabled: iteration.loopEnabled,
+                            phase: 'complete',
+                        });
+                        return notes.map((note) => {
+                            const endpoint = projectPpqEndpoints({
+                                startPpq: note.startBeat,
+                                endPpq: note.startBeat + note.duration,
+                                defaultTempo: tempo,
+                                sampleRate,
+                                changes: tempoChanges,
+                            });
+                            return {
+                                id: note.id,
+                                pitch: note.pitch,
+                                velocity: note.velocity,
+                                startSamples: endpoint.startSamples,
+                                endSamples: endpoint.endSamples,
+                            };
+                        });
+                    });
+                }
+
+                for (const note of scheduledNotes) {
+                    const noteStart = Math.max(0, note.startSamples / sampleRate - renderEndpoints.startSeconds);
+                    const noteEnd = Math.min(
+                        scheduledDurationSeconds,
+                        note.endSamples / sampleRate - renderEndpoints.startSeconds
+                    );
+                    const noteDuration = noteEnd - noteStart;
+                    if (noteStart >= scheduledDurationSeconds || noteDuration <= 0) {
+                        continue;
+                    }
+
+                    const freq = MIDI_FREQUENCIES[note.pitch] ?? 440;
+                    const osc = offlineCtx.createOscillator();
+                    const env = offlineCtx.createGain();
+                    const attackEnd = Math.min(noteStart + 0.005, noteEnd);
+                    const releaseStart = Math.max(attackEnd, noteEnd - 0.01);
+                    osc.type = 'triangle';
+                    osc.frequency.value = freq;
+                    env.gain.setValueAtTime(0, noteStart);
+                    env.gain.linearRampToValueAtTime((note.velocity / 127) * 0.3, attackEnd);
+                    env.gain.setValueAtTime((note.velocity / 127) * 0.3, releaseStart);
+                    env.gain.exponentialRampToValueAtTime(0.001, noteEnd);
+                    osc.connect(env);
+                    env.connect(gainNode);
+                    osc.start(noteStart);
+                    osc.stop(noteEnd + 0.01);
                 }
             } else if (time.kind === 'audio') {
                 for (const clip of time.clips) {
@@ -145,8 +256,15 @@ export async function renderTrackOffline(
                     if (!buffer) {
                         continue;
                     }
-                    const clipStart = ((clip.startBeat - startBeat) / tempo) * 60;
-                    const clipDuration = ((clip.endBeat - clip.startBeat) / tempo) * 60;
+                    const clipEndpoints = projectPpqEndpoints({
+                        startPpq: clip.startBeat,
+                        endPpq: clip.endBeat,
+                        defaultTempo: tempo,
+                        sampleRate,
+                        changes: tempoChanges,
+                    });
+                    const clipStart = clipEndpoints.startSeconds - renderEndpoints.startSeconds;
+                    const clipDuration = clipEndpoints.durationSeconds;
                     const source = offlineCtx.createBufferSource();
                     source.buffer = buffer;
                     source.connect(gainNode);

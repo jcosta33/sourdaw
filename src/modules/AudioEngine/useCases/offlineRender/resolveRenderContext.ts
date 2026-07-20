@@ -7,6 +7,18 @@ import {
     type TransportState,
 } from '#/modules/Transport/stores';
 
+import {
+    offlineMidiEventProjectorState,
+    type OfflineMidiEventProjector,
+} from '../../repositories/offlineScheduler/offlineMidiEventProjectorState';
+import {
+    offlinePpqEndpointProjectorState,
+    type OfflinePpqEndpointProjector,
+} from '../../repositories/offlineScheduler/offlinePpqEndpointProjectorState';
+import {
+    offlineYeastMidiProcessorState,
+    type OfflineYeastMidiProcessor,
+} from '../../repositories/offlineScheduler/offlineYeastMidiProcessorState';
 import { beatToSeconds } from '../../services/beatConversion';
 
 export type OfflineRenderContext = {
@@ -21,6 +33,9 @@ export type OfflineRenderContext = {
     durationSeconds: number;
     /** Tail seconds appended after the musical region. */
     tailSeconds: number;
+    projectMidiEvents: OfflineMidiEventProjector | null;
+    projectPpqEndpoints: OfflinePpqEndpointProjector | null;
+    processYeastMidi: OfflineYeastMidiProcessor | null;
 };
 
 export type ResolveRenderContextInput = {
@@ -59,5 +74,8 @@ export function resolveRenderContext(input: ResolveRenderContextInput | number):
         startBeat: normalized.startBeat,
         durationSeconds,
         tailSeconds: Math.max(0, normalized.tailSeconds),
+        projectMidiEvents: offlineMidiEventProjectorState.createProjector?.() ?? null,
+        projectPpqEndpoints: offlinePpqEndpointProjectorState.project,
+        processYeastMidi: offlineYeastMidiProcessorState.createProcessor?.() ?? null,
     };
 }

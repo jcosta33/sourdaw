@@ -21,6 +21,7 @@ import {
     getArrangementHandlers,
     initStalenessDetection,
     setArrangementEventBus,
+    setOfflineRenderDependencies,
     setTimeOperationDependencies,
     getSongStructureHandlers,
 } from '#/modules/Arrangement/useCases';
@@ -35,6 +36,9 @@ import {
     getFinalFeatureHandlers,
     commitPitchEdit,
     configureAudioDeviceRuntimeSink,
+    configureOfflineMidiEventProjection,
+    configureOfflinePpqEndpointProjection,
+    configureOfflineYeastMidiProcessing,
     stopAllScheduled,
 } from '#/modules/AudioEngine/useCases';
 import {
@@ -80,6 +84,7 @@ import {
     getMidiGrooveHandlers,
     getMidiNoteTransformHandlers,
     getPatternInstanceHandlers,
+    createGrooveMidiEventProjector,
     setWebMidiRealtimeProcessor,
     setWebMidiRuntimeEventBus,
     getWebMidiInputHandlers,
@@ -106,6 +111,9 @@ import {
     getTransportHandlers,
     getTransportState,
     deleteTimelineMapsTimeRange,
+    createMusicalPositionProjector,
+    createSamplePositionProjector,
+    projectPpqEndpoints,
     setStopPlaybackCallback,
     shiftTimelineMapsAfterBeat,
     stopPlayback,
@@ -113,7 +121,12 @@ import {
 import { updateTunerTelemetry } from '#/modules/Tuner/stores';
 import { getWorkspaceHandlers, getScratchPadHandlers, setWorkspaceEventBus } from '#/modules/WorkspaceShell/useCases';
 import { setYeastEventBus } from '#/modules/Yeast/stores';
-import { configureYeastRuntime, processRealtimeMidiInput, teardownYeastRuntime } from '#/modules/Yeast/useCases';
+import {
+    configureYeastRuntime,
+    createOfflineYeastMidiProcessor,
+    processRealtimeMidiInput,
+    teardownYeastRuntime,
+} from '#/modules/Yeast/useCases';
 import { logCapabilities } from '#/utils/capabilities';
 import { setNotificationEventBus } from '#/utils/Notification/notificationEventBus';
 
@@ -133,6 +146,19 @@ actionHistoryStore.subscribe((state) => {
     syncActionReplayMetadata(state?.entries ?? []);
 });
 setRuntimeLogger(logger);
+const createOfflineYeastProcessor = () =>
+    createOfflineYeastMidiProcessor({
+        resolveMusicalPosition: createMusicalPositionProjector(),
+        resolvePpqPosition: createSamplePositionProjector(),
+    });
+configureOfflineMidiEventProjection({ createProjector: createGrooveMidiEventProjector });
+configureOfflinePpqEndpointProjection({ project: projectPpqEndpoints });
+configureOfflineYeastMidiProcessing({ createProcessor: createOfflineYeastProcessor });
+setOfflineRenderDependencies({
+    projectPpqEndpoints,
+    createMidiEventProjector: createGrooveMidiEventProjector,
+    createYeastMidiProcessor: createOfflineYeastProcessor,
+});
 setToasterGrooveAssignmentExecutor({ execute: executeAppAction });
 setArrangementEventBus(eventBus);
 setWorkspaceEventBus(eventBus);

@@ -48,6 +48,29 @@ const TrackDummy = {
 
 type Clip = Track['clips'][number];
 
+function projectPpqEndpoints({
+    startPpq,
+    endPpq,
+    defaultTempo,
+    sampleRate,
+}: {
+    startPpq: number;
+    endPpq: number;
+    defaultTempo: number;
+    sampleRate: number;
+}) {
+    const startSamples = Math.round((startPpq / defaultTempo) * 60 * sampleRate);
+    const endSamples = Math.round((endPpq / defaultTempo) * 60 * sampleRate);
+    return {
+        startSamples,
+        endSamples,
+        durationSamples: endSamples - startSamples,
+        startSeconds: startSamples / sampleRate,
+        endSeconds: endSamples / sampleRate,
+        durationSeconds: (endSamples - startSamples) / sampleRate,
+    };
+}
+
 function makeAudioClip(overrides?: Partial<Clip>): Clip {
     return {
         id: 'clip-1',
@@ -185,6 +208,20 @@ const emptyMidi: NonNullable<MidiStoreState> = {
     pitchBendByClipId: {},
 };
 
+type ProjectableMidiEvent = {
+    id: string;
+    startBeat: number;
+    duration: number;
+    velocity: number;
+};
+
+function projectMidiEvents<Event extends ProjectableMidiEvent>(input: {
+    events: readonly Event[];
+    phase?: 'clip-groove' | 'complete' | 'sequencer-groove';
+}): readonly Event[] {
+    return input.events;
+}
+
 type RunInput = {
     track: Track;
     ctx: OfflineAudioContext;
@@ -204,23 +241,24 @@ async function run({ track, ctx, onWarning, regionStartBeat = 0, withPrebuiltCha
     const trackPanNode = { connect: vi.fn() } as unknown as StereoPannerNode;
     const destination = { connect: vi.fn() } as unknown as AudioNode;
 
-    await scheduleTrackClips(
-        ctx,
+    await scheduleTrackClips({
+        offlineCtx: ctx,
         track,
-        emptyMidi,
+        midi: emptyMidi,
         trackInputNode,
         trackGainNode,
         trackPanNode,
         destination,
-        /* durationSeconds */ 60,
-        /* defaultTempo */ 120,
-        /* changes */ [],
+        durationSeconds: 60,
+        defaultTempo: 120,
+        changes: [],
+        projections: { projectMidiEvents, projectPpqEndpoints, processYeastMidi: null },
         onWarning,
-        [],
-        [track],
-        withPrebuiltChain ? new Map([[track.id, []]]) : undefined,
-        regionStartBeat
-    );
+        pendingWorkletEvents: [],
+        allTracks: [track],
+        deviceEntriesByTrack: withPrebuiltChain ? new Map([[track.id, []]]) : undefined,
+        regionStartBeat,
+    });
 
     return { trackInputNode, trackGainNode, trackPanNode, destination };
 }

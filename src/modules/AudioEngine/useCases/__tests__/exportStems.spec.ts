@@ -1,5 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 
+import { configureOfflineMidiEventProjection } from '../configureOfflineMidiEventProjection';
+import { configureOfflinePpqEndpointProjection } from '../configureOfflinePpqEndpointProjection';
 import { exportStems } from '../exportStems';
 
 const offlineRenderMocks = vi.hoisted(() => ({
@@ -90,6 +92,22 @@ vi.mock('../../repositories/offlineScheduler/automationScheduling', () => ({
 describe('exportStems', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        configureOfflineMidiEventProjection({
+            createProjector:
+                () =>
+                ({ events }) =>
+                    events,
+        });
+        configureOfflinePpqEndpointProjection({
+            project: ({ startPpq, endPpq, sampleRate }) => ({
+                startSamples: startPpq * sampleRate,
+                endSamples: endPpq * sampleRate,
+                durationSamples: (endPpq - startPpq) * sampleRate,
+                startSeconds: startPpq,
+                endSeconds: endPpq,
+                durationSeconds: endPpq - startPpq,
+            }),
+        });
     });
 
     it('returns empty map when track or midi state is missing', async () => {

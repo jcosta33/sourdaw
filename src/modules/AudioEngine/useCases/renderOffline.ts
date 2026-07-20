@@ -54,11 +54,24 @@ export const renderOffline: RenderOfflineFn = async function renderOffline(
             );
         }
 
-        const { tracks, midi, transport, defaultTempo, changes, durationSeconds } = resolveRenderContext({
+        const {
+            tracks,
+            midi,
+            transport,
+            defaultTempo,
+            changes,
+            durationSeconds,
+            projectMidiEvents,
+            projectPpqEndpoints,
+            processYeastMidi,
+        } = resolveRenderContext({
             durationBeats,
             startBeat,
             tailSeconds,
         });
+        if (!projectMidiEvents || !projectPpqEndpoints) {
+            throw new Error('Offline musical projection is not configured');
+        }
 
         // Clamp frame count to browser-safe maximum to avoid context creation error.
         const frameCount = Math.min(Math.ceil(durationSeconds * sampleRate), MAX_OFFLINE_FRAMES);
@@ -141,23 +154,24 @@ export const renderOffline: RenderOfflineFn = async function renderOffline(
                 continue;
             }
 
-            await scheduleTrackClips(
+            await scheduleTrackClips({
                 offlineCtx,
                 track,
-                midi!,
-                strip.inputNode,
-                strip.faderNode,
-                strip.panNode,
-                masterGain,
+                midi: midi!,
+                trackInputNode: strip.inputNode,
+                trackGainNode: strip.faderNode,
+                trackPanNode: strip.panNode,
+                destination: masterGain,
                 durationSeconds,
                 defaultTempo,
                 changes,
+                projections: { projectMidiEvents, projectPpqEndpoints, processYeastMidi },
                 onWarning,
                 pendingWorkletEvents,
-                sourceTracks,
+                allTracks: sourceTracks,
                 deviceEntriesByTrack,
-                startBeat
-            );
+                regionStartBeat: startBeat,
+            });
 
             scheduled++;
             onProgress?.((scheduled / Math.max(1, sourceTracks.length)) * 0.5); // scheduling = 0-50%

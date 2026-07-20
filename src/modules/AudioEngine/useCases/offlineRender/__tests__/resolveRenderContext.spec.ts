@@ -1,5 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+import { configureOfflinePpqEndpointProjection } from '../../configureOfflinePpqEndpointProjection';
+
 const mocks = vi.hoisted(() => ({
     getTrackStoreState: vi.fn(),
     getMidiStoreState: vi.fn(),
@@ -60,5 +62,17 @@ describe('resolveRenderContext', () => {
         expect(ctx.durationSeconds).toBeCloseTo(2, 6);
         expect(ctx.startBeat).toBe(0);
         expect(ctx.tailSeconds).toBe(0);
+    });
+
+    it('snapshots the PPQ projector for the lifetime of one render context', async () => {
+        const firstProjector = vi.fn<Parameters<typeof configureOfflinePpqEndpointProjection>[0]['project']>();
+        const replacementProjector = vi.fn<Parameters<typeof configureOfflinePpqEndpointProjection>[0]['project']>();
+        configureOfflinePpqEndpointProjection({ project: firstProjector });
+        const { resolveRenderContext } = await import('../resolveRenderContext');
+
+        const context = resolveRenderContext(4);
+        configureOfflinePpqEndpointProjection({ project: replacementProjector });
+
+        expect(context.projectPpqEndpoints).toBe(firstProjector);
     });
 });

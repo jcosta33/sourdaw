@@ -11,6 +11,9 @@ export { setTempo } from './setTempo';
 export { setTimeSignature } from './setTimeSignature';
 export { restoreTransportSnapshot } from './restoreTransportSnapshot';
 export { restoreTimelineMapSnapshot } from './restoreTimelineMapSnapshot';
+export { projectPpqEndpoints } from './projectPpqEndpoints';
+export { createMusicalPositionProjector } from './createMusicalPositionProjector';
+export { createSamplePositionProjector } from './createSamplePositionProjector';
 
 export { addTempoChange } from './tempoMap/addTempoChange';
 export { deleteTimelineMapsTimeRange } from './tempoMap/deleteTimelineMapsTimeRange';

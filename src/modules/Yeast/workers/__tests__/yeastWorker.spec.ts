@@ -248,6 +248,41 @@ describe('YeastWorker', () => {
         ]);
     });
 
+    it('preserves input route identities when a track-scoped scheduler requests it', () => {
+        const rack = new MidiRack();
+        const messages: unknown[] = [];
+        const events = [
+            {
+                timeSamples: 0,
+                trackId: 'clip-route-a',
+                kind: { type: 'noteOn', channel: 0, note: 60, velocity: 100 },
+            },
+            {
+                timeSamples: 64,
+                trackId: 'clip-route-a',
+                kind: { type: 'noteOff', channel: 0, note: 60 },
+            },
+        ];
+
+        dispatch(
+            rack,
+            {
+                type: 'processBlock',
+                requestId: 6,
+                captureEpoch: 0,
+                trackId: 'track-a',
+                events,
+                blockStart: 0,
+                blockEnd: 128,
+                transport,
+                preserveInputTrackIds: true,
+            },
+            messages
+        );
+
+        expect(messages).toEqual([{ type: 'processed', requestId: 6, events }]);
+    });
+
     it('settles scheduler output before separately posting a packed preview page', async () => {
         const rack = new MidiRack();
         const messages: unknown[] = [];
