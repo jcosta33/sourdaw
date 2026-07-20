@@ -71,16 +71,13 @@ function resolveOpacity(event: YeastPreviewEvent, playheadBeat: number, lookahea
 
 export function createYeastPreviewGeometry(input: YeastPreviewGeometryInput): YeastPreviewGeometry {
     const lookaheadBeats = Math.max(0.25, input.lookaheadBeats);
-    const lookbehindStart = input.playheadBeat - lookaheadBeats;
     const lookaheadEnd = input.playheadBeat + lookaheadBeats;
-    const pitchEvents = input.events.filter(
-        (event) => event.beatTime >= lookbehindStart && event.beatTime <= lookaheadEnd
-    );
+    const visibleEvents = input.events.filter((event) => isEventVisible(event, input.playheadBeat, lookaheadEnd));
     let minimum = 60;
     let maximum = 72;
-    if (pitchEvents.length > 0) {
-        minimum = Math.min(...pitchEvents.map((event) => event.pitch));
-        maximum = Math.max(...pitchEvents.map((event) => event.pitch));
+    if (visibleEvents.length > 0) {
+        minimum = Math.min(...visibleEvents.map((event) => event.pitch));
+        maximum = Math.max(...visibleEvents.map((event) => event.pitch));
         if (minimum === maximum) {
             minimum -= 1;
             maximum += 1;
@@ -89,27 +86,25 @@ export function createYeastPreviewGeometry(input: YeastPreviewGeometryInput): Ye
 
     const drawableHeight = Math.max(EVENT_HEIGHT, input.height - PITCH_PADDING * 2);
     const pitchSpan = Math.max(1, maximum - minimum);
-    const events = input.events
-        .filter((event) => isEventVisible(event, input.playheadBeat, lookaheadEnd))
-        .map((event): YeastPreviewEventGeometry => {
-            const startRatio = clamp((event.beatTime - input.playheadBeat) / lookaheadBeats, 0, 1);
-            const endRatio = clamp(
-                (event.beatTime + Math.max(0, event.durationBeats) - input.playheadBeat) / lookaheadBeats,
-                0,
-                1
-            );
-            const pitchRatio = (event.pitch - minimum) / pitchSpan;
-            return {
-                eventId: event.eventId,
-                x: startRatio * input.width,
-                y: PITCH_PADDING + (1 - pitchRatio) * (drawableHeight - EVENT_HEIGHT),
-                width: Math.max(2, (endRatio - startRatio) * input.width),
-                height: EVENT_HEIGHT,
-                brightness: normalizeVelocity(event.velocity),
-                opacity: resolveOpacity(event, input.playheadBeat, lookaheadBeats),
-                tone: resolveTone(event),
-            };
-        });
+    const events = visibleEvents.map((event): YeastPreviewEventGeometry => {
+        const startRatio = clamp((event.beatTime - input.playheadBeat) / lookaheadBeats, 0, 1);
+        const endRatio = clamp(
+            (event.beatTime + Math.max(0, event.durationBeats) - input.playheadBeat) / lookaheadBeats,
+            0,
+            1
+        );
+        const pitchRatio = (event.pitch - minimum) / pitchSpan;
+        return {
+            eventId: event.eventId,
+            x: startRatio * input.width,
+            y: PITCH_PADDING + (1 - pitchRatio) * (drawableHeight - EVENT_HEIGHT),
+            width: Math.max(2, (endRatio - startRatio) * input.width),
+            height: EVENT_HEIGHT,
+            brightness: normalizeVelocity(event.velocity),
+            opacity: resolveOpacity(event, input.playheadBeat, lookaheadBeats),
+            tone: resolveTone(event),
+        };
+    });
 
     return { events, pitchRange: { minimum, maximum } };
 }
@@ -182,8 +177,6 @@ export function createYeastPreviewCanvasRenderer(
     function resize(nextWidth: number, nextHeight: number): void {
         width = Math.max(1, nextWidth);
         height = Math.max(1, nextHeight);
-        canvas.style.width = `${width}px`;
-        canvas.style.height = `${height}px`;
         synchronizeBackingStore();
     }
 

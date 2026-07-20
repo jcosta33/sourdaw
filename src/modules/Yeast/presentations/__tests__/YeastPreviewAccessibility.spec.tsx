@@ -1,5 +1,5 @@
 import { act, render, screen } from '@testing-library/react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
     publishAppliedYeastPreviewRevision,
@@ -16,6 +16,11 @@ const previewMocks = vi.hoisted(() => ({
     resetCapture: vi.fn(() => 2),
     onSnapshot: undefined as undefined | ((snapshot: YeastPreviewSnapshot, sampledAt: number) => void),
     frames: [] as FrameRequestCallback[],
+    rendererAvailable: true,
+    rendererResize: vi.fn(),
+    viewportWidth: 320,
+    resizeObserverCallback: null as ResizeObserverCallback | null,
+    resizeObserverTarget: null as Element | null,
 }));
 
 vi.mock('../../useCases/resetYeastPreviewCapture', () => ({
@@ -36,14 +41,33 @@ vi.mock('../createYeastPreviewCanvasRenderer', async (importOriginal) => {
     const actual = await importOriginal<typeof import('../createYeastPreviewCanvasRenderer')>();
     return {
         ...actual,
-        createYeastPreviewCanvasRenderer: () => ({
-            backend: 'canvas2d' as const,
-            render: vi.fn(),
-            resize: vi.fn(),
-            dispose: vi.fn(),
-        }),
+        createYeastPreviewCanvasRenderer: () => {
+            if (!previewMocks.rendererAvailable) {
+                return null;
+            }
+            return {
+                backend: 'canvas2d' as const,
+                render: vi.fn(),
+                resize: previewMocks.rendererResize,
+                dispose: vi.fn(),
+            };
+        },
     };
 });
+
+class MockResizeObserver {
+    constructor(callback: ResizeObserverCallback) {
+        previewMocks.resizeObserverCallback = callback;
+    }
+
+    observe(target: Element): void {
+        previewMocks.resizeObserverTarget = target;
+    }
+
+    unobserve(): void {}
+
+    disconnect(): void {}
+}
 
 describe('Yeast preview accessibility', () => {
     beforeEach(() => {
@@ -51,6 +75,15 @@ describe('Yeast preview accessibility', () => {
         previewMocks.resetCapture.mockClear();
         previewMocks.onSnapshot = undefined;
         previewMocks.frames.length = 0;
+        previewMocks.rendererAvailable = true;
+        previewMocks.rendererResize.mockClear();
+        previewMocks.viewportWidth = 320;
+        previewMocks.resizeObserverCallback = null;
+        previewMocks.resizeObserverTarget = null;
+        vi.stubGlobal('ResizeObserver', MockResizeObserver);
+        vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(
+            () => new DOMRect(0, 0, previewMocks.viewportWidth, 112)
+        );
         vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
             previewMocks.frames.push(callback);
             return previewMocks.frames.length;
@@ -58,6 +91,50 @@ describe('Yeast preview accessibility', () => {
         vi.stubGlobal('cancelAnimationFrame', (handle: number) => {
             previewMocks.frames.splice(handle - 1, 1);
         });
+    });
+
+    afterEach(() => {
+        vi.restoreAllMocks();
+        vi.unstubAllGlobals();
+    });
+
+    it('reports the actual renderer factory failure instead of trusting a throwaway probe', async () => {
+        previewMocks.rendererAvailable = false;
+
+        render(
+            <YeastPreviewSurface
+                scope={{ rackId: 'rack-1', routeId: 'track-1', trackId: 'track-1' }}
+                processors={[]}
+                runtimeStatus="ready"
+            />
+        );
+
+        expect(await screen.findByText('Canvas preview is unavailable.')).toHaveAttribute(
+            'data-reason-code',
+            'renderer-unavailable'
+        );
+        expect(screen.getByText('Error')).toBeInTheDocument();
+    });
+
+    it('observes layout-owned parent width changes without pinning the Canvas size', () => {
+        render(
+            <YeastPreviewSurface
+                scope={{ rackId: 'rack-1', routeId: 'track-1', trackId: 'track-1' }}
+                processors={[]}
+                runtimeStatus="ready"
+            />
+        );
+
+        const canvas = screen.getByRole('img');
+        expect(previewMocks.resizeObserverTarget).toBe(canvas.parentElement);
+        expect(previewMocks.rendererResize).toHaveBeenCalledWith(320, 112);
+
+        previewMocks.viewportWidth = 480;
+        act(() => {
+            previewMocks.resizeObserverCallback?.([], {} as ResizeObserver);
+        });
+
+        expect(previewMocks.rendererResize).toHaveBeenLastCalledWith(480, 112);
     });
 
     it('uses one Canvas surface and exposes a keyboard-readable event summary', () => {

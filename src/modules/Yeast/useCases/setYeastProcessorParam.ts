@@ -1,9 +1,9 @@
 import { getStraightGrooveTemplateId } from '#/modules/MIDI/useCases';
 
-import { applyYeastRuntimeProjection } from '../engine/yeastRuntime';
 import { publishAppliedYeastPreviewRevision, publishPendingYeastPreviewRevision } from '../stores/yeastPreviewRevision';
 import { yeastStore } from '../stores/yeastStore';
 
+import { applyYeastControlProjection } from './applyYeastControlProjection';
 import { commitYeastProjection } from './commitYeastProjection';
 import { createYeastRuntimeProjection } from './createYeastRuntimeProjection';
 import { getYeastGrooveAssignment } from './getYeastGrooveAssignment';
@@ -60,7 +60,7 @@ export async function setYeastProcessorParam(
         }
         const revisionDetails = { processorId: id, parameterName: name, transient: true };
         const revision = publishPendingYeastPreviewRevision(revisionDetails);
-        await applyYeastRuntimeProjection(projection);
+        await applyYeastControlProjection(projection);
         publishAppliedYeastPreviewRevision({ ...revisionDetails, revision });
         return;
     }
@@ -74,7 +74,7 @@ export async function setYeastProcessorParam(
         if (!currentState) {
             return;
         }
-        await applyYeastRuntimeProjection(createYeastRuntimeProjection(currentState.processors));
+        await applyYeastControlProjection(createYeastRuntimeProjection(currentState.processors));
         publishAppliedYeastPreviewRevision({ ...revisionDetails, revision });
         return;
     }
@@ -89,6 +89,6 @@ export async function setYeastProcessorParam(
     if (!currentState) {
         return;
     }
-    await applyYeastRuntimeProjection(createYeastRuntimeProjection(currentState.processors));
+    await applyYeastControlProjection(createYeastRuntimeProjection(currentState.processors));
     publishAppliedYeastPreviewRevision({ ...revisionDetails, revision });
 }

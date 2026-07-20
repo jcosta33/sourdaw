@@ -25,6 +25,21 @@ describe('Yeast preview geometry', () => {
         expect(frame.pitchRange).toEqual({ minimum: 48, maximum: 72 });
     });
 
+    it('ranges a long-held realized event that remains visible after its start leaves lookbehind', () => {
+        const frame = createYeastPreviewGeometry({
+            events: [createPreviewEvent({ eventId: 1, beatTime: 0, durationBeats: 10, pitch: 100 })],
+            playheadBeat: 8,
+            lookaheadBeats: 4,
+            width: 400,
+            height: 100,
+        });
+
+        expect(frame.pitchRange).toEqual({ minimum: 99, maximum: 101 });
+        expect(frame.events).toHaveLength(1);
+        expect(frame.events[0]!.y).toBeGreaterThanOrEqual(0);
+        expect(frame.events[0]!.y + frame.events[0]!.height).toBeLessThanOrEqual(100);
+    });
+
     it('renders a lookahead or processor revision change on the next animation frame', () => {
         const frames: FrameRequestCallback[] = [];
         const render = vi.fn();
@@ -123,6 +138,8 @@ describe('Yeast preview geometry', () => {
         renderer?.resize(200, 100);
         expect(canvas.width).toBe(200);
         expect(canvas.height).toBe(100);
+        expect(canvas.style.width).toBe('');
+        expect(canvas.style.height).toBe('');
 
         vi.stubGlobal('devicePixelRatio', 2);
         renderer?.render({ events: [], playheadBeat: 0, lookaheadBeats: 4, width: 200, height: 100 });

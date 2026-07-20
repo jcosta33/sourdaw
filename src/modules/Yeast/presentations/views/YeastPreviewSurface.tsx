@@ -27,13 +27,6 @@ function clearPreviewTimer(handle: number): void {
     window.clearTimeout(handle);
 }
 
-function isCanvasRendererUnavailable(): boolean {
-    if (typeof document === 'undefined') {
-        return false;
-    }
-    return document.createElement('canvas').getContext('2d') === null;
-}
-
 type PreviewProcessor = Readonly<{ id: string; bypassed: boolean }>;
 
 type YeastPreviewSurfaceProps = {
@@ -155,21 +148,25 @@ export function YeastPreviewSurface({
     runtimeError,
     lookaheadBeats = 4,
 }: YeastPreviewSurfaceProps): ReactElement {
+    const viewportRef = useRef<HTMLDivElement>(null);
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const presenterRef = useRef<ReturnType<typeof createYeastPreviewPresenter> | null>(null);
     const processorsRef = useRef(processors);
     const pendingProcessorRevisionRef = useRef<number | null>(null);
-    const [rendererUnavailable] = useState(isCanvasRendererUnavailable);
+    const [rendererUnavailable, setRendererUnavailable] = useState(false);
     const [feedback, setFeedback] = useState<YeastPreviewFeedback>(initialFeedback);
 
     useEffect(() => {
         const canvas = canvasRef.current;
-        if (!canvas) {
+        const viewport = viewportRef.current;
+        if (!canvas || !viewport) {
             return undefined;
         }
         const previewCanvas: HTMLCanvasElement = canvas;
+        const previewViewport: HTMLDivElement = viewport;
         const renderer = createYeastPreviewCanvasRenderer(previewCanvas);
         if (!renderer) {
+            setRendererUnavailable(true);
             return undefined;
         }
         const presenter = createYeastPreviewPresenter({
@@ -185,12 +182,12 @@ export function YeastPreviewSurface({
         presenterRef.current = presenter;
 
         function resize(): void {
-            const bounds = previewCanvas.getBoundingClientRect();
+            const bounds = previewViewport.getBoundingClientRect();
             presenter.resize(bounds.width || 640, bounds.height || 112);
         }
         resize();
         const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(resize);
-        observer?.observe(previewCanvas);
+        observer?.observe(previewViewport);
 
         return () => {
             observer?.disconnect();
@@ -302,13 +299,15 @@ export function YeastPreviewSurface({
                     </div>
                 </dl>
             </div>
-            <canvas
-                ref={canvasRef}
-                className="h-28 w-full rounded-lg border border-white/10 bg-black/20 focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--color-accent-peach)]"
-                role="img"
-                tabIndex={0}
-                aria-label={feedback.summary}
-            />
+            <div ref={viewportRef} className="h-28 w-full">
+                <canvas
+                    ref={canvasRef}
+                    className="block h-full w-full rounded-lg border border-white/10 bg-black/20 focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--color-accent-peach)]"
+                    role="img"
+                    tabIndex={0}
+                    aria-label={feedback.summary}
+                />
+            </div>
             <div className="sr-only" role="status" aria-live="polite">
                 {feedback.summary}. Preview {status.label.toLowerCase()}. Scheduling latency {latency}.
             </div>

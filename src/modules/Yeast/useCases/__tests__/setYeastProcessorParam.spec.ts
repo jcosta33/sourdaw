@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import type { YeastRuntimeStatus } from '../../models/YeastProcessorProjection';
 import type { YeastPreviewRevision } from '../../stores/yeastPreviewRevision';
 
 const store = vi.hoisted(() => ({
@@ -22,6 +23,7 @@ const store = vi.hoisted(() => ({
         ],
         uiLevel: 2 as const,
     },
+    set: vi.fn(),
 }));
 
 const commit = vi.hoisted(() => vi.fn());
@@ -36,11 +38,15 @@ const runtimeMocks = vi.hoisted(() => ({
         },
     ]),
     applyYeastRuntimeProjection: vi.fn((): Promise<void> => Promise.resolve()),
+    getYeastRuntimeStatus: vi.fn((): YeastRuntimeStatus => 'ready'),
+    getYeastRuntimeError: vi.fn((): string | undefined => undefined),
 }));
 
 vi.mock('../../stores/yeastStore', () => ({ yeastStore: store }));
 vi.mock('../../engine/yeastRuntime', () => ({
     applyYeastRuntimeProjection: runtimeMocks.applyYeastRuntimeProjection,
+    getYeastRuntimeStatus: runtimeMocks.getYeastRuntimeStatus,
+    getYeastRuntimeError: runtimeMocks.getYeastRuntimeError,
 }));
 vi.mock('../commitYeastProjection', () => ({ commitYeastProjection: commit }));
 vi.mock('../createYeastRuntimeProjection', () => ({
@@ -57,6 +63,8 @@ const { subscribeYeastPreviewRevision } = await import('../../stores/yeastPrevie
 describe('setYeastProcessorParam', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        runtimeMocks.getYeastRuntimeStatus.mockReturnValue('ready');
+        runtimeMocks.getYeastRuntimeError.mockReturnValue(undefined);
     });
 
     it.each(['learn', 'clear'])('does not persist the Chord Memory %s command as a parameter', async (name) => {
@@ -177,6 +185,8 @@ describe('setYeastProcessorParam', () => {
     it('keeps the preview suspended when the runtime rejects a projection', async () => {
         const error = new Error('projection failed');
         runtimeMocks.applyYeastRuntimeProjection.mockRejectedValueOnce(error);
+        runtimeMocks.getYeastRuntimeStatus.mockReturnValueOnce('unavailable');
+        runtimeMocks.getYeastRuntimeError.mockReturnValueOnce(error.message);
         const revisions: YeastPreviewRevision[] = [];
         const unsubscribe = subscribeYeastPreviewRevision((revision) => {
             revisions.push(revision);
@@ -190,6 +200,11 @@ describe('setYeastProcessorParam', () => {
             processorId: 'groove-1',
             phase: 'pending',
             transient: true,
+        });
+        expect(store.set).toHaveBeenCalledWith({
+            ...store.value,
+            runtimeStatus: 'unavailable',
+            runtimeError: error.message,
         });
     });
 });

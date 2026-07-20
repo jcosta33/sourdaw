@@ -1,7 +1,8 @@
 import { yeastPreviewTap } from '../../engine/yeastPreviewTap';
-import { getYeastRuntimeError, getYeastRuntimeStatus, processYeastRuntimeTransaction } from '../../engine/yeastRuntime';
+import { processYeastRuntimeTransaction } from '../../engine/yeastRuntime';
 import { yeastStore } from '../../stores/yeastStore';
 import { createYeastRuntimeProjection } from '../createYeastRuntimeProjection';
+import { publishYeastRuntimeStatus } from '../publishYeastRuntimeStatus';
 
 import type { MidiEvent, TransportInfo } from '../../models/MidiEvent';
 
@@ -16,25 +17,6 @@ type ProcessYeastMidiInput = {
     transport: TransportInfo;
     preserveInputTrackIds?: boolean;
 };
-
-function publishRuntimeStatus(): void {
-    const state = yeastStore.value;
-    if (!state) {
-        return;
-    }
-
-    const status = getYeastRuntimeStatus();
-    const error = getYeastRuntimeError();
-    const nextState = { ...state, runtimeStatus: status };
-    if (error) {
-        nextState.runtimeError = error;
-    } else {
-        delete nextState.runtimeError;
-    }
-    if (state.runtimeStatus !== nextState.runtimeStatus || state.runtimeError !== nextState.runtimeError) {
-        yeastStore.set(nextState);
-    }
-}
 
 export async function processYeastMidi(input: ProcessYeastMidiInput): Promise<MidiEvent[]> {
     const state = yeastStore.value;
@@ -59,10 +41,10 @@ export async function processYeastMidi(input: ProcessYeastMidiInput): Promise<Mi
             routeId: previewScope.routeId,
             projection,
         });
-        publishRuntimeStatus();
+        publishYeastRuntimeStatus();
         output = processed ?? [...input.events];
     } catch {
-        publishRuntimeStatus();
+        publishYeastRuntimeStatus();
         output = [...input.events];
     }
 
