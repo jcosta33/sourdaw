@@ -1,0 +1,19 @@
+src/modules/Command/useCases/__tests__/undoToIndex.integration.spec.ts
+  s_ab44d00b33ab9f::t_3dc3c5f5cf5cea 1-98
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "19cdda69cae1ec2ef1450350d0eda45fb8e4288a",
+  "prompts": {},
+  "sessions": {
+    "s_ab44d00b33ab9f": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8132-eefa-71e3-a80e-a76770a6734d",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
