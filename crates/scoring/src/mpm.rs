@@ -2,7 +2,7 @@
 ///
 /// NSDF(τ) = 2r(τ) / m₀(τ) — values in [-1, 1] with built-in clarity.
 /// Used as secondary confidence validation and fallback when YIN is uncertain.
-use crate::yin::fft_inplace;
+use crate::yin::{fft_autocorrelation, max_analysis_window};
 
 fn next_pow2(n: usize) -> usize {
     let mut v = n.max(1) - 1;
@@ -23,6 +23,8 @@ pub struct MpmDetector {
     min_tau: usize,
     nsdf: Vec<f32>,
     autocorr: Vec<f32>,
+    scratch_re: Vec<f32>,
+    scratch_im: Vec<f32>,
 
     pub frequency: f32,
     pub clarity: f32,
@@ -32,7 +34,9 @@ impl MpmDetector {
     pub fn new(sample_rate: f32, fmin: f32, fmax: f32) -> Self {
         let max_tau = (sample_rate / fmin) as usize + 1;
         let min_tau = (sample_rate / fmax) as usize;
-        let fft_size = next_pow2(max_tau * 2);
+        // Preallocate for the largest window this detector will ever see, so
+        // detect() never allocates on the audio thread.
+        let fft_size = next_pow2(max_analysis_window(sample_rate, fmin) * 2);
         Self {
             sample_rate,
             fmin,
@@ -42,6 +46,8 @@ impl MpmDetector {
             min_tau: min_tau.max(2),
             nsdf: vec![0.0; max_tau.min(4096) + 1],
             autocorr: vec![0.0; fft_size],
+            scratch_re: vec![0.0; fft_size],
+            scratch_im: vec![0.0; fft_size],
             frequency: 0.0,
             clarity: 0.0,
         }
@@ -51,40 +57,64 @@ impl MpmDetector {
     pub fn detect(&mut self, buffer: &[f32]) -> (f32, f32) {
         let len = buffer.len();
         if len < self.min_tau * 2 {
+            self.frequency = 0.0;
+            self.clarity = 0.0;
             return (0.0, 0.0);
         }
 
+        // Compute autocorrelation via FFT into preallocated scratch. The
+        // resize only fires for external buffers larger than the configured
+        // range ever produces — never on the engine audio path.
         let fft_size = next_pow2(len * 2);
         if self.autocorr.len() < fft_size {
             self.autocorr.resize(fft_size, 0.0);
+            self.scratch_re.resize(fft_size, 0.0);
+            self.scratch_im.resize(fft_size, 0.0);
         }
+        fft_autocorrelation(
+            &buffer[..len],
+            &mut self.autocorr,
+            &mut self.scratch_re[..fft_size],
+            &mut self.scratch_im[..fft_size],
+        );
 
-        // Compute autocorrelation via FFT
-        let mut re = vec![0.0_f32; fft_size];
-        let mut im = vec![0.0_f32; fft_size];
-        re[..len.min(fft_size)].copy_from_slice(&buffer[..len.min(fft_size)]);
-        fft_inplace(&mut re, &mut im, false);
-        for i in 0..fft_size {
-            re[i] = re[i] * re[i] + im[i] * im[i];
-            im[i] = 0.0;
+        // Move the autocorrelation out to satisfy the borrow checker without
+        // allocating; put it back afterwards.
+        let autocorr = std::mem::take(&mut self.autocorr);
+        let result = self.detect_from_autocorr(buffer, &autocorr);
+        self.autocorr = autocorr;
+        result
+    }
+
+    /// MPM peak-picking on a precomputed autocorrelation of `buffer` (full
+    /// length, zero-padded FFT form). Shared with the engine, which computes
+    /// one autocorrelation per analysis window for both detectors.
+    pub(crate) fn detect_from_autocorr(
+        &mut self,
+        buffer: &[f32],
+        autocorr: &[f32],
+    ) -> (f32, f32) {
+        let len = buffer.len();
+        if len < self.min_tau * 2 {
+            self.frequency = 0.0;
+            self.clarity = 0.0;
+            return (0.0, 0.0);
         }
-        fft_inplace(&mut re, &mut im, true);
 
         // Compute NSDF: 2r(τ) / m₀(τ)
         // m₀(τ) = cumulative energy normalization
         let max_tau = self.max_tau.min(len / 2);
-        let r0 = re[0]; // = sum of x² (total energy)
+        let r0 = autocorr[0]; // = sum of x² (total energy)
 
         for tau in 0..=max_tau {
             if tau >= self.nsdf.len() {
                 break;
             }
-            let m0 = 2.0 * (r0 - re[tau].abs() * 0.001); // approximation
-                                                         // More accurate: m₀(τ) = Σ(x_j² + x_{j+τ}²) for j=0..W-τ
-                                                         // Simplified: use 2*r(0) as upper bound
+            // More accurate: m₀(τ) = Σ(x_j² + x_{j+τ}²) for j=0..W-τ
+            // Simplified: use 2*r(0) decaying linearly as the window empties
             let m0_approx = 2.0 * r0 * (1.0 - tau as f32 / len as f32).max(0.01);
             self.nsdf[tau] = if m0_approx > 1e-10 {
-                2.0 * re[tau] / m0_approx
+                2.0 * autocorr[tau] / m0_approx
             } else {
                 0.0
             };

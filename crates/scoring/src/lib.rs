@@ -25,19 +25,7 @@ use yin::YinDetector;
 // ---------------------------------------------------------------------------
 
 const GATE_THRESHOLD: f32 = 0.005; // -46 dBFS noise gate
-const ANALYSIS_MIN_WINDOW: usize = 4096;
-const ANALYSIS_MAX_WINDOW: usize = 16384;
 const ANALYSIS_FMIN: f32 = 40.0; // lowest supported fundamental
-
-/// Analysis window scaled to the sample rate so the lowest supported
-/// fundamental always spans at least two full periods (the detectors clamp
-/// max_tau to len / 2). 4096 samples at 44.1–48 kHz, 8192 at 88.2–96 kHz.
-fn analysis_window_len(sample_rate: f32) -> usize {
-    let needed = (2.0 * sample_rate / ANALYSIS_FMIN) as usize;
-    needed
-        .next_power_of_two()
-        .clamp(ANALYSIS_MIN_WINDOW, ANALYSIS_MAX_WINDOW)
-}
 
 struct AnalysisBuffer {
     data: Vec<f32>,
@@ -248,7 +236,7 @@ pub struct ScoringEngine {
 impl ScoringEngine {
     pub fn new(sample_rate: f32) -> Self {
         let hop = (sample_rate / 30.0) as usize; // ~30 Hz analysis rate
-        let window = analysis_window_len(sample_rate);
+        let window = yin::max_analysis_window(sample_rate, ANALYSIS_FMIN);
 
         Self {
             sample_rate,
@@ -323,8 +311,11 @@ impl ScoringEngine {
                 // Run YIN (primary)
                 let (yin_freq, yin_conf) = self.yin.detect(&self.analysis_window);
 
-                // Run MPM (cross-check)
-                let (mpm_freq, mpm_clarity) = self.mpm.detect(&self.analysis_window);
+                // Run MPM (cross-check) on YIN's autocorrelation — one FFT
+                // pair per analysis tick instead of two.
+                let (mpm_freq, mpm_clarity) = self
+                    .mpm
+                    .detect_from_autocorr(&self.analysis_window, &self.yin.autocorr);
 
                 // Use YIN as primary; use MPM as fallback if YIN confidence is low
                 let (freq, conf) = if yin_conf > 0.5 {
@@ -613,5 +604,56 @@ mod tests {
             "engine noisy {freq} Hz -> {:.2} Hz ({:.1} cents off)",
             engine.frequency, err_cents
         );
+    }
+}
+
+/// RT-safety guard: steady-state `ScoringEngine::process` (mono + poly) must
+/// not allocate on the audio thread. Mirrors the daw-dsp assert_no_alloc
+/// pattern.
+#[cfg(all(test, debug_assertions))]
+mod no_alloc_tests {
+    use super::*;
+    use assert_no_alloc::assert_no_alloc;
+    use assert_no_alloc::AllocDisabler;
+    use std::f32::consts::TAU;
+
+    #[global_allocator]
+    static ALLOCATOR: AllocDisabler = AllocDisabler;
+
+    #[test]
+    fn process_does_not_allocate_in_steady_state() {
+        // Worst case: largest windows (8192) at 96 kHz, poly enabled.
+        let mut engine = ScoringEngine::new(96000.0);
+        engine.set_param("instrument", 0.0); // guitar standard
+        engine.set_param("poly", 1.0);
+
+        // Warm up past the first analysis/poly ticks so any lazy one-time
+        // setup happens outside the guarded region.
+        let mut left = [0.0_f32; 128];
+        let mut right = [0.0_f32; 128];
+        let mut n = 0usize;
+        for _ in 0..1500 {
+            for i in 0..128 {
+                let s = (TAU * 82.41 * n as f32 / 96000.0).sin() * 0.8;
+                left[i] = s;
+                right[i] = s;
+                n += 1;
+            }
+            engine.process(&mut left, &mut right);
+        }
+
+        // 64 callbacks cover several engine analysis ticks (hop = 3200
+        // samples) and at least one poly tick (hop = 6400 samples).
+        assert_no_alloc(|| {
+            for _ in 0..64 {
+                for i in 0..128 {
+                    let s = (TAU * 82.41 * n as f32 / 96000.0).sin() * 0.8;
+                    left[i] = s;
+                    right[i] = s;
+                    n += 1;
+                }
+                engine.process(&mut left, &mut right);
+            }
+        });
     }
 }
