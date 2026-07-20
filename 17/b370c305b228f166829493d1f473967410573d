@@ -1,0 +1,19 @@
+crates/daw-dsp/src/knead/psola.rs
+  s_d1b6e5ba563447::t_55b61d6a8fd592 26-27,74-77,80-101,106,112,124,132-268
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "17b370c305b228f166829493d1f473967410573d",
+  "prompts": {},
+  "sessions": {
+    "s_d1b6e5ba563447": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f81e8-b66e-76a0-aa99-1b2248cc9488",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
