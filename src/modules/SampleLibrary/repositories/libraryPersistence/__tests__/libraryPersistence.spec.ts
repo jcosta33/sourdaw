@@ -5,11 +5,11 @@ import { notifyUser } from '#/utils/Notification/notifyUser';
 import { isTauri } from '#/utils/tauriBridge';
 
 import { type LibraryRoot, type SampleRecord } from '../../../models/LibraryTypes';
-import { addLibraryRoot, addSamples, type LibraryState } from '../../../stores/libraryStore';
+import { addLibraryRoot, addSamples, setActiveRoot, type LibraryState } from '../../../stores/libraryStore';
 import { readTauriDirectory } from '../../readTauriDirectory';
 import * as helpers from '../helpers';
 import { persistLibraryRoots } from '../persistLibraryRoots';
-import { persistSamples } from '../persistSamples';
+import { persistSamples, ACTIVE_ROOT_KEY } from '../persistSamples';
 import { requestPermission } from '../requestPermission';
 import { restoreLibrary } from '../restoreLibrary';
 
@@ -22,6 +22,7 @@ vi.mock('../../../stores/libraryStore', () => ({
     addLibraryRoot: vi.fn(),
     addSamples: vi.fn(),
     updateLibraryRootStatus: vi.fn(),
+    setActiveRoot: vi.fn(),
 }));
 
 vi.mock('#/utils/tauriBridge', () => ({
@@ -182,6 +183,44 @@ describe('Library Persistence', () => {
             mockLibraryStore.value = null;
             await persistLibraryRoots();
             expect(helpers.openDb).not.toHaveBeenCalled();
+        });
+
+        it('serializes roots without their runtime handle and stores browser handles separately', async () => {
+            const handle = { kind: 'directory' } as unknown as FileSystemDirectoryHandle;
+            const browserRoot = createTauriRoot({ id: 'b1', provider: 'browser', handle });
+            const tauriRoot = createTauriRoot({ id: 't1' });
+            const db = createPersistenceDb();
+            vi.spyOn(helpers, 'openDb').mockResolvedValue(db as any);
+            mockLibraryStore.value = createLibraryState({ roots: [browserRoot, tauriRoot] });
+
+            await persistLibraryRoots();
+
+            expect(db.stores.roots.rows.get('b1')).toEqual(expect.objectContaining({ id: 'b1', handle: undefined }));
+            expect(db.stores.handles.rows.get('b1')).toEqual({ id: 'b1', handle });
+            expect(db.stores.handles.rows.has('t1')).toBe(false);
+        });
+
+        it.each([
+            [
+                'QuotaExceededError',
+                'Storage is full — connected folders could not be saved. Free up disk space and try again.',
+            ],
+            ['UnknownError', 'Could not save your connected folders; they may not reappear on reload.'],
+        ])('notifies on a %s persistence failure', async (name, expectedMessage) => {
+            vi.spyOn(helpers, 'openDb').mockResolvedValue({
+                transaction: () => {
+                    throw new DOMException('fail', name);
+                },
+                close: vi.fn(),
+            } as any);
+            mockLibraryStore.value = createLibraryState({ roots: [createTauriRoot()] });
+
+            await persistLibraryRoots();
+
+            expect(mockNotificationEventBus.emit).toHaveBeenCalledWith('ui.notify', {
+                message: expectedMessage,
+                level: 'error',
+            });
         });
     });
 
@@ -407,6 +446,83 @@ describe('Library Persistence', () => {
                 }),
                 { activate: false }
             );
+        });
+
+        it('restores a browsed root handle and marks it ready when read permission is granted', async () => {
+            const handle = {
+                queryPermission: vi.fn().mockResolvedValue('granted'),
+            } as unknown as FileSystemDirectoryHandle;
+            const root = createTauriRoot({ id: 'b1', provider: 'browser', status: 'offline' });
+            vi.spyOn(helpers, 'openDb').mockResolvedValue(
+                createRestoreDb({ roots: [root], handles: [{ id: 'b1', handle }] }) as any
+            );
+
+            await restoreLibrary();
+
+            expect(addLibraryRoot).toHaveBeenCalledWith(
+                expect.objectContaining({ id: 'b1', status: 'ready', handle }),
+                { activate: false }
+            );
+        });
+
+        it('flags a browsed root permission_required when read permission has lapsed', async () => {
+            const handle = {
+                queryPermission: vi.fn().mockResolvedValue('prompt'),
+            } as unknown as FileSystemDirectoryHandle;
+            const root = createTauriRoot({ id: 'b1', provider: 'browser', status: 'offline' });
+            vi.spyOn(helpers, 'openDb').mockResolvedValue(
+                createRestoreDb({ roots: [root], handles: [{ id: 'b1', handle }] }) as any
+            );
+
+            await restoreLibrary();
+
+            expect(addLibraryRoot).toHaveBeenCalledWith(
+                expect.objectContaining({ id: 'b1', status: 'permission_required', handle }),
+                { activate: false }
+            );
+        });
+
+        it('marks a browsed root offline when checking its permission throws', async () => {
+            const handle = {
+                queryPermission: vi.fn().mockRejectedValue(new Error('detached')),
+            } as unknown as FileSystemDirectoryHandle;
+            const root = createTauriRoot({ id: 'b1', provider: 'browser', status: 'offline' });
+            vi.spyOn(helpers, 'openDb').mockResolvedValue(
+                createRestoreDb({ roots: [root], handles: [{ id: 'b1', handle }] }) as any
+            );
+
+            await restoreLibrary();
+
+            expect(addLibraryRoot).toHaveBeenCalledWith(expect.objectContaining({ id: 'b1', status: 'offline' }), {
+                activate: false,
+            });
+        });
+
+        it('marks a browsed root offline when its persisted handle cannot be found', async () => {
+            const root = createTauriRoot({ id: 'b1', provider: 'browser', status: 'offline' });
+            vi.spyOn(helpers, 'openDb').mockResolvedValue(createRestoreDb({ roots: [root], handles: [] }) as any);
+
+            await restoreLibrary();
+
+            expect(addLibraryRoot).toHaveBeenCalledWith(expect.objectContaining({ id: 'b1', status: 'offline' }), {
+                activate: false,
+            });
+        });
+
+        it('restores the previously focused root id from localStorage', async () => {
+            vi.mocked(isTauri).mockReturnValue(true);
+            vi.mocked(readTauriDirectory).mockResolvedValue([]);
+            const root = createTauriRoot({ id: 'root-1' });
+            localStorage.setItem(ACTIVE_ROOT_KEY, 'root-1');
+            vi.spyOn(helpers, 'openDb').mockResolvedValue(createRestoreDb({ roots: [root] }) as any);
+            // setActiveRoot only fires for a saved id that matches a root the
+            // in-memory store already knows about; addLibraryRoot is mocked, so
+            // that root must be seeded here rather than relying on the restore.
+            mockLibraryStore.value = createLibraryState({ roots: [root] });
+
+            await restoreLibrary();
+
+            expect(setActiveRoot).toHaveBeenCalledWith('root-1');
         });
     });
 });

@@ -1,5 +1,6 @@
 pub mod audio_bridge;
 pub mod audio_thread;
+pub mod midi;
 pub mod midi_fx;
 pub mod mts_esp;
 pub mod plugin_slot;
