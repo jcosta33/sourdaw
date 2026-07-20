@@ -759,7 +759,25 @@ describe('createYeastWorker — processBlock lifecycle', () => {
             routeId: 'track-a',
             trackId: 'track-a',
             previewEnabled: false,
+            preserveInputTrackIds: false,
         });
+
+        replyProcessed(worker, 0, []);
+        await expect(promise).resolves.toEqual([]);
+    });
+
+    it('forwards route-preservation requests to the Worker protocol', async () => {
+        const node = await createYeastWorker(makeContext());
+        const worker = lastWorker();
+        const promise = node.processBlock([], 0, 128, transport, 'track-a', false, 'rack-a', 'track-a', 0, true);
+
+        expect(worker.postMessage).toHaveBeenCalledWith(
+            expect.objectContaining({
+                type: 'processBlock',
+                trackId: 'track-a',
+                preserveInputTrackIds: true,
+            })
+        );
 
         replyProcessed(worker, 0, []);
         await expect(promise).resolves.toEqual([]);

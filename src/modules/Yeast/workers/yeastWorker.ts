@@ -12,7 +12,7 @@
  *   → { type: 'projectionAck', projectionId, events }
  *   → { type: 'projectionError', projectionId, error }
  *   ← { type: 'executeCommand', commandId, command }
- *   ← { type: 'processBlock', requestId, captureEpoch, rackId, routeId, trackId, events, blockStart, blockEnd, transport, previewEnabled }
+ *   ← { type: 'processBlock', requestId, captureEpoch, rackId, routeId, trackId, events, blockStart, blockEnd, transport, previewEnabled, preserveInputTrackIds }
  *   → { type: 'commandAck', commandId, accepted, error? }
  *   → { type: 'processed',    requestId, events }
  *   → { type: 'previewPage',  requestId, captureEpoch, page } (lossy/deferred)
@@ -40,6 +40,7 @@ type YeastProcessBlockMessage = {
     blockEnd: number;
     transport: TransportInfo;
     previewEnabled: boolean;
+    preserveInputTrackIds: boolean;
 };
 
 type ParsedExecuteCommand = {
@@ -167,7 +168,8 @@ function parseProcessBlock(value: unknown): YeastProcessBlockMessage | undefined
         !isFiniteNumber(value.blockStart) ||
         !isFiniteNumber(value.blockEnd) ||
         !isTransportInfo(value.transport) ||
-        (value.previewEnabled !== undefined && typeof value.previewEnabled !== 'boolean')
+        (value.previewEnabled !== undefined && typeof value.previewEnabled !== 'boolean') ||
+        (value.preserveInputTrackIds !== undefined && typeof value.preserveInputTrackIds !== 'boolean')
     ) {
         return undefined;
     }
@@ -183,6 +185,7 @@ function parseProcessBlock(value: unknown): YeastProcessBlockMessage | undefined
         blockEnd: value.blockEnd,
         transport: value.transport,
         previewEnabled: value.previewEnabled === true,
+        preserveInputTrackIds: value.preserveInputTrackIds === true,
     };
 }
 
@@ -421,7 +424,8 @@ export function handleYeastWorkerMessage({ data, rack, postMessage }: YeastWorke
             message.previewEnabled,
             message.rackId,
             message.routeId,
-            message.captureEpoch
+            message.captureEpoch,
+            message.preserveInputTrackIds
         );
         postMessage({ type: 'processed', requestId: message.requestId, events: processed });
         const page = rack.takePreviewPage();

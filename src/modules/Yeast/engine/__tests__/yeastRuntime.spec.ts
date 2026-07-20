@@ -29,6 +29,7 @@ type RuntimeBlockInput = {
     blockStartSamples: number;
     blockEndSamples: number;
     transport: TransportInfo;
+    preserveInputTrackIds?: boolean;
 };
 
 type RuntimeWithTransaction = typeof import('../yeastRuntime') & {
@@ -64,7 +65,11 @@ function makeNode(context: BaseAudioContext) {
                 blockEnd: number,
                 transport: TransportInfo,
                 trackId: string,
-                previewEnabled?: boolean
+                previewEnabled?: boolean,
+                rackId?: string,
+                routeId?: string,
+                captureEpoch?: number,
+                preserveInputTrackIds?: boolean
             ) => Promise<MidiEvent[]>
         >(() => Promise.resolve([])),
         setProjection: vi.fn(),
@@ -168,6 +173,29 @@ describe('yeastRuntime', () => {
         await expect(initialization).resolves.toBe(node);
         expect(node.setProjection).toHaveBeenCalledTimes(1);
         expect(node.setProjection).toHaveBeenCalledWith(projectionB);
+    });
+
+    it('forwards route preservation through a runtime transaction', async () => {
+        const runtime = await loadRuntime();
+        const context = {} as BaseAudioContext;
+        const node = makeNode(context);
+        createNode.mockResolvedValueOnce(node);
+        const input = { ...makeRuntimeBlockInput(context), preserveInputTrackIds: true };
+
+        await (runtime as RuntimeWithTransaction).processYeastRuntimeTransaction(input);
+
+        expect(node.processBlock).toHaveBeenCalledWith(
+            input.events,
+            input.blockStartSamples,
+            input.blockEndSamples,
+            expect.objectContaining(input.transport),
+            input.trackId,
+            false,
+            input.rackId,
+            input.routeId,
+            0,
+            true
+        );
     });
 
     it('does not publish ready before projection execution is acknowledged', async () => {

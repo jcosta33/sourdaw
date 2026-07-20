@@ -14,6 +14,7 @@ type ProcessYeastMidiInput = {
     blockStartSamples: number;
     blockEndSamples: number;
     transport: TransportInfo;
+    preserveInputTrackIds?: boolean;
 };
 
 function publishRuntimeStatus(): void {

@@ -294,10 +294,9 @@ describe('scheduleMidiNotes', () => {
         expect(scheduleNote).not.toHaveBeenCalled();
     });
 
-    // §2 — A looping Yeast clip must run the Worker once per loop iteration so a
-    // bar-aware processor sees iter-correct event positions, instead of running
-    // once and replaying one iteration's output at every offset.
-    it('runs the Yeast Worker per loop iteration over a looping clip (§2)', async () => {
+    // §2 — A looping Yeast clip must feed every visible iteration into one rack
+    // transaction so stateful processors advance once per scheduler block.
+    it('runs one Yeast rack pass containing every looping clip iteration (§2)', async () => {
         const track = midiTrack({
             clips: [midiClip({ endBeat: 8, loopEnabled: true, loopLength: 2 })],
             devices: [{ id: 'y', type: 'yeast' }],
@@ -308,12 +307,14 @@ describe('scheduleMidiNotes', () => {
             notesByClipId: { 'clip-1': [{ id: 'n0', pitch: 60, startBeat: 0, duration: 1, velocity: 100 }] },
         };
 
-        // Record the noteOn sample positions the Worker sees per call. The
-        // processor echoes its input back so we observe per-iteration placement.
-        const seenNoteOnSamples: number[][] = [];
+        // The processor echoes its input so route-preserved source notes can be
+        // projected back through their owning iterations.
+        let seenNoteOnSamples: number[] = [];
         const processYeast = vi.fn<typeof processYeastMidi>((input) => {
             const events = input.events;
-            seenNoteOnSamples.push(events.filter((e) => e.kind.type === 'noteOn').map((e) => e.timeSamples));
+            seenNoteOnSamples = events
+                .filter((event) => event.kind.type === 'noteOn')
+                .map((event) => event.timeSamples);
             return Promise.resolve([...events]);
         });
         vi.mocked(processYeastMidi).mockImplementation(processYeast);
@@ -321,13 +322,50 @@ describe('scheduleMidiNotes', () => {
         // clip endBeat 8, loopLength 2 => ceil(8/2) = 4 iterations.
         await scheduleMidiNotes(0, 8, 0, -1, [], defaultTransportState, 120);
 
-        // The Worker ran once per iteration (was once total before the fix).
-        expect(processYeast).toHaveBeenCalledTimes(4);
-        // Each iteration placed its note at a distinct, iteration-shifted sample
-        // position (2 beats apart at 120bpm/48k = 48000 samples), not a single
-        // replayed position.
-        const firstSampleEachIter = seenNoteOnSamples.map((arr) => arr[0]);
-        expect(firstSampleEachIter).toEqual([0, 48000, 96000, 144000]);
+        expect(processYeast).toHaveBeenCalledTimes(1);
+        expect(processYeast).toHaveBeenCalledWith(expect.objectContaining({ preserveInputTrackIds: true }));
+        expect(seenNoteOnSamples).toEqual([0, 48000, 96000, 144000]);
+    });
+
+    it('schedules track-scoped generator output in a narrow later-loop window', async () => {
+        const track = midiTrack({
+            clips: [midiClip({ endBeat: 8, loopEnabled: true, loopLength: 2 })],
+            devices: [{ id: 'y', type: 'yeast' }],
+        });
+        (trackStore as { value: unknown }).value = { tracks: [track] };
+        (midiStore as { value: unknown }).value = {
+            notesByClipId: { 'clip-1': [{ id: 'n0', pitch: 60, startBeat: 0, duration: 1, velocity: 100 }] },
+        };
+        vi.mocked(processYeastMidi).mockResolvedValue([
+            {
+                timeSamples: 144000,
+                timePpq: 6,
+                trackId: 'track-1',
+                kind: { type: 'noteOn', channel: 0, note: 64, velocity: 90 },
+            },
+            {
+                timeSamples: 168000,
+                timePpq: 7,
+                trackId: 'track-1',
+                kind: { type: 'noteOff', channel: 0, note: 64 },
+            },
+        ]);
+
+        await scheduleMidiNotes(6, 8, 6, -1, [], defaultTransportState, 120);
+
+        expect(processYeastMidi).toHaveBeenCalledTimes(1);
+        expect(processYeastMidi).toHaveBeenCalledWith(
+            expect.objectContaining({
+                blockStartSamples: 144000,
+                blockEndSamples: 192000,
+                preserveInputTrackIds: true,
+            })
+        );
+        expect(scheduleNote).toHaveBeenCalledTimes(1);
+        const scheduled = vi.mocked(scheduleNote).mock.calls[0]!;
+        expect(scheduled[2]).toBe(64);
+        expect(scheduled[3]).toBe(0);
+        expect(scheduled[4]).toBe(0.5);
     });
 
     // §3 — The Yeast block's beats↔samples conversion must use the tempo map's
