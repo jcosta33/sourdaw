@@ -306,9 +306,7 @@ describe('migrateLegacyVcaGroups', () => {
         const trackCollections = [trackCollection('root', ['track-new', 'track-old'])];
         const initial = requireReady(
             migrateLegacyVcaGroups({
-                legacyGroups: [
-                    { id: 'vca-old', name: 'Old', gain: 1, muted: false, trackIds: ['track-old'] },
-                ],
+                legacyGroups: [{ id: 'vca-old', name: 'Old', gain: 1, muted: false, trackIds: ['track-old'] }],
                 trackCollections,
             })
         );
@@ -319,9 +317,7 @@ describe('migrateLegacyVcaGroups', () => {
 
         const result = requireReady(
             migrateLegacyVcaGroups({
-                legacyGroups: [
-                    { id: 'vca-new', name: 'New', gain: 1, muted: false, trackIds: ['track-new'] },
-                ],
+                legacyGroups: [{ id: 'vca-new', name: 'New', gain: 1, muted: false, trackIds: ['track-new'] }],
                 existingCandidates: [{ ...existingCandidate, id: 'vca-new', order: 1 }],
                 trackCollections,
             })

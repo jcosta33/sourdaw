@@ -115,4 +115,21 @@ describe('evaluateFollowActions', () => {
         expect(result.shouldStop).toBe(false);
         expect(result.jumpToPosition).toBeNull();
     });
+
+    it('should not jump when play_previous has no earlier clip to jump to', () => {
+        const track = makeTrack([
+            makeClip({ id: 'a', startBeat: 0, endBeat: 4, followAction: 'play_previous' }),
+            makeClip({ id: 'b', startBeat: 8, endBeat: 12 }),
+        ]);
+        const result = evaluateFollowActions([track], 3, 5);
+        expect(result.jumpToPosition).toBeNull();
+        expect(result.shouldStop).toBe(false);
+    });
+
+    it('should not jump when play_random has no other clips to choose from', () => {
+        const track = makeTrack([makeClip({ id: 'a', startBeat: 0, endBeat: 4, followAction: 'play_random' })]);
+        const result = evaluateFollowActions([track], 3, 5);
+        expect(result.jumpToPosition).toBeNull();
+        expect(result.shouldStop).toBe(false);
+    });
 });
