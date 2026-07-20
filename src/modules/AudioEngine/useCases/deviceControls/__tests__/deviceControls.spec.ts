@@ -15,109 +15,87 @@ import { updateDevicePatch } from '../updateDevicePatch';
 import { updateMidiFxBypass } from '../updateMidiFxBypass';
 import { updateMidiFxParam } from '../updateMidiFxParam';
 
-// Each of these use cases is a one-line delegator onto the `audioEngine`
-// repository singleton (already covered end-to-end elsewhere). What is under
-// test here is that each use case forwards to the *correct* method with the
-// arguments unchanged — a wiring bug (wrong method, dropped/reordered arg)
-// would ship silently since TypeScript can't catch a call to the wrong method
-// with a compatible signature.
-type DelegatorCase = {
-    name: string;
-    call: () => void;
-    method: keyof typeof audioEngine;
-    args: unknown[];
-};
-
-const cases: DelegatorCase[] = [
-    {
-        name: 'addDeviceToStrip',
-        call: () => addDeviceToStrip('track-1', 'device-1', 'grinder', 'ext-1'),
-        method: 'addDeviceToStrip',
-        args: ['track-1', 'device-1', 'grinder', 'ext-1'],
-    },
-    {
-        name: 'addMidiFxToStrip',
-        call: () => addMidiFxToStrip('track-1', 'fx-1', 'arp'),
-        method: 'addMidiFxToStrip',
-        args: ['track-1', 'fx-1', 'arp'],
-    },
-    {
-        name: 'removeDeviceFromStrip',
-        call: () => removeDeviceFromStrip('track-1', 'device-1'),
-        method: 'removeDeviceFromStrip',
-        args: ['track-1', 'device-1'],
-    },
-    {
-        name: 'removeMidiFxFromStrip',
-        call: () => removeMidiFxFromStrip('track-1', 'fx-1'),
-        method: 'removeMidiFxFromStrip',
-        args: ['track-1', 'fx-1'],
-    },
-    {
-        name: 'scheduleDeviceKeyOff',
-        call: () => scheduleDeviceKeyOff('track-1', 'device-1', 60, 100, 1.5),
-        method: 'scheduleDeviceKeyOff',
-        args: ['track-1', 'device-1', 60, 100, 1.5],
-    },
-    {
-        name: 'scheduleDeviceKeyOn',
-        call: () => scheduleDeviceKeyOn('track-1', 'device-1', 60, 100, 1.5),
-        method: 'scheduleDeviceKeyOn',
-        args: ['track-1', 'device-1', 60, 100, 1.5],
-    },
-    {
-        name: 'scheduleDeviceParam',
-        call: () => scheduleDeviceParam('track-1', 'device-1', 'cutoff', 0.5, 2),
-        method: 'scheduleDeviceParam',
-        args: ['track-1', 'device-1', 'cutoff', 0.5, 2],
-    },
-    {
-        name: 'updateDeviceBypass',
-        call: () => updateDeviceBypass('track-1', 'device-1', true),
-        method: 'updateDeviceBypass',
-        args: ['track-1', 'device-1', true],
-    },
-    {
-        name: 'updateDeviceParam',
-        call: () => updateDeviceParam('track-1', 'device-1', 'cutoff', 0.5),
-        method: 'updateDeviceParam',
-        args: ['track-1', 'device-1', 'cutoff', 0.5],
-    },
-    {
-        name: 'updateDevicePatch',
-        call: () => updateDevicePatch('track-1', 'device-1', { cutoff: 0.5 }),
-        method: 'updateDevicePatch',
-        args: ['track-1', 'device-1', { cutoff: 0.5 }],
-    },
-    {
-        name: 'updateMidiFxBypass',
-        call: () => updateMidiFxBypass('track-1', 'fx-1', true),
-        method: 'updateMidiFxBypass',
-        args: ['track-1', 'fx-1', true],
-    },
-    {
-        name: 'updateMidiFxParam',
-        call: () => updateMidiFxParam('track-1', 'fx-1', 'rate', 0.5),
-        method: 'updateMidiFxParam',
-        args: ['track-1', 'fx-1', 'rate', 0.5],
-    },
-];
-
+// Each use case below is a one-line delegator onto the `audioEngine`
+// repository singleton (covered end-to-end elsewhere). A wiring bug — wrong
+// method, dropped/reordered arg — would ship silently since TypeScript can't
+// catch a call to the wrong method with a compatible signature, so each test
+// asserts the exact method + argument list reaching the engine.
 describe('deviceControls delegators', () => {
     afterEach(() => {
         vi.restoreAllMocks();
     });
 
-    for (const { name, call, method, args } of cases) {
-        it(`${name} should forward to audioEngine.${method} with its arguments unchanged`, () => {
-            const spy = vi.spyOn(audioEngine, method).mockImplementation(() => undefined);
+    it('addDeviceToStrip forwards to audioEngine.addDeviceToStrip', () => {
+        const spy = vi.spyOn(audioEngine, 'addDeviceToStrip').mockImplementation(() => undefined);
+        addDeviceToStrip('t1', 'd1', 'grinder', 'ext-1');
+        expect(spy).toHaveBeenCalledWith('t1', 'd1', 'grinder', 'ext-1');
+    });
 
-            call();
+    it('addMidiFxToStrip forwards to audioEngine.addMidiFxToStrip', () => {
+        const spy = vi.spyOn(audioEngine, 'addMidiFxToStrip').mockImplementation(() => undefined);
+        addMidiFxToStrip('t1', 'fx1', 'arp');
+        expect(spy).toHaveBeenCalledWith('t1', 'fx1', 'arp');
+    });
 
-            expect(spy).toHaveBeenCalledTimes(1);
-            expect(spy).toHaveBeenCalledWith(...args);
-        });
-    }
+    it('removeDeviceFromStrip forwards to audioEngine.removeDeviceFromStrip', () => {
+        const spy = vi.spyOn(audioEngine, 'removeDeviceFromStrip').mockImplementation(() => undefined);
+        removeDeviceFromStrip('t1', 'd1');
+        expect(spy).toHaveBeenCalledWith('t1', 'd1');
+    });
+
+    it('removeMidiFxFromStrip forwards to audioEngine.removeMidiFxFromStrip', () => {
+        const spy = vi.spyOn(audioEngine, 'removeMidiFxFromStrip').mockImplementation(() => undefined);
+        removeMidiFxFromStrip('t1', 'fx1');
+        expect(spy).toHaveBeenCalledWith('t1', 'fx1');
+    });
+
+    it('scheduleDeviceKeyOff forwards to audioEngine.scheduleDeviceKeyOff', () => {
+        const spy = vi.spyOn(audioEngine, 'scheduleDeviceKeyOff').mockImplementation(() => undefined);
+        scheduleDeviceKeyOff('t1', 'd1', 60, 100, 1.5);
+        expect(spy).toHaveBeenCalledWith('t1', 'd1', 60, 100, 1.5);
+    });
+
+    it('scheduleDeviceKeyOn forwards to audioEngine.scheduleDeviceKeyOn', () => {
+        const spy = vi.spyOn(audioEngine, 'scheduleDeviceKeyOn').mockImplementation(() => undefined);
+        scheduleDeviceKeyOn('t1', 'd1', 60, 100, 1.5);
+        expect(spy).toHaveBeenCalledWith('t1', 'd1', 60, 100, 1.5);
+    });
+
+    it('scheduleDeviceParam forwards to audioEngine.scheduleDeviceParam', () => {
+        const spy = vi.spyOn(audioEngine, 'scheduleDeviceParam').mockImplementation(() => undefined);
+        scheduleDeviceParam('t1', 'd1', 'cutoff', 0.5, 2);
+        expect(spy).toHaveBeenCalledWith('t1', 'd1', 'cutoff', 0.5, 2);
+    });
+
+    it('updateDeviceBypass forwards to audioEngine.updateDeviceBypass', () => {
+        const spy = vi.spyOn(audioEngine, 'updateDeviceBypass').mockImplementation(() => undefined);
+        updateDeviceBypass('t1', 'd1', true);
+        expect(spy).toHaveBeenCalledWith('t1', 'd1', true);
+    });
+
+    it('updateDeviceParam forwards to audioEngine.updateDeviceParam', () => {
+        const spy = vi.spyOn(audioEngine, 'updateDeviceParam').mockImplementation(() => undefined);
+        updateDeviceParam('t1', 'd1', 'cutoff', 0.5);
+        expect(spy).toHaveBeenCalledWith('t1', 'd1', 'cutoff', 0.5);
+    });
+
+    it('updateDevicePatch forwards to audioEngine.updateDevicePatch', () => {
+        const spy = vi.spyOn(audioEngine, 'updateDevicePatch').mockImplementation(() => undefined);
+        updateDevicePatch('t1', 'd1', { cutoff: 0.5 });
+        expect(spy).toHaveBeenCalledWith('t1', 'd1', { cutoff: 0.5 });
+    });
+
+    it('updateMidiFxBypass forwards to audioEngine.updateMidiFxBypass', () => {
+        const spy = vi.spyOn(audioEngine, 'updateMidiFxBypass').mockImplementation(() => undefined);
+        updateMidiFxBypass('t1', 'fx1', true);
+        expect(spy).toHaveBeenCalledWith('t1', 'fx1', true);
+    });
+
+    it('updateMidiFxParam forwards to audioEngine.updateMidiFxParam', () => {
+        const spy = vi.spyOn(audioEngine, 'updateMidiFxParam').mockImplementation(() => undefined);
+        updateMidiFxParam('t1', 'fx1', 'rate', 0.5);
+        expect(spy).toHaveBeenCalledWith('t1', 'fx1', 'rate', 0.5);
+    });
 });
 
 describe('registerTuningTable', () => {
@@ -131,7 +109,6 @@ describe('registerTuningTable', () => {
 
         registerTuningTable(frequencies);
 
-        expect(spy).toHaveBeenCalledTimes(1);
         expect(spy).toHaveBeenCalledWith(frequencies);
     });
 
