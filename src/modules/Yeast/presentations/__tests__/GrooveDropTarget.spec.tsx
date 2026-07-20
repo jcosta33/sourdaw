@@ -9,7 +9,7 @@ import { trackStore, type TrackStoreState } from '#/modules/Arrangement/stores';
 import { clearHandlerRegistry, registerHandlerMap, undoStore } from '#/modules/Command/stores';
 import { clearUndoHistory } from '#/modules/Command/useCases';
 import { defaultGrooveTemplateState, grooveTemplateStore } from '#/modules/MIDI/stores';
-import { getMidiGrooveHandlers, setMidiStoreState } from '#/modules/MIDI/useCases';
+import { createGrooveTemplate, getMidiGrooveHandlers, setMidiStoreState } from '#/modules/MIDI/useCases';
 
 import { GrooveDropTarget } from '../views/GrooveDropTarget';
 
@@ -145,6 +145,77 @@ describe('GrooveDropTarget', () => {
         expect(screen.queryByText('Previewing “Source clip groove”')).not.toBeInTheDocument();
         expect(grooveTemplateStore.value).toEqual(defaultGrooveTemplateState);
         expect(undoStore.value?.past).toEqual([]);
+    });
+
+    it('rejects confirmation when the displayed source notes changed', async () => {
+        render(<GrooveDropTarget />);
+        fireEvent.drop(screen.getByLabelText('Extract groove from MIDI clip'), {
+            dataTransfer: createDataTransfer('clip-source'),
+        });
+        await screen.findByText('Previewing “Source clip groove”');
+
+        setMidiStoreState({
+            notesByClipId: {
+                'clip-source': [{ id: 'late', pitch: 60, startBeat: 0.04, duration: 0.25, velocity: 96 }],
+            },
+            ccByClipId: {},
+            pitchBendByClipId: {},
+        });
+        fireEvent.click(screen.getByRole('button', { name: 'Save groove' }));
+
+        expect(await screen.findByRole('alert')).toHaveTextContent('The groove template could not be saved.');
+        expect(grooveTemplateStore.value).toEqual(defaultGrooveTemplateState);
+        expect(undoStore.value?.past).toEqual([]);
+    });
+
+    it('rejects confirmation when the displayed source notes were deleted', async () => {
+        render(<GrooveDropTarget />);
+        fireEvent.drop(screen.getByLabelText('Extract groove from MIDI clip'), {
+            dataTransfer: createDataTransfer('clip-source'),
+        });
+        await screen.findByText('Previewing “Source clip groove”');
+
+        setMidiStoreState({ notesByClipId: {}, ccByClipId: {}, pitchBendByClipId: {} });
+        fireEvent.click(screen.getByRole('button', { name: 'Save groove' }));
+
+        expect(await screen.findByRole('alert')).toHaveTextContent('The groove template could not be saved.');
+        expect(grooveTemplateStore.value).toEqual(defaultGrooveTemplateState);
+        expect(undoStore.value?.past).toEqual([]);
+    });
+
+    it('shows and commits a collision-resolved name while an identical retry remains a no-write', async () => {
+        createGrooveTemplate({
+            id: 'occupied-name',
+            name: 'Source clip groove',
+            subdivision: '1/16',
+            slots: [{ index: 1, timingOffset: 0.1, dynamicsOffset: 0 }],
+            provenance: { type: 'user', sourceId: 'occupied-name' },
+        });
+        render(<GrooveDropTarget />);
+
+        fireEvent.drop(screen.getByLabelText('Extract groove from MIDI clip'), {
+            dataTransfer: createDataTransfer('clip-source'),
+        });
+        expect(await screen.findByText('Previewing “Source clip groove 2”')).toBeInTheDocument();
+        fireEvent.click(screen.getByRole('button', { name: 'Save groove' }));
+
+        await waitFor(() => {
+            expect(grooveTemplateStore.value?.templates).toContainEqual(
+                expect.objectContaining({ id: 'groove-clip-source-v1', name: 'Source clip groove 2' })
+            );
+        });
+        expect(undoStore.value?.past).toHaveLength(1);
+
+        fireEvent.drop(screen.getByLabelText('Extract groove from MIDI clip'), {
+            dataTransfer: createDataTransfer('clip-source'),
+        });
+        expect(await screen.findByText('Previewing “Source clip groove 2”')).toBeInTheDocument();
+        fireEvent.click(screen.getByRole('button', { name: 'Save groove' }));
+
+        await waitFor(() => {
+            expect(screen.queryByText('Previewing “Source clip groove 2”')).not.toBeInTheDocument();
+        });
+        expect(undoStore.value?.past).toHaveLength(1);
     });
 
     it('shows typed empty and unsupported results without creating history', async () => {

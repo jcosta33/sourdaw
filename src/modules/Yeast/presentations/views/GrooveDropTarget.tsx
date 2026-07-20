@@ -73,6 +73,8 @@ export const GrooveDropTarget = ({ subdivision = '1/16' }: Props): ReactElement 
                 sourceName: proposal.sourceName,
                 subdivision: proposal.subdivision,
                 templateId: proposal.template.id,
+                proposal: structuredClone(proposal.template),
+                sourceRevision: proposal.sourceRevision,
             });
             setProposal(null);
         } catch {

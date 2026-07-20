@@ -52,9 +52,11 @@ export { getScopedGrooveAssignment } from './grooveTemplates/getScopedGrooveAssi
 export { getScopedGrooveConsumerId } from './grooveTemplates/getScopedGrooveConsumerId';
 export { getCanonicalGrooveTemplateKey } from './grooveTemplates/getCanonicalGrooveTemplateKey';
 export { getGrooveTemplate } from './grooveTemplates/getGrooveTemplate';
+export { getSupportedGrooveSubdivisions } from './grooveTemplates/getSupportedGrooveSubdivisions';
 export { getStraightGrooveTemplateId } from './grooveTemplates/getStraightGrooveTemplateId';
 export { hydrateGrooveTemplates } from './grooveTemplates/hydrateGrooveTemplates';
 export { previewGrooveTemplate } from './grooveTemplates/previewGrooveTemplate';
+export { prepareGrooveExtraction } from './grooveTemplates/prepareGrooveExtraction';
 export { projectClipMidiEvents } from './grooveTemplates/projectClipMidiEvents';
 export { projectCommittedGroove } from './grooveTemplates/projectCommittedGroove';
 export { renameGrooveTemplate } from './grooveTemplates/renameGrooveTemplate';

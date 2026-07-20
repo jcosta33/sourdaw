@@ -19,7 +19,10 @@ const storeMock = vi.hoisted(
         setYeastState: vi.fn(),
     })
 );
-const grooveMocks = vi.hoisted(() => ({ setYeastGrooveTemplate: vi.fn() }));
+const grooveMocks = vi.hoisted(() => ({
+    setYeastGrooveTemplate: vi.fn(),
+    proposeYeastGrooveExtraction: vi.fn(),
+}));
 const runtimeMocks = vi.hoisted(() => ({
     applyProjection: vi.fn((): Promise<void> => Promise.resolve()),
     getStatus: vi.fn((): YeastRuntimeStatus => 'ready'),
@@ -44,6 +47,10 @@ vi.mock('../../../useCases/getYeastGrooveAssignment', () => ({
 
 vi.mock('../../../useCases/setYeastGrooveTemplate', () => ({
     setYeastGrooveTemplate: grooveMocks.setYeastGrooveTemplate,
+}));
+
+vi.mock('../../../useCases/proposeYeastGrooveExtraction', () => ({
+    proposeYeastGrooveExtraction: grooveMocks.proposeYeastGrooveExtraction,
 }));
 
 vi.mock('../../../stores/yeastStore', () => ({
@@ -163,6 +170,45 @@ describe('YeastPanel', () => {
 
         fireEvent.change(templateSelect, { target: { value: 'groove-straight' } });
         expect(grooveMocks.setYeastGrooveTemplate).toHaveBeenCalledWith('groove-1', 'groove-straight');
+    });
+
+    it('passes a supported non-default extraction subdivision to the groove drop target', async () => {
+        storeMock.yeastState = {
+            processors: [{ id: 'groove-1', type: 'groove', name: 'Groove', bypassed: false }],
+            uiLevel: 3,
+        };
+        grooveMocks.proposeYeastGrooveExtraction.mockReturnValue({
+            status: 'extracted',
+            clipId: 'clip-source',
+            sourceName: 'Source clip',
+            subdivision: '1/32',
+            sourceRevision: 'source-revision',
+            template: {
+                id: 'groove-clip-source-v1',
+                name: 'Source clip groove',
+                schemaVersion: 1,
+                subdivision: '1/32',
+                slots: [{ index: 1, timingOffset: 0.1, dynamicsOffset: 0 }],
+                provenance: { type: 'midi-clip', sourceId: 'clip-source', analyzerVersion: 1 },
+            },
+        });
+
+        render(<YeastPanel />);
+        fireEvent.click(screen.getAllByText('Groove')[0]!);
+        fireEvent.change(screen.getByRole('combobox', { name: 'Groove extraction subdivision' }), {
+            target: { value: '1/32' },
+        });
+        fireEvent.drop(screen.getByLabelText('Extract groove from MIDI clip'), {
+            dataTransfer: {
+                getData: (type: string) => (type === 'application/x-sourdaw-midi-clip' ? 'clip-source' : ''),
+            },
+        });
+
+        expect(grooveMocks.proposeYeastGrooveExtraction).toHaveBeenCalledWith({
+            clipId: 'clip-source',
+            subdivision: '1/32',
+        });
+        expect(await screen.findByText('Previewing “Source clip groove”')).toBeInTheDocument();
     });
 
     it('reports a rejected processor control update through rack feedback immediately', async () => {

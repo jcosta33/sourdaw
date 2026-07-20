@@ -20,7 +20,7 @@ import { Row, Stack, Grid } from '#/components/layout';
 import { useStore } from '#/infra/store/useStore';
 import { defaultTrackState, trackStore, type TrackStoreState } from '#/modules/Arrangement/stores';
 import { defaultGrooveTemplateState, grooveTemplateStore } from '#/modules/MIDI/stores';
-import { getStraightGrooveTemplateId } from '#/modules/MIDI/useCases';
+import { getStraightGrooveTemplateId, getSupportedGrooveSubdivisions } from '#/modules/MIDI/useCases';
 
 import { createDefaultPattern, type ArpStep } from '../../models/ArpPattern';
 import { PROCESSOR_TYPES } from '../../models/ProcessorCatalog';
@@ -193,8 +193,11 @@ const defaultYeastState: YeastState = {
     uiLevel: 1,
 };
 
+const GROOVE_EXTRACTION_SUBDIVISIONS = getSupportedGrooveSubdivisions();
+
 const GrooveAwareProcessorParams = ({ processor }: { processor: YeastProcessorInfo }): ReactElement => {
     const grooveState = useStore(grooveTemplateStore, defaultGrooveTemplateState);
+    const [extractionSubdivision, setExtractionSubdivision] = useState('1/16');
     const assignment = getYeastGrooveAssignment(processor.id);
     const selectedGrooveTemplateId = assignment?.templateId ?? getStraightGrooveTemplateId();
     const selectedGrooveTemplate = grooveState.templates.find((template) => template.id === selectedGrooveTemplateId);
@@ -215,7 +218,25 @@ const GrooveAwareProcessorParams = ({ processor }: { processor: YeastProcessorIn
                 grooveAmount={assignment?.amount ?? processor.params?.amount ?? 0.5}
                 onSetGrooveTemplate={setYeastGrooveTemplate}
             />
-            {processor.type === 'groove' ? <GrooveDropTarget /> : null}
+            {processor.type === 'groove' ? (
+                <div className="flex flex-col gap-1 px-1">
+                    <label className="flex items-center justify-between gap-1 text-[7px] text-muted-foreground">
+                        Extraction subdivision
+                        <DawCompactSelect
+                            aria-label="Groove extraction subdivision"
+                            value={extractionSubdivision}
+                            onChange={(event) => setExtractionSubdivision(event.target.value)}
+                        >
+                            {GROOVE_EXTRACTION_SUBDIVISIONS.map((subdivision) => (
+                                <option key={subdivision} value={subdivision}>
+                                    {subdivision}
+                                </option>
+                            ))}
+                        </DawCompactSelect>
+                    </label>
+                    <GrooveDropTarget subdivision={extractionSubdivision} />
+                </div>
+            ) : null}
             {processor.type === 'groove' && canEditSelectedGroove ? (
                 <GrooveTemplateLifecycleControls
                     templateId={selectedGrooveTemplate.id}

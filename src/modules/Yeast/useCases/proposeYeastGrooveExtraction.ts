@@ -1,5 +1,5 @@
 import { trackStore } from '#/modules/Arrangement/stores';
-import { extractGrooveTemplate, getNotesForClip, getStraightGrooveTemplateId } from '#/modules/MIDI/useCases';
+import { prepareGrooveExtraction } from '#/modules/MIDI/useCases';
 
 type ProposeYeastGrooveExtractionInput = {
     clipId: string;
@@ -12,10 +12,13 @@ type GrooveExtractionSource = {
     subdivision: string;
 };
 
-type ExtractedGrooveTemplate = Extract<ReturnType<typeof extractGrooveTemplate>, { ok: true }>['template'];
+type PreparedGrooveExtraction = ReturnType<typeof prepareGrooveExtraction>;
+type ExtractedGrooveExtraction = Extract<PreparedGrooveExtraction, { status: 'extracted' }>;
+type StraightGrooveExtraction = Extract<PreparedGrooveExtraction, { status: 'straight' }>;
 
 type YeastGrooveExtractionProposal =
-    | ({ status: 'extracted' | 'straight'; template: ExtractedGrooveTemplate } & GrooveExtractionSource)
+    | (ExtractedGrooveExtraction & GrooveExtractionSource)
+    | ({ status: 'straight'; template: StraightGrooveExtraction['template'] } & GrooveExtractionSource)
     | ({ status: 'empty' | 'unsupported' } & GrooveExtractionSource)
     | ({ status: 'invalid-source'; reason: string } & GrooveExtractionSource)
     | { status: 'ineligible-clip'; clipId: string };
@@ -35,25 +38,20 @@ export function proposeYeastGrooveExtraction({
         sourceName: clip.name,
         subdivision,
     };
-    const result = extractGrooveTemplate({
-        sourceId: clip.id,
+    const result = prepareGrooveExtraction({
+        clipId: clip.id,
         sourceName: clip.name,
-        analyzerVersion: 1,
         subdivision,
         templateId: `groove-${clip.id}-v1`,
-        notes: getNotesForClip(clip.id),
     });
-    if (!result.ok) {
-        if (result.error.code === 'empty-source') {
-            return { status: 'empty', ...source };
-        }
-        if (result.error.code === 'unsupported-subdivision') {
-            return { status: 'unsupported', ...source };
-        }
-        return { status: 'invalid-source', reason: result.error.reason, ...source };
+    if (result.status === 'extracted') {
+        return { ...source, ...result };
     }
-    if (result.template.id === getStraightGrooveTemplateId()) {
-        return { status: 'straight', template: result.template, ...source };
+    if (result.status === 'straight') {
+        return { ...source, status: result.status, template: result.template };
     }
-    return { status: 'extracted', template: result.template, ...source };
+    if (result.status === 'invalid-source') {
+        return { ...source, status: result.status, reason: result.reason };
+    }
+    return { ...source, status: result.status };
 }

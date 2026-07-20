@@ -37,7 +37,7 @@ export const GrooveTemplateLifecycleControls = ({ templateId, templateName }: Pr
                     Groove template name
                 </label>
                 <input
-                    key={templateId}
+                    key={JSON.stringify([templateId, templateName])}
                     id={`groove-template-name-${templateId}`}
                     name="groove-template-name"
                     defaultValue={templateName}
