@@ -137,16 +137,83 @@ describe('undo', () => {
         expect(mocks.undoTreeMoveTo).toHaveBeenCalledWith('previous');
     });
 
-    it('should not consume an inert action entry without an inverseAction', async () => {
+    it('should drop an inert action entry instead of leaving it to wedge the stack', async () => {
         const entry = actionEntry({ inverseAction: null });
         mocks.undoStoreValue.value = { past: [entry], future: [] };
 
         await undo();
 
         expect(mocks.executeAppAction).not.toHaveBeenCalled();
-        expect(mocks.undoStoreSet).not.toHaveBeenCalled();
-        expect(mocks.undoTreeMoveTo).not.toHaveBeenCalled();
-        expect(mocks.undoStoreValue.value).toEqual({ past: [entry], future: [] });
+        expect(mocks.undoStoreSet).toHaveBeenCalledWith({ past: [], future: [] });
+        expect(mocks.undoTreeMoveTo).toHaveBeenCalledWith(null);
+    });
+
+    it('should skip an inert top entry and undo the undoable entry beneath it', async () => {
+        const undoable = actionEntry({ id: 'undoable' });
+        const inert = actionEntry({ id: 'inert', inverseAction: null });
+        mocks.undoStoreValue.value = { past: [undoable, inert], future: [] };
+
+        await undo();
+
+        expect(mocks.executeAppAction).toHaveBeenCalledWith(
+            { type: 'toggleRecording' },
+            { skipUndo: true, skipMacroRecording: true }
+        );
+        // The inert entry is dropped without reaching future: nothing was undone for
+        // it, so redo must never re-apply its action.
+        expect(mocks.undoStoreSet).toHaveBeenCalledWith({ past: [], future: [undoable] });
+        expect(mocks.undoTreeMoveTo).toHaveBeenCalledWith(null);
+    });
+
+    it('should drop a fully inert group and undo the entry beneath it', async () => {
+        const undoable = actionEntry({ id: 'undoable' });
+        const inert_one = actionEntry({ id: 'inert-1', inverseAction: null, groupId: 'group' });
+        const inert_two = actionEntry({ id: 'inert-2', inverseAction: null, groupId: 'group' });
+        mocks.undoStoreValue.value = { past: [undoable, inert_one, inert_two], future: [] };
+
+        await undo();
+
+        expect(mocks.executeAppAction).toHaveBeenCalledTimes(1);
+        expect(mocks.executeAppAction).toHaveBeenCalledWith(
+            { type: 'toggleRecording' },
+            { skipUndo: true, skipMacroRecording: true }
+        );
+        expect(mocks.undoStoreSet).toHaveBeenCalledWith({ past: [], future: [undoable] });
+    });
+
+    it('should move only the undoable entries of a mixed group to future', async () => {
+        const previous = actionEntry({ id: 'previous' });
+        const inert = actionEntry({ id: 'inert', inverseAction: null, groupId: 'group' });
+        const real = actionEntry({
+            id: 'real',
+            action: { type: 'toggleLoop' },
+            inverseAction: { type: 'stopPlayback' },
+            groupId: 'group',
+        });
+        mocks.undoStoreValue.value = { past: [previous, inert, real], future: [] };
+
+        await undo();
+
+        expect(mocks.executeAppAction).toHaveBeenCalledTimes(1);
+        expect(mocks.executeAppAction).toHaveBeenCalledWith(
+            { type: 'stopPlayback' },
+            { skipUndo: true, skipMacroRecording: true }
+        );
+        expect(mocks.undoStoreSet).toHaveBeenCalledWith({ past: [previous], future: [real] });
+        expect(mocks.undoTreeMoveTo).toHaveBeenCalledWith('previous');
+    });
+
+    it('should empty a stack of only inert entries without touching future', async () => {
+        const inert_one = actionEntry({ id: 'inert-1', inverseAction: null });
+        const inert_two = actionEntry({ id: 'inert-2', inverseAction: null });
+        const future = actionEntry({ id: 'future' });
+        mocks.undoStoreValue.value = { past: [inert_one, inert_two], future: [future] };
+
+        await undo();
+
+        expect(mocks.executeAppAction).not.toHaveBeenCalled();
+        expect(mocks.undoStoreSet).toHaveBeenCalledWith({ past: [], future: [future] });
+        expect(mocks.undoTreeMoveTo).toHaveBeenCalledWith(null);
     });
 
     it('should serialize overlapping undo calls so one entry is not popped twice', async () => {

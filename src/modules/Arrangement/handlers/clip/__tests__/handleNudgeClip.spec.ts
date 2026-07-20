@@ -38,6 +38,18 @@ describe('handleNudgeClip', () => {
         expect(desc2.label).toBe('Nudge clip left');
     });
 
+    it('describes an inverse nudge of the negated beat delta', () => {
+        const desc = handleNudgeClip.describe({
+            type: 'nudgeClip',
+            payload: { clipId: 'c1', beats: 1.5 },
+        });
+
+        expect(desc.inverseAction).toEqual({
+            type: 'nudgeClip',
+            payload: { clipId: 'c1', beats: -1.5 },
+        });
+    });
+
     it('is undoable', () => {
         expect(handleNudgeClip.undoable).toBe(true);
     });
