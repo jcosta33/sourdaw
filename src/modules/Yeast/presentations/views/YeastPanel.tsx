@@ -18,6 +18,7 @@ import { DawPluginToggle } from '#/components/daw/DawPluginToggle';
 import { RotaryKnob } from '#/components/daw/RotaryKnob';
 import { Row, Stack, Grid } from '#/components/layout';
 import { useStore } from '#/infra/store/useStore';
+import { defaultTrackState, trackStore, type TrackStoreState } from '#/modules/Arrangement/stores';
 import { defaultGrooveTemplateState, grooveTemplateStore } from '#/modules/MIDI/stores';
 import { getStraightGrooveTemplateId } from '#/modules/MIDI/useCases';
 
@@ -35,6 +36,10 @@ import { setYeastUiLevel } from '../../useCases/setYeastUiLevel';
 import { KeyboardSplit } from '../components/KeyboardSplit';
 import { ProcessorParams } from '../components/ProcessorParams';
 import { StepPatternEditor } from '../components/StepPatternEditor';
+
+import { YeastPreviewSurface } from './YeastPreviewSurface';
+
+import type { YeastPreviewScope, YeastPreviewUnavailableReason } from '../YeastPreviewTypes';
 
 const LEVEL_OPTIONS = [
     { level: 1 as const, label: 'Play', detail: 'Sprout' },
@@ -144,42 +149,40 @@ function renderDeck(state: YeastState): ReactElement {
     return <Level5Lab state={state} />;
 }
 
-const NoteFlowHero = ({ state }: { state: YeastState }): ReactElement => {
-    const laneCount = Math.max(3, Math.min(7, state.processors.length + 2));
+type PreviewBinding = Readonly<{
+    scope: YeastPreviewScope | null;
+    unavailableReason?: YeastPreviewUnavailableReason;
+}>;
 
-    return (
-        <Stack gap={3} className="yeast-window p-3">
-            <Row justify="between" gap={3}>
-                <Stack>
-                    <div className="text-[10px] font-medium text-foreground">Phrase view</div>
-                    <div className="text-[9px] text-muted-foreground">
-                        A quick motion sketch for whatever the rack is doing right now.
-                    </div>
-                </Stack>
-                <YeastLed>{state.processors.length} modules</YeastLed>
-            </Row>
-
-            <Stack gap={2}>
-                {Array.from({ length: laneCount }, (_, index) => {
-                    const width = 24 + ((index * 17 + state.uiLevel * 11) % 68);
-                    const offset = (index * 9 + state.uiLevel * 7) % 36;
-                    return (
-                        <div key={index} className="h-4 rounded-full bg-white/5 px-1 py-1">
-                            <div
-                                className="h-full rounded-full bg-[linear-gradient(90deg,var(--color-accent-peach),var(--color-accent-cyan))]"
-                                style={{
-                                    width: `${width}%`,
-                                    marginLeft: `${offset}%`,
-                                    opacity: 0.8 - index * 0.07,
-                                }}
-                            />
-                        </div>
-                    );
-                })}
-            </Stack>
-        </Stack>
-    );
-};
+function resolvePreviewBinding(trackState: TrackStoreState): PreviewBinding {
+    if (!trackState.selectedTrackId) {
+        return {
+            scope: null,
+            unavailableReason: { code: 'no-track', message: 'Select a MIDI track to preview Yeast output.' },
+        };
+    }
+    const track = trackState.tracks.find((candidate) => candidate.id === trackState.selectedTrackId);
+    if (!track) {
+        return {
+            scope: null,
+            unavailableReason: { code: 'no-track', message: 'The selected MIDI track is unavailable.' },
+        };
+    }
+    const yeastDevice = track.devices.find((device) => device.type === 'yeast');
+    if (!yeastDevice) {
+        return {
+            scope: null,
+            unavailableReason: { code: 'no-yeast-device', message: 'The selected track has no Yeast device.' },
+        };
+    }
+    return {
+        scope: {
+            rackId: yeastDevice.id,
+            routeId: track.id,
+            trackId: track.id,
+        },
+    };
+}
 
 // ── Component ────────────────────────────────────────────────────────────────
 
@@ -208,9 +211,11 @@ const GrooveAwareProcessorParams = ({ processor }: { processor: YeastProcessorIn
 
 export const YeastPanel = (): ReactElement => {
     const state = useStore(yeastStore, defaultYeastState);
+    const trackState = useStore(trackStore, defaultTrackState);
 
     const { uiLevel } = state;
     const levelMeta = getLevelMeta(uiLevel);
+    const previewBinding = resolvePreviewBinding(trackState);
 
     return (
         <div className="yeast-faceplate h-full min-h-0 overflow-hidden rounded-[26px] p-3">
@@ -294,7 +299,13 @@ export const YeastPanel = (): ReactElement => {
                         </Row>
                     </div>
 
-                    <NoteFlowHero state={state} />
+                    <YeastPreviewSurface
+                        scope={previewBinding.scope}
+                        unavailableReason={previewBinding.unavailableReason}
+                        processors={state.processors}
+                        runtimeStatus={state.runtimeStatus}
+                        runtimeError={state.runtimeError}
+                    />
 
                     <div className="yeast-window min-h-0 flex-1 overflow-auto p-3">{renderDeck(state)}</div>
                 </Stack>

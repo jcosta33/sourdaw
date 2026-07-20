@@ -1,21 +1,38 @@
-import { fireEvent, render, screen, within } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+import { type TrackStoreState } from '#/modules/Arrangement/stores';
 import { type GrooveTemplateState } from '#/modules/MIDI/stores';
 
+import { type YeastRuntimeStatus } from '../../../models/YeastProcessorProjection';
 import { type YeastState } from '../../../stores/yeastStore';
 import { YeastPanel } from '../YeastPanel';
 
-const storeMock = vi.hoisted((): { yeastState: YeastState | null; grooveState: GrooveTemplateState | null } => ({
-    yeastState: null,
-    grooveState: null,
-}));
+const storeMock = vi.hoisted(
+    (): {
+        yeastState: YeastState | null;
+        grooveState: GrooveTemplateState | null;
+        setYeastState: ReturnType<typeof vi.fn>;
+    } => ({
+        yeastState: null,
+        grooveState: null,
+        setYeastState: vi.fn(),
+    })
+);
 const grooveMocks = vi.hoisted(() => ({ setYeastGrooveTemplate: vi.fn() }));
+const runtimeMocks = vi.hoisted(() => ({
+    applyProjection: vi.fn((): Promise<void> => Promise.resolve()),
+    getStatus: vi.fn((): YeastRuntimeStatus => 'ready'),
+    getError: vi.fn((): string | undefined => undefined),
+}));
 
 vi.mock('#/infra/store/useStore', () => ({
-    useStore: vi.fn((_store: unknown, defaultValue: YeastState | GrooveTemplateState) => {
+    useStore: vi.fn((_store: unknown, defaultValue: YeastState | GrooveTemplateState | TrackStoreState) => {
         if ('templates' in defaultValue) {
             return storeMock.grooveState ?? defaultValue;
+        }
+        if ('tracks' in defaultValue) {
+            return defaultValue;
         }
         return storeMock.yeastState ?? defaultValue;
     }),
@@ -29,11 +46,33 @@ vi.mock('../../../useCases/setYeastGrooveTemplate', () => ({
     setYeastGrooveTemplate: grooveMocks.setYeastGrooveTemplate,
 }));
 
+vi.mock('../../../stores/yeastStore', () => ({
+    yeastStore: {
+        get value() {
+            return storeMock.yeastState;
+        },
+        set: storeMock.setYeastState,
+    },
+}));
+
+vi.mock('../../../engine/yeastRuntime', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('../../../engine/yeastRuntime')>()),
+    applyYeastRuntimeProjection: runtimeMocks.applyProjection,
+    getYeastRuntimeStatus: runtimeMocks.getStatus,
+    getYeastRuntimeError: runtimeMocks.getError,
+}));
+
 describe('YeastPanel', () => {
     beforeEach(() => {
         storeMock.yeastState = null;
         storeMock.grooveState = null;
         vi.clearAllMocks();
+        storeMock.setYeastState.mockImplementation((state: YeastState | null) => {
+            storeMock.yeastState = state;
+        });
+        runtimeMocks.applyProjection.mockResolvedValue(undefined);
+        runtimeMocks.getStatus.mockReturnValue('ready');
+        runtimeMocks.getError.mockReturnValue(undefined);
     });
 
     it('should render the default rack when the store has no value', () => {
@@ -124,5 +163,31 @@ describe('YeastPanel', () => {
 
         fireEvent.change(templateSelect, { target: { value: 'groove-straight' } });
         expect(grooveMocks.setYeastGrooveTemplate).toHaveBeenCalledWith('groove-1', 'groove-straight');
+    });
+
+    it('reports a rejected processor control update through rack feedback immediately', async () => {
+        const error = new Error('Projection update failed');
+        storeMock.yeastState = {
+            processors: [{ id: 'arp-1', type: 'arpeggiator', name: 'Arpeggiator', bypassed: false }],
+            uiLevel: 1,
+            runtimeStatus: 'ready',
+        };
+        runtimeMocks.applyProjection.mockRejectedValueOnce(error);
+        runtimeMocks.getStatus.mockReturnValue('unavailable');
+        runtimeMocks.getError.mockReturnValue(error.message);
+
+        const view = render(<YeastPanel />);
+        fireEvent.change(screen.getByRole('combobox'), { target: { value: '1' } });
+
+        await waitFor(() => {
+            expect(storeMock.yeastState).toMatchObject({
+                runtimeStatus: 'unavailable',
+                runtimeError: error.message,
+            });
+        });
+        view.rerender(<YeastPanel />);
+
+        expect(screen.getByText('Error')).toBeInTheDocument();
+        expect(screen.getByText(error.message)).toHaveAttribute('data-reason-code', 'runtime-error');
     });
 });

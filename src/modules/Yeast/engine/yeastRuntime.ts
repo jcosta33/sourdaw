@@ -272,11 +272,15 @@ export function releaseYeastRuntimePreview(binding: YeastPreviewBinding): void {
     releasePreviewBindings([binding]);
 }
 
-export function resetYeastRuntimePreview(scope: Readonly<{ rackId: string; routeId: string; trackId: string }>): void {
+export function resetYeastRuntimePreview(
+    scope: Readonly<{ rackId: string; routeId: string; trackId: string }>
+): number | null {
     const binding = yeastPreviewTap.reset(scope);
-    if (binding) {
-        releaseYeastRuntimePreview(binding);
+    if (!binding) {
+        return null;
     }
+    releaseYeastRuntimePreview(binding);
+    return yeastPreviewTap.getCaptureState(scope).captureEpoch;
 }
 
 function activeOutputNoteKey(trackId: string, channel: number, note: number): string {

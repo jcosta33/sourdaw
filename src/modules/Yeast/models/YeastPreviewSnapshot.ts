@@ -76,6 +76,7 @@ export type YeastPreviewSnapshot = Readonly<{
     rackId: string;
     routeId: string;
     trackId: string;
+    captureEpoch: number;
     projectionVersion: number;
     reset: boolean;
     capacity: number;
