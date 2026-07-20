@@ -1,7 +1,7 @@
 import { getStraightGrooveTemplateId } from '#/modules/MIDI/useCases';
 
-import { setYeastRuntimeProjection } from '../engine/yeastRuntime';
-import { publishYeastPreviewRevision } from '../stores/yeastPreviewRevision';
+import { applyYeastRuntimeProjection } from '../engine/yeastRuntime';
+import { publishAppliedYeastPreviewRevision, publishPendingYeastPreviewRevision } from '../stores/yeastPreviewRevision';
 import { yeastStore } from '../stores/yeastStore';
 
 import { commitYeastProjection } from './commitYeastProjection';
@@ -9,10 +9,10 @@ import { createYeastRuntimeProjection } from './createYeastRuntimeProjection';
 import { getYeastGrooveAssignment } from './getYeastGrooveAssignment';
 import { setYeastGrooveTemplate } from './setYeastGrooveTemplate';
 
-function previewYeastProcessorParam(id: string, name: string, value: number): void {
+function createPreviewYeastProcessorProjection(id: string, name: string, value: number) {
     const state = yeastStore.value;
     if (!state) {
-        return;
+        return null;
     }
 
     const processors = state.processors.map((entry) => {
@@ -23,19 +23,16 @@ function previewYeastProcessorParam(id: string, name: string, value: number): vo
     });
     const projection = createYeastRuntimeProjection(processors);
     if (name !== 'amount') {
-        setYeastRuntimeProjection(projection);
-        return;
+        return projection;
     }
 
     const clampedAmount = Math.max(0, Math.min(1, value));
-    setYeastRuntimeProjection(
-        projection.map((entry) => {
-            if (entry.id !== id || entry.type !== 'groove') {
-                return entry;
-            }
-            return { ...entry, params: { ...entry.params, groove_amount: clampedAmount } };
-        })
-    );
+    return projection.map((entry) => {
+        if (entry.id !== id || entry.type !== 'groove') {
+            return entry;
+        }
+        return { ...entry, params: { ...entry.params, groove_amount: clampedAmount } };
+    });
 }
 
 export async function setYeastProcessorParam(
@@ -57,21 +54,41 @@ export async function setYeastProcessorParam(
         return;
     }
     if (isTransient) {
-        previewYeastProcessorParam(id, name, value);
-        publishYeastPreviewRevision({ processorId: id, parameterName: name, transient: true });
+        const projection = createPreviewYeastProcessorProjection(id, name, value);
+        if (!projection) {
+            return;
+        }
+        const revisionDetails = { processorId: id, parameterName: name, transient: true };
+        const revision = publishPendingYeastPreviewRevision(revisionDetails);
+        await applyYeastRuntimeProjection(projection);
+        publishAppliedYeastPreviewRevision({ ...revisionDetails, revision });
         return;
     }
     if (processor.type === 'groove' && name === 'amount') {
         const assignment = getYeastGrooveAssignment(id);
         const clampedAmount = Math.max(0, Math.min(1, value));
+        const revisionDetails = { processorId: id, parameterName: name, transient: false };
+        const revision = publishPendingYeastPreviewRevision(revisionDetails);
         await setYeastGrooveTemplate(id, assignment?.templateId ?? getStraightGrooveTemplateId(), clampedAmount);
-        publishYeastPreviewRevision({ processorId: id, parameterName: name, transient: false });
+        const currentState = yeastStore.value;
+        if (!currentState) {
+            return;
+        }
+        await applyYeastRuntimeProjection(createYeastRuntimeProjection(currentState.processors));
+        publishAppliedYeastPreviewRevision({ ...revisionDetails, revision });
         return;
     }
+    const revisionDetails = { processorId: id, parameterName: name, transient: false };
+    const revision = publishPendingYeastPreviewRevision(revisionDetails);
     commitYeastProjection(
         state.processors.map((entry) =>
             entry.id === id ? { ...entry, params: { ...entry.params, [name]: value } } : entry
         )
     );
-    publishYeastPreviewRevision({ processorId: id, parameterName: name, transient: false });
+    const currentState = yeastStore.value;
+    if (!currentState) {
+        return;
+    }
+    await applyYeastRuntimeProjection(createYeastRuntimeProjection(currentState.processors));
+    publishAppliedYeastPreviewRevision({ ...revisionDetails, revision });
 }

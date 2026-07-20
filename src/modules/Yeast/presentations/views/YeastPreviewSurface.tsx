@@ -4,6 +4,7 @@ import { playheadPositionRef } from '#/modules/Transport/stores';
 
 import { type YeastRuntimeStatus } from '../../models/YeastProcessorProjection';
 import { subscribeYeastPreviewRevision } from '../../stores/yeastPreviewRevision';
+import { resetYeastPreviewCapture } from '../../useCases/resetYeastPreviewCapture';
 import { subscribeYeastPreview } from '../../useCases/subscribeYeastPreview';
 import { createYeastPreviewCanvasRenderer } from '../createYeastPreviewCanvasRenderer';
 import { createYeastPreviewPresenter } from '../createYeastPreviewPresenter';
@@ -45,8 +46,16 @@ type YeastPreviewSurfaceProps = {
 };
 
 type SurfaceStatus = Readonly<{
-    label: 'Available' | 'Initializing' | 'Active' | 'Silent' | 'Unavailable' | 'Error';
+    label: 'Available' | 'Initializing' | 'Active' | 'Bypassed' | 'Silent' | 'Unavailable' | 'Error';
     reason?: Readonly<{ code: string; message: string }>;
+}>;
+
+type ProcessorStatusCounts = Readonly<{
+    total: number;
+    active: number;
+    enabled: number;
+    bypassed: number;
+    failed: number;
 }>;
 
 const initialFeedback: YeastPreviewFeedback = {
@@ -57,8 +66,34 @@ const initialFeedback: YeastPreviewFeedback = {
     droppedEvents: 0,
     droppedFrames: 0,
     droppedVisualEvents: 0,
+    processorActivity: [],
     summary: '0 upcoming events',
 };
+
+function countProcessorStatuses(
+    processors: readonly PreviewProcessor[],
+    feedback: YeastPreviewFeedback
+): ProcessorStatusCounts {
+    const activityByProcessor = new Map(feedback.processorActivity.map((entry) => [entry.processorId, entry]));
+    const counts = { total: processors.length, active: 0, enabled: 0, bypassed: 0, failed: 0 };
+    for (const processor of processors) {
+        const activity = activityByProcessor.get(processor.id);
+        if (activity?.status === 'failed') {
+            counts.failed += 1;
+            continue;
+        }
+        if (processor.bypassed || activity?.status === 'bypassed') {
+            counts.bypassed += 1;
+            continue;
+        }
+        if (activity?.status === 'active') {
+            counts.active += 1;
+            continue;
+        }
+        counts.enabled += 1;
+    }
+    return counts;
+}
 
 function resolveSurfaceStatus(input: {
     scope: YeastPreviewScope | null;
@@ -67,6 +102,7 @@ function resolveSurfaceStatus(input: {
     runtimeError?: string;
     rendererUnavailable: boolean;
     feedback: YeastPreviewFeedback;
+    processorCounts: ProcessorStatusCounts;
 }): SurfaceStatus {
     if (input.rendererUnavailable) {
         return { label: 'Error', reason: { code: 'renderer-unavailable', message: 'Canvas preview is unavailable.' } };
@@ -90,6 +126,18 @@ function resolveSurfaceStatus(input: {
     if (input.runtimeStatus === 'initializing') {
         return { label: 'Initializing' };
     }
+    if (input.processorCounts.failed > 0) {
+        return {
+            label: 'Error',
+            reason: {
+                code: 'processor-failed',
+                message: 'A Yeast processor failed while generating preview events.',
+            },
+        };
+    }
+    if (input.processorCounts.total > 0 && input.processorCounts.bypassed === input.processorCounts.total) {
+        return { label: 'Bypassed' };
+    }
     if (input.feedback.active) {
         return { label: 'Active' };
     }
@@ -110,6 +158,7 @@ export function YeastPreviewSurface({
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const presenterRef = useRef<ReturnType<typeof createYeastPreviewPresenter> | null>(null);
     const processorsRef = useRef(processors);
+    const pendingProcessorRevisionRef = useRef<number | null>(null);
     const [rendererUnavailable] = useState(isCanvasRendererUnavailable);
     const [feedback, setFeedback] = useState<YeastPreviewFeedback>(initialFeedback);
 
@@ -180,17 +229,35 @@ export function YeastPreviewSurface({
 
     useEffect(() => {
         const presenter = presenterRef.current;
-        if (!presenter) {
+        if (!presenter || !rackId || !routeId || !trackId) {
             return undefined;
         }
-        return subscribeYeastPreviewRevision(({ processorId, revision }) => {
-            const ownsProcessor = processorsRef.current.some((processor) => processor.id === processorId);
-            if (!ownsProcessor) {
+        pendingProcessorRevisionRef.current = null;
+        const unsubscribe = subscribeYeastPreviewRevision(({ processorId, revision, phase }) => {
+            if (phase === 'pending') {
+                const ownsProcessor = processorsRef.current.some((processor) => processor.id === processorId);
+                if (!ownsProcessor) {
+                    return;
+                }
+                pendingProcessorRevisionRef.current = revision;
+                presenter.beginProcessorRevision(revision);
                 return;
             }
-            presenter.invalidateProcessorRevision(revision);
+            if (revision !== pendingProcessorRevisionRef.current) {
+                return;
+            }
+            pendingProcessorRevisionRef.current = null;
+            const captureEpoch = resetYeastPreviewCapture({ rackId, routeId, trackId });
+            if (captureEpoch === null) {
+                return;
+            }
+            presenter.acknowledgeProcessorRevision(revision, captureEpoch);
         });
-    }, []);
+        return () => {
+            unsubscribe();
+            pendingProcessorRevisionRef.current = null;
+        };
+    }, [rackId, routeId, trackId]);
 
     useEffect(() => {
         if (!presenterRef.current) {
@@ -200,6 +267,7 @@ export function YeastPreviewSurface({
         return undefined;
     }, [lookaheadBeats]);
 
+    const processorCounts = countProcessorStatuses(processors, feedback);
     const status = resolveSurfaceStatus({
         scope,
         unavailableReason,
@@ -207,10 +275,10 @@ export function YeastPreviewSurface({
         runtimeError,
         rendererUnavailable,
         feedback,
+        processorCounts,
     });
-    const bypassedCount = processors.filter((processor) => processor.bypassed).length;
-    const liveCount = processors.length - bypassedCount;
     const latency = feedback.latencyP95Ms === null ? '—' : `${Math.round(feedback.latencyP95Ms)} ms`;
+    const processorSummary = `${processorCounts.active} active · ${processorCounts.enabled} enabled · ${processorCounts.bypassed} bypassed · ${processorCounts.failed} failed`;
 
     return (
         <section className="yeast-window p-3" aria-label="Scheduled event preview">
@@ -230,9 +298,7 @@ export function YeastPreviewSurface({
                     </div>
                     <div>
                         <dt>Processors</dt>
-                        <dd className="text-foreground">
-                            {liveCount} live · {bypassedCount} bypassed
-                        </dd>
+                        <dd className="text-foreground">{processorSummary}</dd>
                     </div>
                 </dl>
             </div>

@@ -35,12 +35,12 @@ const runtimeMocks = vi.hoisted(() => ({
             params: { groove_amount: 0.5 },
         },
     ]),
-    setYeastRuntimeProjection: vi.fn(),
+    applyYeastRuntimeProjection: vi.fn((): Promise<void> => Promise.resolve()),
 }));
 
 vi.mock('../../stores/yeastStore', () => ({ yeastStore: store }));
 vi.mock('../../engine/yeastRuntime', () => ({
-    setYeastRuntimeProjection: runtimeMocks.setYeastRuntimeProjection,
+    applyYeastRuntimeProjection: runtimeMocks.applyYeastRuntimeProjection,
 }));
 vi.mock('../commitYeastProjection', () => ({ commitYeastProjection: commit }));
 vi.mock('../createYeastRuntimeProjection', () => ({
@@ -96,7 +96,7 @@ describe('setYeastProcessorParam', () => {
     it('previews a transient groove amount without creating an assignment or durable store write', async () => {
         await setYeastProcessorParam('groove-1', 'amount', 0.75, true);
 
-        expect(runtimeMocks.setYeastRuntimeProjection).toHaveBeenCalledWith([
+        expect(runtimeMocks.applyYeastRuntimeProjection).toHaveBeenCalledWith([
             {
                 id: 'groove-1',
                 type: 'groove',
@@ -109,7 +109,7 @@ describe('setYeastProcessorParam', () => {
         expect(store.value.processors[1]?.params).toEqual({});
     });
 
-    it('publishes durable and transient preview revisions before the polling interval', async () => {
+    it('publishes paired pending and applied revisions for durable and transient updates', async () => {
         const revisions: YeastPreviewRevision[] = [];
         const unsubscribe = subscribeYeastPreviewRevision((revision) => {
             revisions.push(revision);
@@ -119,18 +119,77 @@ describe('setYeastProcessorParam', () => {
         await setYeastProcessorParam('groove-1', 'amount', 0.75, true);
         unsubscribe();
 
-        expect(revisions).toHaveLength(2);
+        expect(revisions).toHaveLength(4);
         expect(revisions[0]).toMatchObject({
             processorId: 'cm-1',
             parameterName: 'transpose_mode',
             transient: false,
+            phase: 'pending',
         });
         expect(revisions[1]).toMatchObject({
+            processorId: 'cm-1',
+            parameterName: 'transpose_mode',
+            transient: false,
+            phase: 'applied',
+        });
+        expect(revisions[2]).toMatchObject({
             processorId: 'groove-1',
             parameterName: 'amount',
             transient: true,
+            phase: 'pending',
+        });
+        expect(revisions[3]).toMatchObject({
+            processorId: 'groove-1',
+            parameterName: 'amount',
+            transient: true,
+            phase: 'applied',
         });
         expect(revisions[0]!.revision).toBeGreaterThan(0);
-        expect(revisions[1]!.revision).toBe(revisions[0]!.revision + 1);
+        expect(revisions[1]!.revision).toBe(revisions[0]!.revision);
+        expect(revisions[2]!.revision).toBe(revisions[0]!.revision + 1);
+        expect(revisions[3]!.revision).toBe(revisions[2]!.revision);
+    });
+
+    it.each([
+        { updateKind: 'durable', processorId: 'cm-1', parameterName: 'transpose_mode', value: 0, transient: false },
+        { updateKind: 'transient', processorId: 'groove-1', parameterName: 'amount', value: 0.75, transient: true },
+    ])('suspends $updateKind snapshots before runtime acknowledgement', async (input) => {
+        const acknowledgement = Promise.withResolvers<void>();
+        runtimeMocks.applyYeastRuntimeProjection.mockReturnValueOnce(acknowledgement.promise);
+        const revisions: YeastPreviewRevision[] = [];
+        const unsubscribe = subscribeYeastPreviewRevision((revision) => {
+            revisions.push(revision);
+        });
+
+        const update = setYeastProcessorParam(input.processorId, input.parameterName, input.value, input.transient);
+        expect(revisions).toHaveLength(1);
+        expect(revisions[0]).toMatchObject({ phase: 'pending', transient: input.transient });
+
+        acknowledgement.resolve();
+        await update;
+        unsubscribe();
+
+        expect(revisions).toHaveLength(2);
+        expect(revisions[1]).toMatchObject({ phase: 'applied', transient: input.transient });
+        expect(revisions[1]!.revision).toBe(revisions[0]!.revision);
+    });
+
+    it('keeps the preview suspended when the runtime rejects a projection', async () => {
+        const error = new Error('projection failed');
+        runtimeMocks.applyYeastRuntimeProjection.mockRejectedValueOnce(error);
+        const revisions: YeastPreviewRevision[] = [];
+        const unsubscribe = subscribeYeastPreviewRevision((revision) => {
+            revisions.push(revision);
+        });
+
+        await expect(setYeastProcessorParam('groove-1', 'amount', 0.75, true)).rejects.toBe(error);
+        unsubscribe();
+
+        expect(revisions).toHaveLength(1);
+        expect(revisions[0]).toMatchObject({
+            processorId: 'groove-1',
+            phase: 'pending',
+            transient: true,
+        });
     });
 });

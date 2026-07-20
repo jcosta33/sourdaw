@@ -217,6 +217,7 @@ export class YeastPreviewTap {
             rackId: scope.rackId,
             routeId: scope.routeId,
             trackId: scope.trackId,
+            captureEpoch: route?.captureEpoch ?? 0,
             projectionVersion: route?.projectionVersion ?? 0,
             reset: route?.reset ?? false,
             capacity: YEAST_PREVIEW_CAPACITY,

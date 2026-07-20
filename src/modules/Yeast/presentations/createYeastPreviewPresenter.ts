@@ -1,7 +1,16 @@
 import { YEAST_PREVIEW_CAPACITY } from '../models/YeastPreviewSnapshot';
 
-import type { DenseRenderer, YeastPreviewFeedback, YeastPreviewRenderModel } from './YeastPreviewTypes';
-import type { YeastPreviewEvent, YeastPreviewSnapshot } from '../models/YeastPreviewSnapshot';
+import type {
+    DenseRenderer,
+    YeastPreviewFeedback,
+    YeastPreviewProcessorActivity,
+    YeastPreviewRenderModel,
+} from './YeastPreviewTypes';
+import type {
+    YeastPreviewEvent,
+    YeastPreviewProcessorProvenance,
+    YeastPreviewSnapshot,
+} from '../models/YeastPreviewSnapshot';
 
 type PresenterDependencies = {
     renderer: DenseRenderer<YeastPreviewRenderModel>;
@@ -17,7 +26,8 @@ type PresenterDependencies = {
 type YeastPreviewPresenter = {
     acceptSnapshot(snapshot: YeastPreviewSnapshot, sampledAt?: number): void;
     resetForScope(): void;
-    invalidateProcessorRevision(revision: number): void;
+    beginProcessorRevision(revision: number): void;
+    acknowledgeProcessorRevision(revision: number, captureEpoch: number): void;
     updateView(input: { lookaheadBeats?: number }): void;
     resize(width: number, height: number): void;
     dispose(): void;
@@ -41,6 +51,22 @@ function isExpired(event: YeastPreviewEvent, playheadBeat: number, lookaheadBeat
         return event.beatTime <= retentionStart;
     }
     return event.beatTime + Math.max(0, event.durationBeats) <= retentionStart;
+}
+
+function createProcessorActivity(
+    provenance: readonly YeastPreviewProcessorProvenance[]
+): YeastPreviewProcessorActivity[] {
+    return provenance.map((entry) => {
+        let status: YeastPreviewProcessorActivity['status'] = 'enabled';
+        if (entry.failed) {
+            status = 'failed';
+        } else if (entry.bypassed) {
+            status = 'bypassed';
+        } else if (entry.eventCount > 0) {
+            status = 'active';
+        }
+        return { processorId: entry.processorId, eventCount: entry.eventCount, status };
+    });
 }
 
 export function createYeastPreviewSummary(events: readonly YeastPreviewEvent[]): string {
@@ -70,6 +96,7 @@ export function createYeastPreviewSummary(events: readonly YeastPreviewEvent[]):
 export function createYeastPreviewPresenter(deps: PresenterDependencies): YeastPreviewPresenter {
     const events = new Map<number, YeastPreviewEvent>();
     const latencySamples: number[] = [];
+    let processorActivity: YeastPreviewProcessorActivity[] = [];
     let width = 640;
     let height = 112;
     let lookaheadBeats = 4;
@@ -83,7 +110,10 @@ export function createYeastPreviewPresenter(deps: PresenterDependencies): YeastP
     let droppedEvents = 0;
     let droppedFrames = 0;
     let droppedVisualEvents = 0;
-    let lastProcessorRevision = 0;
+    let latestProcessorRevision = 0;
+    let pendingProcessorRevision: number | null = null;
+    let expectedCaptureEpoch: number | null = null;
+    let snapshotsSuspended = false;
     let disposed = false;
 
     function cancelPendingFrame(): void {
@@ -97,6 +127,7 @@ export function createYeastPreviewPresenter(deps: PresenterDependencies): YeastP
     function clearProjectionState(resetDropMetrics: boolean): void {
         events.clear();
         latencySamples.length = 0;
+        processorActivity = [];
         latestSampleAt = null;
         lastActivityAt = null;
         sampleRevision = 0;
@@ -125,6 +156,7 @@ export function createYeastPreviewPresenter(deps: PresenterDependencies): YeastP
             droppedEvents,
             droppedFrames,
             droppedVisualEvents,
+            processorActivity: [],
             summary: createYeastPreviewSummary([]),
         });
     }
@@ -167,6 +199,12 @@ export function createYeastPreviewPresenter(deps: PresenterDependencies): YeastP
 
         const visibleEvents = currentVisibleEvents(playheadBeat);
         const active = lastActivityAt !== null && frameAt - lastActivityAt < SILENCE_THRESHOLD_MS;
+        const effectiveProcessorActivity = processorActivity.map((entry) => {
+            if (active || entry.status !== 'active') {
+                return entry;
+            }
+            return { ...entry, status: 'enabled' as const };
+        });
         deps.onFeedback({
             hasSample,
             active,
@@ -175,6 +213,7 @@ export function createYeastPreviewPresenter(deps: PresenterDependencies): YeastP
             droppedEvents,
             droppedFrames,
             droppedVisualEvents,
+            processorActivity: effectiveProcessorActivity,
             summary: createYeastPreviewSummary(visibleEvents),
         });
     }
@@ -207,10 +246,17 @@ export function createYeastPreviewPresenter(deps: PresenterDependencies): YeastP
         if (disposed) {
             return;
         }
+        if (snapshotsSuspended) {
+            return;
+        }
+        if (expectedCaptureEpoch !== null && snapshot.captureEpoch !== expectedCaptureEpoch) {
+            return;
+        }
         hasSample = true;
         latestSampleAt = sampledAt;
         sampleRevision += 1;
         droppedEvents += snapshot.droppedEvents;
+        processorActivity = createProcessorActivity(snapshot.provenance);
         if (snapshot.reset) {
             events.clear();
         }
@@ -224,7 +270,12 @@ export function createYeastPreviewPresenter(deps: PresenterDependencies): YeastP
             }
             events.set(event.eventId, event);
         }
-        if (snapshot.events.length > 0) {
+        const hasActiveProvenance = snapshot.provenance.some(
+            (entry) => !entry.bypassed && !entry.failed && entry.eventCount > 0
+        );
+        const hasActiveEventWithoutProvenance =
+            snapshot.provenance.length === 0 && snapshot.events.some((event) => !event.bypassed && !event.failed);
+        if (hasActiveProvenance || hasActiveEventWithoutProvenance) {
             lastActivityAt = sampledAt;
             scheduleSilenceFrame(sampledAt);
         }
@@ -237,17 +288,37 @@ export function createYeastPreviewPresenter(deps: PresenterDependencies): YeastP
         }
         cancelPendingFrame();
         clearProjectionState(true);
-        lastProcessorRevision = 0;
+        latestProcessorRevision = 0;
+        pendingProcessorRevision = null;
+        expectedCaptureEpoch = null;
+        snapshotsSuspended = false;
         publishBlankFrame();
     }
 
-    function invalidateProcessorRevision(revision: number): void {
-        if (disposed || !Number.isSafeInteger(revision) || revision < 1 || revision === lastProcessorRevision) {
+    function beginProcessorRevision(revision: number): void {
+        if (disposed || !Number.isSafeInteger(revision) || revision < 1 || revision === latestProcessorRevision) {
             return;
         }
-        lastProcessorRevision = revision;
+        latestProcessorRevision = revision;
+        pendingProcessorRevision = revision;
+        snapshotsSuspended = true;
+        expectedCaptureEpoch = null;
         clearProjectionState(false);
         scheduleFrame(false);
+    }
+
+    function acknowledgeProcessorRevision(revision: number, captureEpoch: number): void {
+        if (
+            disposed ||
+            revision !== pendingProcessorRevision ||
+            !Number.isSafeInteger(captureEpoch) ||
+            captureEpoch < 1
+        ) {
+            return;
+        }
+        pendingProcessorRevision = null;
+        expectedCaptureEpoch = captureEpoch;
+        snapshotsSuspended = false;
     }
 
     function updateView(input: { lookaheadBeats?: number }): void {
@@ -275,5 +346,13 @@ export function createYeastPreviewPresenter(deps: PresenterDependencies): YeastP
         deps.renderer.dispose();
     }
 
-    return { acceptSnapshot, resetForScope, invalidateProcessorRevision, updateView, resize, dispose };
+    return {
+        acceptSnapshot,
+        resetForScope,
+        beginProcessorRevision,
+        acknowledgeProcessorRevision,
+        updateView,
+        resize,
+        dispose,
+    };
 }

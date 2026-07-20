@@ -26,6 +26,12 @@ export type YeastPreviewRenderModel = Readonly<{
     height: number;
 }>;
 
+export type YeastPreviewProcessorActivity = Readonly<{
+    processorId: string;
+    eventCount: number;
+    status: 'active' | 'enabled' | 'bypassed' | 'failed';
+}>;
+
 export type YeastPreviewFeedback = Readonly<{
     hasSample: boolean;
     active: boolean;
@@ -34,5 +40,6 @@ export type YeastPreviewFeedback = Readonly<{
     droppedEvents: number;
     droppedFrames: number;
     droppedVisualEvents: number;
+    processorActivity: readonly YeastPreviewProcessorActivity[];
     summary: string;
 }>;

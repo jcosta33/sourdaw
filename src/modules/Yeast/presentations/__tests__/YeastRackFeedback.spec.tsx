@@ -82,12 +82,81 @@ describe('Yeast rack preview feedback', () => {
         );
 
         act(() => {
-            previewMocks.onSnapshot?.(createPreviewSnapshot([createPreviewEvent()]), performance.now());
+            previewMocks.onSnapshot?.(
+                createPreviewSnapshot([createPreviewEvent()], {
+                    provenance: [
+                        { processorId: 'arp-1', bypassed: false, failed: false, eventCount: 1 },
+                        { processorId: 'human-1', bypassed: true, failed: false, eventCount: 0 },
+                    ],
+                }),
+                performance.now()
+            );
             previewMocks.frames.shift()?.(performance.now());
         });
 
         expect(screen.getByText('Active')).toBeInTheDocument();
         expect(screen.getByText(/ms/, { selector: 'dd' })).toBeInTheDocument();
-        expect(screen.getByText('1 live · 1 bypassed')).toBeInTheDocument();
+        expect(screen.getByText('1 active · 0 enabled · 1 bypassed · 0 failed')).toBeInTheDocument();
+    });
+
+    it('reports enabled and failed processors from snapshot provenance without claiming activity', () => {
+        render(
+            <YeastPreviewSurface
+                scope={{ rackId: 'rack-1', routeId: 'track-1', trackId: 'track-1' }}
+                processors={[
+                    { id: 'arp-1', bypassed: false },
+                    { id: 'human-1', bypassed: false },
+                ]}
+                runtimeStatus="ready"
+            />
+        );
+
+        act(() => {
+            previewMocks.onSnapshot?.(
+                createPreviewSnapshot([], {
+                    provenance: [
+                        { processorId: 'arp-1', bypassed: false, failed: false, eventCount: 0 },
+                        { processorId: 'human-1', bypassed: false, failed: true, eventCount: 0 },
+                    ],
+                }),
+                performance.now()
+            );
+            previewMocks.frames.shift()?.(performance.now());
+        });
+
+        expect(screen.getByText('Error')).toBeInTheDocument();
+        expect(screen.getByText('A Yeast processor failed while generating preview events.')).toHaveAttribute(
+            'data-reason-code',
+            'processor-failed'
+        );
+        expect(screen.getByText('0 active · 1 enabled · 0 bypassed · 1 failed')).toBeInTheDocument();
+    });
+
+    it('distinguishes available, silent, and fully bypassed preview states', () => {
+        const scope = { rackId: 'rack-1', routeId: 'track-1', trackId: 'track-1' };
+        const { rerender } = render(<YeastPreviewSurface scope={scope} processors={[]} runtimeStatus="ready" />);
+        expect(screen.getByText('Available')).toBeInTheDocument();
+
+        act(() => {
+            previewMocks.onSnapshot?.(createPreviewSnapshot([]), performance.now());
+            previewMocks.frames.shift()?.(performance.now());
+        });
+        expect(screen.getByText('Silent')).toBeInTheDocument();
+
+        rerender(
+            <YeastPreviewSurface scope={scope} processors={[{ id: 'human-1', bypassed: true }]} runtimeStatus="ready" />
+        );
+        act(() => {
+            previewMocks.onSnapshot?.(
+                createPreviewSnapshot([createPreviewEvent({ bypassed: true, processorId: 'human-1' })], {
+                    provenance: [{ processorId: 'human-1', bypassed: true, failed: false, eventCount: 1 }],
+                }),
+                performance.now()
+            );
+            previewMocks.frames.shift()?.(performance.now());
+        });
+
+        expect(screen.getByText('Bypassed')).toBeInTheDocument();
+        expect(screen.getByText('0 active · 0 enabled · 1 bypassed · 0 failed')).toBeInTheDocument();
     });
 });

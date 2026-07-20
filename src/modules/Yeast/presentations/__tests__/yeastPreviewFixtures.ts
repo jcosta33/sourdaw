@@ -29,6 +29,7 @@ export function createPreviewSnapshot(
         rackId: 'rack-1',
         routeId: 'track-1',
         trackId: 'track-1',
+        captureEpoch: 1,
         projectionVersion: 1,
         reset: false,
         capacity: 512,

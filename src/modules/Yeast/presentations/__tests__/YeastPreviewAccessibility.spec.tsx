@@ -1,7 +1,10 @@
 import { act, render, screen } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { publishYeastPreviewRevision } from '../../stores/yeastPreviewRevision';
+import {
+    publishAppliedYeastPreviewRevision,
+    publishPendingYeastPreviewRevision,
+} from '../../stores/yeastPreviewRevision';
 import { YeastPreviewSurface } from '../views/YeastPreviewSurface';
 
 import { createPreviewEvent, createPreviewSnapshot } from './yeastPreviewFixtures';
@@ -10,8 +13,13 @@ import type { YeastPreviewSnapshot } from '../../models/YeastPreviewSnapshot';
 
 const previewMocks = vi.hoisted(() => ({
     subscribe: vi.fn(),
+    resetCapture: vi.fn(() => 2),
     onSnapshot: undefined as undefined | ((snapshot: YeastPreviewSnapshot, sampledAt: number) => void),
     frames: [] as FrameRequestCallback[],
+}));
+
+vi.mock('../../useCases/resetYeastPreviewCapture', () => ({
+    resetYeastPreviewCapture: previewMocks.resetCapture,
 }));
 
 vi.mock('../../useCases/subscribeYeastPreview', () => ({
@@ -40,6 +48,7 @@ vi.mock('../createYeastPreviewCanvasRenderer', async (importOriginal) => {
 describe('Yeast preview accessibility', () => {
     beforeEach(() => {
         previewMocks.subscribe.mockClear();
+        previewMocks.resetCapture.mockClear();
         previewMocks.onSnapshot = undefined;
         previewMocks.frames.length = 0;
         vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
@@ -135,7 +144,7 @@ describe('Yeast preview accessibility', () => {
         expect(screen.getByRole('img', { name: /1 upcoming event/i })).toBeInTheDocument();
 
         act(() => {
-            publishYeastPreviewRevision({
+            publishPendingYeastPreviewRevision({
                 processorId: 'another-processor',
                 parameterName: 'amount',
                 transient: false,
@@ -153,7 +162,7 @@ describe('Yeast preview accessibility', () => {
         );
 
         act(() => {
-            publishYeastPreviewRevision({
+            publishPendingYeastPreviewRevision({
                 processorId: 'processor-1',
                 parameterName: 'amount',
                 transient: false,
@@ -162,18 +171,84 @@ describe('Yeast preview accessibility', () => {
         expect(previewMocks.frames).toHaveLength(0);
         expect(screen.getByRole('img', { name: /1 upcoming event/i })).toBeInTheDocument();
 
+        let supersededRevision = 0;
+        let currentRevision = 0;
         act(() => {
-            publishYeastPreviewRevision({
+            supersededRevision = publishPendingYeastPreviewRevision({
+                processorId: 'processor-2',
+                parameterName: 'amount',
+                transient: true,
+            });
+            currentRevision = publishPendingYeastPreviewRevision({
                 processorId: 'processor-2',
                 parameterName: 'amount',
                 transient: true,
             });
         });
         expect(previewMocks.frames).toHaveLength(1);
+        expect(previewMocks.resetCapture).not.toHaveBeenCalled();
 
         act(() => {
             previewMocks.frames.shift()?.(16);
         });
         expect(screen.getByRole('img', { name: '0 upcoming events' })).toBeInTheDocument();
+
+        rerender(
+            <YeastPreviewSurface
+                scope={{ rackId: 'rack-1', routeId: 'track-1', trackId: 'track-1' }}
+                processors={[]}
+                runtimeStatus="ready"
+            />
+        );
+
+        act(() => {
+            previewMocks.onSnapshot?.(
+                createPreviewSnapshot([createPreviewEvent({ eventId: 10 })], { captureEpoch: 1 }),
+                17
+            );
+        });
+        expect(previewMocks.frames).toHaveLength(0);
+        expect(screen.getByRole('img', { name: '0 upcoming events' })).toBeInTheDocument();
+
+        act(() => {
+            publishAppliedYeastPreviewRevision({
+                processorId: 'processor-2',
+                parameterName: 'amount',
+                transient: true,
+                revision: supersededRevision,
+            });
+        });
+        expect(previewMocks.resetCapture).not.toHaveBeenCalled();
+
+        act(() => {
+            publishAppliedYeastPreviewRevision({
+                processorId: 'processor-2',
+                parameterName: 'amount',
+                transient: true,
+                revision: currentRevision,
+            });
+        });
+        expect(previewMocks.resetCapture).toHaveBeenCalledWith({
+            rackId: 'rack-1',
+            routeId: 'track-1',
+            trackId: 'track-1',
+        });
+
+        act(() => {
+            previewMocks.onSnapshot?.(
+                createPreviewSnapshot([createPreviewEvent({ eventId: 11 })], { captureEpoch: 1 }),
+                18
+            );
+        });
+        expect(previewMocks.frames).toHaveLength(0);
+
+        act(() => {
+            previewMocks.onSnapshot?.(
+                createPreviewSnapshot([createPreviewEvent({ eventId: 12 })], { captureEpoch: 2 }),
+                19
+            );
+            previewMocks.frames.shift()?.(32);
+        });
+        expect(screen.getByRole('img', { name: /1 upcoming event/i })).toBeInTheDocument();
     });
 });

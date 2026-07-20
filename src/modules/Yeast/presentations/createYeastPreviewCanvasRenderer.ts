@@ -139,9 +139,26 @@ export function createYeastPreviewCanvasRenderer(
 
     let width = 640;
     let height = 112;
+    let backingDevicePixelRatio = 0;
+
+    function synchronizeBackingStore(): number {
+        const devicePixelRatio = window.devicePixelRatio || 1;
+        const backingWidth = Math.round(width * devicePixelRatio);
+        const backingHeight = Math.round(height * devicePixelRatio);
+        if (
+            backingDevicePixelRatio !== devicePixelRatio ||
+            canvas.width !== backingWidth ||
+            canvas.height !== backingHeight
+        ) {
+            canvas.width = backingWidth;
+            canvas.height = backingHeight;
+            backingDevicePixelRatio = devicePixelRatio;
+        }
+        return devicePixelRatio;
+    }
 
     function render(model: YeastPreviewRenderModel): void {
-        const dpr = window.devicePixelRatio || 1;
+        const dpr = synchronizeBackingStore();
         context.clearRect(0, 0, width * dpr, height * dpr);
         context.save();
         context.scale(dpr, dpr);
@@ -163,13 +180,11 @@ export function createYeastPreviewCanvasRenderer(
     }
 
     function resize(nextWidth: number, nextHeight: number): void {
-        const dpr = window.devicePixelRatio || 1;
         width = Math.max(1, nextWidth);
         height = Math.max(1, nextHeight);
-        canvas.width = Math.round(width * dpr);
-        canvas.height = Math.round(height * dpr);
         canvas.style.width = `${width}px`;
         canvas.style.height = `${height}px`;
+        synchronizeBackingStore();
     }
 
     function dispose(): void {

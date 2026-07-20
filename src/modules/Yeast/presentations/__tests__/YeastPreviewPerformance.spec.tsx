@@ -4,45 +4,143 @@ import { createYeastPreviewPresenter } from '../createYeastPreviewPresenter';
 
 import { createPreviewEvent, createPreviewSnapshot } from './yeastPreviewFixtures';
 
+import type { YeastPreviewFeedback } from '../YeastPreviewTypes';
+
+const FRAME_INTERVAL_MS = 1000 / 60;
+const SAMPLE_INTERVAL_MS = 1000 / 30;
+
+type ScheduledCallback = Readonly<{
+    dueAt: number;
+    callback: () => void;
+}>;
+
+function createControlledClock() {
+    const callbacks = new Map<number, ScheduledCallback>();
+    const frameTimes: number[] = [];
+    let currentTime = 0;
+    let nextHandle = 1;
+
+    function schedule(callback: () => void, delayMs: number): number {
+        const handle = nextHandle;
+        nextHandle += 1;
+        callbacks.set(handle, { dueAt: currentTime + Math.max(0, delayMs), callback });
+        return handle;
+    }
+
+    function cancel(handle: number): void {
+        callbacks.delete(handle);
+    }
+
+    function advanceTo(targetTime: number): void {
+        while (callbacks.size > 0) {
+            let next: Readonly<{ handle: number; scheduled: ScheduledCallback }> | null = null;
+            for (const [handle, scheduled] of callbacks) {
+                if (scheduled.dueAt > targetTime) {
+                    continue;
+                }
+                if (!next) {
+                    next = { handle, scheduled };
+                    continue;
+                }
+                if (scheduled.dueAt < next.scheduled.dueAt) {
+                    next = { handle, scheduled };
+                }
+            }
+            if (!next) {
+                break;
+            }
+            callbacks.delete(next.handle);
+            currentTime = next.scheduled.dueAt;
+            next.scheduled.callback();
+        }
+        currentTime = targetTime;
+    }
+
+    function requestFrame(callback: FrameRequestCallback): number {
+        const frameAt = (Math.floor(currentTime / FRAME_INTERVAL_MS) + 1) * FRAME_INTERVAL_MS;
+        return schedule(() => {
+            frameTimes.push(frameAt);
+            callback(frameAt);
+        }, frameAt - currentTime);
+    }
+
+    return {
+        advanceTo,
+        cancel,
+        frameTimes,
+        now: () => currentTime,
+        requestFrame,
+        setTimer: schedule,
+    };
+}
+
 describe('Yeast preview performance', () => {
-    it('coalesces overload, reports bounded p95 age, and becomes silent on the first frame after 500 ms', () => {
-        const frames: FrameRequestCallback[] = [];
-        const timers: Array<() => void> = [];
+    it('keeps 30 Hz sampling within the frame budget and becomes silent only after 500 ms', () => {
+        const clock = createControlledClock();
+        const feedback = vi.fn<(value: YeastPreviewFeedback) => void>();
+        const presenter = createYeastPreviewPresenter({
+            renderer: { backend: 'canvas2d', render: vi.fn(), resize: vi.fn(), dispose: vi.fn() },
+            requestFrame: clock.requestFrame,
+            cancelFrame: clock.cancel,
+            setTimer: clock.setTimer,
+            clearTimer: clock.cancel,
+            now: clock.now,
+            readPlayheadBeat: () => 0,
+            onFeedback: feedback,
+        });
+
+        const sampleTimes = Array.from({ length: 10 }, (_, index) => index * SAMPLE_INTERVAL_MS);
+        for (let index = 0; index < sampleTimes.length; index++) {
+            const sampleAt = sampleTimes[index]!;
+            clock.advanceTo(sampleAt);
+            presenter.acceptSnapshot(
+                createPreviewSnapshot([createPreviewEvent({ eventId: index, beatTime: 1 + index / 64 })]),
+                sampleAt
+            );
+        }
+        const lastSampleAt = sampleTimes.at(-1)!;
+        clock.advanceTo(lastSampleAt + FRAME_INTERVAL_MS + 0.01);
+
+        const activeFeedback = feedback.mock.calls.at(-1)?.[0];
+        expect(activeFeedback).toEqual(expect.objectContaining({ active: true, droppedFrames: 0 }));
+        expect(activeFeedback?.latencyP95Ms).not.toBeNull();
+        expect(activeFeedback?.latencyP95Ms ?? Number.POSITIVE_INFINITY).toBeLessThanOrEqual(
+            FRAME_INTERVAL_MS + SAMPLE_INTERVAL_MS
+        );
+        for (const sampleAt of sampleTimes) {
+            const nextFrame = clock.frameTimes.find((frameAt) => frameAt >= sampleAt);
+            expect(nextFrame).toBeDefined();
+            expect((nextFrame ?? Number.POSITIVE_INFINITY) - sampleAt).toBeLessThanOrEqual(FRAME_INTERVAL_MS + 0.01);
+        }
+
+        clock.advanceTo(lastSampleAt + 499.99);
+        expect(feedback).toHaveBeenLastCalledWith(expect.objectContaining({ active: true }));
+        clock.advanceTo(lastSampleAt + 500);
+        expect(feedback).toHaveBeenLastCalledWith(expect.objectContaining({ active: true }));
+        clock.advanceTo(lastSampleAt + 500 + FRAME_INTERVAL_MS + 0.01);
+        expect(feedback).toHaveBeenLastCalledWith(expect.objectContaining({ active: false }));
+    });
+
+    it('coalesces an overload burst without backpressuring preview production', () => {
+        const clock = createControlledClock();
         const feedback = vi.fn();
         const presenter = createYeastPreviewPresenter({
             renderer: { backend: 'canvas2d', render: vi.fn(), resize: vi.fn(), dispose: vi.fn() },
-            requestFrame: (callback) => {
-                frames.push(callback);
-                return frames.length;
-            },
-            cancelFrame: vi.fn(),
-            setTimer: (callback) => {
-                timers.push(callback);
-                return timers.length;
-            },
-            clearTimer: vi.fn(),
-            now: () => 0,
+            requestFrame: clock.requestFrame,
+            cancelFrame: clock.cancel,
+            setTimer: clock.setTimer,
+            clearTimer: clock.cancel,
+            now: clock.now,
             readPlayheadBeat: () => 0,
             onFeedback: feedback,
         });
 
         for (let index = 0; index < 32; index++) {
-            presenter.acceptSnapshot(
-                createPreviewSnapshot([createPreviewEvent({ eventId: index, beatTime: 1 + index / 64 })]),
-                0
-            );
+            presenter.acceptSnapshot(createPreviewSnapshot([createPreviewEvent({ eventId: index })]), 0);
         }
+        clock.advanceTo(FRAME_INTERVAL_MS + 0.01);
 
-        expect(frames).toHaveLength(1);
-        frames.shift()!(48);
-        expect(feedback).toHaveBeenLastCalledWith(
-            expect.objectContaining({ active: true, latencyP95Ms: 48, droppedFrames: 31 })
-        );
-
-        timers.at(-1)!();
-        expect(frames).toHaveLength(1);
-        frames.shift()!(516);
-        expect(feedback).toHaveBeenLastCalledWith(expect.objectContaining({ active: false }));
+        expect(feedback).toHaveBeenLastCalledWith(expect.objectContaining({ active: true, droppedFrames: 31 }));
     });
 
     it('never grows the visual event field beyond the fixed tap capacity', () => {
@@ -114,6 +212,7 @@ describe('Yeast preview performance', () => {
             droppedEvents: 0,
             droppedFrames: 0,
             droppedVisualEvents: 0,
+            processorActivity: [],
             summary: '0 upcoming events',
         });
     });
