@@ -53,4 +53,25 @@ describe('onboarding useCases', () => {
         window.localStorage.setItem(ONBOARDING_COMPLETED_KEY, '1');
         expect(isOnboardingCompleted()).toBe(true);
     });
+
+    it('regressOnboardingStep does nothing while the tour is inactive', () => {
+        regressOnboardingStep();
+        expect(onboardingStore.value).toEqual({ active: false, stepIndex: 0 });
+    });
+
+    it('advanceOnboardingStep does nothing while the tour is inactive', () => {
+        advanceOnboardingStep({ totalSteps: 3 });
+        expect(onboardingStore.value).toEqual({ active: false, stepIndex: 0 });
+    });
+
+    it('isOnboardingCompleted treats a missing localStorage as completed', () => {
+        const browserStorage = window.localStorage;
+        Object.defineProperty(window, 'localStorage', { configurable: true, value: undefined });
+
+        try {
+            expect(isOnboardingCompleted()).toBe(true);
+        } finally {
+            Object.defineProperty(window, 'localStorage', { configurable: true, value: browserStorage });
+        }
+    });
 });
