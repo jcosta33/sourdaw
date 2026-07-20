@@ -1,0 +1,47 @@
+src/modules/Arrangement/useCases/clipEditing/__tests__/normalizeClip.spec.ts
+  s_c2fca615e81f34::t_015c397f6628bd 22,41-44,120-149
+src/modules/Arrangement/useCases/clipEditing/normalizeClip.ts
+  s_c2fca615e81f34::t_2c65f313261d32 2,29-31
+src/modules/Arrangement/useCases/clipEditing/reverseClip.ts
+  s_c2fca615e81f34::t_c0505ff10adbdb 2,33-35
+src/modules/Arrangement/useCases/replaceClipAudioBuffer.ts
+  s_c2fca615e81f34::t_21f508ec00599b 1-2,15-26,38-43
+src/modules/Knead/useCases/__tests__/clearClipPitchContour.spec.ts
+  s_c2fca615e81f34::t_a47146b7b0e677 1-47
+src/modules/Knead/useCases/clearClipPitchContour.ts
+  s_c28df7d3dde4b9::t_226762ed0d2d22 1-20
+src/modules/Knead/useCases/index.ts
+  s_ab44d00b33ab9f::t_02cd43f2a9564c 2
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "400a125e3c95c68ada8d12b0941fe672ece8cd12",
+  "prompts": {},
+  "sessions": {
+    "s_ab44d00b33ab9f": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8132-eefa-71e3-a80e-a76770a6734d",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_c28df7d3dde4b9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f80f4-c597-7162-a337-9e68c16e3fb4",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_c2fca615e81f34": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f74e9-e1c5-7142-85d2-4c577b3973c0",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
