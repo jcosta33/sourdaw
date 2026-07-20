@@ -1,0 +1,39 @@
+crates/daw-engine/src/midi_fx.rs
+  s_75f59e6653feee::t_36a3893605abc4 10,19-32,368,401-402,413,447,459,462,472,488,528-549,553,572,595-596,603,612,621,630,646,651-667,680,685,696,714,719
+crates/daw-engine/src/plugin_slot.rs
+  s_75f59e6653feee::t_26f1799d6dacc3 12-13
+crates/daw-engine/src/scheduler.rs
+  s_75f59e6653feee::t_cdbbdf230a954e 14-18,37,61-62,74,113,146,148-150,152,209,216-221,254-261,425-480,508,527
+src-tauri/src/commands/plugins.rs
+  s_75f59e6653feee::t_ca28f7b3febeec 563
+src/modules/Arrangement/useCases/__tests__/resolveComping.spec.ts
+  s_75f59e6653feee::t_a3598f37312b57 46,58-90
+src/modules/Arrangement/useCases/resolveComping.ts
+  s_75f59e6653feee::t_2b2002f959457a 7,17,27,56,91
+src/modules/AudioEngine/useCases/offlineRender/scheduleTrackClips.ts
+  s_75f59e6653feee::t_b0d07a0237e35e 34,37-61,65-70,75-80,108,139,250,370-375,378,385,440-445,457,466
+src/modules/MIDI/useCases/__tests__/shouldPlayMidiEvent.spec.ts
+  s_75f59e6653feee::t_072c8fee520eb3 69-80
+src/modules/MIDI/useCases/shouldPlayMidiEvent.ts
+  s_75f59e6653feee::t_0fb3afb31567fa 61-72,92-93
+src/modules/Transport/useCases/scheduling/__tests__/scheduleMidiNotes.spec.ts
+  s_75f59e6653feee::t_26c4a81a6e804d 3,31-38,87,97,108-113,279-314
+src/modules/Transport/useCases/scheduling/scheduleMidiNotes.ts
+  s_75f59e6653feee::t_51f9d7f7578349 59-83,152-157,160,163,174,244-249,311,313,359
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "942394c9ca75c139f7054fda16e985ff447a4bb6",
+  "prompts": {},
+  "sessions": {
+    "s_75f59e6653feee": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f819a-2ddc-70b3-ab04-f29a50e9a71d",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
