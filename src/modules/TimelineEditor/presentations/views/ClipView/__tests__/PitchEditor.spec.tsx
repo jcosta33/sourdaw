@@ -129,11 +129,22 @@ describe('PitchEditor', () => {
         expect(canvas).not.toHaveClass('pointer-events-auto');
     });
 
-    it('should capture pointer events while analyzing so the waveform beneath stays interactive', () => {
+    it('should not capture pointer events while analyzing so the waveform beneath stays interactive', () => {
         vi.mocked(useStore).mockReturnValue({ ...IDLE_STATE, isAnalyzing: true, analysisProgress: 0.5 });
         render(<PitchEditor clipId="clip-1" />);
         const canvas = document.querySelector('canvas')!;
         expect(canvas).toHaveClass('pointer-events-none');
+    });
+
+    it('should treat a contour with no points as no contour: no capture, Analyze Pitch offered, commit hidden', () => {
+        const emptyContour: PitchContour = { points: [], sample_rate: 48000, hop_size: 256 };
+        vi.mocked(useStore).mockReturnValue({ ...IDLE_STATE, contours: { 'clip-1': emptyContour } });
+        render(<PitchEditor clipId="clip-1" />);
+        const canvas = document.querySelector('canvas')!;
+        expect(canvas).toHaveClass('pointer-events-none');
+        expect(canvas).not.toHaveClass('pointer-events-auto');
+        expect(screen.getByText('Analyze Pitch')).toBeInTheDocument();
+        expect(screen.queryByText('Bounce & Commit')).not.toBeInTheDocument();
     });
 
     it('should capture pointer events once a contour exists so pitch editing works', () => {

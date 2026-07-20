@@ -27,6 +27,10 @@ export const PitchEditor = ({ clipId }: PitchEditorProps): ReactElement => {
     const dragRef = useRef<{ startY: number; initialShift: number; segmentIndex: number } | null>(null);
 
     const contour = kneadState.contours[clipId];
+    // A contour with no points (e.g. silent or fully unvoiced audio) is truthy but
+    // offers nothing to edit: hit-testing, the Analyze button, and the commit button
+    // must all treat it as "no contour" so the waveform beneath stays interactive.
+    const hasContourPoints = (contour?.points.length ?? 0) > 0;
 
     // Generate segments from contour if none exist yet.
     useEffect(() => {
@@ -248,7 +252,7 @@ export const PitchEditor = ({ clipId }: PitchEditorProps): ReactElement => {
 
     return (
         <div className="absolute inset-0 pointer-events-none flex flex-col z-10">
-            {!contour && !kneadState.isAnalyzing ? (
+            {!hasContourPoints && !kneadState.isAnalyzing ? (
                 <div className="absolute top-2 right-2 pointer-events-auto flex gap-2">
                     <Button
                         size="xs"
@@ -261,7 +265,7 @@ export const PitchEditor = ({ clipId }: PitchEditorProps): ReactElement => {
                 </div>
             ) : null}
 
-            {contour ? (
+            {hasContourPoints ? (
                 <div className="absolute top-2 right-2 pointer-events-auto flex gap-2">
                     <Button
                         size="xs"
@@ -295,7 +299,7 @@ export const PitchEditor = ({ clipId }: PitchEditorProps): ReactElement => {
                         'absolute inset-0 w-full h-full cursor-ns-resize',
                         // Only capture hit-testing while pitch editing is possible; otherwise the
                         // transparent overlay would swallow every waveform interaction beneath it.
-                        contour ? 'pointer-events-auto' : 'pointer-events-none'
+                        hasContourPoints ? 'pointer-events-auto' : 'pointer-events-none'
                     )}
                     onPointerDown={handlePointerDown}
                     onPointerMove={handlePointerMove}
