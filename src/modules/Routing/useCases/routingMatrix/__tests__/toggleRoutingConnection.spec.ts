@@ -31,4 +31,15 @@ describe('toggleRoutingConnection write boundary', () => {
         const keyB = routingConnectionKey('src-2', 'bus-b');
         expect(Object.keys(routingMatrixStore.value?.connections ?? {})).toEqual([keyB]);
     });
+
+    it('falls back to an empty connection map when the store has never been set', () => {
+        routingMatrixStore.set(null);
+
+        toggleRoutingConnection('src-1', 'master');
+
+        const key = routingConnectionKey('src-1', 'master');
+        expect(routingMatrixStore.value?.connections).toEqual({
+            [key]: { sourceId: 'src-1', destId: 'master', level: 1.0 },
+        });
+    });
 });

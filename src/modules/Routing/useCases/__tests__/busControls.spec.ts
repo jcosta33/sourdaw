@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { ensureBusStrip } from '../busControls/ensureBusStrip';
+import { removeSend } from '../busControls/removeSend';
 import { setBusGain } from '../busControls/setBusGain';
 import { setSend } from '../busControls/setSend';
 
@@ -8,12 +9,14 @@ const mocks = vi.hoisted(() => ({
     ensureBusStripEngine: vi.fn(),
     setBusGainEngine: vi.fn(),
     setSendEngine: vi.fn(),
+    removeSendEngine: vi.fn(),
 }));
 
 vi.mock('#/modules/AudioEngine/useCases', () => ({
     ensureBusStrip: mocks.ensureBusStripEngine,
     setBusGain: mocks.setBusGainEngine,
     setSend: mocks.setSendEngine,
+    removeSend: mocks.removeSendEngine,
 }));
 
 describe('busControls', () => {
@@ -39,5 +42,10 @@ describe('busControls', () => {
     it('setSend supports preFader=true', () => {
         setSend('t1', 'bus-1', 0.5, true);
         expect(mocks.setSendEngine).toHaveBeenCalledWith('t1', 'bus-1', 0.5, true);
+    });
+
+    it('removeSend forwards source track id and bus id to engine', () => {
+        removeSend('t1', 'bus-1');
+        expect(mocks.removeSendEngine).toHaveBeenCalledWith('t1', 'bus-1');
     });
 });
