@@ -67,7 +67,37 @@ describe('Pause/Start Playback', () => {
 
             await vi.waitFor(() => expect(mocks.stopPlayheadScheduler).toHaveBeenCalled());
             expect(mocks.stopAllScheduled).toHaveBeenCalled();
-            expect(mocks.updateTransportState).toHaveBeenCalledWith({ isPlaying: false, isRecording: false });
+            expect(mocks.updateTransportState).toHaveBeenCalledWith({
+                isPlaying: false,
+                isRecording: false,
+                playheadPosition: 0,
+            });
+        });
+    });
+
+    describe('pause → play continuity', () => {
+        it('resumes from the pause position after the playhead advanced during playback', async () => {
+            // A play started at beat 0: the scheduler advanced the live
+            // playhead (the ref — the only channel it writes) to beat 100 while
+            // the store still holds the position where playback started.
+            const liveState: Record<string, unknown> = {
+                isPlaying: true,
+                playheadPosition: 0,
+                preRollEnabled: false,
+            };
+            mocks.getTransportState.mockReturnValue(liveState);
+            mocks.updateTransportState.mockImplementation((...args) => {
+                Object.assign(liveState, args[0]);
+            });
+            mocks.playheadPositionRef.current = 100;
+
+            pausePlayback();
+            await vi.waitFor(() => expect(mocks.stopPlayheadScheduler).toHaveBeenCalled());
+
+            startPlayback();
+
+            expect(mocks.updateTransportState).toHaveBeenCalledWith({ isPlaying: true, playheadPosition: 100 });
+            expect(mocks.playheadPositionRef.current).toBe(100);
         });
     });
 

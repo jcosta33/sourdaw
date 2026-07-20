@@ -1,16 +1,18 @@
 // @ts-check
-// Standalone ESLint config for Sourdaw — React 19 + Compiler, TypeScript, Tailwind v4.
-// Extended with:
-// - architecture/layer restrictions
-// - import ordering + no default exports
+// Retained ESLint config for Sourdaw — only the rules oxlint 1.74 cannot run.
+// oxlint (.oxlintrc.json) is the primary linter: ESLint core/recommended,
+// unicorn, promise, import-x, jsx-a11y and all typescript-eslint rules
+// (incl. type-aware via tsgolint) live there. Retained here:
+// - local Sourdaw-specific rules for agentic drift (custom inline plugin)
+// - @eslint-react + react-hooks v7 (React Compiler) presets
 // - TanStack Query linting
-// - local Sourdaw-specific rules for agentic drift
-// - stronger TypeScript promise/import enforcement
+// - eslint-comments hygiene, prettier-as-lint, @stylistic/spaced-comment
+// - import-x/order, @typescript-eslint/naming-convention, id-length, and a
+//   handful of core rules whose oxlint implementations diverge semantically
 
 import { existsSync, readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 
-import eslint from '@eslint/js';
 import eslintPluginReact from '@eslint-react/eslint-plugin';
 import eslintPluginComments from '@eslint-community/eslint-plugin-eslint-comments/configs';
 import eslintPluginStylistic from '@stylistic/eslint-plugin';
@@ -21,7 +23,6 @@ import eslintPluginJsxA11yX from 'eslint-plugin-jsx-a11y-x';
 import eslintPluginPrettierRecommended from 'eslint-plugin-prettier/recommended';
 import eslintPluginPromise from 'eslint-plugin-promise';
 import eslintPluginReactHooks from 'eslint-plugin-react-hooks';
-import eslintPluginUnicorn from 'eslint-plugin-unicorn';
 import eslintPluginQuery from '@tanstack/eslint-plugin-query';
 import globals from 'globals';
 import tseslint from 'typescript-eslint';
@@ -2324,15 +2325,14 @@ const sourdawPlugin = {
         },
     },
 };
-
 export default defineConfig(
     // ─── Base configs ────────────────────────────────────────────────────────
-    eslint.configs.recommended,
-    tseslint.configs.recommendedTypeChecked,
-    eslintPluginPromise.configs['flat/recommended'],
+    // Only configs whose rules oxlint 1.74 cannot run are kept here. Everything
+    // oxlint covers (ESLint core/recommended, unicorn, promise, import-x,
+    // jsx-a11y, and all typescript-eslint rules incl. type-aware via tsgolint)
+    // lives in .oxlintrc.json and is intentionally absent below so the two
+    // linters never double-report.
     eslintPluginComments.recommended,
-    // eslint-plugin-jsx-a11y-x 0.2.0 removed `flatConfigs`; `configs` is now the flat-config surface (same 34 recommended rules).
-    eslintPluginJsxA11yX.configs.recommended,
     eslintPluginReact.configs['recommended-type-checked'],
     eslintPluginReactHooks.configs.flat['recommended-latest'],
     eslintPluginQuery.configs['flat/recommended'],
@@ -2362,14 +2362,21 @@ export default defineConfig(
     },
 
     // ─── Global settings ─────────────────────────────────────────────────────
+    // NOTE: reportUnusedDisableDirectives is intentionally off — disable
+    // directives in src now suppress oxlint-owned rules (oxlint honors
+    // eslint-disable comments), so ESLint cannot tell they are still in use,
+    // and oxlint conversely cannot see the retained rules below. Neither tool
+    // can own that hygiene without false positives in a split setup.
     {
         linterOptions: {
-            reportUnusedDisableDirectives: true,
+            reportUnusedDisableDirectives: false,
         },
         plugins: {
-            unicorn: eslintPluginUnicorn,
             '@stylistic': eslintPluginStylistic,
+            '@typescript-eslint': tseslint.plugin,
             'import-x': eslintPluginImport,
+            'jsx-a11y-x': eslintPluginJsxA11yX,
+            promise: eslintPluginPromise,
             '@tanstack/query': eslintPluginQuery,
             sourdaw: sourdawPlugin,
         },
@@ -2379,6 +2386,7 @@ export default defineConfig(
             globals: {
                 ...globals.browser,
             },
+            parser: tseslint.parser,
             parserOptions: {
                 project: './tsconfig.eslint.json',
                 tsconfigRootDir: import.meta.dirname,
@@ -2395,9 +2403,21 @@ export default defineConfig(
     {
         files: ['**/*.{js,jsx,ts,tsx,mts,cts}'],
         rules: {
-            // ── Code style ────────────────────────────────────────────────────
-            '@stylistic/linebreak-style': ['error', 'unix'],
-            '@stylistic/eol-last': ['error', 'always'],
+            // ── Retained ESLint-core rules (not implemented by oxlint 1.74) ──
+            'consistent-return': 'error',
+            'no-invalid-this': 'error',
+            'no-octal': 'error',
+            // Oxlint's preserve-caught-error does not recognise an attached
+            // `cause` on AggregateError (false positive); ESLint enforces it.
+            'preserve-caught-error': 'error',
+            // Oxlint's no-useless-computed-key reports computed keys with TS
+            // assertions (`['--x' as string]`); ESLint enforces it.
+            'no-useless-computed-key': 'error',
+            // Oxlint's no-void treats `() => void x` as an allowed statement;
+            // ESLint enforces the warn on expression-position `void`.
+            'no-void': ['warn', { allowAsStatement: true }],
+
+            // ── Code style not covered by oxlint ─────────────────────────────
             '@stylistic/spaced-comment': [
                 'error',
                 'always',
@@ -2406,46 +2426,9 @@ export default defineConfig(
                     block: { markers: ['!'], exceptions: ['*'], balanced: true },
                 },
             ],
-            'prefer-template': 'error',
-            'no-var': 'error',
-            eqeqeq: 'error',
-            'no-eval': 'error',
-            'no-extra-bind': 'error',
-            curly: ['error', 'all'],
-            semi: ['error', 'always'],
-            quotes: ['error', 'single', { avoidEscape: true }],
-            'block-scoped-var': 'error',
-            'array-callback-return': 'error',
-            'object-shorthand': ['error', 'always', { ignoreConstructors: false, avoidQuotes: true }],
-            'no-case-declarations': 'error',
-            'no-void': ['warn', { allowAsStatement: true }],
-            'no-invalid-this': 'error',
-            'require-await': 'off',
-            'max-statements-per-line': ['error', { max: 1 }],
-            'prefer-exponentiation-operator': 'error',
-            'prefer-rest-params': 'error',
-            'prefer-spread': 'error',
-            'no-debugger': 'error',
-            'no-constant-condition': 'warn',
-            'prefer-const': ['error', { destructuring: 'all', ignoreReadBeforeAssign: true }],
-            'no-unreachable': 'error',
-            'no-unused-labels': 'error',
-            'no-useless-computed-key': 'error',
-            'no-useless-concat': 'error',
-            'no-useless-escape': 'error',
-            'no-useless-rename': ['error', { ignoreDestructuring: false, ignoreImport: false, ignoreExport: false }],
-            'no-undef': 'off',
-            'no-nested-ternary': 'error',
-            'no-unneeded-ternary': 'error',
-            'default-case-last': 'error',
-            'consistent-return': 'error',
 
-            // ── Import hygiene ────────────────────────────────────────────────
-            'import-x/no-default-export': 'error',
-            'import-x/first': 'error',
-            'import-x/newline-after-import': 'error',
-            'import-x/no-duplicates': 'error',
-            'sourdaw/no-react-import-outside-ui': 'warn',
+            // ── Import hygiene retained in ESLint ────────────────────────────
+            // oxlint 1.74 has no import/order implementation.
             'import-x/order': [
                 'error',
                 {
@@ -2463,31 +2446,17 @@ export default defineConfig(
                     },
                 },
             ],
+            'sourdaw/no-react-import-outside-ui': 'warn',
 
-            // ── Unicorn ───────────────────────────────────────────────────────
-            'unicorn/error-message': 'error',
-            'unicorn/escape-case': 'error',
-            'unicorn/no-instanceof-array': 'error',
-            'unicorn/number-literal-case': 'error',
-            'unicorn/prefer-array-find': 'error',
-            'unicorn/prefer-default-parameters': 'error',
-            'unicorn/prefer-includes': 'error',
-            'unicorn/prefer-string-starts-ends-with': 'error',
-            'unicorn/prefer-string-replace-all': 'error',
-            'unicorn/prefer-dom-node-text-content': 'warn',
-            'unicorn/prefer-type-error': 'error',
-            'unicorn/throw-new-error': 'error',
-            // Renamed from 'unicorn/no-array-for-each' in eslint-plugin-unicorn v66 — same rule, same severity.
-            'unicorn/no-for-each': 'error',
-            'unicorn/explicit-length-check': 'error',
-            'unicorn/no-new-array': 'error',
-            'unicorn/no-useless-length-check': 'error',
-            'unicorn/catch-error-name': 'error',
+            // ── Promise rules retained in ESLint ─────────────────────────────
+            // Oxlint's no-return-wrap also fires on non-promise callbacks
+            // (stricter); ESLint keeps the exact current semantics.
+            'promise/no-return-wrap': 'error',
 
-            // ── Promise ──────────────────────────────────────────────────────
-            'promise/param-names': 'error',
-            'promise/always-return': 'warn',
-            'promise/catch-or-return': 'warn',
+            // ── a11y retained in ESLint ──────────────────────────────────────
+            // jsx-a11y-x (fork) defaults differ from oxlint's jsx-a11y
+            // implementation for this rule; severity mirrors the preset.
+            'jsx-a11y-x/interactive-supports-focus': 'error',
         },
     },
 
@@ -2495,80 +2464,21 @@ export default defineConfig(
     {
         files: ['**/*.{ts,tsx,mts,cts}'],
         rules: {
-            'no-unused-vars': 'off',
-            '@typescript-eslint/no-unused-vars': ['error', { argsIgnorePattern: '^_', varsIgnorePattern: '^_' }],
-            'no-dupe-class-members': 'off',
-            '@typescript-eslint/no-dupe-class-members': 'error',
-            // AGENTS.md L148: `any` is forbidden except at a boundary with immediate narrowing.
-            '@typescript-eslint/no-explicit-any': 'error',
-            'no-implied-eval': 'off',
-            '@typescript-eslint/no-implied-eval': 'error',
-            'dot-notation': 'off',
-            '@typescript-eslint/dot-notation': ['error', { allowKeywords: true }],
-            '@typescript-eslint/await-thenable': 'error',
-            '@typescript-eslint/no-for-in-array': 'error',
-            '@typescript-eslint/no-unnecessary-type-assertion': 'error',
-            '@typescript-eslint/no-unnecessary-condition': 'warn',
-            '@typescript-eslint/switch-exhaustiveness-check': 'warn',
-            // AGENTS.md L148: soundness — unsafe `any` propagation is forbidden.
-            '@typescript-eslint/no-unsafe-argument': 'error',
-            '@typescript-eslint/no-unsafe-assignment': 'error',
-            '@typescript-eslint/no-unsafe-call': 'error',
-            '@typescript-eslint/no-unsafe-member-access': 'error',
-            '@typescript-eslint/no-unsafe-return': 'error',
-            'require-await': 'off',
-            '@typescript-eslint/require-await': 'warn',
-            '@typescript-eslint/restrict-plus-operands': 'error',
-            '@typescript-eslint/restrict-template-expressions': [
-                'warn',
-                {
-                    allowAny: false,
-                    allowBoolean: true,
-                    allowNullish: false,
-                    allowNumber: true,
-                    allowRegExp: true,
-                },
-            ],
-            '@typescript-eslint/unbound-method': 'off',
-            '@typescript-eslint/consistent-type-imports': [
-                'error',
-                { prefer: 'type-imports', fixStyle: 'inline-type-imports', disallowTypeAnnotations: false },
-            ],
-            '@typescript-eslint/no-misused-promises': ['error', { checksVoidReturn: { attributes: false } }],
-            '@typescript-eslint/no-floating-promises': 'error',
-            '@typescript-eslint/prefer-promise-reject-errors': 'warn',
-
-            // AGENTS.md L147: Prefer `type` over `interface`.
-            '@typescript-eslint/consistent-type-definitions': ['error', 'type'],
-
-            // AGENTS.md L148: `{}`, unconstrained `object` are forbidden placeholder types.
-            '@typescript-eslint/no-empty-object-type': 'error',
-
-            // AGENTS.md L148: `@ts-expect-error`/`@ts-ignore`/`@ts-nocheck` without justification forbidden.
-            '@typescript-eslint/ban-ts-comment': [
+            // AGENTS.md L150: No single-letter generic type parameters.
+            // oxlint 1.74 has no naming-convention implementation.
+            '@typescript-eslint/naming-convention': [
                 'error',
                 {
-                    'ts-expect-error': 'allow-with-description',
-                    'ts-ignore': true,
-                    'ts-nocheck': true,
-                    'ts-check': false,
-                    minimumDescriptionLength: 10,
+                    selector: 'typeParameter',
+                    format: ['PascalCase'],
+                    custom: { regex: '^.{2,}$', match: true },
                 },
             ],
-
-            // AGENTS.md L147 / L149 — sourdaw custom rules for forms/imports.
-            'sourdaw/no-enum': 'error',
-            'sourdaw/no-foreign-store-write': 'warn',
-            'sourdaw/no-model-layer-upward-import': 'error',
-            'sourdaw/no-multiple-function-exports': 'error',
-            'sourdaw/no-namespace-import': 'error',
-            'sourdaw/no-nonmodule-private-module-import': 'error',
-            'sourdaw/no-repository-usecase-import': 'error',
-            'sourdaw/no-type-only-private-module-import': 'error',
-            'sourdaw/no-type-assertion-escape': 'error',
 
             // AGENTS.md L150: No single-letter variable names.
             // `_` is kept for intentionally-unused destructured positional slots.
+            // Oxlint's id-length also reports TS type members (stricter); ESLint
+            // keeps the exact current semantics.
             'id-length': [
                 'error',
                 {
@@ -2631,15 +2541,16 @@ export default defineConfig(
                 },
             ],
 
-            // AGENTS.md L150: No single-letter generic type parameters.
-            '@typescript-eslint/naming-convention': [
-                'error',
-                {
-                    selector: 'typeParameter',
-                    format: ['PascalCase'],
-                    custom: { regex: '^.{2,}$', match: true },
-                },
-            ],
+            // AGENTS.md L147 / L149 — sourdaw custom rules for forms/imports.
+            'sourdaw/no-enum': 'error',
+            'sourdaw/no-foreign-store-write': 'warn',
+            'sourdaw/no-model-layer-upward-import': 'error',
+            'sourdaw/no-multiple-function-exports': 'error',
+            'sourdaw/no-namespace-import': 'error',
+            'sourdaw/no-nonmodule-private-module-import': 'error',
+            'sourdaw/no-repository-usecase-import': 'error',
+            'sourdaw/no-type-only-private-module-import': 'error',
+            'sourdaw/no-type-assertion-escape': 'error',
         },
     },
 
@@ -2647,8 +2558,6 @@ export default defineConfig(
     {
         files: ['**/*.{tsx,jsx}'],
         rules: {
-            'jsx-quotes': ['error', 'prefer-double'],
-
             // Children manipulation is fine for DAW components (e.g. slot patterns)
             '@eslint-react/no-children-for-each': 'off',
             '@eslint-react/no-children-count': 'off',
@@ -2667,19 +2576,7 @@ export default defineConfig(
             '@eslint-react/naming-convention-context-name': 'error',
 
             // DAW UX allowances
-            'jsx-a11y-x/no-autofocus': 'off',
-            'jsx-a11y-x/no-noninteractive-element-interactions': 'off',
-            'jsx-a11y-x/label-has-associated-control': [
-                'warn',
-                {
-                    controlComponents: ['Slider', 'Select', 'Switch', 'Input', 'Knob', 'Checkbox', 'SelectTrigger'],
-                    depth: 3,
-                },
-            ],
             'jsx-a11y-x/interactive-supports-focus': 'warn',
-            'jsx-a11y-x/click-events-have-key-events': 'warn',
-            'jsx-a11y-x/no-static-element-interactions': 'warn',
-            'jsx-a11y-x/role-supports-aria-props': 'warn',
 
             // React Compiler/purity allowances
             'react-hooks/refs': 'warn',
@@ -2735,109 +2632,8 @@ export default defineConfig(
             'src/helpers/**/*.ts',
         ],
         rules: {
-            'func-style': ['warn', 'declaration', { allowArrowFunctions: false }],
             'sourdaw/no-react-in-domain-logic': 'error',
             'sourdaw/no-usecase-repository-reexport': 'error',
-        },
-    },
-
-    // ─── Presentation-layer import restrictions ──────────────────────────────
-    {
-        files: [
-            'src/**/presentations/views/**/*.{ts,tsx}',
-            'src/**/presentations/components/**/*.{ts,tsx}',
-            'src/**/presentations/hooks/**/*.{ts,tsx}',
-        ],
-        rules: {
-            '@typescript-eslint/no-restricted-imports': [
-                'error',
-                {
-                    paths: [
-                        {
-                            name: '@tauri-apps/api/core',
-                            message:
-                                'Do not use Tauri APIs directly in presentation code. Go through repositories, adapters, or use cases.',
-                        },
-                        {
-                            name: '@tauri-apps/api/event',
-                            message:
-                                'Do not use Tauri APIs directly in presentation code. Go through repositories, adapters, or use cases.',
-                        },
-                        {
-                            name: '@tauri-apps/api/window',
-                            message:
-                                'Do not use Tauri APIs directly in presentation code. Go through repositories, adapters, or use cases.',
-                        },
-                    ],
-                    patterns: [
-                        {
-                            group: ['**/repositories/**'],
-                            message:
-                                'Do not import repositories directly into presentation code. Go through a hook, use case, or presentation adapter.',
-                        },
-                        {
-                            group: ['**/src-tauri/**', '**/@tauri-apps/api/**'],
-                            message:
-                                'Do not import Tauri bridge code into presentation code. Use repositories/adapters.',
-                        },
-                    ],
-                },
-            ],
-        },
-    },
-
-    // ─── Domain-layer import restrictions ────────────────────────────────────
-    {
-        files: [
-            'src/**/useCases/**/*.{ts,tsx}',
-            'src/**/services/**/*.{ts,tsx}',
-            'src/**/validators/**/*.{ts,tsx}',
-            'src/**/transformers/**/*.{ts,tsx}',
-        ],
-        rules: {
-            '@typescript-eslint/no-restricted-imports': [
-                'error',
-                {
-                    paths: [
-                        {
-                            name: 'react',
-                            message: 'Do not import React into domain logic. Keep domain logic UI-free.',
-                        },
-                        {
-                            name: '@tauri-apps/api/core',
-                            message: 'Do not import Tauri APIs into domain logic. Use repositories or adapters.',
-                        },
-                        {
-                            name: '@tauri-apps/api/event',
-                            message: 'Do not import Tauri APIs into domain logic. Use repositories or adapters.',
-                        },
-                    ],
-                    patterns: [
-                        {
-                            group: ['**/presentations/**'],
-                            message: 'Do not import presentation code into use cases/services/validators/transformers.',
-                        },
-                    ],
-                },
-            ],
-        },
-    },
-
-    // ─── Repository-layer rules ──────────────────────────────────────────────
-    {
-        files: ['src/**/repositories/**/*.{ts,tsx}'],
-        rules: {
-            '@typescript-eslint/no-restricted-imports': [
-                'error',
-                {
-                    patterns: [
-                        {
-                            group: ['**/presentations/**'],
-                            message: 'Repositories must not depend on presentation-layer modules.',
-                        },
-                    ],
-                },
-            ],
         },
     },
 
@@ -2895,33 +2691,16 @@ export default defineConfig(
             '@eslint-react/no-missing-context-display-name': 'off',
             '@eslint-react/no-create-ref': 'off',
             '@eslint-react/no-unstable-context-value': 'off',
-            'jsx-a11y-x/no-static-element-interactions': 'off',
-            'jsx-a11y-x/click-events-have-key-events': 'off',
-            '@typescript-eslint/unbound-method': 'off',
             'sourdaw/no-manual-memoization': 'off',
             'sourdaw/no-useeffect-derived-state': 'off',
-            // Vitest `vi.mock()` calls sit between imports by design (Vitest hoists them),
-            // which triggers false positives for `import-x/first`.
-            'import-x/first': 'off',
             // `import * as subject from '../module'` is the canonical "test the whole surface" pattern.
             'sourdaw/no-namespace-import': 'off',
-            // Mocks and minimal stubs often use `{}` as a placeholder shape.
-            '@typescript-eslint/no-empty-object-type': 'off',
             // Tests frequently use short names (`t`, `p`, `a`, `b`) for intermediate values.
             'id-length': 'off',
             // Tests frequently parameterise generics with `T`, `K` etc. for brevity.
             '@typescript-eslint/naming-convention': 'off',
             // `as any` in tests is sometimes necessary to construct partial mocks of complex types.
             'sourdaw/no-type-assertion-escape': 'off',
-            '@typescript-eslint/no-unsafe-argument': 'warn',
-            '@typescript-eslint/no-unsafe-assignment': 'warn',
-            '@typescript-eslint/no-unsafe-call': 'warn',
-            '@typescript-eslint/no-unsafe-member-access': 'warn',
-            '@typescript-eslint/no-unsafe-return': 'warn',
-            '@typescript-eslint/no-explicit-any': 'warn',
-            // Unawaited async in a test body (fire-and-forget, intentional ordering
-            // assertions) is acceptable; production keeps this at 'error'.
-            '@typescript-eslint/no-floating-promises': 'warn',
         },
     },
 
@@ -2953,22 +2732,9 @@ export default defineConfig(
     {
         files: ['**/*.d.ts'],
         extends: [tseslint.configs.disableTypeChecked],
-        rules: {
-            // Declaration merging into an existing global interface (e.g. augmenting
-            // DOM's `Window` or `FileSystemHandle`) is only expressible with
-            // `interface` — a `type` alias collides (TS2300). The project-wide
-            // "prefer type" rule (AGENTS.md L147) is therefore inapplicable in
-            // ambient declaration files, whose whole purpose is such merges.
-            '@typescript-eslint/consistent-type-definitions': 'off',
-        },
     },
 
     // ─── Prettier (must be last) ─────────────────────────────────────────────
-    eslintPluginPrettierRecommended,
-    {
-        files: ['**/*.{ts,tsx,mts,cts,js,jsx}'],
-        rules: {
-            curly: ['error', 'all'],
-        },
-    }
+    // oxlint has no prettier integration; formatting drift stays gated here.
+    eslintPluginPrettierRecommended
 );

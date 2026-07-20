@@ -73,10 +73,15 @@ export function scheduleAudioClips(
         }
 
         if (track.freezeState.status === 'frozen' && track.freezeState.frozenBufferId) {
-            if (!scheduledFrozenTracks.has(track.id)) {
+            // Key by content, not just track.id (same contract as
+            // scheduleMidiNotes): an unfreeze → refreeze keeps the track id but
+            // replaces frozenBufferId, and a bare-id key would keep the dedup
+            // entry and leave the refrozen track silent for the whole session.
+            const frozenKey = `${track.id}:${track.freezeState.frozenBufferId}`;
+            if (!scheduledFrozenTracks.has(frozenKey)) {
                 const scheduled = scheduleFrozenTrack(track, accumulatedPosition, activeAudioSources, currentTempo);
                 if (scheduled) {
-                    scheduledFrozenTracks.add(track.id);
+                    scheduledFrozenTracks.add(frozenKey);
                 }
             }
             continue;

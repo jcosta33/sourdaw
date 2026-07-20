@@ -12,14 +12,34 @@ use std::f32::consts::TAU;
 pub const MAX_TAU: usize = 4096;
 pub const MAX_FFT: usize = 8192;
 
-/// Simple radix-2 FFT for autocorrelation.
-fn fft_autocorrelation(input: &[f32], output: &mut [f32], n: usize) {
+/// Largest analysis window the engine/poly tracker feeds a detector tuned to
+/// `fmin`: next_pow2(2 * sr / fmin) clamped to 4096..=8192, so the lowest
+/// fundamental spans ≥ 2 full periods up to 96 kHz. At 192 kHz the window
+/// floor is 46.9 Hz — which MAX_TAU (4096) imposes at that rate regardless.
+/// Detectors preallocate their FFT scratch for this size so no allocation
+/// happens on the audio thread.
+pub(crate) fn max_analysis_window(sample_rate: f32, fmin: f32) -> usize {
+    let needed = (2.0 * sample_rate / fmin) as usize;
+    needed.next_power_of_two().clamp(4096, 8192)
+}
+
+/// Simple radix-2 FFT for autocorrelation. `re`/`im` are caller-owned scratch
+/// (power-of-two length, contents overwritten); no allocation on this path.
+pub(crate) fn fft_autocorrelation(
+    input: &[f32],
+    output: &mut [f32],
+    re: &mut [f32],
+    im: &mut [f32],
+) {
+    let n = re.len();
+    debug_assert!(n.is_power_of_two() && im.len() == n && output.len() >= n);
+
     // Zero-pad input to n, FFT, multiply by conjugate, iFFT
-    let mut re = vec![0.0_f32; n];
-    let mut im = vec![0.0_f32; n];
+    re.fill(0.0);
+    im.fill(0.0);
     re[..input.len().min(n)].copy_from_slice(&input[..input.len().min(n)]);
 
-    fft_inplace(&mut re, &mut im, false);
+    fft_inplace(re, im, false);
 
     // Multiply by conjugate (power spectrum)
     for i in 0..n {
@@ -28,11 +48,10 @@ fn fft_autocorrelation(input: &[f32], output: &mut [f32], n: usize) {
         im[i] = 0.0;
     }
 
-    fft_inplace(&mut re, &mut im, true);
+    fft_inplace(re, im, true);
 
     // Output is the autocorrelation
-    let len = output.len().min(n);
-    output[..len].copy_from_slice(&re[..len]);
+    output[..n].copy_from_slice(&re[..n]);
 }
 
 pub fn fft_inplace(re: &mut [f32], im: &mut [f32], inverse: bool) {
@@ -111,7 +130,11 @@ pub struct YinDetector {
     // Preallocated buffers
     diff: Vec<f32>,
     cmndf: Vec<f32>,
-    autocorr: Vec<f32>,
+    /// Autocorrelation of the last analyzed frame. `pub(crate)` so the engine
+    /// can share one FFT between YIN and MPM (`MpmDetector::detect_from_autocorr`).
+    pub(crate) autocorr: Vec<f32>,
+    scratch_re: Vec<f32>,
+    scratch_im: Vec<f32>,
 
     // Result
     pub frequency: f32,
@@ -124,7 +147,9 @@ impl YinDetector {
         let max_tau = (sample_rate / fmin) as usize + 1;
         let min_tau = (sample_rate / fmax) as usize;
         let win_size = max_tau.min(MAX_TAU);
-        let fft_size = next_pow2(win_size * 2);
+        // Preallocate for the largest window this detector will ever see, so
+        // detect() never allocates on the audio thread.
+        let fft_size = next_pow2(max_analysis_window(sample_rate, fmin) * 2);
 
         Self {
             sample_rate,
@@ -137,40 +162,77 @@ impl YinDetector {
             diff: vec![0.0; max_tau.min(MAX_TAU) + 1],
             cmndf: vec![0.0; max_tau.min(MAX_TAU) + 1],
             autocorr: vec![0.0; fft_size],
+            scratch_re: vec![0.0; fft_size],
+            scratch_im: vec![0.0; fft_size],
             frequency: 0.0,
             confidence: 0.0,
             period: 0.0,
         }
     }
 
-    /// Run YIN on a windowed audio buffer. Returns (frequency, confidence).
+    /// Run YIN on an audio buffer. Returns (frequency, confidence).
+    ///
+    /// The buffer is used at full length: truncating to `win_size` (= max_tau)
+    /// made the `len >= 2 * min_tau` check below unsatisfiable for any band
+    /// narrower than an octave, and the `len / 2` clamp on max_tau silently
+    /// raised the low-frequency floor.
     pub fn detect(&mut self, buffer: &[f32]) -> (f32, f32) {
-        let len = buffer.len().min(self.win_size);
+        let len = buffer.len();
         if len < self.min_tau * 2 {
             self.frequency = 0.0;
             self.confidence = 0.0;
             return (0.0, 0.0);
         }
 
-        // Compute autocorrelation via FFT
+        // Compute autocorrelation via FFT into preallocated scratch. The
+        // resize only fires for external buffers larger than the configured
+        // range ever produces — never on the engine/poly audio path.
         let fft_size = next_pow2(len * 2);
         if self.autocorr.len() < fft_size {
             self.autocorr.resize(fft_size, 0.0);
+            self.scratch_re.resize(fft_size, 0.0);
+            self.scratch_im.resize(fft_size, 0.0);
         }
-        fft_autocorrelation(&buffer[..len], &mut self.autocorr, fft_size);
+        fft_autocorrelation(
+            &buffer[..len],
+            &mut self.autocorr,
+            &mut self.scratch_re[..fft_size],
+            &mut self.scratch_im[..fft_size],
+        );
+
+        // Move the autocorrelation out to satisfy the borrow checker without
+        // allocating; put it back afterwards.
+        let autocorr = std::mem::take(&mut self.autocorr);
+        let result = self.detect_from_autocorr(buffer, &autocorr);
+        self.autocorr = autocorr;
+        result
+    }
+
+    /// YIN candidate selection on a precomputed autocorrelation of `buffer`
+    /// (full length, zero-padded FFT form). Shared with the engine, which
+    /// computes one autocorrelation per analysis window for both detectors.
+    pub(crate) fn detect_from_autocorr(&mut self, buffer: &[f32], autocorr: &[f32]) -> (f32, f32) {
+        let len = buffer.len();
+        if len < self.min_tau * 2 {
+            self.frequency = 0.0;
+            self.confidence = 0.0;
+            return (0.0, 0.0);
+        }
 
         // Compute difference function: d(τ) = S(0) + S(τ) - 2r(τ)
-        // S(τ) = Σ x[j+τ]² (energy of shifted signal)
-        let s0 = self.autocorr[0]; // = Σ x[j]²
+        // S(τ) = Σ_{j=τ}^{len-1} x[j]² (energy of the shifted signal)
+        let s0 = autocorr[0]; // = Σ x[j]²
         let max_tau = self.max_tau.min(len / 2);
 
-        // Cumulative energy for S(τ)
-        let mut energy_sum = s0;
+        // S(τ) shrinks as samples leave the window; track it incrementally.
+        let mut s_tau = s0;
         for tau in 0..=max_tau {
+            if tau > 0 {
+                s_tau -= buffer[tau - 1] * buffer[tau - 1];
+            }
             if tau < self.diff.len() {
-                let s_tau = self.autocorr[0]; // approximation: use s0 (valid for normalized signals)
-                let r_tau = if tau < self.autocorr.len() {
-                    self.autocorr[tau]
+                let r_tau = if tau < autocorr.len() {
+                    autocorr[tau]
                 } else {
                     0.0
                 };
@@ -260,5 +322,66 @@ impl YinDetector {
         self.period = tau_refined;
 
         (self.frequency, self.confidence)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn sine(freq: f32, sample_rate: f32, len: usize) -> Vec<f32> {
+        (0..len)
+            .map(|i| (TAU * freq * i as f32 / sample_rate).sin())
+            .collect()
+    }
+
+    /// Signal-in/signal-out: a pure sine across the guitar/bass fundamental
+    /// range must be detected at the played frequency with usable confidence.
+    fn assert_detects(freq: f32, sample_rate: f32) {
+        let mut det = YinDetector::new(sample_rate, 40.0, 5000.0);
+        let buf = sine(freq, sample_rate, 4096);
+        let (f, c) = det.detect(&buf);
+        assert!(f > 0.0, "YIN returned no pitch for {freq} Hz input");
+        let err_cents = 1200.0 * (f / freq).log2().abs();
+        assert!(
+            err_cents < 30.0,
+            "YIN {freq} Hz -> {f:.2} Hz ({err_cents:.1} cents off)"
+        );
+        assert!(c > 0.5, "YIN {freq} Hz confidence {c:.2}, expected > 0.5");
+    }
+
+    #[test]
+    fn detects_guitar_and_bass_fundamentals() {
+        for freq in [82.41, 110.0, 146.83, 196.0, 246.94, 329.63] {
+            assert_detects(freq, 44100.0);
+        }
+    }
+
+    #[test]
+    fn detects_reference_pitches_at_48k() {
+        for freq in [82.41, 440.0, 880.0] {
+            assert_detects(freq, 48000.0);
+        }
+    }
+
+    /// Narrow per-string band (as used by the poly tracker) must still detect.
+    #[test]
+    fn detects_within_narrow_string_band() {
+        let target = 82.41_f32;
+        let lo = target * 2.0_f32.powf(-2.0 / 12.0);
+        let hi = target * 2.0_f32.powf(2.0 / 12.0);
+        let mut det = YinDetector::new(44100.0, lo, hi);
+        let buf = sine(target, 44100.0, 2048);
+        let (f, c) = det.detect(&buf);
+        assert!(
+            f > 0.0,
+            "YIN returned no pitch for {target} Hz in a ±2-semitone band"
+        );
+        let err_cents = 1200.0 * (f / target).log2().abs();
+        assert!(
+            err_cents < 30.0,
+            "YIN {target} Hz -> {f:.2} Hz ({err_cents:.1} cents off)"
+        );
+        assert!(c > 0.4, "YIN {target} Hz confidence {c:.2}, expected > 0.4");
     }
 }
