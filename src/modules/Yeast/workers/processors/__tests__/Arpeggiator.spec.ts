@@ -191,4 +191,105 @@ describe('Arpeggiator', () => {
             { beatTime: 2.1, pitch: 60, probability: 0, realized: false, processorId: 'test-arp' },
         ]);
     });
+
+    it('reset() clears held notes, latch, and step timing', () => {
+        const input: MidiEvent[] = [{ timeSamples: 0, kind: { type: 'noteOn', channel: 0, note: 60, velocity: 100 } }];
+        const output: MidiEvent[] = [];
+        arp.processMidi(input, output, transport);
+        transport.ppqPosition = 0.6;
+        arp.processMidi([], output, transport);
+        expect(arp.getCurrentStep()).toBeGreaterThan(0);
+
+        arp.reset();
+        expect(arp.getCurrentStep()).toBe(0);
+        expect(arp.getPattern().length).toBeGreaterThan(0);
+
+        const afterReset: MidiEvent[] = [];
+        arp.processMidi([], afterReset, transport);
+        expect(afterReset.filter(isNoteOn)).toEqual([]); // no held notes survive reset
+    });
+
+    it('replaceParams resets to defaults, then applies rate/gate/swing/octave/velocity/latch/restart params', () => {
+        arp.replaceParams({
+            mode: 4, // random
+            rate_denom: 4,
+            rate_type: 2, // triplet
+            gate: 0.5,
+            swing: 1,
+            octave_range: 2,
+            octave_direction: 1, // down
+            velocity_mode: 2, // random
+            latch: 1,
+            restart_mode: 0, // freeRunning
+        });
+
+        const input: MidiEvent[] = [
+            { timeSamples: 0, kind: { type: 'noteOn', channel: 0, note: 60, velocity: 100 } },
+            { timeSamples: 0, kind: { type: 'noteOn', channel: 0, note: 60, velocity: 100 } }, // duplicate: ignored
+        ];
+        const output: MidiEvent[] = [];
+        arp.processMidi(input, output, transport);
+        transport.ppqPosition = 0.7; // past one triplet-1/4 step (~0.667 beats)
+        arp.processMidi([], output, transport);
+
+        const notes = output.filter(isNoteOn);
+        expect(notes.length).toBeGreaterThan(0);
+        for (const note of notes) {
+            expect(note.kind.note).toBeLessThanOrEqual(60); // octave_direction 'down' stays at/below the held note
+            expect(note.kind.velocity).toBeGreaterThanOrEqual(40);
+            expect(note.kind.velocity).toBeLessThanOrEqual(127);
+        }
+
+        // latch: releasing the note keeps the arp running from the latched pool.
+        arp.processMidi([{ timeSamples: 0, kind: { type: 'noteOff', channel: 0, note: 60 } }], [], transport);
+        const afterRelease: MidiEvent[] = [];
+        transport.ppqPosition = 1.5;
+        arp.processMidi([], afterRelease, transport);
+        expect(afterRelease.filter(isNoteOn).length).toBeGreaterThan(0);
+    });
+
+    it('pattern mode skips rest steps, ties hold notes, and applies per-step octave/semitone offsets', () => {
+        arp.setParam('mode', 7); // pattern
+        arp.setPattern([
+            { ...defaultStep(), active: false }, // rest: inactive step advances without emitting
+            { ...defaultStep(), stepType: 'tie' }, // tie: extends prior notes instead of retriggering
+            { ...defaultStep(), octaveOffset: 1, semitoneOffset: 2 }, // +14 semitones
+        ]);
+
+        const input: MidiEvent[] = [{ timeSamples: 0, kind: { type: 'noteOn', channel: 0, note: 60, velocity: 100 } }];
+        const output: MidiEvent[] = [];
+        arp.processMidi(input, output, transport);
+        transport.ppqPosition = 2; // past all three 1/8-note steps
+        arp.processMidi([], output, transport);
+
+        const notes = output.filter(isNoteOn);
+        expect(notes).toHaveLength(1); // only the third (offset) step emits
+        expect(notes[0]?.kind.note).toBe(74); // 60 + 12 (octave) + 2 (semitone)
+    });
+
+    it('selectStepNotes covers down, upDown, downUp, and order modes via reflectedIndex', () => {
+        const input: MidiEvent[] = [
+            { timeSamples: 0, kind: { type: 'noteOn', channel: 0, note: 60, velocity: 100 } },
+            { timeSamples: 0, kind: { type: 'noteOn', channel: 0, note: 64, velocity: 100 } },
+            { timeSamples: 0, kind: { type: 'noteOn', channel: 0, note: 67, velocity: 100 } },
+        ];
+
+        function stepNotesFor(mode: number): number[] {
+            transport.ppqPosition = 0;
+            const local = new Arpeggiator('local-arp');
+            local.setParam('mode', mode);
+            const output: MidiEvent[] = [];
+            local.processMidi(input, output, transport);
+            for (let step = 1; step <= 3; step++) {
+                transport.ppqPosition = step * 0.6;
+                local.processMidi([], output, transport);
+            }
+            return output.filter(isNoteOn).map((event) => event.kind.note);
+        }
+
+        expect(stepNotesFor(1)).toEqual([67, 64, 60]); // 'down': highest to lowest
+        expect(stepNotesFor(2)).toEqual([60, 64, 67]); // 'upDown': reflects at the top
+        expect(stepNotesFor(3)).toEqual([67, 64, 60]); // 'downUp': reflects at the bottom
+        expect(stepNotesFor(5)).toEqual([60, 64, 67]); // 'order': admission order
+    });
 });
