@@ -12,6 +12,7 @@ const mocks = vi.hoisted(() => ({
 
 describe('assignToasterPatternGroove', () => {
     beforeEach(() => {
+        vi.clearAllMocks();
         mocks.executeAppAction.mockImplementation((action) => {
             assignGrooveTemplate(action.payload);
             return Promise.resolve();
@@ -50,5 +51,18 @@ describe('assignToasterPatternGroove', () => {
                 amount: 0.65,
             },
         });
+    });
+
+    it('rejects invalid consumer identity without invoking the executor', async () => {
+        await expect(
+            assignToasterPatternGroove({
+                deviceId: '',
+                patternId: 'A1',
+                templateId: 'toaster-pocket',
+                amount: 0.65,
+            })
+        ).rejects.toThrow();
+
+        expect(mocks.executeAppAction).not.toHaveBeenCalled();
     });
 });

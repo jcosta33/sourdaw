@@ -61,6 +61,16 @@ const SectionCard = ({
 
 const TOASTER_PRESET_SUMMARIES = getToasterPresetSummaries();
 
+type GrooveAmountPreview = {
+    patternId: string;
+    value: number;
+};
+
+type GrooveAssignmentFailure = {
+    patternId: string;
+    message: string;
+};
+
 const Knob = ({
     value,
     label,
@@ -107,6 +117,8 @@ export const ToasterPanel = ({ deviceId }: { deviceId: string }): ReactElement =
     const [presetQuery, setPresetQuery] = useState('');
     const [eucHits, setEucHits] = useState(4);
     const [eucSteps, setEucSteps] = useState(16);
+    const [grooveAmountPreview, setGrooveAmountPreview] = useState<GrooveAmountPreview | null>(null);
+    const [grooveAssignmentFailure, setGrooveAssignmentFailure] = useState<GrooveAssignmentFailure | null>(null);
 
     useEffect(() => {
         if (!selectedTrackId || !state) {
@@ -167,14 +179,20 @@ export const ToasterPanel = ({ deviceId }: { deviceId: string }): ReactElement =
         });
     }
     const isGrooveAvailable = grooveStatus.status === 'unassigned' || grooveStatus.status === 'ready';
+    const canAssignGroove =
+        activePattern !== undefined &&
+        grooveStatus.status !== 'invalid-consumer' &&
+        grooveStatus.status !== 'state-unavailable';
     let assignedGrooveTemplateId = getStraightGrooveTemplateId();
     let assignedGrooveAmount = 1;
     if (grooveStatus.status === 'ready' || grooveStatus.status === 'unsupported') {
         assignedGrooveTemplateId = grooveStatus.templateId;
         assignedGrooveAmount = grooveStatus.amount;
     }
-    let grooveStatusMessage = 'The assigned groove is compatible with this pattern.';
-    if (grooveStatus.status === 'unsupported') {
+    let grooveStatusMessage = 'Straight timing is active; no groove is assigned.';
+    if (grooveStatus.status === 'ready') {
+        grooveStatusMessage = 'The assigned groove is compatible with this pattern.';
+    } else if (grooveStatus.status === 'unsupported') {
         grooveStatusMessage = `${grooveStatus.templateName} is not supported by this pattern grid.`;
     } else if (grooveStatus.status === 'missing-template') {
         grooveStatusMessage = `Assigned groove ${grooveStatus.templateId} is missing.`;
@@ -182,6 +200,13 @@ export const ToasterPanel = ({ deviceId }: { deviceId: string }): ReactElement =
         grooveStatusMessage = 'This pattern has an invalid groove identity.';
     } else if (grooveStatus.status === 'state-unavailable') {
         grooveStatusMessage = 'Groove state is unavailable.';
+    }
+    if (grooveAssignmentFailure && grooveAssignmentFailure.patternId === activePattern?.id) {
+        grooveStatusMessage = grooveAssignmentFailure.message;
+    }
+    let displayedGrooveAmount = assignedGrooveAmount;
+    if (grooveAmountPreview && grooveAmountPreview.patternId === activePattern?.id) {
+        displayedGrooveAmount = grooveAmountPreview.value;
     }
     const presetSearch = presetQuery.trim().toLowerCase();
     const visiblePresets = TOASTER_PRESET_SUMMARIES.filter((preset) => {
@@ -225,10 +250,33 @@ export const ToasterPanel = ({ deviceId }: { deviceId: string }): ReactElement =
     }
 
     function handleAssignGroove(templateId: string, amount: number): void {
-        if (!activePattern) {
+        if (!activePattern || !canAssignGroove) {
             return;
         }
-        void assignToasterPatternGroove({ deviceId, patternId: activePattern.id, templateId, amount });
+        const patternId = activePattern.id;
+        setGrooveAssignmentFailure(null);
+        void assignToasterPatternGroove({ deviceId, patternId, templateId, amount }).catch(() => {
+            setGrooveAssignmentFailure({
+                patternId,
+                message: 'Could not assign the groove. The previous assignment is still active.',
+            });
+        });
+    }
+
+    function previewGrooveAmount(value: number): void {
+        if (!activePattern || !canAssignGroove) {
+            return;
+        }
+        setGrooveAmountPreview({ patternId: activePattern.id, value });
+    }
+
+    function commitGrooveAmount(): void {
+        if (!activePattern || grooveAmountPreview?.patternId !== activePattern.id) {
+            return;
+        }
+        const amount = grooveAmountPreview.value;
+        setGrooveAmountPreview(null);
+        handleAssignGroove(assignedGrooveTemplateId, amount);
     }
 
     return (
@@ -537,8 +585,11 @@ export const ToasterPanel = ({ deviceId }: { deviceId: string }): ReactElement =
                             <select
                                 aria-label="Pattern groove template"
                                 value={assignedGrooveTemplateId}
-                                disabled={!activePattern}
-                                onChange={(event) => handleAssignGroove(event.target.value, assignedGrooveAmount)}
+                                disabled={!canAssignGroove}
+                                onChange={(event) => {
+                                    setGrooveAmountPreview(null);
+                                    handleAssignGroove(event.target.value, assignedGrooveAmount);
+                                }}
                                 className="toaster-window h-8 px-2 text-[10px] normal-case tracking-normal text-foreground outline-none"
                             >
                                 {grooveState.templates.map((template) => (
@@ -549,18 +600,20 @@ export const ToasterPanel = ({ deviceId }: { deviceId: string }): ReactElement =
                             </select>
                         </label>
                         <label className="flex flex-col gap-1 text-[9px] uppercase tracking-[0.16em] text-muted-foreground">
-                            Amount {Math.round(assignedGrooveAmount * 100)}%
+                            Amount {Math.round(displayedGrooveAmount * 100)}%
                             <input
                                 aria-label="Pattern groove amount"
                                 type="range"
                                 min={0}
                                 max={1}
                                 step={0.01}
-                                value={assignedGrooveAmount}
-                                disabled={!activePattern}
-                                onChange={(event) =>
-                                    handleAssignGroove(assignedGrooveTemplateId, Number(event.target.value))
-                                }
+                                value={displayedGrooveAmount}
+                                disabled={!canAssignGroove}
+                                onChange={(event) => previewGrooveAmount(Number(event.target.value))}
+                                onPointerUp={commitGrooveAmount}
+                                onPointerCancel={() => setGrooveAmountPreview(null)}
+                                onKeyUp={commitGrooveAmount}
+                                onBlur={commitGrooveAmount}
                             />
                         </label>
                         <div className="grid grid-cols-2 gap-x-2 gap-y-3">

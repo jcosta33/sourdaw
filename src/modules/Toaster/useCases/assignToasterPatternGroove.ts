@@ -9,13 +9,13 @@ type AssignToasterPatternGrooveInput = {
     amount: number;
 };
 
-export function assignToasterPatternGroove({
+export async function assignToasterPatternGroove({
     deviceId,
     patternId,
     templateId,
     amount,
 }: AssignToasterPatternGrooveInput): Promise<void> {
-    return toasterGrooveAssignmentExecutorState.execute({
+    await toasterGrooveAssignmentExecutorState.execute({
         type: 'assignGrooveTemplate',
         payload: {
             consumerType: 'toaster-pattern',
