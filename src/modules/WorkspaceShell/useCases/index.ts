@@ -27,6 +27,7 @@ export { setSoloMode } from './togglePanel/panelToggles/setSoloMode';
 export { setVirtualKeyboardOctave } from './togglePanel/panelToggles/setVirtualKeyboardOctave';
 export { setVirtualKeyboardVelocity } from './togglePanel/panelToggles/setVirtualKeyboardVelocity';
 export { toggleAutomationPanel } from './togglePanel/panelToggles/toggleAutomationPanel';
+export { toggleBranchManager } from './togglePanel/panelToggles/toggleBranchManager';
 export { toggleChatPanel } from './togglePanel/panelToggles/toggleChatPanel';
 export { toggleCommandPalette } from './togglePanel/panelToggles/toggleCommandPalette';
 export { toggleInspector } from './togglePanel/panelToggles/toggleInspector';
