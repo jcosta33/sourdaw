@@ -1,13 +1,195 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+import { midiLearnStore, type MidiMapping } from '../../../stores/midiLearnStore';
 import { handleMidiMessage } from '../handleMidiMessage';
+import { setMidiLearnDependencies } from '../midiLearnDependencies';
 import { scaleMidiValue } from '../scaleMidiValue';
 
+import type { Track } from '#/modules/Arrangement/stores';
+
+const baseTrack: Track = {
+    id: 'track1',
+    name: 'Track 1',
+    kind: 'audio',
+    muted: false,
+    soloed: false,
+    armed: false,
+    gain: 0.8,
+    pan: 0,
+    color: '#fff',
+    clips: [],
+    devices: [],
+    sends: [],
+    midiFx: [],
+    frozen: false,
+    freezeState: { status: 'unfrozen' },
+    parentId: null,
+    collapsed: false,
+    inputMonitoring: 'auto',
+    hidden: false,
+    disabled: false,
+    height: 80,
+    outputId: 'master',
+    automationMode: 'read',
+    groupId: null,
+    soloSafe: false,
+    notes: '',
+    inputId: null,
+    activeAlternativeId: 'alt-1',
+    alternatives: [{ id: 'alt-1', name: 'Alternative 1', clips: [] }],
+    vcaGroupId: null,
+    midiOutputTrackId: null,
+    followChordTrack: false,
+};
+const makeTrack = (overrides: Partial<Track> = {}): Track => ({ ...baseTrack, ...overrides });
+
+const baseMapping: MidiMapping = {
+    id: 'm1',
+    channel: 0,
+    cc: 7,
+    targetType: 'trackGain',
+    trackId: 'track1',
+    minValue: 0,
+    maxValue: 1,
+    scaleMode: 'linear',
+};
+
 describe('handleMidiMessage', () => {
-    it('should export handleMidiMessage', () => {
-        expect(handleMidiMessage).toBeDefined();
-        const time = typeof handleMidiMessage;
-        expect(time === 'function' || time === 'object').toBe(true);
+    const deps = {
+        setTrackGainArrangement: vi.fn(),
+        setTrackPanArrangement: vi.fn(),
+        setDeviceParameter: vi.fn(),
+        engineSetTrackGain: vi.fn(),
+        engineSetTrackPan: vi.fn(),
+        setFermenterMappedParam: vi.fn(),
+        recordAutomationValue: vi.fn(),
+        getTransportIsPlaying: vi.fn(() => false),
+        getTransportPlayheadPosition: vi.fn(() => 0),
+        getAllTracks: vi.fn((): Track[] => []),
+    };
+
+    beforeEach(() => {
+        vi.clearAllMocks();
+        deps.getTransportIsPlaying.mockReturnValue(false);
+        deps.getTransportPlayheadPosition.mockReturnValue(0);
+        deps.getAllTracks.mockReturnValue([]);
+        setMidiLearnDependencies(deps);
+        midiLearnStore.set({ mappings: [baseMapping], isLearning: false, learningTarget: null });
+    });
+
+    it('does nothing when the store has no state', () => {
+        midiLearnStore.set(null);
+
+        handleMidiMessage(0, 7, 64);
+
+        expect(deps.setTrackGainArrangement).not.toHaveBeenCalled();
+    });
+
+    it('does nothing when no mapping matches the channel/cc pair', () => {
+        handleMidiMessage(1, 99, 64);
+
+        expect(deps.setTrackGainArrangement).not.toHaveBeenCalled();
+    });
+
+    it('scales and writes trackGain to both arrangement and engine', () => {
+        handleMidiMessage(0, 7, 127);
+
+        expect(deps.setTrackGainArrangement).toHaveBeenCalledWith('track1', 1);
+        expect(deps.engineSetTrackGain).toHaveBeenCalledWith('track1', 1);
+    });
+
+    it('scales and writes trackPan to both arrangement and engine', () => {
+        midiLearnStore.set({
+            mappings: [{ ...baseMapping, targetType: 'trackPan', minValue: -50, maxValue: 50 }],
+            isLearning: false,
+            learningTarget: null,
+        });
+
+        handleMidiMessage(0, 7, 0);
+
+        expect(deps.setTrackPanArrangement).toHaveBeenCalledWith('track1', -50);
+        expect(deps.engineSetTrackPan).toHaveBeenCalledWith('track1', -50);
+    });
+
+    it('writes a deviceParam mapping only when both deviceId and paramId are set', () => {
+        midiLearnStore.set({
+            mappings: [{ ...baseMapping, targetType: 'deviceParam', deviceId: 'dev1', paramId: 'cutoff' }],
+            isLearning: false,
+            learningTarget: null,
+        });
+
+        handleMidiMessage(0, 7, 127);
+
+        expect(deps.setDeviceParameter).toHaveBeenCalledWith('dev1', 'cutoff', 1);
+    });
+
+    it('routes fermenterGlobalParam to the first fermenter device found across all tracks', () => {
+        const fermenterTrack = makeTrack({
+            id: 'track2',
+            devices: [{ id: 'ferm1', name: 'Fermenter', type: 'fermenter', bypassed: false, parameterValues: {} }],
+        });
+        deps.getAllTracks.mockReturnValue([baseTrack, fermenterTrack]);
+        midiLearnStore.set({
+            mappings: [{ ...baseMapping, targetType: 'fermenterGlobalParam', paramId: 'mix' }],
+            isLearning: false,
+            learningTarget: null,
+        });
+
+        handleMidiMessage(0, 7, 127);
+
+        expect(deps.setFermenterMappedParam).toHaveBeenCalledWith({ deviceId: 'ferm1', paramId: 'mix', value: 1 });
+    });
+
+    it('does not touch the fermenter param when no track carries a fermenter device', () => {
+        deps.getAllTracks.mockReturnValue([baseTrack]);
+        midiLearnStore.set({
+            mappings: [{ ...baseMapping, targetType: 'fermenterGlobalParam', paramId: 'mix' }],
+            isLearning: false,
+            learningTarget: null,
+        });
+
+        handleMidiMessage(0, 7, 127);
+
+        expect(deps.setFermenterMappedParam).not.toHaveBeenCalled();
+    });
+
+    it('records automation only while the transport plays and the track is armed to write', () => {
+        const fermenterTrack = makeTrack({
+            id: 'track2',
+            automationMode: 'write',
+            devices: [{ id: 'ferm1', name: 'Fermenter', type: 'fermenter', bypassed: false, parameterValues: {} }],
+        });
+        deps.getAllTracks.mockReturnValue([fermenterTrack]);
+        deps.getTransportIsPlaying.mockReturnValue(true);
+        deps.getTransportPlayheadPosition.mockReturnValue(12.5);
+        midiLearnStore.set({
+            mappings: [{ ...baseMapping, targetType: 'fermenterGlobalParam', paramId: 'mix' }],
+            isLearning: false,
+            learningTarget: null,
+        });
+
+        handleMidiMessage(0, 7, 127);
+
+        expect(deps.recordAutomationValue).toHaveBeenCalledWith('track2', 'ferm1:mix', 1, 12.5);
+    });
+
+    it('skips automation recording for a track left in read mode even while playing', () => {
+        const fermenterTrack = makeTrack({
+            id: 'track2',
+            automationMode: 'read',
+            devices: [{ id: 'ferm1', name: 'Fermenter', type: 'fermenter', bypassed: false, parameterValues: {} }],
+        });
+        deps.getAllTracks.mockReturnValue([fermenterTrack]);
+        deps.getTransportIsPlaying.mockReturnValue(true);
+        midiLearnStore.set({
+            mappings: [{ ...baseMapping, targetType: 'fermenterGlobalParam', paramId: 'mix' }],
+            isLearning: false,
+            learningTarget: null,
+        });
+
+        handleMidiMessage(0, 7, 127);
+
+        expect(deps.recordAutomationValue).not.toHaveBeenCalled();
     });
 });
 

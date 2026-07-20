@@ -1,11 +1,26 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeEach } from 'vitest';
 
-import * as subject from '../mcuUpdateTimecode';
+import { controlSurfaceStore } from '../../../stores/controlSurface';
+import { mcuUpdateTimecode } from '../mcuUpdateTimecode';
+
+const initialState = controlSurfaceStore.value;
 
 describe('mcuUpdateTimecode', () => {
-    it('should export mcuUpdateTimecode', () => {
-        expect(subject.mcuUpdateTimecode).toBeDefined();
-        const time = typeof subject.mcuUpdateTimecode;
-        expect(time === 'function' || time === 'object').toBe(true);
+    beforeEach(() => {
+        controlSurfaceStore.set(initialState);
+    });
+
+    it('formats bars/beats/ticks into a zero-padded timecode string', () => {
+        mcuUpdateTimecode(5, 2, 17);
+
+        expect(controlSurfaceStore.value?.mcu.timecodeDisplay).toBe('005:02:017');
+    });
+
+    it('is a no-op when the control surface has no state', () => {
+        controlSurfaceStore.set(null);
+
+        mcuUpdateTimecode(1, 1, 1);
+
+        expect(controlSurfaceStore.value).toBeNull();
     });
 });
