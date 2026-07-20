@@ -1,0 +1,39 @@
+src/modules/Automation/useCases/automation/__tests__/createAutomationLane.spec.ts
+  s_4a3a9ac19de269::t_50af6bce57a8ea 1,3,6-38
+src/modules/Automation/useCases/automationZoom/__tests__/toggleVirginTerritory.spec.ts
+  s_4a3a9ac19de269::t_d88cebfd03bfa6 1,3-19,21-44,47-75
+  s_4a3a9ac19de269::t_feb78f2ff97277 20
+src/modules/Automation/useCases/automation/__tests__/setAutomationPointCurve.spec.ts
+  s_4a3a9ac19de269::t_71c5b6a48fce6c 1,3-19,21-47,50-56,58,60-62,69-71,74-76,80-87
+  s_4a3a9ac19de269::t_661f68cd6a1c90 20
+  s_4a3a9ac19de269::t_18c3d4f7ac3903 57,59,63-68,72-73,77-79
+src/modules/Automation/useCases/automation/__tests__/removeAutomationLane.spec.ts
+  s_4a3a9ac19de269::t_5494a5c4852d34 1,3-19,21-43,46-76
+  s_4a3a9ac19de269::t_390795264b0a3c 20
+src/modules/Automation/useCases/automation/__tests__/toggleLaneCollapsed.spec.ts
+  s_4a3a9ac19de269::t_030855d09731e4 1,3-19,21-44,47-75
+  s_4a3a9ac19de269::t_ad44107ec29d82 20
+src/modules/Automation/useCases/automation/__tests__/shiftClipAutomation.spec.ts
+  s_4a3a9ac19de269::t_e7e4984a45986f 20
+  s_4a3a9ac19de269::t_e299177f7b9cde 1,3-19,21-48,51-62,66-68,71-73,75-82
+  s_4a3a9ac19de269::t_c8162c9912ef03 63-65,69-70,74
+src/modules/Automation/useCases/automation/__tests__/toggleAutomationVisibility.spec.ts
+  s_4a3a9ac19de269::t_75a13afb68e6be 1,3-19,21-44,47-75
+  s_4a3a9ac19de269::t_ac7dac38e22cee 20
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "725c20e264093fd56e5782fd056f0311d3fb68fa",
+  "prompts": {},
+  "sessions": {
+    "s_4a3a9ac19de269": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "4a1953fb-b074-451f-a9e0-2edbbc4fbbf3",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
