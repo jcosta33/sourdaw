@@ -1,0 +1,29 @@
+src/modules/TimelineEditor/presentations/views/ClipView/PitchEditor.tsx
+  s_87cbd0e452c2eb::t_1008d49f5bf95f 30-33,255,268,302
+src/modules/TimelineEditor/presentations/views/ClipView/__tests__/PitchEditor.spec.tsx
+  s_76e1b249336611::t_2fc978f5fb2bd1 132,139-149
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "714fed8e84076fcc95d061ec3c581aeba51450b3",
+  "prompts": {},
+  "sessions": {
+    "s_76e1b249336611": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-a506159e9df3fa0ab",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_87cbd0e452c2eb": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-ae6d43001ea091077",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
