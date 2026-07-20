@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { newProject, pickAndImportProjectFile, saveProject } from '#/modules/Project/useCases';
-import { openExportDialog } from '#/modules/WorkspaceShell/useCases';
+import { openExportDialog, toggleBranchManager } from '#/modules/WorkspaceShell/useCases';
 
 import { projectCommands } from '../ProjectCommands';
 
@@ -10,7 +10,7 @@ vi.mock('#/modules/Project/useCases', () => ({
     pickAndImportProjectFile: vi.fn().mockResolvedValue(true),
     saveProject: vi.fn(),
 }));
-vi.mock('#/modules/WorkspaceShell/useCases', () => ({ openExportDialog: vi.fn() }));
+vi.mock('#/modules/WorkspaceShell/useCases', () => ({ openExportDialog: vi.fn(), toggleBranchManager: vi.fn() }));
 
 function runAction(id: string): void {
     const command = projectCommands.find((entry) => entry.id === id);
@@ -38,6 +38,7 @@ describe('projectCommands', () => {
             { id: 'import-project', label: 'Import Project', category: 'Project' },
             { id: 'create-project-version', label: 'Create Project Version', category: 'Project' },
             { id: 'create-version-branch', label: 'Create Version Branch', category: 'Project' },
+            { id: 'open-branch-manager', label: 'Open Branch Manager', category: 'Project' },
             { id: 'export-dawproject', label: 'Export DAWproject', category: 'Project' },
             { id: 'import-dawproject', label: 'Import DAWproject', category: 'Project' },
         ]);
@@ -82,6 +83,12 @@ describe('projectCommands', () => {
         runAction('export-audio');
 
         expect(openExportDialog).toHaveBeenCalledTimes(1);
+    });
+
+    it('open-branch-manager toggles the branch manager dialog', () => {
+        runAction('open-branch-manager');
+
+        expect(toggleBranchManager).toHaveBeenCalledTimes(1);
     });
 
     it('import-project opens the project file picker', () => {
