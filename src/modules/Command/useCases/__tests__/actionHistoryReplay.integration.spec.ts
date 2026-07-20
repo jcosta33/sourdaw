@@ -103,6 +103,7 @@ describe('Command action-history replay integration', () => {
         if (!original_entry) {
             throw new Error('Expected original action metadata');
         }
+        await flush_pending_frame();
 
         mutateCrdtDoc<IntegrationDocument>({
             id: 'root',
@@ -154,6 +155,7 @@ describe('Command action-history replay integration', () => {
         if (!entry) {
             throw new Error('Expected replayable metadata');
         }
+        await flush_pending_frame();
         clearHandlerRegistry();
         registerHandlerMap({ togglePlayback: pending_toggle_handler });
 
@@ -202,6 +204,7 @@ describe('Command action-history replay integration', () => {
         if (!entry) {
             throw new Error('Expected replayable metadata');
         }
+        await flush_pending_frame();
 
         await expect(revertAction(entry.id)).rejects.toBe(mark_failure);
         mutateCrdtDoc<IntegrationDocument>({
