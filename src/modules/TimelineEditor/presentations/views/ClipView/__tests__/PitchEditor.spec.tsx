@@ -36,7 +36,13 @@ vi.mock('#/modules/Command/useCases', () => ({
     executeAppAction: vi.fn(),
 }));
 
-const IDLE_STATE: KneadStoreState = { activeClipId: null, clips: {}, contours: {}, isAnalyzing: false, analysisProgress: 0 };
+const IDLE_STATE: KneadStoreState = {
+    activeClipId: null,
+    clips: {},
+    contours: {},
+    isAnalyzing: false,
+    analysisProgress: 0,
+};
 
 const makeContour = (lastTimeMs: number): PitchContour => ({
     points: [
@@ -130,9 +136,16 @@ describe('PitchEditor', () => {
 
         const canvas = document.querySelector('canvas')!;
         vi.spyOn(canvas, 'getBoundingClientRect').mockReturnValue({
-            left: 0, width: 300, top: 0, height: 100, right: 300, bottom: 100, x: 0, y: 0,
+            left: 0,
+            width: 300,
+            top: 0,
+            height: 100,
+            right: 300,
+            bottom: 100,
+            x: 0,
+            y: 0,
             toJSON: (): unknown => ({}),
-        } as DOMRect);
+        });
 
         fireEvent.pointerDown(canvas, { pointerId: 1, clientX: 150, clientY: 100 });
         fireEvent.pointerMove(canvas, { pointerId: 1, clientX: 150, clientY: 70 });

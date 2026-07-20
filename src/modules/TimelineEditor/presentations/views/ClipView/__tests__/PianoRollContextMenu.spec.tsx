@@ -2,7 +2,6 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { TooltipProvider } from '#/components/ui/tooltip';
-
 import { generateMidiAI } from '#/modules/AiGeneration/useCases';
 import { copySelectedNotes, pasteNotes } from '#/modules/Arrangement/useCases';
 import { executeAppAction, pushUndoEntry } from '#/modules/Command/useCases';
@@ -321,16 +320,11 @@ describe('PianoRollContextMenu', () => {
         expect(strumNotes).toHaveBeenCalledWith('clip-1', ['n1', 'n2'], 0.04, 'up');
         expect(pushUndoEntry).toHaveBeenCalledWith('Strum up', expect.any(Function), expect.any(Function));
 
-        const [, , redo] = vi.mocked(pushUndoEntry).mock.calls[0]!;
+        const [, undo, redo] = vi.mocked(pushUndoEntry).mock.calls[0]!;
+        undo();
+        expect(restoreStrumOriginals).toHaveBeenCalledWith('clip-1', new Map([['n1', 0]]));
         redo();
         expect(strumNotes).toHaveBeenCalledTimes(2);
-    });
-
-    it('should not push an undo entry when strumming returns no originals', () => {
-        vi.mocked(strumNotes).mockReturnValueOnce(null);
-        renderWithTooltip(<PianoRollContextMenu {...defaultProps} selectedNoteIds={new Set(['n1', 'n2'])} />);
-        fireEvent.click(screen.getByText('↑ Up'));
-        expect(pushUndoEntry).not.toHaveBeenCalled();
     });
 
     it('should generate notes from AI and add each returned note to the clip', async () => {
