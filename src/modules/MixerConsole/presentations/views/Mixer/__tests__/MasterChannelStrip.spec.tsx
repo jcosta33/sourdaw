@@ -4,10 +4,14 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { MasterChannelStrip } from '../MasterChannelStrip';
 
 // Mock hooks
-vi.mock('#/infra/store/useStore', () => ({
+const storeMocks = vi.hoisted(() => ({
     useStore: vi.fn<() => { masterGain: number }>(() => ({
         masterGain: 80,
     })),
+}));
+
+vi.mock('#/infra/store/useStore', () => ({
+    useStore: storeMocks.useStore,
 }));
 
 // Mock useCases
@@ -72,5 +76,27 @@ describe('MasterChannelStrip', () => {
     it('should display correct dB value for gain 80', () => {
         render(<MasterChannelStrip widthClass="w-36" />);
         expect(screen.getByTestId('level-value')).toHaveTextContent('0.0 dB');
+    });
+
+    it('should display -∞ when master gain is 0', () => {
+        storeMocks.useStore.mockReturnValueOnce({ masterGain: 0 });
+
+        render(<MasterChannelStrip widthClass="w-36" />);
+
+        expect(screen.getByTestId('level-value')).toHaveTextContent('-∞');
+    });
+
+    it('should compute a negative dB value for a below-unity gain', () => {
+        storeMocks.useStore.mockReturnValueOnce({ masterGain: 40 });
+
+        render(<MasterChannelStrip widthClass="w-36" />);
+
+        expect(screen.getByTestId('level-value')).toHaveTextContent('-6.0 dB');
+    });
+
+    it('should scale master gain to the 0-1 fader range', () => {
+        render(<MasterChannelStrip widthClass="w-36" />);
+
+        expect(screen.getByTestId('fader')).toHaveValue('0.8');
     });
 });
