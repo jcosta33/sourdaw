@@ -29,7 +29,7 @@ type MidiProjectableEvent = {
     velocity: number;
 };
 
-type MidiEventProjector = <Event extends MidiProjectableEvent>(input: {
+type ClipMidiEventProjectionInput<Event extends MidiProjectableEvent> = {
     events: readonly Event[];
     clipId: string;
     clipStartBeat: number;
@@ -41,7 +41,16 @@ type MidiEventProjector = <Event extends MidiProjectableEvent>(input: {
     clipGrooveAlreadyApplied?: boolean;
     eventsAreAbsolute?: boolean;
     phase?: 'clip-groove' | 'complete';
-}) => readonly Event[];
+};
+
+type SequencerMidiEventProjectionInput<Event extends MidiProjectableEvent> = {
+    events: readonly Event[];
+    phase: 'sequencer-groove';
+};
+
+type MidiEventProjector = <Event extends MidiProjectableEvent>(
+    input: ClipMidiEventProjectionInput<Event> | SequencerMidiEventProjectionInput<Event>
+) => readonly Event[];
 
 type OfflineYeastMidiEvent = {
     timeSamples: number;

@@ -97,7 +97,7 @@ export { exportStems } from './exportStems';
 export { configureOfflineMidiEventProjection } from './configureOfflineMidiEventProjection';
 export { configureOfflinePpqEndpointProjection } from './configureOfflinePpqEndpointProjection';
 export { configureOfflineYeastMidiProcessing } from './configureOfflineYeastMidiProcessing';
-export { projectOfflineYeastClipNotes } from './offlineRender/projectOfflineYeastClipNotes';
+export { projectOfflineYeastTrackNotes } from './offlineRender/projectOfflineYeastTrackNotes';
 // Audio encoders (audioBufferToWav/Mp3/Flac) moved to AudioRendering (ADR 0011 W4).
 
 export { scheduleAdjustmentLayers } from './adjustmentLayer/scheduleAdjustmentLayers';

@@ -6,6 +6,7 @@ type OfflineYeastProjectableNote = {
     startBeat: number;
     duration: number;
     velocity: number;
+    routeId?: string;
 };
 type ProjectOfflineYeastNotesInput = {
     trackId: string;
@@ -27,6 +28,7 @@ type ProjectedOfflineYeastNote = {
     endSamples: number;
     startPpq: number;
     endPpq: number;
+    routeId: string;
 };
 type ActiveProjectedNote = Omit<ProjectedOfflineYeastNote, 'endSamples' | 'endPpq'>;
 
@@ -48,13 +50,13 @@ export function projectOfflineYeastNotes({
             {
                 timeSamples: endpoint.startSamples,
                 timePpq: note.startBeat,
-                trackId,
+                trackId: note.routeId ?? trackId,
                 kind: { type: 'noteOn' as const, channel: 0, note: note.pitch, velocity: note.velocity },
             },
             {
                 timeSamples: endpoint.endSamples,
                 timePpq: note.startBeat + note.duration,
-                trackId,
+                trackId: note.routeId ?? trackId,
                 kind: { type: 'noteOff' as const, channel: 0, note: note.pitch },
             },
         ];
@@ -66,35 +68,38 @@ export function projectOfflineYeastNotes({
         blockEndSamples,
         events,
     });
-    const activeByPitch = new Map<number, ActiveProjectedNote[]>();
+    const activeByRouteAndPitch = new Map<string, ActiveProjectedNote[]>();
     const projected: ProjectedOfflineYeastNote[] = [];
 
     for (let index = 0; index < processedEvents.length; index++) {
         const event = processedEvents[index]!;
-        const key = (event.kind.channel << 7) | ('note' in event.kind ? event.kind.note : 0);
+        const routeId = event.trackId ?? trackId;
+        const pitchKey = (event.kind.channel << 7) | ('note' in event.kind ? event.kind.note : 0);
+        const key = `${routeId}:${pitchKey}`;
         if (event.kind.type === 'noteOn') {
             if (event.timeSamples >= blockEndSamples) {
                 continue;
             }
-            const queue = activeByPitch.get(key) ?? [];
+            const queue = activeByRouteAndPitch.get(key) ?? [];
             queue.push({
                 id: `yeast:${trackId}:${index}`,
                 pitch: event.kind.note,
                 velocity: event.kind.velocity,
                 startSamples: event.timeSamples,
                 startPpq: event.timePpq,
+                routeId,
             });
-            activeByPitch.set(key, queue);
+            activeByRouteAndPitch.set(key, queue);
             continue;
         }
         if (event.kind.type !== 'noteOff') {
             continue;
         }
 
-        const queue = activeByPitch.get(key);
+        const queue = activeByRouteAndPitch.get(key);
         const active = queue?.shift();
         if (queue?.length === 0) {
-            activeByPitch.delete(key);
+            activeByRouteAndPitch.delete(key);
         }
         if (!active || event.timeSamples <= active.startSamples) {
             continue;

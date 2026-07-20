@@ -40,7 +40,7 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     buildDeviceChain: mocks.buildDeviceChain,
     getAudioContext: mocks.getAudioContext,
     getCachedAudioBuffer: mocks.getCachedAudioBuffer,
-    projectOfflineYeastClipNotes: vi.fn(() => []),
+    projectOfflineYeastTrackNotes: vi.fn(() => []),
 }));
 
 vi.mock('#/modules/MIDI/stores', () => ({
@@ -248,7 +248,12 @@ describe('renderTrackOffline', () => {
                     durationSeconds: (endSamples - startSamples) / sampleRate,
                 };
             },
-            createMidiEventProjector: () => projectClipMidiEvents,
+            createMidiEventProjector: () => (input) => {
+                if (input.phase === 'sequencer-groove') {
+                    return input.events;
+                }
+                return projectClipMidiEvents(input);
+            },
             createYeastMidiProcessor: () => (input) =>
                 input.events.map((event) => ({ ...event, timePpq: event.timePpq ?? 0 })),
         });

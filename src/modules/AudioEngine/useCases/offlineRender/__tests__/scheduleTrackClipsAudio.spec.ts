@@ -215,19 +215,11 @@ type ProjectableMidiEvent = {
     velocity: number;
 };
 
-function projectMidiEvents<Event extends ProjectableMidiEvent>({
-    events,
-}: {
+function projectMidiEvents<Event extends ProjectableMidiEvent>(input: {
     events: readonly Event[];
-    clipId: string;
-    clipStartBeat: number;
-    clipEndBeat: number;
-    iterationStartBeat: number;
-    loopLengthBeats: number;
-    midiOffsetBeats: number;
-    loopEnabled?: boolean;
+    phase?: 'clip-groove' | 'complete' | 'sequencer-groove';
 }): readonly Event[] {
-    return events;
+    return input.events;
 }
 
 type RunInput = {

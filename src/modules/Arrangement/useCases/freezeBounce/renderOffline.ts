@@ -2,7 +2,7 @@ import {
     buildDeviceChain,
     getAudioContext,
     getCachedAudioBuffer,
-    projectOfflineYeastClipNotes,
+    projectOfflineYeastTrackNotes,
 } from '#/modules/AudioEngine/useCases';
 import { midiStore } from '#/modules/MIDI/stores';
 import { sidechainStore } from '#/modules/Routing/stores';
@@ -140,6 +140,7 @@ export async function renderTrackOffline(
         } else {
             // Schedule individual clips
             if (time.kind === 'midi' && midi) {
+                const clipIterations: Parameters<typeof projectOfflineYeastTrackNotes>[0]['iterations'][number][] = [];
                 for (const clip of time.clips) {
                     if (clip.type !== 'midi') {
                         continue;
@@ -156,96 +157,97 @@ export async function renderTrackOffline(
                     const loopLength = rawLoopLength > 0 ? rawLoopLength : clipLength;
                     const iterations = clip.loopEnabled ? Math.ceil(clipLength / loopLength) : 1;
                     for (let iteration = 0; iteration < iterations; iteration++) {
-                        const iterationStartBeat = clip.startBeat + iteration * loopLength;
-                        const midiOffsetBeats = clip.midiOffsetBeats ?? 0;
-                        let scheduledNotes: Array<{
-                            id: string;
-                            pitch: number;
-                            velocity: number;
-                            startSamples: number;
-                            endSamples: number;
-                        }>;
-                        if (time.devices.some((device) => device.type === 'yeast')) {
-                            scheduledNotes = projectOfflineYeastClipNotes({
-                                trackId: time.id,
-                                sourceNotes,
-                                clipId: clip.id,
-                                clipStartBeat: clip.startBeat,
-                                clipEndBeat: clip.endBeat,
-                                iterationStartBeat,
-                                loopLengthBeats: loopLength,
-                                midiOffsetBeats,
-                                loopEnabled: clip.loopEnabled ?? false,
-                                sampleRate,
-                                blockStartSamples: renderEndpoints.startSamples,
-                                blockEndSamples: renderEndpoints.startSamples + offlineCtx.length,
-                                defaultTempo: tempo,
-                                changes: tempoChanges,
-                                projectMidiEvents,
-                                projectPpqEndpoints,
-                                processYeastMidi,
-                            });
-                        } else {
-                            const notes = projectMidiEvents({
-                                events: sourceNotes,
-                                clipId: clip.id,
-                                clipStartBeat: clip.startBeat,
-                                clipEndBeat: clip.endBeat,
-                                iterationStartBeat,
-                                loopLengthBeats: loopLength,
-                                midiOffsetBeats,
-                                loopEnabled: clip.loopEnabled ?? false,
-                                phase: 'complete',
-                            });
-                            scheduledNotes = notes.map((note) => {
-                                const endpoint = projectPpqEndpoints({
-                                    startPpq: note.startBeat,
-                                    endPpq: note.startBeat + note.duration,
-                                    defaultTempo: tempo,
-                                    sampleRate,
-                                    changes: tempoChanges,
-                                });
-                                return {
-                                    id: note.id,
-                                    pitch: note.pitch,
-                                    velocity: note.velocity,
-                                    startSamples: endpoint.startSamples,
-                                    endSamples: endpoint.endSamples,
-                                };
-                            });
-                        }
-
-                        for (const note of scheduledNotes) {
-                            const noteStart = Math.max(
-                                0,
-                                note.startSamples / sampleRate - renderEndpoints.startSeconds
-                            );
-                            const noteEnd = Math.min(
-                                durationSeconds,
-                                note.endSamples / sampleRate - renderEndpoints.startSeconds
-                            );
-                            const noteDuration = noteEnd - noteStart;
-                            if (noteStart >= durationSeconds || noteDuration <= 0) {
-                                continue;
-                            }
-
-                            const freq = MIDI_FREQUENCIES[note.pitch] ?? 440;
-                            const osc = offlineCtx.createOscillator();
-                            const env = offlineCtx.createGain();
-                            const attackEnd = Math.min(noteStart + 0.005, noteEnd);
-                            const releaseStart = Math.max(attackEnd, noteEnd - 0.01);
-                            osc.type = 'triangle';
-                            osc.frequency.value = freq;
-                            env.gain.setValueAtTime(0, noteStart);
-                            env.gain.linearRampToValueAtTime((note.velocity / 127) * 0.3, attackEnd);
-                            env.gain.setValueAtTime((note.velocity / 127) * 0.3, releaseStart);
-                            env.gain.exponentialRampToValueAtTime(0.001, noteEnd);
-                            osc.connect(env);
-                            env.connect(gainNode);
-                            osc.start(noteStart);
-                            osc.stop(noteEnd + 0.01);
-                        }
+                        clipIterations.push({
+                            sourceNotes,
+                            clipId: clip.id,
+                            clipStartBeat: clip.startBeat,
+                            clipEndBeat: clip.endBeat,
+                            iterationStartBeat: clip.startBeat + iteration * loopLength,
+                            loopLengthBeats: loopLength,
+                            midiOffsetBeats: clip.midiOffsetBeats ?? 0,
+                            loopEnabled: clip.loopEnabled ?? false,
+                        });
                     }
+                }
+                const hasYeast = time.devices.some((device) => device.type === 'yeast');
+                let scheduledNotes: Array<{
+                    id: string;
+                    pitch: number;
+                    velocity: number;
+                    startSamples: number;
+                    endSamples: number;
+                }>;
+                if (hasYeast) {
+                    scheduledNotes = projectOfflineYeastTrackNotes({
+                        trackId: time.id,
+                        iterations: clipIterations,
+                        sampleRate,
+                        blockStartSamples: renderEndpoints.startSamples,
+                        blockEndSamples: renderEndpoints.startSamples + offlineCtx.length,
+                        defaultTempo: tempo,
+                        changes: tempoChanges,
+                        projectMidiEvents,
+                        projectPpqEndpoints,
+                        processYeastMidi,
+                    });
+                } else {
+                    scheduledNotes = clipIterations.flatMap((iteration) => {
+                        const notes = projectMidiEvents({
+                            events: iteration.sourceNotes,
+                            clipId: iteration.clipId,
+                            clipStartBeat: iteration.clipStartBeat,
+                            clipEndBeat: iteration.clipEndBeat,
+                            iterationStartBeat: iteration.iterationStartBeat,
+                            loopLengthBeats: iteration.loopLengthBeats,
+                            midiOffsetBeats: iteration.midiOffsetBeats,
+                            loopEnabled: iteration.loopEnabled,
+                            phase: 'complete',
+                        });
+                        return notes.map((note) => {
+                            const endpoint = projectPpqEndpoints({
+                                startPpq: note.startBeat,
+                                endPpq: note.startBeat + note.duration,
+                                defaultTempo: tempo,
+                                sampleRate,
+                                changes: tempoChanges,
+                            });
+                            return {
+                                id: note.id,
+                                pitch: note.pitch,
+                                velocity: note.velocity,
+                                startSamples: endpoint.startSamples,
+                                endSamples: endpoint.endSamples,
+                            };
+                        });
+                    });
+                }
+
+                for (const note of scheduledNotes) {
+                    const noteStart = Math.max(0, note.startSamples / sampleRate - renderEndpoints.startSeconds);
+                    const noteEnd = Math.min(
+                        durationSeconds,
+                        note.endSamples / sampleRate - renderEndpoints.startSeconds
+                    );
+                    const noteDuration = noteEnd - noteStart;
+                    if (noteStart >= durationSeconds || noteDuration <= 0) {
+                        continue;
+                    }
+
+                    const freq = MIDI_FREQUENCIES[note.pitch] ?? 440;
+                    const osc = offlineCtx.createOscillator();
+                    const env = offlineCtx.createGain();
+                    const attackEnd = Math.min(noteStart + 0.005, noteEnd);
+                    const releaseStart = Math.max(attackEnd, noteEnd - 0.01);
+                    osc.type = 'triangle';
+                    osc.frequency.value = freq;
+                    env.gain.setValueAtTime(0, noteStart);
+                    env.gain.linearRampToValueAtTime((note.velocity / 127) * 0.3, attackEnd);
+                    env.gain.setValueAtTime((note.velocity / 127) * 0.3, releaseStart);
+                    env.gain.exponentialRampToValueAtTime(0.001, noteEnd);
+                    osc.connect(env);
+                    env.connect(gainNode);
+                    osc.start(noteStart);
+                    osc.stop(noteEnd + 0.01);
                 }
             } else if (time.kind === 'audio') {
                 for (const clip of time.clips) {

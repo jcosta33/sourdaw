@@ -73,7 +73,7 @@ type ProjectableMidiEvent = {
     velocity: number;
 };
 
-type ProjectMidiEventsInput<Event extends ProjectableMidiEvent> = {
+type ClipMidiEventsInput<Event extends ProjectableMidiEvent> = {
     events: readonly Event[];
     clipId: string;
     clipStartBeat: number;
@@ -87,8 +87,18 @@ type ProjectMidiEventsInput<Event extends ProjectableMidiEvent> = {
     phase?: 'clip-groove' | 'complete';
 };
 
-function projectMidiEvents<Event extends ProjectableMidiEvent>(input: ProjectMidiEventsInput<Event>): readonly Event[] {
+type SequencerMidiEventsInput<Event extends ProjectableMidiEvent> = {
+    events: readonly Event[];
+    phase: 'sequencer-groove';
+};
+
+function projectMidiEvents<Event extends ProjectableMidiEvent>(
+    input: ClipMidiEventsInput<Event> | SequencerMidiEventsInput<Event>
+): readonly Event[] {
     mocks.projectMidiEvents(input);
+    if (input.phase === 'sequencer-groove') {
+        return input.events;
+    }
     return input.events.map((event) => {
         let startBeat = event.startBeat + mocks.projection.startOffset;
         if (input.phase !== 'clip-groove' && !input.eventsAreAbsolute) {
@@ -241,11 +251,38 @@ function makeMidi(): NonNullable<MidiStoreState> {
     };
 }
 
-async function runSchedule({ withYeast = false }: { withYeast?: boolean } = {}): Promise<PendingWorkletEvent[]> {
+type RunScheduleInput = {
+    withYeast?: boolean;
+    loopLengthBeats?: number;
+    includeSecondClip?: boolean;
+};
+
+async function runSchedule({
+    withYeast = false,
+    loopLengthBeats,
+    includeSecondClip = false,
+}: RunScheduleInput = {}): Promise<PendingWorkletEvent[]> {
     const offlineCtx = makeOfflineCtx();
     const track = makeMidiTrack();
+    const midi = makeMidi();
     if (withYeast) {
         track.devices.push({ id: 'yeast-1', name: 'Yeast', type: 'yeast', bypassed: false, parameterValues: {} });
+    }
+    if (loopLengthBeats !== undefined) {
+        track.clips[0]!.loopEnabled = true;
+        track.clips[0]!.loopLength = loopLengthBeats;
+    }
+    if (includeSecondClip) {
+        track.clips.push({
+            ...track.clips[0]!,
+            id: 'clip-2',
+            name: 'Second MIDI Clip',
+            startBeat: 4,
+            endBeat: 8,
+            loopEnabled: false,
+            loopLength: undefined,
+        });
+        midi.notesByClipId['clip-2'] = [{ id: 'note-2', pitch: 64, startBeat: 1, duration: 1, velocity: 90 }];
     }
     const entry = makeInstrumentEntry();
     const deviceEntriesByTrack = new Map<string, DeviceNodeEntry[]>([[track.id, [entry]]]);
@@ -259,7 +296,7 @@ async function runSchedule({ withYeast = false }: { withYeast?: boolean } = {}):
     await scheduleTrackClips({
         offlineCtx,
         track,
-        midi: makeMidi(),
+        midi,
         trackInputNode: inputNode,
         trackGainNode: gainNode,
         trackPanNode: panNode,
@@ -349,5 +386,23 @@ describe('scheduleTrackClips — MIDI plugin-delay compensation', () => {
         expect(events.find((event) => event.type === 'off')).toMatchObject({ pitch: 72 });
         expect(mocks.projectMidiEvents).toHaveBeenNthCalledWith(1, expect.objectContaining({ phase: 'clip-groove' }));
         expect(mocks.projectMidiEvents).toHaveBeenNthCalledWith(2, expect.objectContaining({ phase: 'complete' }));
+    });
+
+    it('processes all loop iterations and clips through Yeast in one chronological track pass', async () => {
+        const events = await runSchedule({ withYeast: true, loopLengthBeats: 2, includeSecondClip: true });
+
+        expect(mocks.processYeastMidi).toHaveBeenCalledTimes(1);
+        const processInput = mocks.processYeastMidi.mock.calls[0]?.[0];
+        expect(processInput).toMatchObject({
+            events: [
+                expect.objectContaining({ timePpq: 1 }),
+                expect.objectContaining({ timePpq: 2 }),
+                expect.objectContaining({ timePpq: 3 }),
+                expect.objectContaining({ timePpq: 4 }),
+                expect.objectContaining({ timePpq: 5 }),
+                expect.objectContaining({ timePpq: 6 }),
+            ],
+        });
+        expect(events.filter((event) => event.type === 'on')).toHaveLength(3);
     });
 });

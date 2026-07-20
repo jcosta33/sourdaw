@@ -5,7 +5,7 @@ type OfflineMidiProjectableEvent = {
     velocity: number;
 };
 
-type OfflineMidiEventProjectionInput<Event extends OfflineMidiProjectableEvent> = {
+type OfflineClipMidiEventProjectionInput<Event extends OfflineMidiProjectableEvent> = {
     events: readonly Event[];
     clipId: string;
     clipStartBeat: number;
@@ -18,6 +18,14 @@ type OfflineMidiEventProjectionInput<Event extends OfflineMidiProjectableEvent> 
     eventsAreAbsolute?: boolean;
     phase?: 'clip-groove' | 'complete';
 };
+
+type OfflineSequencerMidiEventProjectionInput<Event extends OfflineMidiProjectableEvent> = {
+    events: readonly Event[];
+    phase: 'sequencer-groove';
+};
+
+type OfflineMidiEventProjectionInput<Event extends OfflineMidiProjectableEvent> =
+    OfflineClipMidiEventProjectionInput<Event> | OfflineSequencerMidiEventProjectionInput<Event>;
 
 export type OfflineMidiEventProjector = <Event extends OfflineMidiProjectableEvent>(
     input: OfflineMidiEventProjectionInput<Event>

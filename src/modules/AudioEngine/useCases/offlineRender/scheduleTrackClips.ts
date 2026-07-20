@@ -21,7 +21,7 @@ import { type DeviceNodeEntry, buildDeviceChain } from '../buildDeviceChain';
 import { getCompensationDelay } from '../latencyCompensation/compensation/getCompensationDelay';
 
 import { MICRO_FADE_SECONDS, YIELD_EVERY_N_NOTES } from './constants';
-import { projectOfflineYeastClipNotes } from './projectOfflineYeastClipNotes';
+import { projectOfflineYeastTrackNotes } from './projectOfflineYeastTrackNotes';
 import { type PendingWorkletEvent } from './types';
 import { yieldToMain } from './yieldToMain';
 
@@ -225,6 +225,136 @@ export async function scheduleTrackClips({
         }
     }
 
+    type ScheduledMidiNote = {
+        id: string;
+        pitch: number;
+        velocity: number;
+        startSamples: number;
+        endSamples: number;
+        toasterPadIndex: number;
+    };
+    type WorkletMidiEvent = {
+        time: number;
+        type: 'on' | 'off';
+        pitch: number;
+        velocity: number;
+        duration: number;
+        toasterPadIndex: number;
+    };
+
+    const drumKit = resolveDrumKit(track.devices);
+    const drumKitDevice = track.devices.find(
+        (device) => device.type === 'builtin-drum-kit' || device.type === 'drum-kit'
+    );
+    const kitDef = drumKitDevice
+        ? getDrumKitDefByIndex(drumKitDevice.parameterValues.kit ?? drumKitDevice.parameterValues.kitId ?? 0)
+        : null;
+    const synthParams = drumKit || kitDef || instrumentControls ? null : getSynthParamsFromDevices(track.devices);
+    const hasYeast = track.devices.some((device) => device.type === 'yeast');
+    const parentTrack =
+        track.parentId && allTracks ? allTracks.find((candidate) => candidate.id === track.parentId) : null;
+    const isToasterChild = !instrumentControls && parentTrack?.devices.some((device) => device.type === 'toaster');
+    const workletEvents: WorkletMidiEvent[] = [];
+    let noteCount = 0;
+
+    async function scheduleMidiNoteBatch(notes: readonly ScheduledMidiNote[]): Promise<void> {
+        for (const note of notes) {
+            if (note.endSamples <= regionStartSec * offlineCtx.sampleRate) {
+                continue;
+            }
+
+            const rawStartSec = note.startSamples / offlineCtx.sampleRate + compensationDelay;
+            const rawEndSec = note.endSamples / offlineCtx.sampleRate + compensationDelay;
+            const startTime = Math.max(0, rawStartSec - regionStartSec);
+            const endTime = Math.min(durationSeconds, rawEndSec - regionStartSec);
+            const duration = endTime - startTime;
+            if (startTime >= durationSeconds || duration <= 0) {
+                continue;
+            }
+
+            if (instrumentControls) {
+                workletEvents.push({
+                    time: startTime,
+                    type: 'on',
+                    pitch: note.pitch,
+                    velocity: note.velocity,
+                    duration,
+                    toasterPadIndex: note.toasterPadIndex,
+                });
+                workletEvents.push({
+                    time: endTime,
+                    type: 'off',
+                    pitch: note.pitch,
+                    velocity: 0,
+                    duration: 0,
+                    toasterPadIndex: note.toasterPadIndex,
+                });
+            } else if (kitDef) {
+                scheduleDrumKitNote(offlineCtx, trackInputNode, kitDef, note.pitch, startTime, note.velocity);
+            } else if (drumKit) {
+                scheduleKitNote(offlineCtx, trackInputNode, drumKit, note.pitch, startTime, duration, note.velocity);
+            } else {
+                scheduleNoteOffline(
+                    offlineCtx,
+                    trackInputNode,
+                    note.pitch,
+                    startTime,
+                    duration,
+                    note.velocity,
+                    synthParams!
+                );
+            }
+
+            noteCount++;
+            if (noteCount % YIELD_EVERY_N_NOTES === 0) {
+                await yieldToMain();
+            }
+        }
+    }
+
+    if (track.kind === 'midi' && hasYeast && processYeastMidi && !isToasterChild) {
+        const iterations: Parameters<typeof projectOfflineYeastTrackNotes>[0]['iterations'][number][] = [];
+        for (const { clip, padIndex } of clipsToProcess) {
+            if (clip.type !== 'midi' || clip.muted || clip.endBeat <= regionStartBeat) {
+                continue;
+            }
+            const sourceNotes = midi.notesByClipId[clip.id];
+            const clipVisualLength = clip.endBeat - clip.startBeat;
+            if (!sourceNotes || clipVisualLength <= 0) {
+                continue;
+            }
+            const rawLoopLength = clip.loopEnabled ? (clip.loopLength ?? clipVisualLength) : clipVisualLength;
+            const loopLength = rawLoopLength > 0 ? rawLoopLength : clipVisualLength;
+            const iterationCount = clip.loopEnabled ? Math.ceil(clipVisualLength / loopLength) : 1;
+            for (let iteration = 0; iteration < iterationCount; iteration++) {
+                iterations.push({
+                    sourceNotes,
+                    clipId: clip.id,
+                    clipStartBeat: clip.startBeat,
+                    clipEndBeat: clip.endBeat,
+                    iterationStartBeat: clip.startBeat + iteration * loopLength,
+                    loopLengthBeats: loopLength,
+                    midiOffsetBeats: clip.midiOffsetBeats ?? 0,
+                    loopEnabled: clip.loopEnabled ?? false,
+                    toasterPadIndex: padIndex,
+                });
+            }
+        }
+        const scheduledNotes = projectOfflineYeastTrackNotes({
+            trackId: track.id,
+            iterations,
+            sampleRate: offlineCtx.sampleRate,
+            blockStartSamples: Math.floor(regionStartSec * offlineCtx.sampleRate),
+            blockEndSamples: Math.ceil((regionStartSec + durationSeconds) * offlineCtx.sampleRate),
+            defaultTempo,
+            changes,
+            projectMidiEvents,
+            projectPpqEndpoints,
+            processYeastMidi,
+        });
+        await scheduleMidiNoteBatch(scheduledNotes);
+    }
+
     for (const { clip, padIndex: toasterPadIndex } of clipsToProcess) {
         // Skip muted clips — they should not render audio.
         if (clip.muted) {
@@ -254,164 +384,43 @@ export async function scheduleTrackClips({
             if (!sourceNotes) {
                 continue;
             }
-
-            const drumKit = resolveDrumKit(track.devices);
-            const drumKitDevice = track.devices.find(
-                (data) => data.type === 'builtin-drum-kit' || data.type === 'drum-kit'
-            );
-            const kitDef = drumKitDevice
-                ? getDrumKitDefByIndex(drumKitDevice.parameterValues.kit ?? drumKitDevice.parameterValues.kitId ?? 0)
-                : null;
-
-            // Only Toaster parent tracks play their own children's clips. If this
-            // is a child track of a Toaster, skip note processing — the parent
-            // will gather them.
-            if (!instrumentControls && track.parentId && allTracks) {
-                const parentTrack = allTracks.find((time) => time.id === track.parentId);
-                if (parentTrack?.devices.some((data) => data.type === 'toaster')) {
-                    continue;
-                }
+            if (isToasterChild || (hasYeast && processYeastMidi)) {
+                continue;
             }
-
-            const synthParams =
-                drumKit || kitDef || instrumentControls ? null : getSynthParamsFromDevices(track.devices);
-            const hasYeast = track.devices.some((device) => device.type === 'yeast');
-
-            let noteCount = 0;
-
-            type NoteEvent = { time: number; type: 'on' | 'off'; pitch: number; velocity: number; duration: number };
-            const workletEvents: NoteEvent[] = [];
 
             for (let iter = 0; iter < maxIterations; iter++) {
                 const iterOffset = iter * loopLen;
                 const iterationStartBeat = clip.startBeat + iterOffset;
                 const midiOffsetBeats = clip.midiOffsetBeats ?? 0;
-                let scheduledNotes: Array<{
-                    id: string;
-                    pitch: number;
-                    velocity: number;
-                    startSamples: number;
-                    endSamples: number;
-                }>;
-                if (hasYeast && processYeastMidi) {
-                    scheduledNotes = projectOfflineYeastClipNotes({
-                        trackId: track.id,
-                        sourceNotes,
-                        clipId: clip.id,
-                        clipStartBeat: clip.startBeat,
-                        clipEndBeat: clip.endBeat,
-                        iterationStartBeat,
-                        loopLengthBeats: loopLen,
-                        midiOffsetBeats,
-                        loopEnabled: clip.loopEnabled ?? false,
-                        sampleRate: offlineCtx.sampleRate,
-                        blockStartSamples: Math.floor(regionStartSec * offlineCtx.sampleRate),
-                        blockEndSamples: Math.ceil((regionStartSec + durationSeconds) * offlineCtx.sampleRate),
+                const notes = projectMidiEvents({
+                    events: sourceNotes,
+                    clipId: clip.id,
+                    clipStartBeat: clip.startBeat,
+                    clipEndBeat: clip.endBeat,
+                    iterationStartBeat,
+                    loopLengthBeats: loopLen,
+                    midiOffsetBeats,
+                    loopEnabled: clip.loopEnabled ?? false,
+                    phase: 'complete',
+                });
+                const scheduledNotes = notes.map((note) => {
+                    const endpoints = projectPpqEndpoints({
+                        startPpq: note.startBeat,
+                        endPpq: note.startBeat + note.duration,
                         defaultTempo,
+                        sampleRate: offlineCtx.sampleRate,
                         changes,
-                        projectMidiEvents,
-                        projectPpqEndpoints,
-                        processYeastMidi,
                     });
-                } else {
-                    const notes = projectMidiEvents({
-                        events: sourceNotes,
-                        clipId: clip.id,
-                        clipStartBeat: clip.startBeat,
-                        clipEndBeat: clip.endBeat,
-                        iterationStartBeat,
-                        loopLengthBeats: loopLen,
-                        midiOffsetBeats,
-                        loopEnabled: clip.loopEnabled ?? false,
-                        phase: 'complete',
-                    });
-                    scheduledNotes = notes.map((note) => {
-                        const endpoints = projectPpqEndpoints({
-                            startPpq: note.startBeat,
-                            endPpq: note.startBeat + note.duration,
-                            defaultTempo,
-                            sampleRate: offlineCtx.sampleRate,
-                            changes,
-                        });
-                        return {
-                            id: note.id,
-                            pitch: note.pitch,
-                            velocity: note.velocity,
-                            startSamples: endpoints.startSamples,
-                            endSamples: endpoints.endSamples,
-                        };
-                    });
-                }
-
-                for (const note of scheduledNotes) {
-                    if (note.endSamples <= regionStartSec * offlineCtx.sampleRate) {
-                        continue;
-                    }
-
-                    // Apply plugin-delay compensation symmetrically with the audio
-                    // branch (see the `+ compensationDelay` on the audio iteration
-                    // below) so instrument notes stay aligned with audio clips.
-                    const rawStartSec = note.startSamples / offlineCtx.sampleRate + compensationDelay;
-                    const rawEndSec = note.endSamples / offlineCtx.sampleRate + compensationDelay;
-                    const startTime = Math.max(0, rawStartSec - regionStartSec);
-                    const endTime = Math.min(durationSeconds, rawEndSec - regionStartSec);
-                    const duration = endTime - startTime;
-                    if (startTime >= durationSeconds || duration <= 0) {
-                        continue;
-                    }
-
-                    if (instrumentControls) {
-                        workletEvents.push({
-                            time: startTime,
-                            type: 'on',
-                            pitch: note.pitch,
-                            velocity: note.velocity,
-                            duration,
-                        });
-                        workletEvents.push({ time: endTime, type: 'off', pitch: note.pitch, velocity: 0, duration: 0 });
-                    } else if (kitDef) {
-                        scheduleDrumKitNote(offlineCtx, trackInputNode, kitDef, note.pitch, startTime, note.velocity);
-                    } else if (drumKit) {
-                        scheduleKitNote(
-                            offlineCtx,
-                            trackInputNode,
-                            drumKit,
-                            note.pitch,
-                            startTime,
-                            duration,
-                            note.velocity
-                        );
-                    } else {
-                        scheduleNoteOffline(
-                            offlineCtx,
-                            trackInputNode,
-                            note.pitch,
-                            startTime,
-                            duration,
-                            note.velocity,
-                            synthParams!
-                        );
-                    }
-
-                    noteCount++;
-                    if (noteCount % YIELD_EVERY_N_NOTES === 0) {
-                        await yieldToMain();
-                    }
-                }
-            }
-
-            if (instrumentControls && workletEvents.length > 0 && pendingWorkletEvents) {
-                for (const evt of workletEvents) {
-                    pendingWorkletEvents.push({
-                        time: evt.time,
-                        type: evt.type,
-                        pitch: evt.pitch,
-                        velocity: evt.velocity,
-                        instrumentControls,
-                        isToaster,
+                    return {
+                        id: note.id,
+                        pitch: note.pitch,
+                        velocity: note.velocity,
+                        startSamples: endpoints.startSamples,
+                        endSamples: endpoints.endSamples,
                         toasterPadIndex,
-                    });
-                }
+                    };
+                });
+                await scheduleMidiNoteBatch(scheduledNotes);
             }
         } else if (clip.type === 'audio' && clip.audioBufferId) {
             const buffer = audioBufferCache.get(clip.audioBufferId);
@@ -521,6 +530,20 @@ export async function scheduleTrackClips({
                 // duration arg is destination-timeline seconds — NOT buffer-time scaled by playbackRate.
                 source.start(startSec, bufferOffsetSec, playDuration);
             }
+        }
+    }
+
+    if (instrumentControls && workletEvents.length > 0 && pendingWorkletEvents) {
+        for (const event of workletEvents) {
+            pendingWorkletEvents.push({
+                time: event.time,
+                type: event.type,
+                pitch: event.pitch,
+                velocity: event.velocity,
+                instrumentControls,
+                isToaster,
+                toasterPadIndex: event.toasterPadIndex,
+            });
         }
     }
 }
