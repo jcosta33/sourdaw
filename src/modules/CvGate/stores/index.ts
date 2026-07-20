@@ -1,1 +1,2 @@
-export { cvGateStore } from './cvGate';
+export type { CvGateState, CvOutputChannel } from './cvGate';
+export { cvGateStore, defaultCvGateState } from './cvGate';
