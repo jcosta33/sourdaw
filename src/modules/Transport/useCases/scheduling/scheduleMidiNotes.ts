@@ -77,6 +77,7 @@ export async function scheduleMidiNotes(
     toBeat: number,
     accumulatedPosition: number,
     lastScheduledBeat: number,
+    scheduledFrozenTracks: Set<string>,
     activeAudioSources: AudioBufferSourceNode[],
     transport: TransportState,
     currentTempo: number,
@@ -99,7 +100,16 @@ export async function scheduleMidiNotes(
         }
 
         if (track.freezeState.status === 'frozen' && track.freezeState.frozenBufferId) {
-            scheduleFrozenTrack(track, accumulatedPosition, activeAudioSources, currentTempo);
+            // Dedup per session (same contract as scheduleAudioClips): the
+            // whole frozen buffer is scheduled in a single shot anchored to the
+            // absolute start time, so without the guard every 10 ms tick would
+            // layer another copy of the track on top of the previous ones.
+            if (!scheduledFrozenTracks.has(track.id)) {
+                const scheduled = scheduleFrozenTrack(track, accumulatedPosition, activeAudioSources, currentTempo);
+                if (scheduled) {
+                    scheduledFrozenTracks.add(track.id);
+                }
+            }
             continue;
         }
 

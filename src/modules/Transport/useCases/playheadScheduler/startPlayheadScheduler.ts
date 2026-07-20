@@ -286,6 +286,7 @@ export function startPlayheadScheduler(): void {
             scheduleUpTo,
             schedulerSession.accumulatedPosition,
             schedulerSession.lastScheduledBeat,
+            schedulerSession.scheduledFrozenTracks,
             schedulerSession.activeAudioSources,
             current,
             currentTempo,
