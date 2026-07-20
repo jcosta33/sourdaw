@@ -1,0 +1,65 @@
+src/modules/MIDI/errors/GrooveExtractionActionError.ts
+  s_c28df7d3dde4b9::t_dc7d938f45e46d 1-24
+src/modules/MIDI/handlers/groove/handleExtractGroove.ts
+  s_c28df7d3dde4b9::t_75558f54bc40c0 4
+src/modules/MIDI/useCases/grooveTemplates/getGrooveExtractionActionErrorCode.ts
+  s_c28df7d3dde4b9::t_4722839e69d5d1 1-5
+src/modules/MIDI/useCases/index.ts
+  s_c28df7d3dde4b9::t_64918b9e66a998 51
+src/modules/TimelineEditor/presentations/views/Inspector/TrackClipsSection.tsx
+  s_8a42859ca8d13e::t_6c62665a9ed85f 3,10,45-64
+src/modules/TimelineEditor/presentations/views/Inspector/__tests__/TrackClipsSection.spec.tsx
+  s_8a42859ca8d13e::t_f77bd98d2a56bc 15-20,92,183-197
+src/modules/Yeast/presentations/__tests__/GrooveDropTarget.spec.tsx
+  s_ab44d00b33ab9f::t_a74660893e5f67 136-192,223-225,240-242,282-321
+src/modules/Yeast/presentations/views/GrooveDropTarget.tsx
+  s_3b6effb999dc38::t_f8f46252142a2f 1-5,15-23,26,34-58,79-106,110,115-117,120,123-129,136-138,140-146,148-158,160,162,167-187,190,201,203-207,212
+src/modules/Yeast/presentations/views/GrooveTemplateLifecycleControls.tsx
+  s_8a42859ca8d13e::t_9091288d258665 1,11-18,20,22-51,55,58,60-91,104,108,110-111,113-115,117
+src/modules/Yeast/presentations/views/__tests__/GrooveTemplateLifecycleControls.spec.tsx
+  s_8a42859ca8d13e::t_81faa533e9fc22 1-2,6-13,15-20,23,28-61
+src/modules/Yeast/useCases/commitYeastGrooveExtraction.ts
+  s_c28df7d3dde4b9::t_3d63e5b58e8ff3 2,21-41
+src/utils/midiClipDrag.ts
+  s_c28df7d3dde4b9::t_175278c67e6390 1
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "1e26fa31b0a62096b28d7c50f352cedbe06e140d",
+  "prompts": {},
+  "sessions": {
+    "s_3b6effb999dc38": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8163-4ceb-7ff2-81f6-1f4419f24ec6",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_8a42859ca8d13e": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f815b-e935-7362-a244-b4356f556bdd",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_ab44d00b33ab9f": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8132-eefa-71e3-a80e-a76770a6734d",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_c28df7d3dde4b9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f80f4-c597-7162-a337-9e68c16e3fb4",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
