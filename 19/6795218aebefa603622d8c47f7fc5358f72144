@@ -1,0 +1,67 @@
+src/modules/MIDI/handlers/groove/__tests__/handleExtractGroove.spec.ts
+  s_4a3a9ac19de269::t_bcafeb99df3c5b 27-47,98-138
+src/modules/MIDI/useCases/grooveTemplates/getSupportedGrooveSubdivisions.ts
+  s_4a3a9ac19de269::t_55d127b7a5b2c2 1-5
+src/modules/MIDI/useCases/grooveTemplates/prepareGrooveTemplateCreation.ts
+  s_4a3a9ac19de269::t_96f8cfa934e813 1-62
+src/modules/MIDI/useCases/index.ts
+  s_4a3a9ac19de269::t_7b2c44a0f22fe2 55,59
+src/modules/Yeast/presentations/__tests__/GrooveDropTarget.spec.tsx
+  s_4a3a9ac19de269::t_7ed3d7f62c7188 12,150-220
+src/modules/Yeast/presentations/views/__tests__/GrooveTemplateLifecycleControls.spec.tsx
+  s_4a3a9ac19de269::t_950389cbb83e32 1-16
+src/modules/Yeast/presentations/views/__tests__/YeastPanel.spec.tsx
+  s_4a3a9ac19de269::t_488f319b6a6e54 22-25,52-55,175-213
+src/modules/Yeast/useCases/proposeYeastGrooveExtraction.ts
+  s_4a3a9ac19de269::t_b07c7d194bf62b 2,15-17,20-21,41-42,47-48,50-51,53-56
+src/utils/handlerContract.ts
+  s_4a3a9ac19de269::t_2ca7574f8bd868 402-410
+src/modules/MIDI/handlers/groove/handleExtractGroove.ts
+  s_7475f7f4c58c43::t_ddaa47c3c05590 6,11-17,36,41-42,47,51-52,56-77,80-89,124-129,132
+src/modules/MIDI/useCases/grooveTemplates/createGrooveSourceRevision.ts
+  s_7475f7f4c58c43::t_5e57604786ef71 1-26
+src/modules/MIDI/useCases/grooveTemplates/createGrooveTemplate.ts
+  s_7475f7f4c58c43::t_98323069067dcf 10,31-32,35
+src/modules/MIDI/useCases/grooveTemplates/prepareGrooveExtraction.ts
+  s_7475f7f4c58c43::t_a0860e20f6c02d 1-55
+src/modules/Yeast/presentations/views/GrooveDropTarget.tsx
+  s_c28df7d3dde4b9::t_bf7565c9a42473 76-77
+src/modules/Yeast/presentations/views/GrooveTemplateLifecycleControls.tsx
+  s_c28df7d3dde4b9::t_721b861b9c471f 40
+src/modules/Yeast/presentations/views/YeastPanel.tsx
+  s_c28df7d3dde4b9::t_77f090937cdcee 23,196-197,200,221-239
+src/modules/Yeast/useCases/commitYeastGrooveExtraction.ts
+  s_c28df7d3dde4b9::t_8bb1d4decc2d4a 2,9-10,18-19,28-29
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "196795218aebefa603622d8c47f7fc5358f72144",
+  "prompts": {},
+  "sessions": {
+    "s_4a3a9ac19de269": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "4a1953fb-b074-451f-a9e0-2edbbc4fbbf3",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_7475f7f4c58c43": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f80f5-432b-7962-b884-92c9a0f55e05",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_c28df7d3dde4b9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f80f4-c597-7162-a337-9e68c16e3fb4",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
