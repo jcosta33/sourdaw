@@ -1,0 +1,69 @@
+src/modules/SessionLauncher/handlers/sessionLauncher/__tests__/sessionLauncherHandlers.spec.ts
+  s_33d7f66980ca40::t_e89f927e881094 20-22,28-30
+src/modules/SessionLauncher/presentations/hooks/__tests__/useTracks.spec.tsx
+  s_4a3a9ac19de269::t_dff8e3aaa24e6f 1-43
+src/modules/SessionLauncher/useCases/loopStation/__tests__/loopStationUndo.spec.ts
+  s_89bff19e454d8f::t_c4c826b5cff18b 121-239
+src/modules/SessionLauncher/useCases/loopStation/__tests__/stopAllSlots.spec.ts
+  s_7dcffeb429d6d4::t_c933f37829be63 57-64
+src/modules/SessionLauncher/useCases/loopStation/__tests__/stopSlot.spec.ts
+  s_89bff19e454d8f::t_a4527d146fba18 57-64
+src/modules/SessionLauncher/useCases/loopStation/__tests__/toggleRecord.spec.ts
+  s_b88cd3730a9eeb::t_f2e6df4ffa6d7d 3,27-43,74-164
+src/modules/SessionLauncher/useCases/loopStation/__tests__/triggerPad.spec.ts
+  s_89bff19e454d8f::t_0da9762c9e89b0 87-95
+src/modules/SessionLauncher/useCases/loopStation/__tests__/triggerScene.spec.ts
+  s_89bff19e454d8f::t_2fbb6fbf00820d 3,39-79
+src/modules/SessionLauncher/useCases/loopStation/__tests__/triggerSlot.spec.ts
+  s_89bff19e454d8f::t_6f9afbaa64e6af 77-84
+src/modules/SessionLauncher/useCases/loopStation/__tests__/undoLastLayer.spec.ts
+  s_7dcffeb429d6d4::t_d8ff20a15b1ce1 66-130
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "22468dfcda4cea7f077b6febedc3acb99a06bdf1",
+  "prompts": {},
+  "sessions": {
+    "s_33d7f66980ca40": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-a3a4fbe36f5242845",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_4a3a9ac19de269": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "4a1953fb-b074-451f-a9e0-2edbbc4fbbf3",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_7dcffeb429d6d4": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f80f5-a629-7381-aec3-cd4152ac2318",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_89bff19e454d8f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-a0f4928479e911238",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_b88cd3730a9eeb": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-a4ea6569dcdcfb772",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
