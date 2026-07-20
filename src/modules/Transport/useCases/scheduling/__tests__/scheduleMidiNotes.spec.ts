@@ -10,6 +10,7 @@ import { processYeastMidi } from '#/modules/Yeast/useCases';
 import { defaultTransportState } from '../../../models/TransportState';
 import { tempoMapStore } from '../../../stores/tempoMapStore';
 import { timeSignatureMapStore } from '../../../stores/timeSignatureMapStore';
+import { scheduleFrozenTrack } from '../scheduleFrozenTrack';
 import { scheduleMidiNotes, type SchedulerCancellation } from '../scheduleMidiNotes';
 
 const shouldPlayProbability = vi.hoisted(() => vi.fn((_input: { eventId: string }) => true));
@@ -57,6 +58,9 @@ vi.mock('#/modules/MIDI/useCases', () => ({
     projectCommittedGroove: vi.fn(({ events }: { events: readonly unknown[] }) => events),
     transposeForChordTrack: vi.fn((param: unknown) => param),
     shouldPlayMidiEvent: shouldPlayProbability,
+}));
+vi.mock('../scheduleFrozenTrack', () => ({
+    scheduleFrozenTrack: vi.fn(() => true),
 }));
 
 function midiTrack(overrides: Record<string, unknown> = {}) {
@@ -108,8 +112,58 @@ describe('scheduleMidiNotes', () => {
         shouldPlayProbability.mockImplementation(() => true);
     });
 
+    it('schedules a frozen MIDI track once per playback session, not on every tick', async () => {
+        const track = midiTrack({
+            clips: [midiClip()],
+            freezeState: { status: 'frozen', frozenBufferId: 'frozen-buffer-1' },
+        });
+        (trackStore as { value: unknown }).value = { tracks: [track] };
+        (midiStore as { value: unknown }).value = { notesByClipId: {} };
+
+        // Two consecutive scheduler ticks over the same frozen track. The whole
+        // frozen buffer is scheduled in one shot, so the second tick must not
+        // layer another copy (the audio path dedups via scheduledFrozenTracks).
+        const scheduledFrozenTracks = new Set<string>();
+        await scheduleMidiNotes(0, 4, 0, -1, scheduledFrozenTracks, [], defaultTransportState, 120);
+        await scheduleMidiNotes(0.2, 4.2, 0.2, -1, scheduledFrozenTracks, [], defaultTransportState, 120);
+
+        expect(vi.mocked(scheduleFrozenTrack)).toHaveBeenCalledTimes(1);
+    });
+
+    // Regression (PR #514 review): the dedup Set was keyed by track.id only, so
+    // an unfreeze → refreeze within one session (new frozenBufferId, same id)
+    // kept the old dedup entry and the refrozen track stayed silent until the
+    // next session. The key must include the buffer id so a refreeze reschedules.
+    it('reschedules a frozen MIDI track after an unfreeze → refreeze with a new buffer within the session', async () => {
+        (midiStore as { value: unknown }).value = { notesByClipId: {} };
+        const scheduledFrozenTracks = new Set<string>();
+
+        const frozenV1 = midiTrack({
+            clips: [midiClip()],
+            freezeState: { status: 'frozen', frozenBufferId: 'frozen-buffer-1' },
+        });
+        (trackStore as { value: unknown }).value = { tracks: [frozenV1] };
+        await scheduleMidiNotes(0, 4, 0, -1, scheduledFrozenTracks, [], defaultTransportState, 120);
+        // Next tick, same buffer: still deduped.
+        await scheduleMidiNotes(0.2, 4.2, 0.2, -1, scheduledFrozenTracks, [], defaultTransportState, 120);
+        expect(vi.mocked(scheduleFrozenTrack)).toHaveBeenCalledTimes(1);
+
+        // Refreeze mid-session: same track.id, new frozen render. The dedup
+        // entry for buffer 1 must not suppress scheduling buffer 2.
+        const frozenV2 = midiTrack({
+            clips: [midiClip()],
+            freezeState: { status: 'frozen', frozenBufferId: 'frozen-buffer-2' },
+        });
+        (trackStore as { value: unknown }).value = { tracks: [frozenV2] };
+        await scheduleMidiNotes(0.4, 4.4, 0.4, -1, scheduledFrozenTracks, [], defaultTransportState, 120);
+
+        expect(vi.mocked(scheduleFrozenTrack)).toHaveBeenCalledTimes(2);
+        expect(scheduledFrozenTracks.has('track-1:frozen-buffer-1')).toBe(true);
+        expect(scheduledFrozenTracks.has('track-1:frozen-buffer-2')).toBe(true);
+    });
+
     it('does not schedule synth when MIDI store is uninitialized', async () => {
-        await scheduleMidiNotes(0, 4, 0, 0, [], defaultTransportState, 120);
+        await scheduleMidiNotes(0, 4, 0, 0, new Set<string>(), [], defaultTransportState, 120);
 
         expect(getSynthParamsForTrack).not.toHaveBeenCalled();
     });
@@ -121,7 +175,7 @@ describe('scheduleMidiNotes', () => {
         (midiStore as { value: unknown }).value = { notesByClipId: { 'clip-1': source } };
         vi.mocked(projectClipMidiEvents).mockReturnValue([{ ...source[0]!, startBeat: 0.5, velocity: 40 }]);
 
-        await scheduleMidiNotes(0, 4, 0, -1, [], defaultTransportState, 120);
+        await scheduleMidiNotes(0, 4, 0, -1, new Set<string>(), [], defaultTransportState, 120);
 
         expect(projectClipMidiEvents).toHaveBeenCalledWith({
             events: [source[0]],
@@ -156,7 +210,7 @@ describe('scheduleMidiNotes', () => {
 
         async function pitchesFromRun() {
             vi.mocked(scheduleNote).mockClear();
-            await scheduleMidiNotes(0, 4, 0, -1, [], defaultTransportState, 120);
+            await scheduleMidiNotes(0, 4, 0, -1, new Set<string>(), [], defaultTransportState, 120);
             return vi.mocked(scheduleNote).mock.calls.map((call) => call[2]);
         }
 
@@ -223,7 +277,7 @@ describe('scheduleMidiNotes', () => {
             { timeSamples: 48000, kind: { type: 'noteOff', channel: 0, note: 64 } },
         ]);
 
-        await scheduleMidiNotes(0, 4, 0, -1, [], defaultTransportState, 120);
+        await scheduleMidiNotes(0, 4, 0, -1, new Set<string>(), [], defaultTransportState, 120);
 
         expect(processYeastMidi).toHaveBeenCalledWith(
             expect.objectContaining({
@@ -254,7 +308,7 @@ describe('scheduleMidiNotes', () => {
             { timeSamples: 24000, kind: { type: 'noteOff', channel: 0, note: 60 } },
         ]);
 
-        await scheduleMidiNotes(0, 4, 0, -1, [], defaultTransportState, 120);
+        await scheduleMidiNotes(0, 4, 0, -1, new Set<string>(), [], defaultTransportState, 120);
 
         expect(scheduleNote).toHaveBeenCalledTimes(1);
         expect(vi.mocked(scheduleNote).mock.calls[0]![4]).toBe(0);
@@ -271,7 +325,7 @@ describe('scheduleMidiNotes', () => {
             { timeSamples: 24000, kind: { type: 'noteOn', channel: 0, note: 60, velocity: 100 } },
         ]);
 
-        await scheduleMidiNotes(0, 4, 0, -1, [], defaultTransportState, 120);
+        await scheduleMidiNotes(0, 4, 0, -1, new Set<string>(), [], defaultTransportState, 120);
 
         expect(scheduleNote).toHaveBeenCalledTimes(1);
         expect(vi.mocked(scheduleNote).mock.calls[0]![4]).toBe(0.125);
@@ -292,7 +346,7 @@ describe('scheduleMidiNotes', () => {
             { timeSamples: 24480, kind: { type: 'noteOff', channel: 0, note: 67 } },
         ]);
 
-        await scheduleMidiNotes(0, 4, 0, -1, [], defaultTransportState, 120);
+        await scheduleMidiNotes(0, 4, 0, -1, new Set<string>(), [], defaultTransportState, 120);
 
         const durationByPitch = new Map(vi.mocked(scheduleNote).mock.calls.map((call) => [call[2], call[4]] as const));
         expect(durationByPitch.get(60)).toBe(0);
@@ -320,7 +374,17 @@ describe('scheduleMidiNotes', () => {
             isCurrent: () => current,
         };
 
-        const scheduling = scheduleMidiNotes(0, 4, 0, -1, [], defaultTransportState, 120, cancellation);
+        const scheduling = scheduleMidiNotes(
+            0,
+            4,
+            0,
+            -1,
+            new Set<string>(),
+            [],
+            defaultTransportState,
+            120,
+            cancellation
+        );
         await Promise.resolve();
         expect(processYeastMidi).toHaveBeenCalledWith(
             expect.objectContaining({
@@ -364,7 +428,7 @@ describe('scheduleMidiNotes', () => {
         vi.mocked(processYeastMidi).mockImplementation(processYeast);
 
         // clip endBeat 8, loopLength 2 => ceil(8/2) = 4 iterations.
-        await scheduleMidiNotes(0, 8, 0, -1, [], defaultTransportState, 120);
+        await scheduleMidiNotes(0, 8, 0, -1, new Set<string>(), [], defaultTransportState, 120);
 
         expect(processYeast).toHaveBeenCalledTimes(1);
         expect(processYeast).toHaveBeenCalledWith(expect.objectContaining({ preserveInputTrackIds: true }));
@@ -395,7 +459,7 @@ describe('scheduleMidiNotes', () => {
             },
         ]);
 
-        await scheduleMidiNotes(6, 8, 6, -1, [], defaultTransportState, 120);
+        await scheduleMidiNotes(6, 8, 6, -1, new Set<string>(), [], defaultTransportState, 120);
 
         expect(processYeastMidi).toHaveBeenCalledTimes(1);
         expect(processYeastMidi).toHaveBeenCalledWith(
@@ -432,7 +496,7 @@ describe('scheduleMidiNotes', () => {
         });
         vi.mocked(processYeastMidi).mockImplementation(processYeast);
 
-        await scheduleMidiNotes(0, 4, 0, -1, [], defaultTransportState, 120);
+        await scheduleMidiNotes(0, 4, 0, -1, new Set<string>(), [], defaultTransportState, 120);
 
         // spb = 240/60 = 4; beat 1 => round(1 * 48000 / 4) = 12000.
         // Flat-tempo (buggy) spb = 120/60 = 2 would give 24000.
@@ -467,7 +531,7 @@ describe('scheduleMidiNotes', () => {
         });
         vi.mocked(processYeastMidi).mockImplementation(processYeast);
 
-        await scheduleMidiNotes(3, 6, 3, -1, [], defaultTransportState, 120);
+        await scheduleMidiNotes(3, 6, 3, -1, new Set<string>(), [], defaultTransportState, 120);
 
         expect(processYeast).toHaveBeenCalledTimes(2);
         expect(processYeast.mock.calls.map(([input]) => input.blockStartSamples)).toEqual([72000, 96000]);
@@ -511,8 +575,8 @@ describe('scheduleMidiNotes', () => {
         });
         vi.mocked(processYeastMidi).mockImplementation(processYeast);
 
-        await scheduleMidiNotes(0, 4, 0, -1, [], defaultTransportState, 120);
-        await scheduleMidiNotes(4, 8, 4, -1, [], defaultTransportState, 120);
+        await scheduleMidiNotes(0, 4, 0, -1, new Set<string>(), [], defaultTransportState, 120);
+        await scheduleMidiNotes(4, 8, 4, -1, new Set<string>(), [], defaultTransportState, 120);
 
         expect(processYeast.mock.calls[0]![0].events.map((event) => event.kind.type)).toEqual(['noteOn']);
         expect(processYeast.mock.calls[1]![0].events.map((event) => event.kind.type)).toEqual(['noteOff']);
@@ -546,7 +610,7 @@ describe('scheduleMidiNotes', () => {
 
         // Block starts at beat 6 — bar 3 (index 2), beat 1 in 3/4. Flat 4/4 (buggy)
         // would report barIndex floor(6/4)=1, beatInBar 6%4=2, timeSigNum 4.
-        await scheduleMidiNotes(6, 10, 6, -1, [], { ...defaultTransportState }, 120);
+        await scheduleMidiNotes(6, 10, 6, -1, new Set<string>(), [], { ...defaultTransportState }, 120);
 
         expect(seenTransport).toBeDefined();
         expect(seenTransport!.timeSigNum).toBe(3);
@@ -567,7 +631,7 @@ describe('scheduleMidiNotes', () => {
             input.events.map((event) => ({ ...event, startBeat: input.iterationStartBeat }))
         );
 
-        await scheduleMidiNotes(0, 4, 0, -1, [], defaultTransportState, 120);
+        await scheduleMidiNotes(0, 4, 0, -1, new Set<string>(), [], defaultTransportState, 120);
 
         // Old behaviour: noteStartBeat (-1) < clip.startBeat (0) => dropped.
         // New behaviour: clamped to the iteration start (0) and scheduled.

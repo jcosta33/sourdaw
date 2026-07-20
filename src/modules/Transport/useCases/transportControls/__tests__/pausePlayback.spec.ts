@@ -7,6 +7,7 @@ import { yeastPanic } from '#/modules/Yeast/useCases';
 import { defaultTransportState } from '../../../models/TransportState';
 import { getTransportState } from '../../../repositories/transport/getTransportState';
 import { updateTransportState } from '../../../repositories/transport/updateTransportState';
+import { playheadPositionRef } from '../../../stores/playheadPositionRef';
 import { stopPlayheadScheduler } from '../../playheadScheduler/stopPlayheadScheduler';
 import { pausePlayback } from '../pausePlayback';
 import { stopActiveRecording } from '../stopActiveRecording';
@@ -39,6 +40,9 @@ vi.mock('../../../repositories/transport/getTransportState', () => ({
 vi.mock('../../../repositories/transport/updateTransportState', () => ({
     updateTransportState: vi.fn(),
 }));
+vi.mock('../../../stores/playheadPositionRef', () => ({
+    playheadPositionRef: { current: 0 },
+}));
 vi.mock('#/infra/logger/appLogger', () => ({ logger: loggerMock }));
 
 describe('pausePlayback', () => {
@@ -51,6 +55,29 @@ describe('pausePlayback', () => {
         vi.mocked(getTransportState).mockClear();
         vi.mocked(updateTransportState).mockClear();
         loggerMock.error.mockClear();
+        playheadPositionRef.current = 0;
+    });
+
+    it('persists the live playhead position into the store so resume restarts from the pause point', async () => {
+        // During playback the scheduler writes only playheadPositionRef; the
+        // store still holds the position where playback started (0). Pause must
+        // commit the live position or the next play resumes from the old start.
+        const liveState = { ...defaultTransportState, isPlaying: true, playheadPosition: 0 };
+        vi.mocked(getTransportState).mockReturnValue(liveState);
+        vi.mocked(updateTransportState).mockImplementation((patch) => {
+            Object.assign(liveState, patch);
+        });
+        playheadPositionRef.current = 42;
+
+        pausePlayback();
+
+        expect(updateTransportState).toHaveBeenCalledWith({
+            isPlaying: false,
+            isRecording: false,
+            playheadPosition: 42,
+        });
+        expect(liveState.playheadPosition).toBe(42);
+        await vi.waitFor(() => expect(stopPlayheadScheduler).toHaveBeenCalled());
     });
 
     it('should pause transport and tear down scheduling when state exists', async () => {
@@ -68,7 +95,11 @@ describe('pausePlayback', () => {
         expect(stopAllScheduled).toHaveBeenCalled();
         expect(resetMidiState).toHaveBeenCalled();
         expect(yeastPanic).toHaveBeenCalledWith(48000);
-        expect(updateTransportState).toHaveBeenCalledWith({ isPlaying: false, isRecording: false });
+        expect(updateTransportState).toHaveBeenCalledWith({
+            isPlaying: false,
+            isRecording: false,
+            playheadPosition: 0,
+        });
     });
 
     it('should wait for recording teardown before stopping the scheduler', async () => {

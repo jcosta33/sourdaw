@@ -4,6 +4,7 @@ import { resetMidiState } from '#/modules/MIDI/useCases';
 
 import { getTransportState } from '../../repositories/transport/getTransportState';
 import { updateTransportState } from '../../repositories/transport/updateTransportState';
+import { playheadPositionRef } from '../../stores/playheadPositionRef';
 import { stopPlayheadScheduler } from '../playheadScheduler/stopPlayheadScheduler';
 
 import { panicYeastRuntime } from './panicYeastRuntime';
@@ -22,7 +23,13 @@ export function pausePlayback(): void {
     // guard), so committing the paused state first makes any in-flight tick a
     // no-op instead of letting it run the full body and write a stale beat
     // record into the SAB.
-    updateTransportState({ isPlaying: false, isRecording: false });
+    //
+    // Persist the live playhead in the same commit. During playback the
+    // scheduler advances only `playheadPositionRef` (the store is written on
+    // discrete events: start, stop, seek), so without this the store still
+    // holds the position where playback *started* and the next
+    // `startPlayback` resumes from there instead of the pause point.
+    updateTransportState({ isPlaying: false, isRecording: false, playheadPosition: playheadPositionRef.current });
 
     // Cancel any pending count-in. During count-in `isRecording` is still
     // false, so `stopActiveRecording` would otherwise be skipped and the
