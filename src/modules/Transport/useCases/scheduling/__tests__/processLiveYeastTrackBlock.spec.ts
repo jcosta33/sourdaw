@@ -58,7 +58,7 @@ describe('processLiveYeastTrackBlock', () => {
 
         const inputEvents = vi.mocked(processYeastMidi).mock.calls[0]![0].events;
         const identities = new Set(inputEvents.map((event) => event.noteInstanceId));
-        expect(identities.size).toBe(2);
+        expect(identities).toEqual(new Set(['route-a:voice-a', 'route-a:voice-b']));
         for (const identity of identities) {
             const endpoints = inputEvents.filter((event) => event.noteInstanceId === identity);
             expect(endpoints).toHaveLength(2);

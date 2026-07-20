@@ -109,8 +109,7 @@ export async function processLiveYeastTrackBlock({
         const inputEvents: LiveYeastMidiEvent[] = [];
 
         for (const iteration of iterations) {
-            for (let sourceIndex = 0; sourceIndex < iteration.sourceNotes.length; sourceIndex++) {
-                const sourceNote = iteration.sourceNotes[sourceIndex]!;
+            for (const sourceNote of iteration.sourceNotes) {
                 const [groovedNote] = projectCommittedGroove({
                     events: [sourceNote],
                     consumerType: 'clip',
@@ -122,12 +121,7 @@ export async function processLiveYeastTrackBlock({
 
                 const noteStartBeat = iteration.iterationStartBeat + groovedNote.startBeat;
                 const noteEndBeat = noteStartBeat + groovedNote.duration;
-                const noteInstanceId = `${iteration.routeId}:${sourceNote.id}:${sourceIndex}:${beatToSamples(
-                    changes,
-                    noteStartBeat,
-                    transport.tempo,
-                    sampleRate
-                )}`;
+                const noteInstanceId = `${iteration.routeId}:${sourceNote.id}`;
                 const ownsNoteOn = noteStartBeat >= block.fromBeat && noteStartBeat < block.toBeat;
                 const ownsNoteOff = noteEndBeat >= block.fromBeat && noteEndBeat < block.toBeat;
                 if (ownsNoteOn) {

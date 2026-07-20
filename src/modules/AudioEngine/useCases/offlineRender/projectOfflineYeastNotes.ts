@@ -41,13 +41,13 @@ export function projectOfflineYeastNotes({
     projectPpqEndpoints,
     processYeastMidi,
 }: ProjectOfflineYeastNotesInput): ProjectedOfflineYeastNote[] {
-    const events = notes.flatMap((note, index) => {
+    const events = notes.flatMap((note) => {
         const endpoint = projectPpqEndpoints({
             startPpq: note.startBeat,
             endPpq: note.startBeat + note.duration,
         });
         const routeId = note.routeId ?? trackId;
-        const noteInstanceId = `${routeId}:${note.id}:${index}:${endpoint.startSamples}`;
+        const noteInstanceId = `${routeId}:${note.id}`;
         return [
             {
                 timeSamples: endpoint.startSamples,

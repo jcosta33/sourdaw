@@ -154,6 +154,8 @@ describe('projectOfflineYeastNotes', () => {
         const inputEvents = processYeastMidi.mock.calls[0]![0].events;
         expect(inputEvents[0]!.noteInstanceId).toBe(inputEvents[1]!.noteInstanceId);
         expect(inputEvents[2]!.noteInstanceId).toBe(inputEvents[3]!.noteInstanceId);
+        expect(inputEvents[0]!.noteInstanceId).toBe('track-1:voice-a');
+        expect(inputEvents[2]!.noteInstanceId).toBe('track-1:voice-b');
         expect(inputEvents[0]!.noteInstanceId).not.toBe(inputEvents[2]!.noteInstanceId);
         expect(inputEvents[0]!.sourceEventId).not.toBe(inputEvents[1]!.sourceEventId);
         expect(projected).toEqual([
