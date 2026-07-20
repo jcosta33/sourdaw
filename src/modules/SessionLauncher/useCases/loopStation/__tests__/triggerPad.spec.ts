@@ -84,4 +84,13 @@ describe('triggerPad', () => {
         triggerPad({ row: 3, column: 0, record: false });
         expect(triggerSlotMock).not.toHaveBeenCalled();
     });
+
+    it('no-ops when no session is loaded', () => {
+        loopStationStoreMock.value = null;
+
+        triggerPad({ row: 1, column: 0, record: false });
+
+        expect(triggerSlotMock).not.toHaveBeenCalled();
+        expect(toggleRecordMock).not.toHaveBeenCalled();
+    });
 });

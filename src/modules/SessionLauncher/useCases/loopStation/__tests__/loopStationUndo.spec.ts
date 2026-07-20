@@ -118,4 +118,123 @@ describe('loop station undo entries', () => {
         const restored = vi.mocked(loopStationStore.set).mock.lastCall?.[0] as LoopStationState | undefined;
         expect(restored?.fixedLoopLength).toBe(4);
     });
+
+    it('createSlot does not push undo when no session is loaded', () => {
+        loopStationStoreMock.value = null;
+        createSlot('track-1', 0, 0);
+        expect(pushUndoEntryMock).not.toHaveBeenCalled();
+    });
+
+    it('createSlot undo restores the prior slot list and redo re-applies the created slot', () => {
+        loopStationStoreMock.value = emptyLoopState();
+        createSlot('track-1', 0, 0);
+
+        const [, undoFn, redoFn] = pushUndoEntryMock.mock.calls[0]!;
+
+        loopStationStoreMock.value = emptyLoopState();
+        (undoFn as () => void)();
+        expect((vi.mocked(loopStationStore.set).mock.lastCall?.[0] as LoopStationState).slots).toHaveLength(0);
+
+        loopStationStoreMock.value = emptyLoopState();
+        (redoFn as () => void)();
+        const redone = vi.mocked(loopStationStore.set).mock.lastCall?.[0] as LoopStationState;
+        expect(redone.slots).toHaveLength(1);
+        expect(redone.slots[0]!.trackId).toBe('track-1');
+    });
+
+    it('clearSlot undo restores the previous slot and redo re-clears it', () => {
+        loopStationStoreMock.value = {
+            ...emptyLoopState(),
+            slots: [
+                {
+                    id: 's1',
+                    trackId: 't',
+                    row: 0,
+                    column: 0,
+                    state: 'playing',
+                    lengthBeats: 4,
+                    layers: [{ id: 'L1', layerIndex: 0, recordedAt: '', muted: false, volume: 1 }],
+                    loopCount: 2,
+                    volume: 1,
+                    quantize: true,
+                    fadeBeats: 0,
+                },
+            ],
+        };
+        clearSlot('s1');
+
+        const [, undoFn, redoFn] = pushUndoEntryMock.mock.calls[0]!;
+
+        loopStationStoreMock.value = emptyLoopState();
+        (undoFn as () => void)();
+        const restored = vi.mocked(loopStationStore.set).mock.lastCall?.[0] as LoopStationState;
+        expect(restored.slots[0]!.state).toBe('playing');
+        expect(restored.slots[0]!.layers).toHaveLength(1);
+
+        loopStationStoreMock.value = emptyLoopState();
+        (redoFn as () => void)();
+        const cleared = vi.mocked(loopStationStore.set).mock.lastCall?.[0] as LoopStationState;
+        expect(cleared.slots[0]!.state).toBe('empty');
+    });
+
+    it('toggleArm does not push undo when no session is loaded', () => {
+        loopStationStoreMock.value = null;
+        toggleArm();
+        expect(pushUndoEntryMock).not.toHaveBeenCalled();
+    });
+
+    it('toggleArm uses a disarm label, and its undo/redo callbacks restore each direction', () => {
+        loopStationStoreMock.value = { ...emptyLoopState(), armed: true };
+        toggleArm();
+        expect(pushUndoEntryMock.mock.calls[0]![0]).toBe('Disarm loop station');
+
+        const [, undoFn, redoFn] = pushUndoEntryMock.mock.calls[0]!;
+
+        loopStationStoreMock.value = emptyLoopState();
+        (undoFn as () => void)();
+        expect((vi.mocked(loopStationStore.set).mock.lastCall?.[0] as LoopStationState).armed).toBe(true);
+
+        loopStationStoreMock.value = emptyLoopState();
+        (redoFn as () => void)();
+        expect((vi.mocked(loopStationStore.set).mock.lastCall?.[0] as LoopStationState).armed).toBe(false);
+    });
+
+    it('toggleSync uses an enable label, and its undo/redo callbacks restore each direction', () => {
+        loopStationStoreMock.value = { ...emptyLoopState(), syncToTransport: false };
+        toggleSync();
+        expect(pushUndoEntryMock.mock.calls[0]![0]).toBe('Enable loop sync');
+
+        const [, undoFn, redoFn] = pushUndoEntryMock.mock.calls[0]!;
+
+        loopStationStoreMock.value = emptyLoopState();
+        (undoFn as () => void)();
+        expect((vi.mocked(loopStationStore.set).mock.lastCall?.[0] as LoopStationState).syncToTransport).toBe(false);
+
+        loopStationStoreMock.value = emptyLoopState();
+        (redoFn as () => void)();
+        expect((vi.mocked(loopStationStore.set).mock.lastCall?.[0] as LoopStationState).syncToTransport).toBe(true);
+    });
+
+    it('setFixedLoopLength does not push undo when no session is loaded', () => {
+        loopStationStoreMock.value = null;
+        setFixedLoopLength(8);
+        expect(pushUndoEntryMock).not.toHaveBeenCalled();
+    });
+
+    it('redo callback re-applies the new fixedLoopLength', () => {
+        loopStationStoreMock.value = { ...emptyLoopState(), fixedLoopLength: 4 };
+        setFixedLoopLength(16);
+
+        const [, , redoFn] = pushUndoEntryMock.mock.calls[0]!;
+        loopStationStoreMock.value = { ...emptyLoopState(), fixedLoopLength: 4 };
+        (redoFn as () => void)();
+        const restored = vi.mocked(loopStationStore.set).mock.lastCall?.[0] as LoopStationState;
+        expect(restored.fixedLoopLength).toBe(16);
+    });
+
+    it('clearSlot does not push undo when no session is loaded', () => {
+        loopStationStoreMock.value = null;
+        clearSlot('s1');
+        expect(pushUndoEntryMock).not.toHaveBeenCalled();
+    });
 });
