@@ -1,0 +1,29 @@
+crates/scoring/src/lib.rs
+  s_4a3a9ac19de269::t_c5b7cb5ece9a5f 28-40,43,50,52,61,73-74,76,251,258-259,318,320,564-616
+crates/scoring/src/poly.rs
+  s_7475f7f4c58c43::t_81cb2224aecc4c 110-120,280-301
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "ca10d6b74fbead6bf9a1f878295e67d24568cd7c",
+  "prompts": {},
+  "sessions": {
+    "s_4a3a9ac19de269": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "4a1953fb-b074-451f-a9e0-2edbbc4fbbf3",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_7475f7f4c58c43": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f80f5-432b-7962-b884-92c9a0f55e05",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
