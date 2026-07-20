@@ -7,6 +7,7 @@ import { executeAppAction } from '#/modules/Command/useCases';
 import { kneadStore, defaultKneadState } from '#/modules/Knead/stores';
 import { analyzeClipPitch } from '#/modules/Knead/useCases';
 import { notifyUser } from '#/utils/Notification/notifyUser';
+import { cn } from '#/utils/Styles/cn';
 import { resolveToken } from '#/utils/UI/resolveToken';
 
 type PitchEditorProps = {
@@ -290,7 +291,12 @@ export const PitchEditor = ({ clipId }: PitchEditorProps): ReactElement => {
             <div ref={containerRef} className="flex-1 w-full h-full relative">
                 <canvas
                     ref={canvasRef}
-                    className="absolute inset-0 w-full h-full pointer-events-auto cursor-ns-resize"
+                    className={cn(
+                        'absolute inset-0 w-full h-full cursor-ns-resize',
+                        // Only capture hit-testing while pitch editing is possible; otherwise the
+                        // transparent overlay would swallow every waveform interaction beneath it.
+                        contour ? 'pointer-events-auto' : 'pointer-events-none'
+                    )}
                     onPointerDown={handlePointerDown}
                     onPointerMove={handlePointerMove}
                     onPointerUp={handlePointerUp}

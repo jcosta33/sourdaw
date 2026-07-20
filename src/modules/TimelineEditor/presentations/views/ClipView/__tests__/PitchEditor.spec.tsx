@@ -122,6 +122,28 @@ describe('PitchEditor', () => {
         });
     });
 
+    it('should not capture pointer events when no contour exists so the waveform beneath stays interactive', () => {
+        render(<PitchEditor clipId="clip-1" />);
+        const canvas = document.querySelector('canvas')!;
+        expect(canvas).toHaveClass('pointer-events-none');
+        expect(canvas).not.toHaveClass('pointer-events-auto');
+    });
+
+    it('should capture pointer events while analyzing so the waveform beneath stays interactive', () => {
+        vi.mocked(useStore).mockReturnValue({ ...IDLE_STATE, isAnalyzing: true, analysisProgress: 0.5 });
+        render(<PitchEditor clipId="clip-1" />);
+        const canvas = document.querySelector('canvas')!;
+        expect(canvas).toHaveClass('pointer-events-none');
+    });
+
+    it('should capture pointer events once a contour exists so pitch editing works', () => {
+        vi.mocked(useStore).mockReturnValue({ ...IDLE_STATE, contours: { 'clip-1': makeContour(300) } });
+        render(<PitchEditor clipId="clip-1" />);
+        const canvas = document.querySelector('canvas')!;
+        expect(canvas).toHaveClass('pointer-events-auto');
+        expect(canvas).not.toHaveClass('pointer-events-none');
+    });
+
     it('should not commit when a contour exists but no segments were generated', () => {
         vi.mocked(useStore).mockReturnValue({ ...IDLE_STATE, contours: { 'clip-1': makeContour(0) } });
         render(<PitchEditor clipId="clip-1" />);
