@@ -21,6 +21,7 @@ import { useStatusBarMetrics } from '../hooks/useStatusBarMetrics';
 import { useUndoState } from '../hooks/useUndoState';
 
 import { MidiStatusBadge } from './MidiStatusBadge';
+import { MonitorStatusBadge } from './MonitorStatusBadge';
 
 type StatusBarLlmState =
     | { state: 'idle' }
@@ -186,6 +187,7 @@ export const StatusBar = (): ReactElement => {
                         <span className="text-[10px] text-muted-foreground/60">Last: {undoState.lastAction.label}</span>
                     ) : null}
                     <MidiStatusBadge />
+                    <MonitorStatusBadge />
                     <Tooltip>
                         <TooltipTrigger asChild>
                             <Button
