@@ -303,4 +303,90 @@ describe('kneadStore persistence of transient analysis flags', () => {
         expect(Object.getPrototypeOf(kneadStore.value?.clips)).toBe(Object.prototype);
         expect(Object.getPrototypeOf(kneadStore.value?.contours)).toBe(Object.prototype);
     });
+
+    it('drops malformed clip entries and blob items at every nested sanitization boundary', () => {
+        const valid_clip_fields = {
+            retuneSpeedMs: 45,
+            toleranceCents: 35,
+            toleranceTimeMs: 20,
+            humanizePercent: 12,
+            formantPreserve: true,
+        };
+        const valid_blob_fields = {
+            startTime: 0,
+            endTime: 1,
+            pitchCenterCents: 0,
+            originalPitchCenterCents: 0,
+            voicedConfidence: 1,
+            driftPercent: 0,
+            vibratoDepthPercent: 0,
+            vibratoRateHz: 0,
+            formantShiftCents: 0,
+            gainDb: 0,
+            muted: false,
+        };
+
+        fakeDoc.knead = {
+            activeClipId: 'clip-ok',
+            clips: {
+                'clip-ok': { clipId: 'clip-ok', blobs: [], ...valid_clip_fields },
+                'clip-not-a-record': 'not-a-record',
+                'clip-blobs-not-array': { clipId: 'x', blobs: 'not-an-array', ...valid_clip_fields },
+                'clip-blob-not-a-record': { clipId: 'y', blobs: ['not-a-record-blob'], ...valid_clip_fields },
+                'clip-pitch-curve-not-array': {
+                    clipId: 'z',
+                    blobs: [{ id: 'blob-z', pitchCurveCents: 'not-an-array', ...valid_blob_fields }],
+                    ...valid_clip_fields,
+                },
+                'clip-pitch-curve-bad-item': {
+                    clipId: 'w',
+                    blobs: [{ id: 'blob-w', pitchCurveCents: [1, 'oops', 3], ...valid_blob_fields }],
+                    ...valid_clip_fields,
+                },
+            },
+            contours: {},
+        };
+
+        kneadStore.hydrate();
+
+        expect(kneadStore.value?.clips).toEqual({
+            'clip-ok': { clipId: 'clip-ok', blobs: [], ...valid_clip_fields },
+            'clip-blob-not-a-record': { clipId: 'y', blobs: [], ...valid_clip_fields },
+            'clip-pitch-curve-not-array': { clipId: 'z', blobs: [], ...valid_clip_fields },
+            'clip-pitch-curve-bad-item': { clipId: 'w', blobs: [], ...valid_clip_fields },
+        });
+    });
+
+    it('drops malformed contour entries and filters non-record points from an otherwise valid contour', () => {
+        fakeDoc.knead = {
+            activeClipId: 'contour-ok',
+            clips: {},
+            contours: {
+                'contour-ok': { points: [], sample_rate: 48000, hop_size: 256 },
+                'contour-not-a-record': 'oops',
+                'contour-points-not-array': { points: 'not-an-array', sample_rate: 48000, hop_size: 256 },
+                'contour-point-not-a-record': { points: ['not-a-record-point'], sample_rate: 48000, hop_size: 256 },
+            },
+        };
+
+        kneadStore.hydrate();
+
+        expect(kneadStore.value?.contours).toEqual({
+            'contour-ok': { points: [], sample_rate: 48000, hop_size: 256 },
+            'contour-point-not-a-record': { points: [], sample_rate: 48000, hop_size: 256 },
+        });
+    });
+
+    it('defaults clips and contours to empty maps when the top-level values are not records', () => {
+        fakeDoc.knead = {
+            activeClipId: 'x',
+            clips: 'not-a-record',
+            contours: 42,
+        };
+
+        kneadStore.hydrate();
+
+        expect(kneadStore.value?.clips).toEqual({});
+        expect(kneadStore.value?.contours).toEqual({});
+    });
 });

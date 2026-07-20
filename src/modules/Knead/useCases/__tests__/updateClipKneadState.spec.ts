@@ -54,4 +54,27 @@ describe('updateClipKneadState', () => {
         expect(updateClipInStore).toHaveBeenCalledTimes(1);
         expect(updateClipInStore).toHaveBeenCalledWith('clip-1', expect.any(Function));
     });
+
+    it('does nothing when the knead store has no value', () => {
+        kneadStore.set(null);
+
+        updateClipKneadState('clip-1', (state) => ({ ...state, retuneSpeedMs: 999 }));
+
+        expect(updateClipInStore).not.toHaveBeenCalled();
+    });
+
+    it('merges the next knead state into the arrangement clip through the updateClipInStore callback', () => {
+        updateClipInStore.mockImplementation((_clipId: string, updater: (clip: { fileId: string }) => unknown) =>
+            updater({ fileId: 'file-1' })
+        );
+
+        updateClipKneadState('clip-1', (state) => ({ ...state, retuneSpeedMs: 100 }));
+
+        const merged = updateClipInStore.mock.results[0]?.value as {
+            fileId: string;
+            kneadState: KneadClipState;
+        };
+        expect(merged.fileId).toBe('file-1');
+        expect(merged.kneadState.retuneSpeedMs).toBe(100);
+    });
 });

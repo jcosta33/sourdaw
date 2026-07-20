@@ -26,6 +26,7 @@ const invalidMutations: Array<[name: string, mutate: PatchMutation]> = [
     ['null EQ band', (patch) => Reflect.set(patch.eqBands, 2, null)],
     ['undefined dynamics band', (patch) => Reflect.set(patch.dynBands, 1, undefined)],
     ['null exciter band', (patch) => Reflect.set(patch.excBands, 1, null)],
+    ['unrecognized target', (patch) => Reflect.set(patch, 'target', 'unknown')],
 ];
 
 describe('isValidProofPatch', () => {
