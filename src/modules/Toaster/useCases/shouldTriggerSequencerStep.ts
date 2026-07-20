@@ -6,9 +6,15 @@ type ShouldTriggerSequencerStepInput = {
     deviceId: string;
     step: Step;
     loopIndex: number;
+    deferFillCondition?: boolean;
 };
 
-export function shouldTriggerSequencerStep({ deviceId, step, loopIndex }: ShouldTriggerSequencerStepInput): boolean {
+export function shouldTriggerSequencerStep({
+    deviceId,
+    step,
+    loopIndex,
+    deferFillCondition = false,
+}: ShouldTriggerSequencerStepInput): boolean {
     if (!step.active) {
         return false;
     }
@@ -19,12 +25,12 @@ export function shouldTriggerSequencerStep({ deviceId, step, loopIndex }: Should
         case 'always':
             break;
         case 'fill':
-            if (!seqState.fillActive) {
+            if (!deferFillCondition && !seqState.fillActive) {
                 return false;
             }
             break;
         case 'not-fill':
-            if (seqState.fillActive) {
+            if (!deferFillCondition && seqState.fillActive) {
                 return false;
             }
             break;

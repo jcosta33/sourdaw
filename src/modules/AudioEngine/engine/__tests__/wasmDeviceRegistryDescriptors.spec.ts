@@ -135,6 +135,10 @@ describe('wasmDeviceRegistry descriptors', () => {
                 workletNode: makeWorkletNode(),
                 noteOn: vi.fn(),
                 noteOff: vi.fn(),
+                scheduleHit: vi.fn(),
+                cancelScheduled: vi.fn(),
+                allNotesOff: vi.fn(),
+                setFillActive: vi.fn(),
                 setParam: vi.fn(),
                 setPadParam: vi.fn(),
                 setBypass: vi.fn(),
@@ -170,6 +174,10 @@ describe('wasmDeviceRegistry descriptors', () => {
             expect(loaded.deviceId).toBe('toast-1');
             expect(loaded.inputNode).toBe(result.workletNode);
             expect(loaded.toasterControls?.ready).toBe(true);
+            expect(loaded.toasterControls?.scheduleHit).toBe(result.scheduleHit);
+            expect(loaded.toasterControls?.cancelScheduled).toBe(result.cancelScheduled);
+            expect(loaded.toasterControls?.allNotesOff).toBe(result.allNotesOff);
+            expect(loaded.toasterControls?.setFillActive).toBe(result.setFillActive);
         });
 
         it('emits device-removed (not a bare store delete) when the loaded controller is destroyed', async () => {

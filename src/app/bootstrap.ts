@@ -48,6 +48,7 @@ import { initBrowserAi, getRaveHandlers } from '#/modules/BrowserAi/useCases';
 import { getCollaborationHandlers, leaveSession } from '#/modules/Collaboration/useCases';
 import { registerHandlerMap } from '#/modules/Command/stores';
 import {
+    executeAppAction,
     getMacroHandlers,
     getUndoRedoHandlers,
     getUndoTreeHandlers,
@@ -96,7 +97,11 @@ import { getPunchRecordingHandlers } from '#/modules/PunchRecording/useCases';
 import { getNodeViewHandlers } from '#/modules/Routing/useCases';
 import { getSessionLauncherHandlers } from '#/modules/SessionLauncher/useCases';
 import { getSetlistHandlers, setSetlistEventBus } from '#/modules/Setlist/useCases';
-import { initToasterSubscribers, setToasterEventBus } from '#/modules/Toaster/useCases';
+import {
+    initToasterSubscribers,
+    setToasterEventBus,
+    setToasterGrooveAssignmentExecutor,
+} from '#/modules/Toaster/useCases';
 import {
     getTransportHandlers,
     getTransportState,
@@ -128,6 +133,7 @@ actionHistoryStore.subscribe((state) => {
     syncActionReplayMetadata(state?.entries ?? []);
 });
 setRuntimeLogger(logger);
+setToasterGrooveAssignmentExecutor({ execute: executeAppAction });
 setArrangementEventBus(eventBus);
 setWorkspaceEventBus(eventBus);
 setCommandEventBus(eventBus);

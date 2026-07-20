@@ -4,10 +4,8 @@ export type SequencerPlaybackState = {
     playCount: number;
     nextTickTime: number;
     timeoutId: ReturnType<typeof setTimeout> | null;
-    // Microtiming / retrigger fires scheduled by ticks. Tracked per device so
-    // stopSequencer can cancel ghost hits that would otherwise fire after Stop
-    // (clearing the next-tick timeoutId alone leaves these armed).
-    pendingFireIds: Set<ReturnType<typeof setTimeout>>;
+    preScheduledStep: number | null;
+    lastBpm: number | null;
 };
 
 const sequencerPlaybackStates = new Map<string, SequencerPlaybackState>();
@@ -21,7 +19,8 @@ export function getSequencerPlaybackState(deviceId: string): SequencerPlaybackSt
             playCount: 0,
             nextTickTime: 0,
             timeoutId: null,
-            pendingFireIds: new Set(),
+            preScheduledStep: null,
+            lastBpm: null,
         };
         sequencerPlaybackStates.set(deviceId, state);
     }

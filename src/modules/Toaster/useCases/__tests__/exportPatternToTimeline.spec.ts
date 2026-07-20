@@ -2,7 +2,8 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { Container } from '#/infra/di/Container';
 import { getAllTracks, addClip } from '#/modules/Arrangement/useCases';
-import { addMidiNote } from '#/modules/MIDI/useCases';
+import { defaultGrooveTemplateState, grooveTemplateStore } from '#/modules/MIDI/stores';
+import { addMidiNote, assignGrooveTemplate, createGrooveTemplate } from '#/modules/MIDI/useCases';
 
 import { exportPatternToTimeline } from '../exportPatternToTimeline';
 
@@ -56,6 +57,7 @@ describe('exportPatternToTimeline', () => {
         vi.mocked(addClip).mockReset();
         vi.mocked(addMidiNote).mockReset();
         mockStore.value = null;
+        grooveTemplateStore.set(structuredClone(defaultGrooveTemplateState));
     });
 
     it('does not add clips when there are no tracks', () => {
@@ -210,6 +212,46 @@ describe('exportPatternToTimeline', () => {
         expect(starts[1]).toBeCloseTo(1.35, 10);
     });
 
+    it('uses the same MIDI-owned groove projection for exported timing and dynamics', () => {
+        const parent = { id: 'parent', parentId: null, devices: [{ id: DEVICE_ID }] };
+        const child = { id: 'child-0', name: 'Kick', parentId: 'parent', devices: [] };
+        vi.mocked(getAllTracks).mockReturnValue([parent, child] as never);
+        vi.mocked(addClip).mockReturnValue({ id: 'clip' } as never);
+        mockStore.value = {
+            [DEVICE_ID]: {
+                kit: {
+                    swing: 0,
+                    activePatternId: 'A1',
+                    patterns: [
+                        {
+                            id: 'A1',
+                            stepsPerBar: 16,
+                            bars: 1,
+                            tracks: [{ padIndex: 0, steps: [makeStep({ active: true, velocity: 1 })] }],
+                        },
+                    ],
+                },
+            },
+        };
+        createGrooveTemplate({
+            id: 'export-pocket',
+            name: 'Export pocket',
+            subdivision: '1/16',
+            slots: [{ index: 0, timingOffset: 0.2, dynamicsOffset: -0.1 }],
+            provenance: { type: 'user', sourceId: 'test' },
+        });
+        assignGrooveTemplate({
+            consumerType: 'toaster-pattern',
+            consumerId: 'groove-consumer:tstr-1:A1',
+            templateId: 'export-pocket',
+            amount: 1,
+        });
+
+        exportPatternToTimeline(DEVICE_ID);
+
+        expect(addMidiNote).toHaveBeenCalledWith('clip', 36, 0.05, 0.225, 114);
+    });
+
     it('emits retrigger notes with the player decay-velocity model', () => {
         const parent = { id: 'parent', parentId: null, devices: [{ id: DEVICE_ID }] };
         const child = { id: 'child-0', name: 'Kick', parentId: 'parent', devices: [] };
@@ -261,5 +303,43 @@ describe('exportPatternToTimeline', () => {
         const [, , r2Start, , r2Vel] = calls[2]!;
         expect(r2Start).toBeCloseTo(2 / 3, 10);
         expect(r2Vel).toBe(Math.round(127 * (1 - 0.24)));
+    });
+
+    it('keeps a positively shifted final step in the following loop during one-shot export', () => {
+        const parent = { id: 'parent', parentId: null, devices: [{ id: DEVICE_ID }] };
+        const child = { id: 'child-0', name: 'Kick', parentId: 'parent', devices: [] };
+        vi.mocked(getAllTracks).mockReturnValue([parent, child] as never);
+        vi.mocked(addClip).mockReturnValue({ id: 'clip' } as never);
+        mockStore.value = {
+            [DEVICE_ID]: {
+                kit: {
+                    swing: 1,
+                    activePatternId: 'A1',
+                    patterns: [
+                        {
+                            id: 'A1',
+                            stepsPerBar: 4,
+                            bars: 1,
+                            tracks: [
+                                {
+                                    padIndex: 0,
+                                    steps: [
+                                        makeStep(),
+                                        makeStep(),
+                                        makeStep(),
+                                        makeStep({ active: true, microTiming: 0.5 }),
+                                    ],
+                                },
+                            ],
+                        },
+                    ],
+                },
+            },
+        };
+
+        exportPatternToTimeline(DEVICE_ID);
+
+        expect(addMidiNote).toHaveBeenCalledWith('clip', 36, 4, expect.any(Number), expect.any(Number));
+        expect(addClip).toHaveBeenCalledWith(expect.objectContaining({ startBeat: 0, endBeat: 4.9 }));
     });
 });

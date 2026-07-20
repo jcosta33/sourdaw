@@ -30,6 +30,7 @@ vi.stubGlobal('currentFrame', 0);
 // --- WASM module mock ------------------------------------------------------
 const noteOffCalls: number[] = [];
 const noteOnCalls: number[] = [];
+const padParamCalls: Array<[number, string, number]> = [];
 const WASM_HEAP = new ArrayBuffer(8192);
 
 class ToasterInstanceMock {
@@ -40,7 +41,9 @@ class ToasterInstanceMock {
         noteOffCalls.push(pad);
     }
     set_param(): void {}
-    set_pad_param(): void {}
+    set_pad_param(pad: number, name: string, value: number): void {
+        padParamCalls.push([pad, name, value]);
+    }
     process(): number {
         return 0;
     }
@@ -73,6 +76,7 @@ describe('ToasterProcessor allNotesOff', () => {
     beforeEach(() => {
         noteOffCalls.length = 0;
         noteOnCalls.length = 0;
+        padParamCalls.length = 0;
     });
 
     // ── Fix 4: a single allNotesOff message releases every pad ──
@@ -107,6 +111,84 @@ describe('ToasterProcessor allNotesOff', () => {
         vi.stubGlobal('currentFrame', 20_000);
         proc.process([[]], [output]);
         expect(noteOnCalls).not.toContain(3);
+        vi.stubGlobal('currentFrame', 0);
+    });
+
+    it('dispatches a scheduled hit and its locks only when the audio frame arrives', async () => {
+        const proc = await loadProcessor();
+        send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
+        send(proc, {
+            type: 'scheduledHit',
+            pad: 3,
+            velocity: 100,
+            sampleFrame: 10_000,
+            padParams: [
+                { name: 'tone', value: 0.7 },
+                { name: 'engineType', value: 2 },
+            ],
+            restoreEngineType: 0,
+        });
+
+        expect(noteOnCalls).toEqual([]);
+        expect(padParamCalls).toEqual([]);
+
+        vi.stubGlobal('currentFrame', 9_900);
+        const output = [new Float32Array(128), new Float32Array(128)];
+        proc.process([[]], [output]);
+
+        expect(noteOnCalls).toEqual([3]);
+        expect(padParamCalls).toEqual([
+            [3, 'tone', 0.7],
+            [3, 'engine_type', 2],
+            [3, 'engine_type', 0],
+        ]);
+        vi.stubGlobal('currentFrame', 0);
+    });
+
+    it('cancels future sequencer hits without releasing voices or deleting queued MIDI', async () => {
+        const proc = await loadProcessor();
+        send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
+        send(proc, {
+            type: 'scheduledHit',
+            pad: 5,
+            velocity: 100,
+            sampleFrame: 10_000,
+            padParams: [],
+        });
+        send(proc, { type: 'noteOn', pad: 7, velocity: 90, sampleFrame: 11_000 });
+
+        send(proc, { type: 'cancelScheduled' });
+
+        expect(proc._queue).toEqual([{ type: 'noteOn', pad: 7, velocity: 90, sampleFrame: 11_000 }]);
+        expect(noteOffCalls).toEqual([]);
+    });
+
+    it('evaluates fill conditions at the queued sample frame using the latest state', async () => {
+        const proc = await loadProcessor();
+        send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
+        send(proc, {
+            type: 'scheduledHit',
+            pad: 1,
+            velocity: 100,
+            sampleFrame: 1_000,
+            padParams: [],
+            fillCondition: 'fill',
+        });
+        send(proc, {
+            type: 'scheduledHit',
+            pad: 2,
+            velocity: 100,
+            sampleFrame: 1_000,
+            padParams: [],
+            fillCondition: 'not-fill',
+        });
+        send(proc, { type: 'fillState', active: true });
+
+        vi.stubGlobal('currentFrame', 900);
+        const output = [new Float32Array(128), new Float32Array(128)];
+        proc.process([[]], [output]);
+
+        expect(noteOnCalls).toEqual([1]);
         vi.stubGlobal('currentFrame', 0);
     });
 });
