@@ -1,0 +1,19 @@
+src/modules/Arrangement/useCases/clipEditing/splitClipWithUndo.ts
+  s_d1b6e5ba563447::t_fc519b0cbfcd73 2,23-33,41-45,56-61,63-77
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "bc75d0851d9dd433310270303cb01d4aad7cd187",
+  "prompts": {},
+  "sessions": {
+    "s_d1b6e5ba563447": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f81e8-b66e-76a0-aa99-1b2248cc9488",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
