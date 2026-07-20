@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 
 import { type MidiEvent, type TransportInfo } from '../../../models/MidiEvent';
+import { gaussianLcg } from '../../lcgRandom';
 import { Humanizer } from '../Humanizer';
 
 /** Assert the output has a first event and return it (narrows under noUncheckedIndexedAccess). */
@@ -283,5 +284,88 @@ describe('Humanizer', () => {
             transport
         );
         expect(requireFirst(recoveredOutput).timeSamples).toBe(441);
+    });
+
+    it('passes through non-note events unchanged', () => {
+        const ccEvent: MidiEvent = { timeSamples: 500, kind: { type: 'cc', channel: 0, cc: 1, value: 64 } };
+        const output: MidiEvent[] = [];
+        human.processMidi([ccEvent], output, transport);
+        expect(output).toEqual([ccEvent]);
+    });
+
+    it('degrades identified-voice timing tracking at capacity and stays disabled for later notes', () => {
+        human.setParam('timing_mean_ms', 10);
+        human.setParam('timing_sigma_ms', 0);
+        human.setParam('vel_sigma', 0);
+
+        const ceiling = 16 * 128;
+        for (let index = 0; index < ceiling; index++) {
+            human.processMidi(
+                [
+                    {
+                        timeSamples: index,
+                        noteInstanceId: `voice-${index}`,
+                        kind: { type: 'noteOn', channel: index % 16, note: index % 128, velocity: 100 },
+                    },
+                ],
+                [],
+                transport
+            );
+        }
+
+        // This identified voice crosses the capacity threshold inside setInstanceOffset itself.
+        const overflowOutput: MidiEvent[] = [];
+        human.processMidi(
+            [
+                {
+                    timeSamples: ceiling,
+                    noteInstanceId: 'voice-overflow',
+                    kind: { type: 'noteOn', channel: 0, note: 60, velocity: 100 },
+                },
+            ],
+            overflowOutput,
+            transport
+        );
+        expect(requireFirst(overflowOutput).timeSamples).toBe(ceiling);
+
+        // Tracking now stays disabled: a later identified note-on short-circuits too.
+        const disabledOnOutput: MidiEvent[] = [];
+        human.processMidi(
+            [
+                {
+                    timeSamples: ceiling + 1,
+                    noteInstanceId: 'voice-disabled',
+                    kind: { type: 'noteOn', channel: 0, note: 61, velocity: 100 },
+                },
+            ],
+            disabledOnOutput,
+            transport
+        );
+        expect(requireFirst(disabledOnOutput).timeSamples).toBe(ceiling + 1);
+
+        // ...and its matching identified note-off short-circuits as well.
+        const disabledOffOutput: MidiEvent[] = [];
+        human.processMidi(
+            [{ timeSamples: ceiling + 100, noteInstanceId: 'voice-disabled', kind: { type: 'noteOff', channel: 0, note: 61 } }],
+            disabledOffOutput,
+            transport
+        );
+        expect(requireFirst(disabledOffOutput).timeSamples).toBe(ceiling + 100);
+    });
+
+    it('replaceParams resets to defaults, then applies a named preset', () => {
+        human.setParam('timing_mean_ms', 25); // wiped by the reset inside replaceParams
+        human.replaceParams({ preset: 2 }); // 'drunk': timingMeanMs=2, timingSigmaMs=18
+
+        const output: MidiEvent[] = [];
+        human.processMidi(
+            [{ timeSamples: 1000, kind: { type: 'noteOn', channel: 0, note: 60, velocity: 100 } }],
+            output,
+            transport
+        );
+
+        const { value: expectedOffsetMs } = gaussianLcg(0xcafe, 2, 18);
+        const expectedOffsetSamples = Math.round(expectedOffsetMs * 0.001 * transport.sampleRate);
+        expect(requireFirst(output).timeSamples).toBe(1000 + expectedOffsetSamples);
     });
 });
