@@ -7,6 +7,7 @@ import { playheadPositionRef } from '../../stores/playheadPositionRef';
 import { type TempoMapStoreState } from '../../stores/tempoMapStore';
 import { evaluateFollowActions } from '../evaluateFollowActions';
 import { disposePlayheadScheduler } from '../playheadScheduler/disposePlayheadScheduler';
+import { schedulerSession } from '../playheadScheduler/schedulerSession';
 import { startPlayheadScheduler } from '../playheadScheduler/startPlayheadScheduler';
 import { stopPlayheadScheduler } from '../playheadScheduler/stopPlayheadScheduler';
 import { applyAutomation } from '../scheduling/applyAutomation/applyAutomation';
@@ -232,6 +233,28 @@ describe('startPlayheadScheduler', () => {
         startPlayheadScheduler();
 
         expect(startAutomationRecording).not.toHaveBeenCalled();
+    });
+
+    it('clears stale dedup Sets and stops orphaned sources from a skipped teardown', () => {
+        // Pause's recording-flush continuation deliberately skips scheduler
+        // teardown when a play landed during the flush. The fresh session must
+        // not inherit the old one's dedup Sets (a stale frozen entry would
+        // suppress rescheduling for the whole session) or its still-playing
+        // sources (they would play out of sync with the restarted playhead).
+        harness.transport_store.value = { ...playingTransport };
+        const orphanSource = { stop: vi.fn() } as unknown as AudioBufferSourceNode;
+        schedulerSession.activeAudioSources.push(orphanSource);
+        schedulerSession.scheduledAudioClips.add('stale-clip');
+        schedulerSession.scheduledFrozenTracks.add('stale-track');
+
+        startPlayheadScheduler();
+
+        expect(schedulerSession.scheduledAudioClips.size).toBe(0);
+        expect(schedulerSession.scheduledFrozenTracks.size).toBe(0);
+        expect(orphanSource.stop).toHaveBeenCalled();
+        expect(schedulerSession.activeAudioSources).toHaveLength(0);
+
+        disposePlayheadScheduler();
     });
 });
 

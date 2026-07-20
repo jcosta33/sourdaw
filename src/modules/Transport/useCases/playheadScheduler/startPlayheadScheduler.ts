@@ -70,6 +70,19 @@ export function startPlayheadScheduler(): void {
     startAutomationRecording();
 
     const ctx = getAudioContext();
+
+    // Drop any scheduler state inherited from a previous session before this
+    // one starts ticking. A play pressed during pausePlayback's recording-flush
+    // window skips the pause teardown (the stale continuation bails when
+    // isPlaying flipped back), so without this the dedup Sets would keep the
+    // frozen track scheduled in the old session suppressed — silent for the
+    // whole new session — while the old frozen source keeps playing out of
+    // sync with the restarted playhead. For every caller that came through a
+    // full teardown (stop/dispose already cleared these) this is a no-op.
+    schedulerSession.scheduledAudioClips.clear();
+    schedulerSession.scheduledFrozenTracks.clear();
+    stopActiveSources(schedulerSession.activeAudioSources, ctx);
+
     schedulerSession.lastTickTime = ctx.currentTime;
     schedulerSession.accumulatedPosition = state.playheadPosition;
     playheadPositionRef.current = state.playheadPosition;

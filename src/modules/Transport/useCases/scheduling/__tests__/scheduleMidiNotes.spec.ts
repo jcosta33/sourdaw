@@ -126,6 +126,38 @@ describe('scheduleMidiNotes', () => {
         expect(vi.mocked(scheduleFrozenTrack)).toHaveBeenCalledTimes(1);
     });
 
+    // Regression (PR #514 review): the dedup Set was keyed by track.id only, so
+    // an unfreeze → refreeze within one session (new frozenBufferId, same id)
+    // kept the old dedup entry and the refrozen track stayed silent until the
+    // next session. The key must include the buffer id so a refreeze reschedules.
+    it('reschedules a frozen MIDI track after an unfreeze → refreeze with a new buffer within the session', async () => {
+        (midiStore as { value: unknown }).value = { notesByClipId: {} };
+        const scheduledFrozenTracks = new Set<string>();
+
+        const frozenV1 = midiTrack({
+            clips: [midiClip()],
+            freezeState: { status: 'frozen', frozenBufferId: 'frozen-buffer-1' },
+        });
+        (trackStore as { value: unknown }).value = { tracks: [frozenV1] };
+        await scheduleMidiNotes(0, 4, 0, -1, scheduledFrozenTracks, [], defaultTransportState, 120);
+        // Next tick, same buffer: still deduped.
+        await scheduleMidiNotes(0.2, 4.2, 0.2, -1, scheduledFrozenTracks, [], defaultTransportState, 120);
+        expect(vi.mocked(scheduleFrozenTrack)).toHaveBeenCalledTimes(1);
+
+        // Refreeze mid-session: same track.id, new frozen render. The dedup
+        // entry for buffer 1 must not suppress scheduling buffer 2.
+        const frozenV2 = midiTrack({
+            clips: [midiClip()],
+            freezeState: { status: 'frozen', frozenBufferId: 'frozen-buffer-2' },
+        });
+        (trackStore as { value: unknown }).value = { tracks: [frozenV2] };
+        await scheduleMidiNotes(0.4, 4.4, 0.4, -1, scheduledFrozenTracks, [], defaultTransportState, 120);
+
+        expect(vi.mocked(scheduleFrozenTrack)).toHaveBeenCalledTimes(2);
+        expect(scheduledFrozenTracks.has('track-1:frozen-buffer-1')).toBe(true);
+        expect(scheduledFrozenTracks.has('track-1:frozen-buffer-2')).toBe(true);
+    });
+
     it('does not schedule synth when MIDI store is uninitialized', async () => {
         await scheduleMidiNotes(0, 4, 0, 0, new Set<string>(), [], defaultTransportState, 120);
 

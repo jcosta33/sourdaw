@@ -104,10 +104,15 @@ export async function scheduleMidiNotes(
             // whole frozen buffer is scheduled in a single shot anchored to the
             // absolute start time, so without the guard every 10 ms tick would
             // layer another copy of the track on top of the previous ones.
-            if (!scheduledFrozenTracks.has(track.id)) {
+            // The key includes the frozenBufferId so an unfreeze → refreeze
+            // (same track.id, new buffer) invalidates the dedup entry and the
+            // refrozen render is scheduled instead of staying silent for the
+            // rest of the session.
+            const frozenKey = `${track.id}:${track.freezeState.frozenBufferId}`;
+            if (!scheduledFrozenTracks.has(frozenKey)) {
                 const scheduled = scheduleFrozenTrack(track, accumulatedPosition, activeAudioSources, currentTempo);
                 if (scheduled) {
-                    scheduledFrozenTracks.add(track.id);
+                    scheduledFrozenTracks.add(frozenKey);
                 }
             }
             continue;
