@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 
-import { generateMelody } from '../algorithm';
+import { generateMelody, MELODY_STYLES } from '../algorithm';
 
 describe('generateMelody (algorithm)', () => {
     it('generates a deterministically seeded melody', () => {
@@ -91,6 +91,23 @@ describe('generateMelody (algorithm)', () => {
         });
 
         for (const note of result.notes) {
+            expect(note.velocity).toBeGreaterThanOrEqual(1);
+            expect(note.velocity).toBeLessThanOrEqual(127);
+        }
+    });
+
+    it.each(MELODY_STYLES)('produces valid, non-empty notes for style "%s" at max density', (style) => {
+        // Exercises every buildRhythm/pickNextNote/velocityForStyle switch arm —
+        // the base tests above only drove 'arpeggiated', 'rhythmic', and 'ambient'.
+        // density: 1 minimizes rests so each style still yields audible output.
+        const result = generateMelody({ style, key: 0, scale: 'major', bars: 4, density: 1, seed: 7 });
+
+        expect(result.notes.length).toBeGreaterThan(0);
+        for (const note of result.notes) {
+            expect(Number.isFinite(note.pitch)).toBe(true);
+            expect(note.pitch).toBeGreaterThanOrEqual(0);
+            expect(note.pitch).toBeLessThanOrEqual(127);
+            expect(note.duration).toBeGreaterThan(0);
             expect(note.velocity).toBeGreaterThanOrEqual(1);
             expect(note.velocity).toBeLessThanOrEqual(127);
         }
