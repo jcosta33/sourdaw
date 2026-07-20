@@ -1,0 +1,29 @@
+src/modules/BrowserAi/repositories/__tests__/readRenderCache.spec.ts
+  s_4a3a9ac19de269::t_f5f0ef4a128c35 1-38
+src/modules/BrowserAi/repositories/__tests__/computeRenderCacheKey.spec.ts
+  s_4a3a9ac19de269::t_0c3ace669fb2c1 1-52
+src/modules/BrowserAi/repositories/__tests__/requestPersistentStorage.spec.ts
+  s_4a3a9ac19de269::t_8df9d7d9a5f8f0 1-29
+src/modules/BrowserAi/useCases/__tests__/detectCapabilities.spec.ts
+  s_4a3a9ac19de269::t_34bc67006eef19 59
+  s_4a3a9ac19de269::t_d71147afcb4344 1-58,60,71
+  s_4a3a9ac19de269::t_811266c3e40c00 61-70
+src/modules/BrowserAi/useCases/__tests__/getRaveHandlers.spec.ts
+  s_4a3a9ac19de269::t_d1640cc334dcef 1-20
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "c12cde235915803c58ec1f25b95ab807c916d9cc",
+  "prompts": {},
+  "sessions": {
+    "s_4a3a9ac19de269": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "4a1953fb-b074-451f-a9e0-2edbbc4fbbf3",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
