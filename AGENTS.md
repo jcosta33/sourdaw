@@ -32,8 +32,8 @@ that has not yet been normalized into a feature specification lives under
 
 ## Path aliases
 
-| Alias | Source | Notes |
-| ----- | ------ | ----- |
+| Alias   | Source  | Notes                                                                  |
+| ------- | ------- | ---------------------------------------------------------------------- |
 | `#/...` | `src/*` | Modules, infra, helpers, utils — e.g. `#/modules/Arrangement/useCases` |
 
 Prefer `#/` for cross-module and cross-folder imports. Inside a module, use **relative** paths to the defining file (never that module’s own contract barrels).
@@ -75,7 +75,8 @@ Agent must-follow subset of [docs/07-conventions.md](./docs/07-conventions.md) a
 - **React 19:** no `useMemo` / `useCallback` / `React.memo` (**error**); no `forwardRef` — `ref` is a prop (**error**). Prefer `cond ? <X /> : null` over render `&&` (**house**); leaky `&&` (e.g. `0 && …`) is **error** lint — boolean `&&` is not that rule.
 - **Audio RT:** anything on the audio thread must not allocate, lock, or block. Prefer `AudioWorklet` + `AudioParam`; one live `AudioContext`. (**policy / review** — not CI-machine-gated)
 - **TypeScript soundness:** types describe real data. No `any` except boundary + immediate narrowing (**error** in app; specs often **warn**). No `as any` / `as unknown as T` (**error** in app). Prefer not using bare `as T` to silence the checker (**policy**). No bare `@ts-expect-error` without a one-line reason (**error**). Prefer `unknown` + narrowing, `satisfies`, unions, `import type`, Zod at I/O (**policy**). Tests assert values/shape/errors — not just “defined” (**policy**).
-- **Style (house):** prefer `type` over `interface`; `as const` over `enum`; named exports (no namespace imports); multi-arg module functions take one object param with `FunctionNameInput` / `FunctionNameOutput` adjacent to the function (convention); modules Capitalized; **filenames per `docs/07-conventions.md`** (PascalCase components/views/models; camelCase use cases/helpers — **not** repo-wide kebab-case); guard clauses + braced `if`; no chained ternaries.
+- **Style (house):** prefer `type` over `interface`; `as const` over `enum`; named exports (no namespace imports); multi-arg module functions take one object param with `FunctionNameInput` / `FunctionNameOutput` adjacent to the function (convention); modules Capitalized; **filenames per `docs/07-conventions.md`** (PascalCase components/views/models; camelCase use cases/helpers — **not** repo-wide kebab-case); guard clauses + braced `if`.
+- **Conventional control flow over compressed expressions.** Use `if`, guard clauses, early returns, and named intermediate values when conditions express control flow or invariants. A ternary is acceptable only for a small, obvious, side-effect-free value choice that stays readable on one line. No nested, chained, multiline, or side-effecting ternaries; do not compress validation, mutation, overflow handling, or multi-condition logic into a ternary merely to save lines. Review for human readability, not cleverness or minimum line count.
 - **Empirical proof:** failing reproduction before behaviour fixes; paste real command output for tests/typecheck/deps claims. Three failed fix attempts on the same approach → stop, reread contracts, change strategy.
 
 ## Safety (destructive actions)
