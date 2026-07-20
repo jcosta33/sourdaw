@@ -48,6 +48,7 @@ export { createGrooveTemplate } from './grooveTemplates/createGrooveTemplate';
 export { deleteGrooveTemplate } from './grooveTemplates/deleteGrooveTemplate';
 export { extractGrooveTemplate } from './grooveTemplates/extractGrooveTemplate';
 export { getGrooveAssignment } from './grooveTemplates/getGrooveAssignment';
+export { getGrooveExtractionActionErrorCode } from './grooveTemplates/getGrooveExtractionActionErrorCode';
 export { getScopedGrooveAssignment } from './grooveTemplates/getScopedGrooveAssignment';
 export { getScopedGrooveConsumerId } from './grooveTemplates/getScopedGrooveConsumerId';
 export { getCanonicalGrooveTemplateKey } from './grooveTemplates/getCanonicalGrooveTemplateKey';

@@ -1,30 +1,14 @@
 import { createHandler } from '#/utils/createHandler';
 import { type AppAction } from '#/utils/handlerContract';
 
+import { GrooveExtractionActionError } from '../../errors/GrooveExtractionActionError';
 import { createGrooveTemplate } from '../../useCases/grooveTemplates/createGrooveTemplate';
 import { getGrooveTemplate } from '../../useCases/grooveTemplates/getGrooveTemplate';
 import { prepareGrooveExtraction } from '../../useCases/grooveTemplates/prepareGrooveExtraction';
 
 type ExtractGrooveAction = Extract<AppAction, { type: 'extractGroove' }>;
 
-type GrooveExtractionActionErrorCode =
-    | 'empty-source'
-    | 'unsupported-subdivision'
-    | 'invalid-source'
-    | 'source-revision-mismatch'
-    | 'proposal-mismatch'
-    | 'template-identity-conflict';
 type ExtractedGrooveTemplate = Extract<ReturnType<typeof prepareGrooveExtraction>, { status: 'extracted' }>['template'];
-
-class GrooveExtractionActionError extends Error {
-    readonly code: GrooveExtractionActionErrorCode;
-
-    constructor(code: GrooveExtractionActionErrorCode, message: string) {
-        super(message);
-        this.name = 'GrooveExtractionActionError';
-        this.code = code;
-    }
-}
 
 type ExtractGroovePlan =
     | { outcome: 'create'; template: ExtractedGrooveTemplate }

@@ -133,6 +133,63 @@ describe('GrooveDropTarget', () => {
         expect(undoStore.value?.past.map((entry) => entry.label)).toEqual(['Extract groove template']);
     });
 
+    it('offers an accessible MIDI clip selection path without requiring drag and drop', async () => {
+        render(<GrooveDropTarget />);
+
+        fireEvent.change(screen.getByRole('combobox', { name: 'MIDI clip for groove extraction' }), {
+            target: { value: 'clip-source' },
+        });
+        fireEvent.click(screen.getByRole('button', { name: 'Preview groove' }));
+
+        expect(await screen.findByText('Previewing “Source clip groove”')).toBeInTheDocument();
+    });
+
+    it('clears a stale proposal when the extraction subdivision changes', async () => {
+        const view = render(<GrooveDropTarget subdivision="1/16" />);
+        fireEvent.drop(screen.getByLabelText('Extract groove from MIDI clip'), {
+            dataTransfer: createDataTransfer('clip-source'),
+        });
+        await screen.findByText('Previewing “Source clip groove”');
+
+        view.rerender(<GrooveDropTarget subdivision="1/32" />);
+
+        await waitFor(() => {
+            expect(screen.queryByText('Previewing “Source clip groove”')).not.toBeInTheDocument();
+        });
+        expect(screen.queryByRole('button', { name: 'Save groove' })).not.toBeInTheDocument();
+    });
+
+    it('locks proposal replacement while the displayed proposal is being saved', async () => {
+        let resolveTransaction: (() => void) | undefined;
+        configureAutomergeStoragePort({
+            getDoc: () => ({}),
+            getSemanticMessage: () => undefined,
+            hasDoc: () => true,
+            mutateDoc: (input) => input.changeFn({}),
+            waitForSnapshotTransaction: () =>
+                new Promise<void>((resolve) => {
+                    resolveTransaction = resolve;
+                }),
+        });
+        render(<GrooveDropTarget />);
+        fireEvent.drop(screen.getByLabelText('Extract groove from MIDI clip'), {
+            dataTransfer: createDataTransfer('clip-source'),
+        });
+        await screen.findByText('Previewing “Source clip groove”');
+
+        fireEvent.click(screen.getByRole('button', { name: 'Save groove' }));
+        fireEvent.drop(screen.getByLabelText('Extract groove from MIDI clip'), {
+            dataTransfer: createDataTransfer('missing-clip'),
+        });
+
+        expect(screen.getByText('Previewing “Source clip groove”')).toBeInTheDocument();
+        expect(screen.queryByText(/missing-clip/)).not.toBeInTheDocument();
+        resolveTransaction?.();
+        await waitFor(() => {
+            expect(screen.queryByText('Previewing “Source clip groove”')).not.toBeInTheDocument();
+        });
+    });
+
     it('cancels a proposal without a catalog write or undo entry', async () => {
         render(<GrooveDropTarget />);
 
@@ -163,7 +220,9 @@ describe('GrooveDropTarget', () => {
         });
         fireEvent.click(screen.getByRole('button', { name: 'Save groove' }));
 
-        expect(await screen.findByRole('alert')).toHaveTextContent('The groove template could not be saved.');
+        expect(await screen.findByRole('alert')).toHaveTextContent(
+            'The source clip changed. Preview the groove again before saving.'
+        );
         expect(grooveTemplateStore.value).toEqual(defaultGrooveTemplateState);
         expect(undoStore.value?.past).toEqual([]);
     });
@@ -178,7 +237,9 @@ describe('GrooveDropTarget', () => {
         setMidiStoreState({ notesByClipId: {}, ccByClipId: {}, pitchBendByClipId: {} });
         fireEvent.click(screen.getByRole('button', { name: 'Save groove' }));
 
-        expect(await screen.findByRole('alert')).toHaveTextContent('The groove template could not be saved.');
+        expect(await screen.findByRole('alert')).toHaveTextContent(
+            'The source clip changed. Preview the groove again before saving.'
+        );
         expect(grooveTemplateStore.value).toEqual(defaultGrooveTemplateState);
         expect(undoStore.value?.past).toEqual([]);
     });
@@ -216,6 +277,46 @@ describe('GrooveDropTarget', () => {
             expect(screen.queryByText('Previewing “Source clip groove 2”')).not.toBeInTheDocument();
         });
         expect(undoStore.value?.past).toHaveLength(1);
+    });
+
+    it('distinguishes a stale proposal from a template identity conflict', async () => {
+        const firstView = render(<GrooveDropTarget />);
+        fireEvent.drop(screen.getByLabelText('Extract groove from MIDI clip'), {
+            dataTransfer: createDataTransfer('clip-source'),
+        });
+        await screen.findByText('Previewing “Source clip groove”');
+        createGrooveTemplate({
+            id: 'occupied-name',
+            name: 'Source clip groove',
+            subdivision: '1/16',
+            slots: [{ index: 1, timingOffset: 0.1, dynamicsOffset: 0 }],
+            provenance: { type: 'user', sourceId: 'occupied-name' },
+        });
+        fireEvent.click(screen.getByRole('button', { name: 'Save groove' }));
+
+        expect(await screen.findByRole('alert')).toHaveTextContent(
+            'The groove library changed. Preview the groove again before saving.'
+        );
+        firstView.unmount();
+
+        grooveTemplateStore.set(structuredClone(defaultGrooveTemplateState));
+        createGrooveTemplate({
+            id: 'groove-clip-source-v1',
+            name: 'Source clip groove',
+            subdivision: '1/16',
+            slots: [{ index: 1, timingOffset: 0.1, dynamicsOffset: 0 }],
+            provenance: { type: 'user', sourceId: 'identity-conflict' },
+        });
+        render(<GrooveDropTarget />);
+        fireEvent.drop(screen.getByLabelText('Extract groove from MIDI clip'), {
+            dataTransfer: createDataTransfer('clip-source'),
+        });
+        await screen.findByText('Previewing “Source clip groove”');
+        fireEvent.click(screen.getByRole('button', { name: 'Save groove' }));
+
+        expect(await screen.findByRole('alert')).toHaveTextContent(
+            'A different groove template already uses this identity. Rename it or preview again.'
+        );
     });
 
     it('shows typed empty and unsupported results without creating history', async () => {
