@@ -60,4 +60,33 @@ describe('GrooveTemplateLifecycleControls', () => {
         await waitFor(() => expect(screen.getByRole('button', { name: 'Rename' })).toBeEnabled());
         expect(nameInput).toHaveValue('Next draft');
     });
+
+    it('reconciles a collision-resolved canonical name when no newer draft was typed', async () => {
+        let resolveRename: (() => void) | undefined;
+        mocks.rename.mockReturnValueOnce(
+            new Promise<void>((resolve) => {
+                resolveRename = resolve;
+            })
+        );
+        const view = render(<GrooveTemplateLifecycleControls templateId="template-1" templateName="Original" />);
+        const nameInput = screen.getByRole('textbox', { name: 'Groove template name' });
+        nameInput.focus();
+        fireEvent.change(nameInput, { target: { value: 'Name' } });
+        fireEvent.click(screen.getByRole('button', { name: 'Rename' }));
+
+        view.rerender(<GrooveTemplateLifecycleControls templateId="template-1" templateName="Name 2" />);
+        await act(async () => {
+            resolveRename?.();
+            await Promise.resolve();
+        });
+
+        await waitFor(() => expect(screen.getByRole('button', { name: 'Rename' })).toBeEnabled());
+        expect(screen.getByRole('textbox', { name: 'Groove template name' })).toBe(nameInput);
+        expect(nameInput).toHaveFocus();
+        expect(nameInput).toHaveValue('Name 2');
+
+        fireEvent.click(screen.getByRole('button', { name: 'Rename' }));
+        await waitFor(() => expect(mocks.rename).toHaveBeenCalledTimes(2));
+        expect(mocks.rename).toHaveBeenLastCalledWith('template-1', 'Name 2');
+    });
 });

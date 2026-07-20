@@ -14,7 +14,19 @@ type RenameState = {
     draftName: string;
     pending: boolean;
     submittedName: string | null;
+    submittedCanonicalName: string | null;
 };
+
+type ReconcileDraftNameInput = Pick<RenameState, 'draftName' | 'submittedName'> & {
+    nextCanonicalName: string;
+};
+
+function reconcileDraftName({ draftName, submittedName, nextCanonicalName }: ReconcileDraftNameInput): string {
+    if (submittedName !== null && draftName !== submittedName) {
+        return draftName;
+    }
+    return nextCanonicalName;
+}
 
 export const GrooveTemplateLifecycleControls = ({ templateId, templateName }: Props): ReactElement => {
     const nameInputId = useId();
@@ -25,6 +37,7 @@ export const GrooveTemplateLifecycleControls = ({ templateId, templateName }: Pr
         draftName: templateName,
         pending: false,
         submittedName: null,
+        submittedCanonicalName: null,
     });
 
     if (renameState.templateId !== templateId) {
@@ -34,18 +47,31 @@ export const GrooveTemplateLifecycleControls = ({ templateId, templateName }: Pr
             draftName: templateName,
             pending: false,
             submittedName: null,
+            submittedCanonicalName: null,
         });
     } else if (renameState.canonicalName !== templateName) {
+        const draftName = reconcileDraftName({
+            draftName: renameState.draftName,
+            submittedName: renameState.submittedName,
+            nextCanonicalName: templateName,
+        });
         if (renameState.pending) {
-            setRenameState({ ...renameState, canonicalName: templateName });
-        } else if (renameState.submittedName === templateName) {
-            setRenameState({ ...renameState, canonicalName: templateName, submittedName: null });
+            setRenameState({ ...renameState, canonicalName: templateName, draftName });
+        } else if (renameState.submittedName !== null) {
+            setRenameState({
+                ...renameState,
+                canonicalName: templateName,
+                draftName,
+                submittedName: null,
+                submittedCanonicalName: null,
+            });
         } else {
             setRenameState({
                 ...renameState,
                 canonicalName: templateName,
                 draftName: templateName,
                 submittedName: null,
+                submittedCanonicalName: null,
             });
         }
     }
@@ -61,6 +87,7 @@ export const GrooveTemplateLifecycleControls = ({ templateId, templateName }: Pr
             ...current,
             pending: true,
             submittedName: requestedName,
+            submittedCanonicalName: current.canonicalName,
         }));
         renameYeastGrooveTemplate(templateId, requestedName)
             .then(() => {
@@ -68,10 +95,17 @@ export const GrooveTemplateLifecycleControls = ({ templateId, templateName }: Pr
                     if (current.templateId !== templateId || current.submittedName !== requestedName) {
                         return current;
                     }
+                    if (current.canonicalName !== current.submittedCanonicalName) {
+                        return {
+                            ...current,
+                            pending: false,
+                            submittedName: null,
+                            submittedCanonicalName: null,
+                        };
+                    }
                     return {
                         ...current,
                         pending: false,
-                        submittedName: current.canonicalName === requestedName ? null : current.submittedName,
                     };
                 });
                 return undefined;
@@ -81,7 +115,12 @@ export const GrooveTemplateLifecycleControls = ({ templateId, templateName }: Pr
                     if (current.templateId !== templateId || current.submittedName !== requestedName) {
                         return current;
                     }
-                    return { ...current, pending: false, submittedName: null };
+                    return {
+                        ...current,
+                        pending: false,
+                        submittedName: null,
+                        submittedCanonicalName: null,
+                    };
                 });
                 setError('The groove template could not be renamed.');
             });
