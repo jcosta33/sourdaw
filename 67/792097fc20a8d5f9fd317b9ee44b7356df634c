@@ -1,0 +1,51 @@
+src-tauri/src/commands/pitch_edit.rs
+  s_c2fca615e81f34::t_62a655753a8f9d 187-190
+src/modules/AudioEngine/services/kneadProcessor.ts
+  s_c2fca615e81f34::t_4c47cbfc2d848b 10-21,57,77,82,96,111,216,229,245-247,253-256,262,265
+crates/daw-dsp/src/knead/mod.rs
+  s_77f20c18537665::t_2a112e05af6388 48-60,73-99
+crates/daw-dsp/src/knead/pitch_edit.rs
+  s_7475f7f4c58c43::t_7875c1c652028c 193,197-201,206,233-326
+crates/daw-dsp/src/knead/psola.rs
+  s_75f59e6653feee::t_fec3d1d26a78a0 21-28,48-52,54-73,75-78,84,90-91,93,97-98,104,108,111,115-116
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "67792097fc20a8d5f9fd317b9ee44b7356df634c",
+  "prompts": {},
+  "sessions": {
+    "s_7475f7f4c58c43": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f80f5-432b-7962-b884-92c9a0f55e05",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_75f59e6653feee": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f819a-2ddc-70b3-ab04-f29a50e9a71d",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_77f20c18537665": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f81c2-e40c-7401-bc60-af66eb69f403",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_c2fca615e81f34": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f74e9-e1c5-7142-85d2-4c577b3973c0",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
