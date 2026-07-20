@@ -1,4 +1,5 @@
 import { getCachedAudioBuffer } from '#/modules/AudioEngine/useCases';
+import { clearClipPitchContour } from '#/modules/Knead/useCases';
 
 import { getTrackState } from '../../repositories/track/getTrackState';
 import { updateClip } from '../../repositories/track/updateClip';
@@ -25,6 +26,9 @@ export function normalizeClip(clipId: string, mode: NormalizationMode = 'peak', 
         }
 
         updateClip(clipId, (context) => ({ ...context, gain: context.gain * scale }));
+        // Normalized clip audio no longer matches a previously analyzed pitch
+        // contour — drop it so the PitchEditor gate re-opens (review #510).
+        clearClipPitchContour(clipId);
         return;
     }
 }

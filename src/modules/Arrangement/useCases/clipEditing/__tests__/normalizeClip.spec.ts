@@ -19,6 +19,7 @@ const mocks = vi.hoisted(() => ({
     getCachedAudioBuffer: vi.fn<(input: { bufferId: string }) => CachedBuffer | null>(),
     getTrackState: vi.fn<() => TrackState | null>(),
     updateClip: vi.fn<UpdateClipFn>(),
+    clearClipPitchContour: vi.fn<(clipId: string) => void>(),
 }));
 
 vi.mock('../../../repositories/track/getTrackState', () => ({
@@ -35,6 +36,10 @@ vi.mock('../../../transformers/clipDspTransformers', () => ({
 
 vi.mock('#/modules/AudioEngine/useCases', () => ({
     getCachedAudioBuffer: mocks.getCachedAudioBuffer,
+}));
+
+vi.mock('#/modules/Knead/useCases', () => ({
+    clearClipPitchContour: mocks.clearClipPitchContour,
 }));
 
 function create_track_state(clip: Clip): TrackState {
@@ -111,5 +116,35 @@ describe('normalizeClip', () => {
         expect(mocks.getCachedAudioBuffer).toHaveBeenCalledWith({ bufferId: 'buffer-1' });
         expect(mocks.computeNormalizationScale).toHaveBeenCalledWith(cached_buffer, 'peak', undefined);
         expect(mocks.updateClip).not.toHaveBeenCalled();
+    });
+
+    it('should clear the clip pitch contour after a successful normalize because the audio changed', () => {
+        const clip = ClipDummy.create({
+            id: 'clip-1',
+            audioBufferId: 'buffer-1',
+            gain: 0.5,
+        });
+        mocks.getTrackState.mockReturnValue(create_track_state(clip));
+        mocks.getCachedAudioBuffer.mockReturnValue({ marker: 'cached-buffer' });
+        mocks.computeNormalizationScale.mockReturnValue(1.75);
+
+        normalizeClip('clip-1');
+
+        expect(mocks.clearClipPitchContour).toHaveBeenCalledWith('clip-1');
+    });
+
+    it('should keep the pitch contour when normalization does not apply', () => {
+        const clip = ClipDummy.create({
+            id: 'clip-1',
+            audioBufferId: 'buffer-1',
+            gain: 0.5,
+        });
+        mocks.getTrackState.mockReturnValue(create_track_state(clip));
+        mocks.getCachedAudioBuffer.mockReturnValue({ marker: 'cached-buffer' });
+        mocks.computeNormalizationScale.mockReturnValue(null);
+
+        normalizeClip('clip-1');
+
+        expect(mocks.clearClipPitchContour).not.toHaveBeenCalled();
     });
 });
