@@ -14,6 +14,9 @@ type OfflineMidiEventProjectionInput<Event extends OfflineMidiProjectableEvent> 
     loopLengthBeats: number;
     midiOffsetBeats: number;
     loopEnabled?: boolean;
+    clipGrooveAlreadyApplied?: boolean;
+    eventsAreAbsolute?: boolean;
+    phase?: 'clip-groove' | 'complete';
 };
 
 export type OfflineMidiEventProjector = <Event extends OfflineMidiProjectableEvent>(

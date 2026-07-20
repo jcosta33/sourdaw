@@ -75,8 +75,8 @@ export class EuclideanGenerator extends BaseMidiProcessor {
 
         const stepLen = rateToBeats(this.rate) * samplesPerBeat(transport);
         const noteLen = stepLen * this.gate;
-        const now = input.length > 0 ? input[0]!.timeSamples : 0;
-        const blockEnd = now + 128;
+        const now = transport.blockStartSamples ?? input[0]?.timeSamples ?? 0;
+        const blockEnd = transport.blockEndSamples ?? now + 128;
 
         if (this.lastStepTime === -Infinity) {
             this.lastStepTime = now;

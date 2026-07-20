@@ -38,6 +38,9 @@ type MidiEventProjector = <Event extends MidiProjectableEvent>(input: {
     loopLengthBeats: number;
     midiOffsetBeats: number;
     loopEnabled?: boolean;
+    clipGrooveAlreadyApplied?: boolean;
+    eventsAreAbsolute?: boolean;
+    phase?: 'clip-groove' | 'complete';
 }) => readonly Event[];
 
 type OfflineYeastMidiEvent = {
@@ -59,7 +62,7 @@ type OfflineYeastMidiProcessor = (input: {
     blockStartSamples: number;
     blockEndSamples: number;
     events: readonly OfflineYeastMidiEvent[];
-}) => readonly OfflineYeastMidiEvent[];
+}) => ReadonlyArray<OfflineYeastMidiEvent & { timePpq: number }>;
 
 type OfflineRenderDependencies = {
     projectPpqEndpoints: (input: PpqEndpointProjectionInput) => PpqEndpointProjection;

@@ -21,7 +21,7 @@ import { type DeviceNodeEntry, buildDeviceChain } from '../buildDeviceChain';
 import { getCompensationDelay } from '../latencyCompensation/compensation/getCompensationDelay';
 
 import { MICRO_FADE_SECONDS, YIELD_EVERY_N_NOTES } from './constants';
-import { projectOfflineYeastNotes } from './projectOfflineYeastNotes';
+import { projectOfflineYeastClipNotes } from './projectOfflineYeastClipNotes';
 import { type PendingWorkletEvent } from './types';
 import { yieldToMain } from './yieldToMain';
 
@@ -284,16 +284,8 @@ export async function scheduleTrackClips({
 
             for (let iter = 0; iter < maxIterations; iter++) {
                 const iterOffset = iter * loopLen;
-                const notes = projectMidiEvents({
-                    events: sourceNotes,
-                    clipId: clip.id,
-                    clipStartBeat: clip.startBeat,
-                    clipEndBeat: clip.endBeat,
-                    iterationStartBeat: clip.startBeat + iterOffset,
-                    loopLengthBeats: loopLen,
-                    midiOffsetBeats: clip.midiOffsetBeats ?? 0,
-                    loopEnabled: clip.loopEnabled ?? false,
-                });
+                const iterationStartBeat = clip.startBeat + iterOffset;
+                const midiOffsetBeats = clip.midiOffsetBeats ?? 0;
                 let scheduledNotes: Array<{
                     id: string;
                     pitch: number;
@@ -302,22 +294,37 @@ export async function scheduleTrackClips({
                     endSamples: number;
                 }>;
                 if (hasYeast && processYeastMidi) {
-                    scheduledNotes = projectOfflineYeastNotes({
+                    scheduledNotes = projectOfflineYeastClipNotes({
                         trackId: track.id,
-                        notes,
+                        sourceNotes,
+                        clipId: clip.id,
+                        clipStartBeat: clip.startBeat,
+                        clipEndBeat: clip.endBeat,
+                        iterationStartBeat,
+                        loopLengthBeats: loopLen,
+                        midiOffsetBeats,
+                        loopEnabled: clip.loopEnabled ?? false,
                         sampleRate: offlineCtx.sampleRate,
+                        blockStartSamples: Math.floor(regionStartSec * offlineCtx.sampleRate),
                         blockEndSamples: Math.ceil((regionStartSec + durationSeconds) * offlineCtx.sampleRate),
-                        projectPpqEndpoints: ({ startPpq, endPpq }) =>
-                            projectPpqEndpoints({
-                                startPpq,
-                                endPpq,
-                                defaultTempo,
-                                sampleRate: offlineCtx.sampleRate,
-                                changes,
-                            }),
+                        defaultTempo,
+                        changes,
+                        projectMidiEvents,
+                        projectPpqEndpoints,
                         processYeastMidi,
                     });
                 } else {
+                    const notes = projectMidiEvents({
+                        events: sourceNotes,
+                        clipId: clip.id,
+                        clipStartBeat: clip.startBeat,
+                        clipEndBeat: clip.endBeat,
+                        iterationStartBeat,
+                        loopLengthBeats: loopLen,
+                        midiOffsetBeats,
+                        loopEnabled: clip.loopEnabled ?? false,
+                        phase: 'complete',
+                    });
                     scheduledNotes = notes.map((note) => {
                         const endpoints = projectPpqEndpoints({
                             startPpq: note.startBeat,
@@ -347,7 +354,7 @@ export async function scheduleTrackClips({
                     const rawStartSec = note.startSamples / offlineCtx.sampleRate + compensationDelay;
                     const rawEndSec = note.endSamples / offlineCtx.sampleRate + compensationDelay;
                     const startTime = Math.max(0, rawStartSec - regionStartSec);
-                    const endTime = rawEndSec - regionStartSec;
+                    const endTime = Math.min(durationSeconds, rawEndSec - regionStartSec);
                     const duration = endTime - startTime;
                     if (startTime >= durationSeconds || duration <= 0) {
                         continue;

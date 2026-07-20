@@ -14,9 +14,22 @@ type GrooveMidiEventProjector = <Event extends GrooveMidiEvent>(input: {
     loopEnabled?: boolean;
     clipGrooveAlreadyApplied?: boolean;
     eventsAreAbsolute?: boolean;
+    phase?: 'clip-groove' | 'complete';
 }) => Event[];
 
 export function createGrooveMidiEventProjector(): GrooveMidiEventProjector {
     const grooveState = structuredClone(grooveTemplateStore.value ?? defaultGrooveTemplateState);
-    return getGrooveProjection(grooveState).projectClipMidiEvents;
+    const projection = getGrooveProjection(grooveState);
+    return (input) => {
+        if (input.phase === 'clip-groove') {
+            return [
+                ...projection.projectCommittedGroove({
+                    events: input.events,
+                    consumerType: 'clip',
+                    consumerId: input.clipId,
+                }),
+            ];
+        }
+        return projection.projectClipMidiEvents(input);
+    };
 }

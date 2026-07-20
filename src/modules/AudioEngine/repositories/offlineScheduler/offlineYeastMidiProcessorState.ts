@@ -11,13 +11,17 @@ type OfflineYeastMidiEvent = {
         | { type: 'channelPressure'; channel: number; value: number };
 };
 
+type OfflineYeastMidiOutputEvent = OfflineYeastMidiEvent & {
+    timePpq: number;
+};
+
 export type OfflineYeastMidiProcessor = (input: {
     trackId: string;
     sampleRate: number;
     blockStartSamples: number;
     blockEndSamples: number;
     events: readonly OfflineYeastMidiEvent[];
-}) => readonly OfflineYeastMidiEvent[];
+}) => readonly OfflineYeastMidiOutputEvent[];
 
 export type OfflineYeastMidiProcessorFactory = () => OfflineYeastMidiProcessor;
 

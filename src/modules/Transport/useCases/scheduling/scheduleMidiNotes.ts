@@ -15,7 +15,7 @@ import {
     transposeForChordTrack,
 } from '#/modules/MIDI/useCases';
 import { scheduleDrumKitNote, scheduleKitNote, scheduleNote } from '#/modules/Synth/useCases';
-import { getYeastSchedulingLookahead, processYeastMidi } from '#/modules/Yeast/useCases';
+import { processYeastMidi } from '#/modules/Yeast/useCases';
 
 import { beatToSamples, getTempoAtBeat, samplesToBeat, splitRangeAtTempoChanges } from '../../models/TempoMap';
 import { getBarBeatAtPosition, getTimeSignatureAtBeat } from '../../models/TimeSignatureMap';
@@ -43,8 +43,6 @@ const WORKLET_SYNTH_DEVICES: Record<string, WorkletSynthEntry> = {
     },
     levain: { controlsKey: 'levainControls' },
 };
-
-const MAX_GROOVE_DISPLACEMENT_BEATS = 0.25;
 
 // Transport-local shapes (AGENTS.md model isolation). Structurally compatible
 // with what Yeast's processors and Worker accept; we do not import Yeast's model.
@@ -76,6 +74,10 @@ type TransportInfo = {
     loopStartPpq: number;
     loopEndPpq: number;
     discontinuityEpoch?: number;
+    tempoMap?: {
+        defaultTempo: number;
+        changes: Array<{ beat: number; tempo: number; curve: 'instant' | 'linear' }>;
+    };
 };
 
 export type SchedulerCancellation = {
@@ -125,6 +127,12 @@ export async function scheduleMidiNotes(
     }
 
     const changes = tempoMapStore.value?.changes ?? [];
+    const yeastTempoMap = {
+        defaultTempo: transport.tempo,
+        changes: changes
+            .map(({ beat, tempo, curve }) => ({ beat, tempo, curve }))
+            .sort((alpha, beta) => alpha.beat - beta.beat),
+    };
 
     for (const track of tracks) {
         if (!isCurrent()) {
@@ -156,7 +164,6 @@ export async function scheduleMidiNotes(
             }
 
             const yeastDevice = track.devices.find((data) => data.type === 'yeast');
-            const yeastLookahead = yeastDevice ? getYeastSchedulingLookahead() : { earlyBeats: 0, lateBeats: 0 };
             // §2 — When the clip loops, run the Yeast Worker once per loop
             // iteration over that iteration's absolute window, so bar-aware
             // processors see iter-correct transport metadata instead of the
@@ -206,18 +213,11 @@ export async function scheduleMidiNotes(
                             loopStartPpq: transport.loopStart,
                             loopEndPpq: transport.loopEnd,
                             discontinuityEpoch: cancellation?.discontinuityEpoch,
+                            tempoMap: yeastTempoMap,
                         };
 
                         const midiEvents: MidiEvent[] = [];
                         for (const sourceNode of rawNotes) {
-                            const rawStartBeat = iterAbsBase + sourceNode.startBeat;
-                            const earliestRawBeat =
-                                block.fromBeat - MAX_GROOVE_DISPLACEMENT_BEATS - yeastLookahead.lateBeats;
-                            const latestRawBeat =
-                                block.toBeat + MAX_GROOVE_DISPLACEMENT_BEATS + yeastLookahead.earlyBeats;
-                            if (rawStartBeat < earliestRawBeat || rawStartBeat >= latestRawBeat) {
-                                continue;
-                            }
                             const [node] = projectCommittedGroove({
                                 events: [sourceNode],
                                 consumerType: 'clip',
@@ -227,32 +227,35 @@ export async function scheduleMidiNotes(
                                 continue;
                             }
                             const noteStartBeat = iterAbsBase + node.startBeat;
-                            if (
-                                noteStartBeat < block.fromBeat - yeastLookahead.lateBeats ||
-                                noteStartBeat >= block.toBeat + yeastLookahead.earlyBeats
-                            ) {
+                            const noteEndBeat = noteStartBeat + node.duration;
+                            const ownsNoteOn = noteStartBeat >= block.fromBeat && noteStartBeat < block.toBeat;
+                            const ownsNoteOff = noteEndBeat >= block.fromBeat && noteEndBeat < block.toBeat;
+                            if (!ownsNoteOn && !ownsNoteOff) {
                                 continue;
                             }
-                            const noteEndBeat = noteStartBeat + node.duration;
-                            midiEvents.push({
-                                timeSamples: beatToSamples(changes, noteStartBeat, transport.tempo, yeastSr),
-                                trackId: track.id,
-                                timePpq: noteStartBeat,
-                                tempoBpm: getTempoAtBeat(changes, noteStartBeat, transport.tempo),
-                                kind: {
-                                    type: 'noteOn',
-                                    channel: 0,
-                                    note: node.pitch,
-                                    velocity: node.velocity,
-                                },
-                            });
-                            midiEvents.push({
-                                timeSamples: beatToSamples(changes, noteEndBeat, transport.tempo, yeastSr),
-                                trackId: track.id,
-                                timePpq: noteEndBeat,
-                                tempoBpm: getTempoAtBeat(changes, noteEndBeat, transport.tempo),
-                                kind: { type: 'noteOff', channel: 0, note: node.pitch },
-                            });
+                            if (ownsNoteOn) {
+                                midiEvents.push({
+                                    timeSamples: beatToSamples(changes, noteStartBeat, transport.tempo, yeastSr),
+                                    trackId: track.id,
+                                    timePpq: noteStartBeat,
+                                    tempoBpm: getTempoAtBeat(changes, noteStartBeat, transport.tempo),
+                                    kind: {
+                                        type: 'noteOn',
+                                        channel: 0,
+                                        note: node.pitch,
+                                        velocity: node.velocity,
+                                    },
+                                });
+                            }
+                            if (ownsNoteOff) {
+                                midiEvents.push({
+                                    timeSamples: beatToSamples(changes, noteEndBeat, transport.tempo, yeastSr),
+                                    trackId: track.id,
+                                    timePpq: noteEndBeat,
+                                    tempoBpm: getTempoAtBeat(changes, noteEndBeat, transport.tempo),
+                                    kind: { type: 'noteOff', channel: 0, note: node.pitch },
+                                });
+                            }
                         }
 
                         const blockProcessed = await processYeastMidi({

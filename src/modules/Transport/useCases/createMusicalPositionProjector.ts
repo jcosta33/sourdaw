@@ -13,6 +13,12 @@ export function createMusicalPositionProjector() {
     const defaultDenominator = transport?.timeSignatureDenominator ?? 4;
     const loopStartPpq = transport?.loopStart ?? 0;
     const loopEndPpq = transport?.loopEnd ?? 0;
+    const tempoMap = {
+        defaultTempo,
+        changes: tempoChanges
+            .map(({ beat, tempo, curve }) => ({ beat, tempo, curve }))
+            .sort((alpha, beta) => alpha.beat - beta.beat),
+    };
 
     return (ppqPosition: number) => {
         const barBeat = getBarBeatAtPosition(timeSignatureChanges, ppqPosition, defaultNumerator, defaultDenominator);
@@ -32,6 +38,7 @@ export function createMusicalPositionProjector() {
             loopEnabled: loopStartPpq < loopEndPpq,
             loopStartPpq,
             loopEndPpq,
+            tempoMap,
         };
     };
 }

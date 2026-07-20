@@ -311,10 +311,10 @@ describe('scheduleMidiNotes', () => {
         // Record the noteOn sample positions the Worker sees per call. The
         // processor echoes its input back so we observe per-iteration placement.
         const seenNoteOnSamples: number[][] = [];
-        const processYeast = vi.fn<typeof processYeastMidi>(async (input) => {
+        const processYeast = vi.fn<typeof processYeastMidi>((input) => {
             const events = input.events;
             seenNoteOnSamples.push(events.filter((e) => e.kind.type === 'noteOn').map((e) => e.timeSamples));
-            return [...events];
+            return Promise.resolve([...events]);
         });
         vi.mocked(processYeastMidi).mockImplementation(processYeast);
 
@@ -381,7 +381,7 @@ describe('scheduleMidiNotes', () => {
             const due = retained.filter((event) => event.timeSamples < input.blockEndSamples);
             const future = retained.filter((event) => event.timeSamples >= input.blockEndSamples);
             retained.splice(0, retained.length, ...future);
-            return due;
+            return Promise.resolve(due);
         });
         vi.mocked(processYeastMidi).mockImplementation(processYeast);
 
@@ -394,11 +394,48 @@ describe('scheduleMidiNotes', () => {
             expect.objectContaining({ bpm: 120, ppqPosition: 3 }),
             expect.objectContaining({ bpm: 240, ppqPosition: 4 }),
         ]);
-        expect(processYeast.mock.calls[0]![0].events.map((event) => event.timeSamples)).toEqual([72000, 108000]);
-        expect(processYeast.mock.calls[1]![0].events).toEqual([]);
+        expect(processYeast.mock.calls[0]![0].events.map((event) => event.timeSamples)).toEqual([72000]);
+        expect(processYeast.mock.calls[1]![0].events.map((event) => event.timeSamples)).toEqual([108000]);
         expect(retained).toEqual([]);
         expect(scheduleNote).toHaveBeenCalledTimes(1);
         expect(vi.mocked(scheduleNote).mock.calls[0]![4]).toBe(0.75);
+    });
+
+    it('feeds each raw event to one owning block while draining a delayed Yeast note once', async () => {
+        const track = midiTrack({
+            clips: [midiClip({ endBeat: 8 })],
+            devices: [{ id: 'y', type: 'yeast' }],
+        });
+        (trackStore as { value: unknown }).value = { tracks: [track] };
+        (midiStore as { value: unknown }).value = {
+            notesByClipId: {
+                'clip-1': [{ id: 'n0', pitch: 60, startBeat: 3.9, duration: 0.2, velocity: 100 }],
+            },
+        };
+        type YeastMidiEvent = Awaited<ReturnType<typeof processYeastMidi>>[number];
+        const retained: YeastMidiEvent[] = [];
+        const processYeast = vi.fn<typeof processYeastMidi>((input) => {
+            for (const event of input.events) {
+                retained.push({
+                    ...event,
+                    timeSamples: event.timeSamples + 4_800,
+                    timePpq: (event.timePpq ?? 0) + 0.2,
+                });
+            }
+            const due = retained.filter((event) => event.timeSamples < input.blockEndSamples);
+            const future = retained.filter((event) => event.timeSamples >= input.blockEndSamples);
+            retained.splice(0, retained.length, ...future);
+            return Promise.resolve(due);
+        });
+        vi.mocked(processYeastMidi).mockImplementation(processYeast);
+
+        await scheduleMidiNotes(0, 4, 0, -1, [], defaultTransportState, 120);
+        await scheduleMidiNotes(4, 8, 4, -1, [], defaultTransportState, 120);
+
+        expect(processYeast.mock.calls[0]![0].events.map((event) => event.kind.type)).toEqual(['noteOn']);
+        expect(processYeast.mock.calls[1]![0].events.map((event) => event.kind.type)).toEqual(['noteOff']);
+        expect(scheduleNote).toHaveBeenCalledTimes(1);
+        expect(retained).toEqual([]);
     });
 
     // audit row 2 — The Yeast transport metadata (bar index, beat-in-bar, time

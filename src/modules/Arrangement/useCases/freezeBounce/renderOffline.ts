@@ -2,7 +2,7 @@ import {
     buildDeviceChain,
     getAudioContext,
     getCachedAudioBuffer,
-    projectOfflineYeastNotes,
+    projectOfflineYeastClipNotes,
 } from '#/modules/AudioEngine/useCases';
 import { midiStore } from '#/modules/MIDI/stores';
 import { sidechainStore } from '#/modules/Routing/stores';
@@ -157,16 +157,7 @@ export async function renderTrackOffline(
                     const iterations = clip.loopEnabled ? Math.ceil(clipLength / loopLength) : 1;
                     for (let iteration = 0; iteration < iterations; iteration++) {
                         const iterationStartBeat = clip.startBeat + iteration * loopLength;
-                        const notes = projectMidiEvents({
-                            events: sourceNotes,
-                            clipId: clip.id,
-                            clipStartBeat: clip.startBeat,
-                            clipEndBeat: clip.endBeat,
-                            iterationStartBeat,
-                            loopLengthBeats: loopLength,
-                            midiOffsetBeats: clip.midiOffsetBeats ?? 0,
-                            loopEnabled: clip.loopEnabled ?? false,
-                        });
+                        const midiOffsetBeats = clip.midiOffsetBeats ?? 0;
                         let scheduledNotes: Array<{
                             id: string;
                             pitch: number;
@@ -175,22 +166,37 @@ export async function renderTrackOffline(
                             endSamples: number;
                         }>;
                         if (time.devices.some((device) => device.type === 'yeast')) {
-                            scheduledNotes = projectOfflineYeastNotes({
+                            scheduledNotes = projectOfflineYeastClipNotes({
                                 trackId: time.id,
-                                notes,
+                                sourceNotes,
+                                clipId: clip.id,
+                                clipStartBeat: clip.startBeat,
+                                clipEndBeat: clip.endBeat,
+                                iterationStartBeat,
+                                loopLengthBeats: loopLength,
+                                midiOffsetBeats,
+                                loopEnabled: clip.loopEnabled ?? false,
                                 sampleRate,
+                                blockStartSamples: renderEndpoints.startSamples,
                                 blockEndSamples: renderEndpoints.startSamples + offlineCtx.length,
-                                projectPpqEndpoints: ({ startPpq, endPpq }) =>
-                                    projectPpqEndpoints({
-                                        startPpq,
-                                        endPpq,
-                                        defaultTempo: tempo,
-                                        sampleRate,
-                                        changes: tempoChanges,
-                                    }),
+                                defaultTempo: tempo,
+                                changes: tempoChanges,
+                                projectMidiEvents,
+                                projectPpqEndpoints,
                                 processYeastMidi,
                             });
                         } else {
+                            const notes = projectMidiEvents({
+                                events: sourceNotes,
+                                clipId: clip.id,
+                                clipStartBeat: clip.startBeat,
+                                clipEndBeat: clip.endBeat,
+                                iterationStartBeat,
+                                loopLengthBeats: loopLength,
+                                midiOffsetBeats,
+                                loopEnabled: clip.loopEnabled ?? false,
+                                phase: 'complete',
+                            });
                             scheduledNotes = notes.map((note) => {
                                 const endpoint = projectPpqEndpoints({
                                     startPpq: note.startBeat,
@@ -214,7 +220,10 @@ export async function renderTrackOffline(
                                 0,
                                 note.startSamples / sampleRate - renderEndpoints.startSeconds
                             );
-                            const noteEnd = note.endSamples / sampleRate - renderEndpoints.startSeconds;
+                            const noteEnd = Math.min(
+                                durationSeconds,
+                                note.endSamples / sampleRate - renderEndpoints.startSeconds
+                            );
                             const noteDuration = noteEnd - noteStart;
                             if (noteStart >= durationSeconds || noteDuration <= 0) {
                                 continue;

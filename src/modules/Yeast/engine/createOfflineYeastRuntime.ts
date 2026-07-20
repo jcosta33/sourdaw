@@ -7,6 +7,7 @@ type MusicalPosition = Omit<TransportInfo, 'sampleRate' | 'ppqPosition' | 'isPla
 type CreateOfflineYeastRuntimeInput = {
     projection: YeastProcessorProjection;
     resolveMusicalPosition: (ppqPosition: number) => MusicalPosition;
+    resolvePpqPosition: (input: { samples: number; sampleRate: number }) => number;
 };
 type ProcessOfflineYeastMidiInput = {
     trackId: string;
@@ -15,13 +16,23 @@ type ProcessOfflineYeastMidiInput = {
     blockEndSamples: number;
     events: readonly MidiEvent[];
 };
+type OfflineMidiEvent = MidiEvent & { timePpq: number };
 
-export function createOfflineYeastRuntime({ projection, resolveMusicalPosition }: CreateOfflineYeastRuntimeInput) {
+export function createOfflineYeastRuntime({
+    projection,
+    resolveMusicalPosition,
+    resolvePpqPosition,
+}: CreateOfflineYeastRuntimeInput) {
     const racksByTrack = new Map<string, MidiRack>();
 
-    return (input: ProcessOfflineYeastMidiInput): MidiEvent[] => {
+    return (input: ProcessOfflineYeastMidiInput): OfflineMidiEvent[] => {
         if (projection.length === 0) {
-            return input.events.map((event) => ({ ...event, kind: { ...event.kind } }));
+            return input.events.map((event) => ({
+                ...event,
+                timePpq:
+                    event.timePpq ?? resolvePpqPosition({ samples: event.timeSamples, sampleRate: input.sampleRate }),
+                kind: { ...event.kind },
+            }));
         }
 
         let rack = racksByTrack.get(input.trackId);
@@ -31,13 +42,6 @@ export function createOfflineYeastRuntime({ projection, resolveMusicalPosition }
             racksByTrack.set(input.trackId, rack);
         }
 
-        const firstPpq = input.events.find((event) => event.timePpq !== undefined)?.timePpq ?? 0;
-        const transport: TransportInfo = {
-            ...resolveMusicalPosition(firstPpq),
-            sampleRate: input.sampleRate,
-            ppqPosition: firstPpq,
-            isPlaying: false,
-        };
         const preparedEvents = input.events.map((event) => {
             if (event.timePpq === undefined || event.tempoBpm !== undefined) {
                 return { ...event, kind: { ...event.kind } };
@@ -48,14 +52,54 @@ export function createOfflineYeastRuntime({ projection, resolveMusicalPosition }
                 tempoBpm: resolveMusicalPosition(event.timePpq).bpm,
             };
         });
-        const output = rack.processBlock(
-            preparedEvents,
-            input.blockStartSamples,
-            input.blockEndSamples,
-            transport,
-            input.trackId
-        );
+        preparedEvents.sort((alpha, beta) => alpha.timeSamples - beta.timeSamples);
+        const output: OfflineMidiEvent[] = [];
+        let inputIndex = 0;
+        let blockStartSamples = input.blockStartSamples;
+        while (blockStartSamples < input.blockEndSamples) {
+            const blockEndSamples = Math.min(blockStartSamples + 128, input.blockEndSamples);
+            const blockEvents: MidiEvent[] = [];
+            while (inputIndex < preparedEvents.length) {
+                const event = preparedEvents[inputIndex]!;
+                if (event.timeSamples >= blockEndSamples) {
+                    break;
+                }
+                blockEvents.push(event);
+                inputIndex++;
+            }
+            const blockPpq = resolvePpqPosition({ samples: blockStartSamples, sampleRate: input.sampleRate });
+            const transport: TransportInfo = {
+                ...resolveMusicalPosition(blockPpq),
+                sampleRate: input.sampleRate,
+                ppqPosition: blockPpq,
+                isPlaying: true,
+            };
+            const blockOutput = rack.processBlock(
+                blockEvents,
+                blockStartSamples,
+                blockEndSamples,
+                transport,
+                input.trackId
+            );
+            for (const event of blockOutput) {
+                output.push({
+                    ...event,
+                    timePpq:
+                        event.timePpq ??
+                        resolvePpqPosition({ samples: event.timeSamples, sampleRate: input.sampleRate }),
+                    kind: { ...event.kind },
+                });
+            }
+            blockStartSamples = blockEndSamples;
+        }
 
-        return output.map((event) => ({ ...event, kind: { ...event.kind } }));
+        for (const event of rack.allNotesOff(input.blockEndSamples)) {
+            output.push({
+                ...event,
+                timePpq: resolvePpqPosition({ samples: event.timeSamples, sampleRate: input.sampleRate }),
+                kind: { ...event.kind },
+            });
+        }
+        return output;
     };
 }

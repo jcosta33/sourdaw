@@ -107,6 +107,7 @@ import {
     getTransportState,
     deleteTimelineMapsTimeRange,
     createMusicalPositionProjector,
+    createSamplePositionProjector,
     projectPpqEndpoints,
     setStopPlaybackCallback,
     shiftTimelineMapsAfterBeat,
@@ -141,7 +142,10 @@ actionHistoryStore.subscribe((state) => {
 });
 setRuntimeLogger(logger);
 const createOfflineYeastProcessor = () =>
-    createOfflineYeastMidiProcessor({ resolveMusicalPosition: createMusicalPositionProjector() });
+    createOfflineYeastMidiProcessor({
+        resolveMusicalPosition: createMusicalPositionProjector(),
+        resolvePpqPosition: createSamplePositionProjector(),
+    });
 configureOfflineMidiEventProjection({ createProjector: createGrooveMidiEventProjector });
 configureOfflinePpqEndpointProjection({ project: projectPpqEndpoints });
 configureOfflineYeastMidiProcessing({ createProcessor: createOfflineYeastProcessor });

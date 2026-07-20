@@ -24,11 +24,25 @@ export type MidiEvent = {
     tempoBpm?: number;
 };
 
+type TempoMapChange = {
+    beat: number;
+    tempo: number;
+    curve: 'instant' | 'linear';
+};
+
+type TempoMapProjection = {
+    defaultTempo: number;
+    /** Sorted ascending by beat at the composition boundary. */
+    changes: readonly TempoMapChange[];
+};
+
 export type TransportInfo = {
     sampleRate: number;
     bpm: number;
     /** Absolute sample origin paired with ppqPosition for this processing block. */
     blockStartSamples?: number;
+    /** Exclusive absolute sample boundary for this processing block. */
+    blockEndSamples?: number;
     /** Current position in PPQ (pulses per quarter note). */
     ppqPosition: number;
     isPlaying: boolean;
@@ -45,6 +59,8 @@ export type TransportInfo = {
      * not a chronological transport stream.
      */
     discontinuityEpoch?: number;
+    /** Optional project tempo map used by PPQ-shifting processors. */
+    tempoMap?: TempoMapProjection;
 };
 
 // ── Utility functions ────────────────────────────────────────────────────────
@@ -59,6 +75,89 @@ export function ppqToSamples(ppq: number, time: TransportInfo): number {
 
 export function samplesToBeats(samples: number, time: TransportInfo): number {
     return samples / samplesPerBeat(time);
+}
+
+function tempoAtPpq(changes: readonly TempoMapChange[], ppq: number, defaultTempo: number): number {
+    if (changes.length === 0) {
+        return defaultTempo;
+    }
+    let previous: TempoMapChange | undefined;
+    let next: TempoMapChange | undefined;
+    for (const change of changes) {
+        if (change.beat <= ppq) {
+            previous = change;
+        } else {
+            next = change;
+            break;
+        }
+    }
+    if (!previous) {
+        return changes[0]!.tempo;
+    }
+    if (!next || previous.curve === 'instant') {
+        return previous.tempo;
+    }
+    const progress = (ppq - previous.beat) / (next.beat - previous.beat);
+    return previous.tempo + (next.tempo - previous.tempo) * progress;
+}
+
+function secondsAcrossTempoRange(
+    changes: readonly TempoMapChange[],
+    fromPpq: number,
+    toPpq: number,
+    defaultTempo: number
+): number {
+    if (fromPpq === toPpq) {
+        return 0;
+    }
+    if (toPpq < fromPpq) {
+        return -secondsAcrossTempoRange(changes, toPpq, fromPpq, defaultTempo);
+    }
+
+    let seconds = 0;
+    let segmentStart = fromPpq;
+    for (const change of changes) {
+        if (change.beat <= fromPpq || change.beat >= toPpq) {
+            continue;
+        }
+        seconds += secondsAcrossTempoSegment(changes, segmentStart, change.beat, defaultTempo);
+        segmentStart = change.beat;
+    }
+    return seconds + secondsAcrossTempoSegment(changes, segmentStart, toPpq, defaultTempo);
+}
+
+function secondsAcrossTempoSegment(
+    changes: readonly TempoMapChange[],
+    fromPpq: number,
+    toPpq: number,
+    defaultTempo: number
+): number {
+    const startTempo = tempoAtPpq(changes, fromPpq, defaultTempo);
+    let activeChange: TempoMapChange | undefined;
+    for (const change of changes) {
+        if (change.beat > fromPpq) {
+            break;
+        }
+        activeChange = change;
+    }
+    if (!activeChange || activeChange.curve === 'instant') {
+        return ((toPpq - fromPpq) * 60) / startTempo;
+    }
+    const endTempo = tempoAtPpq(changes, toPpq, defaultTempo);
+    const tempoDelta = endTempo - startTempo;
+    if (tempoDelta === 0) {
+        return ((toPpq - fromPpq) * 60) / startTempo;
+    }
+    const relativeTempoDelta = tempoDelta / startTempo;
+    return (((toPpq - fromPpq) * 60) / startTempo) * (Math.log1p(relativeTempoDelta) / relativeTempoDelta);
+}
+
+export function projectPpqToSamples(ppq: number, transport: TransportInfo): number {
+    const tempoMap = transport.tempoMap;
+    if (!tempoMap) {
+        return Math.round(ppq * samplesPerBeat(transport));
+    }
+    return Math.round(secondsAcrossTempoRange(tempoMap.changes, 0, ppq, tempoMap.defaultTempo) * transport.sampleRate);
 }
 
 /** Convert a musical rate (e.g., 1/8) to beat duration. */

@@ -120,6 +120,19 @@ function isMidiEventArray(value: unknown): value is MidiEvent[] {
     return Array.isArray(value) && value.every(isMidiEvent);
 }
 
+function isTempoMapProjection(value: unknown): boolean {
+    if (!isPlainObject(value) || !isFiniteNumber(value.defaultTempo) || !Array.isArray(value.changes)) {
+        return false;
+    }
+    return value.changes.every(
+        (change) =>
+            isPlainObject(change) &&
+            isFiniteNumber(change.beat) &&
+            isFiniteNumber(change.tempo) &&
+            (change.curve === 'instant' || change.curve === 'linear')
+    );
+}
+
 function isTransportInfo(value: unknown): value is TransportInfo {
     if (!isPlainObject(value)) {
         return false;
@@ -136,7 +149,8 @@ function isTransportInfo(value: unknown): value is TransportInfo {
         typeof value.loopEnabled === 'boolean' &&
         isFiniteNumber(value.loopStartPpq) &&
         isFiniteNumber(value.loopEndPpq) &&
-        (value.discontinuityEpoch === undefined || isCommandId(value.discontinuityEpoch))
+        (value.discontinuityEpoch === undefined || isCommandId(value.discontinuityEpoch)) &&
+        (value.tempoMap === undefined || isTempoMapProjection(value.tempoMap))
     );
 }
 

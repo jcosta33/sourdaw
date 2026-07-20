@@ -40,7 +40,7 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     buildDeviceChain: mocks.buildDeviceChain,
     getAudioContext: mocks.getAudioContext,
     getCachedAudioBuffer: mocks.getCachedAudioBuffer,
-    projectOfflineYeastNotes: vi.fn(),
+    projectOfflineYeastClipNotes: vi.fn(() => []),
 }));
 
 vi.mock('#/modules/MIDI/stores', () => ({
@@ -249,7 +249,8 @@ describe('renderTrackOffline', () => {
                 };
             },
             createMidiEventProjector: () => projectClipMidiEvents,
-            createYeastMidiProcessor: () => (input) => input.events,
+            createYeastMidiProcessor: () => (input) =>
+                input.events.map((event) => ({ ...event, timePpq: event.timePpq ?? 0 })),
         });
         mocks.projectClipMidiEvents.mockImplementation((input) =>
             input.events.map((event) => ({
@@ -317,6 +318,7 @@ describe('renderTrackOffline', () => {
             loopLengthBeats: 4,
             midiOffsetBeats: 0,
             loopEnabled: false,
+            phase: 'complete',
         });
         expect(createdOscillators[0]?.start).toHaveBeenCalledWith(0.75);
         expect(createdGains.at(-1)?.gain.linearRampToValueAtTime).toHaveBeenCalledWith((40 / 127) * 0.3, 0.755);

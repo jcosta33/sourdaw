@@ -82,13 +82,19 @@ type ProjectMidiEventsInput<Event extends ProjectableMidiEvent> = {
     loopLengthBeats: number;
     midiOffsetBeats: number;
     loopEnabled?: boolean;
+    clipGrooveAlreadyApplied?: boolean;
+    eventsAreAbsolute?: boolean;
+    phase?: 'clip-groove' | 'complete';
 };
 
 function projectMidiEvents<Event extends ProjectableMidiEvent>(input: ProjectMidiEventsInput<Event>): readonly Event[] {
     mocks.projectMidiEvents(input);
     return input.events.map((event) => {
-        const startBeat =
-            input.iterationStartBeat + event.startBeat - input.midiOffsetBeats + mocks.projection.startOffset;
+        let startBeat = event.startBeat + mocks.projection.startOffset;
+        if (input.phase !== 'clip-groove' && !input.eventsAreAbsolute) {
+            startBeat =
+                input.iterationStartBeat + event.startBeat - input.midiOffsetBeats + mocks.projection.startOffset;
+        }
         if (mocks.projection.velocity === null) {
             return { ...event, startBeat };
         }
@@ -98,10 +104,14 @@ function projectMidiEvents<Event extends ProjectableMidiEvent>(input: ProjectMid
 
 function processYeastMidi(input: Parameters<OfflineYeastMidiProcessor>[0]): ReturnType<OfflineYeastMidiProcessor> {
     mocks.processYeastMidi(input);
+    const events = input.events.map((event) => ({
+        ...event,
+        timePpq: event.timePpq ?? event.timeSamples / 24_000,
+    }));
     if (mocks.projection.yeastTranspose === 0) {
-        return input.events;
+        return events;
     }
-    return input.events.map((event) => {
+    return events.map((event) => {
         if (event.kind.type !== 'noteOn' && event.kind.type !== 'noteOff') {
             return event;
         }
@@ -323,6 +333,7 @@ describe('scheduleTrackClips — MIDI plugin-delay compensation', () => {
             loopLengthBeats: 4,
             midiOffsetBeats: 0,
             loopEnabled: false,
+            phase: 'complete',
         });
         expect(events.find((event) => event.type === 'on')).toMatchObject({ time: 0.75, velocity: 40 });
         expect(events.find((event) => event.type === 'off')).toMatchObject({ time: 1.25 });
@@ -336,5 +347,7 @@ describe('scheduleTrackClips — MIDI plugin-delay compensation', () => {
         expect(mocks.processYeastMidi).toHaveBeenCalledTimes(1);
         expect(events.find((event) => event.type === 'on')).toMatchObject({ pitch: 72 });
         expect(events.find((event) => event.type === 'off')).toMatchObject({ pitch: 72 });
+        expect(mocks.projectMidiEvents).toHaveBeenNthCalledWith(1, expect.objectContaining({ phase: 'clip-groove' }));
+        expect(mocks.projectMidiEvents).toHaveBeenNthCalledWith(2, expect.objectContaining({ phase: 'complete' }));
     });
 });

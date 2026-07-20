@@ -88,8 +88,8 @@ export class CCGenerator extends BaseMidiProcessor {
 
         // Emit CC at subdivision boundaries (every ~64 samples to avoid flooding)
         const emitInterval = 64;
-        const blockSamples = 128;
-        const baseTime = input.length > 0 ? input[0]!.timeSamples : 0;
+        const baseTime = transport.blockStartSamples ?? input[0]?.timeSamples ?? 0;
+        const blockSamples = Math.max(0, (transport.blockEndSamples ?? baseTime + 128) - baseTime);
 
         for (let offset = 0; offset < blockSamples; offset += emitInterval) {
             this.accumPhase += phasePerSample * emitInterval;

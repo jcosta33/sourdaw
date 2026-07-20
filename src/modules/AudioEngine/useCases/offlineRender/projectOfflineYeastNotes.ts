@@ -11,6 +11,7 @@ type ProjectOfflineYeastNotesInput = {
     trackId: string;
     notes: readonly OfflineYeastProjectableNote[];
     sampleRate: number;
+    blockStartSamples: number;
     blockEndSamples: number;
     projectPpqEndpoints: (input: { startPpq: number; endPpq: number }) => {
         startSamples: number;
@@ -24,13 +25,16 @@ type ProjectedOfflineYeastNote = {
     velocity: number;
     startSamples: number;
     endSamples: number;
+    startPpq: number;
+    endPpq: number;
 };
-type ActiveProjectedNote = Omit<ProjectedOfflineYeastNote, 'endSamples'>;
+type ActiveProjectedNote = Omit<ProjectedOfflineYeastNote, 'endSamples' | 'endPpq'>;
 
 export function projectOfflineYeastNotes({
     trackId,
     notes,
     sampleRate,
+    blockStartSamples,
     blockEndSamples,
     projectPpqEndpoints,
     processYeastMidi,
@@ -55,11 +59,6 @@ export function projectOfflineYeastNotes({
             },
         ];
     });
-    if (events.length === 0) {
-        return [];
-    }
-
-    const blockStartSamples = Math.min(...events.map((event) => event.timeSamples));
     const processedEvents = processYeastMidi({
         trackId,
         sampleRate,
@@ -74,12 +73,16 @@ export function projectOfflineYeastNotes({
         const event = processedEvents[index]!;
         const key = (event.kind.channel << 7) | ('note' in event.kind ? event.kind.note : 0);
         if (event.kind.type === 'noteOn') {
+            if (event.timeSamples >= blockEndSamples) {
+                continue;
+            }
             const queue = activeByPitch.get(key) ?? [];
             queue.push({
                 id: `yeast:${trackId}:${index}`,
                 pitch: event.kind.note,
                 velocity: event.kind.velocity,
                 startSamples: event.timeSamples,
+                startPpq: event.timePpq,
             });
             activeByPitch.set(key, queue);
             continue;
@@ -98,7 +101,8 @@ export function projectOfflineYeastNotes({
         }
         projected.push({
             ...active,
-            endSamples: event.timeSamples,
+            endSamples: Math.min(event.timeSamples, blockEndSamples),
+            endPpq: event.timePpq,
         });
     }
 
