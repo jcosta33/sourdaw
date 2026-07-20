@@ -8,6 +8,7 @@ import { defaultTransportState } from '../../../models/TransportState';
 import { sessionState } from '../audioClipSchedulingState';
 import { disposeAudioClipScheduling } from '../disposeAudioClipScheduling';
 import { scheduleAudioClips } from '../scheduleAudioClips';
+import { scheduleFrozenTrack } from '../scheduleFrozenTrack';
 
 // trackStore holds a single active audio track; resolveClipsWithComping supplies
 // the clip(s) under test so the clip shape is controlled directly by each test.
@@ -177,5 +178,43 @@ describe('scheduleAudioClips', () => {
         disposeAudioClipScheduling();
 
         expect(sessionState.requestedAssets.size).toBe(0);
+    });
+
+    // Regression (PR #514 review): identical defect to the MIDI path — the
+    // frozen-track dedup was keyed by track.id only, so an unfreeze → refreeze
+    // within one session (new frozenBufferId, same id) stayed silent. Keying by
+    // track.id + frozenBufferId must dedup within a buffer but reschedule on
+    // refreeze.
+    it('dedups a frozen audio track per buffer and reschedules after a refreeze with a new buffer', () => {
+        vi.mocked(scheduleFrozenTrack).mockReturnValue(true);
+        const scheduledFrozenTracks = new Set<string>();
+
+        trackStoreState.value = {
+            tracks: [
+                {
+                    ...(makeAudioTrack([]) as Record<string, unknown>),
+                    freezeState: { status: 'frozen', frozenBufferId: 'frozen-buffer-1' },
+                },
+            ],
+        };
+        scheduleAudioClips(0, 4, 0, new Set(), scheduledFrozenTracks, [], defaultTransportState, 120);
+        // Next tick, same buffer: still deduped.
+        scheduleAudioClips(0.2, 4.2, 0.2, new Set(), scheduledFrozenTracks, [], defaultTransportState, 120);
+        expect(vi.mocked(scheduleFrozenTrack)).toHaveBeenCalledTimes(1);
+
+        // Refreeze mid-session: same track.id, new frozen render.
+        trackStoreState.value = {
+            tracks: [
+                {
+                    ...(makeAudioTrack([]) as Record<string, unknown>),
+                    freezeState: { status: 'frozen', frozenBufferId: 'frozen-buffer-2' },
+                },
+            ],
+        };
+        scheduleAudioClips(0.4, 4.4, 0.4, new Set(), scheduledFrozenTracks, [], defaultTransportState, 120);
+
+        expect(vi.mocked(scheduleFrozenTrack)).toHaveBeenCalledTimes(2);
+        expect(scheduledFrozenTracks.has('track-1:frozen-buffer-1')).toBe(true);
+        expect(scheduledFrozenTracks.has('track-1:frozen-buffer-2')).toBe(true);
     });
 });
