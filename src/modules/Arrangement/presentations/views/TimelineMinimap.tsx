@@ -10,6 +10,10 @@ import {
 
 import { useStore } from '#/infra/store/useStore';
 import { transportStore } from '#/modules/Transport/stores';
+import {
+    normalizeTimelineMinimapHeight,
+    TIMELINE_MINIMAP_DEFAULT_HEIGHT,
+} from '#/utils/TimelineMinimap/timelineMinimapHeight';
 
 import { timelineViewStore, type TimelineViewState } from '../../stores/timelineViewStore';
 import { trackStore, type TrackStoreState } from '../../stores/trackStore';
@@ -18,9 +22,26 @@ import { setTimelineMinimapScrollX } from '../../useCases/setTimelineMinimapScro
 
 import { TimelineChromeSurface } from './TimelineChromeSurface';
 
-export const MINIMAP_HEIGHT = 28;
 const MIN_PROJECT_BEATS = 64;
 const VIEWPORT_MIN_WIDTH = 6;
+
+type TimelineMinimapProps = {
+    height?: number;
+};
+
+type CanvasMetrics = {
+    width: number;
+    dpr: number;
+};
+
+function getDevicePixelRatio(): number {
+    const dpr = window.devicePixelRatio;
+    if (!Number.isFinite(dpr) || dpr <= 0) {
+        return 1;
+    }
+
+    return dpr;
+}
 
 const defaultTrackState: TrackStoreState = { tracks: [], selectedTrackId: null };
 const defaultTimelineView: TimelineViewState = {
@@ -30,7 +51,8 @@ const defaultTimelineView: TimelineViewState = {
     autoScrollEnabled: true,
 };
 
-export const TimelineMinimap = (): ReactElement => {
+export const TimelineMinimap = ({ height = TIMELINE_MINIMAP_DEFAULT_HEIGHT }: TimelineMinimapProps): ReactElement => {
+    const activeHeight = normalizeTimelineMinimapHeight(height);
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const containerRef = useRef<HTMLDivElement>(null);
     const isDraggingRef = useRef(false);
@@ -38,7 +60,7 @@ export const TimelineMinimap = (): ReactElement => {
     // Holds the teardown for the in-flight drag's global listeners so an unmount
     // mid-drag can detach them; null when no drag is active.
     const dragCleanupRef = useRef<(() => void) | null>(null);
-    const [containerWidth, setContainerWidth] = useState(0);
+    const [canvasMetrics, setCanvasMetrics] = useState<CanvasMetrics>({ width: 0, dpr: 1 });
 
     const trackState = useStore(trackStore, defaultTrackState);
     const viewState = useStore(timelineViewStore, defaultTimelineView);
@@ -49,23 +71,31 @@ export const TimelineMinimap = (): ReactElement => {
 
     useLayoutEffect(() => {
         const canvas = canvasRef.current;
-        const container = containerRef.current;
-        if (!canvas || !container) {
+        if (!canvas) {
             return;
         }
 
-        const rect = container.getBoundingClientRect();
-        const dpr = window.devicePixelRatio || 1;
-        canvas.width = rect.width * dpr;
-        canvas.height = MINIMAP_HEIGHT * dpr;
+        const canvasWidth = canvasMetrics.width;
+        const dpr = canvasMetrics.dpr;
+        const backingWidth = Math.round(canvasWidth * dpr);
+        const backingHeight = Math.round(activeHeight * dpr);
+        canvas.width = backingWidth;
+        canvas.height = backingHeight;
 
         const ctx = canvas.getContext('2d');
         if (!ctx) {
             return;
         }
-        ctx.scale(dpr, dpr);
 
-        const canvasWidth = rect.width;
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
+        ctx.clearRect(0, 0, backingWidth, backingHeight);
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        ctx.clearRect(0, 0, canvasWidth, activeHeight);
+
+        if (canvasWidth <= 0) {
+            return;
+        }
+
         const trackCount = tracks.length;
 
         let maxEndBeat = 0;
@@ -78,70 +108,71 @@ export const TimelineMinimap = (): ReactElement => {
         }
         const totalBeats = Math.max(MIN_PROJECT_BEATS, maxEndBeat * 1.1);
         const beatsToPixels = canvasWidth / totalBeats;
-        const trackLaneHeight = trackCount > 0 ? (MINIMAP_HEIGHT - 2) / trackCount : MINIMAP_HEIGHT - 2;
-        const clampedLaneHeight = Math.min(trackLaneHeight, 8);
-
-        ctx.clearRect(0, 0, canvasWidth, MINIMAP_HEIGHT);
+        const drawableHeight = Math.max(1, activeHeight - 2);
+        const laneStep = trackCount > 0 ? drawableHeight / trackCount : drawableHeight;
 
         // Dark background with subtle gradient
-        const bgGrad = ctx.createLinearGradient(0, 0, 0, MINIMAP_HEIGHT);
+        const bgGrad = ctx.createLinearGradient(0, 0, 0, activeHeight);
         bgGrad.addColorStop(0, 'rgba(255, 255, 255, 0.035)');
         bgGrad.addColorStop(1, 'rgba(0, 0, 0, 0.02)');
         ctx.fillStyle = bgGrad;
-        ctx.fillRect(0, 0, canvasWidth, MINIMAP_HEIGHT);
+        ctx.fillRect(0, 0, canvasWidth, activeHeight);
 
         if (trackCount > 0) {
-            const laneOffset = (MINIMAP_HEIGHT - trackCount * clampedLaneHeight) / 2;
-
             for (let index = 0; index < tracks.length; index++) {
                 const track = tracks[index]!;
-                const y = laneOffset + index * clampedLaneHeight;
+                const y = 1 + index * laneStep;
+                const availableHeight = Math.max(1, activeHeight - 1 - y);
+                const clipHeight = Math.min(Math.max(1, laneStep - 1), availableHeight);
 
                 for (const clip of track.clips) {
                     const x = clip.startBeat * beatsToPixels;
                     const w = Math.max(1, (clip.endBeat - clip.startBeat) * beatsToPixels);
                     const color = clip.color || track.color || 'oklch(0.40 0.08 250)';
-                    const clipH = Math.max(1, clampedLaneHeight - 1);
 
                     ctx.fillStyle = color;
                     ctx.globalAlpha = 0.8;
-                    if (w > 3 && clipH > 2) {
+                    if (w > 3 && clipHeight > 2) {
                         ctx.beginPath();
-                        ctx.roundRect(x, y, w, clipH, 1);
+                        ctx.roundRect(x, y, w, clipHeight, 1);
                         ctx.fill();
                     } else {
-                        ctx.fillRect(x, y, w, clipH);
+                        ctx.fillRect(x, y, w, clipHeight);
                     }
                 }
             }
             ctx.globalAlpha = 1;
         }
 
-        const viewportStartPx = (scrollX / pixelsPerBeat) * beatsToPixels;
-        const containerWidth = rect.width;
-        const visibleBeats = containerWidth / pixelsPerBeat;
+        const safePixelsPerBeat = pixelsPerBeat > 0 && Number.isFinite(pixelsPerBeat) ? pixelsPerBeat : 12;
+        const viewportStartPx = (scrollX / safePixelsPerBeat) * beatsToPixels;
+        const visibleBeats = canvasWidth / safePixelsPerBeat;
         const viewportWidthPx = Math.max(VIEWPORT_MIN_WIDTH, visibleBeats * beatsToPixels);
+        const boundedViewportStart = Math.max(0, Math.min(canvasWidth, viewportStartPx));
+        const boundedViewportWidth = Math.max(0, Math.min(viewportWidthPx, canvasWidth - boundedViewportStart));
 
         // Viewport indicator with gradient fill
-        const vpGrad = ctx.createLinearGradient(0, 0, 0, MINIMAP_HEIGHT);
+        const vpGrad = ctx.createLinearGradient(0, 0, 0, activeHeight);
         vpGrad.addColorStop(0, 'rgba(255, 255, 255, 0.10)');
         vpGrad.addColorStop(1, 'rgba(255, 255, 255, 0.04)');
         ctx.fillStyle = vpGrad;
-        ctx.fillRect(viewportStartPx, 0, viewportWidthPx, MINIMAP_HEIGHT);
+        ctx.fillRect(boundedViewportStart, 0, boundedViewportWidth, activeHeight);
 
         // Viewport border — brighter top edge for dimensionality
-        ctx.strokeStyle = 'rgba(255, 255, 255, 0.22)';
-        ctx.lineWidth = 1;
-        ctx.strokeRect(viewportStartPx + 0.5, 0.5, viewportWidthPx - 1, MINIMAP_HEIGHT - 1);
+        if (boundedViewportWidth > 1) {
+            ctx.strokeStyle = 'rgba(255, 255, 255, 0.22)';
+            ctx.lineWidth = 1;
+            ctx.strokeRect(boundedViewportStart + 0.5, 0.5, boundedViewportWidth - 1, activeHeight - 1);
 
-        // Brighter top edge on viewport
-        ctx.strokeStyle = 'rgba(255, 255, 255, 0.12)';
-        ctx.lineWidth = 1;
-        ctx.beginPath();
-        ctx.moveTo(viewportStartPx + 0.5, 0.5);
-        ctx.lineTo(viewportStartPx + viewportWidthPx - 0.5, 0.5);
-        ctx.stroke();
-    }, [tracks, pixelsPerBeat, scrollX, containerWidth]);
+            // Brighter top edge on viewport
+            ctx.strokeStyle = 'rgba(255, 255, 255, 0.12)';
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            ctx.moveTo(boundedViewportStart + 0.5, 0.5);
+            ctx.lineTo(boundedViewportStart + boundedViewportWidth - 0.5, 0.5);
+            ctx.stroke();
+        }
+    }, [tracks, pixelsPerBeat, scrollX, canvasMetrics, activeHeight]);
 
     useLayoutEffect(() => {
         const container = containerRef.current;
@@ -149,17 +180,54 @@ export const TimelineMinimap = (): ReactElement => {
             return undefined;
         }
 
-        const observer = new ResizeObserver((entries) => {
-            if (entries[0]) {
-                setContainerWidth(entries[0].contentRect.width);
+        const measure = (): void => {
+            const rect = container.getBoundingClientRect();
+            const dpr = getDevicePixelRatio();
+            const width = Math.max(0, rect.width);
+            setCanvasMetrics((current) => {
+                if (current.width === width && current.dpr === dpr) {
+                    return current;
+                }
+                return { width, dpr };
+            });
+        };
+
+        const observer = new ResizeObserver(measure);
+        let densityQuery: MediaQueryList | null = null;
+
+        const stopObservingDensity = (): void => {
+            if (!densityQuery) {
+                return;
             }
-        });
+
+            densityQuery.onchange = null;
+            densityQuery = null;
+        };
+
+        const observeDensity = (): void => {
+            stopObservingDensity();
+            if (typeof window.matchMedia !== 'function') {
+                return;
+            }
+
+            densityQuery = window.matchMedia(`(resolution: ${getDevicePixelRatio()}dppx)`);
+            densityQuery.onchange = handleDensityChange;
+        };
+
+        function handleDensityChange(): void {
+            measure();
+            observeDensity();
+        }
 
         observer.observe(container);
-        // Set initial width
-        setContainerWidth(container.getBoundingClientRect().width);
+        observeDensity();
+        window.addEventListener('resize', measure);
 
-        return () => observer.disconnect();
+        return () => {
+            observer.disconnect();
+            stopObservingDensity();
+            window.removeEventListener('resize', measure);
+        };
     }, []);
 
     // Detach any global drag listeners still attached when the minimap unmounts.
@@ -275,7 +343,7 @@ export const TimelineMinimap = (): ReactElement => {
         // visible page on Page keys, and Home jumps to the start.
         const stepBeats = 4;
         const stepPx = stepBeats * pixelsPerBeat;
-        const pageBeats = containerWidth > 0 ? containerWidth / pixelsPerBeat : 16;
+        const pageBeats = canvasMetrics.width > 0 ? canvasMetrics.width / pixelsPerBeat : 16;
         const pagePx = pageBeats * pixelsPerBeat;
 
         if (transportStore.value?.isPlaying) {
@@ -315,7 +383,7 @@ export const TimelineMinimap = (): ReactElement => {
             tone="subtle"
             ref={containerRef}
             className="cursor-pointer"
-            style={{ height: MINIMAP_HEIGHT }}
+            style={{ height: activeHeight }}
             onMouseDown={handleMouseDown}
             onKeyDown={handleKeyDown}
             tabIndex={0}
@@ -325,7 +393,7 @@ export const TimelineMinimap = (): ReactElement => {
             aria-valuemax={100}
             aria-valuenow={Math.round((scrollX / Math.max(1, pixelsPerBeat * MIN_PROJECT_BEATS)) * 100)}
         >
-            <canvas ref={canvasRef} className="absolute inset-0" style={{ width: '100%', height: MINIMAP_HEIGHT }} />
+            <canvas ref={canvasRef} className="absolute inset-0" style={{ width: '100%', height: activeHeight }} />
         </TimelineChromeSurface>
     );
 };

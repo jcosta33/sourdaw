@@ -1,11 +1,13 @@
 import { logger } from '#/infra/logger/appLogger';
 import { createStore } from '#/infra/store/createStore';
 import { createLocalStorage } from '#/infra/store/storage/createLocalStorage';
+import { normalizeTimelineMinimapHeight } from '#/utils/TimelineMinimap/timelineMinimapHeight';
 
 import {
     BUFFER_SIZE_OPTIONS,
     GRID_SNAP_OPTIONS,
     SAMPLE_RATE_OPTIONS,
+    PREFERENCES_SCHEMA_VERSION,
     defaultPreferences,
     type Preferences,
 } from '../models/Preferences';
@@ -26,6 +28,10 @@ function isFiniteNumber(value: unknown): boolean {
     return typeof value === 'number' && Number.isFinite(value);
 }
 
+function isValidPreferencesSchemaVersion(value: unknown): value is number {
+    return typeof value === 'number' && Number.isFinite(value) && Number.isInteger(value) && value >= 1;
+}
+
 function isOneOf(...allowed: unknown[]): (value: unknown) => boolean {
     return (value: unknown): boolean => allowed.includes(value);
 }
@@ -37,6 +43,7 @@ function isOneOf(...allowed: unknown[]): (value: unknown) => boolean {
  * from storage fall through to defaults too.
  */
 const PREFERENCES_SCHEMA: { [K in keyof Preferences]: (value: unknown) => boolean } = {
+    preferencesSchemaVersion: isValidPreferencesSchemaVersion,
     trackHeight: isOneOf('compact', 'normal', 'large'),
     colorblindMode: (value) => typeof value === 'boolean',
     autoSave: (value) => typeof value === 'boolean',
@@ -45,6 +52,7 @@ const PREFERENCES_SCHEMA: { [K in keyof Preferences]: (value: unknown) => boolea
     snapToZeroCrossing: (value) => typeof value === 'boolean',
     gridSubdivision: (value) => GRID_SNAP_VALUES.has(value),
     showMinimap: (value) => typeof value === 'boolean',
+    timelineMinimapHeight: isFiniteNumber,
     voiceCommandKey: (value) => typeof value === 'string',
     theme: isOneOf('dark', 'light'),
     uiScale: isFiniteNumber,
@@ -82,6 +90,8 @@ export function validateStoredPreferences(stored: unknown): Preferences {
     const record = stored as Record<string, unknown>;
     const result = { ...defaultPreferences };
     const rejected: string[] = [];
+    const storedSchemaVersion = record.preferencesSchemaVersion;
+    const visibilityChoiceIsAuthoritative = isValidPreferencesSchemaVersion(storedSchemaVersion);
 
     for (const key of PREFERENCE_KEYS) {
         if (!(key in record)) {
@@ -94,6 +104,12 @@ export function validateStoredPreferences(stored: unknown): Preferences {
         } else {
             rejected.push(key);
         }
+    }
+
+    result.timelineMinimapHeight = normalizeTimelineMinimapHeight(result.timelineMinimapHeight);
+    if (!visibilityChoiceIsAuthoritative) {
+        result.showMinimap = true;
+        result.preferencesSchemaVersion = PREFERENCES_SCHEMA_VERSION;
     }
 
     if (rejected.length > 0) {
