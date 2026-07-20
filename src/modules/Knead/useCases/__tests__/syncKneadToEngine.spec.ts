@@ -83,4 +83,13 @@ describe('syncKneadToEngine', () => {
 
         expect(syncKneadState).not.toHaveBeenCalled();
     });
+
+    it('does not push to the engine when the knead store has no value', () => {
+        kneadStore.set(null);
+        syncKneadState.mockClear();
+
+        setTrack(trackWithKnead());
+
+        expect(syncKneadState).not.toHaveBeenCalled();
+    });
 });
