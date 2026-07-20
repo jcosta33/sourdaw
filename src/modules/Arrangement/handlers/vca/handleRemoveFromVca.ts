@@ -11,9 +11,9 @@ export const handleRemoveFromVca = createHandler<'removeFromVca'>({
         }
         return { status: 'written' };
     },
-    describe: () => ({
+    describe: (alpha) => ({
         label: 'Remove from VCA',
-        inverseAction: { type: 'restoreLegacyVcaState', payload: captureLegacyVcaState() },
+        inverseAction: { type: 'restoreLegacyVcaState', payload: captureLegacyVcaState(alpha) },
     }),
     undoable: true,
 });

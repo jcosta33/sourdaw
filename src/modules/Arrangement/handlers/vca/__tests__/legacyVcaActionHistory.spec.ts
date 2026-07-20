@@ -135,6 +135,81 @@ describe('legacy VCA action history', () => {
 
     it.each([
         {
+            label: 'create',
+            action: {
+                type: 'createVcaGroup',
+                payload: { name: 'Action A', trackIds: ['track-1'], vcaGroupId: 'vca-action-a' },
+            },
+        },
+        {
+            label: 'assign',
+            action: { type: 'assignToVca', payload: { trackId: 'track-1', vcaGroupId: 'vca-b' } },
+        },
+        { label: 'remove', action: { type: 'removeFromVca', payload: { trackId: 'track-1' } } },
+        { label: 'gain', action: { type: 'setVcaGain', payload: { vcaGroupId: 'vca-a', gain: 0.75 } } },
+    ] satisfies Array<{ label: string; action: AppAction }>)(
+        'reverts non-latest $label without overwriting a later group, gain, membership, or track',
+        async ({ action }) => {
+            const beforeActionA = captureState();
+            await executeAppAction(action);
+            const actionAHistoryEntry = actionHistoryStore.value?.entries.at(-1);
+            if (!actionAHistoryEntry) {
+                throw new Error('Expected history for VCA action A');
+            }
+
+            const trackState = trackStore.value;
+            if (!trackState) {
+                throw new Error('Expected seeded track state');
+            }
+            const laterTrack = createTrack({ id: 'track-later', name: 'Later', kind: 'audio' });
+            trackStore.set({ ...trackState, tracks: [...trackState.tracks, laterTrack] });
+
+            await executeAppAction({
+                type: 'createVcaGroup',
+                payload: {
+                    name: 'Later group',
+                    trackIds: [laterTrack.id],
+                    vcaGroupId: 'vca-later',
+                },
+            });
+            await executeAppAction({
+                type: 'setVcaGain',
+                payload: { vcaGroupId: 'vca-later', gain: 1.25 },
+            });
+            const laterGroup = getVcaGroupsState().find((group) => group.id === 'vca-later');
+            if (!laterGroup) {
+                throw new Error('Expected later VCA group');
+            }
+
+            await expect(revertAction(actionAHistoryEntry.id)).resolves.toEqual({ status: 'executed' });
+
+            expect(captureState()).toEqual({
+                groups: [...beforeActionA.groups, { ...laterGroup, trackIds: [...laterGroup.trackIds] }],
+                memberships: [...beforeActionA.memberships, { trackId: laterTrack.id, vcaGroupId: laterGroup.id }],
+            });
+        }
+    );
+
+    it('reports a conflict without changing state when a later action overlaps the inverse footprint', async () => {
+        await executeAppAction({ type: 'setVcaGain', payload: { vcaGroupId: 'vca-a', gain: 0.75 } });
+        const actionAHistoryEntry = actionHistoryStore.value?.entries.at(-1);
+        if (!actionAHistoryEntry) {
+            throw new Error('Expected history for VCA action A');
+        }
+
+        await executeAppAction({ type: 'setVcaGain', payload: { vcaGroupId: 'vca-a', gain: 1.25 } });
+        const beforeConflict = captureState();
+
+        await expect(revertAction(actionAHistoryEntry.id)).resolves.toEqual({ status: 'conflict' });
+
+        expect(captureState()).toEqual(beforeConflict);
+        expect(actionHistoryStore.value?.entries.find((entry) => entry.id === actionAHistoryEntry.id)?.reverted).toBe(
+            false
+        );
+    });
+
+    it.each([
+        {
             label: 'a colliding create replay identity',
             prepare: () => {
                 setVcaGroupsState([

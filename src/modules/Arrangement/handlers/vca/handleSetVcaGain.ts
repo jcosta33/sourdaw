@@ -11,9 +11,9 @@ export const handleSetVcaGain = createHandler<'setVcaGain'>({
         }
         return { status: 'written' };
     },
-    describe: () => ({
+    describe: (alpha) => ({
         label: 'Set VCA Gain',
-        inverseAction: { type: 'restoreLegacyVcaState', payload: captureLegacyVcaState() },
+        inverseAction: { type: 'restoreLegacyVcaState', payload: captureLegacyVcaState(alpha) },
     }),
     undoable: true,
 });

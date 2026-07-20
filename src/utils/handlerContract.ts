@@ -130,9 +130,34 @@ type LegacyVcaGroupSnapshot = {
     readonly trackIds: readonly string[];
 };
 
-type LegacyVcaTrackMembershipSnapshot = {
+type LegacyVcaGroupRowState = {
+    readonly group: LegacyVcaGroupSnapshot;
+    readonly index: number;
+} | null;
+
+type LegacyVcaGroupRowPatch = {
+    readonly groupId: string;
+    readonly expected: LegacyVcaGroupRowState;
+    readonly replacement: LegacyVcaGroupRowState;
+};
+
+type LegacyVcaGroupGainPatch = {
+    readonly groupId: string;
+    readonly expectedGain: number;
+    readonly replacementGain: number;
+};
+
+type LegacyVcaGroupMembershipPatch = {
+    readonly groupId: string;
     readonly trackId: string;
-    readonly vcaGroupId: string | null;
+    readonly expectedIndex: number | null;
+    readonly replacementIndex: number | null;
+};
+
+type LegacyVcaTrackMembershipPatch = {
+    readonly trackId: string;
+    readonly expectedVcaGroupId: string | null;
+    readonly replacementVcaGroupId: string | null;
 };
 
 export type AppAction =
@@ -487,12 +512,15 @@ export type AppAction =
     | { type: 'removeFromVca'; payload: { trackId: string } }
     | { type: 'setVcaGain'; payload: { vcaGroupId: string; gain: number } }
     | {
-          /** Internal inverse only: restores both legacy VCA representations together.
-           *  This is not a canonical/user/AI VCA action and is absent from RuntimeAction. */
+          /** Internal inverse only: conditionally restores the fields touched by one
+           *  legacy VCA action. This is not a canonical/user/AI VCA action and is absent
+           *  from RuntimeAction. */
           type: 'restoreLegacyVcaState';
           payload: {
-              groups: readonly LegacyVcaGroupSnapshot[];
-              trackMemberships: readonly LegacyVcaTrackMembershipSnapshot[];
+              groupRows: readonly LegacyVcaGroupRowPatch[];
+              groupGains: readonly LegacyVcaGroupGainPatch[];
+              groupMemberships: readonly LegacyVcaGroupMembershipPatch[];
+              trackMemberships: readonly LegacyVcaTrackMembershipPatch[];
           };
       }
     | { type: 'setMidiOutput'; payload: { trackId: string; destinationTrackId: string } }
@@ -636,7 +664,7 @@ export type HandlerDescribeResult = {
     inverseAction?: AppAction | null;
 };
 
-export type HandlerExecutionResult = { status: 'written' } | { status: 'no-write' };
+export type HandlerExecutionResult = { status: 'written' } | { status: 'no-write' } | { status: 'conflict' };
 
 /** One dispatchable action's handler. Built via `createHandler` and merged into a module
  *  handler map by each `get<Module>Handlers` factory. */

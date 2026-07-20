@@ -11,9 +11,9 @@ export const handleAssignToVca = createHandler<'assignToVca'>({
         }
         return { status: 'written' };
     },
-    describe: () => ({
+    describe: (alpha) => ({
         label: 'Assign to VCA',
-        inverseAction: { type: 'restoreLegacyVcaState', payload: captureLegacyVcaState() },
+        inverseAction: { type: 'restoreLegacyVcaState', payload: captureLegacyVcaState(alpha) },
     }),
     undoable: true,
 });

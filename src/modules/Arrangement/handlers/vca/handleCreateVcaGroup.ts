@@ -16,10 +16,13 @@ export const handleCreateVcaGroup = createHandler<'createVcaGroup'>({
     execute: (alpha) => {
         createVcaGroup(alpha.payload.name, alpha.payload.trackIds, ensureVcaGroupId(alpha));
     },
-    describe: () => ({
-        label: 'Create VCA Group',
-        inverseAction: { type: 'restoreLegacyVcaState', payload: captureLegacyVcaState() },
-    }),
+    describe: (alpha) => {
+        ensureVcaGroupId(alpha);
+        return {
+            label: 'Create VCA Group',
+            inverseAction: { type: 'restoreLegacyVcaState', payload: captureLegacyVcaState(alpha) },
+        };
+    },
     isNoop: (alpha) => getVcaGroups().some((group) => group.id === ensureVcaGroupId(alpha)),
     undoable: true,
 });

@@ -5,15 +5,18 @@ import { restoreLegacyVcaState } from '../../useCases/vca/restoreLegacyVcaState'
 
 export const handleRestoreLegacyVcaState = createHandler<'restoreLegacyVcaState'>({
     execute: (action) => {
-        const written = restoreLegacyVcaState(action.payload);
-        if (!written) {
+        const result = restoreLegacyVcaState(action.payload);
+        if (result === 'conflict') {
+            return { status: 'conflict' };
+        }
+        if (result === 'no-write') {
             return { status: 'no-write' };
         }
         return { status: 'written' };
     },
-    describe: () => ({
+    describe: (action) => ({
         label: 'Restore Legacy VCA State',
-        inverseAction: { type: 'restoreLegacyVcaState', payload: captureLegacyVcaState() },
+        inverseAction: { type: 'restoreLegacyVcaState', payload: captureLegacyVcaState(action) },
     }),
     undoable: true,
 });
