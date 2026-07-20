@@ -20,7 +20,7 @@ The primitives below assume a **TypeScript 6.0** and **Rust 1.85+** toolchain as
 floor. If the project pins an older toolchain, treat the affected primitive as out of
 scope rather than introducing a build break. Resolve and run the toolchain checks
 (`pnpm typecheck`, `pnpm deps:validate`, `pnpm build`, file-scoped
-`pnpm exec eslint <files>`, and `pnpm test:run <path>`) before relying on any swap —
+`pnpm exec oxlint <files>` (plus `pnpm exec eslint <files>` for the retained-rule set), and `pnpm test:run <path>`) before relying on any swap —
 a stabilized primitive on paper is still a build break if the project's version is
 below the floor.
 

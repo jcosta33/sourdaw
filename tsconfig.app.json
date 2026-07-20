@@ -1,0 +1,9 @@
+{
+    // App-only typecheck gate (`pnpm typecheck`). Same compiler options as the
+    // base tsconfig.json, but excludes specs — identical scope to the
+    // pre-oxlint tsconfig.json. Spec files are type-checked by
+    // `pnpm typecheck:test` (tsconfig.test.json).
+    "extends": "./tsconfig.json",
+    "include": ["src", "vite-env.d.ts"],
+    "exclude": ["dist", "build", "coverage", "storybook-static", "src/**/*.spec.ts", "src/**/*.spec.tsx"]
+}
