@@ -1,6 +1,7 @@
 import { fireEvent, render, screen, within } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+import { type TrackStoreState } from '#/modules/Arrangement/stores';
 import { type GrooveTemplateState } from '#/modules/MIDI/stores';
 
 import { type YeastState } from '../../../stores/yeastStore';
@@ -13,9 +14,12 @@ const storeMock = vi.hoisted((): { yeastState: YeastState | null; grooveState: G
 const grooveMocks = vi.hoisted(() => ({ setYeastGrooveTemplate: vi.fn() }));
 
 vi.mock('#/infra/store/useStore', () => ({
-    useStore: vi.fn((_store: unknown, defaultValue: YeastState | GrooveTemplateState) => {
+    useStore: vi.fn((_store: unknown, defaultValue: YeastState | GrooveTemplateState | TrackStoreState) => {
         if ('templates' in defaultValue) {
             return storeMock.grooveState ?? defaultValue;
+        }
+        if ('tracks' in defaultValue) {
+            return defaultValue;
         }
         return storeMock.yeastState ?? defaultValue;
     }),

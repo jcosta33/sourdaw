@@ -11,3 +11,4 @@ export { sendYeastProcessorCommand } from './sendYeastProcessorCommand';
 export { teardownYeastRuntime } from './teardownYeastRuntime';
 export { getYeastSchedulingLookahead } from './getYeastSchedulingLookahead';
 export { createOfflineYeastMidiProcessor } from './createOfflineYeastMidiProcessor';
+export { subscribeYeastPreview } from './subscribeYeastPreview';
