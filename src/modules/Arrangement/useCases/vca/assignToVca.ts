@@ -1,18 +1,25 @@
+import { getTrackById } from '../../repositories/track/getTrackById';
 import { updateTrack } from '../../repositories/track/updateTrack';
 import { getVcaGroupsState, setVcaGroupsState } from '../../stores/vcaGroupStore';
 
 export function assignToVca(trackId: string, vcaGroupId: string): void {
     const groups = getVcaGroupsState();
-    const group = groups.find((gain) => gain.id === vcaGroupId);
-    if (!group) {
+    const targetGroup = groups.find((group) => group.id === vcaGroupId);
+    const track = getTrackById(trackId);
+    if (!targetGroup || !track) {
         return;
     }
 
-    if (!group.trackIds.includes(trackId)) {
-        setVcaGroupsState(
-            groups.map((gain) => (gain.id === vcaGroupId ? { ...gain, trackIds: [...gain.trackIds, trackId] } : gain))
-        );
-    }
+    setVcaGroupsState(
+        groups.map((group) => {
+            const trackIdsWithoutMember = group.trackIds.filter((memberTrackId) => memberTrackId !== trackId);
+            if (group.id !== vcaGroupId) {
+                return { ...group, trackIds: trackIdsWithoutMember };
+            }
 
-    updateTrack(trackId, (time) => ({ ...time, vcaGroupId }));
+            return { ...group, trackIds: [...trackIdsWithoutMember, trackId] };
+        })
+    );
+
+    updateTrack(trackId, (currentTrack) => ({ ...currentTrack, vcaGroupId }));
 }

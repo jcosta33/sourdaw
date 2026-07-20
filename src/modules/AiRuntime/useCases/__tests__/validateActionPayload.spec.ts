@@ -49,6 +49,43 @@ const guardedPayloadContractCases = [
             { deviceId: 'device-1', paramId: 'gain', value: Number.NaN },
         ],
     }),
+    guardedPayloadCase({
+        actionType: 'createVcaGroup',
+        validPayload: { name: 'Drums', trackIds: ['track-1', 'track-2'] },
+        invalidPayloads: [
+            { name: '', trackIds: ['track-1'] },
+            { name: 'Drums', trackIds: ['track-1', 'track-1'] },
+            { name: 'Drums', trackIds: [''] },
+            { name: 'Drums', trackIds: 'track-1' },
+            { name: 'Drums', trackIds: [], extra: true },
+        ],
+    }),
+    guardedPayloadCase({
+        actionType: 'assignToVca',
+        validPayload: { trackId: 'track-1', vcaGroupId: 'vca-1' },
+        invalidPayloads: [
+            { trackId: '', vcaGroupId: 'vca-1' },
+            { trackId: 'track-1', vcaGroupId: '' },
+            { trackId: 'track-1' },
+            { trackId: 'track-1', vcaGroupId: 'vca-1', extra: true },
+        ],
+    }),
+    guardedPayloadCase({
+        actionType: 'removeFromVca',
+        validPayload: { trackId: 'track-1' },
+        invalidPayloads: [{ trackId: '' }, {}, { trackId: 'track-1', extra: true }],
+    }),
+    guardedPayloadCase({
+        actionType: 'setVcaGain',
+        validPayload: { vcaGroupId: 'vca-1', gain: 1.25 },
+        invalidPayloads: [
+            { vcaGroupId: '', gain: 1 },
+            { vcaGroupId: 'vca-1', gain: -0.01 },
+            { vcaGroupId: 'vca-1', gain: 2.01 },
+            { vcaGroupId: 'vca-1', gain: Number.NaN },
+            { vcaGroupId: 'vca-1', gain: 1, extra: true },
+        ],
+    }),
 ] as const;
 
 describe('validateActionPayload / PAYLOAD_VALIDATORS', () => {

@@ -1,4 +1,4 @@
-import { trackStore } from '#/modules/Arrangement/stores';
+import { setTrackState } from '#/modules/Arrangement/useCases';
 import { addSidechainRoute } from '#/modules/Routing/useCases';
 import { ensureTrackStrips } from '#/modules/Transport/useCases';
 
@@ -17,16 +17,21 @@ type FinalizeTemplateInput = {
 };
 
 export async function finalizeTemplate(input: FinalizeTemplateInput): Promise<void> {
+    let committedTracks = input.tracks;
     if (input.vcaGroups && input.vcaGroups.length > 0) {
-        commitVcaGroups(input.vcaGroups, input.tracks);
+        committedTracks = commitVcaGroups({
+            handles: input.vcaGroups,
+            tracks: input.tracks,
+            selectedTrackId: input.selectTrackId ?? null,
+        });
+    } else {
+        setTrackState({
+            tracks: input.tracks,
+            selectedTrackId: input.selectTrackId ?? null,
+        });
     }
 
-    trackStore.set({
-        tracks: input.tracks,
-        selectedTrackId: input.selectTrackId ?? null,
-    });
-
-    syncArrangement(input.tracks);
+    syncArrangement(committedTracks);
 
     ensureTrackStrips();
 
