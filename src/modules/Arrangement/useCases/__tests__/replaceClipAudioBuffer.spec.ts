@@ -1,9 +1,17 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 
+import { defaultKneadState, kneadStore, type PitchContour } from '#/modules/Knead/stores';
+
 import { TrackDummy } from '../../__tests__/TrackDummy';
 import { type Clip } from '../../models/Track';
 import { trackStore } from '../../stores/trackStore';
 import { replaceClipAudioBuffer } from '../replaceClipAudioBuffer';
+
+const storedContour: PitchContour = {
+    points: [{ time_ms: 0, frequency_hz: 220, confidence: 0.9, voiced: true }],
+    sample_rate: 48000,
+    hop_size: 256,
+};
 
 const clip: Clip = {
     id: 'clip-1',
@@ -46,5 +54,21 @@ describe('replaceClipAudioBuffer', () => {
         replaceClipAudioBuffer('clip-1', 'buf-x');
 
         expect(trackStore.value).toBeNull();
+    });
+
+    it('should clear the clip pitch contour because the new source audio invalidates it', () => {
+        kneadStore.set({ ...defaultKneadState, contours: { 'clip-1': storedContour } });
+
+        replaceClipAudioBuffer('clip-1', 'buf-new');
+
+        expect(kneadStore.value?.contours['clip-1']).toBeUndefined();
+    });
+
+    it('should clear the pitch contour keyed by the real clip id when matched by buffer id', () => {
+        kneadStore.set({ ...defaultKneadState, contours: { 'clip-1': storedContour } });
+
+        replaceClipAudioBuffer('buf-old', 'buf-replaced');
+
+        expect(kneadStore.value?.contours['clip-1']).toBeUndefined();
     });
 });

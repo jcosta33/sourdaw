@@ -3,6 +3,8 @@ import { updateClipInStore } from '#/modules/Arrangement/stores';
 import { type PitchContourSnapshot, type PitchEditSegmentSnapshot } from '#/utils/handlerContract';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
+import { clearClipPitchContour } from '../clearClipPitchContour';
+
 import { findPitchEditClip } from './findPitchEditClip';
 import { getPitchEditDependencies } from './getPitchEditDependencies';
 
@@ -44,6 +46,12 @@ export async function commitPitchEdit({ clipId, segments, contour }: CommitPitch
         });
 
         updateClipInStore(clipId, (clip) => ({ ...clip, fileId: outputAudioPath }));
+
+        // The rendered `_pitch.wav` replaces the clip's audio, so the pre-commit
+        // contour is stale. Drop it to re-open the PitchEditor gate (waveform
+        // interactions reachable, Analyze Pitch offered again). Only on success —
+        // the catch path rethrows before this point and keeps the contour editable.
+        clearClipPitchContour(clipId);
     } catch (error) {
         // Surface the failure so a failed pitch commit does not look like success:
         // log through the project `logger` facade and notify the user. Rethrow so the
