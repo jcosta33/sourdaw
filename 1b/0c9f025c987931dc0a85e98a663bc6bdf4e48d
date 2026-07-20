@@ -1,0 +1,19 @@
+src/modules/CrdtDocument/repositories/crdtPersistence/__tests__/crdtPersistencePrimitives.spec.ts
+  s_4a3a9ac19de269::t_8db3bf009c520e 3
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "1b0c9f025c987931dc0a85e98a663bc6bdf4e48d",
+  "prompts": {},
+  "sessions": {
+    "s_4a3a9ac19de269": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "4a1953fb-b074-451f-a9e0-2edbbc4fbbf3",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
