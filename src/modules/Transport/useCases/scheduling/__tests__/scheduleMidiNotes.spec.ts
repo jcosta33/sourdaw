@@ -245,7 +245,7 @@ describe('scheduleMidiNotes', () => {
         };
         shouldPlayProbability.mockImplementation(({ eventId }: { eventId: string }) => eventId === 'event-alpha');
 
-        await scheduleMidiNotes(0, 4, 0, -1, [], defaultTransportState, 120);
+        await scheduleMidiNotes(0, 4, 0, -1, new Set<string>(), [], defaultTransportState, 120);
 
         expect(vi.mocked(scheduleNote).mock.calls.map((call) => call[2])).toEqual([60]);
         expect(shouldPlayMidiEvent).toHaveBeenCalledWith({
