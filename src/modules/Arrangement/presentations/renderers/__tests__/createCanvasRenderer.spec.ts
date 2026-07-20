@@ -1,6 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { type ClipRenderModel, type TimelineRenderModel, type TrackRenderModel } from '../../../models/TimelineRenderModel';
+import {
+    type ClipRenderModel,
+    type TimelineRenderModel,
+    type TrackRenderModel,
+} from '../../../models/TimelineRenderModel';
 import { createCanvasRenderer } from '../createCanvasRenderer';
 
 type DrawClipMock = (
@@ -12,19 +16,19 @@ type DrawClipMock = (
 ) => void;
 
 type TransportSnapshot = { isLooping: boolean; loopStart: number; loopEnd: number };
-type TakeLaneSnapshot = {
-    lanes: {
-        trackId: string;
-        takes: { id: string; name: string; startBeat: number; endBeat: number; selected: boolean }[];
-        activeCompRegions: { startBeat: number; endBeat: number; takeId: string }[];
-    }[];
-};
+type TakeLaneTake = { id: string; name: string; startBeat: number; endBeat: number; selected: boolean };
+type TakeLaneRegion = { startBeat: number; endBeat: number; takeId: string };
+type TakeLaneSnapshot = { lanes: { trackId: string; takes: TakeLaneTake[]; activeCompRegions: TakeLaneRegion[] }[] };
 
 const mocks = vi.hoisted(() => ({
     drawClip: vi.fn<DrawClipMock>(),
     transport: null as TransportSnapshot | null,
     timeSignatureChanges: [] as { beat: number; numerator: number }[],
-    takeLanes: { lanes: [] } as TakeLaneSnapshot,
+}));
+
+// Explicit return type (not `as`) so `lanes: []` widens for later test reassignments.
+const takeLaneMock = vi.hoisted((): { takeLanes: TakeLaneSnapshot } => ({
+    takeLanes: { lanes: [] },
 }));
 
 vi.mock('../clipDrawing', () => ({ drawClip: mocks.drawClip }));
@@ -40,19 +44,14 @@ vi.mock('#/modules/Transport/stores', () => ({
 
 vi.mock('../../../stores/takeLaneStore', () => ({
     get takeLaneStore() {
-        return { value: mocks.takeLanes };
+        return { value: takeLaneMock.takeLanes };
     },
 }));
 
 type FillRectEntry = { fillStyle: string; x: number; y: number; w: number; h: number };
 type FillTextEntry = { fillStyle: string; text: string; x: number; y: number };
 
-function createMockCtx(): {
-    ctx: CanvasRenderingContext2D;
-    fillRectLog: FillRectEntry[];
-    fillTextLog: FillTextEntry[];
-    strokeLog: string[];
-} {
+function createMockCtx() {
     const fillRectLog: FillRectEntry[] = [];
     const fillTextLog: FillTextEntry[] = [];
     const strokeLog: string[] = [];
@@ -164,7 +163,7 @@ describe('createCanvasRenderer', () => {
         vi.clearAllMocks();
         mocks.transport = null;
         mocks.timeSignatureChanges = [];
-        mocks.takeLanes = { lanes: [] };
+        takeLaneMock.takeLanes = { lanes: [] };
         Object.defineProperty(window, 'devicePixelRatio', { configurable: true, value: 1 });
 
         const mock = createMockCtx();
@@ -186,26 +185,18 @@ describe('createCanvasRenderer', () => {
         vi.restoreAllMocks();
     });
 
-    it('reports a canvas2d backend and exposes a no-op dispose', () => {
+    it('reports a canvas2d backend, and resize/render scale to the current devicePixelRatio', () => {
         const renderer = createCanvasRenderer(canvas);
         expect(renderer.backend).toBe('canvas2d');
         expect(() => renderer.dispose()).not.toThrow();
-    });
 
-    it('resize scales the backing store by devicePixelRatio and sets the CSS size', () => {
         Object.defineProperty(window, 'devicePixelRatio', { configurable: true, value: 2 });
-        const renderer = createCanvasRenderer(canvas);
         renderer.resize(400, 300);
         expect(canvas.width).toBe(800);
         expect(canvas.height).toBe(600);
         expect(canvas.style.width).toBe('400px');
         expect(canvas.style.height).toBe('300px');
-    });
 
-    it('render clears and scales the context using the current size and devicePixelRatio', () => {
-        Object.defineProperty(window, 'devicePixelRatio', { configurable: true, value: 2 });
-        const renderer = createCanvasRenderer(canvas);
-        renderer.resize(400, 300);
         renderer.render(createTestModel());
         expect(ctx.clearRect).toHaveBeenCalledWith(0, 0, 800, 600);
         expect(ctx.scale).toHaveBeenCalledWith(2, 2);
@@ -213,32 +204,39 @@ describe('createCanvasRenderer', () => {
         expect(ctx.restore).toHaveBeenCalledTimes(2);
     });
 
-    it('draws the playhead line and direction triangle at the pixel position derived from the viewport', () => {
+    it('draws the playhead at the viewport-derived pixel position, and grid beat lines dimmer than bar lines', () => {
         const renderer = createCanvasRenderer(canvas);
         renderer.resize(400, 200);
-        renderer.render(createTestModel({ playheadPosition: 10, viewportStartBeat: 2, pixelsPerBeat: 20 }));
+        renderer.render(
+            createTestModel({
+                playheadPosition: 10,
+                viewportStartBeat: 2,
+                pixelsPerBeat: 20,
+                timeSignatureNumerator: 4,
+            })
+        );
         // x = (10 - 2) * 20 = 160
         expect(ctx.moveTo).toHaveBeenCalledWith(160, 0);
         expect(ctx.lineTo).toHaveBeenCalledWith(160, 200);
         expect(ctx.moveTo).toHaveBeenCalledWith(156, 0);
         expect(ctx.lineTo).toHaveBeenCalledWith(164, 0);
         expect(ctx.lineTo).toHaveBeenCalledWith(160, 6);
-    });
 
-    it('draws grid beat lines dimmer than bar lines, in that order', () => {
-        const renderer = createCanvasRenderer(canvas);
-        renderer.resize(400, 200);
-        renderer.render(createTestModel({ pixelsPerBeat: 20, timeSignatureNumerator: 4 }));
         const beatIndex = strokeLog.indexOf('rgba(255, 255, 255, 0.05)');
         const barIndex = strokeLog.indexOf('rgba(255, 255, 255, 0.13)');
         expect(beatIndex).toBeGreaterThanOrEqual(0);
         expect(barIndex).toBeGreaterThan(beatIndex);
     });
 
-    it('draws the loop region from loopStart/loopEnd pixel bounds while the transport is looping', () => {
-        mocks.transport = { isLooping: true, loopStart: 4, loopEnd: 8 };
+    it('draws the loop region from loopStart/loopEnd pixel bounds only while the transport is looping', () => {
         const renderer = createCanvasRenderer(canvas);
         renderer.resize(400, 200);
+
+        mocks.transport = { isLooping: false, loopStart: 4, loopEnd: 8 };
+        renderer.render(createTestModel({ viewportStartBeat: 0, pixelsPerBeat: 20 }));
+        expect(ctx.setLineDash).not.toHaveBeenCalled();
+
+        mocks.transport = { isLooping: true, loopStart: 4, loopEnd: 8 };
         renderer.render(createTestModel({ viewportStartBeat: 0, pixelsPerBeat: 20 }));
         // x1 = 4 * 20 = 80, x2 = 8 * 20 = 160 → width 80
         const region = fillRectLog.find((entry) => entry.fillStyle === 'rgba(255, 255, 255, 0.03)');
@@ -246,16 +244,12 @@ describe('createCanvasRenderer', () => {
         expect(ctx.setLineDash).toHaveBeenCalledWith([4, 4]);
     });
 
-    it('skips the loop region entirely when the transport is not looping', () => {
-        mocks.transport = { isLooping: false, loopStart: 4, loopEnd: 8 };
-        const renderer = createCanvasRenderer(canvas);
-        renderer.resize(400, 200);
-        renderer.render(createTestModel());
-        expect(ctx.setLineDash).not.toHaveBeenCalled();
-    });
-
-    it('differentiates the selected track row from an unselected alternating row', () => {
-        const tracks = [createTestTrack({ id: 't0', index: 0, height: 40 }), createTestTrack({ id: 't1', index: 1, height: 40 })];
+    it('draws track rows (selected vs alternating background) and a folder row with fixed height/accent/label', () => {
+        const tracks = [
+            createTestTrack({ id: 't0', index: 0, height: 40 }),
+            createTestTrack({ id: 't1', index: 1, height: 40 }),
+            createTestTrack({ id: 'f0', index: 2, kind: 'folder', name: 'Drums Bus', height: 60 }),
+        ];
         const renderer = createCanvasRenderer(canvas);
         renderer.resize(400, 200);
         renderer.render(createTestModel({ tracks, selectedTrackId: 't1' }));
@@ -263,22 +257,17 @@ describe('createCanvasRenderer', () => {
         const rowBackgrounds = fillRectLog.filter((entry) => entry.w === 400);
         expect(rowBackgrounds.find((entry) => entry.y === 0)?.fillStyle).toBe('rgba(255, 255, 255, 0.008)');
         expect(rowBackgrounds.find((entry) => entry.y === 40)?.fillStyle).toBe('rgba(255, 255, 255, 0.018)');
-    });
 
-    it('renders a folder track with a fixed 26px row, amber accent, dark background, and uppercase label', () => {
-        const tracks = [createTestTrack({ id: 'f0', index: 0, kind: 'folder', name: 'Drums Bus', height: 60 })];
-        const renderer = createCanvasRenderer(canvas);
-        renderer.resize(400, 200);
-        renderer.render(createTestModel({ tracks }));
-
-        const background = fillRectLog.find((entry) => entry.w === 400 && entry.fillStyle === 'rgba(0, 0, 0, 0.5)');
-        const accent = fillRectLog.find((entry) => entry.w === 3 && entry.fillStyle === 'rgba(176, 144, 64, 0.4)');
-        expect(background?.h).toBe(26);
-        expect(accent).toBeTruthy();
+        const folderBackground = rowBackgrounds.find((entry) => entry.fillStyle === 'rgba(0, 0, 0, 0.5)');
+        const folderAccent = fillRectLog.find(
+            (entry) => entry.w === 3 && entry.fillStyle === 'rgba(176, 144, 64, 0.4)'
+        );
+        expect(folderBackground?.h).toBe(26); // fixed regardless of the model's 60px height
+        expect(folderAccent).toBeTruthy();
         expect(fillTextLog.some((entry) => entry.text === 'DRUMS BUS')).toBe(true);
     });
 
-    it('culls off-screen clips from drawClip while keeping on-screen ones', () => {
+    it('culls off-screen clips from drawClip, and draws/highlights take rows only for a matching lane', () => {
         const offscreenClip = createTestClip({ id: 'off', startBeat: -20, endBeat: -16 });
         const onscreenClip = createTestClip({ id: 'on', startBeat: 2, endBeat: 6 });
         const tracks = [createTestTrack({ id: 't0', index: 0, clips: [offscreenClip, onscreenClip] })];
@@ -289,10 +278,9 @@ describe('createCanvasRenderer', () => {
 
         expect(mocks.drawClip).toHaveBeenCalledTimes(1);
         expect(mocks.drawClip).toHaveBeenCalledWith(ctx, onscreenClip, model, 0, 40);
-    });
+        expect(fillRectLog.some((entry) => entry.fillStyle === 'rgba(80, 160, 110, 0.12)')).toBe(false);
 
-    it('draws take rows and highlights comp regions only for tracks with a matching take lane', () => {
-        mocks.takeLanes = {
+        takeLaneMock.takeLanes = {
             lanes: [
                 {
                     trackId: 't0',
@@ -301,21 +289,9 @@ describe('createCanvasRenderer', () => {
                 },
             ],
         };
-        const tracks = [createTestTrack({ id: 't0', index: 0, height: 40 })];
-        const renderer = createCanvasRenderer(canvas);
-        renderer.resize(400, 200);
-        renderer.render(createTestModel({ tracks, pixelsPerBeat: 20 }));
-
+        renderer.render(model);
         expect(fillTextLog.some((entry) => entry.text === 'Take 1')).toBe(true);
         const highlight = fillRectLog.find((entry) => entry.fillStyle === 'rgba(80, 160, 110, 0.12)');
         expect(highlight).toEqual(expect.objectContaining({ x: 0, w: 40 }));
-    });
-
-    it('skips take lane drawing entirely when the store has no lanes', () => {
-        const tracks = [createTestTrack({ id: 't0', index: 0 })];
-        const renderer = createCanvasRenderer(canvas);
-        renderer.resize(400, 200);
-        renderer.render(createTestModel({ tracks }));
-        expect(fillRectLog.some((entry) => entry.fillStyle === 'rgba(80, 160, 110, 0.12)')).toBe(false);
     });
 });
