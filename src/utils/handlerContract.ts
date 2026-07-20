@@ -399,7 +399,15 @@ export type AppAction =
       }
     | {
           type: 'extractGroove';
-          payload: { clipId: string; templateId?: string; sourceName?: string; subdivision?: string };
+          payload: {
+              clipId: string;
+              templateId?: string;
+              sourceName?: string;
+              subdivision?: string;
+          } & (
+              | { proposal: GrooveTemplateActionSnapshot; sourceRevision: string }
+              | { proposal?: undefined; sourceRevision?: undefined }
+          );
       }
     | { type: 'applyGroove'; payload: { clipId: string; grooveId: string; amount?: number } }
     | { type: 'setClipStretchMode'; payload: { clipId: string; mode: 'off' | 'repitch' | 'timestretch' } }
