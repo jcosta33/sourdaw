@@ -5,23 +5,21 @@ description: >-
   instantiation, editor windows, RT-safe processing, and failure recovery. ALWAYS
   apply when implementing or reviewing plugin scanning, metadata, instance
   lifecycle, editor windows, host/plugin communication, or plugin-host failure
-  handling. Do not store live plugin instances in project truth, embed vendor
-  editors in the webview, run scan or window work on the audio thread, or make
-  the vendor GUI the only control path. Skip built-in DSP device authoring,
-  general audio-engine/transport work, and non-plugin window management.
+  handling. Skip built-in DSP device authoring, general audio-engine/transport
+  work, and non-plugin window management.
 ---
 
 ## Purpose
 
-Plugin hosting combines discovery, metadata caching, capability reporting, instance lifecycle, GUI/editor lifecycle, RT-safe processing, parameter flow, host/plugin thread boundaries, platform-specific native behavior, and failure recovery. Collapsing those into one “plugin manager” means one third-party crash or GUI quirk can corrupt project truth or stall the RT path. Keep hosting isolated, RT-safe, and aligned with the project/runtime split.
+Plugin hosting spans discovery, metadata, lifecycle, GUI, RT processing, and failure recovery. Collapsing those into one “plugin manager” means one third-party crash or GUI quirk can corrupt project truth or stall the RT path. Keep hosting isolated, RT-safe, and aligned with the project/runtime split.
 
 ## Core rules
 
 ### 1. Project-side plugin state is not runtime-side plugin state
 
-Project truth may store: plugin identity, slot/order, configured parameter values, preset references, bypass, automation targets, and saved plugin-specific project metadata.
-
-Runtime/plugin-host state may store: live instance, native handle, editor window, processing buffers, host communication channels, scan/runtime caches, crash-isolation state.
+| Project truth may store | Runtime/plugin-host may store |
+|---|---|
+| plugin identity, slot/order, configured parameter values, preset references, bypass, automation targets, saved plugin-specific project metadata | live instance, native handle, editor window, processing buffers, host communication channels, scan/runtime caches, crash-isolation state |
 
 Do not conflate them.
 
@@ -29,7 +27,7 @@ Do not conflate them.
 
 ### 2. Treat hosting as separable concerns
 
-Keep distinct: (1) discovery, (2) scan metadata, (3) capability reporting, (4) instantiation, (5) parameter inspection, (6) state save/restore, (7) editor window management, (8) audio processing, (9) crash/failure isolation. If one abstraction owns too many, it is probably wrong.
+Keep distinct: (1) discovery, (2) scan metadata, (3) capability reporting, (4) instantiation, (5) parameter inspection, (6) state save/restore, (7) editor window management, (8) audio processing, (9) crash/failure isolation. If one abstraction owns too many, it is wrong.
 
 Scan metadata is cacheable and failure-isolated: one bad plugin must not abort the scan. Capability reporting reads that metadata without instantiating a live plugin.
 
@@ -47,11 +45,11 @@ Do not embed native plugin editors inside the webview. Default: DAW UI in the we
 
 **Slow (not RT):** scan/discovery, instantiate/unload, editor lifecycle, metadata refresh, failure recovery.
 
-Never on audio-thread-sensitive paths: unbounded alloc, locks, open windows, scan plugins, filesystem work, heavy metadata parse, UI code, shell event loops, blocking IPC.
+Never on audio-thread-sensitive paths: anything on the `web-audio-engine` RT-forbidden list (rule 7), plus plugin scanning, window/GUI work, and metadata parsing.
 
 **Why:** the audio thread has a hard deadline; slow-path work on the fast path is how RT violations sneak in.
 
-### 5. Hosted plugins and built-in devices converge conceptually where possible
+### 5. Hosted plugins and built-in devices converge conceptually
 
 Even if runtimes differ, preserve a common conceptual surface for parameters, automation targets, presets, bypass, routing participation, and instance identity.
 
@@ -72,52 +70,6 @@ If a plugin is added in project truth but runtime instantiation fails, define ex
 Isolation: crash/hang isolation is runtime state, never project truth; a failed plugin degrades to a visible non-processing slot; recovery runs on the slow path only.
 
 **Why:** plugin hosting is the subsystem most exposed to third-party and platform failure; undefined instantiation semantics are how load failures corrupt saves.
-
-## What does not belong
-
-- Live plugin instances or native handles in project truth or shared UI state.
-- Editor window position/focus auto-saved as project truth without intentional modeling.
-- Scanning logic fused with the live host.
-- Built-in DSP device authoring.
-- General transport/routing/scheduling RT architecture.
-
-## Anti-patterns
-
-### CRITICAL — Live instance in project truth
-
-❌ Wrong: serialize or store a native plugin handle in project/app truth.
-
-✅ Correct: project truth holds identity, placement, and configured values; runtime owns the live instance.
-
-### CRITICAL — Scan or window work on the audio thread
-
-❌ Wrong: open editor, scan plugins, or block on IPC inside the RT path.
-
-✅ Correct: slow path only; RT path does RT-safe parameter and buffer work.
-
-### CRITICAL — Ambiguous instantiation failure
-
-❌ Wrong: “add to project” succeeds in the file while runtime fails with no defined slot semantics.
-
-✅ Correct: explicit rollback, error-slot, or retry — documented in the design.
-
-### HIGH — Vendor GUI is the only control path
-
-❌ Wrong: parameter only changeable through the native editor.
-
-✅ Correct: host-visible parameters for automation, inspector, presets, and a11y.
-
-### HIGH — One mega “plugin manager” abstraction
-
-❌ Wrong: single type that scans, hosts, edits, and processes.
-
-✅ Correct: separate discovery/metadata from live instance management and from editor lifecycle.
-
-### MEDIUM — Incompatible models for built-in vs hosted
-
-❌ Wrong: totally different automation/preset/bypass semantics for no technical reason.
-
-✅ Correct: align conceptual surfaces where practical.
 
 ## References
 

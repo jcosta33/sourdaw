@@ -5,9 +5,8 @@ description: >-
   before adding or changing state. ALWAYS apply when adding, editing, or reviewing
   project truth, stores, selectors/projections, undo/redo, commands, events, async
   fetch/cache state, UI state, or telemetry — even if it looks like "just one more
-  store field". Do not write business state through a store, mutate another
-  feature's slice, or treat query cache as editable truth. Skip pure presentational
-  props with no persistence, and engine-internal RT buffers.
+  store field". Skip pure presentational props with no persistence, and
+  engine-internal RT buffers.
 ---
 
 ## Purpose
@@ -41,7 +40,7 @@ Feature A never mutates feature B’s project slice. Cross-feature intent goes t
 
 Foreign modules may `useStore` / select. `store.set` only inside the owning module’s write path (use cases / handlers). Outside: use cases or `executeAppAction` (**policy**; foreign-write ESLint is **warn** only). Leaf components must not **directly** import business stores (**error** `components-no-business-store-access`).
 
-**Why:** Sourdaw keeps stores as read contracts; write discipline is what prevents global mutability.
+**Why:** write discipline is what prevents global mutability.
 
 ### 4. Project truth is serializable; engine/runtime state is not
 
@@ -75,54 +74,7 @@ Edit project truth through domain writes; invalidate or refetch the cache. Do no
 
 ## What does not belong
 
-- Pure presentational props that never persist or cross features.
-- Engine-internal RT buffers and schedules.
 - Inventing a ninth category instead of fitting or splitting the design.
-- “Just one more field” on a store without classification.
-
-## Anti-patterns
-
-### CRITICAL — Store as write API for business truth
-
-❌ Wrong: any module calls `trackStore.set(…)` to “add a track”.
-
-✅ Correct: Arrangement (or Command) use case owns the write; others call that API.
-
-### CRITICAL — Runtime object in a general store
-
-❌ Wrong: `audioContextStore` holding the live `AudioContext`.
-
-✅ Correct: engine-owned runtime; expose summaries/APIs only.
-
-### CRITICAL — Feature A mutates feature B’s slice
-
-❌ Wrong: Mixer code directly rewrites Arrangement clip state.
-
-✅ Correct: command / Arrangement use case.
-
-### HIGH — Unclassified new field
-
-❌ Wrong: add `foo` to a store “for now”.
-
-✅ Correct: pick a row from the category table, then place the write.
-
-### HIGH — Derived value stored as truth
-
-❌ Wrong: persist `visibleClips` that is just a filter of clips.
-
-✅ Correct: selector/projection over source truth.
-
-### HIGH — Query cache treated as editable truth
-
-❌ Wrong: mutate TanStack Query data as if it were the project document.
-
-✅ Correct: domain write + invalidate/refetch.
-
-### MEDIUM — Events instead of ownership
-
-❌ Wrong: emit an event whose only listener is a known foreign mutator standing in for a use-case call.
-
-✅ Correct: call the owning use case (or command) directly for intentional writes.
 
 ## References
 

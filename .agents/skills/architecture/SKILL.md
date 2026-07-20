@@ -5,14 +5,13 @@ description: >-
   public read contracts, UI → business → IO flow, and composition shells. ALWAYS
   apply when creating modules, moving code between layers, adding cross-module
   imports, wiring use cases or stores, or designing presentation access to other
-  domains. Do not invent a fifth barrel, deep-import private folders, or treat
-  stores as free global write APIs — apply first. Skip pure styling, single-file
-  renames inside one folder, and violation remediation (use architecture-violations).
+  domains. Skip pure styling, single-file renames inside one folder, and violation
+  remediation (use architecture-violations).
 ---
 
 ## Purpose
 
-Modules must stay independently understandable. When the boundary leaks — a presentation file importing a foreign repository, a use case importing `presentations/`, a model climbing into the engine — the cost surfaces months later as cascading rewrites and RT-unsafe paths. This skill is how to build on the right side of the boundary. When a check already failed, load `architecture-violations` instead.
+Modules must stay independently understandable. When the boundary leaks — a presentation file importing a foreign repository, a use case importing `presentations/`, a model climbing into the engine — the cost surfaces months later as cascading rewrites and RT-unsafe paths. This skill is how to build on the right side of the boundary.
 
 ## Core rules
 
@@ -49,7 +48,7 @@ Inside `src/modules/Arrangement/`, import with relatives (`../stores/trackStore`
 
 ### 3. Stores are a public read contract; writes stay with the owner
 
-Other modules may subscribe via `useStore` / selectors. They must not call `store.set` on a foreign store (**agent policy**; ESLint `sourdaw/no-foreign-store-write` is **warn** only — not a `deps:validate` error). Route mutations through the owning module's use cases or `executeAppAction`. Leaf components: no **direct** business-store import (**error** `components-no-business-store-access`).
+Other modules may subscribe via `useStore` / selectors. They must not call `store.set` on a foreign store (ESLint `sourdaw/no-foreign-store-write`, **warn** — canonical rule in `state-and-write-paths` rule 3). Route mutations through the owning module's use cases or `executeAppAction`. Leaf components: no **direct** business-store import (**error** `components-no-business-store-access`).
 
 ```typescript
 import { trackStore } from '#/modules/Arrangement/stores';
@@ -91,54 +90,17 @@ Do not `export type` from `useCases/index.ts` (`no-usecase-type-exports-on-index
 
 ### 7. Repositories touch metal; engine does not import repositories
 
-I/O (storage, Web Audio setup, Tauri IPC) belongs in the module-root `src/modules/<M>/repositories/` layer, including `Common/` and `Supporting/` namespaces. Nested `useCases/repositories` and `presentations/repositories` folders are not repository layers. `src/utils/tauriBridge.ts` is the sole production adapter exception; only `src/utils/__tests__/tauriBridge.spec.ts` may mock its adapter dependencies, while every other `src/**` origin and non-allowlisted bridge caller is forbidden by depcruise (`tauri-ipc-only-in-repositories`, **error**). Engine receives deps from use cases — never imports repositories (**error** `usecases-only-write-boundary-to-repositories`).
+I/O (storage, Web Audio setup, Tauri IPC) belongs in the module-root `src/modules/<M>/repositories/` layer, including `Common/` and `Supporting/` namespaces. Nested `useCases/repositories` and `presentations/repositories` folders are not repository layers. Tauri IPC confinement (allowlist, mock rules, `tauri-ipc-only-in-repositories` **error**) is canonical in `tauri-platform` rule 4. Engine receives deps from use cases — never imports repositories (**error** `usecases-only-write-boundary-to-repositories`).
 
 **Why:** engine → repository couples graph/RT code to I/O and breaks the use-case write boundary.
 
-## What does not belong
-
-- Pure styling / className tweaks with no import or boundary change.
-- Single-file renames inside one folder that do not cross layers.
-- Gaming a red `deps:validate` — that is `architecture-violations`.
-- Inventing a fifth contract surface or a module-root `index.ts`.
-
 ## Anti-patterns
-
-### CRITICAL — Cross-module private import
-
-❌ Wrong: `import { type Track } from '#/modules/Arrangement/models/Track'`
-
-✅ Correct: call Arrangement use cases / read stores / define a local shape; shared named types go through `events/` when required.
-
-### CRITICAL — Business importing presentations
-
-❌ Wrong: `useCases/initTimelineRenderer` imports `presentations/renderers/…`
-
-✅ Correct: keep renderer factories under presentations and call them from views/hooks, or move pure factory code out of presentations.
 
 ### CRITICAL — Boundary evasion (malicious compliance)
 
 ❌ Wrong: re-export a repository through a use-case file so the import path is “legal”.
 
 ✅ Correct: a real typed use case that owns the operation; consumers import the function, not the private symbol.
-
-### HIGH — Component owns business calls or store reads
-
-❌ Wrong: `presentations/components/VoiceButton.tsx` imports `AiRuntime/stores`
-
-✅ Correct: view/hook reads the store and passes props/callbacks into the leaf component.
-
-### HIGH — Foreign store write
-
-❌ Wrong: `trackStore.set(…)` from another module
-
-✅ Correct: owning use case or `executeAppAction`.
-
-### MEDIUM — Same-module barrel import
-
-❌ Wrong: inside Arrangement, `import { addTrack } from '#/modules/Arrangement/useCases'`
-
-✅ Correct: relative path to the defining file.
 
 ## References
 
