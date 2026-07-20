@@ -1,0 +1,29 @@
+crates/daw-engine/src/midi/mod.rs
+  s_c2fca615e81f34::t_787a56e24a4016 1
+crates/daw-engine/src/midi/midi_clock.rs
+  s_ab44d00b33ab9f::t_a4fe11bbd1bd99 1-605
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "001fc56c99fd0778aed64f39e85ad9ab67edce8f",
+  "prompts": {},
+  "sessions": {
+    "s_ab44d00b33ab9f": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8132-eefa-71e3-a80e-a76770a6734d",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_c2fca615e81f34": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f74e9-e1c5-7142-85d2-4c577b3973c0",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
