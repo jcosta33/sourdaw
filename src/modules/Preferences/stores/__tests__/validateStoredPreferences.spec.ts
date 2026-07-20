@@ -249,3 +249,48 @@ describe('validateStoredPreferences — fields absent from a partial stored blob
         expect(validateStoredPreferences({})).toEqual(defaultPreferences);
     });
 });
+
+describe('validateStoredPreferences — timeline minimap migration', () => {
+    beforeEach(() => {
+        vi.spyOn(logger, 'warn').mockImplementation(() => {});
+    });
+
+    it('preserves the historically visible minimap for a legacy blob whose false value was never consumed', () => {
+        const result = validateStoredPreferences({
+            theme: 'light',
+            showMinimap: false,
+        });
+
+        expect(result.showMinimap).toBe(true);
+        expect(result.timelineMinimapHeight).toBe(28);
+        expect(result.preferencesSchemaVersion).toBe(1);
+    });
+
+    it('honors an explicit hidden choice after the schema-aware migration', () => {
+        const result = validateStoredPreferences({
+            ...defaultPreferences,
+            preferencesSchemaVersion: 1,
+            showMinimap: false,
+            timelineMinimapHeight: 72,
+        });
+
+        expect(result.showMinimap).toBe(false);
+        expect(result.timelineMinimapHeight).toBe(72);
+    });
+
+    it.each([
+        { input: 72.7, expected: 73 },
+        { input: -10, expected: 28 },
+        { input: 900, expected: 160 },
+        { input: Number.NaN, expected: 28 },
+        { input: Number.POSITIVE_INFINITY, expected: 28 },
+        { input: '72', expected: 28 },
+    ])('normalizes stored minimap height $input to $expected', ({ input, expected }) => {
+        const result = validateStoredPreferences({
+            ...defaultPreferences,
+            timelineMinimapHeight: input,
+        });
+
+        expect(result.timelineMinimapHeight).toBe(expected);
+    });
+});

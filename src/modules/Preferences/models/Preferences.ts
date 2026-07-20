@@ -1,3 +1,5 @@
+import { TIMELINE_MINIMAP_DEFAULT_HEIGHT } from '#/utils/TimelineMinimap/timelineMinimapHeight';
+
 export type GridSnapOption =
     'bar' | 'beat' | '1/2' | '1/4' | '1/8' | '1/16' | '1/32' | '1/4T' | '1/8T' | '1/16T' | '1/4D' | '1/8D' | 'off';
 
@@ -41,7 +43,10 @@ export const SAMPLE_RATE_OPTIONS: { value: SampleRateOption; label: string }[] =
 
 export type SoloModePreference = 'sip' | 'afl' | 'pfl';
 
+export const PREFERENCES_SCHEMA_VERSION = 1;
+
 export type Preferences = {
+    preferencesSchemaVersion: number;
     trackHeight: 'compact' | 'normal' | 'large';
     colorblindMode: boolean;
     autoSave: boolean;
@@ -50,6 +55,7 @@ export type Preferences = {
     snapToZeroCrossing: boolean;
     gridSubdivision: GridSnapOption;
     showMinimap: boolean;
+    timelineMinimapHeight: number;
     voiceCommandKey: string;
     theme: 'dark' | 'light';
     uiScale: number;
@@ -70,6 +76,7 @@ export type Preferences = {
 };
 
 export const defaultPreferences: Preferences = {
+    preferencesSchemaVersion: PREFERENCES_SCHEMA_VERSION,
     trackHeight: 'normal',
     colorblindMode: false,
     autoSave: true,
@@ -77,7 +84,8 @@ export const defaultPreferences: Preferences = {
     snapToGrid: true,
     snapToZeroCrossing: true,
     gridSubdivision: '1/4',
-    showMinimap: false,
+    showMinimap: true,
+    timelineMinimapHeight: TIMELINE_MINIMAP_DEFAULT_HEIGHT,
     voiceCommandKey: 'v',
     theme: 'dark',
     uiScale: 1.0,
