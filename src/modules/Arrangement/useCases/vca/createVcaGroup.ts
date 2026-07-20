@@ -2,11 +2,16 @@ import { getTrackById } from '../../repositories/track/getTrackById';
 import { updateTracks } from '../../repositories/track/updateTracks';
 import { getVcaGroupsState, setVcaGroupsState, type VcaGroup } from '../../stores/vcaGroupStore';
 
-export function createVcaGroup(name: string, trackIds: string[]): VcaGroup {
+export function createVcaGroup(name: string, trackIds: string[], vcaGroupId?: string): VcaGroup {
     const validTrackIds = [...new Set(trackIds)].filter((trackId) => getTrackById(trackId) !== undefined);
     const validTrackIdSet = new Set(validTrackIds);
+    const groupId = vcaGroupId ?? `vca-${crypto.randomUUID().slice(0, 8)}`;
+    if (getVcaGroupsState().some((existingGroup) => existingGroup.id === groupId)) {
+        throw new Error(`VCA group id already exists: ${groupId}`);
+    }
+
     const group: VcaGroup = {
-        id: `vca-${crypto.randomUUID().slice(0, 8)}`,
+        id: groupId,
         name,
         gain: 1.0,
         muted: false,

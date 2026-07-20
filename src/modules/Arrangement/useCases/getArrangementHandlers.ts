@@ -73,6 +73,7 @@ import { handleSwitchTrackAlternative } from '../handlers/trackAlternative/handl
 import { handleAssignToVca } from '../handlers/vca/handleAssignToVca';
 import { handleCreateVcaGroup } from '../handlers/vca/handleCreateVcaGroup';
 import { handleRemoveFromVca } from '../handlers/vca/handleRemoveFromVca';
+import { handleRestoreLegacyVcaState } from '../handlers/vca/handleRestoreLegacyVcaState';
 import { handleSetVcaGain } from '../handlers/vca/handleSetVcaGain';
 
 /**
@@ -138,6 +139,7 @@ export function getArrangementHandlers() {
         assignToVca: handleAssignToVca,
         removeFromVca: handleRemoveFromVca,
         setVcaGain: handleSetVcaGain,
+        restoreLegacyVcaState: handleRestoreLegacyVcaState,
         setClipStretchMode: handleSetClipStretchMode,
         setClipStretchRatio: handleSetClipStretchRatio,
         fitClipToBeats: handleFitClipToBeats,

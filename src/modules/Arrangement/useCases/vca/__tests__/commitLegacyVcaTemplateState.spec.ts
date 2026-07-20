@@ -44,4 +44,54 @@ describe('commitLegacyVcaTemplateState', () => {
         expect(getTrackById(first.id)?.vcaGroupId).toBe('vca-drums');
         expect(getTrackById(second.id)?.vcaGroupId).toBe('vca-other');
     });
+
+    it('rejects duplicate group identities before either representation is written', () => {
+        const existing = createTrack({ id: 'track-existing', name: 'Existing', kind: 'audio' });
+        existing.vcaGroupId = 'vca-existing';
+        setTrackState({ tracks: [existing], selectedTrackId: existing.id });
+        setVcaGroupsState([
+            {
+                id: 'vca-existing',
+                name: 'Existing',
+                gain: 0.5,
+                muted: false,
+                trackIds: [existing.id],
+            },
+        ]);
+        const incoming = createTrack({ id: 'track-incoming', name: 'Incoming', kind: 'midi' });
+
+        expect(() =>
+            commitLegacyVcaTemplateState({
+                tracks: [incoming],
+                selectedTrackId: incoming.id,
+                groups: [
+                    {
+                        id: 'vca-duplicate',
+                        name: 'First',
+                        gain: 1,
+                        muted: false,
+                        memberTrackIds: [incoming.id],
+                    },
+                    {
+                        id: 'vca-duplicate',
+                        name: 'Second',
+                        gain: 0.75,
+                        muted: true,
+                        memberTrackIds: [],
+                    },
+                ],
+            })
+        ).toThrow('Duplicate legacy VCA group id: vca-duplicate');
+        expect(getVcaGroupsState()).toEqual([
+            {
+                id: 'vca-existing',
+                name: 'Existing',
+                gain: 0.5,
+                muted: false,
+                trackIds: [existing.id],
+            },
+        ]);
+        expect(getTrackById(existing.id)?.vcaGroupId).toBe('vca-existing');
+        expect(getTrackById(incoming.id)).toBeUndefined();
+    });
 });

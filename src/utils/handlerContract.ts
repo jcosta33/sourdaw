@@ -122,6 +122,19 @@ export type DeletedGrooveTemplateActionSnapshot = {
     assignments: Array<{ index: number; assignment: GrooveAssignmentActionSnapshot }>;
 };
 
+type LegacyVcaGroupSnapshot = {
+    readonly id: string;
+    readonly name: string;
+    readonly gain: number;
+    readonly muted: boolean;
+    readonly trackIds: readonly string[];
+};
+
+type LegacyVcaTrackMembershipSnapshot = {
+    readonly trackId: string;
+    readonly vcaGroupId: string | null;
+};
+
 export type AppAction =
     | { type: 'addTrack'; payload: { id?: string; name: string; kind: TrackKind } }
     | { type: 'removeTrack'; payload: { trackId: string } }
@@ -453,10 +466,27 @@ export type AppAction =
     | { type: 'saveTrackTemplate'; payload: { trackId: string; name: string; category: string } }
     | { type: 'loadTrackTemplate'; payload: { templateId: string } }
     | { type: 'deleteTrackTemplate'; payload: { templateId: string } }
-    | { type: 'createVcaGroup'; payload: { name: string; trackIds: string[] } }
+    | {
+          type: 'createVcaGroup';
+          payload: {
+              name: string;
+              trackIds: string[];
+              /** Command-owned replay identity. AiRuntime deliberately does not expose it. */
+              vcaGroupId?: string;
+          };
+      }
     | { type: 'assignToVca'; payload: { trackId: string; vcaGroupId: string } }
     | { type: 'removeFromVca'; payload: { trackId: string } }
     | { type: 'setVcaGain'; payload: { vcaGroupId: string; gain: number } }
+    | {
+          /** Internal inverse only: restores both legacy VCA representations together.
+           *  This is not a canonical/user/AI VCA action and is absent from RuntimeAction. */
+          type: 'restoreLegacyVcaState';
+          payload: {
+              groups: readonly LegacyVcaGroupSnapshot[];
+              trackMemberships: readonly LegacyVcaTrackMembershipSnapshot[];
+          };
+      }
     | { type: 'setMidiOutput'; payload: { trackId: string; destinationTrackId: string } }
     | { type: 'clearMidiOutput'; payload: { trackId: string } }
     | {

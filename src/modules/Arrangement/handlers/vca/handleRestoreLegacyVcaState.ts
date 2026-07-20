@@ -1,18 +1,18 @@
 import { createHandler } from '#/utils/createHandler';
 
-import { assignToVca } from '../../useCases/vca/assignToVca';
 import { captureLegacyVcaState } from '../../useCases/vca/captureLegacyVcaState';
+import { restoreLegacyVcaState } from '../../useCases/vca/restoreLegacyVcaState';
 
-export const handleAssignToVca = createHandler<'assignToVca'>({
-    execute: (alpha) => {
-        const written = assignToVca(alpha.payload.trackId, alpha.payload.vcaGroupId);
+export const handleRestoreLegacyVcaState = createHandler<'restoreLegacyVcaState'>({
+    execute: (action) => {
+        const written = restoreLegacyVcaState(action.payload);
         if (!written) {
             return { status: 'no-write' };
         }
         return { status: 'written' };
     },
     describe: () => ({
-        label: 'Assign to VCA',
+        label: 'Restore Legacy VCA State',
         inverseAction: { type: 'restoreLegacyVcaState', payload: captureLegacyVcaState() },
     }),
     undoable: true,

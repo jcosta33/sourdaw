@@ -58,6 +58,7 @@ const guardedPayloadContractCases = [
             { name: 'Drums', trackIds: [''] },
             { name: 'Drums', trackIds: 'track-1' },
             { name: 'Drums', trackIds: [], extra: true },
+            { name: 'Drums', trackIds: [], vcaGroupId: 'command-only-replay-id' },
         ],
     }),
     guardedPayloadCase({

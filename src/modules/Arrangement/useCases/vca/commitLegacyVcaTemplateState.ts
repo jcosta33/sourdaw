@@ -17,6 +17,14 @@ type CommitLegacyVcaTemplateStateInput = {
 };
 
 export function commitLegacyVcaTemplateState(input: CommitLegacyVcaTemplateStateInput): Track[] {
+    const groupIds = new Set<string>();
+    for (const group of input.groups) {
+        if (groupIds.has(group.id)) {
+            throw new Error(`Duplicate legacy VCA group id: ${group.id}`);
+        }
+        groupIds.add(group.id);
+    }
+
     const availableTrackIds = new Set(input.tracks.map((track) => track.id));
     const ownerByTrackId = new Map<string, string>();
     const legacyGroups: VcaGroup[] = [];

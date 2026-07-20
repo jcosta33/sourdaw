@@ -60,6 +60,17 @@ describe('validateActions', () => {
         );
     });
 
+    it('should reject the internal legacy VCA restoration action as unavailable to AI', () => {
+        const actions = [
+            { type: 'restoreLegacyVcaState', payload: { groups: [], trackMemberships: [] } },
+        ] as unknown as RuntimeAction[];
+
+        expect(validateActions(actions)).toEqual([]);
+        expect(mockLogger.warn).toHaveBeenCalledWith(
+            expect.stringContaining('Unknown action type rejected: restoreLegacyVcaState')
+        );
+    });
+
     it('should reject invalid setTempo bpm', () => {
         const actions = [{ type: 'setTempo', payload: { bpm: 5 } }] as unknown as RuntimeAction[];
         expect(validateActions(actions)).toEqual([]);
