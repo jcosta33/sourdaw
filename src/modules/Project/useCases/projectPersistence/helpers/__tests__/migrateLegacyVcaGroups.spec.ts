@@ -302,6 +302,41 @@ describe('migrateLegacyVcaGroups', () => {
         ).toEqual(duplicateIds);
     });
 
+    it('should reserve safe existing candidate identities before allocating legacy-only identities', () => {
+        const trackCollections = [trackCollection('root', ['track-new', 'track-old'])];
+        const initial = requireReady(
+            migrateLegacyVcaGroups({
+                legacyGroups: [
+                    { id: 'vca-old', name: 'Old', gain: 1, muted: false, trackIds: ['track-old'] },
+                ],
+                trackCollections,
+            })
+        );
+        const existingCandidate = initial.candidates[0];
+        if (existingCandidate === undefined) {
+            throw new Error('Expected one dormant VCA candidate');
+        }
+
+        const result = requireReady(
+            migrateLegacyVcaGroups({
+                legacyGroups: [
+                    { id: 'vca-new', name: 'New', gain: 1, muted: false, trackIds: ['track-new'] },
+                ],
+                existingCandidates: [{ ...existingCandidate, id: 'vca-new', order: 1 }],
+                trackCollections,
+            })
+        );
+
+        expect(result.candidates.map((candidate) => [candidate.legacyGroupId, candidate.id])).toEqual([
+            ['vca-new', 'vca-new-vca'],
+            ['vca-old', 'vca-new'],
+        ]);
+        expect(result.collections[0]?.assignments).toEqual([
+            { trackId: 'track-new', vcaTrackId: 'vca-new-vca' },
+            { trackId: 'track-old', vcaTrackId: 'vca-new' },
+        ]);
+    });
+
     it('should preserve group, member, and saved collection order without changing selection', () => {
         const result = requireReady(
             migrateLegacyVcaGroups({

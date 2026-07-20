@@ -323,23 +323,44 @@ export function migrateLegacyVcaGroups({
         existingCandidateByGroupId.set(candidate.legacyGroupId, candidate);
     }
 
-    const candidates: DormantVcaTrackCandidate[] = [];
     const candidateIdByGroupId = new Map<string, string>();
     for (const group of sourceGroups) {
         const existingCandidate = existingCandidateByGroupId.get(group.id);
-        let candidateId: string;
-        if (
-            existingCandidate !== undefined &&
-            existingCandidate.id.length > 0 &&
-            !occupiedIds.has(existingCandidate.id)
-        ) {
-            candidateId = existingCandidate.id;
-            occupiedIds.add(candidateId);
-        } else {
-            candidateId = allocateCandidateId(group.id, occupiedIds);
+        if (existingCandidate === undefined || existingCandidate.id.length === 0) {
+            continue;
+        }
+        if (occupiedIds.has(existingCandidate.id)) {
+            continue;
         }
 
-        candidateIdByGroupId.set(group.id, candidateId);
+        occupiedIds.add(existingCandidate.id);
+        candidateIdByGroupId.set(group.id, existingCandidate.id);
+    }
+
+    for (const group of sourceGroups) {
+        const existingCandidate = existingCandidateByGroupId.get(group.id);
+        if (existingCandidate === undefined || candidateIdByGroupId.has(group.id)) {
+            continue;
+        }
+
+        candidateIdByGroupId.set(group.id, allocateCandidateId(group.id, occupiedIds));
+    }
+
+    for (const group of sourceGroups) {
+        if (candidateIdByGroupId.has(group.id)) {
+            continue;
+        }
+
+        candidateIdByGroupId.set(group.id, allocateCandidateId(group.id, occupiedIds));
+    }
+
+    const candidates: DormantVcaTrackCandidate[] = [];
+    for (const group of sourceGroups) {
+        const candidateId = candidateIdByGroupId.get(group.id);
+        if (candidateId === undefined) {
+            continue;
+        }
+
         candidates.push({
             id: candidateId,
             legacyGroupId: group.id,
