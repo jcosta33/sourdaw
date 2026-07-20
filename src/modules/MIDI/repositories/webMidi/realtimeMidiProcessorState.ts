@@ -9,12 +9,17 @@ export type RealtimeMidiInput = {
     isNoteOn: boolean;
     sampleTime: number;
     sampleRate: number;
+    noteInstanceId?: string;
     blockSize?: number;
 };
 
 export type RealtimeMidiEvent = {
     timeSamples: number;
     trackId?: string;
+    sourceEventId?: string;
+    noteInstanceId?: string;
+    timePpq?: number;
+    tempoBpm?: number;
     kind:
         | { type: 'noteOn'; channel: number; note: number; velocity: number }
         | { type: 'noteOff'; channel: number; note: number }
@@ -30,6 +35,7 @@ export function passThroughRealtimeMidi(input: RealtimeMidiInput): Promise<Realt
         {
             timeSamples: input.sampleTime,
             trackId: input.trackId,
+            noteInstanceId: input.noteInstanceId,
             kind: input.isNoteOn
                 ? { type: 'noteOn', channel: input.channel, note: input.note, velocity: input.velocity }
                 : { type: 'noteOff', channel: input.channel, note: input.note },

@@ -13,13 +13,20 @@ import type { YeastPreviewDecisionSink } from '../YeastPreviewSidecar';
 type HumanizePreset = 'tight' | 'loose' | 'drunk' | 'rushed' | 'laidBack';
 
 /**
- * Upper bound on tracked Note On timing offsets. The key space is
- * (channel << 7) | note = 16 channels × 128 notes, so at most this many
- * distinct notes can be sounding at once. Anything beyond this is a stale
- * entry from a dropped Note Off (e.g. a transport seek before panic); we
- * evict the oldest to keep the map from growing unbounded across a session.
+ * Upper bound for identity and legacy timing state. Capacity exhaustion clears
+ * timing state and disables timing shifts until reset, avoiding corrupt pair
+ * matching without throwing from ordinary MIDI processing.
  */
 const MAX_TRACKED_NOTES = 16 * 128;
+
+function hashIdentity(value: string): number {
+    let hash = 0x811c9dc5;
+    for (let index = 0; index < value.length; index++) {
+        hash ^= value.charCodeAt(index);
+        hash = Math.imul(hash, 0x01000193);
+    }
+    return hash & 0x7fffffff;
+}
 
 const PRESETS: Record<HumanizePreset, { timingMeanMs: number; timingSigmaMs: number; velSigma: number }> = {
     tight: { timingMeanMs: 0, timingSigmaMs: 3, velSigma: 5 },
@@ -36,9 +43,9 @@ export class Humanizer extends BaseMidiProcessor {
     private timingSigmaMs = 5;
     private velSigma = 8;
     private rngState = 0xcafe;
-    // Track timing offsets for matching Note Offs.
-    // Numeric key (channel << 7) | note matches MidiRack/ScaleQuantizer.
     private noteTimingVoices = new BoundedNoteVoiceQueue<number>(MAX_TRACKED_NOTES);
+    private noteInstanceTimingMap = new Map<string, number>();
+    private timingTrackingDisabled = false;
 
     constructor(id?: string) {
         super(id ?? `humanize-${Date.now()}`);
@@ -52,40 +59,116 @@ export class Humanizer extends BaseMidiProcessor {
     ): void {
         for (const event of input) {
             if (event.kind.type === 'noteOn') {
-                const timingOffsetMs = this.gaussian(this.timingMeanMs, this.timingSigmaMs);
+                let timingOffsetMs: number;
+                let velocityOffsetValue: number;
+                if (event.noteInstanceId) {
+                    const identity = `${this.id}\u0000${event.trackId ?? ''}\u0000${event.noteInstanceId}`;
+                    const timingResult = gaussianLcg(hashIdentity(identity), this.timingMeanMs, this.timingSigmaMs);
+                    const velocityResult = gaussianLcg(timingResult.state, 0, this.velSigma);
+                    timingOffsetMs = timingResult.value;
+                    velocityOffsetValue = velocityResult.value;
+                } else {
+                    timingOffsetMs = this.gaussian(this.timingMeanMs, this.timingSigmaMs);
+                    velocityOffsetValue = this.gaussian(0, this.velSigma);
+                }
                 const timingOffsetSamples = Math.round(timingOffsetMs * 0.001 * transport.sampleRate);
-                const velOffset = Math.round(this.gaussian(0, this.velSigma));
+                const velocityOffset = Math.round(velocityOffsetValue);
 
                 const key = (event.kind.channel << 7) | event.kind.note;
-                this.noteTimingVoices.push(event.trackId, key, timingOffsetSamples);
+                const acceptedOffset = event.noteInstanceId
+                    ? this.setInstanceOffset(event.trackId, event.noteInstanceId, timingOffsetSamples)
+                    : this.enqueueLegacyOffset(event.trackId, key, timingOffsetSamples);
 
                 const transformed: MidiEvent = {
-                    timeSamples: event.timeSamples + timingOffsetSamples,
-                    trackId: event.trackId,
+                    ...event,
+                    timeSamples: event.timeSamples + acceptedOffset,
                     kind: {
                         type: 'noteOn',
                         channel: event.kind.channel,
                         note: event.kind.note,
-                        velocity: Math.max(1, Math.min(127, event.kind.velocity + velOffset)),
+                        velocity: Math.max(1, Math.min(127, event.kind.velocity + velocityOffset)),
                     },
                 };
+                if (event.timePpq !== undefined) {
+                    const endpointTempo = event.tempoBpm ?? transport.bpm;
+                    transformed.timePpq =
+                        event.timePpq + (acceptedOffset * endpointTempo) / (transport.sampleRate * 60);
+                }
                 output.push(transformed);
                 preview?.transferDecisionLineage(event, transformed);
-            } else if (event.kind.type === 'noteOff') {
+                continue;
+            }
+
+            if (event.kind.type === 'noteOff') {
                 const key = (event.kind.channel << 7) | event.kind.note;
-                const offset = this.noteTimingVoices.shift(event.trackId, key) ?? 0;
+                const offset = event.noteInstanceId
+                    ? this.takeInstanceOffset(event.trackId, event.noteInstanceId)
+                    : (this.noteTimingVoices.shift(event.trackId, key) ?? 0);
 
                 const transformed: MidiEvent = {
+                    ...event,
                     timeSamples: event.timeSamples + offset,
-                    trackId: event.trackId,
                     kind: event.kind,
                 };
+                if (event.timePpq !== undefined) {
+                    const endpointTempo = event.tempoBpm ?? transport.bpm;
+                    transformed.timePpq = event.timePpq + (offset * endpointTempo) / (transport.sampleRate * 60);
+                }
                 output.push(transformed);
                 preview?.transferDecisionLineage(event, transformed);
-            } else {
-                output.push(event);
+                continue;
             }
+
+            output.push(event);
         }
+    }
+
+    private instanceKey(trackId: string | undefined, noteInstanceId: string): string {
+        return `${trackId ?? ''}\u0000${noteInstanceId}`;
+    }
+
+    private hasTimingCapacity(): boolean {
+        return this.noteTimingVoices.size + this.noteInstanceTimingMap.size < MAX_TRACKED_NOTES;
+    }
+
+    private disableTimingTracking(): void {
+        this.noteTimingVoices.clear();
+        this.noteInstanceTimingMap.clear();
+        this.timingTrackingDisabled = true;
+    }
+
+    private setInstanceOffset(trackId: string | undefined, noteInstanceId: string, offset: number): number {
+        if (this.timingTrackingDisabled) {
+            return 0;
+        }
+        const key = this.instanceKey(trackId, noteInstanceId);
+        if (!this.noteInstanceTimingMap.has(key) && !this.hasTimingCapacity()) {
+            this.disableTimingTracking();
+            return 0;
+        }
+        this.noteInstanceTimingMap.set(key, offset);
+        return offset;
+    }
+
+    private enqueueLegacyOffset(trackId: string | undefined, key: number, offset: number): number {
+        if (this.timingTrackingDisabled) {
+            return 0;
+        }
+        if (!this.hasTimingCapacity() || !this.noteTimingVoices.tryPush(trackId, key, offset)) {
+            this.disableTimingTracking();
+            return 0;
+        }
+        return offset;
+    }
+
+    private takeInstanceOffset(trackId: string | undefined, noteInstanceId: string): number {
+        if (this.timingTrackingDisabled) {
+            return 0;
+        }
+        const key = this.instanceKey(trackId, noteInstanceId);
+        const offset = this.noteInstanceTimingMap.get(key) ?? 0;
+        this.noteInstanceTimingMap.delete(key);
+        return offset;
     }
 
     private gaussian(mean: number, sigma: number): number {
@@ -96,6 +179,8 @@ export class Humanizer extends BaseMidiProcessor {
 
     reset(): void {
         this.noteTimingVoices.clear();
+        this.noteInstanceTimingMap.clear();
+        this.timingTrackingDisabled = false;
     }
 
     protected resetParams(): void {

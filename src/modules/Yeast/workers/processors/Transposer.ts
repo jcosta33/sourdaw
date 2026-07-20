@@ -44,8 +44,7 @@ export class Transposer extends BaseMidiProcessor {
                 this.noteVoices.push(event.trackId, (event.kind.channel << 7) | event.kind.note, note);
 
                 const transformed: MidiEvent = {
-                    timeSamples: event.timeSamples,
-                    trackId: event.trackId,
+                    ...event,
                     kind: { type: 'noteOn', channel: event.kind.channel, note, velocity: event.kind.velocity },
                 };
                 output.push(transformed);
@@ -55,8 +54,7 @@ export class Transposer extends BaseMidiProcessor {
                 const note = this.noteVoices.shift(event.trackId, key) ?? event.kind.note;
 
                 const transformed: MidiEvent = {
-                    timeSamples: event.timeSamples,
-                    trackId: event.trackId,
+                    ...event,
                     kind: { type: 'noteOff', channel: event.kind.channel, note },
                 };
                 output.push(transformed);

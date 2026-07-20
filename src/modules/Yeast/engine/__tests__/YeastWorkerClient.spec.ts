@@ -829,6 +829,62 @@ describe('createYeastWorker — processBlock lifecycle', () => {
     it.each([
         ['missing events', { type: 'processed', requestId: 0 }],
         ['malformed events', { type: 'processed', requestId: 0, events: [{ nope: true }] }],
+        [
+            'non-string source event identity',
+            {
+                type: 'processed',
+                requestId: 0,
+                events: [
+                    {
+                        timeSamples: 0,
+                        sourceEventId: 7,
+                        kind: { type: 'noteOn', channel: 0, note: 60, velocity: 100 },
+                    },
+                ],
+            },
+        ],
+        [
+            'non-string note instance identity',
+            {
+                type: 'processed',
+                requestId: 0,
+                events: [
+                    {
+                        timeSamples: 0,
+                        noteInstanceId: {},
+                        kind: { type: 'noteOn', channel: 0, note: 60, velocity: 100 },
+                    },
+                ],
+            },
+        ],
+        [
+            'non-finite PPQ position',
+            {
+                type: 'processed',
+                requestId: 0,
+                events: [
+                    {
+                        timeSamples: 0,
+                        timePpq: Number.NaN,
+                        kind: { type: 'noteOn', channel: 0, note: 60, velocity: 100 },
+                    },
+                ],
+            },
+        ],
+        [
+            'non-numeric endpoint tempo',
+            {
+                type: 'processed',
+                requestId: 0,
+                events: [
+                    {
+                        timeSamples: 0,
+                        tempoBpm: '120',
+                        kind: { type: 'noteOn', channel: 0, note: 60, velocity: 100 },
+                    },
+                ],
+            },
+        ],
     ] as const)('times out instead of accepting %s as silence', async (_label, message) => {
         const node = await createYeastWorker(makeContext());
         const promise = node.processBlock([], 0, 128, transport, 'track-a');

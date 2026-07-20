@@ -5,6 +5,7 @@ import { createWebMidiNoteKey } from '../../../models/WebMidiTypes';
 const target_track_id = vi.hoisted(() => ({ value: 'track-1' }));
 const mpe_enabled = vi.hoisted(() => ({ value: false }));
 const ensure_track_strip = vi.hoisted(() => vi.fn());
+const get_track_strip = vi.hoisted(() => vi.fn());
 
 type TestMidiEvent = {
     timeSamples: number;
@@ -23,14 +24,16 @@ vi.mock('../../../repositories/webMidi/getTargetTrackId', () => ({
 
 vi.mock('#/modules/AudioEngine/useCases', () => ({
     audioEngine: {
-        context: { currentTime: 2, sampleRate: 48000 },
+        context: { currentTime: 2, sampleRate: 48000, baseLatency: 0, outputLatency: 0 },
         ensureTrackStrip: ensure_track_strip,
+        getTrackStrip: get_track_strip,
     },
     getCompensationDelay: () => 0,
     getFactoryDrumKitByIndex: () => null,
 }));
 
 const { handleWebMidiNoteOn } = await import('../handleWebMidiNoteOn');
+const { handleWebMidiNoteOff } = await import('../handleWebMidiNoteOff');
 const { activeNotes, channelToNote } = await import('../../../repositories/webMidi/state');
 
 type HandleWebMidiNoteOnDependencies = Parameters<typeof handleWebMidiNoteOn._factory>[0];
@@ -62,6 +65,7 @@ describe('handleWebMidiNoteOn', () => {
         activeNotes.clear();
         channelToNote.clear();
         ensure_track_strip.mockReset();
+        get_track_strip.mockReset();
         target_track_id.value = 'track-1';
         mpe_enabled.value = false;
     });
@@ -149,6 +153,52 @@ describe('handleWebMidiNoteOn', () => {
         await fn(0, 60, 100);
 
         expect(grand_boule_note_on).toHaveBeenCalledWith(67, 100 / 127, 96_240);
+    });
+
+    it('reuses the note-on identity for the paired Yeast note-off', async () => {
+        const getTrackStoreState = () => ({
+            tracks: [{ id: 'track-1', armed: false, devices: [{ id: 'yeast-1', type: 'yeast' }], clips: [] }],
+            selectedTrackId: 'track-1',
+        });
+        const processRealtimeMidiInput = vi.fn(async () => []);
+        const noteOff = handleWebMidiNoteOff._factory({
+            getCompensationDelay: () => 0,
+            getTrackStoreState,
+            getTransportStoreValue: () => ({ isRecording: false }),
+            playheadPositionRef: { current: 0 },
+            createMidiNote: () => ({ id: 'unused', pitch: 60, startBeat: 0, duration: 1, velocity: 100 }),
+            appendRecordedMidiNote: () => {},
+            getSynthParamsForTrack: () => ({ release: 0.3 }),
+            processRealtimeMidiInput,
+            stepRecordNoteOff: () => {},
+            eventBus: { emit: () => Promise.resolve(), on: () => () => {} },
+        });
+        const noteOn = handleWebMidiNoteOn._factory(
+            make_dependencies({
+                getTrackStoreState,
+                getTransportStoreValue: () => ({ isRecording: false }),
+                processRealtimeMidiInput,
+                handleWebMidiNoteOff: noteOff,
+            })
+        );
+        ensure_track_strip.mockReturnValue({ gainNode: {}, deviceNodes: [] });
+        get_track_strip.mockReturnValue({ deviceNodes: [] });
+
+        await noteOn(2, 60, 100);
+
+        const noteInstanceId = activeNotes.get(createWebMidiNoteKey(2, 60))?.noteInstanceId;
+        expect(noteInstanceId).toBe('track-1:2:60:96000');
+        expect(processRealtimeMidiInput).toHaveBeenNthCalledWith(
+            1,
+            expect.objectContaining({ isNoteOn: true, noteInstanceId })
+        );
+
+        await noteOff(2, 60);
+
+        expect(processRealtimeMidiInput).toHaveBeenNthCalledWith(
+            2,
+            expect.objectContaining({ isNoteOn: false, noteInstanceId })
+        );
     });
 
     it('dispatches a missed Yeast deadline at the current AudioContext frame', async () => {

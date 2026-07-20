@@ -35,8 +35,7 @@ export class VelocityProcessor extends BaseMidiProcessor {
             if (event.kind.type === 'noteOn') {
                 const vel = this.processVelocity(event.kind.velocity);
                 const transformed: MidiEvent = {
-                    timeSamples: event.timeSamples,
-                    trackId: event.trackId,
+                    ...event,
                     kind: { type: 'noteOn', channel: event.kind.channel, note: event.kind.note, velocity: vel },
                 };
                 output.push(transformed);

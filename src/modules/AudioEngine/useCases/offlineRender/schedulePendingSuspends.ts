@@ -1,3 +1,4 @@
+import { comparePendingWorkletEvents } from './comparePendingWorkletEvents';
 import { type PendingWorkletEvent } from './types';
 
 /**
@@ -17,7 +18,7 @@ export function schedulePendingSuspends(
     }
 
     // Sort by time, then noteOff before noteOn at same time (release before re-trigger).
-    events.sort((alpha, b) => alpha.time - b.time || (alpha.type === 'off' ? -1 : 1));
+    events.sort(comparePendingWorkletEvents);
 
     for (const evt of events) {
         if (evt.time >= durationSeconds) {

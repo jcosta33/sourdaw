@@ -61,8 +61,7 @@ export class MutationEngine extends BaseMidiProcessor {
             if (event.kind.type === 'noteOn') {
                 const vel = Math.max(1, Math.min(127, Math.round(event.kind.velocity + velOffset)));
                 const transformed: MidiEvent = {
-                    timeSamples: event.timeSamples,
-                    trackId: event.trackId,
+                    ...event,
                     kind: { type: 'noteOn', channel: event.kind.channel, note: event.kind.note, velocity: vel },
                 };
                 output.push(transformed);

@@ -23,14 +23,15 @@ const transport: TransportInfo = {
 };
 
 function dispatch(rack: MidiRack, data: unknown, messages: unknown[]): void {
-    const routedData =
-        typeof data === 'object' && data !== null && Reflect.get(data, 'type') === 'processBlock'
-            ? {
-                  rackId: 'rack-a',
-                  routeId: Reflect.get(data, 'trackId'),
-                  ...data,
-              }
-            : data;
+    let routedData = data;
+    if (typeof data === 'object' && data !== null && Reflect.get(data, 'type') === 'processBlock') {
+        const trackId: unknown = Reflect.get(data, 'trackId');
+        routedData = {
+            rackId: 'rack-a',
+            routeId: trackId,
+            ...data,
+        };
+    }
     handleYeastWorkerMessage({
         data: routedData,
         rack,
@@ -451,6 +452,86 @@ describe('YeastWorker', () => {
                 captureEpoch: 0,
                 trackId: 'track-a',
                 events: [{ timeSamples: 0, kind: { type: 'noteOn', channel: 16, note: 60, velocity: 100 } }],
+                blockStart: 0,
+                blockEnd: 128,
+                transport,
+            },
+            messages
+        );
+        dispatch(
+            rack,
+            {
+                type: 'processBlock',
+                requestId: 9,
+                captureEpoch: 0,
+                trackId: 'track-a',
+                events: [
+                    {
+                        timeSamples: 0,
+                        sourceEventId: 7,
+                        kind: { type: 'noteOn', channel: 0, note: 60, velocity: 100 },
+                    },
+                ],
+                blockStart: 0,
+                blockEnd: 128,
+                transport,
+            },
+            messages
+        );
+        dispatch(
+            rack,
+            {
+                type: 'processBlock',
+                requestId: 10,
+                captureEpoch: 0,
+                trackId: 'track-a',
+                events: [
+                    {
+                        timeSamples: 0,
+                        noteInstanceId: {},
+                        kind: { type: 'noteOn', channel: 0, note: 60, velocity: 100 },
+                    },
+                ],
+                blockStart: 0,
+                blockEnd: 128,
+                transport,
+            },
+            messages
+        );
+        dispatch(
+            rack,
+            {
+                type: 'processBlock',
+                requestId: 11,
+                captureEpoch: 0,
+                trackId: 'track-a',
+                events: [
+                    {
+                        timeSamples: 0,
+                        timePpq: Number.NaN,
+                        kind: { type: 'noteOn', channel: 0, note: 60, velocity: 100 },
+                    },
+                ],
+                blockStart: 0,
+                blockEnd: 128,
+                transport,
+            },
+            messages
+        );
+        dispatch(
+            rack,
+            {
+                type: 'processBlock',
+                requestId: 12,
+                captureEpoch: 0,
+                trackId: 'track-a',
+                events: [
+                    {
+                        timeSamples: 0,
+                        tempoBpm: '120',
+                        kind: { type: 'noteOn', channel: 0, note: 60, velocity: 100 },
+                    },
+                ],
                 blockStart: 0,
                 blockEnd: 128,
                 transport,

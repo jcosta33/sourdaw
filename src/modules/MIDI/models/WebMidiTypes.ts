@@ -35,6 +35,8 @@ export type ActiveNoteData = {
     trackId: string;
     /** Instrument owner resolved at note-on; source-track changes must not retarget release. */
     instrumentTrackId: string;
+    /** Stable runtime identity carried through the Yeast note-on/note-off pair. */
+    noteInstanceId?: string;
     pressure?: number;
     slide?: number;
     pitchBend?: number;

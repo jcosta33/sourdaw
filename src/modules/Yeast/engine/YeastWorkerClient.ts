@@ -124,6 +124,18 @@ function isMidiEvent(value: unknown): value is MidiEvent {
     if (value.trackId !== undefined && !isTrackId(value.trackId)) {
         return false;
     }
+    if (value.sourceEventId !== undefined && typeof value.sourceEventId !== 'string') {
+        return false;
+    }
+    if (value.noteInstanceId !== undefined && typeof value.noteInstanceId !== 'string') {
+        return false;
+    }
+    if (value.timePpq !== undefined && !isFiniteNumber(value.timePpq)) {
+        return false;
+    }
+    if (value.tempoBpm !== undefined && !isFiniteNumber(value.tempoBpm)) {
+        return false;
+    }
 
     const kind = value.kind;
     if (kind.type === 'noteOn') {
@@ -142,15 +154,7 @@ function isMidiEvent(value: unknown): value is MidiEvent {
 }
 
 function isNoteOffEvent(value: unknown): value is MidiEvent {
-    if (!isPlainObject(value) || !isFiniteNumber(value.timeSamples) || !isPlainObject(value.kind)) {
-        return false;
-    }
-    return (
-        value.kind.type === 'noteOff' &&
-        isMidiChannel(value.kind.channel) &&
-        isMidiNote(value.kind.note) &&
-        isTrackId(value.trackId)
-    );
+    return isMidiEvent(value) && value.kind.type === 'noteOff' && isTrackId(value.trackId);
 }
 
 function parseAcknowledgedNoteOffs(value: Record<string, unknown>, required: boolean): MidiEvent[] | undefined {

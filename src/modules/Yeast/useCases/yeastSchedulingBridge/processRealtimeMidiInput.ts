@@ -17,6 +17,7 @@ type ProcessRealtimeMidiInputInput = {
     isNoteOn: boolean;
     sampleTime: number;
     sampleRate: number;
+    noteInstanceId?: string;
     blockSize?: number;
 };
 
@@ -35,6 +36,8 @@ export function processRealtimeMidiInput(input: ProcessRealtimeMidiInputInput): 
         return {
             timeSamples,
             trackId: input.trackId,
+            sourceEventId: `${input.trackId}:${input.channel}:${input.note}:${input.isNoteOn ? 'on' : 'off'}:${input.sampleTime}`,
+            noteInstanceId: input.noteInstanceId,
             kind: input.isNoteOn
                 ? { type: 'noteOn', channel: input.channel, note: input.note, velocity: input.velocity }
                 : { type: 'noteOff', channel: input.channel, note: input.note },

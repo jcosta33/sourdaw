@@ -35,6 +35,7 @@ describe('processRealtimeMidiInput', () => {
             isNoteOn: true,
             sampleTime: 128,
             sampleRate: 48000,
+            noteInstanceId: 'realtime-voice-a',
             blockSize: 64,
         });
 
@@ -47,6 +48,8 @@ describe('processRealtimeMidiInput', () => {
                     {
                         timeSamples: 7328,
                         trackId: 'track-a',
+                        sourceEventId: 'track-a:2:60:on:128',
+                        noteInstanceId: 'realtime-voice-a',
                         kind: { type: 'noteOn', channel: 2, note: 60, velocity: 96 },
                     },
                 ],
