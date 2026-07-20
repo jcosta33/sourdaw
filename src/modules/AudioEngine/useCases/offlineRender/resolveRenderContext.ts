@@ -10,6 +10,7 @@ import {
 import {
     offlineMidiEventProjectorState,
     type OfflineMidiEventProjector,
+    type OfflineMidiProbabilitySelector,
 } from '../../repositories/offlineScheduler/offlineMidiEventProjectorState';
 import {
     offlinePpqEndpointProjectorState,
@@ -34,6 +35,7 @@ export type OfflineRenderContext = {
     /** Tail seconds appended after the musical region. */
     tailSeconds: number;
     projectMidiEvents: OfflineMidiEventProjector | null;
+    selectMidiEventProbability: OfflineMidiProbabilitySelector | null;
     projectPpqEndpoints: OfflinePpqEndpointProjector | null;
     processYeastMidi: OfflineYeastMidiProcessor | null;
 };
@@ -75,6 +77,7 @@ export function resolveRenderContext(input: ResolveRenderContextInput | number):
         durationSeconds,
         tailSeconds: Math.max(0, normalized.tailSeconds),
         projectMidiEvents: offlineMidiEventProjectorState.createProjector?.() ?? null,
+        selectMidiEventProbability: offlineMidiEventProjectorState.selectProbability,
         projectPpqEndpoints: offlinePpqEndpointProjectorState.project,
         processYeastMidi: offlineYeastMidiProcessorState.createProcessor?.() ?? null,
     };

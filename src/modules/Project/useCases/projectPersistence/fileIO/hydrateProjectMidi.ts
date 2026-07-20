@@ -12,6 +12,7 @@ import { mapProjectMidiValues } from './midiStateMapping';
 type RuntimeNote = MidiStoreState['notesByClipId'][string][number];
 type RuntimeCC = MidiStoreState['ccByClipId'][string][number];
 type RuntimePitchBend = MidiStoreState['pitchBendByClipId'][string][number];
+type HydratedProjectMidi = Omit<MidiStoreState, 'probabilitySeed'> & { probabilitySeed?: number };
 
 function hydrateProjectMidiNote(note: ProjectMidiNote): RuntimeNote {
     return {
@@ -65,8 +66,8 @@ function hydrateProjectMidiPitchBend({
 /** Hydrate the runtime MIDI store from the serialized `.sourdaw` MIDI block.
  *  Notes already carry ids; CC and pitch-bend get a deterministic id minted from
  *  the clip id and index, since the serialized schema omits the runtime `id`. */
-export function hydrateProjectMidi(midi: ProjectMidi): MidiStoreState {
-    return {
+export function hydrateProjectMidi(midi: ProjectMidi): HydratedProjectMidi {
+    const hydrated: HydratedProjectMidi = {
         notesByClipId: mapProjectMidiValues({
             byClipId: midi.notesByClipId,
             mapEntry: hydrateProjectMidiNote,
@@ -80,4 +81,10 @@ export function hydrateProjectMidi(midi: ProjectMidi): MidiStoreState {
             mapEntry: (pb, index, clipId) => hydrateProjectMidiPitchBend({ pb, clipId, index }),
         }),
     };
+
+    if (midi.probabilitySeed !== undefined) {
+        hydrated.probabilitySeed = midi.probabilitySeed;
+    }
+
+    return hydrated;
 }

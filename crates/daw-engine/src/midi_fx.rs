@@ -8,7 +8,64 @@ const EMPTY_MIDI_EVENT: MidiNoteEvent = MidiNoteEvent {
     channel: 0,
     is_note_on: false,
     probability: 0.0,
+    project_probability_seed: 0,
+    clip_id_hash: 0,
+    event_id_hash: 0,
+    absolute_occurrence_index: 0,
 };
+
+const FNV_OFFSET_BASIS: u32 = 2_166_136_261;
+const FNV_PRIME: u32 = 16_777_619;
+
+#[inline]
+fn mix_byte(hash: u32, value: u8) -> u32 {
+    (hash ^ u32::from(value)).wrapping_mul(FNV_PRIME)
+}
+
+#[inline]
+fn mix_u32(mut hash: u32, value: u32) -> u32 {
+    for byte in value.to_le_bytes() {
+        hash = mix_byte(hash, byte);
+    }
+    hash
+}
+
+/// Hash a stable string identity before entering the audio thread.
+pub fn hash_probability_id(value: &str) -> u32 {
+    let code_unit_count = value.encode_utf16().count() as u32;
+    let mut hash = mix_u32(FNV_OFFSET_BASIS, code_unit_count);
+    for code_unit in value.encode_utf16() {
+        hash = mix_byte(hash, (code_unit & 0xff) as u8);
+        hash = mix_byte(hash, (code_unit >> 8) as u8);
+    }
+    hash
+}
+
+#[inline]
+fn avalanche(mut hash: u32) -> u32 {
+    hash ^= hash >> 16;
+    hash = hash.wrapping_mul(0x85eb_ca6b);
+    hash ^= hash >> 13;
+    hash = hash.wrapping_mul(0xc2b2_ae35);
+    hash ^ (hash >> 16)
+}
+
+/// Allocation-free deterministic roll for a pre-hashed stable MIDI identity tuple.
+#[inline]
+pub fn deterministic_probability_roll(
+    project_probability_seed: u32,
+    clip_id_hash: u32,
+    event_id_hash: u32,
+    absolute_occurrence_index: u64,
+) -> u32 {
+    let mut hash = FNV_OFFSET_BASIS;
+    hash = mix_u32(hash, project_probability_seed);
+    hash = mix_u32(hash, clip_id_hash);
+    hash = mix_u32(hash, event_id_hash);
+    hash = mix_u32(hash, absolute_occurrence_index as u32);
+    hash = mix_u32(hash, (absolute_occurrence_index >> 32) as u32);
+    avalanche(hash)
+}
 
 pub struct MidiEventBuffer {
     events: [MidiNoteEvent; MIDI_EVENT_BUFFER_CAPACITY],
@@ -339,6 +396,10 @@ impl MidiFx for Arpeggiator {
                         channel: 0,
                         is_note_on: true,
                         probability: 1.0,
+                        project_probability_seed: 0,
+                        clip_id_hash: 0,
+                        event_id_hash: 0,
+                        absolute_occurrence_index: 0,
                     });
                 }
             }
@@ -368,13 +429,11 @@ impl MidiFx for Arpeggiator {
     }
 }
 
-pub struct ProbabilityEvaluator {
-    seed: u64,
-}
+pub struct ProbabilityEvaluator;
 
 impl Default for ProbabilityEvaluator {
     fn default() -> Self {
-        Self { seed: 12345 }
+        Self
     }
 }
 
@@ -386,41 +445,47 @@ impl MidiFx for ProbabilityEvaluator {
         _sample_rate: f32,
         _num_samples: usize,
     ) {
-        // Simple linear congruential generator for deterministic probability
-        let mut seed = self.seed;
         events.retain_mut(|event| {
-            if event.probability >= 1.0 { return true; }
-            if event.probability <= 0.0 { return false; }
+            if event.probability >= 1.0 {
+                return true;
+            }
+            if event.probability <= 0.0 {
+                return false;
+            }
 
-            seed = seed.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
-            let roll = (seed >> 32) as f32 / 4294967296.0;
-            roll <= event.probability
+            let roll = deterministic_probability_roll(
+                event.project_probability_seed,
+                event.clip_id_hash,
+                event.event_id_hash,
+                event.absolute_occurrence_index,
+            );
+            f64::from(roll) / 4_294_967_296.0 < f64::from(event.probability)
         });
-        self.seed = seed;
     }
 
-    fn set_param(&mut self, name: &str, value: f32) {
-        if name == "seed" {
-            self.seed = value as u64;
-        }
-    }
+    fn set_param(&mut self, _name: &str, _value: f32) {}
 
     fn reset(&mut self) {}
 }
 
 #[cfg(test)]
+fn note_on(note: u8) -> MidiNoteEvent {
+    MidiNoteEvent {
+        note,
+        velocity: 100,
+        channel: 0,
+        is_note_on: true,
+        probability: 1.0,
+        project_probability_seed: 0,
+        clip_id_hash: 0,
+        event_id_hash: 0,
+        absolute_occurrence_index: 0,
+    }
+}
+
+#[cfg(test)]
 mod tests {
     use super::*;
-
-    fn note_on(note: u8) -> MidiNoteEvent {
-        MidiNoteEvent {
-            note,
-            velocity: 100,
-            channel: 0,
-            is_note_on: true,
-            probability: 1.0,
-        }
-    }
 
     #[test]
     fn scheduler_arpeggiator_drops_newest_active_notes_after_fixed_capacity() {
@@ -443,5 +508,179 @@ mod tests {
         );
         assert!(arpeggiator.active_notes.contains(&75));
         assert!(!arpeggiator.active_notes.contains(&76));
+    }
+}
+
+#[cfg(test)]
+mod deterministic_probability {
+    use super::*;
+
+    #[test]
+    fn does_not_shift_when_an_unrelated_event_is_inserted() {
+        let target = MidiNoteEvent {
+            probability: 0.2,
+            project_probability_seed: 0xdecafbad,
+            clip_id_hash: hash_probability_id("clip-target"),
+            event_id_hash: hash_probability_id("event-target"),
+            absolute_occurrence_index: 7,
+            ..note_on(60)
+        };
+
+        let mut isolated = MidiEventBuffer::new();
+        assert!(isolated.try_push(target));
+        ProbabilityEvaluator::default().process_midi(
+            &mut isolated,
+            &TransportState::default(),
+            48_000.0,
+            128,
+        );
+
+        let mut with_unrelated = MidiEventBuffer::new();
+        assert!(with_unrelated.try_push(MidiNoteEvent {
+            probability: 0.5,
+            project_probability_seed: 0x12345678,
+            clip_id_hash: hash_probability_id("clip-unrelated"),
+            event_id_hash: hash_probability_id("event-unrelated"),
+            absolute_occurrence_index: 99,
+            ..note_on(61)
+        }));
+        assert!(with_unrelated.try_push(target));
+        ProbabilityEvaluator::default().process_midi(
+            &mut with_unrelated,
+            &TransportState::default(),
+            48_000.0,
+            128,
+        );
+
+        let isolated_kept_target = isolated.iter().any(|event| event.note == target.note);
+        let inserted_kept_target = with_unrelated.iter().any(|event| event.note == target.note);
+        assert_eq!(inserted_kept_target, isolated_kept_target);
+    }
+
+    #[test]
+    fn matches_the_cross_runtime_tuple_corpus() {
+        let corpus = [
+            (0, "clip-0", "event-0", 0, 2_209_426_670, 0.5, false),
+            (1, "clip-a", "event-alpha", 0, 1_901_562_438, 0.5, true),
+            (
+                0xdecafbad,
+                "clip-1",
+                "event-alpha",
+                0,
+                283_418_835,
+                0.5,
+                true,
+            ),
+            (
+                0xdecafbad,
+                "clip-1",
+                "event-beta",
+                0,
+                3_377_534_636,
+                0.5,
+                false,
+            ),
+            (
+                u32::MAX,
+                "loop-🎹",
+                "note-Ω",
+                4_294_967_297,
+                3_819_417_621,
+                0.9,
+                true,
+            ),
+            (
+                0x12345678,
+                "clip-shared",
+                "event-stable",
+                42,
+                3_065_371_926,
+                0.7,
+                false,
+            ),
+        ];
+
+        for (seed, clip_id, event_id, occurrence, expected_roll, probability, expected_decision) in
+            corpus
+        {
+            let roll = deterministic_probability_roll(
+                seed,
+                hash_probability_id(clip_id),
+                hash_probability_id(event_id),
+                occurrence,
+            );
+            assert_eq!(roll, expected_roll);
+            assert_eq!(
+                f64::from(roll) / 4_294_967_296.0 < probability,
+                expected_decision
+            );
+        }
+    }
+}
+
+#[cfg(test)]
+mod probability_distribution {
+    use super::*;
+
+    #[test]
+    fn has_exact_edges_and_binomial_balance() {
+        let clip_id_hash = hash_probability_id("distribution-clip");
+        let event_id_hash = hash_probability_id("distribution-event");
+        let sample_count = 10_000_u64;
+        let mut accepted_at_half = 0_i64;
+
+        for occurrence in 0..sample_count {
+            let roll =
+                deterministic_probability_roll(0x5eed1234, clip_id_hash, event_id_hash, occurrence);
+            if f64::from(roll) / 4_294_967_296.0 < 0.5 {
+                accepted_at_half += 1;
+            }
+        }
+
+        let expected = sample_count as i64 / 2;
+        let three_sigma = 150_i64;
+        assert_eq!(accepted_at_half, 5_009);
+        assert!((accepted_at_half - expected).abs() <= three_sigma);
+
+        let target = MidiNoteEvent {
+            probability: 0.25,
+            project_probability_seed: 0x5eed1234,
+            clip_id_hash,
+            event_id_hash,
+            absolute_occurrence_index: 17,
+            ..note_on(62)
+        };
+        let mut isolated = MidiEventBuffer::new();
+        assert!(isolated.try_push(target));
+        ProbabilityEvaluator::default().process_midi(
+            &mut isolated,
+            &TransportState::default(),
+            48_000.0,
+            128,
+        );
+
+        let mut interleaved = MidiEventBuffer::new();
+        assert!(interleaved.try_push(MidiNoteEvent {
+            probability: 0.0,
+            ..note_on(60)
+        }));
+        assert!(interleaved.try_push(target));
+        assert!(interleaved.try_push(MidiNoteEvent {
+            probability: 1.0,
+            ..note_on(61)
+        }));
+        ProbabilityEvaluator::default().process_midi(
+            &mut interleaved,
+            &TransportState::default(),
+            48_000.0,
+            128,
+        );
+
+        assert!(!interleaved.iter().any(|event| event.note == 60));
+        assert!(interleaved.iter().any(|event| event.note == 61));
+        assert_eq!(
+            isolated.iter().any(|event| event.note == target.note),
+            interleaved.iter().any(|event| event.note == target.note),
+        );
     }
 }

@@ -8,8 +8,7 @@ import { resetGrandBouleStores } from '#/modules/GrandBoule/stores';
 import { grinderStore, grinderTelemetryStore } from '#/modules/Grinder/stores';
 import { kneadStore, defaultKneadState } from '#/modules/Knead/stores';
 import { levainStore } from '#/modules/Levain/stores';
-import { midiStore } from '#/modules/MIDI/stores';
-import { hydrateGrooveTemplates } from '#/modules/MIDI/useCases';
+import { hydrateGrooveTemplates, resetMidiStoreForProject } from '#/modules/MIDI/useCases';
 import { proofStore } from '#/modules/Proof/stores';
 import { setSidechainRoutes } from '#/modules/Routing/useCases';
 import { toasterStore } from '#/modules/Toaster/stores';
@@ -21,11 +20,13 @@ import { hydrateYeastState } from '#/modules/Yeast/useCases';
 import { arrangementStore, defaultArrangementStoreState } from '../../../stores/arrangementStore';
 
 type ResetModuleStoresToDefaultInput = {
+    createNewMidiProbabilitySeed?: boolean;
     resetGrooveTemplates?: boolean;
     resetYeastState?: boolean;
 };
 
 export function resetModuleStoresToDefault({
+    createNewMidiProbabilitySeed = false,
     resetGrooveTemplates = true,
     resetYeastState = true,
 }: ResetModuleStoresToDefaultInput = {}): void {
@@ -33,7 +34,7 @@ export function resetModuleStoresToDefault({
     arrangementStore.set(structuredClone(defaultArrangementStoreState));
     transportStore.set(defaultTransportState);
     automationStore.set({ lanes: [] });
-    midiStore.set({ notesByClipId: {}, ccByClipId: {}, pitchBendByClipId: {} });
+    resetMidiStoreForProject({ generateProbabilitySeed: createNewMidiProbabilitySeed });
     if (resetGrooveTemplates) {
         hydrateGrooveTemplates({ templates: [], assignments: [] });
     }

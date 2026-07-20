@@ -561,6 +561,10 @@ pub async fn send_plugin_midi(
             channel,
             is_note_on,
             probability: 1.0,
+            project_probability_seed: 0,
+            clip_id_hash: 0,
+            event_id_hash: 0,
+            absolute_occurrence_index: 0,
         },
     )
 }

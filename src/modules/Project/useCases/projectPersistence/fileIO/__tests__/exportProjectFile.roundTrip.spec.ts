@@ -63,6 +63,7 @@ describe('exportProjectFile round-trip shape', () => {
             selectedTrackId: null,
         });
         midiStore.set({
+            probabilitySeed: 3_735_928_559,
             notesByClipId: {
                 'clip-midi': [{ id: 'note-1', pitch: 64, startBeat: 0, duration: 1, velocity: 100 }],
             },
@@ -95,6 +96,7 @@ describe('exportProjectFile round-trip shape', () => {
         const midi = written().midi;
         expect(midi.notesByClipId['clip-midi']?.[0]?.pitch).toBe(64);
         expect(midi.ccByClipId['clip-midi']?.[0]?.controller).toBe(1);
+        expect(midi.probabilitySeed).toBe(3_735_928_559);
     });
 
     it('writes the live transport tempo into the export', async () => {

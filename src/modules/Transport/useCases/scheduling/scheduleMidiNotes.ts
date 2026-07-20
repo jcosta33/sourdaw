@@ -12,6 +12,7 @@ import {
     getChordAtBeat,
     projectClipMidiEvents,
     projectCommittedGroove,
+    shouldPlayMidiEvent,
     transposeForChordTrack,
 } from '#/modules/MIDI/useCases';
 import { scheduleDrumKitNote, scheduleKitNote, scheduleNote } from '#/modules/Synth/useCases';
@@ -49,23 +50,6 @@ export type SchedulerCancellation = {
     discontinuityEpoch: number;
     isCurrent: () => boolean;
 };
-
-/**
- * Deterministic pseudo-random number from a clip id + position seed.
- * Mirrors evaluateFollowActions' seededRandom so per-note probability gates
- * replay identically across sessions instead of using Math.random() (§55.3).
- */
-function seededRandom(clipId: string, position: number): number {
-    let h = 2166136261;
-    for (let index = 0; index < clipId.length; index++) {
-        h ^= clipId.charCodeAt(index);
-        h = Math.imul(h, 16777619);
-    }
-    h ^= Math.floor(position * 1e4) | 0;
-    h = Math.imul(h, 16777619);
-    // Fold to [0, 1).
-    return ((h >>> 0) % 1_000_000) / 1_000_000;
-}
 
 /** Toaster parent-device note controls shape (local — cross-module model isolation). */
 type ToasterControls = {
@@ -135,7 +119,15 @@ export async function scheduleMidiNotes(
                         clipId: clip.id,
                         iterationStartBeat,
                         midiOffsetBeats: clip.midiOffsetBeats ?? 0,
-                        sourceNotes,
+                        sourceNotes: sourceNotes.filter((note) =>
+                            shouldPlayMidiEvent({
+                                projectProbabilitySeed: midiState.probabilitySeed,
+                                clipId: clip.id,
+                                eventId: note.id,
+                                absoluteOccurrenceIndex: iteration,
+                                probabilityPercent: note.probability ?? 100,
+                            })
+                        ),
                     });
                     if (
                         activeYeastCarrierRouteId === undefined &&
@@ -274,10 +266,6 @@ export async function scheduleMidiNotes(
                         continue;
                     }
 
-                    let rawStartBeat = clip.startBeat + iterOffset + (note.startBeat - clipMidiOffset);
-                    if (notesAreAbsolute) {
-                        rawStartBeat = note.startBeat;
-                    }
                     const iterationStart = clip.startBeat + iterOffset;
                     let projectedNotes: readonly LiveYeastNote[];
                     if (isTrackScopedYeastNote) {
@@ -309,9 +297,17 @@ export async function scheduleMidiNotes(
                         if (!isCurrent()) {
                             return;
                         }
-                        const probability = note.probability ?? 100;
-                        if (probability < 100 && seededRandom(clip.id, rawStartBeat) * 100 >= probability) {
-                            continue;
+                        if (!yeastDevice) {
+                            const shouldPlay = shouldPlayMidiEvent({
+                                projectProbabilitySeed: midiState.probabilitySeed,
+                                clipId: clip.id,
+                                eventId: note.id,
+                                absoluteOccurrenceIndex: iter,
+                                probabilityPercent: note.probability ?? 100,
+                            });
+                            if (!shouldPlay) {
+                                continue;
+                            }
                         }
 
                         let pitch = note.pitch;

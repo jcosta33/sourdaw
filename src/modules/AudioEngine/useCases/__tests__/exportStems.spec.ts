@@ -97,6 +97,7 @@ describe('exportStems', () => {
                 () =>
                 ({ events }) =>
                     events,
+            selectProbability: () => true,
         });
         configureOfflinePpqEndpointProjection({
             project: ({ startPpq, endPpq, sampleRate }) => ({

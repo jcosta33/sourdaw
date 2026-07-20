@@ -3,7 +3,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { trackStore } from '#/modules/Arrangement/stores';
 import { resolveClipsWithComping, getSynthParamsForTrack } from '#/modules/Arrangement/useCases';
 import { midiStore } from '#/modules/MIDI/stores';
-import { projectClipMidiEvents } from '#/modules/MIDI/useCases';
+import { projectClipMidiEvents, shouldPlayMidiEvent } from '#/modules/MIDI/useCases';
 import { scheduleNote } from '#/modules/Synth/useCases';
 import { processYeastMidi } from '#/modules/Yeast/useCases';
 
@@ -11,6 +11,8 @@ import { defaultTransportState } from '../../../models/TransportState';
 import { tempoMapStore } from '../../../stores/tempoMapStore';
 import { timeSignatureMapStore } from '../../../stores/timeSignatureMapStore';
 import { scheduleMidiNotes, type SchedulerCancellation } from '../scheduleMidiNotes';
+
+const shouldPlayProbability = vi.hoisted(() => vi.fn((_input: { eventId: string }) => true));
 
 vi.mock('#/modules/Arrangement/stores', () => ({
     trackStore: { value: { tracks: [] } },
@@ -54,6 +56,7 @@ vi.mock('#/modules/MIDI/useCases', () => ({
     projectClipMidiEvents: vi.fn(),
     projectCommittedGroove: vi.fn(({ events }: { events: readonly unknown[] }) => events),
     transposeForChordTrack: vi.fn((param: unknown) => param),
+    shouldPlayMidiEvent: shouldPlayProbability,
 }));
 
 function midiTrack(overrides: Record<string, unknown> = {}) {
@@ -102,6 +105,7 @@ describe('scheduleMidiNotes', () => {
             }))
         );
         vi.mocked(processYeastMidi).mockImplementation((input) => Promise.resolve([...input.events]));
+        shouldPlayProbability.mockImplementation(() => true);
     });
 
     it('does not schedule synth when MIDI store is uninitialized', async () => {
@@ -156,6 +160,11 @@ describe('scheduleMidiNotes', () => {
             return vi.mocked(scheduleNote).mock.calls.map((call) => call[2]);
         }
 
+        shouldPlayProbability.mockImplementation(({ eventId }: { eventId: string }) => {
+            const index = Number(eventId.slice('note-'.length));
+            return index % 2 === 0;
+        });
+
         const first = await pitchesFromRun();
         const second = await pitchesFromRun();
 
@@ -164,6 +173,41 @@ describe('scheduleMidiNotes', () => {
         // Sanity: 50% gating actually drops some of the 16 notes (not all-or-nothing).
         expect(first.length).toBeGreaterThan(0);
         expect(first.length).toBeLessThan(notes.length);
+    });
+
+    it('keys equal-position probability decisions by persisted seed and stable event id', async () => {
+        const track = midiTrack({ clips: [midiClip()] });
+        (trackStore as { value: unknown }).value = { tracks: [track] };
+        (midiStore as { value: unknown }).value = {
+            probabilitySeed: 0xdecafbad,
+            notesByClipId: {
+                'clip-1': [
+                    { id: 'event-alpha', pitch: 60, startBeat: 1, duration: 0.25, velocity: 100, probability: 50 },
+                    { id: 'event-beta', pitch: 61, startBeat: 1, duration: 0.25, velocity: 100, probability: 50 },
+                ],
+            },
+            ccByClipId: {},
+            pitchBendByClipId: {},
+        };
+        shouldPlayProbability.mockImplementation(({ eventId }: { eventId: string }) => eventId === 'event-alpha');
+
+        await scheduleMidiNotes(0, 4, 0, -1, [], defaultTransportState, 120);
+
+        expect(vi.mocked(scheduleNote).mock.calls.map((call) => call[2])).toEqual([60]);
+        expect(shouldPlayMidiEvent).toHaveBeenCalledWith({
+            projectProbabilitySeed: 0xdecafbad,
+            clipId: 'clip-1',
+            eventId: 'event-alpha',
+            absoluteOccurrenceIndex: 0,
+            probabilityPercent: 50,
+        });
+        expect(shouldPlayMidiEvent).toHaveBeenCalledWith({
+            projectProbabilitySeed: 0xdecafbad,
+            clipId: 'clip-1',
+            eventId: 'event-beta',
+            absoluteOccurrenceIndex: 0,
+            probabilityPercent: 50,
+        });
     });
 
     // §6 — A Yeast generator can emit notes for a clip that has none. Those

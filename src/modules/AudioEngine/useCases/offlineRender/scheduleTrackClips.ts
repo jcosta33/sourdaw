@@ -11,7 +11,10 @@ import {
 import { type TempoMapStoreState } from '#/modules/Transport/stores';
 
 import { scheduleTrackAutomation } from '../../repositories/offlineScheduler/automationScheduling';
-import { type OfflineMidiEventProjector } from '../../repositories/offlineScheduler/offlineMidiEventProjectorState';
+import {
+    type OfflineMidiEventProjector,
+    type OfflineMidiProbabilitySelector,
+} from '../../repositories/offlineScheduler/offlineMidiEventProjectorState';
 import { type OfflinePpqEndpointProjector } from '../../repositories/offlineScheduler/offlinePpqEndpointProjectorState';
 import { type OfflineYeastMidiProcessor } from '../../repositories/offlineScheduler/offlineYeastMidiProcessorState';
 import { beatToSeconds } from '../../services/beatConversion';
@@ -115,6 +118,7 @@ type OfflineProjectionDependencies = {
     projectMidiEvents: OfflineMidiEventProjector;
     projectPpqEndpoints: OfflinePpqEndpointProjector;
     processYeastMidi: OfflineYeastMidiProcessor | null;
+    selectMidiEventProbability: OfflineMidiProbabilitySelector;
 };
 
 export type ScheduleTrackClipsInput = {
@@ -154,7 +158,7 @@ export async function scheduleTrackClips({
     deviceEntriesByTrack,
     regionStartBeat = 0,
 }: ScheduleTrackClipsInput): Promise<void> {
-    const { projectMidiEvents, projectPpqEndpoints, processYeastMidi } = projections;
+    const { projectMidiEvents, projectPpqEndpoints, processYeastMidi, selectMidiEventProbability } = projections;
     const regionStartSec = projectPpqEndpoints({
         startPpq: regionStartBeat,
         endPpq: regionStartBeat,
@@ -328,7 +332,15 @@ export async function scheduleTrackClips({
             const iterationCount = clip.loopEnabled ? Math.ceil(clipVisualLength / loopLength) : 1;
             for (let iteration = 0; iteration < iterationCount; iteration++) {
                 iterations.push({
-                    sourceNotes,
+                    sourceNotes: sourceNotes.filter((note) =>
+                        selectMidiEventProbability({
+                            projectProbabilitySeed: midi.probabilitySeed,
+                            clipId: clip.id,
+                            eventId: note.id,
+                            absoluteOccurrenceIndex: iteration,
+                            probabilityPercent: note.probability ?? 100,
+                        })
+                    ),
                     clipId: clip.id,
                     clipStartBeat: clip.startBeat,
                     clipEndBeat: clip.endBeat,
@@ -394,8 +406,17 @@ export async function scheduleTrackClips({
                 const iterOffset = iter * loopLen;
                 const iterationStartBeat = clip.startBeat + iterOffset;
                 const midiOffsetBeats = clip.midiOffsetBeats ?? 0;
+                const acceptedSourceNotes = sourceNotes.filter((note) =>
+                    selectMidiEventProbability({
+                        projectProbabilitySeed: midi.probabilitySeed,
+                        clipId: clip.id,
+                        eventId: note.id,
+                        absoluteOccurrenceIndex: iter,
+                        probabilityPercent: note.probability ?? 100,
+                    })
+                );
                 const notes = projectMidiEvents({
-                    events: sourceNotes,
+                    events: acceptedSourceNotes,
                     clipId: clip.id,
                     clipStartBeat: clip.startBeat,
                     clipEndBeat: clip.endBeat,

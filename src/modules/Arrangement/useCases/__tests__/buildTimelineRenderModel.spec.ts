@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 
+import { LEGACY_MIDI_PROBABILITY_SEED } from '#/modules/MIDI/stores';
 import { playheadPositionRef } from '#/modules/Transport/stores';
 
 import { createTrack } from '../../models/Track';
@@ -99,7 +100,12 @@ describe('buildTimelineRenderModel', () => {
         };
         playheadPositionRef.current = 0;
         timelineViewStoreMock.value = { pixelsPerBeat: 12, scrollX: 0, scrollY: 0 };
-        midiStoreMock.value = { notesByClipId: {}, ccByClipId: {}, pitchBendByClipId: {} };
+        midiStoreMock.value = {
+            probabilitySeed: LEGACY_MIDI_PROBABILITY_SEED,
+            notesByClipId: {},
+            ccByClipId: {},
+            pitchBendByClipId: {},
+        };
         clipSelectionStoreMock.value = { selectedClipId: null, selectedClipIds: [] };
         preferencesStoreMock.value = { trackHeight: 'normal' };
         clipDragPreviewRef.current = null;
@@ -136,7 +142,12 @@ describe('buildTimelineRenderModel', () => {
             selectedTrackId: null,
         };
         timelineViewStoreMock.value = { pixelsPerBeat: 12, scrollX: 0, scrollY: 0 };
-        midiStoreMock.value = { notesByClipId: {}, ccByClipId: {}, pitchBendByClipId: {} };
+        midiStoreMock.value = {
+            probabilitySeed: LEGACY_MIDI_PROBABILITY_SEED,
+            notesByClipId: {},
+            ccByClipId: {},
+            pitchBendByClipId: {},
+        };
         clipSelectionStoreMock.value = { selectedClipId: null, selectedClipIds: [] };
         preferencesStoreMock.value = { trackHeight: 'normal' };
         clipDragPreviewRef.current = null;

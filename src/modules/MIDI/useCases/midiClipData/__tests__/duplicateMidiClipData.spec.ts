@@ -1,14 +1,14 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { type MidiStoreState } from '../../../stores/midiStore';
+import { type MidiStoreStateInput } from '../../../stores/midiStore';
 
 const mocks = vi.hoisted(() => {
-    const state: { value: MidiStoreState | null } = { value: null };
+    const state: { value: MidiStoreStateInput | null } = { value: null };
 
     return {
         state,
-        getValue: vi.fn((): MidiStoreState | null => state.value),
-        set: vi.fn((nextState: MidiStoreState): void => {
+        getValue: vi.fn((): MidiStoreStateInput | null => state.value),
+        set: vi.fn((nextState: MidiStoreStateInput): void => {
             state.value = nextState;
         }),
     };
@@ -16,7 +16,7 @@ const mocks = vi.hoisted(() => {
 
 vi.mock('../../../stores/midiStore', () => ({
     midiStore: {
-        get value(): MidiStoreState | null {
+        get value(): MidiStoreStateInput | null {
             return mocks.getValue();
         },
         set: mocks.set,
@@ -39,7 +39,7 @@ function createPitchBend(id: string) {
     return { id, value: 256, beat: 0, channel: 1 };
 }
 
-function requireMidiState(): MidiStoreState {
+function requireMidiState(): MidiStoreStateInput {
     const state = mocks.state.value;
     if (state === null) {
         throw new Error('Expected MIDI store state');
@@ -105,7 +105,7 @@ describe('duplicateMidiClipData', () => {
     });
 
     it('writes nothing when every source category is empty', () => {
-        const previousState: MidiStoreState = {
+        const previousState: MidiStoreStateInput = {
             notesByClipId: { empty: [], keep: [createNote('note-keep')] },
             ccByClipId: { empty: [], keep: [createControlChange('cc-keep')] },
             pitchBendByClipId: { empty: [], keep: [createPitchBend('pitch-keep')] },
@@ -131,7 +131,7 @@ describe('duplicateMidiClipData', () => {
         const sourceNoteBefore = { ...sourceNote };
         const sourceControlChangeBefore = { ...sourceControlChange };
         const sourcePitchBendBefore = { ...sourcePitchBend };
-        const previousState: MidiStoreState = {
+        const previousState: MidiStoreStateInput = {
             notesByClipId: { source: [sourceNote], keep: [unrelatedNote], target: [createNote('note-old')] },
             ccByClipId: {
                 source: [sourceControlChange],
@@ -267,7 +267,7 @@ describe('duplicateMidiClipData', () => {
 
     it('does not write a partial batch when UUID generation fails', () => {
         const sourceRows = [createNote('note-one'), createNote('note-two')];
-        const previousState: MidiStoreState = {
+        const previousState: MidiStoreStateInput = {
             notesByClipId: { source: sourceRows },
             ccByClipId: {},
             pitchBendByClipId: {},
@@ -291,7 +291,7 @@ describe('duplicateMidiClipData', () => {
     });
 
     it('scopes write-then-throw compensation without erasing newer owner state', () => {
-        const previousState: MidiStoreState = {
+        const previousState: MidiStoreStateInput = {
             notesByClipId: { source: [createNote('note-source')] },
             ccByClipId: { source: [createControlChange('cc-source')] },
             pitchBendByClipId: { source: [createPitchBend('pb-source')] },

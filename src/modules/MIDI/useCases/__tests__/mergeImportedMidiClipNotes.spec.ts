@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 
-import { midiStore } from '../../stores/midiStore';
+import { LEGACY_MIDI_PROBABILITY_SEED, midiStore } from '../../stores/midiStore';
 import { mergeImportedMidiClipNotes } from '../mergeImportedMidiClipNotes';
 
 const existingNote = {
@@ -22,6 +22,7 @@ const importedNote = {
 describe('mergeImportedMidiClipNotes', () => {
     beforeEach(() => {
         midiStore.set({
+            probabilitySeed: LEGACY_MIDI_PROBABILITY_SEED,
             notesByClipId: { 'existing-clip': [existingNote] },
             ccByClipId: {
                 'existing-clip': [{ id: 'cc-existing', controller: 1, value: 64, beat: 0, channel: 0 }],
@@ -38,6 +39,7 @@ describe('mergeImportedMidiClipNotes', () => {
         });
 
         expect(midiStore.value).toEqual({
+            probabilitySeed: LEGACY_MIDI_PROBABILITY_SEED,
             notesByClipId: {
                 'existing-clip': [existingNote],
                 'imported-clip': [importedNote],
@@ -59,6 +61,7 @@ describe('mergeImportedMidiClipNotes', () => {
         });
 
         expect(midiStore.value).toEqual({
+            probabilitySeed: LEGACY_MIDI_PROBABILITY_SEED,
             notesByClipId: { 'imported-clip': [importedNote] },
             ccByClipId: {},
             pitchBendByClipId: {},

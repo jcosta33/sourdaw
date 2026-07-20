@@ -4,7 +4,7 @@
 //! via the NativePlugin trait. All communication is lock-free via rtrb.
 
 use crate::audio_bridge::PluginAudioBridge;
-use crate::midi_fx::{Arpeggiator, MidiEventBuffer, MidiFx, VelocityScaler};
+use crate::midi_fx::{Arpeggiator, MidiEventBuffer, MidiFx, ProbabilityEvaluator, VelocityScaler};
 use crate::plugin_slot::{MidiNoteEvent, NativePlugin, TransportState};
 use daw_core::tuning::TuningTable;
 use daw_dsp::knead::engine::KneadEngine;
@@ -142,6 +142,7 @@ impl AudioScheduler {
                         let fx: Option<Box<dyn MidiFx>> = match fx_type.as_str() {
                             "arp" => Some(Box::new(Arpeggiator::default())),
                             "velocity" => Some(Box::new(VelocityScaler::default())),
+                            "probability" => Some(Box::new(ProbabilityEvaluator::default())),
                             _ => None,
                         };
                         if let Some(instance) = fx {
@@ -433,6 +434,10 @@ mod tests {
                         channel: channel as i16,
                         is_note_on: true,
                         probability: 1.0,
+                        project_probability_seed: 0,
+                        clip_id_hash: 0,
+                        event_id_hash: 0,
+                        absolute_occurrence_index: 0,
                     },
                 ))
                 .unwrap();

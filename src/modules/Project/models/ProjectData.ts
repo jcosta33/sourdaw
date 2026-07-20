@@ -188,6 +188,7 @@ export type ProjectMidiPitchBend = {
 };
 
 export type ProjectMidi = {
+    probabilitySeed?: number;
     notesByClipId: Record<string, ProjectMidiNote[]>;
     ccByClipId: Record<string, ProjectMidiCC[]>;
     pitchBendByClipId: Record<string, ProjectMidiPitchBend[]>;
