@@ -1,8 +1,8 @@
 import { describe, it, expect, vi, beforeEach, type Mock } from 'vitest';
 
+import { openDatabase } from '../helpers';
 import { loadDocFromIdb } from '../loadDocFromIdb';
 import { loadIncrementalsFromIdb } from '../loadIncrementalsFromIdb';
-import { openDatabase } from '../helpers';
 import { replaceAllInIdb } from '../replaceAllInIdb';
 import { saveDocToIdb } from '../saveDocToIdb';
 
