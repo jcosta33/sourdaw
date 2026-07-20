@@ -1,0 +1,29 @@
+src/modules/Arrangement/presentations/helpers/__tests__/timelineTools.spec.ts
+  s_75f59e6653feee::t_88aa20e86ebcce 3,15,53,57,60,64
+src/modules/Arrangement/presentations/helpers/timelineTools.ts
+  s_c2fca615e81f34::t_ca1ff1a9e70cb7 14,41-46
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "cb46a107448624bc8fd711d8012207d323387e02",
+  "prompts": {},
+  "sessions": {
+    "s_75f59e6653feee": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f819a-2ddc-70b3-ab04-f29a50e9a71d",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_c2fca615e81f34": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f74e9-e1c5-7142-85d2-4c577b3973c0",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
