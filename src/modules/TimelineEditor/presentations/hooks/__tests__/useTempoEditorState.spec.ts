@@ -47,7 +47,7 @@ let mockTempoMapState: { changes: Array<{ id: string; beat: number; tempo: numbe
     changes: [],
 };
 
-const mockUseStore = vi.fn((store: unknown) => {
+const mockUseStore = vi.fn((store: unknown, _defaultState?: unknown) => {
     if (store === mockTransportStore) {
         return mockTransportState;
     }
