@@ -278,4 +278,185 @@ describe('setProofParamWithPatch', () => {
         expect(getProofState('no-bridge').patch.outputGain).toBe(5);
         expect(persistDevicePatch).toHaveBeenCalledWith('no-bridge', { output_gain: 5 });
     });
+
+    it('maps dynBypassed to the shared dyn_bypass engine convention', () => {
+        const bridge = makeBridge();
+        bridges.set('dev-1', bridge);
+
+        setProofParamWithPatch({ deviceId: 'dev-1', key: 'dynBypassed', value: true });
+
+        expect(getProofState('dev-1').patch.dynBypassed).toBe(true);
+        expect(bridge.setParam).toHaveBeenCalledWith('dyn_bypass', 1);
+        expect(persistDevicePatch).toHaveBeenCalledWith('dev-1', { dyn_bypass: 1 });
+    });
+
+    it('maps imgBypassed to the shared img_bypass engine convention', () => {
+        const bridge = makeBridge();
+        bridges.set('dev-1', bridge);
+
+        setProofParamWithPatch({ deviceId: 'dev-1', key: 'imgBypassed', value: true });
+
+        expect(getProofState('dev-1').patch.imgBypassed).toBe(true);
+        expect(bridge.setParam).toHaveBeenCalledWith('img_bypass', 1);
+        expect(persistDevicePatch).toHaveBeenCalledWith('dev-1', { img_bypass: 1 });
+    });
+
+    it('maps excBypassed to the shared exc_bypass engine convention', () => {
+        const bridge = makeBridge();
+        bridges.set('dev-1', bridge);
+
+        setProofParamWithPatch({ deviceId: 'dev-1', key: 'excBypassed', value: false });
+
+        expect(getProofState('dev-1').patch.excBypassed).toBe(false);
+        expect(bridge.setParam).toHaveBeenCalledWith('exc_bypass', 0);
+        expect(persistDevicePatch).toHaveBeenCalledWith('dev-1', { exc_bypass: 0 });
+    });
+
+    it('maps imgAutoMonoBass to the shared img_auto_mono_bass engine convention', () => {
+        const bridge = makeBridge();
+        bridges.set('dev-1', bridge);
+
+        setProofParamWithPatch({ deviceId: 'dev-1', key: 'imgAutoMonoBass', value: false });
+
+        expect(getProofState('dev-1').patch.imgAutoMonoBass).toBe(false);
+        expect(bridge.setParam).toHaveBeenCalledWith('img_auto_mono_bass', 0);
+        expect(persistDevicePatch).toHaveBeenCalledWith('dev-1', { img_auto_mono_bass: 0 });
+    });
+
+    it('passes limRelease through to lim_release unscaled', () => {
+        const bridge = makeBridge();
+        bridges.set('dev-1', bridge);
+
+        setProofParamWithPatch({ deviceId: 'dev-1', key: 'limRelease', value: 250 });
+
+        expect(getProofState('dev-1').patch.limRelease).toBe(250);
+        expect(bridge.setParam).toHaveBeenCalledWith('lim_release', 250);
+        expect(persistDevicePatch).toHaveBeenCalledWith('dev-1', { lim_release: 250 });
+    });
+
+    it('passes limLookahead through to lim_lookahead unscaled', () => {
+        const bridge = makeBridge();
+        bridges.set('dev-1', bridge);
+
+        setProofParamWithPatch({ deviceId: 'dev-1', key: 'limLookahead', value: 3 });
+
+        expect(getProofState('dev-1').patch.limLookahead).toBe(3);
+        expect(bridge.setParam).toHaveBeenCalledWith('lim_lookahead', 3);
+        expect(persistDevicePatch).toHaveBeenCalledWith('dev-1', { lim_lookahead: 3 });
+    });
+
+    it('passes imgMonoBassFreq through to img_mono_bass_freq unscaled', () => {
+        const bridge = makeBridge();
+        bridges.set('dev-1', bridge);
+
+        setProofParamWithPatch({ deviceId: 'dev-1', key: 'imgMonoBassFreq', value: 150 });
+
+        expect(getProofState('dev-1').patch.imgMonoBassFreq).toBe(150);
+        expect(bridge.setParam).toHaveBeenCalledWith('img_mono_bass_freq', 150);
+        expect(persistDevicePatch).toHaveBeenCalledWith('dev-1', { img_mono_bass_freq: 150 });
+    });
+
+    it('passes ditherBits through to dither_bits unscaled', () => {
+        const bridge = makeBridge();
+        bridges.set('dev-1', bridge);
+
+        setProofParamWithPatch({ deviceId: 'dev-1', key: 'ditherBits', value: 24 });
+
+        expect(getProofState('dev-1').patch.ditherBits).toBe(24);
+        expect(bridge.setParam).toHaveBeenCalledWith('dither_bits', 24);
+        expect(persistDevicePatch).toHaveBeenCalledWith('dev-1', { dither_bits: 24 });
+    });
+
+    it('resyncs every EQ band to the engine on a full-array replacement with no changedParams', () => {
+        const bridge = makeBridge();
+        bridges.set('dev-1', bridge);
+        const bands = DEFAULT_PATCH.eqBands.map((band, index) =>
+            index === 3 ? { ...band, freq: 900, gain: 2 } : band
+        );
+
+        setProofParamWithPatch({ deviceId: 'dev-1', key: 'eqBands', value: bands });
+
+        expect(getProofState('dev-1').patch.eqBands[3]).toEqual({ ...DEFAULT_PATCH.eqBands[3], freq: 900, gain: 2 });
+        expect(bridge.setParam).toHaveBeenCalledWith('eq_band3_freq', 900);
+        expect(bridge.setParam).toHaveBeenCalledWith('eq_band3_gain', 2);
+        // The full sync walks every band, not only the one that changed.
+        expect(bridge.setParam).toHaveBeenCalledWith('eq_band0_freq', DEFAULT_PATCH.eqBands[0]!.freq);
+        expect(bridge.setParam).toHaveBeenCalledWith('eq_band7_q', DEFAULT_PATCH.eqBands[7]!.q);
+    });
+
+    it('resyncs every exciter band to the engine on a full-array replacement with no changedParams', () => {
+        const bridge = makeBridge();
+        bridges.set('dev-1', bridge);
+        const bands = DEFAULT_PATCH.excBands.map((band, index) =>
+            index === 1 ? { ...band, drive: 0.9, enabled: true } : band
+        );
+
+        setProofParamWithPatch({ deviceId: 'dev-1', key: 'excBands', value: bands });
+
+        expect(getProofState('dev-1').patch.excBands[1]).toEqual({
+            ...DEFAULT_PATCH.excBands[1],
+            drive: 0.9,
+            enabled: true,
+        });
+        expect(bridge.setParam).toHaveBeenCalledWith('exc_band1_drive', 0.9);
+        expect(bridge.setParam).toHaveBeenCalledWith('exc_band1_enabled', 1);
+        // The full sync walks every band, not only the one that changed.
+        expect(bridge.setParam).toHaveBeenCalledWith('exc_band0_type', DEFAULT_PATCH.excBands[0]!.type);
+        expect(bridge.setParam).toHaveBeenCalledWith('exc_band3_blend', DEFAULT_PATCH.excBands[3]!.blend);
+    });
+
+    it('merges a changed imager band width and drops an unchanged sibling from the delta', () => {
+        const bridge = makeBridge();
+        bridges.set('dev-1', bridge);
+        const widths = getProofState('dev-1').patch.imgBandWidth.map((width, index) =>
+            index === 2 ? 1.9 : width
+        ) as typeof DEFAULT_PATCH.imgBandWidth;
+
+        setProofParamWithPatch({
+            deviceId: 'dev-1',
+            key: 'imgBandWidth',
+            value: widths,
+            changedParams: [{ bandIndex: 2 }, { bandIndex: 0 }],
+        });
+
+        expect(getProofState('dev-1').patch.imgBandWidth).toEqual([
+            DEFAULT_PATCH.imgBandWidth[0],
+            DEFAULT_PATCH.imgBandWidth[1],
+            1.9,
+            DEFAULT_PATCH.imgBandWidth[3],
+        ]);
+        // bandIndex 0 requested the same value it already had — filtered out of the delta.
+        expect(bridge.setParam).toHaveBeenCalledTimes(1);
+        expect(bridge.setParam).toHaveBeenCalledWith('img_width2', 1.9);
+        expect(persistDevicePatch).toHaveBeenCalledWith('dev-1', expect.objectContaining({ img_width2: 1.9 }));
+    });
+
+    it('translates dynBands autoMakeup and bypassed changed-fields to their engine param names', () => {
+        const bridge = makeBridge();
+        bridges.set('dev-1', bridge);
+        const bands = getProofState('dev-1').patch.dynBands.map((band, index) => {
+            if (index === 0) {
+                return { ...band, autoMakeup: false };
+            }
+            if (index === 1) {
+                return { ...band, bypassed: true };
+            }
+            return band;
+        });
+
+        setProofParamWithPatch({
+            deviceId: 'dev-1',
+            key: 'dynBands',
+            value: bands,
+            changedParams: [
+                { bandIndex: 0, field: 'autoMakeup' },
+                { bandIndex: 1, field: 'bypassed' },
+            ],
+        });
+
+        expect(getProofState('dev-1').patch.dynBands[0]?.autoMakeup).toBe(false);
+        expect(getProofState('dev-1').patch.dynBands[1]?.bypassed).toBe(true);
+        expect(bridge.setParam).toHaveBeenCalledWith('dyn_band0_auto_makeup', 0);
+        expect(bridge.setParam).toHaveBeenCalledWith('dyn_band1_bypass', 1);
+    });
 });
