@@ -12,8 +12,12 @@ vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => {
     const actual = await importOriginal<typeof import('#/modules/Arrangement/useCases')>();
     return {
         ...actual,
-        acceptGhostClip: (...args: unknown[]) => mockAcceptGhostClip(...args),
-        dismissGhostClip: (...args: unknown[]) => mockDismissGhostClip(...args),
+        acceptGhostClip: (clipId: string): void => {
+            mockAcceptGhostClip(clipId);
+        },
+        dismissGhostClip: (clipId: string): void => {
+            mockDismissGhostClip(clipId);
+        },
     };
 });
 
@@ -85,7 +89,7 @@ describe('TrackClipsSection', () => {
                 name: 'Clip 1',
                 startBeat: 0,
                 endBeat: 16,
-                type: 'audio',
+                type: 'midi',
                 fadeInBeats: 0,
                 fadeOutBeats: 0,
                 gain: 1,
@@ -174,6 +178,21 @@ describe('TrackClipsSection', () => {
         }
         fireEvent.click(firstCard);
         expect(mockOnSelectClip).toHaveBeenCalledWith('clip-1');
+    });
+
+    it('publishes MIDI clip transfer data from a dedicated drag affordance', () => {
+        const setData = vi.fn();
+        render(<TrackClipsSection track={mockTrack} onSelectClip={mockOnSelectClip} />);
+
+        fireEvent.dragStart(screen.getByRole('button', { name: 'Select or drag Clip 1 as groove source' }), {
+            dataTransfer: { effectAllowed: '', setData },
+        });
+
+        expect(setData).toHaveBeenCalledWith('application/x-sourdaw-midi-clip', 'clip-1');
+        expect(setData).toHaveBeenCalledWith('text/plain', 'clip-1');
+        expect(
+            screen.queryByRole('button', { name: 'Select or drag Clip 2 as groove source' })
+        ).not.toBeInTheDocument();
     });
 
     it('should show ghost badge for ghost clips', () => {

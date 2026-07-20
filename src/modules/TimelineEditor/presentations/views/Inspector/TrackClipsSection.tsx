@@ -1,12 +1,13 @@
 import { type ReactElement } from 'react';
 
-import { Check, X, Sparkles } from 'lucide-react';
+import { Check, GripVertical, X, Sparkles } from 'lucide-react';
 
 import { DawEmptyState } from '#/components/daw/DawEmptyState';
 import { DawHeaderBand } from '#/components/daw/DawHeaderBand';
 import { DawMicroBadge } from '#/components/daw/DawMicroBadge';
 import { Button } from '#/components/ui/button';
 import { acceptGhostClip, dismissGhostClip } from '#/modules/Arrangement/useCases';
+import { MIDI_CLIP_DRAG_MIME_TYPE } from '#/utils/midiClipDrag';
 
 import { type Track } from '../../../models/TrackViewTypes';
 import { ChoiceCard } from '../../components/Inspector/ChoiceCard';
@@ -41,6 +42,26 @@ export const TrackClipsSection = ({ track, onSelectClip }: TrackClipsSectionProp
                                 ) : null}
                                 <span className="text-xs text-foreground font-medium truncate">{clip.name}</span>
                                 {clip.isGhost ? <DawMicroBadge tone="primary">Ghost</DawMicroBadge> : null}
+                                {clip.type === 'midi' && !clip.isGhost ? (
+                                    <button
+                                        type="button"
+                                        draggable
+                                        aria-label={`Select or drag ${clip.name} as groove source`}
+                                        className="ml-auto shrink-0 cursor-grab rounded-sm p-0.5 text-muted-foreground hover:text-foreground active:cursor-grabbing"
+                                        onClick={(event) => {
+                                            event.stopPropagation();
+                                            onSelectClip(clip.id);
+                                        }}
+                                        onDragStart={(event) => {
+                                            event.stopPropagation();
+                                            event.dataTransfer.effectAllowed = 'copy';
+                                            event.dataTransfer.setData(MIDI_CLIP_DRAG_MIME_TYPE, clip.id);
+                                            event.dataTransfer.setData('text/plain', clip.id);
+                                        }}
+                                    >
+                                        <GripVertical aria-hidden="true" className="size-3" />
+                                    </button>
+                                ) : null}
                             </div>
                             <MetaText>
                                 bar {Math.floor(clip.startBeat / 4) + 1}–{Math.floor(clip.endBeat / 4) + 1}
