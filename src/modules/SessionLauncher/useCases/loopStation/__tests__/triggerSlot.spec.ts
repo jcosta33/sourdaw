@@ -74,4 +74,12 @@ describe('triggerSlot', () => {
         triggerSlot('missing');
         expect(loopStationStore.set).not.toHaveBeenCalled();
     });
+
+    it('does not update the store when no session is loaded', () => {
+        loopStationStoreMock.value = null;
+
+        triggerSlot('s1');
+
+        expect(loopStationStore.set).not.toHaveBeenCalled();
+    });
 });

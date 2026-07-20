@@ -54,4 +54,12 @@ describe('stopSlot', () => {
         const next = vi.mocked(loopStationStore.set).mock.calls[0]![0] as LoopStationState;
         expect(next.slots[0]!.state).toBe('stopped');
     });
+
+    it('does not update the store when no session is loaded', () => {
+        loopStationStoreMock.value = null;
+
+        stopSlot('s1');
+
+        expect(loopStationStore.set).not.toHaveBeenCalled();
+    });
 });
