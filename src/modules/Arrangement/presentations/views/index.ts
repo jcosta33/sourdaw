@@ -6,7 +6,7 @@ export { ArrangementBar, ARRANGEMENT_BAR_HEIGHT } from './ArrangementBar';
 export { BeatRulerBar, BEAT_RULER_HEIGHT } from './BeatRulerBar';
 export { MarkerLane, MARKER_LANE_HEIGHT } from './MarkerLane';
 export { TimelineChromeSurface } from './TimelineChromeSurface';
-export { TimelineMinimap, MINIMAP_HEIGHT } from './TimelineMinimap';
+export { TimelineMinimap } from './TimelineMinimap';
 export { TakeLanesView } from './TakeLanesView';
 export { TimelineSurface } from './TimelineSurface';
 export { TrackListView } from './TrackListView';

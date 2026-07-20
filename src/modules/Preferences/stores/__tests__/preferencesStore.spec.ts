@@ -100,4 +100,46 @@ describe('preferencesStore — empty persisted storage (first run)', () => {
         expect(persisted).not.toBeNull();
         expect(parse(persisted as string)).toMatchObject({ theme: 'light', bufferSize: 1024 });
     });
+
+    it('seeds a visible 28px minimap under the current preferences schema', async () => {
+        vi.resetModules();
+        const fresh = (await import('../preferencesStore')).preferencesStore;
+
+        expect(fresh.value).toMatchObject({
+            preferencesSchemaVersion: 1,
+            showMinimap: true,
+            timelineMinimapHeight: 28,
+        });
+    });
+});
+
+describe('preferencesStore — legacy minimap visibility migration', () => {
+    const STORAGE_KEY = 'sourdaw-preferences';
+
+    beforeEach(() => {
+        window.localStorage.clear();
+    });
+
+    afterEach(() => {
+        window.localStorage.clear();
+    });
+
+    it('writes the migrated visible baseline back once, then honors a later explicit hidden choice', async () => {
+        window.localStorage.setItem(STORAGE_KEY, stringify({ showMinimap: false, theme: 'light' }));
+        vi.resetModules();
+        const fresh = (await import('../preferencesStore')).preferencesStore;
+
+        expect(fresh.value).toMatchObject({
+            preferencesSchemaVersion: 1,
+            showMinimap: true,
+            timelineMinimapHeight: 28,
+        });
+
+        fresh.set({ ...fresh.value!, showMinimap: false });
+        vi.resetModules();
+        const reloaded = (await import('../preferencesStore')).preferencesStore;
+
+        expect(reloaded.value?.showMinimap).toBe(false);
+        expect(reloaded.value?.preferencesSchemaVersion).toBe(1);
+    });
 });
