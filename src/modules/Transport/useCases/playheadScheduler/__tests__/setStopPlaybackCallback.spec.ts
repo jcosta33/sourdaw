@@ -13,7 +13,7 @@ describe('setStopPlaybackCallback', () => {
     });
 
     it('registers the callback on the scheduler session', () => {
-        const callback = (): void => {};
+        function callback(): void {}
 
         setStopPlaybackCallback(callback);
 
@@ -21,8 +21,8 @@ describe('setStopPlaybackCallback', () => {
     });
 
     it('replaces a previously registered callback', () => {
-        const first = (): void => {};
-        const second = (): void => {};
+        function first(): void {}
+        function second(): void {}
 
         setStopPlaybackCallback(first);
         setStopPlaybackCallback(second);
