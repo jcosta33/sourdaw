@@ -184,8 +184,10 @@ pub async fn commit_pitch_edit(
                     let ratio = 2.0_f32.powf(shift_semitones / 12.0);
                     let target_hz = pt.frequency_hz * ratio;
                     
-                    // Fill curve ahead roughly one period
-                    let period = (sample_rate / target_hz).max(1.0);
+                    // Fill curve ahead roughly one source period (up to the
+                    // next mark) — filling one target period leaves zero
+                    // stretches that read as "no shift" downstream.
+                    let period = (sample_rate / pt.frequency_hz).max(1.0);
                     let end_idx = ((current_sample + period) as usize).min(target_f0_curve.len());
                     for i in idx..end_idx {
                         target_f0_curve[i] = target_hz;
