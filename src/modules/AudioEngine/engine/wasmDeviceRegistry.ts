@@ -134,6 +134,9 @@ const toasterDescriptor: WasmDeviceDescriptor = {
             ready: false,
             noteOn: () => {},
             noteOff: () => {},
+            scheduleHit: () => {},
+            cancelScheduled: () => {},
+            allNotesOff: () => {},
             setParam: (name, value) => {
                 pendingParams.push([name, value]);
             },
@@ -157,6 +160,7 @@ const toasterDescriptor: WasmDeviceDescriptor = {
                         ready: true,
                         noteOn: result.noteOn,
                         noteOff: result.noteOff,
+                        allNotesOff: result.allNotesOff,
                         setParam: result.setParam,
                         setPadParam: result.setPadParam,
                         setBypass: result.setBypass,
@@ -180,6 +184,9 @@ const toasterDescriptor: WasmDeviceDescriptor = {
                         ready: true,
                         noteOn: result.noteOn,
                         noteOff: result.noteOff,
+                        scheduleHit: result.scheduleHit,
+                        cancelScheduled: result.cancelScheduled,
+                        allNotesOff: result.allNotesOff,
                         setParam: result.setParam,
                         setPadParam: result.setPadParam,
                         setBypass: result.setBypass,

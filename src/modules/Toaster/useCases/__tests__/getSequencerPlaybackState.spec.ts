@@ -14,7 +14,6 @@ describe('getSequencerPlaybackState', () => {
             timeoutId: null,
             preScheduledStep: null,
             lastBpm: null,
-            pendingFireIds: new Set(),
         });
     });
 

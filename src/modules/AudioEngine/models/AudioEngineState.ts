@@ -22,6 +22,20 @@ export type AudioEngineHealth = {
     lastResumeError: Error | null;
 };
 
+type ToasterScheduledPadParam = {
+    name: string;
+    value: number;
+};
+
+type ToasterScheduledHit = {
+    pad: number;
+    velocity: number;
+    midiNote?: number;
+    sampleFrame: number;
+    padParams: ToasterScheduledPadParam[];
+    restoreEngineType?: number;
+};
+
 export type DeviceController = {
     ready?: boolean;
     setParam(name: string, value: number, sampleFrame?: number): void;
@@ -79,6 +93,9 @@ export type BuiltinDeviceNode = {
         ready: boolean;
         noteOn: (pad: number, velocity: number, midiNote?: number, sampleFrame?: number) => void;
         noteOff: (pad: number, sampleFrame?: number) => void;
+        scheduleHit: (hit: ToasterScheduledHit) => void;
+        cancelScheduled: () => void;
+        allNotesOff: () => void;
         setParam: (name: string, value: number) => void;
         setPadParam: (pad: number, name: string, value: number) => void;
         setBypass: (bypassed: boolean) => void;

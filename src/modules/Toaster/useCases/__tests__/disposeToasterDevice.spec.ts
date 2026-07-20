@@ -17,8 +17,17 @@ import { triggerToasterPad } from '../triggerPad';
 // the rAF pad-param flush has a real strip to target — otherwise the flush
 // short-circuits before scheduling a frame and the cancellation can't be proven.
 const setPadParam = vi.fn();
+const scheduleHit = vi.fn();
+const allNotesOff = vi.fn();
 vi.mock('#/modules/AudioEngine/useCases', () => ({
     getAudioTime: vi.fn(() => 0),
+    getAudioSampleRate: vi.fn(() => 48_000),
+    getToasterDeviceControls: vi.fn(() => ({
+        ready: true,
+        scheduleHit,
+        cancelScheduled: vi.fn(),
+        allNotesOff,
+    })),
     getTrackStrip: vi.fn(() => ({
         deviceNodes: [{ toasterControls: { ready: true, setPadParam } }],
     })),
@@ -78,6 +87,8 @@ describe('disposeToasterDevice', () => {
         vi.useFakeTimers();
         vi.clearAllMocks();
         setPadParam.mockClear();
+        scheduleHit.mockClear();
+        allNotesOff.mockClear();
         toasterStore.set({});
     });
 
@@ -98,7 +109,7 @@ describe('disposeToasterDevice', () => {
         startSequencer(DEVICE, 120);
 
         // The first tick fired (and stored isPlaying:true).
-        expect(triggerToasterPad).toHaveBeenCalledWith(DEVICE, 0, 127);
+        expect(scheduleHit).toHaveBeenCalledWith(expect.objectContaining({ pad: 0, velocity: 127 }));
         expect(toasterStore.value?.[DEVICE]?.isPlaying).toBe(true);
 
         disposeToasterDevice(DEVICE);
@@ -106,12 +117,12 @@ describe('disposeToasterDevice', () => {
         // A device record reappears (e.g. a fresh instance reuses the id, or any
         // store write lands) while the OLD sequencer's timer is still pending.
         seedDevice(DEVICE, activeStep());
-        vi.mocked(triggerToasterPad).mockClear();
+        scheduleHit.mockClear();
 
         // Advancing past several step durations must not fire another tick:
         // a lingering running:true sequencer would re-arm and re-trigger here.
         vi.advanceTimersByTime(5000);
-        expect(triggerToasterPad).not.toHaveBeenCalled();
+        expect(scheduleHit).not.toHaveBeenCalled();
     });
 
     // Bug #3: per-device note-repeat sessions were never cleared on teardown,

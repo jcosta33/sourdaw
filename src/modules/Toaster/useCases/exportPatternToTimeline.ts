@@ -94,21 +94,11 @@ export function exportPatternToTimeline(deviceId: string): ExportPatternToTimeli
         }
 
         const clipLength = numSteps * stepDurationBeats;
-        const clip = addClip({
-            trackId: childTrack.id,
-            startBeat: insertAt,
-            endBeat: insertAt + clipLength,
-            name: childTrack.name,
-            type: 'midi',
-        });
-        if (!clip) {
-            continue;
-        }
-        const clipId = clip.id;
-        const midiNote = 36 + track.padIndex;
-
-        // Add MIDI notes for each active step using the same projection as the
-        // live sequencer so timing, dynamics, swing, and retriggers stay in sync.
+        const projectedHits: Array<{
+            startBeat: number;
+            durationBeats: number;
+            velocity: number;
+        }> = [];
         for (let stepIdx = 0; stepIdx < numSteps; stepIdx++) {
             const step = track.steps[stepIdx];
             if (!step?.active) {
@@ -128,8 +118,35 @@ export function exportPatternToTimeline(deviceId: string): ExportPatternToTimeli
                 return projection;
             }
             for (const hit of projection.hits) {
-                addMidiNote(clipId, midiNote, hit.startBeat, hit.durationBeats, hit.velocity);
+                projectedHits.push({
+                    startBeat: hit.startBeat + hit.loopOffsetBeats,
+                    durationBeats: hit.durationBeats,
+                    velocity: hit.velocity,
+                });
             }
+        }
+
+        let exportedLength = clipLength;
+        for (const hit of projectedHits) {
+            exportedLength = Math.max(exportedLength, hit.startBeat + hit.durationBeats);
+        }
+        const clip = addClip({
+            trackId: childTrack.id,
+            startBeat: insertAt,
+            endBeat: insertAt + exportedLength,
+            name: childTrack.name,
+            type: 'midi',
+        });
+        if (!clip) {
+            continue;
+        }
+        const clipId = clip.id;
+        const midiNote = 36 + track.padIndex;
+
+        // Add MIDI notes using the same projection as the live sequencer so
+        // timing, dynamics, swing, and retriggers stay in sync.
+        for (const hit of projectedHits) {
+            addMidiNote(clipId, midiNote, hit.startBeat, hit.durationBeats, hit.velocity);
         }
     }
     return { ok: true };

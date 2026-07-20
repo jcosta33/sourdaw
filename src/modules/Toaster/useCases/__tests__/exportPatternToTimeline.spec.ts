@@ -304,4 +304,42 @@ describe('exportPatternToTimeline', () => {
         expect(r2Start).toBeCloseTo(2 / 3, 10);
         expect(r2Vel).toBe(Math.round(127 * (1 - 0.24)));
     });
+
+    it('keeps a positively shifted final step in the following loop during one-shot export', () => {
+        const parent = { id: 'parent', parentId: null, devices: [{ id: DEVICE_ID }] };
+        const child = { id: 'child-0', name: 'Kick', parentId: 'parent', devices: [] };
+        vi.mocked(getAllTracks).mockReturnValue([parent, child] as never);
+        vi.mocked(addClip).mockReturnValue({ id: 'clip' } as never);
+        mockStore.value = {
+            [DEVICE_ID]: {
+                kit: {
+                    swing: 1,
+                    activePatternId: 'A1',
+                    patterns: [
+                        {
+                            id: 'A1',
+                            stepsPerBar: 4,
+                            bars: 1,
+                            tracks: [
+                                {
+                                    padIndex: 0,
+                                    steps: [
+                                        makeStep(),
+                                        makeStep(),
+                                        makeStep(),
+                                        makeStep({ active: true, microTiming: 0.5 }),
+                                    ],
+                                },
+                            ],
+                        },
+                    ],
+                },
+            },
+        };
+
+        exportPatternToTimeline(DEVICE_ID);
+
+        expect(addMidiNote).toHaveBeenCalledWith('clip', 36, 4, expect.any(Number), expect.any(Number));
+        expect(addClip).toHaveBeenCalledWith(expect.objectContaining({ startBeat: 0, endBeat: 4.9 }));
+    });
 });

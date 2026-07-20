@@ -4,28 +4,31 @@ import { Container } from '#/infra/di/Container';
 import { getAudioTime } from '#/modules/AudioEngine/useCases';
 import { defaultGrooveTemplateState, grooveTemplateStore } from '#/modules/MIDI/stores';
 import { assignGrooveTemplate, createGrooveTemplate } from '#/modules/MIDI/useCases';
+import { transportStore } from '#/modules/Transport/stores';
 
 import { type Step, type ToasterKit, createDefaultKit } from '../../models/ToasterKit';
 import { toasterStore, defaultToasterState } from '../../stores/toasterStore';
+import { cancelScheduledToasterHits } from '../cancelScheduledToasterHits';
+import { TOASTER_ENGINE_MAP } from '../loadToasterKit';
+import { releaseToasterNotes } from '../releaseToasterNotes';
+import { scheduleToasterHit } from '../scheduleToasterHit';
 import { startSequencer } from '../startSequencer';
 import { stopSequencer } from '../stopSequencer';
-import { setPadEngineImmediate } from '../toasterParamBridge/setPadEngineImmediate';
-import { triggerToasterPad } from '../triggerPad';
 
 vi.mock('#/modules/AudioEngine/useCases', () => ({
     getAudioTime: vi.fn(() => 0),
 }));
 
-vi.mock('../triggerPad', () => ({
-    triggerToasterPad: vi.fn(),
+vi.mock('../scheduleToasterHit', () => ({
+    scheduleToasterHit: vi.fn(),
 }));
 
-vi.mock('../toasterParamBridge/setPadEngineImmediate', () => ({
-    setPadEngineImmediate: vi.fn(),
+vi.mock('../cancelScheduledToasterHits', () => ({
+    cancelScheduledToasterHits: vi.fn(),
 }));
 
-vi.mock('../toasterParamBridge/setToasterPadParam', () => ({
-    setToasterPadParam: vi.fn(),
+vi.mock('../releaseToasterNotes', () => ({
+    releaseToasterNotes: vi.fn(),
 }));
 
 const DEVICE = 'seq-device';
@@ -75,6 +78,7 @@ describe('startSequencer', () => {
         vi.clearAllMocks();
         toasterStore.set({});
         grooveTemplateStore.set(structuredClone(defaultGrooveTemplateState));
+        transportStore.set({ ...transportStore.value!, tempo: 120 });
     });
 
     afterEach(() => {
@@ -115,9 +119,14 @@ describe('startSequencer', () => {
 
         startSequencer(DEVICE, 120);
 
-        expect(triggerToasterPad).not.toHaveBeenCalled();
-        vi.advanceTimersByTime(25);
-        expect(triggerToasterPad).toHaveBeenCalledWith(DEVICE, 0, 114);
+        expect(scheduleToasterHit).toHaveBeenCalledWith(
+            expect.objectContaining({
+                deviceId: DEVICE,
+                padIndex: 0,
+                velocity: 114,
+                targetTimeSeconds: 0.025,
+            })
+        );
     });
 
     // Regression — tick must trigger and route locks to ITS OWN deviceId, not
@@ -130,45 +139,56 @@ describe('startSequencer', () => {
 
         startSequencer(DEVICE, 120);
 
-        // Trigger fired on the sequencer's own device.
-        expect(triggerToasterPad).toHaveBeenCalledWith(DEVICE, 0, 127);
-        // Engine swap routed to the same device — never to OTHER.
-        for (const call of vi.mocked(setPadEngineImmediate).mock.calls) {
-            expect(call[0]).toBe(DEVICE);
-        }
-        expect(vi.mocked(setPadEngineImmediate).mock.calls.length).toBeGreaterThan(0);
+        const scheduled = vi.mocked(scheduleToasterHit).mock.calls[0]?.[0];
+        expect(scheduled?.deviceId).toBe(DEVICE);
+        expect(scheduled?.padIndex).toBe(0);
+        expect(scheduled?.velocity).toBe(127);
+        expect(scheduled?.padParams?.some((param) => param.name === 'engineType')).toBe(true);
+        expect(scheduled?.restoreEngineType).toBe(TOASTER_ENGINE_MAP['kick-808']);
     });
 
     // Regression (Fix #4) — for a delayed (microtiming) sound-locked step the
     // engine swap must ride inside the deferred fire, not mutate the shared slot
     // before the delay. So no swap happens until the delay elapses.
-    it('defers the sound-lock engine swap until the microtiming fire', () => {
+    it('queues delayed sound locks on the audio clock without waiting for a main-thread timer', () => {
         seedDevice(DEVICE, activeStep({ soundLock: 'snare-808', microTiming: 0.4 }));
 
         startSequencer(DEVICE, 120);
 
-        // Before the microtiming delay: no engine swap and no trigger yet.
-        expect(setPadEngineImmediate).not.toHaveBeenCalled();
-        expect(triggerToasterPad).not.toHaveBeenCalled();
-
-        vi.advanceTimersByTime(800); // 0.4 of the four-beat, one-step pattern grid
-
-        // Now the swap-trigger-revert sequence has run.
-        expect(triggerToasterPad).toHaveBeenCalledWith(DEVICE, 0, 127);
-        expect(setPadEngineImmediate).toHaveBeenCalled();
+        const scheduled = vi
+            .mocked(scheduleToasterHit)
+            .mock.calls.find(([input]) => input.targetTimeSeconds === 0.8)?.[0];
+        expect(scheduled?.deviceId).toBe(DEVICE);
+        expect(scheduled?.padIndex).toBe(0);
+        expect(scheduled?.velocity).toBe(127);
+        expect(scheduled?.padParams?.some((param) => param.name === 'engineType')).toBe(true);
+        expect(scheduled?.restoreEngineType).toBe(TOASTER_ENGINE_MAP['kick-808']);
     });
 
     // Regression (Fix #2) — microtiming/retrigger fires scheduled by a tick must
     // be cancelled by stopSequencer; otherwise ghost hits land after Stop.
-    it('cancels pending microtiming fires on stop (no ghost hits)', () => {
+    it('releases worklet-queued hits on stop so no ghost hit survives', () => {
         seedDevice(DEVICE, activeStep({ microTiming: 0.4, retriggerCount: 3 }));
 
         startSequencer(DEVICE, 120);
-        expect(triggerToasterPad).not.toHaveBeenCalled(); // all deferred
+        const scheduledBeforeStop = vi.mocked(scheduleToasterHit).mock.calls.length;
+        expect(scheduledBeforeStop).toBeGreaterThan(0);
 
         stopSequencer(DEVICE);
         vi.advanceTimersByTime(5000); // would have fired the ghost hits
 
-        expect(triggerToasterPad).not.toHaveBeenCalled();
+        expect(releaseToasterNotes).toHaveBeenCalledWith(DEVICE);
+        expect(scheduleToasterHit).toHaveBeenCalledTimes(scheduledBeforeStop);
+    });
+
+    it('cancels queued lookahead when tempo changes before projecting the replacement', () => {
+        seedDevice(DEVICE, activeStep());
+        startSequencer(DEVICE, 120);
+        vi.mocked(getAudioTime).mockReturnValue(2);
+
+        transportStore.set({ ...transportStore.value!, tempo: 90 });
+        vi.advanceTimersByTime(2000);
+
+        expect(cancelScheduledToasterHits).toHaveBeenCalledWith(DEVICE);
     });
 });

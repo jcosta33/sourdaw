@@ -7,20 +7,18 @@
 import { getAudioTime } from '#/modules/AudioEngine/useCases';
 import { transportStore } from '#/modules/Transport/stores';
 
-import { type PadState, type Pattern } from '../models/ToasterKit';
+import { type Pattern } from '../models/ToasterKit';
 import { toasterStore, type ToasterState } from '../stores/toasterStore';
 
-import { getSequencerPlaybackState, type SequencerPlaybackState } from './getSequencerPlaybackState';
+import { cancelScheduledToasterHits } from './cancelScheduledToasterHits';
+import { getSequencerPlaybackState } from './getSequencerPlaybackState';
 import { TOASTER_ENGINE_MAP } from './loadToasterKit';
 import { morphPatterns } from './patternMorph';
 import { projectToasterPatternGroove } from './projectToasterPatternGroove';
 import { projectToasterStepEvents } from './projectToasterStepEvents';
-import { scheduleSequencerFire } from './scheduleSequencerFire';
+import { scheduleToasterHit } from './scheduleToasterHit';
 import { shouldTriggerSequencerStep } from './shouldTriggerSequencerStep';
 import { stopSequencer } from './stopSequencer';
-import { setPadEngineImmediate } from './toasterParamBridge/setPadEngineImmediate';
-import { setToasterPadParam } from './toasterParamBridge/setToasterPadParam';
-import { triggerToasterPad } from './triggerPad';
 
 type RunSequencerTickInput = {
     deviceId: string;
@@ -33,11 +31,11 @@ type SchedulePatternStepInput = {
     sourcePatternId: string;
     pattern: Pattern;
     state: ToasterState;
-    seqState: SequencerPlaybackState;
     currentStep: number;
     bpm: number;
     loopIndex: number;
     gridDelayMs: number;
+    audioTimeSeconds: number;
 };
 
 function schedulePatternStep({
@@ -45,11 +43,11 @@ function schedulePatternStep({
     sourcePatternId,
     pattern,
     state,
-    seqState,
     currentStep,
     bpm,
     loopIndex,
     gridDelayMs,
+    audioTimeSeconds,
 }: SchedulePatternStepInput): boolean {
     const totalSteps = pattern.stepsPerBar * pattern.bars;
     const stepDurationBeats = 4 / pattern.stepsPerBar;
@@ -76,7 +74,9 @@ function schedulePatternStep({
         }
         const gridStartBeat = stepIdx * stepDurationBeats;
         const pad = state.kit.pads[track.padIndex];
-        const locks = Object.entries(step.paramLocks).filter(([key]) => !key.startsWith('_'));
+        const padParams = Object.entries(step.paramLocks)
+            .filter(([key]) => !key.startsWith('_'))
+            .map(([name, value]) => ({ name, value }));
         let lockedEngineIdx: number | null = null;
         if (step.soundLock) {
             lockedEngineIdx = TOASTER_ENGINE_MAP[step.soundLock];
@@ -87,41 +87,26 @@ function schedulePatternStep({
         }
         const padIndex = track.padIndex;
 
-        function fireBase(velocity: number): void {
-            for (const [key, value] of locks) {
-                setToasterPadParam(deviceId, padIndex, key as keyof PadState, value);
-            }
-            if (lockedEngineIdx !== null && defaultEngineIdx !== null) {
-                setPadEngineImmediate(deviceId, padIndex, lockedEngineIdx);
-                triggerToasterPad(deviceId, padIndex, velocity);
-                setPadEngineImmediate(deviceId, padIndex, defaultEngineIdx);
-                return;
-            }
-            triggerToasterPad(deviceId, padIndex, velocity);
-        }
-
         for (const hit of projection.hits) {
             const projectedStartBeat = hit.startBeat + hit.loopOffsetBeats;
             const totalDelayMs = Math.max(0, gridDelayMs + (projectedStartBeat - gridStartBeat) * (60_000 / bpm));
-            function fireRetrigger(): void {
-                triggerToasterPad(deviceId, padIndex, hit.velocity);
-            }
-            function fireProjectedBase(): void {
-                fireBase(hit.velocity);
-            }
-            let fire = fireRetrigger;
+            let scheduledPadParams: Array<{ name: string; value: number }> = [];
+            let restoreEngineType: number | undefined;
             if (hit.retriggerIndex === 0) {
-                fire = fireProjectedBase;
+                scheduledPadParams = padParams;
+                if (lockedEngineIdx !== null && defaultEngineIdx !== null) {
+                    scheduledPadParams = [...padParams, { name: 'engineType', value: lockedEngineIdx }];
+                    restoreEngineType = defaultEngineIdx;
+                }
             }
-            if (totalDelayMs > 1) {
-                scheduleSequencerFire({
-                    seqState,
-                    fire,
-                    delayMs: totalDelayMs,
-                });
-                continue;
-            }
-            fire();
+            scheduleToasterHit({
+                deviceId,
+                padIndex,
+                velocity: hit.velocity,
+                targetTimeSeconds: audioTimeSeconds + totalDelayMs / 1000,
+                padParams: scheduledPadParams,
+                restoreEngineType,
+            });
         }
     }
     return true;
@@ -145,10 +130,7 @@ export function runSequencerTick({ deviceId, currentStep, bpm }: RunSequencerTic
         return;
     }
     if (seqState.lastBpm !== null && seqState.lastBpm !== currentBpm) {
-        for (const id of seqState.pendingFireIds) {
-            clearTimeout(id);
-        }
-        seqState.pendingFireIds.clear();
+        cancelScheduledToasterHits(deviceId);
         seqState.preScheduledStep = null;
         seqState.nextTickTime = now;
     }
@@ -193,11 +175,11 @@ export function runSequencerTick({ deviceId, currentStep, bpm }: RunSequencerTic
             sourcePatternId: sourcePattern.id,
             pattern,
             state,
-            seqState,
             currentStep,
             bpm: currentBpm,
             loopIndex: seqState.playCount,
             gridDelayMs: 0,
+            audioTimeSeconds: now,
         });
         if (!scheduled) {
             stopSequencer(deviceId);
@@ -217,11 +199,11 @@ export function runSequencerTick({ deviceId, currentStep, bpm }: RunSequencerTic
         sourcePatternId: sourcePattern.id,
         pattern,
         state,
-        seqState,
         currentStep: nextStep,
         bpm: currentBpm,
         loopIndex: seqState.playCount,
         gridDelayMs: stepDurationMs,
+        audioTimeSeconds: now,
     });
     if (!scheduledNextStep) {
         stopSequencer(deviceId);
