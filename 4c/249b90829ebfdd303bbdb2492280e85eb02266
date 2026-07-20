@@ -1,0 +1,33 @@
+src/modules/AiRuntime/useCases/__tests__/validateActions.spec.ts
+  s_3b6effb999dc38::t_b1e0c6da0a843c 63-73
+src/modules/Arrangement/useCases/__tests__/getArrangementHandlers.spec.ts
+  s_3b6effb999dc38::t_0fb3287164c174 12,17-23
+src/modules/Arrangement/useCases/vca/__tests__/commitLegacyVcaTemplateState.spec.ts
+  s_3b6effb999dc38::t_96abf7c465a0b4 47-96
+src/utils/handlerContract.ts
+  s_7475f7f4c58c43::t_a94aed0bd04503 125-137,469-477,481-489
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "4c249b90829ebfdd303bbdb2492280e85eb02266",
+  "prompts": {},
+  "sessions": {
+    "s_3b6effb999dc38": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8163-4ceb-7ff2-81f6-1f4419f24ec6",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_7475f7f4c58c43": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f80f5-432b-7962-b884-92c9a0f55e05",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
