@@ -1,5 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 
+import { createOfflineYeastMidiProcessor } from '#/modules/Yeast/useCases';
+
 import { type OfflineMidiEventProjector } from '../../../repositories/offlineScheduler/offlineMidiEventProjectorState';
 import { type OfflinePpqEndpointProjector } from '../../../repositories/offlineScheduler/offlinePpqEndpointProjectorState';
 import { type OfflineYeastMidiProcessor } from '../../../repositories/offlineScheduler/offlineYeastMidiProcessorState';
@@ -77,5 +79,77 @@ describe('projectOfflineYeastTrackNotes', () => {
         expect(processYeastMidi).toHaveBeenCalledTimes(1);
         expect(phases).toEqual(['clip-groove', 'clip-groove', 'clip-groove', 'sequencer-groove']);
         expect(notes).toEqual([expect.objectContaining({ pitch: 64, startSamples: 100, endSamples: 200 })]);
+    });
+
+    it('retains each clip route through the production rack for post-Yeast projection', () => {
+        function projectMidiEvents<Event extends ProjectableEvent>(
+            input: Parameters<OfflineMidiEventProjector>[0]
+        ): readonly Event[] {
+            return input.events as readonly Event[];
+        }
+        const processYeastMidi = createOfflineYeastMidiProcessor({
+            resolvePpqPosition: ({ samples, sampleRate }) => samples / sampleRate,
+            resolveMusicalPosition: () => ({
+                bpm: 60,
+                barIndex: 0,
+                beatInBar: 0,
+                timeSigNum: 4,
+                timeSigDen: 4,
+                loopEnabled: false,
+                loopStartPpq: 0,
+                loopEndPpq: 0,
+            }),
+            processors: [
+                {
+                    id: 'transpose',
+                    type: 'transposer',
+                    name: 'Transposer',
+                    bypassed: false,
+                    params: { semitones: 12 },
+                },
+            ],
+        });
+        const sourceNotes = [{ id: 'note', pitch: 60, startBeat: 0.5, duration: 0.5, velocity: 100 }];
+
+        const notes = projectOfflineYeastTrackNotes({
+            trackId: 'track-1',
+            iterations: [
+                {
+                    sourceNotes,
+                    clipId: 'clip-1',
+                    clipStartBeat: 0,
+                    clipEndBeat: 2,
+                    iterationStartBeat: 0,
+                    loopLengthBeats: 2,
+                    midiOffsetBeats: 0,
+                    loopEnabled: false,
+                    toasterPadIndex: 2,
+                },
+                {
+                    sourceNotes,
+                    clipId: 'clip-2',
+                    clipStartBeat: 2,
+                    clipEndBeat: 4,
+                    iterationStartBeat: 2,
+                    loopLengthBeats: 2,
+                    midiOffsetBeats: 0,
+                    loopEnabled: false,
+                    toasterPadIndex: 3,
+                },
+            ],
+            sampleRate: 100,
+            blockStartSamples: 0,
+            blockEndSamples: 400,
+            defaultTempo: 60,
+            changes: [],
+            projectMidiEvents,
+            projectPpqEndpoints,
+            processYeastMidi,
+        });
+
+        expect(notes).toEqual([
+            expect.objectContaining({ pitch: 72, startSamples: 50, endSamples: 100, toasterPadIndex: 2 }),
+            expect.objectContaining({ pitch: 72, startSamples: 250, endSamples: 300, toasterPadIndex: 3 }),
+        ]);
     });
 });

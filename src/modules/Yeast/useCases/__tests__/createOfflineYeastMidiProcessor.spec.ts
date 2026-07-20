@@ -157,4 +157,54 @@ describe('createOfflineYeastMidiProcessor', () => {
             { timeSamples: 200, kind: { type: 'noteOff', channel: 0, note: 72 } },
         ]);
     });
+
+    it('preserves source routes while delayed processor output crosses offline blocks', () => {
+        const processSnapshot = createOfflineYeastMidiProcessor({
+            resolvePpqPosition: ({ samples, sampleRate }) => samples / (sampleRate * 0.5),
+            resolveMusicalPosition: () => ({
+                bpm: 120,
+                barIndex: 0,
+                beatInBar: 0,
+                timeSigNum: 4,
+                timeSigDen: 4,
+                loopEnabled: false,
+                loopStartPpq: 0,
+                loopEndPpq: 0,
+            }),
+            processors: [
+                {
+                    id: 'repeat',
+                    type: 'repeater',
+                    name: 'Repeater',
+                    bypassed: false,
+                    params: { repeat_count: 1, rate_denom: 16 },
+                },
+            ],
+        });
+
+        const output = processSnapshot({
+            trackId: 'track-a',
+            sampleRate: 48_000,
+            blockStartSamples: 0,
+            blockEndSamples: 7_000,
+            events: [
+                {
+                    timeSamples: 0,
+                    timePpq: 0,
+                    trackId: 'clip-route-a',
+                    kind: { type: 'noteOn', channel: 0, note: 60, velocity: 100 },
+                },
+                {
+                    timeSamples: 100,
+                    timePpq: 100 / 24_000,
+                    trackId: 'clip-route-a',
+                    kind: { type: 'noteOff', channel: 0, note: 60 },
+                },
+            ],
+        });
+        const routedNotes = output.filter((event) => event.kind.type === 'noteOn' || event.kind.type === 'noteOff');
+
+        expect(routedNotes.some((event) => event.timeSamples > 128)).toBe(true);
+        expect(routedNotes.every((event) => event.trackId === 'clip-route-a')).toBe(true);
+    });
 });

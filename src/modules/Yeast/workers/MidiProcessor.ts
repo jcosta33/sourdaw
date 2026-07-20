@@ -35,7 +35,7 @@ export type MidiProcessor = {
     isBypassed(): boolean;
 
     /** Set the route whose block is currently being processed. */
-    setTrackId?(trackId: string): void;
+    setTrackId?(trackId: string | undefined): void;
 
     /** Set a named parameter. */
     setParam(name: string, value: number): void;

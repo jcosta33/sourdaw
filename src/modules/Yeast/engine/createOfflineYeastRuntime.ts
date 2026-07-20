@@ -74,7 +74,7 @@ export function createOfflineYeastRuntime({
                 ppqPosition: blockPpq,
                 isPlaying: true,
             };
-            const blockOutput = rack.processBlock(
+            const blockOutput = rack.processOfflineBlock(
                 blockEvents,
                 blockStartSamples,
                 blockEndSamples,
