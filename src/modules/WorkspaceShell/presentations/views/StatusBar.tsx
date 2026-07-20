@@ -20,6 +20,7 @@ import { useSelectionLabel } from '../hooks/useSelectionLabel';
 import { useStatusBarMetrics } from '../hooks/useStatusBarMetrics';
 import { useUndoState } from '../hooks/useUndoState';
 
+import { CvOutputStatusBadge } from './CvOutputStatusBadge';
 import { MidiStatusBadge } from './MidiStatusBadge';
 import { MonitorStatusBadge } from './MonitorStatusBadge';
 
@@ -188,6 +189,7 @@ export const StatusBar = (): ReactElement => {
                     ) : null}
                     <MidiStatusBadge />
                     <MonitorStatusBadge />
+                    <CvOutputStatusBadge />
                     <Tooltip>
                         <TooltipTrigger asChild>
                             <Button
