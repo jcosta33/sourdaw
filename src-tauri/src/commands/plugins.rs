@@ -560,7 +560,7 @@ pub async fn send_plugin_midi(
             velocity,
             channel,
             is_note_on,
-            probability: 1.0,
+            probability_cutoff: daw_engine::midi_fx::PROBABILITY_CUTOFF_RANGE,
             project_probability_seed: 0,
             clip_id_hash: 0,
             event_id_hash: 0,

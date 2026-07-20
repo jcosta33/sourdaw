@@ -9,7 +9,8 @@ pub struct MidiNoteEvent {
     pub velocity: u8,
     pub channel: i16,
     pub is_note_on: bool,
-    pub probability: f32, // 0.0 to 1.0
+    /// Fixed acceptance cutoff in the inclusive range 0..=2^32.
+    pub probability_cutoff: u64,
     pub project_probability_seed: u32,
     pub clip_id_hash: u32,
     pub event_id_hash: u32,

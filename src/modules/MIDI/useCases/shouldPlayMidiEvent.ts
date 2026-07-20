@@ -58,7 +58,18 @@ function probabilityRoll({
     hash = mixU32(hash, hashStableId(eventId));
     hash = mixU32(hash, occurrenceLow);
     hash = mixU32(hash, occurrenceHigh);
-    return avalanche(hash) / U32_RANGE;
+    return avalanche(hash);
+}
+
+function probabilityPercentToCutoff(probabilityPercent: number): number {
+    if (!Number.isFinite(probabilityPercent) || probabilityPercent <= 0) {
+        return 0;
+    }
+    if (probabilityPercent >= 100) {
+        return U32_RANGE;
+    }
+
+    return Math.ceil((probabilityPercent / 100) * U32_RANGE);
 }
 
 export function shouldPlayMidiEvent({
@@ -68,12 +79,6 @@ export function shouldPlayMidiEvent({
     absoluteOccurrenceIndex,
     probabilityPercent,
 }: ShouldPlayMidiEventInput): boolean {
-    if (probabilityPercent <= 0) {
-        return false;
-    }
-    if (probabilityPercent >= 100) {
-        return true;
-    }
     if (!Number.isFinite(probabilityPercent)) {
         return false;
     }
@@ -84,5 +89,6 @@ export function shouldPlayMidiEvent({
         eventId,
         absoluteOccurrenceIndex,
     });
-    return roll < probabilityPercent / 100;
+    const cutoff = probabilityPercentToCutoff(probabilityPercent);
+    return roll < cutoff;
 }

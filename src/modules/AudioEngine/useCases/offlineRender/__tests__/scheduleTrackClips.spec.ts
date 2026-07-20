@@ -1,8 +1,9 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 
-import { type Track } from '#/modules/Arrangement/stores';
+import { type TakeLaneStoreState, type Track } from '#/modules/Arrangement/stores';
 import { type MidiStoreState } from '#/modules/MIDI/stores';
 
+import { type OfflineMidiProbabilitySelector } from '../../../repositories/offlineScheduler/offlineMidiEventProjectorState';
 import { type OfflineYeastMidiProcessor } from '../../../repositories/offlineScheduler/offlineYeastMidiProcessorState';
 import { type DeviceNodeEntry } from '../../buildDeviceChain';
 import { scheduleTrackClips } from '../scheduleTrackClips';
@@ -57,14 +58,12 @@ const mocks = vi.hoisted(() => {
     return {
         getCompensationDelay: vi.fn<(trackId: string) => number>(() => 0),
         scheduleTrackAutomation: vi.fn(),
-        takeLaneValue: { value: null },
+        takeLaneValue: { value: null as TakeLaneStoreState | null },
         automationValue: { value: null },
         audioBufferCache: { get: vi.fn(() => undefined) },
         projectMidiEvents: vi.fn<(input: unknown) => void>(),
         processYeastMidi: vi.fn<(input: unknown) => void>(),
-        shouldPlayMidiEvent: vi.fn(
-            ({ probabilityPercent }: { probabilityPercent: number; eventId: string }) => probabilityPercent > 0
-        ),
+        shouldPlayMidiEvent: vi.fn<OfflineMidiProbabilitySelector>(({ probabilityPercent }) => probabilityPercent > 0),
         projection,
     };
 });
@@ -414,6 +413,61 @@ describe('scheduleTrackClips — MIDI plugin-delay compensation', () => {
             absoluteOccurrenceIndex: 0,
             probabilityPercent: 50,
         });
+    });
+
+    it('keeps probability occurrence anchored to the source loop through comp segments', async () => {
+        const track = makeMidiTrack();
+        track.clips[0]!.endBeat = 8;
+        track.clips[0]!.loopEnabled = true;
+        track.clips[0]!.loopLength = 2;
+        mocks.takeLaneValue.value = {
+            lanes: [
+                {
+                    id: 'lane-1',
+                    trackId: track.id,
+                    takes: [
+                        {
+                            id: 'take-1',
+                            clipId: 'clip-1',
+                            name: 'Take 1',
+                            startBeat: 0,
+                            endBeat: 8,
+                            selected: true,
+                        },
+                    ],
+                    activeCompRegions: [{ startBeat: 4, endBeat: 6, takeId: 'take-1' }],
+                },
+            ],
+        };
+        const midi = makeMidi();
+        const entry = makeInstrumentEntry();
+
+        await scheduleTrackClips({
+            offlineCtx: makeOfflineCtx(),
+            track,
+            midi,
+            trackInputNode: {} as GainNode,
+            trackGainNode: {} as GainNode,
+            trackPanNode: {} as StereoPannerNode,
+            destination: {} as AudioNode,
+            durationSeconds: 60,
+            defaultTempo: 120,
+            changes: [],
+            projections: {
+                projectMidiEvents,
+                projectPpqEndpoints,
+                processYeastMidi,
+                selectMidiEventProbability: mocks.shouldPlayMidiEvent,
+            },
+            pendingWorkletEvents: [],
+            allTracks: [track],
+            deviceEntriesByTrack: new Map([[track.id, [entry]]]),
+            regionStartBeat: 0,
+        });
+
+        expect(mocks.shouldPlayMidiEvent.mock.calls.map(([input]) => input.absoluteOccurrenceIndex)).toEqual([
+            0, 1, 2, 3,
+        ]);
     });
 
     it('should project committed groove timing and dynamics before offline scheduling', async () => {

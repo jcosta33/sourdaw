@@ -66,6 +66,18 @@ describe('shouldPlayMidiEvent', () => {
         expect(shouldPlayMidiEvent({ ...tuple, probabilityPercent: 100 })).toBe(true);
     });
 
+    it('keeps the published near-boundary vector without floating-point narrowing', () => {
+        expect(
+            shouldPlayMidiEvent({
+                projectProbabilitySeed: 0xffff_ffff,
+                clipId: 'loop-🎹',
+                eventId: 'note-Ω',
+                absoluteOccurrenceIndex: 4_294_967_297,
+                probabilityPercent: 88.92774630813615,
+            })
+        ).toBe(true);
+    });
+
     it('retains the roll stream for in-place edits and changes it for duplication or moving clips', () => {
         const stableTuple = {
             projectProbabilitySeed: 0x12345678,

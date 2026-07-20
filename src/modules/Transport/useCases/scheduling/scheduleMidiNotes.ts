@@ -56,6 +56,31 @@ type ToasterControls = {
     noteOn: (pad: number, velocity: number, pitchNote: number, sampleFrame?: number) => void;
 };
 
+type GetSourceOccurrenceOffsetInput = {
+    sourceStartBeat: number;
+    segmentStartBeat: number;
+    loopLength: number;
+    loopEnabled: boolean;
+};
+
+function getSourceOccurrenceOffset({
+    sourceStartBeat,
+    segmentStartBeat,
+    loopLength,
+    loopEnabled,
+}: GetSourceOccurrenceOffsetInput): number {
+    if (!loopEnabled || loopLength <= 0) {
+        return 0;
+    }
+
+    const beatsFromSourceStart = segmentStartBeat - sourceStartBeat;
+    if (beatsFromSourceStart <= 0) {
+        return 0;
+    }
+
+    return Math.floor(beatsFromSourceStart / loopLength);
+}
+
 export async function scheduleMidiNotes(
     fromBeat: number,
     toBeat: number,
@@ -124,11 +149,18 @@ export async function scheduleMidiNotes(
                 if (loopLength <= 0) {
                     continue;
                 }
+                const sourceOccurrenceOffset = getSourceOccurrenceOffset({
+                    sourceStartBeat: clip.sourceStartBeat,
+                    segmentStartBeat: clip.startBeat,
+                    loopLength,
+                    loopEnabled: clip.loopEnabled ?? false,
+                });
                 const iterationCount = clip.loopEnabled ? Math.ceil(clipVisualLength / loopLength) : 1;
                 for (let iteration = 0; iteration < iterationCount; iteration++) {
+                    const absoluteOccurrenceIndex = sourceOccurrenceOffset + iteration;
                     const iterationStartBeat = clip.startBeat + iteration * loopLength;
                     const iterationEndBeat = Math.min(iterationStartBeat + loopLength, clip.endBeat);
-                    const routeId = `live-yeast:${track.id}:${clip.id}:${iteration}`;
+                    const routeId = `live-yeast:${track.id}:${clip.id}:${absoluteOccurrenceIndex}`;
                     liveYeastIterations.push({
                         routeId,
                         clipId: clip.id,
@@ -139,7 +171,7 @@ export async function scheduleMidiNotes(
                                 projectProbabilitySeed: midiState.probabilitySeed,
                                 clipId: clip.id,
                                 eventId: note.id,
-                                absoluteOccurrenceIndex: iteration,
+                                absoluteOccurrenceIndex,
                                 probabilityPercent: note.probability ?? 100,
                             })
                         ),
@@ -209,6 +241,12 @@ export async function scheduleMidiNotes(
                 continue;
             }
             const maxIterations = clip.loopEnabled ? Math.ceil(clipVisualLength / loopLen) : 1;
+            const sourceOccurrenceOffset = getSourceOccurrenceOffset({
+                sourceStartBeat: clip.sourceStartBeat,
+                segmentStartBeat: clip.startBeat,
+                loopLength: loopLen,
+                loopEnabled: clip.loopEnabled ?? false,
+            });
             const strip = ensureTrackStrip(track.id);
             const ctx = getAudioContext();
             const sr = ctx.sampleRate;
@@ -270,8 +308,9 @@ export async function scheduleMidiNotes(
                     : track.devices.find((data) => data.type.startsWith('faust-'));
 
             for (let iter = 0; iter < maxIterations; iter++) {
+                const absoluteOccurrenceIndex = sourceOccurrenceOffset + iter;
                 const iterOffset = iter * loopLen;
-                const yeastRouteId = `live-yeast:${track.id}:${clip.id}:${iter}`;
+                const yeastRouteId = `live-yeast:${track.id}:${clip.id}:${absoluteOccurrenceIndex}`;
                 const iterNotes = yeastDevice ? (liveYeastNotesByRoute.get(yeastRouteId) ?? []) : notes;
                 const notesAreAbsolute = yeastDevice !== undefined;
 
@@ -317,7 +356,7 @@ export async function scheduleMidiNotes(
                                 projectProbabilitySeed: midiState.probabilitySeed,
                                 clipId: clip.id,
                                 eventId: note.id,
-                                absoluteOccurrenceIndex: iter,
+                                absoluteOccurrenceIndex,
                                 probabilityPercent: note.probability ?? 100,
                             });
                             if (!shouldPlay) {

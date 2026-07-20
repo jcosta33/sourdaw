@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-import { trackStore } from '#/modules/Arrangement/stores';
+import { type Clip, trackStore } from '#/modules/Arrangement/stores';
 import { resolveClipsWithComping, getSynthParamsForTrack } from '#/modules/Arrangement/useCases';
 import { midiStore } from '#/modules/MIDI/stores';
 import { projectClipMidiEvents, shouldPlayMidiEvent } from '#/modules/MIDI/useCases';
@@ -28,7 +28,14 @@ vi.mock('../../../stores/timeSignatureMapStore', () => ({
     timeSignatureMapStore: { value: { changes: [] } },
 }));
 vi.mock('#/modules/Arrangement/useCases', () => ({
-    resolveClipsWithComping: vi.fn((_trackId, clips) => clips),
+    resolveClipsWithComping: vi.fn((_trackId: string, clips: Clip[]) =>
+        clips.map((clip) => ({
+            ...clip,
+            regionStartBeat: clip.startBeat,
+            regionEndBeat: clip.endBeat,
+            sourceStartBeat: clip.startBeat,
+        }))
+    ),
     getSynthParamsForTrack: vi.fn(() => ({})),
 }));
 vi.mock('#/modules/AudioEngine/useCases', () => ({
@@ -77,7 +84,7 @@ function midiTrack(overrides: Record<string, unknown> = {}) {
     } as never;
 }
 
-function midiClip(overrides: Record<string, unknown> = {}) {
+function midiClip(overrides: Record<string, unknown> = {}): Clip {
     return {
         id: 'clip-1',
         type: 'midi',
@@ -87,7 +94,7 @@ function midiClip(overrides: Record<string, unknown> = {}) {
         gain: 1,
         loopEnabled: false,
         ...overrides,
-    } as never;
+    } as Clip;
 }
 
 describe('scheduleMidiNotes', () => {
@@ -98,7 +105,12 @@ describe('scheduleMidiNotes', () => {
         (tempoMapStore as { value: unknown }).value = { changes: [] };
         (timeSignatureMapStore as { value: unknown }).value = { changes: [] };
         vi.mocked(resolveClipsWithComping).mockImplementation((_trackId, clips) =>
-            clips.map((clip) => ({ ...clip, regionStartBeat: clip.startBeat, regionEndBeat: clip.endBeat }))
+            clips.map((clip) => ({
+                ...clip,
+                regionStartBeat: clip.startBeat,
+                regionEndBeat: clip.endBeat,
+                sourceStartBeat: clip.startBeat,
+            }))
         );
         vi.mocked(projectClipMidiEvents).mockImplementation((input) =>
             input.events.map((event) => ({
@@ -260,6 +272,42 @@ describe('scheduleMidiNotes', () => {
             clipId: 'clip-1',
             eventId: 'event-beta',
             absoluteOccurrenceIndex: 0,
+            probabilityPercent: 50,
+        });
+    });
+
+    it('keeps probability occurrence anchored to the source loop through a comp segment', async () => {
+        const sourceClip = midiClip({ startBeat: 0, endBeat: 8, loopEnabled: true, loopLength: 2 });
+        const track = midiTrack({ clips: [sourceClip] });
+        (trackStore as { value: unknown }).value = { tracks: [track] };
+        (midiStore as { value: unknown }).value = {
+            probabilitySeed: 0xdecafbad,
+            notesByClipId: {
+                'clip-1': [
+                    { id: 'event-alpha', pitch: 60, startBeat: 0.5, duration: 0.25, velocity: 100, probability: 50 },
+                ],
+            },
+            ccByClipId: {},
+            pitchBendByClipId: {},
+        };
+        vi.mocked(resolveClipsWithComping).mockReturnValue([
+            {
+                ...sourceClip,
+                startBeat: 4,
+                endBeat: 6,
+                regionStartBeat: 4,
+                regionEndBeat: 6,
+                sourceStartBeat: 0,
+            },
+        ]);
+
+        await scheduleMidiNotes(4, 6, 4, -1, new Set<string>(), [], defaultTransportState, 120);
+
+        expect(shouldPlayMidiEvent).toHaveBeenCalledWith({
+            projectProbabilitySeed: 0xdecafbad,
+            clipId: 'clip-1',
+            eventId: 'event-alpha',
+            absoluteOccurrenceIndex: 2,
             probabilityPercent: 50,
         });
     });

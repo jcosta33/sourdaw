@@ -31,17 +31,53 @@ import { yieldToMain } from './yieldToMain';
 type ResolvedClip = Track['clips'][number] & {
     regionStartBeat: number;
     regionEndBeat: number;
+    sourceStartBeat: number;
 };
+
+type GetSourceOccurrenceOffsetInput = {
+    sourceStartBeat: number;
+    segmentStartBeat: number;
+    loopLength: number;
+    loopEnabled: boolean;
+};
+
+function getSourceOccurrenceOffset({
+    sourceStartBeat,
+    segmentStartBeat,
+    loopLength,
+    loopEnabled,
+}: GetSourceOccurrenceOffsetInput): number {
+    if (!loopEnabled || loopLength <= 0) {
+        return 0;
+    }
+
+    const beatsFromSourceStart = segmentStartBeat - sourceStartBeat;
+    if (beatsFromSourceStart <= 0) {
+        return 0;
+    }
+
+    return Math.floor(beatsFromSourceStart / loopLength);
+}
 
 function resolveTrackClipsWithComping(trackId: string, clips: Track['clips']): ResolvedClip[] {
     const laneState = takeLaneStore.value;
     if (!laneState) {
-        return clips.map((clip) => ({ ...clip, regionStartBeat: clip.startBeat, regionEndBeat: clip.endBeat }));
+        return clips.map((clip) => ({
+            ...clip,
+            regionStartBeat: clip.startBeat,
+            regionEndBeat: clip.endBeat,
+            sourceStartBeat: clip.startBeat,
+        }));
     }
 
     const lane = laneState.lanes.find((takeLane) => takeLane.trackId === trackId);
     if (!lane || lane.activeCompRegions.length === 0) {
-        return clips.map((clip) => ({ ...clip, regionStartBeat: clip.startBeat, regionEndBeat: clip.endBeat }));
+        return clips.map((clip) => ({
+            ...clip,
+            regionStartBeat: clip.startBeat,
+            regionEndBeat: clip.endBeat,
+            sourceStartBeat: clip.startBeat,
+        }));
     }
 
     const resolvedClips: ResolvedClip[] = [];
@@ -69,6 +105,7 @@ function resolveTrackClipsWithComping(trackId: string, clips: Track['clips']): R
             endBeat: overlapEnd,
             regionStartBeat: overlapStart,
             regionEndBeat: overlapEnd,
+            sourceStartBeat: sourceClip.startBeat,
         });
     }
 
@@ -99,6 +136,7 @@ function resolveTrackClipsWithComping(trackId: string, clips: Track['clips']): R
                 endBeat: gap.end,
                 regionStartBeat: gap.start,
                 regionEndBeat: gap.end,
+                sourceStartBeat: clip.startBeat,
             });
         }
     }
@@ -209,7 +247,7 @@ export async function scheduleTrackClips({
         return;
     }
 
-    const clipsToProcess: { clip: Track['clips'][number]; padIndex: number }[] = [];
+    const clipsToProcess: { clip: ResolvedClip; padIndex: number }[] = [];
     clipsToProcess.push(...resolveTrackClipsWithComping(track.id, track.clips).map((clip) => ({ clip, padIndex: -1 })));
 
     const instrumentEntry = deviceEntries.find((event) => event.instrumentControls);
@@ -329,15 +367,22 @@ export async function scheduleTrackClips({
             }
             const rawLoopLength = clip.loopEnabled ? (clip.loopLength ?? clipVisualLength) : clipVisualLength;
             const loopLength = rawLoopLength > 0 ? rawLoopLength : clipVisualLength;
+            const sourceOccurrenceOffset = getSourceOccurrenceOffset({
+                sourceStartBeat: clip.sourceStartBeat,
+                segmentStartBeat: clip.startBeat,
+                loopLength,
+                loopEnabled: clip.loopEnabled ?? false,
+            });
             const iterationCount = clip.loopEnabled ? Math.ceil(clipVisualLength / loopLength) : 1;
             for (let iteration = 0; iteration < iterationCount; iteration++) {
+                const absoluteOccurrenceIndex = sourceOccurrenceOffset + iteration;
                 iterations.push({
                     sourceNotes: sourceNotes.filter((note) =>
                         selectMidiEventProbability({
                             projectProbabilitySeed: midi.probabilitySeed,
                             clipId: clip.id,
                             eventId: note.id,
-                            absoluteOccurrenceIndex: iteration,
+                            absoluteOccurrenceIndex,
                             probabilityPercent: note.probability ?? 100,
                         })
                     ),
@@ -392,6 +437,12 @@ export async function scheduleTrackClips({
         // Guard against corrupt loopLength (zero or negative would cause infinite loops / NaN).
         const loopLen = rawLoopLen > 0 ? rawLoopLen : clipVisualLength;
         const maxIterations = clip.loopEnabled ? Math.ceil(clipVisualLength / loopLen) : 1;
+        const sourceOccurrenceOffset = getSourceOccurrenceOffset({
+            sourceStartBeat: clip.sourceStartBeat,
+            segmentStartBeat: clip.startBeat,
+            loopLength: loopLen,
+            loopEnabled: clip.loopEnabled ?? false,
+        });
 
         if (clip.type === 'midi') {
             const sourceNotes = midi.notesByClipId[clip.id];
@@ -403,6 +454,7 @@ export async function scheduleTrackClips({
             }
 
             for (let iter = 0; iter < maxIterations; iter++) {
+                const absoluteOccurrenceIndex = sourceOccurrenceOffset + iter;
                 const iterOffset = iter * loopLen;
                 const iterationStartBeat = clip.startBeat + iterOffset;
                 const midiOffsetBeats = clip.midiOffsetBeats ?? 0;
@@ -411,7 +463,7 @@ export async function scheduleTrackClips({
                         projectProbabilitySeed: midi.probabilitySeed,
                         clipId: clip.id,
                         eventId: note.id,
-                        absoluteOccurrenceIndex: iter,
+                        absoluteOccurrenceIndex,
                         probabilityPercent: note.probability ?? 100,
                     })
                 );

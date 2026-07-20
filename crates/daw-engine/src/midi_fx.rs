@@ -7,7 +7,7 @@ const EMPTY_MIDI_EVENT: MidiNoteEvent = MidiNoteEvent {
     velocity: 0,
     channel: 0,
     is_note_on: false,
-    probability: 0.0,
+    probability_cutoff: 0,
     project_probability_seed: 0,
     clip_id_hash: 0,
     event_id_hash: 0,
@@ -16,6 +16,20 @@ const EMPTY_MIDI_EVENT: MidiNoteEvent = MidiNoteEvent {
 
 const FNV_OFFSET_BASIS: u32 = 2_166_136_261;
 const FNV_PRIME: u32 = 16_777_619;
+pub const PROBABILITY_CUTOFF_RANGE: u64 = 1_u64 << 32;
+
+/// Convert an arbitrary finite percentage to the fixed cutoff shared by all runtimes.
+pub fn probability_percent_to_cutoff(probability_percent: f64) -> u64 {
+    if !probability_percent.is_finite() || probability_percent <= 0.0 {
+        return 0;
+    }
+    if probability_percent >= 100.0 {
+        return PROBABILITY_CUTOFF_RANGE;
+    }
+
+    let scaled = (probability_percent / 100.0) * PROBABILITY_CUTOFF_RANGE as f64;
+    scaled.ceil() as u64
+}
 
 #[inline]
 fn mix_byte(hash: u32, value: u8) -> u32 {
@@ -351,7 +365,7 @@ impl MidiFx for Arpeggiator {
         let beat = transport.song_pos_beats;
         let step_count_exact = beat / self.rate_beats;
         let step_beat = step_count_exact.floor();
-        
+
         if step_beat > self.last_beat_step {
             self.last_beat_step = step_beat;
             self.step_trigger_count += 1;
@@ -384,7 +398,8 @@ impl MidiFx for Arpeggiator {
                         }
                     }
                     ArpMode::Random => {
-                        self.current_step = (self.step_trigger_count as usize * 17) % self.active_notes.len();
+                        self.current_step =
+                            (self.step_trigger_count as usize * 17) % self.active_notes.len();
                     }
                 }
 
@@ -395,7 +410,7 @@ impl MidiFx for Arpeggiator {
                         velocity: 100, // Default for now
                         channel: 0,
                         is_note_on: true,
-                        probability: 1.0,
+                        probability_cutoff: PROBABILITY_CUTOFF_RANGE,
                         project_probability_seed: 0,
                         clip_id_hash: 0,
                         event_id_hash: 0,
@@ -429,13 +444,8 @@ impl MidiFx for Arpeggiator {
     }
 }
 
+#[derive(Default)]
 pub struct ProbabilityEvaluator;
-
-impl Default for ProbabilityEvaluator {
-    fn default() -> Self {
-        Self
-    }
-}
 
 impl MidiFx for ProbabilityEvaluator {
     fn process_midi(
@@ -446,10 +456,10 @@ impl MidiFx for ProbabilityEvaluator {
         _num_samples: usize,
     ) {
         events.retain_mut(|event| {
-            if event.probability >= 1.0 {
+            if event.probability_cutoff >= PROBABILITY_CUTOFF_RANGE {
                 return true;
             }
-            if event.probability <= 0.0 {
+            if event.probability_cutoff == 0 {
                 return false;
             }
 
@@ -459,7 +469,7 @@ impl MidiFx for ProbabilityEvaluator {
                 event.event_id_hash,
                 event.absolute_occurrence_index,
             );
-            f64::from(roll) / 4_294_967_296.0 < f64::from(event.probability)
+            u64::from(roll) < event.probability_cutoff
         });
     }
 
@@ -475,7 +485,7 @@ fn note_on(note: u8) -> MidiNoteEvent {
         velocity: 100,
         channel: 0,
         is_note_on: true,
-        probability: 1.0,
+        probability_cutoff: PROBABILITY_CUTOFF_RANGE,
         project_probability_seed: 0,
         clip_id_hash: 0,
         event_id_hash: 0,
@@ -516,9 +526,31 @@ mod deterministic_probability {
     use super::*;
 
     #[test]
+    fn actual_evaluator_keeps_the_published_near_boundary_vector() {
+        let mut events = MidiEventBuffer::new();
+        assert!(events.try_push(MidiNoteEvent {
+            probability_cutoff: probability_percent_to_cutoff(88.92774630813615),
+            project_probability_seed: u32::MAX,
+            clip_id_hash: hash_probability_id("loop-🎹"),
+            event_id_hash: hash_probability_id("note-Ω"),
+            absolute_occurrence_index: 4_294_967_297,
+            ..note_on(60)
+        }));
+
+        ProbabilityEvaluator::default().process_midi(
+            &mut events,
+            &TransportState::default(),
+            48_000.0,
+            128,
+        );
+
+        assert_eq!(events.len(), 1);
+    }
+
+    #[test]
     fn does_not_shift_when_an_unrelated_event_is_inserted() {
         let target = MidiNoteEvent {
-            probability: 0.2,
+            probability_cutoff: probability_percent_to_cutoff(20.0),
             project_probability_seed: 0xdecafbad,
             clip_id_hash: hash_probability_id("clip-target"),
             event_id_hash: hash_probability_id("event-target"),
@@ -537,7 +569,7 @@ mod deterministic_probability {
 
         let mut with_unrelated = MidiEventBuffer::new();
         assert!(with_unrelated.try_push(MidiNoteEvent {
-            probability: 0.5,
+            probability_cutoff: probability_percent_to_cutoff(50.0),
             project_probability_seed: 0x12345678,
             clip_id_hash: hash_probability_id("clip-unrelated"),
             event_id_hash: hash_probability_id("event-unrelated"),
@@ -560,15 +592,15 @@ mod deterministic_probability {
     #[test]
     fn matches_the_cross_runtime_tuple_corpus() {
         let corpus = [
-            (0, "clip-0", "event-0", 0, 2_209_426_670, 0.5, false),
-            (1, "clip-a", "event-alpha", 0, 1_901_562_438, 0.5, true),
+            (0, "clip-0", "event-0", 0, 2_209_426_670, 50.0, false),
+            (1, "clip-a", "event-alpha", 0, 1_901_562_438, 50.0, true),
             (
                 0xdecafbad,
                 "clip-1",
                 "event-alpha",
                 0,
                 283_418_835,
-                0.5,
+                50.0,
                 true,
             ),
             (
@@ -577,7 +609,7 @@ mod deterministic_probability {
                 "event-beta",
                 0,
                 3_377_534_636,
-                0.5,
+                50.0,
                 false,
             ),
             (
@@ -586,7 +618,7 @@ mod deterministic_probability {
                 "note-Ω",
                 4_294_967_297,
                 3_819_417_621,
-                0.9,
+                90.0,
                 true,
             ),
             (
@@ -595,7 +627,7 @@ mod deterministic_probability {
                 "event-stable",
                 42,
                 3_065_371_926,
-                0.7,
+                70.0,
                 false,
             ),
         ];
@@ -611,8 +643,25 @@ mod deterministic_probability {
             );
             assert_eq!(roll, expected_roll);
             assert_eq!(
-                f64::from(roll) / 4_294_967_296.0 < probability,
+                u64::from(roll) < probability_percent_to_cutoff(probability),
                 expected_decision
+            );
+        }
+    }
+
+    #[test]
+    fn converts_percentages_to_the_shared_fixed_cutoff() {
+        let corpus = [
+            (0.0, 0),
+            (50.0, 2_147_483_648),
+            (88.92774630813615, 3_819_417_622),
+            (100.0, PROBABILITY_CUTOFF_RANGE),
+        ];
+
+        for (probability_percent, expected_cutoff) in corpus {
+            assert_eq!(
+                probability_percent_to_cutoff(probability_percent),
+                expected_cutoff
             );
         }
     }
@@ -628,11 +677,12 @@ mod probability_distribution {
         let event_id_hash = hash_probability_id("distribution-event");
         let sample_count = 10_000_u64;
         let mut accepted_at_half = 0_i64;
+        let half_cutoff = probability_percent_to_cutoff(50.0);
 
         for occurrence in 0..sample_count {
             let roll =
                 deterministic_probability_roll(0x5eed1234, clip_id_hash, event_id_hash, occurrence);
-            if f64::from(roll) / 4_294_967_296.0 < 0.5 {
+            if u64::from(roll) < half_cutoff {
                 accepted_at_half += 1;
             }
         }
@@ -643,7 +693,7 @@ mod probability_distribution {
         assert!((accepted_at_half - expected).abs() <= three_sigma);
 
         let target = MidiNoteEvent {
-            probability: 0.25,
+            probability_cutoff: probability_percent_to_cutoff(25.0),
             project_probability_seed: 0x5eed1234,
             clip_id_hash,
             event_id_hash,
@@ -661,12 +711,12 @@ mod probability_distribution {
 
         let mut interleaved = MidiEventBuffer::new();
         assert!(interleaved.try_push(MidiNoteEvent {
-            probability: 0.0,
+            probability_cutoff: 0,
             ..note_on(60)
         }));
         assert!(interleaved.try_push(target));
         assert!(interleaved.try_push(MidiNoteEvent {
-            probability: 1.0,
+            probability_cutoff: PROBABILITY_CUTOFF_RANGE,
             ..note_on(61)
         }));
         ProbabilityEvaluator::default().process_midi(
