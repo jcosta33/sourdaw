@@ -7,8 +7,8 @@ Tool-neutral guidance for AI coding agents (Cursor, Codex CLI, Windsurf, Cline, 
 See `package.json` for all scripts.
 
 - **Tests:** `pnpm test:run <path/to/file.spec.ts>` — always pass a file (or narrow path). `pnpm test` is watch mode; do not use it for verification. See `docs/06-testing.md`.
-- **Lint:** `pnpm exec eslint <path/to/file.ts>` — always specify the touched files. Do not run whole-tree `pnpm lint` unless the task is a repo-wide lint pass. CI uses `pnpm lint --quiet` (errors only; **warns do not fail**).
-- **Type check (app):** `pnpm typecheck` — base `tsconfig.json`; **excludes** `*.spec.ts(x)`.
+- **Lint:** `pnpm exec oxlint <path/to/file.ts>` — always specify the touched files (oxlint covers ESLint core, unicorn, promise, import, jsx-a11y, and all typescript-eslint rules incl. type-aware). `pnpm exec eslint <path/to/file.ts>` covers the retained-only rules (custom `sourdaw/*`, `@eslint-react`, `react-hooks`, `@tanstack/query`, prettier, `import-x/order`). `pnpm lint` runs both (oxlint first). Do not run whole-tree `pnpm lint` unless the task is a repo-wide lint pass. CI uses `pnpm lint --quiet` (errors only; **warns do not fail**).
+- **Type check (app):** `pnpm typecheck` — `tsconfig.app.json`; **excludes** `*.spec.ts(x)`. (The base `tsconfig.json` is spec-inclusive so oxlint's type-aware linting sees real types in tests.)
 - **Type check (tests):** `pnpm typecheck:test` — spec-inclusive (`tsconfig.test.json`: all of `src` **including** `*.spec.ts(x)`). Run after touching any spec, dummy factory, or model shape that fixtures mirror; must stay at zero errors.
 - **Module boundaries:** `pnpm deps:validate` (main + causal reachability + type-edge + test-inclusive cruises). New **error** edges and stale baseline rows fail; known debt is exact and reviewable.
 

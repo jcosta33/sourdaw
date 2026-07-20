@@ -133,7 +133,8 @@ describe('loop station undo entries', () => {
 
         loopStationStoreMock.value = emptyLoopState();
         (undoFn as () => void)();
-        expect((vi.mocked(loopStationStore.set).mock.lastCall?.[0] as LoopStationState).slots).toHaveLength(0);
+        const clearedSlots = vi.mocked(loopStationStore.set).mock.lastCall?.[0] as LoopStationState;
+        expect(clearedSlots.slots).toHaveLength(0);
 
         loopStationStoreMock.value = emptyLoopState();
         (redoFn as () => void)();
@@ -192,11 +193,13 @@ describe('loop station undo entries', () => {
 
         loopStationStoreMock.value = emptyLoopState();
         (undoFn as () => void)();
-        expect((vi.mocked(loopStationStore.set).mock.lastCall?.[0] as LoopStationState).armed).toBe(true);
+        const afterUndo = vi.mocked(loopStationStore.set).mock.lastCall?.[0] as LoopStationState;
+        expect(afterUndo.armed).toBe(true);
 
         loopStationStoreMock.value = emptyLoopState();
         (redoFn as () => void)();
-        expect((vi.mocked(loopStationStore.set).mock.lastCall?.[0] as LoopStationState).armed).toBe(false);
+        const afterRedo = vi.mocked(loopStationStore.set).mock.lastCall?.[0] as LoopStationState;
+        expect(afterRedo.armed).toBe(false);
     });
 
     it('toggleSync uses an enable label, and its undo/redo callbacks restore each direction', () => {
@@ -208,11 +211,13 @@ describe('loop station undo entries', () => {
 
         loopStationStoreMock.value = emptyLoopState();
         (undoFn as () => void)();
-        expect((vi.mocked(loopStationStore.set).mock.lastCall?.[0] as LoopStationState).syncToTransport).toBe(false);
+        const afterUndo = vi.mocked(loopStationStore.set).mock.lastCall?.[0] as LoopStationState;
+        expect(afterUndo.syncToTransport).toBe(false);
 
         loopStationStoreMock.value = emptyLoopState();
         (redoFn as () => void)();
-        expect((vi.mocked(loopStationStore.set).mock.lastCall?.[0] as LoopStationState).syncToTransport).toBe(true);
+        const afterRedo = vi.mocked(loopStationStore.set).mock.lastCall?.[0] as LoopStationState;
+        expect(afterRedo.syncToTransport).toBe(true);
     });
 
     it('setFixedLoopLength does not push undo when no session is loaded', () => {

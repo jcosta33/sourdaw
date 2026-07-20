@@ -1,4 +1,9 @@
 {
+    // Base project for editor tooling and oxlint's type-aware linting
+    // (tsgolint discovers `tsconfig.json` per file). It is spec-inclusive so
+    // that type-aware lint rules receive real types in test files.
+    // `pnpm typecheck` (app gate) uses tsconfig.app.json, which re-excludes
+    // specs — the app typecheck scope is unchanged.
     "compilerOptions": {
         "target": "ES2022",
         "lib": ["ES2024", "DOM", "DOM.Iterable"],
@@ -23,5 +28,5 @@
         }
     },
     "include": ["src", "vite-env.d.ts"],
-    "exclude": ["dist", "build", "coverage", "storybook-static", "src/**/*.spec.ts", "src/**/*.spec.tsx"]
+    "exclude": ["dist", "build", "coverage", "storybook-static"]
 }
