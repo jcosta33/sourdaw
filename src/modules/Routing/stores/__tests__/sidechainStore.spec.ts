@@ -57,4 +57,25 @@ describe('sanitize_sidechain_store_state', () => {
             ],
         });
     });
+
+    it('should reset state when routes is present but not an array', () => {
+        expect(sanitize_sidechain_store_state({ routes: 'not-an-array' })).toEqual(defaultSidechainStoreState);
+    });
+
+    it('should return the same reference when the state is already exact', () => {
+        const exact_state = {
+            routes: [
+                {
+                    id: 'sidechain-1',
+                    sourceTrackId: 'track-1',
+                    targetTrackId: 'track-2',
+                    targetDeviceId: 'device-1',
+                    targetParameterId: 'threshold',
+                    gain: 0.5,
+                },
+            ],
+        };
+
+        expect(sanitize_sidechain_store_state(exact_state)).toBe(exact_state);
+    });
 });

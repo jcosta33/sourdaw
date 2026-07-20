@@ -40,4 +40,18 @@ describe('moveNode', () => {
         moveNode('only', 1, 2);
         expect(nodeViewStore.value).toBeNull();
     });
+
+    it('leaves non-matching nodes untouched when moving one of several', () => {
+        nodeViewStore.set({
+            ...nodeViewStore.value!,
+            nodes: [node('a'), node('b')],
+            connections: [],
+        });
+
+        moveNode('a', 30, 40);
+
+        const [nodeA, nodeB] = nodeViewStore.value?.nodes ?? [];
+        expect(nodeA).toMatchObject({ id: 'a', x: 30, y: 40 });
+        expect(nodeB).toMatchObject({ id: 'b', x: 0, y: 0 });
+    });
 });
