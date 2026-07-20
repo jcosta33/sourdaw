@@ -1,11 +1,19 @@
 import { createHandler } from '#/utils/createHandler';
 
 import { assignToVca } from '../../useCases/vca/assignToVca';
+import { captureLegacyVcaState } from '../../useCases/vca/captureLegacyVcaState';
 
 export const handleAssignToVca = createHandler<'assignToVca'>({
     execute: (alpha) => {
-        assignToVca(alpha.payload.trackId, alpha.payload.vcaGroupId);
+        const written = assignToVca(alpha.payload.trackId, alpha.payload.vcaGroupId);
+        if (!written) {
+            return { status: 'no-write' };
+        }
+        return { status: 'written' };
     },
-    describe: () => ({ label: 'Assign to VCA' }),
+    describe: (alpha) => ({
+        label: 'Assign to VCA',
+        inverseAction: { type: 'restoreLegacyVcaState', payload: captureLegacyVcaState(alpha) },
+    }),
     undoable: true,
 });

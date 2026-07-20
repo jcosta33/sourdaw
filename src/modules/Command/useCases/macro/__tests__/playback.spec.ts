@@ -124,4 +124,48 @@ describe('playMacro', () => {
         ]);
         expect(macroStore.value?.macros[0]?.actions).toEqual(adjustmentMacro.actions);
     });
+
+    it('should regenerate recorded VCA IDs and remap references independently on every playback', async () => {
+        const vcaMacro: Macro = {
+            id: 'vca-1',
+            name: 'VCA steps',
+            actions: [
+                {
+                    type: 'createVcaGroup',
+                    payload: { name: 'Drums', trackIds: ['track-1'], vcaGroupId: 'recorded-vca' },
+                },
+                { type: 'assignToVca', payload: { trackId: 'track-2', vcaGroupId: 'recorded-vca' } },
+                { type: 'setVcaGain', payload: { vcaGroupId: 'recorded-vca', gain: 0.75 } },
+            ],
+            createdAt: 0,
+        };
+        macroStore.set({ macros: [vcaMacro], recording: false, currentRecording: [] });
+        let generatedId = 0;
+        executeAppActionMock.mockImplementation((action) => {
+            if (action.type === 'createVcaGroup' && action.payload.vcaGroupId === undefined) {
+                generatedId += 1;
+                action.payload.vcaGroupId = `replayed-vca-${String(generatedId)}`;
+            }
+            return Promise.resolve();
+        });
+
+        await playMacro('vca-1');
+        await playMacro('vca-1');
+
+        expect(executeAppActionMock.mock.calls.map(([action]) => action)).toEqual([
+            {
+                type: 'createVcaGroup',
+                payload: { name: 'Drums', trackIds: ['track-1'], vcaGroupId: 'replayed-vca-1' },
+            },
+            { type: 'assignToVca', payload: { trackId: 'track-2', vcaGroupId: 'replayed-vca-1' } },
+            { type: 'setVcaGain', payload: { vcaGroupId: 'replayed-vca-1', gain: 0.75 } },
+            {
+                type: 'createVcaGroup',
+                payload: { name: 'Drums', trackIds: ['track-1'], vcaGroupId: 'replayed-vca-2' },
+            },
+            { type: 'assignToVca', payload: { trackId: 'track-2', vcaGroupId: 'replayed-vca-2' } },
+            { type: 'setVcaGain', payload: { vcaGroupId: 'replayed-vca-2', gain: 0.75 } },
+        ]);
+        expect(macroStore.value?.macros[0]?.actions).toEqual(vcaMacro.actions);
+    });
 });

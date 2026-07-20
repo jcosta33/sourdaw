@@ -1,5 +1,6 @@
 import { inject } from '#/infra/di/inject';
 import { logger } from '#/infra/logger/appLogger';
+import { trackStore, vcaGroupStore } from '#/modules/Arrangement/stores';
 
 import { type RuntimeAction, type RuntimeActionType } from '../models/RuntimeAction';
 
@@ -251,6 +252,31 @@ const KNOWN_ACTION_TYPES: ReadonlySet<RuntimeActionType> = new Set(
     Object.keys(KNOWN_ACTION_TYPES_MAP) as RuntimeActionType[]
 );
 
+function hasAvailableVcaTargets(action: RuntimeAction): boolean {
+    const tracks = trackStore.value?.tracks ?? [];
+    const groups = vcaGroupStore.value?.groups ?? [];
+
+    if (action.type === 'createVcaGroup') {
+        return action.payload.trackIds.every((trackId) => tracks.some((track) => track.id === trackId));
+    }
+
+    if (action.type === 'assignToVca') {
+        const trackExists = tracks.some((track) => track.id === action.payload.trackId);
+        const groupExists = groups.some((group) => group.id === action.payload.vcaGroupId);
+        return trackExists && groupExists;
+    }
+
+    if (action.type === 'removeFromVca') {
+        return tracks.some((track) => track.id === action.payload.trackId);
+    }
+
+    if (action.type === 'setVcaGain') {
+        return groups.some((group) => group.id === action.payload.vcaGroupId);
+    }
+
+    return true;
+}
+
 export const validateActions = inject({ logger })(
     ({ logger }) =>
         function validateActions(actions: RuntimeAction[]): RuntimeAction[] {
@@ -281,6 +307,11 @@ export const validateActions = inject({ logger })(
                         logger.warn(`Invalid payload for action ${action.type}`);
                         return false;
                     }
+                }
+
+                if (!hasAvailableVcaTargets(action)) {
+                    logger.warn(`Unavailable target for action ${action.type}`);
+                    return false;
                 }
 
                 return true;
