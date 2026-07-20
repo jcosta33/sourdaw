@@ -20,6 +20,8 @@
         "format": "prettier --write \"**/*.{ts,tsx,js,mjs,cjs,json,md,css}\" && cargo fmt --all",
         "lint": "oxlint src && eslint --cache --cache-location node_modules/.cache/eslint/ \"src/**/*.{ts,tsx}\"",
         "lint:fix": "oxlint --fix src && eslint --cache --cache-location node_modules/.cache/eslint/ --fix \"src/**/*.{ts,tsx}\"",
+        "layout:census:check": "node --experimental-strip-types scripts/layoutPrimitivesCensus.ts --check",
+        "layout:census:generate": "node --experimental-strip-types scripts/layoutPrimitivesCensus.ts --write",
         "deps:validate": "node scripts/check-dependency-boundaries.mjs",
         "deps:baseline:main": "node scripts/check-dependency-boundaries.mjs --write-baseline main",
         "deps:baseline:reachability": "node scripts/check-dependency-boundaries.mjs --write-baseline reachability",
