@@ -46,6 +46,7 @@ export const handleWebMidiNoteOn = inject({
             const transport = deps.getTransportStoreValue();
             const engine = audioEngine;
             const now = engine.context.currentTime;
+            const noteInstanceId = `${targetTrackId}:${channel}:${note}:${Math.round(now * engine.context.sampleRate)}`;
 
             const noteData: ActiveNoteData = {
                 startTime: now,
@@ -54,6 +55,7 @@ export const handleWebMidiNoteOn = inject({
                 note,
                 trackId: targetTrackId,
                 instrumentTrackId: targetTrackId,
+                noteInstanceId,
             };
             activeNotes.set(noteKey, noteData);
 
@@ -87,6 +89,7 @@ export const handleWebMidiNoteOn = inject({
                         isNoteOn: true,
                         sampleTime,
                         sampleRate: engine.context.sampleRate,
+                        noteInstanceId,
                     });
                 } catch (error: unknown) {
                     // The note was registered before this awaited step; un-register it so a

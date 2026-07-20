@@ -114,7 +114,22 @@ function isMidiEvent(value: unknown): value is MidiEvent {
     if (!isPlainObject(value) || !isFiniteNumber(value.timeSamples) || !isMidiEventKind(value.kind)) {
         return false;
     }
-    return value.trackId === undefined || isTrackId(value.trackId);
+    if (value.trackId !== undefined && !isTrackId(value.trackId)) {
+        return false;
+    }
+    if (value.sourceEventId !== undefined && typeof value.sourceEventId !== 'string') {
+        return false;
+    }
+    if (value.noteInstanceId !== undefined && typeof value.noteInstanceId !== 'string') {
+        return false;
+    }
+    if (value.timePpq !== undefined && !isFiniteNumber(value.timePpq)) {
+        return false;
+    }
+    if (value.tempoBpm !== undefined && !isFiniteNumber(value.tempoBpm)) {
+        return false;
+    }
+    return true;
 }
 
 function isMidiEventArray(value: unknown): value is MidiEvent[] {

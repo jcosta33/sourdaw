@@ -67,6 +67,137 @@ describe('Humanizer', () => {
         expect(offOffset).toBe(onOffset);
     });
 
+    it('pairs overlapping identified voices in release order and preserves endpoint metadata', () => {
+        human.setParam('timing_sigma_ms', 10);
+        human.setParam('vel_sigma', 0);
+        const onOutput: MidiEvent[] = [];
+        human.processMidi(
+            [
+                {
+                    timeSamples: 1_000,
+                    trackId: 'track-a',
+                    sourceEventId: 'source-a:on',
+                    noteInstanceId: 'voice-a',
+                    timePpq: 1,
+                    tempoBpm: 60,
+                    kind: { type: 'noteOn', channel: 0, note: 64, velocity: 100 },
+                },
+                {
+                    timeSamples: 1_100,
+                    trackId: 'track-a',
+                    sourceEventId: 'source-b:on',
+                    noteInstanceId: 'voice-b',
+                    timePpq: 1.1,
+                    tempoBpm: 120,
+                    kind: { type: 'noteOn', channel: 0, note: 64, velocity: 100 },
+                },
+            ],
+            onOutput,
+            transport
+        );
+        const offsetByInstance = new Map(
+            onOutput.map((event, index) => [event.noteInstanceId, event.timeSamples - (1_000 + index * 100)])
+        );
+        const offOutput: MidiEvent[] = [];
+        human.processMidi(
+            [
+                {
+                    timeSamples: 2_000,
+                    trackId: 'track-a',
+                    sourceEventId: 'source-b:off',
+                    noteInstanceId: 'voice-b',
+                    timePpq: 2,
+                    tempoBpm: 120,
+                    kind: { type: 'noteOff', channel: 0, note: 64 },
+                },
+                {
+                    timeSamples: 2_100,
+                    trackId: 'track-a',
+                    sourceEventId: 'source-a:off',
+                    noteInstanceId: 'voice-a',
+                    timePpq: 2.1,
+                    tempoBpm: 60,
+                    kind: { type: 'noteOff', channel: 0, note: 64 },
+                },
+            ],
+            offOutput,
+            transport
+        );
+
+        expect(onOutput[0]).toEqual(
+            expect.objectContaining({ sourceEventId: 'source-a:on', noteInstanceId: 'voice-a', tempoBpm: 60 })
+        );
+        expect(onOutput[1]).toEqual(
+            expect.objectContaining({ sourceEventId: 'source-b:on', noteInstanceId: 'voice-b', tempoBpm: 120 })
+        );
+        expect(offOutput[0]?.timeSamples).toBe(2_000 + offsetByInstance.get('voice-b')!);
+        expect(offOutput[1]?.timeSamples).toBe(2_100 + offsetByInstance.get('voice-a')!);
+        expect(offOutput[0]).toEqual(
+            expect.objectContaining({ sourceEventId: 'source-b:off', noteInstanceId: 'voice-b', tempoBpm: 120 })
+        );
+        expect(onOutput[0]?.timePpq).toBe(1 + (offsetByInstance.get('voice-a')! * 60) / (transport.sampleRate * 60));
+        expect(onOutput[1]?.timePpq).toBe(1.1 + (offsetByInstance.get('voice-b')! * 120) / (transport.sampleRate * 60));
+    });
+
+    it('uses FIFO offset pairing for overlapping legacy voices', () => {
+        human.setParam('timing_sigma_ms', 10);
+        human.setParam('vel_sigma', 0);
+        const onOutput: MidiEvent[] = [];
+        human.processMidi(
+            [
+                { timeSamples: 1_000, kind: { type: 'noteOn', channel: 0, note: 64, velocity: 100 } },
+                { timeSamples: 1_100, kind: { type: 'noteOn', channel: 0, note: 64, velocity: 100 } },
+            ],
+            onOutput,
+            transport
+        );
+        const firstOffset = onOutput[0]!.timeSamples - 1_000;
+        const secondOffset = onOutput[1]!.timeSamples - 1_100;
+        const offOutput: MidiEvent[] = [];
+        human.processMidi(
+            [
+                { timeSamples: 2_000, kind: { type: 'noteOff', channel: 0, note: 64 } },
+                { timeSamples: 2_100, kind: { type: 'noteOff', channel: 0, note: 64 } },
+            ],
+            offOutput,
+            transport
+        );
+
+        expect(offOutput.map((event, index) => event.timeSamples - (2_000 + index * 100))).toEqual([
+            firstOffset,
+            secondOffset,
+        ]);
+    });
+
+    it('derives identified variation from stable identity instead of admission order', () => {
+        function variationForOrder(ids: string[]): Map<string, { timeSamples: number; velocity: number }> {
+            const processor = new Humanizer('stable-human');
+            processor.setParam('timing_sigma_ms', 10);
+            processor.setParam('vel_sigma', 10);
+            const output: MidiEvent[] = [];
+            processor.processMidi(
+                ids.map((noteInstanceId) => ({
+                    timeSamples: 0,
+                    noteInstanceId,
+                    kind: { type: 'noteOn' as const, channel: 0, note: 64, velocity: 100 },
+                })),
+                output,
+                transport
+            );
+            return new Map(
+                output.map((event) => [
+                    event.noteInstanceId!,
+                    {
+                        timeSamples: event.timeSamples,
+                        velocity: event.kind.type === 'noteOn' ? event.kind.velocity : 0,
+                    },
+                ])
+            );
+        }
+
+        expect(variationForOrder(['voice-a', 'voice-b'])).toEqual(variationForOrder(['voice-b', 'voice-a']));
+    });
+
     it('produces a deterministic Gaussian sequence from the shared LCG helper', () => {
         // Guards the gaussianLcg extraction: the same seed must yield the same
         // sequence of timing offsets it produced inline before the refactor.
@@ -98,27 +229,59 @@ describe('Humanizer', () => {
         expect(first.some((value) => value !== 0)).toBe(true); // and it actually varies
     });
 
-    it('fails before mutating its bounded voice queue when Note Offs are dropped', () => {
-        human.setParam('timing_sigma_ms', 5);
+    it('degrades to neutral timing without throwing when voice tracking reaches capacity', () => {
+        human.setParam('timing_mean_ms', 10);
+        human.setParam('timing_sigma_ms', 0);
+        human.setParam('vel_sigma', 0);
 
         const ceiling = 16 * 128;
-        for (let note = 0; note < ceiling; note++) {
-            const out: MidiEvent[] = [];
+        for (let index = 0; index < ceiling; index++) {
             human.processMidi(
-                [{ timeSamples: note, kind: { type: 'noteOn', channel: 0, note, velocity: 100 } }],
-                out,
+                [
+                    {
+                        timeSamples: index,
+                        trackId: `route-${index}`,
+                        kind: { type: 'noteOn', channel: index % 16, note: index % 128, velocity: 100 },
+                    },
+                ],
+                [],
                 transport
             );
         }
 
-        expect(() => {
+        const overflowOutput: MidiEvent[] = [];
+        expect(() =>
             human.processMidi(
-                [{ timeSamples: ceiling, kind: { type: 'noteOn', channel: 0, note: ceiling, velocity: 100 } }],
-                [],
+                [
+                    {
+                        timeSamples: ceiling,
+                        trackId: 'overflow-route',
+                        kind: { type: 'noteOn', channel: 0, note: 60, velocity: 100 },
+                    },
+                ],
+                overflowOutput,
                 transport
-            );
-        }).toThrow('Yeast note voice capacity exceeded');
+            )
+        ).not.toThrow();
         const queue = (human as unknown as { noteTimingVoices: { size: number } }).noteTimingVoices;
-        expect(queue.size).toBe(ceiling);
+        expect(queue.size).toBe(0);
+        expect(requireFirst(overflowOutput).timeSamples).toBe(ceiling);
+
+        const disabledOutput: MidiEvent[] = [];
+        human.processMidi(
+            [{ timeSamples: ceiling + 1, kind: { type: 'noteOn', channel: 0, note: 61, velocity: 100 } }],
+            disabledOutput,
+            transport
+        );
+        expect(requireFirst(disabledOutput).timeSamples).toBe(ceiling + 1);
+
+        human.reset();
+        const recoveredOutput: MidiEvent[] = [];
+        human.processMidi(
+            [{ timeSamples: 0, kind: { type: 'noteOn', channel: 0, note: 62, velocity: 100 } }],
+            recoveredOutput,
+            transport
+        );
+        expect(requireFirst(recoveredOutput).timeSamples).toBe(441);
     });
 });

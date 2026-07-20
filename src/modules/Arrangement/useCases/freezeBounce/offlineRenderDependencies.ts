@@ -55,6 +55,8 @@ type MidiEventProjector = <Event extends MidiProjectableEvent>(
 type OfflineYeastMidiEvent = {
     timeSamples: number;
     trackId?: string;
+    sourceEventId?: string;
+    noteInstanceId?: string;
     timePpq?: number;
     tempoBpm?: number;
     kind:

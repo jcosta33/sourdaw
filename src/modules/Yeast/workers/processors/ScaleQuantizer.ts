@@ -61,8 +61,7 @@ export class ScaleQuantizer extends BaseMidiProcessor {
 
                 this.noteVoices.push(event.trackId, event.kind.channel * 128 + event.kind.note, note);
                 const transformed: MidiEvent = {
-                    timeSamples: event.timeSamples,
-                    trackId: event.trackId,
+                    ...event,
                     kind: { type: 'noteOn', channel: event.kind.channel, note, velocity: event.kind.velocity },
                 };
                 output.push(transformed);
@@ -71,8 +70,7 @@ export class ScaleQuantizer extends BaseMidiProcessor {
                 const key = event.kind.channel * 128 + event.kind.note;
                 const mappedNote = this.noteVoices.shift(event.trackId, key) ?? event.kind.note;
                 const transformed: MidiEvent = {
-                    timeSamples: event.timeSamples,
-                    trackId: event.trackId,
+                    ...event,
                     kind: { type: 'noteOff', channel: event.kind.channel, note: mappedNote },
                 };
                 output.push(transformed);
