@@ -1,0 +1,29 @@
+src/modules/Collaboration/useCases/collaboration/__tests__/joinSession.spec.ts
+  s_03374e2759bd95::t_ccbbbdc16eff24 130,150-176,188
+src/modules/Collaboration/useCases/collaboration/joinSession.ts
+  s_75f59e6653feee::t_67085a4addf5ee 26-32
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "8b01f302893f31f339cfe808fc98d019c3844aa0",
+  "prompts": {},
+  "sessions": {
+    "s_03374e2759bd95": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f81b4-6a2b-7833-afc9-dabd974d7d75",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_75f59e6653feee": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f819a-2ddc-70b3-ab04-f29a50e9a71d",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
