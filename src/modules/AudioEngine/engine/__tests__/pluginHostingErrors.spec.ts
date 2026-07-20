@@ -50,7 +50,6 @@ describe('requireSharedArrayBuffer', () => {
     it('should throw a PluginRequiresIsolationError carrying the plugin name when SharedArrayBuffer is undefined', () => {
         vi.stubGlobal('SharedArrayBuffer', undefined);
 
-        expect(() => requireSharedArrayBuffer('Toaster')).toThrow(PluginRequiresIsolationError);
         try {
             requireSharedArrayBuffer('Toaster');
             expect.unreachable('expected requireSharedArrayBuffer to throw');

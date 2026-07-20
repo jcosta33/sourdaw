@@ -60,15 +60,12 @@ describe('createProofChamberNode', () => {
         return new FakeAudioContext() as unknown as BaseAudioContext;
     }
 
-    it('should resume a suspended context before registering the worklet', async () => {
+    it('should resume the context only when it starts out suspended', async () => {
         await createProofChamberNode(makeCtx('suspended'));
-
         expect(resume).toHaveBeenCalledTimes(1);
-    });
 
-    it('should not resume a context that is already running', async () => {
+        resume.mockClear();
         await createProofChamberNode(makeCtx('running'));
-
         expect(resume).not.toHaveBeenCalled();
     });
 

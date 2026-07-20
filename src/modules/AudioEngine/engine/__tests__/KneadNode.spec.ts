@@ -55,19 +55,12 @@ describe('createKneadNode', () => {
         return new FakeAudioContext() as unknown as BaseAudioContext;
     }
 
-    it('should resume a suspended context before registering the worklet', async () => {
-        const ctx = makeCtx('suspended');
-
-        await createKneadNode(ctx);
-
+    it('should resume the context only when it starts out suspended', async () => {
+        await createKneadNode(makeCtx('suspended'));
         expect(resume).toHaveBeenCalledTimes(1);
-    });
 
-    it('should not resume a context that is already running', async () => {
-        const ctx = makeCtx('running');
-
-        await createKneadNode(ctx);
-
+        resume.mockClear();
+        await createKneadNode(makeCtx('running'));
         expect(resume).not.toHaveBeenCalled();
     });
 
