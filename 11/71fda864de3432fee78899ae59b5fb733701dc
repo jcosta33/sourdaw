@@ -1,0 +1,49 @@
+src/modules/Arrangement/handlers/vca/__tests__/legacyVcaActionHistory.spec.ts
+  s_c2fca615e81f34::t_5c824b5b971cad 136-210
+src/modules/Arrangement/useCases/vca/captureLegacyVcaState.ts
+  s_c2fca615e81f34::t_f085a7c19d16d8 6-9,11-12,14,16-116,118-206,210-225
+src/modules/Command/errors/AppActionExecutionError.ts
+  s_c2fca615e81f34::t_5607166d70d80e 14-20
+src/modules/Command/useCases/executeAppAction.ts
+  s_c2fca615e81f34::t_e871f535e854cb 8,10-14,60,65,80-88
+src/modules/Command/useCases/revertAction.ts
+  s_c2fca615e81f34::t_9160a52235522a 3,62-66,98-101
+src/modules/Arrangement/handlers/vca/handleAssignToVca.ts
+  s_7475f7f4c58c43::t_b1a75a7bdc6e85 14,16
+src/modules/Arrangement/handlers/vca/handleCreateVcaGroup.ts
+  s_7475f7f4c58c43::t_eaf51605603a31 19-25
+src/modules/Arrangement/handlers/vca/handleRemoveFromVca.ts
+  s_7475f7f4c58c43::t_5f43b777153bed 14,16
+src/modules/Arrangement/handlers/vca/handleRestoreLegacyVcaState.ts
+  s_7475f7f4c58c43::t_304de6df1d7f35 8-12,17,19
+src/modules/Arrangement/handlers/vca/handleSetVcaGain.ts
+  s_7475f7f4c58c43::t_c977a16590916c 14,16
+src/modules/Arrangement/useCases/vca/restoreLegacyVcaState.ts
+  s_7475f7f4c58c43::t_046c0f30c1cfe9 3,8-13,15-16,19-28,30-48,51-73,79-166
+src/utils/handlerContract.ts
+  s_7475f7f4c58c43::t_54fac42e6dfd6a 133-157,159-160,515-517,520-523,667
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "1171fda864de3432fee78899ae59b5fb733701dc",
+  "prompts": {},
+  "sessions": {
+    "s_7475f7f4c58c43": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f80f5-432b-7962-b884-92c9a0f55e05",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_c2fca615e81f34": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f74e9-e1c5-7142-85d2-4c577b3973c0",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
