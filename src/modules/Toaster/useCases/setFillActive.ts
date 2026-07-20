@@ -1,9 +1,9 @@
-import { cancelScheduledToasterHits } from './cancelScheduledToasterHits';
+import { getToasterDeviceControls } from '#/modules/AudioEngine/useCases';
+
 import { getSequencerPlaybackState } from './getSequencerPlaybackState';
 
 export function setFillActive(deviceId: string, active: boolean): void {
     const state = getSequencerPlaybackState(deviceId);
     state.fillActive = active;
-    state.preScheduledStep = null;
-    cancelScheduledToasterHits(deviceId);
+    getToasterDeviceControls(deviceId)?.setFillActive(active);
 }

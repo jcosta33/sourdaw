@@ -138,6 +138,7 @@ describe('wasmDeviceRegistry descriptors', () => {
                 scheduleHit: vi.fn(),
                 cancelScheduled: vi.fn(),
                 allNotesOff: vi.fn(),
+                setFillActive: vi.fn(),
                 setParam: vi.fn(),
                 setPadParam: vi.fn(),
                 setBypass: vi.fn(),
@@ -176,6 +177,7 @@ describe('wasmDeviceRegistry descriptors', () => {
             expect(loaded.toasterControls?.scheduleHit).toBe(result.scheduleHit);
             expect(loaded.toasterControls?.cancelScheduled).toBe(result.cancelScheduled);
             expect(loaded.toasterControls?.allNotesOff).toBe(result.allNotesOff);
+            expect(loaded.toasterControls?.setFillActive).toBe(result.setFillActive);
         });
 
         it('emits device-removed (not a bare store delete) when the loaded controller is destroyed', async () => {

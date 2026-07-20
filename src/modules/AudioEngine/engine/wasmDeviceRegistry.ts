@@ -137,6 +137,7 @@ const toasterDescriptor: WasmDeviceDescriptor = {
             scheduleHit: () => {},
             cancelScheduled: () => {},
             allNotesOff: () => {},
+            setFillActive: () => {},
             setParam: (name, value) => {
                 pendingParams.push([name, value]);
             },
@@ -187,6 +188,7 @@ const toasterDescriptor: WasmDeviceDescriptor = {
                         scheduleHit: result.scheduleHit,
                         cancelScheduled: result.cancelScheduled,
                         allNotesOff: result.allNotesOff,
+                        setFillActive: result.setFillActive,
                         setParam: result.setParam,
                         setPadParam: result.setPadParam,
                         setBypass: result.setBypass,

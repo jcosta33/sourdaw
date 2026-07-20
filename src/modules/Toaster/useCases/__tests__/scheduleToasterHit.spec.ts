@@ -25,6 +25,7 @@ describe('scheduleToasterHit', () => {
             targetTimeSeconds: 1.25,
             padParams: [{ name: 'tone', value: 0.7 }],
             restoreEngineType: 0,
+            fillCondition: undefined,
         });
 
         expect(scheduleHit).toHaveBeenCalledWith({

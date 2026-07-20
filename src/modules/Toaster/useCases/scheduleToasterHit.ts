@@ -7,6 +7,7 @@ type ScheduleToasterHitInput = {
     targetTimeSeconds: number;
     padParams?: Array<{ name: string; value: number }>;
     restoreEngineType?: number;
+    fillCondition?: 'fill' | 'not-fill';
 };
 
 export function scheduleToasterHit({
@@ -16,6 +17,7 @@ export function scheduleToasterHit({
     targetTimeSeconds,
     padParams = [],
     restoreEngineType,
+    fillCondition,
 }: ScheduleToasterHitInput): void {
     const controls = getToasterDeviceControls(deviceId);
     if (!controls?.ready) {
@@ -29,5 +31,6 @@ export function scheduleToasterHit({
         sampleFrame,
         padParams,
         restoreEngineType,
+        fillCondition,
     });
 }

@@ -1,11 +1,13 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-import { cancelScheduledToasterHits } from '../cancelScheduledToasterHits';
+import { getToasterDeviceControls } from '#/modules/AudioEngine/useCases';
+
 import { getSequencerPlaybackState } from '../getSequencerPlaybackState';
 import { setFillActive } from '../setFillActive';
 
-vi.mock('../cancelScheduledToasterHits', () => ({
-    cancelScheduledToasterHits: vi.fn(),
+const { setWorkletFillActive } = vi.hoisted(() => ({ setWorkletFillActive: vi.fn() }));
+vi.mock('#/modules/AudioEngine/useCases', () => ({
+    getToasterDeviceControls: vi.fn(() => ({ setFillActive: setWorkletFillActive })),
 }));
 
 describe('setFillActive', () => {
@@ -27,13 +29,14 @@ describe('setFillActive', () => {
         expect(getSequencerPlaybackState('dev-z').fillActive).toBe(false);
     });
 
-    it('invalidates the queued lookahead so conditions are evaluated with the new fill state', () => {
+    it('updates the worklet condition state without disturbing queued hit timing', () => {
         const state = getSequencerPlaybackState('dev-queued');
         state.preScheduledStep = 3;
 
         setFillActive('dev-queued', true);
 
-        expect(state.preScheduledStep).toBeNull();
-        expect(cancelScheduledToasterHits).toHaveBeenCalledWith('dev-queued');
+        expect(state.preScheduledStep).toBe(3);
+        expect(getToasterDeviceControls).toHaveBeenCalledWith('dev-queued');
+        expect(setWorkletFillActive).toHaveBeenCalledWith(true);
     });
 });

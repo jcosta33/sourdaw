@@ -56,6 +56,28 @@ describe('shouldTriggerSequencerStep', () => {
         expect(shouldTriggerSequencerStep({ deviceId, step, loopIndex: 0 })).toBe(false);
     });
 
+    it('defers fill and not-fill decisions for audio-thread dispatch', () => {
+        const deviceId = 'dev-deferred-fill';
+
+        expect(
+            shouldTriggerSequencerStep({
+                deviceId,
+                step: activeStep({ condition: 'fill' }),
+                loopIndex: 0,
+                deferFillCondition: true,
+            })
+        ).toBe(true);
+        getSequencerPlaybackState(deviceId).fillActive = true;
+        expect(
+            shouldTriggerSequencerStep({
+                deviceId,
+                step: activeStep({ condition: 'not-fill' }),
+                loopIndex: 0,
+                deferFillCondition: true,
+            })
+        ).toBe(true);
+    });
+
     it('fires a first-condition step only on the first loop pass', () => {
         const step = activeStep({ condition: 'first' });
 

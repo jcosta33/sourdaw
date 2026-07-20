@@ -18,6 +18,7 @@ type ScheduleToasterHitInput = {
     sampleFrame: number;
     padParams: Array<{ name: string; value: number }>;
     restoreEngineType?: number;
+    fillCondition?: 'fill' | 'not-fill';
 };
 
 export type ToasterNodeResult = {
@@ -27,6 +28,7 @@ export type ToasterNodeResult = {
     scheduleHit: (input: ScheduleToasterHitInput) => void;
     cancelScheduled: () => void;
     allNotesOff: () => void;
+    setFillActive: (active: boolean) => void;
     setParam: (name: string, value: number) => void;
     setPadParam: (pad: number, name: string, value: number) => void;
     setBypass: (bypassed: boolean) => void;
@@ -83,7 +85,7 @@ export async function createToasterNode(ctx: BaseAudioContext, wasmUrl?: string)
         noteOff(pad: number, sampleFrame?: number) {
             node.port.postMessage({ type: 'noteOff', pad, sampleFrame });
         },
-        scheduleHit({ pad, velocity, midiNote = 60, sampleFrame, padParams, restoreEngineType }) {
+        scheduleHit({ pad, velocity, midiNote = 60, sampleFrame, padParams, restoreEngineType, fillCondition }) {
             if (bypassed) {
                 return;
             }
@@ -95,6 +97,7 @@ export async function createToasterNode(ctx: BaseAudioContext, wasmUrl?: string)
                 sampleFrame,
                 padParams,
                 restoreEngineType,
+                fillCondition,
             });
         },
         cancelScheduled() {
@@ -102,6 +105,9 @@ export async function createToasterNode(ctx: BaseAudioContext, wasmUrl?: string)
         },
         allNotesOff() {
             node.port.postMessage({ type: 'allNotesOff' });
+        },
+        setFillActive(active) {
+            node.port.postMessage({ type: 'fillState', active });
         },
         setParam(name: string, value: number) {
             if (Number.isFinite(value)) {

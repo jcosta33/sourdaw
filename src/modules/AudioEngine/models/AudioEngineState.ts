@@ -34,6 +34,7 @@ type ToasterScheduledHit = {
     sampleFrame: number;
     padParams: ToasterScheduledPadParam[];
     restoreEngineType?: number;
+    fillCondition?: 'fill' | 'not-fill';
 };
 
 export type DeviceController = {
@@ -96,6 +97,7 @@ export type BuiltinDeviceNode = {
         scheduleHit: (hit: ToasterScheduledHit) => void;
         cancelScheduled: () => void;
         allNotesOff: () => void;
+        setFillActive: (active: boolean) => void;
         setParam: (name: string, value: number) => void;
         setPadParam: (pad: number, name: string, value: number) => void;
         setBypass: (bypassed: boolean) => void;

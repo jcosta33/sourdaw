@@ -10,6 +10,7 @@
  *   { type: 'noteOff', pad, sampleFrame? }
  *   { type: 'scheduledHit', pad, velocity, note, sampleFrame, padParams, restoreEngineType? }
  *   { type: 'cancelScheduled' }
+ *   { type: 'fillState', active }
  *   { type: 'param', name, value }
  *   { type: 'padParam', pad, name, value }
  */
@@ -64,8 +65,10 @@ type ToasterMsg =
           sampleFrame: number;
           padParams: Array<{ name: string; value: number }>;
           restoreEngineType?: number;
+          fillCondition?: 'fill' | 'not-fill';
       }
     | { type: 'cancelScheduled' }
+    | { type: 'fillState'; active: boolean }
     | { type: 'allNotesOff' }
     | { type: 'param'; name: string; value: number }
     | { type: 'padParam'; pad: number; name: string; value: number };
@@ -81,6 +84,7 @@ type ToasterQueued =
           sampleFrame: number;
           padParams: Array<{ name: string; value: number }>;
           restoreEngineType?: number;
+          fillCondition?: 'fill' | 'not-fill';
       };
 
 class ToasterProcessor extends AudioWorkletProcessor {
@@ -90,6 +94,7 @@ class ToasterProcessor extends AudioWorkletProcessor {
     _faulted = false;
     _queue: ToasterQueued[] = [];
     _queueHead = 0;
+    _fillActive = false;
 
     constructor() {
         super();
@@ -164,6 +169,12 @@ class ToasterProcessor extends AudioWorkletProcessor {
                 inst.note_off(msg.pad);
                 break;
             case 'scheduledHit':
+                if (msg.fillCondition === 'fill' && !this._fillActive) {
+                    break;
+                }
+                if (msg.fillCondition === 'not-fill' && this._fillActive) {
+                    break;
+                }
                 for (const param of msg.padParams) {
                     inst.set_pad_param(msg.pad, PAD_PARAM_MAP[param.name] ?? param.name, param.value);
                 }
@@ -187,6 +198,9 @@ class ToasterProcessor extends AudioWorkletProcessor {
                 this._queueHead = 0;
                 break;
             }
+            case 'fillState':
+                this._fillActive = msg.active;
+                break;
             case 'allNotesOff':
                 // Release every pad in one message instead of the main thread
                 // fanning out 16 structured-clone note-off postMessages per device

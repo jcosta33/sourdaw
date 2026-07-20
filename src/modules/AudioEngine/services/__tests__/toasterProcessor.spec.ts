@@ -162,4 +162,33 @@ describe('ToasterProcessor allNotesOff', () => {
         expect(proc._queue).toEqual([{ type: 'noteOn', pad: 7, velocity: 90, sampleFrame: 11_000 }]);
         expect(noteOffCalls).toEqual([]);
     });
+
+    it('evaluates fill conditions at the queued sample frame using the latest state', async () => {
+        const proc = await loadProcessor();
+        send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
+        send(proc, {
+            type: 'scheduledHit',
+            pad: 1,
+            velocity: 100,
+            sampleFrame: 1_000,
+            padParams: [],
+            fillCondition: 'fill',
+        });
+        send(proc, {
+            type: 'scheduledHit',
+            pad: 2,
+            velocity: 100,
+            sampleFrame: 1_000,
+            padParams: [],
+            fillCondition: 'not-fill',
+        });
+        send(proc, { type: 'fillState', active: true });
+
+        vi.stubGlobal('currentFrame', 900);
+        const output = [new Float32Array(128), new Float32Array(128)];
+        proc.process([[]], [output]);
+
+        expect(noteOnCalls).toEqual([1]);
+        vi.stubGlobal('currentFrame', 0);
+    });
 });

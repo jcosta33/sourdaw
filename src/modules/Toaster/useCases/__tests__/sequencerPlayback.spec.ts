@@ -181,6 +181,20 @@ describe('startSequencer', () => {
         expect(scheduleToasterHit).toHaveBeenCalledTimes(scheduledBeforeStop);
     });
 
+    it('queues fill-conditioned hits at their projected time even before fill is active', () => {
+        seedDevice(DEVICE, activeStep({ condition: 'fill', microTiming: -0.25 }));
+
+        startSequencer(DEVICE, 120);
+
+        expect(scheduleToasterHit).toHaveBeenCalledWith(
+            expect.objectContaining({
+                deviceId: DEVICE,
+                fillCondition: 'fill',
+                targetTimeSeconds: 0,
+            })
+        );
+    });
+
     it('cancels queued lookahead when tempo changes before projecting the replacement', () => {
         seedDevice(DEVICE, activeStep());
         startSequencer(DEVICE, 120);

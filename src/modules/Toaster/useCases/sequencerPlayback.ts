@@ -55,7 +55,7 @@ function schedulePatternStep({
         const trackSteps = track.stepsOverride ?? totalSteps;
         const stepIdx = currentStep % trackSteps;
         const step = track.steps[stepIdx];
-        if (!step || !shouldTriggerSequencerStep({ deviceId, step, loopIndex })) {
+        if (!step || !shouldTriggerSequencerStep({ deviceId, step, loopIndex, deferFillCondition: true })) {
             continue;
         }
 
@@ -106,6 +106,7 @@ function schedulePatternStep({
                 targetTimeSeconds: audioTimeSeconds + totalDelayMs / 1000,
                 padParams: scheduledPadParams,
                 restoreEngineType,
+                fillCondition: step.condition === 'fill' || step.condition === 'not-fill' ? step.condition : undefined,
             });
         }
     }
