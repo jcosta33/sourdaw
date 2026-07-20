@@ -69,7 +69,7 @@ import { type ReactElement } from 'react';
 
 export const RemoveTrackButton = (): ReactElement => {
     return (
-        <Button aria-label={t('TrackControls_remove')} variant="ghost" size="icon">
+        <Button aria-label="Remove track" variant="ghost" size="icon">
             <Trash2Icon className="h-4 w-4" aria-hidden="true" />
         </Button>
     );

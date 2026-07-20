@@ -66,13 +66,13 @@ export const eventBus = createEventBus<AppEvents>();
 
 #### Event naming conventions
 
-Use `noun.pastTense` dot-separated string keys for clarity:
+Use `noun.pastTense` dot-separated string keys for lifecycle events (some domains use `domain.verb`, e.g. `panel.showDevice`, `zoom.toFit`):
 
 ```typescript
-// ✅ Clear, descriptive names
-'transport.started';
-'plugin.loaded';
-'track.muted';
+// ✅ Clear, descriptive names (all real keys)
+'track.added';
+'audioDevice.loaded';
+'yeast.notesOff';
 
 // ❌ Vague or unclear names
 'transport';
@@ -120,7 +120,7 @@ Subscribe to events in other domains to trigger side effects, such as updating a
 Subscribe to events from other domains. The `on()` method returns an unsubscribe function:
 
 ```typescript
-// Mixer/useCases/trackEventHandlers.ts
+// Illustrative — a module's subscriber file (real example: Toaster/useCases/toasterSubscriber.ts)
 
 import { eventBus } from '#/app/bootstrap';
 
@@ -140,7 +140,7 @@ export function initMixerSubscribers(): () => void {
 For events that are frequently subscribed to, you can create a reusable helper function:
 
 ```ts
-// Common/Flags/useCases/subscribeToFlagsFetchedEvent.ts
+// Illustrative — hypothetical flags feature (no Common module exists)
 import { eventBus } from '#/app/bootstrap';
 
 type Callback = (flags: FlagsFetchedPayload) => void;
@@ -158,7 +158,7 @@ export function subscribeToFlagsFetchedEvent(callback: Callback): () => void {
 The following example illustrates the anti-pattern and its fix. Note the use of `useEffectEvent` (stable in React 19.2) to capture the latest callback without adding it to the Effect's dependency array, preventing unnecessary re-subscriptions:
 
 ```typescript
-// FeatureFlags/presentations/hooks/useFlagSubscription.ts
+// Illustrative — hypothetical FeatureFlags module
 
 // ❌ Bad: eventBus at module scope in a hook file
 import { eventBus } from '#/app/bootstrap';
@@ -202,9 +202,8 @@ export function registerAiEventHandlers(): () => void {
     const unsubs = [
         eventBus.on('track.added', syncAiTrackContext),
         eventBus.on('track.removed', removeAiTrackContext),
-        eventBus.on('transport.started', handleTransportPlay),
-        eventBus.on('transport.stopped', handleTransportStop),
-        eventBus.on('plugin.loaded', analyzeNewPluginParameters),
+        eventBus.on('track.selectionChanged', handleSelectionChange),
+        eventBus.on('audioDevice.loaded', analyzeNewDeviceParameters),
     ];
 
     return () => unsubs.forEach((unsub) => unsub());

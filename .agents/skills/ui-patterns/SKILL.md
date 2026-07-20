@@ -57,7 +57,7 @@ Plan for audio-thread failure, async projection failure, network failure, and un
 
 ### 7. Prefer plain, compiler-friendly components
 
-Do not hand-write `useMemo`, `useCallback`, or `React.memo` — the React Compiler owns memoization. No `forwardRef` (ref is a regular prop in React 19). Never render with `&&` — use ternary or early `return null`. Consume Context with `use()`, not `useContext`.
+Do not hand-write `useMemo`, `useCallback`, or `React.memo` — the React Compiler owns memoization. No `forwardRef` (ref is a regular prop in React 19). Prefer ternary or early `return null` over render `&&`; leaky non-boolean `&&` (e.g. `0 && …`) is **error** lint. Consume Context with `use()`, not `useContext`.
 
 **Why:** hand memoization fights the compiler; `&&` silently renders `0`/`''`; `forwardRef` is obsolete.
 

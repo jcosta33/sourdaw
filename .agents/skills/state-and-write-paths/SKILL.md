@@ -26,7 +26,7 @@ Unclassified state is how DAW truth corrupts: a store field that is half project
 | Ephemeral UI | Selection, tool, drag, hover | Feature/view; disposable |
 | Local component | Draft input, popover open | `useState` / form in that component |
 | Engine/runtime | Live graph, playhead execution, meters | Engine only — non-serializable |
-| Async fetch/cache | Server/query results | TanStack Query (or equivalent) — not business writes |
+| Async fetch/cache | Server/query results | TanStack Query (or equivalent; installed, no call sites yet) — not business writes |
 | Telemetry | Logs, metrics | Side channel — never truth |
 
 **Why:** two categories “fitting” means the design is mixed; split the value or the owner before coding.
@@ -127,5 +127,6 @@ Edit project truth through domain writes; invalidate or refetch the cache. Do no
 ## References
 
 - [docs/03-state-management.md](../../../docs/03-state-management.md) — store patterns and client state.
+- [docs/architecture/01-system.md](../../../docs/architecture/01-system.md) — canonical state-category taxonomy (§6).
 - [docs/architecture/03-typescript-module.md](../../../docs/architecture/03-typescript-module.md) — stores as contract surfaces.
 - [docs/04-events.md](../../../docs/04-events.md) — event contracts vs commands.

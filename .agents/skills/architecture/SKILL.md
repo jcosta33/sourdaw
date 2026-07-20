@@ -57,7 +57,7 @@ import { useStore } from '#/infra/store/useStore';
 const tracks = useStore(trackStore);
 
 import { executeAppAction } from '#/modules/Command/useCases';
-await executeAppAction({ type: 'track/add', payload: { /* … */ } });
+await executeAppAction({ type: 'addTrack', payload: { /* … */ } });
 ```
 
 **Why:** global visibility without global mutability keeps undo, CRDT, and invariants in one place.

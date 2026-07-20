@@ -1,6 +1,6 @@
 # State management
 
-This document explains our approach to client-side state management for UI and domain state. For server state, use TanStack Query. For cross-domain UI updates, use [domain events](./04-events.md).
+This document explains our approach to client-side state management for UI and domain state. For server state, use TanStack Query (installed and wired via `src/app/queryClient.ts`; no call sites yet — treat this as the adopted direction, not current usage). For cross-domain UI updates, use [domain events](./04-events.md).
 
 ---
 
@@ -46,7 +46,7 @@ This section provides a practical guide to creating, persisting, and subscribing
 A store is a module-level singleton from `createStore` (`#/infra/store/createStore`).
 
 ```typescript
-// Workspace/stores/workspacePreferencesStore.ts
+// WorkspaceShell/stores/workspacePreferencesStore.ts
 import { createStore } from '#/infra/store/createStore';
 
 export type WorkspacePreferences = {
@@ -86,7 +86,7 @@ export const useWorkspacePreferences = (): WorkspacePreferences => {
 
 ### 3. Persist store state (optional)
 
-Pass a storage adapter into `createStore` when persistence is required (see `#/infra/store/storage/*`). Prefer project patterns already used by Workspace/Arrangement stores over ad-hoc `localStorage` access.
+Pass a storage adapter into `createStore` when persistence is required (see `#/infra/store/storage/*`). Prefer project patterns already used by WorkspaceShell/Arrangement stores over ad-hoc `localStorage` access.
 
 Persisted blobs must hydrate through a validator: pass `createStore({ sanitize })` so a stored value is re-validated on load and rewritten if it has drifted. The dangerous case is a **present-but-invalid** blob, not a missing one -- an empty store simply seeds `initialData`, but a blob whose shape no longer matches the current schema will hydrate straight into live state unless `sanitize` narrows or discards it first.
 
@@ -144,4 +144,4 @@ export const PanelHeader = ({ title }: { title: string }): ReactElement => {
 
 ## Async and server state
 
-Use TanStack Query for fetched data with loading, caching, invalidation, or refetch semantics. Sourdaw does not have a `ReadonlyStore` API; do not invent one or put server data in a vanilla store.
+Use TanStack Query for fetched data with loading, caching, invalidation, or refetch semantics (once adoption begins — no call sites exist yet). Sourdaw does not have a `ReadonlyStore` API; do not invent one or put server data in a vanilla store.

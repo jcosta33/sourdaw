@@ -2,7 +2,8 @@
 
 This guide provides a step-by-step process for building robust, type-safe forms with the Form component (using [React Hook Form](https://react-hook-form.com/) ) and [Zod](https://zod.dev) for schema validation.
 
-> **Note:** This is our current standard for building forms. The codebase contains legacy forms using manual state management (`useState`, `useReducer`, or custom hooks). When building new forms or refactoring existing ones, follow the patterns described in this guide.
+> [!WARNING]
+> **Aspirational — not yet adopted.** Neither `react-hook-form` nor `zod` is installed, and the `Common/Form` components, i18n `t()` helpers, and dialog APIs referenced below do not exist in this repository. This guide describes a target stack, not current practice. Forms today use local component state (`useState`).
 
 ---
 

@@ -8,6 +8,7 @@ TypeScript tests use **Vitest** and live under **`__tests__/`** folders (see §3
 
 - **Shallow unit tests only.** Every test exercises one function, one class, or one component in isolation. Every dependency that crosses a module boundary, touches the OS, or hits the audio thread is mocked at the import boundary.
 - **Unit-first.** Playwright E2E exists under `tests/e2e/` (`pnpm test:e2e`) but is **not** in CI health gates. Prefer Vitest unit/component coverage; grow E2E only with a real reason.
+- **Ad-hoc live-UI probes are not E2E.** One-off browser probes/screenshots live in `.agents/ui-scripts/` per the `playwright-ui-bridge` skill — never add them to `tests/e2e/`.
 - **One test file per source file.** The spec lives in **`__tests__/`** inside the same folder as the source file — e.g. `useCases/addTrack.ts` → `useCases/__tests__/addTrack.spec.ts`. Do **not** place `*.spec.ts` beside production files. If a source file is hard to unit-test, that is a signal about the source file, not the tests.
 - **Mock surface dependencies, not internals.** When testing a use case, mock the repositories it calls. When testing a repository, mock `@tauri-apps/api/core` or `AudioContext`. When testing a transformer, mock nothing — it is pure.
 - **Real domain types in tests.** Event payloads and `AppError` values are constructed for real in tests. They are cheap, correct, and faking them hides bugs.
@@ -37,7 +38,7 @@ TypeScript tests use **Vitest** and live under **`__tests__/`** folders (see §3
 - Cross-module flows end-to-end
 - The DI Container's lazy-proxy behaviour — tests register fakes explicitly before reading
 - React components rendered against real stores — mock the store
-- The audio thread itself — audio-thread constraints (no allocation, no locks, no blocking) are enforced by code review, not by tests
+- The audio thread itself — on the TS side, audio-thread constraints (no allocation, no locks, no blocking) are enforced by code review, not by tests (`crates/daw-dsp` RT paths are test-enforced via `assert_no_alloc`)
 
 ---
 
@@ -598,11 +599,11 @@ Prefer (1) unless the store is the subject under test.
 
 ### 7.6 Tauri availability
 
-Repositories that check `isTauriAvailable()` before calling `invoke` need that check mocked:
+Repositories that check `isTauri()` before calling `invoke` need that check mocked:
 
 ```typescript
-vi.mock('#/helpers/Tauri/isTauriAvailable', () => ({
-    isTauriAvailable: vi.fn(() => true),
+vi.mock('#/utils/tauriRuntime', () => ({
+    isTauri: vi.fn(() => true),
 }));
 ```
 

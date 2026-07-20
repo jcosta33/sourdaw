@@ -2,7 +2,7 @@
 
 A reference for the current-edition language primitives worth reaching for in
 sourdaw's hot, real-time, and interop-heavy code. The intent is simple: prefer
-current-edition JS (ES2024–2026) and Rust (2024 Edition) primitives over verbose
+current-edition JS (ES2024–2026) and Rust (1.85+ toolchain, edition 2021) primitives over verbose
 polyfills, manual synchronization, or allocation-heavy idioms on hot and RT-audio
 paths. The failure mode this guards against is defaulting to older,
 training-data-shaped patterns — manual `Float32Array` doubling, hand-rolled
@@ -77,8 +77,8 @@ forgotten on an early return or throw.
 
 ### Native decorators, `withResolvers`, and group-by helpers
 
-- **Standardized decorators (TS 6.0):** use for DI and event metadata. Prefer native
-  `@decorator` syntax over legacy experimental modes.
+- **Standardized decorators (TS 6.0):** usable for event metadata. Prefer native
+  `@decorator` syntax over legacy experimental modes. (DI in this repo is `inject()`/`Container` — see `docs/01-dependency-injection.md` — not decorators.)
 - **`Promise.withResolvers()`:** cleaner "one-shot" async events (e.g. waiting for a
   sample to load).
 - **`Object.groupBy` / `Map.groupBy`:** the standard way to group tracks, plugins, or
@@ -107,9 +107,9 @@ reach for it only for the genuine compile-time math case, not ordinary code.
 
 ### Portable SIMD and zero-overhead kernels
 
-- **Portable SIMD (`std::simd`):** unified DSP code that auto-optimizes for AVX-512
+- **Portable SIMD (`std::simd`, nightly-only — `portable_simd` feature):** unified DSP code that auto-optimizes for AVX-512
   (PC) and NEON (Apple Silicon).
-- **`naked_functions` (stable 1.88):** for ultra-critical DSP kernels requiring
+- **`naked_functions` (stable 1.88 — above the 1.85 floor; gate on the pinned nightly):** for ultra-critical DSP kernels requiring
   zero-overhead assembly interop.
 
 _Why:_ one `std::simd` body replaces two hand-written intrinsic paths and stays

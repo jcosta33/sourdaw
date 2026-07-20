@@ -120,4 +120,6 @@ UI may display summaries and request changes via commands — never owns playbac
 ## References
 
 - [docs/architecture/03-typescript-module.md](../../../docs/architecture/03-typescript-module.md) — where `engine/` sits in a module.
+- [docs/architecture/01-system.md](../../../docs/architecture/01-system.md) — channels and engine/executor model.
+- [src/modules/AudioEngine/AGENTS.md](../../../src/modules/AudioEngine/AGENTS.md) — WASM pipeline and worklet wiring.
 - `.dependency-cruiser.cjs` — `worklets-*`, `presentation-no-engine-runtime-imports`, `react-only-in-presentation`.

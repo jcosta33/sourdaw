@@ -119,4 +119,5 @@ Design for Linux as the realism floor (WebGPU, media APIs, hardware access). Ali
 
 - [docs/architecture/02-rust-backend.md](../../../docs/architecture/02-rust-backend.md) — crate layout and Tauri bridge role.
 - [docs/architecture/01-system.md](../../../docs/architecture/01-system.md) — system placement.
+- [src-tauri/AGENTS.md](../../../src-tauri/AGENTS.md) — command inventory and RT invariants.
 - `.dependency-cruiser.cjs` — `tauri-ipc-only-in-repositories`.
