@@ -19,7 +19,7 @@ function createFakeEventBus(): WorkspaceEventBus & { fire: (event: string, paylo
             return () => {
                 handlersByEvent.get(event)?.delete(handler);
             };
-        }) as WorkspaceEventBus['on'],
+        }),
         fire(event: string, payload?: unknown) {
             for (const handler of handlersByEvent.get(event) ?? []) {
                 handler(payload);

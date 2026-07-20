@@ -1,8 +1,8 @@
 import { renderHook } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
-import { importMidiFile } from '#/modules/Arrangement/useCases';
 import { Container } from '#/infra/di/Container';
+import { importMidiFile } from '#/modules/Arrangement/useCases';
 import { undo, redo } from '#/modules/Command/useCases';
 import { saveProject, newProject } from '#/modules/Project/useCases';
 import { confirmUser } from '#/utils/Notification/confirmUser';
@@ -30,7 +30,7 @@ function createFakeEventBus(): WorkspaceEventBus & { fire: (event: string, paylo
             return () => {
                 handlersByEvent.get(event)?.delete(handler);
             };
-        }) as WorkspaceEventBus['on'],
+        }),
         fire(event: string, payload?: unknown) {
             for (const handler of handlersByEvent.get(event) ?? []) {
                 void handler(payload);
@@ -41,8 +41,8 @@ function createFakeEventBus(): WorkspaceEventBus & { fire: (event: string, paylo
 
 describe('useAppEventHandlers', () => {
     let bus: ReturnType<typeof createFakeEventBus>;
-    let onOpenExport: ReturnType<typeof vi.fn>;
-    let onOpenPreferences: ReturnType<typeof vi.fn>;
+    let onOpenExport: ReturnType<typeof vi.fn<() => void>>;
+    let onOpenPreferences: ReturnType<typeof vi.fn<() => void>>;
     let reloadSpy: ReturnType<typeof vi.fn>;
 
     beforeEach(() => {
@@ -50,8 +50,8 @@ describe('useAppEventHandlers', () => {
         vi.clearAllMocks();
         bus = createFakeEventBus();
         setWorkspaceEventBus(bus);
-        onOpenExport = vi.fn();
-        onOpenPreferences = vi.fn();
+        onOpenExport = vi.fn<() => void>();
+        onOpenPreferences = vi.fn<() => void>();
         reloadSpy = vi.fn();
         vi.stubGlobal('location', { ...window.location, reload: reloadSpy });
     });
@@ -156,10 +156,11 @@ describe('useAppEventHandlers', () => {
 
     it('re-subscribes when the callbacks change identity', () => {
         const { rerender } = renderHook(
-            ({ onExport, onPreferences }) => useAppEventHandlers({ onOpenExport: onExport, onOpenPreferences: onPreferences }),
+            ({ onExport, onPreferences }) =>
+                useAppEventHandlers({ onOpenExport: onExport, onOpenPreferences: onPreferences }),
             { initialProps: { onExport: onOpenExport, onPreferences: onOpenPreferences } }
         );
-        const nextOnOpenExport = vi.fn();
+        const nextOnOpenExport = vi.fn<() => void>();
 
         rerender({ onExport: nextOnOpenExport, onPreferences: onOpenPreferences });
         bus.fire('dialog.openExport');

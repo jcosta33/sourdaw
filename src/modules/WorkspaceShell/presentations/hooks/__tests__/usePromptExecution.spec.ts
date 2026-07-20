@@ -15,10 +15,13 @@ import {
 } from '#/modules/AiRuntime/useCases';
 import { clipSelectionStore, trackStore } from '#/modules/Arrangement/stores';
 import { executeAppAction } from '#/modules/Command/useCases';
+import { type AppAction } from '#/utils/handlerContract';
 
 import { usePromptExecution } from '../usePromptExecution';
 
-vi.mock('#/infra/logger/appLogger', () => ({ logger: { error: vi.fn(), warn: vi.fn(), info: vi.fn(), debug: vi.fn() } }));
+vi.mock('#/infra/logger/appLogger', () => ({
+    logger: { error: vi.fn(), warn: vi.fn(), info: vi.fn(), debug: vi.fn() },
+}));
 vi.mock('#/infra/store/useStore', () => ({ useStore: vi.fn() }));
 vi.mock('#/modules/AiRuntime/stores', () => ({ llmStatusStore: { value: { state: 'idle' } } }));
 vi.mock('#/modules/AiRuntime/useCases', () => ({
@@ -57,13 +60,22 @@ const preset = (overrides: Partial<Preset> = {}): Preset => ({
 const fuzzy = (p: Preset): { preset: Preset; score: number } => ({ preset: p, score: 1 });
 const formEvent = { preventDefault: vi.fn() };
 
-let trackState: { tracks: Array<{ id: string; name: string; clips: Array<{ id: string; name: string; type: string }> }>; selectedTrackId: string | null };
+let trackState: {
+    tracks: Array<{ id: string; name: string; clips: Array<{ id: string; name: string; type: string }> }>;
+    selectedTrackId: string | null;
+};
 let clipState: { selectedClipId: string | null; selectedClipIds: string[]; marqueeSelection: null };
 
 vi.mocked(useStore).mockImplementation((store: unknown, fallback: unknown) => {
-    if (store === trackStore) return trackState;
-    if (store === clipSelectionStore) return clipState;
-    if (store === llmStatusStore) return { state: 'idle' };
+    if (store === trackStore) {
+        return trackState;
+    }
+    if (store === clipSelectionStore) {
+        return clipState;
+    }
+    if (store === llmStatusStore) {
+        return { state: 'idle' };
+    }
     return fallback;
 });
 
@@ -96,7 +108,9 @@ describe('usePromptExecution', () => {
         const track = { id: 't1', name: 'Drums', clips: [{ id: 'c1', name: 'Clip A', type: 'audio' }] };
         trackState = { tracks: [track], selectedTrackId: 't1' };
         const { result, rerender } = renderHook(() => usePromptExecution());
-        expect(result.current.selectionTags).toEqual([{ id: 'track:t1', label: 'Drums', kind: 'track', icon: 'track' }]);
+        expect(result.current.selectionTags).toEqual([
+            { id: 'track:t1', label: 'Drums', kind: 'track', icon: 'track' },
+        ]);
 
         act(() => result.current.dismissTag('track:t1'));
         rerender();
@@ -109,12 +123,22 @@ describe('usePromptExecution', () => {
 
         clipState = { selectedClipId: null, selectedClipIds: ['c1', 'c2'], marqueeSelection: null };
         rerender();
-        expect(result.current.selectionTags).toContainEqual({ id: 'clips:2', label: '2 clips', kind: 'clips', icon: 'clips' });
+        expect(result.current.selectionTags).toContainEqual({
+            id: 'clips:2',
+            label: '2 clips',
+            kind: 'clips',
+            icon: 'clips',
+        });
 
         trackState = { tracks: [track, bass], selectedTrackId: null };
         clipState = { selectedClipId: 'c1', selectedClipIds: [], marqueeSelection: null };
         rerender();
-        expect(result.current.selectionTags).toContainEqual({ id: 'clip:c1', label: 'Clip A', kind: 'clip', icon: 'clip' });
+        expect(result.current.selectionTags).toContainEqual({
+            id: 'clip:c1',
+            label: 'Clip A',
+            kind: 'clip',
+            icon: 'clip',
+        });
     });
 
     it('runs fuzzy search while focused and idle, and suppresses it when blurred', () => {
@@ -136,7 +160,7 @@ describe('usePromptExecution', () => {
     });
 
     it('previews a destructive preset, skips presets with no actions, and executes a non-destructive one through the action group', async () => {
-        const deleteAction = { type: 'track.delete' };
+        const deleteAction: AppAction = { type: 'removeAllTracks' };
         vi.mocked(resolvePresetActions).mockReturnValue([deleteAction]);
         const { result } = renderHook(() => usePromptExecution());
         const destructive = fuzzy(preset({ id: 'delete-track', label: 'Delete track', isDestructive: true }));
@@ -146,7 +170,7 @@ describe('usePromptExecution', () => {
         });
         expect(result.current.preview).toEqual({
             actions: [deleteAction],
-            actionLabels: ['track.delete'],
+            actionLabels: ['removeAllTracks'],
             rawText: 'Delete track',
             requiresConfirmation: true,
         });
@@ -158,33 +182,49 @@ describe('usePromptExecution', () => {
         });
         expect(vi.mocked(executeAppAction)).not.toHaveBeenCalled();
 
-        const playAction = { type: 'transport.play' };
+        const playAction: AppAction = { type: 'togglePlayback' };
         vi.mocked(resolvePresetActions).mockReturnValue([playAction]);
         await act(async () => {
             await result.current.executePreset(fuzzy(preset()));
         });
-        expect(vi.mocked(executeAppAction)).toHaveBeenCalledWith(playAction, expect.objectContaining({ source: 'prompt' }));
-        expect(vi.mocked(recordAiActionGroup)).toHaveBeenCalledWith(expect.objectContaining({ prompt: 'Play', groupId: 'group-1' }));
-        expect(vi.mocked(notifyAiChange)).toHaveBeenCalledWith('Executed: Play', ['transport.play']);
+        expect(vi.mocked(executeAppAction)).toHaveBeenCalledWith(
+            playAction,
+            expect.objectContaining({ source: 'prompt' })
+        );
+        expect(vi.mocked(recordAiActionGroup)).toHaveBeenCalledWith(
+            expect.objectContaining({ prompt: 'Play', groupId: 'group-1' })
+        );
+        expect(vi.mocked(notifyAiChange)).toHaveBeenCalledWith('Executed: Play', ['togglePlayback']);
         expect(result.current.isProcessing).toBe(false);
         expect(result.current.value).toBe('');
     });
 
     it('submits a prompt and executes it directly, or previews it first when confirmation is required', async () => {
-        const stopAction = { type: 'transport.stop' };
-        vi.mocked(parsePromptToActions).mockResolvedValue({ actions: [stopAction], rawText: 'stop playback', requiresConfirmation: false });
+        const stopAction: AppAction = { type: 'stopPlayback' };
+        vi.mocked(parsePromptToActions).mockResolvedValue({
+            actions: [stopAction],
+            rawText: 'stop playback',
+            requiresConfirmation: false,
+        });
         const { result } = renderHook(() => usePromptExecution());
         act(() => result.current.setValue('stop playback'));
 
         await act(async () => {
             await result.current.handleSubmit(formEvent as never);
         });
-        expect(vi.mocked(executeAppAction)).toHaveBeenCalledWith(stopAction, expect.objectContaining({ source: 'prompt' }));
-        expect(vi.mocked(notifyAiChange)).toHaveBeenCalledWith('Executed: stop playback', ['transport.stop']);
+        expect(vi.mocked(executeAppAction)).toHaveBeenCalledWith(
+            stopAction,
+            expect.objectContaining({ source: 'prompt' })
+        );
+        expect(vi.mocked(notifyAiChange)).toHaveBeenCalledWith('Executed: stop playback', ['stopPlayback']);
         expect(result.current.value).toBe('');
 
-        const deleteAction = { type: 'track.delete' };
-        vi.mocked(parsePromptToActions).mockResolvedValue({ actions: [deleteAction], rawText: 'delete all', requiresConfirmation: true });
+        const deleteAction: AppAction = { type: 'removeAllTracks' };
+        vi.mocked(parsePromptToActions).mockResolvedValue({
+            actions: [deleteAction],
+            rawText: 'delete all',
+            requiresConfirmation: true,
+        });
         act(() => result.current.setValue('delete all'));
         await act(async () => {
             await result.current.handleSubmit(formEvent as never);
@@ -193,7 +233,7 @@ describe('usePromptExecution', () => {
             actions: [deleteAction],
             rawText: 'delete all',
             requiresConfirmation: true,
-            actionLabels: ['track.delete'],
+            actionLabels: ['removeAllTracks'],
         });
         expect(result.current.value).toBe('delete all');
         expect(vi.mocked(executeAppAction)).toHaveBeenCalledTimes(1);
@@ -245,7 +285,7 @@ describe('usePromptExecution', () => {
     });
 
     it('confirms and cancels a preview, and safely cancels processing with nothing in flight', async () => {
-        const action = { type: 'track.delete' };
+        const action: AppAction = { type: 'removeAllTracks' };
         const { result } = renderHook(() => usePromptExecution());
 
         await act(async () => {
@@ -255,7 +295,9 @@ describe('usePromptExecution', () => {
 
         vi.mocked(resolvePresetActions).mockReturnValue([action]);
         act(() => {
-            void result.current.executePreset(fuzzy(preset({ id: 'delete-track', label: 'Delete track', isDestructive: true })));
+            void result.current.executePreset(
+                fuzzy(preset({ id: 'delete-track', label: 'Delete track', isDestructive: true }))
+            );
         });
         expect(result.current.preview).not.toBeNull();
 
@@ -263,11 +305,13 @@ describe('usePromptExecution', () => {
             await result.current.confirmPreview();
         });
         expect(vi.mocked(executeAppAction)).toHaveBeenCalledWith(action, expect.objectContaining({ source: 'prompt' }));
-        expect(vi.mocked(notifyAiChange)).toHaveBeenCalledWith('Confirmed: Delete track', ['track.delete']);
+        expect(vi.mocked(notifyAiChange)).toHaveBeenCalledWith('Confirmed: Delete track', ['removeAllTracks']);
         expect(result.current.preview).toBeNull();
 
         act(() => {
-            void result.current.executePreset(fuzzy(preset({ id: 'delete-track', label: 'Delete track', isDestructive: true })));
+            void result.current.executePreset(
+                fuzzy(preset({ id: 'delete-track', label: 'Delete track', isDestructive: true }))
+            );
         });
         act(() => result.current.cancelPreview());
         expect(result.current.preview).toBeNull();
