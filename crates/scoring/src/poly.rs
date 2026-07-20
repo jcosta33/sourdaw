@@ -72,7 +72,9 @@ impl PolyStringTracker {
             sample_rate,
             buffers: Vec::new(),
             buf_positions: Vec::new(),
-            buf_size: 2048,
+            // 4096 samples: bass E1 (41.2 Hz) needs τ ≈ 1070 @44.1 kHz, and
+            // the detector clamps max_tau to len / 2 — 2048 could never reach it.
+            buf_size: 4096,
             hop_counter: 0,
             hop_size: (sample_rate / 15.0) as usize, // 15 Hz poly analysis rate
             results: Vec::new(),
@@ -151,16 +153,15 @@ impl PolyStringTracker {
 
         // Run per-string detection
         for i in 0..self.strings.len() {
-            // Extract contiguous buffer
+            // Extract contiguous buffer. No Hann window: the per-string YIN
+            // detector is autocorrelation-based and windowing destroys its
+            // difference-function dip (see ScoringEngine::process).
             let mut window = vec![0.0_f32; self.buf_size];
             let pos = self.buf_positions[i];
             for j in 0..self.buf_size {
                 let idx = (pos + j) % self.buf_size;
                 window[j] = self.buffers[i][idx];
             }
-
-            // Apply Hann window
-            crate::preprocess::apply_hann_window(&mut window);
 
             let (freq, conf) = self.detectors[i].detect(&window);
 
@@ -190,5 +191,79 @@ impl PolyStringTracker {
         } else {
             "?"
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::f32::consts::TAU;
+
+    fn feed_sine(tracker: &mut PolyStringTracker, freq: f32, seconds: f32) {
+        let sr = tracker.sample_rate;
+        let total = (sr * seconds) as usize;
+        for i in 0..total {
+            let s = (TAU * freq * i as f32 / sr).sin() * 0.8;
+            tracker.process_sample(s);
+        }
+    }
+
+    /// Signal-in/signal-out: with poly mode enabled, a sustained sine on a
+    /// string's fundamental must mark that string active at the played pitch.
+    #[test]
+    fn guitar_standard_reports_active_string() {
+        let mut tracker = PolyStringTracker::new(44100.0);
+        tracker.set_guitar_standard();
+        tracker.enabled = true;
+        feed_sine(&mut tracker, 82.41, 3.0);
+        let r = &tracker.results[0];
+        assert!(
+            r.active,
+            "E2 string never reported active (freq={:.2}, conf={:.2})",
+            r.freq, r.confidence
+        );
+        assert!(
+            r.cents.abs() < 30.0,
+            "E2 string cents {:.1}, expected |cents| < 30",
+            r.cents
+        );
+    }
+
+    #[test]
+    fn guitar_standard_tracks_high_string() {
+        let mut tracker = PolyStringTracker::new(44100.0);
+        tracker.set_guitar_standard();
+        tracker.enabled = true;
+        feed_sine(&mut tracker, 329.63, 3.0);
+        let r = &tracker.results[5];
+        assert!(
+            r.active,
+            "E4 string never reported active (freq={:.2}, conf={:.2})",
+            r.freq, r.confidence
+        );
+        assert!(
+            r.cents.abs() < 30.0,
+            "E4 string cents {:.1}, expected |cents| < 30",
+            r.cents
+        );
+    }
+
+    #[test]
+    fn bass_4_reports_active_low_e() {
+        let mut tracker = PolyStringTracker::new(44100.0);
+        tracker.set_bass_4();
+        tracker.enabled = true;
+        feed_sine(&mut tracker, 41.20, 4.0);
+        let r = &tracker.results[0];
+        assert!(
+            r.active,
+            "E1 string never reported active (freq={:.2}, conf={:.2})",
+            r.freq, r.confidence
+        );
+        assert!(
+            r.cents.abs() < 30.0,
+            "E1 string cents {:.1}, expected |cents| < 30",
+            r.cents
+        );
     }
 }

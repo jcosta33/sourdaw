@@ -143,9 +143,14 @@ impl YinDetector {
         }
     }
 
-    /// Run YIN on a windowed audio buffer. Returns (frequency, confidence).
+    /// Run YIN on an audio buffer. Returns (frequency, confidence).
+    ///
+    /// The buffer is used at full length: truncating to `win_size` (= max_tau)
+    /// made the `len >= 2 * min_tau` check below unsatisfiable for any band
+    /// narrower than an octave, and the `len / 2` clamp on max_tau silently
+    /// raised the low-frequency floor.
     pub fn detect(&mut self, buffer: &[f32]) -> (f32, f32) {
-        let len = buffer.len().min(self.win_size);
+        let len = buffer.len();
         if len < self.min_tau * 2 {
             self.frequency = 0.0;
             self.confidence = 0.0;
@@ -160,15 +165,17 @@ impl YinDetector {
         fft_autocorrelation(&buffer[..len], &mut self.autocorr, fft_size);
 
         // Compute difference function: d(τ) = S(0) + S(τ) - 2r(τ)
-        // S(τ) = Σ x[j+τ]² (energy of shifted signal)
+        // S(τ) = Σ_{j=τ}^{len-1} x[j]² (energy of the shifted signal)
         let s0 = self.autocorr[0]; // = Σ x[j]²
         let max_tau = self.max_tau.min(len / 2);
 
-        // Cumulative energy for S(τ)
-        let mut energy_sum = s0;
+        // S(τ) shrinks as samples leave the window; track it incrementally.
+        let mut s_tau = s0;
         for tau in 0..=max_tau {
+            if tau > 0 {
+                s_tau -= buffer[tau - 1] * buffer[tau - 1];
+            }
             if tau < self.diff.len() {
-                let s_tau = self.autocorr[0]; // approximation: use s0 (valid for normalized signals)
                 let r_tau = if tau < self.autocorr.len() {
                     self.autocorr[tau]
                 } else {
@@ -260,5 +267,66 @@ impl YinDetector {
         self.period = tau_refined;
 
         (self.frequency, self.confidence)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn sine(freq: f32, sample_rate: f32, len: usize) -> Vec<f32> {
+        (0..len)
+            .map(|i| (TAU * freq * i as f32 / sample_rate).sin())
+            .collect()
+    }
+
+    /// Signal-in/signal-out: a pure sine across the guitar/bass fundamental
+    /// range must be detected at the played frequency with usable confidence.
+    fn assert_detects(freq: f32, sample_rate: f32) {
+        let mut det = YinDetector::new(sample_rate, 40.0, 5000.0);
+        let buf = sine(freq, sample_rate, 4096);
+        let (f, c) = det.detect(&buf);
+        assert!(f > 0.0, "YIN returned no pitch for {freq} Hz input");
+        let err_cents = 1200.0 * (f / freq).log2().abs();
+        assert!(
+            err_cents < 30.0,
+            "YIN {freq} Hz -> {f:.2} Hz ({err_cents:.1} cents off)"
+        );
+        assert!(c > 0.5, "YIN {freq} Hz confidence {c:.2}, expected > 0.5");
+    }
+
+    #[test]
+    fn detects_guitar_and_bass_fundamentals() {
+        for freq in [82.41, 110.0, 146.83, 196.0, 246.94, 329.63] {
+            assert_detects(freq, 44100.0);
+        }
+    }
+
+    #[test]
+    fn detects_reference_pitches_at_48k() {
+        for freq in [82.41, 440.0, 880.0] {
+            assert_detects(freq, 48000.0);
+        }
+    }
+
+    /// Narrow per-string band (as used by the poly tracker) must still detect.
+    #[test]
+    fn detects_within_narrow_string_band() {
+        let target = 82.41_f32;
+        let lo = target * 2.0_f32.powf(-2.0 / 12.0);
+        let hi = target * 2.0_f32.powf(2.0 / 12.0);
+        let mut det = YinDetector::new(44100.0, lo, hi);
+        let buf = sine(target, 44100.0, 2048);
+        let (f, c) = det.detect(&buf);
+        assert!(
+            f > 0.0,
+            "YIN returned no pitch for {target} Hz in a ±2-semitone band"
+        );
+        let err_cents = 1200.0 * (f / target).log2().abs();
+        assert!(
+            err_cents < 30.0,
+            "YIN {target} Hz -> {f:.2} Hz ({err_cents:.1} cents off)"
+        );
+        assert!(c > 0.4, "YIN {target} Hz confidence {c:.2}, expected > 0.4");
     }
 }

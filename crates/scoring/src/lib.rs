@@ -14,7 +14,7 @@ pub mod yin;
 
 use mpm::MpmDetector;
 use poly::PolyStringTracker;
-use preprocess::{apply_hann_window, normalize, Bandpass, DcBlocker, RmsTracker};
+use preprocess::{normalize, Bandpass, DcBlocker, RmsTracker};
 use tone::ToneGenerator;
 use tuning::TuningSystem;
 use wasm_bindgen::prelude::*;
@@ -298,10 +298,12 @@ impl ScoringEngine {
             let should_analyze = self.analysis_buf.push(filtered);
 
             if should_analyze && rms > GATE_THRESHOLD {
-                // Extract window
+                // Extract window. No Hann window: YIN/MPM are
+                // autocorrelation-based and a window makes r(τ) decay with
+                // the window autocorrelation, destroying the period dip/peak
+                // for any fundamental beyond a few hundred Hz.
                 self.analysis_buf
                     .extract(&mut self.analysis_window, ANALYSIS_WINDOW);
-                apply_hann_window(&mut self.analysis_window);
                 normalize(&mut self.analysis_window);
 
                 // Run YIN (primary)
@@ -476,5 +478,73 @@ impl ScoringInstance {
             self.engine.tuning.offsets = tuning.to_12tet_offsets();
             self.engine.tuning.a4_hz = tuning.base_freq;
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::f32::consts::TAU;
+
+    /// Feed `seconds` of a stereo sine through the engine in 128-frame blocks,
+    /// the same entry path the AudioWorklet uses.
+    fn run_engine(engine: &mut ScoringEngine, freq: f32, sample_rate: f32, seconds: f32) {
+        let blocks = (sample_rate * seconds) as usize / 128;
+        let mut n = 0usize;
+        for _ in 0..blocks {
+            let mut left = [0.0_f32; 128];
+            let mut right = [0.0_f32; 128];
+            for i in 0..128 {
+                let s = (TAU * freq * n as f32 / sample_rate).sin() * 0.8;
+                left[i] = s;
+                right[i] = s;
+                n += 1;
+            }
+            engine.process(&mut left, &mut right);
+        }
+    }
+
+    /// Signal-in/signal-out: the tuner must report the played note across the
+    /// guitar/bass range — not a fixed ~5.6 kHz (MIDI 113) at full confidence.
+    fn assert_tunes(freq: f32, sample_rate: f32, expected_midi: i32) {
+        let mut engine = ScoringEngine::new(sample_rate);
+        run_engine(&mut engine, freq, sample_rate, 2.0);
+        assert!(
+            engine.active,
+            "engine inactive for {freq} Hz input (freq={:.2}, conf={:.2})",
+            engine.frequency, engine.confidence
+        );
+        let err_cents = 1200.0 * (engine.frequency / freq).log2().abs();
+        assert!(
+            err_cents < 30.0,
+            "engine {freq} Hz -> {:.2} Hz ({:.1} cents off, midi {})",
+            engine.frequency, err_cents, engine.midi_note
+        );
+        assert_eq!(
+            engine.midi_note, expected_midi,
+            "engine {freq} Hz mapped to wrong note"
+        );
+    }
+
+    #[test]
+    fn tunes_guitar_and_bass_range() {
+        assert_tunes(82.41, 44100.0, 40); // E2
+        assert_tunes(110.0, 44100.0, 45); // A2
+        assert_tunes(220.0, 44100.0, 57); // A3
+        assert_tunes(440.0, 44100.0, 69); // A4
+        assert_tunes(82.41, 48000.0, 40); // E2 at 48 kHz
+    }
+
+    #[test]
+    fn engine_poly_mode_marks_string_active() {
+        let mut engine = ScoringEngine::new(44100.0);
+        engine.set_param("instrument", 0.0); // guitar standard
+        engine.set_param("poly", 1.0);
+        run_engine(&mut engine, 82.41, 44100.0, 3.0);
+        assert!(
+            engine.poly.results[0].active,
+            "poly E2 string never reported active (freq={:.2}, conf={:.2})",
+            engine.poly.results[0].freq, engine.poly.results[0].confidence
+        );
     }
 }
