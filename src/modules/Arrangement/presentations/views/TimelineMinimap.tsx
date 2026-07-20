@@ -34,6 +34,15 @@ type CanvasMetrics = {
     dpr: number;
 };
 
+function getDevicePixelRatio(): number {
+    const dpr = window.devicePixelRatio;
+    if (!Number.isFinite(dpr) || dpr <= 0) {
+        return 1;
+    }
+
+    return dpr;
+}
+
 const defaultTrackState: TrackStoreState = { tracks: [], selectedTrackId: null };
 const defaultTimelineView: TimelineViewState = {
     scrollX: 0,
@@ -173,8 +182,7 @@ export const TimelineMinimap = ({ height = TIMELINE_MINIMAP_DEFAULT_HEIGHT }: Ti
 
         const measure = (): void => {
             const rect = container.getBoundingClientRect();
-            const rawDpr = window.devicePixelRatio;
-            const dpr = Number.isFinite(rawDpr) && rawDpr > 0 ? rawDpr : 1;
+            const dpr = getDevicePixelRatio();
             const width = Math.max(0, rect.width);
             setCanvasMetrics((current) => {
                 if (current.width === width && current.dpr === dpr) {
@@ -185,12 +193,39 @@ export const TimelineMinimap = ({ height = TIMELINE_MINIMAP_DEFAULT_HEIGHT }: Ti
         };
 
         const observer = new ResizeObserver(measure);
+        let densityQuery: MediaQueryList | null = null;
+
+        const stopObservingDensity = (): void => {
+            if (!densityQuery) {
+                return;
+            }
+
+            densityQuery.onchange = null;
+            densityQuery = null;
+        };
+
+        const observeDensity = (): void => {
+            stopObservingDensity();
+            if (typeof window.matchMedia !== 'function') {
+                return;
+            }
+
+            densityQuery = window.matchMedia(`(resolution: ${getDevicePixelRatio()}dppx)`);
+            densityQuery.onchange = handleDensityChange;
+        };
+
+        function handleDensityChange(): void {
+            measure();
+            observeDensity();
+        }
 
         observer.observe(container);
+        observeDensity();
         window.addEventListener('resize', measure);
 
         return () => {
             observer.disconnect();
+            stopObservingDensity();
             window.removeEventListener('resize', measure);
         };
     }, []);

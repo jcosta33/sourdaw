@@ -1,7 +1,54 @@
+import { type ReactElement, useLayoutEffect } from 'react';
+
 import { fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { TimelineMinimapResizeHandle } from '../TimelineMinimapResizeHandle';
+
+type ConflictReleaseHarnessProps = {
+    persistedHeight: number;
+    releaseBeforePassiveEffects: boolean;
+    onPreview: (height: number) => void;
+    onCommit: (height: number) => void;
+    onCancel: () => void;
+};
+
+function ConflictReleaseHarness({
+    persistedHeight,
+    releaseBeforePassiveEffects,
+    onPreview,
+    onCommit,
+    onCancel,
+}: ConflictReleaseHarnessProps): ReactElement {
+    useLayoutEffect(() => {
+        if (!releaseBeforePassiveEffects) {
+            return;
+        }
+
+        const handle = document.querySelector('[aria-label="Resize timeline minimap"]');
+        if (!(handle instanceof HTMLElement)) {
+            throw new TypeError('Expected the minimap resize handle');
+        }
+
+        const releaseEvent = new MouseEvent('pointerup', {
+            bubbles: true,
+            cancelable: true,
+            clientY: 50,
+        });
+        Object.defineProperty(releaseEvent, 'pointerId', { value: 11 });
+        handle.dispatchEvent(releaseEvent);
+    }, [releaseBeforePassiveEffects]);
+
+    return (
+        <TimelineMinimapResizeHandle
+            height={persistedHeight}
+            persistedHeight={persistedHeight}
+            onPreview={onPreview}
+            onCommit={onCommit}
+            onCancel={onCancel}
+        />
+    );
+}
 
 describe('TimelineMinimapResizeHandle pointer lifecycle', () => {
     const setPointerCapture = vi.fn();
@@ -63,6 +110,18 @@ describe('TimelineMinimapResizeHandle pointer lifecycle', () => {
         expect(releasePointerCapture).toHaveBeenCalledWith(7);
     });
 
+    it('commits the release position when pointerup arrives without a final pointermove', () => {
+        const { onPreview, onCommit } = renderHandle();
+        const handle = screen.getByRole('separator');
+
+        fireEvent.pointerDown(handle, { button: 0, pointerId: 8, isPrimary: true, clientY: 100 });
+        fireEvent.pointerUp(handle, { pointerId: 8, clientY: 60 });
+
+        expect(onPreview).not.toHaveBeenCalled();
+        expect(onCommit).toHaveBeenCalledTimes(1);
+        expect(onCommit).toHaveBeenCalledWith(104);
+    });
+
     it.each(['pointerCancel', 'lostPointerCapture'] as const)('cancels without persisting on %s', (eventName) => {
         const { onPreview, onCommit, onCancel } = renderHandle();
         const handle = screen.getByRole('separator');
@@ -106,8 +165,40 @@ describe('TimelineMinimapResizeHandle pointer lifecycle', () => {
         );
         fireEvent.pointerUp(handle, { pointerId: 9, clientY: 50 });
 
-        expect(onCancel).toHaveBeenCalledTimes(1);
         expect(onCommit).not.toHaveBeenCalled();
+        expect(onCancel).toHaveBeenCalledTimes(1);
+    });
+
+    it('rejects pointerup after newer persisted truth commits but before passive cancellation runs', () => {
+        const onPreview = vi.fn();
+        const onCommit = vi.fn();
+        const onCancel = vi.fn();
+        const { rerender } = render(
+            <ConflictReleaseHarness
+                persistedHeight={64}
+                releaseBeforePassiveEffects={false}
+                onPreview={onPreview}
+                onCommit={onCommit}
+                onCancel={onCancel}
+            />
+        );
+        const handle = screen.getByRole('separator');
+
+        fireEvent.pointerDown(handle, { button: 0, pointerId: 11, isPrimary: true, clientY: 100 });
+        fireEvent.pointerMove(handle, { pointerId: 11, clientY: 50 });
+
+        rerender(
+            <ConflictReleaseHarness
+                persistedHeight={92}
+                releaseBeforePassiveEffects={true}
+                onPreview={onPreview}
+                onCommit={onCommit}
+                onCancel={onCancel}
+            />
+        );
+
+        expect(onCommit).not.toHaveBeenCalled();
+        expect(onCancel).toHaveBeenCalledTimes(1);
     });
 
     it('ignores secondary and non-primary pointers', () => {

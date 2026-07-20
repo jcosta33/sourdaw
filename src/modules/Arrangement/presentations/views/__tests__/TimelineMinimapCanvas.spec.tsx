@@ -51,6 +51,12 @@ type ResizeObserverHarness = {
 
 const resizeObserverHarness: ResizeObserverHarness = { callback: null };
 
+type DensityObserverHarness = {
+    query: MediaQueryList | null;
+};
+
+const densityObserverHarness: DensityObserverHarness = { query: null };
+
 class MockResizeObserver {
     private readonly callback: ResizeObserverCallback;
 
@@ -90,8 +96,26 @@ describe('TimelineMinimap canvas sizing and drawing', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         resizeObserverHarness.callback = null;
+        densityObserverHarness.query = null;
         cssWidth = 200;
         global.ResizeObserver = MockResizeObserver;
+        vi.stubGlobal(
+            'matchMedia',
+            vi.fn((query: string) => {
+                const mediaQueryList = {
+                    matches: true,
+                    media: query,
+                    onchange: null,
+                    addEventListener: vi.fn(),
+                    removeEventListener: vi.fn(),
+                    addListener: vi.fn(),
+                    removeListener: vi.fn(),
+                    dispatchEvent: vi.fn(),
+                };
+                densityObserverHarness.query = mediaQueryList;
+                return densityObserverHarness.query;
+            })
+        );
         vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(
             () => new DOMRect(0, 0, cssWidth, 160)
         );
@@ -106,6 +130,7 @@ describe('TimelineMinimap canvas sizing and drawing', () => {
 
     afterEach(() => {
         vi.restoreAllMocks();
+        vi.unstubAllGlobals();
     });
 
     it('rounds backing dimensions from live CSS size and DPR and resets the transform before drawing', () => {
@@ -119,24 +144,39 @@ describe('TimelineMinimap canvas sizing and drawing', () => {
         expect(context.clearRect).toHaveBeenCalledWith(0, 0, 200, 160);
     });
 
-    it('redraws after width, height, and DPR changes without cumulative scaling', () => {
+    it('redraws after width and height changes without cumulative scaling', () => {
         const { container, rerender } = render(<TimelineMinimap height={28} />);
         const canvas = container.querySelector('canvas');
 
         cssWidth = 120;
-        Object.defineProperty(window, 'devicePixelRatio', { configurable: true, value: 2.25 });
         act(() => {
             resizeObserverHarness.callback?.(
                 [{ contentRect: new DOMRectReadOnly(0, 0, 120, 80) } as ResizeObserverEntry],
                 {} as ResizeObserver
             );
-            window.dispatchEvent(new Event('resize'));
         });
         rerender(<TimelineMinimap height={80} />);
 
-        expect(canvas).toHaveAttribute('width', '270');
-        expect(canvas).toHaveAttribute('height', '180');
+        expect(canvas).toHaveAttribute('width', '180');
+        expect(canvas).toHaveAttribute('height', '120');
         expect(context.scale).not.toHaveBeenCalled();
+        expect(context.setTransform).toHaveBeenLastCalledWith(1.5, 0, 0, 1.5, 0, 0);
+    });
+
+    it('redraws for a DPR-only change without a geometry or window resize signal', () => {
+        const { container } = render(<TimelineMinimap height={160} />);
+        const canvas = container.querySelector('canvas');
+
+        expect(canvas).toHaveAttribute('width', '300');
+        expect(canvas).toHaveAttribute('height', '240');
+
+        Object.defineProperty(window, 'devicePixelRatio', { configurable: true, value: 2.25 });
+        act(() => {
+            densityObserverHarness.query?.onchange?.({} as MediaQueryListEvent);
+        });
+
+        expect(canvas).toHaveAttribute('width', '450');
+        expect(canvas).toHaveAttribute('height', '360');
         expect(context.setTransform).toHaveBeenLastCalledWith(2.25, 0, 0, 2.25, 0, 0);
     });
 

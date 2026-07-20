@@ -21,7 +21,6 @@ type ActiveResize = {
     startClientY: number;
     startHeight: number;
     startPersistedHeight: number;
-    previewHeight: number;
 };
 
 export const TimelineMinimapResizeHandle = ({
@@ -95,7 +94,6 @@ export const TimelineMinimapResizeHandle = ({
             startClientY: event.clientY,
             startHeight,
             startPersistedHeight: persistedHeight,
-            previewHeight: startHeight,
         };
         event.currentTarget.setPointerCapture(event.pointerId);
     };
@@ -108,7 +106,6 @@ export const TimelineMinimapResizeHandle = ({
 
         event.preventDefault();
         const nextHeight = normalizeTimelineMinimapHeight(resize.startHeight + resize.startClientY - event.clientY);
-        resize.previewHeight = nextHeight;
         onPreview(nextHeight);
     };
 
@@ -121,7 +118,13 @@ export const TimelineMinimapResizeHandle = ({
         event.preventDefault();
         activeResizeRef.current = null;
         releaseCapture(resize);
-        onCommit(resize.previewHeight);
+        if (resize.startPersistedHeight !== persistedHeight) {
+            onCancelRef.current();
+            return;
+        }
+
+        const releaseHeight = normalizeTimelineMinimapHeight(resize.startHeight + resize.startClientY - event.clientY);
+        onCommit(releaseHeight);
     };
 
     const handlePointerCancel = (event: PointerEvent<HTMLDivElement>): void => {
