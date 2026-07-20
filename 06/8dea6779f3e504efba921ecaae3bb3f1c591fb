@@ -1,0 +1,154 @@
+src/modules/Transport/useCases/scheduling/scheduleMidiNotes.ts
+  s_c2fca615e81f34::t_c10984e2391cd6 15,122-130,300-310
+src/modules/AudioEngine/useCases/__tests__/exportStems.spec.ts
+  s_c2fca615e81f34::t_097bf8e3484e7f 100
+crates/daw-engine/src/midi_fx.rs
+  s_c2fca615e81f34::t_4a1b965dfa49f6 563-564,574,584-600,606-610,612,642
+  s_c2fca615e81f34::t_17eb8bbf08e747 565-573,575-583,603-605,613-616,633-634
+  s_c2fca615e81f34::t_3622938412bad9 11-14,17-69,399-402,432,436,449-454,456-462,466,471-485,513-562,601-602,611,617-632,635-641,643-644,685-686
+  s_c2fca615e81f34::t_abc7729a928a18 645-684
+src/modules/MIDI/useCases/__tests__/shouldPlayMidiEvent.spec.ts
+  s_c2fca615e81f34::t_3622938412bad9 1-83
+src/modules/MIDI/useCases/__tests__/appendRecordedMidiNote.spec.ts
+  s_c2fca615e81f34::t_9b45d12facddfa 6,15
+  s_c2fca615e81f34::t_98a54c2555662a 3
+src/modules/MIDI/stores/index.ts
+  s_c2fca615e81f34::t_6c93c71d3aeea1 4
+src/modules/MIDI/useCases/midiClipData/__tests__/duplicateMidiClipData.spec.ts
+  s_c2fca615e81f34::t_9b45d12facddfa 3,6,10-11,19,42,108,134,270,294
+src/modules/AudioEngine/useCases/offlineRender/__tests__/scheduleTrackClipsAudio.spec.ts
+  s_c2fca615e81f34::t_097bf8e3484e7f 256-261
+  s_c2fca615e81f34::t_2db7294dd3ca1f 4,206
+src-tauri/src/commands/plugins.rs
+  s_c2fca615e81f34::t_533956d14191ce 564-567
+src/modules/Project/useCases/projectPersistence/__tests__/newProject.spec.ts
+  s_c2fca615e81f34::t_4bb54f7e46b3af 92
+src/modules/Project/useCases/projectPersistence/helpers/hydrateArrangementStoreFromProjectData.ts
+  s_c2fca615e81f34::t_183e77dcb8e810 1-2,68-72,126-129
+  s_c2fca615e81f34::t_9549262f22d372 67
+src/modules/Transport/useCases/scheduling/__tests__/scheduleMidiNotes.spec.ts
+  s_c2fca615e81f34::t_9549262f22d372 6,15-16,59,108,163-167,178-210
+  s_c2fca615e81f34::t_6cdedfb0442aa0 211-212
+src/modules/MIDI/useCases/__tests__/mergeImportedMidiClipNotes.spec.ts
+  s_c2fca615e81f34::t_2d719348576718 3,25,42,64
+src/modules/AudioEngine/useCases/offlineRender/__tests__/scheduleTrackClips.spec.ts
+  s_c2fca615e81f34::t_85c59d5236bc14 358,403,410
+  s_c2fca615e81f34::t_097bf8e3484e7f 334-339
+  s_c2fca615e81f34::t_1d7e57a68b6ebb 65-67,398
+  s_c2fca615e81f34::t_3622938412bad9 249,264-265,274-275,280-288,391-397,399-402,404-409,411-417
+  s_c2fca615e81f34::t_e67b93e5cb633d 418
+src/modules/MIDI/useCases/midiNoteCrud/__tests__/appendMidiNotes.spec.ts
+  s_c2fca615e81f34::t_9b45d12facddfa 3,6,15,73
+src/modules/MIDI/useCases/setMidiStoreState.ts
+  s_c2fca615e81f34::t_7e1d530f5494e2 1,4-5
+src/modules/MIDI/useCases/midiClipData/__tests__/removeMidiClipData.spec.ts
+  s_c2fca615e81f34::t_9b45d12facddfa 3,6,15,24
+src/app/__tests__/bootstrap.spec.ts
+  s_c2fca615e81f34::t_1d68684a1fce5c 190
+crates/daw-engine/src/scheduler.rs
+  s_c2fca615e81f34::t_17eb8bbf08e747 7,145,437-440
+src/modules/MIDI/stores/__tests__/midiStore.spec.ts
+  s_c2fca615e81f34::t_f54d1a315baba6 5
+  s_c2fca615e81f34::t_3622938412bad9 95,122,159,199,220,252-293
+  s_c2fca615e81f34::t_7e1d530f5494e2 97-109
+  s_c2fca615e81f34::t_4bb54f7e46b3af 1,6-12,43-50,83-94
+  s_c2fca615e81f34::t_2602bac10b1377 96
+src/modules/Arrangement/handlers/clip/__tests__/handleRemoveClip.spec.ts
+  s_c2fca615e81f34::t_2db7294dd3ca1f 3,168
+src/modules/MIDI/useCases/__tests__/setMidiStoreState.spec.ts
+  s_c2fca615e81f34::t_4bb54f7e46b3af 8-9,12,39-42,62,70-90
+  s_c2fca615e81f34::t_f2e9a1a574604d 3
+  s_c2fca615e81f34::t_431f64a6c49224 91
+src/modules/AudioEngine/useCases/exportStems.ts
+  s_c2fca615e81f34::t_097bf8e3484e7f 55,69,114-119
+src/modules/AudioEngine/useCases/offlineRender/scheduleTrackClips.ts
+  s_c2fca615e81f34::t_c10984e2391cd6 335,337-343,409,411-417,419
+  s_c2fca615e81f34::t_097bf8e3484e7f 14-17,121,161,336,410
+src/modules/Arrangement/useCases/__tests__/buildTimelineRenderModel.spec.ts
+  s_c2fca615e81f34::t_9b45d12facddfa 103,105-108,145,147-150
+  s_c2fca615e81f34::t_e65abf903e7b16 3
+  s_c2fca615e81f34::t_2db7294dd3ca1f 104,146
+src/modules/MIDI/useCases/midiClipData/__tests__/restoreMidiClipData.spec.ts
+  s_c2fca615e81f34::t_9b45d12facddfa 3,8,12-13,22,52,69
+src/modules/AudioEngine/useCases/__tests__/renderOfflineGraph.spec.ts
+  s_c2fca615e81f34::t_097bf8e3484e7f 137
+  s_c2fca615e81f34::t_2db7294dd3ca1f 4,53
+src/modules/MIDI/useCases/strumNotes/__tests__/restoreStrumOriginals.spec.ts
+  s_c2fca615e81f34::t_9b45d12facddfa 5,13,40
+src/modules/AudioEngine/repositories/offlineScheduler/setOfflineMidiEventProjector.ts
+  s_c2fca615e81f34::t_097bf8e3484e7f 4,7-15,17
+src/modules/MIDI/useCases/__tests__/getMidiStoreState.spec.ts
+  s_c2fca615e81f34::t_2d719348576718 3,9,18
+src/modules/AudioEngine/useCases/configureOfflineMidiEventProjection.ts
+  s_c2fca615e81f34::t_097bf8e3484e7f 3,7,9
+src/modules/AudioEngine/useCases/offlineRender/resolveRenderContext.ts
+  s_c2fca615e81f34::t_097bf8e3484e7f 13,38,80
+src/modules/MIDI/stores/midiStore.ts
+  s_c2fca615e81f34::t_7ee6da06592a48 251-257,263
+  s_c2fca615e81f34::t_1c40d3587d7dbf 258-259,265,270,275
+  s_c2fca615e81f34::t_6c93c71d3aeea1 3,16-19,282-287,292-302,305-330
+  s_c2fca615e81f34::t_7e1d530f5494e2 243-248,303-304
+  s_c2fca615e81f34::t_f2e9a1a574604d 10,20-21,23,29,56-59,236
+src/app/bootstrap.ts
+  s_c2fca615e81f34::t_097bf8e3484e7f 88,155-158
+src/modules/Project/useCases/projectPersistence/fileIO/__tests__/hydrateProjectMidi.spec.ts
+  s_c2fca615e81f34::t_3622938412bad9 4,10,23-57
+src/modules/Project/useCases/demoProjects/nebulaDrift/createNebulaDriftDemo.ts
+  s_c2fca615e81f34::t_2db7294dd3ca1f 29,1393
+src/modules/AudioEngine/useCases/renderOffline.ts
+  s_c2fca615e81f34::t_097bf8e3484e7f 65,73,169-174
+src/modules/AudioEngine/repositories/offlineScheduler/offlineMidiEventProjectorState.ts
+  s_c2fca615e81f34::t_097bf8e3484e7f 36-49,51
+src/modules/MIDI/useCases/midiClipData/__tests__/glueMidiClipData.spec.ts
+  s_c2fca615e81f34::t_9b45d12facddfa 3,6,10-11,19,40,86,147
+src/modules/MIDI/useCases/__tests__/resetMidiStoreForProject.spec.ts
+  s_c2fca615e81f34::t_4bb54f7e46b3af 1-50
+crates/daw-engine/src/plugin_slot.rs
+  s_c2fca615e81f34::t_0ec0f5ca4198d3 13-16
+src/modules/MIDI/useCases/hydrateMidiProjectState.ts
+  s_c2fca615e81f34::t_0999c5501f83cf 1-5
+src/modules/MIDI/useCases/index.ts
+  s_c2fca615e81f34::t_213058b457d1ef 38-40
+src/modules/MIDI/useCases/resetMidiStoreForProject.ts
+  s_c2fca615e81f34::t_d7f9dd42741992 1-27
+src/modules/MIDI/useCases/shouldPlayMidiEvent.ts
+  s_c2fca615e81f34::t_93d363520d3586 1-88
+src/modules/Project/models/ProjectData.ts
+  s_c2fca615e81f34::t_e11df6d359e2cd 191
+src/modules/Project/useCases/projectPersistence/__tests__/helpers.spec.ts
+  s_c2fca615e81f34::t_cf2b45b681ea21 19,62-66,92
+src/modules/Project/useCases/projectPersistence/fileIO/__tests__/exportProjectFile.roundTrip.spec.ts
+  s_c2fca615e81f34::t_d1d885157bb1ff 66,99
+src/modules/Project/useCases/projectPersistence/fileIO/__tests__/serializeProjectMidi.spec.ts
+  s_c2fca615e81f34::t_e11bef9acebd3d 10,37
+src/modules/Project/useCases/projectPersistence/fileIO/hydrateProjectMidi.ts
+  s_c2fca615e81f34::t_907d851d803656 15,69-70,84-89
+src/modules/Project/useCases/projectPersistence/fileIO/serializeProjectMidi.ts
+  s_c2fca615e81f34::t_47d3a27e58c066 10,21-22,36-46
+src/modules/Project/useCases/projectPersistence/helpers/__tests__/hydrateArrangementStoreFromProjectData.spec.ts
+  s_c2fca615e81f34::t_465cb5e24c8670 119,163
+src/modules/Project/useCases/projectPersistence/helpers/__tests__/resetModuleStoresToDefault.spec.ts
+  s_c2fca615e81f34::t_887ca9bb8d2e8b 12,39-43,91,108
+src/modules/Project/useCases/projectPersistence/helpers/isHydratableProjectData.ts
+  s_c2fca615e81f34::t_b00b5d9ddd35b5 464-468
+src/modules/Project/useCases/projectPersistence/helpers/resetModuleStoresToDefault.ts
+  s_c2fca615e81f34::t_105272286ba96c 11,23,29,37
+src/modules/Project/useCases/projectPersistence/newProject.ts
+  s_c2fca615e81f34::t_99fb133a02d33b 57
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "068dea6779f3e504efba921ecaae3bb3f1c591fb",
+  "prompts": {},
+  "sessions": {
+    "s_c2fca615e81f34": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f74e9-e1c5-7142-85d2-4c577b3973c0",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
