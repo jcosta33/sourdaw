@@ -12,15 +12,35 @@ import { useTracks } from '../../hooks/useTracks';
 import { useWorkspaceState } from '../../hooks/useWorkspaceState';
 import { ArrangeView } from '../ArrangeView';
 
+const preferencesMocks = vi.hoisted(() => ({
+    store: {
+        value: {
+            preferencesSchemaVersion: 1,
+            showMinimap: true,
+            timelineMinimapHeight: 28,
+        },
+    },
+    setTimelineMinimapHeight: vi.fn(),
+}));
+
 vi.mock('#/infra/store/useStore', () => ({
-    useStore: vi.fn((store: { value: unknown }, fallback?: unknown) => fallback ?? store.value),
+    useStore: vi.fn((store: { value: unknown }, fallback?: unknown) => {
+        if (store === preferencesMocks.store) {
+            return preferencesMocks.store.value;
+        }
+        return fallback ?? store.value;
+    }),
 }));
 
 vi.mock('#/modules/Arrangement/presentations/views', () => ({
     AdjustmentLayerStrip: () => <div data-testid="adjustment-layer-strip">Adjustment Layer Strip</div>,
     getAdjustmentLayerStripHeight: (layerCount: number) => (layerCount > 0 ? 28 + layerCount * 18 : 0),
     TimelineSurface: () => <div data-testid="timeline-surface">Timeline Surface</div>,
-    TimelineMinimap: () => <div data-testid="timeline-minimap">Timeline Minimap</div>,
+    TimelineMinimap: ({ height }: { height: number }) => (
+        <div data-testid="timeline-minimap" data-height={height}>
+            Timeline Minimap
+        </div>
+    ),
     MINIMAP_HEIGHT: 28,
     ArrangementBar: () => <div data-testid="arrangement-bar">Arrangement Bar</div>,
     ARRANGEMENT_BAR_HEIGHT: 22,
@@ -34,6 +54,16 @@ vi.mock('#/modules/Arrangement/presentations/views', () => ({
     TrackListView: ({ style, extraHeaderHeight }: { style?: React.CSSProperties; extraHeaderHeight?: number }) => (
         <div data-testid="track-list-view" style={style} data-extra-height={extraHeaderHeight} />
     ),
+}));
+
+vi.mock('#/modules/Preferences/stores', () => ({
+    preferencesStore: preferencesMocks.store,
+    normalizeTimelineMinimapHeight: (height: number) => Math.min(160, Math.max(28, Math.round(height))),
+    TIMELINE_MINIMAP_DEFAULT_HEIGHT: 28,
+}));
+
+vi.mock('#/modules/Preferences/useCases', () => ({
+    setTimelineMinimapHeight: preferencesMocks.setTimelineMinimapHeight,
 }));
 
 vi.mock('#/modules/Arrangement/stores', async (importOriginal) => ({
@@ -83,6 +113,33 @@ vi.mock('../../components/ResizeHandle', () => ({
         onResize: (delta: number) => void;
         onResizeEnd: () => void;
     }) => <div data-testid="resize-handle" data-direction={direction} />,
+}));
+
+vi.mock('../TimelineMinimapResizeHandle', () => ({
+    TimelineMinimapResizeHandle: ({
+        height,
+        persistedHeight,
+        onPreview,
+        onCommit,
+        onCancel,
+    }: {
+        height: number;
+        persistedHeight: number;
+        onPreview: (height: number) => void;
+        onCommit: (height: number) => void;
+        onCancel: () => void;
+    }) => (
+        <div
+            role="separator"
+            aria-label="Resize timeline minimap"
+            data-testid="timeline-minimap-resize-handle"
+            data-height={height}
+            data-persisted-height={persistedHeight}
+            onPointerMove={() => onPreview(96)}
+            onPointerUp={() => onCommit(96)}
+            onPointerCancel={onCancel}
+        />
+    ),
 }));
 
 vi.mock('../Timeline/ChordTrackLane', () => ({
@@ -215,6 +272,11 @@ describe('ArrangeView', () => {
             scratchPadOpen: false,
             scratchPadHeight: 150,
         });
+        preferencesMocks.store.value = {
+            preferencesSchemaVersion: 1,
+            showMinimap: true,
+            timelineMinimapHeight: 28,
+        };
     });
 
     afterEach(() => {
@@ -340,5 +402,92 @@ describe('ArrangeView', () => {
         expect(call.scrollX).toBeCloseTo(600);
         expect(call.maxScrollX).toBe(3800);
         expect(setScrollX).not.toHaveBeenCalled();
+    });
+
+    it('projects one persisted minimap height across the canvas, separator, and track-list header', () => {
+        preferencesMocks.store.value = {
+            preferencesSchemaVersion: 1,
+            showMinimap: true,
+            timelineMinimapHeight: 72,
+        };
+        vi.mocked(useTracks).mockReturnValue({
+            tracks: [makeTrack({ clipEndBeat: 32 })],
+            selectedTrackId: 'track-1',
+        });
+
+        render(<ArrangeView />);
+
+        expect(screen.getByTestId('timeline-minimap')).toHaveAttribute('data-height', '72');
+        expect(screen.getByTestId('timeline-minimap-resize-handle')).toHaveAttribute('data-height', '72');
+        expect(screen.getByTestId('track-list-view')).toHaveAttribute('data-extra-height', '112');
+    });
+
+    it('honors explicit visibility without mounting canvas, separator, or minimap header height', () => {
+        preferencesMocks.store.value = {
+            preferencesSchemaVersion: 1,
+            showMinimap: false,
+            timelineMinimapHeight: 72,
+        };
+        vi.mocked(useTracks).mockReturnValue({
+            tracks: [makeTrack({ clipEndBeat: 32 })],
+            selectedTrackId: 'track-1',
+        });
+
+        render(<ArrangeView />);
+
+        expect(screen.queryByTestId('timeline-minimap')).not.toBeInTheDocument();
+        expect(screen.queryByTestId('timeline-minimap-resize-handle')).not.toBeInTheDocument();
+        expect(screen.getByTestId('track-list-view')).toHaveAttribute('data-extra-height', '40');
+    });
+
+    it('uses local drag preview atomically and commits only through the Preferences use case', () => {
+        preferencesMocks.store.value = {
+            preferencesSchemaVersion: 1,
+            showMinimap: true,
+            timelineMinimapHeight: 72,
+        };
+        vi.mocked(useTracks).mockReturnValue({
+            tracks: [makeTrack({ clipEndBeat: 32 })],
+            selectedTrackId: 'track-1',
+        });
+
+        render(<ArrangeView />);
+        const handle = screen.getByTestId('timeline-minimap-resize-handle');
+        fireEvent.pointerMove(handle);
+
+        expect(screen.getByTestId('timeline-minimap')).toHaveAttribute('data-height', '96');
+        expect(screen.getByTestId('timeline-minimap-resize-handle')).toHaveAttribute('data-height', '96');
+        expect(screen.getByTestId('track-list-view')).toHaveAttribute('data-extra-height', '136');
+        expect(preferencesMocks.setTimelineMinimapHeight).not.toHaveBeenCalled();
+
+        fireEvent.pointerUp(handle);
+        expect(preferencesMocks.setTimelineMinimapHeight).toHaveBeenCalledTimes(1);
+        expect(preferencesMocks.setTimelineMinimapHeight).toHaveBeenCalledWith(96);
+    });
+
+    it('drops a stale local preview when a newer persisted height arrives', () => {
+        preferencesMocks.store.value = {
+            preferencesSchemaVersion: 1,
+            showMinimap: true,
+            timelineMinimapHeight: 72,
+        };
+        vi.mocked(useTracks).mockReturnValue({
+            tracks: [makeTrack({ clipEndBeat: 32 })],
+            selectedTrackId: 'track-1',
+        });
+
+        const { rerender } = render(<ArrangeView />);
+        fireEvent.pointerMove(screen.getByTestId('timeline-minimap-resize-handle'));
+        expect(screen.getByTestId('timeline-minimap')).toHaveAttribute('data-height', '96');
+
+        preferencesMocks.store.value = {
+            preferencesSchemaVersion: 1,
+            showMinimap: true,
+            timelineMinimapHeight: 88,
+        };
+        rerender(<ArrangeView />);
+
+        expect(screen.getByTestId('timeline-minimap')).toHaveAttribute('data-height', '88');
+        expect(screen.getByTestId('track-list-view')).toHaveAttribute('data-extra-height', '128');
     });
 });

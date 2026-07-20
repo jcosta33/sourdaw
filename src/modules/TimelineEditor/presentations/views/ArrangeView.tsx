@@ -22,7 +22,6 @@ import {
     ARRANGEMENT_BAR_HEIGHT,
     BEAT_RULER_HEIGHT,
     MARKER_LANE_HEIGHT,
-    MINIMAP_HEIGHT,
     getAdjustmentLayerStripHeight,
 } from '#/modules/Arrangement/presentations/views';
 import { adjustmentLayerStore, timelineViewStore, markerStore } from '#/modules/Arrangement/stores';
@@ -34,11 +33,14 @@ import {
 } from '#/modules/Arrangement/useCases';
 import { decodeAudioFile } from '#/modules/AudioEngine/useCases';
 import { chordTrackStore } from '#/modules/MIDI/stores';
+import { preferencesStore } from '#/modules/Preferences/stores';
+import { setTimelineMinimapHeight } from '#/modules/Preferences/useCases';
 import { SessionView } from '#/modules/SessionLauncher/presentations/views';
 import { transportStore } from '#/modules/Transport/stores';
 import { closeScratchPad, setSessionViewWidth, setTrackListWidth } from '#/modules/WorkspaceShell/useCases';
 import { clamp } from '#/utils/Math/clamp';
 import { notifyUser } from '#/utils/Notification/notifyUser';
+import { normalizeTimelineMinimapHeight } from '#/utils/TimelineMinimap/timelineMinimapHeight';
 
 import { ResizeHandle } from '../components/ResizeHandle';
 import { useTracks } from '../hooks/useTracks';
@@ -47,6 +49,7 @@ import { useWorkspaceState } from '../hooks/useWorkspaceState';
 import { ArrangeEmptyStateShell } from './ArrangeEmptyStateShell';
 import { ChordTrackLane, CHORD_TRACK_LANE_HEIGHT } from './Timeline/ChordTrackLane';
 import { ScratchPadView } from './Timeline/ScratchPadView';
+import { TimelineMinimapResizeHandle } from './TimelineMinimapResizeHandle';
 
 const TRACK_LIST_MIN = 120;
 const TRACK_LIST_MAX = 400;
@@ -131,6 +134,52 @@ export const ArrangeView = (): ReactElement => {
     const chordState = useStore(chordTrackStore, { enabled: false, events: [] });
 
     const adjustmentState = useStore(adjustmentLayerStore, { layers: [] });
+    const preferences = useStore(preferencesStore);
+
+    const showMinimap = preferences.showMinimap;
+    const persistedMinimapHeight = normalizeTimelineMinimapHeight(preferences.timelineMinimapHeight);
+    const [minimapResizeState, setMinimapResizeState] = useState({
+        persistedHeight: persistedMinimapHeight,
+        visible: showMinimap,
+        previewHeight: null as number | null,
+    });
+    const minimapTruthChanged =
+        minimapResizeState.persistedHeight !== persistedMinimapHeight || minimapResizeState.visible !== showMinimap;
+    if (minimapTruthChanged) {
+        setMinimapResizeState({
+            persistedHeight: persistedMinimapHeight,
+            visible: showMinimap,
+            previewHeight: null,
+        });
+    }
+
+    let activeMinimapHeight = minimapResizeState.previewHeight ?? persistedMinimapHeight;
+    if (minimapTruthChanged) {
+        activeMinimapHeight = persistedMinimapHeight;
+    }
+
+    const handleMinimapResizePreview = (height: number): void => {
+        setMinimapResizeState((current) => ({
+            ...current,
+            previewHeight: normalizeTimelineMinimapHeight(height),
+        }));
+    };
+
+    const handleMinimapResizeCommit = (height: number): void => {
+        const normalizedHeight = normalizeTimelineMinimapHeight(height);
+        setMinimapResizeState((current) => ({
+            ...current,
+            previewHeight: normalizedHeight,
+        }));
+        setTimelineMinimapHeight(normalizedHeight);
+    };
+
+    const handleMinimapResizeCancel = (): void => {
+        setMinimapResizeState((current) => ({
+            ...current,
+            previewHeight: null,
+        }));
+    };
 
     const hasMarkers = (markerState?.markers.length ?? 0) > 0;
     const hasChords = (chordState?.events.length ?? 0) > 0 || (chordState?.enabled ?? false);
@@ -172,7 +221,7 @@ export const ArrangeView = (): ReactElement => {
                             ARRANGEMENT_BAR_HEIGHT +
                             getAdjustmentLayerStripHeight(adjustmentLayerCount) +
                             (hasMarkers ? MARKER_LANE_HEIGHT : 0) +
-                            MINIMAP_HEIGHT +
+                            (showMinimap ? activeMinimapHeight : 0) +
                             BEAT_RULER_HEIGHT +
                             (hasChords ? CHORD_TRACK_LANE_HEIGHT : 0)
                         }
@@ -188,7 +237,18 @@ export const ArrangeView = (): ReactElement => {
                 <ArrangementBar pixelsPerBeat={pixelsPerBeat} scrollX={scrollX} />
                 <AdjustmentLayerStrip pixelsPerBeat={pixelsPerBeat} scrollX={scrollX} />
                 {hasMarkers ? <MarkerLane pixelsPerBeat={pixelsPerBeat} scrollX={scrollX} /> : null}
-                <TimelineMinimap />
+                {showMinimap ? (
+                    <div className="relative shrink-0" style={{ height: activeMinimapHeight }}>
+                        <TimelineMinimap height={activeMinimapHeight} />
+                        <TimelineMinimapResizeHandle
+                            height={activeMinimapHeight}
+                            persistedHeight={persistedMinimapHeight}
+                            onPreview={handleMinimapResizePreview}
+                            onCommit={handleMinimapResizeCommit}
+                            onCancel={handleMinimapResizeCancel}
+                        />
+                    </div>
+                ) : null}
                 <BeatRulerBar />
                 {hasChords ? <ChordTrackLane pixelsPerBeat={pixelsPerBeat} scrollX={scrollX} /> : null}
                 <TimelineSurface />

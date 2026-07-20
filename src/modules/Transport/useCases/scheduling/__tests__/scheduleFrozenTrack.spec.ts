@@ -50,4 +50,104 @@ describe('scheduleFrozenTrack', () => {
         expect(start).toHaveBeenCalledTimes(1);
         expect(start).toHaveBeenCalledWith(4);
     });
+
+    it('does not schedule anything when the track is not frozen', () => {
+        const track = {
+            id: 'track-live',
+            freezeState: { status: 'live' },
+            clips: [{ startBeat: 0 }],
+        };
+
+        const scheduled = scheduleFrozenTrack(track, 0, [], 120);
+
+        expect(scheduled).toBe(false);
+        expect(getCachedAudioBuffer).not.toHaveBeenCalled();
+        expect(createBufferSource).not.toHaveBeenCalled();
+    });
+
+    it('does not schedule anything when the frozen buffer is not cached', () => {
+        vi.mocked(getCachedAudioBuffer).mockReturnValue(null);
+        const track = {
+            id: 'track-frozen',
+            freezeState: { status: 'frozen', frozenBufferId: 'buf-missing' },
+            clips: [{ startBeat: 0 }],
+        };
+
+        const scheduled = scheduleFrozenTrack(track, 0, [], 120);
+
+        expect(scheduled).toBe(false);
+        expect(createBufferSource).not.toHaveBeenCalled();
+    });
+
+    it('starts the buffer mid-way through when playback has already begun before the current tick', () => {
+        const start = vi.fn();
+        const source = { start, connect: vi.fn(), onended: null } as never;
+        vi.mocked(createBufferSource).mockReturnValue(source);
+        vi.mocked(getCachedAudioBuffer).mockReturnValue({ duration: 100 } as never);
+        vi.mocked(ensureTrackStrip).mockReturnValue({ preFaderTap: { connect: vi.fn() } } as never);
+        vi.mocked(getCurrentTime).mockReturnValue(0);
+
+        const track = {
+            id: 'track-frozen',
+            freezeState: { status: 'frozen', frozenBufferId: 'buf-1' },
+            clips: [{ startBeat: 0 }],
+        };
+        const activeAudioSources: AudioBufferSourceNode[] = [];
+
+        // trackStartBeat 0, accumulatedPosition 2 beats, tempo 120bpm (2 beats/sec)
+        // => beatOffset -2 beats => -1 second: playback is already 1s in when this
+        // tick fires, so it must start the source at an offset instead of at time 0.
+        const scheduled = scheduleFrozenTrack(track, 2, activeAudioSources, 120);
+
+        expect(scheduled).toBe(true);
+        expect(start).toHaveBeenCalledWith(0, 1);
+        expect(activeAudioSources).toContain(source);
+    });
+
+    it('does not start a buffer whose already-elapsed offset has outlasted its duration', () => {
+        const start = vi.fn();
+        const source = { start, connect: vi.fn(), onended: null } as never;
+        vi.mocked(createBufferSource).mockReturnValue(source);
+        vi.mocked(getCachedAudioBuffer).mockReturnValue({ duration: 0.5 } as never);
+        vi.mocked(ensureTrackStrip).mockReturnValue({ preFaderTap: { connect: vi.fn() } } as never);
+        vi.mocked(getCurrentTime).mockReturnValue(0);
+
+        const track = {
+            id: 'track-frozen',
+            freezeState: { status: 'frozen', frozenBufferId: 'buf-1' },
+            clips: [{ startBeat: 0 }],
+        };
+        const activeAudioSources: AudioBufferSourceNode[] = [];
+
+        const scheduled = scheduleFrozenTrack(track, 2, activeAudioSources, 120);
+
+        expect(scheduled).toBe(true);
+        expect(start).not.toHaveBeenCalled();
+        expect(activeAudioSources).toHaveLength(0);
+    });
+
+    it('removes the source from the active pool once its playback ends', () => {
+        const start = vi.fn();
+        const source = { start, connect: vi.fn(), onended: null as (() => void) | null };
+        vi.mocked(createBufferSource).mockReturnValue(source as never);
+        vi.mocked(getCachedAudioBuffer).mockReturnValue({ duration: 100 } as never);
+        vi.mocked(ensureTrackStrip).mockReturnValue({ preFaderTap: { connect: vi.fn() } } as never);
+        vi.mocked(getCurrentTime).mockReturnValue(0);
+
+        const track = {
+            id: 'track-frozen',
+            freezeState: { status: 'frozen', frozenBufferId: 'buf-1' },
+            clips: [{ startBeat: 0 }],
+        };
+        const otherSource = { start: vi.fn() } as never;
+        const activeAudioSources: AudioBufferSourceNode[] = [otherSource];
+
+        scheduleFrozenTrack(track, 0, activeAudioSources, 120);
+        expect(activeAudioSources).toContain(source as never);
+
+        source.onended?.();
+
+        expect(activeAudioSources).not.toContain(source as never);
+        expect(activeAudioSources).toEqual([otherSource]);
+    });
 });
