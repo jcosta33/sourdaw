@@ -343,6 +343,42 @@ describe('collectLayoutOccurrences', () => {
         ).toBe(true);
     });
 
+    it('should stop imported lookup at switch and named class-expression shadows', () => {
+        const repositoryRoot = createFixture({
+            'src/App.tsx': `
+                import { ROOT } from './classes';
+                export const ClassOwner = class ROOT {
+                    render() {
+                        return <div className={ROOT} />;
+                    }
+                };
+                export function SwitchOwner(value: string) {
+                    switch (value) {
+                        case 'layout':
+                            const ROOT = value;
+                            return <div className={ROOT} />;
+                        default:
+                            return null;
+                    }
+                }
+            `,
+            'src/classes.ts': `export const ROOT = 'grid grid-cols-2';`,
+        });
+
+        const occurrences = collectLayoutOccurrences({ repositoryRoot });
+
+        expect(occurrences).toHaveLength(2);
+        expect(
+            occurrences.every(
+                (occurrence) =>
+                    occurrence.currentPattern === '{ROOT}' &&
+                    occurrence.disposition === 'responsive-or-dynamic' &&
+                    occurrence.proposedPrimitive === null &&
+                    occurrence.riskFlags.hasDynamicClassName
+            )
+        ).toBe(true);
+    });
+
     it('should reject imported bindings reached through a symlinked repository ancestor', () => {
         const externalRoot = createFixture({
             'classes.ts': `export const ROOT = 'grid grid-cols-2';`,
@@ -793,6 +829,60 @@ describe('compareLayoutCensuses', () => {
             repositoryRoot,
             'src/App.tsx',
             'export const App = () => <nav><div><span className="flex" /></div></nav>;\n'
+        );
+        const changed = createLayoutCensus({ repositoryRoot, previousCensus: baseline });
+        const drift = compareLayoutCensuses({ actual: changed, expected: baseline });
+
+        expect(changed.occurrences[0].id).toBe(baseline.occurrences[0].id);
+        expect(changed.occurrences[0].sourceFingerprint).not.toBe(baseline.occurrences[0].sourceFingerprint);
+        expect(changed.occurrences[0].reviewed).toBe(false);
+        expect(drift.changed).toHaveLength(1);
+    });
+
+    it('should invalidate review when an aliased custom ancestor import changes', () => {
+        const repositoryRoot = createFixture({
+            'src/App.tsx': `
+                import { Panel as Shell } from './PanelA';
+                export const App = () => <Shell><span className="flex" /></Shell>;
+            `,
+        });
+        const baseline = createLayoutCensus({ repositoryRoot });
+        baseline.occurrences[0].reviewed = true;
+
+        writeFixture(
+            repositoryRoot,
+            'src/App.tsx',
+            `
+                import { Panel as Shell } from './PanelB';
+                export const App = () => <Shell><span className="flex" /></Shell>;
+            `
+        );
+        const changed = createLayoutCensus({ repositoryRoot, previousCensus: baseline });
+        const drift = compareLayoutCensuses({ actual: changed, expected: baseline });
+
+        expect(changed.occurrences[0].id).toBe(baseline.occurrences[0].id);
+        expect(changed.occurrences[0].sourceFingerprint).not.toBe(baseline.occurrences[0].sourceFingerprint);
+        expect(changed.occurrences[0].reviewed).toBe(false);
+        expect(drift.changed).toHaveLength(1);
+    });
+
+    it('should invalidate review when a namespaced custom ancestor import changes', () => {
+        const repositoryRoot = createFixture({
+            'src/App.tsx': `
+                import * as Panels from './PanelsA';
+                export const App = () => <Panels.Shell><span className="flex" /></Panels.Shell>;
+            `,
+        });
+        const baseline = createLayoutCensus({ repositoryRoot });
+        baseline.occurrences[0].reviewed = true;
+
+        writeFixture(
+            repositoryRoot,
+            'src/App.tsx',
+            `
+                import * as Panels from './PanelsB';
+                export const App = () => <Panels.Shell><span className="flex" /></Panels.Shell>;
+            `
         );
         const changed = createLayoutCensus({ repositoryRoot, previousCensus: baseline });
         const drift = compareLayoutCensuses({ actual: changed, expected: baseline });

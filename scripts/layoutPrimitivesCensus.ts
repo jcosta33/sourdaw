@@ -34,7 +34,7 @@ export const ALLOWED_LAYOUT_DISPOSITIONS = [
     'one-off',
 ] as const;
 
-export const REVIEWED_LAYOUT_CENSUS_DIGEST = '547431696360e111e8ea002403fd680e1446f775d0bd3a032ddb191aac241eba';
+export const REVIEWED_LAYOUT_CENSUS_DIGEST = '360a6ed46aaa0a1c1ad34280ddaf3dff5a1c857daf49f6345434151cdbbe5011';
 
 const LEGACY_ONE_OFF_RATIONALE =
     'Native semantics, refs, handlers, positioning, overflow, child selectors, inline styles, spread attributes, or unsupported geometry require owner-specific proof.';
@@ -291,10 +291,6 @@ function collectImportedLayoutTags(sourceFile: ts.SourceFile): ImportedLayoutTag
 
         const isPrimitiveImport = moduleIsLayoutPrimitive(moduleSpecifier);
         const isWrapperImport = moduleIsDawWrapper(moduleSpecifier);
-        if (!isPrimitiveImport && !isWrapperImport) {
-            continue;
-        }
-
         const bindings = importClause.namedBindings;
         if (bindings && ts.isNamespaceImport(bindings)) {
             importedTags.namespaceSemantics.set(bindings.name.text, moduleSpecifier);
@@ -517,6 +513,19 @@ function directValueDeclarationShadows(statements: ts.NodeArray<ts.Statement>, i
     });
 }
 
+function caseBlockShadows(caseBlock: ts.CaseBlock, identifierText: string): boolean {
+    for (const clause of caseBlock.clauses) {
+        const declarations = directVariableDeclarationsNamed(clause.statements, identifierText, true);
+        if (declarations.length > 0) {
+            return true;
+        }
+        if (directValueDeclarationShadows(clause.statements, identifierText)) {
+            return true;
+        }
+    }
+    return false;
+}
+
 function isFunctionScopeNode(node: ts.Node): node is ts.FunctionLikeDeclaration {
     return (
         ts.isFunctionDeclaration(node) ||
@@ -616,6 +625,14 @@ function findLocalConstBinding(identifier: ts.Identifier, sourceFile: ts.SourceF
             if (bindingNameContainsIdentifier(current.variableDeclaration.name, identifier.text)) {
                 return { kind: 'shadowed' };
             }
+        }
+
+        if (ts.isCaseBlock(current) && caseBlockShadows(current, identifier.text)) {
+            return { kind: 'shadowed' };
+        }
+
+        if (ts.isClassExpression(current) && current.name?.text === identifier.text) {
+            return { kind: 'shadowed' };
         }
 
         if (isFunctionScopeNode(current)) {
@@ -1327,6 +1344,7 @@ function elementHasConditionalChildren(
 
 function semanticAncestorEvidence(
     elementNode: ts.JsxElement | ts.JsxSelfClosingElement,
+    importedTags: ImportedLayoutTags,
     sourceFile: ts.SourceFile
 ): string[] {
     const evidence: string[] = [];
@@ -1339,7 +1357,12 @@ function semanticAncestorEvidence(
             const hasIntrinsicSemantics = /^[a-z]/.test(tagText) && intrinsicElementHasSemantics(tagText);
             const hasExplicitRole = getAttribute(openingElement.attributes, 'role') !== null;
             if (isCustomElement || hasIntrinsicSemantics || hasExplicitRole) {
-                evidence.push(normalizeWhitespace(openingElement.getText(sourceFile)));
+                let openingEvidence = normalizeWhitespace(openingElement.getText(sourceFile));
+                const tagSemantics = getCanonicalTagSemantics(tagText, importedTags);
+                if (tagSemantics) {
+                    openingEvidence = `${openingEvidence}\u0002import:${tagSemantics}`;
+                }
+                evidence.push(openingEvidence);
             }
         }
         current = current.parent;
@@ -1349,12 +1372,14 @@ function semanticAncestorEvidence(
 
 function sourceFingerprintForElement({
     bindingEvidence,
+    importedTags,
     layoutTokens,
     node,
     sourceFile,
     tagSemantics,
 }: {
     bindingEvidence: string[];
+    importedTags: ImportedLayoutTags;
     layoutTokens: string[];
     node: ts.JsxOpeningElement | ts.JsxSelfClosingElement;
     sourceFile: ts.SourceFile;
@@ -1375,7 +1400,7 @@ function sourceFingerprintForElement({
     } else {
         elementNode = node;
     }
-    const ancestorEvidence = semanticAncestorEvidence(elementNode, sourceFile);
+    const ancestorEvidence = semanticAncestorEvidence(elementNode, importedTags, sourceFile);
     if (ancestorEvidence.length > 0) {
         evidence.push(`ancestors:${ancestorEvidence.join('\u0001')}`);
     }
@@ -1656,6 +1681,7 @@ function collectSourceFileOccurrences({
             const tagSemantics = getCanonicalTagSemantics(tagText, importedTags);
             const sourceFingerprint = sourceFingerprintForElement({
                 bindingEvidence: classEvidence.bindingEvidence,
+                importedTags,
                 layoutTokens: classEvidence.layoutTokens,
                 node,
                 sourceFile,
