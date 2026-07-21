@@ -355,7 +355,33 @@ impl GrandBouleEngine {
     }
 
     pub fn set_sostenuto(&mut self, engaged: bool) {
+        let was_engaged = self.pedals.sostenuto();
         self.pedals.set_sostenuto(engaged);
+        if was_engaged && !engaged {
+            self.release_sostenuto_sustained_voices();
+        }
+    }
+
+    /// Sostenuto pedal lifted: captured voices whose key is no longer held
+    /// begin their release — the same never-release class as the sustain
+    /// pedal. Voices the sustain pedal still holds up (past the `note_off`
+    /// threshold) stay sustained; physically held keys stay active.
+    fn release_sostenuto_sustained_voices(&mut self) {
+        for voice in self.voices.iter_mut() {
+            if voice.stage() != super::voice::VoiceStage::Active {
+                continue;
+            }
+            let Some(key) = midi_to_key(voice.midi_note()) else {
+                continue;
+            };
+            if self.pedals.key_is_held(key) {
+                continue;
+            }
+            if self.pedals.sustain_position() > 0.5 {
+                continue;
+            }
+            voice.note_off();
+        }
     }
 
     pub fn set_temperament(&mut self, temperament: Temperament) {
@@ -551,6 +577,29 @@ mod tests {
         engine.set_sustain(0.0);
         // Lifting the pedal must start the voice's release phase; otherwise it
         // reads as "key held" to the damper logic forever and rings undamped.
+        let stage = engine
+            .voices
+            .iter()
+            .find(|voice| !voice.is_idle())
+            .map(|voice| voice.stage());
+        assert_eq!(stage, Some(super::super::voice::VoiceStage::Releasing));
+    }
+
+    #[test]
+    fn sostenuto_release_starts_release_for_captured_voice() {
+        let mut engine = GrandBouleEngine::new(48_000.0, 4);
+        engine.note_on(60, 0.8);
+        engine.set_sostenuto(true); // captures the held key
+        engine.note_off(60); // sostenuto-sustained: voice stays Active
+        let stage = engine
+            .voices
+            .iter()
+            .find(|voice| !voice.is_idle())
+            .map(|voice| voice.stage());
+        assert_eq!(stage, Some(super::super::voice::VoiceStage::Active));
+        // Lifting sostenuto must start the captured voice's release phase, the
+        // same never-release class as the sustain pedal.
+        engine.set_sostenuto(false);
         let stage = engine
             .voices
             .iter()
