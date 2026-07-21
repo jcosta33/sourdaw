@@ -14,7 +14,7 @@ import { toggleInlineEditing } from '../toggleInlineEditing';
 
 import type * as updateClipUseCase from '../../updateClip';
 
-/** Route the mocked repository through the given clip and collect updater results. */
+/** Route the mocked use case through the given clip and collect updater results. */
 function captureUpdate(clip: Clip): Clip[] {
     const result: Clip[] = [];
     mocks.updateClip.mockImplementation((_clipId, updater) => {
