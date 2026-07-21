@@ -1,5 +1,6 @@
 import { pushUndoEntry, REDO_NOT_APPLIED } from '#/modules/Command/useCases';
 import { getMidiStoreState, restoreMidiClipData } from '#/modules/MIDI/useCases';
+import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { getTrackState } from '../../repositories/track/getTrackState';
 import { updateClip } from '../../repositories/track/updateClip';
@@ -70,8 +71,10 @@ export function splitClipWithUndo(clipId: string, splitBeat: number): void {
             const newRightClipId = splitClip(clipId, splitBeat, rightClipId);
             if (!newRightClipId) {
                 // The split is genuinely rejected now (e.g. the clip was trimmed past
-                // splitBeat after the undo) — report not-applied so the entry stays
-                // on the future stack instead of being silently consumed.
+                // splitBeat after the undo) — surface it (importMidiFile precedent)
+                // and report not-applied so the entry leaves the future stack
+                // instead of deadlocking the entries behind it.
+                notifyUser('Failed to redo split clip - the clip no longer spans the split beat', 'error');
                 return REDO_NOT_APPLIED;
             }
             // splitClip re-partitions from the restored source notes; reinstate the

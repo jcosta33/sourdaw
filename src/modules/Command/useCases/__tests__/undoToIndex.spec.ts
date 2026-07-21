@@ -72,6 +72,22 @@ function mockUndoConsumingHead(): void {
     });
 }
 
+/** Simulates the real redo(): shifts one future entry into past. */
+function mockRedoConsumingHead(): void {
+    mocks.redo.mockImplementation(() => {
+        const state = mocks.undoStoreValue.value;
+        if (!state || state.future.length === 0) {
+            return Promise.resolve();
+        }
+        const head = state.future[0]!;
+        mocks.undoStoreValue.value = {
+            past: [...state.past, head],
+            future: state.future.slice(1),
+        };
+        return Promise.resolve();
+    });
+}
+
 describe('undoToIndex', () => {
     beforeEach(() => {
         mocks.redo.mockReset();
@@ -118,6 +134,7 @@ describe('undoToIndex', () => {
     });
 
     it('should move forward by repeatedly calling redo', async () => {
+        mockRedoConsumingHead();
         mocks.undoStoreValue.value = {
             past: [actionEntry('one')],
             future: [actionEntry('two'), actionEntry('three')],
@@ -126,6 +143,21 @@ describe('undoToIndex', () => {
         await undoToIndex(2);
 
         expect(mocks.redo).toHaveBeenCalledTimes(2);
+        expect(mocks.undo).not.toHaveBeenCalled();
+        expect(mocks.undoStoreValue.value.past.map((entry) => entry.id)).toEqual(['one', 'two', 'three']);
+    });
+
+    it('should stop the forward sweep when redo makes no progress', async () => {
+        // A redo() that neither applies nor drops anything (store untouched) must
+        // not be retried for the full fixed step count.
+        mocks.undoStoreValue.value = {
+            past: [actionEntry('one')],
+            future: [actionEntry('two'), actionEntry('three')],
+        };
+
+        await undoToIndex(2);
+
+        expect(mocks.redo).toHaveBeenCalledTimes(1);
         expect(mocks.undo).not.toHaveBeenCalled();
     });
 

@@ -1,11 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { clearUndoHistory, redo, undo } from '#/modules/Command/useCases';
+import { clearUndoHistory, pushUndoEntry, redo, revertActionGroup, undo } from '#/modules/Command/useCases';
 import { midiStore } from '#/modules/MIDI/stores';
+import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { ClipDummy } from '../../../__tests__/ClipDummy';
 import { TrackDummy } from '../../../__tests__/TrackDummy';
 import { trackStore } from '../../../stores/trackStore';
+import { removeClip } from '../../../useCases/clip/removeClip';
 import { hitTestClip } from '../../../useCases/timelineInteractions/hitTestClip/hitTestClip';
 import { handleCutTool } from '../timelineTools';
 
@@ -13,6 +15,7 @@ import { handleCutTool } from '../timelineTools';
 // splitClip, the undo composition, and the Command undo/redo stack — runs for
 // real so the undo contract is pinned end to end.
 vi.mock('../../../useCases/timelineInteractions/hitTestClip/hitTestClip', () => ({ hitTestClip: vi.fn() }));
+vi.mock('#/utils/Notification/notifyUser', () => ({ notifyUser: vi.fn() }));
 
 type ClipRect = { id: string; startBeat: number; endBeat: number };
 
@@ -84,6 +87,59 @@ describe('handleCutTool undo/redo', () => {
         expect(rects).toHaveLength(2);
         expect(rects[0]).toMatchObject({ id: 'c1', startBeat: 0, endBeat: 4 });
         expect(rects[1]).toMatchObject({ startBeat: 4, endBeat: 8 });
+    });
+});
+
+describe('handleCutTool redo after an AI plan revert (review chain)', () => {
+    beforeEach(() => {
+        vi.clearAllMocks();
+        clearUndoHistory();
+        const clip = ClipDummy.create({ id: 'c1', trackId: 't1', startBeat: 0, endBeat: 8 });
+        trackStore.set({
+            tracks: [TrackDummy.create({ id: 't1', clips: [clip] })],
+            selectedTrackId: null,
+        });
+        vi.mocked(hitTestClip).mockReturnValue({ clipId: 'c1', trackId: 't1' });
+    });
+
+    it('redo survives a deterministically inapplicable cut entry and re-executes the AI plan', async () => {
+        const aiRedo1 = vi.fn();
+        const aiRedo2 = vi.fn();
+
+        // The AI plan lands first: two grouped entries whose revert un-creates the
+        // clip lineage (as an AI revert-plan would when it undoes the clip's
+        // creation). The cut then sits on top of the past stack.
+        pushUndoEntry('AI step 1', () => removeClip('c1'), aiRedo1, { groupId: 'ai-plan-1', groupLabel: 'AI plan' });
+        pushUndoEntry(
+            'AI step 2',
+            () => {
+                const right = trackStore.value?.tracks[0]?.clips.find((clip) => clip.startBeat === 4);
+                if (right) {
+                    removeClip(right.id);
+                }
+            },
+            aiRedo2,
+            { groupId: 'ai-plan-1', groupLabel: 'AI plan' }
+        );
+        handleCutTool(10, 10, 4);
+
+        // Revert the plan (clip lineage gone), then undo the cut: its redo can now
+        // never re-apply — the clip it would split no longer exists.
+        await revertActionGroup('ai-plan-1');
+        await undo();
+
+        // First redo drops the inapplicable cut entry and re-applies AI step 1;
+        // second redo re-applies AI step 2. Before the fix the cut entry pinned
+        // future[0] and the AI plan behind it could never re-execute.
+        await redo();
+        expect(aiRedo1).toHaveBeenCalledTimes(1);
+        await redo();
+        expect(aiRedo2).toHaveBeenCalledTimes(1);
+
+        expect(notifyUser).toHaveBeenCalledWith(
+            'Failed to redo split clip - the clip no longer spans the split beat',
+            'error'
+        );
     });
 });
 

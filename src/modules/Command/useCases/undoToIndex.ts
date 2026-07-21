@@ -28,13 +28,24 @@ export async function undoToIndex(targetIndex: number): Promise<void> {
     }
 
     if (targetIndex > currentIndex) {
-        // redo() consumes exactly one future entry per call, so a fixed step
-        // count stays correct in the forward direction.
-        const stepsForward = targetIndex - currentIndex;
-        for (let index = 0; index < stepsForward; index++) {
+        // Forward: re-read the store every step. redo() consumes a variable
+        // number of entries (it drops not-applied ones while scanning for
+        // something applicable), so a fixed call count computed up front
+        // overshoots the row the user clicked.
+        for (;;) {
+            const state = undoStore.value;
+            if (!state || state.past.length - 1 >= targetIndex || state.future.length === 0) {
+                return;
+            }
+            const pastBefore = state.past.length;
+            const futureBefore = state.future.length;
             await redo();
+            const after = undoStore.value;
+            if (!after || (after.past.length === pastBefore && after.future.length === futureBefore)) {
+                // No-progress guard: redo() declined to consume anything.
+                return;
+            }
         }
-        return;
     }
 
     // Backward: re-read the store every step. undo() consumes a variable number
