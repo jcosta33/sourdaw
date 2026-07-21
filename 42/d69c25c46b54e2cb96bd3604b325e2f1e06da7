@@ -1,0 +1,19 @@
+src/modules/Arrangement/useCases/clipEditing/__tests__/clipEditingOpsExtra.spec.ts
+  s_c2fca615e81f34::t_15b709ac3f89c0 17
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "42d69c25c46b54e2cb96bd3604b325e2f1e06da7",
+  "prompts": {},
+  "sessions": {
+    "s_c2fca615e81f34": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f74e9-e1c5-7142-85d2-4c577b3973c0",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
