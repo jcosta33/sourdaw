@@ -277,6 +277,44 @@ describe('validateControllerMappingSchema', () => {
                 expect(validate(invalid).status).toBe('invalid');
             }
         });
+
+        it.each([
+            [
+                'root fields',
+                () => {
+                    const document = makeDocument([]);
+                    Object.defineProperty(document, 'schemaVersion', { enumerable: false });
+                    return document;
+                },
+                'INVALID_SCHEMA_VERSION',
+                '$.schemaVersion',
+            ],
+            [
+                'nested record fields',
+                () => {
+                    const mapping = makeMapping();
+                    Object.defineProperty(mapping, 'id', { enumerable: false });
+                    return makeDocument([mapping]);
+                },
+                'INVALID_SHAPE',
+                '$.mappings[0].id',
+            ],
+            [
+                'array elements',
+                () => {
+                    const mappings = [makeMapping()];
+                    Object.defineProperty(mappings, '0', { enumerable: false });
+                    return makeDocument(mappings);
+                },
+                'INVALID_SHAPE',
+                '$.mappings[0]',
+            ],
+        ])('rejects non-enumerable declared %s', (_label, makeValue, code, path) => {
+            expect(validate(makeValue())).toEqual({
+                status: 'invalid',
+                diagnostics: [{ code, path }],
+            });
+        });
     });
 
     describe('stable identifiers and scopes', () => {

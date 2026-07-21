@@ -133,7 +133,7 @@ function readExactRecord(
         return failure(invalidCode, path);
     }
 
-    let prototype: object | null;
+    let prototype: unknown;
     let keys: readonly PropertyKey[];
     let descriptors: Record<string, PropertyDescriptor>;
     try {
@@ -159,7 +159,7 @@ function readExactRecord(
         }
 
         const descriptor = descriptors[key];
-        if (descriptor === undefined || !('value' in descriptor)) {
+        if (descriptor === undefined || !('value' in descriptor) || descriptor.enumerable !== true) {
             return failure(invalidCode, propertyPath(path, key));
         }
     }
@@ -186,7 +186,7 @@ function readExactArray(value: unknown, path: string): ParseResult<readonly unkn
         return failure('INVALID_SHAPE', path);
     }
 
-    let prototype: object | null;
+    let prototype: unknown;
     let keys: readonly PropertyKey[];
     let descriptors: Record<string, PropertyDescriptor>;
     try {
@@ -206,7 +206,7 @@ function readExactArray(value: unknown, path: string): ParseResult<readonly unkn
         return failure('INVALID_SHAPE', path);
     }
 
-    const length = lengthDescriptor.value;
+    const length: unknown = lengthDescriptor.value;
     if (typeof length !== 'number' || !Number.isSafeInteger(length) || length < 0) {
         return failure('INVALID_SHAPE', path);
     }
@@ -227,7 +227,7 @@ function readExactArray(value: unknown, path: string): ParseResult<readonly unkn
         }
 
         const descriptor = descriptors[key];
-        if (descriptor === undefined || !('value' in descriptor)) {
+        if (descriptor === undefined || !('value' in descriptor) || descriptor.enumerable !== true) {
             return failure('INVALID_SHAPE', `${path}[${key}]`);
         }
     }
@@ -235,7 +235,7 @@ function readExactArray(value: unknown, path: string): ParseResult<readonly unkn
     const items: unknown[] = [];
     for (let index = 0; index < length; index += 1) {
         const descriptor = descriptors[String(index)];
-        if (descriptor === undefined || !('value' in descriptor)) {
+        if (descriptor === undefined || !('value' in descriptor) || descriptor.enumerable !== true) {
             return failure('INVALID_SHAPE', `${path}[${index}]`);
         }
 
