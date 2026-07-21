@@ -1,4 +1,5 @@
 import { type Logger } from '#/infra/logger/types';
+import { resolveEligibleDeviceWriteTarget } from '#/modules/Arrangement/stores';
 import { getToasterDeviceControls } from '#/modules/AudioEngine/useCases';
 
 import { toasterStore } from '../stores/toasterStore';
@@ -26,6 +27,11 @@ type InitToasterSubscribersInput = {
 export function initToasterSubscribers({ eventBus, logger }: InitToasterSubscribersInput): () => void {
     const unsubscribe = eventBus.on('audioDevice.loaded', (payload) => {
         if (payload.deviceType !== 'toaster') {
+            return;
+        }
+
+        const target = resolveEligibleDeviceWriteTarget(payload.deviceId);
+        if (target.status !== 'eligible') {
             return;
         }
 

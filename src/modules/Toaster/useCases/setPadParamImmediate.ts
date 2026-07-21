@@ -1,9 +1,8 @@
+import { resolveEligibleDeviceWriteTarget } from '#/modules/Arrangement/stores';
 import { getTrackStrip } from '#/modules/AudioEngine/useCases';
 
 import { type PadState } from '../models/ToasterKit';
 import { updatePad } from '../stores/toasterStore';
-
-import { findDeviceRef } from './toasterParamBridge/helpers';
 
 /**
  * Send a pad param straight to the worklet, bypassing the rAF coalescing in
@@ -22,14 +21,14 @@ type SetPadParamImmediateInput = {
 
 export function setPadParamImmediate(input: SetPadParamImmediateInput): void {
     const { deviceId, padIndex, key, value } = input;
+    const target = resolveEligibleDeviceWriteTarget(deviceId);
+    if (target.status !== 'eligible') {
+        return;
+    }
 
     updatePad(deviceId, padIndex, { [key]: value });
 
-    const ref = findDeviceRef(deviceId);
-    if (!ref) {
-        return;
-    }
-    const strip = getTrackStrip(ref.trackId);
+    const strip = getTrackStrip(target.trackId);
     if (!strip) {
         return;
     }

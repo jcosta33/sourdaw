@@ -32,6 +32,15 @@ vi.mock('#/modules/Arrangement/stores', () => ({
             return mocks.trackStoreValue.value;
         },
     },
+    resolveEligibleDeviceWriteTarget: (deviceId: string) => {
+        const track = mocks.trackStoreValue.value?.tracks.find((candidate) =>
+            candidate.devices.some((device) => device.id === deviceId)
+        );
+        if (!track) {
+            return { status: 'missing' };
+        }
+        return { status: 'eligible', trackId: track.id, deviceId };
+    },
     markerStore: { value: { markers: [], sections: [] } },
     chordTrackStore: { value: {} },
     scratchPadStore: { value: {} },

@@ -1,5 +1,4 @@
 import { inject } from '#/infra/di/inject';
-import { createFindDeviceRef } from '#/utils/createFindDeviceRef';
 
 import { type GrinderPedal, type GrinderPedalType } from '../../models/GrinderPatch';
 import { setGrinderPedalParam } from '../../stores/grinderStore';
@@ -10,12 +9,15 @@ import { grinderParamBridgeDependencies } from './grinderParamBridgeDependencies
 import { paramBatcher } from './helpers';
 
 export const setGrinderPedalParamWithAudio = inject(grinderParamBridgeDependencies)(({
-    getAllTracks: getAllTracksFn,
     updateDeviceParam: updateDeviceParamFn,
     persistDeviceParam: persistDeviceParamFn,
+    resolveEligibleDeviceWriteTarget: resolveEligibleDeviceWriteTargetFn,
 }) => {
-    const findDeviceRef = createFindDeviceRef(getAllTracksFn);
-    const flushParam = createFlushParam({ updateDeviceParamFn, persistDeviceParamFn });
+    const flushParam = createFlushParam({
+        updateDeviceParamFn,
+        persistDeviceParamFn,
+        resolveEligibleDeviceWriteTargetFn,
+    });
 
     return function setGrinderPedalParamWithAudio(
         deviceId: string,
@@ -25,12 +27,12 @@ export const setGrinderPedalParamWithAudio = inject(grinderParamBridgeDependenci
         value: number,
         defaults: GrinderPedal
     ): void {
-        setGrinderPedalParam(deviceId, isPost, pedalType, paramKey, value, defaults);
-
-        const ref = findDeviceRef(deviceId);
-        if (!ref) {
+        const target = resolveEligibleDeviceWriteTargetFn(deviceId);
+        if (target.status !== 'eligible') {
             return;
         }
+
+        setGrinderPedalParam(deviceId, isPost, pedalType, paramKey, value, defaults);
 
         const audioKey = getAudioParamKeyForPedal(isPost, pedalType, paramKey);
         if (!audioKey) {
@@ -38,6 +40,6 @@ export const setGrinderPedalParamWithAudio = inject(grinderParamBridgeDependenci
         }
 
         const compositeKey = `${deviceId}:${audioKey}`;
-        paramBatcher.schedule(compositeKey, { ref, key: audioKey, value }, flushParam);
+        paramBatcher.schedule(compositeKey, { deviceId: target.deviceId, key: audioKey, value }, flushParam);
     };
 });

@@ -4,23 +4,26 @@ import { clampOversampling, type GlutenPatch } from '../../models/GlutenPatch';
 import { loadGlutenPatch } from '../../stores/glutenStore';
 
 import { createFlushHandlers } from './createFlushHandlers';
-import { bridgeDeps, encodeGlutenValue, findDeviceRefGluten } from './helpers';
+import { bridgeDeps, encodeGlutenValue } from './helpers';
 
 const { pushParamImmediately } = createFlushHandlers(bridgeDeps);
 
 export function loadGlutenPatchWithAudio(deviceId: string, rawPatch: GlutenPatch): void {
+    const target = bridgeDeps.resolveEligibleDeviceWriteTarget(deviceId);
+    if (target.status !== 'eligible') {
+        return;
+    }
+
     // Snap oversampling to a supported factor (1/2/4) before it reaches the store
     // or the engine — a hand-built preset or stale persisted patch may carry an
     // unsupported value such as 3.
     const snapped = clampOversampling(rawPatch.oversampling);
-    const patch: GlutenPatch = snapped === rawPatch.oversampling ? rawPatch : { ...rawPatch, oversampling: snapped };
+    let patch = rawPatch;
+    if (snapped !== rawPatch.oversampling) {
+        patch = { ...rawPatch, oversampling: snapped };
+    }
 
     loadGlutenPatch(deviceId, patch);
-
-    const ref = findDeviceRefGluten(deviceId);
-    if (!ref) {
-        return;
-    }
 
     const params: Array<[string, unknown]> = [
         ['topology', patch.topology],
@@ -80,6 +83,6 @@ export function loadGlutenPatchWithAudio(deviceId: string, rawPatch: GlutenPatch
             );
             continue;
         }
-        pushParamImmediately(ref, key, encodedValue);
+        pushParamImmediately(deviceId, key, encodedValue);
     }
 }

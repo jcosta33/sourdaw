@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, vi, type Mock } from 'vitest';
 
+import { resolveEligibleDeviceWriteTarget } from '#/modules/Arrangement/stores';
 import { persistDevicePatch } from '#/modules/Arrangement/useCases';
 
 import { DEFAULT_PATCH } from '../../../models/ProofPatch';
@@ -10,6 +11,10 @@ import { setProofParamWithPatch } from '../setProofParamWithPatch';
 vi.mock('#/modules/Arrangement/useCases', () => ({
     getTrackStoreState: vi.fn(() => null),
     persistDevicePatch: vi.fn(),
+}));
+
+vi.mock('#/modules/Arrangement/stores', () => ({
+    resolveEligibleDeviceWriteTarget: vi.fn(),
 }));
 
 type MockedProofBridge = {
@@ -29,6 +34,11 @@ describe('setProofParamWithPatch', () => {
         bridges.clear();
         proofStore.set({});
         vi.clearAllMocks();
+        vi.mocked(resolveEligibleDeviceWriteTarget).mockImplementation((deviceId) => ({
+            status: 'eligible',
+            trackId: 'track-1',
+            deviceId,
+        }));
     });
 
     it('updates the stored patch and persists the mapped scalar engine param', () => {
@@ -278,6 +288,21 @@ describe('setProofParamWithPatch', () => {
         expect(getProofState('no-bridge').patch.outputGain).toBe(5);
         expect(persistDevicePatch).toHaveBeenCalledWith('no-bridge', { output_gain: 5 });
     });
+
+    it.each(['missing', 'ineligible'] as const)(
+        'rejects a %s owner before patch, persistence, or engine effects',
+        (status) => {
+            const bridge = makeBridge();
+            bridges.set('dev-1', bridge);
+            vi.mocked(resolveEligibleDeviceWriteTarget).mockReturnValue({ status });
+
+            setProofParamWithPatch({ deviceId: 'dev-1', key: 'limCeiling', value: -2 });
+
+            expect(getProofState('dev-1').patch.limCeiling).toBe(DEFAULT_PATCH.limCeiling);
+            expect(persistDevicePatch).not.toHaveBeenCalled();
+            expect(bridge.setParam).not.toHaveBeenCalled();
+        }
+    );
 
     it('maps dynBypassed to the shared dyn_bypass engine convention', () => {
         const bridge = makeBridge();

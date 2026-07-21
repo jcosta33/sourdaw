@@ -25,6 +25,11 @@ describe('syncGrinderPatchToAudio', () => {
             update_device_param,
             persist_device_param,
             update_device_patch,
+            resolve_eligible_device_write_target: () => ({
+                status: 'eligible',
+                trackId: ref.trackId,
+                deviceId: ref.deviceId,
+            }),
         });
     }
 

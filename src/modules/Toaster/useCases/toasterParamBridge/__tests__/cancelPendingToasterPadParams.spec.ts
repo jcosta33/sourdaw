@@ -1,9 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach, type MockInstance } from 'vitest';
 
-type DeviceRef = {
-    trackId: string;
-    deviceId: string;
-};
+import { type DeviceWriteTargetResolution } from '#/modules/Arrangement/stores';
 
 type SetPadParam = (pad: number, name: string, value: number) => void;
 
@@ -18,14 +15,16 @@ type TrackStrip = {
     }>;
 };
 
-const mockFindDeviceRef = vi.hoisted(() => vi.fn<(deviceId: string) => DeviceRef | null>(() => null));
+const mockResolveDeviceTarget = vi.hoisted(() =>
+    vi.fn<(deviceId: string) => DeviceWriteTargetResolution>(() => ({ status: 'missing' }))
+);
 const mockGetTrackStrip = vi.hoisted(() => vi.fn<(trackId: string) => TrackStrip | undefined>());
 const mockUpdatePad = vi.hoisted(() => vi.fn<(deviceId: string, padIndex: number, updates: unknown) => void>());
 
-vi.mock('../helpers', async (importOriginal) => {
-    const actual = await importOriginal<typeof import('../helpers')>();
-    return { ...actual, findDeviceRef: mockFindDeviceRef };
-});
+vi.mock('#/modules/Arrangement/stores', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Arrangement/stores')>()),
+    resolveEligibleDeviceWriteTarget: mockResolveDeviceTarget,
+}));
 
 vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/AudioEngine/useCases')>()),
@@ -91,7 +90,11 @@ describe('cancelPendingToasterPadParams', () => {
             rafCallbacks.delete(id);
         });
 
-        mockFindDeviceRef.mockImplementation((deviceId) => ({ trackId: `track-${deviceId}`, deviceId }));
+        mockResolveDeviceTarget.mockImplementation((deviceId) => ({
+            status: 'eligible',
+            trackId: `track-${deviceId}`,
+            deviceId,
+        }));
         mockGetTrackStrip.mockImplementation((trackId) => {
             if (trackId === 'track-dev') {
                 return { deviceNodes: [{ toasterControls: { ready: true, setPadParam: setPadParamDev } }] };

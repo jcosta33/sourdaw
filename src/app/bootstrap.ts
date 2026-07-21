@@ -9,7 +9,7 @@ import {
     getAiOrganizationHandlers,
     setVoiceToggleEventBus,
 } from '#/modules/AiRuntime/useCases';
-import { persistDeviceParam, trackStore } from '#/modules/Arrangement/stores';
+import { persistDeviceParam, resolveEligibleDeviceWriteTarget, trackStore } from '#/modules/Arrangement/stores';
 import {
     getAllTracks,
     getPluginById,
@@ -211,6 +211,7 @@ setFermenterDependencies({
     getAllTracks,
     persistDeviceParam,
     persistDevicePatch,
+    resolveEligibleDeviceWriteTarget,
     updateDeviceParam,
     updateDevicePatch,
 });

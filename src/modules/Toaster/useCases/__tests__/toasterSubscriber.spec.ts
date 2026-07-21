@@ -9,7 +9,13 @@ vi.mock('../disposeToasterDevice', () => ({
 
 const hydrationMocks = vi.hoisted(() => ({
     getToasterDeviceControls: vi.fn(),
-    toasterStore: { value: undefined as Record<string, { kit: unknown }> | undefined },
+    readToasterStore: vi.fn<() => Record<string, { kit: unknown }> | undefined>(),
+    resolveEligibleDeviceWriteTarget: vi.fn(),
+}));
+
+vi.mock('#/modules/Arrangement/stores', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Arrangement/stores')>()),
+    resolveEligibleDeviceWriteTarget: hydrationMocks.resolveEligibleDeviceWriteTarget,
 }));
 
 vi.mock('#/modules/AudioEngine/useCases', () => ({
@@ -17,7 +23,11 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
 }));
 
 vi.mock('../../stores/toasterStore', () => ({
-    toasterStore: hydrationMocks.toasterStore,
+    toasterStore: {
+        get value() {
+            return hydrationMocks.readToasterStore();
+        },
+    },
 }));
 
 import { createDefaultKit } from '../../models/ToasterKit';
@@ -45,7 +55,12 @@ function handlerFor(eventBus: MockObject<EventBusShape>, event: string): (payloa
 describe('initToasterSubscribers', () => {
     beforeEach(() => {
         vi.clearAllMocks();
-        hydrationMocks.toasterStore.value = undefined;
+        hydrationMocks.readToasterStore.mockReturnValue(undefined);
+        hydrationMocks.resolveEligibleDeviceWriteTarget.mockReturnValue({
+            status: 'eligible',
+            trackId: 'track-1',
+            deviceId: 'toast-1',
+        });
     });
 
     it('subscribes to audioDevice.loaded and audioDevice.removed', () => {
@@ -93,6 +108,7 @@ describe('initToasterSubscribers', () => {
         handlerFor(eventBus, 'audioDevice.removed')({ deviceId: 'toast-1', deviceType: 'toaster' });
 
         expect(disposeToasterDevice).toHaveBeenCalledWith('toast-1');
+        expect(hydrationMocks.resolveEligibleDeviceWriteTarget).not.toHaveBeenCalled();
     });
 
     it('ignores a non-toaster audioDevice.removed event', () => {
@@ -114,13 +130,14 @@ describe('initToasterSubscribers', () => {
         const setPadParam = vi.fn();
         hydrationMocks.getToasterDeviceControls.mockReturnValue({ setParam, setPadParam });
         const kit = createDefaultKit();
-        hydrationMocks.toasterStore.value = { 'toast-1': { kit } };
+        hydrationMocks.readToasterStore.mockReturnValue({ 'toast-1': { kit } });
 
         const eventBus = createMock<EventBusShape>();
         eventBus.on.mockReturnValue(vi.fn<() => void>());
+        const logger = createMock<Logger>();
         initToasterSubscribers({
             eventBus,
-            logger: createMock<Logger>(),
+            logger,
         });
 
         handlerFor(eventBus, 'audioDevice.loaded')({ deviceId: 'toast-1', deviceType: 'toaster' });
@@ -130,11 +147,55 @@ describe('initToasterSubscribers', () => {
         expect(hydrationMocks.getToasterDeviceControls).toHaveBeenCalledWith('toast-1');
         expect(setParam).toHaveBeenCalledWith('master_gain', kit.masterGain);
         expect(setPadParam).toHaveBeenCalledWith(0, 'volume', kit.pads[0]!.volume);
+
+        const resolutionOrder = hydrationMocks.resolveEligibleDeviceWriteTarget.mock.invocationCallOrder[0];
+        const logOrder = logger.info.mock.invocationCallOrder[0];
+        const storeReadOrder = hydrationMocks.readToasterStore.mock.invocationCallOrder[0];
+        const lookupOrder = hydrationMocks.getToasterDeviceControls.mock.invocationCallOrder[0];
+        const runtimeOrder = setParam.mock.invocationCallOrder[0];
+        if (
+            resolutionOrder === undefined ||
+            logOrder === undefined ||
+            storeReadOrder === undefined ||
+            lookupOrder === undefined ||
+            runtimeOrder === undefined
+        ) {
+            throw new Error('Expected authorization, log, store, lookup, and runtime effects');
+        }
+        expect(resolutionOrder).toBeLessThan(logOrder);
+        expect(logOrder).toBeLessThan(storeReadOrder);
+        expect(storeReadOrder).toBeLessThan(lookupOrder);
+        expect(lookupOrder).toBeLessThan(runtimeOrder);
     });
+
+    it.each(['missing', 'ineligible'] as const)(
+        'rejects loaded hydration for a %s owner before log, store, lookup, or runtime effects',
+        (status) => {
+            const setParam = vi.fn();
+            const setPadParam = vi.fn();
+            hydrationMocks.getToasterDeviceControls.mockReturnValue({ setParam, setPadParam });
+            hydrationMocks.readToasterStore.mockReturnValue({ 'toast-1': { kit: createDefaultKit() } });
+            hydrationMocks.resolveEligibleDeviceWriteTarget.mockReturnValue({ status });
+
+            const eventBus = createMock<EventBusShape>();
+            eventBus.on.mockReturnValue(vi.fn<() => void>());
+            const logger = createMock<Logger>();
+            initToasterSubscribers({ eventBus, logger });
+
+            handlerFor(eventBus, 'audioDevice.loaded')({ deviceId: 'toast-1', deviceType: 'toaster' });
+
+            expect(hydrationMocks.resolveEligibleDeviceWriteTarget).toHaveBeenCalledWith('toast-1');
+            expect(logger.info).not.toHaveBeenCalled();
+            expect(hydrationMocks.readToasterStore).not.toHaveBeenCalled();
+            expect(hydrationMocks.getToasterDeviceControls).not.toHaveBeenCalled();
+            expect(setParam).not.toHaveBeenCalled();
+            expect(setPadParam).not.toHaveBeenCalled();
+        }
+    );
 
     it('skips hydration cleanly when the port finds no loaded device for the id', () => {
         hydrationMocks.getToasterDeviceControls.mockReturnValue(undefined);
-        hydrationMocks.toasterStore.value = { 'toast-1': { kit: createDefaultKit() } };
+        hydrationMocks.readToasterStore.mockReturnValue({ 'toast-1': { kit: createDefaultKit() } });
 
         const eventBus = createMock<EventBusShape>();
         eventBus.on.mockReturnValue(vi.fn<() => void>());

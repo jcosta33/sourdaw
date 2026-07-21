@@ -1,14 +1,17 @@
 import { describe, it, expect, vi, beforeEach, afterEach, type MockInstance } from 'vitest';
 
-const { mockFindDeviceRef, mockGetTrackStrip } = vi.hoisted(() => ({
-    mockFindDeviceRef: vi.fn(() => null as { trackId: string; deviceId: string } | null),
+import { type DeviceWriteTargetResolution } from '#/modules/Arrangement/stores';
+
+const { mockResolveDeviceTarget, mockGetTrackStrip, mockUpdateKit } = vi.hoisted(() => ({
+    mockResolveDeviceTarget: vi.fn<(deviceId: string) => DeviceWriteTargetResolution>(),
     mockGetTrackStrip: vi.fn(),
+    mockUpdateKit: vi.fn(),
 }));
 
-vi.mock('../helpers', async (importOriginal) => {
-    const actual = await importOriginal<typeof import('../helpers')>();
-    return { ...actual, findDeviceRef: mockFindDeviceRef };
-});
+vi.mock('#/modules/Arrangement/stores', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Arrangement/stores')>()),
+    resolveEligibleDeviceWriteTarget: mockResolveDeviceTarget,
+}));
 
 vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/AudioEngine/useCases')>()),
@@ -19,7 +22,7 @@ vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
 // touches the store, which does not affect the worklet-coalescing assertions.
 vi.mock('../../../stores/toasterStore', async (importOriginal) => ({
     ...(await importOriginal<typeof import('../../../stores/toasterStore')>()),
-    updateKit: vi.fn(),
+    updateKit: mockUpdateKit,
 }));
 
 import { setToasterKitParam } from '../setToasterKitParam';
@@ -54,7 +57,11 @@ describe('setToasterKitParam rAF coalescing', () => {
         });
 
         setParam = vi.fn();
-        mockFindDeviceRef.mockReturnValue({ trackId: 'track-1', deviceId: 'dev-1' });
+        mockResolveDeviceTarget.mockReturnValue({
+            status: 'eligible',
+            trackId: 'track-1',
+            deviceId: 'dev-1',
+        });
         mockGetTrackStrip.mockReturnValue({
             deviceNodes: [{ toasterControls: { ready: true, setParam } }],
         });
@@ -90,9 +97,20 @@ describe('setToasterKitParam rAF coalescing', () => {
     });
 
     it('does not schedule a frame when the device is not on any track', () => {
-        mockFindDeviceRef.mockReturnValue(null);
+        mockResolveDeviceTarget.mockReturnValue({ status: 'missing' });
         setToasterKitParam('dev-1', 'swing', 0.5);
+        expect(mockUpdateKit).not.toHaveBeenCalled();
         expect(rafSpy).not.toHaveBeenCalled();
+        expect(setParam).not.toHaveBeenCalled();
+    });
+
+    it('drops a queued write when the owner becomes ineligible before the frame flushes', () => {
+        setToasterKitParam('dev-1', 'swing', 0.5);
+        mockResolveDeviceTarget.mockReturnValue({ status: 'ineligible' });
+
+        flushFrame();
+
+        expect(mockGetTrackStrip).not.toHaveBeenCalled();
         expect(setParam).not.toHaveBeenCalled();
     });
 });

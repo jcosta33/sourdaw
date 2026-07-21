@@ -1,14 +1,14 @@
-import { type persistDeviceParam } from '#/modules/Arrangement/stores';
+import { type persistDeviceParam, type resolveEligibleDeviceWriteTarget } from '#/modules/Arrangement/stores';
 import { type updateDeviceParam } from '#/modules/AudioEngine/useCases';
-import { type DeviceRef } from '#/utils/createFindDeviceRef';
 import { createRafBatcher } from '#/utils/DOM/createRafBatcher';
 
 import { type GrinderNeuralProfile, type GrinderSupportedChainPedalType } from '../../models/GrinderPatch';
 
 export type UpdateDeviceParamFn = typeof updateDeviceParam;
 export type PersistDeviceParamFn = typeof persistDeviceParam;
+export type ResolveEligibleDeviceWriteTargetFn = typeof resolveEligibleDeviceWriteTarget;
 
-export type GrinderBatchEntry = { ref: DeviceRef; key: string; value: number };
+export type GrinderBatchEntry = { deviceId: string; key: string; value: number };
 export const paramBatcher = createRafBatcher<GrinderBatchEntry>();
 
 export const AMP_MODELS = ['clean-twin', 'crunch-jcm', 'lead-jcm', 'ac30-tb', 'rectifier', 'custom'] as const;

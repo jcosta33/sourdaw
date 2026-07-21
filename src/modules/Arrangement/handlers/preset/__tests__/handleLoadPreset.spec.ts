@@ -25,11 +25,12 @@ describe('handleLoadPreset', () => {
         vi.clearAllMocks();
     });
 
-    it('bails if preset cannot be found', () => {
+    it('reports no-write if preset cannot be found', () => {
         mocks.getUserPresets.mockReturnValue([]);
 
-        void handleLoadPreset.execute({ type: 'loadPreset', payload: { presetId: 'p1' } });
+        const result = handleLoadPreset.execute({ type: 'loadPreset', payload: { presetId: 'p1' } });
 
+        expect(result).toEqual({ status: 'no-write' });
         expect(mocks.loadPresetToTrack).not.toHaveBeenCalled();
         expect(mocks.createTrackFromPreset).not.toHaveBeenCalled();
     });
@@ -37,10 +38,26 @@ describe('handleLoadPreset', () => {
     it('loads preset to track if trackId is provided', () => {
         const preset = { id: 'p1', name: 'Cool Synth' };
         mocks.getUserPresets.mockReturnValue([preset]);
+        mocks.loadPresetToTrack.mockReturnValue(true);
 
-        void handleLoadPreset.execute({ type: 'loadPreset', payload: { presetId: 'p1', trackId: 't1' } });
+        const result = handleLoadPreset.execute({ type: 'loadPreset', payload: { presetId: 'p1', trackId: 't1' } });
 
+        expect(result).toEqual({ status: 'written' });
         expect(mocks.loadPresetToTrack).toHaveBeenCalledWith('t1', preset);
+        expect(mocks.createTrackFromPreset).not.toHaveBeenCalled();
+    });
+
+    it('reports no-write when loading onto a track is rejected', () => {
+        const preset = { id: 'p1', name: 'Cool Synth' };
+        mocks.getUserPresets.mockReturnValue([preset]);
+        mocks.loadPresetToTrack.mockReturnValue(false);
+
+        const result = handleLoadPreset.execute({
+            type: 'loadPreset',
+            payload: { presetId: 'p1', trackId: 'vca-1' },
+        });
+
+        expect(result).toEqual({ status: 'no-write' });
         expect(mocks.createTrackFromPreset).not.toHaveBeenCalled();
     });
 
