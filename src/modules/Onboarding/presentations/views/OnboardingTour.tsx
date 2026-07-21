@@ -1,5 +1,6 @@
 import { type ReactElement, useEffect, useState } from 'react';
 
+import { Row } from '#/components/layout';
 import { useStore } from '#/infra/store/useStore';
 
 import { defaultOnboardingState, onboardingStore } from '../../stores/onboardingStore';
@@ -265,7 +266,7 @@ export const OnboardingTour = (): ReactElement | null => {
                     width: TOOLTIP_WIDTH,
                 }}
             >
-                <div className="flex items-center justify-between px-4 py-3 border-b border-white/[0.06]">
+                <Row justify="between" className="px-4 py-3 border-b border-white/[0.06]">
                     <p className="text-[10px] uppercase tracking-wider text-white/40">
                         Step {stepIndex + 1} of {TOUR_STEPS.length}
                     </p>
@@ -276,14 +277,14 @@ export const OnboardingTour = (): ReactElement | null => {
                     >
                         Skip tour
                     </button>
-                </div>
+                </Row>
                 <div className="px-4 py-3">
                     <h2 className="text-sm font-semibold text-white/90">{step.title}</h2>
                     <p aria-live="polite" className="mt-1.5 text-xs leading-relaxed text-white/70">
                         {step.description}
                     </p>
                 </div>
-                <div className="flex items-center justify-between gap-2 px-4 py-3 border-t border-white/[0.06]">
+                <Row gap={2} justify="between" className="px-4 py-3 border-t border-white/[0.06]">
                     <button
                         type="button"
                         onClick={regressOnboardingStep}
@@ -305,7 +306,7 @@ export const OnboardingTour = (): ReactElement | null => {
                     >
                         {nextLabel}
                     </button>
-                </div>
+                </Row>
             </div>
         </div>
     );
