@@ -118,7 +118,7 @@ describe('presetMorph', () => {
         expect(Number.isInteger(morphed.filterModel)).toBe(true);
     });
 
-    it('applyMorphedPatch updates store immediately and forwards the patch to engine + persistence on the next frame', () => {
+    it('applyMorphedPatch updates store immediately and forwards the DSP-mapped patch to engine + raw patch to persistence on the next frame', () => {
         const p = patch('P', { masterGain: 5, compThreshold: -8 });
         applyMorphedPatch('d1', p);
 
@@ -129,8 +129,64 @@ describe('presetMorph', () => {
 
         vi.advanceTimersByTime(16);
 
-        expect(updateDevicePatch).toHaveBeenCalledWith('t1', 'd1', p);
+        // The engine consumes snake_case DSP ids (layer.rs silently ignores
+        // unknown params), so the flush must send the mapped patch — like the
+        // sibling loadFermenterPatchWithAudio path — while persistence keeps
+        // the raw camelCase patch.
+        expect(updateDevicePatch).toHaveBeenCalledWith(
+            't1',
+            'd1',
+            expect.objectContaining({ master_gain: 5, comp_threshold: -8 })
+        );
+        const sent = updateDevicePatch.mock.calls[0]?.[2] as Record<string, number>;
+        expect(sent).not.toHaveProperty('masterGain');
+        expect(sent).not.toHaveProperty('compThreshold');
         expect(persistDevicePatch).toHaveBeenCalledWith('d1', p);
+    });
+
+    it('applyMorphedPatch maps the 7 DSP-renamed params so the engine does not silently drop them', () => {
+        const p = patch('P', {
+            oscEngine: 1,
+            filterCutoff: 1234,
+            filterResonance: 0.7,
+            filterEnvAmount: 0.5,
+            lfoPitchAmount: 0.3,
+            oscDrift: 0.2,
+            portamentoTime: 0.4,
+        });
+        applyMorphedPatch('d1', p);
+
+        vi.advanceTimersByTime(16);
+
+        expect(updateDevicePatch).toHaveBeenCalledWith(
+            't1',
+            'd1',
+            expect.objectContaining({
+                engine: 1,
+                cutoff: 1234,
+                resonance: 0.7,
+                mod_env_to_filter: 0.5,
+                mod_lfo_to_pitch: 0.3,
+                drift: 0.2,
+                portamento: 0.4,
+            })
+        );
+        const sent = updateDevicePatch.mock.calls[0]?.[2] as Record<string, number>;
+        expect(sent).not.toHaveProperty('oscEngine');
+        expect(sent).not.toHaveProperty('filterCutoff');
+        expect(sent).not.toHaveProperty('filterResonance');
+        expect(sent).not.toHaveProperty('filterEnvAmount');
+        expect(sent).not.toHaveProperty('lfoPitchAmount');
+        expect(sent).not.toHaveProperty('oscDrift');
+        expect(sent).not.toHaveProperty('portamentoTime');
+        // …and the naive camelCase→snake_case names the worklet would derive.
+        expect(sent).not.toHaveProperty('osc_engine');
+        expect(sent).not.toHaveProperty('filter_cutoff');
+        expect(sent).not.toHaveProperty('filter_resonance');
+        expect(sent).not.toHaveProperty('filter_env_amount');
+        expect(sent).not.toHaveProperty('lfo_pitch_amount');
+        expect(sent).not.toHaveProperty('osc_drift');
+        expect(sent).not.toHaveProperty('portamento_time');
     });
 
     it('applyMorphedPatch coalesces a rapid drag to one engine + persist flush with the latest patch', () => {
@@ -149,7 +205,7 @@ describe('presetMorph', () => {
 
         expect(updateDevicePatch).toHaveBeenCalledTimes(1);
         expect(persistDevicePatch).toHaveBeenCalledTimes(1);
-        expect(updateDevicePatch).toHaveBeenCalledWith('t1', 'd1', c);
+        expect(updateDevicePatch).toHaveBeenCalledWith('t1', 'd1', expect.objectContaining({ master_gain: 3 }));
         expect(persistDevicePatch).toHaveBeenCalledWith('d1', c);
     });
 });

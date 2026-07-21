@@ -164,6 +164,13 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         'src/modules/Crust/useCases/crustParamBridge/loadCrustPatchWithAudio.ts': 1,
         'src/modules/Crust/presentations/views/CrustPanel.tsx': 3,
         'src/modules/Fermenter/useCases/fermenterParamBridge/loadFermenterPatchWithAudio.ts': 1,
+        // Count provenance: applyMorphedPatch's flushMorph references the sibling
+        // loadFermenterPatchWithAudio path (its engine write now goes through the
+        // same mapFermenterPatchToDspPatch DSP-id mapping — #548). The write is the
+        // same class as the sibling's rAF-batched full-patch engine write; its
+        // updateDevicePatch/persistDevicePatch sinks stay censused under
+        // 'persistence-runtime' at count 6.
+        'src/modules/Fermenter/useCases/presetMorph/applyMorphedPatch.ts': 1,
         'src/modules/Fermenter/presentations/views/FermenterPanel.tsx': 7,
         'src/modules/Gluten/useCases/glutenParamBridge/loadGlutenPatchWithAudio.ts': 2,
         'src/modules/Gluten/useCases/index.ts': 1,
