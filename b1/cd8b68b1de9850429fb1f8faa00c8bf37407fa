@@ -1,0 +1,19 @@
+crates/daw-dsp/src/grand_boule/engine.rs
+  s_c2fca615e81f34::t_f7debf4229ffcd 358,360-384,588-610
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "b1cd8b68b1de9850429fb1f8faa00c8bf37407fa",
+  "prompts": {},
+  "sessions": {
+    "s_c2fca615e81f34": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f74e9-e1c5-7142-85d2-4c577b3973c0",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
