@@ -1,0 +1,19 @@
+src/components/daw/__tests__/DawPanelSurface.spec.tsx
+  s_d551553650f8b1::t_f51be14ba5da91 1-4,9-64,66-75,78-112
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "ca451919e77fb032a39b1dc63e454e3a016d56c0",
+  "prompts": {},
+  "sessions": {
+    "s_d551553650f8b1": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f83c7-243c-7291-b985-3645b77809ca",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
