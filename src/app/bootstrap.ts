@@ -162,6 +162,7 @@ setOfflineRenderDependencies({
     projectPpqEndpoints,
     createMidiEventProjector: createGrooveMidiEventProjector,
     createYeastMidiProcessor: createOfflineYeastProcessor,
+    selectMidiEventProbability: shouldPlayMidiEvent,
 });
 setToasterGrooveAssignmentExecutor({ execute: executeAppAction });
 setArrangementEventBus(eventBus);
