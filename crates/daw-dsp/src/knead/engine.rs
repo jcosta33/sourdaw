@@ -30,6 +30,16 @@ pub struct KneadEngine {
     held_l: Vec<f32>,
     held_r: Vec<f32>,
     held_len: usize,
+    // Grain overhang: the current frame's grains extend up to one target
+    // period past the frame end. Those right tails cover the START of the
+    // next frame (the next frame's own first center starts at
+    // synth_phase > 0), so they are saved and overlap-added into the next
+    // frame's body. Without them, frames whose lattice phase is large emit
+    // a zero gap at the body start (measured 708 samples at a -30 to -12
+    // crossing).
+    overhang_l: Vec<f32>,
+    overhang_r: Vec<f32>,
+    overhang_len: usize,
     // Synthesis lattice phase carried across frames: the coordinate of the
     // next synthesis center relative to the current frame start. Without it
     // each frame restarts the lattice at 0 and 2048 mod P_t samples of
@@ -94,6 +104,9 @@ impl KneadEngine {
             held_l: vec![0.0; tail_capacity],
             held_r: vec![0.0; tail_capacity],
             held_len: 0,
+            overhang_l: vec![0.0; tail_capacity],
+            overhang_r: vec![0.0; tail_capacity],
+            overhang_len: 0,
             synth_phase: 0.0,
             abs_pos: 0,
             in_buffer_l: Vec::with_capacity(frame_size),
@@ -128,6 +141,18 @@ impl KneadEngine {
                 let needs_analysis = self.shift_semitones != 0.0 || self.always_analyze;
 
                 if !needs_analysis {
+                    // Flush any held tail from a preceding shifted frame
+                    // before bypass passthrough (see the !shifted path).
+                    for j in 0..self.held_len {
+                        let l = self.held_l[j];
+                        let r = self.held_r[j];
+                        if self.out_count < ring_cap {
+                            self.out_buffer_l[self.out_write_pos] = l;
+                            self.out_buffer_r[self.out_write_pos] = r;
+                            self.out_write_pos = (self.out_write_pos + 1) % ring_cap;
+                            self.out_count += 1;
+                        }
+                    }
                     for j in 0..self.in_buffer_l.len() {
                         if self.out_count < ring_cap {
                             self.out_buffer_l[self.out_write_pos] = self.in_buffer_l[j];
@@ -141,6 +166,7 @@ impl KneadEngine {
                     // the raw-input history rolling so re-engage starts from
                     // current audio, not from before the bypass.
                     self.held_len = 0;
+                    self.overhang_len = 0;
                     self.synth_phase = 0.0;
                     self.roll_history();
                 } else {
@@ -240,11 +266,12 @@ impl KneadEngine {
                     // buffer (work index = coordinate + t): grains near the
                     // frame start spill their left halves into the margin
                     // indices [0, t) — exactly the contributions needed to
-                    // complete the previous frame's held tail. Synthesis
-                    // starts at coordinate 0 so no center is rendered by two
-                    // consecutive frames (a -t start double-renders centers
-                    // [-t, 0), doubling seam energy).
-                    let work_len = t + frame_len;
+                    // complete the previous frame's held tail. The render
+                    // also captures the grain overhang [frame_len, frame_len
+                    // + t) — the right tails that cover the start of the
+                    // next frame. Synthesis starts at the carried lattice
+                    // phase so no center is rendered by two frames.
+                    let work_len = t + frame_len + t;
                     let end_t = psola_process_span(
                         &self.span_l[..span_len],
                         &self.pitch_marks,
@@ -294,32 +321,66 @@ impl KneadEngine {
                         }
                     }
 
-                    // Body: coords [0, frame_len - t_prev).
-                    for j in 0..(frame_len - t_prev) {
+                    // Body: coords [0, frame_len - t), overlap-adding the
+                    // previous frame's grain overhang (its right tails cover
+                    // these coordinates; the current render's own first
+                    // center starts at synth_phase > 0). Body/hold tiling is
+                    // exact per frame: body [0, F - t) ++ next margin
+                    // [F - t, F) covers every coordinate once, for any
+                    // t_prev. (Keying the body off t_prev double-emitted
+                    // the held tail on re-engage — measured as a
+                    // bit-exact duplicated window at lag ~= t.)
+                    let ola = self.overhang_len.min(frame_len - t);
+                    for j in 0..(frame_len - t) {
                         let idx = t + j;
+                        let mut l = self.psola_l_buffer[idx];
+                        let mut r = self.psola_r_buffer[idx];
+                        if j < ola {
+                            l += self.overhang_l[j];
+                            r += self.overhang_r[j];
+                        }
                         if self.out_count < ring_cap {
-                            self.out_buffer_l[self.out_write_pos] = self.psola_l_buffer[idx];
-                            self.out_buffer_r[self.out_write_pos] = self.psola_r_buffer[idx];
+                            self.out_buffer_l[self.out_write_pos] = l;
+                            self.out_buffer_r[self.out_write_pos] = r;
                             self.out_write_pos = (self.out_write_pos + 1) % ring_cap;
                             self.out_count += 1;
                         }
                     }
 
                     // Hold coords [frame_len - t, frame_len) for the next
-                    // frame (work indices [frame_len, frame_len + t)).
+                    // frame (work indices [frame_len, frame_len + t)), and
+                    // the grain overhang [frame_len, frame_len + t) that
+                    // covers the next frame's start (work indices
+                    // [frame_len + t, frame_len + 2t)).
                     self.held_l[..t].copy_from_slice(&self.psola_l_buffer[frame_len..frame_len + t]);
                     self.held_r[..t].copy_from_slice(&self.psola_r_buffer[frame_len..frame_len + t]);
                     self.held_len = t;
+                    self.overhang_l[..t].copy_from_slice(&self.psola_l_buffer[frame_len + t..frame_len + 2 * t]);
+                    self.overhang_r[..t].copy_from_slice(&self.psola_r_buffer[frame_len + t..frame_len + 2 * t]);
+                    self.overhang_len = t;
                 }
             }
         }
 
         if !shifted {
-            // Fallback: passthrough to output buffers. Drop any held shifted
-            // tail and lattice phase so they cannot bleed into a later frame.
-            self.held_len = 0;
-            self.synth_phase = 0.0;
+            // Passthrough production: flush any held tail from the previous
+            // shifted frame first — dropping it skipped up to one target
+            // period of audio at shifted-to-unshiftable crossings. The ring
+            // absorbs the one-time emission jitter on the crossing frame.
             let ring_cap = self.out_buffer_l.len();
+            for j in 0..self.held_len {
+                let l = self.held_l[j];
+                let r = self.held_r[j];
+                if self.out_count < ring_cap {
+                    self.out_buffer_l[self.out_write_pos] = l;
+                    self.out_buffer_r[self.out_write_pos] = r;
+                    self.out_write_pos = (self.out_write_pos + 1) % ring_cap;
+                    self.out_count += 1;
+                }
+            }
+            self.held_len = 0;
+            self.overhang_len = 0;
+            self.synth_phase = 0.0;
             for i in 0..frame_len {
                 if self.out_count < ring_cap {
                     self.out_buffer_l[self.out_write_pos] = self.in_buffer_l[i];
@@ -366,6 +427,7 @@ impl KneadEngine {
         // tail would replay pre-bypass audio at the next clip boundary.
         if self.shift_semitones == 0.0 && semitones != 0.0 {
             self.held_len = 0;
+            self.overhang_len = 0;
             self.synth_phase = 0.0;
         }
         self.shift_semitones = semitones;
@@ -730,6 +792,181 @@ mod tests {
         assert!(
             tail > 0.05,
             "unshiftable downshift muted the output (tail rms {tail:.4})"
+        );
+    }
+
+    /// Tremolo-enveloped pitched signal: keeps YIN voiced but defeats the
+    /// natural periodicity that would fake a bit-exact self-correlation.
+    fn tremolo(freq: f32, sample_rate: f32, n: usize) -> f32 {
+        pitched(freq, sample_rate, n) * (0.5 + 0.5 * (TAU * 1.3 * n as f32 / sample_rate).sin())
+    }
+
+    /// Count bit-exact duplicated windows (max abs diff == 0, non-silent)
+    /// between `out[a..a+lag]` and `out[a+lag..a+2*lag]`.
+    fn count_dup_windows(out: &[f32], lag: usize) -> usize {
+        let mut dups = 0usize;
+        for a in (2048..out.len().saturating_sub(2 * lag)).step_by(8) {
+            let w1 = &out[a..a + lag];
+            let w2 = &out[a + lag..a + 2 * lag];
+            let max_diff = w1
+                .iter()
+                .zip(w2)
+                .map(|(x, y)| (x - y).abs())
+                .fold(0.0_f32, f32::max);
+            if max_diff == 0.0 && rms(w1) > 0.01 {
+                dups += 1;
+            }
+        }
+        dups
+    }
+
+    /// Regression (final verification pass): continuity resets forced
+    /// t_prev = 0 at re-engage, and the body keyed off t_prev emitted the
+    /// full frame — so the first shifted frame's held tail was emitted
+    /// twice (measured as a duplicated window at lag ~= t with corr 0.9999).
+    /// With exact per-frame body/hold tiling the held tail is emitted
+    /// exactly once: the first re-engage production covers body [0, F - t)
+    /// and the next production leads with the margin — the held tail
+    /// completed by the new frame's margin grains. The ring carries the
+    /// shift->0 crossing flush backlog into the re-engage (the crossing
+    /// frame's over-production is exactly the first re-engage frame's
+    /// under-production), so the jitter shows up as a constant output
+    /// offset, not as a gap or a duplicated window.
+    #[test]
+    fn reengage_after_bypass_has_no_duplicated_window() {
+        let sr = 44100.0;
+        let mut engine = KneadEngine::new(sr);
+        engine.set_shift_semitones(12.0);
+
+        // Drive tremolo'd 330 Hz in frame-aligned chunks so production
+        // positions are exact: first shifted production lands at out[2048].
+        let mut out = Vec::new();
+        let mut n = 0usize;
+        while n < 2048 * 10 {
+            let block = (2048 * 10 - n).min(128);
+            let mut left: Vec<f32> = (0..block).map(|i| tremolo(330.0, sr, n + i)).collect();
+            let mut right = left.clone();
+            engine.process_block(&mut left, &mut right);
+            out.extend_from_slice(&left);
+            n += block;
+        }
+
+        engine.set_shift_semitones(0.0);
+        while n < 2048 * 15 {
+            let block = (2048 * 15 - n).min(128);
+            let mut left = vec![0.0_f32; block];
+            let mut right = vec![0.0_f32; block];
+            engine.process_block(&mut left, &mut right);
+            out.extend_from_slice(&left);
+            n += block;
+        }
+
+        engine.set_shift_semitones(12.0);
+        // Exact per-frame tiling pin: with t_prev = 0 after the continuity
+        // reset, the first re-engage production must emit the body only —
+        // frame_len - t samples — not the full frame. (The pre-fix body
+        // keyed off t_prev emitted the full frame, so the held tail was
+        // emitted again by the next production's margin.) The ring never
+        // empties during this frame — the shift->0 crossing flush backlog
+        // covers it — so the emission size measured via out_count is exact.
+        let count_before = engine.out_count;
+        while n < 2048 * 16 {
+            let block = (2048 * 16 - n).min(128);
+            let mut left: Vec<f32> = (0..block).map(|i| tremolo(330.0, sr, n + i)).collect();
+            let mut right = left.clone();
+            engine.process_block(&mut left, &mut right);
+            out.extend_from_slice(&left);
+            n += block;
+        }
+        let first_production = engine.out_count + 2048 - count_before;
+        assert_eq!(
+            first_production,
+            2048 - 67,
+            "first re-engage production emitted {first_production} samples, expected body-only 1981 (full-frame emission re-duplicates the held tail)"
+        );
+        while n < 2048 * 20 {
+            let block = (2048 * 20 - n).min(128);
+            let mut left: Vec<f32> = (0..block).map(|i| tremolo(330.0, sr, n + i)).collect();
+            let mut right = left.clone();
+            engine.process_block(&mut left, &mut right);
+            out.extend_from_slice(&left);
+            n += block;
+        }
+
+        // +12 st at 330 Hz -> 660 Hz target, t = ceil(44100 / 660) = 67.
+        // The completed margin leads the SECOND re-engage production (the
+        // margin loop runs before the body loop). Productions are written
+        // as the input frame fills, before that sample is consumed, so the
+        // second production lands one frame after the first frame fill, at
+        // out[2048*17 - 1].
+        let t = 67usize;
+        let margin_start = 2048 * 17 - 1;
+        let margin = &out[margin_start..margin_start + t];
+        assert!(
+            rms(margin) > 0.1,
+            "margin after re-engage is empty: rms {:.3}",
+            rms(margin)
+        );
+
+        // Note: correlation/bit-exact-window checks at lag ~= t are NOT
+        // valid pins at +12 st — an octave upshift reuses each analysis
+        // epoch for two synthesis centers, so the shifted render itself is
+        // locally periodic at lag ~= t (measured corr 0.9996 between
+        // adjacent 67-sample windows in steady state). The decisive pins
+        // are the emission size above (the pre-fix body emitted the full
+        // frame, re-emitting the held tail through the next margin) and
+        // the non-empty margin (the held tail IS completed and emitted
+        // exactly once, by the next production's margin).
+    }
+
+    /// Regression (final verification pass): the shifted-to-unshiftable
+    /// transition dropped the held tail (content skip of up to one target
+    /// period). The fallback now flushes the held tail into the ring, so
+    /// the crossing neither skips content nor duplicates it.
+    #[test]
+    fn shifted_to_unshiftable_flushes_held_tail() {
+        let sr = 44100.0;
+        let mut engine = KneadEngine::new(sr);
+        engine.set_shift_semitones(-12.0);
+        let _ = run_engine(&mut engine, 50.0, 50.0, sr, 10.0 * 2048.0 / sr, false);
+        let count_before = engine.out_count;
+
+        // -30 st at 50 Hz -> 8.8 Hz target: below the 10 Hz scratch bound,
+        // so frames go through the unshiftable fallback path.
+        engine.set_shift_semitones(-30.0);
+        let (out_l, _) = run_engine(&mut engine, 50.0, 50.0, sr, 5.0 * 2048.0 / sr, false);
+        let count_after = engine.out_count;
+
+        // The flushed held tail (t = ceil(44100 / 25) = 1764 samples of
+        // shifted content) must be emitted, not dropped: ring depth grows
+        // by the flush instead of the content vanishing.
+        assert!(
+            count_after >= count_before + 1500,
+            "held tail dropped at the unshiftable crossing: out_count {count_before} -> {count_after}"
+        );
+
+        // No bit-exact duplicated window at the suspect lag (1764).
+        assert_eq!(
+            count_dup_windows(&out_l, 1764),
+            0,
+            "crossing duplicated the held tail"
+        );
+
+        // No zero/skip run inside the unshiftable section (past engine
+        // latency): the flush keeps the stream continuous.
+        let mut longest = 0usize;
+        let mut run = 0usize;
+        for &s in &out_l[2048..] {
+            if s.abs() < 0.001 {
+                run += 1;
+                longest = longest.max(run);
+            } else {
+                run = 0;
+            }
+        }
+        assert!(
+            longest <= 100,
+            "skip run of {longest} samples in the unshiftable section"
         );
     }
 }
