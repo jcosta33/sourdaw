@@ -76,4 +76,21 @@ describe('shouldCreateOfflineStrip', () => {
         });
         expect(shouldCreateOfflineStrip(track)).toBe(true);
     });
+
+    it('returns false for a dormant VCA even when legacy residue includes a Toaster', () => {
+        const track = TrackDummy.create({
+            devices: [
+                {
+                    id: 'd1',
+                    name: 'Toaster',
+                    type: 'toaster',
+                    bypassed: false,
+                    parameterValues: {},
+                },
+            ],
+        });
+        Object.defineProperty(track, 'kind', { value: 'vca' });
+
+        expect(shouldCreateOfflineStrip(track)).toBe(false);
+    });
 });

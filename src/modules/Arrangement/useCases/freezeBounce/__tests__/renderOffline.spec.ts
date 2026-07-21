@@ -38,6 +38,7 @@ type RenderOfflineMocks = {
     getCachedAudioBuffer: Mock<typeof getCachedAudioBuffer>;
     getUpstreamSubgraph: Mock<() => Set<string>>;
     trackStore: { value: unknown };
+    sidechainStore: { value: unknown };
     midiStore: { value: { notesByClipId: Record<string, MidiStoreNote[]>; probabilitySeed?: number } | null };
     transportStore: { value: unknown };
     tempoMapStore: { value: unknown };
@@ -52,6 +53,7 @@ const mocks = vi.hoisted<RenderOfflineMocks>(() => ({
     getCachedAudioBuffer: vi.fn<typeof getCachedAudioBuffer>(),
     getUpstreamSubgraph: vi.fn<() => Set<string>>(),
     trackStore: { value: null },
+    sidechainStore: { value: null },
     midiStore: { value: null },
     transportStore: { value: null },
     tempoMapStore: { value: { changes: [] } },
@@ -81,7 +83,7 @@ vi.mock('#/modules/Transport/stores', () => ({
 }));
 
 vi.mock('#/modules/Routing/stores', () => ({
-    sidechainStore: { value: null },
+    sidechainStore: mocks.sidechainStore,
 }));
 
 vi.mock('../../../stores/trackStore', () => ({
@@ -153,6 +155,47 @@ function createFakeAudioBuffer(duration = 1): AudioBuffer {
         numberOfChannels: 1,
         sampleRate,
     };
+}
+
+type IneligibleRoutingResidueInput = {
+    id: string;
+    kind: 'vca' | 'malformed';
+    relation: 'output' | 'send' | 'sidechain';
+    targetId: string;
+};
+
+const INELIGIBLE_ROUTING_KINDS = ['vca', 'malformed'] satisfies IneligibleRoutingResidueInput['kind'][];
+const ROUTING_RELATIONS = ['output', 'send', 'sidechain'] satisfies IneligibleRoutingResidueInput['relation'][];
+
+function createIneligibleRoutingResidue(input: IneligibleRoutingResidueInput): Track {
+    const track = TrackDummy.create({
+        id: input.id,
+        kind: 'audio',
+        devices: [
+            {
+                id: `${input.id}-device`,
+                name: 'Dormant device residue',
+                type: 'compressor',
+                bypassed: false,
+                parameterValues: {},
+            },
+        ],
+        frozen: true,
+        frozenBufferId: `${input.id}-frozen-buffer`,
+    });
+    if (input.relation === 'output') {
+        track.outputId = input.targetId;
+    }
+    if (input.relation === 'send') {
+        track.sends = [{ busId: input.targetId, level: 0.5, preFader: false }];
+    }
+    Object.defineProperty(track, 'kind', {
+        value: input.kind,
+        configurable: true,
+        enumerable: true,
+        writable: true,
+    });
+    return track;
 }
 
 /** Minimal AudioBuffer constructor stand-in for normalize/trim paths that allocate fresh buffers. */
@@ -253,6 +296,7 @@ describe('renderTrackOffline', () => {
         createdOscillators.length = 0;
         renderedBuffer = null;
         mocks.trackStore.value = null;
+        mocks.sidechainStore.value = null;
         mocks.midiStore.value = null;
         mocks.transportStore.value = null;
         mocks.buildDeviceChain.mockResolvedValue([]);
@@ -299,6 +343,82 @@ describe('renderTrackOffline', () => {
         expect(result).toBeNull();
         expect(mocks.buildDeviceChain).not.toHaveBeenCalled();
     });
+
+    it('returns before offline dependencies or allocation for a dormant VCA', async () => {
+        const dormantVca = TrackDummy.create({ id: 'vca-1' });
+        Object.defineProperty(dormantVca, 'kind', { value: 'vca' });
+
+        const result = await renderTrackOffline(dormantVca, 0, 4);
+
+        expect(result).toBeNull();
+        expect(mocks.getAudioContext).not.toHaveBeenCalled();
+        expect(mocks.getUpstreamSubgraph).not.toHaveBeenCalled();
+        expect(mocks.buildDeviceChain).not.toHaveBeenCalled();
+    });
+
+    it('excludes dormant and malformed routing predecessors before offline strip allocation', async () => {
+        const target = TrackDummy.create({ id: 'ordinary-target', kind: 'audio' });
+        const ineligibleTracks = INELIGIBLE_ROUTING_KINDS.flatMap((kind) =>
+            ROUTING_RELATIONS.map((relation) =>
+                createIneligibleRoutingResidue({
+                    id: `${kind}-${relation}`,
+                    kind,
+                    relation,
+                    targetId: target.id,
+                })
+            )
+        );
+        const sidechainTracks = ineligibleTracks.filter((track) => track.id.endsWith('sidechain'));
+        mocks.trackStore.value = {
+            tracks: [target, ...ineligibleTracks],
+            selectedTrackId: target.id,
+            ghostClips: [],
+        };
+        mocks.sidechainStore.value = {
+            routes: sidechainTracks.map((track) => ({
+                id: `route-${track.id}`,
+                sourceTrackId: track.id,
+                targetTrackId: target.id,
+                targetDeviceId: 'missing-device',
+                targetParameterId: 'threshold',
+                gain: 1,
+            })),
+        };
+        mocks.getUpstreamSubgraph.mockReturnValue(new Set(ineligibleTracks.map((track) => track.id)));
+        mocks.getCachedAudioBuffer.mockReturnValue(createFakeAudioBuffer());
+
+        const result = await renderTrackOffline(target, 0, 4);
+
+        expect(result).not.toBeNull();
+        expect(mocks.buildDeviceChain).toHaveBeenCalledTimes(1);
+        expect(mocks.buildDeviceChain).toHaveBeenCalledWith(
+            expect.any(FakeOfflineAudioContext),
+            target.devices,
+            expect.anything(),
+            expect.anything()
+        );
+        expect(mocks.getCachedAudioBuffer).not.toHaveBeenCalled();
+        expect(createdSources).toEqual([]);
+        expect(createdGains).toHaveLength(1);
+    });
+
+    it.each(['audio', 'midi', 'bus', 'master', 'folder'] satisfies Track['kind'][])(
+        'preserves offline allocation for an upstream %s routing endpoint',
+        async (kind) => {
+            const target = TrackDummy.create({ id: 'ordinary-target', kind: 'audio' });
+            const upstream = TrackDummy.create({ id: `upstream-${kind}`, kind, outputId: target.id });
+            mocks.trackStore.value = {
+                tracks: [target, upstream],
+                selectedTrackId: target.id,
+                ghostClips: [],
+            };
+            mocks.getUpstreamSubgraph.mockReturnValue(new Set([upstream.id]));
+
+            await renderTrackOffline(target, 0, 4);
+
+            expect(mocks.buildDeviceChain).toHaveBeenCalledTimes(2);
+        }
+    );
 
     it('should read frozen-track buffers through the AudioEngine cache use case', async () => {
         const frozenBuffer = createFakeAudioBuffer(4);

@@ -3,21 +3,25 @@ import { transportStore } from '#/modules/Transport/stores';
 
 import { updateTrack } from '../../repositories/track/updateTrack';
 import { computeTrackHash } from '../../services/computeTrackHash';
+import { getTrackEligibility } from '../../stores/trackEligibility';
 import { trackStore } from '../../stores/trackStore';
 
 import { renderTrackOffline } from './renderOffline';
 
 export const activeFreezeTasks = new Map<string, AbortController>();
 
-export async function freezeTrack(trackId: string): Promise<void> {
+export async function freezeTrack(trackId: string): Promise<boolean> {
     const state = trackStore.value;
     if (!state) {
-        return;
+        return false;
     }
 
     const track = state.tracks.find((time) => time.id === trackId);
     if (!track || track.freezeState.status === 'frozen') {
-        return;
+        return false;
+    }
+    if (!getTrackEligibility(track.kind).acceptsFreeze) {
+        return false;
     }
 
     if (activeFreezeTasks.has(trackId)) {
@@ -102,7 +106,7 @@ export async function freezeTrack(trackId: string): Promise<void> {
                 ...time,
                 freezeState: { status: 'unfrozen' },
             }));
-            return;
+            return true;
         }
 
         updateTrack(trackId, (time) => ({
@@ -113,4 +117,6 @@ export async function freezeTrack(trackId: string): Promise<void> {
             },
         }));
     }
+
+    return true;
 }

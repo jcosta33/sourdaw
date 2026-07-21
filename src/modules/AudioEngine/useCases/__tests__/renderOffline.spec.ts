@@ -19,6 +19,9 @@ const offlineRenderMocks = vi.hoisted(() => ({
     scheduleKitNote: vi.fn(),
     getDrumKitDefByIndex: vi.fn(() => null),
     scheduleDrumKitNote: vi.fn(),
+    resolveRenderContext: vi.fn(),
+    createOfflineTrackStrip: vi.fn(),
+    renderWithTimeout: vi.fn(),
 }));
 
 vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => {
@@ -87,6 +90,18 @@ vi.mock('../../repositories/offlineScheduler/automationScheduling', () => ({
     scheduleTrackAutomation: offlineRenderMocks.scheduleTrackAutomation,
 }));
 
+vi.mock('../offlineRender/resolveRenderContext', () => ({
+    resolveRenderContext: offlineRenderMocks.resolveRenderContext,
+}));
+
+vi.mock('../offlineRender/createOfflineTrackStrip', () => ({
+    createOfflineTrackStrip: offlineRenderMocks.createOfflineTrackStrip,
+}));
+
+vi.mock('../offlineRender/renderWithTimeout', () => ({
+    renderWithTimeout: offlineRenderMocks.renderWithTimeout,
+}));
+
 describe('renderOffline', () => {
     beforeEach(() => {
         vi.clearAllMocks();
@@ -95,5 +110,45 @@ describe('renderOffline', () => {
     it('rejects non-positive duration before touching stores', async () => {
         await expect(renderOffline(0)).rejects.toThrow();
         expect(offlineRenderMocks.getTrackStoreState).not.toHaveBeenCalled();
+    });
+
+    it('allocates no offline strip for a dormant VCA, including Toaster residue', async () => {
+        offlineRenderMocks.resolveRenderContext.mockReturnValue({
+            tracks: {
+                tracks: [
+                    {
+                        id: 'vca-1',
+                        kind: 'vca',
+                        disabled: false,
+                        muted: false,
+                        devices: [{ id: 'd1', type: 'toaster' }],
+                    },
+                ],
+            },
+            midi: {},
+            transport: null,
+            defaultTempo: 120,
+            changes: [],
+            durationSeconds: 1,
+            projectMidiEvents: vi.fn(),
+            selectMidiEventProbability: vi.fn(() => true),
+            projectPpqEndpoints: vi.fn(),
+            processYeastMidi: vi.fn(),
+        });
+        const rendered = { sampleRate: 44_100 };
+        offlineRenderMocks.renderWithTimeout.mockResolvedValue(rendered);
+        class TestOfflineAudioContext {
+            readonly destination = {};
+
+            createGain() {
+                return { gain: { value: 0 }, connect: vi.fn() };
+            }
+        }
+        vi.stubGlobal('OfflineAudioContext', TestOfflineAudioContext);
+
+        const result = await renderOffline(4);
+
+        expect(result).toBe(rendered);
+        expect(offlineRenderMocks.createOfflineTrackStrip).not.toHaveBeenCalled();
     });
 });

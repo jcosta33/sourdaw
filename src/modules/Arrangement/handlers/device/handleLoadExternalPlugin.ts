@@ -3,6 +3,7 @@ import { createHandler } from '#/utils/createHandler';
 
 import { addTrack } from '../../useCases/addTrack';
 import { addExternalDevice } from '../../useCases/device/addExternalDevice';
+import { toHandlerExecutionResult } from '../toHandlerExecutionResult';
 
 export const handleLoadExternalPlugin = createHandler<'loadExternalPlugin'>({
     // eslint-disable-next-line @typescript-eslint/require-await -- handler interface requires async execute; this handler has no asynchronous operations
@@ -10,6 +11,7 @@ export const handleLoadExternalPlugin = createHandler<'loadExternalPlugin'>({
         const { pluginId, trackId: providedTrackId } = alpha.payload;
 
         let trackId = providedTrackId;
+        let didWrite = false;
         if (!trackId) {
             const plugin = findPluginByName(pluginId);
             const isInstrument = plugin?.category.toLowerCase() === 'instrument';
@@ -18,14 +20,19 @@ export const handleLoadExternalPlugin = createHandler<'loadExternalPlugin'>({
                 kind: isInstrument ? 'midi' : 'audio',
             });
             if (!newTrack) {
-                return;
+                return toHandlerExecutionResult(false);
             }
             trackId = newTrack.id;
+            didWrite = true;
         }
 
         const scanned = findPluginByName(pluginId);
         const pluginName = scanned?.name ?? pluginId;
-        addExternalDevice(trackId, pluginId, pluginName);
+        const device = addExternalDevice(trackId, pluginId, pluginName);
+        if (device) {
+            didWrite = true;
+        }
+        return toHandlerExecutionResult(didWrite);
     },
     describe: (alpha) => ({ label: `Load external plugin "${alpha.payload.pluginId}"` }),
     undoable: false,

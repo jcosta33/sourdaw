@@ -29,6 +29,7 @@ export { persistDeviceParam } from './persistDeviceParam';
 export { updateClipInStore } from './updateClipInStore';
 export { appendClipToTrack } from './appendClipToTrack';
 export { appendTrack } from './appendTrack';
+export { getTrackEligibility } from './trackEligibility';
 
 export { adjustmentLayerStore, EFFECT_PRESETS, LAYER_COLORS } from './adjustmentLayer';
 export type {

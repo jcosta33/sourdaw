@@ -31,10 +31,11 @@ describe('armTrack', () => {
     it('arms a track and sets it as MIDI input in engine if MIDI track', () => {
         mocks.getTrackById.mockReturnValue({ id: 't1', kind: 'midi' });
 
-        armTrack('t1', true);
+        const didWrite = armTrack('t1', true);
 
         expect(mocks.updateTrack).toHaveBeenCalledWith('t1', expect.any(Function));
         expect(mocks.setMidiInputTrack).toHaveBeenCalledWith('t1');
+        expect(didWrite).toBe(true);
     });
 
     it('arms a track but does not set MIDI input if not MIDI', () => {
@@ -44,6 +45,27 @@ describe('armTrack', () => {
 
         expect(mocks.updateTrack).toHaveBeenCalled();
         expect(mocks.setMidiInputTrack).not.toHaveBeenCalled();
+    });
+
+    it('rejects arming a dormant VCA without a project or MIDI-routing write', () => {
+        mocks.getTrackById.mockReturnValue({ id: 'vca-1', kind: 'vca' });
+
+        const didWrite = armTrack('vca-1', true);
+
+        expect(mocks.updateTrack).not.toHaveBeenCalled();
+        expect(mocks.setMidiInputTrack).not.toHaveBeenCalled();
+        expect(didWrite).toBe(false);
+    });
+
+    it('permits dormant VCA disarm cleanup and conditionally clears its stale MIDI routing', () => {
+        mocks.getTrackById.mockReturnValue({ id: 'vca-1', kind: 'vca' });
+        mocks.getMidiInputTrack.mockReturnValue('vca-1');
+
+        const didWrite = armTrack('vca-1', false);
+
+        expect(mocks.updateTrack).toHaveBeenCalledWith('vca-1', expect.any(Function));
+        expect(mocks.setMidiInputTrack).toHaveBeenCalledWith(null);
+        expect(didWrite).toBe(true);
     });
 
     it('disarms a track without touching MIDI input pointed elsewhere', () => {

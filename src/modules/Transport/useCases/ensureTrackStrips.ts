@@ -5,7 +5,7 @@
  * Used by startPlayback and toggleRecording before audio begins.
  */
 
-import { trackStore } from '#/modules/Arrangement/stores';
+import { getTrackEligibility, trackStore } from '#/modules/Arrangement/stores';
 import {
     addDeviceToStrip,
     ensureTrackStrip,
@@ -29,11 +29,14 @@ export function ensureTrackStrips(): void {
     }
 
     for (const track of tracks) {
-        if (track.kind === 'folder') {
+        if (!getTrackEligibility(track.kind).createsLiveStrip) {
             continue;
         }
         ensureTrackStrip(track.id);
-        setTrackOutput(track.id, track.outputId);
+        const outputTarget = tracks.find((candidate) => candidate.id === track.outputId);
+        if (!outputTarget || getTrackEligibility(outputTarget.kind).acceptsRoutingEndpoint) {
+            setTrackOutput(track.id, track.outputId);
+        }
         setTrackGain(track.id, track.gain);
         setTrackPan(track.id, track.pan);
         setTrackMute(track.id, track.muted);
@@ -53,6 +56,10 @@ export function ensureTrackStrips(): void {
         }
 
         for (const send of track.sends) {
+            const sendTarget = tracks.find((candidate) => candidate.id === send.busId);
+            if (sendTarget && !getTrackEligibility(sendTarget.kind).acceptsRoutingEndpoint) {
+                continue;
+            }
             setSend(track.id, send.busId, send.level, send.preFader);
         }
     }
@@ -65,10 +72,10 @@ export function ensureTrackStrips(): void {
     wireSidechainRoutes();
     // Apply solo state: if any track is soloed, mute all non-soloed tracks.
     // This ensures solo set before pressing play takes effect immediately.
-    const anySoloed = tracks.some((time) => time.soloed && time.kind !== 'folder');
+    const anySoloed = tracks.some((time) => time.soloed && getTrackEligibility(time.kind).createsLiveStrip);
     if (anySoloed) {
         for (const track of tracks) {
-            if (track.kind === 'folder' || track.kind === 'master') {
+            if (!getTrackEligibility(track.kind).createsLiveStrip || track.kind === 'master') {
                 continue;
             }
             const shouldMute = !track.soloed;

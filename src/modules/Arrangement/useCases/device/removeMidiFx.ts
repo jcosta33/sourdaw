@@ -2,13 +2,14 @@ import { inject } from '#/infra/di/inject';
 import { RuntimeLogger } from '#/infra/logger/runtimeLogger';
 import { removeMidiFxFromStrip } from '#/modules/AudioEngine/useCases';
 
+import { getTrackEligibility } from '../../stores/trackEligibility';
 import { updateTrack } from '../updateTrack';
 
 export const removeMidiFx = inject({ logger: RuntimeLogger })(
     ({ logger }) =>
         function removeMidiFx(trackId: string, fxId: string): void {
             updateTrack(trackId, (track) => {
-                if (track.kind !== 'midi') {
+                if (!getTrackEligibility(track.kind).removesMidiFxProjectResidue) {
                     return track;
                 }
                 const nextMidiFx = track.midiFx?.filter((fx) => fx.id !== fxId) ?? [];

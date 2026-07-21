@@ -16,12 +16,25 @@ describe('handleBounceToNewTrack', () => {
     });
 
     it('executes bounceToNewTrack with the provided payload', async () => {
-        await handleBounceToNewTrack.execute({
+        mocks.bounceToNewTrack.mockResolvedValue(true);
+        const result = await handleBounceToNewTrack.execute({
             type: 'bounceToNewTrack',
             payload: { trackId: 't1' },
         });
 
         expect(mocks.bounceToNewTrack).toHaveBeenCalledWith('t1');
+        expect(result).toEqual({ status: 'written' });
+    });
+
+    it('reports no-write when new-track bounce is rejected', async () => {
+        mocks.bounceToNewTrack.mockResolvedValue(false);
+
+        const result = await handleBounceToNewTrack.execute({
+            type: 'bounceToNewTrack',
+            payload: { trackId: 'vca-1' },
+        });
+
+        expect(result).toEqual({ status: 'no-write' });
     });
 
     it('provides a description', () => {

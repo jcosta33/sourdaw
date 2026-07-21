@@ -99,4 +99,17 @@ describe('startRecording', () => {
         expect(newClips).toHaveLength(0);
         expect(mocks.setTrackState).not.toHaveBeenCalled();
     });
+
+    it('excludes an armed dormant VCA before clip, take, or store work', () => {
+        mocks.getTrackState.mockReturnValue({
+            tracks: [{ id: 'vca-1', armed: true, kind: 'vca', clips: [] }],
+        });
+        mocks.transportStoreValue = { playheadPosition: 4 };
+
+        expect(startRecording()).toEqual([]);
+        expect(mocks.getTakeLaneForTrack).not.toHaveBeenCalled();
+        expect(mocks.addTakeLane).not.toHaveBeenCalled();
+        expect(mocks.addTake).not.toHaveBeenCalled();
+        expect(mocks.setTrackState).not.toHaveBeenCalled();
+    });
 });

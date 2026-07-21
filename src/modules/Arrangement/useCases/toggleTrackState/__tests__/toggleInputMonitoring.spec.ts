@@ -44,7 +44,7 @@ describe('toggleInputMonitoring', () => {
     });
 
     function advance(from: InputMonitoring): InputMonitoring {
-        mocks.getTrackById.mockReturnValue({ id: 't1', inputMonitoring: from });
+        mocks.getTrackById.mockReturnValue({ id: 't1', kind: 'audio', inputMonitoring: from });
         toggleInputMonitoring('t1');
         const patch = mocks.updateTrack.mock.calls.at(-1)![1] as (t: { inputMonitoring: InputMonitoring }) => {
             inputMonitoring: InputMonitoring;
@@ -70,5 +70,25 @@ describe('toggleInputMonitoring', () => {
         expect(advance('off')).toBe('auto');
         expect(mocks.stopInputMonitoring).toHaveBeenCalledTimes(1);
         expect(mocks.startInputMonitoring).not.toHaveBeenCalled();
+    });
+
+    it('rejects a dormant VCA toggle without writing or stopping another monitoring session', () => {
+        mocks.getTrackById.mockImplementation((trackId: string) => {
+            if (trackId === 'audio-1') {
+                return { id: 'audio-1', kind: 'audio', inputMonitoring: 'auto' };
+            }
+            return { id: 'vca-1', kind: 'vca', inputMonitoring: 'auto' };
+        });
+
+        toggleInputMonitoring('audio-1');
+        expect(mocks.startInputMonitoring).toHaveBeenCalledWith('audio-1');
+        mocks.updateTrack.mockClear();
+        mocks.startInputMonitoring.mockClear();
+
+        toggleInputMonitoring('vca-1');
+
+        expect(mocks.updateTrack).not.toHaveBeenCalled();
+        expect(mocks.startInputMonitoring).not.toHaveBeenCalled();
+        expect(mocks.stopInputMonitoring).not.toHaveBeenCalled();
     });
 });

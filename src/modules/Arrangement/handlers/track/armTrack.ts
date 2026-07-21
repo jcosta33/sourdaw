@@ -2,10 +2,11 @@ import { createHandler } from '#/utils/createHandler';
 
 import { getTrackStoreState } from '../../useCases/getTrackStoreState';
 import { armTrack } from '../../useCases/recording/armTrack';
+import { toHandlerExecutionResult } from '../toHandlerExecutionResult';
 
 export const handleArmTrack = createHandler<'armTrack'>({
     execute: (action) => {
-        armTrack(action.payload.trackId, action.payload.armed);
+        return toHandlerExecutionResult(armTrack(action.payload.trackId, action.payload.armed));
     },
     describe: (alpha) => {
         // Re-arming an already-armed track is a forward no-op, so the inverse

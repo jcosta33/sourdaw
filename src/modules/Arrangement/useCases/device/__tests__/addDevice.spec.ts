@@ -37,7 +37,7 @@ vi.mock('#/modules/PluginHost/useCases', async (importOriginal) => ({
 describe('addDevice', () => {
     beforeEach(() => {
         vi.clearAllMocks();
-        mocks.getTrackState.mockReturnValue({ tracks: [] });
+        mocks.getTrackState.mockReturnValue({ tracks: [{ id: 't1', kind: 'audio' }] });
         mocks.getPlatformPlugins.mockReturnValue([]);
     });
 
@@ -85,5 +85,16 @@ describe('addDevice', () => {
         await vi.waitFor(() => {
             expect(mocks.compileFaustDSP).toHaveBeenCalledWith('faust-synth');
         });
+    });
+
+    it('rejects a dormant VCA before ID allocation, store writes, engine calls, or plugin compilation', () => {
+        mocks.getTrackState.mockReturnValue({ tracks: [{ id: 'vca-1', kind: 'vca' }] });
+        mocks.getPlatformPlugins.mockReturnValue([{ id: 'faust-synth', name: 'Faust Synth', parameters: [] }]);
+
+        expect(addDevice('vca-1', 'faust-synth')).toBeNull();
+        expect(mocks.getPlatformPlugins).not.toHaveBeenCalled();
+        expect(mocks.updateTrack).not.toHaveBeenCalled();
+        expect(mocks.addDeviceToStrip).not.toHaveBeenCalled();
+        expect(mocks.compileFaustDSP).not.toHaveBeenCalled();
     });
 });

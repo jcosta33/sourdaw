@@ -2,11 +2,17 @@ import { inject } from '#/infra/di/inject';
 import { RuntimeLogger } from '#/infra/logger/runtimeLogger';
 import { updateMidiFxBypass } from '#/modules/AudioEngine/useCases';
 
+import { getTrackById } from '../../repositories/track/getTrackById';
+import { getTrackEligibility } from '../../stores/trackEligibility';
 import { updateTrack } from '../updateTrack';
 
 export const bypassMidiFx = inject({ logger: RuntimeLogger })(
     ({ logger }) =>
         function bypassMidiFx(trackId: string, fxId: string, bypassed: boolean): void {
+            const track = getTrackById(trackId);
+            if (!track || !getTrackEligibility(track.kind).acceptsMidiFxUpdate) {
+                return;
+            }
             updateTrack(trackId, (track) => {
                 if (track.kind !== 'midi') {
                     return track;

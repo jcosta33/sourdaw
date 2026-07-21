@@ -1,3 +1,5 @@
+import { getTrackEligibility } from '#/modules/Arrangement/stores';
+
 import { createExportError } from '../errors/ExportError';
 
 import { type DeviceNodeEntry } from './buildDeviceChain';
@@ -72,12 +74,16 @@ export const exportStems: ExportStemsFn = async function exportStems(
 
         // Exclude disabled and structural tracks (unless they host a Toaster); muted tracks are included as stems
         // (users may want silent-in-mixdown stems for later use in a DAW).
-        const eligible = tracks.tracks.filter(
-            (time) =>
-                !time.disabled &&
-                time.kind !== 'master' &&
-                (time.kind !== 'folder' || time.devices.some((data) => data.type === 'toaster'))
-        );
+        const eligible = tracks.tracks.filter((time) => {
+            if (time.disabled) {
+                return false;
+            }
+            const eligibility = getTrackEligibility(time.kind);
+            if (eligibility.exportsStem) {
+                return true;
+            }
+            return time.kind === 'folder' && time.devices.some((data) => data.type === 'toaster');
+        });
         let done = 0;
 
         if (eligible.length === 0) {

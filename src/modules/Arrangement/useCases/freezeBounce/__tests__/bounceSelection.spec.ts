@@ -144,7 +144,7 @@ describe('bounceSelection', () => {
         setTrackStoreState({ tracks: [sourceTrack], selectedTrackId: 'track-1' });
         mocks.renderTrackOffline.mockResolvedValue(renderedBuffer);
 
-        await bounceSelection('track-1', 2, 6);
+        const didWrite = await bounceSelection('track-1', 2, 6);
 
         const expectedBufferId = 'bounce-sel-track-1-1234567890';
         expect(mocks.renderTrackOffline).toHaveBeenCalledWith(
@@ -178,5 +178,21 @@ describe('bounceSelection', () => {
 
         redo();
         expect(mocks.trackStore.value?.tracks[0]?.clips).toEqual(bouncedTrack?.clips);
+        expect(didWrite).toBe(true);
+    });
+
+    it('reports no-write when offline rendering rejects a dormant VCA selection', async () => {
+        const sourceTrack = createAudioTrack();
+        Object.defineProperty(sourceTrack, 'kind', { value: 'vca' });
+        setTrackStoreState({ tracks: [sourceTrack], selectedTrackId: 'track-1' });
+        mocks.renderTrackOffline.mockResolvedValue(null);
+
+        const didWrite = await bounceSelection('track-1', 0, 4);
+
+        expect(mocks.cacheAudioBuffer).not.toHaveBeenCalled();
+        expect(crypto.randomUUID).not.toHaveBeenCalled();
+        expect(mocks.pushUndoEntry).not.toHaveBeenCalled();
+        expect(mocks.trackStore.set).not.toHaveBeenCalled();
+        expect(didWrite).toBe(false);
     });
 });
