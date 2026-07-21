@@ -71,7 +71,7 @@ export async function loadProject(): Promise<boolean> {
         preparedBuffers.publish();
         // Reset per-device-instance stores (§13.1) before hydration so stale
         // device state from a previously open project cannot leak into it.
-        resetModuleStoresToDefault({ resetGrooveTemplates: false, resetYeastState: false });
+        resetModuleStoresToDefault({ resetGrooveTemplates: false, resetMidiState: false, resetYeastState: false });
         projectCrdtToStores();
         migrateAbsoluteMidiNotes();
 

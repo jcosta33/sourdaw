@@ -7,6 +7,7 @@ import { serializeProjectMidiNote } from './serializeProjectMidiNote';
 
 type RuntimeCC = MidiStoreState['ccByClipId'][string][number];
 type RuntimePitchBend = MidiStoreState['pitchBendByClipId'][string][number];
+type SerializableMidiState = Omit<MidiStoreState, 'probabilitySeed'> & { probabilitySeed?: number };
 
 function serializeProjectMidiCC(cc: RuntimeCC): ProjectMidiCC {
     return { beat: cc.beat, controller: cc.controller, value: cc.value, channel: cc.channel };
@@ -17,8 +18,8 @@ function serializeProjectMidiPitchBend(pb: RuntimePitchBend): ProjectMidiPitchBe
 }
 
 /** Serialize the runtime MIDI store into the `.sourdaw` MIDI block. */
-export function serializeProjectMidi(midi: MidiStoreState): ProjectMidi {
-    return {
+export function serializeProjectMidi(midi: SerializableMidiState): ProjectMidi {
+    const serialized: ProjectMidi = {
         notesByClipId: mapProjectMidiValues({
             byClipId: midi.notesByClipId,
             mapEntry: serializeProjectMidiNote,
@@ -32,4 +33,15 @@ export function serializeProjectMidi(midi: MidiStoreState): ProjectMidi {
             mapEntry: serializeProjectMidiPitchBend,
         }),
     };
+
+    if (
+        typeof midi.probabilitySeed === 'number' &&
+        Number.isInteger(midi.probabilitySeed) &&
+        midi.probabilitySeed >= 0 &&
+        midi.probabilitySeed <= 0xffff_ffff
+    ) {
+        serialized.probabilitySeed = midi.probabilitySeed;
+    }
+
+    return serialized;
 }

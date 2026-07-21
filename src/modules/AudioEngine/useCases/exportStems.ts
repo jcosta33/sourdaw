@@ -52,6 +52,7 @@ export const exportStems: ExportStemsFn = async function exportStems(
             changes,
             durationSeconds,
             projectMidiEvents,
+            selectMidiEventProbability,
             projectPpqEndpoints,
             processYeastMidi,
         } = resolveRenderContext({
@@ -65,7 +66,7 @@ export const exportStems: ExportStemsFn = async function exportStems(
             onProgress?.(1);
             return stems;
         }
-        if (!projectMidiEvents || !projectPpqEndpoints) {
+        if (!projectMidiEvents || !selectMidiEventProbability || !projectPpqEndpoints) {
             throw new Error('Offline musical projection is not configured');
         }
 
@@ -110,7 +111,12 @@ export const exportStems: ExportStemsFn = async function exportStems(
                 durationSeconds,
                 defaultTempo,
                 changes,
-                projections: { projectMidiEvents, projectPpqEndpoints, processYeastMidi },
+                projections: {
+                    projectMidiEvents,
+                    projectPpqEndpoints,
+                    processYeastMidi,
+                    selectMidiEventProbability,
+                },
                 onWarning,
                 pendingWorkletEvents,
                 allTracks: [track],

@@ -46,7 +46,8 @@ export async function renderTrackOffline(
     const projectPpqEndpoints = offlineRenderDependencies?.projectPpqEndpoints;
     const createMidiEventProjector = offlineRenderDependencies?.createMidiEventProjector;
     const createYeastMidiProcessor = offlineRenderDependencies?.createYeastMidiProcessor;
-    if (!projectPpqEndpoints || !createMidiEventProjector || !createYeastMidiProcessor) {
+    const selectMidiEventProbability = offlineRenderDependencies?.selectMidiEventProbability;
+    if (!projectPpqEndpoints || !createMidiEventProjector || !createYeastMidiProcessor || !selectMidiEventProbability) {
         throw new Error('Arrangement offline render dependencies are not configured');
     }
     const projectMidiEvents = createMidiEventProjector();
@@ -158,8 +159,18 @@ export async function renderTrackOffline(
                     const loopLength = rawLoopLength > 0 ? rawLoopLength : clipLength;
                     const iterations = clip.loopEnabled ? Math.ceil(clipLength / loopLength) : 1;
                     for (let iteration = 0; iteration < iterations; iteration++) {
+                        const absoluteOccurrenceIndex = iteration;
+                        const acceptedSourceNotes = sourceNotes.filter((note) =>
+                            selectMidiEventProbability({
+                                projectProbabilitySeed: midi.probabilitySeed,
+                                clipId: clip.id,
+                                eventId: note.id,
+                                absoluteOccurrenceIndex,
+                                probabilityPercent: note.probability ?? 100,
+                            })
+                        );
                         clipIterations.push({
-                            sourceNotes,
+                            sourceNotes: acceptedSourceNotes,
                             clipId: clip.id,
                             clipStartBeat: clip.startBeat,
                             clipEndBeat: clip.endBeat,

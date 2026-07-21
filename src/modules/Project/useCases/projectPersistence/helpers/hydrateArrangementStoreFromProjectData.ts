@@ -1,3 +1,5 @@
+import { hydrateMidiProjectState } from '#/modules/MIDI/useCases';
+
 import { type ProjectMidi, type ProjectTempoMap, type ProjectTimeSignatureMap } from '../../../models/ProjectData';
 import { type ArrangementSnapshot, arrangementStore, defaultArrangementId } from '../../../stores/arrangementStore';
 import { loadSnapshot } from '../../arrangement/loadSnapshot';
@@ -62,9 +64,12 @@ function hydrateMidiWithInlineNotes({
     midi,
     tracks,
 }: HydrateMidiWithInlineNotesInput): HydrateMidiWithInlineNotesOutput {
-    const arrangementMidi = midi
-        ? hydrateProjectMidi(midi)
-        : { notesByClipId: {}, ccByClipId: {}, pitchBendByClipId: {} };
+    const hydratedMidi = midi ? hydrateProjectMidi(midi) : { notesByClipId: {}, ccByClipId: {}, pitchBendByClipId: {} };
+    const arrangementMidi: HydrateMidiWithInlineNotesOutput = {
+        notesByClipId: hydratedMidi.notesByClipId,
+        ccByClipId: hydratedMidi.ccByClipId,
+        pitchBendByClipId: hydratedMidi.pitchBendByClipId,
+    };
 
     for (const track of tracks) {
         const clips = [...track.clips, ...(track.alternatives ?? []).flatMap((alternative) => alternative.clips)];
@@ -118,6 +123,10 @@ export function hydrateArrangementStoreFromProjectData({
     data,
     preserveSavedArrangements = false,
 }: HydrateArrangementStoreFromProjectDataInput): void {
+    hydrateMidiProjectState(
+        data.midi ? hydrateProjectMidi(data.midi) : { notesByClipId: {}, ccByClipId: {}, pitchBendByClipId: {} }
+    );
+
     if (preserveSavedArrangements && data.arrangements && data.arrangements.length > 0) {
         const arrangements = data.arrangements.map((snapshot) => hydrateSavedArrangement({ data, snapshot }));
 

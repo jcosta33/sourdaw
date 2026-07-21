@@ -1,16 +1,16 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { type MidiStoreState } from '../../../stores/midiStore';
+import { type MidiStoreStateInput } from '../../../stores/midiStore';
 
 const INVALID_MIDI_CLIP_DATA_SNAPSHOT = 'Invalid MIDI clip data snapshot';
 
 const mocks = vi.hoisted(() => {
-    const state: { value: MidiStoreState | null } = { value: null };
+    const state: { value: MidiStoreStateInput | null } = { value: null };
 
     return {
         state,
-        getValue: vi.fn((): MidiStoreState | null => state.value),
-        set: vi.fn((nextState: MidiStoreState): void => {
+        getValue: vi.fn((): MidiStoreStateInput | null => state.value),
+        set: vi.fn((nextState: MidiStoreStateInput): void => {
             state.value = nextState;
         }),
     };
@@ -19,7 +19,7 @@ const mocks = vi.hoisted(() => {
 vi.mock('../../../stores/midiStore', () => {
     return {
         midiStore: {
-            get value(): MidiStoreState | null {
+            get value(): MidiStoreStateInput | null {
                 return mocks.getValue();
             },
             set: mocks.set,
@@ -49,7 +49,7 @@ function createPitchBend(id: string) {
     return { id, value: 256, beat: 0, channel: 1 };
 }
 
-function createMidiState(): MidiStoreState {
+function createMidiState(): MidiStoreStateInput {
     return {
         notesByClipId: {
             'clip-restore': [createNote('note-existing')],
@@ -66,7 +66,7 @@ function createMidiState(): MidiStoreState {
     };
 }
 
-function requireMidiState(): MidiStoreState {
+function requireMidiState(): MidiStoreStateInput {
     const state = mocks.state.value;
     if (!state) {
         throw new Error('Expected MIDI store state');

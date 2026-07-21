@@ -461,6 +461,11 @@ function isArrayRecordOf(value: unknown, predicate: (item: unknown) => boolean):
 function isMidi(value: unknown): value is ProjectMidi {
     return (
         isRecord(value) &&
+        (value.probabilitySeed === undefined ||
+            (typeof value.probabilitySeed === 'number' &&
+                Number.isInteger(value.probabilitySeed) &&
+                value.probabilitySeed >= 0 &&
+                value.probabilitySeed <= 0xffff_ffff)) &&
         isArrayRecordOf(value.notesByClipId, isMidiNote) &&
         isArrayRecordOf(value.ccByClipId, isMidiCc) &&
         isArrayRecordOf(value.pitchBendByClipId, isMidiPitchBend)

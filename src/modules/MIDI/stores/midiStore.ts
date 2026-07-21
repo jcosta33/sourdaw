@@ -1,23 +1,32 @@
 import { createStore } from '#/infra/store/createStore';
 import { createAutomergeStorage } from '#/infra/store/storage/createAutomergeStorage';
+import { type Store } from '#/infra/store/types';
 
 import { type MidiNote, type MidiCC, type MidiPitchBend } from '../models/MidiNote';
 
 const DOC_PREFIX_ROOT = 'root';
 
 export type MidiStoreState = {
+    probabilitySeed: number;
     notesByClipId: Record<string, MidiNote[]>;
     ccByClipId: Record<string, MidiCC[]>;
     pitchBendByClipId: Record<string, MidiPitchBend[]>;
 };
 
+export type MidiStoreStateInput = Omit<MidiStoreState, 'probabilitySeed'> & {
+    probabilitySeed?: number;
+};
+
+export const LEGACY_MIDI_PROBABILITY_SEED = 0x6d2b79f5;
+
 export const defaultMidiStoreState: MidiStoreState = {
+    probabilitySeed: LEGACY_MIDI_PROBABILITY_SEED,
     notesByClipId: {},
     ccByClipId: {},
     pitchBendByClipId: {},
 };
 
-const MIDI_STORE_STATE_KEYS = ['notesByClipId', 'ccByClipId', 'pitchBendByClipId'] as const;
+const MIDI_STORE_STATE_KEYS = ['probabilitySeed', 'notesByClipId', 'ccByClipId', 'pitchBendByClipId'] as const;
 const MIDI_NOTE_REQUIRED_KEYS = ['id', 'pitch', 'startBeat', 'duration', 'velocity'] as const;
 const MIDI_NOTE_OPTIONAL_KEYS = ['probability', 'pressure', 'slide', 'pitchBend', 'channel'] as const;
 const MIDI_CC_KEYS = ['id', 'controller', 'value', 'beat', 'channel'] as const;
@@ -42,6 +51,10 @@ function is_plain_object(value: unknown): value is { [key: string]: unknown } {
 
 function is_finite_number(value: unknown): value is number {
     return typeof value === 'number' && Number.isFinite(value);
+}
+
+export function isValidMidiProbabilitySeed(value: unknown): value is number {
+    return is_finite_number(value) && Number.isInteger(value) && value >= 0 && value <= 0xffff_ffff;
 }
 
 function is_valid_midi_note(value: unknown): value is MidiNote {
@@ -220,42 +233,100 @@ function is_exact_midi_store_state(value: unknown): value is MidiStoreState {
     return (
         is_plain_object(value) &&
         has_exact_keys({ value, required_keys: MIDI_STORE_STATE_KEYS }) &&
+        isValidMidiProbabilitySeed(value.probabilitySeed) &&
         is_exact_note_clip_map(value.notesByClipId) &&
         is_exact_cc_clip_map(value.ccByClipId) &&
         is_exact_pitch_bend_clip_map(value.pitchBendByClipId)
     );
 }
 
-export function sanitize_midi_store_state(value: unknown): MidiStoreState {
-    if (is_exact_midi_store_state(value)) {
-        return value;
+export function sanitize_midi_store_state(
+    value: unknown,
+    probabilitySeedFallback = LEGACY_MIDI_PROBABILITY_SEED
+): MidiStoreState {
+    if (!is_plain_object(value)) {
+        return { ...defaultMidiStoreState, probabilitySeed: probabilitySeedFallback };
     }
 
-    if (!is_plain_object(value)) {
-        return defaultMidiStoreState;
+    let probabilitySeed = probabilitySeedFallback;
+    let candidate = value;
+    if (isValidMidiProbabilitySeed(value.probabilitySeed)) {
+        probabilitySeed = value.probabilitySeed;
+    } else {
+        candidate = { ...value, probabilitySeed };
+    }
+    if (is_exact_midi_store_state(candidate)) {
+        return candidate;
     }
 
     return {
+        probabilitySeed,
         notesByClipId: normalize_clip_map({
-            value: value.notesByClipId,
+            value: candidate.notesByClipId,
             is_valid_row: is_valid_midi_note,
             normalize_row: normalize_midi_note,
         }),
         ccByClipId: normalize_clip_map({
-            value: value.ccByClipId,
+            value: candidate.ccByClipId,
             is_valid_row: is_valid_midi_cc,
             normalize_row: normalize_midi_cc,
         }),
         pitchBendByClipId: normalize_clip_map({
-            value: value.pitchBendByClipId,
+            value: candidate.pitchBendByClipId,
             is_valid_row: is_valid_midi_pitch_bend,
             normalize_row: normalize_midi_pitch_bend,
         }),
     };
 }
 
-export const midiStore = createStore<MidiStoreState>({
-    storage: createAutomergeStorage(DOC_PREFIX_ROOT, 'midi'),
+type MidiStore = Omit<Store<MidiStoreState>, 'set' | 'update'> & {
+    set(value: MidiStoreStateInput | null): void;
+    update(updater: (current: MidiStoreState | null) => MidiStoreStateInput | null): void;
+};
+
+const runtimeMidiStore = createStore<MidiStoreState>({
+    storage: createAutomergeStorage(DOC_PREFIX_ROOT, 'midi', {
+        hydrateMissing: () => defaultMidiStoreState,
+    }),
     initialData: defaultMidiStoreState,
     sanitize: sanitize_midi_store_state,
 });
+
+export const midiStore: MidiStore = {
+    get value(): MidiStoreState | null {
+        return runtimeMidiStore.value;
+    },
+
+    set(value: MidiStoreStateInput | null): void {
+        if (value === null) {
+            runtimeMidiStore.set(null);
+            return;
+        }
+        const probabilitySeedFallback = runtimeMidiStore.value?.probabilitySeed ?? LEGACY_MIDI_PROBABILITY_SEED;
+        runtimeMidiStore.set(sanitize_midi_store_state(value, probabilitySeedFallback));
+    },
+
+    update(updater: (current: MidiStoreState | null) => MidiStoreStateInput | null): void {
+        midiStore.set(updater(runtimeMidiStore.value));
+    },
+
+    clear(): void {
+        runtimeMidiStore.clear();
+    },
+
+    hydrate(): void {
+        runtimeMidiStore.hydrate();
+    },
+
+    subscribe(callback: (value: MidiStoreState | null) => void): () => void {
+        return runtimeMidiStore.subscribe(callback);
+    },
+
+    subscribeReact(listener: () => void): () => void {
+        return runtimeMidiStore.subscribeReact(listener);
+    },
+
+    getSnapshot(): MidiStoreState | null {
+        return runtimeMidiStore.getSnapshot();
+    },
+};

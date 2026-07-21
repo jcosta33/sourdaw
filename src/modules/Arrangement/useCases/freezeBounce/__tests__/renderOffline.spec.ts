@@ -15,7 +15,22 @@ import type {
     projectOfflineYeastTrackNotes,
 } from '#/modules/AudioEngine/useCases';
 
-type MidiStoreNote = { id: string; pitch: number; startBeat: number; duration: number; velocity: number };
+type MidiStoreNote = {
+    id: string;
+    pitch: number;
+    startBeat: number;
+    duration: number;
+    velocity: number;
+    probability?: number;
+};
+
+type MidiProbabilitySelectionInput = {
+    projectProbabilitySeed: number;
+    clipId: string;
+    eventId: string;
+    absoluteOccurrenceIndex: number;
+    probabilityPercent: number;
+};
 
 type RenderOfflineMocks = {
     buildDeviceChain: Mock<typeof buildDeviceChain>;
@@ -23,11 +38,12 @@ type RenderOfflineMocks = {
     getCachedAudioBuffer: Mock<typeof getCachedAudioBuffer>;
     getUpstreamSubgraph: Mock<() => Set<string>>;
     trackStore: { value: unknown };
-    midiStore: { value: { notesByClipId: Record<string, MidiStoreNote[]> } | null };
+    midiStore: { value: { notesByClipId: Record<string, MidiStoreNote[]>; probabilitySeed?: number } | null };
     transportStore: { value: unknown };
     tempoMapStore: { value: unknown };
     projectClipMidiEvents: Mock<typeof projectClipMidiEvents>;
     projectOfflineYeastTrackNotes: Mock<typeof projectOfflineYeastTrackNotes>;
+    selectMidiEventProbability: Mock<(input: MidiProbabilitySelectionInput) => boolean>;
 };
 
 const mocks = vi.hoisted<RenderOfflineMocks>(() => ({
@@ -41,6 +57,7 @@ const mocks = vi.hoisted<RenderOfflineMocks>(() => ({
     tempoMapStore: { value: { changes: [] } },
     projectClipMidiEvents: vi.fn<typeof projectClipMidiEvents>(),
     projectOfflineYeastTrackNotes: vi.fn<typeof projectOfflineYeastTrackNotes>(() => []),
+    selectMidiEventProbability: vi.fn<(input: MidiProbabilitySelectionInput) => boolean>(() => true),
 }));
 
 vi.mock('#/modules/AudioEngine/useCases', () => ({
@@ -263,6 +280,7 @@ describe('renderTrackOffline', () => {
             },
             createYeastMidiProcessor: () => (input) =>
                 input.events.map((event) => ({ ...event, timePpq: event.timePpq ?? 0 })),
+            selectMidiEventProbability: mocks.selectMidiEventProbability,
         });
         mocks.projectClipMidiEvents.mockImplementation((input) =>
             input.events.map((event) => ({
@@ -271,6 +289,7 @@ describe('renderTrackOffline', () => {
             }))
         );
         mocks.projectOfflineYeastTrackNotes.mockReturnValue([]);
+        mocks.selectMidiEventProbability.mockReturnValue(true);
     });
 
     it('should not build a device chain for non-audio non-midi tracks', async () => {
@@ -335,6 +354,101 @@ describe('renderTrackOffline', () => {
         });
         expect(createdOscillators[0]?.start).toHaveBeenCalledWith(0.75);
         expect(createdGains.at(-1)?.gain.linearRampToValueAtTime).toHaveBeenCalledWith((40 / 127) * 0.3, 0.755);
+    });
+
+    it.each([
+        { label: 'without Yeast', hasYeast: false },
+        { label: 'with Yeast', hasYeast: true },
+    ])('filters loop iterations by project probability $label', async ({ hasYeast }) => {
+        const clip = ClipDummy.create({
+            id: 'clip-probability',
+            trackId: 'track-midi',
+            type: 'midi',
+            startBeat: 4,
+            endBeat: 8,
+            loopEnabled: true,
+            loopLength: 2,
+        });
+        let devices: Track['devices'] = [];
+        if (hasYeast) {
+            devices = [{ id: 'yeast', name: 'Yeast', type: 'yeast', bypassed: false, parameterValues: {} }];
+        }
+        const track = TrackDummy.create({ id: 'track-midi', kind: 'midi', clips: [clip], devices });
+        const defaultProbabilityNote = {
+            id: 'note-default',
+            pitch: 60,
+            startBeat: 0,
+            duration: 1,
+            velocity: 100,
+        };
+        const zeroProbabilityNote = {
+            id: 'note-zero',
+            pitch: 62,
+            startBeat: 1,
+            duration: 1,
+            velocity: 100,
+            probability: 0,
+        };
+        mocks.trackStore.value = { tracks: [track], selectedTrackId: track.id, ghostClips: [] };
+        mocks.midiStore.value = {
+            notesByClipId: { [clip.id]: [defaultProbabilityNote, zeroProbabilityNote] },
+            probabilitySeed: 0xdecafbad,
+        };
+        mocks.transportStore.value = { tempo: 120 };
+        mocks.selectMidiEventProbability.mockImplementation((input) => input.probabilityPercent > 0);
+
+        await renderTrackOffline(track, 4, 8, { includeInserts: false });
+
+        expect(mocks.selectMidiEventProbability).toHaveBeenCalledTimes(4);
+        expect(mocks.selectMidiEventProbability).toHaveBeenNthCalledWith(1, {
+            projectProbabilitySeed: 0xdecafbad,
+            clipId: clip.id,
+            eventId: defaultProbabilityNote.id,
+            absoluteOccurrenceIndex: 0,
+            probabilityPercent: 100,
+        });
+        expect(mocks.selectMidiEventProbability).toHaveBeenNthCalledWith(2, {
+            projectProbabilitySeed: 0xdecafbad,
+            clipId: clip.id,
+            eventId: zeroProbabilityNote.id,
+            absoluteOccurrenceIndex: 0,
+            probabilityPercent: 0,
+        });
+        expect(mocks.selectMidiEventProbability).toHaveBeenNthCalledWith(3, {
+            projectProbabilitySeed: 0xdecafbad,
+            clipId: clip.id,
+            eventId: defaultProbabilityNote.id,
+            absoluteOccurrenceIndex: 1,
+            probabilityPercent: 100,
+        });
+        expect(mocks.selectMidiEventProbability).toHaveBeenNthCalledWith(4, {
+            projectProbabilitySeed: 0xdecafbad,
+            clipId: clip.id,
+            eventId: zeroProbabilityNote.id,
+            absoluteOccurrenceIndex: 1,
+            probabilityPercent: 0,
+        });
+
+        if (hasYeast) {
+            expect(mocks.projectOfflineYeastTrackNotes).toHaveBeenCalledWith(
+                expect.objectContaining({
+                    iterations: [
+                        expect.objectContaining({ sourceNotes: [defaultProbabilityNote] }),
+                        expect.objectContaining({ sourceNotes: [defaultProbabilityNote] }),
+                    ],
+                })
+            );
+            return;
+        }
+
+        expect(mocks.projectClipMidiEvents).toHaveBeenNthCalledWith(
+            1,
+            expect.objectContaining({ events: [defaultProbabilityNote] })
+        );
+        expect(mocks.projectClipMidiEvents).toHaveBeenNthCalledWith(
+            2,
+            expect.objectContaining({ events: [defaultProbabilityNote] })
+        );
     });
 
     it('drives a source-free Yeast generator for an empty clip but not without an eligible clip', async () => {
