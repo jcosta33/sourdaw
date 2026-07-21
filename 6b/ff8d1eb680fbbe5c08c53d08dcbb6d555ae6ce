@@ -1,0 +1,25 @@
+src/modules/AudioEngine/CLAUDE.md
+  s_2cf3b16a6bbafd::t_db1141a971e428 1
+src/modules/AudioEngine/GEMINI.md
+  s_2cf3b16a6bbafd::t_7b704df8b9136d 1
+src/modules/Collaboration/CLAUDE.md
+  s_2cf3b16a6bbafd::t_557610a820cbc4 1
+src/modules/Collaboration/GEMINI.md
+  s_2cf3b16a6bbafd::t_8dc0ee49750b86 1
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "6bff8d1eb680fbbe5c08c53d08dcbb6d555ae6ce",
+  "prompts": {},
+  "sessions": {
+    "s_2cf3b16a6bbafd": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f85e9-d510-7c62-b8cb-232d5707ede3",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
