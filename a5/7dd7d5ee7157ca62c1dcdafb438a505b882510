@@ -1,0 +1,21 @@
+docs/06-testing.md
+  s_c2fca615e81f34::t_cdbf2a9ecd5e8e 224
+tsconfig.test.json
+  s_c2fca615e81f34::t_34c8630fbd06a2 2-6
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "a57dd7d5ee7157ca62c1dcdafb438a505b882510",
+  "prompts": {},
+  "sessions": {
+    "s_c2fca615e81f34": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f74e9-e1c5-7142-85d2-4c577b3973c0",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
