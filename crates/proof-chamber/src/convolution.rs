@@ -100,8 +100,12 @@ struct ConvStage {
     fdl_pos: usize,
     input_acc: Vec<f32>,
     input_acc_pos: usize,
-    overlap_buf: Vec<f32>,
-    output_pos: usize,
+    // Overlap-add state. `emit_buf` holds the fully summed output block
+    // (first half of the IFFT plus the tail carried from the previous
+    // block); `tail_buf` carries this block's second half forward.
+    emit_buf: Vec<f32>,
+    tail_buf: Vec<f32>,
+    emit_pos: usize,
 }
 
 impl ConvStage {
@@ -139,8 +143,12 @@ impl ConvStage {
             fdl_pos: 0,
             input_acc: vec![0.0; partition_size],
             input_acc_pos: 0,
-            overlap_buf: vec![0.0; fft_size],
-            output_pos: partition_size, // start reading from second half (delay = partition_size)
+            emit_buf: vec![0.0; partition_size],
+            tail_buf: vec![0.0; partition_size],
+            // The first output block is silent: a block's convolution can only
+            // be emitted while the next block accumulates, so the stage has an
+            // inherent one-partition streaming latency.
+            emit_pos: partition_size,
         }
     }
 
@@ -150,16 +158,16 @@ impl ConvStage {
         self.input_acc[self.input_acc_pos] = input;
         self.input_acc_pos += 1;
 
-        let output = if self.output_pos < self.fft_size {
-            self.overlap_buf[self.output_pos]
+        let output = if self.emit_pos < self.partition_size {
+            self.emit_buf[self.emit_pos]
         } else {
             0.0
         };
-        self.output_pos += 1;
+        self.emit_pos += 1;
 
         if self.input_acc_pos >= self.partition_size {
             self.input_acc_pos = 0;
-            self.output_pos = self.partition_size;
+            self.emit_pos = 0;
 
             let mut in_re = vec![0.0_f32; self.fft_size];
             let mut in_im = vec![0.0_f32; self.fft_size];
@@ -193,7 +201,17 @@ impl ConvStage {
             }
 
             fft(&mut acc_re, &mut acc_im, true);
-            self.overlap_buf = acc_re;
+
+            // Overlap-add: the linear convolution of this block is the first
+            // half of the IFFT summed with the second half carried from the
+            // previous block. Carry this block's second half forward.
+            // (Previously the buffer was *replaced* and only the second half
+            // was emitted — the correct first half was discarded every block,
+            // so an impulse produced essentially zero tail output.)
+            for i in 0..self.partition_size {
+                self.emit_buf[i] = acc_re[i] + self.tail_buf[i];
+                self.tail_buf[i] = acc_re[self.partition_size + i];
+            }
         }
 
         output
@@ -494,4 +512,142 @@ fn build_stages(tail: &[f32]) -> Vec<ConvStage> {
     }
 
     stages
+}
+
+// ---------------------------------------------------------------------------
+// Tests
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod tests {
+    use super::ConvolutionEngine;
+
+    /// Deterministic decaying-noise IR. The generator must be spectrally
+    /// white at the stage-delay lags (a multiply-without-carries hash is
+    /// pathologically correlated at lag 1792 and would fake an energy
+    /// deficit in the stage-overlap region).
+    fn make_ir(len: usize) -> Vec<f32> {
+        let mut state = 12345_u32;
+        (0..len)
+            .map(|i| {
+                state = state.wrapping_mul(1664525).wrapping_add(1013904223);
+                let noise = ((state >> 8) as f32 / (1 << 24) as f32) * 2.0 - 1.0;
+                noise * (-(i as f32) / 1500.0).exp()
+            })
+            .collect()
+    }
+
+    /// Run the engine over `input` (fed identically on both channels) with
+    /// mix = 1.0, in host-sized blocks, returning the wet left channel.
+    fn run_engine(ir: &[f32], input: &[f32]) -> Vec<f32> {
+        let mut engine = ConvolutionEngine::new(48_000.0);
+        engine.load_ir(ir, 1);
+        engine.set_param("mix", 1.0);
+
+        let mut left = input.to_vec();
+        let mut right = input.to_vec();
+        for start in (0..left.len()).step_by(1024) {
+            let end = (start + 1024).min(left.len());
+            engine.process(&mut left[start..end], &mut right[start..end]);
+        }
+        left
+    }
+
+    /// Naive time-domain convolution, used as the ground-truth reference.
+    fn reference_convolution(input: &[f32], ir: &[f32]) -> Vec<f32> {
+        let mut out = vec![0.0_f32; input.len() + ir.len() - 1];
+        for (n, &x) in input.iter().enumerate() {
+            if x == 0.0 {
+                continue;
+            }
+            for (k, &h) in ir.iter().enumerate() {
+                out[n + k] += x * h;
+            }
+        }
+        out
+    }
+
+    #[test]
+    fn impulse_produces_tail_energy_matching_reference_convolution() {
+        // 6000 samples: head (128) + stage 1 (2048) + a stage-2 crossing.
+        let ir = make_ir(6000);
+        let mut input = vec![0.0_f32; 8192];
+        input[0] = 1.0;
+
+        let out = run_engine(&ir, &input);
+        let reference = reference_convolution(&input, &ir);
+
+        let engine_energy: f32 = out.iter().map(|s| s * s).sum();
+        let reference_energy: f32 = reference.iter().map(|s| s * s).sum();
+        assert!(
+            (engine_energy - reference_energy).abs() / reference_energy < 0.05,
+            "total wet energy must match true convolution (engine={engine_energy}, reference={reference_energy})"
+        );
+
+        // The decisive assertion for the discarded-tail bug: pre-fix the tail
+        // stages emitted ~1e-14 total; the head alone cannot reach this bound.
+        let tail_energy: f32 = out[256..].iter().map(|s| s * s).sum();
+        assert!(
+            tail_energy > 0.5 * reference_energy,
+            "tail stages must contribute the bulk of the response (tail={tail_energy}, total={reference_energy})"
+        );
+    }
+
+    #[test]
+    fn dc_input_converges_to_ir_sum_without_tearing() {
+        // Positive decaying IR: the steady-state DC response is exactly the IR
+        // sum. The discarded-tail bug tore this to a small oscillating
+        // fraction of the true value.
+        let ir: Vec<f32> = (0..2000).map(|i| (-(i as f32) / 800.0).exp()).collect();
+        let input = vec![1.0_f32; 8192];
+
+        let out = run_engine(&ir, &input);
+
+        let ir_sum: f32 = ir.iter().sum();
+        for (n, &s) in out.iter().enumerate().skip(4096) {
+            assert!(
+                (s - ir_sum).abs() / ir_sum < 0.01,
+                "steady-state DC output must equal the IR sum (n={n}, out={s}, ir_sum={ir_sum})"
+            );
+        }
+    }
+
+    #[test]
+    fn sine_output_is_continuous_across_partition_boundaries() {
+        // IR long enough to cross the stage-1/stage-2 partition boundary.
+        let ir = make_ir(6000);
+        let input: Vec<f32> = (0..16384)
+            .map(|n| (n as f32 * 2.0 * std::f32::consts::PI * 440.0 / 48_000.0).sin() * 0.5)
+            .collect();
+
+        let out = run_engine(&ir, &input);
+
+        // An LTI system driven by a steady sine reaches constant-amplitude
+        // steady state. Compare against the true convolution: pre-fix this
+        // ratio was 2.14 (torn leakage coherently amplifies a continuous
+        // tone); with correct overlap-add it sits near 1.0 — the residual
+        // spread is incoherent cross-stage overlap with a noise IR.
+        let reference = reference_convolution(&input, &ir);
+        let rms =
+            |slice: &[f32]| (slice.iter().map(|s| s * s).sum::<f32>() / slice.len() as f32).sqrt();
+        let engine_rms = rms(&out[8192..]);
+        let reference_rms = rms(&reference[8192..input.len()]);
+        let ratio = engine_rms / reference_rms;
+        assert!(
+            (ratio - 1.0).abs() < 0.15,
+            "steady-state sine response must match true convolution (engine={engine_rms}, reference={reference_rms}, ratio={ratio})"
+        );
+
+        // No periodic amplitude tearing across partition boundaries either.
+        let block_rms: Vec<f32> = out[8192..]
+            .chunks(256)
+            .map(|chunk| (chunk.iter().map(|s| s * s).sum::<f32>() / chunk.len() as f32).sqrt())
+            .collect();
+        let max_rms = block_rms.iter().copied().fold(0.0_f32, f32::max);
+        let min_rms = block_rms.iter().copied().fold(f32::MAX, f32::min);
+        assert!(
+            min_rms > 0.5 * max_rms,
+            "steady-state sine RMS must not tear across partition boundaries (min={min_rms}, max={max_rms})"
+        );
+    }
 }

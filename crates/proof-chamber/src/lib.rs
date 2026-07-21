@@ -160,10 +160,12 @@ impl ProofChamberInstance {
     }
 
     /// Report plugin latency in samples for PDC (delay compensation).
-    /// The convolution head size is the minimum latency.
+    /// The time-domain convolution head is zero-latency; the FFT tail stages
+    /// each emit a block while the next one accumulates, so the first tail
+    /// stage (256-sample partitions) sets the wet path's latency floor.
     pub fn get_latency(&self) -> u32 {
         match &self.engine {
-            ReverbEngine::Convolution(_) => 128, // HEAD_SIZE
+            ReverbEngine::Convolution(_) => 256, // first tail-stage partition size
             ReverbEngine::Hybrid(_) => 128,
             _ => 0, // algorithmic reverbs have zero latency
         }
@@ -191,5 +193,24 @@ impl ProofChamberInstance {
         };
         names.extend(engine_names);
         serde_json::to_string(&names).unwrap_or_else(|_| "[]".to_string())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::ProofChamberInstance;
+
+    #[test]
+    fn convolution_latency_matches_first_tail_stage_partition() {
+        let mut instance = ProofChamberInstance::new(48_000.0);
+        // Algorithmic engines report zero latency.
+        assert_eq!(instance.get_latency(), 0);
+
+        instance.set_param("algorithm", 4.0); // Convolution
+        assert_eq!(
+            instance.get_latency(),
+            256,
+            "time-domain head is zero-latency; each FFT tail stage emits a block while the next accumulates, so the first stage's 256-sample partition sets the wet path's latency floor"
+        );
     }
 }
