@@ -1,0 +1,29 @@
+crates/daw-dsp/src/grand_boule/pedals.rs
+  s_c2fca615e81f34::t_1c177098bd2087 154-158
+crates/daw-dsp/src/grand_boule/engine.rs
+  s_ac9b259eab20ba::t_71cc34ca835a3e 319-321,323-350,545-632
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "b1dc5bd6279df18b32ee34d3400f9bfa152c0d18",
+  "prompts": {},
+  "sessions": {
+    "s_ac9b259eab20ba": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8699-3865-7842-8c54-afbac6cfd266",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_c2fca615e81f34": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f74e9-e1c5-7142-85d2-4c577b3973c0",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
