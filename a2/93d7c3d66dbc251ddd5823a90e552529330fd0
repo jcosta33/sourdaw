@@ -1,0 +1,127 @@
+AGENTS.md
+  s_4a3a9ac19de269::t_411f319ce80834 20-24,26-29,31-49
+  s_4a3a9ac19de269::t_b2d431cc8b9559 30
+  s_8a42859ca8d13e::t_ede6276c0b9d54 79,83,98,100
+crates/daw-dsp/CLAUDE.md
+  s_4a3a9ac19de269::t_06f9ae11a536bc 1
+crates/daw-dsp/GEMINI.md
+  s_4a3a9ac19de269::t_ca24fefd9eb98a 1
+src-tauri/CLAUDE.md
+  s_4a3a9ac19de269::t_4f979771930591 1
+src-tauri/GEMINI.md
+  s_4a3a9ac19de269::t_540a8a38a476b7 1
+src/components/CLAUDE.md
+  s_4a3a9ac19de269::t_fb9247cc73f178 1
+src/components/GEMINI.md
+  s_4a3a9ac19de269::t_53097d0acfe46d 1
+src/modules/AudioEngine/CLAUDE.md
+  s_4a3a9ac19de269::t_ae9e23808a0ce2 1
+src/modules/AudioEngine/GEMINI.md
+  s_4a3a9ac19de269::t_33e79ca245e951 1
+src/modules/Collaboration/CLAUDE.md
+  s_4a3a9ac19de269::t_43b4228de627e1 1
+src/modules/Collaboration/GEMINI.md
+  s_4a3a9ac19de269::t_49cf40615c5acd 1
+.agents/skills/architecture-violations/SKILL.md
+  s_c28df7d3dde4b9::t_b011dfc2948f81 131
+.agents/skills/architecture/SKILL.md
+  s_c2fca615e81f34::t_edf1430d2ad9af 60
+.agents/skills/state-and-write-paths/SKILL.md
+  s_c28df7d3dde4b9::t_ef56caac57b67a 29,130
+.agents/skills/tauri-platform/SKILL.md
+  s_c28df7d3dde4b9::t_e3b4f69acce6ee 122
+.agents/skills/ui-patterns/SKILL.md
+  s_c2fca615e81f34::t_66e0e95e649e6e 60
+.agents/skills/web-audio-engine/SKILL.md
+  s_c28df7d3dde4b9::t_89991db5c8189b 123-124
+crates/daw-dsp/AGENTS.md
+  s_4a17f0114d6cd3::t_4d1e73144aedd3 1-15
+docs/02-forms.md
+  s_c2fca615e81f34::t_f3f130741c7722 5-6
+docs/03-state-management.md
+  s_7475f7f4c58c43::t_6200669fa9ca5f 3,49,89,147
+docs/04-events.md
+  s_7475f7f4c58c43::t_9c7d1284b07ea7 69,72-75,123,143,161,205-206
+docs/05-accessibility.md
+  s_c28df7d3dde4b9::t_215e773548a8f0 72
+docs/06-testing.md
+  s_8a42859ca8d13e::t_1a2b2f282ac0a6 11,41,602,605-606
+docs/07-conventions.md
+  s_7475f7f4c58c43::t_75bc85b584bc71 83,88,469,698-700
+docs/README.md
+  s_7475f7f4c58c43::t_e11eb317ffbefd 5,15,17,27
+docs/architecture/01-system.md
+  s_7475f7f4c58c43::t_7c62734ace0f4e 20-21
+docs/architecture/02-rust-backend.md
+  s_8a42859ca8d13e::t_3212a6810ac923 119-120,329
+docs/architecture/03-typescript-module.md
+  s_7475f7f4c58c43::t_1bd18dad6b84b9 43,203-206,209-210,215-217,219-220,225-226,229-230,897,978-979,991,1003-1004,1016-1017,1116
+docs/architecture/05-boundary-enforcement-limits.md
+  s_c28df7d3dde4b9::t_3d6e3fd28e2b38 55
+docs/modern-primitives.md
+  s_8a42859ca8d13e::t_56772b3bd5c1ca 5,80-81,110,112
+src-tauri/AGENTS.md
+  s_7475f7f4c58c43::t_d6caffa4db8d17 1-25
+src/components/AGENTS.md
+  s_c2fca615e81f34::t_503183becaa732 1-19
+src/modules/AudioEngine/AGENTS.md
+  s_4a17f0114d6cd3::t_17d52378dca5d8 1-19
+src/modules/Collaboration/AGENTS.md
+  s_4a17f0114d6cd3::t_3c4f7ae1db6178 1-13
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "a293d7c3d66dbc251ddd5823a90e552529330fd0",
+  "prompts": {},
+  "sessions": {
+    "s_4a17f0114d6cd3": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-af8e30ca12b20ebdc",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_4a3a9ac19de269": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "4a1953fb-b074-451f-a9e0-2edbbc4fbbf3",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_7475f7f4c58c43": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f80f5-432b-7962-b884-92c9a0f55e05",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_8a42859ca8d13e": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f815b-e935-7362-a244-b4356f556bdd",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_c28df7d3dde4b9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f80f4-c597-7162-a337-9e68c16e3fb4",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_c2fca615e81f34": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f74e9-e1c5-7142-85d2-4c577b3973c0",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
