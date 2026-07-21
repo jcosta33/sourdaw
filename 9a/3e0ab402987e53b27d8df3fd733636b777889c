@@ -1,0 +1,31 @@
+src/modules/Arrangement/stores/__tests__/trackEligibility.spec.ts
+  s_70dfac9e909f7f::t_c7541ad2e4b4b6 1,24-29,86,114-119
+src/modules/Arrangement/stores/trackEligibility.ts
+  s_70dfac9e909f7f::t_f4cf25c7b6c1ee 109,125
+src/modules/AudioEngine/useCases/offlineRender/shouldCreateOfflineStrip.ts
+  s_00eee6c678eb0b::t_db2880d8712bea 6
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "9a3e0ab402987e53b27d8df3fd733636b777889c",
+  "prompts": {},
+  "sessions": {
+    "s_00eee6c678eb0b": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f82a1-27bf-7c10-8ad1-a59cec86134d",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_70dfac9e909f7f": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8290-4e77-73b2-8a76-2d4ecec0634e",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
