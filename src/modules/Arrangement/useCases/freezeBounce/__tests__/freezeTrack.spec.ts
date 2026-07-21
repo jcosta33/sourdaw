@@ -58,6 +58,7 @@ describe('freezeTrack', () => {
             tracks: [
                 {
                     id: 't1',
+                    kind: 'audio',
                     clips: [{ startBeat: 2, endBeat: 6 }],
                     devices: [],
                     freezeState: { status: 'unfrozen' },
@@ -128,6 +129,7 @@ describe('freezeTrack', () => {
             tracks: [
                 {
                     id: 't1',
+                    kind: 'audio',
                     clips: [],
                     devices: [],
                     freezeState: { status: 'unfrozen' },
@@ -161,6 +163,7 @@ describe('freezeTrack', () => {
             tracks: [
                 {
                     id: 't1',
+                    kind: 'audio',
                     clips: [],
                     devices: [],
                     freezeState: { status: 'unfrozen' },

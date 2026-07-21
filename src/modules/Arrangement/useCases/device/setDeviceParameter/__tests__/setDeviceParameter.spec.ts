@@ -52,7 +52,7 @@ describe('setDeviceParameter', () => {
 
     it('updates parameter in store and engine', () => {
         mocks.getTrackState.mockReturnValue({
-            tracks: [{ id: 't1', devices: [{ id: 'd1', parameterValues: { gain: 0.1 } }] }],
+            tracks: [{ id: 't1', kind: 'audio', devices: [{ id: 'd1', parameterValues: { gain: 0.1 } }] }],
         } as unknown as TrackState);
 
         setDeviceParameter('d1', 'gain', 0.5);
@@ -67,7 +67,7 @@ describe('setDeviceParameter', () => {
 
     it('records automation if playing and recording mode', () => {
         mocks.getTrackState.mockReturnValue({
-            tracks: [{ id: 't1', automationMode: 'write', devices: [{ id: 'd1' }] }],
+            tracks: [{ id: 't1', kind: 'audio', automationMode: 'write', devices: [{ id: 'd1' }] }],
         } as unknown as TrackState);
         mocks.transportStoreValue = { isPlaying: true, playheadPosition: 8 };
 

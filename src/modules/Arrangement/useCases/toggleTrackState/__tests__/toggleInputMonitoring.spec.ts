@@ -44,7 +44,7 @@ describe('toggleInputMonitoring', () => {
     });
 
     function advance(from: InputMonitoring): InputMonitoring {
-        mocks.getTrackById.mockReturnValue({ id: 't1', inputMonitoring: from });
+        mocks.getTrackById.mockReturnValue({ id: 't1', kind: 'audio', inputMonitoring: from });
         toggleInputMonitoring('t1');
         const patch = mocks.updateTrack.mock.calls.at(-1)![1] as (t: { inputMonitoring: InputMonitoring }) => {
             inputMonitoring: InputMonitoring;
