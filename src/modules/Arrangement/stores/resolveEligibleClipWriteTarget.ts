@@ -1,5 +1,5 @@
 import { getTrackEligibility } from './trackEligibility';
-import { trackStore } from './trackStore';
+import { type Clip, type Track, type TrackStoreState, trackStore } from './trackStore';
 
 type EligibleClipAddTarget = Readonly<{
     status: 'eligible';
@@ -25,17 +25,25 @@ type TrackEligibilityKind = Parameters<typeof getTrackEligibility>[0];
 
 type NormalizedClipOwner = Readonly<{
     id: string;
+    source: Clip;
 }>;
 
 type NormalizedTrackOwner = Readonly<{
     id: string;
     kind: TrackEligibilityKind;
+    source: Track;
+    snapshot: Track;
     clips: ReadonlyArray<NormalizedClipOwner>;
+    acceptsClipAdd: boolean;
+    acceptsClipUpdate: boolean;
 }>;
 
 type NormalizedStore = Readonly<{
     status: 'valid';
+    snapshot: TrackStoreState;
     tracks: ReadonlyArray<NormalizedTrackOwner>;
+    tracksById: ReadonlyMap<string, NormalizedTrackOwner>;
+    clipsById: ReadonlyMap<string, NormalizedTrackOwner>;
 }>;
 
 type UnresolvedStore = Readonly<{
@@ -46,6 +54,8 @@ type StoreNormalization = NormalizedStore | UnresolvedStore;
 
 const INELIGIBLE: ClipWriteTargetResolution = Object.freeze({ status: 'ineligible' });
 const MISSING: ClipWriteTargetResolution = Object.freeze({ status: 'missing' });
+const INELIGIBLE_STORE: StoreNormalization = Object.freeze({ status: 'ineligible' });
+const MISSING_STORE: StoreNormalization = Object.freeze({ status: 'missing' });
 
 function isObject(value: unknown): value is object {
     return value !== null && typeof value === 'object';
@@ -62,92 +72,128 @@ function isTrackEligibilityKind(value: unknown): value is TrackEligibilityKind {
     );
 }
 
-function normalizeStore(): StoreNormalization {
-    const state: unknown = trackStore.value;
-    if (!isObject(state)) {
-        return { status: 'missing' };
+function normalizeStore(state: TrackStoreState | null | undefined): StoreNormalization {
+    if (state === null || state === undefined) {
+        return MISSING_STORE;
     }
 
-    const candidates: unknown = Reflect.get(state, 'tracks');
-    if (!Array.isArray(candidates)) {
-        return { status: 'ineligible' };
+    const runtimeState: unknown = state;
+    if (!isObject(runtimeState)) {
+        return INELIGIBLE_STORE;
     }
 
-    const trackIds = new Set<string>();
+    const snapshot = { ...state };
+    const runtimeCandidates: unknown = snapshot.tracks;
+    if (!Array.isArray(runtimeCandidates)) {
+        return INELIGIBLE_STORE;
+    }
+    const candidates = snapshot.tracks;
+
+    const tracksById = new Map<string, NormalizedTrackOwner>();
+    const clipsById = new Map<string, NormalizedTrackOwner>();
     const clipIds = new Set<string>();
     const tracks: NormalizedTrackOwner[] = [];
 
     for (const candidate of candidates) {
-        if (!isObject(candidate)) {
-            return { status: 'ineligible' };
+        const runtimeCandidate: unknown = candidate;
+        if (!isObject(runtimeCandidate)) {
+            return INELIGIBLE_STORE;
         }
 
-        const trackId: unknown = Reflect.get(candidate, 'id');
-        const kind: unknown = Reflect.get(candidate, 'kind');
-        const clipCandidates: unknown = Reflect.get(candidate, 'clips');
+        const trackSnapshot = { ...candidate };
+        const trackId: unknown = trackSnapshot.id;
+        const kind: unknown = trackSnapshot.kind;
+        const runtimeClipCandidates: unknown = trackSnapshot.clips;
         if (
             typeof trackId !== 'string' ||
             trackId.length === 0 ||
             !isTrackEligibilityKind(kind) ||
-            !Array.isArray(clipCandidates)
+            !Array.isArray(runtimeClipCandidates)
         ) {
-            return { status: 'ineligible' };
+            return INELIGIBLE_STORE;
         }
+        const clipCandidates = trackSnapshot.clips;
 
-        if (trackIds.has(trackId)) {
-            return { status: 'ineligible' };
+        if (tracksById.has(trackId)) {
+            return INELIGIBLE_STORE;
         }
-        trackIds.add(trackId);
 
         const clips: NormalizedClipOwner[] = [];
         for (const clipCandidate of clipCandidates) {
-            if (!isObject(clipCandidate)) {
-                return { status: 'ineligible' };
+            const runtimeClipCandidate: unknown = clipCandidate;
+            if (!isObject(runtimeClipCandidate)) {
+                return INELIGIBLE_STORE;
             }
 
-            const clipId: unknown = Reflect.get(clipCandidate, 'id');
-            const clipTrackId: unknown = Reflect.get(clipCandidate, 'trackId');
+            const clipSnapshot = { ...clipCandidate };
+            const clipId: unknown = clipSnapshot.id;
+            const clipTrackId: unknown = clipSnapshot.trackId;
             if (typeof clipId !== 'string' || clipId.length === 0 || clipTrackId !== trackId || clipIds.has(clipId)) {
-                return { status: 'ineligible' };
+                return INELIGIBLE_STORE;
             }
 
             clipIds.add(clipId);
-            clips.push({ id: clipId });
+            clips.push(Object.freeze({ id: clipId, source: clipCandidate }));
         }
 
-        tracks.push({ id: trackId, kind, clips });
+        const eligibility = getTrackEligibility(kind);
+        const owner = Object.freeze({
+            id: trackId,
+            kind,
+            source: candidate,
+            snapshot: trackSnapshot,
+            clips: Object.freeze(clips),
+            acceptsClipAdd: eligibility.acceptsClipAdd,
+            acceptsClipUpdate: eligibility.acceptsClipUpdate,
+        });
+        tracksById.set(trackId, owner);
+        for (const clip of clips) {
+            clipsById.set(clip.id, owner);
+        }
+        tracks.push(owner);
     }
 
-    return { status: 'valid', tracks };
+    return Object.freeze({
+        status: 'valid',
+        snapshot: Object.freeze(snapshot),
+        tracks: Object.freeze(tracks),
+        tracksById,
+        clipsById,
+    });
 }
 
-function resolveTrackTarget(tracks: ReadonlyArray<NormalizedTrackOwner>, trackId: string): ClipWriteTargetResolution {
-    const owner = tracks.find((track) => track.id === trackId);
+export function createClipWriteTargetIndex(state: TrackStoreState | null | undefined): StoreNormalization {
+    try {
+        return normalizeStore(state);
+    } catch {
+        return INELIGIBLE_STORE;
+    }
+}
+
+function resolveTrackTarget(store: NormalizedStore, trackId: string): ClipWriteTargetResolution {
+    const owner = store.tracksById.get(trackId);
     if (!owner) {
         return MISSING;
     }
 
-    if (!getTrackEligibility(owner.kind).acceptsClipAdd) {
+    if (!owner.acceptsClipAdd) {
         return INELIGIBLE;
     }
 
     return Object.freeze({ status: 'eligible', trackId });
 }
 
-function resolveClipTarget(tracks: ReadonlyArray<NormalizedTrackOwner>, clipId: string): ClipWriteTargetResolution {
-    for (const track of tracks) {
-        if (!track.clips.some((clip) => clip.id === clipId)) {
-            continue;
-        }
-
-        if (!getTrackEligibility(track.kind).acceptsClipUpdate) {
-            return INELIGIBLE;
-        }
-
-        return Object.freeze({ status: 'eligible', trackId: track.id, clipId });
+function resolveClipTarget(store: NormalizedStore, clipId: string): ClipWriteTargetResolution {
+    const owner = store.clipsById.get(clipId);
+    if (!owner) {
+        return MISSING;
     }
 
-    return MISSING;
+    if (!owner.acceptsClipUpdate) {
+        return INELIGIBLE;
+    }
+
+    return Object.freeze({ status: 'eligible', trackId: owner.id, clipId });
 }
 
 function resolveClipWriteTarget(input: unknown): ClipWriteTargetResolution {
@@ -171,7 +217,7 @@ function resolveClipWriteTarget(input: unknown): ClipWriteTargetResolution {
         return INELIGIBLE;
     }
 
-    const store = normalizeStore();
+    const store = createClipWriteTargetIndex(trackStore.value);
     if (store.status !== 'valid') {
         if (store.status === 'missing') {
             return MISSING;
@@ -180,9 +226,9 @@ function resolveClipWriteTarget(input: unknown): ClipWriteTargetResolution {
     }
 
     if (hasTrackId) {
-        return resolveTrackTarget(store.tracks, requestedId);
+        return resolveTrackTarget(store, requestedId);
     }
-    return resolveClipTarget(store.tracks, requestedId);
+    return resolveClipTarget(store, requestedId);
 }
 
 export function resolveEligibleClipWriteTarget(input: ClipWriteTargetInput): ClipWriteTargetResolution {

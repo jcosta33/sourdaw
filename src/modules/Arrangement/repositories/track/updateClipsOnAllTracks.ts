@@ -1,43 +1,42 @@
 import { type Clip, type Track } from '../../models/Track';
-import { resolveEligibleClipWriteTarget } from '../../stores/resolveEligibleClipWriteTarget';
+import { createClipWriteTargetIndex } from '../../stores/resolveEligibleClipWriteTarget';
 import { trackStore } from '../../stores/trackStore';
 
 /** Update clips on all tracks with a mapper function. */
 export function updateClipsOnAllTracks(mapper: (clip: Clip) => Clip): boolean {
-    const state = trackStore.value;
-    if (!state) {
+    let state;
+    try {
+        state = trackStore.value;
+    } catch {
+        return false;
+    }
+
+    const index = createClipWriteTargetIndex(state);
+    if (index.status !== 'valid') {
         return false;
     }
 
     let didMapClip = false;
     const nextTracks: Track[] = [];
-    for (const track of state.tracks) {
-        let didMapTrackClip = false;
-        const nextClips: Clip[] = [];
-        for (const clip of track.clips) {
-            const target = resolveEligibleClipWriteTarget({ clipId: clip.id });
-            if (target.status !== 'eligible') {
-                nextClips.push(clip);
-                continue;
-            }
-
-            didMapClip = true;
-            didMapTrackClip = true;
-            nextClips.push(mapper(clip));
-        }
-
-        if (!didMapTrackClip) {
-            nextTracks.push(track);
+    for (const track of index.tracks) {
+        if (!track.acceptsClipUpdate || track.clips.length === 0) {
+            nextTracks.push(track.source);
             continue;
         }
 
-        nextTracks.push({ ...track, clips: nextClips });
+        const nextClips: Clip[] = [];
+        for (const clip of track.clips) {
+            didMapClip = true;
+            nextClips.push(mapper(clip.source));
+        }
+
+        nextTracks.push({ ...track.snapshot, clips: nextClips });
     }
 
     if (!didMapClip) {
         return false;
     }
 
-    trackStore.set({ ...state, tracks: nextTracks });
+    trackStore.set({ ...index.snapshot, tracks: nextTracks });
     return true;
 }

@@ -84,6 +84,23 @@ describe('resolveEligibleClipWriteTarget', () => {
         expect(resolveEligibleClipWriteTarget({ clipId: 'clip-1' })).toEqual({ status: 'missing' });
     });
 
+    it('classifies a present primitive store state as ineligible', () => {
+        const originalDescriptor = Object.getOwnPropertyDescriptor(trackStore, 'value');
+        Object.defineProperty(trackStore, 'value', {
+            configurable: true,
+            get: () => 17,
+        });
+
+        try {
+            expect(resolveEligibleClipWriteTarget({ trackId: 'track-1' })).toEqual({ status: 'ineligible' });
+            expect(resolveEligibleClipWriteTarget({ clipId: 'clip-1' })).toEqual({ status: 'ineligible' });
+        } finally {
+            if (originalDescriptor) {
+                Object.defineProperty(trackStore, 'value', originalDescriptor);
+            }
+        }
+    });
+
     it('fails closed when the tracks accessor throws', () => {
         const state = { ...defaultTrackState };
         Object.defineProperty(state, 'tracks', {
@@ -135,6 +152,9 @@ describe('resolveEligibleClipWriteTarget', () => {
     it('fails closed for duplicate track and clip identities', () => {
         setTracks([makeTrack('duplicate-track'), makeTrack('duplicate-track')]);
         expect(resolveEligibleClipWriteTarget({ trackId: 'duplicate-track' })).toEqual({ status: 'ineligible' });
+
+        setTracks([makeTrack('track-1', ['duplicate-clip', 'duplicate-clip'])]);
+        expect(resolveEligibleClipWriteTarget({ clipId: 'duplicate-clip' })).toEqual({ status: 'ineligible' });
 
         setTracks([makeTrack('track-1', ['duplicate-clip']), makeTrack('track-2', ['duplicate-clip'])]);
         expect(resolveEligibleClipWriteTarget({ clipId: 'duplicate-clip' })).toEqual({ status: 'ineligible' });

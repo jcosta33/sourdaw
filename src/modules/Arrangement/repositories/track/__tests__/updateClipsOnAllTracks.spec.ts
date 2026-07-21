@@ -57,6 +57,49 @@ describe('updateClipsOnAllTracks', () => {
         expect(clip2.muted).toBe(true);
     });
 
+    it('returns false before mapper invocation or publication for a malformed runtime snapshot', () => {
+        const malformedState = { tracks: [] as Track[], selectedTrackId: null };
+        Object.defineProperty(malformedState, 'tracks', {
+            configurable: true,
+            enumerable: true,
+            get() {
+                throw new Error('tracks unavailable');
+            },
+        });
+        trackStore.set(malformedState);
+        vi.mocked(trackStore.set).mockClear();
+        const mapper = vi.fn((clip: Clip) => clip);
+
+        expect(() => updateClipsOnAllTracks(mapper)).not.toThrow();
+        expect(updateClipsOnAllTracks(mapper)).toBe(false);
+        expect(mapper).not.toHaveBeenCalled();
+        expect(trackStore.set).not.toHaveBeenCalled();
+    });
+
+    it('normalizes one captured snapshot once for a valid multi-clip update', () => {
+        const clips = [
+            ClipDummy.create({ id: 'c1', trackId: 't1' }),
+            ClipDummy.create({ id: 'c2', trackId: 't1' }),
+            ClipDummy.create({ id: 'c3', trackId: 't1' }),
+        ];
+        const track = TrackDummy.create({ id: 't1', clips });
+        const readTrackId = vi.fn(() => 't1');
+        Object.defineProperty(track, 'id', {
+            configurable: true,
+            enumerable: true,
+            get: readTrackId,
+        });
+        trackStore.set({ tracks: [track], selectedTrackId: null });
+        vi.mocked(trackStore.set).mockClear();
+        const mapper = vi.fn((clip: Clip) => ({ ...clip, muted: true }));
+
+        expect(updateClipsOnAllTracks(mapper)).toBe(true);
+
+        expect(mapper).toHaveBeenCalledTimes(3);
+        expect(readTrackId).toHaveBeenCalledTimes(1);
+        expect(trackStore.set).toHaveBeenCalledTimes(1);
+    });
+
     it('maps only eligible clips and retains an ineligible track by identity', () => {
         const eligibleClip = ClipDummy.create({ id: 'eligible-clip', trackId: 'track-1', muted: false });
         const ineligibleClip = ClipDummy.create({ id: 'ineligible-clip', trackId: 'vca-1', muted: false });
