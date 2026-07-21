@@ -1,0 +1,33 @@
+src/modules/Arrangement/presentations/helpers/__tests__/handleCutToolUndo.spec.ts
+  s_03970d0f21185e::t_2aba50fb54c44d 96-99,101-105,158-202
+src/modules/Arrangement/useCases/clipEditing/__tests__/splitClipWithUndo.spec.ts
+  s_d65a26f95500e9::t_7e79bfc9990205 95,103
+src/modules/Arrangement/useCases/clipEditing/splitClip.ts
+  s_d65a26f95500e9::t_2b2efd23e0ae3b 9-16,38
+src/modules/Arrangement/useCases/clipEditing/splitClipWithUndo.ts
+  s_d65a26f95500e9::t_40f96d470cc3e2 1,64-70,72-75
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "7ea4ea23f55bb110882082495f4150b8e60baf25",
+  "prompts": {},
+  "sessions": {
+    "s_03970d0f21185e": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f81ff-0dcb-7f72-8042-0a57e062aeaa",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_d65a26f95500e9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8205-899e-7c13-b090-ffda4a20ad3e",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
