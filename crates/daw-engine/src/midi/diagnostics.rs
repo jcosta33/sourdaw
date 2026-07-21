@@ -1,15 +1,10 @@
-use super::midi_clock::MidiClockEventBuffer;
-use super::mpe_allocator::MpeAllocatorDiagnostics;
-
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-pub struct MidiRtDiagnosticsSnapshot {
+pub struct ActiveMidiRtDiagnosticsSnapshot {
     pub scheduler_event_buffer_overflows: u64,
     pub arpeggiator_active_note_exhaustions: u64,
-    pub mpe_channel_reuse_stalls: u64,
-    pub midi_clock_output_overflows: u64,
 }
 
-impl MidiRtDiagnosticsSnapshot {
+impl ActiveMidiRtDiagnosticsSnapshot {
     pub fn saturating_add(self, other: Self) -> Self {
         Self {
             scheduler_event_buffer_overflows: self
@@ -18,38 +13,30 @@ impl MidiRtDiagnosticsSnapshot {
             arpeggiator_active_note_exhaustions: self
                 .arpeggiator_active_note_exhaustions
                 .saturating_add(other.arpeggiator_active_note_exhaustions),
-            mpe_channel_reuse_stalls: self
-                .mpe_channel_reuse_stalls
-                .saturating_add(other.mpe_channel_reuse_stalls),
-            midi_clock_output_overflows: self
-                .midi_clock_output_overflows
-                .saturating_add(other.midi_clock_output_overflows),
         }
     }
 }
 
-pub struct MidiRtDiagnostics {
-    snapshot: MidiRtDiagnosticsSnapshot,
+pub struct ActiveMidiRtDiagnostics {
+    snapshot: ActiveMidiRtDiagnosticsSnapshot,
 }
 
-impl MidiRtDiagnostics {
+impl ActiveMidiRtDiagnostics {
     pub const fn new() -> Self {
         Self {
-            snapshot: MidiRtDiagnosticsSnapshot {
+            snapshot: ActiveMidiRtDiagnosticsSnapshot {
                 scheduler_event_buffer_overflows: 0,
                 arpeggiator_active_note_exhaustions: 0,
-                mpe_channel_reuse_stalls: 0,
-                midi_clock_output_overflows: 0,
             },
         }
     }
 
     #[cfg(test)]
-    pub(crate) const fn from_snapshot(snapshot: MidiRtDiagnosticsSnapshot) -> Self {
+    pub(crate) const fn from_snapshot(snapshot: ActiveMidiRtDiagnosticsSnapshot) -> Self {
         Self { snapshot }
     }
 
-    pub const fn snapshot(&self) -> MidiRtDiagnosticsSnapshot {
+    pub const fn snapshot(&self) -> ActiveMidiRtDiagnosticsSnapshot {
         self.snapshot
     }
 
@@ -66,23 +53,9 @@ impl MidiRtDiagnostics {
             .arpeggiator_active_note_exhaustions
             .saturating_add(count);
     }
-
-    pub fn record_mpe_allocator(&mut self, diagnostics: MpeAllocatorDiagnostics) {
-        self.snapshot.mpe_channel_reuse_stalls = self
-            .snapshot
-            .mpe_channel_reuse_stalls
-            .saturating_add(diagnostics.channel_reuse_stalls);
-    }
-
-    pub fn record_midi_clock_output(&mut self, output: &MidiClockEventBuffer) {
-        self.snapshot.midi_clock_output_overflows = self
-            .snapshot
-            .midi_clock_output_overflows
-            .saturating_add(output.dropped_event_count());
-    }
 }
 
-impl Default for MidiRtDiagnostics {
+impl Default for ActiveMidiRtDiagnostics {
     fn default() -> Self {
         Self::new()
     }

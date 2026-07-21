@@ -4,7 +4,7 @@
 //! via the NativePlugin trait. All communication is lock-free via rtrb.
 
 use crate::audio_bridge::PluginAudioBridge;
-use crate::midi::diagnostics::{MidiRtDiagnostics, MidiRtDiagnosticsSnapshot};
+use crate::midi::diagnostics::{ActiveMidiRtDiagnostics, ActiveMidiRtDiagnosticsSnapshot};
 use crate::midi_fx::{Arpeggiator, MidiEventBuffer, MidiFx, ProbabilityEvaluator, VelocityScaler};
 use crate::plugin_slot::{MidiNoteEvent, NativePlugin, TransportState};
 use daw_core::tuning::TuningTable;
@@ -79,7 +79,7 @@ impl ActiveEffect {
     }
 
     #[inline]
-    fn enqueue_midi(&mut self, event: MidiNoteEvent, diagnostics: &mut MidiRtDiagnostics) {
+    fn enqueue_midi(&mut self, event: MidiNoteEvent, diagnostics: &mut ActiveMidiRtDiagnostics) {
         // Drop the newest event when the fixed block-local buffer is full.
         if !self.pending_midi.try_push(event) {
             diagnostics.record_scheduler_event_buffer_overflow(1);
@@ -93,21 +93,21 @@ pub struct AudioScheduler {
     command_rx: Consumer<GraphCommand>,
     sample_rate: f32,
     transport: TransportState,
-    midi_rt_diagnostics: MidiRtDiagnostics,
-    midi_rt_diagnostics_tx: Input<MidiRtDiagnosticsSnapshot>,
+    midi_rt_diagnostics: ActiveMidiRtDiagnostics,
+    midi_rt_diagnostics_tx: Input<ActiveMidiRtDiagnosticsSnapshot>,
 }
 
 impl AudioScheduler {
     pub fn new(command_rx: Consumer<GraphCommand>, sample_rate: f32) -> Self {
         let (diagnostics_tx, _diagnostics_rx) =
-            triple_buffer::triple_buffer(&MidiRtDiagnosticsSnapshot::default());
+            triple_buffer::triple_buffer(&ActiveMidiRtDiagnosticsSnapshot::default());
         Self::with_midi_rt_diagnostics(command_rx, sample_rate, diagnostics_tx)
     }
 
     pub(crate) fn with_midi_rt_diagnostics(
         command_rx: Consumer<GraphCommand>,
         sample_rate: f32,
-        midi_rt_diagnostics_tx: Input<MidiRtDiagnosticsSnapshot>,
+        midi_rt_diagnostics_tx: Input<ActiveMidiRtDiagnosticsSnapshot>,
     ) -> Self {
         Self {
             effects: Vec::with_capacity(128),
@@ -115,7 +115,7 @@ impl AudioScheduler {
             command_rx,
             sample_rate,
             transport: TransportState::default(),
-            midi_rt_diagnostics: MidiRtDiagnostics::new(),
+            midi_rt_diagnostics: ActiveMidiRtDiagnostics::new(),
             midi_rt_diagnostics_tx,
         }
     }

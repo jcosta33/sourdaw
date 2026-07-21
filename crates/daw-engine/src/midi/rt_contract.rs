@@ -1,8 +1,4 @@
-use super::diagnostics::{MidiRtDiagnostics, MidiRtDiagnosticsSnapshot};
-use super::midi_clock::{
-    MidiClock, MidiClockBlockInput, MidiClockTransportTransition, MIDI_CLOCK_EVENT_CAPACITY,
-};
-use super::mpe_allocator::MpeAllocatorDiagnostics;
+use super::diagnostics::{ActiveMidiRtDiagnostics, ActiveMidiRtDiagnosticsSnapshot};
 use crate::midi_fx::{Arpeggiator, MidiEventBuffer, MidiFx, PROBABILITY_CUTOFF_RANGE};
 use crate::plugin_slot::{MidiNoteEvent, NativePlugin, TransportState};
 use crate::scheduler::{AudioScheduler, GraphCommand};
@@ -70,7 +66,7 @@ fn note_on(note: u8, channel: i16) -> MidiNoteEvent {
 fn scheduler_event_overflow_reports_exact_count_and_preserves_accepted_prefix() {
     let (mut command_tx, command_rx) = RingBuffer::new(256);
     let (diagnostics_tx, mut diagnostics_rx) =
-        triple_buffer::triple_buffer(&MidiRtDiagnosticsSnapshot::default());
+        triple_buffer::triple_buffer(&ActiveMidiRtDiagnosticsSnapshot::default());
     let mut scheduler =
         AudioScheduler::with_midi_rt_diagnostics(command_rx, 48_000.0, diagnostics_tx);
     let received_event_count = Arc::new(AtomicUsize::new(0));
@@ -109,7 +105,7 @@ fn scheduler_event_overflow_reports_exact_count_and_preserves_accepted_prefix() 
 fn arpeggiator_exhaustion_reports_exact_count_and_preserves_accepted_set() {
     let mut arpeggiator = Arpeggiator::default();
     let mut events = MidiEventBuffer::new();
-    let mut diagnostics = MidiRtDiagnostics::new();
+    let mut diagnostics = ActiveMidiRtDiagnostics::new();
 
     for note in 60..=76 {
         assert!(events.try_push(note_on(note, 0)));
@@ -134,42 +130,21 @@ fn arpeggiator_exhaustion_reports_exact_count_and_preserves_accepted_set() {
 }
 
 #[test]
-fn unified_diagnostic_aggregation_saturates_every_counter() {
-    let maximum = MidiRtDiagnosticsSnapshot {
+fn active_runtime_diagnostic_aggregation_saturates_both_counters() {
+    let maximum = ActiveMidiRtDiagnosticsSnapshot {
         scheduler_event_buffer_overflows: u64::MAX,
         arpeggiator_active_note_exhaustions: u64::MAX,
-        mpe_channel_reuse_stalls: u64::MAX,
-        midi_clock_output_overflows: u64::MAX,
     };
-    let mut diagnostics = MidiRtDiagnostics::from_snapshot(maximum);
+    let mut diagnostics = ActiveMidiRtDiagnostics::from_snapshot(maximum);
 
     diagnostics.record_scheduler_event_buffer_overflow(1);
     diagnostics.record_arpeggiator_active_note_exhaustion(1);
-    diagnostics.record_mpe_allocator(MpeAllocatorDiagnostics {
-        channel_reuse_stalls: 1,
-    });
-
-    let mut clock = MidiClock::new();
-    let clock_output = clock
-        .process_block(MidiClockBlockInput {
-            timeline_sample: 0,
-            block_sample_count: 48_000 * 10,
-            sample_rate: 48_000,
-            tempo_bpm: 960.0,
-            transition: MidiClockTransportTransition::Start,
-        })
-        .expect("valid clock block should process");
-    assert_eq!(clock_output.len(), MIDI_CLOCK_EVENT_CAPACITY);
-    assert!(clock_output.dropped_event_count() > 0);
-    diagnostics.record_midi_clock_output(&clock_output);
 
     assert_eq!(diagnostics.snapshot(), maximum);
     assert_eq!(
-        maximum.saturating_add(MidiRtDiagnosticsSnapshot {
+        maximum.saturating_add(ActiveMidiRtDiagnosticsSnapshot {
             scheduler_event_buffer_overflows: 1,
             arpeggiator_active_note_exhaustions: 1,
-            mpe_channel_reuse_stalls: 1,
-            midi_clock_output_overflows: 1,
         }),
         maximum
     );

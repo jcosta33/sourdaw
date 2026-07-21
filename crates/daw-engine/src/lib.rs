@@ -8,7 +8,7 @@ pub mod scheduler;
 
 use audio_thread::{spawn_audio_thread, AudioThreadHandle};
 use daw_core::tuning::TuningTable;
-use midi::diagnostics::MidiRtDiagnosticsSnapshot;
+use midi::diagnostics::ActiveMidiRtDiagnosticsSnapshot;
 use mts_esp::MtsEspMaster;
 use plugin_slot::NativePlugin;
 use rtrb::{Producer, RingBuffer};
@@ -21,7 +21,7 @@ pub struct EngineHandle {
     _audio_thread: Arc<Mutex<AudioThreadHandle>>,
     next_plugin_id: usize,
     mts_esp_master: Option<MtsEspMaster>,
-    midi_rt_diagnostics: Output<MidiRtDiagnosticsSnapshot>,
+    midi_rt_diagnostics: Output<ActiveMidiRtDiagnosticsSnapshot>,
 }
 
 impl EngineHandle {
@@ -29,7 +29,7 @@ impl EngineHandle {
     pub fn new() -> Result<Self, String> {
         let (tx, rx) = RingBuffer::new(256);
         let (diagnostics_tx, diagnostics_rx) =
-            triple_buffer::triple_buffer(&MidiRtDiagnosticsSnapshot::default());
+            triple_buffer::triple_buffer(&ActiveMidiRtDiagnosticsSnapshot::default());
         let thread_handle = spawn_audio_thread(rx, diagnostics_tx)?;
 
         Ok(Self {
@@ -61,7 +61,7 @@ impl EngineHandle {
     }
 
     /// Read the latest fixed numeric MIDI diagnostics outside the audio callback.
-    pub fn midi_rt_diagnostics_snapshot(&mut self) -> MidiRtDiagnosticsSnapshot {
+    pub fn midi_rt_diagnostics_snapshot(&mut self) -> ActiveMidiRtDiagnosticsSnapshot {
         *self.midi_rt_diagnostics.read()
     }
 

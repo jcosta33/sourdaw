@@ -1,6 +1,6 @@
 //! Native OS Audio Thread using CPAL
 
-use crate::midi::diagnostics::MidiRtDiagnosticsSnapshot;
+use crate::midi::diagnostics::ActiveMidiRtDiagnosticsSnapshot;
 use crate::scheduler::{AudioScheduler, GraphCommand};
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use rtrb::Consumer;
@@ -21,7 +21,7 @@ unsafe impl Sync for AudioThreadHandle {}
 
 pub fn spawn_audio_thread(
     command_rx: Consumer<GraphCommand>,
-    midi_rt_diagnostics_tx: Input<MidiRtDiagnosticsSnapshot>,
+    midi_rt_diagnostics_tx: Input<ActiveMidiRtDiagnosticsSnapshot>,
 ) -> Result<AudioThreadHandle, String> {
     let host = cpal::default_host();
     let device = host
