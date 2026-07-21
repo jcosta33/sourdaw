@@ -32,8 +32,8 @@ Occurrence count: 2741
 | complex-grid | 20 |
 | eligible | 1141 |
 | one-off | 0 |
-| renderer | 57 |
-| responsive-or-dynamic | 331 |
+| renderer | 58 |
+| responsive-or-dynamic | 330 |
 | semantic-wrapper | 969 |
 | third-party-generated-test | 0 |
 
@@ -2116,7 +2116,7 @@ Occurrence count: 2741
 | `layout-4644cf280810031f` | `src/modules/TimelineEditor/presentations/views/ClipView/PianoRoll.tsx:265#1` | `flex flex-1 overflow-auto` | — | renderer | yes | Renderer-owned geometry is excluded from mechanical primitive migration. |
 | `layout-44e5e56ba0bd29f4` | `src/modules/TimelineEditor/presentations/views/ClipView/PianoRoll.tsx:274#1` | `sticky left-0 z-10 w-10` | — | semantic-wrapper | yes | Preserve the DawSideRail semantic wrapper and review its geometry through the owning component. |
 | `layout-fcebc73130faca17` | `src/modules/TimelineEditor/presentations/views/ClipView/PianoRoll.tsx:275#1` | `px-0` | — | semantic-wrapper | yes | Preserve the DawGridHeaderCell semantic wrapper and review its geometry through the owning component. |
-| `layout-2b3d80995d026f9e` | `src/modules/TimelineEditor/presentations/views/ClipView/PianoRoll.tsx:281#1` | `{cn( 'flex items-center justify-end pr-1 text-[10px]', isBlack ? 'bg-surface-base text-muted-foreground/40' : 'text-muted-foreground/60', isInScale && 'text-accent-primary/80 font-bold' )}` | — | responsive-or-dynamic | yes | Responsive, runtime-computed, or conditional-sibling layout must retain its explicit behavior until separately characterized. |
+| `layout-2b3d80995d026f9e` | `src/modules/TimelineEditor/presentations/views/ClipView/PianoRoll.tsx:281#1` | `{cn( 'flex items-center justify-end pr-1 text-[10px]', isBlack ? 'bg-surface-base text-muted-foreground/40' : 'text-muted-foreground/60', isInScale && 'text-accent-primary/80 font-bold' )}` | — | renderer | yes | Renderer-owned geometry is excluded from mechanical primitive migration. |
 | `layout-0b14cad51d8a5f76` | `src/modules/TimelineEditor/presentations/views/ClipView/PianoRoll.tsx:326#1` | `h-32 border-t border-border/20 bg-surface-well flex` | — | renderer | yes | Renderer-owned geometry is excluded from mechanical primitive migration. |
 | `layout-51e9a0a21e21392e` | `src/modules/TimelineEditor/presentations/views/ClipView/PianoRoll.tsx:327#1` | `w-10 shrink-0 border-r border-border/10 flex flex-col items-center py-1` | — | renderer | yes | Renderer-owned geometry is excluded from mechanical primitive migration. |
 | `layout-8ec1d17e5a7f9041` | `src/modules/TimelineEditor/presentations/views/ClipView/PianoRollContextMenu.tsx:105#1` | `min-w-[170px]` | — | semantic-wrapper | yes | Preserve the DawContextMenuSurface semantic wrapper and review its geometry through the owning component. |

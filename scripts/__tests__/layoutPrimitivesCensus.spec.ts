@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 
@@ -112,6 +112,141 @@ describe('collectLayoutOccurrences', () => {
         ).toBe(true);
     });
 
+    it('should recognize every semantic intrinsic family used by layout candidates', () => {
+        const semanticTags = [
+            'a',
+            'abbr',
+            'address',
+            'area',
+            'article',
+            'aside',
+            'audio',
+            'b',
+            'base',
+            'bdi',
+            'bdo',
+            'blockquote',
+            'body',
+            'br',
+            'button',
+            'canvas',
+            'caption',
+            'cite',
+            'code',
+            'col',
+            'colgroup',
+            'data',
+            'datalist',
+            'dd',
+            'del',
+            'details',
+            'dfn',
+            'dialog',
+            'dl',
+            'dt',
+            'em',
+            'embed',
+            'fieldset',
+            'figcaption',
+            'figure',
+            'footer',
+            'form',
+            'h1',
+            'h2',
+            'h3',
+            'h4',
+            'h5',
+            'h6',
+            'head',
+            'header',
+            'hgroup',
+            'hr',
+            'html',
+            'i',
+            'iframe',
+            'img',
+            'input',
+            'ins',
+            'kbd',
+            'label',
+            'legend',
+            'li',
+            'link',
+            'main',
+            'map',
+            'mark',
+            'math',
+            'menu',
+            'meta',
+            'meter',
+            'nav',
+            'noscript',
+            'object',
+            'ol',
+            'optgroup',
+            'option',
+            'output',
+            'p',
+            'param',
+            'picture',
+            'pre',
+            'progress',
+            'q',
+            'rp',
+            'rt',
+            'ruby',
+            's',
+            'samp',
+            'script',
+            'search',
+            'section',
+            'select',
+            'slot',
+            'small',
+            'source',
+            'strong',
+            'style',
+            'sub',
+            'summary',
+            'sup',
+            'svg',
+            'table',
+            'tbody',
+            'td',
+            'template',
+            'textarea',
+            'tfoot',
+            'th',
+            'thead',
+            'time',
+            'title',
+            'tr',
+            'track',
+            'u',
+            'ul',
+            'var',
+            'video',
+            'wbr',
+        ];
+        const semanticElements = semanticTags.map((tag) => `<${tag} className="flex" />`).join('\n');
+        const repositoryRoot = createFixture({
+            'src/App.tsx': `
+                export const App = () => (
+                    <>
+                        ${semanticElements}
+                    </>
+                );
+            `,
+        });
+
+        const occurrences = collectLayoutOccurrences({ repositoryRoot });
+
+        expect(occurrences.map((occurrence) => occurrence.nativeElement)).toEqual(semanticTags);
+        expect(
+            occurrences.every((occurrence) => occurrence.riskFlags.hasSemanticElement && occurrence.riskTier === 'high')
+        ).toBe(true);
+    });
+
     it('should resolve same-file class-name bindings into layout evidence', () => {
         const repositoryRoot = createFixture({
             'src/App.tsx': `
@@ -152,6 +287,83 @@ describe('collectLayoutOccurrences', () => {
             riskFlags: { hasDynamicClassName: false },
         });
         expect(occurrences[0].currentPattern).toContain('grid grid-cols-2 gap-2');
+    });
+
+    it('should treat lexically shadowed immutable bindings as unresolved', () => {
+        const repositoryRoot = createFixture({
+            'src/App.tsx': `
+                const ROOT = 'flex flex-col';
+                export function App(ROOT: string) {
+                    return <div className={ROOT} />;
+                }
+            `,
+        });
+
+        const occurrences = collectLayoutOccurrences({ repositoryRoot });
+
+        expect(occurrences).toHaveLength(1);
+        expect(occurrences[0]).toMatchObject({
+            currentPattern: '{ROOT}',
+            disposition: 'responsive-or-dynamic',
+            proposedPrimitive: null,
+            riskFlags: { hasDynamicClassName: true },
+        });
+    });
+
+    it('should conservatively stop at non-const and destructured lexical shadows', () => {
+        const repositoryRoot = createFixture({
+            'src/App.tsx': `
+                import { ROOT } from './classes';
+                export function Parameter({ ROOT }: { ROOT: string }) {
+                    return <div className={ROOT} />;
+                }
+                export function Local() {
+                    let ROOT = 'flex flex-col';
+                    return <div className={ROOT} />;
+                }
+                export function FunctionShadow() {
+                    function ROOT() {}
+                    return <div className={ROOT} />;
+                }
+            `,
+            'src/classes.ts': `export const ROOT = 'grid grid-cols-2';`,
+        });
+
+        const occurrences = collectLayoutOccurrences({ repositoryRoot });
+
+        expect(occurrences).toHaveLength(3);
+        expect(
+            occurrences.every(
+                (occurrence) =>
+                    occurrence.currentPattern === '{ROOT}' &&
+                    occurrence.disposition === 'responsive-or-dynamic' &&
+                    occurrence.proposedPrimitive === null &&
+                    occurrence.riskFlags.hasDynamicClassName
+            )
+        ).toBe(true);
+    });
+
+    it('should reject imported bindings reached through a symlinked repository ancestor', () => {
+        const externalRoot = createFixture({
+            'classes.ts': `export const ROOT = 'grid grid-cols-2';`,
+        });
+        const repositoryRoot = createFixture({
+            'src/App.tsx': `
+                import { ROOT } from './linked/classes';
+                export const App = () => <div className={ROOT} />;
+            `,
+        });
+        symlinkSync(externalRoot, join(repositoryRoot, 'src/linked'), 'dir');
+
+        const occurrences = collectLayoutOccurrences({ repositoryRoot });
+
+        expect(occurrences).toHaveLength(1);
+        expect(occurrences[0]).toMatchObject({
+            currentPattern: '{ROOT}',
+            disposition: 'responsive-or-dynamic',
+            proposedPrimitive: null,
+            riskFlags: { hasDynamicClassName: true },
+        });
     });
 
     it('should record unresolved class-name bindings without inventing layout tokens', () => {
@@ -567,6 +779,27 @@ describe('compareLayoutCensuses', () => {
         expect(changed.occurrences[0].id).toBe(baseline.occurrences[0].id);
         expect(changed.occurrences[0].reviewed).toBe(false);
         expect(changed.occurrences[0].rationale).not.toBe('Reviewed exception.');
+        expect(drift.changed).toHaveLength(1);
+    });
+
+    it('should invalidate review when semantic ancestor context changes', () => {
+        const repositoryRoot = createFixture({
+            'src/App.tsx': 'export const App = () => <section><div><span className="flex" /></div></section>;\n',
+        });
+        const baseline = createLayoutCensus({ repositoryRoot });
+        baseline.occurrences[0].reviewed = true;
+
+        writeFixture(
+            repositoryRoot,
+            'src/App.tsx',
+            'export const App = () => <nav><div><span className="flex" /></div></nav>;\n'
+        );
+        const changed = createLayoutCensus({ repositoryRoot, previousCensus: baseline });
+        const drift = compareLayoutCensuses({ actual: changed, expected: baseline });
+
+        expect(changed.occurrences[0].id).toBe(baseline.occurrences[0].id);
+        expect(changed.occurrences[0].sourceFingerprint).not.toBe(baseline.occurrences[0].sourceFingerprint);
+        expect(changed.occurrences[0].reviewed).toBe(false);
         expect(drift.changed).toHaveLength(1);
     });
 
