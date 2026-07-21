@@ -2,7 +2,7 @@ import { type ReactElement, type ComponentProps } from 'react';
 
 import { cn } from '#/utils/Styles/cn';
 
-type SpacerSize = 1 | 2 | 3 | 4 | 6 | 8 | 12 | 16;
+type SpacerSize = 0 | 1 | 2 | 3 | 4 | 6 | 8 | 12 | 16;
 type SpacerAxis = 'x' | 'y';
 
 type SpacerProps = ComponentProps<'div'> & {
@@ -12,6 +12,7 @@ type SpacerProps = ComponentProps<'div'> & {
 
 const SIZE_CLASS_NAMES: Record<SpacerAxis | 'both', Record<SpacerSize, string>> = {
     both: {
+        0: 'w-0 h-0',
         1: 'w-1 h-1',
         2: 'w-2 h-2',
         3: 'w-3 h-3',
@@ -22,6 +23,7 @@ const SIZE_CLASS_NAMES: Record<SpacerAxis | 'both', Record<SpacerSize, string>> 
         16: 'w-16 h-16',
     },
     x: {
+        0: 'w-0',
         1: 'w-1',
         2: 'w-2',
         3: 'w-3',
@@ -32,6 +34,7 @@ const SIZE_CLASS_NAMES: Record<SpacerAxis | 'both', Record<SpacerSize, string>> 
         16: 'w-16',
     },
     y: {
+        0: 'h-0',
         1: 'h-1',
         2: 'h-2',
         3: 'h-3',
