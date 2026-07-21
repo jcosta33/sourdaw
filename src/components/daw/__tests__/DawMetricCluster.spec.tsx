@@ -21,14 +21,7 @@ describe('DawMetricCluster', () => {
         const metricCluster = screen.getByTestId('metric-cluster');
 
         expect(metricCluster.tagName).toBe('DIV');
-        expect(metricCluster).toHaveClass(
-            'flex',
-            'flex-row',
-            'min-w-0',
-            'gap-1',
-            'items-center',
-            'justify-start'
-        );
+        expect(metricCluster).toHaveClass('flex', 'flex-row', 'min-w-0', 'gap-1', 'items-center', 'justify-start');
         expect(Array.from(metricCluster.children, (child) => child.textContent)).toEqual([
             'CPU',
             'meter',
@@ -81,13 +74,7 @@ describe('DawMetricCluster', () => {
     });
 
     it('lets caller classes override conflicting row defaults', () => {
-        render(
-            <DawMetricCluster
-                data-testid="metric-cluster"
-                className="gap-4 items-start justify-end"
-                label="CPU"
-            />
-        );
+        render(<DawMetricCluster data-testid="metric-cluster" className="gap-4 items-start justify-end" label="CPU" />);
 
         const metricCluster = screen.getByTestId('metric-cluster');
 

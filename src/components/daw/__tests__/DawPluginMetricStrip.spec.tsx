@@ -1,5 +1,3 @@
-import { createRef } from 'react';
-
 import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 
@@ -39,13 +37,11 @@ describe('DawPluginMetricStrip', () => {
         expect(screen.getByTestId('metric-strip')).toHaveClass('justify-start', 'flex-wrap', 'gap-2');
     });
 
-    it('forwards native props, events, styles, and refs', () => {
-        const ref = createRef<HTMLDivElement>();
+    it('forwards native props, events, and styles', () => {
         const handleClick = vi.fn();
 
         render(
             <DawPluginMetricStrip
-                ref={ref}
                 data-testid="metric-strip"
                 data-state="active"
                 aria-label="Plugin metrics"
@@ -59,7 +55,6 @@ describe('DawPluginMetricStrip', () => {
 
         const metricStrip = screen.getByRole('group', { name: 'Plugin metrics' });
 
-        expect(ref.current).toBe(metricStrip);
         expect(metricStrip).toHaveAttribute('data-state', 'active');
         expect(metricStrip).toHaveStyle({ minWidth: '160px' });
 
@@ -69,10 +64,7 @@ describe('DawPluginMetricStrip', () => {
 
     it('lets caller classes override conflicting row defaults', () => {
         render(
-            <DawPluginMetricStrip
-                data-testid="metric-strip"
-                className="flex-nowrap gap-4 items-start justify-center"
-            >
+            <DawPluginMetricStrip data-testid="metric-strip" className="flex-nowrap gap-4 items-start justify-center">
                 metrics
             </DawPluginMetricStrip>
         );

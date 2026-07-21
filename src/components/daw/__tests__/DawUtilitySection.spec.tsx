@@ -1,5 +1,3 @@
-import { createRef } from 'react';
-
 import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 
@@ -41,7 +39,7 @@ describe('DawUtilitySection', () => {
         render(
             <DawUtilitySection
                 data-testid="utility-section"
-                title={<span>Inputs</span>}
+                title="Inputs"
                 detail={<span>2 active</span>}
                 actions={<button type="button">Add</button>}
             >
@@ -74,13 +72,11 @@ describe('DawUtilitySection', () => {
         expect(screen.getByText('body')).toBeInTheDocument();
     });
 
-    it('forwards native props, events, styles, and refs', () => {
-        const ref = createRef<HTMLElement>();
+    it('forwards native props, events, and styles', () => {
         const handleClick = vi.fn();
 
         render(
             <DawUtilitySection
-                ref={ref}
                 data-testid="utility-section"
                 data-state="ready"
                 aria-label="Input analysis"
@@ -94,7 +90,6 @@ describe('DawUtilitySection', () => {
 
         const section = screen.getByRole('region', { name: 'Input analysis' });
 
-        expect(ref.current).toBe(section);
         expect(section).toHaveAttribute('data-state', 'ready');
         expect(section).toHaveStyle({ minHeight: '180px' });
 

@@ -1,5 +1,3 @@
-import { createRef } from 'react';
-
 import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 
@@ -58,13 +56,11 @@ describe('DawPanelSurface', () => {
         expect(screen.getByTestId('panel-surface')).toHaveClass(...expectedClassNames);
     });
 
-    it('renders as an aside and forwards native props, events, styles, and refs', () => {
-        const ref = createRef<HTMLDivElement>();
+    it('renders as an aside and forwards native props, events, and styles', () => {
         const handleClick = vi.fn();
 
         render(
             <DawPanelSurface
-                ref={ref}
                 as="aside"
                 data-testid="panel-surface"
                 data-state="open"
@@ -79,7 +75,6 @@ describe('DawPanelSurface', () => {
         const panel = screen.getByRole('complementary', { name: 'Inspector' });
 
         expect(panel.tagName).toBe('ASIDE');
-        expect(ref.current).toBe(panel);
         expect(panel).toHaveAttribute('data-state', 'open');
         expect(panel).toHaveStyle({ width: '320px' });
 

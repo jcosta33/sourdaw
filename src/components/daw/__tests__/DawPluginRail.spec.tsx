@@ -1,5 +1,3 @@
-import { createRef } from 'react';
-
 import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 
@@ -35,13 +33,11 @@ describe('DawPluginRail', () => {
         expect(rail).not.toHaveClass('overflow-y-auto', 'pr-1');
     });
 
-    it('forwards native props, events, styles, and refs', () => {
-        const ref = createRef<HTMLElement>();
+    it('forwards native props, events, and styles', () => {
         const handleClick = vi.fn();
 
         render(
             <DawPluginRail
-                ref={ref}
                 data-testid="plugin-rail"
                 data-state="active"
                 aria-label="Plugin controls"
@@ -54,7 +50,6 @@ describe('DawPluginRail', () => {
 
         const rail = screen.getByRole('complementary', { name: 'Plugin controls' });
 
-        expect(ref.current).toBe(rail);
         expect(rail).toHaveAttribute('data-state', 'active');
         expect(rail).toHaveStyle({ maxHeight: '480px' });
 

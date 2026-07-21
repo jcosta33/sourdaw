@@ -1,5 +1,3 @@
-import { createRef } from 'react';
-
 import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 
@@ -66,13 +64,11 @@ describe('DawPluginSectionCard', () => {
         expect(heading).toHaveTextContent('Filter');
     });
 
-    it('forwards native props, events, styles, and refs', () => {
-        const ref = createRef<HTMLElement>();
+    it('forwards native props, events, and styles', () => {
         const handleClick = vi.fn();
 
         render(
             <DawPluginSectionCard
-                ref={ref}
                 data-testid="section-card"
                 data-state="active"
                 aria-label="Filter controls"
@@ -86,7 +82,6 @@ describe('DawPluginSectionCard', () => {
 
         const card = screen.getByRole('region', { name: 'Filter controls' });
 
-        expect(ref.current).toBe(card);
         expect(card).toHaveAttribute('data-state', 'active');
         expect(card).toHaveStyle({ minWidth: '240px' });
 

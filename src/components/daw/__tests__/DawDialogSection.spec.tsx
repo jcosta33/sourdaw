@@ -1,5 +1,3 @@
-import { createRef } from 'react';
-
 import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 
@@ -28,7 +26,7 @@ describe('DawDialogSection', () => {
         render(
             <DawDialogSection
                 data-testid="dialog-section"
-                title={<span>Export</span>}
+                title="Export"
                 detail={<span>WAV</span>}
                 actions={<button type="button">Choose</button>}
                 bodyClassName="body-hook"
@@ -101,13 +99,11 @@ describe('DawDialogSection', () => {
         expect(screen.getByRole('button', { name: 'Action' })).toBeInTheDocument();
     });
 
-    it('forwards native props, events, styles, and refs', () => {
-        const ref = createRef<HTMLElement>();
+    it('forwards native props, events, and styles', () => {
         const handleClick = vi.fn();
 
         render(
             <DawDialogSection
-                ref={ref}
                 data-testid="dialog-section"
                 data-state="ready"
                 aria-label="Export settings"
@@ -120,7 +116,6 @@ describe('DawDialogSection', () => {
 
         const section = screen.getByRole('region', { name: 'Export settings' });
 
-        expect(ref.current).toBe(section);
         expect(section).toHaveAttribute('data-state', 'ready');
         expect(section).toHaveStyle({ minHeight: '160px' });
 

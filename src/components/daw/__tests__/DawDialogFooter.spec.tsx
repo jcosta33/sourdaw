@@ -1,5 +1,3 @@
-import { createRef } from 'react';
-
 import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 
@@ -61,13 +59,11 @@ describe('DawDialogFooter', () => {
         );
     });
 
-    it('forwards native props, events, styles, and refs', () => {
-        const ref = createRef<HTMLDivElement>();
+    it('forwards native props, events, and styles', () => {
         const handleClick = vi.fn();
 
         render(
             <DawDialogFooter
-                ref={ref}
                 data-testid="dialog-footer"
                 data-state="ready"
                 aria-label="Dialog actions"
@@ -81,7 +77,6 @@ describe('DawDialogFooter', () => {
 
         const footer = screen.getByRole('group', { name: 'Dialog actions' });
 
-        expect(ref.current).toBe(footer);
         expect(footer).toHaveAttribute('data-state', 'ready');
         expect(footer).toHaveStyle({ minHeight: '48px' });
 

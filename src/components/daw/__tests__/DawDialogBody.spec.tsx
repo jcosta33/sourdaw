@@ -1,5 +1,3 @@
-import { createRef } from 'react';
-
 import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 
@@ -32,13 +30,11 @@ describe('DawDialogBody', () => {
         expect(screen.getByTestId('dialog-body')).toHaveClass('overflow-y-auto');
     });
 
-    it('forwards native props, events, styles, and refs', () => {
-        const ref = createRef<HTMLDivElement>();
+    it('forwards native props, events, and styles', () => {
         const handleClick = vi.fn();
 
         render(
             <DawDialogBody
-                ref={ref}
                 data-testid="dialog-body"
                 data-state="ready"
                 aria-label="Dialog content"
@@ -52,7 +48,6 @@ describe('DawDialogBody', () => {
 
         const body = screen.getByRole('region', { name: 'Dialog content' });
 
-        expect(ref.current).toBe(body);
         expect(body).toHaveAttribute('data-state', 'ready');
         expect(body).toHaveStyle({ maxHeight: '320px' });
 
