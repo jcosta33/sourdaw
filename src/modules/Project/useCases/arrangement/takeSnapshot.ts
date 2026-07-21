@@ -7,17 +7,30 @@ import { type ArrangementSnapshot } from '../../stores/arrangementStore';
 
 import { emptySnapshotAutomation, emptySnapshotMidi, emptySnapshotTracks } from './helpers';
 
+function captureMidiSnapshot(): ArrangementSnapshot['midi'] {
+    const midi = midiStore.value;
+    if (!midi) {
+        return {
+            notesByClipId: { ...emptySnapshotMidi.notesByClipId },
+            ccByClipId: { ...emptySnapshotMidi.ccByClipId },
+            pitchBendByClipId: { ...emptySnapshotMidi.pitchBendByClipId },
+        };
+    }
+
+    return {
+        notesByClipId: midi.notesByClipId,
+        ccByClipId: midi.ccByClipId,
+        pitchBendByClipId: midi.pitchBendByClipId,
+    };
+}
+
 export function takeSnapshot(id: string, name: string): ArrangementSnapshot {
     return {
         id,
         name,
         tracks: trackStore.value ?? { ...emptySnapshotTracks, tracks: [...emptySnapshotTracks.tracks] },
         automation: automationStore.value ?? { lanes: [...emptySnapshotAutomation.lanes] },
-        midi: midiStore.value ?? {
-            notesByClipId: { ...emptySnapshotMidi.notesByClipId },
-            ccByClipId: { ...emptySnapshotMidi.ccByClipId },
-            pitchBendByClipId: { ...emptySnapshotMidi.pitchBendByClipId },
-        },
+        midi: captureMidiSnapshot(),
         tempoMap: tempoMapStore.value ?? undefined,
         timeSignatureMap: timeSignatureMapStore.value ?? undefined,
         markers: markerStore.value ?? undefined,

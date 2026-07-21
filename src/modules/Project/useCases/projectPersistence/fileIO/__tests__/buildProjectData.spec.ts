@@ -15,7 +15,9 @@ vi.mock('#/modules/Arrangement/stores', () => ({
 vi.mock('#/modules/Automation/stores', () => ({ automationStore: { value: { lanes: [] } } }));
 vi.mock('#/modules/MIDI/stores', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/MIDI/stores')>()),
-    midiStore: { value: { notesByClipId: {}, ccByClipId: {}, pitchBendByClipId: {} } },
+    midiStore: {
+        value: { probabilitySeed: 0xdecafbad, notesByClipId: {}, ccByClipId: {}, pitchBendByClipId: {} },
+    },
 }));
 vi.mock('#/modules/Transport/stores', () => ({
     transportStore: { value: { tempo: 120 } },
@@ -113,5 +115,32 @@ describe('buildProjectData', () => {
             throw new Error('expected the repaired inactive arrangement to keep its tracks');
         }
         expect(inactive.tracks.tracks.map((track) => track.id)).toEqual(['track-only-id']);
+    });
+
+    it('serializes arrangement MIDI maps without a stale project probability seed', async () => {
+        arrangementStoreMock.value = {
+            arrangements: [
+                {
+                    id: 'legacy-arrangement',
+                    name: 'Legacy',
+                    tracks: { tracks: [], selectedTrackId: null },
+                    automation: { lanes: [] },
+                    midi: {
+                        probabilitySeed: 123,
+                        notesByClipId: { legacy: [] },
+                        ccByClipId: {},
+                        pitchBendByClipId: {},
+                    },
+                },
+            ],
+            activeArrangementId: 'legacy-arrangement',
+        };
+
+        const built = await buildProjectData();
+        const arrangementMidi = built?.data.arrangements?.[0]?.midi;
+
+        expect(built?.data.midi.probabilitySeed).toBe(0xdecafbad);
+        expect(arrangementMidi).toEqual({ notesByClipId: { legacy: [] }, ccByClipId: {}, pitchBendByClipId: {} });
+        expect(arrangementMidi).not.toHaveProperty('probabilitySeed');
     });
 });

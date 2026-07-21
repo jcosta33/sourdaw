@@ -175,7 +175,11 @@ export async function buildProjectData({
                 ...snapshot.tracks,
                 tracks: serializeArrangementTracks(snapshot.tracks.tracks, snapshot.midi.notesByClipId),
             },
-            midi: serializeProjectMidi(snapshot.midi),
+            midi: serializeProjectMidi({
+                notesByClipId: snapshot.midi.notesByClipId,
+                ccByClipId: snapshot.midi.ccByClipId,
+                pitchBendByClipId: snapshot.midi.pitchBendByClipId,
+            }),
         })),
         activeArrangementId: arrState.activeArrangementId,
         audioBuffers: Object.keys(audioBuffers).length > 0 ? audioBuffers : undefined,

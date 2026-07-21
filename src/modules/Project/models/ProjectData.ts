@@ -194,6 +194,12 @@ export type ProjectMidi = {
     pitchBendByClipId: Record<string, ProjectMidiPitchBend[]>;
 };
 
+export type ProjectArrangementMidi = {
+    notesByClipId: Record<string, ProjectMidiNote[]>;
+    ccByClipId: Record<string, ProjectMidiCC[]>;
+    pitchBendByClipId: Record<string, ProjectMidiPitchBend[]>;
+};
+
 export type ProjectMidiNote = {
     id: string;
     pitch: number;
@@ -497,7 +503,7 @@ export type ProjectArrangementSnapshot = {
         selectedTrackId: string | null;
     };
     automation?: ProjectAutomation;
-    midi?: ProjectMidi;
+    midi?: ProjectArrangementMidi;
     tempoMap?: {
         changes: Array<{
             id: string;

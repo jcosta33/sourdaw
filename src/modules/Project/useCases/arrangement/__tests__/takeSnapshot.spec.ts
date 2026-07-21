@@ -1,5 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { type MidiStoreState } from '#/modules/MIDI/stores';
+
 import { type ArrangementSnapshot } from '../../../stores/arrangementStore';
 import { takeSnapshot } from '../takeSnapshot';
 
@@ -15,7 +17,7 @@ const mocks = vi.hoisted(() => {
     return {
         automation_store: create_store_mock<ArrangementSnapshot['automation']>(null),
         marker_store: create_store_mock<NonNullable<ArrangementSnapshot['markers']>>(null),
-        midi_store: create_store_mock<ArrangementSnapshot['midi']>(null),
+        midi_store: create_store_mock<MidiStoreState>(null),
         take_lane_store: create_store_mock<NonNullable<ArrangementSnapshot['takeLanes']>>(null),
         tempo_map_store: create_store_mock<NonNullable<ArrangementSnapshot['tempoMap']>>(null),
         time_signature_map_store: create_store_mock<NonNullable<ArrangementSnapshot['timeSignatureMap']>>(null),
@@ -74,7 +76,8 @@ describe('takeSnapshot', () => {
     it('should capture present Arrangement Automation MIDI and Transport snapshot values', () => {
         const tracks: ArrangementSnapshot['tracks'] = { tracks: [], selectedTrackId: 'track-1' };
         const automation: ArrangementSnapshot['automation'] = { lanes: [] };
-        const midi: ArrangementSnapshot['midi'] = {
+        const midi: MidiStoreState = {
+            probabilitySeed: 0xdecafbad,
             notesByClipId: { 'clip-1': [] },
             ccByClipId: { 'clip-1': [] },
             pitchBendByClipId: { 'clip-1': [] },
@@ -105,7 +108,11 @@ describe('takeSnapshot', () => {
             name: 'Live',
             tracks,
             automation,
-            midi,
+            midi: {
+                notesByClipId: midi.notesByClipId,
+                ccByClipId: midi.ccByClipId,
+                pitchBendByClipId: midi.pitchBendByClipId,
+            },
             tempoMap,
             timeSignatureMap,
             markers,
@@ -113,6 +120,6 @@ describe('takeSnapshot', () => {
         });
         expect(snapshot.tracks).toBe(tracks);
         expect(snapshot.automation).toBe(automation);
-        expect(snapshot.midi).toBe(midi);
+        expect(snapshot.midi).not.toHaveProperty('probabilitySeed');
     });
 });

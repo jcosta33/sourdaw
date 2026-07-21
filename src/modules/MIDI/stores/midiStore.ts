@@ -285,7 +285,9 @@ type MidiStore = Omit<Store<MidiStoreState>, 'set' | 'update'> & {
 };
 
 const runtimeMidiStore = createStore<MidiStoreState>({
-    storage: createAutomergeStorage(DOC_PREFIX_ROOT, 'midi'),
+    storage: createAutomergeStorage(DOC_PREFIX_ROOT, 'midi', {
+        hydrateMissing: () => defaultMidiStoreState,
+    }),
     initialData: defaultMidiStoreState,
     sanitize: sanitize_midi_store_state,
 });

@@ -124,6 +124,12 @@ describe('resetModuleStoresToDefault', () => {
         expect(mocks.hydrateYeastState).not.toHaveBeenCalled();
     });
 
+    it('does not queue a MIDI owner write before project-load hydration', () => {
+        resetModuleStoresToDefault({ resetMidiState: false });
+
+        expect(mocks.resetMidiStoreForProject).not.toHaveBeenCalled();
+    });
+
     it('should clear per-device Grinder telemetry so prior-project meters do not linger', () => {
         resetModuleStoresToDefault();
 

@@ -22,19 +22,23 @@ import { arrangementStore, defaultArrangementStoreState } from '../../../stores/
 type ResetModuleStoresToDefaultInput = {
     createNewMidiProbabilitySeed?: boolean;
     resetGrooveTemplates?: boolean;
+    resetMidiState?: boolean;
     resetYeastState?: boolean;
 };
 
 export function resetModuleStoresToDefault({
     createNewMidiProbabilitySeed = false,
     resetGrooveTemplates = true,
+    resetMidiState = true,
     resetYeastState = true,
 }: ResetModuleStoresToDefaultInput = {}): void {
     resetArrangementStoresForProject();
     arrangementStore.set(structuredClone(defaultArrangementStoreState));
     transportStore.set(defaultTransportState);
     automationStore.set({ lanes: [] });
-    resetMidiStoreForProject({ generateProbabilitySeed: createNewMidiProbabilitySeed });
+    if (resetMidiState) {
+        resetMidiStoreForProject({ generateProbabilitySeed: createNewMidiProbabilitySeed });
+    }
     if (resetGrooveTemplates) {
         hydrateGrooveTemplates({ templates: [], assignments: [] });
     }
