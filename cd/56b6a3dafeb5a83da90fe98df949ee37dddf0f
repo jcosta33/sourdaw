@@ -1,0 +1,31 @@
+.agents/skills/crdt-collaboration/SKILL.md
+  s_c2fca615e81f34::t_bb83746408b152 1-66
+docs/README.md
+  s_c2fca615e81f34::t_233817550d0381 18-21
+docs/architecture/01-system.md
+  s_c2fca615e81f34::t_7491f56514514d 20
+docs/architecture/06-crdt-collaboration.md
+  s_c2fca615e81f34::t_c545697d55ab60 1-89
+docs/architecture/07-wasm-dsp-pipeline.md
+  s_c2fca615e81f34::t_c712a23a0bcc5c 1-64
+docs/architecture/08-device-authoring.md
+  s_c2fca615e81f34::t_5b7038071d5ec3 1-63
+docs/architecture/09-ai-stack.md
+  s_c2fca615e81f34::t_862a8701045ffb 1-73
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "cd56b6a3dafeb5a83da90fe98df949ee37dddf0f",
+  "prompts": {},
+  "sessions": {
+    "s_c2fca615e81f34": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f74e9-e1c5-7142-85d2-4c577b3973c0",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
