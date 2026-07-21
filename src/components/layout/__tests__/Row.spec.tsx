@@ -1,7 +1,7 @@
 import { createRef } from 'react';
 
-import { render, screen } from '@testing-library/react';
-import { describe, it, expect } from 'vitest';
+import { fireEvent, render, screen } from '@testing-library/react';
+import { describe, it, expect, vi } from 'vitest';
 
 import { Row } from '../Row';
 
@@ -24,8 +24,11 @@ describe('Row', () => {
     describe('gap prop', () => {
         it.each([
             [0, 'gap-0'],
+            [0.5, 'gap-0.5'],
             [1, 'gap-1'],
+            [1.5, 'gap-1.5'],
             [2, 'gap-2'],
+            [2.5, 'gap-2.5'],
             [3, 'gap-3'],
             [4, 'gap-4'],
             [6, 'gap-6'],
@@ -89,6 +92,15 @@ describe('Row', () => {
             );
             expect(screen.getByTestId('row')).toHaveClass('flex-1');
         });
+
+        it('should not apply flex-1 when false', () => {
+            render(
+                <Row grow={false} data-testid="row">
+                    Content
+                </Row>
+            );
+            expect(screen.getByTestId('row')).not.toHaveClass('flex-1');
+        });
     });
 
     describe('shrink prop', () => {
@@ -115,6 +127,15 @@ describe('Row', () => {
                 </Row>
             );
             expect(screen.getByTestId('row')).toHaveClass('flex-wrap');
+        });
+
+        it('should not apply flex-wrap when false', () => {
+            render(
+                <Row wrap={false} data-testid="row">
+                    Content
+                </Row>
+            );
+            expect(screen.getByTestId('row')).not.toHaveClass('flex-wrap');
         });
     });
 
@@ -147,6 +168,17 @@ describe('Row', () => {
             );
             expect(ref.current).toBe(screen.getByTestId('row'));
         });
+
+        it('should match a selected polymorphic element', () => {
+            const ref = createRef<HTMLUListElement>();
+            render(
+                <Row as="ul" ref={ref} data-testid="row">
+                    <li>Content</li>
+                </Row>
+            );
+            expect(ref.current).toBe(screen.getByTestId('row'));
+            expect(ref.current?.tagName).toBe('UL');
+        });
     });
 
     describe('className merging', () => {
@@ -159,19 +191,58 @@ describe('Row', () => {
             const element = screen.getByTestId('row');
             expect(element).toHaveClass('flex', 'items-center', 'custom-class');
         });
-    });
 
-    describe('HTML attributes', () => {
-        it('should pass through arbitrary HTML attributes', () => {
+        it('should give conflicting caller utilities precedence', () => {
             render(
-                <Row data-testid="row" id="test-id" title="Test Title" aria-label="Test Label">
+                <Row className="flex-col min-w-full gap-8 items-end justify-between" data-testid="row">
                     Content
                 </Row>
             );
             const element = screen.getByTestId('row');
+            expect(element).toHaveClass('flex-col', 'min-w-full', 'gap-8', 'items-end', 'justify-between');
+            expect(element).not.toHaveClass('flex-row', 'min-w-0', 'gap-0', 'items-center', 'justify-start');
+        });
+    });
+
+    describe('HTML attributes', () => {
+        it('should pass through arbitrary HTML attributes', () => {
+            const onClick = vi.fn();
+            render(
+                <Row
+                    data-testid="row"
+                    data-proof="native"
+                    id="test-id"
+                    title="Test Title"
+                    aria-label="Test Label"
+                    style={{ color: 'rgb(1, 2, 3)' }}
+                    onClick={onClick}
+                >
+                    Content
+                </Row>
+            );
+            const element = screen.getByTestId('row');
+            fireEvent.click(element);
             expect(element).toHaveAttribute('id', 'test-id');
             expect(element).toHaveAttribute('title', 'Test Title');
             expect(element).toHaveAttribute('aria-label', 'Test Label');
+            expect(element).toHaveAttribute('data-proof', 'native');
+            expect(element).toHaveStyle({ color: 'rgb(1, 2, 3)' });
+            expect(onClick).toHaveBeenCalledOnce();
         });
+    });
+
+    it('should render children exactly once in their original order', () => {
+        render(
+            <Row data-testid="row">
+                <span>First</span>
+                <span>Second</span>
+                <span>Third</span>
+            </Row>
+        );
+        expect(Array.from(screen.getByTestId('row').children, (child) => child.textContent)).toEqual([
+            'First',
+            'Second',
+            'Third',
+        ]);
     });
 });
