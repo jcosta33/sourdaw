@@ -247,7 +247,16 @@ impl GrinderEngine {
 
             // Neural
             "engineMode" | "neuralEnabled" | "neuralPlacement" | "neuralMix" | "neuralTier"
-            | "neuralCpuBudget" | "neuralModelSlot" => self.neural.set_param(name, value),
+            | "neuralCpuBudget" | "neuralModelSlot" | "neuralModelMode" => {
+                self.neural.set_param(name, value);
+            }
+
+            // Imported/custom neural-capture profile, including the indexed
+            // neuralCustomConvWeight{layer}_{idx} family parsed inside
+            // NeuralCapture. These used to fall into the pedal-prefix `_` arm
+            // and were silently discarded, killing the whole custom-profile
+            // (capture import) feature end-to-end.
+            name if name.starts_with("neuralCustom") => self.neural.set_param(name, value),
 
             // Supported pedal ordering
             "preCompressorOrder" | "preOverdriveOrder" | "preDistortionOrder" | "preFuzzOrder"
@@ -1021,6 +1030,78 @@ mod tests {
         assert!(
             (serial - wet_dry_wet).abs() > 1.0e-3,
             "wet-dry-wet routing should audibly differ from serial (serial={serial}, wet_dry_wet={wet_dry_wet})"
+        );
+    }
+
+    #[test]
+    fn neural_model_mode_param_activates_the_custom_profile() {
+        let mut engine = GrinderEngine::new(48_000.0);
+        engine.set_param("engineMode", 2.0); // Hybrid: non-circuit, so warmup is observable
+        assert_eq!(
+            engine.neural_warmup_progress(),
+            1.0,
+            "nothing is armed yet: the warmup ramp reads complete"
+        );
+
+        engine.set_param("neuralModelMode", 1.0);
+
+        // Activating the custom profile rearms the warmup ramp from zero. If
+        // the engine dropped the param, progress stays pinned at 1.0.
+        assert!(
+            engine.neural_warmup_progress() < 1.0,
+            "neuralModelMode must reach NeuralCapture (custom profile arms warmup), got {}",
+            engine.neural_warmup_progress()
+        );
+    }
+
+    #[test]
+    fn neural_custom_tier_param_reaches_the_capture() {
+        let mut engine = GrinderEngine::new(48_000.0);
+        // Default tier is Standard: 48% CPU estimate.
+        assert_eq!(engine.neural_cpu_percent(), 48.0);
+
+        engine.set_param("neuralCustomTier", 3.0); // Recurrent
+
+        assert_eq!(
+            engine.neural_cpu_percent(),
+            10.0,
+            "neuralCustomTier must reach NeuralCapture (tier drives the CPU estimate)"
+        );
+    }
+
+    #[test]
+    fn neural_custom_conv_weight_params_change_the_processed_signal() {
+        fn render(conv_weight: Option<f32>) -> Vec<f32> {
+            let mut engine = GrinderEngine::new(48_000.0);
+            engine.set_param("engineMode", 1.0); // Capture: the capture replaces the amp path
+            engine.set_param("neuralModelMode", 1.0);
+            if let Some(weight) = conv_weight {
+                engine.set_param("neuralCustomConvWeight0_1", weight);
+            }
+
+            let total = 4096;
+            let mut left = vec![0.0_f32; total];
+            let mut right = vec![0.0_f32; total];
+            for n in 0..total {
+                let phase = (n as f32 * 2.0 * std::f32::consts::PI * 220.0) / 48_000.0;
+                left[n] = phase.sin() * 0.1;
+                right[n] = left[n];
+            }
+            engine.process_block(&mut left, &mut right);
+            left
+        }
+
+        let baseline = render(None);
+        let inverted = render(Some(-1.0));
+
+        let max_delta = baseline
+            .iter()
+            .zip(inverted.iter())
+            .map(|(a, b)| (a - b).abs())
+            .fold(0.0_f32, f32::max);
+        assert!(
+            max_delta > 1.0e-3,
+            "neuralCustomConvWeight0_1 must alter the capture output (max delta {max_delta})"
         );
     }
 }
