@@ -1,0 +1,141 @@
+src/modules/Arrangement/stores/__tests__/trackEligibility.spec.ts
+  s_70dfac9e909f7f::t_59cf65abc41cb9 1-108
+src/modules/Arrangement/stores/index.ts
+  s_70dfac9e909f7f::t_3ba62c2cd3f2c6 32
+src/modules/Arrangement/stores/trackEligibility.ts
+  s_70dfac9e909f7f::t_95cad9f127557e 1-129
+src/modules/Arrangement/useCases/__tests__/setTrackInput.spec.ts
+  s_70dfac9e909f7f::t_24eb88e57c4ea4 1,3-16,19-36
+src/modules/Arrangement/useCases/__tests__/updateClip.spec.ts
+  s_70dfac9e909f7f::t_008229de4acf30 1,7-10,15-18,20-21,23,29-38
+src/modules/Arrangement/useCases/clip/__tests__/addClip.spec.ts
+  s_70dfac9e909f7f::t_9bc8ff558675f6 100-109
+src/modules/Arrangement/useCases/clip/addClip.ts
+  s_70dfac9e909f7f::t_07ef0d48c5ff6f 4,55-57
+src/modules/Arrangement/useCases/device/__tests__/addDevice.spec.ts
+  s_70dfac9e909f7f::t_2bf1861176f555 40,89-99
+src/modules/Arrangement/useCases/device/__tests__/addExternalDevice.spec.ts
+  s_70dfac9e909f7f::t_c0166dd4a6ffc4 1,3-26,29-58
+src/modules/Arrangement/useCases/device/__tests__/bypassDevice.spec.ts
+  s_70dfac9e909f7f::t_dcd886396b91a9 29,50-61
+src/modules/Arrangement/useCases/device/__tests__/midiFxEligibility.spec.ts
+  s_70dfac9e909f7f::t_e0fabf0f70f1f5 1-92
+src/modules/Arrangement/useCases/device/__tests__/removeDevice.spec.ts
+  s_00eee6c678eb0b::t_8dca2157a29910 3,71-92
+src/modules/Arrangement/useCases/device/__tests__/reorderDevices.spec.ts
+  s_70dfac9e909f7f::t_6ec7a0e68b2e55 8,13-16,43-50
+src/modules/Arrangement/useCases/device/addDevice.ts
+  s_70dfac9e909f7f::t_ffec8ac07732b5 7,20-23
+src/modules/Arrangement/useCases/device/addExternalDevice.ts
+  s_70dfac9e909f7f::t_3fe9d0a052745c 6,18-21
+src/modules/Arrangement/useCases/device/addMidiFx.ts
+  s_70dfac9e909f7f::t_d67ca8f59a4253 4-5,9-12
+src/modules/Arrangement/useCases/device/bypassDevice.ts
+  s_70dfac9e909f7f::t_84d7d198f6c58d 3,10-12
+src/modules/Arrangement/useCases/device/bypassMidiFx.ts
+  s_70dfac9e909f7f::t_3a41fccb73ed77 5-6,12-15
+src/modules/Arrangement/useCases/device/removeMidiFx.ts
+  s_70dfac9e909f7f::t_871feb1690dbb9 5,12
+src/modules/Arrangement/useCases/device/reorderDevices.ts
+  s_70dfac9e909f7f::t_e74884cc1f9b0b 1,3,6-9
+src/modules/Arrangement/useCases/device/sendManagement/__tests__/setSend.spec.ts
+  s_70dfac9e909f7f::t_bc2340f00dd2cb 28,46,64-72
+src/modules/Arrangement/useCases/device/sendManagement/__tests__/toggleSendPreFader.spec.ts
+  s_70dfac9e909f7f::t_96d91bddc2cfd3 1,3-21,24-49
+src/modules/Arrangement/useCases/device/sendManagement/setSend.ts
+  s_70dfac9e909f7f::t_4e565ad0dc9713 5,9-11
+src/modules/Arrangement/useCases/device/sendManagement/toggleSendPreFader.ts
+  s_70dfac9e909f7f::t_c303442be67066 5,9-12,16-18
+src/modules/Arrangement/useCases/device/setDeviceParameter/__tests__/setDeviceParameter.spec.ts
+  s_00eee6c678eb0b::t_e2488a29fdef57 3,83-97
+src/modules/Arrangement/useCases/device/setDeviceParameter/setDeviceParameter.ts
+  s_70dfac9e909f7f::t_02b8da4d0112f4 7,27-29
+src/modules/Arrangement/useCases/device/updateMidiFxParam.ts
+  s_70dfac9e909f7f::t_7ba049ba5f5bd1 5-6,12-15
+src/modules/Arrangement/useCases/freezeBounce/__tests__/bounceTrack.spec.ts
+  s_70dfac9e909f7f::t_60ccf2ad7c64b0 202-222
+src/modules/Arrangement/useCases/freezeBounce/__tests__/freezeTrack.spec.ts
+  s_70dfac9e909f7f::t_8d3ad624936c71 5,181-192
+src/modules/Arrangement/useCases/freezeBounce/__tests__/renderOffline.spec.ts
+  s_70dfac9e909f7f::t_214b5bb17913f7 303-314
+src/modules/Arrangement/useCases/freezeBounce/bounceTrack.ts
+  s_70dfac9e909f7f::t_ec5f0cf8879bed 6,30-32
+src/modules/Arrangement/useCases/freezeBounce/freezeTrack.ts
+  s_70dfac9e909f7f::t_0c650bc5c6521b 6,23-25
+src/modules/Arrangement/useCases/freezeBounce/renderOffline.ts
+  s_70dfac9e909f7f::t_86b7b85d5914a2 13,47-51,64
+src/modules/Arrangement/useCases/recording/__tests__/armTrack.spec.ts
+  s_70dfac9e909f7f::t_784730d0f51740 49-67
+src/modules/Arrangement/useCases/recording/__tests__/startRecording.spec.ts
+  s_70dfac9e909f7f::t_9fa386b717275d 102-114
+src/modules/Arrangement/useCases/recording/armTrack.ts
+  s_70dfac9e909f7f::t_7e28d36327982e 5,8-12
+src/modules/Arrangement/useCases/recording/startRecording.ts
+  s_70dfac9e909f7f::t_4a3cae5bac5a9a 6,22-24
+src/modules/Arrangement/useCases/setTrackGainPan/__tests__/setInputMonitoring.spec.ts
+  s_70dfac9e909f7f::t_130f080daa0505 6,48-61,63-65
+src/modules/Arrangement/useCases/setTrackGainPan/setInputMonitoring.ts
+  s_70dfac9e909f7f::t_d455abce9a0e23 3,5,9-14
+src/modules/Arrangement/useCases/setTrackInput.ts
+  s_70dfac9e909f7f::t_4040c7978adfd9 1,3,6-9
+src/modules/Arrangement/useCases/toggleTrackState/__tests__/setTrackOutput.spec.ts
+  s_70dfac9e909f7f::t_df6a2da9033b9c 6,36-44,46-48
+src/modules/Arrangement/useCases/toggleTrackState/__tests__/toggleInputMonitoring.spec.ts
+  s_70dfac9e909f7f::t_3ffe64b590ab43 74-86
+src/modules/Arrangement/useCases/toggleTrackState/setTrackOutput.ts
+  s_70dfac9e909f7f::t_b194f3bd3da494 3,5,8-11
+src/modules/Arrangement/useCases/toggleTrackState/toggleInputMonitoring.ts
+  s_70dfac9e909f7f::t_531be08760475c 5,27-31
+src/modules/Arrangement/useCases/updateClip.ts
+  s_70dfac9e909f7f::t_b8ffadaf6cfa16 1,3,7-11
+src/modules/AudioEngine/useCases/__tests__/exportStems.spec.ts
+  s_70dfac9e909f7f::t_52baeaae224840 8-9,118-139
+src/modules/AudioEngine/useCases/__tests__/renderOffline.spec.ts
+  s_70dfac9e909f7f::t_922f9fa6a518d3 22-24,93-104,114-153
+src/modules/AudioEngine/useCases/exportStems.ts
+  s_70dfac9e909f7f::t_86a7ff31d1da6d 1-2,77-86
+src/modules/AudioEngine/useCases/offlineRender/__tests__/shouldCreateOfflineStrip.spec.ts
+  s_70dfac9e909f7f::t_f939fb2f50c56e 79-95
+src/modules/AudioEngine/useCases/offlineRender/shouldCreateOfflineStrip.ts
+  s_70dfac9e909f7f::t_d836c464a6bf3b 1-2,11-18
+src/modules/Routing/useCases/busControls/__tests__/sendEligibility.spec.ts
+  s_70dfac9e909f7f::t_9f4f8edbaf7be4 1-54
+src/modules/Routing/useCases/busControls/setSend.ts
+  s_70dfac9e909f7f::t_8e687bafe9955c 1,5-13
+src/modules/Routing/useCases/sidechain/__tests__/sidechainEligibility.spec.ts
+  s_70dfac9e909f7f::t_b86ebc8a72cd4a 1-112
+src/modules/Routing/useCases/sidechain/addSidechainRoute.ts
+  s_70dfac9e909f7f::t_13f52477acc139 1,38-47
+src/modules/Routing/useCases/sidechain/setSidechainRoutes.ts
+  s_70dfac9e909f7f::t_e663f287014441 1,26-39,46
+src/modules/Routing/useCases/sidechain/wireSidechainRoutes.ts
+  s_70dfac9e909f7f::t_67a8ffdaa1591a 1,22,24-31
+src/modules/Transport/useCases/__tests__/ensureTrackStrips.spec.ts
+  s_70dfac9e909f7f::t_ee387cc7c3b867 26,123-138
+src/modules/Transport/useCases/ensureTrackStrips.ts
+  s_70dfac9e909f7f::t_7741361db7df20 8,32,68,71
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "a49a1e4bbb6062dac9dee493d84ddbf245dcdb87",
+  "prompts": {},
+  "sessions": {
+    "s_00eee6c678eb0b": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f82a1-27bf-7c10-8ad1-a59cec86134d",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_70dfac9e909f7f": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8290-4e77-73b2-8a76-2d4ecec0634e",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
