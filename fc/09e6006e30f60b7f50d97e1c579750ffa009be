@@ -1,0 +1,19 @@
+crates/daw-dsp/src/proof/oversample.rs
+  s_c2fca615e81f34::t_0effca9f3a517f 16-23,25-29,31-34,40-43,47-48,50-51,53,55-56,58-64,66-70,73,77-81,85-88,123-213
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "fc09e6006e30f60b7f50d97e1c579750ffa009be",
+  "prompts": {},
+  "sessions": {
+    "s_c2fca615e81f34": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f74e9-e1c5-7142-85d2-4c577b3973c0",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
