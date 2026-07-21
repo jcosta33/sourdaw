@@ -163,17 +163,41 @@ pub async fn open_plugin_gui(
         }
     };
 
-    let publish_window = || -> Result<(), String> {
-        let _ = plugin_window.set_size(tauri::LogicalSize::new(width, height));
-        let _ = plugin_window.show();
-        let _ = plugin_window.set_focus();
+    // OS-level close (title-bar button): Tauri destroys the window by default.
+    // Schedule the plugin GUI state reset when that happens so a later open
+    // recreates the GUI instead of failing on stale state and leaking the
+    // plugin's internal GUI (audit #508 row 10).
+    {
+        let close_app = app.clone();
+        let close_instance_id = instance_id.clone();
+        let close_window_label = window_label.clone();
+        plugin_window.on_window_event(move |event| {
+            if let tauri::WindowEvent::CloseRequested { .. } = event {
+                schedule_plugin_gui_reset_after_os_close(
+                    close_instance_id.clone(),
+                    close_window_label.clone(),
+                    close_app.clone(),
+                );
+            }
+        });
+    }
 
-        let mut windows = state
-            .plugin_windows
-            .lock()
-            .map_err(|e| format!("Failed to lock plugin_windows: {}", e))?;
-        windows.insert(instance_id.clone(), window_label.clone());
-        Ok(())
+    let publish_window = || -> Result<(), String> {
+        publish_plugin_gui_window_in_label_order(
+            || {
+                let mut windows = state
+                    .plugin_windows
+                    .lock()
+                    .map_err(|e| format!("Failed to lock plugin_windows: {}", e))?;
+                windows.insert(instance_id.clone(), window_label.clone());
+                Ok(())
+            },
+            || {
+                let _ = plugin_window.set_size(tauri::LogicalSize::new(width, height));
+                let _ = plugin_window.show();
+                let _ = plugin_window.set_focus();
+            },
+        )
     };
 
     if let Some(runtime) = engine_runtime.as_ref() {
@@ -223,6 +247,84 @@ fn publish_engine_gui_window_with_lifecycle_checks(
     ensure_public_control_allowed()?;
     publish_window()?;
     ensure_public_control_allowed()
+}
+
+/// Publish the plugin window: record the window label BEFORE showing. A close
+/// racing the show path must always find the label recorded, otherwise the
+/// close-requested reset would miss it and leave a stale entry behind.
+fn publish_plugin_gui_window_in_label_order(
+    insert_label: impl FnOnce() -> Result<(), String>,
+    show_window: impl FnOnce(),
+) -> Result<(), String> {
+    insert_label()?;
+    show_window();
+    Ok(())
+}
+
+/// Hand the OS-close reset to the async runtime and return its join handle.
+///
+/// The CloseRequested handler runs on the Tauri event thread — the only
+/// event-thread caller of the plugin mutexes (`plugins`, `engine_plugins`) and
+/// of `SharedClapPlugin`'s control lock (a 2 s spin). Doing that work inline
+/// risks a circular-wait deadlock with GUI-affine plugins and freezes the
+/// whole app event loop otherwise, so the handler only spawns; Tauri destroys
+/// the window regardless. The handle is returned so tests can await the
+/// scheduled reset; the handler itself detaches.
+fn schedule_plugin_gui_reset_after_os_close<R: tauri::Runtime>(
+    instance_id: String,
+    window_label: String,
+    app: tauri::AppHandle<R>,
+) -> tauri::async_runtime::JoinHandle<()> {
+    tauri::async_runtime::spawn(async move {
+        reset_plugin_gui_state_after_os_close(&instance_id, &window_label, app.state::<AppState>().inner());
+    })
+}
+
+/// Reset "GUI open" bookkeeping after the OS reports the plugin window is
+/// closing (title-bar close request). Tauri's default handling destroys the
+/// window itself; this closes the plugin's internal GUI (hide + destroy, via
+/// the same owning paths as `close_plugin_gui`) and drops the `plugin_windows`
+/// entry, so a later `open_plugin_gui` recreates the GUI instead of failing
+/// with "GUI is already open" on stale state and leaking the plugin's
+/// internal GUI resources. The label is compare-and-removed: a newer window
+/// published for the same instance since the close must keep its entry.
+/// It never drops the plugin, so no audio-thread/retire-list concern applies.
+fn reset_plugin_gui_state_after_os_close(instance_id: &str, window_label: &str, state: &AppState) {
+    let closed_command_owned = match state.plugins.lock() {
+        Ok(mut plugins) => match plugins.get_mut(instance_id) {
+            Some(instance) => {
+                instance.close_gui();
+                true
+            }
+            None => false,
+        },
+        Err(_) => false,
+    };
+
+    if !closed_command_owned {
+        let is_engine_owned = state
+            .engine_plugins
+            .lock()
+            .map(|engine_plugins| engine_plugins.contains_key(instance_id))
+            .unwrap_or(false);
+
+        if is_engine_owned {
+            let _ = state.with_engine_plugin_control(instance_id, |plugin| {
+                plugin.close_gui();
+                Ok(())
+            });
+        }
+    }
+
+    if let Ok(mut windows) = state.plugin_windows.lock() {
+        let is_this_window = windows
+            .get(instance_id)
+            .map(|label| label == window_label)
+            .unwrap_or(false);
+        if is_this_window {
+            windows.remove(instance_id);
+        }
+    }
 }
 
 fn cleanup_opened_engine_gui_after_rejected_lifecycle(
@@ -542,5 +644,151 @@ mod tests {
         assert!(!closed_gui.get());
         assert!(!removed_window_label.get());
         assert!(!destroyed_window.get());
+    }
+
+    fn engine_fixture_runtime(
+        state: &tauri::State<'_, AppState>,
+        instance_id: &str,
+    ) -> Arc<SharedClapPlugin> {
+        let engine_plugins = state.engine_plugins.lock().expect("engine_plugins lock");
+        std::sync::Arc::clone(
+            &engine_plugins
+                .get(instance_id)
+                .expect("engine fixture should exist")
+                .runtime,
+        )
+    }
+
+    #[test]
+    fn os_close_resets_engine_owned_gui_state_and_reopen_recreates_gui() {
+        let app = command_test_app();
+        let state = app.state::<AppState>();
+        insert_engine_owned_fixture(&state, "engine-owned-fixture", true);
+        let runtime = engine_fixture_runtime(&state, "engine-owned-fixture");
+
+        // Open (as open_plugin_gui does) and record the window label.
+        let size = runtime.with_control(std::time::Duration::from_secs(2), |plugin| {
+            plugin.open_gui(std::ptr::null_mut())
+        });
+        assert!(size.is_ok());
+        state
+            .plugin_windows
+            .lock()
+            .expect("plugin_windows lock")
+            .insert(
+                "engine-owned-fixture".to_string(),
+                "plugin-engine-owned-fixture".to_string(),
+            );
+
+        // OS-level close: the event-thread handler only schedules the reset on
+        // the async runtime (non-blocking); await the scheduled work here.
+        let reset = schedule_plugin_gui_reset_after_os_close(
+            "engine-owned-fixture".to_string(),
+            "plugin-engine-owned-fixture".to_string(),
+            app.handle().clone(),
+        );
+        tauri::async_runtime::block_on(reset).expect("scheduled reset should complete");
+
+        assert!(state
+            .plugin_windows
+            .lock()
+            .expect("plugin_windows lock")
+            .get("engine-owned-fixture")
+            .is_none());
+
+        // The reopen path reaches open_gui with clean state and recreates the GUI.
+        let reopened = runtime.with_control(std::time::Duration::from_secs(2), |plugin| {
+            plugin.open_gui(std::ptr::null_mut())
+        });
+        assert!(
+            reopened.is_ok(),
+            "reopen after OS-level close must recreate the GUI, got: {:?}",
+            reopened.err()
+        );
+    }
+
+    #[test]
+    fn os_close_reset_keeps_label_when_a_newer_window_was_published() {
+        let app = command_test_app();
+        let state = app.state::<AppState>();
+        insert_engine_owned_fixture(&state, "engine-owned-fixture", true);
+        let runtime = engine_fixture_runtime(&state, "engine-owned-fixture");
+
+        let size = runtime.with_control(std::time::Duration::from_secs(2), |plugin| {
+            plugin.open_gui(std::ptr::null_mut())
+        });
+        assert!(size.is_ok());
+
+        // A newer window for the same instance was published after the close
+        // event fired: the reset for the OLD window must not remove its label.
+        state
+            .plugin_windows
+            .lock()
+            .expect("plugin_windows lock")
+            .insert("engine-owned-fixture".to_string(), "plugin-newer".to_string());
+
+        reset_plugin_gui_state_after_os_close("engine-owned-fixture", "plugin-older", &state);
+
+        assert_eq!(
+            state
+                .plugin_windows
+                .lock()
+                .expect("plugin_windows lock")
+                .get("engine-owned-fixture")
+                .cloned(),
+            Some("plugin-newer".to_string())
+        );
+    }
+
+    #[test]
+    fn os_close_removes_window_label_for_unknown_instance_without_plugins() {
+        let app = command_test_app();
+        let state = app.state::<AppState>();
+        state
+            .plugin_windows
+            .lock()
+            .expect("plugin_windows lock")
+            .insert("ghost".to_string(), "plugin-ghost".to_string());
+
+        reset_plugin_gui_state_after_os_close("ghost", "plugin-ghost", &state);
+
+        assert!(state
+            .plugin_windows
+            .lock()
+            .expect("plugin_windows lock")
+            .is_empty());
+    }
+
+    #[test]
+    fn publish_plugin_gui_window_in_label_order_inserts_label_before_showing() {
+        let order = std::cell::RefCell::new(Vec::new());
+
+        let result = publish_plugin_gui_window_in_label_order(
+            || {
+                order.borrow_mut().push("insert");
+                Ok(())
+            },
+            || {
+                order.borrow_mut().push("show");
+            },
+        );
+
+        assert_eq!(result, Ok(()));
+        assert_eq!(order.borrow().as_slice(), ["insert", "show"]);
+    }
+
+    #[test]
+    fn publish_plugin_gui_window_in_label_order_skips_show_when_insert_fails() {
+        let shown = Cell::new(false);
+
+        let result = publish_plugin_gui_window_in_label_order(
+            || Err("Failed to lock plugin_windows: poisoned".to_string()),
+            || {
+                shown.set(true);
+            },
+        );
+
+        assert_eq!(result, Err("Failed to lock plugin_windows: poisoned".to_string()));
+        assert!(!shown.get());
     }
 }
