@@ -5,14 +5,15 @@ import { type Track } from '#/modules/Arrangement/stores';
 
 import { DEFAULT_BAND, DEFAULT_PATCH, type BacteriaPatch } from '../../../models/BacteriaPatch';
 import { type BacteriaState, setBacteriaBandParam } from '../../../stores/bacteriaStore';
-import { type PersistDeviceParamFn, type UpdateDeviceParamFn } from '../helpers';
+import {
+    type PersistDeviceParamFn,
+    type ResolveEligibleDeviceWriteTargetFn,
+    type UpdateDeviceParamFn,
+} from '../helpers';
 import { setBacteriaBandParamWithAudio } from '../setBacteriaBandParamWithAudio';
 
 type ScheduledEntry = {
-    ref: {
-        trackId: string;
-        deviceId: string;
-    };
+    deviceId: string;
     key: string;
     value: number;
 };
@@ -61,6 +62,7 @@ type BridgeDeps = {
     getAllTracks: () => Track[];
     updateDeviceParam: UpdateDeviceParamFn;
     persistDeviceParam: PersistDeviceParamFn;
+    resolveEligibleDeviceWriteTarget: ResolveEligibleDeviceWriteTargetFn;
 };
 
 function createTrackWithDevice(deviceId: string): Track {
@@ -120,10 +122,20 @@ function createTwoBandState(): BacteriaState {
 }
 
 function createDeps(tracks: Track[] = [createTrackWithDevice('device-1')]): BridgeDeps {
+    const resolveEligibleDeviceWriteTarget = vi.fn<ResolveEligibleDeviceWriteTargetFn>((deviceId) => {
+        const owner = tracks.find((track) => track.devices.some((device) => device.id === deviceId));
+        if (owner === undefined) {
+            return { status: 'missing' };
+        }
+
+        return { status: 'eligible', trackId: owner.id, deviceId };
+    });
+
     return {
         getAllTracks: vi.fn(() => tracks),
         updateDeviceParam: vi.fn<UpdateDeviceParamFn>(),
         persistDeviceParam: vi.fn<PersistDeviceParamFn>(),
+        resolveEligibleDeviceWriteTarget,
     };
 }
 

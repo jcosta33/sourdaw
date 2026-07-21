@@ -1,19 +1,29 @@
-import { type BridgeDeps, type DeviceRef, type GlutenBatchEntry } from './helpers';
+import { type BridgeDeps, type GlutenBatchEntry } from './helpers';
 
 type CreateFlushHandlersOutput = {
     flushParam: (_compositeKey: string, entry: GlutenBatchEntry) => void;
-    pushParamImmediately: (ref: DeviceRef, key: string, value: number) => void;
+    pushParamImmediately: (deviceId: string, key: string, value: number) => void;
 };
 
 export function createFlushHandlers(deps: BridgeDeps): CreateFlushHandlersOutput {
     function flushParam(_compositeKey: string, entry: GlutenBatchEntry): void {
-        deps.updateDeviceParam(entry.ref.trackId, entry.ref.deviceId, entry.key, entry.value);
-        deps.persistDeviceParam(entry.ref.deviceId, entry.key, entry.value);
+        const target = deps.resolveEligibleDeviceWriteTarget(entry.deviceId);
+        if (target.status !== 'eligible') {
+            return;
+        }
+
+        deps.updateDeviceParam(target.trackId, target.deviceId, entry.key, entry.value);
+        deps.persistDeviceParam(target.deviceId, entry.key, entry.value);
     }
 
-    function pushParamImmediately(ref: DeviceRef, key: string, value: number): void {
-        deps.updateDeviceParam(ref.trackId, ref.deviceId, key, value);
-        deps.persistDeviceParam(ref.deviceId, key, value);
+    function pushParamImmediately(deviceId: string, key: string, value: number): void {
+        const target = deps.resolveEligibleDeviceWriteTarget(deviceId);
+        if (target.status !== 'eligible') {
+            return;
+        }
+
+        deps.updateDeviceParam(target.trackId, target.deviceId, key, value);
+        deps.persistDeviceParam(target.deviceId, key, value);
     }
 
     return { flushParam, pushParamImmediately };

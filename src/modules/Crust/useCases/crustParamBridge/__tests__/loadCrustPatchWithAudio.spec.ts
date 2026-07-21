@@ -1,17 +1,24 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
+import { type DeviceWriteTargetResolution } from '#/modules/Arrangement/stores';
+
 const TRACK_ID = 'track-1';
 const DEVICE_ID = 'device-1';
 
 // Controllable engine / persistence sinks. `helpers.ts` wires these at module
 // level (no DI), so we intercept them at the module boundary and keep the real
-// paramBatcher / encodeCrustValue / findDeviceRefCrust so the cancel-on-load
-// behaviour is genuinely exercised. vi.hoisted lifts the shared spies/state so
-// the hoisted vi.mock factories below can reference them.
+// paramBatcher / encodeCrustValue so the cancel-on-load behaviour is genuinely
+// exercised. vi.hoisted lifts the shared spies/state so the hoisted vi.mock
+// factories below can reference them.
 const mocks = vi.hoisted(() => ({
     updateDeviceParam: vi.fn(),
     persistDeviceParam: vi.fn(),
     loadCrustPatch: vi.fn(),
+    resolveEligibleDeviceWriteTarget: vi.fn<(deviceId: string) => DeviceWriteTargetResolution>(() => ({
+        status: 'eligible' as const,
+        trackId: 'track-1',
+        deviceId: 'device-1',
+    })),
     trackStore: {
         value: { tracks: [{ id: 'track-1', devices: [{ id: 'device-1', type: 'crust' }] }] },
     },
@@ -25,6 +32,7 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
 vi.mock('#/modules/Arrangement/stores', () => ({
     trackStore: mocks.trackStore,
     persistDeviceParam: mocks.persistDeviceParam,
+    resolveEligibleDeviceWriteTarget: mocks.resolveEligibleDeviceWriteTarget,
 }));
 
 vi.mock('../../../stores/crustStore', () => ({
@@ -33,7 +41,7 @@ vi.mock('../../../stores/crustStore', () => ({
 
 import { DEFAULT_CRUST_PATCH } from '../../../models/CrustPatch';
 import { createFlushHandlers } from '../createFlushHandlers';
-import { paramBatcher, findDeviceRefCrust } from '../helpers';
+import { paramBatcher } from '../helpers';
 import { loadCrustPatchWithAudio } from '../loadCrustPatchWithAudio';
 
 describe('loadCrustPatchWithAudio', () => {
@@ -41,6 +49,11 @@ describe('loadCrustPatchWithAudio', () => {
 
     beforeEach(() => {
         vi.clearAllMocks();
+        mocks.resolveEligibleDeviceWriteTarget.mockReturnValue({
+            status: 'eligible',
+            trackId: TRACK_ID,
+            deviceId: DEVICE_ID,
+        });
         paramBatcher.cancelAll();
         rafQueue = [];
         // Capture rAF callbacks so the test drives flush timing deterministically.
@@ -54,6 +67,7 @@ describe('loadCrustPatchWithAudio', () => {
     });
 
     afterEach(() => {
+        vi.restoreAllMocks();
         paramBatcher.cancelAll();
         vi.unstubAllGlobals();
     });
@@ -85,15 +99,15 @@ describe('loadCrustPatchWithAudio', () => {
     });
 
     it('cancels a pending drag-flush so it cannot overwrite the loaded preset value', () => {
-        const ref = findDeviceRefCrust(DEVICE_ID);
-        if (!ref) {
-            throw new Error('expected device ref in test setup');
-        }
-        const { flushParam } = createFlushHandlers({ updateDeviceParam, persistDeviceParam });
+        const { flushParam } = createFlushHandlers({
+            updateDeviceParam,
+            persistDeviceParam,
+            resolveEligibleDeviceWriteTarget: mocks.resolveEligibleDeviceWriteTarget,
+        });
 
         // A knob drag scheduled a rAF flush carrying a stale gain value but the
         // frame has not fired yet.
-        paramBatcher.schedule(`${DEVICE_ID}:gain`, { ref, key: 'gain', value: 99 }, flushParam);
+        paramBatcher.schedule(`${DEVICE_ID}:gain`, { deviceId: DEVICE_ID, key: 'gain', value: 99 }, flushParam);
         expect(paramBatcher.pendingSize).toBe(1);
 
         // The preset carries a different gain; load applies it immediately.
@@ -112,4 +126,19 @@ describe('loadCrustPatchWithAudio', () => {
         const sawStaleGain = updateDeviceParam.mock.calls.some(([, , key, value]) => key === 'gain' && value === 99);
         expect(sawStaleGain).toBe(false);
     });
+
+    it.each(['missing', 'ineligible'] as const)(
+        'rejects a %s owner before patch, cancellation, or engine effects',
+        (status) => {
+            mocks.resolveEligibleDeviceWriteTarget.mockReturnValue({ status });
+            const cancelAll = vi.spyOn(paramBatcher, 'cancelAll');
+
+            loadCrustPatchWithAudio(DEVICE_ID, DEFAULT_CRUST_PATCH);
+
+            expect(mocks.loadCrustPatch).not.toHaveBeenCalled();
+            expect(cancelAll).not.toHaveBeenCalled();
+            expect(updateDeviceParam).not.toHaveBeenCalled();
+            expect(persistDeviceParam).not.toHaveBeenCalled();
+        }
+    );
 });

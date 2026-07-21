@@ -3,7 +3,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { addDeviceToStrip, removeDeviceFromStrip, updateDeviceParam } from '#/modules/AudioEngine/useCases';
 
 import { type SoundPreset } from '../../../models/SoundPreset';
-import { type Track } from '../../../models/Track';
+import { normalizeTrack, type Track } from '../../../models/Track';
 import { getTrackById } from '../../../repositories/track/getTrackById';
 import { updateTrack } from '../../../repositories/track/updateTrack';
 import { addDevice } from '../../device/addDevice';
@@ -69,6 +69,28 @@ function basePreset(devices: SoundPreset['devices']): SoundPreset {
     };
 }
 
+function makeTrack(id: string, deviceId = 'old-dev'): Track {
+    return normalizeTrack({
+        id,
+        name: id,
+        kind: 'audio',
+        devices: [
+            {
+                id: deviceId,
+                name: 'Old',
+                type: 'delay',
+                bypassed: false,
+                parameterValues: {},
+            },
+        ],
+    });
+}
+
+function setRuntimeKind(track: Track, kind: string): Track {
+    Object.defineProperty(track, 'kind', { configurable: true, enumerable: true, value: kind });
+    return track;
+}
+
 describe('loadPresetToTrack', () => {
     beforeEach(() => {
         vi.mocked(getTrackById).mockReset();
@@ -84,18 +106,7 @@ describe('loadPresetToTrack', () => {
     });
 
     it('should strip existing devices before loading when track exists', () => {
-        const track = {
-            id: 't1',
-            devices: [
-                {
-                    id: 'old-dev',
-                    name: 'Old',
-                    type: 'delay',
-                    bypassed: false,
-                    parameterValues: {},
-                },
-            ],
-        } as Track;
+        const track = makeTrack('t1');
 
         vi.mocked(getTrackById).mockReturnValue(track);
         vi.mocked(addDevice).mockReturnValue({
@@ -106,15 +117,19 @@ describe('loadPresetToTrack', () => {
             parameterValues: { mix: 0.5 },
         });
 
-        loadPresetToTrack('t1', basePreset([{ type: 'delay', name: 'Delay', parameterValues: { mix: 0.5 } }]));
+        const didWrite = loadPresetToTrack(
+            't1',
+            basePreset([{ type: 'delay', name: 'Delay', parameterValues: { mix: 0.5 } }])
+        );
 
+        expect(didWrite).toBe(true);
         expect(removeDeviceFromStrip).toHaveBeenCalledWith('t1', 'old-dev');
         expect(updateTrack).toHaveBeenCalledWith('t1', expect.any(Function));
         const clearDevices = vi.mocked(updateTrack).mock.calls[0]?.[1];
         expect(clearDevices?.(track)).toEqual({ ...track, devices: [] });
     });
 
-    it('should add effect devices without stripping when track is missing', () => {
+    it('rejects a missing target before any effect', () => {
         vi.mocked(getTrackById).mockReturnValue(undefined);
         vi.mocked(addDevice).mockReturnValue({
             id: 'fx-1',
@@ -124,16 +139,20 @@ describe('loadPresetToTrack', () => {
             parameterValues: { size: 0.2 },
         });
 
-        loadPresetToTrack('ghost', basePreset([{ type: 'reverb', name: 'Reverb', parameterValues: { size: 0.2 } }]));
+        const didWrite = loadPresetToTrack(
+            'ghost',
+            basePreset([{ type: 'reverb', name: 'Reverb', parameterValues: { size: 0.2 } }])
+        );
 
+        expect(didWrite).toBe(false);
         expect(removeDeviceFromStrip).not.toHaveBeenCalled();
-        expect(addDevice).toHaveBeenCalledWith('ghost', 'Reverb');
-        expect(setDeviceParameter).toHaveBeenCalledWith('fx-1', 'size', 0.2);
-        expect(updateDeviceParam).toHaveBeenCalledWith('ghost', 'fx-1', 'size', 0.2);
+        expect(addDevice).not.toHaveBeenCalled();
+        expect(setDeviceParameter).not.toHaveBeenCalled();
+        expect(updateDeviceParam).not.toHaveBeenCalled();
     });
 
     it('should attach instrument devices via updateTrack and audio strip', () => {
-        vi.mocked(getTrackById).mockReturnValue(undefined);
+        vi.mocked(getTrackById).mockReturnValue(makeTrack('t2'));
 
         loadPresetToTrack(
             't2',
@@ -148,7 +167,7 @@ describe('loadPresetToTrack', () => {
     it('should notify when Faust instrument compilation fails', async () => {
         const failure = new Error('compile failed');
         mocks.compileFaustDSP.mockRejectedValueOnce(failure);
-        vi.mocked(getTrackById).mockReturnValue(undefined);
+        vi.mocked(getTrackById).mockReturnValue(makeTrack('t3'));
 
         loadPresetToTrack(
             't3',
@@ -167,5 +186,27 @@ describe('loadPresetToTrack', () => {
         expect(loggedError.message).toBe('Faust compilation failed for faust-synth');
         expect(loggedError.cause).toBe(failure);
         expect(mocks.notifyUser).toHaveBeenCalledWith('Failed to compile Faust device: Faust Synth', 'error');
+    });
+
+    it('rejects a VCA target before removal, allocation, mutation, compile, runtime, or notification', async () => {
+        const randomUuid = vi.spyOn(crypto, 'randomUUID');
+        vi.mocked(getTrackById).mockReturnValue(setRuntimeKind(makeTrack('vca-1'), 'vca'));
+
+        const didWrite = loadPresetToTrack(
+            'vca-1',
+            basePreset([{ type: 'faust-synth', name: 'Forbidden', parameterValues: { gain: 0.8 } }])
+        );
+        await Promise.resolve();
+
+        expect(didWrite).toBe(false);
+        expect(removeDeviceFromStrip).not.toHaveBeenCalled();
+        expect(randomUuid).not.toHaveBeenCalled();
+        expect(updateTrack).not.toHaveBeenCalled();
+        expect(addDevice).not.toHaveBeenCalled();
+        expect(setDeviceParameter).not.toHaveBeenCalled();
+        expect(mocks.compileFaustDSP).not.toHaveBeenCalled();
+        expect(addDeviceToStrip).not.toHaveBeenCalled();
+        expect(updateDeviceParam).not.toHaveBeenCalled();
+        expect(mocks.notifyUser).not.toHaveBeenCalled();
     });
 });

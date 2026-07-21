@@ -1,5 +1,4 @@
 import { inject } from '#/infra/di/inject';
-import { createFindDeviceRef } from '#/utils/createFindDeviceRef';
 
 import { type GrinderMic } from '../../models/GrinderPatch';
 import { setGrinderMicParam } from '../../stores/grinderStore';
@@ -9,12 +8,15 @@ import { grinderParamBridgeDependencies } from './grinderParamBridgeDependencies
 import { paramBatcher } from './helpers';
 
 export const setGrinderMicParamWithAudio = inject(grinderParamBridgeDependencies)(({
-    getAllTracks: getAllTracksFn,
     updateDeviceParam: updateDeviceParamFn,
     persistDeviceParam: persistDeviceParamFn,
+    resolveEligibleDeviceWriteTarget: resolveEligibleDeviceWriteTargetFn,
 }) => {
-    const findDeviceRef = createFindDeviceRef(getAllTracksFn);
-    const flushParam = createFlushParam({ updateDeviceParamFn, persistDeviceParamFn });
+    const flushParam = createFlushParam({
+        updateDeviceParamFn,
+        persistDeviceParamFn,
+        resolveEligibleDeviceWriteTargetFn,
+    });
 
     return function setGrinderMicParamWithAudio<Key extends keyof GrinderMic>(
         deviceId: string,
@@ -22,6 +24,11 @@ export const setGrinderMicParamWithAudio = inject(grinderParamBridgeDependencies
         key: Key,
         value: number
     ): void {
+        const target = resolveEligibleDeviceWriteTargetFn(deviceId);
+        if (target.status !== 'eligible') {
+            return;
+        }
+
         // Note: GrinderMic values are all numeric in the model except 'type' and 'enabled'
         // But they are passed as number to the audio engine
         let finalValue: unknown = value;
@@ -34,13 +41,8 @@ export const setGrinderMicParamWithAudio = inject(grinderParamBridgeDependencies
 
         setGrinderMicParam(deviceId, micIndex, key, finalValue as GrinderMic[Key]);
 
-        const ref = findDeviceRef(deviceId);
-        if (!ref) {
-            return;
-        }
-
         const audioKey = `mic${micIndex}${key.charAt(0).toUpperCase()}${key.slice(1)}`;
         const compositeKey = `${deviceId}:${audioKey}`;
-        paramBatcher.schedule(compositeKey, { ref, key: audioKey, value }, flushParam);
+        paramBatcher.schedule(compositeKey, { deviceId: target.deviceId, key: audioKey, value }, flushParam);
     };
 });

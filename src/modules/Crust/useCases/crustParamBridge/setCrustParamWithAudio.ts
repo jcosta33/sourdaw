@@ -2,7 +2,7 @@ import { type CrustPatch } from '../../models/CrustPatch';
 import { setCrustParam } from '../../stores/crustStore';
 
 import { createFlushHandlers } from './createFlushHandlers';
-import { crustBridgeDeps, encodeCrustValue, findDeviceRefCrust, paramBatcher } from './helpers';
+import { crustBridgeDeps, encodeCrustValue, paramBatcher } from './helpers';
 
 const { flushParam: flushCrustParam } = createFlushHandlers(crustBridgeDeps);
 
@@ -25,17 +25,17 @@ export function setCrustParamWithAudio<Key extends keyof CrustPatch>(
         return;
     }
 
+    const target = crustBridgeDeps.resolveEligibleDeviceWriteTarget(deviceId);
+    if (target.status !== 'eligible') {
+        return;
+    }
+
     setCrustParam(key, value);
 
     if (encodedValue === undefined) {
         return;
     }
 
-    const ref = findDeviceRefCrust(deviceId);
-    if (!ref) {
-        return;
-    }
-
     const compositeKey = `${deviceId}:${key}`;
-    paramBatcher.schedule(compositeKey, { ref, key, value: encodedValue }, flushCrustParam);
+    paramBatcher.schedule(compositeKey, { deviceId, key, value: encodedValue }, flushCrustParam);
 }

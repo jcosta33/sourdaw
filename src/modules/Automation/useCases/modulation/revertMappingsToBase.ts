@@ -1,3 +1,5 @@
+import { resolveEligibleDeviceWriteTarget } from '#/modules/Arrangement/stores';
+
 import { type ModulatorMapping } from '../../models/Modulator';
 
 import { getModulationDependencies } from './getModulationDependencies';
@@ -36,10 +38,14 @@ export function revertMappingsToBase(mappings: readonly ModulatorMapping[]): voi
         if (!binding) {
             continue;
         }
+        const targetOwner = resolveEligibleDeviceWriteTarget(mapping.targetDeviceId);
+        if (targetOwner.status !== 'eligible' || targetOwner.trackId !== mapping.targetTrackId) {
+            continue;
+        }
         reverted.add(key);
         // Drop the slew slot so a future re-add of this destination seeds fresh
         // at its new target rather than ramping from this now-stale value.
         modulationParamSlew.delete(key);
-        deps.updateDeviceParam(mapping.targetTrackId, mapping.targetDeviceId, mapping.targetParamId, binding.baseValue);
+        deps.updateDeviceParam(targetOwner.trackId, targetOwner.deviceId, mapping.targetParamId, binding.baseValue);
     }
 }

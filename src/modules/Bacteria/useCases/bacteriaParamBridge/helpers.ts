@@ -1,5 +1,5 @@
 import { logger } from '#/infra/logger/appLogger';
-import { type persistDeviceParam } from '#/modules/Arrangement/stores';
+import { type persistDeviceParam, type resolveEligibleDeviceWriteTarget } from '#/modules/Arrangement/stores';
 import { type updateDeviceParam } from '#/modules/AudioEngine/useCases';
 import { createFindDeviceRef, type DeviceRef, type GetAllTracksFn } from '#/utils/createFindDeviceRef';
 import { createRafBatcher, type RafBatcher } from '#/utils/DOM/createRafBatcher';
@@ -8,10 +8,11 @@ export { createFindDeviceRef };
 export type { DeviceRef, GetAllTracksFn };
 export type UpdateDeviceParamFn = typeof updateDeviceParam;
 export type PersistDeviceParamFn = typeof persistDeviceParam;
+export type ResolveEligibleDeviceWriteTargetFn = typeof resolveEligibleDeviceWriteTarget;
 
 // §33.2 — Shared rAF-batch primitive; replaces the per-bridge
 // pendingUpdates / latestValues Map pair.
-export type BacteriaBatchEntry = { ref: DeviceRef; key: string; value: number };
+export type BacteriaBatchEntry = { deviceId: string; key: string; value: number };
 export const paramBatcher: RafBatcher<BacteriaBatchEntry> = createRafBatcher<BacteriaBatchEntry>();
 
 export const DISTORTION_MODE_INDEX = {

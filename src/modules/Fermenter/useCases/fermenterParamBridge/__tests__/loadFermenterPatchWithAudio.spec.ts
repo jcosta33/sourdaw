@@ -32,6 +32,7 @@ describe('loadFermenterPatchWithAudio', () => {
         );
         setFermenterDependencies({
             getAllTracks: () => [{ id: 't1', devices: [{ id: 'd1' }] }] as never,
+            resolveEligibleDeviceWriteTarget: () => ({ status: 'eligible', trackId: 't1', deviceId: 'd1' }),
             updateDeviceParam,
             persistDeviceParam,
             updateDevicePatch,

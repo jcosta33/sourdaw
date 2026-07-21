@@ -15,6 +15,7 @@ describe('fermenterParamBridge', () => {
         setFermenterDependencies({
             getAllTracks,
             persistDeviceParam: persistDeviceParam as never,
+            resolveEligibleDeviceWriteTarget: () => ({ status: 'missing' }),
             updateDeviceParam: updateDeviceParam as never,
         });
     });

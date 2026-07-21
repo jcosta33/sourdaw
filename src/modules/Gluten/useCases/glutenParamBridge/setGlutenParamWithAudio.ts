@@ -2,7 +2,7 @@ import { type GlutenPatch } from '../../models/GlutenPatch';
 import { setGlutenParam } from '../../stores/glutenStore';
 
 import { createFlushHandlers } from './createFlushHandlers';
-import { bridgeDeps, encodeGlutenValue, findDeviceRefGluten, paramBatcher } from './helpers';
+import { bridgeDeps, encodeGlutenValue, paramBatcher } from './helpers';
 
 const { flushParam } = createFlushHandlers(bridgeDeps);
 
@@ -11,6 +11,11 @@ export function setGlutenParamWithAudio<Key extends keyof GlutenPatch>(
     key: Key,
     value: GlutenPatch[Key]
 ): void {
+    const target = bridgeDeps.resolveEligibleDeviceWriteTarget(deviceId);
+    if (target.status !== 'eligible') {
+        return;
+    }
+
     setGlutenParam(deviceId, key, value);
 
     const encodedValue = encodeGlutenValue(key, value);
@@ -18,11 +23,6 @@ export function setGlutenParamWithAudio<Key extends keyof GlutenPatch>(
         return;
     }
 
-    const ref = findDeviceRefGluten(deviceId);
-    if (!ref) {
-        return;
-    }
-
     const compositeKey = `${deviceId}:${key}`;
-    paramBatcher.schedule(compositeKey, { ref, key, value: encodedValue }, flushParam);
+    paramBatcher.schedule(compositeKey, { deviceId, key, value: encodedValue }, flushParam);
 }

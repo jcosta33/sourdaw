@@ -1,5 +1,7 @@
 import { afterEach, beforeEach, describe, it, expect, vi, type Mock } from 'vitest';
 
+import { type DeviceWriteTargetResolution } from '#/modules/Arrangement/stores';
+
 import { createDefaultPatch } from '../../../models/LevainPatch';
 import { defaultLevainState, levainStore } from '../../../stores/levainStore';
 import { createLevainBridge, type LevainDevice } from '../helpers';
@@ -10,11 +12,25 @@ import { createLevainBridge, type LevainDevice } from '../helpers';
 
 type AutoLoad = (deviceId: string, port: MessagePort, instrumentId: string, signal?: AbortSignal) => Promise<void>;
 
-function makeDeps(autoLoad: AutoLoad = vi.fn(() => Promise.resolve())) {
+function makeDeps(
+    autoLoad: AutoLoad = vi.fn(() => Promise.resolve()),
+    initialResolutionStatus: DeviceWriteTargetResolution['status'] = 'eligible'
+) {
+    let resolutionStatus = initialResolutionStatus;
     return {
         getAllTracks: vi.fn(() => []),
         persistDeviceParam: vi.fn(),
         autoLoadLevainSamples: vi.fn(autoLoad) as unknown as AutoLoad & ReturnType<typeof vi.fn>,
+        resolveEligibleDeviceWriteTarget: vi.fn((deviceId: string): DeviceWriteTargetResolution => {
+            if (resolutionStatus !== 'eligible') {
+                return { status: resolutionStatus };
+            }
+
+            return { status: 'eligible', trackId: 'track-1', deviceId };
+        }),
+        setResolutionStatus(status: DeviceWriteTargetResolution['status']): void {
+            resolutionStatus = status;
+        },
     };
 }
 
@@ -64,6 +80,140 @@ describe('createLevainBridge', () => {
             cb(0);
         }
     }
+
+    describe('device write eligibility', () => {
+        it.each(['missing', 'ineligible'] as const)(
+            'rejects %s registration before registry, store, load, queue, or engine effects',
+            (status) => {
+                const deps = makeDeps(undefined, status);
+                const bridge = createLevainBridge(deps);
+                const device = makeDevice();
+
+                bridge.registerLevainDevice('d1', device, {} as MessagePort);
+
+                expect(levainStore.value).toEqual({});
+                expect(deps.autoLoadLevainSamples).not.toHaveBeenCalled();
+                expect(deps.persistDeviceParam).not.toHaveBeenCalled();
+                expect(device.setInstrument).not.toHaveBeenCalled();
+                expect(rafCallbacks).toEqual([]);
+
+                deps.setResolutionStatus('eligible');
+                bridge.sendMicParamToEngine('d1', 0, 'volume', 0.5);
+                expect(device.setParam).not.toHaveBeenCalled();
+            }
+        );
+
+        it.each(['missing', 'ineligible'] as const)(
+            'rejects %s sample loading before instrument, cancellation, or async-load effects',
+            (status) => {
+                const signals: AbortSignal[] = [];
+                const deps = makeDeps((_deviceId, _port, _instrumentId, signal) => {
+                    if (signal) {
+                        signals.push(signal);
+                    }
+                    return new Promise<void>(() => {
+                        // Intentionally remains pending so cancellation is observable.
+                    });
+                });
+                const bridge = createLevainBridge(deps);
+                const device = makeDevice();
+                bridge.registerLevainDevice('d1', device, {} as MessagePort);
+                expect(signals).toHaveLength(1);
+                deps.autoLoadLevainSamples.mockClear();
+                device.setInstrument.mockClear();
+                deps.setResolutionStatus(status);
+
+                bridge.loadSamplesForInstrument('d1', 'cello');
+
+                expect(device.setInstrument).not.toHaveBeenCalled();
+                expect(deps.autoLoadLevainSamples).not.toHaveBeenCalled();
+                expect(signals[0]?.aborted).toBe(false);
+            }
+        );
+
+        it.each(['missing', 'ineligible'] as const)(
+            'rejects %s granular parameter writes before store, queue, persistence, or engine effects',
+            (status) => {
+                const deps = makeDeps();
+                const bridge = createLevainBridge(deps);
+                const device = makeDevice();
+                seedDevice('d1');
+                bridge.registerLevainDevice('d1', device);
+                const before = structuredClone(levainStore.value);
+                deps.setResolutionStatus(status);
+
+                bridge.setLevainParamWithAudio('d1', 'masterGain', 0.42);
+
+                expect(levainStore.value).toEqual(before);
+                expect(rafCallbacks).toEqual([]);
+                expect(deps.persistDeviceParam).not.toHaveBeenCalled();
+                expect(device.setParam).not.toHaveBeenCalled();
+            }
+        );
+
+        it.each(['missing', 'ineligible'] as const)(
+            'rejects %s macro writes before store or engine effects',
+            (status) => {
+                const deps = makeDeps();
+                const bridge = createLevainBridge(deps);
+                const device = makeDevice();
+                seedDevice('d1');
+                bridge.registerLevainDevice('d1', device);
+                const before = structuredClone(levainStore.value);
+                deps.setResolutionStatus(status);
+
+                bridge.setMacroWithAudio('d1', 4, 0.7);
+
+                expect(levainStore.value).toEqual(before);
+                expect(device.handleCc).not.toHaveBeenCalled();
+                expect(device.setParam).not.toHaveBeenCalled();
+            }
+        );
+
+        it.each(['missing', 'ineligible'] as const)('rejects %s mic writes before engine effects', (status) => {
+            const deps = makeDeps();
+            const bridge = createLevainBridge(deps);
+            const device = makeDevice();
+            bridge.registerLevainDevice('d1', device);
+            deps.setResolutionStatus(status);
+
+            bridge.sendMicParamToEngine('d1', 2, 'volume', 0.5);
+
+            expect(device.setParam).not.toHaveBeenCalled();
+        });
+
+        it.each(['missing', 'ineligible'] as const)(
+            'keeps unregister cleanup independent when the owner becomes %s',
+            (status) => {
+                const signals: AbortSignal[] = [];
+                const deps = makeDeps((_deviceId, _port, _instrumentId, signal) => {
+                    if (signal) {
+                        signals.push(signal);
+                    }
+                    return new Promise<void>(() => {
+                        // Intentionally remains pending so unregister must abort it.
+                    });
+                });
+                const bridge = createLevainBridge(deps);
+                const device = makeDevice();
+                seedDevice('d1');
+                bridge.registerLevainDevice('d1', device, {} as MessagePort);
+                flushRaf();
+                deps.persistDeviceParam.mockClear();
+                bridge.setLevainParamWithAudio('d1', 'masterGain', 0.42);
+                deps.setResolutionStatus(status);
+                deps.resolveEligibleDeviceWriteTarget.mockClear();
+
+                bridge.unregisterLevainDevice('d1');
+                flushRaf();
+
+                expect(deps.resolveEligibleDeviceWriteTarget).not.toHaveBeenCalled();
+                expect(signals[0]?.aborted).toBe(true);
+                expect(levainStore.value).toEqual({});
+                expect(deps.persistDeviceParam).not.toHaveBeenCalled();
+            }
+        );
+    });
 
     describe('fix 1 — register-time vibrato uses the cents slot, not the CC slot', () => {
         // vibratoDepthMax is in cents (default 40). The CC-scaled slot

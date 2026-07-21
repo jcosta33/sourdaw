@@ -27,6 +27,11 @@ function makeDeps() {
         getAllTracks: vi.fn().mockReturnValue([{ id: TRACK_ID, devices: [{ id: DEVICE_ID, type: 'bacteria' }] }]),
         updateDeviceParam: vi.fn(),
         persistDeviceParam: vi.fn(),
+        resolveEligibleDeviceWriteTarget: vi.fn().mockReturnValue({
+            status: 'eligible',
+            trackId: TRACK_ID,
+            deviceId: DEVICE_ID,
+        }),
     };
 }
 
