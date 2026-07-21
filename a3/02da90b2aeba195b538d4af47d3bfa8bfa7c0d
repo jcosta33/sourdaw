@@ -1,0 +1,23 @@
+.agents/skills/crdt-collaboration/SKILL.md
+  s_c2fca615e81f34::t_b379b71eee19f0 44
+docs/architecture/07-wasm-dsp-pipeline.md
+  s_c2fca615e81f34::t_be1a92aadf5134 37,39
+docs/architecture/09-ai-stack.md
+  s_c2fca615e81f34::t_0f48999892f374 23
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "a302da90b2aeba195b538d4af47d3bfa8bfa7c0d",
+  "prompts": {},
+  "sessions": {
+    "s_c2fca615e81f34": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f74e9-e1c5-7142-85d2-4c577b3973c0",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
