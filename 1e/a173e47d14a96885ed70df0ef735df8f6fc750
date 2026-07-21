@@ -1,0 +1,21 @@
+src/components/daw/__tests__/DawDialogBody.spec.tsx
+  s_d551553650f8b1::t_bd8cf30c0855ea 1-4,9-85
+src/components/daw/__tests__/DawDialogSection.spec.tsx
+  s_d551553650f8b1::t_1a1989df964104 1-4,9-55,57-78,81-148
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "1ea173e47d14a96885ed70df0ef735df8f6fc750",
+  "prompts": {},
+  "sessions": {
+    "s_d551553650f8b1": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f83c7-243c-7291-b985-3645b77809ca",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
