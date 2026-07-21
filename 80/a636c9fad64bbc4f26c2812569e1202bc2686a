@@ -1,0 +1,25 @@
+src/components/layout/Spacer.tsx
+  s_d551553650f8b1::t_3b9068d951d88a 5,15,26,37
+src/components/layout/Stack.tsx
+  s_d551553650f8b1::t_a61ae5d4fe3086 65
+src/components/layout/__tests__/Grid.spec.tsx
+  s_d551553650f8b1::t_2409c9712cce55 3-4,50,52,54,78,80,82,100,102,104,168-178,191-201,206,208-216,221,225-227,230-244
+src/components/layout/__tests__/Row.spec.tsx
+  s_d551553650f8b1::t_28c382538060d9 3-4,27,29,31,95-103,131-139,171-181,194-204,209,211-219,224,228-230,233-247
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "80a636c9fad64bbc4f26c2812569e1202bc2686a",
+  "prompts": {},
+  "sessions": {
+    "s_d551553650f8b1": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f83c7-243c-7291-b985-3645b77809ca",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
