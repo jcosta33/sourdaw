@@ -106,7 +106,7 @@ const TRACK_ELIGIBILITY: Readonly<Record<TrackEligibilityKind, Readonly<TrackEli
     },
 };
 
-export function getTrackEligibility(kind: string): Readonly<TrackEligibility> {
+export function getTrackEligibility(kind: TrackEligibilityKind): Readonly<TrackEligibility> {
     if (kind === 'audio') {
         return TRACK_ELIGIBILITY.audio;
     }
@@ -122,8 +122,5 @@ export function getTrackEligibility(kind: string): Readonly<TrackEligibility> {
     if (kind === 'folder') {
         return TRACK_ELIGIBILITY.folder;
     }
-    if (kind === 'vca') {
-        return TRACK_ELIGIBILITY.vca;
-    }
-    return TRACK_ELIGIBILITY.audio;
+    return TRACK_ELIGIBILITY.vca;
 }

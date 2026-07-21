@@ -3,7 +3,7 @@ import { getTrackEligibility } from '#/modules/Arrangement/stores';
 import { hasToasterDevice } from './hasToasterDevice';
 
 type ShouldCreateOfflineStripInput = {
-    kind: string;
+    kind: Parameters<typeof getTrackEligibility>[0];
     devices: readonly { type: string }[];
 };
 

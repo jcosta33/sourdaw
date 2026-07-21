@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, expectTypeOf, it } from 'vitest';
 
 import { getTrackEligibility } from '../trackEligibility';
 
@@ -21,6 +21,12 @@ const ELIGIBLE_FOR_ALL_AUDIO_BEARING_WRITES = {
 } as const;
 
 describe('getTrackEligibility', () => {
+    it('accepts only current production kinds plus dormant VCA at the public type boundary', () => {
+        expectTypeOf<Parameters<typeof getTrackEligibility>[0]>().toEqualTypeOf<
+            'audio' | 'midi' | 'bus' | 'master' | 'folder' | 'vca'
+        >();
+    });
+
     it.each([
         [
             'audio',
@@ -77,7 +83,7 @@ describe('getTrackEligibility', () => {
                 exportsStem: false,
             },
         ],
-    ])('preserves the frozen %s row', (kind, expected) => {
+    ] as const)('preserves the frozen %s row', (kind, expected) => {
         expect(getTrackEligibility(kind)).toEqual(expected);
     });
 
@@ -104,5 +110,11 @@ describe('getTrackEligibility', () => {
             createsOfflineStrip: false,
             exportsStem: false,
         });
+    });
+
+    it('denies an unexpected runtime kind instead of making it audio eligible', () => {
+        const eligibility: unknown = Reflect.apply(getTrackEligibility, undefined, ['future-track-kind']);
+
+        expect(eligibility).toEqual(getTrackEligibility('vca'));
     });
 });
