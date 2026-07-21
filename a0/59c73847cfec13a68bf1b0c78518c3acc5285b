@@ -1,0 +1,19 @@
+src-tauri/src/commands/plugin_gui.rs
+  s_c2fca615e81f34::t_b6f571e8046419 167-169,173,176-179,186-200,252-282,289-292,320-326,683-690,710-742,753,761-793
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "a059c73847cfec13a68bf1b0c78518c3acc5285b",
+  "prompts": {},
+  "sessions": {
+    "s_c2fca615e81f34": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f74e9-e1c5-7142-85d2-4c577b3973c0",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
