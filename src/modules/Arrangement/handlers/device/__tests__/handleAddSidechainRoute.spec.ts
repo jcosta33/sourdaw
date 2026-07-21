@@ -23,12 +23,13 @@ describe('handleAddSidechainRoute', () => {
     it('bails if the target track cannot be found', () => {
         mocks.getTrackStoreState.mockReturnValue({ tracks: [] });
 
-        void handleAddSidechainRoute.execute({
+        const result = handleAddSidechainRoute.execute({
             type: 'addSidechainRoute',
             payload: { sourceTrackId: 't1', targetTrackId: 't2' },
         });
 
         expect(mocks.addSidechainRoute).not.toHaveBeenCalled();
+        expect(result).toEqual({ status: 'no-write' });
     });
 
     it('bails if the target track has no sidechain device', () => {
@@ -36,25 +37,42 @@ describe('handleAddSidechainRoute', () => {
             tracks: [{ id: 't2', devices: [{ id: 'd1', type: 'EQ' }] }],
         });
 
-        void handleAddSidechainRoute.execute({
+        const result = handleAddSidechainRoute.execute({
             type: 'addSidechainRoute',
             payload: { sourceTrackId: 't1', targetTrackId: 't2' },
         });
 
         expect(mocks.addSidechainRoute).not.toHaveBeenCalled();
+        expect(result).toEqual({ status: 'no-write' });
     });
 
     it('adds a route if a sidechain device exists', () => {
+        mocks.addSidechainRoute.mockReturnValue(true);
         mocks.getTrackStoreState.mockReturnValue({
             tracks: [{ id: 't2', devices: [{ id: 'd1', type: 'Compressor (Sidechain)' }] }],
         });
 
-        void handleAddSidechainRoute.execute({
+        const result = handleAddSidechainRoute.execute({
             type: 'addSidechainRoute',
             payload: { sourceTrackId: 't1', targetTrackId: 't2' },
         });
 
         expect(mocks.addSidechainRoute).toHaveBeenCalledWith('t1', 't2', 'd1');
+        expect(result).toEqual({ status: 'written' });
+    });
+
+    it('reports no-write when Routing rejects the route', () => {
+        mocks.addSidechainRoute.mockReturnValue(false);
+        mocks.getTrackStoreState.mockReturnValue({
+            tracks: [{ id: 't2', devices: [{ id: 'd1', type: 'Compressor (Sidechain)' }] }],
+        });
+
+        const result = handleAddSidechainRoute.execute({
+            type: 'addSidechainRoute',
+            payload: { sourceTrackId: 't1', targetTrackId: 't2' },
+        });
+
+        expect(result).toEqual({ status: 'no-write' });
     });
 
     it('provides a description', () => {

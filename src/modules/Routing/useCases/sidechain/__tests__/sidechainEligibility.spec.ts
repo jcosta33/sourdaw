@@ -72,16 +72,32 @@ describe('sidechain eligibility', () => {
             { id: 'audio-1', kind: 'audio' },
             { id: 'audio-2', kind: 'audio' },
             { id: 'vca-1', kind: 'vca' },
+            { id: 'malformed-1', kind: 'malformed' },
         ];
         mocks.routes = [];
     });
 
-    it('rejects dormant VCA endpoints before route ID, store, or engine work', () => {
-        addSidechainRoute('vca-1', 'audio-2', 'device-1');
-        addSidechainRoute('audio-1', 'vca-1', 'device-1');
+    it.each([
+        { label: 'dormant source', sourceTrackId: 'vca-1', targetTrackId: 'audio-2' },
+        { label: 'dormant destination', sourceTrackId: 'audio-1', targetTrackId: 'vca-1' },
+        { label: 'malformed source', sourceTrackId: 'malformed-1', targetTrackId: 'audio-2' },
+        { label: 'malformed destination', sourceTrackId: 'audio-1', targetTrackId: 'malformed-1' },
+        { label: 'missing source', sourceTrackId: 'missing-source', targetTrackId: 'audio-2' },
+        { label: 'missing destination', sourceTrackId: 'audio-1', targetTrackId: 'missing-target' },
+    ])('returns no-write for a $label before route, store, or engine work', ({ sourceTrackId, targetTrackId }) => {
+        const didWrite = addSidechainRoute(sourceTrackId, targetTrackId, 'device-1');
 
         expect(mocks.setRoutes).not.toHaveBeenCalled();
         expect(mocks.wireSidechainRoute).not.toHaveBeenCalled();
+        expect(didWrite).toBe(false);
+    });
+
+    it('returns written after an ordinary route reaches store and runtime wiring', () => {
+        const didWrite = addSidechainRoute('audio-1', 'audio-2', 'device-1');
+
+        expect(mocks.setRoutes).toHaveBeenCalledTimes(1);
+        expect(mocks.wireSidechainRoute).toHaveBeenCalledWith('audio-1', 'audio-2', 'device-1');
+        expect(didWrite).toBe(true);
     });
 
     it('filters dormant VCA endpoints from bulk state and wiring while preserving ordinary routes', () => {

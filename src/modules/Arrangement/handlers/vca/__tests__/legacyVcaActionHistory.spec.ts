@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { configureAutomergeStoragePort } from '#/infra/store/storage/createAutomergeStorage';
-import { clearHandlerRegistry, registerHandlerMap, undoStore } from '#/modules/Command/stores';
+import { clearHandlerRegistry, macroStore, registerHandlerMap, undoStore } from '#/modules/Command/stores';
 import {
     clearUndoHistory,
     executeAppAction,
@@ -20,6 +20,7 @@ import {
     registerCrdtStorageRuntime,
     removeCrdtDoc,
 } from '#/modules/CrdtDocument/useCases';
+import { sidechainStore } from '#/modules/Routing/stores';
 import { type AppAction } from '#/utils/handlerContract';
 
 import { createTrack } from '../../../models/Track';
@@ -51,6 +52,15 @@ function captureState(): LegacyVcaState {
 function seedState(): void {
     const first = createTrack({ id: 'track-1', name: 'Kick', kind: 'audio' });
     const second = createTrack({ id: 'track-2', name: 'Bass', kind: 'midi' });
+    second.devices = [
+        {
+            id: 'sidechain-device',
+            name: 'Sidechain Compressor',
+            type: 'Compressor (Sidechain)',
+            bypassed: false,
+            parameterValues: {},
+        },
+    ];
     first.vcaGroupId = 'vca-a';
     trackStore.set({ tracks: [first, second], selectedTrackId: first.id, ghostClips: [] });
     setVcaGroupsState([
@@ -92,6 +102,8 @@ describe('legacy VCA action history', () => {
         clearHandlerRegistry();
         registerHandlerMap(getArrangementHandlers());
         clearUndoHistory();
+        macroStore.set({ macros: [], recording: true, currentRecording: [] });
+        sidechainStore.set({ routes: [] });
         resetActionReplayAuthority();
         clearCrdtActionHistory();
         setActionHistoryMetadataPort({
@@ -104,6 +116,8 @@ describe('legacy VCA action history', () => {
 
     afterEach(() => {
         setActionHistoryMetadataPort(noActionHistoryMetadataPort);
+        macroStore.set({ macros: [], recording: false, currentRecording: [] });
+        sidechainStore.set({ routes: [] });
         clearCrdtActionHistory();
         resetActionReplayAuthority();
         clearUndoHistory();
@@ -248,4 +262,176 @@ describe('legacy VCA action history', () => {
             expect(actionHistoryStore.value?.entries).toEqual([]);
         }
     );
+
+    it.each([
+        {
+            label: 'a dormant source',
+            prepare: () => {
+                const source = trackStore.value?.tracks.find((track) => track.id === 'track-1');
+                if (!source) {
+                    throw new Error('Expected source track');
+                }
+                Object.defineProperty(source, 'kind', { value: 'vca' });
+            },
+            action: {
+                type: 'addSidechainRoute',
+                payload: { sourceTrackId: 'track-1', targetTrackId: 'track-2' },
+            },
+        },
+        {
+            label: 'a dormant destination',
+            prepare: () => {
+                const target = trackStore.value?.tracks.find((track) => track.id === 'track-2');
+                if (!target) {
+                    throw new Error('Expected target track');
+                }
+                Object.defineProperty(target, 'kind', { value: 'vca' });
+            },
+            action: {
+                type: 'addSidechainRoute',
+                payload: { sourceTrackId: 'track-1', targetTrackId: 'track-2' },
+            },
+        },
+        {
+            label: 'a malformed source',
+            prepare: () => {
+                const source = trackStore.value?.tracks.find((track) => track.id === 'track-1');
+                if (!source) {
+                    throw new Error('Expected source track');
+                }
+                Object.defineProperty(source, 'kind', { value: 'malformed' });
+            },
+            action: {
+                type: 'addSidechainRoute',
+                payload: { sourceTrackId: 'track-1', targetTrackId: 'track-2' },
+            },
+        },
+        {
+            label: 'a malformed destination',
+            prepare: () => {
+                const target = trackStore.value?.tracks.find((track) => track.id === 'track-2');
+                if (!target) {
+                    throw new Error('Expected target track');
+                }
+                Object.defineProperty(target, 'kind', { value: 'malformed' });
+            },
+            action: {
+                type: 'addSidechainRoute',
+                payload: { sourceTrackId: 'track-1', targetTrackId: 'track-2' },
+            },
+        },
+        {
+            label: 'a missing source',
+            prepare: () => undefined,
+            action: {
+                type: 'addSidechainRoute',
+                payload: { sourceTrackId: 'missing-source', targetTrackId: 'track-2' },
+            },
+        },
+        {
+            label: 'a missing destination',
+            prepare: () => undefined,
+            action: {
+                type: 'addSidechainRoute',
+                payload: { sourceTrackId: 'track-1', targetTrackId: 'missing-target' },
+            },
+        },
+        {
+            label: 'a target without a sidechain device',
+            prepare: () => {
+                const target = trackStore.value?.tracks.find((track) => track.id === 'track-2');
+                if (!target) {
+                    throw new Error('Expected target track');
+                }
+                target.devices = [];
+            },
+            action: {
+                type: 'addSidechainRoute',
+                payload: { sourceTrackId: 'track-1', targetTrackId: 'track-2' },
+            },
+        },
+        {
+            label: 'missing Routing store state',
+            prepare: () => sidechainStore.set(null),
+            action: {
+                type: 'addSidechainRoute',
+                payload: { sourceTrackId: 'track-1', targetTrackId: 'track-2' },
+            },
+        },
+        {
+            label: 'a duplicate route',
+            prepare: () => {
+                sidechainStore.set({
+                    routes: [
+                        {
+                            id: 'existing-route',
+                            sourceTrackId: 'track-1',
+                            targetTrackId: 'track-2',
+                            targetDeviceId: 'sidechain-device',
+                            targetParameterId: 'threshold',
+                            gain: 1,
+                        },
+                    ],
+                });
+            },
+            action: {
+                type: 'addSidechainRoute',
+                payload: { sourceTrackId: 'track-1', targetTrackId: 'track-2' },
+            },
+        },
+    ] satisfies Array<{ label: string; prepare: () => void; action: AppAction }>)(
+        'records no macro, replay, or undo history for $label',
+        async ({ action, prepare }) => {
+            prepare();
+            const routesBefore = structuredClone(sidechainStore.value);
+
+            await executeAppAction(action);
+
+            expect(sidechainStore.value).toEqual(routesBefore);
+            expect(macroStore.value?.currentRecording).toEqual([]);
+            expect(actionHistoryStore.value?.entries).toEqual([]);
+            expect(undoStore.value?.past).toEqual([]);
+        }
+    );
+
+    it('records macro, replay, inverse, and undo history for a real sidechain write', async () => {
+        const action = {
+            type: 'addSidechainRoute',
+            payload: { sourceTrackId: 'track-1', targetTrackId: 'track-2' },
+        } satisfies AppAction;
+
+        await executeAppAction(action);
+
+        expect(sidechainStore.value?.routes).toEqual([
+            expect.objectContaining({
+                sourceTrackId: 'track-1',
+                targetTrackId: 'track-2',
+                targetDeviceId: 'sidechain-device',
+            }),
+        ]);
+        expect(macroStore.value?.currentRecording).toEqual([action]);
+        expect(actionHistoryStore.value?.entries).toHaveLength(1);
+        expect(undoStore.value?.past).toHaveLength(1);
+        expect(undoStore.value?.past[0]).toEqual({ label: 'Add sidechain route' });
+
+        // The public undo store intentionally exposes labels only. Executing undo
+        // proves the registered handler retained its inverse action and routes it
+        // through removeSidechainRoute to remove the project/runtime route.
+        await undo();
+        expect(sidechainStore.value?.routes).toEqual([]);
+    });
+
+    it('propagates a sidechain cycle without recording macro, replay, or undo history', async () => {
+        const action = {
+            type: 'addSidechainRoute',
+            payload: { sourceTrackId: 'track-2', targetTrackId: 'track-2' },
+        } satisfies AppAction;
+
+        await expect(executeAppAction(action)).rejects.toThrow();
+
+        expect(sidechainStore.value?.routes).toEqual([]);
+        expect(macroStore.value?.currentRecording).toEqual([]);
+        expect(actionHistoryStore.value?.entries).toEqual([]);
+        expect(undoStore.value?.past).toEqual([]);
+    });
 });

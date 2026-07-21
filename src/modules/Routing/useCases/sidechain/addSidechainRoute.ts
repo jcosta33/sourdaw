@@ -34,25 +34,25 @@ export function addSidechainRoute(
     targetTrackId: string,
     targetDeviceId: string,
     targetParameterId = 'threshold'
-): void {
+): boolean {
     const tracks = trackStore.value?.tracks;
     const sourceTrack = tracks?.find((track) => track.id === sourceTrackId);
     const targetTrack = tracks?.find((track) => track.id === targetTrackId);
-    if (sourceTrack && !getTrackEligibility(sourceTrack.kind).acceptsRoutingEndpoint) {
-        return;
+    if (!sourceTrack || !getTrackEligibility(sourceTrack.kind).acceptsRoutingEndpoint) {
+        return false;
     }
-    if (targetTrack && !getTrackEligibility(targetTrack.kind).acceptsRoutingEndpoint) {
-        return;
+    if (!targetTrack || !getTrackEligibility(targetTrack.kind).acceptsRoutingEndpoint) {
+        return false;
     }
 
     const state = sidechainStore.value;
     if (!state) {
-        return;
+        return false;
     }
 
     const exists = state.routes.some((r) => r.sourceTrackId === sourceTrackId && r.targetDeviceId === targetDeviceId);
     if (exists) {
-        return;
+        return false;
     }
 
     if (wouldCreateCycle(sourceTrackId, targetTrackId, state.routes)) {
@@ -63,4 +63,5 @@ export function addSidechainRoute(
     sidechainStore.set({ routes: [...state.routes, route] });
 
     wireSidechainRoute(sourceTrackId, targetTrackId, targetDeviceId);
+    return true;
 }
