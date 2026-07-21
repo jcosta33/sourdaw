@@ -1,0 +1,21 @@
+src/modules/ControlSurface/useCases/__tests__/matchControllerProfile.spec.ts
+  s_2c09e70ff10c68::t_fc5ec5f1684d18 326-435
+src/modules/ControlSurface/useCases/matchControllerProfile.ts
+  s_2c09e70ff10c68::t_64f3c2fa6377a0 59-71,77-81,85-89,97-101,111,119-120,124,128-133,135-137,140-145,147-149,152-156,160-164,166-168,170-172,175-176,178-179,183-187,191,195,199,203,207-208,213,217,225,227-228,232-236,304-319,321,328,330-331,338-340,427
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "eb3183479aa76a893b97cc27c5b9cc1a0eef668b",
+  "prompts": {},
+  "sessions": {
+    "s_2c09e70ff10c68": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8326-d700-7df3-8bab-bc2c2ed77f4a",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
