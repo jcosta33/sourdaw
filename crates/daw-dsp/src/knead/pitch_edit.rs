@@ -190,17 +190,20 @@ pub fn commit_pitch_edit_wasm(
         if let Some(pt) = contour.points.get(point_idx) {
             if pt.voiced && pt.frequency_hz > 20.0 {
                 pitch_marks.push(idx);
-                
+
                 let shift_semitones = map.get_shift_at(idx);
                 let ratio = 2.0_f32.powf(shift_semitones / 12.0);
                 let target_hz = pt.frequency_hz * ratio;
-                
-                let period = (sample_rate / target_hz).max(1.0);
+
+                // Fill the curve up to the next mark (one source period) —
+                // filling only one target period leaves zero stretches that
+                // read as "no shift" downstream.
+                let period = (sample_rate / pt.frequency_hz).max(1.0);
                 let end_idx = ((current_sample + period) as usize).min(target_f0_curve.len());
                 for i in idx..end_idx {
                     target_f0_curve[i] = target_hz;
                 }
-                
+
                 current_sample += sample_rate / pt.frequency_hz;
                 continue;
             }
@@ -227,4 +230,98 @@ pub fn commit_pitch_edit_wasm(
     );
 
     out_samples
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::f32::consts::TAU;
+
+    /// Harmonically rich periodic signal (see engine tests: PSOLA needs
+    /// epochs; a pure sine is pathological TD-PSOLA input).
+    fn pitched(freq: f32, sample_rate: f32, len: usize) -> Vec<f32> {
+        (0..len)
+            .map(|i| {
+                let mut s = 0.0_f32;
+                for h in 1..=8 {
+                    s += (TAU * freq * h as f32 * i as f32 / sample_rate).sin() / h as f32;
+                }
+                s * 0.8
+            })
+            .collect()
+    }
+
+    /// Dominant f0 via autocorrelation.
+    fn estimate_f0(samples: &[f32], sample_rate: f32) -> f32 {
+        let lo = (sample_rate / 1000.0) as usize;
+        let hi = ((sample_rate / 50.0) as usize).min(samples.len() / 2);
+        let mut best = 0.0_f32;
+        let mut best_tau = 0usize;
+        for tau in lo..=hi {
+            let mut r = 0.0_f32;
+            for i in 0..samples.len() - tau {
+                r += samples[i] * samples[i + tau];
+            }
+            if r > best {
+                best = r;
+                best_tau = tau;
+            }
+        }
+        assert!(best_tau > 0, "no pitch detected");
+        sample_rate / best_tau as f32
+    }
+
+    /// Signal-in/signal-out end-to-end through the exact exports the Knead
+    /// module's commitPitchEdit drives: analyze_pitch_wasm -> contour,
+    /// commit_pitch_edit_wasm -> rendered samples.
+    #[test]
+    fn commit_pitch_edit_shifts_voiced_segment_up_octave() {
+        let sr = 44100.0_f32;
+        let samples = pitched(220.0, sr, sr as usize);
+        let contour_json = analyze_pitch_wasm(&samples, sr);
+        let segments = serde_json::to_string(&vec![NoteSegment {
+            start_time_ms: 0.0,
+            end_time_ms: 1000.0,
+            shift_semitones: 12.0,
+        }])
+        .unwrap();
+
+        let out = commit_pitch_edit_wasm(&samples, sr, &segments, &contour_json);
+        assert_eq!(out.len(), samples.len());
+
+        let f0 = estimate_f0(&out[8192..12288], sr);
+        let err_cents = 1200.0 * (f0 / 440.0).log2().abs();
+        assert!(
+            err_cents < 60.0,
+            "committed f0 {f0:.1} Hz, expected ~440 Hz ({err_cents:.0} cents off)"
+        );
+    }
+
+    /// Zero shift must return the input essentially unmodified.
+    #[test]
+    fn commit_pitch_edit_zero_shift_is_transparent() {
+        let sr = 44100.0_f32;
+        let samples = pitched(220.0, sr, sr as usize);
+        let contour_json = analyze_pitch_wasm(&samples, sr);
+        let segments = serde_json::to_string(&vec![NoteSegment {
+            start_time_ms: 0.0,
+            end_time_ms: 1000.0,
+            shift_semitones: 0.0,
+        }])
+        .unwrap();
+
+        let out = commit_pitch_edit_wasm(&samples, sr, &segments, &contour_json);
+        let n = out.len().min(samples.len());
+        let mut num = 0.0f32;
+        let mut den = 0.0f32;
+        for i in 0..n {
+            num += (out[i] - samples[i]).powi(2);
+            den += samples[i].powi(2);
+        }
+        let rel_err = (num / den.max(1e-9)).sqrt();
+        assert!(
+            rel_err < 0.25,
+            "zero-shift commit diverged from input (rel err {rel_err:.3})"
+        );
+    }
 }

@@ -45,6 +45,19 @@ impl KneadInstance {
         self.left_buf.as_ptr()
     }
 
+    /// Right-channel output of the last `process` call (mirrors
+    /// `GlutenInstance::get_right_ptr`).
+    pub fn get_right_ptr(&self) -> *const f32 {
+        self.right_buf.as_ptr()
+    }
+
+    /// Set the real-time pitch shift in semitones. Without this export the
+    /// worklet's per-quantum `set_shift_semitones` call throws a TypeError
+    /// and the processor faults into permanent passthrough.
+    pub fn set_shift_semitones(&mut self, semitones: f32) {
+        self.engine.set_shift_semitones(semitones);
+    }
+
     pub fn get_f0(&self) -> f32 {
         self.engine.get_f0().unwrap_or(0.0)
     }
@@ -55,5 +68,32 @@ impl KneadInstance {
 
     pub fn is_voiced(&self) -> bool {
         self.engine.is_voiced()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The worklet drives the instance through raw pointers; the shift setter
+    /// and right-output getter must exist and reach the engine.
+    #[test]
+    fn instance_exposes_shift_setter_and_right_output() {
+        let mut inst = KneadInstance::new(48000.0);
+        inst.set_shift_semitones(3.0);
+        assert_eq!(inst.engine.shift_semitones, 3.0);
+
+        let frames = 128usize;
+        unsafe {
+            let in_l = inst.get_input_left_ptr();
+            let in_r = inst.get_input_right_ptr();
+            for i in 0..frames {
+                *in_l.add(i) = 0.1;
+                *in_r.add(i) = -0.1;
+            }
+        }
+        let out_l = inst.process(frames as u32);
+        let out_r = inst.get_right_ptr();
+        assert_ne!(out_l, out_r, "right output must be a distinct buffer");
     }
 }
