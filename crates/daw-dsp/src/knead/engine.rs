@@ -136,6 +136,13 @@ impl KneadEngine {
                             self.out_count += 1;
                         }
                     }
+                    // Bypass: reset continuity state (a stale held tail would
+                    // replay pre-bypass "ghost" audio at re-engage) and keep
+                    // the raw-input history rolling so re-engage starts from
+                    // current audio, not from before the bypass.
+                    self.held_len = 0;
+                    self.synth_phase = 0.0;
+                    self.roll_history();
                 } else {
                     self.analyze_and_shift();
                 }
@@ -178,15 +185,27 @@ impl KneadEngine {
 
                 // Output margin: one target period, capped at one frame so
                 // the hold/completion bookkeeping stays inside this frame.
-                // Input history depth is two target periods so the grains
-                // covering the margin stay fully inside the span — a span
-                // that starts exactly at the margin edge clamps the first
-                // marks' grains and starves the boundary of energy.
+                // Input history depth covers the slower of target and source
+                // period: two target periods keep margin grains inside the
+                // span, two SOURCE periods guarantee ≥ 3 analysis marks in
+                // every span — sizing to the target period alone starved
+                // bass upshifts (e.g. +18 st at 50 Hz) into unshifted
+                // passthrough on a fifth of all frames.
                 let target_period = self.yin_cfg.sample_rate / target_f0;
+                let source_period = self.yin_cfg.sample_rate / f0_val;
                 let t = (target_period.ceil() as usize)
                     .min(self.hist_l.len())
                     .min(frame_len);
-                let h = (2 * (target_period.ceil() as usize)).min(self.hist_l.len());
+                let h = (2 * (target_period.ceil() as usize))
+                    .max(2 * (source_period.ceil() as usize))
+                    .min(self.hist_l.len());
+
+                // Frames whose target period exceeds the scratch capacity
+                // cannot be shifted (every grain would bail, emitting
+                // zeroed voiced audio). Treat them as unshiftable and fall
+                // through to passthrough instead.
+                let shiftable =
+                    2 * (target_period.ceil() as usize) <= self.window_scratchpad.len();
 
                 // Span = last h samples of raw input history ++ this frame.
                 let hist_start = self.hist_l.len() - h;
@@ -213,7 +232,7 @@ impl KneadEngine {
                     mark += period;
                 }
 
-                if self.pitch_marks.len() >= 3 {
+                if shiftable && self.pitch_marks.len() >= 3 {
                     shifted = true;
                     self.target_f0_curve[..span_len].fill(target_f0);
 
@@ -312,8 +331,12 @@ impl KneadEngine {
         }
 
         self.abs_pos += frame_len;
+        self.roll_history();
+    }
 
-        // Roll the raw-input history forward with this frame.
+    /// Roll the raw-input history forward with the current frame.
+    fn roll_history(&mut self) {
+        let frame_len = self.in_buffer_l.len();
         let t_max = self.hist_l.len();
         if frame_len >= t_max {
             self.hist_l.copy_from_slice(&self.in_buffer_l[frame_len - t_max..]);
@@ -339,6 +362,12 @@ impl KneadEngine {
     }
 
     pub fn set_shift_semitones(&mut self, semitones: f32) {
+        // Reset continuity state when re-engaging from bypass: a stale held
+        // tail would replay pre-bypass audio at the next clip boundary.
+        if self.shift_semitones == 0.0 && semitones != 0.0 {
+            self.held_len = 0;
+            self.synth_phase = 0.0;
+        }
         self.shift_semitones = semitones;
     }
 }
@@ -592,5 +621,115 @@ mod tests {
                 "shift {shift:+.0}: dropout run {longest} samples, bound {bound}"
             );
         }
+    }
+
+    /// Regression (PR #532 rotation-3 review): history sized to the target
+    /// period starved bass upshifts of analysis marks (span < 3 marks), so
+    /// up to 26% of frames fell back to unshifted passthrough (+18/+20 st
+    /// at 50 Hz). Every frame must now shift: no output window may be a
+    /// bit-exact passthrough of the input.
+    #[test]
+    fn upshift_bass_never_falls_back() {
+        let sr = 48000.0;
+        let total = (sr * 1.5) as usize;
+        let input: Vec<f32> = (0..total).map(|n| pitched(50.0, sr, n)).collect();
+        let mut engine = KneadEngine::new(sr);
+        engine.set_shift_semitones(18.0);
+
+        let mut out = Vec::new();
+        let mut n = 0usize;
+        while n < total {
+            let block = (total - n).min(128);
+            let mut left: Vec<f32> = input[n..n + block].to_vec();
+            let mut right = left.clone();
+            engine.process_block(&mut left, &mut right);
+            out.extend_from_slice(&left);
+            n += block;
+        }
+
+        // Fallback frames pass the input through unprocessed (one frame of
+        // engine latency): correlate each output window with the input.
+        let latency = 2048isize;
+        let mut passthrough = 0usize;
+        let mut total_windows = 0usize;
+        for s in (8192..out.len() - 2048).step_by(2048) {
+            total_windows += 1;
+            let mut best = 0.0_f32;
+            for lag in -96isize..=96 {
+                let base = s as isize - latency + lag;
+                if base < 0 {
+                    continue;
+                }
+                let (mut dot, mut eo, mut ei) = (0.0_f32, 0.0_f32, 0.0_f32);
+                for i in 0..2048 {
+                    let o = out[s + i];
+                    let x = input[(base + i as isize) as usize];
+                    dot += o * x;
+                    eo += o * o;
+                    ei += x * x;
+                }
+                best = best.max(dot / (eo.sqrt() * ei.sqrt()).max(1e-9));
+            }
+            if best > 0.95 {
+                passthrough += 1;
+            }
+        }
+        assert_eq!(
+            passthrough, 0,
+            "{passthrough}/{total_windows} windows fell back to unshifted passthrough (target 141 Hz)"
+        );
+    }
+
+    /// Regression (PR #532 rotation-3 review): bypass skipped the continuity
+    /// reset, so a stale held tail replayed pre-bypass audio ("ghost") at
+    /// re-engage. After a silence bypass, everything before the first new
+    /// production must be silent.
+    #[test]
+    fn reengage_after_bypass_has_no_ghost() {
+        let sr = 44100.0;
+        let mut engine = KneadEngine::new(sr);
+        engine.set_shift_semitones(12.0);
+        let half = (sr * 0.5) as usize; // deliberately not frame-aligned
+        let _ = run_engine(&mut engine, 220.0, 220.0, sr, 0.5, false);
+
+        engine.set_shift_semitones(0.0);
+        let mut n = half;
+        while n < 2 * half {
+            let block = (2 * half - n).min(128);
+            let mut left = vec![0.0_f32; block];
+            let mut right = vec![0.0_f32; block];
+            engine.process_block(&mut left, &mut right);
+            n += block;
+        }
+
+        engine.set_shift_semitones(12.0);
+        let (out_l, _) = run_engine(&mut engine, 330.0, 330.0, sr, 4.0 * 2048.0 / sr, false);
+
+        let ghost = rms(&out_l[..1792]);
+        assert!(
+            ghost < 0.01,
+            "ghost audio at re-engage: rms {ghost:.3} in the pre-production region"
+        );
+        let resumed = rms(&out_l[2048 * 2..2048 * 3]);
+        assert!(
+            resumed > 0.1,
+            "engine did not resume after re-engage (rms {resumed:.3})"
+        );
+    }
+
+    /// Regression (PR #532 rotation-3 review): target periods beyond the
+    /// scratch capacity made every grain bail, hard-mutating voiced frames
+    /// (−28/−30 st). Unshiftable frames must pass through instead.
+    #[test]
+    fn extreme_downshift_passthrough_not_mute() {
+        let sr = 48000.0;
+        let mut engine = KneadEngine::new(sr);
+        engine.set_shift_semitones(-30.0);
+        let (out_l, _) = run_engine(&mut engine, 50.0, 50.0, sr, 1.5, false);
+        let tail = rms(&out_l[8192..]);
+        assert!(
+            tail > 0.05,
+            "unshiftable downshift muted the output (tail rms {tail:.4})"
+        );
     }
 }
