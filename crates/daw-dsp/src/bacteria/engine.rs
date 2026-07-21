@@ -451,6 +451,8 @@ impl BacteriaEngine {
 
     pub fn set_param(&mut self, name: &str, value: f32) {
         // Parse band-prefixed params: "band0_drive", "band1_filterCutoff", etc.
+        // Only a digit after "band" makes it one — "bandCount" and friends must
+        // fall through to the match below, not be swallowed by an early return.
         if name.starts_with("band") && name.len() > 5 {
             if let Some(idx_char) = name.chars().nth(4) {
                 if let Some(band_idx) = idx_char.to_digit(10) {
@@ -459,9 +461,9 @@ impl BacteriaEngine {
                         let param_name = &name[6..]; // skip "bandN_"
                         self.bands[band_idx].set_param(param_name, value);
                     }
+                    return;
                 }
             }
-            return;
         }
 
         // Step sequencer steps: "stepSeqVal_N"
@@ -750,5 +752,85 @@ impl BacteriaEngine {
     /// Get current modulation source values (for UI visualization).
     pub fn mod_source_values(&self) -> &[f32; 16] {
         &self.mod_values
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Deterministic pseudo-white noise (LCG) in [-1, 1).
+    fn noise_block(len: usize, seed: &mut u32) -> Vec<f32> {
+        (0..len)
+            .map(|_| {
+                *seed = seed.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+                (*seed >> 8) as f32 / (1u32 << 24) as f32 * 2.0 - 1.0
+            })
+            .collect()
+    }
+
+    fn rms(samples: &[f32]) -> f32 {
+        (samples.iter().map(|s| s * s).sum::<f32>() / samples.len() as f32).sqrt()
+    }
+
+    /// bandCount must reach the crossover: with 2 bands engaged, the high band
+    /// receives signal (band_levels[1] rises above zero for broadband input).
+    #[test]
+    fn band_count_param_engages_multiband_split() {
+        let mut engine = BacteriaEngine::new(48_000.0);
+        engine.set_param("crossoverFreq1", 1000.0);
+        engine.set_param("bandCount", 2.0);
+
+        let mut seed = 42u32;
+        let mut left = noise_block(2048, &mut seed);
+        let mut right = noise_block(2048, &mut seed);
+        engine.process_block(&mut left, &mut right);
+
+        assert!(
+            engine.band_levels()[1] > 0.0,
+            "band 1 received no signal — multiband not engaged: {:?}",
+            engine.band_levels()
+        );
+    }
+
+    /// Signal-in/signal-out: a 2-band split with the high band muted must
+    /// produce measurably different output from a 1-band passthrough of the
+    /// same input. Pre-fix, bandCount is swallowed by the band-prefix guard,
+    /// both engines run single-band, and the outputs are identical.
+    #[test]
+    fn two_band_split_differs_from_one_band_output() {
+        let block = 4096usize;
+        let mut seed = 7u32;
+        let input_l = noise_block(block, &mut seed);
+        let input_r = noise_block(block, &mut seed);
+
+        // Engine A: default single band.
+        let mut engine_a = BacteriaEngine::new(48_000.0);
+        let mut a_l = input_l.clone();
+        let mut a_r = input_r.clone();
+        engine_a.process_block(&mut a_l, &mut a_r);
+
+        // Engine B: two bands, high band muted -> highs must disappear.
+        let mut engine_b = BacteriaEngine::new(48_000.0);
+        engine_b.set_param("crossoverFreq1", 1000.0);
+        engine_b.set_param("bandCount", 2.0);
+        engine_b.set_param("band1_mute", 1.0);
+        let mut b_l = input_l.clone();
+        let mut b_r = input_r.clone();
+        engine_b.process_block(&mut b_l, &mut b_r);
+
+        // Compare over the settled tail (skip crossover/LR4 warmup).
+        let tail = 1024..block;
+        let diff: Vec<f32> = a_l[tail.clone()]
+            .iter()
+            .zip(b_l[tail.clone()].iter())
+            .map(|(a, b)| a - b)
+            .collect();
+        let diff_rms = rms(&diff);
+        let input_rms = rms(&input_l[tail]);
+        assert!(
+            diff_rms > 0.25 * input_rms,
+            "2-band (high muted) output matches 1-band output — bandCount did not engage: diff_rms={diff_rms} input_rms={input_rms}"
+        );
     }
 }
