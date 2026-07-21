@@ -1,0 +1,21 @@
+crates/proof-chamber/src/convolution.rs
+  s_c2fca615e81f34::t_bc982905dd148a 103-108,146-151,161-162,166,170,204-214,516-653
+crates/proof-chamber/src/lib.rs
+  s_c2fca615e81f34::t_0b42ab5901a216 163-165,168,198-216
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "132b9227fb64b584fdf2931e53f34916d03c893c",
+  "prompts": {},
+  "sessions": {
+    "s_c2fca615e81f34": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f74e9-e1c5-7142-85d2-4c577b3973c0",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
