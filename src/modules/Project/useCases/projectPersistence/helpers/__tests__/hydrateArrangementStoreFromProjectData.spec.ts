@@ -116,6 +116,7 @@ describe('hydrateArrangementStoreFromProjectData', () => {
 
     it('preserves saved arrangement identities and hydrates canonical and legacy clip fields', () => {
         const data = projectData();
+        data.midi.probabilitySeed = 3_735_928_559;
         data.arrangements = [
             {
                 id: 'arrangement-a',
@@ -159,6 +160,7 @@ describe('hydrateArrangementStoreFromProjectData', () => {
             { id: 'meter-b', beat: 0, numerator: 3, denominator: 4 },
         ]);
         expect(markerStore.value?.markers.map((marker) => marker.id)).toEqual(['marker-b']);
+        expect(midiStore.value?.probabilitySeed).toBe(3_735_928_559);
     });
 
     it('uses empty MIDI and automation state for accepted sparse snapshots', () => {

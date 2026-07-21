@@ -1,11 +1,10 @@
 import { setOfflineMidiEventProjector } from '../repositories/offlineScheduler/setOfflineMidiEventProjector';
 
-type ConfigureOfflineMidiEventProjectionInput = {
-    createProjector: Parameters<typeof setOfflineMidiEventProjector>[0];
-};
+type ConfigureOfflineMidiEventProjectionInput = Parameters<typeof setOfflineMidiEventProjector>[0];
 
 export function configureOfflineMidiEventProjection({
     createProjector,
+    selectProbability,
 }: ConfigureOfflineMidiEventProjectionInput): void {
-    setOfflineMidiEventProjector(createProjector);
+    setOfflineMidiEventProjector({ createProjector, selectProbability });
 }

@@ -1,14 +1,14 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { type MidiStoreState } from '../../../stores/midiStore';
+import { type MidiStoreStateInput } from '../../../stores/midiStore';
 
 const mocks = vi.hoisted(() => {
-    const state: { value: MidiStoreState | null } = { value: null };
+    const state: { value: MidiStoreStateInput | null } = { value: null };
 
     return {
         state,
-        getValue: vi.fn((): MidiStoreState | null => state.value),
-        set: vi.fn((nextState: MidiStoreState): void => {
+        getValue: vi.fn((): MidiStoreStateInput | null => state.value),
+        set: vi.fn((nextState: MidiStoreStateInput): void => {
             state.value = nextState;
         }),
     };
@@ -16,7 +16,7 @@ const mocks = vi.hoisted(() => {
 
 vi.mock('../../../stores/midiStore', () => ({
     midiStore: {
-        get value(): MidiStoreState | null {
+        get value(): MidiStoreStateInput | null {
             return mocks.getValue();
         },
         set: mocks.set,
@@ -37,7 +37,7 @@ function createPitchBend(id: string, beat: number) {
     return { id, value: 256, beat, channel: 1 };
 }
 
-function requireMidiState(): MidiStoreState {
+function requireMidiState(): MidiStoreStateInput {
     const state = mocks.state.value;
     if (!state) {
         throw new Error('Expected MIDI store state');
@@ -83,7 +83,7 @@ describe('glueMidiClipData', () => {
         const unrelatedNotes = [unrelatedNote];
         const unrelatedControlChanges = [unrelatedControlChange];
         const unrelatedPitchBends = [unrelatedPitchBend];
-        const previousState: MidiStoreState = {
+        const previousState: MidiStoreStateInput = {
             notesByClipId: {
                 'source-a': sourceNotesA,
                 'source-b': sourceNotesB,
@@ -144,7 +144,7 @@ describe('glueMidiClipData', () => {
         const unrelatedNotes = [createNote('note-keep', 10)];
         const unrelatedControlChanges = [createControlChange('cc-keep', 10)];
         const unrelatedPitchBends = [createPitchBend('pitch-keep', 10)];
-        const previousState: MidiStoreState = {
+        const previousState: MidiStoreStateInput = {
             notesByClipId: { source: [], keep: unrelatedNotes },
             ccByClipId: { source: [], keep: unrelatedControlChanges },
             pitchBendByClipId: { source: [], keep: unrelatedPitchBends },

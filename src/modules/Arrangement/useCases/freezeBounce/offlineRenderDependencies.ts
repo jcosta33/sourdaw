@@ -52,6 +52,16 @@ type MidiEventProjector = <Event extends MidiProjectableEvent>(
     input: ClipMidiEventProjectionInput<Event> | SequencerMidiEventProjectionInput<Event>
 ) => readonly Event[];
 
+type MidiProbabilitySelectionInput = {
+    projectProbabilitySeed: number;
+    clipId: string;
+    eventId: string;
+    absoluteOccurrenceIndex: number;
+    probabilityPercent: number;
+};
+
+type MidiEventProbabilitySelector = (input: MidiProbabilitySelectionInput) => boolean;
+
 type OfflineYeastMidiEvent = {
     timeSamples: number;
     trackId?: string;
@@ -79,6 +89,7 @@ type OfflineRenderDependencies = {
     projectPpqEndpoints: (input: PpqEndpointProjectionInput) => PpqEndpointProjection;
     createMidiEventProjector: () => MidiEventProjector;
     createYeastMidiProcessor: () => OfflineYeastMidiProcessor;
+    selectMidiEventProbability: MidiEventProbabilitySelector;
 };
 
 export let offlineRenderDependencies: OfflineRenderDependencies | null = null;

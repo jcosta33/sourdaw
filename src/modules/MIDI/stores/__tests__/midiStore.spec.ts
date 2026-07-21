@@ -1,8 +1,15 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, expectTypeOf, it } from 'vitest';
 
 import { configureAutomergeStoragePort } from '#/infra/store/storage/createAutomergeStorage';
 
-import { defaultMidiStoreState, midiStore, type MidiStoreState } from '../midiStore';
+import { shouldPlayMidiEvent } from '../../useCases/shouldPlayMidiEvent';
+import {
+    defaultMidiStoreState,
+    isValidMidiProbabilitySeed,
+    LEGACY_MIDI_PROBABILITY_SEED,
+    midiStore,
+    type MidiStoreState,
+} from '../midiStore';
 
 type TestDoc = {
     [key: string]: unknown;
@@ -31,6 +38,14 @@ function configure_fake_crdt_port(): void {
     };
 
     configureAutomergeStoragePort(port);
+}
+
+function require_midi_state(): MidiStoreState {
+    const state = midiStore.value;
+    if (state === null) {
+        throw new Error('Expected concrete MIDI store state');
+    }
+    return state;
 }
 
 async function flush_pending_frame(): Promise<void> {
@@ -65,6 +80,33 @@ describe('midiStore', () => {
         expect(midiStore.value).toEqual(defaultMidiStoreState);
     });
 
+    it('exposes a concrete unsigned u32 seed after default and legacy hydration', () => {
+        const defaultState = require_midi_state();
+        expectTypeOf(defaultState.probabilitySeed).toEqualTypeOf<number>();
+        expect(isValidMidiProbabilitySeed(defaultState.probabilitySeed)).toBe(true);
+
+        fake_doc.midi = { notesByClipId: {}, ccByClipId: {}, pitchBendByClipId: {} };
+        midiStore.hydrate();
+
+        const legacyHydratedState = require_midi_state();
+        expectTypeOf(legacyHydratedState.probabilitySeed).toEqualTypeOf<number>();
+        expect(legacyHydratedState.probabilitySeed).toBe(LEGACY_MIDI_PROBABILITY_SEED);
+        expect(isValidMidiProbabilitySeed(legacyHydratedState.probabilitySeed)).toBe(true);
+    });
+
+    it('preserves the active seed when a legacy-shaped owner write omits it', () => {
+        midiStore.set({
+            probabilitySeed: 3_735_928_559,
+            notesByClipId: {},
+            ccByClipId: {},
+            pitchBendByClipId: {},
+        });
+
+        midiStore.set({ notesByClipId: {}, ccByClipId: {}, pitchBendByClipId: {} });
+
+        expect(require_midi_state().probabilitySeed).toBe(3_735_928_559);
+    });
+
     it('should default malformed top-level maps independently without resetting valid siblings', () => {
         fake_doc.midi = {
             notesByClipId: 'not-a-map',
@@ -77,6 +119,7 @@ describe('midiStore', () => {
         midiStore.hydrate();
 
         expect(midiStore.value).toEqual({
+            probabilitySeed: defaultMidiStoreState.probabilitySeed,
             notesByClipId: {},
             ccByClipId: {
                 'clip-cc': [{ id: 'cc-1', controller: 74, value: 0.5, beat: 1, channel: 0 }],
@@ -113,6 +156,7 @@ describe('midiStore', () => {
         midiStore.hydrate();
 
         expect(midiStore.value).toEqual({
+            probabilitySeed: defaultMidiStoreState.probabilitySeed,
             notesByClipId: {
                 'clip-notes': [{ id: 'note-1', pitch: 60, startBeat: 0, duration: 1, velocity: 90 }],
             },
@@ -152,6 +196,7 @@ describe('midiStore', () => {
         midiStore.hydrate();
 
         expect(midiStore.value).toEqual({
+            probabilitySeed: defaultMidiStoreState.probabilitySeed,
             notesByClipId: {
                 'clip-notes': [
                     {
@@ -172,6 +217,7 @@ describe('midiStore', () => {
 
     it('should preserve exact valid CRDT hydration without writing back', async () => {
         const valid_state = {
+            probabilitySeed: 4_294_967_295,
             notesByClipId: {
                 'clip-notes': [
                     {
@@ -202,5 +248,47 @@ describe('midiStore', () => {
 
         expect(midiStore.value).toEqual(valid_state);
         expect(mutation_count).toBe(0);
+    });
+
+    it('preserves the persisted unsigned u32 probability seed through CRDT hydration', () => {
+        fake_doc.midi = {
+            probabilitySeed: 3_735_928_559,
+            notesByClipId: {},
+            ccByClipId: {},
+            pitchBendByClipId: {},
+        };
+
+        midiStore.hydrate();
+
+        expect(midiStore.value?.probabilitySeed).toBe(3_735_928_559);
+    });
+
+    it('replays the fixed probability tuple corpus from collaborative CRDT state', () => {
+        fake_doc.midi = {
+            probabilitySeed: 0xdecafbad,
+            notesByClipId: {
+                'clip-1': [
+                    { id: 'event-alpha', pitch: 60, startBeat: 1, duration: 0.25, velocity: 100, probability: 50 },
+                    { id: 'event-beta', pitch: 61, startBeat: 1, duration: 0.25, velocity: 100, probability: 50 },
+                ],
+            },
+            ccByClipId: {},
+            pitchBendByClipId: {},
+        };
+
+        midiStore.hydrate();
+
+        const acceptedIds = midiStore.value?.notesByClipId['clip-1']
+            ?.filter((note) =>
+                shouldPlayMidiEvent({
+                    projectProbabilitySeed: midiStore.value?.probabilitySeed ?? 0,
+                    clipId: 'clip-1',
+                    eventId: note.id,
+                    absoluteOccurrenceIndex: 0,
+                    probabilityPercent: note.probability ?? 100,
+                })
+            )
+            .map((note) => note.id);
+        expect(acceptedIds).toEqual(['event-alpha']);
     });
 });

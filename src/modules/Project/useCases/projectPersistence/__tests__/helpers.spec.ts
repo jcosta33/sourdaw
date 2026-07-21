@@ -16,6 +16,7 @@ const mocks = vi.hoisted(() => ({
     timeSignatureMapStoreSet: vi.fn(),
     automationStoreSet: vi.fn(),
     midiStoreSet: vi.fn(),
+    resetMidiStoreForProject: vi.fn(),
     setSidechainRoutes: vi.fn(),
     notifyUser: vi.fn(),
 }));
@@ -58,6 +59,11 @@ vi.mock('#/modules/MIDI/stores', async (importOriginal) => {
     return { ...actual, midiStore: { value: null, set: mocks.midiStoreSet } };
 });
 
+vi.mock('#/modules/MIDI/useCases', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('#/modules/MIDI/useCases')>();
+    return { ...actual, resetMidiStoreForProject: mocks.resetMidiStoreForProject };
+});
+
 vi.mock('#/modules/Routing/useCases', async (importOriginal) => {
     const actual = await importOriginal<typeof import('#/modules/Routing/useCases')>();
     return { ...actual, setSidechainRoutes: mocks.setSidechainRoutes };
@@ -83,11 +89,7 @@ describe('resetModuleStoresToDefault', () => {
         expect(mocks.resetArrangementStoresForProject).toHaveBeenCalledTimes(1);
         expect(mocks.transportStoreSet).toHaveBeenCalledWith(defaultTransportState);
         expect(mocks.automationStoreSet).toHaveBeenCalledWith({ lanes: [] });
-        expect(mocks.midiStoreSet).toHaveBeenCalledWith({
-            notesByClipId: {},
-            ccByClipId: {},
-            pitchBendByClipId: {},
-        });
+        expect(mocks.resetMidiStoreForProject).toHaveBeenCalledWith({ generateProbabilitySeed: false });
         expect(mocks.tempoMapStoreSet).toHaveBeenCalledWith({ changes: [] });
         expect(mocks.timeSignatureMapStoreSet).toHaveBeenCalledWith({ changes: [] });
         expect(mocks.setSidechainRoutes).toHaveBeenCalledWith([]);

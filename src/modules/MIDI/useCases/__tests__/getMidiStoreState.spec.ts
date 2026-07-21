@@ -1,11 +1,12 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 
-import { midiStore } from '../../stores/midiStore';
+import { LEGACY_MIDI_PROBABILITY_SEED, midiStore } from '../../stores/midiStore';
 import { getMidiStoreState } from '../getMidiStoreState';
 
 describe('getMidiStoreState', () => {
     beforeEach(() => {
         midiStore.set({
+            probabilitySeed: LEGACY_MIDI_PROBABILITY_SEED,
             notesByClipId: {},
             ccByClipId: {},
             pitchBendByClipId: {},
@@ -14,6 +15,7 @@ describe('getMidiStoreState', () => {
 
     it('should return the current MIDI store snapshot', () => {
         const next = {
+            probabilitySeed: LEGACY_MIDI_PROBABILITY_SEED,
             notesByClipId: {
                 c1: [{ id: 'n1', pitch: 60, startBeat: 0, duration: 1, velocity: 100 }],
             },

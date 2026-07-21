@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 
 import { type Track } from '#/modules/Arrangement/stores';
-import { type MidiStoreState } from '#/modules/MIDI/stores';
+import { LEGACY_MIDI_PROBABILITY_SEED, type MidiStoreState } from '#/modules/MIDI/stores';
 
 import { MICRO_FADE_SECONDS } from '../constants';
 import { scheduleTrackClips } from '../scheduleTrackClips';
@@ -203,6 +203,7 @@ function makeBuffer(durationSeconds: number): AudioBuffer {
 }
 
 const emptyMidi: NonNullable<MidiStoreState> = {
+    probabilitySeed: LEGACY_MIDI_PROBABILITY_SEED,
     notesByClipId: {},
     ccByClipId: {},
     pitchBendByClipId: {},
@@ -252,7 +253,12 @@ async function run({ track, ctx, onWarning, regionStartBeat = 0, withPrebuiltCha
         durationSeconds: 60,
         defaultTempo: 120,
         changes: [],
-        projections: { projectMidiEvents, projectPpqEndpoints, processYeastMidi: null },
+        projections: {
+            projectMidiEvents,
+            projectPpqEndpoints,
+            processYeastMidi: null,
+            selectMidiEventProbability: () => true,
+        },
         onWarning,
         pendingWorkletEvents: [],
         allTracks: [track],

@@ -9,6 +9,7 @@ const mocks = vi.hoisted(() => ({
     transportStoreSet: vi.fn(),
     automationStoreSet: vi.fn(),
     midiStoreSet: vi.fn(),
+    resetMidiStoreForProject: vi.fn(),
     hydrateGrooveTemplates: vi.fn(),
     tempoMapStoreSet: vi.fn(),
     timeSignatureMapStoreSet: vi.fn(),
@@ -35,7 +36,11 @@ vi.mock('#/modules/MIDI/stores', async (importOriginal) => {
 
 vi.mock('#/modules/MIDI/useCases', async (importOriginal) => {
     const actual = await importOriginal<typeof import('#/modules/MIDI/useCases')>();
-    return { ...actual, hydrateGrooveTemplates: mocks.hydrateGrooveTemplates };
+    return {
+        ...actual,
+        hydrateGrooveTemplates: mocks.hydrateGrooveTemplates,
+        resetMidiStoreForProject: mocks.resetMidiStoreForProject,
+    };
 });
 
 vi.mock('#/modules/Yeast/useCases', async (importOriginal) => {
@@ -83,6 +88,7 @@ describe('resetModuleStoresToDefault', () => {
         mocks.transportStoreSet.mockClear();
         mocks.automationStoreSet.mockClear();
         mocks.midiStoreSet.mockClear();
+        mocks.resetMidiStoreForProject.mockClear();
         mocks.hydrateGrooveTemplates.mockClear();
         mocks.tempoMapStoreSet.mockClear();
         mocks.timeSignatureMapStoreSet.mockClear();
@@ -99,11 +105,7 @@ describe('resetModuleStoresToDefault', () => {
         expect(mocks.resetArrangementStoresForProject).toHaveBeenCalledTimes(1);
         expect(mocks.transportStoreSet).toHaveBeenCalledWith(defaultTransportState);
         expect(mocks.automationStoreSet).toHaveBeenCalledWith({ lanes: [] });
-        expect(mocks.midiStoreSet).toHaveBeenCalledWith({
-            notesByClipId: {},
-            ccByClipId: {},
-            pitchBendByClipId: {},
-        });
+        expect(mocks.resetMidiStoreForProject).toHaveBeenCalledWith({ generateProbabilitySeed: false });
         expect(mocks.tempoMapStoreSet).toHaveBeenCalledWith({ changes: [] });
         expect(mocks.timeSignatureMapStoreSet).toHaveBeenCalledWith({ changes: [] });
         expect(mocks.setSidechainRoutes).toHaveBeenCalledWith([]);
@@ -120,6 +122,12 @@ describe('resetModuleStoresToDefault', () => {
 
         expect(mocks.hydrateGrooveTemplates).not.toHaveBeenCalled();
         expect(mocks.hydrateYeastState).not.toHaveBeenCalled();
+    });
+
+    it('does not queue a MIDI owner write before project-load hydration', () => {
+        resetModuleStoresToDefault({ resetMidiState: false });
+
+        expect(mocks.resetMidiStoreForProject).not.toHaveBeenCalled();
     });
 
     it('should clear per-device Grinder telemetry so prior-project meters do not linger', () => {

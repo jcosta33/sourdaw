@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-import { type MidiStoreState } from '#/modules/MIDI/stores';
+import { LEGACY_MIDI_PROBABILITY_SEED, type MidiStoreState } from '#/modules/MIDI/stores';
 
 import { type rippleDeleteClips } from '../../../useCases/rippleDelete/rippleDeleteClips';
 import { handleRemoveClip } from '../handleRemoveClip';
@@ -165,6 +165,7 @@ describe('handleRemoveClip', () => {
             const mockMidiCcs = [mockMidiCc];
             const mockMidiPitchBends = [mockMidiPitchBend];
             mocks.getMidiStoreState.mockReturnValue({
+                probabilitySeed: LEGACY_MIDI_PROBABILITY_SEED,
                 notesByClipId: { c1: mockMidiNotes },
                 ccByClipId: { c1: mockMidiCcs },
                 pitchBendByClipId: { c1: mockMidiPitchBends },

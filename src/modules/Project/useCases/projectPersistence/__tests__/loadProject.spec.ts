@@ -72,6 +72,7 @@ describe('loadProject', () => {
         expect(resetActionReplayAuthority).toHaveBeenCalledTimes(1);
         expect(mocks.resetModuleStores).toHaveBeenCalledWith({
             resetGrooveTemplates: false,
+            resetMidiState: false,
             resetYeastState: false,
         });
         expect(projectCrdtToStores).toHaveBeenCalledTimes(1);

@@ -187,6 +187,7 @@ vi.mock('#/modules/MIDI/useCases', () => ({
     getMidiNoteTransformHandlers: sentinelHandlers('MidiNoteTransform'),
     getPatternInstanceHandlers: sentinelHandlers('PatternInstance'),
     createGrooveMidiEventProjector: noop,
+    shouldPlayMidiEvent: () => true,
     setWebMidiRealtimeProcessor: noop,
     setWebMidiRuntimeEventBus: noop,
     getWebMidiInputHandlers: sentinelHandlers('WebMidiInput'),

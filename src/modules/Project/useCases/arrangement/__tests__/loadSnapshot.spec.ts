@@ -1,4 +1,10 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+import {
+    configureAutomergeStoragePort,
+    flushAutomergeStorageWrites,
+} from '#/infra/store/storage/createAutomergeStorage';
+import { midiStore } from '#/modules/MIDI/stores';
 
 import { type ArrangementSnapshot } from '../../../stores/arrangementStore';
 import { loadSnapshot } from '../loadSnapshot';
@@ -24,7 +30,16 @@ vi.mock('#/modules/Automation/useCases', () => ({
     restoreAutomationSnapshot: mocks.restore_automation_snapshot,
 }));
 
-vi.mock('#/modules/MIDI/useCases', () => ({ setMidiStoreState: mocks.set_midi_store_state }));
+vi.mock('#/modules/MIDI/useCases', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('#/modules/MIDI/useCases')>();
+    return {
+        ...actual,
+        setMidiStoreState: (state: unknown): void => {
+            mocks.set_midi_store_state(state);
+            actual.setMidiStoreState(state);
+        },
+    };
+});
 
 vi.mock('#/modules/Transport/useCases', () => ({
     restoreTimelineMapSnapshot: mocks.restore_timeline_map_snapshot,
@@ -78,7 +93,21 @@ const baseSnapshot: ArrangementSnapshot = {
 
 describe('loadSnapshot', () => {
     beforeEach(() => {
+        configureAutomergeStoragePort(null);
+        flushAutomergeStorageWrites();
+        midiStore.set({
+            probabilitySeed: 0xdecafbad,
+            notesByClipId: {},
+            ccByClipId: {},
+            pitchBendByClipId: {},
+        });
+        flushAutomergeStorageWrites();
         vi.clearAllMocks();
+    });
+
+    afterEach(() => {
+        flushAutomergeStorageWrites();
+        configureAutomergeStoragePort(null);
     });
 
     it('delegates track and Automation restoration to their owning modules', () => {
@@ -138,5 +167,36 @@ describe('loadSnapshot', () => {
         expect(mocks.restore_track_snapshot).toHaveBeenCalledWith(snapshot.tracks);
         expect(mocks.restore_automation_snapshot).toHaveBeenCalledWith(snapshot.automation);
         expect(mocks.set_midi_store_state).toHaveBeenCalledWith(snapshot.midi);
+    });
+
+    it('preserves the active project seed when loading legacy and current arrangement MIDI', () => {
+        const legacyMidi = {
+            probabilitySeed: 123,
+            notesByClipId: { legacy: [] },
+            ccByClipId: {},
+            pitchBendByClipId: {},
+        };
+        const legacySnapshot: ArrangementSnapshot = { ...baseSnapshot, midi: legacyMidi };
+        const currentSnapshot: ArrangementSnapshot = {
+            ...baseSnapshot,
+            midi: { notesByClipId: { current: [] }, ccByClipId: {}, pitchBendByClipId: {} },
+        };
+
+        loadSnapshot(legacySnapshot);
+        expect(midiStore.value).toEqual({
+            probabilitySeed: 0xdecafbad,
+            notesByClipId: { legacy: [] },
+            ccByClipId: {},
+            pitchBendByClipId: {},
+        });
+
+        loadSnapshot(currentSnapshot);
+        expect(midiStore.value).toEqual({
+            probabilitySeed: 0xdecafbad,
+            notesByClipId: { current: [] },
+            ccByClipId: {},
+            pitchBendByClipId: {},
+        });
+        expect(mocks.set_midi_store_state).toHaveBeenLastCalledWith(currentSnapshot.midi);
     });
 });
