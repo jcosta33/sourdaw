@@ -34,7 +34,7 @@ export const ALLOWED_LAYOUT_DISPOSITIONS = [
     'one-off',
 ] as const;
 
-export const REVIEWED_LAYOUT_CENSUS_DIGEST = '83688fd4cb83e712e66fa92a97d10ee904967e534928c5d69d2572607aa7389a';
+export const REVIEWED_LAYOUT_CENSUS_DIGEST = '4bfce08561da5df3655f9ee421665e61c76e3c1fc1aa9c78c1df6fc0023fde6f';
 
 const LEGACY_ONE_OFF_RATIONALE =
     'Native semantics, refs, handlers, positioning, overflow, child selectors, inline styles, spread attributes, or unsupported geometry require owner-specific proof.';

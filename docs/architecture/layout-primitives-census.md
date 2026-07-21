@@ -28,9 +28,9 @@ Occurrence count: 2741
 
 | Class | Occurrences |
 | --- | ---: |
-| already-migrated | 223 |
+| already-migrated | 225 |
 | complex-grid | 20 |
-| eligible | 1141 |
+| eligible | 1139 |
 | one-off | 0 |
 | renderer | 58 |
 | responsive-or-dynamic | 330 |
@@ -54,12 +54,12 @@ Occurrence count: 2741
 | --- | ---: |
 | alignment | 182 |
 | flex-column | 576 |
-| flex-row | 861 |
+| flex-row | 859 |
 | grid | 14 |
 | grid-columns | 104 |
 | primitive-divider | 1 |
 | primitive-grid | 22 |
-| primitive-row | 90 |
+| primitive-row | 92 |
 | primitive-stack | 114 |
 | semantic-wrapper | 777 |
 
@@ -1683,8 +1683,8 @@ Occurrence count: 2741
 | `layout-e464adc193ed825b` | `src/modules/MixerConsole/presentations/views/MixerPanel.tsx:204#1` | MixerPanel | checked-no-conflict:MixerConsole | `flex h-full items-stretch gap-1 p-2` | Row | eligible | yes | Static low-risk geometry maps directly to Row. |
 | `layout-4964c1984c56258f` | `src/modules/MixerConsole/presentations/views/MixerPanel.tsx:219#1` | MixerPanel | checked-no-conflict:MixerConsole | `flex flex-1 items-center justify-center` | Row | eligible | yes | Static low-risk geometry maps directly to Row. |
 | `layout-466fe59de757a62d` | `src/modules/MixerConsole/presentations/views/MixerPanel.tsx:220#1` | MixerPanel | checked-no-conflict:MixerConsole | `max-w-64` | — | semantic-wrapper | yes | Preserve the DawBlockedState semantic wrapper and review its geometry through the owning component. |
-| `layout-bae381b5c7e4d031` | `src/modules/Onboarding/presentations/views/OnboardingTour.tsx:268#1` | OnboardingTour | checked-no-conflict:Onboarding | `flex items-center justify-between px-4 py-3 border-b border-white/[0.06]` | Row | eligible | yes | Static low-risk geometry maps directly to Row. |
-| `layout-429d5ffc3b90d9e3` | `src/modules/Onboarding/presentations/views/OnboardingTour.tsx:286#1` | OnboardingTour | checked-no-conflict:Onboarding | `flex items-center justify-between gap-2 px-4 py-3 border-t border-white/[0.06]` | Row | eligible | yes | Static low-risk geometry maps directly to Row. |
+| `layout-a3d646015d21a3c2` | `src/modules/Onboarding/presentations/views/OnboardingTour.tsx:269#1` | OnboardingTour | checked-no-conflict:Onboarding | `px-4 py-3 border-b border-white/[0.06]` | Row | already-migrated | yes | Already uses the Row layout primitive; retain as a characterized primitive consumer. |
+| `layout-035f4b816d4da039` | `src/modules/Onboarding/presentations/views/OnboardingTour.tsx:287#1` | OnboardingTour | checked-no-conflict:Onboarding | `px-4 py-3 border-t border-white/[0.06]` | Row | already-migrated | yes | Already uses the Row layout primitive; retain as a characterized primitive consumer. |
 | `layout-c28e31395a56b56f` | `src/modules/Preferences/presentations/components/CaptureKeyButton.tsx:15#1` | CaptureKeyButton | checked-no-conflict:Preferences | `{cn( 'rounded border bg-surface-overlay font-mono text-foreground transition-colors', listening ? 'border-primary bg-primary/10 text-primary animate-pulse' : 'border-border', className )}` | — | responsive-or-dynamic | yes | Responsive, runtime-computed, or conditional-sibling layout must retain its explicit behavior until separately characterized. |
 | `layout-f8f60d221632b682` | `src/modules/Preferences/presentations/views/preferences/AiSection.tsx:48#1` | AiSection | checked-no-conflict:Preferences | `flex items-center gap-2` | Row | eligible | yes | Static low-risk geometry maps directly to Row. |
 | `layout-ddb747af839f54d1` | `src/modules/Preferences/presentations/views/preferences/AiSection.tsx:49#1` | AiSection | checked-no-conflict:Preferences | `{cn( 'inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-[10px] font-medium', backend === 'native' && 'bg-[var(--color-state-success)]/15 text-[var(--color-state-success)]', backend === 'webllm' && 'bg-[var(--color-accent-cyan)]/15 text-[var(--color-accent-cyan)]', backend === 'cloud' && 'bg-[var(--color-accent-lavender)]/15 text-[var(--color-accent-lavender)]', backend === 'none' && 'bg-muted text-muted-foreground' )}` | — | responsive-or-dynamic | yes | Responsive, runtime-computed, or conditional-sibling layout must retain its explicit behavior until separately characterized. |
