@@ -6,6 +6,7 @@
 import { type MidiEvent, type TransportInfo } from '../../models/MidiEvent';
 import { BaseMidiProcessor } from '../BaseMidiProcessor';
 import { BoundedNoteVoiceQueue } from '../BoundedNoteVoiceQueue';
+import { ScheduledEventQueue } from '../MidiProcessor';
 
 import type { YeastPreviewDecisionSink } from '../YeastPreviewSidecar';
 
@@ -35,6 +36,9 @@ export class ChordGenerator extends BaseMidiProcessor {
     // Numeric key (channel << 7) | note matches MidiRack/ScaleQuantizer and avoids a
     // per-event template-literal allocation on the audio thread.
     private generatedVoices = new BoundedNoteVoiceQueue<number[]>();
+    // Strummed tones whose time falls beyond the current block. They must
+    // not leave the processor with a future timestamp (see processMidi).
+    private scheduled = new ScheduledEventQueue();
 
     constructor(id?: string) {
         super(id ?? `chord-${Date.now()}`);
@@ -46,6 +50,21 @@ export class ChordGenerator extends BaseMidiProcessor {
         transport: TransportInfo,
         preview?: YeastPreviewDecisionSink
     ): void {
+        // Bound strum emission by the transport's block range (MidiRack
+        // always sets it). A strummed tone leaving the processor with
+        // timeSamples >= the rack's block end parks in the rack-level
+        // scheduled queue, which re-feeds it through the chain top on a
+        // later block — the tone re-entered as fresh input and triggered a
+        // NEW full chord (one noteOn + 20 ms strum → 12-20 noteOns in
+        // 100 ms with compounding pitches). Queue future tones internally
+        // and drain exactly [0, blockEnd): each tone leaves in the block
+        // that contains it, as final output, and never re-enters (same
+        // mechanism as the NoteRepeater fix). The 8192 fallback only serves
+        // direct processMidi callers whose transport carries no block range
+        // (isolated unit specs).
+        const now = transport.blockStartSamples ?? input[0]?.timeSamples ?? 0;
+        const blockEnd = transport.blockEndSamples ?? now + 8192;
+
         for (const event of input) {
             if (event.kind.type === 'noteOn') {
                 let intervals = [...(CHORD_FORMULAS[this.chordType] ?? [0, 4, 7])];
@@ -85,7 +104,11 @@ export class ChordGenerator extends BaseMidiProcessor {
                         trackId: event.trackId,
                         kind: { type: 'noteOn', channel: event.kind.channel, note, velocity: event.kind.velocity },
                     };
-                    output.push(generated);
+                    if (generated.timeSamples < blockEnd) {
+                        output.push(generated);
+                    } else {
+                        this.scheduled.push(generated);
+                    }
                     preview?.transferDecisionLineage(event, generated);
                 }
 
@@ -110,10 +133,17 @@ export class ChordGenerator extends BaseMidiProcessor {
                 output.push(event);
             }
         }
+
+        // Drain internally queued strummed tones that fall in this block.
+        const drained = this.scheduled.drainRange(0, blockEnd, this.trackId);
+        for (const event1 of drained) {
+            output.push(event1);
+        }
     }
 
     reset(): void {
         this.generatedVoices.clear();
+        this.scheduled.clear();
     }
 
     protected resetParams(): void {

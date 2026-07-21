@@ -1035,6 +1035,80 @@ describe('MidiRack', () => {
             expect(noteOffs).toBe(3); // one off per repeat (the input note stays held)
         });
 
+        it('bounds ChordGenerator strum — strummed tones never re-enter the chain as fresh chord triggers (regression: chord multiplication)', () => {
+            const rack = new MidiRack('rack-a');
+            const chord = new ChordGenerator('chord-1');
+            chord.setParam('strum_ms', 20); // 882-sample offsets at 44.1 kHz ≫ 128-sample blocks
+            rack.addProcessor(chord, 'chord');
+
+            // One noteOn, then ~100 ms of continuous 128-sample blocks.
+            // Pre-fix the strummed tones left the processor with timeSamples
+            // beyond the rack's block end, parked in the rack scheduled
+            // queue, and re-entered the chain top — each strummed tone
+            // triggering a NEW full chord (audit probe: 12-20 noteOns within
+            // 100 ms with compounding pitches 60@0 64@882 67@1764 68@1764
+            // 71@2646 …). Post-fix the rack must emit exactly the major triad.
+            const pitches: number[] = [];
+            for (let block = 0; block < 35; block++) {
+                const start = block * 128;
+                const input = block === 0 ? [noteOn(0, 60)] : [];
+                const out = rack.processBlock(
+                    input,
+                    start,
+                    start + 128,
+                    { ...transport, ppqPosition: start / 22050 },
+                    'track-a'
+                );
+                for (const event of out) {
+                    if (isNoteOn(event)) {
+                        pitches.push(event.kind.note);
+                    }
+                }
+            }
+
+            expect(pitches).toHaveLength(3);
+            expect([...pitches].sort((a, b) => a - b)).toEqual([60, 64, 67]);
+        });
+
+        it('emits exactly one Note Off per Arpeggiator Note On (regression: duplicate offs)', () => {
+            const rack = new MidiRack('rack-a');
+            const arp = new Arpeggiator('arp-1');
+            rack.addProcessor(arp, 'arpeggiator'); // defaults: up, 1/8 straight, gate 0.8
+
+            // Hold one note for 250 × 128-sample blocks (1/8 steps at 120 bpm
+            // = 11025 samples → ons at 11025 and 22050, offs at 19845 and
+            // 30870). Pre-fix every generated off was emitted TWICE: once by
+            // expireNotes at the next step boundary and again by the internal
+            // scheduled drain — the two stores were never synchronized
+            // (audit probe: 8 ons → 14 offs, duplicate pairs 60@19845 ×2,
+            // 60@30870 ×2). Post-fix: exactly one off per on, no duplicate
+            // note+time pair.
+            let noteOns = 0;
+            const offs: string[] = [];
+            for (let block = 0; block < 250; block++) {
+                const start = block * 128;
+                const input = block === 0 ? [noteOn(0, 60)] : [];
+                const out = rack.processBlock(
+                    input,
+                    start,
+                    start + 128,
+                    { ...transport, ppqPosition: start / 22050 },
+                    'track-a'
+                );
+                for (const event of out) {
+                    if (isNoteOn(event)) {
+                        noteOns++;
+                    } else if (isNoteOff(event)) {
+                        offs.push(`${event.kind.note}@${event.timeSamples}`);
+                    }
+                }
+            }
+
+            expect(noteOns).toBe(2);
+            expect(offs).toHaveLength(noteOns); // exactly one off per on
+            expect(new Set(offs).size).toBe(offs.length); // no duplicate note+time off
+        });
+
         it('panics audible state and clears NoteRepeater delay queues before a new discontinuity epoch', () => {
             const enabledRack = new MidiRack('rack-a');
             const disabledRack = new MidiRack('rack-a');

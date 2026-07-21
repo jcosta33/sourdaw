@@ -250,10 +250,18 @@ export class Arpeggiator extends BaseMidiProcessor {
             this.lastStepTimeSamples = stepTime;
         }
 
-        // Drain scheduled Note Offs that fall in this block
+        // Drain scheduled Note Offs that fall in this block, and drop the
+        // matching activeGenerated entries: expireNotes must not re-emit
+        // these offs at a later step boundary. The two stores are kept in
+        // sync in both directions so every generated note gets exactly one
+        // Note Off (pre-fix each off left twice — once via expireNotes,
+        // once via this drain; 8 ons → 14 offs in the audit probe).
         const drained = this.scheduled.drainRange(0, blockEnd, this.trackId);
         for (const event1 of drained) {
             output.push(event1);
+            if (event1.kind.type === 'noteOff') {
+                this.removeActiveGenerated(event1.trackId, event1.kind.channel, event1.kind.note, event1.timeSamples);
+            }
         }
     }
 
@@ -625,11 +633,32 @@ export class Arpeggiator extends BaseMidiProcessor {
                     trackId: node.trackId,
                     kind: { type: 'noteOff', channel: node.channel, note: node.note },
                 });
+                // Keep the scheduled queue in sync: the off is emitted here,
+                // so the queue must not re-emit it at the block-end drain.
+                this.scheduled.removeNoteOff(node.trackId, node.channel, node.note, node.offTimeSamples);
             } else {
                 this.activeGenerated[writeIdx] = node;
                 writeIdx++;
             }
         }
         this.activeGenerated.length = writeIdx;
+    }
+
+    private removeActiveGenerated(
+        trackId: string | undefined,
+        channel: number,
+        note: number,
+        offTimeSamples: number
+    ): void {
+        const idx = this.activeGenerated.findIndex(
+            (an) =>
+                an.trackId === trackId &&
+                an.channel === channel &&
+                an.note === note &&
+                an.offTimeSamples === offTimeSamples
+        );
+        if (idx !== -1) {
+            this.activeGenerated.splice(idx, 1);
+        }
     }
 }
