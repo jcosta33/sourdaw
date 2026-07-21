@@ -214,6 +214,27 @@ function expectValid(value: unknown, resolver: ActionResolver = fixtureActionRes
     expect(validate(value, resolver).status).toBe('valid');
 }
 
+function expectResolverFailureIsAtomic(resolver: ActionResolver): void {
+    effectSpies.dispatch.mockClear();
+    effectSpies.storeWrite.mockClear();
+
+    const result = validate(
+        makeDocument([
+            makeMapping({ id: 'first', input: makeNoteInput({ note: 1 }) }),
+            makeMapping({ id: 'second', input: makeNoteInput({ note: 2 }) }),
+        ]),
+        resolver
+    );
+
+    expect(result).toEqual({
+        status: 'invalid',
+        diagnostics: [{ code: 'UNRESOLVED_ACTION', path: '$.mappings[0].action' }],
+    });
+    expect(resolver).toHaveBeenCalledTimes(1);
+    expect(effectSpies.dispatch).not.toHaveBeenCalled();
+    expect(effectSpies.storeWrite).not.toHaveBeenCalled();
+}
+
 describe('validateControllerMappingSchema', () => {
     describe('exact root shape', () => {
         it('accepts only schema version 1 with an exact mappings array', () => {
@@ -829,6 +850,80 @@ describe('validateControllerMappingSchema', () => {
             expect(throwingResolver).toHaveBeenCalledTimes(1);
             expect(effectSpies.dispatch).not.toHaveBeenCalled();
             expect(effectSpies.storeWrite).not.toHaveBeenCalled();
+        });
+
+        it('rejects a null resolver result without attempting the later mapping', () => {
+            const holder: { value: ReturnType<ActionResolver> } = {
+                value: { status: 'unresolved', reason: 'placeholder' },
+            };
+            Reflect.set(holder, 'value', null);
+            const nullResolver: ActionResolver = vi.fn(() => holder.value);
+
+            expectResolverFailureIsAtomic(nullResolver);
+        });
+
+        it('rejects a throwing status accessor without reading it or attempting the later mapping', () => {
+            let statusReads = 0;
+            const resolution: ReturnType<ActionResolver> = {
+                status: 'resolved',
+                actionType: 'setTempo',
+            };
+            Object.defineProperty(resolution, 'status', {
+                configurable: true,
+                enumerable: true,
+                get() {
+                    statusReads += 1;
+                    throw new Error('status unavailable');
+                },
+            });
+            const accessorResolver: ActionResolver = vi.fn(() => resolution);
+
+            expectResolverFailureIsAtomic(accessorResolver);
+            expect(statusReads).toBe(0);
+        });
+
+        it('rejects a throwing actionType accessor without reading it or attempting the later mapping', () => {
+            let actionTypeReads = 0;
+            const resolution: ReturnType<ActionResolver> = {
+                status: 'resolved',
+                actionType: 'setTempo',
+            };
+            Object.defineProperty(resolution, 'actionType', {
+                configurable: true,
+                enumerable: true,
+                get() {
+                    actionTypeReads += 1;
+                    throw new Error('action type unavailable');
+                },
+            });
+            const accessorResolver: ActionResolver = vi.fn(() => resolution);
+
+            expectResolverFailureIsAtomic(accessorResolver);
+            expect(actionTypeReads).toBe(0);
+        });
+
+        it('rejects a changing actionType getter without reading divergent values', () => {
+            let actionTypeReads = 0;
+            const resolution: ReturnType<ActionResolver> = {
+                status: 'resolved',
+                actionType: 'setTempo',
+            };
+            Object.defineProperty(resolution, 'actionType', {
+                configurable: true,
+                enumerable: true,
+                get() {
+                    actionTypeReads += 1;
+                    if (actionTypeReads === 1) {
+                        return 'setTempo';
+                    }
+
+                    return 'muteTrack';
+                },
+            });
+            const changingResolver: ActionResolver = vi.fn(() => resolution);
+
+            expectResolverFailureIsAtomic(changingResolver);
+            expect(actionTypeReads).toBe(0);
         });
     });
 

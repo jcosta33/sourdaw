@@ -1199,24 +1199,79 @@ function findGlobalDiagnostics(
     return Object.freeze(diagnostics);
 }
 
+function snapshotActionResolution(
+    resolution: ResolveControllerActionTemplateOutput
+): ResolveControllerActionTemplateOutput | null {
+    const record = readExactRecord(
+        resolution,
+        ['status', 'actionType', 'reason'],
+        ['status'],
+        '$',
+        'UNRESOLVED_ACTION',
+        'UNRESOLVED_ACTION'
+    );
+    if (record.status === 'invalid') {
+        return null;
+    }
+
+    const status = resolution.status;
+    if (status === 'resolved') {
+        const hasActionType = Object.hasOwn(record.value, 'actionType');
+        const hasReason = Object.hasOwn(record.value, 'reason');
+        if (!hasActionType || hasReason) {
+            return null;
+        }
+
+        const actionType = resolution.actionType;
+        if (typeof actionType !== 'string') {
+            return null;
+        }
+
+        return Object.freeze({ status, actionType });
+    }
+
+    if (status === 'unresolved') {
+        const hasActionType = Object.hasOwn(record.value, 'actionType');
+        const hasReason = Object.hasOwn(record.value, 'reason');
+        if (hasActionType || !hasReason) {
+            return null;
+        }
+
+        const reason = resolution.reason;
+        if (typeof reason !== 'string') {
+            return null;
+        }
+
+        return Object.freeze({ status, reason });
+    }
+
+    return null;
+}
+
 function resolveMapping(
     mapping: ParsedMappingCandidate,
     index: number,
     resolveActionTemplate: ValidateControllerMappingSchemaInput['resolveActionTemplate']
 ): ParseResult<ControllerMappingV1> {
-    let resolution: ResolveControllerActionTemplateOutput;
+    let resolution: ResolveControllerActionTemplateOutput | null;
     try {
-        resolution = resolveActionTemplate({ action: mapping.action, input: mapping.input });
+        const resolverResult = resolveActionTemplate({ action: mapping.action, input: mapping.input });
+        resolution = snapshotActionResolution(resolverResult);
     } catch {
         return failure('UNRESOLVED_ACTION', `$.mappings[${index}].action`);
     }
 
-    if (resolution.status !== 'resolved' || resolution.actionType !== mapping.action.type) {
+    if (resolution === null || resolution.status !== 'resolved') {
+        return failure('UNRESOLVED_ACTION', `$.mappings[${index}].action`);
+    }
+
+    const resolvedActionType = resolution.actionType;
+    if (resolvedActionType !== mapping.action.type) {
         return failure('UNRESOLVED_ACTION', `$.mappings[${index}].action`);
     }
 
     const action: ControllerActionTemplateV1 = Object.freeze({
-        type: resolution.actionType,
+        type: resolvedActionType,
         payload: mapping.action.payload,
     });
 
