@@ -2,6 +2,7 @@ import { startInputMonitoring, stopInputMonitoring } from '#/modules/AudioEngine
 
 import { getTrackById } from '../../repositories/track/getTrackById';
 import { updateTrack } from '../../repositories/track/updateTrack';
+import { getTrackEligibility } from '../../stores/trackEligibility';
 import { type InputMonitoring } from '../../stores/trackStore';
 
 /**
@@ -21,6 +22,11 @@ export const INPUT_MONITORING_CYCLE: Record<InputMonitoring, InputMonitoring> = 
 export function toggleInputMonitoring(trackId: string): void {
     const track = getTrackById(trackId);
     if (!track) {
+        return;
+    }
+    if (!getTrackEligibility(track.kind).acceptsMonitoring) {
+        updateTrack(trackId, (time) => ({ ...time, inputMonitoring: 'off' }));
+        stopInputMonitoring();
         return;
     }
     const newValue = INPUT_MONITORING_CYCLE[track.inputMonitoring];

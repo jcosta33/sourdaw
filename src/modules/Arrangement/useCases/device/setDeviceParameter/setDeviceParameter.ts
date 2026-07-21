@@ -4,6 +4,7 @@ import { transportStore } from '#/modules/Transport/stores';
 
 import { getTrackState } from '../../../repositories/track/getTrackState';
 import { updateTrack } from '../../../repositories/track/updateTrack';
+import { getTrackEligibility } from '../../../stores/trackEligibility';
 import { type AutomationMode } from '../../../stores/trackStore';
 
 const RECORDING_MODES: ReadonlySet<AutomationMode> = new Set(['write', 'touch', 'latch']);
@@ -21,6 +22,9 @@ export function setDeviceParameter(deviceId: string, paramId: string, value: num
 
     const track = state.tracks.find((time) => time.devices.some((data) => data.id === deviceId));
     if (!track) {
+        return;
+    }
+    if (!getTrackEligibility(track.kind).acceptsDeviceUpdate) {
         return;
     }
 

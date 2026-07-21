@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+import { createTrack } from '../../../../models/Track';
 import { setDeviceParameter } from '../setDeviceParameter';
 
 import type { Track } from '#/modules/Arrangement/models/Track';
@@ -78,5 +79,20 @@ describe('setDeviceParameter', () => {
     it('bails if value is not finite', () => {
         setDeviceParameter('d1', 'gain', NaN);
         expect(mocks.updateDeviceParam).not.toHaveBeenCalled();
+    });
+
+    it('rejects dormant VCA parameter updates before engine, project, or automation work', () => {
+        const track = createTrack({ id: 'vca-1', name: 'VCA', kind: 'audio' });
+        Object.defineProperty(track, 'kind', { value: 'vca' });
+        track.devices = [{ id: 'd1', name: 'Device', type: 'device', bypassed: false, parameterValues: {} }];
+        track.automationMode = 'write';
+        mocks.getTrackState.mockReturnValue({ tracks: [track], selectedTrackId: null });
+        mocks.transportStoreValue = { isPlaying: true, playheadPosition: 8 };
+
+        setDeviceParameter('d1', 'gain', 0.5);
+
+        expect(mocks.updateDeviceParam).not.toHaveBeenCalled();
+        expect(mocks.updateTrack).not.toHaveBeenCalled();
+        expect(mocks.recordAutomationValue).not.toHaveBeenCalled();
     });
 });

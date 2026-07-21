@@ -199,4 +199,25 @@ describe('bounceTrack', () => {
         redo();
         expect(mocks.trackStore.value?.tracks[0]?.clips[0]).toEqual(bouncedClip);
     });
+
+    it('rejects dormant VCA bounce before render, cache, IDs, history, or project work', async () => {
+        const sourceTrack = createAudioTrack();
+        Object.defineProperty(sourceTrack, 'kind', { value: 'vca' });
+        setTrackStoreState({ tracks: [sourceTrack], selectedTrackId: 'track-1' });
+
+        await bounceTrack('track-1', {
+            includeInserts: true,
+            includeSends: true,
+            includeAutomation: true,
+            normalization: 'off',
+            tailHandling: 'off',
+            destination: 'replace',
+        });
+
+        expect(mocks.renderTrackOffline).not.toHaveBeenCalled();
+        expect(mocks.cacheAudioBuffer).not.toHaveBeenCalled();
+        expect(crypto.randomUUID).not.toHaveBeenCalled();
+        expect(mocks.pushUndoEntry).not.toHaveBeenCalled();
+        expect(mocks.trackStore.set).not.toHaveBeenCalled();
+    });
 });

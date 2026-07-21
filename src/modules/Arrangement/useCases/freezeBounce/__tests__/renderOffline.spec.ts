@@ -300,6 +300,18 @@ describe('renderTrackOffline', () => {
         expect(mocks.buildDeviceChain).not.toHaveBeenCalled();
     });
 
+    it('returns before offline dependencies or allocation for a dormant VCA', async () => {
+        const dormantVca = TrackDummy.create({ id: 'vca-1' });
+        Object.defineProperty(dormantVca, 'kind', { value: 'vca' });
+
+        const result = await renderTrackOffline(dormantVca, 0, 4);
+
+        expect(result).toBeNull();
+        expect(mocks.getAudioContext).not.toHaveBeenCalled();
+        expect(mocks.getUpstreamSubgraph).not.toHaveBeenCalled();
+        expect(mocks.buildDeviceChain).not.toHaveBeenCalled();
+    });
+
     it('should read frozen-track buffers through the AudioEngine cache use case', async () => {
         const frozenBuffer = createFakeAudioBuffer(4);
         const frozenTrack = TrackDummy.create({

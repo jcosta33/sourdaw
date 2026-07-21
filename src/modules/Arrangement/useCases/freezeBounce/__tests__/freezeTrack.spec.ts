@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { cacheAudioBuffer } from '#/modules/AudioEngine/useCases';
 
+import { createTrack } from '../../../models/Track';
 import { updateTrack } from '../../../repositories/track/updateTrack';
 import { trackStore } from '../../../stores/trackStore';
 import { freezeTrack } from '../freezeTrack';
@@ -176,5 +177,17 @@ describe('freezeTrack', () => {
         await freezeTrack('t1');
 
         expect(renderTrackOffline).toHaveBeenCalledWith(expect.any(Object), 0, 1 + 4, expect.any(Object));
+    });
+
+    it('rejects dormant VCA freeze before task, render, cache, or project work', async () => {
+        const track = createTrack({ id: 'vca-1', name: 'VCA', kind: 'audio' });
+        Object.defineProperty(track, 'kind', { value: 'vca' });
+        trackStore.set({ tracks: [track], selectedTrackId: null });
+
+        await freezeTrack('vca-1');
+
+        expect(updateTrack).not.toHaveBeenCalled();
+        expect(renderTrackOffline).not.toHaveBeenCalled();
+        expect(cacheAudioBuffer).not.toHaveBeenCalled();
     });
 });

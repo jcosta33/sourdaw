@@ -3,6 +3,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { setTrackOutput } from '../setTrackOutput';
 
 const mocks = vi.hoisted(() => ({
+    getTrackById: vi.fn(),
     updateTrack: vi.fn(),
     engineSetTrackOutput: vi.fn(),
 }));
@@ -32,4 +33,16 @@ describe('setTrackOutput', () => {
 
         expect(mocks.engineSetTrackOutput).toHaveBeenCalledWith('t1', 'bus-main');
     });
+
+    it('rejects dormant VCA output assignment before project or engine work', () => {
+        mocks.getTrackById.mockReturnValue({ id: 'vca-1', kind: 'vca' });
+
+        setTrackOutput('vca-1', 'bus-main');
+
+        expect(mocks.updateTrack).not.toHaveBeenCalled();
+        expect(mocks.engineSetTrackOutput).not.toHaveBeenCalled();
+    });
 });
+vi.mock('#/modules/Arrangement/repositories/track/getTrackById', () => ({
+    getTrackById: mocks.getTrackById,
+}));

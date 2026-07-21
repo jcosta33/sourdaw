@@ -3,6 +3,7 @@ import { loadPlugin } from '#/modules/PluginHost/useCases';
 
 import { getTrackState } from '../../repositories/track/getTrackState';
 import { updateTrack } from '../../repositories/track/updateTrack';
+import { getTrackEligibility } from '../../stores/trackEligibility';
 import { type Device } from '../../stores/trackStore';
 
 function nextDeviceIdStr(): string {
@@ -12,6 +13,10 @@ function nextDeviceIdStr(): string {
 export function addExternalDevice(trackId: string, pluginId: string, pluginName: string): Device | null {
     const state = getTrackState();
     if (!state) {
+        return null;
+    }
+    const track = state.tracks.find((candidate) => candidate.id === trackId);
+    if (!track || !getTrackEligibility(track.kind).acceptsDeviceAdd) {
         return null;
     }
 

@@ -1,3 +1,4 @@
+import { getTrackEligibility, trackStore } from '#/modules/Arrangement/stores';
 import { wireSidechainRoute } from '#/modules/AudioEngine/useCases';
 
 import { SidechainCycleError } from '../../errors/RoutingErrors';
@@ -34,6 +35,16 @@ export function addSidechainRoute(
     targetDeviceId: string,
     targetParameterId = 'threshold'
 ): void {
+    const tracks = trackStore.value?.tracks;
+    const sourceTrack = tracks?.find((track) => track.id === sourceTrackId);
+    const targetTrack = tracks?.find((track) => track.id === targetTrackId);
+    if (sourceTrack && !getTrackEligibility(sourceTrack.kind).acceptsRoutingEndpoint) {
+        return;
+    }
+    if (targetTrack && !getTrackEligibility(targetTrack.kind).acceptsRoutingEndpoint) {
+        return;
+    }
+
     const state = sidechainStore.value;
     if (!state) {
         return;

@@ -3,6 +3,7 @@ import { transportStore } from '#/modules/Transport/stores';
 import { getTrackState } from '../../repositories/track/getTrackState';
 import { setTrackState } from '../../repositories/track/setTrackState';
 import { activeRecordingRef } from '../../stores/activeRecordingRef';
+import { getTrackEligibility } from '../../stores/trackEligibility';
 import { type Clip } from '../../stores/trackStore';
 import { addTake } from '../comping/addTake';
 import { addTakeLane } from '../comping/addTakeLane';
@@ -18,7 +19,9 @@ export function startRecording(): Clip[] {
         return [];
     }
 
-    const armedTracks = trackState.tracks.filter((time) => time.armed);
+    const armedTracks = trackState.tracks.filter(
+        (time) => time.armed && getTrackEligibility(time.kind).acceptsRecording
+    );
     const newClips: Clip[] = [];
 
     for (const track of armedTracks) {

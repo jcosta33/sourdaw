@@ -1,11 +1,15 @@
 import { getTrackState } from '../../repositories/track/getTrackState';
 import { mapAllTracks } from '../../repositories/track/mapAllTracks';
+import { getTrackEligibility } from '../../stores/trackEligibility';
 
 export function bypassDevice(deviceId: string, bypassed: boolean): void {
     const state = getTrackState();
     if (state) {
         for (const track of state.tracks) {
             if (track.devices.some((data) => data.id === deviceId)) {
+                if (!getTrackEligibility(track.kind).acceptsDeviceUpdate) {
+                    return;
+                }
                 // Forward bypass to live engine for native DSP devices
                 import('#/modules/AudioEngine/useCases')
                     .then(({ updateDeviceBypass }) => {

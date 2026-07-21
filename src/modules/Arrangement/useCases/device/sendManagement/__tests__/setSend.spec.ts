@@ -25,7 +25,7 @@ describe('setSend', () => {
     beforeEach(() => vi.clearAllMocks());
 
     it('adds a new send and notifies engine', () => {
-        mocks.getTrackById.mockReturnValue({ id: 't1', sends: [] });
+        mocks.getTrackById.mockReturnValue({ id: 't1', kind: 'audio', sends: [] });
 
         setSend('t1', 'bus1', 0.5, true);
 
@@ -43,6 +43,7 @@ describe('setSend', () => {
     it('updates an existing send maintaining preFader state', () => {
         mocks.getTrackById.mockReturnValue({
             id: 't1',
+            kind: 'audio',
             sends: [{ busId: 'bus1', level: 0.1, preFader: true }],
         });
 
@@ -59,5 +60,14 @@ describe('setSend', () => {
         });
 
         expect(mocks.engineSetSend).toHaveBeenCalledWith('t1', 'bus1', 0.8, true);
+    });
+
+    it('rejects dormant VCA send creation before project or engine work', () => {
+        mocks.getTrackById.mockReturnValue({ id: 'vca-1', kind: 'vca', sends: [] });
+
+        setSend('vca-1', 'bus1', 0.5);
+
+        expect(mocks.updateTrack).not.toHaveBeenCalled();
+        expect(mocks.engineSetSend).not.toHaveBeenCalled();
     });
 });

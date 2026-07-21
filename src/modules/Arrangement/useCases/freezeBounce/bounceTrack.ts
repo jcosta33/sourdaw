@@ -3,6 +3,7 @@ import { pushUndoEntry } from '#/modules/Command/useCases';
 import { transportStore } from '#/modules/Transport/stores';
 
 import { type Clip, type Track } from '../../models/Track';
+import { getTrackEligibility } from '../../stores/trackEligibility';
 import { trackStore } from '../../stores/trackStore';
 
 import { renderTrackOffline } from './renderOffline';
@@ -24,6 +25,9 @@ export async function bounceTrack(trackId: string, options: BounceOptions): Prom
 
     const track = state.tracks.find((time) => time.id === trackId);
     if (!track || track.clips.length === 0) {
+        return;
+    }
+    if (!getTrackEligibility(track.kind).acceptsBounce) {
         return;
     }
 

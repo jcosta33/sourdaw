@@ -1,3 +1,4 @@
+import { getTrackEligibility, trackStore } from '#/modules/Arrangement/stores';
 import { getEngineState, unwireSidechainRoute, wireSidechainRoute } from '#/modules/AudioEngine/useCases';
 
 import { type SidechainRoute } from '../../models/SidechainRoute';
@@ -22,14 +23,27 @@ export function setSidechainRoutes(routes: SidechainRoute[]): SetSidechainRoutes
         }
     }
 
-    sidechainStore.set({ routes });
+    const tracks = trackStore.value?.tracks;
+    const eligibleRoutes = routes.filter((route) => {
+        const sourceTrack = tracks?.find((track) => track.id === route.sourceTrackId);
+        const targetTrack = tracks?.find((track) => track.id === route.targetTrackId);
+        if (sourceTrack && !getTrackEligibility(sourceTrack.kind).acceptsRoutingEndpoint) {
+            return false;
+        }
+        if (targetTrack && !getTrackEligibility(targetTrack.kind).acceptsRoutingEndpoint) {
+            return false;
+        }
+        return true;
+    });
+
+    sidechainStore.set({ routes: eligibleRoutes });
 
     // Issue the wiring regardless of engine readiness: when the engine is in
     // fallback mode it now queues each route for replay rather than dropping it,
     // so the request is never silently lost. We report whether it was applied
     // live so the caller has visibility into the deferred (recoverable) state.
     const wiredLive = getEngineState().isReady;
-    for (const route of routes) {
+    for (const route of eligibleRoutes) {
         wireSidechainRoute(route.sourceTrackId, route.targetTrackId, route.targetDeviceId);
     }
 

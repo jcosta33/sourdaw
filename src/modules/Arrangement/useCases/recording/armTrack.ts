@@ -2,12 +2,17 @@ import { getMidiInputTrack, setMidiInputTrack } from '#/modules/MIDI/useCases';
 
 import { getTrackById } from '../../repositories/track/getTrackById';
 import { updateTrack } from '../../repositories/track/updateTrack';
+import { getTrackEligibility } from '../../stores/trackEligibility';
 
 export function armTrack(trackId: string, armed: boolean): void {
+    const track = getTrackById(trackId);
+    if (armed && track && !getTrackEligibility(track.kind).acceptsArm) {
+        return;
+    }
+
     updateTrack(trackId, (time) => ({ ...time, armed }));
 
     if (armed) {
-        const track = getTrackById(trackId);
         if (track && track.kind === 'midi') {
             setMidiInputTrack(trackId);
         }

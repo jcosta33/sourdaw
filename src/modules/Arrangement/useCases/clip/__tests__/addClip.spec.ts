@@ -97,6 +97,16 @@ describe('addClip', () => {
         expect(mocks.updateTrack).not.toHaveBeenCalled();
     });
 
+    it('rejects a dormant VCA before allocating a clip ID or writing the track', () => {
+        mocks.getTrackState.mockReturnValue({ tracks: [{ id: 'vca-1', kind: 'vca', clips: [] }] });
+
+        const result = addClip({ trackId: 'vca-1', startBeat: 0, endBeat: 4, name: 'Forbidden' });
+
+        expect(result).toBeNull();
+        expect(mocks.getNextClipId).not.toHaveBeenCalled();
+        expect(mocks.updateTrack).not.toHaveBeenCalled();
+    });
+
     it('returns null when endBeat does not exceed startBeat', () => {
         mocks.getTrackState.mockReturnValue({ tracks: [{ id: 't1', kind: 'audio', clips: [] }] });
 

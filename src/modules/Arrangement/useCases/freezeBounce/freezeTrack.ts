@@ -3,6 +3,7 @@ import { transportStore } from '#/modules/Transport/stores';
 
 import { updateTrack } from '../../repositories/track/updateTrack';
 import { computeTrackHash } from '../../services/computeTrackHash';
+import { getTrackEligibility } from '../../stores/trackEligibility';
 import { trackStore } from '../../stores/trackStore';
 
 import { renderTrackOffline } from './renderOffline';
@@ -17,6 +18,9 @@ export async function freezeTrack(trackId: string): Promise<void> {
 
     const track = state.tracks.find((time) => time.id === trackId);
     if (!track || track.freezeState.status === 'frozen') {
+        return;
+    }
+    if (!getTrackEligibility(track.kind).acceptsFreeze) {
         return;
     }
 

@@ -71,4 +71,17 @@ describe('toggleInputMonitoring', () => {
         expect(mocks.stopInputMonitoring).toHaveBeenCalledTimes(1);
         expect(mocks.startInputMonitoring).not.toHaveBeenCalled();
     });
+
+    it('normalizes dormant VCA monitoring residue to off without starting hardware monitoring', () => {
+        mocks.getTrackById.mockReturnValue({ id: 'vca-1', kind: 'vca', inputMonitoring: 'auto' });
+
+        toggleInputMonitoring('vca-1');
+
+        const patch = mocks.updateTrack.mock.calls[0]![1] as (track: { inputMonitoring: InputMonitoring }) => {
+            inputMonitoring: InputMonitoring;
+        };
+        expect(patch({ inputMonitoring: 'auto' }).inputMonitoring).toBe('off');
+        expect(mocks.startInputMonitoring).not.toHaveBeenCalled();
+        expect(mocks.stopInputMonitoring).toHaveBeenCalledTimes(1);
+    });
 });

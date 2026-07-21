@@ -23,6 +23,7 @@ const mocks = vi.hoisted(() => ({
 
 // Mock the barrel re-exports but satisfy the markerStore etc. if needed by other components
 vi.mock('#/modules/Arrangement/stores', () => ({
+    getTrackEligibility: (kind: string) => ({ createsLiveStrip: kind !== 'folder' && kind !== 'vca' }),
     trackStore: {
         get value() {
             return mocks.trackStoreValue.value;
@@ -118,5 +119,21 @@ describe('ensureTrackStrips', () => {
         ensureTrackStrips();
 
         expect(mocks.wireSidechainRoutes).toHaveBeenCalledTimes(1);
+    });
+
+    it('does not allocate or replay a strip for a dormant VCA', () => {
+        const dormantVca = createTrack({ id: 'vca-1', name: 'VCA', kind: 'audio' });
+        Object.defineProperty(dormantVca, 'kind', { value: 'vca' });
+        dormantVca.devices = [{ id: 'd1', name: 'Device', type: 'device', bypassed: false, parameterValues: {} }];
+        dormantVca.sends = [{ busId: 'b1', level: 0.5, preFader: false }];
+        mocks.trackStoreValue.value = { selectedTrackId: null, tracks: [dormantVca] };
+
+        ensureTrackStrips();
+
+        expect(mocks.ensureTrackStrip).not.toHaveBeenCalled();
+        expect(mocks.addDeviceToStrip).not.toHaveBeenCalled();
+        expect(mocks.setSend).not.toHaveBeenCalled();
+        expect(mocks.setTrackGain).not.toHaveBeenCalled();
+        expect(mocks.setTrackMute).not.toHaveBeenCalled();
     });
 });

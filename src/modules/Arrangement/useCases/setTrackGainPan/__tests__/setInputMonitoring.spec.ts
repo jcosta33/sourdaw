@@ -3,6 +3,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { setInputMonitoring } from '../setInputMonitoring';
 
 const mocks = vi.hoisted(() => ({
+    getTrackById: vi.fn(),
     updateTrack: vi.fn(),
     startInputMonitoring: vi.fn(),
     stopInputMonitoring: vi.fn(),
@@ -44,4 +45,21 @@ describe('setInputMonitoring', () => {
         setInputMonitoring('t1', 'auto');
         expect(mocks.stopInputMonitoring).toHaveBeenCalledTimes(1);
     });
+
+    it('normalizes dormant VCA monitoring to off without starting hardware monitoring', () => {
+        mocks.getTrackById.mockReturnValue({ id: 'vca-1', kind: 'vca' });
+
+        setInputMonitoring('vca-1', 'on');
+
+        const call = mocks.updateTrack.mock.calls[0];
+        if (!call) {
+            throw new Error('expected dormant cleanup update');
+        }
+        expect(call[1]({ inputMonitoring: 'on' })).toEqual({ inputMonitoring: 'off' });
+        expect(mocks.startInputMonitoring).not.toHaveBeenCalled();
+        expect(mocks.stopInputMonitoring).toHaveBeenCalledTimes(1);
+    });
 });
+vi.mock('../../../repositories/track/getTrackById', () => ({
+    getTrackById: mocks.getTrackById,
+}));

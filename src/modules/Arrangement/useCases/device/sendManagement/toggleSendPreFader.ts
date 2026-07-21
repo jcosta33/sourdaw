@@ -2,11 +2,18 @@ import { setSend as engineSetSend } from '#/modules/Routing/useCases';
 
 import { getTrackById } from '../../../repositories/track/getTrackById';
 import { updateTrack } from '../../../repositories/track/updateTrack';
+import { getTrackEligibility } from '../../../stores/trackEligibility';
 
 export function toggleSendPreFader(trackId: string, busId: string): void {
     const track = getTrackById(trackId);
-    const send = track?.sends.find((state) => state.busId === busId);
+    if (!track) {
+        return;
+    }
+    const send = track.sends.find((state) => state.busId === busId);
     if (!send) {
+        return;
+    }
+    if (!getTrackEligibility(track.kind).acceptsSend) {
         return;
     }
 
