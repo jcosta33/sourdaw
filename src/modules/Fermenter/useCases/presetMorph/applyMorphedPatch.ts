@@ -2,6 +2,7 @@ import { createRafBatcher } from '#/utils/DOM/createRafBatcher';
 
 import { type FermenterPatch } from '../../models/FermenterPatch';
 import { loadFermenterPatch } from '../../stores/fermenterStore';
+import { mapFermenterPatchToDspPatch } from '../fermenterParamBridge/mapFermenterPatchToDspPatch';
 import { getFermenterDependencies } from '../getFermenterDependencies';
 
 // §33.2 — TransformPad's onPointerMove calls this on every pointermove with no
@@ -19,7 +20,11 @@ function flushMorph(_compositeKey: string, entry: MorphBatchEntry): void {
     }
 
     if (updateDevicePatch) {
-        updateDevicePatch(target.trackId, target.deviceId, entry.patch);
+        // The engine consumes snake_case DSP ids and silently ignores unknown
+        // params (layer.rs `_ => {}`), so the engine write must go through the
+        // same DSP-id mapping as loadFermenterPatchWithAudio — the raw camelCase
+        // patch drops the 7 FERMENTER_DSP_PARAM_OVERRIDES params at the engine.
+        updateDevicePatch(target.trackId, target.deviceId, mapFermenterPatchToDspPatch({ patch: entry.patch }));
     }
     if (persistDevicePatch) {
         persistDevicePatch(target.deviceId, entry.patch);
