@@ -1,0 +1,25 @@
+src/app/bootstrap.ts
+  s_75f59e6653feee::t_22813a6c5d6028 165
+src/modules/Arrangement/useCases/freezeBounce/__tests__/renderOffline.spec.ts
+  s_75f59e6653feee::t_eb59a0a8237cda 18-33,41,46,60,283,292,359-453
+src/modules/Arrangement/useCases/freezeBounce/offlineRenderDependencies.ts
+  s_75f59e6653feee::t_d0ff96bfe55803 55-64,92
+src/modules/Arrangement/useCases/freezeBounce/renderOffline.ts
+  s_75f59e6653feee::t_12d418ca470fb2 49-50,162-171,173
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "9a19ecad67d4d4aa756207bffa7c0165762e986d",
+  "prompts": {},
+  "sessions": {
+    "s_75f59e6653feee": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f819a-2ddc-70b3-ab04-f29a50e9a71d",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
