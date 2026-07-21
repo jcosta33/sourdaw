@@ -143,6 +143,31 @@ export class ScheduledEventQueue {
         this.events = [];
     }
 
+    /**
+     * Remove the first scheduled Note Off matching (trackId, channel, note,
+     * timeSamples); returns true when one was removed. A processor that
+     * emits a scheduled Note Off early (e.g. Arpeggiator's expireNotes at a
+     * step boundary) uses this so the queue cannot re-emit the same off
+     * later — the module contract is exactly one Note Off per Note On.
+     * In-place removal; no allocation.
+     */
+    removeNoteOff(trackId: string | undefined, channel: number, note: number, timeSamples: number): boolean {
+        for (let index = 0; index < this.events.length; index++) {
+            const event = this.events[index]!;
+            if (
+                event.kind.type === 'noteOff' &&
+                event.trackId === trackId &&
+                event.kind.channel === channel &&
+                event.kind.note === note &&
+                event.timeSamples === timeSamples
+            ) {
+                this.events.splice(index, 1);
+                return true;
+            }
+        }
+        return false;
+    }
+
     get size(): number {
         return this.events.length;
     }
