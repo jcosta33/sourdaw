@@ -151,6 +151,11 @@ impl PedalState {
         self.keys_held.clear(key);
     }
 
+    /// Whether the performer is currently holding `key` down.
+    pub fn key_is_held(&self, key: u32) -> bool {
+        self.keys_held.contains(key)
+    }
+
     /// Damper bandwidth (Hz) applied to `key` given the current pedal state
     /// and whether the key itself is still held down by the player.
     ///

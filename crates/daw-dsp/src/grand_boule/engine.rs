@@ -316,7 +316,38 @@ impl GrandBouleEngine {
     }
 
     pub fn set_sustain(&mut self, position: f32) {
+        // `note_off` treats > 0.5 as engaged; reuse that threshold so a pedal
+        // crossing it downwards releases the voices the pedal was sustaining.
+        let was_engaged = self.pedals.sustain_position() > 0.5;
         self.pedals.set_sustain(position);
+        if was_engaged && self.pedals.sustain_position() <= 0.5 {
+            self.release_pedal_sustained_voices();
+        }
+    }
+
+    /// Sustain pedal lifted: voices held up only by the pedal (key released,
+    /// not sostenuto-captured) begin their release, mirroring the `note_off`
+    /// sustain decision. Without this their stage stays `Active`, the damper
+    /// logic reads them as key-held (0 Hz bandwidth), and they ring undamped.
+    /// Physically held keys stay active and release on their own `note_off`.
+    fn release_pedal_sustained_voices(&mut self) {
+        for voice in self.voices.iter_mut() {
+            if voice.stage() != super::voice::VoiceStage::Active {
+                continue;
+            }
+            let Some(key) = midi_to_key(voice.midi_note()) else {
+                continue;
+            };
+            if self.pedals.key_is_held(key) {
+                continue;
+            }
+            let sostenuto_held =
+                self.pedals.sostenuto() && self.pedals.damper_bandwidth_for_key(key, false) == 0.0;
+            if sostenuto_held {
+                continue;
+            }
+            voice.note_off();
+        }
     }
 
     pub fn set_una_corda(&mut self, engaged: bool) {
@@ -324,7 +355,33 @@ impl GrandBouleEngine {
     }
 
     pub fn set_sostenuto(&mut self, engaged: bool) {
+        let was_engaged = self.pedals.sostenuto();
         self.pedals.set_sostenuto(engaged);
+        if was_engaged && !engaged {
+            self.release_sostenuto_sustained_voices();
+        }
+    }
+
+    /// Sostenuto pedal lifted: captured voices whose key is no longer held
+    /// begin their release — the same never-release class as the sustain
+    /// pedal. Voices the sustain pedal still holds up (past the `note_off`
+    /// threshold) stay sustained; physically held keys stay active.
+    fn release_sostenuto_sustained_voices(&mut self) {
+        for voice in self.voices.iter_mut() {
+            if voice.stage() != super::voice::VoiceStage::Active {
+                continue;
+            }
+            let Some(key) = midi_to_key(voice.midi_note()) else {
+                continue;
+            };
+            if self.pedals.key_is_held(key) {
+                continue;
+            }
+            if self.pedals.sustain_position() > 0.5 {
+                continue;
+            }
+            voice.note_off();
+        }
     }
 
     pub fn set_temperament(&mut self, temperament: Temperament) {
@@ -509,6 +566,117 @@ mod tests {
         assert!(stages
             .iter()
             .any(|s| *s == super::super::voice::VoiceStage::Active));
+    }
+
+    #[test]
+    fn sustain_pedal_release_starts_release_for_pedal_sustained_voice() {
+        let mut engine = GrandBouleEngine::new(48_000.0, 4);
+        engine.set_sustain(1.0);
+        engine.note_on(60, 0.8);
+        engine.note_off(60); // pedal-sustained: voice stays Active
+        engine.set_sustain(0.0);
+        // Lifting the pedal must start the voice's release phase; otherwise it
+        // reads as "key held" to the damper logic forever and rings undamped.
+        let stage = engine
+            .voices
+            .iter()
+            .find(|voice| !voice.is_idle())
+            .map(|voice| voice.stage());
+        assert_eq!(stage, Some(super::super::voice::VoiceStage::Releasing));
+    }
+
+    #[test]
+    fn sostenuto_release_starts_release_for_captured_voice() {
+        let mut engine = GrandBouleEngine::new(48_000.0, 4);
+        engine.note_on(60, 0.8);
+        engine.set_sostenuto(true); // captures the held key
+        engine.note_off(60); // sostenuto-sustained: voice stays Active
+        let stage = engine
+            .voices
+            .iter()
+            .find(|voice| !voice.is_idle())
+            .map(|voice| voice.stage());
+        assert_eq!(stage, Some(super::super::voice::VoiceStage::Active));
+        // Lifting sostenuto must start the captured voice's release phase, the
+        // same never-release class as the sustain pedal.
+        engine.set_sostenuto(false);
+        let stage = engine
+            .voices
+            .iter()
+            .find(|voice| !voice.is_idle())
+            .map(|voice| voice.stage());
+        assert_eq!(stage, Some(super::super::voice::VoiceStage::Releasing));
+    }
+
+    #[test]
+    fn sustain_pedal_release_keeps_physically_held_voice_active() {
+        let mut engine = GrandBouleEngine::new(48_000.0, 4);
+        engine.set_sustain(1.0);
+        engine.note_on(60, 0.8);
+        // Key still held (no note_off); lifting the pedal must not release it.
+        engine.set_sustain(0.0);
+        let stage = engine
+            .voices
+            .iter()
+            .find(|voice| !voice.is_idle())
+            .map(|voice| voice.stage());
+        assert_eq!(stage, Some(super::super::voice::VoiceStage::Active));
+        // Releasing the key afterwards starts the release normally.
+        engine.note_off(60);
+        let stage = engine
+            .voices
+            .iter()
+            .find(|voice| !voice.is_idle())
+            .map(|voice| voice.stage());
+        assert_eq!(stage, Some(super::super::voice::VoiceStage::Releasing));
+    }
+
+    /// Signal-level proof: after the pedal lifts, the pedal-sustained note must
+    /// decay to (near) silence instead of ringing on intrinsic string decay.
+    #[test]
+    fn sustain_pedal_release_decays_output_to_silence() {
+        fn render(engine: &mut GrandBouleEngine, left: &mut [f32], right: &mut [f32], seconds: f32, sr: f32) {
+            let blocks = (seconds * sr / left.len() as f32) as usize;
+            for _ in 0..blocks {
+                left.fill(0.0);
+                right.fill(0.0);
+                engine.process_block(left, right);
+            }
+        }
+        fn window_energy(engine: &mut GrandBouleEngine, left: &mut [f32], right: &mut [f32], sr: f32) -> f32 {
+            let mut energy = 0.0_f32;
+            let blocks = (0.1 * sr / left.len() as f32) as usize;
+            for _ in 0..blocks {
+                left.fill(0.0);
+                right.fill(0.0);
+                engine.process_block(left, right);
+                for &s in left.iter() {
+                    energy += s * s;
+                }
+            }
+            energy
+        }
+
+        let sr = 48_000.0_f32;
+        let block = 512usize;
+        let mut engine = GrandBouleEngine::new(sr, 8);
+        let mut left = vec![0.0_f32; block];
+        let mut right = vec![0.0_f32; block];
+
+        engine.set_sustain(1.0);
+        engine.note_on(60, 0.8);
+        engine.note_off(60);
+        render(&mut engine, &mut left, &mut right, 0.5, sr); // let the sustained note stabilize
+        engine.set_sustain(0.0);
+        let early = window_energy(&mut engine, &mut left, &mut right, sr); // first 100 ms after pedal up
+        render(&mut engine, &mut left, &mut right, 1.8, sr);
+        let late = window_energy(&mut engine, &mut left, &mut right, sr); // ~2 s after pedal up
+
+        assert!(early > 1.0e-6, "sustained note was already dead at pedal up: {early}");
+        assert!(
+            late < early * 0.01,
+            "note still ringing 2s after pedal release: early={early} late={late}"
+        );
     }
 
     #[test]
