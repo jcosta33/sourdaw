@@ -1,0 +1,19 @@
+scripts/__tests__/layoutPrimitivesCensus.spec.ts
+  s_0ca844d2ea8375::t_032069afc80bf8 382-502,963-991
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "6d73c78e923a1b93def1c1338eb68adf9e5876db",
+  "prompts": {},
+  "sessions": {
+    "s_0ca844d2ea8375": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f82b1-7798-7f71-b9c6-2f713748689f",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
