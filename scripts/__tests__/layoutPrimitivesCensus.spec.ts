@@ -4,6 +4,7 @@ import { dirname, join } from 'node:path';
 
 import { afterEach, describe, expect, it } from 'vitest';
 
+import * as layoutCensusModule from '../layoutPrimitivesCensus';
 import {
     collectLayoutOccurrences,
     compareLayoutCensuses,
@@ -255,6 +256,111 @@ describe('collectLayoutOccurrences', () => {
             riskFlags: { hasConditionalChildren: true },
         });
     });
+
+    it('should scope canvas renderer ownership without classifying neighboring owners', () => {
+        const repositoryRoot = createFixture({
+            'src/Surfaces.tsx': `
+                export function CanvasSurface() {
+                    return <div className="flex"><canvas /></div>;
+                }
+
+                export function Toolbar() {
+                    return <div className="flex" />;
+                }
+            `,
+        });
+
+        const occurrences = collectLayoutOccurrences({ repositoryRoot });
+
+        expect(occurrences).toHaveLength(2);
+        expect(occurrences[0]).toMatchObject({ disposition: 'renderer', proposedPrimitive: null });
+        expect(occurrences[1]).toMatchObject({ disposition: 'eligible', proposedPrimitive: 'Row' });
+    });
+
+    it('should detect layout tokens used as dynamic class-helper object keys', () => {
+        const repositoryRoot = createFixture({
+            'src/App.tsx': `
+                import { clsx } from 'clsx';
+                export const App = ({ active }: { active: boolean }) => (
+                    <div className={clsx({ flex: active, grid: !active })} />
+                );
+            `,
+        });
+
+        const baseline = createLayoutCensus({ repositoryRoot });
+
+        expect(baseline.occurrences).toHaveLength(1);
+        expect(baseline.occurrences[0]).toMatchObject({
+            disposition: 'responsive-or-dynamic',
+            proposedPrimitive: null,
+            reviewed: false,
+            riskFlags: { hasDynamicClassName: true },
+        });
+    });
+
+    it('should keep conditional display variants and prefixed child visibility non-eligible', () => {
+        const repositoryRoot = createFixture({
+            'src/App.tsx': `
+                export function App() {
+                    return (
+                        <>
+                            <div className="hidden group-hover:flex" />
+                            <div className="space-y-2">
+                                <div className="md:hidden">Conditional</div>
+                                <div>Always</div>
+                            </div>
+                        </>
+                    );
+                }
+            `,
+        });
+
+        const occurrences = collectLayoutOccurrences({ repositoryRoot });
+
+        expect(occurrences).toHaveLength(2);
+        expect(occurrences[0]).toMatchObject({
+            disposition: 'responsive-or-dynamic',
+            proposedPrimitive: null,
+            riskFlags: { hasResponsiveClasses: true },
+        });
+        expect(occurrences[1]).toMatchObject({
+            disposition: 'responsive-or-dynamic',
+            proposedPrimitive: null,
+            riskFlags: { hasConditionalChildren: true },
+        });
+    });
+
+    it('should preserve semantic risk for custom member tags and dynamic role attributes', () => {
+        const repositoryRoot = createFixture({
+            'src/App.tsx': `
+                export function App({ role }: { role: string }) {
+                    return (
+                        <>
+                            <motion.div className="flex" />
+                            <div className="flex" role={role} />
+                        </>
+                    );
+                }
+            `,
+        });
+
+        const occurrences = collectLayoutOccurrences({ repositoryRoot });
+
+        expect(occurrences).toHaveLength(2);
+        expect(occurrences[0]).toMatchObject({
+            disposition: 'one-off',
+            nativeElement: null,
+            proposedPrimitive: null,
+            riskFlags: { hasSemanticElement: true },
+        });
+        expect(occurrences[1]).toMatchObject({
+            disposition: 'one-off',
+            nativeElement: 'div',
+            proposedPrimitive: null,
+            role: null,
+            riskFlags: { hasSemanticElement: true },
+        });
+    });
 });
 
 describe('compareLayoutCensuses', () => {
@@ -360,6 +466,63 @@ describe('compareLayoutCensuses', () => {
             reviewed: false,
         });
     });
+
+    it('should not transfer reviewed identity when an identical sibling is inserted first', () => {
+        const repositoryRoot = createFixture({
+            'src/App.tsx': 'export const App = () => <><div className="flex" /></>;\n',
+        });
+        const baseline = createLayoutCensus({ repositoryRoot });
+        baseline.occurrences[0].disposition = 'one-off';
+        baseline.occurrences[0].rationale = 'Reviewed original occurrence.';
+        baseline.occurrences[0].reviewed = true;
+
+        writeFixture(
+            repositoryRoot,
+            'src/App.tsx',
+            'export const App = () => <><div className="flex" /><div className="flex" /></>;\n'
+        );
+        const changed = createLayoutCensus({ repositoryRoot, previousCensus: baseline });
+        const drift = compareLayoutCensuses({ actual: changed, expected: baseline });
+
+        expect(changed.occurrences).toHaveLength(2);
+        expect(changed.occurrences.every((occurrence) => !occurrence.reviewed)).toBe(true);
+        expect(
+            changed.occurrences.every((occurrence) => occurrence.rationale !== 'Reviewed original occurrence.')
+        ).toBe(true);
+        expect(drift.added).toHaveLength(1);
+        expect(drift.changed).toHaveLength(1);
+    });
+
+    it('should invalidate review when an import changes the canonical tag semantics', () => {
+        const repositoryRoot = createFixture({
+            'src/App.tsx': `
+                import { Box } from './Box';
+                export const App = () => <Box className="flex" />;
+            `,
+        });
+        const baseline = createLayoutCensus({ repositoryRoot });
+        baseline.occurrences[0].rationale = 'Reviewed custom component.';
+        baseline.occurrences[0].reviewed = true;
+
+        writeFixture(
+            repositoryRoot,
+            'src/App.tsx',
+            `
+                import { Row as Box } from '#/components/layout';
+                export const App = () => <Box className="flex" />;
+            `
+        );
+        const changed = createLayoutCensus({ repositoryRoot, previousCensus: baseline });
+
+        expect(changed.occurrences[0].id).toBe(baseline.occurrences[0].id);
+        expect(changed.occurrences[0].sourceFingerprint).not.toBe(baseline.occurrences[0].sourceFingerprint);
+        expect(changed.occurrences[0]).toMatchObject({
+            disposition: 'already-migrated',
+            proposedPrimitive: 'Row',
+            reviewed: false,
+        });
+        expect(changed.occurrences[0].rationale).not.toBe('Reviewed custom component.');
+    });
 });
 
 describe('layout census artifacts', () => {
@@ -425,5 +588,24 @@ describe('layout census artifacts', () => {
             '| Stable ID | File:line | Pattern | Primitive | Disposition | Reviewed | Rationale |'
         );
         expect(markdown).toContain('flex flex-col gap-2');
+    });
+
+    it('should make check mode reject malformed TSX with a relative file and line', () => {
+        const repositoryRoot = createFixture({
+            'src/App.tsx': 'export const App = () => <div className="flex" />;\n',
+        });
+        const censusPath = join(repositoryRoot, 'docs/layout-census.json');
+        const ledgerPath = join(repositoryRoot, 'docs/layout-census.md');
+        const baseline = createLayoutCensus({ repositoryRoot });
+        writeFixture(repositoryRoot, 'docs/layout-census.json', JSON.stringify(baseline));
+        writeFixture(repositoryRoot, 'docs/layout-census.md', renderLayoutCensusMarkdown(baseline));
+        writeFixture(repositoryRoot, 'src/App.tsx', 'export const App = () => <div className="flex";\n');
+        const checkArtifacts = Reflect.get(layoutCensusModule, 'checkLayoutCensusArtifacts');
+
+        expect(checkArtifacts).toBeTypeOf('function');
+        if (typeof checkArtifacts !== 'function') {
+            throw new TypeError('checkLayoutCensusArtifacts must be exported for check-mode verification');
+        }
+        expect(() => checkArtifacts({ censusPath, ledgerPath, repositoryRoot })).toThrow(/src\/App\.tsx:1/);
     });
 });

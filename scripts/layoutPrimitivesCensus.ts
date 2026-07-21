@@ -34,7 +34,7 @@ export const ALLOWED_LAYOUT_DISPOSITIONS = [
     'one-off',
 ] as const;
 
-export const REVIEWED_LAYOUT_CENSUS_DIGEST = '22b8faa4ac581699b578f47dcd50acd30af39f51923a93554442df2452cb6c70';
+export const REVIEWED_LAYOUT_CENSUS_DIGEST = '0c570dad7888539b99831497f86d0aa633fc8f21301ceb198f4eb7815e7a1c4b';
 
 export type LayoutDisposition = (typeof ALLOWED_LAYOUT_DISPOSITIONS)[number];
 export type LayoutRiskTier = 'low' | 'medium' | 'high';
@@ -120,6 +120,8 @@ type ImportedLayoutTags = {
     primitiveNamespaces: Set<string>;
     wrapperTags: Map<string, string>;
     wrapperNamespaces: Set<string>;
+    tagSemantics: Map<string, string>;
+    namespaceSemantics: Map<string, string>;
 };
 
 type CandidateClassification = {
@@ -166,6 +168,7 @@ const semanticElements = new Set([
     'ul',
 ]);
 const responsivePrefix = /^(?:(?:sm|md|lg|xl|2xl|max-\[[^\]]+\]|min-\[[^\]]+\])|@[^:]+):/;
+const conditionalVariantPrefix = /(?:^|:)(?:group(?:-[^:]+)?|peer(?:-[^:]+)?|state(?:-[^:]+)?|data-[^:]+|aria-[^:]+):/;
 const rendererPath = /(?:^|\/)(?:[^/]*(?:Canvas|Renderer|WebGL)[^/]*|renderers?)(?:\/|\.tsx$)/i;
 const thirdPartyPath = /(?:^|\/)(?:third[-_]?party|vendor)(?:\/|$)/i;
 
@@ -261,6 +264,8 @@ function collectImportedLayoutTags(sourceFile: ts.SourceFile): ImportedLayoutTag
         primitiveNamespaces: new Set(),
         wrapperTags: new Map(),
         wrapperNamespaces: new Set(),
+        tagSemantics: new Map(),
+        namespaceSemantics: new Map(),
     };
 
     for (const statement of sourceFile.statements) {
@@ -273,6 +278,10 @@ function collectImportedLayoutTags(sourceFile: ts.SourceFile): ImportedLayoutTag
             continue;
         }
 
+        if (importClause.name) {
+            importedTags.tagSemantics.set(importClause.name.text, `${moduleSpecifier}:default`);
+        }
+
         const isPrimitiveImport = moduleIsLayoutPrimitive(moduleSpecifier);
         const isWrapperImport = moduleIsDawWrapper(moduleSpecifier);
         if (!isPrimitiveImport && !isWrapperImport) {
@@ -281,6 +290,7 @@ function collectImportedLayoutTags(sourceFile: ts.SourceFile): ImportedLayoutTag
 
         const bindings = importClause.namedBindings;
         if (bindings && ts.isNamespaceImport(bindings)) {
+            importedTags.namespaceSemantics.set(bindings.name.text, moduleSpecifier);
             if (isPrimitiveImport) {
                 importedTags.primitiveNamespaces.add(bindings.name.text);
             }
@@ -296,6 +306,7 @@ function collectImportedLayoutTags(sourceFile: ts.SourceFile): ImportedLayoutTag
         for (const element of bindings.elements) {
             const importedName = element.propertyName?.text ?? element.name.text;
             const localName = element.name.text;
+            importedTags.tagSemantics.set(localName, `${moduleSpecifier}:${importedName}`);
             if (isPrimitiveImport && primitiveDefaults.has(importedName)) {
                 importedTags.primitiveTags.set(localName, importedName);
             }
@@ -306,6 +317,29 @@ function collectImportedLayoutTags(sourceFile: ts.SourceFile): ImportedLayoutTag
     }
 
     return importedTags;
+}
+
+function getCanonicalTagSemantics(tagText: string, importedTags: ImportedLayoutTags): string | null {
+    const directSemantics = importedTags.tagSemantics.get(tagText);
+    if (directSemantics) {
+        return directSemantics;
+    }
+
+    const namespaceSeparator = tagText.indexOf('.');
+    if (namespaceSeparator < 0) {
+        return null;
+    }
+    const namespace = tagText.slice(0, namespaceSeparator);
+    const member = tagText.slice(namespaceSeparator + 1);
+    const namespaceModule = importedTags.namespaceSemantics.get(namespace);
+    if (namespaceModule) {
+        return `${namespaceModule}:${member}`;
+    }
+    const objectSemantics = importedTags.tagSemantics.get(namespace);
+    if (objectSemantics) {
+        return `${objectSemantics}.${member}`;
+    }
+    return null;
 }
 
 function getCanonicalImportedTag(
@@ -360,6 +394,15 @@ function getStaticAttributeValue(attribute: ts.JsxAttribute | null): string | nu
 }
 
 function collectStringFragments(node: ts.Node, fragments: string[]): void {
+    if (ts.isPropertyAssignment(node) && ts.isIdentifier(node.name)) {
+        fragments.push(node.name.text);
+        collectStringFragments(node.initializer, fragments);
+        return;
+    }
+    if (ts.isShorthandPropertyAssignment(node)) {
+        fragments.push(node.name.text);
+        return;
+    }
     if (ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node)) {
         fragments.push(node.text);
         return;
@@ -419,7 +462,9 @@ function classNameEvidence(attribute: ts.JsxAttribute | null, sourceFile: ts.Sou
     }
     const layoutTokens = allTokens.filter(isLayoutToken);
 
-    const responsive = allTokens.some((token) => responsivePrefix.test(token));
+    const responsive = allTokens.some(
+        (token) => responsivePrefix.test(token) || (isLayoutToken(token) && conditionalVariantPrefix.test(token))
+    );
     let currentPattern = normalizeWhitespace(fragments.join(' '));
     if (dynamic) {
         currentPattern = normalizeWhitespace(attribute.initializer.getText(sourceFile));
@@ -427,19 +472,31 @@ function classNameEvidence(attribute: ts.JsxAttribute | null, sourceFile: ts.Sou
     return { currentPattern, allTokens, layoutTokens, dynamic, responsive };
 }
 
-function getEnclosingOwner(node: ts.Node, sourceFile: ts.SourceFile): string {
+function getEnclosingOwnerNode(node: ts.Node): ts.Node | null {
     let current: ts.Node | undefined = node;
     while (current) {
-        if (ts.isFunctionDeclaration(current) && current.name) {
-            return current.name.text;
-        }
-        if (ts.isMethodDeclaration(current) && current.name) {
-            return current.name.getText(sourceFile);
-        }
-        if (ts.isVariableDeclaration(current) && ts.isIdentifier(current.name)) {
-            return current.name.text;
+        if (
+            (ts.isFunctionDeclaration(current) && current.name) ||
+            (ts.isMethodDeclaration(current) && current.name) ||
+            (ts.isVariableDeclaration(current) && ts.isIdentifier(current.name))
+        ) {
+            return current;
         }
         current = current.parent;
+    }
+    return null;
+}
+
+function getEnclosingOwner(node: ts.Node, sourceFile: ts.SourceFile): string {
+    const ownerNode = getEnclosingOwnerNode(node);
+    if (ownerNode && ts.isFunctionDeclaration(ownerNode) && ownerNode.name) {
+        return ownerNode.name.text;
+    }
+    if (ownerNode && ts.isMethodDeclaration(ownerNode) && ownerNode.name) {
+        return ownerNode.name.getText(sourceFile);
+    }
+    if (ownerNode && ts.isVariableDeclaration(ownerNode) && ts.isIdentifier(ownerNode.name)) {
+        return ownerNode.name.text;
     }
     return basename(sourceFile.fileName, '.tsx');
 }
@@ -593,6 +650,7 @@ function riskFlagsFor({
             hasHandlers = true;
         }
         if (
+            attributeName === 'role' ||
             attributeName.startsWith('aria-') ||
             ['contentEditable', 'draggable', 'href', 'htmlFor', 'tabIndex'].includes(attributeName)
         ) {
@@ -659,10 +717,28 @@ function elementHasConditionalChildren(
                 return true;
             }
             const childClasses = staticClassName?.split(/\s+/) ?? [];
-            if (childClasses.includes('hidden') || childClasses.includes('contents')) {
+            const childBaseClasses = childClasses.map(baseLayoutToken);
+            if (childBaseClasses.includes('hidden') || childBaseClasses.includes('contents')) {
                 return true;
             }
-            const childBaseClasses = childClasses.map(baseLayoutToken);
+            const conditionalDisplayClasses = new Set([
+                'block',
+                'flex',
+                'grid',
+                'inline',
+                'inline-block',
+                'inline-flex',
+                'inline-grid',
+                'table',
+            ]);
+            if (
+                childClasses.some(
+                    (className, index) =>
+                        className.includes(':') && conditionalDisplayClasses.has(childBaseClasses[index])
+                )
+            ) {
+                return true;
+            }
             if (
                 childBaseClasses.some(
                     (className) =>
@@ -683,12 +759,48 @@ function sourceFingerprintForElement({
     layoutTokens,
     node,
     sourceFile,
+    tagSemantics,
 }: {
     layoutTokens: string[];
     node: ts.JsxOpeningElement | ts.JsxSelfClosingElement;
     sourceFile: ts.SourceFile;
+    tagSemantics: string | null;
 }): string {
     const evidence = [normalizeWhitespace(node.getText(sourceFile))];
+    if (tagSemantics) {
+        evidence.push(`import:${tagSemantics}`);
+    }
+
+    let elementNode: ts.JsxElement | ts.JsxSelfClosingElement;
+    if (ts.isJsxOpeningElement(node)) {
+        if (!ts.isJsxElement(node.parent)) {
+            throw new TypeError('JSX opening element must belong to a JSX element');
+        }
+        elementNode = node.parent;
+    } else {
+        elementNode = node;
+    }
+    const structuralParent = elementNode.parent;
+    if (ts.isJsxElement(structuralParent) || ts.isJsxFragment(structuralParent)) {
+        const siblingElements = structuralParent.children.filter(
+            (child): child is ts.JsxElement | ts.JsxSelfClosingElement =>
+                ts.isJsxElement(child) || ts.isJsxSelfClosingElement(child)
+        );
+        const openingEvidence = (child: ts.JsxElement | ts.JsxSelfClosingElement): string => {
+            if (ts.isJsxElement(child)) {
+                return normalizeWhitespace(child.openingElement.getText(sourceFile));
+            }
+            return normalizeWhitespace(child.getText(sourceFile));
+        };
+        const currentOpeningEvidence = openingEvidence(elementNode);
+        const identicalSiblingCount = siblingElements.filter(
+            (sibling) => openingEvidence(sibling) === currentOpeningEvidence
+        ).length;
+        if (identicalSiblingCount > 1) {
+            evidence.push(`siblings:${siblingElements.map(openingEvidence).join('\u0001')}`);
+        }
+    }
+
     const usesSpace = layoutTokens.map(baseLayoutToken).some((token) => token.startsWith('space-'));
     if (usesSpace && ts.isJsxOpeningElement(node) && ts.isJsxElement(node.parent)) {
         for (const child of node.parent.children) {
@@ -699,6 +811,23 @@ function sourceFingerprintForElement({
         }
     }
     return hash(evidence.join('\u0000'));
+}
+
+function reviewEvidenceMatches(previous: LayoutOccurrence, current: PendingOccurrence): boolean {
+    return (
+        previous.id === current.id &&
+        previous.file === current.file &&
+        previous.sourceFingerprint === current.sourceFingerprint &&
+        previous.patternFamily === current.patternFamily &&
+        previous.patternClass === current.patternClass &&
+        previous.currentPattern === current.currentPattern &&
+        previous.proposedPrimitive === current.proposedPrimitive &&
+        previous.wrapperOwner === current.wrapperOwner &&
+        previous.nativeElement === current.nativeElement &&
+        previous.role === current.role &&
+        JSON.stringify(previous.riskFlags) === JSON.stringify(current.riskFlags) &&
+        previous.riskTier === current.riskTier
+    );
 }
 
 function hasHighRiskFlags(riskFlags: LayoutRiskFlags): boolean {
@@ -728,6 +857,7 @@ function classifyCandidate({
     complexGrid,
     primitiveTag,
     proposedPrimitive,
+    rendererOwned,
     repositoryPath,
     riskFlags,
     wrapperOwner,
@@ -735,6 +865,7 @@ function classifyCandidate({
     complexGrid: boolean;
     primitiveTag: string | null;
     proposedPrimitive: string | null;
+    rendererOwned: boolean;
     repositoryPath: string;
     riskFlags: LayoutRiskFlags;
     wrapperOwner: string | null;
@@ -753,7 +884,7 @@ function classifyCandidate({
             riskTier: characterizedRiskTier(riskFlags),
         };
     }
-    if (rendererPath.test(repositoryPath)) {
+    if (rendererOwned) {
         return {
             disposition: 'renderer',
             rationale: 'Renderer-owned geometry is excluded from mechanical primitive migration.',
@@ -801,7 +932,7 @@ function classifyCandidate({
     };
 }
 
-function sourceContainsCanvas(sourceFile: ts.SourceFile): boolean {
+function nodeContainsCanvas(root: ts.Node, sourceFile: ts.SourceFile): boolean {
     let containsCanvas = false;
     function visit(node: ts.Node): void {
         if (containsCanvas) {
@@ -816,8 +947,33 @@ function sourceContainsCanvas(sourceFile: ts.SourceFile): boolean {
         }
         ts.forEachChild(node, visit);
     }
-    visit(sourceFile);
+    visit(root);
     return containsCanvas;
+}
+
+function assertNoParseDiagnostics(sourceFile: ts.SourceFile, repositoryPath: string): void {
+    const diagnostics: unknown = Reflect.get(sourceFile, 'parseDiagnostics');
+    if (!Array.isArray(diagnostics) || diagnostics.length === 0) {
+        return;
+    }
+    const diagnostic: unknown = diagnostics[0];
+    if (typeof diagnostic !== 'object' || diagnostic === null) {
+        throw new SyntaxError(`Failed to parse ${repositoryPath}:1: Unknown parser diagnostic`);
+    }
+    const diagnosticStart: unknown = Reflect.get(diagnostic, 'start');
+    const position = typeof diagnosticStart === 'number' ? diagnosticStart : 0;
+    const { line } = sourceFile.getLineAndCharacterOfPosition(position);
+    const diagnosticMessage: unknown = Reflect.get(diagnostic, 'messageText');
+    let message = 'Unknown parser diagnostic';
+    if (typeof diagnosticMessage === 'string') {
+        message = diagnosticMessage;
+    } else if (typeof diagnosticMessage === 'object' && diagnosticMessage !== null) {
+        const chainedMessage: unknown = Reflect.get(diagnosticMessage, 'messageText');
+        if (typeof chainedMessage === 'string') {
+            message = chainedMessage;
+        }
+    }
+    throw new SyntaxError(`Failed to parse ${repositoryPath}:${line + 1}: ${message}`);
 }
 
 function collectSourceFileOccurrences({
@@ -832,8 +988,9 @@ function collectSourceFileOccurrences({
     const repositoryPath = toPosixPath(relative(repositoryRoot, absolutePath));
     const sourceText = readFileSync(absolutePath, 'utf8');
     const sourceFile = ts.createSourceFile(absolutePath, sourceText, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+    assertNoParseDiagnostics(sourceFile, repositoryPath);
     const importedTags = collectImportedLayoutTags(sourceFile);
-    const fileContainsCanvas = sourceContainsCanvas(sourceFile);
+    const rendererOwnerCache = new WeakMap<ts.Node, boolean>();
     const candidateOrdinals = new Map<string, number>();
     const occurrences: PendingOccurrence[] = [];
 
@@ -858,22 +1015,25 @@ function collectSourceFileOccurrences({
         const isCandidate = primitiveTag !== null || wrapperTag !== null || classEvidence.layoutTokens.length > 0;
 
         if (isCandidate) {
+            const ownerNode = getEnclosingOwnerNode(node) ?? sourceFile;
             const owner = getEnclosingOwner(node, sourceFile);
             const ordinalKey = `${owner}\u0000${tagText}`;
             const ordinal = (candidateOrdinals.get(ordinalKey) ?? 0) + 1;
             candidateOrdinals.set(ordinalKey, ordinal);
             const identitySource = `${repositoryPath}\u0000${owner}\u0000${tagText}\u0000${ordinal}`;
             const id = `layout-${hash(identitySource)}`;
+            const tagSemantics = getCanonicalTagSemantics(tagText, importedTags);
             const sourceFingerprint = sourceFingerprintForElement({
                 layoutTokens: classEvidence.layoutTokens,
                 node,
                 sourceFile,
+                tagSemantics,
             });
             const role = getStaticAttributeValue(getAttribute(node.attributes, 'role'));
             const asElement = getStaticAttributeValue(getAttribute(node.attributes, 'as'));
             let nativeElement: string | null = null;
-            if (/^[a-z]/.test(tagText)) {
-                nativeElement = tagText;
+            if (ts.isIdentifier(node.tagName) && /^[a-z]/.test(node.tagName.text)) {
+                nativeElement = node.tagName.text;
             } else if (asElement) {
                 nativeElement = asElement;
             } else if (primitiveTag) {
@@ -895,15 +1055,22 @@ function collectSourceFileOccurrences({
             let proposedPrimitive = proposedPrimitiveFor(patternFamily, classEvidence.layoutTokens, primitiveTag);
             const wrapperOwner = getWrapperOwner(repositoryPath, wrapperTag);
             const complexGrid = hasComplexGrid(classEvidence.layoutTokens, node.attributes, sourceFile);
-            let classificationPath = repositoryPath;
-            if (fileContainsCanvas && !rendererPath.test(repositoryPath)) {
-                classificationPath = `${repositoryPath}/CanvasRenderer`;
+            let rendererOwned = rendererPath.test(repositoryPath);
+            if (!rendererOwned) {
+                const cachedRendererOwnership = rendererOwnerCache.get(ownerNode);
+                if (cachedRendererOwnership === undefined) {
+                    rendererOwned = nodeContainsCanvas(ownerNode, sourceFile);
+                    rendererOwnerCache.set(ownerNode, rendererOwned);
+                } else {
+                    rendererOwned = cachedRendererOwnership;
+                }
             }
             const classification = classifyCandidate({
                 complexGrid,
                 primitiveTag,
                 proposedPrimitive,
-                repositoryPath: classificationPath,
+                rendererOwned,
+                repositoryPath,
                 riskFlags,
                 wrapperOwner,
             });
@@ -915,18 +1082,8 @@ function collectSourceFileOccurrences({
             if (currentPattern.length === 0) {
                 currentPattern = primitiveTag ?? wrapperTag ?? tagText;
             }
-            let disposition = classification.disposition;
-            let rationale = classification.rationale;
-            let reviewed = false;
-            const previous = previousById.get(id);
-            if (previous?.reviewed && previous.sourceFingerprint === sourceFingerprint) {
-                disposition = previous.disposition;
-                rationale = previous.rationale;
-                reviewed = previous.reviewed;
-            }
-
             const { line } = sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile));
-            occurrences.push({
+            const occurrence: PendingOccurrence = {
                 id,
                 file: repositoryPath,
                 line: line + 1,
@@ -941,10 +1098,17 @@ function collectSourceFileOccurrences({
                 role,
                 riskFlags,
                 riskTier: classification.riskTier,
-                disposition,
-                rationale,
-                reviewed,
-            });
+                disposition: classification.disposition,
+                rationale: classification.rationale,
+                reviewed: false,
+            };
+            const previous = previousById.get(id);
+            if (previous?.reviewed && reviewEvidenceMatches(previous, occurrence)) {
+                occurrence.disposition = previous.disposition;
+                occurrence.rationale = previous.rationale;
+                occurrence.reviewed = true;
+            }
+            occurrences.push(occurrence);
         }
 
         ts.forEachChild(node, visit);
@@ -1267,7 +1431,7 @@ function writeLayoutCensusArtifacts({
     console.log(`Wrote ${census.summary.occurrenceCount} layout occurrence(s); ${unreviewedCount} require review.`);
 }
 
-function checkLayoutCensusArtifacts({
+export function checkLayoutCensusArtifacts({
     censusPath,
     ledgerPath,
     repositoryRoot,
