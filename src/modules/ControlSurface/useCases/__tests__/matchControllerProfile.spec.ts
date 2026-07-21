@@ -323,4 +323,114 @@ describe('matchControllerProfile', () => {
         });
         expect(input.candidates).toEqual(candidatesBefore);
     });
+
+    it.each<{
+        name: string;
+        input: unknown;
+        connectedInstanceId: string;
+        reason: string;
+    }>([
+        {
+            name: 'null root input',
+            input: null,
+            connectedInstanceId: '',
+            reason: 'invalid-connected-identity',
+        },
+        {
+            name: 'missing candidates container',
+            input: { connectedIdentity: createConnectedIdentity() },
+            connectedInstanceId: 'instance-1',
+            reason: 'invalid-candidate',
+        },
+        {
+            name: 'null candidates container',
+            input: { candidates: null, connectedIdentity: createConnectedIdentity() },
+            connectedInstanceId: 'instance-1',
+            reason: 'invalid-candidate',
+        },
+        {
+            name: 'null candidate',
+            input: { candidates: [null], connectedIdentity: createConnectedIdentity() },
+            connectedInstanceId: 'instance-1',
+            reason: 'invalid-candidate',
+        },
+        {
+            name: 'candidate missing profile identity',
+            input: {
+                candidates: [{ stableNativeIdentities: ['usb:2982:1967'] }],
+                connectedIdentity: createConnectedIdentity(),
+            },
+            connectedInstanceId: 'instance-1',
+            reason: 'invalid-candidate',
+        },
+        {
+            name: 'candidate with null native identity container',
+            input: {
+                candidates: [{ profileId: 'push-2', stableNativeIdentities: null }],
+                connectedIdentity: createConnectedIdentity(),
+            },
+            connectedInstanceId: 'instance-1',
+            reason: 'invalid-candidate',
+        },
+        {
+            name: 'missing connected identity container',
+            input: { candidates: [createCandidate()] },
+            connectedInstanceId: '',
+            reason: 'invalid-connected-identity',
+        },
+        {
+            name: 'null connected identity',
+            input: { candidates: [createCandidate()], connectedIdentity: null },
+            connectedInstanceId: '',
+            reason: 'invalid-connected-identity',
+        },
+        {
+            name: 'connected identity missing instance identity',
+            input: {
+                candidates: [createCandidate()],
+                connectedIdentity: { fingerprint: 'fingerprint:push-2:desk' },
+            },
+            connectedInstanceId: '',
+            reason: 'invalid-connected-identity',
+        },
+        {
+            name: 'connected identity with null SysEx container',
+            input: {
+                candidates: [createCandidate()],
+                connectedIdentity: {
+                    ...createConnectedIdentity(),
+                    sysexIdentityReply: null,
+                },
+            },
+            connectedInstanceId: 'instance-1',
+            reason: 'invalid-connected-identity',
+        },
+        {
+            name: 'explicit binding missing profile identity',
+            input: {
+                candidates: [createCandidate()],
+                connectedIdentity: createConnectedIdentity(),
+                explicitFingerprintBinding: { fingerprint: 'fingerprint:push-2:desk' },
+            },
+            connectedInstanceId: 'instance-1',
+            reason: 'invalid-explicit-binding',
+        },
+        {
+            name: 'explicit binding with null fingerprint',
+            input: {
+                candidates: [createCandidate()],
+                connectedIdentity: createConnectedIdentity(),
+                explicitFingerprintBinding: { fingerprint: null, profileId: 'push-2' },
+            },
+            connectedInstanceId: 'instance-1',
+            reason: 'invalid-explicit-binding',
+        },
+    ])('should reject malformed runtime input without throwing for $name', ({ input, connectedInstanceId, reason }) => {
+        expect(() => matchControllerProfile(input)).not.toThrow();
+        expect(matchControllerProfile(input)).toEqual({
+            status: 'invalid-input',
+            connectedInstanceId,
+            reason,
+        });
+    });
 });

@@ -56,16 +56,37 @@ export type MatchControllerProfileOutput =
       }>;
 
 type SuccessfulTierResult = Extract<MatchControllerProfileOutput, { status: 'match' | 'ambiguous' }>;
+type UnknownRecord = Readonly<Record<string, unknown>>;
+
+const isUnknownRecord = (value: unknown): value is UnknownRecord => {
+    if (typeof value !== 'object' || value === null) {
+        return false;
+    }
+
+    return !Array.isArray(value);
+};
+
+const isUnknownArray = (value: unknown): value is readonly unknown[] => {
+    return Array.isArray(value);
+};
 
 const normalizeExactName = (value: string): string => {
     return value.normalize('NFKC').trim().replaceAll(/\s+/gu, ' ').toLocaleLowerCase('en-US');
 };
 
-const isNonBlankName = (value: string): boolean => {
+const isNonBlankName = (value: unknown): value is string => {
+    if (typeof value !== 'string') {
+        return false;
+    }
+
     return normalizeExactName(value).length > 0;
 };
 
-const isValidOpaqueIdentity = (value: string): boolean => {
+const isValidOpaqueIdentity = (value: unknown): value is string => {
+    if (typeof value !== 'string') {
+        return false;
+    }
+
     if (value.length === 0) {
         return false;
     }
@@ -73,7 +94,11 @@ const isValidOpaqueIdentity = (value: string): boolean => {
     return value.trim() === value;
 };
 
-const isValidSysExIdentityReply = (reply: readonly number[]): boolean => {
+const isValidSysExIdentityReply = (reply: unknown): reply is readonly number[] => {
+    if (!isUnknownArray(reply)) {
+        return false;
+    }
+
     if (reply.length < 3) {
         return false;
     }
@@ -83,7 +108,7 @@ const isValidSysExIdentityReply = (reply: readonly number[]): boolean => {
     }
 
     for (const byte of reply) {
-        if (!Number.isInteger(byte) || byte < 0 || byte > 0xff) {
+        if (typeof byte !== 'number' || !Number.isInteger(byte) || byte < 0 || byte > 0xff) {
             return false;
         }
     }
@@ -91,102 +116,105 @@ const isValidSysExIdentityReply = (reply: readonly number[]): boolean => {
     return true;
 };
 
-const hasValidNativeIdentities = (candidate: ControllerProfileMatchCandidate): boolean => {
-    const identities = candidate.stableNativeIdentities;
-    if (identities === undefined) {
+const isValidCandidate = (value: unknown): value is ControllerProfileMatchCandidate => {
+    if (!isUnknownRecord(value)) {
         return false;
     }
 
-    if (identities.length === 0) {
+    if (!isValidOpaqueIdentity(value.profileId)) {
         return false;
     }
 
-    return identities.every(isValidOpaqueIdentity);
-};
+    const stableNativeIdentities = value.stableNativeIdentities;
+    const hasNativeIdentities = stableNativeIdentities !== undefined;
+    if (hasNativeIdentities) {
+        if (!isUnknownArray(stableNativeIdentities) || stableNativeIdentities.length === 0) {
+            return false;
+        }
 
-const hasValidSysExIdentities = (candidate: ControllerProfileMatchCandidate): boolean => {
-    const replies = candidate.acceptedSysExIdentityReplies;
-    if (replies === undefined) {
-        return false;
+        if (!stableNativeIdentities.every(isValidOpaqueIdentity)) {
+            return false;
+        }
     }
 
-    if (replies.length === 0) {
-        return false;
+    const acceptedSysExIdentityReplies = value.acceptedSysExIdentityReplies;
+    const hasSysExIdentities = acceptedSysExIdentityReplies !== undefined;
+    if (hasSysExIdentities) {
+        if (!isUnknownArray(acceptedSysExIdentityReplies) || acceptedSysExIdentityReplies.length === 0) {
+            return false;
+        }
+
+        if (!acceptedSysExIdentityReplies.every(isValidSysExIdentityReply)) {
+            return false;
+        }
     }
 
-    return replies.every(isValidSysExIdentityReply);
-};
-
-const hasValidManufacturerAliases = (candidate: ControllerProfileMatchCandidate): boolean => {
-    const { manufacturer, productAliases } = candidate;
-    if (manufacturer === undefined || productAliases === undefined) {
-        return false;
-    }
-
-    if (!isNonBlankName(manufacturer) || productAliases.length === 0) {
-        return false;
-    }
-
-    return productAliases.every(isNonBlankName);
-};
-
-const isValidCandidate = (candidate: ControllerProfileMatchCandidate): boolean => {
-    if (!isValidOpaqueIdentity(candidate.profileId)) {
-        return false;
-    }
-
-    const hasNativeIdentities = candidate.stableNativeIdentities !== undefined;
-    if (hasNativeIdentities && !hasValidNativeIdentities(candidate)) {
-        return false;
-    }
-
-    const hasSysExIdentities = candidate.acceptedSysExIdentityReplies !== undefined;
-    if (hasSysExIdentities && !hasValidSysExIdentities(candidate)) {
-        return false;
-    }
-
-    const hasManufacturer = candidate.manufacturer !== undefined;
-    const hasProductAliases = candidate.productAliases !== undefined;
+    const manufacturer = value.manufacturer;
+    const productAliases = value.productAliases;
+    const hasManufacturer = manufacturer !== undefined;
+    const hasProductAliases = productAliases !== undefined;
     if (hasManufacturer !== hasProductAliases) {
         return false;
     }
 
     const hasManufacturerAliases = hasManufacturer && hasProductAliases;
-    if (hasManufacturerAliases && !hasValidManufacturerAliases(candidate)) {
-        return false;
+    if (hasManufacturerAliases) {
+        if (!isNonBlankName(manufacturer)) {
+            return false;
+        }
+
+        if (!isUnknownArray(productAliases) || productAliases.length === 0) {
+            return false;
+        }
+
+        if (!productAliases.every(isNonBlankName)) {
+            return false;
+        }
     }
 
     return hasNativeIdentities || hasSysExIdentities || hasManufacturerAliases;
 };
 
-const isValidConnectedIdentity = (identity: ConnectedControllerIdentity): boolean => {
-    if (!isValidOpaqueIdentity(identity.instanceId)) {
+const isValidCandidateArray = (value: unknown): value is readonly ControllerProfileMatchCandidate[] => {
+    if (!isUnknownArray(value)) {
         return false;
     }
 
-    if (identity.fingerprint !== undefined && !isValidOpaqueIdentity(identity.fingerprint)) {
+    return value.every(isValidCandidate);
+};
+
+const isValidConnectedIdentity = (value: unknown): value is ConnectedControllerIdentity => {
+    if (!isUnknownRecord(value)) {
         return false;
     }
 
-    if (identity.stableNativeIdentity !== undefined && !isValidOpaqueIdentity(identity.stableNativeIdentity)) {
+    if (!isValidOpaqueIdentity(value.instanceId)) {
         return false;
     }
 
-    if (identity.sysexIdentityReply !== undefined && !isValidSysExIdentityReply(identity.sysexIdentityReply)) {
+    if (value.fingerprint !== undefined && !isValidOpaqueIdentity(value.fingerprint)) {
         return false;
     }
 
-    const hasManufacturer = identity.manufacturer !== undefined;
-    const hasProductName = identity.productName !== undefined;
+    if (value.stableNativeIdentity !== undefined && !isValidOpaqueIdentity(value.stableNativeIdentity)) {
+        return false;
+    }
+
+    if (value.sysexIdentityReply !== undefined && !isValidSysExIdentityReply(value.sysexIdentityReply)) {
+        return false;
+    }
+
+    const hasManufacturer = value.manufacturer !== undefined;
+    const hasProductName = value.productName !== undefined;
     if (hasManufacturer !== hasProductName) {
         return false;
     }
 
-    if (identity.manufacturer !== undefined && !isNonBlankName(identity.manufacturer)) {
+    if (value.manufacturer !== undefined && !isNonBlankName(value.manufacturer)) {
         return false;
     }
 
-    if (identity.productName !== undefined && !isNonBlankName(identity.productName)) {
+    if (value.productName !== undefined && !isNonBlankName(value.productName)) {
         return false;
     }
 
@@ -194,14 +222,18 @@ const isValidConnectedIdentity = (identity: ConnectedControllerIdentity): boolea
 };
 
 const isValidExplicitBinding = (
-    binding: ControllerFingerprintBinding,
+    value: unknown,
     identity: ConnectedControllerIdentity
-): boolean => {
-    if (!isValidOpaqueIdentity(binding.fingerprint)) {
+): value is ControllerFingerprintBinding => {
+    if (!isUnknownRecord(value)) {
         return false;
     }
 
-    if (!isValidOpaqueIdentity(binding.profileId)) {
+    if (!isValidOpaqueIdentity(value.fingerprint)) {
+        return false;
+    }
+
+    if (!isValidOpaqueIdentity(value.profileId)) {
         return false;
     }
 
@@ -269,25 +301,43 @@ const matchesManufacturerAlias = (
     return candidate.productAliases.some((alias) => normalizeExactName(alias) === productName);
 };
 
-export const matchControllerProfile = (input: MatchControllerProfileInput): MatchControllerProfileOutput => {
-    const { candidates, connectedIdentity, explicitFingerprintBinding } = input;
-    const connectedInstanceId = connectedIdentity.instanceId;
+export function matchControllerProfile(input: unknown): MatchControllerProfileOutput;
+export function matchControllerProfile(input: MatchControllerProfileInput): MatchControllerProfileOutput;
+export function matchControllerProfile(input: unknown): MatchControllerProfileOutput {
+    if (!isUnknownRecord(input)) {
+        return {
+            status: 'invalid-input',
+            connectedInstanceId: '',
+            reason: 'invalid-connected-identity',
+        };
+    }
 
-    if (!isValidConnectedIdentity(connectedIdentity)) {
+    const connectedIdentityInput = input.connectedIdentity;
+    let connectedInstanceId = '';
+    if (isUnknownRecord(connectedIdentityInput) && typeof connectedIdentityInput.instanceId === 'string') {
+        connectedInstanceId = connectedIdentityInput.instanceId;
+    }
+
+    if (!isValidConnectedIdentity(connectedIdentityInput)) {
         return {
             status: 'invalid-input',
             connectedInstanceId,
             reason: 'invalid-connected-identity',
         };
     }
+    const connectedIdentity = connectedIdentityInput;
 
-    if (!candidates.every(isValidCandidate)) {
+    const candidatesInput = input.candidates;
+    if (!isValidCandidateArray(candidatesInput)) {
         return {
             status: 'invalid-input',
             connectedInstanceId,
             reason: 'invalid-candidate',
         };
     }
+    const candidates = candidatesInput;
+
+    const explicitFingerprintBinding = input.explicitFingerprintBinding;
 
     if (
         explicitFingerprintBinding !== undefined &&
@@ -374,4 +424,4 @@ export const matchControllerProfile = (input: MatchControllerProfileInput): Matc
     }
 
     return { status: 'no-match', connectedInstanceId };
-};
+}
