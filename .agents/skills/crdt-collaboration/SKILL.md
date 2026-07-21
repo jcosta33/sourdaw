@@ -41,7 +41,7 @@ Browser: CRDT-backed stores persist via the Automerge storage adapter (`src/infr
 
 ### 5. Three collaboration transports, one document model
 
-Serverless WebRTC with manual offer/answer + QR invites; the standalone `server/` WebSocket relay (port 8787, separate npm package); native LAN via mDNS (`_sourdaw._tcp.local.`) and 11 `collab_*` Tauri commands. Transport/session/presence belongs to the Collaboration module; the document belongs to CrdtDocument (canonical split: `src/modules/Collaboration/AGENTS.md`).
+Serverless WebRTC with manual offer/answer + QR invites; the standalone `server/` WebSocket relay (separate npm package); native LAN via mDNS and `collab_*` Tauri commands. Transport/session/presence belongs to the Collaboration module; the document belongs to CrdtDocument (canonical split: `src/modules/Collaboration/AGENTS.md`).
 
 **Why:** fixes land in the wrong layer when transport and document ownership blur.
 

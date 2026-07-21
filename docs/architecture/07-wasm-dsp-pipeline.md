@@ -34,9 +34,9 @@ Never hand-edit files under `src/modules/AudioEngine/wasm/` — regenerate via t
 
 ## 2. Loading at runtime
 
-Worklets cannot fetch asynchronously at construction time, so WASM bytes are fetched on the main thread and passed in: processors call `initSync({ module: new WebAssembly.Module(wasmBytes) })` (e.g. `services/fermenterProcessor.ts`, `workers/grandBouleEngineWorker.ts`). The shared handshake — per-context module registration cache, fetched-wasm cache, ready/error/timeout protocol — lives in `src/infra/audioWorklet/workletInitShared.ts` and is used by every `create*Node` factory in AudioEngine.
+Worklets cannot fetch asynchronously at construction time, so WASM bytes are fetched on the main thread and passed in: processors call `initSync({ module: new WebAssembly.Module(wasmBytes) })` (e.g. `services/fermenterProcessor.ts`, `workers/grandBouleEngineWorker.ts`). The shared handshake — per-context module registration cache, fetched-wasm cache, ready/error/timeout protocol — lives in `src/infra/audioWorklet/workletInitShared.ts` and is used by every WASM-backed `create*Node` factory in AudioEngine (the native-plugin bridge excepted).
 
-Each DSP crate exports `#[wasm_bindgen]` instance structs (`FermenterInstance`, `ToasterInstance`, `GrinderInstance`, `GrandBouleInstance`, `KneadInstance`, `LevainInstance`, `BacteriaInstance`, `GlutenInstance`, `ProofInstance` from daw-dsp; `ProofChamberInstance` from proof-chamber). The engine instantiates them per device through `wasmDeviceRegistry.ts`.
+Each DSP crate exports `#[wasm_bindgen]` instance structs (`FermenterInstance`, `ToasterInstance`, `GrinderInstance`, `GrandBouleInstance`, `KneadInstance`, `LevainInstance`, `BacteriaInstance`, `GlutenInstance`, `ProofInstance` from daw-dsp; `ProofChamberInstance` from proof-chamber; `ScoringInstance` from scoring). The engine instantiates them per device through `wasmDeviceRegistry.ts`.
 
 ## 3. What runs where
 

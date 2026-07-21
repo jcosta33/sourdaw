@@ -20,7 +20,7 @@ Three runtimes behind one panel (AiRuntime):
 | WebLLM | `@mlc-ai/web-llm` | In-browser inference, no API key (`generateWebLlmCompletion.ts`) |
 | Native mistral.rs | Tauri `native_llm_*` commands | On-device inference with tool calling and schema-constrained generation |
 
-The native runtime is the deepest integration: 8 commands covering init, completion (one-shot and streamed), tool calling, schema-constrained output, unload, and status — with model download progress streamed over a Tauri channel. In browser dev mode the native engine falls back to a manually started `llama-server` on localhost.
+The native runtime is the deepest integration: 8 commands covering init, completion (one-shot and streamed), tool calling, schema-constrained output, unload, and status — with model download progress emitted as `llm-progress` events (completion token streaming uses a Tauri channel). In browser dev mode the native engine falls back to a manually started `llama-server` on localhost.
 
 Voice input runs through whisper-rs dictation (`speech.rs`: load model, start/stop dictation, ASR status).
 
