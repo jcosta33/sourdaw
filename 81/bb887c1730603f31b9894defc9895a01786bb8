@@ -1,0 +1,21 @@
+src/components/daw/__tests__/DawPluginRail.spec.tsx
+  s_d551553650f8b1::t_4eefe0e2b694fb 1-4,9-76
+src/components/daw/__tests__/DawPluginSectionCard.spec.tsx
+  s_d551553650f8b1::t_96075a54b510ef 1-4,9,11-13,17-27,30,32-40,43-53,56,58-59,62-66,69-72,74-83,86-94,97,99-105,108-115
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "81bb887c1730603f31b9894defc9895a01786bb8",
+  "prompts": {},
+  "sessions": {
+    "s_d551553650f8b1": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f83c7-243c-7291-b985-3645b77809ca",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
