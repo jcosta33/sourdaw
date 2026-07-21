@@ -1,7 +1,7 @@
 import { createRef } from 'react';
 
-import { render, screen } from '@testing-library/react';
-import { describe, it, expect } from 'vitest';
+import { fireEvent, render, screen } from '@testing-library/react';
+import { describe, it, expect, vi } from 'vitest';
 
 import { Grid } from '../Grid';
 
@@ -47,8 +47,11 @@ describe('Grid', () => {
     describe('gap prop', () => {
         it.each([
             [0, 'gap-0'],
+            [0.5, 'gap-0.5'],
             [1, 'gap-1'],
+            [1.5, 'gap-1.5'],
             [2, 'gap-2'],
+            [2.5, 'gap-2.5'],
             [3, 'gap-3'],
             [4, 'gap-4'],
             [6, 'gap-6'],
@@ -72,8 +75,11 @@ describe('Grid', () => {
     describe('gapX prop', () => {
         it.each([
             [0, 'gap-x-0'],
+            [0.5, 'gap-x-0.5'],
             [1, 'gap-x-1'],
+            [1.5, 'gap-x-1.5'],
             [2, 'gap-x-2'],
+            [2.5, 'gap-x-2.5'],
             [3, 'gap-x-3'],
             [4, 'gap-x-4'],
             [6, 'gap-x-6'],
@@ -91,8 +97,11 @@ describe('Grid', () => {
     describe('gapY prop', () => {
         it.each([
             [0, 'gap-y-0'],
+            [0.5, 'gap-y-0.5'],
             [1, 'gap-y-1'],
+            [1.5, 'gap-y-1.5'],
             [2, 'gap-y-2'],
+            [2.5, 'gap-y-2.5'],
             [3, 'gap-y-3'],
             [4, 'gap-y-4'],
             [6, 'gap-y-6'],
@@ -156,6 +165,17 @@ describe('Grid', () => {
             );
             expect(ref.current).toBe(screen.getByTestId('grid'));
         });
+
+        it('should match a selected polymorphic element', () => {
+            const ref = createRef<HTMLOListElement>();
+            render(
+                <Grid as="ol" ref={ref} data-testid="grid">
+                    <li>Content</li>
+                </Grid>
+            );
+            expect(ref.current).toBe(screen.getByTestId('grid'));
+            expect(ref.current?.tagName).toBe('OL');
+        });
     });
 
     describe('className merging', () => {
@@ -168,19 +188,58 @@ describe('Grid', () => {
             const element = screen.getByTestId('grid');
             expect(element).toHaveClass('grid', 'grid-cols-1', 'custom-class');
         });
-    });
 
-    describe('HTML attributes', () => {
-        it('should pass through arbitrary HTML attributes', () => {
+        it('should give a complex caller column utility precedence', () => {
             render(
-                <Grid data-testid="grid" id="test-id" title="Test Title" aria-label="Test Label">
+                <Grid className="grid-cols-[minmax(0,2fr)_minmax(0,1fr)]" data-testid="grid">
                     Content
                 </Grid>
             );
             const element = screen.getByTestId('grid');
+            expect(element).toHaveClass('grid', 'grid-cols-[minmax(0,2fr)_minmax(0,1fr)]');
+            expect(element).not.toHaveClass('grid-cols-1');
+        });
+    });
+
+    describe('HTML attributes', () => {
+        it('should pass through arbitrary HTML attributes', () => {
+            const onClick = vi.fn();
+            render(
+                <Grid
+                    data-testid="grid"
+                    data-proof="native"
+                    id="test-id"
+                    title="Test Title"
+                    aria-label="Test Label"
+                    style={{ color: 'rgb(1, 2, 3)' }}
+                    onClick={onClick}
+                >
+                    Content
+                </Grid>
+            );
+            const element = screen.getByTestId('grid');
+            fireEvent.click(element);
             expect(element).toHaveAttribute('id', 'test-id');
             expect(element).toHaveAttribute('title', 'Test Title');
             expect(element).toHaveAttribute('aria-label', 'Test Label');
+            expect(element).toHaveAttribute('data-proof', 'native');
+            expect(element).toHaveStyle({ color: 'rgb(1, 2, 3)' });
+            expect(onClick).toHaveBeenCalledOnce();
         });
+    });
+
+    it('should render children exactly once in their original order', () => {
+        render(
+            <Grid data-testid="grid">
+                <span>First</span>
+                <span>Second</span>
+                <span>Third</span>
+            </Grid>
+        );
+        expect(Array.from(screen.getByTestId('grid').children, (child) => child.textContent)).toEqual([
+            'First',
+            'Second',
+            'Third',
+        ]);
     });
 });
