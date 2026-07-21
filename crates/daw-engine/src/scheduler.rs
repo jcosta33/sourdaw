@@ -4,12 +4,15 @@
 //! via the NativePlugin trait. All communication is lock-free via rtrb.
 
 use crate::audio_bridge::PluginAudioBridge;
+use crate::midi::diagnostics::{
+    active_midi_rt_diagnostics_channel, ActiveMidiRtDiagnostics, ActiveMidiRtDiagnosticsSnapshot,
+};
 use crate::midi_fx::{Arpeggiator, MidiEventBuffer, MidiFx, ProbabilityEvaluator, VelocityScaler};
 use crate::plugin_slot::{MidiNoteEvent, NativePlugin, TransportState};
 use daw_core::tuning::TuningTable;
 use daw_dsp::knead::engine::KneadEngine;
 use rtrb::Consumer;
-use triple_buffer::Output;
+use triple_buffer::{Input, Output};
 
 pub enum MidiFxKind {
     Arpeggiator,
@@ -78,9 +81,11 @@ impl ActiveEffect {
     }
 
     #[inline]
-    fn enqueue_midi(&mut self, event: MidiNoteEvent) {
+    fn enqueue_midi(&mut self, event: MidiNoteEvent, diagnostics: &mut ActiveMidiRtDiagnostics) {
         // Drop the newest event when the fixed block-local buffer is full.
-        let _ = self.pending_midi.try_push(event);
+        if !self.pending_midi.try_push(event) {
+            diagnostics.record_scheduler_event_buffer_overflow(1);
+        }
     }
 }
 
@@ -90,17 +95,36 @@ pub struct AudioScheduler {
     command_rx: Consumer<GraphCommand>,
     sample_rate: f32,
     transport: TransportState,
+    midi_rt_diagnostics: ActiveMidiRtDiagnostics,
+    midi_rt_diagnostics_tx: Input<ActiveMidiRtDiagnosticsSnapshot>,
 }
 
 impl AudioScheduler {
     pub fn new(command_rx: Consumer<GraphCommand>, sample_rate: f32) -> Self {
+        let (diagnostics_tx, _diagnostics_reader) = active_midi_rt_diagnostics_channel();
+        Self::with_midi_rt_diagnostics(command_rx, sample_rate, diagnostics_tx)
+    }
+
+    pub(crate) fn with_midi_rt_diagnostics(
+        command_rx: Consumer<GraphCommand>,
+        sample_rate: f32,
+        midi_rt_diagnostics_tx: Input<ActiveMidiRtDiagnosticsSnapshot>,
+    ) -> Self {
         Self {
             effects: Vec::with_capacity(128),
             audio_bridges: Vec::with_capacity(128),
             command_rx,
             sample_rate,
             transport: TransportState::default(),
+            midi_rt_diagnostics: ActiveMidiRtDiagnostics::new(),
+            midi_rt_diagnostics_tx,
         }
+    }
+
+    #[inline]
+    pub(crate) fn publish_midi_rt_diagnostics(&mut self) {
+        self.midi_rt_diagnostics_tx
+            .write(self.midi_rt_diagnostics.snapshot());
     }
 
     /// Process pending UI commands lock-free on the audio thread.
@@ -168,7 +192,7 @@ impl AudioScheduler {
                 }
                 GraphCommand::SendMidiNote(id, event) => {
                     if let Some(effect) = self.effects.iter_mut().find(|e| e.id == id) {
-                        effect.enqueue_midi(event);
+                        effect.enqueue_midi(event, &mut self.midi_rt_diagnostics);
                     }
                 }
                 GraphCommand::SetTransport(state) => {
@@ -213,14 +237,21 @@ impl AudioScheduler {
                     let sample_rate = self.sample_rate;
 
                     bridge.try_process(|left, right, num_samples| {
-                        probability_evaluator.process_midi(
+                        probability_evaluator.process_midi_with_diagnostics(
                             pending_midi,
                             &transport,
                             sample_rate,
                             num_samples,
+                            &mut self.midi_rt_diagnostics,
                         );
                         for fx in midi_fx.iter_mut() {
-                            fx.process_midi(pending_midi, &transport, sample_rate, num_samples);
+                            fx.process_midi_with_diagnostics(
+                                pending_midi,
+                                &transport,
+                                sample_rate,
+                                num_samples,
+                                &mut self.midi_rt_diagnostics,
+                            );
                         }
 
                         if pending_midi.is_empty() {
@@ -251,20 +282,22 @@ impl AudioScheduler {
                 continue;
             }
 
-            effect.probability_evaluator.process_midi(
+            effect.probability_evaluator.process_midi_with_diagnostics(
                 &mut effect.pending_midi,
                 &self.transport,
                 self.sample_rate,
                 num_samples,
+                &mut self.midi_rt_diagnostics,
             );
 
             // Apply the mutable user MIDI FX chain only after authored probability.
             for fx in &mut effect.midi_fx {
-                fx.process_midi(
+                fx.process_midi_with_diagnostics(
                     &mut effect.pending_midi,
                     &self.transport,
                     self.sample_rate,
                     num_samples,
+                    &mut self.midi_rt_diagnostics,
                 );
             }
 
