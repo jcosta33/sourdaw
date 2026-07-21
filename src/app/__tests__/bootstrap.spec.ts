@@ -59,6 +59,7 @@ vi.mock('#/modules/AiRuntime/useCases', () => ({
 
 vi.mock('#/modules/Arrangement/stores', () => ({
     persistDeviceParam: noop,
+    resolveEligibleDeviceWriteTarget: noop,
     trackStore: trackStoreMock,
 }));
 

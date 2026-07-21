@@ -15,6 +15,11 @@ function makeDeps(autoLoad: AutoLoad = vi.fn(() => Promise.resolve())) {
         getAllTracks: vi.fn(() => []),
         persistDeviceParam: vi.fn(),
         autoLoadLevainSamples: vi.fn(autoLoad) as unknown as AutoLoad & ReturnType<typeof vi.fn>,
+        resolveEligibleDeviceWriteTarget: vi.fn((deviceId: string) => ({
+            status: 'eligible' as const,
+            trackId: 'track-1',
+            deviceId,
+        })),
     };
 }
 

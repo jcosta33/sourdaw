@@ -42,6 +42,7 @@ describe('presetMorph', () => {
         getAllTracks.mockReturnValue([{ id: 't1', devices: [{ id: 'd1' }] }] as never);
         setFermenterDependencies({
             getAllTracks,
+            resolveEligibleDeviceWriteTarget: () => ({ status: 'eligible', trackId: 't1', deviceId: 'd1' }),
             updateDeviceParam: updateDeviceParam as never,
             persistDeviceParam: persistDeviceParam as never,
             updateDevicePatch: updateDevicePatch as never,

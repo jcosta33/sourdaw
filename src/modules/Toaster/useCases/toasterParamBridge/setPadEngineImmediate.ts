@@ -1,6 +1,5 @@
+import { resolveEligibleDeviceWriteTarget } from '#/modules/Arrangement/stores';
 import { getTrackStrip } from '#/modules/AudioEngine/useCases';
-
-import { findDeviceRef } from './helpers';
 
 /**
  * Send engine_type directly to the worklet (bypasses rAF throttle).
@@ -8,12 +7,12 @@ import { findDeviceRef } from './helpers';
  * Does NOT update the store — the pad's stored engineType remains the default.
  */
 export function setPadEngineImmediate(deviceId: string, padIndex: number, engineIdx: number): void {
-    const ref = findDeviceRef(deviceId);
-    if (!ref) {
+    const target = resolveEligibleDeviceWriteTarget(deviceId);
+    if (target.status !== 'eligible') {
         return;
     }
 
-    const strip = getTrackStrip(ref.trackId);
+    const strip = getTrackStrip(target.trackId);
     if (!strip) {
         return;
     }

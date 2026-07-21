@@ -1,14 +1,14 @@
+import { resolveEligibleDeviceWriteTarget } from '#/modules/Arrangement/stores';
 import { getTrackStrip } from '#/modules/AudioEngine/useCases';
 
 import { type PadState } from '../../models/ToasterKit';
 import { updatePad } from '../../stores/toasterStore';
 
-import { findDeviceRef } from './helpers';
 import { padLatest, padPending } from './toasterPadParamQueue';
 
 const STRING_FIELDS = new Set(['engineType', 'name', 'color']);
 
-function flushPadParam(cacheKey: string, trackId: string): void {
+function flushPadParam(cacheKey: string): void {
     padPending.delete(cacheKey);
     const entry = padLatest.get(cacheKey);
     if (!entry) {
@@ -16,7 +16,12 @@ function flushPadParam(cacheKey: string, trackId: string): void {
     }
     padLatest.delete(cacheKey);
 
-    const strip = getTrackStrip(trackId);
+    const target = resolveEligibleDeviceWriteTarget(entry.deviceId);
+    if (target.status !== 'eligible') {
+        return;
+    }
+
+    const strip = getTrackStrip(target.trackId);
     if (!strip) {
         return;
     }
@@ -29,19 +34,19 @@ function flushPadParam(cacheKey: string, trackId: string): void {
 }
 
 export function setToasterPadParam(deviceId: string, padIndex: number, key: keyof PadState, value: number): void {
-    if (!STRING_FIELDS.has(key)) {
-        updatePad(deviceId, padIndex, { [key]: value });
+    const target = resolveEligibleDeviceWriteTarget(deviceId);
+    if (target.status !== 'eligible') {
+        return;
     }
 
-    const ref = findDeviceRef(deviceId);
-    if (!ref) {
-        return;
+    if (!STRING_FIELDS.has(key)) {
+        updatePad(deviceId, padIndex, { [key]: value });
     }
 
     const cacheKey = `${deviceId}_${padIndex}_${key}`;
     padLatest.set(cacheKey, { deviceId, pad: padIndex, name: key, value });
     if (!padPending.has(cacheKey)) {
-        const rafId = requestAnimationFrame(() => flushPadParam(cacheKey, ref.trackId));
+        const rafId = requestAnimationFrame(() => flushPadParam(cacheKey));
         padPending.set(cacheKey, { deviceId, rafId });
     }
 }

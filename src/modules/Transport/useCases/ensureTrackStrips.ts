@@ -5,7 +5,7 @@
  * Used by startPlayback and toggleRecording before audio begins.
  */
 
-import { getTrackEligibility, trackStore } from '#/modules/Arrangement/stores';
+import { getTrackEligibility, resolveEligibleDeviceWriteTarget, trackStore } from '#/modules/Arrangement/stores';
 import {
     addDeviceToStrip,
     ensureTrackStrip,
@@ -44,12 +44,16 @@ export function ensureTrackStrips(): void {
         // Bootstrap devices (effects & instruments) from the store data.
         // Without this, devices exist in the UI but have no audio nodes.
         for (const device of track.devices) {
-            addDeviceToStrip(track.id, device.id, device.type);
+            const targetOwner = resolveEligibleDeviceWriteTarget(device.id);
+            if (targetOwner.status !== 'eligible' || targetOwner.trackId !== track.id) {
+                continue;
+            }
+            addDeviceToStrip(targetOwner.trackId, targetOwner.deviceId, device.type);
             // Apply stored parameter values to the newly created audio nodes
             if (device.parameterValues) {
                 for (const [paramId, value] of Object.entries(device.parameterValues)) {
                     if (typeof value === 'number') {
-                        updateDeviceParam(track.id, device.id, paramId, value);
+                        updateDeviceParam(targetOwner.trackId, targetOwner.deviceId, paramId, value);
                     }
                 }
             }

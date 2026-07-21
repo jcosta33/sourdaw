@@ -1,3 +1,4 @@
+import { resolveEligibleDeviceWriteTarget } from '#/modules/Arrangement/stores';
 import { getTrackStoreState } from '#/modules/Arrangement/useCases';
 
 import { PROOF_PATCH_RANGES, TARGET_LUFS, type DitherMode, type ProofPatch } from '../../models/ProofPatch';
@@ -454,6 +455,11 @@ function rehydrateRestoredPatch(deviceId: string): void {
 
 /** Send full patch to engine (e.g., after preset load). */
 export function syncFullPatch(deviceId: string): void {
+    const target = resolveEligibleDeviceWriteTarget(deviceId);
+    if (target.status !== 'eligible') {
+        return;
+    }
+
     rehydrateRestoredPatch(deviceId);
 
     const state = getProofState(deviceId);

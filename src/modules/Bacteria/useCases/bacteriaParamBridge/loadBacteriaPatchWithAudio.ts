@@ -4,7 +4,7 @@ import { type BacteriaBand, type BacteriaPatch } from '../../models/BacteriaPatc
 import { getBacteriaState, loadBacteriaPatch } from '../../stores/bacteriaStore';
 
 import { bacteriaParamBridgeDependencies } from './bacteriaParamBridgeDependencies';
-import { createFindDeviceRef, encodePatchValue } from './helpers';
+import { encodePatchValue } from './helpers';
 
 import type { DeviceRef, PersistDeviceParamFn, UpdateDeviceParamFn } from './helpers';
 
@@ -42,13 +42,17 @@ function createPushParamImmediately(
 }
 
 export const loadBacteriaPatchWithAudio = inject(bacteriaParamBridgeDependencies)(({
-    getAllTracks: getAllTracksFn,
     updateDeviceParam: updateDeviceParamFn,
     persistDeviceParam: persistDeviceParamFn,
+    resolveEligibleDeviceWriteTarget: resolveEligibleDeviceWriteTargetFn,
 }) => {
-    const findDeviceRef = createFindDeviceRef(getAllTracksFn);
     const pushParamImmediately = createPushParamImmediately(updateDeviceParamFn, persistDeviceParamFn);
     return function loadBacteriaPatchWithAudio(deviceId: string, patch: BacteriaPatch): void {
+        const target = resolveEligibleDeviceWriteTargetFn(deviceId);
+        if (target.status !== 'eligible') {
+            return;
+        }
+
         // Capture the engine's current view (the store mirrors it) *before*
         // loadBacteriaPatch overwrites it, so we can diff and push only the
         // params that actually changed — a preset switch otherwise re-sends
@@ -56,11 +60,6 @@ export const loadBacteriaPatchWithAudio = inject(bacteriaParamBridgeDependencies
         const previousPatch = getBacteriaState(deviceId).patch;
 
         loadBacteriaPatch(deviceId, patch);
-
-        const ref = findDeviceRef(deviceId);
-        if (!ref) {
-            return;
-        }
 
         for (const key of Object.keys(patch) as Array<keyof BacteriaPatch>) {
             if (NON_SCALAR_GLOBAL_KEYS.has(key)) {
@@ -75,7 +74,7 @@ export const loadBacteriaPatchWithAudio = inject(bacteriaParamBridgeDependencies
             if (previousEncoded === encodedValue) {
                 continue;
             }
-            pushParamImmediately(ref, key, encodedValue);
+            pushParamImmediately(target, key, encodedValue);
         }
 
         // Only iterate the bands the new patch actually activates. The patch
@@ -106,7 +105,7 @@ export const loadBacteriaPatchWithAudio = inject(bacteriaParamBridgeDependencies
                 if (previousEncoded === encodedValue) {
                     continue;
                 }
-                pushParamImmediately(ref, `band${bandIndex}_${key}`, encodedValue);
+                pushParamImmediately(target, `band${bandIndex}_${key}`, encodedValue);
             }
         }
     };

@@ -1,9 +1,8 @@
+import { resolveEligibleDeviceWriteTarget } from '#/modules/Arrangement/stores';
 import { getTrackStrip } from '#/modules/AudioEngine/useCases';
 
 import { type ToasterKit } from '../../models/ToasterKit';
 import { updateKit } from '../../stores/toasterStore';
-
-import { findDeviceRef } from './helpers';
 
 const KIT_PARAM_MAP = {
     swing: 'swing',
@@ -19,9 +18,9 @@ const KIT_PARAM_MAP = {
 } as const;
 
 const kitPending = new Map<string, number>();
-const kitLatest = new Map<string, { paramName: string; value: number }>();
+const kitLatest = new Map<string, { deviceId: string; paramName: string; value: number }>();
 
-function flushKitParam(cacheKey: string, trackId: string): void {
+function flushKitParam(cacheKey: string): void {
     kitPending.delete(cacheKey);
     const entry = kitLatest.get(cacheKey);
     if (!entry) {
@@ -29,7 +28,12 @@ function flushKitParam(cacheKey: string, trackId: string): void {
     }
     kitLatest.delete(cacheKey);
 
-    const strip = getTrackStrip(trackId);
+    const target = resolveEligibleDeviceWriteTarget(entry.deviceId);
+    if (target.status !== 'eligible') {
+        return;
+    }
+
+    const strip = getTrackStrip(target.trackId);
     if (!strip) {
         return;
     }
@@ -46,12 +50,12 @@ export function setToasterKitParam<Key extends keyof typeof KIT_PARAM_MAP>(
     key: Key,
     value: ToasterKit[Key]
 ): void {
-    updateKit(deviceId, { [key]: value });
-
-    const ref = findDeviceRef(deviceId);
-    if (!ref) {
+    const target = resolveEligibleDeviceWriteTarget(deviceId);
+    if (target.status !== 'eligible') {
         return;
     }
+
+    updateKit(deviceId, { [key]: value });
 
     const paramName = KIT_PARAM_MAP[key];
     // Coalesce worklet writes per (device, param) to one rAF tick so dragging a
@@ -59,11 +63,11 @@ export function setToasterKitParam<Key extends keyof typeof KIT_PARAM_MAP>(
     // already holds the authoritative latest value (updateKit above); only the
     // last value sampled before the frame fires reaches the worklet.
     const cacheKey = `${deviceId}_${key}`;
-    kitLatest.set(cacheKey, { paramName, value });
+    kitLatest.set(cacheKey, { deviceId, paramName, value });
     if (!kitPending.has(cacheKey)) {
         kitPending.set(
             cacheKey,
-            requestAnimationFrame(() => flushKitParam(cacheKey, ref.trackId))
+            requestAnimationFrame(() => flushKitParam(cacheKey))
         );
     }
 }

@@ -1,3 +1,4 @@
+import { resolveEligibleDeviceWriteTarget } from '#/modules/Arrangement/stores';
 import { persistDevicePatch } from '#/modules/Arrangement/useCases';
 
 import { type ProofPatch, type ProofPatchEdit } from '../../models/ProofPatch';
@@ -318,6 +319,10 @@ type SetProofParamWithPatchOutput = void;
 /** Set a patch parameter and send to audio engine. */
 export function setProofParamWithPatch(input: SetProofParamWithPatchInput): SetProofParamWithPatchOutput {
     const { deviceId } = input;
+    const target = resolveEligibleDeviceWriteTarget(deviceId);
+    if (target.status !== 'eligible') {
+        return;
+    }
 
     // Before bridge registration, a full sync has no engine side effects and
     // ensures saved project values hydrate before this edit takes precedence.

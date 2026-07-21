@@ -4,28 +4,21 @@ import { type FermenterPatch } from '../../models/FermenterPatch';
 import { setFermenterParam } from '../../stores/fermenterStore';
 import { getFermenterDependencies } from '../getFermenterDependencies';
 
-import { createFindDeviceRef } from './helpers';
 import { mapFermenterParamToDspParam } from './mapFermenterParamToDspParam';
 
-import type { DeviceRef } from './helpers';
-
 // §33.2 — Shared rAF-batch primitive.
-type FermenterBatchEntry = { ref: DeviceRef; dspKey: string; key: string; value: number };
+type FermenterBatchEntry = { deviceId: string; dspKey: string; key: string; value: number };
 const paramBatcher = createRafBatcher<FermenterBatchEntry>();
 
-let findDeviceRef: ReturnType<typeof createFindDeviceRef> | null = null;
-
-function getFindDeviceRef() {
-    if (!findDeviceRef) {
-        findDeviceRef = createFindDeviceRef(getFermenterDependencies().getAllTracks);
-    }
-    return findDeviceRef;
-}
-
 function flushParam(_compositeKey: string, entry: FermenterBatchEntry): void {
-    const { updateDeviceParam, persistDeviceParam } = getFermenterDependencies();
-    updateDeviceParam(entry.ref.trackId, entry.ref.deviceId, entry.dspKey, entry.value);
-    persistDeviceParam(entry.ref.deviceId, entry.key, entry.value);
+    const { updateDeviceParam, persistDeviceParam, resolveEligibleDeviceWriteTarget } = getFermenterDependencies();
+    const target = resolveEligibleDeviceWriteTarget(entry.deviceId);
+    if (target.status !== 'eligible') {
+        return;
+    }
+
+    updateDeviceParam(target.trackId, target.deviceId, entry.dspKey, entry.value);
+    persistDeviceParam(target.deviceId, entry.key, entry.value);
 }
 
 /**
@@ -33,14 +26,14 @@ function flushParam(_compositeKey: string, entry: FermenterBatchEntry): void {
  * and throttles audio engine updates to once per animation frame.
  */
 export function setFermenterParamWithAudio(deviceId: string, key: keyof FermenterPatch, value: number): void {
-    setFermenterParam(deviceId, key, value);
-
-    const ref = getFindDeviceRef()(deviceId);
-    if (!ref) {
+    const target = getFermenterDependencies().resolveEligibleDeviceWriteTarget(deviceId);
+    if (target.status !== 'eligible') {
         return;
     }
 
+    setFermenterParam(deviceId, key, value);
+
     const compositeKey = `${deviceId}:${key}`;
     const dspKey = mapFermenterParamToDspParam({ paramId: key });
-    paramBatcher.schedule(compositeKey, { ref, dspKey, key, value }, flushParam);
+    paramBatcher.schedule(compositeKey, { deviceId: target.deviceId, dspKey, key, value }, flushParam);
 }

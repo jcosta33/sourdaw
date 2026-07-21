@@ -1,8 +1,22 @@
-import { type BacteriaBatchEntry, type PersistDeviceParamFn, type UpdateDeviceParamFn } from './helpers';
+import {
+    type BacteriaBatchEntry,
+    type PersistDeviceParamFn,
+    type ResolveEligibleDeviceWriteTargetFn,
+    type UpdateDeviceParamFn,
+} from './helpers';
 
-export function createFlushParam(updateDeviceParamFn: UpdateDeviceParamFn, persistDeviceParamFn: PersistDeviceParamFn) {
+export function createFlushParam(
+    updateDeviceParamFn: UpdateDeviceParamFn,
+    persistDeviceParamFn: PersistDeviceParamFn,
+    resolveEligibleDeviceWriteTargetFn: ResolveEligibleDeviceWriteTargetFn
+) {
     return function flushParam(_compositeKey: string, entry: BacteriaBatchEntry): void {
-        updateDeviceParamFn(entry.ref.trackId, entry.ref.deviceId, entry.key, entry.value);
-        persistDeviceParamFn(entry.ref.deviceId, entry.key, entry.value);
+        const target = resolveEligibleDeviceWriteTargetFn(entry.deviceId);
+        if (target.status !== 'eligible') {
+            return;
+        }
+
+        updateDeviceParamFn(target.trackId, target.deviceId, entry.key, entry.value);
+        persistDeviceParamFn(target.deviceId, entry.key, entry.value);
     };
 }

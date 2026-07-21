@@ -34,6 +34,16 @@ vi.mock('../levainParamBridge/setLevainParamWithAudio', () => ({
     setLevainParamWithAudio: vi.fn(),
 }));
 
+vi.mock('../levainParamBridge/levainBridgeDependencies', () => ({
+    levainBridgeDependencies: {
+        resolveEligibleDeviceWriteTarget: (deviceId: string) => ({
+            status: 'eligible',
+            trackId: 'track-1',
+            deviceId,
+        }),
+    },
+}));
+
 import { loadSamplesForInstrument } from '../levainParamBridge/loadSamplesForInstrument';
 import { setLevainParamWithAudio } from '../levainParamBridge/setLevainParamWithAudio';
 import { loadInstrument } from '../loadPreset';

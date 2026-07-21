@@ -1,3 +1,4 @@
+import { resolveEligibleDeviceWriteTarget } from './resolveEligibleDeviceWriteTarget';
 import { type Track, trackStore } from './trackStore';
 
 /**
@@ -13,25 +14,36 @@ export function persistDeviceParam(deviceId: string, paramId: string, value: num
     if (!Number.isFinite(value)) {
         return;
     }
+
+    const target = resolveEligibleDeviceWriteTarget(deviceId);
+    if (target.status !== 'eligible') {
+        return;
+    }
+
     const state = trackStore.value;
     if (!state) {
         return;
     }
-    const owningTrack = state.tracks.find((t: Track) => t.devices.some((d) => d.id === deviceId));
-    if (!owningTrack) {
-        return;
-    }
+
     trackStore.set({
         ...state,
-        tracks: state.tracks.map((t: Track) =>
-            t.id === owningTrack.id
-                ? {
-                      ...t,
-                      devices: t.devices.map((d) =>
-                          d.id === deviceId ? { ...d, parameterValues: { ...d.parameterValues, [paramId]: value } } : d
-                      ),
-                  }
-                : t
-        ),
+        tracks: state.tracks.map((track: Track) => {
+            if (track.id !== target.trackId) {
+                return track;
+            }
+
+            const devices = track.devices.map((device) => {
+                if (device.id !== target.deviceId) {
+                    return device;
+                }
+
+                return {
+                    ...device,
+                    parameterValues: { ...device.parameterValues, [paramId]: value },
+                };
+            });
+
+            return { ...track, devices };
+        }),
     });
 }

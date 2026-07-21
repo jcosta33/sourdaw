@@ -1,4 +1,9 @@
-import { trackStore, type Track, persistDeviceParam } from '#/modules/Arrangement/stores';
+import {
+    trackStore,
+    type Track,
+    persistDeviceParam,
+    resolveEligibleDeviceWriteTarget,
+} from '#/modules/Arrangement/stores';
 import { updateDeviceParam } from '#/modules/AudioEngine/useCases';
 import { createFindDeviceRef, type DeviceRef, type GetAllTracksFn } from '#/utils/createFindDeviceRef';
 import { createRafBatcher, type RafBatcher } from '#/utils/DOM/createRafBatcher';
@@ -13,15 +18,20 @@ export type { DeviceRef, GetAllTracksFn };
 // §33.2 — Shared rAF-batch primitive instead of a per-bridge mutable
 // `pendingUpdates` / `latestValues` Map pair. The batcher keeps the
 // last-write-wins semantics but the mechanics live in one place.
-export type GlutenBatchEntry = { ref: DeviceRef; key: string; value: number };
+export type GlutenBatchEntry = { deviceId: string; key: string; value: number };
 export const paramBatcher: RafBatcher<GlutenBatchEntry> = createRafBatcher<GlutenBatchEntry>();
 
 export type BridgeDeps = {
     updateDeviceParam: typeof updateDeviceParam;
     persistDeviceParam: typeof persistDeviceParam;
+    resolveEligibleDeviceWriteTarget: typeof resolveEligibleDeviceWriteTarget;
 };
 
-export const bridgeDeps: BridgeDeps = { updateDeviceParam, persistDeviceParam };
+export const bridgeDeps: BridgeDeps = {
+    updateDeviceParam,
+    persistDeviceParam,
+    resolveEligibleDeviceWriteTarget,
+};
 export const findDeviceRefGluten = createFindDeviceRef(getAllTracks);
 
 export const TOPOLOGY_INDEX = {

@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 
 import { createFlushHandlers } from '../createFlushHandlers';
-import { type BridgeDeps, type DeviceRef, type GlutenBatchEntry } from '../helpers';
+import { type BridgeDeps, type GlutenBatchEntry } from '../helpers';
 
 describe('createFlushHandlers', () => {
     it('should flush the entry through update before persist with the same payload', () => {
@@ -12,13 +12,22 @@ describe('createFlushHandlers', () => {
         const persistDeviceParam = vi.fn<BridgeDeps['persistDeviceParam']>((deviceId, key, value) => {
             calls.push(`persist:${deviceId}:${key}:${value}`);
         });
+        const resolveEligibleDeviceWriteTarget = vi.fn<BridgeDeps['resolveEligibleDeviceWriteTarget']>(() => ({
+            status: 'eligible',
+            trackId: 'track-1',
+            deviceId: 'device-1',
+        }));
         const entry = {
-            ref: { trackId: 'track-1', deviceId: 'device-1' },
+            deviceId: 'device-1',
             key: 'threshold',
             value: -18,
         } satisfies GlutenBatchEntry;
 
-        const { flushParam } = createFlushHandlers({ updateDeviceParam, persistDeviceParam });
+        const { flushParam } = createFlushHandlers({
+            updateDeviceParam,
+            persistDeviceParam,
+            resolveEligibleDeviceWriteTarget,
+        });
 
         flushParam('device-1:threshold', entry);
 
@@ -35,14 +44,41 @@ describe('createFlushHandlers', () => {
         const persistDeviceParam = vi.fn<BridgeDeps['persistDeviceParam']>((deviceId, key, value) => {
             calls.push(`persist:${deviceId}:${key}:${value}`);
         });
-        const ref = { trackId: 'track-1', deviceId: 'device-1' } satisfies DeviceRef;
+        const resolveEligibleDeviceWriteTarget = vi.fn<BridgeDeps['resolveEligibleDeviceWriteTarget']>(() => ({
+            status: 'eligible',
+            trackId: 'track-1',
+            deviceId: 'device-1',
+        }));
 
-        const { pushParamImmediately } = createFlushHandlers({ updateDeviceParam, persistDeviceParam });
+        const { pushParamImmediately } = createFlushHandlers({
+            updateDeviceParam,
+            persistDeviceParam,
+            resolveEligibleDeviceWriteTarget,
+        });
 
-        pushParamImmediately(ref, 'attack', 12);
+        pushParamImmediately('device-1', 'attack', 12);
 
         expect(updateDeviceParam).toHaveBeenCalledWith('track-1', 'device-1', 'attack', 12);
         expect(persistDeviceParam).toHaveBeenCalledWith('device-1', 'attack', 12);
         expect(calls).toEqual(['update:track-1:device-1:attack:12', 'persist:device-1:attack:12']);
+    });
+
+    it('drops queued work when the owner becomes missing before flush', () => {
+        const updateDeviceParam = vi.fn<BridgeDeps['updateDeviceParam']>();
+        const persistDeviceParam = vi.fn<BridgeDeps['persistDeviceParam']>();
+        const resolveEligibleDeviceWriteTarget = vi.fn<BridgeDeps['resolveEligibleDeviceWriteTarget']>(() => ({
+            status: 'missing',
+        }));
+        const { flushParam } = createFlushHandlers({
+            updateDeviceParam,
+            persistDeviceParam,
+            resolveEligibleDeviceWriteTarget,
+        });
+
+        flushParam('device-1:threshold', { deviceId: 'device-1', key: 'threshold', value: -10 });
+
+        expect(resolveEligibleDeviceWriteTarget).toHaveBeenCalledWith('device-1');
+        expect(updateDeviceParam).not.toHaveBeenCalled();
+        expect(persistDeviceParam).not.toHaveBeenCalled();
     });
 });

@@ -1,30 +1,33 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { logger } from '#/infra/logger/appLogger';
-import { type DeviceRef } from '#/utils/createFindDeviceRef';
+import { type DeviceWriteTargetResolution } from '#/modules/Arrangement/stores';
 
 import { DEFAULT_PATCH, type GlutenPatch } from '../../../models/GlutenPatch';
 import { loadGlutenPatchWithAudio } from '../loadGlutenPatchWithAudio';
 
-const findDeviceRefGluten = vi.fn<(deviceId: string) => DeviceRef | null>();
-const pushParamImmediately = vi.fn<(ref: DeviceRef, key: string, value: number) => void>();
-const loadGlutenPatch = vi.fn<(deviceId: string, patch: GlutenPatch) => void>();
+const { resolveEligibleDeviceWriteTarget, pushParamImmediately, loadGlutenPatch } = vi.hoisted(() => ({
+    resolveEligibleDeviceWriteTarget: vi.fn<(deviceId: string) => DeviceWriteTargetResolution>(),
+    pushParamImmediately: vi.fn<(deviceId: string, key: string, value: number) => void>(),
+    loadGlutenPatch: vi.fn<(deviceId: string, patch: GlutenPatch) => void>(),
+}));
 
 vi.mock('../helpers', async (importActual) => {
     const actual = await importActual<typeof import('../helpers')>();
     return {
         ...actual,
-        // Keep the real encoder so the null-encode path is exercised genuinely,
-        // but stub the side-effecting bridge boundaries.
-        findDeviceRefGluten: (deviceId: string): DeviceRef | null => findDeviceRefGluten(deviceId),
+        bridgeDeps: {
+            ...actual.bridgeDeps,
+            resolveEligibleDeviceWriteTarget,
+        },
     };
 });
 
 vi.mock('../createFlushHandlers', () => ({
     createFlushHandlers: () => ({
         flushParam: vi.fn(),
-        pushParamImmediately: (ref: DeviceRef, key: string, value: number): void =>
-            pushParamImmediately(ref, key, value),
+        pushParamImmediately: (deviceId: string, key: string, value: number): void =>
+            pushParamImmediately(deviceId, key, value),
     }),
 }));
 
@@ -40,7 +43,11 @@ function pushedValueFor(key: string): unknown {
 describe('loadGlutenPatchWithAudio', () => {
     beforeEach(() => {
         vi.clearAllMocks();
-        findDeviceRefGluten.mockReturnValue({ trackId: 't1', deviceId: 'dev' });
+        resolveEligibleDeviceWriteTarget.mockReturnValue({
+            status: 'eligible',
+            trackId: 't1',
+            deviceId: 'dev',
+        });
     });
 
     it('should export loadGlutenPatchWithAudio', () => {
@@ -103,4 +110,18 @@ describe('loadGlutenPatchWithAudio', () => {
             expect(pushedValueFor('oversampling')).toBe(4);
         });
     });
+
+    it.each(['missing', 'ineligible'] as const)(
+        'rejects a %s owner before store, logging, or engine effects',
+        (status) => {
+            const warnSpy = vi.spyOn(logger, 'warn').mockImplementation(() => {});
+            resolveEligibleDeviceWriteTarget.mockReturnValue({ status });
+
+            loadGlutenPatchWithAudio('dev', DEFAULT_PATCH);
+
+            expect(loadGlutenPatch).not.toHaveBeenCalled();
+            expect(pushParamImmediately).not.toHaveBeenCalled();
+            expect(warnSpy).not.toHaveBeenCalled();
+        }
+    );
 });
