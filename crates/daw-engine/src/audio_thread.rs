@@ -1,8 +1,10 @@
 //! Native OS Audio Thread using CPAL
 
+use crate::midi::diagnostics::MidiRtDiagnosticsSnapshot;
 use crate::scheduler::{AudioScheduler, GraphCommand};
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use rtrb::Consumer;
+use triple_buffer::Input;
 
 const MAX_CALLBACK_FRAMES: usize = 4096;
 
@@ -17,7 +19,10 @@ pub struct AudioThreadHandle {
 unsafe impl Send for AudioThreadHandle {}
 unsafe impl Sync for AudioThreadHandle {}
 
-pub fn spawn_audio_thread(command_rx: Consumer<GraphCommand>) -> Result<AudioThreadHandle, String> {
+pub fn spawn_audio_thread(
+    command_rx: Consumer<GraphCommand>,
+    midi_rt_diagnostics_tx: Input<MidiRtDiagnosticsSnapshot>,
+) -> Result<AudioThreadHandle, String> {
     let host = cpal::default_host();
     let device = host
         .default_output_device()
@@ -28,7 +33,8 @@ pub fn spawn_audio_thread(command_rx: Consumer<GraphCommand>) -> Result<AudioThr
         .map_err(|e| format!("Failed to get default output config: {}", e))?;
 
     let sample_rate = config.sample_rate() as f32;
-    let mut scheduler = AudioScheduler::new(command_rx, sample_rate);
+    let mut scheduler =
+        AudioScheduler::with_midi_rt_diagnostics(command_rx, sample_rate, midi_rt_diagnostics_tx);
 
     // We strictly use f32 streams
     let err_fn = |err| eprintln!("an error occurred on stream: {}", err);
@@ -73,6 +79,8 @@ pub fn spawn_audio_thread(command_rx: Consumer<GraphCommand>) -> Result<AudioThr
                                 }
                             }
                         }
+
+                        scheduler.publish_midi_rt_diagnostics();
                     },
                     err_fn,
                     None,

@@ -1,3 +1,4 @@
+use crate::midi::diagnostics::MidiRtDiagnostics;
 use crate::plugin_slot::{MidiNoteEvent, TransportState};
 
 pub const MIDI_EVENT_BUFFER_CAPACITY: usize = 128;
@@ -159,6 +160,7 @@ pub trait MidiFx: Send {
         transport: &TransportState,
         sample_rate: f32,
         num_samples: usize,
+        diagnostics: &mut MidiRtDiagnostics,
     );
 
     /// Set a parameter by name and value.
@@ -193,6 +195,7 @@ impl MidiFx for VelocityScaler {
         _transport: &TransportState,
         _sample_rate: f32,
         _num_samples: usize,
+        _diagnostics: &mut MidiRtDiagnostics,
     ) {
         for event in events.iter_mut() {
             if event.is_note_on {
@@ -331,6 +334,17 @@ impl Default for Arpeggiator {
     }
 }
 
+#[cfg(test)]
+impl Arpeggiator {
+    pub(crate) fn active_note_count(&self) -> usize {
+        self.active_notes.len()
+    }
+
+    pub(crate) fn contains_active_note(&self, note: u8) -> bool {
+        self.active_notes.contains(&note)
+    }
+}
+
 impl MidiFx for Arpeggiator {
     fn process_midi(
         &mut self,
@@ -338,12 +352,15 @@ impl MidiFx for Arpeggiator {
         transport: &TransportState,
         _sample_rate: f32,
         _num_samples: usize,
+        diagnostics: &mut MidiRtDiagnostics,
     ) {
         // 1. Maintain active note list from incoming events
         for event in events.iter() {
             if event.is_note_on {
                 // Drop the newest active note when the fixed tracking buffer is full.
-                let _ = self.active_notes.try_insert_sorted(event.note);
+                if !self.active_notes.try_insert_sorted(event.note) {
+                    diagnostics.record_arpeggiator_active_note_exhaustion(1);
+                }
             } else {
                 self.active_notes.remove(event.note);
             }
@@ -454,6 +471,7 @@ impl MidiFx for ProbabilityEvaluator {
         _transport: &TransportState,
         _sample_rate: f32,
         _num_samples: usize,
+        _diagnostics: &mut MidiRtDiagnostics,
     ) {
         events.retain_mut(|event| {
             if event.probability_cutoff >= PROBABILITY_CUTOFF_RANGE {
@@ -506,7 +524,13 @@ mod tests {
             assert!(events.try_push(note_on(note)));
         }
 
-        arpeggiator.process_midi(&mut events, &TransportState::default(), 48_000.0, 128);
+        arpeggiator.process_midi(
+            &mut events,
+            &TransportState::default(),
+            48_000.0,
+            128,
+            &mut MidiRtDiagnostics::new(),
+        );
 
         assert_eq!(
             arpeggiator.active_notes.capacity(),
@@ -542,6 +566,7 @@ mod deterministic_probability {
             &TransportState::default(),
             48_000.0,
             128,
+            &mut MidiRtDiagnostics::new(),
         );
 
         assert_eq!(events.len(), 1);
@@ -565,6 +590,7 @@ mod deterministic_probability {
             &TransportState::default(),
             48_000.0,
             128,
+            &mut MidiRtDiagnostics::new(),
         );
 
         let mut with_unrelated = MidiEventBuffer::new();
@@ -582,6 +608,7 @@ mod deterministic_probability {
             &TransportState::default(),
             48_000.0,
             128,
+            &mut MidiRtDiagnostics::new(),
         );
 
         let isolated_kept_target = isolated.iter().any(|event| event.note == target.note);
@@ -707,6 +734,7 @@ mod probability_distribution {
             &TransportState::default(),
             48_000.0,
             128,
+            &mut MidiRtDiagnostics::new(),
         );
 
         let mut interleaved = MidiEventBuffer::new();
@@ -724,6 +752,7 @@ mod probability_distribution {
             &TransportState::default(),
             48_000.0,
             128,
+            &mut MidiRtDiagnostics::new(),
         );
 
         assert!(!interleaved.iter().any(|event| event.note == 60));

@@ -8,6 +8,7 @@ pub mod scheduler;
 
 use audio_thread::{spawn_audio_thread, AudioThreadHandle};
 use daw_core::tuning::TuningTable;
+use midi::diagnostics::MidiRtDiagnosticsSnapshot;
 use mts_esp::MtsEspMaster;
 use plugin_slot::NativePlugin;
 use rtrb::{Producer, RingBuffer};
@@ -20,19 +21,23 @@ pub struct EngineHandle {
     _audio_thread: Arc<Mutex<AudioThreadHandle>>,
     next_plugin_id: usize,
     mts_esp_master: Option<MtsEspMaster>,
+    midi_rt_diagnostics: Output<MidiRtDiagnosticsSnapshot>,
 }
 
 impl EngineHandle {
     /// Boot the native audio engine (spawns CPAL stream).
     pub fn new() -> Result<Self, String> {
         let (tx, rx) = RingBuffer::new(256);
-        let thread_handle = spawn_audio_thread(rx)?;
+        let (diagnostics_tx, diagnostics_rx) =
+            triple_buffer::triple_buffer(&MidiRtDiagnosticsSnapshot::default());
+        let thread_handle = spawn_audio_thread(rx, diagnostics_tx)?;
 
         Ok(Self {
             command_tx: tx,
             _audio_thread: Arc::new(Mutex::new(thread_handle)),
             next_plugin_id: 1000, // Start high to avoid collision with effect IDs
             mts_esp_master: None,
+            midi_rt_diagnostics: diagnostics_rx,
         })
     }
 
@@ -53,6 +58,11 @@ impl EngineHandle {
         if let Some(master) = &mut self.mts_esp_master {
             master.update();
         }
+    }
+
+    /// Read the latest fixed numeric MIDI diagnostics outside the audio callback.
+    pub fn midi_rt_diagnostics_snapshot(&mut self) -> MidiRtDiagnosticsSnapshot {
+        *self.midi_rt_diagnostics.read()
     }
 
     /// Add a built-in effect to the native rendering graph.
