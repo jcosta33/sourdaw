@@ -1,3 +1,4 @@
+import { resolveEligibleClipWriteTarget } from './resolveEligibleClipWriteTarget';
 import { type Clip, type Track, trackStore } from './trackStore';
 
 /**
@@ -11,28 +12,28 @@ import { type Clip, type Track, trackStore } from './trackStore';
  * full-project re-map that a naive `trackStore.set({...state, tracks: ...})`
  * incurs.
  */
-export function updateClipInStore(clipId: string, updater: (clip: Clip) => Clip): void {
-    const state = trackStore.value;
-    if (!state) {
-        return;
+export function updateClipInStore(clipId: string, updater: (clip: Clip) => Clip): boolean {
+    const target = resolveEligibleClipWriteTarget({ clipId });
+    if (target.status !== 'eligible' || !('clipId' in target)) {
+        return false;
     }
 
-    let trackIdx = -1;
-    let clipIdx = -1;
-    for (let i = 0; i < state.tracks.length; i++) {
-        const t = state.tracks[i]!;
-        const j = t.clips.findIndex((c) => c.id === clipId);
-        if (j !== -1) {
-            trackIdx = i;
-            clipIdx = j;
-            break;
-        }
+    const state = trackStore.value;
+    if (!state) {
+        return false;
     }
+
+    const trackIdx = state.tracks.findIndex((track) => track.id === target.trackId);
     if (trackIdx === -1) {
-        return;
+        return false;
     }
 
     const targetTrack = state.tracks[trackIdx]!;
+    const clipIdx = targetTrack.clips.findIndex((clip) => clip.id === target.clipId);
+    if (clipIdx === -1) {
+        return false;
+    }
+
     const updatedClip = updater(targetTrack.clips[clipIdx]!);
     const nextClips = targetTrack.clips.slice();
     nextClips[clipIdx] = updatedClip;
@@ -41,4 +42,5 @@ export function updateClipInStore(clipId: string, updater: (clip: Clip) => Clip)
     nextTracks[trackIdx] = { ...targetTrack, clips: nextClips };
 
     trackStore.set({ ...state, tracks: nextTracks });
+    return true;
 }
