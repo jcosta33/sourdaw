@@ -990,6 +990,51 @@ describe('MidiRack', () => {
     });
 
     describe('rack lifecycle generations', () => {
+        it('bounds NoteRepeater echoes — repeats never re-enter the chain as fresh input (regression: echo storm)', () => {
+            const rack = new MidiRack('rack-a');
+            const repeater = new NoteRepeater('repeat-1');
+            rack.addProcessor(repeater, 'repeater'); // defaults: repeat_count 3, rate 1/16
+
+            // One noteOn, then ~2 s of continuous empty 128-sample blocks at
+            // 44.1 kHz (689 blocks). Pre-fix the repeater drained its repeats
+            // against a "generous" now+8192 window instead of the transport
+            // block range, so echoes left the processor with timeSamples beyond
+            // the rack's block end, parked in the rack scheduled queue, and
+            // re-entered the chain top as fresh input — each echo spawning 3
+            // more until the 4096-voice capacity throw (~1.5 s in the audit's
+            // runtime proof). Post-fix the rack must emit exactly the original
+            // note plus its 3 repeats (each with one off) and never throw.
+            let noteOns = 0;
+            let noteOffs = 0;
+            let thrown: unknown;
+            try {
+                for (let block = 0; block < 689; block++) {
+                    const start = block * 128;
+                    const input = block === 0 ? [noteOn(0, 60)] : [];
+                    const out = rack.processBlock(
+                        input,
+                        start,
+                        start + 128,
+                        { ...transport, ppqPosition: start / 22050 },
+                        'track-a'
+                    );
+                    for (const event of out) {
+                        if (isNoteOn(event)) {
+                            noteOns++;
+                        } else if (isNoteOff(event)) {
+                            noteOffs++;
+                        }
+                    }
+                }
+            } catch (error) {
+                thrown = error;
+            }
+
+            expect(thrown).toBeUndefined();
+            expect(noteOns).toBe(4); // the original plus exactly 3 repeats
+            expect(noteOffs).toBe(3); // one off per repeat (the input note stays held)
+        });
+
         it('panics audible state and clears NoteRepeater delay queues before a new discontinuity epoch', () => {
             const enabledRack = new MidiRack('rack-a');
             const disabledRack = new MidiRack('rack-a');

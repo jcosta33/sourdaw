@@ -92,10 +92,19 @@ export class NoteRepeater extends BaseMidiProcessor {
             }
         }
 
-        // Drain scheduled events for this block
-        // Use a generous range since we don't know exact block boundaries here
-        const now = input.length > 0 ? input[0]!.timeSamples : 0;
-        const blockEnd = now + 8192; // generous window
+        // Drain scheduled events for this block. Bound the window by the
+        // transport's block range (MidiRack always sets it) instead of a
+        // "generous" now+8192 guess: draining repeats early with timeSamples
+        // beyond the rack's block end parked them in the rack-level scheduled
+        // queue, which re-feeds them through the chain top on later blocks —
+        // every echo re-entered as fresh input and retriggered the repeater
+        // exponentially until the rack's voice-capacity throw. Draining
+        // exactly this block keeps each echo inside the block that contains
+        // it, so it leaves the rack as final output and never re-enters.
+        // (The 8192 fallback only serves direct processMidi callers whose
+        // transport carries no block window, e.g. isolated unit specs.)
+        const now = transport.blockStartSamples ?? (input.length > 0 ? input[0]!.timeSamples : 0);
+        const blockEnd = transport.blockEndSamples ?? now + 8192;
         const drained = this.scheduled.drainRange(0, blockEnd, this.trackId);
         for (const event1 of drained) {
             output.push(event1);
