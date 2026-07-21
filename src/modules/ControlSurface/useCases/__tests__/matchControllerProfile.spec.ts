@@ -7,7 +7,25 @@ import {
     type MatchControllerProfileInput,
 } from '../matchControllerProfile';
 
-const PUSH_SYSEX_IDENTITY = [0xf0, 0x7e, 0x00, 0x06, 0x02, 0x00, 0x21, 0x1d, 0x67, 0x19, 0x02, 0xf7] as const;
+const PUSH_SYSEX_IDENTITY = [
+    0xf0, 0x7e, 0x00, 0x06, 0x02, 0x00, 0x21, 0x1d, 0x67, 0x19, 0x02, 0x00, 0x01, 0x00, 0x00, 0x00, 0xf7,
+] as const;
+
+const OTHER_SYSEX_IDENTITY = [
+    0xf0, 0x7e, 0x01, 0x06, 0x02, 0x41, 0x01, 0x00, 0x02, 0x00, 0x01, 0x00, 0x00, 0x00, 0xf7,
+] as const;
+
+const FILE_DUMP_SYSEX_PACKET = [
+    0xf0, 0x7e, 0x00, 0x07, 0x02, 0x00, 0x21, 0x1d, 0x67, 0x19, 0x02, 0x00, 0x01, 0x00, 0x00, 0x00, 0xf7,
+] as const;
+
+const TRUNCATED_SYSEX_IDENTITY = [
+    0xf0, 0x7e, 0x00, 0x06, 0x02, 0x00, 0x21, 0x1d, 0x67, 0x19, 0x02, 0x00, 0x01, 0x00, 0x00, 0xf7,
+] as const;
+
+const STATUS_BYTE_SYSEX_IDENTITY = [
+    0xf0, 0x7e, 0x00, 0x06, 0x02, 0x00, 0x21, 0x1d, 0x67, 0x19, 0x02, 0x00, 0x80, 0x00, 0x00, 0x00, 0xf7,
+] as const;
 
 const createCandidate = (overrides: Partial<ControllerProfileMatchCandidate> = {}): ControllerProfileMatchCandidate => {
     return {
@@ -48,7 +66,7 @@ describe('matchControllerProfile', () => {
         const explicitlyBound = createCandidate({
             profileId: 'explicit-profile',
             stableNativeIdentities: ['usb:other'],
-            acceptedSysExIdentityReplies: [[0xf0, 0x01, 0xf7]],
+            acceptedSysExIdentityReplies: [OTHER_SYSEX_IDENTITY],
             manufacturer: 'Other',
             productAliases: ['Other'],
         });
@@ -60,7 +78,7 @@ describe('matchControllerProfile', () => {
         const aliasMatch = createCandidate({
             profileId: 'alias-profile',
             stableNativeIdentities: ['usb:not-connected'],
-            acceptedSysExIdentityReplies: [[0xf0, 0x01, 0xf7]],
+            acceptedSysExIdentityReplies: [OTHER_SYSEX_IDENTITY],
         });
 
         const result = matchControllerProfile({
@@ -89,7 +107,7 @@ describe('matchControllerProfile', () => {
         const aliasMatch = createCandidate({
             profileId: 'alias-profile',
             stableNativeIdentities: ['usb:not-connected'],
-            acceptedSysExIdentityReplies: [[0xf0, 0x01, 0xf7]],
+            acceptedSysExIdentityReplies: [OTHER_SYSEX_IDENTITY],
         });
 
         const result = matchControllerProfile({
@@ -117,7 +135,7 @@ describe('matchControllerProfile', () => {
         const aliasMatch = createCandidate({
             profileId: 'alias-profile',
             stableNativeIdentities: ['usb:not-connected'],
-            acceptedSysExIdentityReplies: [[0xf0, 0x01, 0xf7]],
+            acceptedSysExIdentityReplies: [OTHER_SYSEX_IDENTITY],
         });
 
         const result = matchControllerProfile({
@@ -230,7 +248,7 @@ describe('matchControllerProfile', () => {
         const lowerAliasMatch = createCandidate({
             profileId: 'lower-profile',
             stableNativeIdentities: ['usb:not-connected'],
-            acceptedSysExIdentityReplies: [[0xf0, 0x01, 0xf7]],
+            acceptedSysExIdentityReplies: [OTHER_SYSEX_IDENTITY],
         });
 
         const result = matchControllerProfile({
@@ -313,6 +331,46 @@ describe('matchControllerProfile', () => {
                 connectedIdentity: createConnectedIdentity({ sysexIdentityReply: [0xf0, 256, 0xf7] }),
             },
             reason: 'invalid-connected-identity',
+        },
+        {
+            name: 'complete-length universal non-Identity SysEx packet',
+            input: {
+                candidates: [
+                    createCandidate({
+                        stableNativeIdentities: undefined,
+                        acceptedSysExIdentityReplies: [FILE_DUMP_SYSEX_PACKET],
+                    }),
+                ],
+                connectedIdentity: createConnectedIdentity({
+                    stableNativeIdentity: undefined,
+                    sysexIdentityReply: FILE_DUMP_SYSEX_PACKET,
+                }),
+            },
+            reason: 'invalid-connected-identity',
+        },
+        {
+            name: 'truncated Identity Reply payload',
+            input: {
+                candidates: [createCandidate()],
+                connectedIdentity: createConnectedIdentity({
+                    stableNativeIdentity: undefined,
+                    sysexIdentityReply: TRUNCATED_SYSEX_IDENTITY,
+                }),
+            },
+            reason: 'invalid-connected-identity',
+        },
+        {
+            name: 'Identity Reply candidate with an internal status byte',
+            input: {
+                candidates: [
+                    createCandidate({
+                        stableNativeIdentities: undefined,
+                        acceptedSysExIdentityReplies: [STATUS_BYTE_SYSEX_IDENTITY],
+                    }),
+                ],
+                connectedIdentity: createConnectedIdentity({ stableNativeIdentity: undefined }),
+            },
+            reason: 'invalid-candidate',
         },
         {
             name: 'blank explicit binding fingerprint',

@@ -94,21 +94,52 @@ const isValidOpaqueIdentity = (value: unknown): value is string => {
     return value.trim() === value;
 };
 
+const isSevenBitDataByte = (value: unknown): value is number => {
+    if (typeof value !== 'number' || !Number.isInteger(value)) {
+        return false;
+    }
+
+    return value >= 0 && value <= 0x7f;
+};
+
 const isValidSysExIdentityReply = (reply: unknown): reply is readonly number[] => {
     if (!isUnknownArray(reply)) {
         return false;
     }
 
-    if (reply.length < 3) {
+    if (reply[0] !== 0xf0) {
         return false;
     }
 
-    if (reply[0] !== 0xf0 || reply[reply.length - 1] !== 0xf7) {
+    if (reply[1] !== 0x7e) {
         return false;
     }
 
-    for (const byte of reply) {
-        if (typeof byte !== 'number' || !Number.isInteger(byte) || byte < 0 || byte > 0xff) {
+    if (!isSevenBitDataByte(reply[2])) {
+        return false;
+    }
+
+    if (reply[3] !== 0x06 || reply[4] !== 0x02) {
+        return false;
+    }
+
+    const manufacturerIdFirstByte = reply[5];
+    if (!isSevenBitDataByte(manufacturerIdFirstByte)) {
+        return false;
+    }
+
+    const hasExtendedManufacturerId = manufacturerIdFirstByte === 0x00;
+    const expectedReplyLength = hasExtendedManufacturerId ? 17 : 15;
+    if (reply.length !== expectedReplyLength) {
+        return false;
+    }
+
+    if (reply[reply.length - 1] !== 0xf7) {
+        return false;
+    }
+
+    for (let index = 6; index < reply.length - 1; index += 1) {
+        if (!isSevenBitDataByte(reply[index])) {
             return false;
         }
     }
