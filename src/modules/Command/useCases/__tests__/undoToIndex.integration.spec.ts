@@ -1,8 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+import { REDO_NOT_APPLIED } from '../redoResult';
 import { undoToIndex } from '../undoToIndex';
 
-import type { ActionUndoEntry } from '../../models/UndoEntry';
+import type { ActionUndoEntry, CallbackUndoEntry } from '../../models/UndoEntry';
 import type { UndoStoreState } from '../../stores/undoStore';
 
 /**
@@ -59,6 +60,18 @@ function inertEntry(id: string): ActionUndoEntry {
     return { ...undoableEntry(id), inverseAction: null };
 }
 
+function notAppliedCallbackEntry(id: string): CallbackUndoEntry {
+    return {
+        kind: 'callback',
+        id,
+        label: id,
+        timestamp: 0,
+        source: 'manual',
+        undo: () => {},
+        redo: () => REDO_NOT_APPLIED,
+    };
+}
+
 describe('undoToIndex via the Undo History panel path', () => {
     beforeEach(() => {
         mocks.executeAppAction.mockReset();
@@ -94,5 +107,32 @@ describe('undoToIndex via the Undo History panel path', () => {
 
         expect(mocks.executeAppAction).toHaveBeenCalledTimes(1);
         expect(mocks.undoStoreValue.value).toEqual({ past: [undoableA, inertB], future: [undoableC] });
+    });
+
+    it('forward sweep drops a not-applied callback entry and stops at the target row', async () => {
+        const undoableA = undoableEntry('a');
+        const stuck = notAppliedCallbackEntry('stuck');
+        const undoableB = undoableEntry('b');
+        mocks.undoStoreValue.value = { past: [undoableA], future: [stuck, undoableB] };
+
+        // Target row index 1 = the state after re-applying 'b'; 'stuck' can never
+        // re-apply, so the sweep must drop it instead of retrying it forever.
+        await undoToIndex(1);
+
+        expect(mocks.executeAppAction).toHaveBeenCalledTimes(1);
+        expect(mocks.executeAppAction).toHaveBeenCalledWith(undoableB.action);
+        expect(mocks.undoStoreValue.value).toEqual({ past: [undoableA, undoableB], future: [] });
+    });
+
+    it('forward sweep stops when every remaining future entry is not-applied', async () => {
+        const undoableA = undoableEntry('a');
+        const stuck = notAppliedCallbackEntry('stuck');
+        mocks.undoStoreValue.value = { past: [undoableA], future: [stuck] };
+
+        // Target unreachable: the purge still makes progress and the sweep exits.
+        await undoToIndex(1);
+
+        expect(mocks.executeAppAction).not.toHaveBeenCalled();
+        expect(mocks.undoStoreValue.value).toEqual({ past: [undoableA], future: [] });
     });
 });

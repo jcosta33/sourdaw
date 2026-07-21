@@ -7,14 +7,11 @@
 import { type RefObject } from 'react';
 
 import { getAutomationLanes } from '#/modules/Automation/useCases';
-import { pushUndoEntry } from '#/modules/Command/useCases';
 
 import { type AutomationPoint } from '../../models/AutomationViewTypes';
 import { timelineViewStore } from '../../stores/timelineViewStore';
 import { trackStore } from '../../stores/trackStore';
-import { addClip } from '../../useCases/clip/addClip';
-import { removeClip } from '../../useCases/clip/removeClip';
-import { splitClip } from '../../useCases/clipEditing/splitClip';
+import { splitClipWithUndo } from '../../useCases/clipEditing/splitClipWithUndo';
 import { commitInlineMidiNoteCreate } from '../../useCases/timelineInteractions/commitInlineMidiNoteCreate';
 import { commitInlineMidiNoteDelete } from '../../useCases/timelineInteractions/commitInlineMidiNoteDelete';
 import { hitTestAutomationSubLane } from '../../useCases/timelineInteractions/hitTestAutomationSubLane';
@@ -41,41 +38,12 @@ export const handleCutTool = (x: number, y: number, beat: number): boolean => {
     if (!hit) {
         return true; // consumed, no clip hit
     }
-    const origClip = trackStore.value?.tracks
-        .flatMap((time) => time.clips)
-        .find((context) => context.id === hit.clipId);
-    if (origClip) {
-        const savedClip = { ...origClip };
-        splitClip(hit.clipId, beat);
-        const newClips =
-            trackStore.value?.tracks
-                .flatMap((time) => time.clips)
-                .filter(
-                    (context) =>
-                        context.id !== hit.clipId &&
-                        (context.startBeat === savedClip.startBeat || context.startBeat === beat) &&
-                        context.endBeat <= savedClip.endBeat &&
-                        context.startBeat >= savedClip.startBeat
-                ) ?? [];
-        const newClipIds = newClips.map((context) => context.id);
-        pushUndoEntry(
-            'Split clip',
-            () => {
-                for (const id of newClipIds) {
-                    removeClip(id);
-                }
-                addClip({
-                    trackId: savedClip.trackId,
-                    startBeat: savedClip.startBeat,
-                    endBeat: savedClip.endBeat,
-                    name: savedClip.name,
-                    type: savedClip.type,
-                    audioBufferId: savedClip.audioBufferId,
-                });
-            },
-            () => splitClip(hit.clipId, beat)
-        );
-    }
+    // Delegate to the use case that owns the split's undo composition. The
+    // hand-rolled entry here identified the "new" clips with a startBeat
+    // heuristic that missed the left half (it keeps the original id) and any
+    // zero-crossing-snapped right half, so undo re-added the full clip over the
+    // surviving left half and redo split the trimmed half — a silent no-op.
+    splitClipWithUndo(hit.clipId, beat);
     return true;
 };
 

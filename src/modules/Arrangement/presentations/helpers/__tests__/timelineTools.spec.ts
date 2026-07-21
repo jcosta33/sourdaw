@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-import { splitClip } from '../../../useCases/clipEditing/splitClip';
+import { splitClipWithUndo } from '../../../useCases/clipEditing/splitClipWithUndo';
 import { hitTestAutomationSubLane } from '../../../useCases/timelineInteractions/hitTestAutomationSubLane';
 import { hitTestClip } from '../../../useCases/timelineInteractions/hitTestClip/hitTestClip';
 import { hitTestTrack } from '../../../useCases/timelineInteractions/hitTestClip/hitTestTrack';
@@ -12,9 +12,7 @@ vi.mock('../../../useCases/timelineInteractions/hitTestClip/hitTestTrack', () =>
 vi.mock('../../../useCases/timelineInteractions/hitTestAutomationSubLane', () => ({
     hitTestAutomationSubLane: vi.fn(),
 }));
-vi.mock('../../../useCases/clipEditing/splitClip', () => ({ splitClip: vi.fn() }));
-vi.mock('../../../useCases/clip/addClip', () => ({ addClip: vi.fn() }));
-vi.mock('../../../useCases/clip/removeClip', () => ({ removeClip: vi.fn() }));
+vi.mock('../../../useCases/clipEditing/splitClipWithUndo', () => ({ splitClipWithUndo: vi.fn() }));
 vi.mock('../../../useCases/toggleTrackState/selectTrack', () => ({ selectTrack: vi.fn() }));
 vi.mock('#/modules/Automation/useCases', () => ({
     getAutomationLanes: vi.fn().mockReturnValue([]),
@@ -25,7 +23,6 @@ vi.mock('#/modules/Automation/useCases', () => ({
     stretchAutomationTime: vi.fn(),
     thinAutomationPoints: vi.fn(),
 }));
-vi.mock('#/modules/Command/useCases', () => ({ pushUndoEntry: vi.fn() }));
 vi.mock('../../../useCases/timelineInteractions/commitInlineMidiNoteCreate', () => ({
     commitInlineMidiNoteCreate: vi.fn(),
 }));
@@ -53,20 +50,18 @@ describe('timelineTools', () => {
     });
 
     describe('handleCutTool', () => {
-        it('should return true and not call splitClip if no clip is hit', () => {
+        it('should return true and not split if no clip is hit', () => {
             vi.mocked(hitTestClip).mockReturnValue(null);
             const result = handleCutTool(10, 10, 4);
             expect(result).toBe(true);
-            expect(splitClip).not.toHaveBeenCalled();
+            expect(splitClipWithUndo).not.toHaveBeenCalled();
         });
 
-        it('should call splitClip if a clip is hit', () => {
+        it('should delegate the split to splitClipWithUndo if a clip is hit', () => {
             vi.mocked(hitTestClip).mockReturnValue({ clipId: 'c1' } as any);
-            const track = { id: 't1', clips: [{ id: 'c1', startBeat: 0, endBeat: 8 }], kind: 'audio' };
-            trackStoreMock.state = { tracks: [track] };
 
             handleCutTool(10, 10, 4);
-            expect(splitClip).toHaveBeenCalledWith('c1', 4);
+            expect(splitClipWithUndo).toHaveBeenCalledWith('c1', 4);
         });
     });
 

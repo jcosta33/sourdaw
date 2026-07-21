@@ -98,14 +98,27 @@ describe('redo', () => {
         expect(mocks.undoTreeMoveTo).toHaveBeenCalledWith('callback-1');
     });
 
-    it('keeps a callback entry in future when redo reports that it was not applied', async () => {
+    it('consumes a callback entry that reports it was not applied, keeping past unchanged', async () => {
         const entry = callbackEntry({ redo: () => REDO_NOT_APPLIED });
         mocks.undoStoreValue.value = { past: [], future: [entry] };
 
         await redo();
 
-        expect(mocks.undoStoreSet).not.toHaveBeenCalled();
-        expect(mocks.undoTreeMoveTo).not.toHaveBeenCalled();
+        // Dropped from future without reaching past — pinning it would deadlock
+        // every redoable entry behind it.
+        expect(mocks.undoStoreSet).toHaveBeenCalledWith({ past: [], future: [] });
+    });
+
+    it('drops a not-applied head and re-applies the entry behind it', async () => {
+        const stuck = callbackEntry({ redo: () => REDO_NOT_APPLIED });
+        const behind = actionEntry();
+        mocks.undoStoreValue.value = { past: [], future: [stuck, behind] };
+
+        await redo();
+
+        expect(mocks.executeAppAction).toHaveBeenCalledWith(behind.action);
+        expect(mocks.undoStoreSet).toHaveBeenCalledWith({ past: [behind], future: [] });
+        expect(mocks.undoTreeMoveTo).toHaveBeenCalledWith(behind.id);
     });
 
     it('should not write when future is empty', async () => {

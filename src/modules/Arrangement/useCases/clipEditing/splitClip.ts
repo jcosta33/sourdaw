@@ -6,7 +6,14 @@ import { setTrackState } from '../../repositories/track/setTrackState';
 import { type Clip } from '../../stores/trackStore';
 import { snapToZeroCrossing } from '../timelineInteractions/snapToZeroCrossing';
 
-export function splitClip(clipId: string, splitBeat: number): string | null {
+/**
+ * Split a clip at `splitBeat` (zero-crossing snapped for audio). The left half
+ * keeps the original clip id; the right half gets a fresh id unless
+ * `rightClipId` is provided — redo paths pass the id the original split
+ * produced so stacked splits on the same lineage stay addressable. Returns the
+ * right clip id, or null when the split is rejected.
+ */
+export function splitClip(clipId: string, splitBeat: number, rightClipId?: string): string | null {
     const state = getTrackState();
     if (!state) {
         return null;
@@ -28,7 +35,7 @@ export function splitClip(clipId: string, splitBeat: number): string | null {
             return time;
         }
 
-        const rightId = getNextClipId();
+        const rightId = rightClipId ?? getNextClipId();
         newRightClipId = rightId;
         splitClipType = clip.type;
         adjustedSplit = adjustedSplitBeat;
