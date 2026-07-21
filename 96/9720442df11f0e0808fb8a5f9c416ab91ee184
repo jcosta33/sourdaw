@@ -1,0 +1,19 @@
+src-tauri/src/commands/native_llm.rs
+  s_529b04078df2e3::t_e43131ea5ac296 366-379,395-401,405,489-552
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "969720442df11f0e0808fb8a5f9c416ab91ee184",
+  "prompts": {},
+  "sessions": {
+    "s_529b04078df2e3": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8652-e064-7cd2-9ee3-0de0766ab847",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
