@@ -32,6 +32,17 @@ const createConnectedIdentity = (overrides: Partial<ConnectedControllerIdentity>
     };
 };
 
+const assertPublicMatcherInputContract = (): void => {
+    // @ts-expect-error -- direct callers must provide a complete matcher input contract.
+    matchControllerProfile(null);
+};
+
+void assertPublicMatcherInputContract;
+
+const invokeMatcherAtRuntimeBoundary = (input: unknown): ReturnType<typeof matchControllerProfile> => {
+    return Reflect.apply(matchControllerProfile, undefined, [input]);
+};
+
 describe('matchControllerProfile', () => {
     it('should prefer an exact explicit fingerprint binding over every automatic identity tier', () => {
         const explicitlyBound = createCandidate({
@@ -313,15 +324,15 @@ describe('matchControllerProfile', () => {
             reason: 'invalid-explicit-binding',
         },
     ])('should fail closed without throwing for $name', ({ input, reason }) => {
-        const candidatesBefore = [...input.candidates];
+        const inputBefore = structuredClone(input);
+        const result = matchControllerProfile(input);
 
-        expect(() => matchControllerProfile(input)).not.toThrow();
-        expect(matchControllerProfile(input)).toEqual({
+        expect(result).toEqual({
             status: 'invalid-input',
             connectedInstanceId: input.connectedIdentity.instanceId,
             reason,
         });
-        expect(input.candidates).toEqual(candidatesBefore);
+        expect(input).toEqual(inputBefore);
     });
 
     it.each<{
@@ -426,11 +437,14 @@ describe('matchControllerProfile', () => {
             reason: 'invalid-explicit-binding',
         },
     ])('should reject malformed runtime input without throwing for $name', ({ input, connectedInstanceId, reason }) => {
-        expect(() => matchControllerProfile(input)).not.toThrow();
-        expect(matchControllerProfile(input)).toEqual({
+        const inputBefore = structuredClone(input);
+        const result = invokeMatcherAtRuntimeBoundary(input);
+
+        expect(result).toEqual({
             status: 'invalid-input',
             connectedInstanceId,
             reason,
         });
+        expect(input).toEqual(inputBefore);
     });
 });

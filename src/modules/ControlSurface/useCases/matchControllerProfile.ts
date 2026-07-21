@@ -301,7 +301,6 @@ const matchesManufacturerAlias = (
     return candidate.productAliases.some((alias) => normalizeExactName(alias) === productName);
 };
 
-export function matchControllerProfile(input: unknown): MatchControllerProfileOutput;
 export function matchControllerProfile(input: MatchControllerProfileInput): MatchControllerProfileOutput;
 export function matchControllerProfile(input: unknown): MatchControllerProfileOutput {
     if (!isUnknownRecord(input)) {
