@@ -1,0 +1,19 @@
+crates/daw-dsp/src/bacteria/crossover.rs
+  s_c2fca615e81f34::t_96971a6b11f74b 137-141,144-151,153-156,167-172,180,256-333
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "adc7e553c7af03cab5b3d6c33abcd8ab7be132fb",
+  "prompts": {},
+  "sessions": {
+    "s_c2fca615e81f34": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f74e9-e1c5-7142-85d2-4c577b3973c0",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
