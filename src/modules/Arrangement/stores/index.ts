@@ -28,6 +28,8 @@ export type { TrackStoreState, Track, Device, Clip } from './trackStore';
 export { persistDeviceParam } from './persistDeviceParam';
 export { resolveEligibleDeviceWriteTarget } from './resolveEligibleDeviceWriteTarget';
 export type { DeviceWriteTargetResolution } from './resolveEligibleDeviceWriteTarget';
+export { resolveEligibleClipWriteTarget } from './resolveEligibleClipWriteTarget';
+export type { ClipWriteTargetResolution } from './resolveEligibleClipWriteTarget';
 export { updateClipInStore } from './updateClipInStore';
 export { appendClipToTrack } from './appendClipToTrack';
 export { appendTrack } from './appendTrack';
