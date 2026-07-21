@@ -1,0 +1,19 @@
+crates/daw-dsp/src/crumbs/engine.rs
+  s_4fb87b99bd347c::t_1b855484d267ff 472-477,623-695
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "02272fae3aa7dbd5a0ca5d7b92fe223da559b29e",
+  "prompts": {},
+  "sessions": {
+    "s_4fb87b99bd347c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8697-866b-7722-a7ea-d6ac2e4bcdf8",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
