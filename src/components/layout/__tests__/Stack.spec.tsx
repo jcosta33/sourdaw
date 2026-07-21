@@ -1,7 +1,7 @@
 import { createRef } from 'react';
 
-import { render, screen } from '@testing-library/react';
-import { describe, it, expect } from 'vitest';
+import { fireEvent, render, screen } from '@testing-library/react';
+import { describe, it, expect, vi } from 'vitest';
 
 import { Stack } from '../Stack';
 
@@ -9,7 +9,7 @@ describe('Stack', () => {
     it('should render with default flex column, gap, alignment, and justification classes', () => {
         render(<Stack data-testid="stack">Content</Stack>);
         const element = screen.getByTestId('stack');
-        expect(element).toHaveClass('flex', 'flex-col', 'gap-0', 'items-stretch', 'justify-start');
+        expect(element).toHaveClass('flex', 'flex-col', 'min-h-0', 'gap-0', 'items-stretch', 'justify-start');
     });
 
     it('should render children', () => {
@@ -24,8 +24,11 @@ describe('Stack', () => {
     describe('gap prop', () => {
         it.each([
             [0, 'gap-0'],
+            [0.5, 'gap-0.5'],
             [1, 'gap-1'],
+            [1.5, 'gap-1.5'],
             [2, 'gap-2'],
+            [2.5, 'gap-2.5'],
             [3, 'gap-3'],
             [4, 'gap-4'],
             [6, 'gap-6'],
@@ -159,6 +162,17 @@ describe('Stack', () => {
             );
             expect(ref.current).toBe(screen.getByTestId('stack'));
         });
+
+        it('should match a selected polymorphic element', () => {
+            const ref = createRef<HTMLElement>();
+            render(
+                <Stack as="section" ref={ref} data-testid="stack">
+                    Content
+                </Stack>
+            );
+            expect(ref.current).toBe(screen.getByTestId('stack'));
+            expect(ref.current?.tagName).toBe('SECTION');
+        });
     });
 
     describe('className merging', () => {
@@ -171,19 +185,68 @@ describe('Stack', () => {
             const element = screen.getByTestId('stack');
             expect(element).toHaveClass('flex', 'flex-col', 'custom-class');
         });
-    });
 
-    describe('HTML attributes', () => {
-        it('should pass through arbitrary HTML attributes', () => {
+        it('should give conflicting caller utilities precedence', () => {
             render(
-                <Stack data-testid="stack" id="test-id" title="Test Title" aria-label="Test Label">
+                <Stack className="flex-row min-h-full gap-8 items-center justify-end" data-testid="stack">
                     Content
                 </Stack>
             );
             const element = screen.getByTestId('stack');
+            expect(element).toHaveClass('flex-row', 'min-h-full', 'gap-8', 'items-center', 'justify-end');
+            expect(element).not.toHaveClass('flex-col', 'min-h-0', 'gap-0', 'items-stretch', 'justify-start');
+        });
+    });
+
+    describe('HTML attributes', () => {
+        it('should pass through arbitrary HTML attributes', () => {
+            const onClick = vi.fn();
+            render(
+                <Stack
+                    data-testid="stack"
+                    data-proof="native"
+                    id="test-id"
+                    title="Test Title"
+                    aria-label="Test Label"
+                    style={{ color: 'rgb(1, 2, 3)' }}
+                    onClick={onClick}
+                >
+                    Content
+                </Stack>
+            );
+            const element = screen.getByTestId('stack');
+            fireEvent.click(element);
             expect(element).toHaveAttribute('id', 'test-id');
             expect(element).toHaveAttribute('title', 'Test Title');
             expect(element).toHaveAttribute('aria-label', 'Test Label');
+            expect(element).toHaveAttribute('data-proof', 'native');
+            expect(element).toHaveStyle({ color: 'rgb(1, 2, 3)' });
+            expect(onClick).toHaveBeenCalledOnce();
         });
+
+        it('should preserve element-specific attributes', () => {
+            render(
+                <Stack as="button" type="button" disabled data-testid="stack">
+                    Content
+                </Stack>
+            );
+            expect(screen.getByTestId('stack')).toHaveAttribute('type', 'button');
+            expect(screen.getByTestId('stack')).toBeDisabled();
+        });
+    });
+
+    it('should render children exactly once in their original order', () => {
+        render(
+            <Stack data-testid="stack">
+                <span>First</span>
+                <span>Second</span>
+                <span>Third</span>
+            </Stack>
+        );
+        expect(Array.from(screen.getByTestId('stack').children, (child) => child.textContent)).toEqual([
+            'First',
+            'Second',
+            'Third',
+        ]);
     });
 });
