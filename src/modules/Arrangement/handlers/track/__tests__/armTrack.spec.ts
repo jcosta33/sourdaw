@@ -22,12 +22,36 @@ describe('handleArmTrack', () => {
     });
 
     it('executes armTrack with the provided payload', () => {
-        void handleArmTrack.execute({
+        mocks.armTrack.mockReturnValue(true);
+        const result = handleArmTrack.execute({
             type: 'armTrack',
             payload: { trackId: 't1', armed: true },
         });
 
         expect(mocks.armTrack).toHaveBeenCalledWith('t1', true);
+        expect(result).toEqual({ status: 'written' });
+    });
+
+    it('reports no-write when arming is rejected', () => {
+        mocks.armTrack.mockReturnValue(false);
+
+        const result = handleArmTrack.execute({
+            type: 'armTrack',
+            payload: { trackId: 'vca-1', armed: true },
+        });
+
+        expect(result).toEqual({ status: 'no-write' });
+    });
+
+    it('reports permitted disarm cleanup as a write', () => {
+        mocks.armTrack.mockReturnValue(true);
+
+        const result = handleArmTrack.execute({
+            type: 'armTrack',
+            payload: { trackId: 'vca-1', armed: false },
+        });
+
+        expect(result).toEqual({ status: 'written' });
     });
 
     it('provides a description reflecting armed state', () => {

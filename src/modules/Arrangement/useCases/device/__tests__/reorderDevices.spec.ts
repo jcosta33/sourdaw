@@ -5,9 +5,14 @@ import { reorderDevices } from '../reorderDevices';
 const mocks = vi.hoisted(() => {
     type Track = { devices: { id: string }[] };
     return {
+        getTrackById: vi.fn(),
         updateTrack: vi.fn<(trackId: string, updater: (track: Track) => Track) => void>(),
     };
 });
+
+vi.mock('../../../repositories/track/getTrackById', () => ({
+    getTrackById: mocks.getTrackById,
+}));
 
 vi.mock('../../../repositories/track/updateTrack', () => ({
     updateTrack: mocks.updateTrack,
@@ -34,5 +39,13 @@ describe('reorderDevices', () => {
         expect(result.devices[0]?.id).toBe('d2');
         expect(result.devices[1]?.id).toBe('d1');
         expect(result.devices[2]?.id).toBe('d3');
+    });
+
+    it('rejects dormant VCA reorder before a project write', () => {
+        mocks.getTrackById.mockReturnValue({ id: 'vca-1', kind: 'vca', devices: [] });
+
+        reorderDevices('vca-1', 0, 1);
+
+        expect(mocks.updateTrack).not.toHaveBeenCalled();
     });
 });

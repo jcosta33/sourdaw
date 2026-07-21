@@ -4,24 +4,28 @@ import { transportStore } from '#/modules/Transport/stores';
 
 import { getTrackState } from '../../../repositories/track/getTrackState';
 import { updateTrack } from '../../../repositories/track/updateTrack';
+import { getTrackEligibility } from '../../../stores/trackEligibility';
 import { type AutomationMode } from '../../../stores/trackStore';
 
 const RECORDING_MODES: ReadonlySet<AutomationMode> = new Set(['write', 'touch', 'latch']);
 
-export function setDeviceParameter(deviceId: string, paramId: string, value: number): void {
+export function setDeviceParameter(deviceId: string, paramId: string, value: number): boolean {
     // Guard against invalid values that could crash the audio engine
     if (!Number.isFinite(value)) {
-        return;
+        return false;
     }
 
     const state = getTrackState();
     if (!state) {
-        return;
+        return false;
     }
 
     const track = state.tracks.find((time) => time.devices.some((data) => data.id === deviceId));
     if (!track) {
-        return;
+        return false;
+    }
+    if (!getTrackEligibility(track.kind).acceptsDeviceUpdate) {
+        return false;
     }
 
     // Update audio engine (non-blocking)
@@ -40,4 +44,6 @@ export function setDeviceParameter(deviceId: string, paramId: string, value: num
     if (transport?.isPlaying && RECORDING_MODES.has(track.automationMode)) {
         recordAutomationValue(track.id, `${deviceId}:${paramId}`, value, transport.playheadPosition);
     }
+
+    return true;
 }
