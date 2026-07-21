@@ -1,0 +1,72 @@
+{
+  "schema_version": 1,
+  "digest_algorithm": "sha256",
+  "sample_encoding": "ieee754-f32-le",
+  "channel_layout": "interleaved",
+  "provenance": "Generated entirely from in-house synthetic formulas in crates/daw-dsp/tests/time_stretch_contract.rs; no copied audio, external corpus, or third-party generator is used.",
+  "fixtures": [
+    {
+      "path": "canonical/mono_440hz.f32le",
+      "role": "canonical-input",
+      "sample_rate_hz": 48000,
+      "channels": 1,
+      "frames": 192000,
+      "construction": "Four-second 440 Hz sine at 10^(-12/20) full scale with 960-frame (20 ms) raised-cosine fade-in and fade-out.",
+      "sha256": "2f0f3fc39f5b0988f8b7cb1f4d78f2c35896609c7a426e2ab73baa3623c3ed55"
+    },
+    {
+      "path": "canonical/mono_880hz.f32le",
+      "role": "canonical-input",
+      "sample_rate_hz": 48000,
+      "channels": 1,
+      "frames": 192000,
+      "construction": "Four-second 880 Hz sine at 10^(-12/20) full scale with 960-frame (20 ms) raised-cosine fade-in and fade-out.",
+      "sha256": "825b624e6835de54aface6b87ecd0617c7f9e456a27500d5a46981a1f70a8688"
+    },
+    {
+      "path": "canonical/stereo_440_880hz.f32le",
+      "role": "canonical-input",
+      "sample_rate_hz": 48000,
+      "channels": 2,
+      "frames": 192000,
+      "construction": "Frame-interleaved stereo: the canonical 440 Hz mono tone on the left and canonical 880 Hz mono tone on the right.",
+      "sha256": "14b76599eeef3bf352d54c5b8800ece9f220eb8d513d725f6833b1f8e0a792ec"
+    },
+    {
+      "path": "canonical/percussive_16_attacks.f32le",
+      "role": "canonical-input",
+      "sample_rate_hz": 48000,
+      "channels": 1,
+      "frames": 192000,
+      "construction": "Sixteen attacks at exact 12000-frame (250 ms) intervals. Each 2400-frame attack is 0.45 * exp(-70*t) times the mean of cosine partials at 180, 360, 720, 1440, 2880, and 5760 Hz; all carriers remain below Nyquist.",
+      "sha256": "c8da5e0c3f4728a29dc78a63cbf9280aca3a415a7fc1071a12c6ca0730d99629"
+    },
+    {
+      "path": "characterization/crumbs_input_4096.f32le",
+      "role": "crumbs-characterization-input",
+      "sample_rate_hz": 48000,
+      "channels": 1,
+      "frames": 4096,
+      "construction": "4096-frame mono input: 0.2*sin(2*pi*440*t) + 0.1*sin(2*pi*660*t), multiplied by 128-frame raised-cosine edge fades.",
+      "sha256": "97131ca3e9be54adc39a9c87a9a377e1545880bfe2e43c7551c02723d8cf35d5"
+    },
+    {
+      "path": "characterization/phase_vocoder_duration_ratio_1_25.f32le",
+      "role": "crumbs-characterization-output",
+      "sample_rate_hz": 48000,
+      "channels": 1,
+      "frames": 4608,
+      "construction": "Current Crumbs PhaseVocoder::process output for crumbs_input_4096.f32le at its inverse output-duration ratio 1.25 (canonical playback-rate ratio 0.8). Bounded characterization only; not a realtime or product-acceptance fixture.",
+      "sha256": "bb8849bba547dbd115b978b9574a93032f78e117a50d9d4a345ac0e708f2ca2c"
+    },
+    {
+      "path": "characterization/wsola_duration_ratio_1_25.f32le",
+      "role": "crumbs-characterization-output",
+      "sample_rate_hz": 48000,
+      "channels": 1,
+      "frames": 5120,
+      "construction": "Current Crumbs WsolaProcessor::process output for crumbs_input_4096.f32le at its inverse output-duration ratio 1.25 (canonical playback-rate ratio 0.8). Bounded characterization only; not a realtime or product-acceptance fixture.",
+      "sha256": "8a0679ff8613be3d7c121010162ee5e99dd1ba4d39b042ce2ad7e9a280e80654"
+    }
+  ]
+}
