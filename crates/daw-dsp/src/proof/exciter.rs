@@ -30,7 +30,18 @@ struct BandExciter {
     // 2x oversampling for anti-aliasing
     os_l: Oversampler2x,
     os_r: Oversampler2x,
+    // Dry-path delay matching the oversampler round trip for comb-free blending
+    dry_l: [f32; DRY_DELAY_BUF],
+    dry_r: [f32; DRY_DELAY_BUF],
+    dry_pos: usize,
 }
+
+/// Round-trip group delay of the 2x oversample pair, in base-rate samples.
+/// The half-band kernels give 7 samples at the 2x rate per direction; the
+/// decimation grid splits the round-trip center tap evenly across base
+/// samples 6 and 7 (measured impulse centroid: 6.5), so the dry path uses a
+/// 6.5-sample linear-interpolated delay to match it.
+const DRY_DELAY_BUF: usize = 8;
 
 impl BandExciter {
     fn new(sr: f64) -> Self {
@@ -49,7 +60,25 @@ impl BandExciter {
             de_coeffs: BiquadCoeffs::high_shelf(10000.0, -6.0, 0.707, sr),
             os_l: Oversampler2x::new(),
             os_r: Oversampler2x::new(),
+            dry_l: [0.0; DRY_DELAY_BUF],
+            dry_r: [0.0; DRY_DELAY_BUF],
+            dry_pos: 0,
         }
+    }
+
+    /// Delay the dry signal by the wet path's 6.5-base-sample round-trip group
+    /// delay (fixed ring buffer — no allocation on the RT path).
+    #[inline]
+    fn delay_dry(&mut self, l: f32, r: f32) -> (f32, f32) {
+        self.dry_l[self.dry_pos] = l;
+        self.dry_r[self.dry_pos] = r;
+        self.dry_pos = (self.dry_pos + 1) % DRY_DELAY_BUF;
+        let i6 = (self.dry_pos + DRY_DELAY_BUF - 7) % DRY_DELAY_BUF; // x[n-6]
+        let i7 = self.dry_pos % DRY_DELAY_BUF; // x[n-7]
+        (
+            0.5 * (self.dry_l[i6] + self.dry_l[i7]),
+            0.5 * (self.dry_r[i6] + self.dry_r[i7]),
+        )
     }
 
     #[inline]
@@ -106,9 +135,11 @@ impl BandExciter {
             (wet_l, wet_r)
         };
 
-        // Parallel blend
-        let out_l = l * (1.0 - self.blend) + wet_l * self.blend;
-        let out_r = r * (1.0 - self.blend) + wet_r * self.blend;
+        // Parallel blend — dry is delayed to match the wet path's round-trip
+        // group delay, so the blend sums in phase instead of comb-filtering.
+        let (dry_l, dry_r) = self.delay_dry(l, r);
+        let out_l = dry_l * (1.0 - self.blend) + wet_l * self.blend;
+        let out_r = dry_r * (1.0 - self.blend) + wet_r * self.blend;
         (out_l, out_r)
     }
 }
@@ -218,5 +249,59 @@ fn transistor_clip(x: f32, drive: f32, knee: f32) -> f32 {
                     .max(0.0)
                     .min(1.0);
         clipped * x.signum() / drive.max(0.01)
+    }
+}
+
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn blend_response_ratio(freq: f32) -> f32 {
+        let mut band = BandExciter::new(48000.0);
+        band.enabled = true;
+        band.drive = 0.0;
+        band.blend = 0.5;
+        let amp = 0.05_f32;
+        let mut in_e = 0.0_f32;
+        let mut out_e = 0.0_f32;
+        for n in 0..9600 {
+            let x = amp * (2.0 * std::f32::consts::PI * freq * n as f32 / 48000.0).sin();
+            let (y, _) = band.process_sample(x, 0.0);
+            if n >= 4800 {
+                in_e += x * x;
+                out_e += y * y;
+            }
+        }
+        (out_e / in_e).sqrt()
+    }
+
+    /// Parallel blend at default 0.5 / drive 0: the dry path is delayed to
+    /// match the oversampler round trip, so the response is flat instead of
+    /// comb-filtered (pre-fix: ratio 0.11 at 3428 Hz, 0.13 at 4000 Hz).
+    /// Residual high-frequency tilt is the dry interpolator's, not a comb.
+    #[test]
+    fn blend_response_has_no_comb_notch() {
+        for &f in &[500.0_f32, 1000.0, 2000.0, 3000.0, 3428.0, 4000.0, 6000.0, 8000.0] {
+            let ratio = blend_response_ratio(f);
+            assert!(
+                (0.90..=1.05).contains(&ratio),
+                "comb-free blend response expected at {:.0} Hz, got ratio {:.4}",
+                f,
+                ratio
+            );
+        }
+    }
+
+    /// Pin the former first comb notch explicitly: 1/(2·6.5·T) ≈ 3.4 kHz.
+    #[test]
+    fn former_comb_notch_is_filled() {
+        let ratio = blend_response_ratio(3428.0);
+        assert!(
+            ratio >= 0.95,
+            "former comb notch at 3428 Hz must be filled, got ratio {:.4}",
+            ratio
+        );
     }
 }

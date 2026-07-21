@@ -211,3 +211,31 @@ mod tests {
         );
     }
 }
+
+#[cfg(test)]
+mod group_delay_tests {
+    use super::*;
+
+    /// The exciter's dry-path compensation is built on this number: the
+    /// round-trip impulse centroid must stay at 6.5 base-rate samples
+    /// (7 per direction at the 2x rate, split across base samples 6 and 7).
+    #[test]
+    fn round_trip_group_delay_is_six_and_a_half_base_samples() {
+        let mut os = Oversampler2x::new();
+        let mut numerator = 0.0_f32;
+        let mut denominator = 0.0_f32;
+        for n in 0..64 {
+            let x = if n == 0 { 1.0 } else { 0.0 };
+            let (s0, s1) = os.upsample(x);
+            let y = os.downsample(s0, s1);
+            numerator += n as f32 * y.abs();
+            denominator += y.abs();
+        }
+        let centroid = numerator / denominator;
+        assert!(
+            (6.4..=6.6).contains(&centroid),
+            "round-trip group delay must stay at 6.5 base samples, got {:.3}",
+            centroid
+        );
+    }
+}
