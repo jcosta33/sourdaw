@@ -1,0 +1,25 @@
+docs/architecture/layout-primitives-census.json
+  s_0ca844d2ea8375::t_18da63df341255 2,55-2795
+docs/architecture/layout-primitives-census.md
+  s_0ca844d2ea8375::t_4eabed01480384 5,68-2810
+scripts/__tests__/layoutPrimitivesCensus.spec.ts
+  s_0ca844d2ea8375::t_fff7e3abe6713a 665-708,986-1017,1068-1148,1343-1402,1411-1417,1427-1428,1445,1447-1448
+scripts/layoutPrimitivesCensus.ts
+  s_0ca844d2ea8375::t_63035f11d45a77 8,37,57-65,74-75,156-178,206,234-283,933-1173,1576-1577,1584-1585,1636-1637,1717-1719,1721,1729-1738,1744-1746,1752,1757,1765,1771,1787-1789,1821-1824,1828-1830,1835-1836,1858-1859,1867-1872,1908-1915,1937-1942,2099-2127,2137,2139,2146-2147,2199-2201,2406-2412,2478-2479,2485-2488,2490
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "776ee2710307c4ac58ac5c833000d782ef35aa96",
+  "prompts": {},
+  "sessions": {
+    "s_0ca844d2ea8375": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f82b1-7798-7f71-b9c6-2f713748689f",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
