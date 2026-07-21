@@ -11,8 +11,6 @@ import { trackStore } from '../../stores/trackStore';
  * one clip — recording finalize fires updateClip up to 2× per armed
  * track and paid a full-project clone per call.
  */
-export function updateClip(clipId: string, updater: (clip: Clip) => Clip): boolean;
-export function updateClip(clipId: string, updater: (clip: Clip) => Clip): void;
 export function updateClip(clipId: string, updater: (clip: Clip) => Clip): boolean {
     const target = resolveEligibleClipWriteTarget({ clipId });
     if (target.status !== 'eligible' || !('clipId' in target)) {

@@ -70,7 +70,7 @@ function normalizeStore(): StoreNormalization {
 
     const candidates: unknown = Reflect.get(state, 'tracks');
     if (!Array.isArray(candidates)) {
-        return { status: 'missing' };
+        return { status: 'ineligible' };
     }
 
     const trackIds = new Set<string>();
@@ -150,7 +150,7 @@ function resolveClipTarget(tracks: ReadonlyArray<NormalizedTrackOwner>, clipId: 
     return MISSING;
 }
 
-export function resolveEligibleClipWriteTarget(input: ClipWriteTargetInput): ClipWriteTargetResolution {
+function resolveClipWriteTarget(input: unknown): ClipWriteTargetResolution {
     if (!isObject(input)) {
         return INELIGIBLE;
     }
@@ -183,4 +183,12 @@ export function resolveEligibleClipWriteTarget(input: ClipWriteTargetInput): Cli
         return resolveTrackTarget(store.tracks, requestedId);
     }
     return resolveClipTarget(store.tracks, requestedId);
+}
+
+export function resolveEligibleClipWriteTarget(input: ClipWriteTargetInput): ClipWriteTargetResolution {
+    try {
+        return resolveClipWriteTarget(input);
+    } catch {
+        return INELIGIBLE;
+    }
 }

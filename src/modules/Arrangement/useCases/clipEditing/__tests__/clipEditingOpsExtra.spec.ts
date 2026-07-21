@@ -1,10 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
-    updateClip: vi.fn<(typeof updateClipRepo)['updateClip']>(),
+    updateClip: vi.fn<(typeof updateClipUseCase)['updateClip']>(),
 }));
 
-vi.mock('../../../repositories/track/updateClip', () => ({ updateClip: mocks.updateClip }));
+vi.mock('../../updateClip', () => ({ updateClip: mocks.updateClip }));
 
 import { ClipDummy } from '../../../__tests__/ClipDummy';
 import { type Clip } from '../../../models/Track';
@@ -12,13 +12,14 @@ import { resetOverride } from '../resetOverride';
 import { slipClipContent } from '../slipClipContent';
 import { toggleInlineEditing } from '../toggleInlineEditing';
 
-import type * as updateClipRepo from '../../../repositories/track/updateClip';
+import type * as updateClipUseCase from '../../updateClip';
 
 /** Route the mocked repository through the given clip and collect updater results. */
 function captureUpdate(clip: Clip): Clip[] {
     const result: Clip[] = [];
     mocks.updateClip.mockImplementation((_clipId, updater) => {
         result.push(updater(clip));
+        return true;
     });
     return result;
 }

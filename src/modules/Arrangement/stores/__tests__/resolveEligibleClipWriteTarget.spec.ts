@@ -84,6 +84,54 @@ describe('resolveEligibleClipWriteTarget', () => {
         expect(resolveEligibleClipWriteTarget({ clipId: 'clip-1' })).toEqual({ status: 'missing' });
     });
 
+    it('fails closed when the tracks accessor throws', () => {
+        const state = { ...defaultTrackState };
+        Object.defineProperty(state, 'tracks', {
+            configurable: true,
+            get() {
+                throw new Error('tracks unavailable');
+            },
+        });
+        vi.spyOn(trackStore, 'value', 'get').mockReturnValue(state);
+
+        expect(() => resolveEligibleClipWriteTarget({ trackId: 'track-1' })).not.toThrow();
+        expect(resolveEligibleClipWriteTarget({ trackId: 'track-1' })).toEqual({ status: 'ineligible' });
+    });
+
+    it('fails closed when track or clip proxy reads throw', () => {
+        const throwingTrack = new Proxy(makeTrack('track-1'), {
+            get() {
+                throw new Error('track unavailable');
+            },
+        });
+        const valueSpy = vi
+            .spyOn(trackStore, 'value', 'get')
+            .mockReturnValue({ ...defaultTrackState, tracks: [throwingTrack] });
+
+        expect(() => resolveEligibleClipWriteTarget({ trackId: 'track-1' })).not.toThrow();
+        expect(resolveEligibleClipWriteTarget({ trackId: 'track-1' })).toEqual({ status: 'ineligible' });
+
+        const throwingClip = new Proxy(makeClip('clip-1', 'track-1'), {
+            get() {
+                throw new Error('clip unavailable');
+            },
+        });
+        const track = makeTrack('track-1');
+        track.clips = [throwingClip];
+        valueSpy.mockReturnValue({ ...defaultTrackState, tracks: [track] });
+
+        expect(() => resolveEligibleClipWriteTarget({ clipId: 'clip-1' })).not.toThrow();
+        expect(resolveEligibleClipWriteTarget({ clipId: 'clip-1' })).toEqual({ status: 'ineligible' });
+    });
+
+    it('classifies a present non-array tracks value as ineligible', () => {
+        const state = { ...defaultTrackState };
+        Object.defineProperty(state, 'tracks', { configurable: true, value: {} });
+        vi.spyOn(trackStore, 'value', 'get').mockReturnValue(state);
+
+        expect(resolveEligibleClipWriteTarget({ trackId: 'track-1' })).toEqual({ status: 'ineligible' });
+    });
+
     it('fails closed for duplicate track and clip identities', () => {
         setTracks([makeTrack('duplicate-track'), makeTrack('duplicate-track')]);
         expect(resolveEligibleClipWriteTarget({ trackId: 'duplicate-track' })).toEqual({ status: 'ineligible' });

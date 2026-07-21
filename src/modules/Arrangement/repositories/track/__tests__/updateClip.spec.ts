@@ -1,4 +1,4 @@
-import { vi, describe, it, expect, beforeEach } from 'vitest';
+import { vi, describe, it, expect, expectTypeOf, beforeEach } from 'vitest';
 
 vi.mock('../../../stores/trackStore', () => {
     const internal = { value: { tracks: [], selectedTrackId: null } };
@@ -43,6 +43,8 @@ describe('updateClip', () => {
 
         const didWrite = updateClip('c1', updater);
 
+        expectTypeOf<ReturnType<typeof updateClip>>().toEqualTypeOf<boolean>();
+        expectTypeOf(didWrite).toEqualTypeOf<boolean>();
         const storedClip = trackStore.value!.tracks[0]?.clips[0];
         if (!storedClip) {
             throw new Error('expected stored clip');
