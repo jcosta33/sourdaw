@@ -1,0 +1,37 @@
+src/components/daw/__tests__/DawControlStrip.spec.tsx
+  s_d551553650f8b1::t_bcc978b0ae3c6f 33,60
+src/components/daw/__tests__/DawDialogBody.spec.tsx
+  s_d551553650f8b1::t_7987dab6bf0976 33
+src/components/daw/__tests__/DawDialogFooter.spec.tsx
+  s_d551553650f8b1::t_c41be57f1114e0 62
+src/components/daw/__tests__/DawDialogSection.spec.tsx
+  s_d551553650f8b1::t_6d1b1b81e5e529 29,102
+src/components/daw/__tests__/DawMetricCluster.spec.tsx
+  s_d551553650f8b1::t_763e9e5b3eb7f6 24,77
+src/components/daw/__tests__/DawPanelSurface.spec.tsx
+  s_d551553650f8b1::t_630229f09030f7 59
+src/components/daw/__tests__/DawPluginMetricStrip.spec.tsx
+  s_d551553650f8b1::t_d2faa9d9e32e8d 40,67
+src/components/daw/__tests__/DawPluginRail.spec.tsx
+  s_d551553650f8b1::t_9dc290bdc55e5f 36
+src/components/daw/__tests__/DawPluginSectionCard.spec.tsx
+  s_d551553650f8b1::t_7bcf880dc8c320 67
+src/components/daw/__tests__/DawUtilitySection.spec.tsx
+  s_d551553650f8b1::t_ac6bc8650b582d 42,75
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "301041d09f438ad277a7c522c4250203f99f5fc9",
+  "prompts": {},
+  "sessions": {
+    "s_d551553650f8b1": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f83c7-243c-7291-b985-3645b77809ca",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
