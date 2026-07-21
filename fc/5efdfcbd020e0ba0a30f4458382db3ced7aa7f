@@ -1,0 +1,29 @@
+crates/daw-dsp/src/proof/oversample.rs
+  s_c2fca615e81f34::t_517ae3abbff908 214-241
+crates/daw-dsp/src/proof/exciter.rs
+  s_0e392cd29f25ae::t_b199cafff83d9b 33-36,39-45,63-65,69-83,138-142,254-307
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "fc5efdfcbd020e0ba0a30f4458382db3ced7aa7f",
+  "prompts": {},
+  "sessions": {
+    "s_0e392cd29f25ae": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f86ec-e043-7142-a334-3a300e85b8b5",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_c2fca615e81f34": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f74e9-e1c5-7142-85d2-4c577b3973c0",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
