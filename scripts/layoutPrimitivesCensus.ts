@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url';
 
 import ts from 'typescript';
 
-export const LAYOUT_CENSUS_SCHEMA_VERSION = 1;
+export const LAYOUT_CENSUS_SCHEMA_VERSION = 2;
 export const PRODUCTION_ROOTS = ['src'] as const;
 export const EXCLUDED_PATH_PATTERNS = [
     '**/__tests__/**',
@@ -34,7 +34,7 @@ export const ALLOWED_LAYOUT_DISPOSITIONS = [
     'one-off',
 ] as const;
 
-export const REVIEWED_LAYOUT_CENSUS_DIGEST = 'ffe2d557494b34c68b4c0eac1e04edc228948a16bcce8a5e7b938f373b233d65';
+export const REVIEWED_LAYOUT_CENSUS_DIGEST = '014008d6c5e4f4c8292952fef9d40774dfabd4ec61de3fd62b5873380408bc26';
 
 const LEGACY_ONE_OFF_RATIONALE =
     'Native semantics, refs, handlers, positioning, overflow, child selectors, inline styles, spread attributes, or unsupported geometry require owner-specific proof.';
@@ -54,6 +54,15 @@ export type LayoutRiskFlags = {
     hasChildSelectors: boolean;
     hasInlineStyle: boolean;
     hasSpreadAttributes: boolean;
+    hasDynamicElement: boolean;
+    hasUnresolvedSemanticAncestor: boolean;
+};
+
+export type LayoutDecompositionMove = {
+    plan: 'CHANGE-module-decomposition';
+    status: 'move-conflict' | 'checked-no-conflict';
+    currentOwner: string;
+    targetOwner: string | null;
 };
 
 export type LayoutOccurrence = {
@@ -62,6 +71,8 @@ export type LayoutOccurrence = {
     line: number;
     occurrence: number;
     sourceFingerprint: string;
+    enclosingOwner: string;
+    decompositionMove: LayoutDecompositionMove;
     patternFamily: string;
     patternClass: string;
     currentPattern: string;
@@ -142,6 +153,29 @@ type ClassExpressionAnalysis = {
     bindingEvidence: string[];
 };
 
+type SemanticValueAnalysis = {
+    evidence: string[];
+    unresolved: boolean;
+};
+
+type SemanticSpreadAnalysis = SemanticValueAnalysis & {
+    hasSemanticProperties: boolean;
+};
+
+type SemanticAttributeAnalysis = SemanticValueAnalysis & {
+    hasSemanticAttributes: boolean;
+};
+
+type SemanticAncestorAnalysis = {
+    evidence: string[];
+    unresolved: boolean;
+};
+
+type SourceFingerprintEvidence = {
+    fingerprint: string;
+    hasUnresolvedSemanticAncestor: boolean;
+};
+
 type ImportedLayoutTags = {
     primitiveTags: Map<string, string>;
     primitiveNamespaces: Set<string>;
@@ -169,6 +203,7 @@ const primitiveDefaults = new Map<string, string>([
     ['Spacer', 'div'],
     ['Divider', 'div'],
 ]);
+const auditedPolymorphicPrimitives = new Set(['Row', 'Stack', 'Grid']);
 const genericIntrinsicElements = new Set(['div', 'span']);
 const semanticAttributeNames = new Set(['contentEditable', 'draggable', 'href', 'htmlFor', 'tabIndex']);
 const responsivePrefix = /^(?:(?:sm|md|lg|xl|2xl|max-\[[^\]]+\]|min-\[[^\]]+\])|@[^:]+):/;
@@ -194,6 +229,56 @@ function intrinsicElementHasSemantics(tagName: string): boolean {
 
 function hash(value: string): string {
     return createHash('sha256').update(value).digest('hex').slice(0, 16);
+}
+
+function currentOwnerForPath(repositoryPath: string): string {
+    const moduleMatch = /^src\/modules\/([^/]+)\//.exec(repositoryPath);
+    if (moduleMatch) {
+        return moduleMatch[1];
+    }
+    const areaMatch = /^src\/([^/]+)\//.exec(repositoryPath);
+    if (areaMatch) {
+        return areaMatch[1];
+    }
+    return 'src';
+}
+
+function decompositionTargetForPath(repositoryPath: string): string | null {
+    if (repositoryPath === 'src/modules/AiRuntime/presentations/views/VoiceCommandOverlay.tsx') {
+        return 'Voice';
+    }
+    if (
+        repositoryPath === 'src/modules/AiRuntime/presentations/views/MixAnalysisPanel.tsx' ||
+        repositoryPath.startsWith('src/modules/AiRuntime/presentations/components/mixAnalysis/')
+    ) {
+        return 'MixAdvisor';
+    }
+    if (repositoryPath === 'src/modules/Automation/presentations/views/ModulationMatrix.tsx') {
+        return 'Modulation';
+    }
+    if (repositoryPath.startsWith('src/modules/AudioEngine/')) {
+        return 'AudioEngineCore';
+    }
+    return null;
+}
+
+function decompositionMoveForPath(repositoryPath: string): LayoutDecompositionMove {
+    const currentOwner = currentOwnerForPath(repositoryPath);
+    const targetOwner = decompositionTargetForPath(repositoryPath);
+    if (targetOwner) {
+        return {
+            plan: 'CHANGE-module-decomposition',
+            status: 'move-conflict',
+            currentOwner,
+            targetOwner,
+        };
+    }
+    return {
+        plan: 'CHANGE-module-decomposition',
+        status: 'checked-no-conflict',
+        currentOwner,
+        targetOwner: null,
+    };
 }
 
 function reviewDigestForOccurrences(occurrences: LayoutOccurrence[]): string {
@@ -418,15 +503,6 @@ function attributeNameHasSemantics(attributeName: string): boolean {
         return true;
     }
     return semanticAttributeNames.has(attributeName);
-}
-
-function attributesHaveSemantics(attributes: ts.JsxAttributes): boolean {
-    return attributes.properties.some((property) => {
-        if (!ts.isJsxAttribute(property)) {
-            return false;
-        }
-        return attributeNameHasSemantics(property.name.getText());
-    });
 }
 
 function getStaticAttributeValue(attribute: ts.JsxAttribute | null): string | null {
@@ -854,6 +930,247 @@ function resolveClassBinding(
     return findImportedConstBinding(identifier, sourceFile, resolver);
 }
 
+function analyzeSemanticValue({
+    expression,
+    resolver,
+    seenBindings,
+    sourceFile,
+}: {
+    expression: ts.Expression;
+    resolver: ClassBindingResolver;
+    seenBindings: Set<string>;
+    sourceFile: ts.SourceFile;
+}): SemanticValueAnalysis {
+    if (
+        ts.isStringLiteral(expression) ||
+        ts.isNoSubstitutionTemplateLiteral(expression) ||
+        ts.isNumericLiteral(expression) ||
+        expression.kind === ts.SyntaxKind.TrueKeyword ||
+        expression.kind === ts.SyntaxKind.FalseKeyword ||
+        expression.kind === ts.SyntaxKind.NullKeyword
+    ) {
+        return {
+            evidence: [`value:${normalizeWhitespace(expression.getText(sourceFile))}`],
+            unresolved: false,
+        };
+    }
+    if (
+        ts.isPrefixUnaryExpression(expression) &&
+        (expression.operator === ts.SyntaxKind.PlusToken || expression.operator === ts.SyntaxKind.MinusToken) &&
+        ts.isNumericLiteral(expression.operand)
+    ) {
+        return {
+            evidence: [`value:${normalizeWhitespace(expression.getText(sourceFile))}`],
+            unresolved: false,
+        };
+    }
+    if (ts.isIdentifier(expression)) {
+        const binding = resolveClassBinding(expression, sourceFile, resolver);
+        if (!binding || seenBindings.has(binding.key)) {
+            return {
+                evidence: [`unresolved:${expression.text}`],
+                unresolved: true,
+            };
+        }
+        const nextSeenBindings = new Set(seenBindings);
+        nextSeenBindings.add(binding.key);
+        const analysis = analyzeSemanticValue({
+            expression: binding.initializer,
+            resolver,
+            seenBindings: nextSeenBindings,
+            sourceFile: binding.sourceFile,
+        });
+        const initializerText = normalizeWhitespace(binding.initializer.getText(binding.sourceFile));
+        analysis.evidence.unshift(`binding:${binding.key}:${initializerText}`);
+        return analysis;
+    }
+    if (ts.isParenthesizedExpression(expression)) {
+        return analyzeSemanticValue({ expression: expression.expression, resolver, seenBindings, sourceFile });
+    }
+    if (ts.isAsExpression(expression) || ts.isTypeAssertionExpression(expression)) {
+        return analyzeSemanticValue({ expression: expression.expression, resolver, seenBindings, sourceFile });
+    }
+    if (ts.isSatisfiesExpression(expression) || ts.isNonNullExpression(expression)) {
+        return analyzeSemanticValue({ expression: expression.expression, resolver, seenBindings, sourceFile });
+    }
+    return {
+        evidence: [`unresolved:${normalizeWhitespace(expression.getText(sourceFile))}`],
+        unresolved: true,
+    };
+}
+
+function analyzeSemanticSpread({
+    expression,
+    resolver,
+    seenBindings,
+    sourceFile,
+}: {
+    expression: ts.Expression;
+    resolver: ClassBindingResolver;
+    seenBindings: Set<string>;
+    sourceFile: ts.SourceFile;
+}): SemanticSpreadAnalysis {
+    if (ts.isIdentifier(expression)) {
+        const binding = resolveClassBinding(expression, sourceFile, resolver);
+        if (!binding || seenBindings.has(binding.key)) {
+            return {
+                evidence: [`unresolved:${expression.text}`],
+                unresolved: true,
+                hasSemanticProperties: false,
+            };
+        }
+        const nextSeenBindings = new Set(seenBindings);
+        nextSeenBindings.add(binding.key);
+        const analysis = analyzeSemanticSpread({
+            expression: binding.initializer,
+            resolver,
+            seenBindings: nextSeenBindings,
+            sourceFile: binding.sourceFile,
+        });
+        const initializerText = normalizeWhitespace(binding.initializer.getText(binding.sourceFile));
+        analysis.evidence.unshift(`binding:${binding.key}:${initializerText}`);
+        return analysis;
+    }
+    if (ts.isParenthesizedExpression(expression)) {
+        return analyzeSemanticSpread({ expression: expression.expression, resolver, seenBindings, sourceFile });
+    }
+    if (ts.isAsExpression(expression) || ts.isTypeAssertionExpression(expression)) {
+        return analyzeSemanticSpread({ expression: expression.expression, resolver, seenBindings, sourceFile });
+    }
+    if (ts.isSatisfiesExpression(expression) || ts.isNonNullExpression(expression)) {
+        return analyzeSemanticSpread({ expression: expression.expression, resolver, seenBindings, sourceFile });
+    }
+    if (!ts.isObjectLiteralExpression(expression)) {
+        return {
+            evidence: [`unresolved:${normalizeWhitespace(expression.getText(sourceFile))}`],
+            unresolved: true,
+            hasSemanticProperties: false,
+        };
+    }
+
+    const evidence: string[] = [];
+    let unresolved = false;
+    let hasSemanticProperties = false;
+    for (const property of expression.properties) {
+        if (ts.isSpreadAssignment(property)) {
+            const spreadAnalysis = analyzeSemanticSpread({
+                expression: property.expression,
+                resolver,
+                seenBindings,
+                sourceFile,
+            });
+            evidence.push(...spreadAnalysis.evidence);
+            if (spreadAnalysis.unresolved) {
+                unresolved = true;
+            }
+            if (spreadAnalysis.hasSemanticProperties) {
+                hasSemanticProperties = true;
+            }
+            continue;
+        }
+        if (ts.isComputedPropertyName(property.name)) {
+            evidence.push(`unresolved:${normalizeWhitespace(property.getText(sourceFile))}`);
+            unresolved = true;
+            continue;
+        }
+        const propertyName = property.name.getText(sourceFile).replace(/^['"]|['"]$/g, '');
+        if (!attributeNameHasSemantics(propertyName)) {
+            continue;
+        }
+        hasSemanticProperties = true;
+        if (ts.isPropertyAssignment(property)) {
+            const valueAnalysis = analyzeSemanticValue({
+                expression: property.initializer,
+                resolver,
+                seenBindings,
+                sourceFile,
+            });
+            evidence.push(`property:${propertyName}`, ...valueAnalysis.evidence);
+            if (valueAnalysis.unresolved) {
+                unresolved = true;
+            }
+            continue;
+        }
+        if (ts.isShorthandPropertyAssignment(property)) {
+            const valueAnalysis = analyzeSemanticValue({
+                expression: property.name,
+                resolver,
+                seenBindings,
+                sourceFile,
+            });
+            evidence.push(`property:${propertyName}`, ...valueAnalysis.evidence);
+            if (valueAnalysis.unresolved) {
+                unresolved = true;
+            }
+            continue;
+        }
+        evidence.push(`unresolved:${normalizeWhitespace(property.getText(sourceFile))}`);
+        unresolved = true;
+    }
+    return { evidence, unresolved, hasSemanticProperties };
+}
+
+function semanticAttributeEvidence(
+    attributes: ts.JsxAttributes,
+    sourceFile: ts.SourceFile,
+    resolver: ClassBindingResolver
+): SemanticAttributeAnalysis {
+    const evidence: string[] = [];
+    let unresolved = false;
+    let hasSemanticAttributes = false;
+    for (const property of attributes.properties) {
+        if (ts.isJsxSpreadAttribute(property)) {
+            const spreadAnalysis = analyzeSemanticSpread({
+                expression: property.expression,
+                resolver,
+                seenBindings: new Set(),
+                sourceFile,
+            });
+            if (spreadAnalysis.hasSemanticProperties || spreadAnalysis.unresolved) {
+                evidence.push(`spread:${normalizeWhitespace(property.expression.getText(sourceFile))}`);
+                evidence.push(...spreadAnalysis.evidence);
+            }
+            if (spreadAnalysis.hasSemanticProperties) {
+                hasSemanticAttributes = true;
+            }
+            if (spreadAnalysis.unresolved) {
+                unresolved = true;
+            }
+            continue;
+        }
+        const attributeName = property.name.getText(sourceFile);
+        if (!attributeNameHasSemantics(attributeName)) {
+            continue;
+        }
+        hasSemanticAttributes = true;
+        if (!property.initializer) {
+            continue;
+        }
+        if (ts.isStringLiteral(property.initializer)) {
+            continue;
+        }
+        if (!ts.isJsxExpression(property.initializer) || !property.initializer.expression) {
+            continue;
+        }
+        const valueAnalysis = analyzeSemanticValue({
+            expression: property.initializer.expression,
+            resolver,
+            seenBindings: new Set(),
+            sourceFile,
+        });
+        const hasProvenanceEvidence = valueAnalysis.evidence.some(
+            (item) => item.startsWith('binding:') || item.startsWith('unresolved:')
+        );
+        if (hasProvenanceEvidence) {
+            evidence.push(`attribute:${attributeName}`, ...valueAnalysis.evidence);
+        }
+        if (valueAnalysis.unresolved) {
+            unresolved = true;
+        }
+    }
+    return { evidence, unresolved, hasSemanticAttributes };
+}
+
 function analyzeClassExpression({
     expression,
     resolver,
@@ -1256,12 +1573,16 @@ function riskFlagsFor({
     attributes,
     classEvidence,
     hasConditionalChildren,
+    hasDynamicElement,
+    hasUnresolvedSemanticAncestor,
     nativeElement,
     role,
 }: {
     attributes: ts.JsxAttributes;
     classEvidence: ClassNameEvidence;
     hasConditionalChildren: boolean;
+    hasDynamicElement: boolean;
+    hasUnresolvedSemanticAncestor: boolean;
     nativeElement: string | null;
     role: string | null;
 }): LayoutRiskFlags {
@@ -1312,6 +1633,8 @@ function riskFlagsFor({
         ),
         hasInlineStyle,
         hasSpreadAttributes,
+        hasDynamicElement,
+        hasUnresolvedSemanticAncestor,
     };
 }
 
@@ -1391,9 +1714,11 @@ function elementHasConditionalChildren(
 function semanticAncestorEvidence(
     elementNode: ts.JsxElement | ts.JsxSelfClosingElement,
     importedTags: ImportedLayoutTags,
-    sourceFile: ts.SourceFile
-): string[] {
+    sourceFile: ts.SourceFile,
+    resolver: ClassBindingResolver
+): SemanticAncestorAnalysis {
     const evidence: string[] = [];
+    let unresolved = false;
     let current: ts.Node | undefined = elementNode.parent;
     while (current) {
         if (ts.isJsxElement(current)) {
@@ -1401,23 +1726,35 @@ function semanticAncestorEvidence(
             const tagText = openingElement.tagName.getText(sourceFile);
             const isCustomElement = !/^[a-z]/.test(tagText);
             const hasIntrinsicSemantics = /^[a-z]/.test(tagText) && intrinsicElementHasSemantics(tagText);
-            const hasSemanticAttributes = attributesHaveSemantics(openingElement.attributes);
-            if (isCustomElement || hasIntrinsicSemantics || hasSemanticAttributes) {
+            const semanticAttributes = semanticAttributeEvidence(openingElement.attributes, sourceFile, resolver);
+            if (semanticAttributes.unresolved) {
+                unresolved = true;
+            }
+            if (
+                isCustomElement ||
+                hasIntrinsicSemantics ||
+                semanticAttributes.hasSemanticAttributes ||
+                semanticAttributes.unresolved
+            ) {
                 let openingEvidence = normalizeWhitespace(openingElement.getText(sourceFile));
                 const tagSemantics = getCanonicalTagSemantics(openingElement.tagName, importedTags, sourceFile);
                 if (tagSemantics) {
                     openingEvidence = `${openingEvidence}\u0002import:${tagSemantics}`;
+                }
+                if (semanticAttributes.evidence.length > 0) {
+                    openingEvidence = `${openingEvidence}\u0002semantic:${semanticAttributes.evidence.join('\u0003')}`;
                 }
                 evidence.push(openingEvidence);
             }
         }
         current = current.parent;
     }
-    return evidence;
+    return { evidence, unresolved };
 }
 
 function sourceFingerprintForElement({
     bindingEvidence,
+    bindingResolver,
     importedTags,
     layoutTokens,
     node,
@@ -1425,12 +1762,13 @@ function sourceFingerprintForElement({
     tagSemantics,
 }: {
     bindingEvidence: string[];
+    bindingResolver: ClassBindingResolver;
     importedTags: ImportedLayoutTags;
     layoutTokens: string[];
     node: ts.JsxOpeningElement | ts.JsxSelfClosingElement;
     sourceFile: ts.SourceFile;
     tagSemantics: string | null;
-}): string {
+}): SourceFingerprintEvidence {
     const evidence = [normalizeWhitespace(node.getText(sourceFile))];
     if (tagSemantics) {
         evidence.push(`import:${tagSemantics}`);
@@ -1446,9 +1784,9 @@ function sourceFingerprintForElement({
     } else {
         elementNode = node;
     }
-    const ancestorEvidence = semanticAncestorEvidence(elementNode, importedTags, sourceFile);
-    if (ancestorEvidence.length > 0) {
-        evidence.push(`ancestors:${ancestorEvidence.join('\u0001')}`);
+    const ancestorAnalysis = semanticAncestorEvidence(elementNode, importedTags, sourceFile, bindingResolver);
+    if (ancestorAnalysis.evidence.length > 0) {
+        evidence.push(`ancestors:${ancestorAnalysis.evidence.join('\u0001')}`);
     }
     const structuralParent = elementNode.parent;
     if (ts.isJsxElement(structuralParent) || ts.isJsxFragment(structuralParent)) {
@@ -1480,14 +1818,22 @@ function sourceFingerprintForElement({
             }
         }
     }
-    return hash(evidence.join('\u0000'));
+    return {
+        fingerprint: hash(evidence.join('\u0000')),
+        hasUnresolvedSemanticAncestor: ancestorAnalysis.unresolved,
+    };
 }
 
 function reviewEvidenceMatches(previous: LayoutOccurrence, current: PendingOccurrence): boolean {
+    if (current.riskFlags.hasUnresolvedSemanticAncestor) {
+        return false;
+    }
     return (
         previous.id === current.id &&
         previous.file === current.file &&
         previous.sourceFingerprint === current.sourceFingerprint &&
+        previous.enclosingOwner === current.enclosingOwner &&
+        JSON.stringify(previous.decompositionMove) === JSON.stringify(current.decompositionMove) &&
         previous.patternFamily === current.patternFamily &&
         previous.patternClass === current.patternClass &&
         previous.currentPattern === current.currentPattern &&
@@ -1509,7 +1855,8 @@ function hasHighRiskFlags(riskFlags: LayoutRiskFlags): boolean {
         riskFlags.hasOverflow ||
         riskFlags.hasChildSelectors ||
         riskFlags.hasInlineStyle ||
-        riskFlags.hasSpreadAttributes
+        riskFlags.hasSpreadAttributes ||
+        riskFlags.hasUnresolvedSemanticAncestor
     );
 }
 
@@ -1517,7 +1864,12 @@ function characterizedRiskTier(riskFlags: LayoutRiskFlags): LayoutRiskTier {
     if (hasHighRiskFlags(riskFlags)) {
         return 'high';
     }
-    if (riskFlags.hasResponsiveClasses || riskFlags.hasDynamicClassName || riskFlags.hasConditionalChildren) {
+    if (
+        riskFlags.hasResponsiveClasses ||
+        riskFlags.hasDynamicClassName ||
+        riskFlags.hasConditionalChildren ||
+        riskFlags.hasDynamicElement
+    ) {
         return 'medium';
     }
     return 'low';
@@ -1553,6 +1905,14 @@ function classifyCandidate({
             riskTier: 'high',
         };
     }
+    if (riskFlags.hasDynamicElement) {
+        return {
+            disposition: 'responsive-or-dynamic',
+            rationale:
+                'A bound or unsupported polymorphic element is explicit unknown element evidence and requires separate characterization.',
+            riskTier: characterizedRiskTier(riskFlags),
+        };
+    }
     if (primitiveTag) {
         return {
             disposition: 'already-migrated',
@@ -1574,7 +1934,12 @@ function classifyCandidate({
             riskTier: 'high',
         };
     }
-    if (riskFlags.hasResponsiveClasses || riskFlags.hasDynamicClassName || riskFlags.hasConditionalChildren) {
+    if (
+        riskFlags.hasResponsiveClasses ||
+        riskFlags.hasDynamicClassName ||
+        riskFlags.hasConditionalChildren ||
+        riskFlags.hasDynamicElement
+    ) {
         let riskTier: LayoutRiskTier = 'medium';
         if (hasHighRiskFlags(riskFlags)) {
             riskTier = 'high';
@@ -1731,30 +2096,55 @@ function collectSourceFileOccurrences({
             const identitySource = `${repositoryPath}\u0000${owner}\u0000${tagText}\u0000${ordinal}`;
             const id = `layout-${hash(identitySource)}`;
             const tagSemantics = getCanonicalTagSemantics(node.tagName, importedTags, sourceFile);
-            const sourceFingerprint = sourceFingerprintForElement({
-                bindingEvidence: classEvidence.bindingEvidence,
+            const roleAttribute = getAttribute(node.attributes, 'role');
+            const role = getStaticAttributeValue(roleAttribute);
+            const hasDynamicRole = roleAttribute !== null && role === null;
+            const asAttribute = getAttribute(node.attributes, 'as');
+            const asElement = getStaticAttributeValue(asAttribute);
+            const trustedStaticAs =
+                primitiveTag !== null && auditedPolymorphicPrimitives.has(primitiveTag) && asElement !== null;
+            const hasDynamicElement = primitiveTag !== null && asAttribute !== null && !trustedStaticAs;
+            const elementBindingEvidence = [...classEvidence.bindingEvidence];
+            if (
+                primitiveTag !== null &&
+                asAttribute?.initializer &&
+                ts.isJsxExpression(asAttribute.initializer) &&
+                asAttribute.initializer.expression
+            ) {
+                const asAnalysis = analyzeSemanticValue({
+                    expression: asAttribute.initializer.expression,
+                    resolver: bindingResolver,
+                    seenBindings: new Set(),
+                    sourceFile,
+                });
+                elementBindingEvidence.push(
+                    `as:${normalizeWhitespace(asAttribute.initializer.expression.getText(sourceFile))}`,
+                    ...asAnalysis.evidence
+                );
+            }
+            const sourceFingerprintEvidence = sourceFingerprintForElement({
+                bindingEvidence: elementBindingEvidence,
+                bindingResolver,
                 importedTags,
                 layoutTokens: classEvidence.layoutTokens,
                 node,
                 sourceFile,
                 tagSemantics,
             });
-            const roleAttribute = getAttribute(node.attributes, 'role');
-            const role = getStaticAttributeValue(roleAttribute);
-            const hasDynamicRole = roleAttribute !== null && role === null;
-            const asElement = getStaticAttributeValue(getAttribute(node.attributes, 'as'));
             let nativeElement: string | null = null;
             if (ts.isIdentifier(node.tagName) && /^[a-z]/.test(node.tagName.text)) {
                 nativeElement = node.tagName.text;
-            } else if (asElement) {
+            } else if (trustedStaticAs) {
                 nativeElement = asElement;
-            } else if (primitiveTag) {
+            } else if (primitiveTag && asAttribute === null) {
                 nativeElement = primitiveDefaults.get(primitiveTag) ?? null;
             }
             const riskFlags = riskFlagsFor({
                 attributes: node.attributes,
                 classEvidence,
                 hasConditionalChildren: elementHasConditionalChildren(node, classEvidence.layoutTokens),
+                hasDynamicElement,
+                hasUnresolvedSemanticAncestor: sourceFingerprintEvidence.hasUnresolvedSemanticAncestor,
                 nativeElement,
                 role,
             });
@@ -1806,7 +2196,9 @@ function collectSourceFileOccurrences({
                 file: repositoryPath,
                 line: line + 1,
                 sourceStart: node.getStart(sourceFile),
-                sourceFingerprint,
+                sourceFingerprint: sourceFingerprintEvidence.fingerprint,
+                enclosingOwner: owner,
+                decompositionMove: decompositionMoveForPath(repositoryPath),
                 patternFamily,
                 patternClass,
                 currentPattern,
@@ -2011,6 +2403,13 @@ export function validateLayoutCensus(census: LayoutCensus): string[] {
         if (!/^[a-f0-9]{16}$/.test(occurrence.sourceFingerprint)) {
             errors.push(`invalid source fingerprint for ${occurrence.id}`);
         }
+        if (typeof occurrence.enclosingOwner !== 'string' || occurrence.enclosingOwner.trim().length === 0) {
+            errors.push(`missing enclosing owner for ${occurrence.id}`);
+        }
+        const expectedDecompositionMove = decompositionMoveForPath(occurrence.file);
+        if (JSON.stringify(occurrence.decompositionMove) !== JSON.stringify(expectedDecompositionMove)) {
+            errors.push(`invalid module-decomposition evidence for ${occurrence.id}`);
+        }
     }
 
     const expectedSummary = summarizeOccurrences(census.occurrences);
@@ -2076,15 +2475,19 @@ export function renderLayoutCensusMarkdown(census: LayoutCensus): string {
         '',
         '## Disposition ledger',
         '',
-        '| Stable ID | File:line | Pattern | Primitive | Disposition | Reviewed | Rationale |',
-        '| --- | --- | --- | --- | --- | --- | --- |'
+        '| Stable ID | File:line | Owner | Module decomposition | Pattern | Primitive | Disposition | Reviewed | Rationale |',
+        '| --- | --- | --- | --- | --- | --- | --- | --- | --- |'
     );
     for (const occurrence of census.occurrences) {
         const location = `${occurrence.file}:${occurrence.line}#${occurrence.occurrence}`;
         const primitive = occurrence.proposedPrimitive ?? '—';
         const reviewed = occurrence.reviewed ? 'yes' : 'no';
+        let decomposition = `checked-no-conflict:${occurrence.decompositionMove.currentOwner}`;
+        if (occurrence.decompositionMove.status === 'move-conflict') {
+            decomposition = `move-conflict:${occurrence.decompositionMove.currentOwner}→${occurrence.decompositionMove.targetOwner}`;
+        }
         lines.push(
-            `| \`${occurrence.id}\` | \`${escapeMarkdown(location)}\` | \`${escapeMarkdown(occurrence.currentPattern)}\` | ${escapeMarkdown(primitive)} | ${occurrence.disposition} | ${reviewed} | ${escapeMarkdown(occurrence.rationale)} |`
+            `| \`${occurrence.id}\` | \`${escapeMarkdown(location)}\` | ${escapeMarkdown(occurrence.enclosingOwner)} | ${escapeMarkdown(decomposition)} | \`${escapeMarkdown(occurrence.currentPattern)}\` | ${escapeMarkdown(primitive)} | ${occurrence.disposition} | ${reviewed} | ${escapeMarkdown(occurrence.rationale)} |`
         );
     }
     return `${lines.join('\n')}\n`;

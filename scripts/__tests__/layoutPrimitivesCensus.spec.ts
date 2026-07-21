@@ -662,6 +662,50 @@ describe('collectLayoutOccurrences', () => {
         });
     });
 
+    it('should trust static as only on audited polymorphic primitives and keep bound as unknown', () => {
+        const repositoryRoot = createFixture({
+            'src/App.tsx': `
+                import { Row, Spacer } from '#/components/layout';
+                const STATIC_TAG = 'section';
+                export function App({ tag }: { tag: 'div' | 'section' }) {
+                    return (
+                        <>
+                            <CustomPanel as="section" className="flex" />
+                            <Row as="section" className="flex" />
+                            <Spacer as="section" className="flex" />
+                            <Row as={tag} className="flex" />
+                            <Row as={STATIC_TAG} className="flex" />
+                        </>
+                    );
+                }
+            `,
+        });
+
+        const occurrences = collectLayoutOccurrences({ repositoryRoot });
+
+        expect(occurrences).toHaveLength(5);
+        expect(occurrences[0]).toMatchObject({
+            disposition: 'semantic-wrapper',
+            nativeElement: null,
+            wrapperOwner: 'CustomPanel',
+            riskFlags: { hasDynamicElement: false },
+        });
+        expect(occurrences[1]).toMatchObject({
+            disposition: 'already-migrated',
+            nativeElement: 'section',
+            proposedPrimitive: 'Row',
+            riskFlags: { hasDynamicElement: false },
+        });
+        for (const occurrence of occurrences.slice(2)) {
+            expect(occurrence).toMatchObject({
+                disposition: 'responsive-or-dynamic',
+                nativeElement: null,
+                proposedPrimitive: null,
+                riskFlags: { hasDynamicElement: true },
+            });
+        }
+    });
+
     it('should keep a static scrollable semantic rail eligible for Stack migration', () => {
         const repositoryRoot = createFixture({
             'src/Rail.tsx': `
@@ -939,6 +983,38 @@ describe('compareLayoutCensuses', () => {
         expect(drift.changed).toHaveLength(1);
     });
 
+    it('should invalidate review when a primitive as binding changes', () => {
+        const repositoryRoot = createFixture({
+            'src/App.tsx': `
+                import { Row } from '#/components/layout';
+                const TAG = 'section';
+                export const App = () => <Row as={TAG} />;
+            `,
+        });
+        const baseline = createLayoutCensus({ repositoryRoot });
+        baseline.occurrences[0].reviewed = true;
+
+        writeFixture(
+            repositoryRoot,
+            'src/App.tsx',
+            `
+                import { Row } from '#/components/layout';
+                const TAG = 'article';
+                export const App = () => <Row as={TAG} />;
+            `
+        );
+        const changed = createLayoutCensus({ repositoryRoot, previousCensus: baseline });
+
+        expect(changed.occurrences[0].id).toBe(baseline.occurrences[0].id);
+        expect(changed.occurrences[0].sourceFingerprint).not.toBe(baseline.occurrences[0].sourceFingerprint);
+        expect(changed.occurrences[0]).toMatchObject({
+            disposition: 'responsive-or-dynamic',
+            nativeElement: null,
+            reviewed: false,
+            riskFlags: { hasDynamicElement: true },
+        });
+    });
+
     it('should invalidate review when semantic ancestor context changes', () => {
         const repositoryRoot = createFixture({
             'src/App.tsx': 'export const App = () => <section><div><span className="flex" /></div></section>;\n',
@@ -987,6 +1063,87 @@ describe('compareLayoutCensuses', () => {
         expect(changed.occurrences[0].sourceFingerprint).not.toBe(baseline.occurrences[0].sourceFingerprint);
         expect(changed.occurrences[0].reviewed).toBe(false);
         expect(drift.changed).toHaveLength(1);
+    });
+
+    it.each([
+        ['ARIA', 'aria-live', "'polite'", "'assertive'"],
+        ['focus', 'tabIndex', '0', '-1'],
+        ['editability', 'contentEditable', 'false', 'true'],
+        ['drag', 'draggable', 'false', 'true'],
+        ['link', 'href', "'/before'", "'/after'"],
+        ['label', 'htmlFor', "'before'", "'after'"],
+        ['role', 'role', "'status'", "'alert'"],
+    ])(
+        'should invalidate review when a bound generic ancestor changes %s semantics',
+        (_name, attribute, before, after) => {
+            const repositoryRoot = createFixture({
+                'src/App.tsx': `
+                    const semanticValue = ${before};
+                    export const App = () => (
+                        <div ${attribute}={semanticValue}><span className="flex" /></div>
+                    );
+                `,
+            });
+            const baseline = createLayoutCensus({ repositoryRoot });
+            baseline.occurrences[0].reviewed = true;
+
+            writeFixture(
+                repositoryRoot,
+                'src/App.tsx',
+                `
+                    const semanticValue = ${after};
+                    export const App = () => (
+                        <div ${attribute}={semanticValue}><span className="flex" /></div>
+                    );
+                `
+            );
+            const changed = createLayoutCensus({ repositoryRoot, previousCensus: baseline });
+
+            expect(changed.occurrences[0].id).toBe(baseline.occurrences[0].id);
+            expect(changed.occurrences[0].sourceFingerprint).not.toBe(baseline.occurrences[0].sourceFingerprint);
+            expect(changed.occurrences[0].reviewed).toBe(false);
+        }
+    );
+
+    it('should fingerprint imported semantic spreads before preserving review', () => {
+        const repositoryRoot = createFixture({
+            'src/App.tsx': `
+                import { SEMANTICS } from './semantics';
+                export const App = () => <div {...SEMANTICS}><span className="flex" /></div>;
+            `,
+            'src/semantics.ts': `export const SEMANTICS = { role: 'status' };`,
+        });
+        const baseline = createLayoutCensus({ repositoryRoot });
+        baseline.occurrences[0].reviewed = true;
+
+        writeFixture(repositoryRoot, 'src/semantics.ts', `export const SEMANTICS = { role: 'alert' };`);
+        const changed = createLayoutCensus({ repositoryRoot, previousCensus: baseline });
+
+        expect(changed.occurrences[0].id).toBe(baseline.occurrences[0].id);
+        expect(changed.occurrences[0].sourceFingerprint).not.toBe(baseline.occurrences[0].sourceFingerprint);
+        expect(changed.occurrences[0].reviewed).toBe(false);
+    });
+
+    it.each([
+        [
+            'spread',
+            'export function App(semantics: object) { return <div {...semantics}><span className="flex" /></div>; }',
+        ],
+        [
+            'bound value',
+            'export function App(role: string) { return <div role={role}><span className="flex" /></div>; }',
+        ],
+    ])('should never preserve review through unresolved ancestor %s evidence', (_name, source) => {
+        const repositoryRoot = createFixture({ 'src/App.tsx': source });
+        const baseline = createLayoutCensus({ repositoryRoot });
+        baseline.occurrences[0].reviewed = true;
+
+        const unchanged = createLayoutCensus({ repositoryRoot, previousCensus: baseline });
+
+        expect(unchanged.occurrences[0]).toMatchObject({
+            reviewed: false,
+            riskFlags: { hasUnresolvedSemanticAncestor: true },
+        });
     });
 
     it('should invalidate review when an aliased custom ancestor import changes', () => {
@@ -1183,7 +1340,66 @@ describe('layout census artifacts', () => {
         expect(serialized).not.toMatch(/generatedAt|timestamp/i);
     });
 
-    it('should reject duplicate IDs, missing rationales, invalid dispositions, and generated drift', () => {
+    it('should record enclosing owners and explicit module-decomposition move evidence', () => {
+        const repositoryRoot = createFixture({
+            'src/modules/AiRuntime/presentations/views/VoiceCommandOverlay.tsx':
+                'export const VoiceCommandOverlay = () => <div className="flex" />;\n',
+            'src/modules/AiRuntime/presentations/views/MixAnalysisPanel.tsx':
+                'export const MixAnalysisPanel = () => <div className="grid" />;\n',
+            'src/modules/Automation/presentations/views/ModulationMatrix.tsx':
+                'export const ModulationMatrix = () => <div className="flex" />;\n',
+            'src/modules/AudioEngine/presentations/views/AudioDevicePicker.tsx':
+                'export const AudioDevicePicker = () => <div className="flex" />;\n',
+            'src/modules/Arrangement/presentations/views/TrackList.tsx':
+                'export const TrackList = () => <div className="flex" />;\n',
+        });
+
+        const occurrences = collectLayoutOccurrences({ repositoryRoot });
+        const byFile = new Map(occurrences.map((occurrence) => [occurrence.file, occurrence]));
+
+        expect(byFile.get('src/modules/AiRuntime/presentations/views/VoiceCommandOverlay.tsx')).toMatchObject({
+            enclosingOwner: 'VoiceCommandOverlay',
+            decompositionMove: {
+                plan: 'CHANGE-module-decomposition',
+                status: 'move-conflict',
+                currentOwner: 'AiRuntime',
+                targetOwner: 'Voice',
+            },
+        });
+        expect(byFile.get('src/modules/AiRuntime/presentations/views/MixAnalysisPanel.tsx')).toMatchObject({
+            enclosingOwner: 'MixAnalysisPanel',
+            decompositionMove: {
+                status: 'move-conflict',
+                currentOwner: 'AiRuntime',
+                targetOwner: 'MixAdvisor',
+            },
+        });
+        expect(byFile.get('src/modules/Automation/presentations/views/ModulationMatrix.tsx')).toMatchObject({
+            decompositionMove: {
+                status: 'move-conflict',
+                currentOwner: 'Automation',
+                targetOwner: 'Modulation',
+            },
+        });
+        expect(byFile.get('src/modules/AudioEngine/presentations/views/AudioDevicePicker.tsx')).toMatchObject({
+            decompositionMove: {
+                status: 'move-conflict',
+                currentOwner: 'AudioEngine',
+                targetOwner: 'AudioEngineCore',
+            },
+        });
+        expect(byFile.get('src/modules/Arrangement/presentations/views/TrackList.tsx')).toMatchObject({
+            enclosingOwner: 'TrackList',
+            decompositionMove: {
+                plan: 'CHANGE-module-decomposition',
+                status: 'checked-no-conflict',
+                currentOwner: 'Arrangement',
+                targetOwner: null,
+            },
+        });
+    });
+
+    it('should reject duplicate IDs, missing evidence, invalid dispositions, and generated drift', () => {
         const repositoryRoot = createFixture({
             'src/App.tsx': 'export const App = () => <><div className="flex" /><div className="grid" /></>;\n',
         });
@@ -1192,6 +1408,13 @@ describe('layout census artifacts', () => {
         invalid.occurrences[1].id = invalid.occurrences[0].id;
         invalid.occurrences[0].rationale = '';
         Reflect.set(invalid.occurrences[1], 'disposition', 'unsafe-guess');
+        Reflect.set(invalid.occurrences[0], 'enclosingOwner', '');
+        Reflect.set(invalid.occurrences[1], 'decompositionMove', {
+            plan: 'CHANGE-module-decomposition',
+            status: 'checked-no-conflict',
+            currentOwner: '',
+            targetOwner: 'Voice',
+        });
         invalid.summary.occurrenceCount = 99;
 
         const errors = validateLayoutCensus(invalid);
@@ -1201,6 +1424,8 @@ describe('layout census artifacts', () => {
                 expect.stringContaining('duplicate occurrence ID'),
                 expect.stringContaining('missing rationale'),
                 expect.stringContaining('invalid disposition'),
+                expect.stringContaining('missing enclosing owner'),
+                expect.stringContaining('invalid module-decomposition evidence'),
                 expect.stringContaining('summary drift'),
             ])
         );
@@ -1217,8 +1442,10 @@ describe('layout census artifacts', () => {
         expect(markdown).toContain('# Layout primitives census');
         expect(markdown).toContain('Production roots: `src`');
         expect(markdown).toContain(
-            '| Stable ID | File:line | Pattern | Primitive | Disposition | Reviewed | Rationale |'
+            '| Stable ID | File:line | Owner | Module decomposition | Pattern | Primitive | Disposition | Reviewed | Rationale |'
         );
+        expect(markdown).toContain('App');
+        expect(markdown).toContain('checked-no-conflict:src');
         expect(markdown).toContain('flex flex-col gap-2');
     });
 
