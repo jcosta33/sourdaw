@@ -1,4 +1,5 @@
 import { type Clip, type Track } from '../../models/Track';
+import { resolveEligibleClipWriteTarget } from '../../stores/resolveEligibleClipWriteTarget';
 import { trackStore } from '../../stores/trackStore';
 
 /**
@@ -10,29 +11,28 @@ import { trackStore } from '../../stores/trackStore';
  * one clip — recording finalize fires updateClip up to 2× per armed
  * track and paid a full-project clone per call.
  */
-export function updateClip(clipId: string, updater: (clip: Clip) => Clip): void {
-    const state = trackStore.value;
-    if (!state) {
-        return;
+export function updateClip(clipId: string, updater: (clip: Clip) => Clip): boolean {
+    const target = resolveEligibleClipWriteTarget({ clipId });
+    if (target.status !== 'eligible' || !('clipId' in target)) {
+        return false;
     }
 
-    // Locate the containing track + clip index without cloning.
-    let trackIdx = -1;
-    let clipIdx = -1;
-    for (let index = 0; index < state.tracks.length; index++) {
-        const time = state.tracks[index]!;
-        const jIndex = time.clips.findIndex((context) => context.id === clipId);
-        if (jIndex !== -1) {
-            trackIdx = index;
-            clipIdx = jIndex;
-            break;
-        }
+    const state = trackStore.value;
+    if (!state) {
+        return false;
     }
+
+    const trackIdx = state.tracks.findIndex((track) => track.id === target.trackId);
     if (trackIdx === -1) {
-        return;
+        return false;
     }
 
     const targetTrack = state.tracks[trackIdx]!;
+    const clipIdx = targetTrack.clips.findIndex((clip) => clip.id === target.clipId);
+    if (clipIdx === -1) {
+        return false;
+    }
+
     const updatedClip = updater(targetTrack.clips[clipIdx]!);
     const nextClips = targetTrack.clips.slice();
     nextClips[clipIdx] = updatedClip;
@@ -41,4 +41,5 @@ export function updateClip(clipId: string, updater: (clip: Clip) => Clip): void 
     nextTracks[trackIdx] = { ...targetTrack, clips: nextClips };
 
     trackStore.set({ ...state, tracks: nextTracks });
+    return true;
 }

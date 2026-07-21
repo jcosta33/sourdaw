@@ -28,6 +28,7 @@ function captureUpdate(clip: Clip): Clip[] {
     const result: Clip[] = [];
     mocks.updateClip.mockImplementation((_clipId, updater) => {
         result.push(updater(clip));
+        return true;
     });
     return result;
 }
