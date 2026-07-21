@@ -40,6 +40,13 @@ pub enum ChannelSupport {
     MonoAndStereo,
 }
 
+/// Identifies which caller-owned buffer failed frame-capacity validation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BufferDirection {
+    Input,
+    Output,
+}
+
 impl ChannelSupport {
     pub const fn accepts(self, layout: ChannelLayout) -> bool {
         match self {
@@ -66,13 +73,15 @@ impl PlanGeneration {
     }
 }
 
-/// Explicit ranges and execution class published by an implementation before preparation.
+/// Explicit independent buffer ranges and execution class published before preparation.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct TimeStretchCapabilities {
     pub min_sample_rate_hz: u32,
     pub max_sample_rate_hz: u32,
-    pub min_block_frames: usize,
-    pub max_block_frames: usize,
+    pub min_input_frames: usize,
+    pub max_input_frames: usize,
+    pub min_output_frames: usize,
+    pub max_output_frames: usize,
     pub channel_support: ChannelSupport,
     pub min_playback_rate_ratio: PlaybackRateRatio,
     pub max_playback_rate_ratio: PlaybackRateRatio,
@@ -85,7 +94,10 @@ impl TimeStretchCapabilities {
         if self.min_sample_rate_hz == 0 || self.min_sample_rate_hz > self.max_sample_rate_hz {
             return Err(TimeStretchError::InvalidCapabilities);
         }
-        if self.min_block_frames == 0 || self.min_block_frames > self.max_block_frames {
+        if self.min_input_frames == 0 || self.min_input_frames > self.max_input_frames {
+            return Err(TimeStretchError::InvalidCapabilities);
+        }
+        if self.min_output_frames == 0 || self.min_output_frames > self.max_output_frames {
             return Err(TimeStretchError::InvalidCapabilities);
         }
         if self.min_playback_rate_ratio > self.max_playback_rate_ratio {
@@ -99,7 +111,8 @@ impl TimeStretchCapabilities {
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct PreparationRequest {
     pub sample_rate_hz: u32,
-    pub max_block_frames: usize,
+    pub max_input_frames: usize,
+    pub max_output_frames: usize,
     pub channel_layout: ChannelLayout,
     pub initial_playback_rate_ratio: PlaybackRateRatio,
     pub plan_generation: PlanGeneration,
@@ -137,13 +150,24 @@ impl PreparedTimeStretch {
                 max: capabilities.max_sample_rate_hz,
             });
         }
-        if !(capabilities.min_block_frames..=capabilities.max_block_frames)
-            .contains(&request.max_block_frames)
+        if !(capabilities.min_input_frames..=capabilities.max_input_frames)
+            .contains(&request.max_input_frames)
         {
-            return Err(TimeStretchError::UnsupportedBlockSize {
-                requested: request.max_block_frames,
-                min: capabilities.min_block_frames,
-                max: capabilities.max_block_frames,
+            return Err(TimeStretchError::UnsupportedFrameCount {
+                buffer: BufferDirection::Input,
+                requested: request.max_input_frames,
+                min: capabilities.min_input_frames,
+                max: capabilities.max_input_frames,
+            });
+        }
+        if !(capabilities.min_output_frames..=capabilities.max_output_frames)
+            .contains(&request.max_output_frames)
+        {
+            return Err(TimeStretchError::UnsupportedFrameCount {
+                buffer: BufferDirection::Output,
+                requested: request.max_output_frames,
+                min: capabilities.min_output_frames,
+                max: capabilities.max_output_frames,
             });
         }
         if !capabilities.channel_support.accepts(request.channel_layout) {
@@ -216,8 +240,17 @@ impl PreparedTimeStretch {
     ) -> Result<(), TimeStretchError> {
         self.validate_generation(request.plan_generation)?;
         self.validate_output_channels(request.output)?;
-        if request.frame_capacity() == 0 {
+        let output_frame_capacity = request.frame_capacity();
+        if output_frame_capacity == 0 {
             return Err(TimeStretchError::ZeroDrainCapacity);
+        }
+        if output_frame_capacity > self.request.max_output_frames {
+            return Err(TimeStretchError::UnsupportedFrameCount {
+                buffer: BufferDirection::Output,
+                requested: output_frame_capacity,
+                min: 1,
+                max: self.request.max_output_frames,
+            });
         }
         Ok(())
     }
@@ -251,25 +284,18 @@ impl PreparedTimeStretch {
                 });
             }
         }
-        if expected_frames > self.request.max_block_frames {
-            return Err(TimeStretchError::UnsupportedBlockSize {
-                requested: expected_frames,
-                min: 0,
-                max: self.request.max_block_frames,
-            });
-        }
         Ok(())
     }
 }
 
-/// A canonical ratio change applied before the sample at `frame_offset` is consumed.
+/// A canonical ratio change applied at an exact frame in the destination render quantum.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct RatioChange {
-    pub frame_offset: usize,
+    pub output_frame_offset: usize,
     pub playback_rate_ratio: PlaybackRateRatio,
 }
 
-/// Caller-borrowed render-quantum buffers and immutable prepared-state identity.
+/// Caller-borrowed source input and destination render-quantum buffers.
 pub struct ProcessRequest<'input, 'output> {
     pub input: &'input [&'input [f32]],
     pub output: &'output mut [&'output mut [f32]],
@@ -283,8 +309,12 @@ impl ProcessRequest<'_, '_> {
         self.input.len()
     }
 
-    pub fn frame_count(&self) -> usize {
+    pub fn input_frame_count(&self) -> usize {
         self.input.first().map_or(0, |channel| channel.len())
+    }
+
+    pub fn output_frame_capacity(&self) -> usize {
+        self.output.first().map_or(0, |channel| channel.len())
     }
 }
 
@@ -385,30 +415,35 @@ pub fn validate_process_request(
     }
     prepared.validate_output_channels(request.output)?;
 
-    let frame_count = request.frame_count();
-    if !(prepared.capabilities.min_block_frames..=prepared.request.max_block_frames)
-        .contains(&frame_count)
+    let input_frame_count = request.input_frame_count();
+    if !(prepared.capabilities.min_input_frames..=prepared.request.max_input_frames)
+        .contains(&input_frame_count)
     {
-        return Err(TimeStretchError::UnsupportedBlockSize {
-            requested: frame_count,
-            min: prepared.capabilities.min_block_frames,
-            max: prepared.request.max_block_frames,
+        return Err(TimeStretchError::UnsupportedFrameCount {
+            buffer: BufferDirection::Input,
+            requested: input_frame_count,
+            min: prepared.capabilities.min_input_frames,
+            max: prepared.request.max_input_frames,
         });
     }
 
-    let output_frames = request.output.first().map_or(0, |channel| channel.len());
-    if output_frames != frame_count {
-        return Err(TimeStretchError::MismatchedInputOutputFrames {
-            input_frames: frame_count,
-            output_frames,
+    let output_frame_count = request.output_frame_capacity();
+    if !(prepared.capabilities.min_output_frames..=prepared.request.max_output_frames)
+        .contains(&output_frame_count)
+    {
+        return Err(TimeStretchError::UnsupportedFrameCount {
+            buffer: BufferDirection::Output,
+            requested: output_frame_count,
+            min: prepared.capabilities.min_output_frames,
+            max: prepared.request.max_output_frames,
         });
     }
 
     for (channel, samples) in request.input.iter().enumerate() {
-        if samples.len() != frame_count {
+        if samples.len() != input_frame_count {
             return Err(TimeStretchError::MismatchedChannelFrames {
                 channel,
-                expected: frame_count,
+                expected: input_frame_count,
                 actual: samples.len(),
             });
         }
@@ -421,18 +456,18 @@ pub fn validate_process_request(
 
     let mut previous_offset = None;
     for (index, change) in request.ratio_changes.iter().enumerate() {
-        let is_out_of_block = change.frame_offset >= frame_count;
+        let is_out_of_block = change.output_frame_offset >= output_frame_count;
         let is_not_strictly_increasing =
-            previous_offset.is_some_and(|previous| change.frame_offset <= previous);
+            previous_offset.is_some_and(|previous| change.output_frame_offset <= previous);
         if is_out_of_block || is_not_strictly_increasing {
             return Err(TimeStretchError::InvalidRatioBoundary {
                 index,
-                frame_offset: change.frame_offset,
-                frame_count,
+                output_frame_offset: change.output_frame_offset,
+                output_frame_count,
             });
         }
         prepared.validate_playback_rate_ratio(change.playback_rate_ratio)?;
-        previous_offset = Some(change.frame_offset);
+        previous_offset = Some(change.output_frame_offset);
     }
 
     Ok(())
@@ -450,7 +485,8 @@ pub enum TimeStretchError {
         min: u32,
         max: u32,
     },
-    UnsupportedBlockSize {
+    UnsupportedFrameCount {
+        buffer: BufferDirection,
         requested: usize,
         min: usize,
         max: usize,
@@ -473,10 +509,6 @@ pub enum TimeStretchError {
         expected: usize,
         actual: usize,
     },
-    MismatchedInputOutputFrames {
-        input_frames: usize,
-        output_frames: usize,
-    },
     ZeroDrainCapacity,
     NonFiniteInput {
         channel: usize,
@@ -484,8 +516,8 @@ pub enum TimeStretchError {
     },
     InvalidRatioBoundary {
         index: usize,
-        frame_offset: usize,
-        frame_count: usize,
+        output_frame_offset: usize,
+        output_frame_count: usize,
     },
 }
 

@@ -5,11 +5,11 @@ use daw_dsp::crumbs::warp::repitch::{
 };
 use daw_dsp::crumbs::warp::wsola::WsolaProcessor;
 use daw_dsp::primitives::time_stretch::{
-    validate_process_request, BypassPolicy, ChannelLayout, ChannelSupport, Discontinuity,
-    DiscontinuityKind, DrainRequest, DrainStatus, OutputDurationRatio, PlanGeneration,
-    PlaybackRateRatio, PreparationRequest, PreparedTimeStretch, ProcessReport, ProcessRequest,
-    ProcessingClass, RatioChange, StreamingTimeStretchProcessor, TimeStretchCapabilities,
-    TimeStretchError, TimeStretchPreparer, TimeStretchTiming,
+    validate_process_request, BufferDirection, BypassPolicy, ChannelLayout, ChannelSupport,
+    Discontinuity, DiscontinuityKind, DrainRequest, DrainStatus, OutputDurationRatio,
+    PlanGeneration, PlaybackRateRatio, PreparationRequest, PreparedTimeStretch, ProcessReport,
+    ProcessRequest, ProcessingClass, RatioChange, StreamingTimeStretchProcessor,
+    TimeStretchCapabilities, TimeStretchError, TimeStretchPreparer, TimeStretchTiming,
 };
 use serde::Deserialize;
 use std::fmt::Write as _;
@@ -22,7 +22,8 @@ use std::time::Instant;
 static ALLOCATOR: AllocDisabler = AllocDisabler;
 
 const SAMPLE_RATE_HZ: u32 = 48_000;
-const MAX_BLOCK_FRAMES: usize = 128;
+const MAX_INPUT_FRAMES: usize = 512;
+const MAX_OUTPUT_FRAMES: usize = 128;
 const LATENCY_FRAMES: usize = 4;
 const MAX_CHANNELS: usize = 2;
 const FIXTURE_SAMPLE_RATE_HZ: u32 = 48_000;
@@ -44,8 +45,10 @@ fn capabilities(channel_support: ChannelSupport) -> TimeStretchCapabilities {
     TimeStretchCapabilities {
         min_sample_rate_hz: 44_100,
         max_sample_rate_hz: 96_000,
-        min_block_frames: 1,
-        max_block_frames: MAX_BLOCK_FRAMES,
+        min_input_frames: 1,
+        max_input_frames: MAX_INPUT_FRAMES,
+        min_output_frames: 1,
+        max_output_frames: MAX_OUTPUT_FRAMES,
         channel_support,
         min_playback_rate_ratio: ratio(0.25),
         max_playback_rate_ratio: ratio(4.0),
@@ -60,7 +63,8 @@ fn preparation_request(
 ) -> PreparationRequest {
     PreparationRequest {
         sample_rate_hz: SAMPLE_RATE_HZ,
-        max_block_frames: MAX_BLOCK_FRAMES,
+        max_input_frames: MAX_INPUT_FRAMES,
+        max_output_frames: MAX_OUTPUT_FRAMES,
         channel_layout,
         initial_playback_rate_ratio: ratio(1.0),
         plan_generation,
@@ -137,23 +141,27 @@ impl StreamingTimeStretchProcessor for ProbeProcessor {
     ) -> Result<ProcessReport, TimeStretchError> {
         validate_process_request(&self.prepared, &request)?;
 
-        let frames = request.frame_count();
+        let input_frames = request.input_frame_count();
+        let output_frames = request.output_frame_capacity();
         let channels = request.channel_count();
         let mut ratio_change_index = 0;
 
-        for frame in 0..frames {
+        for output_frame in 0..output_frames {
             if let Some(change) = request.ratio_changes.get(ratio_change_index) {
-                if change.frame_offset == frame {
+                if change.output_frame_offset == output_frame {
                     self.playback_rate_ratio = change.playback_rate_ratio;
                     ratio_change_index += 1;
                 }
             }
 
+            let input_frame =
+                (output_frame as u128 * input_frames as u128 / output_frames as u128) as usize;
+
             for channel in 0..channels {
                 let delayed = self.delay[channel][self.delay_position];
                 self.delay[channel][self.delay_position] =
-                    request.input[channel][frame] * self.playback_rate_ratio.get() as f32;
-                request.output[channel][frame] = delayed;
+                    request.input[channel][input_frame] * self.playback_rate_ratio.get() as f32;
+                request.output[channel][output_frame] = delayed;
             }
 
             self.delay_position += 1;
@@ -164,8 +172,8 @@ impl StreamingTimeStretchProcessor for ProbeProcessor {
 
         self.pending_tail_frames = LATENCY_FRAMES;
         Ok(ProcessReport {
-            consumed_frames: frames,
-            produced_frames: frames,
+            consumed_frames: input_frames,
+            produced_frames: output_frames,
         })
     }
 
@@ -334,6 +342,57 @@ mod primitives {
         }
 
         #[test]
+        fn canonical_ratio_extremes_allow_asymmetric_input_and_output_frame_counts() {
+            let mut preparer = ProbePreparer::stereo();
+
+            let mut quarter_speed_request =
+                preparation_request(ChannelLayout::Mono, generation(30));
+            quarter_speed_request.initial_playback_rate_ratio = ratio(0.25);
+            let mut quarter_speed = preparer
+                .prepare(quarter_speed_request)
+                .expect("quarter-speed preparation");
+            let quarter_speed_input = [1.0_f32; 32];
+            let mut quarter_speed_output = [0.0_f32; 128];
+            let quarter_speed_report = process_mono_block(
+                &mut quarter_speed,
+                &quarter_speed_input,
+                &mut quarter_speed_output,
+                0,
+                &[],
+            );
+
+            let mut four_times_request = preparation_request(ChannelLayout::Mono, generation(31));
+            four_times_request.initial_playback_rate_ratio = ratio(4.0);
+            let mut four_times = preparer
+                .prepare(four_times_request)
+                .expect("four-times preparation");
+            let four_times_input = [1.0_f32; 512];
+            let mut four_times_output = [0.0_f32; 128];
+            let four_times_report = process_mono_block(
+                &mut four_times,
+                &four_times_input,
+                &mut four_times_output,
+                128,
+                &[],
+            );
+
+            assert_eq!(
+                quarter_speed_report,
+                Ok(ProcessReport {
+                    consumed_frames: 32,
+                    produced_frames: 128,
+                })
+            );
+            assert_eq!(
+                four_times_report,
+                Ok(ProcessReport {
+                    consumed_frames: 512,
+                    produced_frames: 128,
+                })
+            );
+        }
+
+        #[test]
         fn preparation_validates_sample_rate_block_channel_ratio_and_generation() {
             let caps = capabilities(ChannelSupport::MonoOnly);
             let timing = TimeStretchTiming {
@@ -351,11 +410,24 @@ mod primitives {
                 Err(TimeStretchError::UnsupportedSampleRate { .. })
             ));
 
-            let mut unsupported_block = valid;
-            unsupported_block.max_block_frames = MAX_BLOCK_FRAMES + 1;
+            let mut unsupported_input = valid;
+            unsupported_input.max_input_frames = MAX_INPUT_FRAMES + 1;
             assert!(matches!(
-                PreparedTimeStretch::prepare(caps, unsupported_block, timing),
-                Err(TimeStretchError::UnsupportedBlockSize { .. })
+                PreparedTimeStretch::prepare(caps, unsupported_input, timing),
+                Err(TimeStretchError::UnsupportedFrameCount {
+                    buffer: BufferDirection::Input,
+                    ..
+                })
+            ));
+
+            let mut unsupported_output = valid;
+            unsupported_output.max_output_frames = MAX_OUTPUT_FRAMES + 1;
+            assert!(matches!(
+                PreparedTimeStretch::prepare(caps, unsupported_output, timing),
+                Err(TimeStretchError::UnsupportedFrameCount {
+                    buffer: BufferDirection::Output,
+                    ..
+                })
             ));
 
             let mut unsupported_channels = valid;
@@ -430,6 +502,24 @@ mod primitives {
                 Err(TimeStretchError::MismatchedChannelFrames { .. })
             ));
 
+            let short_right = [0.5_f32; 7];
+            let mismatched_input_channels: [&[f32]; 2] = [&left, &short_right];
+            let mut matched_output_left = [0.0_f32; 8];
+            let mut matched_output_right = [0.0_f32; 8];
+            let mut matched_output: [&mut [f32]; 2] =
+                [&mut matched_output_left, &mut matched_output_right];
+            let mismatched_input = ProcessRequest {
+                input: &mismatched_input_channels,
+                output: &mut matched_output,
+                block_start_frame: 0,
+                plan_generation: generation(7),
+                ratio_changes: &[],
+            };
+            assert!(matches!(
+                processor.process(mismatched_input),
+                Err(TimeStretchError::MismatchedChannelFrames { .. })
+            ));
+
             let mut short_output_left = [0.0_f32; 7];
             let mut short_output_right = [0.0_f32; 7];
             let mut short_output: [&mut [f32]; 2] =
@@ -441,13 +531,7 @@ mod primitives {
                 plan_generation: generation(7),
                 ratio_changes: &[],
             };
-            assert!(matches!(
-                validate_process_request(processor.prepared(), &short_quantum),
-                Err(TimeStretchError::MismatchedInputOutputFrames {
-                    input_frames: 8,
-                    output_frames: 7
-                })
-            ));
+            assert!(validate_process_request(processor.prepared(), &short_quantum).is_ok());
 
             let mono_input: [&[f32]; 1] = [&left];
             let mut mono_output_data = [0.0_f32; 8];
@@ -503,11 +587,11 @@ mod primitives {
 
             let changes = [
                 RatioChange {
-                    frame_offset: 5,
+                    output_frame_offset: 5,
                     playback_rate_ratio: ratio(1.5),
                 },
                 RatioChange {
-                    frame_offset: 4,
+                    output_frame_offset: 4,
                     playback_rate_ratio: ratio(0.75),
                 },
             ];
@@ -524,6 +608,56 @@ mod primitives {
             assert!(matches!(
                 processor.process(unordered),
                 Err(TimeStretchError::InvalidRatioBoundary { index: 1, .. })
+            ));
+        }
+
+        #[test]
+        fn process_validation_enforces_independent_prepared_frame_limits() {
+            let mut preparer = ProbePreparer::stereo();
+            let processor = preparer
+                .prepare(preparation_request(ChannelLayout::Mono, generation(8)))
+                .expect("probe preparation");
+
+            let excessive_input = [0.0_f32; MAX_INPUT_FRAMES + 1];
+            let excessive_input_channels: [&[f32]; 1] = [&excessive_input];
+            let mut valid_output = [0.0_f32; MAX_OUTPUT_FRAMES];
+            let mut valid_output_channels: [&mut [f32]; 1] = [&mut valid_output];
+            let input_overflow = ProcessRequest {
+                input: &excessive_input_channels,
+                output: &mut valid_output_channels,
+                block_start_frame: 0,
+                plan_generation: generation(8),
+                ratio_changes: &[],
+            };
+            assert!(matches!(
+                validate_process_request(processor.prepared(), &input_overflow),
+                Err(TimeStretchError::UnsupportedFrameCount {
+                    buffer: BufferDirection::Input,
+                    requested: 513,
+                    max: 512,
+                    ..
+                })
+            ));
+
+            let valid_input = [0.0_f32; MAX_INPUT_FRAMES];
+            let valid_input_channels: [&[f32]; 1] = [&valid_input];
+            let mut excessive_output = [0.0_f32; MAX_OUTPUT_FRAMES + 1];
+            let mut excessive_output_channels: [&mut [f32]; 1] = [&mut excessive_output];
+            let output_overflow = ProcessRequest {
+                input: &valid_input_channels,
+                output: &mut excessive_output_channels,
+                block_start_frame: 0,
+                plan_generation: generation(8),
+                ratio_changes: &[],
+            };
+            assert!(matches!(
+                validate_process_request(processor.prepared(), &output_overflow),
+                Err(TimeStretchError::UnsupportedFrameCount {
+                    buffer: BufferDirection::Output,
+                    requested: 129,
+                    max: 128,
+                    ..
+                })
             ));
         }
 
@@ -548,15 +682,40 @@ mod primitives {
         }
 
         #[test]
-        fn ratio_changes_apply_at_exact_frame_boundaries() {
+        fn ratio_changes_apply_at_exact_output_frame_boundaries() {
             let mut preparer = ProbePreparer::stereo();
             let mut processor = preparer
                 .prepare(preparation_request(ChannelLayout::Mono, generation(10)))
                 .expect("probe preparation");
-            let input = [1.0_f32; 12];
+
+            let longer_input = [1.0_f32; 12];
+            let longer_input_channels: [&[f32]; 1] = [&longer_input];
+            let mut shorter_output = [0.0_f32; 8];
+            let mut shorter_output_channels: [&mut [f32]; 1] = [&mut shorter_output];
+            let outside_output_quantum = [RatioChange {
+                output_frame_offset: 8,
+                playback_rate_ratio: ratio(2.0),
+            }];
+            let invalid_boundary = ProcessRequest {
+                input: &longer_input_channels,
+                output: &mut shorter_output_channels,
+                block_start_frame: 0,
+                plan_generation: generation(10),
+                ratio_changes: &outside_output_quantum,
+            };
+            assert_eq!(
+                validate_process_request(processor.prepared(), &invalid_boundary),
+                Err(TimeStretchError::InvalidRatioBoundary {
+                    index: 0,
+                    output_frame_offset: 8,
+                    output_frame_count: 8,
+                })
+            );
+
+            let input = [1.0_f32; 8];
             let mut output = [0.0_f32; 12];
             let changes = [RatioChange {
-                frame_offset: 4,
+                output_frame_offset: 4,
                 playback_rate_ratio: ratio(2.0),
             }];
 
@@ -586,13 +745,13 @@ mod primitives {
             let mut processor = preparer
                 .prepare(preparation_request(ChannelLayout::Stereo, generation(21)))
                 .expect("probe preparation");
-            let left = [0.25_f32; MAX_BLOCK_FRAMES];
-            let right = [0.5_f32; MAX_BLOCK_FRAMES];
+            let left = [0.25_f32; MAX_INPUT_FRAMES];
+            let right = [0.5_f32; MAX_INPUT_FRAMES];
             let input_channels: [&[f32]; 2] = [&left, &right];
-            let mut output_left = [0.0_f32; MAX_BLOCK_FRAMES];
-            let mut output_right = [0.0_f32; MAX_BLOCK_FRAMES];
+            let mut output_left = [0.0_f32; MAX_OUTPUT_FRAMES];
+            let mut output_right = [0.0_f32; MAX_OUTPUT_FRAMES];
             let changes = [RatioChange {
-                frame_offset: 64,
+                output_frame_offset: 64,
                 playback_rate_ratio: ratio(1.5),
             }];
 

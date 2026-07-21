@@ -8,10 +8,10 @@ mod contract;
 mod ratio;
 
 pub use contract::{
-    validate_process_request, BypassPolicy, ChannelLayout, ChannelSupport, Discontinuity,
-    DiscontinuityKind, DrainRequest, DrainStatus, PlanGeneration, PreparationRequest,
-    PreparedTimeStretch, ProcessReport, ProcessRequest, ProcessingClass, RatioChange,
-    StreamingTimeStretchProcessor, TimeStretchCapabilities, TimeStretchError, TimeStretchPreparer,
-    TimeStretchTiming,
+    validate_process_request, BufferDirection, BypassPolicy, ChannelLayout, ChannelSupport,
+    Discontinuity, DiscontinuityKind, DrainRequest, DrainStatus, PlanGeneration,
+    PreparationRequest, PreparedTimeStretch, ProcessReport, ProcessRequest, ProcessingClass,
+    RatioChange, StreamingTimeStretchProcessor, TimeStretchCapabilities, TimeStretchError,
+    TimeStretchPreparer, TimeStretchTiming,
 };
 pub use ratio::{OutputDurationRatio, PlaybackRateRatio, RatioError};
