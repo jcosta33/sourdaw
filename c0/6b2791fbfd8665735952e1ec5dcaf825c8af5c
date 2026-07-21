@@ -1,0 +1,27 @@
+src/modules/Arrangement/stores/__tests__/resolveEligibleDeviceWriteTarget.spec.ts
+  s_b275a51ee74f73::t_85456ee94817a0 24-32,74-81,111-128
+src/modules/Arrangement/stores/resolveEligibleDeviceWriteTarget.ts
+  s_b275a51ee74f73::t_95e2ec2ba23cce 33-49,93-97
+src/modules/Arrangement/useCases/device/setDeviceParameter/__tests__/setDeviceParameter.spec.ts
+  s_b275a51ee74f73::t_886589ad3b3d03 1,3-7,25-36,67-72,77-84,93-96,170-196
+src/modules/Levain/useCases/__tests__/loadPreset.spec.ts
+  s_b275a51ee74f73::t_04d1754d3a811c 5-7,15,42,58-63,87-99
+src/modules/Levain/useCases/levainParamBridge/__tests__/helpers.spec.ts
+  s_b275a51ee74f73::t_241c976ebf4f3c 3-4,15-19,24-33,84-217
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "c06b2791fbfd8665735952e1ec5dcaf825c8af5c",
+  "prompts": {},
+  "sessions": {
+    "s_b275a51ee74f73": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f83af-d116-74d0-aa71-018e78a92715",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
