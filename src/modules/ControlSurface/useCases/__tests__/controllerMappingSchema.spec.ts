@@ -925,6 +925,27 @@ describe('validateControllerMappingSchema', () => {
             expectResolverFailureIsAtomic(changingResolver);
             expect(actionTypeReads).toBe(0);
         });
+
+        it('uses the own-data snapshot without reading resolver proxy properties', () => {
+            let propertyReads = 0;
+            const resolution: ReturnType<ActionResolver> = {
+                status: 'resolved',
+                actionType: 'setTempo',
+            };
+            const trappedResolution = new Proxy(resolution, {
+                get() {
+                    propertyReads += 1;
+                    throw new Error('original resolver property read');
+                },
+            });
+            const trappedResolver: ActionResolver = vi.fn(() => trappedResolution);
+
+            const result = validate(makeDocument(), trappedResolver);
+
+            expect(result.status).toBe('valid');
+            expect(trappedResolver).toHaveBeenCalledTimes(1);
+            expect(propertyReads).toBe(0);
+        });
     });
 
     describe('atomic deterministic output', () => {

@@ -1199,6 +1199,10 @@ function findGlobalDiagnostics(
     return Object.freeze(diagnostics);
 }
 
+function isDeclaredResolverActionType(value: unknown): value is AppAction['type'] {
+    return typeof value === 'string';
+}
+
 function snapshotActionResolution(
     resolution: ResolveControllerActionTemplateOutput
 ): ResolveControllerActionTemplateOutput | null {
@@ -1214,7 +1218,7 @@ function snapshotActionResolution(
         return null;
     }
 
-    const status = resolution.status;
+    const status = record.value.status;
     if (status === 'resolved') {
         const hasActionType = Object.hasOwn(record.value, 'actionType');
         const hasReason = Object.hasOwn(record.value, 'reason');
@@ -1222,8 +1226,8 @@ function snapshotActionResolution(
             return null;
         }
 
-        const actionType = resolution.actionType;
-        if (typeof actionType !== 'string') {
+        const actionType = record.value.actionType;
+        if (!isDeclaredResolverActionType(actionType)) {
             return null;
         }
 
@@ -1237,7 +1241,7 @@ function snapshotActionResolution(
             return null;
         }
 
-        const reason = resolution.reason;
+        const reason = record.value.reason;
         if (typeof reason !== 'string') {
             return null;
         }
