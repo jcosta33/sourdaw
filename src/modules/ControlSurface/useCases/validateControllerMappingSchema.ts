@@ -112,6 +112,15 @@ function propertyPath(path: string, key: string): string {
     return `${path}[${JSON.stringify(key)}]`;
 }
 
+function defineOwnDataProperty<Value>(record: Record<string, Value>, key: string, value: Value): void {
+    Object.defineProperty(record, key, {
+        value,
+        enumerable: true,
+        writable: true,
+        configurable: true,
+    });
+}
+
 function readExactRecord(
     value: unknown,
     allowedKeys: readonly string[],
@@ -165,7 +174,7 @@ function readExactRecord(
     for (const key of allowedKeys) {
         const descriptor = descriptors[key];
         if (descriptor !== undefined && 'value' in descriptor) {
-            record[key] = descriptor.value;
+            defineOwnDataProperty(record, key, descriptor.value);
         }
     }
 
@@ -658,7 +667,7 @@ function parseActionCandidate(
             return parsedValue;
         }
 
-        payload[key] = parsedValue.value;
+        defineOwnDataProperty(payload, key, parsedValue.value);
     }
 
     return success(Object.freeze({ type, payload: Object.freeze(payload) }));
@@ -964,8 +973,8 @@ function parseMappingCandidate(value: unknown, index: number): ParseResult<Parse
         return id;
     }
 
-    const hasLayer = record.value.layer !== undefined;
-    const hasMode = record.value.mode !== undefined;
+    const hasLayer = Object.hasOwn(record.value, 'layer');
+    const hasMode = Object.hasOwn(record.value, 'mode');
     if (hasLayer && hasMode) {
         return failure('MUTUALLY_EXCLUSIVE_SCOPE', path);
     }
@@ -1024,7 +1033,7 @@ function parseMappingCandidate(value: unknown, index: number): ParseResult<Parse
     }
 
     let feedback: ControllerFeedbackV1 | undefined;
-    if (record.value.feedback !== undefined) {
+    if (Object.hasOwn(record.value, 'feedback')) {
         const parsedFeedback = parseFeedback(record.value.feedback, `${path}.feedback`);
         if (parsedFeedback.status === 'invalid') {
             return parsedFeedback;

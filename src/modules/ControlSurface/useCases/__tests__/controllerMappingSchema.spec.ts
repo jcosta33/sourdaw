@@ -279,6 +279,19 @@ describe('validateControllerMappingSchema', () => {
             expectInvalidCode(makeDocument([mapping]), code);
         });
 
+        it.each([
+            ['present undefined layer', makeMapping({ layer: undefined }), 'INVALID_ID'],
+            ['present undefined mode', makeMapping({ mode: undefined }), 'INVALID_ID'],
+            ['present undefined feedback', makeMapping({ feedback: undefined }), 'INVALID_FEEDBACK'],
+            [
+                'present undefined layer and mode',
+                makeMapping({ layer: undefined, mode: undefined }),
+                'MUTUALLY_EXCLUSIVE_SCOPE',
+            ],
+        ])('rejects %s instead of treating the key as absent', (_label, mapping, code) => {
+            expectInvalidCode(makeDocument([mapping]), code);
+        });
+
         it('rejects duplicate mapping IDs exactly and case-sensitively across scopes', () => {
             expectInvalidCode(
                 makeDocument([
@@ -765,6 +778,35 @@ describe('validateControllerMappingSchema', () => {
             expectInvalidCode(makeDocument([makeMapping({ action })]), 'UNRESOLVED_ACTION');
             expect(effectSpies.dispatch).not.toHaveBeenCalled();
             expect(effectSpies.storeWrite).not.toHaveBeenCalled();
+        });
+
+        it('preserves an own JSON __proto__ payload key for exact resolver rejection', () => {
+            const payload: unknown = JSON.parse(
+                '{"bpm":{"source":"input-value"},"__proto__":{"source":"constant","value":1}}'
+            );
+            const observedKeys: PropertyKey[][] = [];
+            const exactResolver: ActionResolver = ({ action }) => {
+                if (action.payload === null) {
+                    return { status: 'unresolved', reason: 'payload-must-be-an-object' };
+                }
+
+                const keys = Reflect.ownKeys(action.payload);
+                observedKeys.push(keys);
+                if (keys.length === 1 && keys[0] === 'bpm') {
+                    return { status: 'resolved', actionType: 'setTempo' };
+                }
+
+                return { status: 'unresolved', reason: 'unexpected-payload-key' };
+            };
+            const action = { type: 'setTempo', payload };
+
+            const result = validate(makeDocument([makeMapping({ action })]), exactResolver);
+
+            expect(observedKeys).toEqual([['bpm', '__proto__']]);
+            expect(result).toEqual({
+                status: 'invalid',
+                diagnostics: [{ code: 'UNRESOLVED_ACTION', path: '$.mappings[0].action' }],
+            });
         });
 
         it('catches a resolver throw and attempts no later resolver or effect', () => {
