@@ -221,7 +221,7 @@ describe('nativeCreateProject', () => {
 });
 ```
 
-If the repository checks `isTauriAvailable()` and short-circuits when not in Tauri, also mock that helper and test both branches.
+If the repository checks `isTauri()` and short-circuits when not in Tauri, also mock that helper (`#/utils/tauriRuntime`) and test both branches.
 
 ### 6.3 Repositories — Web Audio
 
