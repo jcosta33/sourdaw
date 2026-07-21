@@ -89,6 +89,32 @@ fn next_power_of_2(n: usize) -> usize {
 // Non-uniform partition stage
 // ---------------------------------------------------------------------------
 
+/// Simple ring-buffer delay line (zero-length = passthrough).
+struct DelayLine {
+    buf: Vec<f32>,
+    pos: usize,
+}
+
+impl DelayLine {
+    fn new(samples: usize) -> Self {
+        Self {
+            buf: vec![0.0; samples],
+            pos: 0,
+        }
+    }
+
+    #[inline]
+    fn push(&mut self, input: f32) -> f32 {
+        if self.buf.is_empty() {
+            return input;
+        }
+        let out = self.buf[self.pos];
+        self.buf[self.pos] = input;
+        self.pos = (self.pos + 1) % self.buf.len();
+        out
+    }
+}
+
 struct ConvStage {
     partition_size: usize,
     fft_size: usize,
@@ -98,14 +124,23 @@ struct ConvStage {
     fdl_re: Vec<Vec<f32>>,
     fdl_im: Vec<Vec<f32>>,
     fdl_pos: usize,
+    // Per-stage input delay aligning the stage's segment to the global
+    // latency reference: a stage emits its segment at
+    // (input delay + partition_size + local offset), which must equal the
+    // segment's absolute IR offset plus the global latency.
+    input_delay: DelayLine,
     input_acc: Vec<f32>,
     input_acc_pos: usize,
-    overlap_buf: Vec<f32>,
-    output_pos: usize,
+    // Overlap-add state. `emit_buf` holds the fully summed output block
+    // (first half of the IFFT plus the tail carried from the previous
+    // block); `tail_buf` carries this block's second half forward.
+    emit_buf: Vec<f32>,
+    tail_buf: Vec<f32>,
+    emit_pos: usize,
 }
 
 impl ConvStage {
-    fn new(partition_size: usize, ir_segment: &[f32]) -> Self {
+    fn new(partition_size: usize, ir_segment: &[f32], delay_samples: usize) -> Self {
         let fft_size = partition_size * 2;
         let num_partitions = (ir_segment.len() + partition_size - 1) / partition_size;
 
@@ -137,29 +172,35 @@ impl ConvStage {
             fdl_re,
             fdl_im,
             fdl_pos: 0,
+            input_delay: DelayLine::new(delay_samples),
             input_acc: vec![0.0; partition_size],
             input_acc_pos: 0,
-            overlap_buf: vec![0.0; fft_size],
-            output_pos: partition_size, // start reading from second half (delay = partition_size)
+            emit_buf: vec![0.0; partition_size],
+            tail_buf: vec![0.0; partition_size],
+            // The first output block is silent: a block's convolution can only
+            // be emitted while the next block accumulates, so the stage has an
+            // inherent one-partition streaming latency.
+            emit_pos: partition_size,
         }
     }
 
     /// Feed one sample, get one output sample.
     #[inline]
     fn process_sample(&mut self, input: f32) -> f32 {
-        self.input_acc[self.input_acc_pos] = input;
+        let delayed = self.input_delay.push(input);
+        self.input_acc[self.input_acc_pos] = delayed;
         self.input_acc_pos += 1;
 
-        let output = if self.output_pos < self.fft_size {
-            self.overlap_buf[self.output_pos]
+        let output = if self.emit_pos < self.partition_size {
+            self.emit_buf[self.emit_pos]
         } else {
             0.0
         };
-        self.output_pos += 1;
+        self.emit_pos += 1;
 
         if self.input_acc_pos >= self.partition_size {
             self.input_acc_pos = 0;
-            self.output_pos = self.partition_size;
+            self.emit_pos = 0;
 
             let mut in_re = vec![0.0_f32; self.fft_size];
             let mut in_im = vec![0.0_f32; self.fft_size];
@@ -193,7 +234,17 @@ impl ConvStage {
             }
 
             fft(&mut acc_re, &mut acc_im, true);
-            self.overlap_buf = acc_re;
+
+            // Overlap-add: the linear convolution of this block is the first
+            // half of the IFFT summed with the second half carried from the
+            // previous block. Carry this block's second half forward.
+            // (Previously the buffer was *replaced* and only the second half
+            // was emitted — the correct first half was discarded every block,
+            // so an impulse produced essentially zero tail output.)
+            for i in 0..self.partition_size {
+                self.emit_buf[i] = acc_re[i] + self.tail_buf[i];
+                self.tail_buf[i] = acc_re[self.partition_size + i];
+            }
         }
 
         output
@@ -275,14 +326,31 @@ const HEAD_SIZE: usize = 128;
 /// Non-uniform partition sizes (increasing for efficiency).
 const STAGE_SIZES: [usize; 5] = [256, 512, 1024, 2048, 4096];
 
+/// Global latency reference, in samples. Every part of the wet path — head,
+/// every tail stage, and the dry reference — is aligned so an IR tap at
+/// absolute index `m` lands at output index `m + GLOBAL_LATENCY`.
+/// Stage i's segment starts at absolute offset `HEAD_SIZE + S_i` and the
+/// stage adds `P_i` of streaming latency, so its input is delayed by
+/// `HEAD_SIZE + S_i + GLOBAL_LATENCY - P_i`; the minimum over stages of
+/// `(absolute offset) - P_i` is `HEAD_SIZE - STAGE_SIZES[0] = -128`, which
+/// fixes `GLOBAL_LATENCY = 128` (the largest zero-delay choice).
+const GLOBAL_LATENCY: usize = HEAD_SIZE;
+
 pub struct ConvolutionEngine {
     sample_rate: f32,
 
-    // Direct head (time-domain, zero latency)
+    // Direct head (time-domain, zero latency before alignment)
     head_ir: Vec<f32>,
     head_len: usize,
     input_history: Vec<f32>,
     input_pos: usize,
+    // Alignment delays: the head and the dry reference are delayed by
+    // GLOBAL_LATENCY so they land on the same timeline as the input-delayed
+    // tail stages (see GLOBAL_LATENCY).
+    head_delay: DelayLine,
+    stereo_head_delay: DelayLine,
+    dry_delay_l: DelayLine,
+    dry_delay_r: DelayLine,
 
     // Non-uniform FFT stages
     stages: Vec<ConvStage>,
@@ -309,6 +377,10 @@ impl ConvolutionEngine {
             head_len: 0,
             input_history: vec![0.0; HEAD_SIZE + 1],
             input_pos: 0,
+            head_delay: DelayLine::new(GLOBAL_LATENCY),
+            stereo_head_delay: DelayLine::new(GLOBAL_LATENCY),
+            dry_delay_l: DelayLine::new(GLOBAL_LATENCY),
+            dry_delay_r: DelayLine::new(GLOBAL_LATENCY),
             stages: Vec::new(),
             stereo_head_ir: Vec::new(),
             stereo_stages: Vec::new(),
@@ -425,7 +497,7 @@ impl ConvolutionEngine {
                 tail_out += stage.process_sample(mono);
             }
 
-            let wet_l = head_out + tail_out;
+            let wet_l = self.head_delay.push(head_out) + tail_out;
 
             // True stereo: process right input through RL/RR path
             let wet_r = if self.has_true_stereo {
@@ -439,13 +511,19 @@ impl ConvolutionEngine {
                 for stage in self.stereo_stages.iter_mut() {
                     stereo_tail += stage.process_sample(mono);
                 }
-                stereo_head + stereo_tail
+                self.stereo_head_delay.push(stereo_head) + stereo_tail
             } else {
                 wet_l // mono-to-stereo: same on both channels
             };
 
-            left[i] = dry_l * (1.0 - self.mix) + wet_l * self.mix;
-            right[i] = dry_r * (1.0 - self.mix) + wet_r * self.mix;
+            // The dry reference takes the same alignment delay as the wet
+            // path so the mix stays time-coherent; the plugin reports
+            // GLOBAL_LATENCY via get_latency for host PDC.
+            let aligned_dry_l = self.dry_delay_l.push(dry_l);
+            let aligned_dry_r = self.dry_delay_r.push(dry_r);
+
+            left[i] = aligned_dry_l * (1.0 - self.mix) + wet_l * self.mix;
+            right[i] = aligned_dry_r * (1.0 - self.mix) + wet_r * self.mix;
         }
     }
 
@@ -482,7 +560,15 @@ fn build_stages(tail: &[f32]) -> Vec<ConvStage> {
         let segment = &tail[offset..end];
 
         if !segment.is_empty() {
-            stages.push(ConvStage::new(stage_size, segment));
+            // Align the stage to the global reference: its segment starts at
+            // absolute IR offset HEAD_SIZE + offset, and the stage adds
+            // stage_size of streaming latency, so its input is delayed until
+            // (delay + stage_size + local offset) == (absolute offset +
+            // GLOBAL_LATENCY). Without this every stage emitted its segment
+            // at partition_size + local offset — late for the first stage,
+            // progressively early for the rest.
+            let delay = (HEAD_SIZE + offset + GLOBAL_LATENCY).saturating_sub(stage_size);
+            stages.push(ConvStage::new(stage_size, segment, delay));
         }
         offset = end;
     }
@@ -490,8 +576,183 @@ fn build_stages(tail: &[f32]) -> Vec<ConvStage> {
     // Any remaining tail goes into the largest stage size
     if offset < tail.len() {
         let largest = *STAGE_SIZES.last().unwrap();
-        stages.push(ConvStage::new(largest, &tail[offset..]));
+        let delay = (HEAD_SIZE + offset + GLOBAL_LATENCY).saturating_sub(largest);
+        stages.push(ConvStage::new(largest, &tail[offset..], delay));
     }
 
     stages
+}
+
+// ---------------------------------------------------------------------------
+// Tests
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod tests {
+    use super::ConvolutionEngine;
+
+    /// Deterministic decaying-noise IR. The generator must be spectrally
+    /// white at the stage-delay lags (a multiply-without-carries hash is
+    /// pathologically correlated at lag 1792 and would fake an energy
+    /// deficit in the stage-overlap region).
+    fn make_ir(len: usize) -> Vec<f32> {
+        let mut state = 12345_u32;
+        (0..len)
+            .map(|i| {
+                state = state.wrapping_mul(1664525).wrapping_add(1013904223);
+                let noise = ((state >> 8) as f32 / (1 << 24) as f32) * 2.0 - 1.0;
+                noise * (-(i as f32) / 1500.0).exp()
+            })
+            .collect()
+    }
+
+    /// Run the engine over `input` (fed identically on both channels) with
+    /// mix = 1.0, in host-sized blocks, returning the wet left channel.
+    fn run_engine(ir: &[f32], input: &[f32]) -> Vec<f32> {
+        let mut engine = ConvolutionEngine::new(48_000.0);
+        engine.load_ir(ir, 1);
+        engine.set_param("mix", 1.0);
+
+        let mut left = input.to_vec();
+        let mut right = input.to_vec();
+        for start in (0..left.len()).step_by(1024) {
+            let end = (start + 1024).min(left.len());
+            engine.process(&mut left[start..end], &mut right[start..end]);
+        }
+        left
+    }
+
+    /// Naive time-domain convolution, used as the ground-truth reference.
+    fn reference_convolution(input: &[f32], ir: &[f32]) -> Vec<f32> {
+        let mut out = vec![0.0_f32; input.len() + ir.len() - 1];
+        for (n, &x) in input.iter().enumerate() {
+            if x == 0.0 {
+                continue;
+            }
+            for (k, &h) in ir.iter().enumerate() {
+                out[n + k] += x * h;
+            }
+        }
+        out
+    }
+
+    #[test]
+    fn impulse_produces_tail_energy_matching_reference_convolution() {
+        // 6000 samples: head (128) + stage 1 (2048) + a stage-2 crossing.
+        let ir = make_ir(6000);
+        let mut input = vec![0.0_f32; 8192];
+        input[0] = 1.0;
+
+        let out = run_engine(&ir, &input);
+        let reference = reference_convolution(&input, &ir);
+
+        let engine_energy: f32 = out.iter().map(|s| s * s).sum();
+        let reference_energy: f32 = reference.iter().map(|s| s * s).sum();
+        assert!(
+            (engine_energy - reference_energy).abs() / reference_energy < 0.05,
+            "total wet energy must match true convolution (engine={engine_energy}, reference={reference_energy})"
+        );
+
+        // The decisive assertion for the discarded-tail bug: pre-fix the tail
+        // stages emitted ~1e-14 total; the head alone cannot reach this bound.
+        let tail_energy: f32 = out[256..].iter().map(|s| s * s).sum();
+        assert!(
+            tail_energy > 0.5 * reference_energy,
+            "tail stages must contribute the bulk of the response (tail={tail_energy}, total={reference_energy})"
+        );
+    }
+
+    #[test]
+    fn impulse_taps_land_at_their_ir_index_plus_global_latency() {
+        // One tap per FFT stage: stage 1 (abs 200), stage 2 (abs 3000),
+        // stage 3 (abs 7000). Every tap must appear at output index
+        // (IR index + GLOBAL_LATENCY) — the alignment the undelayed-stage
+        // design violated (stage 1 ran 128 late, stage 2 1664 early, stage 3
+        // 5248 early). Energy/RMS tests are delay-insensitive and cannot see
+        // the misalignment; this one can.
+        let mut ir = vec![0.0_f32; 7001];
+        ir[200] = 1.0;
+        ir[3000] = 0.5;
+        ir[7000] = 0.25;
+        let mut input = vec![0.0_f32; 16384];
+        input[0] = 1.0;
+
+        let out = run_engine(&ir, &input);
+
+        for &(tap, amp) in &[(200usize, 1.0f32), (3000, 0.5), (7000, 0.25)] {
+            let at = tap + super::GLOBAL_LATENCY;
+            assert!(
+                (out[at] - amp).abs() < 1.0e-3,
+                "tap at IR index {tap} must appear at output index {at} (got {})",
+                out[at]
+            );
+        }
+
+        // And nothing but the three taps anywhere: total energy equals the
+        // tap energies within FFT roundoff.
+        let total: f32 = out.iter().map(|s| s * s).sum();
+        let taps: f32 = 1.0f32.powi(2) + 0.5f32.powi(2) + 0.25f32.powi(2);
+        assert!(
+            (total - taps).abs() < 1.0e-2,
+            "taps must not smear beyond their aligned positions (total={total}, taps={taps})"
+        );
+    }
+
+    #[test]
+    fn dc_input_converges_to_ir_sum_without_tearing() {
+        // Positive decaying IR: the steady-state DC response is exactly the IR
+        // sum. The discarded-tail bug tore this to a small oscillating
+        // fraction of the true value.
+        let ir: Vec<f32> = (0..2000).map(|i| (-(i as f32) / 800.0).exp()).collect();
+        let input = vec![1.0_f32; 8192];
+
+        let out = run_engine(&ir, &input);
+
+        let ir_sum: f32 = ir.iter().sum();
+        for (n, &s) in out.iter().enumerate().skip(4096) {
+            assert!(
+                (s - ir_sum).abs() / ir_sum < 0.01,
+                "steady-state DC output must equal the IR sum (n={n}, out={s}, ir_sum={ir_sum})"
+            );
+        }
+    }
+
+    #[test]
+    fn sine_output_is_continuous_across_partition_boundaries() {
+        // IR long enough to cross the stage-1/stage-2 partition boundary.
+        let ir = make_ir(6000);
+        let input: Vec<f32> = (0..16384)
+            .map(|n| (n as f32 * 2.0 * std::f32::consts::PI * 440.0 / 48_000.0).sin() * 0.5)
+            .collect();
+
+        let out = run_engine(&ir, &input);
+
+        // An LTI system driven by a steady sine reaches constant-amplitude
+        // steady state. Compare against the true convolution: pre-fix this
+        // ratio was 2.14 (torn leakage coherently amplifies a continuous
+        // tone); with correct overlap-add it sits near 1.0 — the residual
+        // spread is incoherent cross-stage overlap with a noise IR.
+        let reference = reference_convolution(&input, &ir);
+        let rms =
+            |slice: &[f32]| (slice.iter().map(|s| s * s).sum::<f32>() / slice.len() as f32).sqrt();
+        let engine_rms = rms(&out[8192..]);
+        let reference_rms = rms(&reference[8192..input.len()]);
+        let ratio = engine_rms / reference_rms;
+        assert!(
+            (ratio - 1.0).abs() < 0.15,
+            "steady-state sine response must match true convolution (engine={engine_rms}, reference={reference_rms}, ratio={ratio})"
+        );
+
+        // No periodic amplitude tearing across partition boundaries either.
+        let block_rms: Vec<f32> = out[8192..]
+            .chunks(256)
+            .map(|chunk| (chunk.iter().map(|s| s * s).sum::<f32>() / chunk.len() as f32).sqrt())
+            .collect();
+        let max_rms = block_rms.iter().copied().fold(0.0_f32, f32::max);
+        let min_rms = block_rms.iter().copied().fold(f32::MAX, f32::min);
+        assert!(
+            min_rms > 0.5 * max_rms,
+            "steady-state sine RMS must not tear across partition boundaries (min={min_rms}, max={max_rms})"
+        );
+    }
 }

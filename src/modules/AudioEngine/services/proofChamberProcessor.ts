@@ -58,7 +58,10 @@ class ProofChamberProcessor extends AudioWorkletProcessor {
         this._memory = wasmExports.memory;
         this._instance = new ProofChamberInstance(sampleRate);
         this._ready = true;
-        this.port.postMessage({ type: 'ready' });
+        // Include the aligned convolution latency (GLOBAL_LATENCY = 128) so
+        // the device registry can report it for host PDC — mirrors the
+        // gluten/bacteria/proof handshake pattern.
+        this.port.postMessage({ type: 'ready', latency: this._instance.get_latency() });
     }
 
     _passthrough(input: Float32Array[], output: Float32Array[]): void {

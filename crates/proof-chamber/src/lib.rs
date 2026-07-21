@@ -160,10 +160,12 @@ impl ProofChamberInstance {
     }
 
     /// Report plugin latency in samples for PDC (delay compensation).
-    /// The convolution head size is the minimum latency.
+    /// The convolution wet path is aligned so every IR tap lands at its
+    /// absolute index plus HEAD_SIZE: tail-stage inputs are delayed to their
+    /// segment offsets, and the head/dry reference takes the remaining 128.
     pub fn get_latency(&self) -> u32 {
         match &self.engine {
-            ReverbEngine::Convolution(_) => 128, // HEAD_SIZE
+            ReverbEngine::Convolution(_) => 128, // convolution::GLOBAL_LATENCY (HEAD_SIZE)
             ReverbEngine::Hybrid(_) => 128,
             _ => 0, // algorithmic reverbs have zero latency
         }
@@ -191,5 +193,24 @@ impl ProofChamberInstance {
         };
         names.extend(engine_names);
         serde_json::to_string(&names).unwrap_or_else(|_| "[]".to_string())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::ProofChamberInstance;
+
+    #[test]
+    fn convolution_latency_matches_global_alignment_reference() {
+        let mut instance = ProofChamberInstance::new(48_000.0);
+        // Algorithmic engines report zero latency.
+        assert_eq!(instance.get_latency(), 0);
+
+        instance.set_param("algorithm", 4.0); // Convolution
+        assert_eq!(
+            instance.get_latency(),
+            128,
+            "tail-stage inputs are delayed to their absolute segment offsets and the head/dry reference takes the remainder, so the aligned wet path's latency is the head size (128)"
+        );
     }
 }

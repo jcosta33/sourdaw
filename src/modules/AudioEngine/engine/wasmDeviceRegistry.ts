@@ -303,7 +303,9 @@ const proofChamberDescriptor: WasmDeviceDescriptor = {
         };
         const loadPromise = createProofChamberNode(context)
             .then(async (result: ProofChamberNodeResult) => {
-                await result.ready;
+                const readyData = await result.ready;
+                const initialLatency = typeof readyData.latency === 'number' ? readyData.latency : 0;
+                reportLatency(deviceId, (initialLatency / context.sampleRate) * 1000);
                 for (const [name, value] of pendingParams) {
                     result.setParam(name, value);
                 }
