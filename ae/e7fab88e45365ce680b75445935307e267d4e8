@@ -1,0 +1,35 @@
+src/modules/Arrangement/stores/__tests__/deviceWriteBoundaryClosure.spec.ts
+  s_b275a51ee74f73::t_27731b723e49b1 7-8,10-12,15-192,195-272,309-310,318-319,339,342-345,353-377,379-398,400-412,415-463
+src/modules/Toaster/useCases/__tests__/loadToasterKit.spec.ts
+  s_7c0241d7d2be50::t_ac98925d30ce44 38-49,194-199,218,220,222-228,230-231,235-253
+src/modules/Toaster/useCases/__tests__/toasterSubscriber.spec.ts
+  s_b275a51ee74f73::t_44cb7937297edb 12-18,26-30,58-63,111,133,137,140,150-168,171-195,198
+src/modules/Toaster/useCases/loadToasterKit.ts
+  s_b275a51ee74f73::t_1e2b711971c041 1-2,53-57
+src/modules/Toaster/useCases/toasterSubscriber.ts
+  s_b275a51ee74f73::t_546f9dbfaa5f24 2,33-37
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "aee7fab88e45365ce680b75445935307e267d4e8",
+  "prompts": {},
+  "sessions": {
+    "s_7c0241d7d2be50": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f839f-1172-7142-9319-ea4cfe3ec7e7",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_b275a51ee74f73": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f83af-d116-74d0-aa71-018e78a92715",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
