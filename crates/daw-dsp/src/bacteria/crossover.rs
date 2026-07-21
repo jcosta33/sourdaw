@@ -134,13 +134,26 @@ pub struct CrossoverEngine {
     sample_rate: f32,
 }
 
+/// Maximum crossover split points (6 bands → 5 points).
+const MAX_CROSSOVER_POINTS: usize = 5;
+/// Maximum allpass compensation points (Σ i for i in 1..5).
+const MAX_ALLPASS_POINTS: usize = 10;
+
 impl CrossoverEngine {
     pub fn new(sample_rate: f32) -> Self {
+        // Pre-allocate the full topology at construction: set_bands runs on the
+        // audio rendering thread (via set_param), so it must never grow these
+        // Vecs — activity is gated by band_count, not Vec length.
+        let make_points = |count: usize| {
+            let mut points = Vec::with_capacity(count);
+            points.resize_with(count, || Lr4CrossoverPoint::new(1000.0, sample_rate));
+            points
+        };
         Self {
-            points_l: Vec::new(),
-            points_r: Vec::new(),
-            allpass_points_l: Vec::new(),
-            allpass_points_r: Vec::new(),
+            points_l: make_points(MAX_CROSSOVER_POINTS),
+            points_r: make_points(MAX_CROSSOVER_POINTS),
+            allpass_points_l: make_points(MAX_ALLPASS_POINTS),
+            allpass_points_r: make_points(MAX_ALLPASS_POINTS),
             band_count: 1,
             sample_rate,
         }
@@ -150,28 +163,21 @@ impl CrossoverEngine {
     pub fn set_bands(&mut self, band_count: usize, freqs: &[f32]) {
         let n = band_count.clamp(1, 6);
         let num_xovers = n.saturating_sub(1);
-        let num_allpasses = num_xovers.saturating_sub(1) * num_xovers / 2;
 
+        // Topology switch: reset biquad state (z1/z2) so newly activated points
+        // don't replay stale state from a previous configuration (click) and
+        // active points don't carry history across the band-layout change.
+        if n != self.band_count {
+            self.reset();
+        }
         self.band_count = n;
-        self.points_l.resize_with(num_xovers, || {
-            Lr4CrossoverPoint::new(1000.0, self.sample_rate)
-        });
-        self.points_r.resize_with(num_xovers, || {
-            Lr4CrossoverPoint::new(1000.0, self.sample_rate)
-        });
-        self.allpass_points_l.resize_with(num_allpasses, || {
-            Lr4CrossoverPoint::new(1000.0, self.sample_rate)
-        });
-        self.allpass_points_r.resize_with(num_allpasses, || {
-            Lr4CrossoverPoint::new(1000.0, self.sample_rate)
-        });
 
         let mut ap_idx = 0;
         for i in 0..num_xovers {
             let freq = freqs.get(i).copied().unwrap_or(1000.0).clamp(20.0, 20000.0);
             self.points_l[i].set_freq(freq, self.sample_rate);
             self.points_r[i].set_freq(freq, self.sample_rate);
-            
+
             if i > 0 {
                 for _j in 0..i {
                     self.allpass_points_l[ap_idx].set_freq(freq, self.sample_rate);
@@ -245,5 +251,83 @@ impl CrossoverEngine {
         for p in &mut self.allpass_points_r {
             p.reset();
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// RT contract: the full topology is allocated at construction and
+    /// set_bands (which runs on the audio thread via set_param) never grows
+    /// or shrinks storage — activity is gated by band_count alone.
+    #[test]
+    fn new_preallocates_full_topology_and_set_bands_never_grows_storage() {
+        let mut xover = CrossoverEngine::new(48_000.0);
+        assert_eq!(
+            (
+                xover.points_l.len(),
+                xover.points_r.len(),
+                xover.allpass_points_l.len(),
+                xover.allpass_points_r.len(),
+            ),
+            (
+                MAX_CROSSOVER_POINTS,
+                MAX_CROSSOVER_POINTS,
+                MAX_ALLPASS_POINTS,
+                MAX_ALLPASS_POINTS
+            )
+        );
+        let capacities = (
+            xover.points_l.capacity(),
+            xover.points_r.capacity(),
+            xover.allpass_points_l.capacity(),
+            xover.allpass_points_r.capacity(),
+        );
+
+        let freqs = [200.0, 800.0, 2500.0, 6000.0, 12000.0];
+        for n in [2usize, 6, 3, 1, 5, 6] {
+            xover.set_bands(n, &freqs);
+            assert_eq!(xover.points_l.len(), MAX_CROSSOVER_POINTS);
+            assert_eq!(xover.allpass_points_r.len(), MAX_ALLPASS_POINTS);
+            assert_eq!(
+                (
+                    xover.points_l.capacity(),
+                    xover.points_r.capacity(),
+                    xover.allpass_points_l.capacity(),
+                    xover.allpass_points_r.capacity(),
+                ),
+                capacities,
+                "set_bands({n}) changed storage — allocation on the RT path"
+            );
+        }
+    }
+
+    /// A band-count change must clear biquad z1/z2 state so the new topology
+    /// does not replay stale filter history (transient click).
+    #[test]
+    fn band_count_change_resets_filter_state() {
+        let mut xover = CrossoverEngine::new(48_000.0);
+        let freqs = [1000.0, 3000.0, 8000.0, 12000.0, 16000.0];
+        xover.set_bands(3, &freqs);
+
+        let mut bands_l = [0.0_f32; 6];
+        let mut bands_r = [0.0_f32; 6];
+        for i in 0..512 {
+            let s = (i as f32 * 0.1).sin();
+            xover.process_sample(s, s, &mut bands_l, &mut bands_r);
+        }
+        let dirty = xover.points_l.iter().any(|p| p.lp1.z1 != 0.0 || p.lp1.z2 != 0.0);
+        assert!(dirty, "expected filter state to accumulate while processing");
+
+        xover.set_bands(2, &freqs);
+        let clean = xover
+            .points_l
+            .iter()
+            .chain(xover.points_r.iter())
+            .chain(xover.allpass_points_l.iter())
+            .chain(xover.allpass_points_r.iter())
+            .all(|p| p.lp1.z1 == 0.0 && p.lp1.z2 == 0.0 && p.hp2.z1 == 0.0 && p.hp2.z2 == 0.0);
+        assert!(clean, "topology switch left stale filter state");
     }
 }
