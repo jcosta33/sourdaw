@@ -1,0 +1,23 @@
+crates/daw-dsp/testdata/time_stretch/BASELINE.md
+  s_7c0241d7d2be50::t_25231bc64f675b 35-37
+crates/daw-dsp/testdata/time_stretch/manifest.json
+  s_7c0241d7d2be50::t_b402c456455b77 7-17
+crates/daw-dsp/tests/time_stretch_contract.rs
+  s_7c0241d7d2be50::t_8fdcba24c37ec7 34,811,815-848,1132-1186,1193,1195,1198-1201,1203-1204,1208-1209,1222-1257,1265-1285,1288-1289,1291-1292,1294-1301,1303-1320,1336-1347,1357,1360-1361
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "074e12374e7ec641216be85a5138ade561fe1a83",
+  "prompts": {},
+  "sessions": {
+    "s_7c0241d7d2be50": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f839f-1172-7142-9319-ea4cfe3ec7e7",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
