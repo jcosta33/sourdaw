@@ -5,10 +5,9 @@ description: >-
   state, interact with a flow, or capture screenshots. ALWAYS apply when you need
   to verify how the app renders visually, inspect runtime DOM or layout too
   dynamic for static reading, or click through a stateful flow to debug it — even
-  if the prompt only says "look at the UI" or "check the screen". Do not add files
-  under `tests/e2e/`, invoke the `playwright test` runner, or hand-roll a one-off
-  browser launch for inspection. Skip authoring maintained E2E assertions with
-  `@playwright/test`, unit/component tests, and non-UI work.
+  if the prompt only says "look at the UI" or "check the screen". Skip authoring
+  maintained E2E assertions with `@playwright/test`, unit/component tests, and
+  non-UI work.
 ---
 
 ## Purpose
@@ -31,7 +30,7 @@ Write standard Node scripts using the `playwright` core library and execute them
 
 ### 3. Use `setupAgentBrowser`
 
-Initialize with `setupAgentBrowser` from `.agents/ui-scripts/utils.ts`. It launches headless Chromium, navigates to `process.env.BASE_URL || 'http://localhost:5173'`, and returns `{ browser, page }`. Confirm the dev server is up first.
+Initialize with `setupAgentBrowser` from `.agents/ui-scripts/utils.ts`. It launches headless Chromium, navigates to `process.env.BASE_URL || 'http://localhost:5173'`, and returns `{ browser, page }`.
 
 **Why:** a shared launcher keeps every probe consistent and gives one place to fix flakiness.
 
@@ -79,49 +78,7 @@ try {
 
 ## What does not belong
 
-- Maintained assertions for the version-controlled suite (`tests/e2e/` + `@playwright/test`).
-- Treating `.agents/ui-scripts/` probes as a maintained test API.
 - Production fixes driven only by a probe without a proper task gate.
-- Arbitrary stdout debug logging that breaks the JSON contract.
-
-## Anti-patterns
-
-### CRITICAL — Probe under `tests/e2e/`
-
-❌ Wrong: new file in `tests/e2e/` that clicks around and screenshots.
-
-✅ Correct: `.agents/ui-scripts/` + `node --experimental-strip-types …`.
-
-### CRITICAL — Using the Playwright test runner for a probe
-
-❌ Wrong: `npx playwright test my-probe.spec.ts` (probe) or bare `npx playwright` for the maintained E2E suite
-
-✅ Correct (probe): `node --experimental-strip-types .agents/ui-scripts/my-probe.ts`
-✅ Correct (maintained E2E suite, when used): `pnpm test:e2e`
-
-### HIGH — Hand-rolled browser launch
-
-❌ Wrong: `const browser = await chromium.launch()` at the top of the script.
-
-✅ Correct: `const { browser, page } = await setupAgentBrowser()`.
-
-### HIGH — Free-text stdout
-
-❌ Wrong: `console.log('clicked play button')` scattered through the script.
-
-✅ Correct: one `console.log(JSON.stringify(result, null, 2))`.
-
-### MEDIUM — Fragile CSS locators
-
-❌ Wrong: `page.locator('.btn-primary.transport > svg')`
-
-✅ Correct: `page.getByRole('button', { name: /Play/i })`.
-
-### MEDIUM — Browser closed only on the happy path
-
-❌ Wrong: `await browser.close()` only after success.
-
-✅ Correct: `await browser.close()` inside `finally`.
 
 ## References
 

@@ -5,15 +5,13 @@ description: >-
   the code under test, and reproduce a defect with a failing test before touching
   behaviour. ALWAYS apply when creating a `*.spec.ts` / `*.spec.tsx` file, moving
   or renaming a spec, or reviewing a diff that adds or relocates tests — even if
-  it looks like a one-line rename. Do not co-locate a spec beside its source, add
-  a barrel `index.ts` inside `__tests__/`, or fix a bug before a failing
-  reproduction exists. Skip writing production code, configuring the test runner,
-  or authoring docs.
+  it looks like a one-line rename. Skip writing production code, configuring the
+  test runner, or authoring docs.
 ---
 
 ## Purpose
 
-Specs live in `__tests__/` directories, never beside the source. Layout drift — co-located specs, barrels inside `__tests__/`, shared helpers dumped next to one-off tests — makes suites hard to find and move. Specs also follow the same cross-module barrel rules as production code (test-inclusive depcruise).
+Specs live in `__tests__/` directories, never beside the source. Layout drift — co-located specs, barrels inside `__tests__/`, shared helpers dumped next to one-off tests — makes suites hard to find and move.
 
 ## Core rules
 
@@ -48,7 +46,7 @@ Cross-module imports still go through contract barrels — not private `models/`
 
 ### 4. Put shared helpers in their canonical folder
 
-Module-scoped dummies/fixtures that are not a single-spec detail live where the module already keeps test support (e.g. module `__tests__/` helpers). DI/event test helpers live under the project’s `testing/` paths, not scattered as one-off copies. No `index.ts` barrel inside `__tests__/`.
+Module-scoped dummies/fixtures that are not a single-spec detail live where the module already keeps test support (e.g. module `__tests__/` helpers). DI/event test helpers live under the infra `testing/` folders (`src/infra/*/testing/`), not scattered as one-off copies. No `index.ts` barrel inside `__tests__/`.
 
 **Why:** barrels and misplaced helpers become a second private API nobody owns.
 
@@ -72,46 +70,6 @@ Never claim green without a run. Prefer the specific file over the full suite.
 
 - Production-code changes solely to make a bad test pass (fix the test or surface the bug).
 - E2E / browser automation (different harness).
-- Co-located `SourceFile.spec.ts` beside `SourceFile.ts`.
-- `__tests__/index.ts` re-export barrels.
-
-## Anti-patterns
-
-### CRITICAL — Fix without a red reproduction
-
-❌ Wrong: change production code from a static read alone, then “it should pass”.
-
-✅ Correct: failing spec first, then fix, then green run pasted.
-
-### CRITICAL — Claim green without running the file
-
-❌ Wrong: “the test should pass now” with no output.
-
-✅ Correct: `pnpm test:run <path-to-spec>` and confirm pass.
-
-### HIGH — Spec co-located beside source
-
-❌ Wrong: `useCases/addTrack.spec.ts` next to `addTrack.ts`.
-
-✅ Correct: `useCases/__tests__/addTrack.spec.ts`.
-
-### HIGH — Barrel inside `__tests__/`
-
-❌ Wrong: `__tests__/index.ts` re-exporting helpers.
-
-✅ Correct: import the helper file directly.
-
-### HIGH — Cross-module private import in a test
-
-❌ Wrong: `import { type Track } from '#/modules/Arrangement/models/Track'` in a foreign module’s spec.
-
-✅ Correct: contract barrels, local test doubles, or local shapes.
-
-### MEDIUM — `vi.mock` for an injectable collaborator
-
-❌ Wrong: module-level mock of an injected repository for a use-case unit test.
-
-✅ Correct: inject seam / test double for that dependency.
 
 ## References
 

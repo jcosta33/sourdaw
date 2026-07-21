@@ -7,10 +7,8 @@ description: >-
   apply when writing or reviewing React components, hooks, contexts, or view
   models, when touching accessibility or keyboard behavior, when building
   timeline / waveform / piano-roll / automation / spectrogram surfaces, or when
-  styling presentation. Do not put validation, persistence, undo, or
-  engine-control logic into a hook, view model, or renderer hot path. Skip
-  engine/DSP/Rust work, pure business-rule or data-model changes, and build
-  tooling config.
+  styling presentation. Skip engine/DSP/Rust work, pure business-rule or
+  data-model changes, and build tooling config.
 ---
 
 ## Purpose
@@ -21,7 +19,7 @@ Presentation code that owns business truth, dense editors rendered as giant DOM 
 
 ### 1. Presentation only
 
-Components, hooks, and view models bind controls to semantics, layout, and read surfaces. They must not become the primary home of validation, persistence, undo orchestration, or engine control. Presentation must not import repositories, handlers, or engine: **same-module** `presentation-no-direct-*` (**error**); **cross-module** deep private `cross-module-index-only` (**error**). React stays in presentation (`react-only-in-presentation`).
+Components, hooks, and view models bind controls to semantics, layout, and read surfaces. They must not become the primary home of validation, persistence, undo orchestration, or engine control. Presentation must not import repositories, handlers, or engine (`architecture` rule 5). React stays in presentation (`react-only-in-presentation`).
 
 **Why:** business rules in the tree duplicate across surfaces and couple domain logic to React lifecycle.
 
@@ -39,13 +37,13 @@ Hooks bind presentation to explicit actions and read surfaces. Leaf `presentatio
 
 ### 4. Accessibility is part of component design
 
-Prefer real buttons, inputs, sliders, lists, dialogs, menus, and labels. Toggle/pressed semantics must be explicit for transport, mute/solo, arm, and similar controls. Core workflows stay keyboard-operable where feasible. Dense surfaces still need accessible support in surrounding chrome.
+Prefer real buttons, inputs, sliders, lists, dialogs, menus, and labels. Toggle/pressed semantics must be explicit for transport, mute/solo, arm, and similar controls. Core workflows stay keyboard-operable. Dense surfaces still need accessible support in surrounding chrome.
 
 **Why:** semantics retrofitted after the fact produce visual-only controls that fail a11y and often keyboard use.
 
 ### 5. Styling is systematic
 
-Use design tokens and project-standard primitives. Optimize for dark-UI legibility, dense but readable layouts, long-session usability, and stable affordances. Avoid one-off styling systems per feature.
+Use design tokens and project-standard primitives — dark-UI legibility at DAW density. No one-off styling systems per feature.
 
 **Why:** fragmented styling becomes unmaintainable under DAW density.
 
@@ -57,7 +55,7 @@ Plan for audio-thread failure, async projection failure, network failure, and un
 
 ### 7. Prefer plain, compiler-friendly components
 
-Do not hand-write `useMemo`, `useCallback`, or `React.memo` — the React Compiler owns memoization. No `forwardRef` (ref is a regular prop in React 19). Never render with `&&` — use ternary or early `return null`. Consume Context with `use()`, not `useContext`.
+Do not hand-write `useMemo`, `useCallback`, or `React.memo` — the React Compiler owns memoization. No `forwardRef` (ref is a regular prop in React 19). Prefer ternary or early `return null` over render `&&`; leaky non-boolean `&&` (e.g. `0 && …`) is **error** lint. Consume Context with `use()`, not `useContext`.
 
 **Why:** hand memoization fights the compiler; `&&` silently renders `0`/`''`; `forwardRef` is obsolete.
 
@@ -69,48 +67,7 @@ View models shape data for display. Validation, persistence, cross-feature mutat
 
 ## What does not belong
 
-- Engine/DSP/Rust implementation.
-- Pure business-rule or data-model changes with no presentation surface.
-- Build tooling and package config.
 - Gaming architecture rules by moving business logic into hooks labeled “UI”.
-
-## Anti-patterns
-
-### CRITICAL — Hook owns business truth
-
-❌ Wrong: hook validates, persists, and orchestrates undo for a domain edit.
-
-✅ Correct: hook calls an explicit action/use case and binds read surfaces.
-
-### CRITICAL — Renderer writes authoritative state
-
-❌ Wrong: canvas pointer handler calls `trackStore.set` or mutates project truth inline.
-
-✅ Correct: interpret interaction → dispatch explicit action.
-
-### CRITICAL — Manual memoization / `forwardRef` / `&&` render
-
-❌ Wrong: `useMemo`/`useCallback`/`React.memo`, `forwardRef`, or `{count && <Badge />}`.
-
-✅ Correct: plain components; `ref` as prop; ternary or early return.
-
-### HIGH — Dense editor as DOM forest
-
-❌ Wrong: one DOM node per clip/note for a full timeline.
-
-✅ Correct: renderer surface; React for layout and chrome.
-
-### HIGH — A11y bolted on late
-
-❌ Wrong: div-with-onClick transport controls, keyboard after the fact.
-
-✅ Correct: semantic controls and keyboard built into the component shape.
-
-### HIGH — Component imports useCases or business stores
-
-❌ Wrong: leaf `presentations/components/*` imports foreign `useCases` or business `stores`.
-
-✅ Correct: views/hooks compose; pass props into leaf components.
 
 ## References
 
