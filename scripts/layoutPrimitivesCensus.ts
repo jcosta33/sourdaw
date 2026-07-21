@@ -34,7 +34,7 @@ export const ALLOWED_LAYOUT_DISPOSITIONS = [
     'one-off',
 ] as const;
 
-export const REVIEWED_LAYOUT_CENSUS_DIGEST = 'a3e3f421645ba33e723c48787aa6db0d978bb17d2bacbebee97bab3e5fc4e3ea';
+export const REVIEWED_LAYOUT_CENSUS_DIGEST = 'cd8c94cdeea642f6121b3ae9f6ebea66bc814c4c0dc660be348d9fa7611a235c';
 
 const LEGACY_ONE_OFF_RATIONALE =
     'Native semantics, refs, handlers, positioning, overflow, child selectors, inline styles, spread attributes, or unsupported geometry require owner-specific proof.';
@@ -116,6 +116,26 @@ type ClassNameEvidence = {
     layoutTokens: string[];
     dynamic: boolean;
     responsive: boolean;
+    bindingEvidence: string[];
+    unresolvedBinding: boolean;
+};
+
+type ClassBindingResolver = {
+    repositoryRoot: string;
+    sourceFiles: Map<string, ts.SourceFile>;
+};
+
+type ClassBindingTarget = {
+    initializer: ts.Expression;
+    sourceFile: ts.SourceFile;
+    key: string;
+};
+
+type ClassExpressionAnalysis = {
+    fragments: string[];
+    dynamic: boolean;
+    unresolvedBinding: boolean;
+    bindingEvidence: string[];
 };
 
 type ImportedLayoutTags = {
@@ -147,19 +167,26 @@ const primitiveDefaults = new Map<string, string>([
 ]);
 const semanticElements = new Set([
     'a',
+    'aside',
     'button',
     'details',
     'dialog',
+    'dl',
     'fieldset',
+    'footer',
     'form',
+    'header',
     'input',
+    'kbd',
     'label',
     'legend',
     'li',
     'menu',
+    'nav',
     'ol',
     'option',
     'select',
+    'section',
     'summary',
     'table',
     'tbody',
@@ -423,6 +450,436 @@ function collectStringFragments(node: ts.Node, fragments: string[]): void {
     });
 }
 
+function emptyClassExpressionAnalysis(): ClassExpressionAnalysis {
+    return {
+        fragments: [],
+        dynamic: false,
+        unresolvedBinding: false,
+        bindingEvidence: [],
+    };
+}
+
+function mergeClassExpressionAnalyses(
+    analyses: ClassExpressionAnalysis[],
+    forceDynamic: boolean
+): ClassExpressionAnalysis {
+    const merged = emptyClassExpressionAnalysis();
+    merged.dynamic = forceDynamic;
+
+    for (const analysis of analyses) {
+        merged.fragments.push(...analysis.fragments);
+        merged.bindingEvidence.push(...analysis.bindingEvidence);
+        if (analysis.dynamic) {
+            merged.dynamic = true;
+        }
+        if (analysis.unresolvedBinding) {
+            merged.unresolvedBinding = true;
+        }
+    }
+
+    return merged;
+}
+
+function nearestFunctionScope(node: ts.Node): ts.Node | null {
+    let current: ts.Node | undefined = node.parent;
+    while (current) {
+        if (
+            ts.isFunctionDeclaration(current) ||
+            ts.isFunctionExpression(current) ||
+            ts.isArrowFunction(current) ||
+            ts.isMethodDeclaration(current) ||
+            ts.isGetAccessorDeclaration(current) ||
+            ts.isSetAccessorDeclaration(current) ||
+            ts.isConstructorDeclaration(current)
+        ) {
+            return current;
+        }
+        current = current.parent;
+    }
+    return null;
+}
+
+function variableDeclarationIsConst(declaration: ts.VariableDeclaration): boolean {
+    return (declaration.parent.flags & ts.NodeFlags.Const) !== 0;
+}
+
+function declarationBlockContainsReference(declaration: ts.VariableDeclaration, reference: ts.Identifier): boolean {
+    let current: ts.Node | undefined = declaration.parent;
+    while (current && !ts.isSourceFile(current)) {
+        if (ts.isBlock(current)) {
+            const referenceStart = reference.getStart(reference.getSourceFile());
+            return current.getStart(current.getSourceFile()) <= referenceStart && referenceStart <= current.getEnd();
+        }
+        if (
+            ts.isFunctionDeclaration(current) ||
+            ts.isFunctionExpression(current) ||
+            ts.isArrowFunction(current) ||
+            ts.isMethodDeclaration(current)
+        ) {
+            return true;
+        }
+        current = current.parent;
+    }
+    return true;
+}
+
+function findLocalConstBinding(identifier: ts.Identifier, sourceFile: ts.SourceFile): ClassBindingTarget | null {
+    const referenceFunction = nearestFunctionScope(identifier);
+    const referenceStart = identifier.getStart(sourceFile);
+    const candidates: Array<{ declaration: ts.VariableDeclaration; score: number }> = [];
+
+    function visit(node: ts.Node): void {
+        if (
+            ts.isVariableDeclaration(node) &&
+            ts.isIdentifier(node.name) &&
+            node.name.text === identifier.text &&
+            node.initializer &&
+            variableDeclarationIsConst(node)
+        ) {
+            const declarationFunction = nearestFunctionScope(node);
+            let score = -1;
+            if (declarationFunction === referenceFunction) {
+                if (node.getStart(sourceFile) < referenceStart && declarationBlockContainsReference(node, identifier)) {
+                    score = 2;
+                }
+            } else if (declarationFunction === null) {
+                score = 1;
+            }
+
+            if (score >= 0) {
+                candidates.push({ declaration: node, score });
+            }
+        }
+        ts.forEachChild(node, visit);
+    }
+
+    visit(sourceFile);
+    candidates.sort((left, right) => {
+        if (left.score !== right.score) {
+            return right.score - left.score;
+        }
+        return right.declaration.getStart(sourceFile) - left.declaration.getStart(sourceFile);
+    });
+    const selected = candidates[0]?.declaration;
+    if (!selected?.initializer) {
+        return null;
+    }
+
+    return {
+        initializer: selected.initializer,
+        sourceFile,
+        key: `${sourceFile.fileName}:${identifier.text}:${selected.getStart(sourceFile)}`,
+    };
+}
+
+function resolveRepositoryModulePath({
+    containingSourceFile,
+    moduleSpecifier,
+    resolver,
+}: {
+    containingSourceFile: ts.SourceFile;
+    moduleSpecifier: string;
+    resolver: ClassBindingResolver;
+}): string | null {
+    let moduleBase: string;
+    if (moduleSpecifier.startsWith('#/')) {
+        moduleBase = resolve(resolver.repositoryRoot, 'src', moduleSpecifier.slice(2));
+    } else if (moduleSpecifier.startsWith('.')) {
+        moduleBase = resolve(dirname(containingSourceFile.fileName), moduleSpecifier);
+    } else {
+        return null;
+    }
+
+    const candidates = [
+        moduleBase,
+        `${moduleBase}.ts`,
+        `${moduleBase}.tsx`,
+        resolve(moduleBase, 'index.ts'),
+        resolve(moduleBase, 'index.tsx'),
+    ];
+    for (const candidate of candidates) {
+        const repositoryPath = toPosixPath(relative(resolver.repositoryRoot, candidate));
+        if (repositoryPath.startsWith('../') || repositoryPath === '..') {
+            continue;
+        }
+        if (existsSync(candidate) && lstatSync(candidate).isFile()) {
+            return candidate;
+        }
+    }
+    return null;
+}
+
+function readClassBindingSourceFile(absolutePath: string, resolver: ClassBindingResolver): ts.SourceFile {
+    const cached = resolver.sourceFiles.get(absolutePath);
+    if (cached) {
+        return cached;
+    }
+
+    const sourceText = readFileSync(absolutePath, 'utf8');
+    let scriptKind = ts.ScriptKind.TS;
+    if (absolutePath.endsWith('.tsx')) {
+        scriptKind = ts.ScriptKind.TSX;
+    }
+    const sourceFile = ts.createSourceFile(absolutePath, sourceText, ts.ScriptTarget.Latest, true, scriptKind);
+    const repositoryPath = toPosixPath(relative(resolver.repositoryRoot, absolutePath));
+    assertNoParseDiagnostics(sourceFile, repositoryPath);
+    resolver.sourceFiles.set(absolutePath, sourceFile);
+    return sourceFile;
+}
+
+function findImportedConstBinding(
+    identifier: ts.Identifier,
+    sourceFile: ts.SourceFile,
+    resolver: ClassBindingResolver
+): ClassBindingTarget | null {
+    for (const statement of sourceFile.statements) {
+        if (!ts.isImportDeclaration(statement) || !ts.isStringLiteral(statement.moduleSpecifier)) {
+            continue;
+        }
+        const bindings = statement.importClause?.namedBindings;
+        if (!bindings || !ts.isNamedImports(bindings)) {
+            continue;
+        }
+
+        for (const element of bindings.elements) {
+            if (element.name.text !== identifier.text) {
+                continue;
+            }
+            const importedName = element.propertyName?.text ?? element.name.text;
+            const modulePath = resolveRepositoryModulePath({
+                containingSourceFile: sourceFile,
+                moduleSpecifier: statement.moduleSpecifier.text,
+                resolver,
+            });
+            if (!modulePath) {
+                return null;
+            }
+            const importedSourceFile = readClassBindingSourceFile(modulePath, resolver);
+            for (const importedStatement of importedSourceFile.statements) {
+                if (!ts.isVariableStatement(importedStatement)) {
+                    continue;
+                }
+                const exported = importedStatement.modifiers?.some(
+                    (modifier) => modifier.kind === ts.SyntaxKind.ExportKeyword
+                );
+                if (!exported || (importedStatement.declarationList.flags & ts.NodeFlags.Const) === 0) {
+                    continue;
+                }
+                for (const declaration of importedStatement.declarationList.declarations) {
+                    if (!ts.isIdentifier(declaration.name) || declaration.name.text !== importedName) {
+                        continue;
+                    }
+                    if (!declaration.initializer) {
+                        return null;
+                    }
+                    const repositoryPath = toPosixPath(relative(resolver.repositoryRoot, modulePath));
+                    return {
+                        initializer: declaration.initializer,
+                        sourceFile: importedSourceFile,
+                        key: `${repositoryPath}:${importedName}:${declaration.getStart(importedSourceFile)}`,
+                    };
+                }
+            }
+            return null;
+        }
+    }
+    return null;
+}
+
+function resolveClassBinding(
+    identifier: ts.Identifier,
+    sourceFile: ts.SourceFile,
+    resolver: ClassBindingResolver
+): ClassBindingTarget | null {
+    const localBinding = findLocalConstBinding(identifier, sourceFile);
+    if (localBinding) {
+        const repositoryPath = toPosixPath(relative(resolver.repositoryRoot, sourceFile.fileName));
+        localBinding.key = `${repositoryPath}:${identifier.text}:${localBinding.initializer.getStart(sourceFile)}`;
+        return localBinding;
+    }
+    return findImportedConstBinding(identifier, sourceFile, resolver);
+}
+
+function analyzeClassExpression({
+    expression,
+    resolver,
+    seenBindings,
+    sourceFile,
+}: {
+    expression: ts.Expression;
+    resolver: ClassBindingResolver;
+    seenBindings: Set<string>;
+    sourceFile: ts.SourceFile;
+}): ClassExpressionAnalysis {
+    if (ts.isStringLiteral(expression) || ts.isNoSubstitutionTemplateLiteral(expression)) {
+        return {
+            fragments: [expression.text],
+            dynamic: false,
+            unresolvedBinding: false,
+            bindingEvidence: [],
+        };
+    }
+
+    if (ts.isIdentifier(expression)) {
+        const binding = resolveClassBinding(expression, sourceFile, resolver);
+        if (!binding || seenBindings.has(binding.key)) {
+            return {
+                fragments: [],
+                dynamic: true,
+                unresolvedBinding: true,
+                bindingEvidence: [`unresolved:${expression.text}`],
+            };
+        }
+        const nextSeenBindings = new Set(seenBindings);
+        nextSeenBindings.add(binding.key);
+        const analysis = analyzeClassExpression({
+            expression: binding.initializer,
+            resolver,
+            seenBindings: nextSeenBindings,
+            sourceFile: binding.sourceFile,
+        });
+        const initializerText = normalizeWhitespace(binding.initializer.getText(binding.sourceFile));
+        analysis.bindingEvidence.unshift(`binding:${binding.key}:${initializerText}`);
+        return analysis;
+    }
+
+    if (ts.isParenthesizedExpression(expression)) {
+        return analyzeClassExpression({ expression: expression.expression, resolver, seenBindings, sourceFile });
+    }
+    if (ts.isAsExpression(expression) || ts.isTypeAssertionExpression(expression)) {
+        return analyzeClassExpression({ expression: expression.expression, resolver, seenBindings, sourceFile });
+    }
+    if (ts.isSatisfiesExpression(expression) || ts.isNonNullExpression(expression)) {
+        return analyzeClassExpression({ expression: expression.expression, resolver, seenBindings, sourceFile });
+    }
+
+    if (ts.isConditionalExpression(expression)) {
+        const whenTrue = analyzeClassExpression({
+            expression: expression.whenTrue,
+            resolver,
+            seenBindings,
+            sourceFile,
+        });
+        const whenFalse = analyzeClassExpression({
+            expression: expression.whenFalse,
+            resolver,
+            seenBindings,
+            sourceFile,
+        });
+        return mergeClassExpressionAnalyses([whenTrue, whenFalse], true);
+    }
+
+    if (ts.isCallExpression(expression)) {
+        const argumentAnalyses = expression.arguments.map((argument) =>
+            analyzeClassExpression({ expression: argument, resolver, seenBindings, sourceFile })
+        );
+        const calleeName = expression.expression.getText(sourceFile).split('.').at(-1) ?? '';
+        const knownClassCombiner = calleeName === 'cn' || calleeName === 'clsx';
+        return mergeClassExpressionAnalyses(argumentAnalyses, !knownClassCombiner);
+    }
+
+    if (ts.isArrayLiteralExpression(expression)) {
+        const elementAnalyses = expression.elements.map((element) =>
+            analyzeClassExpression({ expression: element, resolver, seenBindings, sourceFile })
+        );
+        return mergeClassExpressionAnalyses(elementAnalyses, false);
+    }
+
+    if (ts.isObjectLiteralExpression(expression)) {
+        const analysis = emptyClassExpressionAnalysis();
+        analysis.dynamic = true;
+        for (const property of expression.properties) {
+            if (ts.isPropertyAssignment(property)) {
+                if (ts.isIdentifier(property.name) || ts.isStringLiteral(property.name)) {
+                    analysis.fragments.push(property.name.text);
+                }
+                continue;
+            }
+            if (ts.isShorthandPropertyAssignment(property)) {
+                analysis.fragments.push(property.name.text);
+                continue;
+            }
+            if (ts.isSpreadAssignment(property)) {
+                const spreadAnalysis = analyzeClassExpression({
+                    expression: property.expression,
+                    resolver,
+                    seenBindings,
+                    sourceFile,
+                });
+                analysis.fragments.push(...spreadAnalysis.fragments);
+                analysis.bindingEvidence.push(...spreadAnalysis.bindingEvidence);
+                if (spreadAnalysis.unresolvedBinding) {
+                    analysis.unresolvedBinding = true;
+                }
+            }
+        }
+        return analysis;
+    }
+
+    if (ts.isBinaryExpression(expression)) {
+        if (expression.operatorToken.kind === ts.SyntaxKind.AmpersandAmpersandToken) {
+            const rightAnalysis = analyzeClassExpression({
+                expression: expression.right,
+                resolver,
+                seenBindings,
+                sourceFile,
+            });
+            return mergeClassExpressionAnalyses([rightAnalysis], true);
+        }
+        const leftAnalysis = analyzeClassExpression({
+            expression: expression.left,
+            resolver,
+            seenBindings,
+            sourceFile,
+        });
+        const rightAnalysis = analyzeClassExpression({
+            expression: expression.right,
+            resolver,
+            seenBindings,
+            sourceFile,
+        });
+        return mergeClassExpressionAnalyses([leftAnalysis, rightAnalysis], true);
+    }
+
+    if (ts.isTemplateExpression(expression)) {
+        const analysis = emptyClassExpressionAnalysis();
+        analysis.dynamic = true;
+        analysis.fragments.push(expression.head.text);
+        for (const span of expression.templateSpans) {
+            const spanAnalysis = analyzeClassExpression({
+                expression: span.expression,
+                resolver,
+                seenBindings,
+                sourceFile,
+            });
+            analysis.fragments.push(...spanAnalysis.fragments, span.literal.text);
+            analysis.bindingEvidence.push(...spanAnalysis.bindingEvidence);
+            if (spanAnalysis.unresolvedBinding) {
+                analysis.unresolvedBinding = true;
+            }
+        }
+        return analysis;
+    }
+
+    if (ts.isPropertyAccessExpression(expression) || ts.isElementAccessExpression(expression)) {
+        return {
+            fragments: [],
+            dynamic: true,
+            unresolvedBinding: true,
+            bindingEvidence: [`unresolved:${normalizeWhitespace(expression.getText(sourceFile))}`],
+        };
+    }
+
+    const fragments: string[] = [];
+    collectStringFragments(expression, fragments);
+    return {
+        fragments,
+        dynamic: true,
+        unresolvedBinding: false,
+        bindingEvidence: [],
+    };
+}
+
 function baseLayoutToken(token: string): string {
     const pieces = token.split(':');
     return pieces.at(-1) ?? token;
@@ -435,27 +892,37 @@ function isLayoutToken(token: string): boolean {
     );
 }
 
-function classNameEvidence(attribute: ts.JsxAttribute | null, sourceFile: ts.SourceFile): ClassNameEvidence {
+function classNameEvidence(
+    attribute: ts.JsxAttribute | null,
+    sourceFile: ts.SourceFile,
+    resolver: ClassBindingResolver
+): ClassNameEvidence {
     if (!attribute?.initializer) {
-        return { currentPattern: '', allTokens: [], layoutTokens: [], dynamic: false, responsive: false };
+        return {
+            currentPattern: '',
+            allTokens: [],
+            layoutTokens: [],
+            dynamic: false,
+            responsive: false,
+            bindingEvidence: [],
+            unresolvedBinding: false,
+        };
     }
 
-    let fragments: string[] = [];
-    let dynamic = false;
+    let analysis = emptyClassExpressionAnalysis();
     if (ts.isStringLiteral(attribute.initializer)) {
-        fragments = [attribute.initializer.text];
+        analysis.fragments.push(attribute.initializer.text);
     } else if (ts.isJsxExpression(attribute.initializer) && attribute.initializer.expression) {
-        const expression = attribute.initializer.expression;
-        if (ts.isStringLiteral(expression) || ts.isNoSubstitutionTemplateLiteral(expression)) {
-            fragments = [expression.text];
-        } else {
-            dynamic = true;
-            collectStringFragments(expression, fragments);
-        }
+        analysis = analyzeClassExpression({
+            expression: attribute.initializer.expression,
+            resolver,
+            seenBindings: new Set(),
+            sourceFile,
+        });
     }
 
     const allTokens: string[] = [];
-    for (const fragment of fragments) {
+    for (const fragment of analysis.fragments) {
         for (const token of fragment.split(/\s+/)) {
             const normalizedToken = token.trim();
             if (normalizedToken.length > 0) {
@@ -468,11 +935,24 @@ function classNameEvidence(attribute: ts.JsxAttribute | null, sourceFile: ts.Sou
     const responsive = allTokens.some(
         (token) => responsivePrefix.test(token) || (isLayoutToken(token) && conditionalVariantPrefix.test(token))
     );
-    let currentPattern = normalizeWhitespace(fragments.join(' '));
-    if (dynamic) {
+    let currentPattern = normalizeWhitespace(analysis.fragments.join(' '));
+    if (ts.isJsxExpression(attribute.initializer)) {
         currentPattern = normalizeWhitespace(attribute.initializer.getText(sourceFile));
+        const hasResolvedBinding = analysis.bindingEvidence.some((evidence) => evidence.startsWith('binding:'));
+        if (hasResolvedBinding && analysis.fragments.length > 0) {
+            const resolvedPattern = normalizeWhitespace(analysis.fragments.join(' '));
+            currentPattern = `${currentPattern} => ${resolvedPattern}`;
+        }
     }
-    return { currentPattern, allTokens, layoutTokens, dynamic, responsive };
+    return {
+        currentPattern,
+        allTokens,
+        layoutTokens,
+        dynamic: analysis.dynamic,
+        responsive,
+        bindingEvidence: analysis.bindingEvidence,
+        unresolvedBinding: analysis.unresolvedBinding,
+    };
 }
 
 function getEnclosingOwnerNode(node: ts.Node): ts.Node | null {
@@ -759,11 +1239,13 @@ function elementHasConditionalChildren(
 }
 
 function sourceFingerprintForElement({
+    bindingEvidence,
     layoutTokens,
     node,
     sourceFile,
     tagSemantics,
 }: {
+    bindingEvidence: string[];
     layoutTokens: string[];
     node: ts.JsxOpeningElement | ts.JsxSelfClosingElement;
     sourceFile: ts.SourceFile;
@@ -773,6 +1255,7 @@ function sourceFingerprintForElement({
     if (tagSemantics) {
         evidence.push(`import:${tagSemantics}`);
     }
+    evidence.push(...bindingEvidence);
 
     let elementNode: ts.JsxElement | ts.JsxSelfClosingElement;
     if (ts.isJsxOpeningElement(node)) {
@@ -1009,17 +1492,17 @@ function assertNoParseDiagnostics(sourceFile: ts.SourceFile, repositoryPath: str
 
 function collectSourceFileOccurrences({
     absolutePath,
+    bindingResolver,
     previousById,
     repositoryRoot,
 }: {
     absolutePath: string;
+    bindingResolver: ClassBindingResolver;
     previousById: Map<string, LayoutOccurrence>;
     repositoryRoot: string;
 }): PendingOccurrence[] {
     const repositoryPath = toPosixPath(relative(repositoryRoot, absolutePath));
-    const sourceText = readFileSync(absolutePath, 'utf8');
-    const sourceFile = ts.createSourceFile(absolutePath, sourceText, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
-    assertNoParseDiagnostics(sourceFile, repositoryPath);
+    const sourceFile = readClassBindingSourceFile(absolutePath, bindingResolver);
     const importedTags = collectImportedLayoutTags(sourceFile);
     const rendererOwnerCache = new WeakMap<ts.Node, boolean>();
     const candidateOrdinals = new Map<string, number>();
@@ -1042,8 +1525,12 @@ function collectSourceFileOccurrences({
             wrapperTag = tagText;
         }
         const classAttribute = getAttribute(node.attributes, 'className');
-        const classEvidence = classNameEvidence(classAttribute, sourceFile);
-        const isCandidate = primitiveTag !== null || wrapperTag !== null || classEvidence.layoutTokens.length > 0;
+        const classEvidence = classNameEvidence(classAttribute, sourceFile, bindingResolver);
+        const isCandidate =
+            primitiveTag !== null ||
+            wrapperTag !== null ||
+            classEvidence.layoutTokens.length > 0 ||
+            classEvidence.unresolvedBinding;
 
         if (isCandidate) {
             const ownerNode = getEnclosingOwnerNode(node) ?? sourceFile;
@@ -1055,6 +1542,7 @@ function collectSourceFileOccurrences({
             const id = `layout-${hash(identitySource)}`;
             const tagSemantics = getCanonicalTagSemantics(tagText, importedTags);
             const sourceFingerprint = sourceFingerprintForElement({
+                bindingEvidence: classEvidence.bindingEvidence,
                 layoutTokens: classEvidence.layoutTokens,
                 node,
                 sourceFile,
@@ -1191,9 +1679,15 @@ export function collectLayoutOccurrences({
     }
 
     const pendingOccurrences: PendingOccurrence[] = [];
+    const bindingResolver: ClassBindingResolver = {
+        repositoryRoot,
+        sourceFiles: new Map(),
+    };
     const productionFiles = walkProductionFiles(repositoryRoot, productionRoots);
     for (const absolutePath of productionFiles) {
-        pendingOccurrences.push(...collectSourceFileOccurrences({ absolutePath, previousById, repositoryRoot }));
+        pendingOccurrences.push(
+            ...collectSourceFileOccurrences({ absolutePath, bindingResolver, previousById, repositoryRoot })
+        );
     }
     return finalizeOccurrences(pendingOccurrences);
 }

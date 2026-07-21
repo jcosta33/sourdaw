@@ -78,6 +78,103 @@ describe('collectLayoutOccurrences', () => {
         });
     });
 
+    it('should recognize structural and text semantic intrinsic elements', () => {
+        const repositoryRoot = createFixture({
+            'src/App.tsx': `
+                export const App = () => (
+                    <>
+                        <aside className="flex" />
+                        <dl className="flex" />
+                        <footer className="flex" />
+                        <header className="flex" />
+                        <kbd className="flex" />
+                        <nav className="flex" />
+                        <section className="flex" />
+                    </>
+                );
+            `,
+        });
+
+        const occurrences = collectLayoutOccurrences({ repositoryRoot });
+
+        expect(occurrences).toHaveLength(7);
+        expect(occurrences.map((occurrence) => occurrence.nativeElement)).toEqual([
+            'aside',
+            'dl',
+            'footer',
+            'header',
+            'kbd',
+            'nav',
+            'section',
+        ]);
+        expect(
+            occurrences.every((occurrence) => occurrence.riskFlags.hasSemanticElement && occurrence.riskTier === 'high')
+        ).toBe(true);
+    });
+
+    it('should resolve same-file class-name bindings into layout evidence', () => {
+        const repositoryRoot = createFixture({
+            'src/App.tsx': `
+                const rootClassName = 'flex flex-col gap-2';
+                export const App = () => <section className={rootClassName} />;
+            `,
+        });
+
+        const occurrences = collectLayoutOccurrences({ repositoryRoot });
+
+        expect(occurrences).toHaveLength(1);
+        expect(occurrences[0]).toMatchObject({
+            disposition: 'eligible',
+            proposedPrimitive: 'Stack',
+            riskFlags: { hasDynamicClassName: false, hasSemanticElement: true },
+            riskTier: 'high',
+        });
+        expect(occurrences[0].currentPattern).toContain('flex flex-col gap-2');
+    });
+
+    it('should resolve imported class constants into layout evidence', () => {
+        const repositoryRoot = createFixture({
+            'src/App.tsx': `
+                import { ROOT_CLASS_NAME } from './layoutClasses';
+                export const App = () => <div className={ROOT_CLASS_NAME} />;
+            `,
+            'src/layoutClasses.ts': `
+                export const ROOT_CLASS_NAME = 'grid grid-cols-2 gap-2';
+            `,
+        });
+
+        const occurrences = collectLayoutOccurrences({ repositoryRoot });
+
+        expect(occurrences).toHaveLength(1);
+        expect(occurrences[0]).toMatchObject({
+            disposition: 'eligible',
+            proposedPrimitive: 'Grid',
+            riskFlags: { hasDynamicClassName: false },
+        });
+        expect(occurrences[0].currentPattern).toContain('grid grid-cols-2 gap-2');
+    });
+
+    it('should record unresolved class-name bindings without inventing layout tokens', () => {
+        const repositoryRoot = createFixture({
+            'src/App.tsx': `
+                export function App({ className }: { className: string }) {
+                    return <div className={className} />;
+                }
+            `,
+        });
+
+        const occurrences = collectLayoutOccurrences({ repositoryRoot });
+
+        expect(occurrences).toHaveLength(1);
+        expect(occurrences[0]).toMatchObject({
+            currentPattern: '{className}',
+            disposition: 'responsive-or-dynamic',
+            patternFamily: 'alignment',
+            proposedPrimitive: null,
+            riskFlags: { hasDynamicClassName: true },
+        });
+    });
+
     it('should exclude tests, snapshots, generated files, transient output, and nested worktrees', () => {
         const rawLayout = 'export const Item = () => <div className="flex" />;\n';
         const repositoryRoot = createFixture({
