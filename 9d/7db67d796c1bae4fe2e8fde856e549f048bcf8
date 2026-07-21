@@ -1,0 +1,31 @@
+src/modules/ControlSurface/useCases/matchControllerProfile.ts
+  s_c2fca615e81f34::t_d8824207a1ef6f 1-377
+src/modules/ControlSurface/useCases/__tests__/matchControllerProfile.spec.ts
+  s_2c09e70ff10c68::t_b89cc5813130fe 1-326
+src/modules/ControlSurface/useCases/index.ts
+  s_2c09e70ff10c68::t_4a31ba87ad49d8 15
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "9d7db67d796c1bae4fe2e8fde856e549f048bcf8",
+  "prompts": {},
+  "sessions": {
+    "s_2c09e70ff10c68": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8326-d700-7df3-8bab-bc2c2ed77f4a",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_c2fca615e81f34": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f74e9-e1c5-7142-85d2-4c577b3973c0",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
