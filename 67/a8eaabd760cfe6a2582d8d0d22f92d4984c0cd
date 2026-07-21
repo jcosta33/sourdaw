@@ -1,0 +1,55 @@
+src/modules/Arrangement/repositories/track/__tests__/updateClipsOnAllTracks.spec.ts
+  s_c2fca615e81f34::t_398d4a4b1c054f 22,44,67,84
+  s_c2fca615e81f34::t_8a271dcae4b013 26-30,38-39,43,46,53-55,59-66,68-83,85-89
+src/modules/Arrangement/repositories/track/updateClip.ts
+  s_c2fca615e81f34::t_1e77e8a0463742 14-16
+  s_c2fca615e81f34::t_ce0ed1f365e8f9 2,17-21,24,27,29,33-37,46
+src/modules/Arrangement/stores/appendClipToTrack.ts
+  s_c2fca615e81f34::t_ce0ed1f365e8f9 1,10-24,27,29,31,37
+  s_c2fca615e81f34::t_475a2eda493c5f 33,35
+src/modules/Arrangement/stores/updateClipInStore.ts
+  s_c2fca615e81f34::t_ce0ed1f365e8f9 1,15-20,23,26,28,32-36,45
+src/modules/Arrangement/stores/resolveEligibleClipWriteTarget.ts
+  s_c2fca615e81f34::t_398d4a4b1c054f 175-178
+  s_c2fca615e81f34::t_ce0ed1f365e8f9 24-46,48-109,111-174,179-180,182-185
+  s_c2fca615e81f34::t_475a2eda493c5f 1-3
+  s_c2fca615e81f34::t_6a1496aea39a38 4-18,20-21,23,47,181,186
+  s_c2fca615e81f34::t_1e77e8a0463742 19,22,110
+src/modules/Arrangement/stores/__tests__/clipWriteGateways.spec.ts
+  s_c2fca615e81f34::t_33a338caa484f8 96,103-108
+  s_c2fca615e81f34::t_6a1496aea39a38 1-95,97-102,109-124
+src/modules/Arrangement/stores/index.ts
+  s_c2fca615e81f34::t_ce0ed1f365e8f9 31-32
+src/modules/Arrangement/stores/__tests__/resolveEligibleClipWriteTarget.spec.ts
+  s_c2fca615e81f34::t_6a1496aea39a38 2-47,49-77,85-106,108-109,111-115
+  s_c2fca615e81f34::t_33a338caa484f8 1,78-84
+  s_c2fca615e81f34::t_85d9af9580dcf4 48
+  s_c2fca615e81f34::t_398d4a4b1c054f 107,110
+src/modules/Arrangement/useCases/updateClip.ts
+  s_c2fca615e81f34::t_ce0ed1f365e8f9 2,5-8,10
+src/modules/Arrangement/repositories/track/__tests__/updateClip.spec.ts
+  s_c2fca615e81f34::t_8a271dcae4b013 26-30,38,41,44,50-52,55-58,60-70,72-76
+  s_c2fca615e81f34::t_398d4a4b1c054f 22,42,59,71
+src/modules/Arrangement/useCases/__tests__/updateClip.spec.ts
+  s_c2fca615e81f34::t_6b5e79d2683229 27
+  s_c2fca615e81f34::t_8a271dcae4b013 8,15-16,20-26,28,32,34,39,42,44
+src/modules/Arrangement/repositories/track/updateClipsOnAllTracks.ts
+  s_c2fca615e81f34::t_ce0ed1f365e8f9 2,6,9,11-12,15,18-19,22-25,28-29,32-33,36-42
+  s_c2fca615e81f34::t_398d4a4b1c054f 1,13-14,16-17,20-21,26-27,30-31,34-35
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "67a8eaabd760cfe6a2582d8d0d22f92d4984c0cd",
+  "prompts": {},
+  "sessions": {
+    "s_c2fca615e81f34": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f74e9-e1c5-7142-85d2-4c577b3973c0",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
