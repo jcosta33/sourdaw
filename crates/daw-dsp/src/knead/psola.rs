@@ -44,27 +44,77 @@ pub fn psola_process_offline_inplace(
         return;
     }
 
-    let out_len = out.len().min(input.len());
-    let mut out_t = pitch_marks[0] as f32;
+    let coord_end = out.len().min(input.len()) as f32;
+    psola_process_span(
+        input,
+        pitch_marks,
+        target_f0_curve,
+        cfg,
+        window_scratchpad,
+        out,
+        0,
+        0,
+        pitch_marks[0] as f32,
+        coord_end,
+    );
+}
+
+/// Span-aware PSOLA core shared by the offline path and the RT engine.
+///
+/// Synthesis centers are *output coordinates* walking `[coord_start,
+/// coord_end)` at the local target period. Input (span) coordinates are
+/// `output coordinate + input_offset`; output buffer indices are
+/// `output coordinate + out_offset`. This lets the RT engine render a
+/// history margin (negative coordinates) so frame boundaries overlap-add
+/// seamlessly. `pitch_marks` and `target_f0_curve` are in input
+/// coordinates. Grains are written with src/dst in lockstep
+/// (`dst − src == center − pm`), so edge-clamped grains stay aligned.
+///
+/// `coord_start` may be negative and should carry the synthesis phase from
+/// the previous frame so the center lattice stays continuous across frames
+/// (a per-frame restart misaligns the lattice whenever frame_size is not a
+/// multiple of the target period). Returns the final synthesis pointer —
+/// subtract the frame length to get the next frame's phase.
+///
+/// `out` is fully overwritten. `pitch_marks` must hold ≥ 3 marks.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn psola_process_span(
+    input: &[f32],
+    pitch_marks: &[usize],   // epoch indices, input coordinates
+    target_f0_curve: &[f32], // parallel to input
+    cfg: &PsolaConfig,
+    window_scratchpad: &mut [f32],
+    out: &mut [f32],
+    input_offset: isize,
+    out_offset: isize,
+    coord_start: f32,
+    coord_end: f32,
+) -> f32 {
+    for sample in out.iter_mut() {
+        *sample = 0.0;
+    }
+
+    let mut out_t = coord_start;
     // Synthesis centers increase monotonically, so the nearest analysis mark
     // never moves backwards — resume the scan where the last one landed.
     let mut mark_hint = 0usize;
 
-    while out_t < out_len as f32 {
-        let center = out_t.round() as usize;
-        if center >= out_len {
+    while out_t < coord_end {
+        let center = out_t.round() as isize;
+        if center as f32 >= coord_end {
             break;
         }
+        let src_center = (center + input_offset).clamp(0, input.len().saturating_sub(1) as isize) as usize;
 
         // Nearest analysis mark to this output position.
         let mut nearest_idx = mark_hint;
         let mut nearest_dist = usize::MAX;
         for idx in mark_hint..pitch_marks.len() {
-            let dist = pitch_marks[idx].abs_diff(center);
+            let dist = pitch_marks[idx].abs_diff(src_center);
             if dist < nearest_dist {
                 nearest_dist = dist;
                 nearest_idx = idx;
-            } else if pitch_marks[idx] > center {
+            } else if pitch_marks[idx] > src_center {
                 break; // marks are sorted; distance only grows from here
             }
         }
@@ -91,7 +141,7 @@ pub fn psola_process_offline_inplace(
         // output-side). Hann grains of width 2·P_t at hop P_t sum to ≈1 by
         // construction (COLA), so level stays shift-independent without a
         // normalization factor.
-        let f0_t = target_f0_curve[center.min(target_f0_curve.len() - 1)];
+        let f0_t = target_f0_curve[src_center.min(target_f0_curve.len() - 1)];
         let target_period_samples = if f0_t > 0.0 {
             cfg.sample_rate / f0_t
         } else {
@@ -100,34 +150,44 @@ pub fn psola_process_offline_inplace(
 
         let half_grain = target_period_samples.round() as isize;
         let start = (pm as isize - half_grain).max(0) as usize;
-        let end = (pm as isize + half_grain).min(input.len() as isize - 1) as usize;
+        let end = (pm as isize + half_grain).min(input.len() as isize - 1).max(0) as usize;
 
         if end <= start {
             out_t += target_period_samples;
             continue;
         }
 
-        let grain_len = end - start;
-        if grain_len > window_scratchpad.len() {
+        // Window over the FULL intended grain width, indexed by absolute
+        // position within the grain (src − pm + half). Building it over the
+        // clamped slice instead rescales the window at the edges and spikes
+        // the COLA sum (~1.5x peak at the boundaries).
+        let full_len = (2 * half_grain).max(1) as usize;
+        if full_len > window_scratchpad.len() {
             out_t += target_period_samples;
             continue;
         }
 
-        let window = &mut window_scratchpad[..grain_len];
+        let window = &mut window_scratchpad[..full_len];
         hann_window_inplace(window);
 
-        for (i, &win) in window.iter().enumerate() {
-            let src_idx = start + i;
-            let dst_idx = (center as isize - half_grain + i as isize) as usize;
+        for src_idx in start..end {
+            let win_idx = (src_idx as isize - pm as isize + half_grain) as usize;
+            let win = window[win_idx.min(full_len - 1)];
+            // src/dst in lockstep: dst − src == center − pm, also for
+            // edge-clamped grains (the previous center − half + i mapping
+            // lost alignment whenever start was clamped).
+            let dst_idx = center + src_idx as isize - pm as isize + out_offset;
 
-            if dst_idx < out.len() {
-                out[dst_idx] += input[src_idx] * win;
+            if dst_idx >= 0 && (dst_idx as usize) < out.len() {
+                out[dst_idx as usize] += input[src_idx] * win;
             }
         }
 
         // Advance to the next synthesis mark at the target period
         out_t += target_period_samples;
     }
+
+    out_t
 }
 
 #[cfg(test)]
