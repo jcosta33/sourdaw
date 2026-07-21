@@ -1,0 +1,23 @@
+crates/daw-dsp/src/primitives/time_stretch/contract.rs
+  s_7c0241d7d2be50::t_452484188e99f7 43-49,76,81-84,97-100,114-115,153-154,156-170,243-244,247-254,291,294,298,312,315-318,418-420,422-426,430-438,443,446,459,461,465-466,470,488-489,519-520
+crates/daw-dsp/src/primitives/time_stretch/mod.rs
+  s_7c0241d7d2be50::t_a687509f7e9b92 11-15
+crates/daw-dsp/tests/time_stretch_contract.rs
+  s_7c0241d7d2be50::t_10c4d69bd2efb7 8-12,25-26,48-51,66-67,144-145,149,151,157-159,163-164,175-176,344-394,413-414,416-430,505-522,534,590,594,614-663,685,690-715,718,748-749,751-752,754
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "868f1bae1db0ee56f3a7d3af76ca0f6b1c3b8bd3",
+  "prompts": {},
+  "sessions": {
+    "s_7c0241d7d2be50": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f839f-1172-7142-9319-ea4cfe3ec7e7",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
