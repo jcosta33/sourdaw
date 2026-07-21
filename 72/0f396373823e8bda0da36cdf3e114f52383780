@@ -1,0 +1,31 @@
+src/modules/PluginHost/useCases/faustEngine/__tests__/shippedDspCompile.spec.ts
+  s_8f16addbf58a01::t_30bbae6ab7a166 1-102
+src/modules/PluginHost/useCases/faustEngine/dsp/spring-reverb.dsp
+  s_c2fca615e81f34::t_0f1e63e9350e52 2-11
+src/setupTests.ts
+  s_c2fca615e81f34::t_59b8d0d1033aaf 38-44,72-86,151-160,163,166
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "720f396373823e8bda0da36cdf3e114f52383780",
+  "prompts": {},
+  "sessions": {
+    "s_8f16addbf58a01": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8659-b0ad-7573-8264-d60bb2a7f9a2",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_c2fca615e81f34": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f74e9-e1c5-7142-85d2-4c577b3973c0",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
