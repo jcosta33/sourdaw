@@ -1,0 +1,25 @@
+crates/proof-chamber/src/convolution.rs
+  s_c2fca615e81f34::t_d934c7423bfed4 92-117,127-131,143,175,190-191,329-338,342,347-353,380-383,500,514,519-526,563-571,579-580,665-700
+crates/proof-chamber/src/lib.rs
+  s_c2fca615e81f34::t_6dbe328c27af18 163-165,168,204,212-213
+src/modules/AudioEngine/engine/wasmDeviceRegistry.ts
+  s_c2fca615e81f34::t_3daf648ccad7fb 306-308
+src/modules/AudioEngine/services/proofChamberProcessor.ts
+  s_c2fca615e81f34::t_07fb7f3d60c83b 61-64
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "b2a884e656cd65e9462be4dd4ef17739f26a910f",
+  "prompts": {},
+  "sessions": {
+    "s_c2fca615e81f34": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f74e9-e1c5-7142-85d2-4c577b3973c0",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
