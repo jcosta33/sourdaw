@@ -93,13 +93,16 @@ describe('handleCutTool undo/redo on a MIDI clip', () => {
     const straddleNote = { id: 'n-straddle', pitch: 64, startBeat: 3, duration: 2, velocity: 90 };
     const rightNote = { id: 'n-right', pitch: 67, startBeat: 5, duration: 1, velocity: 80 };
 
-    function rightClipId(): string {
-        const state = trackStore.value;
-        const right = state?.tracks[0]?.clips.find((clip) => clip.startBeat === 4);
-        if (!right) {
-            throw new Error('expected a right clip at beat 4');
+    function clipIdAtBeat(startBeat: number): string {
+        const clip = trackStore.value?.tracks[0]?.clips.find((context) => context.startBeat === startBeat);
+        if (!clip) {
+            throw new Error(`expected a clip at beat ${startBeat}`);
         }
-        return right.id;
+        return clip.id;
+    }
+
+    function rightClipId(): string {
+        return clipIdAtBeat(4);
     }
 
     beforeEach(() => {
@@ -151,5 +154,50 @@ describe('handleCutTool undo/redo on a MIDI clip', () => {
             { ...straddleNote, id: straddleRightId, startBeat: 4, duration: 1, probability: 100 },
             rightNote,
         ]);
+    });
+
+    it('two stacked cuts on one clip survive undo x2 and redo x2 with no orphaned MIDI data', async () => {
+        const farRightNote = { id: 'n-far-right', pitch: 72, startBeat: 7, duration: 1, velocity: 70 };
+        midiStore.set({
+            notesByClipId: { c1: [leftNote, straddleNote, rightNote, farRightNote] },
+            ccByClipId: {},
+            pitchBendByClipId: {},
+        });
+
+        // First cut at 4 on c1, second cut at 6 on the resulting right half.
+        handleCutTool(10, 10, 4);
+        const firstRightId = rightClipId();
+        vi.mocked(hitTestClip).mockReturnValue({ clipId: firstRightId, trackId: 't1' });
+        handleCutTool(10, 10, 6);
+        const secondRightId = clipIdAtBeat(6);
+
+        expect(clipRects()).toEqual([
+            { id: 'c1', startBeat: 0, endBeat: 4 },
+            { id: firstRightId, startBeat: 4, endBeat: 6 },
+            { id: secondRightId, startBeat: 6, endBeat: 8 },
+        ]);
+
+        await undo();
+        await undo();
+        expect(clipRects()).toEqual([{ id: 'c1', startBeat: 0, endBeat: 8 }]);
+        expect(midiStore.value?.notesByClipId.c1).toEqual([leftNote, straddleNote, rightNote, farRightNote]);
+
+        await redo();
+        await redo();
+
+        // Both cuts re-applied with stable clip ids on the same lineage.
+        expect(clipRects()).toEqual([
+            { id: 'c1', startBeat: 0, endBeat: 4 },
+            { id: firstRightId, startBeat: 4, endBeat: 6 },
+            { id: secondRightId, startBeat: 6, endBeat: 8 },
+        ]);
+
+        // No notesByClipId key without a live clip, and each clip keeps its notes.
+        const notes = midiStore.value?.notesByClipId ?? {};
+        const liveIds = new Set(clipRects().map((rect) => rect.id));
+        expect(Object.keys(notes).every((key) => liveIds.has(key))).toBe(true);
+        expect(notes.c1).toEqual([leftNote, { ...straddleNote, duration: 1 }]);
+        expect(notes[firstRightId]).toHaveLength(2);
+        expect(notes[secondRightId]).toEqual([farRightNote]);
     });
 });

@@ -92,7 +92,7 @@ describe('splitClipWithUndo', () => {
         expect(updater(leftAfterSplit)).toMatchObject({ name: 'Groove', endBeat: 8, fadeOutBeats: 0.5 });
     });
 
-    it('redo replays the same split', () => {
+    it('redo replays the same split reusing the original right clip id', () => {
         setState([ClipDummy.create({ id: 'c1', startBeat: 0, endBeat: 8 })]);
         mocks.splitClip.mockReturnValue('right-1');
 
@@ -100,6 +100,6 @@ describe('splitClipWithUndo', () => {
         mocks.splitClip.mockClear();
 
         capturedUndoEntry().redoFn();
-        expect(mocks.splitClip).toHaveBeenCalledWith('c1', 4);
+        expect(mocks.splitClip).toHaveBeenCalledWith('c1', 4, 'right-1');
     });
 });
