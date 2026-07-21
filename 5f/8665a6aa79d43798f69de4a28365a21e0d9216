@@ -1,0 +1,35 @@
+docs/architecture/layout-primitives-census.json
+  s_d551553650f8b1::t_ca061502f71c05 24,26,44,49,1671-1672
+docs/architecture/layout-primitives-census.md
+  s_d551553650f8b1::t_759ac07bdab2f0 31,33,57,62,1686-1687
+scripts/layoutPrimitivesCensus.ts
+  s_d551553650f8b1::t_2236d635c45ff1 37
+src/modules/Onboarding/presentations/views/OnboardingTour.tsx
+  s_c2fca615e81f34::t_8416209f03fb75 3,269,280,287,309
+src/modules/Onboarding/presentations/views/__tests__/OnboardingTour.spec.tsx
+  s_d551553650f8b1::t_45c91ebfa600b5 8-29,60-88,116-138
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "5f8665a6aa79d43798f69de4a28365a21e0d9216",
+  "prompts": {},
+  "sessions": {
+    "s_c2fca615e81f34": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f74e9-e1c5-7142-85d2-4c577b3973c0",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_d551553650f8b1": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f83c7-243c-7291-b985-3645b77809ca",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
