@@ -35,6 +35,18 @@ type MockTrackStrip = {
 
 const getAllTracksMock = vi.hoisted(() => vi.fn<() => MockTrack[]>(() => []));
 const getTrackStripMock = vi.hoisted(() => vi.fn<(trackId: string) => MockTrackStrip | undefined>());
+const resolveEligibleDeviceWriteTargetMock = vi.hoisted(() =>
+    vi.fn<
+        (
+            deviceId: string
+        ) => { status: 'eligible'; trackId: string; deviceId: string } | { status: 'missing' | 'ineligible' }
+    >()
+);
+
+vi.mock('#/modules/Arrangement/stores', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Arrangement/stores')>()),
+    resolveEligibleDeviceWriteTarget: resolveEligibleDeviceWriteTargetMock,
+}));
 
 vi.mock('#/modules/Arrangement/useCases', () => ({
     getAllTracks: getAllTracksMock,
@@ -179,6 +191,12 @@ describe('getToasterControls', () => {
 describe('loadToasterKitPreset', () => {
     beforeEach(() => {
         vi.mocked(loadKit).mockReset();
+        resolveEligibleDeviceWriteTargetMock.mockReset();
+        resolveEligibleDeviceWriteTargetMock.mockReturnValue({
+            status: 'eligible',
+            trackId: 't1',
+            deviceId: 'd1',
+        });
         getAllTracksMock.mockReset();
         getAllTracksMock.mockReturnValue([]);
         getTrackStripMock.mockReset();
@@ -197,13 +215,41 @@ describe('loadToasterKitPreset', () => {
         expect(setParam).toHaveBeenCalledWith('reverb_mix', kit.reverbMix);
         expect(setPadParam).toHaveBeenCalledWith(0, 'engine_type', TOASTER_ENGINE_MAP['kick-808']);
 
+        const resolutionCallOrder = resolveEligibleDeviceWriteTargetMock.mock.invocationCallOrder[0];
         const loadKitCallOrder = vi.mocked(loadKit).mock.invocationCallOrder[0];
+        const trackLookupCallOrder = getAllTracksMock.mock.invocationCallOrder[0];
         const firstSetParamCallOrder = setParam.mock.invocationCallOrder[0];
-        if (loadKitCallOrder === undefined || firstSetParamCallOrder === undefined) {
-            throw new Error('Expected loadKit and setParam to be called');
+        if (
+            resolutionCallOrder === undefined ||
+            loadKitCallOrder === undefined ||
+            trackLookupCallOrder === undefined ||
+            firstSetParamCallOrder === undefined
+        ) {
+            throw new Error('Expected authorization, store, lookup, and runtime effects');
         }
+        expect(resolutionCallOrder).toBeLessThan(loadKitCallOrder);
+        expect(loadKitCallOrder).toBeLessThan(trackLookupCallOrder);
         expect(loadKitCallOrder).toBeLessThan(firstSetParamCallOrder);
     });
+
+    it.each(['missing', 'ineligible'] as const)(
+        'rejects a %s owner before store, lookup, or runtime effects',
+        (status) => {
+            const setParam = vi.fn<SetParam>();
+            const setPadParam = vi.fn<SetPadParam>();
+            wireToasterMocks(setParam, setPadParam);
+            resolveEligibleDeviceWriteTargetMock.mockReturnValue({ status });
+
+            loadToasterKitPreset('d1', minimalKit());
+
+            expect(resolveEligibleDeviceWriteTargetMock).toHaveBeenCalledWith('d1');
+            expect(loadKit).not.toHaveBeenCalled();
+            expect(getAllTracksMock).not.toHaveBeenCalled();
+            expect(getTrackStripMock).not.toHaveBeenCalled();
+            expect(setParam).not.toHaveBeenCalled();
+            expect(setPadParam).not.toHaveBeenCalled();
+        }
+    );
 
     it('should set open pad param for hihat-open vs hihat-closed', () => {
         const setParam = vi.fn<SetParam>();
