@@ -35,10 +35,13 @@ const getWindowLocalStorage = (): Storage | null => {
 };
 
 const localStorageShim = getWindowLocalStorage() ?? createStorageShim();
-Object.defineProperty(window, 'localStorage', {
-    configurable: true,
-    value: localStorageShim,
-});
+// Guarded so `@vitest-environment node` specs (no DOM globals) can run under this setup.
+if (typeof window !== 'undefined') {
+    Object.defineProperty(window, 'localStorage', {
+        configurable: true,
+        value: localStorageShim,
+    });
+}
 Object.defineProperty(globalThis, 'localStorage', {
     configurable: true,
     value: localStorageShim,
@@ -66,19 +69,21 @@ if (typeof globalThis.ImageData === 'undefined') {
 }
 
 // Mock matchMedia for JSDOM
-Object.defineProperty(window, 'matchMedia', {
-    writable: true,
-    value: vi.fn().mockImplementation((query) => ({
-        matches: false,
-        media: query,
-        onchange: null,
-        addListener: vi.fn(), // deprecated
-        removeListener: vi.fn(), // deprecated
-        addEventListener: vi.fn(),
-        removeEventListener: vi.fn(),
-        dispatchEvent: vi.fn(),
-    })),
-});
+if (typeof window !== 'undefined') {
+    Object.defineProperty(window, 'matchMedia', {
+        writable: true,
+        value: vi.fn().mockImplementation((query) => ({
+            matches: false,
+            media: query,
+            onchange: null,
+            addListener: vi.fn(), // deprecated
+            removeListener: vi.fn(), // deprecated
+            addEventListener: vi.fn(),
+            removeEventListener: vi.fn(),
+            dispatchEvent: vi.fn(),
+        })),
+    });
+}
 
 // Canvas2D used by `src/components/daw/visualizers/*` — jsdom does not implement drawing.
 const gradientStub = {
@@ -143,20 +148,22 @@ const canvas2dStub = {
     direction: 'inherit',
 } as unknown as CanvasRenderingContext2D;
 
-// @ts-expect-error — jsdom stub covers only the '2d' path; the overloaded return type is intentionally incomplete
-HTMLCanvasElement.prototype.getContext = function getContext(this: HTMLCanvasElement, contextId: string) {
-    if (contextId === '2d') {
-        (canvas2dStub as { canvas: HTMLCanvasElement }).canvas = this;
-        return canvas2dStub;
-    }
-    return null;
-};
+if (typeof HTMLCanvasElement !== 'undefined') {
+    // @ts-expect-error — jsdom stub covers only the '2d' path; the overloaded return type is intentionally incomplete
+    HTMLCanvasElement.prototype.getContext = function getContext(this: HTMLCanvasElement, contextId: string) {
+        if (contextId === '2d') {
+            (canvas2dStub as { canvas: HTMLCanvasElement }).canvas = this;
+            return canvas2dStub;
+        }
+        return null;
+    };
+}
 
 // Pointer capture — used by CrustGainStrip and other drag surfaces; jsdom omits it.
-if (typeof HTMLElement.prototype.setPointerCapture !== 'function') {
+if (typeof HTMLElement !== 'undefined' && typeof HTMLElement.prototype.setPointerCapture !== 'function') {
     HTMLElement.prototype.setPointerCapture = (): void => {};
 }
-if (typeof HTMLElement.prototype.releasePointerCapture !== 'function') {
+if (typeof HTMLElement !== 'undefined' && typeof HTMLElement.prototype.releasePointerCapture !== 'function') {
     HTMLElement.prototype.releasePointerCapture = (): void => {};
 }
 
