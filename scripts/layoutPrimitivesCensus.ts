@@ -34,7 +34,7 @@ export const ALLOWED_LAYOUT_DISPOSITIONS = [
     'one-off',
 ] as const;
 
-export const REVIEWED_LAYOUT_CENSUS_DIGEST = '360a6ed46aaa0a1c1ad34280ddaf3dff5a1c857daf49f6345434151cdbbe5011';
+export const REVIEWED_LAYOUT_CENSUS_DIGEST = 'ffe2d557494b34c68b4c0eac1e04edc228948a16bcce8a5e7b938f373b233d65';
 
 const LEGACY_ONE_OFF_RATIONALE =
     'Native semantics, refs, handlers, positioning, overflow, child selectors, inline styles, spread attributes, or unsupported geometry require owner-specific proof.';
@@ -170,6 +170,7 @@ const primitiveDefaults = new Map<string, string>([
     ['Divider', 'div'],
 ]);
 const genericIntrinsicElements = new Set(['div', 'span']);
+const semanticAttributeNames = new Set(['contentEditable', 'draggable', 'href', 'htmlFor', 'tabIndex']);
 const responsivePrefix = /^(?:(?:sm|md|lg|xl|2xl|max-\[[^\]]+\]|min-\[[^\]]+\])|@[^:]+):/;
 const conditionalVariantPrefix = /(?:^|:)(?:group(?:-[^:]+)?|peer(?:-[^:]+)?|state(?:-[^:]+)?|data-[^:]+|aria-[^:]+):/;
 const rendererPath = /(?:^|\/)(?:[^/]*(?:Canvas|Renderer|WebGL)[^/]*|renderers?)(?:\/|\.tsx$)/i;
@@ -322,7 +323,35 @@ function collectImportedLayoutTags(sourceFile: ts.SourceFile): ImportedLayoutTag
     return importedTags;
 }
 
-function getCanonicalTagSemantics(tagText: string, importedTags: ImportedLayoutTags): string | null {
+function getJsxTagRootIdentifier(tagName: ts.JsxTagNameExpression): ts.Identifier | null {
+    let current: ts.Node = tagName;
+    while (ts.isPropertyAccessExpression(current)) {
+        current = current.expression;
+    }
+    if (!ts.isIdentifier(current)) {
+        return null;
+    }
+    return current;
+}
+
+function importedTagBindingIsActive(tagName: ts.JsxTagNameExpression, sourceFile: ts.SourceFile): boolean {
+    const rootIdentifier = getJsxTagRootIdentifier(tagName);
+    if (!rootIdentifier) {
+        return false;
+    }
+    const localResolution = findLocalConstBinding(rootIdentifier, sourceFile);
+    return localResolution.kind === 'not-found';
+}
+
+function getCanonicalTagSemantics(
+    tagName: ts.JsxTagNameExpression,
+    importedTags: ImportedLayoutTags,
+    sourceFile: ts.SourceFile
+): string | null {
+    if (!importedTagBindingIsActive(tagName, sourceFile)) {
+        return null;
+    }
+    const tagText = tagName.getText(sourceFile);
     const directSemantics = importedTags.tagSemantics.get(tagText);
     if (directSemantics) {
         return directSemantics;
@@ -346,10 +375,15 @@ function getCanonicalTagSemantics(tagText: string, importedTags: ImportedLayoutT
 }
 
 function getCanonicalImportedTag(
-    tagText: string,
+    tagName: ts.JsxTagNameExpression,
     directTags: Map<string, string>,
-    namespaces: Set<string>
+    namespaces: Set<string>,
+    sourceFile: ts.SourceFile
 ): string | null {
+    if (!importedTagBindingIsActive(tagName, sourceFile)) {
+        return null;
+    }
+    const tagText = tagName.getText(sourceFile);
     const directTag = directTags.get(tagText);
     if (directTag) {
         return directTag;
@@ -377,6 +411,22 @@ function getAttribute(attributes: ts.JsxAttributes, name: string): ts.JsxAttribu
         }
     }
     return null;
+}
+
+function attributeNameHasSemantics(attributeName: string): boolean {
+    if (attributeName === 'role' || attributeName.startsWith('aria-')) {
+        return true;
+    }
+    return semanticAttributeNames.has(attributeName);
+}
+
+function attributesHaveSemantics(attributes: ts.JsxAttributes): boolean {
+    return attributes.properties.some((property) => {
+        if (!ts.isJsxAttribute(property)) {
+            return false;
+        }
+        return attributeNameHasSemantics(property.name.getText());
+    });
 }
 
 function getStaticAttributeValue(attribute: ts.JsxAttribute | null): string | null {
@@ -1236,11 +1286,7 @@ function riskFlagsFor({
         if (/^on[A-Z]/.test(attributeName)) {
             hasHandlers = true;
         }
-        if (
-            attributeName === 'role' ||
-            attributeName.startsWith('aria-') ||
-            ['contentEditable', 'draggable', 'href', 'htmlFor', 'tabIndex'].includes(attributeName)
-        ) {
+        if (attributeNameHasSemantics(attributeName)) {
             hasSemanticAttributes = true;
         }
     }
@@ -1355,10 +1401,10 @@ function semanticAncestorEvidence(
             const tagText = openingElement.tagName.getText(sourceFile);
             const isCustomElement = !/^[a-z]/.test(tagText);
             const hasIntrinsicSemantics = /^[a-z]/.test(tagText) && intrinsicElementHasSemantics(tagText);
-            const hasExplicitRole = getAttribute(openingElement.attributes, 'role') !== null;
-            if (isCustomElement || hasIntrinsicSemantics || hasExplicitRole) {
+            const hasSemanticAttributes = attributesHaveSemantics(openingElement.attributes);
+            if (isCustomElement || hasIntrinsicSemantics || hasSemanticAttributes) {
                 let openingEvidence = normalizeWhitespace(openingElement.getText(sourceFile));
-                const tagSemantics = getCanonicalTagSemantics(tagText, importedTags);
+                const tagSemantics = getCanonicalTagSemantics(openingElement.tagName, importedTags, sourceFile);
                 if (tagSemantics) {
                     openingEvidence = `${openingEvidence}\u0002import:${tagSemantics}`;
                 }
@@ -1654,11 +1700,17 @@ function collectSourceFileOccurrences({
 
         const tagText = node.tagName.getText(sourceFile);
         const primitiveTag = getCanonicalImportedTag(
-            tagText,
+            node.tagName,
             importedTags.primitiveTags,
-            importedTags.primitiveNamespaces
+            importedTags.primitiveNamespaces,
+            sourceFile
         );
-        let wrapperTag = getCanonicalImportedTag(tagText, importedTags.wrapperTags, importedTags.wrapperNamespaces);
+        let wrapperTag = getCanonicalImportedTag(
+            node.tagName,
+            importedTags.wrapperTags,
+            importedTags.wrapperNamespaces,
+            sourceFile
+        );
         if (!wrapperTag && tagText.startsWith('Daw')) {
             wrapperTag = tagText;
         }
@@ -1678,7 +1730,7 @@ function collectSourceFileOccurrences({
             candidateOrdinals.set(ordinalKey, ordinal);
             const identitySource = `${repositoryPath}\u0000${owner}\u0000${tagText}\u0000${ordinal}`;
             const id = `layout-${hash(identitySource)}`;
-            const tagSemantics = getCanonicalTagSemantics(tagText, importedTags);
+            const tagSemantics = getCanonicalTagSemantics(node.tagName, importedTags, sourceFile);
             const sourceFingerprint = sourceFingerprintForElement({
                 bindingEvidence: classEvidence.bindingEvidence,
                 importedTags,

@@ -379,6 +379,127 @@ describe('collectLayoutOccurrences', () => {
         ).toBe(true);
     });
 
+    it('should apply imported primitive and wrapper provenance only to active lexical bindings', () => {
+        const repositoryRoot = createFixture({
+            'src/App.tsx': `
+                import { Row, Stack as Column } from '#/components/layout';
+                import * as Layout from '#/components/layout';
+                import { DawPanelSurface as Surface } from '#/components/daw';
+
+                export function ParameterOwner(Row: unknown) {
+                    return <Row className="flex" />;
+                }
+
+                export function BlockOwner() {
+                    {
+                        const Column = () => null;
+                        return <Column className="flex flex-col" />;
+                    }
+                }
+
+                export function SwitchOwner(value: string) {
+                    switch (value) {
+                        case 'layout':
+                            const Layout = { Grid: () => null };
+                            return <Layout.Grid className="grid" />;
+                        default:
+                            return null;
+                    }
+                }
+
+                export const ClassOwner = class Surface {
+                    render() {
+                        return <Surface className="flex" />;
+                    }
+                };
+            `,
+        });
+
+        const occurrences = collectLayoutOccurrences({ repositoryRoot });
+
+        expect(
+            occurrences.map(({ disposition, nativeElement, proposedPrimitive, wrapperOwner }) => ({
+                disposition,
+                nativeElement,
+                proposedPrimitive,
+                wrapperOwner,
+            }))
+        ).toEqual([
+            {
+                disposition: 'semantic-wrapper',
+                nativeElement: null,
+                proposedPrimitive: null,
+                wrapperOwner: 'Row',
+            },
+            {
+                disposition: 'semantic-wrapper',
+                nativeElement: null,
+                proposedPrimitive: null,
+                wrapperOwner: 'Column',
+            },
+            {
+                disposition: 'semantic-wrapper',
+                nativeElement: null,
+                proposedPrimitive: null,
+                wrapperOwner: 'Layout.Grid',
+            },
+            {
+                disposition: 'semantic-wrapper',
+                nativeElement: null,
+                proposedPrimitive: null,
+                wrapperOwner: 'Surface',
+            },
+        ]);
+    });
+
+    it('should omit inactive default and namespace imports from custom tag fingerprints', () => {
+        const repositoryRoot = createFixture({
+            'src/App.tsx': `
+                import Panel from './PanelA';
+                import * as Panels from './PanelsA';
+
+                export function DefaultShadow(Panel: unknown) {
+                    return <Panel className="flex" />;
+                }
+
+                export function NamespaceShadow() {
+                    const Panels = { Shell: () => null };
+                    return <Panels.Shell className="flex" />;
+                }
+            `,
+        });
+        const baseline = createLayoutCensus({ repositoryRoot });
+        for (const occurrence of baseline.occurrences) {
+            occurrence.reviewed = true;
+        }
+
+        writeFixture(
+            repositoryRoot,
+            'src/App.tsx',
+            `
+                import Panel from './PanelB';
+                import * as Panels from './PanelsB';
+
+                export function DefaultShadow(Panel: unknown) {
+                    return <Panel className="flex" />;
+                }
+
+                export function NamespaceShadow() {
+                    const Panels = { Shell: () => null };
+                    return <Panels.Shell className="flex" />;
+                }
+            `
+        );
+        const changed = createLayoutCensus({ repositoryRoot, previousCensus: baseline });
+        const drift = compareLayoutCensuses({ actual: changed, expected: baseline });
+
+        expect(changed.occurrences.map((occurrence) => occurrence.sourceFingerprint)).toEqual(
+            baseline.occurrences.map((occurrence) => occurrence.sourceFingerprint)
+        );
+        expect(changed.occurrences.every((occurrence) => occurrence.reviewed)).toBe(true);
+        expect(drift.changed).toHaveLength(0);
+    });
+
     it('should reject imported bindings reached through a symlinked repository ancestor', () => {
         const externalRoot = createFixture({
             'classes.ts': `export const ROOT = 'grid grid-cols-2';`,
@@ -829,6 +950,35 @@ describe('compareLayoutCensuses', () => {
             repositoryRoot,
             'src/App.tsx',
             'export const App = () => <nav><div><span className="flex" /></div></nav>;\n'
+        );
+        const changed = createLayoutCensus({ repositoryRoot, previousCensus: baseline });
+        const drift = compareLayoutCensuses({ actual: changed, expected: baseline });
+
+        expect(changed.occurrences[0].id).toBe(baseline.occurrences[0].id);
+        expect(changed.occurrences[0].sourceFingerprint).not.toBe(baseline.occurrences[0].sourceFingerprint);
+        expect(changed.occurrences[0].reviewed).toBe(false);
+        expect(drift.changed).toHaveLength(1);
+    });
+
+    it.each([
+        ['ARIA', 'aria-live="polite"', 'aria-live="assertive"'],
+        ['focus', 'tabIndex={0}', 'tabIndex={-1}'],
+        ['editability', 'contentEditable={false}', 'contentEditable'],
+        ['drag', 'draggable={false}', 'draggable'],
+        ['link', 'href="/before"', 'href="/after"'],
+        ['label', 'htmlFor="before"', 'htmlFor="after"'],
+        ['role', 'role="status"', 'role="alert"'],
+    ])('should invalidate review when a generic ancestor changes %s semantics', (_name, before, after) => {
+        const repositoryRoot = createFixture({
+            'src/App.tsx': `export const App = () => <div ${before}><span className="flex" /></div>;\n`,
+        });
+        const baseline = createLayoutCensus({ repositoryRoot });
+        baseline.occurrences[0].reviewed = true;
+
+        writeFixture(
+            repositoryRoot,
+            'src/App.tsx',
+            `export const App = () => <div ${after}><span className="flex" /></div>;\n`
         );
         const changed = createLayoutCensus({ repositoryRoot, previousCensus: baseline });
         const drift = compareLayoutCensuses({ actual: changed, expected: baseline });
