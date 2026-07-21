@@ -55,7 +55,7 @@ describe('setDeviceParameter', () => {
             tracks: [{ id: 't1', kind: 'audio', devices: [{ id: 'd1', parameterValues: { gain: 0.1 } }] }],
         } as unknown as TrackState);
 
-        setDeviceParameter('d1', 'gain', 0.5);
+        const didWrite = setDeviceParameter('d1', 'gain', 0.5);
 
         expect(mocks.updateDeviceParam).toHaveBeenCalledWith('t1', 'd1', 'gain', 0.5);
         expect(mocks.updateTrack).toHaveBeenCalledWith('t1', expect.any(Function));
@@ -63,6 +63,7 @@ describe('setDeviceParameter', () => {
         const updater = mocks.updateTrack.mock.calls[0]![1];
         const result = updater({ devices: [{ id: 'd1', parameterValues: { gain: 0.1 } }] } as unknown as Track);
         expect(result.devices[0]!.parameterValues.gain).toBe(0.5);
+        expect(didWrite).toBe(true);
     });
 
     it('records automation if playing and recording mode', () => {
@@ -71,14 +72,16 @@ describe('setDeviceParameter', () => {
         } as unknown as TrackState);
         mocks.transportStoreValue = { isPlaying: true, playheadPosition: 8 };
 
-        setDeviceParameter('d1', 'cutoff', 1000);
+        const didWrite = setDeviceParameter('d1', 'cutoff', 1000);
 
         expect(mocks.recordAutomationValue).toHaveBeenCalledWith('t1', 'd1:cutoff', 1000, 8);
+        expect(didWrite).toBe(true);
     });
 
     it('bails if value is not finite', () => {
-        setDeviceParameter('d1', 'gain', NaN);
+        const didWrite = setDeviceParameter('d1', 'gain', NaN);
         expect(mocks.updateDeviceParam).not.toHaveBeenCalled();
+        expect(didWrite).toBe(false);
     });
 
     it('rejects dormant VCA parameter updates before engine, project, or automation work', () => {
@@ -89,10 +92,11 @@ describe('setDeviceParameter', () => {
         mocks.getTrackState.mockReturnValue({ tracks: [track], selectedTrackId: null });
         mocks.transportStoreValue = { isPlaying: true, playheadPosition: 8 };
 
-        setDeviceParameter('d1', 'gain', 0.5);
+        const didWrite = setDeviceParameter('d1', 'gain', 0.5);
 
         expect(mocks.updateDeviceParam).not.toHaveBeenCalled();
         expect(mocks.updateTrack).not.toHaveBeenCalled();
         expect(mocks.recordAutomationValue).not.toHaveBeenCalled();
+        expect(didWrite).toBe(false);
     });
 });

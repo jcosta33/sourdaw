@@ -23,7 +23,10 @@ const mocks = vi.hoisted(() => ({
 
 // Mock the barrel re-exports but satisfy the markerStore etc. if needed by other components
 vi.mock('#/modules/Arrangement/stores', () => ({
-    getTrackEligibility: (kind: string) => ({ createsLiveStrip: kind !== 'folder' && kind !== 'vca' }),
+    getTrackEligibility: (kind: string) => ({
+        acceptsRoutingEndpoint: ['audio', 'midi', 'bus', 'master', 'folder'].includes(kind),
+        createsLiveStrip: kind !== 'folder' && kind !== 'vca' && kind !== undefined,
+    }),
     trackStore: {
         get value() {
             return mocks.trackStoreValue.value;
@@ -100,6 +103,7 @@ describe('ensureTrackStrips', () => {
 
         expect(mocks.ensureBusStrip).toHaveBeenCalledWith('b1');
         expect(mocks.ensureTrackStrip).toHaveBeenCalledWith('t1');
+        expect(mocks.setTrackOutput).toHaveBeenCalledWith('t1', 'main');
         expect(mocks.setTrackGain).toHaveBeenCalledWith('t1', 0.8);
         expect(mocks.setSend).toHaveBeenCalledWith('t1', 'b1', 0.1, false);
     });
@@ -135,5 +139,49 @@ describe('ensureTrackStrips', () => {
         expect(mocks.setSend).not.toHaveBeenCalled();
         expect(mocks.setTrackGain).not.toHaveBeenCalled();
         expect(mocks.setTrackMute).not.toHaveBeenCalled();
+    });
+
+    it('does not replay persisted output or sends toward a resolved dormant VCA', () => {
+        const dormantVca = createTrack({ id: 'vca-1', name: 'VCA', kind: 'audio' });
+        Object.defineProperty(dormantVca, 'kind', { value: 'vca' });
+        mocks.trackStoreValue.value = {
+            selectedTrackId: null,
+            tracks: [
+                {
+                    ...createTrack({ id: 'audio-1', name: 'Audio', kind: 'audio' }),
+                    outputId: 'vca-1',
+                    sends: [{ busId: 'vca-1', level: 0.5, preFader: false }],
+                },
+                dormantVca,
+            ],
+        };
+
+        ensureTrackStrips();
+
+        expect(mocks.ensureTrackStrip).toHaveBeenCalledWith('audio-1');
+        expect(mocks.setTrackOutput).not.toHaveBeenCalled();
+        expect(mocks.setSend).not.toHaveBeenCalled();
+    });
+
+    it('does not replay persisted output or sends toward a resolved malformed track', () => {
+        const malformedTarget = createTrack({ id: 'malformed-1', name: 'Malformed', kind: 'audio' });
+        Object.defineProperty(malformedTarget, 'kind', { value: undefined });
+        mocks.trackStoreValue.value = {
+            selectedTrackId: null,
+            tracks: [
+                {
+                    ...createTrack({ id: 'audio-1', name: 'Audio', kind: 'audio' }),
+                    outputId: 'malformed-1',
+                    sends: [{ busId: 'malformed-1', level: 0.5, preFader: false }],
+                },
+                malformedTarget,
+            ],
+        };
+
+        ensureTrackStrips();
+
+        expect(mocks.ensureTrackStrip).toHaveBeenCalledWith('audio-1');
+        expect(mocks.setTrackOutput).not.toHaveBeenCalled();
+        expect(mocks.setSend).not.toHaveBeenCalled();
     });
 });

@@ -25,8 +25,6 @@ export function toggleInputMonitoring(trackId: string): void {
         return;
     }
     if (!getTrackEligibility(track.kind).acceptsMonitoring) {
-        updateTrack(trackId, (time) => ({ ...time, inputMonitoring: 'off' }));
-        stopInputMonitoring();
         return;
     }
     const newValue = INPUT_MONITORING_CYCLE[track.inputMonitoring];

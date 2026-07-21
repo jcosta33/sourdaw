@@ -4,10 +4,10 @@ import { getTrackById } from '../../repositories/track/getTrackById';
 import { updateTrack } from '../../repositories/track/updateTrack';
 import { getTrackEligibility } from '../../stores/trackEligibility';
 
-export function armTrack(trackId: string, armed: boolean): void {
+export function armTrack(trackId: string, armed: boolean): boolean {
     const track = getTrackById(trackId);
     if (armed && track && !getTrackEligibility(track.kind).acceptsArm) {
-        return;
+        return false;
     }
 
     updateTrack(trackId, (time) => ({ ...time, armed }));
@@ -16,7 +16,7 @@ export function armTrack(trackId: string, armed: boolean): void {
         if (track && track.kind === 'midi') {
             setMidiInputTrack(trackId);
         }
-        return;
+        return true;
     }
 
     // Disarming must not leave live WebMIDI input routed to a disarmed track.
@@ -25,4 +25,5 @@ export function armTrack(trackId: string, armed: boolean): void {
     if (getMidiInputTrack() === trackId) {
         setMidiInputTrack(null);
     }
+    return true;
 }

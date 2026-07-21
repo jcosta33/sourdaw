@@ -34,14 +34,16 @@ describe('freezeTrack', () => {
 
     it('does nothing if store state is missing', async () => {
         trackStore.set(null);
-        await freezeTrack('t1');
+        const didWrite = await freezeTrack('t1');
         expect(updateTrack).not.toHaveBeenCalled();
+        expect(didWrite).toBe(false);
     });
 
     it('does nothing if track is not found', async () => {
         trackStore.set({ tracks: [], selectedTrackId: null });
-        await freezeTrack('t1');
+        const didWrite = await freezeTrack('t1');
         expect(updateTrack).not.toHaveBeenCalled();
+        expect(didWrite).toBe(false);
     });
 
     it('does nothing if track is already frozen', async () => {
@@ -49,8 +51,9 @@ describe('freezeTrack', () => {
             tracks: [{ id: 't1', freezeState: { status: 'frozen' } } as any],
             selectedTrackId: null,
         });
-        await freezeTrack('t1');
+        const didWrite = await freezeTrack('t1');
         expect(updateTrack).not.toHaveBeenCalled();
+        expect(didWrite).toBe(false);
     });
 
     it('should freeze the track successfully', async () => {
@@ -80,7 +83,7 @@ describe('freezeTrack', () => {
 
         vi.mocked(renderTrackOffline).mockResolvedValue(renderedBuffer);
 
-        await freezeTrack('t1');
+        const didWrite = await freezeTrack('t1');
 
         expect(updateTrack).toHaveBeenCalledTimes(2);
 
@@ -122,6 +125,7 @@ describe('freezeTrack', () => {
 
         expect(cacheAudioBuffer).toHaveBeenCalledWith({ buffer: renderedBuffer, bufferId: expectedBufferId });
         expect(renderTrackOffline).toHaveBeenCalledWith(expect.any(Object), 2, 6 + 4, expect.any(Object)); // 6 end + 4 tail
+        expect(didWrite).toBe(true);
     });
 
     it('handles render failure gracefully', async () => {
@@ -140,7 +144,7 @@ describe('freezeTrack', () => {
 
         vi.mocked(renderTrackOffline).mockRejectedValue(new Error('Render crashed'));
 
-        await freezeTrack('t1');
+        const didWrite = await freezeTrack('t1');
 
         expect(updateTrack).toHaveBeenCalledTimes(2);
 
@@ -156,6 +160,7 @@ describe('freezeTrack', () => {
 
         expect(errorTrack.freezeState.status).toBe('error');
         expect(errorTrack.freezeState.errorMessage).toBe('Render crashed');
+        expect(didWrite).toBe(true);
     });
 
     it('uses defaults 0 and 1 if track has no clips', async () => {
@@ -187,10 +192,11 @@ describe('freezeTrack', () => {
         Object.defineProperty(track, 'kind', { value: 'vca' });
         trackStore.set({ tracks: [track], selectedTrackId: null });
 
-        await freezeTrack('vca-1');
+        const didWrite = await freezeTrack('vca-1');
 
         expect(updateTrack).not.toHaveBeenCalled();
         expect(renderTrackOffline).not.toHaveBeenCalled();
         expect(cacheAudioBuffer).not.toHaveBeenCalled();
+        expect(didWrite).toBe(false);
     });
 });

@@ -21,18 +21,21 @@ describe('setTrackInput', () => {
     it('preserves ordinary input assignment', () => {
         mocks.getTrackById.mockReturnValue({ id: 'audio-1', kind: 'audio' });
 
-        setTrackInput('audio-1', 'input-1');
+        const didWrite = setTrackInput('audio-1', 'input-1');
 
         expect(mocks.updateTrack).toHaveBeenCalledWith('audio-1', expect.any(Function));
+        expect(didWrite).toBe(true);
     });
 
     it('rejects dormant VCA input assignment but permits clearing residue', () => {
         mocks.getTrackById.mockReturnValue({ id: 'vca-1', kind: 'vca' });
 
-        setTrackInput('vca-1', 'input-1');
+        const rejectedWrite = setTrackInput('vca-1', 'input-1');
         expect(mocks.updateTrack).not.toHaveBeenCalled();
+        expect(rejectedWrite).toBe(false);
 
-        setTrackInput('vca-1', null);
+        const cleanupWrite = setTrackInput('vca-1', null);
         expect(mocks.updateTrack).toHaveBeenCalledWith('vca-1', expect.any(Function));
+        expect(cleanupWrite).toBe(true);
     });
 });

@@ -17,6 +17,11 @@ export function toggleSendPreFader(trackId: string, busId: string): void {
         return;
     }
 
+    const targetTrack = getTrackById(busId);
+    if (targetTrack && !getTrackEligibility(targetTrack.kind).acceptsRoutingEndpoint) {
+        return;
+    }
+
     const newPreFader = !send.preFader;
 
     updateTrack(trackId, (time) => ({

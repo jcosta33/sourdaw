@@ -27,7 +27,7 @@ describe('setSend', () => {
     it('adds a new send and notifies engine', () => {
         mocks.getTrackById.mockReturnValue({ id: 't1', kind: 'audio', sends: [] });
 
-        setSend('t1', 'bus1', 0.5, true);
+        const didWrite = setSend('t1', 'bus1', 0.5, true);
 
         expect(mocks.updateTrack).toHaveBeenCalledWith('t1', expect.any(Function));
         const updateCall = mocks.updateTrack.mock.calls[0];
@@ -38,6 +38,7 @@ describe('setSend', () => {
         expect(updater({ sends: [] })).toEqual({ sends: [{ busId: 'bus1', level: 0.5, preFader: true }] });
 
         expect(mocks.engineSetSend).toHaveBeenCalledWith('t1', 'bus1', 0.5, true);
+        expect(didWrite).toBe(true);
     });
 
     it('updates an existing send maintaining preFader state', () => {
@@ -65,9 +66,25 @@ describe('setSend', () => {
     it('rejects dormant VCA send creation before project or engine work', () => {
         mocks.getTrackById.mockReturnValue({ id: 'vca-1', kind: 'vca', sends: [] });
 
-        setSend('vca-1', 'bus1', 0.5);
+        const didWrite = setSend('vca-1', 'bus1', 0.5);
 
         expect(mocks.updateTrack).not.toHaveBeenCalled();
         expect(mocks.engineSetSend).not.toHaveBeenCalled();
+        expect(didWrite).toBe(false);
+    });
+
+    it('rejects a resolved dormant VCA send destination before project or engine work', () => {
+        mocks.getTrackById.mockImplementation((trackId: string) => {
+            if (trackId === 'audio-1') {
+                return { id: 'audio-1', kind: 'audio', sends: [] };
+            }
+            return { id: 'vca-1', kind: 'vca', sends: [] };
+        });
+
+        const didWrite = setSend('audio-1', 'vca-1', 0.5);
+
+        expect(mocks.updateTrack).not.toHaveBeenCalled();
+        expect(mocks.engineSetSend).not.toHaveBeenCalled();
+        expect(didWrite).toBe(false);
     });
 });

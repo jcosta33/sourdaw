@@ -3,21 +3,11 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { handleSetDeviceParameter } from '../handleSetDeviceParameter';
 
 const mocks = vi.hoisted(() => ({
-    updateDeviceParam: vi.fn(),
     setDeviceParameter: vi.fn(),
-    getTrackStoreState: vi.fn(),
-}));
-
-vi.mock('#/modules/AudioEngine/useCases', () => ({
-    updateDeviceParam: mocks.updateDeviceParam,
 }));
 
 vi.mock('../../../useCases/device/setDeviceParameter/setDeviceParameter', () => ({
     setDeviceParameter: mocks.setDeviceParameter,
-}));
-
-vi.mock('../../../useCases/getTrackStoreState', () => ({
-    getTrackStoreState: mocks.getTrackStoreState,
 }));
 
 describe('handleSetDeviceParameter', () => {
@@ -25,30 +15,28 @@ describe('handleSetDeviceParameter', () => {
         vi.clearAllMocks();
     });
 
-    it('sets the parameter and updates the audio engine', () => {
-        mocks.getTrackStoreState.mockReturnValue({
-            tracks: [{ id: 't1', devices: [{ id: 'd1' }] }],
-        });
+    it('delegates the authoritative mutation once and reports a write', () => {
+        mocks.setDeviceParameter.mockReturnValue(true);
 
-        void handleSetDeviceParameter.execute({
+        const result = handleSetDeviceParameter.execute({
             type: 'setDeviceParameter',
             payload: { deviceId: 'd1', paramId: 'gain', value: 0.5 },
         });
 
         expect(mocks.setDeviceParameter).toHaveBeenCalledWith('d1', 'gain', 0.5);
-        expect(mocks.updateDeviceParam).toHaveBeenCalledWith('t1', 'd1', 'gain', 0.5);
+        expect(mocks.setDeviceParameter).toHaveBeenCalledTimes(1);
+        expect(result).toEqual({ status: 'written' });
     });
 
-    it('updates audio engine with empty string track ID if track cannot be found', () => {
-        mocks.getTrackStoreState.mockReturnValue({ tracks: [] });
+    it('reports no-write when the authoritative use case rejects the owner', () => {
+        mocks.setDeviceParameter.mockReturnValue(false);
 
-        void handleSetDeviceParameter.execute({
+        const result = handleSetDeviceParameter.execute({
             type: 'setDeviceParameter',
             payload: { deviceId: 'd1', paramId: 'gain', value: 0.5 },
         });
 
-        expect(mocks.setDeviceParameter).toHaveBeenCalledWith('d1', 'gain', 0.5);
-        expect(mocks.updateDeviceParam).toHaveBeenCalledWith('', 'd1', 'gain', 0.5);
+        expect(result).toEqual({ status: 'no-write' });
     });
 
     it('provides a description reflecting the parameter', () => {

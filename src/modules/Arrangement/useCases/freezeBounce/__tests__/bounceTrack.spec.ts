@@ -164,7 +164,7 @@ describe('bounceTrack', () => {
         setTrackStoreState({ tracks: [sourceTrack], selectedTrackId: 'track-1' });
         mocks.renderTrackOffline.mockResolvedValue(renderedBuffer);
 
-        await bounceTrack('track-1', options);
+        const didWrite = await bounceTrack('track-1', options);
 
         const expectedBufferId = 'bounce-track-1-1234567890';
         expect(mocks.renderTrackOffline).toHaveBeenCalledWith(sourceTrack, 2, 8, {
@@ -198,6 +198,7 @@ describe('bounceTrack', () => {
 
         redo();
         expect(mocks.trackStore.value?.tracks[0]?.clips[0]).toEqual(bouncedClip);
+        expect(didWrite).toBe(true);
     });
 
     it('rejects dormant VCA bounce before render, cache, IDs, history, or project work', async () => {
@@ -205,7 +206,7 @@ describe('bounceTrack', () => {
         Object.defineProperty(sourceTrack, 'kind', { value: 'vca' });
         setTrackStoreState({ tracks: [sourceTrack], selectedTrackId: 'track-1' });
 
-        await bounceTrack('track-1', {
+        const didWrite = await bounceTrack('track-1', {
             includeInserts: true,
             includeSends: true,
             includeAutomation: true,
@@ -219,5 +220,6 @@ describe('bounceTrack', () => {
         expect(crypto.randomUUID).not.toHaveBeenCalled();
         expect(mocks.pushUndoEntry).not.toHaveBeenCalled();
         expect(mocks.trackStore.set).not.toHaveBeenCalled();
+        expect(didWrite).toBe(false);
     });
 });

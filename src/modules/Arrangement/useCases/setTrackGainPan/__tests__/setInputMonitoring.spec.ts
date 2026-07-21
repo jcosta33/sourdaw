@@ -46,10 +46,33 @@ describe('setInputMonitoring', () => {
         expect(mocks.stopInputMonitoring).toHaveBeenCalledTimes(1);
     });
 
-    it('normalizes dormant VCA monitoring to off without starting hardware monitoring', () => {
+    it.each(['on', 'auto'] as const)(
+        'rejects dormant VCA %s without writing or stopping another monitoring session',
+        (mode) => {
+            mocks.getTrackById.mockImplementation((trackId: string) => {
+                if (trackId === 'audio-1') {
+                    return { id: 'audio-1', kind: 'audio' };
+                }
+                return { id: 'vca-1', kind: 'vca' };
+            });
+
+            setInputMonitoring('audio-1', 'on');
+            expect(mocks.startInputMonitoring).toHaveBeenCalledWith('audio-1');
+            mocks.updateTrack.mockClear();
+            mocks.startInputMonitoring.mockClear();
+
+            setInputMonitoring('vca-1', mode);
+
+            expect(mocks.updateTrack).not.toHaveBeenCalled();
+            expect(mocks.startInputMonitoring).not.toHaveBeenCalled();
+            expect(mocks.stopInputMonitoring).not.toHaveBeenCalled();
+        }
+    );
+
+    it('normalizes dormant VCA residue only for an explicit off request without globally stopping monitoring', () => {
         mocks.getTrackById.mockReturnValue({ id: 'vca-1', kind: 'vca' });
 
-        setInputMonitoring('vca-1', 'on');
+        setInputMonitoring('vca-1', 'off');
 
         const call = mocks.updateTrack.mock.calls[0];
         if (!call) {
@@ -57,7 +80,7 @@ describe('setInputMonitoring', () => {
         }
         expect(call[1]({ inputMonitoring: 'on' })).toEqual({ inputMonitoring: 'off' });
         expect(mocks.startInputMonitoring).not.toHaveBeenCalled();
-        expect(mocks.stopInputMonitoring).toHaveBeenCalledTimes(1);
+        expect(mocks.stopInputMonitoring).not.toHaveBeenCalled();
     });
 });
 vi.mock('../../../repositories/track/getTrackById', () => ({

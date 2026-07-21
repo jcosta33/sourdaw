@@ -48,4 +48,22 @@ describe('toggleSendPreFader', () => {
         expect(mocks.updateTrack).not.toHaveBeenCalled();
         expect(mocks.engineSetSend).not.toHaveBeenCalled();
     });
+
+    it('rejects a toggle whose resolved destination is a dormant VCA', () => {
+        mocks.getTrackById.mockImplementation((trackId: string) => {
+            if (trackId === 'audio-1') {
+                return {
+                    id: 'audio-1',
+                    kind: 'audio',
+                    sends: [{ busId: 'vca-1', level: 0.5, preFader: false }],
+                };
+            }
+            return { id: 'vca-1', kind: 'vca', sends: [] };
+        });
+
+        toggleSendPreFader('audio-1', 'vca-1');
+
+        expect(mocks.updateTrack).not.toHaveBeenCalled();
+        expect(mocks.engineSetSend).not.toHaveBeenCalled();
+    });
 });

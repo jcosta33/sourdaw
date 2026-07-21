@@ -8,8 +8,9 @@ import { type InputMonitoring } from '../../stores/trackStore';
 export function setInputMonitoring(trackId: string, mode: InputMonitoring): void {
     const track = getTrackById(trackId);
     if (track && !getTrackEligibility(track.kind).acceptsMonitoring) {
-        updateTrack(trackId, (time) => ({ ...time, inputMonitoring: 'off' }));
-        stopInputMonitoring();
+        if (mode === 'off') {
+            updateTrack(trackId, (time) => ({ ...time, inputMonitoring: 'off' }));
+        }
         return;
     }
     updateTrack(trackId, (time) => ({ ...time, inputMonitoring: mode }));

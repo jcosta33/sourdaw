@@ -4,11 +4,17 @@ import { getTrackById } from '../../../repositories/track/getTrackById';
 import { updateTrack } from '../../../repositories/track/updateTrack';
 import { getTrackEligibility } from '../../../stores/trackEligibility';
 
-export function setSend(trackId: string, busId: string, level: number, preFader = false): void {
+export function setSend(trackId: string, busId: string, level: number, preFader = false): boolean {
     const track = getTrackById(trackId);
     if (track && !getTrackEligibility(track.kind).acceptsSend) {
-        return;
+        return false;
     }
+
+    const targetTrack = getTrackById(busId);
+    if (targetTrack && !getTrackEligibility(targetTrack.kind).acceptsRoutingEndpoint) {
+        return false;
+    }
+
     const existingSend = track?.sends.find((state) => state.busId === busId);
     const resolvedPreFader = existingSend ? existingSend.preFader : preFader;
 
@@ -25,4 +31,5 @@ export function setSend(trackId: string, busId: string, level: number, preFader 
     });
 
     engineSetSend(trackId, busId, level, resolvedPreFader);
+    return true;
 }

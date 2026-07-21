@@ -33,7 +33,10 @@ export function ensureTrackStrips(): void {
             continue;
         }
         ensureTrackStrip(track.id);
-        setTrackOutput(track.id, track.outputId);
+        const outputTarget = tracks.find((candidate) => candidate.id === track.outputId);
+        if (!outputTarget || getTrackEligibility(outputTarget.kind).acceptsRoutingEndpoint) {
+            setTrackOutput(track.id, track.outputId);
+        }
         setTrackGain(track.id, track.gain);
         setTrackPan(track.id, track.pan);
         setTrackMute(track.id, track.muted);
@@ -53,6 +56,10 @@ export function ensureTrackStrips(): void {
         }
 
         for (const send of track.sends) {
+            const sendTarget = tracks.find((candidate) => candidate.id === send.busId);
+            if (sendTarget && !getTrackEligibility(sendTarget.kind).acceptsRoutingEndpoint) {
+                continue;
+            }
             setSend(track.id, send.busId, send.level, send.preFader);
         }
     }
