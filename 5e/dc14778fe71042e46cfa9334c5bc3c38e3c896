@@ -1,0 +1,19 @@
+crates/daw-dsp/src/crumbs/engine.rs
+  s_c2fca615e81f34::t_aa548e2f2366d9 478-494,712-793
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "5edc14778fe71042e46cfa9334c5bc3c38e3c896",
+  "prompts": {},
+  "sessions": {
+    "s_c2fca615e81f34": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f74e9-e1c5-7142-85d2-4c577b3973c0",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
