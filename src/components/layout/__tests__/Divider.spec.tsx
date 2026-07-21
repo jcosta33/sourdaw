@@ -1,7 +1,7 @@
 import { createRef } from 'react';
 
-import { render, screen } from '@testing-library/react';
-import { describe, it, expect } from 'vitest';
+import { fireEvent, render, screen } from '@testing-library/react';
+import { describe, it, expect, vi } from 'vitest';
 
 import { Divider } from '../Divider';
 
@@ -9,6 +9,7 @@ describe('Divider', () => {
     it('should have correct ARIA attributes', () => {
         render(<Divider data-testid="divider" />);
         const element = screen.getByTestId('divider');
+        expect(element.tagName).toBe('DIV');
         expect(element).toHaveAttribute('role', 'separator');
         expect(element).toHaveAttribute('aria-orientation', 'horizontal');
     });
@@ -94,6 +95,13 @@ describe('Divider', () => {
             const element = screen.getByTestId('divider');
             expect(element).toHaveClass('shrink-0', 'h-px', 'bg-border/40', 'custom-class');
         });
+
+        it('should give conflicting caller utilities precedence', () => {
+            render(<Divider className="shrink h-2 w-10 bg-red-500 mx-8" data-testid="divider" />);
+            const element = screen.getByTestId('divider');
+            expect(element).toHaveClass('shrink', 'h-2', 'w-10', 'bg-red-500', 'mx-8');
+            expect(element).not.toHaveClass('shrink-0', 'h-px', 'w-full', 'bg-border/40', 'mx-0');
+        });
     });
 
     describe('ref forwarding', () => {
@@ -106,10 +114,43 @@ describe('Divider', () => {
 
     describe('HTML attributes', () => {
         it('should pass through arbitrary HTML attributes', () => {
-            render(<Divider data-testid="divider" id="test-id" title="Test Title" />);
+            const onClick = vi.fn();
+            render(
+                <Divider
+                    data-testid="divider"
+                    data-proof="native"
+                    id="test-id"
+                    title="Test Title"
+                    role="presentation"
+                    aria-orientation="vertical"
+                    style={{ color: 'rgb(1, 2, 3)' }}
+                    onClick={onClick}
+                />
+            );
             const element = screen.getByTestId('divider');
+            fireEvent.click(element);
             expect(element).toHaveAttribute('id', 'test-id');
             expect(element).toHaveAttribute('title', 'Test Title');
+            expect(element).toHaveAttribute('data-proof', 'native');
+            expect(element).toHaveAttribute('role', 'presentation');
+            expect(element).toHaveAttribute('aria-orientation', 'vertical');
+            expect(element).toHaveStyle({ color: 'rgb(1, 2, 3)' });
+            expect(onClick).toHaveBeenCalledOnce();
         });
+    });
+
+    it('should render children exactly once in their original order', () => {
+        render(
+            <Divider data-testid="divider">
+                <span>First</span>
+                <span>Second</span>
+                <span>Third</span>
+            </Divider>
+        );
+        expect(Array.from(screen.getByTestId('divider').children, (child) => child.textContent)).toEqual([
+            'First',
+            'Second',
+            'Third',
+        ]);
     });
 });

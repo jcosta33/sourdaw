@@ -4,12 +4,20 @@
 //! via the NativePlugin trait. All communication is lock-free via rtrb.
 
 use crate::audio_bridge::PluginAudioBridge;
-use crate::midi_fx::{Arpeggiator, MidiEventBuffer, MidiFx, VelocityScaler};
+use crate::midi::diagnostics::{
+    active_midi_rt_diagnostics_channel, ActiveMidiRtDiagnostics, ActiveMidiRtDiagnosticsSnapshot,
+};
+use crate::midi_fx::{Arpeggiator, MidiEventBuffer, MidiFx, ProbabilityEvaluator, VelocityScaler};
 use crate::plugin_slot::{MidiNoteEvent, NativePlugin, TransportState};
 use daw_core::tuning::TuningTable;
 use daw_dsp::knead::engine::KneadEngine;
 use rtrb::Consumer;
-use triple_buffer::Output;
+use triple_buffer::{Input, Output};
+
+pub enum MidiFxKind {
+    Arpeggiator,
+    VelocityScaler,
+}
 
 /// Commands sent from the UI/main thread to the audio thread (lock-free via rtrb).
 pub enum GraphCommand {
@@ -29,7 +37,7 @@ pub enum GraphCommand {
     SendMidiNote(usize, MidiNoteEvent),
 
     // MIDI FX
-    AddMidiFx(usize, String),
+    AddMidiFx(usize, MidiFxKind),
     RemoveMidiFx(usize, usize), // effect_id, fx_index
     SetMidiFxParam(usize, usize, String, f32),
 
@@ -53,6 +61,8 @@ struct ActiveEffect {
     id: usize,
     instance: PluginCore,
     bypassed: bool,
+    /// Fixed pre-FX gate. Inline ownership avoids callback-time registration/allocation.
+    probability_evaluator: ProbabilityEvaluator,
     midi_fx: Vec<Box<dyn MidiFx>>,
     /// Pending MIDI events for this block (drained each process_block call).
     pending_midi: MidiEventBuffer,
@@ -64,15 +74,18 @@ impl ActiveEffect {
             id,
             instance,
             bypassed: false,
+            probability_evaluator: ProbabilityEvaluator,
             midi_fx: Vec::new(),
             pending_midi: MidiEventBuffer::new(),
         }
     }
 
     #[inline]
-    fn enqueue_midi(&mut self, event: MidiNoteEvent) {
+    fn enqueue_midi(&mut self, event: MidiNoteEvent, diagnostics: &mut ActiveMidiRtDiagnostics) {
         // Drop the newest event when the fixed block-local buffer is full.
-        let _ = self.pending_midi.try_push(event);
+        if !self.pending_midi.try_push(event) {
+            diagnostics.record_scheduler_event_buffer_overflow(1);
+        }
     }
 }
 
@@ -82,17 +95,36 @@ pub struct AudioScheduler {
     command_rx: Consumer<GraphCommand>,
     sample_rate: f32,
     transport: TransportState,
+    midi_rt_diagnostics: ActiveMidiRtDiagnostics,
+    midi_rt_diagnostics_tx: Input<ActiveMidiRtDiagnosticsSnapshot>,
 }
 
 impl AudioScheduler {
     pub fn new(command_rx: Consumer<GraphCommand>, sample_rate: f32) -> Self {
+        let (diagnostics_tx, _diagnostics_reader) = active_midi_rt_diagnostics_channel();
+        Self::with_midi_rt_diagnostics(command_rx, sample_rate, diagnostics_tx)
+    }
+
+    pub(crate) fn with_midi_rt_diagnostics(
+        command_rx: Consumer<GraphCommand>,
+        sample_rate: f32,
+        midi_rt_diagnostics_tx: Input<ActiveMidiRtDiagnosticsSnapshot>,
+    ) -> Self {
         Self {
             effects: Vec::with_capacity(128),
             audio_bridges: Vec::with_capacity(128),
             command_rx,
             sample_rate,
             transport: TransportState::default(),
+            midi_rt_diagnostics: ActiveMidiRtDiagnostics::new(),
+            midi_rt_diagnostics_tx,
         }
+    }
+
+    #[inline]
+    pub(crate) fn publish_midi_rt_diagnostics(&mut self) {
+        self.midi_rt_diagnostics_tx
+            .write(self.midi_rt_diagnostics.snapshot());
     }
 
     /// Process pending UI commands lock-free on the audio thread.
@@ -102,9 +134,7 @@ impl AudioScheduler {
             match cmd {
                 GraphCommand::AddEffect(id, plugin_type) => {
                     let instance = match plugin_type.as_str() {
-                        "knead" => {
-                            Some(PluginCore::Knead(KneadEngine::new(self.sample_rate)))
-                        }
+                        "knead" => Some(PluginCore::Knead(KneadEngine::new(self.sample_rate))),
                         _ => None,
                     };
                     if let Some(inst) = instance {
@@ -137,16 +167,13 @@ impl AudioScheduler {
                         .push(ActiveEffect::new(id, PluginCore::Native(plugin)));
                     self.audio_bridges.push(bridge);
                 }
-                GraphCommand::AddMidiFx(id, fx_type) => {
+                GraphCommand::AddMidiFx(id, fx_kind) => {
                     if let Some(effect) = self.effects.iter_mut().find(|e| e.id == id) {
-                        let fx: Option<Box<dyn MidiFx>> = match fx_type.as_str() {
-                            "arp" => Some(Box::new(Arpeggiator::default())),
-                            "velocity" => Some(Box::new(VelocityScaler::default())),
-                            _ => None,
+                        let fx: Box<dyn MidiFx> = match fx_kind {
+                            MidiFxKind::Arpeggiator => Box::new(Arpeggiator::default()),
+                            MidiFxKind::VelocityScaler => Box::new(VelocityScaler::default()),
                         };
-                        if let Some(instance) = fx {
-                            effect.midi_fx.push(instance);
-                        }
+                        effect.midi_fx.push(fx);
                     }
                 }
                 GraphCommand::RemoveMidiFx(id, index) => {
@@ -165,7 +192,7 @@ impl AudioScheduler {
                 }
                 GraphCommand::SendMidiNote(id, event) => {
                     if let Some(effect) = self.effects.iter_mut().find(|e| e.id == id) {
-                        effect.enqueue_midi(event);
+                        effect.enqueue_midi(event, &mut self.midi_rt_diagnostics);
                     }
                 }
                 GraphCommand::SetTransport(state) => {
@@ -203,14 +230,28 @@ impl AudioScheduler {
                 }
 
                 if let PluginCore::Native(ref mut plugin) = effect.instance {
+                    let probability_evaluator = &mut effect.probability_evaluator;
                     let midi_fx = &mut effect.midi_fx;
                     let pending_midi = &mut effect.pending_midi;
                     let transport = self.transport;
                     let sample_rate = self.sample_rate;
 
                     bridge.try_process(|left, right, num_samples| {
+                        probability_evaluator.process_midi_with_diagnostics(
+                            pending_midi,
+                            &transport,
+                            sample_rate,
+                            num_samples,
+                            &mut self.midi_rt_diagnostics,
+                        );
                         for fx in midi_fx.iter_mut() {
-                            fx.process_midi(pending_midi, &transport, sample_rate, num_samples);
+                            fx.process_midi_with_diagnostics(
+                                pending_midi,
+                                &transport,
+                                sample_rate,
+                                num_samples,
+                                &mut self.midi_rt_diagnostics,
+                            );
                         }
 
                         if pending_midi.is_empty() {
@@ -241,13 +282,22 @@ impl AudioScheduler {
                 continue;
             }
 
-            // Apply MIDI FX chain before processing
+            effect.probability_evaluator.process_midi_with_diagnostics(
+                &mut effect.pending_midi,
+                &self.transport,
+                self.sample_rate,
+                num_samples,
+                &mut self.midi_rt_diagnostics,
+            );
+
+            // Apply the mutable user MIDI FX chain only after authored probability.
             for fx in &mut effect.midi_fx {
-                fx.process_midi(
+                fx.process_midi_with_diagnostics(
                     &mut effect.pending_midi,
                     &self.transport,
                     self.sample_rate,
                     num_samples,
+                    &mut self.midi_rt_diagnostics,
                 );
             }
 
@@ -406,6 +456,62 @@ mod tests {
     }
 
     #[test]
+    fn probability_zero_is_gated_before_arpeggiation() {
+        let (mut command_tx, mut scheduler) = create_scheduler();
+        let received_event_count = Arc::new(AtomicUsize::new(0));
+        let received_channel_sum = Arc::new(AtomicUsize::new(0));
+
+        command_tx
+            .push(GraphCommand::AddPlugin(
+                7,
+                Box::new(MidiRecordingPlugin {
+                    received_event_count: Arc::clone(&received_event_count),
+                    received_channel_sum,
+                }),
+            ))
+            .unwrap();
+        command_tx
+            .push(GraphCommand::AddMidiFx(7, MidiFxKind::Arpeggiator))
+            .unwrap();
+        command_tx
+            .push(GraphCommand::SendMidiNote(
+                7,
+                MidiNoteEvent {
+                    note: 60,
+                    velocity: 100,
+                    channel: 0,
+                    is_note_on: true,
+                    probability_cutoff: 0,
+                    project_probability_seed: 0,
+                    clip_id_hash: 0,
+                    event_id_hash: 0,
+                    absolute_occurrence_index: 0,
+                },
+            ))
+            .unwrap();
+
+        scheduler.update_graph();
+
+        let mut left = [0.0; 4];
+        let mut right = [0.0; 4];
+        scheduler.process_block(&mut left, &mut right, 4);
+
+        assert_eq!(received_event_count.load(Ordering::Relaxed), 0);
+    }
+
+    #[test]
+    fn probability_evaluator_is_inline_and_uses_no_dynamic_chain_capacity() {
+        let effect = ActiveEffect::new(
+            7,
+            PluginCore::Native(Box::new(FakeNativePlugin { value: 0.25 })),
+        );
+
+        assert_eq!(std::mem::size_of::<ProbabilityEvaluator>(), 0);
+        assert_eq!(effect.midi_fx.len(), 0);
+        assert_eq!(effect.midi_fx.capacity(), 0);
+    }
+
+    #[test]
     fn send_midi_note_drops_newest_events_after_fixed_capacity() {
         let midi_capacity = MIDI_EVENT_BUFFER_CAPACITY;
         let (mut command_tx, command_rx) = RingBuffer::new(256);
@@ -432,7 +538,11 @@ mod tests {
                         velocity: 100,
                         channel: channel as i16,
                         is_note_on: true,
-                        probability: 1.0,
+                        probability_cutoff: crate::midi_fx::PROBABILITY_CUTOFF_RANGE,
+                        project_probability_seed: 0,
+                        clip_id_hash: 0,
+                        event_id_hash: 0,
+                        absolute_occurrence_index: 0,
                     },
                 ))
                 .unwrap();
@@ -447,10 +557,7 @@ mod tests {
         let mut right = [0.0; 4];
         scheduler.process_block(&mut left, &mut right, 4);
 
-        assert_eq!(
-            received_event_count.load(Ordering::Relaxed),
-            midi_capacity
-        );
+        assert_eq!(received_event_count.load(Ordering::Relaxed), midi_capacity);
         assert_eq!(
             received_channel_sum.load(Ordering::Relaxed),
             (midi_capacity - 1) * midi_capacity / 2

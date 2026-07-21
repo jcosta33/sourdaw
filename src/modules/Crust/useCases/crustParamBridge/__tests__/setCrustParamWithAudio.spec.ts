@@ -1,5 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
+import { type DeviceWriteTargetResolution } from '#/modules/Arrangement/stores';
+
 const TRACK_ID = 'track-1';
 const DEVICE_ID = 'device-1';
 
@@ -7,6 +9,11 @@ const mocks = vi.hoisted(() => ({
     updateDeviceParam: vi.fn(),
     persistDeviceParam: vi.fn(),
     setCrustParam: vi.fn(),
+    resolveEligibleDeviceWriteTarget: vi.fn<(deviceId: string) => DeviceWriteTargetResolution>(() => ({
+        status: 'eligible' as const,
+        trackId: 'track-1',
+        deviceId: 'device-1',
+    })),
     trackStore: {
         value: { tracks: [{ id: 'track-1', devices: [{ id: 'device-1', type: 'crust' }] }] },
     },
@@ -19,6 +26,7 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
 vi.mock('#/modules/Arrangement/stores', () => ({
     trackStore: mocks.trackStore,
     persistDeviceParam: mocks.persistDeviceParam,
+    resolveEligibleDeviceWriteTarget: mocks.resolveEligibleDeviceWriteTarget,
 }));
 
 vi.mock('../../../stores/crustStore', () => ({
@@ -34,6 +42,11 @@ describe('setCrustParamWithAudio', () => {
 
     beforeEach(() => {
         vi.clearAllMocks();
+        mocks.resolveEligibleDeviceWriteTarget.mockReturnValue({
+            status: 'eligible',
+            trackId: TRACK_ID,
+            deviceId: DEVICE_ID,
+        });
         paramBatcher.cancelAll();
         rafQueue = [];
         vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback): number => {
@@ -101,5 +114,17 @@ describe('setCrustParamWithAudio', () => {
         expect(mocks.updateDeviceParam).toHaveBeenCalledWith(TRACK_ID, DEVICE_ID, 'gain', 5);
         expect(mocks.persistDeviceParam).toHaveBeenCalledWith(DEVICE_ID, 'gain', 5);
         expect(calls).toEqual(['store:gain:5', 'update:track-1:device-1:gain:5', 'persist:device-1:gain:5']);
+    });
+
+    it.each(['missing', 'ineligible'] as const)('rejects a %s owner before store or queue effects', (status) => {
+        mocks.resolveEligibleDeviceWriteTarget.mockReturnValue({ status });
+
+        setCrustParamWithAudio(DEVICE_ID, 'streamingPreset', 'ebu_r128');
+        setCrustParamWithAudio(DEVICE_ID, 'gain', 5);
+
+        expect(mocks.setCrustParam).not.toHaveBeenCalled();
+        expect(paramBatcher.pendingSize).toBe(0);
+        expect(mocks.updateDeviceParam).not.toHaveBeenCalled();
+        expect(mocks.persistDeviceParam).not.toHaveBeenCalled();
     });
 });

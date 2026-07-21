@@ -1,9 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach, type MockInstance } from 'vitest';
 
-type DeviceRef = {
-    trackId: string;
-    deviceId: string;
-};
+import { type DeviceWriteTargetResolution } from '#/modules/Arrangement/stores';
 
 type SetPadParam = (pad: number, name: string, value: number) => void;
 
@@ -18,14 +15,16 @@ type TrackStrip = {
     }>;
 };
 
-const mockFindDeviceRef = vi.hoisted(() => vi.fn<(deviceId: string) => DeviceRef | null>(() => null));
+const mockResolveDeviceTarget = vi.hoisted(() =>
+    vi.fn<(deviceId: string) => DeviceWriteTargetResolution>(() => ({ status: 'missing' }))
+);
 const mockGetTrackStrip = vi.hoisted(() => vi.fn<(trackId: string) => TrackStrip | undefined>());
 const mockUpdatePad = vi.hoisted(() => vi.fn<(deviceId: string, padIndex: number, updates: unknown) => void>());
 
-vi.mock('../helpers', async (importOriginal) => {
-    const actual = await importOriginal<typeof import('../helpers')>();
-    return { ...actual, findDeviceRef: mockFindDeviceRef };
-});
+vi.mock('#/modules/Arrangement/stores', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Arrangement/stores')>()),
+    resolveEligibleDeviceWriteTarget: mockResolveDeviceTarget,
+}));
 
 vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/AudioEngine/useCases')>()),
@@ -66,7 +65,11 @@ describe('setToasterPadParam', () => {
             rafCallbacks.push(callback);
             return rafCallbacks.length;
         });
-        mockFindDeviceRef.mockReturnValue({ trackId: 'track-1', deviceId: 'dev-1' });
+        mockResolveDeviceTarget.mockReturnValue({
+            status: 'eligible',
+            trackId: 'track-1',
+            deviceId: 'dev-1',
+        });
         wireReadyToasterControls();
     });
 
@@ -107,12 +110,12 @@ describe('setToasterPadParam', () => {
         expect(setPadParam).toHaveBeenCalledWith(0, 'color', 1);
     });
 
-    it('should not schedule a frame when no device ref exists', () => {
-        mockFindDeviceRef.mockReturnValue(null);
+    it.each(['missing', 'ineligible'] as const)('rejects a %s owner before store or queue effects', (status) => {
+        mockResolveDeviceTarget.mockReturnValue({ status });
 
         setToasterPadParam('dev-1', 0, 'decay', 0.6);
 
-        expect(mockUpdatePad).toHaveBeenCalledWith('dev-1', 0, { decay: 0.6 });
+        expect(mockUpdatePad).not.toHaveBeenCalled();
         expect(requestAnimationFrameSpy).not.toHaveBeenCalled();
         expect(setPadParam).not.toHaveBeenCalled();
     });
@@ -149,6 +152,16 @@ describe('setToasterPadParam', () => {
         setToasterPadParam('dev-1', 0, 'pan', -0.25);
         flushFrame();
 
+        expect(setPadParam).not.toHaveBeenCalled();
+    });
+
+    it('drops a queued write when the owner becomes missing before the frame flushes', () => {
+        setToasterPadParam('dev-1', 0, 'tone', 0.4);
+        mockResolveDeviceTarget.mockReturnValue({ status: 'missing' });
+
+        flushFrame();
+
+        expect(mockGetTrackStrip).not.toHaveBeenCalled();
         expect(setPadParam).not.toHaveBeenCalled();
     });
 });

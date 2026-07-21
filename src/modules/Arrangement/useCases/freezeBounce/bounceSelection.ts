@@ -6,21 +6,21 @@ import { trackStore } from '../../stores/trackStore';
 
 import { renderTrackOffline } from './renderOffline';
 
-export async function bounceSelection(trackId: string, startBeat: number, endBeat: number): Promise<void> {
+export async function bounceSelection(trackId: string, startBeat: number, endBeat: number): Promise<boolean> {
     // Selection bounce uses hardcoded options for now, but could be extended
     const state = trackStore.value;
     if (!state) {
-        return;
+        return false;
     }
 
     const track = state.tracks.find((time) => time.id === trackId);
     if (!track) {
-        return;
+        return false;
     }
 
     const clipsInRange = track.clips.filter((context) => context.endBeat > startBeat && context.startBeat < endBeat);
     if (clipsInRange.length === 0) {
-        return;
+        return false;
     }
 
     const virtualTrack: Track = {
@@ -35,7 +35,7 @@ export async function bounceSelection(trackId: string, startBeat: number, endBea
     const renderedBuffer = await renderTrackOffline(virtualTrack, startBeat, endBeat);
 
     if (!renderedBuffer) {
-        return;
+        return false;
     }
 
     const audioBufferId = `bounce-sel-${trackId}-${Date.now()}`;
@@ -59,7 +59,7 @@ export async function bounceSelection(trackId: string, startBeat: number, endBea
 
     const freshState = trackStore.value;
     if (!freshState) {
-        return;
+        return false;
     }
 
     const tracksBefore = structuredClone(freshState.tracks);
@@ -96,4 +96,5 @@ export async function bounceSelection(trackId: string, startBeat: number, endBea
             }
         }
     );
+    return true;
 }

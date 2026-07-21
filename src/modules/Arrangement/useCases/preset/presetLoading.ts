@@ -11,6 +11,7 @@ import { notifyUser } from '#/utils/Notification/notifyUser';
 import { type SoundPreset, type DevicePreset } from '../../models/SoundPreset';
 import { getTrackById } from '../../repositories/track/getTrackById';
 import { updateTrack } from '../../repositories/track/updateTrack';
+import { getTrackEligibility } from '../../stores/trackEligibility';
 import { type Device } from '../../stores/trackStore';
 import { addDevice } from '../device/addDevice';
 import { setDeviceParameter } from '../device/setDeviceParameter/setDeviceParameter';
@@ -66,15 +67,17 @@ export const loadPresetToTrack = inject({ logger })(({ logger }) => {
         }
     }
 
-    return function loadPresetToTrack(trackId: string, preset: SoundPreset): void {
+    return function loadPresetToTrack(trackId: string, preset: SoundPreset): boolean {
         const track = getTrackById(trackId);
-        if (track) {
-            const deviceIds = track.devices.map((data) => data.id);
-            for (const deviceId of deviceIds) {
-                removeDeviceFromStrip(trackId, deviceId);
-            }
-            updateTrack(trackId, (time) => ({ ...time, devices: [] }));
+        if (!track || !getTrackEligibility(track.kind).acceptsDeviceUpdate) {
+            return false;
         }
+
+        const deviceIds = track.devices.map((device) => device.id);
+        for (const deviceId of deviceIds) {
+            removeDeviceFromStrip(trackId, deviceId);
+        }
+        updateTrack(trackId, (currentTrack) => ({ ...currentTrack, devices: [] }));
 
         for (const dp of preset.devices) {
             if (isInstrumentDevice(dp.type)) {
@@ -83,5 +86,7 @@ export const loadPresetToTrack = inject({ logger })(({ logger }) => {
                 attachEffectDevice(trackId, dp);
             }
         }
+
+        return true;
     };
 });

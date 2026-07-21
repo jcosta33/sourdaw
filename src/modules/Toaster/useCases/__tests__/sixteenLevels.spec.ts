@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 import { Container } from '#/infra/di/Container';
+import { type DeviceWriteTargetResolution } from '#/modules/Arrangement/stores';
 import { getAllTracks } from '#/modules/Arrangement/useCases';
 import { getTrackStrip } from '#/modules/AudioEngine/useCases';
 
@@ -11,6 +12,15 @@ import { get16LevelsTarget } from '../get16LevelsTarget';
 import { is16LevelsActive } from '../is16LevelsActive';
 import { trigger16Level } from '../trigger16Level';
 import { triggerToasterPad } from '../triggerPad';
+
+const mockResolveDeviceTarget = vi.hoisted(() =>
+    vi.fn<(deviceId: string) => DeviceWriteTargetResolution>(() => ({ status: 'missing' }))
+);
+
+vi.mock('#/modules/Arrangement/stores', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Arrangement/stores')>()),
+    resolveEligibleDeviceWriteTarget: mockResolveDeviceTarget,
+}));
 
 vi.mock('../triggerPad', () => ({
     triggerToasterPad: vi.fn(),
@@ -32,6 +42,11 @@ describe('trigger16Level', () => {
     beforeEach(() => {
         Container.clear();
         vi.clearAllMocks();
+        mockResolveDeviceTarget.mockImplementation((deviceId) => ({
+            status: 'eligible',
+            trackId: 't1',
+            deviceId,
+        }));
     });
 
     afterEach(() => {

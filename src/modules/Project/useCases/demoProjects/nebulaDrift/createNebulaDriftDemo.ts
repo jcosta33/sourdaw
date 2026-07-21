@@ -26,7 +26,7 @@ import {
 } from '#/modules/AudioEngine/useCases';
 import { automationStore } from '#/modules/Automation/stores';
 import { createAutomationLane } from '#/modules/Automation/useCases';
-import { chordTrackStore, midiStore } from '#/modules/MIDI/stores';
+import { chordTrackStore, LEGACY_MIDI_PROBABILITY_SEED, midiStore } from '#/modules/MIDI/stores';
 import { addChordEvent } from '#/modules/MIDI/useCases';
 import { addSidechainRoute } from '#/modules/Routing/useCases';
 import { getDefaultPadNames } from '#/modules/Toaster/useCases';
@@ -1390,6 +1390,7 @@ export async function demo5_NebulaDrift(): Promise<void> {
     Object.assign(notesByClipId, toasterNotesByClipId);
 
     midiStore.set({
+        probabilitySeed: midiStore.value?.probabilitySeed ?? LEGACY_MIDI_PROBABILITY_SEED,
         notesByClipId,
         ccByClipId: {},
         pitchBendByClipId: {},

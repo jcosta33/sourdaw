@@ -1,4 +1,9 @@
-import { trackStore, type Track, persistDeviceParam } from '#/modules/Arrangement/stores';
+import {
+    trackStore,
+    type Track,
+    persistDeviceParam,
+    resolveEligibleDeviceWriteTarget,
+} from '#/modules/Arrangement/stores';
 import { updateDeviceParam } from '#/modules/AudioEngine/useCases';
 import { createFindDeviceRef, type DeviceRef, type GetAllTracksFn } from '#/utils/createFindDeviceRef';
 import { createRafBatcher, type RafBatcher } from '#/utils/DOM/createRafBatcher';
@@ -11,15 +16,20 @@ export { createFindDeviceRef };
 export type { DeviceRef, GetAllTracksFn };
 
 // §33.2 — Shared rAF-batch primitive.
-export type CrustBatchEntry = { ref: DeviceRef; key: string; value: number };
+export type CrustBatchEntry = { deviceId: string; key: string; value: number };
 export const paramBatcher: RafBatcher<CrustBatchEntry> = createRafBatcher<CrustBatchEntry>();
 
 export type BridgeDeps = {
     updateDeviceParam: typeof updateDeviceParam;
     persistDeviceParam: typeof persistDeviceParam;
+    resolveEligibleDeviceWriteTarget: typeof resolveEligibleDeviceWriteTarget;
 };
 
-export const crustBridgeDeps: BridgeDeps = { updateDeviceParam, persistDeviceParam };
+export const crustBridgeDeps: BridgeDeps = {
+    updateDeviceParam,
+    persistDeviceParam,
+    resolveEligibleDeviceWriteTarget,
+};
 
 export const findDeviceRefCrust = createFindDeviceRef(getAllTracks);
 

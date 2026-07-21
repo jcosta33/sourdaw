@@ -1,3 +1,5 @@
+import { getTrackEligibility } from '#/modules/Arrangement/stores';
+
 import { createExportError } from '../errors/ExportError';
 
 import { type DeviceNodeEntry } from './buildDeviceChain';
@@ -52,6 +54,7 @@ export const exportStems: ExportStemsFn = async function exportStems(
             changes,
             durationSeconds,
             projectMidiEvents,
+            selectMidiEventProbability,
             projectPpqEndpoints,
             processYeastMidi,
         } = resolveRenderContext({
@@ -65,18 +68,22 @@ export const exportStems: ExportStemsFn = async function exportStems(
             onProgress?.(1);
             return stems;
         }
-        if (!projectMidiEvents || !projectPpqEndpoints) {
+        if (!projectMidiEvents || !selectMidiEventProbability || !projectPpqEndpoints) {
             throw new Error('Offline musical projection is not configured');
         }
 
         // Exclude disabled and structural tracks (unless they host a Toaster); muted tracks are included as stems
         // (users may want silent-in-mixdown stems for later use in a DAW).
-        const eligible = tracks.tracks.filter(
-            (time) =>
-                !time.disabled &&
-                time.kind !== 'master' &&
-                (time.kind !== 'folder' || time.devices.some((data) => data.type === 'toaster'))
-        );
+        const eligible = tracks.tracks.filter((time) => {
+            if (time.disabled) {
+                return false;
+            }
+            const eligibility = getTrackEligibility(time.kind);
+            if (eligibility.exportsStem) {
+                return true;
+            }
+            return time.kind === 'folder' && time.devices.some((data) => data.type === 'toaster');
+        });
         let done = 0;
 
         if (eligible.length === 0) {
@@ -110,7 +117,12 @@ export const exportStems: ExportStemsFn = async function exportStems(
                 durationSeconds,
                 defaultTempo,
                 changes,
-                projections: { projectMidiEvents, projectPpqEndpoints, processYeastMidi },
+                projections: {
+                    projectMidiEvents,
+                    projectPpqEndpoints,
+                    processYeastMidi,
+                    selectMidiEventProbability,
+                },
                 onWarning,
                 pendingWorkletEvents,
                 allTracks: [track],

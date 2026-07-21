@@ -1,3 +1,4 @@
+import { resolveEligibleDeviceWriteTarget } from '#/modules/Arrangement/stores';
 import { persistDevicePatch } from '#/modules/Arrangement/useCases';
 
 import { TARGET_LUFS, type ProofTarget } from '../../models/ProofPatch';
@@ -17,6 +18,12 @@ export function setProofTarget({ deviceId, target }: SetProofTargetInput): void 
     if (!Object.hasOwn(TARGET_LUFS, target)) {
         return;
     }
+
+    const writeTarget = resolveEligibleDeviceWriteTarget(deviceId);
+    if (writeTarget.status !== 'eligible') {
+        return;
+    }
+
     if (!bridges.has(deviceId)) {
         syncFullPatch(deviceId);
     }

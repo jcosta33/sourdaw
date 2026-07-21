@@ -1,5 +1,4 @@
 import { inject } from '#/infra/di/inject';
-import { createFindDeviceRef } from '#/utils/createFindDeviceRef';
 
 import { type GrinderPatch } from '../../models/GrinderPatch';
 import { setGrinderParam } from '../../stores/grinderStore';
@@ -67,17 +66,25 @@ function toPatchValue<Key extends keyof GrinderPatch>(key: Key, value: number): 
 }
 
 export const setGrinderParamWithAudio = inject(grinderParamBridgeDependencies)(({
-    getAllTracks: getAllTracksFn,
     updateDeviceParam: updateDeviceParamFn,
     persistDeviceParam: persistDeviceParamFn,
+    resolveEligibleDeviceWriteTarget: resolveEligibleDeviceWriteTargetFn,
 }) => {
-    const findDeviceRef = createFindDeviceRef(getAllTracksFn);
-    const flushParam = createFlushParam({ updateDeviceParamFn, persistDeviceParamFn });
+    const flushParam = createFlushParam({
+        updateDeviceParamFn,
+        persistDeviceParamFn,
+        resolveEligibleDeviceWriteTargetFn,
+    });
     return function setGrinderParamWithAudio<Key extends keyof GrinderPatch>(
         deviceId: string,
         key: Key,
         value: number
     ): void {
+        const target = resolveEligibleDeviceWriteTargetFn(deviceId);
+        if (target.status !== 'eligible') {
+            return;
+        }
+
         const patchValue = toPatchValue(key, value);
         setGrinderParam(deviceId, key, patchValue);
 
@@ -97,18 +104,13 @@ export const setGrinderParamWithAudio = inject(grinderParamBridgeDependencies)((
             coupled = { key: 'engineMode', value: ENGINE_MODES.indexOf(engineMode) };
         }
 
-        const ref = findDeviceRef(deviceId);
-        if (!ref) {
-            return;
-        }
-
         const compositeKey = `${deviceId}:${key}`;
-        paramBatcher.schedule(compositeKey, { ref, key, value }, flushParam);
+        paramBatcher.schedule(compositeKey, { deviceId: target.deviceId, key, value }, flushParam);
 
         if (coupled) {
             paramBatcher.schedule(
                 `${deviceId}:${coupled.key}`,
-                { ref, key: coupled.key, value: coupled.value },
+                { deviceId: target.deviceId, key: coupled.key, value: coupled.value },
                 flushParam
             );
         }

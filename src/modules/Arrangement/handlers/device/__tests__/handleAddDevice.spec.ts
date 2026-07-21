@@ -16,12 +16,24 @@ describe('handleAddDevice', () => {
     });
 
     it('executes addDevice with the provided payload', () => {
-        void handleAddDevice.execute({
+        mocks.addDevice.mockReturnValue({ id: 'device-1' });
+        const result = handleAddDevice.execute({
             type: 'addDevice',
             payload: { trackId: 't1', deviceType: 'EQ' },
         });
 
         expect(mocks.addDevice).toHaveBeenCalledWith('t1', 'EQ');
+        expect(result).toEqual({ status: 'written' });
+    });
+
+    it('returns no-write when addDevice rejects the target track', () => {
+        mocks.addDevice.mockReturnValue(null);
+        const result = handleAddDevice.execute({
+            type: 'addDevice',
+            payload: { trackId: 'vca-1', deviceType: 'EQ' },
+        });
+
+        expect(result).toEqual({ status: 'no-write' });
     });
 
     it('provides a description reflecting the device type', () => {

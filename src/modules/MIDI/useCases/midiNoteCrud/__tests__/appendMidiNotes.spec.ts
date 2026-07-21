@@ -1,9 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { type MidiStoreState } from '../../../stores/midiStore';
+import { type MidiStoreState, type MidiStoreStateInput } from '../../../stores/midiStore';
 
 const mocks = vi.hoisted(() => {
-    const state: { value: MidiStoreState | null } = { value: null };
+    const state: { value: MidiStoreStateInput | null } = { value: null };
     return { state };
 });
 
@@ -12,7 +12,7 @@ vi.mock('../../../stores/midiStore', () => ({
         get value() {
             return mocks.state.value;
         },
-        set: vi.fn((next: MidiStoreState | null) => {
+        set: vi.fn((next: MidiStoreStateInput | null) => {
             mocks.state.value = next;
         }),
     },
@@ -70,7 +70,7 @@ function createStoredNote(id: string, overrides: Partial<TestAppendNote> = {}): 
     };
 }
 
-function createState(notesByClipId: MidiStoreState['notesByClipId'] = {}): MidiStoreState {
+function createState(notesByClipId: MidiStoreState['notesByClipId'] = {}): MidiStoreStateInput {
     return {
         notesByClipId,
         ccByClipId: {},

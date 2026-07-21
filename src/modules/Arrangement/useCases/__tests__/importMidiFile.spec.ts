@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { REDO_NOT_APPLIED } from '#/modules/Command/useCases';
+import { LEGACY_MIDI_PROBABILITY_SEED } from '#/modules/MIDI/stores';
 import { getMidiStoreState, setMidiStoreState } from '#/modules/MIDI/useCases';
 
 import { type TrackStoreState, trackStore } from '../../stores/trackStore';
@@ -161,6 +162,7 @@ describe('importMidiFile', () => {
         undo();
         expect(trackStore.value?.tracks.map((track) => track.id)).toEqual(['concurrent-track']);
         expect(getMidiStoreState()).toEqual({
+            probabilitySeed: LEGACY_MIDI_PROBABILITY_SEED,
             notesByClipId: {
                 'existing-clip': [existingNote],
                 'concurrent-clip': [concurrentNote],

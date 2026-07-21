@@ -43,6 +43,7 @@ describe('resolveClipsWithComping', () => {
         expect(out).toHaveLength(1);
         expect(out[0]!.regionStartBeat).toBe(0);
         expect(out[0]!.regionEndBeat).toBe(8);
+        expect(out[0]!.sourceStartBeat).toBe(0);
         expect(out[0]!.id).toBe('a');
     });
 
@@ -54,5 +55,38 @@ describe('resolveClipsWithComping', () => {
         expect(out).toHaveLength(1);
         expect(out[0]!.regionStartBeat).toBe(clip.startBeat);
         expect(out[0]!.regionEndBeat).toBe(clip.endBeat);
+        expect(out[0]!.sourceStartBeat).toBe(clip.startBeat);
+    });
+
+    it('retains the source start when comping segments a loop', () => {
+        mocks.takeLaneStoreValue.value = {
+            lanes: [
+                {
+                    id: 'lane-1',
+                    trackId: 't1',
+                    takes: [
+                        {
+                            id: 'take-1',
+                            clipId: 'loop',
+                            name: 'Take 1',
+                            startBeat: 0,
+                            endBeat: 8,
+                            selected: true,
+                        },
+                    ],
+                    activeCompRegions: [{ startBeat: 4, endBeat: 6, takeId: 'take-1' }],
+                },
+            ],
+        };
+
+        const out = resolveClipsWithComping('t1', [
+            testClip({ id: 'loop', startBeat: 0, endBeat: 8, loopEnabled: true, loopLength: 2 }),
+        ]);
+
+        expect(out.map((clip) => [clip.startBeat, clip.endBeat, clip.sourceStartBeat])).toEqual([
+            [0, 4, 0],
+            [4, 6, 0],
+            [6, 8, 0],
+        ]);
     });
 });

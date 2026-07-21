@@ -5,15 +5,13 @@ description: >-
   AudioContext. ALWAYS apply when touching transport timing, clip scheduling,
   routing or buses, automation, worklet processors, metering taps, offline
   rendering, or any low-latency audio path — even if it looks like a small
-  parameter tweak or a UI hook reading a meter. Do not store AudioContext/node/
-  worklet handles in React state, mix or schedule audio on the main thread, or
-  rebuild the graph on a parameter change. Skip non-audio UI, project-state and
-  persistence design, AI intent parsing, and native/Tauri concerns.
+  parameter tweak or a UI hook reading a meter. Skip non-audio UI, project-state
+  and persistence design, AI intent parsing, and native/Tauri concerns.
 ---
 
 ## Purpose
 
-The engine is the runtime executor for playback and processing — owner of live timing, graph topology, and worklet lifecycle — and a derived projection of authoritative project state. It is not a UI concern, a global state bucket, or a second source of truth. Drift into React-held handles, main-thread mixing, or rebuild-on-fader is how audio glitches and becomes unreason-able.
+The engine is the runtime executor for playback and processing — owner of live timing, graph topology, and worklet lifecycle — and a derived projection of authoritative project state. It is not a UI concern, a global state bucket, or a second source of truth. Drift into React-held handles, main-thread mixing, or rebuild-on-fader is how audio glitches and becomes undebuggable.
 
 ## Core rules
 
@@ -74,30 +72,9 @@ UI may display summaries and request changes via commands — never owns playbac
 
 ## What does not belong
 
-- UI layout, selection, and editor chrome.
-- Project-level ownership rules, save/load, command parsing, AI intent.
-- Non-runtime validation and view formatting.
-- Native plugin host isolation mechanics beyond shared RT rules.
+- Native plugin host isolation mechanics beyond shared RT rules (see `plugin-hosting`).
 
 ## Anti-patterns
-
-### CRITICAL — Runtime handles in React/stores
-
-❌ Wrong: store `AudioContext`, `AudioNode`, engine instances, or worklet handles in React state, context, or general stores.
-
-✅ Correct: engine-owned runtime objects; expose controlled APIs and summaries only.
-
-### CRITICAL — RT-unsafe work on the audio path
-
-❌ Wrong: allocate, lock, touch DOM/React, FS/network, Tauri, or parse JSON on RT-adjacent paths.
-
-✅ Correct: worklets + prepared schedules; slow path for topology.
-
-### CRITICAL — Parameter gesture rebuilds graph
-
-❌ Wrong: moving a fader rebuilds routing or recreates nodes.
-
-✅ Correct: fast parameter path vs slow topology path (rule 4).
 
 ### HIGH — Hook owns playback phase
 
@@ -105,19 +82,9 @@ UI may display summaries and request changes via commands — never owns playbac
 
 ✅ Correct: hook sends commands and subscribes to engine summaries.
 
-### HIGH — Export reuses live engine state
-
-❌ Wrong: offline render assumes current UI/runtime state is canonical.
-
-✅ Correct: offline path reconstructs the graph from project truth.
-
-### MEDIUM — Extra live AudioContext for preview
-
-❌ Wrong: fresh context for one-shots or meters.
-
-✅ Correct: route previews through the single live engine (or explicit offline context).
-
 ## References
 
 - [docs/architecture/03-typescript-module.md](../../../docs/architecture/03-typescript-module.md) — where `engine/` sits in a module.
+- [docs/architecture/01-system.md](../../../docs/architecture/01-system.md) — channels and engine/executor model.
+- [src/modules/AudioEngine/AGENTS.md](../../../src/modules/AudioEngine/AGENTS.md) — WASM pipeline and worklet wiring.
 - `.dependency-cruiser.cjs` — `worklets-*`, `presentation-no-engine-runtime-imports`, `react-only-in-presentation`.

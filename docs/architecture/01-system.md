@@ -17,6 +17,8 @@ That belongs in the TypeScript and Rust architecture documents.
 
 This document is the top-level source of truth for system architecture.
 
+Related agent skills: `state-and-write-paths` (state categories), `crdt-collaboration` (CRDT write path), `web-audio-engine` (channels/engine), `tauri-platform` (placement).
+
 ---
 
 ## 1. Purpose

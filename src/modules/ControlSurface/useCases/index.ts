@@ -12,6 +12,7 @@ export { setMidiLearnDependencies } from './midiLearn/midiLearnDependencies';
 // ── Hardware mappings ─────────────────────────────────────────────────────────
 export { exportHardwareMappings } from './hardware/exportHardwareMappings';
 export { importHardwareMappings } from './hardware/importHardwareMappings';
+export { matchControllerProfile } from './matchControllerProfile';
 
 // ── Command handlers ──────────────────────────────────────────────────────────
 export { getControlSurfaceHandlers } from './getControlSurfaceHandlers';

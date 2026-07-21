@@ -1,3 +1,5 @@
+import { resolveEligibleDeviceWriteTarget } from '#/modules/Arrangement/stores';
+
 import { type ToasterKit, type DrumEngineType } from '../models/ToasterKit';
 import { loadKit } from '../stores/toasterStore';
 
@@ -48,6 +50,11 @@ export const TOASTER_ENGINE_MAP: Record<DrumEngineType, number> = {
 };
 
 export function loadToasterKitPreset(deviceId: string, kit: ToasterKit): void {
+    const target = resolveEligibleDeviceWriteTarget(deviceId);
+    if (target.status !== 'eligible') {
+        return;
+    }
+
     // Update the UI store first
     loadKit(deviceId, kit);
 

@@ -11,6 +11,9 @@ export type FermenterDependencies = {
     updateDeviceParam: (trackId: string, deviceId: string, paramId: string, value: number) => void;
     updateDevicePatch?: (trackId: string, deviceId: string, patch: Record<string, unknown>) => void;
     getAllTracks: GetAllTracksFn;
+    resolveEligibleDeviceWriteTarget: (
+        deviceId: string
+    ) => { status: 'eligible'; trackId: string; deviceId: string } | { status: 'missing' | 'ineligible' };
 };
 
 export const fermenterDependenciesHolder: { current: FermenterDependencies | null } = {

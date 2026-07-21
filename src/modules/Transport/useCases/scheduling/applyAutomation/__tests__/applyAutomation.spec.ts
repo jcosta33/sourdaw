@@ -10,9 +10,25 @@ import { applyAutomation } from '../applyAutomation';
 
 vi.mock('#/modules/Arrangement/stores', async (importOriginal) => {
     const mod = await importOriginal<typeof import('#/modules/Arrangement/stores')>();
+    const trackStore: { value: typeof mod.trackStore.value } = {
+        value: { tracks: [], selectedTrackId: null },
+    };
     return {
         ...mod,
-        trackStore: { value: { tracks: [] } },
+        trackStore,
+        resolveEligibleDeviceWriteTarget: (deviceId: string) => {
+            const track = trackStore.value?.tracks.find((candidate) =>
+                candidate.devices.some((device) => device.id === deviceId)
+            );
+            if (!track) {
+                return { status: 'missing' };
+            }
+            const runtimeKind: unknown = Reflect.get(track, 'kind');
+            if (runtimeKind === 'vca') {
+                return { status: 'ineligible' };
+            }
+            return { status: 'eligible', trackId: track.id, deviceId };
+        },
     };
 });
 vi.mock('#/modules/Automation/stores', async (importOriginal) => {
@@ -59,11 +75,13 @@ function seedDeviceLane(options: {
     deviceId: string;
     bareParamId: string;
     laneParameterId: string;
+    trackKind?: string;
 }): void {
     mutableTrackStore.value = {
         tracks: [
             {
                 id: 'track-1',
+                kind: options.trackKind ?? 'audio',
                 automationMode: 'read',
                 clips: [],
                 midiFx: [],
@@ -150,6 +168,23 @@ describe('applyAutomation', () => {
 
         expect(updateDeviceParam).toHaveBeenCalledTimes(1);
         expect(updateDeviceParam).toHaveBeenCalledWith('track-1', 'device-eq1', 'eq-low-gain', expect.any(Number));
+        expect(setFermenterMappedParam).not.toHaveBeenCalled();
+    });
+
+    it('does not send device automation for an ineligible runtime VCA owner', () => {
+        seedDeviceLane({
+            deviceType: 'builtin-eq',
+            deviceId: 'forbidden-device',
+            bareParamId: 'eq-low-gain',
+            laneParameterId: 'builtin-eq:eq-low-gain',
+            trackKind: 'vca',
+        });
+
+        vi.mocked(getAutomationValueAtBeat).mockReturnValueOnce(0).mockReturnValue(0.75);
+        applyAutomation(0);
+        applyAutomation(1);
+
+        expect(updateDeviceParam).not.toHaveBeenCalled();
         expect(setFermenterMappedParam).not.toHaveBeenCalled();
     });
 });

@@ -26,10 +26,10 @@ describe('bypassDevice', () => {
 
     it('updates bypass state in store and engine', async () => {
         mocks.getTrackState.mockReturnValue({
-            tracks: [{ id: 't1', devices: [{ id: 'd1' }] }],
+            tracks: [{ id: 't1', kind: 'audio', devices: [{ id: 'd1' }] }],
         });
 
-        bypassDevice('d1', true);
+        const didWrite = bypassDevice('d1', true);
 
         expect(mocks.mapAllTracks).toHaveBeenCalled();
         const call = mocks.mapAllTracks.mock.calls[0];
@@ -46,5 +46,19 @@ describe('bypassDevice', () => {
         await vi.waitFor(() => {
             expect(mocks.updateDeviceBypass).toHaveBeenCalledWith('t1', 'd1', true);
         });
+        expect(didWrite).toBe(true);
+    });
+
+    it('rejects dormant VCA bypass before project or engine mutation', async () => {
+        mocks.getTrackState.mockReturnValue({
+            tracks: [{ id: 'vca-1', kind: 'vca', devices: [{ id: 'd1' }] }],
+        });
+
+        const didWrite = bypassDevice('d1', true);
+
+        expect(mocks.mapAllTracks).not.toHaveBeenCalled();
+        await Promise.resolve();
+        expect(mocks.updateDeviceBypass).not.toHaveBeenCalled();
+        expect(didWrite).toBe(false);
     });
 });

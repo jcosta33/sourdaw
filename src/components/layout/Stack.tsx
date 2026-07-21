@@ -62,7 +62,7 @@ export const Stack = <Element extends StackElement = 'div'>({
     return (
         <Component
             className={cn(
-                'flex flex-col',
+                'flex flex-col min-h-0',
                 GAP_CLASS_NAMES[String(gap)],
                 ALIGN_CLASS_NAMES[align],
                 JUSTIFY_CLASS_NAMES[justify],

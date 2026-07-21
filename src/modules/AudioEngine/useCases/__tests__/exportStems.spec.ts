@@ -5,8 +5,8 @@ import { configureOfflinePpqEndpointProjection } from '../configureOfflinePpqEnd
 import { exportStems } from '../exportStems';
 
 const offlineRenderMocks = vi.hoisted(() => ({
-    getTrackStoreState: vi.fn(() => null),
-    getMidiStoreState: vi.fn(() => null),
+    getTrackStoreState: vi.fn<() => unknown>(() => null),
+    getMidiStoreState: vi.fn<() => unknown>(() => null),
     getTransportStoreValue: vi.fn(() => null),
     getTempoMapState: vi.fn(() => null),
     getAutomationLanes: vi.fn(() => []),
@@ -97,6 +97,7 @@ describe('exportStems', () => {
                 () =>
                 ({ events }) =>
                     events,
+            selectProbability: () => true,
         });
         configureOfflinePpqEndpointProjection({
             project: ({ startPpq, endPpq, sampleRate }) => ({
@@ -113,5 +114,27 @@ describe('exportStems', () => {
     it('returns empty map when track or midi state is missing', async () => {
         const stems = await exportStems(4);
         expect(stems.size).toBe(0);
+    });
+
+    it('emits no stem or offline context for a dormant VCA, including Toaster residue', async () => {
+        offlineRenderMocks.getTrackStoreState.mockReturnValue({
+            tracks: [
+                {
+                    id: 'vca-1',
+                    kind: 'vca',
+                    disabled: false,
+                    muted: false,
+                    devices: [{ id: 'd1', type: 'toaster' }],
+                },
+            ],
+        });
+        offlineRenderMocks.getMidiStoreState.mockReturnValue({ notesByClipId: {}, probabilitySeed: 1 });
+        const OfflineContext = vi.fn();
+        vi.stubGlobal('OfflineAudioContext', OfflineContext);
+
+        const stems = await exportStems(4);
+
+        expect(stems.size).toBe(0);
+        expect(OfflineContext).not.toHaveBeenCalled();
     });
 });

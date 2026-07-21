@@ -1,11 +1,13 @@
 import { describe, it, expect } from 'vitest';
 
 import { type MidiStoreState } from '#/modules/MIDI/stores';
+import { shouldPlayMidiEvent } from '#/modules/MIDI/useCases';
 
 import { hydrateProjectMidi } from '../hydrateProjectMidi';
 import { serializeProjectMidi } from '../serializeProjectMidi';
 
 const midi: MidiStoreState = {
+    probabilitySeed: 3_735_928_559,
     notesByClipId: {
         'clip-1': [{ id: 'note-1', pitch: 60, startBeat: 0, duration: 1, velocity: 100 }],
     },
@@ -18,6 +20,41 @@ const midi: MidiStoreState = {
 };
 
 describe('hydrateProjectMidi', () => {
+    it('preserves the unsigned u32 probability seed across serialization and hydration', () => {
+        const roundTripped = hydrateProjectMidi(serializeProjectMidi(midi));
+
+        expect(roundTripped.probabilitySeed).toBe(3_735_928_559);
+    });
+
+    it('preserves the fixed probability tuple corpus across save and hydration', () => {
+        const corpusMidi: MidiStoreState = {
+            probabilitySeed: 0xdecafbad,
+            notesByClipId: {
+                'clip-1': [
+                    { id: 'event-alpha', pitch: 60, startBeat: 1, duration: 0.25, velocity: 100, probability: 50 },
+                    { id: 'event-beta', pitch: 61, startBeat: 1, duration: 0.25, velocity: 100, probability: 50 },
+                ],
+            },
+            ccByClipId: {},
+            pitchBendByClipId: {},
+        };
+
+        const hydrated = hydrateProjectMidi(serializeProjectMidi(corpusMidi));
+        const acceptedIds = hydrated.notesByClipId['clip-1']
+            ?.filter((note) =>
+                shouldPlayMidiEvent({
+                    projectProbabilitySeed: hydrated.probabilitySeed ?? 0,
+                    clipId: 'clip-1',
+                    eventId: note.id,
+                    absoluteOccurrenceIndex: 0,
+                    probabilityPercent: note.probability ?? 100,
+                })
+            )
+            .map((note) => note.id);
+
+        expect(acceptedIds).toEqual(['event-alpha']);
+    });
+
     it('serializes and re-hydrates notes with their data intact', () => {
         const roundTripped = hydrateProjectMidi(serializeProjectMidi(midi));
         const note = roundTripped.notesByClipId['clip-1']?.[0];

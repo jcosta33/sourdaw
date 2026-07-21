@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 
 import { type Track, type TrackStoreState } from '#/modules/Arrangement/stores';
-import { type MidiStoreState } from '#/modules/MIDI/stores';
+import { LEGACY_MIDI_PROBABILITY_SEED, type MidiStoreState } from '#/modules/MIDI/stores';
 import { type TransportState } from '#/modules/Transport/stores';
 
 import { MAX_OFFLINE_FRAMES } from '../offlineRender/constants';
@@ -50,6 +50,7 @@ const TrackDummy = {
 };
 
 const emptyMidi: NonNullable<MidiStoreState> = {
+    probabilitySeed: LEGACY_MIDI_PROBABILITY_SEED,
     notesByClipId: {},
     ccByClipId: {},
     pitchBendByClipId: {},
@@ -133,6 +134,7 @@ function makeContext(overrides?: Partial<OfflineRenderContext>): OfflineRenderCo
         durationSeconds: 2,
         tailSeconds: 0,
         projectMidiEvents: ({ events }) => events,
+        selectMidiEventProbability: () => true,
         projectPpqEndpoints: ({ startPpq, endPpq, sampleRate }) => ({
             startSamples: startPpq * sampleRate,
             endSamples: endPpq * sampleRate,

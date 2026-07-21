@@ -10,6 +10,7 @@ import { tempoMapStore, transportStore } from '#/modules/Transport/stores';
 
 import { type Track } from '../../models/Track';
 import { getUpstreamSubgraph } from '../../services/getUpstreamSubgraph';
+import { getTrackEligibility } from '../../stores/trackEligibility';
 import { trackStore } from '../../stores/trackStore';
 
 import { offlineRenderDependencies } from './offlineRenderDependencies';
@@ -43,10 +44,16 @@ export async function renderTrackOffline(
     endBeat: number,
     options?: RenderOfflineOptions
 ): Promise<AudioBuffer | null> {
+    const eligibility = getTrackEligibility(targetTrack.kind);
+    if (!eligibility.acceptsClipAdd) {
+        return null;
+    }
+
     const projectPpqEndpoints = offlineRenderDependencies?.projectPpqEndpoints;
     const createMidiEventProjector = offlineRenderDependencies?.createMidiEventProjector;
     const createYeastMidiProcessor = offlineRenderDependencies?.createYeastMidiProcessor;
-    if (!projectPpqEndpoints || !createMidiEventProjector || !createYeastMidiProcessor) {
+    const selectMidiEventProbability = offlineRenderDependencies?.selectMidiEventProbability;
+    if (!projectPpqEndpoints || !createMidiEventProjector || !createYeastMidiProcessor || !selectMidiEventProbability) {
         throw new Error('Arrangement offline render dependencies are not configured');
     }
     const projectMidiEvents = createMidiEventProjector();
@@ -54,14 +61,24 @@ export async function renderTrackOffline(
 
     // Only audio and midi tracks produce renderable content on their own.
     // Bus / group / master tracks have no direct sound source — skip rendering.
-    if (targetTrack.kind !== 'audio' && targetTrack.kind !== 'midi') {
+    if (!eligibility.rendersTrackContent) {
         return null;
     }
 
     const allTracks = trackStore.value?.tracks ?? [];
     const allSidechainRoutes = sidechainStore.value?.routes ?? [];
     const upstreamIds = getUpstreamSubgraph(targetTrack.id, allTracks, allSidechainRoutes);
-    const renderTracks = allTracks.filter((time) => upstreamIds.has(time.id) || time.id === targetTrack.id);
+    const renderTracks: Track[] = [];
+    for (const time of allTracks) {
+        const belongsToRenderSubgraph = time.id === targetTrack.id || upstreamIds.has(time.id);
+        if (!belongsToRenderSubgraph) {
+            continue;
+        }
+        if (!getTrackEligibility(time.kind).acceptsRoutingEndpoint) {
+            continue;
+        }
+        renderTracks.push(time);
+    }
 
     const transport = transportStore.value;
     const tempo = transport?.tempo ?? 120;
@@ -158,8 +175,18 @@ export async function renderTrackOffline(
                     const loopLength = rawLoopLength > 0 ? rawLoopLength : clipLength;
                     const iterations = clip.loopEnabled ? Math.ceil(clipLength / loopLength) : 1;
                     for (let iteration = 0; iteration < iterations; iteration++) {
+                        const absoluteOccurrenceIndex = iteration;
+                        const acceptedSourceNotes = sourceNotes.filter((note) =>
+                            selectMidiEventProbability({
+                                projectProbabilitySeed: midi.probabilitySeed,
+                                clipId: clip.id,
+                                eventId: note.id,
+                                absoluteOccurrenceIndex,
+                                probabilityPercent: note.probability ?? 100,
+                            })
+                        );
                         clipIterations.push({
-                            sourceNotes,
+                            sourceNotes: acceptedSourceNotes,
                             clipId: clip.id,
                             clipStartBeat: clip.startBeat,
                             clipEndBeat: clip.endBeat,

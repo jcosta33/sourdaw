@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, vi, type Mock } from 'vitest';
 
+import { resolveEligibleDeviceWriteTarget } from '#/modules/Arrangement/stores';
 import { getTrackStoreState, persistDevicePatch } from '#/modules/Arrangement/useCases';
 
 import { DEFAULT_PATCH, type ProofPatch } from '../../../models/ProofPatch';
@@ -14,6 +15,10 @@ import { syncFullPatch } from '../syncFullPatch';
 vi.mock('#/modules/Arrangement/useCases', () => ({
     getTrackStoreState: vi.fn(() => null),
     persistDevicePatch: vi.fn(),
+}));
+
+vi.mock('#/modules/Arrangement/stores', () => ({
+    resolveEligibleDeviceWriteTarget: vi.fn(),
 }));
 
 type MockedProofBridge = {
@@ -106,6 +111,11 @@ describe('loadProofPatchWithAudio', () => {
         proofStore.set({});
         vi.clearAllMocks();
         vi.mocked(getTrackStoreState).mockReturnValue(null);
+        vi.mocked(resolveEligibleDeviceWriteTarget).mockImplementation((deviceId) => ({
+            status: 'eligible',
+            trackId: 'track-1',
+            deviceId,
+        }));
     });
 
     it('loads the patch into the store and sends the full patch to the engine', () => {
@@ -497,5 +507,33 @@ describe('loadProofPatchWithAudio', () => {
         const patch: ProofPatch = { ...DEFAULT_PATCH, name: 'Local only' };
         expect(() => loadProofPatchWithAudio({ deviceId: 'no-bridge', patch })).not.toThrow();
         expect(getProofState('no-bridge').patch.name).toBe('Local only');
+    });
+
+    it.each(['missing', 'ineligible'] as const)(
+        'rejects a %s owner before load, persistence, or engine effects',
+        (status) => {
+            const bridge = makeBridge();
+            bridges.set(DEVICE_ID, bridge);
+            vi.mocked(resolveEligibleDeviceWriteTarget).mockReturnValue({ status });
+
+            loadProofPatchWithAudio({ deviceId: DEVICE_ID, patch: { ...DEFAULT_PATCH, limCeiling: -2 } });
+
+            expect(getProofState(DEVICE_ID).patch.limCeiling).toBe(DEFAULT_PATCH.limCeiling);
+            expect(persistDevicePatch).not.toHaveBeenCalled();
+            expect(bridge.setParam).not.toHaveBeenCalled();
+            expect(bridge.reorderModules).not.toHaveBeenCalled();
+        }
+    );
+
+    it('rejects full sync before hydration when the owner becomes ineligible', () => {
+        const bridge = makeBridge();
+        bridges.set(DEVICE_ID, bridge);
+        vi.mocked(resolveEligibleDeviceWriteTarget).mockReturnValue({ status: 'ineligible' });
+
+        syncFullPatch(DEVICE_ID);
+
+        expect(getTrackStoreState).not.toHaveBeenCalled();
+        expect(bridge.setParam).not.toHaveBeenCalled();
+        expect(bridge.reorderModules).not.toHaveBeenCalled();
     });
 });

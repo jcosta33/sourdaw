@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+import { createTrack } from '../../../models/Track';
 import { removeDevice } from '../removeDevice';
 
 import type { removeDeviceFromStrip } from '#/modules/AudioEngine/useCases';
@@ -66,5 +67,27 @@ describe('removeDevice', () => {
         removeDevice('d1');
 
         expect(mocks.unloadPlugin).toHaveBeenCalledWith('inst1');
+    });
+
+    it('permits dormant VCA device and plugin cleanup', () => {
+        const track = createTrack({ id: 'vca-1', name: 'VCA', kind: 'audio' });
+        Object.defineProperty(track, 'kind', { value: 'vca' });
+        track.devices = [
+            {
+                id: 'd1',
+                name: 'Legacy plugin',
+                type: 'external-plugin',
+                bypassed: false,
+                parameterValues: {},
+                externalInstanceId: 'inst1',
+            },
+        ];
+        mocks.getTrackState.mockReturnValue({ tracks: [track], selectedTrackId: null });
+
+        removeDevice('d1');
+
+        expect(mocks.removeDeviceFromStrip).toHaveBeenCalledWith('vca-1', 'd1');
+        expect(mocks.unloadPlugin).toHaveBeenCalledWith('inst1');
+        expect(mocks.mapAllTracks).toHaveBeenCalled();
     });
 });

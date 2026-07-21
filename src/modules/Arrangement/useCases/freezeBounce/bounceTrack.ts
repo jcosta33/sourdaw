@@ -3,6 +3,7 @@ import { pushUndoEntry } from '#/modules/Command/useCases';
 import { transportStore } from '#/modules/Transport/stores';
 
 import { type Clip, type Track } from '../../models/Track';
+import { getTrackEligibility } from '../../stores/trackEligibility';
 import { trackStore } from '../../stores/trackStore';
 
 import { renderTrackOffline } from './renderOffline';
@@ -16,15 +17,18 @@ export type BounceOptions = {
     destination: 'new-track' | 'replace';
 };
 
-export async function bounceTrack(trackId: string, options: BounceOptions): Promise<void> {
+export async function bounceTrack(trackId: string, options: BounceOptions): Promise<boolean> {
     const state = trackStore.value;
     if (!state) {
-        return;
+        return false;
     }
 
     const track = state.tracks.find((time) => time.id === trackId);
     if (!track || track.clips.length === 0) {
-        return;
+        return false;
+    }
+    if (!getTrackEligibility(track.kind).acceptsBounce) {
+        return false;
     }
 
     let startBeat = Infinity;
@@ -54,7 +58,7 @@ export async function bounceTrack(trackId: string, options: BounceOptions): Prom
     });
 
     if (!renderedBuffer) {
-        return;
+        return false;
     }
 
     const audioBufferId = `bounce-${trackId}-${Date.now()}`;
@@ -78,7 +82,7 @@ export async function bounceTrack(trackId: string, options: BounceOptions): Prom
 
     const freshState = trackStore.value;
     if (!freshState) {
-        return;
+        return false;
     }
 
     // Snapshot for undo
@@ -137,4 +141,5 @@ export async function bounceTrack(trackId: string, options: BounceOptions): Prom
             }
         }
     );
+    return true;
 }

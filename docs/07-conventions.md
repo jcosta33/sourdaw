@@ -80,12 +80,12 @@ export const PanKnob = ({ panLeft, panRight }: PanAmount): ReactElement => {
 
 ### React anti-patterns
 
-- **No `useEffect` for data fetching**: This is a critical pattern. Data fetching must be handled by TanStack Query.
+- **No `useEffect` for data fetching**: This is a critical pattern. Data fetching must be handled by TanStack Query (installed and wired via `src/app/queryClient.ts`; no call sites yet — until adoption, fetched server state simply has no query layer).
 - **No `useEffect` for derived state**: Compute derived state directly during rendering.
 - **No manual memoization**: The [React Compiler](https://react.dev/learn/react-compiler) handles memoization automatically at build time. Do not use `useMemo`, `useCallback`, or `React.memo` manually -- the compiler inserts optimal memoization for you. Existing manual calls are harmless (the compiler skips already-memoized code) but should be removed when touching a file.
 - **No `forwardRef`**: In React 19, `ref` is a regular prop. Destructure it directly instead of wrapping with `forwardRef`.
 - **Prefer `use()` over `useContext`**: The `use()` hook replaces `useContext` for reading context. It can be called conditionally and also reads Promises for Suspense-based patterns.
-- **No manual form state**: All forms must be managed with [React Hook Form](./02-forms.md) and a schema library like Zod.
+- **No manual form state**: A React Hook Form + Zod stack is the documented target ([forms](./02-forms.md)) but is **not installed yet**; until it lands, forms use local component state (`useState`).
 
 ```tsx
 // ❌ Bad: Manual memoization (the React Compiler handles this automatically)
@@ -248,7 +248,6 @@ const calcFade = (d: number) => d * 1.2;
 ### Component and class names
 
 - Components and classes must be `PascalCase`.
-    - **Related Lint Rule**: [`@eslint-react/naming-convention/component-name`](https://eslint-react.xyz/docs/rules/naming-convention/component-name)
 
 ```typescript
 // ✅ Good: PascalCase for components and classes
@@ -467,7 +466,7 @@ export const TrackCard = ({ track }: TrackCardProps): ReactElement => {
 ### JSX conditional rendering
 
 - Use early returns, full ternary operators (`condition ? <A /> : <B />`), or logical nullish operators for conditional rendering.
-- Do not use the logical AND operator (`&&`) for conditional rendering, as it can lead to unexpected output (like rendering `0` or an empty string).
+- Prefer not to use the logical AND operator (`&&`) for conditional rendering, as it can lead to unexpected output (like rendering `0` or an empty string). Leaky non-boolean `&&` is **error** lint; boolean `&&` is allowed, but ternaries are the house style.
     - **Related Lint Rule**: [`@eslint-react/no-leaked-conditional-rendering`](https://eslint-react.xyz/docs/rules/no-leaked-conditional-rendering)
 
 ```typescript
@@ -696,9 +695,9 @@ type ApiUser = { user_id: number; full_name: string };
 type User = { id: number; name: string };
 export const mapUserFromApiToModel = (api: ApiUser): User => ({ id: api.user_id, name: api.full_name });
 
-// Observer pattern (domain events)
-eventBus.on(PluginAddedEvent, (event) => {
-    auditUseCase.recordPluginAdded(event.payload.pluginId);
+// Observer pattern (domain events — string keys, unwrapped payload)
+eventBus.on('track.added', (payload) => {
+    auditUseCase.recordTrackAdded(payload);
 });
 ```
 

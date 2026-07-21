@@ -1,24 +1,24 @@
-import { vcaGroupStore } from '#/modules/Arrangement/stores';
+import { commitLegacyVcaTemplateState } from '#/modules/Arrangement/useCases';
 
 import type { Track } from '#/modules/Arrangement/stores';
 import type { VcaGroupHandle } from './createVca';
 
-export function commitVcaGroups(handles: VcaGroupHandle[], allTracks: Track[]): void {
-    vcaGroupStore.set({
-        groups: handles.map((handle) => ({
+type CommitVcaGroupsInput = {
+    handles: readonly VcaGroupHandle[];
+    tracks: readonly Track[];
+    selectedTrackId: string | null;
+};
+
+export function commitVcaGroups(input: CommitVcaGroupsInput): Track[] {
+    return commitLegacyVcaTemplateState({
+        tracks: input.tracks,
+        selectedTrackId: input.selectedTrackId,
+        groups: input.handles.map((handle) => ({
             id: handle.id,
             name: handle.name,
-            gain: 1,
-            muted: false,
-            trackIds: handle.memberTrackIds,
+            gain: handle.gain,
+            muted: handle.muted,
+            memberTrackIds: handle.memberTrackIds,
         })),
     });
-    for (const handle of handles) {
-        for (const memberId of handle.memberTrackIds) {
-            const member = allTracks.find((track) => track.id === memberId);
-            if (member) {
-                member.vcaGroupId = handle.id;
-            }
-        }
-    }
 }

@@ -15,7 +15,22 @@ import type {
     projectOfflineYeastTrackNotes,
 } from '#/modules/AudioEngine/useCases';
 
-type MidiStoreNote = { id: string; pitch: number; startBeat: number; duration: number; velocity: number };
+type MidiStoreNote = {
+    id: string;
+    pitch: number;
+    startBeat: number;
+    duration: number;
+    velocity: number;
+    probability?: number;
+};
+
+type MidiProbabilitySelectionInput = {
+    projectProbabilitySeed: number;
+    clipId: string;
+    eventId: string;
+    absoluteOccurrenceIndex: number;
+    probabilityPercent: number;
+};
 
 type RenderOfflineMocks = {
     buildDeviceChain: Mock<typeof buildDeviceChain>;
@@ -23,11 +38,13 @@ type RenderOfflineMocks = {
     getCachedAudioBuffer: Mock<typeof getCachedAudioBuffer>;
     getUpstreamSubgraph: Mock<() => Set<string>>;
     trackStore: { value: unknown };
-    midiStore: { value: { notesByClipId: Record<string, MidiStoreNote[]> } | null };
+    sidechainStore: { value: unknown };
+    midiStore: { value: { notesByClipId: Record<string, MidiStoreNote[]>; probabilitySeed?: number } | null };
     transportStore: { value: unknown };
     tempoMapStore: { value: unknown };
     projectClipMidiEvents: Mock<typeof projectClipMidiEvents>;
     projectOfflineYeastTrackNotes: Mock<typeof projectOfflineYeastTrackNotes>;
+    selectMidiEventProbability: Mock<(input: MidiProbabilitySelectionInput) => boolean>;
 };
 
 const mocks = vi.hoisted<RenderOfflineMocks>(() => ({
@@ -36,11 +53,13 @@ const mocks = vi.hoisted<RenderOfflineMocks>(() => ({
     getCachedAudioBuffer: vi.fn<typeof getCachedAudioBuffer>(),
     getUpstreamSubgraph: vi.fn<() => Set<string>>(),
     trackStore: { value: null },
+    sidechainStore: { value: null },
     midiStore: { value: null },
     transportStore: { value: null },
     tempoMapStore: { value: { changes: [] } },
     projectClipMidiEvents: vi.fn<typeof projectClipMidiEvents>(),
     projectOfflineYeastTrackNotes: vi.fn<typeof projectOfflineYeastTrackNotes>(() => []),
+    selectMidiEventProbability: vi.fn<(input: MidiProbabilitySelectionInput) => boolean>(() => true),
 }));
 
 vi.mock('#/modules/AudioEngine/useCases', () => ({
@@ -64,7 +83,7 @@ vi.mock('#/modules/Transport/stores', () => ({
 }));
 
 vi.mock('#/modules/Routing/stores', () => ({
-    sidechainStore: { value: null },
+    sidechainStore: mocks.sidechainStore,
 }));
 
 vi.mock('../../../stores/trackStore', () => ({
@@ -136,6 +155,47 @@ function createFakeAudioBuffer(duration = 1): AudioBuffer {
         numberOfChannels: 1,
         sampleRate,
     };
+}
+
+type IneligibleRoutingResidueInput = {
+    id: string;
+    kind: 'vca' | 'malformed';
+    relation: 'output' | 'send' | 'sidechain';
+    targetId: string;
+};
+
+const INELIGIBLE_ROUTING_KINDS = ['vca', 'malformed'] satisfies IneligibleRoutingResidueInput['kind'][];
+const ROUTING_RELATIONS = ['output', 'send', 'sidechain'] satisfies IneligibleRoutingResidueInput['relation'][];
+
+function createIneligibleRoutingResidue(input: IneligibleRoutingResidueInput): Track {
+    const track = TrackDummy.create({
+        id: input.id,
+        kind: 'audio',
+        devices: [
+            {
+                id: `${input.id}-device`,
+                name: 'Dormant device residue',
+                type: 'compressor',
+                bypassed: false,
+                parameterValues: {},
+            },
+        ],
+        frozen: true,
+        frozenBufferId: `${input.id}-frozen-buffer`,
+    });
+    if (input.relation === 'output') {
+        track.outputId = input.targetId;
+    }
+    if (input.relation === 'send') {
+        track.sends = [{ busId: input.targetId, level: 0.5, preFader: false }];
+    }
+    Object.defineProperty(track, 'kind', {
+        value: input.kind,
+        configurable: true,
+        enumerable: true,
+        writable: true,
+    });
+    return track;
 }
 
 /** Minimal AudioBuffer constructor stand-in for normalize/trim paths that allocate fresh buffers. */
@@ -236,6 +296,7 @@ describe('renderTrackOffline', () => {
         createdOscillators.length = 0;
         renderedBuffer = null;
         mocks.trackStore.value = null;
+        mocks.sidechainStore.value = null;
         mocks.midiStore.value = null;
         mocks.transportStore.value = null;
         mocks.buildDeviceChain.mockResolvedValue([]);
@@ -263,6 +324,7 @@ describe('renderTrackOffline', () => {
             },
             createYeastMidiProcessor: () => (input) =>
                 input.events.map((event) => ({ ...event, timePpq: event.timePpq ?? 0 })),
+            selectMidiEventProbability: mocks.selectMidiEventProbability,
         });
         mocks.projectClipMidiEvents.mockImplementation((input) =>
             input.events.map((event) => ({
@@ -271,6 +333,7 @@ describe('renderTrackOffline', () => {
             }))
         );
         mocks.projectOfflineYeastTrackNotes.mockReturnValue([]);
+        mocks.selectMidiEventProbability.mockReturnValue(true);
     });
 
     it('should not build a device chain for non-audio non-midi tracks', async () => {
@@ -280,6 +343,82 @@ describe('renderTrackOffline', () => {
         expect(result).toBeNull();
         expect(mocks.buildDeviceChain).not.toHaveBeenCalled();
     });
+
+    it('returns before offline dependencies or allocation for a dormant VCA', async () => {
+        const dormantVca = TrackDummy.create({ id: 'vca-1' });
+        Object.defineProperty(dormantVca, 'kind', { value: 'vca' });
+
+        const result = await renderTrackOffline(dormantVca, 0, 4);
+
+        expect(result).toBeNull();
+        expect(mocks.getAudioContext).not.toHaveBeenCalled();
+        expect(mocks.getUpstreamSubgraph).not.toHaveBeenCalled();
+        expect(mocks.buildDeviceChain).not.toHaveBeenCalled();
+    });
+
+    it('excludes dormant and malformed routing predecessors before offline strip allocation', async () => {
+        const target = TrackDummy.create({ id: 'ordinary-target', kind: 'audio' });
+        const ineligibleTracks = INELIGIBLE_ROUTING_KINDS.flatMap((kind) =>
+            ROUTING_RELATIONS.map((relation) =>
+                createIneligibleRoutingResidue({
+                    id: `${kind}-${relation}`,
+                    kind,
+                    relation,
+                    targetId: target.id,
+                })
+            )
+        );
+        const sidechainTracks = ineligibleTracks.filter((track) => track.id.endsWith('sidechain'));
+        mocks.trackStore.value = {
+            tracks: [target, ...ineligibleTracks],
+            selectedTrackId: target.id,
+            ghostClips: [],
+        };
+        mocks.sidechainStore.value = {
+            routes: sidechainTracks.map((track) => ({
+                id: `route-${track.id}`,
+                sourceTrackId: track.id,
+                targetTrackId: target.id,
+                targetDeviceId: 'missing-device',
+                targetParameterId: 'threshold',
+                gain: 1,
+            })),
+        };
+        mocks.getUpstreamSubgraph.mockReturnValue(new Set(ineligibleTracks.map((track) => track.id)));
+        mocks.getCachedAudioBuffer.mockReturnValue(createFakeAudioBuffer());
+
+        const result = await renderTrackOffline(target, 0, 4);
+
+        expect(result).not.toBeNull();
+        expect(mocks.buildDeviceChain).toHaveBeenCalledTimes(1);
+        expect(mocks.buildDeviceChain).toHaveBeenCalledWith(
+            expect.any(FakeOfflineAudioContext),
+            target.devices,
+            expect.anything(),
+            expect.anything()
+        );
+        expect(mocks.getCachedAudioBuffer).not.toHaveBeenCalled();
+        expect(createdSources).toEqual([]);
+        expect(createdGains).toHaveLength(1);
+    });
+
+    it.each(['audio', 'midi', 'bus', 'master', 'folder'] satisfies Track['kind'][])(
+        'preserves offline allocation for an upstream %s routing endpoint',
+        async (kind) => {
+            const target = TrackDummy.create({ id: 'ordinary-target', kind: 'audio' });
+            const upstream = TrackDummy.create({ id: `upstream-${kind}`, kind, outputId: target.id });
+            mocks.trackStore.value = {
+                tracks: [target, upstream],
+                selectedTrackId: target.id,
+                ghostClips: [],
+            };
+            mocks.getUpstreamSubgraph.mockReturnValue(new Set([upstream.id]));
+
+            await renderTrackOffline(target, 0, 4);
+
+            expect(mocks.buildDeviceChain).toHaveBeenCalledTimes(2);
+        }
+    );
 
     it('should read frozen-track buffers through the AudioEngine cache use case', async () => {
         const frozenBuffer = createFakeAudioBuffer(4);
@@ -335,6 +474,101 @@ describe('renderTrackOffline', () => {
         });
         expect(createdOscillators[0]?.start).toHaveBeenCalledWith(0.75);
         expect(createdGains.at(-1)?.gain.linearRampToValueAtTime).toHaveBeenCalledWith((40 / 127) * 0.3, 0.755);
+    });
+
+    it.each([
+        { label: 'without Yeast', hasYeast: false },
+        { label: 'with Yeast', hasYeast: true },
+    ])('filters loop iterations by project probability $label', async ({ hasYeast }) => {
+        const clip = ClipDummy.create({
+            id: 'clip-probability',
+            trackId: 'track-midi',
+            type: 'midi',
+            startBeat: 4,
+            endBeat: 8,
+            loopEnabled: true,
+            loopLength: 2,
+        });
+        let devices: Track['devices'] = [];
+        if (hasYeast) {
+            devices = [{ id: 'yeast', name: 'Yeast', type: 'yeast', bypassed: false, parameterValues: {} }];
+        }
+        const track = TrackDummy.create({ id: 'track-midi', kind: 'midi', clips: [clip], devices });
+        const defaultProbabilityNote = {
+            id: 'note-default',
+            pitch: 60,
+            startBeat: 0,
+            duration: 1,
+            velocity: 100,
+        };
+        const zeroProbabilityNote = {
+            id: 'note-zero',
+            pitch: 62,
+            startBeat: 1,
+            duration: 1,
+            velocity: 100,
+            probability: 0,
+        };
+        mocks.trackStore.value = { tracks: [track], selectedTrackId: track.id, ghostClips: [] };
+        mocks.midiStore.value = {
+            notesByClipId: { [clip.id]: [defaultProbabilityNote, zeroProbabilityNote] },
+            probabilitySeed: 0xdecafbad,
+        };
+        mocks.transportStore.value = { tempo: 120 };
+        mocks.selectMidiEventProbability.mockImplementation((input) => input.probabilityPercent > 0);
+
+        await renderTrackOffline(track, 4, 8, { includeInserts: false });
+
+        expect(mocks.selectMidiEventProbability).toHaveBeenCalledTimes(4);
+        expect(mocks.selectMidiEventProbability).toHaveBeenNthCalledWith(1, {
+            projectProbabilitySeed: 0xdecafbad,
+            clipId: clip.id,
+            eventId: defaultProbabilityNote.id,
+            absoluteOccurrenceIndex: 0,
+            probabilityPercent: 100,
+        });
+        expect(mocks.selectMidiEventProbability).toHaveBeenNthCalledWith(2, {
+            projectProbabilitySeed: 0xdecafbad,
+            clipId: clip.id,
+            eventId: zeroProbabilityNote.id,
+            absoluteOccurrenceIndex: 0,
+            probabilityPercent: 0,
+        });
+        expect(mocks.selectMidiEventProbability).toHaveBeenNthCalledWith(3, {
+            projectProbabilitySeed: 0xdecafbad,
+            clipId: clip.id,
+            eventId: defaultProbabilityNote.id,
+            absoluteOccurrenceIndex: 1,
+            probabilityPercent: 100,
+        });
+        expect(mocks.selectMidiEventProbability).toHaveBeenNthCalledWith(4, {
+            projectProbabilitySeed: 0xdecafbad,
+            clipId: clip.id,
+            eventId: zeroProbabilityNote.id,
+            absoluteOccurrenceIndex: 1,
+            probabilityPercent: 0,
+        });
+
+        if (hasYeast) {
+            expect(mocks.projectOfflineYeastTrackNotes).toHaveBeenCalledWith(
+                expect.objectContaining({
+                    iterations: [
+                        expect.objectContaining({ sourceNotes: [defaultProbabilityNote] }),
+                        expect.objectContaining({ sourceNotes: [defaultProbabilityNote] }),
+                    ],
+                })
+            );
+            return;
+        }
+
+        expect(mocks.projectClipMidiEvents).toHaveBeenNthCalledWith(
+            1,
+            expect.objectContaining({ events: [defaultProbabilityNote] })
+        );
+        expect(mocks.projectClipMidiEvents).toHaveBeenNthCalledWith(
+            2,
+            expect.objectContaining({ events: [defaultProbabilityNote] })
+        );
     });
 
     it('drives a source-free Yeast generator for an empty clip but not without an eligible clip', async () => {

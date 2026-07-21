@@ -16,12 +16,25 @@ describe('handleSetTrackOutput', () => {
     });
 
     it('executes setTrackOutput with the provided payload', () => {
-        void handleSetTrackOutput.execute({
+        mocks.setTrackOutput.mockReturnValue(true);
+        const result = handleSetTrackOutput.execute({
             type: 'setTrackOutput',
             payload: { trackId: 't1', outputId: 'main' },
         });
 
         expect(mocks.setTrackOutput).toHaveBeenCalledWith('t1', 'main');
+        expect(result).toEqual({ status: 'written' });
+    });
+
+    it('reports no-write when output routing is rejected', () => {
+        mocks.setTrackOutput.mockReturnValue(false);
+
+        const result = handleSetTrackOutput.execute({
+            type: 'setTrackOutput',
+            payload: { trackId: 't1', outputId: 'vca-1' },
+        });
+
+        expect(result).toEqual({ status: 'no-write' });
     });
 
     it('provides a description', () => {

@@ -29,6 +29,17 @@ describe('moveGrinderPedalInChainWithAudio', () => {
         updateDeviceParam: vi.fn(),
         updateDevicePatch: vi.fn(),
         persistDeviceParam: vi.fn(),
+        resolveEligibleDeviceWriteTarget: vi.fn((deviceId: string) => {
+            const track = deps
+                .getAllTracks()
+                .find((candidate: { id: string; devices: Array<{ id: string }> }) =>
+                    candidate.devices.some((device: { id: string }) => device.id === deviceId)
+                );
+            if (!track) {
+                return { status: 'missing' as const };
+            }
+            return { status: 'eligible' as const, trackId: track.id, deviceId };
+        }),
     };
 
     beforeEach(() => {
@@ -77,12 +88,13 @@ describe('moveGrinderPedalInChainWithAudio', () => {
     });
 
     it('should no-op without touching the audio engine when the store reports no swap partner', () => {
+        deps.getAllTracks.mockReturnValue([{ id: 'track-3', devices: [{ id: 'device-3', type: 'grinder' }] }]);
         move_pedal_mock.mockReturnValue(null);
 
         const action = moveGrinderPedalInChainWithAudio(deps as any);
         action('device-3', false, 'overdrive', 'left');
 
-        expect(deps.getAllTracks).not.toHaveBeenCalled();
+        expect(deps.getAllTracks).toHaveBeenCalled();
         expect(deps.updateDeviceParam).not.toHaveBeenCalled();
         expect(deps.persistDeviceParam).not.toHaveBeenCalled();
     });

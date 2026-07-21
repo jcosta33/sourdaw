@@ -5,9 +5,8 @@ description: >-
   touches DAW state. ALWAYS apply when building or reviewing copilot/AI features,
   prompt handling, voice-command flows, structured-output parsing, or tool/action
   registries — even if the change looks like a small prompt tweak or one new
-  action. Do not let model output mutate React state, call engine objects, or run
-  commands without validation and the normal action boundary. Skip non-AI feature
-  work, model/inference tuning with no action execution, and UI styling.
+  action. Skip non-AI feature work, model/inference tuning with no action
+  execution, and UI styling.
 ---
 
 ## Purpose
@@ -50,7 +49,7 @@ Where the model runs (cloud, local, browser) can vary. Where actions execute mus
 
 ### 6. Design actions to be specific and reversible
 
-Prefer actions that are specific, composable, easy to validate, intent-aligned, undo/redo-compatible, and reviewable in logs/history.
+Prefer actions that are specific, undoable, and cheap to validate.
 
 **Why:** vague mega-actions cannot be validated, undone, or explained.
 
@@ -71,41 +70,14 @@ For any prompt, be able to answer: (1) what the model proposed, (2) what validat
 ## What does not belong
 
 - Free-form natural language executed as code or shell.
-- Model output writing stores/engine/DOM directly.
-- Inference hyperparameter tuning with no action execution path.
-- UI chrome for chat that does not touch the action bridge (pure styling).
 
 ## Anti-patterns
-
-### CRITICAL — Model writes truth/runtime directly
-
-❌ Wrong: tool handler calls `trackStore.set` or engine APIs from raw model JSON.
-
-✅ Correct: model emits a registry action → validate → `executeAppAction` / owning use case.
-
-### CRITICAL — Unvalidated execution
-
-❌ Wrong: parse JSON and run immediately.
-
-✅ Correct: schema + bounds + ID + capability checks; reject before write.
-
-### HIGH — Privileged AI write path
-
-❌ Wrong: special “AI service” that mutates project state outside Command/use cases.
-
-✅ Correct: same write boundary as keyboard/UI.
 
 ### HIGH — Stringly dispatch
 
 ❌ Wrong: `switch (actionName: string)` with untyped payloads.
 
 ✅ Correct: typed registry entries with payload schemas.
-
-### MEDIUM — Planning conflated with execution
-
-❌ Wrong: “plan” step that already mutated state.
-
-✅ Correct: immutable plan object, then a separate execute step (with confirm when required).
 
 ## References
 

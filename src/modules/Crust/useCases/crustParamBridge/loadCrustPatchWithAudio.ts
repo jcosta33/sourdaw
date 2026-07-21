@@ -2,17 +2,17 @@ import { type CrustPatch } from '../../models/CrustPatch';
 import { loadCrustPatch } from '../../stores/crustStore';
 
 import { createFlushHandlers } from './createFlushHandlers';
-import { crustBridgeDeps, encodeCrustValue, findDeviceRefCrust, paramBatcher } from './helpers';
+import { crustBridgeDeps, encodeCrustValue, paramBatcher } from './helpers';
 
 const { pushParamImmediately: pushCrustParamImmediately } = createFlushHandlers(crustBridgeDeps);
 
 export function loadCrustPatchWithAudio(deviceId: string, patch: CrustPatch): void {
-    loadCrustPatch(patch);
-
-    const ref = findDeviceRefCrust(deviceId);
-    if (!ref) {
+    const target = crustBridgeDeps.resolveEligibleDeviceWriteTarget(deviceId);
+    if (target.status !== 'eligible') {
         return;
     }
+
+    loadCrustPatch(patch);
 
     // Drop any rAF flush still pending from a prior knob drag so it can't fire
     // after these immediate pushes and overwrite a preset value with the stale
@@ -56,7 +56,7 @@ export function loadCrustPatchWithAudio(deviceId: string, patch: CrustPatch): vo
         // The params list carries no store-only keys today, but guarding both
         // keeps the push type-safe if one is ever added.
         if (typeof encodedValue === 'number') {
-            pushCrustParamImmediately(ref, key, encodedValue);
+            pushCrustParamImmediately(deviceId, key, encodedValue);
         }
     }
 }

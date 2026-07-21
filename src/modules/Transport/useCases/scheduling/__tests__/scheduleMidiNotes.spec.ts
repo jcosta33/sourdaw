@@ -1,9 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-import { trackStore } from '#/modules/Arrangement/stores';
+import { type Clip, trackStore } from '#/modules/Arrangement/stores';
 import { resolveClipsWithComping, getSynthParamsForTrack } from '#/modules/Arrangement/useCases';
 import { midiStore } from '#/modules/MIDI/stores';
-import { projectClipMidiEvents } from '#/modules/MIDI/useCases';
+import { projectClipMidiEvents, shouldPlayMidiEvent } from '#/modules/MIDI/useCases';
 import { scheduleNote } from '#/modules/Synth/useCases';
 import { processYeastMidi } from '#/modules/Yeast/useCases';
 
@@ -12,6 +12,8 @@ import { tempoMapStore } from '../../../stores/tempoMapStore';
 import { timeSignatureMapStore } from '../../../stores/timeSignatureMapStore';
 import { scheduleFrozenTrack } from '../scheduleFrozenTrack';
 import { scheduleMidiNotes, type SchedulerCancellation } from '../scheduleMidiNotes';
+
+const shouldPlayProbability = vi.hoisted(() => vi.fn((_input: { eventId: string }) => true));
 
 vi.mock('#/modules/Arrangement/stores', () => ({
     trackStore: { value: { tracks: [] } },
@@ -26,7 +28,14 @@ vi.mock('../../../stores/timeSignatureMapStore', () => ({
     timeSignatureMapStore: { value: { changes: [] } },
 }));
 vi.mock('#/modules/Arrangement/useCases', () => ({
-    resolveClipsWithComping: vi.fn((_trackId, clips) => clips),
+    resolveClipsWithComping: vi.fn((_trackId: string, clips: Clip[]) =>
+        clips.map((clip) => ({
+            ...clip,
+            regionStartBeat: clip.startBeat,
+            regionEndBeat: clip.endBeat,
+            sourceStartBeat: clip.startBeat,
+        }))
+    ),
     getSynthParamsForTrack: vi.fn(() => ({})),
 }));
 vi.mock('#/modules/AudioEngine/useCases', () => ({
@@ -55,6 +64,7 @@ vi.mock('#/modules/MIDI/useCases', () => ({
     projectClipMidiEvents: vi.fn(),
     projectCommittedGroove: vi.fn(({ events }: { events: readonly unknown[] }) => events),
     transposeForChordTrack: vi.fn((param: unknown) => param),
+    shouldPlayMidiEvent: shouldPlayProbability,
 }));
 vi.mock('../scheduleFrozenTrack', () => ({
     scheduleFrozenTrack: vi.fn(() => true),
@@ -74,7 +84,7 @@ function midiTrack(overrides: Record<string, unknown> = {}) {
     } as never;
 }
 
-function midiClip(overrides: Record<string, unknown> = {}) {
+function midiClip(overrides: Record<string, unknown> = {}): Clip {
     return {
         id: 'clip-1',
         type: 'midi',
@@ -84,7 +94,7 @@ function midiClip(overrides: Record<string, unknown> = {}) {
         gain: 1,
         loopEnabled: false,
         ...overrides,
-    } as never;
+    } as Clip;
 }
 
 describe('scheduleMidiNotes', () => {
@@ -95,7 +105,12 @@ describe('scheduleMidiNotes', () => {
         (tempoMapStore as { value: unknown }).value = { changes: [] };
         (timeSignatureMapStore as { value: unknown }).value = { changes: [] };
         vi.mocked(resolveClipsWithComping).mockImplementation((_trackId, clips) =>
-            clips.map((clip) => ({ ...clip, regionStartBeat: clip.startBeat, regionEndBeat: clip.endBeat }))
+            clips.map((clip) => ({
+                ...clip,
+                regionStartBeat: clip.startBeat,
+                regionEndBeat: clip.endBeat,
+                sourceStartBeat: clip.startBeat,
+            }))
         );
         vi.mocked(projectClipMidiEvents).mockImplementation((input) =>
             input.events.map((event) => ({
@@ -106,6 +121,7 @@ describe('scheduleMidiNotes', () => {
             }))
         );
         vi.mocked(processYeastMidi).mockImplementation((input) => Promise.resolve([...input.events]));
+        shouldPlayProbability.mockImplementation(() => true);
     });
 
     it('schedules a frozen MIDI track once per playback session, not on every tick', async () => {
@@ -210,6 +226,11 @@ describe('scheduleMidiNotes', () => {
             return vi.mocked(scheduleNote).mock.calls.map((call) => call[2]);
         }
 
+        shouldPlayProbability.mockImplementation(({ eventId }: { eventId: string }) => {
+            const index = Number(eventId.slice('note-'.length));
+            return index % 2 === 0;
+        });
+
         const first = await pitchesFromRun();
         const second = await pitchesFromRun();
 
@@ -218,6 +239,77 @@ describe('scheduleMidiNotes', () => {
         // Sanity: 50% gating actually drops some of the 16 notes (not all-or-nothing).
         expect(first.length).toBeGreaterThan(0);
         expect(first.length).toBeLessThan(notes.length);
+    });
+
+    it('keys equal-position probability decisions by persisted seed and stable event id', async () => {
+        const track = midiTrack({ clips: [midiClip()] });
+        (trackStore as { value: unknown }).value = { tracks: [track] };
+        (midiStore as { value: unknown }).value = {
+            probabilitySeed: 0xdecafbad,
+            notesByClipId: {
+                'clip-1': [
+                    { id: 'event-alpha', pitch: 60, startBeat: 1, duration: 0.25, velocity: 100, probability: 50 },
+                    { id: 'event-beta', pitch: 61, startBeat: 1, duration: 0.25, velocity: 100, probability: 50 },
+                ],
+            },
+            ccByClipId: {},
+            pitchBendByClipId: {},
+        };
+        shouldPlayProbability.mockImplementation(({ eventId }: { eventId: string }) => eventId === 'event-alpha');
+
+        await scheduleMidiNotes(0, 4, 0, -1, new Set<string>(), [], defaultTransportState, 120);
+
+        expect(vi.mocked(scheduleNote).mock.calls.map((call) => call[2])).toEqual([60]);
+        expect(shouldPlayMidiEvent).toHaveBeenCalledWith({
+            projectProbabilitySeed: 0xdecafbad,
+            clipId: 'clip-1',
+            eventId: 'event-alpha',
+            absoluteOccurrenceIndex: 0,
+            probabilityPercent: 50,
+        });
+        expect(shouldPlayMidiEvent).toHaveBeenCalledWith({
+            projectProbabilitySeed: 0xdecafbad,
+            clipId: 'clip-1',
+            eventId: 'event-beta',
+            absoluteOccurrenceIndex: 0,
+            probabilityPercent: 50,
+        });
+    });
+
+    it('keeps probability occurrence anchored to the source loop through a comp segment', async () => {
+        const sourceClip = midiClip({ startBeat: 0, endBeat: 8, loopEnabled: true, loopLength: 2 });
+        const track = midiTrack({ clips: [sourceClip] });
+        (trackStore as { value: unknown }).value = { tracks: [track] };
+        (midiStore as { value: unknown }).value = {
+            probabilitySeed: 0xdecafbad,
+            notesByClipId: {
+                'clip-1': [
+                    { id: 'event-alpha', pitch: 60, startBeat: 0.5, duration: 0.25, velocity: 100, probability: 50 },
+                ],
+            },
+            ccByClipId: {},
+            pitchBendByClipId: {},
+        };
+        vi.mocked(resolveClipsWithComping).mockReturnValue([
+            {
+                ...sourceClip,
+                startBeat: 4,
+                endBeat: 6,
+                regionStartBeat: 4,
+                regionEndBeat: 6,
+                sourceStartBeat: 0,
+            },
+        ]);
+
+        await scheduleMidiNotes(4, 6, 4, -1, new Set<string>(), [], defaultTransportState, 120);
+
+        expect(shouldPlayMidiEvent).toHaveBeenCalledWith({
+            projectProbabilitySeed: 0xdecafbad,
+            clipId: 'clip-1',
+            eventId: 'event-alpha',
+            absoluteOccurrenceIndex: 2,
+            probabilityPercent: 50,
+        });
     });
 
     // §6 — A Yeast generator can emit notes for a clip that has none. Those

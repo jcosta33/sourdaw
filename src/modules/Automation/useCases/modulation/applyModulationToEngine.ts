@@ -1,4 +1,4 @@
-import { trackStore } from '#/modules/Arrangement/stores';
+import { resolveEligibleDeviceWriteTarget, trackStore } from '#/modules/Arrangement/stores';
 
 import { automationStore } from '../../stores/automationStore';
 import { modulationStore } from '../../stores/modulationStore';
@@ -104,6 +104,10 @@ export function applyModulationToEngine(currentBeat: number): void {
             if (!binding) {
                 continue;
             }
+            const targetOwner = resolveEligibleDeviceWriteTarget(mapping.targetDeviceId);
+            if (targetOwner.status !== 'eligible' || targetOwner.trackId !== mapping.targetTrackId) {
+                continue;
+            }
 
             // Combine: ride modulation on top of automation when the param is
             // automated this tick; otherwise on top of the persisted base. The
@@ -131,8 +135,8 @@ export function applyModulationToEngine(currentBeat: number): void {
 
             if (!hadPrev || Math.abs(smoothed - prev) > SLEW_EPSILON) {
                 getModulationDependencies().updateDeviceParam(
-                    mapping.targetTrackId,
-                    mapping.targetDeviceId,
+                    targetOwner.trackId,
+                    targetOwner.deviceId,
                     mapping.targetParamId,
                     smoothed
                 );

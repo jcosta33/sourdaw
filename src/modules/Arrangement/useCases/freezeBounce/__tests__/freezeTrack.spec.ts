@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { cacheAudioBuffer } from '#/modules/AudioEngine/useCases';
 
+import { createTrack } from '../../../models/Track';
 import { updateTrack } from '../../../repositories/track/updateTrack';
 import { trackStore } from '../../../stores/trackStore';
 import { freezeTrack } from '../freezeTrack';
@@ -33,14 +34,16 @@ describe('freezeTrack', () => {
 
     it('does nothing if store state is missing', async () => {
         trackStore.set(null);
-        await freezeTrack('t1');
+        const didWrite = await freezeTrack('t1');
         expect(updateTrack).not.toHaveBeenCalled();
+        expect(didWrite).toBe(false);
     });
 
     it('does nothing if track is not found', async () => {
         trackStore.set({ tracks: [], selectedTrackId: null });
-        await freezeTrack('t1');
+        const didWrite = await freezeTrack('t1');
         expect(updateTrack).not.toHaveBeenCalled();
+        expect(didWrite).toBe(false);
     });
 
     it('does nothing if track is already frozen', async () => {
@@ -48,8 +51,9 @@ describe('freezeTrack', () => {
             tracks: [{ id: 't1', freezeState: { status: 'frozen' } } as any],
             selectedTrackId: null,
         });
-        await freezeTrack('t1');
+        const didWrite = await freezeTrack('t1');
         expect(updateTrack).not.toHaveBeenCalled();
+        expect(didWrite).toBe(false);
     });
 
     it('should freeze the track successfully', async () => {
@@ -57,6 +61,7 @@ describe('freezeTrack', () => {
             tracks: [
                 {
                     id: 't1',
+                    kind: 'audio',
                     clips: [{ startBeat: 2, endBeat: 6 }],
                     devices: [],
                     freezeState: { status: 'unfrozen' },
@@ -78,7 +83,7 @@ describe('freezeTrack', () => {
 
         vi.mocked(renderTrackOffline).mockResolvedValue(renderedBuffer);
 
-        await freezeTrack('t1');
+        const didWrite = await freezeTrack('t1');
 
         expect(updateTrack).toHaveBeenCalledTimes(2);
 
@@ -120,6 +125,7 @@ describe('freezeTrack', () => {
 
         expect(cacheAudioBuffer).toHaveBeenCalledWith({ buffer: renderedBuffer, bufferId: expectedBufferId });
         expect(renderTrackOffline).toHaveBeenCalledWith(expect.any(Object), 2, 6 + 4, expect.any(Object)); // 6 end + 4 tail
+        expect(didWrite).toBe(true);
     });
 
     it('handles render failure gracefully', async () => {
@@ -127,6 +133,7 @@ describe('freezeTrack', () => {
             tracks: [
                 {
                     id: 't1',
+                    kind: 'audio',
                     clips: [],
                     devices: [],
                     freezeState: { status: 'unfrozen' },
@@ -137,7 +144,7 @@ describe('freezeTrack', () => {
 
         vi.mocked(renderTrackOffline).mockRejectedValue(new Error('Render crashed'));
 
-        await freezeTrack('t1');
+        const didWrite = await freezeTrack('t1');
 
         expect(updateTrack).toHaveBeenCalledTimes(2);
 
@@ -153,6 +160,7 @@ describe('freezeTrack', () => {
 
         expect(errorTrack.freezeState.status).toBe('error');
         expect(errorTrack.freezeState.errorMessage).toBe('Render crashed');
+        expect(didWrite).toBe(true);
     });
 
     it('uses defaults 0 and 1 if track has no clips', async () => {
@@ -160,6 +168,7 @@ describe('freezeTrack', () => {
             tracks: [
                 {
                     id: 't1',
+                    kind: 'audio',
                     clips: [],
                     devices: [],
                     freezeState: { status: 'unfrozen' },
@@ -176,5 +185,18 @@ describe('freezeTrack', () => {
         await freezeTrack('t1');
 
         expect(renderTrackOffline).toHaveBeenCalledWith(expect.any(Object), 0, 1 + 4, expect.any(Object));
+    });
+
+    it('rejects dormant VCA freeze before task, render, cache, or project work', async () => {
+        const track = createTrack({ id: 'vca-1', name: 'VCA', kind: 'audio' });
+        Object.defineProperty(track, 'kind', { value: 'vca' });
+        trackStore.set({ tracks: [track], selectedTrackId: null });
+
+        const didWrite = await freezeTrack('vca-1');
+
+        expect(updateTrack).not.toHaveBeenCalled();
+        expect(renderTrackOffline).not.toHaveBeenCalled();
+        expect(cacheAudioBuffer).not.toHaveBeenCalled();
+        expect(didWrite).toBe(false);
     });
 });

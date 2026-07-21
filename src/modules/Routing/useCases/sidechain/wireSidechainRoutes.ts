@@ -1,3 +1,4 @@
+import { getTrackEligibility, trackStore } from '#/modules/Arrangement/stores';
 import { wireSidechainRoute } from '#/modules/AudioEngine/useCases';
 
 import { sidechainStore } from '../../stores/sidechainStore';
@@ -18,7 +19,16 @@ export function wireSidechainRoutes(): void {
     if (!state) {
         return;
     }
+    const tracks = trackStore.value?.tracks;
     for (const route of state.routes) {
+        const sourceTrack = tracks?.find((track) => track.id === route.sourceTrackId);
+        const targetTrack = tracks?.find((track) => track.id === route.targetTrackId);
+        if (sourceTrack && !getTrackEligibility(sourceTrack.kind).acceptsRoutingEndpoint) {
+            continue;
+        }
+        if (targetTrack && !getTrackEligibility(targetTrack.kind).acceptsRoutingEndpoint) {
+            continue;
+        }
         wireSidechainRoute(route.sourceTrackId, route.targetTrackId, route.targetDeviceId);
     }
 }

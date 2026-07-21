@@ -52,7 +52,7 @@ own exact known-violations baseline (repaired debt cannot stay silently authoriz
    → **Closed by** re-anchoring every barrel rule to the live contract-folder form
    `(useCases|events|stores|presentations/views)/index.ts` (`cross-module-index-only`,
    `contract-barrel-scope`, `no-models-repos-transformers-in-index`, …). The retired module-root
-   barrel is rejected outright by the architecture checker (0/34 modules have a root `index.ts`).
+   barrel is rejected outright by the architecture checker (0/50 modules have a root `index.ts`).
 
 5. **`from`-scope exclusions.** A cross-module rule scoped `from: ^src/modules/` never inspects an
    importer that lives *outside* that prefix (`src/app`, `src/components`, `src/routes`,

@@ -1,4 +1,9 @@
-import { trackStore, type Track, persistDeviceParam } from '#/modules/Arrangement/stores';
+import {
+    trackStore,
+    type Track,
+    persistDeviceParam,
+    resolveEligibleDeviceWriteTarget,
+} from '#/modules/Arrangement/stores';
 
 import { autoLoadLevainSamples } from '../autoLoadSamples';
 
@@ -10,4 +15,5 @@ export const levainBridgeDependencies = {
     getAllTracks,
     persistDeviceParam,
     autoLoadLevainSamples,
+    resolveEligibleDeviceWriteTarget,
 } as const;
