@@ -4,6 +4,17 @@
   "sample_encoding": "ieee754-f32-le",
   "channel_layout": "interleaved",
   "provenance": "Generated entirely from in-house synthetic formulas in crates/daw-dsp/tests/time_stretch_contract.rs; no copied audio, external corpus, or third-party generator is used.",
+  "generation_policy": {
+    "exact_byte_regeneration": "reference-environment-only",
+    "reference_target": "aarch64-apple-darwin",
+    "reference_rustc_release": "1.97.0-nightly",
+    "reference_rustc_commit_hash": "17584a181979f04f2aaad867332c22db1caa511a",
+    "reference_os": "macOS",
+    "reference_os_version": "26.5.2",
+    "reference_cpu": "Apple M4 Pro",
+    "non_reference_verification": "checked-in-sha256-plus-finite-shape-and-sample-tolerance",
+    "non_reference_max_abs_diff": 0.00005
+  },
   "fixtures": [
     {
       "path": "canonical/mono_440hz.f32le",

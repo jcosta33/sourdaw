@@ -31,7 +31,7 @@ const CANONICAL_FIXTURE_FRAMES: usize = FIXTURE_SAMPLE_RATE_HZ as usize * 4;
 const TONE_FADE_FRAMES: usize = FIXTURE_SAMPLE_RATE_HZ as usize * 20 / 1_000;
 const CHARACTERIZATION_INPUT_FRAMES: usize = 4_096;
 const CHARACTERIZATION_DURATION_RATIO: f64 = 1.25;
-const CHARACTERIZATION_MAX_ABS_DIFF: f32 = 0.000_05;
+const PORTABLE_FIXTURE_MAX_ABS_DIFF: f32 = 0.000_05;
 
 fn ratio(value: f64) -> PlaybackRateRatio {
     PlaybackRateRatio::new(value).expect("test ratio must be valid")
@@ -808,7 +808,42 @@ struct FixtureManifest {
     sample_encoding: String,
     channel_layout: String,
     provenance: String,
+    generation_policy: FixtureGenerationPolicy,
     fixtures: Vec<FixtureManifestEntry>,
+}
+
+#[derive(Debug, Deserialize)]
+struct FixtureGenerationPolicy {
+    exact_byte_regeneration: String,
+    reference_target: String,
+    reference_rustc_release: String,
+    reference_rustc_commit_hash: String,
+    reference_os: String,
+    reference_os_version: String,
+    reference_cpu: String,
+    non_reference_verification: String,
+    non_reference_max_abs_diff: f32,
+}
+
+#[derive(Debug, PartialEq, Eq)]
+struct FixtureGenerationEnvironment {
+    target: String,
+    rustc_release: String,
+    rustc_commit_hash: String,
+    os: String,
+    os_version: String,
+    cpu: String,
+}
+
+impl FixtureGenerationPolicy {
+    fn matches_reference_environment(&self, environment: &FixtureGenerationEnvironment) -> bool {
+        self.reference_target == environment.target
+            && self.reference_rustc_release == environment.rustc_release
+            && self.reference_rustc_commit_hash == environment.rustc_commit_hash
+            && self.reference_os == environment.os
+            && self.reference_os_version == environment.os_version
+            && self.reference_cpu == environment.cpu
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -1094,25 +1129,84 @@ fn read_manifest() -> FixtureManifest {
     serde_json::from_str(&json).expect("fixture manifest must be valid JSON")
 }
 
+fn command_stdout(program: &str, arguments: &[&str]) -> Option<String> {
+    let output = std::process::Command::new(program)
+        .args(arguments)
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+
+    let stdout = String::from_utf8(output.stdout).ok()?;
+    Some(stdout.trim().to_owned())
+}
+
+fn rustc_metadata_value(output: &str, key: &str) -> Option<String> {
+    for line in output.lines() {
+        let Some((candidate_key, value)) = line.split_once(": ") else {
+            continue;
+        };
+        if candidate_key == key {
+            return Some(value.to_owned());
+        }
+    }
+    None
+}
+
+fn current_fixture_generation_environment() -> Option<FixtureGenerationEnvironment> {
+    if !cfg!(all(
+        target_arch = "aarch64",
+        target_vendor = "apple",
+        target_os = "macos"
+    )) {
+        return None;
+    }
+
+    let rustc = command_stdout("rustc", &["--version", "--verbose"])?;
+    Some(FixtureGenerationEnvironment {
+        target: rustc_metadata_value(&rustc, "host")?,
+        rustc_release: rustc_metadata_value(&rustc, "release")?,
+        rustc_commit_hash: rustc_metadata_value(&rustc, "commit-hash")?,
+        os: command_stdout("sw_vers", &["-productName"])?,
+        os_version: command_stdout("sw_vers", &["-productVersion"])?,
+        cpu: command_stdout("sysctl", &["-n", "machdep.cpu.brand_string"])?,
+    })
+}
+
+fn assert_reference_generation_environment(policy: &FixtureGenerationPolicy) {
+    let environment = current_fixture_generation_environment().unwrap_or_else(|| {
+        panic!("fixture regeneration requires the declared reference environment: {policy:?}")
+    });
+    assert!(
+        policy.matches_reference_environment(&environment),
+        "fixture regeneration environment mismatch: expected {policy:?}, actual {environment:?}"
+    );
+}
+
 fn read_fixture_samples(path: &Path) -> Vec<f32> {
     let bytes =
         fs::read(path).unwrap_or_else(|error| panic!("failed to read {}: {error}", path.display()));
     f32le_to_samples(&bytes)
 }
 
-fn assert_samples_match(actual: &[f32], expected: &[f32], label: &str) {
+fn assert_samples_match(actual: &[f32], expected: &[f32], allowed_max_abs_diff: f32, label: &str) {
     assert_eq!(actual.len(), expected.len(), "{label} frame count");
-    let mut max_abs_diff = 0.0_f32;
+    let mut observed_max_abs_diff = 0.0_f32;
     for (actual_sample, expected_sample) in actual.iter().zip(expected) {
         assert!(actual_sample.is_finite(), "{label} emitted non-finite data");
+        assert!(
+            expected_sample.is_finite(),
+            "{label} fixture contains non-finite data"
+        );
         let difference = (actual_sample - expected_sample).abs();
-        if difference > max_abs_diff {
-            max_abs_diff = difference;
+        if difference > observed_max_abs_diff {
+            observed_max_abs_diff = difference;
         }
     }
     assert!(
-        max_abs_diff <= CHARACTERIZATION_MAX_ABS_DIFF,
-        "{label} max absolute difference {max_abs_diff} exceeds nonbinding characterization guard {CHARACTERIZATION_MAX_ABS_DIFF}"
+        observed_max_abs_diff <= allowed_max_abs_diff,
+        "{label} max absolute difference {observed_max_abs_diff} exceeds portable fixture tolerance {allowed_max_abs_diff}"
     );
 }
 
@@ -1125,7 +1219,42 @@ fn time_stretch_fixture_manifest_sha256_matches_known_vector() {
 }
 
 #[test]
-fn time_stretch_fixture_manifest_reproduces_every_file_twice() {
+fn time_stretch_fixture_manifest_declares_portable_generation_policy() {
+    let manifest = read_manifest();
+    let policy = &manifest.generation_policy;
+
+    assert_eq!(policy.exact_byte_regeneration, "reference-environment-only");
+    assert_eq!(policy.reference_target, "aarch64-apple-darwin");
+    assert_eq!(policy.reference_rustc_release, "1.97.0-nightly");
+    assert_eq!(
+        policy.reference_rustc_commit_hash,
+        "17584a181979f04f2aaad867332c22db1caa511a"
+    );
+    assert_eq!(policy.reference_os, "macOS");
+    assert_eq!(policy.reference_os_version, "26.5.2");
+    assert_eq!(policy.reference_cpu, "Apple M4 Pro");
+    assert_eq!(
+        policy.non_reference_verification,
+        "checked-in-sha256-plus-finite-shape-and-sample-tolerance"
+    );
+    assert_eq!(
+        policy.non_reference_max_abs_diff,
+        PORTABLE_FIXTURE_MAX_ABS_DIFF
+    );
+
+    let non_reference_environment = FixtureGenerationEnvironment {
+        target: policy.reference_target.clone(),
+        rustc_release: policy.reference_rustc_release.clone(),
+        rustc_commit_hash: policy.reference_rustc_commit_hash.clone(),
+        os: policy.reference_os.clone(),
+        os_version: policy.reference_os_version.clone(),
+        cpu: "different CPU".to_owned(),
+    };
+    assert!(!policy.matches_reference_environment(&non_reference_environment));
+}
+
+#[test]
+fn time_stretch_fixture_manifest_validates_hashes_and_portable_semantics() {
     let manifest = read_manifest();
     assert_eq!(manifest.schema_version, 1);
     assert_eq!(manifest.digest_algorithm, "sha256");
@@ -1133,40 +1262,62 @@ fn time_stretch_fixture_manifest_reproduces_every_file_twice() {
     assert_eq!(manifest.channel_layout, "interleaved");
     assert!(manifest.provenance.contains("in-house synthetic"));
 
-    let first_generation = generated_fixture_corpus();
-    let second_generation = generated_fixture_corpus();
-    assert_eq!(manifest.fixtures.len(), first_generation.len());
-    assert_eq!(first_generation.len(), second_generation.len());
+    let exact_reference_environment =
+        current_fixture_generation_environment().is_some_and(|environment| {
+            manifest
+                .generation_policy
+                .matches_reference_environment(&environment)
+        });
+    let generated = generated_fixture_corpus();
+    let second_reference_generation = if exact_reference_environment {
+        Some(generated_fixture_corpus())
+    } else {
+        None
+    };
+    assert_eq!(manifest.fixtures.len(), 7);
+    assert_eq!(manifest.fixtures.len(), generated.len());
 
-    for ((first, second), entry) in first_generation
-        .iter()
-        .zip(&second_generation)
-        .zip(&manifest.fixtures)
-    {
-        assert_eq!(first.path, second.path);
-        assert_eq!(first.path, entry.path);
-        assert_eq!(first.role, entry.role);
-        assert_eq!(first.sample_rate_hz, entry.sample_rate_hz);
-        assert_eq!(first.channels, entry.channels);
-        assert_eq!(first.frames, entry.frames);
+    for (index, (fixture, entry)) in generated.iter().zip(&manifest.fixtures).enumerate() {
+        assert_eq!(fixture.path, entry.path);
+        assert_eq!(fixture.role, entry.role);
+        assert_eq!(fixture.sample_rate_hz, entry.sample_rate_hz);
+        assert_eq!(fixture.channels, entry.channels);
+        assert_eq!(fixture.frames, entry.frames);
         assert!(!entry.construction.is_empty());
 
-        let first_bytes = first.bytes();
-        let second_bytes = second.bytes();
+        let checked_in_bytes =
+            fs::read(fixture_root().join(fixture.path)).expect("checked-in fixture");
         assert_eq!(
-            first_bytes, second_bytes,
-            "{} did not reproduce",
-            first.path
+            checked_in_bytes.len(),
+            entry.frames * entry.channels * std::mem::size_of::<f32>()
         );
-        assert_eq!(
-            first_bytes.len(),
-            first.frames * first.channels * std::mem::size_of::<f32>()
+        assert_eq!(sha256_hex(&checked_in_bytes), entry.sha256);
+
+        let checked_in_samples = f32le_to_samples(&checked_in_bytes);
+        assert_samples_match(
+            &fixture.samples,
+            &checked_in_samples,
+            manifest.generation_policy.non_reference_max_abs_diff,
+            fixture.path,
         );
-        assert_eq!(sha256_hex(&first_bytes), entry.sha256);
-        assert_eq!(
-            fs::read(fixture_root().join(first.path)).expect("checked-in fixture"),
-            first_bytes
-        );
+
+        if exact_reference_environment {
+            let second_fixture = &second_reference_generation
+                .as_ref()
+                .expect("reference generation")[index];
+            assert_eq!(second_fixture.path, fixture.path);
+
+            let first_bytes = fixture.bytes();
+            let second_bytes = second_fixture.bytes();
+            assert_eq!(first_bytes, second_bytes, "{} repeated bytes", fixture.path);
+            assert_eq!(
+                first_bytes, checked_in_bytes,
+                "{} exact bytes",
+                fixture.path
+            );
+            assert_eq!(sha256_hex(&first_bytes), entry.sha256);
+            assert_eq!(sha256_hex(&second_bytes), entry.sha256);
+        }
     }
 }
 
@@ -1182,8 +1333,18 @@ fn time_stretch_crumbs_baseline_matches_bounded_characterizations() {
 
     let actual_phase = PhaseVocoder::new().process(&input, CHARACTERIZATION_DURATION_RATIO);
     let actual_wsola = WsolaProcessor::new().process(&input, CHARACTERIZATION_DURATION_RATIO);
-    assert_samples_match(&actual_phase, &expected_phase, "Crumbs phase vocoder");
-    assert_samples_match(&actual_wsola, &expected_wsola, "Crumbs WSOLA");
+    assert_samples_match(
+        &actual_phase,
+        &expected_phase,
+        PORTABLE_FIXTURE_MAX_ABS_DIFF,
+        "Crumbs phase vocoder",
+    );
+    assert_samples_match(
+        &actual_wsola,
+        &expected_wsola,
+        PORTABLE_FIXTURE_MAX_ABS_DIFF,
+        "Crumbs WSOLA",
+    );
 
     assert_eq!(semitones_to_ratio(12.0), 2.0);
     assert_eq!(cents_to_ratio(1_200.0), 2.0);
@@ -1193,9 +1354,11 @@ fn time_stretch_crumbs_baseline_matches_bounded_characterizations() {
 }
 
 #[test]
-#[ignore = "explicit deterministic corpus regeneration only"]
+#[ignore = "reference-environment fixture regeneration only"]
 fn regenerate_time_stretch_fixtures() {
     let root = fixture_root();
+    let manifest = read_manifest();
+    assert_reference_generation_environment(&manifest.generation_policy);
     for fixture in generated_fixture_corpus() {
         let path = root.join(fixture.path);
         fs::create_dir_all(path.parent().expect("fixture parent")).expect("fixture directory");
