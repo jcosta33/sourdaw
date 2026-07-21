@@ -1,0 +1,30 @@
+src/modules/Arrangement/repositories/track/__tests__/updateClipsOnAllTracks.spec.ts
+  s_c2fca615e81f34::t_67cc838748f48f 60-102
+src/modules/Arrangement/stores/__tests__/resolveEligibleClipWriteTarget.spec.ts
+  s_c2fca615e81f34::t_41956df01ff8a2 156-158
+  s_c2fca615e81f34::t_67cc838748f48f 87-103
+src/modules/Arrangement/stores/resolveEligibleClipWriteTarget.ts
+  s_c2fca615e81f34::t_b05f3d14d57c8d 86-87,90,98-99,106,111,115,123-124
+  s_c2fca615e81f34::t_d0140ed15b4f82 75-77,80-82,85,88,92-93,100,103-105,113,117-118,125,128-130,132,136,139-153,156-170
+  s_c2fca615e81f34::t_bfe2584a6e25b6 89,173-174,179,186-190,192-193,196,220,229,231
+  s_c2fca615e81f34::t_f05e6263e83e1a 2,28,34-35,37-38,43,45-46,57-58
+  s_c2fca615e81f34::t_8116c0b1ee56e0 91
+src/modules/Arrangement/repositories/track/updateClipsOnAllTracks.ts
+  s_c2fca615e81f34::t_bfe2584a6e25b6 2,7-15,21-26,30,33,40
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "f2b8f1144814e3f692fec0ac2200d0b6a7a32d98",
+  "prompts": {},
+  "sessions": {
+    "s_c2fca615e81f34": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f74e9-e1c5-7142-85d2-4c577b3973c0",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
