@@ -109,6 +109,7 @@ describe('collectLayoutOccurrences', () => {
                             <button className="flex gap-1" onClick={() => undefined} />
                             <div className="absolute flex overflow-auto [&>*]:min-w-0" />
                             <div className="flex" aria-label="Toolbar" style={{ minWidth: 0 }} />
+                            <div className="gap-1" />
                         </>
                     );
                 }
@@ -152,23 +153,31 @@ describe('collectLayoutOccurrences', () => {
         });
         expect(appRows[1]).toMatchObject({ disposition: 'eligible', proposedPrimitive: 'Row' });
         expect(appRows[2]).toMatchObject({
-            disposition: 'one-off',
-            proposedPrimitive: null,
+            disposition: 'eligible',
+            proposedPrimitive: 'Row',
             riskFlags: { hasHandlers: true, hasSemanticElement: true },
             riskTier: 'high',
         });
         expect(appRows[3]).toMatchObject({
-            disposition: 'one-off',
-            proposedPrimitive: null,
+            disposition: 'eligible',
+            proposedPrimitive: 'Row',
             riskFlags: { hasChildSelectors: true, hasOverflow: true, hasPositioning: true },
             riskTier: 'high',
         });
         expect(appRows[4]).toMatchObject({
-            disposition: 'one-off',
-            proposedPrimitive: null,
+            disposition: 'eligible',
+            proposedPrimitive: 'Row',
             riskFlags: { hasInlineStyle: true, hasSemanticElement: true },
             riskTier: 'high',
         });
+        expect(appRows[5]).toMatchObject({
+            disposition: 'one-off',
+            proposedPrimitive: null,
+            riskTier: 'high',
+        });
+        expect(appRows[5].rationale).toBe(
+            'This bespoke layout has no supported flex, stack, or grid primitive mapping.'
+        );
         expect(byFile.get('src/components/daw/DawRail.tsx:3')).toMatchObject({
             disposition: 'semantic-wrapper',
             wrapperOwner: 'DawRail',
@@ -185,6 +194,30 @@ describe('collectLayoutOccurrences', () => {
         expect(byFile.get('src/modules/Arrangement/presentations/ContainerResponsive.tsx:3')).toMatchObject({
             disposition: 'responsive-or-dynamic',
         });
+    });
+
+    it('should keep a static scrollable semantic rail eligible for Stack migration', () => {
+        const repositoryRoot = createFixture({
+            'src/Rail.tsx': `
+                export function Rail() {
+                    return <aside className="flex min-h-0 flex-col gap-3 overflow-y-auto pr-1" />;
+                }
+            `,
+        });
+
+        const occurrences = collectLayoutOccurrences({ repositoryRoot });
+
+        expect(occurrences).toHaveLength(1);
+        expect(occurrences[0]).toMatchObject({
+            disposition: 'eligible',
+            nativeElement: 'aside',
+            proposedPrimitive: 'Stack',
+            riskFlags: {
+                hasOverflow: true,
+            },
+            riskTier: 'high',
+        });
+        expect(occurrences[0].rationale).toContain('Stack');
     });
 
     it('should not mark custom component geometry or conditional space children eligible', () => {
@@ -225,11 +258,15 @@ describe('collectLayoutOccurrences', () => {
         const occurrences = collectLayoutOccurrences({ repositoryRoot });
 
         expect(occurrences[0]).toMatchObject({
-            disposition: 'one-off',
+            disposition: 'semantic-wrapper',
             nativeElement: null,
             proposedPrimitive: null,
             riskFlags: { hasSemanticElement: true },
+            wrapperOwner: 'CustomPanel',
         });
+        expect(occurrences[0].rationale).toBe(
+            'Preserve the CustomPanel component contract and review its geometry through that owner.'
+        );
         expect(occurrences[1]).toMatchObject({
             disposition: 'responsive-or-dynamic',
             proposedPrimitive: null,
@@ -348,11 +385,13 @@ describe('collectLayoutOccurrences', () => {
 
         expect(occurrences).toHaveLength(2);
         expect(occurrences[0]).toMatchObject({
-            disposition: 'one-off',
+            disposition: 'semantic-wrapper',
             nativeElement: null,
             proposedPrimitive: null,
             riskFlags: { hasSemanticElement: true },
+            wrapperOwner: 'motion.div',
         });
+        expect(occurrences[0].rationale).toContain('motion.div');
         expect(occurrences[1]).toMatchObject({
             disposition: 'one-off',
             nativeElement: 'div',
@@ -360,6 +399,9 @@ describe('collectLayoutOccurrences', () => {
             role: null,
             riskFlags: { hasSemanticElement: true },
         });
+        expect(occurrences[1].rationale).toBe(
+            'Runtime role semantics require owner-specific characterization before primitive migration.'
+        );
     });
 });
 
@@ -429,6 +471,26 @@ describe('compareLayoutCensuses', () => {
         expect(changed.occurrences[0].reviewed).toBe(false);
         expect(changed.occurrences[0].rationale).not.toBe('Reviewed exception.');
         expect(drift.changed).toHaveLength(1);
+    });
+
+    it('should not preserve the obsolete catch-all one-off review', () => {
+        const repositoryRoot = createFixture({
+            'src/App.tsx': 'export const App = () => <div className="flex" />;\n',
+        });
+        const baseline = createLayoutCensus({ repositoryRoot });
+        baseline.occurrences[0].disposition = 'one-off';
+        baseline.occurrences[0].rationale =
+            'Native semantics, refs, handlers, positioning, overflow, child selectors, inline styles, spread attributes, or unsupported geometry require owner-specific proof.';
+        baseline.occurrences[0].reviewed = true;
+
+        const changed = createLayoutCensus({ repositoryRoot, previousCensus: baseline });
+
+        expect(changed.occurrences[0]).toMatchObject({
+            disposition: 'eligible',
+            proposedPrimitive: 'Row',
+            reviewed: false,
+        });
+        expect(changed.occurrences[0].rationale).toContain('Row');
     });
 
     it('should fingerprint space-layout child structure before preserving review', () => {

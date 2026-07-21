@@ -34,7 +34,10 @@ export const ALLOWED_LAYOUT_DISPOSITIONS = [
     'one-off',
 ] as const;
 
-export const REVIEWED_LAYOUT_CENSUS_DIGEST = '0c570dad7888539b99831497f86d0aa633fc8f21301ceb198f4eb7815e7a1c4b';
+export const REVIEWED_LAYOUT_CENSUS_DIGEST = 'a3e3f421645ba33e723c48787aa6db0d978bb17d2bacbebee97bab3e5fc4e3ea';
+
+const LEGACY_ONE_OFF_RATIONALE =
+    'Native semantics, refs, handlers, positioning, overflow, child selectors, inline styles, spread attributes, or unsupported geometry require owner-specific proof.';
 
 export type LayoutDisposition = (typeof ALLOWED_LAYOUT_DISPOSITIONS)[number];
 export type LayoutRiskTier = 'low' | 'medium' | 'high';
@@ -855,6 +858,9 @@ function characterizedRiskTier(riskFlags: LayoutRiskFlags): LayoutRiskTier {
 
 function classifyCandidate({
     complexGrid,
+    componentTag,
+    hasDynamicRole,
+    nativeElement,
     primitiveTag,
     proposedPrimitive,
     rendererOwned,
@@ -863,6 +869,9 @@ function classifyCandidate({
     wrapperOwner,
 }: {
     complexGrid: boolean;
+    componentTag: string;
+    hasDynamicRole: boolean;
+    nativeElement: string | null;
     primitiveTag: string | null;
     proposedPrimitive: string | null;
     rendererOwned: boolean;
@@ -917,12 +926,34 @@ function classifyCandidate({
             riskTier: 'high',
         };
     }
-    if (hasHighRiskFlags(riskFlags) || proposedPrimitive === null) {
+    if (nativeElement === null) {
+        return {
+            disposition: 'semantic-wrapper',
+            rationale: `Preserve the ${componentTag} component contract and review its geometry through that owner.`,
+            riskTier: 'high',
+        };
+    }
+    if (hasDynamicRole) {
         return {
             disposition: 'one-off',
-            rationale:
-                'Native semantics, refs, handlers, positioning, overflow, child selectors, inline styles, spread attributes, or unsupported geometry require owner-specific proof.',
+            rationale: 'Runtime role semantics require owner-specific characterization before primitive migration.',
             riskTier: 'high',
+        };
+    }
+    if (proposedPrimitive === null) {
+        return {
+            disposition: 'one-off',
+            rationale: 'This bespoke layout has no supported flex, stack, or grid primitive mapping.',
+            riskTier: 'high',
+        };
+    }
+
+    const riskTier = characterizedRiskTier(riskFlags);
+    if (riskTier !== 'low') {
+        return {
+            disposition: 'eligible',
+            rationale: `Static ${nativeElement} geometry maps to ${proposedPrimitive}; preserve its element, classes, and native props during owner-specific migration proof.`,
+            riskTier,
         };
     }
     return {
@@ -1029,7 +1060,9 @@ function collectSourceFileOccurrences({
                 sourceFile,
                 tagSemantics,
             });
-            const role = getStaticAttributeValue(getAttribute(node.attributes, 'role'));
+            const roleAttribute = getAttribute(node.attributes, 'role');
+            const role = getStaticAttributeValue(roleAttribute);
+            const hasDynamicRole = roleAttribute !== null && role === null;
             const asElement = getStaticAttributeValue(getAttribute(node.attributes, 'as'));
             let nativeElement: string | null = null;
             if (ts.isIdentifier(node.tagName) && /^[a-z]/.test(node.tagName.text)) {
@@ -1053,7 +1086,7 @@ function collectSourceFileOccurrences({
             });
             const patternClass = patternClassFor(patternFamily, classEvidence.layoutTokens, primitiveTag);
             let proposedPrimitive = proposedPrimitiveFor(patternFamily, classEvidence.layoutTokens, primitiveTag);
-            const wrapperOwner = getWrapperOwner(repositoryPath, wrapperTag);
+            let wrapperOwner = getWrapperOwner(repositoryPath, wrapperTag);
             const complexGrid = hasComplexGrid(classEvidence.layoutTokens, node.attributes, sourceFile);
             let rendererOwned = rendererPath.test(repositoryPath);
             if (!rendererOwned) {
@@ -1067,6 +1100,9 @@ function collectSourceFileOccurrences({
             }
             const classification = classifyCandidate({
                 complexGrid,
+                componentTag: tagText,
+                hasDynamicRole,
+                nativeElement,
                 primitiveTag,
                 proposedPrimitive,
                 rendererOwned,
@@ -1074,6 +1110,9 @@ function collectSourceFileOccurrences({
                 riskFlags,
                 wrapperOwner,
             });
+            if (classification.disposition === 'semantic-wrapper' && wrapperOwner === null && nativeElement === null) {
+                wrapperOwner = tagText;
+            }
             if (classification.disposition !== 'eligible' && classification.disposition !== 'already-migrated') {
                 proposedPrimitive = null;
             }
@@ -1103,7 +1142,9 @@ function collectSourceFileOccurrences({
                 reviewed: false,
             };
             const previous = previousById.get(id);
-            if (previous?.reviewed && reviewEvidenceMatches(previous, occurrence)) {
+            const hasLegacyOneOffReview =
+                previous?.disposition === 'one-off' && previous.rationale === LEGACY_ONE_OFF_RATIONALE;
+            if (previous?.reviewed && !hasLegacyOneOffReview && reviewEvidenceMatches(previous, occurrence)) {
                 occurrence.disposition = previous.disposition;
                 occurrence.rationale = previous.rationale;
                 occurrence.reviewed = true;
