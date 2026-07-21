@@ -475,7 +475,23 @@ impl CrumbsEngine {
         // to 0 and auto-committed a 1-frame sample (audit F1).
         let left = self.record_buffer_left.clone();
         let right = self.record_buffer_right.clone();
+        // Clear after cloning (keeps capacity): the is_empty() guard above
+        // must mean "nothing recorded since the last commit". Without this,
+        // a double StopRecording — or an auto-commit at capacity followed
+        // by a user Stop — re-committed the same take as a duplicate pool
+        // entry and re-hijacked active_sample_id.
+        self.record_buffer_left.clear();
+        self.record_buffer_right.clear();
 
+        // RT-ALLOC HAZARD (audit F4, latent): the clone above allocates and
+        // memcpies len frames × 2 channels on the calling thread, which is
+        // the audio thread when recording is driven from the native bridge
+        // — same class as the pool add/Arc::new below. The preferred fix is
+        // an off-thread commit handoff via the existing SPSC command queue
+        // (management thread owns pool insertion), which needs a new
+        // command variant + pool ownership changes (>100 lines); deferred
+        // because process_record_input currently has ZERO native callers,
+        // so no native audio thread ever reaches this code today.
         let sample_data =
             super::sample::SampleData::from_stereo(left, right, self.sample_rate as u32);
 
@@ -691,5 +707,87 @@ mod tests {
             );
         }
         assert_eq!(engine.sample_pool().count(), 3);
+    }
+}
+
+#[cfg(test)]
+mod duplicate_commit_tests {
+    use super::*;
+
+    fn arm(engine: &mut CrumbsEngine, max_duration_secs: f32) {
+        engine.handle_command(CrumbsCommand::ArmRecording {
+            threshold: 0.01,
+            target_pad: 0,
+            max_duration_secs,
+        });
+    }
+
+    fn feed(engine: &mut CrumbsEngine, frames: usize) {
+        let left = vec![0.5f32; frames];
+        let right = vec![0.5f32; frames];
+        engine.process_record_input(&left, &right);
+    }
+
+    /// Regression (PR #552 review): cloning at commit left the record
+    /// buffers full, and the commit guards only on is_empty() — a second
+    /// StopRecording re-committed the same take as a duplicate pool entry
+    /// and re-hijacked active_sample_id (measured: pool count 2).
+    #[test]
+    fn double_stop_does_not_recommit_take() {
+        let mut engine = CrumbsEngine::new(44100.0);
+        engine.handle_command(CrumbsCommand::SetMode(CrumbsMode::Record));
+
+        arm(&mut engine, 10.0);
+        feed(&mut engine, 1000);
+        engine.handle_command(CrumbsCommand::StopRecording);
+        let first_id = engine.active_sample_id().expect("take 1 sets active");
+        assert_eq!(engine.sample_pool().count(), 1);
+
+        // User hits Stop again with no re-arm in between.
+        engine.handle_command(CrumbsCommand::StopRecording);
+
+        assert_eq!(
+            engine.sample_pool().count(),
+            1,
+            "double stop duplicated the take"
+        );
+        assert_eq!(
+            engine.active_sample_id(),
+            Some(first_id),
+            "double stop re-hijacked the active sample"
+        );
+        assert_eq!(engine.record_state(), RecordState::Idle);
+    }
+
+    /// Regression (PR #552 review): same duplicate-commit trigger via the
+    /// auto-commit path — recording hits max_duration (auto-commit), then
+    /// the StopRecording ending the user gesture must be a no-op.
+    #[test]
+    fn auto_commit_at_capacity_then_stop_does_not_recommit() {
+        let mut engine = CrumbsEngine::new(44100.0);
+        engine.handle_command(CrumbsCommand::SetMode(CrumbsMode::Record));
+
+        arm(&mut engine, 0.01); // 441 frames at 44.1 kHz
+        feed(&mut engine, 2000);
+
+        // Capacity reached mid-input: auto-committed, back to Idle.
+        assert_eq!(engine.record_state(), RecordState::Idle);
+        assert_eq!(engine.sample_pool().count(), 1);
+        let first_id = engine.active_sample_id().expect("auto-commit sets active");
+        assert_eq!(
+            engine.sample_pool().get(first_id).unwrap().meta.frame_count,
+            441,
+            "auto-commit must cap the take at record_max_samples"
+        );
+
+        engine.handle_command(CrumbsCommand::StopRecording);
+
+        assert_eq!(
+            engine.sample_pool().count(),
+            1,
+            "stop after auto-commit duplicated the take"
+        );
+        assert_eq!(engine.active_sample_id(), Some(first_id));
+        assert_eq!(engine.record_state(), RecordState::Idle);
     }
 }
