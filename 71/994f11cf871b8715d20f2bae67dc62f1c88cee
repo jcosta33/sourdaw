@@ -1,0 +1,29 @@
+src/modules/Yeast/workers/__tests__/MidiRack.spec.ts
+  s_c2fca615e81f34::t_4f027872bd0443 993-1037
+src/modules/Yeast/workers/processors/NoteRepeater.ts
+  s_0f851d6f3525ac::t_58dd9970688578 95-107
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "71994f11cf871b8715d20f2bae67dc62f1c88cee",
+  "prompts": {},
+  "sessions": {
+    "s_0f851d6f3525ac": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8647-0b9a-79f2-b657-e21db0f3a21c",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_c2fca615e81f34": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f74e9-e1c5-7142-85d2-4c577b3973c0",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
