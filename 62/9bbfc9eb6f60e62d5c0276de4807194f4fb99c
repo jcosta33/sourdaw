@@ -1,0 +1,25 @@
+src/components/daw/__tests__/DawControlStrip.spec.tsx
+  s_c2fca615e81f34::t_068ffdbe4be2af 1-4,9-77
+src/components/daw/__tests__/DawDialogFooter.spec.tsx
+  s_c2fca615e81f34::t_d62716f75ecb3e 1-4,9-78,81-112
+src/components/daw/__tests__/DawMetricCluster.spec.tsx
+  s_c2fca615e81f34::t_8f7bcbcb20e189 1-4,9-17,20-95
+src/components/daw/__tests__/DawPluginMetricStrip.spec.tsx
+  s_c2fca615e81f34::t_1131f3aa3cfb15 1-4,9-83
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "629bbfc9eb6f60e62d5c0276de4807194f4fb99c",
+  "prompts": {},
+  "sessions": {
+    "s_c2fca615e81f34": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f74e9-e1c5-7142-85d2-4c577b3973c0",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
