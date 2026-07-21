@@ -46,7 +46,7 @@ This section provides a practical guide to creating, persisting, and subscribing
 A store is a module-level singleton from `createStore` (`#/infra/store/createStore`).
 
 ```typescript
-// WorkspaceShell/stores/workspacePreferencesStore.ts
+// Illustrative — e.g. WorkspaceShell/stores/workspaceStore.ts
 import { createStore } from '#/infra/store/createStore';
 
 export type WorkspacePreferences = {

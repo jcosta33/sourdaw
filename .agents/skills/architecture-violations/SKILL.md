@@ -41,7 +41,7 @@ Trace upstream callers and downstream dependencies. Use `pnpm typecheck` as the 
 
 ### 5. Restore the contract barrel — never route around it
 
-Cross-module access goes through the four contract barrels and their rules (`architecture` rule 1: `cross-module-index-only`, `contract-barrel-scope`, `no-self-barrel-import`). Fix barrel violations by re-establishing that surface, not by inventing new barrels or escape hatches.
+Cross-module access goes through the four contract barrels and their rules (`architecture` rules 1–2: `cross-module-index-only`, `contract-barrel-scope`, `no-self-barrel-import`). Fix barrel violations by re-establishing that surface, not by inventing new barrels or escape hatches.
 
 **Why:** the barrel is the only curated public surface; deep imports erase ownership.
 
