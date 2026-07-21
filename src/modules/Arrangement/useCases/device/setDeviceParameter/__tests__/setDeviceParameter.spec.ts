@@ -1,5 +1,10 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { configureAutomergeStoragePort } from '#/infra/store/storage/createAutomergeStorage';
+import { clearHandlerRegistry, macroStore, registerHandlerMap, undoStore } from '#/modules/Command/stores';
+import { clearUndoHistory, executeAppAction, setActionHistoryMetadataPort } from '#/modules/Command/useCases';
+
+import { handleSetDeviceParameter } from '../../../../handlers/device/handleSetDeviceParameter';
 import { createTrack, type Track } from '../../../../models/Track';
 import { defaultTrackState, trackStore } from '../../../../stores/trackStore';
 import { setDeviceParameter } from '../setDeviceParameter';
@@ -16,6 +21,18 @@ const mocks = vi.hoisted(() => {
         recordAutomationValue: vi.fn<typeof import('#/modules/Automation/useCases').recordAutomationValue>(),
     };
 });
+
+const actionHistoryMetadataPort = {
+    record: vi.fn(() => []),
+    markReverted: vi.fn(() => ({ status: 'unavailable' as const })),
+    clear: vi.fn(),
+};
+
+const noActionHistoryMetadataPort = {
+    record: () => [],
+    markReverted: () => ({ status: 'unavailable' as const }),
+    clear: () => undefined,
+};
 
 vi.mock('../../../../repositories/track/getTrackState', () => ({
     getTrackState: mocks.getTrackState,
@@ -47,8 +64,22 @@ vi.mock('#/modules/Automation/useCases', async (importOriginal) => ({
 describe('setDeviceParameter', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        configureAutomergeStoragePort(null);
+        clearHandlerRegistry();
+        registerHandlerMap({ setDeviceParameter: handleSetDeviceParameter });
+        clearUndoHistory();
+        macroStore.set({ macros: [], recording: true, currentRecording: [] });
+        setActionHistoryMetadataPort(actionHistoryMetadataPort);
         mocks.transportStoreValue = { isPlaying: false };
         trackStore.set(defaultTrackState);
+    });
+
+    afterEach(() => {
+        setActionHistoryMetadataPort(noActionHistoryMetadataPort);
+        macroStore.set({ macros: [], recording: false, currentRecording: [] });
+        clearUndoHistory();
+        clearHandlerRegistry();
+        configureAutomergeStoragePort(null);
     });
 
     function makeTrack(id: string, deviceId = 'd1'): Track {
@@ -57,6 +88,10 @@ describe('setDeviceParameter', () => {
             { id: deviceId, name: 'Device', type: 'device', bypassed: false, parameterValues: { gain: 0.1 } },
         ];
         return track;
+    }
+
+    function makeTrackWithoutDevices(id: string): Track {
+        return createTrack({ id, name: id, kind: 'audio' });
     }
 
     function setTrackState(tracks: Track[]): void {
@@ -131,5 +166,32 @@ describe('setDeviceParameter', () => {
         expect(mocks.updateTrack).not.toHaveBeenCalled();
         expect(mocks.recordAutomationValue).not.toHaveBeenCalled();
         expect(didWrite).toBe(false);
+    });
+
+    it.each([
+        ['an empty owner identity', () => [makeTrack('')]],
+        [
+            'a duplicate identity with the device owner first',
+            () => [makeTrack('duplicate-track'), makeTrackWithoutDevices('duplicate-track')],
+        ],
+        [
+            'a duplicate identity with the device owner second',
+            () => [makeTrackWithoutDevices('duplicate-track'), makeTrack('duplicate-track')],
+        ],
+    ] as const)('rejects registered writes for %s with zero effects', async (_label, makeTracks) => {
+        setTrackState(makeTracks());
+        mocks.transportStoreValue = { isPlaying: true, playheadPosition: 8 };
+
+        await executeAppAction({
+            type: 'setDeviceParameter',
+            payload: { deviceId: 'd1', paramId: 'gain', value: 0.5 },
+        });
+
+        expect(mocks.updateDeviceParam).not.toHaveBeenCalled();
+        expect(mocks.updateTrack).not.toHaveBeenCalled();
+        expect(mocks.recordAutomationValue).not.toHaveBeenCalled();
+        expect(macroStore.value?.currentRecording).toEqual([]);
+        expect(undoStore.value?.past).toEqual([]);
+        expect(actionHistoryMetadataPort.record).not.toHaveBeenCalled();
     });
 });

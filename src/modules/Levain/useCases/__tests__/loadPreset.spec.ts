@@ -2,7 +2,9 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 const DEVICE_ID = 'd1';
 
-const { mockLevainStore } = vi.hoisted(() => ({
+type ResolveEligibleDeviceWriteTarget = typeof import('#/modules/Arrangement/stores').resolveEligibleDeviceWriteTarget;
+
+const { mockLevainStore, mockResolveEligibleDeviceWriteTarget } = vi.hoisted(() => ({
     mockLevainStore: {
         value: null as Record<
             string,
@@ -10,6 +12,7 @@ const { mockLevainStore } = vi.hoisted(() => ({
         > | null,
         set: vi.fn(),
     },
+    mockResolveEligibleDeviceWriteTarget: vi.fn<ResolveEligibleDeviceWriteTarget>(),
 }));
 
 vi.mock('../../stores/levainStore', () => ({
@@ -36,11 +39,7 @@ vi.mock('../levainParamBridge/setLevainParamWithAudio', () => ({
 
 vi.mock('../levainParamBridge/levainBridgeDependencies', () => ({
     levainBridgeDependencies: {
-        resolveEligibleDeviceWriteTarget: (deviceId: string) => ({
-            status: 'eligible',
-            trackId: 'track-1',
-            deviceId,
-        }),
+        resolveEligibleDeviceWriteTarget: mockResolveEligibleDeviceWriteTarget,
     },
 }));
 
@@ -56,6 +55,12 @@ describe('loadInstrument', () => {
         mockLevainStore.set.mockClear();
         vi.mocked(setLevainParamWithAudio).mockClear();
         vi.mocked(loadSamplesForInstrument).mockClear();
+        mockResolveEligibleDeviceWriteTarget.mockReset();
+        mockResolveEligibleDeviceWriteTarget.mockImplementation((deviceId) => ({
+            status: 'eligible',
+            trackId: 'track-1',
+            deviceId,
+        }));
     });
 
     it('updates the store with the default patch and triggers sample load', () => {
@@ -79,4 +84,17 @@ describe('loadInstrument', () => {
         expect(mockLevainStore.set).toHaveBeenCalled();
         expect(loadSamplesForInstrument).toHaveBeenCalledWith(DEVICE_ID, 'violin-1');
     });
+
+    it.each(['missing', 'ineligible'] as const)(
+        'rejects owner status %s before store, parameter, or sample-load effects',
+        (status) => {
+            mockResolveEligibleDeviceWriteTarget.mockReturnValue({ status });
+
+            loadInstrument(DEVICE_ID, 'violin-1');
+
+            expect(mockLevainStore.set).not.toHaveBeenCalled();
+            expect(setLevainParamWithAudio).not.toHaveBeenCalled();
+            expect(loadSamplesForInstrument).not.toHaveBeenCalled();
+        }
+    );
 });

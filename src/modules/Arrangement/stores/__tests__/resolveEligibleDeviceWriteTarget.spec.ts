@@ -21,6 +21,15 @@ function makeTrack(id: string, deviceId: string): Track {
     });
 }
 
+function makeTrackWithoutDevices(id: string): Track {
+    return normalizeTrack({
+        id,
+        name: id,
+        kind: 'audio',
+        devices: [],
+    });
+}
+
 function setRuntimeKind(track: Track, kind: string): Track {
     Object.defineProperty(track, 'kind', { configurable: true, enumerable: true, value: kind });
     return track;
@@ -62,8 +71,14 @@ describe('resolveEligibleDeviceWriteTarget', () => {
     });
 
     it.each([
-        ['eligible owner first', [makeTrack('track-1', 'duplicate'), setRuntimeKind(makeTrack('vca-1', 'duplicate'), 'vca')]],
-        ['ineligible owner first', [setRuntimeKind(makeTrack('vca-1', 'duplicate'), 'vca'), makeTrack('track-1', 'duplicate')]],
+        [
+            'eligible owner first',
+            [makeTrack('track-1', 'duplicate'), setRuntimeKind(makeTrack('vca-1', 'duplicate'), 'vca')],
+        ],
+        [
+            'ineligible owner first',
+            [setRuntimeKind(makeTrack('vca-1', 'duplicate'), 'vca'), makeTrack('track-1', 'duplicate')],
+        ],
         [
             'duplicate entries on one owner',
             [
@@ -92,5 +107,23 @@ describe('resolveEligibleDeviceWriteTarget', () => {
         setTracks([makeTrack('track-1', '')]);
 
         expect(resolveEligibleDeviceWriteTarget('')).toEqual({ status: 'ineligible' });
+    });
+
+    it('fails closed for an empty owner track ID', () => {
+        setTracks([makeTrack('', 'device-1')]);
+
+        expect(resolveEligibleDeviceWriteTarget('device-1')).toEqual({ status: 'ineligible' });
+    });
+
+    it.each([
+        ['device owner first', true],
+        ['device owner second', false],
+    ] as const)('fails closed for duplicate track identity with the %s', (_label, deviceOwnerFirst) => {
+        const deviceOwner = makeTrack('duplicate-track', 'device-1');
+        const collidingTrack = makeTrackWithoutDevices('duplicate-track');
+        const tracks = deviceOwnerFirst ? [deviceOwner, collidingTrack] : [collidingTrack, deviceOwner];
+        setTracks(tracks);
+
+        expect(resolveEligibleDeviceWriteTarget('device-1')).toEqual({ status: 'ineligible' });
     });
 });

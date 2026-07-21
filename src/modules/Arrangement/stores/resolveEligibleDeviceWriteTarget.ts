@@ -30,6 +30,23 @@ function isObject(value: unknown): value is object {
     return value !== null && typeof value === 'object';
 }
 
+function hasUniqueTrackIdentity(tracks: ReadonlyArray<unknown>, trackId: string): boolean {
+    let matchingTrackCount = 0;
+
+    for (const candidate of tracks) {
+        if (!isObject(candidate) || Reflect.get(candidate, 'id') !== trackId) {
+            continue;
+        }
+
+        matchingTrackCount += 1;
+        if (matchingTrackCount > 1) {
+            return false;
+        }
+    }
+
+    return matchingTrackCount === 1;
+}
+
 export function resolveEligibleDeviceWriteTarget(deviceId: string): DeviceWriteTargetResolution {
     if (deviceId.length === 0) {
         return { status: 'ineligible' };
@@ -73,7 +90,11 @@ export function resolveEligibleDeviceWriteTarget(deviceId: string): DeviceWriteT
 
     const trackId: unknown = Reflect.get(matchingOwner, 'id');
     const kind: unknown = Reflect.get(matchingOwner, 'kind');
-    if (typeof trackId !== 'string' || !isTrackEligibilityKind(kind)) {
+    if (typeof trackId !== 'string' || trackId.length === 0 || !isTrackEligibilityKind(kind)) {
+        return { status: 'ineligible' };
+    }
+
+    if (!hasUniqueTrackIdentity(tracks, trackId)) {
         return { status: 'ineligible' };
     }
 
