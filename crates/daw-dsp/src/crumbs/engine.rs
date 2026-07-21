@@ -469,8 +469,12 @@ impl CrumbsEngine {
             return;
         }
 
-        let left = core::mem::take(&mut self.record_buffer_left);
-        let right = core::mem::take(&mut self.record_buffer_right);
+        // Clone, not take: the record buffers are pre-allocated once at
+        // construction and must keep their capacity across takes — taking
+        // them left capacity 0, so the next arm clamped record_max_samples
+        // to 0 and auto-committed a 1-frame sample (audit F1).
+        let left = self.record_buffer_left.clone();
+        let right = self.record_buffer_right.clone();
 
         let sample_data =
             super::sample::SampleData::from_stereo(left, right, self.sample_rate as u32);
@@ -614,5 +618,78 @@ impl CrumbsEngine {
     /// Get the sample rate.
     pub fn sample_rate(&self) -> f32 {
         self.sample_rate
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Arm, feed `frames` over-threshold samples, stop — one full take.
+    fn record_take(engine: &mut CrumbsEngine, frames: usize) {
+        engine.handle_command(CrumbsCommand::ArmRecording {
+            threshold: 0.01,
+            target_pad: 0,
+            max_duration_secs: 10.0,
+        });
+        let left = vec![0.5f32; frames];
+        let right = vec![0.5f32; frames];
+        engine.process_record_input(&left, &right);
+        engine.handle_command(CrumbsCommand::StopRecording);
+    }
+
+    /// Regression (audit F1): `commit_recording` consumed the record
+    /// buffers with `mem::take`, leaving capacity 0. The next arm clamped
+    /// `record_max_samples` to 0, so take 2 auto-committed a 1-frame
+    /// sample on its second input sample and hijacked `active_sample_id`.
+    #[test]
+    fn second_take_commits_full_buffer() {
+        let mut engine = CrumbsEngine::new(44100.0);
+        engine.handle_command(CrumbsCommand::SetMode(CrumbsMode::Record));
+
+        record_take(&mut engine, 1000);
+        assert_eq!(engine.record_state(), RecordState::Idle);
+        assert_eq!(engine.sample_pool().count(), 1);
+        let first_id = engine.active_sample_id().expect("take 1 sets active");
+        assert_eq!(
+            engine.sample_pool().get(first_id).unwrap().meta.frame_count,
+            1000
+        );
+
+        record_take(&mut engine, 2000);
+        assert_eq!(engine.record_state(), RecordState::Idle);
+        assert_eq!(
+            engine.sample_pool().count(),
+            2,
+            "take 2 must add its own pool entry"
+        );
+        let second_id = engine.active_sample_id().expect("take 2 sets active");
+        let second = engine.sample_pool().get(second_id).unwrap();
+        assert_eq!(
+            second.meta.frame_count, 2000,
+            "take 2 committed a {}-frame artifact (capacity was consumed by take 1)",
+            second.meta.frame_count
+        );
+        assert_eq!(second.left.len(), 2000);
+        assert_eq!(second.right.len(), 2000);
+    }
+
+    /// A third take must keep working too — the record buffers keep their
+    /// pre-allocated capacity across any number of commits.
+    #[test]
+    fn recording_capacity_survives_repeated_takes() {
+        let mut engine = CrumbsEngine::new(44100.0);
+        engine.handle_command(CrumbsCommand::SetMode(CrumbsMode::Record));
+
+        for take in 1..=3usize {
+            record_take(&mut engine, 500 * take);
+            let id = engine.active_sample_id().expect("take sets active");
+            assert_eq!(
+                engine.sample_pool().get(id).unwrap().meta.frame_count as usize,
+                500 * take,
+                "take {take} frame count"
+            );
+        }
+        assert_eq!(engine.sample_pool().count(), 3);
     }
 }
