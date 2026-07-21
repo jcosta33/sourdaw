@@ -8,6 +8,7 @@ import { removeSidechainRoute } from '../sidechain/removeSidechainRoute';
 import { setSidechainRoutes } from '../sidechain/setSidechainRoutes';
 
 const mocks = vi.hoisted(() => ({
+    tracks: [] as Array<{ id: string; kind: string }>,
     wireSidechainRoute: vi.fn<(...args: unknown[]) => unknown>(),
     unwireSidechainRoute: vi.fn<(...args: unknown[]) => unknown>(),
     createSidechainRoute: vi.fn(
@@ -22,6 +23,15 @@ const mocks = vi.hoisted(() => ({
     storeSet: vi.fn((next: unknown) => {
         mockStoreValue.value = next;
     }),
+}));
+
+vi.mock('#/modules/Arrangement/stores', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Arrangement/stores')>()),
+    trackStore: {
+        get value() {
+            return { tracks: mocks.tracks };
+        },
+    },
 }));
 
 vi.mock('#/modules/AudioEngine/useCases', () => ({
@@ -52,15 +62,17 @@ function scRoute(id: string, sourceTrackId: string, targetTrackId: string, targe
 describe('sidechain use cases', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        mocks.tracks = ['src', 'dst', 't1', 'a', 'c', 'z', 'd'].map((id) => ({ id, kind: 'audio' }));
         mockStoreValue.value = { routes: [] };
     });
 
     it('addSidechainRoute creates and wires a new route', () => {
-        addSidechainRoute('src', 'dst', 'dev1');
+        const didWrite = addSidechainRoute('src', 'dst', 'dev1');
 
         expect(mocks.createSidechainRoute).toHaveBeenCalledWith('src', 'dst', 'dev1', 'threshold');
         expect(mocks.storeSet).toHaveBeenCalled();
         expect(mocks.wireSidechainRoute).toHaveBeenCalledWith('src', 'dst', 'dev1');
+        expect(didWrite).toBe(true);
     });
 
     it('addSidechainRoute throws on self-routing cycle', () => {
@@ -108,9 +120,10 @@ describe('sidechain use cases', () => {
             ],
         };
 
-        expect(() => addSidechainRoute('z', 'd', 'devZ')).not.toThrow();
+        const didWrite = addSidechainRoute('z', 'd', 'devZ');
         expect(mocks.createSidechainRoute).toHaveBeenCalledWith('z', 'd', 'devZ', 'threshold');
         expect(mocks.wireSidechainRoute).toHaveBeenCalledWith('z', 'd', 'devZ');
+        expect(didWrite).toBe(true);
     });
 
     it('addSidechainRoute is idempotent for duplicates', () => {
@@ -123,20 +136,22 @@ describe('sidechain use cases', () => {
         };
         mockStoreValue.value = { routes: [existing] };
 
-        addSidechainRoute('src', 'dst', 'dev1');
+        const didWrite = addSidechainRoute('src', 'dst', 'dev1');
 
         expect(mocks.storeSet).not.toHaveBeenCalled();
         expect(mocks.wireSidechainRoute).not.toHaveBeenCalled();
+        expect(didWrite).toBe(false);
     });
 
     it('addSidechainRoute is a no-op when the store has no value', () => {
         mockStoreValue.value = null;
 
-        addSidechainRoute('src', 'dst', 'dev1');
+        const didWrite = addSidechainRoute('src', 'dst', 'dev1');
 
         expect(mocks.storeSet).not.toHaveBeenCalled();
         expect(mocks.wireSidechainRoute).not.toHaveBeenCalled();
         expect(mocks.createSidechainRoute).not.toHaveBeenCalled();
+        expect(didWrite).toBe(false);
     });
 
     it('removeSidechainRoute unwires and removes the route', () => {

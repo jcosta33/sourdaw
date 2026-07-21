@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { restoreStrumOriginals } from '../restoreStrumOriginals';
 
-import type { MidiStoreState } from '../../../stores/midiStore';
+import type { MidiStoreState, MidiStoreStateInput } from '../../../stores/midiStore';
 
 const mocks = vi.hoisted(() => ({
     midiStoreValue: {
@@ -10,7 +10,7 @@ const mocks = vi.hoisted(() => ({
             notesByClipId: {} as Record<string, { id: string; startBeat: number }[]>,
             ccByClipId: {},
             pitchBendByClipId: {},
-        } as unknown as MidiStoreState,
+        } as unknown as MidiStoreStateInput,
     },
     midiStoreSet: vi.fn<typeof import('../../../stores/midiStore').midiStore.set>(),
 }));
@@ -37,7 +37,7 @@ describe('restoreStrumOriginals', () => {
     });
 
     it('should not write when the MIDI store is null', () => {
-        mocks.midiStoreValue.value = null as unknown as MidiStoreState;
+        mocks.midiStoreValue.value = null as unknown as MidiStoreStateInput;
         restoreStrumOriginals('c1', new Map([['n1', 0]]));
         expect(mocks.midiStoreSet).not.toHaveBeenCalled();
     });

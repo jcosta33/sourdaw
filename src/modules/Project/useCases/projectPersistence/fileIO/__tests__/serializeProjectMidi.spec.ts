@@ -7,6 +7,7 @@ import { serializeProjectMidi } from '../serializeProjectMidi';
 describe('serializeProjectMidi', () => {
     it('serializes notes, CC, and pitch-bend into the Project MIDI contract', () => {
         const midi: MidiStoreState = {
+            probabilitySeed: 4_294_967_295,
             notesByClipId: {
                 'clip-1': [
                     { id: 'note-1', pitch: 60, startBeat: 0, duration: 1, velocity: 100 },
@@ -33,6 +34,7 @@ describe('serializeProjectMidi', () => {
         };
 
         expect(serializeProjectMidi(midi)).toEqual({
+            probabilitySeed: 4_294_967_295,
             notesByClipId: {
                 'clip-1': [
                     {

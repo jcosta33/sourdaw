@@ -1,18 +1,21 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-type DeviceRef = { trackId: string; deviceId: string };
+import { type DeviceWriteTargetResolution } from '#/modules/Arrangement/stores';
+
 type SetPadParam = (pad: number, name: string, value: number) => void;
 type ToasterControls = { ready: boolean; setPadParam: SetPadParam };
 type TrackStrip = { deviceNodes: Array<{ toasterControls?: ToasterControls }> };
 
-const mockFindDeviceRef = vi.hoisted(() => vi.fn<(deviceId: string) => DeviceRef | null>(() => null));
+const mockResolveDeviceTarget = vi.hoisted(() =>
+    vi.fn<(deviceId: string) => DeviceWriteTargetResolution>(() => ({ status: 'missing' }))
+);
 const mockGetTrackStrip = vi.hoisted(() => vi.fn<(trackId: string) => TrackStrip | undefined>());
 const mockUpdatePad = vi.hoisted(() => vi.fn<(deviceId: string, padIndex: number, updates: unknown) => void>());
 
-vi.mock('../toasterParamBridge/helpers', async (importOriginal) => {
-    const actual = await importOriginal<typeof import('../toasterParamBridge/helpers')>();
-    return { ...actual, findDeviceRef: mockFindDeviceRef };
-});
+vi.mock('#/modules/Arrangement/stores', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Arrangement/stores')>()),
+    resolveEligibleDeviceWriteTarget: mockResolveDeviceTarget,
+}));
 
 vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/AudioEngine/useCases')>()),
@@ -31,7 +34,11 @@ describe('setPadParamImmediate', () => {
 
     beforeEach(() => {
         vi.clearAllMocks();
-        mockFindDeviceRef.mockReturnValue({ trackId: 'track-1', deviceId: 'dev-1' });
+        mockResolveDeviceTarget.mockReturnValue({
+            status: 'eligible',
+            trackId: 'track-1',
+            deviceId: 'dev-1',
+        });
         setPadParam = vi.fn<SetPadParam>();
         mockGetTrackStrip.mockReturnValue({
             deviceNodes: [{ toasterControls: { ready: true, setPadParam } }],
@@ -51,12 +58,12 @@ describe('setPadParamImmediate', () => {
         expect(setPadParam).toHaveBeenCalledTimes(1);
     });
 
-    it('still updates the store but skips the worklet when no device ref exists', () => {
-        mockFindDeviceRef.mockReturnValue(null);
+    it.each(['missing', 'ineligible'] as const)('rejects a %s owner before store or runtime effects', (status) => {
+        mockResolveDeviceTarget.mockReturnValue({ status });
 
         setPadParamImmediate({ deviceId: 'dev-1', padIndex: 0, key: 'pan', value: -0.3 });
 
-        expect(mockUpdatePad).toHaveBeenCalledWith('dev-1', 0, { pan: -0.3 });
+        expect(mockUpdatePad).not.toHaveBeenCalled();
         expect(mockGetTrackStrip).not.toHaveBeenCalled();
         expect(setPadParam).not.toHaveBeenCalled();
     });

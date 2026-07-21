@@ -1,12 +1,13 @@
 import { describe, it, expect, beforeEach, vi, type Mock } from 'vitest';
 
-import { persistDeviceParam } from '#/modules/Arrangement/stores';
+import { persistDeviceParam, resolveEligibleDeviceWriteTarget } from '#/modules/Arrangement/stores';
 
 import { bridges, type ProofAudioBridge } from '../helpers';
 import { setProofParam } from '../setProofParam';
 
 vi.mock('#/modules/Arrangement/stores', () => ({
     persistDeviceParam: vi.fn(),
+    resolveEligibleDeviceWriteTarget: vi.fn(),
 }));
 
 type MockedProofBridge = {
@@ -25,6 +26,11 @@ describe('setProofParam', () => {
     beforeEach(() => {
         bridges.clear();
         vi.clearAllMocks();
+        vi.mocked(resolveEligibleDeviceWriteTarget).mockImplementation((deviceId) => ({
+            status: 'eligible',
+            trackId: 'track-1',
+            deviceId,
+        }));
     });
 
     it('forwards the param to the registered bridge and persists it', () => {
@@ -41,5 +47,16 @@ describe('setProofParam', () => {
         setProofParam({ deviceId: 'unregistered', name: 'input_gain', value: 3 });
 
         expect(persistDeviceParam).toHaveBeenCalledWith('unregistered', 'input_gain', 3);
+    });
+
+    it.each(['missing', 'ineligible'] as const)('rejects a %s owner before bridge or persistence effects', (status) => {
+        const bridge = makeBridge();
+        bridges.set('dev-1', bridge);
+        vi.mocked(resolveEligibleDeviceWriteTarget).mockReturnValue({ status });
+
+        setProofParam({ deviceId: 'dev-1', name: 'lim_ceiling', value: -1.5 });
+
+        expect(bridge.setParam).not.toHaveBeenCalled();
+        expect(persistDeviceParam).not.toHaveBeenCalled();
     });
 });

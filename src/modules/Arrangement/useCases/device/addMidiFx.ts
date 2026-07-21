@@ -1,9 +1,15 @@
 import { logger } from '#/infra/logger/appLogger';
 import { addMidiFxToStrip } from '#/modules/AudioEngine/useCases';
 
+import { getTrackById } from '../../repositories/track/getTrackById';
+import { getTrackEligibility } from '../../stores/trackEligibility';
 import { updateTrack } from '../updateTrack';
 
 export function addMidiFx(trackId: string, fxType: 'arp' | 'velocity' | 'probability', name?: string): void {
+    const track = getTrackById(trackId);
+    if (!track || !getTrackEligibility(track.kind).acceptsMidiFxAdd) {
+        return;
+    }
     const fxId = `midi-fx-${crypto.randomUUID().slice(0, 8)}`;
 
     updateTrack(trackId, (track) => {

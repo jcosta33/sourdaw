@@ -1,6 +1,6 @@
 import { bounceTrack } from './bounceTrack';
 
-export async function bounceInPlace(trackId: string): Promise<void> {
+export async function bounceInPlace(trackId: string): Promise<boolean> {
     return bounceTrack(trackId, {
         includeInserts: true,
         includeSends: false,

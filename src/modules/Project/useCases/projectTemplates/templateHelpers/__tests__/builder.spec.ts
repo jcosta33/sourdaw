@@ -6,6 +6,9 @@ vi.mock('#/modules/Arrangement/stores', () => ({
     grooveStore: { value: null, set: vi.fn() },
     vcaGroupStore: { value: [], set: vi.fn() },
 }));
+const arrangementMocks = vi.hoisted(() => ({
+    resetArrangementStoresForProject: vi.fn(),
+}));
 vi.mock('#/modules/Arrangement/useCases', () => ({
     createTrack: vi.fn(() => ({
         id: 't1',
@@ -14,6 +17,7 @@ vi.mock('#/modules/Arrangement/useCases', () => ({
         devices: [],
         alternatives: [{ id: 'a1', clips: [] }],
     })),
+    resetArrangementStoresForProject: arrangementMocks.resetArrangementStoresForProject,
 }));
 const midiMocks = vi.hoisted(() => ({ hydrateGrooveTemplates: vi.fn() }));
 vi.mock('#/modules/MIDI/stores', () => ({ chordTrackStore: { value: null, set: vi.fn() } }));
@@ -55,6 +59,7 @@ describe('template builder', () => {
         const result = initProject({ name: 'Test', tempo: 120 } as never);
         expect(result).toBeDefined();
         expect(result.id).toBeDefined();
+        expect(arrangementMocks.resetArrangementStoresForProject).toHaveBeenCalledOnce();
         expect(midiMocks.hydrateGrooveTemplates).toHaveBeenCalledWith({ templates: [], assignments: [] });
     });
 });

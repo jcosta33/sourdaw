@@ -15,13 +15,26 @@ describe('handleBounceInPlace', () => {
         vi.clearAllMocks();
     });
 
-    it('executes bounceInPlace with the provided payload', () => {
-        void handleBounceInPlace.execute({
+    it('executes bounceInPlace with the provided payload', async () => {
+        mocks.bounceInPlace.mockResolvedValue(true);
+        const result = await handleBounceInPlace.execute({
             type: 'bounceInPlace',
             payload: { trackId: 't1' },
         });
 
         expect(mocks.bounceInPlace).toHaveBeenCalledWith('t1');
+        expect(result).toEqual({ status: 'written' });
+    });
+
+    it('reports no-write when in-place bounce is rejected', async () => {
+        mocks.bounceInPlace.mockResolvedValue(false);
+
+        const result = await handleBounceInPlace.execute({
+            type: 'bounceInPlace',
+            payload: { trackId: 'vca-1' },
+        });
+
+        expect(result).toEqual({ status: 'no-write' });
     });
 
     it('provides a description', () => {

@@ -5,25 +5,29 @@ import { getBacteriaState, setBacteriaBandParam } from '../../stores/bacteriaSto
 
 import { bacteriaParamBridgeDependencies } from './bacteriaParamBridgeDependencies';
 import { createFlushParam } from './createFlushParam';
-import { createFindDeviceRef, encodePatchValue, paramBatcher } from './helpers';
+import { encodePatchValue, paramBatcher } from './helpers';
 
 /**
  * Set a Bacteria per-band parameter — updates UI store immediately,
  * throttles audio engine updates to rAF with a band-prefixed key.
  */
 export const setBacteriaBandParamWithAudio = inject(bacteriaParamBridgeDependencies)(({
-    getAllTracks: getAllTracksFn,
     updateDeviceParam: updateDeviceParamFn,
     persistDeviceParam: persistDeviceParamFn,
+    resolveEligibleDeviceWriteTarget: resolveEligibleDeviceWriteTargetFn,
 }) => {
-    const findDeviceRef = createFindDeviceRef(getAllTracksFn);
-    const flushParam = createFlushParam(updateDeviceParamFn, persistDeviceParamFn);
+    const flushParam = createFlushParam(updateDeviceParamFn, persistDeviceParamFn, resolveEligibleDeviceWriteTargetFn);
     return function setBacteriaBandParamWithAudio<Key extends keyof BacteriaPatch['bands'][0]>(
         deviceId: string,
         bandIndex: number,
         key: Key,
         value: BacteriaPatch['bands'][0][Key]
     ): void {
+        const target = resolveEligibleDeviceWriteTargetFn(deviceId);
+        if (target.status !== 'eligible') {
+            return;
+        }
+
         setBacteriaBandParam(deviceId, bandIndex, key, value);
 
         // Mirror the store's bounds guard before encoding/scheduling an engine
@@ -40,12 +44,11 @@ export const setBacteriaBandParamWithAudio = inject(bacteriaParamBridgeDependenc
             return;
         }
 
-        const ref = findDeviceRef(deviceId);
-        if (!ref) {
-            return;
-        }
-
         const compositeKey = `${deviceId}:${prefixedKey}`;
-        paramBatcher.schedule(compositeKey, { ref, key: prefixedKey, value: encodedValue }, flushParam);
+        paramBatcher.schedule(
+            compositeKey,
+            { deviceId: target.deviceId, key: prefixedKey, value: encodedValue },
+            flushParam
+        );
     };
 });

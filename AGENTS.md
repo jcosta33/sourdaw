@@ -7,8 +7,8 @@ Tool-neutral guidance for AI coding agents (Cursor, Codex CLI, Windsurf, Cline, 
 See `package.json` for all scripts.
 
 - **Tests:** `pnpm test:run <path/to/file.spec.ts>` — always pass a file (or narrow path). `pnpm test` is watch mode; do not use it for verification. See `docs/06-testing.md`.
-- **Lint:** `pnpm exec eslint <path/to/file.ts>` — always specify the touched files. Do not run whole-tree `pnpm lint` unless the task is a repo-wide lint pass. CI uses `pnpm lint --quiet` (errors only; **warns do not fail**).
-- **Type check (app):** `pnpm typecheck` — base `tsconfig.json`; **excludes** `*.spec.ts(x)`.
+- **Lint:** `pnpm exec oxlint <path/to/file.ts>` — always specify the touched files (oxlint covers ESLint core, unicorn, promise, import, jsx-a11y, and all typescript-eslint rules incl. type-aware). `pnpm exec eslint <path/to/file.ts>` covers the retained-only rules (custom `sourdaw/*`, `@eslint-react`, `react-hooks`, `@tanstack/query`, prettier, `import-x/order`). `pnpm lint` runs both (oxlint first). Do not run whole-tree `pnpm lint` unless the task is a repo-wide lint pass. CI uses `pnpm lint --quiet` (errors only; **warns do not fail**).
+- **Type check (app):** `pnpm typecheck` — `tsconfig.app.json`; **excludes** `*.spec.ts(x)`. (The base `tsconfig.json` is spec-inclusive so oxlint's type-aware linting sees real types in tests.)
 - **Type check (tests):** `pnpm typecheck:test` — spec-inclusive (`tsconfig.test.json`: all of `src` **including** `*.spec.ts(x)`). Run after touching any spec, dummy factory, or model shape that fixtures mirror; must stay at zero errors.
 - **Module boundaries:** `pnpm deps:validate` (main + causal reachability + type-edge + test-inclusive cruises). New **error** edges and stale baseline rows fail; known debt is exact and reviewable.
 
@@ -17,10 +17,36 @@ After cross-module moves or bulk import changes, re-run `pnpm deps:validate` bef
 ## Codebase layout
 
 - **`src/modules/`** — DDD domain modules (Arrangement, Transport, AudioEngine, …). Default place for new product code.
-- **`src/infra/`**, **`src/helpers/`**, **`src/utils/`**, **`src/shared/`** — cross-cutting infrastructure and utilities (not domain modules). Must not import from `src/modules/`.
-- **`src-tauri/`** + workspace crates **`daw-core`**, **`daw-engine`**, **`daw-dsp`**, **`daw-io`** — thin Tauri bridge and RT/native audio. Commands live only in `src-tauri`.
-- **`.agents/skills/`** — domain agent skills (architecture, web-audio, …).
+- **`src/app/`** — composition root: `bootstrap.ts` wires DI ports and registers all module handler maps; `registerDependencies.ts` builds the singletons (typed event bus, logger).
+- **`src/infra/`**, **`src/helpers/`**, **`src/utils/`** — cross-cutting infrastructure and utilities (not domain modules). Must not import from `src/modules/`. (`src/shared/` does not exist; the deps rule still guards the name.)
+- **`src/components/`** — shared UI design system (shadcn/Radix `ui/`, `layout/`, DAW `daw/` family). No direct store/use-case imports.
+- **`src-tauri/`** + 9 workspace crates (`daw-core`, `daw-collab`, `daw-engine`, `daw-dsp`, `daw-io`, `daw-wasm-decoder`, `daw-plugin-host`, `proof-chamber`, `scoring`) — thin Tauri bridge and RT/native audio. Commands live only in `src-tauri`.
+- **`.agents/skills/`** — domain agent skills (architecture, web-audio-engine, …).
 - **`.agents/worktrees/<name>/`** — isolated git worktrees for parallel agent work (gitignored). Create with `git worktree add .agents/worktrees/<name> -b <branch>`. Operate only inside the assigned worktree; do not edit the main checkout for that work.
+- **Nested `AGENTS.md`** — subtree-specific guidance (with `CLAUDE.md`/`GEMINI.md` symlinks) lives in `src-tauri/`, `crates/daw-dsp/`, `src/components/`, `src/modules/AudioEngine/`, `src/modules/Collaboration/`. Read the local file when working in those subtrees.
+
+## Device naming key (bakery metaphor)
+
+Bread-named modules under `src/modules/` are the built-in devices. Most have a matching DSP engine in `crates/daw-dsp/src/` (compiled to native + WASM; Crumbs is native-only) and a node in `AudioEngine/engine/`; exceptions: ProofChamber is the sibling `proof-chamber` crate, the Tuner is the `scoring` crate (`ScoringNode`), and Crust, Yeast, and CvGate have no Rust engine. "Dutch Oven" in engine/device ids is the ProofChamber reverb, not a separate module.
+
+| Module     | Device                                 | Module       | Device                            |
+| ---------- | -------------------------------------- | ------------ | --------------------------------- |
+| Fermenter  | flagship hybrid synth                  | Crust        | limiter                           |
+| Toaster    | drum machine                           | Bacteria     | multiband creative FX             |
+| Levain     | orchestral sample instrument           | Proof        | mastering suite                   |
+| GrandBoule | physical-model grand piano             | ProofChamber | algorithmic reverb ("Dutch Oven") |
+| Grinder    | guitar amp/pedal sim (+ neural models) | Knead        | real-time pitch correction        |
+| Gluten     | bus compressor                         | Crumbs       | sampler/slicer                    |
+| Yeast      | MIDI FX rack                           | CvGate       | modular CV/gate outputs           |
+
+## Orientation anchors
+
+- **Mutations:** everything goes through `executeAppAction` (`src/modules/Command/useCases/executeAppAction.ts`); each action runs inside an Automerge transaction, so CRDT history doubles as undo/audit. Handler maps (`get<Module>Handlers()`) are registered in `src/app/bootstrap.ts` in pinned order (see `src/app/__tests__/bootstrap.spec.ts`).
+- **Project read model:** `src/modules/Arrangement/stores/trackStore.ts` is the central hub most modules subscribe to.
+- **IPC:** the only TS adapter is `src/utils/tauriBridge.ts`; repositories gate on `isTauri()` and stub in browser dev mode. Command inventory and RT invariants: `src-tauri/AGENTS.md`.
+- **WASM DSP:** `pnpm wasm:all` builds the Rust DSP crates into `public/wasm/`; worklet wiring and legacy-output traps: `src/modules/AudioEngine/AGENTS.md`.
+- **Single-surface app:** only two routes (`src/routes/__root.tsx`, `src/routes/index.tsx`); the entire DAW renders at `/`.
+- **Events:** one typed bus (built in `src/app/registerDependencies.ts`); only Arrangement, AudioEngine, WorkspaceShell, and Yeast publish real event payloads through their `events/` barrels.
 
 ## Project specifications
 
@@ -50,11 +76,11 @@ Hard gate via `pnpm deps:validate` (main **error** rules + causal reachability +
 - **Tauri IPC confinement** — **error** via `deps:validate` (`tauri-ipc-only-in-repositories`): allowed production origins are only module-root `src/modules/<Module>/repositories/` (including `Common/` and `Supporting/` namespaces) and the exact `src/utils/tauriBridge.ts` adapter. Only `src/utils/__tests__/tauriBridge.spec.ts` may mock adapter dependencies; all other `src/**` origins and non-allowlisted bridge callers are forbidden; nested `useCases/repositories` and `presentations/repositories` are not repository layers.
 - Tests cruise: cross-module **barrel** + **no relative cross-module** for module tests, external tests, and global test setup, plus the promoted Tauri/model rules (main excludes specs).
 
-Deep module anatomy: [docs/architecture/03-typescript-module.md](./docs/architecture/03-typescript-module.md). Rust/Tauri: [docs/architecture/02-rust-backend.md](./docs/architecture/02-rust-backend.md).
+System invariants: [docs/architecture/01-system.md](./docs/architecture/01-system.md). Deep module anatomy: [docs/architecture/03-typescript-module.md](./docs/architecture/03-typescript-module.md). Rust/Tauri: [docs/architecture/02-rust-backend.md](./docs/architecture/02-rust-backend.md).
 
 ## Tech stack
 
-React 19 (Compiler), TypeScript, Vite, TanStack Query, vanilla `Store<T>` + `useStore`, React Hook Form + Zod, Vitest, Playwright (`pnpm test:e2e` local — **not** in CI health gates), Tauri 2, Rust audio crates (CPAL / RT paths).
+React 19 (Compiler), TypeScript, Vite, TanStack Query (installed, not yet adopted), vanilla `Store<T>` + `useStore`, Vitest, Playwright (`pnpm test:e2e` local — **not** in CI health gates), Tauri 2, Rust audio crates (CPAL / RT paths).
 
 ## When a check blocks you
 
@@ -69,9 +95,9 @@ Agent must-follow subset of [docs/07-conventions.md](./docs/07-conventions.md) a
 - **Contract barrels only cross-module.** (**error** via `deps:validate`) Up to four surfaces per module (`useCases`, `stores`, `events`, `presentations/views`) — create only those needed.
 - **Stores are a public read contract.** Foreign modules may subscribe; they must not `store.set` (agent policy; ESLint `sourdaw/no-foreign-store-write` is **warn** only — CI `lint --quiet` ignores warns). Writes go through the owning module’s use cases or `executeAppAction`.
 - **Use-case types stay private.** No `export type` from `useCases/index.ts` (**error** on type cruise). Consumers use `ReturnType` / `Parameters` or `events/` payloads. Models are never re-exported across modules — local shapes or intentional duplication.
-- **One function per use-case and repository file** (house rule; ESLint `sourdaw/no-multiple-function-exports` is **warn** only). Handlers live under `handlers/` with `createHandler`; cross-module access only via `get<Module>Handlers` from `useCases/`. Presentation never imports raw handler maps.
+- **One function per use-case and repository file** (ESLint `sourdaw/no-multiple-function-exports` is **error**). Handlers live under `handlers/` with `createHandler`; cross-module access only via `get<Module>Handlers` from `useCases/`. Presentation never imports raw handler maps.
 - **Repositories touch metal; engine does not import repositories.** (**error**) I/O (Tauri, storage, audio setup) in `repositories/`; use cases orchestrate.
-- **Async/server state:** TanStack Query — never `useEffect` for data fetching (**error** lint where configured). **Local form state:** RHF + Zod. **Local UI:** `useState` + Compiler. **Context:** only deeply local view state; prefer `use()` over `useContext` (convention; not eslint-hard).
+- **Async/server state:** TanStack Query is installed and wired (`src/app/queryClient.ts`) but has no call sites yet — adopted direction, not current usage; never `useEffect` for data fetching (**error** lint where configured). **Local form state:** no form library is installed today (RHF + Zod are aspirational — see the `docs/02-forms.md` banner); use `useState` until the stack lands. **Local UI:** `useState` + Compiler. **Context:** only deeply local view state; prefer `use()` over `useContext` (convention; not eslint-hard).
 - **React 19:** no `useMemo` / `useCallback` / `React.memo` (**error**); no `forwardRef` — `ref` is a prop (**error**). Prefer `cond ? <X /> : null` over render `&&` (**house**); leaky `&&` (e.g. `0 && …`) is **error** lint — boolean `&&` is not that rule.
 - **Audio RT:** anything on the audio thread must not allocate, lock, or block. Prefer `AudioWorklet` + `AudioParam`; one live `AudioContext`. (**policy / review** — not CI-machine-gated)
 - **TypeScript soundness:** types describe real data. No `any` except boundary + immediate narrowing (**error** in app; specs often **warn**). No `as any` / `as unknown as T` (**error** in app). Prefer not using bare `as T` to silence the checker (**policy**). No bare `@ts-expect-error` without a one-line reason (**error**). Prefer `unknown` + narrowing, `satisfies`, unions, `import type`, Zod at I/O (**policy**). Tests assert values/shape/errors — not just “defined” (**policy**).

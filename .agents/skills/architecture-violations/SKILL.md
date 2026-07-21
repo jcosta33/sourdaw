@@ -5,15 +5,13 @@ description: >-
   the validator. ALWAYS apply when a dependency-boundary check flags a violation,
   when restructuring a module or moving logic across layers, introducing a public
   surface, or auditing real-vs-cosmetic boundary compliance — even if the validator
-  already passes. Do not silence a violation by re-exporting through a barrel,
-  faking a use case, renaming files, or dumping logic into shared/helper escape
-  hatches. Skip net-new feature work inside an already-correct boundary,
+  already passes. Skip net-new feature work inside an already-correct boundary,
   dependency upgrades, and non-architectural bug fixes.
 ---
 
 ## Purpose
 
-This skill guards against architectural drift: shortcut refactors, validator gaming, and code that passes the rules without preserving their meaning. A boundary that exists only to satisfy `pnpm deps:validate` is worse than no boundary — it hides the coupling it was supposed to expose. For authoring new code on the right side of the line, use `architecture`.
+This skill guards against architectural drift: shortcut refactors, validator gaming, and code that passes the rules without preserving their meaning. A boundary that exists only to satisfy `pnpm deps:validate` is worse than no boundary — it hides the coupling it was supposed to expose.
 
 ## Core rules
 
@@ -41,9 +39,9 @@ Trace upstream callers and downstream dependencies. Use `pnpm typecheck` as the 
 
 **Why:** moving a symbol across a boundary breaks consumers you did not look at.
 
-### 5. Route every cross-module access through a contract-folder barrel
+### 5. Restore the contract barrel — never route around it
 
-Up to four surfaces: `useCases/`, `stores/`, `events/`, `presentations/views/`. No module-root `index.ts`. Same-module files use relative paths. Rules: `cross-module-index-only`, `contract-barrel-scope`, `no-self-barrel-import`.
+Cross-module access goes through the four contract barrels and their rules (`architecture` rules 1–2: `cross-module-index-only`, `contract-barrel-scope`, `no-self-barrel-import`). Fix barrel violations by re-establishing that surface, not by inventing new barrels or escape hatches.
 
 **Why:** the barrel is the only curated public surface; deep imports erase ownership.
 
@@ -83,30 +81,9 @@ Multiple features casually mutating shared state destroy undo semantics. Removin
 
 ## What does not belong
 
-- Stack-specific or vendor patterns unrelated to module boundaries.
-- Net-new product behavior inside an already-correct boundary.
-- Dependency upgrades or non-architectural bug fixes.
 - Silencing `pnpm deps:validate` by editing rules or refreshing an exact baseline without an intentional debt decision. New and stale baseline rows both fail.
 
 ## Anti-patterns
-
-### CRITICAL — Re-export laundering
-
-❌ Wrong: `export { getX } from '../repositories/Y'` in a use-case file so the import path is “legal”.
-
-✅ Correct: a typed function in its own file that owns the operation (thin `return repo…` body is fine).
-
-### CRITICAL — Non-contract export on a barrel
-
-❌ Wrong: `useCases/index.ts` re-exports a model, repository, or store.
-
-✅ Correct: each contract barrel re-exports only from its own folder (`contract-barrel-scope`, `no-models-repos-transformers-in-index`).
-
-### CRITICAL — Gaming a pure-layer rule
-
-❌ Wrong: rename or move a file so `business-no-presentations` / `repositories-no-business` no longer matches, with no ownership change.
-
-✅ Correct: move the responsibility to the layer that should own it.
 
 ### HIGH — Cross-module use-case type import
 
@@ -114,19 +91,8 @@ Multiple features casually mutating shared state destroy undo semantics. Removin
 
 ✅ Correct: local type, `ReturnType`/`Parameters`, or an `events/` payload type.
 
-### HIGH — Multi-export wrapper file
-
-❌ Wrong: one use-case file exporting many thin repo wrappers.
-
-✅ Correct: one function per file (rule 7).
-
-### MEDIUM — Same-module barrel import
-
-❌ Wrong: Arrangement code imports `#/modules/Arrangement/useCases`.
-
-✅ Correct: relative import to the defining file.
-
 ## References
 
+- [docs/architecture/05-boundary-enforcement-limits.md](../../../docs/architecture/05-boundary-enforcement-limits.md) — laundering patterns and their closures.
 - [docs/architecture/03-typescript-module.md](../../../docs/architecture/03-typescript-module.md) — contract-folder barrels and public surface.
 - `.dependency-cruiser.cjs` + `scripts/check-dependency-boundaries.mjs` — main rules and exact main/reachability/type/test debt ratchet.

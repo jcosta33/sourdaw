@@ -1,8 +1,15 @@
 import { describe, it, expect, beforeEach, vi, type Mock } from 'vitest';
 
+import { resolveEligibleDeviceWriteTarget } from '#/modules/Arrangement/stores';
+
 import { getProofState, proofStore } from '../../../stores/proofStore';
 import { bridges, type ProofAudioBridge } from '../helpers';
 import { reorderChain } from '../reorderChain';
+
+vi.mock('#/modules/Arrangement/stores', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Arrangement/stores')>()),
+    resolveEligibleDeviceWriteTarget: vi.fn(),
+}));
 
 type MockedProofBridge = {
     [K in keyof ProofAudioBridge]: Mock<ProofAudioBridge[K]>;
@@ -20,6 +27,11 @@ describe('reorderChain', () => {
     beforeEach(() => {
         bridges.clear();
         proofStore.set({});
+        vi.mocked(resolveEligibleDeviceWriteTarget).mockImplementation((deviceId) => ({
+            status: 'eligible',
+            trackId: 'track-1',
+            deviceId,
+        }));
     });
 
     it('updates the stored chain order and forwards it to the bridge', () => {

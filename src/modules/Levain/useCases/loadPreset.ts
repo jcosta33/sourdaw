@@ -6,6 +6,7 @@
 import { type LevainPatch, createDefaultPatch, type InstrumentId } from '../models/LevainPatch';
 import { defaultLevainState, levainStore } from '../stores/levainStore';
 
+import { levainBridgeDependencies } from './levainParamBridge/levainBridgeDependencies';
 import { loadSamplesForInstrument } from './levainParamBridge/loadSamplesForInstrument';
 import { setLevainParamWithAudio } from './levainParamBridge/setLevainParamWithAudio';
 
@@ -13,6 +14,11 @@ import { setLevainParamWithAudio } from './levainParamBridge/setLevainParamWithA
  * Load an instrument with default settings and trigger sample loading.
  */
 export function loadInstrument(deviceId: string, instrumentId: InstrumentId): void {
+    const target = levainBridgeDependencies.resolveEligibleDeviceWriteTarget(deviceId);
+    if (target.status !== 'eligible') {
+        return;
+    }
+
     const patch = createDefaultPatch(instrumentId);
     applyPatch(deviceId, patch);
     // Trigger async sample load via the bridge (it holds the worklet port).
@@ -26,6 +32,11 @@ export function loadInstrument(deviceId: string, instrumentId: InstrumentId): vo
  * the user's preset choice still takes effect once the engine catches up.
  */
 function applyPatch(deviceId: string, patch: LevainPatch): void {
+    const target = levainBridgeDependencies.resolveEligibleDeviceWriteTarget(deviceId);
+    if (target.status !== 'eligible') {
+        return;
+    }
+
     const instances = levainStore.value ?? {};
     const state = instances[deviceId] ?? defaultLevainState;
 

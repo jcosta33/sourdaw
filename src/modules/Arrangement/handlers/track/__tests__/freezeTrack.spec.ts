@@ -16,12 +16,25 @@ describe('handleFreezeTrack', () => {
     });
 
     it('executes freezeTrack with the provided payload', async () => {
-        await handleFreezeTrack.execute({
+        mocks.freezeTrack.mockResolvedValue(true);
+        const result = await handleFreezeTrack.execute({
             type: 'freezeTrack',
             payload: { trackId: 't1' },
         });
 
         expect(mocks.freezeTrack).toHaveBeenCalledWith('t1');
+        expect(result).toEqual({ status: 'written' });
+    });
+
+    it('reports no-write when freeze is rejected', async () => {
+        mocks.freezeTrack.mockResolvedValue(false);
+
+        const result = await handleFreezeTrack.execute({
+            type: 'freezeTrack',
+            payload: { trackId: 'vca-1' },
+        });
+
+        expect(result).toEqual({ status: 'no-write' });
     });
 
     it('provides a description', () => {

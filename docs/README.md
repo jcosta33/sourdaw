@@ -2,7 +2,7 @@
 
 This documentation provides high-level overviews for implementing features in the Sourdaw application, from initial architectural design to testing.
 
-> **Note**: These files are meant for human reading. For the authoritative, machine-enforced rules that AI agents follow, see `.agents/skills/*/SKILL.md`.
+> **Note**: These files are meant for human reading. AI agents start at the root `AGENTS.md` and load task-specific rules from `.agents/skills/*/SKILL.md`; machine enforcement lives in `eslint.config.mjs` and `.dependency-cruiser*.cjs` (`pnpm deps:validate`).
 
 ## Feature implementation flow
 
@@ -12,7 +12,9 @@ Before writing any code, start with the foundational principles. Our codebase fo
 
 - ➡️ **Read about our [TypeScript module architecture](./architecture/03-typescript-module.md)**
 - ➡️ **Read about our [system architecture](./architecture/01-system.md)**
+- ➡️ **Read about our [Rust backend architecture](./architecture/02-rust-backend.md)**
 - ➡️ **Review [plugin hosting security](./architecture/04-plugin-hosting-security.md) before changing native plugin scan/load behavior**
+- ➡️ **Read about [boundary enforcement limits](./architecture/05-boundary-enforcement-limits.md) before touching dependency rules or baselines**
 
 ### 2. Dependency Injection
 
@@ -22,7 +24,7 @@ Understand how services and long-lived collaborators are shared across the busin
 
 ### 3. State Management and Forms
 
-For user input, we use a combination of React Hook Form and Zod for robust, schema-driven forms. For client-side UI state, we use a custom vanilla store.
+For client-side UI state, we use a custom vanilla store. (A React Hook Form + Zod forms stack is documented as a target in [forms](./02-forms.md) but is not yet installed.)
 
 - ➡️ **Implement [forms](./02-forms.md) the right way**
 - ➡️ **Manage UI state with our [state management](./03-state-management.md) principles**

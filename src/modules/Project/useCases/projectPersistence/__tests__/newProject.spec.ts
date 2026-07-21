@@ -89,6 +89,7 @@ describe('newProject injectable', () => {
         expect(stopPlayback).toHaveBeenCalledTimes(1);
         expect(resetAudioGraph).toHaveBeenCalledTimes(1);
         expect(resetModuleStoresToDefault).toHaveBeenCalledTimes(1);
+        expect(resetModuleStoresToDefault).toHaveBeenCalledWith({ createNewMidiProbabilitySeed: true });
         expect(createCrdtProject).toHaveBeenCalledWith('Test');
         expect(projectActionHistoryToStore).toHaveBeenCalledTimes(1);
         expect(addTrack).toHaveBeenCalledWith({ name: 'Master', kind: 'master', select: false });

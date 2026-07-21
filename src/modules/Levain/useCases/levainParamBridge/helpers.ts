@@ -1,5 +1,9 @@
 import { logger } from '#/infra/logger/appLogger';
-import { type Track, type persistDeviceParam } from '#/modules/Arrangement/stores';
+import {
+    type Track,
+    type persistDeviceParam,
+    type resolveEligibleDeviceWriteTarget,
+} from '#/modules/Arrangement/stores';
 import { createRafBatcher } from '#/utils/DOM/createRafBatcher';
 
 import { type LevainPatch } from '../../models/LevainPatch';
@@ -18,6 +22,7 @@ export type LevainBridgeDeps = {
     getAllTracks: () => Track[];
     persistDeviceParam: typeof persistDeviceParam;
     autoLoadLevainSamples: typeof autoLoadLevainSamples;
+    resolveEligibleDeviceWriteTarget: typeof resolveEligibleDeviceWriteTarget;
 };
 
 export function createLevainBridge(deps: LevainBridgeDeps) {
@@ -44,6 +49,11 @@ export function createLevainBridge(deps: LevainBridgeDeps) {
             return;
         }
         pendingKeysByDevice.get(deviceId)?.delete(compositeKey);
+        const target = deps.resolveEligibleDeviceWriteTarget(deviceId);
+        if (target.status !== 'eligible') {
+            return;
+        }
+
         const rustKey = parts.slice(1).join(':');
         const device = activeDevices.get(deviceId);
         if (device) {
@@ -68,6 +78,11 @@ export function createLevainBridge(deps: LevainBridgeDeps) {
     }
 
     function loadSamplesForInstrument(deviceId: string, instrumentId: string): void {
+        const target = deps.resolveEligibleDeviceWriteTarget(deviceId);
+        if (target.status !== 'eligible') {
+            return;
+        }
+
         // Tell the engine which instrument it now is, so the realism layer
         // (body modes, sympathetic strings, breath/bow noise) reconfigures.
         activeDevices.get(deviceId)?.setInstrument?.(instrumentId);
@@ -93,6 +108,11 @@ export function createLevainBridge(deps: LevainBridgeDeps) {
     }
 
     function registerLevainDevice(deviceId: string, device: LevainDevice, port?: MessagePort): void {
+        const target = deps.resolveEligibleDeviceWriteTarget(deviceId);
+        if (target.status !== 'eligible') {
+            return;
+        }
+
         activeDevices.set(deviceId, device);
         if (port) {
             activePorts.set(deviceId, port);
@@ -159,6 +179,11 @@ export function createLevainBridge(deps: LevainBridgeDeps) {
         key: TKey,
         value: LevainPatch[TKey]
     ): void {
+        const target = deps.resolveEligibleDeviceWriteTarget(deviceId);
+        if (target.status !== 'eligible') {
+            return;
+        }
+
         setLevainParam(deviceId, key, value);
 
         if (key === 'currentArticulation' && typeof value === 'string') {
@@ -204,6 +229,11 @@ export function createLevainBridge(deps: LevainBridgeDeps) {
     // position. Use the granular controls (`setLevainParamWithAudio`) when a
     // change must be reflected and persisted per field.
     function setMacroWithAudio(deviceId: string, index: number, value: number): void {
+        const target = deps.resolveEligibleDeviceWriteTarget(deviceId);
+        if (target.status !== 'eligible') {
+            return;
+        }
+
         setMacro(deviceId, index, value);
 
         const device = getDevice(deviceId);
@@ -253,6 +283,11 @@ export function createLevainBridge(deps: LevainBridgeDeps) {
     }
 
     function sendMicParamToEngine(deviceId: string, micIndex: number, param: string, value: number): void {
+        const target = deps.resolveEligibleDeviceWriteTarget(deviceId);
+        if (target.status !== 'eligible') {
+            return;
+        }
+
         const device = getDevice(deviceId);
         if (device) {
             device.setParam(`mic_${micIndex}_${param}`, value);

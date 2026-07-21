@@ -16,6 +16,7 @@ describe('handleAddClip', () => {
     });
 
     it('executes addClip with the payload', () => {
+        mocks.addClip.mockReturnValue({ id: 'clip-1' });
         const payload = {
             trackId: 't1',
             name: 'New Clip',
@@ -24,9 +25,20 @@ describe('handleAddClip', () => {
             type: 'audio' as const,
         };
 
-        void handleAddClip.execute({ type: 'addClip', payload });
+        const result = handleAddClip.execute({ type: 'addClip', payload });
 
         expect(mocks.addClip).toHaveBeenCalledWith(payload);
+        expect(result).toEqual({ status: 'written' });
+    });
+
+    it('returns no-write when addClip rejects the target track', () => {
+        mocks.addClip.mockReturnValue(null);
+        const result = handleAddClip.execute({
+            type: 'addClip',
+            payload: { trackId: 'vca-1', name: 'Rejected', startBeat: 0, endBeat: 4, type: 'audio' },
+        });
+
+        expect(result).toEqual({ status: 'no-write' });
     });
 
     it('provides a description based on clip name', () => {

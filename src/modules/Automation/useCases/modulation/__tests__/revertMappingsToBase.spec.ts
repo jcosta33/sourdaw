@@ -33,6 +33,15 @@ const { mocks } = vi.hoisted(() => {
 
 vi.mock('#/modules/Arrangement/stores', () => ({
     trackStore: mocks.trackStore,
+    resolveEligibleDeviceWriteTarget: (deviceId: string) => {
+        const track = mocks.trackStore.value?.tracks.find((candidate) =>
+            candidate.devices.some((device) => device.id === deviceId)
+        );
+        if (!track) {
+            return { status: 'missing' };
+        }
+        return { status: 'eligible', trackId: track.id, deviceId };
+    },
 }));
 
 type SubjectModules = {

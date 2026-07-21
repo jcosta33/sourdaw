@@ -39,6 +39,17 @@ describe('setGrinderParamWithAudio', () => {
         updateDeviceParam: vi.fn(),
         updateDevicePatch: vi.fn(),
         persistDeviceParam: vi.fn(),
+        resolveEligibleDeviceWriteTarget: vi.fn((deviceId: string) => {
+            const track = deps
+                .getAllTracks()
+                .find((candidate: { id: string; devices: Array<{ id: string }> }) =>
+                    candidate.devices.some((device: { id: string }) => device.id === deviceId)
+                );
+            if (!track) {
+                return { status: 'missing' as const };
+            }
+            return { status: 'eligible' as const, trackId: track.id, deviceId };
+        }),
     };
 
     beforeEach(() => {

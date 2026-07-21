@@ -5,9 +5,13 @@ import {
     waitForAutomergeSnapshotTransaction,
 } from '#/infra/store/storage/createAutomergeStorage';
 import { setSemanticContext, clearSemanticContext } from '#/modules/CrdtDocument/stores';
-import { type AppAction, type ExecuteOptions } from '#/utils/handlerContract';
+import { type AppAction, type ExecuteOptions, type HandlerExecutionResult } from '#/utils/handlerContract';
 
-import { AppActionCommittedError, AppActionNotDispatchedError } from '../errors/AppActionExecutionError';
+import {
+    AppActionCommittedError,
+    AppActionConflictError,
+    AppActionNotDispatchedError,
+} from '../errors/AppActionExecutionError';
 import { registerActionReplayCapability, revokeActionReplayCapability } from '../stores/actionReplayCapabilities';
 import { getHandler } from '../stores/handlerRegistry';
 
@@ -53,15 +57,12 @@ export const executeAppAction: ExecuteAppAction = inject({ logger })(
                 entityRefs: [],
             });
 
+            let execution_result: HandlerExecutionResult | void;
             try {
                 const execution = runWithAutomergeStorageTransaction(options?.snapshotTransaction, () =>
                     handler.execute(action)
                 );
-                const result = await execution;
-                if (result?.status === 'no-write') {
-                    clearSemanticContext();
-                    return;
-                }
+                execution_result = await execution;
             } catch (error) {
                 try {
                     clearSemanticContext();
@@ -74,6 +75,15 @@ export const executeAppAction: ExecuteAppAction = inject({ logger })(
                 }
                 logger.error(new Error(`Action handler rejected for action: ${action.type}`, { cause: error }));
                 throw error;
+            }
+
+            if (execution_result?.status === 'no-write') {
+                clearSemanticContext();
+                return;
+            }
+            if (execution_result?.status === 'conflict') {
+                clearSemanticContext();
+                throw new AppActionConflictError(action.type);
             }
 
             try {

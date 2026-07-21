@@ -1,3 +1,4 @@
+import { resolveEligibleDeviceWriteTarget } from '#/modules/Arrangement/stores';
 import { persistDevicePatch } from '#/modules/Arrangement/useCases';
 
 import { type ProofPatch } from '../../models/ProofPatch';
@@ -16,6 +17,12 @@ export function loadProofPatchWithAudio({ deviceId, patch }: LoadProofPatchWithA
     if (!isValidProofPatch(patch)) {
         return;
     }
+
+    const target = resolveEligibleDeviceWriteTarget(deviceId);
+    if (target.status !== 'eligible') {
+        return;
+    }
+
     loadProofPatch({ deviceId, patch });
     persistDevicePatch(deviceId, getProofPatchParameterValues(patch));
     syncFullPatch(deviceId);

@@ -1,8 +1,14 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { configureAutomergeStoragePort } from '#/infra/store/storage/createAutomergeStorage';
+import { clearHandlerRegistry, macroStore, registerHandlerMap, undoStore } from '#/modules/Command/stores';
+import { clearUndoHistory, executeAppAction, setActionHistoryMetadataPort } from '#/modules/Command/useCases';
+
+import { handleSetDeviceParameter } from '../../../../handlers/device/handleSetDeviceParameter';
+import { createTrack, type Track } from '../../../../models/Track';
+import { defaultTrackState, trackStore } from '../../../../stores/trackStore';
 import { setDeviceParameter } from '../setDeviceParameter';
 
-import type { Track } from '#/modules/Arrangement/models/Track';
 import type { TrackState } from '../../../../repositories/track/getTrackState';
 
 const mocks = vi.hoisted(() => {
@@ -15,6 +21,18 @@ const mocks = vi.hoisted(() => {
         recordAutomationValue: vi.fn<typeof import('#/modules/Automation/useCases').recordAutomationValue>(),
     };
 });
+
+const actionHistoryMetadataPort = {
+    record: vi.fn(() => []),
+    markReverted: vi.fn(() => ({ status: 'unavailable' as const })),
+    clear: vi.fn(),
+};
+
+const noActionHistoryMetadataPort = {
+    record: () => [],
+    markReverted: () => ({ status: 'unavailable' as const }),
+    clear: () => undefined,
+};
 
 vi.mock('../../../../repositories/track/getTrackState', () => ({
     getTrackState: mocks.getTrackState,
@@ -46,37 +64,134 @@ vi.mock('#/modules/Automation/useCases', async (importOriginal) => ({
 describe('setDeviceParameter', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        configureAutomergeStoragePort(null);
+        clearHandlerRegistry();
+        registerHandlerMap({ setDeviceParameter: handleSetDeviceParameter });
+        clearUndoHistory();
+        macroStore.set({ macros: [], recording: true, currentRecording: [] });
+        setActionHistoryMetadataPort(actionHistoryMetadataPort);
         mocks.transportStoreValue = { isPlaying: false };
+        trackStore.set(defaultTrackState);
     });
 
-    it('updates parameter in store and engine', () => {
-        mocks.getTrackState.mockReturnValue({
-            tracks: [{ id: 't1', devices: [{ id: 'd1', parameterValues: { gain: 0.1 } }] }],
-        } as unknown as TrackState);
+    afterEach(() => {
+        setActionHistoryMetadataPort(noActionHistoryMetadataPort);
+        macroStore.set({ macros: [], recording: false, currentRecording: [] });
+        clearUndoHistory();
+        clearHandlerRegistry();
+        configureAutomergeStoragePort(null);
+    });
 
-        setDeviceParameter('d1', 'gain', 0.5);
+    function makeTrack(id: string, deviceId = 'd1'): Track {
+        const track = createTrack({ id, name: id, kind: 'audio' });
+        track.devices = [
+            { id: deviceId, name: 'Device', type: 'device', bypassed: false, parameterValues: { gain: 0.1 } },
+        ];
+        return track;
+    }
+
+    function makeTrackWithoutDevices(id: string): Track {
+        return createTrack({ id, name: id, kind: 'audio' });
+    }
+
+    function setTrackState(tracks: Track[]): void {
+        const state: TrackState = { tracks, selectedTrackId: null };
+        trackStore.set({ ...defaultTrackState, tracks });
+        mocks.getTrackState.mockReturnValue(state);
+    }
+
+    function setRuntimeKind(track: Track, kind: string): Track {
+        Object.defineProperty(track, 'kind', { configurable: true, enumerable: true, value: kind });
+        return track;
+    }
+
+    it('updates parameter in store and engine', () => {
+        setTrackState([makeTrack('t1')]);
+
+        const didWrite = setDeviceParameter('d1', 'gain', 0.5);
 
         expect(mocks.updateDeviceParam).toHaveBeenCalledWith('t1', 'd1', 'gain', 0.5);
         expect(mocks.updateTrack).toHaveBeenCalledWith('t1', expect.any(Function));
 
         const updater = mocks.updateTrack.mock.calls[0]![1];
-        const result = updater({ devices: [{ id: 'd1', parameterValues: { gain: 0.1 } }] } as unknown as Track);
+        const result = updater(makeTrack('t1'));
         expect(result.devices[0]!.parameterValues.gain).toBe(0.5);
+        expect(didWrite).toBe(true);
     });
 
     it('records automation if playing and recording mode', () => {
-        mocks.getTrackState.mockReturnValue({
-            tracks: [{ id: 't1', automationMode: 'write', devices: [{ id: 'd1' }] }],
-        } as unknown as TrackState);
+        const track = makeTrack('t1');
+        track.automationMode = 'write';
+        setTrackState([track]);
         mocks.transportStoreValue = { isPlaying: true, playheadPosition: 8 };
 
-        setDeviceParameter('d1', 'cutoff', 1000);
+        const didWrite = setDeviceParameter('d1', 'cutoff', 1000);
 
         expect(mocks.recordAutomationValue).toHaveBeenCalledWith('t1', 'd1:cutoff', 1000, 8);
+        expect(didWrite).toBe(true);
     });
 
     it('bails if value is not finite', () => {
-        setDeviceParameter('d1', 'gain', NaN);
+        const didWrite = setDeviceParameter('d1', 'gain', NaN);
         expect(mocks.updateDeviceParam).not.toHaveBeenCalled();
+        expect(didWrite).toBe(false);
+    });
+
+    it('rejects dormant VCA parameter updates before engine, project, or automation work', () => {
+        const track = createTrack({ id: 'vca-1', name: 'VCA', kind: 'audio' });
+        Object.defineProperty(track, 'kind', { configurable: true, enumerable: true, value: 'vca' });
+        track.devices = [{ id: 'd1', name: 'Device', type: 'device', bypassed: false, parameterValues: {} }];
+        track.automationMode = 'write';
+        setTrackState([track]);
+        mocks.transportStoreValue = { isPlaying: true, playheadPosition: 8 };
+
+        const didWrite = setDeviceParameter('d1', 'gain', 0.5);
+
+        expect(mocks.updateDeviceParam).not.toHaveBeenCalled();
+        expect(mocks.updateTrack).not.toHaveBeenCalled();
+        expect(mocks.recordAutomationValue).not.toHaveBeenCalled();
+        expect(didWrite).toBe(false);
+    });
+
+    it.each([
+        ['eligible owner first', [makeTrack('track-1'), setRuntimeKind(makeTrack('vca-1'), 'vca')]],
+        ['ineligible owner first', [setRuntimeKind(makeTrack('vca-1'), 'vca'), makeTrack('track-1')]],
+    ])('rejects duplicate ownership with %s before engine, project, or automation work', (_label, tracks) => {
+        setTrackState(tracks);
+        mocks.transportStoreValue = { isPlaying: true, playheadPosition: 8 };
+
+        const didWrite = setDeviceParameter('d1', 'gain', 0.5);
+
+        expect(mocks.updateDeviceParam).not.toHaveBeenCalled();
+        expect(mocks.updateTrack).not.toHaveBeenCalled();
+        expect(mocks.recordAutomationValue).not.toHaveBeenCalled();
+        expect(didWrite).toBe(false);
+    });
+
+    it.each([
+        ['an empty owner identity', () => [makeTrack('')]],
+        [
+            'a duplicate identity with the device owner first',
+            () => [makeTrack('duplicate-track'), makeTrackWithoutDevices('duplicate-track')],
+        ],
+        [
+            'a duplicate identity with the device owner second',
+            () => [makeTrackWithoutDevices('duplicate-track'), makeTrack('duplicate-track')],
+        ],
+    ] as const)('rejects registered writes for %s with zero effects', async (_label, makeTracks) => {
+        setTrackState(makeTracks());
+        mocks.transportStoreValue = { isPlaying: true, playheadPosition: 8 };
+
+        await executeAppAction({
+            type: 'setDeviceParameter',
+            payload: { deviceId: 'd1', paramId: 'gain', value: 0.5 },
+        });
+
+        expect(mocks.updateDeviceParam).not.toHaveBeenCalled();
+        expect(mocks.updateTrack).not.toHaveBeenCalled();
+        expect(mocks.recordAutomationValue).not.toHaveBeenCalled();
+        expect(macroStore.value?.currentRecording).toEqual([]);
+        expect(undoStore.value?.past).toEqual([]);
+        expect(actionHistoryMetadataPort.record).not.toHaveBeenCalled();
     });
 });

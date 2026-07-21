@@ -527,6 +527,17 @@ describe('AudioEngine', () => {
         });
     });
 
+    it('does not allocate a strip when parameter and patch executors target an absent strip', () => {
+        const engine = createAudioEngine();
+
+        expect(engine.getTrackStrip('missing-track')).toBeUndefined();
+
+        engine.updateDeviceParam('missing-track', 'missing-device', 'gain', 0.5);
+        engine.updateDevicePatch('missing-track', 'missing-device', { gain: 0.75 });
+
+        expect(engine.getTrackStrip('missing-track')).toBeUndefined();
+    });
+
     // ── Fix 2: sidechain wiring in fallback mode is queued, not dropped ──────────
     //
     // wireSidechainRoute used to early-return in fallback mode, silently dropping

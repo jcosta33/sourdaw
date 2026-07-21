@@ -1,6 +1,7 @@
 import { getNextClipId } from '../../repositories/clipIdCounter';
 import { getTrackState } from '../../repositories/track/getTrackState';
 import { updateTrack } from '../../repositories/track/updateTrack';
+import { getTrackEligibility } from '../../stores/trackEligibility';
 import { type Clip, type FollowAction, type StretchMode } from '../../stores/trackStore';
 
 export function addClip(input: {
@@ -49,6 +50,9 @@ export function addClip(input: {
     // updateTrack.ts), so without this guard addClip would return a clip that
     // was never actually inserted into any track.
     if (!track) {
+        return null;
+    }
+    if (!getTrackEligibility(track.kind).acceptsClipAdd) {
         return null;
     }
     const inferredType = input.type ?? (track.kind === 'midi' ? 'midi' : 'audio');

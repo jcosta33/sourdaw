@@ -1,4 +1,4 @@
-import { trackStore } from '#/modules/Arrangement/stores';
+import { getTrackEligibility, resolveEligibleDeviceWriteTarget, trackStore } from '#/modules/Arrangement/stores';
 import {
     setTrackGain as engineSetTrackGain,
     setTrackPan as engineSetTrackPan,
@@ -73,10 +73,6 @@ export function applyAutomation(currentBeat: number): void {
             engineSetTrackPan(lane.trackId, value * 100 - 50);
         } else {
             let laneSlew = automationState.pluginParamSlew.get(lane.id);
-            if (!laneSlew) {
-                laneSlew = new Map<string, number>();
-                automationState.pluginParamSlew.set(lane.id, laneSlew);
-            }
 
             // Audio Device Automation
             //
@@ -88,11 +84,20 @@ export function applyAutomation(currentBeat: number): void {
             // lane no-ops.
             for (const device of track.devices) {
                 const prefix = `${device.type}:`;
-                const paramId = lane.parameterId.startsWith(prefix)
-                    ? lane.parameterId.slice(prefix.length)
-                    : lane.parameterId;
+                let paramId = lane.parameterId;
+                if (lane.parameterId.startsWith(prefix)) {
+                    paramId = lane.parameterId.slice(prefix.length);
+                }
                 if (device.parameterValues[paramId] === undefined) {
                     continue;
+                }
+                const targetOwner = resolveEligibleDeviceWriteTarget(device.id);
+                if (targetOwner.status !== 'eligible' || targetOwner.trackId !== lane.trackId) {
+                    continue;
+                }
+                if (!laneSlew) {
+                    laneSlew = new Map<string, number>();
+                    automationState.pluginParamSlew.set(lane.id, laneSlew);
                 }
 
                 const prev = laneSlew.get(device.id) ?? value;
@@ -107,15 +112,22 @@ export function applyAutomation(currentBeat: number): void {
                         // one mapping path instead of hitting Rust's silent no-op arm.
                         setFermenterMappedParam({ deviceId: device.id, paramId, value: smoothed });
                     } else {
-                        updateDeviceParam(lane.trackId, device.id, paramId, smoothed);
+                        updateDeviceParam(targetOwner.trackId, targetOwner.deviceId, paramId, smoothed);
                     }
                 }
                 break;
             }
 
             // MIDI FX Automation
+            if (!getTrackEligibility(track.kind).acceptsDeviceUpdate) {
+                continue;
+            }
             for (const fx of track.midiFx) {
                 if (fx.parameterValues[lane.parameterId] !== undefined) {
+                    if (!laneSlew) {
+                        laneSlew = new Map<string, number>();
+                        automationState.pluginParamSlew.set(lane.id, laneSlew);
+                    }
                     const prev = laneSlew.get(fx.id) ?? value;
                     const smoothed = prev + (value - prev) * SLEW_ALPHA;
                     laneSlew.set(fx.id, smoothed);

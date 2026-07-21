@@ -11,3 +11,10 @@ export class AppActionCommittedError extends Error {
         this.name = 'AppActionCommittedError';
     }
 }
+
+export class AppActionConflictError extends Error {
+    constructor(action_type: string) {
+        super(`Action conflicts with current project state: ${action_type}`);
+        this.name = 'AppActionConflictError';
+    }
+}

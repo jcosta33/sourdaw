@@ -4,6 +4,7 @@ import { type Clip } from '../stores/trackStore';
 export type ResolvedClip = Clip & {
     regionStartBeat: number;
     regionEndBeat: number;
+    sourceStartBeat: number;
 };
 
 export function resolveClipsWithComping(trackId: string, clips: Clip[]): ResolvedClip[] {
@@ -13,6 +14,7 @@ export function resolveClipsWithComping(trackId: string, clips: Clip[]): Resolve
             ...context,
             regionStartBeat: context.startBeat,
             regionEndBeat: context.endBeat,
+            sourceStartBeat: context.startBeat,
         }));
     }
 
@@ -22,6 +24,7 @@ export function resolveClipsWithComping(trackId: string, clips: Clip[]): Resolve
             ...context,
             regionStartBeat: context.startBeat,
             regionEndBeat: context.endBeat,
+            sourceStartBeat: context.startBeat,
         }));
     }
 
@@ -50,6 +53,7 @@ export function resolveClipsWithComping(trackId: string, clips: Clip[]): Resolve
             endBeat: overlapEnd,
             regionStartBeat: overlapStart,
             regionEndBeat: overlapEnd,
+            sourceStartBeat: sourceClip.startBeat,
         });
     }
 
@@ -84,6 +88,7 @@ export function resolveClipsWithComping(trackId: string, clips: Clip[]): Resolve
                 endBeat: gap.end,
                 regionStartBeat: gap.start,
                 regionEndBeat: gap.end,
+                sourceStartBeat: clip.startBeat,
             });
         }
     }

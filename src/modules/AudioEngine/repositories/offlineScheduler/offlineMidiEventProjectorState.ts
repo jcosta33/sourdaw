@@ -33,6 +33,20 @@ export type OfflineMidiEventProjector = <Event extends OfflineMidiProjectableEve
 
 export type OfflineMidiEventProjectorFactory = () => OfflineMidiEventProjector;
 
-export const offlineMidiEventProjectorState: { createProjector: OfflineMidiEventProjectorFactory | null } = {
+export type OfflineMidiProbabilitySelectionInput = {
+    projectProbabilitySeed: number;
+    clipId: string;
+    eventId: string;
+    absoluteOccurrenceIndex: number;
+    probabilityPercent: number;
+};
+
+export type OfflineMidiProbabilitySelector = (input: OfflineMidiProbabilitySelectionInput) => boolean;
+
+export const offlineMidiEventProjectorState: {
+    createProjector: OfflineMidiEventProjectorFactory | null;
+    selectProbability: OfflineMidiProbabilitySelector | null;
+} = {
     createProjector: null,
+    selectProbability: null,
 };

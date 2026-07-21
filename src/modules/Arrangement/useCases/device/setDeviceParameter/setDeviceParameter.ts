@@ -4,40 +4,55 @@ import { transportStore } from '#/modules/Transport/stores';
 
 import { getTrackState } from '../../../repositories/track/getTrackState';
 import { updateTrack } from '../../../repositories/track/updateTrack';
+import { resolveEligibleDeviceWriteTarget } from '../../../stores/resolveEligibleDeviceWriteTarget';
 import { type AutomationMode } from '../../../stores/trackStore';
 
 const RECORDING_MODES: ReadonlySet<AutomationMode> = new Set(['write', 'touch', 'latch']);
 
-export function setDeviceParameter(deviceId: string, paramId: string, value: number): void {
+export function setDeviceParameter(deviceId: string, paramId: string, value: number): boolean {
     // Guard against invalid values that could crash the audio engine
     if (!Number.isFinite(value)) {
-        return;
+        return false;
+    }
+
+    const target = resolveEligibleDeviceWriteTarget(deviceId);
+    if (target.status !== 'eligible') {
+        return false;
     }
 
     const state = getTrackState();
     if (!state) {
-        return;
+        return false;
     }
 
-    const track = state.tracks.find((time) => time.devices.some((data) => data.id === deviceId));
+    const track = state.tracks.find((candidate) => candidate.id === target.trackId);
     if (!track) {
-        return;
+        return false;
     }
 
     // Update audio engine (non-blocking)
-    updateDeviceParam(track.id, deviceId, paramId, value);
+    updateDeviceParam(target.trackId, target.deviceId, paramId, value);
 
     // Update only the affected track's store state (not all tracks)
-    updateTrack(track.id, (time) => ({
-        ...time,
-        devices: time.devices.map((data) =>
-            data.id === deviceId ? { ...data, parameterValues: { ...data.parameterValues, [paramId]: value } } : data
-        ),
+    updateTrack(target.trackId, (currentTrack) => ({
+        ...currentTrack,
+        devices: currentTrack.devices.map((device) => {
+            if (device.id !== target.deviceId) {
+                return device;
+            }
+
+            return {
+                ...device,
+                parameterValues: { ...device.parameterValues, [paramId]: value },
+            };
+        }),
     }));
 
     // Record automation if playing in a recording mode
     const transport = transportStore.value;
     if (transport?.isPlaying && RECORDING_MODES.has(track.automationMode)) {
-        recordAutomationValue(track.id, `${deviceId}:${paramId}`, value, transport.playheadPosition);
+        recordAutomationValue(target.trackId, `${target.deviceId}:${paramId}`, value, transport.playheadPosition);
     }
+
+    return true;
 }

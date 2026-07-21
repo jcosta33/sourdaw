@@ -1,3 +1,4 @@
+import { type resolveEligibleDeviceWriteTarget } from '#/modules/Arrangement/stores';
 import { type DeviceRef } from '#/utils/createFindDeviceRef';
 
 import { type GrinderPatch, type GrinderPedal } from '../../models/GrinderPatch';
@@ -26,6 +27,7 @@ type SyncGrinderPatchToAudioInput = {
     persist_device_param: (device_id: string, key: string, value: number) => void;
     update_device_param: (track_id: string, device_id: string, key: string, value: number) => void;
     update_device_patch: (track_id: string, device_id: string, patch: Record<string, unknown>) => void;
+    resolve_eligible_device_write_target: typeof resolveEligibleDeviceWriteTarget;
 };
 
 const AUDIO_SYNC_KEYS: readonly (keyof GrinderPatch)[] = [
@@ -183,6 +185,11 @@ function sendPatchToDevice(
 }
 
 export function syncGrinderPatchToAudio(input: SyncGrinderPatchToAudioInput): void {
+    const target = input.resolve_eligible_device_write_target(input.ref.deviceId);
+    if (target.status !== 'eligible' || target.trackId !== input.ref.trackId) {
+        return;
+    }
+
     // Callers (loadGrinderPatchWithAudio, recallGrinderSnapshotWithAudio) always pass an
     // already-migrated GrinderPatch, so this path does not migrate again.
     const patch = input.patch;

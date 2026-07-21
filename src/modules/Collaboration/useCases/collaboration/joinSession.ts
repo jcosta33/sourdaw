@@ -23,7 +23,13 @@ export async function joinSession(inviteString: string, name: string): Promise<s
         throw createCollaborationError('Invalid invite: expected offer');
     }
 
-    const peerId = runtime.generatePeerId();
+    // Adopt the host-minted pendingPeerId as our session identity. The host
+    // keys our PeerConnection by it and lists us in its peer store under
+    // answer.peerId; minting our own id here splits the joiner across two
+    // identities, so host-side presence, peer-leave, disconnect cleanup, and
+    // color assignment all miss their lookups. Fall back to a self-minted id
+    // only for legacy invites that predate pendingPeerId.
+    const peerId = invite.pendingPeerId ?? runtime.generatePeerId();
     // Pick a color that doesn't clash with the host's (always the first color).
     const color = runtime.pickPeerColor([PEER_COLORS[0]]);
 

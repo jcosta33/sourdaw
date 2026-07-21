@@ -18,7 +18,6 @@ It complements:
 
 - `DAW System Architecture` — system-level invariants and runtime model
 - `TypeScript Module Architecture` — TypeScript bounded-context anatomy
-- `Migration Architecture` — staged migration strategy
 
 ---
 
@@ -116,6 +115,8 @@ For a professional DAW backend, the sweet spot is usually **4–6 crates**.
 
 Not one monolith.
 Not 20 tiny crates.
+
+> **Sourdaw today:** 9 crates + `src-tauri` — the five below plus `daw-collab` (Automerge CRDT + LAN sync), `daw-wasm-decoder` (browser codec decode), `proof-chamber` (reverb), and `scoring` (tuner). The extra four exist to isolate WASM-only build targets and the collaboration stack. See `src-tauri/AGENTS.md` for the command inventory.
 
 A practical default is:
 
@@ -325,7 +326,7 @@ It contains:
 - event/channel registration
 - relay code
 - API error translation
-- typed binding generation hooks
+- typed binding generation hooks (aspirational — no Specta export pipeline today; TS payload types are hand-maintained)
 
 It should not contain:
 

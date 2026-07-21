@@ -1,18 +1,21 @@
 import { createRef } from 'react';
 
-import { render, screen } from '@testing-library/react';
-import { describe, it, expect } from 'vitest';
+import { fireEvent, render, screen } from '@testing-library/react';
+import { describe, it, expect, vi } from 'vitest';
 
 import { Spacer } from '../Spacer';
 
 describe('Spacer', () => {
     it('should set aria-hidden for accessibility', () => {
         render(<Spacer size={2} data-testid="spacer" />);
-        expect(screen.getByTestId('spacer')).toHaveAttribute('aria-hidden', 'true');
+        const element = screen.getByTestId('spacer');
+        expect(element.tagName).toBe('DIV');
+        expect(element).toHaveAttribute('aria-hidden', 'true');
     });
 
     describe('size prop', () => {
         it.each([
+            [0, 'w-0', 'h-0'],
             [1, 'w-1', 'h-1'],
             [2, 'w-2', 'h-2'],
             [3, 'w-3', 'h-3'],
@@ -52,6 +55,8 @@ describe('Spacer', () => {
 
     describe('axis size combinations', () => {
         it.each([
+            [0, 'x', 'w-0'],
+            [0, 'y', 'h-0'],
             [1, 'x', 'w-1'],
             [2, 'y', 'h-2'],
             [8, 'x', 'w-8'],
@@ -73,6 +78,13 @@ describe('Spacer', () => {
             const element = screen.getByTestId('spacer');
             expect(element).toHaveClass('shrink-0', 'w-2', 'h-2', 'custom-class');
         });
+
+        it('should give conflicting caller utilities precedence', () => {
+            render(<Spacer size={2} className="shrink w-10 h-10" data-testid="spacer" />);
+            const element = screen.getByTestId('spacer');
+            expect(element).toHaveClass('shrink', 'w-10', 'h-10');
+            expect(element).not.toHaveClass('shrink-0', 'w-2', 'h-2');
+        });
     });
 
     describe('ref forwarding', () => {
@@ -85,10 +97,42 @@ describe('Spacer', () => {
 
     describe('HTML attributes', () => {
         it('should pass through arbitrary HTML attributes', () => {
-            render(<Spacer size={2} data-testid="spacer" id="test-id" title="Test Title" />);
+            const onClick = vi.fn();
+            render(
+                <Spacer
+                    size={2}
+                    data-testid="spacer"
+                    data-proof="native"
+                    id="test-id"
+                    title="Test Title"
+                    aria-hidden="false"
+                    style={{ color: 'rgb(1, 2, 3)' }}
+                    onClick={onClick}
+                />
+            );
             const element = screen.getByTestId('spacer');
+            fireEvent.click(element);
             expect(element).toHaveAttribute('id', 'test-id');
             expect(element).toHaveAttribute('title', 'Test Title');
+            expect(element).toHaveAttribute('data-proof', 'native');
+            expect(element).toHaveAttribute('aria-hidden', 'false');
+            expect(element).toHaveStyle({ color: 'rgb(1, 2, 3)' });
+            expect(onClick).toHaveBeenCalledOnce();
         });
+    });
+
+    it('should render children exactly once in their original order', () => {
+        render(
+            <Spacer size={0} data-testid="spacer">
+                <span>First</span>
+                <span>Second</span>
+                <span>Third</span>
+            </Spacer>
+        );
+        expect(Array.from(screen.getByTestId('spacer').children, (child) => child.textContent)).toEqual([
+            'First',
+            'Second',
+            'Third',
+        ]);
     });
 });

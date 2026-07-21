@@ -1,7 +1,11 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { injectDependencies } from '#/infra/di/testing/injectDependencies';
-import { type Track } from '#/modules/Arrangement/stores';
+import {
+    type DeviceWriteTargetResolution,
+    type Track,
+    type resolveEligibleDeviceWriteTarget,
+} from '#/modules/Arrangement/stores';
 
 import { type BacteriaPatch } from '../../../models/BacteriaPatch';
 import { setBacteriaParam } from '../../../stores/bacteriaStore';
@@ -9,10 +13,7 @@ import { type PersistDeviceParamFn, type UpdateDeviceParamFn } from '../helpers'
 import { setBacteriaParamWithAudio } from '../setBacteriaParamWithAudio';
 
 type ScheduledEntry = {
-    ref: {
-        trackId: string;
-        deviceId: string;
-    };
+    deviceId: string;
     key: string;
     value: number;
 };
@@ -55,6 +56,7 @@ type BridgeDeps = {
     getAllTracks: () => Track[];
     updateDeviceParam: UpdateDeviceParamFn;
     persistDeviceParam: PersistDeviceParamFn;
+    resolveEligibleDeviceWriteTarget: typeof resolveEligibleDeviceWriteTarget;
 };
 
 function createTrackWithDevice(deviceId: string): Track {
@@ -94,19 +96,29 @@ function createTrackWithDevice(deviceId: string): Track {
     };
 }
 
-function createDeps(tracks: Track[] = [createTrackWithDevice('device-1')]): {
+function createDeps(
+    resolutions: readonly DeviceWriteTargetResolution[] = [
+        { status: 'eligible', trackId: 'track-1', deviceId: 'device-1' },
+    ]
+): {
     deps: BridgeDeps;
     calls: string[];
 } {
     const calls: string[] = [];
+    let resolutionIndex = 0;
     return {
         deps: {
-            getAllTracks: vi.fn(() => tracks),
+            getAllTracks: vi.fn(() => [createTrackWithDevice('device-1')]),
             updateDeviceParam: vi.fn<UpdateDeviceParamFn>((trackId, deviceId, key, value) => {
                 calls.push(`update:${trackId}:${deviceId}:${key}:${value}`);
             }),
             persistDeviceParam: vi.fn<PersistDeviceParamFn>((deviceId, key, value) => {
                 calls.push(`persist:${deviceId}:${key}:${value}`);
+            }),
+            resolveEligibleDeviceWriteTarget: vi.fn<BridgeDeps['resolveEligibleDeviceWriteTarget']>(() => {
+                const resolution = resolutions[Math.min(resolutionIndex, resolutions.length - 1)];
+                resolutionIndex += 1;
+                return resolution ?? { status: 'missing' };
             }),
         },
         calls,
@@ -138,7 +150,7 @@ describe('setBacteriaParamWithAudio', () => {
         const [compositeKey, entry, flushParam] = getScheduledWrite();
         expect(compositeKey).toBe('device-1:globalRouting');
         expect(entry).toEqual({
-            ref: { trackId: 'track-1', deviceId: 'device-1' },
+            deviceId: 'device-1',
             key: 'globalRouting',
             value: 2,
         });
@@ -165,13 +177,29 @@ describe('setBacteriaParamWithAudio', () => {
     });
 
     it('should not schedule an audio write when no device ref exists', () => {
-        const { deps } = createDeps([]);
+        const { deps } = createDeps([{ status: 'missing' }]);
         const action = injectDependencies(setBacteriaParamWithAudio, deps);
 
         action('missing-device', 'mix', 0.75);
 
-        expect(setBacteriaParam).toHaveBeenCalledWith('missing-device', 'mix', 0.75);
+        expect(setBacteriaParam).not.toHaveBeenCalled();
         expect(mocks.schedule).not.toHaveBeenCalled();
+        expect(deps.updateDeviceParam).not.toHaveBeenCalled();
+        expect(deps.persistDeviceParam).not.toHaveBeenCalled();
+    });
+
+    it('rechecks ownership at flush and drops work whose owner became ineligible', () => {
+        const { deps } = createDeps([
+            { status: 'eligible', trackId: 'track-1', deviceId: 'device-1' },
+            { status: 'ineligible' },
+        ]);
+        const action = injectDependencies(setBacteriaParamWithAudio, deps);
+
+        action('device-1', 'mix', 0.75);
+        const [compositeKey, entry, flushParam] = getScheduledWrite();
+        flushParam(compositeKey, entry);
+
+        expect(deps.resolveEligibleDeviceWriteTarget).toHaveBeenCalledTimes(2);
         expect(deps.updateDeviceParam).not.toHaveBeenCalled();
         expect(deps.persistDeviceParam).not.toHaveBeenCalled();
     });

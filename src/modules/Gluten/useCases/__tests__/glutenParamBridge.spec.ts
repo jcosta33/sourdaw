@@ -2,11 +2,19 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { Container } from '#/infra/di/Container';
 
-const { mockUpdateDeviceParam, mockPersistDeviceParam, mockTrackStoreValue } = vi.hoisted(() => {
+const {
+    mockUpdateDeviceParam,
+    mockPersistDeviceParam,
+    mockSetGlutenParam,
+    mockResolveDeviceTarget,
+    mockTrackStoreValue,
+} = vi.hoisted(() => {
     const mockTrackStoreValue: { value: unknown } = { value: null };
     return {
         mockUpdateDeviceParam: vi.fn(),
         mockPersistDeviceParam: vi.fn(),
+        mockSetGlutenParam: vi.fn(),
+        mockResolveDeviceTarget: vi.fn(),
         mockTrackStoreValue,
     };
 });
@@ -23,6 +31,7 @@ vi.mock('#/modules/Arrangement/stores', async (importOriginal) => ({
         },
     },
     persistDeviceParam: mockPersistDeviceParam,
+    resolveEligibleDeviceWriteTarget: mockResolveDeviceTarget,
 }));
 
 vi.mock('#/utils/DOM/createRafBatcher', () => ({
@@ -35,7 +44,7 @@ vi.mock('#/utils/DOM/createRafBatcher', () => ({
 }));
 
 vi.mock('../../stores/glutenStore', () => ({
-    setGlutenParam: vi.fn(),
+    setGlutenParam: mockSetGlutenParam,
     loadGlutenPatch: vi.fn(),
 }));
 
@@ -47,6 +56,12 @@ describe('glutenParamBridge', () => {
     beforeEach(() => {
         Container.clear();
         vi.clearAllMocks();
+        mockResolveDeviceTarget.mockImplementation((deviceId: string) => {
+            if (deviceId === 'd1') {
+                return { status: 'eligible', trackId: 't1', deviceId };
+            }
+            return { status: 'missing' };
+        });
     });
 
     it('setGlutenParamWithAudio forwards numeric params to engine + persistence via rAF flush', () => {
@@ -64,6 +79,17 @@ describe('glutenParamBridge', () => {
         setGlutenParamWithAudio('missing', 'threshold', -12);
 
         expect(mockUpdateDeviceParam).not.toHaveBeenCalled();
+        expect(mockSetGlutenParam).not.toHaveBeenCalled();
+    });
+
+    it('setGlutenParamWithAudio rejects an ineligible owner before store or engine effects', () => {
+        mockResolveDeviceTarget.mockReturnValue({ status: 'ineligible' });
+
+        setGlutenParamWithAudio('d1', 'threshold', -12);
+
+        expect(mockSetGlutenParam).not.toHaveBeenCalled();
+        expect(mockUpdateDeviceParam).not.toHaveBeenCalled();
+        expect(mockPersistDeviceParam).not.toHaveBeenCalled();
     });
 
     it('loadGlutenPatchWithAudio is callable without throwing on valid device', () => {

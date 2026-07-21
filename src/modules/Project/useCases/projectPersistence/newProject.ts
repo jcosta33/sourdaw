@@ -54,7 +54,7 @@ async function activateNewProject({
             return failNewProjectActivation({ previousTransientState, transaction });
         }
         projectActionHistoryToStore();
-        resetModuleStoresToDefault();
+        resetModuleStoresToDefault({ createNewMidiProbabilitySeed: true });
         arrangementStore.set(structuredClone(defaultArrangementStoreState));
         addTrack({ name: 'Master', kind: 'master', select: false });
 

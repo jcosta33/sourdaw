@@ -8,6 +8,15 @@ describe('setTrackGainPan helpers', () => {
         const deps = {
             updateDeviceParam: vi.fn(),
             getAllTracks: vi.fn(),
+            resolveEligibleDeviceWriteTarget: vi.fn(
+                (
+                    deviceId: string
+                ): { status: 'eligible'; trackId: string; deviceId: string } | { status: 'ineligible' } => ({
+                    status: 'eligible',
+                    trackId: 'parent1',
+                    deviceId,
+                })
+            ),
         };
 
         beforeEach(() => vi.clearAllMocks());
@@ -30,6 +39,18 @@ describe('setTrackGainPan helpers', () => {
             syncToasterPadParam('t1', 'volume', 0.7, deps);
 
             expect(deps.updateDeviceParam).toHaveBeenCalledWith('parent1', 'd1', 'pad_0_volume', 0.7);
+        });
+
+        it('does not sync a child param to an ineligible parent Toaster', () => {
+            deps.getAllTracks.mockReturnValue([
+                { id: 'parent1', devices: [{ type: 'toaster', id: 'd1' }] },
+                { id: 't1', parentId: 'parent1' },
+            ]);
+            deps.resolveEligibleDeviceWriteTarget.mockReturnValueOnce({ status: 'ineligible' });
+
+            syncToasterPadParam('t1', 'volume', 0.7, deps);
+
+            expect(deps.updateDeviceParam).not.toHaveBeenCalled();
         });
     });
 

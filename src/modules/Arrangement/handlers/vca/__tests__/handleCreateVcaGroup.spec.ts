@@ -21,7 +21,7 @@ describe('handleCreateVcaGroup', () => {
             payload: { name: 'Drums VCA', trackIds: ['t1', 't2'] },
         });
 
-        expect(mocks.createVcaGroup).toHaveBeenCalledWith('Drums VCA', ['t1', 't2']);
+        expect(mocks.createVcaGroup).toHaveBeenCalledWith('Drums VCA', ['t1', 't2'], expect.stringMatching(/^vca-/));
     });
 
     it('is undoable', () => {

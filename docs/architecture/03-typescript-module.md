@@ -18,7 +18,6 @@ It complements:
 
 - `DAW System Architecture` — system-level invariants and runtime model
 - `Rust Backend Architecture` — native/backend topology
-- `Migration Architecture` — staged migration strategy
 
 ---
 
@@ -41,7 +40,7 @@ Arrangement
 Transport
 Routing
 Automation
-Plugin
+PluginHost
 Project
 MIDI
 Command
@@ -201,34 +200,34 @@ Four smaller barrels break this amplification: importing from `stores/index.ts` 
 
 ```ts
 // Another module — correct
-import { addTrack } from ‘#/modules/Arrangement/useCases’;
-import { trackStore } from ‘#/modules/Arrangement/stores’;
-import type { TrackAddedEvent } from ‘#/modules/Arrangement/events’;
-import { ArrangementBar } from ‘#/modules/Arrangement/presentations/views’;
+import { addTrack } from '#/modules/Arrangement/useCases';
+import { trackStore } from '#/modules/Arrangement/stores';
+import type { TrackAddedPayload } from '#/modules/Arrangement/events';
+import { ArrangementBar } from '#/modules/Arrangement/presentations/views';
 
 // Another module — FORBIDDEN (direct file access)
-import { addTrack } from ‘#/modules/Arrangement/useCases/addTrack’;
-import { trackStore } from ‘#/modules/Arrangement/stores/trackStore’;
+import { addTrack } from '#/modules/Arrangement/useCases/addTrack';
+import { trackStore } from '#/modules/Arrangement/stores/trackStore';
 ```
 
 ```ts
 // src/modules/Arrangement/useCases/index.ts — curated useCases barrel
-export { addTrack } from ‘./addTrack’;
-export { removeTrack } from ‘./removeTrack’;
-export { getArrangementHandlers } from ‘./getArrangementHandlers’;
+export { addTrack } from './addTrack';
+export { removeTrack } from './removeTrack';
+export { getArrangementHandlers } from './getArrangementHandlers';
 // FORBIDDEN inside useCases/index.ts:
-// export type { TrackSummary } from ‘./getTrackSummary’; // use-case types stay private
-// export { trackStore } from ‘../stores/trackStore’;     // wrong folder
+// export type { TrackSummary } from './getTrackSummary'; // use-case types stay private
+// export { trackStore } from '../stores/trackStore';     // wrong folder
 ```
 
 ```ts
 // Inside Arrangement — correct (relative)
-import { trackStore } from ‘../stores/trackStore’;
-import { addClip } from ‘./useCases/clip/addClip’;
+import { trackStore } from '../stores/trackStore';
+import { addClip } from './useCases/clip/addClip';
 
 // Inside Arrangement — FORBIDDEN (own contract barrel)
-import { trackStore } from ‘#/modules/Arrangement/stores’;
-import { addClip } from ‘#/modules/Arrangement/useCases’;
+import { trackStore } from '#/modules/Arrangement/stores';
+import { addClip } from '#/modules/Arrangement/useCases';
 ```
 
 ---
@@ -895,7 +894,7 @@ presentations/stores/
 presentations/context/
 presentations/components/
 presentations/renderers/
-presentations/views/   ← use the owning module’s presentations/views barrel instead
+presentations/views/   ← use the owning module's presentations/views barrel instead
 engine/
 runtime/
 worklets/
@@ -976,8 +975,8 @@ Use when:
 - the dependency is intentional and acceptable
 
 ```typescript
-// Import from the module’s useCases barrel, not from a useCases/ file directly
-import { getRoutingForTrack } from ‘#/modules/Routing/useCases’;
+// Import from the module's useCases barrel, not from a useCases/ file directly
+import { getRoutingForTrack } from '#/modules/Routing/useCases';
 ```
 
 ## 7.2 Pattern B: event-driven interaction
@@ -989,7 +988,7 @@ Use when:
 - the occurrence has business meaning
 
 ```typescript
-void eventBus.emit(‘track.added’, { trackId, name, kind });
+void eventBus.emit('track.added', { trackId, name, kind });
 ```
 
 ## 7.3 Pattern C: shared store / selector read
@@ -1001,8 +1000,8 @@ Use when:
 - the read is stable and intentional
 
 ```typescript
-// Store exported from the module’s stores barrel
-import { transportStore } from ‘#/modules/Transport/stores’;
+// Store exported from the module's stores barrel
+import { transportStore } from '#/modules/Transport/stores';
 const transport = transportStore.value;
 ```
 
@@ -1014,8 +1013,8 @@ Use when:
 - the dependency is presentational, not business-layer
 
 ```typescript
-// Views re-exported from the module’s presentations/views barrel
-import { ArrangementView } from ‘#/modules/Arrangement/presentations/views’;
+// Views re-exported from the module's presentations/views barrel
+import { ArrangementView } from '#/modules/Arrangement/presentations/views';
 ```
 
 ---
@@ -1114,7 +1113,7 @@ Module/
     views/
 ```
 
-Example: `Mixer` is often presentation-only if it reads from Arrangement + Routing + Telemetry rather than owning its own truth.
+Example: `MixerConsole` is often presentation-only if it reads from Arrangement + Routing + Telemetry rather than owning its own truth.
 
 ---
 

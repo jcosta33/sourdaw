@@ -16,12 +16,24 @@ describe('handleBypassDevice', () => {
     });
 
     it('executes bypassDevice with the provided payload', () => {
-        void handleBypassDevice.execute({
+        mocks.bypassDevice.mockReturnValue(true);
+        const result = handleBypassDevice.execute({
             type: 'bypassDevice',
             payload: { deviceId: 'd1', bypassed: true },
         });
 
         expect(mocks.bypassDevice).toHaveBeenCalledWith('d1', true);
+        expect(result).toEqual({ status: 'written' });
+    });
+
+    it('returns no-write when bypassDevice rejects the device owner', () => {
+        mocks.bypassDevice.mockReturnValue(false);
+        const result = handleBypassDevice.execute({
+            type: 'bypassDevice',
+            payload: { deviceId: 'vca-device', bypassed: true },
+        });
+
+        expect(result).toEqual({ status: 'no-write' });
     });
 
     it('provides a description reflecting the bypassed state', () => {

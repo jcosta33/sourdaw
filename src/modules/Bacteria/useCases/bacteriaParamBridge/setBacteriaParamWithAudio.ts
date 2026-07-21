@@ -5,24 +5,28 @@ import { setBacteriaParam } from '../../stores/bacteriaStore';
 
 import { bacteriaParamBridgeDependencies } from './bacteriaParamBridgeDependencies';
 import { createFlushParam } from './createFlushParam';
-import { createFindDeviceRef, encodePatchValue, paramBatcher } from './helpers';
+import { encodePatchValue, paramBatcher } from './helpers';
 
 /**
  * Set a Bacteria global parameter — updates UI store immediately,
  * throttles audio engine updates to rAF.
  */
 export const setBacteriaParamWithAudio = inject(bacteriaParamBridgeDependencies)(({
-    getAllTracks: getAllTracksFn,
     updateDeviceParam: updateDeviceParamFn,
     persistDeviceParam: persistDeviceParamFn,
+    resolveEligibleDeviceWriteTarget: resolveEligibleDeviceWriteTargetFn,
 }) => {
-    const findDeviceRef = createFindDeviceRef(getAllTracksFn);
-    const flushParam = createFlushParam(updateDeviceParamFn, persistDeviceParamFn);
+    const flushParam = createFlushParam(updateDeviceParamFn, persistDeviceParamFn, resolveEligibleDeviceWriteTargetFn);
     return function setBacteriaParamWithAudio<Key extends keyof BacteriaPatch>(
         deviceId: string,
         key: Key,
         value: BacteriaPatch[Key]
     ): void {
+        const target = resolveEligibleDeviceWriteTargetFn(deviceId);
+        if (target.status !== 'eligible') {
+            return;
+        }
+
         setBacteriaParam(deviceId, key, value);
 
         const encodedValue = encodePatchValue(key, value);
@@ -30,12 +34,7 @@ export const setBacteriaParamWithAudio = inject(bacteriaParamBridgeDependencies)
             return;
         }
 
-        const ref = findDeviceRef(deviceId);
-        if (!ref) {
-            return;
-        }
-
         const compositeKey = `${deviceId}:${key}`;
-        paramBatcher.schedule(compositeKey, { ref, key, value: encodedValue }, flushParam);
+        paramBatcher.schedule(compositeKey, { deviceId: target.deviceId, key, value: encodedValue }, flushParam);
     };
 });
