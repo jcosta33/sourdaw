@@ -89,6 +89,32 @@ fn next_power_of_2(n: usize) -> usize {
 // Non-uniform partition stage
 // ---------------------------------------------------------------------------
 
+/// Simple ring-buffer delay line (zero-length = passthrough).
+struct DelayLine {
+    buf: Vec<f32>,
+    pos: usize,
+}
+
+impl DelayLine {
+    fn new(samples: usize) -> Self {
+        Self {
+            buf: vec![0.0; samples],
+            pos: 0,
+        }
+    }
+
+    #[inline]
+    fn push(&mut self, input: f32) -> f32 {
+        if self.buf.is_empty() {
+            return input;
+        }
+        let out = self.buf[self.pos];
+        self.buf[self.pos] = input;
+        self.pos = (self.pos + 1) % self.buf.len();
+        out
+    }
+}
+
 struct ConvStage {
     partition_size: usize,
     fft_size: usize,
@@ -98,6 +124,11 @@ struct ConvStage {
     fdl_re: Vec<Vec<f32>>,
     fdl_im: Vec<Vec<f32>>,
     fdl_pos: usize,
+    // Per-stage input delay aligning the stage's segment to the global
+    // latency reference: a stage emits its segment at
+    // (input delay + partition_size + local offset), which must equal the
+    // segment's absolute IR offset plus the global latency.
+    input_delay: DelayLine,
     input_acc: Vec<f32>,
     input_acc_pos: usize,
     // Overlap-add state. `emit_buf` holds the fully summed output block
@@ -109,7 +140,7 @@ struct ConvStage {
 }
 
 impl ConvStage {
-    fn new(partition_size: usize, ir_segment: &[f32]) -> Self {
+    fn new(partition_size: usize, ir_segment: &[f32], delay_samples: usize) -> Self {
         let fft_size = partition_size * 2;
         let num_partitions = (ir_segment.len() + partition_size - 1) / partition_size;
 
@@ -141,6 +172,7 @@ impl ConvStage {
             fdl_re,
             fdl_im,
             fdl_pos: 0,
+            input_delay: DelayLine::new(delay_samples),
             input_acc: vec![0.0; partition_size],
             input_acc_pos: 0,
             emit_buf: vec![0.0; partition_size],
@@ -155,7 +187,8 @@ impl ConvStage {
     /// Feed one sample, get one output sample.
     #[inline]
     fn process_sample(&mut self, input: f32) -> f32 {
-        self.input_acc[self.input_acc_pos] = input;
+        let delayed = self.input_delay.push(input);
+        self.input_acc[self.input_acc_pos] = delayed;
         self.input_acc_pos += 1;
 
         let output = if self.emit_pos < self.partition_size {
@@ -293,14 +326,31 @@ const HEAD_SIZE: usize = 128;
 /// Non-uniform partition sizes (increasing for efficiency).
 const STAGE_SIZES: [usize; 5] = [256, 512, 1024, 2048, 4096];
 
+/// Global latency reference, in samples. Every part of the wet path — head,
+/// every tail stage, and the dry reference — is aligned so an IR tap at
+/// absolute index `m` lands at output index `m + GLOBAL_LATENCY`.
+/// Stage i's segment starts at absolute offset `HEAD_SIZE + S_i` and the
+/// stage adds `P_i` of streaming latency, so its input is delayed by
+/// `HEAD_SIZE + S_i + GLOBAL_LATENCY - P_i`; the minimum over stages of
+/// `(absolute offset) - P_i` is `HEAD_SIZE - STAGE_SIZES[0] = -128`, which
+/// fixes `GLOBAL_LATENCY = 128` (the largest zero-delay choice).
+const GLOBAL_LATENCY: usize = HEAD_SIZE;
+
 pub struct ConvolutionEngine {
     sample_rate: f32,
 
-    // Direct head (time-domain, zero latency)
+    // Direct head (time-domain, zero latency before alignment)
     head_ir: Vec<f32>,
     head_len: usize,
     input_history: Vec<f32>,
     input_pos: usize,
+    // Alignment delays: the head and the dry reference are delayed by
+    // GLOBAL_LATENCY so they land on the same timeline as the input-delayed
+    // tail stages (see GLOBAL_LATENCY).
+    head_delay: DelayLine,
+    stereo_head_delay: DelayLine,
+    dry_delay_l: DelayLine,
+    dry_delay_r: DelayLine,
 
     // Non-uniform FFT stages
     stages: Vec<ConvStage>,
@@ -327,6 +377,10 @@ impl ConvolutionEngine {
             head_len: 0,
             input_history: vec![0.0; HEAD_SIZE + 1],
             input_pos: 0,
+            head_delay: DelayLine::new(GLOBAL_LATENCY),
+            stereo_head_delay: DelayLine::new(GLOBAL_LATENCY),
+            dry_delay_l: DelayLine::new(GLOBAL_LATENCY),
+            dry_delay_r: DelayLine::new(GLOBAL_LATENCY),
             stages: Vec::new(),
             stereo_head_ir: Vec::new(),
             stereo_stages: Vec::new(),
@@ -443,7 +497,7 @@ impl ConvolutionEngine {
                 tail_out += stage.process_sample(mono);
             }
 
-            let wet_l = head_out + tail_out;
+            let wet_l = self.head_delay.push(head_out) + tail_out;
 
             // True stereo: process right input through RL/RR path
             let wet_r = if self.has_true_stereo {
@@ -457,13 +511,19 @@ impl ConvolutionEngine {
                 for stage in self.stereo_stages.iter_mut() {
                     stereo_tail += stage.process_sample(mono);
                 }
-                stereo_head + stereo_tail
+                self.stereo_head_delay.push(stereo_head) + stereo_tail
             } else {
                 wet_l // mono-to-stereo: same on both channels
             };
 
-            left[i] = dry_l * (1.0 - self.mix) + wet_l * self.mix;
-            right[i] = dry_r * (1.0 - self.mix) + wet_r * self.mix;
+            // The dry reference takes the same alignment delay as the wet
+            // path so the mix stays time-coherent; the plugin reports
+            // GLOBAL_LATENCY via get_latency for host PDC.
+            let aligned_dry_l = self.dry_delay_l.push(dry_l);
+            let aligned_dry_r = self.dry_delay_r.push(dry_r);
+
+            left[i] = aligned_dry_l * (1.0 - self.mix) + wet_l * self.mix;
+            right[i] = aligned_dry_r * (1.0 - self.mix) + wet_r * self.mix;
         }
     }
 
@@ -500,7 +560,15 @@ fn build_stages(tail: &[f32]) -> Vec<ConvStage> {
         let segment = &tail[offset..end];
 
         if !segment.is_empty() {
-            stages.push(ConvStage::new(stage_size, segment));
+            // Align the stage to the global reference: its segment starts at
+            // absolute IR offset HEAD_SIZE + offset, and the stage adds
+            // stage_size of streaming latency, so its input is delayed until
+            // (delay + stage_size + local offset) == (absolute offset +
+            // GLOBAL_LATENCY). Without this every stage emitted its segment
+            // at partition_size + local offset — late for the first stage,
+            // progressively early for the rest.
+            let delay = (HEAD_SIZE + offset + GLOBAL_LATENCY).saturating_sub(stage_size);
+            stages.push(ConvStage::new(stage_size, segment, delay));
         }
         offset = end;
     }
@@ -508,7 +576,8 @@ fn build_stages(tail: &[f32]) -> Vec<ConvStage> {
     // Any remaining tail goes into the largest stage size
     if offset < tail.len() {
         let largest = *STAGE_SIZES.last().unwrap();
-        stages.push(ConvStage::new(largest, &tail[offset..]));
+        let delay = (HEAD_SIZE + offset + GLOBAL_LATENCY).saturating_sub(largest);
+        stages.push(ConvStage::new(largest, &tail[offset..], delay));
     }
 
     stages
@@ -590,6 +659,42 @@ mod tests {
         assert!(
             tail_energy > 0.5 * reference_energy,
             "tail stages must contribute the bulk of the response (tail={tail_energy}, total={reference_energy})"
+        );
+    }
+
+    #[test]
+    fn impulse_taps_land_at_their_ir_index_plus_global_latency() {
+        // One tap per FFT stage: stage 1 (abs 200), stage 2 (abs 3000),
+        // stage 3 (abs 7000). Every tap must appear at output index
+        // (IR index + GLOBAL_LATENCY) — the alignment the undelayed-stage
+        // design violated (stage 1 ran 128 late, stage 2 1664 early, stage 3
+        // 5248 early). Energy/RMS tests are delay-insensitive and cannot see
+        // the misalignment; this one can.
+        let mut ir = vec![0.0_f32; 7001];
+        ir[200] = 1.0;
+        ir[3000] = 0.5;
+        ir[7000] = 0.25;
+        let mut input = vec![0.0_f32; 16384];
+        input[0] = 1.0;
+
+        let out = run_engine(&ir, &input);
+
+        for &(tap, amp) in &[(200usize, 1.0f32), (3000, 0.5), (7000, 0.25)] {
+            let at = tap + super::GLOBAL_LATENCY;
+            assert!(
+                (out[at] - amp).abs() < 1.0e-3,
+                "tap at IR index {tap} must appear at output index {at} (got {})",
+                out[at]
+            );
+        }
+
+        // And nothing but the three taps anywhere: total energy equals the
+        // tap energies within FFT roundoff.
+        let total: f32 = out.iter().map(|s| s * s).sum();
+        let taps: f32 = 1.0f32.powi(2) + 0.5f32.powi(2) + 0.25f32.powi(2);
+        assert!(
+            (total - taps).abs() < 1.0e-2,
+            "taps must not smear beyond their aligned positions (total={total}, taps={taps})"
         );
     }
 

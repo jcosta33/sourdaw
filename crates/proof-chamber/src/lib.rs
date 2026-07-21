@@ -160,12 +160,12 @@ impl ProofChamberInstance {
     }
 
     /// Report plugin latency in samples for PDC (delay compensation).
-    /// The time-domain convolution head is zero-latency; the FFT tail stages
-    /// each emit a block while the next one accumulates, so the first tail
-    /// stage (256-sample partitions) sets the wet path's latency floor.
+    /// The convolution wet path is aligned so every IR tap lands at its
+    /// absolute index plus HEAD_SIZE: tail-stage inputs are delayed to their
+    /// segment offsets, and the head/dry reference takes the remaining 128.
     pub fn get_latency(&self) -> u32 {
         match &self.engine {
-            ReverbEngine::Convolution(_) => 256, // first tail-stage partition size
+            ReverbEngine::Convolution(_) => 128, // convolution::GLOBAL_LATENCY (HEAD_SIZE)
             ReverbEngine::Hybrid(_) => 128,
             _ => 0, // algorithmic reverbs have zero latency
         }
@@ -201,7 +201,7 @@ mod tests {
     use super::ProofChamberInstance;
 
     #[test]
-    fn convolution_latency_matches_first_tail_stage_partition() {
+    fn convolution_latency_matches_global_alignment_reference() {
         let mut instance = ProofChamberInstance::new(48_000.0);
         // Algorithmic engines report zero latency.
         assert_eq!(instance.get_latency(), 0);
@@ -209,8 +209,8 @@ mod tests {
         instance.set_param("algorithm", 4.0); // Convolution
         assert_eq!(
             instance.get_latency(),
-            256,
-            "time-domain head is zero-latency; each FFT tail stage emits a block while the next accumulates, so the first stage's 256-sample partition sets the wet path's latency floor"
+            128,
+            "tail-stage inputs are delayed to their absolute segment offsets and the head/dry reference takes the remainder, so the aligned wet path's latency is the head size (128)"
         );
     }
 }
