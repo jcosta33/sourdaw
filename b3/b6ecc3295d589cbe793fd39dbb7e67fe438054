@@ -1,0 +1,37 @@
+src/modules/Arrangement/handlers/device/__tests__/handleAddSidechainRoute.spec.ts
+  s_70dfac9e909f7f::t_ec48ac4747ab70 26,32,40,46,50,55,61-75
+src/modules/Arrangement/handlers/device/handleAddSidechainRoute.ts
+  s_6de6fab6f2f610::t_f207c51fb3ee77 5,11-12,14-15
+src/modules/Arrangement/handlers/vca/__tests__/legacyVcaActionHistory.spec.ts
+  s_70dfac9e909f7f::t_3692cfea86182f 4,23,55-63,105-106,119-120,265-436
+src/modules/Routing/useCases/__tests__/sidechain.spec.ts
+  s_70dfac9e909f7f::t_e7a73775d513bc 11,28-36,65,70,75,123,126,139,143,149,154
+src/modules/Routing/useCases/sidechain/__tests__/sidechainEligibility.spec.ts
+  s_70dfac9e909f7f::t_37d813e5e9f624 75,80-88,92-100
+src/modules/Routing/useCases/sidechain/addSidechainRoute.ts
+  s_6de6fab6f2f610::t_410a3eabc4fac3 37,41-42,44-45,50,55,66
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "b3b6ecc3295d589cbe793fd39dbb7e67fe438054",
+  "prompts": {},
+  "sessions": {
+    "s_6de6fab6f2f610": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f832f-5194-7a72-a56f-ec30788278a2",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_70dfac9e909f7f": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8290-4e77-73b2-8a76-2d4ecec0634e",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
