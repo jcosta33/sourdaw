@@ -1,0 +1,19 @@
+src/components/daw/__tests__/DawUtilitySection.spec.tsx
+  s_d551553650f8b1::t_8e3c5af304e1ab 1-4,9-40,42-66,70-72,76-130
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "ef5266168fb9b9461ddceeb42c05dfb0cf313e5c",
+  "prompts": {},
+  "sessions": {
+    "s_d551553650f8b1": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f83c7-243c-7291-b985-3645b77809ca",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
