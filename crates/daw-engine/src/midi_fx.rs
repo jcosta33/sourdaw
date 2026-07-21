@@ -160,8 +160,19 @@ pub trait MidiFx: Send {
         transport: &TransportState,
         sample_rate: f32,
         num_samples: usize,
-        diagnostics: &mut ActiveMidiRtDiagnostics,
     );
+
+    /// Internal scheduler hook for effects that publish bounded RT diagnostics.
+    fn process_midi_with_diagnostics(
+        &mut self,
+        events: &mut MidiEventBuffer,
+        transport: &TransportState,
+        sample_rate: f32,
+        num_samples: usize,
+        _diagnostics: &mut ActiveMidiRtDiagnostics,
+    ) {
+        self.process_midi(events, transport, sample_rate, num_samples);
+    }
 
     /// Set a parameter by name and value.
     fn set_param(&mut self, name: &str, value: f32);
@@ -195,7 +206,6 @@ impl MidiFx for VelocityScaler {
         _transport: &TransportState,
         _sample_rate: f32,
         _num_samples: usize,
-        _diagnostics: &mut ActiveMidiRtDiagnostics,
     ) {
         for event in events.iter_mut() {
             if event.is_note_on {
@@ -350,6 +360,23 @@ impl MidiFx for Arpeggiator {
         &mut self,
         events: &mut MidiEventBuffer,
         transport: &TransportState,
+        sample_rate: f32,
+        num_samples: usize,
+    ) {
+        let mut diagnostics = ActiveMidiRtDiagnostics::new();
+        self.process_midi_with_diagnostics(
+            events,
+            transport,
+            sample_rate,
+            num_samples,
+            &mut diagnostics,
+        );
+    }
+
+    fn process_midi_with_diagnostics(
+        &mut self,
+        events: &mut MidiEventBuffer,
+        transport: &TransportState,
         _sample_rate: f32,
         _num_samples: usize,
         diagnostics: &mut ActiveMidiRtDiagnostics,
@@ -471,7 +498,6 @@ impl MidiFx for ProbabilityEvaluator {
         _transport: &TransportState,
         _sample_rate: f32,
         _num_samples: usize,
-        _diagnostics: &mut ActiveMidiRtDiagnostics,
     ) {
         events.retain_mut(|event| {
             if event.probability_cutoff >= PROBABILITY_CUTOFF_RANGE {
@@ -524,13 +550,7 @@ mod tests {
             assert!(events.try_push(note_on(note)));
         }
 
-        arpeggiator.process_midi(
-            &mut events,
-            &TransportState::default(),
-            48_000.0,
-            128,
-            &mut ActiveMidiRtDiagnostics::new(),
-        );
+        arpeggiator.process_midi(&mut events, &TransportState::default(), 48_000.0, 128);
 
         assert_eq!(
             arpeggiator.active_notes.capacity(),
@@ -566,7 +586,6 @@ mod deterministic_probability {
             &TransportState::default(),
             48_000.0,
             128,
-            &mut ActiveMidiRtDiagnostics::new(),
         );
 
         assert_eq!(events.len(), 1);
@@ -590,7 +609,6 @@ mod deterministic_probability {
             &TransportState::default(),
             48_000.0,
             128,
-            &mut ActiveMidiRtDiagnostics::new(),
         );
 
         let mut with_unrelated = MidiEventBuffer::new();
@@ -608,7 +626,6 @@ mod deterministic_probability {
             &TransportState::default(),
             48_000.0,
             128,
-            &mut ActiveMidiRtDiagnostics::new(),
         );
 
         let isolated_kept_target = isolated.iter().any(|event| event.note == target.note);
@@ -734,7 +751,6 @@ mod probability_distribution {
             &TransportState::default(),
             48_000.0,
             128,
-            &mut ActiveMidiRtDiagnostics::new(),
         );
 
         let mut interleaved = MidiEventBuffer::new();
@@ -752,7 +768,6 @@ mod probability_distribution {
             &TransportState::default(),
             48_000.0,
             128,
-            &mut ActiveMidiRtDiagnostics::new(),
         );
 
         assert!(!interleaved.iter().any(|event| event.note == 60));

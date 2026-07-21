@@ -1,19 +1,26 @@
+use triple_buffer::{Input, Output};
+
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct ActiveMidiRtDiagnosticsSnapshot {
     pub scheduler_event_buffer_overflows: u64,
     pub arpeggiator_active_note_exhaustions: u64,
 }
 
-impl ActiveMidiRtDiagnosticsSnapshot {
-    pub fn saturating_add(self, other: Self) -> Self {
-        Self {
-            scheduler_event_buffer_overflows: self
-                .scheduler_event_buffer_overflows
-                .saturating_add(other.scheduler_event_buffer_overflows),
-            arpeggiator_active_note_exhaustions: self
-                .arpeggiator_active_note_exhaustions
-                .saturating_add(other.arpeggiator_active_note_exhaustions),
-        }
+pub(crate) struct ActiveMidiRtDiagnosticsReader {
+    output: Output<ActiveMidiRtDiagnosticsSnapshot>,
+}
+
+pub(crate) fn active_midi_rt_diagnostics_channel() -> (
+    Input<ActiveMidiRtDiagnosticsSnapshot>,
+    ActiveMidiRtDiagnosticsReader,
+) {
+    let (input, output) = triple_buffer::triple_buffer(&ActiveMidiRtDiagnosticsSnapshot::default());
+    (input, ActiveMidiRtDiagnosticsReader { output })
+}
+
+impl ActiveMidiRtDiagnosticsReader {
+    pub(crate) fn snapshot(&mut self) -> ActiveMidiRtDiagnosticsSnapshot {
+        *self.output.read()
     }
 }
 
@@ -29,11 +36,6 @@ impl ActiveMidiRtDiagnostics {
                 arpeggiator_active_note_exhaustions: 0,
             },
         }
-    }
-
-    #[cfg(test)]
-    pub(crate) const fn from_snapshot(snapshot: ActiveMidiRtDiagnosticsSnapshot) -> Self {
-        Self { snapshot }
     }
 
     pub const fn snapshot(&self) -> ActiveMidiRtDiagnosticsSnapshot {

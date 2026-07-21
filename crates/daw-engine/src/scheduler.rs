@@ -4,7 +4,9 @@
 //! via the NativePlugin trait. All communication is lock-free via rtrb.
 
 use crate::audio_bridge::PluginAudioBridge;
-use crate::midi::diagnostics::{ActiveMidiRtDiagnostics, ActiveMidiRtDiagnosticsSnapshot};
+use crate::midi::diagnostics::{
+    active_midi_rt_diagnostics_channel, ActiveMidiRtDiagnostics, ActiveMidiRtDiagnosticsSnapshot,
+};
 use crate::midi_fx::{Arpeggiator, MidiEventBuffer, MidiFx, ProbabilityEvaluator, VelocityScaler};
 use crate::plugin_slot::{MidiNoteEvent, NativePlugin, TransportState};
 use daw_core::tuning::TuningTable;
@@ -99,8 +101,7 @@ pub struct AudioScheduler {
 
 impl AudioScheduler {
     pub fn new(command_rx: Consumer<GraphCommand>, sample_rate: f32) -> Self {
-        let (diagnostics_tx, _diagnostics_rx) =
-            triple_buffer::triple_buffer(&ActiveMidiRtDiagnosticsSnapshot::default());
+        let (diagnostics_tx, _diagnostics_reader) = active_midi_rt_diagnostics_channel();
         Self::with_midi_rt_diagnostics(command_rx, sample_rate, diagnostics_tx)
     }
 
@@ -236,7 +237,7 @@ impl AudioScheduler {
                     let sample_rate = self.sample_rate;
 
                     bridge.try_process(|left, right, num_samples| {
-                        probability_evaluator.process_midi(
+                        probability_evaluator.process_midi_with_diagnostics(
                             pending_midi,
                             &transport,
                             sample_rate,
@@ -244,7 +245,7 @@ impl AudioScheduler {
                             &mut self.midi_rt_diagnostics,
                         );
                         for fx in midi_fx.iter_mut() {
-                            fx.process_midi(
+                            fx.process_midi_with_diagnostics(
                                 pending_midi,
                                 &transport,
                                 sample_rate,
@@ -281,7 +282,7 @@ impl AudioScheduler {
                 continue;
             }
 
-            effect.probability_evaluator.process_midi(
+            effect.probability_evaluator.process_midi_with_diagnostics(
                 &mut effect.pending_midi,
                 &self.transport,
                 self.sample_rate,
@@ -291,7 +292,7 @@ impl AudioScheduler {
 
             // Apply the mutable user MIDI FX chain only after authored probability.
             for fx in &mut effect.midi_fx {
-                fx.process_midi(
+                fx.process_midi_with_diagnostics(
                     &mut effect.pending_midi,
                     &self.transport,
                     self.sample_rate,

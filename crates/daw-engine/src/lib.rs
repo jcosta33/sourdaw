@@ -6,9 +6,12 @@ pub mod mts_esp;
 pub mod plugin_slot;
 pub mod scheduler;
 
-use audio_thread::{spawn_audio_thread, AudioThreadHandle};
+use audio_thread::{spawn_audio_thread_with_diagnostics, AudioThreadHandle};
 use daw_core::tuning::TuningTable;
-use midi::diagnostics::ActiveMidiRtDiagnosticsSnapshot;
+use midi::diagnostics::{
+    active_midi_rt_diagnostics_channel, ActiveMidiRtDiagnosticsReader,
+    ActiveMidiRtDiagnosticsSnapshot,
+};
 use mts_esp::MtsEspMaster;
 use plugin_slot::NativePlugin;
 use rtrb::{Producer, RingBuffer};
@@ -21,23 +24,22 @@ pub struct EngineHandle {
     _audio_thread: Arc<Mutex<AudioThreadHandle>>,
     next_plugin_id: usize,
     mts_esp_master: Option<MtsEspMaster>,
-    midi_rt_diagnostics: Output<ActiveMidiRtDiagnosticsSnapshot>,
+    midi_rt_diagnostics: ActiveMidiRtDiagnosticsReader,
 }
 
 impl EngineHandle {
     /// Boot the native audio engine (spawns CPAL stream).
     pub fn new() -> Result<Self, String> {
         let (tx, rx) = RingBuffer::new(256);
-        let (diagnostics_tx, diagnostics_rx) =
-            triple_buffer::triple_buffer(&ActiveMidiRtDiagnosticsSnapshot::default());
-        let thread_handle = spawn_audio_thread(rx, diagnostics_tx)?;
+        let (diagnostics_tx, diagnostics_reader) = active_midi_rt_diagnostics_channel();
+        let thread_handle = spawn_audio_thread_with_diagnostics(rx, diagnostics_tx)?;
 
         Ok(Self {
             command_tx: tx,
             _audio_thread: Arc::new(Mutex::new(thread_handle)),
             next_plugin_id: 1000, // Start high to avoid collision with effect IDs
             mts_esp_master: None,
-            midi_rt_diagnostics: diagnostics_rx,
+            midi_rt_diagnostics: diagnostics_reader,
         })
     }
 
@@ -62,7 +64,7 @@ impl EngineHandle {
 
     /// Read the latest fixed numeric MIDI diagnostics outside the audio callback.
     pub fn midi_rt_diagnostics_snapshot(&mut self) -> ActiveMidiRtDiagnosticsSnapshot {
-        *self.midi_rt_diagnostics.read()
+        self.midi_rt_diagnostics.snapshot()
     }
 
     /// Add a built-in effect to the native rendering graph.

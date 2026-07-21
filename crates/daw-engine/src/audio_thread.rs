@@ -1,6 +1,8 @@
 //! Native OS Audio Thread using CPAL
 
-use crate::midi::diagnostics::ActiveMidiRtDiagnosticsSnapshot;
+use crate::midi::diagnostics::{
+    active_midi_rt_diagnostics_channel, ActiveMidiRtDiagnosticsSnapshot,
+};
 use crate::scheduler::{AudioScheduler, GraphCommand};
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use rtrb::Consumer;
@@ -19,7 +21,13 @@ pub struct AudioThreadHandle {
 unsafe impl Send for AudioThreadHandle {}
 unsafe impl Sync for AudioThreadHandle {}
 
-pub fn spawn_audio_thread(
+pub fn spawn_audio_thread(command_rx: Consumer<GraphCommand>) -> Result<AudioThreadHandle, String> {
+    let (midi_rt_diagnostics_tx, _midi_rt_diagnostics_reader) =
+        active_midi_rt_diagnostics_channel();
+    spawn_audio_thread_with_diagnostics(command_rx, midi_rt_diagnostics_tx)
+}
+
+pub(crate) fn spawn_audio_thread_with_diagnostics(
     command_rx: Consumer<GraphCommand>,
     midi_rt_diagnostics_tx: Input<ActiveMidiRtDiagnosticsSnapshot>,
 ) -> Result<AudioThreadHandle, String> {
