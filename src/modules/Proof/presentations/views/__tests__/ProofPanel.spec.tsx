@@ -33,10 +33,17 @@ vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => ({
 }));
 
 // persistDeviceParam writes into the Arrangement track store; isolate this view
-// test from that cross-module write.
+// test from that cross-module write. resolveEligibleDeviceWriteTarget quarantines
+// device writes for missing/ineligible owners — open the gate for the panel's
+// synthetic devices, which have no real track owner in this isolated view test.
 vi.mock('#/modules/Arrangement/stores', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/Arrangement/stores')>()),
     persistDeviceParam: vi.fn(),
+    resolveEligibleDeviceWriteTarget: vi.fn((deviceId: string) => ({
+        status: 'eligible' as const,
+        trackId: 'track-1',
+        deviceId,
+    })),
 }));
 
 const DEVICE_ID = 'proof-test-device';
