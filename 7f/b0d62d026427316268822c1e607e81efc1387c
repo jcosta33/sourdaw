@@ -1,0 +1,33 @@
+src/modules/Yeast/workers/processors/Arpeggiator.ts
+  s_c2fca615e81f34::t_8ad7aa453cd0bf 253-258,262-264,636-638,646-663
+src/modules/Yeast/workers/MidiProcessor.ts
+  s_1db0bdd21ead98::t_ff8721dae696de 146-170
+src/modules/Yeast/workers/__tests__/MidiRack.spec.ts
+  s_1db0bdd21ead98::t_a7678b046d45b8 1038-1111
+src/modules/Yeast/workers/processors/ChordGenerator.ts
+  s_1db0bdd21ead98::t_8471852342be37 9,39-41,53-67,107-111,136-141,146
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "7fb0d62d026427316268822c1e607e81efc1387c",
+  "prompts": {},
+  "sessions": {
+    "s_1db0bdd21ead98": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f86d9-490f-75a1-a2d2-5ec0d3b0b8e1",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_c2fca615e81f34": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f74e9-e1c5-7142-85d2-4c577b3973c0",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
