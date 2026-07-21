@@ -1,3 +1,4 @@
+use crate::midi::diagnostics::ActiveMidiRtDiagnostics;
 use crate::plugin_slot::{MidiNoteEvent, TransportState};
 
 pub const MIDI_EVENT_BUFFER_CAPACITY: usize = 128;
@@ -160,6 +161,18 @@ pub trait MidiFx: Send {
         sample_rate: f32,
         num_samples: usize,
     );
+
+    /// Internal scheduler hook for effects that publish bounded RT diagnostics.
+    fn process_midi_with_diagnostics(
+        &mut self,
+        events: &mut MidiEventBuffer,
+        transport: &TransportState,
+        sample_rate: f32,
+        num_samples: usize,
+        _diagnostics: &mut ActiveMidiRtDiagnostics,
+    ) {
+        self.process_midi(events, transport, sample_rate, num_samples);
+    }
 
     /// Set a parameter by name and value.
     fn set_param(&mut self, name: &str, value: f32);
@@ -331,19 +344,50 @@ impl Default for Arpeggiator {
     }
 }
 
+#[cfg(test)]
+impl Arpeggiator {
+    pub(crate) fn active_note_count(&self) -> usize {
+        self.active_notes.len()
+    }
+
+    pub(crate) fn contains_active_note(&self, note: u8) -> bool {
+        self.active_notes.contains(&note)
+    }
+}
+
 impl MidiFx for Arpeggiator {
     fn process_midi(
         &mut self,
         events: &mut MidiEventBuffer,
         transport: &TransportState,
+        sample_rate: f32,
+        num_samples: usize,
+    ) {
+        let mut diagnostics = ActiveMidiRtDiagnostics::new();
+        self.process_midi_with_diagnostics(
+            events,
+            transport,
+            sample_rate,
+            num_samples,
+            &mut diagnostics,
+        );
+    }
+
+    fn process_midi_with_diagnostics(
+        &mut self,
+        events: &mut MidiEventBuffer,
+        transport: &TransportState,
         _sample_rate: f32,
         _num_samples: usize,
+        diagnostics: &mut ActiveMidiRtDiagnostics,
     ) {
         // 1. Maintain active note list from incoming events
         for event in events.iter() {
             if event.is_note_on {
                 // Drop the newest active note when the fixed tracking buffer is full.
-                let _ = self.active_notes.try_insert_sorted(event.note);
+                if !self.active_notes.try_insert_sorted(event.note) {
+                    diagnostics.record_arpeggiator_active_note_exhaustion(1);
+                }
             } else {
                 self.active_notes.remove(event.note);
             }
