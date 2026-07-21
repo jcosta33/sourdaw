@@ -363,6 +363,20 @@ pub async fn native_tool_calling(
     Ok(results)
 }
 
+/// Parse the IPC schema argument into the constraint value llguidance
+/// expects. The frontend sends the schema as a serialized JSON string
+/// (`jsonSchema: string`); llguidance requires the parsed object/boolean —
+/// wrapping the raw string in `Value::String` made grammar construction
+/// fail with "schema must be an object or boolean" on every request.
+fn build_json_schema_constraint(json_schema: &str) -> Result<Constraint, String> {
+    let value: serde_json::Value =
+        serde_json::from_str(json_schema).map_err(|e| format!("Invalid JSON schema: {e}"))?;
+    if value.as_object().is_none() && value.as_bool().is_none() {
+        return Err("JSON schema must be an object or boolean".to_string());
+    }
+    Ok(Constraint::JsonSchema(value))
+}
+
 /// Schema-constrained streaming generation.
 /// The output is guaranteed to conform to the provided JSON schema at the token level.
 /// This is the primary edit protocol — DSO output via schema constraints.
@@ -378,12 +392,17 @@ pub async fn schema_constrained_generation(
 ) -> Result<(), String> {
     let model = get_model(&state).await?;
 
+    let constraint = build_json_schema_constraint(&json_schema).map_err(|e| {
+        let _ = on_event.send(LlmStreamEvent::Error {
+            message: e.clone(),
+        });
+        e
+    })?;
+
     let mut request = RequestBuilder::new()
         .add_message(TextMessageRole::System, &system_prompt)
         .add_message(TextMessageRole::User, &user_message)
-        .set_constraint(Constraint::JsonSchema(serde_json::Value::String(
-            json_schema,
-        )))
+        .set_constraint(constraint)
         .set_sampler_temperature(temperature.unwrap_or(0.1) as f64)
         .set_sampler_topp(0.9)
         .set_sampler_max_len(max_tokens.unwrap_or(2048));
@@ -466,6 +485,70 @@ pub fn get_model_dir() -> Result<String, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// llguidance-1.7.0/src/json/schema.rs:608-610 gate, mirrored verbatim:
+    /// grammar construction rejects any schema value that is not an object
+    /// or boolean with "schema must be an object or boolean".
+    fn llguidance_schema_gate(value: &serde_json::Value) -> Result<(), String> {
+        if value.as_object().is_some() || value.as_bool().is_some() {
+            Ok(())
+        } else {
+            Err("schema must be an object or boolean".to_string())
+        }
+    }
+
+    /// Regression (F1): the command receives the schema as a serialized
+    /// JSON string over IPC and must hand llguidance the parsed object —
+    /// the parsed value must pass the llguidance gate (object or boolean).
+    #[test]
+    fn should_parse_serialized_schema_into_object_constraint() {
+        let json_schema = r#"{"type":"object","properties":{"kind":{"type":"string"}}}"#;
+
+        let constraint = match build_json_schema_constraint(json_schema) {
+            Ok(c) => c,
+            Err(e) => panic!("expected a valid constraint, got: {e}"),
+        };
+        let Constraint::JsonSchema(value) = constraint else {
+            panic!("expected JsonSchema constraint")
+        };
+
+        assert_eq!(
+            llguidance_schema_gate(&value),
+            Ok(()),
+            "constraint value must satisfy the llguidance object/boolean gate"
+        );
+        assert_eq!(value["type"], "object");
+    }
+
+    /// Regression (F1): the pre-fix construction (Value::String around the
+    /// raw string) is exactly the shape llguidance rejects — pin the gate
+    /// so the constraint path can never regress to it.
+    #[test]
+    fn should_reject_non_object_schema_values_at_the_gate() {
+        let string_valued = serde_json::Value::String(r#"{"type":"object"}"#.to_string());
+        assert_eq!(
+            llguidance_schema_gate(&string_valued),
+            Err("schema must be an object or boolean".to_string())
+        );
+
+        let err = match build_json_schema_constraint(r#""just a string""#) {
+            Ok(_) => panic!("string-valued schema must be rejected"),
+            Err(e) => e,
+        };
+        assert_eq!(err, "JSON schema must be an object or boolean");
+    }
+
+    #[test]
+    fn should_reject_malformed_schema_json_with_clear_error() {
+        let err = match build_json_schema_constraint("{not json") {
+            Ok(_) => panic!("malformed schema must be rejected"),
+            Err(e) => e,
+        };
+        assert!(
+            err.starts_with("Invalid JSON schema:"),
+            "expected a parse error, got: {err}"
+        );
+    }
 
     #[test]
     fn should_build_gguf_target_from_verified_local_file() {
