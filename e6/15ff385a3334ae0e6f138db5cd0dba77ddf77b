@@ -1,0 +1,19 @@
+crates/daw-dsp/src/grinder/engine.rs
+  s_c2fca615e81f34::t_ea533991aedcc4 250-259,1035-1106
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "e615ff385a3334ae0e6f138db5cd0dba77ddf77b",
+  "prompts": {},
+  "sessions": {
+    "s_c2fca615e81f34": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f74e9-e1c5-7142-85d2-4c577b3973c0",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
