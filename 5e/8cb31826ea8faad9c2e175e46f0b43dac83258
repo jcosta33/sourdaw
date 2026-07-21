@@ -1,0 +1,213 @@
+src/modules/Grinder/useCases/grinderParamBridge/__tests__/loadGrinderPatchWithAudio.spec.ts
+  s_c2fca615e81f34::t_69e29481eeca0f 35-45
+src/modules/Grinder/useCases/grinderParamBridge/__tests__/moveGrinderPedalInChainWithAudio.spec.ts
+  s_c2fca615e81f34::t_77d6f3af453d78 32-42,91,97
+src/modules/Grinder/useCases/grinderParamBridge/__tests__/setGrinderParamWithAudio.spec.ts
+  s_c2fca615e81f34::t_4284bd3d7a942a 42-52
+src/modules/Grinder/useCases/grinderParamBridge/__tests__/setGrinderPedalParamWithAudio.spec.ts
+  s_c2fca615e81f34::t_bfa466af07151c 41-51
+src/app/__tests__/bootstrap.spec.ts
+  s_473cae639de4d9::t_4a66bc1010cbd3 62
+src/app/bootstrap.ts
+  s_473cae639de4d9::t_14e488c49e3694 12,214
+src/modules/Arrangement/handlers/preset/__tests__/handleLoadPreset.spec.ts
+  s_473cae639de4d9::t_9e3de6f80adb6a 28,31,33,41,43,45,50-63
+src/modules/Arrangement/handlers/preset/handleLoadPreset.ts
+  s_473cae639de4d9::t_ca4937e4437a22 6,16,20,22-24
+src/modules/Arrangement/stores/__tests__/persistDeviceParam.spec.ts
+  s_473cae639de4d9::t_f18323284cfdf2 3,5-27,67-74,76-77,83-84,86-102
+src/modules/Arrangement/stores/__tests__/resolveEligibleDeviceWriteTarget.spec.ts
+  s_473cae639de4d9::t_1c563fb862d6ec 1-96
+src/modules/Arrangement/stores/index.ts
+  s_473cae639de4d9::t_2d4e74456434ee 29-30
+src/modules/Arrangement/stores/resolveEligibleDeviceWriteTarget.ts
+  s_473cae639de4d9::t_47348252bb7ec0 1-85
+src/modules/Arrangement/useCases/device/setDeviceParameter/__tests__/persistDevicePatch.spec.ts
+  s_473cae639de4d9::t_2f708244e1c7bb 1-62
+src/modules/Arrangement/useCases/device/setDeviceParameter/__tests__/setDeviceParameter.spec.ts
+  s_473cae639de4d9::t_c9f391c28c1940 3-4,51,54-72,74,82,88-90,107,110-125
+src/modules/Arrangement/useCases/device/setDeviceParameter/persistDevicePatch.ts
+  s_473cae639de4d9::t_3c2940b0876a8f 3,6-10,15-16,20-25,28,35
+src/modules/Arrangement/useCases/device/setDeviceParameter/setDeviceParameter.ts
+  s_473cae639de4d9::t_ff987a8c502185 7,18-22,28,34,37-48,54
+src/modules/Arrangement/useCases/preset/__tests__/presetLoading.spec.ts
+  s_473cae639de4d9::t_7f78de5b114235 6,72-93,109,120-123,125,132,142-145,147,149-151,155,170,190-211
+src/modules/Arrangement/useCases/preset/presetLoading.ts
+  s_473cae639de4d9::t_019def3b81b706 14,70,72-78,80,89-90
+src/modules/Automation/useCases/modulation/__tests__/applyModulationToEngine.spec.ts
+  s_473cae639de4d9::t_5e39312a4df1c6 45-53
+src/modules/Automation/useCases/modulation/__tests__/revertMappingsToBase.spec.ts
+  s_473cae639de4d9::t_2b965372fbe2f9 36-44
+src/modules/Automation/useCases/modulation/applyModulationToEngine.ts
+  s_473cae639de4d9::t_31b1426ca4ab24 1,107-110,138-139
+src/modules/Bacteria/useCases/bacteriaParamBridge/__tests__/createFlushParam.spec.ts
+  s_473cae639de4d9::t_d99c53b930c820 3-4,18,23-28,36-47
+src/modules/Bacteria/useCases/bacteriaParamBridge/__tests__/loadBacteriaPatchWithAudio.behavior.spec.ts
+  s_473cae639de4d9::t_e5e2c717972a4d 30-34
+src/modules/Bacteria/useCases/bacteriaParamBridge/__tests__/setBacteriaBandParamWithAudio.spec.ts
+  s_473cae639de4d9::t_e9ec74018c5e4d 8-12,16,65,125-133,138
+src/modules/Bacteria/useCases/bacteriaParamBridge/__tests__/setBacteriaParamWithAudio.spec.ts
+  s_473cae639de4d9::t_cf7286920da7a6 4-8,16,59,99-103,108,111,118-122,153,180,185,190-205
+src/modules/Bacteria/useCases/bacteriaParamBridge/bacteriaParamBridgeDependencies.ts
+  s_473cae639de4d9::t_c759601aa909a9 1-6,17
+src/modules/Bacteria/useCases/bacteriaParamBridge/createFlushParam.ts
+  s_473cae639de4d9::t_e0b8729eb451c9 1-6,8-12,14-20
+src/modules/Bacteria/useCases/bacteriaParamBridge/helpers.ts
+  s_473cae639de4d9::t_e5f24e129560cb 2,11,15
+src/modules/Bacteria/useCases/bacteriaParamBridge/loadBacteriaPatchWithAudio.ts
+  s_473cae639de4d9::t_d65a9be313db78 7,47,51-55,77,108
+src/modules/Crust/useCases/crustParamBridge/__tests__/createFlushHandlers.spec.ts
+  s_7c0241d7d2be50::t_b670aafd2527b1 4,15-19,21,26-30,47-51,53-57,59,65-83
+src/modules/Crust/useCases/crustParamBridge/__tests__/loadCrustPatchWithAudio.spec.ts
+  s_473cae639de4d9::t_3029bb9674e753 3-4,10-12,17-21,35,44,52-56,70,102-106,110,129-143
+src/modules/Crust/useCases/crustParamBridge/__tests__/setCrustParamWithAudio.spec.ts
+  s_473cae639de4d9::t_27cc4b4e6240f5 3-4,12-16,29,45-49,118-129
+src/modules/Crust/useCases/crustParamBridge/createFlushHandlers.ts
+  s_b275a51ee74f73::t_3fb026c92af9c0 1,5,10-16,19-26
+src/modules/Crust/useCases/crustParamBridge/helpers.ts
+  s_b275a51ee74f73::t_a92995a3037f04 1-6,19,25,28-32
+src/modules/Crust/useCases/crustParamBridge/loadCrustPatchWithAudio.ts
+  s_b275a51ee74f73::t_4126efe5621956 5,10-11,15-16,59
+src/modules/Crust/useCases/crustParamBridge/setCrustParamWithAudio.ts
+  s_b275a51ee74f73::t_2809adabe25cf7 5,28-29,33-35,40
+src/modules/Fermenter/useCases/__tests__/fermenterParamBridge.spec.ts
+  s_473cae639de4d9::t_ac500e1d464fa6 18
+src/modules/Fermenter/useCases/__tests__/presetMorph.spec.ts
+  s_473cae639de4d9::t_1eedcaba61ce22 45
+src/modules/Fermenter/useCases/fermenterParamBridge/__tests__/loadFermenterPatchWithAudio.spec.ts
+  s_473cae639de4d9::t_0e3b0974a150de 35
+src/modules/Fermenter/useCases/fermenterParamBridge/__tests__/setFermenterParamWithAudio.spec.ts
+  s_473cae639de4d9::t_8371573d725b9d 34
+src/modules/Fermenter/useCases/fermenterParamBridge/loadFermenterPatchWithAudio.ts
+  s_473cae639de4d9::t_26276871695f78 15,18-22,26,29,34-35,39-40
+src/modules/Fermenter/useCases/fermenterParamBridge/setFermenterParamWithAudio.ts
+  s_473cae639de4d9::t_2c1f2acd7ec784 10,13-17,20-21,29-30,34-35,38
+src/modules/Fermenter/useCases/presetMorph/applyMorphedPatch.ts
+  s_473cae639de4d9::t_54bc9b2b5c2706 11,14-18,22,25,33-34,38-39
+src/modules/Gluten/useCases/__tests__/glutenParamBridge.spec.ts
+  s_b275a51ee74f73::t_4e7f2ab0e68013 5-11,16-17,34,47,59-64,82-92
+src/modules/Gluten/useCases/glutenParamBridge/__tests__/createFlushHandlers.spec.ts
+  s_b275a51ee74f73::t_24016f793c361b 4,15-19,21,26-30,47-51,53-57,59,65-83
+src/modules/Gluten/useCases/glutenParamBridge/__tests__/loadGlutenPatchWithAudio.spec.ts
+  s_b275a51ee74f73::t_058904d4427881 4,9-13,19-22,29-30,46-50,113-126
+src/modules/Gluten/useCases/glutenParamBridge/createFlushHandlers.ts
+  s_473cae639de4d9::t_2253c5694662cc 1,5,10-16,19-26
+src/modules/Gluten/useCases/glutenParamBridge/helpers.ts
+  s_473cae639de4d9::t_ae9c59e272c7bb 1-6,21,27,30-34
+src/modules/Gluten/useCases/glutenParamBridge/loadGlutenPatchWithAudio.ts
+  s_473cae639de4d9::t_5250270986fee0 7,12-16,21-24,86
+src/modules/Gluten/useCases/glutenParamBridge/setGlutenParamWithAudio.ts
+  s_473cae639de4d9::t_8444a46eb6ada7 5,14-18,27
+src/modules/Grinder/useCases/grinderParamBridge/__tests__/createFlushParam.spec.ts
+  s_473cae639de4d9::t_de36173ea6194b 9-18,21
+src/modules/Grinder/useCases/grinderParamBridge/__tests__/syncGrinderPatchToAudio.spec.ts
+  s_473cae639de4d9::t_8c401a23eac06c 28-32
+src/modules/Grinder/useCases/grinderParamBridge/createFlushParam.ts
+  s_473cae639de4d9::t_29da249a13935b 1-6,11,19,22-28
+src/modules/Grinder/useCases/grinderParamBridge/grinderParamBridgeDependencies.ts
+  s_473cae639de4d9::t_925dadc2e048a2 1-6,18
+src/modules/Grinder/useCases/grinderParamBridge/helpers.ts
+  s_473cae639de4d9::t_90a87ed17c5f76 1,9,11
+src/modules/Grinder/useCases/grinderParamBridge/loadGrinderPatchWithAudio.ts
+  s_473cae639de4d9::t_710848a2e7bb2d 13,16-20,27,31
+src/modules/Grinder/useCases/grinderParamBridge/moveGrinderPedalInChainWithAudio.ts
+  s_473cae639de4d9::t_595a438318b8b1 12,20-21,25-26,32-33
+src/modules/Grinder/useCases/grinderParamBridge/recallGrinderSnapshotWithAudio.ts
+  s_473cae639de4d9::t_688b968e3b842b 12,15-16,20-21,27,31
+src/modules/Grinder/useCases/grinderParamBridge/setGrinderParamWithAudio.ts
+  s_473cae639de4d9::t_ed241dda8315db 71,73-77,83-87,108,113
+src/modules/Levain/useCases/__tests__/loadPreset.spec.ts
+  s_473cae639de4d9::t_ae34c3d5948b19 37-46
+src/modules/Levain/useCases/levainParamBridge/__tests__/helpers.spec.ts
+  s_473cae639de4d9::t_a44acf62518283 18-22
+src/modules/Levain/useCases/levainParamBridge/helpers.ts
+  s_473cae639de4d9::t_f1ed091e57f896 2-6,25,52-56,81-85,111-115,182-186,232-236,286-290
+src/modules/Levain/useCases/levainParamBridge/levainBridgeDependencies.ts
+  s_473cae639de4d9::t_86d142e613f218 1-6,18
+src/modules/Proof/useCases/__tests__/proofParamBridge.spec.ts
+  s_b275a51ee74f73::t_a7ea8511fdefc9 3-4,12,18-22
+src/modules/Proof/useCases/proofParamBridge/__tests__/loadProofPatchWithAudio.spec.ts
+  s_b275a51ee74f73::t_728d6b625d0bb0 3,20-23,114-118,511-538
+src/modules/Proof/useCases/proofParamBridge/__tests__/reorderChain.spec.ts
+  s_473cae639de4d9::t_3a14805eff7662 3-4,9-13,30-34
+src/modules/Proof/useCases/proofParamBridge/__tests__/setProofParam.spec.ts
+  s_b275a51ee74f73::t_8d6106962fd7f3 3,10,29-33,51-61
+src/modules/Proof/useCases/proofParamBridge/__tests__/setProofParamWithPatch.spec.ts
+  s_b275a51ee74f73::t_c50dba529f8c52 3,16-19,37-41,292-306
+src/modules/Proof/useCases/proofParamBridge/__tests__/setProofTarget.spec.ts
+  s_b275a51ee74f73::t_231cea4ff426d1 3,16-19,25-29,64-77
+src/modules/Proof/useCases/proofParamBridge/loadProofPatchWithAudio.ts
+  s_b275a51ee74f73::t_2c9c73e6272697 1,20-25
+src/modules/Proof/useCases/proofParamBridge/setProofParam.ts
+  s_b275a51ee74f73::t_b0aed418a41bd0 1,12-16
+src/modules/Proof/useCases/proofParamBridge/setProofParamWithPatch.ts
+  s_b275a51ee74f73::t_6b44e78aaaa11e 1,322-325
+src/modules/Proof/useCases/proofParamBridge/setProofTarget.ts
+  s_b275a51ee74f73::t_aee0e5049dd2b7 1,21-26
+src/modules/Proof/useCases/proofParamBridge/syncFullPatch.ts
+  s_b275a51ee74f73::t_510c24b9aecbd4 1,458-462
+src/modules/Toaster/useCases/__tests__/setPadParamImmediate.spec.ts
+  s_b275a51ee74f73::t_936150620f7a09 3-4,9-11,15-18,37-41,61-62,66
+src/modules/Toaster/useCases/setPadParamImmediate.ts
+  s_b275a51ee74f73::t_948fd41d6103f4 1,24-27,31
+src/modules/Toaster/useCases/toasterParamBridge/__tests__/cancelPendingToasterPadParams.spec.ts
+  s_473cae639de4d9::t_308490a4b1d59f 3,18-20,24-27,93-97
+src/modules/Toaster/useCases/toasterParamBridge/__tests__/setPadEngineImmediate.spec.ts
+  s_b275a51ee74f73::t_f5ce6cbad8ad1d 1-18,23-36,40-55
+src/modules/Toaster/useCases/toasterParamBridge/__tests__/setToasterKitParam.spec.ts
+  s_b275a51ee74f73::t_e51ed929e4bb74 3-6,8,11-14,25,60-64,100,102,106-115
+src/modules/Toaster/useCases/toasterParamBridge/__tests__/setToasterPadParam.spec.ts
+  s_b275a51ee74f73::t_f96ade3403d2e9 3,18-20,24-27,68-72,113-114,118,157-166
+src/modules/Toaster/useCases/toasterParamBridge/setPadEngineImmediate.ts
+  s_b275a51ee74f73::t_11bd0be630a776 1,10-11,15
+src/modules/Toaster/useCases/toasterParamBridge/setToasterKitParam.ts
+  s_b275a51ee74f73::t_8a11b945ad2783 1,21,23,31-36,53-54,58-59,66,70
+src/modules/Toaster/useCases/toasterParamBridge/setToasterPadParam.ts
+  s_b275a51ee74f73::t_4ae36ed798b6a5 1,11,19-24,37-39,42-43,49
+src/modules/Transport/useCases/__tests__/ensureTrackStrips.spec.ts
+  s_473cae639de4d9::t_7ca43974cacf55 35-43
+src/modules/Transport/useCases/ensureTrackStrips.ts
+  s_473cae639de4d9::t_36807c2f2dfe36 8,47-51,56
+src/modules/Transport/useCases/scheduling/applyAutomation/applyAutomation.ts
+  s_473cae639de4d9::t_0e156137459b77 1,87-90,94-101,115,122-124,127-130
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "5e8cb31826ea8faad9c2e175e46f0b43dac83258",
+  "prompts": {},
+  "sessions": {
+    "s_473cae639de4d9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f839b-d2e8-70a3-b87a-f84b33a2c10c",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_7c0241d7d2be50": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f839f-1172-7142-9319-ea4cfe3ec7e7",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_b275a51ee74f73": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f83af-d116-74d0-aa71-018e78a92715",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_c2fca615e81f34": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f74e9-e1c5-7142-85d2-4c577b3973c0",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
