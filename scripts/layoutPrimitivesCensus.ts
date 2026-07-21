@@ -34,7 +34,7 @@ export const ALLOWED_LAYOUT_DISPOSITIONS = [
     'one-off',
 ] as const;
 
-export const REVIEWED_LAYOUT_CENSUS_DIGEST = '014008d6c5e4f4c8292952fef9d40774dfabd4ec61de3fd62b5873380408bc26';
+export const REVIEWED_LAYOUT_CENSUS_DIGEST = 'd4ad41ab3beb0d918b35211083535aac19d26d3c1bbe23359795948fbb8c9917';
 
 const LEGACY_ONE_OFF_RATIONALE =
     'Native semantics, refs, handlers, positioning, overflow, child selectors, inline styles, spread attributes, or unsupported geometry require owner-specific proof.';
@@ -207,7 +207,6 @@ const auditedPolymorphicPrimitives = new Set(['Row', 'Stack', 'Grid']);
 const genericIntrinsicElements = new Set(['div', 'span']);
 const semanticAttributeNames = new Set(['contentEditable', 'draggable', 'href', 'htmlFor', 'tabIndex']);
 const responsivePrefix = /^(?:(?:sm|md|lg|xl|2xl|max-\[[^\]]+\]|min-\[[^\]]+\])|@[^:]+):/;
-const conditionalVariantPrefix = /(?:^|:)(?:group(?:-[^:]+)?|peer(?:-[^:]+)?|state(?:-[^:]+)?|data-[^:]+|aria-[^:]+):/;
 const rendererPath = /(?:^|\/)(?:[^/]*(?:Canvas|Renderer|WebGL)[^/]*|renderers?)(?:\/|\.tsx$)/i;
 const thirdPartyPath = /(?:^|\/)(?:third[-_]?party|vendor)(?:\/|$)/i;
 
@@ -1363,6 +1362,13 @@ function isLayoutToken(token: string): boolean {
     );
 }
 
+function layoutTokenHasModifier(token: string): boolean {
+    if (!isLayoutToken(token)) {
+        return false;
+    }
+    return token !== baseLayoutToken(token);
+}
+
 function classNameEvidence(
     attribute: ts.JsxAttribute | null,
     sourceFile: ts.SourceFile,
@@ -1403,9 +1409,7 @@ function classNameEvidence(
     }
     const layoutTokens = allTokens.filter(isLayoutToken);
 
-    const responsive = allTokens.some(
-        (token) => responsivePrefix.test(token) || (isLayoutToken(token) && conditionalVariantPrefix.test(token))
-    );
+    const responsive = allTokens.some((token) => responsivePrefix.test(token) || layoutTokenHasModifier(token));
     let currentPattern = normalizeWhitespace(analysis.fragments.join(' '));
     if (ts.isJsxExpression(attribute.initializer)) {
         currentPattern = normalizeWhitespace(attribute.initializer.getText(sourceFile));

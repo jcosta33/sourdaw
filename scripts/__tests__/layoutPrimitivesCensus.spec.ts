@@ -662,6 +662,24 @@ describe('collectLayoutOccurrences', () => {
         });
     });
 
+    it.each(['hover:flex', 'focus:grid', 'dark:flex-col', 'motion-reduce:grid', 'supports-[display:grid]:grid'])(
+        'should classify modifier-bearing layout token %s as responsive or dynamic',
+        (className) => {
+            const repositoryRoot = createFixture({
+                'src/App.tsx': `export const App = () => <div className="${className}" />;\n`,
+            });
+
+            const occurrences = collectLayoutOccurrences({ repositoryRoot });
+
+            expect(occurrences).toHaveLength(1);
+            expect(occurrences[0]).toMatchObject({
+                disposition: 'responsive-or-dynamic',
+                proposedPrimitive: null,
+                riskFlags: { hasResponsiveClasses: true },
+            });
+        }
+    );
+
     it('should trust static as only on audited polymorphic primitives and keep bound as unknown', () => {
         const repositoryRoot = createFixture({
             'src/App.tsx': `
