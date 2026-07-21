@@ -1,0 +1,19 @@
+crates/daw-dsp/src/knead/engine.rs
+  s_c2fca615e81f34::t_a963a4e61efa34 139-145,188-193,195,199-208,235,334-335,337-339,365-370,625-734
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "0220e22f503dab7b9cdd5efc4ab5bcd4d70556f5",
+  "prompts": {},
+  "sessions": {
+    "s_c2fca615e81f34": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f74e9-e1c5-7142-85d2-4c577b3973c0",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
