@@ -127,7 +127,7 @@ describe('joinSession', () => {
         expect(state).toMatchObject({
             isEnabled: true,
             sessionId: 'session-99',
-            localPeerId: 'local-peer-id',
+            localPeerId: 'joiner-1',
             localName: 'Alice',
             localColor: PEER_COLORS[3],
             isHost: false,
@@ -147,6 +147,33 @@ describe('joinSession', () => {
         ]);
     });
 
+    it('adopts the host-minted pendingPeerId as the joiner identity (regression: dual peer id)', async () => {
+        // The host creates the PeerConnection keyed by pendingPeerId and lists
+        // the joiner in its store under answer.peerId. If those differ, every
+        // cross-layer host lookup (presence, peer-leave, disconnect cleanup,
+        // color assignment) silently misses. The joiner must therefore take
+        // the host-minted slot id as its own session identity.
+        const offer = makeOffer({ pendingPeerId: 'joiner-slot-9' });
+        mockRuntime.decompressInvite.mockResolvedValueOnce(JSON.stringify(offer));
+
+        await joinSession('invite', 'Alice');
+
+        expect(collaborationStore.value?.localPeerId).toBe('joiner-slot-9');
+        const sentJson = mockRuntime.compressInvite.mock.calls[0]![0];
+        const answer = JSON.parse(sentJson) as SignalingMessage;
+        expect(answer).toMatchObject({ type: 'answer', peerId: 'joiner-slot-9', pendingPeerId: 'joiner-slot-9' });
+    });
+
+    it('falls back to a self-minted id for legacy invites without pendingPeerId', async () => {
+        const { pendingPeerId: _omitted, ...legacyOffer } = makeOffer();
+        mockRuntime.decompressInvite.mockResolvedValueOnce(JSON.stringify(legacyOffer));
+
+        await joinSession('invite', 'Alice');
+
+        expect(collaborationStore.value?.localPeerId).toBe('local-peer-id');
+        expect(mockRuntime.generatePeerId).toHaveBeenCalledTimes(1);
+    });
+
     it('returns a compressed answer addressed to the pending peer slot', async () => {
         const offer = makeOffer({ pendingPeerId: 'pending-7' });
         mockRuntime.decompressInvite.mockResolvedValueOnce(JSON.stringify(offer));
@@ -158,7 +185,7 @@ describe('joinSession', () => {
         const answer = JSON.parse(sentJson) as SignalingMessage;
         expect(answer).toMatchObject({
             type: 'answer',
-            peerId: 'local-peer-id',
+            peerId: 'pending-7',
             name: 'Alice',
             sdp: 'fake-answer-sdp',
             pendingPeerId: 'pending-7',
