@@ -23,7 +23,7 @@ import {
 import { sidechainStore } from '#/modules/Routing/stores';
 import { type AppAction } from '#/utils/handlerContract';
 
-import { createTrack } from '../../../models/Track';
+import { createTrack, type Track } from '../../../models/Track';
 import { trackStore } from '../../../stores/trackStore';
 import { getVcaGroupsState, setVcaGroupsState } from '../../../stores/vcaGroupStore';
 import { getArrangementHandlers } from '../../../useCases/getArrangementHandlers';
@@ -67,6 +67,38 @@ function seedState(): void {
         { id: 'vca-a', name: 'A', gain: 0.5, muted: false, trackIds: [first.id] },
         { id: 'vca-b', name: 'B', gain: 1, muted: false, trackIds: [] },
     ]);
+}
+
+const DORMANT_ACTION_TRACK_ID = 'dormant-vca';
+const DORMANT_ACTION_DEVICE_ID = 'dormant-device';
+
+function seedDormantActionTarget(): Track {
+    const state = trackStore.value;
+    if (!state) {
+        throw new Error('Expected seeded track state');
+    }
+    const dormant = createTrack({ id: DORMANT_ACTION_TRACK_ID, name: 'Dormant VCA', kind: 'audio' });
+    dormant.armed = true;
+    dormant.inputId = 'input-residue';
+    dormant.outputId = 'track-2';
+    dormant.devices = [
+        {
+            id: DORMANT_ACTION_DEVICE_ID,
+            name: 'Dormant device residue',
+            type: 'compressor',
+            bypassed: false,
+            parameterValues: { threshold: 0.25 },
+        },
+    ];
+    dormant.sends = [{ busId: 'track-2', level: 0.25, preFader: false }];
+    Object.defineProperty(dormant, 'kind', {
+        value: 'vca',
+        configurable: true,
+        enumerable: true,
+        writable: true,
+    });
+    trackStore.set({ ...state, tracks: [...state.tracks, dormant] });
+    return dormant;
 }
 
 async function expectRoundTrip(action: AppAction): Promise<void> {
@@ -260,6 +292,154 @@ describe('legacy VCA action history', () => {
             expect(captureState()).toEqual(before);
             expect(undoStore.value?.past).toEqual([]);
             expect(actionHistoryStore.value?.entries).toEqual([]);
+        }
+    );
+
+    it.each([
+        {
+            label: 'add clip',
+            action: {
+                type: 'addClip',
+                payload: {
+                    trackId: DORMANT_ACTION_TRACK_ID,
+                    startBeat: 0,
+                    endBeat: 4,
+                    name: 'Denied clip',
+                    type: 'audio',
+                },
+            },
+        },
+        {
+            label: 'add device',
+            action: {
+                type: 'addDevice',
+                payload: { trackId: DORMANT_ACTION_TRACK_ID, deviceType: 'compressor' },
+            },
+        },
+        {
+            label: 'add send',
+            action: {
+                type: 'addSend',
+                payload: { trackId: DORMANT_ACTION_TRACK_ID, busId: 'track-1', level: 0.5 },
+            },
+        },
+        {
+            label: 'load external plugin',
+            action: {
+                type: 'loadExternalPlugin',
+                payload: { pluginId: 'external-plugin', trackId: DORMANT_ACTION_TRACK_ID },
+            },
+        },
+        {
+            label: 'set send',
+            action: {
+                type: 'setSend',
+                payload: { trackId: DORMANT_ACTION_TRACK_ID, busId: 'track-2', level: 0.75 },
+            },
+        },
+        {
+            label: 'set device parameter',
+            action: {
+                type: 'setDeviceParameter',
+                payload: { deviceId: DORMANT_ACTION_DEVICE_ID, paramId: 'threshold', value: 0.75 },
+            },
+        },
+        {
+            label: 'set input',
+            action: {
+                type: 'setTrackInput',
+                payload: { trackId: DORMANT_ACTION_TRACK_ID, inputId: 'new-input' },
+            },
+        },
+        {
+            label: 'set output',
+            action: {
+                type: 'setTrackOutput',
+                payload: { trackId: DORMANT_ACTION_TRACK_ID, outputId: 'track-1' },
+            },
+        },
+        {
+            label: 'bypass device',
+            action: {
+                type: 'bypassDevice',
+                payload: { deviceId: DORMANT_ACTION_DEVICE_ID, bypassed: true },
+            },
+        },
+        {
+            label: 'arm',
+            action: {
+                type: 'armTrack',
+                payload: { trackId: DORMANT_ACTION_TRACK_ID, armed: true },
+            },
+        },
+        {
+            label: 'freeze',
+            action: { type: 'freezeTrack', payload: { trackId: DORMANT_ACTION_TRACK_ID } },
+        },
+        {
+            label: 'bounce selection',
+            action: {
+                type: 'bounceSelection',
+                payload: { trackId: DORMANT_ACTION_TRACK_ID, startBeat: 0, endBeat: 4 },
+            },
+        },
+        {
+            label: 'bounce in place',
+            action: { type: 'bounceInPlace', payload: { trackId: DORMANT_ACTION_TRACK_ID } },
+        },
+        {
+            label: 'bounce to new track',
+            action: { type: 'bounceToNewTrack', payload: { trackId: DORMANT_ACTION_TRACK_ID } },
+        },
+    ] satisfies Array<{ label: string; action: AppAction }>)(
+        'records no macro, replay, or undo history when dormant denial rejects $label',
+        async ({ action }) => {
+            seedDormantActionTarget();
+            const before = structuredClone(trackStore.value);
+
+            await executeAppAction(action);
+
+            expect(trackStore.value).toEqual(before);
+            expect(macroStore.value?.currentRecording).toEqual([]);
+            expect(actionHistoryStore.value?.entries).toEqual([]);
+            expect(undoStore.value?.past).toEqual([]);
+        }
+    );
+
+    it.each([
+        {
+            label: 'input cleanup',
+            action: {
+                type: 'setTrackInput',
+                payload: { trackId: DORMANT_ACTION_TRACK_ID, inputId: null },
+            },
+            assertTrack: (track: Track) => expect(track.inputId).toBeNull(),
+        },
+        {
+            label: 'disarm cleanup',
+            action: {
+                type: 'armTrack',
+                payload: { trackId: DORMANT_ACTION_TRACK_ID, armed: false },
+            },
+            assertTrack: (track: Track) => expect(track.armed).toBe(false),
+        },
+    ] satisfies Array<{ label: string; action: AppAction; assertTrack: (track: Track) => void }>)(
+        'records macro, replay, and undo history for permitted dormant $label',
+        async ({ action, assertTrack }) => {
+            seedDormantActionTarget();
+            const before = structuredClone(trackStore.value);
+
+            await executeAppAction(action);
+
+            expect(trackStore.value).not.toEqual(before);
+            const updated = trackStore.value?.tracks.find((track) => track.id === DORMANT_ACTION_TRACK_ID);
+            if (!updated) {
+                throw new Error('Expected updated dormant action target');
+            }
+            assertTrack(updated);
+            expect(macroStore.value?.currentRecording).toEqual([action]);
+            expect(actionHistoryStore.value?.entries).toHaveLength(1);
+            expect(undoStore.value?.past).toHaveLength(1);
         }
     );
 

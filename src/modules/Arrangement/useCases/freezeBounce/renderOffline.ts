@@ -68,7 +68,17 @@ export async function renderTrackOffline(
     const allTracks = trackStore.value?.tracks ?? [];
     const allSidechainRoutes = sidechainStore.value?.routes ?? [];
     const upstreamIds = getUpstreamSubgraph(targetTrack.id, allTracks, allSidechainRoutes);
-    const renderTracks = allTracks.filter((time) => upstreamIds.has(time.id) || time.id === targetTrack.id);
+    const renderTracks: Track[] = [];
+    for (const time of allTracks) {
+        const belongsToRenderSubgraph = time.id === targetTrack.id || upstreamIds.has(time.id);
+        if (!belongsToRenderSubgraph) {
+            continue;
+        }
+        if (!getTrackEligibility(time.kind).acceptsRoutingEndpoint) {
+            continue;
+        }
+        renderTracks.push(time);
+    }
 
     const transport = transportStore.value;
     const tempo = transport?.tempo ?? 120;
