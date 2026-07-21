@@ -1,0 +1,43 @@
+src/modules/MIDI/stores/midiStore.ts
+  s_75f59e6653feee::t_309222407b651d 288-290
+src/modules/Project/models/ProjectData.ts
+  s_75f59e6653feee::t_4804f4319b7d6f 197-202,506
+src/modules/Project/useCases/arrangement/__tests__/loadSnapshot.spec.ts
+  s_75f59e6653feee::t_22bfae20878c09 1-7,33-42,96-104,108-112,171-201
+src/modules/Project/useCases/arrangement/__tests__/takeSnapshot.spec.ts
+  s_75f59e6653feee::t_783685a9b04a0a 3-4,20,79-80,111-115,123
+src/modules/Project/useCases/arrangement/loadSnapshot.ts
+  s_75f59e6653feee::t_2487de2b937a4b 11-15
+src/modules/Project/useCases/arrangement/takeSnapshot.ts
+  s_75f59e6653feee::t_48e374a5d23fd2 10-26,33
+src/modules/Project/useCases/projectPersistence/__tests__/loadProject.spec.ts
+  s_75f59e6653feee::t_889e7a730e3a95 75
+src/modules/Project/useCases/projectPersistence/__tests__/loadProjectMidiHydration.spec.ts
+  s_75f59e6653feee::t_57041c3009bb78 1-131
+src/modules/Project/useCases/projectPersistence/fileIO/__tests__/buildProjectData.spec.ts
+  s_75f59e6653feee::t_0cbbe819e4d38e 18-20,119-145
+src/modules/Project/useCases/projectPersistence/fileIO/buildProjectData.ts
+  s_75f59e6653feee::t_5ed9b120d8d26c 178-182
+src/modules/Project/useCases/projectPersistence/helpers/__tests__/resetModuleStoresToDefault.spec.ts
+  s_75f59e6653feee::t_f746cc57541289 127-132
+src/modules/Project/useCases/projectPersistence/helpers/resetModuleStoresToDefault.ts
+  s_75f59e6653feee::t_955b9ec1c68819 25,32,39-41
+src/modules/Project/useCases/projectPersistence/loadProject.ts
+  s_75f59e6653feee::t_20453660211e2f 74
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "fa17614c33b1b7ae60842bf49b66c824518ff7b4",
+  "prompts": {},
+  "sessions": {
+    "s_75f59e6653feee": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f819a-2ddc-70b3-ab04-f29a50e9a71d",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
