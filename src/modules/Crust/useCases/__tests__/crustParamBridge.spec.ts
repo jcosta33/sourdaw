@@ -1,5 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+import { type DeviceWriteTargetResolution } from '#/modules/Arrangement/stores';
+
 type TestTrack = { id: string; devices: Array<{ id: string }> };
 
 const { mockUpdateDeviceParam, mockPersistDeviceParam, mockGetAllTracks } = vi.hoisted(() => ({
@@ -15,6 +17,16 @@ vi.mock('../crustParamBridge/helpers', async (importOriginal) => {
         crustBridgeDeps: {
             updateDeviceParam: mockUpdateDeviceParam,
             persistDeviceParam: mockPersistDeviceParam,
+            // Mirrors the real resolver against the mocked track list so the
+            // quarantine gate opens exactly when findDeviceRefCrust would match.
+            resolveEligibleDeviceWriteTarget: (deviceId: string): DeviceWriteTargetResolution => {
+                for (const track of mockGetAllTracks()) {
+                    if (track.devices.some((device) => device.id === deviceId)) {
+                        return { status: 'eligible', trackId: track.id, deviceId };
+                    }
+                }
+                return { status: 'missing' };
+            },
         },
         findDeviceRefCrust: (deviceId: string) => {
             for (const track of mockGetAllTracks()) {

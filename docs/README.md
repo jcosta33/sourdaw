@@ -15,6 +15,10 @@ Before writing any code, start with the foundational principles. Our codebase fo
 - ➡️ **Read about our [Rust backend architecture](./architecture/02-rust-backend.md)**
 - ➡️ **Review [plugin hosting security](./architecture/04-plugin-hosting-security.md) before changing native plugin scan/load behavior**
 - ➡️ **Read about [boundary enforcement limits](./architecture/05-boundary-enforcement-limits.md) before touching dependency rules or baselines**
+- ➡️ **Read about the [CRDT write path & collaboration](./architecture/06-crdt-collaboration.md) before touching state, undo, or persistence**
+- ➡️ **Read about the [WASM DSP pipeline](./architecture/07-wasm-dsp-pipeline.md) before touching device engines or worklets**
+- ➡️ **Follow the [device authoring playbook](./architecture/08-device-authoring.md) when adding or changing a built-in device**
+- ➡️ **Read about the [AI stack](./architecture/09-ai-stack.md) before touching LLM or ML features**
 
 ### 2. Dependency Injection
 

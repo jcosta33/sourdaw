@@ -16,10 +16,16 @@ describe('levainParamBridge', () => {
         const getAllTracks = vi.fn(() => []);
         const persistDeviceParam = vi.fn();
         const autoLoadLevainSamples = vi.fn().mockResolvedValue(undefined);
+        const resolveEligibleDeviceWriteTarget = vi.fn((deviceId: string) => ({
+            status: 'eligible' as const,
+            trackId: 'track-1',
+            deviceId,
+        }));
         injectDependencies(levainBridge, {
             getAllTracks,
             persistDeviceParam,
             autoLoadLevainSamples,
+            resolveEligibleDeviceWriteTarget,
         });
 
         const mockDevice = { setParam: vi.fn(), handleCc: vi.fn() };
