@@ -1,0 +1,21 @@
+src/modules/ControlSurface/useCases/__tests__/controllerMappingSchema.spec.ts
+  s_7c0241d7d2be50::t_7d37e0c29ee924 280-317
+src/modules/ControlSurface/useCases/validateControllerMappingSchema.ts
+  s_7c0241d7d2be50::t_35fe87bfdbdbcf 136,162,189,209,230,238
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "e443520dc96b5224539d75cac6402f8006b4f7e5",
+  "prompts": {},
+  "sessions": {
+    "s_7c0241d7d2be50": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f839f-1172-7142-9319-ea4cfe3ec7e7",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
