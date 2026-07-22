@@ -1,0 +1,48 @@
+src/modules/AudioEngine/engine/wasmDeviceRegistry.ts
+  s_ac9b259eab20ba::t_d21f3df7dc5187 198
+  s_ac9b259eab20ba::t_435debf82f9a8e 147
+crates/daw-dsp/src/toaster/engine.rs
+  s_ac9b259eab20ba::t_2b65e932f02576 223,304,423-439,536-545
+  s_ac9b259eab20ba::t_19385545f479a2 533-535
+crates/daw-dsp/tests/toaster_pad_output.rs
+  s_ac9b259eab20ba::t_4a9fcb7e5b5ef5 55-129
+  s_ac9b259eab20ba::t_a3e4cb3e1fb903 209,212,214
+src/modules/AudioEngine/engine/ToasterNode.ts
+  s_ac9b259eab20ba::t_435debf82f9a8e 35,126-130,160
+src/modules/AudioEngine/services/__tests__/toasterProcessor.spec.ts
+  s_ac9b259eab20ba::t_cef9dcadc6a424 252,254-257,260-264
+  s_ac9b259eab20ba::t_4a9fcb7e5b5ef5 34,36,52-60,65-66,103-104,238-251,253,258-259
+  s_ac9b259eab20ba::t_46102fafbeb0c2 265-266
+src/modules/AudioEngine/engine/__tests__/wasmDeviceRegistryDescriptors.spec.ts
+  s_ac9b259eab20ba::t_4a9fcb7e5b5ef5 145,185
+crates/daw-dsp/src/toaster/mod.rs
+  s_ac9b259eab20ba::t_2b65e932f02576 67-76
+src/modules/AudioEngine/models/AudioEngineState.ts
+  s_ac9b259eab20ba::t_435debf82f9a8e 103
+src/modules/AudioEngine/engine/__tests__/ToasterNode.spec.ts
+  s_ac9b259eab20ba::t_4a9fcb7e5b5ef5 172-186,249
+src/modules/AudioEngine/services/toasterProcessor.ts
+  s_ac9b259eab20ba::t_435debf82f9a8e 16-17,78-80,243-248
+src/modules/AudioEngine/wasm/daw_dsp.d.ts
+  s_ac9b259eab20ba::t_a29550f5577c2a 196-197
+public/wasm/daw-dsp/daw_dsp.js
+  s_ac9b259eab20ba::t_cef98a2d1306fb 1110-1123
+src/modules/AudioEngine/wasm/daw_dsp.js
+  s_ac9b259eab20ba::t_27487b9221fd4c 1153-1166
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "b34789d2affae721ad747b0a5b78969eb681b3b5",
+  "prompts": {},
+  "sessions": {
+    "s_ac9b259eab20ba": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8699-3865-7842-8c54-afbac6cfd266",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
