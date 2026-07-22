@@ -141,15 +141,15 @@ describe('TrackAutomationSection', () => {
 
     it('creates a device lane with the stable device id and bare parameter id', () => {
         mockGetBuiltinPlugins.mockReturnValue([
-            { id: 'effect', name: 'Effect', parameters: [{ id: 'cutoff', name: 'Cutoff', automatable: true }] },
+            { id: 'builtin-crumbs', name: 'Crumbs', parameters: [{ id: 'cutoff', name: 'Cutoff', automatable: true }] },
         ]);
         const track = {
             ...mockTrack,
             devices: [
                 {
                     id: 'device-1',
-                    name: 'Effect',
-                    type: 'effect',
+                    name: 'Crumbs',
+                    type: 'builtin-crumbs',
                     bypassed: false,
                     parameterValues: { cutoff: 0.5 },
                 },
@@ -160,7 +160,7 @@ describe('TrackAutomationSection', () => {
         fireEvent.click(screen.getByLabelText('Add automation lane'));
         fireEvent.click(screen.getByRole('menuitem', { name: 'Cutoff' }));
 
-        expect(mockAddAutomationLane).toHaveBeenCalledWith('track-1', 'device-1:cutoff', 'Effect: Cutoff');
+        expect(mockAddAutomationLane).toHaveBeenCalledWith('track-1', 'device-1:cutoff', 'Crumbs: Cutoff');
     });
 
     it('should render automation lanes when they exist', () => {

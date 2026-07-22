@@ -104,9 +104,13 @@ export const TrackAutomationSection = ({ track }: TrackAutomationSectionProps): 
                                     <>
                                         <DawMenuSeparator />
                                         {track.devices.map((device) => {
-                                            const plugin = getBuiltinPlugins().find(
-                                                (param) => param.name.toLowerCase() === device.type.toLowerCase()
-                                            );
+                                            const builtinPlugins = getBuiltinPlugins();
+                                            const plugin =
+                                                builtinPlugins.find((candidate) => candidate.id === device.type) ??
+                                                builtinPlugins.find(
+                                                    (candidate) =>
+                                                        candidate.name.toLowerCase() === device.type.toLowerCase()
+                                                );
                                             if (!plugin) {
                                                 return null;
                                             }
