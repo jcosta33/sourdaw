@@ -4,13 +4,12 @@ import { readFileSync } from 'node:fs';
 // The package's "main" CJS bundle exposes no runtime exports under Node SSR
 // resolution; the ESM build (what Vite serves the app) does.
 import {
-    FaustCompiler,
     FaustMonoDspGenerator,
-    instantiateFaustModuleFromFile,
-    LibFaust,
     type FaustMonoDspGenerator as FaustMonoDspGeneratorType,
 } from '@grame/faustwasm/dist/esm/index.js';
 import { describe, expect, it, beforeAll } from 'vitest';
+
+import { loadFaustCompilerForSpec } from '../../../testing/loadFaustCompilerForSpec';
 
 /**
  * Behavior proof for the shipped noise-gate.dsp (review #563): compiled
@@ -21,7 +20,6 @@ import { describe, expect, it, beforeAll } from 'vitest';
  */
 
 const DSP_FILE = 'src/modules/PluginHost/useCases/faustEngine/dsp/noise-gate.dsp';
-const LIBFAUST_JS = './public/faust/libfaust-wasm.js';
 const COMPILE_TIMEOUT_MS = 120_000;
 
 const SAMPLE_RATE = 48_000;
@@ -78,8 +76,7 @@ describe('noise-gate.dsp behavior (offline render)', () => {
     let generator: FaustMonoDspGeneratorType;
 
     beforeAll(async () => {
-        const faustModule = await instantiateFaustModuleFromFile(LIBFAUST_JS);
-        const compiler = new FaustCompiler(new LibFaust(faustModule));
+        const compiler = await loadFaustCompilerForSpec();
         const dspCode = readFileSync(DSP_FILE, 'utf8');
         const created = new FaustMonoDspGenerator();
         const compiled = await created.compile(compiler, 'noise-gate', dspCode, '-I libraries/');

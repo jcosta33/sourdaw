@@ -4,14 +4,10 @@ import { join } from 'node:path';
 
 // The package's "main" CJS bundle exposes no runtime exports under Node SSR
 // resolution; the ESM build (what Vite serves the app) does.
-import {
-    FaustCompiler,
-    FaustMonoDspGenerator,
-    instantiateFaustModuleFromFile,
-    LibFaust,
-    type IFaustCompiler,
-} from '@grame/faustwasm/dist/esm/index.js';
+import { FaustMonoDspGenerator, type IFaustCompiler } from '@grame/faustwasm/dist/esm/index.js';
 import { describe, expect, it, beforeAll } from 'vitest';
+
+import { loadFaustCompilerForSpec } from '../../../testing/loadFaustCompilerForSpec';
 
 /**
  * Compiles every shipped .dsp through the app's own Faust path
@@ -22,7 +18,6 @@ import { describe, expect, it, beforeAll } from 'vitest';
  */
 
 const DSP_DIR = 'src/modules/PluginHost/useCases/faustEngine/dsp';
-const LIBFAUST_JS = './public/faust/libfaust-wasm.js';
 const COMPILE_TIMEOUT_MS = 300_000;
 
 /**
@@ -59,8 +54,7 @@ describe('shipped Faust DSP compile', () => {
     let compiled: CompiledDsp;
 
     beforeAll(async () => {
-        const faustModule = await instantiateFaustModuleFromFile(LIBFAUST_JS);
-        compiler = new FaustCompiler(new LibFaust(faustModule));
+        compiler = await loadFaustCompilerForSpec();
 
         const failures: Record<string, string> = {};
         const paramPaths: Record<string, string[]> = {};
