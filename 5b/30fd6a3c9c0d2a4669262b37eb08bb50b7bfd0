@@ -1,0 +1,23 @@
+src/modules/Project/useCases/projectPersistence/fileIO/__tests__/vcaFoundationLifecycle.spec.ts
+  s_c2fca615e81f34::t_33ab18e365d3cc 3,7-12,33-36,46-49
+src/modules/Arrangement/stores/__tests__/vcaActivationQuarantine.spec.ts
+  s_c2fca615e81f34::t_308d5d4accb73a 93-104,171,174
+  s_c2fca615e81f34::t_33ab18e365d3cc 4-18,46-63,67-86,91-92,105-123,146,156-158,160-161,166-170,172-173,175-178
+  s_c2fca615e81f34::t_38657fc3c051bb 64-66,87-90
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "5b30fd6a3c9c0d2a4669262b37eb08bb50b7bfd0",
+  "prompts": {},
+  "sessions": {
+    "s_c2fca615e81f34": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f74e9-e1c5-7142-85d2-4c577b3973c0",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
