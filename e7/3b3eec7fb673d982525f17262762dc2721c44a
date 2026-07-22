@@ -1,0 +1,22 @@
+src/modules/TimelineEditor/presentations/views/Timeline/__tests__/ChordTrackLane.spec.tsx
+  s_ac9b259eab20ba::t_b26dce3350c738 142,145,147
+  s_ac9b259eab20ba::t_0bb086277857ad 4-5,201,205-224,248-264,266-267,269-271,273-275
+src/modules/TimelineEditor/presentations/views/Timeline/ChordTrackLane.tsx
+  s_ac9b259eab20ba::t_b4593bfea4b5c0 24,109,147,149,151-156,196,226-229,257-259,303,313,492,519,535
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "e73b3eec7fb673d982525f17262762dc2721c44a",
+  "prompts": {},
+  "sessions": {
+    "s_ac9b259eab20ba": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8699-3865-7842-8c54-afbac6cfd266",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
