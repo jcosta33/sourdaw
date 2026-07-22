@@ -1,0 +1,29 @@
+src-tauri/src/commands/crumbs.rs
+  s_c2fca615e81f34::t_8c55e36a4444dd 40-44,55-71,86-100,230,794,796,807,809,817,836-849,858-913,918
+src-tauri/src/host/native_bridge.rs
+  s_ac9b259eab20ba::t_37cba9c1064467 970-1029,1081-1090
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "5e96c9521d8f2ba58e5ce02333ed5d24a2423a67",
+  "prompts": {},
+  "sessions": {
+    "s_ac9b259eab20ba": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8699-3865-7842-8c54-afbac6cfd266",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_c2fca615e81f34": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f74e9-e1c5-7142-85d2-4c577b3973c0",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
