@@ -13,8 +13,15 @@ vi.mock('#/modules/Arrangement/stores', () => ({
     adjustmentLayerStore: { value: { layers: [] } },
 }));
 vi.mock('#/modules/Automation/stores', () => ({ automationStore: { value: { lanes: [] } } }));
+const chordTrackStoreMock = vi.hoisted(() => ({
+    value: {
+        enabled: true,
+        events: [{ id: 'chord-1', beat: 0, root: 9, quality: 'minor' as const, duration: 4 }],
+    },
+}));
 vi.mock('#/modules/MIDI/stores', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/MIDI/stores')>()),
+    chordTrackStore: chordTrackStoreMock,
     midiStore: {
         value: { probabilitySeed: 0xdecafbad, notesByClipId: {}, ccByClipId: {}, pitchBendByClipId: {} },
     },
@@ -53,6 +60,19 @@ import { sanitize_arrangement_store_state } from '../../../../stores/arrangement
 import { buildProjectData } from '../buildProjectData';
 
 describe('buildProjectData', () => {
+    it('serializes the current chord-track read contract into project truth', async () => {
+        arrangementStoreMock.value = sanitize_arrangement_store_state({
+            arrangements: [],
+            activeArrangementId: null,
+        });
+
+        const built = await buildProjectData();
+
+        expect(built?.data.chordTrack).toEqual(chordTrackStoreMock.value);
+        expect(built?.data.chordTrack).not.toBe(chordTrackStoreMock.value);
+        expect(built?.data.chordTrack?.events).not.toBe(chordTrackStoreMock.value.events);
+    });
+
     it('persists durable Yeast processor identities without runtime state', async () => {
         arrangementStoreMock.value = sanitize_arrangement_store_state({
             arrangements: [],

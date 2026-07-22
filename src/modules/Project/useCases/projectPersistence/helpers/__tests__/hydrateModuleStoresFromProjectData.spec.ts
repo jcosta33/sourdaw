@@ -7,6 +7,7 @@ const mocks = vi.hoisted(() => ({
     automationStoreSet: vi.fn(),
     markerStoreSet: vi.fn(),
     restoreAdjustmentLayerSnapshot: vi.fn(),
+    replaceChordTrackState: vi.fn(),
     hydrateGrooveTemplates: vi.fn(),
     hydrateYeastState: vi.fn(),
     setSidechainRoutes: vi.fn(),
@@ -28,6 +29,7 @@ vi.mock('#/modules/Automation/stores', () => ({
 }));
 
 vi.mock('#/modules/MIDI/useCases', () => ({
+    replaceChordTrackState: mocks.replaceChordTrackState,
     hydrateGrooveTemplates: mocks.hydrateGrooveTemplates,
 }));
 
@@ -45,7 +47,7 @@ vi.mock('#/modules/Yeast/useCases', () => ({
 
 type HydratableProjectDataOverrides = Pick<
     HydratableProjectData,
-    'adjustmentLayers' | 'automation' | 'grooves' | 'markers' | 'sidechainRoutes' | 'transport' | 'yeast'
+    'adjustmentLayers' | 'automation' | 'chordTrack' | 'grooves' | 'markers' | 'sidechainRoutes' | 'transport' | 'yeast'
 >;
 
 function createHydratableProjectData(overrides: HydratableProjectDataOverrides = {}): HydratableProjectData {
@@ -129,9 +131,21 @@ describe('hydrateModuleStoresFromProjectData', () => {
 
         expect(mocks.restoreTransportSnapshot).not.toHaveBeenCalled();
         expect(mocks.restoreAdjustmentLayerSnapshot).toHaveBeenCalledWith(undefined);
+        expect(mocks.replaceChordTrackState).toHaveBeenCalledWith(undefined);
         expect(mocks.hydrateGrooveTemplates).toHaveBeenCalledWith({ templates: [], assignments: [] });
         expect(mocks.hydrateYeastState).toHaveBeenCalledWith(undefined);
         expect(mocks.setSidechainRoutes).toHaveBeenCalledWith([]);
+    });
+
+    it('hydrates persisted chord-track state through the owning MIDI use case', () => {
+        const chordTrack = {
+            enabled: true,
+            events: [{ id: 'chord-1', beat: 0, root: 9, quality: 'minor', duration: 4 }],
+        } satisfies NonNullable<HydratableProjectData['chordTrack']>;
+
+        hydrateModuleStoresFromProjectData(createHydratableProjectData({ chordTrack }));
+
+        expect(mocks.replaceChordTrackState).toHaveBeenCalledWith(chordTrack);
     });
 
     it('hydrates persisted groove state through the owning MIDI use case', () => {

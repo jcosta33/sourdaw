@@ -203,4 +203,65 @@ describe('playMacro', () => {
         });
         expect(replayedIds).toEqual(['replayed-chord-1', 'replayed-chord-1', 'replayed-chord-2', 'replayed-chord-2']);
     });
+
+    it('regenerates recorded marker/section IDs and remaps references on every playback', async () => {
+        // A macro recorded with caller-minted marker/section ids (batch-4 undo
+        // inverses put them on the payload). Replaying it twice must mint fresh
+        // ids per playback — duplicate ids would make a later removeMarker (or
+        // an undo of addMarker, whose inverse is removeMarker) delete BOTH
+        // entries sharing the id, and duplicate React keys in the marker list.
+        const markerMacro: Macro = {
+            id: 'markers-1',
+            name: 'Marker steps',
+            actions: [
+                { type: 'addMarker', payload: { beat: 4, name: 'Intro', markerId: 'recorded-marker' } },
+                { type: 'setMarkerColor', payload: { markerId: 'recorded-marker', color: '#f00' } },
+                {
+                    type: 'addSection',
+                    payload: { startBeat: 0, endBeat: 8, name: 'Verse', sectionId: 'recorded-section' },
+                },
+                { type: 'renameSection', payload: { sectionId: 'recorded-section', name: 'Chorus' } },
+                { type: 'removeMarker', payload: { markerId: 'recorded-marker' } },
+            ],
+            createdAt: 0,
+        };
+        macroStore.set({ macros: [markerMacro], recording: false, currentRecording: [] });
+        let generatedMarkerId = 0;
+        let generatedSectionId = 0;
+        executeAppActionMock.mockImplementation((action) => {
+            if (action.type === 'addMarker' && action.payload.markerId === undefined) {
+                generatedMarkerId += 1;
+                action.payload.markerId = `replayed-marker-${String(generatedMarkerId)}`;
+            }
+            if (action.type === 'addSection' && action.payload.sectionId === undefined) {
+                generatedSectionId += 1;
+                action.payload.sectionId = `replayed-section-${String(generatedSectionId)}`;
+            }
+            return Promise.resolve();
+        });
+
+        await playMacro('markers-1');
+        await playMacro('markers-1');
+
+        expect(executeAppActionMock.mock.calls.map(([action]) => action)).toEqual([
+            { type: 'addMarker', payload: { beat: 4, name: 'Intro', markerId: 'replayed-marker-1' } },
+            { type: 'setMarkerColor', payload: { markerId: 'replayed-marker-1', color: '#f00' } },
+            {
+                type: 'addSection',
+                payload: { startBeat: 0, endBeat: 8, name: 'Verse', sectionId: 'replayed-section-1' },
+            },
+            { type: 'renameSection', payload: { sectionId: 'replayed-section-1', name: 'Chorus' } },
+            { type: 'removeMarker', payload: { markerId: 'replayed-marker-1' } },
+            { type: 'addMarker', payload: { beat: 4, name: 'Intro', markerId: 'replayed-marker-2' } },
+            { type: 'setMarkerColor', payload: { markerId: 'replayed-marker-2', color: '#f00' } },
+            {
+                type: 'addSection',
+                payload: { startBeat: 0, endBeat: 8, name: 'Verse', sectionId: 'replayed-section-2' },
+            },
+            { type: 'renameSection', payload: { sectionId: 'replayed-section-2', name: 'Chorus' } },
+            { type: 'removeMarker', payload: { markerId: 'replayed-marker-2' } },
+        ]);
+        // The stored macro keeps its recorded ids — replay never mutates it.
+        expect(macroStore.value?.macros[0]?.actions).toEqual(markerMacro.actions);
+    });
 });

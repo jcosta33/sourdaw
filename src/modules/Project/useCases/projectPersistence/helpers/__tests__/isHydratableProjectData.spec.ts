@@ -190,6 +190,10 @@ describe('isHydratableProjectData', () => {
                 masterGain: 1,
             },
             midi: { notesByClipId: {}, ccByClipId: {}, pitchBendByClipId: {} },
+            chordTrack: {
+                enabled: true,
+                events: [{ id: 'chord-1', beat: 0, root: 9, quality: 'minor', duration: 4 }],
+            },
             automation: { lanes: [] },
             markers: [{ id: 'marker-1', beat: 0, name: 'Verse', color: '#000000' }],
             tempoMap: { changes: [{ beat: 0, tempo: 120, curve: 'instant' }] },
@@ -318,6 +322,42 @@ describe('isHydratableProjectData', () => {
             isHydratableProjectData({
                 ...buildValidProjectData(),
                 transport: { tempo: 120 },
+            })
+        ).toBe(false);
+    });
+
+    it('keeps the optional chord-track field backward compatible with version-1 snapshots', () => {
+        expect(isHydratableProjectData(buildValidProjectData())).toBe(true);
+    });
+
+    it.each([
+        {
+            name: 'an out-of-range root',
+            events: [{ id: 'chord-1', beat: 0, root: 12, quality: 'minor', duration: 4 }],
+        },
+        {
+            name: 'events out of beat order',
+            events: [
+                { id: 'chord-1', beat: 4, root: 9, quality: 'minor', duration: 4 },
+                { id: 'chord-2', beat: 0, root: 0, quality: 'major', duration: 4 },
+            ],
+        },
+        {
+            name: 'an empty event ID',
+            events: [{ id: '', beat: 0, root: 9, quality: 'minor', duration: 4 }],
+        },
+        {
+            name: 'duplicate event IDs',
+            events: [
+                { id: 'chord-1', beat: 0, root: 9, quality: 'minor', duration: 4 },
+                { id: 'chord-1', beat: 4, root: 0, quality: 'major', duration: 4 },
+            ],
+        },
+    ])('rejects chord-track imports with $name', ({ events }) => {
+        expect(
+            isHydratableProjectData({
+                ...buildValidProjectData(),
+                chordTrack: { enabled: true, events },
             })
         ).toBe(false);
     });
