@@ -1,0 +1,85 @@
+src/modules/Project/presentations/views/__tests__/RecentProjectsMenu.spec.tsx
+  s_ac9b259eab20ba::t_30adb7034fb1b0 168,171,184,188-206,216,222-248
+src/modules/Project/useCases/__tests__/recentProjects.spec.ts
+  s_ac9b259eab20ba::t_cca267698faf69 122
+src/modules/Project/useCases/projectPersistence/fileIO/__tests__/pickAndImportProjectFile.spec.ts
+  s_92b905bf82da5c::t_edbcbb15fae44a 24,71,154,157,166,171-183
+src/modules/Project/useCases/projectPersistence/saveProject/__tests__/saveProject.recentRoundTrip.spec.ts
+  s_ac9b259eab20ba::t_d4300f71ff40db 175
+src/modules/Project/useCases/projectPersistence/saveProject/__tests__/saveProject.spec.ts
+  s_c2fca615e81f34::t_f07ab8c188d5bc 13,37-40,108-125
+src/modules/Project/useCases/recentProjects/__tests__/loadRecentProject.spec.ts
+  s_ac9b259eab20ba::t_51f9aeda54e5c7 117,145,157,168,194,211,254,264,296,306,315,343,365,373,399,418,426
+src/modules/Project/presentations/views/RecentProjectsMenu.tsx
+  s_ac9b259eab20ba::t_410562c62bb443 96-100,140-149,152-153
+src/modules/Project/presentations/views/TemplateChooser.tsx
+  s_4ea8d91bd2ac3d::t_51f0ec5b056cd3 345-349
+src/modules/Project/useCases/projectPersistence/fileIO/pickAndImportProjectFile.ts
+  s_4ea8d91bd2ac3d::t_e8f5c62ff61240 22-26
+src/modules/Project/useCases/projectPersistence/saveProject/saveProject.ts
+  s_ac9b259eab20ba::t_9cea00425c2f26 3,10,13,25-27,49,53-54
+src/modules/Project/useCases/projectTemplates/templateDefinitions/__tests__/createFromTemplate.spec.ts
+  s_ac9b259eab20ba::t_f59be811c0d708 228-253
+src/modules/Project/useCases/projectTemplates/templateDefinitions/createFromTemplate.ts
+  s_51b7271278858f::t_3f1c71c2c6ad80 63-67,70,80-84
+src/modules/Project/useCases/recentProjects/loadRecentProject.ts
+  s_ac9b259eab20ba::t_99b68d5f5d32e6 10-19,28,33,41,46,55
+src/modules/WorkspaceShell/presentations/views/LaunchScreen.tsx
+  s_0362cee3db98c0::t_026110c9565a86 292
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "98b43c594c4ac3f8af13946a8c3eabb8c9186a04",
+  "prompts": {},
+  "sessions": {
+    "s_0362cee3db98c0": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8b84-3b9e-7ec2-9749-ba7dfcc2344b",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_4ea8d91bd2ac3d": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8bbd-2cb8-7eb2-ad38-a0e13909be11",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_51b7271278858f": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8b69-4f08-77a2-aa10-c51bc5eb5864",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_92b905bf82da5c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "fc4c3b22-f57f-4fa4-a234-65db0d062ff2",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_ac9b259eab20ba": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8699-3865-7842-8c54-afbac6cfd266",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_c2fca615e81f34": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f74e9-e1c5-7142-85d2-4c577b3973c0",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
