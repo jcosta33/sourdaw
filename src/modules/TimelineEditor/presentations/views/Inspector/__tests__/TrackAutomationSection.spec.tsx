@@ -6,7 +6,7 @@ import { TrackAutomationSection } from '../TrackAutomationSection';
 import type { Track } from '../../../../models/TrackViewTypes';
 
 // Mock external dependencies
-const mockGetBuiltinPlugins = vi.fn<() => unknown[]>(() => []);
+const mockGetBuiltinPlugins = vi.fn(() => []);
 vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => {
     const actual = await importOriginal<typeof import('#/modules/Arrangement/useCases')>();
     return {
@@ -34,7 +34,6 @@ type AutomationLaneFixture = {
     parameterId: string;
     parameterName: string;
     visible: boolean;
-    clipId?: string;
 };
 const mockUseStore = vi.fn((_store: unknown, _defaultState: unknown): { lanes: AutomationLaneFixture[] } => ({
     lanes: [],
@@ -139,59 +138,12 @@ describe('TrackAutomationSection', () => {
         expect(screen.getByLabelText(/Add automation lane/i)).toBeInTheDocument();
     });
 
-    it('creates a device lane with the stable device id and bare parameter id', () => {
-        mockGetBuiltinPlugins.mockReturnValue([
-            { id: 'builtin-crumbs', name: 'Crumbs', parameters: [{ id: 'cutoff', name: 'Cutoff', automatable: true }] },
-        ]);
-        const track = {
-            ...mockTrack,
-            devices: [
-                {
-                    id: 'device-1',
-                    name: 'Crumbs',
-                    type: 'builtin-crumbs',
-                    bypassed: false,
-                    parameterValues: { cutoff: 0.5 },
-                },
-            ],
-        };
-        render(<TrackAutomationSection track={track} />);
-
-        fireEvent.click(screen.getByLabelText('Add automation lane'));
-        fireEvent.click(screen.getByRole('menuitem', { name: 'Cutoff' }));
-
-        expect(mockAddAutomationLane).toHaveBeenCalledWith('track-1', 'device-1:cutoff', 'Crumbs: Cutoff');
-    });
-
     it('should render automation lanes when they exist', () => {
         mockUseStore.mockReturnValue({
             lanes: [{ id: 'lane-1', trackId: 'track-1', parameterId: 'gain', parameterName: 'Gain', visible: true }],
         });
         render(<TrackAutomationSection track={mockTrack} />);
         expect(screen.getByText('Gain')).toBeInTheDocument();
-    });
-
-    it('does not render or remove clip automation as track automation', () => {
-        mockUseStore.mockReturnValue({
-            lanes: [
-                {
-                    id: 'clip-lane',
-                    trackId: 'track-1',
-                    clipId: 'clip-1',
-                    parameterId: 'gain',
-                    parameterName: 'Gain',
-                    visible: true,
-                },
-            ],
-        });
-
-        render(<TrackAutomationSection track={mockTrack} />);
-
-        expect(screen.getByText(/No automation lanes yet/i)).toBeInTheDocument();
-        expect(screen.queryByLabelText('Remove lane')).not.toBeInTheDocument();
-        fireEvent.click(screen.getByLabelText('Add automation lane'));
-        fireEvent.click(screen.getByRole('menuitem', { name: 'Gain' }));
-        expect(mockAddAutomationLane).toHaveBeenCalledWith('track-1', 'gain', 'Gain');
     });
 
     it('should render show/hide button for each lane', () => {

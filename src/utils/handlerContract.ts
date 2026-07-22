@@ -305,11 +305,9 @@ export type AppAction =
           payload: { trackId: string; parameterId: string; parameterName: string; laneId?: string };
       }
     | {
-          /** Command inverse of `addAutomationLane`, keyed by the exact id allocated
-           *  before execute. The legacy RuntimeAction pair remains accepted for type
-           *  compatibility but the handler deliberately performs no removal without an id. */
+          /** Inverse of `addAutomationLane`, keyed by the exact id allocated before execute. */
           type: 'removeAutomationLane';
-          payload: { laneId: string } | { trackId: string; parameterId: string };
+          payload: { laneId: string };
       }
     | {
           type: 'addAutomationPoint';

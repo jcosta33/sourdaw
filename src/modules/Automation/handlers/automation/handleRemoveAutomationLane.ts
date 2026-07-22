@@ -10,9 +10,6 @@ import { removeAutomationLane } from '../../useCases/automation/removeAutomation
  */
 export const handleRemoveAutomationLane = createHandler<'removeAutomationLane'>({
     execute: (action) => {
-        if (!('laneId' in action.payload)) {
-            return;
-        }
         removeAutomationLane(action.payload.laneId);
     },
     describe: () => ({ label: 'Remove automation lane' }),

@@ -172,12 +172,28 @@ describe('validateActionPayload / PAYLOAD_VALIDATORS', () => {
                 return;
             }
 
-            const payload = { trackId: 'track-1', parameterId: 'gain', parameterName: 'Gain' };
+            const payload: Extract<RuntimeAction, { type: 'addAutomationLane' }>['payload'] = {
+                trackId: 'track-1',
+                parameterId: 'gain',
+                parameterName: 'Gain',
+            };
+            const replayPayload: Extract<RuntimeAction, { type: 'addAutomationLane' }>['payload'] = {
+                ...payload,
+                laneId: 'auto-lane-1',
+            };
             expect(guard(payload)).toBe(true);
-            expect(guard({ ...payload, laneId: 'auto-lane-1' })).toBe(true);
+            expect(guard(replayPayload)).toBe(true);
             expect(guard({ ...payload, laneId: '' })).toBe(false);
             expect(guard({ ...payload, laneId: 1 })).toBe(false);
             expect(guard({ ...payload, laneId: null })).toBe(false);
+        });
+
+        it('should type the inverse as an exact lane-id removal', () => {
+            const inverse: Extract<RuntimeAction, { type: 'removeAutomationLane' }> = {
+                type: 'removeAutomationLane',
+                payload: { laneId: 'auto-lane-1' },
+            };
+            expect(inverse.payload).toEqual({ laneId: 'auto-lane-1' });
         });
     });
 
