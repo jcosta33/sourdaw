@@ -24,7 +24,7 @@ vi.mock('../../../useCases/midiNoteCrud/setNotesForClip', () => ({ setNotesForCl
 describe('propagateParentChanges', () => {
     beforeEach(() => vi.clearAllMocks());
 
-    it('clones parent notes onto a linked instance, offsetting by the instance start beat', () => {
+    it("clones parent notes onto a linked instance, keeping the parent's clip-relative beats", () => {
         const parentClip = { id: 'parent', startBeat: 0 };
         const instanceClip = { id: 'inst-1', startBeat: 16, parentClipId: 'parent' };
         mocks.trackStoreValue = { tracks: [{ id: 't1', clips: [parentClip, instanceClip] }] };
@@ -33,7 +33,7 @@ describe('propagateParentChanges', () => {
         propagateParentChanges('parent');
 
         expect(mocks.setNotesForClip).toHaveBeenCalledWith('inst-1', [
-            expect.objectContaining({ pitch: 60, startBeat: 17, id: 'note-inst-inst-1-n1' }),
+            expect.objectContaining({ pitch: 60, startBeat: 1, id: 'note-inst-inst-1-n1' }),
         ]);
     });
 
@@ -52,8 +52,8 @@ describe('propagateParentChanges', () => {
         propagateParentChanges('parent');
 
         expect(mocks.setNotesForClip).toHaveBeenCalledTimes(2);
-        expect(mocks.setNotesForClip).toHaveBeenCalledWith('inst-1', [expect.objectContaining({ startBeat: 16 })]);
-        expect(mocks.setNotesForClip).toHaveBeenCalledWith('inst-2', [expect.objectContaining({ startBeat: 32 })]);
+        expect(mocks.setNotesForClip).toHaveBeenCalledWith('inst-1', [expect.objectContaining({ startBeat: 0 })]);
+        expect(mocks.setNotesForClip).toHaveBeenCalledWith('inst-2', [expect.objectContaining({ startBeat: 0 })]);
     });
 
     it.each([

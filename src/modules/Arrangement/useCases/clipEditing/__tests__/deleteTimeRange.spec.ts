@@ -61,6 +61,9 @@ describe('deleteTimeRange', () => {
                             startBeat: 7,
                             endBeat: 10,
                             audioOffsetBeats: 7,
+                            // Right clip's MIDI media starts at the split —
+                            // its notes are re-based by splitMidiNotesAtBeat.
+                            midiOffsetBeats: 0,
                         },
                         { id: 'untouched', type: 'audio', name: 'Untouched', startBeat: 12, endBeat: 14 },
                     ],

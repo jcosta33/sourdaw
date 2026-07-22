@@ -134,7 +134,7 @@ describe('createPatternInstance', () => {
             });
             setEligibleProject(sourceClip, destinationKind, sourceKind);
             mocks.getNotesForClip.mockReturnValue([
-                { id: 'note-1', startBeat: 5, duration: 1, pitch: 60, velocity: 0.8 },
+                { id: 'note-1', startBeat: 1, duration: 1, pitch: 60, velocity: 0.8 },
             ]);
 
             const instanceId = createPatternInstance(sourceClip.id, 'destination-track', 16);
@@ -167,7 +167,10 @@ describe('createPatternInstance', () => {
             expect(mocks.setNotesForClip).toHaveBeenCalledWith(instanceId, [
                 {
                     id: `note-inst-${instanceId}-note-1`,
-                    startBeat: 17,
+                    // Clip-relative beat cloned as-is: playback adds the
+                    // instance's own start (16 + 1 = 17), so adding the
+                    // offset here displaced or silenced instances (M-142).
+                    startBeat: 1,
                     duration: 1,
                     pitch: 60,
                     velocity: 0.8,

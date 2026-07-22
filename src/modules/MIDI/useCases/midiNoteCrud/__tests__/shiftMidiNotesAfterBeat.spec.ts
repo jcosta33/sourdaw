@@ -2,11 +2,10 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { shiftMidiNotesAfterBeat } from '../shiftMidiNotesAfterBeat';
 
-import type { MidiStoreState } from '../../../stores/midiStore';
-
 const mocks = vi.hoisted(() => ({
     midiStoreValue: { value: { notesByClipId: {}, ccByClipId: {}, pitchBendByClipId: {} } },
     midiStoreSet: vi.fn(),
+    trackStoreValue: { current: null as unknown },
 }));
 
 vi.mock('../../../stores/midiStore', () => ({
@@ -18,76 +17,86 @@ vi.mock('../../../stores/midiStore', () => ({
     },
 }));
 
+vi.mock('#/modules/Arrangement/stores', () => ({
+    trackStore: {
+        get value() {
+            return mocks.trackStoreValue.current;
+        },
+    },
+}));
+
 describe('shiftMidiNotesAfterBeat', () => {
     beforeEach(() => {
         vi.clearAllMocks();
-        mocks.midiStoreValue.value = { notesByClipId: {}, ccByClipId: {}, pitchBendByClipId: {} };
+        mocks.midiStoreValue.value = {
+            notesByClipId: {},
+            ccByClipId: {},
+            pitchBendByClipId: {},
+        };
+        // Clip `moved` starts after atBeat (insertTime moves its rectangle,
+        // so its clip-relative notes must NOT shift). Clip `straddler`
+        // spans atBeat, so only notes at/after the window move.
+        mocks.trackStoreValue.current = {
+            tracks: [
+                {
+                    id: 'track-1',
+                    clips: [
+                        { id: 'moved', type: 'midi', startBeat: 16, endBeat: 24 },
+                        { id: 'straddler', type: 'midi', startBeat: 4, endBeat: 16 },
+                    ],
+                },
+            ],
+        };
     });
 
-    it('shifts notes, CCs, and pitch bends at or after the window open, leaving earlier ones untouched', () => {
+    /// Regression (M-141): the shift window was timeline-absolute while
+    /// notes are clip-relative — insertTime moved clips after atBeat AND
+    /// shifted their notes (double shift), and straddled clips shifted the
+    /// wrong notes.
+    it('leaves notes of moved clips untouched and shifts only straddler notes past the window', () => {
         mocks.midiStoreValue.value = {
             notesByClipId: {
-                c1: [
-                    { id: 'n1', pitch: 60, startBeat: 0, duration: 1, velocity: 100 },
-                    { id: 'n2', pitch: 62, startBeat: 8, duration: 1, velocity: 100 },
+                moved: [{ pitch: 60, startBeat: 10, duration: 1 }],
+                straddler: [
+                    { pitch: 62, startBeat: 2, duration: 1 }, // absolute 6 — before the window
+                    { pitch: 64, startBeat: 6, duration: 1 }, // absolute 10 — inside the window
                 ],
             },
-            ccByClipId: { c1: [{ id: 'cc1', controller: 1, value: 64, beat: 8, channel: 0 }] },
-            pitchBendByClipId: { c1: [{ id: 'pb1', value: 0.5, beat: 8, channel: 0 }] },
+            ccByClipId: {
+                straddler: [{ beat: 6, controller: 1, value: 100 }],
+            },
+            pitchBendByClipId: {},
+        };
+
+        // insertTime(atBeat 8, 4): `moved` rectangle goes to [20, 28), its
+        // note must stay relative 10 (still plays at 30, not 34).
+        shiftMidiNotesAfterBeat({ atBeat: 8, delta: 4 });
+
+        expect(mocks.midiStoreSet).toHaveBeenCalledTimes(1);
+        const written = mocks.midiStoreSet.mock.calls[0]![0] as {
+            notesByClipId: Record<string, Array<{ pitch: number; startBeat: number }>>;
+            ccByClipId: Record<string, Array<{ beat: number }>>;
+        };
+        expect(written.notesByClipId['moved']).toEqual([{ pitch: 60, startBeat: 10, duration: 1 }]);
+        expect(written.notesByClipId['straddler']).toEqual([
+            { pitch: 62, startBeat: 2, duration: 1 },
+            { pitch: 64, startBeat: 10, duration: 1 },
+        ]);
+        expect(written.ccByClipId['straddler']).toEqual([{ beat: 10, controller: 1, value: 100 }]);
+    });
+
+    it('does not write when every clip starts after the window', () => {
+        mocks.midiStoreValue.value = {
+            notesByClipId: { moved: [{ pitch: 60, startBeat: 10, duration: 1 }] },
+            ccByClipId: {},
+            pitchBendByClipId: {},
+        };
+        mocks.trackStoreValue.current = {
+            tracks: [{ id: 'track-1', clips: [{ id: 'moved', type: 'midi', startBeat: 16, endBeat: 24 }] }],
         };
 
         shiftMidiNotesAfterBeat({ atBeat: 8, delta: 4 });
 
-        const [written] = mocks.midiStoreSet.mock.calls[0] as [MidiStoreState];
-        expect(written.notesByClipId.c1).toEqual([
-            { id: 'n1', pitch: 60, startBeat: 0, duration: 1, velocity: 100 },
-            { id: 'n2', pitch: 62, startBeat: 12, duration: 1, velocity: 100 },
-        ]);
-        expect(written.ccByClipId.c1).toEqual([{ id: 'cc1', controller: 1, value: 64, beat: 12, channel: 0 }]);
-        expect(written.pitchBendByClipId.c1).toEqual([{ id: 'pb1', value: 0.5, beat: 12, channel: 0 }]);
-    });
-
-    it('shifts notes exactly at atBeat (inclusive boundary)', () => {
-        mocks.midiStoreValue.value = {
-            notesByClipId: { c1: [{ id: 'n1', pitch: 60, startBeat: 4, duration: 1, velocity: 100 }] },
-            ccByClipId: {},
-            pitchBendByClipId: {},
-        };
-
-        shiftMidiNotesAfterBeat({ atBeat: 4, delta: -2 });
-
-        const [written] = mocks.midiStoreSet.mock.calls[0] as [MidiStoreState];
-        expect(written.notesByClipId.c1).toEqual([{ id: 'n1', pitch: 60, startBeat: 2, duration: 1, velocity: 100 }]);
-    });
-
-    it('applies the shift across every clip in the store, not just one', () => {
-        mocks.midiStoreValue.value = {
-            notesByClipId: {
-                c1: [{ id: 'n1', pitch: 60, startBeat: 8, duration: 1, velocity: 100 }],
-                c2: [{ id: 'n2', pitch: 61, startBeat: 8, duration: 1, velocity: 100 }],
-            },
-            ccByClipId: {},
-            pitchBendByClipId: {},
-        };
-
-        shiftMidiNotesAfterBeat({ atBeat: 0, delta: 1 });
-
-        const [written] = mocks.midiStoreSet.mock.calls[0] as [MidiStoreState];
-        expect(written.notesByClipId.c1?.[0]?.startBeat).toBe(9);
-        expect(written.notesByClipId.c2?.[0]?.startBeat).toBe(9);
-    });
-
-    it('is a no-op when delta is zero, and does nothing when the store is unavailable', () => {
-        mocks.midiStoreValue.value = {
-            notesByClipId: { c1: [{ id: 'n1', pitch: 60, startBeat: 8, duration: 1, velocity: 100 }] },
-            ccByClipId: {},
-            pitchBendByClipId: {},
-        };
-        shiftMidiNotesAfterBeat({ atBeat: 0, delta: 0 });
-        expect(mocks.midiStoreSet).not.toHaveBeenCalled();
-
-        mocks.midiStoreValue.value = null as unknown as MidiStoreState;
-        shiftMidiNotesAfterBeat({ atBeat: 0, delta: 4 });
         expect(mocks.midiStoreSet).not.toHaveBeenCalled();
     });
 });

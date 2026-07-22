@@ -58,11 +58,12 @@ export function createPatternInstance(sourceClipId: string, targetTrackId: strin
 
     const sourceNotes = getNotesForClip(sourceClipId);
     if (sourceNotes.length > 0) {
-        const offset = startBeat - sourceClip.startBeat;
+        // Notes are clip-relative: playback adds the instance clip's own
+        // start, so the clones keep the parent's beats verbatim (adding the
+        // instance-parent offset displaced or silenced instances, M-142).
         const clonedNotes = sourceNotes.map((node) => ({
             ...node,
             id: `note-inst-${instanceId}-${node.id}`,
-            startBeat: node.startBeat + offset,
         }));
         setNotesForClip(instanceId, clonedNotes);
     }

@@ -35,10 +35,19 @@ export function deleteTimeRange(startBeat: number, endBeat: number, trackIds: st
                     startBeat: endBeat,
                     name: `${clip.name} (R)`,
                     audioOffsetBeats: (clip.audioOffsetBeats ?? 0) + (endBeat - clip.startBeat),
+                    // Right-side notes are re-based onto this clip at split
+                    // time, so its MIDI media starts at the split point.
+                    midiOffsetBeats: 0,
                 };
                 finalClips.push(leftClip, rightClip);
                 if (clip.type === 'midi') {
-                    splitOps.push({ sourceClipId: clip.id, newClipId: rightClipId, splitBeat: startBeat });
+                    // splitMidiNotesAtBeat partitions in clip-media beats
+                    // (notes are clip-relative), not timeline beats.
+                    splitOps.push({
+                        sourceClipId: clip.id,
+                        newClipId: rightClipId,
+                        splitBeat: startBeat - clip.startBeat + (clip.midiOffsetBeats ?? 0),
+                    });
                 }
             } else if (clip.startBeat < startBeat && clip.endBeat > startBeat) {
                 finalClips.push({ ...clip, endBeat: startBeat });
