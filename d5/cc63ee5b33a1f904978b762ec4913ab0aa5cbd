@@ -1,0 +1,36 @@
+src/modules/MIDI/stores/chordTrackStore.ts
+  s_ac9b259eab20ba::t_c0c4f1cdd6476a 168-169,172-175,177
+src/modules/Project/useCases/projectPersistence/__tests__/loadProject.spec.ts
+  s_ac9b259eab20ba::t_1e5790f0e4f15e 186-192
+  s_ac9b259eab20ba::t_6c2afe3ca349dc 20-25
+src/modules/Command/useCases/executeAppAction.ts
+  s_ac9b259eab20ba::t_c0c4f1cdd6476a 41-44
+src/modules/MIDI/useCases/__tests__/readLegacyChordTrackMigration.spec.ts
+  s_ac9b259eab20ba::t_0f2b277b037519 11
+  s_ac9b259eab20ba::t_3631ffdbf7b9be 20,29,37,66-71,92-118
+  s_ac9b259eab20ba::t_f77146b8aba894 119-120
+src/modules/MIDI/repositories/readLegacyChordTrackStorage.ts
+  s_ac9b259eab20ba::t_c0c4f1cdd6476a 27-30
+src/modules/MIDI/stores/__tests__/chordTrackStore.spec.ts
+  s_ac9b259eab20ba::t_3631ffdbf7b9be 326-330
+src/modules/Project/useCases/projectPersistence/loadProject.ts
+  s_ac9b259eab20ba::t_c0c4f1cdd6476a 93-97
+src/utils/handlerContract.ts
+  s_ac9b259eab20ba::t_c0c4f1cdd6476a 728-729
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "d5cc63ee5b33a1f904978b762ec4913ab0aa5cbd",
+  "prompts": {},
+  "sessions": {
+    "s_ac9b259eab20ba": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8699-3865-7842-8c54-afbac6cfd266",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
