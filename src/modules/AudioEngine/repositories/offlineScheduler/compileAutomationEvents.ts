@@ -210,13 +210,26 @@ export function compileAutomationEvents(
             continue;
         }
 
+        if (current.point.curve === 'stairs') {
+            const stairSteps = current.point.stairSteps ?? 4;
+            for (let stair = 1; stair <= stairSteps; stair++) {
+                const beat = current.point.beat + ((next.point.beat - current.point.beat) * stair) / stairSteps;
+                const time = projectBeat(beat);
+                if (time >= visibleStart && time <= visibleEnd) {
+                    const value = current.point.value + ((next.point.value - current.point.value) * stair) / stairSteps;
+                    appendEvent(events, { type: 'set', timeSeconds: time - regionStartSeconds, value });
+                }
+            }
+            continue;
+        }
+
         const steps =
             current.point.curve === 'linear'
                 ? 1
                 : Math.max(1, Math.ceil((visibleEnd - visibleStart) / AUTOMATION_SAMPLE_INTERVAL_SEC));
         for (let step = 1; step <= steps; step++) {
-            const beat = visibleStartBeat + ((visibleEndBeat - visibleStartBeat) * step) / steps;
-            const time = projectBeat(beat);
+            const time = visibleStart + ((visibleEnd - visibleStart) * step) / steps;
+            const beat = beatAtTime(visibleStartBeat, visibleEndBeat, time, projectBeat);
             appendEvent(events, {
                 type: 'linear',
                 timeSeconds: time - regionStartSeconds,
