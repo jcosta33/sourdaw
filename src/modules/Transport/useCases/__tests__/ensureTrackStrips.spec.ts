@@ -19,6 +19,12 @@ const mocks = vi.hoisted(() => ({
     setBusGain: vi.fn(),
     setSend: vi.fn(),
     wireSidechainRoutes: vi.fn(),
+    projectTrackToLiveStrip: vi.fn(),
+}));
+
+vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Arrangement/useCases')>()),
+    projectTrackToLiveStrip: mocks.projectTrackToLiveStrip,
 }));
 
 // Mock the barrel re-exports but satisfy the markerStore etc. if needed by other components
@@ -117,10 +123,14 @@ describe('ensureTrackStrips', () => {
         ensureTrackStrips();
 
         expect(mocks.ensureBusStrip).toHaveBeenCalledWith('b1');
-        expect(mocks.ensureTrackStrip).toHaveBeenCalledWith('t1');
-        expect(mocks.setTrackOutput).toHaveBeenCalledWith('t1', 'main');
-        expect(mocks.setTrackGain).toHaveBeenCalledWith('t1', 0.8);
-        expect(mocks.setSend).toHaveBeenCalledWith('t1', 'b1', 0.1, false);
+        expect(mocks.projectTrackToLiveStrip).toHaveBeenNthCalledWith(1, {
+            trackId: 't1',
+            deferSidechainWiring: true,
+        });
+        expect(mocks.projectTrackToLiveStrip).toHaveBeenNthCalledWith(2, {
+            trackId: 'b1',
+            deferSidechainWiring: true,
+        });
     });
 
     it('wires persisted sidechain routes into the engine after strips exist', () => {
@@ -149,11 +159,7 @@ describe('ensureTrackStrips', () => {
 
         ensureTrackStrips();
 
-        expect(mocks.ensureTrackStrip).not.toHaveBeenCalled();
-        expect(mocks.addDeviceToStrip).not.toHaveBeenCalled();
-        expect(mocks.setSend).not.toHaveBeenCalled();
-        expect(mocks.setTrackGain).not.toHaveBeenCalled();
-        expect(mocks.setTrackMute).not.toHaveBeenCalled();
+        expect(mocks.projectTrackToLiveStrip).not.toHaveBeenCalled();
     });
 
     it('allocates a strip for a Toaster folder but not an ordinary folder', () => {
@@ -170,14 +176,14 @@ describe('ensureTrackStrips', () => {
 
         ensureTrackStrips();
 
-        expect(mocks.ensureTrackStrip).toHaveBeenCalledTimes(1);
-        expect(mocks.ensureTrackStrip).toHaveBeenCalledWith('toaster-1');
-        expect(mocks.addDeviceToStrip).toHaveBeenCalledWith('toaster-1', 'toaster-device', 'toaster');
-        expect(mocks.setTrackMute).toHaveBeenCalledTimes(1);
-        expect(mocks.setTrackMute).toHaveBeenCalledWith('toaster-1', false);
+        expect(mocks.projectTrackToLiveStrip).toHaveBeenCalledOnce();
+        expect(mocks.projectTrackToLiveStrip).toHaveBeenCalledWith({
+            trackId: 'toaster-1',
+            deferSidechainWiring: true,
+        });
     });
 
-    it('does not replay persisted output or sends toward a resolved dormant VCA', () => {
+    it('delegates resolved dormant-VCA routing validation to the Arrangement projector', () => {
         const dormantVca = createTrack({ id: 'vca-1', name: 'VCA', kind: 'audio' });
         Object.defineProperty(dormantVca, 'kind', { value: 'vca' });
         mocks.trackStoreValue.value = {
@@ -194,12 +200,13 @@ describe('ensureTrackStrips', () => {
 
         ensureTrackStrips();
 
-        expect(mocks.ensureTrackStrip).toHaveBeenCalledWith('audio-1');
-        expect(mocks.setTrackOutput).not.toHaveBeenCalled();
-        expect(mocks.setSend).not.toHaveBeenCalled();
+        expect(mocks.projectTrackToLiveStrip).toHaveBeenCalledWith({
+            trackId: 'audio-1',
+            deferSidechainWiring: true,
+        });
     });
 
-    it('does not replay persisted output or sends toward a resolved malformed track', () => {
+    it('delegates resolved malformed-target validation to the Arrangement projector', () => {
         const malformedTarget = createTrack({ id: 'malformed-1', name: 'Malformed', kind: 'audio' });
         Object.defineProperty(malformedTarget, 'kind', { value: undefined });
         mocks.trackStoreValue.value = {
@@ -216,8 +223,9 @@ describe('ensureTrackStrips', () => {
 
         ensureTrackStrips();
 
-        expect(mocks.ensureTrackStrip).toHaveBeenCalledWith('audio-1');
-        expect(mocks.setTrackOutput).not.toHaveBeenCalled();
-        expect(mocks.setSend).not.toHaveBeenCalled();
+        expect(mocks.projectTrackToLiveStrip).toHaveBeenCalledWith({
+            trackId: 'audio-1',
+            deferSidechainWiring: true,
+        });
     });
 });
