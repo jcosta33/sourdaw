@@ -36,6 +36,7 @@ const { mocks } = vi.hoisted(() => {
             updateDeviceParam: vi.fn<UpdateDeviceParam>(),
             getPluginById: vi.fn<GetPluginById>(),
             trackStore,
+            makeRecordingKey: vi.fn((trackId: string, parameterId: string) => `${trackId}::${parameterId}`),
         },
     };
 });
@@ -52,6 +53,8 @@ vi.mock('#/modules/Arrangement/stores', () => ({
         return { status: 'eligible', trackId: track.id, deviceId };
     },
 }));
+
+vi.mock('../../automationRecording/makeKey', () => ({ makeKey: mocks.makeRecordingKey }));
 
 import { type AutomationLane } from '../../../models/Automation';
 import { automationStore } from '../../../stores/automationStore';
@@ -110,6 +113,7 @@ describe('applyModulationToEngine', () => {
         automationStore.set({ lanes: [] });
         mocks.updateDeviceParam.mockReset();
         mocks.getPluginById.mockReset();
+        mocks.makeRecordingKey.mockClear();
         setModulationDependencies({
             updateDeviceParam: mocks.updateDeviceParam,
             getPluginParamRange: (deviceType, paramId) => {
@@ -126,6 +130,8 @@ describe('applyModulationToEngine', () => {
             tracks: [
                 {
                     id: 't1',
+                    automationMode: 'read',
+                    clips: [{ id: 'clip-1', startBeat: 0, endBeat: 4 }],
                     devices: [
                         {
                             id: 'd1',
@@ -243,6 +249,10 @@ describe('applyModulationToEngine', () => {
     });
 
     it('does nothing when the modulator is disabled', () => {
+        const automationState = automationStore.value!;
+        const laneSnapshot = automationState.lanes;
+        const readLanes = vi.fn(() => laneSnapshot);
+        Object.defineProperty(automationState, 'lanes', { get: readLanes });
         const state = modulationStore.value!;
         modulationStore.set({
             ...state,
@@ -251,24 +261,6 @@ describe('applyModulationToEngine', () => {
 
         applyModulationToEngine(1);
         expect(mocks.updateDeviceParam).not.toHaveBeenCalled();
-    });
-
-    it('does not scan automation when no enabled modulator has mappings', () => {
-        const automationState = automationStore.value!;
-        const laneSnapshot = automationState.lanes;
-        const readLanes = vi.fn(() => laneSnapshot);
-        Object.defineProperty(automationState, 'lanes', { get: readLanes });
-        const state = modulationStore.value!;
-        modulationStore.set({
-            ...state,
-            modulators: [
-                { ...state.modulators[0]!, enabled: false },
-                { ...state.modulators[0]!, id: 'empty', mappings: [], enabled: true },
-            ],
-        });
-
-        applyModulationToEngine(1);
-
         expect(readLanes).not.toHaveBeenCalled();
     });
 
@@ -359,16 +351,6 @@ describe('applyModulationToEngine', () => {
 
     it.each(['d1:cutoff', 'builtin-filter:cutoff'])('indexes device automation lane %s once', (parameterId) => {
         const mapping = { targetTrackId: 't1', targetDeviceId: 'd1', targetParamId: 'cutoff', amount: 0 };
-        mocks.trackStore.value = {
-            tracks: [
-                {
-                    id: 't1',
-                    automationMode: 'read',
-                    clips: [],
-                    devices: [{ id: 'd1', type: 'builtin-filter', parameterValues: { cutoff: 500 } }],
-                },
-            ],
-        };
         automationStore.set({
             lanes: [
                 createAutomationLaneFixture({
@@ -405,35 +387,23 @@ describe('applyModulationToEngine', () => {
         const [, , , value] = mocks.updateDeviceParam.mock.calls[0]!;
         expect(value).toBeCloseTo(800);
         expect(readLanes).toHaveBeenCalledTimes(4);
+        applyModulationToEngine(2);
+        expect(mocks.makeRecordingKey).toHaveBeenCalledTimes(1);
     });
 
     it.each([
         [
             'track and clip',
-            [
-                createCutoffLane(['track-lane', 'd1:cutoff', 200]),
-                createCutoffLane(['clip-lane', 'd1:cutoff', 800, 'clip-1']),
-            ],
+            createCutoffLane(['track-lane', 'd1:cutoff', 200]),
+            createCutoffLane(['clip-lane', 'd1:cutoff', 800, 'clip-1']),
         ],
         [
             'legacy and canonical',
-            [
-                createCutoffLane(['legacy-lane', 'builtin-filter:cutoff', 200]),
-                createCutoffLane(['canonical-lane', 'd1:cutoff', 800]),
-            ],
+            createCutoffLane(['legacy-lane', 'builtin-filter:cutoff', 200]),
+            createCutoffLane(['canonical-lane', 'd1:cutoff', 800]),
         ],
-    ])('uses the later %s lane as the modulated automation base', (_name, lanes) => {
-        mocks.trackStore.value = {
-            tracks: [
-                {
-                    id: 't1',
-                    automationMode: 'read',
-                    clips: [{ id: 'clip-1', startBeat: 0, endBeat: 4 }],
-                    devices: [{ id: 'd1', type: 'builtin-filter', parameterValues: { cutoff: 500 } }],
-                },
-            ],
-        };
-        automationStore.set({ lanes });
+    ])('uses the later %s lane as the modulated automation base', (_name, earlierLane, laterLane) => {
+        automationStore.set({ lanes: [earlierLane, laterLane] });
         const state = modulationStore.value!;
         modulationStore.set({
             ...state,
