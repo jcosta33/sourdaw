@@ -24,6 +24,7 @@ type TrackAutomationState = {
     lanes: Array<{
         id: string;
         trackId: string;
+        clipId?: string;
         parameterId: string;
         parameterName: string;
         visible: boolean;
@@ -36,7 +37,7 @@ export const TrackAutomationSection = ({ track }: TrackAutomationSectionProps): 
 
     const autoState = useStore<TrackAutomationState>(automationStore, { lanes: [] });
 
-    const trackLanes = autoState.lanes.filter((length) => length.trackId === track.id);
+    const trackLanes = autoState.lanes.filter((lane) => lane.trackId === track.id && !lane.clipId);
 
     useEffect(() => {
         if (!showAutoMenu) {

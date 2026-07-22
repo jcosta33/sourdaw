@@ -25,6 +25,7 @@ type DeviceAutomationState = {
     lanes: Array<{
         id: string;
         trackId: string;
+        clipId?: string;
         parameterId: string;
     }>;
 };
@@ -38,6 +39,9 @@ type DeviceAutomationState = {
 function buildLaneLookup(lanes: DeviceAutomationState['lanes']): Map<string, DeviceAutomationState['lanes'][number]> {
     const map = new Map<string, DeviceAutomationState['lanes'][number]>();
     for (const lane of lanes) {
+        if (lane.clipId) {
+            continue;
+        }
         map.set(`${lane.trackId}|${lane.parameterId}`, lane);
     }
     return map;
@@ -114,7 +118,7 @@ export const DeviceParameterControl = ({ param, device, trackId }: DeviceParamet
         laneLookup.get(`${trackId}|${targetId}`) ??
         findEquivalentAutomationLane(
             targetId,
-            autoState.lanes.filter((lane) => lane.trackId === trackId),
+            autoState.lanes.filter((lane) => lane.trackId === trackId && !lane.clipId),
             devices
         );
     const hasAutomation = !!activeLane;

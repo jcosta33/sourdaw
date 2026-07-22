@@ -34,6 +34,7 @@ type AutomationLaneFixture = {
     parameterId: string;
     parameterName: string;
     visible: boolean;
+    clipId?: string;
 };
 const mockUseStore = vi.fn((_store: unknown, _defaultState: unknown): { lanes: AutomationLaneFixture[] } => ({
     lanes: [],
@@ -168,6 +169,29 @@ describe('TrackAutomationSection', () => {
         });
         render(<TrackAutomationSection track={mockTrack} />);
         expect(screen.getByText('Gain')).toBeInTheDocument();
+    });
+
+    it('does not render or remove clip automation as track automation', () => {
+        mockUseStore.mockReturnValue({
+            lanes: [
+                {
+                    id: 'clip-lane',
+                    trackId: 'track-1',
+                    clipId: 'clip-1',
+                    parameterId: 'gain',
+                    parameterName: 'Gain',
+                    visible: true,
+                },
+            ],
+        });
+
+        render(<TrackAutomationSection track={mockTrack} />);
+
+        expect(screen.getByText(/No automation lanes yet/i)).toBeInTheDocument();
+        expect(screen.queryByLabelText('Remove lane')).not.toBeInTheDocument();
+        fireEvent.click(screen.getByLabelText('Add automation lane'));
+        fireEvent.click(screen.getByRole('menuitem', { name: 'Gain' }));
+        expect(mockAddAutomationLane).toHaveBeenCalledWith('track-1', 'gain', 'Gain');
     });
 
     it('should render show/hide button for each lane', () => {

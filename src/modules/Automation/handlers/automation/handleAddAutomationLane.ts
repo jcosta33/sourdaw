@@ -8,7 +8,7 @@ export const handleAddAutomationLane = createHandler<'addAutomationLane'>({
         addAutomationLane(action.payload.trackId, action.payload.parameterId, action.payload.parameterName);
     },
     // Runs PRE-execute (see executeAppAction). The inverse of adding a lane is
-    // removing it, keyed by `(trackId, parameterId)` — the generated lane id is
+    // removing it, keyed by track-scoped `(trackId, parameterId)` — the generated lane id is
     // not yet known here. `addAutomationLane` bails when a lane already exists for
     // that pair, so when one is present execute is a no-op and we omit the inverse
     // rather than emit one that would delete the user's pre-existing lane on undo.
@@ -16,7 +16,10 @@ export const handleAddAutomationLane = createHandler<'addAutomationLane'>({
         const label = `Add automation: ${action.payload.parameterName}`;
         const state = getAutomationStoreState();
         const alreadyExists = state?.lanes.some(
-            (lane) => lane.trackId === action.payload.trackId && lane.parameterId === action.payload.parameterId
+            (lane) =>
+                !lane.clipId &&
+                lane.trackId === action.payload.trackId &&
+                lane.parameterId === action.payload.parameterId
         );
         if (alreadyExists) {
             return { label };

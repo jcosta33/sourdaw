@@ -92,6 +92,15 @@ vi.mock('#/modules/ControlSurface/presentations/views', () => ({
     },
 }));
 
+function useAutomationLanes(lanes: Array<{ id: string; trackId: string; parameterId: string; clipId?: string }>): void {
+    mockUseStore.mockImplementation((store: unknown, defaultState: unknown) => {
+        if (typeof store === 'object' && store !== null && 'id' in store && store.id === 'automation') {
+            return { lanes };
+        }
+        return defaultState;
+    });
+}
+
 describe('DeviceParameterControl', () => {
     const mockDevice: Device = {
         id: 'device-1',
@@ -211,17 +220,20 @@ describe('DeviceParameterControl', () => {
     });
 
     it('should call removeAutomationLane when automation button is clicked with active lane', () => {
-        mockUseStore.mockImplementation((store: any, defaultState: any) => {
-            if (store.id === 'automation') {
-                return {
-                    lanes: [{ id: 'lane-1', trackId: 'track-1', parameterId: 'device-1:gain' }],
-                };
-            }
-            return defaultState;
-        });
+        useAutomationLanes([{ id: 'lane-1', trackId: 'track-1', parameterId: 'device-1:gain' }]);
         render(<DeviceParameterControl param={mockParam} device={mockDevice} trackId="track-1" />);
         fireEvent.click(screen.getByLabelText(/Automate Gain/i));
         expect(mockRemoveAutomationLane).toHaveBeenCalledWith('lane-1');
+    });
+
+    it('adds track automation instead of removing a matching clip lane', () => {
+        useAutomationLanes([{ id: 'clip-lane', trackId: 'track-1', clipId: 'clip-1', parameterId: 'device-1:gain' }]);
+
+        render(<DeviceParameterControl param={mockParam} device={mockDevice} trackId="track-1" />);
+        fireEvent.click(screen.getByLabelText(/Automate Gain/i));
+
+        expect(mockRemoveAutomationLane).not.toHaveBeenCalled();
+        expect(mockAddAutomationLane).toHaveBeenCalledWith('track-1', 'device-1:gain', 'Gain');
     });
 
     it('should not render automation button for non-automatable parameters', () => {

@@ -5,7 +5,7 @@ import { getAutomationStoreState } from '../../useCases/getAutomationStoreState'
 
 /**
  * Inverse-action handler for `addAutomationLane`. Removes the lane created under
- * `(trackId, parameterId)`. The lane is identified by that pair rather than by id
+ * track-scoped `(trackId, parameterId)`. The lane is identified by that pair rather than by id
  * because the generated lane id is not known when the inverse is captured
  * (pre-execute, before `addAutomationLane` runs).
  *
@@ -19,7 +19,9 @@ export const handleRemoveAutomationLane = createHandler<'removeAutomationLane'>(
         }
         const lane = state.lanes.find(
             (candidate) =>
-                candidate.trackId === action.payload.trackId && candidate.parameterId === action.payload.parameterId
+                !candidate.clipId &&
+                candidate.trackId === action.payload.trackId &&
+                candidate.parameterId === action.payload.parameterId
         );
         if (!lane) {
             return;

@@ -1,11 +1,12 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 
-import { type AutomationPoint } from '../../../models/Automation';
+import { createAutomationLane, type AutomationPoint } from '../../../models/Automation';
 import { automationStore } from '../../../stores/automationStore';
 import { restoreAutomationLanePoints } from '../../../useCases/automation/restoreAutomationLanePoints';
 import { handleAddAutomationLane } from '../handleAddAutomationLane';
 import { handleInvertAutomation } from '../handleInvertAutomation';
 import { handleQuantizeAutomation } from '../handleQuantizeAutomation';
+import { handleRemoveAutomationLane } from '../handleRemoveAutomationLane';
 import { handleReverseAutomation } from '../handleReverseAutomation';
 import { handleScaleAutomation } from '../handleScaleAutomation';
 import { handleStretchAutomation } from '../handleStretchAutomation';
@@ -181,7 +182,7 @@ describe('automation transform handlers — execute → undo restores pre-state'
             payload: { trackId: 't9', parameterId: 'pan', parameterName: 'Pan' },
         };
         const describeResult = handleAddAutomationLane.describe(action);
-        handleAddAutomationLane.execute(action);
+        void handleAddAutomationLane.execute(action);
 
         // The lane now exists.
         expect(automationStore.value!.lanes.some((l) => l.trackId === 't9' && l.parameterId === 'pan')).toBe(true);
@@ -209,5 +210,26 @@ describe('automation transform handlers — execute → undo restores pre-state'
         // No inverse: execute is a no-op (duplicate guard), so undoing must not
         // remove the pre-existing lane.
         expect(describeResult.inverseAction ?? null).toBeNull();
+    });
+
+    it('handleAddAutomationLane: undo removes only the added track lane when a clip lane coexists', () => {
+        const clipLane = createAutomationLane('t9', 'pan', 'Pan', 0, 1, 'clip-1');
+        automationStore.set({ lanes: [clipLane] });
+        const action = {
+            type: 'addAutomationLane' as const,
+            payload: { trackId: 't9', parameterId: 'pan', parameterName: 'Pan' },
+        };
+
+        const describeResult = handleAddAutomationLane.describe(action);
+        void handleAddAutomationLane.execute(action);
+
+        expect(automationStore.value?.lanes).toHaveLength(2);
+        const inverse = describeResult.inverseAction;
+        expect(inverse?.type).toBe('removeAutomationLane');
+        if (inverse?.type !== 'removeAutomationLane') {
+            throw new Error('Expected removeAutomationLane inverse');
+        }
+        void handleRemoveAutomationLane.execute(inverse);
+        expect(automationStore.value?.lanes).toEqual([clipLane]);
     });
 });
