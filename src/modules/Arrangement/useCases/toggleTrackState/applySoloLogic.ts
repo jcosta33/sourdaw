@@ -27,7 +27,13 @@ export function applySoloLogic({
     }
 
     const liveStripTrackIds = new Set(
-        state.tracks.filter((track) => shouldCreateLiveTrackStrip(track)).map((track) => track.id)
+        state.tracks
+            .filter(
+                (track) =>
+                    shouldCreateLiveTrackStrip(track) &&
+                    state.tracks.filter((candidate) => candidate.id === track.id).length === 1
+            )
+            .map((track) => track.id)
     );
     const result = calculateSoloLogic({
         tracks: state.tracks,

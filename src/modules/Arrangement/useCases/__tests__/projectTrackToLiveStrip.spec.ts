@@ -111,6 +111,18 @@ describe('projectTrackToLiveStrip', () => {
         expect(mocks.wireSidechainRoutes).not.toHaveBeenCalled();
     });
 
+    it('ignores a soloed ambiguous owner when projecting a unique live strip', () => {
+        const first = createTrack({ id: 'duplicate', name: 'First', kind: 'audio' });
+        first.soloed = true;
+        const second = createTrack({ id: 'duplicate', name: 'Second', kind: 'audio' });
+        const unique = createTrack({ id: 'unique', name: 'Unique', kind: 'audio' });
+        trackStore.set({ tracks: [first, second, unique], selectedTrackId: null });
+
+        projectTrackToLiveStrip({ trackId: unique.id });
+
+        expect(mocks.setTrackMute).toHaveBeenCalledWith(unique.id, false);
+    });
+
     it('restores authoritative gain after a persisted PFL solo is cleared', () => {
         mocks.soloMode = 'pfl';
         const soloed = createTrack({ id: 'soloed', name: 'Soloed', kind: 'audio' });
