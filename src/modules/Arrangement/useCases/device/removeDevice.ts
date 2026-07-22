@@ -1,9 +1,12 @@
+import { logger } from '#/infra/logger/appLogger';
 import { removeDeviceFromStrip, removeTrackStrip } from '#/modules/AudioEngine/useCases';
 import { unloadPlugin } from '#/modules/PluginHost/useCases';
 
 import { getTrackState } from '../../repositories/track/getTrackState';
 import { mapAllTracks } from '../../repositories/track/mapAllTracks';
-import { shouldCreateLiveTrackStrip } from '../../stores/trackEligibility';
+import { getTrackEligibility, shouldCreateLiveTrackStrip } from '../../stores/trackEligibility';
+
+import type { Device, Track } from '../../models/Track';
 
 export function removeDevice(deviceId: string): void {
     const state = getTrackState();
@@ -11,27 +14,76 @@ export function removeDevice(deviceId: string): void {
         return;
     }
 
+    let target: { track: Track; device: Device } | null = null;
     for (const track of state.tracks) {
-        const device = track.devices.find((data) => data.id === deviceId);
-        if (device) {
-            const retainsToaster = track.devices.some(
-                (candidate) => candidate.id !== deviceId && candidate.type === 'toaster'
-            );
-            const shouldRemoveTrackStrip =
-                device.type === 'toaster' &&
-                track.kind === 'folder' &&
-                shouldCreateLiveTrackStrip(track) &&
-                !retainsToaster;
-            removeDeviceFromStrip(track.id, deviceId);
-            if (shouldRemoveTrackStrip) {
-                removeTrackStrip(track.id);
+        for (const device of track.devices) {
+            if (device.id !== deviceId) {
+                continue;
             }
-            if (device.type === 'external-plugin' && device.externalInstanceId) {
-                void unloadPlugin(device.externalInstanceId);
+            if (target) {
+                return;
             }
-            break;
+            target = { track, device };
+        }
+    }
+    if (!target) {
+        return;
+    }
+
+    const { track, device } = target;
+    const matchingOwners = state.tracks.filter((candidate) => candidate.id === track.id);
+    if (matchingOwners.length !== 1) {
+        return;
+    }
+
+    const remainingDevices = track.devices.filter((candidate) => candidate.id !== deviceId);
+    const trackEligibility = getTrackEligibility(track.kind);
+    const wasLive = shouldCreateLiveTrackStrip(track);
+    const remainsLive =
+        trackEligibility.createsLiveStrip ||
+        (track.kind === 'folder' && remainingDevices.some((candidate) => candidate.type === 'toaster'));
+    const deactivatesStrip = wasLive && !remainsLive;
+    const shouldUnloadRemovedExternal = wasLive || !trackEligibility.acceptsDeviceUpdate;
+    const externalInstanceIds = new Set<string>();
+    if (deactivatesStrip) {
+        for (const retainedDevice of remainingDevices) {
+            if (retainedDevice.type === 'external-plugin' && retainedDevice.externalInstanceId) {
+                externalInstanceIds.add(retainedDevice.externalInstanceId);
+            }
+        }
+    }
+    if (device.type === 'external-plugin' && device.externalInstanceId && shouldUnloadRemovedExternal) {
+        externalInstanceIds.add(device.externalInstanceId);
+    }
+
+    mapAllTracks((candidate) => {
+        if (candidate.id !== track.id) {
+            return candidate;
+        }
+        return { ...candidate, devices: candidate.devices.filter((item) => item.id !== deviceId) };
+    });
+
+    try {
+        removeDeviceFromStrip(track.id, deviceId);
+    } catch (error) {
+        logger.warn(`Failed to remove device ${deviceId} from track strip ${track.id}: ${String(error)}`);
+    }
+
+    if (deactivatesStrip) {
+        try {
+            removeTrackStrip(track.id);
+        } catch (error) {
+            logger.warn(`Failed to remove track strip ${track.id}: ${String(error)}`);
         }
     }
 
-    mapAllTracks((time) => ({ ...time, devices: time.devices.filter((data) => data.id !== deviceId) }));
+    for (const instanceId of externalInstanceIds) {
+        try {
+            void unloadPlugin(instanceId).catch((error: unknown) => {
+                logger.warn(`Failed to unload external plugin instance ${instanceId}: ${String(error)}`);
+            });
+        } catch (error) {
+            logger.warn(`Failed to unload external plugin instance ${instanceId}: ${String(error)}`);
+        }
+    }
 }

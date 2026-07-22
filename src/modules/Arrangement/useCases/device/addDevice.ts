@@ -18,7 +18,11 @@ export function addDevice(trackId: string, deviceType: string): Device | null {
     if (!state) {
         return null;
     }
-    const track = state.tracks.find((candidate) => candidate.id === trackId);
+    const matchingTracks = state.tracks.filter((candidate) => candidate.id === trackId);
+    if (matchingTracks.length !== 1) {
+        return null;
+    }
+    const track = matchingTracks[0];
     if (!track || !getTrackEligibility(track.kind).acceptsDeviceAdd) {
         return null;
     }

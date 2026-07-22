@@ -77,6 +77,20 @@ describe('addExternalDevice', () => {
         expect(mocks.loadPlugin).toHaveBeenCalledWith('plugin-1', device?.externalInstanceId);
     });
 
+    it('rejects duplicate track identity before truth, engine, or host work', () => {
+        mocks.getTrackState.mockReturnValue({
+            tracks: [
+                { id: 'duplicate', kind: 'audio', devices: [] },
+                { id: 'duplicate', kind: 'audio', devices: [] },
+            ],
+        });
+
+        expect(addExternalDevice('duplicate', 'plugin-1', 'Plugin')).toBeNull();
+        expect(mocks.updateTrack).not.toHaveBeenCalled();
+        expect(mocks.addDeviceToStrip).not.toHaveBeenCalled();
+        expect(mocks.loadPlugin).not.toHaveBeenCalled();
+    });
+
     it('rejects a dormant VCA before ID, instance, project, engine, or plugin work', () => {
         mocks.getTrackState.mockReturnValue({ tracks: [{ id: 'vca-1', kind: 'vca', devices: [] }] });
 

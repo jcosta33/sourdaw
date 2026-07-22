@@ -169,6 +169,26 @@ describe('addDevice', () => {
         });
     });
 
+    it('rejects duplicate track identity before truth or runtime work', () => {
+        mocks.getTrackState.mockReturnValue({
+            tracks: [
+                { id: 'duplicate', kind: 'audio', devices: [] },
+                { id: 'duplicate', kind: 'audio', devices: [] },
+            ],
+        });
+        mocks.getPlatformPlugins.mockReturnValue([
+            { id: 'faust-synth', name: 'Faust Synth', parameters: [{ id: 'gain', value: 0.5 }] },
+        ]);
+
+        expect(addDevice('duplicate', 'faust-synth')).toBeNull();
+        expect(mocks.getPlatformPlugins).not.toHaveBeenCalled();
+        expect(mocks.updateTrack).not.toHaveBeenCalled();
+        expect(mocks.addDeviceToStrip).not.toHaveBeenCalled();
+        expect(mocks.updateDeviceParam).not.toHaveBeenCalled();
+        expect(mocks.compileFaustDSP).not.toHaveBeenCalled();
+        expect(mocks.projectTrackToLiveStrip).not.toHaveBeenCalled();
+    });
+
     it('rejects a dormant VCA before ID allocation, store writes, engine calls, or plugin compilation', () => {
         mocks.getTrackState.mockReturnValue({ tracks: [{ id: 'vca-1', kind: 'vca', devices: [] }] });
         mocks.getPlatformPlugins.mockReturnValue([{ id: 'faust-synth', name: 'Faust Synth', parameters: [] }]);
