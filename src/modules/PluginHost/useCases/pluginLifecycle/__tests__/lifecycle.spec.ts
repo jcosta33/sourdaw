@@ -59,6 +59,7 @@ describe('Plugin Lifecycle Use Cases', () => {
 
         const unloadResult = unloadPlugin('ordered-instance');
         const loadResult = loadPlugin('p1', 'ordered-instance');
+        await Promise.resolve();
 
         expect(mocks.unloadPluginRepo).toHaveBeenCalledWith('ordered-instance');
         expect(mocks.loadPluginRepo).not.toHaveBeenCalled();
@@ -72,6 +73,32 @@ describe('Plugin Lifecycle Use Cases', () => {
         );
     });
 
+    it('registers an idle tail before a same-instance operation can reenter', async () => {
+        const order: string[] = [];
+        let nestedResult: ReturnType<typeof loadPlugin> | undefined;
+        mocks.unloadPluginRepo.mockImplementationOnce(() => {
+            order.push('outer-start');
+            nestedResult = loadPlugin('p1', 'reentrant-instance');
+            order.push('outer-return');
+            return Promise.resolve();
+        });
+        mocks.loadPluginRepo.mockImplementationOnce(() => {
+            order.push('nested-run');
+            return Promise.resolve(pluginInstance);
+        });
+
+        const outerResult = unloadPlugin('reentrant-instance');
+        await Promise.resolve();
+
+        expect(order).toEqual(['outer-start', 'outer-return']);
+        await expect(outerResult).resolves.toBeUndefined();
+        if (!nestedResult) {
+            throw new Error('Expected the outer operation to enqueue a nested load');
+        }
+        await expect(nestedResult).resolves.toBe(pluginInstance);
+        expect(order).toEqual(['outer-start', 'outer-return', 'nested-run']);
+    });
+
     it('allows a different instance to progress while an unload is pending and then fails', async () => {
         const unloading = Promise.withResolvers<void>();
         const failure = new Error('unload failed');
@@ -80,6 +107,7 @@ describe('Plugin Lifecycle Use Cases', () => {
 
         const unloadResult = unloadPlugin('blocked-instance');
         const loadResult = loadPlugin('p1', 'independent-instance');
+        await Promise.resolve();
 
         expect(mocks.loadPluginRepo).toHaveBeenCalledWith('p1', 'independent-instance');
 
@@ -104,6 +132,7 @@ describe('Plugin Lifecycle Use Cases', () => {
         expect(mocks.loadPluginRepo).not.toHaveBeenCalled();
 
         const retriedLoad = loadPlugin('p1', 'recovering-instance');
+        await Promise.resolve();
         expect(mocks.loadPluginRepo).toHaveBeenCalledTimes(1);
         await expect(retriedLoad).resolves.toBe(pluginInstance);
     });

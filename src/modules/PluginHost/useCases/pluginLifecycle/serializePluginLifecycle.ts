@@ -9,13 +9,15 @@ export function serializePluginLifecycle<Result>(
     if (previous) {
         result = previous.then(operation);
     } else {
-        try {
-            result = operation();
-        } catch (error) {
-            const failure =
-                error instanceof Error ? error : new Error('Plugin lifecycle operation failed', { cause: error });
-            result = Promise.reject(failure);
-        }
+        result = Promise.resolve().then(() => {
+            try {
+                return operation();
+            } catch (error) {
+                const failure =
+                    error instanceof Error ? error : new Error('Plugin lifecycle operation failed', { cause: error });
+                throw failure;
+            }
+        });
     }
 
     const callerResult = result.then((value) => value);
