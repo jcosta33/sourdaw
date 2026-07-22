@@ -54,6 +54,16 @@ vi.mock('../renderOffline', () => ({
     renderTrackOffline: mocks.renderTrackOffline,
 }));
 
+const midiMocks = vi.hoisted(() => ({
+    removeMidiClipData: vi.fn(),
+    splitMidiNotesAtBeat: vi.fn(),
+}));
+
+vi.mock('#/modules/MIDI/useCases', () => ({
+    removeMidiClipData: midiMocks.removeMidiClipData,
+    splitMidiNotesAtBeat: midiMocks.splitMidiNotesAtBeat,
+}));
+
 function createTestAudioBuffer(): AudioBuffer {
     const channelData = new Float32Array(128);
 
@@ -115,6 +125,52 @@ function getFirstUndoEntry(): [string, () => void, () => void] {
 }
 
 describe('bounceSelection', () => {
+    it('splits partially-overlapping clips at the selection edges and cleans removed MIDI data (regression: ledger M-031)', async () => {
+        // Left-crossing clip [0,4), fully-inside [4,6), right-crossing [6,10)
+        // with the selection at [2,8). Pre-fix, the crossing clips were
+        // deleted wholesale and the inside clip's MIDI orphaned.
+        const leftCrossing = createAudioClip({ id: 'left-crossing', startBeat: 0, endBeat: 4, type: 'midi' });
+        const fullyInside = createAudioClip({ id: 'fully-inside', startBeat: 4, endBeat: 6, type: 'midi' });
+        const rightCrossing = createAudioClip({ id: 'right-crossing', startBeat: 6, endBeat: 10, type: 'midi' });
+        const track: Track = normalizeTrack({
+            id: 'track-1',
+            name: 'Track 1',
+            kind: 'midi',
+            muted: false,
+            clips: [leftCrossing, fullyInside, rightCrossing],
+        } as unknown as Track);
+        mocks.trackStore.value = { tracks: [track], selectedTrackId: 'track-1', ghostClips: [] };
+        mocks.renderTrackOffline.mockResolvedValue(createTestAudioBuffer());
+
+        const result = await bounceSelection('track-1', 2, 8);
+
+        expect(result).toBe(true);
+        const written = mocks.trackStore.set.mock.calls.at(-1)?.[0];
+        if (!written) {
+            throw new Error('expected trackStore.set');
+        }
+        const clips = written.tracks[0]!.clips;
+        const byId = new Map(clips.map((clip) => [clip.id, clip]));
+
+        // Left part survives with its original id, trimmed to the edge.
+        expect(byId.get('left-crossing')?.endBeat).toBe(2);
+        // The inside clip is gone (replaced by the bounce), its MIDI cleaned.
+        expect(byId.has('fully-inside')).toBe(false);
+        expect(midiMocks.removeMidiClipData).toHaveBeenCalledWith(['fully-inside']);
+        // The right part survives on a fresh id at the selection end.
+        const rightParts = clips.filter((clip) => clip.startBeat === 8 && clip.id !== 'fully-inside');
+        const keptRight = rightParts.find((clip) => clip.id.startsWith('clip-bsel-'));
+        expect(keptRight?.endBeat).toBe(10);
+        expect(keptRight?.midiOffsetBeats).toBe(0);
+        // Bounced clip occupies the selection.
+        expect(clips.some((clip) => clip.type === 'audio' && clip.startBeat === 2 && clip.endBeat === 8)).toBe(true);
+        // Notes partitioned at media beats with in-selection notes discarded.
+        expect(midiMocks.splitMidiNotesAtBeat).toHaveBeenCalledTimes(2);
+        expect(midiMocks.splitMidiNotesAtBeat).toHaveBeenCalledWith(
+            expect.objectContaining({ sourceClipId: 'right-crossing', splitBeat: 2, discardBeforeBeat: 2 })
+        );
+    });
+
     beforeEach(() => {
         vi.clearAllMocks();
         vi.useFakeTimers();
