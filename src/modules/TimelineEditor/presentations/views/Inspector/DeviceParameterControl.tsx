@@ -29,6 +29,20 @@ type DeviceAutomationState = {
     }>;
 };
 
+/**
+ * Build an O(1) lookup keyed by `trackId|parameterId` so each
+ * DeviceParameterControl instance can skip the full `lanes.find()` scan
+ * (see audit §115.1). React Compiler memoizes this call on `lanes` identity,
+ * so the lookup is rebuilt at most once per automation-store update.
+ */
+function buildLaneLookup(lanes: DeviceAutomationState['lanes']): Map<string, DeviceAutomationState['lanes'][number]> {
+    const map = new Map<string, DeviceAutomationState['lanes'][number]>();
+    for (const lane of lanes) {
+        map.set(`${lane.trackId}|${lane.parameterId}`, lane);
+    }
+    return map;
+}
+
 /** Compute a sensible step from the parameter range and type. */
 function deriveStep(param: DeviceParameter): number {
     if (param.type === 'int') {
@@ -93,13 +107,16 @@ export const DeviceParameterControl = ({ param, device, trackId }: DeviceParamet
         return Math.max(-1, Math.min(1, total));
     })();
 
+    const laneLookup = buildLaneLookup(autoState.lanes);
     const targetId = createDeviceAutomationTargetId(device.id, param.id);
     const devices = trackState.tracks.find((track) => track.id === trackId)?.devices ?? [device];
-    const activeLane = findEquivalentAutomationLane(
-        targetId,
-        autoState.lanes.filter((lane) => lane.trackId === trackId),
-        devices
-    );
+    const activeLane =
+        laneLookup.get(`${trackId}|${targetId}`) ??
+        findEquivalentAutomationLane(
+            targetId,
+            autoState.lanes.filter((lane) => lane.trackId === trackId),
+            devices
+        );
     const hasAutomation = !!activeLane;
 
     const value = device.parameterValues[param.id] ?? param.value;

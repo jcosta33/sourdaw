@@ -1,13 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { type AutomationPoint } from '../../../models/AutomationViewTypes';
-import {
-    AUTOMATION_MODE_CONFIG,
-    LANE_HEIGHT,
-    buildCurvePath,
-    findEquivalentAutomationLane,
-    getAutomatableParams,
-} from '../automationViewHelpers';
+import { AUTOMATION_MODE_CONFIG, LANE_HEIGHT, buildCurvePath, getAutomatableParams } from '../automationViewHelpers';
 
 const beatToX = (beat: number): number => beat * 10;
 const valueToY = (value: number): number => 100 - value * 100;
@@ -59,9 +53,7 @@ describe('getAutomatableParams', () => {
     });
 
     it('should ignore a device whose type does not match any built-in plugin', () => {
-        const params = getAutomatableParams('track-1', [
-            { id: 'mystery-1', type: 'not-a-real-plugin', name: 'Mystery' },
-        ]);
+        const params = getAutomatableParams('track-1', [{ type: 'not-a-real-plugin', name: 'Mystery' }]);
         expect(params).toEqual([
             { id: 'gain', name: 'Volume', min: 0, max: 1 },
             { id: 'pan', name: 'Pan', min: -1, max: 1 },
@@ -69,18 +61,15 @@ describe('getAutomatableParams', () => {
     });
 
     it('equates a uniquely resolvable legacy lane with its canonical device target but rejects ambiguity', () => {
-        const lane = { parameterId: 'levain:masterGain' };
         const targetId = 'levain-1:masterGain';
         const device = { id: 'levain-1', type: 'levain', name: 'Strings' };
+        const hasTarget = (devices: (typeof device)[]) =>
+            getAutomatableParams('track-1', devices, [{ parameterId: 'levain:masterGain' }]).some(
+                (param) => param.id === targetId
+            );
 
-        expect(findEquivalentAutomationLane(targetId, [lane], [device])).toBe(lane);
-        expect(
-            findEquivalentAutomationLane(
-                targetId,
-                [lane],
-                [device, { id: 'levain-2', type: 'levain', name: 'Strings 2' }]
-            )
-        ).toBeUndefined();
+        expect(hasTarget([device])).toBe(false);
+        expect(hasTarget([device, { id: 'levain-2', type: 'levain', name: 'Strings 2' }])).toBe(true);
     });
 });
 

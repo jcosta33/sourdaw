@@ -214,15 +214,7 @@ describe('DeviceParameterControl', () => {
         mockUseStore.mockImplementation((store: any, defaultState: any) => {
             if (store.id === 'automation') {
                 return {
-                    lanes: [
-                        {
-                            id: 'lane-1',
-                            trackId: 'track-1',
-                            parameterId: 'device-1:gain',
-                            parameterName: 'Gain',
-                            visible: true,
-                        },
-                    ],
+                    lanes: [{ id: 'lane-1', trackId: 'track-1', parameterId: 'device-1:gain' }],
                 };
             }
             return defaultState;

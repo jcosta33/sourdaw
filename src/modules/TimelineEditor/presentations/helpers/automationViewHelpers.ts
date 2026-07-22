@@ -54,11 +54,7 @@ export const getAutomatableParams = (
     });
 };
 
-type AutomationTargetDevice = {
-    id?: string;
-    type: string;
-    parameterValues?: Record<string, number>;
-};
+type AutomationTargetDevice = { id?: string; type: string; parameterValues?: Record<string, number> };
 
 function acceptsAutomationParameter(device: AutomationTargetDevice, parameterId: string): boolean {
     if (device.parameterValues?.[parameterId] !== undefined) {

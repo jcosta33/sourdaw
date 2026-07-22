@@ -4,17 +4,11 @@ export const NO_DEVICE_AUTOMATION_TARGET = -1;
 export const UNRESOLVED_DEVICE_AUTOMATION_TARGET = -2;
 
 function getCandidateId(candidate: DeviceAutomationCandidate): string {
-    if ('deviceId' in candidate) {
-        return candidate.deviceId;
-    }
-    return candidate.id;
+    return 'deviceId' in candidate ? candidate.deviceId : candidate.id;
 }
 
 function getCandidateType(candidate: DeviceAutomationCandidate): string {
-    if ('deviceType' in candidate) {
-        return candidate.deviceType;
-    }
-    return candidate.type;
+    return 'deviceType' in candidate ? candidate.deviceType : candidate.type;
 }
 
 export function createDeviceAutomationTargetId(deviceId: string, parameterId: string): string {
@@ -44,44 +38,43 @@ export function resolveDeviceAutomationTargetIndex<Candidate extends DeviceAutom
         }
 
         let canonicalIndex = NO_DEVICE_AUTOMATION_TARGET;
-        let canonicalCount = 0;
         for (let index = 0; index < candidates.length; index++) {
             const candidate = candidates[index]!;
             if (getCandidateId(candidate) === ownerId) {
-                canonicalCount += 1;
+                if (canonicalIndex >= 0) {
+                    return UNRESOLVED_DEVICE_AUTOMATION_TARGET;
+                }
                 canonicalIndex = index;
             }
         }
-        if (canonicalCount > 0) {
-            if (canonicalCount !== 1 || !acceptsParameter(candidates[canonicalIndex]!, parameterId)) {
-                return UNRESOLVED_DEVICE_AUTOMATION_TARGET;
-            }
-            return canonicalIndex;
+        if (canonicalIndex >= 0) {
+            return acceptsParameter(candidates[canonicalIndex]!, parameterId)
+                ? canonicalIndex
+                : UNRESOLVED_DEVICE_AUTOMATION_TARGET;
         }
 
         let legacyIndex = NO_DEVICE_AUTOMATION_TARGET;
-        let legacyCount = 0;
         for (let index = 0; index < candidates.length; index++) {
             const candidate = candidates[index]!;
             if (getCandidateType(candidate) === ownerId && acceptsParameter(candidate, parameterId)) {
-                legacyCount += 1;
+                if (legacyIndex >= 0) {
+                    return UNRESOLVED_DEVICE_AUTOMATION_TARGET;
+                }
                 legacyIndex = index;
             }
         }
-        return legacyCount === 1 ? legacyIndex : UNRESOLVED_DEVICE_AUTOMATION_TARGET;
+        return legacyIndex >= 0 ? legacyIndex : UNRESOLVED_DEVICE_AUTOMATION_TARGET;
     }
 
     let legacyIndex = NO_DEVICE_AUTOMATION_TARGET;
-    let legacyCount = 0;
     for (let index = 0; index < candidates.length; index++) {
         const candidate = candidates[index]!;
         if (acceptsParameter(candidate, parameterId)) {
-            legacyCount += 1;
+            if (legacyIndex >= 0) {
+                return UNRESOLVED_DEVICE_AUTOMATION_TARGET;
+            }
             legacyIndex = index;
         }
     }
-    if (legacyCount === 0) {
-        return NO_DEVICE_AUTOMATION_TARGET;
-    }
-    return legacyCount === 1 ? legacyIndex : UNRESOLVED_DEVICE_AUTOMATION_TARGET;
+    return legacyIndex;
 }

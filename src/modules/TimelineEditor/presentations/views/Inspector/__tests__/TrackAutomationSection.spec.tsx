@@ -6,9 +6,7 @@ import { TrackAutomationSection } from '../TrackAutomationSection';
 import type { Track } from '../../../../models/TrackViewTypes';
 
 // Mock external dependencies
-const mockGetBuiltinPlugins = vi.fn(
-    (): Array<{ id: string; name: string; parameters: Array<{ id: string; name: string; automatable: boolean }> }> => []
-);
+const mockGetBuiltinPlugins = vi.fn<() => unknown[]>(() => []);
 vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => {
     const actual = await importOriginal<typeof import('#/modules/Arrangement/useCases')>();
     return {
