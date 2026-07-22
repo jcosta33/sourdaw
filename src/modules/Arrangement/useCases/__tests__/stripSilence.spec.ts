@@ -11,6 +11,7 @@ type UpdateTrackFn = (track_id: string, updater: (track: Track) => Track) => voi
 const mocks = vi.hoisted(() => ({
     getCachedAudioBuffer: vi.fn<(input: { bufferId: string }) => AudioBuffer | null>(),
     getTrackState: vi.fn<() => TrackState | null>(),
+    resolveEligibleClipWriteTarget: vi.fn(),
     updateTrack: vi.fn<UpdateTrackFn>(),
 }));
 
@@ -24,6 +25,10 @@ vi.mock('../../repositories/track/getTrackState', () => ({
 
 vi.mock('../../repositories/track/updateTrack', () => ({
     updateTrack: mocks.updateTrack,
+}));
+
+vi.mock('../../stores/resolveEligibleClipWriteTarget', () => ({
+    resolveEligibleClipWriteTarget: mocks.resolveEligibleClipWriteTarget,
 }));
 
 function create_track_with_clips(clips: Clip[]): Track {
@@ -61,13 +66,19 @@ function create_test_audio_buffer(channel_data: Float32Array<ArrayBuffer>): Audi
 describe('stripSilence', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        mocks.resolveEligibleClipWriteTarget.mockReturnValue({
+            status: 'eligible',
+            trackId: 'track-1',
+            clipId: 'clip-1',
+        });
     });
 
     it('should not read the cache or update when track state is missing', () => {
         mocks.getTrackState.mockReturnValue(null);
 
-        stripSilence('clip-1');
+        const didWrite = stripSilence('clip-1');
 
+        expect(didWrite).toBe(false);
         expect(mocks.getCachedAudioBuffer).not.toHaveBeenCalled();
         expect(mocks.updateTrack).not.toHaveBeenCalled();
     });
@@ -76,8 +87,9 @@ describe('stripSilence', () => {
         const clip = ClipDummy.create({ id: 'other-clip', audioBufferId: 'buf-1' });
         mocks.getTrackState.mockReturnValue(create_track_state(create_track_with_clips([clip])));
 
-        stripSilence('clip-1');
+        const didWrite = stripSilence('clip-1');
 
+        expect(didWrite).toBe(false);
         expect(mocks.getCachedAudioBuffer).not.toHaveBeenCalled();
         expect(mocks.updateTrack).not.toHaveBeenCalled();
     });
@@ -107,8 +119,9 @@ describe('stripSilence', () => {
         mocks.getTrackState.mockReturnValue(create_track_state(create_track_with_clips([clip])));
         mocks.getCachedAudioBuffer.mockReturnValue(null);
 
-        stripSilence('clip-1');
+        const didWrite = stripSilence('clip-1');
 
+        expect(didWrite).toBe(false);
         expect(mocks.getCachedAudioBuffer).toHaveBeenCalledWith({ bufferId: 'buf-1' });
         expect(mocks.updateTrack).not.toHaveBeenCalled();
     });
@@ -139,8 +152,9 @@ describe('stripSilence', () => {
         mocks.getTrackState.mockReturnValue(create_track_state(track));
         mocks.getCachedAudioBuffer.mockReturnValue(create_test_audio_buffer(channel_data));
 
-        stripSilence('clip-1');
+        const didWrite = stripSilence('clip-1');
 
+        expect(didWrite).toBe(true);
         expect(mocks.getCachedAudioBuffer).toHaveBeenCalledWith({ bufferId: 'buf-1' });
         expect(mocks.updateTrack).toHaveBeenCalledWith('track-1', expect.any(Function));
 
@@ -167,5 +181,19 @@ describe('stripSilence', () => {
             }),
         ]);
         expect(updated_track.clips.map((context) => context.id)).not.toContain('clip-1');
+    });
+
+    it('rejects an ineligible owner before buffer scanning, UUID allocation, or track update', () => {
+        const clip = ClipDummy.create({ id: 'clip-1', audioBufferId: 'buf-1' });
+        mocks.getTrackState.mockReturnValue(create_track_state(create_track_with_clips([clip])));
+        mocks.resolveEligibleClipWriteTarget.mockReturnValue({ status: 'ineligible' });
+        const randomUuid = vi.spyOn(crypto, 'randomUUID');
+
+        const didWrite = stripSilence('clip-1');
+
+        expect(didWrite).toBe(false);
+        expect(mocks.getCachedAudioBuffer).not.toHaveBeenCalled();
+        expect(randomUuid).not.toHaveBeenCalled();
+        expect(mocks.updateTrack).not.toHaveBeenCalled();
     });
 });

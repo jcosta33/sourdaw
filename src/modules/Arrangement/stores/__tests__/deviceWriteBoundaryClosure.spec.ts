@@ -60,6 +60,7 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         'src/modules/Arrangement/useCases/device/setDeviceParameter/setDeviceParameter.ts': 2,
         'src/modules/Arrangement/useCases/index.ts': 2,
         'src/modules/Arrangement/useCases/preset/presetLoading.ts': 3,
+        'src/modules/Arrangement/useCases/projectTrackToLiveStrip.ts': 2,
         'src/modules/Arrangement/useCases/setTrackGainPan/helpers.ts': 4,
         'src/modules/Arrangement/useCases/setTrackGainPan/setTrackGain.ts': 2,
         'src/modules/Arrangement/useCases/setTrackGainPan/setTrackPan.ts': 2,
@@ -102,13 +103,13 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         'src/modules/Proof/useCases/proofParamBridge/setProofParam.ts': 2,
         'src/modules/Proof/useCases/proofParamBridge/setProofParamWithPatch.ts': 3,
         'src/modules/Proof/useCases/proofParamBridge/setProofTarget.ts': 2,
-        'src/modules/Transport/useCases/ensureTrackStrips.ts': 2,
         'src/modules/Transport/useCases/scheduling/applyAutomation/applyAutomation.ts': 2,
     },
     'strip-add': {
         'src/modules/Arrangement/useCases/device/addDevice.ts': 2,
         'src/modules/Arrangement/useCases/device/addExternalDevice.ts': 2,
         'src/modules/Arrangement/useCases/preset/presetLoading.ts': 2,
+        'src/modules/Arrangement/useCases/projectTrackToLiveStrip.ts': 2,
         'src/modules/AudioEngine/models/AudioEngineState.ts': 1,
         'src/modules/AudioEngine/repositories/createWebAudioEngine.ts': 1,
         'src/modules/AudioEngine/useCases/deviceControls/addDeviceToStrip.ts': 2,
@@ -116,7 +117,6 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         'src/modules/GrandBoule/useCases/createGrandBouleTrack.ts': 3,
         'src/modules/Project/useCases/demoProjects/nebulaDrift/createNebulaDriftDemo.ts': 3,
         'src/modules/Toaster/useCases/createDrumTrackStack.ts': 2,
-        'src/modules/Transport/useCases/ensureTrackStrips.ts': 2,
     },
     'direct-built-in': {
         'src/modules/GrandBoule/useCases/loadGrandBoulePreset.ts': 4,
@@ -263,6 +263,10 @@ const DEVICE_DATA_COUNTS = {
         'src/modules/Arrangement/repositories/presets/presetHelpers/tremolo.ts': 1,
         'src/modules/Arrangement/repositories/presets/stringsPresets.ts': 6,
         'src/modules/Arrangement/repositories/trackTemplate/loadTrackTemplates.ts': 1,
+        // Type-only device-data shape: LiveStripTrack declares `devices` so
+        // shouldCreateLiveTrackStrip can read device types for folder-strip
+        // eligibility (#584) — a static declaration, not an executable access.
+        'src/modules/Arrangement/stores/trackEligibility.ts': 1,
         'src/modules/Project/models/ProjectData.ts': 4,
         'src/modules/Project/models/VcaTrackMigration.ts': 1,
         'src/modules/Project/useCases/projectTemplates/templateFiles/ambient.ts': 3,
@@ -281,6 +285,7 @@ const GUARDED_EXECUTABLE_PATHS = [
     'src/modules/Arrangement/stores/persistDeviceParam.ts',
     'src/modules/Arrangement/useCases/device/setDeviceParameter/persistDevicePatch.ts',
     'src/modules/Arrangement/useCases/device/setDeviceParameter/setDeviceParameter.ts',
+    'src/modules/Arrangement/useCases/projectTrackToLiveStrip.ts',
     'src/modules/Arrangement/useCases/setTrackGainPan/helpers.ts',
     'src/modules/Automation/useCases/modulation/applyModulationToEngine.ts',
     'src/modules/Automation/useCases/modulation/revertMappingsToBase.ts',
@@ -318,7 +323,6 @@ const GUARDED_EXECUTABLE_PATHS = [
     'src/modules/Toaster/useCases/toasterParamBridge/setPadEngineImmediate.ts',
     'src/modules/Toaster/useCases/toasterParamBridge/setToasterKitParam.ts',
     'src/modules/Toaster/useCases/toasterParamBridge/setToasterPadParam.ts',
-    'src/modules/Transport/useCases/ensureTrackStrips.ts',
     'src/modules/Transport/useCases/scheduling/applyAutomation/applyAutomation.ts',
 ] as const;
 
