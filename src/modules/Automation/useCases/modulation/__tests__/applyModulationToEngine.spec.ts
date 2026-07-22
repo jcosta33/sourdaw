@@ -68,10 +68,12 @@ function createAutomationLaneFixture(input: {
     value: number;
     minValue: number;
     maxValue: number;
+    clipId?: string;
 }): AutomationLane {
     return {
         id: input.id,
         trackId: input.trackId,
+        clipId: input.clipId,
         parameterId: input.parameterId,
         parameterName: input.parameterName,
         points: [{ beat: 0, value: input.value, curve: 'linear', tension: 0 }],
@@ -83,6 +85,19 @@ function createAutomationLaneFixture(input: {
         minValue: input.minValue,
         maxValue: input.maxValue,
     };
+}
+
+function createCutoffLane([id, parameterId, value, clipId]: [string, string, number, string?]): AutomationLane {
+    return createAutomationLaneFixture({
+        id,
+        trackId: 't1',
+        clipId,
+        parameterId,
+        parameterName: 'Cutoff',
+        value,
+        minValue: 0,
+        maxValue: 1000,
+    });
 }
 
 describe('applyModulationToEngine', () => {
@@ -238,6 +253,25 @@ describe('applyModulationToEngine', () => {
         expect(mocks.updateDeviceParam).not.toHaveBeenCalled();
     });
 
+    it('does not scan automation when no enabled modulator has mappings', () => {
+        const automationState = automationStore.value!;
+        const laneSnapshot = automationState.lanes;
+        const readLanes = vi.fn(() => laneSnapshot);
+        Object.defineProperty(automationState, 'lanes', { get: readLanes });
+        const state = modulationStore.value!;
+        modulationStore.set({
+            ...state,
+            modulators: [
+                { ...state.modulators[0]!, enabled: false },
+                { ...state.modulators[0]!, id: 'empty', mappings: [], enabled: true },
+            ],
+        });
+
+        applyModulationToEngine(1);
+
+        expect(readLanes).not.toHaveBeenCalled();
+    });
+
     it('skips mappings whose target track/device/param cannot be resolved', () => {
         modulationStore.set({
             modulators: [
@@ -371,5 +405,47 @@ describe('applyModulationToEngine', () => {
         const [, , , value] = mocks.updateDeviceParam.mock.calls[0]!;
         expect(value).toBeCloseTo(800);
         expect(readLanes).toHaveBeenCalledTimes(4);
+    });
+
+    it.each([
+        [
+            'track and clip',
+            [
+                createCutoffLane(['track-lane', 'd1:cutoff', 200]),
+                createCutoffLane(['clip-lane', 'd1:cutoff', 800, 'clip-1']),
+            ],
+        ],
+        [
+            'legacy and canonical',
+            [
+                createCutoffLane(['legacy-lane', 'builtin-filter:cutoff', 200]),
+                createCutoffLane(['canonical-lane', 'd1:cutoff', 800]),
+            ],
+        ],
+    ])('uses the later %s lane as the modulated automation base', (_name, lanes) => {
+        mocks.trackStore.value = {
+            tracks: [
+                {
+                    id: 't1',
+                    automationMode: 'read',
+                    clips: [{ id: 'clip-1', startBeat: 0, endBeat: 4 }],
+                    devices: [{ id: 'd1', type: 'builtin-filter', parameterValues: { cutoff: 500 } }],
+                },
+            ],
+        };
+        automationStore.set({ lanes });
+        const state = modulationStore.value!;
+        modulationStore.set({
+            ...state,
+            modulators: state.modulators.map((modulator) => ({
+                ...modulator,
+                mappings: modulator.mappings.map((mapping) => ({ ...mapping, amount: 0 })),
+            })),
+        });
+
+        applyModulationToEngine(1);
+
+        const [, , , value] = mocks.updateDeviceParam.mock.calls[0]!;
+        expect(value).toBeCloseTo(800);
     });
 });
