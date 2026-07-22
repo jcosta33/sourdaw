@@ -1,0 +1,31 @@
+src/modules/PluginHost/testing/loadFaustCompilerForSpec.ts
+  s_00080880462b54::t_3052ba85f18831 1-48
+src/modules/PluginHost/useCases/faustEngine/__tests__/noiseGateDspBehavior.spec.ts
+  s_c2fca615e81f34::t_b2854b3d26caa7 12-13,79
+src/modules/PluginHost/useCases/faustEngine/__tests__/shippedDspCompile.spec.ts
+  s_c2fca615e81f34::t_d1151a52da18c8 7,10-11,57
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "3586142a773e786ac9ab9866684ce9c9adb798ce",
+  "prompts": {},
+  "sessions": {
+    "s_00080880462b54": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8752-e821-7c61-ac98-446069b13c88",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_c2fca615e81f34": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f74e9-e1c5-7142-85d2-4c577b3973c0",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
