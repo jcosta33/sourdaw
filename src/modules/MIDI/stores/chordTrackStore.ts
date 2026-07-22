@@ -64,6 +64,7 @@ function isChordEvent(value: unknown): value is ChordEvent {
 
     return (
         typeof value.id === 'string' &&
+        value.id.length > 0 &&
         isNonNegativeFiniteNumber(value.beat) &&
         isRootValue(value.root) &&
         isChordType(value.quality) &&
@@ -76,7 +77,21 @@ export function isChordTrackState(value: unknown): value is ChordTrackState {
         return false;
     }
 
-    return typeof value.enabled === 'boolean' && Array.isArray(value.events) && value.events.every(isChordEvent);
+    if (typeof value.enabled !== 'boolean' || !Array.isArray(value.events)) {
+        return false;
+    }
+
+    const eventIds = new Set<string>();
+    let previousBeat = Number.NEGATIVE_INFINITY;
+    for (const event of value.events) {
+        if (!isChordEvent(event) || event.beat < previousBeat || eventIds.has(event.id)) {
+            return false;
+        }
+        eventIds.add(event.id);
+        previousBeat = event.beat;
+    }
+
+    return true;
 }
 
 function getStorage(): Storage | null {

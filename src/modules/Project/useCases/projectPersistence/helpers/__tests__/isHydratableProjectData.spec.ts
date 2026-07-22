@@ -326,15 +326,38 @@ describe('isHydratableProjectData', () => {
         ).toBe(false);
     });
 
-    it('rejects malformed chord-track state while keeping the optional v1 field backward compatible', () => {
+    it('keeps the optional chord-track field backward compatible with version-1 snapshots', () => {
         expect(isHydratableProjectData(buildValidProjectData())).toBe(true);
+    });
+
+    it.each([
+        {
+            name: 'an out-of-range root',
+            events: [{ id: 'chord-1', beat: 0, root: 12, quality: 'minor', duration: 4 }],
+        },
+        {
+            name: 'events out of beat order',
+            events: [
+                { id: 'chord-1', beat: 4, root: 9, quality: 'minor', duration: 4 },
+                { id: 'chord-2', beat: 0, root: 0, quality: 'major', duration: 4 },
+            ],
+        },
+        {
+            name: 'an empty event ID',
+            events: [{ id: '', beat: 0, root: 9, quality: 'minor', duration: 4 }],
+        },
+        {
+            name: 'duplicate event IDs',
+            events: [
+                { id: 'chord-1', beat: 0, root: 9, quality: 'minor', duration: 4 },
+                { id: 'chord-1', beat: 4, root: 0, quality: 'major', duration: 4 },
+            ],
+        },
+    ])('rejects chord-track imports with $name', ({ events }) => {
         expect(
             isHydratableProjectData({
                 ...buildValidProjectData(),
-                chordTrack: {
-                    enabled: true,
-                    events: [{ id: 'chord-1', beat: 0, root: 12, quality: 'minor', duration: 4 }],
-                },
+                chordTrack: { enabled: true, events },
             })
         ).toBe(false);
     });
