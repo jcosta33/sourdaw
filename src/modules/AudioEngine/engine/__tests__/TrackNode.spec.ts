@@ -1,12 +1,14 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { createMockAudioContext } from '../../../../helpers/__tests__/audioContext.mock';
+import { createAudioEngine } from '../../repositories/createWebAudioEngine';
+import { createNativePluginBridgeNode } from '../NativePluginBridgeNode';
 import { TrackNode, type TrackNodeDeps } from '../TrackNode';
 
 // The external-plugin path loads its native bridge asynchronously. Mock the
 // bridge factory so the spec can capture the param ids/values that actually
 // reach the native engine and control when the load resolves.
-const bridgeSetParam = vi.fn<(paramId: number, value: number) => void>();
+const bridgeSetParam = vi.fn<(paramId: number, value: number) => Promise<void>>();
 let resolveBridge: ((result: unknown) => void) | undefined;
 vi.mock('../NativePluginBridgeNode', () => ({
     createNativePluginBridgeNode: vi.fn(
@@ -40,6 +42,7 @@ describe('TrackNode', () => {
             pendingDevicePromises: new Set(),
         };
         vi.clearAllMocks();
+        bridgeSetParam.mockResolvedValue();
         resolveBridge = undefined;
     });
 
@@ -265,11 +268,19 @@ describe('TrackNode', () => {
 
         // Live reload order: addDevice, then updateParam from saved values —
         // while the async bridge load is still pending.
-        track.addDevice('dev-1', 'external-plugin', 'inst-1');
+        track.addDevice('dev-1', 'external-plugin', 'inst-1', 'plugin-1');
         track.updateParam('dev-1', '3', 0.75);
         track.updateParam('dev-1', '7', -2);
 
         expect(resolveBridge).toBeDefined();
+        expect(createNativePluginBridgeNode).toHaveBeenCalledWith(
+            expect.objectContaining({
+                context: ctx,
+                instanceId: 'inst-1',
+                pluginId: 'plugin-1',
+                signal: expect.any(AbortSignal),
+            })
+        );
         // Nothing should have reached the native bridge yet — it isn't loaded.
         expect(bridgeSetParam).not.toHaveBeenCalled();
 
@@ -278,6 +289,7 @@ describe('TrackNode', () => {
         const destroy = vi.fn(() => {
             bridgeNode.disconnect();
             bridgeNode.port.close();
+            return Promise.resolve();
         });
         resolveBridge!({
             workletNode: bridgeNode,
@@ -296,5 +308,31 @@ describe('TrackNode', () => {
         expect(destroy).toHaveBeenCalledTimes(1);
         expect(bridgeNode.disconnect).toHaveBeenCalled();
         expect(bridgeNode.port.close).toHaveBeenCalledTimes(1);
+    });
+
+    it('keeps waitForDevices pending until the external lifecycle generation is ready', async () => {
+        const engine = createAudioEngine(ctx as unknown as AudioContext);
+        engine.addDeviceToStrip('track-1', 'dev-1', 'external-plugin', 'inst-1', 'plugin-1');
+        let waitSettled = false;
+        const waiting = engine.waitForDevices().then(() => {
+            waitSettled = true;
+            return undefined;
+        });
+
+        await Promise.resolve();
+        await Promise.resolve();
+        expect(waitSettled).toBe(false);
+
+        const bridgeNode = { disconnect: vi.fn(), connect: vi.fn(), port: { close: vi.fn() } };
+        expect(resolveBridge).toBeDefined();
+        resolveBridge!({
+            workletNode: bridgeNode,
+            setParam: bridgeSetParam,
+            setBypass: vi.fn(),
+            destroy: vi.fn().mockResolvedValue(undefined),
+        });
+
+        await waiting;
+        expect(waitSettled).toBe(true);
     });
 });

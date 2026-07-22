@@ -53,7 +53,7 @@ describe('removeDevice', () => {
         });
     });
 
-    it('unloads plugin if it is an external plugin', () => {
+    it('leaves external runtime teardown to the engine-owned lifecycle', () => {
         mocks.getTrackState.mockReturnValue({
             tracks: [
                 {
@@ -66,10 +66,11 @@ describe('removeDevice', () => {
 
         removeDevice('d1');
 
-        expect(mocks.unloadPlugin).toHaveBeenCalledWith('inst1');
+        expect(mocks.removeDeviceFromStrip).toHaveBeenCalledWith('t1', 'd1');
+        expect(mocks.unloadPlugin).not.toHaveBeenCalled();
     });
 
-    it('permits dormant VCA device and plugin cleanup', () => {
+    it('permits dormant VCA project cleanup without inventing a second runtime owner', () => {
         const track = createTrack({ id: 'vca-1', name: 'VCA', kind: 'audio' });
         Object.defineProperty(track, 'kind', { value: 'vca' });
         track.devices = [
@@ -87,7 +88,7 @@ describe('removeDevice', () => {
         removeDevice('d1');
 
         expect(mocks.removeDeviceFromStrip).toHaveBeenCalledWith('vca-1', 'd1');
-        expect(mocks.unloadPlugin).toHaveBeenCalledWith('inst1');
+        expect(mocks.unloadPlugin).not.toHaveBeenCalled();
         expect(mocks.mapAllTracks).toHaveBeenCalled();
     });
 });

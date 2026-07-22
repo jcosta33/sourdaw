@@ -53,7 +53,17 @@ export function ensureTrackStrips(): void {
             if (targetOwner.status !== 'eligible' || targetOwner.trackId !== track.id) {
                 continue;
             }
-            addDeviceToStrip(targetOwner.trackId, targetOwner.deviceId, device.type);
+            if (device.type === 'external-plugin' && device.externalInstanceId && device.externalPluginId) {
+                addDeviceToStrip(
+                    targetOwner.trackId,
+                    targetOwner.deviceId,
+                    device.type,
+                    device.externalInstanceId,
+                    device.externalPluginId
+                );
+            } else {
+                addDeviceToStrip(targetOwner.trackId, targetOwner.deviceId, device.type);
+            }
             // Apply stored parameter values to the newly created audio nodes
             if (device.parameterValues) {
                 for (const [paramId, value] of Object.entries(device.parameterValues)) {

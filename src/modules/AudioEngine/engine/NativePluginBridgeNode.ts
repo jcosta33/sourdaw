@@ -11,40 +11,94 @@
  * recent available block in the meantime.
  */
 
-import { processAudioIPC, setPluginParameter } from '#/modules/PluginHost/useCases';
+import { loadPlugin, processAudioIPC, setPluginParameter, unloadPlugin } from '#/modules/PluginHost/useCases';
+
+export type CreateNativePluginBridgeNodeInput = {
+    context: AudioContext;
+    pluginId: string;
+    instanceId: string;
+    signal: AbortSignal;
+};
 
 export type NativePluginBridgeResult = {
     workletNode: AudioWorkletNode;
-    setParam: (paramId: number, value: number) => void;
+    setParam: (paramId: number, value: number) => Promise<void>;
     setBypass: (_bypassed: boolean) => void;
-    destroy: () => void;
+    destroy: () => Promise<void>;
 };
 
-// eslint-disable-next-line @typescript-eslint/require-await -- async API contract; callers use .then(); will await node initialization once native bridge handshake is implemented
 export async function createNativePluginBridgeNode(
-    ctx: AudioContext,
-    instanceId: string,
-    enginePluginId: number
+    input: CreateNativePluginBridgeNodeInput
 ): Promise<NativePluginBridgeResult> {
-    const node = new AudioWorkletNode(ctx, 'native-plugin-bridge-processor', {
-        numberOfInputs: 1,
-        numberOfOutputs: 1,
-        outputChannelCount: [2],
-        channelCount: 2,
-        channelCountMode: 'explicit',
-    });
+    const { context, pluginId, instanceId, signal } = input;
+    let unloadPromise: Promise<void> | null = null;
 
-    // Initialize the worklet with the engine plugin ID
-    node.port.postMessage({ type: 'init', enginePluginId });
+    function unloadNativeOnce(): Promise<void> {
+        if (!unloadPromise) {
+            unloadPromise = unloadPlugin(instanceId);
+        }
+        return unloadPromise;
+    }
+
+    const pluginInstance = await loadPlugin(pluginId, instanceId);
+    if (signal.aborted) {
+        await unloadNativeOnce();
+        throw new Error(`Native plugin lifecycle cancelled: ${instanceId}`);
+    }
+
+    const enginePluginId = pluginInstance.engine_plugin_id;
+    if (enginePluginId === null) {
+        await unloadNativeOnce();
+        throw new Error(`Native plugin has no engine bridge id: ${instanceId}`);
+    }
+
+    let node: AudioWorkletNode;
+    try {
+        node = new AudioWorkletNode(context, 'native-plugin-bridge-processor', {
+            numberOfInputs: 1,
+            numberOfOutputs: 1,
+            outputChannelCount: [2],
+            channelCount: 2,
+            channelCountMode: 'explicit',
+        });
+    } catch (error) {
+        await unloadNativeOnce();
+        throw error;
+    }
+
+    let bridgeDisconnected = false;
+    function disconnectBridge(): void {
+        if (bridgeDisconnected) {
+            return;
+        }
+        bridgeDisconnected = true;
+        try {
+            node.disconnect();
+        } catch {
+            // A bridge can already be detached by graph teardown.
+        }
+        node.port.close();
+    }
+
+    try {
+        node.port.postMessage({ type: 'init', enginePluginId });
+    } catch (error) {
+        disconnectBridge();
+        await unloadNativeOnce();
+        throw error;
+    }
 
     // Backpressure: only one IPC round-trip in flight at a time.
     let pendingBlock = false;
+    let destroyed = false;
+    let destroyPromise: Promise<void> | null = null;
+    const pendingParameterWrites = new Set<Promise<void>>();
 
     type WorkletMessage = { type: string; audio?: ArrayBuffer };
 
     // Relay audio between worklet and Rust
     node.port.onmessage = async (event: MessageEvent<WorkletMessage>) => {
-        if (event.data.type !== 'process') {
+        if (destroyed || event.data.type !== 'process') {
             return;
         }
 
@@ -65,7 +119,7 @@ export async function createNativePluginBridgeNode(
                 audioBytes: new Uint8Array(audioBuffer),
             });
 
-            if (resultBytes) {
+            if (resultBytes && !destroyed) {
                 const processedBuffer = new Uint8Array(resultBytes).buffer;
                 node.port.postMessage({ type: 'processed', audio: processedBuffer }, [processedBuffer]);
             }
@@ -76,25 +130,39 @@ export async function createNativePluginBridgeNode(
         }
     };
 
+    function setParam(paramId: number, value: number): Promise<void> {
+        if (destroyed) {
+            return Promise.resolve();
+        }
+        const write = setPluginParameter({ instanceId, paramId, value }).catch(() => {});
+        pendingParameterWrites.add(write);
+        void write.then(() => pendingParameterWrites.delete(write));
+        return write;
+    }
+
+    function destroy(): Promise<void> {
+        if (destroyPromise) {
+            return destroyPromise;
+        }
+        destroyed = true;
+        signal.removeEventListener('abort', handleAbort);
+        disconnectBridge();
+        destroyPromise = Promise.allSettled(Array.from(pendingParameterWrites)).then(() => unloadNativeOnce());
+        return destroyPromise;
+    }
+
+    function handleAbort(): void {
+        void destroy().catch(() => {});
+    }
+
+    signal.addEventListener('abort', handleAbort, { once: true });
+
     return {
         workletNode: node,
-        setParam(paramId: number, value: number) {
-            void setPluginParameter({
-                instanceId,
-                paramId,
-                value,
-            }).catch(() => {});
-        },
+        setParam,
         setBypass(_bypassed: boolean) {
             // TODO: Send bypass command to native engine
         },
-        destroy() {
-            try {
-                node.disconnect();
-            } catch {
-                // ignore
-            }
-            node.port.close();
-        },
+        destroy,
     };
 }

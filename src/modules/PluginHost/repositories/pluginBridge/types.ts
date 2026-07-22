@@ -22,6 +22,7 @@ export type PluginInstance = {
     parameters: PluginParameter[];
     is_active: boolean;
     latency_samples: number;
+    engine_plugin_id: number | null;
 };
 
 export type ScanResult = {

@@ -31,7 +31,7 @@ describe('addExternalDevice', () => {
         mocks.getTrackState.mockReturnValue({ tracks: [{ id: 'audio-1', kind: 'audio' }] });
     });
 
-    it('preserves ordinary external plugin creation and runtime loading', () => {
+    it('hands the complete external identity to the engine-owned lifecycle', () => {
         const device = addExternalDevice('audio-1', 'plugin-1', 'Plugin');
 
         expect(device).toMatchObject({
@@ -44,9 +44,10 @@ describe('addExternalDevice', () => {
             'audio-1',
             device?.id,
             'external-plugin',
-            device?.externalInstanceId
+            device?.externalInstanceId,
+            'plugin-1'
         );
-        expect(mocks.loadPlugin).toHaveBeenCalledWith('plugin-1', device?.externalInstanceId);
+        expect(mocks.loadPlugin).not.toHaveBeenCalled();
     });
 
     it('rejects a dormant VCA before ID, instance, project, engine, or plugin work', () => {

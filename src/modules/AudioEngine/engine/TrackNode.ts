@@ -23,6 +23,7 @@ export type TrackNodeDeps = {
 };
 
 type PendingDeviceLoad = {
+    abortController?: AbortController;
     bypassed?: boolean;
     parameterWrites: Array<[string, number]>;
     loadPromise?: Promise<unknown>;
@@ -337,13 +338,28 @@ export class TrackNode {
         pendingLoad.loadPromise = loadPromise;
         this._pendingDeviceLoads.set(deviceId, pendingLoad);
         this.deps.pendingDevicePromises.add(loadPromise);
-        void loadPromise.finally(() => {
-            this.deps.pendingDevicePromises.delete(loadPromise);
-            if (this._pendingDeviceLoads.get(deviceId) === pendingLoad) {
-                this._pendingDeviceLoads.delete(deviceId);
-                pendingLoad.parameterWrites.length = 0;
-            }
-        });
+        void loadPromise.then(
+            () => this.finishPendingDeviceLoad(deviceId, pendingLoad, loadPromise),
+            () => this.finishPendingDeviceLoad(deviceId, pendingLoad, loadPromise)
+        );
+    }
+
+    private finishPendingDeviceLoad(
+        deviceId: string,
+        pendingLoad: PendingDeviceLoad,
+        loadPromise: Promise<unknown>
+    ): void {
+        this.deps.pendingDevicePromises.delete(loadPromise);
+        if (this._pendingDeviceLoads.get(deviceId) === pendingLoad) {
+            this._pendingDeviceLoads.delete(deviceId);
+            pendingLoad.parameterWrites.length = 0;
+        }
+    }
+
+    private trackDeviceLifecycle(promise: Promise<unknown>, failureMessage: string): void {
+        const guardedPromise = promise.catch((error) => logger.warn(`${failureMessage}: ${String(error)}`));
+        this.deps.pendingDevicePromises.add(guardedPromise);
+        void guardedPromise.then(() => this.deps.pendingDevicePromises.delete(guardedPromise));
     }
 
     private invalidatePendingDeviceLoad(deviceId: string): void {
@@ -352,10 +368,8 @@ export class TrackNode {
             return;
         }
         this._pendingDeviceLoads.delete(deviceId);
+        pendingLoad.abortController?.abort();
         pendingLoad.parameterWrites.length = 0;
-        if (pendingLoad.loadPromise) {
-            this.deps.pendingDevicePromises.delete(pendingLoad.loadPromise);
-        }
     }
 
     private completePendingDeviceLoad(
@@ -402,7 +416,12 @@ export class TrackNode {
         }
     }
 
-    public addDevice(deviceId: string, deviceType: string, externalInstanceId?: string): void {
+    public addDevice(
+        deviceId: string,
+        deviceType: string,
+        externalInstanceId?: string,
+        externalPluginId?: string
+    ): void {
         if (this._disposed) {
             return;
         }
@@ -462,32 +481,48 @@ export class TrackNode {
             };
             dn.controller = loadingControls;
 
-            const loadPromise = createNativePluginBridgeNode(
-                context,
-                externalInstanceId ?? deviceId,
-                0 // engine plugin ID — will be assigned by Rust
-            )
-                .then((result) => {
-                    const controls = {
-                        setParam: (name: string, value: number) => result.setParam(parseInt(name, 10) || 0, value),
-                        setBypass: result.setBypass,
-                        destroy: result.destroy,
-                    };
-                    const bridgeDn: BuiltinDeviceNode = {
-                        deviceId,
-                        type: deviceType,
-                        nodes: [result.workletNode],
-                        inputNode: result.workletNode,
-                        outputNode: result.workletNode,
-                        nativeDspControls: controls,
-                        controller: controls,
-                        dispose: result.destroy,
-                    };
-                    this.completePendingDeviceLoad(deviceId, pendingLoad, bridgeDn);
-                    return;
+            if (!externalInstanceId || !externalPluginId) {
+                logger.warn(`[WebAudioEngine] External plugin ${deviceId} is missing persisted runtime identity`);
+            } else {
+                const abortController = new AbortController();
+                pendingLoad.abortController = abortController;
+                const loadPromise = createNativePluginBridgeNode({
+                    context,
+                    instanceId: externalInstanceId,
+                    pluginId: externalPluginId,
+                    signal: abortController.signal,
                 })
-                .catch((error) => logger.warn(`[WebAudioEngine] Native plugin bridge failed: ${String(error)}`));
-            this.registerPendingDeviceLoad(deviceId, pendingLoad, loadPromise);
+                    .then((result) => {
+                        const controls = {
+                            setParam: (name: string, value: number) => {
+                                this.trackDeviceLifecycle(
+                                    result.setParam(parseInt(name, 10) || 0, value),
+                                    `[WebAudioEngine] Native plugin parameter write failed for ${deviceId}`
+                                );
+                            },
+                            setBypass: result.setBypass,
+                            destroy: () => {
+                                this.trackDeviceLifecycle(
+                                    result.destroy(),
+                                    `[WebAudioEngine] Native plugin teardown failed for ${deviceId}`
+                                );
+                            },
+                        };
+                        const bridgeDn: BuiltinDeviceNode = {
+                            deviceId,
+                            type: deviceType,
+                            nodes: [result.workletNode],
+                            inputNode: result.workletNode,
+                            outputNode: result.workletNode,
+                            nativeDspControls: controls,
+                            controller: controls,
+                        };
+                        this.completePendingDeviceLoad(deviceId, pendingLoad, bridgeDn);
+                        return;
+                    })
+                    .catch((error) => logger.warn(`[WebAudioEngine] Native plugin bridge failed: ${String(error)}`));
+                this.registerPendingDeviceLoad(deviceId, pendingLoad, loadPromise);
+            }
         } else {
             const factoryNode = createBuiltinDeviceNode({ context, deviceType });
             if (factoryNode) {

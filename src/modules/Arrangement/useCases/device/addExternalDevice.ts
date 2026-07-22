@@ -1,5 +1,4 @@
 import { addDeviceToStrip } from '#/modules/AudioEngine/useCases';
-import { loadPlugin } from '#/modules/PluginHost/useCases';
 
 import { getTrackState } from '../../repositories/track/getTrackState';
 import { updateTrack } from '../../repositories/track/updateTrack';
@@ -34,8 +33,7 @@ export function addExternalDevice(trackId: string, pluginId: string, pluginName:
 
     updateTrack(trackId, (time) => ({ ...time, devices: [...time.devices, device] }));
 
-    addDeviceToStrip(trackId, device.id, 'external-plugin', instanceId);
-    void loadPlugin(pluginId, instanceId);
+    addDeviceToStrip(trackId, device.id, 'external-plugin', instanceId, pluginId);
 
     return device;
 }
