@@ -5,7 +5,7 @@ type PrepareClipMidiShiftTransactionInput = {
     beatDelta: number;
 };
 
-type TransactionPhase = 'prepared' | 'applied' | 'closed';
+type TransactionPhase = 'prepared' | 'publishing' | 'applied' | 'closed';
 
 type TransactionStatus = 'ready' | 'rejected';
 
@@ -37,6 +37,10 @@ type ShiftedMidiState = {
     hasChanges: boolean;
     nextState: MidiStoreState | null;
 };
+
+function isPublishingPhase(phase: TransactionPhase): boolean {
+    return phase === 'publishing';
+}
 
 function shiftEvents<TRow>({ events, beatDelta, readBeat, withBeat }: ShiftEventsInput<TRow>): ShiftedEvents<TRow> {
     if (!events || events.length === 0) {
@@ -202,9 +206,19 @@ export function prepareClipMidiShiftTransaction({ clipId, beatDelta }: PrepareCl
             return false;
         }
 
-        phase = 'closed';
-        midiStore.set(shiftedState.nextState);
+        phase = 'publishing';
+        try {
+            midiStore.set(shiftedState.nextState);
+        } catch (error) {
+            phase = 'closed';
+            throw error;
+        }
+        if (!isPublishingPhase(phase)) {
+            phase = 'closed';
+            return false;
+        }
         if (midiStore.value !== shiftedState.nextState) {
+            phase = 'closed';
             return false;
         }
 
@@ -222,8 +236,19 @@ export function prepareClipMidiShiftTransaction({ clipId, beatDelta }: PrepareCl
             return false;
         }
 
+        phase = 'publishing';
+        try {
+            midiStore.set(preparedState);
+        } catch (error) {
+            phase = 'closed';
+            throw error;
+        }
+        if (!isPublishingPhase(phase)) {
+            phase = 'closed';
+            return false;
+        }
+
         phase = 'closed';
-        midiStore.set(preparedState);
         return midiStore.value === preparedState;
     }
 

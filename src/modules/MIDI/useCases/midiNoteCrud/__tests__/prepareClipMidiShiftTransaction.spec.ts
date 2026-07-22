@@ -319,6 +319,46 @@ describe('prepareClipMidiShiftTransaction', () => {
         expect(mocks.set).toHaveBeenCalledTimes(1);
     });
 
+    it.each(['apply', 'revert'] as const)(
+        'stays closed after reentrant %s during apply publication',
+        (reentrantOperation) => {
+            const preparedState = midiState({
+                notesByClipId: { target: [note(1)] },
+            });
+            mocks.state.value = preparedState;
+            let transaction: ReturnType<typeof prepareClipMidiShiftTransaction> | undefined;
+            let reentrantResult: boolean | undefined;
+            mocks.set.mockImplementationOnce((nextState: MidiStoreState | null): void => {
+                mocks.state.value = nextState;
+                if (!transaction) {
+                    throw new Error('Expected a prepared transaction');
+                }
+                if (reentrantOperation === 'apply') {
+                    reentrantResult = transaction.apply();
+                    return;
+                }
+                reentrantResult = transaction.revert();
+            });
+            const preparedTransaction = prepareClipMidiShiftTransaction({
+                clipId: 'target',
+                beatDelta: 1,
+            });
+            transaction = preparedTransaction;
+
+            const outerApplyResult = preparedTransaction.apply();
+            const publishedState = requireState();
+            const laterRevertResult = preparedTransaction.revert();
+            const laterApplyResult = preparedTransaction.apply();
+
+            expect(outerApplyResult).toBe(false);
+            expect(reentrantResult).toBe(false);
+            expect(laterRevertResult).toBe(false);
+            expect(laterApplyResult).toBe(false);
+            expect(mocks.state.value).toBe(publishedState);
+            expect(mocks.set).toHaveBeenCalledTimes(1);
+        }
+    );
+
     it('refuses a stale revert by exact applied-state identity and closes the handle', () => {
         const preparedState = midiState({
             notesByClipId: { target: [note(1)] },
