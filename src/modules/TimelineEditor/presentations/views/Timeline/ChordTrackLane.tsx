@@ -344,7 +344,7 @@ export const ChordTrackLane = ({ pixelsPerBeat, scrollX }: ChordTrackLaneProps):
             activeElement.matches(PAGE_CONTROL_SELECTOR) &&
             activeElement.tabIndex >= 0
                 ? activeElement
-                : null;
+                : (addRef.current?.querySelector<HTMLButtonElement>('button') ?? null);
         const rect = event.currentTarget.getBoundingClientRect();
         const localX = event.clientX - rect.left;
         const beat = (localX + scrollX) / pixelsPerBeat;

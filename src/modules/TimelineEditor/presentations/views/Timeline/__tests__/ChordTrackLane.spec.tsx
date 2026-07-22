@@ -404,7 +404,7 @@ describe('ChordTrackLane', () => {
         expect(block).toHaveFocus();
     });
 
-    it('owns focus for empty-space Escape and directional Tab dismissal', () => {
+    it('owns fallback focus for body-active empty-space Tab dismissal', () => {
         render(
             <div>
                 <ChordTrackLane pixelsPerBeat={16} scrollX={0} />
@@ -413,6 +413,17 @@ describe('ChordTrackLane', () => {
         );
         const region = screen.getByRole('region', { name: 'Chord track' });
         const addButton = screen.getByLabelText('Add chord event');
+
+        expect(document.activeElement).toBe(document.body);
+        fireEvent.contextMenu(region, { clientX: 200, clientY: 10 });
+        fireEvent.keyDown(screen.getByRole('menu'), { key: 'Tab' });
+        expect(screen.getByRole('button', { name: 'After lane' })).toHaveFocus();
+
+        screen.getByRole('button', { name: 'After lane' }).blur();
+        expect(document.activeElement).toBe(document.body);
+        fireEvent.contextMenu(region, { clientX: 200, clientY: 10 });
+        fireEvent.keyDown(screen.getByRole('menu'), { key: 'Tab', shiftKey: true });
+        expect(screen.getByLabelText('Enable harmonic following')).toHaveFocus();
 
         addButton.focus();
         fireEvent.contextMenu(region, { clientX: 200, clientY: 10 });
