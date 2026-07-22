@@ -1,5 +1,4 @@
 import { shiftClipAutomation } from '#/modules/Automation/useCases';
-import { shiftClipMidiNotes } from '#/modules/MIDI/useCases';
 
 import { getTrackState } from '../../repositories/track/getTrackState';
 import { updateClip } from '../../repositories/track/updateClip';
@@ -33,12 +32,11 @@ export function nudgeClip(clipId: string, beats: number): boolean {
         return { ...context, startBeat: newStart, endBeat: newStart + duration };
     });
 
-    // Notes and automation are indexed per clip with absolute beat positions —
-    // shifting the clip rectangle without shifting them desyncs playback from
-    // the visual arrangement. `moveClip` already does this for drags; nudges
-    // need the same follow-through.
+    // Clip-scoped automation is stored at timeline-absolute beats and must
+    // follow the rectangle. MIDI notes are stored clip-relative and follow
+    // automatically — shifting them here double-moved every note (same
+    // re-validation finding as moveClip, ledger M-025 family).
     if (didWrite && appliedDelta !== 0) {
-        shiftClipMidiNotes(clipId, appliedDelta);
         shiftClipAutomation(clipId, appliedDelta);
     }
 
