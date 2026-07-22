@@ -390,6 +390,10 @@ class AudioEngineImpl implements AudioEngine {
         if (!node) {
             return;
         }
+        // TrackNode.dispose() clears deviceNodes. Capture the ids first so all
+        // live and pending sidechains targeting this strip can be identified.
+        const removedDeviceIds = new Set(node.strip.deviceNodes.map((device) => device.deviceId));
+
         // Sweep dependent routing keyed on this track as the source, mirroring
         // removeBusStrip's busId sweep. Without this, the send/sidechain GainNodes
         // for the removed track survive in the maps — still wired into their bus /
@@ -401,11 +405,32 @@ class AudioEngineImpl implements AudioEngine {
             }
         }
         for (const [key, scGain] of this.sidechainConnections) {
-            // Keys are `${sourceTrackId}→${targetDeviceId}`; sweep where the
-            // removed track is the source.
-            if (key.slice(0, key.indexOf('→')) === trackId) {
+            // Keys are `${sourceTrackId}→${targetDeviceId}`. Both ends belong
+            // to the live graph: removing either the source track or the target
+            // device invalidates the connection and its dedupe entry.
+            const separatorIndex = key.indexOf('→');
+            const sourceTrackId = key.slice(0, separatorIndex);
+            const targetDeviceId = key.slice(separatorIndex + 1);
+            if (sourceTrackId === trackId || removedDeviceIds.has(targetDeviceId)) {
                 scGain.disconnect();
                 this.sidechainConnections.delete(key);
+            }
+        }
+        for (const [key, route] of this.pendingSidechainRoutes) {
+            const belongsToRemovedStrip =
+                route.sourceTrackId === trackId ||
+                route.targetTrackId === trackId ||
+                removedDeviceIds.has(route.targetDeviceId);
+            if (belongsToRemovedStrip) {
+                this.pendingSidechainRoutes.delete(key);
+            }
+        }
+        // A track-to-track output is a live edge into the target strip. Preserve
+        // the remaining source strips and make the fallback explicit: `hw_out`
+        // routes through TrackNode's masterGainNode destination.
+        for (const [sourceTrackId, sourceNode] of this.trackNodes) {
+            if (sourceTrackId !== trackId && sourceNode.strip.outputId === trackId) {
+                sourceNode.setOutput('hw_out');
             }
         }
         node.dispose();

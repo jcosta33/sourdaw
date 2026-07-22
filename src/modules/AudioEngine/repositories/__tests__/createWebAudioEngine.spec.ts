@@ -22,20 +22,40 @@ vi.mock('../../engine/TrackNode', () => ({
         trackId: string;
         strip: {
             trackId: string;
+            gainNode: ReturnType<typeof makeStripNode>;
             preFaderTap: ReturnType<typeof makeStripNode>;
             analyserNode: ReturnType<typeof makeStripNode>;
             meterNode: ReturnType<typeof makeStripNode> | null;
             deviceNodes: unknown[];
+            outputId?: string;
+        };
+        private deps: {
+            masterGainNode: unknown;
+            getTrackGainNode: (trackId: string) => unknown;
         };
         dispose = vi.fn();
         setGain = vi.fn();
         setPan = vi.fn();
         setMute = vi.fn();
+        setOutput = vi.fn((outputId: string) => {
+            this.strip.outputId = outputId;
+            this.strip.analyserNode.disconnect();
+            const destination = outputId === 'hw_out' ? this.deps.masterGainNode : this.deps.getTrackGainNode(outputId);
+            this.strip.analyserNode.connect(destination ?? this.deps.masterGainNode);
+        });
         getPeakLevel = vi.fn().mockReturnValue(0.5);
-        constructor(id: string) {
+        constructor(
+            id: string,
+            deps: {
+                masterGainNode: unknown;
+                getTrackGainNode: (trackId: string) => unknown;
+            }
+        ) {
             this.trackId = id;
+            this.deps = deps;
             this.strip = {
                 trackId: id,
+                gainNode: makeStripNode(),
                 preFaderTap: makeStripNode(),
                 analyserNode: makeStripNode(),
                 meterNode: makeStripNode(),
@@ -71,6 +91,33 @@ vi.mock('#/utils/Notification/notifyUser', () => ({
  */
 function asAudioContext(ctx: MockAudioContext): AudioContext {
     return ctx as unknown as AudioContext;
+}
+
+function makeFallbackEngine(): AudioEngine {
+    class FailingAudioContext {
+        constructor() {
+            throw new Error('no AudioContext in this environment');
+        }
+    }
+    const createGain = vi.fn(() => ({ gain: { value: 0 }, connect: vi.fn(), disconnect: vi.fn() }));
+    vi.stubGlobal('AudioContext', FailingAudioContext);
+    vi.stubGlobal(
+        'OfflineAudioContext',
+        class {
+            createGain = createGain;
+            createAnalyser() {
+                return { connect: vi.fn(), disconnect: vi.fn(), frequencyBinCount: 1 };
+            }
+        }
+    );
+    const fallbackEngine = createAudioEngine();
+    // Expose the gain factory for assertions on the noop graph.
+    (fallbackEngine as unknown as { __createGain: Mock }).__createGain = createGain;
+    return fallbackEngine;
+}
+
+function getPendingSidechainRoutes(engine: AudioEngine): Map<string, unknown> {
+    return (engine as unknown as { pendingSidechainRoutes: Map<string, unknown> }).pendingSidechainRoutes;
 }
 
 describe('AudioEngine', () => {
@@ -139,6 +186,21 @@ describe('AudioEngine', () => {
 
     // ── Fix 1: removeTrackStrip sweeps dependent send/sidechain entries ──────────
     describe('removeTrackStrip dependent-route sweep', () => {
+        it('reroutes every inbound track output to the master destination', () => {
+            const inboundA = engine.ensureTrackStrip('inbound-a');
+            const inboundB = engine.ensureTrackStrip('inbound-b');
+            engine.ensureTrackStrip('target');
+            engine.setTrackOutput('inbound-a', 'target');
+            engine.setTrackOutput('inbound-b', 'target');
+
+            engine.removeTrackStrip('target');
+
+            expect(inboundA.outputId).toBe('hw_out');
+            expect(inboundB.outputId).toBe('hw_out');
+            expect(inboundA.analyserNode.connect).toHaveBeenLastCalledWith(engine.masterGainNode);
+            expect(inboundB.analyserNode.connect).toHaveBeenLastCalledWith(engine.masterGainNode);
+        });
+
         it('disconnects and forgets the source track sends when the track is removed', () => {
             engine.ensureTrackStrip('src');
             engine.setSend('src', 'busA', 0.5);
@@ -204,6 +266,47 @@ describe('AudioEngine', () => {
             expect(mockCtx.createGain.mock.calls.length).toBeGreaterThan(createGainBefore);
 
             void srcStrip;
+        });
+
+        it('disconnects a sidechain targeting a removed device and permits rewiring the same route key', () => {
+            engine.ensureTrackStrip('scSrc');
+            const targetStrip = engine.ensureTrackStrip('scTgt');
+            targetStrip.deviceNodes.push({
+                deviceId: 'dev1',
+                type: 'builtin-sidechain-compressor',
+                inputNode: makeStripNode() as unknown as AudioNode,
+            } as never);
+            engine.wireSidechainRoute('scSrc', 'scTgt', 'dev1');
+            const oldSidechainGain = mockCtx.createGain.mock.results.at(-1)!.value as { disconnect: Mock };
+
+            engine.removeTrackStrip('scTgt');
+
+            expect(oldSidechainGain.disconnect).toHaveBeenCalledTimes(1);
+            const replacementTarget = engine.ensureTrackStrip('scTgt');
+            replacementTarget.deviceNodes.push({
+                deviceId: 'dev1',
+                type: 'builtin-sidechain-compressor',
+                inputNode: makeStripNode() as unknown as AudioNode,
+            } as never);
+            const createGainBeforeRewire = mockCtx.createGain.mock.calls.length;
+            engine.wireSidechainRoute('scSrc', 'scTgt', 'dev1');
+            expect(mockCtx.createGain.mock.calls.length).toBe(createGainBeforeRewire + 1);
+        });
+
+        it('forgets pending sidechains owned by a removed source, target track, or target device', () => {
+            const fallbackEngine = makeFallbackEngine();
+            const removedStrip = fallbackEngine.ensureTrackStrip('removed');
+            removedStrip.deviceNodes.push({ deviceId: 'owned-device' } as never);
+
+            fallbackEngine.wireSidechainRoute('removed', 'other-target', 'other-device');
+            fallbackEngine.wireSidechainRoute('other-source-a', 'removed', 'missing-device');
+            fallbackEngine.wireSidechainRoute('other-source-b', 'wrong-target', 'owned-device');
+            fallbackEngine.wireSidechainRoute('kept-source', 'kept-target', 'kept-device');
+            expect(getPendingSidechainRoutes(fallbackEngine).size).toBe(4);
+
+            fallbackEngine.removeTrackStrip('removed');
+
+            expect(Array.from(getPendingSidechainRoutes(fallbackEngine).keys())).toEqual(['kept-source→kept-device']);
         });
     });
 
@@ -549,29 +652,6 @@ describe('AudioEngine', () => {
     // keep wiring as before. The discriminating queue-vs-drop + recoverable-state
     // contract is proven through the public caller in setSidechainRoutes.spec.ts.
     describe('sidechain fallback queue and replay', () => {
-        function makeFallbackEngine(): AudioEngine {
-            class FailingAudioContext {
-                constructor() {
-                    throw new Error('no AudioContext in this environment');
-                }
-            }
-            const createGain = vi.fn(() => ({ gain: { value: 0 }, connect: vi.fn(), disconnect: vi.fn() }));
-            vi.stubGlobal('AudioContext', FailingAudioContext);
-            vi.stubGlobal(
-                'OfflineAudioContext',
-                class {
-                    createGain = createGain;
-                    createAnalyser() {
-                        return { connect: vi.fn(), disconnect: vi.fn(), frequencyBinCount: 1 };
-                    }
-                }
-            );
-            const fb = createAudioEngine();
-            // Expose the gain factory for assertions on the noop graph.
-            (fb as unknown as { __createGain: Mock }).__createGain = createGain;
-            return fb;
-        }
-
         it('does not wire onto the noop graph and does not throw when requested in fallback mode', () => {
             const fb = makeFallbackEngine();
             const createGain = (fb as unknown as { __createGain: Mock }).__createGain;
