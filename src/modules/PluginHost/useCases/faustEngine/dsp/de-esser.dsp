@@ -6,7 +6,12 @@ ratio = hslider("ratio", 4, 1, 20, 0.5);
 atk = 0.001; rel = 0.05;
 listen = checkbox("listen");
 sc_signal = fi.resonbp(freq, bw, 1);
-env = sc_signal : abs : si.smooth(ba.tau2pole(atk)) : max(_, _ : si.smooth(ba.tau2pole(rel)));
+// Attack/release envelope: fast attack-smoothed level, kept high by the
+// slow release-smoothed level (the original max composition dropped a bus —
+// an arity error).
+attack_env = sc_signal : abs : si.smooth(ba.tau2pole(atk));
+env(x) = max(attack_env(x), attack_env(x) : si.smooth(ba.tau2pole(rel)));
 gr(e) = ba.if(e > ba.db2linear(thresh), pow(ba.db2linear(thresh) / e, 1 - 1.0/ratio), 1.0);
-deess(x) = x <: (sc_signal, _) : (env : gr, _) : select2(listen, *(_, _), (sc_signal));
+// listen=1 monitors the sidechain; otherwise output is gain * dry.
+deess(x) = select2(listen, (x : env : gr) * x, x : sc_signal);
 process = deess, deess;
