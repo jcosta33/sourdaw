@@ -1,6 +1,7 @@
 import { CURRENT_PROJECT_VERSION, type ProjectData } from '../../../models/ProjectData';
 
 import { createMyceliumId } from './createMyceliumId';
+import { createMyceliumRhythmPerformance } from './createMyceliumRhythmPerformance';
 import { createMyceliumTopology } from './createMyceliumTopology';
 
 export type MyceliumSection = {
@@ -170,5 +171,5 @@ export function createMyceliumAscendantBlueprint(): MyceliumAscendantBlueprint {
     ];
     projectData.activeArrangementId = activeArrangementId;
 
-    return { projectData, sections, chordEvents };
+    return { projectData: createMyceliumRhythmPerformance(projectData), sections, chordEvents };
 }
