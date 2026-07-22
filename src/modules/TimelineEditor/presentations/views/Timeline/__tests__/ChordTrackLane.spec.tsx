@@ -179,22 +179,56 @@ describe('ChordTrackLane', () => {
         expectAction({ type: 'moveChordEvent', payload: { eventId: 'c1', beat: 6 } });
     });
 
-    it('cancels pointer-cancel, lost-capture, and unmount drags without committing', () => {
-        const view = renderChordLane();
+    it('cancels a pointer-cancel drag without committing', () => {
+        renderChordLane();
         const block = getChordBlock();
 
         fireEvent.pointerDown(block, { button: 0, clientX: 64, pointerId: 9 });
         fireEvent.pointerMove(block, { clientX: 96, pointerId: 9 });
         fireEvent.pointerCancel(block, { pointerId: 9 });
+
         expect(block).toHaveStyle({ left: '64px' });
+        expect(executeAppAction).not.toHaveBeenCalled();
+    });
+
+    it('resets a lost-capture preview and prevents a later commit', () => {
+        renderChordLane();
+        const block = getChordBlock();
 
         fireEvent.pointerDown(block, { button: 0, clientX: 64, pointerId: 10 });
+        expect(block.setPointerCapture).toHaveBeenCalledWith(10);
         fireEvent.pointerMove(block, { clientX: 96, pointerId: 10 });
+        expect(block).toHaveStyle({ left: '96px' });
         fireEvent.lostPointerCapture(block, { pointerId: 10 });
+        expect(block).toHaveStyle({ left: '64px' });
+        fireEvent.pointerUp(block, { clientX: 96, pointerId: 10 });
+
+        expect(executeAppAction).not.toHaveBeenCalled();
+    });
+
+    it('starts capture before an unmount and never commits the abandoned drag', () => {
+        const view = renderChordLane();
+        const block = getChordBlock();
 
         fireEvent.pointerDown(block, { button: 0, clientX: 64, pointerId: 11 });
+        expect(block.setPointerCapture).toHaveBeenCalledWith(11);
         fireEvent.pointerMove(block, { clientX: 96, pointerId: 11 });
+        expect(block).toHaveStyle({ left: '96px' });
         view.unmount();
+
+        expect(executeAppAction).not.toHaveBeenCalled();
+    });
+
+    it('ignores a secondary-button drag without capture, preview, or dispatch', () => {
+        renderChordLane();
+        const block = getChordBlock();
+
+        fireEvent.pointerDown(block, { button: 2, clientX: 64, pointerId: 16 });
+        fireEvent.pointerMove(block, { clientX: 96, pointerId: 16 });
+        fireEvent.pointerUp(block, { clientX: 96, pointerId: 16 });
+
+        expect(block.setPointerCapture).not.toHaveBeenCalled();
+        expect(block).toHaveStyle({ left: '64px' });
         expect(executeAppAction).not.toHaveBeenCalled();
     });
 
@@ -234,14 +268,20 @@ describe('ChordTrackLane', () => {
         );
         renderChordLane();
         const block = getChordBlock();
+        const status = screen.getByRole('status');
+        const alert = screen.getByRole('alert');
+        expect(status).toBeEmptyDOMElement();
+        expect(alert).toBeEmptyDOMElement();
+        expect(status).toHaveAttribute('aria-atomic', 'true');
+        expect(alert).toHaveAttribute('aria-atomic', 'true');
 
         fireEvent.pointerDown(block, { button: 0, clientX: 64, pointerId: 12 });
         fireEvent.pointerMove(block, { clientX: 96, pointerId: 12 });
         fireEvent.pointerUp(block, { clientX: 96, pointerId: 12 });
-        expect(screen.getByRole('status')).toHaveTextContent('Applying chord change');
+        expect(status).toHaveTextContent('Applying chord change');
 
         rejectAction(new Error('move failed'));
-        expect(await screen.findByRole('alert')).toHaveTextContent('Chord change failed');
+        await waitFor(() => expect(alert).toHaveTextContent('Chord change failed'));
         expect(block).toHaveStyle({ left: '64px' });
     });
 
@@ -253,8 +293,8 @@ describe('ChordTrackLane', () => {
         fireEvent.click(screen.getByLabelText('Add chord event'));
         fireEvent.click(screen.getByRole('button', { name: 'C' }));
 
-        const alert = await screen.findByRole('alert');
-        expect(alert).toHaveTextContent(/applied/i);
+        const alert = screen.getByRole('alert');
+        await waitFor(() => expect(alert).toHaveTextContent(/applied/i));
         expect(alert).not.toHaveTextContent(/try again/i);
         expect(screen.queryByRole('button', { name: 'C' })).not.toBeInTheDocument();
     });
@@ -295,9 +335,47 @@ describe('ChordTrackLane', () => {
         fireEvent.keyDown(menu, { key: 'Escape' });
         expect(screen.queryByRole('menu')).not.toBeInTheDocument();
         expect(block).toHaveFocus();
+    });
 
+    it('keeps menu items out of the tab sequence and traverses the page in either direction', () => {
+        mockChordState = { enabled: false, events: [oneEvent] };
+        render(
+            <div>
+                <button type="button">Before lane</button>
+                <ChordTrackLane pixelsPerBeat={16} scrollX={0} />
+                <button type="button">After lane</button>
+            </div>
+        );
+        const block = getChordBlock();
+
+        block.focus();
         fireEvent.keyDown(block, { key: 'Enter' });
-        fireEvent.keyDown(screen.getByRole('menu'), { key: 'Tab' });
+        let menu = screen.getByRole('menu');
+        expect(menu.querySelectorAll('[role^="menuitem"][tabindex="-1"]')).toHaveLength(
+            menu.querySelectorAll('[role^="menuitem"]').length
+        );
+        fireEvent.keyDown(menu, { key: 'Tab' });
+        expect(screen.queryByRole('menu')).not.toBeInTheDocument();
+        expect(screen.getByRole('button', { name: 'After lane' })).toHaveFocus();
+
+        block.focus();
+        fireEvent.keyDown(block, { key: 'Enter' });
+        menu = screen.getByRole('menu');
+        fireEvent.keyDown(menu, { key: 'Tab', shiftKey: true });
+        expect(screen.queryByRole('menu')).not.toBeInTheDocument();
+        expect(screen.getByRole('button', { name: 'Clear all chords' })).toHaveFocus();
+    });
+
+    it('restores a nested-label pointer opener on Escape', () => {
+        renderChordLane();
+        const block = getChordBlock();
+        const label = within(block).getByText('C');
+
+        fireEvent.contextMenu(label, { clientX: 64, clientY: 10 });
+        const menu = screen.getByRole('menu');
+        expect(within(menu).getByRole('menuitemradio', { name: 'major' })).toHaveFocus();
+        fireEvent.keyDown(menu, { key: 'Escape' });
+
         expect(screen.queryByRole('menu')).not.toBeInTheDocument();
         expect(block).toHaveFocus();
     });
@@ -311,6 +389,36 @@ describe('ChordTrackLane', () => {
         expect(within(quality).getByRole('menuitemradio', { name: 'minor' })).toHaveAttribute('aria-checked', 'false');
         const root = screen.getByRole('group', { name: 'Root' });
         expect(within(root).getByRole('menuitemradio', { name: 'C' })).toHaveAttribute('aria-checked', 'true');
+    });
+
+    it.each(['9', 'min9'] as const)('checks a persisted %s quality outside the quick-add shortlist', (quality) => {
+        mockChordState = { enabled: false, events: [{ ...oneEvent, quality }] };
+        render(<ChordTrackLane pixelsPerBeat={16} scrollX={0} />);
+        fireEvent.contextMenu(screen.getByRole('region', { name: 'Chord track' }), { clientX: 64, clientY: 10 });
+
+        const qualityGroup = screen.getByRole('group', { name: 'Quality' });
+        expect(within(qualityGroup).getByRole('menuitemradio', { name: quality })).toHaveAttribute(
+            'aria-checked',
+            'true'
+        );
+    });
+
+    it('announces the destination beat after a successful keyboard move', async () => {
+        executeAppAction.mockResolvedValueOnce(undefined);
+        renderChordLane();
+        const block = getChordBlock();
+        const status = screen.getByRole('status');
+        const alert = screen.getByRole('alert');
+        expect(status).toBeEmptyDOMElement();
+        expect(alert).toBeEmptyDOMElement();
+        block.focus();
+
+        await runAndSettle(() => fireEvent.keyDown(block, { key: 'ArrowRight' }));
+
+        expectAction({ type: 'moveChordEvent', payload: { eventId: 'c1', beat: 4.25 } });
+        expect(status).toHaveTextContent('Moved C chord to beat 4.25');
+        expect(alert).toBeEmptyDOMElement();
+        expect(block).toHaveFocus();
     });
 
     it('restores focus and announces a keyboard deletion after rerender', async () => {

@@ -91,6 +91,16 @@ const ROOT_COLORS = [
 /** Chord qualities offered in the quick-add menu. */
 const ADD_MENU_QUALITIES: ChordQuality[] = ['major', 'minor', '7', 'maj7', 'min7', 'dim', 'sus4'];
 
+const PAGE_CONTROL_SELECTOR =
+    'a[href], button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex]';
+
+function getContextMenuQualities(currentQuality: ChordQuality): ChordQuality[] {
+    if (ADD_MENU_QUALITIES.includes(currentQuality)) {
+        return ADD_MENU_QUALITIES;
+    }
+    return [...ADD_MENU_QUALITIES, currentQuality];
+}
+
 type ContextMenuState =
     | { kind: 'none' }
     | { kind: 'empty'; x: number; y: number; beat: number }
@@ -120,7 +130,7 @@ export const ChordTrackLane = ({ pixelsPerBeat, scrollX }: ChordTrackLaneProps):
     const [actionStatus, setActionStatus] = useState<string | null>(null);
     const menuRef = useRef<HTMLDivElement>(null);
     const addRef = useRef<HTMLDivElement>(null);
-    const menuOpenerRef = useRef<HTMLElement | null>(null);
+    const menuOpenerRef = useRef<HTMLButtonElement | null>(null);
     const dragRef = useRef<DragState | null>(null);
     const committingPointerRef = useRef<number | null>(null);
     const mountedRef = useRef(true);
@@ -208,15 +218,28 @@ export const ChordTrackLane = ({ pixelsPerBeat, scrollX }: ChordTrackLaneProps):
     }, [contextMenu]);
 
     useEffect(() => {
-        if (!pending && actionStatus) {
+        if (!pending && actionStatus?.startsWith('Removed ')) {
             addRef.current?.querySelector<HTMLButtonElement>('button')?.focus();
         }
     }, [actionStatus, pending]);
 
     const handleMenuKeyDown = (event: KeyboardEvent<HTMLDivElement>): void => {
-        if (event.key === 'Escape' || event.key === 'Tab') {
+        if (event.key === 'Escape') {
             event.preventDefault();
             closeContextMenu(true);
+            return;
+        }
+        if (event.key === 'Tab') {
+            event.preventDefault();
+            const opener = menuOpenerRef.current;
+            const pageControls = Array.from(document.querySelectorAll<HTMLElement>(PAGE_CONTROL_SELECTOR)).filter(
+                (control) => control.tabIndex >= 0 && !menuRef.current?.contains(control)
+            );
+            const openerIndex = opener ? pageControls.indexOf(opener) : -1;
+            const nextIndex = openerIndex + (event.shiftKey ? -1 : 1);
+            const nextControl = openerIndex >= 0 ? pageControls[nextIndex] : undefined;
+            closeContextMenu(false);
+            nextControl?.focus();
             return;
         }
         const items = Array.from(
@@ -317,7 +340,8 @@ export const ChordTrackLane = ({ pixelsPerBeat, scrollX }: ChordTrackLaneProps):
         });
 
         if (hitEvent) {
-            menuOpenerRef.current = event.target instanceof HTMLElement ? event.target : null;
+            const opener = event.target instanceof Element ? event.target.closest<HTMLButtonElement>('button') : null;
+            menuOpenerRef.current = opener?.dataset.chordEventId === hitEvent.id ? opener : null;
             setContextMenu({ kind: 'chord', x: event.clientX, y: event.clientY, event: hitEvent });
         } else {
             setContextMenu({ kind: 'empty', x: event.clientX, y: event.clientY, beat });
@@ -355,7 +379,10 @@ export const ChordTrackLane = ({ pixelsPerBeat, scrollX }: ChordTrackLaneProps):
             keyboardEvent.preventDefault();
             const direction = keyboardEvent.key === 'ArrowLeft' ? -1 : 1;
             const beat = Math.max(0, event.beat + direction * 0.25);
-            void dispatchAction({ type: 'moveChordEvent', payload: { eventId: event.id, beat } });
+            void dispatchAction(
+                { type: 'moveChordEvent', payload: { eventId: event.id, beat } },
+                { onApplied: () => setActionStatus(`Moved ${formatChordName(event)} chord to beat ${String(beat)}.`) }
+            );
             return;
         }
         if (keyboardEvent.key === 'Delete' || keyboardEvent.key === 'Backspace') {
@@ -466,16 +493,22 @@ export const ChordTrackLane = ({ pixelsPerBeat, scrollX }: ChordTrackLaneProps):
                     </button>
                 ) : null}
             </div>
-            {statusText ? (
-                <span className="absolute right-2 z-40 text-[9px] text-muted-foreground" role="status">
-                    {statusText}
-                </span>
-            ) : null}
-            {actionError ? (
-                <span className="absolute right-2 z-40 text-[9px] text-destructive" role="alert">
-                    {actionError}
-                </span>
-            ) : null}
+            <span
+                className="absolute right-2 z-40 text-[9px] text-muted-foreground"
+                role="status"
+                aria-atomic="true"
+                aria-live="polite"
+            >
+                {statusText ?? ''}
+            </span>
+            <span
+                className="absolute right-2 z-40 text-[9px] text-destructive"
+                role="alert"
+                aria-atomic="true"
+                aria-live="assertive"
+            >
+                {actionError ?? ''}
+            </span>
             {/* ── Chord blocks ── */}
             <div className="relative flex-1 h-full">
                 {state.events.map((event) => {
@@ -507,6 +540,7 @@ export const ChordTrackLane = ({ pixelsPerBeat, scrollX }: ChordTrackLaneProps):
                             aria-expanded={contextMenu.kind === 'chord' && contextMenu.event.id === event.id}
                             aria-haspopup="menu"
                             aria-label={`${formatChordName(event)} chord at beat ${String(event.beat)}`}
+                            data-chord-event-id={event.id}
                             onKeyDown={(keyboardEvent) => handleChordKeyDown(keyboardEvent, event)}
                             onLostPointerCapture={cancelPointerDrag}
                             onPointerCancel={cancelPointerDrag}
@@ -555,6 +589,7 @@ export const ChordTrackLane = ({ pixelsPerBeat, scrollX }: ChordTrackLaneProps):
                                     disabled={pending}
                                     onClick={() => handleAddAtBeat(contextMenu.beat, rootIdx, 'major')}
                                     role="menuitem"
+                                    tabIndex={-1}
                                 >
                                     Add {name}
                                 </button>
@@ -566,7 +601,7 @@ export const ChordTrackLane = ({ pixelsPerBeat, scrollX }: ChordTrackLaneProps):
                             <DawMenuMutedRow className="px-2">{formatChordName(contextMenu.event)}</DawMenuMutedRow>
                             <DawMenuMutedRow className="px-2">Quality</DawMenuMutedRow>
                             <div className="flex flex-wrap gap-0.5 px-2 pb-1" aria-label="Quality" role="group">
-                                {ADD_MENU_QUALITIES.map((query) => (
+                                {getContextMenuQualities(contextMenu.event.quality).map((query) => (
                                     <button
                                         type="button"
                                         key={query}
@@ -588,6 +623,7 @@ export const ChordTrackLane = ({ pixelsPerBeat, scrollX }: ChordTrackLaneProps):
                                         }}
                                         aria-checked={contextMenu.event.quality === query}
                                         role="menuitemradio"
+                                        tabIndex={-1}
                                     >
                                         {query}
                                     </button>
@@ -617,6 +653,7 @@ export const ChordTrackLane = ({ pixelsPerBeat, scrollX }: ChordTrackLaneProps):
                                         }}
                                         aria-checked={contextMenu.event.root === idx}
                                         role="menuitemradio"
+                                        tabIndex={-1}
                                     >
                                         {name}
                                     </button>
@@ -634,6 +671,7 @@ export const ChordTrackLane = ({ pixelsPerBeat, scrollX }: ChordTrackLaneProps):
                                     );
                                 }}
                                 role="menuitem"
+                                tabIndex={-1}
                             >
                                 Delete Chord
                             </button>
