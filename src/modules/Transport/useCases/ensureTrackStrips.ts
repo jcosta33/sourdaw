@@ -5,21 +5,20 @@
  * Used by startPlayback and toggleRecording before audio begins.
  */
 
-import { getTrackEligibility, resolveEligibleDeviceWriteTarget, trackStore } from '#/modules/Arrangement/stores';
-import {
-    addDeviceToStrip,
-    ensureTrackStrip,
-    setTrackGain,
-    setTrackMute,
-    setTrackOutput,
-    setTrackPan,
-    updateDeviceParam,
-} from '#/modules/AudioEngine/useCases';
-import { ensureBusStrip, setBusGain, setSend, wireSidechainRoutes } from '#/modules/Routing/useCases';
+import { shouldCreateLiveTrackStrip, trackStore } from '#/modules/Arrangement/stores';
+import { applySoloLogic, projectTrackToLiveStrip } from '#/modules/Arrangement/useCases';
+import { ensureBusStrip, setBusGain, wireSidechainRoutes } from '#/modules/Routing/useCases';
+
+function hasAmbiguousBusOwner(tracks: NonNullable<typeof trackStore.value>['tracks']): boolean {
+    return tracks.some(
+        (track) => track.kind === 'bus' && tracks.filter((candidate) => candidate.id === track.id).length !== 1
+    );
+}
 
 export function ensureTrackStrips(): void {
+    applySoloLogic({ resetSavedGains: true, applyActions: false });
     const tracks = trackStore.value?.tracks;
-    if (!tracks) {
+    if (!tracks || hasAmbiguousBusOwner(tracks)) {
         return;
     }
     const busTracks = tracks.filter((time) => time.kind === 'bus');
@@ -29,43 +28,10 @@ export function ensureTrackStrips(): void {
     }
 
     for (const track of tracks) {
-        if (!getTrackEligibility(track.kind).createsLiveStrip) {
+        if (!shouldCreateLiveTrackStrip(track)) {
             continue;
         }
-        ensureTrackStrip(track.id);
-        const outputTarget = tracks.find((candidate) => candidate.id === track.outputId);
-        if (!outputTarget || getTrackEligibility(outputTarget.kind).acceptsRoutingEndpoint) {
-            setTrackOutput(track.id, track.outputId);
-        }
-        setTrackGain(track.id, track.gain);
-        setTrackPan(track.id, track.pan);
-        setTrackMute(track.id, track.muted);
-
-        // Bootstrap devices (effects & instruments) from the store data.
-        // Without this, devices exist in the UI but have no audio nodes.
-        for (const device of track.devices) {
-            const targetOwner = resolveEligibleDeviceWriteTarget(device.id);
-            if (targetOwner.status !== 'eligible' || targetOwner.trackId !== track.id) {
-                continue;
-            }
-            addDeviceToStrip(targetOwner.trackId, targetOwner.deviceId, device.type);
-            // Apply stored parameter values to the newly created audio nodes
-            if (device.parameterValues) {
-                for (const [paramId, value] of Object.entries(device.parameterValues)) {
-                    if (typeof value === 'number') {
-                        updateDeviceParam(targetOwner.trackId, targetOwner.deviceId, paramId, value);
-                    }
-                }
-            }
-        }
-
-        for (const send of track.sends) {
-            const sendTarget = tracks.find((candidate) => candidate.id === send.busId);
-            if (sendTarget && !getTrackEligibility(sendTarget.kind).acceptsRoutingEndpoint) {
-                continue;
-            }
-            setSend(track.id, send.busId, send.level, send.preFader);
-        }
+        projectTrackToLiveStrip({ trackId: track.id, deferSidechainWiring: true });
     }
 
     // Re-wire persisted sidechain routes now that every track/bus strip and its
@@ -74,16 +40,4 @@ export function ensureTrackStrips(): void {
     // so the compression is silently absent. The engine ignores routes whose
     // target strip/device is missing, so this must run after the loop above.
     wireSidechainRoutes();
-    // Apply solo state: if any track is soloed, mute all non-soloed tracks.
-    // This ensures solo set before pressing play takes effect immediately.
-    const anySoloed = tracks.some((time) => time.soloed && getTrackEligibility(time.kind).createsLiveStrip);
-    if (anySoloed) {
-        for (const track of tracks) {
-            if (!getTrackEligibility(track.kind).createsLiveStrip || track.kind === 'master') {
-                continue;
-            }
-            const shouldMute = !track.soloed;
-            setTrackMute(track.id, shouldMute || track.muted);
-        }
-    }
 }

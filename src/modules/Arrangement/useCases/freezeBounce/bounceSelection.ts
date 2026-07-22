@@ -2,6 +2,7 @@ import { cacheAudioBuffer } from '#/modules/AudioEngine/useCases';
 import { pushUndoEntry } from '#/modules/Command/useCases';
 
 import { type Clip, type Track } from '../../models/Track';
+import { resolveEligibleClipWriteTarget } from '../../stores/resolveEligibleClipWriteTarget';
 import { trackStore } from '../../stores/trackStore';
 
 import { renderTrackOffline } from './renderOffline';
@@ -38,6 +39,27 @@ export async function bounceSelection(trackId: string, startBeat: number, endBea
         return false;
     }
 
+    const freshTarget = resolveEligibleClipWriteTarget({ trackId });
+    if (freshTarget.status !== 'eligible') {
+        return false;
+    }
+
+    const freshState = trackStore.value;
+    if (!freshState) {
+        return false;
+    }
+
+    const targetTrackIndex = freshState.tracks.findIndex((candidate) => candidate.id === freshTarget.trackId);
+    if (targetTrackIndex === -1) {
+        return false;
+    }
+
+    const targetTrack = freshState.tracks[targetTrackIndex]!;
+    const keptClips = targetTrack.clips.filter(
+        (context) => context.endBeat <= startBeat || context.startBeat >= endBeat
+    );
+    const tracksBefore = structuredClone(freshState.tracks);
+
     const audioBufferId = `bounce-sel-${trackId}-${Date.now()}`;
     cacheAudioBuffer({ buffer: renderedBuffer, bufferId: audioBufferId });
 
@@ -57,27 +79,14 @@ export async function bounceSelection(trackId: string, startBeat: number, endBea
         muted: false,
     };
 
-    const freshState = trackStore.value;
-    if (!freshState) {
-        return false;
-    }
-
-    const tracksBefore = structuredClone(freshState.tracks);
-
+    const tracksAfterBounce = freshState.tracks.slice();
+    tracksAfterBounce[targetTrackIndex] = {
+        ...targetTrack,
+        clips: [...keptClips, bouncedClip],
+    };
     trackStore.set({
         ...freshState,
-        tracks: freshState.tracks.map((time) => {
-            if (time.id !== trackId) {
-                return time;
-            }
-            const keptClips = time.clips.filter(
-                (context) => context.endBeat <= startBeat || context.startBeat >= endBeat
-            );
-            return {
-                ...time,
-                clips: [...keptClips, bouncedClip],
-            };
-        }),
+        tracks: tracksAfterBounce,
     });
 
     const tracksAfter = structuredClone(trackStore.value?.tracks ?? []);

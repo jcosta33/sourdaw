@@ -2,6 +2,7 @@ import { getCachedAudioBuffer } from '#/modules/AudioEngine/useCases';
 
 import { getTrackState } from '../repositories/track/getTrackState';
 import { updateTrack } from '../repositories/track/updateTrack';
+import { resolveEligibleClipWriteTarget } from '../stores/resolveEligibleClipWriteTarget';
 import { type Clip } from '../stores/trackStore';
 
 /**
@@ -9,33 +10,32 @@ import { type Clip } from '../stores/trackStore';
  * Silent gaps shorter than `minSilenceBeats` are merged with their adjacent
  * sound regions so that short inter-word pauses don't cut the clip.
  */
-export function stripSilence(clipId: string, thresholdDb: number = -40, minSilenceBeats: number = 0.5): void {
+export function stripSilence(clipId: string, thresholdDb: number = -40, minSilenceBeats: number = 0.5): boolean {
+    const target = resolveEligibleClipWriteTarget({ clipId });
+    if (target.status !== 'eligible' || !('clipId' in target)) {
+        return false;
+    }
+
     const state = getTrackState();
     if (!state) {
-        return;
+        return false;
     }
 
-    let targetClip: { trackId: string; clip: Clip } | null = null;
-    for (const track of state.tracks) {
-        const clip = track.clips.find((context) => context.id === clipId);
-        if (clip) {
-            targetClip = { trackId: track.id, clip };
-            break;
-        }
-    }
-    if (!targetClip || targetClip.clip.type !== 'audio' || !targetClip.clip.audioBufferId) {
-        return;
+    const track = state.tracks.find((candidate) => candidate.id === target.trackId);
+    const targetClip: Clip | undefined = track?.clips.find((candidate) => candidate.id === target.clipId);
+    if (!track || !targetClip || targetClip.type !== 'audio' || !targetClip.audioBufferId) {
+        return false;
     }
 
-    const buffer = getCachedAudioBuffer({ bufferId: targetClip.clip.audioBufferId });
+    const buffer = getCachedAudioBuffer({ bufferId: targetClip.audioBufferId });
     if (!buffer) {
-        return;
+        return false;
     }
 
     const threshold = 10 ** (thresholdDb / 20);
     const sampleRate = buffer.sampleRate;
     const channelData = buffer.getChannelData(0);
-    const clipDurationBeats = targetClip.clip.endBeat - targetClip.clip.startBeat;
+    const clipDurationBeats = targetClip.endBeat - targetClip.startBeat;
 
     const windowSize = Math.floor(sampleRate * 0.01);
     const regions: { startSample: number; endSample: number }[] = [];
@@ -69,10 +69,10 @@ export function stripSilence(clipId: string, thresholdDb: number = -40, minSilen
     }
 
     if (regions.length <= 1) {
-        return;
+        return false;
     }
 
-    const clip = targetClip.clip;
+    const clip = targetClip;
     const beatsPerSample = clipDurationBeats / channelData.length;
 
     // Merge adjacent regions whose gap (in beats) is shorter than minSilenceBeats.
@@ -90,7 +90,7 @@ export function stripSilence(clipId: string, thresholdDb: number = -40, minSilen
     }
 
     if (mergedRegions.length <= 1) {
-        return;
+        return false;
     }
 
     const newClips = mergedRegions.map((region) => ({
@@ -100,8 +100,9 @@ export function stripSilence(clipId: string, thresholdDb: number = -40, minSilen
         endBeat: clip.startBeat + region.endSample * beatsPerSample,
     }));
 
-    updateTrack(targetClip.trackId, (time) => ({
+    updateTrack(target.trackId, (time) => ({
         ...time,
-        clips: [...time.clips.filter((context) => context.id !== clipId), ...newClips],
+        clips: [...time.clips.filter((context) => context.id !== target.clipId), ...newClips],
     }));
+    return true;
 }

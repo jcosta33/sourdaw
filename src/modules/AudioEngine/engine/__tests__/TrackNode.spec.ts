@@ -110,6 +110,30 @@ describe('TrackNode', () => {
         expect(track.strip.analyserNode.connect).toHaveBeenCalledWith(busGain);
     });
 
+    it('disconnects only its previous output destination when rerouting', () => {
+        const busGain = ctx.createGain();
+        vi.mocked(deps.getBusGainNode).mockReturnValue(busGain as unknown as GainNode);
+        const track = new TrackNode('track-1', deps);
+
+        track.setOutput('bus-1');
+
+        expect(track.strip.analyserNode.disconnect).toHaveBeenCalledTimes(1);
+        expect(track.strip.analyserNode.disconnect).toHaveBeenCalledWith(deps.masterGainNode);
+        expect(track.strip.analyserNode.disconnect).not.toHaveBeenCalledWith();
+    });
+
+    it('preserves analyser output, send, and sidechain edges across a chain rebuild', () => {
+        const track = new TrackNode('track-1', deps);
+        const unrelatedEdge = ctx.createGain();
+        track.strip.analyserNode.connect(unrelatedEdge as unknown as AudioNode);
+        vi.mocked(track.strip.analyserNode.disconnect).mockClear();
+
+        track.rebuildChain();
+
+        expect(track.strip.analyserNode.disconnect).not.toHaveBeenCalledWith();
+        expect(track.strip.analyserNode.disconnect).not.toHaveBeenCalledWith(unrelatedEdge);
+    });
+
     it('adds a built-in device through the use-case resolver and wires it into the track chain', () => {
         const track = new TrackNode('track-1', deps);
         vi.mocked(ctx.createGain).mockClear();

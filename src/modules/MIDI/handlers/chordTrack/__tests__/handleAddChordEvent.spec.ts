@@ -16,18 +16,18 @@ describe('handleAddChordEvent', () => {
     it('delegates to addChordEvent with sanitized payload', () => {
         void handleAddChordEvent.execute({
             type: 'addChordEvent',
-            payload: { beat: 4, root: 0, quality: 'minor', duration: 8 },
+            payload: { beat: 4, root: 0, quality: 'minor', duration: 8, eventId: 'chord-test' },
         });
 
-        expect(mocks.addChordEvent).toHaveBeenCalledWith(4, 0, 'minor', 8);
+        expect(mocks.addChordEvent).toHaveBeenCalledWith(4, 0, 'minor', 8, 'chord-test');
     });
 
     it('falls back to default quality if invalid', () => {
         void handleAddChordEvent.execute({
             type: 'addChordEvent',
-            payload: { beat: 0, root: 2, quality: 'garbage' },
+            payload: { beat: 0, root: 2, quality: 'garbage', eventId: 'chord-test' },
         });
 
-        expect(mocks.addChordEvent).toHaveBeenCalledWith(0, 2, 'major', 4);
+        expect(mocks.addChordEvent).toHaveBeenCalledWith(0, 2, 'major', 4, 'chord-test');
     });
 });

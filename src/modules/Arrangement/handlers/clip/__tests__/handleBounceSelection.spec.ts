@@ -4,6 +4,11 @@ import { handleBounceSelection } from '../handleBounceSelection';
 
 const mocks = vi.hoisted(() => ({
     bounceSelection: vi.fn(),
+    resolveEligibleClipWriteTarget: vi.fn(),
+}));
+
+vi.mock('../../../stores/resolveEligibleClipWriteTarget', () => ({
+    resolveEligibleClipWriteTarget: mocks.resolveEligibleClipWriteTarget,
 }));
 
 vi.mock('../../../useCases/freezeBounce/bounceSelection', () => ({
@@ -13,6 +18,7 @@ vi.mock('../../../useCases/freezeBounce/bounceSelection', () => ({
 describe('handleBounceSelection', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        mocks.resolveEligibleClipWriteTarget.mockReturnValue({ status: 'eligible', trackId: 't1' });
     });
 
     it('executes bounceSelection with the provided payload', async () => {
@@ -35,6 +41,18 @@ describe('handleBounceSelection', () => {
         });
 
         expect(result).toEqual({ status: 'no-write' });
+    });
+
+    it('rejects an ineligible destination before bounce rendering', async () => {
+        mocks.resolveEligibleClipWriteTarget.mockReturnValue({ status: 'ineligible' });
+
+        const result = await handleBounceSelection.execute({
+            type: 'bounceSelection',
+            payload: { trackId: 'vca-1', startBeat: 0, endBeat: 4 },
+        });
+
+        expect(result).toEqual({ status: 'no-write' });
+        expect(mocks.bounceSelection).not.toHaveBeenCalled();
     });
 
     it('provides a description', () => {

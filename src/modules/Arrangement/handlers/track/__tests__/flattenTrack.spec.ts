@@ -13,15 +13,28 @@ vi.mock('../../../useCases/freezeBounce/flattenTrack', () => ({
 describe('handleFlattenTrack', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        mocks.flattenTrack.mockReturnValue(true);
     });
 
     it('executes flattenTrack with the provided payload', () => {
-        void handleFlattenTrack.execute({
+        const result = handleFlattenTrack.execute({
             type: 'flattenTrack',
             payload: { trackId: 't1' },
         });
 
         expect(mocks.flattenTrack).toHaveBeenCalledWith('t1');
+        expect(result).toEqual({ status: 'written' });
+    });
+
+    it('returns no-write when flattening is rejected', () => {
+        mocks.flattenTrack.mockReturnValue(false);
+
+        const result = handleFlattenTrack.execute({
+            type: 'flattenTrack',
+            payload: { trackId: 'vca-1' },
+        });
+
+        expect(result).toEqual({ status: 'no-write' });
     });
 
     it('provides a description', () => {
