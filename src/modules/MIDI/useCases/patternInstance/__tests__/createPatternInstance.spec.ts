@@ -22,6 +22,7 @@ type ClipFixture = {
     color: string;
     locked: boolean;
     muted: boolean;
+    midiOffsetBeats?: number;
     parentClipId?: string;
     overrides?: Record<string, boolean>;
 };
@@ -131,10 +132,11 @@ describe('createPatternInstance', () => {
                 parentClipId: 'root-pattern',
                 overrides: { notes: true },
                 type: sourceType,
+                midiOffsetBeats: 2,
             });
             setEligibleProject(sourceClip, destinationKind, sourceKind);
             mocks.getNotesForClip.mockReturnValue([
-                { id: 'note-1', startBeat: 5, duration: 1, pitch: 60, velocity: 0.8 },
+                { id: 'note-1', startBeat: 1, duration: 1, pitch: 60, velocity: 0.8 },
             ]);
 
             const instanceId = createPatternInstance(sourceClip.id, 'destination-track', 16);
@@ -163,11 +165,17 @@ describe('createPatternInstance', () => {
                 muted: false,
                 parentClipId: 'root-pattern',
                 overrides: {},
+                // Inherited from the slipped parent so the cloned
+                // clip-relative notes play at the right positions.
+                midiOffsetBeats: 2,
             });
             expect(mocks.setNotesForClip).toHaveBeenCalledWith(instanceId, [
                 {
                     id: `note-inst-${instanceId}-note-1`,
-                    startBeat: 17,
+                    // Clip-relative beat cloned as-is: playback adds the
+                    // instance's own start (16 + 1 = 17), so adding the
+                    // offset here displaced or silenced instances (M-142).
+                    startBeat: 1,
                     duration: 1,
                     pitch: 60,
                     velocity: 0.8,

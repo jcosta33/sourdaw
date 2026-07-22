@@ -31,6 +31,8 @@ export type ActiveNoteData = {
     startBeat: number;
     channel: number;
     note: number;
+    /** Played note-on velocity, captured so recording preserves dynamics (M-143). */
+    velocity?: number;
     /** Track that originated the note; selection changes must not retarget release. */
     trackId: string;
     /** Instrument owner resolved at note-on; source-track changes must not retarget release. */
