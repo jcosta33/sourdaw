@@ -1,0 +1,95 @@
+src/modules/Command/useCases/macro/playback.ts
+  s_c2fca615e81f34::t_4857c98071322a 14,33-43,110-113,186-196,201,229
+src/modules/Arrangement/handlers/trackAlternative/__tests__/handleCreateTrackAlternative.spec.ts
+  s_ac9b259eab20ba::t_ce48ec51e556d7 174-227
+src/modules/Arrangement/handlers/trackAlternative/__tests__/handleDeleteTrackAlternative.spec.ts
+  s_b1ffd560d0fed0::t_372a8a9be844a6 300-327
+src/modules/Arrangement/handlers/trackAlternative/__tests__/handleRenameTrackAlternative.spec.ts
+  s_26a64bd45b2035::t_b85d00b0cc2fbd 52-86
+src/modules/Arrangement/handlers/trackAlternative/__tests__/handleSwitchTrackAlternative.spec.ts
+  s_749384c49c1aa1::t_f465acb8ed055d 307-333
+src/modules/Arrangement/handlers/trackAlternative/handleCreateTrackAlternative.ts
+  s_51b7271278858f::t_dcfd61c2200932 13-28,90,128-149
+src/modules/Arrangement/handlers/trackAlternative/handleDeleteTrackAlternative.ts
+  s_51b7271278858f::t_7040185ccf535e 81-86
+src/modules/Arrangement/handlers/trackAlternative/handleRenameTrackAlternative.ts
+  s_0362cee3db98c0::t_6fa2a304f91c53 29-42
+src/modules/Arrangement/handlers/trackAlternative/handleSwitchTrackAlternative.ts
+  s_0362cee3db98c0::t_72112b0e82bb55 122-139
+src/modules/Command/useCases/macro/__tests__/playback.spec.ts
+  s_b1ffd560d0fed0::t_61f0859ab5b6ae 267-326
+src/utils/handlerContract.ts
+  s_88819704aa63e8::t_2c62d39a8ce767 233-236,239-242
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "242e7aa9bf67ad56c9d78762d409008738054435",
+  "prompts": {},
+  "sessions": {
+    "s_0362cee3db98c0": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8b84-3b9e-7ec2-9749-ba7dfcc2344b",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_26a64bd45b2035": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8b85-836a-7cc2-8d9b-5933dfeaed0b",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_51b7271278858f": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8b69-4f08-77a2-aa10-c51bc5eb5864",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_749384c49c1aa1": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8b88-c045-7771-977d-792aeb4bed2a",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_88819704aa63e8": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8b7d-3f96-7962-873f-c3c7b8567f15",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_ac9b259eab20ba": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8699-3865-7842-8c54-afbac6cfd266",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_b1ffd560d0fed0": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8b2b-7e63-7521-8436-825c6357795e",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_c2fca615e81f34": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f74e9-e1c5-7142-85d2-4c577b3973c0",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
