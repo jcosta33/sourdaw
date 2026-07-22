@@ -1,43 +1,34 @@
+import { appendClipToTrack } from '../../stores/appendClipToTrack';
 import { trackStore } from '../../stores/trackStore';
-import { updateTrack } from '../updateTrack';
+import { updateClipInStore } from '../../stores/updateClipInStore';
 
 /**
  * Accept a ghost clip, making it a permanent part of the track (E1).
  */
-export function acceptGhostClip(clipId: string): void {
+export function acceptGhostClip(clipId: string): boolean {
     const state = trackStore.value;
     if (!state) {
-        return;
+        return false;
     }
 
     const ghost = (state.ghostClips ?? []).find((context) => context.id === clipId);
     if (!ghost) {
-        // Fallback for pre-existing ghost-flag implementation
-        for (const time of state.tracks) {
-            if (time.clips.some((context) => context.id === clipId)) {
-                updateTrack(time.id, (track) => ({
-                    ...track,
-                    clips: track.clips.map((context) =>
-                        context.id === clipId ? { ...context, isGhost: false } : context
-                    ),
-                }));
-            }
-        }
-        return;
+        return updateClipInStore(clipId, (clip) => ({ ...clip, isGhost: false }));
     }
 
     const { trackId, ...clipData } = ghost;
+    const inserted = appendClipToTrack(trackId, { ...clipData, trackId, isGhost: false });
+    if (!inserted) {
+        return false;
+    }
 
-    // 1. Add to track
-    updateTrack(trackId, (time) => ({
-        ...time,
-        clips: [...time.clips, { ...clipData, trackId, isGhost: false }],
-    }));
-
-    // 2. Remove from ghost list (re-read after updateTrack mutated the store)
-    const updated = trackStore.value!;
+    const updated = trackStore.value;
+    if (!updated) {
+        return false;
+    }
     trackStore.set({
         ...updated,
         ghostClips: (updated.ghostClips ?? []).filter((context) => context.id !== clipId),
     });
+    return true;
 }

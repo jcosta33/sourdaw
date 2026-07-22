@@ -8,6 +8,7 @@ const mocks = vi.hoisted(() => ({
     duplicateClipAutomation: vi.fn(),
     duplicateClipNotes: vi.fn(),
     getWarpState: vi.fn(),
+    resolveEligibleClipWriteTarget: vi.fn(),
     setWarpState: vi.fn(),
 }));
 
@@ -32,6 +33,10 @@ vi.mock('../../../stores/warpStates', () => ({
     setWarpState: mocks.setWarpState,
 }));
 
+vi.mock('../../../stores/resolveEligibleClipWriteTarget', () => ({
+    resolveEligibleClipWriteTarget: mocks.resolveEligibleClipWriteTarget,
+}));
+
 describe('duplicateClipCore', () => {
     beforeEach(() => {
         vi.clearAllMocks();
@@ -40,6 +45,15 @@ describe('duplicateClipCore', () => {
             markers: [],
             stretchMode: 'complex',
             originalTempo: null,
+        });
+        mocks.resolveEligibleClipWriteTarget.mockImplementation((input: { clipId?: string; trackId?: string }) => {
+            if (input.clipId === 'c1') {
+                return { status: 'eligible', clipId: 'c1', trackId: 't1' };
+            }
+            if (input.trackId === 't1') {
+                return { status: 'eligible', trackId: 't1' };
+            }
+            return { status: 'missing' };
         });
     });
 
@@ -75,11 +89,13 @@ describe('duplicateClipCore', () => {
         mocks.addClip.mockReturnValue({ id: 'c2', type: 'audio' });
 
         // computeStartBeat = clip.endBeat (matches duplicateClip's behavior)
-        duplicateClipCore({
-            clipId: 'c1',
-            targetClipId: 'c2',
-            computeStartBeat: (clip) => clip.endBeat,
-        });
+        expect(
+            duplicateClipCore({
+                clipId: 'c1',
+                targetClipId: 'c2',
+                computeStartBeat: (clip) => clip.endBeat,
+            })
+        ).toBe(true);
 
         expect(mocks.addClip).toHaveBeenCalledTimes(1);
         expect(mocks.addClip).toHaveBeenCalledWith(
@@ -147,5 +163,69 @@ describe('duplicateClipCore', () => {
                 markers: [{ id: 'w1', originalBeat: 1, warpedBeat: 1.2 }],
             })
         );
+    });
+
+    it('rejects an ineligible source before computing or publishing any effect', () => {
+        const computeStartBeat = vi.fn(() => 4);
+        mocks.resolveEligibleClipWriteTarget.mockReturnValue({ status: 'ineligible' });
+        mocks.getTrackState.mockReturnValue({ tracks: [] });
+
+        expect(
+            duplicateClipCore({
+                clipId: 'vca-clip',
+                targetClipId: 'clip-copy',
+                computeStartBeat,
+            })
+        ).toBe(false);
+
+        expect(computeStartBeat).not.toHaveBeenCalled();
+        expect(mocks.addClip).not.toHaveBeenCalled();
+        expect(mocks.duplicateClipAutomation).not.toHaveBeenCalled();
+        expect(mocks.getWarpState).not.toHaveBeenCalled();
+        expect(mocks.setWarpState).not.toHaveBeenCalled();
+        expect(mocks.duplicateClipNotes).not.toHaveBeenCalled();
+    });
+
+    it('rejects a duplicate explicit target id before computing or publishing', () => {
+        const computeStartBeat = vi.fn(() => 4);
+        mocks.resolveEligibleClipWriteTarget.mockImplementation((input: { clipId?: string; trackId?: string }) => {
+            if (input.clipId === 'c1' || input.clipId === 'clip-copy') {
+                return { status: 'eligible', clipId: input.clipId, trackId: 't1' };
+            }
+            return { status: 'eligible', trackId: 't1' };
+        });
+        mocks.getTrackState.mockReturnValue({
+            tracks: [{ id: 't1', clips: [{ id: 'c1', trackId: 't1', startBeat: 0, endBeat: 4 }] }],
+        });
+
+        expect(
+            duplicateClipCore({
+                clipId: 'c1',
+                targetClipId: 'clip-copy',
+                computeStartBeat,
+            })
+        ).toBe(false);
+
+        expect(computeStartBeat).not.toHaveBeenCalled();
+        expect(mocks.addClip).not.toHaveBeenCalled();
+    });
+
+    it('duplicates MIDI ownership only after the clip add succeeds', () => {
+        const source = {
+            id: 'c1',
+            trackId: 't1',
+            name: 'MIDI take',
+            startBeat: 0,
+            endBeat: 4,
+            type: 'midi' as const,
+        };
+        mocks.getTrackState.mockReturnValue({ tracks: [{ id: 't1', clips: [source] }] });
+        mocks.addClip.mockReturnValueOnce(null).mockReturnValueOnce({ id: 'c2', type: 'midi' });
+
+        expect(duplicateClipCore({ clipId: 'c1', computeStartBeat: () => 4 })).toBe(false);
+        expect(mocks.duplicateClipNotes).not.toHaveBeenCalled();
+
+        expect(duplicateClipCore({ clipId: 'c1', computeStartBeat: () => 4 })).toBe(true);
+        expect(mocks.duplicateClipNotes).toHaveBeenCalledWith('c1', 'c2');
     });
 });

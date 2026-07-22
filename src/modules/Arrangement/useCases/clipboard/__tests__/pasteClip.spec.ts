@@ -25,6 +25,7 @@ const mocks = vi.hoisted(() => {
     return {
         addClip: vi.fn<(input: AddClipInput) => { id: string } | null>(),
         getTrackState: vi.fn<() => MockTrackState | null>(),
+        resolveEligibleClipWriteTarget: vi.fn(),
         setNotesForClip: vi.fn<(clipId: string, notes: MidiNote[]) => void>(),
         readTransportState,
         transportState,
@@ -49,6 +50,9 @@ vi.mock('../../../repositories/track/getTrackState', () => ({
 }));
 vi.mock('../../clip/addClip', () => ({
     addClip: mocks.addClip,
+}));
+vi.mock('../../../stores/resolveEligibleClipWriteTarget', () => ({
+    resolveEligibleClipWriteTarget: mocks.resolveEligibleClipWriteTarget,
 }));
 
 function createClipboardEntry(
@@ -89,13 +93,18 @@ describe('pasteClip', () => {
         mocks.getTrackState.mockReset();
         mocks.setNotesForClip.mockReset();
         mocks.readTransportState.mockClear();
+        mocks.resolveEligibleClipWriteTarget.mockReset();
+        mocks.resolveEligibleClipWriteTarget.mockImplementation((input: { trackId: string }) => ({
+            status: 'eligible',
+            trackId: input.trackId,
+        }));
         mocks.transportState.value = {};
         mocks.playheadPositionRef.current = 0;
         setClipClipboard([]);
     });
 
     it('returns before transport or track work when the clip clipboard is empty', () => {
-        pasteClip();
+        expect(pasteClip()).toBe(false);
 
         expect(mocks.getTrackState).not.toHaveBeenCalled();
         expect(mocks.readTransportState).not.toHaveBeenCalled();
@@ -111,7 +120,7 @@ describe('pasteClip', () => {
         mocks.transportState.value = transport;
         mocks.getTrackState.mockReturnValue(trackState);
 
-        pasteClip();
+        expect(pasteClip()).toBe(false);
 
         expect(mocks.readTransportState).toHaveBeenCalledTimes(1);
         expect(mocks.getTrackState).toHaveBeenCalledTimes(1);
@@ -196,7 +205,7 @@ describe('pasteClip', () => {
             }),
         ]);
 
-        pasteClip();
+        expect(pasteClip()).toBe(true);
 
         expect(mocks.addClip).toHaveBeenCalledTimes(2);
         expect(mocks.addClip).toHaveBeenNthCalledWith(1, {
@@ -261,7 +270,7 @@ describe('pasteClip', () => {
             tracks: [{ id: 'source-track' }],
         });
 
-        pasteClip();
+        expect(pasteClip()).toBe(false);
 
         expect(mocks.addClip).not.toHaveBeenCalled();
         expect(mocks.setNotesForClip).not.toHaveBeenCalled();
@@ -280,7 +289,7 @@ describe('pasteClip', () => {
             }),
         ]);
 
-        pasteClip();
+        expect(pasteClip()).toBe(false);
 
         expect(mocks.addClip).toHaveBeenCalledTimes(1);
         expect(mocks.addClip).toHaveBeenCalledWith(expect.objectContaining({ trackId: 'source-track' }));
@@ -292,6 +301,30 @@ describe('pasteClip', () => {
 
         pasteClip();
 
+        expect(randomUuid).not.toHaveBeenCalled();
+        expect(mocks.setNotesForClip).not.toHaveBeenCalled();
+    });
+
+    it('rejects all entries before allocation when one effective destination is ineligible', () => {
+        const randomUuid = vi.spyOn(crypto, 'randomUUID');
+        mocks.getTrackState.mockReturnValue({
+            selectedTrackId: null,
+            tracks: [{ id: 'track-1' }, { id: 'vca-1' }],
+        });
+        mocks.resolveEligibleClipWriteTarget.mockImplementation((input: { trackId: string }) => {
+            if (input.trackId === 'vca-1') {
+                return { status: 'ineligible' };
+            }
+            return { status: 'eligible', trackId: input.trackId };
+        });
+        setClipClipboard([
+            createClipboardEntry({ sourceTrackId: 'track-1' }),
+            createClipboardEntry({ sourceTrackId: 'vca-1', midiNotes: [] }),
+        ]);
+
+        expect(pasteClip()).toBe(false);
+
+        expect(mocks.addClip).not.toHaveBeenCalled();
         expect(randomUuid).not.toHaveBeenCalled();
         expect(mocks.setNotesForClip).not.toHaveBeenCalled();
     });
