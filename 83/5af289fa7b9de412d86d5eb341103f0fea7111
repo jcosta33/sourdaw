@@ -1,0 +1,30 @@
+src/modules/Transport/useCases/__tests__/ensureTrackStrips.spec.ts
+  s_ac9b259eab20ba::t_b6c40e03ab5e63 23,29,128
+src/modules/Transport/useCases/ensureTrackStrips.ts
+  s_ac9b259eab20ba::t_69ff16ce9d8922 9,19
+src/modules/Arrangement/useCases/__tests__/projectTrackToLiveStrip.spec.ts
+  s_ac9b259eab20ba::t_b6c40e03ab5e63 6,51,114,123-124,129,134-148
+  s_ac9b259eab20ba::t_bea853ba6a37d5 149-150
+src/modules/Arrangement/useCases/toggleTrackState/applySoloLogic.ts
+  s_ac9b259eab20ba::t_69ff16ce9d8922 10-23,40-42
+src/modules/Arrangement/useCases/projectTrackToLiveStrip.ts
+  s_ac9b259eab20ba::t_69ff16ce9d8922 16-17,61
+src/modules/Arrangement/useCases/index.ts
+  s_ac9b259eab20ba::t_69ff16ce9d8922 180
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "835af289fa7b9de412d86d5eb341103f0fea7111",
+  "prompts": {},
+  "sessions": {
+    "s_ac9b259eab20ba": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8699-3865-7842-8c54-afbac6cfd266",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
