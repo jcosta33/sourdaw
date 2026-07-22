@@ -90,16 +90,6 @@ async function activateNewProject({
         }
     }
 
-    try {
-        await compactProject();
-    } catch (error) {
-        degraded = true;
-        logger.warn('[newProject] Initial CRDT snapshot persistence failed:', error);
-    }
-    if (!transaction.isCurrent()) {
-        return false;
-    }
-
     runCommittedStep('action history projection', projectActionHistoryToStore);
     runCommittedStep('module store reset', () => resetModuleStoresToDefault({ createNewMidiProbabilitySeed: true }));
     runCommittedStep('arrangement reset', () => arrangementStore.set(structuredClone(defaultArrangementStoreState)));
@@ -124,6 +114,13 @@ async function activateNewProject({
     runCommittedStep('audio buffer reset', clearCachedAudioBuffers);
     runCommittedStep('undo history reset', clearUndoHistory);
     runCommittedStep('autosave start', () => setAutoSaveHandle(startCrdtAutoSave()));
+
+    try {
+        await compactProject();
+    } catch (error) {
+        degraded = true;
+        logger.warn('[newProject] Initial CRDT snapshot persistence failed:', error);
+    }
 
     if (degraded) {
         logger.warn('[newProject] Project activated with recovery errors; save before closing.');

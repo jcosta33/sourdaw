@@ -169,8 +169,53 @@ describe('newProject injectable', () => {
         if (authorityOrder === undefined || compactionOrder === undefined || storeResetOrder === undefined) {
             throw new Error('expected authority, compaction, and project publication calls');
         }
-        expect(compactionOrder).toBeGreaterThan(authorityOrder);
-        expect(storeResetOrder).toBeGreaterThan(compactionOrder);
+        expect(storeResetOrder).toBeGreaterThan(authorityOrder);
+        expect(compactionOrder).toBeGreaterThan(storeResetOrder);
+    });
+
+    it('keeps committed project authority published when a newer preparation fails during compaction', async () => {
+        const compaction = createDeferred<void>();
+        let latestTransition = 1;
+        vi.mocked(runProjectLoadTransaction)
+            .mockReturnValueOnce({
+                prepare: vi.fn().mockResolvedValue(true),
+                activate: vi.fn().mockReturnValue(true),
+                canActivate: () => latestTransition === 1,
+                isCurrent: () => latestTransition === 1,
+            })
+            .mockReturnValueOnce({
+                prepare: vi.fn().mockImplementation(() => {
+                    latestTransition = 2;
+                    return Promise.reject(new Error('newer preparation failed'));
+                }),
+                activate: vi.fn().mockReturnValue(false),
+                canActivate: () => true,
+                isCurrent: () => false,
+            });
+        vi.mocked(compactProject).mockReturnValueOnce(compaction.promise);
+
+        const committedActivation = newProject('Committed Project');
+        await vi.waitFor(() => expect(compactProject).toHaveBeenCalledOnce());
+
+        const failedNewerActivation = newProject('Failed Newer Project');
+        await expect(failedNewerActivation).resolves.toBe(false);
+
+        compaction.resolve(undefined);
+
+        await expect(committedActivation).resolves.toBe(true);
+        expect(projectStore.value).toMatchObject({
+            name: 'Committed Project',
+            loading: false,
+            initialized: true,
+        });
+        expect(startCrdtAutoSave).toHaveBeenCalledOnce();
+
+        const autosaveOrder = vi.mocked(startCrdtAutoSave).mock.invocationCallOrder[0];
+        const compactionOrder = vi.mocked(compactProject).mock.invocationCallOrder[0];
+        if (autosaveOrder === undefined || compactionOrder === undefined) {
+            throw new Error('expected autosave and compaction calls');
+        }
+        expect(autosaveOrder).toBeLessThan(compactionOrder);
     });
 
     it('does not clear loading when an older activation is superseded', async () => {
