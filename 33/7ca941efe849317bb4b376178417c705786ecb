@@ -1,0 +1,45 @@
+src/infra/store/storage/__tests__/createAutomergeStorage.spec.ts
+  s_ac9b259eab20ba::t_5d04e8e5261fe4 290-352
+src/infra/store/storage/createAutomergeStorage.ts
+  s_ac9b259eab20ba::t_95729ad1ad4d3b 55,352,359-367,427,433,446-457,503,534,629,676
+src/modules/Arrangement/handlers/marker/__tests__/markerHandlers.spec.ts
+  s_ac9b259eab20ba::t_6bc5a13580f404 10-15,24,36,50,53,57-180
+src/modules/Arrangement/handlers/marker/handleAddMarker.ts
+  s_ac9b259eab20ba::t_831766b0643ee2 5-18,21,23-26
+src/modules/Arrangement/handlers/marker/handleAddSection.ts
+  s_ac9b259eab20ba::t_8d1834f1f1add4 5-18,21,23-26
+src/modules/Arrangement/handlers/marker/handleRemoveMarker.ts
+  s_ac9b259eab20ba::t_128da67bb609b8 4,10-22
+src/modules/Arrangement/handlers/marker/handleRemoveSection.ts
+  s_ac9b259eab20ba::t_dfd0ea71f44274 4,10-28
+src/modules/Arrangement/handlers/marker/handleRenameSection.ts
+  s_ac9b259eab20ba::t_55ae2f81268700 4,10-16
+src/modules/Arrangement/handlers/marker/handleSetMarkerColor.ts
+  s_ac9b259eab20ba::t_2442cd56ff7835 4,10-18
+src/modules/Arrangement/useCases/marker/markerOperations/addMarker.ts
+  s_ac9b259eab20ba::t_b5168a5b99d958 4,9-13
+src/modules/Arrangement/useCases/marker/sectionOperations/addSection.ts
+  s_ac9b259eab20ba::t_c7664fd8057f5c 4,9-13
+src/modules/Command/useCases/macro/__tests__/playback.spec.ts
+  s_ac9b259eab20ba::t_4e09a2322f9ed8 206-266
+src/modules/Command/useCases/macro/playback.ts
+  s_ac9b259eab20ba::t_8fce4c7ea74c91 12-13,22-31,90-97,148-169,173,199-200
+src/utils/handlerContract.ts
+  s_ac9b259eab20ba::t_24b7ffd4e03811 297,300-303
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "337ca941efe849317bb4b376178417c705786ecb",
+  "prompts": {},
+  "sessions": {
+    "s_ac9b259eab20ba": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8699-3865-7842-8c54-afbac6cfd266",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
