@@ -31,7 +31,10 @@ vi.stubGlobal('currentFrame', 0);
 const noteOffCalls: number[] = [];
 const noteOnCalls: number[] = [];
 const padParamCalls: Array<[number, string, number]> = [];
-const WASM_HEAP = new ArrayBuffer(8192);
+const processCalls: number[] = [];
+const WASM_BLOCK_SAMPLES = 4096;
+const WASM_CHANNEL_BYTES = WASM_BLOCK_SAMPLES * Float32Array.BYTES_PER_ELEMENT;
+const WASM_HEAP = new ArrayBuffer((2 + 16 * 2) * WASM_CHANNEL_BYTES);
 
 class ToasterInstanceMock {
     note_on(pad: number): void {
@@ -44,11 +47,20 @@ class ToasterInstanceMock {
     set_pad_param(pad: number, name: string, value: number): void {
         padParamCalls.push([pad, name, value]);
     }
-    process(): number {
+    process(frames: number): number {
+        processCalls.push(frames);
+        const heap = new Float32Array(WASM_HEAP);
+        heap.fill(0);
+        heap.subarray(0, frames).fill(0.25);
+        heap.subarray(WASM_BLOCK_SAMPLES, WASM_BLOCK_SAMPLES + frames).fill(0.5);
+        heap.subarray(2 * WASM_BLOCK_SAMPLES, 2 * WASM_BLOCK_SAMPLES + frames).fill(0.75);
+        heap.subarray(3 * WASM_BLOCK_SAMPLES, 3 * WASM_BLOCK_SAMPLES + frames).fill(1);
+        heap.subarray(4 * WASM_BLOCK_SAMPLES, 4 * WASM_BLOCK_SAMPLES + frames).fill(-0.25);
+        heap.subarray(5 * WASM_BLOCK_SAMPLES, 5 * WASM_BLOCK_SAMPLES + frames).fill(-0.5);
         return 0;
     }
     get_right_ptr(): number {
-        return 4096;
+        return WASM_CHANNEL_BYTES;
     }
 }
 
@@ -77,6 +89,7 @@ describe('ToasterProcessor allNotesOff', () => {
         noteOffCalls.length = 0;
         noteOnCalls.length = 0;
         padParamCalls.length = 0;
+        processCalls.length = 0;
     });
 
     // ── Fix 4: a single allNotesOff message releases every pad ──
@@ -190,5 +203,38 @@ describe('ToasterProcessor allNotesOff', () => {
 
         expect(noteOnCalls).toEqual([1]);
         vi.stubGlobal('currentFrame', 0);
+    });
+
+    it('copies pad-pure stereo taps to outputs after the unchanged parent mix', async () => {
+        const proc = await loadProcessor();
+        send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
+        const outputs = Array.from({ length: 17 }, () => [new Float32Array(8), new Float32Array(8)]);
+
+        proc.process([[]], outputs);
+
+        expect(outputs[0]?.[0]).toEqual(new Float32Array(8).fill(0.25));
+        expect(outputs[0]?.[1]).toEqual(new Float32Array(8).fill(0.5));
+        expect(outputs[1]?.[0]).toEqual(new Float32Array(8).fill(0.75));
+        expect(outputs[1]?.[1]).toEqual(new Float32Array(8).fill(1));
+        expect(outputs[2]?.[0]).toEqual(new Float32Array(8).fill(-0.25));
+        expect(outputs[2]?.[1]).toEqual(new Float32Array(8).fill(-0.5));
+        expect(outputs[3]?.[0]).toEqual(new Float32Array(8));
+        expect(outputs[3]?.[1]).toEqual(new Float32Array(8));
+    });
+
+    it('hard-zeros an oversized render quantum without reading beyond WASM output buffers', async () => {
+        const proc = await loadProcessor();
+        send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
+        const outputs = Array.from({ length: 17 }, () => [
+            new Float32Array(WASM_BLOCK_SAMPLES + 1).fill(Number.NaN),
+            new Float32Array(WASM_BLOCK_SAMPLES + 1).fill(Number.NaN),
+        ]);
+
+        proc.process([[]], outputs);
+
+        expect(processCalls).toEqual([0]);
+        expect(outputs.every((output) => output.every((channel) => channel.every((sample) => sample === 0)))).toBe(
+            true
+        );
     });
 });

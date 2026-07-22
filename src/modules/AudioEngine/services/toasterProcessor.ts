@@ -19,6 +19,8 @@ import { initSync, ToasterInstance } from '../wasm/daw_dsp.js';
 
 /** Pad count the ToasterInstance is created with; the allNotesOff release loop spans 0..PAD_COUNT-1. */
 const TOASTER_PAD_COUNT = 16;
+const TOASTER_MAX_BLOCK_SIZE = 4096;
+const TOASTER_OUTPUT_COUNT = 1 + TOASTER_PAD_COUNT;
 
 /** Map camelCase pad param names from TypeScript to snake_case for Rust. */
 const PAD_PARAM_MAP: Record<string, string> = {
@@ -95,6 +97,8 @@ class ToasterProcessor extends AudioWorkletProcessor {
     _queue: ToasterQueued[] = [];
     _queueHead = 0;
     _fillActive = false;
+    _outputBasePtr = 0;
+    _outputViews: Array<[Float32Array, Float32Array]> = [];
 
     constructor() {
         super();
@@ -125,8 +129,22 @@ class ToasterProcessor extends AudioWorkletProcessor {
         const wasmExports = initSync({ module: new WebAssembly.Module(wasmBytes) });
         this._memory = wasmExports.memory;
         this._instance = new ToasterInstance(sampleRate, TOASTER_PAD_COUNT);
+        this._cacheOutputViews(this._instance.process(0), this._memory.buffer);
         this._ready = true;
         this.port.postMessage({ type: 'ready' });
+    }
+
+    _cacheOutputViews(basePtr: number, memory: ArrayBuffer): void {
+        this._outputBasePtr = basePtr;
+        this._outputViews = Array.from({ length: TOASTER_OUTPUT_COUNT }, (_, outputIndex) => {
+            const firstChannel = outputIndex === 0 ? 0 : 2 + (outputIndex - 1) * 2;
+            const leftOffset = basePtr + firstChannel * TOASTER_MAX_BLOCK_SIZE * Float32Array.BYTES_PER_ELEMENT;
+            const rightOffset = leftOffset + TOASTER_MAX_BLOCK_SIZE * Float32Array.BYTES_PER_ELEMENT;
+            return [
+                new Float32Array(memory, leftOffset, TOASTER_MAX_BLOCK_SIZE),
+                new Float32Array(memory, rightOffset, TOASTER_MAX_BLOCK_SIZE),
+            ];
+        });
     }
 
     _enqueue(msg: ToasterQueued): void {
@@ -241,16 +259,26 @@ class ToasterProcessor extends AudioWorkletProcessor {
             return true;
         }
 
-        const output = outputs[0];
-        if (!output || output.length < 2) {
+        const parentOutput = outputs[0];
+        if (!parentOutput || parentOutput.length < 2) {
             return true;
         }
 
-        const out0 = output[0];
+        const out0 = parentOutput[0];
         if (!out0) {
             return true;
         }
         const frames = out0.length;
+        if (frames > TOASTER_MAX_BLOCK_SIZE) {
+            // The WASM instance has fixed RT buffers. An unexpected oversized
+            // quantum is silenced without advancing DSP state or reading past them.
+            for (const output of outputs) {
+                for (const channel of output) {
+                    channel.fill(0);
+                }
+            }
+            return true;
+        }
 
         const blockEndFrame = currentFrame + frames;
         this._drainQueue(blockEndFrame);
@@ -263,12 +291,28 @@ class ToasterProcessor extends AudioWorkletProcessor {
             }
 
             const leftPtr = inst.process(frames);
-            const rightPtr = inst.get_right_ptr();
+            const cachedMemory = this._outputViews[0]?.[0].buffer;
+            if (leftPtr !== this._outputBasePtr || cachedMemory !== mem) {
+                this._cacheOutputViews(leftPtr, mem);
+            }
 
-            out0.set(new Float32Array(mem, leftPtr, frames));
-            const out1 = output[1];
-            if (out1) {
-                out1.set(new Float32Array(mem, rightPtr, frames));
+            const outputCount = Math.min(outputs.length, this._outputViews.length);
+            for (let outputIndex = 0; outputIndex < outputCount; outputIndex++) {
+                const output = outputs[outputIndex];
+                const views = this._outputViews[outputIndex];
+                if (!output || !views) {
+                    continue;
+                }
+                const outLeft = output[0];
+                const outRight = output[1];
+                for (let frame = 0; frame < frames; frame++) {
+                    if (outLeft) {
+                        outLeft[frame] = views[0][frame]!;
+                    }
+                    if (outRight) {
+                        outRight[frame] = views[1][frame]!;
+                    }
+                }
             }
         } catch (error) {
             this._faulted = true;

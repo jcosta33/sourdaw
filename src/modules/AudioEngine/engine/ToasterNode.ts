@@ -10,6 +10,7 @@ import { createReadyHandshake, ensureWorkletRegistered, fetchWasmBinary } from '
 import toasterProcessorUrl from '../services/toasterProcessor.ts?worker&url';
 
 const DEFAULT_WASM_URL = '/wasm/daw-dsp/daw_dsp_bg.wasm';
+const TOASTER_PAD_COUNT = 16;
 
 type ScheduleToasterHitInput = {
     pad: number;
@@ -32,6 +33,8 @@ export type ToasterNodeResult = {
     setParam: (name: string, value: number) => void;
     setPadParam: (pad: number, name: string, value: number) => void;
     setBypass: (bypassed: boolean) => void;
+    connectPadOutput?: (pad: number, dest: AudioNode) => void;
+    disconnectPadOutput?: (pad: number, dest: AudioNode) => void;
     connect: (dest: AudioNode) => void;
     disconnect: () => void;
     destroy: () => void;
@@ -51,8 +54,8 @@ export async function createToasterNode(ctx: BaseAudioContext, wasmUrl?: string)
 
     const node = new AudioWorkletNode(ctx, 'toaster-processor', {
         numberOfInputs: 0,
-        numberOfOutputs: 1,
-        outputChannelCount: [2],
+        numberOfOutputs: 1 + TOASTER_PAD_COUNT,
+        outputChannelCount: Array.from({ length: 1 + TOASTER_PAD_COUNT }, () => 2),
         channelCount: 2,
         channelCountMode: 'explicit',
     });
@@ -121,6 +124,21 @@ export async function createToasterNode(ctx: BaseAudioContext, wasmUrl?: string)
         },
         setBypass(state: boolean) {
             bypassed = state;
+        },
+        connectPadOutput(pad: number, dest: AudioNode) {
+            if (Number.isInteger(pad) && pad >= 0 && pad < TOASTER_PAD_COUNT) {
+                node.connect(dest, pad + 1, 0);
+            }
+        },
+        disconnectPadOutput(pad: number, dest: AudioNode) {
+            if (!Number.isInteger(pad) || pad < 0 || pad >= TOASTER_PAD_COUNT) {
+                return;
+            }
+            try {
+                node.disconnect(dest, pad + 1, 0);
+            } catch {
+                // The output edge may already have been removed by device teardown.
+            }
         },
         connect(dest: AudioNode) {
             node.connect(dest);
