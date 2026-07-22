@@ -14,9 +14,17 @@ const mocks = vi.hoisted(() => ({
     addDeviceToStrip: vi.fn(),
     updateDeviceParam: vi.fn(),
     updateDeviceBypass: vi.fn(),
+    loadPlugin: vi.fn(),
+    warn: vi.fn(),
     setSend: vi.fn(),
     wireSidechainRoutes: vi.fn(),
     soloMode: 'sip',
+}));
+
+vi.mock('#/infra/logger/appLogger', () => ({ logger: { warn: mocks.warn } }));
+
+vi.mock('#/modules/PluginHost/useCases', () => ({
+    loadPlugin: mocks.loadPlugin,
 }));
 
 vi.mock('#/modules/AudioEngine/useCases', () => ({
@@ -51,7 +59,7 @@ describe('projectTrackToLiveStrip', () => {
         applySoloLogic({ resetSavedGains: true, applyActions: false });
     });
 
-    it('projects the current owned track in device-chain order and wires sidechains last', () => {
+    it('projects the current owned track in device-chain order and wires sidechains last', async () => {
         const track = createTrack({ id: 'audio-1', name: 'Audio', kind: 'audio' });
         track.gain = 0.75;
         track.pan = -0.25;
@@ -80,12 +88,31 @@ describe('projectTrackToLiveStrip', () => {
         expect(mocks.setTrackPan).toHaveBeenCalledWith('audio-1', -0.25);
         expect(mocks.setTrackMute).toHaveBeenCalledWith('audio-1', false);
         expect(mocks.addDeviceToStrip.mock.calls[0]).toEqual(['audio-1', 'device-1', 'external-plugin']);
+        expect(mocks.loadPlugin).not.toHaveBeenCalled();
         expect(mocks.updateDeviceParam).toHaveBeenNthCalledWith(1, 'audio-1', 'device-1', 'feedback', 0.6);
         expect(mocks.updateDeviceParam).toHaveBeenNthCalledWith(2, 'audio-1', 'device-1', 'mix', 0.3);
         expect(mocks.updateDeviceBypass).toHaveBeenCalledWith('audio-1', 'device-1', true);
         expect(mocks.setSend).toHaveBeenCalledWith('audio-1', 'bus-1', 0.4, true);
         expect(mocks.wireSidechainRoutes.mock.invocationCallOrder[0] ?? 0).toBeGreaterThan(
             mocks.updateDeviceBypass.mock.invocationCallOrder[0] ?? 0
+        );
+
+        vi.clearAllMocks();
+        const loadFailure = new Error('load failed');
+        mocks.loadPlugin.mockRejectedValueOnce(loadFailure);
+        projectTrackToLiveStrip({ trackId: track.id, activateDormantExternalPlugins: true });
+
+        expect(mocks.addDeviceToStrip).toHaveBeenCalledWith(
+            'audio-1',
+            'device-1',
+            'external-plugin',
+            'persisted-native-instance'
+        );
+        expect(mocks.loadPlugin).toHaveBeenCalledWith('persisted-native-plugin', 'persisted-native-instance');
+        await vi.waitFor(() =>
+            expect(mocks.warn).toHaveBeenCalledWith(
+                'Failed to load external plugin persisted-native-plugin for instance persisted-native-instance: Error: load failed'
+            )
         );
     });
 

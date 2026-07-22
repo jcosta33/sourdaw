@@ -527,6 +527,7 @@ export type AppAction =
     | { type: 'saveTrackTemplate'; payload: { trackId: string; name: string; category: string } }
     | { type: 'loadTrackTemplate'; payload: { templateId: string } }
     | { type: 'deleteTrackTemplate'; payload: { templateId: string } }
+    | { type: 'createProjectFromTemplate'; payload: { templateId: string } }
     | {
           type: 'createVcaGroup';
           payload: {
@@ -724,6 +725,8 @@ export type ActionHandler<Action extends AppAction = AppAction> = {
 export type ExecuteOptions = {
     groupId?: string;
     groupLabel?: string;
+    /** Recheck transient authority after queued CRDT work completes and before dispatch begins. */
+    shouldExecute?: () => boolean;
     source?: 'manual' | 'prompt' | 'voice' | 'ai';
     /** When true, skip pushing an undo entry and action history entry.
      *  Use this when the caller manages batch undo externally (e.g. executeDsoEdit). */
