@@ -1,0 +1,39 @@
+src/modules/TimelineEditor/presentations/views/Timeline/ChordTrackLane.tsx
+  s_ac9b259eab20ba::t_8e97bc5c0c708b 9-17,24,26,99-111,116,118-119,122-125,129-160
+  s_ac9b259eab20ba::t_39ba8ca79bb429 361,363-368,379,393,395-397,403-412
+  s_ac9b259eab20ba::t_55397bdb889a35 179,181-182,184-194,196-197,200-208,211-213,216,218-241,244-245,247-248
+  s_ac9b259eab20ba::t_af06be3c0677b1 246
+  s_ac9b259eab20ba::t_18828c07c1680f 180,183
+  s_ac9b259eab20ba::t_d943ae7853ce6c 272-307,310-316,323-326,341
+  s_ac9b259eab20ba::t_fd15944e3ca2e7 329-333,470-471,481,483,505,507-513,515,533,535-541,543,553,555-558,560
+  s_ac9b259eab20ba::t_b059d7f0b48e38 416-417,427-428,431,440-447,453
+  s_ac9b259eab20ba::t_1d58fbd291f567 161
+src/modules/TimelineEditor/presentations/views/Timeline/__tests__/ChordTrackLane.spec.tsx
+  s_ac9b259eab20ba::t_69c0a35de25ed2 87,90,92,94
+  s_ac9b259eab20ba::t_b3e02921837661 127
+  s_ac9b259eab20ba::t_af06be3c0677b1 37-40,51,104,111,123,139,144,149,177,200,207
+  s_ac9b259eab20ba::t_8e3d7fc5d796a2 126
+  s_ac9b259eab20ba::t_f73686118c3ad1 12-14
+  s_ac9b259eab20ba::t_e2e49da73f83f2 152-154,156-158,160-162,165-176,178-199,201-205,209-213,215-217,219-220,222-253,255-256
+  s_ac9b259eab20ba::t_859304276b799e 1,41-47,138,143,148,206,214,221
+  s_ac9b259eab20ba::t_288e29eaefd080 140,145,208,218
+  s_ac9b259eab20ba::t_5e6dae7d198686 16-19,23-35
+  s_ac9b259eab20ba::t_6e95d15c358a56 15
+  s_ac9b259eab20ba::t_6d304ca4545a9e 36
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "3a11fbb58cd4ca937f3eb72eeaa7d80ffde2fc33",
+  "prompts": {},
+  "sessions": {
+    "s_ac9b259eab20ba": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8699-3865-7842-8c54-afbac6cfd266",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
