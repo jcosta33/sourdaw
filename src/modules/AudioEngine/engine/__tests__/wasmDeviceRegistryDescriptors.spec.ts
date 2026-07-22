@@ -80,6 +80,7 @@ vi.mock('#/infra/logger/appLogger', () => ({
 
 type RegistryAudioContext = ReturnType<typeof createMockAudioContext> & AudioContext;
 type RegistryAudioWorkletNode = ReturnType<typeof createMockAudioNode<'audio-worklet'>> & AudioWorkletNode;
+type RegistryGainNode = ReturnType<typeof createMockAudioNode<'gain'>> & GainNode;
 
 function makeContext(): AudioContext {
     return createMockAudioContext() as RegistryAudioContext;
@@ -87,6 +88,10 @@ function makeContext(): AudioContext {
 
 function makeWorkletNode(): AudioWorkletNode {
     return createMockAudioNode('audio-worklet') as RegistryAudioWorkletNode;
+}
+
+function makeGainNode(): GainNode {
+    return createMockAudioNode('gain') as RegistryGainNode;
 }
 
 function createDeps(overrides?: Partial<WasmDeviceCreateDeps>): WasmDeviceCreateDeps {
@@ -134,6 +139,7 @@ describe('wasmDeviceRegistry descriptors', () => {
         function makeToasterResult(): ToasterNodeResult {
             return {
                 workletNode: makeWorkletNode(),
+                outputNode: makeGainNode(),
                 noteOn: vi.fn(),
                 noteOff: vi.fn(),
                 scheduleHit: vi.fn(),
@@ -142,6 +148,7 @@ describe('wasmDeviceRegistry descriptors', () => {
                 setFillActive: vi.fn(),
                 setParam: vi.fn(),
                 setPadParam: vi.fn(),
+                setPadDryRouted: vi.fn(),
                 setBypass: vi.fn(),
                 connectPadOutput: vi.fn(),
                 disconnectPadOutput: vi.fn(),
@@ -175,12 +182,16 @@ describe('wasmDeviceRegistry descriptors', () => {
             expect(emitDeviceLoaded).toHaveBeenCalledWith({ deviceId: 'toast-1', deviceType: 'toaster' });
             const loaded = lastLoadedNode(deps.onLoaded);
             expect(loaded.deviceId).toBe('toast-1');
-            expect(loaded.inputNode).toBe(result.workletNode);
+            expect(loaded.inputNode).toBe(result.outputNode);
+            expect(loaded.outputNode).toBe(result.outputNode);
+            expect(loaded.nodes).toEqual([result.outputNode, result.workletNode]);
+            expect(loaded.isGenerator).toBe(true);
             expect(loaded.toasterControls?.ready).toBe(true);
             expect(loaded.toasterControls?.scheduleHit).toBe(result.scheduleHit);
             expect(loaded.toasterControls?.cancelScheduled).toBe(result.cancelScheduled);
             expect(loaded.toasterControls?.allNotesOff).toBe(result.allNotesOff);
             expect(loaded.toasterControls?.setFillActive).toBe(result.setFillActive);
+            expect(loaded.toasterControls?.setPadDryRouted).toBe(result.setPadDryRouted);
             expect(loaded.toasterControls?.connectPadOutput).toBe(result.connectPadOutput);
             expect(loaded.toasterControls?.disconnectPadOutput).toBe(result.disconnectPadOutput);
 
