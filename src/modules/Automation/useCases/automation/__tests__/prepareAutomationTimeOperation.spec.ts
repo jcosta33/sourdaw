@@ -292,7 +292,6 @@ describe('prepareAutomationTimeOperation', () => {
 
         expect(transaction.revert()).toBe(false);
         expect(transaction.apply()).toBe(true);
-        const appliedState = mocks.state.value;
         expect(transaction.revert()).toBe(true);
         expect(mocks.state.value).toBe(preparedState);
         expect(transaction.revert()).toBe(false);
@@ -305,10 +304,11 @@ describe('prepareAutomationTimeOperation', () => {
         expect(staleRevertTransaction.apply()).toBe(true);
         const interveningState: AutomationStoreState = { lanes: [lane({ points: [point(12, 0.9)] })] };
         mocks.state.value = interveningState;
+        const callsBeforeStaleRevert = mocks.set.mock.calls.length;
 
         expect(staleRevertTransaction.revert()).toBe(false);
         expect(mocks.state.value).toBe(interveningState);
-        expect(mocks.set).toHaveBeenCalledWith(appliedState);
+        expect(mocks.set).toHaveBeenCalledTimes(callsBeforeStaleRevert);
     });
 
     it('closes after apply or revert publication failure without inventing inverse state', () => {
