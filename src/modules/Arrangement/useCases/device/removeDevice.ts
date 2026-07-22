@@ -8,10 +8,12 @@ import { getTrackEligibility, shouldCreateLiveTrackStrip } from '../../stores/tr
 
 import type { Device, Track } from '../../models/Track';
 
-export function removeDevice(deviceId: string): void {
+type RemoveDeviceOutcome = 'written' | 'missing' | 'conflict';
+
+export function removeDevice(deviceId: string): RemoveDeviceOutcome {
     const state = getTrackState();
     if (!state) {
-        return;
+        return 'missing';
     }
 
     let target: { track: Track; device: Device } | null = null;
@@ -21,19 +23,19 @@ export function removeDevice(deviceId: string): void {
                 continue;
             }
             if (target) {
-                return;
+                return 'conflict';
             }
             target = { track, device };
         }
     }
     if (!target) {
-        return;
+        return 'missing';
     }
 
     const { track, device } = target;
     const matchingOwners = state.tracks.filter((candidate) => candidate.id === track.id);
     if (matchingOwners.length !== 1) {
-        return;
+        return 'conflict';
     }
 
     const remainingDevices = track.devices.filter((candidate) => candidate.id !== deviceId);
@@ -86,4 +88,5 @@ export function removeDevice(deviceId: string): void {
             logger.warn(`Failed to unload external plugin instance ${instanceId}: ${String(error)}`);
         }
     }
+    return 'written';
 }

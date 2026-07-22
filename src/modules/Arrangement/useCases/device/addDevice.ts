@@ -60,7 +60,7 @@ export function addDevice(trackId: string, deviceType: string): Device | null {
     }
 
     if (activatesFolderStrip) {
-        projectTrackToLiveStrip({ trackId });
+        projectTrackToLiveStrip({ trackId, activateDormantExternalPlugins: true });
         return device;
     }
 

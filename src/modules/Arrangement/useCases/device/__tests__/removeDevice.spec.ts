@@ -41,6 +41,18 @@ vi.mock('#/modules/PluginHost/useCases', async (importOriginal) => ({
     unloadPlugin: mocks.unloadPlugin,
 }));
 
+function createExternalDevice(id = 'external-1', instanceId = 'instance-1'): Device {
+    return {
+        id,
+        name: 'External',
+        type: 'external-plugin',
+        bypassed: false,
+        parameterValues: {},
+        externalPluginId: 'plugin-1',
+        externalInstanceId: instanceId,
+    };
+}
+
 describe('removeDevice', () => {
     beforeEach(() => {
         vi.clearAllMocks();
@@ -53,7 +65,7 @@ describe('removeDevice', () => {
             selectedTrackId: null,
         });
 
-        removeDevice('d1');
+        expect(removeDevice('d1')).toBe('written');
 
         expect(mocks.mapAllTracks.mock.invocationCallOrder[0]).toBeLessThan(
             mocks.removeDeviceFromStrip.mock.invocationCallOrder[0]!
@@ -73,7 +85,7 @@ describe('removeDevice', () => {
                 {
                     id: 't1',
                     kind: 'audio',
-                    devices: [{ id: 'd1', type: 'external-plugin', externalInstanceId: 'inst1' }],
+                    devices: [createExternalDevice('d1', 'inst1')],
                 } as unknown as Track,
             ],
             selectedTrackId: null,
@@ -87,15 +99,7 @@ describe('removeDevice', () => {
     it('removes the strip after removing the last Toaster from a folder', () => {
         const folder = createTrack({ id: 'folder-1', name: 'Folder', kind: 'folder' });
         folder.devices = [
-            {
-                id: 'external-1',
-                name: 'External',
-                type: 'external-plugin',
-                bypassed: false,
-                parameterValues: {},
-                externalPluginId: 'plugin-1',
-                externalInstanceId: 'instance-1',
-            },
+            createExternalDevice(),
             { id: 'toaster-1', name: 'Toaster', type: 'toaster', bypassed: false, parameterValues: {} },
         ];
         mocks.getTrackState.mockReturnValue({ tracks: [folder], selectedTrackId: null });
@@ -113,16 +117,7 @@ describe('removeDevice', () => {
 
     it('does not unload a removed external plugin from a never-live ordinary folder', () => {
         const folder = createTrack({ id: 'folder-1', name: 'Folder', kind: 'folder' });
-        folder.devices = [
-            {
-                id: 'external-1',
-                name: 'External',
-                type: 'external-plugin',
-                bypassed: false,
-                parameterValues: {},
-                externalInstanceId: 'instance-1',
-            },
-        ];
+        folder.devices = [createExternalDevice()];
         mocks.getTrackState.mockReturnValue({ tracks: [folder], selectedTrackId: null });
 
         removeDevice('external-1');
@@ -151,15 +146,7 @@ describe('removeDevice', () => {
         const folder = createTrack({ id: 'folder-1', name: 'Folder', kind: 'folder' });
         folder.devices = [
             { id: 'toaster-1', name: 'Toaster', type: 'toaster', bypassed: false, parameterValues: {} },
-            {
-                id: 'external-1',
-                name: 'External',
-                type: 'external-plugin',
-                bypassed: false,
-                parameterValues: {},
-                externalPluginId: 'plugin-1',
-                externalInstanceId: 'instance-1',
-            },
+            createExternalDevice(),
         ];
         mocks.getTrackState.mockReturnValue({ tracks: [folder], selectedTrackId: null });
 
@@ -178,7 +165,7 @@ describe('removeDevice', () => {
         second.devices = [{ id: 'duplicate', name: 'Second', type: 'delay', bypassed: false, parameterValues: {} }];
         mocks.getTrackState.mockReturnValue({ tracks: [first, second], selectedTrackId: null });
 
-        removeDevice('duplicate');
+        expect(removeDevice('duplicate')).toBe('conflict');
 
         expect(mocks.mapAllTracks).not.toHaveBeenCalled();
         expect(mocks.removeDeviceFromStrip).not.toHaveBeenCalled();
@@ -186,17 +173,18 @@ describe('removeDevice', () => {
         expect(mocks.unloadPlugin).not.toHaveBeenCalled();
     });
 
+    it('returns missing without truth or runtime cleanup', () => {
+        mocks.getTrackState.mockReturnValue({ tracks: [], selectedTrackId: null });
+
+        expect(removeDevice('missing')).toBe('missing');
+        expect(mocks.mapAllTracks).not.toHaveBeenCalled();
+        expect(mocks.removeDeviceFromStrip).not.toHaveBeenCalled();
+    });
+
     it('commits truth before independently reporting device, strip, and host cleanup failures', async () => {
         const folder = createTrack({ id: 'folder-1', name: 'Folder', kind: 'folder' });
         folder.devices = [
-            {
-                id: 'external-1',
-                name: 'External',
-                type: 'external-plugin',
-                bypassed: false,
-                parameterValues: {},
-                externalInstanceId: 'instance-1',
-            },
+            createExternalDevice(),
             { id: 'toaster-1', name: 'Toaster', type: 'toaster', bypassed: false, parameterValues: {} },
         ];
         mocks.getTrackState.mockReturnValue({ tracks: [folder], selectedTrackId: null });
@@ -221,16 +209,7 @@ describe('removeDevice', () => {
     it('permits dormant VCA device and plugin cleanup', () => {
         const track = createTrack({ id: 'vca-1', name: 'VCA', kind: 'audio' });
         Object.defineProperty(track, 'kind', { value: 'vca' });
-        track.devices = [
-            {
-                id: 'd1',
-                name: 'Legacy plugin',
-                type: 'external-plugin',
-                bypassed: false,
-                parameterValues: {},
-                externalInstanceId: 'inst1',
-            },
-        ];
+        track.devices = [createExternalDevice('d1', 'inst1')];
         mocks.getTrackState.mockReturnValue({ tracks: [track], selectedTrackId: null });
 
         removeDevice('d1');

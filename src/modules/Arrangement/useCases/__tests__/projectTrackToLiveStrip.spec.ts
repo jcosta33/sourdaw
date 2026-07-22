@@ -14,9 +14,14 @@ const mocks = vi.hoisted(() => ({
     addDeviceToStrip: vi.fn(),
     updateDeviceParam: vi.fn(),
     updateDeviceBypass: vi.fn(),
+    loadPlugin: vi.fn(),
     setSend: vi.fn(),
     wireSidechainRoutes: vi.fn(),
     soloMode: 'sip',
+}));
+
+vi.mock('#/modules/PluginHost/useCases', () => ({
+    loadPlugin: mocks.loadPlugin,
 }));
 
 vi.mock('#/modules/AudioEngine/useCases', () => ({
@@ -80,6 +85,7 @@ describe('projectTrackToLiveStrip', () => {
         expect(mocks.setTrackPan).toHaveBeenCalledWith('audio-1', -0.25);
         expect(mocks.setTrackMute).toHaveBeenCalledWith('audio-1', false);
         expect(mocks.addDeviceToStrip.mock.calls[0]).toEqual(['audio-1', 'device-1', 'external-plugin']);
+        expect(mocks.loadPlugin).not.toHaveBeenCalled();
         expect(mocks.updateDeviceParam).toHaveBeenNthCalledWith(1, 'audio-1', 'device-1', 'feedback', 0.6);
         expect(mocks.updateDeviceParam).toHaveBeenNthCalledWith(2, 'audio-1', 'device-1', 'mix', 0.3);
         expect(mocks.updateDeviceBypass).toHaveBeenCalledWith('audio-1', 'device-1', true);
@@ -87,6 +93,17 @@ describe('projectTrackToLiveStrip', () => {
         expect(mocks.wireSidechainRoutes.mock.invocationCallOrder[0] ?? 0).toBeGreaterThan(
             mocks.updateDeviceBypass.mock.invocationCallOrder[0] ?? 0
         );
+
+        vi.clearAllMocks();
+        projectTrackToLiveStrip({ trackId: track.id, activateDormantExternalPlugins: true });
+
+        expect(mocks.addDeviceToStrip).toHaveBeenCalledWith(
+            'audio-1',
+            'device-1',
+            'external-plugin',
+            'persisted-native-instance'
+        );
+        expect(mocks.loadPlugin).toHaveBeenCalledWith('persisted-native-plugin', 'persisted-native-instance');
     });
 
     it('keeps solo-safe and solo-bus upstream tracks audible while muting unrelated tracks', () => {

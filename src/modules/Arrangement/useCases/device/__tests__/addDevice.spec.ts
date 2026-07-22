@@ -100,22 +100,10 @@ describe('addDevice', () => {
                     id: 'folder-1',
                     kind: 'folder',
                     devices: [
-                        {
-                            id: 'reverb-1',
-                            name: 'Reverb',
-                            type: 'p1',
-                            bypassed: true,
-                            parameterValues: { wet: 0.25, room: 0.5 },
-                        },
-                        {
-                            id: 'faust-1',
-                            name: 'Faust Delay',
-                            type: 'faust-delay',
-                            parameterValues: { feedback: 0.4 },
-                        },
+                        { id: 'reverb-1', type: 'p1', bypassed: true, parameterValues: { wet: 0.25, room: 0.5 } },
+                        { id: 'faust-1', type: 'faust-delay', parameterValues: { feedback: 0.4 } },
                         {
                             id: 'external-1',
-                            name: 'External',
                             type: 'external-plugin',
                             parameterValues: { mix: 0.8 },
                             externalPluginId: 'plugin-1',
@@ -132,7 +120,10 @@ describe('addDevice', () => {
         const result = addDevice('folder-1', 'Toaster');
 
         expect(result).toMatchObject({ type: 'toaster' });
-        expect(mocks.projectTrackToLiveStrip).toHaveBeenCalledWith({ trackId: 'folder-1' });
+        expect(mocks.projectTrackToLiveStrip).toHaveBeenCalledWith({
+            trackId: 'folder-1',
+            activateDormantExternalPlugins: true,
+        });
         expect(mocks.addDeviceToStrip).not.toHaveBeenCalled();
         expect(mocks.updateDeviceParam).not.toHaveBeenCalled();
         expect(mocks.compileFaustDSP).not.toHaveBeenCalled();
