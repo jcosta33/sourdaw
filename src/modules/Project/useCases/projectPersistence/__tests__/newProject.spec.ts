@@ -3,7 +3,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { Container } from '#/infra/di/Container';
 import { addTrack } from '#/modules/Arrangement/useCases';
 import { clearCachedAudioBuffers, resetAudioGraph } from '#/modules/AudioEngine/useCases';
-import { clearUndoHistory, executeAppAction } from '#/modules/Command/useCases';
+import { clearUndoHistory } from '#/modules/Command/useCases';
 import { createCrdtProject, projectActionHistoryToStore, startCrdtAutoSave } from '#/modules/CrdtDocument/useCases';
 import { stopPlayback } from '#/modules/Transport/useCases';
 
@@ -63,7 +63,6 @@ vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => ({
 
 vi.mock('#/modules/Command/useCases', () => ({
     clearUndoHistory: vi.fn(),
-    executeAppAction: vi.fn().mockResolvedValue(undefined),
 }));
 
 vi.mock('../../../repositories/project/removeProjectJson', () => ({
@@ -93,31 +92,11 @@ describe('newProject injectable', () => {
         expect(resetModuleStoresToDefault).toHaveBeenCalledWith({ createNewMidiProbabilitySeed: true });
         expect(createCrdtProject).toHaveBeenCalledWith('Test');
         expect(projectActionHistoryToStore).toHaveBeenCalledTimes(1);
-        expect(executeAppAction).toHaveBeenNthCalledWith(1, {
-            type: 'toggleChordTrack',
-            payload: { enabled: false },
-        });
-        expect(executeAppAction).toHaveBeenNthCalledWith(2, { type: 'clearChordTrack' });
         expect(addTrack).toHaveBeenCalledWith({ name: 'Master', kind: 'master', select: false });
         expect(removeProjectJson).toHaveBeenCalledTimes(1);
         expect(clearCachedAudioBuffers).toHaveBeenCalledTimes(1);
         expect(clearUndoHistory).toHaveBeenCalledTimes(1);
         expect(startCrdtAutoSave).toHaveBeenCalledTimes(1);
-
-        const firstActionOrder = vi.mocked(executeAppAction).mock.invocationCallOrder[0];
-        const secondActionOrder = vi.mocked(executeAppAction).mock.invocationCallOrder[1];
-        const createDocumentOrder = vi.mocked(createCrdtProject).mock.invocationCallOrder[0];
-        const resetStoresOrder = vi.mocked(resetModuleStoresToDefault).mock.invocationCallOrder[0];
-        if (
-            firstActionOrder === undefined ||
-            secondActionOrder === undefined ||
-            createDocumentOrder === undefined ||
-            resetStoresOrder === undefined
-        ) {
-            throw new Error('expected project creation, chord actions, and store reset calls');
-        }
-        expect(firstActionOrder).toBeGreaterThan(createDocumentOrder);
-        expect(secondActionOrder).toBeLessThan(resetStoresOrder);
 
         const remove_project_json_order = vi.mocked(removeProjectJson).mock.invocationCallOrder[0];
         const clear_audio_buffers_order = vi.mocked(clearCachedAudioBuffers).mock.invocationCallOrder[0];

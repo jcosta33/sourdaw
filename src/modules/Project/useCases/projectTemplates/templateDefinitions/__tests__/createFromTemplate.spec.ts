@@ -4,6 +4,7 @@ import { createFromTemplate } from '../createFromTemplate';
 
 const mocks = vi.hoisted(() => ({
     createPopSongTemplate: vi.fn(),
+    ensureTrackStrips: vi.fn(),
     executeAppAction: vi.fn(),
     newProject: vi.fn(),
     resetAudioGraph: vi.fn(),
@@ -19,6 +20,7 @@ vi.mock('#/modules/Command/useCases', () => ({
 }));
 
 vi.mock('#/modules/Transport/useCases', () => ({
+    ensureTrackStrips: mocks.ensureTrackStrips,
     stopPlayback: mocks.stopPlayback,
 }));
 
@@ -68,12 +70,23 @@ describe('createFromTemplate', () => {
         mocks.executeAppAction.mockRejectedValue(new Error('device setup failed'));
 
         await expect(createFromTemplate('pop-song')).resolves.toBe(false);
+        expect(mocks.resetAudioGraph).toHaveBeenCalledTimes(2);
+        expect(mocks.ensureTrackStrips).toHaveBeenCalledOnce();
+
+        const recoveryResetOrder = mocks.resetAudioGraph.mock.invocationCallOrder[1];
+        const rebuildOrder = mocks.ensureTrackStrips.mock.invocationCallOrder[0];
+        if (recoveryResetOrder === undefined || rebuildOrder === undefined) {
+            throw new Error('expected graph recovery calls');
+        }
+        expect(rebuildOrder).toBeGreaterThan(recoveryResetOrder);
     });
 
     it('lets project-replacement templates own the CRDT authority swap', async () => {
         await expect(createFromTemplate('empty')).resolves.toBe(true);
 
         expect(mocks.newProject).toHaveBeenCalledOnce();
+        expect(mocks.stopPlayback).not.toHaveBeenCalled();
+        expect(mocks.resetAudioGraph).not.toHaveBeenCalled();
         expect(mocks.executeAppAction).not.toHaveBeenCalled();
     });
 });
