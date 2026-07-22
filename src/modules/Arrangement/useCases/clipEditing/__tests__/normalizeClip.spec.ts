@@ -11,13 +11,14 @@ type CachedBuffer = {
     readonly marker: 'cached-buffer';
 };
 
-type UpdateClipFn = (clip_id: string, updater: (clip: Clip) => Clip) => void;
+type UpdateClipFn = (clip_id: string, updater: (clip: Clip) => Clip) => boolean;
 
 const mocks = vi.hoisted(() => ({
     computeNormalizationScale:
         vi.fn<(buffer: CachedBuffer, mode: NormalizationMode, target_db?: number) => number | null>(),
     getCachedAudioBuffer: vi.fn<(input: { bufferId: string }) => CachedBuffer | null>(),
     getTrackState: vi.fn<() => TrackState | null>(),
+    resolveEligibleClipWriteTarget: vi.fn(),
     updateClip: vi.fn<UpdateClipFn>(),
 }));
 
@@ -27,6 +28,10 @@ vi.mock('../../../repositories/track/getTrackState', () => ({
 
 vi.mock('../../../repositories/track/updateClip', () => ({
     updateClip: mocks.updateClip,
+}));
+
+vi.mock('../../../stores/resolveEligibleClipWriteTarget', () => ({
+    resolveEligibleClipWriteTarget: mocks.resolveEligibleClipWriteTarget,
 }));
 
 vi.mock('../../../transformers/clipDspTransformers', () => ({
@@ -48,6 +53,12 @@ function create_track_state(clip: Clip): TrackState {
 describe('normalizeClip', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        mocks.resolveEligibleClipWriteTarget.mockReturnValue({
+            status: 'eligible',
+            trackId: 'track-1',
+            clipId: 'clip-1',
+        });
+        mocks.updateClip.mockReturnValue(true);
     });
 
     it('should read the source buffer through AudioEngine and update gain by the normalization scale', () => {
@@ -61,8 +72,9 @@ describe('normalizeClip', () => {
         mocks.getCachedAudioBuffer.mockReturnValue(cached_buffer);
         mocks.computeNormalizationScale.mockReturnValue(1.75);
 
-        normalizeClip('clip-1', 'rms', -18);
+        const didWrite = normalizeClip('clip-1', 'rms', -18);
 
+        expect(didWrite).toBe(true);
         expect(mocks.getCachedAudioBuffer).toHaveBeenCalledWith({ bufferId: 'buffer-1' });
         expect(mocks.computeNormalizationScale).toHaveBeenCalledWith(cached_buffer, 'rms', -18);
         expect(mocks.updateClip).toHaveBeenCalledTimes(1);
@@ -88,8 +100,9 @@ describe('normalizeClip', () => {
         mocks.getTrackState.mockReturnValue(create_track_state(clip));
         mocks.getCachedAudioBuffer.mockReturnValue(null);
 
-        normalizeClip('clip-1');
+        const didWrite = normalizeClip('clip-1');
 
+        expect(didWrite).toBe(false);
         expect(mocks.getCachedAudioBuffer).toHaveBeenCalledWith({ bufferId: 'missing-buffer' });
         expect(mocks.computeNormalizationScale).not.toHaveBeenCalled();
         expect(mocks.updateClip).not.toHaveBeenCalled();
@@ -106,10 +119,24 @@ describe('normalizeClip', () => {
         mocks.getCachedAudioBuffer.mockReturnValue(cached_buffer);
         mocks.computeNormalizationScale.mockReturnValue(null);
 
-        normalizeClip('clip-1');
+        const didWrite = normalizeClip('clip-1');
 
+        expect(didWrite).toBe(false);
         expect(mocks.getCachedAudioBuffer).toHaveBeenCalledWith({ bufferId: 'buffer-1' });
         expect(mocks.computeNormalizationScale).toHaveBeenCalledWith(cached_buffer, 'peak', undefined);
+        expect(mocks.updateClip).not.toHaveBeenCalled();
+    });
+
+    it('rejects an ineligible owner before buffer lookup or normalization', () => {
+        const clip = ClipDummy.create({ id: 'clip-1', audioBufferId: 'buffer-1' });
+        mocks.getTrackState.mockReturnValue(create_track_state(clip));
+        mocks.resolveEligibleClipWriteTarget.mockReturnValue({ status: 'ineligible' });
+
+        const didWrite = normalizeClip('clip-1');
+
+        expect(didWrite).toBe(false);
+        expect(mocks.getCachedAudioBuffer).not.toHaveBeenCalled();
+        expect(mocks.computeNormalizationScale).not.toHaveBeenCalled();
         expect(mocks.updateClip).not.toHaveBeenCalled();
     });
 });

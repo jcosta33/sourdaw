@@ -8,6 +8,7 @@ const mocks = vi.hoisted(() => ({
     getCachedAudioBuffer: vi.fn(),
     cacheAudioBuffer: vi.fn(),
     clearClipPitchContour: vi.fn(),
+    resolveEligibleClipWriteTarget: vi.fn(),
 }));
 
 vi.mock('#/modules/Arrangement/repositories/track/getTrackState', () => ({
@@ -27,11 +28,21 @@ vi.mock('#/modules/Knead/useCases', () => ({
     clearClipPitchContour: mocks.clearClipPitchContour,
 }));
 
+vi.mock('../../../stores/resolveEligibleClipWriteTarget', () => ({
+    resolveEligibleClipWriteTarget: mocks.resolveEligibleClipWriteTarget,
+}));
+
 describe('reverseClip', () => {
     let mockCtx: any;
 
     beforeEach(() => {
         vi.clearAllMocks();
+        mocks.resolveEligibleClipWriteTarget.mockReturnValue({
+            status: 'eligible',
+            trackId: 'track-1',
+            clipId: 'c1',
+        });
+        mocks.updateClip.mockReturnValue(true);
 
         mockCtx = {
             createBuffer: vi.fn(),
@@ -52,7 +63,7 @@ describe('reverseClip', () => {
 
         const mockClip = { id: 'c1', type: 'audio', audioBufferId: 'buf1', name: 'Sample' };
         mocks.getTrackState.mockReturnValue({
-            tracks: [{ clips: [mockClip] }],
+            tracks: [{ id: 'track-1', clips: [mockClip] }],
         });
 
         const originalData = new Float32Array(100);
@@ -75,14 +86,18 @@ describe('reverseClip', () => {
         };
         mockCtx.createBuffer.mockReturnValue(reversedBuffer);
 
-        reverseClip('c1');
+        const didWrite = reverseClip('c1');
 
+        expect(didWrite).toBe(true);
         expect(mocks.getCachedAudioBuffer).toHaveBeenCalledWith({ bufferId: 'buf1' });
         expect(mocks.cacheAudioBuffer).toHaveBeenCalledWith({
             buffer: reversedBuffer,
             bufferId: 'reversed-buf1-12345',
         });
         expect(mocks.updateClip).toHaveBeenCalledWith('c1', expect.any(Function));
+        expect(mocks.updateClip.mock.invocationCallOrder[0]).toBeLessThan(
+            mocks.cacheAudioBuffer.mock.invocationCallOrder[0]!
+        );
 
         const call = mocks.updateClip.mock.calls[0];
         if (!call) {
@@ -101,7 +116,7 @@ describe('reverseClip', () => {
     it('clears the clip pitch contour after a successful reverse because the audio changed', () => {
         const mockClip = { id: 'c1', type: 'audio', audioBufferId: 'buf1', name: 'Sample' };
         mocks.getTrackState.mockReturnValue({
-            tracks: [{ clips: [mockClip] }],
+            tracks: [{ id: 'track-1', clips: [mockClip] }],
         });
         mocks.getCachedAudioBuffer.mockReturnValue({
             numberOfChannels: 1,
@@ -122,7 +137,7 @@ describe('reverseClip', () => {
 
     it('keeps the pitch contour when the clip cannot be reversed', () => {
         mocks.getTrackState.mockReturnValue({
-            tracks: [{ clips: [{ id: 'c1', type: 'midi' }] }],
+            tracks: [{ id: 'track-1', clips: [{ id: 'c1', type: 'midi' }] }],
         });
 
         reverseClip('c1');
@@ -130,12 +145,51 @@ describe('reverseClip', () => {
         expect(mocks.clearClipPitchContour).not.toHaveBeenCalled();
     });
 
+    it('does not publish cache or contour effects when the eligible update is not committed', () => {
+        const mockClip = { id: 'c1', type: 'audio', audioBufferId: 'buf1', name: 'Sample' };
+        mocks.getTrackState.mockReturnValue({
+            tracks: [{ id: 'track-1', clips: [mockClip] }],
+        });
+        mocks.getCachedAudioBuffer.mockReturnValue({
+            numberOfChannels: 1,
+            length: 4,
+            sampleRate: 44100,
+            getChannelData: vi.fn(() => new Float32Array(4)),
+        });
+        mockCtx.createBuffer.mockReturnValue({
+            getChannelData: vi.fn(() => new Float32Array(4)),
+        });
+        mocks.updateClip.mockReturnValue(false);
+
+        const didWrite = reverseClip('c1');
+
+        expect(didWrite).toBe(false);
+        expect(mocks.cacheAudioBuffer).not.toHaveBeenCalled();
+        expect(mocks.clearClipPitchContour).not.toHaveBeenCalled();
+    });
+
     it('bails if clip is not found or not audio', () => {
         mocks.getTrackState.mockReturnValue({
-            tracks: [{ clips: [{ id: 'c1', type: 'midi' }] }],
+            tracks: [{ id: 'track-1', clips: [{ id: 'c1', type: 'midi' }] }],
         });
 
         reverseClip('c1');
         expect(mocks.cacheAudioBuffer).not.toHaveBeenCalled();
+    });
+
+    it('rejects an ineligible owner before Web Audio, cache, update, or contour effects', () => {
+        mocks.resolveEligibleClipWriteTarget.mockReturnValue({ status: 'ineligible' });
+        mocks.getTrackState.mockReturnValue({
+            tracks: [{ id: 'track-1', clips: [{ id: 'c1', type: 'audio', audioBufferId: 'buf1', name: 'Sample' }] }],
+        });
+
+        const didWrite = reverseClip('c1');
+
+        expect(didWrite).toBe(false);
+        expect(mocks.getCachedAudioBuffer).not.toHaveBeenCalled();
+        expect(mockCtx.createBuffer).not.toHaveBeenCalled();
+        expect(mocks.cacheAudioBuffer).not.toHaveBeenCalled();
+        expect(mocks.updateClip).not.toHaveBeenCalled();
+        expect(mocks.clearClipPitchContour).not.toHaveBeenCalled();
     });
 });
