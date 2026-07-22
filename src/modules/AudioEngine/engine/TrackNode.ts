@@ -7,7 +7,7 @@ import { createBuiltinDeviceNode } from '../useCases/deviceResolvers/createBuilt
 import { createNativePluginBridgeNode } from './NativePluginBridgeNode';
 import { findWasmDescriptor } from './wasmDeviceRegistry';
 
-import type { TrackChannelStrip, BuiltinDeviceNode, SendNode } from '../models/AudioEngineState';
+import type { TrackChannelStrip, BuiltinDeviceNode, DeviceController, SendNode } from '../models/AudioEngineState';
 
 export type TrackNodeDeps = {
     context: AudioContext;
@@ -22,6 +22,13 @@ export type TrackNodeDeps = {
     getAdjustmentBusForTrack?: (trackId: string) => AudioNode | null;
 };
 
+type PendingDeviceLoad = {
+    bypassed?: boolean;
+    parameterWrites: Array<[string, number]>;
+    loadPromise?: Promise<unknown>;
+    resolved: boolean;
+};
+
 export class TrackNode {
     public strip: TrackChannelStrip;
     /** When SAB is unavailable, getPeakLevel falls back to AnalyserNode time-domain data. */
@@ -31,6 +38,8 @@ export class TrackNode {
     // disconnect/reconnect sweeps. `_rebuildScheduled` coalesces them so at
     // most one rebuild runs per microtask turn.
     private _rebuildScheduled = false;
+    private _disposed = false;
+    private readonly _pendingDeviceLoads = new Map<string, PendingDeviceLoad>();
 
     constructor(
         public trackId: string,
@@ -234,17 +243,23 @@ export class TrackNode {
 
     /** Coalesce concurrent rebuild requests into a single microtask (§88.3). */
     public scheduleRebuildChain(): void {
-        if (this._rebuildScheduled) {
+        if (this._disposed || this._rebuildScheduled) {
             return;
         }
         this._rebuildScheduled = true;
         queueMicrotask(() => {
             this._rebuildScheduled = false;
+            if (this._disposed) {
+                return;
+            }
             this.rebuildChain();
         });
     }
 
     public rebuildChain(): void {
+        if (this._disposed) {
+            return;
+        }
         const s = this.strip;
         s.preFaderTap.disconnect();
         s.gainNode.disconnect();
@@ -297,13 +312,106 @@ export class TrackNode {
         this.reconnectSends();
     }
 
+    private createPlaceholderController(
+        deviceId: string,
+        pendingLoad: PendingDeviceLoad,
+        controller?: DeviceController
+    ): DeviceController {
+        return {
+            ...controller,
+            ready: false,
+            setParam: (name, value) => {
+                if (this._disposed || pendingLoad.resolved || this._pendingDeviceLoads.get(deviceId) !== pendingLoad) {
+                    return;
+                }
+                pendingLoad.parameterWrites.push([name, value]);
+            },
+        };
+    }
+
+    private registerPendingDeviceLoad(
+        deviceId: string,
+        pendingLoad: PendingDeviceLoad,
+        loadPromise: Promise<unknown>
+    ): void {
+        pendingLoad.loadPromise = loadPromise;
+        this._pendingDeviceLoads.set(deviceId, pendingLoad);
+        this.deps.pendingDevicePromises.add(loadPromise);
+        void loadPromise.finally(() => {
+            this.deps.pendingDevicePromises.delete(loadPromise);
+            if (this._pendingDeviceLoads.get(deviceId) === pendingLoad) {
+                this._pendingDeviceLoads.delete(deviceId);
+                pendingLoad.parameterWrites.length = 0;
+            }
+        });
+    }
+
+    private invalidatePendingDeviceLoad(deviceId: string): void {
+        const pendingLoad = this._pendingDeviceLoads.get(deviceId);
+        if (!pendingLoad) {
+            return;
+        }
+        this._pendingDeviceLoads.delete(deviceId);
+        pendingLoad.parameterWrites.length = 0;
+        if (pendingLoad.loadPromise) {
+            this.deps.pendingDevicePromises.delete(pendingLoad.loadPromise);
+        }
+    }
+
+    private completePendingDeviceLoad(
+        deviceId: string,
+        pendingLoad: PendingDeviceLoad,
+        finalDn: BuiltinDeviceNode
+    ): boolean {
+        const isCurrentLoad = this._pendingDeviceLoads.get(deviceId) === pendingLoad;
+        const index = this.strip.deviceNodes.findIndex((device) => device.deviceId === deviceId);
+        if (this._disposed || !isCurrentLoad || pendingLoad.resolved || index === -1) {
+            if (isCurrentLoad && !pendingLoad.resolved) {
+                this.invalidatePendingDeviceLoad(deviceId);
+            }
+            this.destroyRejectedDeviceNode(finalDn);
+            return false;
+        }
+
+        pendingLoad.resolved = true;
+        for (const [name, value] of pendingLoad.parameterWrites) {
+            finalDn.controller?.setParam(name, value);
+        }
+        if (pendingLoad.bypassed !== undefined) {
+            finalDn.controller?.setBypass?.(pendingLoad.bypassed);
+            finalDn.bypassed = pendingLoad.bypassed;
+        }
+        pendingLoad.parameterWrites.length = 0;
+        this.strip.deviceNodes[index] = finalDn;
+        this.scheduleRebuildChain();
+        return true;
+    }
+
+    private destroyRejectedDeviceNode(device: BuiltinDeviceNode): void {
+        if (device.dispose) {
+            device.dispose();
+        } else if (device.controller) {
+            device.controller.destroy?.();
+        }
+        for (const node of device.nodes) {
+            try {
+                node.disconnect();
+            } catch {
+                // A node may already be detached when a pending load resolves late.
+            }
+        }
+    }
+
     public addDevice(deviceId: string, deviceType: string, externalInstanceId?: string): void {
+        if (this._disposed) {
+            return;
+        }
         if (this.strip.deviceNodes.some((d) => d.deviceId === deviceId)) {
             logger.debug(`Device ${deviceId} already exists on track ${this.trackId}`);
             return;
         }
 
-        const { context, pendingDevicePromises } = this.deps;
+        const { context } = this.deps;
         let dn: BuiltinDeviceNode;
 
         if (deviceType === 'builtin-sidechain-compressor') {
@@ -334,6 +442,7 @@ export class TrackNode {
             // Native plugin bridge: uses SharedArrayBuffer for zero-copy audio transfer
             // between Web Audio and the Rust cpal audio thread.
             const loadingBypass = context.createGain();
+            const pendingLoad: PendingDeviceLoad = { parameterWrites: [], resolved: false };
             dn = {
                 deviceId,
                 type: deviceType,
@@ -342,15 +451,15 @@ export class TrackNode {
                 outputNode: loadingBypass,
             };
 
-            const pendingParams: Array<[string, number]> = [];
-            const loadingControls = {
-                setParam: (name: string, value: number) => {
-                    pendingParams.push([name, value]);
-                },
+            const loadingControls = this.createPlaceholderController(deviceId, pendingLoad, {
+                setParam: () => {},
                 setBypass: () => {},
                 destroy: () => {},
+            });
+            dn.nativeDspControls = {
+                setParam: loadingControls.setParam,
+                setBypass: (bypassed) => loadingControls.setBypass?.(bypassed),
             };
-            dn.nativeDspControls = loadingControls;
             dn.controller = loadingControls;
 
             const loadPromise = createNativePluginBridgeNode(
@@ -359,42 +468,26 @@ export class TrackNode {
                 0 // engine plugin ID — will be assigned by Rust
             )
                 .then((result) => {
-                    const idx = this.strip.deviceNodes.findIndex((d) => d.deviceId === deviceId);
-                    if (idx !== -1) {
-                        const controls = {
-                            setParam: (name: string, value: number) => result.setParam(parseInt(name, 10) || 0, value),
-                            setBypass: result.setBypass,
-                            destroy: () => result.workletNode.disconnect(),
-                        };
-                        // Replay parameter values buffered against the loading
-                        // placeholder (e.g. saved Track.devices[*].parameterValues
-                        // applied during live reload before the bridge resolved).
-                        // Mirrors the wasm descriptors and the offline
-                        // NativeDspDeviceStrategy, which both drain their pending
-                        // params on load — without this the bridge stays at engine
-                        // defaults while the offline render reflects saved knobs.
-                        for (const [name, value] of pendingParams) {
-                            controls.setParam(name, value);
-                        }
-                        const bridgeDn: BuiltinDeviceNode = {
-                            deviceId,
-                            type: deviceType,
-                            nodes: [result.workletNode],
-                            inputNode: result.workletNode,
-                            outputNode: result.workletNode,
-                            nativeDspControls: controls,
-                            controller: controls,
-                        };
-                        this.strip.deviceNodes[idx] = bridgeDn;
-                        this.scheduleRebuildChain();
-                    }
+                    const controls = {
+                        setParam: (name: string, value: number) => result.setParam(parseInt(name, 10) || 0, value),
+                        setBypass: result.setBypass,
+                        destroy: result.destroy,
+                    };
+                    const bridgeDn: BuiltinDeviceNode = {
+                        deviceId,
+                        type: deviceType,
+                        nodes: [result.workletNode],
+                        inputNode: result.workletNode,
+                        outputNode: result.workletNode,
+                        nativeDspControls: controls,
+                        controller: controls,
+                        dispose: result.destroy,
+                    };
+                    this.completePendingDeviceLoad(deviceId, pendingLoad, bridgeDn);
+                    return;
                 })
-                .catch((error) => logger.warn(`[WebAudioEngine] Native plugin bridge failed: ${error}`));
-            pendingDevicePromises.add(loadPromise);
-            // Fire-and-forget cleanup: `loadPromise` already has its own .catch()
-            // (above); this .finally() only removes the entry from the tracking
-            // Set once settled and never rejects meaningfully.
-            void loadPromise.finally(() => pendingDevicePromises.delete(loadPromise));
+                .catch((error) => logger.warn(`[WebAudioEngine] Native plugin bridge failed: ${String(error)}`));
+            this.registerPendingDeviceLoad(deviceId, pendingLoad, loadPromise);
         } else {
             const factoryNode = createBuiltinDeviceNode({ context, deviceType });
             if (factoryNode) {
@@ -423,25 +516,20 @@ export class TrackNode {
                 if (!descriptor) {
                     return;
                 }
+                const pendingLoad: PendingDeviceLoad = { parameterWrites: [], resolved: false };
                 const { placeholder, loadPromise } = descriptor.create({
                     context,
                     deviceId,
                     deviceType,
                     transportSAB: this.deps.transportSAB,
-                    onLoaded: (finalDn) => {
-                        const idx = this.strip.deviceNodes.findIndex((d) => d.deviceId === deviceId);
-                        if (idx !== -1) {
-                            this.strip.deviceNodes[idx] = finalDn;
-                            this.scheduleRebuildChain();
-                        }
-                    },
+                    isCurrent: () => this._pendingDeviceLoads.get(deviceId) === pendingLoad && !this._disposed,
+                    onLoaded: (finalDn) => this.completePendingDeviceLoad(deviceId, pendingLoad, finalDn),
                 });
+                if (!placeholder.controller) {
+                    placeholder.controller = this.createPlaceholderController(deviceId, pendingLoad);
+                }
                 dn = placeholder;
-                pendingDevicePromises.add(loadPromise);
-                // Fire-and-forget cleanup: the descriptor's `loadPromise` already
-                // has its own .catch() (see wasmDeviceRegistry); this .finally()
-                // only removes the entry from the tracking Set once settled.
-                void loadPromise.finally(() => pendingDevicePromises.delete(loadPromise));
+                this.registerPendingDeviceLoad(deviceId, pendingLoad, loadPromise);
             }
         }
 
@@ -455,6 +543,7 @@ export class TrackNode {
             return;
         }
 
+        this.invalidatePendingDeviceLoad(deviceId);
         if (dn.controller) {
             dn.controller.destroy?.();
         } else if (dn.dispose) {
@@ -523,6 +612,10 @@ export class TrackNode {
         if (!dn) {
             return;
         }
+        const pendingLoad = this._pendingDeviceLoads.get(deviceId);
+        if (pendingLoad && !pendingLoad.resolved) {
+            pendingLoad.bypassed = bypassed;
+        }
         dn.controller?.setBypass?.(bypassed);
         // WASM instruments (Fermenter / Grand Boule / Levain) keep their worklet
         // running on bypass — their setBypass only flips a JS flag that gates new
@@ -543,6 +636,14 @@ export class TrackNode {
     }
 
     public dispose(): void {
+        if (this._disposed) {
+            return;
+        }
+        this._disposed = true;
+        this._rebuildScheduled = false;
+        for (const deviceId of this._pendingDeviceLoads.keys()) {
+            this.invalidatePendingDeviceLoad(deviceId);
+        }
         this.strip.preFaderTap.disconnect();
         this.strip.gainNode.disconnect();
         this.strip.faderNode.disconnect();
@@ -568,5 +669,6 @@ export class TrackNode {
                 }
             }
         }
+        this.strip.deviceNodes = [];
     }
 }

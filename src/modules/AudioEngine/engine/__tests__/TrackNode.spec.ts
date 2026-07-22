@@ -274,11 +274,16 @@ describe('TrackNode', () => {
         expect(bridgeSetParam).not.toHaveBeenCalled();
 
         // Resolve the bridge load and let the .then swap-in run.
+        const bridgeNode = { disconnect: vi.fn(), connect: vi.fn(), port: { close: vi.fn() } };
+        const destroy = vi.fn(() => {
+            bridgeNode.disconnect();
+            bridgeNode.port.close();
+        });
         resolveBridge!({
-            workletNode: { disconnect: vi.fn(), connect: vi.fn() },
+            workletNode: bridgeNode,
             setParam: bridgeSetParam,
             setBypass: vi.fn(),
-            destroy: vi.fn(),
+            destroy,
         });
         await Promise.all([...deps.pendingDevicePromises]);
 
@@ -287,5 +292,9 @@ describe('TrackNode', () => {
         expect(bridgeSetParam).toHaveBeenCalledWith(3, 0.75);
         expect(bridgeSetParam).toHaveBeenCalledWith(7, -2);
         expect(bridgeSetParam).toHaveBeenCalledTimes(2);
+        track.removeDevice('dev-1');
+        expect(destroy).toHaveBeenCalledTimes(1);
+        expect(bridgeNode.disconnect).toHaveBeenCalled();
+        expect(bridgeNode.port.close).toHaveBeenCalledTimes(1);
     });
 });
