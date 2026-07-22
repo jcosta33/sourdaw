@@ -32,9 +32,15 @@ export function splitClip(clipId: string, splitBeat: number, rightClipId?: strin
         return null;
     }
     if (rightClipId !== undefined) {
-        const destinationIdIsUsed = state.tracks.some((track) =>
-            track.clips.some((context) => context.id === rightClipId)
-        );
+        const destinationIdIsUsed = state.tracks.some((track) => {
+            if (track.clips.some((context) => context.id === rightClipId)) {
+                return true;
+            }
+
+            return track.alternatives.some((alternative) =>
+                alternative.clips.some((context) => context.id === rightClipId)
+            );
+        });
         if (destinationIdIsUsed) {
             return null;
         }

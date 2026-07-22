@@ -56,15 +56,15 @@ describe('handleDeleteTrackAlternative', () => {
     });
 
     it('falls back to another alternative if deleting the active one', () => {
-        const alt2Clips = [{ id: 'c2' }];
+        const alt2Clips = [{ id: 'c2', trackId: 't1' }];
         mocks.getTrackStoreState.mockReturnValue({
             tracks: [
                 {
                     id: 't1',
                     activeAlternativeId: 'alt1',
-                    clips: [{ id: 'c1' }],
+                    clips: [{ id: 'c1', trackId: 't1' }],
                     alternatives: [
-                        { id: 'alt1', clips: [{ id: 'c1' }] },
+                        { id: 'alt1', clips: [{ id: 'c1', trackId: 't1' }] },
                         { id: 'alt2', clips: alt2Clips },
                     ],
                 },
@@ -85,6 +85,116 @@ describe('handleDeleteTrackAlternative', () => {
         expect(track.alternatives).toHaveLength(1);
         expect(track.activeAlternativeId).toBe('alt2');
         expect(track.clips).toEqual(alt2Clips);
+    });
+
+    it('rejects a malformed fallback clip when deleting the active alternative', () => {
+        const fallbackClips = [{ id: 'c2', trackId: 't1' }];
+        Object.defineProperty(fallbackClips, 0, { value: null });
+        mocks.getTrackStoreState.mockReturnValue({
+            tracks: [
+                {
+                    id: 't1',
+                    activeAlternativeId: 'alt1',
+                    clips: [{ id: 'c1', trackId: 't1' }],
+                    alternatives: [
+                        { id: 'alt1', clips: [] },
+                        { id: 'alt2', clips: fallbackClips },
+                    ],
+                },
+            ],
+        });
+
+        const result = handleDeleteTrackAlternative.execute({
+            type: 'deleteTrackAlternative',
+            payload: { trackId: 't1', alternativeId: 'alt1' },
+        });
+
+        expect(result).toEqual({ status: 'no-write' });
+        expect(mocks.setTrackStoreState).not.toHaveBeenCalled();
+    });
+
+    it('rejects a foreign-owned fallback clip when deleting the active alternative', () => {
+        mocks.getTrackStoreState.mockReturnValue({
+            tracks: [
+                {
+                    id: 't1',
+                    activeAlternativeId: 'alt1',
+                    clips: [{ id: 'c1', trackId: 't1' }],
+                    alternatives: [
+                        { id: 'alt1', clips: [] },
+                        { id: 'alt2', clips: [{ id: 'c2', trackId: 't2' }] },
+                    ],
+                },
+            ],
+        });
+
+        const result = handleDeleteTrackAlternative.execute({
+            type: 'deleteTrackAlternative',
+            payload: { trackId: 't1', alternativeId: 'alt1' },
+        });
+
+        expect(result).toEqual({ status: 'no-write' });
+        expect(mocks.setTrackStoreState).not.toHaveBeenCalled();
+    });
+
+    it('rejects duplicate fallback clip ids when deleting the active alternative', () => {
+        mocks.getTrackStoreState.mockReturnValue({
+            tracks: [
+                {
+                    id: 't1',
+                    activeAlternativeId: 'alt1',
+                    clips: [{ id: 'c1', trackId: 't1' }],
+                    alternatives: [
+                        { id: 'alt1', clips: [] },
+                        {
+                            id: 'alt2',
+                            clips: [
+                                { id: 'duplicate', trackId: 't1' },
+                                { id: 'duplicate', trackId: 't1' },
+                            ],
+                        },
+                    ],
+                },
+            ],
+        });
+
+        const result = handleDeleteTrackAlternative.execute({
+            type: 'deleteTrackAlternative',
+            payload: { trackId: 't1', alternativeId: 'alt1' },
+        });
+
+        expect(result).toEqual({ status: 'no-write' });
+        expect(mocks.setTrackStoreState).not.toHaveBeenCalled();
+    });
+
+    it('rejects a fallback clip id that collides with another live track', () => {
+        mocks.getTrackStoreState.mockReturnValue({
+            tracks: [
+                {
+                    id: 't1',
+                    activeAlternativeId: 'alt1',
+                    clips: [{ id: 'c1', trackId: 't1' }],
+                    alternatives: [
+                        { id: 'alt1', clips: [] },
+                        { id: 'alt2', clips: [{ id: 'occupied', trackId: 't1' }] },
+                    ],
+                },
+                {
+                    id: 't2',
+                    activeAlternativeId: 'other-alt',
+                    clips: [{ id: 'occupied', trackId: 't2' }],
+                    alternatives: [{ id: 'other-alt', clips: [] }],
+                },
+            ],
+        });
+
+        const result = handleDeleteTrackAlternative.execute({
+            type: 'deleteTrackAlternative',
+            payload: { trackId: 't1', alternativeId: 'alt1' },
+        });
+
+        expect(result).toEqual({ status: 'no-write' });
+        expect(mocks.setTrackStoreState).not.toHaveBeenCalled();
     });
 
     it('refuses to delete if only one alternative remains', () => {

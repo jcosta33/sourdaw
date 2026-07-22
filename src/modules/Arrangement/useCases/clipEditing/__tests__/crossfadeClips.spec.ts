@@ -94,6 +94,15 @@ describe('crossfadeClips', () => {
         expect(mocks.mapAllTracks).not.toHaveBeenCalled();
     });
 
+    it('rejects finite inputs whose derived crossfade geometry overflows', () => {
+        const clips = [makeClip('a', 0, Number.MAX_VALUE), makeClip('b', Number.MAX_VALUE, Number.MAX_VALUE)];
+        mocks.getTrackState.mockReturnValue({ tracks: [makeTrack(clips)], selectedTrackId: 't1' });
+
+        expect(crossfadeClips('a', 'b', Number.MAX_VALUE)).toBe(false);
+
+        expect(mocks.mapAllTracks).not.toHaveBeenCalled();
+    });
+
     it('returns no-write when the requested crossfade already matches project truth', () => {
         const clips = [makeClip('a', 0, 4), makeClip('b', 4, 8)];
         mocks.getTrackState.mockReturnValue({ tracks: [makeTrack(clips)], selectedTrackId: 't1' });

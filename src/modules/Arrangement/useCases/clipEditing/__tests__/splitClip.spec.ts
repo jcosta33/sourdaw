@@ -125,6 +125,30 @@ describe('splitClip', () => {
         expect(mocks.splitMidiNotesAtBeat).not.toHaveBeenCalled();
     });
 
+    it('rejects an explicit destination id stored in an inactive alternative', () => {
+        const track = TrackDummy.create({
+            id: 't1',
+            activeAlternativeId: 'active',
+            clips: [makeClip('c1', 0, 4, 'midi')],
+            alternatives: [
+                { id: 'active', name: 'Active', clips: [] },
+                {
+                    id: 'inactive',
+                    name: 'Inactive',
+                    clips: [ClipDummy.create({ id: 'captured-right', trackId: 't1', type: 'midi' })],
+                },
+            ],
+        });
+        mocks.getTrackState.mockReturnValue({ tracks: [track], selectedTrackId: 't1' });
+
+        expect(splitClip('c1', 2, 'captured-right')).toBeNull();
+
+        expect(mocks.snapToZeroCrossing).not.toHaveBeenCalled();
+        expect(mocks.getNextClipId).not.toHaveBeenCalled();
+        expect(mocks.setTrackState).not.toHaveBeenCalled();
+        expect(mocks.splitMidiNotesAtBeat).not.toHaveBeenCalled();
+    });
+
     it('reuses a free explicit destination id without allocating another id', () => {
         mocks.getTrackState.mockReturnValue(makeState([makeClip('c1', 0, 4, 'midi')]));
 

@@ -175,13 +175,14 @@ describe('splitClipWithUndo', () => {
         });
     });
 
-    it('reports REDO_NOT_APPLIED when the deterministic redo split is rejected', () => {
+    it('reports REDO_NOT_APPLIED without restoring MIDI when the deterministic destination is occupied', () => {
         setState([ClipDummy.create({ id: 'c1', trackId: 't1', startBeat: 0, endBeat: 8 })]);
         mocks.splitClip.mockReturnValueOnce('right-1').mockReturnValueOnce(null);
 
         splitClipWithUndo('c1', 4);
         const result = capturedUndoEntry().redoFn();
 
+        expect(mocks.splitClip).toHaveBeenLastCalledWith('c1', 4, 'right-1');
         expect(result).toBe(mocks.redoNotApplied);
         expect(mocks.notifyUser).toHaveBeenCalledWith(
             'Failed to redo split clip - the clip no longer spans the split beat',

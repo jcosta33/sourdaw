@@ -36,8 +36,18 @@ export function crossfadeClips(clipAId: string, clipBId: string, durationBeats =
 
     const halfLen = durationBeats / 2;
     const newClipAEnd = clipA.endBeat + halfLen;
-    const newClipBStart = Math.max(0, clipB.startBeat - halfLen);
+    const unclampedClipBStart = clipB.startBeat - halfLen;
+    const newClipBStart = Math.max(0, unclampedClipBStart);
     const actualOverlap = newClipAEnd - newClipBStart;
+    if (
+        !Number.isFinite(halfLen) ||
+        !Number.isFinite(newClipAEnd) ||
+        !Number.isFinite(unclampedClipBStart) ||
+        !Number.isFinite(newClipBStart) ||
+        !Number.isFinite(actualOverlap)
+    ) {
+        return false;
+    }
     const didChangeClipA = clipA.endBeat !== newClipAEnd || clipA.fadeOutBeats !== actualOverlap;
     const didChangeClipB = clipB.startBeat !== newClipBStart || clipB.fadeInBeats !== actualOverlap;
     if (!didChangeClipA && !didChangeClipB) {

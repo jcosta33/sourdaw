@@ -35,6 +35,45 @@ function isValidAlternativeCollection(value: unknown): value is TrackAlternative
     return true;
 }
 
+type ValidFallbackClipsInput = {
+    value: unknown;
+    targetTrackId: string;
+    tracks: TrackState['tracks'];
+};
+
+function isValidFallbackClips({ value, targetTrackId, tracks }: ValidFallbackClipsInput): boolean {
+    if (!Array.isArray(value)) {
+        return false;
+    }
+
+    const clipIds = new Set<string>();
+    for (const entry of value) {
+        const candidate: unknown = entry;
+        if (
+            candidate === null ||
+            typeof candidate !== 'object' ||
+            !('id' in candidate) ||
+            !('trackId' in candidate) ||
+            typeof candidate.id !== 'string' ||
+            candidate.id.length === 0 ||
+            candidate.trackId !== targetTrackId ||
+            clipIds.has(candidate.id)
+        ) {
+            return false;
+        }
+
+        const conflictsWithAnotherTrack = tracks.some(
+            (track) => track.id !== targetTrackId && track.clips.some((clip) => clip.id === candidate.id)
+        );
+        if (conflictsWithAnotherTrack) {
+            return false;
+        }
+        clipIds.add(candidate.id);
+    }
+
+    return true;
+}
+
 export const handleDeleteTrackAlternative = createHandler<'deleteTrackAlternative'>({
     execute: (action) => {
         const { trackId, alternativeId } = action.payload;
@@ -77,7 +116,14 @@ export const handleDeleteTrackAlternative = createHandler<'deleteTrackAlternativ
 
         if (targetTrack.activeAlternativeId === alternativeId) {
             const fallbackAlternative = filteredAlternatives[0];
-            if (!fallbackAlternative) {
+            if (
+                !fallbackAlternative ||
+                !isValidFallbackClips({
+                    value: fallbackAlternative.clips,
+                    targetTrackId: targetTrack.id,
+                    tracks: state.tracks,
+                })
+            ) {
                 return toHandlerExecutionResult(false);
             }
             updatedTrack = {
