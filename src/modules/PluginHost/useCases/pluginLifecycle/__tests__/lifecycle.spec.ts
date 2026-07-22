@@ -1,3 +1,7 @@
+import { execFileSync } from 'node:child_process';
+import { resolve } from 'node:path';
+import { pathToFileURL } from 'node:url';
+
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { loadPlugin } from '../loadPlugin';
@@ -68,8 +72,9 @@ describe('Plugin Lifecycle Use Cases', () => {
         );
     });
 
-    it('allows different instances to progress independently', async () => {
+    it('allows a different instance to progress while an unload is pending and then fails', async () => {
         const unloading = Promise.withResolvers<void>();
+        const failure = new Error('unload failed');
         mocks.unloadPluginRepo.mockReturnValueOnce(unloading.promise);
         mocks.loadPluginRepo.mockResolvedValueOnce(pluginInstance);
 
@@ -78,11 +83,12 @@ describe('Plugin Lifecycle Use Cases', () => {
 
         expect(mocks.loadPluginRepo).toHaveBeenCalledWith('p1', 'independent-instance');
 
-        unloading.resolve();
-        await Promise.all([unloadResult, loadResult]);
+        unloading.reject(failure);
+        await expect(unloadResult).rejects.toBe(failure);
+        await expect(loadResult).resolves.toBe(pluginInstance);
     });
 
-    it('continues after failure and removes the settled queue entry', async () => {
+    it('rejects queued same-instance work after failure and allows a later explicit retry', async () => {
         const unloading = Promise.withResolvers<void>();
         const failure = new Error('unload failed');
         mocks.unloadPluginRepo.mockReturnValueOnce(unloading.promise);
@@ -94,12 +100,58 @@ describe('Plugin Lifecycle Use Cases', () => {
         expect(mocks.loadPluginRepo).not.toHaveBeenCalled();
         unloading.reject(failure);
         await expect(failedUnload).rejects.toBe(failure);
-        await expect(recoveredLoad).resolves.toBe(pluginInstance);
+        await expect(recoveredLoad).rejects.toBe(failure);
+        expect(mocks.loadPluginRepo).not.toHaveBeenCalled();
 
-        mocks.unloadPluginRepo.mockResolvedValueOnce(undefined);
-        const postCleanupUnload = unloadPlugin('recovering-instance');
-        expect(mocks.unloadPluginRepo).toHaveBeenCalledTimes(2);
-        await postCleanupUnload;
+        const retriedLoad = loadPlugin('p1', 'recovering-instance');
+        expect(mocks.loadPluginRepo).toHaveBeenCalledTimes(1);
+        await expect(retriedLoad).resolves.toBe(pluginInstance);
+    });
+
+    it('exposes only the ignored caller branch as an unhandled rejection', () => {
+        const moduleUrl = pathToFileURL(
+            resolve('src/modules/PluginHost/useCases/pluginLifecycle/serializePluginLifecycle.ts')
+        ).href;
+        const script = `
+            import { serializePluginLifecycle } from ${JSON.stringify(moduleUrl)};
+
+            const observed = [];
+            process.on('unhandledRejection', (reason, promise) => {
+                observed.push({ reason, promise });
+            });
+
+            const ignoredFailure = new Error('ignored caller failure');
+            const ignoredResult = serializePluginLifecycle('ignored-instance', () =>
+                Promise.reject(ignoredFailure)
+            );
+            await new Promise((resolve) => setImmediate(resolve));
+
+            const caughtFailure = new Error('caught caller failure');
+            const caughtResult = serializePluginLifecycle('caught-instance', () =>
+                Promise.reject(caughtFailure)
+            );
+            await caughtResult.catch(() => undefined);
+            await new Promise((resolve) => setImmediate(resolve));
+
+            console.log(JSON.stringify({
+                count: observed.length,
+                ignoredCallerWasReported:
+                    observed[0]?.reason === ignoredFailure && observed[0]?.promise === ignoredResult,
+            }));
+        `;
+
+        const output = execFileSync(
+            process.execPath,
+            ['--experimental-strip-types', '--input-type=module', '--eval', script],
+            {
+                encoding: 'utf8',
+            }
+        );
+
+        expect(JSON.parse(output)).toEqual({
+            count: 1,
+            ignoredCallerWasReported: true,
+        });
     });
 
     it('openPluginGui delegates to repository', async () => {

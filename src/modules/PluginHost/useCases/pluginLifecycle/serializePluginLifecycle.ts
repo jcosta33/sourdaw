@@ -18,6 +18,7 @@ export function serializePluginLifecycle<Result>(
         }
     }
 
+    const callerResult = result.then((value) => value);
     const completion = result.then(
         () => {
             if (lifecycleTails.get(instanceId) === completion) {
@@ -25,13 +26,14 @@ export function serializePluginLifecycle<Result>(
             }
             return undefined;
         },
-        () => {
+        (error: unknown) => {
             if (lifecycleTails.get(instanceId) === completion) {
                 lifecycleTails.delete(instanceId);
             }
-            return undefined;
+            throw error;
         }
     );
+    void completion.catch(() => undefined);
     lifecycleTails.set(instanceId, completion);
-    return result;
+    return callerResult;
 }
