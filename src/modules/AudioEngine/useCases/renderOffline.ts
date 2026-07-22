@@ -175,7 +175,9 @@ export const renderOffline: RenderOfflineFn = async function renderOffline(
                 },
                 onWarning,
                 pendingWorkletEvents,
-                allTracks: sourceTracks,
+                // Keep canonical project order for Toaster pad indexes. The
+                // scheduler skips inaudible children only after indexing.
+                allTracks: tracks?.tracks ?? [],
                 deviceEntriesByTrack,
                 regionStartBeat: startBeat,
             });
