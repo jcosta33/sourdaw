@@ -1,0 +1,34 @@
+src/modules/TimelineEditor/presentations/views/Inspector/TrackAutomationSection.tsx
+  s_ac9b259eab20ba::t_e734c49ccdf5df 13,17,113-121,137
+src/modules/TimelineEditor/presentations/views/Inspector/__tests__/TrackAutomationSection.spec.tsx
+  s_ac9b259eab20ba::t_7fd3cbeb4faa7e 9,142-163
+  s_ac9b259eab20ba::t_d1d336bd49d9ae 164-165
+src/modules/TimelineEditor/presentations/helpers/__tests__/automationViewHelpers.spec.ts
+  s_ac9b259eab20ba::t_55334132643f83 8-10,47,51-54,65-74
+  s_ac9b259eab20ba::t_f1dc13f9bcf25f 75
+src/modules/TimelineEditor/presentations/views/Inspector/DeviceParameterControl.tsx
+  s_ac9b259eab20ba::t_7dfdb7a9f79d10 6,11,16,89,266,306
+src/modules/TimelineEditor/presentations/views/Inspector/__tests__/DeviceParameterControl.spec.tsx
+  s_ac9b259eab20ba::t_561c19e2b5bd1d 219
+src/modules/TimelineEditor/presentations/helpers/automationViewHelpers.ts
+  s_ac9b259eab20ba::t_3e2d3696cf273f 1,3-8,15-17,24-30,38,47-56,59-93
+  s_ac9b259eab20ba::t_ac35b587e76bd7 94
+src/modules/TimelineEditor/presentations/views/AutomationBottomPanel.tsx
+  s_ac9b259eab20ba::t_be17b10fc536ae 141-142,145
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "c18c6271534130f87e0e1f8dd054711c9b7bdbc9",
+  "prompts": {},
+  "sessions": {
+    "s_ac9b259eab20ba": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8699-3865-7842-8c54-afbac6cfd266",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
