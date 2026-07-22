@@ -1,0 +1,23 @@
+src/modules/WorkspaceShell/handlers/workspace/handleSaveProject.ts
+  s_d75c1ffd03a842::t_6d6f304384d8a0 6-7
+src/modules/WorkspaceShell/presentations/hooks/useAppEventHandlers.ts
+  s_d75c1ffd03a842::t_7e651040d0db04 29-32
+src/modules/WorkspaceShell/presentations/hooks/useAppInitialization.ts
+  s_d75c1ffd03a842::t_794f46115190d4 120-121
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "edc07a7835dbaeb8bac88bd946b6106ddcbb57c0",
+  "prompts": {},
+  "sessions": {
+    "s_d75c1ffd03a842": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8be6-2fdc-7ea3-960c-4029b8ac293a",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
