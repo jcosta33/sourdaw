@@ -1,4 +1,4 @@
-import { act, render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { act, render, screen, fireEvent, waitFor, within } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { createAppActionCommittedError } from '#/modules/Command/useCases';
@@ -142,7 +142,7 @@ describe('ChordTrackLane', () => {
         expect(screen.queryByText('Delete Chord')).not.toBeInTheDocument();
 
         fireEvent.contextMenu(region, { clientX: 100, clientY: 10 });
-        await runAndSettle(() => fireEvent.click(screen.getByRole('button', { name: 'D' })));
+        await runAndSettle(() => fireEvent.click(screen.getByRole('menuitemradio', { name: 'D' })));
         expectAction({ type: 'updateChordEvent', payload: { eventId: 'c1', root: 2 } });
         expect(screen.queryByText('Delete Chord')).not.toBeInTheDocument();
 
@@ -273,6 +273,58 @@ describe('ChordTrackLane', () => {
         expect(screen.queryByText('Beat 12')).not.toBeInTheDocument();
         resolveAction();
         await waitFor(() => expect(screen.queryByText('Delete Chord')).not.toBeInTheDocument());
+    });
+
+    it('implements APG menu navigation, dismissal, and opener focus restoration', () => {
+        renderChordLane();
+        const block = getChordBlock();
+        block.focus();
+        expect(block).toHaveAttribute('aria-haspopup', 'menu');
+        expect(block).toHaveAttribute('aria-expanded', 'false');
+
+        fireEvent.keyDown(block, { key: 'F10', shiftKey: true });
+        const menu = screen.getByRole('menu', { name: 'Chord actions for C' });
+        expect(block).toHaveAttribute('aria-expanded', 'true');
+        expect(within(menu).getByRole('menuitemradio', { name: 'major' })).toHaveFocus();
+        fireEvent.keyDown(menu, { key: 'ArrowDown' });
+        expect(within(menu).getByRole('menuitemradio', { name: 'minor' })).toHaveFocus();
+        fireEvent.keyDown(menu, { key: 'End' });
+        expect(within(menu).getByRole('menuitem', { name: 'Delete Chord' })).toHaveFocus();
+        fireEvent.keyDown(menu, { key: 'Home' });
+        expect(within(menu).getByRole('menuitemradio', { name: 'major' })).toHaveFocus();
+        fireEvent.keyDown(menu, { key: 'Escape' });
+        expect(screen.queryByRole('menu')).not.toBeInTheDocument();
+        expect(block).toHaveFocus();
+
+        fireEvent.keyDown(block, { key: 'Enter' });
+        fireEvent.keyDown(screen.getByRole('menu'), { key: 'Tab' });
+        expect(screen.queryByRole('menu')).not.toBeInTheDocument();
+        expect(block).toHaveFocus();
+    });
+
+    it('labels root and quality as checked radio groups', () => {
+        renderChordLane();
+        fireEvent.contextMenu(screen.getByRole('region', { name: 'Chord track' }), { clientX: 64, clientY: 10 });
+
+        const quality = screen.getByRole('group', { name: 'Quality' });
+        expect(within(quality).getByRole('menuitemradio', { name: 'major' })).toHaveAttribute('aria-checked', 'true');
+        expect(within(quality).getByRole('menuitemradio', { name: 'minor' })).toHaveAttribute('aria-checked', 'false');
+        const root = screen.getByRole('group', { name: 'Root' });
+        expect(within(root).getByRole('menuitemradio', { name: 'C' })).toHaveAttribute('aria-checked', 'true');
+    });
+
+    it('restores focus and announces a keyboard deletion after rerender', async () => {
+        executeAppAction.mockResolvedValueOnce(undefined);
+        const view = renderChordLane();
+        const block = getChordBlock();
+        block.focus();
+
+        await runAndSettle(() => fireEvent.keyDown(block, { key: 'Delete' }));
+        mockChordState = { enabled: false, events: [] };
+        view.rerender(<ChordTrackLane pixelsPerBeat={16} scrollX={0} />);
+
+        expect(screen.getByLabelText('Add chord event')).toHaveFocus();
+        expect(screen.getByRole('status')).toHaveTextContent('Removed C chord at beat 4');
     });
 
     it('closes an open context menu on an outside click', () => {

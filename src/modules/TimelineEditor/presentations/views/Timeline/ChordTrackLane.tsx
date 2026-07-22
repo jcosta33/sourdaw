@@ -117,8 +117,10 @@ export const ChordTrackLane = ({ pixelsPerBeat, scrollX }: ChordTrackLaneProps):
     const [showAddMenu, setShowAddMenu] = useState(false);
     const [pending, setPending] = useState(false);
     const [actionError, setActionError] = useState<string | null>(null);
+    const [actionStatus, setActionStatus] = useState<string | null>(null);
     const menuRef = useRef<HTMLDivElement>(null);
     const addRef = useRef<HTMLDivElement>(null);
+    const menuOpenerRef = useRef<HTMLElement | null>(null);
     const dragRef = useRef<DragState | null>(null);
     const committingPointerRef = useRef<number | null>(null);
     const mountedRef = useRef(true);
@@ -141,6 +143,7 @@ export const ChordTrackLane = ({ pixelsPerBeat, scrollX }: ChordTrackLaneProps):
         pendingRef.current = true;
         setPending(true);
         setActionError(null);
+        setActionStatus(null);
         try {
             await executeAppAction(action);
             if (mountedRef.current) {
@@ -190,6 +193,51 @@ export const ChordTrackLane = ({ pixelsPerBeat, scrollX }: ChordTrackLaneProps):
             committingPointerRef.current = null;
         };
     }, []);
+
+    const closeContextMenu = (restoreFocus: boolean): void => {
+        setContextMenu({ kind: 'none' });
+        if (restoreFocus) {
+            menuOpenerRef.current?.focus();
+        }
+    };
+
+    useEffect(() => {
+        if (contextMenu.kind !== 'none') {
+            menuRef.current?.querySelector<HTMLButtonElement>('[role^="menuitem"]:not(:disabled)')?.focus();
+        }
+    }, [contextMenu]);
+
+    useEffect(() => {
+        if (!pending && actionStatus) {
+            addRef.current?.querySelector<HTMLButtonElement>('button')?.focus();
+        }
+    }, [actionStatus, pending]);
+
+    const handleMenuKeyDown = (event: KeyboardEvent<HTMLDivElement>): void => {
+        if (event.key === 'Escape' || event.key === 'Tab') {
+            event.preventDefault();
+            closeContextMenu(true);
+            return;
+        }
+        const items = Array.from(
+            menuRef.current?.querySelectorAll<HTMLButtonElement>('[role^="menuitem"]:not(:disabled)') ?? []
+        );
+        const currentIndex = items.indexOf(document.activeElement as HTMLButtonElement);
+        let nextIndex: number | null = null;
+        if (event.key === 'ArrowDown') {
+            nextIndex = (currentIndex + 1) % items.length;
+        } else if (event.key === 'ArrowUp') {
+            nextIndex = (currentIndex - 1 + items.length) % items.length;
+        } else if (event.key === 'Home') {
+            nextIndex = 0;
+        } else if (event.key === 'End') {
+            nextIndex = items.length - 1;
+        }
+        if (nextIndex !== null) {
+            event.preventDefault();
+            items[nextIndex]?.focus();
+        }
+    };
 
     // ── Drag handling ─────────────────────────────────────────────────
     const handlePointerDown = (pointerEvent: PointerEvent<HTMLButtonElement>, event: ChordTrackEvent): void => {
@@ -269,10 +317,34 @@ export const ChordTrackLane = ({ pixelsPerBeat, scrollX }: ChordTrackLaneProps):
         });
 
         if (hitEvent) {
+            menuOpenerRef.current = event.target instanceof HTMLElement ? event.target : null;
             setContextMenu({ kind: 'chord', x: event.clientX, y: event.clientY, event: hitEvent });
         } else {
             setContextMenu({ kind: 'empty', x: event.clientX, y: event.clientY, beat });
         }
+    };
+
+    const openChordMenuFromKeyboard = (
+        keyboardEvent: KeyboardEvent<HTMLButtonElement>,
+        event: ChordTrackEvent
+    ): void => {
+        const opensMenu =
+            keyboardEvent.key === 'ContextMenu' ||
+            (keyboardEvent.shiftKey && keyboardEvent.key === 'F10') ||
+            keyboardEvent.key === 'Enter' ||
+            keyboardEvent.key === ' ';
+        if (!opensMenu) {
+            return;
+        }
+        keyboardEvent.preventDefault();
+        const rect = keyboardEvent.currentTarget.getBoundingClientRect();
+        menuOpenerRef.current = keyboardEvent.currentTarget;
+        setContextMenu({ kind: 'chord', x: rect.left + rect.width / 2, y: rect.bottom, event });
+    };
+
+    const finishKeyboardDelete = (event: ChordTrackEvent): void => {
+        closeContextMenu(false);
+        setActionStatus(`Removed ${formatChordName(event)} chord at beat ${String(event.beat)}.`);
     };
 
     const handleChordKeyDown = (keyboardEvent: KeyboardEvent<HTMLButtonElement>, event: ChordTrackEvent): void => {
@@ -288,9 +360,13 @@ export const ChordTrackLane = ({ pixelsPerBeat, scrollX }: ChordTrackLaneProps):
         }
         if (keyboardEvent.key === 'Delete' || keyboardEvent.key === 'Backspace') {
             keyboardEvent.preventDefault();
-            void dispatchAction({ type: 'removeChordEvent', payload: { eventId: event.id } });
+            void dispatchAction(
+                { type: 'removeChordEvent', payload: { eventId: event.id } },
+                { onApplied: () => finishKeyboardDelete(event) }
+            );
             return;
         }
+        openChordMenuFromKeyboard(keyboardEvent, event);
     };
 
     // ── Add chord at beat from context menu ───────────────────────────
@@ -300,7 +376,7 @@ export const ChordTrackLane = ({ pixelsPerBeat, scrollX }: ChordTrackLaneProps):
                 type: 'addChordEvent',
                 payload: { beat: Math.floor(beat), root, quality, duration: 4 },
             },
-            { onApplied: () => setContextMenu({ kind: 'none' }) }
+            { onApplied: () => closeContextMenu(false) }
         );
     };
 
@@ -313,6 +389,13 @@ export const ChordTrackLane = ({ pixelsPerBeat, scrollX }: ChordTrackLaneProps):
             { onApplied: () => setShowAddMenu(false) }
         );
     };
+
+    let statusText: string | null = null;
+    if (pending) {
+        statusText = 'Applying chord change…';
+    } else if (actionStatus) {
+        statusText = actionStatus;
+    }
 
     return (
         <div
@@ -383,9 +466,9 @@ export const ChordTrackLane = ({ pixelsPerBeat, scrollX }: ChordTrackLaneProps):
                     </button>
                 ) : null}
             </div>
-            {pending ? (
+            {statusText ? (
                 <span className="absolute right-2 z-40 text-[9px] text-muted-foreground" role="status">
-                    Applying chord change…
+                    {statusText}
                 </span>
             ) : null}
             {actionError ? (
@@ -421,6 +504,8 @@ export const ChordTrackLane = ({ pixelsPerBeat, scrollX }: ChordTrackLaneProps):
                                 backgroundColor: color,
                             }}
                             aria-disabled={pending}
+                            aria-expanded={contextMenu.kind === 'chord' && contextMenu.event.id === event.id}
+                            aria-haspopup="menu"
                             aria-label={`${formatChordName(event)} chord at beat ${String(event.beat)}`}
                             onKeyDown={(keyboardEvent) => handleChordKeyDown(keyboardEvent, event)}
                             onLostPointerCapture={cancelPointerDrag}
@@ -450,6 +535,14 @@ export const ChordTrackLane = ({ pixelsPerBeat, scrollX }: ChordTrackLaneProps):
                     ref={menuRef}
                     className="daw-floating-surface fixed z-50 min-w-[140px] rounded-md p-1"
                     style={{ left: contextMenu.x, top: contextMenu.y }}
+                    aria-label={
+                        contextMenu.kind === 'chord'
+                            ? `Chord actions for ${formatChordName(contextMenu.event)}`
+                            : 'Add chord'
+                    }
+                    onKeyDown={handleMenuKeyDown}
+                    role="menu"
+                    tabIndex={-1}
                 >
                     {contextMenu.kind === 'empty' ? (
                         <>
@@ -461,6 +554,7 @@ export const ChordTrackLane = ({ pixelsPerBeat, scrollX }: ChordTrackLaneProps):
                                     className="flex w-full items-center rounded-sm px-2 py-1 text-xs text-popover-foreground hover:bg-accent hover:text-accent-foreground"
                                     disabled={pending}
                                     onClick={() => handleAddAtBeat(contextMenu.beat, rootIdx, 'major')}
+                                    role="menuitem"
                                 >
                                     Add {name}
                                 </button>
@@ -471,7 +565,7 @@ export const ChordTrackLane = ({ pixelsPerBeat, scrollX }: ChordTrackLaneProps):
                         <>
                             <DawMenuMutedRow className="px-2">{formatChordName(contextMenu.event)}</DawMenuMutedRow>
                             <DawMenuMutedRow className="px-2">Quality</DawMenuMutedRow>
-                            <div className="flex flex-wrap gap-0.5 px-2 pb-1">
+                            <div className="flex flex-wrap gap-0.5 px-2 pb-1" aria-label="Quality" role="group">
                                 {ADD_MENU_QUALITIES.map((query) => (
                                     <button
                                         type="button"
@@ -489,16 +583,18 @@ export const ChordTrackLane = ({ pixelsPerBeat, scrollX }: ChordTrackLaneProps):
                                                     type: 'updateChordEvent',
                                                     payload: { eventId: contextMenu.event.id, quality: query },
                                                 },
-                                                { onApplied: () => setContextMenu({ kind: 'none' }) }
+                                                { onApplied: () => closeContextMenu(true) }
                                             );
                                         }}
+                                        aria-checked={contextMenu.event.quality === query}
+                                        role="menuitemradio"
                                     >
                                         {query}
                                     </button>
                                 ))}
                             </div>
                             <DawMenuMutedRow className="px-2">Root</DawMenuMutedRow>
-                            <div className="flex flex-wrap gap-0.5 px-2 pb-1">
+                            <div className="flex flex-wrap gap-0.5 px-2 pb-1" aria-label="Root" role="group">
                                 {ROOT_NAMES.map((name, idx) => (
                                     <button
                                         type="button"
@@ -516,9 +612,11 @@ export const ChordTrackLane = ({ pixelsPerBeat, scrollX }: ChordTrackLaneProps):
                                                     type: 'updateChordEvent',
                                                     payload: { eventId: contextMenu.event.id, root: idx },
                                                 },
-                                                { onApplied: () => setContextMenu({ kind: 'none' }) }
+                                                { onApplied: () => closeContextMenu(true) }
                                             );
                                         }}
+                                        aria-checked={contextMenu.event.root === idx}
+                                        role="menuitemradio"
                                     >
                                         {name}
                                     </button>
@@ -532,9 +630,10 @@ export const ChordTrackLane = ({ pixelsPerBeat, scrollX }: ChordTrackLaneProps):
                                 onClick={() => {
                                     void dispatchAction(
                                         { type: 'removeChordEvent', payload: { eventId: contextMenu.event.id } },
-                                        { onApplied: () => setContextMenu({ kind: 'none' }) }
+                                        { onApplied: () => finishKeyboardDelete(contextMenu.event) }
                                     );
                                 }}
+                                role="menuitem"
                             >
                                 Delete Chord
                             </button>
