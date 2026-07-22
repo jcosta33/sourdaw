@@ -1,0 +1,21 @@
+src/modules/MIDI/stores/__tests__/grooveTemplateCollaboration.spec.ts
+  s_ac9b259eab20ba::t_4c4d2687d65bfd 7,390-398
+src/modules/Arrangement/stores/__tests__/deviceWriteBoundaryClosure.spec.ts
+  s_ac9b259eab20ba::t_8b687f88ccfad0 266-269
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "fc5b178cd3d7c56b4ecc05b07fa754da054b6a50",
+  "prompts": {},
+  "sessions": {
+    "s_ac9b259eab20ba": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8699-3865-7842-8c54-afbac6cfd266",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
