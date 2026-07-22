@@ -3,6 +3,7 @@ import { CURRENT_PROJECT_VERSION, type ProjectData } from '../../../models/Proje
 import { createMyceliumId } from './createMyceliumId';
 import { createMyceliumRhythmPerformance } from './createMyceliumRhythmPerformance';
 import { createMyceliumTopology } from './createMyceliumTopology';
+import { createMyceliumVoicePerformance } from './createMyceliumVoicePerformance';
 
 export type MyceliumSection = {
     id: string;
@@ -171,5 +172,6 @@ export function createMyceliumAscendantBlueprint(): MyceliumAscendantBlueprint {
     ];
     projectData.activeArrangementId = activeArrangementId;
 
-    return { projectData: createMyceliumRhythmPerformance(projectData), sections, chordEvents };
+    const rhythmProjectData = createMyceliumRhythmPerformance(projectData);
+    return { projectData: createMyceliumVoicePerformance(rhythmProjectData), sections, chordEvents };
 }
