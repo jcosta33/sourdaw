@@ -967,6 +967,66 @@ mod tests {
         );
     }
 
+    /// PR #579 review (blocking): a re-arm whose ArmRecording command is
+    /// processed in the same block that adopts the just-recycled buffers
+    /// must find capacity. Pre-fix the adoption ran AFTER the command
+    /// drain, so the arm was silently refused (record_state stayed Idle —
+    /// silent take loss on fast stop→record).
+    #[test]
+    fn crumbs_rearm_right_after_drained_commit_finds_recycled_capacity() {
+        use daw_dsp::crumbs::types::{CrumbsMode, RecordState};
+
+        let (mut slot, mut tx, mut commit_rx, mut recycle_tx) = crumbs_slot_with_rings();
+
+        tx.push(CrumbsCommand::SetMode(CrumbsMode::Record)).unwrap();
+        tx.push(CrumbsCommand::ArmRecording {
+            threshold: 0.01,
+            target_pad: 0,
+            max_duration_secs: 10.0,
+        })
+        .unwrap();
+
+        // Take one take and stop it.
+        let mut left = vec![0.5f32; 128];
+        let mut right = vec![0.5f32; 128];
+        slot.process_bridged_audio(&mut left, &mut right, 128);
+        tx.push(CrumbsCommand::StopRecording).unwrap();
+        let mut flush_l = vec![0.0f32; 128];
+        let mut flush_r = vec![0.0f32; 128];
+        slot.process_bridged_audio(&mut flush_l, &mut flush_r, 128);
+        let commit = commit_rx.pop().expect("take handed to the commit ring");
+
+        // Simulate the command side (arm_recording's drain): clone the take
+        // off-thread, then return the emptied buffers BEFORE the ArmRecording
+        // command reaches the engine.
+        let (mut buf_left, mut buf_right) = (commit.left, commit.right);
+        buf_left.clear();
+        buf_right.clear();
+        recycle_tx.push((buf_left, buf_right)).unwrap();
+        tx.push(CrumbsCommand::ArmRecording {
+            threshold: 0.01,
+            target_pad: 0,
+            max_duration_secs: 10.0,
+        })
+        .unwrap();
+
+        // One process call: must adopt the recycled pair, THEN process the
+        // arm — in that order.
+        slot.process_bridged_audio(&mut flush_l, &mut flush_r, 128);
+
+        assert_eq!(
+            slot.engine.record_state(),
+            RecordState::Armed,
+            "re-arm immediately after a drained commit must find recycled capacity"
+        );
+
+        // And the re-armed recorder actually captures the next take.
+        let mut left2 = vec![0.5f32; 128];
+        let mut right2 = vec![0.5f32; 128];
+        slot.process_bridged_audio(&mut left2, &mut right2, 128);
+        assert_eq!(slot.engine.record_state(), RecordState::Recording);
+    }
+
     /// The same wiring must leave the engine untouched when it is not armed:
     /// feeding input in a non-Record mode captures nothing.
     #[test]
@@ -1018,6 +1078,16 @@ impl CrumbsPluginSlot {
         midi_events: &[MidiNoteEvent],
         feed_record_input: bool,
     ) {
+        // Adopt recycled record buffers BEFORE draining commands: an
+        // ArmRecording processed in this same block must find the capacity
+        // the command side just returned. Adopting after the command drain
+        // silently refused any re-arm that raced a drained commit (PR #579
+        // review — silent take loss on fast stop→record). O(1) ring pops,
+        // allocation-free on this thread, independent of command ordering.
+        while let Ok((buf_left, buf_right)) = self.recycle_rx.pop() {
+            self.engine.return_record_buffers(buf_left, buf_right);
+        }
+
         // Drain commands from the UI thread
         while let Ok(cmd) = self.command_rx.pop() {
             self.engine.handle_command(cmd);
@@ -1033,12 +1103,6 @@ impl CrumbsPluginSlot {
             } else {
                 self.engine.handle_command(CrumbsCommand::NoteOff { note: event.note });
             }
-        }
-
-        // Adopt recycled record buffers so a re-arm finds capacity. O(1)
-        // ring pops, allocation-free on this thread.
-        while let Ok((buf_left, buf_right)) = self.recycle_rx.pop() {
-            self.engine.return_record_buffers(buf_left, buf_right);
         }
 
         if feed_record_input {

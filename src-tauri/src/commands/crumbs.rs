@@ -37,6 +37,11 @@ pub struct CrumbsInstanceData {
     pub commit_rx: rtrb::Consumer<PendingRecordingCommit>,
     /// Returns emptied record-buffer pairs to the audio thread for reuse.
     pub recycle_tx: Producer<RecordBufferPair>,
+    /// Engine-mirror entries (AddSample + SetActiveSample) whose push hit a
+    /// full command ring; retried at the top of every drain (PR #579
+    /// review). Retries are idempotent: AddSample uses set() with the same
+    /// id and data.
+    pub pending_mirror: Vec<(SampleId, Arc<SampleData>)>,
 }
 
 /// Complete any recording commits the audio thread handed off (ledger
@@ -47,6 +52,23 @@ pub struct CrumbsInstanceData {
 /// from the recording and polling command handlers; a pending commit at
 /// destroy time is simply dropped with the instance.
 pub(crate) fn drain_pending_recording_commits(instance: &mut CrumbsInstanceData) {
+    // Retry mirror pushes that previously hit a full command ring (oldest
+    // first). Stop at the first still-full ring; later entries retry on the
+    // next drain call.
+    while let Some((id, sample)) = instance.pending_mirror.first() {
+        let pushed = instance.command_tx.push(CrumbsCommand::AddSample {
+            id: *id,
+            data: Arc::clone(sample),
+        });
+        if pushed.is_err() {
+            return;
+        }
+        let _ = instance
+            .command_tx
+            .push(CrumbsCommand::SetActiveSample(*id));
+        instance.pending_mirror.remove(0);
+    }
+
     while let Ok(commit) = instance.commit_rx.pop() {
         let PendingRecordingCommit {
             mut left,
@@ -61,12 +83,21 @@ pub(crate) fn drain_pending_recording_commits(instance: &mut CrumbsInstanceData)
         let id = instance.next_sample_id;
         instance.next_sample_id += 1;
         instance.samples.insert(id, Arc::clone(&sample));
-        // Best-effort mirror into the engine: a full command ring retries on
-        // the next drain call (the commit data is already cloned here).
-        let _ = instance
-            .command_tx
-            .push(CrumbsCommand::AddSample { id, data: sample });
-        let _ = instance.command_tx.push(CrumbsCommand::SetActiveSample(id));
+        // Mirror into the engine. A full command ring must not lose the
+        // mirror (the sample map above already holds the take): queue it in
+        // pending_mirror, retried at the top of this drain.
+        let pushed = instance.command_tx.push(CrumbsCommand::AddSample {
+            id,
+            data: Arc::clone(&sample),
+        });
+        match pushed {
+            Ok(()) => {
+                let _ = instance.command_tx.push(CrumbsCommand::SetActiveSample(id));
+            }
+            Err(_) => {
+                instance.pending_mirror.push((id, sample));
+            }
+        }
         left.clear();
         right.clear();
         let _ = instance.recycle_tx.push((left, right));
@@ -196,6 +227,7 @@ pub async fn create_crumbs(
             next_sample_id: 1,
             commit_rx,
             recycle_tx,
+            pending_mirror: Vec::new(),
         },
     );
     Ok(())
@@ -759,8 +791,9 @@ mod tests {
         CrumbsInstanceData,
         Producer<PendingRecordingCommit>,
         rtrb::Consumer<RecordBufferPair>,
+        rtrb::Consumer<CrumbsCommand>,
     ) {
-        let (tx, _rx) = rtrb::RingBuffer::new(8);
+        let (tx, cmd_rx) = rtrb::RingBuffer::new(8);
         let (commit_tx, commit_rx) = rtrb::RingBuffer::new(2);
         let (recycle_tx, recycle_rx) = rtrb::RingBuffer::new(2);
         let instance = CrumbsInstanceData {
@@ -771,8 +804,9 @@ mod tests {
             next_sample_id: 1,
             commit_rx,
             recycle_tx,
+            pending_mirror: Vec::new(),
         };
-        (instance, commit_tx, recycle_rx)
+        (instance, commit_tx, recycle_rx, cmd_rx)
     }
 
     /// The drain completes a handed-off take off the RT thread: SampleData
@@ -780,7 +814,7 @@ mod tests {
     /// emptied buffers recycled.
     #[test]
     fn drain_completes_commit_off_thread() {
-        let (mut instance, mut commit_tx, mut recycle_rx) = instance_with_rings();
+        let (mut instance, mut commit_tx, mut recycle_rx, mut cmd_rx) = instance_with_rings();
         let frames = 512;
         commit_tx
             .push(PendingRecordingCommit {
@@ -799,8 +833,20 @@ mod tests {
         assert!(sample.right.iter().all(|&s| (s - 0.25).abs() < 1.0e-6));
         assert_eq!(instance.next_sample_id, 2);
 
-        // Engine mirror commands queued (AddSample then SetActiveSample).
-        // (The engine itself consumes these on the audio thread.)
+        // Engine mirror commands were queued (AddSample then
+        // SetActiveSample); the engine consumes these on the audio thread.
+        let mut mirrored = Vec::new();
+        while let Ok(cmd) = cmd_rx.pop() {
+            mirrored.push(cmd);
+        }
+        assert_eq!(mirrored.len(), 2);
+        assert!(matches!(
+            mirrored[0],
+            CrumbsCommand::AddSample { id: 1, .. }
+        ));
+        assert!(matches!(mirrored[1], CrumbsCommand::SetActiveSample(1)));
+        assert!(instance.pending_mirror.is_empty());
+
         // Emptied buffers with their capacity intact came back for reuse.
         let (buf_left, buf_right) = recycle_rx.pop().expect("buffers recycled");
         assert!(buf_left.is_empty());
@@ -809,11 +855,67 @@ mod tests {
         assert_eq!(buf_right.capacity(), frames);
     }
 
+    /// PR #579 review (non-blocking): a mirror push that hits a full
+    /// command ring must be parked and retried — not silently dropped.
+    #[test]
+    fn drain_retries_mirror_pushes_after_ring_full() {
+        let (mut instance, mut commit_tx, _recycle_rx, mut cmd_rx) = instance_with_rings();
+
+        // Saturate the command ring (capacity 8 in the helper).
+        for _ in 0..8 {
+            instance
+                .command_tx
+                .push(CrumbsCommand::AllNotesOff)
+                .unwrap();
+        }
+        commit_tx
+            .push(PendingRecordingCommit {
+                left: vec![0.5f32; 64],
+                right: vec![0.5f32; 64],
+                sample_rate: 48_000,
+            })
+            .unwrap();
+
+        drain_pending_recording_commits(&mut instance);
+        assert_eq!(
+            instance.pending_mirror.len(),
+            1,
+            "a full command ring must park the mirror, not drop it"
+        );
+        assert!(
+            instance.samples.contains_key(&1),
+            "the take is registered command-side even while the mirror waits"
+        );
+
+        // Still full: the parked entry waits without churn.
+        drain_pending_recording_commits(&mut instance);
+        assert_eq!(instance.pending_mirror.len(), 1);
+
+        // Free the ring (as the audio thread would) and re-drain: the
+        // parked mirror is delivered.
+        while cmd_rx.pop().is_ok() {}
+        drain_pending_recording_commits(&mut instance);
+        assert!(
+            instance.pending_mirror.is_empty(),
+            "parked mirror must be delivered once the ring drains"
+        );
+        let mut saw_add = false;
+        let mut saw_active = false;
+        while let Ok(cmd) = cmd_rx.pop() {
+            match cmd {
+                CrumbsCommand::AddSample { id: 1, .. } => saw_add = true,
+                CrumbsCommand::SetActiveSample(1) => saw_active = true,
+                _ => {}
+            }
+        }
+        assert!(saw_add && saw_active);
+    }
+
     /// A commit still in flight when the instance is destroyed is dropped
     /// with the rings — no panic, no use-after-free surface.
     #[test]
     fn destroy_with_pending_commit_drops_take_cleanly() {
-        let (instance, mut commit_tx, _recycle_rx) = instance_with_rings();
+        let (instance, mut commit_tx, _recycle_rx, _cmd_rx) = instance_with_rings();
         commit_tx
             .push(PendingRecordingCommit {
                 left: vec![0.5f32; 128],
