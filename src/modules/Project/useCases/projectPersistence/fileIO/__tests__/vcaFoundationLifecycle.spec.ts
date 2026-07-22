@@ -1,10 +1,15 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import { trackStore } from '#/modules/Arrangement/stores';
+import { markerStore, takeLaneStore, trackStore } from '#/modules/Arrangement/stores';
 import { normalizeTrack } from '#/modules/Arrangement/useCases';
 import { automationStore } from '#/modules/Automation/stores';
 import { midiStore } from '#/modules/MIDI/stores';
-import { defaultTransportState, transportStore } from '#/modules/Transport/stores';
+import {
+    defaultTransportState,
+    tempoMapStore,
+    timeSignatureMapStore,
+    transportStore,
+} from '#/modules/Transport/stores';
 
 import { arrangementStore, defaultArrangementStoreState } from '../../../../stores/arrangementStore';
 import { defaultProjectStoreState, projectStore } from '../../../../stores/projectStore';
@@ -25,6 +30,10 @@ describe('VCA clip-foundation lifecycle preservation', () => {
         transportStore.set({ ...defaultTransportState });
         automationStore.set({ lanes: [] });
         midiStore.set({ notesByClipId: {}, ccByClipId: {}, pitchBendByClipId: {} });
+        tempoMapStore.set({ changes: [] });
+        timeSignatureMapStore.set({ changes: [] });
+        markerStore.set({ markers: [], sections: [] });
+        takeLaneStore.set({ lanes: [] });
         trackStore.set({ tracks: [], selectedTrackId: null });
         arrangementStore.set(structuredClone(defaultArrangementStoreState));
     });
@@ -34,6 +43,10 @@ describe('VCA clip-foundation lifecycle preservation', () => {
         transportStore.set({ ...defaultTransportState });
         automationStore.set({ lanes: [] });
         midiStore.set({ notesByClipId: {}, ccByClipId: {}, pitchBendByClipId: {} });
+        tempoMapStore.set({ changes: [] });
+        timeSignatureMapStore.set({ changes: [] });
+        markerStore.set({ markers: [], sections: [] });
+        takeLaneStore.set({ lanes: [] });
         trackStore.set({ tracks: [], selectedTrackId: null });
         arrangementStore.set(structuredClone(defaultArrangementStoreState));
     });

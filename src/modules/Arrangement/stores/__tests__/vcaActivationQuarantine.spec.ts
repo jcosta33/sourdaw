@@ -1,6 +1,21 @@
 import { readdirSync, readFileSync } from 'node:fs';
 import { join, relative, resolve } from 'node:path';
 
+import {
+    createSourceFile,
+    forEachChild,
+    isCallExpression,
+    isIdentifier,
+    isImportDeclaration,
+    isJsxSelfClosingElement,
+    isNamedImports,
+    isPropertyAssignment,
+    isStringLiteral,
+    type Node,
+    type SourceFile,
+    ScriptKind,
+    ScriptTarget,
+} from 'typescript';
 import { describe, expect, it } from 'vitest';
 
 function source(path: string): string {
@@ -28,6 +43,84 @@ function matches(text: string, pattern: RegExp): string[] {
     return text.match(pattern) ?? [];
 }
 
+function parsedSource(path: string): SourceFile {
+    const scriptKind = path.endsWith('.tsx') ? ScriptKind.TSX : ScriptKind.TS;
+    return createSourceFile(path, source(path), ScriptTarget.Latest, true, scriptKind);
+}
+
+function importedBinding(file: SourceFile, modulePath: string, exportedName: string): string {
+    for (const statement of file.statements) {
+        if (
+            !isImportDeclaration(statement) ||
+            !isStringLiteral(statement.moduleSpecifier) ||
+            statement.moduleSpecifier.text !== modulePath
+        ) {
+            continue;
+        }
+        const bindings = statement.importClause?.namedBindings;
+        if (!bindings || !isNamedImports(bindings)) {
+            continue;
+        }
+        const element = bindings.elements.find(
+            (candidate) => (candidate.propertyName ?? candidate.name).text === exportedName
+        );
+        if (element) {
+            return element.name.text;
+        }
+    }
+    throw new Error(`Missing ${exportedName} import from ${modulePath} in ${file.fileName}`);
+}
+
+function visit(root: Node, predicate: (node: Node) => boolean): Node[] {
+    const found: Node[] = [];
+    function walk(node: Node): void {
+        if (predicate(node)) {
+            found.push(node);
+        }
+        forEachChild(node, walk);
+    }
+    walk(root);
+    return found;
+}
+
+function callCount(file: SourceFile, binding: string): number {
+    return visit(
+        file,
+        (node) => isCallExpression(node) && isIdentifier(node.expression) && node.expression.text === binding
+    ).length;
+}
+
+function callWithIdentifierArgumentsCount(file: SourceFile, binding: string, arguments_: readonly string[]): number {
+    return visit(file, (node) => {
+        if (!isCallExpression(node) || !isIdentifier(node.expression) || node.expression.text !== binding) {
+            return false;
+        }
+        return (
+            node.arguments.length === arguments_.length &&
+            node.arguments.every((argument, index) => isIdentifier(argument) && argument.text === arguments_[index])
+        );
+    }).length;
+}
+
+function propertyBindingCount(file: SourceFile, property: string, binding: string): number {
+    return visit(
+        file,
+        (node) =>
+            isPropertyAssignment(node) &&
+            isIdentifier(node.name) &&
+            node.name.text === property &&
+            isIdentifier(node.initializer) &&
+            node.initializer.text === binding
+    ).length;
+}
+
+function jsxMountCount(file: SourceFile, binding: string): number {
+    return visit(
+        file,
+        (node) => isJsxSelfClosingElement(node) && isIdentifier(node.tagName) && node.tagName.text === binding
+    ).length;
+}
+
 const LEGACY_ACTIONS = ['createVcaGroup', 'assignToVca', 'removeFromVca', 'setVcaGain'] as const;
 
 describe('VCA activation quarantine', () => {
@@ -50,7 +143,7 @@ describe('VCA activation quarantine', () => {
     });
 
     it('keeps every legacy writer registered and called by its allowed handler', () => {
-        const handlers = source('src/modules/Arrangement/useCases/getArrangementHandlers.ts');
+        const handlers = parsedSource('src/modules/Arrangement/useCases/getArrangementHandlers.ts');
         const expectedHandlerByAction = {
             assignToVca: 'handleAssignToVca',
             createVcaGroup: 'handleCreateVcaGroup',
@@ -60,23 +153,29 @@ describe('VCA activation quarantine', () => {
 
         for (const action of LEGACY_ACTIONS) {
             const handler = expectedHandlerByAction[action];
-            const handlerSource = source(`src/modules/Arrangement/handlers/vca/${handler}.ts`);
+            const handlerFile = parsedSource(`src/modules/Arrangement/handlers/vca/${handler}.ts`);
+            const registeredBinding = importedBinding(handlers, `../handlers/vca/${handler}`, handler);
+            const writerBinding = importedBinding(handlerFile, `../../useCases/vca/${action}`, action);
 
-            expect(matches(handlers, new RegExp(`\\b${action}: ${handler}\\b`, 'g'))).toHaveLength(1);
-            expect(matches(handlerSource, new RegExp(`\\b${action}\\(`, 'g'))).toHaveLength(1);
+            expect(propertyBindingCount(handlers, action, registeredBinding)).toBe(1);
+            expect(callCount(handlerFile, writerBinding)).toBe(1);
         }
     });
 
     it('keeps the legacy assignment reader mounted with exact live writer calls', () => {
-        const inspector = source('src/modules/TimelineEditor/presentations/views/Inspector/TrackInspector.tsx');
-        const reader = source('src/modules/TimelineEditor/presentations/views/Inspector/TrackVcaSection.tsx');
+        const inspector = parsedSource('src/modules/TimelineEditor/presentations/views/Inspector/TrackInspector.tsx');
+        const reader = parsedSource('src/modules/TimelineEditor/presentations/views/Inspector/TrackVcaSection.tsx');
+        const mountedReader = importedBinding(inspector, './TrackVcaSection', 'TrackVcaSection');
+        const useStoreBinding = importedBinding(reader, '#/infra/store/useStore', 'useStore');
+        const storeBinding = importedBinding(reader, '#/modules/Arrangement/stores', 'vcaGroupStore');
+        const defaultStateBinding = importedBinding(reader, '#/modules/Arrangement/stores', 'defaultVcaGroupState');
 
-        expect(matches(inspector, /import \{ TrackVcaSection \} from '\.\/TrackVcaSection';/g)).toHaveLength(1);
-        expect(matches(inspector, /<TrackVcaSection track=\{track\} \/>/g)).toHaveLength(1);
-        expect(matches(reader, /useStore\(vcaGroupStore, defaultVcaGroupState\)/g)).toHaveLength(1);
-        expect(matches(reader, /createVcaGroup\(name, \[track\.id\]\)/g)).toHaveLength(1);
-        expect(matches(reader, /assignToVca\(track\.id, val\)/g)).toHaveLength(1);
-        expect(matches(reader, /removeFromVca\(track\.id\)/g)).toHaveLength(1);
+        expect(jsxMountCount(inspector, mountedReader)).toBe(1);
+        expect(callWithIdentifierArgumentsCount(reader, useStoreBinding, [storeBinding, defaultStateBinding])).toBe(1);
+        for (const writer of ['createVcaGroup', 'assignToVca', 'removeFromVca'] as const) {
+            const writerBinding = importedBinding(reader, '#/modules/Arrangement/useCases', writer);
+            expect(callCount(reader, writerBinding)).toBe(1);
+        }
     });
 
     it('keeps only legacy VCA actions in the registered and persisted action unions', () => {
