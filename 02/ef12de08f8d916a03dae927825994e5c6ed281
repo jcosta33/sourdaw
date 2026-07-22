@@ -1,0 +1,45 @@
+src/modules/TimelineEditor/presentations/helpers/__tests__/automationViewHelpers.spec.ts
+  s_ac9b259eab20ba::t_3ecdba779f0c75 44,48-51,56-58
+src/modules/TimelineEditor/presentations/views/AutomationView.tsx
+  s_ac9b259eab20ba::t_66dac07e8f0b8c 78
+src/modules/TimelineEditor/presentations/views/AutomationView/__tests__/TrackAutomationSection.spec.tsx
+  s_ac9b259eab20ba::t_66dac07e8f0b8c 96
+src/modules/TimelineEditor/presentations/helpers/automationViewHelpers.ts
+  s_ac9b259eab20ba::t_66dac07e8f0b8c 2,10,25
+src/modules/AudioEngine/repositories/offlineScheduler/automationScheduling.ts
+  s_ac9b259eab20ba::t_9c1db373fe0bc8 1-2
+  s_ac9b259eab20ba::t_66dac07e8f0b8c 47-51,53-55,57
+src/utils/automationDeviceTarget.ts
+  s_ac9b259eab20ba::t_66dac07e8f0b8c 2-6,28,40-43,47-54,69-70,72-73,83-84,86-87,97-98,100-101,103
+  s_ac9b259eab20ba::t_00174c97886a9e 77
+  s_ac9b259eab20ba::t_cb5d908763b881 1,7-27,29-39,44-46,55-68,71,74-76,78-82,85,88-96,99,102
+src/modules/AudioEngine/repositories/offlineScheduler/__tests__/automationScheduling.spec.ts
+  s_ac9b259eab20ba::t_9c1db373fe0bc8 289-293,297-298,300-312,314-316,318-333,335-342,344-349,351-353,380
+  s_ac9b259eab20ba::t_3ecdba779f0c75 186,189-190,193,196-201,207,214-217,223-224,261-288,294-296,299,313,317,334,343,350,354-379
+src/modules/TimelineEditor/presentations/views/AutomationBottomPanel.tsx
+  s_ac9b259eab20ba::t_66dac07e8f0b8c 141
+src/modules/Transport/useCases/scheduling/applyAutomation/__tests__/applyAutomation.spec.ts
+  s_ac9b259eab20ba::t_3ecdba779f0c75 4,73-78,80,83,93,100,123,125-127,153,155,167-201,211,215,218-255,258,261
+  s_ac9b259eab20ba::t_9c1db373fe0bc8 202-210,212-214,216-217
+src/modules/TimelineEditor/presentations/views/AutomationView/TrackAutomationSection.tsx
+  s_ac9b259eab20ba::t_66dac07e8f0b8c 23
+src/modules/Transport/useCases/scheduling/applyAutomation/applyAutomation.ts
+  s_ac9b259eab20ba::t_cb5d908763b881 80-85,89
+  s_ac9b259eab20ba::t_66dac07e8f0b8c 11,78-79,86-88,90,115-118
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "02ef12de08f8d916a03dae927825994e5c6ed281",
+  "prompts": {},
+  "sessions": {
+    "s_ac9b259eab20ba": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8699-3865-7842-8c54-afbac6cfd266",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
