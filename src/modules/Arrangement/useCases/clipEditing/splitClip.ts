@@ -3,6 +3,7 @@ import { splitMidiNotesAtBeat } from '#/modules/MIDI/useCases';
 import { getNextClipId } from '../../repositories/clipIdCounter';
 import { getTrackState } from '../../repositories/track/getTrackState';
 import { setTrackState } from '../../repositories/track/setTrackState';
+import { resolveEligibleClipWriteTarget } from '../../stores/resolveEligibleClipWriteTarget';
 import { type Clip } from '../../stores/trackStore';
 import { snapToZeroCrossing } from '../timelineInteractions/snapToZeroCrossing';
 
@@ -14,9 +15,35 @@ import { snapToZeroCrossing } from '../timelineInteractions/snapToZeroCrossing';
  * right clip id, or null when the split is rejected.
  */
 export function splitClip(clipId: string, splitBeat: number, rightClipId?: string): string | null {
+    if (!Number.isFinite(splitBeat)) {
+        return null;
+    }
+    if (rightClipId !== undefined && (typeof rightClipId !== 'string' || rightClipId.length === 0)) {
+        return null;
+    }
+
+    const resolution = resolveEligibleClipWriteTarget({ clipId });
+    if (resolution.status !== 'eligible') {
+        return null;
+    }
+
     const state = getTrackState();
     if (!state) {
         return null;
+    }
+    if (rightClipId !== undefined) {
+        const destinationIdIsUsed = state.tracks.some((track) => {
+            if (track.clips.some((context) => context.id === rightClipId)) {
+                return true;
+            }
+
+            return track.alternatives.some((alternative) =>
+                alternative.clips.some((context) => context.id === rightClipId)
+            );
+        });
+        if (destinationIdIsUsed) {
+            return null;
+        }
     }
 
     let newRightClipId: string | null = null;
@@ -24,6 +51,10 @@ export function splitClip(clipId: string, splitBeat: number, rightClipId?: strin
     let adjustedSplit: number | null = null;
 
     const newTracks = state.tracks.map((time) => {
+        if (time.id !== resolution.trackId) {
+            return time;
+        }
+
         const clip = time.clips.find((context) => context.id === clipId);
         if (!clip || splitBeat <= clip.startBeat || splitBeat >= clip.endBeat) {
             return time;

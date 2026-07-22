@@ -4,14 +4,24 @@ import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { getTrackState } from '../../repositories/track/getTrackState';
 import { updateClip } from '../../repositories/track/updateClip';
+import { resolveEligibleClipWriteTarget } from '../../stores/resolveEligibleClipWriteTarget';
 import { removeClip } from '../clip/removeClip';
 
 import { splitClip } from './splitClip';
 
 export function splitClipWithUndo(clipId: string, splitBeat: number): void {
-    const origClip = getTrackState()
-        ?.tracks.flatMap((time) => time.clips)
-        .find((context) => context.id === clipId);
+    if (!Number.isFinite(splitBeat)) {
+        return;
+    }
+
+    const resolution = resolveEligibleClipWriteTarget({ clipId });
+    if (resolution.status !== 'eligible') {
+        return;
+    }
+
+    const state = getTrackState();
+    const targetTrack = state?.tracks.find((track) => track.id === resolution.trackId);
+    const origClip = targetTrack?.clips.find((context) => context.id === clipId);
     if (!origClip) {
         return;
     }

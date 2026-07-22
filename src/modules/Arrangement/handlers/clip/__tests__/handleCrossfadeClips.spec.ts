@@ -13,15 +13,28 @@ vi.mock('../../../useCases/clipEditing/crossfadeClips', () => ({
 describe('handleCrossfadeClips', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        mocks.crossfadeClips.mockReturnValue(true);
     });
 
     it('executes crossfadeClips with the provided payload', () => {
-        void handleCrossfadeClips.execute({
+        const result = handleCrossfadeClips.execute({
             type: 'crossfadeClips',
             payload: { clipAId: 'c1', clipBId: 'c2', durationBeats: 0.5 },
         });
 
         expect(mocks.crossfadeClips).toHaveBeenCalledWith('c1', 'c2', 0.5);
+        expect(result).toEqual({ status: 'written' });
+    });
+
+    it('returns no-write when the crossfade is rejected', () => {
+        mocks.crossfadeClips.mockReturnValue(false);
+
+        const result = handleCrossfadeClips.execute({
+            type: 'crossfadeClips',
+            payload: { clipAId: 'c1', clipBId: 'c2', durationBeats: 0.5 },
+        });
+
+        expect(result).toEqual({ status: 'no-write' });
     });
 
     it('provides a description', () => {
