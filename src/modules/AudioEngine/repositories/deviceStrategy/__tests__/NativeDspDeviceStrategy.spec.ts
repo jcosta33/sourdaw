@@ -30,6 +30,24 @@ describe('NativeDspDeviceStrategy', () => {
         expect(setParam).toHaveBeenCalledWith('gain', 0.5);
     });
 
+    it('forwards Toaster pad output and dry-ownership controls', () => {
+        const connectPadOutput = vi.fn();
+        const disconnectPadOutput = vi.fn();
+        const setPadDryRouted = vi.fn();
+        const strategy = new NativeDspDeviceStrategy(
+            make_dsp_node({ connectPadOutput, disconnectPadOutput, setPadDryRouted })
+        );
+        const destination = {} as AudioNode;
+
+        strategy.connectPadOutput(3, destination);
+        strategy.disconnectPadOutput(3, destination);
+        strategy.setPadDryRouted(3, true);
+
+        expect(connectPadOutput).toHaveBeenCalledWith(3, destination);
+        expect(disconnectPadOutput).toHaveBeenCalledWith(3, destination);
+        expect(setPadDryRouted).toHaveBeenCalledWith(3, true);
+    });
+
     it('should not throw when setParam is missing', () => {
         const strategy = new NativeDspDeviceStrategy(make_dsp_node());
         expect(() => strategy.setParam('x', 1)).not.toThrow();
@@ -64,9 +82,13 @@ describe('NativeDspDeviceStrategy', () => {
 
     it('should not throw when optional methods are missing', () => {
         const strategy = new NativeDspDeviceStrategy(make_dsp_node());
+        const destination = {} as AudioNode;
         expect(() => strategy.setBypass(false)).not.toThrow();
         expect(() => strategy.noteOn(0, 0)).not.toThrow();
         expect(() => strategy.noteOff(0)).not.toThrow();
+        expect(() => strategy.connectPadOutput(0, destination)).not.toThrow();
+        expect(() => strategy.disconnectPadOutput(0, destination)).not.toThrow();
+        expect(() => strategy.setPadDryRouted(0, false)).not.toThrow();
         expect(() => strategy.destroy()).not.toThrow();
     });
 });
