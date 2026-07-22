@@ -1,0 +1,35 @@
+src/modules/Arrangement/useCases/clipEditing/__tests__/splitClip.spec.ts
+  s_c2fca615e81f34::t_8e08aea9e12ba6 128-151
+src/modules/Arrangement/handlers/trackAlternative/__tests__/handleDeleteTrackAlternative.spec.ts
+  s_c2fca615e81f34::t_8e08aea9e12ba6 59,65,67,90-198
+  s_c2fca615e81f34::t_bdc376e90daa69 199
+src/modules/Arrangement/useCases/clipEditing/__tests__/crossfadeClips.spec.ts
+  s_c2fca615e81f34::t_8e08aea9e12ba6 97,99-105
+  s_c2fca615e81f34::t_222203d52fb18a 98
+src/modules/Arrangement/useCases/clipEditing/crossfadeClips.ts
+  s_c2fca615e81f34::t_2222af2dd311ea 39-40,42-50
+src/modules/Arrangement/useCases/clipEditing/__tests__/splitClipWithUndo.spec.ts
+  s_c2fca615e81f34::t_c7884b3eb387ee 178
+  s_c2fca615e81f34::t_8e08aea9e12ba6 185
+src/modules/Arrangement/handlers/trackAlternative/handleDeleteTrackAlternative.ts
+  s_c2fca615e81f34::t_2222af2dd311ea 38-49,52-76,119-126
+  s_c2fca615e81f34::t_0966fdf8fc8142 50-51
+src/modules/Arrangement/useCases/clipEditing/splitClip.ts
+  s_c2fca615e81f34::t_2222af2dd311ea 35-43
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "7e29d794829bc840cecf5e72054b5a9b0e92f8bb",
+  "prompts": {},
+  "sessions": {
+    "s_c2fca615e81f34": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f74e9-e1c5-7142-85d2-4c577b3973c0",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
