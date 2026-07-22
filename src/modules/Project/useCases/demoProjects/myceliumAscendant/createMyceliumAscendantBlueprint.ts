@@ -137,6 +137,34 @@ export function createMyceliumAscendantBlueprint(): MyceliumAscendantBlueprint {
         },
         history: { checkpoints: [] },
     };
+    const activeArrangementId = createMyceliumId('arrangement', 'primary');
+    projectData.arrangements = [
+        {
+            id: activeArrangementId,
+            name: 'Mycelium Ascendant',
+            tracks: { tracks: projectData.arrangement.tracks, selectedTrackId: null },
+            automation: projectData.automation,
+            midi: projectData.midi,
+            tempoMap: {
+                changes:
+                    projectData.tempoMap?.changes.map((change, index) => ({
+                        ...change,
+                        id: change.id ?? createMyceliumId('tempo', `arrangement:${index}`),
+                        curve: change.curve ?? 'instant',
+                    })) ?? [],
+            },
+            timeSignatureMap: {
+                changes:
+                    projectData.timeSignatureMap?.changes.map((change, index) => ({
+                        ...change,
+                        id: change.id ?? createMyceliumId('meter', `arrangement:${index}`),
+                    })) ?? [],
+            },
+            markers: { markers: projectData.markers, sections },
+            takeLanes: { lanes: [] },
+        },
+    ];
+    projectData.activeArrangementId = activeArrangementId;
 
     return { projectData, sections, chordEvents };
 }

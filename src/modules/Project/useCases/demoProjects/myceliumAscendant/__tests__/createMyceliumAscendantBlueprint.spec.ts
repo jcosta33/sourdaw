@@ -1,9 +1,21 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 
+import { arrangementStore } from '../../../../stores/arrangementStore';
+import { defaultProjectStoreState, projectStore } from '../../../../stores/projectStore';
+import { buildProjectData } from '../../../projectPersistence/fileIO/buildProjectData';
+import { hydrateArrangementStoreFromProjectData } from '../../../projectPersistence/helpers/hydrateArrangementStoreFromProjectData';
+import { hydrateModuleStoresFromProjectData } from '../../../projectPersistence/helpers/hydrateModuleStoresFromProjectData';
+import { isHydratableProjectData } from '../../../projectPersistence/helpers/isHydratableProjectData';
+import { resetModuleStoresToDefault } from '../../../projectPersistence/helpers/resetModuleStoresToDefault';
 import { createMyceliumAscendantBlueprint } from '../createMyceliumAscendantBlueprint';
 import { createMyceliumId, type MyceliumIdNamespace } from '../createMyceliumId';
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-8[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
+
+afterEach(() => {
+    resetModuleStoresToDefault();
+    projectStore.set(defaultProjectStoreState);
+});
 
 describe('createMyceliumAscendantBlueprint', () => {
     it('creates the transport contract', () => {
@@ -94,6 +106,7 @@ describe('createMyceliumAscendantBlueprint', () => {
         const tempoIds = first.projectData.tempoMap?.changes.flatMap((change) => change.id ?? []) ?? [];
         const meterIds = first.projectData.timeSignatureMap?.changes.flatMap((change) => change.id ?? []) ?? [];
         const ids = [
+            ...(first.projectData.activeArrangementId ? [first.projectData.activeArrangementId] : []),
             ...first.sections.map((section) => section.id),
             ...first.chordEvents.map((chord) => chord.id),
             ...first.projectData.markers.map((marker) => marker.id),
@@ -108,6 +121,48 @@ describe('createMyceliumAscendantBlueprint', () => {
         expect(first.projectData.arrangement).toEqual({ tracks: [] });
         expect(first.projectData.midi).toEqual({ notesByClipId: {}, ccByClipId: {}, pitchBendByClipId: {} });
         expect(first.projectData.automation).toEqual({ lanes: [] });
+    });
+
+    it('preserves sections through validation, import hydration, save, and reload', async () => {
+        const blueprint = createMyceliumAscendantBlueprint();
+        const imported = structuredClone(blueprint.projectData);
+
+        expect(isHydratableProjectData(imported)).toBe(true);
+        if (!isHydratableProjectData(imported)) {
+            throw new Error('Mycelium blueprint did not pass the canonical project validator');
+        }
+
+        hydrateArrangementStoreFromProjectData({ data: imported, preserveSavedArrangements: true });
+        hydrateModuleStoresFromProjectData(imported);
+        projectStore.set({
+            ...defaultProjectStoreState,
+            ...imported.meta,
+            dirty: false,
+            loading: false,
+            initialized: true,
+        });
+
+        const importedActive = arrangementStore.value?.arrangements.find(
+            (arrangement) => arrangement.id === arrangementStore.value?.activeArrangementId
+        );
+        expect(importedActive?.id).toBe(imported.activeArrangementId);
+        expect(importedActive?.markers?.sections).toEqual(blueprint.sections);
+
+        const saved = await buildProjectData({ includeAudioBuffers: false });
+        expect(saved?.data.arrangements?.[0]?.markers?.sections).toEqual(blueprint.sections);
+        const reloaded = structuredClone(saved?.data);
+        expect(isHydratableProjectData(reloaded)).toBe(true);
+        if (!isHydratableProjectData(reloaded)) {
+            throw new Error('Saved Mycelium blueprint did not pass the canonical project validator');
+        }
+
+        resetModuleStoresToDefault();
+        hydrateArrangementStoreFromProjectData({ data: reloaded, preserveSavedArrangements: true });
+        const reloadedActive = arrangementStore.value?.arrangements.find(
+            (arrangement) => arrangement.id === arrangementStore.value?.activeArrangementId
+        );
+        expect(reloadedActive?.id).toBe(blueprint.projectData.activeArrangementId);
+        expect(reloadedActive?.markers?.sections).toEqual(blueprint.sections);
     });
 
     it('isolates ids across future content namespaces', () => {
