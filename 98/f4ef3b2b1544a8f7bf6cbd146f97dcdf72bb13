@@ -1,0 +1,74 @@
+src/modules/Arrangement/useCases/clipEditing/glueClips.ts
+  s_c2fca615e81f34::t_19b0fcd35a2793 8,10-21,24,26,29-35,37,40-41,73-74
+src/modules/Arrangement/useCases/clipEditing/__tests__/splitClip.spec.ts
+  s_c2fca615e81f34::t_6a628a20dce84e 9,17-19,29,53,65-86
+src/modules/Arrangement/useCases/clipEditing/__tests__/crossfadeClips.spec.ts
+  s_c2fca615e81f34::t_639941d4908a69 79-84
+  s_c2fca615e81f34::t_55c2b3fd244dc3 6,11-13,22,41-44,48,54-77,92
+  s_c2fca615e81f34::t_d4dca0ce68df88 78
+src/modules/Arrangement/handlers/trackAlternative/__tests__/handleCreateTrackAlternative.spec.ts
+  s_c2fca615e81f34::t_d7249db98f8820 1,8,19-22,37-41,45,65-91
+src/modules/Arrangement/useCases/clipEditing/__tests__/createAlternativeClips.spec.ts
+  s_c2fca615e81f34::t_46b4243dfcc944 1,70-73
+  s_c2fca615e81f34::t_a2b02987f86ac7 7,12-14,24,67-69,74,76,78,82,84-97,99-108,110-111,118
+src/modules/Arrangement/handlers/trackAlternative/__tests__/handleSwitchTrackAlternative.spec.ts
+  s_c2fca615e81f34::t_7f68f298134743 15,26-29,33,52,70,78,83-121
+src/modules/Arrangement/handlers/clip/handleCrossfadeClips.ts
+  s_c2fca615e81f34::t_065f90559e80f1 4,8-10
+src/modules/Arrangement/handlers/clip/__tests__/handleCrossfadeClips.spec.ts
+  s_c2fca615e81f34::t_c5e74766722244 16,20,26-37
+src/modules/Arrangement/useCases/clipEditing/createAlternativeClips.ts
+  s_c2fca615e81f34::t_19b0fcd35a2793 5,14-26,29,32-33,36,74-75
+src/modules/Arrangement/handlers/clip/__tests__/handleGlueClips.spec.ts
+  s_c2fca615e81f34::t_c5e74766722244 16,20,26-37
+src/modules/Arrangement/handlers/clip/handleGlueClips.ts
+  s_c2fca615e81f34::t_065f90559e80f1 4,8
+src/modules/Arrangement/handlers/trackAlternative/handleDeleteTrackAlternative.ts
+  s_c2fca615e81f34::t_065f90559e80f1 3,6-23,26-36,40-45,48,51-66,68-71,73-88,92,94-95
+  s_c2fca615e81f34::t_b0848d36a383cd 67,72
+  s_c2fca615e81f34::t_fc55763acdb46c 24-25
+src/modules/Arrangement/handlers/trackAlternative/handleSwitchTrackAlternative.ts
+  s_c2fca615e81f34::t_065f90559e80f1 3,6-23,26-36,40-45,48,51,53-65,67-76,79-92,95,97-98
+  s_c2fca615e81f34::t_fc55763acdb46c 24-25
+  s_c2fca615e81f34::t_b0848d36a383cd 66
+src/modules/Arrangement/handlers/trackAlternative/__tests__/handleDeleteTrackAlternative.spec.ts
+  s_c2fca615e81f34::t_78bfab6c5ccb52 8,19-22,26,43,55,95,100-148
+src/modules/Arrangement/useCases/clipEditing/__tests__/glueClips.spec.ts
+  s_c2fca615e81f34::t_ec8b6722f4b54a 74,76
+  s_c2fca615e81f34::t_6609e98c8218b5 10
+  s_c2fca615e81f34::t_b7ab72ea25c455 20,28-30,37-40,44,51,58,78,87-121,178
+  s_c2fca615e81f34::t_d3d873051bbd11 73,75
+src/modules/Arrangement/useCases/clipEditing/__tests__/splitClipWithUndo.spec.ts
+  s_c2fca615e81f34::t_88fe5096143725 9-13,20-31,40,59-63,72-82,137-191
+src/modules/Arrangement/useCases/clipEditing/crossfadeClips.ts
+  s_c2fca615e81f34::t_639941d4908a69 38-42
+  s_c2fca615e81f34::t_19b0fcd35a2793 4-19,23,26-29,31,56-57
+src/modules/Arrangement/useCases/clipEditing/splitClip.ts
+  s_c2fca615e81f34::t_19b0fcd35a2793 6,18-26,40
+  s_c2fca615e81f34::t_d21ef0ab36f00e 37-39
+src/modules/Arrangement/useCases/clipEditing/splitClipWithUndo.ts
+  s_c2fca615e81f34::t_19b0fcd35a2793 7,13-24
+src/modules/Arrangement/handlers/clip/handleSplitClip.ts
+  s_c2fca615e81f34::t_065f90559e80f1 4,8
+src/modules/Arrangement/handlers/trackAlternative/handleCreateTrackAlternative.ts
+  s_c2fca615e81f34::t_065f90559e80f1 3,6,13-24,27-38,41-46,49,52-99,103,105-106
+  s_c2fca615e81f34::t_fc55763acdb46c 25-26
+src/modules/Arrangement/handlers/clip/__tests__/handleSplitClip.spec.ts
+  s_c2fca615e81f34::t_c5e74766722244 16,20,26-37
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "98f4ef3b2b1544a8f7bf6cbd146f97dcdf72bb13",
+  "prompts": {},
+  "sessions": {
+    "s_c2fca615e81f34": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f74e9-e1c5-7142-85d2-4c577b3973c0",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
