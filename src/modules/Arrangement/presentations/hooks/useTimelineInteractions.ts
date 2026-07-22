@@ -885,8 +885,8 @@ export const useTimelineInteractions = (canvasRef: React.RefObject<HTMLCanvasEle
                         }
                     }
                 } else if (dragMode === 'trim-start' && primaryPos) {
-                    trimClipStart(dragClipId, primaryPos.startBeat);
-                    if (primaryOrig && primaryPos.startBeat !== primaryOrig.startBeat) {
+                    const didWrite = trimClipStart(dragClipId, primaryPos.startBeat);
+                    if (didWrite && primaryOrig && primaryPos.startBeat !== primaryOrig.startBeat) {
                         const newStart = primaryPos.startBeat;
                         pushUndoEntry(
                             'Trim clip start',
@@ -895,8 +895,8 @@ export const useTimelineInteractions = (canvasRef: React.RefObject<HTMLCanvasEle
                         );
                     }
                 } else if (dragMode === 'stretch' && primaryPos) {
-                    trimClipEnd(dragClipId, primaryPos.endBeat);
-                    if (primaryOrig && primaryPos.endBeat !== primaryOrig.endBeat) {
+                    const didWrite = trimClipEnd(dragClipId, primaryPos.endBeat);
+                    if (didWrite && primaryOrig && primaryPos.endBeat !== primaryOrig.endBeat) {
                         const newEnd = primaryPos.endBeat;
                         pushUndoEntry(
                             'Trim clip end',

@@ -734,6 +734,21 @@ function isAudioBuffers(value: unknown): value is Record<string, ProjectExported
     );
 }
 
+function isCanonicalChordTrackState(value: unknown): boolean {
+    if (!isChordTrackState(value)) {
+        return false;
+    }
+
+    let previousBeat = Number.NEGATIVE_INFINITY;
+    for (const event of value.events) {
+        if (event.beat < previousBeat) {
+            return false;
+        }
+        previousBeat = event.beat;
+    }
+    return true;
+}
+
 export function isHydratableProjectData(value: unknown): value is HydratableProjectData {
     if (!isRecord(value) || !Number.isInteger(value.version) || !isSupportedProjectVersion(value.version)) {
         return false;
@@ -747,7 +762,7 @@ export function isHydratableProjectData(value: unknown): value is HydratableProj
     if (value.midi !== undefined && !isMidi(value.midi)) {
         return false;
     }
-    if (value.chordTrack !== undefined && !isChordTrackState(value.chordTrack)) {
+    if (value.chordTrack !== undefined && !isCanonicalChordTrackState(value.chordTrack)) {
         return false;
     }
     if (value.grooves !== undefined && !isGrooves(value.grooves)) {

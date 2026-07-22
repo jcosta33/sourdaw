@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { defaultKneadState, kneadStore, type PitchContour } from '#/modules/Knead/stores';
 
@@ -6,6 +6,14 @@ import { TrackDummy } from '../../__tests__/TrackDummy';
 import { type Clip } from '../../models/Track';
 import { trackStore } from '../../stores/trackStore';
 import { replaceClipAudioBuffer } from '../replaceClipAudioBuffer';
+
+const mocks = vi.hoisted(() => ({
+    resolveEligibleClipWriteTarget: vi.fn(),
+}));
+
+vi.mock('../../stores/resolveEligibleClipWriteTarget', () => ({
+    resolveEligibleClipWriteTarget: mocks.resolveEligibleClipWriteTarget,
+}));
 
 const storedContour: PitchContour = {
     points: [{ time_ms: 0, frequency_hz: 220, confidence: 0.9, voiced: true }],
@@ -31,6 +39,12 @@ const clip: Clip = {
 
 describe('replaceClipAudioBuffer', () => {
     beforeEach(() => {
+        vi.clearAllMocks();
+        mocks.resolveEligibleClipWriteTarget.mockReturnValue({
+            status: 'eligible',
+            trackId: 'track-1',
+            clipId: 'clip-1',
+        });
         trackStore.set({
             tracks: [TrackDummy.create({ clips: [clip] })],
             selectedTrackId: null,
@@ -38,8 +52,9 @@ describe('replaceClipAudioBuffer', () => {
     });
 
     it('should update audioBufferId on the clip whose id matches', () => {
-        replaceClipAudioBuffer('clip-1', 'buf-new');
+        const didWrite = replaceClipAudioBuffer('clip-1', 'buf-new');
 
+        expect(didWrite).toBe(true);
         expect(trackStore.value?.tracks[0]?.clips[0]?.audioBufferId).toBe('buf-new');
     });
 
@@ -70,5 +85,93 @@ describe('replaceClipAudioBuffer', () => {
         replaceClipAudioBuffer('buf-old', 'buf-replaced');
 
         expect(kneadStore.value?.contours['clip-1']).toBeUndefined();
+    });
+
+    it('returns false without publishing when no clip matches either lookup key', () => {
+        const before = trackStore.value;
+
+        const didWrite = replaceClipAudioBuffer('missing', 'buf-new');
+
+        expect(didWrite).toBe(false);
+        expect(trackStore.value).toBe(before);
+    });
+
+    it('publishes one valid multi-match replacement before clearing both contours', () => {
+        const secondClip: Clip = {
+            ...clip,
+            id: 'clip-2',
+            trackId: 'track-2',
+        };
+        trackStore.set({
+            tracks: [
+                TrackDummy.create({ id: 'track-1', clips: [clip] }),
+                TrackDummy.create({ id: 'track-2', clips: [secondClip] }),
+            ],
+            selectedTrackId: null,
+        });
+        kneadStore.set({
+            ...defaultKneadState,
+            contours: { 'clip-1': storedContour, 'clip-2': storedContour },
+        });
+        mocks.resolveEligibleClipWriteTarget.mockImplementation(({ clipId }: { clipId: string }) => ({
+            status: 'eligible',
+            trackId: clipId === 'clip-1' ? 'track-1' : 'track-2',
+            clipId,
+        }));
+        const setTrackState = vi.spyOn(trackStore, 'set');
+
+        const didWrite = replaceClipAudioBuffer('buf-old', 'buf-new');
+
+        expect(didWrite).toBe(true);
+        expect(setTrackState).toHaveBeenCalledTimes(1);
+        expect(trackStore.value?.tracks.map((track) => track.clips[0]?.audioBufferId)).toEqual(['buf-new', 'buf-new']);
+        expect(kneadStore.value?.contours).toEqual({});
+        setTrackState.mockRestore();
+    });
+
+    it('atomically rejects a multi-match replacement when any matched owner is ineligible', () => {
+        const secondClip: Clip = {
+            ...clip,
+            id: 'clip-2',
+            trackId: 'track-2',
+        };
+        trackStore.set({
+            tracks: [
+                TrackDummy.create({ id: 'track-1', clips: [clip] }),
+                TrackDummy.create({ id: 'track-2', clips: [secondClip] }),
+            ],
+            selectedTrackId: null,
+        });
+        kneadStore.set({
+            ...defaultKneadState,
+            contours: { 'clip-1': storedContour, 'clip-2': storedContour },
+        });
+        mocks.resolveEligibleClipWriteTarget.mockImplementation(({ clipId }: { clipId: string }) => {
+            if (clipId === 'clip-1') {
+                return { status: 'eligible', trackId: 'track-1', clipId };
+            }
+            return { status: 'ineligible' };
+        });
+        const before = structuredClone(trackStore.value);
+
+        const didWrite = replaceClipAudioBuffer('buf-old', 'buf-new');
+
+        expect(didWrite).toBe(false);
+        expect(trackStore.value).toEqual(before);
+        expect(kneadStore.value?.contours).toEqual({
+            'clip-1': storedContour,
+            'clip-2': storedContour,
+        });
+    });
+
+    it('rejects the whole replacement before publication or contour clearing when one owner is ineligible', () => {
+        kneadStore.set({ ...defaultKneadState, contours: { 'clip-1': storedContour } });
+        mocks.resolveEligibleClipWriteTarget.mockReturnValue({ status: 'ineligible' });
+
+        const didWrite = replaceClipAudioBuffer('clip-1', 'buf-new');
+
+        expect(didWrite).toBe(false);
+        expect(trackStore.value?.tracks[0]?.clips[0]?.audioBufferId).toBe('buf-old');
+        expect(kneadStore.value?.contours['clip-1']).toEqual(storedContour);
     });
 });

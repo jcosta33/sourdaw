@@ -1,4 +1,5 @@
 import { createStore } from '#/infra/store/createStore';
+import { createAutomergeStorage } from '#/infra/store/storage/createAutomergeStorage';
 
 import { type ChordEvent } from '../models/ChordEvent';
 import { CHORD_TYPES, type ChordType } from '../models/ChordTypes';
@@ -10,8 +11,17 @@ export type ChordTrackState = {
 
 export const defaultChordTrackState: ChordTrackState = { enabled: false, events: [] };
 
-const STORAGE_KEY = 'sourdaw_chord_track';
+const CHORD_TRACK_CRDT_SCHEMA_VERSION = 1;
+const CHORD_EVENT_VALUE_FIELDS = ['beat', 'root', 'quality', 'duration'] as const;
 
+type MutableRecord = Record<string, unknown>;
+type ChordEventEntity = { deleted: boolean; value: ChordEvent };
+type ChordTrackCrdtState = {
+    schemaVersion: number;
+    enabled: boolean;
+    events: Record<string, ChordEventEntity>;
+    migrationBase?: ChordTrackState;
+};
 type ChordEventCandidate = {
     beat?: unknown;
     duration?: unknown;
@@ -77,73 +87,282 @@ export function isChordTrackState(value: unknown): value is ChordTrackState {
         return false;
     }
 
-    if (typeof value.enabled !== 'boolean' || !Array.isArray(value.events)) {
+    if (typeof value.enabled !== 'boolean' || !Array.isArray(value.events) || !value.events.every(isChordEvent)) {
         return false;
     }
-
-    const eventIds = new Set<string>();
-    let previousBeat = Number.NEGATIVE_INFINITY;
-    for (const event of value.events) {
-        if (!isChordEvent(event) || event.beat < previousBeat || eventIds.has(event.id)) {
-            return false;
-        }
-        eventIds.add(event.id);
-        previousBeat = event.beat;
-    }
-
-    return true;
+    return new Set(value.events.map((event) => event.id)).size === value.events.length;
 }
 
-function getStorage(): Storage | null {
-    try {
-        if (typeof window === 'undefined') {
-            return null;
-        }
-
-        return window.localStorage;
-    } catch {
-        return null;
+function isRecord(value: unknown): value is MutableRecord {
+    return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+function compareIds(left: string, right: string): number {
+    if (left === right) {
+        return 0;
     }
+    return left < right ? -1 : 1;
 }
 
-function loadFromStorage(): ChordTrackState {
-    const storage = getStorage();
-    if (!storage) {
+function normalizeState(value: unknown): ChordTrackState {
+    if (!isChordTrackState(value)) {
         return defaultChordTrackState;
     }
+    return {
+        enabled: value.enabled,
+        events: [...value.events].sort((left, right) => left.beat - right.beat || compareIds(left.id, right.id)),
+    };
+}
 
-    try {
-        const stored = storage.getItem(STORAGE_KEY);
-        if (stored === null) {
+function isCrdtState(value: unknown): value is ChordTrackCrdtState {
+    if (
+        !isRecord(value) ||
+        value.schemaVersion !== CHORD_TRACK_CRDT_SCHEMA_VERSION ||
+        typeof value.enabled !== 'boolean' ||
+        !isRecord(value.events) ||
+        (value.migrationBase !== undefined && !isChordTrackState(value.migrationBase))
+    ) {
+        return false;
+    }
+    return Object.entries(value.events).every(
+        ([id, entity]) =>
+            id.length > 0 &&
+            isRecord(entity) &&
+            typeof entity.deleted === 'boolean' &&
+            isChordEvent(entity.value) &&
+            entity.value.id === id
+    );
+}
+
+function assertSupportedSchema(value: unknown): void {
+    if (!isRecord(value) || !Object.hasOwn(value, 'schemaVersion')) {
+        return;
+    }
+    if (value.schemaVersion !== CHORD_TRACK_CRDT_SCHEMA_VERSION) {
+        throw new Error(`Unsupported chord-track CRDT schema version: ${String(value.schemaVersion)}`);
+    }
+    if (!isCrdtState(value)) {
+        throw new Error(`Malformed chord-track CRDT schema version ${CHORD_TRACK_CRDT_SCHEMA_VERSION}`);
+    }
+}
+
+function encodeState(value: ChordTrackState): ChordTrackCrdtState {
+    const state = normalizeState(value);
+    return {
+        schemaVersion: CHORD_TRACK_CRDT_SCHEMA_VERSION,
+        enabled: state.enabled,
+        events: Object.fromEntries(state.events.map((event) => [event.id, { deleted: false, value: { ...event } }])),
+    };
+}
+
+function decodeState(value: unknown): ChordTrackState {
+    assertSupportedSchema(value);
+    if (!isCrdtState(value)) {
+        return normalizeState(value);
+    }
+    const events = Object.values(value.events).flatMap((entity) => (entity.deleted ? [] : [entity.value]));
+    return normalizeState({ enabled: value.enabled, events });
+}
+
+function encodeMigratedState(previous: unknown, desired: ChordTrackState): ChordTrackCrdtState {
+    const encoded = encodeState(desired);
+    const migrationBase = previous === undefined ? normalizeState(desired) : normalizeState(previous);
+    if (previous !== undefined && !isChordTrackState(previous)) {
+        return encoded;
+    }
+    encoded.migrationBase = {
+        enabled: migrationBase.enabled,
+        events: migrationBase.events.map((event) => ({ ...event })),
+    };
+    const desiredIds = new Set(desired.events.map((event) => event.id));
+    for (const event of migrationBase.events) {
+        if (!desiredIds.has(event.id)) {
+            encoded.events[event.id] = { deleted: true, value: { ...event } };
+        }
+    }
+    return encoded;
+}
+
+function replaceIfChanged(target: MutableRecord, key: string, value: unknown): void {
+    if (JSON.stringify(target[key]) !== JSON.stringify(value)) {
+        target[key] = value;
+    }
+}
+
+function syncEvents(current: MutableRecord, events: readonly ChordEvent[]): void {
+    const desired = new Map(events.map((event) => [event.id, event]));
+    for (const [id, entity] of Object.entries(current)) {
+        if (!desired.has(id) && isRecord(entity) && entity.deleted !== true) {
+            entity.deleted = true;
+        }
+    }
+    for (const [id, event] of desired) {
+        const entity = current[id];
+        if (!isRecord(entity) || !isRecord(entity.value)) {
+            current[id] = { deleted: false, value: { ...event } };
+            continue;
+        }
+        replaceIfChanged(entity, 'deleted', false);
+        replaceIfChanged(entity.value, 'id', event.id);
+        for (const field of CHORD_EVENT_VALUE_FIELDS) {
+            replaceIfChanged(entity.value, field, event[field]);
+        }
+    }
+}
+
+function mutateCrdt({ doc, key, value }: { doc: MutableRecord; key: string; value: ChordTrackState }): void {
+    const desired = normalizeState(value);
+    const current = doc[key];
+    assertSupportedSchema(current);
+    if (!isCrdtState(current)) {
+        doc[key] = encodeMigratedState(current, desired);
+        return;
+    }
+    replaceIfChanged(current, 'enabled', desired.enabled);
+    syncEvents(current.events, desired.events);
+}
+
+function mergeEntities(target: Record<string, ChordEventEntity>, source: Record<string, ChordEventEntity>): void {
+    for (const id of Object.keys(source).sort(compareIds)) {
+        if (target[id]?.deleted !== true && (!target[id] || source[id]!.deleted === true)) {
+            target[id] = structuredClone(source[id]!);
+        }
+    }
+}
+
+function mergeEventFields(base: ChordEvent, values: readonly ChordEvent[]): ChordEvent {
+    const merged = { ...base };
+    for (const event of values) {
+        for (const field of CHORD_EVENT_VALUE_FIELDS) {
+            if (event[field] !== base[field]) {
+                Object.assign(merged, { [field]: event[field] });
+            }
+        }
+    }
+    return merged;
+}
+
+function mergeMigratedStates(states: readonly ChordTrackCrdtState[], base: ChordTrackState): ChordTrackCrdtState {
+    const merged = encodeState(base);
+    const baseById = new Map(base.events.map((event) => [event.id, event]));
+    for (const state of states) {
+        if (state.enabled !== base.enabled) {
+            merged.enabled = state.enabled;
+        }
+        mergeEntities(merged.events, state.events);
+    }
+    for (const [id, entity] of Object.entries(merged.events)) {
+        if (entity.deleted) {
+            continue;
+        }
+        const values = states.flatMap((state) => (state.events[id]?.deleted === false ? [state.events[id].value] : []));
+        entity.value = mergeEventFields(baseById.get(id) ?? entity.value, values);
+    }
+    return merged;
+}
+
+function reconcileRootConflicts(values: readonly unknown[]): ChordTrackCrdtState {
+    const states = values.map((value) => {
+        assertSupportedSchema(value);
+        return isCrdtState(value) ? value : encodeState(normalizeState(value));
+    });
+    const migrationBase = states.map((state) => state.migrationBase).find(isChordTrackState);
+    if (migrationBase) {
+        return mergeMigratedStates(states, normalizeState(migrationBase));
+    }
+    const merged = encodeState(defaultChordTrackState);
+    for (const state of states) {
+        merged.enabled = state.enabled;
+        mergeEntities(merged.events, state.events);
+    }
+    return merged;
+}
+
+type RebasePendingInput = {
+    baseValue: ChordTrackState | null;
+    pendingValue: ChordTrackState | null;
+    hydratedValue: ChordTrackState;
+};
+
+function rebasePending({ baseValue, pendingValue, hydratedValue }: RebasePendingInput): ChordTrackState | null {
+    if (!pendingValue) {
+        return null;
+    }
+    const base = normalizeState(baseValue);
+    const pending = normalizeState(pendingValue);
+    const hydrated = normalizeState(hydratedValue);
+    const baseById = new Map(base.events.map((event) => [event.id, event]));
+    const pendingById = new Map(pending.events.map((event) => [event.id, event]));
+    const rebasedById = new Map(hydrated.events.map((event) => [event.id, event]));
+    for (const id of new Set([...baseById.keys(), ...pendingById.keys()])) {
+        const original = baseById.get(id);
+        const local = pendingById.get(id);
+        const remote = rebasedById.get(id);
+        if (JSON.stringify(original) === JSON.stringify(local)) {
+            continue;
+        }
+        // Existing-event deletion wins over a concurrent update in either direction.
+        if (original && (!local || !remote)) {
+            rebasedById.delete(id);
+            continue;
+        }
+        if (original && local && remote) {
+            rebasedById.set(id, mergeEventFields(original, [remote, local]));
+            continue;
+        }
+        if (local) {
+            rebasedById.set(id, local);
+        }
+    }
+    return normalizeState({
+        enabled: base.enabled === pending.enabled ? hydrated.enabled : pending.enabled,
+        events: [...rebasedById.values()],
+    });
+}
+
+export function createChordTrackAutomergeStorage() {
+    let reconciledConflictState: ChordTrackCrdtState | null = null;
+    let rejectedAuthority: Error | null = null;
+    function projectAuthority(project: () => ChordTrackState): ChordTrackState {
+        rejectedAuthority = null;
+        try {
+            return project();
+        } catch (error) {
+            rejectedAuthority =
+                error instanceof Error ? error : new Error('Chord-track authority rejected', { cause: error });
+            reconciledConflictState = null;
             return defaultChordTrackState;
         }
-
-        const parsed: unknown = JSON.parse(stored);
-        if (isChordTrackState(parsed)) {
-            return parsed;
-        }
-    } catch {
-        // Fallback
     }
-
-    return defaultChordTrackState;
+    return createAutomergeStorage<ChordTrackState>('root', 'chordTrack', {
+        fromCrdt: (value) => {
+            reconciledConflictState = null;
+            return projectAuthority(() => decodeState(value));
+        },
+        hydrateMissing: () => {
+            reconciledConflictState = null;
+            rejectedAuthority = null;
+            return defaultChordTrackState;
+        },
+        resolveCrdtConflicts: (values) =>
+            projectAuthority(() => {
+                reconciledConflictState = reconcileRootConflicts(values);
+                return decodeState(reconciledConflictState);
+            }),
+        mutateCrdt: (input) => {
+            if (rejectedAuthority !== null) {
+                throw rejectedAuthority;
+            }
+            if (reconciledConflictState) {
+                input.doc[input.key] = structuredClone(reconciledConflictState);
+            }
+            reconciledConflictState = null;
+            mutateCrdt(input);
+        },
+        rebasePending,
+    });
 }
 
 export const chordTrackStore = createStore<ChordTrackState>({
-    initialData: loadFromStorage(),
-});
-
-/** Persist chord track state to localStorage on every change. */
-chordTrackStore.subscribe(() => {
-    const state = chordTrackStore.value;
-    const storage = getStorage();
-    if (!state || !storage) {
-        return;
-    }
-
-    try {
-        storage.setItem(STORAGE_KEY, JSON.stringify(state));
-    } catch {
-        // Persistence is best effort.
-    }
+    storage: createChordTrackAutomergeStorage(),
+    initialData: defaultChordTrackState,
 });

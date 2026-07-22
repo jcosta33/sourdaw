@@ -10,7 +10,6 @@ const mocks = vi.hoisted(() => ({
     automationStoreSet: vi.fn(),
     midiStoreSet: vi.fn(),
     resetMidiStoreForProject: vi.fn(),
-    hydrateChordTrackProjectState: vi.fn(),
     hydrateGrooveTemplates: vi.fn(),
     tempoMapStoreSet: vi.fn(),
     timeSignatureMapStoreSet: vi.fn(),
@@ -39,7 +38,6 @@ vi.mock('#/modules/MIDI/useCases', async (importOriginal) => {
     const actual = await importOriginal<typeof import('#/modules/MIDI/useCases')>();
     return {
         ...actual,
-        hydrateChordTrackProjectState: mocks.hydrateChordTrackProjectState,
         hydrateGrooveTemplates: mocks.hydrateGrooveTemplates,
         resetMidiStoreForProject: mocks.resetMidiStoreForProject,
     };
@@ -91,7 +89,6 @@ describe('resetModuleStoresToDefault', () => {
         mocks.automationStoreSet.mockClear();
         mocks.midiStoreSet.mockClear();
         mocks.resetMidiStoreForProject.mockClear();
-        mocks.hydrateChordTrackProjectState.mockClear();
         mocks.hydrateGrooveTemplates.mockClear();
         mocks.tempoMapStoreSet.mockClear();
         mocks.timeSignatureMapStoreSet.mockClear();
@@ -109,7 +106,6 @@ describe('resetModuleStoresToDefault', () => {
         expect(mocks.transportStoreSet).toHaveBeenCalledWith(defaultTransportState);
         expect(mocks.automationStoreSet).toHaveBeenCalledWith({ lanes: [] });
         expect(mocks.resetMidiStoreForProject).toHaveBeenCalledWith({ generateProbabilitySeed: false });
-        expect(mocks.hydrateChordTrackProjectState).toHaveBeenCalledWith(undefined);
         expect(mocks.tempoMapStoreSet).toHaveBeenCalledWith({ changes: [] });
         expect(mocks.timeSignatureMapStoreSet).toHaveBeenCalledWith({ changes: [] });
         expect(mocks.setSidechainRoutes).toHaveBeenCalledWith([]);
@@ -132,7 +128,6 @@ describe('resetModuleStoresToDefault', () => {
         resetModuleStoresToDefault({ resetMidiState: false });
 
         expect(mocks.resetMidiStoreForProject).not.toHaveBeenCalled();
-        expect(mocks.hydrateChordTrackProjectState).not.toHaveBeenCalled();
     });
 
     it('should clear per-device Grinder telemetry so prior-project meters do not linger', () => {

@@ -8,11 +8,7 @@ import { resetGrandBouleStores } from '#/modules/GrandBoule/stores';
 import { grinderStore, grinderTelemetryStore } from '#/modules/Grinder/stores';
 import { kneadStore, defaultKneadState } from '#/modules/Knead/stores';
 import { levainStore } from '#/modules/Levain/stores';
-import {
-    hydrateChordTrackProjectState,
-    hydrateGrooveTemplates,
-    resetMidiStoreForProject,
-} from '#/modules/MIDI/useCases';
+import { hydrateGrooveTemplates, resetMidiStoreForProject } from '#/modules/MIDI/useCases';
 import { proofStore } from '#/modules/Proof/stores';
 import { setSidechainRoutes } from '#/modules/Routing/useCases';
 import { toasterStore } from '#/modules/Toaster/stores';
@@ -42,7 +38,6 @@ export function resetModuleStoresToDefault({
     automationStore.set({ lanes: [] });
     if (resetMidiState) {
         resetMidiStoreForProject({ generateProbabilitySeed: createNewMidiProbabilitySeed });
-        hydrateChordTrackProjectState(undefined);
     }
     if (resetGrooveTemplates) {
         hydrateGrooveTemplates({ templates: [], assignments: [] });

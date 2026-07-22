@@ -35,8 +35,9 @@ export type WasmDeviceCreateDeps = {
     deviceId: string;
     deviceType: string;
     transportSAB?: SharedArrayBuffer;
-    /** Called with the fully-loaded BuiltinDeviceNode — swap-in + rebuildChain happen here */
-    onLoaded: (finalDn: BuiltinDeviceNode) => void;
+    isCurrent?: () => boolean;
+    /** Returns false when the owner rejected and destroyed a stale loaded node. */
+    onLoaded: (finalDn: BuiltinDeviceNode) => boolean | void;
 };
 
 export type WasmDeviceDescriptor = {
@@ -94,6 +95,7 @@ const fermenterDescriptor: WasmDeviceDescriptor = {
                     nodes: [result.workletNode],
                     inputNode: result.workletNode,
                     outputNode: result.workletNode,
+                    dispose: result.destroy,
                     controller: {
                         ready: true,
                         noteOn: result.noteOn,
@@ -151,12 +153,13 @@ const toasterDescriptor: WasmDeviceDescriptor = {
                 for (const [name, value] of pendingParams) {
                     result.setParam(name, value);
                 }
-                onLoaded({
+                const accepted = onLoaded({
                     deviceId,
                     type: deviceType,
                     nodes: [result.workletNode],
                     inputNode: result.workletNode,
                     outputNode: result.workletNode,
+                    dispose: result.destroy,
                     controller: {
                         ready: true,
                         noteOn: result.noteOn,
@@ -195,6 +198,9 @@ const toasterDescriptor: WasmDeviceDescriptor = {
                         destroy: result.destroy,
                     },
                 });
+                if (accepted === false) {
+                    return;
+                }
                 getAudioDeviceRuntimeSink().emitDeviceLoaded({ deviceId, deviceType });
                 return;
             })
@@ -235,12 +241,13 @@ const levainDescriptor: WasmDeviceDescriptor = {
                 for (const [name, value] of pendingParams) {
                     result.setParam(name, value);
                 }
-                onLoaded({
+                const accepted = onLoaded({
                     deviceId,
                     type: deviceType,
                     nodes: [result.workletNode],
                     inputNode: result.workletNode,
                     outputNode: result.workletNode,
+                    dispose: result.destroy,
                     controller: {
                         ready: true,
                         noteOn: result.noteOn,
@@ -270,6 +277,9 @@ const levainDescriptor: WasmDeviceDescriptor = {
                         destroy: result.destroy,
                     },
                 });
+                if (accepted === false) {
+                    return;
+                }
                 getAudioDeviceRuntimeSink().registerLevainDevice({
                     deviceId,
                     device: {
@@ -305,19 +315,29 @@ const proofChamberDescriptor: WasmDeviceDescriptor = {
             .then(async (result: ProofChamberNodeResult) => {
                 const readyData = await result.ready;
                 const initialLatency = typeof readyData.latency === 'number' ? readyData.latency : 0;
-                reportLatency(deviceId, (initialLatency / context.sampleRate) * 1000);
                 for (const [name, value] of pendingParams) {
                     result.setParam(name, value);
                 }
-                onLoaded({
+                const accepted = onLoaded({
                     deviceId,
                     type: deviceType,
                     nodes: [result.workletNode],
                     inputNode: result.workletNode,
                     outputNode: result.workletNode,
-                    controller: { setParam: result.setParam, setBypass: result.setBypass, destroy: result.destroy },
+                    dispose: result.destroy,
+                    controller: {
+                        setParam: result.setParam,
+                        setBypass: result.setBypass,
+                        destroy: () => {
+                            result.destroy();
+                            clearReportedLatency(deviceId);
+                        },
+                    },
                     nativeDspControls: { setParam: result.setParam, setBypass: result.setBypass },
                 });
+                if (accepted !== false) {
+                    reportLatency(deviceId, (initialLatency / context.sampleRate) * 1000);
+                }
                 return;
             })
             .catch((error) => {
@@ -362,6 +382,7 @@ const glutenDescriptor: WasmDeviceDescriptor = {
                     nodes: [result.workletNode],
                     inputNode: result.workletNode,
                     outputNode: result.workletNode,
+                    dispose: result.destroy,
                     controller: {
                         setParam: result.setParam,
                         setBypass: result.setBypass,
@@ -415,6 +436,7 @@ const bacteriaDescriptor: WasmDeviceDescriptor = {
                     nodes: [result.workletNode],
                     inputNode: result.workletNode,
                     outputNode: result.workletNode,
+                    dispose: result.destroy,
                     controller: {
                         setParam: result.setParam,
                         setBypass: result.setBypass,
@@ -499,6 +521,7 @@ const grinderDescriptor: WasmDeviceDescriptor = {
                     nodes: [result.workletNode],
                     inputNode: result.workletNode,
                     outputNode: result.workletNode,
+                    dispose: result.destroy,
                     controller: {
                         setParam: result.setParam,
                         setPatch: result.setPatch,
@@ -522,7 +545,7 @@ const grinderDescriptor: WasmDeviceDescriptor = {
 
 const proofDescriptor: WasmDeviceDescriptor = {
     matches: isProofDevice,
-    create({ context, deviceId, deviceType, onLoaded }) {
+    create({ context, deviceId, deviceType, isCurrent, onLoaded }) {
         const pendingParams: Array<[string, number]> = [];
         const placeholder = loadingBypassNode(context, deviceId, deviceType);
         const loadingControls: {
@@ -539,6 +562,10 @@ const proofDescriptor: WasmDeviceDescriptor = {
         const loadPromise = createProofNode(context)
             .then(async (result: ProofNodeResult) => {
                 const readyData = await result.ready;
+                if (isCurrent?.() === false) {
+                    result.destroy();
+                    return;
+                }
                 const initialLatency = typeof readyData.latency === 'number' ? readyData.latency : 0;
                 reportLatency(deviceId, (initialLatency / context.sampleRate) * 1000);
                 const runtimeSink = getAudioDeviceRuntimeSink();
@@ -570,6 +597,7 @@ const proofDescriptor: WasmDeviceDescriptor = {
                         nodes: [result.workletNode],
                         inputNode: result.workletNode,
                         outputNode: result.workletNode,
+                        dispose: result.destroy,
                         controller: {
                             setParam: result.setParam,
                             setBypass: result.setBypass,
@@ -677,7 +705,7 @@ const grandBouleDescriptor: WasmDeviceDescriptor = {
                 for (const [name, value] of pendingParams) {
                     result.setParam(name, value);
                 }
-                onLoaded({
+                const accepted = onLoaded({
                     deviceId,
                     type: deviceType,
                     nodes: [result.workletNode],
@@ -714,6 +742,9 @@ const grandBouleDescriptor: WasmDeviceDescriptor = {
                         destroy: result.destroy,
                     },
                 });
+                if (accepted === false) {
+                    return;
+                }
                 getAudioDeviceRuntimeSink().emitDeviceLoaded({ deviceId, deviceType });
                 return;
             })
@@ -768,7 +799,7 @@ const faustDescriptor: WasmDeviceDescriptor = {
                         controls.keyOff?.(event.channel, event.pitch, event.velocity, event.time);
                     }
                 }
-                onLoaded({
+                const accepted = onLoaded({
                     deviceId,
                     type: deviceType,
                     nodes: result.nodes,
@@ -782,6 +813,9 @@ const faustDescriptor: WasmDeviceDescriptor = {
                         destroy: controls.destroy,
                     },
                 });
+                if (accepted === false) {
+                    return;
+                }
                 getAudioDeviceRuntimeSink().emitDeviceLoaded({ deviceId, deviceType });
                 return;
             })

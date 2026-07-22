@@ -7,7 +7,7 @@ const mocks = vi.hoisted(() => ({
     automationStoreSet: vi.fn(),
     markerStoreSet: vi.fn(),
     restoreAdjustmentLayerSnapshot: vi.fn(),
-    hydrateChordTrackProjectState: vi.fn(),
+    replaceChordTrackState: vi.fn(),
     hydrateGrooveTemplates: vi.fn(),
     hydrateYeastState: vi.fn(),
     setSidechainRoutes: vi.fn(),
@@ -29,7 +29,7 @@ vi.mock('#/modules/Automation/stores', () => ({
 }));
 
 vi.mock('#/modules/MIDI/useCases', () => ({
-    hydrateChordTrackProjectState: mocks.hydrateChordTrackProjectState,
+    replaceChordTrackState: mocks.replaceChordTrackState,
     hydrateGrooveTemplates: mocks.hydrateGrooveTemplates,
 }));
 
@@ -131,7 +131,7 @@ describe('hydrateModuleStoresFromProjectData', () => {
 
         expect(mocks.restoreTransportSnapshot).not.toHaveBeenCalled();
         expect(mocks.restoreAdjustmentLayerSnapshot).toHaveBeenCalledWith(undefined);
-        expect(mocks.hydrateChordTrackProjectState).toHaveBeenCalledWith(undefined);
+        expect(mocks.replaceChordTrackState).toHaveBeenCalledWith(undefined);
         expect(mocks.hydrateGrooveTemplates).toHaveBeenCalledWith({ templates: [], assignments: [] });
         expect(mocks.hydrateYeastState).toHaveBeenCalledWith(undefined);
         expect(mocks.setSidechainRoutes).toHaveBeenCalledWith([]);
@@ -145,7 +145,7 @@ describe('hydrateModuleStoresFromProjectData', () => {
 
         hydrateModuleStoresFromProjectData(createHydratableProjectData({ chordTrack }));
 
-        expect(mocks.hydrateChordTrackProjectState).toHaveBeenCalledWith(chordTrack);
+        expect(mocks.replaceChordTrackState).toHaveBeenCalledWith(chordTrack);
     });
 
     it('hydrates persisted groove state through the owning MIDI use case', () => {

@@ -1,4 +1,4 @@
-import { chordTrackStore } from '#/modules/MIDI/stores';
+import { replaceChordTrackState } from '#/modules/MIDI/useCases';
 
 type ChordQuality =
     | 'major'
@@ -28,7 +28,7 @@ type SetChordProgressionInput = {
 
 export function setChordProgression(input: SetChordProgressionInput): void {
     if (input.chords.length === 0) {
-        chordTrackStore.set({ enabled: true, events: [] });
+        replaceChordTrackState({ enabled: true, events: [] });
         return;
     }
     const events = [];
@@ -47,5 +47,5 @@ export function setChordProgression(input: SetChordProgressionInput): void {
         beat += chord.duration;
         progressionIndex += 1;
     }
-    chordTrackStore.set({ enabled: true, events });
+    replaceChordTrackState({ enabled: true, events });
 }

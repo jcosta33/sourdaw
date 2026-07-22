@@ -195,4 +195,30 @@ describe('bounceSelection', () => {
         expect(mocks.trackStore.set).not.toHaveBeenCalled();
         expect(didWrite).toBe(false);
     });
+
+    it('discards a completed render when the destination disappears while rendering', async () => {
+        const renderedBuffer = createTestAudioBuffer();
+        const sourceTrack = createAudioTrack();
+        let finishRender = (_buffer: AudioBuffer | null): void => {
+            throw new Error('Expected the render promise to be controlled by the test');
+        };
+        const pendingRender = new Promise<AudioBuffer | null>((resolve) => {
+            finishRender = resolve;
+        });
+        setTrackStoreState({ tracks: [sourceTrack], selectedTrackId: 'track-1' });
+        mocks.renderTrackOffline.mockReturnValue(pendingRender);
+
+        const pendingBounce = bounceSelection('track-1', 0, 4);
+        expect(mocks.renderTrackOffline).toHaveBeenCalledTimes(1);
+        setTrackStoreState({ tracks: [], selectedTrackId: null });
+        finishRender(renderedBuffer);
+
+        const didWrite = await pendingBounce;
+
+        expect(mocks.cacheAudioBuffer).not.toHaveBeenCalled();
+        expect(crypto.randomUUID).not.toHaveBeenCalled();
+        expect(mocks.trackStore.set).not.toHaveBeenCalled();
+        expect(mocks.pushUndoEntry).not.toHaveBeenCalled();
+        expect(didWrite).toBe(false);
+    });
 });
