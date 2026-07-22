@@ -220,6 +220,32 @@ describe('prepareAutomationTimeOperation', () => {
         );
     });
 
+    it.each([
+        {
+            name: 'insert',
+            operation: { type: 'insert' as const, atBeat: 0, durationBeats: 1 },
+        },
+        {
+            name: 'delete',
+            operation: { type: 'delete' as const, startBeat: 0, endBeat: 1 },
+        },
+    ])('reports no change when $name rounding preserves the beat', ({ operation }) => {
+        const unchangedPoint = point(Number.MAX_VALUE, 0.5);
+        const unchangedLane = lane({ points: [unchangedPoint] });
+        const preparedState: AutomationStoreState = { lanes: [unchangedLane] };
+        mocks.state.value = preparedState;
+
+        expectClosedWithoutWrite(
+            {
+                operation,
+                owners: [owner('track-1', true, ['clip-1'])],
+            },
+            preparedState
+        );
+        expect(mocks.state.value.lanes[0]).toBe(unchangedLane);
+        expect(mocks.state.value.lanes[0]?.points[0]).toBe(unchangedPoint);
+    });
+
     it('reports truthful no-change for missing, empty, and ineligible owner state', () => {
         const missingTransaction = prepareAutomationTimeOperation({
             operation: { type: 'insert', atBeat: 4, durationBeats: 2 },

@@ -122,6 +122,10 @@ function prepareInsertedPoints(
         if (!isFiniteNonNegative(shiftedBeat)) {
             return { status: 'invalid' };
         }
+        if (shiftedBeat === automationPoint.beat) {
+            nextPoints.push(automationPoint);
+            continue;
+        }
 
         hasChanges = true;
         nextPoints.push({ ...automationPoint, beat: shiftedBeat });
@@ -155,6 +159,10 @@ function prepareDeletedPoints(
         const shiftedBeat = automationPoint.beat - durationBeats;
         if (!isFiniteNonNegative(shiftedBeat)) {
             return { status: 'invalid' };
+        }
+        if (shiftedBeat === automationPoint.beat) {
+            nextPoints.push(automationPoint);
+            continue;
         }
 
         hasChanges = true;
