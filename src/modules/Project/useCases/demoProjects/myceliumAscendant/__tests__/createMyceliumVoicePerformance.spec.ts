@@ -61,8 +61,8 @@ describe('createMyceliumVoicePerformance', () => {
         const sourceSnapshot = structuredClone(first);
 
         expect(voiceTracks.map((track) => track.name)).toEqual(VOICE_NAMES);
-        expect(allClips).toHaveLength(105);
-        expect(allNotes).toHaveLength(3_535);
+        expect(allClips).toHaveLength(114);
+        expect(allNotes).toHaveLength(3_713);
         expect(
             allNotes.every((note) => Number.isInteger(note.velocity) && note.velocity >= 1 && note.velocity <= 127)
         ).toBe(true);
