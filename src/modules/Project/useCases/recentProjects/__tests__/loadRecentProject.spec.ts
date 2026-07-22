@@ -114,7 +114,7 @@ describe('loadRecentProject', () => {
 
         const ok = await loadRecentProject('sourdaw:project:Large Project');
 
-        expect(ok).toBe(true);
+        expect(ok).toBe('committed');
         expect(readNamedProjectJson).toHaveBeenCalledWith('sourdaw:project:Large Project');
         expect(hydrateModuleStoresFromProjectData).toHaveBeenCalledTimes(1);
         const arrangementHydration = vi.mocked(hydrateArrangementStoreFromProjectData).mock.calls[0]?.[0];
@@ -142,7 +142,7 @@ describe('loadRecentProject', () => {
             publish: publishEmbedded,
         });
 
-        await expect(loadRecentProject('embedded-persist-failure')).resolves.toBe(true);
+        await expect(loadRecentProject('embedded-persist-failure')).resolves.toBe('committed');
 
         expect(persistEmbedded).toHaveBeenCalledOnce();
         expect(publishEmbedded).toHaveBeenCalledOnce();
@@ -154,7 +154,7 @@ describe('loadRecentProject', () => {
     it('starts the committed project durability lifecycle', async () => {
         vi.mocked(readNamedProjectJson).mockResolvedValue(validProject);
 
-        await expect(loadRecentProject('crdt-persist-failure')).resolves.toBe(true);
+        await expect(loadRecentProject('crdt-persist-failure')).resolves.toBe('committed');
 
         expect(startCrdtAutoSave).toHaveBeenCalledOnce();
     });
@@ -165,7 +165,7 @@ describe('loadRecentProject', () => {
             throw new Error('recent JSON write failed');
         });
 
-        await expect(loadRecentProject('recent-write-failure')).resolves.toBe(true);
+        await expect(loadRecentProject('recent-write-failure')).resolves.toBe('committed');
 
         expect(hydrateModuleStoresFromProjectData).toHaveBeenCalledOnce();
         expect(startCrdtAutoSave).toHaveBeenCalledOnce();
@@ -191,7 +191,7 @@ describe('loadRecentProject', () => {
             throw new Error('graph reset failed');
         });
 
-        await expect(loadRecentProject('reset-failure')).resolves.toBe(false);
+        await expect(loadRecentProject('reset-failure')).resolves.toBe('aborted');
 
         expect(order).toEqual(['reset']);
         expect(publishEmbedded).not.toHaveBeenCalled();
@@ -208,7 +208,7 @@ describe('loadRecentProject', () => {
             throw new Error('device store reset failed');
         });
 
-        await expect(loadRecentProject('mid-commit-failure')).resolves.toBe(true);
+        await expect(loadRecentProject('mid-commit-failure')).resolves.toBe('committed');
 
         expect(hydrateArrangementStoreFromProjectData).toHaveBeenCalledOnce();
         expect(hydrateModuleStoresFromProjectData).toHaveBeenCalledOnce();
@@ -251,7 +251,7 @@ describe('loadRecentProject', () => {
             })
         );
 
-        await expect(loadRecentProject('candidate')).resolves.toBe(true);
+        await expect(loadRecentProject('candidate')).resolves.toBe('committed');
 
         expect(vi.mocked(prepareCachedAudioBuffersFromIdb).mock.calls[0]?.[0]?.bufferIds).toEqual(['candidate-buffer']);
     });
@@ -261,7 +261,7 @@ describe('loadRecentProject', () => {
 
         const ok = await loadRecentProject('sourdaw:project:Large Project');
 
-        expect(ok).toBe(true);
+        expect(ok).toBe('committed');
         expect(resetModuleStoresToDefault).toHaveBeenCalledTimes(1);
         // The reset must precede hydration so device stores are blank before the
         // loaded project's non-device state is written over them.
@@ -293,7 +293,7 @@ describe('loadRecentProject', () => {
             throw new Error('Expected pending audio-buffer restoration');
         }
         finishRestore();
-        await expect(loading).resolves.toBe(true);
+        await expect(loading).resolves.toBe('committed');
         expect(resetModuleStoresToDefault).toHaveBeenCalledTimes(1);
         expect(hydrateModuleStoresFromProjectData).toHaveBeenCalledTimes(1);
     });
@@ -303,7 +303,7 @@ describe('loadRecentProject', () => {
 
         const ok = await loadRecentProject('missing');
 
-        expect(ok).toBe(false);
+        expect(ok).toBe('not-found');
         expect(hydrateModuleStoresFromProjectData).not.toHaveBeenCalled();
         // No project was replaced, so the device-store reset must not fire either.
         expect(resetModuleStoresToDefault).not.toHaveBeenCalled();
@@ -312,7 +312,7 @@ describe('loadRecentProject', () => {
     it('leaves the live project untouched when recent-project parsing fails', async () => {
         vi.mocked(readNamedProjectJson).mockResolvedValue('{invalid-json');
 
-        await expect(loadRecentProject('invalid')).resolves.toBe(false);
+        await expect(loadRecentProject('invalid')).resolves.toBe('failed');
 
         expect(resetAudioGraph).not.toHaveBeenCalled();
         expect(resetModuleStoresToDefault).not.toHaveBeenCalled();
@@ -340,7 +340,7 @@ describe('loadRecentProject', () => {
             throw new Error('Expected first project restoration to be pending');
         }
         finishFirstRestore();
-        await expect(Promise.all([firstLoad, secondLoad])).resolves.toEqual([false, true]);
+        await expect(Promise.all([firstLoad, secondLoad])).resolves.toEqual(['aborted', 'committed']);
 
         expect(readNamedProjectJson).toHaveBeenCalledTimes(2);
         expect(readNamedProjectJson).toHaveBeenNthCalledWith(1, 'first-project');
@@ -362,7 +362,7 @@ describe('loadRecentProject', () => {
 
         const firstLoad = loadRecentProject('first-project');
         const secondLoad = loadRecentProject('second-project');
-        await expect(secondLoad).resolves.toBe(true);
+        await expect(secondLoad).resolves.toBe('committed');
 
         const finishRead = finishFirstRead;
         if (!finishRead) {
@@ -370,7 +370,7 @@ describe('loadRecentProject', () => {
         }
         finishRead();
 
-        await expect(firstLoad).resolves.toBe(false);
+        await expect(firstLoad).resolves.toBe('aborted');
         expect(hydrateModuleStoresFromProjectData).toHaveBeenCalledOnce();
     });
 
@@ -396,7 +396,7 @@ describe('loadRecentProject', () => {
         }
         finishRestore();
 
-        await expect(loading).resolves.toBe(false);
+        await expect(loading).resolves.toBe('aborted');
         expect(hydrateModuleStoresFromProjectData).not.toHaveBeenCalled();
         expect(hydrateArrangementStoreFromProjectData).not.toHaveBeenCalled();
     });
@@ -415,7 +415,7 @@ describe('loadRecentProject', () => {
 
         const validLoad = loadRecentProject('valid-project');
         await vi.waitFor(() => expect(completeRestore).toBeDefined());
-        await expect(loadRecentProject('missing-project')).resolves.toBe(false);
+        await expect(loadRecentProject('missing-project')).resolves.toBe('not-found');
 
         const finishRestore = completeRestore;
         if (!finishRestore) {
@@ -423,7 +423,7 @@ describe('loadRecentProject', () => {
         }
         finishRestore();
 
-        await expect(validLoad).resolves.toBe(true);
+        await expect(validLoad).resolves.toBe('committed');
         expect(hydrateModuleStoresFromProjectData).toHaveBeenCalledTimes(1);
     });
 });

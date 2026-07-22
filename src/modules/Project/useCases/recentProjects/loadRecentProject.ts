@@ -7,7 +7,16 @@ import { normalizeLegacyProjectData } from '../projectPersistence/helpers/normal
 import { replaceProjectData } from '../projectPersistence/helpers/replaceProjectData';
 import { runProjectLoadTransaction } from '../projectPersistence/helpers/runProjectLoadTransaction';
 
-export async function loadRecentProject(key: string): Promise<boolean> {
+/**
+ * Why a recent-project load ended the way it did. Callers must distinguish
+ * these before reacting: 'not-found' is the only definitive-dead-entry
+ * outcome (safe to prune), 'failed' is transient/corrupt-data (notify, keep
+ * the entry), and 'aborted' means a newer transition superseded this load
+ * (do nothing — the successor owns the project now).
+ */
+export type LoadRecentProjectOutcome = 'committed' | 'not-found' | 'failed' | 'aborted';
+
+export async function loadRecentProject(key: string): Promise<LoadRecentProjectOutcome> {
     const transaction = runProjectLoadTransaction();
     let raw: string | null;
     try {
@@ -16,12 +25,12 @@ export async function loadRecentProject(key: string): Promise<boolean> {
         raw = await readNamedProjectJson(key);
     } catch (error) {
         logger.error(new Error('Failed to read recent project', { cause: error }));
-        return false;
+        return 'failed';
     }
 
     if (!raw) {
         logger.warn(`No project data found for key: ${key}`);
-        return false;
+        return 'not-found';
     }
 
     let data: unknown;
@@ -29,12 +38,12 @@ export async function loadRecentProject(key: string): Promise<boolean> {
         data = normalizeLegacyProjectData(JSON.parse(raw));
     } catch (error) {
         logger.error(new Error('Failed to parse or normalize recent project', { cause: error }));
-        return false;
+        return 'failed';
     }
 
     if (!isHydratableProjectData(data)) {
         logger.warn(`Unsupported project version for key: ${key}`);
-        return false;
+        return 'failed';
     }
 
     const result = await replaceProjectData({
@@ -43,5 +52,5 @@ export async function loadRecentProject(key: string): Promise<boolean> {
         data,
         transaction,
     });
-    return result.status === 'committed';
+    return result.status === 'committed' ? 'committed' : 'aborted';
 }
