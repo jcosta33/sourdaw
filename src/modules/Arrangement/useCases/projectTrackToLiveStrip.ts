@@ -15,6 +15,7 @@ import { resolveEligibleDeviceWriteTarget } from '../stores/resolveEligibleDevic
 import { getTrackEligibility, shouldCreateLiveTrackStrip } from '../stores/trackEligibility';
 import { trackStore } from '../stores/trackStore';
 
+import { resolveToasterPadBinding } from './resolveToasterPadBinding';
 import { applySoloLogic } from './toggleTrackState/applySoloLogic';
 
 import type { Track } from '../stores/trackStore';
@@ -61,7 +62,12 @@ export function projectTrackToLiveStrip({
 
     ensureTrackStrip(track.id);
     if (acceptsRoutingEndpoint(tracks, track.outputId)) {
-        setTrackOutput(track.id, track.outputId);
+        const padBinding = resolveToasterPadBinding(tracks, track.id);
+        if (padBinding) {
+            setTrackOutput(track.id, track.outputId, padBinding);
+        } else {
+            setTrackOutput(track.id, track.outputId);
+        }
     }
     setTrackGain(track.id, track.gain);
     setTrackPan(track.id, track.pan);

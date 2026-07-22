@@ -32,6 +32,9 @@ vi.mock('../../engine/TrackNode', () => ({
         private deps: {
             masterGainNode: unknown;
             getTrackGainNode: (trackId: string) => unknown;
+            onDeviceLoaded?: (trackId: string, device: unknown) => void;
+            onDeviceRemoved?: (trackId: string, device: unknown) => void;
+            reconnectRoutingForTrack?: (trackId: string) => void;
         };
         private outputDestination: unknown;
         dispose = vi.fn();
@@ -46,11 +49,29 @@ vi.mock('../../engine/TrackNode', () => ({
             this.outputDestination = destination ?? this.deps.masterGainNode;
         });
         getPeakLevel = vi.fn().mockReturnValue(0.5);
+        removeDevice = vi.fn((deviceId: string) => {
+            const device = this.strip.deviceNodes.find(
+                (candidate) => (candidate as { deviceId?: string }).deviceId === deviceId
+            );
+            if (!device) {
+                return;
+            }
+            this.strip.deviceNodes = this.strip.deviceNodes.filter((candidate) => candidate !== device);
+            this.deps.onDeviceRemoved?.(this.trackId, device);
+        });
+        rebuildChain = vi.fn(() => this.deps.reconnectRoutingForTrack?.(this.trackId));
+        notifyDeviceLoaded(device: unknown) {
+            this.strip.deviceNodes.push(device);
+            this.deps.onDeviceLoaded?.(this.trackId, device);
+        }
         constructor(
             id: string,
             deps: {
                 masterGainNode: unknown;
                 getTrackGainNode: (trackId: string) => unknown;
+                onDeviceLoaded?: (trackId: string, device: unknown) => void;
+                onDeviceRemoved?: (trackId: string, device: unknown) => void;
+                reconnectRoutingForTrack?: (trackId: string) => void;
             }
         ) {
             this.trackId = id;
@@ -121,6 +142,29 @@ function makeFallbackEngine(): AudioEngine {
 
 function getPendingSidechainRoutes(engine: AudioEngine): Map<string, unknown> {
     return (engine as unknown as { pendingSidechainRoutes: Map<string, unknown> }).pendingSidechainRoutes;
+}
+
+type MockTrackNode = {
+    notifyDeviceLoaded(device: unknown): void;
+    rebuildChain(): void;
+};
+
+function getMockTrackNode(engine: AudioEngine, trackId: string): MockTrackNode {
+    const node = (engine as unknown as { trackNodes: Map<string, MockTrackNode> }).trackNodes.get(trackId);
+    if (!node) {
+        throw new Error(`expected mock TrackNode for ${trackId}`);
+    }
+    return node;
+}
+
+function setPadTrackOutput(
+    engine: AudioEngine,
+    trackId: string,
+    outputId: string,
+    toasterParentTrackId: string,
+    padIndex: number
+): void {
+    engine.setTrackOutput(trackId, outputId, { toasterParentTrackId, padIndex });
 }
 
 describe('AudioEngine', () => {
@@ -201,6 +245,65 @@ describe('AudioEngine', () => {
         expect(source.analyserNode.connect).toHaveBeenCalledWith(deviceSendGain);
         expect(deviceSendGain.connect).toHaveBeenCalledWith(deviceBus.gainNode);
         expect(ordinarySendGain.connect).toHaveBeenCalledWith(ordinaryBus.gainNode);
+    });
+
+    it('routes a Toaster pad through the child chain across reroute, rebuild, replacement, and reset', () => {
+        const child = engine.ensureTrackStrip('pad-track');
+        engine.ensureTrackStrip('toaster-parent');
+        engine.setSend('pad-track', 'pre-bus', 0.5, true);
+        const preSendGain = mockCtx.createGain.mock.results.at(-1)!.value;
+        engine.setSend('pad-track', 'post-bus', 0.5, false);
+        const postSendGain = mockCtx.createGain.mock.results.at(-1)!.value;
+        const target = engine.ensureTrackStrip('sidechain-target');
+        target.deviceNodes.push({
+            deviceId: 'sidechain-device',
+            type: 'builtin-sidechain-compressor',
+            inputNode: makeStripNode() as unknown as AudioNode,
+        } as never);
+        engine.wireSidechainRoute('pad-track', 'sidechain-target', 'sidechain-device');
+        const sidechainGain = mockCtx.createGain.mock.results.at(-1)!.value;
+
+        setPadTrackOutput(engine, 'pad-track', 'post-bus', 'toaster-parent', 3);
+        const firstControls = { connectPadOutput: vi.fn(), disconnectPadOutput: vi.fn() };
+        const firstDevice = { deviceId: 'toaster-1', type: 'toaster', nodes: [], toasterControls: firstControls };
+        const parentNode = getMockTrackNode(engine, 'toaster-parent');
+        parentNode.notifyDeviceLoaded(firstDevice);
+
+        expect(child.outputId).toBe('post-bus');
+        expect(firstControls.connectPadOutput).toHaveBeenCalledWith(3, child.gainNode);
+        expect(child.preFaderTap.connect).toHaveBeenCalledWith(preSendGain);
+        expect(child.analyserNode.connect).toHaveBeenCalledWith(postSendGain);
+        expect(child.analyserNode.connect).toHaveBeenCalledWith(sidechainGain);
+
+        setPadTrackOutput(engine, 'pad-track', 'hw_out', 'toaster-parent', 3);
+        setPadTrackOutput(engine, 'pad-track', 'post-bus', 'toaster-parent', 3);
+        expect(firstControls.connectPadOutput).toHaveBeenCalledTimes(1);
+        expect(child.outputId).toBe('post-bus');
+
+        vi.mocked(child.preFaderTap.connect).mockClear();
+        vi.mocked(child.analyserNode.connect).mockClear();
+        getMockTrackNode(engine, 'pad-track').rebuildChain();
+        expect(child.preFaderTap.connect).toHaveBeenCalledWith(preSendGain);
+        expect(child.analyserNode.connect).toHaveBeenCalledWith(postSendGain);
+        expect(child.analyserNode.connect).toHaveBeenCalledWith(sidechainGain);
+
+        const replacementControls = { connectPadOutput: vi.fn(), disconnectPadOutput: vi.fn() };
+        parentNode.notifyDeviceLoaded({
+            deviceId: 'toaster-2',
+            type: 'toaster',
+            nodes: [],
+            toasterControls: replacementControls,
+        });
+        engine.removeDeviceFromStrip('toaster-parent', firstDevice.deviceId);
+
+        expect(firstControls.disconnectPadOutput).toHaveBeenCalledWith(3, child.gainNode);
+        expect(replacementControls.connectPadOutput).toHaveBeenCalledWith(3, child.gainNode);
+
+        engine.resetGraph();
+        expect(replacementControls.disconnectPadOutput).toHaveBeenCalledWith(3, child.gainNode);
+        const lateControls = { connectPadOutput: vi.fn(), disconnectPadOutput: vi.fn() };
+        parentNode.notifyDeviceLoaded({ deviceId: 'late', type: 'toaster', nodes: [], toasterControls: lateControls });
+        expect(lateControls.connectPadOutput).not.toHaveBeenCalled();
     });
 
     it('removes the paired track strip when a bus facade is removed', () => {

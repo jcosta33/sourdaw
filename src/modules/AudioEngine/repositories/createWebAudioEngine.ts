@@ -14,6 +14,7 @@ import type {
     AudioEngineHealth,
     AudioEngineState,
     BusStrip,
+    BuiltinDeviceNode,
     SendNode,
     ToasterDeviceControls,
     TrackChannelStrip,
@@ -28,8 +29,15 @@ type NoopMeterNode = {
 type SidechainConnection = {
     sourceTrackId: string;
     targetDeviceId: string;
-    sourceAnalyserNode: AnalyserNode;
+    sourceNode: AudioNode;
     gainNode: GainNode;
+};
+
+type ToasterPadRoute = {
+    toasterParentTrackId: string;
+    padIndex: number;
+    destinationNode: GainNode | null;
+    controls: ToasterDeviceControls | null;
 };
 
 /**
@@ -116,6 +124,7 @@ class AudioEngineImpl implements AudioEngine {
     private busNodes = new Map<string, BusNode>();
     private sendNodes = new Map<string, SendNode>();
     private sidechainConnections = new Map<string, SidechainConnection>();
+    private toasterPadRoutes = new Map<string, ToasterPadRoute>();
     /**
      * Sidechain routes requested while the engine could not wire them (fallback
      * mode — no live AudioContext). Keyed by `${sourceTrackId}→${targetDeviceId}`
@@ -360,6 +369,95 @@ class AudioEngineImpl implements AudioEngine {
         };
     }
 
+    private reconnectRoutingForTrack(trackId: string): void {
+        const strip = this.trackNodes.get(trackId)?.strip;
+        if (!strip) {
+            return;
+        }
+        for (const send of this.sendNodes.values()) {
+            if (send.sourceTrackId !== trackId) {
+                continue;
+            }
+            const sourceNode = send.preFader ? strip.preFaderTap : strip.analyserNode;
+            try {
+                send.sourceNode.disconnect(send.gainNode);
+            } catch {
+                // A wider rebuild may already have removed the prior source edge.
+            }
+            sourceNode.connect(send.gainNode);
+            send.sourceNode = sourceNode;
+        }
+        for (const connection of this.sidechainConnections.values()) {
+            if (connection.sourceTrackId !== trackId) {
+                continue;
+            }
+            const sourceNode = strip.analyserNode;
+            try {
+                connection.sourceNode.disconnect(connection.gainNode);
+            } catch {
+                // A wider rebuild may already have removed the prior source edge.
+            }
+            sourceNode.connect(connection.gainNode);
+            connection.sourceNode = sourceNode;
+        }
+    }
+
+    private detachToasterPadRoute(trackId: string, forgetRoute: boolean): void {
+        const route = this.toasterPadRoutes.get(trackId);
+        if (!route) {
+            return;
+        }
+        if (route.destinationNode) {
+            route.controls?.disconnectPadOutput?.(route.padIndex, route.destinationNode);
+        }
+        route.destinationNode = null;
+        route.controls = null;
+        if (forgetRoute) {
+            this.toasterPadRoutes.delete(trackId);
+        }
+    }
+
+    private reconcileToasterParent(toasterParentTrackId: string): void {
+        const device = this.trackNodes
+            .get(toasterParentTrackId)
+            ?.strip.deviceNodes.find((candidate) => candidate.toasterControls?.connectPadOutput);
+        const controls = device?.toasterControls;
+        if (!controls?.connectPadOutput) {
+            return;
+        }
+        for (const [trackId, route] of this.toasterPadRoutes) {
+            if (route.toasterParentTrackId !== toasterParentTrackId || route.controls === controls) {
+                continue;
+            }
+            if (route.destinationNode) {
+                this.detachToasterPadRoute(trackId, false);
+            }
+            const destinationNode = this.trackNodes.get(trackId)?.strip.gainNode;
+            if (!destinationNode) {
+                continue;
+            }
+            controls.connectPadOutput(route.padIndex, destinationNode);
+            route.destinationNode = destinationNode;
+            route.controls = controls;
+        }
+    }
+
+    private handleDeviceRemoved(trackId: string, device: BuiltinDeviceNode): void {
+        if (device.type !== 'toaster') {
+            return;
+        }
+        for (const [sourceTrackId, route] of this.toasterPadRoutes) {
+            if (route.toasterParentTrackId !== trackId) {
+                continue;
+            }
+            if (route.controls && route.controls !== device.toasterControls) {
+                continue;
+            }
+            this.detachToasterPadRoute(sourceTrackId, false);
+        }
+        this.reconcileToasterParent(trackId);
+    }
+
     public ensureTrackStrip(trackId: string): TrackChannelStrip {
         let node = this.trackNodes.get(trackId);
         if (!node) {
@@ -385,6 +483,9 @@ class AudioEngineImpl implements AudioEngine {
                     pendingDevicePromises: this.pendingDevicePromises,
                     transportSAB: this.transportSAB ?? undefined,
                     getAdjustmentBusForTrack: (id) => this.adjustmentRuntime.getBusInputForTrack(id),
+                    reconnectRoutingForTrack: (id) => this.reconnectRoutingForTrack(id),
+                    onDeviceLoaded: (id) => this.reconcileToasterParent(id),
+                    onDeviceRemoved: (id, device) => this.handleDeviceRemoved(id, device),
                 });
             }
             this.trackNodes.set(trackId, node);
@@ -410,6 +511,12 @@ class AudioEngineImpl implements AudioEngine {
                 this.pendingSidechainRoutes.delete(key);
             }
         }
+        this.detachToasterPadRoute(trackId, true);
+        for (const [sourceTrackId, route] of this.toasterPadRoutes) {
+            if (route.toasterParentTrackId === trackId) {
+                this.detachToasterPadRoute(sourceTrackId, true);
+            }
+        }
         if (!node) {
             return;
         }
@@ -418,10 +525,9 @@ class AudioEngineImpl implements AudioEngine {
         // removeBusStrip's busId sweep. Without this, the send/sidechain GainNodes
         // for the removed track survive in the maps — still wired into their bus /
         // target device, leaking nodes and (for sends) re-summing a ghost tap.
-        for (const [key, send] of this.sendNodes) {
+        for (const send of Array.from(this.sendNodes.values())) {
             if (send.sourceTrackId === trackId) {
-                send.gainNode.disconnect();
-                this.sendNodes.delete(key);
+                this.removeSend(send.sourceTrackId, send.busId);
             }
         }
         for (const [key, connection] of this.sidechainConnections) {
@@ -502,10 +608,9 @@ class AudioEngineImpl implements AudioEngine {
         if (!node) {
             return;
         }
-        for (const [key, send] of this.sendNodes) {
+        for (const send of Array.from(this.sendNodes.values())) {
             if (send.busId === busId) {
-                send.gainNode.disconnect();
-                this.sendNodes.delete(key);
+                this.removeSend(send.sourceTrackId, send.busId);
             }
         }
         this.removeTrackStrip(busId);
@@ -685,7 +790,7 @@ class AudioEngineImpl implements AudioEngine {
         const existing = this.sendNodes.get(key);
         if (existing) {
             if (existing.preFader !== preFader) {
-                this.crossfadeSendTap(existing, trackNode, busStrip, preFader, clampedLevel);
+                this.crossfadeSendTap(existing, busStrip, preFader, clampedLevel);
             } else {
                 existing.gainNode.gain.setTargetAtTime(clampedLevel, this.context.currentTime, 0.01);
             }
@@ -697,7 +802,7 @@ class AudioEngineImpl implements AudioEngine {
         const tap = preFader ? trackNode.strip.preFaderTap : trackNode.strip.analyserNode;
         tap.connect(sendGain);
         sendGain.connect(busStrip.gainNode);
-        this.sendNodes.set(key, { sourceTrackId, busId, gainNode: sendGain, preFader });
+        this.sendNodes.set(key, { sourceTrackId, busId, gainNode: sendGain, sourceNode: tap, preFader });
     }
 
     /**
@@ -710,17 +815,15 @@ class AudioEngineImpl implements AudioEngine {
      * down. The teardown is deferred on the control thread (`setTimeout`), never
      * on the audio thread, so the RT graph is untouched by the cleanup.
      */
-    private crossfadeSendTap(
-        existing: SendNode,
-        trackNode: TrackNode,
-        busStrip: BusStrip,
-        preFader: boolean,
-        clampedLevel: number
-    ): void {
+    private crossfadeSendTap(existing: SendNode, busStrip: BusStrip, preFader: boolean, clampedLevel: number): void {
         const now = this.context.currentTime;
         const end = now + SEND_TAP_CROSSFADE_SECONDS;
 
-        const newTap = preFader ? trackNode.strip.preFaderTap : trackNode.strip.analyserNode;
+        const sourceStrip = this.trackNodes.get(existing.sourceTrackId)?.strip;
+        if (!sourceStrip) {
+            return;
+        }
+        const newTap = preFader ? sourceStrip.preFaderTap : sourceStrip.analyserNode;
         const newGain = this.context.createGain();
         newGain.gain.setValueAtTime(0, now);
         newGain.gain.linearRampToValueAtTime(clampedLevel, end);
@@ -731,6 +834,7 @@ class AudioEngineImpl implements AudioEngine {
         // value first so the ramp starts from where it is, not from a stale
         // scheduled value.
         const oldGain = existing.gainNode;
+        const oldSource = existing.sourceNode;
         oldGain.gain.cancelScheduledValues(now);
         oldGain.gain.setValueAtTime(oldGain.gain.value, now);
         oldGain.gain.linearRampToValueAtTime(0, end);
@@ -738,14 +842,19 @@ class AudioEngineImpl implements AudioEngine {
         // Promote the new node to the live send and tear the old one down after
         // the crossfade completes (plus a small margin) on the control thread.
         existing.gainNode = newGain;
+        existing.sourceNode = newTap;
         existing.preFader = preFader;
         const teardownMs = (SEND_TAP_CROSSFADE_SECONDS + SEND_TAP_CROSSFADE_TEARDOWN_MARGIN_SECONDS) * 1000;
         setTimeout(() => {
             try {
+                oldSource.disconnect(oldGain);
+            } catch {
+                // The old source edge may already be gone after wider teardown.
+            }
+            try {
                 oldGain.disconnect();
             } catch {
-                // Already disconnected (e.g. removeSend / resetGraph ran during
-                // the crossfade) — nothing to tear down.
+                // removeSend or resetGraph may already have torn down the gain.
             }
         }, teardownMs);
     }
@@ -754,13 +863,47 @@ class AudioEngineImpl implements AudioEngine {
         const key = `${sourceTrackId}→${busId}`;
         const send = this.sendNodes.get(key);
         if (send) {
+            try {
+                send.sourceNode.disconnect(send.gainNode);
+            } catch {
+                // The source edge may already be gone after a graph rebuild.
+            }
             send.gainNode.disconnect();
             this.sendNodes.delete(key);
         }
     }
 
-    public setTrackOutput(trackId: string, outputId: string): void {
-        this.trackNodes.get(trackId)?.setOutput(outputId);
+    public setTrackOutput(
+        trackId: string,
+        outputId: string,
+        padBinding?: { toasterParentTrackId: string; padIndex: number }
+    ): void {
+        const trackNode = this.trackNodes.get(trackId);
+        if (!trackNode) {
+            return;
+        }
+        trackNode.setOutput(outputId);
+        if (
+            !padBinding ||
+            !Number.isInteger(padBinding.padIndex) ||
+            padBinding.padIndex < 0 ||
+            padBinding.padIndex >= 16
+        ) {
+            this.detachToasterPadRoute(trackId, true);
+            return;
+        }
+        const existing = this.toasterPadRoutes.get(trackId);
+        const changedOwner =
+            existing &&
+            (existing.toasterParentTrackId !== padBinding.toasterParentTrackId ||
+                existing.padIndex !== padBinding.padIndex);
+        if (changedOwner) {
+            this.detachToasterPadRoute(trackId, true);
+        }
+        if (!this.toasterPadRoutes.has(trackId)) {
+            this.toasterPadRoutes.set(trackId, { ...padBinding, destinationNode: null, controls: null });
+        }
+        this.reconcileToasterParent(padBinding.toasterParentTrackId);
     }
 
     public async waitForDevices(timeoutMs = 10000): Promise<void> {
@@ -829,12 +972,13 @@ class AudioEngineImpl implements AudioEngine {
 
         const scGain = this.context.createGain();
         scGain.gain.value = 1;
-        sourceStrip.analyserNode.connect(scGain);
+        const sourceNode = sourceStrip.analyserNode;
+        sourceNode.connect(scGain);
         scGain.connect(deviceNode.inputNode, 0, 1);
         this.sidechainConnections.set(key, {
             sourceTrackId,
             targetDeviceId,
-            sourceAnalyserNode: sourceStrip.analyserNode,
+            sourceNode,
             gainNode: scGain,
         });
     }
@@ -845,7 +989,7 @@ class AudioEngineImpl implements AudioEngine {
             return;
         }
         try {
-            connection.sourceAnalyserNode.disconnect(connection.gainNode);
+            connection.sourceNode.disconnect(connection.gainNode);
         } catch {
             // The source edge was already detached by a wider graph teardown.
         }
@@ -955,20 +1099,16 @@ class AudioEngineImpl implements AudioEngine {
         // Drop sidechain routes queued during fallback: they belong to the
         // project being torn down and must not replay into the next one.
         this.pendingSidechainRoutes.clear();
-        for (const [, send] of this.sendNodes) {
-            try {
-                send.gainNode.disconnect();
-            } catch {
-                // ignore
-            }
+        for (const send of Array.from(this.sendNodes.values())) {
+            this.removeSend(send.sourceTrackId, send.busId);
         }
-        this.sendNodes.clear();
         for (const [id] of this.busNodes) {
             this.removeBusStrip(id);
         }
         for (const [id] of this.trackNodes) {
             this.removeTrackStrip(id);
         }
+        this.toasterPadRoutes.clear();
         this.pendingDevicePromises.clear();
     }
 

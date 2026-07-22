@@ -230,6 +230,26 @@ describe('projectTrackToLiveStrip', () => {
         expect(mocks.addDeviceToStrip).toHaveBeenCalledWith(toaster.id, 'toaster-device', 'toaster');
     });
 
+    it('projects Toaster pad ownership independently from the audible output', () => {
+        const toaster = createTrack({ id: 'toaster', name: 'Toaster', kind: 'folder' });
+        toaster.devices = [
+            { id: 'toaster-device', name: 'Toaster', type: 'toaster', bypassed: false, parameterValues: {} },
+        ];
+        const firstPad = createTrack({ id: 'pad-1', name: 'Pad 1', kind: 'audio' });
+        firstPad.parentId = toaster.id;
+        const routedPad = createTrack({ id: 'pad-2', name: 'Pad 2', kind: 'audio' });
+        routedPad.parentId = toaster.id;
+        routedPad.outputId = 'return-bus';
+        trackStore.set({ tracks: [toaster, firstPad, routedPad], selectedTrackId: null });
+
+        projectTrackToLiveStrip({ trackId: routedPad.id });
+
+        expect(mocks.setTrackOutput).toHaveBeenCalledWith(routedPad.id, 'return-bus', {
+            toasterParentTrackId: toaster.id,
+            padIndex: 1,
+        });
+    });
+
     it('skips resolved routing targets that cannot own audio endpoints', () => {
         const track = createTrack({ id: 'audio-1', name: 'Audio', kind: 'audio' });
         const vca = createTrack({ id: 'vca-1', name: 'VCA', kind: 'audio' });

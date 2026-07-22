@@ -153,12 +153,14 @@ const toasterDescriptor: WasmDeviceDescriptor = {
                 for (const [name, value] of pendingParams) {
                     result.setParam(name, value);
                 }
+                const mainOutput = context.createGain();
+                result.connect(mainOutput);
                 const accepted = onLoaded({
                     deviceId,
                     type: deviceType,
-                    nodes: [result.workletNode],
+                    nodes: [result.workletNode, mainOutput],
                     inputNode: result.workletNode,
-                    outputNode: result.workletNode,
+                    outputNode: mainOutput,
                     dispose: result.destroy,
                     controller: {
                         ready: true,

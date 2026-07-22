@@ -176,6 +176,9 @@ describe('wasmDeviceRegistry descriptors', () => {
             const loaded = lastLoadedNode(deps.onLoaded);
             expect(loaded.deviceId).toBe('toast-1');
             expect(loaded.inputNode).toBe(result.workletNode);
+            expect(loaded.outputNode).not.toBe(result.workletNode);
+            expect(loaded.nodes).toContain(loaded.outputNode);
+            expect(result.connect).toHaveBeenCalledWith(loaded.outputNode);
             expect(loaded.toasterControls?.ready).toBe(true);
             expect(loaded.toasterControls?.scheduleHit).toBe(result.scheduleHit);
             expect(loaded.toasterControls?.cancelScheduled).toBe(result.cancelScheduled);
