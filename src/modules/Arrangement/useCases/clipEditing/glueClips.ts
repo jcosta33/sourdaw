@@ -5,29 +5,40 @@ import { type Clip } from '../../models/Track';
 import { getNextClipId } from '../../repositories/clipIdCounter';
 import { getTrackState } from '../../repositories/track/getTrackState';
 import { updateTrack } from '../../repositories/track/updateTrack';
+import { resolveEligibleClipWriteTarget } from '../../stores/resolveEligibleClipWriteTarget';
 
-export function glueClips(clipIds: string[]): void {
-    const state = getTrackState();
-    if (!state || clipIds.length < 2) {
-        return;
+export function glueClips(clipIds: string[]): boolean {
+    if (!Array.isArray(clipIds) || clipIds.length < 2 || new Set(clipIds).size !== clipIds.length) {
+        return false;
     }
 
-    // Guard: reject selections that span multiple tracks
-    const tracksWithMatchingClips = state.tracks.filter((time) =>
-        time.clips.some((context) => clipIds.includes(context.id))
-    );
-    if (tracksWithMatchingClips.length > 1) {
+    const ownerTrackIds = new Set<string>();
+    for (const clipId of clipIds) {
+        const resolution = resolveEligibleClipWriteTarget({ clipId });
+        if (resolution.status !== 'eligible') {
+            return false;
+        }
+        ownerTrackIds.add(resolution.trackId);
+    }
+
+    if (ownerTrackIds.size !== 1) {
         logger.warn('glueClips: clips span multiple tracks — gluing is only supported within a single track');
-        return;
+        return false;
     }
 
-    const firstTrack = tracksWithMatchingClips[0];
+    const state = getTrackState();
+    if (!state) {
+        return false;
+    }
+
+    const [ownerTrackId] = ownerTrackIds;
+    const firstTrack = state.tracks.find((track) => track.id === ownerTrackId);
     if (!firstTrack) {
-        return;
+        return false;
     }
     const clips = firstTrack.clips.filter((context) => clipIds.includes(context.id));
-    if (clips.length < 2) {
-        return;
+    if (clips.length !== clipIds.length) {
+        return false;
     }
     let startBeat = Infinity;
     let endBeat = -Infinity;
@@ -59,4 +70,6 @@ export function glueClips(clipIds: string[]): void {
         clips: [...time.clips.filter((context) => !clipIds.includes(context.id)), glued],
     }));
     glueMidiClipData({ sourceClipIds: clipIds, targetClipId: gluedId });
+
+    return true;
 }

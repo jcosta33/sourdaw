@@ -4,7 +4,12 @@ import { detachPatternInstance } from '../../useCases/patternInstance/detachPatt
 
 export const handleDetachPatternInstance = createHandler<'detachPatternInstance'>({
     execute: (alpha) => {
-        detachPatternInstance(alpha.payload.clipId);
+        const didDetach = detachPatternInstance(alpha.payload.clipId);
+        if (!didDetach) {
+            return { status: 'no-write' };
+        }
+
+        return { status: 'written' };
     },
     undoable: true,
     describe: () => ({ label: 'Detach Pattern Instance' }),

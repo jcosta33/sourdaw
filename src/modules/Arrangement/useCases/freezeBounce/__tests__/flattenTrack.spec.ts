@@ -4,13 +4,22 @@ import { updateTrack } from '../../../repositories/track/updateTrack';
 import { trackStore } from '../../../stores/trackStore';
 import { flattenTrack } from '../flattenTrack';
 
+const mocks = vi.hoisted(() => ({
+    resolveEligibleClipWriteTarget: vi.fn(),
+}));
+
 vi.mock('../../../repositories/track/updateTrack', () => ({
     updateTrack: vi.fn(),
+}));
+
+vi.mock('../../../stores/resolveEligibleClipWriteTarget', () => ({
+    resolveEligibleClipWriteTarget: mocks.resolveEligibleClipWriteTarget,
 }));
 
 describe('flattenTrack', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        mocks.resolveEligibleClipWriteTarget.mockReturnValue({ status: 'eligible', trackId: 't1' });
         trackStore.set({ tracks: [], selectedTrackId: null });
     });
 
@@ -65,8 +74,9 @@ describe('flattenTrack', () => {
             selectedTrackId: null,
         });
 
-        flattenTrack('t1');
+        const didWrite = flattenTrack('t1');
 
+        expect(didWrite).toBe(true);
         expect(updateTrack).toHaveBeenCalledWith('t1', expect.any(Function));
 
         // Execute the updater function passed to updateTrack
@@ -85,6 +95,14 @@ describe('flattenTrack', () => {
         expect(updatedTrack.frozen).toBe(false);
         expect(updatedTrack.frozenBufferId).toBeUndefined();
         expect(updatedTrack.freezeState.status).toBe('unfrozen');
+        expect(updatedTrack.activeAlternativeId).toMatch(/^alt-flatten-/);
+        expect(updatedTrack.alternatives).toEqual([
+            expect.objectContaining({
+                id: updatedTrack.activeAlternativeId,
+                name: 'Flattened',
+                clips: updatedTrack.clips,
+            }),
+        ]);
         expect(updatedTrack.clips).toHaveLength(1);
 
         const clip = updatedTrack.clips[0];
@@ -134,5 +152,28 @@ describe('flattenTrack', () => {
         }
         expect(clip.startBeat).toBe(0);
         expect(clip.endBeat).toBe(5); // 1 (default end) + 2s * (120 BPM / 60) = 1 + 4 beats
+    });
+
+    it('rejects an ineligible destination before transport reads, UUID allocation, or replacement', () => {
+        mocks.resolveEligibleClipWriteTarget.mockReturnValue({ status: 'ineligible' });
+        trackStore.set({
+            tracks: [
+                {
+                    id: 't1',
+                    name: 'VCA',
+                    kind: 'vca',
+                    clips: [],
+                    freezeState: { status: 'frozen', frozenBufferId: 'buf-123' },
+                } as never,
+            ],
+            selectedTrackId: null,
+        });
+        const randomUuid = vi.spyOn(crypto, 'randomUUID');
+
+        const didWrite = flattenTrack('t1');
+
+        expect(didWrite).toBe(false);
+        expect(randomUuid).not.toHaveBeenCalled();
+        expect(updateTrack).not.toHaveBeenCalled();
     });
 });

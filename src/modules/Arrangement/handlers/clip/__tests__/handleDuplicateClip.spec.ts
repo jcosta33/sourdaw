@@ -5,6 +5,7 @@ import { handleDuplicateClip } from '../handleDuplicateClip';
 const mocks = vi.hoisted(() => ({
     duplicateClip: vi.fn(),
     prepareDuplicateClipTargetId: vi.fn(() => 'clip-copy'),
+    resolveEligibleClipWriteTarget: vi.fn(),
 }));
 
 vi.mock('../../../useCases/clip/duplicateClip', () => ({
@@ -15,16 +16,32 @@ vi.mock('../../../useCases/clip/prepareDuplicateClipTargetId', () => ({
     prepareDuplicateClipTargetId: mocks.prepareDuplicateClipTargetId,
 }));
 
+vi.mock('../../../stores/resolveEligibleClipWriteTarget', () => ({
+    resolveEligibleClipWriteTarget: mocks.resolveEligibleClipWriteTarget,
+}));
+
 describe('handleDuplicateClip', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        mocks.duplicateClip.mockReturnValue(true);
+        mocks.resolveEligibleClipWriteTarget.mockImplementation((input: { clipId?: string; trackId?: string }) => {
+            if (input.clipId === 'c1') {
+                return { status: 'eligible', clipId: 'c1', trackId: 't1' };
+            }
+            if (input.trackId === 't1') {
+                return { status: 'eligible', trackId: 't1' };
+            }
+            return { status: 'missing' };
+        });
     });
 
     it('executes duplicateClip with the provided payload and target clip id', () => {
-        void handleDuplicateClip.execute({
-            type: 'duplicateClip',
-            payload: { clipId: 'c1', targetClipId: 'clip-provided' },
-        });
+        expect(
+            handleDuplicateClip.execute({
+                type: 'duplicateClip',
+                payload: { clipId: 'c1', targetClipId: 'clip-provided' },
+            })
+        ).toEqual({ status: 'written' });
 
         expect(mocks.duplicateClip).toHaveBeenCalledWith({ clipId: 'c1', targetClipId: 'clip-provided' });
         expect(mocks.prepareDuplicateClipTargetId).not.toHaveBeenCalled();
@@ -56,5 +73,44 @@ describe('handleDuplicateClip', () => {
 
     it('is undoable', () => {
         expect(handleDuplicateClip.undoable).toBe(true);
+    });
+
+    it('rejects before describe can allocate a target id when the source is ineligible', () => {
+        const action = { type: 'duplicateClip' as const, payload: { clipId: 'vca-clip' } };
+        mocks.resolveEligibleClipWriteTarget.mockReturnValue({ status: 'ineligible' });
+
+        expect(handleDuplicateClip.isNoop?.(action)).toBe(true);
+
+        expect(mocks.prepareDuplicateClipTargetId).not.toHaveBeenCalled();
+        expect(mocks.duplicateClip).not.toHaveBeenCalled();
+    });
+
+    it('rejects an existing explicit target before describe can attach its inverse', () => {
+        const action = {
+            type: 'duplicateClip' as const,
+            payload: { clipId: 'c1', targetClipId: 'existing-clip' },
+        };
+        mocks.resolveEligibleClipWriteTarget.mockImplementation((input: { clipId?: string; trackId?: string }) => {
+            if (input.trackId === 't1') {
+                return { status: 'eligible', trackId: 't1' };
+            }
+            return { status: 'eligible', clipId: input.clipId, trackId: 't1' };
+        });
+
+        expect(handleDuplicateClip.isNoop?.(action)).toBe(true);
+
+        expect(mocks.prepareDuplicateClipTargetId).not.toHaveBeenCalled();
+        expect(mocks.duplicateClip).not.toHaveBeenCalled();
+    });
+
+    it('reports no-write when the prepared duplicate is not published', () => {
+        mocks.duplicateClip.mockReturnValue(false);
+
+        expect(
+            handleDuplicateClip.execute({
+                type: 'duplicateClip',
+                payload: { clipId: 'c1', targetClipId: 'clip-provided' },
+            })
+        ).toEqual({ status: 'no-write' });
     });
 });

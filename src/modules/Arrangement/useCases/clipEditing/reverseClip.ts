@@ -3,36 +3,53 @@ import { clearClipPitchContour } from '#/modules/Knead/useCases';
 
 import { getTrackState } from '../../repositories/track/getTrackState';
 import { updateClip } from '../../repositories/track/updateClip';
+import { resolveEligibleClipWriteTarget } from '../../stores/resolveEligibleClipWriteTarget';
 
-export function reverseClip(clipId: string): void {
+export function reverseClip(clipId: string): boolean {
+    const target = resolveEligibleClipWriteTarget({ clipId });
+    if (target.status !== 'eligible' || !('clipId' in target)) {
+        return false;
+    }
+
     const state = getTrackState();
     if (!state) {
-        return;
+        return false;
     }
-    for (const track of state.tracks) {
-        const clip = track.clips.find((context) => context.id === clipId);
-        if (!clip || clip.type !== 'audio' || !clip.audioBufferId) {
-            continue;
+
+    const track = state.tracks.find((candidate) => candidate.id === target.trackId);
+    const clip = track?.clips.find((candidate) => candidate.id === target.clipId);
+    if (!clip || clip.type !== 'audio' || !clip.audioBufferId) {
+        return false;
+    }
+
+    const buffer = getCachedAudioBuffer({ bufferId: clip.audioBufferId });
+    if (!buffer) {
+        return false;
+    }
+
+    const context = new OfflineAudioContext(buffer.numberOfChannels, buffer.length, buffer.sampleRate);
+    const reversed = context.createBuffer(buffer.numberOfChannels, buffer.length, buffer.sampleRate);
+    for (let channel = 0; channel < buffer.numberOfChannels; channel++) {
+        const source = buffer.getChannelData(channel);
+        const destination = reversed.getChannelData(channel);
+        for (let index = 0; index < source.length; index++) {
+            destination[index] = source[source.length - 1 - index]!;
         }
-        const buffer = getCachedAudioBuffer({ bufferId: clip.audioBufferId });
-        if (!buffer) {
-            return;
-        }
-        const ctx = new OfflineAudioContext(buffer.numberOfChannels, buffer.length, buffer.sampleRate);
-        const reversed = ctx.createBuffer(buffer.numberOfChannels, buffer.length, buffer.sampleRate);
-        for (let ch = 0; ch < buffer.numberOfChannels; ch++) {
-            const src = buffer.getChannelData(ch);
-            const dst = reversed.getChannelData(ch);
-            for (let index = 0; index < src.length; index++) {
-                dst[index] = src[src.length - 1 - index]!;
-            }
-        }
-        const newId = `reversed-${clip.audioBufferId}-${Date.now()}`;
+    }
+
+    const newId = `reversed-${clip.audioBufferId}-${Date.now()}`;
+    const didWrite = updateClip(target.clipId, (candidate) => {
         cacheAudioBuffer({ buffer: reversed, bufferId: newId });
-        updateClip(clipId, (context) => ({ ...context, audioBufferId: newId, name: `${context.name} (reversed)` }));
-        // The reversed buffer replaces the clip's audio, invalidating any analyzed
-        // pitch contour — drop it so the PitchEditor gate re-opens.
-        clearClipPitchContour(clipId);
-        return;
+        return {
+            ...candidate,
+            audioBufferId: newId,
+            name: `${candidate.name} (reversed)`,
+        };
+    });
+    if (!didWrite) {
+        return false;
     }
+
+    clearClipPitchContour(target.clipId);
+    return true;
 }
