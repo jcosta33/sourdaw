@@ -3,6 +3,7 @@ import { createExportError } from '../errors/ExportError';
 import { type DeviceNodeEntry } from './buildDeviceChain';
 import { acquireRenderLock } from './offlineRender/acquireRenderLock';
 import { checkCancel } from './offlineRender/checkCancel';
+import { connectOfflineToasterPadRoutes } from './offlineRender/connectOfflineToasterPadRoutes';
 import {
     MAX_OFFLINE_FRAMES,
     MIN_RENDER_TIMEOUT_MS,
@@ -109,6 +110,8 @@ export const renderOffline: RenderOfflineFn = async function renderOffline(
                 busStripsById.set(track.id, createOfflineBusStrip(strip));
             }
         }
+
+        connectOfflineToasterPadRoutes({ tracks: tracks?.tracks ?? [], trackStripsById, deviceEntriesByTrack });
 
         for (const track of allRenderableTracks) {
             const strip = trackStripsById.get(track.id);

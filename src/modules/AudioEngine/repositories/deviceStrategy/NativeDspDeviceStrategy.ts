@@ -20,6 +20,9 @@ type NativeDspNode = {
     setBypass?: (bypassed: boolean) => void;
     noteOn?: (noteOrPad: number, velocity: number, midiNote?: number, sampleFrame?: number) => void;
     noteOff?: (noteOrPad: number, sampleFrame?: number) => void;
+    connectPadOutput?: (pad: number, destination: AudioNode) => void;
+    disconnectPadOutput?: (pad: number, destination: AudioNode) => void;
+    setPadDryRouted?: (pad: number, routed: boolean) => void;
     destroy?: () => void;
     ready: Promise<Record<string, unknown>>;
 };
@@ -49,6 +52,18 @@ export class NativeDspDeviceStrategy implements AudioDeviceStrategy {
 
     noteOff(noteOrPad: number, sampleFrame?: number): void {
         this.dspNode.noteOff?.(noteOrPad, sampleFrame);
+    }
+
+    connectPadOutput(pad: number, destination: AudioNode): void {
+        this.dspNode.connectPadOutput?.(pad, destination);
+    }
+
+    disconnectPadOutput(pad: number, destination: AudioNode): void {
+        this.dspNode.disconnectPadOutput?.(pad, destination);
+    }
+
+    setPadDryRouted(pad: number, routed: boolean): void {
+        this.dspNode.setPadDryRouted?.(pad, routed);
     }
 
     destroy(): void {

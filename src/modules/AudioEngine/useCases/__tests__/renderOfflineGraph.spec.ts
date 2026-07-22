@@ -4,6 +4,7 @@ import { type Track, type TrackStoreState } from '#/modules/Arrangement/stores';
 import { LEGACY_MIDI_PROBABILITY_SEED, type MidiStoreState } from '#/modules/MIDI/stores';
 import { type TransportState } from '#/modules/Transport/stores';
 
+import { type DeviceNodeEntry } from '../buildDeviceChain';
 import { MAX_OFFLINE_FRAMES } from '../offlineRender/constants';
 import { type OfflineRenderContext } from '../offlineRender/resolveRenderContext';
 import { type OfflineTrackStrip } from '../offlineRender/types';
@@ -242,6 +243,55 @@ describe('renderOffline — graph construction and lifecycle', () => {
             stripsByTrack.get('t-hw')!.inputNode
         );
         expect(stripsByTrack.get('t-orphan')!.outputNode.connect).toHaveBeenCalledWith(masterGain);
+    });
+
+    it('routes a Toaster pad into its child strip and removes the duplicate parent dry copy', async () => {
+        const parent = TrackDummy.create({
+            id: 'toaster-parent',
+            kind: 'folder',
+            devices: [{ id: 'toaster-device', type: 'toaster' } as never],
+        });
+        const child = TrackDummy.create({ id: 'pad-child', kind: 'midi', parentId: parent.id, outputId: parent.id });
+        const connectPadOutput = vi.fn<NonNullable<DeviceNodeEntry['strategy']['connectPadOutput']>>();
+        const setPadDryRouted = vi.fn<NonNullable<DeviceNodeEntry['strategy']['setPadDryRouted']>>();
+        const stripsByTrack = new Map<string, OfflineTrackStrip>();
+        mocks.resolveRenderContext.mockReturnValue(
+            makeContext({ tracks: { tracks: [parent, child] } as unknown as TrackStoreState })
+        );
+        mocks.createOfflineTrackStrip.mockImplementation((_ctx: OfflineAudioContext, track: Track) => {
+            const strip = makeStrip();
+            if (track.id === parent.id) {
+                const audioNode = {} as AudioNode;
+                const node: DeviceNodeEntry['node'] = {
+                    inputNode: audioNode,
+                    outputNode: audioNode,
+                    nodes: [audioNode],
+                };
+                strip.deviceEntries = [
+                    {
+                        deviceId: 'toaster-device',
+                        deviceType: 'toaster',
+                        node,
+                        strategy: {
+                            node,
+                            setParam: vi.fn<(name: string, value: number) => void>(),
+                            connectPadOutput,
+                            setPadDryRouted,
+                        },
+                    },
+                ];
+            }
+            stripsByTrack.set(track.id, strip);
+            return Promise.resolve(strip);
+        });
+
+        await renderOffline(4);
+
+        expect(connectPadOutput).toHaveBeenCalledWith(0, stripsByTrack.get(child.id)!.inputNode);
+        expect(setPadDryRouted).toHaveBeenCalledWith(0, true);
+        expect(stripsByTrack.get(child.id)!.outputNode.connect).toHaveBeenCalledWith(
+            stripsByTrack.get(parent.id)!.inputNode
+        );
     });
 
     it('wires sends from the right tap with a clamped level and drops sends to unknown buses', async () => {
