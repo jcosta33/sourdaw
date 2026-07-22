@@ -112,6 +112,7 @@ export function createMyceliumAscendantBlueprint(): MyceliumAscendantBlueprint {
         arrangement: { tracks: [] },
         automation: { lanes: [] },
         midi: { notesByClipId: {}, ccByClipId: {}, pitchBendByClipId: {} },
+        chordTrack: { enabled: true, events: chordEvents },
         mixer: { master: { gain: 0.8, pan: 0 }, buses: [] },
         markers: MARKER_SPECS.map(([name, beat], index) => ({
             id: createMyceliumId('marker', `${index}:${name}`),

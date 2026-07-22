@@ -86,8 +86,9 @@ describe('createMyceliumAscendantBlueprint', () => {
     });
 
     it('creates the complete repeating harmonic cycle', () => {
-        const { chordEvents } = createMyceliumAscendantBlueprint();
+        const { chordEvents, projectData } = createMyceliumAscendantBlueprint();
 
+        expect(projectData.chordTrack).toEqual({ enabled: true, events: chordEvents });
         expect(chordEvents).toHaveLength(36);
         expect(
             chordEvents.slice(0, 4).map(({ beat, root, quality, duration }) => [beat, root, quality, duration])
@@ -150,6 +151,7 @@ describe('createMyceliumAscendantBlueprint', () => {
 
         const saved = await buildProjectData({ includeAudioBuffers: false });
         expect(saved?.data.arrangements?.[0]?.markers?.sections).toEqual(blueprint.sections);
+        expect(saved?.data.chordTrack).toEqual(blueprint.projectData.chordTrack);
         const reloaded = structuredClone(saved?.data);
         expect(isHydratableProjectData(reloaded)).toBe(true);
         if (!isHydratableProjectData(reloaded)) {
