@@ -82,7 +82,7 @@ export function applyAutomation(currentBeat: number): void {
             const linearGain = lane.minValue < 0 ? 10 ** (value / 20) : value;
             engineSetTrackGain(lane.trackId, linearGain);
         } else if (lane.parameterId === 'pan') {
-            engineSetTrackPan(lane.trackId, value * 100 - 50);
+            engineSetTrackPan(lane.trackId, value * 50);
         } else {
             let laneSlew = automationState.pluginParamSlew.get(lane.id);
 

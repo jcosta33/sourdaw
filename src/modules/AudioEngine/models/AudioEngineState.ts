@@ -101,6 +101,8 @@ export type BuiltinDeviceNode = {
         setParam: (name: string, value: number) => void;
         setPadParam: (pad: number, name: string, value: number) => void;
         setBypass: (bypassed: boolean) => void;
+        connectPadOutput?: (pad: number, dest: AudioNode) => void;
+        disconnectPadOutput?: (pad: number, dest: AudioNode) => void;
         destroy: () => void;
     };
     /** Controls for the Grand Boule piano (MIDI + pedals + param updates via MessagePort) */

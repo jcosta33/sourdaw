@@ -143,6 +143,8 @@ describe('wasmDeviceRegistry descriptors', () => {
                 setParam: vi.fn(),
                 setPadParam: vi.fn(),
                 setBypass: vi.fn(),
+                connectPadOutput: vi.fn(),
+                disconnectPadOutput: vi.fn(),
                 connect: vi.fn(),
                 disconnect: vi.fn(),
                 destroy: vi.fn(),
@@ -179,6 +181,8 @@ describe('wasmDeviceRegistry descriptors', () => {
             expect(loaded.toasterControls?.cancelScheduled).toBe(result.cancelScheduled);
             expect(loaded.toasterControls?.allNotesOff).toBe(result.allNotesOff);
             expect(loaded.toasterControls?.setFillActive).toBe(result.setFillActive);
+            expect(loaded.toasterControls?.connectPadOutput).toBe(result.connectPadOutput);
+            expect(loaded.toasterControls?.disconnectPadOutput).toBe(result.disconnectPadOutput);
 
             vi.mocked(deps.onLoaded).mockReturnValue(false);
             emitDeviceLoaded.mockClear();
