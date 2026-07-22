@@ -1,43 +1,53 @@
+import { appendClipToTrack } from '../../stores/appendClipToTrack';
 import { trackStore } from '../../stores/trackStore';
-import { updateTrack } from '../updateTrack';
+import { updateClipInStore } from '../../stores/updateClipInStore';
 
 /**
  * Accept a ghost clip, making it a permanent part of the track (E1).
  */
-export function acceptGhostClip(clipId: string): void {
+export function acceptGhostClip(clipId: string): boolean {
     const state = trackStore.value;
     if (!state) {
-        return;
+        return false;
     }
 
-    const ghost = (state.ghostClips ?? []).find((context) => context.id === clipId);
+    const matchingGhosts = (state.ghostClips ?? []).filter((context) => context.id === clipId);
+    if (matchingGhosts.length === 0) {
+        return updateClipInStore(clipId, (clip) => ({ ...clip, isGhost: false }));
+    }
+    if (matchingGhosts.length !== 1) {
+        return false;
+    }
+
+    const ghost = matchingGhosts[0];
     if (!ghost) {
-        // Fallback for pre-existing ghost-flag implementation
-        for (const time of state.tracks) {
-            if (time.clips.some((context) => context.id === clipId)) {
-                updateTrack(time.id, (track) => ({
-                    ...track,
-                    clips: track.clips.map((context) =>
-                        context.id === clipId ? { ...context, isGhost: false } : context
-                    ),
-                }));
-            }
-        }
-        return;
+        return false;
+    }
+
+    const ghostType: unknown = ghost.type;
+    const hasValidIdentity = typeof ghost.id === 'string' && ghost.id.length > 0;
+    const hasValidOwner = typeof ghost.trackId === 'string' && ghost.trackId.length > 0;
+    const hasValidName = typeof ghost.name === 'string';
+    const hasValidType = ghostType === 'audio' || ghostType === 'midi';
+    const hasFiniteSpan = Number.isFinite(ghost.startBeat) && Number.isFinite(ghost.endBeat);
+    const hasPositiveSpan = ghost.startBeat >= 0 && ghost.endBeat > ghost.startBeat;
+    if (!hasValidIdentity || !hasValidOwner || !hasValidName || !hasValidType || !hasFiniteSpan || !hasPositiveSpan) {
+        return false;
     }
 
     const { trackId, ...clipData } = ghost;
+    const inserted = appendClipToTrack(trackId, { ...clipData, trackId, isGhost: false });
+    if (!inserted) {
+        return false;
+    }
 
-    // 1. Add to track
-    updateTrack(trackId, (time) => ({
-        ...time,
-        clips: [...time.clips, { ...clipData, trackId, isGhost: false }],
-    }));
-
-    // 2. Remove from ghost list (re-read after updateTrack mutated the store)
-    const updated = trackStore.value!;
+    const updated = trackStore.value;
+    if (!updated) {
+        return false;
+    }
     trackStore.set({
         ...updated,
         ghostClips: (updated.ghostClips ?? []).filter((context) => context.id !== clipId),
     });
+    return true;
 }

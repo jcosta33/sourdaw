@@ -13,11 +13,15 @@ vi.mock('../../../useCases/clipboard/pasteClip', () => ({
 describe('handlePasteClip', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        mocks.pasteClip.mockReturnValue(true);
     });
 
-    it('executes pasteClip', () => {
-        void handlePasteClip.execute({ type: 'pasteClip' });
+    it('returns written only when pasteClip writes', () => {
+        expect(handlePasteClip.execute({ type: 'pasteClip' })).toEqual({ status: 'written' });
         expect(mocks.pasteClip).toHaveBeenCalledTimes(1);
+
+        mocks.pasteClip.mockReturnValue(false);
+        expect(handlePasteClip.execute({ type: 'pasteClip' })).toEqual({ status: 'no-write' });
     });
 
     it('provides a description', () => {
