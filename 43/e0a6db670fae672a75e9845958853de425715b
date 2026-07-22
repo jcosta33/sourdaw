@@ -1,0 +1,21 @@
+src/modules/Automation/useCases/automation/__tests__/prepareClipAutomationShiftTransaction.spec.ts
+  s_c2fca615e81f34::t_86e20345805cba 164-181
+src/modules/Automation/useCases/automation/prepareClipAutomationShiftTransaction.ts
+  s_c2fca615e81f34::t_bc5abfc77f3bfe 27-41
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "43e0a6db670fae672a75e9845958853de425715b",
+  "prompts": {},
+  "sessions": {
+    "s_c2fca615e81f34": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f74e9-e1c5-7142-85d2-4c577b3973c0",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
