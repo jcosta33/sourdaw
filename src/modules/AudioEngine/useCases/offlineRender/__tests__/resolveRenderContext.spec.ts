@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { configureOfflinePpqEndpointProjection } from '../../configureOfflinePpqEndpointProjection';
+import { resolveRenderContext } from '../resolveRenderContext';
 
 const mocks = vi.hoisted(() => ({
     getTrackStoreState: vi.fn(),
@@ -31,8 +32,7 @@ describe('resolveRenderContext', () => {
         mocks.getTempoMapState.mockReturnValue({ changes: [] });
     });
 
-    it('returns durationSeconds for a plain duration (no start offset, no tail)', async () => {
-        const { resolveRenderContext } = await import('../resolveRenderContext');
+    it('returns durationSeconds for a plain duration (no start offset, no tail)', () => {
         const ctx = resolveRenderContext({ durationBeats: 8 });
         // 8 beats at 120 bpm = 4 seconds
         expect(ctx.durationSeconds).toBeCloseTo(4, 6);
@@ -40,35 +40,31 @@ describe('resolveRenderContext', () => {
         expect(ctx.tailSeconds).toBe(0);
     });
 
-    it('subtracts the start offset so durationSeconds reflects only the region', async () => {
-        const { resolveRenderContext } = await import('../resolveRenderContext');
+    it('subtracts the start offset so durationSeconds reflects only the region', () => {
         const ctx = resolveRenderContext({ durationBeats: 4, startBeat: 4 });
         // 4 beats at 120 bpm = 2 seconds
         expect(ctx.durationSeconds).toBeCloseTo(2, 6);
         expect(ctx.startBeat).toBe(4);
     });
 
-    it('appends tail seconds onto the region length', async () => {
-        const { resolveRenderContext } = await import('../resolveRenderContext');
+    it('appends tail seconds onto the region length', () => {
         const ctx = resolveRenderContext({ durationBeats: 4, startBeat: 0, tailSeconds: 3 });
         // 4 beats at 120 bpm = 2 seconds, plus 3s tail = 5s
         expect(ctx.durationSeconds).toBeCloseTo(5, 6);
         expect(ctx.tailSeconds).toBe(3);
     });
 
-    it('supports the legacy numeric input form', async () => {
-        const { resolveRenderContext } = await import('../resolveRenderContext');
+    it('supports the legacy numeric input form', () => {
         const ctx = resolveRenderContext(4);
         expect(ctx.durationSeconds).toBeCloseTo(2, 6);
         expect(ctx.startBeat).toBe(0);
         expect(ctx.tailSeconds).toBe(0);
     });
 
-    it('snapshots the PPQ projector for the lifetime of one render context', async () => {
+    it('snapshots the PPQ projector for the lifetime of one render context', () => {
         const firstProjector = vi.fn<Parameters<typeof configureOfflinePpqEndpointProjection>[0]['project']>();
         const replacementProjector = vi.fn<Parameters<typeof configureOfflinePpqEndpointProjection>[0]['project']>();
         configureOfflinePpqEndpointProjection({ project: firstProjector });
-        const { resolveRenderContext } = await import('../resolveRenderContext');
 
         const context = resolveRenderContext(4);
         configureOfflinePpqEndpointProjection({ project: replacementProjector });
