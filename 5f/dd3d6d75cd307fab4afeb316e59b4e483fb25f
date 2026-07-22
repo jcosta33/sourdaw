@@ -1,0 +1,23 @@
+src/modules/MIDI/useCases/__tests__/resetMidiStoreForProject.spec.ts
+  s_ac9b259eab20ba::t_4f31e3c38f8db0 3
+  s_ac9b259eab20ba::t_af06fc7419ca81 53
+  s_ac9b259eab20ba::t_54932a302fa21c 52,54,56-57
+src/modules/MIDI/useCases/resetMidiStoreForProject.ts
+  s_ac9b259eab20ba::t_5ae13d0a92b0ed 1,28
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "5fdd3d6d75cd307fab4afeb316e59b4e483fb25f",
+  "prompts": {},
+  "sessions": {
+    "s_ac9b259eab20ba": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8699-3865-7842-8c54-afbac6cfd266",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
