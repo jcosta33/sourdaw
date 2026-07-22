@@ -1,7 +1,7 @@
 import { getDeviceAutomationParameterId, resolveDeviceAutomationTargetIndex } from '#/utils/automationDeviceTarget';
 
 import { type AutomationLane } from '../../models/AutomationViewTypes';
-import { resolveDeviceParam, resolveDeviceParamScale } from '../../services/deviceResolution';
+import { resolveDeviceParamTargets } from '../../services/deviceResolution';
 import { type OfflineDeviceNode } from '../devices/types';
 
 import { scheduleAutomationOnParam } from './scheduleAutomationOnParam';
@@ -21,7 +21,7 @@ function acceptsOfflineAutomationParameter(
     candidate: ScheduleTrackAutomationDeviceEntry,
     parameterId: string
 ): boolean {
-    return resolveDeviceParam(candidate.deviceType, parameterId, candidate.node) !== null;
+    return resolveDeviceParamTargets(candidate.deviceType, parameterId, candidate.node).length > 0;
 }
 
 export function scheduleTrackAutomation(
@@ -59,11 +59,12 @@ export function scheduleTrackAutomation(
         const parameterId = getDeviceAutomationParameterId(lane.parameterId);
         if (deviceIndex >= 0 && parameterId) {
             const candidate = deviceEntries[deviceIndex]!;
-            const audioParam = resolveDeviceParam(candidate.deviceType, parameterId, candidate.node);
-            if (audioParam) {
-                const scale = resolveDeviceParamScale(candidate.deviceType, parameterId);
+            const targets = resolveDeviceParamTargets(candidate.deviceType, parameterId, candidate.node);
+            for (const { audioParam, scale, offset } of targets) {
                 const points =
-                    scale !== 1 ? lane.points.map((param) => ({ ...param, value: param.value * scale })) : lane.points;
+                    scale !== 1 || offset !== 0
+                        ? lane.points.map((point) => ({ ...point, value: point.value * scale + offset }))
+                        : lane.points;
                 scheduleAutomationOnParam(audioParam, points, durationSeconds, defaultTempo, changes);
             }
         }

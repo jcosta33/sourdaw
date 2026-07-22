@@ -78,7 +78,12 @@ export const handleDeleteTrackAlternative = createHandler<'deleteTrackAlternativ
         };
 
         if (targetTrack.activeAlternativeId === alternativeId) {
-            const fallbackAlternative = filteredAlternatives[0];
+            // Undo of createTrackAlternative passes fallbackAlternativeId so the
+            // pre-create active alternative is restored, not the first in list.
+            const requestedFallback = action.payload.fallbackAlternativeId
+                ? filteredAlternatives.find((alternative) => alternative.id === action.payload.fallbackAlternativeId)
+                : undefined;
+            const fallbackAlternative = requestedFallback ?? filteredAlternatives[0];
             if (
                 !fallbackAlternative ||
                 !isPromotableRuntimeClipCollection({

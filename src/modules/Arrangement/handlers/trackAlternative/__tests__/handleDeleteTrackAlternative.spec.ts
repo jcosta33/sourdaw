@@ -297,4 +297,32 @@ describe('handleDeleteTrackAlternative', () => {
         expect(result).toEqual({ status: 'no-write' });
         expect(mocks.setTrackStoreState).not.toHaveBeenCalled();
     });
+
+    it('honors fallbackAlternativeId over the first-in-list fallback when deleting the active alternative', () => {
+        mocks.getTrackStoreState.mockReturnValue({
+            tracks: [
+                {
+                    id: 't1',
+                    activeAlternativeId: 'alt3',
+                    clips: [],
+                    alternatives: [
+                        { id: 'alt1', clips: [] },
+                        { id: 'alt2', clips: [] },
+                        { id: 'alt3', clips: [] },
+                    ],
+                },
+            ],
+        });
+
+        const result = handleDeleteTrackAlternative.execute({
+            type: 'deleteTrackAlternative',
+            payload: { trackId: 't1', alternativeId: 'alt3', fallbackAlternativeId: 'alt2' },
+        });
+
+        // The undo of createTrackAlternative restores the pre-create active
+        // alternative, which is not necessarily first in the list.
+        expect(result).toEqual({ status: 'written' });
+        const newState = mocks.setTrackStoreState.mock.calls[0]?.[0];
+        expect(newState.tracks[0].activeAlternativeId).toBe('alt2');
+    });
 });

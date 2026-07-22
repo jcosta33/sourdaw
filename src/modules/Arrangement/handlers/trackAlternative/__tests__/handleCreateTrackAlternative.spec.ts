@@ -171,4 +171,58 @@ describe('handleCreateTrackAlternative', () => {
     it('is undoable', () => {
         expect(handleCreateTrackAlternative.undoable).toBe(true);
     });
+
+    it('describe mints one id shared by execute and the delete inverse with the pre-create active as fallback', () => {
+        const action: {
+            type: 'createTrackAlternative';
+            payload: { trackId: string; name: string; duplicateActive: boolean; alternativeId?: string };
+        } = { type: 'createTrackAlternative', payload: { trackId: 't1', name: 'New Alt', duplicateActive: false } };
+
+        const desc = handleCreateTrackAlternative.describe(action);
+        void handleCreateTrackAlternative.execute(action);
+
+        const inverse = desc.inverseAction;
+        if (inverse?.type !== 'deleteTrackAlternative') {
+            throw new Error('expected a deleteTrackAlternative inverse');
+        }
+        expect(inverse.payload.alternativeId).toMatch(/^alt-/);
+        // Undo must fall back to the pre-create active alternative — not
+        // deleteTrackAlternative's default first-in-list fallback.
+        expect(inverse.payload.fallbackAlternativeId).toBe('alt1');
+        const newState = mocks.setTrackStoreState.mock.calls[0]?.[0];
+        expect(newState.tracks[0].activeAlternativeId).toBe(inverse.payload.alternativeId);
+    });
+
+    it('describe honors a caller-supplied alternative id', () => {
+        const action: {
+            type: 'createTrackAlternative';
+            payload: { trackId: string; name: string; duplicateActive: boolean; alternativeId?: string };
+        } = {
+            type: 'createTrackAlternative',
+            payload: { trackId: 't1', name: 'New Alt', duplicateActive: false, alternativeId: 'alt-fixed' },
+        };
+
+        const desc = handleCreateTrackAlternative.describe(action);
+        void handleCreateTrackAlternative.execute(action);
+
+        expect(desc.inverseAction).toEqual({
+            type: 'deleteTrackAlternative',
+            payload: { trackId: 't1', alternativeId: 'alt-fixed', fallbackAlternativeId: 'alt1' },
+        });
+        const newState = mocks.setTrackStoreState.mock.calls[0]?.[0];
+        expect(newState.tracks[0].activeAlternativeId).toBe('alt-fixed');
+    });
+
+    it('describe returns a null inverse when the track has no valid active alternative', () => {
+        mocks.getTrackStoreState.mockReturnValue({
+            tracks: [{ id: 't1', activeAlternativeId: '', clips: [], alternatives: [] }],
+        });
+
+        const desc = handleCreateTrackAlternative.describe({
+            type: 'createTrackAlternative',
+            payload: { trackId: 't1', name: 'X', duplicateActive: false },
+        });
+
+        expect(desc.inverseAction).toBeNull();
+    });
 });
