@@ -17,14 +17,15 @@ const SLEW_EPSILON = 5e-5;
 type ModulationTrack = NonNullable<typeof trackStore.value>['tracks'][number];
 type AutomationLane = NonNullable<typeof automationStore.value>['lanes'][number];
 type IndexedLane = readonly [AutomationLane, ModulationTrack, string, string, string];
+type AutomatedBaseSlot = { activeLaneCount: number; value: number | null };
 
 const trackById = new Map<string, ModulationTrack>();
 let cachedLanesRef: readonly AutomationLane[] | undefined;
 let cachedTracksRef: readonly ModulationTrack[] | undefined;
 const cachedDeviceRefs: ModulationTrack['devices'][] = [];
 const indexedLaneMetadata: IndexedLane[] = [];
-const automatedBaseByDevice = new Map<string, Map<string, number>>();
-const automatedBaseLeaves: Map<string, number>[] = [];
+const automatedBaseByDevice = new Map<string, Map<string, AutomatedBaseSlot>>();
+const automatedBaseSlots: AutomatedBaseSlot[] = [];
 const automationVisited = new Set<string>();
 
 function deviceAcceptsAutomationParameter(
@@ -45,19 +46,27 @@ function clamp(value: number, min: number, max: number): number {
 }
 
 function clearAutomatedBaseValues(): void {
-    for (let index = 0; index < automatedBaseLeaves.length; index++) {
-        automatedBaseLeaves[index]!.clear();
+    for (let index = 0; index < automatedBaseSlots.length; index++) {
+        const slot = automatedBaseSlots[index]!;
+        slot.activeLaneCount = 0;
+        slot.value = null;
     }
 }
 
 function setAutomatedBase(deviceId: string, parameterId: string, value: number): void {
     let baseByParameter = automatedBaseByDevice.get(deviceId);
     if (!baseByParameter) {
-        baseByParameter = new Map<string, number>();
+        baseByParameter = new Map<string, AutomatedBaseSlot>();
         automatedBaseByDevice.set(deviceId, baseByParameter);
-        automatedBaseLeaves.push(baseByParameter);
     }
-    baseByParameter.set(parameterId, value);
+    let slot = baseByParameter.get(parameterId);
+    if (!slot) {
+        slot = { activeLaneCount: 0, value: null };
+        baseByParameter.set(parameterId, slot);
+        automatedBaseSlots.push(slot);
+    }
+    slot.activeLaneCount += 1;
+    slot.value = value;
 }
 
 function isClipActive(track: ModulationTrack, clipId: string, currentBeat: number): boolean {
@@ -110,7 +119,7 @@ function rebuildLaneMetadata(lanes: readonly AutomationLane[], tracks: readonly 
         }
     }
     automatedBaseByDevice.clear();
-    automatedBaseLeaves.length = 0;
+    automatedBaseSlots.length = 0;
 }
 
 function indexAutomatedBases(currentBeat: number): void {
@@ -192,8 +201,11 @@ export function applyModulationToEngine(currentBeat: number): void {
             }
 
             const key = `${mapping.targetTrackId} ${mapping.targetDeviceId} ${mapping.targetParamId}`;
-            const base =
-                automatedBaseByDevice.get(mapping.targetDeviceId)?.get(mapping.targetParamId) ?? binding.baseValue;
+            const automatedBase = automatedBaseByDevice.get(mapping.targetDeviceId)?.get(mapping.targetParamId);
+            const base = automatedBase?.value ?? binding.baseValue;
+            // applyAutomation may have just written an earlier equivalent lane;
+            // restate the later authoritative combined target after that write.
+            const hasCompetingAutomationWrites = (automatedBase?.activeLaneCount ?? 0) > 1;
 
             const paramRange = binding.paramMax - binding.paramMin;
             const delta = modValue * mapping.amount * paramRange;
@@ -210,7 +222,7 @@ export function applyModulationToEngine(currentBeat: number): void {
             const smoothed = hadPrev ? prev + (target - prev) * SLEW_ALPHA : target;
             modulationParamSlew.set(key, smoothed);
 
-            if (!hadPrev || Math.abs(smoothed - prev) > SLEW_EPSILON) {
+            if (!hadPrev || Math.abs(smoothed - prev) > SLEW_EPSILON || hasCompetingAutomationWrites) {
                 getModulationDependencies().updateDeviceParam(
                     targetOwner.trackId,
                     targetOwner.deviceId,
