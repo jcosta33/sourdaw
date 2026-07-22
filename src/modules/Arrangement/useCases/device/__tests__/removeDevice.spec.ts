@@ -73,7 +73,18 @@ describe('removeDevice', () => {
 
     it('removes the strip after removing the last Toaster from a folder', () => {
         const folder = createTrack({ id: 'folder-1', name: 'Folder', kind: 'folder' });
-        folder.devices = [{ id: 'toaster-1', name: 'Toaster', type: 'toaster', bypassed: false, parameterValues: {} }];
+        folder.devices = [
+            {
+                id: 'external-1',
+                name: 'External',
+                type: 'external-plugin',
+                bypassed: false,
+                parameterValues: {},
+                externalPluginId: 'plugin-1',
+                externalInstanceId: 'instance-1',
+            },
+            { id: 'toaster-1', name: 'Toaster', type: 'toaster', bypassed: false, parameterValues: {} },
+        ];
         mocks.getTrackState.mockReturnValue({ tracks: [folder], selectedTrackId: null });
 
         removeDevice('toaster-1');
@@ -83,6 +94,8 @@ describe('removeDevice', () => {
         expect(mocks.removeDeviceFromStrip.mock.invocationCallOrder[0]).toBeLessThan(
             mocks.removeTrackStrip.mock.invocationCallOrder[0]!
         );
+        expect(mocks.unloadPlugin).toHaveBeenCalledTimes(1);
+        expect(mocks.unloadPlugin).toHaveBeenCalledWith('instance-1');
     });
 
     it('retains a live folder strip when another Toaster remains', () => {
@@ -99,18 +112,28 @@ describe('removeDevice', () => {
         expect(mocks.removeTrackStrip).not.toHaveBeenCalled();
     });
 
-    it('retains a live Toaster folder strip when removing a non-Toaster device', () => {
+    it('retains a live Toaster folder strip and unloads a removed external device exactly once', () => {
         const folder = createTrack({ id: 'folder-1', name: 'Folder', kind: 'folder' });
         folder.devices = [
             { id: 'toaster-1', name: 'Toaster', type: 'toaster', bypassed: false, parameterValues: {} },
-            { id: 'reverb-1', name: 'Reverb', type: 'reverb', bypassed: false, parameterValues: {} },
+            {
+                id: 'external-1',
+                name: 'External',
+                type: 'external-plugin',
+                bypassed: false,
+                parameterValues: {},
+                externalPluginId: 'plugin-1',
+                externalInstanceId: 'instance-1',
+            },
         ];
         mocks.getTrackState.mockReturnValue({ tracks: [folder], selectedTrackId: null });
 
-        removeDevice('reverb-1');
+        removeDevice('external-1');
 
-        expect(mocks.removeDeviceFromStrip).toHaveBeenCalledWith('folder-1', 'reverb-1');
+        expect(mocks.removeDeviceFromStrip).toHaveBeenCalledWith('folder-1', 'external-1');
         expect(mocks.removeTrackStrip).not.toHaveBeenCalled();
+        expect(mocks.unloadPlugin).toHaveBeenCalledTimes(1);
+        expect(mocks.unloadPlugin).toHaveBeenCalledWith('instance-1');
     });
 
     it('permits dormant VCA device and plugin cleanup', () => {

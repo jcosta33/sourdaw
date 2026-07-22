@@ -49,6 +49,7 @@ describe('addExternalDevice', () => {
 
         const device = addExternalDevice('folder-1', 'plugin-1', 'Plugin');
 
+        expect(mocks.addDeviceToStrip).toHaveBeenCalledTimes(1);
         expect(mocks.addDeviceToStrip).toHaveBeenCalledWith(
             'folder-1',
             device?.id,

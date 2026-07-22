@@ -9,6 +9,7 @@ const mocks = vi.hoisted(() => ({
     addDeviceToStrip: vi.fn(),
     updateDeviceParam: vi.fn(),
     compileFaustDSP: vi.fn(),
+    loadPlugin: vi.fn(),
 }));
 
 vi.mock('../../../repositories/track/getTrackState', () => ({
@@ -32,6 +33,7 @@ vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
 vi.mock('#/modules/PluginHost/useCases', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/PluginHost/useCases')>()),
     compileFaustDSP: mocks.compileFaustDSP,
+    loadPlugin: mocks.loadPlugin,
 }));
 
 describe('addDevice', () => {
@@ -86,13 +88,65 @@ describe('addDevice', () => {
         expect(mocks.updateDeviceParam).not.toHaveBeenCalled();
     });
 
-    it('bootstraps an ordinary folder when adding Toaster', () => {
-        mocks.getTrackState.mockReturnValue({ tracks: [{ id: 'folder-1', kind: 'folder', devices: [] }] });
-        mocks.getPlatformPlugins.mockReturnValue([{ id: 'toaster', name: 'Toaster', parameters: [] }]);
+    it('bootstraps the complete projected folder chain in deterministic order when adding Toaster', async () => {
+        mocks.getTrackState.mockReturnValue({
+            tracks: [
+                {
+                    id: 'folder-1',
+                    kind: 'folder',
+                    devices: [
+                        {
+                            id: 'reverb-1',
+                            name: 'Reverb',
+                            type: 'p1',
+                            parameterValues: { wet: 0.25, room: 0.5 },
+                        },
+                        {
+                            id: 'faust-1',
+                            name: 'Faust Delay',
+                            type: 'faust-delay',
+                            parameterValues: { feedback: 0.4 },
+                        },
+                        {
+                            id: 'external-1',
+                            name: 'External',
+                            type: 'external-plugin',
+                            parameterValues: { mix: 0.8 },
+                            externalPluginId: 'plugin-1',
+                            externalInstanceId: 'instance-1',
+                        },
+                    ],
+                },
+            ],
+        });
+        mocks.getPlatformPlugins.mockReturnValue([
+            { id: 'toaster', name: 'Toaster', parameters: [{ id: 'swing', value: 0.2 }] },
+        ]);
+        mocks.compileFaustDSP.mockRejectedValueOnce(new Error('compile failed'));
 
         const result = addDevice('folder-1', 'Toaster');
 
-        expect(mocks.addDeviceToStrip).toHaveBeenCalledWith('folder-1', result?.id, 'toaster');
+        expect(mocks.addDeviceToStrip).toHaveBeenNthCalledWith(1, 'folder-1', 'reverb-1', 'p1');
+        expect(mocks.addDeviceToStrip).toHaveBeenNthCalledWith(2, 'folder-1', 'faust-1', 'faust-delay');
+        expect(mocks.addDeviceToStrip).toHaveBeenNthCalledWith(
+            3,
+            'folder-1',
+            'external-1',
+            'external-plugin',
+            'instance-1'
+        );
+        expect(mocks.addDeviceToStrip).toHaveBeenNthCalledWith(4, 'folder-1', result?.id, 'toaster');
+        expect(mocks.updateDeviceParam.mock.calls).toEqual([
+            ['folder-1', 'reverb-1', 'wet', 0.25],
+            ['folder-1', 'reverb-1', 'room', 0.5],
+            ['folder-1', 'faust-1', 'feedback', 0.4],
+            ['folder-1', 'external-1', 'mix', 0.8],
+            ['folder-1', result?.id, 'swing', 0.2],
+        ]);
+        expect(mocks.loadPlugin).toHaveBeenCalledWith('plugin-1', 'instance-1');
+        await vi.waitFor(() => {
+            expect(mocks.compileFaustDSP).toHaveBeenCalledWith('faust-delay');
+        });
     });
 
     it('adds a supported device to an already-live Toaster folder', () => {
@@ -105,6 +159,7 @@ describe('addDevice', () => {
 
         const result = addDevice('folder-1', 'Reverb');
 
+        expect(mocks.addDeviceToStrip).toHaveBeenCalledTimes(1);
         expect(mocks.addDeviceToStrip).toHaveBeenCalledWith('folder-1', result?.id, 'p1');
         expect(mocks.updateDeviceParam).toHaveBeenCalledWith('folder-1', result?.id, 'wet', 0.5);
     });

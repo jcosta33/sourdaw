@@ -23,6 +23,11 @@ export function removeDevice(deviceId: string): void {
             removeDeviceFromStrip(track.id, deviceId);
             if (shouldRemoveTrackStrip) {
                 removeTrackStrip(track.id);
+                for (const retainedDevice of projectedTrack.devices) {
+                    if (retainedDevice.type === 'external-plugin' && retainedDevice.externalInstanceId) {
+                        void unloadPlugin(retainedDevice.externalInstanceId);
+                    }
+                }
             }
             if (device.type === 'external-plugin' && device.externalInstanceId) {
                 void unloadPlugin(device.externalInstanceId);

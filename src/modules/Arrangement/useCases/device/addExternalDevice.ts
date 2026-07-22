@@ -1,10 +1,9 @@
-import { addDeviceToStrip } from '#/modules/AudioEngine/useCases';
-import { loadPlugin } from '#/modules/PluginHost/useCases';
-
 import { getTrackState } from '../../repositories/track/getTrackState';
 import { updateTrack } from '../../repositories/track/updateTrack';
 import { getTrackEligibility, shouldCreateLiveTrackStrip } from '../../stores/trackEligibility';
 import { type Device } from '../../stores/trackStore';
+
+import { activateTrackDevices } from './activateTrackDevices';
 
 function nextDeviceIdStr(): string {
     return `device-${crypto.randomUUID().slice(0, 8)}`;
@@ -32,12 +31,13 @@ export function addExternalDevice(trackId: string, pluginId: string, pluginName:
         externalInstanceId: instanceId,
     };
 
+    const hadLiveStrip = shouldCreateLiveTrackStrip(track);
     const projectedTrack = { ...track, devices: [...track.devices, device] };
     updateTrack(trackId, (time) => ({ ...time, devices: [...time.devices, device] }));
 
     if (shouldCreateLiveTrackStrip(projectedTrack)) {
-        addDeviceToStrip(trackId, device.id, 'external-plugin', instanceId);
-        void loadPlugin(pluginId, instanceId);
+        const devicesToActivate = hadLiveStrip ? [device] : projectedTrack.devices;
+        activateTrackDevices({ trackId, devices: devicesToActivate });
     }
 
     return device;

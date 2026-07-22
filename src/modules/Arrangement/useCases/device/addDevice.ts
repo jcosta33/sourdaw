@@ -1,5 +1,3 @@
-import { addDeviceToStrip, updateDeviceParam } from '#/modules/AudioEngine/useCases';
-import { compileFaustDSP } from '#/modules/PluginHost/useCases';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { getTrackState } from '../../repositories/track/getTrackState';
@@ -7,6 +5,8 @@ import { updateTrack } from '../../repositories/track/updateTrack';
 import { getTrackEligibility, shouldCreateLiveTrackStrip } from '../../stores/trackEligibility';
 import { type Device } from '../../stores/trackStore';
 import { getPlatformPlugins } from '../getPlatformPlugins';
+
+import { activateTrackDevices } from './activateTrackDevices';
 
 function nextDeviceIdStr(): string {
     return `device-${crypto.randomUUID().slice(0, 8)}`;
@@ -46,21 +46,13 @@ export function addDevice(trackId: string, deviceType: string): Device | null {
         parameterValues,
     };
 
+    const hadLiveStrip = shouldCreateLiveTrackStrip(track);
     const projectedTrack = { ...track, devices: [...track.devices, device] };
     updateTrack(trackId, (time) => ({ ...time, devices: [...time.devices, device] }));
 
     if (plugin && shouldCreateLiveTrackStrip(projectedTrack)) {
-        if (plugin.id.startsWith('faust-')) {
-            Promise.resolve()
-                .then(() => compileFaustDSP(plugin.id))
-                .catch(() => {
-                    // Faust compilation is best-effort — device falls back to passthrough
-                });
-        }
-        addDeviceToStrip(trackId, device.id, plugin.id);
-        for (const param of plugin.parameters) {
-            updateDeviceParam(trackId, device.id, param.id, param.value);
-        }
+        const devicesToActivate = hadLiveStrip ? [device] : projectedTrack.devices;
+        activateTrackDevices({ trackId, devices: devicesToActivate });
     }
 
     return device;
