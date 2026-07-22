@@ -1,0 +1,25 @@
+src/modules/Project/useCases/demoProjects/myceliumAscendant/createMyceliumId.ts
+  s_ac9b259eab20ba::t_51be146667c2ea 32
+  s_ac9b259eab20ba::t_b6bcad4d72b8c8 1-31,33
+src/modules/Project/useCases/demoProjects/myceliumAscendant/createMyceliumAscendantBlueprint.ts
+  s_ac9b259eab20ba::t_2a6695eb91fe71 1-142
+src/modules/Project/useCases/demoProjects/myceliumAscendant/__tests__/createMyceliumAscendantBlueprint.spec.ts
+  s_ac9b259eab20ba::t_5cd9af16434819 1-5,7-79,83-126,128-129
+  s_ac9b259eab20ba::t_51be146667c2ea 6,80-82,127
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "c535ffd06c89ee4747c29dd78ce4d18e22a21c20",
+  "prompts": {},
+  "sessions": {
+    "s_ac9b259eab20ba": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8699-3865-7842-8c54-afbac6cfd266",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
