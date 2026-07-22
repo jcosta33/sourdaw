@@ -157,6 +157,42 @@ describe('scheduleAutomationOnParam', () => {
         expect(param.linearRampToValueAtTime).toHaveBeenCalledWith(1, 2);
     });
 
+    it('crops a linear ramp to the rendered region with interpolated boundary values', () => {
+        const param = makeParam();
+        scheduleAutomationOnParam(
+            param as unknown as AudioParam,
+            [
+                { beat: 0, value: 0, curve: 'linear', tension: 0 },
+                { beat: 4, value: 1, curve: 'linear', tension: 0 },
+            ],
+            0.5,
+            120,
+            [],
+            1
+        );
+
+        expect(param.setValueAtTime).toHaveBeenCalledWith(0.5, 0);
+        expect(param.linearRampToValueAtTime).toHaveBeenCalledWith(0.75, 0.5);
+    });
+
+    it('samples exponential curves only inside the rendered region', () => {
+        const param = makeParam();
+        scheduleAutomationOnParam(
+            param as unknown as AudioParam,
+            [
+                { beat: 0, value: 0, curve: 'exponential', tension: 0 },
+                { beat: 130, value: 1, curve: 'linear', tension: 0 },
+            ],
+            1,
+            120,
+            [],
+            64
+        );
+
+        expect(param.linearRampToValueAtTime.mock.calls.length).toBeLessThanOrEqual(101);
+        expect(param.linearRampToValueAtTime).toHaveBeenLastCalledWith(1, 1);
+    });
+
     it('holds (step) a value rather than ramping when the curve is step', () => {
         const param = makeParam();
         scheduleAutomationOnParam(
@@ -204,8 +240,8 @@ describe('scheduleTrackAutomation', () => {
                         minValue: min,
                         maxValue: max,
                         points: [
-                            { beat: 0, value: min, curve: 'linear', tension: 0 },
-                            { beat: 2, value: max, curve: 'linear', tension: 0 },
+                            { beat: 128, value: min, curve: 'linear', tension: 0 },
+                            { beat: 130, value: max, curve: 'linear', tension: 0 },
                         ],
                     }),
                 ],
@@ -215,7 +251,8 @@ describe('scheduleTrackAutomation', () => {
                 [{ deviceId: 'device-1', deviceType, node: device }],
                 10,
                 120,
-                []
+                [],
+                64
             );
 
             for (const [index, [, , scale, offset]] of targetSpecs.entries()) {
@@ -233,14 +270,15 @@ describe('scheduleTrackAutomation', () => {
         const panNode = { pan } as unknown as StereoPannerNode;
 
         scheduleTrackAutomation(
-            [makeLane({ parameterId: 'gain', points: [{ beat: 0, value: 0.8, curve: 'linear', tension: 0 }] })],
+            [makeLane({ parameterId: 'gain', points: [{ beat: 128, value: 0.8, curve: 'linear', tension: 0 }] })],
             'track-1',
             gainNode,
             panNode,
             [],
             10,
             120,
-            []
+            [],
+            64
         );
 
         expect(gain.setValueAtTime).toHaveBeenCalledWith(0.8, 0);
@@ -254,14 +292,15 @@ describe('scheduleTrackAutomation', () => {
         const panNode = { pan } as unknown as StereoPannerNode;
 
         scheduleTrackAutomation(
-            [makeLane({ parameterId: 'pan', points: [{ beat: 0, value: -0.5, curve: 'linear', tension: 0 }] })],
+            [makeLane({ parameterId: 'pan', points: [{ beat: 128, value: -0.5, curve: 'linear', tension: 0 }] })],
             'track-1',
             gainNode,
             panNode,
             [],
             10,
             120,
-            []
+            [],
+            64
         );
 
         expect(pan.setValueAtTime).toHaveBeenCalledWith(-0.5, 0);
