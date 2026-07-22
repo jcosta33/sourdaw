@@ -1,0 +1,29 @@
+src/modules/CrdtDocument/useCases/__tests__/startCrdtAutoSave.spec.ts
+  s_05e5dfaf0f6a77::t_2438b2d3a206a2 133-213
+src/modules/CrdtDocument/useCases/startCrdtAutoSave.ts
+  s_9fb73f58e8b84e::t_1ad38865b737d7 16-24,33,105-127,132-135,139-179,189-194,202-207
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "ffcc30e1949a2eaa7402baf3380a9014769988d1",
+  "prompts": {},
+  "sessions": {
+    "s_05e5dfaf0f6a77": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8a78-fd59-7513-93bb-6345b9174b5a",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_9fb73f58e8b84e": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8a67-1803-75a2-b15d-4b73fd680357",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
