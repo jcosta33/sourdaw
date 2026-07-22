@@ -1,0 +1,31 @@
+src/modules/Project/useCases/projectTemplates/templateHelpers/__tests__/builder.spec.ts
+  s_ac9b259eab20ba::t_8da499cb94efeb 22-29,68
+src/modules/MIDI/useCases/chordTrack/replaceChordTrackState.ts
+  s_ac9b259eab20ba::t_75faac34259489 1-8
+src/modules/Project/useCases/projectTemplates/templateHelpers/initProject.ts
+  s_ac9b259eab20ba::t_75faac34259489 2,23
+src/modules/Project/useCases/projectTemplates/templateHelpers/setChordProgression.ts
+  s_ac9b259eab20ba::t_75faac34259489 1,31,50
+src/modules/Project/useCases/demoProjects/nebulaDrift/createNebulaDriftDemo.ts
+  s_ac9b259eab20ba::t_75faac34259489 29-30,2290
+src/modules/MIDI/useCases/index.ts
+  s_ac9b259eab20ba::t_75faac34259489 17
+src/modules/MIDI/useCases/chordTrack/__tests__/replaceChordTrackState.spec.ts
+  s_ac9b259eab20ba::t_c789196b52484d 1-30
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "f8d4b8faea7dfa93df1afdcbc82a466327a45ed2",
+  "prompts": {},
+  "sessions": {
+    "s_ac9b259eab20ba": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8699-3865-7842-8c54-afbac6cfd266",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
