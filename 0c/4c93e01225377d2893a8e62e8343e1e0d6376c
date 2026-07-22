@@ -1,0 +1,53 @@
+src/modules/AudioEngine/engine/FermenterNode.ts
+  s_ac9b259eab20ba::t_30b0da77c78b6b 10,21,105-119
+  s_ac9b259eab20ba::t_70876d3a071844 120-121
+src/modules/AudioEngine/repositories/offlineScheduler/__tests__/automationScheduling.spec.ts
+  s_ac9b259eab20ba::t_d4a0c9c9a1fbe9 362-397
+src/modules/AudioEngine/repositories/deviceStrategy/AudioDeviceStrategy.ts
+  s_ac9b259eab20ba::t_25788373b7c97b 1,8
+src/modules/AudioEngine/services/fermenterProcessor.ts
+  s_ac9b259eab20ba::t_0d372295341b01 42-55,62,76,127-146,190-191,222-249,268
+src/modules/AudioEngine/repositories/offlineScheduler/automationScheduling.ts
+  s_ac9b259eab20ba::t_25788373b7c97b 8,20,27-30,41-42,70-80
+  s_ac9b259eab20ba::t_ae552c2c0bb951 6
+src/modules/AudioEngine/services/__tests__/processorQueues.spec.ts
+  s_ac9b259eab20ba::t_8bce14f993d590 120-146
+  s_ac9b259eab20ba::t_d59aa89de3215b 5
+src/modules/AudioEngine/repositories/offlineScheduler/__tests__/compileAutomationSegments.spec.ts
+  s_ac9b259eab20ba::t_9eddb7265bc71b 1-54,70
+  s_ac9b259eab20ba::t_ae552c2c0bb951 68
+  s_ac9b259eab20ba::t_3e06428f677bf1 55-67,69
+src/modules/AudioEngine/useCases/offlineRender/scheduleTrackClips.ts
+  s_ac9b259eab20ba::t_25788373b7c97b 243-244
+src/modules/AudioEngine/repositories/deviceStrategy/__tests__/NativeDspDeviceStrategy.spec.ts
+  s_ac9b259eab20ba::t_cd23d687554e04 38,80
+  s_ac9b259eab20ba::t_3922bf5fc279a6 33-37,39-42
+src/modules/AudioEngine/engine/__tests__/wasmDeviceRegistry.spec.ts
+  s_ac9b259eab20ba::t_2d2be7c45b7160 300
+src/modules/AudioEngine/repositories/deviceStrategy/NativeDspDeviceStrategy.ts
+  s_ac9b259eab20ba::t_cd23d687554e04 31,39-42
+  s_ac9b259eab20ba::t_25788373b7c97b 12,21
+src/modules/AudioEngine/models/OfflineAutomationSegment.ts
+  s_ac9b259eab20ba::t_25788373b7c97b 1-6
+src/modules/AudioEngine/engine/__tests__/FermenterNode.spec.ts
+  s_ac9b259eab20ba::t_fbb16121e93f6b 71-81
+src/modules/AudioEngine/repositories/offlineScheduler/compileAutomationSegments.ts
+  s_ac9b259eab20ba::t_25788373b7c97b 1-83,89-90
+  s_ac9b259eab20ba::t_cd23d687554e04 84-88
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "0c4c93e01225377d2893a8e62e8343e1e0d6376c",
+  "prompts": {},
+  "sessions": {
+    "s_ac9b259eab20ba": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8699-3865-7842-8c54-afbac6cfd266",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
