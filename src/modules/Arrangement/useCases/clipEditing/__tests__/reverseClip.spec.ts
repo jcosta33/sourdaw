@@ -42,8 +42,6 @@ describe('reverseClip', () => {
             trackId: 'track-1',
             clipId: 'c1',
         });
-        mocks.updateClip.mockReturnValue(true);
-
         mockCtx = {
             createBuffer: vi.fn(),
         };
@@ -62,9 +60,21 @@ describe('reverseClip', () => {
         vi.spyOn(Date, 'now').mockReturnValue(12345);
 
         const mockClip = { id: 'c1', type: 'audio', audioBufferId: 'buf1', name: 'Sample' };
+        const events: string[] = [];
+        let publishedClip: typeof mockClip | undefined;
         mocks.getTrackState.mockReturnValue({
             tracks: [{ id: 'track-1', clips: [mockClip] }],
         });
+        mocks.cacheAudioBuffer.mockImplementation(() => {
+            events.push('cache');
+        });
+        mocks.updateClip.mockImplementation(
+            (_clipId: string, updater: (candidate: typeof mockClip) => typeof mockClip) => {
+                publishedClip = updater(mockClip);
+                events.push('publish');
+                return true;
+            }
+        );
 
         const originalData = new Float32Array(100);
         originalData[0] = 1.0;
@@ -95,18 +105,9 @@ describe('reverseClip', () => {
             bufferId: 'reversed-buf1-12345',
         });
         expect(mocks.updateClip).toHaveBeenCalledWith('c1', expect.any(Function));
-        expect(mocks.updateClip.mock.invocationCallOrder[0]).toBeLessThan(
-            mocks.cacheAudioBuffer.mock.invocationCallOrder[0]!
-        );
-
-        const call = mocks.updateClip.mock.calls[0];
-        if (!call) {
-            throw new Error('expected updateClip to be called');
-        }
-        const updater = call[1];
-        const result = updater(mockClip);
-        expect(result.audioBufferId).toBe('reversed-buf1-12345');
-        expect(result.name).toBe('Sample (reversed)');
+        expect(events).toEqual(['cache', 'publish']);
+        expect(publishedClip?.audioBufferId).toBe('reversed-buf1-12345');
+        expect(publishedClip?.name).toBe('Sample (reversed)');
 
         // Verify the math
         expect(reversedData[0]).toBe(0.5);
@@ -118,6 +119,12 @@ describe('reverseClip', () => {
         mocks.getTrackState.mockReturnValue({
             tracks: [{ id: 'track-1', clips: [mockClip] }],
         });
+        mocks.updateClip.mockImplementation(
+            (_clipId: string, updater: (candidate: typeof mockClip) => typeof mockClip) => {
+                updater(mockClip);
+                return true;
+            }
+        );
         mocks.getCachedAudioBuffer.mockReturnValue({
             numberOfChannels: 1,
             length: 4,

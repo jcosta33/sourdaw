@@ -38,16 +38,18 @@ export function reverseClip(clipId: string): boolean {
     }
 
     const newId = `reversed-${clip.audioBufferId}-${Date.now()}`;
-    const didWrite = updateClip(target.clipId, (candidate) => ({
-        ...candidate,
-        audioBufferId: newId,
-        name: `${candidate.name} (reversed)`,
-    }));
+    const didWrite = updateClip(target.clipId, (candidate) => {
+        cacheAudioBuffer({ buffer: reversed, bufferId: newId });
+        return {
+            ...candidate,
+            audioBufferId: newId,
+            name: `${candidate.name} (reversed)`,
+        };
+    });
     if (!didWrite) {
         return false;
     }
 
-    cacheAudioBuffer({ buffer: reversed, bufferId: newId });
     clearClipPitchContour(target.clipId);
     return true;
 }
