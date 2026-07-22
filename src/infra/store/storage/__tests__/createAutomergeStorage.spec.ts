@@ -454,6 +454,33 @@ describe('createAutomergeStorage', () => {
         expect(doc).toEqual({});
     });
 
+    it('restores the adapter cache when mutateDoc fails before the transaction commits', () => {
+        const doc: TestDoc = { state: { count: 0 } };
+        const commitFailure = new Error('CRDT commit failed');
+        const port: TestPort = {
+            getDoc: () => doc,
+            getSemanticMessage: () => undefined,
+            hasDoc: () => true,
+            mutateDoc: () => {
+                throw commitFailure;
+            },
+        };
+        configureAutomergeStoragePort(port);
+        const storage = createAutomergeStorage<{ count: number }>('root', 'state');
+        expect(storage.hydrate?.()).toBe(true);
+
+        const transaction = runWithAutomergeStorageTransaction(undefined, () => {
+            storage.set({ count: 1 });
+        });
+
+        expect(() => transaction.commit()).toThrow(commitFailure);
+        transaction.abort();
+        flushAutomergeStorageWrites();
+
+        expect(storage.get()).toEqual({ count: 0 });
+        expect(doc.state).toEqual({ count: 0 });
+    });
+
     it('preserves semantic messages across ordinary action scopes', () => {
         let semanticMessage: string | undefined = 'First action';
         const { doc, mutations, port } = createTestPort({

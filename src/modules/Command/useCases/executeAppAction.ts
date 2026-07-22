@@ -1,6 +1,7 @@
 import { inject } from '#/infra/di/inject';
 import { logger } from '#/infra/logger/appLogger';
 import {
+    AutomergeStorageTransactionCommittedError,
     runWithAutomergeStorageTransaction,
     waitForAutomergeSnapshotTransaction,
 } from '#/infra/store/storage/createAutomergeStorage';
@@ -107,6 +108,7 @@ export const executeAppAction: ExecuteAppAction = inject({ logger })(
             try {
                 storage_transaction.commit();
             } catch (error) {
+                storage_transaction.abort();
                 try {
                     clearSemanticContext();
                 } catch (clear_error) {
@@ -115,6 +117,11 @@ export const executeAppAction: ExecuteAppAction = inject({ logger })(
                             cause: clear_error,
                         })
                     );
+                }
+                if (error instanceof AutomergeStorageTransactionCommittedError) {
+                    const committed_error = new AppActionCommittedError(action.type, error.cause);
+                    logger.error(committed_error);
+                    throw committed_error;
                 }
                 logger.error(new Error(`Action storage commit failed for action: ${action.type}`, { cause: error }));
                 throw error;

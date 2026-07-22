@@ -59,9 +59,10 @@ type PendingAutomergeStorageWrite = {
     readonly abort: () => void;
     readonly commitOwner: object;
     readonly didCommit: () => void;
+    readonly didDiscard: () => void;
     readonly docId: AutomergeStorageDocId;
     readonly snapshotTransaction: object | undefined;
-    readonly flush: () => AutomergeStorageMutationInput | null;
+    readonly prepare: () => AutomergeStorageMutationInput | null;
 };
 
 type ActiveAutomergeStorageTransaction = {
@@ -83,6 +84,27 @@ type AutomergeStorageTransactionOutcome<Result> =
 
 type AutomergeStorageTransactionResult<Result> = AutomergeStorageTransactionControl &
     AutomergeStorageTransactionOutcome<Result>;
+
+class AutomergeStorageFlushError extends Error {
+    readonly committedDocumentCount: number;
+    readonly failure: unknown;
+
+    constructor(failure: unknown, committedDocumentCount: number) {
+        super(failure instanceof Error ? failure.message : 'Failed to flush an Automerge storage write', {
+            cause: failure,
+        });
+        this.name = 'AutomergeStorageFlushError';
+        this.committedDocumentCount = committedDocumentCount;
+        this.failure = failure;
+    }
+}
+
+export class AutomergeStorageTransactionCommittedError extends Error {
+    constructor(cause: unknown) {
+        super('Automerge storage transaction committed before a later document failed', { cause });
+        this.name = 'AutomergeStorageTransactionCommittedError';
+    }
+}
 
 let automergeStoragePort: AutomergeStoragePort | null = null;
 const pendingAutomergeStorageWrites = new Set<PendingAutomergeStorageWrite>();
@@ -156,13 +178,31 @@ export function runWithAutomergeStorageTransaction<Result>(
             if (terminalState !== 'open') {
                 return;
             }
-            terminalState = 'committed';
             openAutomergeStorageCommitOwners.delete(transaction.commitOwner);
-            flushMatchingAutomergeStorageWrites(
-                (pending) =>
-                    pending.commitOwner === transaction.commitOwner &&
-                    pending.snapshotTransaction === transaction.snapshotTransaction
-            );
+            try {
+                flushMatchingAutomergeStorageWrites(
+                    (pending) =>
+                        pending.commitOwner === transaction.commitOwner &&
+                        pending.snapshotTransaction === transaction.snapshotTransaction
+                );
+            } catch (error) {
+                if (error instanceof AutomergeStorageFlushError && error.committedDocumentCount > 0) {
+                    terminalState = 'committed';
+                    for (const pending of [...pendingAutomergeStorageWrites]) {
+                        if (
+                            pending.commitOwner === transaction.commitOwner &&
+                            pending.snapshotTransaction === transaction.snapshotTransaction
+                        ) {
+                            pending.abort();
+                        }
+                    }
+                    throw new AutomergeStorageTransactionCommittedError(error.failure);
+                }
+
+                openAutomergeStorageCommitOwners.add(transaction.commitOwner);
+                throw error instanceof AutomergeStorageFlushError ? error.failure : error;
+            }
+            terminalState = 'committed';
         },
     };
 
@@ -171,6 +211,7 @@ export function runWithAutomergeStorageTransaction<Result>(
 
 function flushMatchingAutomergeStorageWrites(matches: (pending: PendingAutomergeStorageWrite) => boolean): void {
     let firstError: unknown;
+    let committedDocumentCount = 0;
     const groups = new Map<string, Map<object, PendingAutomergeStorageWrite[]>>();
 
     for (const pending of [...pendingAutomergeStorageWrites]) {
@@ -199,14 +240,15 @@ function flushMatchingAutomergeStorageWrites(matches: (pending: PendingAutomerge
         for (const writes of ownerGroups.values()) {
             const mutations: AutomergeStorageMutationInput[] = [];
             let preparationFailed = false;
+            let preparationUnavailable = false;
 
             for (const write of writes) {
                 try {
-                    const mutation = write.flush();
+                    const mutation = write.prepare();
                     if (mutation) {
                         mutations.push(mutation);
                     } else {
-                        preparationFailed = true;
+                        preparationUnavailable = true;
                     }
                 } catch (error) {
                     preparationFailed = true;
@@ -217,9 +259,16 @@ function flushMatchingAutomergeStorageWrites(matches: (pending: PendingAutomerge
             if (preparationFailed) {
                 continue;
             }
+            if (preparationUnavailable) {
+                for (const write of writes) {
+                    write.didDiscard();
+                }
+                continue;
+            }
 
             try {
                 commitAutomergeStorageMutations(mutations);
+                committedDocumentCount += 1;
                 for (const write of writes) {
                     write.didCommit();
                 }
@@ -230,9 +279,7 @@ function flushMatchingAutomergeStorageWrites(matches: (pending: PendingAutomerge
     }
 
     if (firstError !== undefined) {
-        throw firstError instanceof Error
-            ? firstError
-            : new Error('Failed to flush an Automerge storage write', { cause: firstError });
+        throw new AutomergeStorageFlushError(firstError, committedDocumentCount);
     }
 }
 
@@ -376,7 +423,7 @@ export const createAutomergeStorage = <TData>(
         };
     };
 
-    const flushPendingWrite = (pending: AdapterPendingWrite): AutomergeStorageMutationInput | null => {
+    const preparePendingWrite = (pending: AdapterPendingWrite): AutomergeStorageMutationInput | null => {
         if (pendingWritesByOwner.get(pending.write.commitOwner) !== pending) {
             return null;
         }
@@ -384,17 +431,12 @@ export const createAutomergeStorage = <TData>(
             cancelAnimationFrame(pending.rafId);
             pending.rafId = null;
         }
-        pendingAutomergeStorageWrites.delete(pending.write);
-        pendingWritesByOwner.delete(pending.write.commitOwner);
-        if (unscopedCommitOwner === pending.write.commitOwner) {
-            unscopedCommitOwner = undefined;
-        }
         return createMutation(pending.value, pending.message, pending.write.snapshotTransaction);
     };
 
-    const abortPendingWrite = (pending: AdapterPendingWrite): void => {
+    const releasePendingWrite = (pending: AdapterPendingWrite): boolean => {
         if (pendingWritesByOwner.get(pending.write.commitOwner) !== pending) {
-            return;
+            return false;
         }
         if (pending.rafId !== null) {
             cancelAnimationFrame(pending.rafId);
@@ -404,6 +446,13 @@ export const createAutomergeStorage = <TData>(
         pendingWritesByOwner.delete(pending.write.commitOwner);
         if (unscopedCommitOwner === pending.write.commitOwner) {
             unscopedCommitOwner = undefined;
+        }
+        return true;
+    };
+
+    const abortPendingWrite = (pending: AdapterPendingWrite): void => {
+        if (!releasePendingWrite(pending)) {
+            return;
         }
         recomputeCachedValue();
     };
@@ -422,6 +471,9 @@ export const createAutomergeStorage = <TData>(
     };
 
     const recordCommittedWrite = (pending: AdapterPendingWrite): void => {
+        if (!releasePendingWrite(pending)) {
+            return;
+        }
         committedCacheValue = pending.value;
         committedCacheRevision = ++nextRevision;
         for (const remaining of pendingWritesByOwner.values()) {
@@ -444,9 +496,10 @@ export const createAutomergeStorage = <TData>(
             abort: () => abortPendingWrite(getPending()),
             commitOwner: context.commitOwner,
             didCommit: () => recordCommittedWrite(getPending()),
+            didDiscard: () => releasePendingWrite(getPending()),
             docId,
+            prepare: () => preparePendingWrite(getPending()),
             snapshotTransaction: context.snapshotTransaction,
-            flush: () => flushPendingWrite(getPending()),
         };
         pending = {
             baseValue: cachedValue,
