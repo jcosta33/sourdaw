@@ -1,0 +1,21 @@
+src/modules/Transport/useCases/scheduling/applyAutomation/__tests__/applyAutomation.spec.ts
+  s_ac9b259eab20ba::t_1a61e1c50749f3 131-143,204
+src/modules/Transport/useCases/scheduling/applyAutomation/applyAutomation.ts
+  s_ac9b259eab20ba::t_fd5c4c118f9fc1 85
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "19f8330f0f125c7c0c5ec653f5f7408611e42139",
+  "prompts": {},
+  "sessions": {
+    "s_ac9b259eab20ba": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8699-3865-7842-8c54-afbac6cfd266",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
