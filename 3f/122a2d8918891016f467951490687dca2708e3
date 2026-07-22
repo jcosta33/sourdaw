@@ -1,0 +1,36 @@
+src/modules/Project/useCases/demoProjects/myceliumAscendant/__tests__/createMyceliumVoicePerformance.spec.ts
+  s_ac9b259eab20ba::t_193a6949f4b258 93-96,98-99,101-102
+  s_ac9b259eab20ba::t_0fd7b15cfb3cf1 55,108
+  s_ac9b259eab20ba::t_58f9f5861af885 10,160-164
+  s_ac9b259eab20ba::t_ee513bf260c9c0 5,61,79
+  s_ac9b259eab20ba::t_99a96a8b72c8f4 64
+  s_ac9b259eab20ba::t_c8963e58bad5cf 78,85-86,89-91,111-117
+  s_ac9b259eab20ba::t_b4d3bd138942d2 1-4,6-9,14-54,56-60,62-63,66-77,80-84,87-88,92,103-107,109-110,118-154,172-179
+  s_ac9b259eab20ba::t_1c5ec15c573a7f 65,97,100,165,170-171
+  s_ac9b259eab20ba::t_14f8658c655aab 11-13,155-159,166-169
+src/modules/Project/useCases/demoProjects/myceliumAscendant/createMyceliumVoicePerformance.ts
+  s_ac9b259eab20ba::t_a046dc4d2c6608 1-4,6,8-38,48-49,70,83-87,92-93,98-138,140-148,161-224,231-261,263-280,297-309,315-317
+  s_ac9b259eab20ba::t_58f9f5861af885 5
+  s_ac9b259eab20ba::t_14f8658c655aab 7,39
+  s_ac9b259eab20ba::t_c8963e58bad5cf 40-47,50-69,71-82,88-91,94-97,149-154,262,281-296,310-314
+  s_ac9b259eab20ba::t_1c5ec15c573a7f 139,155-160
+  s_ac9b259eab20ba::t_165b9884789337 225-230
+src/modules/Project/useCases/demoProjects/myceliumAscendant/createMyceliumAscendantBlueprint.ts
+  s_ac9b259eab20ba::t_a046dc4d2c6608 6,175-176
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "3f122a2d8918891016f467951490687dca2708e3",
+  "prompts": {},
+  "sessions": {
+    "s_ac9b259eab20ba": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8699-3865-7842-8c54-afbac6cfd266",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
