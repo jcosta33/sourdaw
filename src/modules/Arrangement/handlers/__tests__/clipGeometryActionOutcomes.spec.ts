@@ -456,7 +456,7 @@ describe('clip geometry action outcomes', () => {
         expect(mocks.shiftClipAutomation).not.toHaveBeenCalled();
     });
 
-    it('preserves nudge geometry and shifts dependent MIDI and automation by the applied delta', () => {
+    it('preserves nudge geometry and shifts automation only (notes follow clip-relative)', () => {
         const result = handleNudgeClip.execute({
             type: 'nudgeClip',
             payload: { clipId: 'clip-1', beats: 2 },
@@ -464,7 +464,9 @@ describe('clip geometry action outcomes', () => {
 
         expect(result).toEqual({ status: 'written' });
         expect(currentClip).toMatchObject({ startBeat: 2, endBeat: 6 });
-        expect(mocks.shiftClipMidiNotes).toHaveBeenCalledWith('clip-1', 2);
+        // Notes are clip-relative and follow the rectangle; shifting them
+        // double-moved every note (PR #621 review).
+        expect(mocks.shiftClipMidiNotes).not.toHaveBeenCalled();
         expect(mocks.shiftClipAutomation).toHaveBeenCalledWith('clip-1', 2);
     });
 
