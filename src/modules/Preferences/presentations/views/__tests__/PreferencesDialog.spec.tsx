@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { PreferencesDialog } from '../PreferencesDialog';
@@ -47,25 +47,72 @@ describe('PreferencesDialog', () => {
         vi.clearAllMocks();
     });
 
-    it('should render without crashing', () => {
+    it('preserves the dialog shell and navigation layout contracts', () => {
         render(<PreferencesDialog open={true} onClose={vi.fn()} />);
-        expect(document.body).toBeTruthy();
+
+        const navigation = screen.getByRole('navigation');
+        const sideRail = navigation.parentElement;
+        const shell = sideRail?.parentElement;
+
+        expect(shell?.tagName).toBe('DIV');
+        expect(shell).toHaveClass(
+            'flex',
+            'flex-row',
+            'min-w-0',
+            'gap-0',
+            'items-stretch',
+            'justify-start',
+            'h-[520px]'
+        );
+        expect(shell?.children).toHaveLength(2);
+        expect(shell?.children[0]).toBe(sideRail);
+        expect(shell?.children[1]).toHaveClass('flex-1', 'gap-5', 'bg-surface-base/60', 'p-5');
+
+        expect(navigation.tagName).toBe('NAV');
+        expect(navigation).toHaveClass(
+            'flex',
+            'flex-col',
+            'min-h-0',
+            'gap-0.5',
+            'items-stretch',
+            'justify-start',
+            'h-full'
+        );
     });
 
-    it('should handle store state', () => {
+    it('preserves navigation content and focus order', () => {
         render(<PreferencesDialog open={true} onClose={vi.fn()} />);
-        expect(document.body).toBeTruthy();
+
+        const navigation = screen.getByRole('navigation');
+        const buttons = within(navigation).getAllByRole('button');
+
+        expect(buttons.map((button) => button.textContent.trim())).toEqual([
+            'General',
+            'Appearance',
+            'Layout',
+            'Audio',
+            'MIDI',
+            'Performance',
+            'AI',
+            'Shortcuts',
+            'Reset Defaults',
+            'Done',
+        ]);
+        expect(buttons.every((button) => button.tagName === 'BUTTON')).toBe(true);
+        expect(buttons.slice(0, 8).every((button) => button.getAttribute('type') === 'button')).toBe(true);
+        expect(Array.from(navigation.children).slice(1, 9)).toEqual(buttons.slice(0, 8));
     });
 
-    it('should render with useCase bindings', () => {
+    it('switches sections through a keyboard-synthesized native-button click', () => {
         render(<PreferencesDialog open={true} onClose={vi.fn()} />);
-        expect(document.body).toBeTruthy();
-    });
 
-    it('should have interactive elements', () => {
-        render(<PreferencesDialog open={true} onClose={vi.fn()} />);
-        const buttons = screen.queryAllByRole('button');
-        expect(buttons.length).toBeGreaterThanOrEqual(0);
+        const audioButton = screen.getByRole('button', { name: 'Audio' });
+        audioButton.focus();
+        fireEvent.click(audioButton, { detail: 0 });
+
+        expect(audioButton).toHaveFocus();
+        expect(screen.getByTestId('audio-device-picker')).toBeInTheDocument();
+        expect(screen.getByTestId('plugin-scan-settings')).toBeInTheDocument();
     });
 
     it('should route preference updates through the Workspace update use case', () => {
@@ -84,5 +131,17 @@ describe('PreferencesDialog', () => {
 
         expect(mocks.resetPreferences).toHaveBeenCalledWith();
         expect(mocks.preferencesStoreSet).not.toHaveBeenCalled();
+    });
+
+    it('closes from Done and the dialog Escape interaction', () => {
+        const onClose = vi.fn();
+        const { rerender } = render(<PreferencesDialog open={true} onClose={onClose} />);
+
+        fireEvent.click(screen.getByRole('button', { name: 'Done' }));
+        expect(onClose).toHaveBeenCalledTimes(1);
+
+        rerender(<PreferencesDialog open={true} onClose={onClose} />);
+        fireEvent.keyDown(document, { key: 'Escape' });
+        expect(onClose).toHaveBeenCalledTimes(2);
     });
 });
