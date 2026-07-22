@@ -54,9 +54,7 @@ describe('resetMidiStoreForProject', () => {
             enabled: true,
             events: [{ id: 'old-project-chord', beat: 0, root: 9, quality: 'min9', duration: 4 }],
         });
-
         resetMidiStoreForProject();
-
         expect(chordTrackStore.value).toEqual(defaultChordTrackState);
     });
 });

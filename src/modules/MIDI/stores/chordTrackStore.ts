@@ -20,6 +20,7 @@ type ChordTrackCrdtState = {
     schemaVersion: number;
     enabled: boolean;
     events: Record<string, ChordEventEntity>;
+    migrationBase?: ChordTrackState;
 };
 
 type ChordEventCandidate = {
@@ -160,6 +161,7 @@ function encodeMigratedState(previous: unknown, desired: ChordTrackState): Chord
     if (!isChordTrackState(previous)) {
         return encoded;
     }
+    encoded.migrationBase = { enabled: legacy.enabled, events: legacy.events.map(copyEvent) };
     const desiredIds = new Set(desired.events.map((event) => event.id));
     for (const event of legacy.events) {
         if (!desiredIds.has(event.id)) {
@@ -223,15 +225,59 @@ function mergeEntities(target: Record<string, ChordEventEntity>, source: Record<
     }
 }
 
+function mergeEventFields(base: ChordEvent, values: readonly ChordEvent[]): ChordEvent {
+    const merged = copyEvent(base);
+    for (const event of values) {
+        if (event.beat !== base.beat) {
+            merged.beat = event.beat;
+        }
+        if (event.root !== base.root) {
+            merged.root = event.root;
+        }
+        if (event.quality !== base.quality) {
+            merged.quality = event.quality;
+        }
+        if (event.duration !== base.duration) {
+            merged.duration = event.duration;
+        }
+    }
+    return merged;
+}
+
+function mergeMigratedStates(states: readonly ChordTrackCrdtState[], base: ChordTrackState): ChordTrackCrdtState {
+    const merged = encodeState(base);
+    const baseById = new Map(base.events.map((event) => [event.id, event]));
+    for (const state of states) {
+        if (state.enabled !== base.enabled) {
+            merged.enabled = state.enabled;
+        }
+        mergeEntities(merged.events, state.events);
+    }
+    for (const [id, entity] of Object.entries(merged.events)) {
+        if (entity.deleted) {
+            continue;
+        }
+        const values = states.flatMap((state) => (state.events[id]?.deleted === false ? [state.events[id].value] : []));
+        entity.value = mergeEventFields(baseById.get(id) ?? entity.value, values);
+    }
+    return merged;
+}
+
 function reconcileRootConflicts(values: readonly unknown[]): ChordTrackCrdtState {
+    const states = values.map((value) => {
+        assertSupportedSchema(value);
+        return isCrdtState(value) ? value : encodeState(normalizeState(value));
+    });
+    const migrationBase = states.map((state) => state.migrationBase).find(isChordTrackState);
+    if (migrationBase) {
+        return mergeMigratedStates(states, normalizeState(migrationBase));
+    }
     const merged: ChordTrackCrdtState = {
         schemaVersion: CHORD_TRACK_CRDT_SCHEMA_VERSION,
         enabled: false,
         events: {},
     };
-    for (const value of values) {
-        assertSupportedSchema(value);
-        const state = isCrdtState(value) ? value : encodeState(normalizeState(value));
+    for (const state of states) {
         merged.enabled = state.enabled;
         mergeEntities(merged.events, state.events);
     }
@@ -257,14 +303,23 @@ function rebasePending({
     const pendingById = new Map(pending.events.map((event) => [event.id, event]));
     const rebasedById = new Map(hydrated.events.map((event) => [event.id, event]));
     for (const id of new Set([...baseById.keys(), ...pendingById.keys()])) {
+        const original = baseById.get(id);
         const local = pendingById.get(id);
-        if (JSON.stringify(baseById.get(id)) === JSON.stringify(local)) {
+        const remote = rebasedById.get(id);
+        if (JSON.stringify(original) === JSON.stringify(local)) {
+            continue;
+        }
+        // Existing-event deletion wins over a concurrent update in either direction.
+        if (original && (!local || !remote)) {
+            rebasedById.delete(id);
+            continue;
+        }
+        if (original && local && remote) {
+            rebasedById.set(id, mergeEventFields(original, [remote, local]));
             continue;
         }
         if (local) {
             rebasedById.set(id, local);
-        } else {
-            rebasedById.delete(id);
         }
     }
     return normalizeState({

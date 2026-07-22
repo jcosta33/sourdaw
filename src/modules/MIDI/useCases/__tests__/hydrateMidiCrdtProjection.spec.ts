@@ -1,35 +1,14 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { expect, it, vi } from 'vitest';
 
 import { hydrateMidiCrdtProjection } from '../hydrateMidiCrdtProjection';
 
-const mocks = vi.hoisted(() => ({
-    chordTrackHydrate: vi.fn(),
-    grooveTemplateHydrate: vi.fn(),
-    midiHydrate: vi.fn(),
-}));
-
-vi.mock('../../stores/chordTrackStore', () => ({
-    chordTrackStore: { hydrate: mocks.chordTrackHydrate },
-}));
-
-vi.mock('../../stores/grooveTemplateStore', () => ({
-    grooveTemplateStore: { hydrate: mocks.grooveTemplateHydrate },
-}));
-
-vi.mock('../../stores/midiStore', () => ({
-    midiStore: { hydrate: mocks.midiHydrate },
-}));
-
-describe('hydrateMidiCrdtProjection', () => {
-    beforeEach(() => {
-        vi.clearAllMocks();
-    });
-
-    it('hydrates every MIDI-owned project projection', () => {
-        hydrateMidiCrdtProjection();
-
-        expect(mocks.midiHydrate).toHaveBeenCalledOnce();
-        expect(mocks.grooveTemplateHydrate).toHaveBeenCalledOnce();
-        expect(mocks.chordTrackHydrate).toHaveBeenCalledOnce();
-    });
+const mocks = vi.hoisted(() => ({ chord: vi.fn(), groove: vi.fn(), midi: vi.fn() }));
+vi.mock('../../stores/chordTrackStore', () => ({ chordTrackStore: { hydrate: mocks.chord } }));
+vi.mock('../../stores/grooveTemplateStore', () => ({ grooveTemplateStore: { hydrate: mocks.groove } }));
+vi.mock('../../stores/midiStore', () => ({ midiStore: { hydrate: mocks.midi } }));
+it('hydrates every MIDI-owned project projection', () => {
+    hydrateMidiCrdtProjection();
+    expect(mocks.midi).toHaveBeenCalledOnce();
+    expect(mocks.groove).toHaveBeenCalledOnce();
+    expect(mocks.chord).toHaveBeenCalledOnce();
 });
