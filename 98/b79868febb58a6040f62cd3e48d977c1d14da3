@@ -1,0 +1,27 @@
+src/modules/AudioEngine/engine/ToasterNode.ts
+  s_ac9b259eab20ba::t_90eeb79dbcf69b 14,64-69,124-125,128-133,150,158,175-181
+  s_ac9b259eab20ba::t_19923ec49420a0 127
+  s_ac9b259eab20ba::t_c774ef440cafd8 168
+src/modules/AudioEngine/engine/__tests__/ToasterNode.spec.ts
+  s_ac9b259eab20ba::t_c774ef440cafd8 229
+  s_ac9b259eab20ba::t_1f91f51ef20ab3 3-4,35,44,67-71,232,241-245,249-251,254-262,266,270,274-275
+  s_ac9b259eab20ba::t_433e3d7ba35ded 271-273
+  s_ac9b259eab20ba::t_362b5dedf7cb3b 267-268
+  s_ac9b259eab20ba::t_19923ec49420a0 263-265,269
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "98b79868febb58a6040f62cd3e48d977c1d14da3",
+  "prompts": {},
+  "sessions": {
+    "s_ac9b259eab20ba": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8699-3865-7842-8c54-afbac6cfd266",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
