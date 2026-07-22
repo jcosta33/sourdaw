@@ -80,11 +80,16 @@ function isFiniteNonNegative(value: number): boolean {
 
 function isValidOperation(operation: TimelineMapTimeOperation): boolean {
     if (operation.type === 'insert') {
-        return (
-            isFiniteNonNegative(operation.atBeat) &&
-            Number.isFinite(operation.durationBeats) &&
-            operation.durationBeats > 0
-        );
+        if (
+            !isFiniteNonNegative(operation.atBeat) ||
+            !Number.isFinite(operation.durationBeats) ||
+            operation.durationBeats <= 0
+        ) {
+            return false;
+        }
+
+        const endBeat = operation.atBeat + operation.durationBeats;
+        return Number.isFinite(endBeat);
     }
 
     return (
@@ -349,6 +354,7 @@ export function prepareTimelineMapTimeOperation({ operation }: PrepareTimelineMa
     }
 
     return {
+        status: preparedStates.status,
         hasChanges,
         apply,
         revert,

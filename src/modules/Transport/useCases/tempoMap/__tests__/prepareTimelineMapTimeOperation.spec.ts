@@ -64,7 +64,9 @@ function observeBothStores(): StoreObservation[] {
     return observations;
 }
 
-function expectClosedWithoutWrite(operation: TimelineMapTimeOperation): void {
+function expectClosedWithoutWrite(
+    operation: TimelineMapTimeOperation
+): ReturnType<typeof prepareTimelineMapTimeOperation> {
     const capturedTempo = tempoMapStore.value;
     const capturedTimeSignature = timeSignatureMapStore.value;
     const tempoSet = vi.spyOn(tempoMapStore, 'set');
@@ -79,6 +81,7 @@ function expectClosedWithoutWrite(operation: TimelineMapTimeOperation): void {
     expect(timeSignatureMapStore.value).toBe(capturedTimeSignature);
     expect(tempoSet).not.toHaveBeenCalled();
     expect(timeSignatureSet).not.toHaveBeenCalled();
+    return transaction;
 }
 
 describe('prepareTimelineMapTimeOperation', () => {
@@ -111,6 +114,7 @@ describe('prepareTimelineMapTimeOperation', () => {
             operation: { type: 'insert', atBeat: 4, durationBeats: 2 },
         });
 
+        expect(transaction.status).toBe('ready');
         expect(transaction.hasChanges).toBe(true);
         expect(tempoMapStore.value).toBe(capturedTempo);
         expect(timeSignatureMapStore.value).toBe(capturedTimeSignature);
@@ -195,7 +199,31 @@ describe('prepareTimelineMapTimeOperation', () => {
             timeSignatureState([timeSignatureChange('signature', 4)])
         );
 
-        expectClosedWithoutWrite(operation);
+        const transaction = expectClosedWithoutWrite(operation);
+        expect(transaction.status).toBe('rejected');
+    });
+
+    it.each([
+        {
+            name: 'empty',
+            tempo: tempoState([]),
+            timeSignature: timeSignatureState([]),
+        },
+        {
+            name: 'all-before-boundary',
+            tempo: tempoState([tempoChange('tempo-before', 4)]),
+            timeSignature: timeSignatureState([timeSignatureChange('signature-before', 4)]),
+        },
+    ])('rejects an overflowing insert endpoint with $name owner maps', ({ tempo, timeSignature }) => {
+        setStoreStates(tempo, timeSignature);
+
+        const transaction = expectClosedWithoutWrite({
+            type: 'insert',
+            atBeat: Number.MAX_VALUE,
+            durationBeats: Number.MAX_VALUE,
+        });
+
+        expect(transaction.status).toBe('rejected');
     });
 
     it.each(['tempo', 'time-signature'] as const)(
@@ -208,11 +236,12 @@ describe('prepareTimelineMapTimeOperation', () => {
                 timeSignatureState([timeSignatureChange('signature', signatureBeat)])
             );
 
-            expectClosedWithoutWrite({
+            const transaction = expectClosedWithoutWrite({
                 type: 'insert',
                 atBeat: 0,
                 durationBeats: Number.MAX_VALUE,
             });
+            expect(transaction.status).toBe('rejected');
         }
     );
 
@@ -232,14 +261,16 @@ describe('prepareTimelineMapTimeOperation', () => {
         const capturedTimeSignature = timeSignatureState([signature]);
         setStoreStates(capturedTempo, capturedTimeSignature);
 
-        expectClosedWithoutWrite(operation);
+        const transaction = expectClosedWithoutWrite(operation);
+        expect(transaction.status).toBe('ready');
         expect(tempoMapStore.value?.changes[0]).toBe(tempo);
         expect(timeSignatureMapStore.value?.changes[0]).toBe(signature);
     });
 
     it('accepts empty owner maps and writes only a structurally changed owner', () => {
         setStoreStates(tempoState([]), timeSignatureState([]));
-        expectClosedWithoutWrite({ type: 'insert', atBeat: 4, durationBeats: 2 });
+        const emptyTransaction = expectClosedWithoutWrite({ type: 'insert', atBeat: 4, durationBeats: 2 });
+        expect(emptyTransaction.status).toBe('ready');
         vi.restoreAllMocks();
 
         const emptyTempo = tempoState([]);
@@ -266,7 +297,8 @@ describe('prepareTimelineMapTimeOperation', () => {
             missingOwner === 'time-signature' ? null : timeSignatureState([timeSignatureChange('signature', 4)]);
         setStoreStates(tempo, timeSignature);
 
-        expectClosedWithoutWrite({ type: 'insert', atBeat: 4, durationBeats: 2 });
+        const transaction = expectClosedWithoutWrite({ type: 'insert', atBeat: 4, durationBeats: 2 });
+        expect(transaction.status).toBe('rejected');
     });
 
     it.each(['tempo', 'time-signature'] as const)('stale-checks the %s owner before either apply write', (owner) => {
