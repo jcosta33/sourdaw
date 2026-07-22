@@ -92,6 +92,20 @@ function chordState(id: string, root: number): ChordTrackState {
     };
 }
 
+const validEvent = { id: 'event', beat: 0, root: 5, quality: 'major' as const, duration: 4 };
+const validSchema = { schemaVersion: 1, enabled: true, events: {} };
+const malformedSchemas = [
+    [
+        'mismatched entity id',
+        { ...validSchema, events: { expected: { deleted: false, value: { ...validEvent, id: 'other' } } } },
+    ],
+    ['non-boolean tombstone', { ...validSchema, events: { event: { deleted: 'no', value: validEvent } } }],
+    [
+        'invalid event value',
+        { ...validSchema, events: { event: { deleted: false, value: { ...validEvent, root: 12 } } } },
+    ],
+] as const;
+
 function projectPendingHydrate(
     base: ChordTrackState,
     pending: ChordTrackState,
@@ -302,22 +316,6 @@ describe('chordTrackStore CRDT projection', () => {
         expect(projectMerged(removed, added).events.map((event) => event.id)).toEqual(['keep-add']);
     });
 
-    it('reconciles concurrent first migration without losing independent edits', () => {
-        const initial = { ...chordState('legacy-shared', 3), enabled: false };
-        const legacy = from<RootDocument>({ chordTrack: initial });
-        const leftPeer = createPeer(clone(legacy));
-        const rightPeer = createPeer(clone(legacy));
-        writePeer(leftPeer, { enabled: true, events: [{ ...initial.events[0]!, duration: 16 }] });
-        writePeer(rightPeer, {
-            enabled: false,
-            events: [{ ...initial.events[0]!, root: 8 }, ...chordState('legacy-add', 11).events],
-        });
-        const projected = projectMerged(leftPeer, rightPeer);
-        expect(projected.enabled).toBe(true);
-        expect(projected.events.map((event) => event.id)).toEqual(['legacy-add', 'legacy-shared']);
-        expect(projected.events[1]).toMatchObject({ duration: 16, root: 8 });
-    });
-
     it('rebases pending edits field-by-field with delete-wins semantics', () => {
         const addition = projectPendingHydrate(
             { enabled: true, events: [] },
@@ -335,5 +333,47 @@ describe('chordTrackStore CRDT projection', () => {
         const updated = { ...initial, events: [{ ...initial.events[0]!, quality: 'dim' as const }] };
         expect(projectPendingHydrate(initial, { enabled: true, events: [] }, updated).events).toEqual([]);
         expect(projectPendingHydrate(initial, updated, { enabled: true, events: [] }).events).toEqual([]);
+    });
+
+    it.each(malformedSchemas)(
+        'rejects schema-v1 state with a %s without changing the document',
+        (_label, malformed) => {
+            const peer = createPeer(from<RootDocument>({ chordTrack: malformed }));
+            const originalHeads = getHeads(peer.getDoc());
+            const originalBytes = save(peer.getDoc());
+            configureAutomergeStoragePort(peer.port);
+            const storage = createChordTrackAutomergeStorage();
+
+            expect(() => storage.hydrate?.()).toThrow('Malformed chord-track CRDT schema version 1');
+            expect(getHeads(peer.getDoc())).toEqual(originalHeads);
+            expect(save(peer.getDoc())).toEqual(originalBytes);
+            if (_label === 'mismatched entity id') {
+                storage.set(chordState('replacement', 8));
+                expect(() => flushAutomergeStorageWrites()).toThrow('Malformed chord-track CRDT schema version 1');
+                expect(getHeads(peer.getDoc())).toEqual(originalHeads);
+                expect(save(peer.getDoc())).toEqual(originalBytes);
+                configureAutomergeStoragePort(null);
+                flushAutomergeStorageWrites();
+            }
+        }
+    );
+
+    it('drops reconciled conflict state when the same adapter hydrates a new missing authority', () => {
+        const legacy = from<RootDocument>({ chordTrack: chordState('legacy', 3) });
+        const left = createPeer(clone(legacy));
+        const right = createPeer(clone(legacy));
+        writePeer(left, chordState('left', 4));
+        writePeer(right, chordState('right', 7));
+        const peer = createPeer(merge(left.getDoc(), right.getDoc()));
+        const storage = createStorage(peer);
+
+        peer.replaceDoc(from<RootDocument>({}));
+        storage.hydrate?.();
+        storage.set(chordState('fresh', 9));
+        flushAutomergeStorageWrites();
+
+        expect(Object.keys((peer.getDoc().chordTrack as { events: Record<string, unknown> }).events)).toEqual([
+            'fresh',
+        ]);
     });
 });
