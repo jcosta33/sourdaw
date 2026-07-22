@@ -1,0 +1,103 @@
+src/modules/Arrangement/useCases/clipEditing/__tests__/deleteTimeRange.spec.ts
+  s_ac9b259eab20ba::t_284ed91fa02174 64-66
+src/modules/MIDI/useCases/patternInstance/createPatternInstance.ts
+  s_ac9b259eab20ba::t_32611b6cc0ae8d 61-63
+src/modules/Arrangement/presentations/helpers/__tests__/handleCutToolUndo.spec.ts
+  s_21da6e9c67fba5::t_6837bd26b862ca 201-203,212-214,260-262
+src/modules/Arrangement/useCases/clipEditing/deleteTimeRange.ts
+  s_1bb709a590e3ef::t_f0ab20fe32177f 38-40,44-50
+src/modules/Arrangement/useCases/clipEditing/splitClip.ts
+  s_0b4a735cffc418::t_459bd169cb4768 51,72-75,93-95,110,114,118
+src/modules/MIDI/models/WebMidiTypes.ts
+  s_ac9b259eab20ba::t_8dfe6bf26c46d8 34-35
+src/modules/MIDI/stores/midiStore.ts
+  s_ac9b259eab20ba::t_d56a33dfb88755 14-17,34,237-240,244-248,252-253,293-295
+src/modules/MIDI/useCases/midiNoteCrud/__tests__/migrateAbsoluteMidiNotes.spec.ts
+  s_ac9b259eab20ba::t_d2864ce5bad328 5-8,10,20-26,28-30,35-49,52-64,66-78,81-86
+src/modules/MIDI/useCases/midiNoteCrud/__tests__/shiftMidiNotesAfterBeat.spec.ts
+  s_c2fca615e81f34::t_629874dcd8a545 8,20-27,32,36-49,52-56,59-66,71-73,75-85,88,90,94-98
+src/modules/MIDI/useCases/midiNoteCrud/__tests__/splitMidiNotesAtBeat.spec.ts
+  s_ac9b259eab20ba::t_bd712c3eac24d1 19-30,34-38,41-46,49,55-69,71-76,79-84,86-92
+src/modules/MIDI/useCases/midiNoteCrud/migrateAbsoluteMidiNotes.ts
+  s_c2fca615e81f34::t_efffc3f2a66297 9-13,23,26,33-35,57,62-67
+src/modules/MIDI/useCases/midiNoteCrud/shiftMidiNotesAfterBeat.ts
+  s_dba8178fe66be6::t_17670ceb98d477 1-2,13-17,19-24,39-64,67-78,83-94,99-114
+src/modules/MIDI/useCases/midiNoteCrud/splitMidiNotesAtBeat.ts
+  s_dba8178fe66be6::t_645fd5c5c5daee 13-16,19-21,24,56-57,64
+src/modules/MIDI/useCases/patternInstance/__tests__/createPatternInstance.spec.ts
+  s_89f1926c4eb848::t_2051c7aca51624 137,170-173
+src/modules/MIDI/useCases/patternInstance/__tests__/propagateParentChanges.spec.ts
+  s_ac9b259eab20ba::t_5b75304f0185f7 27,36,55-56
+src/modules/MIDI/useCases/patternInstance/propagateParentChanges.ts
+  s_c2fca615e81f34::t_54ae66dbf2887e 44-45
+src/modules/MIDI/useCases/webMidiInput/__tests__/handleWebMidiNoteOff.spec.ts
+  s_ac9b259eab20ba::t_9532c002997182 394-448
+src/modules/MIDI/useCases/webMidiInput/handleWebMidiNoteOff.ts
+  s_ac9b259eab20ba::t_b8fc13418db597 185-198
+src/modules/MIDI/useCases/webMidiInput/handleWebMidiNoteOn.ts
+  s_ac9b259eab20ba::t_3cb28be2e6b4ab 56
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "46c35eb1356e574de859abd20e614a4be3051cbd",
+  "prompts": {},
+  "sessions": {
+    "s_0b4a735cffc418": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8adf-593a-76c1-884c-d5834c92ebbe",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_1bb709a590e3ef": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8905-7496-75b3-b927-6596303eed1d",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_21da6e9c67fba5": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8b01-3cff-76c3-aab3-a5211a768aab",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_89f1926c4eb848": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8abe-69f2-7263-aa78-d8175c2f4529",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_ac9b259eab20ba": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8699-3865-7842-8c54-afbac6cfd266",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_c2fca615e81f34": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f74e9-e1c5-7142-85d2-4c577b3973c0",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_dba8178fe66be6": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8a6b-5115-7c31-8493-b4e4fb242fdf",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
