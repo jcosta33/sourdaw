@@ -294,10 +294,13 @@ export type AppAction =
           type: 'setMarqueeSelection';
           payload: { selection: { startBeat: number; endBeat: number; trackIds: string[] } | null };
       }
-    | { type: 'addMarker'; payload: { beat: number; name: string } }
+    | { type: 'addMarker'; payload: { beat: number; name: string; markerId?: string; color?: string } }
     | { type: 'removeMarker'; payload: { markerId: string } }
     | { type: 'setMarkerColor'; payload: { markerId: string; color: string } }
-    | { type: 'addSection'; payload: { startBeat: number; endBeat: number; name: string } }
+    | {
+          type: 'addSection';
+          payload: { startBeat: number; endBeat: number; name: string; sectionId?: string; color?: string };
+      }
     | { type: 'removeSection'; payload: { sectionId: string } }
     | { type: 'renameSection'; payload: { sectionId: string; name: string } }
     | { type: 'addAutomationLane'; payload: { trackId: string; parameterId: string; parameterName: string } }
