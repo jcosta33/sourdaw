@@ -1,8 +1,9 @@
 import { createHandler } from '#/utils/createHandler';
 
 import { type ChordType, CHORD_TYPES } from '../../models/ChordTypes';
-import { chordTrackStore } from '../../stores/chordTrackStore';
 import { addChordEvent } from '../../useCases/chordTrack/addChordEvent';
+
+import { describeChordTrackMutation } from './handleRestoreChordTrackState';
 
 function isChordType(value: string): value is ChordType {
     return Object.prototype.hasOwnProperty.call(CHORD_TYPES, value);
@@ -27,16 +28,7 @@ export const handleAddChordEvent = createHandler<'addChordEvent'>({
     },
     describe: (alpha) => {
         ensureEventId(alpha);
-        const state = chordTrackStore.value;
-        return {
-            label: `Add ${alpha.payload.quality} chord at beat ${alpha.payload.beat}`,
-            inverseAction: state
-                ? {
-                      type: 'restoreChordTrackState',
-                      payload: { enabled: state.enabled, events: state.events.map((event) => ({ ...event })) },
-                  }
-                : null,
-        };
+        return describeChordTrackMutation(alpha, `Add ${alpha.payload.quality} chord at beat ${alpha.payload.beat}`);
     },
     undoable: true,
 });

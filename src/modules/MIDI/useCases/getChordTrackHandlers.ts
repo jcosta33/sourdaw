@@ -2,11 +2,13 @@ import { type ActionHandler, type AppAction } from '#/utils/handlerContract';
 
 import { handleAddChordEvent } from '../handlers/chordTrack/handleAddChordEvent';
 import { handleClearChordTrack } from '../handlers/chordTrack/handleClearChordTrack';
-import { handleMoveChordEvent } from '../handlers/chordTrack/handleMoveChordEvent';
 import { handleRemoveChordEvent } from '../handlers/chordTrack/handleRemoveChordEvent';
-import { handleRestoreChordTrackState } from '../handlers/chordTrack/handleRestoreChordTrackState';
+import {
+    handleMoveChordEvent,
+    handleRestoreChordTrackState,
+    handleUpdateChordEvent,
+} from '../handlers/chordTrack/handleRestoreChordTrackState';
 import { handleToggleChordTrack } from '../handlers/chordTrack/handleToggleChordTrack';
-import { handleUpdateChordEvent } from '../handlers/chordTrack/handleUpdateChordEvent';
 
 type ChordTrackAppAction =
     | Extract<AppAction, { type: 'addChordEvent' }>

@@ -168,4 +168,39 @@ describe('playMacro', () => {
         ]);
         expect(macroStore.value?.macros[0]?.actions).toEqual(vcaMacro.actions);
     });
+
+    it('regenerates chord IDs and remaps later chord actions on every playback', async () => {
+        const chordMacro: Macro = {
+            id: 'chords-1',
+            name: 'Chord steps',
+            actions: [
+                {
+                    type: 'addChordEvent',
+                    payload: { eventId: 'recorded-chord', beat: 0, root: 0, quality: 'major', duration: 4 },
+                },
+                { type: 'moveChordEvent', payload: { eventId: 'recorded-chord', beat: 8 } },
+            ],
+            createdAt: 0,
+        };
+        macroStore.set({ macros: [chordMacro], recording: false, currentRecording: [] });
+        let generatedId = 0;
+        executeAppActionMock.mockImplementation((action) => {
+            if (action.type === 'addChordEvent' && action.payload.eventId === undefined) {
+                generatedId += 1;
+                action.payload.eventId = `replayed-chord-${String(generatedId)}`;
+            }
+            return Promise.resolve();
+        });
+
+        await playMacro('chords-1');
+        await playMacro('chords-1');
+
+        const replayedIds = executeAppActionMock.mock.calls.map(([action]) => {
+            if (action.type === 'addChordEvent' || action.type === 'moveChordEvent') {
+                return action.payload.eventId;
+            }
+            throw new Error(`Unexpected chord macro action: ${action.type}`);
+        });
+        expect(replayedIds).toEqual(['replayed-chord-1', 'replayed-chord-1', 'replayed-chord-2', 'replayed-chord-2']);
+    });
 });

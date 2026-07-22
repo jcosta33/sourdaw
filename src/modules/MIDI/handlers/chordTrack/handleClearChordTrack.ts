@@ -1,23 +1,13 @@
 import { createHandler } from '#/utils/createHandler';
 
-import { chordTrackStore } from '../../stores/chordTrackStore';
 import { clearChordTrack } from '../../useCases/chordTrack/clearChordTrack';
+
+import { describeChordTrackMutation } from './handleRestoreChordTrackState';
 
 export const handleClearChordTrack = createHandler<'clearChordTrack'>({
     execute: () => {
         clearChordTrack();
     },
-    describe: () => {
-        const state = chordTrackStore.value;
-        return {
-            label: 'Clear chord track',
-            inverseAction: state
-                ? {
-                      type: 'restoreChordTrackState',
-                      payload: { enabled: state.enabled, events: state.events.map((event) => ({ ...event })) },
-                  }
-                : null,
-        };
-    },
+    describe: (action) => describeChordTrackMutation(action, 'Clear chord track'),
     undoable: true,
 });

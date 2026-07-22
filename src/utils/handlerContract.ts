@@ -602,7 +602,10 @@ export type AppAction =
     | { type: 'removeChordEvent'; payload: { eventId: string } }
     | { type: 'toggleChordTrack'; payload?: { enabled?: boolean } }
     | { type: 'clearChordTrack'; payload?: undefined }
-    | { type: 'restoreChordTrackState'; payload: ChordTrackActionSnapshot }
+    | {
+          type: 'restoreChordTrackState';
+          payload: { expected: ChordTrackActionSnapshot; replacement: ChordTrackActionSnapshot };
+      }
     | { type: 'clearAllMidiMappings'; payload?: undefined }
     | { type: 'toggleScratchPad'; payload?: undefined }
     | { type: 'captureScratchPad'; payload?: undefined }

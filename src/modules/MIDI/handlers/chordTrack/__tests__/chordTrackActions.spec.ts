@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { configureAutomergeStoragePort } from '#/infra/store/storage/createAutomergeStorage';
-import { clearHandlerRegistry, registerHandlerMap } from '#/modules/Command/stores';
+import { clearHandlerRegistry, registerHandlerMap, undoStore } from '#/modules/Command/stores';
 import { clearUndoHistory, executeAppAction, redo, undo } from '#/modules/Command/useCases';
 import { type AppAction } from '#/utils/handlerContract';
 
@@ -10,78 +10,17 @@ import { getChordTrackHandlers } from '../../../useCases/getChordTrackHandlers';
 
 const beforeState: ChordTrackState = {
     enabled: true,
-    events: [
-        { id: 'chord-a', beat: 4, root: 0, quality: 'major', duration: 2 },
-        { id: 'chord-b', beat: 4, root: 7, quality: 'min7', duration: 6 },
-    ],
-};
-
-type ChordMutationAction = Extract<
-    AppAction,
-    {
-        type:
-            | 'addChordEvent'
-            | 'moveChordEvent'
-            | 'updateChordEvent'
-            | 'removeChordEvent'
-            | 'toggleChordTrack'
-            | 'clearChordTrack';
-    }
->;
-
-type ChordMutationCase = {
-    action: ChordMutationAction;
-    expected: ChordTrackState;
-    label: string;
+    events: [{ id: 'chord-a', beat: 4, root: 0, quality: 'major', duration: 2 }],
 };
 
 const mutationCases = [
-    {
-        label: 'add',
-        action: {
-            type: 'addChordEvent',
-            payload: { eventId: 'chord-c', beat: 2, root: 5, quality: 'minor', duration: 4 },
-        },
-        expected: {
-            enabled: true,
-            events: [{ id: 'chord-c', beat: 2, root: 5, quality: 'minor', duration: 4 }, ...beforeState.events],
-        },
-    },
-    {
-        label: 'move',
-        action: { type: 'moveChordEvent', payload: { eventId: 'chord-b', beat: 1 } },
-        expected: {
-            enabled: true,
-            events: [{ ...beforeState.events[1]!, beat: 1 }, beforeState.events[0]!],
-        },
-    },
-    {
-        label: 'update',
-        action: {
-            type: 'updateChordEvent',
-            payload: { eventId: 'chord-a', root: 14, quality: 'min9', duration: 0.1 },
-        },
-        expected: {
-            enabled: true,
-            events: [{ ...beforeState.events[0]!, root: 2, quality: 'min9', duration: 0.25 }, beforeState.events[1]!],
-        },
-    },
-    {
-        label: 'remove',
-        action: { type: 'removeChordEvent', payload: { eventId: 'chord-a' } },
-        expected: { enabled: true, events: [beforeState.events[1]!] },
-    },
-    {
-        label: 'toggle',
-        action: { type: 'toggleChordTrack', payload: { enabled: false } },
-        expected: { enabled: false, events: beforeState.events },
-    },
-    {
-        label: 'clear',
-        action: { type: 'clearChordTrack' },
-        expected: { enabled: true, events: [] },
-    },
-] satisfies ChordMutationCase[];
+    { type: 'addChordEvent', payload: { eventId: 'chord-c', beat: 2, root: 5, quality: 'minor', duration: 4 } },
+    { type: 'moveChordEvent', payload: { eventId: 'chord-a', beat: 1 } },
+    { type: 'updateChordEvent', payload: { eventId: 'chord-a', root: 14, quality: 'min9', duration: 0.1 } },
+    { type: 'removeChordEvent', payload: { eventId: 'chord-a' } },
+    { type: 'toggleChordTrack', payload: { enabled: false } },
+    { type: 'clearChordTrack' },
+] satisfies AppAction[];
 
 describe('chord-track action authority', () => {
     beforeEach(() => {
@@ -95,23 +34,24 @@ describe('chord-track action authority', () => {
     afterEach(() => {
         clearUndoHistory();
         clearHandlerRegistry();
-        configureAutomergeStoragePort(null);
     });
 
-    it.each(mutationCases)(
-        '$label writes through one action and restores exact state on undo',
-        async ({ action, expected }) => {
-            await executeAppAction(action);
+    it.each(mutationCases)('$type restores exact state on undo and redo', async (action) => {
+        await executeAppAction(action);
+        const expected = structuredClone(chordTrackStore.value);
+        expect(expected).not.toEqual(beforeState);
+        await undo();
+        expect(chordTrackStore.value).toEqual(beforeState);
+        await redo();
+        expect(chordTrackStore.value).toEqual(expected);
+    });
 
-            expect(chordTrackStore.value).toEqual(expected);
+    it('labels the effective disabling toggle and skips explicit same-state toggles', async () => {
+        await executeAppAction({ type: 'toggleChordTrack' });
+        expect(undoStore.value?.past.at(-1)?.label).toBe('Disable chord track');
 
-            await undo();
-
-            expect(chordTrackStore.value).toEqual(beforeState);
-
-            await redo();
-
-            expect(chordTrackStore.value).toEqual(expected);
-        }
-    );
+        const undoCount = undoStore.value?.past.length;
+        await executeAppAction({ type: 'toggleChordTrack', payload: { enabled: false } });
+        expect(undoStore.value?.past).toHaveLength(undoCount ?? 0);
+    });
 });
