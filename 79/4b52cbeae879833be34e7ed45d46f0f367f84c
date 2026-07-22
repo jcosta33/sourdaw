@@ -1,0 +1,19 @@
+src/modules/Arrangement/useCases/trackViewActions/__tests__/setWorkspaceMode.spec.ts
+  s_40ad4fb1cc4440::t_cd67993f258bfb 3-8,20-23
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "794b52cbeae879833be34e7ed45d46f0f367f84c",
+  "prompts": {},
+  "sessions": {
+    "s_40ad4fb1cc4440": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f88d5-5be7-7910-9533-c6141b4a16ba",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
