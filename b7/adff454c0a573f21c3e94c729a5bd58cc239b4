@@ -1,0 +1,52 @@
+src/modules/Arrangement/handlers/clip/handleSetClipLoopLength.ts
+  s_c2fca615e81f34::t_4221940bed1a88 4,8
+src/modules/Arrangement/useCases/clipEditing/setClipGain.ts
+  s_c2fca615e81f34::t_4221940bed1a88 3-4
+src/modules/Arrangement/handlers/clip/handleLockClip.ts
+  s_c2fca615e81f34::t_4221940bed1a88 4,8
+src/modules/Arrangement/handlers/clip/__tests__/clipMetadataActionOutcomes.spec.ts
+  s_c2fca615e81f34::t_61bfeebfa5eb33 1-117
+src/modules/Arrangement/useCases/clipEditing/muteClip.ts
+  s_c2fca615e81f34::t_4221940bed1a88 3-4
+src/modules/Arrangement/handlers/clip/handleSetClipColor.ts
+  s_c2fca615e81f34::t_4221940bed1a88 4,8
+src/modules/Arrangement/useCases/clipLoop/setClipLoop.ts
+  s_c2fca615e81f34::t_4221940bed1a88 3-4
+src/modules/Arrangement/useCases/clipEditing/renameClip.ts
+  s_c2fca615e81f34::t_4221940bed1a88 3-4
+src/modules/Arrangement/useCases/clipEditing/setClipColor.ts
+  s_c2fca615e81f34::t_4221940bed1a88 3-4
+src/modules/Arrangement/handlers/clip/handleMuteClip.ts
+  s_c2fca615e81f34::t_4221940bed1a88 4,8
+src/modules/Arrangement/useCases/clipEditing/lockClip.ts
+  s_c2fca615e81f34::t_4221940bed1a88 3-4
+src/modules/Arrangement/handlers/clip/handleSetClipGain.ts
+  s_c2fca615e81f34::t_4221940bed1a88 5,9
+src/modules/Arrangement/useCases/clipLoop/setClipLoopLength.ts
+  s_c2fca615e81f34::t_4221940bed1a88 3,5,7-8
+src/modules/Arrangement/handlers/clip/handleSetClipLoop.ts
+  s_c2fca615e81f34::t_4221940bed1a88 4,8
+src/modules/Arrangement/useCases/clipEditing/setClipFade.ts
+  s_c2fca615e81f34::t_4221940bed1a88 3-4
+src/modules/Arrangement/handlers/clip/handleRenameClip.ts
+  s_c2fca615e81f34::t_4221940bed1a88 5,9
+src/modules/Arrangement/handlers/clip/handleSetClipFade.ts
+  s_c2fca615e81f34::t_d3489149ce5cbd 9
+  s_c2fca615e81f34::t_4221940bed1a88 4,8,10
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "b7adff454c0a573f21c3e94c729a5bd58cc239b4",
+  "prompts": {},
+  "sessions": {
+    "s_c2fca615e81f34": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f74e9-e1c5-7142-85d2-4c577b3973c0",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
