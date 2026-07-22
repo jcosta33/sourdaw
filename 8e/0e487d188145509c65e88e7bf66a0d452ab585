@@ -1,0 +1,39 @@
+src/modules/AiRuntime/useCases/__tests__/validateActionPayload.spec.ts
+  s_ac9b259eab20ba::t_fc2092a1d049de 167-183
+src/modules/TimelineEditor/presentations/views/AutomationBottomPanel.tsx
+  s_ac9b259eab20ba::t_fc2092a1d049de 141,144-148
+src/modules/Automation/useCases/automation/addAutomationLane.ts
+  s_ac9b259eab20ba::t_ace2c4559125d1 10-17
+src/modules/AiRuntime/models/RuntimeAction.ts
+  s_ac9b259eab20ba::t_ec8e0a53ef6ec8 123,125-126,128
+src/utils/handlerContract.ts
+  s_ac9b259eab20ba::t_ace2c4559125d1 308-310
+  s_ac9b259eab20ba::t_ec8e0a53ef6ec8 312
+src/modules/Automation/handlers/automation/handleRemoveAutomationLane.ts
+  s_ac9b259eab20ba::t_ec8e0a53ef6ec8 13-15
+src/modules/Automation/handlers/automation/handleAddAutomationLane.ts
+  s_ac9b259eab20ba::t_5c0e9afaa6ba54 28
+  s_ac9b259eab20ba::t_310933e2720886 29
+  s_ac9b259eab20ba::t_ec8e0a53ef6ec8 21-27
+src/modules/Automation/handlers/automation/__tests__/transformHandlersUndo.spec.ts
+  s_ac9b259eab20ba::t_2d8df9d7e082ab 189-190
+  s_ac9b259eab20ba::t_fc2092a1d049de 207-213
+src/modules/AiRuntime/useCases/validateActionPayload.ts
+  s_ac9b259eab20ba::t_ec8e0a53ef6ec8 182-185
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "8e0e487d188145509c65e88e7bf66a0d452ab585",
+  "prompts": {},
+  "sessions": {
+    "s_ac9b259eab20ba": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8699-3865-7842-8c54-afbac6cfd266",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
