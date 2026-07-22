@@ -1,0 +1,28 @@
+src/modules/Transport/useCases/tempoMap/__tests__/prepareTimelineMapTimeOperation.spec.ts
+  s_c2fca615e81f34::t_fc9dbfefdd9a6a 243
+  s_c2fca615e81f34::t_fae5f67cb11f53 1-3,5-47,49-54,56-59,61-201,203-242,244-262,264,267-271,273-318,320-329,331-483
+  s_c2fca615e81f34::t_db3f7b937a7ab9 265-266
+  s_c2fca615e81f34::t_a49d5e7d26078f 4,48,55,60,202,263,272,319,330
+src/modules/Transport/useCases/tempoMap/prepareTimelineMapTimeOperation.ts
+  s_c2fca615e81f34::t_30fb17b1bcfaa0 1,3,5,26-44,47-48,51-69,71-120,122-128,130-133,135-165,168-171,173-207,212-219,221-284,288-300,304-305,309,312-315,318-325,331,334,340-346
+  s_c2fca615e81f34::t_f026ec7f097938 2,6-25,45-46,49-50,70,121,129,134,166-167,172,208-211,220,301-303,306-308,310-311,316-317,326-330,332-333,335-339,347-356
+  s_c2fca615e81f34::t_a49d5e7d26078f 4,285-287
+src/modules/Transport/useCases/index.ts
+  s_c2fca615e81f34::t_f026ec7f097938 20
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "00bdab8dca51336fa987565a30f8006de94a3197",
+  "prompts": {},
+  "sessions": {
+    "s_c2fca615e81f34": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f74e9-e1c5-7142-85d2-4c577b3973c0",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
