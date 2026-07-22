@@ -287,6 +287,69 @@ describe('createAutomergeStorage', () => {
         expect(doc.state).toEqual({ count: 2 });
     });
 
+    it('does not let a superseded pending write revert a newer committed value', () => {
+        // The GrooveDropTarget race: an unscoped write (pre-seeded template) is
+        // deferred via rAF; a scoped save commits a superset value first; under
+        // CPU saturation the stale unscoped write flushes LAST and must not
+        // revert the CRDT slot or the cache to its older value.
+        const { doc, port } = createTestPort();
+        configureAutomergeStoragePort(port);
+        const storage = createAutomergeStorage<{ templates: string[] }>('root', 'state');
+
+        storage.set({ templates: ['occupied-name'] });
+
+        const transaction = runWithAutomergeStorageTransaction(undefined, () => {
+            storage.set({ templates: ['occupied-name', 'groove-clip-source-v1'] });
+        });
+        transaction.commit();
+        expect(storage.get()).toEqual({ templates: ['occupied-name', 'groove-clip-source-v1'] });
+
+        flushAutomergeStorageWrites();
+
+        expect(storage.get()).toEqual({ templates: ['occupied-name', 'groove-clip-source-v1'] });
+        expect(doc.state).toEqual({ templates: ['occupied-name', 'groove-clip-source-v1'] });
+    });
+
+    it('still commits a pending write whose last set is newer than the latest commit', () => {
+        const { doc, port } = createTestPort();
+        configureAutomergeStoragePort(port);
+        const storage = createAutomergeStorage<{ count: number }>('root', 'state');
+
+        storage.set({ count: 1 });
+
+        const transaction = runWithAutomergeStorageTransaction(undefined, () => {
+            storage.set({ count: 2 });
+        });
+        transaction.commit();
+
+        storage.set({ count: 3 });
+        flushAutomergeStorageWrites();
+
+        expect(storage.get()).toEqual({ count: 3 });
+        expect(doc.state).toEqual({ count: 3 });
+    });
+
+    it('keeps an unscoped write made after the scoped set but before its commit', () => {
+        // The unscoped set is causally NEWER than the scoped set even though
+        // the scoped commit lands first — the guard must compare against the
+        // committed write's set-time revision, not the commit-time bump
+        // (review #601).
+        const { doc, port } = createTestPort();
+        configureAutomergeStoragePort(port);
+        const storage = createAutomergeStorage<{ count: number }>('root', 'state');
+
+        const transaction = runWithAutomergeStorageTransaction(undefined, () => {
+            storage.set({ count: 1 });
+        });
+        storage.set({ count: 2 });
+        transaction.commit();
+
+        flushAutomergeStorageWrites();
+
+        expect(storage.get()).toEqual({ count: 2 });
+        expect(doc.state).toEqual({ count: 2 });
+    });
+
     it('commits same-document keys in one Automerge mutation', () => {
         const { doc, mutations, port } = createTestPort();
         configureAutomergeStoragePort(port);

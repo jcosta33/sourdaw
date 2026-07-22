@@ -27,4 +27,10 @@ describe('replaceChordTrackState', () => {
             events: [{ id: 'replacement', beat: 8, root: 9, quality: 'min9', duration: 8 }],
         });
     });
+
+    it('projects the default when a backward-compatible flat project omits chord-track truth', () => {
+        replaceChordTrackState(undefined);
+
+        expect(chordTrackStore.value).toEqual({ enabled: false, events: [] });
+    });
 });
