@@ -69,4 +69,11 @@ describe('createFromTemplate', () => {
 
         await expect(createFromTemplate('pop-song')).resolves.toBe(false);
     });
+
+    it('lets project-replacement templates own the CRDT authority swap', async () => {
+        await expect(createFromTemplate('empty')).resolves.toBe(true);
+
+        expect(mocks.newProject).toHaveBeenCalledOnce();
+        expect(mocks.executeAppAction).not.toHaveBeenCalled();
+    });
 });

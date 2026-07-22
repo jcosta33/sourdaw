@@ -2,7 +2,10 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { applyProjectTemplate } from '../applyProjectTemplate';
 
-const mocks = vi.hoisted(() => ({ createPopSongTemplate: vi.fn(), newProject: vi.fn() }));
+const mocks = vi.hoisted(() => ({
+    createPopSongTemplate: vi.fn(),
+    newProject: vi.fn(),
+}));
 
 vi.mock('../../../projectPersistence/newProject', () => ({ newProject: mocks.newProject }));
 vi.mock('../../templateFiles/popSong', () => ({ createPopSongTemplate: mocks.createPopSongTemplate }));
@@ -19,10 +22,13 @@ describe('applyProjectTemplate', () => {
         expect(mocks.createPopSongTemplate).toHaveBeenCalledOnce();
     });
 
-    it('propagates empty-project activation failure and rejects unknown templates', async () => {
-        mocks.newProject.mockResolvedValue(false);
-
-        await expect(applyProjectTemplate('empty')).resolves.toBe(false);
+    it('rejects unknown templates', async () => {
         await expect(applyProjectTemplate('unknown-template')).resolves.toBe(false);
+    });
+
+    it('refuses project-replacement templates inside an app-action transaction', async () => {
+        await expect(applyProjectTemplate('empty')).resolves.toBe(false);
+
+        expect(mocks.newProject).not.toHaveBeenCalled();
     });
 });
