@@ -1,0 +1,24 @@
+src/modules/Arrangement/useCases/clipboard/__tests__/pasteClip.spec.ts
+  s_c2fca615e81f34::t_eccb5acfcefa51 259-264,402-442
+  s_c2fca615e81f34::t_6eff964ecfe130 142,189
+  s_c2fca615e81f34::t_dfd96e6ed23561 328-329,339
+  s_c2fca615e81f34::t_03502b922417d0 443
+src/modules/Arrangement/useCases/clipboard/pasteClip.ts
+  s_c2fca615e81f34::t_dfd96e6ed23561 70-77
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "a08bc852004e1c29d14f671c52f1703163f94886",
+  "prompts": {},
+  "sessions": {
+    "s_c2fca615e81f34": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f74e9-e1c5-7142-85d2-4c577b3973c0",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
