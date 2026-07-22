@@ -6,6 +6,7 @@ import { getTrackState } from '../../repositories/track/getTrackState';
 import { clipboardStore } from '../../stores/clipboardStore';
 import { resolveEligibleClipWriteTarget } from '../../stores/resolveEligibleClipWriteTarget';
 import { addClip } from '../clip/addClip';
+import { removeClip } from '../clip/removeClip';
 
 export function pasteClip(): boolean {
     const clipClipboard = clipboardStore.value?.clipClipboard ?? [];
@@ -25,19 +26,45 @@ export function pasteClip(): boolean {
     }
 
     let minStartBeat = Infinity;
+    const sourceClipIds = new Set<string>();
     for (const event of clipClipboard) {
+        const eventValue: unknown = event;
+        if (typeof eventValue !== 'object' || eventValue === null) {
+            return false;
+        }
+        const sourceClipValue: unknown = Reflect.get(eventValue, 'clip');
+        if (typeof sourceClipValue !== 'object' || sourceClipValue === null) {
+            return false;
+        }
+
+        const sourceClipId: unknown = Reflect.get(sourceClipValue, 'id');
+        const clipOwnerId: unknown = Reflect.get(sourceClipValue, 'trackId');
+        const sourceTrackId: unknown = Reflect.get(eventValue, 'sourceTrackId');
+        if (typeof sourceClipId !== 'string' || sourceClipId.length === 0) {
+            return false;
+        }
+        if (typeof clipOwnerId !== 'string' || clipOwnerId.length === 0) {
+            return false;
+        }
+        if (typeof sourceTrackId !== 'string' || sourceTrackId.length === 0) {
+            return false;
+        }
+        if (clipOwnerId !== sourceTrackId || sourceClipIds.has(sourceClipId)) {
+            return false;
+        }
+        sourceClipIds.add(sourceClipId);
+
+        const sourceClip = event.clip;
         if (
-            event.clip.id.length === 0 ||
-            event.clip.trackId !== event.sourceTrackId ||
-            !Number.isFinite(event.clip.startBeat) ||
-            !Number.isFinite(event.clip.endBeat) ||
-            event.clip.startBeat < 0 ||
-            event.clip.endBeat <= event.clip.startBeat
+            !Number.isFinite(sourceClip.startBeat) ||
+            !Number.isFinite(sourceClip.endBeat) ||
+            sourceClip.startBeat < 0 ||
+            sourceClip.endBeat <= sourceClip.startBeat
         ) {
             return false;
         }
-        if (event.clip.startBeat < minStartBeat) {
-            minStartBeat = event.clip.startBeat;
+        if (sourceClip.startBeat < minStartBeat) {
+            minStartBeat = sourceClip.startBeat;
         }
     }
     const offset = playheadBeat - minStartBeat;
@@ -68,30 +95,50 @@ export function pasteClip(): boolean {
         plans.push({ entry, endBeat, startBeat, targetTrackId });
     }
 
-    for (const plan of plans) {
-        const { entry, endBeat, startBeat, targetTrackId } = plan;
-        const newClip = addClip({
-            trackId: targetTrackId,
-            startBeat,
-            endBeat,
-            name: `${entry.clip.name} (paste)`,
-            type: entry.clip.type,
-            audioBufferId: entry.clip.audioBufferId,
-        });
+    const addedClipIds: string[] = [];
+    let pasteCompleted = true;
+    try {
+        for (const plan of plans) {
+            const { entry, endBeat, startBeat, targetTrackId } = plan;
+            const newClip = addClip({
+                trackId: targetTrackId,
+                startBeat,
+                endBeat,
+                name: `${entry.clip.name} (paste)`,
+                type: entry.clip.type,
+                audioBufferId: entry.clip.audioBufferId,
+            });
 
-        if (!newClip) {
-            return false;
+            if (!newClip) {
+                pasteCompleted = false;
+                break;
+            }
+            addedClipIds.push(newClip.id);
+
+            if (entry.midiNotes && entry.midiNotes.length > 0) {
+                const copiedNotes: MidiNote[] = entry.midiNotes.map((node) => ({
+                    ...node,
+                    id: `note-${crypto.randomUUID().slice(0, 8)}`,
+                }));
+
+                setNotesForClip(newClip.id, copiedNotes);
+            }
         }
-
-        if (entry.midiNotes && entry.midiNotes.length > 0) {
-            const copiedNotes: MidiNote[] = entry.midiNotes.map((node) => ({
-                ...node,
-                id: `note-${crypto.randomUUID().slice(0, 8)}`,
-            }));
-
-            setNotesForClip(newClip.id, copiedNotes);
-        }
+    } catch {
+        pasteCompleted = false;
     }
 
-    return true;
+    if (pasteCompleted) {
+        return true;
+    }
+
+    while (addedClipIds.length > 0) {
+        const addedClipId = addedClipIds.pop();
+        if (addedClipId === undefined) {
+            break;
+        }
+        removeClip(addedClipId);
+    }
+
+    return false;
 }

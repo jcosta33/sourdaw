@@ -25,6 +25,7 @@ const mocks = vi.hoisted(() => {
     return {
         addClip: vi.fn<(input: AddClipInput) => { id: string } | null>(),
         getTrackState: vi.fn<() => MockTrackState | null>(),
+        removeClip: vi.fn<(clipId: string) => void>(),
         resolveEligibleClipWriteTarget: vi.fn(),
         setNotesForClip: vi.fn<(clipId: string, notes: MidiNote[]) => void>(),
         readTransportState,
@@ -51,6 +52,9 @@ vi.mock('../../../repositories/track/getTrackState', () => ({
 vi.mock('../../clip/addClip', () => ({
     addClip: mocks.addClip,
 }));
+vi.mock('../../clip/removeClip', () => ({
+    removeClip: mocks.removeClip,
+}));
 vi.mock('../../../stores/resolveEligibleClipWriteTarget', () => ({
     resolveEligibleClipWriteTarget: mocks.resolveEligibleClipWriteTarget,
 }));
@@ -58,6 +62,7 @@ vi.mock('../../../stores/resolveEligibleClipWriteTarget', () => ({
 function createClipboardEntry(
     input: {
         endBeat?: number;
+        clipId?: string;
         midiNotes?: MidiNote[];
         name?: string;
         sourceTrackId?: string;
@@ -69,7 +74,7 @@ function createClipboardEntry(
     return {
         sourceTrackId,
         clip: {
-            id: 'source-clip',
+            id: input.clipId ?? 'source-clip',
             trackId: sourceTrackId,
             name: input.name ?? 'Source clip',
             startBeat: input.startBeat ?? 4,
@@ -91,6 +96,7 @@ describe('pasteClip', () => {
         vi.restoreAllMocks();
         mocks.addClip.mockReset();
         mocks.getTrackState.mockReset();
+        mocks.removeClip.mockReset();
         mocks.setNotesForClip.mockReset();
         mocks.readTransportState.mockClear();
         mocks.resolveEligibleClipWriteTarget.mockReset();
@@ -190,6 +196,7 @@ describe('pasteClip', () => {
         });
         setClipClipboard([
             createClipboardEntry({
+                clipId: 'source-clip-later',
                 startBeat: 9,
                 endBeat: 11,
                 name: 'Later clip',
@@ -197,6 +204,7 @@ describe('pasteClip', () => {
                 midiNotes: laterClipNotes,
             }),
             createClipboardEntry({
+                clipId: 'source-clip-earlier',
                 startBeat: 4,
                 endBeat: 7,
                 name: 'Earlier clip',
@@ -297,7 +305,10 @@ describe('pasteClip', () => {
         expect(mocks.setNotesForClip).not.toHaveBeenCalled();
 
         mocks.addClip.mockReturnValue({ id: 'pasted-clip' });
-        setClipClipboard([createClipboardEntry(), createClipboardEntry({ midiNotes: [] })]);
+        setClipClipboard([
+            createClipboardEntry({ clipId: 'source-clip-one' }),
+            createClipboardEntry({ clipId: 'source-clip-two', midiNotes: [] }),
+        ]);
 
         pasteClip();
 
@@ -318,8 +329,8 @@ describe('pasteClip', () => {
             return { status: 'eligible', trackId: input.trackId };
         });
         setClipClipboard([
-            createClipboardEntry({ sourceTrackId: 'track-1' }),
-            createClipboardEntry({ sourceTrackId: 'vca-1', midiNotes: [] }),
+            createClipboardEntry({ clipId: 'source-clip-one', sourceTrackId: 'track-1' }),
+            createClipboardEntry({ clipId: 'source-clip-two', sourceTrackId: 'vca-1', midiNotes: [] }),
         ]);
 
         expect(pasteClip()).toBe(false);
@@ -327,5 +338,102 @@ describe('pasteClip', () => {
         expect(mocks.addClip).not.toHaveBeenCalled();
         expect(randomUuid).not.toHaveBeenCalled();
         expect(mocks.setNotesForClip).not.toHaveBeenCalled();
+    });
+
+    it.each([
+        {
+            name: 'a non-string clip id',
+            corrupt(entry: ClipboardEntry) {
+                Reflect.set(entry.clip, 'id', 42);
+            },
+        },
+        {
+            name: 'non-string matching owner ids',
+            corrupt(entry: ClipboardEntry) {
+                Reflect.set(entry, 'sourceTrackId', 42);
+                Reflect.set(entry.clip, 'trackId', 42);
+            },
+        },
+        {
+            name: 'empty matching owner ids',
+            corrupt(entry: ClipboardEntry) {
+                entry.sourceTrackId = '';
+                entry.clip.trackId = '';
+            },
+        },
+    ])('rejects $name before destination resolution or allocation', ({ corrupt }) => {
+        const entry = createClipboardEntry();
+        corrupt(entry);
+        mocks.getTrackState.mockReturnValue({
+            selectedTrackId: 'selected-track',
+            tracks: [{ id: 'selected-track' }],
+        });
+        setClipClipboard([entry]);
+
+        expect(pasteClip()).toBe(false);
+
+        expect(mocks.resolveEligibleClipWriteTarget).not.toHaveBeenCalled();
+        expect(mocks.addClip).not.toHaveBeenCalled();
+        expect(mocks.setNotesForClip).not.toHaveBeenCalled();
+        expect(mocks.removeClip).not.toHaveBeenCalled();
+    });
+
+    it('rejects duplicate source clip ids before destination resolution or allocation', () => {
+        mocks.getTrackState.mockReturnValue({
+            selectedTrackId: 'selected-track',
+            tracks: [{ id: 'selected-track' }],
+        });
+        setClipClipboard([
+            createClipboardEntry({ clipId: 'duplicate-source', sourceTrackId: 'source-track-one' }),
+            createClipboardEntry({ clipId: 'duplicate-source', sourceTrackId: 'source-track-two' }),
+        ]);
+
+        expect(pasteClip()).toBe(false);
+
+        expect(mocks.resolveEligibleClipWriteTarget).not.toHaveBeenCalled();
+        expect(mocks.addClip).not.toHaveBeenCalled();
+        expect(mocks.setNotesForClip).not.toHaveBeenCalled();
+        expect(mocks.removeClip).not.toHaveBeenCalled();
+    });
+
+    it('rolls back Arrangement and MIDI state when the second add fails', () => {
+        const arrangementClipIds = new Set(['existing-clip']);
+        const midiState = new Map<string, MidiNote[]>([
+            ['existing-clip', [{ id: 'existing-note', pitch: 60, startBeat: 0, duration: 1, velocity: 90 }]],
+        ]);
+        const arrangementBefore = [...arrangementClipIds];
+        const midiBefore = [...midiState];
+        const pastedNotes: MidiNote[] = [{ id: 'source-note', pitch: 64, startBeat: 0, duration: 1, velocity: 100 }];
+        vi.spyOn(crypto, 'randomUUID').mockReturnValue('11111111-1111-4111-8111-111111111111');
+        mocks.getTrackState.mockReturnValue({
+            selectedTrackId: 'selected-track',
+            tracks: [{ id: 'selected-track' }],
+        });
+        mocks.addClip
+            .mockImplementationOnce(() => {
+                arrangementClipIds.add('pasted-first');
+                return { id: 'pasted-first' };
+            })
+            .mockReturnValueOnce(null);
+        mocks.setNotesForClip.mockImplementation((clipId, notes) => {
+            midiState.set(clipId, notes);
+        });
+        mocks.removeClip.mockImplementation((clipId) => {
+            arrangementClipIds.delete(clipId);
+            midiState.delete(clipId);
+        });
+        setClipClipboard([
+            createClipboardEntry({ clipId: 'source-clip-one', midiNotes: pastedNotes }),
+            createClipboardEntry({ clipId: 'source-clip-two', midiNotes: pastedNotes }),
+        ]);
+
+        expect(pasteClip()).toBe(false);
+
+        expect(mocks.addClip).toHaveBeenCalledTimes(2);
+        expect(mocks.setNotesForClip).toHaveBeenCalledTimes(1);
+        expect(mocks.removeClip).toHaveBeenCalledOnce();
+        expect(mocks.removeClip).toHaveBeenCalledWith('pasted-first');
+        expect([...arrangementClipIds]).toEqual(arrangementBefore);
+        expect([...midiState]).toEqual(midiBefore);
     });
 });

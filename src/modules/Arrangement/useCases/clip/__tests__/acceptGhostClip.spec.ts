@@ -72,6 +72,42 @@ describe('acceptGhostClip', () => {
         expect(mocks.state.value.ghostClips).toEqual([ghost]);
     });
 
+    it('rejects duplicate matching ghosts without publishing or discarding either ghost', () => {
+        const firstGhost = createClip({ id: 'ghost-1', trackId: 'track-1', isGhost: true });
+        const secondGhost = createClip({ id: 'ghost-1', trackId: 'track-2', isGhost: true });
+        const state: TrackStoreState = {
+            tracks: [TrackDummy.create({ id: 'track-1', clips: [] }), TrackDummy.create({ id: 'track-2', clips: [] })],
+            selectedTrackId: null,
+            ghostClips: [firstGhost, secondGhost],
+        };
+        mocks.state.value = state;
+
+        expect(acceptGhostClip('ghost-1')).toBe(false);
+
+        expect(mocks.appendClipToTrack).not.toHaveBeenCalled();
+        expect(mocks.updateClipInStore).not.toHaveBeenCalled();
+        expect(mocks.trackStoreSet).not.toHaveBeenCalled();
+        expect(mocks.state.value).toBe(state);
+        expect(mocks.state.value.ghostClips).toEqual([firstGhost, secondGhost]);
+    });
+
+    it('rejects a matching ghost with an empty owner id without any write', () => {
+        const ghost = createClip({ id: 'ghost-1', trackId: '', isGhost: true });
+        const state: TrackStoreState = {
+            tracks: [TrackDummy.create({ id: 'track-1', clips: [] })],
+            selectedTrackId: null,
+            ghostClips: [ghost],
+        };
+        mocks.state.value = state;
+
+        expect(acceptGhostClip('ghost-1')).toBe(false);
+
+        expect(mocks.appendClipToTrack).not.toHaveBeenCalled();
+        expect(mocks.updateClipInStore).not.toHaveBeenCalled();
+        expect(mocks.trackStoreSet).not.toHaveBeenCalled();
+        expect(mocks.state.value).toBe(state);
+    });
+
     it('uses the clip-update gateway for legacy ghost flags and reports its result', () => {
         const ghost = createClip({ id: 'ghost-1', trackId: 'track-1', isGhost: true });
         mocks.state.value = {

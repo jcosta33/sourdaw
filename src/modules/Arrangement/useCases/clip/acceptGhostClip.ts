@@ -11,9 +11,28 @@ export function acceptGhostClip(clipId: string): boolean {
         return false;
     }
 
-    const ghost = (state.ghostClips ?? []).find((context) => context.id === clipId);
-    if (!ghost) {
+    const matchingGhosts = (state.ghostClips ?? []).filter((context) => context.id === clipId);
+    if (matchingGhosts.length === 0) {
         return updateClipInStore(clipId, (clip) => ({ ...clip, isGhost: false }));
+    }
+    if (matchingGhosts.length !== 1) {
+        return false;
+    }
+
+    const ghost = matchingGhosts[0];
+    if (!ghost) {
+        return false;
+    }
+
+    const ghostType: unknown = ghost.type;
+    const hasValidIdentity = typeof ghost.id === 'string' && ghost.id.length > 0;
+    const hasValidOwner = typeof ghost.trackId === 'string' && ghost.trackId.length > 0;
+    const hasValidName = typeof ghost.name === 'string';
+    const hasValidType = ghostType === 'audio' || ghostType === 'midi';
+    const hasFiniteSpan = Number.isFinite(ghost.startBeat) && Number.isFinite(ghost.endBeat);
+    const hasPositiveSpan = ghost.startBeat >= 0 && ghost.endBeat > ghost.startBeat;
+    if (!hasValidIdentity || !hasValidOwner || !hasValidName || !hasValidType || !hasFiniteSpan || !hasPositiveSpan) {
+        return false;
     }
 
     const { trackId, ...clipData } = ghost;
