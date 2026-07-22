@@ -4,14 +4,10 @@ import { join } from 'node:path';
 
 // The package's "main" CJS bundle exposes no runtime exports under Node SSR
 // resolution; the ESM build (what Vite serves the app) does.
-import {
-    FaustCompiler,
-    FaustMonoDspGenerator,
-    instantiateFaustModuleFromFile,
-    LibFaust,
-    type IFaustCompiler,
-} from '@grame/faustwasm/dist/esm/index.js';
+import { FaustMonoDspGenerator, type IFaustCompiler } from '@grame/faustwasm/dist/esm/index.js';
 import { describe, expect, it, beforeAll } from 'vitest';
+
+import { loadFaustCompilerForSpec } from '../../../testing/loadFaustCompilerForSpec';
 
 /**
  * Compiles every shipped .dsp through the app's own Faust path
@@ -22,17 +18,15 @@ import { describe, expect, it, beforeAll } from 'vitest';
  */
 
 const DSP_DIR = 'src/modules/PluginHost/useCases/faustEngine/dsp';
-const LIBFAUST_JS = './public/faust/libfaust-wasm.js';
 const COMPILE_TIMEOUT_MS = 300_000;
 
 /**
- * Documented known-broken shipped DSP, reported on the #508 ledger for their
- * own rows — exact and reviewable: a NEW compile failure fails this test, and
- * repairing one of these fails it too (remove the file from the set).
- * - de-esser.dsp / stereo-widener.dsp: sequential-composition arity errors
- * - noise-gate.dsp: undefined symbol `gate_stereo`
+ * Compile-failure baseline — EMPTY since #508 rows 19+20 repaired the last
+ * broken files (noise-gate, de-esser, stereo-widener). The exact-set
+ * mechanism stays: any NEW compile failure fails this test; if a file ever
+ * has to ship broken, add it here with the reason.
  */
-const KNOWN_BROKEN = ['de-esser.dsp', 'noise-gate.dsp', 'stereo-widener.dsp'];
+const KNOWN_BROKEN: string[] = [];
 
 type CompiledDsp = {
     failures: Record<string, string>;
@@ -60,8 +54,7 @@ describe('shipped Faust DSP compile', () => {
     let compiled: CompiledDsp;
 
     beforeAll(async () => {
-        const faustModule = await instantiateFaustModuleFromFile(LIBFAUST_JS);
-        compiler = new FaustCompiler(new LibFaust(faustModule));
+        compiler = await loadFaustCompilerForSpec();
 
         const failures: Record<string, string> = {};
         const paramPaths: Record<string, string[]> = {};
@@ -97,6 +90,38 @@ describe('shipped Faust DSP compile', () => {
             '/spring/brightness',
             '/spring/decay',
             '/spring/mix',
+        ]);
+    });
+
+    it('noise-gate.dsp compiles and exposes the params its descriptors declare', () => {
+        // builtinDSP.ts declares /Noise_Gate/{threshold,attack,hold,release}.
+        expect(compiled.failures['noise-gate.dsp']).toBeUndefined();
+        expect(compiled.paramPaths['noise-gate.dsp']).toEqual([
+            '/noise-gate/attack',
+            '/noise-gate/hold',
+            '/noise-gate/release',
+            '/noise-gate/threshold',
+        ]);
+    });
+
+    it('de-esser.dsp compiles and exposes the params its descriptors declare', () => {
+        // builtinDSP.ts declares /De-esser/{frequency,bandwidth,threshold,ratio,listen}.
+        expect(compiled.failures['de-esser.dsp']).toBeUndefined();
+        expect(compiled.paramPaths['de-esser.dsp']).toEqual([
+            '/de-esser/bandwidth',
+            '/de-esser/frequency',
+            '/de-esser/listen',
+            '/de-esser/ratio',
+            '/de-esser/threshold',
+        ]);
+    });
+
+    it('stereo-widener.dsp compiles and exposes the params its descriptors declare', () => {
+        // builtinDSP.ts declares /Stereo_Widener/{width,mono_bass}.
+        expect(compiled.failures['stereo-widener.dsp']).toBeUndefined();
+        expect(compiled.paramPaths['stereo-widener.dsp']).toEqual([
+            '/stereo-widener/mono_bass',
+            '/stereo-widener/width',
         ]);
     });
 });
