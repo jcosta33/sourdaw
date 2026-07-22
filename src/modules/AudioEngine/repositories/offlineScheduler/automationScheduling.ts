@@ -32,7 +32,9 @@ export function scheduleTrackAutomation(
     deviceEntries: ScheduleTrackAutomationDeviceEntry[],
     durationSeconds: number,
     defaultTempo: number,
-    changes: AutomationTempoChange[]
+    changes: AutomationTempoChange[],
+    regionStartBeat = 0,
+    compensationDelaySec = 0
 ): void {
     const trackLanes = lanes.filter((length) => length.trackId === trackId && !length.clipId);
 
@@ -42,12 +44,12 @@ export function scheduleTrackAutomation(
         }
 
         if (lane.parameterId === 'gain') {
-            scheduleAutomationOnParam(trackGainNode.gain, lane.points, durationSeconds, defaultTempo, changes);
+            scheduleAutomationOnParam(trackGainNode.gain, lane.points, durationSeconds, defaultTempo, changes, regionStartBeat, compensationDelaySec);
             continue;
         }
 
         if (lane.parameterId === 'pan') {
-            scheduleAutomationOnParam(trackPanNode.pan, lane.points, durationSeconds, defaultTempo, changes);
+            scheduleAutomationOnParam(trackPanNode.pan, lane.points, durationSeconds, defaultTempo, changes, regionStartBeat, compensationDelaySec);
             continue;
         }
 
@@ -64,7 +66,7 @@ export function scheduleTrackAutomation(
                 const scale = resolveDeviceParamScale(candidate.deviceType, parameterId);
                 const points =
                     scale !== 1 ? lane.points.map((param) => ({ ...param, value: param.value * scale })) : lane.points;
-                scheduleAutomationOnParam(audioParam, points, durationSeconds, defaultTempo, changes);
+                scheduleAutomationOnParam(audioParam, points, durationSeconds, defaultTempo, changes, regionStartBeat, compensationDelaySec);
             }
         }
     }

@@ -1,3 +1,5 @@
+import { sidechainStore } from '#/modules/Routing/stores';
+
 import { createExportError } from '../errors/ExportError';
 
 import { type DeviceNodeEntry } from './buildDeviceChain';
@@ -17,6 +19,7 @@ import { resolveRenderContext } from './offlineRender/resolveRenderContext';
 import { schedulePendingSuspends } from './offlineRender/schedulePendingSuspends';
 import { scheduleTrackClips } from './offlineRender/scheduleTrackClips';
 import { shouldCreateOfflineStrip } from './offlineRender/shouldCreateOfflineStrip';
+import { wireOfflineSidechainRoutes } from './offlineRender/wireOfflineSidechainRoutes';
 import {
     type OfflineBusStrip,
     type OfflineRenderOptions,
@@ -144,6 +147,16 @@ export const renderOffline: RenderOfflineFn = async function renderOffline(
                 sendGain.connect(busStrip.gainNode);
             }
         }
+
+        // Wire persisted sidechain routes into the offline graph, mirroring
+        // the live engine's applySidechainRoute — without them, exports
+        // render sidechain compressors keyless (M-041).
+        wireOfflineSidechainRoutes(
+            offlineCtx,
+            trackStripsById,
+            deviceEntriesByTrack,
+            sidechainStore.value?.routes ?? []
+        );
 
         // Schedule only audible source tracks, but keep the full routing graph alive so
         // buses, targets, and the master strip behave like live playback.

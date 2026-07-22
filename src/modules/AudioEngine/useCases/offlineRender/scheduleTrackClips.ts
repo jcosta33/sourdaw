@@ -212,10 +212,15 @@ export async function scheduleTrackClips({
     if (track.freezeState.status === 'frozen' && track.freezeState.frozenBufferId) {
         const frozenBuf = audioBufferCache.get(track.freezeState.frozenBufferId);
         if (frozenBuf) {
-            const source = offlineCtx.createBufferSource();
-            source.buffer = frozenBuf;
-            source.connect(trackGainNode); // Skip trackInputNode to bypass device chain processing, but keep fader/pan
-            source.start(0);
+            // Frozen buffers are rendered from timeline 0, so a region
+            // export must start regionStartSec INTO the buffer — starting
+            // at 0 shifted frozen content early by the region offset.
+            if (regionStartSec < frozenBuf.duration) {
+                const source = offlineCtx.createBufferSource();
+                source.buffer = frozenBuf;
+                source.connect(trackGainNode); // Skip trackInputNode to bypass device chain processing, but keep fader/pan
+                source.start(0, regionStartSec, frozenBuf.duration - regionStartSec);
+            }
         } else {
             onWarning?.(
                 `Track "${track.name}" is frozen but its frozen buffer is missing and will be silent in the export. ` +
@@ -232,6 +237,8 @@ export async function scheduleTrackClips({
         }
     }
 
+    // Apply the same region/latency corrections clip scheduling gets, so
+    // automation lands on the audio it shapes (M-038).
     scheduleTrackAutomation(
         automationLanes,
         track.id,
@@ -240,7 +247,9 @@ export async function scheduleTrackClips({
         deviceEntries,
         durationSeconds,
         defaultTempo,
-        changes
+        changes,
+        regionStartBeat,
+        compensationDelay
     );
 
     if (track.freezeState.status === 'frozen' && track.freezeState.frozenBufferId) {
