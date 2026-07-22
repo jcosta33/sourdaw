@@ -1,0 +1,30 @@
+src/modules/Project/useCases/demoProjects/myceliumAscendant/__tests__/createMyceliumAutomation.spec.ts
+  s_ac9b259eab20ba::t_e111ac62096756 86
+  s_ac9b259eab20ba::t_16404197a7fc6f 21-22,49-50
+  s_ac9b259eab20ba::t_988ae1bce37777 62,69,123,127,147
+  s_ac9b259eab20ba::t_5921a01ae167fa 26-27,124-126
+  s_ac9b259eab20ba::t_eba88dd28ad3a2 9-12,82-85
+  s_ac9b259eab20ba::t_71a09b1fc4ccef 1-8,13-20,23-25,29-48,51-61,63-68,70-81,87-122,128-146,148-152
+  s_ac9b259eab20ba::t_400a3f2c1008b3 28
+src/modules/Project/useCases/demoProjects/myceliumAscendant/createMyceliumAutomation.ts
+  s_ac9b259eab20ba::t_93594e8edefdaa 11-14,128-260,276-283
+  s_ac9b259eab20ba::t_988ae1bce37777 264,307,313
+  s_ac9b259eab20ba::t_ddabf20cb00339 1-10,15-113,115-127,261-263,265-275,284-306,308-312,314-347
+  s_ac9b259eab20ba::t_4ec88276996d4d 114
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "e7b2b150c2a8f38d1a099bff6ca5632d42d92844",
+  "prompts": {},
+  "sessions": {
+    "s_ac9b259eab20ba": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8699-3865-7842-8c54-afbac6cfd266",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
