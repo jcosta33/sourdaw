@@ -39,6 +39,15 @@ function remapTrackAlternativeReferences(action: AppAction, mappings: ReplayIdMa
         action.payload.alternativeId =
             mappings.trackAlternativeIds.get(action.payload.alternativeId) ?? action.payload.alternativeId;
     }
+    // Recorded via revertAction (no skipMacroRecording): a create's undo inverse
+    // is a deleteTrackAlternative whose fallbackAlternativeId references another
+    // recorded alternative — remap it too or the replayed delete degrades to the
+    // first-in-list fallback and restores the wrong active alternative.
+    if (action.type === 'deleteTrackAlternative' && action.payload.fallbackAlternativeId) {
+        action.payload.fallbackAlternativeId =
+            mappings.trackAlternativeIds.get(action.payload.fallbackAlternativeId) ??
+            action.payload.fallbackAlternativeId;
+    }
 }
 
 function remapLayerId(layerId: string, mappings: ReplayIdMappings): string {
