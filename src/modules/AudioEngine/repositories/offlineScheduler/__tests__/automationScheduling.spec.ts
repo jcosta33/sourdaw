@@ -183,7 +183,7 @@ describe('scheduleTrackAutomation', () => {
         expect(gain.setValueAtTime).not.toHaveBeenCalled();
     });
 
-    it('routes a prefixed device lane to the matching device param', () => {
+    it('routes a canonical delay lane and scales milliseconds to seconds', () => {
         const gain = makeParam();
         const pan = makeParam();
         const deviceParam = makeParam();
@@ -192,59 +192,77 @@ describe('scheduleTrackAutomation', () => {
         const deviceNode = {
             inputNode: {} as AudioNode,
             outputNode: {} as AudioNode,
-            nodes: [{ gain: deviceParam } as unknown as AudioNode],
+            nodes: [
+                {} as AudioNode,
+                {} as AudioNode,
+                {} as AudioNode,
+                { delayTime: deviceParam } as unknown as AudioNode,
+            ],
         };
 
         scheduleTrackAutomation(
             [
                 makeLane({
-                    parameterId: 'device-1:gain-level',
-                    points: [{ beat: 0, value: 0.65, curve: 'linear', tension: 0 }],
+                    parameterId: 'device-1:delay-time',
+                    points: [{ beat: 0, value: 500, curve: 'linear', tension: 0 }],
                 }),
             ],
             'track-1',
             gainNode,
             panNode,
-            [{ deviceId: 'device-1', deviceType: 'builtin-gain', node: deviceNode }],
-            10,
-            120,
-            []
-        );
-
-        expect(deviceParam.setValueAtTime).toHaveBeenCalledWith(0.65, 0);
-        expect(gain.setValueAtTime).not.toHaveBeenCalled();
-        expect(pan.setValueAtTime).not.toHaveBeenCalled();
-    });
-
-    it('routes a direct device lane to the first device exposing that param', () => {
-        const gain = makeParam();
-        const pan = makeParam();
-        const deviceParam = makeParam();
-        const gainNode = { gain } as unknown as GainNode;
-        const panNode = { pan } as unknown as StereoPannerNode;
-        const deviceNode = {
-            inputNode: {} as AudioNode,
-            outputNode: {} as AudioNode,
-            nodes: [{ gain: deviceParam } as unknown as AudioNode],
-        };
-
-        scheduleTrackAutomation(
-            [
-                makeLane({
-                    parameterId: 'gain-level',
-                    points: [{ beat: 0, value: 0.5, curve: 'linear', tension: 0 }],
-                }),
-            ],
-            'track-1',
-            gainNode,
-            panNode,
-            [{ deviceId: 'device-1', deviceType: 'builtin-gain', node: deviceNode }],
+            [{ deviceId: 'device-1', deviceType: 'builtin-delay', node: deviceNode }],
             10,
             120,
             []
         );
 
         expect(deviceParam.setValueAtTime).toHaveBeenCalledWith(0.5, 0);
+        expect(gain.setValueAtTime).not.toHaveBeenCalled();
+        expect(pan.setValueAtTime).not.toHaveBeenCalled();
+    });
+
+    it.each<[string, string, boolean, string | null]>([
+        ['unique bare', 'gain-level', false, 'device-1'],
+        ['same-type canonical', 'device-2:gain-level', true, 'device-2'],
+        ['ambiguous type', 'builtin-gain:gain-level', true, null],
+        ['ambiguous bare', 'gain-level', true, null],
+        ['wrong canonical', 'missing:gain-level', true, null],
+    ])('resolves %s device target', (_name, parameterId, includeSecond, expectedId) => {
+        const gain = makeParam();
+        const pan = makeParam();
+        const deviceParam = makeParam();
+        const secondParam = makeParam();
+        const gainNode = { gain } as unknown as GainNode;
+        const panNode = { pan } as unknown as StereoPannerNode;
+        const deviceNode = {
+            inputNode: {} as AudioNode,
+            outputNode: {} as AudioNode,
+            nodes: [{ gain: deviceParam } as unknown as AudioNode],
+        };
+        const secondNode = { ...deviceNode, nodes: [{ gain: secondParam } as unknown as AudioNode] };
+        const entries = [{ deviceId: 'device-1', deviceType: 'builtin-gain', node: deviceNode }];
+        if (includeSecond) {
+            entries.push({ deviceId: 'device-2', deviceType: 'builtin-gain', node: secondNode });
+        }
+
+        scheduleTrackAutomation(
+            [
+                makeLane({
+                    parameterId,
+                    points: [{ beat: 0, value: 0.5, curve: 'linear', tension: 0 }],
+                }),
+            ],
+            'track-1',
+            gainNode,
+            panNode,
+            entries,
+            10,
+            120,
+            []
+        );
+
+        expect(deviceParam.setValueAtTime.mock.calls.length > 0).toBe(expectedId === 'device-1');
+        expect(secondParam.setValueAtTime.mock.calls.length > 0).toBe(expectedId === 'device-2');
         expect(gain.setValueAtTime).not.toHaveBeenCalled();
         expect(pan.setValueAtTime).not.toHaveBeenCalled();
     });
