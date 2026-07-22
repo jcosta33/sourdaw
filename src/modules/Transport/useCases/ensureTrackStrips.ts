@@ -9,9 +9,15 @@ import { shouldCreateLiveTrackStrip, trackStore } from '#/modules/Arrangement/st
 import { projectTrackToLiveStrip } from '#/modules/Arrangement/useCases';
 import { ensureBusStrip, setBusGain, wireSidechainRoutes } from '#/modules/Routing/useCases';
 
+function hasAmbiguousBusOwner(tracks: NonNullable<typeof trackStore.value>['tracks']): boolean {
+    return tracks.some(
+        (track) => track.kind === 'bus' && tracks.filter((candidate) => candidate.id === track.id).length !== 1
+    );
+}
+
 export function ensureTrackStrips(): void {
     const tracks = trackStore.value?.tracks;
-    if (!tracks) {
+    if (!tracks || hasAmbiguousBusOwner(tracks)) {
         return;
     }
     const busTracks = tracks.filter((time) => time.kind === 'bus');

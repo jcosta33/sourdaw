@@ -15,6 +15,7 @@ const mocks = vi.hoisted(() => ({
     updateDeviceBypass: vi.fn(),
     setSend: vi.fn(),
     wireSidechainRoutes: vi.fn(),
+    soloMode: 'sip',
 }));
 
 vi.mock('#/modules/AudioEngine/useCases', () => ({
@@ -33,9 +34,18 @@ vi.mock('#/modules/Routing/useCases', () => ({
     wireSidechainRoutes: mocks.wireSidechainRoutes,
 }));
 
+vi.mock('#/modules/WorkspaceShell/stores', () => ({
+    workspaceStore: {
+        get value() {
+            return { soloMode: mocks.soloMode };
+        },
+    },
+}));
+
 describe('projectTrackToLiveStrip', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        mocks.soloMode = 'sip';
         trackStore.set({ tracks: [], selectedTrackId: null });
     });
 
@@ -77,16 +87,43 @@ describe('projectTrackToLiveStrip', () => {
         );
     });
 
-    it('uses effective solo mute and can defer global sidechain wiring', () => {
+    it('keeps solo-safe and solo-bus upstream tracks audible while muting unrelated tracks', () => {
         const target = createTrack({ id: 'target', name: 'Target', kind: 'audio' });
-        const soloed = createTrack({ id: 'soloed', name: 'Soloed', kind: 'audio' });
-        soloed.soloed = true;
-        trackStore.set({ tracks: [target, soloed], selectedTrackId: null });
+        const soloedBus = createTrack({ id: 'bus', name: 'Bus', kind: 'bus' });
+        soloedBus.soloed = true;
+        const source = createTrack({ id: 'source', name: 'Source', kind: 'audio' });
+        source.outputId = soloedBus.id;
+        const safe = createTrack({ id: 'safe', name: 'Safe', kind: 'audio' });
+        safe.soloSafe = true;
+        trackStore.set({ tracks: [target, soloedBus, source, safe], selectedTrackId: null });
 
         projectTrackToLiveStrip({ trackId: target.id, deferSidechainWiring: true });
+        projectTrackToLiveStrip({ trackId: source.id, deferSidechainWiring: true });
+        projectTrackToLiveStrip({ trackId: safe.id, deferSidechainWiring: true });
 
-        expect(mocks.setTrackMute).toHaveBeenCalledWith('target', true);
+        expect(mocks.setTrackMute.mock.calls).toEqual([
+            ['target', true],
+            ['source', false],
+            ['safe', false],
+        ]);
         expect(mocks.wireSidechainRoutes).not.toHaveBeenCalled();
+    });
+
+    it('applies canonical PFL gain and mute behavior', () => {
+        mocks.soloMode = 'pfl';
+        const soloed = createTrack({ id: 'soloed', name: 'Soloed', kind: 'audio' });
+        soloed.gain = 0.4;
+        soloed.muted = true;
+        soloed.soloed = true;
+        trackStore.set({ tracks: [soloed], selectedTrackId: null });
+
+        projectTrackToLiveStrip({ trackId: soloed.id });
+
+        expect(mocks.setTrackGain.mock.calls).toEqual([
+            ['soloed', 0.4],
+            ['soloed', 1],
+        ]);
+        expect(mocks.setTrackMute).toHaveBeenCalledWith('soloed', false);
     });
 
     it('refuses ambiguous track ownership', () => {

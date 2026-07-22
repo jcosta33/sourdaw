@@ -150,6 +150,19 @@ describe('ensureTrackStrips', () => {
         expect(mocks.wireSidechainRoutes).toHaveBeenCalledTimes(1);
     });
 
+    it('fails closed before bus or sidechain projection when a bus id is ambiguous', () => {
+        const first = createTrack({ id: 'duplicate-bus', name: 'First', kind: 'bus' });
+        const second = createTrack({ id: 'duplicate-bus', name: 'Second', kind: 'bus' });
+        mocks.trackStoreValue.value = { selectedTrackId: null, tracks: [first, second] };
+
+        ensureTrackStrips();
+
+        expect(mocks.ensureBusStrip).not.toHaveBeenCalled();
+        expect(mocks.setBusGain).not.toHaveBeenCalled();
+        expect(mocks.projectTrackToLiveStrip).not.toHaveBeenCalled();
+        expect(mocks.wireSidechainRoutes).not.toHaveBeenCalled();
+    });
+
     it('does not allocate or replay a strip for a dormant VCA', () => {
         const dormantVca = createTrack({ id: 'vca-1', name: 'VCA', kind: 'audio' });
         Object.defineProperty(dormantVca, 'kind', { value: 'vca' });
