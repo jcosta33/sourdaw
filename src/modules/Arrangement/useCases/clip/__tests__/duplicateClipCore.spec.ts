@@ -4,6 +4,7 @@ import { duplicateClipCore } from '../duplicateClipCore';
 
 const mocks = vi.hoisted(() => ({
     getTrackState: vi.fn(),
+    getNextClipId: vi.fn(),
     addClip: vi.fn(),
     duplicateClipAutomation: vi.fn(),
     duplicateClipNotes: vi.fn(),
@@ -14,6 +15,10 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock('../../../repositories/track/getTrackState', () => ({
     getTrackState: mocks.getTrackState,
+}));
+
+vi.mock('../../../repositories/clipIdCounter', () => ({
+    getNextClipId: mocks.getNextClipId,
 }));
 
 vi.mock('../addClip', () => ({
@@ -40,6 +45,7 @@ vi.mock('../../../stores/resolveEligibleClipWriteTarget', () => ({
 describe('duplicateClipCore', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        mocks.getNextClipId.mockReturnValue('c2');
         mocks.getWarpState.mockReturnValue({
             enabled: false,
             markers: [],
@@ -154,6 +160,8 @@ describe('duplicateClipCore', () => {
             computeStartBeat: (clip) => clip.endBeat,
         });
 
+        expect(mocks.getNextClipId).toHaveBeenCalledOnce();
+        expect(mocks.addClip).toHaveBeenCalledWith(expect.objectContaining({ id: 'c2' }));
         expect(mocks.setWarpState).toHaveBeenCalledWith(
             'c2',
             expect.objectContaining({
@@ -208,6 +216,45 @@ describe('duplicateClipCore', () => {
 
         expect(computeStartBeat).not.toHaveBeenCalled();
         expect(mocks.addClip).not.toHaveBeenCalled();
+    });
+
+    it('rejects a generated target id collision before computing or publishing', () => {
+        const computeStartBeat = vi.fn(() => 4);
+        const source = {
+            id: 'c1',
+            trackId: 't1',
+            name: 'Take',
+            startBeat: 0,
+            endBeat: 4,
+            type: 'audio' as const,
+        };
+        mocks.getNextClipId.mockReturnValue('clip-collision');
+        mocks.resolveEligibleClipWriteTarget.mockImplementation((input: { clipId?: string; trackId?: string }) => {
+            if (input.clipId === 'c1') {
+                return { status: 'eligible', clipId: 'c1', trackId: 't1' };
+            }
+            if (input.trackId === 't1') {
+                return { status: 'eligible', trackId: 't1' };
+            }
+            if (input.clipId === 'clip-collision') {
+                return { status: 'eligible', clipId: 'clip-collision', trackId: 't1' };
+            }
+            return { status: 'missing' };
+        });
+        mocks.getTrackState.mockReturnValue({ tracks: [{ id: 't1', clips: [source] }] });
+        mocks.addClip.mockReturnValue({ id: 'clip-collision', type: 'audio' });
+
+        expect(duplicateClipCore({ clipId: 'c1', computeStartBeat })).toBe(false);
+
+        expect(mocks.getNextClipId).toHaveBeenCalledOnce();
+        expect(mocks.resolveEligibleClipWriteTarget).toHaveBeenCalledWith({ clipId: 'clip-collision' });
+        expect(mocks.getTrackState).not.toHaveBeenCalled();
+        expect(computeStartBeat).not.toHaveBeenCalled();
+        expect(mocks.addClip).not.toHaveBeenCalled();
+        expect(mocks.duplicateClipAutomation).not.toHaveBeenCalled();
+        expect(mocks.getWarpState).not.toHaveBeenCalled();
+        expect(mocks.setWarpState).not.toHaveBeenCalled();
+        expect(mocks.duplicateClipNotes).not.toHaveBeenCalled();
     });
 
     it('duplicates MIDI ownership only after the clip add succeeds', () => {

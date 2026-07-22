@@ -2,6 +2,7 @@ import { duplicateClipAutomation } from '#/modules/Automation/useCases';
 import { duplicateClipNotes } from '#/modules/MIDI/useCases';
 
 import { type Clip } from '../../models/Track';
+import { getNextClipId } from '../../repositories/clipIdCounter';
 import { getTrackState } from '../../repositories/track/getTrackState';
 import { resolveEligibleClipWriteTarget } from '../../stores/resolveEligibleClipWriteTarget';
 import { getWarpState, setWarpState } from '../../stores/warpStates';
@@ -37,14 +38,14 @@ export function duplicateClipCore(
         return false;
     }
 
-    if (targetClipId !== undefined) {
-        if (targetClipId.length === 0) {
-            return false;
-        }
-        const existingTarget = resolveEligibleClipWriteTarget({ clipId: targetClipId });
-        if (existingTarget.status !== 'missing') {
-            return false;
-        }
+    const effectiveTargetClipId = targetClipId ?? getNextClipId();
+    if (effectiveTargetClipId.length === 0) {
+        return false;
+    }
+
+    const existingTarget = resolveEligibleClipWriteTarget({ clipId: effectiveTargetClipId });
+    if (existingTarget.status !== 'missing') {
+        return false;
     }
 
     const state = getTrackState();
@@ -61,7 +62,7 @@ export function duplicateClipCore(
     const duration = clip.endBeat - clip.startBeat;
     const startBeat = computeStartBeat(clip);
     const newClip = addClip({
-        id: targetClipId,
+        id: effectiveTargetClipId,
         trackId: track.id,
         startBeat,
         endBeat: startBeat + duration,
