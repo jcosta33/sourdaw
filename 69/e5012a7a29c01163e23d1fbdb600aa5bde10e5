@@ -1,0 +1,25 @@
+crates/daw-engine/src/plugin_slot.rs
+  s_d877e61e99e341::t_f5c70fabb274b6 62-83
+crates/daw-engine/src/scheduler.rs
+  s_d877e61e99e341::t_87907f482a4f9a 258,260
+src-tauri/src/commands/crumbs.rs
+  s_d877e61e99e341::t_ac9ef23958bd76 167-180,186-187
+src-tauri/src/host/native_bridge.rs
+  s_d877e61e99e341::t_edb3c37d0d115a 864,875,898-960,975-976,989-995,1001,1003,1020-1023,1025-1027,1030,1033-1068
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "69e5012a7a29c01163e23d1fbdb600aa5bde10e5",
+  "prompts": {},
+  "sessions": {
+    "s_d877e61e99e341": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8743-b2f6-7332-b9c1-aade3d23381b",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
