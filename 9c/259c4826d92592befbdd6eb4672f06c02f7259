@@ -1,0 +1,21 @@
+src/modules/Transport/useCases/tempoMap/__tests__/prepareTimelineMapTimeOperation.spec.ts
+  s_c2fca615e81f34::t_e91c8b57dad126 67-69,84,117,202-226,239,244,264-265,272-273,300-301
+src/modules/Transport/useCases/tempoMap/prepareTimelineMapTimeOperation.ts
+  s_c2fca615e81f34::t_4d0ba5d3d7d019 83-92,357
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "9c259c4826d92592befbdd6eb4672f06c02f7259",
+  "prompts": {},
+  "sessions": {
+    "s_c2fca615e81f34": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f74e9-e1c5-7142-85d2-4c577b3973c0",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
