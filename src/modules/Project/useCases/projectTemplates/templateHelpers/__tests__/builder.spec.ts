@@ -19,9 +19,14 @@ vi.mock('#/modules/Arrangement/useCases', () => ({
     })),
     resetArrangementStoresForProject: arrangementMocks.resetArrangementStoresForProject,
 }));
-const midiMocks = vi.hoisted(() => ({ hydrateGrooveTemplates: vi.fn() }));
-vi.mock('#/modules/MIDI/stores', () => ({ chordTrackStore: { value: null, set: vi.fn() } }));
-vi.mock('#/modules/MIDI/useCases', () => ({ hydrateGrooveTemplates: midiMocks.hydrateGrooveTemplates }));
+const midiMocks = vi.hoisted(() => ({
+    hydrateGrooveTemplates: vi.fn(),
+    replaceChordTrackState: vi.fn(),
+}));
+vi.mock('#/modules/MIDI/useCases', () => ({
+    hydrateGrooveTemplates: midiMocks.hydrateGrooveTemplates,
+    replaceChordTrackState: midiMocks.replaceChordTrackState,
+}));
 vi.mock('#/modules/Routing/useCases', () => ({ addSidechainRoute: vi.fn() }));
 vi.mock('#/modules/Transport/stores', () => ({
     transportStore: { value: null, set: vi.fn() },
@@ -60,6 +65,7 @@ describe('template builder', () => {
         expect(result).toBeDefined();
         expect(result.id).toBeDefined();
         expect(arrangementMocks.resetArrangementStoresForProject).toHaveBeenCalledOnce();
+        expect(midiMocks.replaceChordTrackState).toHaveBeenCalledWith({ enabled: false, events: [] });
         expect(midiMocks.hydrateGrooveTemplates).toHaveBeenCalledWith({ templates: [], assignments: [] });
     });
 });
