@@ -1,0 +1,22 @@
+src/modules/MIDI/useCases/midiNoteCrud/__tests__/prepareClipMidiShiftTransaction.spec.ts
+  s_c2fca615e81f34::t_3da976aa94d931 322-361
+src/modules/MIDI/useCases/midiNoteCrud/prepareClipMidiShiftTransaction.ts
+  s_c2fca615e81f34::t_a175981f13bed4 8,41-44,209-219,221,239-249
+  s_c2fca615e81f34::t_1fe946aef51f79 250
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "ce145fc9e857f59f9329161fe5f7a8a6f2144f06",
+  "prompts": {},
+  "sessions": {
+    "s_c2fca615e81f34": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f74e9-e1c5-7142-85d2-4c577b3973c0",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
