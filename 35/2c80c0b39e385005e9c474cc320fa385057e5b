@@ -1,0 +1,27 @@
+src/modules/MIDI/useCases/midiNoteCrud/prepareMidiTimeShiftTransaction.ts
+  s_c2fca615e81f34::t_a367cae99d85f2 1-21,85,121,132,144,167,181,184,274-275,278,350,372,376,382,405-406,414-416,435-436,439-442,445-448
+  s_c2fca615e81f34::t_749d74904f8c22 22-84,86-120,122-131,133-143,145-166,168-180,182-183,185-273,276-277,279-349,351-371,373-375,377-381,383-404,407-413,417-434,437-438,443-444
+src/modules/MIDI/useCases/index.ts
+  s_c2fca615e81f34::t_5175efefa6548e 93
+src/modules/MIDI/useCases/midiNoteCrud/__tests__/prepareMidiTimeShiftTransaction.spec.ts
+  s_c2fca615e81f34::t_75d388dd7245a2 1-70,72-196,198-345,347,349-726
+  s_c2fca615e81f34::t_5175efefa6548e 346,348
+  s_c2fca615e81f34::t_b77fe21cb947e1 71
+  s_c2fca615e81f34::t_65e68c0a2fd070 197
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "352c80c0b39e385005e9c474cc320fa385057e5b",
+  "prompts": {},
+  "sessions": {
+    "s_c2fca615e81f34": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f74e9-e1c5-7142-85d2-4c577b3973c0",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
