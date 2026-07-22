@@ -1,11 +1,26 @@
 import { setNotesForClip } from '#/modules/MIDI/useCases';
 
+import { getNextClipId } from '../../repositories/clipIdCounter';
 import { getTrackState } from '../../repositories/track/getTrackState';
 import { updateTrack } from '../../repositories/track/updateTrack';
 import { resolveEligibleClipWriteTarget } from '../../stores/resolveEligibleClipWriteTarget';
 import { type Clip } from '../../stores/trackStore';
 
 export type VariationNote = { pitch: number; startBeat: number; duration: number; velocity: number };
+
+type StagedNote = {
+    id: string;
+    pitch: number;
+    startBeat: number;
+    duration: number;
+    velocity: number;
+    probability: number;
+};
+
+type StagedVariation = {
+    clip: Clip;
+    notes: StagedNote[];
+};
 
 function clamp(value: number, min: number, max: number): number {
     return Math.min(max, Math.max(min, value));
@@ -66,6 +81,68 @@ function normalizeVariationData(value: unknown): VariationNote[][] | null {
     return normalizedVariations;
 }
 
+function addClipIdsToSet(value: unknown, clipIds: Set<string>): boolean {
+    if (!Array.isArray(value)) {
+        return false;
+    }
+
+    for (const candidate of value) {
+        if (candidate === null || typeof candidate !== 'object') {
+            return false;
+        }
+
+        const clipId: unknown = Reflect.get(candidate, 'id');
+        if (typeof clipId !== 'string' || clipId.length === 0) {
+            return false;
+        }
+        clipIds.add(clipId);
+    }
+
+    return true;
+}
+
+function collectProjectClipIds(value: unknown): Set<string> | null {
+    if (!Array.isArray(value)) {
+        return null;
+    }
+
+    const clipIds = new Set<string>();
+    try {
+        for (const track of value) {
+            if (track === null || typeof track !== 'object') {
+                return null;
+            }
+            if (!addClipIdsToSet(Reflect.get(track, 'clips'), clipIds)) {
+                return null;
+            }
+
+            const alternatives: unknown = Reflect.get(track, 'alternatives');
+            if (!Array.isArray(alternatives)) {
+                return null;
+            }
+            for (const alternative of alternatives) {
+                if (alternative === null || typeof alternative !== 'object') {
+                    return null;
+                }
+                if (!addClipIdsToSet(Reflect.get(alternative, 'clips'), clipIds)) {
+                    return null;
+                }
+            }
+        }
+    } catch {
+        return null;
+    }
+
+    return clipIds;
+}
+
+function hasValidSourceGeometry(clip: Clip): boolean {
+    if (!Number.isFinite(clip.startBeat) || !Number.isFinite(clip.endBeat)) {
+        return false;
+    }
+    return clip.endBeat > clip.startBeat;
+}
+
 export function createAlternativeClips(originalClipId: string, variationsData: VariationNote[][]): boolean {
     const normalizedVariations = normalizeVariationData(variationsData);
     if (!normalizedVariations) {
@@ -89,39 +166,76 @@ export function createAlternativeClips(originalClipId: string, variationsData: V
         return false;
     }
 
+    if (!hasValidSourceGeometry(originalClip)) {
+        return false;
+    }
+
+    const occupiedClipIds = collectProjectClipIds(state.tracks);
+    if (!occupiedClipIds) {
+        return false;
+    }
+
     const clipDuration = originalClip.endBeat - originalClip.startBeat;
-    const newClips: Clip[] = [];
+    const stagedNoteIds = new Set<string>();
+    const stagedVariations: StagedVariation[] = [];
 
     let currentStart = originalClip.endBeat;
     for (const [index, variation] of normalizedVariations.entries()) {
-        const newClipId = `clip-var-${crypto.randomUUID().slice(0, 8)}`;
+        const currentEnd = currentStart + clipDuration;
+        if (!Number.isFinite(currentStart) || !Number.isFinite(currentEnd)) {
+            return false;
+        }
 
-        const globalNotes = variation.map((node) => ({
-            id: `note-${crypto.randomUUID().slice(0, 8)}`,
-            pitch: node.pitch,
-            startBeat: currentStart + node.startBeat,
-            duration: node.duration,
-            velocity: node.velocity,
-            probability: 100,
-        }));
+        const newClipId = getNextClipId();
+        if (newClipId.length === 0 || occupiedClipIds.has(newClipId)) {
+            return false;
+        }
+        occupiedClipIds.add(newClipId);
 
-        setNotesForClip(newClipId, globalNotes);
+        const globalNotes: StagedNote[] = [];
+        for (const node of variation) {
+            const noteStartBeat = currentStart + node.startBeat;
+            if (!Number.isFinite(noteStartBeat)) {
+                return false;
+            }
 
-        newClips.push({
-            ...originalClip,
-            id: newClipId,
-            name: `${originalClip.name} (Var ${String(index + 1)})`,
-            startBeat: currentStart,
-            endBeat: currentStart + clipDuration,
-            muted: true,
+            const noteId = `note-${crypto.randomUUID()}`;
+            if (stagedNoteIds.has(noteId)) {
+                return false;
+            }
+            stagedNoteIds.add(noteId);
+            globalNotes.push({
+                id: noteId,
+                pitch: node.pitch,
+                startBeat: noteStartBeat,
+                duration: node.duration,
+                velocity: node.velocity,
+                probability: 100,
+            });
+        }
+
+        stagedVariations.push({
+            clip: {
+                ...originalClip,
+                id: newClipId,
+                name: `${originalClip.name} (Var ${String(index + 1)})`,
+                startBeat: currentStart,
+                endBeat: currentEnd,
+                muted: true,
+            },
+            notes: globalNotes,
         });
 
-        currentStart += clipDuration;
+        currentStart = currentEnd;
+    }
+
+    for (const variation of stagedVariations) {
+        setNotesForClip(variation.clip.id, variation.notes);
     }
 
     updateTrack(targetTrack.id, (time) => ({
         ...time,
-        clips: [...time.clips, ...newClips],
+        clips: [...time.clips, ...stagedVariations.map((variation) => variation.clip)],
     }));
 
     return true;

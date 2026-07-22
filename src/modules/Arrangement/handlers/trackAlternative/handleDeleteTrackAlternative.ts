@@ -5,6 +5,8 @@ import { getTrackStoreState } from '../../useCases/getTrackStoreState';
 import { setTrackStoreState } from '../../useCases/setTrackStoreState';
 import { toHandlerExecutionResult } from '../toHandlerExecutionResult';
 
+import { isPromotableRuntimeClipCollection } from './isPromotableRuntimeClipCollection';
+
 type TrackState = NonNullable<ReturnType<typeof getTrackStoreState>>;
 type Track = TrackState['tracks'][number];
 type TrackAlternative = Track['alternatives'][number];
@@ -30,45 +32,6 @@ function isValidAlternativeCollection(value: unknown): value is TrackAlternative
         }
     } catch {
         return false;
-    }
-
-    return true;
-}
-
-type ValidFallbackClipsInput = {
-    value: unknown;
-    targetTrackId: string;
-    tracks: TrackState['tracks'];
-};
-
-function isValidFallbackClips({ value, targetTrackId, tracks }: ValidFallbackClipsInput): boolean {
-    if (!Array.isArray(value)) {
-        return false;
-    }
-
-    const clipIds = new Set<string>();
-    for (const entry of value) {
-        const candidate: unknown = entry;
-        if (
-            candidate === null ||
-            typeof candidate !== 'object' ||
-            !('id' in candidate) ||
-            !('trackId' in candidate) ||
-            typeof candidate.id !== 'string' ||
-            candidate.id.length === 0 ||
-            candidate.trackId !== targetTrackId ||
-            clipIds.has(candidate.id)
-        ) {
-            return false;
-        }
-
-        const conflictsWithAnotherTrack = tracks.some(
-            (track) => track.id !== targetTrackId && track.clips.some((clip) => clip.id === candidate.id)
-        );
-        if (conflictsWithAnotherTrack) {
-            return false;
-        }
-        clipIds.add(candidate.id);
     }
 
     return true;
@@ -118,10 +81,11 @@ export const handleDeleteTrackAlternative = createHandler<'deleteTrackAlternativ
             const fallbackAlternative = filteredAlternatives[0];
             if (
                 !fallbackAlternative ||
-                !isValidFallbackClips({
+                !isPromotableRuntimeClipCollection({
                     value: fallbackAlternative.clips,
                     targetTrackId: targetTrack.id,
                     tracks: state.tracks,
+                    source: { kind: 'alternative', trackId: targetTrack.id, alternativeId: fallbackAlternative.id },
                 })
             ) {
                 return toHandlerExecutionResult(false);

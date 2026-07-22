@@ -1,6 +1,11 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+import { ClipDummy } from '../../../__tests__/ClipDummy';
 import { handleDeleteTrackAlternative } from '../handleDeleteTrackAlternative';
+
+function makeClip(id: string, trackId = 't1') {
+    return ClipDummy.create({ id, trackId });
+}
 
 const mocks = vi.hoisted(() => ({
     getTrackStoreState: vi.fn(),
@@ -56,15 +61,15 @@ describe('handleDeleteTrackAlternative', () => {
     });
 
     it('falls back to another alternative if deleting the active one', () => {
-        const alt2Clips = [{ id: 'c2', trackId: 't1' }];
+        const alt2Clips = [makeClip('c2')];
         mocks.getTrackStoreState.mockReturnValue({
             tracks: [
                 {
                     id: 't1',
                     activeAlternativeId: 'alt1',
-                    clips: [{ id: 'c1', trackId: 't1' }],
+                    clips: [makeClip('c1')],
                     alternatives: [
-                        { id: 'alt1', clips: [{ id: 'c1', trackId: 't1' }] },
+                        { id: 'alt1', clips: [makeClip('c1')] },
                         { id: 'alt2', clips: alt2Clips },
                     ],
                 },
@@ -88,7 +93,7 @@ describe('handleDeleteTrackAlternative', () => {
     });
 
     it('rejects a malformed fallback clip when deleting the active alternative', () => {
-        const fallbackClips = [{ id: 'c2', trackId: 't1' }];
+        const fallbackClips = [makeClip('c2')];
         Object.defineProperty(fallbackClips, 0, { value: null });
         mocks.getTrackStoreState.mockReturnValue({
             tracks: [
@@ -113,16 +118,54 @@ describe('handleDeleteTrackAlternative', () => {
         expect(mocks.setTrackStoreState).not.toHaveBeenCalled();
     });
 
+    it.each([
+        [
+            'a missing required field',
+            () => {
+                const clip = makeClip('partial');
+                Reflect.deleteProperty(clip, 'gain');
+                return clip;
+            },
+        ],
+        ['a non-finite required field', () => makeClip('nonfinite', 't1')],
+    ] as const)('rejects fallback clips with %s', (_label, createInvalidClip) => {
+        const invalidClip = createInvalidClip();
+        if (invalidClip.id === 'nonfinite') {
+            invalidClip.endBeat = Number.POSITIVE_INFINITY;
+        }
+        mocks.getTrackStoreState.mockReturnValue({
+            tracks: [
+                {
+                    id: 't1',
+                    activeAlternativeId: 'alt1',
+                    clips: [makeClip('c1')],
+                    alternatives: [
+                        { id: 'alt1', clips: [] },
+                        { id: 'alt2', clips: [invalidClip] },
+                    ],
+                },
+            ],
+        });
+
+        const result = handleDeleteTrackAlternative.execute({
+            type: 'deleteTrackAlternative',
+            payload: { trackId: 't1', alternativeId: 'alt1' },
+        });
+
+        expect(result).toEqual({ status: 'no-write' });
+        expect(mocks.setTrackStoreState).not.toHaveBeenCalled();
+    });
+
     it('rejects a foreign-owned fallback clip when deleting the active alternative', () => {
         mocks.getTrackStoreState.mockReturnValue({
             tracks: [
                 {
                     id: 't1',
                     activeAlternativeId: 'alt1',
-                    clips: [{ id: 'c1', trackId: 't1' }],
+                    clips: [makeClip('c1')],
                     alternatives: [
                         { id: 'alt1', clips: [] },
-                        { id: 'alt2', clips: [{ id: 'c2', trackId: 't2' }] },
+                        { id: 'alt2', clips: [makeClip('c2', 't2')] },
                     ],
                 },
             ],
@@ -143,15 +186,12 @@ describe('handleDeleteTrackAlternative', () => {
                 {
                     id: 't1',
                     activeAlternativeId: 'alt1',
-                    clips: [{ id: 'c1', trackId: 't1' }],
+                    clips: [makeClip('c1')],
                     alternatives: [
                         { id: 'alt1', clips: [] },
                         {
                             id: 'alt2',
-                            clips: [
-                                { id: 'duplicate', trackId: 't1' },
-                                { id: 'duplicate', trackId: 't1' },
-                            ],
+                            clips: [makeClip('duplicate'), makeClip('duplicate')],
                         },
                     ],
                 },
@@ -173,16 +213,16 @@ describe('handleDeleteTrackAlternative', () => {
                 {
                     id: 't1',
                     activeAlternativeId: 'alt1',
-                    clips: [{ id: 'c1', trackId: 't1' }],
+                    clips: [makeClip('c1')],
                     alternatives: [
                         { id: 'alt1', clips: [] },
-                        { id: 'alt2', clips: [{ id: 'occupied', trackId: 't1' }] },
+                        { id: 'alt2', clips: [makeClip('occupied')] },
                     ],
                 },
                 {
                     id: 't2',
                     activeAlternativeId: 'other-alt',
-                    clips: [{ id: 'occupied', trackId: 't2' }],
+                    clips: [makeClip('occupied', 't2')],
                     alternatives: [{ id: 'other-alt', clips: [] }],
                 },
             ],

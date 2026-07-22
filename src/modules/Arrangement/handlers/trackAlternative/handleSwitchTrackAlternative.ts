@@ -5,6 +5,8 @@ import { getTrackStoreState } from '../../useCases/getTrackStoreState';
 import { setTrackStoreState } from '../../useCases/setTrackStoreState';
 import { toHandlerExecutionResult } from '../toHandlerExecutionResult';
 
+import { isPromotableRuntimeClipCollection } from './isPromotableRuntimeClipCollection';
+
 type TrackState = NonNullable<ReturnType<typeof getTrackStoreState>>;
 type Track = TrackState['tracks'][number];
 type TrackAlternative = Track['alternatives'][number];
@@ -27,50 +29,6 @@ function isValidAlternativeCollection(value: unknown): value is TrackAlternative
                 return false;
             }
             alternativeIds.add(id);
-        }
-    } catch {
-        return false;
-    }
-
-    return true;
-}
-
-type ValidAlternativeClipsInput = {
-    value: unknown;
-    targetTrackId: string;
-    tracks: TrackState['tracks'];
-};
-
-function isValidAlternativeClips({ value, targetTrackId, tracks }: ValidAlternativeClipsInput): boolean {
-    if (!Array.isArray(value)) {
-        return false;
-    }
-
-    const clipIds = new Set<string>();
-    try {
-        for (const candidate of value) {
-            if (candidate === null || typeof candidate !== 'object') {
-                return false;
-            }
-
-            const clipId: unknown = Reflect.get(candidate, 'id');
-            const clipTrackId: unknown = Reflect.get(candidate, 'trackId');
-            if (
-                typeof clipId !== 'string' ||
-                clipId.length === 0 ||
-                clipTrackId !== targetTrackId ||
-                clipIds.has(clipId)
-            ) {
-                return false;
-            }
-
-            const conflictsWithAnotherTrack = tracks.some(
-                (track) => track.id !== targetTrackId && track.clips.some((clip) => clip.id === clipId)
-            );
-            if (conflictsWithAnotherTrack) {
-                return false;
-            }
-            clipIds.add(clipId);
         }
     } catch {
         return false;
@@ -120,15 +78,21 @@ export const handleSwitchTrackAlternative = createHandler<'switchTrackAlternativ
             return toHandlerExecutionResult(false);
         }
         if (
-            !isValidAlternativeClips({
+            !isPromotableRuntimeClipCollection({
                 value: targetTrack.clips,
                 targetTrackId: targetTrack.id,
                 tracks: state.tracks,
+                source: {
+                    kind: 'active',
+                    trackId: targetTrack.id,
+                    activeAlternativeId: targetTrack.activeAlternativeId,
+                },
             }) ||
-            !isValidAlternativeClips({
+            !isPromotableRuntimeClipCollection({
                 value: targetAlternative.clips,
                 targetTrackId: targetTrack.id,
                 tracks: state.tracks,
+                source: { kind: 'alternative', trackId: targetTrack.id, alternativeId: targetAlternative.id },
             })
         ) {
             return toHandlerExecutionResult(false);
