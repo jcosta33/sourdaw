@@ -204,6 +204,14 @@ export async function scheduleTrackClips({
         sampleRate: offlineCtx.sampleRate,
         changes,
     }).startSeconds;
+    const projectAutomationBeatToSeconds = (beat: number) =>
+        projectPpqEndpoints({
+            startPpq: beat,
+            endPpq: beat,
+            defaultTempo,
+            sampleRate: offlineCtx.sampleRate,
+            changes,
+        }).startSeconds;
     const compensationDelay = getCompensationDelay(track.id);
 
     const automationLanes = automationStore.value?.lanes ?? [];
@@ -241,7 +249,8 @@ export async function scheduleTrackClips({
         durationSeconds,
         defaultTempo,
         changes,
-        regionStartSec
+        regionStartSec,
+        projectAutomationBeatToSeconds
     );
 
     if (track.freezeState.status === 'frozen' && track.freezeState.frozenBufferId) {

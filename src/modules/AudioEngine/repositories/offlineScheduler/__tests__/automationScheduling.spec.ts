@@ -171,8 +171,10 @@ describe('scheduleAutomationOnParam', () => {
             1
         );
 
-        expect(param.setValueAtTime).toHaveBeenCalledWith(0.5, 0);
-        expect(param.linearRampToValueAtTime).toHaveBeenCalledWith(0.75, 0.5);
+        expect(param.setValueAtTime.mock.calls[0]?.[0]).toBeCloseTo(0.5, 10);
+        expect(param.setValueAtTime.mock.calls[0]?.[1]).toBe(0);
+        expect(param.linearRampToValueAtTime.mock.calls.at(-1)?.[0]).toBeCloseTo(0.75, 10);
+        expect(param.linearRampToValueAtTime.mock.calls.at(-1)?.[1]).toBeCloseTo(0.5, 10);
     });
 
     it('samples exponential curves only inside the rendered region', () => {
@@ -189,8 +191,48 @@ describe('scheduleAutomationOnParam', () => {
             64
         );
 
+        expect(param.setValueAtTime.mock.calls[0]?.[0]).toBeCloseTo(128 / 130, 10);
+        expect(param.setValueAtTime.mock.calls[0]?.[1]).toBe(0);
         expect(param.linearRampToValueAtTime.mock.calls.length).toBeLessThanOrEqual(101);
         expect(param.linearRampToValueAtTime).toHaveBeenLastCalledWith(1, 1);
+    });
+
+    it('uses the canonical beat projector at both cropped boundaries', () => {
+        const param = makeParam();
+        scheduleAutomationOnParam(
+            param as unknown as AudioParam,
+            [
+                { beat: 0, value: 0, curve: 'linear', tension: 0 },
+                { beat: 4, value: 1, curve: 'linear', tension: 0 },
+            ],
+            5,
+            120,
+            [],
+            4,
+            (beat) => beat * beat
+        );
+
+        expect(param.setValueAtTime.mock.calls[0]?.[0]).toBeCloseTo(0.5, 10);
+        expect(param.setValueAtTime.mock.calls[0]?.[1]).toBe(0);
+        expect(param.linearRampToValueAtTime.mock.calls.at(-1)?.[0]).toBeCloseTo(0.75, 10);
+        expect(param.linearRampToValueAtTime.mock.calls.at(-1)?.[1]).toBeCloseTo(5, 10);
+    });
+
+    it('collapses equal-beat points with the last value winning', () => {
+        const param = makeParam();
+        scheduleAutomationOnParam(
+            param as unknown as AudioParam,
+            [
+                { beat: 0, value: 0, curve: 'linear', tension: 0 },
+                { beat: 2, value: 0.5, curve: 'linear', tension: 0 },
+                { beat: 2, value: 0.9, curve: 'linear', tension: 0 },
+            ],
+            1,
+            120,
+            []
+        );
+
+        expect(param.linearRampToValueAtTime).toHaveBeenLastCalledWith(0.9, 1);
     });
 
     it('holds (step) a value rather than ramping when the curve is step', () => {

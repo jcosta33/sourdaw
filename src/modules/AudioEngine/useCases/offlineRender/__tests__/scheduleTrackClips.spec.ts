@@ -362,7 +362,10 @@ describe('scheduleTrackClips — MIDI plugin-delay compensation', () => {
     it('threads a nonzero render-region offset into automation scheduling', async () => {
         await runSchedule({ regionStartBeat: 128 });
 
-        expect(mocks.scheduleTrackAutomation.mock.calls.at(-1)?.at(-1)).toBe(64);
+        const call = mocks.scheduleTrackAutomation.mock.calls.at(-1);
+        expect(call?.at(-2)).toBe(64);
+        const projectBeat = call?.at(-1) as ((beat: number) => number) | undefined;
+        expect(projectBeat?.(130)).toBe(65);
     });
 
     it('shifts instrument note on/off times by the track compensation delay', async () => {
