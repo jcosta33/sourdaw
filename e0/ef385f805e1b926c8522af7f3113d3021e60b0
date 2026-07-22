@@ -1,0 +1,51 @@
+src/modules/AudioEngine/repositories/offlineScheduler/__tests__/scheduleAutomationOnParam.spec.ts
+  s_92b905bf82da5c::t_3791aa7e801be5 33,49,69,89,107,124
+src/modules/AudioEngine/repositories/offlineScheduler/automationScheduling.ts
+  s_92b905bf82da5c::t_36478bf576fcf7 47-55,60-68,85-93
+src/modules/AudioEngine/repositories/offlineScheduler/interpolateCurveValue.ts
+  s_92b905bf82da5c::t_b1f93e9c72f99a 1-98
+src/modules/AudioEngine/useCases/offlineRender/__tests__/wireOfflineSidechainRoutes.spec.ts
+  s_92b905bf82da5c::t_c1a3887edf7ba0 5
+src/modules/AudioEngine/useCases/offlineRender/scheduleTrackClips.ts
+  s_92b905bf82da5c::t_e45640e30b081e 220
+src/modules/AudioEngine/useCases/offlineRender/wireOfflineSidechainRoutes.ts
+  s_92b905bf82da5c::t_0c0bcda7a53b83 33-36
+src/modules/AudioEngine/useCases/renderOffline.ts
+  s_92b905bf82da5c::t_23a79b3b9175f8 28
+src/modules/AudioEngine/repositories/offlineScheduler/__tests__/curveConformance.spec.ts
+  s_6bd5b17aa22c90::t_c308862613a6c6 6
+src/modules/AudioEngine/repositories/offlineScheduler/scheduleAutomationOnParam.ts
+  s_51b7271278858f::t_6b4fd788f00680 4-5
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "e0ef385f805e1b926c8522af7f3113d3021e60b0",
+  "prompts": {},
+  "sessions": {
+    "s_51b7271278858f": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8b69-4f08-77a2-aa10-c51bc5eb5864",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_6bd5b17aa22c90": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8be4-15fa-7091-9f46-0c9fc053b0e0",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_92b905bf82da5c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "fc4c3b22-f57f-4fa4-a234-65db0d062ff2",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
