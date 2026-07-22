@@ -182,7 +182,8 @@ const validators = {
         isObj(param) &&
         isString(param.trackId) &&
         isString(param.parameterId) &&
-        (!Object.hasOwn(param, 'laneId') || isNonEmptyString(param.laneId)),
+        isString(param.parameterName) &&
+        !Object.hasOwn(param, 'laneId'),
     addAutomationPoint: (param): param is PayloadOf<'addAutomationPoint'> =>
         isObj(param) && isString(param.laneId) && isNumber(param.beat) && isNumber(param.value),
     removeAutomationPoint: (param): param is PayloadOf<'removeAutomationPoint'> =>
@@ -353,7 +354,6 @@ const validators = {
     quantizeAutomation: 'unchecked',
     // Internal inverse-only actions (emitted by handlers' describe(), never by the AI).
     restoreAutomationLanePoints: 'unchecked',
-    removeAutomationLane: 'unchecked',
 
     // Preset / template
     loadPreset: 'unchecked',

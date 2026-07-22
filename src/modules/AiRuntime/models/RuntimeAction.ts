@@ -122,12 +122,7 @@ export type RuntimeAction =
     | { type: 'renameSection'; payload: { sectionId: string; name: string } }
     | {
           type: 'addAutomationLane';
-          payload: { trackId: string; parameterId: string; parameterName: string; laneId?: string };
-      }
-    | {
-          /** Inverse of `addAutomationLane`, keyed by its preallocated id. Mirrors Command's AppAction unions. */
-          type: 'removeAutomationLane';
-          payload: { laneId: string };
+          payload: { trackId: string; parameterId: string; parameterName: string };
       }
     | {
           type: 'addAutomationPoint';

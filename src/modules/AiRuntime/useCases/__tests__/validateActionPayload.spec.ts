@@ -1,7 +1,8 @@
-import { describe, it, expect } from 'vitest';
+import { describe, expect, expectTypeOf, it } from 'vitest';
 
 import { type RuntimeAction, type RuntimeActionType } from '../../models/RuntimeAction';
 import { PAYLOAD_VALIDATORS } from '../validateActionPayload';
+import { validateActions } from '../validateActions';
 
 type PayloadOf<ActionType extends RuntimeActionType> =
     Extract<RuntimeAction, { type: ActionType }> extends { payload: infer Payload } ? Payload : undefined;
@@ -165,7 +166,7 @@ describe('validateActionPayload / PAYLOAD_VALIDATORS', () => {
     });
 
     describe('addAutomationLane', () => {
-        it('should accept an absent or non-empty laneId and reject malformed replay ids', () => {
+        it('should accept only the public runtime payload', () => {
             const guard = PAYLOAD_VALIDATORS.addAutomationLane;
             expect(guard).not.toBe('unchecked');
             if (guard === 'unchecked') {
@@ -177,23 +178,37 @@ describe('validateActionPayload / PAYLOAD_VALIDATORS', () => {
                 parameterId: 'gain',
                 parameterName: 'Gain',
             };
-            const replayPayload: Extract<RuntimeAction, { type: 'addAutomationLane' }>['payload'] = {
-                ...payload,
-                laneId: 'auto-lane-1',
-            };
             expect(guard(payload)).toBe(true);
-            expect(guard(replayPayload)).toBe(true);
+            expect(guard({ ...payload, laneId: 'auto-lane-1' })).toBe(false);
             expect(guard({ ...payload, laneId: '' })).toBe(false);
             expect(guard({ ...payload, laneId: 1 })).toBe(false);
             expect(guard({ ...payload, laneId: null })).toBe(false);
         });
 
-        it('should type the inverse as an exact lane-id removal', () => {
-            const inverse: Extract<RuntimeAction, { type: 'removeAutomationLane' }> = {
-                type: 'removeAutomationLane',
-                payload: { laneId: 'auto-lane-1' },
-            };
-            expect(inverse.payload).toEqual({ laneId: 'auto-lane-1' });
+        it('should require a string parameterName', () => {
+            const guard = PAYLOAD_VALIDATORS.addAutomationLane;
+            expect(guard).not.toBe('unchecked');
+            if (guard === 'unchecked') {
+                return;
+            }
+
+            const payload = { trackId: 'track-1', parameterId: 'gain' };
+            expect(guard(payload)).toBe(false);
+            expect(guard({ ...payload, parameterName: 1 })).toBe(false);
+            expect(guard({ ...payload, parameterName: null })).toBe(false);
+        });
+
+        it('should reject command-only automation identities from RuntimeAction', () => {
+            type AddAutomationLanePayload = Extract<RuntimeAction, { type: 'addAutomationLane' }>['payload'];
+            type AddAutomationLaneHasLaneId = 'laneId' extends keyof AddAutomationLanePayload ? true : false;
+            type RemoveAutomationLaneAction = Extract<RuntimeAction, { type: 'removeAutomationLane' }>;
+            const inverse = [
+                { type: 'removeAutomationLane', payload: { laneId: 'auto-lane-1' } },
+            ] as unknown as RuntimeAction[];
+
+            expect(validateActions(inverse)).toEqual([]);
+            expectTypeOf<AddAutomationLaneHasLaneId>().toEqualTypeOf<false>();
+            expectTypeOf<RemoveAutomationLaneAction>().toEqualTypeOf<never>();
         });
     });
 
@@ -235,6 +250,10 @@ describe('validateActionPayload / PAYLOAD_VALIDATORS', () => {
 
     it('should not expose the internal punch-region inverse to model payload validation', () => {
         expect(PAYLOAD_VALIDATORS).not.toHaveProperty('restorePunchRegion');
+    });
+
+    it('should not expose the internal automation-lane inverse to model payload validation', () => {
+        expect(PAYLOAD_VALIDATORS).not.toHaveProperty('removeAutomationLane');
     });
 
     describe('joinCollabSession', () => {
