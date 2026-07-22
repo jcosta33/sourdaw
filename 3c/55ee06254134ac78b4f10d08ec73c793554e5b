@@ -1,0 +1,44 @@
+src/modules/TimelineEditor/presentations/views/AutomationView/TrackAutomationSection.tsx
+  s_ac9b259eab20ba::t_15da9d756d6774 92-93
+src/modules/AudioEngine/repositories/offlineScheduler/automationScheduling.ts
+  s_ac9b259eab20ba::t_e79265e9c29caa 45-65,67
+src/modules/Transport/useCases/scheduling/applyAutomation/__tests__/applyAutomation.spec.ts
+  s_ac9b259eab20ba::t_39aa3149ea5749 86,93,95-101,103-104,173-179
+  s_ac9b259eab20ba::t_394a80c3401597 4,192-193
+  s_ac9b259eab20ba::t_413bc35c84dbcb 87,180-184,189-191,194-196
+src/utils/automationDeviceTarget.ts
+  s_ac9b259eab20ba::t_3eee64c6cf5a42 3-4,41,51,54-55,58
+  s_ac9b259eab20ba::t_15da9d756d6774 50,56-57
+src/modules/Automation/useCases/modulation/__tests__/applyModulationToEngine.spec.ts
+  s_ac9b259eab20ba::t_b5e29dfa4fd8b8 326,373
+  s_ac9b259eab20ba::t_394a80c3401597 327,363
+  s_ac9b259eab20ba::t_3317cf512a1eb4 351-354
+src/modules/TimelineEditor/presentations/helpers/__tests__/automationViewHelpers.spec.ts
+  s_ac9b259eab20ba::t_03ab8f19853c45 9-10,67-68,71
+  s_ac9b259eab20ba::t_394a80c3401597 66
+  s_ac9b259eab20ba::t_4986bb0aa94b77 8,69-70,72-74
+src/modules/TimelineEditor/presentations/views/AutomationBottomPanel.tsx
+  s_ac9b259eab20ba::t_15da9d756d6774 142
+src/modules/Automation/useCases/modulation/applyModulationToEngine.ts
+  s_ac9b259eab20ba::t_ffb0f09b379ddb 100,118-119
+  s_ac9b259eab20ba::t_27dcb75a2e16c5 16,35-36,39,43,45-46,59-60,69,74-77,80
+src/modules/TimelineEditor/presentations/helpers/automationViewHelpers.ts
+  s_ac9b259eab20ba::t_15da9d756d6774 3,17,48-49,53-54
+  s_ac9b259eab20ba::t_73dcb14eb5fafd 27,47,52,55
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "3c55ee06254134ac78b4f10d08ec73c793554e5b",
+  "prompts": {},
+  "sessions": {
+    "s_ac9b259eab20ba": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8699-3865-7842-8c54-afbac6cfd266",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
