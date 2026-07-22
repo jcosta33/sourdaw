@@ -1,0 +1,29 @@
+src/modules/Command/useCases/macro/__tests__/playback.spec.ts
+  s_b78675a6226493::t_0378c8c20582d0 206-266
+src/modules/Command/useCases/macro/playback.ts
+  s_94e3d81abe6841::t_18a1389d805edc 12-13,22-31,90-97,148-169,173,199-200
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "6746f7fdc4f2e4d952da7ff25cc46bd49be37dfa",
+  "prompts": {},
+  "sessions": {
+    "s_94e3d81abe6841": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8b1a-d6f8-7ee3-a2b0-844babad9a8c",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_b78675a6226493": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8b0c-d9b4-7df2-95b2-cf7604c11d50",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
