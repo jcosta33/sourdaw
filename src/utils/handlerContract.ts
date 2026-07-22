@@ -116,6 +116,34 @@ export type GrooveAssignmentActionSnapshot = {
     templateId: string;
     amount: number;
 };
+export type ChordQualityActionSnapshot =
+    | 'major'
+    | 'minor'
+    | 'dim'
+    | 'aug'
+    | 'sus2'
+    | 'sus4'
+    | '7'
+    | 'maj7'
+    | 'min7'
+    | 'dim7'
+    | 'aug7'
+    | '6'
+    | 'min6'
+    | '9'
+    | 'add9'
+    | 'min9'
+    | '7sus4';
+export type ChordTrackActionSnapshot = {
+    readonly enabled: boolean;
+    readonly events: readonly {
+        readonly id: string;
+        readonly beat: number;
+        readonly root: number;
+        readonly quality: ChordQualityActionSnapshot;
+        readonly duration: number;
+    }[];
+};
 export type DeletedGrooveTemplateActionSnapshot = {
     template: GrooveTemplateActionSnapshot;
     templateIndex: number;
@@ -499,6 +527,7 @@ export type AppAction =
     | { type: 'saveTrackTemplate'; payload: { trackId: string; name: string; category: string } }
     | { type: 'loadTrackTemplate'; payload: { templateId: string } }
     | { type: 'deleteTrackTemplate'; payload: { templateId: string } }
+    | { type: 'createProjectFromTemplate'; payload: { templateId: string } }
     | {
           type: 'createVcaGroup';
           payload: {
@@ -557,10 +586,27 @@ export type AppAction =
               }>;
           };
       }
-    | { type: 'addChordEvent'; payload: { beat: number; root: number; quality: string; duration?: number } }
+    | {
+          type: 'addChordEvent';
+          payload: { beat: number; root: number; quality: string; duration?: number; eventId?: string };
+      }
+    | { type: 'moveChordEvent'; payload: { eventId: string; beat: number } }
+    | {
+          type: 'updateChordEvent';
+          payload: {
+              eventId: string;
+              root?: number;
+              quality?: ChordQualityActionSnapshot;
+              duration?: number;
+          };
+      }
     | { type: 'removeChordEvent'; payload: { eventId: string } }
     | { type: 'toggleChordTrack'; payload?: { enabled?: boolean } }
     | { type: 'clearChordTrack'; payload?: undefined }
+    | {
+          type: 'restoreChordTrackState';
+          payload: { expected: ChordTrackActionSnapshot; replacement: ChordTrackActionSnapshot };
+      }
     | { type: 'clearAllMidiMappings'; payload?: undefined }
     | { type: 'toggleScratchPad'; payload?: undefined }
     | { type: 'captureScratchPad'; payload?: undefined }

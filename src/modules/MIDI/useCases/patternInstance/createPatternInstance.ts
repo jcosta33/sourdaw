@@ -1,4 +1,4 @@
-import { appendClipToTrack, trackStore } from '#/modules/Arrangement/stores';
+import { appendClipToTrack, resolveEligibleClipWriteTarget, trackStore } from '#/modules/Arrangement/stores';
 
 import { type Clip } from '../../models/TrackViewTypes';
 import { getNotesForClip } from '../midiNoteCrud/getNotesForClip';
@@ -9,18 +9,23 @@ import { setNotesForClip } from '../midiNoteCrud/setNotesForClip';
  * The instance inherits MIDI notes and properties from the parent.
  */
 export function createPatternInstance(sourceClipId: string, targetTrackId: string, startBeat: number): string | null {
+    const sourceTarget = resolveEligibleClipWriteTarget({ clipId: sourceClipId });
+    if (sourceTarget.status !== 'eligible' || !('clipId' in sourceTarget)) {
+        return null;
+    }
+
+    const destinationTarget = resolveEligibleClipWriteTarget({ trackId: targetTrackId });
+    if (destinationTarget.status !== 'eligible') {
+        return null;
+    }
+
     const state = trackStore.value;
     if (!state) {
         return null;
     }
 
-    let sourceClip: Clip | undefined;
-    for (const track of state.tracks) {
-        sourceClip = track.clips.find((context) => context.id === sourceClipId);
-        if (sourceClip) {
-            break;
-        }
-    }
+    const sourceTrack = state.tracks.find((track) => track.id === sourceTarget.trackId);
+    const sourceClip = sourceTrack?.clips.find((clip) => clip.id === sourceTarget.clipId);
     if (!sourceClip) {
         return null;
     }
@@ -31,7 +36,7 @@ export function createPatternInstance(sourceClipId: string, targetTrackId: strin
     const instanceId = `clip-inst-${crypto.randomUUID()}`;
     const instance: Clip = {
         id: instanceId,
-        trackId: targetTrackId,
+        trackId: destinationTarget.trackId,
         name: `${sourceClip.name} (instance)`,
         startBeat,
         endBeat: startBeat + duration,
@@ -46,7 +51,8 @@ export function createPatternInstance(sourceClipId: string, targetTrackId: strin
         overrides: {},
     };
 
-    if (!state.tracks.some((track) => track.id === targetTrackId)) {
+    const didAppend = appendClipToTrack(destinationTarget.trackId, instance);
+    if (!didAppend) {
         return null;
     }
 
@@ -60,8 +66,6 @@ export function createPatternInstance(sourceClipId: string, targetTrackId: strin
         }));
         setNotesForClip(instanceId, clonedNotes);
     }
-
-    appendClipToTrack(targetTrackId, instance);
 
     return instanceId;
 }

@@ -4,15 +4,25 @@ import { handleSetDeviceParameter } from '../handleSetDeviceParameter';
 
 const mocks = vi.hoisted(() => ({
     setDeviceParameter: vi.fn(),
+    getTrackStoreState: vi.fn<
+        () => {
+            tracks: { id: string; devices: { id: string; parameterValues: Record<string, number> }[] }[];
+        } | null
+    >(),
 }));
 
 vi.mock('../../../useCases/device/setDeviceParameter/setDeviceParameter', () => ({
     setDeviceParameter: mocks.setDeviceParameter,
 }));
 
+vi.mock('../../../useCases/getTrackStoreState', () => ({
+    getTrackStoreState: mocks.getTrackStoreState,
+}));
+
 describe('handleSetDeviceParameter', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        mocks.getTrackStoreState.mockReturnValue(null);
     });
 
     it('delegates the authoritative mutation once and reports a write', () => {
@@ -45,6 +55,36 @@ describe('handleSetDeviceParameter', () => {
             payload: { deviceId: 'd1', paramId: 'gain', value: 0.5 },
         });
         expect(desc.label).toBe('Set gain');
+        expect(desc.inverseAction).toBeNull();
+    });
+
+    it('describes an inverse restoring the previous parameter value', () => {
+        mocks.getTrackStoreState.mockReturnValue({
+            tracks: [{ id: 't1', devices: [{ id: 'd1', parameterValues: { gain: 0.8 } }] }],
+        });
+
+        const desc = handleSetDeviceParameter.describe({
+            type: 'setDeviceParameter',
+            payload: { deviceId: 'd1', paramId: 'gain', value: 0.5 },
+        });
+
+        expect(desc.inverseAction).toEqual({
+            type: 'setDeviceParameter',
+            payload: { deviceId: 'd1', paramId: 'gain', value: 0.8 },
+        });
+    });
+
+    it('describes a null inverse when the parameter has no stored value to restore', () => {
+        mocks.getTrackStoreState.mockReturnValue({
+            tracks: [{ id: 't1', devices: [{ id: 'd1', parameterValues: {} }] }],
+        });
+
+        const desc = handleSetDeviceParameter.describe({
+            type: 'setDeviceParameter',
+            payload: { deviceId: 'd1', paramId: 'gain', value: 0.5 },
+        });
+
+        expect(desc.inverseAction).toBeNull();
     });
 
     it('is undoable', () => {

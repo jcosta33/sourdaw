@@ -12,6 +12,8 @@ import {
     registerCrdtStorageRuntime,
     removeCrdtDoc,
 } from '#/modules/CrdtDocument/useCases';
+import { chordTrackStore } from '#/modules/MIDI/stores';
+import { getChordTrackHandlers } from '#/modules/MIDI/useCases';
 import { type ActionHandler, type AppAction } from '#/utils/handlerContract';
 
 import { clearHandlerRegistry, registerHandlerMap } from '../../stores/handlerRegistry';
@@ -138,6 +140,23 @@ describe('Command action-history replay integration', () => {
         recordActionHistoryEntry(second_entry);
 
         expect(getActionReplayStatus(second_entry_id)).toEqual({ status: 'unavailable' });
+    });
+
+    it('conflicts rather than overwriting a later chord edit', async () => {
+        registerHandlerMap(getChordTrackHandlers());
+        chordTrackStore.set({
+            enabled: true,
+            events: [{ id: 'chord-a', beat: 0, root: 0, quality: 'major', duration: 4 }],
+        });
+        await executeAppAction({ type: 'moveChordEvent', payload: { eventId: 'chord-a', beat: 8 } });
+        const actionAId = actionHistoryStore.value?.entries.at(-1)?.id;
+        if (!actionAId) {
+            throw new Error('Expected chord action history');
+        }
+        await executeAppAction({ type: 'moveChordEvent', payload: { eventId: 'chord-a', beat: 12 } });
+        const afterActionB = structuredClone(chordTrackStore.value);
+        expect(await revertAction(actionAId)).toEqual({ status: 'conflict' });
+        expect(chordTrackStore.value).toEqual(afterActionB);
     });
 
     it('should not mark a same-ID replacement that arrives while inverse execution is pending', async () => {

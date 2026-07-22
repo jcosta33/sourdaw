@@ -48,4 +48,13 @@ describe('createNebulaDriftDemo', () => {
         // scale; demo ids must use the full UUID.
         expect(demoSource).not.toContain('randomUUID().slice(0, 8)');
     });
+
+    it('commits project truth before yielding for device readiness', () => {
+        const projectWriteOffset = demoSource.lastIndexOf('projectStore.set({');
+        const readinessOffset = demoSource.indexOf('await waitForDevices();');
+
+        expect(projectWriteOffset).toBeGreaterThan(0);
+        expect(readinessOffset).toBeGreaterThan(0);
+        expect(projectWriteOffset).toBeLessThan(readinessOffset);
+    });
 });

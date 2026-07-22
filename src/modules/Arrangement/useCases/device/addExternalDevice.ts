@@ -3,7 +3,7 @@ import { loadPlugin } from '#/modules/PluginHost/useCases';
 
 import { getTrackState } from '../../repositories/track/getTrackState';
 import { updateTrack } from '../../repositories/track/updateTrack';
-import { getTrackEligibility } from '../../stores/trackEligibility';
+import { getTrackEligibility, shouldCreateLiveTrackStrip } from '../../stores/trackEligibility';
 import { type Device } from '../../stores/trackStore';
 
 function nextDeviceIdStr(): string {
@@ -15,7 +15,11 @@ export function addExternalDevice(trackId: string, pluginId: string, pluginName:
     if (!state) {
         return null;
     }
-    const track = state.tracks.find((candidate) => candidate.id === trackId);
+    const matchingTracks = state.tracks.filter((candidate) => candidate.id === trackId);
+    if (matchingTracks.length !== 1) {
+        return null;
+    }
+    const track = matchingTracks[0];
     if (!track || !getTrackEligibility(track.kind).acceptsDeviceAdd) {
         return null;
     }
@@ -32,10 +36,13 @@ export function addExternalDevice(trackId: string, pluginId: string, pluginName:
         externalInstanceId: instanceId,
     };
 
+    const hadLiveStrip = shouldCreateLiveTrackStrip(track);
     updateTrack(trackId, (time) => ({ ...time, devices: [...time.devices, device] }));
 
-    addDeviceToStrip(trackId, device.id, 'external-plugin', instanceId);
-    void loadPlugin(pluginId, instanceId);
+    if (hadLiveStrip) {
+        addDeviceToStrip(trackId, device.id, 'external-plugin', instanceId);
+        void loadPlugin(pluginId, instanceId);
+    }
 
     return device;
 }
