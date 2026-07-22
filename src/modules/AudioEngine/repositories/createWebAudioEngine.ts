@@ -408,7 +408,11 @@ class AudioEngineImpl implements AudioEngine {
             return;
         }
         if (route.destinationNode) {
-            route.controls?.disconnectPadOutput?.(route.padIndex, route.destinationNode);
+            try {
+                route.controls?.disconnectPadOutput?.(route.padIndex, route.destinationNode);
+            } finally {
+                route.controls?.setPadDryRouted(route.padIndex, false);
+            }
         }
         route.destinationNode = null;
         route.controls = null;
@@ -437,6 +441,7 @@ class AudioEngineImpl implements AudioEngine {
                 continue;
             }
             controls.connectPadOutput(route.padIndex, destinationNode);
+            controls.setPadDryRouted(route.padIndex, true);
             route.destinationNode = destinationNode;
             route.controls = controls;
         }

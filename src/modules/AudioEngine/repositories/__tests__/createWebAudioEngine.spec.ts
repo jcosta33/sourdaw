@@ -264,13 +264,21 @@ describe('AudioEngine', () => {
         const sidechainGain = mockCtx.createGain.mock.results.at(-1)!.value;
 
         setPadTrackOutput(engine, 'pad-track', 'post-bus', 'toaster-parent', 3);
-        const firstControls = { connectPadOutput: vi.fn(), disconnectPadOutput: vi.fn() };
+        const firstControls = {
+            connectPadOutput: vi.fn(),
+            disconnectPadOutput: vi.fn(),
+            setPadDryRouted: vi.fn(),
+        };
         const firstDevice = { deviceId: 'toaster-1', type: 'toaster', nodes: [], toasterControls: firstControls };
         const parentNode = getMockTrackNode(engine, 'toaster-parent');
         parentNode.notifyDeviceLoaded(firstDevice);
 
         expect(child.outputId).toBe('post-bus');
         expect(firstControls.connectPadOutput).toHaveBeenCalledWith(3, child.gainNode);
+        expect(firstControls.setPadDryRouted).toHaveBeenCalledWith(3, true);
+        expect(firstControls.connectPadOutput.mock.invocationCallOrder[0]).toBeLessThan(
+            firstControls.setPadDryRouted.mock.invocationCallOrder[0]!
+        );
         expect(child.preFaderTap.connect).toHaveBeenCalledWith(preSendGain);
         expect(child.analyserNode.connect).toHaveBeenCalledWith(postSendGain);
         expect(child.analyserNode.connect).toHaveBeenCalledWith(sidechainGain);
@@ -287,7 +295,11 @@ describe('AudioEngine', () => {
         expect(child.analyserNode.connect).toHaveBeenCalledWith(postSendGain);
         expect(child.analyserNode.connect).toHaveBeenCalledWith(sidechainGain);
 
-        const replacementControls = { connectPadOutput: vi.fn(), disconnectPadOutput: vi.fn() };
+        const replacementControls = {
+            connectPadOutput: vi.fn(),
+            disconnectPadOutput: vi.fn(),
+            setPadDryRouted: vi.fn(),
+        };
         parentNode.notifyDeviceLoaded({
             deviceId: 'toaster-2',
             type: 'toaster',
@@ -297,11 +309,14 @@ describe('AudioEngine', () => {
         engine.removeDeviceFromStrip('toaster-parent', firstDevice.deviceId);
 
         expect(firstControls.disconnectPadOutput).toHaveBeenCalledWith(3, child.gainNode);
+        expect(firstControls.setPadDryRouted).toHaveBeenLastCalledWith(3, false);
         expect(replacementControls.connectPadOutput).toHaveBeenCalledWith(3, child.gainNode);
+        expect(replacementControls.setPadDryRouted).toHaveBeenCalledWith(3, true);
 
         engine.resetGraph();
         expect(replacementControls.disconnectPadOutput).toHaveBeenCalledWith(3, child.gainNode);
-        const lateControls = { connectPadOutput: vi.fn(), disconnectPadOutput: vi.fn() };
+        expect(replacementControls.setPadDryRouted).toHaveBeenLastCalledWith(3, false);
+        const lateControls = { connectPadOutput: vi.fn(), disconnectPadOutput: vi.fn(), setPadDryRouted: vi.fn() };
         parentNode.notifyDeviceLoaded({ deviceId: 'late', type: 'toaster', nodes: [], toasterControls: lateControls });
         expect(lateControls.connectPadOutput).not.toHaveBeenCalled();
     });

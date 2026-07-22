@@ -2,6 +2,7 @@ import { logger } from '#/infra/logger/appLogger';
 import {
     addDeviceToStrip,
     ensureTrackStrip,
+    resolveToasterPadBinding,
     setTrackGain,
     setTrackOutput,
     setTrackPan,
@@ -15,7 +16,6 @@ import { resolveEligibleDeviceWriteTarget } from '../stores/resolveEligibleDevic
 import { getTrackEligibility, shouldCreateLiveTrackStrip } from '../stores/trackEligibility';
 import { trackStore } from '../stores/trackStore';
 
-import { resolveToasterPadBinding } from './resolveToasterPadBinding';
 import { applySoloLogic } from './toggleTrackState/applySoloLogic';
 
 import type { Track } from '../stores/trackStore';

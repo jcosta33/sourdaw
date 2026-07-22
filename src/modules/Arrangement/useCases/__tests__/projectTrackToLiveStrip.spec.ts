@@ -18,6 +18,7 @@ const mocks = vi.hoisted(() => ({
     warn: vi.fn(),
     setSend: vi.fn(),
     wireSidechainRoutes: vi.fn(),
+    resolveToasterPadBinding: vi.fn(),
     soloMode: 'sip',
 }));
 
@@ -36,6 +37,7 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     addDeviceToStrip: mocks.addDeviceToStrip,
     updateDeviceParam: mocks.updateDeviceParam,
     updateDeviceBypass: mocks.updateDeviceBypass,
+    resolveToasterPadBinding: mocks.resolveToasterPadBinding,
 }));
 
 vi.mock('#/modules/Routing/useCases', () => ({
@@ -55,6 +57,7 @@ describe('projectTrackToLiveStrip', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         mocks.soloMode = 'sip';
+        mocks.resolveToasterPadBinding.mockReturnValue(undefined);
         trackStore.set({ tracks: [], selectedTrackId: null });
         applySoloLogic({ resetSavedGains: true, applyActions: false });
     });
@@ -240,6 +243,7 @@ describe('projectTrackToLiveStrip', () => {
         const routedPad = createTrack({ id: 'pad-2', name: 'Pad 2', kind: 'audio' });
         routedPad.parentId = toaster.id;
         routedPad.outputId = 'return-bus';
+        mocks.resolveToasterPadBinding.mockReturnValue({ toasterParentTrackId: toaster.id, padIndex: 1 });
         trackStore.set({ tracks: [toaster, firstPad, routedPad], selectedTrackId: null });
 
         projectTrackToLiveStrip({ trackId: routedPad.id });

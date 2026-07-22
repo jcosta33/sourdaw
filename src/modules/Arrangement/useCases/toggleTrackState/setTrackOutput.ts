@@ -1,10 +1,9 @@
-import { setTrackOutput as engineSetTrackOutput } from '#/modules/AudioEngine/useCases';
+import { resolveToasterPadBinding, setTrackOutput as engineSetTrackOutput } from '#/modules/AudioEngine/useCases';
 
 import { getAllTracks } from '../../repositories/track/getAllTracks';
 import { getTrackById } from '../../repositories/track/getTrackById';
 import { updateTrack } from '../../repositories/track/updateTrack';
 import { getTrackEligibility } from '../../stores/trackEligibility';
-import { resolveToasterPadBinding } from '../resolveToasterPadBinding';
 
 export function setTrackOutput(trackId: string, outputId: string): boolean {
     const track = getTrackById(trackId);
