@@ -1,4 +1,4 @@
-import { change, from, type Doc } from '@automerge/automerge';
+import { change, clone, from, getHeads, merge, save, type Doc } from '@automerge/automerge';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
@@ -6,7 +6,12 @@ import {
     flushAutomergeStorageWrites,
 } from '#/infra/store/storage/createAutomergeStorage';
 
-import { chordTrackStore, defaultChordTrackState, type ChordTrackState } from '../chordTrackStore';
+import {
+    chordTrackStore,
+    createChordTrackAutomergeStorage,
+    defaultChordTrackState,
+    type ChordTrackState,
+} from '../chordTrackStore';
 
 type RootDocument = {
     chordTrack?: unknown;
@@ -15,10 +20,17 @@ type RootDocument = {
 
 type TestPort = NonNullable<Parameters<typeof configureAutomergeStoragePort>[0]>;
 
-function createPeer(initialDoc: Doc<RootDocument>): { getDoc: () => Doc<RootDocument>; port: TestPort } {
+function createPeer(initialDoc: Doc<RootDocument>): {
+    getDoc: () => Doc<RootDocument>;
+    replaceDoc: (doc: Doc<RootDocument>) => void;
+    port: TestPort;
+} {
     let doc = initialDoc;
     return {
         getDoc: () => doc,
+        replaceDoc: (nextDoc) => {
+            doc = nextDoc;
+        },
         port: {
             getDoc: () => doc,
             getSemanticMessage: () => undefined,
@@ -28,6 +40,40 @@ function createPeer(initialDoc: Doc<RootDocument>): { getDoc: () => Doc<RootDocu
             },
         },
     };
+}
+
+function createBaseline(state: ChordTrackState): Doc<RootDocument> {
+    const peer = createPeer(from<RootDocument>({ chordTrack: defaultChordTrackState }));
+    const storage = createChordTrackAutomergeStorage();
+    configureAutomergeStoragePort(peer.port);
+    storage.hydrate?.();
+    storage.set(state);
+    flushAutomergeStorageWrites();
+    return peer.getDoc();
+}
+
+function writePeer(peer: ReturnType<typeof createPeer>, state: ChordTrackState): void {
+    const storage = createChordTrackAutomergeStorage();
+    configureAutomergeStoragePort(peer.port);
+    storage.hydrate?.();
+    storage.set(state);
+    flushAutomergeStorageWrites();
+}
+
+function projectMerged(
+    leftPeer: ReturnType<typeof createPeer>,
+    rightPeer: ReturnType<typeof createPeer>,
+    direction: 'left-right' | 'right-left' = 'left-right'
+): ChordTrackState {
+    const doc =
+        direction === 'left-right'
+            ? merge(leftPeer.getDoc(), rightPeer.getDoc())
+            : merge(rightPeer.getDoc(), leftPeer.getDoc());
+    const peer = createPeer(doc);
+    const storage = createChordTrackAutomergeStorage();
+    configureAutomergeStoragePort(peer.port);
+    storage.hydrate?.();
+    return storage.get() ?? defaultChordTrackState;
 }
 
 function chordState(id: string, root: number): ChordTrackState {
@@ -78,7 +124,9 @@ describe('chordTrackStore CRDT projection', () => {
         chordTrackStore.set(state);
         flushAutomergeStorageWrites();
 
-        expect(readChordTrack(peer)).toEqual(state);
+        expect(readChordTrack(peer)).toBeDefined();
+        chordTrackStore.hydrate();
+        expect(chordTrackStore.value).toEqual(state);
     });
 
     it('does not read or write independent process-global localStorage', () => {
@@ -126,6 +174,80 @@ describe('chordTrackStore CRDT projection', () => {
         expect(readChordTrack(mainPeer)).toEqual(mainState);
     });
 
+    it('converges concurrent additions by stable event ID', () => {
+        const baseline = createBaseline({ enabled: true, events: [] });
+        const leftPeer = createPeer(clone(baseline));
+        const rightPeer = createPeer(clone(baseline));
+
+        writePeer(leftPeer, chordState('left-add', 2));
+        writePeer(rightPeer, chordState('right-add', 7));
+
+        expect(projectMerged(leftPeer, rightPeer).events.map((event) => event.id)).toEqual(['left-add', 'right-add']);
+    });
+
+    it('converges independent concurrent updates to one event', () => {
+        const initial = chordState('shared-update', 3);
+        const baseline = createBaseline(initial);
+        const leftPeer = createPeer(clone(baseline));
+        const rightPeer = createPeer(clone(baseline));
+
+        writePeer(leftPeer, { ...initial, events: [{ ...initial.events[0]!, duration: 16 }] });
+        writePeer(rightPeer, { ...initial, events: [{ ...initial.events[0]!, root: 8 }] });
+
+        expect(projectMerged(leftPeer, rightPeer).events).toEqual([
+            expect.objectContaining({ id: 'shared-update', duration: 16, root: 8 }),
+        ]);
+    });
+
+    it('keeps a concurrent removal causal while preserving an unrelated addition', () => {
+        const initial = chordState('remove-me', 4);
+        const baseline = createBaseline(initial);
+        const leftPeer = createPeer(clone(baseline));
+        const rightPeer = createPeer(clone(baseline));
+
+        writePeer(leftPeer, { enabled: true, events: [] });
+        writePeer(rightPeer, { enabled: true, events: [...initial.events, ...chordState('keep-add', 9).events] });
+
+        expect(projectMerged(leftPeer, rightPeer).events.map((event) => event.id)).toEqual(['keep-add']);
+    });
+
+    it('deterministically reconciles concurrent first writes from a legacy root', () => {
+        const initial = chordState('legacy-remove', 5);
+        const legacy = from<RootDocument>({ chordTrack: initial });
+        const leftPeer = createPeer(clone(legacy));
+        const rightPeer = createPeer(clone(legacy));
+
+        writePeer(leftPeer, { enabled: true, events: [] });
+        writePeer(rightPeer, { enabled: true, events: [...initial.events, ...chordState('legacy-add', 11).events] });
+
+        const expectedIds = ['legacy-add'];
+        expect(projectMerged(leftPeer, rightPeer, 'left-right').events.map((event) => event.id)).toEqual(expectedIds);
+        expect(projectMerged(leftPeer, rightPeer, 'right-left').events.map((event) => event.id)).toEqual(expectedIds);
+    });
+
+    it('rebases a pending local addition over a remote hydrate', () => {
+        const frameCallbacks: FrameRequestCallback[] = [];
+        vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
+            frameCallbacks.push(callback);
+            return frameCallbacks.length;
+        });
+        const baseline = createBaseline({ enabled: true, events: [] });
+        const remotePeer = createPeer(clone(baseline));
+        writePeer(remotePeer, chordState('remote-add', 6));
+
+        const localPeer = createPeer(clone(baseline));
+        const localStorage = createChordTrackAutomergeStorage();
+        configureAutomergeStoragePort(localPeer.port);
+        localStorage.hydrate?.();
+        localStorage.set(chordState('local-pending', 1));
+        localPeer.replaceDoc(merge(localPeer.getDoc(), remotePeer.getDoc()));
+        localStorage.hydrate?.();
+        frameCallbacks.at(-1)?.(100);
+
+        localStorage.hydrate?.();
+        expect(localStorage.get()?.events.map((event) => event.id)).toEqual(['local-pending', 'remote-add']);
+    });
+
     it('sanitizes malformed collaborative chord state to the safe default', () => {
         const malformed = {
             enabled: true,
@@ -133,9 +255,14 @@ describe('chordTrackStore CRDT projection', () => {
         };
         const peer = createPeer(from<RootDocument>({ chordTrack: malformed }));
         configureAutomergeStoragePort(peer.port);
+        const heads = getHeads(peer.getDoc());
+        const bytes = save(peer.getDoc());
 
         chordTrackStore.hydrate();
+        flushAutomergeStorageWrites();
 
         expect(chordTrackStore.value).toEqual(defaultChordTrackState);
+        expect(getHeads(peer.getDoc())).toEqual(heads);
+        expect(save(peer.getDoc())).toEqual(bytes);
     });
 });
