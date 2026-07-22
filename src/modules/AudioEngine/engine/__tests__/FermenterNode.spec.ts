@@ -68,4 +68,15 @@ describe('createFermenterNode allNotesOff surface', () => {
 
         expect(postMessage).not.toHaveBeenCalled();
     });
+
+    it('posts validated frame-addressed parameter automation as one worklet message', async () => {
+        const ctx = { currentTime: 0, state: 'running' } as unknown as BaseAudioContext;
+        const result = await createFermenterNode(ctx);
+        postMessage.mockClear();
+        const segments = [{ startFrame: 0, endFrame: 48_000, startValue: 200, endValue: 2_000 }];
+
+        result.scheduleParam('filterCutoff', segments);
+
+        expect(postMessage).toHaveBeenCalledWith({ type: 'paramAutomation', name: 'filterCutoff', segments });
+    });
 });

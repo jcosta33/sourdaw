@@ -1,9 +1,11 @@
+import { type OfflineAutomationSegment } from '../../models/OfflineAutomationSegment';
 import { type Device } from '../../models/TrackViewTypes';
 import { type OfflineDeviceNode } from '../devices/types';
 
 export type AudioDeviceStrategy = {
     readonly node: OfflineDeviceNode;
     setParam(name: string, value: number): void;
+    scheduleParam?(name: string, segments: readonly OfflineAutomationSegment[]): void;
     setBypass?(bypassed: boolean): void;
     noteOn?(noteOrPad: number, velocity: number, midiNote?: number, sampleFrame?: number): void;
     noteOff?(noteOrPad: number, sampleFrame?: number): void;

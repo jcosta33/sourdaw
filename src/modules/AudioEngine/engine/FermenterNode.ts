@@ -7,6 +7,7 @@
 
 import { createReadyHandshake, ensureWorkletRegistered, fetchWasmBinary } from '#/infra/audioWorklet/workletInitShared';
 
+import { type OfflineAutomationSegment } from '../models/OfflineAutomationSegment';
 import fermenterProcessorUrl from '../services/fermenterProcessor.ts?worker&url';
 
 const DEFAULT_WASM_URL = '/wasm/daw-dsp/daw_dsp_bg.wasm';
@@ -17,6 +18,7 @@ export type FermenterNodeResult = {
     noteOff: (note: number, sampleFrame?: number) => void;
     allNotesOff: () => void;
     setParam: (name: string, value: number | number[], sampleFrame?: number) => void;
+    scheduleParam: (name: string, segments: readonly OfflineAutomationSegment[]) => void;
     setPatch: (patch: Record<string, unknown>) => void;
     setBypass: (bypassed: boolean) => void;
     onTelemetry: (callback: (data: { peakL: number; peakR: number; scopeBuffer: Float32Array }) => void) => void;
@@ -98,6 +100,23 @@ export async function createFermenterNode(ctx: BaseAudioContext, wasmUrl?: strin
         setParam(name: string, value: number | number[], sampleFrame?: number) {
             if (Array.isArray(value) || Number.isFinite(value)) {
                 node.port.postMessage({ type: 'param', name, value, sampleFrame });
+            }
+        },
+        scheduleParam(name: string, segments: readonly OfflineAutomationSegment[]) {
+            const valid =
+                name.length > 0 &&
+                segments.length > 0 &&
+                segments.every(
+                    (segment) =>
+                        Number.isInteger(segment.startFrame) &&
+                        Number.isInteger(segment.endFrame) &&
+                        segment.startFrame >= 0 &&
+                        segment.endFrame >= segment.startFrame &&
+                        Number.isFinite(segment.startValue) &&
+                        Number.isFinite(segment.endValue)
+                );
+            if (valid) {
+                node.port.postMessage({ type: 'paramAutomation', name, segments });
             }
         },
         setPatch(patch: Record<string, unknown>) {

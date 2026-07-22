@@ -359,6 +359,42 @@ describe('scheduleTrackAutomation', () => {
         expect(pan.setValueAtTime).not.toHaveBeenCalled();
     });
 
+    it('compiles a canonical native-device lane into frame-addressed automation segments', () => {
+        const scheduleParam = vi.fn();
+
+        scheduleTrackAutomation(
+            [
+                makeLane({
+                    parameterId: 'fermenter-1:filterCutoff',
+                    points: [
+                        { beat: 0, value: 200, curve: 'linear', tension: 0 },
+                        { beat: 2, value: 2_000, curve: 'linear', tension: 0 },
+                    ],
+                }),
+            ],
+            'track-1',
+            { gain: makeParam() } as unknown as GainNode,
+            { pan: makeParam() } as unknown as StereoPannerNode,
+            [
+                {
+                    deviceId: 'fermenter-1',
+                    deviceType: 'fermenter',
+                    node: { inputNode: {} as AudioNode, outputNode: {} as AudioNode, nodes: [] },
+                    strategy: { scheduleParam },
+                },
+            ],
+            2,
+            120,
+            [],
+            1_000
+        );
+
+        expect(scheduleParam).toHaveBeenCalledWith('filterCutoff', [
+            { startFrame: 0, endFrame: 1_000, startValue: 200, endValue: 2_000 },
+            { startFrame: 1_000, endFrame: 1_000, startValue: 2_000, endValue: 2_000 },
+        ]);
+    });
+
     it.each<[string, string, boolean, string | null]>([
         ['unique bare', 'gain-level', false, 'device-1'],
         ['same-type canonical', 'device-2:gain-level', true, 'device-2'],

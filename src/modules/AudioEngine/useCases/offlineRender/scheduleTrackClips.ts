@@ -240,7 +240,8 @@ export async function scheduleTrackClips({
         deviceEntries,
         durationSeconds,
         defaultTempo,
-        changes
+        changes,
+        offlineCtx.sampleRate
     );
 
     if (track.freezeState.status === 'frozen' && track.freezeState.frozenBufferId) {

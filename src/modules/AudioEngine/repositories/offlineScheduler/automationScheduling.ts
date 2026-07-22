@@ -3,7 +3,9 @@ import { getDeviceAutomationParameterId, resolveDeviceAutomationTargetIndex } fr
 import { type AutomationLane } from '../../models/AutomationViewTypes';
 import { resolveDeviceParamTargets } from '../../services/deviceResolution';
 import { type OfflineDeviceNode } from '../devices/types';
+import { type AudioDeviceStrategy } from '../deviceStrategy/AudioDeviceStrategy';
 
+import { compileAutomationSegments } from './compileAutomationSegments';
 import { scheduleAutomationOnParam } from './scheduleAutomationOnParam';
 
 type AutomationTempoChange = {
@@ -15,13 +17,17 @@ type ScheduleTrackAutomationDeviceEntry = {
     deviceId: string;
     deviceType: string;
     node: OfflineDeviceNode;
+    strategy?: Pick<AudioDeviceStrategy, 'scheduleParam'>;
 };
 
 function acceptsOfflineAutomationParameter(
     candidate: ScheduleTrackAutomationDeviceEntry,
     parameterId: string
 ): boolean {
-    return resolveDeviceParamTargets(candidate.deviceType, parameterId, candidate.node).length > 0;
+    return (
+        resolveDeviceParamTargets(candidate.deviceType, parameterId, candidate.node).length > 0 ||
+        candidate.strategy?.scheduleParam !== undefined
+    );
 }
 
 export function scheduleTrackAutomation(
@@ -32,7 +38,8 @@ export function scheduleTrackAutomation(
     deviceEntries: ScheduleTrackAutomationDeviceEntry[],
     durationSeconds: number,
     defaultTempo: number,
-    changes: AutomationTempoChange[]
+    changes: AutomationTempoChange[],
+    sampleRate = 44_100
 ): void {
     const trackLanes = lanes.filter((length) => length.trackId === trackId && !length.clipId);
 
@@ -60,6 +67,17 @@ export function scheduleTrackAutomation(
         if (deviceIndex >= 0 && parameterId) {
             const candidate = deviceEntries[deviceIndex]!;
             const targets = resolveDeviceParamTargets(candidate.deviceType, parameterId, candidate.node);
+            if (targets.length === 0 && candidate.strategy?.scheduleParam) {
+                const segments = compileAutomationSegments(
+                    lane.points,
+                    durationSeconds,
+                    defaultTempo,
+                    changes,
+                    sampleRate
+                );
+                candidate.strategy.scheduleParam(parameterId, segments);
+                continue;
+            }
             for (const { audioParam, scale, offset } of targets) {
                 const points =
                     scale !== 1 || offset !== 0

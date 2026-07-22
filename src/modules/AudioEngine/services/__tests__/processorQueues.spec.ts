@@ -2,7 +2,7 @@ import fs from 'fs';
 import path from 'path';
 
 import ts from 'typescript';
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 
 // Helper to evaluate an AudioWorklet script and extract its class
 function loadProcessorClass(filePath: string, className: string) {
@@ -116,4 +116,31 @@ describe('AudioWorklet Processor Queues (_queueHead Read Index)', () => {
             });
         });
     }
+});
+
+describe('FermenterProcessor parameter automation', () => {
+    it('interpolates a compiled segment without allocating events per render quantum', () => {
+        const ProcessorClass = loadProcessorClass('../fermenterProcessor.ts', 'FermenterProcessor');
+        const processor = new ProcessorClass();
+        const setParam = vi.fn();
+        processor._instance = { set_param: setParam };
+        processor._ready = true;
+        processor.port.onmessage({
+            data: {
+                type: 'paramAutomation',
+                name: 'filterCutoff',
+                segments: [{ startFrame: 0, endFrame: 1_000, startValue: 200, endValue: 2_000 }],
+            },
+        });
+
+        processor._applyParamAutomation(0);
+        processor._applyParamAutomation(500);
+        processor._applyParamAutomation(1_000);
+
+        expect(setParam.mock.calls).toEqual([
+            ['cutoff', 200],
+            ['cutoff', 1_100],
+            ['cutoff', 2_000],
+        ]);
+    });
 });
