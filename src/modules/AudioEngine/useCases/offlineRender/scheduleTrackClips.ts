@@ -241,7 +241,8 @@ export async function scheduleTrackClips({
         durationSeconds,
         defaultTempo,
         changes,
-        offlineCtx.sampleRate
+        offlineCtx.sampleRate,
+        regionStartSec
     );
 
     if (track.freezeState.status === 'frozen' && track.freezeState.frozenBufferId) {

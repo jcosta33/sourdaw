@@ -367,8 +367,8 @@ describe('scheduleTrackAutomation', () => {
                 makeLane({
                     parameterId: 'fermenter-1:filterCutoff',
                     points: [
-                        { beat: 0, value: 200, curve: 'linear', tension: 0 },
-                        { beat: 2, value: 2_000, curve: 'linear', tension: 0 },
+                        { beat: 128, value: 200, curve: 'linear', tension: 0 },
+                        { beat: 130, value: 2_000, curve: 'linear', tension: 0 },
                     ],
                 }),
             ],
@@ -386,7 +386,8 @@ describe('scheduleTrackAutomation', () => {
             2,
             120,
             [],
-            1_000
+            1_000,
+            64
         );
 
         expect(scheduleParam).toHaveBeenCalledWith('filterCutoff', [

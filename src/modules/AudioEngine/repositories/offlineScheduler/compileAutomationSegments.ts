@@ -26,7 +26,8 @@ export function compileAutomationSegments(
     durationSeconds: number,
     defaultTempo: number,
     changes: AutomationTempoChange[],
-    sampleRate: number
+    sampleRate: number,
+    regionStartSeconds = 0
 ): OfflineAutomationSegment[] {
     if (points.length === 0 || durationSeconds < 0 || sampleRate <= 0) {
         return [];
@@ -35,7 +36,11 @@ export function compileAutomationSegments(
     const sorted = [...points].sort((alpha, beta) => alpha.beat - beta.beat);
     const segments: OfflineAutomationSegment[] = [];
     const first = sorted[0]!;
-    const firstFrame = toFrame(beatToSeconds(first.beat, defaultTempo, changes), durationSeconds, sampleRate);
+    const firstFrame = toFrame(
+        beatToSeconds(first.beat, defaultTempo, changes) - regionStartSeconds,
+        durationSeconds,
+        sampleRate
+    );
     if (firstFrame > 0) {
         segments.push({ startFrame: 0, endFrame: firstFrame, startValue: first.value, endValue: first.value });
     }
@@ -43,11 +48,11 @@ export function compileAutomationSegments(
     for (let index = 0; index < sorted.length - 1; index++) {
         const current = sorted[index]!;
         const next = sorted[index + 1]!;
-        const currentTime = beatToSeconds(current.beat, defaultTempo, changes);
+        const currentTime = beatToSeconds(current.beat, defaultTempo, changes) - regionStartSeconds;
         if (currentTime > durationSeconds) {
             break;
         }
-        const nextTime = beatToSeconds(next.beat, defaultTempo, changes);
+        const nextTime = beatToSeconds(next.beat, defaultTempo, changes) - regionStartSeconds;
         const startFrame = toFrame(currentTime, durationSeconds, sampleRate);
         const endFrame = toFrame(nextTime, durationSeconds, sampleRate);
 
@@ -58,7 +63,7 @@ export function compileAutomationSegments(
             for (let step = 1; step <= steps; step++) {
                 const fraction = step / steps;
                 const sampleBeat = current.beat + (next.beat - current.beat) * fraction;
-                const sampleTime = beatToSeconds(sampleBeat, defaultTempo, changes);
+                const sampleTime = beatToSeconds(sampleBeat, defaultTempo, changes) - regionStartSeconds;
                 if (sampleTime > durationSeconds) {
                     break;
                 }
@@ -81,7 +86,7 @@ export function compileAutomationSegments(
     }
 
     const last = sorted.at(-1)!;
-    const lastTime = beatToSeconds(last.beat, defaultTempo, changes);
+    const lastTime = beatToSeconds(last.beat, defaultTempo, changes) - regionStartSeconds;
     if (lastTime <= durationSeconds) {
         const lastFrame = toFrame(lastTime, durationSeconds, sampleRate);
         segments.push({ startFrame: lastFrame, endFrame: lastFrame, startValue: last.value, endValue: last.value });

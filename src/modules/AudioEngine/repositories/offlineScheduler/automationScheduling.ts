@@ -39,7 +39,8 @@ export function scheduleTrackAutomation(
     durationSeconds: number,
     defaultTempo: number,
     changes: AutomationTempoChange[],
-    sampleRate = 44_100
+    sampleRate = 44_100,
+    regionStartSeconds = 0
 ): void {
     const trackLanes = lanes.filter((length) => length.trackId === trackId && !length.clipId);
 
@@ -73,7 +74,8 @@ export function scheduleTrackAutomation(
                     durationSeconds,
                     defaultTempo,
                     changes,
-                    sampleRate
+                    sampleRate,
+                    regionStartSeconds
                 );
                 candidate.strategy.scheduleParam(parameterId, segments);
                 continue;
