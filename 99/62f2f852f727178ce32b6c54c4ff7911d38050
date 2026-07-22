@@ -1,0 +1,482 @@
+src/modules/MIDI/useCases/chordTrack/__tests__/replaceChordTrackState.spec.ts
+  s_ac9b259eab20ba::t_61fe10903889d2 1,3-4,6,8-11,14-20,22-23,25-28,31-32,34
+  s_ac9b259eab20ba::t_74469eb5e1b96d 2
+  s_ac9b259eab20ba::t_92807817cd0840 5
+  s_ac9b259eab20ba::t_43732c46d4bfa0 7
+  s_ac9b259eab20ba::t_5696ff49e4a537 12-13
+  s_ac9b259eab20ba::t_868bf55e3bf3b7 21
+  s_ac9b259eab20ba::t_df0d7c68e34c2a 24
+  s_ac9b259eab20ba::t_12415db92e84dd 29-30
+  s_ac9b259eab20ba::t_0933cbbac17120 33
+  s_ac9b259eab20ba::t_d912d3928a21d2 35-36
+src/modules/MIDI/useCases/index.ts
+  s_ac9b259eab20ba::t_6dcc628ff4b78b 17-18
+src/modules/Project/useCases/projectPersistence/helpers/hydrateModuleStoresFromProjectData.ts
+  s_ac9b259eab20ba::t_6dcc628ff4b78b 2,17
+src/modules/Project/useCases/projectPersistence/helpers/resetModuleStoresToDefault.ts
+  s_ac9b259eab20ba::t_6dcc628ff4b78b 11
+src/modules/MIDI/stores/chordTrackStore.ts
+  s_ac9b259eab20ba::t_965d663974705e 2,14-15,17-24,90,93-94,96-179,182-183,185-188,191-207,209-210,212-218,220-221,224-228,230,232-238,240-242,244-255,257-258,260-261,263-277,280-284,286-314,316-320,322-334,336-367
+src/modules/Project/useCases/projectPersistence/helpers/__tests__/hydrateModuleStoresFromProjectData.spec.ts
+  s_ac9b259eab20ba::t_61fe10903889d2 10,32,134,148
+src/modules/Project/useCases/projectPersistence/helpers/isHydratableProjectData.ts
+  s_ac9b259eab20ba::t_6dcc628ff4b78b 737-751,765
+src/modules/MIDI/useCases/chordTrack/replaceChordTrackState.ts
+  s_ac9b259eab20ba::t_6dcc628ff4b78b 3,5-8
+crates/daw-dsp/src/crumbs/engine.rs
+  s_ac9b259eab20ba::t_995edb41562912 88-96,158-159,165-192,250-257,519-536,551-555,855-992
+src-tauri/src/commands/crumbs.rs
+  s_ac9b259eab20ba::t_c5bf43f0396b0d 9,35-104,172-176,194-195,199-200,228-230,636,641,644-646,698-701,727,782-931
+src-tauri/src/host/native_bridge.rs
+  s_ac9b259eab20ba::t_c77dcad4bb2fc0 839-861,870,897-904,906,910,913,924,955-957,959-960,962,965,970-1029,1034,1049-1059,1063-1064,1081-1090,1120-1131
+src/app/__tests__/bootstrap.spec.ts
+  s_ac9b259eab20ba::t_94d7e6a63280a5 202,321
+src/app/bootstrap.ts
+  s_ac9b259eab20ba::t_92c93482d3739d 95,314
+src/infra/store/storage/__tests__/createAutomergeStorage.spec.ts
+  s_ac9b259eab20ba::t_d03036c4f93068 245,252-254,273,276,296,300-301,312-425,448,453,457-483,493,496,498,501,522,525,532-533,538,577,582,612,617
+src/infra/store/storage/createAutomergeStorage.ts
+  s_ac9b259eab20ba::t_5881084e2ac61d 59,61-62,65,73-108,111,143,145,149-152,154-156,160-209,214,221-223,243,247,251,262-267,271-274,282,346-353,355-359,426-427,430-443,445-447,450,453-455,457,460-474,477-483,485,488-494,496,498-499,501,504-512,514-515,522,532,534-536,541,543-545,601-608,611-612,617-618,622,625-627,630-631,634,647-649
+src/modules/Arrangement/handlers/__tests__/clipGeometryActionOutcomes.spec.ts
+  s_ac9b259eab20ba::t_4698974f8b28cf 1-529
+src/modules/Arrangement/handlers/clip/__tests__/clipMetadataActionOutcomes.spec.ts
+  s_ac9b259eab20ba::t_bf47848e22add2 1-117
+src/modules/Arrangement/handlers/clip/__tests__/handleBounceSelection.spec.ts
+  s_ac9b259eab20ba::t_886db8cacbff67 7-11,21,46-57
+src/modules/Arrangement/handlers/clip/__tests__/handleConsolidateSelection.spec.ts
+  s_ac9b259eab20ba::t_309d347aacb8ea 7-11,21-22,26,32-44
+src/modules/Arrangement/handlers/clip/__tests__/handleCopyClip.spec.ts
+  s_ac9b259eab20ba::t_a1e41bea0bc87c 16,19-20,22-24
+src/modules/Arrangement/handlers/clip/__tests__/handleCrossfadeClips.spec.ts
+  s_ac9b259eab20ba::t_7a7fd2af791bcc 16,20,26-37
+src/modules/Arrangement/handlers/clip/__tests__/handleCutClip.spec.ts
+  s_ac9b259eab20ba::t_5b0ff47b625546 16,19-20,22-24
+src/modules/Arrangement/handlers/clip/__tests__/handleDuplicateClip.spec.ts
+  s_ac9b259eab20ba::t_72fc398f52cea4 8,19-22,26-35,39-44,77-115
+src/modules/Arrangement/handlers/clip/__tests__/handleDuplicateClipToNextBar.spec.ts
+  s_ac9b259eab20ba::t_ee9419c40c753a 8,19-22,26-35,39-44,77-115
+src/modules/Arrangement/handlers/clip/__tests__/handleGlueClips.spec.ts
+  s_ac9b259eab20ba::t_7c2c33ae9e42bf 16,20,26-37
+src/modules/Arrangement/handlers/clip/__tests__/handleNormalizeClip.spec.ts
+  s_ac9b259eab20ba::t_0a2d9eb69eb058 16,20,26-37
+src/modules/Arrangement/handlers/clip/__tests__/handlePasteClip.spec.ts
+  s_ac9b259eab20ba::t_b64f2c183893d9 16,19-20,22-24
+src/modules/Arrangement/handlers/clip/__tests__/handleReverseClip.spec.ts
+  s_ac9b259eab20ba::t_ebcc41114d12a0 16,20,26-37
+src/modules/Arrangement/handlers/clip/__tests__/handleSplitClip.spec.ts
+  s_ac9b259eab20ba::t_e58289e4a6377d 16,20,26-37
+src/modules/Arrangement/handlers/clip/__tests__/handleStripSilence.spec.ts
+  s_ac9b259eab20ba::t_7b5b061a2aed79 16,20,26-37
+src/modules/Arrangement/handlers/clip/handleBounceSelection.ts
+  s_ac9b259eab20ba::t_359d95f75aeae4 3,9-14
+src/modules/Arrangement/handlers/clip/handleConsolidateSelection.ts
+  s_ac9b259eab20ba::t_37b1dc5b14d767 3,5,9-15
+src/modules/Arrangement/handlers/clip/handleCopyClip.ts
+  s_ac9b259eab20ba::t_8c07ff37c96998 4,8
+src/modules/Arrangement/handlers/clip/handleCrossfadeClips.ts
+  s_ac9b259eab20ba::t_da4fd6e5bf09c3 4,8-10
+src/modules/Arrangement/handlers/clip/handleCutClip.ts
+  s_ac9b259eab20ba::t_d3baf1f39fb545 4,8
+src/modules/Arrangement/handlers/clip/handleDuplicateClip.ts
+  s_ac9b259eab20ba::t_f3d6b4c5ebd6a2 3,6,19-40,43-48,54
+src/modules/Arrangement/handlers/clip/handleDuplicateClipToNextBar.ts
+  s_ac9b259eab20ba::t_731dc28a2ef41f 3,6,19-40,43-48,54
+src/modules/Arrangement/handlers/clip/handleGlueClips.ts
+  s_ac9b259eab20ba::t_36ebed5120edca 4,8
+src/modules/Arrangement/handlers/clip/handleLockClip.ts
+  s_ac9b259eab20ba::t_1127860aa72ce2 4,8
+src/modules/Arrangement/handlers/clip/handleMuteClip.ts
+  s_ac9b259eab20ba::t_7cd4d66a1b5f50 4,8
+src/modules/Arrangement/handlers/clip/handleNormalizeClip.ts
+  s_ac9b259eab20ba::t_dcb671d8a0fad6 4,8-9
+src/modules/Arrangement/handlers/clip/handleNudgeClip.ts
+  s_ac9b259eab20ba::t_ce204477918c98 5,9,13-30
+src/modules/Arrangement/handlers/clip/handlePasteClip.ts
+  s_ac9b259eab20ba::t_4df2d35fa018c7 4,8
+src/modules/Arrangement/handlers/clip/handleRenameClip.ts
+  s_ac9b259eab20ba::t_67da69c7f5f082 5,9
+src/modules/Arrangement/handlers/clip/handleReverseClip.ts
+  s_ac9b259eab20ba::t_a59b2480857519 4,8-9
+src/modules/Arrangement/handlers/clip/handleSetClipColor.ts
+  s_ac9b259eab20ba::t_194979e8684b74 4,8
+src/modules/Arrangement/handlers/clip/handleSetClipFade.ts
+  s_ac9b259eab20ba::t_255707e2df0c89 4,8-10
+src/modules/Arrangement/handlers/clip/handleSetClipGain.ts
+  s_ac9b259eab20ba::t_773a4d7f23fa29 5,9
+src/modules/Arrangement/handlers/clip/handleSetClipLoop.ts
+  s_ac9b259eab20ba::t_1b0967250a4455 4,8
+src/modules/Arrangement/handlers/clip/handleSetClipLoopLength.ts
+  s_ac9b259eab20ba::t_d010da22be70aa 4,8
+src/modules/Arrangement/handlers/clip/handleSplitClip.ts
+  s_ac9b259eab20ba::t_1e65e4a2ff58ca 4,8
+src/modules/Arrangement/handlers/clip/handleStripSilence.ts
+  s_ac9b259eab20ba::t_a8786a7cd64f0e 4,8-9
+src/modules/Arrangement/handlers/clip/handleTrimClipEnd.ts
+  s_ac9b259eab20ba::t_4a254578e62299 5,9,12-28
+src/modules/Arrangement/handlers/clip/handleTrimClipStart.ts
+  s_ac9b259eab20ba::t_7a46c0a583a449 5,9,12-28
+src/modules/Arrangement/handlers/clipStretch/handleFitClipToBeats.ts
+  s_ac9b259eab20ba::t_d1e7405ec9541e 4,8
+src/modules/Arrangement/handlers/clipStretch/handleSetClipStretchMode.ts
+  s_ac9b259eab20ba::t_666b472ce5834f 4,8
+src/modules/Arrangement/handlers/clipStretch/handleSetClipStretchRatio.ts
+  s_ac9b259eab20ba::t_8ee413d1650774 4,8
+src/modules/Arrangement/handlers/device/__tests__/handleAddSend.spec.ts
+  s_ac9b259eab20ba::t_6183d67e6b85fd 7,14-17,21,51-83
+src/modules/Arrangement/handlers/device/__tests__/handleBypassDevice.spec.ts
+  s_ac9b259eab20ba::t_3175aeea9f245e 7-8,15-18,22,60-102
+src/modules/Arrangement/handlers/device/__tests__/handleRemoveDevice.spec.ts
+  s_ac9b259eab20ba::t_f1265892f669e6 18-25,31
+src/modules/Arrangement/handlers/device/__tests__/handleRemoveSend.spec.ts
+  s_ac9b259eab20ba::t_df903a0fa4ea35 7,14-17,21,39-55
+src/modules/Arrangement/handlers/device/__tests__/handleSetDeviceParameter.spec.ts
+  s_ac9b259eab20ba::t_21f52017946bb5 7-11,18-21,25,58-87
+src/modules/Arrangement/handlers/device/__tests__/handleSetSend.spec.ts
+  s_ac9b259eab20ba::t_62e791c281c73e 7,14-17,21,51-81
+src/modules/Arrangement/handlers/device/handleAddSend.ts
+  s_ac9b259eab20ba::t_0501b26cef8d57 4,11-30
+src/modules/Arrangement/handlers/device/handleBypassDevice.ts
+  s_ac9b259eab20ba::t_5e1b4e8d8b467f 4,11-24
+src/modules/Arrangement/handlers/device/handleRemoveDevice.ts
+  s_ac9b259eab20ba::t_d9d870537cfeb1 7-14
+src/modules/Arrangement/handlers/device/handleRemoveSend.ts
+  s_ac9b259eab20ba::t_64b75f41eb5cd6 4,10-27
+src/modules/Arrangement/handlers/device/handleSetDeviceParameter.ts
+  s_ac9b259eab20ba::t_e8a273449234e7 4,13-30
+src/modules/Arrangement/handlers/device/handleSetSend.ts
+  s_ac9b259eab20ba::t_b1d3c15a6f9412 4,11-29
+src/modules/Arrangement/handlers/track/__tests__/flattenTrack.spec.ts
+  s_ac9b259eab20ba::t_329e20d864f8c2 16,20,26-37
+src/modules/Arrangement/handlers/track/flattenTrack.ts
+  s_ac9b259eab20ba::t_62a05e9f3755f8 4,8-9
+src/modules/Arrangement/handlers/trackAlternative/__tests__/handleCreateTrackAlternative.spec.ts
+  s_ac9b259eab20ba::t_706a949ce45961 1,8,19-22,37-41,45,65-149
+src/modules/Arrangement/handlers/trackAlternative/__tests__/handleDeleteTrackAlternative.spec.ts
+  s_ac9b259eab20ba::t_c1c03f5a2e0de7 3,6-9,13,24-27,31,48,60,64,70,72,95-239,245,250-298
+src/modules/Arrangement/handlers/trackAlternative/__tests__/handleSwitchTrackAlternative.spec.ts
+  s_ac9b259eab20ba::t_7057260aa96ed5 3-4,9,11-12,15-20,24,35-38,42,46-47,53,62,79-253,261,266-304
+src/modules/Arrangement/handlers/trackAlternative/handleCreateTrackAlternative.ts
+  s_ac9b259eab20ba::t_b05ad57ba79067 3,6,13-38,41-50,53,56-103,107,109-110
+src/modules/Arrangement/handlers/trackAlternative/handleDeleteTrackAlternative.ts
+  s_ac9b259eab20ba::t_18542bc08d466e 3,6-38,42-47,50,53-98,102,104-105
+src/modules/Arrangement/handlers/trackAlternative/handleSwitchTrackAlternative.ts
+  s_ac9b259eab20ba::t_acd0f481ef195b 3,6-38,42-47,50,53,55-73,76-114,117,119-120
+src/modules/Arrangement/handlers/trackAlternative/isPromotableRuntimeClipCollection.ts
+  s_ac9b259eab20ba::t_a17a282924724a 1-234
+src/modules/Arrangement/presentations/hooks/__tests__/useTimelineInteractions.spec.tsx
+  s_ac9b259eab20ba::t_0979095b2d40f9 27-31,339-405
+src/modules/Arrangement/presentations/hooks/useTimelineInteractions.ts
+  s_ac9b259eab20ba::t_1cd2026c3a0203 888-889,898-899
+src/modules/Arrangement/services/__tests__/applySoloLogic.spec.ts
+  s_ac9b259eab20ba::t_4200174b227756 17,38,60,81,96,106-121
+src/modules/Arrangement/services/applySoloLogic.ts
+  s_ac9b259eab20ba::t_593347f5a64cdc 12,20-25,37,40,43-48,51-53,56,77
+src/modules/Arrangement/stores/__tests__/deviceWriteBoundaryClosure.spec.ts
+  s_ac9b259eab20ba::t_6f679e6aa318da 63,112,266-269,288
+src/modules/Arrangement/stores/__tests__/trackEligibility.spec.ts
+  s_ac9b259eab20ba::t_d740d9260181d3 3,121-131
+src/modules/Arrangement/stores/__tests__/vcaActivationQuarantine.spec.ts
+  s_ac9b259eab20ba::t_7d04b87d894559 1-296
+src/modules/Arrangement/stores/index.ts
+  s_ac9b259eab20ba::t_664edb2cc8fbf6 36
+src/modules/Arrangement/stores/trackEligibility.ts
+  s_ac9b259eab20ba::t_c20899ce75c495 26-30,132-141
+src/modules/Arrangement/useCases/__tests__/projectTrackToLiveStrip.spec.ts
+  s_ac9b259eab20ba::t_1e1eac6eee41a4 1-246
+src/modules/Arrangement/useCases/__tests__/removeTrack.spec.ts
+  s_ac9b259eab20ba::t_5158d2827f76db 126-127,140-141,167,182-201
+src/modules/Arrangement/useCases/__tests__/replaceClipAudioBuffer.spec.ts
+  s_ac9b259eab20ba::t_1ded47dafdf707 1,10-17,42-47,55,57,89-176
+src/modules/Arrangement/useCases/__tests__/stripSilence.spec.ts
+  s_ac9b259eab20ba::t_61017d5fc2c841 14,30-33,69-73,79,81,90,92,122,124,155,157,185-198
+src/modules/Arrangement/useCases/clip/__tests__/acceptGhostClip.spec.ts
+  s_ac9b259eab20ba::t_a86e7b3631376b 1,3-49,52-146
+src/modules/Arrangement/useCases/clip/__tests__/duplicateClipCore.spec.ts
+  s_ac9b259eab20ba::t_774718450ba86d 7,12,20-23,41-44,48,55-63,98-104,163-164,175-277
+src/modules/Arrangement/useCases/clip/__tests__/ghostClips.spec.ts
+  s_ac9b259eab20ba::t_d7b7ea0c0b6211 1,3-5,7-14,16-17,19,23-39,44-47,51-62,66-70,73-77
+src/modules/Arrangement/useCases/clip/acceptGhostClip.ts
+  s_ac9b259eab20ba::t_698a0995ebe095 1,3,8,11,14-22,24,27-36,38-42,44-47,52
+src/modules/Arrangement/useCases/clip/duplicateClipCore.ts
+  s_ac9b259eab20ba::t_742bd80a5a7742 5,7,18-19,23,28-48,53-59,62-89,91,93-97,99-100,102-103
+src/modules/Arrangement/useCases/clipEditing/__tests__/createAlternativeClips.spec.ts
+  s_ac9b259eab20ba::t_703004fb7c63f9 1,7-8,13-16,26,36,38,69-78,80,82,86,88-180,182-189,191-201,208,218-219,221,233
+src/modules/Arrangement/useCases/clipEditing/__tests__/crossfadeClips.spec.ts
+  s_ac9b259eab20ba::t_35c1f453a7049c 6,11-13,22,41-44,48,54-111,119
+src/modules/Arrangement/useCases/clipEditing/__tests__/glueClips.spec.ts
+  s_ac9b259eab20ba::t_9ad162ea3a715e 10,20,28-30,37-40,44,51,58,73-76,78,87-121,178
+src/modules/Arrangement/useCases/clipEditing/__tests__/normalizeClip.spec.ts
+  s_ac9b259eab20ba::t_113885f7a83cbb 14,21,33-36,56-61,75,77,103,105,122,124,129-141
+src/modules/Arrangement/useCases/clipEditing/__tests__/reverseClip.spec.ts
+  s_ac9b259eab20ba::t_812189955e9b2e 11,31-34,40-44,63-64,66-69,71-77,99,101,108-110,120,122-127,147,155-177,180,186-201
+src/modules/Arrangement/useCases/clipEditing/__tests__/splitClip.spec.ts
+  s_ac9b259eab20ba::t_50bdeb76b9da8d 9,17-19,29,53,67-165
+src/modules/Arrangement/useCases/clipEditing/__tests__/splitClipWithUndo.spec.ts
+  s_ac9b259eab20ba::t_b0ae8a18e59771 9-13,20-31,40,59-63,72-82,137-192
+src/modules/Arrangement/useCases/clipEditing/createAlternativeClips.ts
+  s_ac9b259eab20ba::t_a520aa50cea027 3,6,11-24,29-78,81-102,104-130,132-133,136-164,166-175,179-180,183-226,229-233,238,240-241
+src/modules/Arrangement/useCases/clipEditing/crossfadeClips.ts
+  s_ac9b259eab20ba::t_d428c35204860e 4-19,23,26-29,31-34,39-40,42-55,69-70
+src/modules/Arrangement/useCases/clipEditing/glueClips.ts
+  s_ac9b259eab20ba::t_c940815ba5fd7e 8,10-21,24,26,29-35,37,40-41,73-74
+src/modules/Arrangement/useCases/clipEditing/lockClip.ts
+  s_ac9b259eab20ba::t_04721a4e7bcfb5 3-4
+src/modules/Arrangement/useCases/clipEditing/muteClip.ts
+  s_ac9b259eab20ba::t_2a6669bb3a6085 3-4
+src/modules/Arrangement/useCases/clipEditing/normalizeClip.ts
+  s_ac9b259eab20ba::t_b52fcc6d430386 5,8-13,16-22,25-28,30-32,34-35
+src/modules/Arrangement/useCases/clipEditing/nudgeClip.ts
+  s_ac9b259eab20ba::t_fde55c04447233 4,6-23,26,40,44-45
+src/modules/Arrangement/useCases/clipEditing/renameClip.ts
+  s_ac9b259eab20ba::t_14698a4a8494c2 3-4
+src/modules/Arrangement/useCases/clipEditing/reverseClip.ts
+  s_ac9b259eab20ba::t_bd4c4e833e7b91 6-12,16,18-36,38-41,43-50,52-54
+src/modules/Arrangement/useCases/clipEditing/setClipColor.ts
+  s_ac9b259eab20ba::t_9e2ee252d247cc 3-4
+src/modules/Arrangement/useCases/clipEditing/setClipFade.ts
+  s_ac9b259eab20ba::t_ca6dda17b49a52 3-4
+src/modules/Arrangement/useCases/clipEditing/setClipGain.ts
+  s_ac9b259eab20ba::t_37afd6f435042b 3-4
+src/modules/Arrangement/useCases/clipEditing/splitClip.ts
+  s_ac9b259eab20ba::t_fb0e8f907a9ec1 6,18-29,34-47,54-57
+src/modules/Arrangement/useCases/clipEditing/splitClipWithUndo.ts
+  s_ac9b259eab20ba::t_1d478f703c7120 7,13-24
+src/modules/Arrangement/useCases/clipEditing/trimClipEnd.ts
+  s_ac9b259eab20ba::t_2fc8a336e73919 1,3,5-28
+src/modules/Arrangement/useCases/clipEditing/trimClipStart.ts
+  s_ac9b259eab20ba::t_b1e4686bf5c2ed 1,3,5-22
+src/modules/Arrangement/useCases/clipLoop/setClipLoop.ts
+  s_ac9b259eab20ba::t_91263493713635 3-4
+src/modules/Arrangement/useCases/clipLoop/setClipLoopLength.ts
+  s_ac9b259eab20ba::t_ee68b48700756d 3,5,7-8
+src/modules/Arrangement/useCases/clipStretch/fitClipToBeats.ts
+  s_ac9b259eab20ba::t_556223ec703122 6-8,11-12,15-19,22-35,37-47
+src/modules/Arrangement/useCases/clipStretch/setClipStretchMode.ts
+  s_ac9b259eab20ba::t_dbc4b9bc118b9c 3-11
+src/modules/Arrangement/useCases/clipStretch/setClipStretchRatio.ts
+  s_ac9b259eab20ba::t_b6c17413b205ab 5-9,12
+src/modules/Arrangement/useCases/clipboard/__tests__/copySelectedClip.spec.ts
+  s_ac9b259eab20ba::t_f069f652778589 13,33-36,42-46,50-51,71,79-112
+src/modules/Arrangement/useCases/clipboard/__tests__/cutSelectedClip.spec.ts
+  s_ac9b259eab20ba::t_376de9c8d85c17 26,72-75,97-101,106,143,160-186
+src/modules/Arrangement/useCases/clipboard/__tests__/pasteClip.spec.ts
+  s_ac9b259eab20ba::t_bcc82eb4973763 28-29,55-60,65,77,99,102-106,113,129,142,189,199,207,216,259-264,287,306,314-317,324-486
+src/modules/Arrangement/useCases/clipboard/copySelectedClip.ts
+  s_ac9b259eab20ba::t_38ca90ea61ea1d 6,9,12,23-36,40-44,49,59
+src/modules/Arrangement/useCases/clipboard/cutSelectedClip.ts
+  s_ac9b259eab20ba::t_2e69b09d14d98c 6,10,13,24-37,41-45,50,64
+src/modules/Arrangement/useCases/clipboard/pasteClip.ts
+  s_ac9b259eab20ba::t_a86b8e29947bcd 7,9,11,14,20,24-27,29,31-74,77,80-85,90-94,97-104,106-133,135-137,139-141,143-146,148,150-151
+src/modules/Arrangement/useCases/device/__tests__/addDevice.spec.ts
+  s_ac9b259eab20ba::t_06bb192bd84cf6 12-13,28-31,41,47,82-147,163-182,184
+src/modules/Arrangement/useCases/device/__tests__/addExternalDevice.spec.ts
+  s_ac9b259eab20ba::t_114ab360416452 31-59,80-93,95
+src/modules/Arrangement/useCases/device/__tests__/removeDevice.spec.ts
+  s_ac9b259eab20ba::t_f8f979af67ed3a 13,17,21-24,36,44-55,57-60,68,70-72,76-77,87-88,99-208,212,218
+src/modules/Arrangement/useCases/device/addDevice.ts
+  s_ac9b259eab20ba::t_012533826a3858 7,10,21-25,54-55,58-67
+src/modules/Arrangement/useCases/device/addExternalDevice.ts
+  s_ac9b259eab20ba::t_045ecb627df698 6,18-22,39,42-45
+src/modules/Arrangement/useCases/device/removeDevice.ts
+  s_ac9b259eab20ba::t_5908526e8a340a 1-2,7,9-13,16,19,21-53,57-72,74-91
+src/modules/Arrangement/useCases/freezeBounce/__tests__/bounceSelection.spec.ts
+  s_ac9b259eab20ba::t_9a282682355b61 198-223
+src/modules/Arrangement/useCases/freezeBounce/__tests__/flattenTrack.spec.ts
+  s_ac9b259eab20ba::t_84795e63dbdab4 7-10,15-18,22,77,79,98-105,156-178
+src/modules/Arrangement/useCases/freezeBounce/bounceSelection.ts
+  s_ac9b259eab20ba::t_82ff62e107e385 5,42-62,82-86,89
+src/modules/Arrangement/useCases/freezeBounce/flattenTrack.ts
+  s_ac9b259eab20ba::t_df3a621beb7a4d 5,8-13,16,19,21,26,48,65,76
+src/modules/Arrangement/useCases/index.ts
+  s_ac9b259eab20ba::t_936ab05934b5fa 19,180
+src/modules/Arrangement/useCases/projectTrackToLiveStrip.ts
+  s_ac9b259eab20ba::t_b98896f1598a96 1-103
+src/modules/Arrangement/useCases/removeTrack.ts
+  s_ac9b259eab20ba::t_559dde9b01d2d1 12,61-63,67
+src/modules/Arrangement/useCases/replaceClipAudioBuffer.ts
+  s_ac9b259eab20ba::t_863a561c1ab36a 3,10-14,17,24-32,36-48,51-59,62,70
+src/modules/Arrangement/useCases/stripSilence.ts
+  s_ac9b259eab20ba::t_aaaeb431193776 5,13-18,21,24-27,30,32,38,72,75,93,103,105,107
+src/modules/Arrangement/useCases/toggleTrackState/__tests__/applySoloLogic.spec.ts
+  s_ac9b259eab20ba::t_49322de65a1226 63,69,85-105
+src/modules/Arrangement/useCases/toggleTrackState/applySoloLogic.ts
+  s_ac9b259eab20ba::t_81789e5913453d 5,10-23,29-37,42,46-48
+src/modules/Arrangement/useCases/trackViewActions/__tests__/setWorkspaceMode.spec.ts
+  s_ac9b259eab20ba::t_68225bc257462a 3-8,17-26
+src/modules/AudioEngine/engine/TrackNode.ts
+  s_ac9b259eab20ba::t_4337e22d5529d6 10,25-31,41-43,216-217,220-229,235-240,257,263-265,271-273,325-414,416-418,424,455,464-465,468-471,481-497,499-500,529,535-536,538-540,542,556,625-628,649-656,663,683
+src/modules/AudioEngine/engine/__tests__/TrackNode.spec.ts
+  s_ac9b259eab20ba::t_0848e28075fcba 113-136,301-305,307,310,319-322
+src/modules/AudioEngine/engine/__tests__/TrackNodeDevices.spec.ts
+  s_ac9b259eab20ba::t_df87b967a641fd 91-146,449-450,455-457,459,462-520,522-534,536-537,539-555
+src/modules/AudioEngine/engine/__tests__/wasmDeviceRegistryDescriptors.spec.ts
+  s_ac9b259eab20ba::t_0492f2776fcb47 97,182-186,259-265,315,330,332-343
+src/modules/AudioEngine/engine/wasmDeviceRegistry.ts
+  s_ac9b259eab20ba::t_5dd7e8b734c841 38-40,98,156,162,201-203,244,250,280-282,321,327-335,338-340,385,439,524,548,565-568,600,708,745-747,802,816-818
+src/modules/AudioEngine/repositories/__tests__/createWebAudioEngine.spec.ts
+  s_ac9b259eab20ba::t_898beab73ac4db 25,30,32-36,41-47,49-55,57-58,61,99-125,192-222,280,290-361
+src/modules/AudioEngine/repositories/createWebAudioEngine.ts
+  s_ac9b259eab20ba::t_2bcf46ff73849f 28-34,118,397-412,416,427-437,828-851,859,946-947
+src/modules/AudioEngine/useCases/__tests__/exportStems.spec.ts
+  s_ac9b259eab20ba::t_458f646f319928 24-27,96-128,132,158-165,174-210
+src/modules/AudioEngine/useCases/exportStems.ts
+  s_ac9b259eab20ba::t_692720b4947489 1,75,81
+src/modules/AudioEngine/useCases/offlineRender/__tests__/resolveRenderContext.spec.ts
+  s_ac9b259eab20ba::t_ca04df4042c346 4,35,43,50,57,64
+src/modules/AudioEngine/useCases/offlineRender/shouldCreateOfflineStrip.ts
+  s_ac9b259eab20ba::t_92f59e661b21ce 1,9
+src/modules/Automation/useCases/automation/__tests__/prepareClipAutomationShiftTransaction.spec.ts
+  s_ac9b259eab20ba::t_5e3d230a023ad9 1-324
+src/modules/Automation/useCases/automation/prepareClipAutomationShiftTransaction.ts
+  s_ac9b259eab20ba::t_a16c5740f75f6c 1-134
+src/modules/Automation/useCases/automationRecording/__tests__/isRecordingAutomation.spec.ts
+  s_ac9b259eab20ba::t_c23206939b60f8 4,12,16-17,26,52,122-133
+src/modules/Automation/useCases/automationRecording/isRecordingAutomation.ts
+  s_ac9b259eab20ba::t_973337ed4455e9 3,5,9,13
+src/modules/Automation/useCases/automationRecording/isRecordingAutomationByKey.ts
+  s_ac9b259eab20ba::t_398d2f0276543f 1-20
+src/modules/Automation/useCases/index.ts
+  s_ac9b259eab20ba::t_48c485fedd060a 15
+src/modules/Command/useCases/__tests__/actionHistoryReplay.integration.spec.ts
+  s_ac9b259eab20ba::t_de8b7d4c641ce4 15-16,145-161
+src/modules/Command/useCases/__tests__/executeAppAction.spec.ts
+  s_ac9b259eab20ba::t_d757d2e26a7ac7 10-14,190-363,561-572,575,591-592
+src/modules/Command/useCases/executeAppAction.ts
+  s_ac9b259eab20ba::t_c24278390b45ef 4,41-44,66-83,85,87,102,107,112-133
+src/modules/Command/useCases/macro/__tests__/playback.spec.ts
+  s_ac9b259eab20ba::t_7836f82dfd5c91 171-205
+src/modules/Command/useCases/macro/playback.ts
+  s_ac9b259eab20ba::t_d2066b61b4e586 8,14-19,63-65,84-93,129,152
+src/modules/CrdtDocument/repositories/__tests__/automergeRepository.replacementLoad.spec.ts
+  s_ac9b259eab20ba::t_66b740ec607e60 1-126
+src/modules/CrdtDocument/repositories/__tests__/automergeRepository.worker.spec.ts
+  s_ac9b259eab20ba::t_0c78a7816c8f79 1,4-11
+src/modules/CrdtDocument/repositories/__tests__/automergeWorkerTestHarness.ts
+  s_ac9b259eab20ba::t_9699874f8edc40 1-260
+src/modules/MIDI/handlers/chordTrack/__tests__/chordTrackActions.spec.ts
+  s_ac9b259eab20ba::t_c61bcdcf3f351a 1-85
+src/modules/MIDI/handlers/chordTrack/__tests__/handleAddChordEvent.spec.ts
+  s_ac9b259eab20ba::t_136b3c9e8c777f 19,22,28,31
+src/modules/MIDI/handlers/chordTrack/handleAddChordEvent.ts
+  s_ac9b259eab20ba::t_321304a79749c6 6-7,12-20,27-31
+src/modules/MIDI/handlers/chordTrack/handleClearChordTrack.ts
+  s_ac9b259eab20ba::t_28d7d2578f003b 5-6,11
+src/modules/MIDI/handlers/chordTrack/handleRemoveChordEvent.ts
+  s_ac9b259eab20ba::t_f5eb69b2a00686 5-6,11-12
+src/modules/MIDI/handlers/chordTrack/handleRestoreChordTrackState.ts
+  s_ac9b259eab20ba::t_37f9e3bf04bbc0 1-109
+src/modules/MIDI/handlers/chordTrack/handleToggleChordTrack.ts
+  s_ac9b259eab20ba::t_016c2fc26606a0 3,6-15,17-29,31
+src/modules/MIDI/handlers/patternInstance/__tests__/handleCreatePatternInstance.spec.ts
+  s_ac9b259eab20ba::t_54b3d211c27fd6 1,6,13-17,19-42
+src/modules/MIDI/handlers/patternInstance/__tests__/handleDetachPatternInstance.spec.ts
+  s_ac9b259eab20ba::t_fbc0809e8b4797 1,5-6,9-10,13-17,20-32,35-38,40-42
+src/modules/MIDI/handlers/patternInstance/handleCreatePatternInstance.ts
+  s_ac9b259eab20ba::t_d432de82b0e6de 7-16
+src/modules/MIDI/handlers/patternInstance/handleDetachPatternInstance.ts
+  s_ac9b259eab20ba::t_65dca4f9df9a92 7-12
+src/modules/MIDI/repositories/readLegacyChordTrackStorage.ts
+  s_ac9b259eab20ba::t_bbf72b3eb7d78d 1-36
+src/modules/MIDI/stores/__tests__/chordTrackStore.spec.ts
+  s_ac9b259eab20ba::t_0d881551992ab5 1,4-43,47-76,79-131,133-136,141-142,159,166,168-169,177-178,180-181,300-400
+src/modules/MIDI/stores/__tests__/grooveTemplateCollaboration.spec.ts
+  s_ac9b259eab20ba::t_200e245e6641ed 7,390-398
+src/modules/MIDI/useCases/__tests__/readLegacyChordTrackMigration.spec.ts
+  s_ac9b259eab20ba::t_1c10bfc7439ff9 1-137
+src/modules/MIDI/useCases/__tests__/resetMidiStoreForProject.spec.ts
+  s_ac9b259eab20ba::t_5fc26332fbd1f8 3,10,46-47,50,54-55
+src/modules/MIDI/useCases/chordTrack/addChordEvent.ts
+  s_ac9b259eab20ba::t_1a4d0735cdac77 5-11,17-18
+src/modules/MIDI/useCases/getChordTrackHandlers.ts
+  s_ac9b259eab20ba::t_26d429e67f8007 6-10,15-16,19-20,32-33,37
+src/modules/MIDI/useCases/hydrateMidiCrdtProjection.ts
+  s_ac9b259eab20ba::t_1dd03279e75482 1,8
+src/modules/MIDI/useCases/patternInstance/__tests__/createPatternInstance.spec.ts
+  s_ac9b259eab20ba::t_8447f388fcea1b 1,5-34,36,39-42,49,52,64-80,82-95,97-104,106-117,120-121,124-188,191-192,194-321
+src/modules/MIDI/useCases/patternInstance/__tests__/detachPatternInstance.spec.ts
+  s_ac9b259eab20ba::t_3c5baf95746023 1,7-20,23-28,34-35,40-45,50-54,56-60,63-80,82,84-105,108-120,122,124-147,149-151
+src/modules/MIDI/useCases/patternInstance/createPatternInstance.ts
+  s_ac9b259eab20ba::t_19550b2ae1bfb3 1,12-21,27-28,39,54-55
+src/modules/MIDI/useCases/patternInstance/detachPatternInstance.ts
+  s_ac9b259eab20ba::t_61235740f0904f 1,6-24
+src/modules/MIDI/useCases/readLegacyChordTrackMigration.ts
+  s_ac9b259eab20ba::t_f1d67842382821 1-33
+src/modules/MIDI/useCases/resetMidiStoreForProject.ts
+  s_ac9b259eab20ba::t_f4dd4cff81f578 1,28
+src/modules/PluginHost/useCases/pluginLifecycle/__tests__/lifecycle.spec.ts
+  s_ac9b259eab20ba::t_4b5cc9f84ea869 1-4,17-25,39-43,55-185
+src/modules/PluginHost/useCases/pluginLifecycle/loadPlugin.ts
+  s_ac9b259eab20ba::t_bb2343bf9a13ec 3-4,7
+src/modules/PluginHost/useCases/pluginLifecycle/serializePluginLifecycle.ts
+  s_ac9b259eab20ba::t_e8b7b5d4bbe441 1-41
+src/modules/PluginHost/useCases/pluginLifecycle/unloadPlugin.ts
+  s_ac9b259eab20ba::t_78e21292746737 3-4,7
+src/modules/Project/handlers/projectTemplate/__tests__/handleCreateProjectFromTemplate.spec.ts
+  s_ac9b259eab20ba::t_86f46e1eded9d6 1-38
+src/modules/Project/handlers/projectTemplate/handleCreateProjectFromTemplate.ts
+  s_ac9b259eab20ba::t_ab9d0a162a2b9c 1-12
+src/modules/Project/useCases/demoProjects/nebulaDrift/__tests__/createNebulaDriftDemo.spec.ts
+  s_ac9b259eab20ba::t_e78b1b89dd1aa0 51-59
+src/modules/Project/useCases/demoProjects/nebulaDrift/createNebulaDriftDemo.ts
+  s_ac9b259eab20ba::t_7ef490ca0955b4 29-30,2290,2345-2347
+src/modules/Project/useCases/getProjectHandlers.ts
+  s_ac9b259eab20ba::t_b396bec015c425 1-13
+src/modules/Project/useCases/index.ts
+  s_ac9b259eab20ba::t_65d7c59fd5f634 18
+src/modules/Project/useCases/projectPersistence/__tests__/loadProject.spec.ts
+  s_ac9b259eab20ba::t_2a8e3a11e39409 3,7,20-26,28,33,56,62,65-68,78,80-81,83,167-248
+src/modules/Project/useCases/projectPersistence/__tests__/newProject.spec.ts
+  s_ac9b259eab20ba::t_35a4f5c842392a 7-14,38,48,51,102-104,127-130,140-218
+src/modules/Project/useCases/projectPersistence/fileIO/__tests__/vcaFoundationLifecycle.spec.ts
+  s_ac9b259eab20ba::t_783601b41cb7b7 1-233
+src/modules/Project/useCases/projectPersistence/loadProject.ts
+  s_ac9b259eab20ba::t_570a057bfd62e0 4,9,13,60,90-108
+src/modules/Project/useCases/projectPersistence/newProject.ts
+  s_ac9b259eab20ba::t_bbb36a59df472b 5-11,41-53,59-60,70-72,74-81,83-89,91,93-97,112-116,118-119,121-126,128
+src/modules/Project/useCases/projectTemplates/templateDefinitions/__tests__/applyProjectTemplate.spec.ts
+  s_ac9b259eab20ba::t_47d90a9f79beeb 3,5-7,10-11,13,15,18-19,21-23,25-26,29-30,32
+src/modules/Project/useCases/projectTemplates/templateDefinitions/__tests__/createFromTemplate.spec.ts
+  s_ac9b259eab20ba::t_e6a5a8ec3ac879 7-9,19-23,25,39,41-42,46-47,49,53,56-68,72-107,110-130
+src/modules/Project/useCases/projectTemplates/templateDefinitions/applyProjectTemplate.ts
+  s_ac9b259eab20ba::t_445e3ef6b27876 1-9
+src/modules/Project/useCases/projectTemplates/templateDefinitions/createFromTemplate.ts
+  s_ac9b259eab20ba::t_f7c7f72cfd1019 3-4,8-20,26,28-30,32,34-38,40-46
+src/modules/Project/useCases/projectTemplates/templateDefinitions/helpers.ts
+  s_ac9b259eab20ba::t_040d4c7822bacf 20,36,45,54,63,72,81,90,99,108,117,126
+src/modules/Project/useCases/projectTemplates/templateHelpers/__tests__/builder.spec.ts
+  s_ac9b259eab20ba::t_f7eeecfa51bead 22-29,68
+src/modules/Project/useCases/projectTemplates/templateHelpers/__tests__/finalizeTemplate.spec.ts
+  s_ac9b259eab20ba::t_de63ba68179d4e 1-65
+src/modules/Project/useCases/projectTemplates/templateHelpers/finalizeTemplate.ts
+  s_ac9b259eab20ba::t_fd372f780cb8ec 36-39
+src/modules/Project/useCases/projectTemplates/templateHelpers/initProject.ts
+  s_ac9b259eab20ba::t_129c4b4afd4c6c 2,23
+src/modules/Project/useCases/projectTemplates/templateHelpers/setChordProgression.ts
+  s_ac9b259eab20ba::t_4e94f39beaa211 1,31,50
+src/modules/TimelineEditor/presentations/views/Timeline/ChordTrackLane.tsx
+  s_ac9b259eab20ba::t_451f36214e57a5 9-17,24,26,94-103,109-121,126,128-130,133-138,142-181,199-274,276-277,280-288,291-293,296,298-325,328-332,338-347,360-363,370-421,424-430,437-440,443-449,457,477,479-484,495,509,511-513,519-534,538-539,549-550,553,562-572,578,595-602,612,614-615,626-627,637,639-645,647-649,656,667,669-675,677-679,689,691-694,696-697
+src/modules/TimelineEditor/presentations/views/Timeline/__tests__/ChordTrackLane.spec.tsx
+  s_ac9b259eab20ba::t_26ffab61f03ca3 1,4-5,14-21,25-49,53,89,92,94,96,106,113,125,128-129,140-142,145-147,150-151,154-291,293-305,307,309-311,313-315,318-340,342-413,415-525,527-528
+src/modules/Transport/useCases/__tests__/ensureTrackStrips.spec.ts
+  s_ac9b259eab20ba::t_9fcff70dac2528 22-29,34-35,38-43,128-201,221-233,243-264,267,284-287,290,307-310
+src/modules/Transport/useCases/ensureTrackStrips.ts
+  s_ac9b259eab20ba::t_97d8b0bdda4e7f 8-17,20,22,25-27,32,34,36-38,40-41
+src/utils/handlerContract.ts
+  s_ac9b259eab20ba::t_db21a2ad74820a 119-146,530,589-602,606-609,728-729
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "9962f2f852f727178ce32b6c54c4ff7911d38050",
+  "prompts": {},
+  "sessions": {
+    "s_ac9b259eab20ba": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8699-3865-7842-8c54-afbac6cfd266",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
