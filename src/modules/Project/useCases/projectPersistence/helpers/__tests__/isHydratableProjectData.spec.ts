@@ -190,6 +190,10 @@ describe('isHydratableProjectData', () => {
                 masterGain: 1,
             },
             midi: { notesByClipId: {}, ccByClipId: {}, pitchBendByClipId: {} },
+            chordTrack: {
+                enabled: true,
+                events: [{ id: 'chord-1', beat: 0, root: 9, quality: 'minor', duration: 4 }],
+            },
             automation: { lanes: [] },
             markers: [{ id: 'marker-1', beat: 0, name: 'Verse', color: '#000000' }],
             tempoMap: { changes: [{ beat: 0, tempo: 120, curve: 'instant' }] },
@@ -318,6 +322,19 @@ describe('isHydratableProjectData', () => {
             isHydratableProjectData({
                 ...buildValidProjectData(),
                 transport: { tempo: 120 },
+            })
+        ).toBe(false);
+    });
+
+    it('rejects malformed chord-track state while keeping the optional v1 field backward compatible', () => {
+        expect(isHydratableProjectData(buildValidProjectData())).toBe(true);
+        expect(
+            isHydratableProjectData({
+                ...buildValidProjectData(),
+                chordTrack: {
+                    enabled: true,
+                    events: [{ id: 'chord-1', beat: 0, root: 12, quality: 'minor', duration: 4 }],
+                },
             })
         ).toBe(false);
     });

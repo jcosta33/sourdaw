@@ -71,7 +71,7 @@ function isChordEvent(value: unknown): value is ChordEvent {
     );
 }
 
-function isChordTrackState(value: unknown): value is ChordTrackState {
+export function isChordTrackState(value: unknown): value is ChordTrackState {
     if (!isChordTrackStateCandidate(value)) {
         return false;
     }

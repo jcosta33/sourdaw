@@ -1,4 +1,4 @@
-import { isGrooveTemplateState } from '#/modules/MIDI/stores';
+import { isChordTrackState, isGrooveTemplateState } from '#/modules/MIDI/stores';
 
 import {
     isSupportedProjectVersion,
@@ -6,6 +6,7 @@ import {
     type ProjectArrangementSnapshot,
     type ProjectAutomation,
     type ProjectClip,
+    type ProjectChordTrackState,
     type ProjectExportedAudioBuffer,
     type ProjectGrooveState,
     type ProjectMeta,
@@ -46,6 +47,7 @@ export type HydratableProjectData = {
     transport?: ProjectTransport;
     automation?: ProjectAutomation;
     midi?: ProjectMidi;
+    chordTrack?: ProjectChordTrackState;
     grooves?: ProjectGrooveState;
     yeast?: ProjectYeastState;
     markers?: ProjectMarker[];
@@ -743,6 +745,9 @@ export function isHydratableProjectData(value: unknown): value is HydratableProj
         return false;
     }
     if (value.midi !== undefined && !isMidi(value.midi)) {
+        return false;
+    }
+    if (value.chordTrack !== undefined && !isChordTrackState(value.chordTrack)) {
         return false;
     }
     if (value.grooves !== undefined && !isGrooves(value.grooves)) {
