@@ -44,12 +44,28 @@ export function scheduleTrackAutomation(
         }
 
         if (lane.parameterId === 'gain') {
-            scheduleAutomationOnParam(trackGainNode.gain, lane.points, durationSeconds, defaultTempo, changes, regionStartBeat, compensationDelaySec);
+            scheduleAutomationOnParam(
+                trackGainNode.gain,
+                lane.points,
+                durationSeconds,
+                defaultTempo,
+                changes,
+                regionStartBeat,
+                compensationDelaySec
+            );
             continue;
         }
 
         if (lane.parameterId === 'pan') {
-            scheduleAutomationOnParam(trackPanNode.pan, lane.points, durationSeconds, defaultTempo, changes, regionStartBeat, compensationDelaySec);
+            scheduleAutomationOnParam(
+                trackPanNode.pan,
+                lane.points,
+                durationSeconds,
+                defaultTempo,
+                changes,
+                regionStartBeat,
+                compensationDelaySec
+            );
             continue;
         }
 
@@ -66,7 +82,15 @@ export function scheduleTrackAutomation(
                 const scale = resolveDeviceParamScale(candidate.deviceType, parameterId);
                 const points =
                     scale !== 1 ? lane.points.map((param) => ({ ...param, value: param.value * scale })) : lane.points;
-                scheduleAutomationOnParam(audioParam, points, durationSeconds, defaultTempo, changes, regionStartBeat, compensationDelaySec);
+                scheduleAutomationOnParam(
+                    audioParam,
+                    points,
+                    durationSeconds,
+                    defaultTempo,
+                    changes,
+                    regionStartBeat,
+                    compensationDelaySec
+                );
             }
         }
     }

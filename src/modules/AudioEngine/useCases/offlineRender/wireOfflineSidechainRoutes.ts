@@ -30,7 +30,10 @@ export function wireOfflineSidechainRoutes(
         }
         const targetEntry = deviceEntriesByTrack
             .get(route.targetTrackId)
-            ?.find((entry) => entry.deviceId === route.targetDeviceId && entry.deviceType === 'builtin-sidechain-compressor');
+            ?.find(
+                (entry) =>
+                    entry.deviceId === route.targetDeviceId && entry.deviceType === 'builtin-sidechain-compressor'
+            );
         if (!targetEntry) {
             continue;
         }

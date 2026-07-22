@@ -1,8 +1,8 @@
 import { describe, it, expect, vi } from 'vitest';
 
 import { type DeviceNodeEntry } from '../../buildDeviceChain';
-import { wireOfflineSidechainRoutes } from '../wireOfflineSidechainRoutes';
 import { type OfflineTrackStrip } from '../types';
+import { wireOfflineSidechainRoutes } from '../wireOfflineSidechainRoutes';
 
 function makeGain() {
     return { gain: { value: 1 }, connect: vi.fn(), disconnect: vi.fn() };

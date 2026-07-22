@@ -30,10 +30,7 @@ describe('scheduleAutomationOnParam — export region offset and latency compens
         const param = makeParam();
         scheduleAutomationOnParam(
             param as unknown as AudioParam,
-            [
-                point({ beat: 2, value: 0.2 }),
-                point({ beat: 4, value: 0.8 }),
-            ],
+            [point({ beat: 2, value: 0.2 }), point({ beat: 4, value: 0.8 })],
             10,
             120,
             [],
@@ -49,10 +46,7 @@ describe('scheduleAutomationOnParam — export region offset and latency compens
         const param = makeParam();
         scheduleAutomationOnParam(
             param as unknown as AudioParam,
-            [
-                point({ beat: 0, value: 0 }),
-                point({ beat: 8, value: 1 }),
-            ],
+            [point({ beat: 0, value: 0 }), point({ beat: 8, value: 1 })],
             10,
             120,
             [],
@@ -72,10 +66,7 @@ describe('scheduleAutomationOnParam — step curve at the region boundary', () =
         const param = makeParam();
         scheduleAutomationOnParam(
             param as unknown as AudioParam,
-            [
-                point({ beat: 0, value: 0.1, curve: 'step' }),
-                point({ beat: 1, value: 0.9 }),
-            ],
+            [point({ beat: 0, value: 0.1, curve: 'step' }), point({ beat: 1, value: 0.9 })],
             10,
             120,
             [],
@@ -95,11 +86,7 @@ describe('scheduleAutomationOnParam — advanced curve shapes (M-039)', () => {
         const param = makeParam();
         scheduleAutomationOnParam(
             param as unknown as AudioParam,
-            [
-                point({ beat: 0, value: 0 }),
-                point({ beat: 4, value: 1, curve: 'smooth' }),
-                point({ beat: 8, value: 0 }),
-            ],
+            [point({ beat: 0, value: 0 }), point({ beat: 4, value: 1, curve: 'smooth' }), point({ beat: 8, value: 0 })],
             10,
             120,
             []
@@ -117,10 +104,7 @@ describe('scheduleAutomationOnParam — advanced curve shapes (M-039)', () => {
         const param = makeParam();
         scheduleAutomationOnParam(
             param as unknown as AudioParam,
-            [
-                point({ beat: 0, value: 0, curve: 'stairs', stairSteps: 4 }),
-                point({ beat: 4, value: 1 }),
-            ],
+            [point({ beat: 0, value: 0, curve: 'stairs', stairSteps: 4 }), point({ beat: 4, value: 1 })],
             10,
             120,
             []
@@ -137,10 +121,7 @@ describe('scheduleAutomationOnParam — advanced curve shapes (M-039)', () => {
         const param = makeParam();
         scheduleAutomationOnParam(
             param as unknown as AudioParam,
-            [
-                point({ beat: 0, value: 0, curve: 's-curve', tension: 1 }),
-                point({ beat: 4, value: 1 }),
-            ],
+            [point({ beat: 0, value: 0, curve: 's-curve', tension: 1 }), point({ beat: 4, value: 1 })],
             10,
             120,
             []

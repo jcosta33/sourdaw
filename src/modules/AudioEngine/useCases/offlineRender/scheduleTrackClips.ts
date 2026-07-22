@@ -217,8 +217,7 @@ export async function scheduleTrackClips({
             // the same way: region exports start (regionStart - trackStart)
             // into the buffer; regions starting before the track content
             // start the buffer later at offset 0.
-            const trackStartBeat =
-                track.clips.length > 0 ? Math.min(...track.clips.map((clip) => clip.startBeat)) : 0;
+            const trackStartBeat = track.clips.length > 0 ? Math.min(...track.clips.map((clip) => clip.startBeat)) : 0;
             const trackStartSec = projectPpqEndpoints({
                 startPpq: trackStartBeat,
                 endPpq: trackStartBeat,

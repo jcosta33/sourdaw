@@ -3,7 +3,7 @@ import { describe, it, expect } from 'vitest';
 import { interpolateAutomationPointValue } from '#/modules/Automation/useCases';
 
 import { type AutomationPoint } from '../../../models/AutomationViewTypes';
-import { interpolateCurveValue } from '../scheduleAutomationOnParam';
+import { interpolateCurveValue } from '../interpolateCurveValue';
 
 /**
  * Conformance sweep (PR #616 review, non-blocking): the offline export

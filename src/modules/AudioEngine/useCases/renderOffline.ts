@@ -19,13 +19,13 @@ import { resolveRenderContext } from './offlineRender/resolveRenderContext';
 import { schedulePendingSuspends } from './offlineRender/schedulePendingSuspends';
 import { scheduleTrackClips } from './offlineRender/scheduleTrackClips';
 import { shouldCreateOfflineStrip } from './offlineRender/shouldCreateOfflineStrip';
-import { wireOfflineSidechainRoutes } from './offlineRender/wireOfflineSidechainRoutes';
 import {
     type OfflineBusStrip,
     type OfflineRenderOptions,
     type OfflineTrackStrip,
     type PendingWorkletEvent,
 } from './offlineRender/types';
+import { wireOfflineSidechainRoutes } from './offlineRender/wireOfflineSidechainRoutes';
 import { yieldToMain } from './offlineRender/yieldToMain';
 
 type RenderOfflineFn = {
