@@ -1,0 +1,37 @@
+src/modules/Arrangement/handlers/marker/__tests__/markerHandlers.spec.ts
+  s_c2fca615e81f34::t_da4fa9b50a9cb2 10-15,24,36,50,53,57-180
+src/modules/Arrangement/handlers/marker/handleAddMarker.ts
+  s_c2fca615e81f34::t_a17a5cbcafc528 5-18,21,23-26
+src/modules/Arrangement/handlers/marker/handleAddSection.ts
+  s_c2fca615e81f34::t_e7a654ded4af55 5-18,21,23-26
+src/modules/Arrangement/handlers/marker/handleRemoveMarker.ts
+  s_c2fca615e81f34::t_dcb9cba3c4c967 4,10-22
+src/modules/Arrangement/handlers/marker/handleRemoveSection.ts
+  s_c2fca615e81f34::t_fb053f4a84a452 4,10-28
+src/modules/Arrangement/handlers/marker/handleRenameSection.ts
+  s_c2fca615e81f34::t_13aea97976186c 4,10-16
+src/modules/Arrangement/handlers/marker/handleSetMarkerColor.ts
+  s_c2fca615e81f34::t_16f2bdbb45ef6f 4,10-18
+src/modules/Arrangement/useCases/marker/markerOperations/addMarker.ts
+  s_c2fca615e81f34::t_dd7765961a20a8 4,9-13
+src/modules/Arrangement/useCases/marker/sectionOperations/addSection.ts
+  s_c2fca615e81f34::t_68f04a5c222877 4,9-13
+src/utils/handlerContract.ts
+  s_c2fca615e81f34::t_66c0037450b3db 297,300-303
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "ee2c429cc39add55b6dd347324ed7678222bd97d",
+  "prompts": {},
+  "sessions": {
+    "s_c2fca615e81f34": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f74e9-e1c5-7142-85d2-4c577b3973c0",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
