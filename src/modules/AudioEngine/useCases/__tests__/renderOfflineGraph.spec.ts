@@ -205,7 +205,13 @@ describe('renderOffline — graph construction and lifecycle', () => {
 
     it('routes strips to master, buses, other track inputs, or master fallback by outputId', async () => {
         const hwTrack = TrackDummy.create({ id: 't-hw', outputId: 'hw_out' });
-        const busTrack = TrackDummy.create({ id: 'bus-1', kind: 'bus', gain: 0.9, outputId: 'hw_out' });
+        const busTrack = TrackDummy.create({
+            id: 'bus-1',
+            kind: 'bus',
+            gain: 0.9,
+            outputId: 'hw_out',
+            devices: [{ id: 'return-fx' } as never],
+        });
         const toBusTrack = TrackDummy.create({ id: 't-bus', outputId: 'bus-1' });
         const toTrackTrack = TrackDummy.create({ id: 't-chain', outputId: 't-hw' });
         const orphanTrack = TrackDummy.create({ id: 't-orphan', outputId: 'ghost' });
@@ -226,13 +232,12 @@ describe('renderOffline — graph construction and lifecycle', () => {
         await renderOffline(4);
 
         const masterGain = createdContexts[0]!.gains[0]!;
-        const busGain = createdContexts[0]!.gains[1]!;
-        // Bus strip: clamped project gain, summed into master.
-        expect(busGain.gain.value).toBe(0.9);
-        expect(busGain.connect).toHaveBeenCalledWith(masterGain);
 
         expect(stripsByTrack.get('t-hw')!.outputNode.connect).toHaveBeenCalledWith(masterGain);
-        expect(stripsByTrack.get('t-bus')!.outputNode.connect).toHaveBeenCalledWith(busGain);
+        expect(stripsByTrack.get('bus-1')!.outputNode.connect).toHaveBeenCalledWith(masterGain);
+        expect(stripsByTrack.get('t-bus')!.outputNode.connect).toHaveBeenCalledWith(
+            stripsByTrack.get('bus-1')!.inputNode
+        );
         expect(stripsByTrack.get('t-chain')!.outputNode.connect).toHaveBeenCalledWith(
             stripsByTrack.get('t-hw')!.inputNode
         );
@@ -240,17 +245,24 @@ describe('renderOffline — graph construction and lifecycle', () => {
     });
 
     it('wires sends from the right tap with a clamped level and drops sends to unknown buses', async () => {
-        const busTrack = TrackDummy.create({ id: 'bus-1', kind: 'bus' });
+        const deviceBusTrack = TrackDummy.create({
+            id: 'device-bus',
+            kind: 'bus',
+            devices: [{ id: 'return-fx' } as never],
+        });
+        const ordinaryBusTrack = TrackDummy.create({ id: 'ordinary-bus', kind: 'bus' });
         const sender = TrackDummy.create({
             id: 't-send',
             sends: [
-                { busId: 'bus-1', level: 2, preFader: true },
-                { busId: 'bus-1', level: 0.4, preFader: false },
+                { busId: 'device-bus', level: 2, preFader: true },
+                { busId: 'ordinary-bus', level: 0.4, preFader: false },
                 { busId: 'missing-bus', level: 1, preFader: false },
             ] as Track['sends'],
         });
         mocks.resolveRenderContext.mockReturnValue(
-            makeContext({ tracks: { tracks: [busTrack, sender] } as unknown as TrackStoreState })
+            makeContext({
+                tracks: { tracks: [deviceBusTrack, ordinaryBusTrack, sender] } as unknown as TrackStoreState,
+            })
         );
         const stripsByTrack = new Map<string, OfflineTrackStrip>();
         mocks.createOfflineTrackStrip.mockImplementation((_ctx: OfflineAudioContext, track: Track) => {
@@ -261,20 +273,19 @@ describe('renderOffline — graph construction and lifecycle', () => {
 
         await renderOffline(4);
 
-        const busGain = createdContexts[0]!.gains[1]!;
         const senderStrip = stripsByTrack.get('t-send')!;
-        // Two send gains created (unknown bus creates none): master, bus, send, send.
-        expect(createdContexts[0]!.gains).toHaveLength(4);
-        const preFaderSendGain = createdContexts[0]!.gains[2]!;
-        const postFaderSendGain = createdContexts[0]!.gains[3]!;
+        // Two send gains created (unknown bus creates none): master, send, send.
+        expect(createdContexts[0]!.gains).toHaveLength(3);
+        const preFaderSendGain = createdContexts[0]!.gains[1]!;
+        const postFaderSendGain = createdContexts[0]!.gains[2]!;
 
         expect(preFaderSendGain.gain.value).toBe(1); // clamped from 2
         expect(senderStrip.preFaderTap.connect).toHaveBeenCalledWith(preFaderSendGain);
-        expect(preFaderSendGain.connect).toHaveBeenCalledWith(busGain);
+        expect(preFaderSendGain.connect).toHaveBeenCalledWith(stripsByTrack.get('device-bus')!.inputNode);
 
         expect(postFaderSendGain.gain.value).toBe(0.4);
         expect(senderStrip.outputNode.connect).toHaveBeenCalledWith(postFaderSendGain);
-        expect(postFaderSendGain.connect).toHaveBeenCalledWith(busGain);
+        expect(postFaderSendGain.connect).toHaveBeenCalledWith(stripsByTrack.get('ordinary-bus')!.inputNode);
     });
 
     it('builds strips for muted tracks to keep routing alive but never schedules their clips', async () => {

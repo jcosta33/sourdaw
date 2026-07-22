@@ -486,7 +486,12 @@ class AudioEngineImpl implements AudioEngine {
     public ensureBusStrip(busId: string): BusStrip {
         let node = this.busNodes.get(busId);
         if (!node) {
-            node = new BusNode(busId, this.context, this.masterGainNode);
+            this.ensureTrackStrip(busId);
+            const trackNode = this.trackNodes.get(busId);
+            if (!trackNode) {
+                throw new Error(`Failed to create track strip for bus ${busId}`);
+            }
+            node = new BusNode(busId, trackNode);
             this.busNodes.set(busId, node);
         }
         return node.strip;
@@ -503,6 +508,7 @@ class AudioEngineImpl implements AudioEngine {
                 this.sendNodes.delete(key);
             }
         }
+        this.removeTrackStrip(busId);
         node.dispose();
         this.busNodes.delete(busId);
     }
