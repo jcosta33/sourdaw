@@ -26,8 +26,8 @@ import {
 } from '#/modules/AudioEngine/useCases';
 import { automationStore } from '#/modules/Automation/stores';
 import { createAutomationLane } from '#/modules/Automation/useCases';
-import { chordTrackStore, LEGACY_MIDI_PROBABILITY_SEED, midiStore } from '#/modules/MIDI/stores';
-import { addChordEvent } from '#/modules/MIDI/useCases';
+import { LEGACY_MIDI_PROBABILITY_SEED, midiStore } from '#/modules/MIDI/stores';
+import { addChordEvent, replaceChordTrackState } from '#/modules/MIDI/useCases';
 import { addSidechainRoute } from '#/modules/Routing/useCases';
 import { getDefaultPadNames } from '#/modules/Toaster/useCases';
 import { tempoMapStore, timeSignatureMapStore, transportStore } from '#/modules/Transport/stores';
@@ -2287,7 +2287,7 @@ export async function demo5_NebulaDrift(): Promise<void> {
     //   Am9 | Cmaj9 | Em7 | Dm9 | Fmaj7 | G7 | Am9 | Bbmaj7
     //   (Cmaj9 and Am9 use available CHORD_TYPES keys; 'maj7' + 'min9' are the
     //   closest approximations in the type set.)
-    chordTrackStore.set({ enabled: true, events: [] });
+    replaceChordTrackState({ enabled: true, events: [] });
     type ChordQual = 'min9' | 'maj7' | 'min7' | '7';
     const chordProgression: Array<[number, ChordQual]> = [
         [9, 'min9'], // Am9
