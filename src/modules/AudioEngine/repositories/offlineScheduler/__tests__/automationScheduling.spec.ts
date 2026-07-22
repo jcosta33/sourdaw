@@ -1,8 +1,105 @@
 import { describe, it, expect, vi } from 'vitest';
 
+import { asBaseAudioContext, createMockAudioContext } from '../../../../../helpers/__tests__/audioContext.mock';
 import { type AutomationLane } from '../../../models/AutomationViewTypes';
+import { resolveDeviceParam, resolveDeviceParamScale } from '../../../services/deviceResolution';
+import { createOfflineDeviceNode, type OfflineDeviceNode } from '../../deviceNodeFactory';
 import { scheduleTrackAutomation } from '../automationScheduling';
 import { scheduleAutomationOnParam } from '../scheduleAutomationOnParam';
+
+type ParamProperty = 'frequency' | 'Q' | 'gain';
+type ExpectedParamTarget = readonly [node: string | number, property: ParamProperty, scale: number, offset: number];
+type WebAudioTarget = readonly [
+    deviceType: string,
+    parameterId: string,
+    min: number,
+    max: number,
+    targets: readonly ExpectedParamTarget[],
+];
+
+const GENERATED_WEB_AUDIO_TARGETS = [
+    ['builtin-filter', 'filter-cutoff', 20, 20_000, [['filter', 'frequency', 1, 0]]],
+    ['builtin-filter', 'filter-resonance', 0.1, 20, [['filter', 'Q', 1, 0]]],
+    [
+        'builtin-distortion',
+        'dist-mix',
+        0,
+        1,
+        [
+            ['wet', 'gain', 1, 0],
+            ['dry', 'gain', -1, 1],
+        ],
+    ],
+    ['builtin-delay', 'delay-feedback', 0, 0.95, [[4, 'gain', 1, 0]]],
+    [
+        'builtin-delay',
+        'delay-mix',
+        0,
+        1,
+        [
+            [2, 'gain', 1, 0],
+            [1, 'gain', -1, 1],
+        ],
+    ],
+    ['builtin-autopan', 'autopan-rate', 0.1, 10, [['lfo', 'frequency', 1, 0]]],
+    [
+        'builtin-autopan',
+        'autopan-depth',
+        0,
+        1,
+        [
+            ['lfoGainL', 'gain', 0.5, 0],
+            ['lfoGainR', 'gain', -0.5, 0],
+        ],
+    ],
+    ['builtin-phaser', 'phaser-rate', 0.1, 10, [['lfo', 'frequency', 1, 0]]],
+    [
+        'builtin-phaser',
+        'phaser-depth',
+        0,
+        1,
+        [
+            ['lfoGain', 'gain', 1000, 0],
+            ['wet', 'gain', 0.5, 0.25],
+            ['dry', 'gain', -0.5, 0.75],
+        ],
+    ],
+    [
+        'builtin-chorus',
+        'chorus-rate',
+        0.1,
+        10,
+        [
+            ['lfo1', 'frequency', 1, 0],
+            ['lfo2', 'frequency', 1.2, 0],
+        ],
+    ],
+    [
+        'builtin-chorus',
+        'chorus-depth',
+        0,
+        20,
+        [
+            ['lfoGain1', 'gain', 1 / 1000, 0],
+            ['lfoGain2', 'gain', 1 / 1000, 0],
+        ],
+    ],
+    ['builtin-tremolo', 'trem-rate', 0.1, 20, [['lfo', 'frequency', 1, 0]]],
+    ['builtin-tremolo', 'trem-depth', 0, 1, [['lfoDepth', 'gain', 1, 0]]],
+    ['builtin-stereo-widener', 'width-amount', 0, 3, [['sideGain', 'gain', 1, 0]]],
+] as const satisfies readonly WebAudioTarget[];
+
+function resolveExpectedParam(device: OfflineDeviceNode, [nodeKey, property]: ExpectedParamTarget): AudioParam {
+    const node = typeof nodeKey === 'string' ? device.namedNodes?.[nodeKey] : device.nodes[nodeKey];
+    if (!node) {
+        throw new Error(`Expected semantic node ${String(nodeKey)}`);
+    }
+    const audioParam = (node as unknown as Partial<Record<ParamProperty, AudioParam>>)[property];
+    if (!audioParam) {
+        throw new Error(`Expected ${String(nodeKey)}.${property} AudioParam`);
+    }
+    return audioParam;
+}
 
 // A minimal AudioParam double exposing the scheduling methods the function calls.
 function makeParam() {
@@ -88,6 +185,47 @@ describe('scheduleAutomationOnParam', () => {
 });
 
 describe('scheduleTrackAutomation', () => {
+    it.each(GENERATED_WEB_AUDIO_TARGETS)(
+        'resolves and schedules generated %s:%s automation with truthful scaling',
+        (deviceType, parameterId, min, max, targetSpecs) => {
+            const context = createMockAudioContext();
+            const device = createOfflineDeviceNode({ context: asBaseAudioContext(context), deviceType });
+            if (!device) {
+                throw new Error(`Expected ${deviceType} factory`);
+            }
+            const params = targetSpecs.map((target) => resolveExpectedParam(device, target));
+            expect(resolveDeviceParam(deviceType, parameterId, device)).toBe(params[0]);
+            expect(resolveDeviceParamScale(deviceType, parameterId)).toBe(targetSpecs[0][2]);
+
+            scheduleTrackAutomation(
+                [
+                    makeLane({
+                        parameterId: `device-1:${parameterId}`,
+                        minValue: min,
+                        maxValue: max,
+                        points: [
+                            { beat: 0, value: min, curve: 'linear', tension: 0 },
+                            { beat: 2, value: max, curve: 'linear', tension: 0 },
+                        ],
+                    }),
+                ],
+                'track-1',
+                { gain: makeParam() } as unknown as GainNode,
+                { pan: makeParam() } as unknown as StereoPannerNode,
+                [{ deviceId: 'device-1', deviceType, node: device }],
+                10,
+                120,
+                []
+            );
+
+            for (const [index, [, , scale, offset]] of targetSpecs.entries()) {
+                expect(params[index]!.setValueAtTime).toHaveBeenCalledWith(min * scale + offset, 0);
+                expect(params[index]!.linearRampToValueAtTime).toHaveBeenCalledWith(max * scale + offset, 1);
+            }
+            device.dispose?.();
+        }
+    );
+
     it('routes a gain lane to the track gain param and leaves pan untouched', () => {
         const gain = makeParam();
         const pan = makeParam();
