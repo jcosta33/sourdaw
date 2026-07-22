@@ -164,21 +164,27 @@ pub async fn destroy_crumbs(
         .map_err(|err| format!("Failed to lock crumbs state: {err}"))?;
 
     if let Some(instance) = instances.remove(&instance_id) {
-        let mut engine_guard = app_state
-            .engine
-            .lock()
-            .map_err(|e| format!("Failed to lock engine: {e}"))?;
-        if let Some(ref mut engine_handle) = *engine_guard {
-            engine_handle.remove_plugin(instance.engine_plugin_id)?;
-        }
-        drop(engine_guard);
-        // Drop the audio-bridge handle registered at create time (mirrors
-        // the CLAP unload path) so no stale ring keeps accepting blocks.
+        // Attempt the scheduler removal but never let its failure skip the
+        // bridge-handle cleanup — a stale ring would keep accepting blocks
+        // for a dead plugin (PR #564 review).
+        let removal_result = (|app_state: &State<'_, AppState>| -> Result<(), String> {
+            let mut engine_guard = app_state
+                .engine
+                .lock()
+                .map_err(|e| format!("Failed to lock engine: {e}"))?;
+            if let Some(ref mut engine_handle) = *engine_guard {
+                engine_handle.remove_plugin(instance.engine_plugin_id)?;
+            }
+            Ok(())
+        })(&app_state);
+
         let mut bridges = app_state
             .audio_bridges
             .lock()
             .map_err(|e| format!("Failed to lock audio_bridges: {e}"))?;
         bridges.remove(&instance.engine_plugin_id);
+
+        removal_result?;
     }
     Ok(())
 }

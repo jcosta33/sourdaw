@@ -255,9 +255,9 @@ impl AudioScheduler {
                         }
 
                         if pending_midi.is_empty() {
-                            plugin.process_audio(left, right, num_samples);
+                            plugin.process_bridged_audio(left, right, num_samples);
                         } else {
-                            plugin.process_with_events(
+                            plugin.process_bridged_with_events(
                                 left,
                                 right,
                                 num_samples,
