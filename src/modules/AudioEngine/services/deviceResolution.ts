@@ -51,7 +51,10 @@ const paramTargetMap: Record<string, readonly DeviceParamTargetDefinition[]> = {
     'builtin-reverb:rev-mix': [{ nodeIndex: 2, property: 'gain' }],
     'builtin-delay:delay-time': [{ nodeIndex: 3, property: 'delayTime', scale: 1 / 1000 }],
     'builtin-delay:delay-feedback': [{ nodeIndex: 4, property: 'gain' }],
-    'builtin-delay:delay-mix': [{ nodeIndex: 2, property: 'gain' }],
+    'builtin-delay:delay-mix': [
+        { nodeIndex: 2, property: 'gain' },
+        { nodeIndex: 1, property: 'gain', scale: -1, offset: 1 },
+    ],
     'builtin-gain:gain-level': [{ nodeIndex: 0, property: 'gain' }],
     'builtin-limiter:lim-threshold': [{ nodeIndex: 0, property: 'threshold' }],
     'builtin-limiter:lim-release': [{ nodeIndex: 0, property: 'release' }],

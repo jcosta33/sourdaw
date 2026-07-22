@@ -31,7 +31,16 @@ const GENERATED_WEB_AUDIO_TARGETS = [
         ],
     ],
     ['builtin-delay', 'delay-feedback', 0, 0.95, [[4, 'gain', 1, 0]]],
-    ['builtin-delay', 'delay-mix', 0, 1, [[2, 'gain', 1, 0]]],
+    [
+        'builtin-delay',
+        'delay-mix',
+        0,
+        1,
+        [
+            [2, 'gain', 1, 0],
+            [1, 'gain', -1, 1],
+        ],
+    ],
     ['builtin-autopan', 'autopan-rate', 0.1, 10, [['lfo', 'frequency', 1, 0]]],
     [
         'builtin-autopan',
