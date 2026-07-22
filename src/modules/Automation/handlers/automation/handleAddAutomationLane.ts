@@ -18,14 +18,15 @@ function ensureLaneId(action: AddAutomationLaneAction): string {
 
 function isAddAutomationLaneNoop(action: AddAutomationLaneAction): boolean {
     const state = getAutomationStoreState();
-    return (
-        state?.lanes.some(
-            (lane) =>
-                (action.payload.laneId !== undefined && lane.id === action.payload.laneId) ||
-                (!lane.clipId &&
-                    lane.trackId === action.payload.trackId &&
-                    lane.parameterId === action.payload.parameterId)
-        ) ?? false
+    if (!state) {
+        return false;
+    }
+    if (action.payload.laneId !== undefined) {
+        return state.lanes.some((lane) => lane.id === action.payload.laneId);
+    }
+    return state.lanes.some(
+        (lane) =>
+            !lane.clipId && lane.trackId === action.payload.trackId && lane.parameterId === action.payload.parameterId
     );
 }
 

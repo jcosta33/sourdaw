@@ -164,6 +164,23 @@ describe('validateActionPayload / PAYLOAD_VALIDATORS', () => {
         });
     });
 
+    describe('addAutomationLane', () => {
+        it('should accept an absent or non-empty laneId and reject malformed replay ids', () => {
+            const guard = PAYLOAD_VALIDATORS.addAutomationLane;
+            expect(guard).not.toBe('unchecked');
+            if (guard === 'unchecked') {
+                return;
+            }
+
+            const payload = { trackId: 'track-1', parameterId: 'gain', parameterName: 'Gain' };
+            expect(guard(payload)).toBe(true);
+            expect(guard({ ...payload, laneId: 'auto-lane-1' })).toBe(true);
+            expect(guard({ ...payload, laneId: '' })).toBe(false);
+            expect(guard({ ...payload, laneId: 1 })).toBe(false);
+            expect(guard({ ...payload, laneId: null })).toBe(false);
+        });
+    });
+
     describe.each(['setPunchIn', 'setPunchOut'] as const)('%s', (actionType) => {
         it('should accept an exact payload with any finite numeric beat', () => {
             const guard = PAYLOAD_VALIDATORS[actionType];

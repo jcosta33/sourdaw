@@ -305,11 +305,11 @@ export type AppAction =
           payload: { trackId: string; parameterId: string; parameterName: string; laneId?: string };
       }
     | {
-          /** Inverse of `addAutomationLane`, keyed by the exact id allocated before
-           *  execute. Emitted only by the `addAutomationLane` handler's `describe()`. Keep mirrored in
-           *  src/utils/handlerContract.ts and AiRuntime/models/RuntimeAction.ts. */
+          /** Command inverse of `addAutomationLane`, keyed by the exact id allocated
+           *  before execute. The legacy RuntimeAction pair remains accepted for type
+           *  compatibility but the handler deliberately performs no removal without an id. */
           type: 'removeAutomationLane';
-          payload: { laneId: string };
+          payload: { laneId: string } | { trackId: string; parameterId: string };
       }
     | {
           type: 'addAutomationPoint';

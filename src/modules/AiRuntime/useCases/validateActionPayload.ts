@@ -179,7 +179,10 @@ const validators = {
 
     // Automation
     addAutomationLane: (param): param is PayloadOf<'addAutomationLane'> =>
-        isObj(param) && isString(param.trackId) && isString(param.parameterId),
+        isObj(param) &&
+        isString(param.trackId) &&
+        isString(param.parameterId) &&
+        (!Object.hasOwn(param, 'laneId') || isNonEmptyString(param.laneId)),
     addAutomationPoint: (param): param is PayloadOf<'addAutomationPoint'> =>
         isObj(param) && isString(param.laneId) && isNumber(param.beat) && isNumber(param.value),
     removeAutomationPoint: (param): param is PayloadOf<'removeAutomationPoint'> =>

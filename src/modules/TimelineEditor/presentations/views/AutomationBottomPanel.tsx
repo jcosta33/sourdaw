@@ -138,11 +138,14 @@ export const AutomationBottomPanel = (): ReactElement => {
     const availableParams = selectedTrack
         ? getAutomatableParams(
               selectedTrack.id,
-              selectedTrack.devices.map((data) => ({ id: data.id, type: data.type, name: data.name })),
-              trackLanes
+              selectedTrack.devices.map((data) => ({ type: data.type, name: data.name }))
           )
         : [];
-    const unusedParams = availableParams;
+
+    // Filter out params that already have lanes
+    const unusedParams = availableParams.filter(
+        (param) => !trackLanes.some((length) => length.parameterId === param.id)
+    );
 
     const automationMode = selectedTrack?.automationMode ?? 'read';
     const trackColor = selectedTrack?.color ?? 'var(--color-palette-steel)';

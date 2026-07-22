@@ -7,11 +7,14 @@ export function addAutomationLane(trackId: string, parameterId: string, paramete
         return;
     }
 
-    const exists = state.lanes.some(
-        (lane) =>
-            (laneId !== undefined && lane.id === laneId) ||
-            (!lane.clipId && lane.trackId === trackId && lane.parameterId === parameterId)
-    );
+    let exists: boolean;
+    if (laneId === undefined) {
+        exists = state.lanes.some(
+            (lane) => !lane.clipId && lane.trackId === trackId && lane.parameterId === parameterId
+        );
+    } else {
+        exists = state.lanes.some((lane) => lane.id === laneId);
+    }
     if (exists) {
         return;
     }

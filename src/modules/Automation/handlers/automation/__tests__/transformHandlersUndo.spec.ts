@@ -186,8 +186,8 @@ describe('automation transform handlers — execute → undo restores pre-state'
 
         const inverse = describeResult.inverseAction;
         expect(inverse?.type).toBe('removeAutomationLane');
-        if (inverse?.type !== 'removeAutomationLane') {
-            throw new Error('Expected removeAutomationLane inverse');
+        if (inverse?.type !== 'removeAutomationLane' || !('laneId' in inverse.payload)) {
+            throw new Error('Expected id-scoped removeAutomationLane inverse');
         }
         expect(inverse.payload).toEqual({ laneId: expect.any(String) });
         expect(action.payload).toHaveProperty('laneId', inverse.payload.laneId);
@@ -204,6 +204,13 @@ describe('automation transform handlers — execute → undo restores pre-state'
         void handleRemoveAutomationLane.execute(inverse);
 
         expect(automationStore.value?.lanes).toEqual([concurrentLane]);
+
+        expect(handleAddAutomationLane.isNoop?.(action)).toBe(false);
+        void handleAddAutomationLane.execute(action);
+        expect(automationStore.value?.lanes).toEqual([
+            concurrentLane,
+            expect.objectContaining({ id: inverse.payload.laneId, trackId: 't9', parameterId: 'pan' }),
+        ]);
     });
 
     it('handleAddAutomationLane: omits the inverse when the lane already exists (no-op execute)', () => {
