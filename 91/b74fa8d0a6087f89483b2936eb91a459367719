@@ -1,0 +1,41 @@
+src/modules/AudioEngine/engine/wasmDeviceRegistry.ts
+  s_ac9b259eab20ba::t_96a6a23f7e2c2d 160-163
+src/modules/AudioEngine/models/AudioEngineState.ts
+  s_ac9b259eab20ba::t_bdd6806d1fd68a 71-72
+src/modules/AudioEngine/engine/__tests__/wasmDeviceRegistryDescriptors.spec.ts
+  s_ac9b259eab20ba::t_88b173b5ef6352 83,93-96,142
+  s_ac9b259eab20ba::t_bdd6806d1fd68a 188
+  s_ac9b259eab20ba::t_7ce62132a0bc2f 185-187
+src/modules/AudioEngine/engine/ToasterNode.ts
+  s_ac9b259eab20ba::t_bdd6806d1fd68a 28,65-67,89,169,173,187-190
+  s_c2fca615e81f34::t_26cbc68effbb14 191
+src/modules/AudioEngine/engine/TrackNode.ts
+  s_ac9b259eab20ba::t_bdd6806d1fd68a 295
+src/modules/AudioEngine/engine/__tests__/ToasterNode.spec.ts
+  s_ac9b259eab20ba::t_bdd6806d1fd68a 246-252,257-259,262,266,268,272-273,303
+  s_ac9b259eab20ba::t_7ce62132a0bc2f 219,222-223,225,227-234
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "91b74fa8d0a6087f89483b2936eb91a459367719",
+  "prompts": {},
+  "sessions": {
+    "s_ac9b259eab20ba": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8699-3865-7842-8c54-afbac6cfd266",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_c2fca615e81f34": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f74e9-e1c5-7142-85d2-4c577b3973c0",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
