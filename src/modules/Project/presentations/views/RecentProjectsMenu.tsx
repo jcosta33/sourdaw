@@ -93,7 +93,11 @@ export const RecentProjectsMenu = (): ReactElement => {
 
     const handleNewProject = () => {
         void (async () => {
-            await saveProject();
+            // Abort on a failed save (already notified) so the current
+            // project stays open with its unsaved work.
+            if (!(await saveProject())) {
+                return;
+            }
             void newProject();
         })();
         setOpen(false);
@@ -133,15 +137,20 @@ export const RecentProjectsMenu = (): ReactElement => {
 
     const handleLoad = (entry: RecentProjectEntry) => {
         void (async () => {
-            // Await the pre-switch save so its snapshot cannot capture the
-            // successor project's state (audit #568 F2), and surface failures
-            // instead of leaving a dead entry (audit #568 F3).
-            await saveProject();
-            const loaded = await loadRecentProject(entry.key);
-            if (!loaded) {
-                notifyUser(`Could not open "${entry.name}" — removing it from recent projects.`, 'error');
+            // Await the pre-switch save (audit #568 F2) and abort on its
+            // failure; react to the load outcome by reason (audit #568 F3):
+            // prune only a definitively missing entry, notify on transient
+            // failure, and do nothing when a newer transition superseded.
+            if (!(await saveProject())) {
+                return;
+            }
+            const outcome = await loadRecentProject(entry.key);
+            if (outcome === 'not-found') {
+                notifyUser(`Could not find "${entry.name}" — removing it from recent projects.`, 'error');
                 removeFromRecentProjects(entry.key);
                 setEntries(getRecentProjects());
+            } else if (outcome === 'failed') {
+                notifyUser(`Could not open "${entry.name}" — see logs for details.`, 'error');
             }
         })();
         setOpen(false);

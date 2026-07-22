@@ -225,4 +225,30 @@ describe('createFromTemplate', () => {
         expect(mocks.clearUndoHistory).not.toHaveBeenCalled();
         expect(mocks.executeAppAction).not.toHaveBeenCalled();
     });
+
+    it('bails before any teardown when superseded mid-flight during stopPlayback', async () => {
+        mocks.transactionIsCurrent.mockReturnValueOnce(false);
+
+        await expect(createFromTemplate('pop-song')).resolves.toBe(false);
+
+        expect(mocks.stopPlayback).toHaveBeenCalledOnce();
+        expect(mocks.stopActiveAutoSave).not.toHaveBeenCalled();
+        expect(mocks.resetAudioGraph).not.toHaveBeenCalled();
+        expect(mocks.resetCrdtProjectAuthority).not.toHaveBeenCalled();
+        expect(mocks.resetModuleStoresToDefault).not.toHaveBeenCalled();
+        expect(mocks.clearUndoHistory).not.toHaveBeenCalled();
+        expect(mocks.executeAppAction).not.toHaveBeenCalled();
+        expect(mocks.startCrdtAutoSave).not.toHaveBeenCalled();
+        expect(mocks.compactProject).not.toHaveBeenCalled();
+    });
+
+    it('skips autosave restart and compaction when superseded during the template action', async () => {
+        mocks.transactionIsCurrent.mockReturnValueOnce(true).mockReturnValueOnce(false);
+
+        await expect(createFromTemplate('pop-song')).resolves.toBe(false);
+
+        expect(mocks.executeAppAction).toHaveBeenCalledOnce();
+        expect(mocks.startCrdtAutoSave).not.toHaveBeenCalled();
+        expect(mocks.compactProject).not.toHaveBeenCalled();
+    });
 });

@@ -342,9 +342,11 @@ export const TemplateChooser = ({ open, onClose, initialCategory = 'all' }: Temp
 
         void (async () => {
             try {
-                // Await the pre-switch save so its snapshot cannot capture the
-                // template project's state (audit #568 F2).
-                await saveProject();
+                // Await the pre-switch save (audit #568 F2); abort on failure
+                // so the current project stays open.
+                if (!(await saveProject())) {
+                    return;
+                }
                 await createFromTemplate(templateId);
             } finally {
                 setIsLoading(false);

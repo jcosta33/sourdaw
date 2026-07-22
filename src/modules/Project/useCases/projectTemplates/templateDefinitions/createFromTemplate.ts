@@ -60,9 +60,14 @@ export async function createFromTemplate(templateId: string): Promise<boolean> {
             return false;
         }
         await stopPlayback();
-        graphWasReset = true;
+        if (!transaction.isCurrent()) {
+            // Superseded mid-flight: the successor transition owns the project
+            // now — no teardown, no persistence touch (mirror newProject).
+            return false;
+        }
         stopActiveAutoSave();
         persistenceStopped = true;
+        graphWasReset = true;
         resetAudioGraph();
         resetCrdtProjectAuthority(template.name);
         projectActionHistoryToStore();
@@ -72,6 +77,11 @@ export async function createFromTemplate(templateId: string): Promise<boolean> {
             { type: 'createProjectFromTemplate', payload: { templateId } },
             { skipMacroRecording: true }
         );
+        if (!transaction.isCurrent()) {
+            // Superseded while the template action ran: the successor owns
+            // persistence — do not restart autosave or compact here.
+            return false;
+        }
         restorePersistence();
         await compactProject();
         return true;

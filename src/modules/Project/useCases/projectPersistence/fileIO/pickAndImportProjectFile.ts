@@ -19,9 +19,11 @@ export async function pickAndImportProjectFile(): Promise<boolean> {
     }
 
     // Pre-save the open project before the import replaces it — otherwise
-    // unsaved edits since the last save are silently lost (audit #568 F3).
-    if (projectStore.value?.dirty) {
-        await saveProject();
+    // unsaved edits since the last save are silently lost (audit #568 F3). A
+    // failed save (already notified) aborts the import so the current project
+    // stays open.
+    if (projectStore.value?.dirty && !(await saveProject())) {
+        return false;
     }
 
     const transaction = runProjectLoadTransaction();

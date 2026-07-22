@@ -165,10 +165,10 @@ describe('RecentProjectsMenu', () => {
     });
 
     it('awaits the pre-switch save before starting a new project', async () => {
-        let resolveSave: (() => void) | undefined;
+        let resolveSave: ((value: boolean) => void) | undefined;
         vi.mocked(saveProject).mockImplementation(
             () =>
-                new Promise<void>((resolve) => {
+                new Promise<boolean>((resolve) => {
                     resolveSave = resolve;
                 })
         );
@@ -181,13 +181,29 @@ describe('RecentProjectsMenu', () => {
         await waitFor(() => expect(saveProject).toHaveBeenCalledOnce());
         expect(newProject).not.toHaveBeenCalled();
 
-        resolveSave?.();
+        resolveSave?.(true);
         await waitFor(() => expect(newProject).toHaveBeenCalledOnce());
     });
 
-    it('awaits the pre-switch save, then notifies and prunes a recent entry whose load fails', async () => {
-        vi.mocked(saveProject).mockResolvedValue(undefined);
-        vi.mocked(loadRecentProject).mockResolvedValue(false);
+    it('aborts the new-project transition when the pre-switch save fails', async () => {
+        vi.mocked(saveProject).mockResolvedValue(false);
+        vi.mocked(newProject).mockResolvedValue(true);
+
+        render(<RecentProjectsMenu />);
+        fireEvent.click(screen.getByLabelText(/Project menu/i));
+        fireEvent.click(screen.getByRole('menuitem', { name: /New Project/i }));
+
+        await waitFor(() => expect(saveProject).toHaveBeenCalledOnce());
+        // Flush the aborted continuation (microtasks only — no timers).
+        await Promise.resolve();
+        await Promise.resolve();
+        expect(newProject).not.toHaveBeenCalled();
+        expect(notifyUser).not.toHaveBeenCalled();
+    });
+
+    it('awaits the pre-switch save, then notifies and prunes a definitively missing recent entry', async () => {
+        vi.mocked(saveProject).mockResolvedValue(true);
+        vi.mocked(loadRecentProject).mockResolvedValue('not-found');
 
         render(<RecentProjectsMenu />);
         fireEvent.click(screen.getByLabelText(/Project menu/i));
@@ -197,10 +213,37 @@ describe('RecentProjectsMenu', () => {
         await waitFor(() => expect(loadRecentProject).toHaveBeenCalledWith('proj-1'));
         await waitFor(() =>
             expect(notifyUser).toHaveBeenCalledWith(
-                'Could not open "Project One" — removing it from recent projects.',
+                'Could not find "Project One" — removing it from recent projects.',
                 'error'
             )
         );
         expect(removeFromRecentProjects).toHaveBeenCalledWith('proj-1');
+    });
+
+    it('notifies without pruning on a transient load failure', async () => {
+        vi.mocked(saveProject).mockResolvedValue(true);
+        vi.mocked(loadRecentProject).mockResolvedValue('failed');
+
+        render(<RecentProjectsMenu />);
+        fireEvent.click(screen.getByLabelText(/Project menu/i));
+        fireEvent.click(screen.getByText('Project One'));
+
+        await waitFor(() =>
+            expect(notifyUser).toHaveBeenCalledWith('Could not open "Project One" — see logs for details.', 'error')
+        );
+        expect(removeFromRecentProjects).not.toHaveBeenCalled();
+    });
+
+    it('does nothing when the load is superseded by a newer transition', async () => {
+        vi.mocked(saveProject).mockResolvedValue(true);
+        vi.mocked(loadRecentProject).mockResolvedValue('aborted');
+
+        render(<RecentProjectsMenu />);
+        fireEvent.click(screen.getByLabelText(/Project menu/i));
+        fireEvent.click(screen.getByText('Project One'));
+
+        await waitFor(() => expect(loadRecentProject).toHaveBeenCalledWith('proj-1'));
+        expect(notifyUser).not.toHaveBeenCalled();
+        expect(removeFromRecentProjects).not.toHaveBeenCalled();
     });
 });
