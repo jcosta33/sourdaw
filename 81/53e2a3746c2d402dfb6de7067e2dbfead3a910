@@ -1,0 +1,21 @@
+src/modules/PluginHost/useCases/faustEngine/__tests__/noiseGateDspBehavior.spec.ts
+  s_922404a4743f66::t_d3ccdd1e4e3401 1-115
+src/modules/PluginHost/useCases/faustEngine/dsp/noise-gate.dsp
+  s_922404a4743f66::t_b86c03901bb251 9-24
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "8153e2a3746c2d402dfb6de7067e2dbfead3a910",
+  "prompts": {},
+  "sessions": {
+    "s_922404a4743f66": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8744-626f-7f33-b812-7fb9bb6d34b0",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
