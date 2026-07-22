@@ -1,16 +1,19 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const mocks = vi.hoisted(() => ({
-    getTrackState: vi.fn(),
-    setTrackState: vi.fn(),
-    pushUndoEntry: vi.fn(),
-    removeMidiClipData: vi.fn(),
-    splitMidiNotesAtBeat: vi.fn(),
+const mocks = vi.hoisted(() => {
     // Captured from the real barrel at mock-factory time so the behavioral
     // test can drive deleteTimeRange through the genuine partition without
     // a per-test importActual (and without any deep cross-module edge).
-    actualSplitMidiNotesAtBeat: { fn: undefined as unknown },
-}));
+    const actualSplitMidiNotesAtBeat: { fn: ((...args: never[]) => void) | undefined } = { fn: undefined };
+    return {
+        getTrackState: vi.fn(),
+        setTrackState: vi.fn(),
+        pushUndoEntry: vi.fn(),
+        removeMidiClipData: vi.fn(),
+        splitMidiNotesAtBeat: vi.fn(),
+        actualSplitMidiNotesAtBeat,
+    };
+});
 
 vi.mock('../../../repositories/track/getTrackState', () => ({ getTrackState: mocks.getTrackState }));
 vi.mock('../../../repositories/track/setTrackState', () => ({ setTrackState: mocks.setTrackState }));
@@ -168,10 +171,12 @@ describe('deleteTimeRange', () => {
     /// Regression (PR #608 review, blocking): end-to-end note positions for
     /// a spanning MIDI clip — hole notes must be gone, post-hole notes must
     /// land at their original timeline positions on the right clip.
-    it('deletes hole notes and keeps post-hole notes at their timeline positions (real partition)', async () => {
-        mocks.splitMidiNotesAtBeat.mockImplementation(
-            mocks.actualSplitMidiNotesAtBeat.fn as (...args: unknown[]) => void
-        );
+    it('deletes hole notes and keeps post-hole notes at their timeline positions (real partition)', () => {
+        const actualSplit = mocks.actualSplitMidiNotesAtBeat.fn;
+        expect(actualSplit).toBeDefined();
+        if (actualSplit) {
+            mocks.splitMidiNotesAtBeat.mockImplementation(actualSplit);
+        }
 
         const state = {
             tracks: [

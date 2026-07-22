@@ -2,11 +2,14 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { shiftMidiNotesAfterBeat } from '../shiftMidiNotesAfterBeat';
 
-const mocks = vi.hoisted(() => ({
-    midiStoreValue: { value: { notesByClipId: {}, ccByClipId: {}, pitchBendByClipId: {} } },
-    midiStoreSet: vi.fn(),
-    trackStoreValue: { current: null as unknown },
-}));
+const mocks = vi.hoisted(() => {
+    const trackStoreValue: { current: unknown } = { current: null };
+    return {
+        midiStoreValue: { value: { notesByClipId: {}, ccByClipId: {}, pitchBendByClipId: {} } },
+        midiStoreSet: vi.fn(),
+        trackStoreValue,
+    };
+});
 
 vi.mock('../../../stores/midiStore', () => ({
     midiStore: {
@@ -77,12 +80,12 @@ describe('shiftMidiNotesAfterBeat', () => {
             notesByClipId: Record<string, Array<{ pitch: number; startBeat: number }>>;
             ccByClipId: Record<string, Array<{ beat: number }>>;
         };
-        expect(written.notesByClipId['moved']).toEqual([{ pitch: 60, startBeat: 10, duration: 1 }]);
-        expect(written.notesByClipId['straddler']).toEqual([
+        expect(written.notesByClipId.moved).toEqual([{ pitch: 60, startBeat: 10, duration: 1 }]);
+        expect(written.notesByClipId.straddler).toEqual([
             { pitch: 62, startBeat: 2, duration: 1 },
             { pitch: 64, startBeat: 10, duration: 1 },
         ]);
-        expect(written.ccByClipId['straddler']).toEqual([{ beat: 10, controller: 1, value: 100 }]);
+        expect(written.ccByClipId.straddler).toEqual([{ beat: 10, controller: 1, value: 100 }]);
     });
 
     it('does not write when every clip starts after the window', () => {

@@ -71,7 +71,7 @@ describe('propagateParentChanges', () => {
 
         expect(mocks.updateClipInStore).toHaveBeenCalledTimes(1);
         expect(mocks.updateClipInStore).toHaveBeenCalledWith('inst-1', expect.any(Function));
-        const updater = mocks.updateClipInStore.mock.calls[0]![1] as (clip: unknown) => unknown;
+        const updater = mocks.updateClipInStore.mock.calls[0]![1];
         expect(updater({ id: 'inst-1' })).toMatchObject({ midiOffsetBeats: 2 });
     });
 

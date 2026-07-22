@@ -2,11 +2,14 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { migrateAbsoluteMidiNotes } from '../migrateAbsoluteMidiNotes';
 
-const mocks = vi.hoisted(() => ({
-    midiStoreValue: { value: { notesByClipId: {}, ccByClipId: {}, pitchBendByClipId: {} } },
-    midiStoreSet: vi.fn(),
-    trackStoreValue: { current: null as unknown },
-}));
+const mocks = vi.hoisted(() => {
+    const trackStoreValue: { current: unknown } = { current: null };
+    return {
+        midiStoreValue: { value: { notesByClipId: {}, ccByClipId: {}, pitchBendByClipId: {} } },
+        midiStoreSet: vi.fn(),
+        trackStoreValue,
+    };
+});
 
 vi.mock('../../../stores/midiStore', () => ({
     midiStore: {

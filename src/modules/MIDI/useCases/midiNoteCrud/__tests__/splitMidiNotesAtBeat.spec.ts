@@ -60,8 +60,8 @@ describe('splitMidiNotesAtBeat', () => {
         const written = mocks.midiStoreSet.mock.calls[0]![0] as {
             notesByClipId: Record<string, StoredNote[]>;
         };
-        const left = written.notesByClipId['source']!;
-        const right = written.notesByClipId['right']!;
+        const left = written.notesByClipId.source!;
+        const right = written.notesByClipId.right!;
 
         // Left: untouched note + trimmed straddler half.
         expect(left).toHaveLength(2);
@@ -101,8 +101,8 @@ describe('splitMidiNotesAtBeat', () => {
         const written = mocks.midiStoreSet.mock.calls[0]![0] as {
             notesByClipId: Record<string, StoredNote[]>;
         };
-        const left = written.notesByClipId['source']!;
-        const right = written.notesByClipId['right']!;
+        const left = written.notesByClipId.source!;
+        const right = written.notesByClipId.right!;
 
         expect(left).toEqual([
             note(60, 1, 1, 'left'),
@@ -129,7 +129,7 @@ describe('splitMidiNotesAtBeat', () => {
         const written = mocks.midiStoreSet.mock.calls[0]![0] as {
             notesByClipId: Record<string, StoredNote[]>;
         };
-        expect(written.notesByClipId['source']).toHaveLength(2);
-        expect(written.notesByClipId['right']).toHaveLength(0);
+        expect(written.notesByClipId.source).toHaveLength(2);
+        expect(written.notesByClipId.right).toHaveLength(0);
     });
 });
