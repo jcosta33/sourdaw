@@ -1,0 +1,31 @@
+src/modules/TimelineEditor/presentations/views/Inspector/DeviceParameterControl.tsx
+  s_ac9b259eab20ba::t_f1ab06dcf125a4 107-108,251,291
+src/modules/TimelineEditor/presentations/helpers/__tests__/automationViewHelpers.spec.ts
+  s_ac9b259eab20ba::t_f1ab06dcf125a4 44,48-51
+src/modules/TimelineEditor/presentations/views/AutomationBottomPanel.tsx
+  s_ac9b259eab20ba::t_f1ab06dcf125a4 141,144-148
+src/modules/TimelineEditor/presentations/helpers/automationViewHelpers.ts
+  s_ac9b259eab20ba::t_f1ab06dcf125a4 8-9,16,24,33
+src/modules/TimelineEditor/presentations/views/Inspector/TrackAutomationSection.tsx
+  s_ac9b259eab20ba::t_f1ab06dcf125a4 109,125
+src/modules/TimelineEditor/presentations/views/Inspector/__tests__/TrackAutomationSection.spec.tsx
+  s_ac9b259eab20ba::t_f1ab06dcf125a4 9
+src/modules/TimelineEditor/presentations/views/Inspector/__tests__/DeviceParameterControl.spec.tsx
+  s_ac9b259eab20ba::t_f1ab06dcf125a4 210,217-219
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "f4f26533a03c7e33ac3d3663a54a13fc0b1cf604",
+  "prompts": {},
+  "sessions": {
+    "s_ac9b259eab20ba": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8699-3865-7842-8c54-afbac6cfd266",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
