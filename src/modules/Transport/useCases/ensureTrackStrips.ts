@@ -7,6 +7,7 @@
 
 import { shouldCreateLiveTrackStrip, trackStore } from '#/modules/Arrangement/stores';
 import { applySoloLogic, projectTrackToLiveStrip } from '#/modules/Arrangement/useCases';
+import { ensureTrackStrip } from '#/modules/AudioEngine/useCases';
 import { ensureBusStrip, setBusGain, wireSidechainRoutes } from '#/modules/Routing/useCases';
 
 function hasAmbiguousBusOwner(tracks: NonNullable<typeof trackStore.value>['tracks']): boolean {
@@ -21,16 +22,22 @@ export function ensureTrackStrips(): void {
     if (!tracks || hasAmbiguousBusOwner(tracks)) {
         return;
     }
-    const busTracks = tracks.filter((time) => time.kind === 'bus');
+    const busTracks = tracks.filter((track) => track.kind === 'bus');
+    const liveTracks = tracks.filter(shouldCreateLiveTrackStrip);
+
     for (const bus of busTracks) {
         ensureBusStrip(bus.id);
+    }
+
+    for (const track of liveTracks) {
+        ensureTrackStrip(track.id);
+    }
+
+    for (const bus of busTracks) {
         setBusGain(bus.id, bus.gain);
     }
 
-    for (const track of tracks) {
-        if (!shouldCreateLiveTrackStrip(track)) {
-            continue;
-        }
+    for (const track of liveTracks) {
         projectTrackToLiveStrip({ trackId: track.id, deferSidechainWiring: true });
     }
 
