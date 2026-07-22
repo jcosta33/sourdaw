@@ -11,6 +11,7 @@ type ReplayIdMappings = {
     vcaGroupIds: Map<string, string>;
     markerIds: Map<string, string>;
     sectionIds: Map<string, string>;
+    trackAlternativeIds: Map<string, string>;
 };
 
 function remapChordReferences(action: AppAction, mappings: ReplayIdMappings): void {
@@ -26,6 +27,17 @@ function remapMarkerReferences(action: AppAction, mappings: ReplayIdMappings): v
     }
     if (action.type === 'removeSection' || action.type === 'renameSection') {
         action.payload.sectionId = mappings.sectionIds.get(action.payload.sectionId) ?? action.payload.sectionId;
+    }
+}
+
+function remapTrackAlternativeReferences(action: AppAction, mappings: ReplayIdMappings): void {
+    if (
+        action.type === 'deleteTrackAlternative' ||
+        action.type === 'renameTrackAlternative' ||
+        action.type === 'switchTrackAlternative'
+    ) {
+        action.payload.alternativeId =
+            mappings.trackAlternativeIds.get(action.payload.alternativeId) ?? action.payload.alternativeId;
     }
 }
 
@@ -93,6 +105,10 @@ function getGeneratedMarkerId(action: AppAction): string | undefined {
 
 function getGeneratedSectionId(action: AppAction): string | undefined {
     return action.type === 'addSection' ? action.payload.sectionId : undefined;
+}
+
+function getGeneratedTrackAlternativeId(action: AppAction): string | undefined {
+    return action.type === 'createTrackAlternative' ? action.payload.alternativeId : undefined;
 }
 
 async function executeMacroAction(
@@ -167,10 +183,22 @@ async function executeMacroAction(
         return;
     }
 
+    if (replayAction.type === 'createTrackAlternative') {
+        const recordedAlternativeId = replayAction.payload.alternativeId;
+        delete replayAction.payload.alternativeId;
+        await executeAppAction(replayAction, options);
+        const generatedAlternativeId = getGeneratedTrackAlternativeId(replayAction);
+        if (recordedAlternativeId && generatedAlternativeId) {
+            mappings.trackAlternativeIds.set(recordedAlternativeId, generatedAlternativeId);
+        }
+        return;
+    }
+
     remapAdjustmentReferences(replayAction, mappings);
     remapChordReferences(replayAction, mappings);
     remapVcaReferences(replayAction, mappings);
     remapMarkerReferences(replayAction, mappings);
+    remapTrackAlternativeReferences(replayAction, mappings);
     await executeAppAction(replayAction, options);
 }
 
@@ -198,6 +226,7 @@ export async function playMacro(macroId: string): Promise<void> {
         vcaGroupIds: new Map(),
         markerIds: new Map(),
         sectionIds: new Map(),
+        trackAlternativeIds: new Map(),
     };
 
     for (const action of macro.actions) {

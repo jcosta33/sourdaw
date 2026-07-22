@@ -264,4 +264,64 @@ describe('playMacro', () => {
         // The stored macro keeps its recorded ids — replay never mutates it.
         expect(macroStore.value?.macros[0]?.actions).toEqual(markerMacro.actions);
     });
+
+    it('regenerates recorded track-alternative IDs and remaps references on every playback', async () => {
+        // Batch 5 put caller-minted alternativeIds on createTrackAlternative
+        // payloads for undo. Replaying a recorded macro twice must mint fresh
+        // ids per playback, or both plays share one alternative id (duplicate
+        // React keys; delete/undo would hit both plays' alternatives).
+        const alternativeMacro: Macro = {
+            id: 'alternatives-1',
+            name: 'Alternative steps',
+            actions: [
+                {
+                    type: 'createTrackAlternative',
+                    payload: { trackId: 't1', name: 'Take 2', duplicateActive: false, alternativeId: 'recorded-alt' },
+                },
+                {
+                    type: 'renameTrackAlternative',
+                    payload: { trackId: 't1', alternativeId: 'recorded-alt', name: 'Take 2 (final)' },
+                },
+                {
+                    type: 'switchTrackAlternative',
+                    payload: { trackId: 't1', alternativeId: 'recorded-alt' },
+                },
+            ],
+            createdAt: 0,
+        };
+        macroStore.set({ macros: [alternativeMacro], recording: false, currentRecording: [] });
+        let generatedId = 0;
+        executeAppActionMock.mockImplementation((action) => {
+            if (action.type === 'createTrackAlternative' && action.payload.alternativeId === undefined) {
+                generatedId += 1;
+                action.payload.alternativeId = `replayed-alt-${String(generatedId)}`;
+            }
+            return Promise.resolve();
+        });
+
+        await playMacro('alternatives-1');
+        await playMacro('alternatives-1');
+
+        expect(executeAppActionMock.mock.calls.map(([action]) => action)).toEqual([
+            {
+                type: 'createTrackAlternative',
+                payload: { trackId: 't1', name: 'Take 2', duplicateActive: false, alternativeId: 'replayed-alt-1' },
+            },
+            {
+                type: 'renameTrackAlternative',
+                payload: { trackId: 't1', alternativeId: 'replayed-alt-1', name: 'Take 2 (final)' },
+            },
+            { type: 'switchTrackAlternative', payload: { trackId: 't1', alternativeId: 'replayed-alt-1' } },
+            {
+                type: 'createTrackAlternative',
+                payload: { trackId: 't1', name: 'Take 2', duplicateActive: false, alternativeId: 'replayed-alt-2' },
+            },
+            {
+                type: 'renameTrackAlternative',
+                payload: { trackId: 't1', alternativeId: 'replayed-alt-2', name: 'Take 2 (final)' },
+            },
+            { type: 'switchTrackAlternative', payload: { trackId: 't1', alternativeId: 'replayed-alt-2' } },
+        ]);
+        expect(macroStore.value?.macros[0]?.actions).toEqual(alternativeMacro.actions);
+    });
 });
