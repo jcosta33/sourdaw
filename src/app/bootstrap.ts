@@ -92,6 +92,7 @@ import {
 } from '#/modules/MIDI/useCases';
 import { getPluginHostHandlers } from '#/modules/PluginHost/useCases';
 import {
+    getProjectHandlers,
     initGrooveTemplateDirtyTracking,
     markDirty,
     setProjectIdentityTransitionDependencies,
@@ -310,6 +311,7 @@ registerHandlerMap(getUndoRedoHandlers());
 registerHandlerMap(getUndoTreeHandlers());
 registerHandlerMap(getPitchHandlers());
 registerHandlerMap(getSongStructureHandlers());
+registerHandlerMap(getProjectHandlers());
 registerHandlerMap(getVersionControlHandlers());
 registerHandlerMap(getDawProjectHandlers());
 registerHandlerMap(getFinalFeatureHandlers());

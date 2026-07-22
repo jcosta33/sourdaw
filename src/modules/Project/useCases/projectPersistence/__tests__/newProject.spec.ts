@@ -4,8 +4,14 @@ import { Container } from '#/infra/di/Container';
 import { addTrack } from '#/modules/Arrangement/useCases';
 import { clearCachedAudioBuffers, resetAudioGraph } from '#/modules/AudioEngine/useCases';
 import { clearUndoHistory } from '#/modules/Command/useCases';
-import { createCrdtProject, projectActionHistoryToStore, startCrdtAutoSave } from '#/modules/CrdtDocument/useCases';
-import { stopPlayback } from '#/modules/Transport/useCases';
+import {
+    compactProject,
+    createCrdtProject,
+    projectActionHistoryToStore,
+    resetCrdtProjectAuthority,
+    startCrdtAutoSave,
+} from '#/modules/CrdtDocument/useCases';
+import { ensureTrackStrips, stopPlayback } from '#/modules/Transport/useCases';
 
 import { removeProjectJson } from '../../../repositories/project/removeProjectJson';
 import { defaultProjectStoreState, projectStore } from '../../../stores/projectStore';
@@ -29,6 +35,7 @@ function createDeferred<T>(): Deferred<T> {
 
 vi.mock('#/modules/Transport/useCases', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/Transport/useCases')>()),
+    ensureTrackStrips: vi.fn(),
     stopPlayback: vi.fn(),
 }));
 
@@ -38,8 +45,10 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
 }));
 
 vi.mock('#/modules/CrdtDocument/useCases', () => ({
+    compactProject: vi.fn().mockResolvedValue(undefined),
     createCrdtProject: vi.fn().mockResolvedValue(undefined),
     projectActionHistoryToStore: vi.fn(),
+    resetCrdtProjectAuthority: vi.fn(),
     startCrdtAutoSave: vi.fn().mockReturnValue(() => {}),
 }));
 
@@ -90,7 +99,9 @@ describe('newProject injectable', () => {
         expect(resetAudioGraph).toHaveBeenCalledTimes(1);
         expect(resetModuleStoresToDefault).toHaveBeenCalledTimes(1);
         expect(resetModuleStoresToDefault).toHaveBeenCalledWith({ createNewMidiProbabilitySeed: true });
-        expect(createCrdtProject).toHaveBeenCalledWith('Test');
+        expect(resetCrdtProjectAuthority).toHaveBeenCalledWith('Test');
+        expect(compactProject).toHaveBeenCalledOnce();
+        expect(createCrdtProject).not.toHaveBeenCalled();
         expect(projectActionHistoryToStore).toHaveBeenCalledTimes(1);
         expect(addTrack).toHaveBeenCalledWith({ name: 'Master', kind: 'master', select: false });
         expect(removeProjectJson).toHaveBeenCalledTimes(1);
@@ -113,8 +124,10 @@ describe('newProject injectable', () => {
         expect(clear_audio_buffers_order).toBeLessThan(clear_undo_history_order);
     });
 
-    it('clears loading when the current activation fails', async () => {
-        vi.mocked(createCrdtProject).mockRejectedValueOnce(new Error('CRDT setup failed'));
+    it('restores the previous project when authority reset fails before commit', async () => {
+        vi.mocked(resetCrdtProjectAuthority).mockImplementationOnce(() => {
+            throw new Error('CRDT setup failed');
+        });
 
         const activated = await newProject('Broken Project');
 
@@ -124,6 +137,85 @@ describe('newProject injectable', () => {
             loading: false,
             initialized: true,
         });
+        expect(ensureTrackStrips).toHaveBeenCalledOnce();
+        expect(startCrdtAutoSave).toHaveBeenCalledOnce();
+    });
+
+    it('completes the committed project when initial compaction rejects after authority swaps', async () => {
+        let activeAuthority = 'Existing Project';
+        vi.mocked(resetCrdtProjectAuthority).mockImplementationOnce((name) => {
+            activeAuthority = name;
+        });
+        vi.mocked(compactProject).mockImplementationOnce(() => {
+            expect(activeAuthority).toBe('Degraded Project');
+            return Promise.reject(new Error('initial compaction failed'));
+        });
+
+        const activated = await newProject('Degraded Project');
+
+        expect(activated).toBe(true);
+        expect(activeAuthority).toBe('Degraded Project');
+        expect(resetModuleStoresToDefault).toHaveBeenCalledOnce();
+        expect(projectStore.value).toMatchObject({
+            name: 'Degraded Project',
+            loading: false,
+            initialized: true,
+        });
+        expect(startCrdtAutoSave).toHaveBeenCalledOnce();
+
+        const authorityOrder = vi.mocked(resetCrdtProjectAuthority).mock.invocationCallOrder[0];
+        const compactionOrder = vi.mocked(compactProject).mock.invocationCallOrder[0];
+        const storeResetOrder = vi.mocked(resetModuleStoresToDefault).mock.invocationCallOrder[0];
+        if (authorityOrder === undefined || compactionOrder === undefined || storeResetOrder === undefined) {
+            throw new Error('expected authority, compaction, and project publication calls');
+        }
+        expect(storeResetOrder).toBeGreaterThan(authorityOrder);
+        expect(compactionOrder).toBeGreaterThan(storeResetOrder);
+    });
+
+    it('keeps committed project authority published when a newer preparation fails during compaction', async () => {
+        const compaction = createDeferred<void>();
+        let latestTransition = 1;
+        vi.mocked(runProjectLoadTransaction)
+            .mockReturnValueOnce({
+                prepare: vi.fn().mockResolvedValue(true),
+                activate: vi.fn().mockReturnValue(true),
+                canActivate: () => latestTransition === 1,
+                isCurrent: () => latestTransition === 1,
+            })
+            .mockReturnValueOnce({
+                prepare: vi.fn().mockImplementation(() => {
+                    latestTransition = 2;
+                    return Promise.reject(new Error('newer preparation failed'));
+                }),
+                activate: vi.fn().mockReturnValue(false),
+                canActivate: () => true,
+                isCurrent: () => false,
+            });
+        vi.mocked(compactProject).mockReturnValueOnce(compaction.promise);
+
+        const committedActivation = newProject('Committed Project');
+        await vi.waitFor(() => expect(compactProject).toHaveBeenCalledOnce());
+
+        const failedNewerActivation = newProject('Failed Newer Project');
+        await expect(failedNewerActivation).resolves.toBe(false);
+
+        compaction.resolve(undefined);
+
+        await expect(committedActivation).resolves.toBe(true);
+        expect(projectStore.value).toMatchObject({
+            name: 'Committed Project',
+            loading: false,
+            initialized: true,
+        });
+        expect(startCrdtAutoSave).toHaveBeenCalledOnce();
+
+        const autosaveOrder = vi.mocked(startCrdtAutoSave).mock.invocationCallOrder[0];
+        const compactionOrder = vi.mocked(compactProject).mock.invocationCallOrder[0];
+        if (autosaveOrder === undefined || compactionOrder === undefined) {
+            throw new Error('expected autosave and compaction calls');
+        }
+        expect(autosaveOrder).toBeLessThan(compactionOrder);
     });
 
     it('does not clear loading when an older activation is superseded', async () => {

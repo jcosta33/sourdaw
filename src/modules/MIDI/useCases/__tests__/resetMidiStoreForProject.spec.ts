@@ -1,11 +1,13 @@
 import { afterEach, describe, expect, expectTypeOf, it, vi } from 'vitest';
 
+import { chordTrackStore } from '../../stores/chordTrackStore';
 import {
     isValidMidiProbabilitySeed,
     LEGACY_MIDI_PROBABILITY_SEED,
     midiStore,
     type MidiStoreState,
 } from '../../stores/midiStore';
+import { hydrateMidiCrdtProjection } from '../hydrateMidiCrdtProjection';
 import { resetMidiStoreForProject } from '../resetMidiStoreForProject';
 
 describe('resetMidiStoreForProject', () => {
@@ -41,10 +43,15 @@ describe('resetMidiStoreForProject', () => {
 
     it('uses one deterministic seed when a legacy project has none', () => {
         const getRandomValues = vi.spyOn(crypto, 'getRandomValues');
+        const hydrate = vi.spyOn(chordTrackStore, 'hydrate');
+        const set = vi.spyOn(chordTrackStore, 'set');
 
         resetMidiStoreForProject();
+        hydrateMidiCrdtProjection();
 
         expect(getRandomValues).not.toHaveBeenCalled();
         expect(midiStore.value?.probabilitySeed).toBe(LEGACY_MIDI_PROBABILITY_SEED);
+        expect(hydrate).toHaveBeenCalledTimes(2);
+        expect(set).not.toHaveBeenCalled();
     });
 });
