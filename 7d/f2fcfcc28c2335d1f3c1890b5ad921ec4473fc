@@ -1,0 +1,55 @@
+src/modules/AudioEngine/engine/FermenterNode.ts
+  s_ac9b259eab20ba::t_be64496db13672 14-28,129,131,135,147
+  s_ac9b259eab20ba::t_f1d9fb04cc5369 44-45
+  s_ac9b259eab20ba::t_3158a0201c129c 13,29,130,133
+  s_ac9b259eab20ba::t_32bf406a6b28be 30-36
+src/modules/AudioEngine/engine/__tests__/FermenterNode.spec.ts
+  s_ac9b259eab20ba::t_be64496db13672 83-85
+  s_ac9b259eab20ba::t_f1d9fb04cc5369 77-79
+src/modules/AudioEngine/repositories/offlineScheduler/compileAutomationSegments.ts
+  s_ac9b259eab20ba::t_32bf406a6b28be 3
+src/modules/AudioEngine/services/__tests__/processorQueues.spec.ts
+  s_ac9b259eab20ba::t_962ff2955244fd 131,141-143
+  s_ac9b259eab20ba::t_4dc905031775f9 126
+src/modules/AudioEngine/repositories/deviceStrategy/AudioDeviceStrategy.ts
+  s_ac9b259eab20ba::t_be64496db13672 14
+  s_ac9b259eab20ba::t_32bf406a6b28be 4-9
+  s_ac9b259eab20ba::t_8435328131be15 10
+crates/daw-dsp/src/fermenter/mod.rs
+  s_ac9b259eab20ba::t_32bf406a6b28be 78,113-130
+  s_ac9b259eab20ba::t_962ff2955244fd 30-47,73-77
+  s_ac9b259eab20ba::t_58c07565528db1 79
+src/modules/AudioEngine/repositories/deviceStrategy/NativeDspDeviceStrategy.ts
+  s_ac9b259eab20ba::t_be64496db13672 20,31,41-43
+  s_ac9b259eab20ba::t_32bf406a6b28be 15
+src/modules/AudioEngine/repositories/offlineScheduler/automationScheduling.ts
+  s_ac9b259eab20ba::t_be64496db13672 20,29
+src/modules/AudioEngine/services/fermenterProcessor.ts
+  s_ac9b259eab20ba::t_962ff2955244fd 50,62,128,132,138,244
+src/modules/AudioEngine/repositories/offlineScheduler/__tests__/automationScheduling.spec.ts
+  s_ac9b259eab20ba::t_055419d6e5a0c5 403
+  s_ac9b259eab20ba::t_be64496db13672 383,398-402,404-425
+  s_ac9b259eab20ba::t_4e50a04bded653 426-427
+src/modules/AudioEngine/wasm/daw_dsp.d.ts
+  s_ac9b259eab20ba::t_f7463fc92d707d 45
+public/wasm/daw-dsp/daw_dsp.js
+  s_ac9b259eab20ba::t_c9384285fec8ac 203-210
+src/modules/AudioEngine/wasm/daw_dsp.js
+  s_ac9b259eab20ba::t_5a48f532ddfa32 246-253
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "7df2fcfcc28c2335d1f3c1890b5ad921ec4473fc",
+  "prompts": {},
+  "sessions": {
+    "s_ac9b259eab20ba": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8699-3865-7842-8c54-afbac6cfd266",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
