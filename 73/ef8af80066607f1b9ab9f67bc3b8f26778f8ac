@@ -1,0 +1,53 @@
+src/modules/Arrangement/handlers/__tests__/clipGeometryActionOutcomes.spec.ts
+  s_ac9b259eab20ba::t_1c310aaf753c98 1-529
+src/modules/Arrangement/handlers/clip/handleNudgeClip.ts
+  s_ac9b259eab20ba::t_ee56bbfbe28613 5,9,13-30
+src/modules/Arrangement/handlers/clip/handleTrimClipEnd.ts
+  s_ac9b259eab20ba::t_373f207d30789e 5,9,12-28
+src/modules/Arrangement/handlers/clip/handleTrimClipStart.ts
+  s_ac9b259eab20ba::t_0b24a43363d6be 5,9,12-28
+src/modules/Arrangement/handlers/clipStretch/handleFitClipToBeats.ts
+  s_ac9b259eab20ba::t_5014bbc8617eb0 4,8
+src/modules/Arrangement/handlers/clipStretch/handleSetClipStretchMode.ts
+  s_ac9b259eab20ba::t_0326d3b45f9291 4,8
+src/modules/Arrangement/handlers/clipStretch/handleSetClipStretchRatio.ts
+  s_ac9b259eab20ba::t_f894f275a8eea6 4,8
+src/modules/Arrangement/presentations/hooks/__tests__/useTimelineInteractions.spec.tsx
+  s_ac9b259eab20ba::t_da0674ed377c30 27-31,339-405
+src/modules/Arrangement/presentations/hooks/useTimelineInteractions.ts
+  s_ac9b259eab20ba::t_422fd2c580aae8 888-889,898-899
+src/modules/Arrangement/useCases/clipEditing/nudgeClip.ts
+  s_ac9b259eab20ba::t_b4d8ca2b86147e 4,6-23,26,40,44-45
+src/modules/Arrangement/useCases/clipEditing/trimClipEnd.ts
+  s_ac9b259eab20ba::t_73183508c1a4b2 1,3,5-28
+src/modules/Arrangement/useCases/clipEditing/trimClipStart.ts
+  s_ac9b259eab20ba::t_f885364963dce0 1,3,5-22
+src/modules/Arrangement/useCases/clipStretch/fitClipToBeats.ts
+  s_ac9b259eab20ba::t_21d7cedc661ac9 6-8,11-12,15-19,22-35,37-47
+src/modules/Arrangement/useCases/clipStretch/setClipStretchMode.ts
+  s_ac9b259eab20ba::t_349e52cd3b81ff 3-11
+src/modules/Arrangement/useCases/clipStretch/setClipStretchRatio.ts
+  s_ac9b259eab20ba::t_01ff11d2713ac7 5-9,12
+src/modules/Automation/useCases/automationRecording/__tests__/isRecordingAutomation.spec.ts
+  s_ac9b259eab20ba::t_d9fce25bfc5d79 4,12,16-17,26,52,122-133
+src/modules/Automation/useCases/automationRecording/isRecordingAutomation.ts
+  s_ac9b259eab20ba::t_88ca2db7753721 3,5,9,13
+src/modules/Automation/useCases/automationRecording/isRecordingAutomationByKey.ts
+  s_ac9b259eab20ba::t_03627c31a1faad 1-20
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "73ef8af80066607f1b9ab9f67bc3b8f26778f8ac",
+  "prompts": {},
+  "sessions": {
+    "s_ac9b259eab20ba": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8699-3865-7842-8c54-afbac6cfd266",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
