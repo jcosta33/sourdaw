@@ -1,0 +1,36 @@
+src/modules/AudioEngine/repositories/offlineScheduler/automationScheduling.ts
+  s_ac9b259eab20ba::t_c30b1eab871495 4,24,62-63,65-67
+src/modules/AudioEngine/repositories/devices/modulation/__tests__/applyChorusParams.spec.ts
+  s_ac9b259eab20ba::t_2422cc2eb487c9 1-30
+src/modules/AudioEngine/services/deviceResolution.ts
+  s_ac9b259eab20ba::t_01503be1199bc6 76-83
+  s_ac9b259eab20ba::t_26a03cfbc0bec7 90
+  s_ac9b259eab20ba::t_c30b1eab871495 21,24-75,84-86,89,91-111,113-123,125
+  s_ac9b259eab20ba::t_a02c390571893a 112
+src/modules/AudioEngine/repositories/devices/toneShaping/createFilter.ts
+  s_ac9b259eab20ba::t_c30b1eab871495 10
+src/modules/AudioEngine/repositories/devices/modulation/applyChorusParams.ts
+  s_ac9b259eab20ba::t_01503be1199bc6 8-10,13,16-17
+src/modules/AudioEngine/repositories/devices/toneShaping/createDistortion.ts
+  s_ac9b259eab20ba::t_c30b1eab871495 27-32
+src/modules/AudioEngine/repositories/offlineScheduler/__tests__/automationScheduling.spec.ts
+  s_ac9b259eab20ba::t_2422cc2eb487c9 58-77
+  s_ac9b259eab20ba::t_a02c390571893a 189
+  s_ac9b259eab20ba::t_b5d0f50482e8e2 3,5-6,10-57,78-94,179-188,190-219
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "2f407767a7b0078c62bf7472321b7399326907a3",
+  "prompts": {},
+  "sessions": {
+    "s_ac9b259eab20ba": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8699-3865-7842-8c54-afbac6cfd266",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
