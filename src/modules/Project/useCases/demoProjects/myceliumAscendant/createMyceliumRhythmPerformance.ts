@@ -9,11 +9,7 @@ type RhythmSection = {
     endBeat: number;
 };
 
-type NoteSeed = {
-    beat: number;
-    duration: number;
-    velocity: number;
-};
+type NoteSeed = { beat: number; duration: number; velocity: number };
 
 const SECTIONS: readonly RhythmSection[] = [
     { key: 'germination', name: 'First Germination', startBeat: 64, endBeat: 128 },
@@ -44,20 +40,9 @@ const PAD_NAMES = [
     'Perc 2',
 ] as const;
 
-const DROP_TWO_PADS = new Set([
-    'Kick',
-    'Snare',
-    'Closed HH',
-    'Open HH',
-    'Clap',
-    'Rim',
-    'Low Tom',
-    'Mid Tom',
-    'Hi Tom',
-    'Shaker',
-    'Perc 1',
-    'Perc 2',
-]);
+const DROP_TWO_PADS = new Set<string>(
+    PAD_NAMES.filter((name) => !['Crash', 'Ride', 'Cowbell', 'Clave'].includes(name))
+);
 const DROP_ONE_RANGES = [[192, 288]] as const;
 const DROP_TWO_RANGES = [
     [416, 480],
@@ -131,20 +116,38 @@ function peelSeeds(startBeat: number, duration: number, velocity: number): NoteS
 
 function drumSeeds(name: string, section: RhythmSection): NoteSeed[] {
     if (section.key === 'germination') {
-        return name === 'Kick' ? stepped(64, 128, 8, 0.12, 91) : [];
+        if (name === 'Kick') {
+            return stepped(64, 128, 8, 0.12, 91);
+        }
+        if (name === 'Shaker') {
+            return stepped(65.5, 128, 4, 0.08, 68).map((note, index) => ({
+                ...note,
+                beat: note.beat + (index % 2) * 0.25,
+            }));
+        }
+        return [];
     }
     if (section.key === 'pressure') {
         if (name === 'Kick') {
+            return stepped(128, 191.75, 1, 0.12, 108);
+        }
+        if (name === 'Closed HH') {
             return [
-                ...stepped(128, 160, 8, 0.12, 99),
-                ...stepped(160, 176, 2, 0.12, 107),
-                ...stepped(176, 191.75, 1, 0.12, 114),
+                ...stepped(128.5, 160, 4, 0.08, 75),
+                ...stepped(160.5, 176, 1, 0.08, 84),
+                ...stepped(176.5, 191.75, 0.5, 0.08, 93),
             ];
         }
-        if (name === 'Clap') {
-            return stepped(160, 191.75, 4, 0.08, 89);
+        if (name === 'Open HH') {
+            return [...stepped(162.5, 176, 4, 0.12, 81), ...stepped(176.75, 191.75, 2, 0.12, 89)];
         }
-        return name === 'Shaker' ? stepped(144.25, 191.75, 2, 0.08, 79) : [];
+        if (['Clap', 'Rim', 'Low Tom', 'Mid Tom', 'Hi Tom'].includes(name)) {
+            return [...fillSeeds(name, 160, 176, 16), ...fillSeeds(name, 176, 191.75, 8)];
+        }
+        if (name === 'Shaker') {
+            return [...stepped(144.25, 176, 2, 0.08, 76), ...stepped(176.25, 191.75, 1, 0.08, 84)];
+        }
+        return [];
     }
     if (section.key === 'drop-one') {
         return dropDrumSeeds(name, 192, 288, 32);
@@ -187,6 +190,16 @@ function drumSeeds(name: string, section: RhythmSection): NoteSeed[] {
 }
 
 function bassSeeds(name: string, section: RhythmSection): NoteSeed[] {
+    if (name === 'Sub Mycelium' && section.key === 'germination') {
+        return stepped(71.5, 128, 16, 0.14, 58);
+    }
+    if (name === 'Rolling Colony' && section.key === 'pressure') {
+        return [
+            ...stepped(128.25, 160, 8, 0.16, 72),
+            ...stepped(160.25, 176, 2, 0.16, 82),
+            ...stepped(176.25, 191.75, 1, 0.16, 94),
+        ];
+    }
     if (name === 'Rolling Colony' && (section.key === 'drop-one' || section.key === 'drop-two')) {
         const ranges = section.key === 'drop-one' ? DROP_ONE_RANGES : DROP_TWO_RANGES;
         return ranges.flatMap(([startBeat, endBeat]) =>

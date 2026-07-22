@@ -50,6 +50,10 @@ function overlaps(notes: AbsoluteNote[], startBeat: number, endBeat: number): Ab
     return notes.filter((note) => note.absoluteBeat < endBeat && note.absoluteBeat + note.duration > startBeat);
 }
 
+function pressureCounts(notes: AbsoluteNote[]): number[] {
+    return [inRange(notes, 128, 160).length, inRange(notes, 160, 176).length, inRange(notes, 176, 191.75).length];
+}
+
 describe('createMyceliumRhythmPerformance', () => {
     it('creates canonical nonempty clips and valid clip-relative notes for every rhythm track', () => {
         const first = createMyceliumAscendantBlueprint().projectData;
@@ -63,9 +67,9 @@ describe('createMyceliumRhythmPerformance', () => {
 
         expect(tracks.map((track) => track.name)).toEqual(rhythmNames);
         expect(clips.length).toBeGreaterThanOrEqual(35);
-        expect(clips.length).toBeLessThan(60);
+        expect(clips.length).toBeLessThan(70);
         expect(notes.length).toBeGreaterThanOrEqual(1400);
-        expect(notes.length).toBeLessThan(2000);
+        expect(notes.length).toBeLessThan(2200);
         expect(
             notes.every((note) => Number.isInteger(note.velocity) && note.velocity >= 1 && note.velocity <= 127)
         ).toBe(true);
@@ -87,22 +91,32 @@ describe('createMyceliumRhythmPerformance', () => {
         expect(isHydratableProjectData(first)).toBe(true);
     });
 
-    it('teases the groove, reveals it progressively, and preserves both quarter-beat vacuums', () => {
+    it('teases shuffled ghosts, progressively blooms, and preserves both quarter-beat vacuums', () => {
         const projectData = createMyceliumAscendantBlueprint().projectData;
         const kick = getNotes(projectData, ['Kick']);
         const bass = getNotes(projectData, BASS_NAMES);
-        const tease = inRange(kick, 0, 128);
-        const revealCounts = [
-            inRange(kick, 128, 160).length,
-            inRange(kick, 160, 176).length,
-            inRange(kick, 176, 191.75).length,
-        ];
+        const shuffledPercussion = inRange(getNotes(projectData, ['Shaker']), 64, 128);
+        const ghostBass = inRange(bass, 64, 128);
+        const rolling = getNotes(projectData, ['Rolling Colony']);
+        const hats = getNotes(projectData, ['Closed HH', 'Open HH']);
+        const fills = getNotes(projectData, ['Clap', 'Rim', 'Low Tom', 'Mid Tom', 'Hi Tom']);
+        const shuffleIntervals = shuffledPercussion
+            .slice(1)
+            .map((note, index) => note.absoluteBeat - shuffledPercussion[index]!.absoluteBeat);
 
-        expect(tease.map((note) => note.absoluteBeat)).toEqual([64, 72, 80, 88, 96, 104, 112, 120]);
-        expect(inRange(bass, 0, 128)).toEqual([]);
-        expect(revealCounts[0]).toBeLessThan(revealCounts[1]!);
-        expect(revealCounts[1]).toBeLessThan(revealCounts[2]!);
-        expect(overlaps([...kick, ...bass], 191.75, 192)).toEqual([]);
+        expect(inRange(kick, 0, 128).map((note) => note.absoluteBeat)).toEqual([64, 72, 80, 88, 96, 104, 112, 120]);
+        expect(ghostBass.length).toBeGreaterThanOrEqual(3);
+        expect(ghostBass.length).toBeLessThanOrEqual(8);
+        expect(new Set(shuffleIntervals)).toEqual(new Set([4.25, 3.75]));
+        expect(inRange(kick, 128, 191.75).map((note) => note.absoluteBeat)).toEqual(
+            Array.from({ length: 64 }, (_, index) => 128 + index)
+        );
+        for (const notes of [rolling, hats, fills]) {
+            const counts = pressureCounts(notes);
+            expect(counts[0]).toBeLessThan(counts[1]!);
+            expect(counts[1]).toBeLessThan(counts[2]!);
+        }
+        expect(overlaps(getNotes(projectData, [...PAD_NAMES, ...BASS_NAMES]), 191.75, 192)).toEqual([]);
         expect(overlaps(getNotes(projectData, [...PAD_NAMES, ...BASS_NAMES]), 415.75, 416)).toEqual([]);
     });
 
