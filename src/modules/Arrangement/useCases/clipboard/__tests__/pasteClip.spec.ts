@@ -139,7 +139,7 @@ describe('pasteClip', () => {
         expect(mocks.setNotesForClip).not.toHaveBeenCalled();
     });
 
-    it('pastes copied MIDI notes through the owner with regenerated ids and preserved properties', () => {
+    it('pastes eligible cut-source MIDI snapshots through an override with regenerated ids and preserved properties', () => {
         const laterClipNotes: MidiNote[] = [
             {
                 id: 'source-note-later',
@@ -186,7 +186,7 @@ describe('pasteClip', () => {
         mocks.playheadPositionRef.current = 12;
         mocks.getTrackState.mockReturnValue({
             selectedTrackId: 'selected-track',
-            tracks: [{ id: 'selected-track' }],
+            tracks: [{ id: 'selected-track' }, { id: 'source-track-later' }, { id: 'source-track-earlier' }],
         });
         mocks.addClip
             .mockReturnValueOnce({ id: 'pasted-later-clip' })
@@ -256,6 +256,12 @@ describe('pasteClip', () => {
                 ],
             ],
         ]);
+        expect(mocks.resolveEligibleClipWriteTarget.mock.calls).toStrictEqual([
+            [{ trackId: 'source-track-later' }],
+            [{ trackId: 'source-track-earlier' }],
+            [{ trackId: 'selected-track' }],
+            [{ trackId: 'selected-track' }],
+        ]);
         expect(uuidCallCountsAtOwner).toEqual([1, 3]);
         const [addClipOrderFirst, addClipOrderSecond] = mocks.addClip.mock.invocationCallOrder;
         const [setNotesOrderFirst, setNotesOrderSecond] = mocks.setNotesForClip.mock.invocationCallOrder;
@@ -319,8 +325,8 @@ describe('pasteClip', () => {
     it('rejects all entries before allocation when one effective destination is ineligible', () => {
         const randomUuid = vi.spyOn(crypto, 'randomUUID');
         mocks.getTrackState.mockReturnValue({
-            selectedTrackId: null,
-            tracks: [{ id: 'track-1' }, { id: 'vca-1' }],
+            selectedTrackId: 'vca-1',
+            tracks: [{ id: 'track-1' }, { id: 'track-2' }, { id: 'vca-1' }],
         });
         mocks.resolveEligibleClipWriteTarget.mockImplementation((input: { trackId: string }) => {
             if (input.trackId === 'vca-1') {
@@ -330,7 +336,7 @@ describe('pasteClip', () => {
         });
         setClipClipboard([
             createClipboardEntry({ clipId: 'source-clip-one', sourceTrackId: 'track-1' }),
-            createClipboardEntry({ clipId: 'source-clip-two', sourceTrackId: 'vca-1', midiNotes: [] }),
+            createClipboardEntry({ clipId: 'source-clip-two', sourceTrackId: 'track-2', midiNotes: [] }),
         ]);
 
         expect(pasteClip()).toBe(false);
@@ -392,6 +398,48 @@ describe('pasteClip', () => {
 
         expect(mocks.resolveEligibleClipWriteTarget).not.toHaveBeenCalled();
         expect(mocks.addClip).not.toHaveBeenCalled();
+        expect(mocks.setNotesForClip).not.toHaveBeenCalled();
+        expect(mocks.removeClip).not.toHaveBeenCalled();
+    });
+
+    it.each([
+        {
+            name: 'a runtime-VCA source owner',
+            sourceStatus: 'ineligible',
+            sourceTrackId: 'vca-source',
+            tracks: [{ id: 'selected-track' }, { id: 'vca-source' }],
+        },
+        {
+            name: 'a missing source owner',
+            sourceStatus: 'missing',
+            sourceTrackId: 'missing-source',
+            tracks: [{ id: 'selected-track' }],
+        },
+    ])('rejects $name before selected-target resolution or any effect', ({ sourceStatus, sourceTrackId, tracks }) => {
+        const randomUuid = vi.spyOn(crypto, 'randomUUID');
+        mocks.getTrackState.mockReturnValue({
+            selectedTrackId: 'selected-track',
+            tracks,
+        });
+        mocks.resolveEligibleClipWriteTarget.mockImplementation((input: { trackId: string }) => {
+            if (input.trackId === sourceTrackId) {
+                return { status: sourceStatus };
+            }
+            return { status: 'eligible', trackId: input.trackId };
+        });
+        mocks.addClip.mockReturnValue({ id: 'pasted-clip' });
+        setClipClipboard([
+            createClipboardEntry({
+                sourceTrackId,
+                midiNotes: [{ id: 'source-note', pitch: 60, startBeat: 0, duration: 1, velocity: 90 }],
+            }),
+        ]);
+
+        expect(pasteClip()).toBe(false);
+
+        expect(mocks.resolveEligibleClipWriteTarget.mock.calls).toStrictEqual([[{ trackId: sourceTrackId }]]);
+        expect(mocks.addClip).not.toHaveBeenCalled();
+        expect(randomUuid).not.toHaveBeenCalled();
         expect(mocks.setNotesForClip).not.toHaveBeenCalled();
         expect(mocks.removeClip).not.toHaveBeenCalled();
     });

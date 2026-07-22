@@ -67,6 +67,14 @@ export function pasteClip(): boolean {
             minStartBeat = sourceClip.startBeat;
         }
     }
+
+    for (const entry of clipClipboard) {
+        const sourceTarget = resolveEligibleClipWriteTarget({ trackId: entry.sourceTrackId });
+        if (sourceTarget.status !== 'eligible') {
+            return false;
+        }
+    }
+
     const offset = playheadBeat - minStartBeat;
 
     const plans: Array<{
