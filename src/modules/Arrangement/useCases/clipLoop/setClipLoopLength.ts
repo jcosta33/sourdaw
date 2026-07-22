@@ -1,8 +1,9 @@
 import { updateClip } from '../../repositories/track/updateClip';
 
-export function setClipLoopLength(clipId: string, loopLength: number): void {
+export function setClipLoopLength(clipId: string, loopLength: number): boolean {
     if (loopLength <= 0) {
-        return;
+        return false;
     }
-    updateClip(clipId, (context) => ({ ...context, loopLength }));
+
+    return updateClip(clipId, (context) => ({ ...context, loopLength }));
 }

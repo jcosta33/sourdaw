@@ -2,10 +2,11 @@ import { createHandler } from '#/utils/createHandler';
 
 import { renameClip } from '../../useCases/clipEditing/renameClip';
 import { getTrackStoreState } from '../../useCases/getTrackStoreState';
+import { toHandlerExecutionResult } from '../toHandlerExecutionResult';
 
 export const handleRenameClip = createHandler<'renameClip'>({
     execute: (alpha) => {
-        renameClip(alpha.payload.clipId, alpha.payload.name);
+        return toHandlerExecutionResult(renameClip(alpha.payload.clipId, alpha.payload.name));
     },
     describe: (alpha) => {
         const state = getTrackStoreState();
