@@ -22,19 +22,26 @@ export function ensureTrackStrips(): void {
     if (!tracks) {
         return;
     }
-    const busTracks = tracks.filter((time) => time.kind === 'bus');
+    const busTracks = tracks.filter((track) => track.kind === 'bus');
+    const liveTracks = tracks.filter((track) => {
+        const createsLiveStrip = getTrackEligibility(track.kind).createsLiveStrip;
+        const hostsToaster = track.kind === 'folder' && track.devices.some((device) => device.type === 'toaster');
+        return createsLiveStrip || hostsToaster;
+    });
+
     for (const bus of busTracks) {
         ensureBusStrip(bus.id);
+    }
+
+    for (const track of liveTracks) {
+        ensureTrackStrip(track.id);
+    }
+
+    for (const bus of busTracks) {
         setBusGain(bus.id, bus.gain);
     }
 
-    for (const track of tracks) {
-        const createsLiveStrip = getTrackEligibility(track.kind).createsLiveStrip;
-        const hostsToaster = track.kind === 'folder' && track.devices.some((device) => device.type === 'toaster');
-        if (!createsLiveStrip && !hostsToaster) {
-            continue;
-        }
-        ensureTrackStrip(track.id);
+    for (const track of liveTracks) {
         const outputTarget = tracks.find((candidate) => candidate.id === track.outputId);
         if (!outputTarget || getTrackEligibility(outputTarget.kind).acceptsRoutingEndpoint) {
             setTrackOutput(track.id, track.outputId);

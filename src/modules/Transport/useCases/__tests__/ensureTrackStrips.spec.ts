@@ -117,9 +117,14 @@ describe('ensureTrackStrips', () => {
         expect(mocks.setSend).toHaveBeenCalledWith('t1', 'b1', 0.1, false);
     });
 
-    it('reconstructs a persisted folder-hosted Toaster and its child outputs', () => {
+    it('reconstructs a reverse-ordered folder-hosted Toaster on every invocation', () => {
         const toasterFolder = createTrack({ id: 'toaster-folder', name: 'Toaster Kit', kind: 'folder' });
         const ordinaryFolder = createTrack({ id: 'ordinary-folder', name: 'Group', kind: 'folder' });
+        const effectsBus = createTrack({ id: 'effects-bus', name: 'Effects', kind: 'bus' });
+        const masterTrack = createTrack({ id: 'master-track', name: 'Master', kind: 'master' });
+        toasterFolder.outputId = masterTrack.id;
+        effectsBus.outputId = masterTrack.id;
+        masterTrack.outputId = 'hw_out';
         toasterFolder.devices = [
             {
                 id: 'toaster-device',
@@ -140,22 +145,49 @@ describe('ensureTrackStrips', () => {
             child.outputId = toasterFolder.id;
             return child;
         });
+        children[0]!.sends = [{ busId: effectsBus.id, level: 0.25, preFader: false }];
         mocks.trackStoreValue.value = {
             selectedTrackId: toasterFolder.id,
-            tracks: [ordinaryFolder, toasterFolder, ...children],
+            tracks: [...children, ordinaryFolder, toasterFolder, effectsBus, masterTrack],
         };
 
-        ensureTrackStrips();
+        function expectReconstruction(): void {
+            expect(mocks.ensureTrackStrip).toHaveBeenCalledWith(toasterFolder.id);
+            expect(mocks.ensureTrackStrip).not.toHaveBeenCalledWith(ordinaryFolder.id);
+            expect(mocks.addDeviceToStrip).toHaveBeenCalledWith(toasterFolder.id, 'toaster-device', 'toaster');
+            expect(mocks.updateDeviceParam).toHaveBeenCalledWith(
+                toasterFolder.id,
+                'toaster-device',
+                'masterGain',
+                1.35
+            );
+            expect(mocks.updateDeviceParam).toHaveBeenCalledWith(toasterFolder.id, 'toaster-device', 'swing', 0.08);
+            for (const child of children) {
+                expect(mocks.setTrackOutput).toHaveBeenCalledWith(child.id, toasterFolder.id);
+            }
+            expect(mocks.setTrackOutput).toHaveBeenCalledWith(toasterFolder.id, masterTrack.id);
+            expect(mocks.setSend).toHaveBeenCalledWith(children[0]!.id, effectsBus.id, 0.25, false);
+            expect(mocks.wireSidechainRoutes).toHaveBeenCalledTimes(1);
 
-        expect(mocks.ensureTrackStrip).toHaveBeenCalledWith(toasterFolder.id);
-        expect(mocks.ensureTrackStrip).not.toHaveBeenCalledWith(ordinaryFolder.id);
-        expect(mocks.addDeviceToStrip).toHaveBeenCalledWith(toasterFolder.id, 'toaster-device', 'toaster');
-        expect(mocks.updateDeviceParam).toHaveBeenCalledWith(toasterFolder.id, 'toaster-device', 'masterGain', 1.35);
-        expect(mocks.updateDeviceParam).toHaveBeenCalledWith(toasterFolder.id, 'toaster-device', 'swing', 0.08);
-        for (const child of children) {
-            expect(mocks.setTrackOutput).toHaveBeenCalledWith(child.id, toasterFolder.id);
+            const allocationCalls = [
+                ...mocks.ensureBusStrip.mock.invocationCallOrder,
+                ...mocks.ensureTrackStrip.mock.invocationCallOrder,
+            ];
+            const reconstructionCalls = [
+                ...mocks.setTrackOutput.mock.invocationCallOrder,
+                ...mocks.addDeviceToStrip.mock.invocationCallOrder,
+                ...mocks.updateDeviceParam.mock.invocationCallOrder,
+                ...mocks.setSend.mock.invocationCallOrder,
+            ];
+            expect(Math.max(...allocationCalls)).toBeLessThan(Math.min(...reconstructionCalls));
         }
-        expect(mocks.wireSidechainRoutes).toHaveBeenCalledTimes(1);
+
+        ensureTrackStrips();
+        expectReconstruction();
+
+        vi.clearAllMocks();
+        ensureTrackStrips();
+        expectReconstruction();
     });
 
     it('wires persisted sidechain routes into the engine after strips exist', () => {
