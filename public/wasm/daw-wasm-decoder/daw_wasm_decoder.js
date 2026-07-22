@@ -1,6 +1,5 @@
 export class DecodedAudioWasm {
     static __wrap(ptr) {
-        ptr = ptr >>> 0;
         const obj = Object.create(DecodedAudioWasm.prototype);
         obj.__wbg_ptr = ptr;
         DecodedAudioWasmFinalization.register(obj, obj.__wbg_ptr, obj);
@@ -70,15 +69,14 @@ export function decode_audio_bytes(bytes) {
     }
     return DecodedAudioWasm.__wrap(ret[0]);
 }
-
 function __wbg_get_imports() {
     const import0 = {
         __proto__: null,
-        __wbg_Error_55538483de6e3abe: function(arg0, arg1) {
+        __wbg_Error_92b29b0548f8b746: function(arg0, arg1) {
             const ret = Error(getStringFromWasm0(arg0, arg1));
             return ret;
         },
-        __wbg___wbindgen_throw_5549492daedad139: function(arg0, arg1) {
+        __wbg___wbindgen_throw_344f42d3211c4765: function(arg0, arg1) {
             throw new Error(getStringFromWasm0(arg0, arg1));
         },
         __wbindgen_init_externref_table: function() {
@@ -99,7 +97,7 @@ function __wbg_get_imports() {
 
 const DecodedAudioWasmFinalization = (typeof FinalizationRegistry === 'undefined')
     ? { register: () => {}, unregister: () => {} }
-    : new FinalizationRegistry(ptr => wasm.__wbg_decodedaudiowasm_free(ptr >>> 0, 1));
+    : new FinalizationRegistry(ptr => wasm.__wbg_decodedaudiowasm_free(ptr, 1));
 
 function getArrayF32FromWasm0(ptr, len) {
     ptr = ptr >>> 0;
@@ -115,8 +113,7 @@ function getFloat32ArrayMemory0() {
 }
 
 function getStringFromWasm0(ptr, len) {
-    ptr = ptr >>> 0;
-    return decodeText(ptr, len);
+    return decodeText(ptr >>> 0, len);
 }
 
 let cachedUint8ArrayMemory0 = null;
@@ -156,8 +153,9 @@ function decodeText(ptr, len) {
 
 let WASM_VECTOR_LEN = 0;
 
-let wasmModule, wasm;
+let wasmModule, wasmInstance, wasm;
 function __wbg_finalize_init(instance, module) {
+    wasmInstance = instance;
     wasm = instance.exports;
     wasmModule = module;
     cachedFloat32ArrayMemory0 = null;
