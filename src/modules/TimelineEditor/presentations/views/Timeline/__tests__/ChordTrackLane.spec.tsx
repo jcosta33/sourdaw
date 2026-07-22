@@ -9,16 +9,25 @@ vi.mock('#/infra/store/useStore', () => ({
     useStore: vi.fn(() => mockChordState),
 }));
 
-const executeAppAction = vi.fn((_action: unknown) => Promise.resolve());
+const addChordEvent = vi.fn();
+const removeChordEvent = vi.fn();
+const moveChordEvent = vi.fn();
+const updateChordEvent = vi.fn();
+const toggleChordTrack = vi.fn();
+const clearChordTrack = vi.fn();
 
-function expectAction(action: unknown): void {
-    expect(executeAppAction).toHaveBeenCalledWith(action);
-}
-
-vi.mock('#/modules/Command/useCases', async () => ({
-    ...(await vi.importActual<typeof import('#/modules/Command/useCases')>('#/modules/Command/useCases')),
-    executeAppAction: (action: unknown) => executeAppAction(action),
-}));
+vi.mock('#/modules/MIDI/useCases', async () => {
+    const actual = await vi.importActual<typeof import('#/modules/MIDI/useCases')>('#/modules/MIDI/useCases');
+    return {
+        ...actual,
+        addChordEvent: (...args: unknown[]) => addChordEvent(...args),
+        removeChordEvent: (...args: unknown[]) => removeChordEvent(...args),
+        moveChordEvent: (...args: unknown[]) => moveChordEvent(...args),
+        updateChordEvent: (...args: unknown[]) => updateChordEvent(...args),
+        toggleChordTrack: (...args: unknown[]) => toggleChordTrack(...args),
+        clearChordTrack: (...args: unknown[]) => clearChordTrack(...args),
+    };
+});
 
 const oneEvent = { id: 'c1', beat: 4, duration: 4, root: 0, quality: 'major' };
 
@@ -60,17 +69,17 @@ describe('ChordTrackLane', () => {
         expect(power).toHaveAttribute('title', 'Harmonic following ON');
     });
 
-    it('dispatches toggleChordTrack when the power button is clicked', () => {
+    it('calls toggleChordTrack when the power button is clicked', () => {
         render(<ChordTrackLane pixelsPerBeat={16} scrollX={0} />);
         fireEvent.click(screen.getByLabelText('Enable harmonic following'));
-        expectAction({ type: 'toggleChordTrack', payload: { enabled: true } });
+        expect(toggleChordTrack).toHaveBeenCalledWith();
     });
 
-    it('dispatches clearChordTrack when the clear button is clicked', () => {
+    it('calls clearChordTrack when the clear button is clicked', () => {
         mockChordState = { enabled: false, events: [oneEvent] };
         render(<ChordTrackLane pixelsPerBeat={16} scrollX={0} />);
         fireEvent.click(screen.getByLabelText('Clear all chords'));
-        expectAction({ type: 'clearChordTrack' });
+        expect(clearChordTrack).toHaveBeenCalledWith();
     });
 
     it('opens the add-chord popover and quick-adds after the last event', () => {
@@ -80,14 +89,14 @@ describe('ChordTrackLane', () => {
 
         fireEvent.click(screen.getByRole('button', { name: 'C' }));
 
-        expectAction({ type: 'addChordEvent', payload: { beat: 8, root: 0, quality: 'major', duration: 4 } });
+        expect(addChordEvent).toHaveBeenCalledWith(8, 0, 'major', 4);
     });
 
     it('quick-adds at beat 0 when there are no existing events', () => {
         render(<ChordTrackLane pixelsPerBeat={16} scrollX={0} />);
         fireEvent.click(screen.getByLabelText('Add chord event'));
         fireEvent.click(screen.getByRole('button', { name: 'C' }));
-        expectAction({ type: 'addChordEvent', payload: { beat: 0, root: 0, quality: 'major', duration: 4 } });
+        expect(addChordEvent).toHaveBeenCalledWith(0, 0, 'major', 4);
     });
 
     it('right-clicking empty space opens the quick-add root menu at the clicked beat', () => {
@@ -99,7 +108,7 @@ describe('ChordTrackLane', () => {
 
         expect(screen.getByText('Beat 12')).toBeInTheDocument();
         fireEvent.click(screen.getByText('Add C'));
-        expectAction({ type: 'addChordEvent', payload: { beat: 12, root: 0, quality: 'major', duration: 4 } });
+        expect(addChordEvent).toHaveBeenCalledWith(12, 0, 'major', 4);
     });
 
     it('right-clicking an existing chord opens its quality/root/delete menu', () => {
@@ -114,15 +123,15 @@ describe('ChordTrackLane', () => {
         expect(screen.getByText('Root')).toBeInTheDocument();
 
         fireEvent.click(screen.getByText('min7'));
-        expectAction({ type: 'updateChordEvent', payload: { eventId: 'c1', quality: 'min7' } });
+        expect(updateChordEvent).toHaveBeenCalledWith('c1', { quality: 'min7' });
 
         fireEvent.contextMenu(region, { clientX: 100, clientY: 10 });
         fireEvent.click(screen.getByRole('button', { name: 'D' }));
-        expectAction({ type: 'updateChordEvent', payload: { eventId: 'c1', root: 2 } });
+        expect(updateChordEvent).toHaveBeenCalledWith('c1', { root: 2 });
 
         fireEvent.contextMenu(region, { clientX: 100, clientY: 10 });
         fireEvent.click(screen.getByText('Delete Chord'));
-        expectAction({ type: 'removeChordEvent', payload: { eventId: 'c1' } });
+        expect(removeChordEvent).toHaveBeenCalledWith('c1');
     });
 
     it('drags a chord to a new beat, quantized to a sixteenth note', () => {
@@ -133,13 +142,12 @@ describe('ChordTrackLane', () => {
 
         fireEvent.mouseDown(block, { button: 0, clientX: 64 });
         fireEvent.mouseMove(region, { clientX: 96 });
-        expect(executeAppAction).not.toHaveBeenCalled();
+        expect(moveChordEvent).toHaveBeenCalledWith('c1', 6);
 
         fireEvent.mouseUp(region);
-        expectAction({ type: 'moveChordEvent', payload: { eventId: 'c1', beat: 6 } });
-        executeAppAction.mockClear();
+        moveChordEvent.mockClear();
         fireEvent.mouseMove(region, { clientX: 200 });
-        expect(executeAppAction).not.toHaveBeenCalled();
+        expect(moveChordEvent).not.toHaveBeenCalled();
     });
 
     it('ignores non-primary-button mouse down for drag', () => {
@@ -150,8 +158,7 @@ describe('ChordTrackLane', () => {
 
         fireEvent.mouseDown(block, { button: 2, clientX: 64 });
         fireEvent.mouseMove(region, { clientX: 200 });
-        fireEvent.mouseUp(region);
-        expect(executeAppAction).not.toHaveBeenCalled();
+        expect(moveChordEvent).not.toHaveBeenCalled();
     });
 
     it('closes an open context menu on an outside click', () => {

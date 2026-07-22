@@ -13,9 +13,16 @@ import { Music2, Plus, Power, Trash2 } from 'lucide-react';
 import { DawInlineHint } from '#/components/daw/DawInlineHint';
 import { DawMenuMutedRow, DawMenuSeparator } from '#/components/daw/DawMenuParts';
 import { useStore } from '#/infra/store/useStore';
-import { executeAppAction } from '#/modules/Command/useCases';
 import { chordTrackStore } from '#/modules/MIDI/stores';
-import { formatChordName } from '#/modules/MIDI/useCases';
+import {
+    addChordEvent,
+    removeChordEvent,
+    moveChordEvent,
+    updateChordEvent,
+    toggleChordTrack,
+    clearChordTrack,
+    formatChordName,
+} from '#/modules/MIDI/useCases';
 import { cn } from '#/utils/Styles/cn';
 
 const ROOT_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'] as const;
@@ -92,12 +99,7 @@ export const ChordTrackLane = ({ pixelsPerBeat, scrollX }: ChordTrackLaneProps):
     const state = useStore<ChordTrackViewState>(chordTrackStore, defaultState);
 
     const [contextMenu, setContextMenu] = useState<ContextMenuState>({ kind: 'none' });
-    const [dragState, setDragState] = useState<{
-        eventId: string;
-        startX: number;
-        originalBeat: number;
-        previewBeat: number;
-    } | null>(null);
+    const [dragState, setDragState] = useState<{ eventId: string; startX: number; originalBeat: number } | null>(null);
     const [showAddMenu, setShowAddMenu] = useState(false);
     const menuRef = useRef<HTMLDivElement>(null);
     const addRef = useRef<HTMLDivElement>(null);
@@ -127,12 +129,7 @@ export const ChordTrackLane = ({ pixelsPerBeat, scrollX }: ChordTrackLaneProps):
             return;
         }
         event1.stopPropagation();
-        setDragState({
-            eventId: event.id,
-            startX: event1.clientX,
-            originalBeat: event.beat,
-            previewBeat: event.beat,
-        });
+        setDragState({ eventId: event.id, startX: event1.clientX, originalBeat: event.beat });
     };
 
     const handleMouseMove = (event: MouseEvent): void => {
@@ -142,16 +139,10 @@ export const ChordTrackLane = ({ pixelsPerBeat, scrollX }: ChordTrackLaneProps):
         const dx = event.clientX - dragState.startX;
         const beatDelta = dx / pixelsPerBeat;
         const newBeat = Math.max(0, Math.round((dragState.originalBeat + beatDelta) * 4) / 4);
-        setDragState({ ...dragState, previewBeat: newBeat });
+        moveChordEvent(dragState.eventId, newBeat);
     };
 
     const handleMouseUp = (): void => {
-        if (dragState && dragState.previewBeat !== dragState.originalBeat) {
-            void executeAppAction({
-                type: 'moveChordEvent',
-                payload: { eventId: dragState.eventId, beat: dragState.previewBeat },
-            });
-        }
         setDragState(null);
     };
 
@@ -178,10 +169,7 @@ export const ChordTrackLane = ({ pixelsPerBeat, scrollX }: ChordTrackLaneProps):
 
     // ── Add chord at beat from context menu ───────────────────────────
     const handleAddAtBeat = (beat: number, root: number, quality: ChordQuality): void => {
-        void executeAppAction({
-            type: 'addChordEvent',
-            payload: { beat: Math.floor(beat), root, quality, duration: 4 },
-        });
+        addChordEvent(Math.floor(beat), root, quality, 4);
         setContextMenu({ kind: 'none' });
     };
 
@@ -189,7 +177,7 @@ export const ChordTrackLane = ({ pixelsPerBeat, scrollX }: ChordTrackLaneProps):
     const handleQuickAdd = (root: number, quality: ChordQuality): void => {
         const lastEvent = state.events[state.events.length - 1];
         const beat = lastEvent ? lastEvent.beat + lastEvent.duration : 0;
-        void executeAppAction({ type: 'addChordEvent', payload: { beat, root, quality, duration: 4 } });
+        addChordEvent(beat, root, quality, 4);
         setShowAddMenu(false);
     };
 
@@ -223,12 +211,7 @@ export const ChordTrackLane = ({ pixelsPerBeat, scrollX }: ChordTrackLaneProps):
                     aria-label={state.enabled ? 'Disable harmonic following' : 'Enable harmonic following'}
                     aria-pressed={state.enabled}
                     title={state.enabled ? 'Harmonic following ON' : 'Harmonic following OFF'}
-                    onClick={() => {
-                        void executeAppAction({
-                            type: 'toggleChordTrack',
-                            payload: { enabled: !state.enabled },
-                        });
-                    }}
+                    onClick={() => toggleChordTrack()}
                 >
                     <Power className="size-2.5" />
                 </button>
@@ -253,9 +236,7 @@ export const ChordTrackLane = ({ pixelsPerBeat, scrollX }: ChordTrackLaneProps):
                         className="size-4 rounded flex items-center justify-center text-muted-foreground/30 hover:text-destructive/70 hover:bg-destructive/5 transition-colors"
                         aria-label="Clear all chords"
                         title="Clear chord track"
-                        onClick={() => {
-                            void executeAppAction({ type: 'clearChordTrack' });
-                        }}
+                        onClick={() => clearChordTrack()}
                     >
                         <Trash2 className="size-2.5" />
                     </button>
@@ -264,8 +245,7 @@ export const ChordTrackLane = ({ pixelsPerBeat, scrollX }: ChordTrackLaneProps):
             {/* ── Chord blocks ── */}
             <div className="relative flex-1 h-full">
                 {state.events.map((event) => {
-                    const beat = dragState?.eventId === event.id ? dragState.previewBeat : event.beat;
-                    const x = beatToX(beat);
+                    const x = beatToX(event.beat);
                     const width = event.duration * pixelsPerBeat;
                     const color = ROOT_COLORS[event.root % 12]!;
 
@@ -342,10 +322,7 @@ export const ChordTrackLane = ({ pixelsPerBeat, scrollX }: ChordTrackLaneProps):
                                                 : 'text-popover-foreground hover:bg-accent/50'
                                         )}
                                         onClick={() => {
-                                            void executeAppAction({
-                                                type: 'updateChordEvent',
-                                                payload: { eventId: contextMenu.event.id, quality: query },
-                                            });
+                                            updateChordEvent(contextMenu.event.id, { quality: query });
                                             setContextMenu({ kind: 'none' });
                                         }}
                                     >
@@ -366,10 +343,7 @@ export const ChordTrackLane = ({ pixelsPerBeat, scrollX }: ChordTrackLaneProps):
                                                 : 'text-popover-foreground hover:bg-accent/50'
                                         )}
                                         onClick={() => {
-                                            void executeAppAction({
-                                                type: 'updateChordEvent',
-                                                payload: { eventId: contextMenu.event.id, root: idx },
-                                            });
+                                            updateChordEvent(contextMenu.event.id, { root: idx });
                                             setContextMenu({ kind: 'none' });
                                         }}
                                     >
@@ -382,10 +356,7 @@ export const ChordTrackLane = ({ pixelsPerBeat, scrollX }: ChordTrackLaneProps):
                                 type="button"
                                 className="flex w-full items-center rounded-sm px-2 py-1.5 text-xs text-destructive hover:bg-destructive/10"
                                 onClick={() => {
-                                    void executeAppAction({
-                                        type: 'removeChordEvent',
-                                        payload: { eventId: contextMenu.event.id },
-                                    });
+                                    removeChordEvent(contextMenu.event.id);
                                     setContextMenu({ kind: 'none' });
                                 }}
                             >

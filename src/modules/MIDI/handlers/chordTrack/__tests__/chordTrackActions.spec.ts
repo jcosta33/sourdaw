@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { configureAutomergeStoragePort } from '#/infra/store/storage/createAutomergeStorage';
-import { clearHandlerRegistry, registerHandlerMap, undoStore } from '#/modules/Command/stores';
+import { clearHandlerRegistry, macroStore, registerHandlerMap, undoStore } from '#/modules/Command/stores';
 import { clearUndoHistory, executeAppAction, redo, undo } from '#/modules/Command/useCases';
 import { type AppAction } from '#/utils/handlerContract';
 
@@ -32,6 +32,7 @@ describe('chord-track action authority', () => {
     });
 
     afterEach(() => {
+        macroStore.set({ macros: [], recording: false, currentRecording: [] });
         clearUndoHistory();
         clearHandlerRegistry();
     });
@@ -54,4 +55,31 @@ describe('chord-track action authority', () => {
         await executeAppAction({ type: 'toggleChordTrack', payload: { enabled: false } });
         expect(undoStore.value?.past).toHaveLength(undoCount ?? 0);
     });
+
+    it.each([
+        { label: 'stale move', action: { type: 'moveChordEvent', payload: { eventId: 'missing', beat: 8 } } },
+        { label: 'same beat', action: { type: 'moveChordEvent', payload: { eventId: 'chord-a', beat: 4 } } },
+        { label: 'stale update', action: { type: 'updateChordEvent', payload: { eventId: 'missing', root: 2 } } },
+        {
+            label: 'same root, quality, and duration',
+            action: {
+                type: 'updateChordEvent',
+                payload: { eventId: 'chord-a', root: 0, quality: 'major', duration: 2 },
+            },
+        },
+        { label: 'stale remove', action: { type: 'removeChordEvent', payload: { eventId: 'missing' } } },
+    ] satisfies Array<{ action: AppAction; label: string }>)(
+        '$label is a no-op before record or write',
+        async ({ action }) => {
+            macroStore.set({ macros: [], recording: true, currentRecording: [] });
+            const before = chordTrackStore.value;
+            const undoCount = undoStore.value?.past.length ?? 0;
+
+            await executeAppAction(action);
+
+            expect(chordTrackStore.value).toBe(before);
+            expect(undoStore.value?.past).toHaveLength(undoCount);
+            expect(macroStore.value?.currentRecording).toEqual([]);
+        }
+    );
 });

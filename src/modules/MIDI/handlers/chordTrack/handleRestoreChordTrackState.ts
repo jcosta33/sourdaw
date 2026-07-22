@@ -69,15 +69,22 @@ export function describeChordTrackMutation(action: ChordMutationAction, label: s
     return { label, inverseAction: { type: 'restoreChordTrackState', payload: { expected, replacement } } };
 }
 
+export function isChordTrackMutationNoop(action: ChordMutationAction): boolean {
+    const state = chordTrackStore.value;
+    return !state || JSON.stringify(state) === JSON.stringify(projectState(state, action));
+}
+
 export const handleMoveChordEvent = createHandler<'moveChordEvent'>({
     execute: (action) => moveChordEvent(action.payload.eventId, action.payload.beat),
     describe: (action) => describeChordTrackMutation(action, 'Move chord event'),
+    isNoop: isChordTrackMutationNoop,
     undoable: true,
 });
 
 export const handleUpdateChordEvent = createHandler<'updateChordEvent'>({
     execute: (action) => updateChordEvent(action.payload.eventId, action.payload),
     describe: (action) => describeChordTrackMutation(action, 'Update chord event'),
+    isNoop: isChordTrackMutationNoop,
     undoable: true,
 });
 
