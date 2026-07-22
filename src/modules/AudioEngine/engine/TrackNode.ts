@@ -369,7 +369,7 @@ export class TrackNode {
             if (isCurrentLoad && !pendingLoad.resolved) {
                 this.invalidatePendingDeviceLoad(deviceId);
             }
-            this.destroyDeviceNode(finalDn);
+            this.destroyRejectedDeviceNode(finalDn);
             return false;
         }
 
@@ -387,11 +387,11 @@ export class TrackNode {
         return true;
     }
 
-    private destroyDeviceNode(device: BuiltinDeviceNode): void {
-        if (device.controller) {
-            device.controller.destroy?.();
-        } else if (device.dispose) {
+    private destroyRejectedDeviceNode(device: BuiltinDeviceNode): void {
+        if (device.dispose) {
             device.dispose();
+        } else if (device.controller) {
+            device.controller.destroy?.();
         }
         for (const node of device.nodes) {
             try {
@@ -471,7 +471,7 @@ export class TrackNode {
                     const controls = {
                         setParam: (name: string, value: number) => result.setParam(parseInt(name, 10) || 0, value),
                         setBypass: result.setBypass,
-                        destroy: () => result.workletNode.disconnect(),
+                        destroy: result.destroy,
                     };
                     const bridgeDn: BuiltinDeviceNode = {
                         deviceId,
@@ -481,6 +481,7 @@ export class TrackNode {
                         outputNode: result.workletNode,
                         nativeDspControls: controls,
                         controller: controls,
+                        dispose: result.destroy,
                     };
                     this.completePendingDeviceLoad(deviceId, pendingLoad, bridgeDn);
                     return;
@@ -521,6 +522,7 @@ export class TrackNode {
                     deviceId,
                     deviceType,
                     transportSAB: this.deps.transportSAB,
+                    isCurrent: () => this._pendingDeviceLoads.get(deviceId) === pendingLoad && !this._disposed,
                     onLoaded: (finalDn) => this.completePendingDeviceLoad(deviceId, pendingLoad, finalDn),
                 });
                 if (!placeholder.controller) {
@@ -542,7 +544,20 @@ export class TrackNode {
         }
 
         this.invalidatePendingDeviceLoad(deviceId);
-        this.destroyDeviceNode(dn);
+        if (dn.controller) {
+            dn.controller.destroy?.();
+        } else if (dn.dispose) {
+            dn.dispose();
+        }
+
+        for (const n of dn.nodes) {
+            try {
+                n.disconnect();
+            } catch {
+                // Intentionally empty: a node already detached from the graph
+                // throws on disconnect(); nothing to clean up in that case.
+            }
+        }
         this.strip.deviceNodes = this.strip.deviceNodes.filter((d) => d.deviceId !== deviceId);
         this.rebuildChain();
     }
@@ -640,7 +655,19 @@ export class TrackNode {
             this.strip.meterNode.disconnect();
         }
         for (const dn of this.strip.deviceNodes) {
-            this.destroyDeviceNode(dn);
+            if (dn.controller) {
+                dn.controller.destroy?.();
+            } else if (dn.dispose) {
+                dn.dispose();
+            }
+            for (const n of dn.nodes) {
+                try {
+                    n.disconnect();
+                } catch {
+                    // Intentionally empty: a node already detached from the graph
+                    // throws on disconnect() during teardown; safe to ignore.
+                }
+            }
         }
         this.strip.deviceNodes = [];
     }

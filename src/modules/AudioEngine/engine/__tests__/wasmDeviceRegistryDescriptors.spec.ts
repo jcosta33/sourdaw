@@ -94,6 +94,7 @@ function createDeps(overrides?: Partial<WasmDeviceCreateDeps>): WasmDeviceCreate
         context: makeContext(),
         deviceId: 'dev-1',
         deviceType: 'toaster',
+        isCurrent: () => true,
         onLoaded: vi.fn(),
         ...overrides,
     };
@@ -179,14 +180,9 @@ describe('wasmDeviceRegistry descriptors', () => {
             expect(loaded.toasterControls?.allNotesOff).toBe(result.allNotesOff);
             expect(loaded.toasterControls?.setFillActive).toBe(result.setFillActive);
 
+            vi.mocked(deps.onLoaded).mockReturnValue(false);
             emitDeviceLoaded.mockClear();
-            const rejectedDeps = createDeps({
-                deviceType: 'toaster',
-                deviceId: 'toast-late',
-                onLoaded: vi.fn(() => false),
-            });
-            await requireDescriptor('toaster').create(rejectedDeps).loadPromise;
-
+            await requireDescriptor('toaster').create(deps).loadPromise;
             expect(emitDeviceLoaded).not.toHaveBeenCalled();
         });
 
@@ -261,15 +257,10 @@ describe('wasmDeviceRegistry descriptors', () => {
             });
             expect(setLevainEngineReady).toHaveBeenCalledWith({ deviceId: 'lev-1', isReady: true });
 
+            vi.mocked(deps.onLoaded).mockReturnValue(false);
             registerLevainDevice.mockClear();
             setLevainEngineReady.mockClear();
-            const rejectedDeps = createDeps({
-                deviceType: 'levain',
-                deviceId: 'lev-late',
-                onLoaded: vi.fn(() => false),
-            });
-            await requireDescriptor('levain').create(rejectedDeps).loadPromise;
-
+            await requireDescriptor('levain').create(deps).loadPromise;
             expect(registerLevainDevice).not.toHaveBeenCalled();
             expect(setLevainEngineReady).not.toHaveBeenCalled();
         });
@@ -321,7 +312,7 @@ describe('wasmDeviceRegistry descriptors', () => {
                 connect: vi.fn(),
                 disconnect: vi.fn(),
                 destroy: vi.fn(),
-                ready: Promise.resolve({}),
+                ready: Promise.resolve({ latency: 480 }),
             };
             factoryMocks.createProofChamberNode.mockResolvedValue(result);
             const deps = createDeps({ deviceType: 'dutch-oven', deviceId: 'oven-1' });
@@ -336,8 +327,20 @@ describe('wasmDeviceRegistry descriptors', () => {
             expect(loaded.controller).toEqual({
                 setParam: result.setParam,
                 setBypass: result.setBypass,
-                destroy: result.destroy,
+                destroy: expect.any(Function),
             });
+            expect(externalLatencyRegistry.get('oven-1')).toBe(10);
+            loaded.controller?.destroy?.();
+            expect(externalLatencyRegistry.has('oven-1')).toBe(false);
+
+            vi.mocked(result.destroy).mockClear();
+            vi.mocked(deps.onLoaded).mockImplementation((node) => {
+                node.dispose?.();
+                return false;
+            });
+            await requireDescriptor('dutch-oven').create(deps).loadPromise;
+            expect(result.destroy).toHaveBeenCalledTimes(1);
+            expect(externalLatencyRegistry.has('oven-1')).toBe(false);
         });
     });
 

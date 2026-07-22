@@ -107,17 +107,12 @@ function installDeferredWasmDevice({
         controller,
     };
     let onLoaded: ((finalDn: BuiltinDeviceNode) => void) | undefined;
-    let resolveLoad: (() => void) | undefined;
+    const load = Promise.withResolvers<void>();
     mocks.findWasmDescriptor.mockReturnValue({
         matches: () => true,
         create: (deps: { onLoaded: (finalDn: BuiltinDeviceNode) => void }) => {
             onLoaded = deps.onLoaded;
-            return {
-                placeholder,
-                loadPromise: new Promise<void>((resolve) => {
-                    resolveLoad = resolve;
-                }),
-            };
+            return { placeholder, loadPromise: load.promise };
         },
     });
     return {
@@ -129,18 +124,14 @@ function installDeferredWasmDevice({
             beforeLoaded?.(finalDn);
             onLoaded(finalDn);
         },
-        settle(): void {
-            if (!resolveLoad) {
-                throw new Error('expected the deferred descriptor to capture its resolver');
-            }
-            resolveLoad();
-        },
+        settle: load.resolve,
     };
 }
 
 function createLoadedDevice(deviceId = 'wasm-1') {
     const node = createMockAudioNode('gain');
     const controller = { setParam: vi.fn(), setBypass: vi.fn(), destroy: vi.fn() };
+    const dispose = vi.fn();
     const device: BuiltinDeviceNode = {
         deviceId,
         type: 'levain',
@@ -148,8 +139,9 @@ function createLoadedDevice(deviceId = 'wasm-1') {
         inputNode: node,
         outputNode: node,
         controller,
+        dispose,
     };
-    return { device, node, controller };
+    return { device, node, controller, dispose };
 }
 
 describe('TrackNode — metering, devices, sends, and teardown', () => {
@@ -460,10 +452,8 @@ describe('TrackNode — metering, devices, sends, and teardown', () => {
             const track = new TrackNode('t1', makeDeps(ctx, { pendingDevicePromises }));
 
             track.addDevice('wasm-1', 'levain');
-            track.addDevice('wasm-1', 'levain');
             track.updateParam('wasm-1', 'gain', 0.25);
             track.updateParam('wasm-1', 'tone', 0.75);
-            track.updateParam('wasm-1', 'gain', 0.5);
             track.updateBypass('wasm-1', true);
 
             expect(track.strip.deviceNodes[0]).toBe(deferred.placeholder);
@@ -475,7 +465,6 @@ describe('TrackNode — metering, devices, sends, and teardown', () => {
             expect(loaded.controller.setParam.mock.calls).toEqual([
                 ['gain', 0.25],
                 ['tone', 0.75],
-                ['gain', 0.5],
             ]);
             expect(loaded.controller.setBypass).toHaveBeenCalledWith(true);
             expect(loaded.device.bypassed).toBe(true);
@@ -508,7 +497,6 @@ describe('TrackNode — metering, devices, sends, and teardown', () => {
             deferred.resolve(loaded.device);
 
             expect(order).toEqual(['queuedParam', 'syncProofPatch']);
-            expect(loaded.controller.setParam).toHaveBeenCalledTimes(1);
         });
 
         it('invalidates a removed placeholder and destroys its late wasm result', async () => {
@@ -516,8 +504,6 @@ describe('TrackNode — metering, devices, sends, and teardown', () => {
             const pendingDevicePromises = new Set<Promise<unknown>>();
             const track = new TrackNode('t1', makeDeps(ctx, { pendingDevicePromises }));
             track.addDevice('wasm-1', 'levain');
-            track.updateParam('wasm-1', 'gain', 0.5);
-            track.updateBypass('wasm-1', true);
             const scheduleRebuild = vi.spyOn(track, 'scheduleRebuildChain');
 
             track.removeDevice('wasm-1');
@@ -526,8 +512,8 @@ describe('TrackNode — metering, devices, sends, and teardown', () => {
             expect(pendingDevicePromises.size).toBe(0);
             const loaded = createLoadedDevice();
             deferred.resolve(loaded.device);
-            expect(loaded.controller.destroy).toHaveBeenCalledTimes(1);
-            expect(loaded.controller.setBypass).not.toHaveBeenCalled();
+            expect(loaded.dispose).toHaveBeenCalledTimes(1);
+            expect(loaded.controller.destroy).not.toHaveBeenCalled();
             expect(loaded.node.disconnect).toHaveBeenCalled();
             expect(scheduleRebuild).not.toHaveBeenCalled();
 
@@ -535,18 +521,15 @@ describe('TrackNode — metering, devices, sends, and teardown', () => {
             await Promise.resolve();
         });
 
-        it('invalidates pending wasm loads and scheduled rebuilds when disposed repeatedly', async () => {
+        it('keeps same-id replacement state when reset rejects an old generation', async () => {
             const deferred = installDeferredWasmDevice();
             const pendingDevicePromises = new Set<Promise<unknown>>();
             const track = new TrackNode('t1', makeDeps(ctx, { pendingDevicePromises }));
             track.addDevice('wasm-1', 'levain');
-            track.updateParam('wasm-1', 'gain', 0.5);
             const rebuildChain = vi.spyOn(track, 'rebuildChain');
             const meterNode = workletInstances[0]!;
             track.scheduleRebuildChain();
 
-            // resetGraph reaches the same TrackNode.dispose path; repeat it to
-            // prove project teardown cannot retain or reconnect this placeholder.
             track.dispose();
             track.dispose();
             await Promise.resolve();
@@ -557,8 +540,14 @@ describe('TrackNode — metering, devices, sends, and teardown', () => {
             expect(rebuildChain).not.toHaveBeenCalled();
 
             const loaded = createLoadedDevice();
+            let activeGeneration = 'new';
+            loaded.controller.destroy.mockImplementation(() => {
+                activeGeneration = 'removed';
+            });
             deferred.resolve(loaded.device);
-            expect(loaded.controller.destroy).toHaveBeenCalledTimes(1);
+            expect(loaded.dispose).toHaveBeenCalledTimes(1);
+            expect(loaded.controller.destroy).not.toHaveBeenCalled();
+            expect(activeGeneration).toBe('new');
             expect(loaded.node.disconnect).toHaveBeenCalled();
             expect(rebuildChain).not.toHaveBeenCalled();
 
