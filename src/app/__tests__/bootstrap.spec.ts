@@ -199,6 +199,7 @@ vi.mock('#/modules/PluginHost/useCases', () => ({
 }));
 
 vi.mock('#/modules/Project/useCases', () => ({
+    getProjectHandlers: sentinelHandlers('Project'),
     initGrooveTemplateDirtyTracking: noop,
     markDirty: noop,
     setProjectIdentityTransitionDependencies: noop,
@@ -317,6 +318,7 @@ describe('bootstrap', () => {
         'UndoTree',
         'Pitch',
         'SongStructure',
+        'Project',
         'VersionControl',
         'DawProject',
         'FinalFeature',

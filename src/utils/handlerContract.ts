@@ -530,6 +530,7 @@ export type AppAction =
     | { type: 'saveTrackTemplate'; payload: { trackId: string; name: string; category: string } }
     | { type: 'loadTrackTemplate'; payload: { templateId: string } }
     | { type: 'deleteTrackTemplate'; payload: { templateId: string } }
+    | { type: 'createProjectFromTemplate'; payload: { templateId: string } }
     | {
           type: 'createVcaGroup';
           payload: {
