@@ -1,3 +1,4 @@
+import type { TrackNode } from './TrackNode';
 import type { BusStrip } from '../models/AudioEngineState';
 
 export class BusNode {
@@ -5,51 +6,26 @@ export class BusNode {
 
     constructor(
         public busId: string,
-        private context: BaseAudioContext,
-        masterGainNode: GainNode
+        private trackNode: TrackNode
     ) {
-        const gainNode = context.createGain();
-        gainNode.gain.value = 1;
-
-        const analyserNode = context.createAnalyser();
-        analyserNode.fftSize = 256;
-        analyserNode.smoothingTimeConstant = 0.8;
-
-        gainNode.connect(analyserNode);
-        analyserNode.connect(masterGainNode);
-
         this.strip = {
             busId,
-            gainNode,
-            analyserNode,
-            meterBuffer: new Float32Array(analyserNode.frequencyBinCount),
+            gainNode: trackNode.strip.gainNode,
+            analyserNode: trackNode.strip.analyserNode,
+            meterBuffer: trackNode.strip.meterBuffer,
         };
     }
 
     public setGain(gain: number): void {
-        this.strip.gainNode.gain.setTargetAtTime(Math.max(0, Math.min(2, gain)), this.context.currentTime, 0.01);
+        this.trackNode.setGain(gain);
     }
 
     public getPeakLevel(): number {
-        const data = this.strip.meterBuffer;
-        if (data) {
-            // `Float32Array<ArrayBuffer>` is what the Web Audio DOM lib type
-            // requires; our model stores the default `Float32Array<ArrayBufferLike>`.
-            // Both are compatible at runtime — the cast is purely structural.
-            this.strip.analyserNode.getFloatTimeDomainData(data as Float32Array<ArrayBuffer>);
-        }
-        let peak = 0;
-        for (let index = 0; index < data.length; index++) {
-            const abs = Math.abs(data[index]!);
-            if (abs > peak) {
-                peak = abs;
-            }
-        }
-        return peak;
+        return this.trackNode.getPeakLevel();
     }
 
     public dispose(): void {
-        this.strip.gainNode.disconnect();
-        this.strip.analyserNode.disconnect();
+        // The facade owns no nodes. The paired TrackNode owns and disposes the
+        // input, device chain, mixer nodes, meter, and output edge.
     }
 }

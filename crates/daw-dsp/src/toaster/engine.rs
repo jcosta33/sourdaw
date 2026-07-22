@@ -419,7 +419,42 @@ impl ToasterEngine {
     }
 
     pub fn process_block(&mut self, left: &mut [f32], right: &mut [f32]) {
+        self.process_block_inner(left, right, None, 0);
+    }
+
+    pub fn process_block_with_pad_outputs(
+        &mut self,
+        left: &mut [f32],
+        right: &mut [f32],
+        pad_outputs: &mut [f32],
+        pad_stride: usize,
+    ) {
+        self.process_block_inner(left, right, Some(pad_outputs), pad_stride);
+    }
+
+    fn process_block_inner(
+        &mut self,
+        left: &mut [f32],
+        right: &mut [f32],
+        mut pad_outputs: Option<&mut [f32]>,
+        pad_stride: usize,
+    ) {
         let len = left.len().min(right.len()).min(self.bus_buffers_l[0].len());
+        let required_pad_samples = self.pads.len().saturating_mul(2).saturating_mul(pad_stride);
+        let pad_outputs_valid = pad_stride >= len
+            && pad_outputs
+                .as_ref()
+                .is_some_and(|outputs| outputs.len() >= required_pad_samples);
+
+        if pad_outputs_valid {
+            let outputs = pad_outputs
+                .as_deref_mut()
+                .expect("validated pad output buffer");
+            for channel in 0..self.pads.len() * 2 {
+                let start = channel * pad_stride;
+                outputs[start..start + len].fill(0.0);
+            }
+        }
 
         // Precompute panning gains per pad for this block to avoid sqrt() in the inner loop
         for p in 0..self.pads.len() {
@@ -466,6 +501,15 @@ impl ToasterEngine {
                     let r_gain = self.pad_r_gains[pad_idx];
                     let sl = sample * l_gain;
                     let sr = sample * r_gain;
+
+                    if pad_outputs_valid {
+                        let outputs = pad_outputs
+                            .as_deref_mut()
+                            .expect("validated pad output buffer");
+                        let tap_start = pad_idx * 2 * pad_stride;
+                        outputs[tap_start + i] += sl;
+                        outputs[tap_start + pad_stride + i] += sr;
+                    }
 
                     let bus = pad.bus_route;
                     if bus >= 1 && (bus as usize) <= NUM_BUSES {
