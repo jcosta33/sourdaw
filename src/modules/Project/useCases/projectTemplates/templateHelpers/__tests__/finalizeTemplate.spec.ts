@@ -40,5 +40,26 @@ describe('finalizeTemplate', () => {
         expect(mocks.addSidechainRoute).toHaveBeenCalledWith('trigger', 'target', 'compressor', 'sc-comp-threshold');
         readiness.resolve();
         await completion;
+
+        expect(mocks.setTrackState).toHaveBeenCalledOnce();
+        expect(mocks.addSidechainRoute).toHaveBeenCalledOnce();
+        expect(mocks.ensureTrackStrips).toHaveBeenCalledOnce();
+        expect(mocks.waitForDevices).toHaveBeenCalledOnce();
+
+        const trackPublicationOrder = mocks.setTrackState.mock.invocationCallOrder[0];
+        const sidechainTruthOrder = mocks.addSidechainRoute.mock.invocationCallOrder[0];
+        const stripConstructionOrder = mocks.ensureTrackStrips.mock.invocationCallOrder[0];
+        const readinessOrder = mocks.waitForDevices.mock.invocationCallOrder[0];
+        if (
+            trackPublicationOrder === undefined ||
+            sidechainTruthOrder === undefined ||
+            stripConstructionOrder === undefined ||
+            readinessOrder === undefined
+        ) {
+            throw new Error('expected template publication and runtime readiness calls');
+        }
+        expect(sidechainTruthOrder).toBeGreaterThan(trackPublicationOrder);
+        expect(stripConstructionOrder).toBeGreaterThan(sidechainTruthOrder);
+        expect(readinessOrder).toBeGreaterThan(stripConstructionOrder);
     });
 });
