@@ -1,7 +1,7 @@
 import { logger } from '#/infra/logger/appLogger';
 import { addTrack } from '#/modules/Arrangement/useCases';
 import { clearCachedAudioBuffers, resetAudioGraph } from '#/modules/AudioEngine/useCases';
-import { clearUndoHistory } from '#/modules/Command/useCases';
+import { clearUndoHistory, executeAppAction } from '#/modules/Command/useCases';
 import { createCrdtProject, projectActionHistoryToStore, startCrdtAutoSave } from '#/modules/CrdtDocument/useCases';
 import { stopPlayback } from '#/modules/Transport/useCases';
 
@@ -54,6 +54,8 @@ async function activateNewProject({
             return failNewProjectActivation({ previousTransientState, transaction });
         }
         projectActionHistoryToStore();
+        await executeAppAction({ type: 'toggleChordTrack', payload: { enabled: false } });
+        await executeAppAction({ type: 'clearChordTrack' });
         resetModuleStoresToDefault({ createNewMidiProbabilitySeed: true });
         arrangementStore.set(structuredClone(defaultArrangementStoreState));
         addTrack({ name: 'Master', kind: 'master', select: false });

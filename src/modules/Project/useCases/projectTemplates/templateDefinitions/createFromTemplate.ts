@@ -1,5 +1,6 @@
 import { logger } from '#/infra/logger/appLogger';
 import { resetAudioGraph } from '#/modules/AudioEngine/useCases';
+import { executeAppAction } from '#/modules/Command/useCases';
 import { stopPlayback } from '#/modules/Transport/useCases';
 
 import { templates } from './helpers';
@@ -16,7 +17,8 @@ export async function createFromTemplate(templateId: string): Promise<boolean> {
         // operations are idempotent so the double-call is harmless.
         await stopPlayback();
         resetAudioGraph();
-        return await template.create();
+        await executeAppAction({ type: 'createProjectFromTemplate', payload: { templateId } });
+        return true;
     } catch (error) {
         logger.warn(`[createFromTemplate] Failed to create template "${templateId}":`, error);
         return false;
