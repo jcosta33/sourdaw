@@ -1,0 +1,24 @@
+src/modules/Arrangement/useCases/clip/__tests__/duplicateClipCore.spec.ts
+  s_c2fca615e81f34::t_8291a73e305b10 163-164,251
+  s_c2fca615e81f34::t_946257988e3ec1 7,20-23,48,221-250,254-257
+  s_c2fca615e81f34::t_464145de258310 252-253
+  s_c2fca615e81f34::t_2ae3d304c1dd32 258-259
+src/modules/Arrangement/useCases/clip/duplicateClipCore.ts
+  s_c2fca615e81f34::t_db78ae1c8e72d5 5,41-48,65
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "824102de8f5921060011ca37f2a42548b8398ac1",
+  "prompts": {},
+  "sessions": {
+    "s_c2fca615e81f34": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f74e9-e1c5-7142-85d2-4c577b3973c0",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
