@@ -119,7 +119,7 @@ export class ScoringInstance {
      */
     constructor(sample_rate) {
         const ret = wasm.scoringinstance_new(sample_rate);
-        this.__wbg_ptr = ret >>> 0;
+        this.__wbg_ptr = ret;
         ScoringInstanceFinalization.register(this, this.__wbg_ptr, this);
         return this;
     }
@@ -148,11 +148,10 @@ export class ScoringInstance {
     }
 }
 if (Symbol.dispose) ScoringInstance.prototype[Symbol.dispose] = ScoringInstance.prototype.free;
-
 function __wbg_get_imports() {
     const import0 = {
         __proto__: null,
-        __wbg___wbindgen_throw_5549492daedad139: function(arg0, arg1) {
+        __wbg___wbindgen_throw_344f42d3211c4765: function(arg0, arg1) {
             throw new Error(getStringFromWasm0(arg0, arg1));
         },
         __wbindgen_init_externref_table: function() {
@@ -173,7 +172,7 @@ function __wbg_get_imports() {
 
 const ScoringInstanceFinalization = (typeof FinalizationRegistry === 'undefined')
     ? { register: () => {}, unregister: () => {} }
-    : new FinalizationRegistry(ptr => wasm.__wbg_scoringinstance_free(ptr >>> 0, 1));
+    : new FinalizationRegistry(ptr => wasm.__wbg_scoringinstance_free(ptr, 1));
 
 let cachedFloat32ArrayMemory0 = null;
 function getFloat32ArrayMemory0() {
@@ -184,8 +183,7 @@ function getFloat32ArrayMemory0() {
 }
 
 function getStringFromWasm0(ptr, len) {
-    ptr = ptr >>> 0;
-    return decodeText(ptr, len);
+    return decodeText(ptr >>> 0, len);
 }
 
 let cachedUint8ArrayMemory0 = null;
@@ -269,8 +267,9 @@ if (!('encodeInto' in cachedTextEncoder)) {
 
 let WASM_VECTOR_LEN = 0;
 
-let wasmModule, wasm;
+let wasmModule, wasmInstance, wasm;
 function __wbg_finalize_init(instance, module) {
+    wasmInstance = instance;
     wasm = instance.exports;
     wasmModule = module;
     cachedFloat32ArrayMemory0 = null;

@@ -2,20 +2,15 @@
 if (typeof TextDecoder === 'undefined') {
     globalThis.TextDecoder = class TextDecoder {
         decode(input) {
-            if (!input) {
-                return '';
-            }
-            const bytes =
-                input instanceof Uint8Array
-                    ? input
-                    : new Uint8Array(
-                          input instanceof ArrayBuffer ? input : input.buffer,
-                          input instanceof ArrayBuffer ? 0 : input.byteOffset,
-                          input instanceof ArrayBuffer ? input.byteLength : input.byteLength
-                      );
+            if (!input) return '';
+            const bytes = input instanceof Uint8Array ? input : new Uint8Array(
+                input instanceof ArrayBuffer ? input : input.buffer,
+                input instanceof ArrayBuffer ? 0 : input.byteOffset,
+                input instanceof ArrayBuffer ? input.byteLength : input.byteLength,
+            );
             let result = '';
-            for (let index = 0; index < bytes.length; index++) {
-                result += String.fromCharCode(bytes[index]);
+            for (let i = 0; i < bytes.length; i++) {
+                result += String.fromCharCode(bytes[i]);
             }
             return result;
         }
@@ -24,19 +19,17 @@ if (typeof TextDecoder === 'undefined') {
 if (typeof TextEncoder === 'undefined') {
     globalThis.TextEncoder = class TextEncoder {
         encode(input) {
-            if (!input) {
-                return new Uint8Array(0);
-            }
+            if (!input) return new Uint8Array(0);
             const buf = new Uint8Array(input.length);
-            for (let index = 0; index < input.length; index++) {
-                buf[index] = input.charCodeAt(index) & 0xff;
+            for (let i = 0; i < input.length; i++) {
+                buf[i] = input.charCodeAt(i) & 0xff;
             }
             return buf;
         }
         encodeInto(src, dest) {
             const len = Math.min(src.length, dest.length);
-            for (let index = 0; index < len; index++) {
-                dest[index] = src.charCodeAt(index) & 0xff;
+            for (let i = 0; i < len; i++) {
+                dest[i] = src.charCodeAt(i) & 0xff;
             }
             return { read: len, written: len };
         }
@@ -61,7 +54,9 @@ export class ProofChamberInstance {
     }
     /**
      * Report plugin latency in samples for PDC (delay compensation).
-     * The convolution head size is the minimum latency.
+     * The convolution wet path is aligned so every IR tap lands at its
+     * absolute index plus HEAD_SIZE: tail-stage inputs are delayed to their
+     * segment offsets, and the head/dry reference takes the remaining 128.
      * @returns {number}
      */
     get_latency() {
@@ -105,7 +100,7 @@ export class ProofChamberInstance {
      */
     constructor(sample_rate) {
         const ret = wasm.proofchamberinstance_new(sample_rate);
-        this.__wbg_ptr = ret >>> 0;
+        this.__wbg_ptr = ret;
         ProofChamberInstanceFinalization.register(this, this.__wbg_ptr, this);
         return this;
     }
@@ -133,17 +128,14 @@ export class ProofChamberInstance {
         wasm.proofchamberinstance_set_param(this.__wbg_ptr, ptr0, len0, value);
     }
 }
-if (Symbol.dispose) {
-    ProofChamberInstance.prototype[Symbol.dispose] = ProofChamberInstance.prototype.free;
-}
-
+if (Symbol.dispose) ProofChamberInstance.prototype[Symbol.dispose] = ProofChamberInstance.prototype.free;
 function __wbg_get_imports() {
     const import0 = {
         __proto__: null,
-        __wbg___wbindgen_throw_5549492daedad139(arg0, arg1) {
+        __wbg___wbindgen_throw_344f42d3211c4765: function(arg0, arg1) {
             throw new Error(getStringFromWasm0(arg0, arg1));
         },
-        __wbindgen_init_externref_table() {
+        __wbindgen_init_externref_table: function() {
             const table = wasm.__wbindgen_externrefs;
             const offset = table.grow(4);
             table.set(0, undefined);
@@ -155,14 +147,13 @@ function __wbg_get_imports() {
     };
     return {
         __proto__: null,
-        './proof_chamber_bg.js': import0,
+        "./proof_chamber_bg.js": import0,
     };
 }
 
-const ProofChamberInstanceFinalization =
-    typeof FinalizationRegistry === 'undefined'
-        ? { register: () => {}, unregister: () => {} }
-        : new FinalizationRegistry((ptr) => wasm.__wbg_proofchamberinstance_free(ptr >>> 0, 1));
+const ProofChamberInstanceFinalization = (typeof FinalizationRegistry === 'undefined')
+    ? { register: () => {}, unregister: () => {} }
+    : new FinalizationRegistry(ptr => wasm.__wbg_proofchamberinstance_free(ptr, 1));
 
 let cachedFloat32ArrayMemory0 = null;
 function getFloat32ArrayMemory0() {
@@ -173,8 +164,7 @@ function getFloat32ArrayMemory0() {
 }
 
 function getStringFromWasm0(ptr, len) {
-    ptr = ptr >>> 0;
-    return decodeText(ptr, len);
+    return decodeText(ptr >>> 0, len);
 }
 
 let cachedUint8ArrayMemory0 = null;
@@ -196,9 +186,7 @@ function passStringToWasm0(arg, malloc, realloc) {
     if (realloc === undefined) {
         const buf = cachedTextEncoder.encode(arg);
         const ptr = malloc(buf.length, 1) >>> 0;
-        getUint8ArrayMemory0()
-            .subarray(ptr, ptr + buf.length)
-            .set(buf);
+        getUint8ArrayMemory0().subarray(ptr, ptr + buf.length).set(buf);
         WASM_VECTOR_LEN = buf.length;
         return ptr;
     }
@@ -212,16 +200,14 @@ function passStringToWasm0(arg, malloc, realloc) {
 
     for (; offset < len; offset++) {
         const code = arg.charCodeAt(offset);
-        if (code > 0x7f) {
-            break;
-        }
+        if (code > 0x7F) break;
         mem[ptr + offset] = code;
     }
     if (offset !== len) {
         if (offset !== 0) {
             arg = arg.slice(offset);
         }
-        ptr = realloc(ptr, len, (len = offset + arg.length * 3), 1) >>> 0;
+        ptr = realloc(ptr, len, len = offset + arg.length * 3, 1) >>> 0;
         const view = getUint8ArrayMemory0().subarray(ptr + offset, ptr + len);
         const ret = cachedTextEncoder.encodeInto(arg, view);
 
@@ -255,15 +241,16 @@ if (!('encodeInto' in cachedTextEncoder)) {
         view.set(buf);
         return {
             read: arg.length,
-            written: buf.length,
+            written: buf.length
         };
     };
 }
 
 let WASM_VECTOR_LEN = 0;
 
-let wasmModule, wasm;
+let wasmModule, wasmInstance, wasm;
 function __wbg_finalize_init(instance, module) {
+    wasmInstance = instance;
     wasm = instance.exports;
     wasmModule = module;
     cachedFloat32ArrayMemory0 = null;
@@ -277,17 +264,13 @@ async function __wbg_load(module, imports) {
         if (typeof WebAssembly.instantiateStreaming === 'function') {
             try {
                 return await WebAssembly.instantiateStreaming(module, imports);
-            } catch (error) {
+            } catch (e) {
                 const validResponse = module.ok && expectedResponseType(module.type);
 
                 if (validResponse && module.headers.get('Content-Type') !== 'application/wasm') {
-                    console.warn(
-                        '`WebAssembly.instantiateStreaming` failed because your server does not serve Wasm with `application/wasm` MIME type. Falling back to `WebAssembly.instantiate` which is slower. Original error:\n',
-                        error
-                    );
-                } else {
-                    throw error;
-                }
+                    console.warn("`WebAssembly.instantiateStreaming` failed because your server does not serve Wasm with `application/wasm` MIME type. Falling back to `WebAssembly.instantiate` which is slower. Original error:\n", e);
+
+                } else { throw e; }
             }
         }
 
@@ -305,25 +288,21 @@ async function __wbg_load(module, imports) {
 
     function expectedResponseType(type) {
         switch (type) {
-            case 'basic':
-            case 'cors':
-            case 'default':
-                return true;
+            case 'basic': case 'cors': case 'default': return true;
         }
         return false;
     }
 }
 
 function initSync(module) {
-    if (wasm !== undefined) {
-        return wasm;
-    }
+    if (wasm !== undefined) return wasm;
+
 
     if (module !== undefined) {
         if (Object.getPrototypeOf(module) === Object.prototype) {
-            ({ module } = module);
+            ({module} = module)
         } else {
-            console.warn('using deprecated parameters for `initSync()`; pass a single object instead');
+            console.warn('using deprecated parameters for `initSync()`; pass a single object instead')
         }
     }
 
@@ -336,15 +315,14 @@ function initSync(module) {
 }
 
 async function __wbg_init(module_or_path) {
-    if (wasm !== undefined) {
-        return wasm;
-    }
+    if (wasm !== undefined) return wasm;
+
 
     if (module_or_path !== undefined) {
         if (Object.getPrototypeOf(module_or_path) === Object.prototype) {
-            ({ module_or_path } = module_or_path);
+            ({module_or_path} = module_or_path)
         } else {
-            console.warn('using deprecated parameters for the initialization function; pass a single object instead');
+            console.warn('using deprecated parameters for the initialization function; pass a single object instead')
         }
     }
 
@@ -353,11 +331,7 @@ async function __wbg_init(module_or_path) {
     }
     const imports = __wbg_get_imports();
 
-    if (
-        typeof module_or_path === 'string' ||
-        (typeof Request === 'function' && module_or_path instanceof Request) ||
-        (typeof URL === 'function' && module_or_path instanceof URL)
-    ) {
+    if (typeof module_or_path === 'string' || (typeof Request === 'function' && module_or_path instanceof Request) || (typeof URL === 'function' && module_or_path instanceof URL)) {
         module_or_path = fetch(module_or_path);
     }
 

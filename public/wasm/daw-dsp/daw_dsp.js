@@ -98,7 +98,7 @@ export class BacteriaInstance {
      */
     constructor(sample_rate) {
         const ret = wasm.bacteriainstance_new(sample_rate);
-        this.__wbg_ptr = ret >>> 0;
+        this.__wbg_ptr = ret;
         BacteriaInstanceFinalization.register(this, this.__wbg_ptr, this);
         return this;
     }
@@ -161,7 +161,7 @@ export class FermenterInstance {
      */
     constructor(sample_rate, max_voices) {
         const ret = wasm.fermenterinstance_new(sample_rate, max_voices);
-        this.__wbg_ptr = ret >>> 0;
+        this.__wbg_ptr = ret;
         FermenterInstanceFinalization.register(this, this.__wbg_ptr, this);
         return this;
     }
@@ -311,7 +311,7 @@ export class GlutenInstance {
      */
     constructor(sample_rate) {
         const ret = wasm.gluteninstance_new(sample_rate);
-        this.__wbg_ptr = ret >>> 0;
+        this.__wbg_ptr = ret;
         GlutenInstanceFinalization.register(this, this.__wbg_ptr, this);
         return this;
     }
@@ -382,7 +382,7 @@ export class GrandBouleInstance {
      */
     constructor(sample_rate, voice_count) {
         const ret = wasm.grandbouleinstance_new(sample_rate, voice_count);
-        this.__wbg_ptr = ret >>> 0;
+        this.__wbg_ptr = ret;
         GrandBouleInstanceFinalization.register(this, this.__wbg_ptr, this);
         return this;
     }
@@ -588,7 +588,7 @@ export class GrinderInstance {
      */
     constructor(sample_rate) {
         const ret = wasm.grinderinstance_new(sample_rate);
-        this.__wbg_ptr = ret >>> 0;
+        this.__wbg_ptr = ret;
         GrinderInstanceFinalization.register(this, this.__wbg_ptr, this);
         return this;
     }
@@ -660,6 +660,15 @@ export class KneadInstance {
         return ret;
     }
     /**
+     * Right-channel output of the last `process` call (mirrors
+     * `GlutenInstance::get_right_ptr`).
+     * @returns {number}
+     */
+    get_right_ptr() {
+        const ret = wasm.kneadinstance_get_right_ptr(this.__wbg_ptr);
+        return ret >>> 0;
+    }
+    /**
      * @returns {boolean}
      */
     is_voiced() {
@@ -671,7 +680,7 @@ export class KneadInstance {
      */
     constructor(sample_rate) {
         const ret = wasm.kneadinstance_new(sample_rate);
-        this.__wbg_ptr = ret >>> 0;
+        this.__wbg_ptr = ret;
         KneadInstanceFinalization.register(this, this.__wbg_ptr, this);
         return this;
     }
@@ -682,6 +691,15 @@ export class KneadInstance {
     process(frames) {
         const ret = wasm.kneadinstance_process(this.__wbg_ptr, frames);
         return ret >>> 0;
+    }
+    /**
+     * Set the real-time pitch shift in semitones. Without this export the
+     * worklet's per-quantum `set_shift_semitones` call throws a TypeError
+     * and the processor faults into permanent passthrough.
+     * @param {number} semitones
+     */
+    set_shift_semitones(semitones) {
+        wasm.kneadinstance_set_shift_semitones(this.__wbg_ptr, semitones);
     }
 }
 if (Symbol.dispose) KneadInstance.prototype[Symbol.dispose] = KneadInstance.prototype.free;
@@ -794,7 +812,7 @@ export class LevainInstance {
      */
     constructor(sample_rate, max_voices) {
         const ret = wasm.levaininstance_new(sample_rate, max_voices);
-        this.__wbg_ptr = ret >>> 0;
+        this.__wbg_ptr = ret;
         LevainInstanceFinalization.register(this, this.__wbg_ptr, this);
         return this;
     }
@@ -992,7 +1010,7 @@ export class ProofInstance {
      */
     constructor(sample_rate) {
         const ret = wasm.proofinstance_new(sample_rate);
-        this.__wbg_ptr = ret >>> 0;
+        this.__wbg_ptr = ret;
         ProofInstanceFinalization.register(this, this.__wbg_ptr, this);
         return this;
     }
@@ -1059,7 +1077,7 @@ export class ToasterInstance {
      */
     constructor(sample_rate, num_pads) {
         const ret = wasm.toasterinstance_new(sample_rate, num_pads);
-        this.__wbg_ptr = ret >>> 0;
+        this.__wbg_ptr = ret;
         ToasterInstanceFinalization.register(this, this.__wbg_ptr, this);
         return this;
     }
@@ -1152,11 +1170,10 @@ export function commit_pitch_edit_wasm(samples, sample_rate, segments_json, cont
     wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
     return v4;
 }
-
 function __wbg_get_imports() {
     const import0 = {
         __proto__: null,
-        __wbg___wbindgen_throw_5549492daedad139: function(arg0, arg1) {
+        __wbg___wbindgen_throw_344f42d3211c4765: function(arg0, arg1) {
             throw new Error(getStringFromWasm0(arg0, arg1));
         },
         __wbindgen_init_externref_table: function() {
@@ -1177,31 +1194,31 @@ function __wbg_get_imports() {
 
 const BacteriaInstanceFinalization = (typeof FinalizationRegistry === 'undefined')
     ? { register: () => {}, unregister: () => {} }
-    : new FinalizationRegistry(ptr => wasm.__wbg_bacteriainstance_free(ptr >>> 0, 1));
+    : new FinalizationRegistry(ptr => wasm.__wbg_bacteriainstance_free(ptr, 1));
 const FermenterInstanceFinalization = (typeof FinalizationRegistry === 'undefined')
     ? { register: () => {}, unregister: () => {} }
-    : new FinalizationRegistry(ptr => wasm.__wbg_fermenterinstance_free(ptr >>> 0, 1));
+    : new FinalizationRegistry(ptr => wasm.__wbg_fermenterinstance_free(ptr, 1));
 const GlutenInstanceFinalization = (typeof FinalizationRegistry === 'undefined')
     ? { register: () => {}, unregister: () => {} }
-    : new FinalizationRegistry(ptr => wasm.__wbg_gluteninstance_free(ptr >>> 0, 1));
+    : new FinalizationRegistry(ptr => wasm.__wbg_gluteninstance_free(ptr, 1));
 const GrandBouleInstanceFinalization = (typeof FinalizationRegistry === 'undefined')
     ? { register: () => {}, unregister: () => {} }
-    : new FinalizationRegistry(ptr => wasm.__wbg_grandbouleinstance_free(ptr >>> 0, 1));
+    : new FinalizationRegistry(ptr => wasm.__wbg_grandbouleinstance_free(ptr, 1));
 const GrinderInstanceFinalization = (typeof FinalizationRegistry === 'undefined')
     ? { register: () => {}, unregister: () => {} }
-    : new FinalizationRegistry(ptr => wasm.__wbg_grinderinstance_free(ptr >>> 0, 1));
+    : new FinalizationRegistry(ptr => wasm.__wbg_grinderinstance_free(ptr, 1));
 const KneadInstanceFinalization = (typeof FinalizationRegistry === 'undefined')
     ? { register: () => {}, unregister: () => {} }
-    : new FinalizationRegistry(ptr => wasm.__wbg_kneadinstance_free(ptr >>> 0, 1));
+    : new FinalizationRegistry(ptr => wasm.__wbg_kneadinstance_free(ptr, 1));
 const LevainInstanceFinalization = (typeof FinalizationRegistry === 'undefined')
     ? { register: () => {}, unregister: () => {} }
-    : new FinalizationRegistry(ptr => wasm.__wbg_levaininstance_free(ptr >>> 0, 1));
+    : new FinalizationRegistry(ptr => wasm.__wbg_levaininstance_free(ptr, 1));
 const ProofInstanceFinalization = (typeof FinalizationRegistry === 'undefined')
     ? { register: () => {}, unregister: () => {} }
-    : new FinalizationRegistry(ptr => wasm.__wbg_proofinstance_free(ptr >>> 0, 1));
+    : new FinalizationRegistry(ptr => wasm.__wbg_proofinstance_free(ptr, 1));
 const ToasterInstanceFinalization = (typeof FinalizationRegistry === 'undefined')
     ? { register: () => {}, unregister: () => {} }
-    : new FinalizationRegistry(ptr => wasm.__wbg_toasterinstance_free(ptr >>> 0, 1));
+    : new FinalizationRegistry(ptr => wasm.__wbg_toasterinstance_free(ptr, 1));
 
 function getArrayF32FromWasm0(ptr, len) {
     ptr = ptr >>> 0;
@@ -1222,8 +1239,7 @@ function getFloat32ArrayMemory0() {
 }
 
 function getStringFromWasm0(ptr, len) {
-    ptr = ptr >>> 0;
-    return decodeText(ptr, len);
+    return decodeText(ptr >>> 0, len);
 }
 
 let cachedUint8ArrayMemory0 = null;
@@ -1307,8 +1323,9 @@ if (!('encodeInto' in cachedTextEncoder)) {
 
 let WASM_VECTOR_LEN = 0;
 
-let wasmModule, wasm;
+let wasmModule, wasmInstance, wasm;
 function __wbg_finalize_init(instance, module) {
+    wasmInstance = instance;
     wasm = instance.exports;
     wasmModule = module;
     cachedFloat32ArrayMemory0 = null;

@@ -11,7 +11,9 @@ export class ProofChamberInstance {
     }
     /**
      * Report plugin latency in samples for PDC (delay compensation).
-     * The convolution head size is the minimum latency.
+     * The convolution wet path is aligned so every IR tap lands at its
+     * absolute index plus HEAD_SIZE: tail-stage inputs are delayed to their
+     * segment offsets, and the head/dry reference takes the remaining 128.
      * @returns {number}
      */
     get_latency() {
@@ -55,7 +57,7 @@ export class ProofChamberInstance {
      */
     constructor(sample_rate) {
         const ret = wasm.proofchamberinstance_new(sample_rate);
-        this.__wbg_ptr = ret >>> 0;
+        this.__wbg_ptr = ret;
         ProofChamberInstanceFinalization.register(this, this.__wbg_ptr, this);
         return this;
     }
@@ -84,11 +86,10 @@ export class ProofChamberInstance {
     }
 }
 if (Symbol.dispose) ProofChamberInstance.prototype[Symbol.dispose] = ProofChamberInstance.prototype.free;
-
 function __wbg_get_imports() {
     const import0 = {
         __proto__: null,
-        __wbg___wbindgen_throw_5549492daedad139: function(arg0, arg1) {
+        __wbg___wbindgen_throw_344f42d3211c4765: function(arg0, arg1) {
             throw new Error(getStringFromWasm0(arg0, arg1));
         },
         __wbindgen_init_externref_table: function() {
@@ -109,7 +110,7 @@ function __wbg_get_imports() {
 
 const ProofChamberInstanceFinalization = (typeof FinalizationRegistry === 'undefined')
     ? { register: () => {}, unregister: () => {} }
-    : new FinalizationRegistry(ptr => wasm.__wbg_proofchamberinstance_free(ptr >>> 0, 1));
+    : new FinalizationRegistry(ptr => wasm.__wbg_proofchamberinstance_free(ptr, 1));
 
 let cachedFloat32ArrayMemory0 = null;
 function getFloat32ArrayMemory0() {
@@ -120,8 +121,7 @@ function getFloat32ArrayMemory0() {
 }
 
 function getStringFromWasm0(ptr, len) {
-    ptr = ptr >>> 0;
-    return decodeText(ptr, len);
+    return decodeText(ptr >>> 0, len);
 }
 
 let cachedUint8ArrayMemory0 = null;
@@ -205,8 +205,9 @@ if (!('encodeInto' in cachedTextEncoder)) {
 
 let WASM_VECTOR_LEN = 0;
 
-let wasmModule, wasm;
+let wasmModule, wasmInstance, wasm;
 function __wbg_finalize_init(instance, module) {
+    wasmInstance = instance;
     wasm = instance.exports;
     wasmModule = module;
     cachedFloat32ArrayMemory0 = null;
