@@ -110,9 +110,18 @@ describe('prepareClipMidiShiftTransaction', () => {
     });
 
     it('prepares without effects and shifts every target event family exactly once', () => {
-        const targetNotes = [note(3), note(1, 'note-2')];
-        const targetCcs = [cc(2)];
-        const targetPitchBends = [pitchBend(4)];
+        const targetNotes = [
+            { ...note(3), probability: 75, pressure: 0.25 },
+            { ...note(1, 'note-2'), pitch: 72, duration: 2, velocity: 81, channel: 3 },
+        ];
+        const targetCcs = [
+            { ...cc(4), controller: 74, value: 96, channel: 2 },
+            { ...cc(1, 'cc-2'), controller: 11, value: 32, channel: 5 },
+        ];
+        const targetPitchBends = [
+            { ...pitchBend(5), value: 0.75, channel: 4 },
+            { ...pitchBend(0.5, 'pitch-bend-2'), value: -0.5, channel: 7 },
+        ];
         const unrelatedNotes = [note(8, 'unrelated-note')];
         const unrelatedCcs = [cc(9, 'unrelated-cc')];
         const unrelatedPitchBends = [pitchBend(10, 'unrelated-pitch-bend')];
@@ -139,16 +148,22 @@ describe('prepareClipMidiShiftTransaction', () => {
         expect(mocks.state.value).toBe(preparedState);
         expect(mocks.set).not.toHaveBeenCalled();
         expect(targetNotes.map(({ startBeat }) => startBeat)).toEqual([3, 1]);
-        expect(targetCcs.map(({ beat }) => beat)).toEqual([2]);
-        expect(targetPitchBends.map(({ beat }) => beat)).toEqual([4]);
+        expect(targetCcs.map(({ beat }) => beat)).toEqual([4, 1]);
+        expect(targetPitchBends.map(({ beat }) => beat)).toEqual([5, 0.5]);
 
         expect(transaction.apply()).toBe(true);
         expect(mocks.set).toHaveBeenCalledTimes(1);
         const appliedState = requireState();
         expect(appliedState).not.toBe(preparedState);
-        expect(appliedState.notesByClipId.target?.map(({ startBeat }) => startBeat)).toEqual([1, -1]);
-        expect(appliedState.ccByClipId.target?.map(({ beat }) => beat)).toEqual([0]);
-        expect(appliedState.pitchBendByClipId.target?.map(({ beat }) => beat)).toEqual([2]);
+        expect(appliedState.notesByClipId.target).toEqual(
+            targetNotes.map((midiNote) => ({ ...midiNote, startBeat: midiNote.startBeat - 2 }))
+        );
+        expect(appliedState.ccByClipId.target).toEqual(
+            targetCcs.map((midiCc) => ({ ...midiCc, beat: midiCc.beat - 2 }))
+        );
+        expect(appliedState.pitchBendByClipId.target).toEqual(
+            targetPitchBends.map((midiPitchBend) => ({ ...midiPitchBend, beat: midiPitchBend.beat - 2 }))
+        );
         expect(appliedState.notesByClipId.other).toBe(unrelatedNotes);
         expect(appliedState.ccByClipId.other).toBe(unrelatedCcs);
         expect(appliedState.pitchBendByClipId.other).toBe(unrelatedPitchBends);
