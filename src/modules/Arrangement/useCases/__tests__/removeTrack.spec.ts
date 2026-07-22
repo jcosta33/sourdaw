@@ -123,8 +123,8 @@ describe('removeTrack', () => {
         removeTrack('bus-1');
 
         expect(ownerUseCases.removeBusStrip).toHaveBeenCalledWith('bus-1');
-        // ensureTrackStrips skips only 'folder', so a bus also owns a TrackNode
-        // (devices, sends/sidechains sourced from the bus). removeBusStrip only
+        // A bus is live-strip eligible, so it also owns a TrackNode (devices,
+        // sends/sidechains sourced from the bus). removeBusStrip only
         // disposes the BusNode — the TrackNode must be torn down too or it leaks.
         expect(ownerUseCases.removeTrackStrip).toHaveBeenCalledWith('bus-1');
         // Order is load-bearing: the TrackNode sweep (sends/sidechains keyed on
@@ -137,8 +137,8 @@ describe('removeTrack', () => {
     });
 
     it('should remove the engine track strip when the master track is deleted', () => {
-        // ensureTrackStrips skips only 'folder', so master owns a TrackNode too
-        // (e.g. via handleRemoveAllTracks, which removes every track).
+        // Master is live-strip eligible, so it owns a TrackNode too (e.g. via
+        // handleRemoveAllTracks, which removes every track).
         const master = {
             id: 'master',
             name: 'Master',
@@ -164,6 +164,7 @@ describe('removeTrack', () => {
             name: 'Drums',
             kind: 'folder' as const,
             clips: [],
+            devices: [],
         };
         vi.mocked(getTrackState).mockReturnValue({
             tracks: [folder as never],
@@ -176,6 +177,26 @@ describe('removeTrack', () => {
         expect(ownerUseCases.removeTrackStrip).not.toHaveBeenCalled();
         expect(ownerUseCases.removeBusStrip).not.toHaveBeenCalled();
         expect(mockEventBus.emit).toHaveBeenCalledWith('track.removed', { trackId: 'folder-1' });
+    });
+
+    it('should remove the engine track strip when a Toaster folder is deleted', () => {
+        const toasterFolder = {
+            id: 'toaster-1',
+            name: 'Toaster',
+            kind: 'folder' as const,
+            clips: [],
+            devices: [{ id: 'toaster-device', type: 'toaster' }],
+        };
+        vi.mocked(getTrackState).mockReturnValue({
+            tracks: [toasterFolder as never],
+            selectedTrackId: null,
+        });
+        vi.mocked(getTrackById).mockReturnValue(toasterFolder as never);
+
+        removeTrack('toaster-1');
+
+        expect(ownerUseCases.removeTrackStrip).toHaveBeenCalledWith('toaster-1');
+        expect(ownerUseCases.removeBusStrip).not.toHaveBeenCalled();
     });
 
     it('should clean active clip MIDI for a legacy track without alternatives', () => {

@@ -23,6 +23,11 @@ type TrackEligibility = {
 
 type TrackEligibilityKind = 'audio' | 'midi' | 'bus' | 'master' | 'folder' | 'vca';
 
+type LiveStripTrack = {
+    kind: TrackEligibilityKind;
+    devices: readonly { type: string }[];
+};
+
 const ELIGIBLE_FOR_ALL_AUDIO_BEARING_WRITES = {
     acceptsClipAdd: true,
     acceptsClipUpdate: true,
@@ -123,4 +128,14 @@ export function getTrackEligibility(kind: TrackEligibilityKind): Readonly<TrackE
         return TRACK_ELIGIBILITY.folder;
     }
     return TRACK_ELIGIBILITY.vca;
+}
+
+export function shouldCreateLiveTrackStrip(track: LiveStripTrack): boolean {
+    if (getTrackEligibility(track.kind).createsLiveStrip) {
+        return true;
+    }
+    if (track.kind !== 'folder') {
+        return false;
+    }
+    return track.devices.some((device) => device.type === 'toaster');
 }

@@ -6,6 +6,7 @@ const mocks = vi.hoisted(() => ({
     getNextClipId: vi.fn(() => 'new-clip-right'),
     snapToZeroCrossing: vi.fn<(typeof snapModule)['snapToZeroCrossing']>(),
     splitMidiNotesAtBeat: vi.fn(),
+    resolveEligibleClipWriteTarget: vi.fn<(typeof resolverModule)['resolveEligibleClipWriteTarget']>(),
 }));
 
 vi.mock('../../../repositories/track/getTrackState', () => ({ getTrackState: mocks.getTrackState }));
@@ -13,6 +14,9 @@ vi.mock('../../../repositories/track/setTrackState', () => ({ setTrackState: moc
 vi.mock('../../../repositories/clipIdCounter', () => ({ getNextClipId: mocks.getNextClipId }));
 vi.mock('#/modules/MIDI/useCases', () => ({ splitMidiNotesAtBeat: mocks.splitMidiNotesAtBeat }));
 vi.mock('../../timelineInteractions/snapToZeroCrossing', () => ({ snapToZeroCrossing: mocks.snapToZeroCrossing }));
+vi.mock('../../../stores/resolveEligibleClipWriteTarget', () => ({
+    resolveEligibleClipWriteTarget: mocks.resolveEligibleClipWriteTarget,
+}));
 
 import { ClipDummy } from '../../../__tests__/ClipDummy';
 import { TrackDummy } from '../../../__tests__/TrackDummy';
@@ -22,6 +26,7 @@ import { splitClip } from '../splitClip';
 
 import type * as trackStateRepo from '../../../repositories/track/getTrackState';
 import type * as trackSetRepo from '../../../repositories/track/setTrackState';
+import type * as resolverModule from '../../../stores/resolveEligibleClipWriteTarget';
 import type * as snapModule from '../../timelineInteractions/snapToZeroCrossing';
 
 function makeClip(id: string, start: number, end: number, type: Clip['type'] = 'audio'): Clip {
@@ -45,6 +50,7 @@ describe('splitClip', () => {
         vi.clearAllMocks();
         mocks.getNextClipId.mockReturnValue('new-clip-right');
         mocks.snapToZeroCrossing.mockImplementation((_clip, beat) => beat);
+        mocks.resolveEligibleClipWriteTarget.mockReturnValue({ status: 'eligible', trackId: 't1', clipId: 'c1' });
     });
 
     it('returns null when no state', () => {
@@ -56,6 +62,105 @@ describe('splitClip', () => {
         mocks.getTrackState.mockReturnValue(makeState([]));
         expect(splitClip('nonexistent', 2)).toBeNull();
         expect(mocks.setTrackState).not.toHaveBeenCalled();
+    });
+
+    it('rejects an ineligible owner before snapping, allocating, or writing', () => {
+        mocks.getTrackState.mockReturnValue(makeState([makeClip('c1', 0, 4)]));
+        mocks.resolveEligibleClipWriteTarget.mockReturnValue({ status: 'ineligible' });
+
+        expect(splitClip('c1', 2)).toBeNull();
+
+        expect(mocks.snapToZeroCrossing).not.toHaveBeenCalled();
+        expect(mocks.getNextClipId).not.toHaveBeenCalled();
+        expect(mocks.setTrackState).not.toHaveBeenCalled();
+        expect(mocks.splitMidiNotesAtBeat).not.toHaveBeenCalled();
+    });
+
+    it('rejects a non-finite split beat before snapping or allocating', () => {
+        mocks.getTrackState.mockReturnValue(makeState([makeClip('c1', 0, 4)]));
+
+        expect(splitClip('c1', Number.NaN)).toBeNull();
+
+        expect(mocks.snapToZeroCrossing).not.toHaveBeenCalled();
+        expect(mocks.getNextClipId).not.toHaveBeenCalled();
+        expect(mocks.setTrackState).not.toHaveBeenCalled();
+    });
+
+    it('rejects an empty explicit destination id before snapping or writing', () => {
+        mocks.getTrackState.mockReturnValue(makeState([makeClip('c1', 0, 4, 'midi')]));
+
+        expect(splitClip('c1', 2, '')).toBeNull();
+
+        expect(mocks.snapToZeroCrossing).not.toHaveBeenCalled();
+        expect(mocks.getNextClipId).not.toHaveBeenCalled();
+        expect(mocks.setTrackState).not.toHaveBeenCalled();
+        expect(mocks.splitMidiNotesAtBeat).not.toHaveBeenCalled();
+    });
+
+    it('rejects the source id as an explicit destination before snapping or writing', () => {
+        mocks.getTrackState.mockReturnValue(makeState([makeClip('c1', 0, 4, 'midi')]));
+
+        expect(splitClip('c1', 2, 'c1')).toBeNull();
+
+        expect(mocks.snapToZeroCrossing).not.toHaveBeenCalled();
+        expect(mocks.getNextClipId).not.toHaveBeenCalled();
+        expect(mocks.setTrackState).not.toHaveBeenCalled();
+        expect(mocks.splitMidiNotesAtBeat).not.toHaveBeenCalled();
+    });
+
+    it('rejects an explicit destination id already used on another track', () => {
+        mocks.getTrackState.mockReturnValue({
+            tracks: [
+                TrackDummy.create({ id: 't1', clips: [makeClip('c1', 0, 4, 'midi')] }),
+                TrackDummy.create({ id: 't2', clips: [ClipDummy.create({ id: 'occupied', trackId: 't2' })] }),
+            ],
+            selectedTrackId: 't1',
+        });
+
+        expect(splitClip('c1', 2, 'occupied')).toBeNull();
+
+        expect(mocks.snapToZeroCrossing).not.toHaveBeenCalled();
+        expect(mocks.getNextClipId).not.toHaveBeenCalled();
+        expect(mocks.setTrackState).not.toHaveBeenCalled();
+        expect(mocks.splitMidiNotesAtBeat).not.toHaveBeenCalled();
+    });
+
+    it('rejects an explicit destination id stored in an inactive alternative', () => {
+        const track = TrackDummy.create({
+            id: 't1',
+            activeAlternativeId: 'active',
+            clips: [makeClip('c1', 0, 4, 'midi')],
+            alternatives: [
+                { id: 'active', name: 'Active', clips: [] },
+                {
+                    id: 'inactive',
+                    name: 'Inactive',
+                    clips: [ClipDummy.create({ id: 'captured-right', trackId: 't1', type: 'midi' })],
+                },
+            ],
+        });
+        mocks.getTrackState.mockReturnValue({ tracks: [track], selectedTrackId: 't1' });
+
+        expect(splitClip('c1', 2, 'captured-right')).toBeNull();
+
+        expect(mocks.snapToZeroCrossing).not.toHaveBeenCalled();
+        expect(mocks.getNextClipId).not.toHaveBeenCalled();
+        expect(mocks.setTrackState).not.toHaveBeenCalled();
+        expect(mocks.splitMidiNotesAtBeat).not.toHaveBeenCalled();
+    });
+
+    it('reuses a free explicit destination id without allocating another id', () => {
+        mocks.getTrackState.mockReturnValue(makeState([makeClip('c1', 0, 4, 'midi')]));
+
+        expect(splitClip('c1', 2, 'captured-right')).toBe('captured-right');
+
+        expect(mocks.getNextClipId).not.toHaveBeenCalled();
+        expect(mocks.setTrackState).toHaveBeenCalledTimes(1);
+        expect(mocks.splitMidiNotesAtBeat).toHaveBeenCalledWith({
+            sourceClipId: 'c1',
+            newClipId: 'captured-right',
+            splitBeat: 2,
+        });
     });
 
     it('returns null when split at clip start', () => {

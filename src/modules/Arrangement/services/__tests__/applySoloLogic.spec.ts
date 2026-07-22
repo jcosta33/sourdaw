@@ -14,6 +14,7 @@ describe('applySoloLogic', () => {
             tracks,
             soloMode: 'sip',
             savedGains: new Map(),
+            liveStripTrackIds: new Set(['t1', 't2']),
         });
 
         expect(result.actions).toEqual([
@@ -34,6 +35,7 @@ describe('applySoloLogic', () => {
             tracks,
             soloMode: 'sip',
             savedGains: new Map(),
+            liveStripTrackIds: new Set(['bus', 'src', 'safe', 'other']),
         });
 
         expect(result.actions).toEqual([
@@ -55,6 +57,7 @@ describe('applySoloLogic', () => {
             tracks,
             soloMode: 'sip',
             savedGains: new Map(),
+            liveStripTrackIds: new Set(['solo', 'a', 'b']),
         });
 
         expect(result.actions).toEqual([
@@ -75,6 +78,7 @@ describe('applySoloLogic', () => {
             tracks: soloedTracks,
             soloMode: 'pfl',
             savedGains,
+            liveStripTrackIds: new Set(['t1', 't2']),
         });
 
         expect(soloedResult.actions).toEqual([
@@ -89,6 +93,7 @@ describe('applySoloLogic', () => {
             tracks: soloedTracks.map((track) => ({ ...track, soloed: false })),
             soloMode: 'pfl',
             savedGains: soloedResult.savedGains,
+            liveStripTrackIds: new Set(['t1', 't2']),
         });
 
         expect(clearedResult.actions).toEqual([
@@ -97,5 +102,21 @@ describe('applySoloLogic', () => {
             { type: 'setMute', trackId: 't2', muted: true },
         ]);
         expect(clearedResult.savedGains).toEqual(new Map());
+    });
+
+    it('acts on an eligible Toaster folder while ignoring a soloed ordinary folder', () => {
+        const tracks = [
+            TrackDummy.create({ id: 'folder-1', kind: 'folder', muted: true, soloed: true }),
+            TrackDummy.create({ id: 'toaster-1', kind: 'folder', muted: false }),
+        ];
+
+        const result = applySoloLogic({
+            tracks,
+            soloMode: 'sip',
+            savedGains: new Map(),
+            liveStripTrackIds: new Set(['toaster-1']),
+        });
+
+        expect(result.actions).toEqual([{ type: 'setMute', trackId: 'toaster-1', muted: false }]);
     });
 });

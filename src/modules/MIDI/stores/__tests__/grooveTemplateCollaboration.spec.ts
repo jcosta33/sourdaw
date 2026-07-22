@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
     configureAutomergeStoragePort,
     flushAutomergeStorageWrites,
+    runWithAutomergeStorageTransaction,
 } from '#/infra/store/storage/createAutomergeStorage';
 
 import { createBuiltinGrooveTemplates } from '../../models/BuiltinGrooveTemplates';
@@ -386,8 +387,15 @@ describe('groove template collaboration storage', () => {
         configureAutomergeStoragePort(peer.port);
 
         expect(() => storage.hydrate?.()).toThrow('Unsupported groove CRDT schema version: 2');
-        storage.set({ templates: createBuiltinGrooveTemplates(), assignments: [] });
-        expect(() => flushAutomergeStorageWrites()).toThrow('Unsupported groove CRDT schema version: 2');
+        // Overwrite attempts go through the storage transaction API (#576):
+        // a refused commit stays queued for explicit rollback, so the test must
+        // abort — otherwise the retained refusal rethrows on every later flush
+        // (including the shared afterEach cleanup).
+        const transaction = runWithAutomergeStorageTransaction(undefined, () => {
+            storage.set({ templates: createBuiltinGrooveTemplates(), assignments: [] });
+        });
+        expect(() => transaction.commit()).toThrow('Unsupported groove CRDT schema version: 2');
+        transaction.abort();
         expect((peer.getDoc().grooveTemplates as { schemaVersion: number }).schemaVersion).toBe(2);
     });
 

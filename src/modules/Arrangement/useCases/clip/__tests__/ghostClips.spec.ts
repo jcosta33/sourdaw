@@ -1,58 +1,79 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { trackStore } from '#/modules/Arrangement/stores/trackStore';
-import { acceptGhostClip } from '#/modules/Arrangement/useCases/clip/acceptGhostClip';
-import { updateTrack } from '#/modules/Arrangement/useCases/updateTrack';
+import { TrackDummy } from '../../../__tests__/TrackDummy';
+import { type Clip } from '../../../models/Track';
+import { acceptGhostClip } from '../acceptGhostClip';
 
-vi.mock('#/modules/Arrangement/stores/trackStore', () => ({
+import type { TrackStoreState } from '../../../stores/trackStore';
+
+const mocks = vi.hoisted(() => ({
+    state: { value: null as TrackStoreState | null },
+    trackStoreSet: vi.fn<(state: TrackStoreState) => void>(),
+}));
+
+vi.mock('../../../stores/trackStore', () => ({
     trackStore: {
-        value: {
-            tracks: [{ id: 't1', clips: [] }],
-            ghostClips: [
-                {
-                    id: 'g1',
-                    trackId: 't1',
-                    startBeat: 0,
-                    endBeat: 4,
-                    name: 'Ghost',
-                    type: 'audio' as const,
-                    fadeInBeats: 0,
-                    fadeOutBeats: 0,
-                    gain: 1,
-                    color: 'blue',
-                    locked: false,
-                    muted: false,
-                },
-            ],
+        get value() {
+            return mocks.state.value;
         },
-        set: vi.fn(),
+        set: mocks.trackStoreSet,
     },
 }));
 
-vi.mock('#/modules/Arrangement/useCases/updateTrack', () => ({
-    updateTrack: vi.fn(),
-}));
+function createClip(input: { id: string; trackId: string; isGhost?: boolean }): Clip {
+    return {
+        id: input.id,
+        trackId: input.trackId,
+        name: input.id,
+        startBeat: 0,
+        endBeat: 4,
+        type: 'audio',
+        fadeInBeats: 0,
+        fadeOutBeats: 0,
+        gain: 1,
+        color: 'blue',
+        locked: false,
+        muted: false,
+        isGhost: input.isGhost,
+    };
+}
 
 describe('acceptGhostClip', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        mocks.state.value = null;
+        mocks.trackStoreSet.mockImplementation((state) => {
+            mocks.state.value = state;
+        });
     });
 
     it('should move ghost clip to track and remove from ghost list', () => {
-        acceptGhostClip('g1');
-        expect(vi.mocked(updateTrack)).toHaveBeenCalledWith('t1', expect.any(Function));
+        const ghost = createClip({ id: 'g1', trackId: 't1', isGhost: true });
+        mocks.state.value = {
+            tracks: [TrackDummy.create({ id: 't1', clips: [] })],
+            selectedTrackId: null,
+            ghostClips: [ghost],
+        };
+
+        expect(acceptGhostClip('g1')).toBe(true);
+
+        expect(mocks.trackStoreSet).toHaveBeenCalledTimes(2);
+        expect(mocks.state.value.tracks[0]?.clips).toEqual([{ ...ghost, isGhost: false }]);
+        expect(mocks.state.value.ghostClips).toEqual([]);
     });
 
     it('should handle legacy ghost-flag acceptance', () => {
-        type MockTrackStoreValue = {
-            tracks: { id: string; clips: { id: string; isGhost?: boolean }[] }[];
-            ghostClips: unknown[];
+        const ghost = createClip({ id: 'c1', trackId: 't1', isGhost: true });
+        mocks.state.value = {
+            tracks: [TrackDummy.create({ id: 't1', clips: [ghost] })],
+            selectedTrackId: null,
+            ghostClips: [],
         };
-        const state = trackStore.value as unknown as MockTrackStoreValue;
-        state.ghostClips = [];
-        state.tracks = [{ id: 't1', clips: [{ id: 'c1', isGhost: true }] }];
 
-        acceptGhostClip('c1');
-        expect(vi.mocked(updateTrack)).toHaveBeenCalledWith('t1', expect.any(Function));
+        expect(acceptGhostClip('c1')).toBe(true);
+
+        expect(mocks.trackStoreSet).toHaveBeenCalledOnce();
+        expect(mocks.state.value.tracks[0]?.clips).toEqual([{ ...ghost, isGhost: false }]);
+        expect(mocks.state.value.ghostClips).toEqual([]);
     });
 });

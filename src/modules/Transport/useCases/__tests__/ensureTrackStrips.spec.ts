@@ -27,6 +27,12 @@ vi.mock('#/modules/Arrangement/stores', () => ({
         acceptsRoutingEndpoint: ['audio', 'midi', 'bus', 'master', 'folder'].includes(kind),
         createsLiveStrip: kind !== 'folder' && kind !== 'vca' && kind !== undefined,
     }),
+    shouldCreateLiveTrackStrip: (track: { kind: string; devices: readonly { type: string }[] }) => {
+        if (track.kind !== 'folder') {
+            return track.kind !== 'vca' && track.kind !== undefined;
+        }
+        return track.devices.some((device) => device.type === 'toaster');
+    },
     trackStore: {
         get value() {
             return mocks.trackStoreValue.value;
@@ -148,6 +154,27 @@ describe('ensureTrackStrips', () => {
         expect(mocks.setSend).not.toHaveBeenCalled();
         expect(mocks.setTrackGain).not.toHaveBeenCalled();
         expect(mocks.setTrackMute).not.toHaveBeenCalled();
+    });
+
+    it('allocates a strip for a Toaster folder but not an ordinary folder', () => {
+        const ordinaryFolder = createTrack({ id: 'folder-1', name: 'Folder', kind: 'folder' });
+        ordinaryFolder.soloed = true;
+        const toasterFolder = createTrack({ id: 'toaster-1', name: 'Toaster', kind: 'folder' });
+        toasterFolder.devices = [
+            { id: 'toaster-device', name: 'Toaster', type: 'toaster', bypassed: false, parameterValues: {} },
+        ];
+        mocks.trackStoreValue.value = {
+            selectedTrackId: null,
+            tracks: [ordinaryFolder, toasterFolder],
+        };
+
+        ensureTrackStrips();
+
+        expect(mocks.ensureTrackStrip).toHaveBeenCalledTimes(1);
+        expect(mocks.ensureTrackStrip).toHaveBeenCalledWith('toaster-1');
+        expect(mocks.addDeviceToStrip).toHaveBeenCalledWith('toaster-1', 'toaster-device', 'toaster');
+        expect(mocks.setTrackMute).toHaveBeenCalledTimes(1);
+        expect(mocks.setTrackMute).toHaveBeenCalledWith('toaster-1', false);
     });
 
     it('does not replay persisted output or sends toward a resolved dormant VCA', () => {
