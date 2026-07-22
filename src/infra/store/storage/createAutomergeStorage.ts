@@ -52,6 +52,7 @@ type AutomergeStorageOptions<TData> = {
 
 type AutomergeStorageWriteContext = {
     readonly commitOwner: object;
+    readonly scoped: boolean;
     readonly snapshotTransaction: object | undefined;
 };
 
@@ -348,6 +349,7 @@ export const createAutomergeStorage = <TData>(
         message: string | undefined;
         rafId: number | null;
         revision: number;
+        scoped: boolean;
         value: TData | null;
         write: PendingAutomergeStorageWrite;
     };
@@ -413,12 +415,13 @@ export const createAutomergeStorage = <TData>(
 
     const getWriteContext = (): AutomergeStorageWriteContext => {
         if (activeAutomergeStorageTransaction) {
-            return activeAutomergeStorageTransaction;
+            return { ...activeAutomergeStorageTransaction, scoped: true };
         }
 
         unscopedCommitOwner ??= Object.freeze({});
         return {
             commitOwner: unscopedCommitOwner,
+            scoped: false,
             snapshotTransaction: undefined,
         };
     };
@@ -430,6 +433,18 @@ export const createAutomergeStorage = <TData>(
         if (pending.rafId !== null) {
             cancelAnimationFrame(pending.rafId);
             pending.rafId = null;
+        }
+        // Superseded-write guard for UNSCOPED pendings: an rAF-deferred write
+        // whose last set() predates the newest committed value would, on its
+        // late flush, revert the CRDT slot — and recordCommittedWrite would
+        // then surface the older value as the cache (the GrooveDropTarget
+        // cache race: a pre-save write's slow rAF flush landed after the
+        // save's scoped commit and dropped the just-committed template).
+        // Scoped pendings are exempt: transaction commit order is deliberate
+        // terminal order (compensating transactions legitimately commit older
+        // values last).
+        if (!pending.scoped && pending.revision < committedCacheRevision) {
+            return null;
         }
         return createMutation(pending.value, pending.message, pending.write.snapshotTransaction);
     };
@@ -506,6 +521,7 @@ export const createAutomergeStorage = <TData>(
             message: getSemanticMessage(),
             rafId: null,
             revision: cachedRevision,
+            scoped: context.scoped,
             value: cachedValue,
             write,
         };
