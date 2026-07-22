@@ -1,7 +1,13 @@
 import { describe, expect, it } from 'vitest';
 
 import { type AutomationPoint } from '../../../models/AutomationViewTypes';
-import { AUTOMATION_MODE_CONFIG, LANE_HEIGHT, buildCurvePath, getAutomatableParams } from '../automationViewHelpers';
+import {
+    AUTOMATION_MODE_CONFIG,
+    LANE_HEIGHT,
+    buildCurvePath,
+    findEquivalentAutomationLane,
+    getAutomatableParams,
+} from '../automationViewHelpers';
 
 const beatToX = (beat: number): number => beat * 10;
 const valueToY = (value: number): number => 100 - value * 100;
@@ -60,6 +66,21 @@ describe('getAutomatableParams', () => {
             { id: 'gain', name: 'Volume', min: 0, max: 1 },
             { id: 'pan', name: 'Pan', min: -1, max: 1 },
         ]);
+    });
+
+    it('equates a uniquely resolvable legacy lane with its canonical device target but rejects ambiguity', () => {
+        const lane = { parameterId: 'levain:masterGain' };
+        const targetId = 'levain-1:masterGain';
+        const device = { id: 'levain-1', type: 'levain', name: 'Strings' };
+
+        expect(findEquivalentAutomationLane(targetId, [lane], [device])).toBe(lane);
+        expect(
+            findEquivalentAutomationLane(
+                targetId,
+                [lane],
+                [device, { id: 'levain-2', type: 'levain', name: 'Strings 2' }]
+            )
+        ).toBeUndefined();
     });
 });
 

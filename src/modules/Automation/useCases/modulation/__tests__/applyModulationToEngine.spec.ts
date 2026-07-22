@@ -323,51 +323,50 @@ describe('applyModulationToEngine', () => {
         expect(value).toBeCloseTo(0.5);
     });
 
-    it('rides a device-param modulation on the matching device-param automation lane', () => {
-        // The device-param lane carries the prefixed id `${deviceType}:${paramId}`
-        // and its value is in the device param's engine space — so it is the
-        // correct automated base for a device-param modulation.
-        mocks.trackStore.value = {
-            tracks: [
-                {
-                    id: 't1',
-                    automationMode: 'read',
-                    clips: [],
-                    devices: [{ id: 'd1', type: 'builtin-filter', parameterValues: { cutoff: 500 } }],
-                },
-            ],
-        };
-        automationStore.set({
-            lanes: [
-                createAutomationLaneFixture({
-                    id: 'lane-device-cutoff',
-                    trackId: 't1',
-                    parameterId: 'builtin-filter:cutoff',
-                    parameterName: 'Filter Cutoff',
-                    value: 800,
-                    minValue: 0,
-                    maxValue: 1000,
-                }),
-            ],
-        });
-        modulationStore.set({
-            modulators: [
-                {
-                    id: 'lfo1',
-                    name: 'LFO',
-                    trackId: 't1',
-                    kind: 'lfo',
-                    config: { kind: 'lfo', waveform: 'sine', rate: 4, sync: true, phase: 0, depth: 1 },
-                    mappings: [{ targetTrackId: 't1', targetDeviceId: 'd1', targetParamId: 'cutoff', amount: 0 }],
-                    enabled: true,
-                },
-            ],
-        });
+    it.each(['d1:cutoff', 'builtin-filter:cutoff'])(
+        'rides modulation on the uniquely matching device automation lane %s',
+        (parameterId) => {
+            mocks.trackStore.value = {
+                tracks: [
+                    {
+                        id: 't1',
+                        automationMode: 'read',
+                        clips: [],
+                        devices: [{ id: 'd1', type: 'builtin-filter', parameterValues: { cutoff: 500 } }],
+                    },
+                ],
+            };
+            automationStore.set({
+                lanes: [
+                    createAutomationLaneFixture({
+                        id: 'lane-device-cutoff',
+                        trackId: 't1',
+                        parameterId,
+                        parameterName: 'Filter Cutoff',
+                        value: 800,
+                        minValue: 0,
+                        maxValue: 1000,
+                    }),
+                ],
+            });
+            modulationStore.set({
+                modulators: [
+                    {
+                        id: 'lfo1',
+                        name: 'LFO',
+                        trackId: 't1',
+                        kind: 'lfo',
+                        config: { kind: 'lfo', waveform: 'sine', rate: 4, sync: true, phase: 0, depth: 1 },
+                        mappings: [{ targetTrackId: 't1', targetDeviceId: 'd1', targetParamId: 'cutoff', amount: 0 }],
+                        enabled: true,
+                    },
+                ],
+            });
 
-        applyModulationToEngine(1);
+            applyModulationToEngine(1);
 
-        // Base is the device-param automation value (800), not the persisted 500.
-        const [, , , value] = mocks.updateDeviceParam.mock.calls[0]!;
-        expect(value).toBeCloseTo(800);
-    });
+            const [, , , value] = mocks.updateDeviceParam.mock.calls[0]!;
+            expect(value).toBeCloseTo(800);
+        }
+    );
 });

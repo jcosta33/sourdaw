@@ -6,7 +6,9 @@ import { TrackAutomationSection } from '../TrackAutomationSection';
 import type { Track } from '../../../../models/TrackViewTypes';
 
 // Mock external dependencies
-const mockGetBuiltinPlugins = vi.fn(() => []);
+const mockGetBuiltinPlugins = vi.fn(
+    (): Array<{ id: string; name: string; parameters: Array<{ id: string; name: string; automatable: boolean }> }> => []
+);
 vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => {
     const actual = await importOriginal<typeof import('#/modules/Arrangement/useCases')>();
     return {
@@ -136,6 +138,30 @@ describe('TrackAutomationSection', () => {
     it('should render add button', () => {
         render(<TrackAutomationSection track={mockTrack} />);
         expect(screen.getByLabelText(/Add automation lane/i)).toBeInTheDocument();
+    });
+
+    it('creates a device lane with the stable device id and bare parameter id', () => {
+        mockGetBuiltinPlugins.mockReturnValue([
+            { id: 'effect', name: 'Effect', parameters: [{ id: 'cutoff', name: 'Cutoff', automatable: true }] },
+        ]);
+        const track = {
+            ...mockTrack,
+            devices: [
+                {
+                    id: 'device-1',
+                    name: 'Effect',
+                    type: 'effect',
+                    bypassed: false,
+                    parameterValues: { cutoff: 0.5 },
+                },
+            ],
+        };
+        render(<TrackAutomationSection track={track} />);
+
+        fireEvent.click(screen.getByLabelText('Add automation lane'));
+        fireEvent.click(screen.getByRole('menuitem', { name: 'Cutoff' }));
+
+        expect(mockAddAutomationLane).toHaveBeenCalledWith('track-1', 'device-1:cutoff', 'Effect: Cutoff');
     });
 
     it('should render automation lanes when they exist', () => {

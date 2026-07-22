@@ -8,7 +8,11 @@ import {
 import { automationStore } from '#/modules/Automation/stores';
 import { getAutomationValueAtBeat, isRecordingAutomation } from '#/modules/Automation/useCases';
 import { setFermenterMappedParam } from '#/modules/Fermenter/useCases';
-import { resolveDeviceAutomationTarget } from '#/utils/automationDeviceTarget';
+import {
+    getDeviceAutomationParameterId,
+    resolveDeviceAutomationTargetIndex,
+    UNRESOLVED_DEVICE_AUTOMATION_TARGET,
+} from '#/utils/automationDeviceTarget';
 
 /**
  * Per-parameter exponential slew state for plugin automation.
@@ -17,6 +21,13 @@ import { resolveDeviceAutomationTarget } from '#/utils/automationDeviceTarget';
 const SLEW_ALPHA = 0.4;
 /** Skip dispatch when the smoothed value has moved less than this per tick. */
 const SLEW_EPSILON = 5e-5;
+
+function deviceAcceptsAutomationParameter(
+    device: { parameterValues: Record<string, number> },
+    parameterId: string
+): boolean {
+    return device.parameterValues[parameterId] !== undefined;
+}
 
 const automationState: {
     pluginParamSlew: Map<string, Map<string, number>>;
@@ -75,19 +86,18 @@ export function applyAutomation(currentBeat: number): void {
         } else {
             let laneSlew = automationState.pluginParamSlew.get(lane.id);
 
-            const deviceTarget = resolveDeviceAutomationTarget({
-                targetId: lane.parameterId,
-                candidates: track.devices,
-                isEligible: (device) => {
-                    const targetOwner = resolveEligibleDeviceWriteTarget(device.id);
-                    return targetOwner.status === 'eligible' && targetOwner.trackId === lane.trackId;
-                },
-                acceptsParameter: (device, parameterId) => device.parameterValues[parameterId] !== undefined,
-            });
+            const deviceIndex = resolveDeviceAutomationTargetIndex(
+                lane.parameterId,
+                track.devices,
+                deviceAcceptsAutomationParameter
+            );
 
-            if (deviceTarget.status === 'resolved') {
-                const device = deviceTarget.candidate;
-                const paramId = deviceTarget.parameterId;
+            if (deviceIndex >= 0) {
+                const device = track.devices[deviceIndex]!;
+                const paramId = getDeviceAutomationParameterId(lane.parameterId);
+                if (!paramId) {
+                    continue;
+                }
                 const targetOwner = resolveEligibleDeviceWriteTarget(device.id);
                 if (targetOwner.status !== 'eligible' || targetOwner.trackId !== lane.trackId) {
                     continue;
@@ -114,7 +124,7 @@ export function applyAutomation(currentBeat: number): void {
                 }
                 continue;
             }
-            if (deviceTarget.status === 'unresolved') {
+            if (deviceIndex === UNRESOLVED_DEVICE_AUTOMATION_TARGET) {
                 continue;
             }
 

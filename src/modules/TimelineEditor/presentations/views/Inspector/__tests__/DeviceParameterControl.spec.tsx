@@ -207,7 +207,7 @@ describe('DeviceParameterControl', () => {
     it('should call addAutomationLane when automation button is clicked without active lane', () => {
         render(<DeviceParameterControl param={mockParam} device={mockDevice} trackId="track-1" />);
         fireEvent.click(screen.getByLabelText(/Automate Gain/i));
-        expect(mockAddAutomationLane).toHaveBeenCalledWith('track-1', 'gain', 'Gain');
+        expect(mockAddAutomationLane).toHaveBeenCalledWith('track-1', 'device-1:gain', 'Gain');
     });
 
     it('should call removeAutomationLane when automation button is clicked with active lane', () => {
@@ -215,7 +215,13 @@ describe('DeviceParameterControl', () => {
             if (store.id === 'automation') {
                 return {
                     lanes: [
-                        { id: 'lane-1', trackId: 'track-1', parameterId: 'gain', parameterName: 'Gain', visible: true },
+                        {
+                            id: 'lane-1',
+                            trackId: 'track-1',
+                            parameterId: 'device-1:gain',
+                            parameterName: 'Gain',
+                            visible: true,
+                        },
                     ],
                 };
             }

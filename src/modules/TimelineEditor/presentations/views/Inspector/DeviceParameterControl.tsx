@@ -3,14 +3,17 @@ import { type ReactElement, type ChangeEvent } from 'react';
 import { DawCompactSelect } from '#/components/daw/DawCompactSelect';
 import { BipolarSlider } from '#/components/ui/bipolar-slider';
 import { useStore } from '#/infra/store/useStore';
+import { trackStore } from '#/modules/Arrangement/stores';
 import { setDeviceParameter } from '#/modules/Arrangement/useCases';
 import { automationStore, modulationStore, modulationRuntimeStore } from '#/modules/Automation/stores';
 import { addAutomationLane, removeAutomationLane } from '#/modules/Automation/useCases';
 import { MidiLearnButton, MidiLearnRotaryKnob as RotaryKnob } from '#/modules/ControlSurface/presentations/views';
+import { createDeviceAutomationTargetId } from '#/utils/automationDeviceTarget';
 import { cn } from '#/utils/Styles/cn';
 
 import { type DeviceParameterView as DeviceParameter } from '../../../models/PluginDescriptorViewTypes';
 import { type Device } from '../../../models/TrackViewTypes';
+import { findEquivalentAutomationLane } from '../../helpers/automationViewHelpers';
 
 type DeviceParameterControlProps = {
     param: DeviceParameter;
@@ -25,20 +28,6 @@ type DeviceAutomationState = {
         parameterId: string;
     }>;
 };
-
-/**
- * Build an O(1) lookup keyed by `trackId|parameterId` so each
- * DeviceParameterControl instance can skip the full `lanes.find()` scan
- * (see audit §115.1). React Compiler memoizes this call on `lanes` identity,
- * so the lookup is rebuilt at most once per automation-store update.
- */
-function buildLaneLookup(lanes: DeviceAutomationState['lanes']): Map<string, DeviceAutomationState['lanes'][number]> {
-    const map = new Map<string, DeviceAutomationState['lanes'][number]>();
-    for (const lane of lanes) {
-        map.set(`${lane.trackId}|${lane.parameterId}`, lane);
-    }
-    return map;
-}
 
 /** Compute a sensible step from the parameter range and type. */
 function deriveStep(param: DeviceParameter): number {
@@ -79,6 +68,7 @@ function formatDisplayValue(value: number, param: DeviceParameter): string {
 
 export const DeviceParameterControl = ({ param, device, trackId }: DeviceParameterControlProps): ReactElement => {
     const autoState = useStore<DeviceAutomationState>(automationStore, { lanes: [] });
+    const trackState = useStore(trackStore, { tracks: [], selectedTrackId: null });
     const modState = useStore(modulationStore, { modulators: [] });
     const modRtState = useStore(modulationRuntimeStore, { runtimeValues: {} });
 
@@ -103,9 +93,13 @@ export const DeviceParameterControl = ({ param, device, trackId }: DeviceParamet
         return Math.max(-1, Math.min(1, total));
     })();
 
-    const laneLookup = buildLaneLookup(autoState.lanes);
-
-    const activeLane = laneLookup.get(`${trackId}|${param.id}`);
+    const targetId = createDeviceAutomationTargetId(device.id, param.id);
+    const devices = trackState.tracks.find((track) => track.id === trackId)?.devices ?? [device];
+    const activeLane = findEquivalentAutomationLane(
+        targetId,
+        autoState.lanes.filter((lane) => lane.trackId === trackId),
+        devices
+    );
     const hasAutomation = !!activeLane;
 
     const value = device.parameterValues[param.id] ?? param.value;
@@ -248,7 +242,7 @@ export const DeviceParameterControl = ({ param, device, trackId }: DeviceParamet
                                     if (activeLane) {
                                         removeAutomationLane(activeLane.id);
                                     } else {
-                                        addAutomationLane(trackId, param.id, param.name);
+                                        addAutomationLane(trackId, targetId, param.name);
                                     }
                                 }}
                                 aria-label={`Automate ${param.name}`}
@@ -288,7 +282,7 @@ export const DeviceParameterControl = ({ param, device, trackId }: DeviceParamet
                                     if (activeLane) {
                                         removeAutomationLane(activeLane.id);
                                     } else {
-                                        addAutomationLane(trackId, param.id, param.name);
+                                        addAutomationLane(trackId, targetId, param.name);
                                     }
                                 }}
                                 aria-label={`Automate ${param.name}`}

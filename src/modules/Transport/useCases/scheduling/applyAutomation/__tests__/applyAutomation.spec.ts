@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-import { trackStore } from '#/modules/Arrangement/stores';
-import { setTrackGain, setTrackPan, updateDeviceParam } from '#/modules/AudioEngine/useCases';
+import { resolveEligibleDeviceWriteTarget, trackStore } from '#/modules/Arrangement/stores';
+import { setTrackGain, setTrackPan, updateDeviceParam, updateMidiFxParam } from '#/modules/AudioEngine/useCases';
 import { automationStore } from '#/modules/Automation/stores';
 import { getAutomationValueAtBeat, isRecordingAutomation } from '#/modules/Automation/useCases';
 import { setFermenterMappedParam } from '#/modules/Fermenter/useCases';
@@ -16,19 +16,23 @@ vi.mock('#/modules/Arrangement/stores', async (importOriginal) => {
     return {
         ...mod,
         trackStore,
-        resolveEligibleDeviceWriteTarget: (deviceId: string) => {
-            const track = trackStore.value?.tracks.find((candidate) =>
+        resolveEligibleDeviceWriteTarget: vi.fn((deviceId: string) => {
+            const owners = trackStore.value?.tracks.filter((candidate) =>
                 candidate.devices.some((device) => device.id === deviceId)
             );
-            if (!track) {
+            if (!owners || owners.length === 0) {
                 return { status: 'missing' };
             }
+            if (owners.length !== 1) {
+                return { status: 'ineligible' };
+            }
+            const track = owners[0]!;
             const runtimeKind: unknown = Reflect.get(track, 'kind');
             if (runtimeKind === 'vca') {
                 return { status: 'ineligible' };
             }
             return { status: 'eligible', trackId: track.id, deviceId };
-        },
+        }),
     };
 });
 vi.mock('#/modules/Automation/stores', async (importOriginal) => {
@@ -81,6 +85,8 @@ function seedDeviceLane(options: {
     laneParameterId: string;
     trackKind?: string;
     laneId?: string;
+    midiFx?: Array<{ id: string; parameterValues: Record<string, number> }>;
+    extraTracks?: unknown[];
 }): void {
     mutableTrackStore.value = {
         tracks: [
@@ -89,9 +95,10 @@ function seedDeviceLane(options: {
                 kind: options.trackKind ?? 'audio',
                 automationMode: 'read',
                 clips: [],
-                midiFx: [],
+                midiFx: options.midiFx ?? [],
                 devices: options.devices,
             },
+            ...(options.extraTracks ?? []),
         ],
     };
     mutableAutomationStore.value = {
@@ -180,6 +187,7 @@ describe('applyAutomation', () => {
 
         expect(updateDeviceParam).toHaveBeenCalledTimes(1);
         expect(updateDeviceParam).toHaveBeenCalledWith('track-1', 'eq-b', 'eq-low-gain', expect.any(Number));
+        expect(resolveEligibleDeviceWriteTarget).toHaveBeenCalledTimes(2);
     });
 
     it('accepts a bare legacy parameter only when exactly one eligible device exposes it', () => {
@@ -214,6 +222,33 @@ describe('applyAutomation', () => {
         applyAutomation(1);
 
         expect(updateDeviceParam).not.toHaveBeenCalled();
+    });
+
+    it('does not fall through a duplicate-owned bare device target to a same-named MIDI FX parameter', () => {
+        const duplicate = { id: 'eq-a', type: 'builtin-eq', parameterValues: { 'eq-low-gain': 0 } };
+        seedDeviceLane({
+            devices: [duplicate],
+            laneParameterId: 'eq-low-gain',
+            laneId: 'duplicate-owner',
+            midiFx: [{ id: 'midi-fx', parameterValues: { 'eq-low-gain': 0 } }],
+            extraTracks: [
+                {
+                    id: 'track-2',
+                    kind: 'audio',
+                    automationMode: 'read',
+                    clips: [],
+                    midiFx: [],
+                    devices: [duplicate],
+                },
+            ],
+        });
+
+        vi.mocked(getAutomationValueAtBeat).mockReturnValueOnce(0).mockReturnValue(0.75);
+        applyAutomation(0);
+        applyAutomation(1);
+
+        expect(updateDeviceParam).not.toHaveBeenCalled();
+        expect(updateMidiFxParam).not.toHaveBeenCalled();
     });
 
     it.each(['missing:eq-low-gain', 'gain-a:eq-low-gain'])(

@@ -1,4 +1,4 @@
-import { resolveDeviceAutomationTarget } from '#/utils/automationDeviceTarget';
+import { getDeviceAutomationParameterId, resolveDeviceAutomationTargetIndex } from '#/utils/automationDeviceTarget';
 
 import { type AutomationLane } from '../../models/AutomationViewTypes';
 import { resolveDeviceParam, resolveDeviceParamScale } from '../../services/deviceResolution';
@@ -16,6 +16,13 @@ type ScheduleTrackAutomationDeviceEntry = {
     deviceType: string;
     node: OfflineDeviceNode;
 };
+
+function acceptsOfflineAutomationParameter(
+    candidate: ScheduleTrackAutomationDeviceEntry,
+    parameterId: string
+): boolean {
+    return resolveDeviceParam(candidate.deviceType, parameterId, candidate.node) !== null;
+}
 
 export function scheduleTrackAutomation(
     lanes: AutomationLane[],
@@ -44,14 +51,14 @@ export function scheduleTrackAutomation(
             continue;
         }
 
-        const deviceTarget = resolveDeviceAutomationTarget({
-            targetId: lane.parameterId,
-            candidates: deviceEntries,
-            acceptsParameter: (candidate, parameterId) =>
-                resolveDeviceParam(candidate.deviceType, parameterId, candidate.node) !== null,
-        });
-        if (deviceTarget.status === 'resolved') {
-            const { candidate, parameterId } = deviceTarget;
+        const deviceIndex = resolveDeviceAutomationTargetIndex(
+            lane.parameterId,
+            deviceEntries,
+            acceptsOfflineAutomationParameter
+        );
+        const parameterId = getDeviceAutomationParameterId(lane.parameterId);
+        if (deviceIndex >= 0 && parameterId) {
+            const candidate = deviceEntries[deviceIndex]!;
             const audioParam = resolveDeviceParam(candidate.deviceType, parameterId, candidate.node);
             if (audioParam) {
                 const scale = resolveDeviceParamScale(candidate.deviceType, parameterId);

@@ -93,7 +93,7 @@ describe('TrackAutomationSection', () => {
         trackName: 'Test Track',
         trackColor: '#ff0000',
         automationMode: 'read' as const,
-        devices: [{ id: 'synth-1', type: 'synth', name: 'Synth 1' }],
+        devices: [{ type: 'synth', name: 'Synth 1' }],
         pixelsPerBeat: 12,
         scrollX: 0,
         containerWidth: 800,

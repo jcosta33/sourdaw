@@ -20,7 +20,7 @@ type TrackAutomationSectionProps = {
     trackName: string;
     trackColor: string;
     automationMode: AutomationMode;
-    devices: { id: string; type: string; name: string }[];
+    devices: { type: string; name: string }[];
     pixelsPerBeat: number;
     scrollX: number;
     containerWidth: number;
@@ -89,8 +89,7 @@ export const TrackAutomationSection = ({
     const autoState = useStore<TrackAutomationState>(automationStore, { lanes: [] });
 
     const trackLanes = autoState.lanes.filter((length) => length.trackId === trackId && !length.clipId);
-    const availableParams = getAutomatableParams(trackId, devices);
-    const unusedParams = availableParams.filter((param) => !trackLanes.some((lane) => lane.parameterId === param.id));
+    const unusedParams = getAutomatableParams(trackId, devices, trackLanes);
 
     const handleAddLane = (paramId: string, paramName: string) => {
         addAutomationLane(trackId, paramId, paramName);

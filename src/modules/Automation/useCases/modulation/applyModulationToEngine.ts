@@ -1,4 +1,5 @@
 import { resolveEligibleDeviceWriteTarget, trackStore } from '#/modules/Arrangement/stores';
+import { getDeviceAutomationParameterId, resolveDeviceAutomationTargetIndex } from '#/utils/automationDeviceTarget';
 
 import { automationStore } from '../../stores/automationStore';
 import { modulationStore } from '../../stores/modulationStore';
@@ -12,6 +13,13 @@ import { resolveModulationBinding } from './resolveModulationBinding';
 
 const SLEW_ALPHA = 0.4;
 const SLEW_EPSILON = 5e-5;
+
+function deviceAcceptsAutomationParameter(
+    device: { parameterValues: Record<string, number> },
+    parameterId: string
+): boolean {
+    return device.parameterValues[parameterId] !== undefined;
+}
 
 function clamp(value: number, min: number, max: number): number {
     if (value < min) {
@@ -30,11 +38,8 @@ function clamp(value: number, min: number, max: number): number {
  * automated and modulated combines the two instead of the scheduler's later
  * modulation write clobbering the earlier automation write (last-write-wins).
  *
- * The lane it matches must be the *device-param* lane that writes to this exact
- * param: device-param lanes carry a prefixed `${deviceType}:${paramId}`
- * parameterId (Workspace/.../automationViewHelpers.ts), and `applyAutomation`
- * forwards their value verbatim to `updateDeviceParam` — the same engine space
- * the modulation write targets. A *track-level* `gain`/`pan` lane carries the
+ * The lane it matches must resolve to this exact device and parameter. A
+ * *track-level* `gain`/`pan` lane carries the
  * bare id and is converted (dB→linear, pan remap) before a *track* engine
  * setter; it must NOT be matched here, or a normalized track-gain value would
  * ride a device-param modulation in the wrong units.
@@ -43,7 +48,7 @@ function clamp(value: number, min: number, max: number): number {
  * `automationMode === 'off'`, a clip-scoped lane only applies inside its clip,
  * and a lane being recorded into is skipped (the user is writing it live).
  */
-function automatedBaseFor(trackId: string, deviceType: string, paramId: string, currentBeat: number): number | null {
+function automatedBaseFor(trackId: string, deviceId: string, paramId: string, currentBeat: number): number | null {
     const autoState = automationStore.value;
     if (!autoState) {
         return null;
@@ -53,9 +58,22 @@ function automatedBaseFor(trackId: string, deviceType: string, paramId: string, 
         return null;
     }
 
-    const deviceLaneParameterId = `${deviceType}:${paramId}`;
     for (const lane of autoState.lanes) {
-        if (lane.trackId !== trackId || lane.parameterId !== deviceLaneParameterId || lane.points.length === 0) {
+        if (
+            lane.trackId !== trackId ||
+            lane.points.length === 0 ||
+            lane.parameterId === 'gain' ||
+            lane.parameterId === 'pan'
+        ) {
+            continue;
+        }
+        const deviceIndex = resolveDeviceAutomationTargetIndex(
+            lane.parameterId,
+            track.devices,
+            deviceAcceptsAutomationParameter
+        );
+        const laneParamId = getDeviceAutomationParameterId(lane.parameterId);
+        if (deviceIndex < 0 || track.devices[deviceIndex]?.id !== deviceId || laneParamId !== paramId) {
             continue;
         }
         if (lane.clipId) {
@@ -111,10 +129,9 @@ export function applyModulationToEngine(currentBeat: number): void {
 
             // Combine: ride modulation on top of automation when the param is
             // automated this tick; otherwise on top of the persisted base. The
-            // automated base is read from the device-param lane (binding.deviceType),
-            // so it is already in this param's engine space.
+            // automated base is already in this param's engine space.
             const base =
-                automatedBaseFor(mapping.targetTrackId, binding.deviceType, mapping.targetParamId, currentBeat) ??
+                automatedBaseFor(mapping.targetTrackId, mapping.targetDeviceId, mapping.targetParamId, currentBeat) ??
                 binding.baseValue;
 
             const paramRange = binding.paramMax - binding.paramMin;
