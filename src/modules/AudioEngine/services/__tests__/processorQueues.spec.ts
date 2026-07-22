@@ -152,3 +152,29 @@ describe('FermenterProcessor parameter automation', () => {
         ]);
     });
 });
+
+describe('ProofChamberProcessor parameter automation', () => {
+    it('interpolates a compiled segment at render quantum boundaries', () => {
+        const ProcessorClass = loadProcessorClass('../proofChamberProcessor.ts', 'ProofChamberProcessor');
+        const processor = new ProcessorClass();
+        const setParam = vi.fn();
+        processor._instance = { set_param: setParam };
+        processor.port.onmessage({
+            data: {
+                type: 'paramAutomation',
+                name: 'mix',
+                segments: [{ startFrame: 0, endFrame: 1_000, startValue: 0.2, endValue: 0.8 }],
+            },
+        });
+
+        processor._applyParamAutomation(0);
+        processor._applyParamAutomation(500);
+        processor._applyParamAutomation(1_000);
+
+        expect(setParam.mock.calls).toEqual([
+            ['mix', 0.2],
+            ['mix', 0.5],
+            ['mix', 0.8],
+        ]);
+    });
+});

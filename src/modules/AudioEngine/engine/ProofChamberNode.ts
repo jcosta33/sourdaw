@@ -5,6 +5,7 @@
 
 import { createReadyHandshake, ensureWorkletRegistered, fetchWasmBinary } from '#/infra/audioWorklet/workletInitShared';
 
+import { type OfflineAutomationSegment } from '../models/OfflineAutomationSegment';
 import proofChamberProcessorUrl from '../services/proofChamberProcessor.ts?worker&url';
 
 const DEFAULT_WASM_URL = '/wasm/proof-chamber/proof_chamber_bg.wasm';
@@ -12,6 +13,7 @@ const DEFAULT_WASM_URL = '/wasm/proof-chamber/proof_chamber_bg.wasm';
 export type ProofChamberNodeResult = {
     workletNode: AudioWorkletNode;
     setParam: (name: string, value: number) => void;
+    scheduleParam: (name: string, segments: readonly OfflineAutomationSegment[]) => void;
     setBypass: (bypassed: boolean) => void;
     connect: (dest: AudioNode) => void;
     disconnect: () => void;
@@ -54,6 +56,24 @@ export async function createProofChamberNode(ctx: BaseAudioContext): Promise<Pro
         }
     };
 
+    const scheduleParam = (name: string, segments: readonly OfflineAutomationSegment[]): void => {
+        const valid =
+            name.length > 0 &&
+            segments.length > 0 &&
+            segments.every(
+                (segment) =>
+                    Number.isInteger(segment.startFrame) &&
+                    Number.isInteger(segment.endFrame) &&
+                    segment.startFrame >= 0 &&
+                    segment.endFrame >= segment.startFrame &&
+                    Number.isFinite(segment.startValue) &&
+                    Number.isFinite(segment.endValue)
+            );
+        if (valid) {
+            node.port.postMessage({ type: 'paramAutomation', name, segments });
+        }
+    };
+
     const setBypass = (bypassed: boolean): void => {
         node.port.postMessage({ type: 'bypass', bypassed });
     };
@@ -75,5 +95,5 @@ export async function createProofChamberNode(ctx: BaseAudioContext): Promise<Pro
         node.port.close();
     };
 
-    return { workletNode: node, setParam, setBypass, connect, disconnect, destroy, ready: readyPromise };
+    return { workletNode: node, setParam, scheduleParam, setBypass, connect, disconnect, destroy, ready: readyPromise };
 }

@@ -14,9 +14,24 @@
 
 import { initSync, ProofChamberInstance } from '../wasm/proof_chamber.js';
 
+type ParamAutomationSegment = {
+    startFrame: number;
+    endFrame: number;
+    startValue: number;
+    endValue: number;
+};
+
+type ParamAutomationSchedule = {
+    name: string;
+    segments: ParamAutomationSegment[];
+    segmentIndex: number;
+    lastValue: number;
+};
+
 type ProofChamberMsg =
     | { type: 'init'; wasmBytes: BufferSource }
     | { type: 'param'; name: string; value: number }
+    | { type: 'paramAutomation'; name: string; segments: ParamAutomationSegment[] }
     | { type: 'bypass'; bypassed: boolean };
 
 class ProofChamberProcessor extends AudioWorkletProcessor {
@@ -25,6 +40,7 @@ class ProofChamberProcessor extends AudioWorkletProcessor {
     _ready = false;
     _faulted = false;
     _bypassed = false;
+    _paramAutomation: ParamAutomationSchedule[] = [];
 
     constructor() {
         super();
@@ -38,6 +54,8 @@ class ProofChamberProcessor extends AudioWorkletProcessor {
                     this._initWasm(msg.wasmBytes);
                 } else if (msg.type === 'bypass') {
                     this._bypassed = msg.bypassed;
+                } else if (msg.type === 'paramAutomation' && this._instance !== null && !this._faulted) {
+                    this._setParamAutomation(msg.name, msg.segments);
                 } else if (msg.type === 'param' && this._instance !== null && !this._faulted) {
                     this._instance.set_param(msg.name, msg.value);
                 }
@@ -62,6 +80,47 @@ class ProofChamberProcessor extends AudioWorkletProcessor {
         // the device registry can report it for host PDC — mirrors the
         // gluten/bacteria/proof handshake pattern.
         this.port.postMessage({ type: 'ready', latency: this._instance.get_latency() });
+    }
+
+    _setParamAutomation(name: string, segments: ParamAutomationSegment[]): void {
+        if (name.length === 0 || segments.length === 0) {
+            return;
+        }
+        const schedule = { name, segments, segmentIndex: 0, lastValue: Number.NaN };
+        const existingIndex = this._paramAutomation.findIndex((candidate) => candidate.name === name);
+        if (existingIndex >= 0) {
+            this._paramAutomation[existingIndex] = schedule;
+        } else {
+            this._paramAutomation.push(schedule);
+        }
+    }
+
+    _applyParamAutomation(frame: number): void {
+        const inst = this._instance;
+        if (!inst) {
+            return;
+        }
+        for (let scheduleIndex = 0; scheduleIndex < this._paramAutomation.length; scheduleIndex++) {
+            const schedule = this._paramAutomation[scheduleIndex]!;
+            while (
+                schedule.segmentIndex < schedule.segments.length - 1 &&
+                frame >= schedule.segments[schedule.segmentIndex]!.endFrame
+            ) {
+                schedule.segmentIndex++;
+            }
+            const segment = schedule.segments[schedule.segmentIndex]!;
+            let value = segment.startValue;
+            if (segment.endFrame <= segment.startFrame || frame >= segment.endFrame) {
+                value = segment.endValue;
+            } else if (frame > segment.startFrame) {
+                const fraction = (frame - segment.startFrame) / (segment.endFrame - segment.startFrame);
+                value = segment.startValue + (segment.endValue - segment.startValue) * fraction;
+            }
+            if (value !== schedule.lastValue) {
+                inst.set_param(schedule.name, value);
+                schedule.lastValue = value;
+            }
+        }
     }
 
     _passthrough(input: Float32Array[], output: Float32Array[]): void {
@@ -107,6 +166,8 @@ class ProofChamberProcessor extends AudioWorkletProcessor {
             if (!inst || !mem) {
                 return true;
             }
+
+            this._applyParamAutomation(currentFrame);
 
             const leftPtr = inst.process(leftIn, rightIn, frames);
             const rightPtr = inst.get_right_ptr();
