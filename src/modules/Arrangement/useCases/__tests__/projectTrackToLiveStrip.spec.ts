@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { trackStore } from '../../stores/trackStore';
 import { createTrack } from '../createTrack';
 import { projectTrackToLiveStrip } from '../projectTrackToLiveStrip';
+import { applySoloLogic } from '../toggleTrackState/applySoloLogic';
 
 const mocks = vi.hoisted(() => ({
     ensureTrackStrip: vi.fn(),
@@ -47,6 +48,7 @@ describe('projectTrackToLiveStrip', () => {
         vi.clearAllMocks();
         mocks.soloMode = 'sip';
         trackStore.set({ tracks: [], selectedTrackId: null });
+        applySoloLogic({ resetSavedGains: true, applyActions: false });
     });
 
     it('projects the current owned track in device-chain order and wires sidechains last', () => {
@@ -109,7 +111,7 @@ describe('projectTrackToLiveStrip', () => {
         expect(mocks.wireSidechainRoutes).not.toHaveBeenCalled();
     });
 
-    it('applies canonical PFL gain and mute behavior', () => {
+    it('restores authoritative gain after a persisted PFL solo is cleared', () => {
         mocks.soloMode = 'pfl';
         const soloed = createTrack({ id: 'soloed', name: 'Soloed', kind: 'audio' });
         soloed.gain = 0.4;
@@ -118,12 +120,32 @@ describe('projectTrackToLiveStrip', () => {
         trackStore.set({ tracks: [soloed], selectedTrackId: null });
 
         projectTrackToLiveStrip({ trackId: soloed.id });
+        trackStore.set({ tracks: [{ ...soloed, soloed: false }], selectedTrackId: null });
+        applySoloLogic();
 
         expect(mocks.setTrackGain.mock.calls).toEqual([
             ['soloed', 0.4],
             ['soloed', 1],
+            ['soloed', 0.4],
         ]);
         expect(mocks.setTrackMute).toHaveBeenCalledWith('soloed', false);
+    });
+
+    it('resets saved PFL gain state at project startup without runtime writes', () => {
+        mocks.soloMode = 'pfl';
+        const oldTrack = createTrack({ id: 'shared-id', name: 'Old', kind: 'audio' });
+        oldTrack.gain = 0.4;
+        oldTrack.soloed = true;
+        trackStore.set({ tracks: [oldTrack], selectedTrackId: null });
+        applySoloLogic();
+        vi.clearAllMocks();
+        const newTrack = { ...oldTrack, name: 'New', gain: 0.8, soloed: false };
+        trackStore.set({ tracks: [newTrack], selectedTrackId: null });
+
+        applySoloLogic({ resetSavedGains: true, applyActions: false });
+
+        expect(mocks.setTrackGain).not.toHaveBeenCalled();
+        expect(mocks.setTrackMute).not.toHaveBeenCalled();
     });
 
     it('refuses ambiguous track ownership', () => {

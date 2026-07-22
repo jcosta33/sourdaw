@@ -6,7 +6,7 @@
  */
 
 import { shouldCreateLiveTrackStrip, trackStore } from '#/modules/Arrangement/stores';
-import { projectTrackToLiveStrip } from '#/modules/Arrangement/useCases';
+import { applySoloLogic, projectTrackToLiveStrip } from '#/modules/Arrangement/useCases';
 import { ensureBusStrip, setBusGain, wireSidechainRoutes } from '#/modules/Routing/useCases';
 
 function hasAmbiguousBusOwner(tracks: NonNullable<typeof trackStore.value>['tracks']): boolean {
@@ -16,6 +16,7 @@ function hasAmbiguousBusOwner(tracks: NonNullable<typeof trackStore.value>['trac
 }
 
 export function ensureTrackStrips(): void {
+    applySoloLogic({ resetSavedGains: true, applyActions: false });
     const tracks = trackStore.value?.tracks;
     if (!tracks || hasAmbiguousBusOwner(tracks)) {
         return;

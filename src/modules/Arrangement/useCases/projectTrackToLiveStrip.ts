@@ -2,19 +2,18 @@ import {
     addDeviceToStrip,
     ensureTrackStrip,
     setTrackGain,
-    setTrackMute,
     setTrackOutput,
     setTrackPan,
     updateDeviceBypass,
     updateDeviceParam,
 } from '#/modules/AudioEngine/useCases';
 import { setSend, wireSidechainRoutes } from '#/modules/Routing/useCases';
-import { workspaceStore } from '#/modules/WorkspaceShell/stores';
 
-import { applySoloLogic } from '../services/applySoloLogic';
 import { resolveEligibleDeviceWriteTarget } from '../stores/resolveEligibleDeviceWriteTarget';
 import { getTrackEligibility, shouldCreateLiveTrackStrip } from '../stores/trackEligibility';
 import { trackStore } from '../stores/trackStore';
+
+import { applySoloLogic } from './toggleTrackState/applySoloLogic';
 
 import type { Track } from '../stores/trackStore';
 
@@ -43,38 +42,6 @@ function acceptsRoutingEndpoint(tracks: readonly Track[], targetId: string): boo
     return target ? getTrackEligibility(target.kind).acceptsRoutingEndpoint : false;
 }
 
-function projectSoloAudibility(tracks: readonly Track[], track: Track): void {
-    const liveStripTrackIds = new Set(
-        tracks
-            .filter(
-                (candidate) =>
-                    findUniqueTrack(tracks, candidate.id) === candidate && shouldCreateLiveTrackStrip(candidate)
-            )
-            .map((candidate) => candidate.id)
-    );
-    const result = applySoloLogic({
-        tracks,
-        soloMode: workspaceStore.value?.soloMode ?? 'sip',
-        savedGains: new Map(),
-        liveStripTrackIds,
-    });
-    let muteProjected = false;
-    for (const action of result.actions) {
-        if (action.trackId !== track.id) {
-            continue;
-        }
-        if (action.type === 'setGain') {
-            setTrackGain(action.trackId, action.gain);
-            continue;
-        }
-        setTrackMute(action.trackId, action.muted);
-        muteProjected = true;
-    }
-    if (!muteProjected) {
-        setTrackMute(track.id, track.muted);
-    }
-}
-
 export function projectTrackToLiveStrip({ trackId, deferSidechainWiring = false }: ProjectTrackToLiveStripInput): void {
     const tracks = trackStore.value?.tracks;
     if (!tracks) {
@@ -91,7 +58,7 @@ export function projectTrackToLiveStrip({ trackId, deferSidechainWiring = false 
     }
     setTrackGain(track.id, track.gain);
     setTrackPan(track.id, track.pan);
-    projectSoloAudibility(tracks, track);
+    applySoloLogic({ trackId: track.id });
 
     for (const device of track.devices) {
         const target = resolveEligibleDeviceWriteTarget(device.id);

@@ -20,11 +20,13 @@ const mocks = vi.hoisted(() => ({
     setSend: vi.fn(),
     wireSidechainRoutes: vi.fn(),
     projectTrackToLiveStrip: vi.fn(),
+    applySoloLogic: vi.fn(),
 }));
 
 vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/Arrangement/useCases')>()),
     projectTrackToLiveStrip: mocks.projectTrackToLiveStrip,
+    applySoloLogic: mocks.applySoloLogic,
 }));
 
 // Mock the barrel re-exports but satisfy the markerStore etc. if needed by other components
@@ -123,6 +125,7 @@ describe('ensureTrackStrips', () => {
         ensureTrackStrips();
 
         expect(mocks.ensureBusStrip).toHaveBeenCalledWith('b1');
+        expect(mocks.applySoloLogic).toHaveBeenCalledWith({ resetSavedGains: true, applyActions: false });
         expect(mocks.projectTrackToLiveStrip).toHaveBeenNthCalledWith(1, {
             trackId: 't1',
             deferSidechainWiring: true,

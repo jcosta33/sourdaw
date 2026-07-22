@@ -177,6 +177,7 @@ export { reorderScratchPadSection } from './scratchPad/scratchPadCrud/reorderScr
 // ── Toggle Track State ────────────────────────────────────────────────────────
 
 export { clearSolos } from './toggleTrackState/clearSolos';
+export { applySoloLogic } from './toggleTrackState/applySoloLogic';
 export { groupTracks } from './toggleTrackState/groupTracks';
 export { muteTrack } from './toggleTrackState/muteTrack';
 export { selectTrack } from './toggleTrackState/selectTrack';
