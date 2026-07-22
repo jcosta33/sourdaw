@@ -1,0 +1,46 @@
+src/modules/Project/useCases/projectTemplates/templateDefinitions/__tests__/applyProjectTemplate.spec.ts
+  s_ac9b259eab20ba::t_270ecf8beeb330 1-28
+src/app/bootstrap.ts
+  s_ac9b259eab20ba::t_e735018435f3c6 95,314
+src/modules/Project/useCases/index.ts
+  s_ac9b259eab20ba::t_e735018435f3c6 18
+src/utils/handlerContract.ts
+  s_ac9b259eab20ba::t_e735018435f3c6 530
+src/modules/Project/handlers/projectTemplate/__tests__/handleCreateProjectFromTemplate.spec.ts
+  s_ac9b259eab20ba::t_e735018435f3c6 1-38
+src/modules/Project/useCases/projectPersistence/newProject.ts
+  s_ac9b259eab20ba::t_e735018435f3c6 4,57-58
+src/modules/Project/handlers/projectTemplate/handleCreateProjectFromTemplate.ts
+  s_ac9b259eab20ba::t_e735018435f3c6 1-12
+src/app/__tests__/bootstrap.spec.ts
+  s_ac9b259eab20ba::t_e735018435f3c6 202,321
+src/modules/Project/useCases/projectPersistence/__tests__/newProject.spec.ts
+  s_ac9b259eab20ba::t_58d4d8fbe6eb9d 107-120
+  s_ac9b259eab20ba::t_270ecf8beeb330 121
+  s_ac9b259eab20ba::t_9f40dfc6d47ef0 6,66,96-100
+src/modules/Project/useCases/projectTemplates/templateDefinitions/applyProjectTemplate.ts
+  s_ac9b259eab20ba::t_e735018435f3c6 1-9
+src/modules/Project/useCases/getProjectHandlers.ts
+  s_ac9b259eab20ba::t_e735018435f3c6 1-13
+src/modules/Project/useCases/projectTemplates/templateDefinitions/createFromTemplate.ts
+  s_ac9b259eab20ba::t_e735018435f3c6 3,20-21
+src/modules/Project/useCases/projectTemplates/templateDefinitions/__tests__/createFromTemplate.spec.ts
+  s_ac9b259eab20ba::t_58d4d8fbe6eb9d 57-62
+  s_ac9b259eab20ba::t_9f40dfc6d47ef0 7,17-20,37,41-42,44,48,51-56,63,67-68
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "8a503b5110c02261bc22fd698ddf75db66cccaed",
+  "prompts": {},
+  "sessions": {
+    "s_ac9b259eab20ba": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8699-3865-7842-8c54-afbac6cfd266",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
