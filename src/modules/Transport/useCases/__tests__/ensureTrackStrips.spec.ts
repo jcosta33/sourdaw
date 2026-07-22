@@ -31,11 +31,11 @@ vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => ({
 
 // Mock the barrel re-exports but satisfy the markerStore etc. if needed by other components
 vi.mock('#/modules/Arrangement/stores', () => ({
-    getTrackEligibility: (kind: string) => ({
-        acceptsRoutingEndpoint: ['audio', 'midi', 'bus', 'master', 'folder'].includes(kind),
+    getTrackEligibility: (kind: string | undefined) => ({
+        acceptsRoutingEndpoint: kind !== undefined && ['audio', 'midi', 'bus', 'master', 'folder'].includes(kind),
         createsLiveStrip: kind !== 'folder' && kind !== 'vca' && kind !== undefined,
     }),
-    shouldCreateLiveTrackStrip: (track: { kind: string; devices: readonly { type: string }[] }) => {
+    shouldCreateLiveTrackStrip: (track: { kind: string | undefined; devices: readonly { type: string }[] }) => {
         if (track.kind !== 'folder') {
             return track.kind !== 'vca' && track.kind !== undefined;
         }
@@ -134,6 +134,71 @@ describe('ensureTrackStrips', () => {
             trackId: 'b1',
             deferSidechainWiring: true,
         });
+    });
+
+    it('delegates reverse-ordered Toaster reconstruction only after every eligible strip exists', () => {
+        const toasterFolder = createTrack({ id: 'toaster-folder', name: 'Toaster Kit', kind: 'folder' });
+        const ordinaryFolder = createTrack({ id: 'ordinary-folder', name: 'Group', kind: 'folder' });
+        const effectsBus = createTrack({ id: 'effects-bus', name: 'Effects', kind: 'bus' });
+        const masterTrack = createTrack({ id: 'master-track', name: 'Master', kind: 'master' });
+        toasterFolder.outputId = masterTrack.id;
+        effectsBus.outputId = masterTrack.id;
+        masterTrack.outputId = 'hw_out';
+        toasterFolder.devices = [
+            {
+                id: 'toaster-device',
+                name: 'Toaster',
+                type: 'toaster',
+                bypassed: false,
+                parameterValues: {},
+            },
+        ];
+        const children = Array.from({ length: 16 }, (_, padIndex) => {
+            const child = createTrack({
+                id: `toaster-pad-${padIndex}`,
+                name: `Pad ${padIndex + 1}`,
+                kind: 'midi',
+                parentId: toasterFolder.id,
+            });
+            child.devices = [];
+            child.outputId = toasterFolder.id;
+            return child;
+        });
+        children[0]!.sends = [{ busId: effectsBus.id, level: 0.25, preFader: false }];
+        mocks.trackStoreValue.value = {
+            selectedTrackId: toasterFolder.id,
+            tracks: [...children, ordinaryFolder, toasterFolder, effectsBus, masterTrack],
+        };
+        const liveTrackIds = [...children.map((child) => child.id), toasterFolder.id, effectsBus.id, masterTrack.id];
+
+        function expectReconstruction(): void {
+            for (const trackId of liveTrackIds) {
+                expect(mocks.ensureTrackStrip).toHaveBeenCalledWith(trackId);
+            }
+            expect(mocks.ensureTrackStrip).not.toHaveBeenCalledWith(ordinaryFolder.id);
+            expect(mocks.projectTrackToLiveStrip.mock.calls).toEqual(
+                liveTrackIds.map((trackId) => [{ trackId, deferSidechainWiring: true }])
+            );
+            expect(mocks.wireSidechainRoutes).toHaveBeenCalledTimes(1);
+
+            const allocationCalls = [
+                ...mocks.ensureBusStrip.mock.invocationCallOrder,
+                ...mocks.ensureTrackStrip.mock.invocationCallOrder,
+            ];
+            expect(Math.max(...allocationCalls)).toBeLessThan(
+                Math.min(...mocks.projectTrackToLiveStrip.mock.invocationCallOrder)
+            );
+            expect(Math.max(...mocks.projectTrackToLiveStrip.mock.invocationCallOrder)).toBeLessThan(
+                mocks.wireSidechainRoutes.mock.invocationCallOrder[0] ?? 0
+            );
+        }
+
+        ensureTrackStrips();
+        expectReconstruction();
+
+        vi.clearAllMocks();
+        ensureTrackStrips();
+        expectReconstruction();
     });
 
     it('wires persisted sidechain routes into the engine after strips exist', () => {
