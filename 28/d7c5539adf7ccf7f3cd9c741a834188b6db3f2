@@ -1,0 +1,23 @@
+src/modules/Transport/useCases/ensureTrackStrips.ts
+  s_ac9b259eab20ba::t_5732f100081efe 32-34
+src/modules/Transport/useCases/__tests__/ensureTrackStrips.spec.ts
+  s_ac9b259eab20ba::t_906c2bb7cfe1e9 120-121,123-144,146-150,152,155-160
+  s_ac9b259eab20ba::t_affd1ea3a611cf 122,145,151
+  s_ac9b259eab20ba::t_f96e671ba18b19 153-154
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "28d7c5539adf7ccf7f3cd9c741a834188b6db3f2",
+  "prompts": {},
+  "sessions": {
+    "s_ac9b259eab20ba": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8699-3865-7842-8c54-afbac6cfd266",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
