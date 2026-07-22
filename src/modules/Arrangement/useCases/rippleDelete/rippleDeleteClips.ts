@@ -1,3 +1,5 @@
+import { shiftClipAutomation } from '#/modules/Automation/useCases';
+
 import { getTrackStoreState } from '../getTrackStoreState';
 import { setTrackState } from '../setTrackState';
 
@@ -30,6 +32,21 @@ export function rippleDeleteClips({ trackId, clipIds }: RippleDeleteClipsInput):
         ...state,
         tracks: state.tracks.map((track) => (track.id === trackId ? { ...track, clips: plan.nextClips } : track)),
     });
+
+    // Clip-scoped automation is timeline-absolute: collateral clips shifted
+    // by the ripple must carry their lanes along or playback desyncs from
+    // the arrangement (ledger M-025). MIDI notes are clip-relative and
+    // follow the rectangle on their own.
+    for (const shifted of plan.shiftedClips) {
+        const next = plan.nextClips.find((clip) => clip.id === shifted.clipId);
+        if (!next) {
+            continue;
+        }
+        const delta = next.startBeat - shifted.origStartBeat;
+        if (delta !== 0) {
+            shiftClipAutomation(shifted.clipId, delta);
+        }
+    }
 
     return {
         removedClips: plan.removedClips,
