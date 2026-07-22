@@ -1,9 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { clearUndoHistory, resetActionReplayAuthority } from '#/modules/Command/useCases';
+import { clearUndoHistory, executeAppAction, resetActionReplayAuthority } from '#/modules/Command/useCases';
 import {
     createCrdtProject,
     loadCrdtProject,
+    persistCrdtProject,
     projectCrdtToStores,
     startCrdtAutoSave,
 } from '#/modules/CrdtDocument/useCases';
@@ -16,12 +17,15 @@ const mocks = vi.hoisted(() => ({
     projectStoreValue: { value: { loading: false, initialized: true } as ProjectStoreState },
     projectStoreSet: vi.fn(),
     createCrdtProject: vi.fn(),
-    getCrdtDoc: vi.fn(() => ({ tracks: { tracks: [] } })),
+    executeAppAction: vi.fn(() => Promise.resolve()),
+    getCrdtDoc: vi.fn((): { chordTrack?: unknown; tracks: { tracks: never[] } } => ({ tracks: { tracks: [] } })),
     loadCrdtProject: vi.fn(),
+    persistCrdtProject: vi.fn(() => Promise.resolve()),
     projectCrdtToStores: vi.fn(),
     startCrdtAutoSave: vi.fn(() => vi.fn()),
     prepareCachedAudioBuffersFromIdb: vi.fn(() => Promise.resolve({ publish: vi.fn() })),
     resetModuleStores: vi.fn(),
+    readLegacyChordTrackMigration: vi.fn(),
     stopActiveAutoSave: vi.fn(),
     setAutoSaveHandle: vi.fn(),
 }));
@@ -44,14 +48,19 @@ vi.mock('#/modules/CrdtDocument/useCases', () => ({
     DOC_PREFIX_ROOT: 'root',
     getCrdtDoc: mocks.getCrdtDoc,
     loadCrdtProject: mocks.loadCrdtProject,
+    persistCrdtProject: mocks.persistCrdtProject,
     projectCrdtToStores: mocks.projectCrdtToStores,
     startCrdtAutoSave: mocks.startCrdtAutoSave,
 }));
 vi.mock('#/modules/Command/useCases', () => ({
     clearUndoHistory: vi.fn(),
+    executeAppAction: mocks.executeAppAction,
     resetActionReplayAuthority: vi.fn(),
 }));
-vi.mock('#/modules/MIDI/useCases', () => ({ migrateAbsoluteMidiNotes: vi.fn() }));
+vi.mock('#/modules/MIDI/useCases', () => ({
+    migrateAbsoluteMidiNotes: vi.fn(),
+    readLegacyChordTrackMigration: mocks.readLegacyChordTrackMigration,
+}));
 vi.mock('../helpers/resetModuleStoresToDefault', () => ({ resetModuleStoresToDefault: mocks.resetModuleStores }));
 vi.mock('../helpers/stopActiveAutoSave', () => ({ stopActiveAutoSave: mocks.stopActiveAutoSave }));
 vi.mock('../helpers/autoSaveHandle', () => ({ setAutoSaveHandle: mocks.setAutoSaveHandle }));
@@ -61,8 +70,12 @@ describe('loadProject', () => {
         vi.clearAllMocks();
         mocks.projectStoreValue.value = { loading: false, initialized: true } as ProjectStoreState;
         mocks.loadCrdtProject.mockResolvedValue(true);
+        mocks.persistCrdtProject.mockResolvedValue(undefined);
         mocks.createCrdtProject.mockResolvedValue(undefined);
+        mocks.executeAppAction.mockResolvedValue(undefined);
+        mocks.getCrdtDoc.mockReturnValue({ tracks: { tracks: [] } });
         mocks.prepareCachedAudioBuffersFromIdb.mockResolvedValue({ publish: vi.fn() });
+        mocks.readLegacyChordTrackMigration.mockReturnValue(null);
         setProjectIdentityTransitionDependencies({ leaveCollaborationSession: () => Promise.resolve() });
     });
 
@@ -145,5 +158,83 @@ describe('loadProject', () => {
         expect(loadCrdtProject).not.toHaveBeenCalled();
         expect(createCrdtProject).not.toHaveBeenCalled();
         expect(projectCrdtToStores).not.toHaveBeenCalled();
+    });
+
+    it('removes validated legacy chord data only after its restore action commits', async () => {
+        let resolveCommit: (() => void) | undefined;
+        const remove = vi.fn();
+        const action = {
+            type: 'restoreChordTrackState' as const,
+            payload: {
+                expected: { enabled: false, events: [] },
+                replacement: { enabled: true, events: [] },
+            },
+        };
+        mocks.readLegacyChordTrackMigration.mockReturnValue({ action, remove });
+        mocks.executeAppAction.mockReturnValue(
+            new Promise<void>((resolve) => {
+                resolveCommit = resolve;
+            })
+        );
+
+        const loading = loadProject();
+        await vi.waitFor(() =>
+            expect(executeAppAction).toHaveBeenCalledWith(action, { skipMacroRecording: true, skipUndo: true })
+        );
+        expect(persistCrdtProject).not.toHaveBeenCalled();
+        expect(remove).not.toHaveBeenCalled();
+        resolveCommit?.();
+
+        await expect(loading).resolves.toBe(true);
+        expect(persistCrdtProject).toHaveBeenCalledOnce();
+        expect(remove).toHaveBeenCalledOnce();
+    });
+
+    it('does not read or overwrite legacy chord data when CRDT truth already exists', async () => {
+        mocks.getCrdtDoc.mockReturnValue({ tracks: { tracks: [] }, chordTrack: { enabled: false, events: {} } });
+
+        await expect(loadProject()).resolves.toBe(true);
+
+        expect(mocks.readLegacyChordTrackMigration).not.toHaveBeenCalled();
+        expect(executeAppAction).not.toHaveBeenCalled();
+    });
+
+    it('preserves legacy chord data when the CRDT restore commit fails', async () => {
+        const failure = new Error('commit failed');
+        const remove = vi.fn();
+        mocks.readLegacyChordTrackMigration.mockReturnValue({
+            action: {
+                type: 'restoreChordTrackState',
+                payload: {
+                    expected: { enabled: false, events: [] },
+                    replacement: { enabled: true, events: [] },
+                },
+            },
+            remove,
+        });
+        mocks.executeAppAction.mockRejectedValue(failure);
+
+        await expect(loadProject()).rejects.toBe(failure);
+        expect(persistCrdtProject).not.toHaveBeenCalled();
+        expect(remove).not.toHaveBeenCalled();
+    });
+
+    it('preserves legacy chord data when durable CRDT persistence fails', async () => {
+        const failure = new Error('persistence failed');
+        const remove = vi.fn();
+        mocks.readLegacyChordTrackMigration.mockReturnValue({
+            action: {
+                type: 'restoreChordTrackState',
+                payload: {
+                    expected: { enabled: false, events: [] },
+                    replacement: { enabled: true, events: [] },
+                },
+            },
+            remove,
+        });
+        mocks.persistCrdtProject.mockRejectedValue(failure);
+
+        await expect(loadProject()).rejects.toBe(failure);
+        expect(remove).not.toHaveBeenCalled();
     });
 });

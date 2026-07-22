@@ -1,15 +1,16 @@
 import { logger } from '#/infra/logger/appLogger';
 import { batchStoreUpdates } from '#/infra/store/createStore';
 import { getAudioContext, prepareCachedAudioBuffersFromIdb } from '#/modules/AudioEngine/useCases';
-import { clearUndoHistory } from '#/modules/Command/useCases';
+import { clearUndoHistory, executeAppAction } from '#/modules/Command/useCases';
 import {
     DOC_PREFIX_ROOT,
     getCrdtDoc,
     loadCrdtProject,
+    persistCrdtProject,
     projectCrdtToStores,
     startCrdtAutoSave,
 } from '#/modules/CrdtDocument/useCases';
-import { migrateAbsoluteMidiNotes } from '#/modules/MIDI/useCases';
+import { migrateAbsoluteMidiNotes, readLegacyChordTrackMigration } from '#/modules/MIDI/useCases';
 
 import { projectStore } from '../../stores/projectStore';
 import { finishProjectLoading } from '../finishProjectLoading';
@@ -56,7 +57,7 @@ export async function loadProject(): Promise<boolean> {
         return false;
     }
 
-    const rootDoc = getCrdtDoc<{ tracks?: unknown }>(DOC_PREFIX_ROOT);
+    const rootDoc = getCrdtDoc<{ chordTrack?: unknown; tracks?: unknown }>(DOC_PREFIX_ROOT);
     const referencedBufferIds = collectTrackStateAudioBufferIds(rootDoc?.tracks);
     const preparedBuffers = await prepareCachedAudioBuffersFromIdb({
         audioContext: getAudioContext(),
@@ -84,6 +85,21 @@ export async function loadProject(): Promise<boolean> {
 
     if (!transaction.isCurrent()) {
         return false;
+    }
+
+    if (rootDoc && !Object.hasOwn(rootDoc, 'chordTrack')) {
+        const migration = readLegacyChordTrackMigration();
+        if (migration) {
+            await executeAppAction(migration.action, { skipMacroRecording: true, skipUndo: true });
+            if (!transaction.isCurrent()) {
+                return false;
+            }
+            await persistCrdtProject();
+            if (!transaction.isCurrent()) {
+                return false;
+            }
+            migration.remove();
+        }
     }
 
     // Start debounced incremental auto-save so edits survive browser crashes.

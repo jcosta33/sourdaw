@@ -104,6 +104,10 @@ const malformedSchemas = [
         'invalid event value',
         { ...validSchema, events: { event: { deleted: false, value: { ...validEvent, root: 12 } } } },
     ],
+    [
+        'invalid migration base',
+        { ...validSchema, migrationBase: { enabled: true, events: [{ ...validEvent, id: '' }] } },
+    ],
 ] as const;
 
 function projectPendingHydrate(
@@ -314,6 +318,22 @@ describe('chordTrackStore CRDT projection', () => {
         writePeer(removed, { enabled: true, events: [] });
         writePeer(added, { enabled: true, events: [...initial.events, ...chordState('keep-add', 9).events] });
         expect(projectMerged(removed, added).events.map((event) => event.id)).toEqual(['keep-add']);
+    });
+
+    it('reconciles concurrent first migration without losing independent edits', () => {
+        const initial = { ...chordState('legacy-shared', 3), enabled: false };
+        const legacy = from<RootDocument>({ chordTrack: initial });
+        const leftPeer = createPeer(clone(legacy));
+        const rightPeer = createPeer(clone(legacy));
+        writePeer(leftPeer, { enabled: true, events: [{ ...initial.events[0]!, duration: 16 }] });
+        writePeer(rightPeer, {
+            enabled: false,
+            events: [{ ...initial.events[0]!, root: 8 }, ...chordState('legacy-add', 11).events],
+        });
+        const projected = projectMerged(leftPeer, rightPeer);
+        expect(projected.enabled).toBe(true);
+        expect(projected.events.map((event) => event.id)).toEqual(['legacy-add', 'legacy-shared']);
+        expect(projected.events[1]).toMatchObject({ duration: 16, root: 8 });
     });
 
     it('rebases pending edits field-by-field with delete-wins semantics', () => {

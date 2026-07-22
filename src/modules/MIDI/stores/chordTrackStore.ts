@@ -20,6 +20,7 @@ type ChordTrackCrdtState = {
     schemaVersion: number;
     enabled: boolean;
     events: Record<string, ChordEventEntity>;
+    migrationBase?: ChordTrackState;
 };
 
 type ChordEventCandidate = {
@@ -82,7 +83,7 @@ function isChordEvent(value: unknown): value is ChordEvent {
     );
 }
 
-function isChordTrackState(value: unknown): value is ChordTrackState {
+export function isChordTrackState(value: unknown): value is ChordTrackState {
     if (!isChordTrackStateCandidate(value)) {
         return false;
     }
@@ -119,7 +120,8 @@ function isCrdtState(value: unknown): value is ChordTrackCrdtState {
         !isRecord(value) ||
         value.schemaVersion !== CHORD_TRACK_CRDT_SCHEMA_VERSION ||
         typeof value.enabled !== 'boolean' ||
-        !isRecord(value.events)
+        !isRecord(value.events) ||
+        (value.migrationBase !== undefined && !isChordTrackState(value.migrationBase))
     ) {
         return false;
     }
@@ -163,6 +165,22 @@ function decodeState(value: unknown): ChordTrackState {
     return normalizeState({ enabled: value.enabled, events });
 }
 
+function encodeMigratedState(previous: unknown, desired: ChordTrackState): ChordTrackCrdtState {
+    const encoded = encodeState(desired);
+    if (!isChordTrackState(previous)) {
+        return encoded;
+    }
+    const legacy = normalizeState(previous);
+    encoded.migrationBase = { enabled: legacy.enabled, events: legacy.events.map((event) => ({ ...event })) };
+    const desiredIds = new Set(desired.events.map((event) => event.id));
+    for (const event of legacy.events) {
+        if (!desiredIds.has(event.id)) {
+            encoded.events[event.id] = { deleted: true, value: { ...event } };
+        }
+    }
+    return encoded;
+}
+
 function replaceIfChanged(target: MutableRecord, key: string, value: unknown): void {
     if (JSON.stringify(target[key]) !== JSON.stringify(value)) {
         target[key] = value;
@@ -195,7 +213,7 @@ function mutateCrdt({ doc, key, value }: { doc: MutableRecord; key: string; valu
     const current = doc[key];
     assertSupportedSchema(current);
     if (!isCrdtState(current)) {
-        doc[key] = encodeState(desired);
+        doc[key] = encodeMigratedState(current, desired);
         return;
     }
     replaceIfChanged(current, 'enabled', desired.enabled);
@@ -224,11 +242,36 @@ function mergeEventFields(base: ChordEvent, values: readonly ChordEvent[]): Chor
     return merged;
 }
 
+function mergeMigratedStates(states: readonly ChordTrackCrdtState[], base: ChordTrackState): ChordTrackCrdtState {
+    const merged = encodeState(base);
+    const baseById = new Map(base.events.map((event) => [event.id, event]));
+    for (const state of states) {
+        if (state.enabled !== base.enabled) {
+            merged.enabled = state.enabled;
+        }
+        mergeEntities(merged.events, state.events);
+    }
+    for (const [id, entity] of Object.entries(merged.events)) {
+        if (entity.deleted) {
+            continue;
+        }
+        const values = states.flatMap((state) => (state.events[id]?.deleted === false ? [state.events[id].value] : []));
+        entity.value = mergeEventFields(baseById.get(id) ?? entity.value, values);
+    }
+    return merged;
+}
+
 function reconcileRootConflicts(values: readonly unknown[]): ChordTrackCrdtState {
-    const merged = encodeState(defaultChordTrackState);
-    for (const value of values) {
+    const states = values.map((value) => {
         assertSupportedSchema(value);
-        const state = isCrdtState(value) ? value : encodeState(normalizeState(value));
+        return isCrdtState(value) ? value : encodeState(normalizeState(value));
+    });
+    const migrationBase = states.map((state) => state.migrationBase).find(isChordTrackState);
+    if (migrationBase) {
+        return mergeMigratedStates(states, normalizeState(migrationBase));
+    }
+    const merged = encodeState(defaultChordTrackState);
+    for (const state of states) {
         merged.enabled = state.enabled;
         mergeEntities(merged.events, state.events);
     }
