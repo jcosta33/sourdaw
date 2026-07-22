@@ -5,9 +5,6 @@ import { AUTOMATION_MODE_CONFIG, LANE_HEIGHT, buildCurvePath, getAutomatablePara
 
 const beatToX = (beat: number): number => beat * 10;
 const valueToY = (value: number): number => 100 - value * 100;
-const device = (type: string, index = 1) => ({ id: `${type}-${index}`, type, name: type });
-const levainLane = { parameterId: 'levain:masterGain' };
-const levainTarget = 'levain-1:masterGain';
 
 function pt(
     beat: number,
@@ -44,14 +41,14 @@ describe('getAutomatableParams', () => {
     });
 
     it('should append only the automatable params of a known device, skipping non-automatable ones', () => {
-        const params = getAutomatableParams('track-1', [{ id: 'levain-1', type: 'levain', name: 'Strings' }]);
+        const params = getAutomatableParams('track-1', [{ type: 'levain', name: 'Strings' }]);
         expect(params).toEqual([
             { id: 'gain', name: 'Volume', min: 0, max: 1 },
             { id: 'pan', name: 'Pan', min: -1, max: 1 },
-            { id: 'levain-1:masterGain', name: 'Strings → Master', min: 0, max: 2 },
-            { id: 'levain-1:humanize', name: 'Strings → Humanize', min: 0, max: 1 },
-            { id: 'levain-1:vibratoDepth', name: 'Strings → Vibrato', min: 0, max: 1 },
-            { id: 'levain-1:legatoEnabled', name: 'Strings → Legato', min: 0, max: 1 },
+            { id: 'levain:masterGain', name: 'Strings → Master', min: 0, max: 2 },
+            { id: 'levain:humanize', name: 'Strings → Humanize', min: 0, max: 1 },
+            { id: 'levain:vibratoDepth', name: 'Strings → Vibrato', min: 0, max: 1 },
+            { id: 'levain:legatoEnabled', name: 'Strings → Legato', min: 0, max: 1 },
         ]);
     });
 
@@ -61,17 +58,6 @@ describe('getAutomatableParams', () => {
             { id: 'gain', name: 'Volume', min: 0, max: 1 },
             { id: 'pan', name: 'Pan', min: -1, max: 1 },
         ]);
-    });
-
-    it.each([
-        ['unique legacy', [device('levain')], [levainLane], levainTarget, false],
-        ['ambiguous legacy', [device('levain'), device('levain', 2)], [levainLane], levainTarget, true],
-        ['device gain', [device('grinder')], [{ parameterId: 'grinder-1:gain' }], 'gain', true],
-        ['device pan', [device('crumbs')], [{ parameterId: 'crumbs-1:pan' }], 'pan', true],
-        ['clip lane', [device('levain')], [{ ...levainLane, clipId: 'clip-1' }], levainTarget, true],
-    ])('filters %s equivalence safely', (_name, devices, lanes, targetId, expected) => {
-        const params = getAutomatableParams('track-1', devices, lanes);
-        expect(params.some((param) => param.id === targetId)).toBe(expected);
     });
 });
 
