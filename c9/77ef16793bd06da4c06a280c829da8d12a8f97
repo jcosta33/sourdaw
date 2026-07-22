@@ -1,0 +1,41 @@
+src/modules/AudioEngine/useCases/offlineRender/__tests__/scheduleTrackClips.spec.ts
+  s_ac9b259eab20ba::t_7dc92ff239a39a 371-423
+src/modules/AudioEngine/repositories/deviceStrategy/AudioDeviceStrategy.ts
+  s_ac9b259eab20ba::t_bcb45f2ae24717 10-12
+src/modules/AudioEngine/repositories/deviceStrategy/NativeDspDeviceStrategy.ts
+  s_ac9b259eab20ba::t_64b45f327cf1a1 23-25,57-68
+src/modules/AudioEngine/repositories/deviceStrategy/__tests__/NativeDspDeviceStrategy.spec.ts
+  s_ac9b259eab20ba::t_f40d90993348d0 33-50,85,89-91
+src/modules/AudioEngine/useCases/__tests__/renderOfflineGraph.spec.ts
+  s_ac9b259eab20ba::t_2e562fb69a1a8d 7,248-296
+src/modules/AudioEngine/useCases/__tests__/resolveToasterPadBinding.spec.ts
+  s_ac9b259eab20ba::t_88f68479922036 1-35
+src/modules/AudioEngine/useCases/index.ts
+  s_ac9b259eab20ba::t_5ebfc7a70aa81d 43
+src/modules/AudioEngine/useCases/offlineRender/__tests__/connectOfflineToasterPadRoutes.spec.ts
+  s_ac9b259eab20ba::t_964a2211d6641e 1-93
+src/modules/AudioEngine/useCases/offlineRender/connectOfflineToasterPadRoutes.ts
+  s_ac9b259eab20ba::t_d4dd82941ddf55 1-34
+src/modules/AudioEngine/useCases/offlineRender/scheduleTrackClips.ts
+  s_ac9b259eab20ba::t_21d16f65c0846d 272
+src/modules/AudioEngine/useCases/renderOffline.ts
+  s_ac9b259eab20ba::t_e239055d93985b 6,114-115,178-180
+src/modules/AudioEngine/useCases/resolveToasterPadBinding.ts
+  s_ac9b259eab20ba::t_a15db25a53fb12 1-23
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "c977ef16793bd06da4c06a280c829da8d12a8f97",
+  "prompts": {},
+  "sessions": {
+    "s_ac9b259eab20ba": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8699-3865-7842-8c54-afbac6cfd266",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
