@@ -64,6 +64,16 @@ impl ToasterInstance {
         self.engine.set_pad_param(pad, name, value);
     }
 
+    /// Transfer or restore ownership of a pad's dry contribution to output 0.
+    pub fn set_pad_dry_routed(&mut self, pad: u8, routed: bool) {
+        self.engine.set_pad_dry_routed(pad, routed);
+    }
+
+    /// Restore legacy parent-mix ownership for every pad.
+    pub fn reset_pad_dry_routing(&mut self) {
+        self.engine.reset_pad_dry_routing();
+    }
+
     /// Process a block of audio. Returns pointer to left channel buffer.
     /// Caller reads left + right from WASM memory.
     pub fn process(&mut self, block_size: u32) -> *const f32 {

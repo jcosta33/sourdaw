@@ -220,6 +220,7 @@ pub struct ToasterEngine {
     global_lofi: LofiProcessor,
     pad_l_gains: Vec<f32>,
     pad_r_gains: Vec<f32>,
+    pad_dry_routed_mask: u16,
     sample_rate: f32,
     master_gain: f32,
 }
@@ -300,6 +301,7 @@ impl ToasterEngine {
             global_lofi: LofiProcessor::new(),
             pad_l_gains: vec![0.70710677; num_pads],
             pad_r_gains: vec![0.70710677; num_pads],
+            pad_dry_routed_mask: 0,
             sample_rate,
             master_gain: 0.8,
         }
@@ -418,6 +420,23 @@ impl ToasterEngine {
         }
     }
 
+    pub fn set_pad_dry_routed(&mut self, pad: u8, routed: bool) {
+        let pad_idx = pad as usize;
+        if pad_idx >= self.pads.len() || pad_idx >= u16::BITS as usize {
+            return;
+        }
+        let pad_bit = 1_u16 << pad_idx;
+        if routed {
+            self.pad_dry_routed_mask |= pad_bit;
+        } else {
+            self.pad_dry_routed_mask &= !pad_bit;
+        }
+    }
+
+    pub fn reset_pad_dry_routing(&mut self) {
+        self.pad_dry_routed_mask = 0;
+    }
+
     pub fn process_block(&mut self, left: &mut [f32], right: &mut [f32]) {
         self.process_block_inner(left, right, None, 0);
     }
@@ -511,15 +530,19 @@ impl ToasterEngine {
                         outputs[tap_start + pad_stride + i] += sr;
                     }
 
-                    let bus = pad.bus_route;
-                    if bus >= 1 && (bus as usize) <= NUM_BUSES {
-                        let bi = (bus as usize) - 1;
-                        self.bus_buffers_l[bi][i] += sl;
-                        self.bus_buffers_r[bi][i] += sr;
-                    } else {
-                        // Route directly to master
-                        left[i] += sl;
-                        right[i] += sr;
+                    let pad_dry_routed = pad_idx < u16::BITS as usize
+                        && self.pad_dry_routed_mask & (1_u16 << pad_idx) != 0;
+                    if !pad_dry_routed {
+                        let bus = pad.bus_route;
+                        if bus >= 1 && (bus as usize) <= NUM_BUSES {
+                            let bi = (bus as usize) - 1;
+                            self.bus_buffers_l[bi][i] += sl;
+                            self.bus_buffers_r[bi][i] += sr;
+                        } else {
+                            // Route directly to master
+                            left[i] += sl;
+                            right[i] += sr;
+                        }
                     }
 
                     // Send levels (always go to global fx regardless of bus)
