@@ -7,10 +7,33 @@
 
 import { createReadyHandshake, ensureWorkletRegistered, fetchWasmBinary } from '#/infra/audioWorklet/workletInitShared';
 
-import { type OfflineAutomationSegment } from '../models/OfflineAutomationSegment';
 import fermenterProcessorUrl from '../services/fermenterProcessor.ts?worker&url';
 
 const DEFAULT_WASM_URL = '/wasm/daw-dsp/daw_dsp_bg.wasm';
+const FERMENTER_AUTOMATION_PARAM_IDS: Readonly<Record<string, number>> = {
+    oscLevel: 0,
+    filterCutoff: 1,
+    filterResonance: 2,
+    lfoRate: 3,
+    lfoFilterAmount: 4,
+    lfoPitchAmount: 5,
+    filterEnvAmount: 6,
+    msegToFilter: 7,
+    unisonSpread: 8,
+    fmLevel2: 9,
+    fmFeedback: 10,
+    noiseLevel: 11,
+    grainDensity: 12,
+    grainSize: 13,
+    grainSpray: 14,
+};
+
+type OfflineAutomationSegment = {
+    startFrame: number;
+    endFrame: number;
+    startValue: number;
+    endValue: number;
+};
 
 export type FermenterNodeResult = {
     workletNode: AudioWorkletNode;
@@ -18,7 +41,8 @@ export type FermenterNodeResult = {
     noteOff: (note: number, sampleFrame?: number) => void;
     allNotesOff: () => void;
     setParam: (name: string, value: number | number[], sampleFrame?: number) => void;
-    scheduleParam: (name: string, segments: readonly OfflineAutomationSegment[]) => void;
+    acceptsScheduledParam?: (name: string) => boolean;
+    scheduleParam?: (name: string, segments: readonly OfflineAutomationSegment[]) => void;
     setPatch: (patch: Record<string, unknown>) => void;
     setBypass: (bypassed: boolean) => void;
     onTelemetry: (callback: (data: { peakL: number; peakR: number; scopeBuffer: Float32Array }) => void) => void;
@@ -102,9 +126,13 @@ export async function createFermenterNode(ctx: BaseAudioContext, wasmUrl?: strin
                 node.port.postMessage({ type: 'param', name, value, sampleFrame });
             }
         },
+        acceptsScheduledParam(name: string) {
+            return FERMENTER_AUTOMATION_PARAM_IDS[name] !== undefined;
+        },
         scheduleParam(name: string, segments: readonly OfflineAutomationSegment[]) {
+            const paramId = FERMENTER_AUTOMATION_PARAM_IDS[name];
             const valid =
-                name.length > 0 &&
+                paramId !== undefined &&
                 segments.length > 0 &&
                 segments.every(
                     (segment) =>
@@ -116,7 +144,7 @@ export async function createFermenterNode(ctx: BaseAudioContext, wasmUrl?: strin
                         Number.isFinite(segment.endValue)
                 );
             if (valid) {
-                node.port.postMessage({ type: 'paramAutomation', name, segments });
+                node.port.postMessage({ type: 'paramAutomation', paramId, segments });
             }
         },
         setPatch(patch: Record<string, unknown>) {

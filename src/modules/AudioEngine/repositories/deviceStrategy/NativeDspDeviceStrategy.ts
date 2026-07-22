@@ -9,15 +9,15 @@ import { isProofChamberDevice, createProofChamberNode } from '../../engine/Proof
 import { isProofDevice, createProofNode } from '../../engine/ProofNode';
 import { isScoringDevice, createScoringNode } from '../../engine/ScoringNode';
 import { isToasterDevice, createToasterNode } from '../../engine/ToasterNode';
-import { type OfflineAutomationSegment } from '../../models/OfflineAutomationSegment';
 import { type Device } from '../../models/TrackViewTypes';
 import { type OfflineDeviceNode } from '../devices/types';
 
-import { type AudioDeviceStrategy } from './AudioDeviceStrategy';
+import { type AudioDeviceStrategy, type OfflineAutomationSegment } from './AudioDeviceStrategy';
 
 type NativeDspNode = {
     workletNode: AudioWorkletNode;
     setParam?: (name: string, value: number) => void;
+    acceptsScheduledParam?: (name: string) => boolean;
     scheduleParam?: (name: string, segments: readonly OfflineAutomationSegment[]) => void;
     setBypass?: (bypassed: boolean) => void;
     noteOn?: (noteOrPad: number, velocity: number, midiNote?: number, sampleFrame?: number) => void;
@@ -28,6 +28,7 @@ type NativeDspNode = {
 
 export class NativeDspDeviceStrategy implements AudioDeviceStrategy {
     public readonly node: OfflineDeviceNode;
+    public readonly acceptsScheduledParam?: (name: string) => boolean;
     public readonly scheduleParam?: (name: string, segments: readonly OfflineAutomationSegment[]) => void;
 
     constructor(private readonly dspNode: NativeDspNode) {
@@ -37,7 +38,9 @@ export class NativeDspDeviceStrategy implements AudioDeviceStrategy {
             nodes: [dspNode.workletNode],
         };
         const scheduleParam = dspNode.scheduleParam;
-        if (scheduleParam) {
+        const acceptsScheduledParam = dspNode.acceptsScheduledParam;
+        if (scheduleParam && acceptsScheduledParam) {
+            this.acceptsScheduledParam = (name) => acceptsScheduledParam(name);
             this.scheduleParam = (name, segments) => scheduleParam(name, segments);
         }
     }

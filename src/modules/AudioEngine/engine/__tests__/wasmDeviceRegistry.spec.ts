@@ -297,7 +297,6 @@ function createFermenterNodeResult(): FermenterNodeResult {
         noteOn: fermenterNodeMocks.noteOn,
         onTelemetry: fermenterNodeMocks.onTelemetry,
         ready: Promise.resolve({}),
-        scheduleParam: vi.fn(),
         setBypass: fermenterNodeMocks.setBypass,
         setParam: fermenterNodeMocks.setParam,
         setPatch: fermenterNodeMocks.setPatch,

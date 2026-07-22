@@ -30,16 +30,6 @@ describe('NativeDspDeviceStrategy', () => {
         expect(setParam).toHaveBeenCalledWith('gain', 0.5);
     });
 
-    it('forwards compiled parameter automation when the node supports it', () => {
-        const scheduleParam = vi.fn();
-        const strategy = new NativeDspDeviceStrategy(make_dsp_node({ scheduleParam }));
-        const segments = [{ startFrame: 0, endFrame: 100, startValue: 0, endValue: 1 }];
-
-        strategy.scheduleParam?.('gain', segments);
-
-        expect(scheduleParam).toHaveBeenCalledWith('gain', segments);
-    });
-
     it('should not throw when setParam is missing', () => {
         const strategy = new NativeDspDeviceStrategy(make_dsp_node());
         expect(() => strategy.setParam('x', 1)).not.toThrow();
@@ -77,7 +67,6 @@ describe('NativeDspDeviceStrategy', () => {
         expect(() => strategy.setBypass(false)).not.toThrow();
         expect(() => strategy.noteOn(0, 0)).not.toThrow();
         expect(() => strategy.noteOff(0)).not.toThrow();
-        expect(strategy.scheduleParam).toBeUndefined();
         expect(() => strategy.destroy()).not.toThrow();
     });
 });

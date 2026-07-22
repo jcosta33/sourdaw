@@ -1,6 +1,6 @@
 import { type AutomationPoint } from '../../models/AutomationViewTypes';
-import { type OfflineAutomationSegment } from '../../models/OfflineAutomationSegment';
 import { beatToSeconds } from '../../services/beatConversion';
+import { type OfflineAutomationSegment } from '../deviceStrategy/AudioDeviceStrategy';
 
 type AutomationTempoChange = {
     beat: number;

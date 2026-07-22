@@ -47,7 +47,7 @@ type ParamAutomationSegment = {
 };
 
 type ParamAutomationSchedule = {
-    rustName: string;
+    paramId: number;
     segments: ParamAutomationSegment[];
     segmentIndex: number;
     lastValue: number;
@@ -59,7 +59,7 @@ type FermenterMsg =
     | { type: 'noteOff'; note: number; sampleFrame?: number }
     | { type: 'allNotesOff' }
     | { type: 'param'; name: string; value: number }
-    | { type: 'paramAutomation'; name: string; segments: ParamAutomationSegment[] }
+    | { type: 'paramAutomation'; paramId: number; segments: ParamAutomationSegment[] }
     | { type: 'patch'; patch: Record<string, number | number[]> };
 
 type FermenterQueued =
@@ -125,17 +125,17 @@ class FermenterProcessor extends AudioWorkletProcessor {
 
     _handleMessage(msg: FermenterMsg): void {
         if (msg.type === 'paramAutomation') {
-            if (msg.name.length === 0 || msg.segments.length === 0) {
+            if (!Number.isInteger(msg.paramId) || msg.paramId < 0 || msg.segments.length === 0) {
                 return;
             }
             const schedule: ParamAutomationSchedule = {
-                rustName: camelToSnake(msg.name),
+                paramId: msg.paramId,
                 segments: msg.segments,
                 segmentIndex: 0,
                 lastValue: Number.NaN,
             };
             const existingIndex = this._paramAutomation.findIndex(
-                (candidate) => candidate.rustName === schedule.rustName
+                (candidate) => candidate.paramId === schedule.paramId
             );
             if (existingIndex >= 0) {
                 this._paramAutomation[existingIndex] = schedule;
@@ -241,7 +241,7 @@ class FermenterProcessor extends AudioWorkletProcessor {
                 value = segment.startValue + (segment.endValue - segment.startValue) * fraction;
             }
             if (value !== schedule.lastValue) {
-                inst.set_param(schedule.rustName, value);
+                inst.set_param_by_id(schedule.paramId, value);
                 schedule.lastValue = value;
             }
         }

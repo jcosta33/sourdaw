@@ -123,12 +123,12 @@ describe('FermenterProcessor parameter automation', () => {
         const ProcessorClass = loadProcessorClass('../fermenterProcessor.ts', 'FermenterProcessor');
         const processor = new ProcessorClass();
         const setParam = vi.fn();
-        processor._instance = { set_param: setParam };
+        processor._instance = { set_param_by_id: setParam };
         processor._ready = true;
         processor.port.onmessage({
             data: {
                 type: 'paramAutomation',
-                name: 'filterCutoff',
+                paramId: 1,
                 segments: [{ startFrame: 0, endFrame: 1_000, startValue: 200, endValue: 2_000 }],
             },
         });
@@ -138,9 +138,9 @@ describe('FermenterProcessor parameter automation', () => {
         processor._applyParamAutomation(1_000);
 
         expect(setParam.mock.calls).toEqual([
-            ['cutoff', 200],
-            ['cutoff', 1_100],
-            ['cutoff', 2_000],
+            [1, 200],
+            [1, 1_100],
+            [1, 2_000],
         ]);
     });
 });

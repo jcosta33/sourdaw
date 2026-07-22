@@ -17,7 +17,7 @@ type ScheduleTrackAutomationDeviceEntry = {
     deviceId: string;
     deviceType: string;
     node: OfflineDeviceNode;
-    strategy?: Pick<AudioDeviceStrategy, 'scheduleParam'>;
+    strategy?: Pick<AudioDeviceStrategy, 'acceptsScheduledParam' | 'scheduleParam'>;
 };
 
 function acceptsOfflineAutomationParameter(
@@ -26,7 +26,7 @@ function acceptsOfflineAutomationParameter(
 ): boolean {
     return (
         resolveDeviceParamTargets(candidate.deviceType, parameterId, candidate.node).length > 0 ||
-        candidate.strategy?.scheduleParam !== undefined
+        candidate.strategy?.acceptsScheduledParam?.(parameterId) === true
     );
 }
 
