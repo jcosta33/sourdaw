@@ -1,0 +1,43 @@
+src/modules/Arrangement/useCases/freezeBounce/__tests__/bounceSelection.spec.ts
+  s_92b905bf82da5c::t_6452f14a994c75 57-101,104-146,242,257-315,326
+src/modules/Arrangement/useCases/freezeBounce/bounceSelection.ts
+  s_92b905bf82da5c::t_07aad99c40c62d 3-8,16-52,109-110,123-125,146,163,185,197-206,245-249,258-264,271-277
+src/modules/Arrangement/handlers/__tests__/clipGeometryActionOutcomes.spec.ts
+  s_ac9b259eab20ba::t_ab9b7bf4d1fcfa 459,467-469
+src/modules/Arrangement/useCases/timeOperations/__tests__/deleteTime.spec.ts
+  s_51b7271278858f::t_fc788c180b9b70 14,20-25,41,178-206
+src/modules/Arrangement/useCases/timeOperations/deleteTime.ts
+  s_ac9b259eab20ba::t_20bac2a568b878 135-171
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "5b86e1d4144aa3b5f1e6a5645e4d5b19cbea0021",
+  "prompts": {},
+  "sessions": {
+    "s_51b7271278858f": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8b69-4f08-77a2-aa10-c51bc5eb5864",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_92b905bf82da5c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "fc4c3b22-f57f-4fa4-a234-65db0d062ff2",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_ac9b259eab20ba": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8699-3865-7842-8c54-afbac6cfd266",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
