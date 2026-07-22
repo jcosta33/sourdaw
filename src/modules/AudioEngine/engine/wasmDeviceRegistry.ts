@@ -157,7 +157,10 @@ const toasterDescriptor: WasmDeviceDescriptor = {
                 const accepted = onLoaded({
                     deviceId,
                     type: deviceType,
-                    nodes: [result.outputNode],
+                    // Keep the stable output proxy at the graph boundary, while
+                    // retaining the worklet for lifecycle sweeps such as the
+                    // transport-wide all-notes-off release.
+                    nodes: [result.outputNode, result.workletNode],
                     inputNode: result.outputNode,
                     outputNode: result.outputNode,
                     isGenerator: true,

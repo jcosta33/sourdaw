@@ -184,7 +184,7 @@ describe('wasmDeviceRegistry descriptors', () => {
             expect(loaded.deviceId).toBe('toast-1');
             expect(loaded.inputNode).toBe(result.outputNode);
             expect(loaded.outputNode).toBe(result.outputNode);
-            expect(loaded.nodes).toEqual([result.outputNode]);
+            expect(loaded.nodes).toEqual([result.outputNode, result.workletNode]);
             expect(loaded.isGenerator).toBe(true);
             expect(loaded.toasterControls?.ready).toBe(true);
             expect(loaded.toasterControls?.scheduleHit).toBe(result.scheduleHit);
