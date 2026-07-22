@@ -1,0 +1,21 @@
+src/modules/Project/useCases/demoProjects/myceliumAscendant/createMyceliumVoicePerformance.ts
+  s_ac9b259eab20ba::t_bece0408f82538 116-118,162,184,194,216,240
+src/modules/Project/useCases/demoProjects/myceliumAscendant/__tests__/createMyceliumVoicePerformance.spec.ts
+  s_ac9b259eab20ba::t_c2fe91009fac38 66-68
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "0ba897295f61414d8f604819b7f3c4d676d08998",
+  "prompts": {},
+  "sessions": {
+    "s_ac9b259eab20ba": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8699-3865-7842-8c54-afbac6cfd266",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
