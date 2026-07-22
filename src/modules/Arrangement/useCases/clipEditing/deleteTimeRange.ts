@@ -11,7 +11,8 @@ export function deleteTimeRange(startBeat: number, endBeat: number, trackIds: st
     }
 
     const deletedClipIds: string[] = [];
-    const splitOps: Array<{ sourceClipId: string; newClipId: string; splitBeat: number }> = [];
+    const splitOps: Array<{ sourceClipId: string; newClipId: string; splitBeat: number; discardBeforeBeat?: number }> =
+        [];
 
     const newTracks = state.tracks.map((track) => {
         if (!trackIds.includes(track.id)) {
@@ -41,12 +42,17 @@ export function deleteTimeRange(startBeat: number, endBeat: number, trackIds: st
                 };
                 finalClips.push(leftClip, rightClip);
                 if (clip.type === 'midi') {
-                    // splitMidiNotesAtBeat partitions in clip-media beats
-                    // (notes are clip-relative), not timeline beats.
+                    // The right clip starts at the hole END, so the split
+                    // point is the hole-end media beat; everything inside
+                    // the hole's media window is discarded, not re-homed
+                    // (feeding the hole-start beat here resurrected hole
+                    // notes after the hole and pushed post-hole notes out
+                    // of their clip).
                     splitOps.push({
                         sourceClipId: clip.id,
                         newClipId: rightClipId,
-                        splitBeat: startBeat - clip.startBeat + (clip.midiOffsetBeats ?? 0),
+                        splitBeat: endBeat - clip.startBeat + (clip.midiOffsetBeats ?? 0),
+                        discardBeforeBeat: startBeat - clip.startBeat + (clip.midiOffsetBeats ?? 0),
                     });
                 }
             } else if (clip.startBeat < startBeat && clip.endBeat > startBeat) {

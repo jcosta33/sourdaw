@@ -22,6 +22,7 @@ type ClipFixture = {
     color: string;
     locked: boolean;
     muted: boolean;
+    midiOffsetBeats?: number;
     parentClipId?: string;
     overrides?: Record<string, boolean>;
 };
@@ -131,6 +132,7 @@ describe('createPatternInstance', () => {
                 parentClipId: 'root-pattern',
                 overrides: { notes: true },
                 type: sourceType,
+                midiOffsetBeats: 2,
             });
             setEligibleProject(sourceClip, destinationKind, sourceKind);
             mocks.getNotesForClip.mockReturnValue([
@@ -163,6 +165,9 @@ describe('createPatternInstance', () => {
                 muted: false,
                 parentClipId: 'root-pattern',
                 overrides: {},
+                // Inherited from the slipped parent so the cloned
+                // clip-relative notes play at the right positions.
+                midiOffsetBeats: 2,
             });
             expect(mocks.setNotesForClip).toHaveBeenCalledWith(instanceId, [
                 {

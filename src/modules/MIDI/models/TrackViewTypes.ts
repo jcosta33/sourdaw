@@ -16,6 +16,7 @@ export type Clip = {
     audioBufferId?: string;
     assetHash?: string;
     audioOffsetBeats?: number;
+    midiOffsetBeats?: number;
     fadeInBeats: number;
     fadeOutBeats: number;
     gain: number;

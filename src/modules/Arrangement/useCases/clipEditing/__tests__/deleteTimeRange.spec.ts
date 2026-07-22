@@ -16,6 +16,8 @@ vi.mock('#/modules/MIDI/useCases', () => ({
     splitMidiNotesAtBeat: mocks.splitMidiNotesAtBeat,
 }));
 
+import { midiStore } from '#/modules/MIDI/stores';
+
 import { ClipDummy } from '../../../__tests__/ClipDummy';
 import { TrackDummy } from '../../../__tests__/TrackDummy';
 import { deleteTimeRange } from '../deleteTimeRange';
@@ -78,10 +80,13 @@ describe('deleteTimeRange', () => {
 
         expect(mocks.setTrackState).toHaveBeenCalledWith(nextState);
         expect(mocks.removeMidiClipData).toHaveBeenCalledWith(['drop-midi']);
+        // The right clip starts at the hole END (timeline 7, media 7 for a
+        // clip at 0); the hole's media window [3, 7) is discarded, not kept.
         expect(mocks.splitMidiNotesAtBeat).toHaveBeenCalledWith({
             sourceClipId: 'span-midi',
             newClipId: 'clip-dtr-12345678',
-            splitBeat: 3,
+            splitBeat: 7,
+            discardBeforeBeat: 3,
         });
         expect(mocks.setTrackState.mock.invocationCallOrder[0]).toBeLessThan(
             mocks.removeMidiClipData.mock.invocationCallOrder[0]!
@@ -151,5 +156,58 @@ describe('deleteTimeRange', () => {
             tracks: [{ ...track, clips: [] }],
             selectedTrackId: 'later',
         });
+    });
+    /// Regression (PR #608 review, blocking): end-to-end note positions for
+    /// a spanning MIDI clip — hole notes must be gone, post-hole notes must
+    /// land at their original timeline positions on the right clip.
+    it('deletes hole notes and keeps post-hole notes at their timeline positions (real partition)', async () => {
+        const actual = await vi.importActual<
+            typeof import('#/modules/MIDI/useCases/midiNoteCrud/splitMidiNotesAtBeat')
+        >('#/modules/MIDI/useCases/midiNoteCrud/splitMidiNotesAtBeat');
+        mocks.splitMidiNotesAtBeat.mockImplementation(actual.splitMidiNotesAtBeat);
+
+        const state = {
+            tracks: [
+                {
+                    id: 'target',
+                    clips: [{ id: 'span-midi', type: 'midi', name: 'Span', startBeat: 0, endBeat: 10 }],
+                },
+            ],
+            selectedTrackId: 'target',
+        };
+        mocks.getTrackState.mockReturnValue(state);
+        midiStore.set({
+            notesByClipId: {
+                'span-midi': [
+                    { id: 'n-left', pitch: 60, startBeat: 1, duration: 1, velocity: 100 },
+                    { id: 'n-straddle', pitch: 62, startBeat: 2, duration: 3, velocity: 100 }, // [2,5) — trimmed to [2,3)
+                    { id: 'n-hole', pitch: 64, startBeat: 4, duration: 1, velocity: 100 }, // [4,5) — deleted
+                    { id: 'n-spanner', pitch: 65, startBeat: 1.5, duration: 7, velocity: 100 }, // [1.5,8.5) — stubs both sides
+                    { id: 'n-post', pitch: 67, startBeat: 8, duration: 1, velocity: 100 }, // [8,9) — re-based to 1
+                ],
+            },
+            ccByClipId: {},
+            pitchBendByClipId: {},
+        });
+
+        deleteTimeRange(3, 7, ['target']);
+
+        const notes = midiStore.value?.notesByClipId ?? {};
+        // Left clip [0,3): left note untouched, hole-start straddlers trimmed
+        // to the hole start.
+        expect(notes['span-midi']).toEqual([
+            { id: 'n-left', pitch: 60, startBeat: 1, duration: 1, velocity: 100 },
+            { id: 'n-straddle', pitch: 62, startBeat: 2, duration: 1, velocity: 100 },
+            { id: 'n-spanner', pitch: 65, startBeat: 1.5, duration: 1.5, velocity: 100 },
+        ]);
+        // Right clip [7,10): hole note is gone; the hole-spanner's remainder
+        // starts at 0 (plays at 7) and the post-hole note sits at 1 (plays
+        // at 8 — its original timeline position).
+        const right = notes['clip-dtr-12345678'] ?? [];
+        expect(right).toHaveLength(2);
+        expect(right[0]).toMatchObject({ startBeat: 0, duration: 1.5, pitch: 65 });
+        expect(right[1]).toMatchObject({ id: 'n-post', startBeat: 1, duration: 1 });
+        expect(right.some((note) => note.id === 'n-hole')).toBe(false);
+        expect(notes['span-midi']?.some((note) => note.id === 'n-hole')).toBe(false);
     });
 });

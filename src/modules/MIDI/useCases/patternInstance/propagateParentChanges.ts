@@ -1,4 +1,4 @@
-import { trackStore } from '#/modules/Arrangement/stores';
+import { trackStore, updateClipInStore } from '#/modules/Arrangement/stores';
 
 import { type Clip } from '../../models/TrackViewTypes';
 import { getNotesForClip } from '../midiNoteCrud/getNotesForClip';
@@ -35,6 +35,15 @@ export function propagateParentChanges(parentClipId: string): void {
             }
             if (clip.overrides?.notes) {
                 continue;
+            }
+
+            // Notes are cloned clip-relative, so the instance must carry
+            // the parent's media offset or slipped parents play displaced.
+            if ((clip.midiOffsetBeats ?? 0) !== (parentClip.midiOffsetBeats ?? 0)) {
+                updateClipInStore(clip.id, (current) => ({
+                    ...current,
+                    midiOffsetBeats: parentClip.midiOffsetBeats,
+                }));
             }
 
             const clonedNotes = parentNotes.map((node) => ({

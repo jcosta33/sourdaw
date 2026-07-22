@@ -8,6 +8,7 @@ const mocks = vi.hoisted(() => {
         trackStoreValue,
         getNotesForClip: vi.fn<() => unknown[]>(() => []),
         setNotesForClip: vi.fn<(...args: unknown[]) => void>(),
+        updateClipInStore: vi.fn<(clipId: string, updater: (clip: unknown) => unknown) => boolean>(() => true),
     };
 });
 
@@ -17,6 +18,7 @@ vi.mock('#/modules/Arrangement/stores', () => ({
             return mocks.trackStoreValue;
         },
     },
+    updateClipInStore: mocks.updateClipInStore,
 }));
 vi.mock('../../../useCases/midiNoteCrud/getNotesForClip', () => ({ getNotesForClip: mocks.getNotesForClip }));
 vi.mock('../../../useCases/midiNoteCrud/setNotesForClip', () => ({ setNotesForClip: mocks.setNotesForClip }));
@@ -54,6 +56,23 @@ describe('propagateParentChanges', () => {
         expect(mocks.setNotesForClip).toHaveBeenCalledTimes(2);
         expect(mocks.setNotesForClip).toHaveBeenCalledWith('inst-1', [expect.objectContaining({ startBeat: 0 })]);
         expect(mocks.setNotesForClip).toHaveBeenCalledWith('inst-2', [expect.objectContaining({ startBeat: 0 })]);
+    });
+
+    /// Regression (PR #608 review): the instance must carry the parent's
+    /// midiOffsetBeats or slipped parents play displaced.
+    it('mirrors the parent midiOffsetBeats onto instances whose offset differs', () => {
+        const parentClip = { id: 'parent', startBeat: 0, midiOffsetBeats: 2 };
+        const slipped = { id: 'inst-1', startBeat: 16, parentClipId: 'parent' };
+        const aligned = { id: 'inst-2', startBeat: 32, parentClipId: 'parent', midiOffsetBeats: 2 };
+        mocks.trackStoreValue = { tracks: [{ id: 't1', clips: [parentClip, slipped, aligned] }] };
+        mocks.getNotesForClip.mockReturnValue([{ id: 'n1', startBeat: 1, pitch: 60 }]);
+
+        propagateParentChanges('parent');
+
+        expect(mocks.updateClipInStore).toHaveBeenCalledTimes(1);
+        expect(mocks.updateClipInStore).toHaveBeenCalledWith('inst-1', expect.any(Function));
+        const updater = mocks.updateClipInStore.mock.calls[0]![1] as (clip: unknown) => unknown;
+        expect(updater({ id: 'inst-1' })).toMatchObject({ midiOffsetBeats: 2 });
     });
 
     it.each([

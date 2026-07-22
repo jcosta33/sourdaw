@@ -76,6 +76,47 @@ describe('splitMidiNotesAtBeat', () => {
         expect(right[1]).toMatchObject({ startBeat: 0, duration: 3, pitch: 67 });
     });
 
+    /// Regression (PR #608 review): range deletion (deleteTimeRange) must
+    /// drop the notes inside the deleted media window — feeding only the
+    /// hole-start beat resurrected hole notes on the right clip and pushed
+    /// post-hole notes out of their clip.
+    it('discards notes inside the deleted window and re-bases post-window notes onto the right clip', () => {
+        mocks.midiStoreValue.value = {
+            notesByClipId: {
+                source: [
+                    note(60, 1, 1, 'left'),
+                    note(62, 2, 3, 'hole-start-straddler'), // [2,5) — trim to [2,3)
+                    note(64, 4, 1, 'hole-note'), // [4,5) — deleted
+                    note(65, 1.5, 7, 'hole-spanner'), // [1.5,8.5) — stubs on both sides
+                    note(67, 8, 1, 'post'), // [8,9) — re-base to 1
+                ],
+            },
+            ccByClipId: {},
+            pitchBendByClipId: {},
+        };
+
+        // Clip [0, 10), deleted media window [3, 7).
+        splitMidiNotesAtBeat({ sourceClipId: 'source', newClipId: 'right', splitBeat: 7, discardBeforeBeat: 3 });
+
+        const written = mocks.midiStoreSet.mock.calls[0]![0] as {
+            notesByClipId: Record<string, StoredNote[]>;
+        };
+        const left = written.notesByClipId['source']!;
+        const right = written.notesByClipId['right']!;
+
+        expect(left).toEqual([
+            note(60, 1, 1, 'left'),
+            note(62, 2, 1, 'hole-start-straddler'),
+            note(65, 1.5, 1.5, 'hole-spanner'),
+        ]);
+        // Hole note is gone entirely; survivors on the right clip start at
+        // the hole end (media 7 -> 0).
+        expect(right).toHaveLength(2);
+        expect(right[0]).toMatchObject({ startBeat: 0, duration: 1.5, pitch: 65 });
+        expect(right[1]).toMatchObject({ id: 'post', startBeat: 1, duration: 1 });
+        expect(right.some((entry) => entry.id === 'hole-note')).toBe(false);
+    });
+
     it('keeps notes on the source clip when nothing crosses the split', () => {
         mocks.midiStoreValue.value = {
             notesByClipId: { source: [note(60, 0, 2, 'a'), note(62, 2, 1, 'b')] },

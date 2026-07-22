@@ -49,6 +49,9 @@ export function createPatternInstance(sourceClipId: string, targetTrackId: strin
         muted: false,
         parentClipId: parentId,
         overrides: {},
+        // The notes are cloned clip-relative, so the instance must inherit
+        // the parent's media offset or slipped parents play displaced.
+        midiOffsetBeats: sourceClip.midiOffsetBeats,
     };
 
     const didAppend = appendClipToTrack(destinationTarget.trackId, instance);

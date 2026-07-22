@@ -5,6 +5,14 @@ export type SplitMidiNotesAtBeatInput = {
     sourceClipId: string;
     newClipId: string;
     splitBeat: number;
+    /**
+     * Optional end bound for range deletion (deleteTimeRange): notes and
+     * note parts in `[discardBeforeBeat, splitBeat)` are dropped instead of
+     * kept on the source clip. Notes straddling `discardBeforeBeat` are
+     * trimmed to end at it; notes straddling `splitBeat` still emit their
+     * right half at beat 0 on the new clip.
+     */
+    discardBeforeBeat?: number;
 };
 
 /**
@@ -21,7 +29,7 @@ export type SplitMidiNotesAtBeatInput = {
  *    media starts at the split point).
  *  - Notes straddling the split are cut: the left half (with its original id)
  *    stays on the source clip with shortened duration; the right half is
- *    created at beat 0 on the new clip, keeping pitch/velocity/etc.
+ *    created as a new note on the new clip, keeping pitch/velocity/etc.
  *
  * Without this, the notes beyond `splitBeat` remain keyed under the source
  * clip id which is now trimmed — they become invisible and unplayable even
@@ -31,7 +39,7 @@ export type SplitMidiNotesAtBeatInput = {
  * projection bridge see a consistent state.
  */
 export function splitMidiNotesAtBeat(input: SplitMidiNotesAtBeatInput): void {
-    const { sourceClipId, newClipId, splitBeat } = input;
+    const { sourceClipId, newClipId, splitBeat, discardBeforeBeat } = input;
 
     const state = midiStore.value;
     if (!state) {
@@ -43,11 +51,51 @@ export function splitMidiNotesAtBeat(input: SplitMidiNotesAtBeatInput): void {
         return;
     }
 
+    const makeRightHalf = (note: MidiNote, duration: number): MidiNote => {
+        const rightHalf = createMidiNote(note.pitch, 0, duration, note.velocity);
+        return {
+            ...rightHalf,
+            probability: note.probability ?? rightHalf.probability,
+            pressure: note.pressure,
+            slide: note.slide,
+            pitchBend: note.pitchBend,
+        };
+    };
+
     const leftNotes: MidiNote[] = [];
     const rightNotes: MidiNote[] = [];
 
     for (const note of sourceNotes) {
         const noteEnd = note.startBeat + note.duration;
+
+        // Range deletion: everything in [discardBeforeBeat, splitBeat) goes
+        // away — left straddlers are trimmed to the window start, fully
+        // enclosed notes are dropped, and only post-window parts survive.
+        if (discardBeforeBeat !== undefined) {
+            if (noteEnd <= discardBeforeBeat) {
+                leftNotes.push(note);
+                continue;
+            }
+            if (note.startBeat < discardBeforeBeat) {
+                leftNotes.push({ ...note, duration: discardBeforeBeat - note.startBeat });
+                if (noteEnd > splitBeat) {
+                    rightNotes.push(makeRightHalf(note, noteEnd - splitBeat));
+                }
+                continue;
+            }
+            if (note.startBeat >= splitBeat) {
+                // Fully past the window: re-base onto the right clip.
+                rightNotes.push({ ...note, startBeat: note.startBeat - splitBeat });
+                continue;
+            }
+            if (noteEnd > splitBeat) {
+                // Starts inside the window but crosses the split: only the
+                // post-window part survives, at the right clip's start.
+                rightNotes.push(makeRightHalf(note, noteEnd - splitBeat));
+            }
+            continue;
+        }
+
         if (noteEnd <= splitBeat) {
             leftNotes.push(note);
             continue;
@@ -61,14 +109,7 @@ export function splitMidiNotesAtBeat(input: SplitMidiNotesAtBeatInput): void {
         const leftDuration = splitBeat - note.startBeat;
         const rightDuration = noteEnd - splitBeat;
         leftNotes.push({ ...note, duration: leftDuration });
-        const rightHalf = createMidiNote(note.pitch, 0, rightDuration, note.velocity);
-        rightNotes.push({
-            ...rightHalf,
-            probability: note.probability ?? rightHalf.probability,
-            pressure: note.pressure,
-            slide: note.slide,
-            pitchBend: note.pitchBend,
-        });
+        rightNotes.push(makeRightHalf(note, rightDuration));
     }
 
     const existingRight = state.notesByClipId[newClipId] ?? [];
