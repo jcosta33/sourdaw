@@ -1,0 +1,51 @@
+src/modules/MIDI/handlers/chordTrack/handleUpdateChordEvent.ts
+  s_ac9b259eab20ba::t_7fe5ccb204f20f 1-24
+src/modules/MIDI/useCases/getChordTrackHandlers.ts
+  s_ac9b259eab20ba::t_e2d6755c6fb80e 5,7,9,13-14,17-18,30-31,35
+src/modules/MIDI/useCases/chordTrack/addChordEvent.ts
+  s_ac9b259eab20ba::t_545f6c2f900d79 5-11,17-18
+src/modules/MIDI/handlers/chordTrack/handleClearChordTrack.ts
+  s_ac9b259eab20ba::t_7fe5ccb204f20f 3,10-21
+src/modules/MIDI/useCases/chordTrack/restoreChordTrackState.ts
+  s_ac9b259eab20ba::t_545f6c2f900d79 1-14
+src/modules/TimelineEditor/presentations/views/Timeline/ChordTrackLane.tsx
+  s_ac9b259eab20ba::t_c08240f1ee624d 16,18,95-100,130-135,145,149-154,181-184,192,226-231,256-258,267-268,345-348,369-372,385-388
+src/modules/MIDI/handlers/chordTrack/handleRemoveChordEvent.ts
+  s_ac9b259eab20ba::t_7fe5ccb204f20f 3,10-21
+src/modules/MIDI/handlers/chordTrack/handleToggleChordTrack.ts
+  s_ac9b259eab20ba::t_7fe5ccb204f20f 3,10-22
+src/modules/MIDI/handlers/chordTrack/__tests__/handleAddChordEvent.spec.ts
+  s_ac9b259eab20ba::t_cb035c2cbca245 19,22,28,31
+src/utils/handlerContract.ts
+  s_ac9b259eab20ba::t_47329475b0dd7e 119-146,588-601,605
+src/modules/MIDI/handlers/chordTrack/handleMoveChordEvent.ts
+  s_ac9b259eab20ba::t_7fe5ccb204f20f 1-23
+src/modules/TimelineEditor/presentations/views/Timeline/__tests__/ChordTrackLane.spec.tsx
+  s_ac9b259eab20ba::t_75f6e5b2333f1b 12
+  s_ac9b259eab20ba::t_9c4d743e80f603 14-17,59,62-65,68,72,82-85,92-95,107-110,125-128,132-135,139-142,153,156-160,162,173-174
+  s_ac9b259eab20ba::t_d9f0682c036aa8 13
+src/modules/MIDI/handlers/chordTrack/handleRestoreChordTrackState.ts
+  s_ac9b259eab20ba::t_7fe5ccb204f20f 1-23
+src/modules/MIDI/handlers/chordTrack/handleAddChordEvent.ts
+  s_ac9b259eab20ba::t_7fe5ccb204f20f 4,11-19,26-39
+src/modules/MIDI/handlers/chordTrack/__tests__/chordTrackActions.spec.ts
+  s_ac9b259eab20ba::t_6ace8745302c1d 1-4,7-18,86-100,105,107,109,117
+  s_ac9b259eab20ba::t_6a63f82bc15887 47,55,101-104,106,108,110,112,114-116
+  s_ac9b259eab20ba::t_58ac0c94cedf0f 5-6,19-46,48-54,56-85,111,113
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "0f23e23ed5a5dbaab10d4f40ac4287cdf5f20b69",
+  "prompts": {},
+  "sessions": {
+    "s_ac9b259eab20ba": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8699-3865-7842-8c54-afbac6cfd266",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
