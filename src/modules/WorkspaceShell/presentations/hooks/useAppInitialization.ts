@@ -117,7 +117,8 @@ export const useAppInitialization = (): void => {
             }
             const intervalMs = prefs?.autoSaveIntervalMs ?? 30_000;
             interval = setInterval(() => {
-                saveProject();
+                // Fire-and-forget: saveProject notifies the user itself on failure.
+                void saveProject();
             }, intervalMs);
         };
 
