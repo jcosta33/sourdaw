@@ -1,0 +1,21 @@
+src/modules/Arrangement/useCases/__tests__/projectTrackToLiveStrip.spec.ts
+  s_ac9b259eab20ba::t_5ea6d8025a3e69 114-125
+src/modules/Arrangement/useCases/toggleTrackState/applySoloLogic.ts
+  s_ac9b259eab20ba::t_9075cf1575af9e 30-36
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "824e4f46ab5fbfa0d03eed88db08a01af7b414d3",
+  "prompts": {},
+  "sessions": {
+    "s_ac9b259eab20ba": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8699-3865-7842-8c54-afbac6cfd266",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
