@@ -35,8 +35,8 @@ export type WasmDeviceCreateDeps = {
     deviceId: string;
     deviceType: string;
     transportSAB?: SharedArrayBuffer;
-    /** Called with the fully-loaded BuiltinDeviceNode — swap-in + rebuildChain happen here */
-    onLoaded: (finalDn: BuiltinDeviceNode) => void;
+    /** Returns false when the owner rejected and destroyed a stale loaded node. */
+    onLoaded: (finalDn: BuiltinDeviceNode) => boolean | void;
 };
 
 export type WasmDeviceDescriptor = {
@@ -151,7 +151,7 @@ const toasterDescriptor: WasmDeviceDescriptor = {
                 for (const [name, value] of pendingParams) {
                     result.setParam(name, value);
                 }
-                onLoaded({
+                const accepted = onLoaded({
                     deviceId,
                     type: deviceType,
                     nodes: [result.workletNode],
@@ -195,6 +195,9 @@ const toasterDescriptor: WasmDeviceDescriptor = {
                         destroy: result.destroy,
                     },
                 });
+                if (accepted === false) {
+                    return;
+                }
                 getAudioDeviceRuntimeSink().emitDeviceLoaded({ deviceId, deviceType });
                 return;
             })
@@ -235,7 +238,7 @@ const levainDescriptor: WasmDeviceDescriptor = {
                 for (const [name, value] of pendingParams) {
                     result.setParam(name, value);
                 }
-                onLoaded({
+                const accepted = onLoaded({
                     deviceId,
                     type: deviceType,
                     nodes: [result.workletNode],
@@ -270,6 +273,9 @@ const levainDescriptor: WasmDeviceDescriptor = {
                         destroy: result.destroy,
                     },
                 });
+                if (accepted === false) {
+                    return;
+                }
                 getAudioDeviceRuntimeSink().registerLevainDevice({
                     deviceId,
                     device: {
@@ -677,7 +683,7 @@ const grandBouleDescriptor: WasmDeviceDescriptor = {
                 for (const [name, value] of pendingParams) {
                     result.setParam(name, value);
                 }
-                onLoaded({
+                const accepted = onLoaded({
                     deviceId,
                     type: deviceType,
                     nodes: [result.workletNode],
@@ -714,6 +720,9 @@ const grandBouleDescriptor: WasmDeviceDescriptor = {
                         destroy: result.destroy,
                     },
                 });
+                if (accepted === false) {
+                    return;
+                }
                 getAudioDeviceRuntimeSink().emitDeviceLoaded({ deviceId, deviceType });
                 return;
             })
@@ -768,7 +777,7 @@ const faustDescriptor: WasmDeviceDescriptor = {
                         controls.keyOff?.(event.channel, event.pitch, event.velocity, event.time);
                     }
                 }
-                onLoaded({
+                const accepted = onLoaded({
                     deviceId,
                     type: deviceType,
                     nodes: result.nodes,
@@ -782,6 +791,9 @@ const faustDescriptor: WasmDeviceDescriptor = {
                         destroy: controls.destroy,
                     },
                 });
+                if (accepted === false) {
+                    return;
+                }
                 getAudioDeviceRuntimeSink().emitDeviceLoaded({ deviceId, deviceType });
                 return;
             })

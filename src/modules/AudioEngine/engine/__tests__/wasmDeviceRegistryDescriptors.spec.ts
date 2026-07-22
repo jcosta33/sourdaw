@@ -178,6 +178,16 @@ describe('wasmDeviceRegistry descriptors', () => {
             expect(loaded.toasterControls?.cancelScheduled).toBe(result.cancelScheduled);
             expect(loaded.toasterControls?.allNotesOff).toBe(result.allNotesOff);
             expect(loaded.toasterControls?.setFillActive).toBe(result.setFillActive);
+
+            emitDeviceLoaded.mockClear();
+            const rejectedDeps = createDeps({
+                deviceType: 'toaster',
+                deviceId: 'toast-late',
+                onLoaded: vi.fn(() => false),
+            });
+            await requireDescriptor('toaster').create(rejectedDeps).loadPromise;
+
+            expect(emitDeviceLoaded).not.toHaveBeenCalled();
         });
 
         it('emits device-removed (not a bare store delete) when the loaded controller is destroyed', async () => {
@@ -250,6 +260,18 @@ describe('wasmDeviceRegistry descriptors', () => {
                 port: result.workletNode.port,
             });
             expect(setLevainEngineReady).toHaveBeenCalledWith({ deviceId: 'lev-1', isReady: true });
+
+            registerLevainDevice.mockClear();
+            setLevainEngineReady.mockClear();
+            const rejectedDeps = createDeps({
+                deviceType: 'levain',
+                deviceId: 'lev-late',
+                onLoaded: vi.fn(() => false),
+            });
+            await requireDescriptor('levain').create(rejectedDeps).loadPromise;
+
+            expect(registerLevainDevice).not.toHaveBeenCalled();
+            expect(setLevainEngineReady).not.toHaveBeenCalled();
         });
 
         it('reflects a post-ready worklet fault into engineReady=false', async () => {

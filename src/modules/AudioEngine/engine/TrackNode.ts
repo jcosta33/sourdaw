@@ -23,6 +23,7 @@ export type TrackNodeDeps = {
 };
 
 type PendingDeviceLoad = {
+    bypassed?: boolean;
     parameterWrites: Array<[string, number]>;
     loadPromise?: Promise<unknown>;
     resolved: boolean;
@@ -361,7 +362,7 @@ export class TrackNode {
         deviceId: string,
         pendingLoad: PendingDeviceLoad,
         finalDn: BuiltinDeviceNode
-    ): void {
+    ): boolean {
         const isCurrentLoad = this._pendingDeviceLoads.get(deviceId) === pendingLoad;
         const index = this.strip.deviceNodes.findIndex((device) => device.deviceId === deviceId);
         if (this._disposed || !isCurrentLoad || pendingLoad.resolved || index === -1) {
@@ -369,16 +370,21 @@ export class TrackNode {
                 this.invalidatePendingDeviceLoad(deviceId);
             }
             this.destroyDeviceNode(finalDn);
-            return;
+            return false;
         }
 
         pendingLoad.resolved = true;
         for (const [name, value] of pendingLoad.parameterWrites) {
             finalDn.controller?.setParam(name, value);
         }
+        if (pendingLoad.bypassed !== undefined) {
+            finalDn.controller?.setBypass?.(pendingLoad.bypassed);
+            finalDn.bypassed = pendingLoad.bypassed;
+        }
         pendingLoad.parameterWrites.length = 0;
         this.strip.deviceNodes[index] = finalDn;
         this.scheduleRebuildChain();
+        return true;
     }
 
     private destroyDeviceNode(device: BuiltinDeviceNode): void {
@@ -515,15 +521,11 @@ export class TrackNode {
                     deviceId,
                     deviceType,
                     transportSAB: this.deps.transportSAB,
-                    onLoaded: (finalDn) => {
-                        this.completePendingDeviceLoad(deviceId, pendingLoad, finalDn);
-                    },
+                    onLoaded: (finalDn) => this.completePendingDeviceLoad(deviceId, pendingLoad, finalDn),
                 });
-                placeholder.controller = this.createPlaceholderController(
-                    deviceId,
-                    pendingLoad,
-                    placeholder.controller
-                );
+                if (!placeholder.controller) {
+                    placeholder.controller = this.createPlaceholderController(deviceId, pendingLoad);
+                }
                 dn = placeholder;
                 this.registerPendingDeviceLoad(deviceId, pendingLoad, loadPromise);
             }
@@ -594,6 +596,10 @@ export class TrackNode {
         const dn = this.strip.deviceNodes.find((d) => d.deviceId === deviceId);
         if (!dn) {
             return;
+        }
+        const pendingLoad = this._pendingDeviceLoads.get(deviceId);
+        if (pendingLoad && !pendingLoad.resolved) {
+            pendingLoad.bypassed = bypassed;
         }
         dn.controller?.setBypass?.(bypassed);
         // WASM instruments (Fermenter / Grand Boule / Levain) keep their worklet
