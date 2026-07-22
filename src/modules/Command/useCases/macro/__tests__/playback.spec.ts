@@ -264,4 +264,144 @@ describe('playMacro', () => {
         // The stored macro keeps its recorded ids — replay never mutates it.
         expect(macroStore.value?.macros[0]?.actions).toEqual(markerMacro.actions);
     });
+
+    it('regenerates recorded track-alternative IDs and remaps references on every playback', async () => {
+        // Batch 5 put caller-minted alternativeIds on createTrackAlternative
+        // payloads for undo. Replaying a recorded macro twice must mint fresh
+        // ids per playback, or both plays share one alternative id (duplicate
+        // React keys; delete/undo would hit both plays' alternatives).
+        const alternativeMacro: Macro = {
+            id: 'alternatives-1',
+            name: 'Alternative steps',
+            actions: [
+                {
+                    type: 'createTrackAlternative',
+                    payload: { trackId: 't1', name: 'Take 2', duplicateActive: false, alternativeId: 'recorded-alt' },
+                },
+                {
+                    type: 'renameTrackAlternative',
+                    payload: { trackId: 't1', alternativeId: 'recorded-alt', name: 'Take 2 (final)' },
+                },
+                {
+                    type: 'switchTrackAlternative',
+                    payload: { trackId: 't1', alternativeId: 'recorded-alt' },
+                },
+            ],
+            createdAt: 0,
+        };
+        macroStore.set({ macros: [alternativeMacro], recording: false, currentRecording: [] });
+        let generatedId = 0;
+        executeAppActionMock.mockImplementation((action) => {
+            if (action.type === 'createTrackAlternative' && action.payload.alternativeId === undefined) {
+                generatedId += 1;
+                action.payload.alternativeId = `replayed-alt-${String(generatedId)}`;
+            }
+            return Promise.resolve();
+        });
+
+        await playMacro('alternatives-1');
+        await playMacro('alternatives-1');
+
+        expect(executeAppActionMock.mock.calls.map(([action]) => action)).toEqual([
+            {
+                type: 'createTrackAlternative',
+                payload: { trackId: 't1', name: 'Take 2', duplicateActive: false, alternativeId: 'replayed-alt-1' },
+            },
+            {
+                type: 'renameTrackAlternative',
+                payload: { trackId: 't1', alternativeId: 'replayed-alt-1', name: 'Take 2 (final)' },
+            },
+            { type: 'switchTrackAlternative', payload: { trackId: 't1', alternativeId: 'replayed-alt-1' } },
+            {
+                type: 'createTrackAlternative',
+                payload: { trackId: 't1', name: 'Take 2', duplicateActive: false, alternativeId: 'replayed-alt-2' },
+            },
+            {
+                type: 'renameTrackAlternative',
+                payload: { trackId: 't1', alternativeId: 'replayed-alt-2', name: 'Take 2 (final)' },
+            },
+            { type: 'switchTrackAlternative', payload: { trackId: 't1', alternativeId: 'replayed-alt-2' } },
+        ]);
+        expect(macroStore.value?.macros[0]?.actions).toEqual(alternativeMacro.actions);
+    });
+
+    it('remaps fallbackAlternativeId on recorded deleteTrackAlternative payloads (revertAction-recorded create inverse)', async () => {
+        // revertAction replays a create's undo inverse without
+        // skipMacroRecording, so a recorded macro can contain a
+        // deleteTrackAlternative whose fallbackAlternativeId references another
+        // recorded create's id. Replay must remap both references or the delete
+        // degrades to the first-in-list fallback and restores the wrong active
+        // alternative.
+        const inverseMacro: Macro = {
+            id: 'alternatives-inverse-1',
+            name: 'Alternative inverse steps',
+            actions: [
+                {
+                    type: 'createTrackAlternative',
+                    payload: { trackId: 't1', name: 'Take 1', duplicateActive: false, alternativeId: 'recorded-alt-a' },
+                },
+                {
+                    type: 'createTrackAlternative',
+                    payload: { trackId: 't1', name: 'Take 2', duplicateActive: false, alternativeId: 'recorded-alt-b' },
+                },
+                {
+                    type: 'deleteTrackAlternative',
+                    payload: {
+                        trackId: 't1',
+                        alternativeId: 'recorded-alt-b',
+                        fallbackAlternativeId: 'recorded-alt-a',
+                    },
+                },
+            ],
+            createdAt: 0,
+        };
+        macroStore.set({ macros: [inverseMacro], recording: false, currentRecording: [] });
+        let generatedId = 0;
+        executeAppActionMock.mockImplementation((action) => {
+            if (action.type === 'createTrackAlternative' && action.payload.alternativeId === undefined) {
+                generatedId += 1;
+                action.payload.alternativeId = `replayed-alt-${String(generatedId)}`;
+            }
+            return Promise.resolve();
+        });
+
+        await playMacro('alternatives-inverse-1');
+        await playMacro('alternatives-inverse-1');
+
+        expect(executeAppActionMock.mock.calls.map(([action]) => action)).toEqual([
+            {
+                type: 'createTrackAlternative',
+                payload: { trackId: 't1', name: 'Take 1', duplicateActive: false, alternativeId: 'replayed-alt-1' },
+            },
+            {
+                type: 'createTrackAlternative',
+                payload: { trackId: 't1', name: 'Take 2', duplicateActive: false, alternativeId: 'replayed-alt-2' },
+            },
+            {
+                type: 'deleteTrackAlternative',
+                payload: {
+                    trackId: 't1',
+                    alternativeId: 'replayed-alt-2',
+                    fallbackAlternativeId: 'replayed-alt-1',
+                },
+            },
+            {
+                type: 'createTrackAlternative',
+                payload: { trackId: 't1', name: 'Take 1', duplicateActive: false, alternativeId: 'replayed-alt-3' },
+            },
+            {
+                type: 'createTrackAlternative',
+                payload: { trackId: 't1', name: 'Take 2', duplicateActive: false, alternativeId: 'replayed-alt-4' },
+            },
+            {
+                type: 'deleteTrackAlternative',
+                payload: {
+                    trackId: 't1',
+                    alternativeId: 'replayed-alt-4',
+                    fallbackAlternativeId: 'replayed-alt-3',
+                },
+            },
+        ]);
+        expect(macroStore.value?.macros[0]?.actions).toEqual(inverseMacro.actions);
+    });
 });

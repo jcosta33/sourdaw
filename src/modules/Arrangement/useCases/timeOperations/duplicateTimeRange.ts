@@ -1,3 +1,5 @@
+import { duplicateClipNotes } from '#/modules/MIDI/useCases';
+
 import { getTrackState } from '../../repositories/track/getTrackState';
 import { setTrackState } from '../../repositories/track/setTrackState';
 
@@ -12,6 +14,8 @@ export function duplicateTimeRange(startBeat: number, endBeat: number): void {
         return;
     }
 
+    const duplicatedNoteSources: Array<{ sourceClipId: string; newClipId: string }> = [];
+
     setTrackState({
         ...state,
         tracks: state.tracks.map((track) => {
@@ -21,13 +25,26 @@ export function duplicateTimeRange(startBeat: number, endBeat: number): void {
                     context.endBeat <= endBeat + duration &&
                     context.startBeat < endBeat
             );
-            const duplicated = clipsInRange.map((context) => ({
-                ...context,
-                id: `clip-dup-${crypto.randomUUID()}`,
-                startBeat: context.startBeat + duration,
-                endBeat: context.endBeat + duration,
-            }));
+            const duplicated = clipsInRange.map((context) => {
+                const newClipId = `clip-dup-${crypto.randomUUID()}`;
+                if (context.type === 'midi') {
+                    duplicatedNoteSources.push({ sourceClipId: context.id, newClipId });
+                }
+                return {
+                    ...context,
+                    id: newClipId,
+                    startBeat: context.startBeat + duration,
+                    endBeat: context.endBeat + duration,
+                };
+            });
             return { ...track, clips: [...track.clips, ...duplicated] };
         }),
     });
+
+    // MIDI notes are keyed by clip id — duplicating the rectangle without the
+    // notes produced silent clips (ledger M-023). Notes are clip-relative, so
+    // a verbatim copy lands at the same relative position in the duplicate.
+    for (const { sourceClipId, newClipId } of duplicatedNoteSources) {
+        duplicateClipNotes(sourceClipId, newClipId);
+    }
 }

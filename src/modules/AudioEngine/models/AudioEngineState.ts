@@ -68,6 +68,8 @@ export type BuiltinDeviceNode = {
     nodes: AudioNode[];
     inputNode: AudioNode;
     outputNode: AudioNode;
+    /** Treat a stable proxy as a source even though GainNode accepts input. */
+    isGenerator?: boolean;
     bypassed?: boolean;
     /** Stop oscillators and release resources when the device is removed. */
     dispose?: () => void;

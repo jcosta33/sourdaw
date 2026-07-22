@@ -24,5 +24,10 @@ export function createDistortion(ctx: BaseAudioContext): OfflineDeviceNode {
     outputLevel.connect(wet);
     dry.connect(merger);
     wet.connect(merger);
-    return { inputNode: splitter, outputNode: merger, nodes: [splitter, dry, wet, shaper, tone, merger, outputLevel] };
+    return {
+        inputNode: splitter,
+        outputNode: merger,
+        nodes: [splitter, dry, wet, shaper, tone, merger, outputLevel],
+        namedNodes: { splitter, dry, wet, shaper, tone, merger, outputLevel },
+    };
 }

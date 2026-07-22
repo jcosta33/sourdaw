@@ -115,6 +115,7 @@ export function pasteClip(): boolean {
                 name: `${entry.clip.name} (paste)`,
                 type: entry.clip.type,
                 audioBufferId: entry.clip.audioBufferId,
+                midiOffsetBeats: entry.clip.midiOffsetBeats,
             });
 
             if (!newClip) {
