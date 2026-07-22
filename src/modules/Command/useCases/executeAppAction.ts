@@ -1,6 +1,7 @@
 import { inject } from '#/infra/di/inject';
 import { logger } from '#/infra/logger/appLogger';
 import {
+    AutomergeStorageTransactionCommittedError,
     runWithAutomergeStorageTransaction,
     waitForAutomergeSnapshotTransaction,
 } from '#/infra/store/storage/createAutomergeStorage';
@@ -58,12 +59,28 @@ export const executeAppAction: ExecuteAppAction = inject({ logger })(
             });
 
             let execution_result: HandlerExecutionResult | void;
+            const storage_transaction = runWithAutomergeStorageTransaction(options?.snapshotTransaction, () =>
+                handler.execute(action)
+            );
+            if (storage_transaction.status === 'threw') {
+                storage_transaction.abort();
+                const error = storage_transaction.error;
+                try {
+                    clearSemanticContext();
+                } catch (clear_error) {
+                    logger.error(
+                        new Error(`Semantic context cleanup failed for action: ${action.type}`, {
+                            cause: clear_error,
+                        })
+                    );
+                }
+                logger.error(new Error(`Action handler rejected for action: ${action.type}`, { cause: error }));
+                throw error;
+            }
             try {
-                const execution = runWithAutomergeStorageTransaction(options?.snapshotTransaction, () =>
-                    handler.execute(action)
-                );
-                execution_result = await execution;
+                execution_result = await storage_transaction.value;
             } catch (error) {
+                storage_transaction.abort();
                 try {
                     clearSemanticContext();
                 } catch (clear_error) {
@@ -78,12 +95,36 @@ export const executeAppAction: ExecuteAppAction = inject({ logger })(
             }
 
             if (execution_result?.status === 'no-write') {
+                storage_transaction.abort();
                 clearSemanticContext();
                 return;
             }
             if (execution_result?.status === 'conflict') {
+                storage_transaction.abort();
                 clearSemanticContext();
                 throw new AppActionConflictError(action.type);
+            }
+
+            try {
+                storage_transaction.commit();
+            } catch (error) {
+                storage_transaction.abort();
+                try {
+                    clearSemanticContext();
+                } catch (clear_error) {
+                    logger.error(
+                        new Error(`Semantic context cleanup failed for action: ${action.type}`, {
+                            cause: clear_error,
+                        })
+                    );
+                }
+                if (error instanceof AutomergeStorageTransactionCommittedError) {
+                    const committed_error = new AppActionCommittedError(action.type, error.cause);
+                    logger.error(committed_error);
+                    throw committed_error;
+                }
+                logger.error(new Error(`Action storage commit failed for action: ${action.type}`, { cause: error }));
+                throw error;
             }
 
             try {
