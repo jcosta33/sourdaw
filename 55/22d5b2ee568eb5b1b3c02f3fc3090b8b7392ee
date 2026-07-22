@@ -1,0 +1,37 @@
+src/modules/Transport/useCases/__tests__/ensureTrackStrips.spec.ts
+  s_ac9b259eab20ba::t_0ee9cd7d1ef92c 186,209
+  s_ac9b259eab20ba::t_a5b06d1e2a696d 22-27,126-133,162,179-183,203-206,226-229
+src/modules/Arrangement/useCases/projectTrackToLiveStrip.ts
+  s_ac9b259eab20ba::t_b6fffa2fb15d44 54
+  s_ac9b259eab20ba::t_d1ec9f8e6ac80f 1-45,47-53,55-94
+  s_ac9b259eab20ba::t_45475a0a433a2f 46
+src/modules/Arrangement/stores/__tests__/deviceWriteBoundaryClosure.spec.ts
+  s_ac9b259eab20ba::t_3ad2b5dfd7efb8 63,112
+  s_ac9b259eab20ba::t_4961fca83e1d36 266,285
+src/modules/Arrangement/useCases/__tests__/projectTrackToLiveStrip.spec.ts
+  s_ac9b259eab20ba::t_1f6abd70c445de 1-50,53-54,56-69,71-74,77-91,93-103,133-148
+  s_ac9b259eab20ba::t_b6fffa2fb15d44 51-52,70,75-76
+  s_ac9b259eab20ba::t_98fef74dcf91a4 55
+  s_ac9b259eab20ba::t_fc599b920655e2 92,104-132
+src/modules/Arrangement/useCases/index.ts
+  s_ac9b259eab20ba::t_d1ec9f8e6ac80f 19
+src/modules/Transport/useCases/ensureTrackStrips.ts
+  s_ac9b259eab20ba::t_d1ec9f8e6ac80f 27
+  s_ac9b259eab20ba::t_a5b06d1e2a696d 8-10
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "5522d5b2ee568eb5b1b3c02f3fc3090b8b7392ee",
+  "prompts": {},
+  "sessions": {
+    "s_ac9b259eab20ba": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8699-3865-7842-8c54-afbac6cfd266",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
