@@ -3,34 +3,54 @@ import { createHandler } from '#/utils/createHandler';
 import { addAutomationLane } from '../../useCases/automation/addAutomationLane';
 import { getAutomationStoreState } from '../../useCases/getAutomationStoreState';
 
+type AddAutomationLaneAction = {
+    payload: { trackId: string; parameterId: string; parameterName: string; laneId?: string };
+};
+
+function ensureLaneId(action: AddAutomationLaneAction): string {
+    if (action.payload.laneId) {
+        return action.payload.laneId;
+    }
+    const laneId = `auto-${crypto.randomUUID()}`;
+    action.payload.laneId = laneId;
+    return laneId;
+}
+
+function isAddAutomationLaneNoop(action: AddAutomationLaneAction): boolean {
+    const state = getAutomationStoreState();
+    return (
+        state?.lanes.some(
+            (lane) =>
+                (action.payload.laneId !== undefined && lane.id === action.payload.laneId) ||
+                (!lane.clipId &&
+                    lane.trackId === action.payload.trackId &&
+                    lane.parameterId === action.payload.parameterId)
+        ) ?? false
+    );
+}
+
 export const handleAddAutomationLane = createHandler<'addAutomationLane'>({
     execute: (action) => {
-        addAutomationLane(action.payload.trackId, action.payload.parameterId, action.payload.parameterName);
+        addAutomationLane(
+            action.payload.trackId,
+            action.payload.parameterId,
+            action.payload.parameterName,
+            ensureLaneId(action)
+        );
     },
-    // Runs PRE-execute (see executeAppAction). The inverse of adding a lane is
-    // removing it, keyed by track-scoped `(trackId, parameterId)` — the generated lane id is
-    // not yet known here. `addAutomationLane` bails when a lane already exists for
-    // that pair, so when one is present execute is a no-op and we omit the inverse
-    // rather than emit one that would delete the user's pre-existing lane on undo.
     describe: (action) => {
         const label = `Add automation: ${action.payload.parameterName}`;
-        const state = getAutomationStoreState();
-        const alreadyExists = state?.lanes.some(
-            (lane) =>
-                !lane.clipId &&
-                lane.trackId === action.payload.trackId &&
-                lane.parameterId === action.payload.parameterId
-        );
-        if (alreadyExists) {
+        if (isAddAutomationLaneNoop(action)) {
             return { label };
         }
         return {
             label,
             inverseAction: {
                 type: 'removeAutomationLane',
-                payload: { trackId: action.payload.trackId, parameterId: action.payload.parameterId },
+                payload: { laneId: ensureLaneId(action) },
             },
         };
     },
+    isNoop: isAddAutomationLaneNoop,
     undoable: true,
 });

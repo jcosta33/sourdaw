@@ -300,15 +300,16 @@ export type AppAction =
     | { type: 'addSection'; payload: { startBeat: number; endBeat: number; name: string } }
     | { type: 'removeSection'; payload: { sectionId: string } }
     | { type: 'renameSection'; payload: { sectionId: string; name: string } }
-    | { type: 'addAutomationLane'; payload: { trackId: string; parameterId: string; parameterName: string } }
     | {
-          /** Inverse of `addAutomationLane`. Keyed by `(trackId, parameterId)` — the
-           *  identity a lane is created under — because the generated lane id is not
-           *  known when the inverse is captured (pre-execute). Emitted only by the
-           *  `addAutomationLane` handler's `describe()`. Keep mirrored in
+          type: 'addAutomationLane';
+          payload: { trackId: string; parameterId: string; parameterName: string; laneId?: string };
+      }
+    | {
+          /** Inverse of `addAutomationLane`, keyed by the exact id allocated before
+           *  execute. Emitted only by the `addAutomationLane` handler's `describe()`. Keep mirrored in
            *  src/utils/handlerContract.ts and AiRuntime/models/RuntimeAction.ts. */
           type: 'removeAutomationLane';
-          payload: { trackId: string; parameterId: string };
+          payload: { laneId: string };
       }
     | {
           type: 'addAutomationPoint';

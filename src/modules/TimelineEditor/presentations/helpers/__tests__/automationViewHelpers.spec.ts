@@ -63,6 +63,18 @@ describe('getAutomatableParams', () => {
         ]);
     });
 
+    it('exposes canonical targets for legacy device names and suppresses a bare equivalent lane', () => {
+        const devices = [{ id: 'crumbs-1', type: 'cRuMbS', name: 'Sampler' }];
+
+        const available = getAutomatableParams('track-1', devices);
+        expect(available).toContainEqual(
+            expect.objectContaining({ id: 'crumbs-1:masterGain', name: 'Sampler → Gain' })
+        );
+
+        const filtered = getAutomatableParams('track-1', devices, [{ parameterId: 'masterGain' }]);
+        expect(filtered.some((param) => param.id === 'crumbs-1:masterGain')).toBe(false);
+    });
+
     it.each([
         ['unique legacy', [device('levain')], [levainLane], levainTarget, false],
         ['ambiguous legacy', [device('levain'), device('levain', 2)], [levainLane], levainTarget, true],

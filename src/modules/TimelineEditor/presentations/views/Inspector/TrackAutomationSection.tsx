@@ -7,14 +7,13 @@ import { DawHeaderBand } from '#/components/daw/DawHeaderBand';
 import { DawMenuSectionLabel, DawMenuSeparator } from '#/components/daw/DawMenuParts';
 import { Button } from '#/components/ui/button';
 import { useStore } from '#/infra/store/useStore';
-import { getBuiltinPlugins } from '#/modules/Arrangement/useCases';
 import { automationStore } from '#/modules/Automation/stores';
 import { addAutomationLane, toggleAutomationVisibility, removeAutomationLane } from '#/modules/Automation/useCases';
 import { createDeviceAutomationTargetId } from '#/utils/automationDeviceTarget';
 
 import { type Track } from '../../../models/TrackViewTypes';
 import { SurfaceCard } from '../../components/Inspector/SurfaceCard';
-import { findEquivalentAutomationLane } from '../../helpers/automationViewHelpers';
+import { findAutomationDeviceDescriptor, findEquivalentAutomationLane } from '../../helpers/automationViewHelpers';
 
 type TrackAutomationSectionProps = {
     track: Track;
@@ -104,13 +103,7 @@ export const TrackAutomationSection = ({ track }: TrackAutomationSectionProps): 
                                     <>
                                         <DawMenuSeparator />
                                         {track.devices.map((device) => {
-                                            const builtinPlugins = getBuiltinPlugins();
-                                            const plugin =
-                                                builtinPlugins.find((candidate) => candidate.id === device.type) ??
-                                                builtinPlugins.find(
-                                                    (candidate) =>
-                                                        candidate.name.toLowerCase() === device.type.toLowerCase()
-                                                );
+                                            const plugin = findAutomationDeviceDescriptor(device.type);
                                             if (!plugin) {
                                                 return null;
                                             }

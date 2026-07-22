@@ -175,7 +175,7 @@ describe('automation transform handlers — execute → undo restores pre-state'
         });
     }
 
-    it('handleAddAutomationLane: undo removes the added lane', () => {
+    it('handleAddAutomationLane: undo removes only its allocated lane under a duplicate target', () => {
         automationStore.set({ lanes: [] });
         const action = {
             type: 'addAutomationLane' as const,
@@ -184,19 +184,26 @@ describe('automation transform handlers — execute → undo restores pre-state'
         const describeResult = handleAddAutomationLane.describe(action);
         void handleAddAutomationLane.execute(action);
 
-        // The lane now exists.
-        expect(automationStore.value!.lanes.some((l) => l.trackId === 't9' && l.parameterId === 'pan')).toBe(true);
-
-        // The handler emitted a real inverse (was null — inert no-op).
         const inverse = describeResult.inverseAction;
-        expect(inverse).toBeTruthy();
-        expect(inverse!.type).toBe('removeAutomationLane');
+        expect(inverse?.type).toBe('removeAutomationLane');
+        if (inverse?.type !== 'removeAutomationLane') {
+            throw new Error('Expected removeAutomationLane inverse');
+        }
+        expect(inverse.payload).toEqual({ laneId: expect.any(String) });
+        expect(action.payload).toHaveProperty('laneId', inverse.payload.laneId);
 
-        // Replaying the inverse removes the lane the action added.
-        const lane = automationStore.value!.lanes.find((l) => l.trackId === 't9' && l.parameterId === 'pan')!;
-        // The restore handler resolves by id; mirror that here.
-        automationStore.set({ lanes: automationStore.value!.lanes.filter((l) => l.id !== lane.id) });
-        expect(automationStore.value!.lanes.some((l) => l.trackId === 't9' && l.parameterId === 'pan')).toBe(false);
+        const addedLane = automationStore.value!.lanes[0]!;
+        expect(addedLane.id).toBe(inverse.payload.laneId);
+
+        const concurrentLane = {
+            ...createAutomationLane('t9', 'pan', 'Concurrent pan'),
+            id: 'concurrent-lane',
+        };
+        automationStore.set({ lanes: [...automationStore.value!.lanes, concurrentLane] });
+
+        void handleRemoveAutomationLane.execute(inverse);
+
+        expect(automationStore.value?.lanes).toEqual([concurrentLane]);
     });
 
     it('handleAddAutomationLane: omits the inverse when the lane already exists (no-op execute)', () => {
