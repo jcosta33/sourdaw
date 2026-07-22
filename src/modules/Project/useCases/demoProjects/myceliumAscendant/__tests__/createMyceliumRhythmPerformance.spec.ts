@@ -66,6 +66,9 @@ describe('createMyceliumRhythmPerformance', () => {
         expect(clips.length).toBeLessThan(60);
         expect(notes.length).toBeGreaterThanOrEqual(1400);
         expect(notes.length).toBeLessThan(2000);
+        expect(
+            notes.every((note) => Number.isInteger(note.velocity) && note.velocity >= 1 && note.velocity <= 127)
+        ).toBe(true);
         expect(clips.every((clip) => (first.midi.notesByClipId[clip.id]?.length ?? 0) > 0)).toBe(true);
         expect(
             clips.every((clip) =>
