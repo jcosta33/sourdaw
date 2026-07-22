@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-import { trackStore } from '#/modules/Arrangement/stores';
-import { updateDeviceParam } from '#/modules/AudioEngine/useCases';
+import { resolveEligibleDeviceWriteTarget, trackStore } from '#/modules/Arrangement/stores';
+import { setTrackGain, setTrackPan, updateDeviceParam, updateMidiFxParam } from '#/modules/AudioEngine/useCases';
 import { automationStore } from '#/modules/Automation/stores';
 import { getAutomationValueAtBeat, isRecordingAutomation } from '#/modules/Automation/useCases';
 import { setFermenterMappedParam } from '#/modules/Fermenter/useCases';
@@ -16,19 +16,23 @@ vi.mock('#/modules/Arrangement/stores', async (importOriginal) => {
     return {
         ...mod,
         trackStore,
-        resolveEligibleDeviceWriteTarget: (deviceId: string) => {
-            const track = trackStore.value?.tracks.find((candidate) =>
+        resolveEligibleDeviceWriteTarget: vi.fn((deviceId: string) => {
+            const owners = trackStore.value?.tracks.filter((candidate) =>
                 candidate.devices.some((device) => device.id === deviceId)
             );
-            if (!track) {
+            if (!owners || owners.length === 0) {
                 return { status: 'missing' };
             }
+            if (owners.length !== 1) {
+                return { status: 'ineligible' };
+            }
+            const track = owners[0]!;
             const runtimeKind: unknown = Reflect.get(track, 'kind');
             if (runtimeKind === 'vca') {
                 return { status: 'ineligible' };
             }
             return { status: 'eligible', trackId: track.id, deviceId };
-        },
+        }),
     };
 });
 vi.mock('#/modules/Automation/stores', async (importOriginal) => {
@@ -70,31 +74,34 @@ type MutableAutomationStore = { value: { lanes: unknown[] } };
 const mutableTrackStore = trackStore as unknown as MutableTrackStore;
 const mutableAutomationStore = automationStore as unknown as MutableAutomationStore;
 
+type SeedDevice = {
+    id: string;
+    type: string;
+    parameterValues: Record<string, number>;
+};
+
+const EQ_A = { id: 'eq-a', type: 'builtin-eq', parameterValues: { 'eq-low-gain': 0 } };
+const EQ_B = { id: 'eq-b', type: 'builtin-eq', parameterValues: { 'eq-low-gain': 0 } };
+const GAIN_A = { id: 'gain-a', type: 'builtin-gain', parameterValues: { 'gain-level': 0 } };
+const SPARSE_EQ_B = { ...EQ_B, parameterValues: {} };
+type TargetCase = [string, string, SeedDevice[], string?];
+
 function seedDeviceLane(options: {
-    deviceType: string;
-    deviceId: string;
-    bareParamId: string;
+    devices: SeedDevice[];
     laneParameterId: string;
     trackKind?: string;
+    duplicateOwner?: boolean;
 }): void {
-    mutableTrackStore.value = {
-        tracks: [
-            {
-                id: 'track-1',
-                kind: options.trackKind ?? 'audio',
-                automationMode: 'read',
-                clips: [],
-                midiFx: [],
-                devices: [
-                    {
-                        id: options.deviceId,
-                        type: options.deviceType,
-                        parameterValues: { [options.bareParamId]: 0 },
-                    },
-                ],
-            },
-        ],
+    const track = {
+        id: 'track-1',
+        kind: options.trackKind ?? 'audio',
+        automationMode: 'read',
+        clips: [],
+        midiFx: options.duplicateOwner ? [{ id: 'midi-fx', parameterValues: { 'eq-low-gain': 0 } }] : [],
+        devices: options.devices,
     };
+    const tracks = options.duplicateOwner ? [track, { ...track, id: 'track-2', midiFx: [] }] : [track];
+    mutableTrackStore.value = { tracks };
     mutableAutomationStore.value = {
         lanes: [
             {
@@ -121,16 +128,10 @@ describe('applyAutomation', () => {
         expect(typeof applyAutomation).toBe('function');
     });
 
-    it('routes a prefixed Fermenter param lane through the mapped use-case with the bare param id', () => {
-        // Regression: automation lanes carry `${device.type}:${paramId}`
-        // (`fermenter:filterCutoff`), while `parameterValues` is keyed by the
-        // bare id (`filterCutoff`). Before the fix the prefixed lookup was
-        // undefined, so the device branch never fired and the param was a no-op.
+    it('routes a canonical Fermenter lane through the mapped use-case with the bare param id', () => {
         seedDeviceLane({
-            deviceType: 'fermenter',
-            deviceId: 'device-f1',
-            bareParamId: 'filterCutoff',
-            laneParameterId: 'fermenter:filterCutoff',
+            devices: [{ id: 'device-f1', type: 'fermenter', parameterValues: { filterCutoff: 0 } }],
+            laneParameterId: 'device-f1:filterCutoff',
         });
 
         // The per-param exponential slew only dispatches once the smoothed value
@@ -156,9 +157,7 @@ describe('applyAutomation', () => {
         // Fermenter — a builtin EQ band lane must reach updateDeviceParam with the
         // bare param id, never the prefixed `builtin-eq:eq-low-gain`.
         seedDeviceLane({
-            deviceType: 'builtin-eq',
-            deviceId: 'device-eq1',
-            bareParamId: 'eq-low-gain',
+            devices: [{ id: 'device-eq1', type: 'builtin-eq', parameterValues: { 'eq-low-gain': 0 } }],
             laneParameterId: 'builtin-eq:eq-low-gain',
         });
 
@@ -171,11 +170,39 @@ describe('applyAutomation', () => {
         expect(setFermenterMappedParam).not.toHaveBeenCalled();
     });
 
+    it.each<TargetCase>([
+        ['canonical duplicate type', 'eq-b:eq-low-gain', [EQ_A, EQ_B], 'eq-b'],
+        ['unique bare', 'eq-low-gain', [EQ_A, GAIN_A], 'eq-a'],
+        ['ambiguous type', 'builtin-eq:eq-low-gain', [EQ_A, EQ_B]],
+        ['sparse duplicate type', 'builtin-eq:eq-low-gain', [EQ_A, SPARSE_EQ_B]],
+        ['ambiguous bare', 'eq-low-gain', [EQ_A, EQ_B]],
+        ['wrong canonical owner', 'gain-a:eq-low-gain', [EQ_A, GAIN_A]],
+        ['track gain', 'gain', [], 'gain'],
+        ['track pan', 'pan', [], 'pan'],
+        ['duplicate owner MIDI collision', 'eq-low-gain', [EQ_A], 'midi'],
+    ])('resolves %s target safely', (_name, laneParameterId, devices, expectedTarget) => {
+        seedDeviceLane({ devices, laneParameterId, duplicateOwner: expectedTarget === 'midi' });
+        vi.mocked(getAutomationValueAtBeat).mockReturnValueOnce(0).mockReturnValue(0.75);
+        applyAutomation(0);
+        applyAutomation(1);
+
+        if (expectedTarget === 'gain' || expectedTarget === 'pan') {
+            const setter = expectedTarget === 'gain' ? setTrackGain : setTrackPan;
+            expect(setter).toHaveBeenCalledWith('track-1', expectedTarget === 'gain' ? 0.75 : 25);
+            return;
+        }
+        if (expectedTarget && expectedTarget !== 'midi') {
+            expect(vi.mocked(updateDeviceParam).mock.calls[0]?.[1]).toBe(expectedTarget);
+            expect(resolveEligibleDeviceWriteTarget).toHaveBeenCalledTimes(2);
+            return;
+        }
+        expect(updateDeviceParam).not.toHaveBeenCalled();
+        expect(updateMidiFxParam).not.toHaveBeenCalled();
+    });
+
     it('does not send device automation for an ineligible runtime VCA owner', () => {
         seedDeviceLane({
-            deviceType: 'builtin-eq',
-            deviceId: 'forbidden-device',
-            bareParamId: 'eq-low-gain',
+            devices: [{ id: 'forbidden-device', type: 'builtin-eq', parameterValues: { 'eq-low-gain': 0 } }],
             laneParameterId: 'builtin-eq:eq-low-gain',
             trackKind: 'vca',
         });
