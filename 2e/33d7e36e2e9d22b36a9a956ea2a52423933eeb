@@ -1,0 +1,32 @@
+src/modules/AudioEngine/repositories/offlineScheduler/__tests__/automationScheduling.spec.ts
+  s_ac9b259eab20ba::t_f4f918a588f7fa 160-195,243-244,254-255,273,280-281,295,302-303
+src/modules/AudioEngine/useCases/offlineRender/__tests__/scheduleTrackClips.spec.ts
+  s_ac9b259eab20ba::t_f4f918a588f7fa 265,276,344,362-365
+  s_ac9b259eab20ba::t_20293f5677b49a 366-367
+src/modules/AudioEngine/repositories/offlineScheduler/automationScheduling.ts
+  s_ac9b259eab20ba::t_fe1dd469f53d60 35-36,46-53,58-65,83-90
+src/modules/AudioEngine/repositories/offlineScheduler/scheduleAutomationOnParam.ts
+  s_ac9b259eab20ba::t_fe1dd469f53d60 3,15-16,18-21,23
+  s_ac9b259eab20ba::t_6c785c9a9c4f16 2
+src/modules/AudioEngine/repositories/offlineScheduler/compileAutomationEvents.ts
+  s_ac9b259eab20ba::t_8c1662f7549f9d 34
+  s_ac9b259eab20ba::t_fe1dd469f53d60 1-33,35-115
+src/modules/AudioEngine/useCases/offlineRender/scheduleTrackClips.ts
+  s_ac9b259eab20ba::t_fe1dd469f53d60 243-244
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "2e33d7e36e2e9d22b36a9a956ea2a52423933eeb",
+  "prompts": {},
+  "sessions": {
+    "s_ac9b259eab20ba": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8699-3865-7842-8c54-afbac6cfd266",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
