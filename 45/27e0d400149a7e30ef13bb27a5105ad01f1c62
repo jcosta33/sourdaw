@@ -1,0 +1,19 @@
+src/modules/Arrangement/stores/__tests__/deviceWriteBoundaryClosure.spec.ts
+  s_2686e8ff2f5c45::t_4e76c8af94893f 72-78
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "4527e0d400149a7e30ef13bb27a5105ad01f1c62",
+  "prompts": {},
+  "sessions": {
+    "s_2686e8ff2f5c45": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8b3a-f120-7052-bdd4-3921e6515b0a",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
