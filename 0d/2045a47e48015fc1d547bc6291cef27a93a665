@@ -1,0 +1,24 @@
+src/modules/Arrangement/presentations/hooks/__tests__/useTimelineInteractions.spec.tsx
+  s_c2fca615e81f34::t_88d37cff54210e 356-382,387,398
+  s_c2fca615e81f34::t_f66f443067d2af 383-386,389-392
+  s_c2fca615e81f34::t_6d95da1e8a8dff 27-31,339-355,388,393-397,399-404
+  s_c2fca615e81f34::t_f520c5d4beb987 405
+src/modules/Arrangement/presentations/hooks/useTimelineInteractions.ts
+  s_c2fca615e81f34::t_8106db8a4c0a15 888-889,898-899
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "0d2045a47e48015fc1d547bc6291cef27a93a665",
+  "prompts": {},
+  "sessions": {
+    "s_c2fca615e81f34": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f74e9-e1c5-7142-85d2-4c577b3973c0",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
