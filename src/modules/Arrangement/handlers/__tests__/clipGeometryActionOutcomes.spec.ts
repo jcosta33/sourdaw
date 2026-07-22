@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { type Clip, type Track } from '../../models/Track';
+import { type Clip, type StretchMode, type Track } from '../../models/Track';
 import { handleNudgeClip } from '../clip/handleNudgeClip';
 import { handleTrimClipEnd } from '../clip/handleTrimClipEnd';
 import { handleTrimClipStart } from '../clip/handleTrimClipStart';
@@ -143,6 +143,8 @@ const geometryActions = [
     },
 ] as const;
 
+const nonFiniteNumbers = [Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY] as const;
+
 describe('clip geometry action outcomes', () => {
     let currentClip: Clip;
 
@@ -175,10 +177,88 @@ describe('clip geometry action outcomes', () => {
         expect(mocks.updateClip).toHaveBeenCalledOnce();
     });
 
-    it.each([0, -1])('fitClipToBeats rejects target %s before reaching the repository', (targetBeats) => {
-        const result = handleFitClipToBeats.execute({
-            type: 'fitClipToBeats',
-            payload: { clipId: 'clip-1', targetBeats },
+    it.each([0, -1, ...nonFiniteNumbers])(
+        'fitClipToBeats rejects target %s before reading or writing the repository',
+        (targetBeats) => {
+            const result = handleFitClipToBeats.execute({
+                type: 'fitClipToBeats',
+                payload: { clipId: 'clip-1', targetBeats },
+            });
+
+            expect(result).toEqual({ status: 'no-write' });
+            expect(mocks.getTrackState).not.toHaveBeenCalled();
+            expect(mocks.updateClip).not.toHaveBeenCalled();
+        }
+    );
+
+    it('rejects a locked nudge before the repository or dependent side owners', () => {
+        currentClip = makeClip({ locked: true });
+
+        const result = handleNudgeClip.execute({
+            type: 'nudgeClip',
+            payload: { clipId: 'clip-1', beats: 2 },
+        });
+
+        expect(result).toEqual({ status: 'no-write' });
+        expect(mocks.updateClip).not.toHaveBeenCalled();
+        expect(mocks.shiftClipMidiNotes).not.toHaveBeenCalled();
+        expect(mocks.shiftClipAutomation).not.toHaveBeenCalled();
+    });
+
+    it.each(nonFiniteNumbers)(
+        'rejects a non-finite nudge of %s before the repository or dependent side owners',
+        (beats) => {
+            const result = handleNudgeClip.execute({
+                type: 'nudgeClip',
+                payload: { clipId: 'clip-1', beats },
+            });
+
+            expect(result).toEqual({ status: 'no-write' });
+            expect(mocks.updateClip).not.toHaveBeenCalled();
+            expect(mocks.shiftClipMidiNotes).not.toHaveBeenCalled();
+            expect(mocks.shiftClipAutomation).not.toHaveBeenCalled();
+        }
+    );
+
+    it.each([4, 5, ...nonFiniteNumbers])(
+        'rejects an invalid trim start of %s before the repository',
+        (newStartBeat) => {
+            const result = handleTrimClipStart.execute({
+                type: 'trimClipStart',
+                payload: { clipId: 'clip-1', newStartBeat },
+            });
+
+            expect(result).toEqual({ status: 'no-write' });
+            expect(mocks.updateClip).not.toHaveBeenCalled();
+        }
+    );
+
+    it.each([0, -1, ...nonFiniteNumbers])('rejects an invalid trim end of %s before the repository', (newEndBeat) => {
+        const result = handleTrimClipEnd.execute({
+            type: 'trimClipEnd',
+            payload: { clipId: 'clip-1', newEndBeat },
+        });
+
+        expect(result).toEqual({ status: 'no-write' });
+        expect(mocks.updateClip).not.toHaveBeenCalled();
+    });
+
+    it.each(nonFiniteNumbers)('rejects a non-finite stretch ratio of %s before the repository', (ratio) => {
+        const result = handleSetClipStretchRatio.execute({
+            type: 'setClipStretchRatio',
+            payload: { clipId: 'clip-1', ratio },
+        });
+
+        expect(result).toEqual({ status: 'no-write' });
+        expect(mocks.updateClip).not.toHaveBeenCalled();
+    });
+
+    it('rejects an unknown runtime stretch mode before the repository', () => {
+        const runtimeMode = 'elastic' as StretchMode;
+
+        const result = handleSetClipStretchMode.execute({
+            type: 'setClipStretchMode',
+            payload: { clipId: 'clip-1', mode: runtimeMode },
         });
 
         expect(result).toEqual({ status: 'no-write' });

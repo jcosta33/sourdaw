@@ -1,6 +1,20 @@
+import { getTrackState } from '../../repositories/track/getTrackState';
 import { updateClip } from '../../repositories/track/updateClip';
+import { findClipById } from '../../services/findClipById';
 
 export function trimClipStart(clipId: string, newStartBeat: number): boolean {
+    if (!Number.isFinite(newStartBeat)) {
+        return false;
+    }
+
+    const state = getTrackState();
+    if (state) {
+        const target = findClipById({ clipId, tracks: state.tracks });
+        if (target && newStartBeat >= target.clip.endBeat) {
+            return false;
+        }
+    }
+
     return updateClip(clipId, (context) => {
         if (newStartBeat < context.endBeat) {
             const startBeat = Math.max(0, newStartBeat);

@@ -4,6 +4,10 @@ import { updateClip } from '../../repositories/track/updateClip';
 import { clampRatio } from './helpers';
 
 export function fitClipToBeats(clipId: string, targetBeats: number): boolean {
+    if (!Number.isFinite(targetBeats)) {
+        return false;
+    }
+
     if (targetBeats <= 0) {
         return false;
     }

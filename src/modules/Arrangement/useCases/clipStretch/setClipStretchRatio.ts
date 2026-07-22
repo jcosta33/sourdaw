@@ -3,6 +3,10 @@ import { updateClip } from '../../repositories/track/updateClip';
 import { clampRatio } from './helpers';
 
 export function setClipStretchRatio(clipId: string, ratio: number): boolean {
+    if (!Number.isFinite(ratio)) {
+        return false;
+    }
+
     const clamped = clampRatio(ratio);
 
     return updateClip(clipId, (context) => {
