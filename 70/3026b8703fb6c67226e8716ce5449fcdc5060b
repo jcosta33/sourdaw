@@ -1,0 +1,21 @@
+src/modules/Arrangement/useCases/clipEditing/reverseClip.ts
+  s_c2fca615e81f34::t_583f38d64fd9fd 41-48
+src/modules/Arrangement/useCases/clipEditing/__tests__/reverseClip.spec.ts
+  s_c2fca615e81f34::t_a5c87986998934 63-64,68-77,108-110,122-127
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "703026b8703fb6c67226e8716ce5449fcdc5060b",
+  "prompts": {},
+  "sessions": {
+    "s_c2fca615e81f34": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f74e9-e1c5-7142-85d2-4c577b3973c0",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
