@@ -9,11 +9,23 @@ type ReplayIdMappings = {
     layerIds: Map<string, string>;
     regionIds: Map<string, string>;
     vcaGroupIds: Map<string, string>;
+    markerIds: Map<string, string>;
+    sectionIds: Map<string, string>;
 };
 
 function remapChordReferences(action: AppAction, mappings: ReplayIdMappings): void {
     if (action.type === 'moveChordEvent' || action.type === 'updateChordEvent' || action.type === 'removeChordEvent') {
         action.payload.eventId = mappings.chordEventIds.get(action.payload.eventId) ?? action.payload.eventId;
+    }
+}
+
+function remapMarkerReferences(action: AppAction, mappings: ReplayIdMappings): void {
+    if (action.type === 'removeMarker' || action.type === 'setMarkerColor') {
+        action.payload.markerId = mappings.markerIds.get(action.payload.markerId) ?? action.payload.markerId;
+        return;
+    }
+    if (action.type === 'removeSection' || action.type === 'renameSection') {
+        action.payload.sectionId = mappings.sectionIds.get(action.payload.sectionId) ?? action.payload.sectionId;
     }
 }
 
@@ -75,6 +87,14 @@ function getGeneratedVcaGroupId(action: AppAction): string | undefined {
     return undefined;
 }
 
+function getGeneratedMarkerId(action: AppAction): string | undefined {
+    return action.type === 'addMarker' ? action.payload.markerId : undefined;
+}
+
+function getGeneratedSectionId(action: AppAction): string | undefined {
+    return action.type === 'addSection' ? action.payload.sectionId : undefined;
+}
+
 async function executeMacroAction(
     action: AppAction,
     mappings: ReplayIdMappings,
@@ -125,9 +145,32 @@ async function executeMacroAction(
         return;
     }
 
+    if (replayAction.type === 'addMarker') {
+        const recordedMarkerId = replayAction.payload.markerId;
+        delete replayAction.payload.markerId;
+        await executeAppAction(replayAction, options);
+        const generatedMarkerId = getGeneratedMarkerId(replayAction);
+        if (recordedMarkerId && generatedMarkerId) {
+            mappings.markerIds.set(recordedMarkerId, generatedMarkerId);
+        }
+        return;
+    }
+
+    if (replayAction.type === 'addSection') {
+        const recordedSectionId = replayAction.payload.sectionId;
+        delete replayAction.payload.sectionId;
+        await executeAppAction(replayAction, options);
+        const generatedSectionId = getGeneratedSectionId(replayAction);
+        if (recordedSectionId && generatedSectionId) {
+            mappings.sectionIds.set(recordedSectionId, generatedSectionId);
+        }
+        return;
+    }
+
     remapAdjustmentReferences(replayAction, mappings);
     remapChordReferences(replayAction, mappings);
     remapVcaReferences(replayAction, mappings);
+    remapMarkerReferences(replayAction, mappings);
     await executeAppAction(replayAction, options);
 }
 
@@ -153,6 +196,8 @@ export async function playMacro(macroId: string): Promise<void> {
         layerIds: new Map(),
         regionIds: new Map(),
         vcaGroupIds: new Map(),
+        markerIds: new Map(),
+        sectionIds: new Map(),
     };
 
     for (const action of macro.actions) {

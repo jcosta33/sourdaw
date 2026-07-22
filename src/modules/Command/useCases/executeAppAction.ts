@@ -38,6 +38,10 @@ export const executeAppAction: ExecuteAppAction = inject({ logger })(
 
             await waitForAutomergeSnapshotTransaction(options?.snapshotTransaction);
 
+            if (options?.shouldExecute && !options.shouldExecute()) {
+                return;
+            }
+
             if (handler.isNoop?.(action)) {
                 return;
             }
