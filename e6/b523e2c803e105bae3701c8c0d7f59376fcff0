@@ -1,0 +1,28 @@
+src/modules/MIDI/handlers/chordTrack/__tests__/chordTrackActions.spec.ts
+  s_ac9b259eab20ba::t_9b2ddaa4a178fd 71-76,78,80-84
+  s_ac9b259eab20ba::t_cab56a6c1f61a8 4,35,58-70,77,79
+src/modules/MIDI/handlers/chordTrack/handleRestoreChordTrackState.ts
+  s_ac9b259eab20ba::t_e69054d15986e7 72-76,80,87
+src/modules/MIDI/handlers/chordTrack/handleRemoveChordEvent.ts
+  s_ac9b259eab20ba::t_e69054d15986e7 5,12
+src/modules/TimelineEditor/presentations/views/Timeline/__tests__/ChordTrackLane.spec.tsx
+  s_ac9b259eab20ba::t_4a51da324dc964 12-30,72,75,78,82,92,99,111,126,130,134,145,148,150,161
+src/modules/TimelineEditor/presentations/views/Timeline/ChordTrackLane.tsx
+  s_ac9b259eab20ba::t_db61bb3a1a0894 17-25,102,132,142,172,180,214,239,248,325,346,359
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "e6b523e2c803e105bae3701c8c0d7f59376fcff0",
+  "prompts": {},
+  "sessions": {
+    "s_ac9b259eab20ba": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8699-3865-7842-8c54-afbac6cfd266",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
