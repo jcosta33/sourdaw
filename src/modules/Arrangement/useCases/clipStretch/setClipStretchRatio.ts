@@ -2,10 +2,10 @@ import { updateClip } from '../../repositories/track/updateClip';
 
 import { clampRatio } from './helpers';
 
-export function setClipStretchRatio(clipId: string, ratio: number): void {
+export function setClipStretchRatio(clipId: string, ratio: number): boolean {
     const clamped = clampRatio(ratio);
 
-    updateClip(clipId, (context) => {
+    return updateClip(clipId, (context) => {
         const updated = { ...context, stretchRatio: clamped };
 
         if (context.stretchMode === 'repitch') {

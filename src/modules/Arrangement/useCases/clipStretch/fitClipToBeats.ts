@@ -3,14 +3,14 @@ import { updateClip } from '../../repositories/track/updateClip';
 
 import { clampRatio } from './helpers';
 
-export function fitClipToBeats(clipId: string, targetBeats: number): void {
+export function fitClipToBeats(clipId: string, targetBeats: number): boolean {
     if (targetBeats <= 0) {
-        return;
+        return false;
     }
 
     const state = getTrackState();
     if (!state) {
-        return;
+        return false;
     }
 
     for (const track of state.tracks) {
@@ -24,12 +24,13 @@ export function fitClipToBeats(clipId: string, targetBeats: number): void {
         const baseDuration = currentDuration * previousRatio;
         const newRatio = clampRatio(baseDuration / targetBeats);
 
-        updateClip(clipId, (context) => ({
+        return updateClip(clipId, (context) => ({
             ...context,
             stretchRatio: newRatio,
             stretchMode: context.stretchMode === 'off' ? ('repitch' as const) : context.stretchMode,
             endBeat: context.startBeat + targetBeats,
         }));
-        return;
     }
+
+    return false;
 }

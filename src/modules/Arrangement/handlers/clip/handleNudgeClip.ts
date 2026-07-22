@@ -2,10 +2,11 @@ import { createHandler } from '#/utils/createHandler';
 
 import { nudgeClip } from '../../useCases/clipEditing/nudgeClip';
 import { getTrackStoreState } from '../../useCases/getTrackStoreState';
+import { toHandlerExecutionResult } from '../toHandlerExecutionResult';
 
 export const handleNudgeClip = createHandler<'nudgeClip'>({
     execute: (alpha) => {
-        nudgeClip(alpha.payload.clipId, alpha.payload.beats);
+        return toHandlerExecutionResult(nudgeClip(alpha.payload.clipId, alpha.payload.beats));
     },
     describe: (alpha) => {
         const label = `Nudge clip ${alpha.payload.beats > 0 ? 'right' : 'left'}`;

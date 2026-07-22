@@ -3,9 +3,9 @@ import { shiftClipMidiNotes } from '#/modules/MIDI/useCases';
 
 import { updateClip } from '../../repositories/track/updateClip';
 
-export function nudgeClip(clipId: string, beats: number): void {
+export function nudgeClip(clipId: string, beats: number): boolean {
     let appliedDelta = 0;
-    updateClip(clipId, (context) => {
+    const didWrite = updateClip(clipId, (context) => {
         if (context.locked) {
             return context;
         }
@@ -19,8 +19,10 @@ export function nudgeClip(clipId: string, beats: number): void {
     // shifting the clip rectangle without shifting them desyncs playback from
     // the visual arrangement. `moveClip` already does this for drags; nudges
     // need the same follow-through.
-    if (appliedDelta !== 0) {
+    if (didWrite && appliedDelta !== 0) {
         shiftClipMidiNotes(clipId, appliedDelta);
         shiftClipAutomation(clipId, appliedDelta);
     }
+
+    return didWrite;
 }

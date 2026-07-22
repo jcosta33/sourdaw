@@ -2,10 +2,11 @@ import { createHandler } from '#/utils/createHandler';
 
 import { trimClipStart } from '../../useCases/clipEditing/trimClipStart';
 import { getTrackStoreState } from '../../useCases/getTrackStoreState';
+import { toHandlerExecutionResult } from '../toHandlerExecutionResult';
 
 export const handleTrimClipStart = createHandler<'trimClipStart'>({
     execute: (alpha) => {
-        trimClipStart(alpha.payload.clipId, alpha.payload.newStartBeat);
+        return toHandlerExecutionResult(trimClipStart(alpha.payload.clipId, alpha.payload.newStartBeat));
     },
     describe: (alpha) => {
         const state = getTrackStoreState();
