@@ -28,9 +28,9 @@ Occurrence count: 2741
 
 | Class | Occurrences |
 | --- | ---: |
-| already-migrated | 225 |
+| already-migrated | 227 |
 | complex-grid | 20 |
-| eligible | 1139 |
+| eligible | 1137 |
 | one-off | 0 |
 | renderer | 58 |
 | responsive-or-dynamic | 330 |
@@ -53,14 +53,14 @@ Occurrence count: 2741
 | Class | Occurrences |
 | --- | ---: |
 | alignment | 182 |
-| flex-column | 576 |
-| flex-row | 859 |
+| flex-column | 575 |
+| flex-row | 858 |
 | grid | 14 |
 | grid-columns | 104 |
 | primitive-divider | 1 |
 | primitive-grid | 22 |
-| primitive-row | 92 |
-| primitive-stack | 114 |
+| primitive-row | 93 |
+| primitive-stack | 115 |
 | semantic-wrapper | 777 |
 
 ## Disposition ledger
@@ -1722,13 +1722,13 @@ Occurrence count: 2741
 | `layout-71d66e5883c41d5e` | `src/modules/Preferences/presentations/views/preferences/PerformanceSection.tsx:26#1` | PerformanceSection | checked-no-conflict:Preferences | `flex items-center gap-2` | Row | eligible | yes | Static low-risk geometry maps directly to Row. |
 | `layout-4f561d6d8a32a55a` | `src/modules/Preferences/presentations/views/preferences/PerformanceSection.tsx:27#1` | PerformanceSection | checked-no-conflict:Preferences | `flex-1` | — | semantic-wrapper | yes | Preserve the DawCompactSelect semantic wrapper and review its geometry through the owning component. |
 | `layout-c732c786afdb9a6c` | `src/modules/Preferences/presentations/views/preferences/PerformanceSection.tsx:46#1` | PerformanceSection | checked-no-conflict:Preferences | `w-full` | — | semantic-wrapper | yes | Preserve the DawCompactSelect semantic wrapper and review its geometry through the owning component. |
-| `layout-34eddde32c2530f8` | `src/modules/Preferences/presentations/views/PreferencesDialog.tsx:82#1` | PreferencesDialog | checked-no-conflict:Preferences | `flex h-[520px]` | Row | eligible | yes | Static low-risk geometry maps directly to Row. |
-| `layout-52aaaff84d2d07a8` | `src/modules/Preferences/presentations/views/PreferencesDialog.tsx:84#1` | PreferencesDialog | checked-no-conflict:Preferences | `w-[180px] p-3` | — | semantic-wrapper | yes | Preserve the DawSideRail semantic wrapper and review its geometry through the owning component. |
-| `layout-23ccc324809ea8a8` | `src/modules/Preferences/presentations/views/PreferencesDialog.tsx:85#1` | PreferencesDialog | checked-no-conflict:Preferences | `flex h-full flex-col gap-0.5` | Stack | eligible | yes | Static nav geometry maps to Stack; preserve its element, classes, and native props during owner-specific migration proof. |
-| `layout-cd6583a49492aabe` | `src/modules/Preferences/presentations/views/PreferencesDialog.tsx:90#1` | PreferencesDialog | checked-no-conflict:Preferences | `{cn( 'flex items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-xs transition-colors', section === item.id ? 'bg-primary/10 font-medium text-primary' : 'text-muted-foreground hover:bg-muted/40 hover:text-foreground' )}` | — | responsive-or-dynamic | yes | Responsive, runtime-computed, or conditional-sibling layout must retain its explicit behavior until separately characterized. |
-| `layout-34b64fef188fe4d0` | `src/modules/Preferences/presentations/views/PreferencesDialog.tsx:106#1` | PreferencesDialog | checked-no-conflict:Preferences | `mt-auto flex-col items-stretch gap-1.5 border-white/6 bg-transparent px-0 py-3 shadow-none` | — | semantic-wrapper | yes | Preserve the DawDialogFooter semantic wrapper and review its geometry through the owning component. |
-| `layout-7480c330169fc1b1` | `src/modules/Preferences/presentations/views/PreferencesDialog.tsx:111#1` | PreferencesDialog | checked-no-conflict:Preferences | `w-full justify-start text-xs text-muted-foreground` | — | semantic-wrapper | yes | Preserve the Button component contract and review its geometry through that owner. |
-| `layout-5bc380d436c10b40` | `src/modules/Preferences/presentations/views/PreferencesDialog.tsx:127#1` | PreferencesDialog | checked-no-conflict:Preferences | `flex-1 gap-5 bg-surface-base/60 p-5` | — | semantic-wrapper | yes | Preserve the DawDialogBody semantic wrapper and review its geometry through the owning component. |
+| `layout-b5f0072df285a0e4` | `src/modules/Preferences/presentations/views/PreferencesDialog.tsx:83#1` | PreferencesDialog | checked-no-conflict:Preferences | `h-[520px]` | Row | already-migrated | yes | Already uses the Row layout primitive; retain as a characterized primitive consumer. |
+| `layout-52aaaff84d2d07a8` | `src/modules/Preferences/presentations/views/PreferencesDialog.tsx:85#1` | PreferencesDialog | checked-no-conflict:Preferences | `w-[180px] p-3` | — | semantic-wrapper | yes | Preserve the DawSideRail semantic wrapper and review its geometry through the owning component. |
+| `layout-eedad4a7b171b2cf` | `src/modules/Preferences/presentations/views/PreferencesDialog.tsx:86#1` | PreferencesDialog | checked-no-conflict:Preferences | `h-full` | Stack | already-migrated | yes | Already uses the Stack layout primitive; retain as a characterized primitive consumer. |
+| `layout-cd6583a49492aabe` | `src/modules/Preferences/presentations/views/PreferencesDialog.tsx:91#1` | PreferencesDialog | checked-no-conflict:Preferences | `{cn( 'flex items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-xs transition-colors', section === item.id ? 'bg-primary/10 font-medium text-primary' : 'text-muted-foreground hover:bg-muted/40 hover:text-foreground' )}` | — | responsive-or-dynamic | yes | Responsive, runtime-computed, or conditional-sibling layout must retain its explicit behavior until separately characterized. |
+| `layout-34b64fef188fe4d0` | `src/modules/Preferences/presentations/views/PreferencesDialog.tsx:107#1` | PreferencesDialog | checked-no-conflict:Preferences | `mt-auto flex-col items-stretch gap-1.5 border-white/6 bg-transparent px-0 py-3 shadow-none` | — | semantic-wrapper | yes | Preserve the DawDialogFooter semantic wrapper and review its geometry through the owning component. |
+| `layout-7480c330169fc1b1` | `src/modules/Preferences/presentations/views/PreferencesDialog.tsx:112#1` | PreferencesDialog | checked-no-conflict:Preferences | `w-full justify-start text-xs text-muted-foreground` | — | semantic-wrapper | yes | Preserve the Button component contract and review its geometry through that owner. |
+| `layout-5bc380d436c10b40` | `src/modules/Preferences/presentations/views/PreferencesDialog.tsx:128#1` | PreferencesDialog | checked-no-conflict:Preferences | `flex-1 gap-5 bg-surface-base/60 p-5` | — | semantic-wrapper | yes | Preserve the DawDialogBody semantic wrapper and review its geometry through the owning component. |
 | `layout-2faecc55ad83e20c` | `src/modules/Preferences/presentations/views/preferencesShared.tsx:14#1` | SectionTitle | checked-no-conflict:Preferences | `flex items-center gap-2 pb-2 mb-1` | Row | eligible | yes | Static low-risk geometry maps directly to Row. |
 | `layout-4ca321246df739f6` | `src/modules/Preferences/presentations/views/preferencesShared.tsx:24#1` | FieldGroup | checked-no-conflict:Preferences | `space-y-1.5` | — | responsive-or-dynamic | yes | Responsive, runtime-computed, or conditional-sibling layout must retain its explicit behavior until separately characterized. |
 | `layout-15703692f5b95728` | `src/modules/Preferences/presentations/views/preferencesShared.tsx:41#1` | ToggleRow | checked-no-conflict:Preferences | `flex items-center justify-between` | Row | eligible | yes | Static low-risk geometry maps directly to Row. |
