@@ -14,20 +14,17 @@ export function removeDevice(deviceId: string): void {
     for (const track of state.tracks) {
         const device = track.devices.find((data) => data.id === deviceId);
         if (device) {
-            const projectedTrack = {
-                ...track,
-                devices: track.devices.filter((candidate) => candidate.id !== deviceId),
-            };
+            const retainsToaster = track.devices.some(
+                (candidate) => candidate.id !== deviceId && candidate.type === 'toaster'
+            );
             const shouldRemoveTrackStrip =
-                shouldCreateLiveTrackStrip(track) && !shouldCreateLiveTrackStrip(projectedTrack);
+                device.type === 'toaster' &&
+                track.kind === 'folder' &&
+                shouldCreateLiveTrackStrip(track) &&
+                !retainsToaster;
             removeDeviceFromStrip(track.id, deviceId);
             if (shouldRemoveTrackStrip) {
                 removeTrackStrip(track.id);
-                for (const retainedDevice of projectedTrack.devices) {
-                    if (retainedDevice.type === 'external-plugin' && retainedDevice.externalInstanceId) {
-                        void unloadPlugin(retainedDevice.externalInstanceId);
-                    }
-                }
             }
             if (device.type === 'external-plugin' && device.externalInstanceId) {
                 void unloadPlugin(device.externalInstanceId);

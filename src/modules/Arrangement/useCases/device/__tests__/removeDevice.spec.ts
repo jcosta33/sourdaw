@@ -94,8 +94,7 @@ describe('removeDevice', () => {
         expect(mocks.removeDeviceFromStrip.mock.invocationCallOrder[0]).toBeLessThan(
             mocks.removeTrackStrip.mock.invocationCallOrder[0]!
         );
-        expect(mocks.unloadPlugin).toHaveBeenCalledTimes(1);
-        expect(mocks.unloadPlugin).toHaveBeenCalledWith('instance-1');
+        expect(mocks.unloadPlugin).not.toHaveBeenCalled();
     });
 
     it('retains a live folder strip when another Toaster remains', () => {
