@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { isRecordingAutomation } from '../isRecordingAutomation';
+import { isRecordingAutomationByKey } from '../isRecordingAutomationByKey';
 
 type TestTrack = {
     id: string;
@@ -114,5 +115,17 @@ describe('isRecordingAutomation', () => {
         });
         touchActive.add('t1::gain');
         expect(isRecordingAutomation('t1', 'gain')).toBe(true);
+    });
+
+    it('queries an already-keyed recording without consulting the track store', () => {
+        activeRecording.set('t1::gain', {
+            parameterId: 'gain',
+            trackId: 't1',
+            startBeat: 0,
+            lastValue: null,
+        });
+        touchActive.add('t1::gain');
+
+        expect(isRecordingAutomationByKey('t1::gain', 'touch')).toBe(true);
     });
 });
