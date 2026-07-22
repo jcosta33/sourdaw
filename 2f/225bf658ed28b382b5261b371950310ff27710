@@ -1,0 +1,22 @@
+src/modules/AudioEngine/useCases/__tests__/exportStems.spec.ts
+  s_ac9b259eab20ba::t_bb1da35aa770a9 24-27,96-128,132,158-165,174-189,191-198,202-207,209
+  s_ac9b259eab20ba::t_4bb9e336b1145c 199-201
+  s_ac9b259eab20ba::t_4874f9c6cddcc3 190,208
+  s_ac9b259eab20ba::t_bc9819decec2e6 210
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "2f225bf658ed28b382b5261b371950310ff27710",
+  "prompts": {},
+  "sessions": {
+    "s_ac9b259eab20ba": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8699-3865-7842-8c54-afbac6cfd266",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
