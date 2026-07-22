@@ -216,17 +216,22 @@ describe('createToasterNode', () => {
         });
     });
 
-    it('should connect to the destination and swallow a disconnect error instead of throwing', async () => {
-        disconnect.mockImplementation(() => {
-            throw new Error('already disconnected');
-        });
+    it('keeps private worklet outputs connected when the parent output is rebuilt', async () => {
         const node = await createToasterNode(makeCtx());
         const dest = {} as AudioNode;
+        connect.mockClear();
+        disconnect.mockClear();
 
+        node.disconnect();
         node.connect(dest);
-        expect(connect).toHaveBeenCalledWith(dest);
-        expect(() => node.disconnect()).not.toThrow();
-        expect(disconnect).toHaveBeenCalledWith(0);
+
+        const [parentOutput, ...padOutputs] = padGainNodes;
+        expect(padGainNodes).toHaveLength(17);
+        expect(parentOutput?.disconnect).toHaveBeenCalledTimes(1);
+        expect(parentOutput?.connect).toHaveBeenCalledWith(dest);
+        expect(padOutputs.every((gainNode) => gainNode.disconnect.mock.calls.length === 0)).toBe(true);
+        expect(connect).not.toHaveBeenCalled();
+        expect(disconnect).not.toHaveBeenCalled();
     });
 
     it('routes stable pad outputs through gain mirrors of the clamped master gain and tears them down', async () => {
@@ -238,30 +243,34 @@ describe('createToasterNode', () => {
 
         expect(workletOptions?.numberOfOutputs).toBe(17);
         expect(workletOptions?.outputChannelCount).toEqual(Array.from({ length: 17 }, () => 2));
-        expect(padGainNodes).toHaveLength(16);
-        expect(padGainNodes.every((gainNode) => gainNode.gain.value === 0.8)).toBe(true);
-        expect(connect).toHaveBeenNthCalledWith(1, padGainNodes[0], 1, 0);
-        expect(connect).toHaveBeenNthCalledWith(16, padGainNodes[15], 16, 0);
+        const [parentOutput, ...padOutputs] = padGainNodes;
+        expect(padGainNodes).toHaveLength(17);
+        expect(parentOutput?.gain.value).toBe(1);
+        expect(padOutputs.every((gainNode) => gainNode.gain.value === 0.8)).toBe(true);
+        expect(connect).toHaveBeenNthCalledWith(1, parentOutput, 0, 0);
+        expect(connect).toHaveBeenNthCalledWith(2, padOutputs[0], 1, 0);
+        expect(connect).toHaveBeenNthCalledWith(17, padOutputs[15], 16, 0);
 
         node.connectPadOutput(0, destination);
         node.connectPadOutput(15, destination);
         node.connectPadOutput(16, destination);
-        expect(padGainNodes[0]?.connect).toHaveBeenCalledWith(destination);
-        expect(padGainNodes[15]?.connect).toHaveBeenCalledWith(destination);
-        expect(connect).toHaveBeenCalledTimes(16);
+        expect(padOutputs[0]?.connect).toHaveBeenCalledWith(destination);
+        expect(padOutputs[15]?.connect).toHaveBeenCalledWith(destination);
+        expect(connect).toHaveBeenCalledTimes(17);
 
         node.disconnectPadOutput(15, destination);
-        expect(padGainNodes[15]?.disconnect).toHaveBeenCalledWith(destination);
+        expect(padOutputs[15]?.disconnect).toHaveBeenCalledWith(destination);
 
         postMessage.mockClear();
         node.setParam('masterGain', 1.5);
-        expect(padGainNodes.every((gainNode) => gainNode.gain.value === 1)).toBe(true);
+        expect(padOutputs.every((gainNode) => gainNode.gain.value === 1)).toBe(true);
         node.setParam('masterGain', -0.25);
-        expect(padGainNodes.every((gainNode) => gainNode.gain.value === 0)).toBe(true);
+        expect(padOutputs.every((gainNode) => gainNode.gain.value === 0)).toBe(true);
         node.setParam('masterGain', 0.35);
         node.setParam('masterGain', Number.NaN);
         node.setParam('master_gain', 0.6);
-        expect(padGainNodes.every((gainNode) => gainNode.gain.value === 0.6)).toBe(true);
+        expect(padOutputs.every((gainNode) => gainNode.gain.value === 0.6)).toBe(true);
+        expect(parentOutput?.gain.value).toBe(1);
         expect(postMessage).toHaveBeenCalledTimes(4);
         expect(postMessage).toHaveBeenNthCalledWith(1, { type: 'param', name: 'masterGain', value: 1.5 });
         expect(postMessage).toHaveBeenNthCalledWith(2, { type: 'param', name: 'masterGain', value: -0.25 });
@@ -291,6 +300,7 @@ describe('createToasterNode', () => {
         const node = await createToasterNode(makeCtx());
 
         expect(node.workletNode).toBeDefined();
+        expect(node.outputNode).toBe(padGainNodes[0]);
         await expect(node.ready).resolves.toEqual({});
     });
 });

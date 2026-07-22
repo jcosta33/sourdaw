@@ -157,9 +157,10 @@ const toasterDescriptor: WasmDeviceDescriptor = {
                 const accepted = onLoaded({
                     deviceId,
                     type: deviceType,
-                    nodes: [result.workletNode],
-                    inputNode: result.workletNode,
-                    outputNode: result.workletNode,
+                    nodes: [result.outputNode],
+                    inputNode: result.outputNode,
+                    outputNode: result.outputNode,
+                    isGenerator: true,
                     dispose: result.destroy,
                     controller: {
                         ready: true,

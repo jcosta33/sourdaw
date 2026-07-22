@@ -25,6 +25,7 @@ type ScheduleToasterHitInput = {
 
 export type ToasterNodeResult = {
     workletNode: AudioWorkletNode;
+    outputNode: GainNode;
     noteOn: (pad: number, velocity: number, midiNote?: number, sampleFrame?: number) => void;
     noteOff: (pad: number, sampleFrame?: number) => void;
     scheduleHit: (input: ScheduleToasterHitInput) => void;
@@ -61,6 +62,9 @@ export async function createToasterNode(ctx: BaseAudioContext, wasmUrl?: string)
         channelCount: 2,
         channelCountMode: 'explicit',
     });
+    const outputNode = ctx.createGain();
+    outputNode.gain.value = 1;
+    node.connect(outputNode, 0, 0);
     const padOutputGains = Array.from({ length: TOASTER_PAD_COUNT }, (_, pad) => {
         const gainNode = ctx.createGain();
         gainNode.gain.value = TOASTER_DEFAULT_MASTER_GAIN;
@@ -82,6 +86,7 @@ export async function createToasterNode(ctx: BaseAudioContext, wasmUrl?: string)
 
     return {
         workletNode: node,
+        outputNode,
         noteOn(pad: number, velocity: number, midiNote: number = 60, sampleFrame?: number) {
             if (!bypassed) {
                 node.port.postMessage({
@@ -161,11 +166,11 @@ export async function createToasterNode(ctx: BaseAudioContext, wasmUrl?: string)
             }
         },
         connect(dest: AudioNode) {
-            node.connect(dest);
+            outputNode.connect(dest);
         },
         disconnect() {
             try {
-                node.disconnect(0);
+                outputNode.disconnect();
             } catch {
                 // ignore
             }
@@ -178,6 +183,11 @@ export async function createToasterNode(ctx: BaseAudioContext, wasmUrl?: string)
                 } catch {
                     // The pad output may already have been disconnected.
                 }
+            }
+            try {
+                outputNode.disconnect();
+            } catch {
+                // The parent output may already be detached from the track graph.
             }
             try {
                 node.disconnect();
