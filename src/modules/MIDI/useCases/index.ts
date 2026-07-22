@@ -14,6 +14,7 @@ export { clearChordTrack } from './chordTrack/clearChordTrack';
 export { getChordAtBeat } from './chordTrack/getChordAtBeat';
 export { moveChordEvent } from './chordTrack/moveChordEvent';
 export { removeChordEvent } from './chordTrack/removeChordEvent';
+export { replaceChordTrackState } from './chordTrack/replaceChordTrackState';
 export { toggleChordTrack } from './chordTrack/toggleChordTrack';
 export { updateChordEvent } from './chordTrack/updateChordEvent';
 

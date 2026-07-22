@@ -1,6 +1,5 @@
 import { createTrack, resetArrangementStoresForProject } from '#/modules/Arrangement/useCases';
-import { chordTrackStore } from '#/modules/MIDI/stores';
-import { hydrateGrooveTemplates } from '#/modules/MIDI/useCases';
+import { hydrateGrooveTemplates, replaceChordTrackState } from '#/modules/MIDI/useCases';
 import { transportStore, defaultTransportState } from '#/modules/Transport/stores';
 
 import { projectStore } from '../../../stores/projectStore';
@@ -21,7 +20,7 @@ export function initProject(input: InitProjectInput): Track {
     const timeSigDen = input.timeSig?.[1] ?? 4;
 
     resetArrangementStoresForProject();
-    chordTrackStore.set({ enabled: false, events: [] });
+    replaceChordTrackState({ enabled: false, events: [] });
     hydrateGrooveTemplates({ templates: [], assignments: [] });
 
     transportStore.set({
