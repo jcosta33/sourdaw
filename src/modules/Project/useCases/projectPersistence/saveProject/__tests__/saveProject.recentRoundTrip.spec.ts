@@ -172,7 +172,7 @@ describe('saveProject -> recent list -> loadRecentProject round-trip', () => {
 
         const ok = await loadRecentProject(entry.key);
 
-        expect(ok).toBe(true);
+        expect(ok).toBe('committed');
         expect(mocks.projectStoreValue.value).not.toBeNull();
         expect(mocks.projectStoreValue.value?.name).toBe(PROJECT_NAME);
     });

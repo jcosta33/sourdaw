@@ -17,6 +17,7 @@ import { DawKeycap } from '#/components/daw/DawKeycap';
 import { Button } from '#/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip';
 import { openExportDialog } from '#/modules/WorkspaceShell/useCases';
+import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { type TemplateCategory } from '../../models/ProjectTemplateTypes';
 import { exportProjectFile } from '../../useCases/projectPersistence/fileIO/exportProjectFile';
@@ -91,8 +92,14 @@ export const RecentProjectsMenu = (): ReactElement => {
     }, [open]);
 
     const handleNewProject = () => {
-        void saveProject();
-        void newProject();
+        void (async () => {
+            // Abort on a failed save (already notified) so the current
+            // project stays open with its unsaved work.
+            if (!(await saveProject())) {
+                return;
+            }
+            void newProject();
+        })();
         setOpen(false);
     };
 
@@ -129,8 +136,23 @@ export const RecentProjectsMenu = (): ReactElement => {
     };
 
     const handleLoad = (entry: RecentProjectEntry) => {
-        void saveProject();
-        void loadRecentProject(entry.key);
+        void (async () => {
+            // Await the pre-switch save (audit #568 F2) and abort on its
+            // failure; react to the load outcome by reason (audit #568 F3):
+            // prune only a definitively missing entry, notify on transient
+            // failure, and do nothing when a newer transition superseded.
+            if (!(await saveProject())) {
+                return;
+            }
+            const outcome = await loadRecentProject(entry.key);
+            if (outcome === 'not-found') {
+                notifyUser(`Could not find "${entry.name}" — removing it from recent projects.`, 'error');
+                removeFromRecentProjects(entry.key);
+                setEntries(getRecentProjects());
+            } else if (outcome === 'failed') {
+                notifyUser(`Could not open "${entry.name}" — see logs for details.`, 'error');
+            }
+        })();
         setOpen(false);
     };
 

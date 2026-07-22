@@ -119,7 +119,7 @@ describe('recentProjects injectables', () => {
 
         const ok = await loadRecentProject('missing-key');
 
-        expect(ok).toBe(false);
+        expect(ok).toBe('not-found');
         expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining('No project data found'));
         expect(stopPlayback).not.toHaveBeenCalled();
     });

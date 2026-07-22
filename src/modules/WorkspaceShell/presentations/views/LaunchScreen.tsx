@@ -289,7 +289,7 @@ export const LaunchScreen = ({ exiting }: LaunchScreenProps): ReactElement => {
         // await or propagate.
         void (async () => {
             await new Promise<void>((resolve) => setTimeout(resolve, 80));
-            const ok = await loadRecentProject(entry.key);
+            const ok = (await loadRecentProject(entry.key)) === 'committed';
             if (!ok) {
                 notifyUser(`Failed to open "${entry.name}"`, 'error');
                 setRecentProjects(getRecentProjects().slice(0, RECENT_PROJECTS_LIMIT));
