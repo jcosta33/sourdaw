@@ -139,7 +139,7 @@ export const AutomationBottomPanel = (): ReactElement => {
         ? getAutomatableParams(
               selectedTrack.id,
               selectedTrack.devices.map((data) => ({ type: data.type, name: data.name })),
-              autoState.lanes
+              trackLanes
           )
         : [];
     const unusedParams = availableParams;

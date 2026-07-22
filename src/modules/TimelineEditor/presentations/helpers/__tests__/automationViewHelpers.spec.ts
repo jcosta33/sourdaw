@@ -5,6 +5,9 @@ import { AUTOMATION_MODE_CONFIG, LANE_HEIGHT, buildCurvePath, getAutomatablePara
 
 const beatToX = (beat: number): number => beat * 10;
 const valueToY = (value: number): number => 100 - value * 100;
+const device = (type: string, index = 1) => ({ id: `${type}-${index}`, type, name: type });
+const levainLane = { parameterId: 'levain:masterGain' };
+const levainTarget = 'levain-1:masterGain';
 
 function pt(
     beat: number,
@@ -60,16 +63,15 @@ describe('getAutomatableParams', () => {
         ]);
     });
 
-    it('equates a uniquely resolvable legacy lane with its canonical device target but rejects ambiguity', () => {
-        const targetId = 'levain-1:masterGain';
-        const device = { id: 'levain-1', type: 'levain', name: 'Strings' };
-        const hasTarget = (devices: (typeof device)[]) =>
-            getAutomatableParams('track-1', devices, [{ parameterId: 'levain:masterGain' }]).some(
-                (param) => param.id === targetId
-            );
-
-        expect(hasTarget([device])).toBe(false);
-        expect(hasTarget([device, { id: 'levain-2', type: 'levain', name: 'Strings 2' }])).toBe(true);
+    it.each([
+        ['unique legacy', [device('levain')], [levainLane], levainTarget, false],
+        ['ambiguous legacy', [device('levain'), device('levain', 2)], [levainLane], levainTarget, true],
+        ['device gain', [device('grinder')], [{ parameterId: 'grinder-1:gain' }], 'gain', true],
+        ['device pan', [device('crumbs')], [{ parameterId: 'crumbs-1:pan' }], 'pan', true],
+        ['clip lane', [device('levain')], [{ ...levainLane, clipId: 'clip-1' }], levainTarget, true],
+    ])('filters %s equivalence safely', (_name, devices, lanes, targetId, expected) => {
+        const params = getAutomatableParams('track-1', devices, lanes);
+        expect(params.some((param) => param.id === targetId)).toBe(expected);
     });
 });
 

@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { resolveEligibleDeviceWriteTarget, trackStore } from '#/modules/Arrangement/stores';
-import { updateDeviceParam, updateMidiFxParam } from '#/modules/AudioEngine/useCases';
+import { setTrackGain, setTrackPan, updateDeviceParam, updateMidiFxParam } from '#/modules/AudioEngine/useCases';
 import { automationStore } from '#/modules/Automation/stores';
 import { getAutomationValueAtBeat, isRecordingAutomation } from '#/modules/Automation/useCases';
 import { setFermenterMappedParam } from '#/modules/Fermenter/useCases';
@@ -83,27 +83,25 @@ type SeedDevice = {
 const EQ_A = { id: 'eq-a', type: 'builtin-eq', parameterValues: { 'eq-low-gain': 0 } };
 const EQ_B = { id: 'eq-b', type: 'builtin-eq', parameterValues: { 'eq-low-gain': 0 } };
 const GAIN_A = { id: 'gain-a', type: 'builtin-gain', parameterValues: { 'gain-level': 0 } };
+const SPARSE_EQ_B = { ...EQ_B, parameterValues: {} };
+type TargetCase = [string, string, SeedDevice[], string?];
 
 function seedDeviceLane(options: {
     devices: SeedDevice[];
     laneParameterId: string;
     trackKind?: string;
-    midiFx?: Array<{ id: string; parameterValues: Record<string, number> }>;
-    extraTracks?: unknown[];
+    duplicateOwner?: boolean;
 }): void {
-    mutableTrackStore.value = {
-        tracks: [
-            {
-                id: 'track-1',
-                kind: options.trackKind ?? 'audio',
-                automationMode: 'read',
-                clips: [],
-                midiFx: options.midiFx ?? [],
-                devices: options.devices,
-            },
-            ...(options.extraTracks ?? []),
-        ],
+    const track = {
+        id: 'track-1',
+        kind: options.trackKind ?? 'audio',
+        automationMode: 'read',
+        clips: [],
+        midiFx: options.duplicateOwner ? [{ id: 'midi-fx', parameterValues: { 'eq-low-gain': 0 } }] : [],
+        devices: options.devices,
     };
+    const tracks = options.duplicateOwner ? [track, { ...track, id: 'track-2', midiFx: [] }] : [track];
+    mutableTrackStore.value = { tracks };
     mutableAutomationStore.value = {
         lanes: [
             {
@@ -172,60 +170,32 @@ describe('applyAutomation', () => {
         expect(setFermenterMappedParam).not.toHaveBeenCalled();
     });
 
-    it('targets only the requested device when two devices share a type and parameter', () => {
-        seedDeviceLane({
-            devices: [EQ_A, EQ_B],
-            laneParameterId: 'eq-b:eq-low-gain',
-        });
-
+    it.each<TargetCase>([
+        ['canonical duplicate type', 'eq-b:eq-low-gain', [EQ_A, EQ_B], 'eq-b'],
+        ['unique bare', 'eq-low-gain', [EQ_A, GAIN_A], 'eq-a'],
+        ['ambiguous type', 'builtin-eq:eq-low-gain', [EQ_A, EQ_B]],
+        ['sparse duplicate type', 'builtin-eq:eq-low-gain', [EQ_A, SPARSE_EQ_B]],
+        ['ambiguous bare', 'eq-low-gain', [EQ_A, EQ_B]],
+        ['wrong canonical owner', 'gain-a:eq-low-gain', [EQ_A, GAIN_A]],
+        ['track gain', 'gain', [], 'gain'],
+        ['track pan', 'pan', [], 'pan'],
+        ['duplicate owner MIDI collision', 'eq-low-gain', [EQ_A], 'midi'],
+    ])('resolves %s target safely', (_name, laneParameterId, devices, expectedTarget) => {
+        seedDeviceLane({ devices, laneParameterId, duplicateOwner: expectedTarget === 'midi' });
         vi.mocked(getAutomationValueAtBeat).mockReturnValueOnce(0).mockReturnValue(0.75);
         applyAutomation(0);
         applyAutomation(1);
 
-        expect(updateDeviceParam).toHaveBeenCalledTimes(1);
-        expect(updateDeviceParam).toHaveBeenCalledWith('track-1', 'eq-b', 'eq-low-gain', expect.any(Number));
-        expect(resolveEligibleDeviceWriteTarget).toHaveBeenCalledTimes(2);
-    });
-
-    it.each([
-        { name: 'unique bare', laneParameterId: 'eq-low-gain', devices: [EQ_A, GAIN_A], expectedDeviceId: 'eq-a' },
-        { name: 'ambiguous type', laneParameterId: 'builtin-eq:eq-low-gain', devices: [EQ_A, EQ_B] },
-        { name: 'ambiguous bare', laneParameterId: 'eq-low-gain', devices: [EQ_A, EQ_B] },
-        { name: 'wrong canonical owner', laneParameterId: 'gain-a:eq-low-gain', devices: [EQ_A, GAIN_A] },
-    ])('resolves $name device target safely', ({ laneParameterId, devices, expectedDeviceId }) => {
-        seedDeviceLane({ devices, laneParameterId });
-        vi.mocked(getAutomationValueAtBeat).mockReturnValueOnce(0).mockReturnValue(0.75);
-        applyAutomation(0);
-        applyAutomation(1);
-
-        if (expectedDeviceId) {
-            expect(vi.mocked(updateDeviceParam).mock.calls[0]?.[1]).toBe(expectedDeviceId);
+        if (expectedTarget === 'gain' || expectedTarget === 'pan') {
+            const setter = expectedTarget === 'gain' ? setTrackGain : setTrackPan;
+            expect(setter).toHaveBeenCalledWith('track-1', expectedTarget === 'gain' ? 0.75 : 25);
             return;
         }
-        expect(updateDeviceParam).not.toHaveBeenCalled();
-    });
-
-    it('does not fall through a duplicate-owned bare device target to a same-named MIDI FX parameter', () => {
-        seedDeviceLane({
-            devices: [EQ_A],
-            laneParameterId: 'eq-low-gain',
-            midiFx: [{ id: 'midi-fx', parameterValues: { 'eq-low-gain': 0 } }],
-            extraTracks: [
-                {
-                    id: 'track-2',
-                    kind: 'audio',
-                    automationMode: 'read',
-                    clips: [],
-                    midiFx: [],
-                    devices: [EQ_A],
-                },
-            ],
-        });
-
-        vi.mocked(getAutomationValueAtBeat).mockReturnValueOnce(0).mockReturnValue(0.75);
-        applyAutomation(0);
-        applyAutomation(1);
-
+        if (expectedTarget && expectedTarget !== 'midi') {
+            expect(vi.mocked(updateDeviceParam).mock.calls[0]?.[1]).toBe(expectedTarget);
+            expect(resolveEligibleDeviceWriteTarget).toHaveBeenCalledTimes(2);
+            return;
+        }
         expect(updateDeviceParam).not.toHaveBeenCalled();
         expect(updateMidiFxParam).not.toHaveBeenCalled();
     });

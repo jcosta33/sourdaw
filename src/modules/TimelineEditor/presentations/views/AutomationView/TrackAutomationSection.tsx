@@ -89,7 +89,8 @@ export const TrackAutomationSection = ({
     const autoState = useStore<TrackAutomationState>(automationStore, { lanes: [] });
 
     const trackLanes = autoState.lanes.filter((length) => length.trackId === trackId && !length.clipId);
-    const unusedParams = getAutomatableParams(trackId, devices, trackLanes);
+    const availableParams = getAutomatableParams(trackId, devices);
+    const unusedParams = availableParams.filter((param) => !trackLanes.some((lane) => lane.parameterId === param.id));
 
     const handleAddLane = (paramId: string, paramName: string) => {
         addAutomationLane(trackId, paramId, paramName);

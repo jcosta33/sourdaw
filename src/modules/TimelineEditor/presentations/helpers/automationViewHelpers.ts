@@ -1,5 +1,6 @@
 import { trackStore } from '#/modules/Arrangement/stores';
 import { getBuiltinPlugins } from '#/modules/Arrangement/useCases';
+import { automationStore } from '#/modules/Automation/stores';
 import {
     createDeviceAutomationTargetId,
     getDeviceAutomationParameterId,
@@ -13,7 +14,7 @@ export const LANE_HEIGHT = 100;
 export const getAutomatableParams = (
     trackId: string,
     devices: { id?: string; type: string; name: string }[],
-    lanes?: readonly { trackId?: string; parameterId: string }[]
+    lanes?: readonly { trackId?: string; clipId?: string; parameterId: string }[]
 ): { id: string; name: string; min: number; max: number }[] => {
     const params: { id: string; name: string; min: number; max: number }[] = [
         { id: 'gain', name: 'Volume', min: 0, max: 1 },
@@ -23,8 +24,7 @@ export const getAutomatableParams = (
     const trackDevices = trackStore.value?.tracks.find((track) => track.id === trackId)?.devices ?? [];
     for (let index = 0; index < devices.length; index++) {
         const device = devices[index]!;
-        const storedDevice = trackDevices[index];
-        const deviceId = device.id ?? (storedDevice?.type === device.type ? storedDevice.id : null);
+        const deviceId = device.id ?? trackDevices[index]?.id;
         if (!deviceId) {
             continue;
         }
@@ -44,13 +44,15 @@ export const getAutomatableParams = (
         }
     }
 
-    if (!lanes) {
-        return params;
-    }
-    const trackLanes = lanes.filter((lane) => lane.trackId === undefined || lane.trackId === trackId);
+    const trackLanes = (lanes ?? automationStore.value?.lanes ?? []).filter(
+        (lane) => (lane.trackId === undefined || lane.trackId === trackId) && !lane.clipId
+    );
     return params.filter((param) => {
         const exactLane = trackLanes.some((lane) => lane.parameterId === param.id);
-        return !exactLane && !findEquivalentAutomationLane(param.id, trackLanes, devices, trackId);
+        if (exactLane || param.id === 'gain' || param.id === 'pan') {
+            return !exactLane;
+        }
+        return !findEquivalentAutomationLane(param.id, trackLanes, devices, trackId);
     });
 };
 

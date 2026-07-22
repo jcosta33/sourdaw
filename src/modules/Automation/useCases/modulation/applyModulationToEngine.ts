@@ -13,6 +13,7 @@ import { resolveModulationBinding } from './resolveModulationBinding';
 
 const SLEW_ALPHA = 0.4;
 const SLEW_EPSILON = 5e-5;
+const automatedBaseByTarget = new Map<string, number>();
 
 function deviceAcceptsAutomationParameter(
     device: { parameterValues: Record<string, number> },
@@ -31,36 +32,18 @@ function clamp(value: number, min: number, max: number): number {
     return value;
 }
 
-/**
- * The value automation is driving the modulation's target device-param to at
- * `currentBeat`, or `null` when automation is not authoritative this tick. Used
- * as the base the modulation delta rides on top of, so a param that is BOTH
- * automated and modulated combines the two instead of the scheduler's later
- * modulation write clobbering the earlier automation write (last-write-wins).
- *
- * The lane it matches must resolve to this exact device and parameter. A
- * *track-level* `gain`/`pan` lane carries the
- * bare id and is converted (dB→linear, pan remap) before a *track* engine
- * setter; it must NOT be matched here, or a normalized track-gain value would
- * ride a device-param modulation in the wrong units.
- *
- * Mirrors `applyAutomation`'s lane guards: the track must exist and not be in
- * `automationMode === 'off'`, a clip-scoped lane only applies inside its clip,
- * and a lane being recorded into is skipped (the user is writing it live).
- */
-function automatedBaseFor(trackId: string, deviceId: string, paramId: string, currentBeat: number): number | null {
+function indexAutomatedBases(currentBeat: number): ReadonlyMap<string, number> {
+    automatedBaseByTarget.clear();
     const autoState = automationStore.value;
     if (!autoState) {
-        return null;
-    }
-    const track = trackStore.value?.tracks.find((candidate) => candidate.id === trackId);
-    if (!track || track.automationMode === 'off') {
-        return null;
+        return automatedBaseByTarget;
     }
 
     for (const lane of autoState.lanes) {
+        const track = trackStore.value?.tracks.find((candidate) => candidate.id === lane.trackId);
         if (
-            lane.trackId !== trackId ||
+            !track ||
+            track.automationMode === 'off' ||
             lane.points.length === 0 ||
             lane.parameterId === 'gain' ||
             lane.parameterId === 'pan'
@@ -73,7 +56,8 @@ function automatedBaseFor(trackId: string, deviceId: string, paramId: string, cu
             deviceAcceptsAutomationParameter
         );
         const laneParamId = getDeviceAutomationParameterId(lane.parameterId);
-        if (deviceIndex < 0 || track.devices[deviceIndex]?.id !== deviceId || laneParamId !== paramId) {
+        const device = track.devices[deviceIndex];
+        if (!device || !laneParamId) {
             continue;
         }
         if (lane.clipId) {
@@ -82,15 +66,18 @@ function automatedBaseFor(trackId: string, deviceId: string, paramId: string, cu
                 continue;
             }
         }
-        if (isRecordingAutomation(trackId, lane.parameterId)) {
+        if (isRecordingAutomation(lane.trackId, lane.parameterId)) {
             continue;
         }
         const value = getAutomationValueAtBeat(lane.id, currentBeat);
         if (value !== null) {
-            return value;
+            const key = `${lane.trackId} ${device.id} ${laneParamId}`;
+            if (!automatedBaseByTarget.has(key)) {
+                automatedBaseByTarget.set(key, value);
+            }
         }
     }
-    return null;
+    return automatedBaseByTarget;
 }
 
 /**
@@ -110,6 +97,7 @@ export function applyModulationToEngine(currentBeat: number): void {
     if (!state || state.modulators.length === 0) {
         return;
     }
+    const automatedBases = indexAutomatedBases(currentBeat);
 
     for (const modulator of state.modulators) {
         if (!modulator.enabled || modulator.mappings.length === 0) {
@@ -127,12 +115,8 @@ export function applyModulationToEngine(currentBeat: number): void {
                 continue;
             }
 
-            // Combine: ride modulation on top of automation when the param is
-            // automated this tick; otherwise on top of the persisted base. The
-            // automated base is already in this param's engine space.
-            const base =
-                automatedBaseFor(mapping.targetTrackId, mapping.targetDeviceId, mapping.targetParamId, currentBeat) ??
-                binding.baseValue;
+            const key = `${mapping.targetTrackId} ${mapping.targetDeviceId} ${mapping.targetParamId}`;
+            const base = automatedBases.get(key) ?? binding.baseValue;
 
             const paramRange = binding.paramMax - binding.paramMin;
             const delta = modValue * mapping.amount * paramRange;
@@ -144,7 +128,6 @@ export function applyModulationToEngine(currentBeat: number): void {
             // stale slot). On later ticks, ramp toward the target and write only
             // when the value moved more than epsilon — suppressing sub-epsilon
             // jitter and zipper noise.
-            const key = `${mapping.targetTrackId} ${mapping.targetDeviceId} ${mapping.targetParamId}`;
             const hadPrev = modulationParamSlew.has(key);
             const prev = modulationParamSlew.get(key) ?? target;
             const smoothed = hadPrev ? prev + (target - prev) * SLEW_ALPHA : target;

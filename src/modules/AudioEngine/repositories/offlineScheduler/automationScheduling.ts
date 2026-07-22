@@ -1,5 +1,3 @@
-import { getDeviceAutomationParameterId, resolveDeviceAutomationTargetIndex } from '#/utils/automationDeviceTarget';
-
 import { type AutomationLane } from '../../models/AutomationViewTypes';
 import { resolveDeviceParam, resolveDeviceParamScale } from '../../services/deviceResolution';
 import { type OfflineDeviceNode } from '../devices/types';
@@ -16,13 +14,6 @@ type ScheduleTrackAutomationDeviceEntry = {
     deviceType: string;
     node: OfflineDeviceNode;
 };
-
-function acceptsOfflineAutomationParameter(
-    candidate: ScheduleTrackAutomationDeviceEntry,
-    parameterId: string
-): boolean {
-    return resolveDeviceParam(candidate.deviceType, parameterId, candidate.node) !== null;
-}
 
 export function scheduleTrackAutomation(
     lanes: AutomationLane[],
@@ -51,17 +42,29 @@ export function scheduleTrackAutomation(
             continue;
         }
 
-        const deviceIndex = resolveDeviceAutomationTargetIndex(
-            lane.parameterId,
-            deviceEntries,
-            acceptsOfflineAutomationParameter
-        );
-        const parameterId = getDeviceAutomationParameterId(lane.parameterId);
-        if (deviceIndex >= 0 && parameterId) {
-            const candidate = deviceEntries[deviceIndex]!;
-            const audioParam = resolveDeviceParam(candidate.deviceType, parameterId, candidate.node);
+        const deviceEntry = deviceEntries.find((event) => {
+            const prefix = `${event.deviceId}:`;
+            return lane.parameterId.startsWith(prefix);
+        });
+        if (deviceEntry) {
+            const paramKey = lane.parameterId.slice(lane.parameterId.indexOf(':') + 1);
+            const audioParam = resolveDeviceParam(deviceEntry.deviceType, paramKey, deviceEntry.node);
             if (audioParam) {
-                const scale = resolveDeviceParamScale(candidate.deviceType, parameterId);
+                const scale = resolveDeviceParamScale(deviceEntry.deviceType, paramKey);
+                const points =
+                    scale !== 1 ? lane.points.map((param) => ({ ...param, value: param.value * scale })) : lane.points;
+                scheduleAutomationOnParam(audioParam, points, durationSeconds, defaultTempo, changes);
+            }
+            continue;
+        }
+
+        const directEntry = deviceEntries.find((event) => {
+            return resolveDeviceParam(event.deviceType, lane.parameterId, event.node) !== null;
+        });
+        if (directEntry) {
+            const audioParam = resolveDeviceParam(directEntry.deviceType, lane.parameterId, directEntry.node);
+            if (audioParam) {
+                const scale = resolveDeviceParamScale(directEntry.deviceType, lane.parameterId);
                 const points =
                     scale !== 1 ? lane.points.map((param) => ({ ...param, value: param.value * scale })) : lane.points;
                 scheduleAutomationOnParam(audioParam, points, durationSeconds, defaultTempo, changes);

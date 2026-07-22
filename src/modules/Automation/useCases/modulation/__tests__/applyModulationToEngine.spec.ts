@@ -323,7 +323,8 @@ describe('applyModulationToEngine', () => {
         expect(value).toBeCloseTo(0.5);
     });
 
-    it.each(['d1:cutoff', 'builtin-filter:cutoff'])('rides device automation lane %s', (parameterId) => {
+    it.each(['d1:cutoff', 'builtin-filter:cutoff'])('indexes device automation lane %s once', (parameterId) => {
+        const mapping = { targetTrackId: 't1', targetDeviceId: 'd1', targetParamId: 'cutoff', amount: 0 };
         mocks.trackStore.value = {
             tracks: [
                 {
@@ -347,6 +348,10 @@ describe('applyModulationToEngine', () => {
                 }),
             ],
         });
+        const automationState = automationStore.value!;
+        const laneSnapshot = automationState.lanes;
+        const readLanes = vi.fn(() => laneSnapshot);
+        Object.defineProperty(automationState, 'lanes', { get: readLanes });
         modulationStore.set({
             modulators: [
                 {
@@ -355,7 +360,7 @@ describe('applyModulationToEngine', () => {
                     trackId: 't1',
                     kind: 'lfo',
                     config: { kind: 'lfo', waveform: 'sine', rate: 4, sync: true, phase: 0, depth: 1 },
-                    mappings: [{ targetTrackId: 't1', targetDeviceId: 'd1', targetParamId: 'cutoff', amount: 0 }],
+                    mappings: [mapping, mapping],
                     enabled: true,
                 },
             ],
@@ -365,5 +370,6 @@ describe('applyModulationToEngine', () => {
 
         const [, , , value] = mocks.updateDeviceParam.mock.calls[0]!;
         expect(value).toBeCloseTo(800);
+        expect(readLanes).toHaveBeenCalledTimes(4);
     });
 });
