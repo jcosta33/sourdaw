@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, expectTypeOf, it, vi } from 'vitest';
 
+import { chordTrackStore, defaultChordTrackState } from '../../stores/chordTrackStore';
 import {
     isValidMidiProbabilitySeed,
     LEGACY_MIDI_PROBABILITY_SEED,
@@ -46,5 +47,16 @@ describe('resetMidiStoreForProject', () => {
 
         expect(getRandomValues).not.toHaveBeenCalled();
         expect(midiStore.value?.probabilitySeed).toBe(LEGACY_MIDI_PROBABILITY_SEED);
+    });
+
+    it('resets chord project truth when creating a replacement project', () => {
+        chordTrackStore.set({
+            enabled: true,
+            events: [{ id: 'old-project-chord', beat: 0, root: 9, quality: 'min9', duration: 4 }],
+        });
+
+        resetMidiStoreForProject();
+
+        expect(chordTrackStore.value).toEqual(defaultChordTrackState);
     });
 });

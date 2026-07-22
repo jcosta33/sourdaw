@@ -1,4 +1,5 @@
 import { createStore } from '#/infra/store/createStore';
+import { createAutomergeStorage } from '#/infra/store/storage/createAutomergeStorage';
 
 import { type ChordEvent } from '../models/ChordEvent';
 import { CHORD_TYPES, type ChordType } from '../models/ChordTypes';
@@ -10,7 +11,7 @@ export type ChordTrackState = {
 
 export const defaultChordTrackState: ChordTrackState = { enabled: false, events: [] };
 
-const STORAGE_KEY = 'sourdaw_chord_track';
+const DOC_PREFIX_ROOT = 'root';
 
 type ChordEventCandidate = {
     beat?: unknown;
@@ -79,56 +80,17 @@ function isChordTrackState(value: unknown): value is ChordTrackState {
     return typeof value.enabled === 'boolean' && Array.isArray(value.events) && value.events.every(isChordEvent);
 }
 
-function getStorage(): Storage | null {
-    try {
-        if (typeof window === 'undefined') {
-            return null;
-        }
-
-        return window.localStorage;
-    } catch {
-        return null;
+function sanitizeChordTrackState(value: unknown): ChordTrackState {
+    if (isChordTrackState(value)) {
+        return value;
     }
-}
-
-function loadFromStorage(): ChordTrackState {
-    const storage = getStorage();
-    if (!storage) {
-        return defaultChordTrackState;
-    }
-
-    try {
-        const stored = storage.getItem(STORAGE_KEY);
-        if (stored === null) {
-            return defaultChordTrackState;
-        }
-
-        const parsed: unknown = JSON.parse(stored);
-        if (isChordTrackState(parsed)) {
-            return parsed;
-        }
-    } catch {
-        // Fallback
-    }
-
     return defaultChordTrackState;
 }
 
 export const chordTrackStore = createStore<ChordTrackState>({
-    initialData: loadFromStorage(),
-});
-
-/** Persist chord track state to localStorage on every change. */
-chordTrackStore.subscribe(() => {
-    const state = chordTrackStore.value;
-    const storage = getStorage();
-    if (!state || !storage) {
-        return;
-    }
-
-    try {
-        storage.setItem(STORAGE_KEY, JSON.stringify(state));
-    } catch {
-        // Persistence is best effort.
-    }
+    storage: createAutomergeStorage(DOC_PREFIX_ROOT, 'chordTrack', {
+        hydrateMissing: () => defaultChordTrackState,
+    }),
+    initialData: defaultChordTrackState,
+    sanitize: sanitizeChordTrackState,
 });

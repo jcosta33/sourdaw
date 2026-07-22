@@ -1,9 +1,7 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { beforeEach, describe, expect, it } from 'vitest';
 
 import { chordTrackStore } from '../../../stores/chordTrackStore';
 import { getChordAtBeat } from '../getChordAtBeat';
-
-const CHORD_STORAGE_KEY = 'sourdaw_chord_track';
 
 function ev(id: string, beat: number, duration: number) {
     return {
@@ -17,12 +15,7 @@ function ev(id: string, beat: number, duration: number) {
 
 describe('getChordAtBeat', () => {
     beforeEach(() => {
-        localStorage.removeItem(CHORD_STORAGE_KEY);
         chordTrackStore.set({ enabled: true, events: [] });
-    });
-
-    afterEach(() => {
-        localStorage.removeItem(CHORD_STORAGE_KEY);
     });
 
     it('should return null when the chord track is disabled', () => {

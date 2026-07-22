@@ -1,3 +1,4 @@
+import { chordTrackStore, defaultChordTrackState } from '../stores/chordTrackStore';
 import { LEGACY_MIDI_PROBABILITY_SEED, midiStore } from '../stores/midiStore';
 
 type ResetMidiStoreForProjectInput = {
@@ -24,4 +25,5 @@ export function resetMidiStoreForProject({
         ccByClipId: {},
         pitchBendByClipId: {},
     });
+    chordTrackStore.set(defaultChordTrackState);
 }
