@@ -1,0 +1,47 @@
+src/modules/MIDI/models/TrackViewTypes.ts
+  s_ac9b259eab20ba::t_c4a6ccb8c7b5d6 19
+src/modules/MIDI/useCases/midiNoteCrud/__tests__/splitMidiNotesAtBeat.spec.ts
+  s_ac9b259eab20ba::t_74e7b962230958 79-119
+src/modules/MIDI/useCases/patternInstance/__tests__/createPatternInstance.spec.ts
+  s_ac9b259eab20ba::t_b528cd61481ab9 25,135,168-170
+src/modules/MIDI/useCases/patternInstance/__tests__/propagateParentChanges.spec.ts
+  s_ac9b259eab20ba::t_f27811c616137f 11,21,61-77
+src/modules/MIDI/useCases/patternInstance/createPatternInstance.ts
+  s_ac9b259eab20ba::t_406980ec43129e 52-54
+src/modules/MIDI/useCases/midiNoteCrud/splitMidiNotesAtBeat.ts
+  s_189ba8bd6c464e::t_ae7b7d3b483da9 8-15,32,42,54-64,70-98,112
+src/modules/MIDI/useCases/patternInstance/propagateParentChanges.ts
+  s_d3adc0160ece51::t_ec6b5dcb716678 1,40-48
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "28ce08c008646bffc575aad94af9a8de7a2ccd84",
+  "prompts": {},
+  "sessions": {
+    "s_189ba8bd6c464e": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8b26-4d2b-7343-91c9-611bf3d3c922",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_ac9b259eab20ba": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8699-3865-7842-8c54-afbac6cfd266",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_d3adc0160ece51": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8b29-4c92-7082-8a91-e4520d60de90",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
