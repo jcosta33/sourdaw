@@ -1,4 +1,4 @@
-import { getTrackEligibility } from '#/modules/Arrangement/stores';
+import { shouldCreateLiveTrackStrip } from '#/modules/Arrangement/stores';
 
 import { createExportError } from '../errors/ExportError';
 
@@ -72,17 +72,13 @@ export const exportStems: ExportStemsFn = async function exportStems(
             throw new Error('Offline musical projection is not configured');
         }
 
-        // Exclude disabled and structural tracks (unless they host a Toaster); muted tracks are included as stems
+        // Exclude disabled and non-strip tracks; muted tracks are included as stems
         // (users may want silent-in-mixdown stems for later use in a DAW).
         const eligible = tracks.tracks.filter((time) => {
             if (time.disabled) {
                 return false;
             }
-            const eligibility = getTrackEligibility(time.kind);
-            if (eligibility.exportsStem) {
-                return true;
-            }
-            return time.kind === 'folder' && time.devices.some((data) => data.type === 'toaster');
+            return time.kind !== 'master' && shouldCreateLiveTrackStrip(time);
         });
         let done = 0;
 

@@ -1,6 +1,6 @@
 import { describe, expect, expectTypeOf, it } from 'vitest';
 
-import { getTrackEligibility } from '../trackEligibility';
+import { getTrackEligibility, shouldCreateLiveTrackStrip } from '../trackEligibility';
 
 const ELIGIBLE_FOR_ALL_AUDIO_BEARING_WRITES = {
     acceptsClipAdd: true,
@@ -116,5 +116,16 @@ describe('getTrackEligibility', () => {
         const eligibility: unknown = Reflect.apply(getTrackEligibility, undefined, ['future-track-kind']);
 
         expect(eligibility).toEqual(getTrackEligibility('vca'));
+    });
+});
+
+describe('shouldCreateLiveTrackStrip', () => {
+    it('distinguishes an ordinary folder from a Toaster folder', () => {
+        expect(shouldCreateLiveTrackStrip({ kind: 'folder', devices: [] })).toBe(false);
+        expect(shouldCreateLiveTrackStrip({ kind: 'folder', devices: [{ type: 'toaster' }] })).toBe(true);
+    });
+
+    it('does not revive a dormant VCA from Toaster residue', () => {
+        expect(shouldCreateLiveTrackStrip({ kind: 'vca', devices: [{ type: 'toaster' }] })).toBe(false);
     });
 });
