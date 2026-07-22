@@ -1,0 +1,38 @@
+src/modules/TimelineEditor/presentations/views/Inspector/DeviceParameterControl.tsx
+  s_ac9b259eab20ba::t_f10b7962409b42 32-45,110,113-119
+src/modules/TimelineEditor/presentations/helpers/automationViewHelpers.ts
+  s_ac9b259eab20ba::t_e3ec6c853eac16 57
+src/modules/TimelineEditor/presentations/views/Inspector/__tests__/DeviceParameterControl.spec.tsx
+  s_ac9b259eab20ba::t_a087a42a81d524 217
+src/modules/Automation/useCases/modulation/__tests__/applyModulationToEngine.spec.ts
+  s_ac9b259eab20ba::t_9f8d7bee2726ae 326-368
+src/utils/automationDeviceTarget.ts
+  s_ac9b259eab20ba::t_843e78579668e9 7,11,44-46,50-53,60-62,66,73-75,79
+src/modules/Transport/useCases/scheduling/applyAutomation/__tests__/applyAutomation.spec.ts
+  s_ac9b259eab20ba::t_f0bf36b11a96ef 4
+  s_ac9b259eab20ba::t_828892e86d955d 83-86,110,177,190-196,201,203-204,210,220
+  s_ac9b259eab20ba::t_0da3d4e81395ec 202
+src/modules/TimelineEditor/presentations/helpers/__tests__/automationViewHelpers.spec.ts
+  s_ac9b259eab20ba::t_feca71e10e09c0 66
+  s_ac9b259eab20ba::t_39b2941d620af7 67-69,71
+  s_ac9b259eab20ba::t_0140bfdd5717e1 72
+  s_ac9b259eab20ba::t_7946aadc02b271 4,56
+src/modules/TimelineEditor/presentations/views/Inspector/__tests__/TrackAutomationSection.spec.tsx
+  s_ac9b259eab20ba::t_39b2941d620af7 9
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "5cefffe5b1ea97dbb078a551c4d406a413d9c923",
+  "prompts": {},
+  "sessions": {
+    "s_ac9b259eab20ba": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8699-3865-7842-8c54-afbac6cfd266",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
