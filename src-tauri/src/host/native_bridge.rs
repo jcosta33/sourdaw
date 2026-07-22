@@ -836,6 +836,29 @@ mod tests {
         assert!(!lifecycle.allows_process());
     }
 
+    /// Build a slot the way create_crumbs wires it in production: handoff
+    /// enabled, commit/recycle rings attached. Returns the slot plus the
+    /// command-side ring endpoints a test can drive.
+    fn crumbs_slot_with_rings() -> (
+        CrumbsPluginSlot,
+        rtrb::Producer<CrumbsCommand>,
+        rtrb::Consumer<PendingRecordingCommit>,
+        rtrb::Producer<RecordBufferPair>,
+    ) {
+        let (tx, rx) = rtrb::RingBuffer::new(8);
+        let (commit_tx, commit_rx) = rtrb::RingBuffer::new(2);
+        let (recycle_tx, recycle_rx) = rtrb::RingBuffer::new(2);
+        let mut engine = CrumbsEngine::new(48_000.0);
+        engine.enable_commit_handoff();
+        let slot = CrumbsPluginSlot {
+            engine,
+            command_rx: rx,
+            commit_tx,
+            recycle_rx,
+        };
+        (slot, tx, commit_rx, recycle_tx)
+    }
+
     /// Wiring-boundary regression (ledger #508 row 24): the slot must feed
     /// the incoming audio buffers to the engine's record input before
     /// zeroing them. Pre-fix the buffers were discarded unread, so an armed
@@ -844,11 +867,7 @@ mod tests {
     fn crumbs_slot_feeds_record_input_to_engine() {
         use daw_dsp::crumbs::types::{CrumbsMode, RecordState};
 
-        let (mut tx, rx) = rtrb::RingBuffer::new(8);
-        let mut slot = CrumbsPluginSlot {
-            engine: CrumbsEngine::new(48_000.0),
-            command_rx: rx,
-        };
+        let (mut slot, mut tx, mut commit_rx, _recycle_tx) = crumbs_slot_with_rings();
 
         tx.push(CrumbsCommand::SetMode(CrumbsMode::Record)).unwrap();
         tx.push(CrumbsCommand::ArmRecording {
@@ -875,24 +894,23 @@ mod tests {
         slot.process_bridged_audio(&mut flush_l, &mut flush_r, 128);
 
         assert_eq!(slot.engine.record_state(), RecordState::Idle);
-        let sample_id = slot
-            .engine
-            .active_sample_id()
-            .expect("stopping an armed take must commit a pool sample");
-        let sample = slot
-            .engine
-            .sample_pool()
-            .get(sample_id)
-            .expect("committed sample lives in the pool");
-        assert_eq!(sample.meta.frame_count as usize, frames);
+        // Handoff mode: the take leaves the engine over the commit ring; the
+        // engine pool is updated later by the command side (off-RT).
+        assert_eq!(slot.engine.sample_pool().count(), 0);
+        let commit = commit_rx
+            .pop()
+            .expect("stopping an armed take must hand a commit to the ring");
+        assert_eq!(commit.left.len(), frames);
+        assert_eq!(commit.right.len(), frames);
         assert!(
-            sample.left.iter().all(|&s| (s - 0.5).abs() < 1.0e-6),
+            commit.left.iter().all(|&s| (s - 0.5).abs() < 1.0e-6),
             "committed buffer must hold the fed input, not silence"
         );
         assert!(
-            sample.right.iter().all(|&s| (s - 0.5).abs() < 1.0e-6),
+            commit.right.iter().all(|&s| (s - 0.5).abs() < 1.0e-6),
             "committed buffer must hold the fed input, not silence"
         );
+        assert_eq!(commit.sample_rate, 48_000);
     }
 
     /// PR #564 review (blocking): the real CPAL callback interleaves bridge
@@ -903,11 +921,7 @@ mod tests {
     fn crumbs_take_has_no_interleaved_silence_across_callback_paths() {
         use daw_dsp::crumbs::types::{CrumbsMode, RecordState};
 
-        let (mut tx, rx) = rtrb::RingBuffer::new(8);
-        let mut slot = CrumbsPluginSlot {
-            engine: CrumbsEngine::new(48_000.0),
-            command_rx: rx,
-        };
+        let (mut slot, mut tx, mut commit_rx, _recycle_tx) = crumbs_slot_with_rings();
 
         tx.push(CrumbsCommand::SetMode(CrumbsMode::Record)).unwrap();
         tx.push(CrumbsCommand::ArmRecording {
@@ -938,22 +952,17 @@ mod tests {
         let mut flush_r = vec![0.0f32; 128];
         slot.process_bridged_audio(&mut flush_l, &mut flush_r, 128);
 
-        let sample_id = slot
-            .engine
-            .active_sample_id()
-            .expect("stopping an armed take must commit a pool sample");
-        let sample = slot
-            .engine
-            .sample_pool()
-            .get(sample_id)
-            .expect("committed sample lives in the pool");
+        let commit = commit_rx
+            .pop()
+            .expect("stopping an armed take must hand a commit to the ring");
         assert_eq!(
-            sample.meta.frame_count as usize, 1024,
+            commit.left.len(),
+            1024,
             "standalone-chain silence must not enter the take (got {} frames)",
-            sample.meta.frame_count
+            commit.left.len()
         );
         assert!(
-            sample.left.iter().all(|&s| (s - 0.5).abs() < 1.0e-6),
+            commit.left.iter().all(|&s| (s - 0.5).abs() < 1.0e-6),
             "take must be the 1024 real frames, no interleaved zeros"
         );
     }
@@ -962,11 +971,7 @@ mod tests {
     /// feeding input in a non-Record mode captures nothing.
     #[test]
     fn crumbs_slot_ignores_record_input_when_not_armed() {
-        let (_tx, rx) = rtrb::RingBuffer::new(8);
-        let mut slot = CrumbsPluginSlot {
-            engine: CrumbsEngine::new(48_000.0),
-            command_rx: rx,
-        };
+        let (mut slot, _tx, _commit_rx, _recycle_tx) = crumbs_slot_with_rings();
 
         // No SetMode(Record), no ArmRecording — default mode.
         let frames = 256;
@@ -981,9 +986,22 @@ mod tests {
 }
 
 /// Crumbs plugin slot — adapts CrumbsEngine for the native audio thread.
+///
+/// A committed take handed off by the engine in O(1) (ledger #568).
+pub struct PendingRecordingCommit {
+    pub left: Vec<f32>,
+    pub right: Vec<f32>,
+    pub sample_rate: u32,
+}
+
+/// An emptied record-buffer pair returned by the command side for reuse.
+pub type RecordBufferPair = (Vec<f32>, Vec<f32>);
+
 pub struct CrumbsPluginSlot {
     pub engine: CrumbsEngine,
     pub command_rx: Consumer<CrumbsCommand>,
+    pub commit_tx: rtrb::Producer<PendingRecordingCommit>,
+    pub recycle_rx: Consumer<RecordBufferPair>,
 }
 
 impl CrumbsPluginSlot {
@@ -1017,6 +1035,12 @@ impl CrumbsPluginSlot {
             }
         }
 
+        // Adopt recycled record buffers so a re-arm finds capacity. O(1)
+        // ring pops, allocation-free on this thread.
+        while let Ok((buf_left, buf_right)) = self.recycle_rx.pop() {
+            self.engine.return_record_buffers(buf_left, buf_right);
+        }
+
         if feed_record_input {
             self.engine
                 .process_record_input(&left[..num_samples], &right[..num_samples]);
@@ -1029,6 +1053,18 @@ impl CrumbsPluginSlot {
         right[..num_samples].fill(0.0);
 
         self.engine.process_block(left, right);
+
+        // Forward any committed take to the command side over the SPSC ring.
+        // The engine did only pointer moves; the clone + pool insertion
+        // happen off-thread in the drain helper. A full ring (command side
+        // not draining) drops the take rather than allocating here.
+        if let Some((take_left, take_right)) = self.engine.take_pending_commit() {
+            let _ = self.commit_tx.push(PendingRecordingCommit {
+                left: take_left,
+                right: take_right,
+                sample_rate: self.engine.sample_rate() as u32,
+            });
+        }
     }
 }
 

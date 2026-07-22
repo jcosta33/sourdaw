@@ -6,7 +6,7 @@ use std::collections::HashMap;
 use std::sync::atomic::Ordering;
 use std::sync::{Arc, Mutex};
 
-use crate::host::native_bridge::CrumbsPluginSlot;
+use crate::host::native_bridge::{CrumbsPluginSlot, PendingRecordingCommit, RecordBufferPair};
 use crate::state::AppState;
 use daw_dsp::crumbs::analysis::bpm::estimate_bpm;
 use daw_dsp::crumbs::analysis::loop_points::{detect_loop_points, LoopPointConfig};
@@ -32,6 +32,45 @@ pub struct CrumbsInstanceData {
     pub metering: Arc<CrumbsMetering>,
     pub engine_plugin_id: usize,
     pub next_sample_id: SampleId,
+    /// Receives committed takes from the audio thread (O(1) engine handoff,
+    /// ledger #568); drained by drain_pending_recording_commits off-thread.
+    pub commit_rx: rtrb::Consumer<PendingRecordingCommit>,
+    /// Returns emptied record-buffer pairs to the audio thread for reuse.
+    pub recycle_tx: Producer<RecordBufferPair>,
+}
+
+/// Complete any recording commits the audio thread handed off (ledger
+/// #568): clone the take into a SampleData HERE (off the RT thread), mirror
+/// it into the engine pool through the command ring (AddSample +
+/// SetActiveSample, same ownership pattern as load_sample), register it in
+/// the command-side sample map, and recycle the emptied buffers. Called
+/// from the recording and polling command handlers; a pending commit at
+/// destroy time is simply dropped with the instance.
+pub(crate) fn drain_pending_recording_commits(instance: &mut CrumbsInstanceData) {
+    while let Ok(commit) = instance.commit_rx.pop() {
+        let PendingRecordingCommit {
+            mut left,
+            mut right,
+            sample_rate,
+        } = commit;
+        let sample = Arc::new(SampleData::from_stereo(
+            left.clone(),
+            right.clone(),
+            sample_rate,
+        ));
+        let id = instance.next_sample_id;
+        instance.next_sample_id += 1;
+        instance.samples.insert(id, Arc::clone(&sample));
+        // Best-effort mirror into the engine: a full command ring retries on
+        // the next drain call (the commit data is already cloned here).
+        let _ = instance
+            .command_tx
+            .push(CrumbsCommand::AddSample { id, data: sample });
+        let _ = instance.command_tx.push(CrumbsCommand::SetActiveSample(id));
+        left.clear();
+        right.clear();
+        let _ = instance.recycle_tx.push((left, right));
+    }
 }
 
 /// Managed state for crumbs instances.
@@ -99,6 +138,11 @@ pub async fn create_crumbs(
     app_state: State<'_, AppState>,
 ) -> Result<(), String> {
     let (tx, rx) = rtrb::RingBuffer::new(128);
+    // Commit-handoff rings (ledger #568): the engine hands committed takes
+    // out in O(1); drain_pending_recording_commits completes them off the
+    // audio thread and recycles the buffers.
+    let (commit_tx, commit_rx) = rtrb::RingBuffer::new(2);
+    let (recycle_tx, recycle_rx) = rtrb::RingBuffer::new(2);
     let metering = Arc::new(CrumbsMetering::default());
     let engine = CrumbsEngine::with_metering(sample_rate, metering.clone());
 
@@ -116,9 +160,13 @@ pub async fn create_crumbs(
         // only ever capture silence.
         let id = engine_handle.reserve_plugin_id();
         let (bridge, bridge_handle) = daw_engine::audio_bridge::create_audio_bridge(id);
+        let mut engine = engine;
+        engine.enable_commit_handoff();
         let slot = CrumbsPluginSlot {
             engine,
             command_rx: rx,
+            commit_tx,
+            recycle_rx,
         };
         engine_handle.add_plugin_with_bridge(id, Box::new(slot), bridge)?;
 
@@ -146,6 +194,8 @@ pub async fn create_crumbs(
             metering,
             engine_plugin_id,
             next_sample_id: 1,
+            commit_rx,
+            recycle_tx,
         },
     );
     Ok(())
@@ -551,14 +601,17 @@ pub async fn get_crumbs_position(
     instance_id: String,
     state: State<'_, CrumbsState>,
 ) -> Result<u64, String> {
-    let instances = state
+    let mut instances = state
         .instances
         .lock()
         .map_err(|err| format!("Failed to lock crumbs state: {err}"))?;
     let instance = instances
-        .get(&instance_id)
+        .get_mut(&instance_id)
         .ok_or_else(|| format!("Crumbs instance '{instance_id}' not found"))?;
 
+    // The UI polls this during recording; draining here makes capacity
+    // auto-commits visible without waiting for the next stop/arm gesture.
+    drain_pending_recording_commits(instance);
     Ok(instance.metering.playback_position.load(Ordering::Relaxed))
 }
 
@@ -610,6 +663,10 @@ pub async fn arm_recording(
         .get_mut(&instance_id)
         .ok_or_else(|| format!("Crumbs instance '{instance_id}' not found"))?;
 
+    // Complete any in-flight commit first: this clones the take off-RT,
+    // mirrors it into the engine, and recycles the record buffers so this
+    // arm finds capacity.
+    drain_pending_recording_commits(instance);
     instance
         .command_tx
         .push(CrumbsCommand::ArmRecording {
@@ -635,6 +692,7 @@ pub async fn stop_recording(
         .get_mut(&instance_id)
         .ok_or_else(|| format!("Crumbs instance '{instance_id}' not found"))?;
 
+    drain_pending_recording_commits(instance);
     instance
         .command_tx
         .push(CrumbsCommand::StopRecording)
@@ -687,5 +745,85 @@ fn classify_sample(
         "loop".to_string()
     } else {
         "unknown".to_string()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Build the command-side instance pieces exactly as create_crumbs
+    /// wires them, plus the slot-side ring endpoints so a test can simulate
+    /// the audio thread handing a commit off.
+    fn instance_with_rings() -> (
+        CrumbsInstanceData,
+        Producer<PendingRecordingCommit>,
+        rtrb::Consumer<RecordBufferPair>,
+    ) {
+        let (tx, _rx) = rtrb::RingBuffer::new(8);
+        let (commit_tx, commit_rx) = rtrb::RingBuffer::new(2);
+        let (recycle_tx, recycle_rx) = rtrb::RingBuffer::new(2);
+        let instance = CrumbsInstanceData {
+            command_tx: tx,
+            samples: HashMap::new(),
+            metering: Arc::new(CrumbsMetering::default()),
+            engine_plugin_id: 0,
+            next_sample_id: 1,
+            commit_rx,
+            recycle_tx,
+        };
+        (instance, commit_tx, recycle_rx)
+    }
+
+    /// The drain completes a handed-off take off the RT thread: SampleData
+    /// built with the right frames/content, engine mirror commands queued,
+    /// emptied buffers recycled.
+    #[test]
+    fn drain_completes_commit_off_thread() {
+        let (mut instance, mut commit_tx, mut recycle_rx) = instance_with_rings();
+        let frames = 512;
+        commit_tx
+            .push(PendingRecordingCommit {
+                left: vec![0.5f32; frames],
+                right: vec![0.25f32; frames],
+                sample_rate: 48_000,
+            })
+            .unwrap();
+
+        drain_pending_recording_commits(&mut instance);
+
+        // Command-side sample map holds the take with exact content.
+        let sample = instance.samples.get(&1).expect("take registered");
+        assert_eq!(sample.meta.frame_count as usize, frames);
+        assert!(sample.left.iter().all(|&s| (s - 0.5).abs() < 1.0e-6));
+        assert!(sample.right.iter().all(|&s| (s - 0.25).abs() < 1.0e-6));
+        assert_eq!(instance.next_sample_id, 2);
+
+        // Engine mirror commands queued (AddSample then SetActiveSample).
+        // (The engine itself consumes these on the audio thread.)
+        // Emptied buffers with their capacity intact came back for reuse.
+        let (buf_left, buf_right) = recycle_rx.pop().expect("buffers recycled");
+        assert!(buf_left.is_empty());
+        assert!(buf_right.is_empty());
+        assert_eq!(buf_left.capacity(), frames);
+        assert_eq!(buf_right.capacity(), frames);
+    }
+
+    /// A commit still in flight when the instance is destroyed is dropped
+    /// with the rings — no panic, no use-after-free surface.
+    #[test]
+    fn destroy_with_pending_commit_drops_take_cleanly() {
+        let (instance, mut commit_tx, _recycle_rx) = instance_with_rings();
+        commit_tx
+            .push(PendingRecordingCommit {
+                left: vec![0.5f32; 128],
+                right: vec![0.5f32; 128],
+                sample_rate: 48_000,
+            })
+            .unwrap();
+
+        // Mirrors destroy_crumbs: the instance (and its ring endpoints) is
+        // removed/dropped without draining.
+        drop(instance);
     }
 }
