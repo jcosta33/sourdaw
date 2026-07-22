@@ -5,6 +5,7 @@ import { KeyboardMusic, AudioLines, Keyboard, Palette, Cpu, Sparkles, Settings, 
 import { DawDialogBody } from '#/components/daw/DawDialogBody';
 import { DawDialogFooter } from '#/components/daw/DawDialogFooter';
 import { DawSideRail } from '#/components/daw/DawSideRail';
+import { Row, Stack } from '#/components/layout';
 import { Button } from '#/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '#/components/ui/dialog';
 import { Separator } from '#/components/ui/separator';
@@ -79,10 +80,10 @@ export const PreferencesDialog = ({ open, onClose }: PreferencesDialogProps): Re
             }}
         >
             <DialogContent className="w-[720px] max-w-[90vw] max-h-[80vh] p-0 bg-surface-raised overflow-hidden">
-                <div className="flex h-[520px]">
+                <Row align="stretch" className="h-[520px]">
                     {/* ── Sidebar navigation ── */}
                     <DawSideRail className="w-[180px] p-3">
-                        <nav className="flex h-full flex-col gap-0.5">
+                        <Stack as="nav" gap={0.5} className="h-full">
                             <DialogHeader className="mb-3">
                                 <DialogTitle className="text-sm font-semibold">Preferences</DialogTitle>
                             </DialogHeader>
@@ -120,7 +121,7 @@ export const PreferencesDialog = ({ open, onClose }: PreferencesDialogProps): Re
                                     Done
                                 </Button>
                             </DawDialogFooter>
-                        </nav>
+                        </Stack>
                     </DawSideRail>
 
                     {/* ── Content area ── */}
@@ -134,7 +135,7 @@ export const PreferencesDialog = ({ open, onClose }: PreferencesDialogProps): Re
                         {section === 'ai' ? <AiSection /> : null}
                         {section === 'shortcuts' ? <ShortcutsSection /> : null}
                     </DawDialogBody>
-                </div>
+                </Row>
             </DialogContent>
         </Dialog>
     );
