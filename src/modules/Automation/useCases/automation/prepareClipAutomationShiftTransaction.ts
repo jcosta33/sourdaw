@@ -24,6 +24,21 @@ function prepareShiftedState(
         };
     }
 
+    for (const lane of preparedState.lanes) {
+        if (lane.clipId !== clipId) {
+            continue;
+        }
+        for (const automationPoint of lane.points) {
+            const shiftedBeat = automationPoint.beat + beatDelta;
+            if (!Number.isFinite(shiftedBeat)) {
+                return {
+                    hasChanges: false,
+                    nextState: preparedState,
+                };
+            }
+        }
+    }
+
     const lanes = preparedState.lanes.map((lane) => {
         if (lane.clipId !== clipId) {
             return lane;

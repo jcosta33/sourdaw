@@ -161,6 +161,24 @@ describe('prepareClipAutomationShiftTransaction', () => {
         }
     );
 
+    it('fails closed when a finite point beat plus a finite delta overflows', () => {
+        const preparedState: AutomationStoreState = {
+            lanes: [lane({ points: [point(Number.MAX_VALUE, 0.5), point(1, 0.25)] })],
+        };
+        mocks.state.value = preparedState;
+
+        const transaction = prepareClipAutomationShiftTransaction({
+            clipId: 'clip-1',
+            beatDelta: Number.MAX_VALUE,
+        });
+
+        expect(transaction.hasChanges).toBe(false);
+        expect(transaction.apply()).toBe(false);
+        expect(transaction.revert()).toBe(false);
+        expect(mocks.state.value).toBe(preparedState);
+        expect(mocks.set).not.toHaveBeenCalled();
+    });
+
     it('reports no change when state is missing, the clip has no lane, or clamping preserves every beat', () => {
         const missingStateTransaction = prepareClipAutomationShiftTransaction({
             clipId: 'clip-1',
