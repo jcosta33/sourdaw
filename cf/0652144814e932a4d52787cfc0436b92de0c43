@@ -1,0 +1,59 @@
+src/modules/AudioEngine/useCases/offlineRender/__tests__/createOfflineTrackStrip.spec.ts
+  s_ac9b259eab20ba::t_c5df268956cad3 24-42,50
+src/modules/AudioEngine/useCases/offlineRender/__tests__/wireOfflineSidechainRoutes.spec.ts
+  s_ac9b259eab20ba::t_f543c98c214d57 39-40,65
+src/modules/AudioEngine/useCases/offlineRender/scheduleTrackClips.ts
+  s_c2fca615e81f34::t_0cd8c741b59567 215-232,236
+src/modules/AudioEngine/useCases/offlineRender/wireOfflineSidechainRoutes.ts
+  s_ac9b259eab20ba::t_500c53ee46b3d0 13-18,40
+src/modules/AudioEngine/repositories/offlineScheduler/__tests__/curveConformance.spec.ts
+  s_ac9b259eab20ba::t_51b2a0ac468bb0 1-107
+src/modules/AudioEngine/repositories/offlineScheduler/__tests__/scheduleAutomationOnParam.spec.ts
+  s_c2fca615e81f34::t_64c7ed20390784 66-89
+src/modules/AudioEngine/repositories/offlineScheduler/scheduleAutomationOnParam.ts
+  s_51b7271278858f::t_daaf782b9cbabe 25,178-183
+src/modules/AudioEngine/useCases/__tests__/exportStems.spec.ts
+  s_ac9b259eab20ba::t_e19fd540a3e1e1 208-211
+src/modules/AudioEngine/useCases/exportStems.ts
+  s_ac9b259eab20ba::t_aa0baec1c7e4fa 100-102
+src/modules/AudioEngine/useCases/offlineRender/__tests__/scheduleTrackClipsAudio.spec.ts
+  s_ac9b259eab20ba::t_bdc624df4dabc8 484-486,511-547
+src/modules/AudioEngine/useCases/offlineRender/createOfflineTrackStrip.ts
+  s_ac9b259eab20ba::t_c90d4d2925fcf5 13-22,25-26,28,39-41
+src/modules/Automation/useCases/automation/interpolateAutomationPointValue.ts
+  s_51b7271278858f::t_5c42c776c5a6e1 1-7
+src/modules/Automation/useCases/index.ts
+  s_51b7271278858f::t_d8e9fc6a9c997f 24
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "cf0652144814e932a4d52787cfc0436b92de0c43",
+  "prompts": {},
+  "sessions": {
+    "s_51b7271278858f": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8b69-4f08-77a2-aa10-c51bc5eb5864",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_ac9b259eab20ba": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8699-3865-7842-8c54-afbac6cfd266",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_c2fca615e81f34": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f74e9-e1c5-7142-85d2-4c577b3973c0",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
