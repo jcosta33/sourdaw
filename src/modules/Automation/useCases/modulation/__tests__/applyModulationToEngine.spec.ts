@@ -402,7 +402,7 @@ describe('applyModulationToEngine', () => {
             createCutoffLane(['legacy-lane', 'builtin-filter:cutoff', 200]),
             createCutoffLane(['canonical-lane', 'd1:cutoff', 800]),
         ],
-    ])('uses the later %s lane as the modulated automation base', (_name, earlierLane, laterLane) => {
+    ])('restates the later %s lane after only the earlier lane changes', (_name, earlierLane, laterLane) => {
         automationStore.set({ lanes: [earlierLane, laterLane] });
         const state = modulationStore.value!;
         modulationStore.set({
@@ -415,7 +415,15 @@ describe('applyModulationToEngine', () => {
 
         applyModulationToEngine(1);
 
-        const [, , , value] = mocks.updateDeviceParam.mock.calls[0]!;
-        expect(value).toBeCloseTo(800);
+        expect(mocks.updateDeviceParam.mock.calls[0]?.[3]).toBeCloseTo(800);
+
+        mocks.updateDeviceParam.mockClear();
+        automationStore.set({
+            lanes: [{ ...earlierLane, points: [{ beat: 0, value: 400, curve: 'linear', tension: 0 }] }, laterLane],
+        });
+        applyModulationToEngine(2);
+
+        expect(mocks.updateDeviceParam).toHaveBeenCalledTimes(1);
+        expect(mocks.updateDeviceParam.mock.calls[0]?.[3]).toBeCloseTo(800);
     });
 });

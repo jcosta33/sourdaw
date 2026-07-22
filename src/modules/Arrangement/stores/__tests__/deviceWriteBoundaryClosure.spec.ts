@@ -69,7 +69,13 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         'src/modules/AudioEngine/useCases/deviceControls/updateDeviceParam.ts': 2,
         'src/modules/AudioEngine/useCases/deviceControls/updateDevicePatch.ts': 2,
         'src/modules/AudioEngine/useCases/index.ts': 4,
-        'src/modules/Automation/useCases/modulation/applyModulationToEngine.ts': 2,
+        // Count provenance: pre-#597 this file scored 2 — a doc-comment mention
+        // plus the single canonical updateDeviceParam call site. #597
+        // (canonicalize device targets) rewrote the doc comment, and #609
+        // (preserve later-lane precedence) kept the same single call site
+        // (its specs pin exactly one write per change), so the live write path
+        // is unchanged and singular — only the lexical count dropped.
+        'src/modules/Automation/useCases/modulation/applyModulationToEngine.ts': 1,
         'src/modules/Automation/useCases/modulation/modulationDependencies.ts': 1,
         'src/modules/Automation/useCases/modulation/revertMappingsToBase.ts': 1,
         'src/modules/Bacteria/models/BacteriaPatch.ts': 1,
