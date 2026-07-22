@@ -1,6 +1,8 @@
 import { act, render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+import { createAppActionCommittedError } from '#/modules/Command/useCases';
+
 import { ChordTrackLane } from '../ChordTrackLane';
 
 let mockChordState: { enabled: boolean; events: Array<Record<string, unknown>> } = { enabled: false, events: [] };
@@ -137,12 +139,12 @@ describe('ChordTrackLane', () => {
 
         await runAndSettle(() => fireEvent.click(screen.getByText('min7')));
         expectAction({ type: 'updateChordEvent', payload: { eventId: 'c1', quality: 'min7' } });
-        expect(screen.queryByRole('menu')).not.toBeInTheDocument();
+        expect(screen.queryByText('Delete Chord')).not.toBeInTheDocument();
 
         fireEvent.contextMenu(region, { clientX: 100, clientY: 10 });
-        await runAndSettle(() => fireEvent.click(screen.getByRole('menuitem', { name: 'D' })));
+        await runAndSettle(() => fireEvent.click(screen.getByRole('button', { name: 'D' })));
         expectAction({ type: 'updateChordEvent', payload: { eventId: 'c1', root: 2 } });
-        expect(screen.queryByRole('menu')).not.toBeInTheDocument();
+        expect(screen.queryByText('Delete Chord')).not.toBeInTheDocument();
 
         fireEvent.contextMenu(region, { clientX: 100, clientY: 10 });
         await runAndSettle(() => fireEvent.click(screen.getByText('Delete Chord')));
@@ -196,31 +198,30 @@ describe('ChordTrackLane', () => {
         expect(executeAppAction).not.toHaveBeenCalled();
     });
 
-    it('supports keyboard focus, movement, context-menu actions, and direct delete', async () => {
-        executeAppAction.mockResolvedValue(undefined);
+    it('rejects a second pointer without losing the original drag', () => {
         renderChordLane();
         const block = getChordBlock();
-        block.focus();
-        expect(block).toHaveFocus();
 
-        await runAndSettle(() => fireEvent.keyDown(block, { key: 'ArrowRight' }));
-        expectAction({ type: 'moveChordEvent', payload: { eventId: 'c1', beat: 4.25 } });
-        expect(screen.queryByRole('status')).not.toBeInTheDocument();
+        fireEvent.pointerDown(block, { button: 0, clientX: 64, pointerId: 13 });
+        fireEvent.pointerDown(block, { button: 0, clientX: 80, pointerId: 14 });
+        fireEvent.pointerMove(block, { clientX: 96, pointerId: 13 });
+        fireEvent.pointerUp(block, { clientX: 96, pointerId: 13 });
 
-        executeAppAction.mockClear();
-        fireEvent.keyDown(block, { key: 'F10', shiftKey: true });
-        const deleteItem = screen.getByRole('menuitem', { name: 'Delete Chord' });
-        deleteItem.focus();
-        await runAndSettle(() => fireEvent.click(deleteItem, { detail: 0 }));
-        await waitFor(() => {
-            expect(executeAppAction).toHaveBeenCalledWith({ type: 'removeChordEvent', payload: { eventId: 'c1' } });
-        });
-        expect(screen.queryByRole('status')).not.toBeInTheDocument();
+        expect(block.setPointerCapture).toHaveBeenCalledTimes(1);
+        expectAction({ type: 'moveChordEvent', payload: { eventId: 'c1', beat: 6 } });
+    });
 
-        executeAppAction.mockClear();
-        executeAppAction.mockReturnValue(new Promise<void>(() => {}));
-        fireEvent.keyDown(block, { key: 'Delete' });
-        expect(executeAppAction).toHaveBeenCalledWith({ type: 'removeChordEvent', payload: { eventId: 'c1' } });
+    it('clears a drag when pointer-up finds another action pending', () => {
+        renderChordLane();
+        const block = getChordBlock();
+
+        fireEvent.pointerDown(block, { button: 0, clientX: 64, pointerId: 15 });
+        fireEvent.pointerMove(block, { clientX: 96, pointerId: 15 });
+        fireEvent.keyDown(block, { key: 'ArrowRight' });
+        fireEvent.pointerUp(block, { clientX: 96, pointerId: 15 });
+
+        expect(block).toHaveStyle({ left: '64px' });
+        expect(executeAppAction).toHaveBeenCalledTimes(1);
     });
 
     it('shows pending then rolls back preview with an alert when drag dispatch rejects', async () => {
@@ -244,16 +245,34 @@ describe('ChordTrackLane', () => {
         expect(block).toHaveStyle({ left: '64px' });
     });
 
-    it('keeps the keyboard-opened menu visible and alerts when its action rejects', async () => {
-        executeAppAction.mockRejectedValueOnce(new Error('menu failed'));
+    it('treats a committed action error as applied and closes the add popover', async () => {
+        executeAppAction.mockRejectedValueOnce(
+            createAppActionCommittedError({ actionType: 'addChordEvent', cause: new Error('history failed') })
+        );
+        render(<ChordTrackLane pixelsPerBeat={16} scrollX={0} />);
+        fireEvent.click(screen.getByLabelText('Add chord event'));
+        fireEvent.click(screen.getByRole('button', { name: 'C' }));
+
+        const alert = await screen.findByRole('alert');
+        expect(alert).toHaveTextContent(/applied/i);
+        expect(alert).not.toHaveTextContent(/try again/i);
+        expect(screen.queryByRole('button', { name: 'C' })).not.toBeInTheDocument();
+    });
+
+    it('gates a newer menu while an older menu action is pending', async () => {
+        let resolveAction: () => void = () => {};
+        executeAppAction.mockImplementationOnce(() => new Promise<void>((resolve) => (resolveAction = resolve)));
         renderChordLane();
-        const block = getChordBlock();
+        const region = screen.getByRole('region', { name: 'Chord track' });
+        region.getBoundingClientRect = vi.fn(() => ({ left: 0, top: 0, width: 1000, height: 26 }) as DOMRect);
 
-        fireEvent.keyDown(block, { key: 'F10', shiftKey: true });
-        fireEvent.click(screen.getByRole('menuitem', { name: 'min7' }), { detail: 0 });
+        fireEvent.contextMenu(region, { clientX: 100, clientY: 10 });
+        fireEvent.click(screen.getByText('min7'));
+        fireEvent.contextMenu(region, { clientX: 200, clientY: 10 });
 
-        expect(await screen.findByRole('alert')).toHaveTextContent('Chord change failed');
-        expect(screen.getByRole('menu', { name: 'Chord actions for C' })).toBeInTheDocument();
+        expect(screen.queryByText('Beat 12')).not.toBeInTheDocument();
+        resolveAction();
+        await waitFor(() => expect(screen.queryByText('Delete Chord')).not.toBeInTheDocument());
     });
 
     it('closes an open context menu on an outside click', () => {
