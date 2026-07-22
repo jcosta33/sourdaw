@@ -1,0 +1,42 @@
+src/modules/TimelineEditor/presentations/views/Inspector/TrackAutomationSection.tsx
+  s_ac9b259eab20ba::t_dee1bcd6d4f374 27,40
+src/modules/TimelineEditor/presentations/views/Inspector/__tests__/DeviceParameterControl.spec.tsx
+  s_ac9b259eab20ba::t_36df08c6765f6e 230
+  s_ac9b259eab20ba::t_47e54b74e2eacf 95-103,223,229,231-237
+  s_ac9b259eab20ba::t_fa87f125f8ed5b 238
+src/modules/Automation/handlers/automation/handleAddAutomationLane.ts
+  s_ac9b259eab20ba::t_dee1bcd6d4f374 11,19-22
+src/modules/Automation/useCases/automation/__tests__/addAutomationLane.spec.ts
+  s_ac9b259eab20ba::t_47e54b74e2eacf 1,3-4,8-11,17-24,28
+  s_ac9b259eab20ba::t_36df08c6765f6e 25-27
+src/modules/Automation/handlers/automation/__tests__/transformHandlersUndo.spec.ts
+  s_ac9b259eab20ba::t_36df08c6765f6e 185,232
+  s_ac9b259eab20ba::t_47e54b74e2eacf 3,9,214-223,225-231,233
+  s_ac9b259eab20ba::t_52511531854c70 224
+  s_ac9b259eab20ba::t_00bbf17a486400 234
+src/modules/TimelineEditor/presentations/views/Inspector/__tests__/TrackAutomationSection.spec.tsx
+  s_ac9b259eab20ba::t_47e54b74e2eacf 37,174-194
+  s_ac9b259eab20ba::t_9247eff785ae9d 195-196
+src/modules/Automation/handlers/automation/handleRemoveAutomationLane.ts
+  s_ac9b259eab20ba::t_dee1bcd6d4f374 8,22-24
+src/modules/Automation/useCases/automation/addAutomationLane.ts
+  s_ac9b259eab20ba::t_dee1bcd6d4f374 10-12
+src/modules/TimelineEditor/presentations/views/Inspector/DeviceParameterControl.tsx
+  s_ac9b259eab20ba::t_dee1bcd6d4f374 28,42-44,121
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "81c74c8394ba30ef5d501f6c8cc49b66cb34a3f8",
+  "prompts": {},
+  "sessions": {
+    "s_ac9b259eab20ba": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8699-3865-7842-8c54-afbac6cfd266",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
