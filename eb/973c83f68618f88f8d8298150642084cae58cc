@@ -1,0 +1,21 @@
+src/modules/Arrangement/useCases/freezeBounce/__tests__/bounceSelection.spec.ts
+  s_c2fca615e81f34::t_6b95b9496377f4 198-223
+src/modules/Arrangement/useCases/freezeBounce/bounceSelection.ts
+  s_c2fca615e81f34::t_bf48d2452a49d2 5,42-62,82-86,89
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "eb973c83f68618f88f8d8298150642084cae58cc",
+  "prompts": {},
+  "sessions": {
+    "s_c2fca615e81f34": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f74e9-e1c5-7142-85d2-4c577b3973c0",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
