@@ -100,6 +100,7 @@ export type BuiltinDeviceNode = {
         setFillActive: (active: boolean) => void;
         setParam: (name: string, value: number) => void;
         setPadParam: (pad: number, name: string, value: number) => void;
+        setPadDryRouted: (pad: number, routed: boolean) => void;
         setBypass: (bypassed: boolean) => void;
         connectPadOutput?: (pad: number, dest: AudioNode) => void;
         disconnectPadOutput?: (pad: number, dest: AudioNode) => void;

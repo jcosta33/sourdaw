@@ -142,6 +142,7 @@ describe('wasmDeviceRegistry descriptors', () => {
                 setFillActive: vi.fn(),
                 setParam: vi.fn(),
                 setPadParam: vi.fn(),
+                setPadDryRouted: vi.fn(),
                 setBypass: vi.fn(),
                 connectPadOutput: vi.fn(),
                 disconnectPadOutput: vi.fn(),
@@ -181,6 +182,7 @@ describe('wasmDeviceRegistry descriptors', () => {
             expect(loaded.toasterControls?.cancelScheduled).toBe(result.cancelScheduled);
             expect(loaded.toasterControls?.allNotesOff).toBe(result.allNotesOff);
             expect(loaded.toasterControls?.setFillActive).toBe(result.setFillActive);
+            expect(loaded.toasterControls?.setPadDryRouted).toBe(result.setPadDryRouted);
             expect(loaded.toasterControls?.connectPadOutput).toBe(result.connectPadOutput);
             expect(loaded.toasterControls?.disconnectPadOutput).toBe(result.disconnectPadOutput);
 

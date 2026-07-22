@@ -32,6 +32,7 @@ export type ToasterNodeResult = {
     setFillActive: (active: boolean) => void;
     setParam: (name: string, value: number) => void;
     setPadParam: (pad: number, name: string, value: number) => void;
+    setPadDryRouted: (pad: number, routed: boolean) => void;
     setBypass: (bypassed: boolean) => void;
     connectPadOutput?: (pad: number, dest: AudioNode) => void;
     disconnectPadOutput?: (pad: number, dest: AudioNode) => void;
@@ -122,6 +123,11 @@ export async function createToasterNode(ctx: BaseAudioContext, wasmUrl?: string)
                 node.port.postMessage({ type: 'padParam', pad, name, value });
             }
         },
+        setPadDryRouted(pad: number, routed: boolean) {
+            if (Number.isInteger(pad) && pad >= 0 && pad < TOASTER_PAD_COUNT) {
+                node.port.postMessage({ type: 'padDryRouted', pad, routed });
+            }
+        },
         setBypass(state: boolean) {
             bypassed = state;
         },
@@ -151,6 +157,7 @@ export async function createToasterNode(ctx: BaseAudioContext, wasmUrl?: string)
             }
         },
         destroy() {
+            node.port.postMessage({ type: 'resetPadDryRouting' });
             try {
                 node.disconnect();
             } catch {

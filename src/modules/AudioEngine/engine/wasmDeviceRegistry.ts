@@ -144,6 +144,7 @@ const toasterDescriptor: WasmDeviceDescriptor = {
                 pendingParams.push([name, value]);
             },
             setPadParam: () => {},
+            setPadDryRouted: () => {},
             setBypass: () => {},
             destroy: () => {},
         };
@@ -194,6 +195,7 @@ const toasterDescriptor: WasmDeviceDescriptor = {
                         setFillActive: result.setFillActive,
                         setParam: result.setParam,
                         setPadParam: result.setPadParam,
+                        setPadDryRouted: result.setPadDryRouted,
                         setBypass: result.setBypass,
                         connectPadOutput: result.connectPadOutput,
                         disconnectPadOutput: result.disconnectPadOutput,

@@ -169,6 +169,21 @@ describe('createToasterNode', () => {
         expect(postMessage).toHaveBeenCalledWith({ type: 'padParam', pad: 1, name: 'decay', value: 0.3 });
     });
 
+    it('should forward valid pad dry-routing ownership changes and ignore invalid pads', async () => {
+        const node = await createToasterNode(makeCtx());
+        postMessage.mockClear();
+
+        node.setPadDryRouted(0, true);
+        node.setPadDryRouted(15, false);
+        node.setPadDryRouted(-1, true);
+        node.setPadDryRouted(16, true);
+        node.setPadDryRouted(1.5, true);
+
+        expect(postMessage).toHaveBeenNthCalledWith(1, { type: 'padDryRouted', pad: 0, routed: true });
+        expect(postMessage).toHaveBeenNthCalledWith(2, { type: 'padDryRouted', pad: 15, routed: false });
+        expect(postMessage).toHaveBeenCalledTimes(2);
+    });
+
     it('should gate noteOn and scheduleHit while bypassed, without gating noteOff', async () => {
         const node = await createToasterNode(makeCtx());
         postMessage.mockClear();
@@ -231,6 +246,7 @@ describe('createToasterNode', () => {
         const node = await createToasterNode(makeCtx());
 
         expect(() => node.destroy()).not.toThrow();
+        expect(postMessage).toHaveBeenCalledWith({ type: 'resetPadDryRouting' });
         expect(disconnect).toHaveBeenCalled();
         expect(close).toHaveBeenCalled();
     });
