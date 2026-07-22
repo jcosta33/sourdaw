@@ -1,0 +1,41 @@
+src/modules/Arrangement/useCases/clipEditing/createAlternativeClips.ts
+  s_c2fca615e81f34::t_92acbf51ecaa6f 14-63,65-71,96,101-104
+src/modules/Arrangement/handlers/trackAlternative/__tests__/handleCreateTrackAlternative.spec.ts
+  s_c2fca615e81f34::t_1168f32cb6734a 94-151
+src/modules/Arrangement/useCases/clipEditing/__tests__/splitClip.spec.ts
+  s_c2fca615e81f34::t_1168f32cb6734a 89-141
+src/modules/Arrangement/useCases/clipEditing/splitClip.ts
+  s_c2fca615e81f34::t_92acbf51ecaa6f 21-23,34-41
+src/modules/Arrangement/handlers/trackAlternative/handleSwitchTrackAlternative.ts
+  s_c2fca615e81f34::t_92acbf51ecaa6f 38-43,45-81,122,133,135
+  s_c2fca615e81f34::t_a23e5c23d6e876 44,123-132
+  s_c2fca615e81f34::t_e109d7d16cce39 134
+src/modules/Arrangement/useCases/clipEditing/__tests__/createAlternativeClips.spec.ts
+  s_c2fca615e81f34::t_1168f32cb6734a 114-126
+src/modules/Arrangement/useCases/clipEditing/crossfadeClips.ts
+  s_c2fca615e81f34::t_92acbf51ecaa6f 33-35
+src/modules/Arrangement/useCases/clipEditing/__tests__/crossfadeClips.spec.ts
+  s_c2fca615e81f34::t_1168f32cb6734a 79-96
+src/modules/Arrangement/handlers/trackAlternative/__tests__/handleSwitchTrackAlternative.spec.ts
+  s_c2fca615e81f34::t_92acbf51ecaa6f 166,173
+  s_c2fca615e81f34::t_1168f32cb6734a 7,9-10,13-14,40,46,72,76-165,167-172,174-186
+  s_c2fca615e81f34::t_7f0dc60f983d6e 187
+src/modules/Arrangement/handlers/trackAlternative/handleCreateTrackAlternative.ts
+  s_c2fca615e81f34::t_92acbf51ecaa6f 42-45
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "69bedb545f26138b1201c10d11da441e2f2dd701",
+  "prompts": {},
+  "sessions": {
+    "s_c2fca615e81f34": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f74e9-e1c5-7142-85d2-4c577b3973c0",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
