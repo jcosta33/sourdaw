@@ -7,6 +7,7 @@ import { glueClips } from '../glueClips';
 
 import type { TrackState, getTrackState as originalGetTrackState } from '../../../repositories/track/getTrackState';
 import type { updateTrack as originalUpdateTrack } from '../../../repositories/track/updateTrack';
+import type * as resolverModule from '../../../stores/resolveEligibleClipWriteTarget';
 
 type GlueMidiClipData = (input: { sourceClipIds: readonly string[]; targetClipId: string }) => void;
 
@@ -16,6 +17,7 @@ const mocks = vi.hoisted(() => ({
     getNextClipId: vi.fn(() => 'merged-clip'),
     glueMidiClipData: vi.fn<GlueMidiClipData>(),
     warn: vi.fn(),
+    resolveEligibleClipWriteTarget: vi.fn<(typeof resolverModule)['resolveEligibleClipWriteTarget']>(),
 }));
 
 vi.mock('../../../repositories/track/getTrackState', () => ({ getTrackState: mocks.getTrackState }));
@@ -23,31 +25,37 @@ vi.mock('../../../repositories/track/updateTrack', () => ({ updateTrack: mocks.u
 vi.mock('../../../repositories/clipIdCounter', () => ({ getNextClipId: mocks.getNextClipId }));
 vi.mock('#/infra/logger/appLogger', () => ({ logger: { warn: mocks.warn } }));
 vi.mock('#/modules/MIDI/useCases', () => ({ glueMidiClipData: mocks.glueMidiClipData }));
+vi.mock('../../../stores/resolveEligibleClipWriteTarget', () => ({
+    resolveEligibleClipWriteTarget: mocks.resolveEligibleClipWriteTarget,
+}));
 
 function createTrackState(tracks: Track[]): TrackState {
     return { tracks, selectedTrackId: 't1', ghostClips: [] };
 }
 
 describe('glueClips', () => {
-    beforeEach(() => vi.clearAllMocks());
+    beforeEach(() => {
+        vi.clearAllMocks();
+        mocks.resolveEligibleClipWriteTarget.mockReturnValue({ status: 'eligible', trackId: 't1', clipId: 'a' });
+    });
 
     it('does nothing with no state', () => {
         mocks.getTrackState.mockReturnValue(null);
-        glueClips(['a', 'b']);
+        expect(glueClips(['a', 'b'])).toBe(false);
         expect(mocks.updateTrack).not.toHaveBeenCalled();
         expect(mocks.glueMidiClipData).not.toHaveBeenCalled();
     });
 
     it('does nothing with less than 2 clips', () => {
         mocks.getTrackState.mockReturnValue(createTrackState([]));
-        glueClips(['a']);
+        expect(glueClips(['a'])).toBe(false);
         expect(mocks.updateTrack).not.toHaveBeenCalled();
         expect(mocks.glueMidiClipData).not.toHaveBeenCalled();
     });
 
     it('does nothing with empty clip list', () => {
         mocks.getTrackState.mockReturnValue(createTrackState([]));
-        glueClips([]);
+        expect(glueClips([])).toBe(false);
         expect(mocks.updateTrack).not.toHaveBeenCalled();
         expect(mocks.glueMidiClipData).not.toHaveBeenCalled();
     });
@@ -62,14 +70,53 @@ describe('glueClips', () => {
             clips: [ClipDummy.create({ id: 'b', trackId: 't2' })],
         });
         mocks.getTrackState.mockReturnValue(createTrackState([firstTrack, secondTrack]));
+        mocks.resolveEligibleClipWriteTarget.mockImplementation((input) => ({
+            status: 'eligible',
+            trackId: input.clipId === 'a' ? 't1' : 't2',
+        }));
 
-        glueClips(['a', 'b']);
+        expect(glueClips(['a', 'b'])).toBe(false);
 
         expect(mocks.updateTrack).not.toHaveBeenCalled();
         expect(mocks.glueMidiClipData).not.toHaveBeenCalled();
         expect(mocks.warn).toHaveBeenCalledWith(
             'glueClips: clips span multiple tracks — gluing is only supported within a single track'
         );
+    });
+
+    it('rejects a mixed eligible and ineligible set before warning, allocation, or writes', () => {
+        const firstTrack = TrackDummy.create({
+            id: 't1',
+            clips: [ClipDummy.create({ id: 'a', trackId: 't1' })],
+        });
+        const secondTrack = TrackDummy.create({
+            id: 't2',
+            clips: [ClipDummy.create({ id: 'b', trackId: 't2' })],
+        });
+        mocks.getTrackState.mockReturnValue(createTrackState([firstTrack, secondTrack]));
+        mocks.resolveEligibleClipWriteTarget
+            .mockReturnValueOnce({ status: 'eligible', trackId: 't1', clipId: 'a' })
+            .mockReturnValueOnce({ status: 'ineligible' });
+
+        expect(glueClips(['a', 'b'])).toBe(false);
+
+        expect(mocks.warn).not.toHaveBeenCalled();
+        expect(mocks.getNextClipId).not.toHaveBeenCalled();
+        expect(mocks.updateTrack).not.toHaveBeenCalled();
+        expect(mocks.glueMidiClipData).not.toHaveBeenCalled();
+    });
+
+    it('rejects duplicate target ids before owner resolution', () => {
+        const track = TrackDummy.create({
+            id: 't1',
+            clips: [ClipDummy.create({ id: 'a', trackId: 't1' })],
+        });
+        mocks.getTrackState.mockReturnValue(createTrackState([track]));
+
+        expect(glueClips(['a', 'a'])).toBe(false);
+
+        expect(mocks.resolveEligibleClipWriteTarget).not.toHaveBeenCalled();
+        expect(mocks.getNextClipId).not.toHaveBeenCalled();
     });
 
     it('does nothing when the selection has no matching track', () => {
@@ -128,7 +175,7 @@ describe('glueClips', () => {
         const selectedClipIds = ['a', 'b'];
         mocks.getTrackState.mockReturnValue(createTrackState([track]));
 
-        glueClips(selectedClipIds);
+        expect(glueClips(selectedClipIds)).toBe(true);
 
         expect(mocks.updateTrack).toHaveBeenCalledTimes(1);
         expect(mocks.glueMidiClipData).toHaveBeenCalledTimes(1);
