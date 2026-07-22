@@ -6,15 +6,23 @@ const mocks = vi.hoisted(() => ({
     pushUndoEntry: vi.fn(),
     removeMidiClipData: vi.fn(),
     splitMidiNotesAtBeat: vi.fn(),
+    // Captured from the real barrel at mock-factory time so the behavioral
+    // test can drive deleteTimeRange through the genuine partition without
+    // a per-test importActual (and without any deep cross-module edge).
+    actualSplitMidiNotesAtBeat: { fn: undefined as unknown },
 }));
 
 vi.mock('../../../repositories/track/getTrackState', () => ({ getTrackState: mocks.getTrackState }));
 vi.mock('../../../repositories/track/setTrackState', () => ({ setTrackState: mocks.setTrackState }));
 vi.mock('#/modules/Command/useCases', () => ({ pushUndoEntry: mocks.pushUndoEntry }));
-vi.mock('#/modules/MIDI/useCases', () => ({
-    removeMidiClipData: mocks.removeMidiClipData,
-    splitMidiNotesAtBeat: mocks.splitMidiNotesAtBeat,
-}));
+vi.mock('#/modules/MIDI/useCases', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('#/modules/MIDI/useCases')>();
+    mocks.actualSplitMidiNotesAtBeat.fn = actual.splitMidiNotesAtBeat;
+    return {
+        removeMidiClipData: mocks.removeMidiClipData,
+        splitMidiNotesAtBeat: mocks.splitMidiNotesAtBeat,
+    };
+});
 
 import { midiStore } from '#/modules/MIDI/stores';
 
@@ -161,10 +169,9 @@ describe('deleteTimeRange', () => {
     /// a spanning MIDI clip — hole notes must be gone, post-hole notes must
     /// land at their original timeline positions on the right clip.
     it('deletes hole notes and keeps post-hole notes at their timeline positions (real partition)', async () => {
-        const actual = await vi.importActual<
-            typeof import('#/modules/MIDI/useCases/midiNoteCrud/splitMidiNotesAtBeat')
-        >('#/modules/MIDI/useCases/midiNoteCrud/splitMidiNotesAtBeat');
-        mocks.splitMidiNotesAtBeat.mockImplementation(actual.splitMidiNotesAtBeat);
+        mocks.splitMidiNotesAtBeat.mockImplementation(
+            mocks.actualSplitMidiNotesAtBeat.fn as (...args: unknown[]) => void
+        );
 
         const state = {
             tracks: [
