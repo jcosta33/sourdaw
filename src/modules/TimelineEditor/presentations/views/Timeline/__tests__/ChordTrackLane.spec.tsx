@@ -1,5 +1,7 @@
-import { render, screen, fireEvent } from '@testing-library/react';
+import { act, render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
+import { createAppActionCommittedError } from '#/modules/Command/useCases';
 
 import { ChordTrackLane } from '../ChordTrackLane';
 
@@ -9,31 +11,46 @@ vi.mock('#/infra/store/useStore', () => ({
     useStore: vi.fn(() => mockChordState),
 }));
 
-const addChordEvent = vi.fn();
-const removeChordEvent = vi.fn();
-const moveChordEvent = vi.fn();
-const updateChordEvent = vi.fn();
-const toggleChordTrack = vi.fn();
-const clearChordTrack = vi.fn();
+const { executeAppAction } = vi.hoisted(() => ({
+    executeAppAction: vi.fn<typeof import('#/modules/Command/useCases').executeAppAction>(),
+}));
 
-vi.mock('#/modules/MIDI/useCases', async () => {
-    const actual = await vi.importActual<typeof import('#/modules/MIDI/useCases')>('#/modules/MIDI/useCases');
-    return {
-        ...actual,
-        addChordEvent: (...args: unknown[]) => addChordEvent(...args),
-        removeChordEvent: (...args: unknown[]) => removeChordEvent(...args),
-        moveChordEvent: (...args: unknown[]) => moveChordEvent(...args),
-        updateChordEvent: (...args: unknown[]) => updateChordEvent(...args),
-        toggleChordTrack: (...args: unknown[]) => toggleChordTrack(...args),
-        clearChordTrack: (...args: unknown[]) => clearChordTrack(...args),
-    };
-});
+vi.mock('#/modules/Command/useCases', async () => ({
+    ...(await vi.importActual<typeof import('#/modules/Command/useCases')>('#/modules/Command/useCases')),
+    executeAppAction: (action: Parameters<typeof executeAppAction>[0]) => executeAppAction(action),
+}));
 
 const oneEvent = { id: 'c1', beat: 4, duration: 4, root: 0, quality: 'major' };
+
+function renderChordLane() {
+    mockChordState = { enabled: false, events: [oneEvent] };
+    return render(<ChordTrackLane pixelsPerBeat={16} scrollX={0} />);
+}
+
+function getChordBlock(): HTMLElement {
+    const block = screen.getByRole('button', { name: 'C chord at beat 4' });
+    Object.defineProperties(block, {
+        setPointerCapture: { configurable: true, value: vi.fn() },
+        releasePointerCapture: { configurable: true, value: vi.fn() },
+    });
+    return block;
+}
+
+function expectAction(action: Parameters<typeof executeAppAction>[0]): void {
+    expect(executeAppAction).toHaveBeenCalledWith(action);
+}
+
+async function runAndSettle(interaction: () => void): Promise<void> {
+    await act(async () => {
+        interaction();
+        await Promise.resolve();
+    });
+}
 
 describe('ChordTrackLane', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        executeAppAction.mockReturnValue(new Promise<void>(() => {}));
         mockChordState = { enabled: false, events: [] };
     });
 
@@ -69,17 +86,14 @@ describe('ChordTrackLane', () => {
         expect(power).toHaveAttribute('title', 'Harmonic following ON');
     });
 
-    it('calls toggleChordTrack when the power button is clicked', () => {
+    it('dispatches toggle and clear actions through Command', () => {
         render(<ChordTrackLane pixelsPerBeat={16} scrollX={0} />);
         fireEvent.click(screen.getByLabelText('Enable harmonic following'));
-        expect(toggleChordTrack).toHaveBeenCalledWith();
-    });
+        expect(executeAppAction).toHaveBeenCalledWith({ type: 'toggleChordTrack', payload: { enabled: true } });
 
-    it('calls clearChordTrack when the clear button is clicked', () => {
-        mockChordState = { enabled: false, events: [oneEvent] };
-        render(<ChordTrackLane pixelsPerBeat={16} scrollX={0} />);
+        renderChordLane();
         fireEvent.click(screen.getByLabelText('Clear all chords'));
-        expect(clearChordTrack).toHaveBeenCalledWith();
+        expect(executeAppAction).toHaveBeenCalledWith({ type: 'clearChordTrack' });
     });
 
     it('opens the add-chord popover and quick-adds after the last event', () => {
@@ -89,14 +103,14 @@ describe('ChordTrackLane', () => {
 
         fireEvent.click(screen.getByRole('button', { name: 'C' }));
 
-        expect(addChordEvent).toHaveBeenCalledWith(8, 0, 'major', 4);
+        expectAction({ type: 'addChordEvent', payload: { beat: 8, root: 0, quality: 'major', duration: 4 } });
     });
 
     it('quick-adds at beat 0 when there are no existing events', () => {
         render(<ChordTrackLane pixelsPerBeat={16} scrollX={0} />);
         fireEvent.click(screen.getByLabelText('Add chord event'));
         fireEvent.click(screen.getByRole('button', { name: 'C' }));
-        expect(addChordEvent).toHaveBeenCalledWith(0, 0, 'major', 4);
+        expectAction({ type: 'addChordEvent', payload: { beat: 0, root: 0, quality: 'major', duration: 4 } });
     });
 
     it('right-clicking empty space opens the quick-add root menu at the clicked beat', () => {
@@ -108,10 +122,11 @@ describe('ChordTrackLane', () => {
 
         expect(screen.getByText('Beat 12')).toBeInTheDocument();
         fireEvent.click(screen.getByText('Add C'));
-        expect(addChordEvent).toHaveBeenCalledWith(12, 0, 'major', 4);
+        expectAction({ type: 'addChordEvent', payload: { beat: 12, root: 0, quality: 'major', duration: 4 } });
     });
 
-    it('right-clicking an existing chord opens its quality/root/delete menu', () => {
+    it('right-clicking an existing chord opens its quality/root/delete menu', async () => {
+        executeAppAction.mockResolvedValue(undefined);
         mockChordState = { enabled: false, events: [oneEvent] };
         render(<ChordTrackLane pixelsPerBeat={16} scrollX={0} />);
         const region = screen.getByRole('region', { name: 'Chord track' });
@@ -122,43 +137,142 @@ describe('ChordTrackLane', () => {
         expect(screen.getByText('Quality')).toBeInTheDocument();
         expect(screen.getByText('Root')).toBeInTheDocument();
 
+        await runAndSettle(() => fireEvent.click(screen.getByText('min7')));
+        expectAction({ type: 'updateChordEvent', payload: { eventId: 'c1', quality: 'min7' } });
+        expect(screen.queryByText('Delete Chord')).not.toBeInTheDocument();
+
+        fireEvent.contextMenu(region, { clientX: 100, clientY: 10 });
+        await runAndSettle(() => fireEvent.click(screen.getByRole('button', { name: 'D' })));
+        expectAction({ type: 'updateChordEvent', payload: { eventId: 'c1', root: 2 } });
+        expect(screen.queryByText('Delete Chord')).not.toBeInTheDocument();
+
+        fireEvent.contextMenu(region, { clientX: 100, clientY: 10 });
+        await runAndSettle(() => fireEvent.click(screen.getByText('Delete Chord')));
+        expectAction({ type: 'removeChordEvent', payload: { eventId: 'c1' } });
+    });
+
+    it('keeps a stable drag preview on lane exit without committing', () => {
+        renderChordLane();
+        const block = getChordBlock();
+
+        fireEvent.pointerDown(block, { button: 0, clientX: 64, pointerId: 7 });
+        fireEvent.pointerMove(block, { clientX: 96, pointerId: 7 });
+        fireEvent.pointerLeave(block, { clientX: 120, pointerId: 7 });
+
+        expect(block).toHaveStyle({ left: '96px' });
+        expect(block.setPointerCapture).toHaveBeenCalledWith(7);
+        expect(executeAppAction).not.toHaveBeenCalled();
+    });
+
+    it('commits once when captured pointer-up occurs outside the lane', async () => {
+        renderChordLane();
+        const block = getChordBlock();
+
+        fireEvent.pointerDown(block, { button: 0, clientX: 64, pointerId: 8 });
+        fireEvent.pointerMove(block, { clientX: 96, pointerId: 8 });
+        fireEvent.pointerLeave(block, { clientX: 120, pointerId: 8 });
+        fireEvent.pointerUp(block, { clientX: 120, pointerId: 8 });
+
+        await waitFor(() => {
+            expect(executeAppAction).toHaveBeenCalledTimes(1);
+        });
+        expectAction({ type: 'moveChordEvent', payload: { eventId: 'c1', beat: 6 } });
+    });
+
+    it('cancels pointer-cancel, lost-capture, and unmount drags without committing', () => {
+        const view = renderChordLane();
+        const block = getChordBlock();
+
+        fireEvent.pointerDown(block, { button: 0, clientX: 64, pointerId: 9 });
+        fireEvent.pointerMove(block, { clientX: 96, pointerId: 9 });
+        fireEvent.pointerCancel(block, { pointerId: 9 });
+        expect(block).toHaveStyle({ left: '64px' });
+
+        fireEvent.pointerDown(block, { button: 0, clientX: 64, pointerId: 10 });
+        fireEvent.pointerMove(block, { clientX: 96, pointerId: 10 });
+        fireEvent.lostPointerCapture(block, { pointerId: 10 });
+
+        fireEvent.pointerDown(block, { button: 0, clientX: 64, pointerId: 11 });
+        fireEvent.pointerMove(block, { clientX: 96, pointerId: 11 });
+        view.unmount();
+        expect(executeAppAction).not.toHaveBeenCalled();
+    });
+
+    it('rejects a second pointer without losing the original drag', () => {
+        renderChordLane();
+        const block = getChordBlock();
+
+        fireEvent.pointerDown(block, { button: 0, clientX: 64, pointerId: 13 });
+        fireEvent.pointerDown(block, { button: 0, clientX: 80, pointerId: 14 });
+        fireEvent.pointerMove(block, { clientX: 96, pointerId: 13 });
+        fireEvent.pointerUp(block, { clientX: 96, pointerId: 13 });
+
+        expect(block.setPointerCapture).toHaveBeenCalledTimes(1);
+        expectAction({ type: 'moveChordEvent', payload: { eventId: 'c1', beat: 6 } });
+    });
+
+    it('clears a drag when pointer-up finds another action pending', () => {
+        renderChordLane();
+        const block = getChordBlock();
+
+        fireEvent.pointerDown(block, { button: 0, clientX: 64, pointerId: 15 });
+        fireEvent.pointerMove(block, { clientX: 96, pointerId: 15 });
+        fireEvent.keyDown(block, { key: 'ArrowRight' });
+        fireEvent.pointerUp(block, { clientX: 96, pointerId: 15 });
+
+        expect(block).toHaveStyle({ left: '64px' });
+        expect(executeAppAction).toHaveBeenCalledTimes(1);
+    });
+
+    it('shows pending then rolls back preview with an alert when drag dispatch rejects', async () => {
+        let rejectAction: (reason: unknown) => void = () => {};
+        executeAppAction.mockImplementationOnce(
+            () =>
+                new Promise<void>((_resolve, reject) => {
+                    rejectAction = reject;
+                })
+        );
+        renderChordLane();
+        const block = getChordBlock();
+
+        fireEvent.pointerDown(block, { button: 0, clientX: 64, pointerId: 12 });
+        fireEvent.pointerMove(block, { clientX: 96, pointerId: 12 });
+        fireEvent.pointerUp(block, { clientX: 96, pointerId: 12 });
+        expect(screen.getByRole('status')).toHaveTextContent('Applying chord change');
+
+        rejectAction(new Error('move failed'));
+        expect(await screen.findByRole('alert')).toHaveTextContent('Chord change failed');
+        expect(block).toHaveStyle({ left: '64px' });
+    });
+
+    it('treats a committed action error as applied and closes the add popover', async () => {
+        executeAppAction.mockRejectedValueOnce(
+            createAppActionCommittedError({ actionType: 'addChordEvent', cause: new Error('history failed') })
+        );
+        render(<ChordTrackLane pixelsPerBeat={16} scrollX={0} />);
+        fireEvent.click(screen.getByLabelText('Add chord event'));
+        fireEvent.click(screen.getByRole('button', { name: 'C' }));
+
+        const alert = await screen.findByRole('alert');
+        expect(alert).toHaveTextContent(/applied/i);
+        expect(alert).not.toHaveTextContent(/try again/i);
+        expect(screen.queryByRole('button', { name: 'C' })).not.toBeInTheDocument();
+    });
+
+    it('gates a newer menu while an older menu action is pending', async () => {
+        let resolveAction: () => void = () => {};
+        executeAppAction.mockImplementationOnce(() => new Promise<void>((resolve) => (resolveAction = resolve)));
+        renderChordLane();
+        const region = screen.getByRole('region', { name: 'Chord track' });
+        region.getBoundingClientRect = vi.fn(() => ({ left: 0, top: 0, width: 1000, height: 26 }) as DOMRect);
+
+        fireEvent.contextMenu(region, { clientX: 100, clientY: 10 });
         fireEvent.click(screen.getByText('min7'));
-        expect(updateChordEvent).toHaveBeenCalledWith('c1', { quality: 'min7' });
+        fireEvent.contextMenu(region, { clientX: 200, clientY: 10 });
 
-        fireEvent.contextMenu(region, { clientX: 100, clientY: 10 });
-        fireEvent.click(screen.getByRole('button', { name: 'D' }));
-        expect(updateChordEvent).toHaveBeenCalledWith('c1', { root: 2 });
-
-        fireEvent.contextMenu(region, { clientX: 100, clientY: 10 });
-        fireEvent.click(screen.getByText('Delete Chord'));
-        expect(removeChordEvent).toHaveBeenCalledWith('c1');
-    });
-
-    it('drags a chord to a new beat, quantized to a sixteenth note', () => {
-        mockChordState = { enabled: false, events: [oneEvent] };
-        render(<ChordTrackLane pixelsPerBeat={16} scrollX={0} />);
-        const region = screen.getByRole('region', { name: 'Chord track' });
-        const block = screen.getByTitle('C — 4 beats');
-
-        fireEvent.mouseDown(block, { button: 0, clientX: 64 });
-        fireEvent.mouseMove(region, { clientX: 96 });
-        expect(moveChordEvent).toHaveBeenCalledWith('c1', 6);
-
-        fireEvent.mouseUp(region);
-        moveChordEvent.mockClear();
-        fireEvent.mouseMove(region, { clientX: 200 });
-        expect(moveChordEvent).not.toHaveBeenCalled();
-    });
-
-    it('ignores non-primary-button mouse down for drag', () => {
-        mockChordState = { enabled: false, events: [oneEvent] };
-        render(<ChordTrackLane pixelsPerBeat={16} scrollX={0} />);
-        const region = screen.getByRole('region', { name: 'Chord track' });
-        const block = screen.getByTitle('C — 4 beats');
-
-        fireEvent.mouseDown(block, { button: 2, clientX: 64 });
-        fireEvent.mouseMove(region, { clientX: 200 });
-        expect(moveChordEvent).not.toHaveBeenCalled();
+        expect(screen.queryByText('Beat 12')).not.toBeInTheDocument();
+        resolveAction();
+        await waitFor(() => expect(screen.queryByText('Delete Chord')).not.toBeInTheDocument());
     });
 
     it('closes an open context menu on an outside click', () => {
