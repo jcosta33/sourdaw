@@ -7,6 +7,7 @@ import {
     midiStore,
     type MidiStoreState,
 } from '../../stores/midiStore';
+import { hydrateMidiCrdtProjection } from '../hydrateMidiCrdtProjection';
 import { resetMidiStoreForProject } from '../resetMidiStoreForProject';
 
 describe('resetMidiStoreForProject', () => {
@@ -42,18 +43,15 @@ describe('resetMidiStoreForProject', () => {
 
     it('uses one deterministic seed when a legacy project has none', () => {
         const getRandomValues = vi.spyOn(crypto, 'getRandomValues');
+        const hydrate = vi.spyOn(chordTrackStore, 'hydrate');
+        const set = vi.spyOn(chordTrackStore, 'set');
 
         resetMidiStoreForProject();
+        hydrateMidiCrdtProjection();
 
         expect(getRandomValues).not.toHaveBeenCalled();
         expect(midiStore.value?.probabilitySeed).toBe(LEGACY_MIDI_PROBABILITY_SEED);
-    });
-
-    it('projects replacement chord authority without scheduling an unscoped write', () => {
-        const hydrate = vi.spyOn(chordTrackStore, 'hydrate');
-        const set = vi.spyOn(chordTrackStore, 'set');
-        resetMidiStoreForProject();
-        expect(hydrate).toHaveBeenCalledOnce();
+        expect(hydrate).toHaveBeenCalledTimes(2);
         expect(set).not.toHaveBeenCalled();
     });
 });
