@@ -88,6 +88,60 @@ function pushControllerDevice(
     return { node, controller };
 }
 
+function installDeferredWasmDevice(deviceId = 'wasm-1') {
+    const placeholderNode = createMockAudioNode('gain');
+    const placeholder: BuiltinDeviceNode = {
+        deviceId,
+        type: 'levain',
+        nodes: [placeholderNode],
+        inputNode: placeholderNode,
+        outputNode: placeholderNode,
+    };
+    let onLoaded: ((finalDn: BuiltinDeviceNode) => void) | undefined;
+    let resolveLoad: (() => void) | undefined;
+    mocks.findWasmDescriptor.mockReturnValue({
+        matches: () => true,
+        create: (deps: { onLoaded: (finalDn: BuiltinDeviceNode) => void }) => {
+            onLoaded = deps.onLoaded;
+            return {
+                placeholder,
+                loadPromise: new Promise<void>((resolve) => {
+                    resolveLoad = resolve;
+                }),
+            };
+        },
+    });
+    return {
+        placeholder,
+        resolve(finalDn: BuiltinDeviceNode): void {
+            if (!onLoaded) {
+                throw new Error('expected the deferred descriptor to capture onLoaded');
+            }
+            onLoaded(finalDn);
+        },
+        settle(): void {
+            if (!resolveLoad) {
+                throw new Error('expected the deferred descriptor to capture its resolver');
+            }
+            resolveLoad();
+        },
+    };
+}
+
+function createLoadedDevice(deviceId = 'wasm-1') {
+    const node = createMockAudioNode('gain');
+    const controller = { setParam: vi.fn(), destroy: vi.fn() };
+    const device: BuiltinDeviceNode = {
+        deviceId,
+        type: 'levain',
+        nodes: [node],
+        inputNode: node,
+        outputNode: node,
+        controller,
+    };
+    return { device, node, controller };
+}
+
 describe('TrackNode — metering, devices, sends, and teardown', () => {
     let ctx: MockContext;
 
@@ -390,52 +444,86 @@ describe('TrackNode — metering, devices, sends, and teardown', () => {
             expect(track.strip.deviceNodes).toHaveLength(0);
         });
 
-        it('installs the wasm placeholder, then swaps in the loaded node and drops the pending promise', async () => {
-            const placeholderNode = createMockAudioNode('gain');
-            const placeholder: BuiltinDeviceNode = {
-                deviceId: 'wasm-1',
-                type: 'levain',
-                nodes: [placeholderNode],
-                inputNode: placeholderNode,
-                outputNode: placeholderNode,
-            };
-            let capturedOnLoaded: ((finalDn: BuiltinDeviceNode) => void) | undefined;
-            let resolveLoad: (() => void) | undefined;
-            mocks.findWasmDescriptor.mockReturnValue({
-                matches: () => true,
-                create: (deps: { onLoaded: (finalDn: BuiltinDeviceNode) => void }) => {
-                    capturedOnLoaded = deps.onLoaded;
-                    return {
-                        placeholder,
-                        loadPromise: new Promise<void>((resolve) => {
-                            resolveLoad = resolve;
-                        }),
-                    };
-                },
-            });
+        it('replays placeholder parameter writes once and in order when a wasm device resolves', async () => {
+            const deferred = installDeferredWasmDevice();
             const pendingDevicePromises = new Set<Promise<unknown>>();
             const track = new TrackNode('t1', makeDeps(ctx, { pendingDevicePromises }));
 
             track.addDevice('wasm-1', 'levain');
+            track.addDevice('wasm-1', 'levain');
+            track.updateParam('wasm-1', 'gain', 0.25);
+            track.updateParam('wasm-1', 'tone', 0.75);
+            track.updateParam('wasm-1', 'gain', 0.5);
 
-            expect(track.strip.deviceNodes[0]).toBe(placeholder);
+            expect(track.strip.deviceNodes[0]).toBe(deferred.placeholder);
             expect(pendingDevicePromises.size).toBe(1);
 
-            const loadedNode = createMockAudioNode('gain');
-            const finalDn: BuiltinDeviceNode = {
-                deviceId: 'wasm-1',
-                type: 'levain',
-                nodes: [loadedNode],
-                inputNode: loadedNode,
-                outputNode: loadedNode,
-            };
-            capturedOnLoaded!(finalDn);
-            expect(track.strip.deviceNodes[0]).toBe(finalDn);
+            const loaded = createLoadedDevice();
+            deferred.resolve(loaded.device);
+            expect(track.strip.deviceNodes[0]).toBe(loaded.device);
+            expect(loaded.controller.setParam.mock.calls).toEqual([
+                ['gain', 0.25],
+                ['tone', 0.75],
+                ['gain', 0.5],
+            ]);
 
-            resolveLoad!();
+            deferred.settle();
             await Promise.resolve();
             await Promise.resolve();
             expect(pendingDevicePromises.size).toBe(0);
+        });
+
+        it('invalidates a removed placeholder and destroys its late wasm result', async () => {
+            const deferred = installDeferredWasmDevice();
+            const pendingDevicePromises = new Set<Promise<unknown>>();
+            const track = new TrackNode('t1', makeDeps(ctx, { pendingDevicePromises }));
+            track.addDevice('wasm-1', 'levain');
+            track.updateParam('wasm-1', 'gain', 0.5);
+            const scheduleRebuild = vi.spyOn(track, 'scheduleRebuildChain');
+
+            track.removeDevice('wasm-1');
+
+            expect(track.strip.deviceNodes).toHaveLength(0);
+            expect(pendingDevicePromises.size).toBe(0);
+            const loaded = createLoadedDevice();
+            deferred.resolve(loaded.device);
+            expect(loaded.controller.destroy).toHaveBeenCalledTimes(1);
+            expect(loaded.node.disconnect).toHaveBeenCalled();
+            expect(scheduleRebuild).not.toHaveBeenCalled();
+
+            deferred.settle();
+            await Promise.resolve();
+        });
+
+        it('invalidates pending wasm loads and scheduled rebuilds when disposed repeatedly', async () => {
+            const deferred = installDeferredWasmDevice();
+            const pendingDevicePromises = new Set<Promise<unknown>>();
+            const track = new TrackNode('t1', makeDeps(ctx, { pendingDevicePromises }));
+            track.addDevice('wasm-1', 'levain');
+            track.updateParam('wasm-1', 'gain', 0.5);
+            const rebuildChain = vi.spyOn(track, 'rebuildChain');
+            const meterNode = workletInstances[0]!;
+            track.scheduleRebuildChain();
+
+            // resetGraph reaches the same TrackNode.dispose path; repeat it to
+            // prove project teardown cannot retain or reconnect this placeholder.
+            track.dispose();
+            track.dispose();
+            await Promise.resolve();
+
+            expect(track.strip.deviceNodes).toHaveLength(0);
+            expect(pendingDevicePromises.size).toBe(0);
+            expect(meterNode.port.close).toHaveBeenCalledTimes(1);
+            expect(rebuildChain).not.toHaveBeenCalled();
+
+            const loaded = createLoadedDevice();
+            deferred.resolve(loaded.device);
+            expect(loaded.controller.destroy).toHaveBeenCalledTimes(1);
+            expect(loaded.node.disconnect).toHaveBeenCalled();
+            expect(rebuildChain).not.toHaveBeenCalled();
+
+            deferred.settle();
+            await Promise.resolve();
         });
     });
 
