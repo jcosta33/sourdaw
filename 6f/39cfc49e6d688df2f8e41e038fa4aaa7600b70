@@ -1,0 +1,19 @@
+src/modules/Arrangement/useCases/clipEditing/__tests__/deleteTimeRange.spec.ts
+  s_ac9b259eab20ba::t_6a97d39d1dd7ad 9-12,18-25,172-174
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "6f39cfc49e6d688df2f8e41e038fa4aaa7600b70",
+  "prompts": {},
+  "sessions": {
+    "s_ac9b259eab20ba": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8699-3865-7842-8c54-afbac6cfd266",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
