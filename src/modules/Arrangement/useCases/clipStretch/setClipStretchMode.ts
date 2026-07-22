@@ -1,6 +1,12 @@
-import { type StretchMode } from '../../models/Track';
 import { updateClip } from '../../repositories/track/updateClip';
 
-export function setClipStretchMode(clipId: string, mode: StretchMode): void {
-    updateClip(clipId, (context) => ({ ...context, stretchMode: mode }));
+import type { StretchMode } from '../../models/Track';
+
+export function setClipStretchMode(clipId: string, mode: StretchMode): boolean {
+    const isSupportedMode = mode === 'off' || mode === 'repitch' || mode === 'timestretch';
+    if (!isSupportedMode) {
+        return false;
+    }
+
+    return updateClip(clipId, (context) => ({ ...context, stretchMode: mode }));
 }
