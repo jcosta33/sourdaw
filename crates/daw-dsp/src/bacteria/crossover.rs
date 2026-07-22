@@ -6,6 +6,10 @@
 
 use std::f32::consts::PI;
 
+/// Butterworth Q for one stage of an LR4 cascade (1/√2), matching the sister
+/// implementation in proof/crossover.rs.
+const BUTTERWORTH_Q: f32 = std::f32::consts::FRAC_1_SQRT_2;
+
 /// 2nd-order biquad filter (used to cascade into LR4).
 #[derive(Clone)]
 struct Biquad {
@@ -35,7 +39,9 @@ impl Biquad {
         let w0 = 2.0 * PI * freq / sample_rate;
         let cos_w0 = w0.cos();
         let sin_w0 = w0.sin();
-        let alpha = sin_w0 / (2.0 * 2.0_f32.sqrt()); // Q = sqrt(2) for Butterworth
+        // RBJ: alpha = sin(w0) / (2Q). One LR4 stage is Butterworth, Q = 1/√2 —
+        // Q = √2 here put +6 dB/stage into every crossover (audit #508 row 25).
+        let alpha = sin_w0 / (2.0 * BUTTERWORTH_Q);
 
         let a0 = 1.0 + alpha;
         self.b0 = ((1.0 - cos_w0) / 2.0) / a0;
@@ -49,7 +55,7 @@ impl Biquad {
         let w0 = 2.0 * PI * freq / sample_rate;
         let cos_w0 = w0.cos();
         let sin_w0 = w0.sin();
-        let alpha = sin_w0 / (2.0 * 2.0_f32.sqrt());
+        let alpha = sin_w0 / (2.0 * BUTTERWORTH_Q);
 
         let a0 = 1.0 + alpha;
         self.b0 = ((1.0 + cos_w0) / 2.0) / a0;
@@ -329,5 +335,77 @@ mod tests {
             .chain(xover.allpass_points_r.iter())
             .all(|p| p.lp1.z1 == 0.0 && p.lp1.z2 == 0.0 && p.hp2.z1 == 0.0 && p.hp2.z2 == 0.0);
         assert!(clean, "topology switch left stale filter state");
+    }
+
+    /// Steady-state magnitude (dB) of the summed band outputs for a sine at
+    /// `test_freq`, relative to the input. A correct LR4 crossover sums flat
+    /// (allpass); the wrong Q peaks at every crossover frequency.
+    fn band_sum_db(num_bands: usize, freqs: &[f32], test_freq: f32, sr: f32) -> f32 {
+        let mut xover = CrossoverEngine::new(sr);
+        xover.set_bands(num_bands, freqs);
+        let mut bands_l = [0.0_f32; 6];
+        let mut bands_r = [0.0_f32; 6];
+        let total = (sr * 1.5) as usize;
+        let measure_from = total / 3; // 0.5 s warmup, 1 s measurement
+        let mut in_energy = 0.0_f64;
+        let mut out_energy = 0.0_f64;
+        for n in 0..total {
+            let s = (2.0 * PI * test_freq * n as f32 / sr).sin();
+            xover.process_sample(s, s, &mut bands_l, &mut bands_r);
+            if n >= measure_from {
+                let sum: f32 = bands_l[..num_bands].iter().sum();
+                in_energy += (s as f64) * (s as f64);
+                out_energy += (sum as f64) * (sum as f64);
+            }
+        }
+        (10.0 * (out_energy / in_energy).log10()) as f32
+    }
+
+    /// Log-spaced sweep 20 Hz–16 kHz plus every crossover frequency (the exact
+    /// points where a wrong Butterworth Q peaks hardest).
+    fn sweep_plus(xover_freqs: &[f32]) -> Vec<f32> {
+        let mut points: Vec<f32> = (0..40)
+            .map(|i| 20.0 * (800.0_f32).powf(i as f32 / 39.0))
+            .collect();
+        points.extend_from_slice(xover_freqs);
+        points
+    }
+
+    #[test]
+    fn two_band_sum_is_flat_across_frequency_including_crossover() {
+        let freqs = [1000.0_f32, 3000.0, 8000.0, 12000.0, 16000.0];
+        let mut worst_db = 0.0_f32;
+        let mut worst_freq = 0.0_f32;
+        for f in sweep_plus(&freqs[..1]) {
+            let db = band_sum_db(2, &freqs, f, 48_000.0);
+            if db.abs() > worst_db.abs() {
+                worst_db = db;
+                worst_freq = f;
+            }
+        }
+        eprintln!("2-band worst deviation: {worst_db:+.2} dB at {worst_freq} Hz");
+        assert!(
+            worst_db.abs() <= 0.5,
+            "2-band sum not flat: {worst_db:+.2} dB at {worst_freq} Hz"
+        );
+    }
+
+    #[test]
+    fn four_band_sum_is_flat_across_frequency_including_all_crossovers() {
+        let freqs = [200.0_f32, 800.0, 2500.0, 6000.0, 12000.0];
+        let mut worst_db = 0.0_f32;
+        let mut worst_freq = 0.0_f32;
+        for f in sweep_plus(&freqs[..3]) {
+            let db = band_sum_db(4, &freqs, f, 48_000.0);
+            if db.abs() > worst_db.abs() {
+                worst_db = db;
+                worst_freq = f;
+            }
+        }
+        eprintln!("4-band worst deviation: {worst_db:+.2} dB at {worst_freq} Hz");
+        assert!(
+            worst_db.abs() <= 0.5,
+            "4-band sum not flat: {worst_db:+.2} dB at {worst_freq} Hz"
+        );
     }
 }
