@@ -165,13 +165,16 @@ function decodeState(value: unknown): ChordTrackState {
 
 function encodeMigratedState(previous: unknown, desired: ChordTrackState): ChordTrackCrdtState {
     const encoded = encodeState(desired);
-    if (!isChordTrackState(previous)) {
+    const migrationBase = previous === undefined ? normalizeState(desired) : normalizeState(previous);
+    if (previous !== undefined && !isChordTrackState(previous)) {
         return encoded;
     }
-    const legacy = normalizeState(previous);
-    encoded.migrationBase = { enabled: legacy.enabled, events: legacy.events.map((event) => ({ ...event })) };
+    encoded.migrationBase = {
+        enabled: migrationBase.enabled,
+        events: migrationBase.events.map((event) => ({ ...event })),
+    };
     const desiredIds = new Set(desired.events.map((event) => event.id));
-    for (const event of legacy.events) {
+    for (const event of migrationBase.events) {
         if (!desiredIds.has(event.id)) {
             encoded.events[event.id] = { deleted: true, value: { ...event } };
         }

@@ -323,9 +323,11 @@ describe('chordTrackStore CRDT projection', () => {
 
     it('reconciles concurrent first migration without losing independent edits', () => {
         const initial = { ...chordState('legacy-shared', 3), enabled: false };
-        const legacy = from<RootDocument>({ chordTrack: initial });
-        const leftPeer = createPeer(clone(legacy));
-        const rightPeer = createPeer(clone(legacy));
+        const emptyRoot = from<RootDocument>({});
+        const leftPeer = createPeer(clone(emptyRoot));
+        const rightPeer = createPeer(clone(emptyRoot));
+        writePeer(leftPeer, initial);
+        writePeer(rightPeer, initial);
         writePeer(leftPeer, { enabled: true, events: [{ ...initial.events[0]!, duration: 16 }] });
         writePeer(rightPeer, {
             enabled: false,

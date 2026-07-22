@@ -8,7 +8,7 @@ import {
 import { clearHandlerRegistry, registerHandlerMap } from '#/modules/Command/stores';
 import { executeAppAction } from '#/modules/Command/useCases';
 
-import { chordTrackStore } from '../../stores/chordTrackStore';
+import { chordTrackStore, defaultChordTrackState } from '../../stores/chordTrackStore';
 import { getChordTrackHandlers } from '../getChordTrackHandlers';
 import { readLegacyChordTrackMigration } from '../readLegacyChordTrackMigration';
 
@@ -17,6 +17,7 @@ type RootDocument = Record<string, unknown> & { chordTrack?: unknown };
 type TestPort = NonNullable<Parameters<typeof configureAutomergeStoragePort>[0]>;
 
 let doc: Doc<RootDocument>;
+let waitForSnapshotTransaction: (() => Promise<void>) | undefined;
 
 describe('readLegacyChordTrackMigration', () => {
     beforeEach(() => {
@@ -25,6 +26,7 @@ describe('readLegacyChordTrackMigration', () => {
         clearHandlerRegistry();
         registerHandlerMap(getChordTrackHandlers());
         doc = from<RootDocument>({});
+        waitForSnapshotTransaction = undefined;
         configureAutomergeStoragePort({
             getDoc: () => doc,
             getSemanticMessage: () => undefined,
@@ -32,6 +34,7 @@ describe('readLegacyChordTrackMigration', () => {
             mutateDoc: ({ changeFn }: Parameters<TestPort['mutateDoc']>[0]) => {
                 doc = change(doc, (draft) => changeFn(draft));
             },
+            waitForSnapshotTransaction: () => waitForSnapshotTransaction?.() ?? Promise.resolve(),
         });
         chordTrackStore.hydrate();
         localStorage.removeItem(STORAGE_KEY);
@@ -60,6 +63,12 @@ describe('readLegacyChordTrackMigration', () => {
         expect(localStorage.getItem(STORAGE_KEY)).not.toBeNull();
         migration?.remove();
         expect(localStorage.getItem(STORAGE_KEY)).toBeNull();
+
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+        const staleMigration = readLegacyChordTrackMigration();
+        localStorage.setItem(STORAGE_KEY, JSON.stringify({ ...state, enabled: false }));
+        staleMigration?.remove();
+        expect(localStorage.getItem(STORAGE_KEY)).toBe(JSON.stringify({ ...state, enabled: false }));
     });
 
     it('commits legacy storage into an empty real CRDT root without seeding chord truth', async () => {
@@ -78,6 +87,35 @@ describe('readLegacyChordTrackMigration', () => {
         expect(doc.chordTrack).toMatchObject({ schemaVersion: 1, enabled: true });
         expect(chordTrackStore.value).toEqual(state);
         expect(localStorage.getItem(STORAGE_KEY)).not.toBeNull();
+    });
+
+    it('does not let a queued real migration write into successor project authority', async () => {
+        const state = { ...defaultChordTrackState, enabled: true };
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+        const migration = readLegacyChordTrackMigration();
+        if (!migration) {
+            throw new Error('Expected a valid legacy migration');
+        }
+        let releaseQueue: (() => void) | undefined;
+        waitForSnapshotTransaction = () =>
+            new Promise<void>((resolve) => {
+                releaseQueue = resolve;
+            });
+        let isCurrent = true;
+
+        const execution = executeAppAction(migration.action, {
+            shouldExecute: () => isCurrent,
+            skipMacroRecording: true,
+            skipUndo: true,
+        });
+        doc = from<RootDocument>({});
+        chordTrackStore.hydrate();
+        isCurrent = false;
+        releaseQueue?.();
+        await execution;
+
+        expect(doc.chordTrack).toBeUndefined();
+        expect(chordTrackStore.value).toEqual(defaultChordTrackState);
     });
 
     it.each([

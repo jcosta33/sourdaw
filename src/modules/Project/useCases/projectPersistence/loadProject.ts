@@ -90,7 +90,11 @@ export async function loadProject(): Promise<boolean> {
     if (rootDoc && !Object.hasOwn(rootDoc, 'chordTrack')) {
         const migration = readLegacyChordTrackMigration();
         if (migration) {
-            await executeAppAction(migration.action, { skipMacroRecording: true, skipUndo: true });
+            await executeAppAction(migration.action, {
+                shouldExecute: transaction.isCurrent,
+                skipMacroRecording: true,
+                skipUndo: true,
+            });
             if (!transaction.isCurrent()) {
                 return false;
             }

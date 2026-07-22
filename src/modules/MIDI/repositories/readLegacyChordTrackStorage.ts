@@ -24,7 +24,10 @@ export function readLegacyChordTrackStorage(): LegacyChordTrackStorage | null {
         raw,
         remove: () => {
             try {
-                window.localStorage.removeItem(LEGACY_CHORD_TRACK_STORAGE_KEY);
+                const current = window.localStorage.getItem(LEGACY_CHORD_TRACK_STORAGE_KEY);
+                if (current === raw) {
+                    window.localStorage.removeItem(LEGACY_CHORD_TRACK_STORAGE_KEY);
+                }
             } catch {
                 // A blocked cleanup must not invalidate an already committed migration.
             }

@@ -17,7 +17,12 @@ const mocks = vi.hoisted(() => ({
     projectStoreValue: { value: { loading: false, initialized: true } as ProjectStoreState },
     projectStoreSet: vi.fn(),
     createCrdtProject: vi.fn(),
-    executeAppAction: vi.fn(() => Promise.resolve()),
+    executeAppAction: vi.fn<
+        (
+            action: unknown,
+            options?: { shouldExecute?: () => boolean; skipMacroRecording?: boolean; skipUndo?: boolean }
+        ) => Promise<void>
+    >(() => Promise.resolve()),
     getCrdtDoc: vi.fn((): { chordTrack?: unknown; tracks: { tracks: never[] } } => ({ tracks: { tracks: [] } })),
     loadCrdtProject: vi.fn(),
     persistCrdtProject: vi.fn(() => Promise.resolve()),
@@ -178,9 +183,13 @@ describe('loadProject', () => {
         );
 
         const loading = loadProject();
-        await vi.waitFor(() =>
-            expect(executeAppAction).toHaveBeenCalledWith(action, { skipMacroRecording: true, skipUndo: true })
-        );
+        await vi.waitFor(() => expect(executeAppAction).toHaveBeenCalledOnce());
+        expect(mocks.executeAppAction.mock.calls[0]?.[0]).toEqual(action);
+        expect(mocks.executeAppAction.mock.calls[0]?.[1]).toMatchObject({
+            skipMacroRecording: true,
+            skipUndo: true,
+        });
+        expect(mocks.executeAppAction.mock.calls[0]?.[1]?.shouldExecute).toBeTypeOf('function');
         expect(persistCrdtProject).not.toHaveBeenCalled();
         expect(remove).not.toHaveBeenCalled();
         resolveCommit?.();
