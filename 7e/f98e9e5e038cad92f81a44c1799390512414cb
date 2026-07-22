@@ -1,0 +1,58 @@
+src/modules/AudioEngine/repositories/deviceStrategy/__tests__/NativeDspDeviceStrategy.spec.ts
+  s_ac9b259eab20ba::t_c64f07bf3023f8 42-44
+  s_ac9b259eab20ba::t_6bd4e14d4b80e5 85,89-91
+  s_ac9b259eab20ba::t_2822aa9a6a47c4 33-41,45-50
+src/modules/AudioEngine/useCases/index.ts
+  s_ac9b259eab20ba::t_9964fc228258a0 43
+src/modules/AudioEngine/useCases/resolveToasterPadBinding.ts
+  s_ac9b259eab20ba::t_9964fc228258a0 1-23
+src/modules/AudioEngine/useCases/offlineRender/__tests__/connectOfflineToasterPadRoutes.spec.ts
+  s_ac9b259eab20ba::t_bb5a1b2beca04b 9-10,20,27-28,35-36,58,63,71,80-81
+  s_ac9b259eab20ba::t_692799ec2cbc5f 75-79,82-92
+  s_ac9b259eab20ba::t_ad028d6154fa26 21-22,24,26
+  s_ac9b259eab20ba::t_b0c5493742166a 1-8,11-19,23,25,29-34,37-57,59-62,64-70,72-74,93
+src/modules/AudioEngine/useCases/__tests__/renderOfflineGraph.spec.ts
+  s_ac9b259eab20ba::t_ad028d6154fa26 264-269,272,274,281
+  s_ac9b259eab20ba::t_5e4871767fbce7 248-254,257-263,270-271,273,282-294
+  s_ac9b259eab20ba::t_b837d80657318c 7
+  s_ac9b259eab20ba::t_bb5a1b2beca04b 255-256,275-280
+  s_92b905bf82da5c::t_ff62e792156bea 295-296
+src/modules/AudioEngine/useCases/__tests__/resolveToasterPadBinding.spec.ts
+  s_ac9b259eab20ba::t_9964fc228258a0 1-32
+  s_ac9b259eab20ba::t_e96d11509e2b7b 33-35
+src/modules/AudioEngine/repositories/deviceStrategy/NativeDspDeviceStrategy.ts
+  s_ac9b259eab20ba::t_9fb1c24746cf40 23-25,57-67
+  s_ac9b259eab20ba::t_57c4f722d4c02d 68
+src/modules/AudioEngine/useCases/offlineRender/connectOfflineToasterPadRoutes.ts
+  s_ac9b259eab20ba::t_b0c5493742166a 1-34
+src/modules/AudioEngine/repositories/deviceStrategy/AudioDeviceStrategy.ts
+  s_ac9b259eab20ba::t_9fb1c24746cf40 10-12
+src/modules/AudioEngine/useCases/renderOffline.ts
+  s_ac9b259eab20ba::t_692799ec2cbc5f 114
+  s_ac9b259eab20ba::t_fbc0648f770ee6 6
+  s_ac9b259eab20ba::t_f0fe8830e78304 115
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "7ef98e9e5e038cad92f81a44c1799390512414cb",
+  "prompts": {},
+  "sessions": {
+    "s_92b905bf82da5c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "fc4c3b22-f57f-4fa4-a234-65db0d062ff2",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_ac9b259eab20ba": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8699-3865-7842-8c54-afbac6cfd266",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
