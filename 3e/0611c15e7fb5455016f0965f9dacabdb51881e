@@ -1,0 +1,20 @@
+src/modules/Arrangement/stores/__tests__/vcaActivationQuarantine.spec.ts
+  s_c2fca615e81f34::t_7db60a8732c3c0 5,8-9,11,16-17,20-22,60-63,65-92,110,170-183
+  s_c2fca615e81f34::t_100e839f970ac8 64
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "3e0611c15e7fb5455016f0965f9dacabdb51881e",
+  "prompts": {},
+  "sessions": {
+    "s_c2fca615e81f34": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f74e9-e1c5-7142-85d2-4c577b3973c0",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
