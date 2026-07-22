@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, expectTypeOf, it, vi } from 'vitest';
 
-import { chordTrackStore, defaultChordTrackState } from '../../stores/chordTrackStore';
+import { chordTrackStore } from '../../stores/chordTrackStore';
 import {
     isValidMidiProbabilitySeed,
     LEGACY_MIDI_PROBABILITY_SEED,
@@ -49,12 +49,11 @@ describe('resetMidiStoreForProject', () => {
         expect(midiStore.value?.probabilitySeed).toBe(LEGACY_MIDI_PROBABILITY_SEED);
     });
 
-    it('resets chord project truth when creating a replacement project', () => {
-        chordTrackStore.set({
-            enabled: true,
-            events: [{ id: 'old-project-chord', beat: 0, root: 9, quality: 'min9', duration: 4 }],
-        });
+    it('projects replacement chord authority without scheduling an unscoped write', () => {
+        const hydrate = vi.spyOn(chordTrackStore, 'hydrate');
+        const set = vi.spyOn(chordTrackStore, 'set');
         resetMidiStoreForProject();
-        expect(chordTrackStore.value).toEqual(defaultChordTrackState);
+        expect(hydrate).toHaveBeenCalledOnce();
+        expect(set).not.toHaveBeenCalled();
     });
 });
