@@ -8,6 +8,11 @@ import {
 import { automationStore } from '#/modules/Automation/stores';
 import { getAutomationValueAtBeat, isRecordingAutomation } from '#/modules/Automation/useCases';
 import { setFermenterMappedParam } from '#/modules/Fermenter/useCases';
+import {
+    getDeviceAutomationParameterId,
+    resolveDeviceAutomationTargetIndex,
+    UNRESOLVED_DEVICE_AUTOMATION_TARGET,
+} from '#/utils/automationDeviceTarget';
 
 /**
  * Per-parameter exponential slew state for plugin automation.
@@ -16,6 +21,13 @@ import { setFermenterMappedParam } from '#/modules/Fermenter/useCases';
 const SLEW_ALPHA = 0.4;
 /** Skip dispatch when the smoothed value has moved less than this per tick. */
 const SLEW_EPSILON = 5e-5;
+
+function deviceAcceptsAutomationParameter(
+    device: { parameterValues: Record<string, number> },
+    parameterId: string
+): boolean {
+    return device.parameterValues[parameterId] !== undefined;
+}
 
 const automationState: {
     pluginParamSlew: Map<string, Map<string, number>>;
@@ -74,21 +86,16 @@ export function applyAutomation(currentBeat: number): void {
         } else {
             let laneSlew = automationState.pluginParamSlew.get(lane.id);
 
-            // Audio Device Automation
-            //
-            // Device-param lanes carry a `${device.type}:${paramId}` parameterId
-            // (built in TimelineEditor/presentations/helpers/automationViewHelpers.ts),
-            // but `device.parameterValues` is keyed by the bare paramId
-            // (Arrangement/useCases/device/addDevice.ts). Strip the device-type
-            // prefix before matching/forwarding, otherwise every device-param
-            // lane no-ops.
-            for (const device of track.devices) {
-                const prefix = `${device.type}:`;
-                let paramId = lane.parameterId;
-                if (lane.parameterId.startsWith(prefix)) {
-                    paramId = lane.parameterId.slice(prefix.length);
-                }
-                if (device.parameterValues[paramId] === undefined) {
+            const deviceIndex = resolveDeviceAutomationTargetIndex(
+                lane.parameterId,
+                track.devices,
+                deviceAcceptsAutomationParameter
+            );
+
+            if (deviceIndex >= 0) {
+                const device = track.devices[deviceIndex]!;
+                const paramId = getDeviceAutomationParameterId(lane.parameterId);
+                if (!paramId) {
                     continue;
                 }
                 const targetOwner = resolveEligibleDeviceWriteTarget(device.id);
@@ -115,7 +122,10 @@ export function applyAutomation(currentBeat: number): void {
                         updateDeviceParam(targetOwner.trackId, targetOwner.deviceId, paramId, smoothed);
                     }
                 }
-                break;
+                continue;
+            }
+            if (deviceIndex === UNRESOLVED_DEVICE_AUTOMATION_TARGET) {
+                continue;
             }
 
             // MIDI FX Automation
