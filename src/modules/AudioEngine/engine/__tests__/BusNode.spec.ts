@@ -3,67 +3,56 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { createMockAudioContext } from '../../../../helpers/__tests__/audioContext.mock';
 import { BusNode } from '../BusNode';
 
+import type { TrackNode } from '../TrackNode';
+
 describe('BusNode', () => {
     let ctx: ReturnType<typeof createMockAudioContext>;
-    let masterGain: GainNode;
+    let trackNode: TrackNode;
 
     beforeEach(() => {
         ctx = createMockAudioContext();
-        masterGain = ctx.createGain() as any;
+        const gainNode = ctx.createGain();
+        const analyserNode = ctx.createAnalyser();
+        trackNode = {
+            strip: {
+                gainNode,
+                analyserNode,
+                meterBuffer: new Float32Array(1),
+            },
+            setGain: vi.fn(),
+            getPeakLevel: vi.fn(() => 0.8),
+        } as unknown as TrackNode;
         vi.clearAllMocks();
     });
 
-    it('should create and wire up nodes correctly', () => {
-        const bus = new BusNode('bus-1', ctx as any, masterGain);
+    it('uses the owning track strip as the bus input and meter path', () => {
+        const bus = new BusNode('bus-1', trackNode);
 
-        expect(ctx.createGain).toHaveBeenCalled();
-        expect(ctx.createAnalyser).toHaveBeenCalled();
         expect(bus.strip.busId).toBe('bus-1');
-
-        // gain -> analyser -> master
-        expect(bus.strip.gainNode.connect).toHaveBeenCalledWith(bus.strip.analyserNode);
-        expect(bus.strip.analyserNode.connect).toHaveBeenCalledWith(masterGain);
+        expect(bus.strip.gainNode).toBe(trackNode.strip.gainNode);
+        expect(bus.strip.analyserNode).toBe(trackNode.strip.analyserNode);
+        expect(bus.strip.meterBuffer).toBe(trackNode.strip.meterBuffer);
     });
 
-    it('should set gain using setTargetAtTime', () => {
-        const bus = new BusNode('bus-1', ctx as any, masterGain);
-        const gainParam = bus.strip.gainNode.gain;
+    it('sets gain through the owning track fader', () => {
+        const bus = new BusNode('bus-1', trackNode);
 
         bus.setGain(0.5);
-        expect(gainParam.setTargetAtTime).toHaveBeenCalledWith(0.5, ctx.currentTime, 0.01);
+        expect(trackNode.setGain).toHaveBeenCalledWith(0.5);
     });
 
-    it('should clamp gain values', () => {
-        const bus = new BusNode('bus-1', ctx as any, masterGain);
-        const gainParam = bus.strip.gainNode.gain;
-
-        bus.setGain(-1);
-        expect(gainParam.setTargetAtTime).toHaveBeenCalledWith(0, ctx.currentTime, 0.01);
-
-        bus.setGain(3);
-        expect(gainParam.setTargetAtTime).toHaveBeenCalledWith(2, ctx.currentTime, 0.01);
-    });
-
-    it('should calculate peak level from analyser data', () => {
-        const bus = new BusNode('bus-1', ctx as any, masterGain);
-        const analyser = bus.strip.analyserNode;
-
-        // Mock analyser data: peak is 0.8
-        vi.mocked(analyser.getFloatTimeDomainData).mockImplementation((data: Float32Array) => {
-            data[0] = 0.1;
-            data[1] = -0.8;
-            data[2] = 0.5;
-        });
+    it('reads peak level from the owning track meter', () => {
+        const bus = new BusNode('bus-1', trackNode);
 
         const peak = bus.getPeakLevel();
         expect(peak).toBeCloseTo(0.8, 5);
     });
 
-    it('should disconnect nodes on dispose', () => {
-        const bus = new BusNode('bus-1', ctx as any, masterGain);
+    it('does not dispose nodes owned by the paired track strip', () => {
+        const bus = new BusNode('bus-1', trackNode);
         bus.dispose();
 
-        expect(bus.strip.gainNode.disconnect).toHaveBeenCalled();
-        expect(bus.strip.analyserNode.disconnect).toHaveBeenCalled();
+        expect(bus.strip.gainNode.disconnect).not.toHaveBeenCalled();
+        expect(bus.strip.analyserNode.disconnect).not.toHaveBeenCalled();
     });
 });

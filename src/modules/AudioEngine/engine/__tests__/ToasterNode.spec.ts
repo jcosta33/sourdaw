@@ -30,6 +30,7 @@ describe('createToasterNode', () => {
     let connect: ReturnType<typeof vi.fn>;
     let close: ReturnType<typeof vi.fn>;
     let resume: ReturnType<typeof vi.fn>;
+    let workletOptions: AudioWorkletNodeOptions | undefined;
 
     beforeEach(() => {
         postMessage = vi.fn();
@@ -37,8 +38,12 @@ describe('createToasterNode', () => {
         connect = vi.fn();
         close = vi.fn();
         resume = vi.fn().mockResolvedValue(undefined);
+        workletOptions = undefined;
 
         class FakeWorkletNode {
+            constructor(_context: BaseAudioContext, _name: string, options?: AudioWorkletNodeOptions) {
+                workletOptions = options;
+            }
             port = { postMessage, onmessage: null as ((e: MessageEvent) => void) | null, close };
             connect = connect;
             disconnect = disconnect;
@@ -197,6 +202,26 @@ describe('createToasterNode', () => {
         node.connect(dest);
         expect(connect).toHaveBeenCalledWith(dest);
         expect(() => node.disconnect()).not.toThrow();
+    });
+
+    it('exposes one parent and 16 stereo pad outputs through stable output indexes', async () => {
+        const node = await createToasterNode(makeCtx());
+        const destination = {} as AudioNode;
+        if (!node.connectPadOutput || !node.disconnectPadOutput) {
+            throw new Error('Toaster pad output controls are missing');
+        }
+
+        expect(workletOptions?.numberOfOutputs).toBe(17);
+        expect(workletOptions?.outputChannelCount).toEqual(Array.from({ length: 17 }, () => 2));
+        node.connectPadOutput(0, destination);
+        node.connectPadOutput(15, destination);
+        node.connectPadOutput(16, destination);
+        expect(connect).toHaveBeenNthCalledWith(1, destination, 1, 0);
+        expect(connect).toHaveBeenNthCalledWith(2, destination, 16, 0);
+        expect(connect).toHaveBeenCalledTimes(2);
+
+        node.disconnectPadOutput(15, destination);
+        expect(disconnect).toHaveBeenCalledWith(destination, 16, 0);
     });
 
     it('should disconnect and close the port on destroy, swallowing a disconnect error', async () => {
