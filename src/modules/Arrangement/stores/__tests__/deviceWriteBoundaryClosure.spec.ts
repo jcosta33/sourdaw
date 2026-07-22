@@ -263,6 +263,9 @@ const DEVICE_DATA_COUNTS = {
         'src/modules/Arrangement/repositories/presets/presetHelpers/tremolo.ts': 1,
         'src/modules/Arrangement/repositories/presets/stringsPresets.ts': 6,
         'src/modules/Arrangement/repositories/trackTemplate/loadTrackTemplates.ts': 1,
+        // Type-only device-data shape: LiveStripTrack declares `devices` so
+        // shouldCreateLiveTrackStrip can read device types for folder-strip
+        // eligibility (#584) — a static declaration, not an executable access.
         'src/modules/Arrangement/stores/trackEligibility.ts': 1,
         'src/modules/Project/models/ProjectData.ts': 4,
         'src/modules/Project/models/VcaTrackMigration.ts': 1,
