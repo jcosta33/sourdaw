@@ -9,11 +9,12 @@ type TestTrack = {
     automationMode: 'read' | 'write' | 'touch' | 'latch';
 };
 
-const { activeRecording, touchActive, trackSnapshot } = vi.hoisted(() => {
+const { activeRecording, touchActive, trackSnapshot, trackStoreRead } = vi.hoisted(() => {
     const activeRecording = new Map<string, import('../recordingSessionState').RecordingSession>();
     const touchActive = new Set<string>();
     const trackSnapshot: { value: { tracks: TestTrack[] } | null } = { value: null };
-    return { activeRecording, touchActive, trackSnapshot };
+    const trackStoreRead = vi.fn();
+    return { activeRecording, touchActive, trackSnapshot, trackStoreRead };
 });
 
 vi.mock('#/modules/Arrangement/stores', async (importOriginal) => {
@@ -22,6 +23,7 @@ vi.mock('#/modules/Arrangement/stores', async (importOriginal) => {
         ...actual,
         trackStore: {
             get value() {
+                trackStoreRead();
                 return trackSnapshot.value;
             },
         },
@@ -47,6 +49,7 @@ describe('isRecordingAutomation', () => {
 
     it('returns false when there is no active recording session', () => {
         expect(isRecordingAutomation('t1', 'gain')).toBe(false);
+        expect(trackStoreRead).not.toHaveBeenCalled();
     });
 
     it('returns false when the track no longer exists', () => {
