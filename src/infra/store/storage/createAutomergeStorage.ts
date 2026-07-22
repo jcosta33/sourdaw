@@ -356,6 +356,15 @@ export const createAutomergeStorage = <TData>(
     let cachedValue: TData | null = null;
     let committedCacheValue: TData | null = null;
     let committedCacheRevision = 0;
+    /**
+     * Set-time high-water mark of the newest committed value. Unlike
+     * committedCacheRevision (bumped at COMMIT time), this records the
+     * revision the committed pending carried at its last set() — so an
+     * unscoped write made after the committed set but before the commit is
+     * correctly seen as newer (review #601). Hydrate bumps it like the
+     * committed revision since hydrated values are causally newest.
+     */
+    let committedSetRevision = 0;
     let cachedRevision = 0;
     let nextRevision = 0;
     const pendingWritesByOwner = new Map<object, AdapterPendingWrite>();
@@ -443,7 +452,7 @@ export const createAutomergeStorage = <TData>(
         // Scoped pendings are exempt: transaction commit order is deliberate
         // terminal order (compensating transactions legitimately commit older
         // values last).
-        if (!pending.scoped && pending.revision < committedCacheRevision) {
+        if (!pending.scoped && pending.revision < committedSetRevision) {
             return null;
         }
         return createMutation(pending.value, pending.message, pending.write.snapshotTransaction);
@@ -491,6 +500,7 @@ export const createAutomergeStorage = <TData>(
         }
         committedCacheValue = pending.value;
         committedCacheRevision = ++nextRevision;
+        committedSetRevision = pending.revision;
         for (const remaining of pendingWritesByOwner.values()) {
             remaining.baseValue = pending.value;
         }
@@ -616,6 +626,7 @@ export const createAutomergeStorage = <TData>(
 
                 committedCacheValue = crdtData;
                 committedCacheRevision = ++nextRevision;
+                committedSetRevision = committedCacheRevision;
 
                 const visiblePending = [...pendingWritesByOwner.values()].find(
                     (pending) => pending.revision === cachedRevision
@@ -662,6 +673,7 @@ export const createAutomergeStorage = <TData>(
                     cachedValue = missing_value;
                     committedCacheValue = missing_value;
                     committedCacheRevision = ++nextRevision;
+                    committedSetRevision = committedCacheRevision;
                     cachedRevision = committedCacheRevision;
                     lastHydratedJson = null;
                     return true;
