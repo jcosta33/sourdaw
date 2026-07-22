@@ -3,7 +3,7 @@ import { loadPlugin } from '#/modules/PluginHost/useCases';
 
 import { getTrackState } from '../../repositories/track/getTrackState';
 import { updateTrack } from '../../repositories/track/updateTrack';
-import { getTrackEligibility } from '../../stores/trackEligibility';
+import { getTrackEligibility, shouldCreateLiveTrackStrip } from '../../stores/trackEligibility';
 import { type Device } from '../../stores/trackStore';
 
 function nextDeviceIdStr(): string {
@@ -32,10 +32,13 @@ export function addExternalDevice(trackId: string, pluginId: string, pluginName:
         externalInstanceId: instanceId,
     };
 
+    const projectedTrack = { ...track, devices: [...track.devices, device] };
     updateTrack(trackId, (time) => ({ ...time, devices: [...time.devices, device] }));
 
-    addDeviceToStrip(trackId, device.id, 'external-plugin', instanceId);
-    void loadPlugin(pluginId, instanceId);
+    if (shouldCreateLiveTrackStrip(projectedTrack)) {
+        addDeviceToStrip(trackId, device.id, 'external-plugin', instanceId);
+        void loadPlugin(pluginId, instanceId);
+    }
 
     return device;
 }

@@ -37,7 +37,7 @@ vi.mock('#/modules/PluginHost/useCases', async (importOriginal) => ({
 describe('addDevice', () => {
     beforeEach(() => {
         vi.clearAllMocks();
-        mocks.getTrackState.mockReturnValue({ tracks: [{ id: 't1', kind: 'audio' }] });
+        mocks.getTrackState.mockReturnValue({ tracks: [{ id: 't1', kind: 'audio', devices: [] }] });
         mocks.getPlatformPlugins.mockReturnValue([]);
     });
 
@@ -72,6 +72,43 @@ describe('addDevice', () => {
         expect(mocks.updateDeviceParam).toHaveBeenCalledWith('t1', result?.id, 'wet', 0.5);
     });
 
+    it('persists a registered non-Toaster on an ordinary folder without allocating an engine strip', () => {
+        mocks.getTrackState.mockReturnValue({ tracks: [{ id: 'folder-1', kind: 'folder', devices: [] }] });
+        mocks.getPlatformPlugins.mockReturnValue([
+            { id: 'p1', name: 'Reverb', parameters: [{ id: 'wet', value: 0.5 }] },
+        ]);
+
+        const result = addDevice('folder-1', 'Reverb');
+
+        expect(result).toMatchObject({ type: 'p1' });
+        expect(mocks.updateTrack).toHaveBeenCalledWith('folder-1', expect.any(Function));
+        expect(mocks.addDeviceToStrip).not.toHaveBeenCalled();
+        expect(mocks.updateDeviceParam).not.toHaveBeenCalled();
+    });
+
+    it('bootstraps an ordinary folder when adding Toaster', () => {
+        mocks.getTrackState.mockReturnValue({ tracks: [{ id: 'folder-1', kind: 'folder', devices: [] }] });
+        mocks.getPlatformPlugins.mockReturnValue([{ id: 'toaster', name: 'Toaster', parameters: [] }]);
+
+        const result = addDevice('folder-1', 'Toaster');
+
+        expect(mocks.addDeviceToStrip).toHaveBeenCalledWith('folder-1', result?.id, 'toaster');
+    });
+
+    it('adds a supported device to an already-live Toaster folder', () => {
+        mocks.getTrackState.mockReturnValue({
+            tracks: [{ id: 'folder-1', kind: 'folder', devices: [{ id: 'toaster-1', type: 'toaster' }] }],
+        });
+        mocks.getPlatformPlugins.mockReturnValue([
+            { id: 'p1', name: 'Reverb', parameters: [{ id: 'wet', value: 0.5 }] },
+        ]);
+
+        const result = addDevice('folder-1', 'Reverb');
+
+        expect(mocks.addDeviceToStrip).toHaveBeenCalledWith('folder-1', result?.id, 'p1');
+        expect(mocks.updateDeviceParam).toHaveBeenCalledWith('folder-1', result?.id, 'wet', 0.5);
+    });
+
     it('compiles Faust DSP if it starts with faust-', async () => {
         const mockPlugin = {
             id: 'faust-synth',
@@ -88,7 +125,7 @@ describe('addDevice', () => {
     });
 
     it('rejects a dormant VCA before ID allocation, store writes, engine calls, or plugin compilation', () => {
-        mocks.getTrackState.mockReturnValue({ tracks: [{ id: 'vca-1', kind: 'vca' }] });
+        mocks.getTrackState.mockReturnValue({ tracks: [{ id: 'vca-1', kind: 'vca', devices: [] }] });
         mocks.getPlatformPlugins.mockReturnValue([{ id: 'faust-synth', name: 'Faust Synth', parameters: [] }]);
 
         expect(addDevice('vca-1', 'faust-synth')).toBeNull();

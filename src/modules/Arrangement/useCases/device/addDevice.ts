@@ -4,7 +4,7 @@ import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { getTrackState } from '../../repositories/track/getTrackState';
 import { updateTrack } from '../../repositories/track/updateTrack';
-import { getTrackEligibility } from '../../stores/trackEligibility';
+import { getTrackEligibility, shouldCreateLiveTrackStrip } from '../../stores/trackEligibility';
 import { type Device } from '../../stores/trackStore';
 import { getPlatformPlugins } from '../getPlatformPlugins';
 
@@ -46,9 +46,10 @@ export function addDevice(trackId: string, deviceType: string): Device | null {
         parameterValues,
     };
 
+    const projectedTrack = { ...track, devices: [...track.devices, device] };
     updateTrack(trackId, (time) => ({ ...time, devices: [...time.devices, device] }));
 
-    if (plugin) {
+    if (plugin && shouldCreateLiveTrackStrip(projectedTrack)) {
         if (plugin.id.startsWith('faust-')) {
             Promise.resolve()
                 .then(() => compileFaustDSP(plugin.id))
