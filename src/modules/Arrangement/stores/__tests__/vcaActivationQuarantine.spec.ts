@@ -2,15 +2,24 @@ import { readdirSync, readFileSync } from 'node:fs';
 import { join, relative, resolve } from 'node:path';
 
 import {
+    type BindingName,
     createSourceFile,
     forEachChild,
+    isClassDeclaration,
+    isClassExpression,
     isCallExpression,
+    isEnumDeclaration,
     isIdentifier,
     isImportDeclaration,
     isJsxSelfClosingElement,
     isNamedImports,
+    isOmittedExpression,
+    isParameter,
     isPropertyAssignment,
     isStringLiteral,
+    isFunctionDeclaration,
+    isFunctionExpression,
+    isVariableDeclaration,
     type Node,
     type SourceFile,
     ScriptKind,
@@ -48,6 +57,39 @@ function parsedSource(path: string): SourceFile {
     return createSourceFile(path, source(path), ScriptTarget.Latest, true, scriptKind);
 }
 
+function bindingNameContains(name: BindingName, binding: string): boolean {
+    if (isIdentifier(name)) {
+        return name.text === binding;
+    }
+    return name.elements.some((element) => !isOmittedExpression(element) && bindingNameContains(element.name, binding));
+}
+
+function declarationBindingName(node: Node): BindingName | undefined {
+    if (isParameter(node) || isVariableDeclaration(node)) {
+        return node.name;
+    }
+    if (
+        isFunctionDeclaration(node) ||
+        isFunctionExpression(node) ||
+        isClassDeclaration(node) ||
+        isClassExpression(node) ||
+        isEnumDeclaration(node)
+    ) {
+        return node.name;
+    }
+    return undefined;
+}
+
+function assertImportIsUnshadowed(file: SourceFile, binding: string): void {
+    const declarations = visit(file, (node) => {
+        const name = declarationBindingName(node);
+        return name !== undefined && bindingNameContains(name, binding);
+    });
+    if (declarations.length > 0) {
+        throw new Error(`Imported binding ${binding} is shadowed in ${file.fileName}`);
+    }
+}
+
 function importedBinding(file: SourceFile, modulePath: string, exportedName: string): string {
     for (const statement of file.statements) {
         if (
@@ -65,6 +107,7 @@ function importedBinding(file: SourceFile, modulePath: string, exportedName: str
             (candidate) => (candidate.propertyName ?? candidate.name).text === exportedName
         );
         if (element) {
+            assertImportIsUnshadowed(file, element.name.text);
             return element.name.text;
         }
     }
@@ -124,6 +167,20 @@ function jsxMountCount(file: SourceFile, binding: string): number {
 const LEGACY_ACTIONS = ['createVcaGroup', 'assignToVca', 'removeFromVca', 'setVcaGain'] as const;
 
 describe('VCA activation quarantine', () => {
+    it('rejects imported liveness bindings shadowed by executable declarations', () => {
+        const shadowed = createSourceFile(
+            'shadowed.ts',
+            "import { writer } from './writer'; function invoke(writer: () => void) { writer(); }",
+            ScriptTarget.Latest,
+            true,
+            ScriptKind.TS
+        );
+
+        expect(() => importedBinding(shadowed, './writer', 'writer')).toThrow(
+            'Imported binding writer is shadowed in shadowed.ts'
+        );
+    });
+
     it('keeps vca outside the production TrackKind contract', () => {
         const trackModel = source('src/modules/Arrangement/models/Track.ts');
         const declaration = trackModel.match(/export type TrackKind = ([^;]+);/);
