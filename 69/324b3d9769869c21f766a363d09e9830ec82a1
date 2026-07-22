@@ -1,0 +1,21 @@
+src/modules/TimelineEditor/presentations/views/Inspector/TrackAutomationSection.tsx
+  s_ac9b259eab20ba::t_73cc6c47f60c4a 107-113
+src/modules/TimelineEditor/presentations/views/Inspector/__tests__/TrackAutomationSection.spec.tsx
+  s_ac9b259eab20ba::t_42fdbe86d12aee 144,151-152,163
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "69324b3d9769869c21f766a363d09e9830ec82a1",
+  "prompts": {},
+  "sessions": {
+    "s_ac9b259eab20ba": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8699-3865-7842-8c54-afbac6cfd266",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
