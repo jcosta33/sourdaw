@@ -1,0 +1,133 @@
+src/modules/Automation/useCases/modulation/__tests__/applyModulationToEngine.spec.ts
+  s_ac9b259eab20ba::t_abd48ebb1c0e87 405,418-427
+src/modules/Automation/useCases/modulation/applyModulationToEngine.ts
+  s_ac9b259eab20ba::t_abd48ebb1c0e87 20,27-28,49-52,59,62-69,122,204-208,225
+src/infra/store/storage/__tests__/createAutomergeStorage.spec.ts
+  s_ac9b259eab20ba::t_ea003c46f084e6 290-352
+src/infra/store/storage/createAutomergeStorage.ts
+  s_ac9b259eab20ba::t_31a6b1bef5d2e6 55,352,359-367,427,433,446-457,503,534,629,676
+src/modules/Arrangement/handlers/__tests__/clipGeometryActionOutcomes.spec.ts
+  s_ac9b259eab20ba::t_76527deb597adb 1-529
+src/modules/Arrangement/handlers/clip/handleNudgeClip.ts
+  s_ac9b259eab20ba::t_77ce34f00a7a38 5,9,13-30
+src/modules/Arrangement/handlers/clip/handleTrimClipEnd.ts
+  s_ac9b259eab20ba::t_56fd935441a2af 5,9,12-28
+src/modules/Arrangement/handlers/clip/handleTrimClipStart.ts
+  s_ac9b259eab20ba::t_8de098d22ce624 5,9,12-28
+src/modules/Arrangement/handlers/clipStretch/handleFitClipToBeats.ts
+  s_ac9b259eab20ba::t_dab6f6d5708653 4,8
+src/modules/Arrangement/handlers/clipStretch/handleSetClipStretchMode.ts
+  s_ac9b259eab20ba::t_1cfbdde0214c34 4,8
+src/modules/Arrangement/handlers/clipStretch/handleSetClipStretchRatio.ts
+  s_ac9b259eab20ba::t_35ab43de4528cb 4,8
+src/modules/Arrangement/handlers/marker/__tests__/markerHandlers.spec.ts
+  s_ac9b259eab20ba::t_54f20d074e87a1 10-15,24,36,50,53,57-180
+src/modules/Arrangement/handlers/marker/handleAddMarker.ts
+  s_ac9b259eab20ba::t_d3f1c9c22c69b6 5-18,21,23-26
+src/modules/Arrangement/handlers/marker/handleAddSection.ts
+  s_ac9b259eab20ba::t_198498355365ae 5-18,21,23-26
+src/modules/Arrangement/handlers/marker/handleRemoveMarker.ts
+  s_ac9b259eab20ba::t_6122be582268fd 4,10-22
+src/modules/Arrangement/handlers/marker/handleRemoveSection.ts
+  s_ac9b259eab20ba::t_6f2b1c539bd0cc 4,10-28
+src/modules/Arrangement/handlers/marker/handleRenameSection.ts
+  s_ac9b259eab20ba::t_91012c5e48865a 4,10-16
+src/modules/Arrangement/handlers/marker/handleSetMarkerColor.ts
+  s_ac9b259eab20ba::t_acd16f6450b30f 4,10-18
+src/modules/Arrangement/presentations/hooks/__tests__/useTimelineInteractions.spec.tsx
+  s_ac9b259eab20ba::t_70126716e9bd35 27-31,339-405
+src/modules/Arrangement/presentations/hooks/useTimelineInteractions.ts
+  s_ac9b259eab20ba::t_494c5296abf615 888-889,898-899
+src/modules/Arrangement/useCases/clipEditing/nudgeClip.ts
+  s_ac9b259eab20ba::t_709d703c01dc68 4,6-23,26,40,44-45
+src/modules/Arrangement/useCases/clipEditing/trimClipEnd.ts
+  s_ac9b259eab20ba::t_1ea01ea56f58bb 1,3,5-28
+src/modules/Arrangement/useCases/clipEditing/trimClipStart.ts
+  s_ac9b259eab20ba::t_c367de36c1caf7 1,3,5-22
+src/modules/Arrangement/useCases/clipStretch/fitClipToBeats.ts
+  s_ac9b259eab20ba::t_b14f9b6ca5b775 6-8,11-12,15-19,22-35,37-47
+src/modules/Arrangement/useCases/clipStretch/setClipStretchMode.ts
+  s_ac9b259eab20ba::t_1b8ab6d2864d84 3-11
+src/modules/Arrangement/useCases/clipStretch/setClipStretchRatio.ts
+  s_ac9b259eab20ba::t_bbb2309c9f04aa 5-9,12
+src/modules/Arrangement/useCases/marker/markerOperations/addMarker.ts
+  s_ac9b259eab20ba::t_9d819fd1f5bc1a 4,9-13
+src/modules/Arrangement/useCases/marker/sectionOperations/addSection.ts
+  s_ac9b259eab20ba::t_0e6d4c2e5995f9 4,9-13
+src/modules/AudioEngine/repositories/offlineScheduler/__tests__/automationScheduling.spec.ts
+  s_ac9b259eab20ba::t_f89f7f81e2b924 186,195-200,206-207,213,219,224-230,234,242-246,251,258,264-265
+src/modules/AudioEngine/repositories/offlineScheduler/automationScheduling.ts
+  s_ac9b259eab20ba::t_0c8033ef0ca13c 1-2,20-26,54-62,64
+src/modules/Command/useCases/executeAppAction.ts
+  s_ac9b259eab20ba::t_39f308c86b3b57 41-44
+src/modules/Command/useCases/macro/__tests__/playback.spec.ts
+  s_ac9b259eab20ba::t_b0f70d5381d50f 206-266
+src/modules/Command/useCases/macro/playback.ts
+  s_ac9b259eab20ba::t_aeb7ca7d422b6a 12-13,22-31,90-97,148-169,173,199-200
+src/modules/MIDI/repositories/readLegacyChordTrackStorage.ts
+  s_ac9b259eab20ba::t_1de4f7e8bb18f1 1-36
+src/modules/MIDI/stores/__tests__/chordTrackStore.spec.ts
+  s_ac9b259eab20ba::t_0774b14fac2bd9 1,4-43,47-76,79-131,133-136,141-142,159,166,168-169,177-178,180-181,300-400
+src/modules/MIDI/stores/chordTrackStore.ts
+  s_ac9b259eab20ba::t_a226b17c99f9d7 2,14-15,17-24,77,85,90-163,166-179,181-183,185-187,191-196,198-210,212-227,229-230,232-238,241-242,244-260,263-278,280-288,290-320,322-334,336-367
+src/modules/MIDI/stores/index.ts
+  s_ac9b259eab20ba::t_cc9a3379429f6c 19
+src/modules/MIDI/useCases/__tests__/readLegacyChordTrackMigration.spec.ts
+  s_ac9b259eab20ba::t_6477f90bdb6178 1-137
+src/modules/MIDI/useCases/__tests__/resetMidiStoreForProject.spec.ts
+  s_ac9b259eab20ba::t_b797a27c5fdea0 3,10,46-47,50,54-55
+src/modules/MIDI/useCases/chordTrack/__tests__/replaceChordTrackState.spec.ts
+  s_ac9b259eab20ba::t_ebcc18e5f058f8 30-35
+src/modules/MIDI/useCases/chordTrack/replaceChordTrackState.ts
+  s_ac9b259eab20ba::t_e839f6ca442974 1,3-4,6-7
+src/modules/MIDI/useCases/hydrateMidiCrdtProjection.ts
+  s_ac9b259eab20ba::t_63ff81bf26f946 1,8
+src/modules/MIDI/useCases/index.ts
+  s_ac9b259eab20ba::t_ef918cccebf472 18
+src/modules/MIDI/useCases/readLegacyChordTrackMigration.ts
+  s_ac9b259eab20ba::t_b053f3d26fb529 1-33
+src/modules/MIDI/useCases/resetMidiStoreForProject.ts
+  s_ac9b259eab20ba::t_8cbdf1cd823ef8 1,28
+src/modules/Project/models/ProjectData.ts
+  s_ac9b259eab20ba::t_f58c3c37cc1b59 48,198-229
+src/modules/Project/useCases/demoProjects/myceliumAscendant/__tests__/createMyceliumAscendantBlueprint.spec.ts
+  s_ac9b259eab20ba::t_48472927e7a120 1-186
+src/modules/Project/useCases/demoProjects/myceliumAscendant/createMyceliumAscendantBlueprint.ts
+  s_ac9b259eab20ba::t_2932bb8e12ed0d 1-171
+src/modules/Project/useCases/demoProjects/myceliumAscendant/createMyceliumId.ts
+  s_ac9b259eab20ba::t_10583eeea2ba50 1-34
+src/modules/Project/useCases/projectPersistence/__tests__/loadProject.spec.ts
+  s_ac9b259eab20ba::t_f598945ffa5414 3,7,20-26,28,33,56,62,65-68,78,80-81,83,167-248
+src/modules/Project/useCases/projectPersistence/fileIO/__tests__/buildProjectData.spec.ts
+  s_ac9b259eab20ba::t_c9ba22b05af553 16-21,24,63-75
+src/modules/Project/useCases/projectPersistence/fileIO/buildProjectData.ts
+  s_ac9b259eab20ba::t_e2295c4d426dc8 10-16,166
+src/modules/Project/useCases/projectPersistence/helpers/__tests__/hydrateModuleStoresFromProjectData.spec.ts
+  s_ac9b259eab20ba::t_2204e4695fc8c0 10,32,50,134,140-150
+src/modules/Project/useCases/projectPersistence/helpers/__tests__/isHydratableProjectData.spec.ts
+  s_ac9b259eab20ba::t_b45da9ef6ce1b5 193-196,329-364
+src/modules/Project/useCases/projectPersistence/helpers/hydrateModuleStoresFromProjectData.ts
+  s_ac9b259eab20ba::t_ef5e57d642ffe5 2,17
+src/modules/Project/useCases/projectPersistence/helpers/isHydratableProjectData.ts
+  s_ac9b259eab20ba::t_f5e22cf429c4a7 1,9,50,737-751,765-767
+src/modules/Project/useCases/projectPersistence/loadProject.ts
+  s_ac9b259eab20ba::t_8b31f67a06e69b 4,9,13,60,90-108
+src/utils/handlerContract.ts
+  s_ac9b259eab20ba::t_a95d89526d6509 297,300-303,730-731
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "6d52f024f34e82cd633cfed902a3e0c617d0c40f",
+  "prompts": {},
+  "sessions": {
+    "s_ac9b259eab20ba": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8699-3865-7842-8c54-afbac6cfd266",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
