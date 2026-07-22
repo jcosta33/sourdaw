@@ -4,9 +4,10 @@ import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { getTrackState } from '../../repositories/track/getTrackState';
 import { updateTrack } from '../../repositories/track/updateTrack';
-import { getTrackEligibility } from '../../stores/trackEligibility';
+import { getTrackEligibility, shouldCreateLiveTrackStrip } from '../../stores/trackEligibility';
 import { type Device } from '../../stores/trackStore';
 import { getPlatformPlugins } from '../getPlatformPlugins';
+import { projectTrackToLiveStrip } from '../projectTrackToLiveStrip';
 
 function nextDeviceIdStr(): string {
     return `device-${crypto.randomUUID().slice(0, 8)}`;
@@ -17,7 +18,11 @@ export function addDevice(trackId: string, deviceType: string): Device | null {
     if (!state) {
         return null;
     }
-    const track = state.tracks.find((candidate) => candidate.id === trackId);
+    const matchingTracks = state.tracks.filter((candidate) => candidate.id === trackId);
+    if (matchingTracks.length !== 1) {
+        return null;
+    }
+    const track = matchingTracks[0];
     if (!track || !getTrackEligibility(track.kind).acceptsDeviceAdd) {
         return null;
     }
@@ -46,9 +51,20 @@ export function addDevice(trackId: string, deviceType: string): Device | null {
         parameterValues,
     };
 
+    const hadLiveStrip = shouldCreateLiveTrackStrip(track);
+    const activatesFolderStrip = !hadLiveStrip && track.kind === 'folder' && device.type === 'toaster';
     updateTrack(trackId, (time) => ({ ...time, devices: [...time.devices, device] }));
 
-    if (plugin) {
+    if (!plugin) {
+        return device;
+    }
+
+    if (activatesFolderStrip) {
+        projectTrackToLiveStrip({ trackId, activateDormantExternalPlugins: true });
+        return device;
+    }
+
+    if (hadLiveStrip) {
         if (plugin.id.startsWith('faust-')) {
             Promise.resolve()
                 .then(() => compileFaustDSP(plugin.id))

@@ -1,3 +1,4 @@
+import { logger } from '#/infra/logger/appLogger';
 import {
     addDeviceToStrip,
     ensureTrackStrip,
@@ -7,6 +8,7 @@ import {
     updateDeviceBypass,
     updateDeviceParam,
 } from '#/modules/AudioEngine/useCases';
+import { loadPlugin } from '#/modules/PluginHost/useCases';
 import { setSend, wireSidechainRoutes } from '#/modules/Routing/useCases';
 
 import { resolveEligibleDeviceWriteTarget } from '../stores/resolveEligibleDeviceWriteTarget';
@@ -20,6 +22,7 @@ import type { Track } from '../stores/trackStore';
 type ProjectTrackToLiveStripInput = {
     trackId: string;
     deferSidechainWiring?: boolean;
+    activateDormantExternalPlugins?: boolean;
 };
 
 function findUniqueTrack(tracks: readonly Track[], trackId: string): Track | null {
@@ -42,7 +45,11 @@ function acceptsRoutingEndpoint(tracks: readonly Track[], targetId: string): boo
     return target ? getTrackEligibility(target.kind).acceptsRoutingEndpoint : false;
 }
 
-export function projectTrackToLiveStrip({ trackId, deferSidechainWiring = false }: ProjectTrackToLiveStripInput): void {
+export function projectTrackToLiveStrip({
+    trackId,
+    deferSidechainWiring = false,
+    activateDormantExternalPlugins = false,
+}: ProjectTrackToLiveStripInput): void {
     const tracks = trackStore.value?.tracks;
     if (!tracks) {
         return;
@@ -65,7 +72,18 @@ export function projectTrackToLiveStrip({ trackId, deferSidechainWiring = false 
         if (target.status !== 'eligible' || target.trackId !== track.id) {
             continue;
         }
-        addDeviceToStrip(target.trackId, target.deviceId, device.type);
+        const addDeviceArgs: [string, string, string, string?] = [target.trackId, target.deviceId, device.type];
+        if (activateDormantExternalPlugins && device.type === 'external-plugin' && device.externalInstanceId) {
+            addDeviceArgs[3] = device.externalInstanceId;
+        }
+        addDeviceToStrip(...addDeviceArgs);
+        const instanceId = addDeviceArgs[3];
+        const pluginId = device.externalPluginId;
+        if (instanceId && pluginId) {
+            void loadPlugin(pluginId, instanceId).catch((error: unknown) => {
+                logger.warn(`Failed to load external plugin ${pluginId} for instance ${instanceId}: ${String(error)}`);
+            });
+        }
         for (const [parameterId, value] of Object.entries(device.parameterValues)) {
             if (typeof value === 'number') {
                 updateDeviceParam(target.trackId, target.deviceId, parameterId, value);
