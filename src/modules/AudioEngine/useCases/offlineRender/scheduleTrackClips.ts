@@ -269,7 +269,7 @@ export async function scheduleTrackClips({
         const children = allTracks.filter((time) => time.parentId === track.id);
         for (let index = 0; index < children.length; index++) {
             const childTrack = children[index];
-            if (!childTrack) {
+            if (!childTrack || childTrack.muted || childTrack.disabled) {
                 continue;
             }
             const childClips = resolveTrackClipsWithComping(childTrack.id, childTrack.clips);
