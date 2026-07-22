@@ -5,10 +5,17 @@ import { executeAppAction } from '../executeAppAction';
 import { generateGroupId } from '../generateGroupId';
 
 type ReplayIdMappings = {
+    chordEventIds: Map<string, string>;
     layerIds: Map<string, string>;
     regionIds: Map<string, string>;
     vcaGroupIds: Map<string, string>;
 };
+
+function remapChordReferences(action: AppAction, mappings: ReplayIdMappings): void {
+    if (action.type === 'moveChordEvent' || action.type === 'updateChordEvent' || action.type === 'removeChordEvent') {
+        action.payload.eventId = mappings.chordEventIds.get(action.payload.eventId) ?? action.payload.eventId;
+    }
+}
 
 function remapLayerId(layerId: string, mappings: ReplayIdMappings): string {
     return mappings.layerIds.get(layerId) ?? layerId;
@@ -53,6 +60,9 @@ function remapAdjustmentReferences(action: AppAction, mappings: ReplayIdMappings
 function getGeneratedLayerId(action: AppAction): string | undefined {
     return action.type === 'createAdjustmentLayer' ? action.payload.layerId : undefined;
 }
+function getGeneratedChordEventId(action: AppAction): string | undefined {
+    return action.type === 'addChordEvent' ? action.payload.eventId : undefined;
+}
 
 function getGeneratedRegionId(action: AppAction): string | undefined {
     return action.type === 'addAdjustmentRegion' ? action.payload.regionId : undefined;
@@ -71,6 +81,16 @@ async function executeMacroAction(
     options: { groupId: string; groupLabel: string }
 ): Promise<void> {
     const replayAction = structuredClone(action);
+    if (replayAction.type === 'addChordEvent') {
+        const recordedEventId = replayAction.payload.eventId;
+        delete replayAction.payload.eventId;
+        await executeAppAction(replayAction, options);
+        const generatedEventId = getGeneratedChordEventId(replayAction);
+        if (recordedEventId && generatedEventId) {
+            mappings.chordEventIds.set(recordedEventId, generatedEventId);
+        }
+        return;
+    }
     if (replayAction.type === 'createAdjustmentLayer') {
         const recordedLayerId = replayAction.payload.layerId;
         delete replayAction.payload.layerId;
@@ -106,6 +126,7 @@ async function executeMacroAction(
     }
 
     remapAdjustmentReferences(replayAction, mappings);
+    remapChordReferences(replayAction, mappings);
     remapVcaReferences(replayAction, mappings);
     await executeAppAction(replayAction, options);
 }
@@ -128,6 +149,7 @@ export async function playMacro(macroId: string): Promise<void> {
 
     const { groupId, groupLabel } = generateGroupId(`Macro: ${macro.name}`);
     const replayIdMappings: ReplayIdMappings = {
+        chordEventIds: new Map(),
         layerIds: new Map(),
         regionIds: new Map(),
         vcaGroupIds: new Map(),
