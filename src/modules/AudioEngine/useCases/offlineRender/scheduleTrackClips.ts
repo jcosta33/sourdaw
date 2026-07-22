@@ -212,14 +212,28 @@ export async function scheduleTrackClips({
     if (track.freezeState.status === 'frozen' && track.freezeState.frozenBufferId) {
         const frozenBuf = audioBufferCache.get(track.freezeState.frozenBufferId);
         if (frozenBuf) {
-            // Frozen buffers are rendered from timeline 0, so a region
-            // export must start regionStartSec INTO the buffer — starting
-            // at 0 shifted frozen content early by the region offset.
-            if (regionStartSec < frozenBuf.duration) {
+            // Frozen buffers render from the track's earliest clip startBeat
+            // (scheduleFrozenTrack), not from timeline 0 — anchor the source
+            // the same way: region exports start (regionStart - trackStart)
+            // into the buffer; regions starting before the track content
+            // start the buffer later at offset 0.
+            const trackStartBeat =
+                track.clips.length > 0 ? Math.min(...track.clips.map((clip) => clip.startBeat)) : 0;
+            const trackStartSec = projectPpqEndpoints({
+                startPpq: trackStartBeat,
+                endPpq: trackStartBeat,
+                defaultTempo,
+                sampleRate: offlineCtx.sampleRate,
+                changes,
+            }).startSeconds;
+            const when = Math.max(0, trackStartSec - regionStartSec);
+            const bufferOffset = Math.max(0, regionStartSec - trackStartSec);
+            const remaining = frozenBuf.duration - bufferOffset;
+            if (remaining > 0) {
                 const source = offlineCtx.createBufferSource();
                 source.buffer = frozenBuf;
                 source.connect(trackGainNode); // Skip trackInputNode to bypass device chain processing, but keep fader/pan
-                source.start(0, regionStartSec, frozenBuf.duration - regionStartSec);
+                source.start(when, bufferOffset, remaining);
             }
         } else {
             onWarning?.(

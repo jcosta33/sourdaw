@@ -36,7 +36,8 @@ describe('wireOfflineSidechainRoutes (M-041)', () => {
     /// Regression: offline exports mapped builtin-sidechain-compressor to a
     /// plain compressor with no key input, so sidechain ducking was silently
     /// absent from exports. The offline graph must mirror the live engine:
-    /// source pre-fader tap → gain → compressor sidechain input (index 1).
+    /// source analyserNode (post-fader/pan/mute — the strip's outputNode
+    /// offline) → gain → compressor sidechain input (index 1).
     it('connects the source tap to the compressor sidechain input through a gain', () => {
         const { ctx, createdGains } = makeCtx();
         const sourceStrip = makeStrip();
@@ -61,7 +62,7 @@ describe('wireOfflineSidechainRoutes (M-041)', () => {
 
         expect(createdGains).toHaveLength(1);
         const scGain = createdGains[0]!;
-        expect(sourceStrip.preFaderTap.connect).toHaveBeenCalledWith(scGain);
+        expect(sourceStrip.outputNode.connect).toHaveBeenCalledWith(scGain);
         expect(scGain.connect).toHaveBeenCalledWith(compressorNode, 0, 1);
     });
 

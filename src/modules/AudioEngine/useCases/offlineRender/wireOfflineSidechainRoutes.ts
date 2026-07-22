@@ -10,11 +10,12 @@ export type OfflineSidechainRoute = {
 
 /**
  * Wire persisted sidechain routes into the offline render graph, mirroring
- * the live engine (`applySidechainRoute`: source analyser tap → gain →
- * compressor sidechain input). The pre-fader tap matches the live tap
- * position (post-device-chain, pre-fader). Without this, exports of mixes
- * relying on sidechain ducking render the compressor as a plain
- * no-key compressor (M-041).
+ * the live engine (`applySidechainRoute`: source analyserNode → gain →
+ * compressor sidechain input). The live analyserNode sits post-fader, post
+ * mute, and post-pan (TrackNode: preFaderTap → fader → postFaderGain → pan
+ * → analyser), so the offline tap is the strip's outputNode — not the
+ * pre-fader tap. Without this, exports of mixes relying on sidechain
+ * ducking render the compressor as a plain no-key compressor (M-041).
  */
 export function wireOfflineSidechainRoutes(
     offlineCtx: OfflineAudioContext,
@@ -36,7 +37,7 @@ export function wireOfflineSidechainRoutes(
 
         const scGain = offlineCtx.createGain();
         scGain.gain.value = 1;
-        sourceStrip.preFaderTap.connect(scGain);
+        sourceStrip.outputNode.connect(scGain);
         scGain.connect(targetEntry.node.inputNode, 0, 1);
     }
 }

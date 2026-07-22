@@ -22,7 +22,7 @@ function cubicBezierDeriv(p0: number, p1: number, p2: number, p3: number, t: num
     return 3 * mt * mt * (p1 - p0) + 6 * mt * t * (p2 - p1) + 3 * t * t * (p3 - p2);
 }
 
-function interpolateCurveValue(
+export function interpolateCurveValue(
     firstPoint: AutomationPoint,
     secondPoint: AutomationPoint,
     beat: number,
@@ -175,7 +175,12 @@ export function scheduleAutomationOnParam(
         const nextTime = timeForBeat(next.beat);
 
         if (current.curve === 'step') {
-            param.setValueAtTime(current.value, Math.max(0, nextTime - 0.0001));
+            // A step hold from a pre-region segment would land at clamped
+            // time 0 and clobber the region-start seed (measured: export
+            // held 0.1 where live holds 0.9 past the lane's end).
+            if (next.beat > regionStartBeat) {
+                param.setValueAtTime(current.value, Math.max(0, nextTime - 0.0001));
+            }
         } else if (current.curve === 'linear') {
             param.linearRampToValueAtTime(next.value, Math.min(nextTime, durationSeconds));
         } else {

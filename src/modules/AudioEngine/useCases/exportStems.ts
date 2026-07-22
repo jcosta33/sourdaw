@@ -97,7 +97,9 @@ export const exportStems: ExportStemsFn = async function exportStems(
 
             const offlineCtx = new OfflineAudioContext(2, frameCount, sampleRate);
             const pendingWorkletEvents: PendingWorkletEvent[] = [];
-            const strip = await createOfflineTrackStrip(offlineCtx, track);
+            // Stems carry the track's content even when muted (see the
+            // eligibility comment above) — only the mixdown bakes mute in.
+            const strip = await createOfflineTrackStrip(offlineCtx, track, { honorMuted: false });
             const deviceEntriesByTrack = new Map<string, DeviceNodeEntry[]>();
             deviceEntriesByTrack.set(track.id, strip.deviceEntries);
             strip.outputNode.connect(offlineCtx.destination);

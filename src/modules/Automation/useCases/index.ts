@@ -21,6 +21,7 @@ export { shiftAutomationAfterBeat } from './automation/shiftAutomationAfterBeat'
 export { shiftClipAutomation } from './automation/shiftClipAutomation';
 export { updateAutomationPoint } from './automation/updateAutomationPoint';
 export { setAutomationPointCurve } from './automation/setAutomationPointCurve';
+export { interpolateAutomationPointValue } from './automation/interpolateAutomationPointValue';
 export { toggleAutomationVisibility } from './automation/toggleAutomationVisibility';
 export { toggleLaneCollapsed } from './automation/toggleLaneCollapsed';
 

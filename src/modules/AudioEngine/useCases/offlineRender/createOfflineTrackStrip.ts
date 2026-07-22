@@ -10,10 +10,22 @@ type CreateOfflineTrackStripTrackInput = {
     devices: Device[];
 };
 
+type CreateOfflineTrackStripOptions = {
+    /**
+     * Stem exports pass false: stems of muted tracks must carry the track's
+     * content for "later use in a DAW" (exportStems documents this intent).
+     * The mixdown path keeps the default — baking mute into the strip there
+     * would leak muted-track audio otherwise (PR #616 review).
+     */
+    honorMuted?: boolean;
+};
+
 export async function createOfflineTrackStrip(
     offlineCtx: OfflineAudioContext,
-    track: CreateOfflineTrackStripTrackInput
+    track: CreateOfflineTrackStripTrackInput,
+    options: CreateOfflineTrackStripOptions = {}
 ): Promise<OfflineTrackStrip> {
+    const honorMuted = options.honorMuted ?? true;
     const inputNode = offlineCtx.createGain();
     inputNode.gain.value = 1;
 
@@ -24,11 +36,9 @@ export async function createOfflineTrackStrip(
     faderNode.gain.value = Math.max(0, track.gain);
 
     const postFaderGain = offlineCtx.createGain();
-    // Never bake mute into the strip: stems of muted tracks must carry the
-    // track's content for "later use in a DAW" (exportStems documents this
-    // intent), and the mixdown path already excludes muted tracks from clip
-    // scheduling — zeroing here only produced silent stems (M-037).
-    postFaderGain.gain.value = 1;
+    // Mixdown bakes mute into the strip; stem exports opt out so muted
+    // tracks still export their content (M-037).
+    postFaderGain.gain.value = honorMuted && track.muted ? 0 : 1;
 
     const panNode = offlineCtx.createStereoPanner();
     panNode.pan.value = Math.max(-1, Math.min(1, track.pan / 50));

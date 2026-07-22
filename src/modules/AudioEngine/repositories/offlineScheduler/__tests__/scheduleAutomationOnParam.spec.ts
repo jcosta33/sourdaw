@@ -63,6 +63,30 @@ describe('scheduleAutomationOnParam — export region offset and latency compens
     });
 });
 
+describe('scheduleAutomationOnParam — step curve at the region boundary', () => {
+    /// Regression (PR #616 review): a step hold emitted from a pre-region
+    /// segment landed at clamped time 0 and overwrote the region-start
+    /// seed — export held the lane's first value (0.1) where live holds
+    /// the last (0.9).
+    it('does not clobber the region-start seed with a pre-region step hold', () => {
+        const param = makeParam();
+        scheduleAutomationOnParam(
+            param as unknown as AudioParam,
+            [
+                point({ beat: 0, value: 0.1, curve: 'step' }),
+                point({ beat: 1, value: 0.9 }),
+            ],
+            10,
+            120,
+            [],
+            2 // region starts after the lane's last point — seed must hold 0.9
+        );
+
+        expect(param.setValueAtTime).toHaveBeenCalledWith(0.9, 0);
+        expect(param.setValueAtTime).not.toHaveBeenCalledWith(0.1, 0);
+    });
+});
+
 describe('scheduleAutomationOnParam — advanced curve shapes (M-039)', () => {
     /// Regression: 'smooth', 's-curve', 'stairs', and 'bezier' segments were
     /// silently flattened to linear in exports while playback renders them

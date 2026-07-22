@@ -205,7 +205,10 @@ describe('exportStems', () => {
 
         expect(OfflineContext).toHaveBeenCalledTimes(1);
         expect(offlineRenderMocks.createOfflineTrackStrip).toHaveBeenCalledTimes(1);
-        expect(offlineRenderMocks.createOfflineTrackStrip).toHaveBeenCalledWith(expect.anything(), toasterFolder);
+        // Stem path opts out of baked-in mute (M-037).
+        expect(offlineRenderMocks.createOfflineTrackStrip).toHaveBeenCalledWith(expect.anything(), toasterFolder, {
+            honorMuted: false,
+        });
         expect(stems).toEqual(new Map([['toaster-folder', renderedBuffer]]));
     });
 });
