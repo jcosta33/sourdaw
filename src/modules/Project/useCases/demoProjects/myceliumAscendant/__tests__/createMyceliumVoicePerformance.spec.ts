@@ -64,6 +64,9 @@ describe('createMyceliumVoicePerformance', () => {
         expect(allClips).toHaveLength(105);
         expect(allNotes).toHaveLength(3_535);
         expect(
+            allNotes.every((note) => Number.isInteger(note.velocity) && note.velocity >= 1 && note.velocity <= 127)
+        ).toBe(true);
+        expect(
             voiceClips.every((clip) =>
                 (first.midi.notesByClipId[clip.id] ?? []).every(
                     (note) => note.startBeat >= 0 && note.startBeat + note.duration <= clip.endBeat - clip.startBeat

@@ -113,17 +113,9 @@ function getWindows(section: Section, trackName: string): readonly (readonly [nu
     return [[section.startBeat, section.endBeat]];
 }
 
-function pitchFor({
-    spec,
-    trackIndex,
-    sectionIndex,
-    cellIndex,
-}: {
-    spec: VoiceSpec;
-    trackIndex: number;
-    sectionIndex: number;
-    cellIndex: number;
-}): number {
+type PitchForInput = { spec: VoiceSpec; trackIndex: number; sectionIndex: number; cellIndex: number };
+
+function pitchFor({ spec, trackIndex, sectionIndex, cellIndex }: PitchForInput): number {
     const [, basePitch] = spec;
     const interval = CELL[cellIndex % CELL.length]!;
     const inverted = (trackIndex + sectionIndex) % 2 === 1;
@@ -167,7 +159,7 @@ function genericSeeds(spec: VoiceSpec, section: Section, trackIndex: number, sec
                 seeds.push({
                     beat,
                     duration,
-                    velocity: 0.56 + ((trackIndex * 3 + cellIndex * 5 + sectionIndex) % 17) / 50,
+                    velocity: 71 + ((trackIndex * 3 + cellIndex * 5 + sectionIndex) % 17) * 3,
                     pitch: pitchFor({ spec, trackIndex, sectionIndex, cellIndex }),
                 });
             }
@@ -189,7 +181,7 @@ function chapelOrganicSeeds(spec: VoiceSpec, trackIndex: number, sectionIndex: n
             seeds.push({
                 beat: 288 + bar * 3.5 + offset,
                 duration: name === 'Grand Boule Ritual' ? 0.9 : 0.55,
-                velocity: 0.62 + ((bar + cellIndex) % 4) * 0.05,
+                velocity: 79 + ((bar + cellIndex) % 4) * 6,
                 pitch: pitchFor({ spec, trackIndex, sectionIndex, cellIndex }),
             });
         }
@@ -199,7 +191,7 @@ function chapelOrganicSeeds(spec: VoiceSpec, trackIndex: number, sectionIndex: n
             seeds.push({
                 beat: beat + 0.125 + cellIndex,
                 duration: 0.65,
-                velocity: 0.64 + cellIndex * 0.04,
+                velocity: 81 + cellIndex * 5,
                 pitch: pitchFor({ spec, trackIndex, sectionIndex, cellIndex }),
             });
         }
@@ -221,7 +213,7 @@ function dropOrganicSeeds(spec: VoiceSpec, section: Section, trackIndex: number,
                         seeds.push({
                             beat: blockStart + offset,
                             duration: name === 'Grand Boule Ritual' ? 1.25 : 0.7,
-                            velocity: 0.66 + ((blockIndex + cellIndex) % 4) * 0.05,
+                            velocity: 84 + ((blockIndex + cellIndex) % 4) * 6,
                             pitch: pitchFor({
                                 spec,
                                 trackIndex,
@@ -245,7 +237,7 @@ function createSeeds(spec: VoiceSpec, section: Section, trackIndex: number, sect
             Array.from({ length: Math.ceil((endBeat - startBeat) / 16) }, (_, index) => ({
                 beat: startBeat + index * 16,
                 duration: Math.min(15.5, endBeat - startBeat - index * 16),
-                velocity: 0.46 + (index % 3) * 0.04,
+                velocity: 58 + (index % 3) * 5,
                 pitch: basePitch + SECTION_TRANSPOSITIONS[sectionIndex]!,
             }))
         );
