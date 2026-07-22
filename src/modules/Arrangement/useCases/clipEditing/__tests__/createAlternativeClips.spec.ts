@@ -1,13 +1,17 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
     getTrackState: vi.fn<(typeof trackStateRepo)['getTrackState']>(),
     updateTrack: vi.fn<(typeof updateTrackRepo)['updateTrack']>(),
     setNotesForClip: vi.fn<(clipId: string, notes: WrittenNote[]) => void>(),
+    resolveEligibleClipWriteTarget: vi.fn<(typeof resolverModule)['resolveEligibleClipWriteTarget']>(),
 }));
 
 vi.mock('../../../repositories/track/getTrackState', () => ({ getTrackState: mocks.getTrackState }));
 vi.mock('../../../repositories/track/updateTrack', () => ({ updateTrack: mocks.updateTrack }));
+vi.mock('../../../stores/resolveEligibleClipWriteTarget', () => ({
+    resolveEligibleClipWriteTarget: mocks.resolveEligibleClipWriteTarget,
+}));
 vi.mock('#/modules/MIDI/useCases', () => ({ setNotesForClip: mocks.setNotesForClip }));
 
 import { ClipDummy } from '../../../__tests__/ClipDummy';
@@ -17,6 +21,7 @@ import { createAlternativeClips, type VariationNote } from '../createAlternative
 
 import type * as trackStateRepo from '../../../repositories/track/getTrackState';
 import type * as updateTrackRepo from '../../../repositories/track/updateTrack';
+import type * as resolverModule from '../../../stores/resolveEligibleClipWriteTarget';
 
 const note = (overrides?: Partial<VariationNote>): VariationNote => ({
     pitch: 60,
@@ -59,26 +64,58 @@ function writtenNotes(callIndex: number): { clipId: string; notes: WrittenNote[]
 }
 
 describe('createAlternativeClips', () => {
-    beforeEach(() => vi.clearAllMocks());
+    beforeEach(() => {
+        vi.clearAllMocks();
+        mocks.resolveEligibleClipWriteTarget.mockReturnValue({ status: 'eligible', trackId: 't1', clipId: 'c1' });
+    });
 
-    it('throws when track state is unavailable', () => {
+    afterEach(() => {
+        vi.restoreAllMocks();
+    });
+
+    it('returns false when track state is unavailable', () => {
         mocks.getTrackState.mockReturnValue(null);
-        expect(() => createAlternativeClips('c1', [[note()]])).toThrow('Track state unavailable');
+        expect(createAlternativeClips('c1', [[note()]])).toBe(false);
         expect(mocks.updateTrack).not.toHaveBeenCalled();
     });
 
-    it('throws when the original clip is not found', () => {
+    it('returns false when the original clip is not found', () => {
         setState([]);
-        expect(() => createAlternativeClips('missing', [[note()]])).toThrow('Clip missing not found');
+        expect(createAlternativeClips('missing', [[note()]])).toBe(false);
         expect(mocks.updateTrack).not.toHaveBeenCalled();
         expect(mocks.setNotesForClip).not.toHaveBeenCalled();
+    });
+
+    it('rejects an ineligible owner before allocating ids or writing MIDI', () => {
+        setState([ClipDummy.create({ id: 'c1', trackId: 't1', type: 'midi' })]);
+        mocks.resolveEligibleClipWriteTarget.mockReturnValue({ status: 'ineligible' });
+        const randomUuid = vi.spyOn(crypto, 'randomUUID');
+
+        expect(createAlternativeClips('c1', [[note()]])).toBe(false);
+
+        expect(randomUuid).not.toHaveBeenCalled();
+        expect(mocks.setNotesForClip).not.toHaveBeenCalled();
+        expect(mocks.updateTrack).not.toHaveBeenCalled();
+        randomUuid.mockRestore();
+    });
+
+    it('rejects an empty variation set without allocating or publishing', () => {
+        setState([ClipDummy.create({ id: 'c1', trackId: 't1', type: 'midi' })]);
+        const randomUuid = vi.spyOn(crypto, 'randomUUID');
+
+        expect(createAlternativeClips('c1', [])).toBe(false);
+
+        expect(randomUuid).not.toHaveBeenCalled();
+        expect(mocks.setNotesForClip).not.toHaveBeenCalled();
+        expect(mocks.updateTrack).not.toHaveBeenCalled();
+        randomUuid.mockRestore();
     });
 
     it('appends muted variation clips back-to-back after the original clip', () => {
         const original = ClipDummy.create({ id: 'c1', name: 'Lead', startBeat: 4, endBeat: 8, type: 'midi' });
         const track = setState([original]);
 
-        createAlternativeClips('c1', [[note()], [note({ pitch: 64 })]]);
+        expect(createAlternativeClips('c1', [[note()], [note({ pitch: 64 })]])).toBe(true);
 
         expect(mocks.updateTrack).toHaveBeenCalledWith('t1', expect.any(Function));
         const updated = applyTrackUpdate(track);

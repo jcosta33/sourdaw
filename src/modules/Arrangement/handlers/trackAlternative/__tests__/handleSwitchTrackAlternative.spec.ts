@@ -12,6 +12,7 @@ type MockTrack = {
 const mocks = vi.hoisted(() => ({
     getTrackStoreState: vi.fn<() => { tracks: MockTrack[] }>(),
     setTrackStoreState: vi.fn<(state: { tracks: MockTrack[] }) => void>(),
+    resolveEligibleClipWriteTarget: vi.fn(),
 }));
 
 vi.mock('../../../useCases/getTrackStoreState', () => ({
@@ -22,9 +23,14 @@ vi.mock('../../../useCases/setTrackStoreState', () => ({
     setTrackStoreState: mocks.setTrackStoreState,
 }));
 
+vi.mock('../../../stores/resolveEligibleClipWriteTarget', () => ({
+    resolveEligibleClipWriteTarget: mocks.resolveEligibleClipWriteTarget,
+}));
+
 describe('handleSwitchTrackAlternative', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        mocks.resolveEligibleClipWriteTarget.mockReturnValue({ status: 'eligible', trackId: 't1' });
     });
 
     it('switches between alternatives saving active clips', () => {
@@ -43,7 +49,7 @@ describe('handleSwitchTrackAlternative', () => {
             ],
         });
 
-        void handleSwitchTrackAlternative.execute({
+        const result = handleSwitchTrackAlternative.execute({
             type: 'switchTrackAlternative',
             payload: { trackId: 't1', alternativeId: 'alt2' },
         });
@@ -61,6 +67,7 @@ describe('handleSwitchTrackAlternative', () => {
 
         // Verify alt1 now contains the clips that were active
         expect(track.alternatives[0]?.clips).toEqual([{ id: 'c1' }]);
+        expect(result).toEqual({ status: 'written' });
     });
 
     it('bails if switching to the already active alternative', () => {
@@ -68,11 +75,50 @@ describe('handleSwitchTrackAlternative', () => {
             tracks: [{ id: 't1', activeAlternativeId: 'alt1', alternatives: [{ id: 'alt1' }] }],
         });
 
-        void handleSwitchTrackAlternative.execute({
+        const result = handleSwitchTrackAlternative.execute({
             type: 'switchTrackAlternative',
             payload: { trackId: 't1', alternativeId: 'alt1' },
         });
 
+        expect(result).toEqual({ status: 'no-write' });
+        expect(mocks.setTrackStoreState).not.toHaveBeenCalled();
+    });
+
+    it('rejects an ineligible track without publishing', () => {
+        mocks.getTrackStoreState.mockReturnValue({
+            tracks: [
+                {
+                    id: 't1',
+                    activeAlternativeId: 'alt1',
+                    alternatives: [
+                        { id: 'alt1', clips: [] },
+                        { id: 'alt2', clips: [] },
+                    ],
+                },
+            ],
+        });
+        mocks.resolveEligibleClipWriteTarget.mockReturnValue({ status: 'ineligible' });
+
+        const result = handleSwitchTrackAlternative.execute({
+            type: 'switchTrackAlternative',
+            payload: { trackId: 't1', alternativeId: 'alt2' },
+        });
+
+        expect(result).toEqual({ status: 'no-write' });
+        expect(mocks.setTrackStoreState).not.toHaveBeenCalled();
+    });
+
+    it('returns no-write when the requested alternative is missing', () => {
+        mocks.getTrackStoreState.mockReturnValue({
+            tracks: [{ id: 't1', activeAlternativeId: 'alt1', alternatives: [{ id: 'alt1', clips: [] }] }],
+        });
+
+        const result = handleSwitchTrackAlternative.execute({
+            type: 'switchTrackAlternative',
+            payload: { trackId: 't1', alternativeId: 'missing' },
+        });
+
+        expect(result).toEqual({ status: 'no-write' });
         expect(mocks.setTrackStoreState).not.toHaveBeenCalled();
     });
 });

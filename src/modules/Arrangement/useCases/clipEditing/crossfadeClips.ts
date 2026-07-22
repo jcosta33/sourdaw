@@ -1,27 +1,45 @@
 import { type Clip } from '../../models/Track';
 import { getTrackState } from '../../repositories/track/getTrackState';
 import { mapAllTracks } from '../../repositories/track/mapAllTracks';
+import { resolveEligibleClipWriteTarget } from '../../stores/resolveEligibleClipWriteTarget';
 
-export function crossfadeClips(clipAId: string, clipBId: string, durationBeats = 0.5): void {
+export function crossfadeClips(clipAId: string, clipBId: string, durationBeats = 0.5): boolean {
+    if (clipAId === clipBId || !Number.isFinite(durationBeats) || durationBeats < 0) {
+        return false;
+    }
+
+    const clipAResolution = resolveEligibleClipWriteTarget({ clipId: clipAId });
+    if (clipAResolution.status !== 'eligible') {
+        return false;
+    }
+
+    const clipBResolution = resolveEligibleClipWriteTarget({ clipId: clipBId });
+    if (clipBResolution.status !== 'eligible') {
+        return false;
+    }
+
     const state = getTrackState();
     if (!state) {
-        return;
+        return false;
     }
 
-    let clipA: Clip | undefined;
-    let clipB: Clip | undefined;
-    for (const track of state.tracks) {
-        clipA = clipA ?? track.clips.find((context) => context.id === clipAId);
-        clipB = clipB ?? track.clips.find((context) => context.id === clipBId);
-    }
+    const clipATrack = state.tracks.find((track) => track.id === clipAResolution.trackId);
+    const clipBTrack = state.tracks.find((track) => track.id === clipBResolution.trackId);
+    const clipA: Clip | undefined = clipATrack?.clips.find((context) => context.id === clipAId);
+    const clipB: Clip | undefined = clipBTrack?.clips.find((context) => context.id === clipBId);
     if (!clipA || !clipB) {
-        return;
+        return false;
     }
 
     const halfLen = durationBeats / 2;
     const newClipAEnd = clipA.endBeat + halfLen;
     const newClipBStart = Math.max(0, clipB.startBeat - halfLen);
     const actualOverlap = newClipAEnd - newClipBStart;
+    const didChangeClipA = clipA.endBeat !== newClipAEnd || clipA.fadeOutBeats !== actualOverlap;
+    const didChangeClipB = clipB.startBeat !== newClipBStart || clipB.fadeInBeats !== actualOverlap;
+    if (!didChangeClipA && !didChangeClipB) {
+        return false;
+    }
 
     mapAllTracks((time) => ({
         ...time,
@@ -35,4 +53,6 @@ export function crossfadeClips(clipAId: string, clipBId: string, durationBeats =
             return context;
         }),
     }));
+
+    return true;
 }

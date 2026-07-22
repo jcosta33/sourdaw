@@ -6,13 +6,29 @@ const mocks = vi.hoisted(() => ({
     splitClip: vi.fn<(typeof splitClipModule)['splitClip']>(),
     removeClip: vi.fn(),
     pushUndoEntry: vi.fn<(label: string, undoFn: () => void, redoFn: () => unknown) => void>(),
+    getMidiStoreState: vi.fn(),
+    restoreMidiClipData: vi.fn(),
+    notifyUser: vi.fn(),
+    resolveEligibleClipWriteTarget: vi.fn<(typeof resolverModule)['resolveEligibleClipWriteTarget']>(),
+    redoNotApplied: Symbol('redo-not-applied'),
 }));
 
 vi.mock('../../../repositories/track/getTrackState', () => ({ getTrackState: mocks.getTrackState }));
 vi.mock('../../../repositories/track/updateClip', () => ({ updateClip: mocks.updateClip }));
 vi.mock('../splitClip', () => ({ splitClip: mocks.splitClip }));
 vi.mock('../../clip/removeClip', () => ({ removeClip: mocks.removeClip }));
-vi.mock('#/modules/Command/useCases', () => ({ pushUndoEntry: mocks.pushUndoEntry }));
+vi.mock('#/modules/Command/useCases', () => ({
+    pushUndoEntry: mocks.pushUndoEntry,
+    REDO_NOT_APPLIED: mocks.redoNotApplied,
+}));
+vi.mock('#/modules/MIDI/useCases', () => ({
+    getMidiStoreState: mocks.getMidiStoreState,
+    restoreMidiClipData: mocks.restoreMidiClipData,
+}));
+vi.mock('#/utils/Notification/notifyUser', () => ({ notifyUser: mocks.notifyUser }));
+vi.mock('../../../stores/resolveEligibleClipWriteTarget', () => ({
+    resolveEligibleClipWriteTarget: mocks.resolveEligibleClipWriteTarget,
+}));
 
 import { ClipDummy } from '../../../__tests__/ClipDummy';
 import { TrackDummy } from '../../../__tests__/TrackDummy';
@@ -21,6 +37,7 @@ import { splitClipWithUndo } from '../splitClipWithUndo';
 
 import type * as trackStateRepo from '../../../repositories/track/getTrackState';
 import type * as updateClipRepo from '../../../repositories/track/updateClip';
+import type * as resolverModule from '../../../stores/resolveEligibleClipWriteTarget';
 import type * as splitClipModule from '../splitClip';
 
 function setState(clips: Clip[]): void {
@@ -39,11 +56,26 @@ function capturedUndoEntry(): { label: string; undoFn: () => void; redoFn: () =>
 }
 
 describe('splitClipWithUndo', () => {
-    beforeEach(() => vi.clearAllMocks());
+    beforeEach(() => {
+        vi.clearAllMocks();
+        mocks.getMidiStoreState.mockReturnValue(null);
+        mocks.resolveEligibleClipWriteTarget.mockReturnValue({ status: 'eligible', trackId: 't1', clipId: 'c1' });
+    });
 
     it('does nothing when the clip does not exist', () => {
         setState([]);
         splitClipWithUndo('missing', 2);
+        expect(mocks.splitClip).not.toHaveBeenCalled();
+        expect(mocks.pushUndoEntry).not.toHaveBeenCalled();
+    });
+
+    it('rejects an ineligible owner before MIDI snapshots or split work', () => {
+        setState([ClipDummy.create({ id: 'c1', trackId: 't1', startBeat: 0, endBeat: 8 })]);
+        mocks.resolveEligibleClipWriteTarget.mockReturnValue({ status: 'ineligible' });
+
+        splitClipWithUndo('c1', 4);
+
+        expect(mocks.getMidiStoreState).not.toHaveBeenCalled();
         expect(mocks.splitClip).not.toHaveBeenCalled();
         expect(mocks.pushUndoEntry).not.toHaveBeenCalled();
     });
@@ -101,5 +133,60 @@ describe('splitClipWithUndo', () => {
 
         capturedUndoEntry().redoFn();
         expect(mocks.splitClip).toHaveBeenCalledWith('c1', 4, 'right-1');
+    });
+
+    it('restores frozen source and right MIDI snapshots across undo and redo', () => {
+        setState([ClipDummy.create({ id: 'c1', trackId: 't1', startBeat: 0, endBeat: 8, type: 'midi' })]);
+        const sourceNotes = [{ id: 'source-note' }];
+        const sourceCc = [{ id: 'source-cc' }];
+        const sourcePitchBend = [{ id: 'source-pitch' }];
+        const rightNotes = [{ id: 'right-note' }];
+        const rightCc = [{ id: 'right-cc' }];
+        const rightPitchBend = [{ id: 'right-pitch' }];
+        mocks.getMidiStoreState
+            .mockReturnValueOnce({
+                notesByClipId: { c1: sourceNotes },
+                ccByClipId: { c1: sourceCc },
+                pitchBendByClipId: { c1: sourcePitchBend },
+            })
+            .mockReturnValueOnce({
+                notesByClipId: { 'right-1': rightNotes },
+                ccByClipId: { 'right-1': rightCc },
+                pitchBendByClipId: { 'right-1': rightPitchBend },
+            });
+        mocks.splitClip.mockReturnValue('right-1');
+
+        splitClipWithUndo('c1', 4);
+        const entry = capturedUndoEntry();
+        entry.undoFn();
+        entry.redoFn();
+
+        expect(mocks.restoreMidiClipData).toHaveBeenNthCalledWith(1, {
+            clipId: 'c1',
+            notesSnapshot: sourceNotes,
+            controlChangeSnapshot: sourceCc,
+            pitchBendSnapshot: sourcePitchBend,
+        });
+        expect(mocks.restoreMidiClipData).toHaveBeenNthCalledWith(2, {
+            clipId: 'right-1',
+            notesSnapshot: rightNotes,
+            controlChangeSnapshot: rightCc,
+            pitchBendSnapshot: rightPitchBend,
+        });
+    });
+
+    it('reports REDO_NOT_APPLIED when the deterministic redo split is rejected', () => {
+        setState([ClipDummy.create({ id: 'c1', trackId: 't1', startBeat: 0, endBeat: 8 })]);
+        mocks.splitClip.mockReturnValueOnce('right-1').mockReturnValueOnce(null);
+
+        splitClipWithUndo('c1', 4);
+        const result = capturedUndoEntry().redoFn();
+
+        expect(result).toBe(mocks.redoNotApplied);
+        expect(mocks.notifyUser).toHaveBeenCalledWith(
+            'Failed to redo split clip - the clip no longer spans the split beat',
+            'error'
+        );
+        expect(mocks.restoreMidiClipData).not.toHaveBeenCalled();
     });
 });

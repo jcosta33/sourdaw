@@ -2,6 +2,7 @@ import { setNotesForClip } from '#/modules/MIDI/useCases';
 
 import { getTrackState } from '../../repositories/track/getTrackState';
 import { updateTrack } from '../../repositories/track/updateTrack';
+import { resolveEligibleClipWriteTarget } from '../../stores/resolveEligibleClipWriteTarget';
 import { type Clip } from '../../stores/trackStore';
 
 export type VariationNote = { pitch: number; startBeat: number; duration: number; velocity: number };
@@ -10,27 +11,29 @@ function clamp(value: number, min: number, max: number): number {
     return Math.min(max, Math.max(min, value));
 }
 
-export function createAlternativeClips(originalClipId: string, variationsData: VariationNote[][]): void {
+export function createAlternativeClips(originalClipId: string, variationsData: VariationNote[][]): boolean {
+    if (!Array.isArray(variationsData) || variationsData.length === 0) {
+        return false;
+    }
+    if (!variationsData.every((variation) => Array.isArray(variation))) {
+        return false;
+    }
+
+    const resolution = resolveEligibleClipWriteTarget({ clipId: originalClipId });
+    if (resolution.status !== 'eligible') {
+        return false;
+    }
+
     const state = getTrackState();
     if (!state) {
-        throw new Error('Track state unavailable — cannot create alternative clips.');
+        return false;
     }
 
-    type Track = (typeof state.tracks)[number];
-    let targetTrack: Track | null = null;
-    let originalClip: Clip | null = null;
-
-    for (const track of state.tracks) {
-        const clip = track.clips.find((context) => context.id === originalClipId);
-        if (clip) {
-            targetTrack = track;
-            originalClip = clip;
-            break;
-        }
-    }
+    const targetTrack = state.tracks.find((track) => track.id === resolution.trackId);
+    const originalClip = targetTrack?.clips.find((context) => context.id === originalClipId);
 
     if (!targetTrack || !originalClip) {
-        throw new Error(`Clip ${originalClipId} not found — cannot create alternative clips.`);
+        return false;
     }
 
     const clipDuration = originalClip.endBeat - originalClip.startBeat;
@@ -68,4 +71,6 @@ export function createAlternativeClips(originalClipId: string, variationsData: V
         ...time,
         clips: [...time.clips, ...newClips],
     }));
+
+    return true;
 }
