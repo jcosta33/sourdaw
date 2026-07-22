@@ -1,0 +1,87 @@
+src/modules/Arrangement/useCases/clipEditing/__tests__/clipEditingOperations.spec.ts
+  s_c2fca615e81f34::t_c5cc4cced32a51 40,45-47,59,63
+src/modules/Arrangement/useCases/timeOperations/__tests__/deleteTime.spec.ts
+  s_ac9b259eab20ba::t_0fdd6b3ce15227 12-13,27-30,80-83,90-96,106-170
+src/modules/Arrangement/useCases/clip/__tests__/moveClip.spec.ts
+  s_0362cee3db98c0::t_27ae5fe51aeefb 77,101
+src/modules/Arrangement/useCases/clip/moveClip.ts
+  s_83ef68f85a224c::t_2a09b047f8e90d 54-57
+src/modules/Arrangement/useCases/clipEditing/__tests__/glueClips.spec.ts
+  s_51b7271278858f::t_40965eed474308 42-57
+src/modules/Arrangement/useCases/clipEditing/glueClips.ts
+  s_83ef68f85a224c::t_8197ca9bad718c 43-49
+src/modules/Arrangement/useCases/clipEditing/nudgeClip.ts
+  s_83ef68f85a224c::t_e7786418690144 35-38
+src/modules/Arrangement/useCases/clipboard/__tests__/pasteClip.spec.ts
+  s_51b7271278858f::t_4435ecb7b8f94d 112-129
+src/modules/Arrangement/useCases/clipboard/pasteClip.ts
+  s_83ef68f85a224c::t_4c663ba5d7b944 118
+src/modules/Arrangement/useCases/freezeBounce/__tests__/bounceSelection.spec.ts
+  s_ac9b259eab20ba::t_4979c23380f233 57-66,128-173
+src/modules/Arrangement/useCases/freezeBounce/bounceSelection.ts
+  s_83ef68f85a224c::t_826ff251e4b079 3,59-146,178-184
+src/modules/Arrangement/useCases/rippleDelete/__tests__/rippleDeleteClips.spec.ts
+  s_83ef68f85a224c::t_51d3f10e7fe6de 9,24-27,54-72
+src/modules/Arrangement/useCases/rippleDelete/rippleDeleteClips.ts
+  s_83ef68f85a224c::t_b54df1e5953919 1-2,36-50
+src/modules/Arrangement/useCases/rippleInsert/__tests__/rippleInsertClip.spec.ts
+  s_ac9b259eab20ba::t_39f8bb2e7c3479 18-25,31-57
+src/modules/Arrangement/useCases/rippleInsert/rippleInsertClip.ts
+  s_83ef68f85a224c::t_8cab673c660ce6 1-2,47-52
+src/modules/Arrangement/useCases/rippleMove/__tests__/rippleMoveClip.spec.ts
+  s_ac9b259eab20ba::t_44f819724c847b 20-27,33-73
+src/modules/Arrangement/useCases/rippleMove/rippleMoveClip.ts
+  s_83ef68f85a224c::t_32753d0078969c 1-2,38,63,73-78
+src/modules/Arrangement/useCases/timeOperations/deleteTime.ts
+  s_83ef68f85a224c::t_6c0ba61577bbed 2,24-31,46-48,50-74,76-77,79-89,91-114,121-127,135-144
+src/modules/Arrangement/useCases/timeOperations/duplicateTimeRange.ts
+  s_83ef68f85a224c::t_7dc6b001f1d226 1-2,17-18,28-39,43-49
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "27df7f6da451bbde1752332d8f3d69800ef87cb9",
+  "prompts": {},
+  "sessions": {
+    "s_0362cee3db98c0": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8b84-3b9e-7ec2-9749-ba7dfcc2344b",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_51b7271278858f": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8b69-4f08-77a2-aa10-c51bc5eb5864",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_83ef68f85a224c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8b69-8c5e-7a93-972d-625fc799eb2b",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_ac9b259eab20ba": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8699-3865-7842-8c54-afbac6cfd266",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_c2fca615e81f34": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f74e9-e1c5-7142-85d2-4c577b3973c0",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
