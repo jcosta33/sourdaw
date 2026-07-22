@@ -1,0 +1,40 @@
+src/modules/MIDI/useCases/index.ts
+  s_ac9b259eab20ba::t_292d5bad616711 18
+src/modules/Project/useCases/projectPersistence/__tests__/loadProject.spec.ts
+  s_ac9b259eab20ba::t_b5332f1609631a 7,23,51,73,184,189,216-235,239
+  s_ac9b259eab20ba::t_dda29e105f5909 21
+  s_ac9b259eab20ba::t_b40a1d64881dbf 3,20,28,57,60-63,75-76,78,162-183,185-188,190-215,236-238
+src/modules/MIDI/stores/chordTrackStore.ts
+  s_ac9b259eab20ba::t_1a171ba3a57ec3 23,123-124,168-183,216,245-263,265,267-274
+  s_ac9b259eab20ba::t_292d5bad616711 86
+src/modules/MIDI/repositories/readLegacyChordTrackStorage.ts
+  s_ac9b259eab20ba::t_292d5bad616711 1-33
+src/modules/MIDI/useCases/__tests__/readLegacyChordTrackMigration.spec.ts
+  s_ac9b259eab20ba::t_e0095cd1bb700b 1,4-12,16-17,19-20,23-36,41-43,63-80
+  s_ac9b259eab20ba::t_292d5bad616711 2-3,13-15,18,21-22,37-40,44-62,81-99
+src/modules/Project/useCases/projectPersistence/loadProject.ts
+  s_ac9b259eab20ba::t_b5332f1609631a 9,94-97
+  s_ac9b259eab20ba::t_b40a1d64881dbf 4,13,60,90-93,98-102
+  s_ac9b259eab20ba::t_68e0d1d79f21dd 103-104
+src/modules/MIDI/stores/__tests__/chordTrackStore.spec.ts
+  s_ac9b259eab20ba::t_1a171ba3a57ec3 107-110,323-336
+  s_ac9b259eab20ba::t_9603e941cfb456 337-338
+src/modules/MIDI/useCases/readLegacyChordTrackMigration.ts
+  s_ac9b259eab20ba::t_292d5bad616711 1-33
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "07177213ec9c08fdea8c20d45e52b0f51ebeb657",
+  "prompts": {},
+  "sessions": {
+    "s_ac9b259eab20ba": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8699-3865-7842-8c54-afbac6cfd266",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
