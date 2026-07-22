@@ -7,14 +7,33 @@ import { getTrackStoreState } from '../getTrackStoreState';
 
 let savedGains = new Map<string, number>();
 
-export function applySoloLogic(): void {
+type ApplySoloLogicUseCaseInput = {
+    applyActions?: boolean;
+    resetSavedGains?: boolean;
+    trackId?: string;
+};
+
+export function applySoloLogic({
+    applyActions = true,
+    resetSavedGains = false,
+    trackId,
+}: ApplySoloLogicUseCaseInput = {}): void {
+    if (resetSavedGains) {
+        savedGains = new Map();
+    }
     const state = getTrackStoreState();
     if (!state) {
         return;
     }
 
     const liveStripTrackIds = new Set(
-        state.tracks.filter((track) => shouldCreateLiveTrackStrip(track)).map((track) => track.id)
+        state.tracks
+            .filter(
+                (track) =>
+                    shouldCreateLiveTrackStrip(track) &&
+                    state.tracks.filter((candidate) => candidate.id === track.id).length === 1
+            )
+            .map((track) => track.id)
     );
     const result = calculateSoloLogic({
         tracks: state.tracks,
@@ -24,6 +43,9 @@ export function applySoloLogic(): void {
     });
 
     for (const action of result.actions) {
+        if (!applyActions || (trackId && action.trackId !== trackId)) {
+            continue;
+        }
         if (action.type === 'setGain') {
             setTrackGain(action.trackId, action.gain);
             continue;

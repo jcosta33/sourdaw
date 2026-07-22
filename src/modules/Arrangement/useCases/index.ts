@@ -16,6 +16,7 @@ export { getTrackById } from './getTrackById';
 export { getSynthParamsForTrack } from './getSynthParamsForTrack';
 export { getTrackStoreState } from './getTrackStoreState';
 export { hydrateTracksForProject } from './hydrateTracksForProject';
+export { projectTrackToLiveStrip } from './projectTrackToLiveStrip';
 export { restoreTrackSnapshot } from './restoreTrackSnapshot';
 export { restoreMarkerSnapshot } from './restoreMarkerSnapshot';
 export { restoreArrangementMetadataSnapshot } from './restoreArrangementMetadataSnapshot';
@@ -176,6 +177,7 @@ export { reorderScratchPadSection } from './scratchPad/scratchPadCrud/reorderScr
 // ── Toggle Track State ────────────────────────────────────────────────────────
 
 export { clearSolos } from './toggleTrackState/clearSolos';
+export { applySoloLogic } from './toggleTrackState/applySoloLogic';
 export { groupTracks } from './toggleTrackState/groupTracks';
 export { muteTrack } from './toggleTrackState/muteTrack';
 export { selectTrack } from './toggleTrackState/selectTrack';
