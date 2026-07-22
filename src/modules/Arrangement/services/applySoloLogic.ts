@@ -9,6 +9,7 @@ export type ApplySoloLogicInput = {
     tracks: readonly Track[];
     soloMode: SoloMode;
     savedGains: ReadonlyMap<string, number>;
+    liveStripTrackIds: ReadonlySet<string>;
 };
 
 export type ApplySoloLogicOutput = {
@@ -16,7 +17,12 @@ export type ApplySoloLogicOutput = {
     savedGains: ReadonlyMap<string, number>;
 };
 
-function isRoutedToSoloedTrack(track: Track, allTracks: readonly Track[], visited = new Set<string>()): boolean {
+function isRoutedToSoloedTrack(
+    track: Track,
+    allTracks: readonly Track[],
+    liveStripTrackIds: ReadonlySet<string>,
+    visited = new Set<string>()
+): boolean {
     if (track.outputId === 'master') {
         return false;
     }
@@ -28,19 +34,26 @@ function isRoutedToSoloedTrack(track: Track, allTracks: readonly Track[], visite
     if (!outputTrack) {
         return false;
     }
-    if (outputTrack.soloed) {
+    if (outputTrack.soloed && liveStripTrackIds.has(outputTrack.id)) {
         return true;
     }
-    return isRoutedToSoloedTrack(outputTrack, allTracks, visited);
+    return isRoutedToSoloedTrack(outputTrack, allTracks, liveStripTrackIds, visited);
 }
 
-export function applySoloLogic({ tracks, soloMode, savedGains }: ApplySoloLogicInput): ApplySoloLogicOutput {
+export function applySoloLogic({
+    tracks,
+    soloMode,
+    savedGains,
+    liveStripTrackIds,
+}: ApplySoloLogicInput): ApplySoloLogicOutput {
     const nextSavedGains = new Map(savedGains);
     const actions: SoloLogicAction[] = [];
-    const anySoloed = tracks.some((track) => track.soloed);
+    const anySoloed = tracks.some(
+        (track) => track.kind !== 'master' && track.soloed && liveStripTrackIds.has(track.id)
+    );
 
     for (const track of tracks) {
-        if (track.kind === 'folder' || track.kind === 'master') {
+        if (!liveStripTrackIds.has(track.id) || track.kind === 'master') {
             continue;
         }
 
@@ -61,7 +74,7 @@ export function applySoloLogic({ tracks, soloMode, savedGains }: ApplySoloLogicI
             continue;
         }
 
-        const routedToSoloed = isRoutedToSoloedTrack(track, tracks);
+        const routedToSoloed = isRoutedToSoloedTrack(track, tracks, liveStripTrackIds);
 
         if (soloMode === 'pfl' && track.soloed) {
             if (!nextSavedGains.has(track.id)) {

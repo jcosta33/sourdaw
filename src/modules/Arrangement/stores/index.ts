@@ -33,7 +33,7 @@ export type { ClipWriteTargetResolution } from './resolveEligibleClipWriteTarget
 export { updateClipInStore } from './updateClipInStore';
 export { appendClipToTrack } from './appendClipToTrack';
 export { appendTrack } from './appendTrack';
-export { getTrackEligibility } from './trackEligibility';
+export { getTrackEligibility, shouldCreateLiveTrackStrip } from './trackEligibility';
 
 export { adjustmentLayerStore, EFFECT_PRESETS, LAYER_COLORS } from './adjustmentLayer';
 export type {

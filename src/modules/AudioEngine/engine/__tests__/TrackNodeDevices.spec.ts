@@ -88,6 +88,62 @@ function pushControllerDevice(
     return { node, controller };
 }
 
+function installDeferredWasmDevice({
+    deviceId = 'wasm-1',
+    controller,
+    beforeLoaded,
+}: {
+    deviceId?: string;
+    controller?: BuiltinDeviceNode['controller'];
+    beforeLoaded?: (finalDn: BuiltinDeviceNode) => void;
+} = {}) {
+    const placeholderNode = createMockAudioNode('gain');
+    const placeholder: BuiltinDeviceNode = {
+        deviceId,
+        type: 'levain',
+        nodes: [placeholderNode],
+        inputNode: placeholderNode,
+        outputNode: placeholderNode,
+        controller,
+    };
+    let onLoaded: ((finalDn: BuiltinDeviceNode) => void) | undefined;
+    const load = Promise.withResolvers<void>();
+    mocks.findWasmDescriptor.mockReturnValue({
+        matches: () => true,
+        create: (deps: { onLoaded: (finalDn: BuiltinDeviceNode) => void }) => {
+            onLoaded = deps.onLoaded;
+            return { placeholder, loadPromise: load.promise };
+        },
+    });
+    return {
+        placeholder,
+        resolve(finalDn: BuiltinDeviceNode): void {
+            if (!onLoaded) {
+                throw new Error('expected the deferred descriptor to capture onLoaded');
+            }
+            beforeLoaded?.(finalDn);
+            onLoaded(finalDn);
+        },
+        settle: load.resolve,
+    };
+}
+
+function createLoadedDevice(deviceId = 'wasm-1') {
+    const node = createMockAudioNode('gain');
+    const controller = { setParam: vi.fn(), setBypass: vi.fn(), destroy: vi.fn() };
+    const dispose = vi.fn();
+    const device: BuiltinDeviceNode = {
+        deviceId,
+        type: 'levain',
+        nodes: [node],
+        inputNode: node,
+        outputNode: node,
+        controller,
+        dispose,
+    };
+    return { device, node, controller, dispose };
+}
+
 describe('TrackNode — metering, devices, sends, and teardown', () => {
     let ctx: MockContext;
 
@@ -390,52 +446,113 @@ describe('TrackNode — metering, devices, sends, and teardown', () => {
             expect(track.strip.deviceNodes).toHaveLength(0);
         });
 
-        it('installs the wasm placeholder, then swaps in the loaded node and drops the pending promise', async () => {
-            const placeholderNode = createMockAudioNode('gain');
-            const placeholder: BuiltinDeviceNode = {
-                deviceId: 'wasm-1',
-                type: 'levain',
-                nodes: [placeholderNode],
-                inputNode: placeholderNode,
-                outputNode: placeholderNode,
-            };
-            let capturedOnLoaded: ((finalDn: BuiltinDeviceNode) => void) | undefined;
-            let resolveLoad: (() => void) | undefined;
-            mocks.findWasmDescriptor.mockReturnValue({
-                matches: () => true,
-                create: (deps: { onLoaded: (finalDn: BuiltinDeviceNode) => void }) => {
-                    capturedOnLoaded = deps.onLoaded;
-                    return {
-                        placeholder,
-                        loadPromise: new Promise<void>((resolve) => {
-                            resolveLoad = resolve;
-                        }),
-                    };
-                },
-            });
+        it('replays placeholder parameter writes once and in order when a wasm device resolves', async () => {
+            const deferred = installDeferredWasmDevice();
             const pendingDevicePromises = new Set<Promise<unknown>>();
             const track = new TrackNode('t1', makeDeps(ctx, { pendingDevicePromises }));
 
             track.addDevice('wasm-1', 'levain');
+            track.updateParam('wasm-1', 'gain', 0.25);
+            track.updateParam('wasm-1', 'tone', 0.75);
+            track.updateBypass('wasm-1', true);
 
-            expect(track.strip.deviceNodes[0]).toBe(placeholder);
+            expect(track.strip.deviceNodes[0]).toBe(deferred.placeholder);
             expect(pendingDevicePromises.size).toBe(1);
 
-            const loadedNode = createMockAudioNode('gain');
-            const finalDn: BuiltinDeviceNode = {
-                deviceId: 'wasm-1',
-                type: 'levain',
-                nodes: [loadedNode],
-                inputNode: loadedNode,
-                outputNode: loadedNode,
-            };
-            capturedOnLoaded!(finalDn);
-            expect(track.strip.deviceNodes[0]).toBe(finalDn);
+            const loaded = createLoadedDevice();
+            deferred.resolve(loaded.device);
+            expect(track.strip.deviceNodes[0]).toBe(loaded.device);
+            expect(loaded.controller.setParam.mock.calls).toEqual([
+                ['gain', 0.25],
+                ['tone', 0.75],
+            ]);
+            expect(loaded.controller.setBypass).toHaveBeenCalledWith(true);
+            expect(loaded.device.bypassed).toBe(true);
 
-            resolveLoad!();
+            deferred.settle();
             await Promise.resolve();
             await Promise.resolve();
             expect(pendingDevicePromises.size).toBe(0);
+        });
+
+        it('preserves the descriptor-owned Proof parameter barrier', () => {
+            const pendingParams: Array<[string, number]> = [];
+            const order: string[] = [];
+            const deferred = installDeferredWasmDevice({
+                deviceId: 'proof-1',
+                controller: { setParam: (name, value) => pendingParams.push([name, value]) },
+                beforeLoaded: (finalDn) => {
+                    for (const [name, value] of pendingParams) {
+                        finalDn.controller?.setParam(name, value);
+                    }
+                    order.push('syncProofPatch');
+                },
+            });
+            const track = new TrackNode('t1', makeDeps(ctx));
+            track.addDevice('proof-1', 'proof');
+            track.updateParam('proof-1', 'lim_ceiling', -1.5);
+            const loaded = createLoadedDevice('proof-1');
+            loaded.controller.setParam.mockImplementation(() => order.push('queuedParam'));
+
+            deferred.resolve(loaded.device);
+
+            expect(order).toEqual(['queuedParam', 'syncProofPatch']);
+        });
+
+        it('invalidates a removed placeholder and destroys its late wasm result', async () => {
+            const deferred = installDeferredWasmDevice();
+            const pendingDevicePromises = new Set<Promise<unknown>>();
+            const track = new TrackNode('t1', makeDeps(ctx, { pendingDevicePromises }));
+            track.addDevice('wasm-1', 'levain');
+            const scheduleRebuild = vi.spyOn(track, 'scheduleRebuildChain');
+
+            track.removeDevice('wasm-1');
+
+            expect(track.strip.deviceNodes).toHaveLength(0);
+            expect(pendingDevicePromises.size).toBe(0);
+            const loaded = createLoadedDevice();
+            deferred.resolve(loaded.device);
+            expect(loaded.dispose).toHaveBeenCalledTimes(1);
+            expect(loaded.controller.destroy).not.toHaveBeenCalled();
+            expect(loaded.node.disconnect).toHaveBeenCalled();
+            expect(scheduleRebuild).not.toHaveBeenCalled();
+
+            deferred.settle();
+            await Promise.resolve();
+        });
+
+        it('keeps same-id replacement state when reset rejects an old generation', async () => {
+            const deferred = installDeferredWasmDevice();
+            const pendingDevicePromises = new Set<Promise<unknown>>();
+            const track = new TrackNode('t1', makeDeps(ctx, { pendingDevicePromises }));
+            track.addDevice('wasm-1', 'levain');
+            const rebuildChain = vi.spyOn(track, 'rebuildChain');
+            const meterNode = workletInstances[0]!;
+            track.scheduleRebuildChain();
+
+            track.dispose();
+            track.dispose();
+            await Promise.resolve();
+
+            expect(track.strip.deviceNodes).toHaveLength(0);
+            expect(pendingDevicePromises.size).toBe(0);
+            expect(meterNode.port.close).toHaveBeenCalledTimes(1);
+            expect(rebuildChain).not.toHaveBeenCalled();
+
+            const loaded = createLoadedDevice();
+            let activeGeneration = 'new';
+            loaded.controller.destroy.mockImplementation(() => {
+                activeGeneration = 'removed';
+            });
+            deferred.resolve(loaded.device);
+            expect(loaded.dispose).toHaveBeenCalledTimes(1);
+            expect(loaded.controller.destroy).not.toHaveBeenCalled();
+            expect(activeGeneration).toBe('new');
+            expect(loaded.node.disconnect).toHaveBeenCalled();
+            expect(rebuildChain).not.toHaveBeenCalled();
+
+            deferred.settle();
+            await Promise.resolve();
         });
     });
 

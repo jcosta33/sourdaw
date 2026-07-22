@@ -9,6 +9,7 @@ import { getTrackState } from '../repositories/track/getTrackState';
 import { setTrackState } from '../repositories/track/setTrackState';
 import { collectTrackClipIds } from '../services/collectTrackClipIds';
 import { takeLaneStore } from '../stores/takeLaneStore';
+import { shouldCreateLiveTrackStrip } from '../stores/trackEligibility';
 
 import { ArrangementEventBus } from './arrangementEventBus';
 
@@ -57,13 +58,13 @@ export const removeTrack = inject({ eventBus: ArrangementEventBus })(
 
             // Tear down the engine strips for this track. Without this the
             // BusNode/TrackNode survives in the live graph, still summing and
-            // processing (a leaked node). ensureTrackStrips skips only 'folder',
-            // so audio, midi, master AND bus tracks all own a TrackNode; a bus
-            // owns a BusNode on top. Tear the TrackNode down first — it sweeps
+            // processing (a leaked node). Audio, MIDI, master, bus, and a folder
+            // hosting Toaster own a TrackNode; a bus owns a BusNode on top. Tear
+            // the TrackNode down first — it sweeps
             // routing keyed on this id as the source — then dispose the BusNode,
             // which sweeps sends targeting the bus. Both engine methods no-op
             // when the node is absent.
-            if (track.kind !== 'folder') {
+            if (shouldCreateLiveTrackStrip(track)) {
                 removeTrackStrip(trackId);
             }
             if (track.kind === 'bus') {
