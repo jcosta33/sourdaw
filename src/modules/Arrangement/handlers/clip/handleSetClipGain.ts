@@ -2,10 +2,11 @@ import { createHandler } from '#/utils/createHandler';
 
 import { setClipGain } from '../../useCases/clipEditing/setClipGain';
 import { getTrackStoreState } from '../../useCases/getTrackStoreState';
+import { toHandlerExecutionResult } from '../toHandlerExecutionResult';
 
 export const handleSetClipGain = createHandler<'setClipGain'>({
     execute: (alpha) => {
-        setClipGain(alpha.payload.clipId, alpha.payload.gain);
+        return toHandlerExecutionResult(setClipGain(alpha.payload.clipId, alpha.payload.gain));
     },
     describe: (alpha) => {
         const state = getTrackStoreState();
