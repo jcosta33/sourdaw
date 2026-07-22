@@ -14,6 +14,7 @@ import { EQCurve } from '#/components/daw/visualizers/EQCurve';
 
 type EffectsSectionProps = {
     rotaryKnob?: RotaryKnobComponent;
+    reverbType: number;
     reverbMix: number;
     reverbDecay: number;
     delayTime: number;
@@ -266,7 +267,7 @@ export const EffectsSection = (props: EffectsSectionProps): ReactElement => {
                                 <button
                                     key={name}
                                     type="button"
-                                    className={`px-1.5 py-0.5 rounded text-[7px] font-medium transition-colors ${i === 0 ? 'bg-[var(--color-accent-mint)]/80 text-white' : 'text-muted-foreground/50 hover:text-foreground'}`}
+                                    className={`px-1.5 py-0.5 rounded text-[7px] font-medium transition-colors ${Math.round(props.reverbType) === i ? 'bg-[var(--color-accent-mint)]/80 text-white' : 'text-muted-foreground/50 hover:text-foreground'}`}
                                     onClick={() => onParam('reverbType', i)}
                                 >
                                     {name}

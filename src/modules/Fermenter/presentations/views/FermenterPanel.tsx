@@ -1,5 +1,6 @@
 import { type ReactElement, useState } from 'react';
 
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Cpu, RotateCcw, Save, Shuffle } from 'lucide-react';
 
 import { DawPluginChip } from '#/components/daw/DawPluginChip';
@@ -47,6 +48,8 @@ import { WarpSection } from '../components/WarpSection';
 import { XYPad } from '../components/XYPad';
 
 import { TransformPad } from './TransformPad';
+
+const USER_PATCHES_QUERY_KEY = ['fermenter', 'user-patches'] as const;
 
 const LEVELS = [
     { id: 1, label: 'Play', eyebrow: 'Scene' },
@@ -416,6 +419,7 @@ function renderSectionContent(
     return (
         <EffectsSection
             rotaryKnob={MidiLearnRotaryKnob}
+            reverbType={patch.reverbType}
             reverbMix={patch.reverbMix}
             reverbDecay={patch.reverbDecay}
             delayTime={patch.delayTime}
@@ -471,10 +475,18 @@ export const FermenterPanel = ({ deviceId }: { deviceId: string }): ReactElement
     const [section, setSection] = useState<FermenterSection>('osc');
     const [showSave, setShowSave] = useState(false);
     const [saveName, setSaveName] = useState('');
-    // version counter forces re-render after user-patch save so the preset browser reflects new entries
-    const [_userPatchVersion, setUserPatchVersion] = useState(0);
 
-    const userPatches = loadUserPatches();
+    // User patches come from the TanStack Query cache — never a render-body
+    // read (a per-render loadUserPatches() put a synchronous localStorage
+    // read + JSON.parse on the gesture path, and the React Compiler's
+    // memoization made the post-save list permanently stale). The save flow
+    // invalidates the key below to refresh the preset browser.
+    const queryClient = useQueryClient();
+    const { data: userPatches = [] } = useQuery({
+        queryKey: USER_PATCHES_QUERY_KEY,
+        queryFn: loadUserPatches,
+        staleTime: Infinity,
+    });
     const sectionMeta = getSectionMeta(section);
 
     function onParam(key: string, value: number): void {
@@ -520,7 +532,7 @@ export const FermenterPanel = ({ deviceId }: { deviceId: string }): ReactElement
         }
         setSaveName('');
         setShowSave(false);
-        setUserPatchVersion((currentVersion) => currentVersion + 1);
+        void queryClient.invalidateQueries({ queryKey: USER_PATCHES_QUERY_KEY });
     }
 
     return (
