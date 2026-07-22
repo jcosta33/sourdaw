@@ -1,0 +1,23 @@
+src/modules/Automation/useCases/modulation/__tests__/applyModulationToEngine.spec.ts
+  s_ac9b259eab20ba::t_d48085a1995787 71,76,256-274,409-413,416-420,423-450
+  s_ac9b259eab20ba::t_7abb6c5ddac438 90-102,414-415,421-422
+src/modules/Automation/useCases/modulation/applyModulationToEngine.ts
+  s_ac9b259eab20ba::t_4d17079a09c929 99-101,107
+  s_ac9b259eab20ba::t_9a773f97d8ac93 16-23,42-93,96-98,102-104,108,118-123,134-135,137-138,160-170,189-191
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "496fff29c6c5bd5bd1bc2218887c2227ffbc7219",
+  "prompts": {},
+  "sessions": {
+    "s_ac9b259eab20ba": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8699-3865-7842-8c54-afbac6cfd266",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
