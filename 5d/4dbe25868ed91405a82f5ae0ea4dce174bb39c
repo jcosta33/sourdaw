@@ -1,0 +1,56 @@
+src/modules/Project/useCases/projectPersistence/fileIO/buildProjectData.ts
+  s_ac9b259eab20ba::t_09c557e41f4bab 10-16,166
+src/modules/Project/useCases/projectPersistence/fileIO/__tests__/buildProjectData.spec.ts
+  s_ac9b259eab20ba::t_1e004ee81665a1 16-21,24,63-75
+src/modules/MIDI/useCases/chordTrack/__tests__/hydrateChordTrackProjectState.spec.ts
+  s_ac9b259eab20ba::t_1e004ee81665a1 1-37
+src/modules/MIDI/useCases/index.ts
+  s_ac9b259eab20ba::t_09c557e41f4bab 15
+src/modules/Project/useCases/projectPersistence/helpers/__tests__/isHydratableProjectData.spec.ts
+  s_ac9b259eab20ba::t_1e004ee81665a1 193-196,329-337
+  s_ac9b259eab20ba::t_a20062b4963760 338-340
+  s_ac9b259eab20ba::t_4fbea4dc4c7037 341
+src/modules/MIDI/stores/index.ts
+  s_ac9b259eab20ba::t_63289ce86f27bd 19
+src/modules/Project/useCases/projectPersistence/helpers/resetModuleStoresToDefault.ts
+  s_ac9b259eab20ba::t_09c557e41f4bab 45
+  s_ac9b259eab20ba::t_e4083e406edf8f 11-15
+src/modules/Project/useCases/projectPersistence/helpers/isHydratableProjectData.ts
+  s_ac9b259eab20ba::t_09c557e41f4bab 9
+  s_ac9b259eab20ba::t_63289ce86f27bd 1,750
+  s_ac9b259eab20ba::t_77fa36f2785ef0 50
+  s_ac9b259eab20ba::t_e918cf96af5ba8 751-752
+src/modules/Project/useCases/projectPersistence/helpers/__tests__/hydrateModuleStoresFromProjectData.spec.ts
+  s_ac9b259eab20ba::t_e4083e406edf8f 50
+  s_ac9b259eab20ba::t_1e004ee81665a1 10,32,134,140-148
+  s_ac9b259eab20ba::t_a8988c7c0815fe 149-150
+src/modules/Project/useCases/projectPersistence/helpers/__tests__/resetModuleStoresToDefault.spec.ts
+  s_ac9b259eab20ba::t_1e004ee81665a1 13,42,94,112,135
+src/modules/Project/models/ProjectData.ts
+  s_ac9b259eab20ba::t_09c557e41f4bab 48,216-228
+  s_ac9b259eab20ba::t_63289ce86f27bd 198-215
+  s_ac9b259eab20ba::t_1608b439c09f3e 229
+src/modules/Project/useCases/projectPersistence/helpers/hydrateModuleStoresFromProjectData.ts
+  s_ac9b259eab20ba::t_09c557e41f4bab 2,17
+src/modules/MIDI/stores/chordTrackStore.ts
+  s_ac9b259eab20ba::t_63289ce86f27bd 74
+src/modules/MIDI/useCases/chordTrack/hydrateChordTrackProjectState.ts
+  s_ac9b259eab20ba::t_e4083e406edf8f 1
+  s_ac9b259eab20ba::t_09c557e41f4bab 2-6
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "5d4dbe25868ed91405a82f5ae0ea4dce174bb39c",
+  "prompts": {},
+  "sessions": {
+    "s_ac9b259eab20ba": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8699-3865-7842-8c54-afbac6cfd266",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
