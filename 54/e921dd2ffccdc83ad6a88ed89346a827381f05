@@ -1,0 +1,78 @@
+src/modules/Arrangement/useCases/clipEditing/__tests__/reverseClip.spec.ts
+  s_c2fca615e81f34::t_ff6aa32d72a02b 66,119,140,173
+  s_c2fca615e81f34::t_ae86fe2d4b0425 98-100,183
+  s_c2fca615e81f34::t_b519428857e059 11,31-34,40-45,168,179-182,184-193
+  s_c2fca615e81f34::t_5b6d119efc392f 89,91,148-167
+  s_c2fca615e81f34::t_228cbe0de0af96 169-170
+  s_c2fca615e81f34::t_7d6c41e25a386f 194
+src/modules/Arrangement/useCases/__tests__/stripSilence.spec.ts
+  s_c2fca615e81f34::t_bb6076a624f3d3 124,155,157
+  s_c2fca615e81f34::t_6c3b72e799ff68 92,122
+  s_c2fca615e81f34::t_b519428857e059 14,30-33,69-73,185-197
+  s_c2fca615e81f34::t_5b6d119efc392f 79,81,90
+  s_c2fca615e81f34::t_5de8354a6ffc64 198
+src/modules/Arrangement/useCases/replaceClipAudioBuffer.ts
+  s_c2fca615e81f34::t_a9e9d7bef49cbc 3,10-14,17,24-32,36-48,51-59,62,70
+src/modules/Arrangement/handlers/track/__tests__/flattenTrack.spec.ts
+  s_c2fca615e81f34::t_1d69bc7cf208d6 16,20,26-37
+src/modules/Arrangement/useCases/freezeBounce/flattenTrack.ts
+  s_c2fca615e81f34::t_a9e9d7bef49cbc 5,8-13,16,19,21,26,48,65,76
+src/modules/Arrangement/useCases/clipEditing/normalizeClip.ts
+  s_c2fca615e81f34::t_a9e9d7bef49cbc 5,8-13,16-22,25-28,30-32,34-35
+src/modules/Arrangement/handlers/clip/handleConsolidateSelection.ts
+  s_c2fca615e81f34::t_a9e9d7bef49cbc 3,5,9-15
+src/modules/Arrangement/handlers/clip/__tests__/handleConsolidateSelection.spec.ts
+  s_c2fca615e81f34::t_1d69bc7cf208d6 7-11,21-22,26,32-44
+src/modules/Arrangement/handlers/clip/__tests__/handleStripSilence.spec.ts
+  s_c2fca615e81f34::t_1d69bc7cf208d6 16,20,26-37
+src/modules/Arrangement/useCases/freezeBounce/__tests__/flattenTrack.spec.ts
+  s_c2fca615e81f34::t_b519428857e059 7-10,15-18,22,156-177
+  s_c2fca615e81f34::t_5b6d119efc392f 77,79,98-105
+  s_c2fca615e81f34::t_0f9ee972144458 178
+src/modules/Arrangement/useCases/clipEditing/reverseClip.ts
+  s_c2fca615e81f34::t_a9e9d7bef49cbc 6-12,16,18-36,39-52
+src/modules/Arrangement/handlers/clip/handleReverseClip.ts
+  s_c2fca615e81f34::t_a9e9d7bef49cbc 4,8-9
+src/modules/Arrangement/handlers/clip/handleStripSilence.ts
+  s_c2fca615e81f34::t_a9e9d7bef49cbc 4,8-9
+src/modules/Arrangement/useCases/__tests__/replaceClipAudioBuffer.spec.ts
+  s_c2fca615e81f34::t_5b6d119efc392f 55,57,89-98,132-164
+  s_c2fca615e81f34::t_9bf9c2eb4b38b8 127
+  s_c2fca615e81f34::t_b519428857e059 1,10-17,42-47,165-176
+  s_c2fca615e81f34::t_022b3c9dc54260 99-126,128-131
+src/modules/Arrangement/useCases/stripSilence.ts
+  s_c2fca615e81f34::t_a9e9d7bef49cbc 5,13-18,21,24-27,30,32,38,72,75,93,103,105,107
+src/modules/Arrangement/handlers/clip/handleNormalizeClip.ts
+  s_c2fca615e81f34::t_a9e9d7bef49cbc 4,8-9
+src/modules/Arrangement/handlers/clip/__tests__/handleBounceSelection.spec.ts
+  s_c2fca615e81f34::t_1d69bc7cf208d6 7-11,21,46-55
+  s_c2fca615e81f34::t_8a57e73d9d04c6 56-57
+src/modules/Arrangement/handlers/track/flattenTrack.ts
+  s_c2fca615e81f34::t_a9e9d7bef49cbc 4,8-9
+src/modules/Arrangement/handlers/clip/__tests__/handleNormalizeClip.spec.ts
+  s_c2fca615e81f34::t_1d69bc7cf208d6 16,20,26-37
+src/modules/Arrangement/handlers/clip/__tests__/handleReverseClip.spec.ts
+  s_c2fca615e81f34::t_1d69bc7cf208d6 16,20,26-37
+src/modules/Arrangement/handlers/clip/handleBounceSelection.ts
+  s_c2fca615e81f34::t_a9e9d7bef49cbc 3,9-14
+src/modules/Arrangement/useCases/clipEditing/__tests__/normalizeClip.spec.ts
+  s_c2fca615e81f34::t_5b6d119efc392f 75,77,103,105,122,124
+  s_c2fca615e81f34::t_b519428857e059 14,21,33-36,56-61,129-139
+  s_c2fca615e81f34::t_e49a69cf3ff935 140-141
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "54e921dd2ffccdc83ad6a88ed89346a827381f05",
+  "prompts": {},
+  "sessions": {
+    "s_c2fca615e81f34": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f74e9-e1c5-7142-85d2-4c577b3973c0",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
