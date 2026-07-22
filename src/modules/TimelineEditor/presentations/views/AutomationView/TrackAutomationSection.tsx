@@ -20,7 +20,7 @@ type TrackAutomationSectionProps = {
     trackName: string;
     trackColor: string;
     automationMode: AutomationMode;
-    devices: { type: string; name: string }[];
+    devices: { id: string; type: string; name: string }[];
     pixelsPerBeat: number;
     scrollX: number;
     containerWidth: number;

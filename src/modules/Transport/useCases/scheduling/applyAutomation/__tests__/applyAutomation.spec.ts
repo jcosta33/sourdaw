@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { trackStore } from '#/modules/Arrangement/stores';
-import { updateDeviceParam } from '#/modules/AudioEngine/useCases';
+import { setTrackGain, setTrackPan, updateDeviceParam } from '#/modules/AudioEngine/useCases';
 import { automationStore } from '#/modules/Automation/stores';
 import { getAutomationValueAtBeat, isRecordingAutomation } from '#/modules/Automation/useCases';
 import { setFermenterMappedParam } from '#/modules/Fermenter/useCases';
@@ -70,12 +70,17 @@ type MutableAutomationStore = { value: { lanes: unknown[] } };
 const mutableTrackStore = trackStore as unknown as MutableTrackStore;
 const mutableAutomationStore = automationStore as unknown as MutableAutomationStore;
 
+type SeedDevice = {
+    id: string;
+    type: string;
+    parameterValues: Record<string, number>;
+};
+
 function seedDeviceLane(options: {
-    deviceType: string;
-    deviceId: string;
-    bareParamId: string;
+    devices: SeedDevice[];
     laneParameterId: string;
     trackKind?: string;
+    laneId?: string;
 }): void {
     mutableTrackStore.value = {
         tracks: [
@@ -85,20 +90,14 @@ function seedDeviceLane(options: {
                 automationMode: 'read',
                 clips: [],
                 midiFx: [],
-                devices: [
-                    {
-                        id: options.deviceId,
-                        type: options.deviceType,
-                        parameterValues: { [options.bareParamId]: 0 },
-                    },
-                ],
+                devices: options.devices,
             },
         ],
     };
     mutableAutomationStore.value = {
         lanes: [
             {
-                id: 'lane-1',
+                id: options.laneId ?? 'lane-1',
                 trackId: 'track-1',
                 parameterId: options.laneParameterId,
                 minValue: 0,
@@ -121,16 +120,11 @@ describe('applyAutomation', () => {
         expect(typeof applyAutomation).toBe('function');
     });
 
-    it('routes a prefixed Fermenter param lane through the mapped use-case with the bare param id', () => {
-        // Regression: automation lanes carry `${device.type}:${paramId}`
-        // (`fermenter:filterCutoff`), while `parameterValues` is keyed by the
-        // bare id (`filterCutoff`). Before the fix the prefixed lookup was
-        // undefined, so the device branch never fired and the param was a no-op.
+    it('routes a canonical Fermenter lane through the mapped use-case with the bare param id', () => {
         seedDeviceLane({
-            deviceType: 'fermenter',
-            deviceId: 'device-f1',
-            bareParamId: 'filterCutoff',
-            laneParameterId: 'fermenter:filterCutoff',
+            devices: [{ id: 'device-f1', type: 'fermenter', parameterValues: { filterCutoff: 0 } }],
+            laneParameterId: 'device-f1:filterCutoff',
+            laneId: 'fermenter-canonical',
         });
 
         // The per-param exponential slew only dispatches once the smoothed value
@@ -156,10 +150,9 @@ describe('applyAutomation', () => {
         // Fermenter — a builtin EQ band lane must reach updateDeviceParam with the
         // bare param id, never the prefixed `builtin-eq:eq-low-gain`.
         seedDeviceLane({
-            deviceType: 'builtin-eq',
-            deviceId: 'device-eq1',
-            bareParamId: 'eq-low-gain',
+            devices: [{ id: 'device-eq1', type: 'builtin-eq', parameterValues: { 'eq-low-gain': 0 } }],
             laneParameterId: 'builtin-eq:eq-low-gain',
+            laneId: 'eq-legacy-type',
         });
 
         vi.mocked(getAutomationValueAtBeat).mockReturnValueOnce(0).mockReturnValue(0.75);
@@ -171,13 +164,101 @@ describe('applyAutomation', () => {
         expect(setFermenterMappedParam).not.toHaveBeenCalled();
     });
 
+    it('targets only the requested device when two devices share a type and parameter', () => {
+        seedDeviceLane({
+            devices: [
+                { id: 'eq-a', type: 'builtin-eq', parameterValues: { 'eq-low-gain': 0 } },
+                { id: 'eq-b', type: 'builtin-eq', parameterValues: { 'eq-low-gain': 0 } },
+            ],
+            laneParameterId: 'eq-b:eq-low-gain',
+            laneId: 'eq-canonical',
+        });
+
+        vi.mocked(getAutomationValueAtBeat).mockReturnValueOnce(0).mockReturnValue(0.75);
+        applyAutomation(0);
+        applyAutomation(1);
+
+        expect(updateDeviceParam).toHaveBeenCalledTimes(1);
+        expect(updateDeviceParam).toHaveBeenCalledWith('track-1', 'eq-b', 'eq-low-gain', expect.any(Number));
+    });
+
+    it('accepts a bare legacy parameter only when exactly one eligible device exposes it', () => {
+        seedDeviceLane({
+            devices: [
+                { id: 'eq-a', type: 'builtin-eq', parameterValues: { 'eq-low-gain': 0 } },
+                { id: 'gain-a', type: 'builtin-gain', parameterValues: { 'gain-level': 0 } },
+            ],
+            laneParameterId: 'eq-low-gain',
+            laneId: 'eq-legacy-bare',
+        });
+
+        vi.mocked(getAutomationValueAtBeat).mockReturnValueOnce(0).mockReturnValue(0.75);
+        applyAutomation(0);
+        applyAutomation(1);
+
+        expect(updateDeviceParam).toHaveBeenCalledWith('track-1', 'eq-a', 'eq-low-gain', expect.any(Number));
+    });
+
+    it.each(['builtin-eq:eq-low-gain', 'eq-low-gain'])('rejects ambiguous legacy target %s', (laneParameterId) => {
+        seedDeviceLane({
+            devices: [
+                { id: 'eq-a', type: 'builtin-eq', parameterValues: { 'eq-low-gain': 0 } },
+                { id: 'eq-b', type: 'builtin-eq', parameterValues: { 'eq-low-gain': 0 } },
+            ],
+            laneParameterId,
+            laneId: `ambiguous-${laneParameterId}`,
+        });
+
+        vi.mocked(getAutomationValueAtBeat).mockReturnValueOnce(0).mockReturnValue(0.75);
+        applyAutomation(0);
+        applyAutomation(1);
+
+        expect(updateDeviceParam).not.toHaveBeenCalled();
+    });
+
+    it.each(['missing:eq-low-gain', 'gain-a:eq-low-gain'])(
+        'fails closed for canonical target %s instead of falling through',
+        (laneParameterId) => {
+            seedDeviceLane({
+                devices: [
+                    { id: 'eq-a', type: 'builtin-eq', parameterValues: { 'eq-low-gain': 0 } },
+                    { id: 'gain-a', type: 'builtin-gain', parameterValues: { 'gain-level': 0 } },
+                ],
+                laneParameterId,
+                laneId: `invalid-${laneParameterId}`,
+            });
+
+            vi.mocked(getAutomationValueAtBeat).mockReturnValueOnce(0).mockReturnValue(0.75);
+            applyAutomation(0);
+            applyAutomation(1);
+
+            expect(updateDeviceParam).not.toHaveBeenCalled();
+        }
+    );
+
+    it('keeps track gain and pan lane behavior unchanged', () => {
+        mutableTrackStore.value = {
+            tracks: [{ id: 'track-1', kind: 'audio', automationMode: 'read', clips: [], midiFx: [], devices: [] }],
+        };
+        mutableAutomationStore.value = {
+            lanes: [
+                { id: 'gain-lane', trackId: 'track-1', parameterId: 'gain', minValue: 0, points: [{}] },
+                { id: 'pan-lane', trackId: 'track-1', parameterId: 'pan', minValue: -1, points: [{}] },
+            ],
+        };
+
+        applyAutomation(0);
+
+        expect(setTrackGain).toHaveBeenCalledWith('track-1', 0.75);
+        expect(setTrackPan).toHaveBeenCalledWith('track-1', 25);
+    });
+
     it('does not send device automation for an ineligible runtime VCA owner', () => {
         seedDeviceLane({
-            deviceType: 'builtin-eq',
-            deviceId: 'forbidden-device',
-            bareParamId: 'eq-low-gain',
+            devices: [{ id: 'forbidden-device', type: 'builtin-eq', parameterValues: { 'eq-low-gain': 0 } }],
             laneParameterId: 'builtin-eq:eq-low-gain',
             trackKind: 'vca',
+            laneId: 'ineligible-device',
         });
 
         vi.mocked(getAutomationValueAtBeat).mockReturnValueOnce(0).mockReturnValue(0.75);

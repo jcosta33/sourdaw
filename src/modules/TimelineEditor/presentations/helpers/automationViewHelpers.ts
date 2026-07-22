@@ -1,4 +1,5 @@
 import { getBuiltinPlugins } from '#/modules/Arrangement/useCases';
+import { createDeviceAutomationTargetId } from '#/utils/automationDeviceTarget';
 
 import { type AutomationPoint } from '../../models/AutomationViewTypes';
 
@@ -6,7 +7,7 @@ export const LANE_HEIGHT = 100;
 
 export const getAutomatableParams = (
     _trackId: string,
-    devices: { type: string; name: string }[]
+    devices: { id: string; type: string; name: string }[]
 ): { id: string; name: string; min: number; max: number }[] => {
     const params: { id: string; name: string; min: number; max: number }[] = [
         { id: 'gain', name: 'Volume', min: 0, max: 1 },
@@ -21,7 +22,7 @@ export const getAutomatableParams = (
         for (const param of plugin.parameters) {
             if (param.automatable) {
                 params.push({
-                    id: `${device.type}:${param.id}`,
+                    id: createDeviceAutomationTargetId(device.id, param.id),
                     name: `${device.name} → ${param.name}`,
                     min: param.minValue,
                     max: param.maxValue,

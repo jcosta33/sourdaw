@@ -41,19 +41,21 @@ describe('getAutomatableParams', () => {
     });
 
     it('should append only the automatable params of a known device, skipping non-automatable ones', () => {
-        const params = getAutomatableParams('track-1', [{ type: 'levain', name: 'Strings' }]);
+        const params = getAutomatableParams('track-1', [{ id: 'levain-1', type: 'levain', name: 'Strings' }]);
         expect(params).toEqual([
             { id: 'gain', name: 'Volume', min: 0, max: 1 },
             { id: 'pan', name: 'Pan', min: -1, max: 1 },
-            { id: 'levain:masterGain', name: 'Strings → Master', min: 0, max: 2 },
-            { id: 'levain:humanize', name: 'Strings → Humanize', min: 0, max: 1 },
-            { id: 'levain:vibratoDepth', name: 'Strings → Vibrato', min: 0, max: 1 },
-            { id: 'levain:legatoEnabled', name: 'Strings → Legato', min: 0, max: 1 },
+            { id: 'levain-1:masterGain', name: 'Strings → Master', min: 0, max: 2 },
+            { id: 'levain-1:humanize', name: 'Strings → Humanize', min: 0, max: 1 },
+            { id: 'levain-1:vibratoDepth', name: 'Strings → Vibrato', min: 0, max: 1 },
+            { id: 'levain-1:legatoEnabled', name: 'Strings → Legato', min: 0, max: 1 },
         ]);
     });
 
     it('should ignore a device whose type does not match any built-in plugin', () => {
-        const params = getAutomatableParams('track-1', [{ type: 'not-a-real-plugin', name: 'Mystery' }]);
+        const params = getAutomatableParams('track-1', [
+            { id: 'mystery-1', type: 'not-a-real-plugin', name: 'Mystery' },
+        ]);
         expect(params).toEqual([
             { id: 'gain', name: 'Volume', min: 0, max: 1 },
             { id: 'pan', name: 'Pan', min: -1, max: 1 },

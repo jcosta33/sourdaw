@@ -75,7 +75,7 @@ export const AutomationView = (): ReactElement => {
                             trackName={track.name}
                             trackColor={track.color ?? 'var(--color-palette-steel)'}
                             automationMode={track.automationMode}
-                            devices={track.devices.map((data) => ({ type: data.type, name: data.name }))}
+                            devices={track.devices.map((data) => ({ id: data.id, type: data.type, name: data.name }))}
                             pixelsPerBeat={pixelsPerBeat}
                             scrollX={scrollX}
                             containerWidth={containerWidth}

@@ -8,6 +8,7 @@ import {
 import { automationStore } from '#/modules/Automation/stores';
 import { getAutomationValueAtBeat, isRecordingAutomation } from '#/modules/Automation/useCases';
 import { setFermenterMappedParam } from '#/modules/Fermenter/useCases';
+import { resolveDeviceAutomationTarget } from '#/utils/automationDeviceTarget';
 
 /**
  * Per-parameter exponential slew state for plugin automation.
@@ -74,23 +75,19 @@ export function applyAutomation(currentBeat: number): void {
         } else {
             let laneSlew = automationState.pluginParamSlew.get(lane.id);
 
-            // Audio Device Automation
-            //
-            // Device-param lanes carry a `${device.type}:${paramId}` parameterId
-            // (built in TimelineEditor/presentations/helpers/automationViewHelpers.ts),
-            // but `device.parameterValues` is keyed by the bare paramId
-            // (Arrangement/useCases/device/addDevice.ts). Strip the device-type
-            // prefix before matching/forwarding, otherwise every device-param
-            // lane no-ops.
-            for (const device of track.devices) {
-                const prefix = `${device.type}:`;
-                let paramId = lane.parameterId;
-                if (lane.parameterId.startsWith(prefix)) {
-                    paramId = lane.parameterId.slice(prefix.length);
-                }
-                if (device.parameterValues[paramId] === undefined) {
-                    continue;
-                }
+            const deviceTarget = resolveDeviceAutomationTarget({
+                targetId: lane.parameterId,
+                candidates: track.devices,
+                isEligible: (device) => {
+                    const targetOwner = resolveEligibleDeviceWriteTarget(device.id);
+                    return targetOwner.status === 'eligible' && targetOwner.trackId === lane.trackId;
+                },
+                acceptsParameter: (device, parameterId) => device.parameterValues[parameterId] !== undefined,
+            });
+
+            if (deviceTarget.status === 'resolved') {
+                const device = deviceTarget.candidate;
+                const paramId = deviceTarget.parameterId;
                 const targetOwner = resolveEligibleDeviceWriteTarget(device.id);
                 if (targetOwner.status !== 'eligible' || targetOwner.trackId !== lane.trackId) {
                     continue;
@@ -115,7 +112,10 @@ export function applyAutomation(currentBeat: number): void {
                         updateDeviceParam(targetOwner.trackId, targetOwner.deviceId, paramId, smoothed);
                     }
                 }
-                break;
+                continue;
+            }
+            if (deviceTarget.status === 'unresolved') {
+                continue;
             }
 
             // MIDI FX Automation
