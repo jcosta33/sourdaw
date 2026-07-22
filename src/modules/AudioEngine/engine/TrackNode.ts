@@ -39,6 +39,7 @@ export class TrackNode {
     // most one rebuild runs per microtask turn.
     private _rebuildScheduled = false;
     private _disposed = false;
+    private _outputDestination: AudioNode | null = null;
     private readonly _pendingDeviceLoads = new Map<string, PendingDeviceLoad>();
 
     constructor(
@@ -211,27 +212,37 @@ export class TrackNode {
     public routeOutput(): void {
         const { analyserNode } = this.strip;
         const { getAdjustmentBusForTrack } = this.deps;
-
-        analyserNode.disconnect();
-
         const adjustmentBus = getAdjustmentBusForTrack?.(this.trackId) ?? null;
-        if (adjustmentBus) {
-            analyserNode.connect(adjustmentBus);
+        const nextDestination = adjustmentBus ?? this.getDefaultDestination();
+        if (this._outputDestination === nextDestination) {
             return;
         }
-
-        analyserNode.connect(this.getDefaultDestination());
+        if (this._outputDestination) {
+            try {
+                analyserNode.disconnect(this._outputDestination);
+            } catch {
+                // The owned output edge was already detached during a wider graph
+                // teardown. Other analyser edges still must remain untouched.
+            }
+        }
+        analyserNode.connect(nextDestination);
+        this._outputDestination = nextDestination;
     }
 
     private reconnectSends(): void {
         const sends = this.deps.getSendsForTrack(this.trackId);
         for (const send of sends) {
+            const tap = send.preFader ? this.strip.preFaderTap : this.strip.analyserNode;
+            try {
+                tap.disconnect(send.gainNode);
+            } catch {
+                /* source edge already disconnected during chain teardown */
+            }
             try {
                 send.gainNode.disconnect();
             } catch {
                 /* already disconnected */
             }
-            const tap = send.preFader ? this.strip.preFaderTap : this.strip.analyserNode;
             tap.connect(send.gainNode);
 
             const busGain = this.deps.getBusGainNode(send.busId);
@@ -267,7 +278,6 @@ export class TrackNode {
         s.postFaderGain.disconnect();
         s.panNode.disconnect();
         s.meterNode?.disconnect();
-        s.analyserNode.disconnect();
 
         for (const dn of s.deviceNodes) {
             try {
@@ -650,6 +660,7 @@ export class TrackNode {
         this.strip.postFaderGain.disconnect();
         this.strip.panNode.disconnect();
         this.strip.analyserNode.disconnect();
+        this._outputDestination = null;
         if (this.strip.meterNode) {
             this.strip.meterNode.port.close();
             this.strip.meterNode.disconnect();

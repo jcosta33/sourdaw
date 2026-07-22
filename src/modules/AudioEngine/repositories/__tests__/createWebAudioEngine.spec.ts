@@ -33,15 +33,17 @@ vi.mock('../../engine/TrackNode', () => ({
             masterGainNode: unknown;
             getTrackGainNode: (trackId: string) => unknown;
         };
+        private outputDestination: unknown;
         dispose = vi.fn();
         setGain = vi.fn();
         setPan = vi.fn();
         setMute = vi.fn();
         setOutput = vi.fn((outputId: string) => {
             this.strip.outputId = outputId;
-            this.strip.analyserNode.disconnect();
+            this.strip.analyserNode.disconnect(this.outputDestination);
             const destination = outputId === 'hw_out' ? this.deps.masterGainNode : this.deps.getTrackGainNode(outputId);
             this.strip.analyserNode.connect(destination ?? this.deps.masterGainNode);
+            this.outputDestination = destination ?? this.deps.masterGainNode;
         });
         getPeakLevel = vi.fn().mockReturnValue(0.5);
         constructor(
@@ -53,6 +55,7 @@ vi.mock('../../engine/TrackNode', () => ({
         ) {
             this.trackId = id;
             this.deps = deps;
+            this.outputDestination = deps.masterGainNode;
             this.strip = {
                 trackId: id,
                 gainNode: makeStripNode(),
@@ -189,16 +192,32 @@ describe('AudioEngine', () => {
         it('reroutes every inbound track output to the master destination', () => {
             const inboundA = engine.ensureTrackStrip('inbound-a');
             const inboundB = engine.ensureTrackStrip('inbound-b');
-            engine.ensureTrackStrip('target');
+            const target = engine.ensureTrackStrip('target');
             engine.setTrackOutput('inbound-a', 'target');
             engine.setTrackOutput('inbound-b', 'target');
+
+            engine.setSend('inbound-a', 'unrelated-bus', 0.5);
+            const unrelatedSendGain = mockCtx.createGain.mock.results.at(-1)!.value as { disconnect: Mock };
+            const sidechainTarget = engine.ensureTrackStrip('unrelated-sidechain-target');
+            sidechainTarget.deviceNodes.push({
+                deviceId: 'unrelated-sidechain-device',
+                type: 'builtin-sidechain-compressor',
+                inputNode: makeStripNode() as unknown as AudioNode,
+            } as never);
+            engine.wireSidechainRoute('inbound-a', 'unrelated-sidechain-target', 'unrelated-sidechain-device');
+            const unrelatedSidechainGain = mockCtx.createGain.mock.results.at(-1)!.value as { disconnect: Mock };
+            vi.mocked(inboundA.analyserNode.disconnect).mockClear();
 
             engine.removeTrackStrip('target');
 
             expect(inboundA.outputId).toBe('hw_out');
             expect(inboundB.outputId).toBe('hw_out');
+            expect(inboundA.analyserNode.disconnect).toHaveBeenCalledWith(target.gainNode);
+            expect(inboundA.analyserNode.disconnect).not.toHaveBeenCalledWith();
             expect(inboundA.analyserNode.connect).toHaveBeenLastCalledWith(engine.masterGainNode);
             expect(inboundB.analyserNode.connect).toHaveBeenLastCalledWith(engine.masterGainNode);
+            expect(unrelatedSendGain.disconnect).not.toHaveBeenCalled();
+            expect(unrelatedSidechainGain.disconnect).not.toHaveBeenCalled();
         });
 
         it('disconnects and forgets the source track sends when the track is removed', () => {
@@ -258,6 +277,7 @@ describe('AudioEngine', () => {
 
             engine.removeTrackStrip('scSrc');
             expect(scGain.disconnect).toHaveBeenCalled();
+            expect(srcStrip.analyserNode.disconnect).toHaveBeenCalledWith(scGain);
 
             // Re-wiring proves the entry was deleted (no early `has(key)` return).
             engine.ensureTrackStrip('scSrc');
@@ -269,7 +289,7 @@ describe('AudioEngine', () => {
         });
 
         it('disconnects a sidechain targeting a removed device and permits rewiring the same route key', () => {
-            engine.ensureTrackStrip('scSrc');
+            const sourceStrip = engine.ensureTrackStrip('scSrc');
             const targetStrip = engine.ensureTrackStrip('scTgt');
             targetStrip.deviceNodes.push({
                 deviceId: 'dev1',
@@ -282,6 +302,7 @@ describe('AudioEngine', () => {
             engine.removeTrackStrip('scTgt');
 
             expect(oldSidechainGain.disconnect).toHaveBeenCalledTimes(1);
+            expect(sourceStrip.analyserNode.disconnect).toHaveBeenCalledWith(oldSidechainGain);
             const replacementTarget = engine.ensureTrackStrip('scTgt');
             replacementTarget.deviceNodes.push({
                 deviceId: 'dev1',
@@ -291,6 +312,24 @@ describe('AudioEngine', () => {
             const createGainBeforeRewire = mockCtx.createGain.mock.calls.length;
             engine.wireSidechainRoute('scSrc', 'scTgt', 'dev1');
             expect(mockCtx.createGain.mock.calls.length).toBe(createGainBeforeRewire + 1);
+        });
+
+        it('detaches both sidechain ends when route unwiring precedes source strip removal', () => {
+            const sourceStrip = engine.ensureTrackStrip('ordered-source');
+            const targetStrip = engine.ensureTrackStrip('ordered-target');
+            targetStrip.deviceNodes.push({
+                deviceId: 'ordered-device',
+                type: 'builtin-sidechain-compressor',
+                inputNode: makeStripNode() as unknown as AudioNode,
+            } as never);
+            engine.wireSidechainRoute('ordered-source', 'ordered-target', 'ordered-device');
+            const sidechainGain = mockCtx.createGain.mock.results.at(-1)!.value as { disconnect: Mock };
+
+            engine.unwireSidechainRoute('ordered-source', 'ordered-device');
+            engine.removeTrackStrip('ordered-source');
+
+            expect(sourceStrip.analyserNode.disconnect).toHaveBeenCalledWith(sidechainGain);
+            expect(sidechainGain.disconnect).toHaveBeenCalledTimes(1);
         });
 
         it('forgets pending sidechains owned by a removed source, target track, or target device', () => {
@@ -305,6 +344,18 @@ describe('AudioEngine', () => {
             expect(getPendingSidechainRoutes(fallbackEngine).size).toBe(4);
 
             fallbackEngine.removeTrackStrip('removed');
+
+            expect(Array.from(getPendingSidechainRoutes(fallbackEngine).keys())).toEqual(['kept-source→kept-device']);
+        });
+
+        it('forgets pending routes for an absent source or target strip', () => {
+            const fallbackEngine = makeFallbackEngine();
+            fallbackEngine.wireSidechainRoute('absent-source', 'kept-target', 'source-device');
+            fallbackEngine.wireSidechainRoute('kept-source', 'absent-target', 'target-device');
+            fallbackEngine.wireSidechainRoute('kept-source', 'kept-target', 'kept-device');
+
+            fallbackEngine.removeTrackStrip('absent-source');
+            fallbackEngine.removeTrackStrip('absent-target');
 
             expect(Array.from(getPendingSidechainRoutes(fallbackEngine).keys())).toEqual(['kept-source→kept-device']);
         });

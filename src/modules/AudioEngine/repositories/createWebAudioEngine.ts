@@ -25,6 +25,13 @@ type NoopMeterNode = {
     port: { postMessage(message: unknown): void };
 };
 
+type SidechainConnection = {
+    sourceTrackId: string;
+    targetDeviceId: string;
+    sourceAnalyserNode: AnalyserNode;
+    gainNode: GainNode;
+};
+
 /**
  * Transport SharedArrayBuffer layout (one 64-byte buffer shared with worklet
  * readers, e.g. {@link kneadProcessor}).
@@ -108,7 +115,7 @@ class AudioEngineImpl implements AudioEngine {
     private trackNodes = new Map<string, TrackNode>();
     private busNodes = new Map<string, BusNode>();
     private sendNodes = new Map<string, SendNode>();
-    private sidechainConnections = new Map<string, GainNode>();
+    private sidechainConnections = new Map<string, SidechainConnection>();
     /**
      * Sidechain routes requested while the engine could not wire them (fallback
      * mode — no live AudioContext). Keyed by `${sourceTrackId}→${targetDeviceId}`
@@ -387,12 +394,25 @@ class AudioEngineImpl implements AudioEngine {
 
     public removeTrackStrip(trackId: string): void {
         const node = this.trackNodes.get(trackId);
+        // TrackNode.dispose() clears deviceNodes. Capture the ids first so all
+        // live and pending sidechains targeting this strip can be identified.
+        const removedDeviceIds = new Set(node?.strip.deviceNodes.map((device) => device.deviceId) ?? []);
+
+        // Fallback-mode wiring can queue routes without ever materializing a
+        // source or target strip. Purge endpoint ownership before the node guard
+        // so removing either absent endpoint cannot leave a replayable route.
+        for (const [key, route] of this.pendingSidechainRoutes) {
+            const belongsToRemovedStrip =
+                route.sourceTrackId === trackId ||
+                route.targetTrackId === trackId ||
+                removedDeviceIds.has(route.targetDeviceId);
+            if (belongsToRemovedStrip) {
+                this.pendingSidechainRoutes.delete(key);
+            }
+        }
         if (!node) {
             return;
         }
-        // TrackNode.dispose() clears deviceNodes. Capture the ids first so all
-        // live and pending sidechains targeting this strip can be identified.
-        const removedDeviceIds = new Set(node.strip.deviceNodes.map((device) => device.deviceId));
 
         // Sweep dependent routing keyed on this track as the source, mirroring
         // removeBusStrip's busId sweep. Without this, the send/sidechain GainNodes
@@ -404,25 +424,9 @@ class AudioEngineImpl implements AudioEngine {
                 this.sendNodes.delete(key);
             }
         }
-        for (const [key, scGain] of this.sidechainConnections) {
-            // Keys are `${sourceTrackId}→${targetDeviceId}`. Both ends belong
-            // to the live graph: removing either the source track or the target
-            // device invalidates the connection and its dedupe entry.
-            const separatorIndex = key.indexOf('→');
-            const sourceTrackId = key.slice(0, separatorIndex);
-            const targetDeviceId = key.slice(separatorIndex + 1);
-            if (sourceTrackId === trackId || removedDeviceIds.has(targetDeviceId)) {
-                scGain.disconnect();
-                this.sidechainConnections.delete(key);
-            }
-        }
-        for (const [key, route] of this.pendingSidechainRoutes) {
-            const belongsToRemovedStrip =
-                route.sourceTrackId === trackId ||
-                route.targetTrackId === trackId ||
-                removedDeviceIds.has(route.targetDeviceId);
-            if (belongsToRemovedStrip) {
-                this.pendingSidechainRoutes.delete(key);
+        for (const [key, connection] of this.sidechainConnections) {
+            if (connection.sourceTrackId === trackId || removedDeviceIds.has(connection.targetDeviceId)) {
+                this.removeLiveSidechainConnection(key);
             }
         }
         // A track-to-track output is a live edge into the target strip. Preserve
@@ -821,7 +825,30 @@ class AudioEngineImpl implements AudioEngine {
         scGain.gain.value = 1;
         sourceStrip.analyserNode.connect(scGain);
         scGain.connect(deviceNode.inputNode, 0, 1);
-        this.sidechainConnections.set(key, scGain);
+        this.sidechainConnections.set(key, {
+            sourceTrackId,
+            targetDeviceId,
+            sourceAnalyserNode: sourceStrip.analyserNode,
+            gainNode: scGain,
+        });
+    }
+
+    private removeLiveSidechainConnection(key: string): void {
+        const connection = this.sidechainConnections.get(key);
+        if (!connection) {
+            return;
+        }
+        try {
+            connection.sourceAnalyserNode.disconnect(connection.gainNode);
+        } catch {
+            // The source edge was already detached by a wider graph teardown.
+        }
+        try {
+            connection.gainNode.disconnect();
+        } catch {
+            // The target edge was already detached by a wider graph teardown.
+        }
+        this.sidechainConnections.delete(key);
     }
 
     public unwireSidechainRoute(sourceTrackId: string, targetDeviceId: string): void {
@@ -829,11 +856,7 @@ class AudioEngineImpl implements AudioEngine {
         // Cancel a still-pending (queued-in-fallback) wire so an unwire issued
         // before recovery does not get replayed back into the live graph.
         this.pendingSidechainRoutes.delete(key);
-        const scGain = this.sidechainConnections.get(key);
-        if (scGain) {
-            scGain.disconnect();
-            this.sidechainConnections.delete(key);
-        }
+        this.removeLiveSidechainConnection(key);
     }
 
     public scheduleOscillator(frequency: number, startTime: number, duration: number, gain = 0.3): void {
@@ -920,14 +943,9 @@ class AudioEngineImpl implements AudioEngine {
         // or already-loaded worklet modules. Used when switching projects.
         this.stopAllScheduled();
         this.adjustmentRuntime.reset();
-        for (const [, scGain] of this.sidechainConnections) {
-            try {
-                scGain.disconnect();
-            } catch {
-                // ignore
-            }
+        for (const [key] of this.sidechainConnections) {
+            this.removeLiveSidechainConnection(key);
         }
-        this.sidechainConnections.clear();
         // Drop sidechain routes queued during fallback: they belong to the
         // project being torn down and must not replay into the next one.
         this.pendingSidechainRoutes.clear();
