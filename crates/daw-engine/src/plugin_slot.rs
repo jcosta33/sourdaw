@@ -59,6 +59,28 @@ pub trait NativePlugin: Any + Send {
         self.process_audio(left, right, num_samples);
     }
 
+    /// Process a block that arrived over an audio bridge — the only path
+    /// whose buffers carry real input audio from the app. Default delegates
+    /// to process_audio, so existing plugins keep exactly one behaviour;
+    /// plugins that consume their input (e.g. recording) override this to
+    /// run input-side work only for real bridge audio, never for the
+    /// standalone native chain (whose scratch carries no app input).
+    fn process_bridged_audio(&mut self, left: &mut [f32], right: &mut [f32], num_samples: usize) {
+        self.process_audio(left, right, num_samples);
+    }
+
+    /// Bridged counterpart of process_with_events (see process_bridged_audio).
+    fn process_bridged_with_events(
+        &mut self,
+        left: &mut [f32],
+        right: &mut [f32],
+        num_samples: usize,
+        midi_events: &[MidiNoteEvent],
+        transport: &TransportState,
+    ) {
+        self.process_with_events(left, right, num_samples, midi_events, transport);
+    }
+
     /// Get the plugin's name (for logging).
     fn name(&self) -> &str;
 

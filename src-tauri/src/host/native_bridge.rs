@@ -835,6 +835,149 @@ mod tests {
         );
         assert!(!lifecycle.allows_process());
     }
+
+    /// Wiring-boundary regression (ledger #508 row 24): the slot must feed
+    /// the incoming audio buffers to the engine's record input before
+    /// zeroing them. Pre-fix the buffers were discarded unread, so an armed
+    /// recording captured silence end-to-end.
+    #[test]
+    fn crumbs_slot_feeds_record_input_to_engine() {
+        use daw_dsp::crumbs::types::{CrumbsMode, RecordState};
+
+        let (mut tx, rx) = rtrb::RingBuffer::new(8);
+        let mut slot = CrumbsPluginSlot {
+            engine: CrumbsEngine::new(48_000.0),
+            command_rx: rx,
+        };
+
+        tx.push(CrumbsCommand::SetMode(CrumbsMode::Record)).unwrap();
+        tx.push(CrumbsCommand::ArmRecording {
+            threshold: 0.01,
+            target_pad: 0,
+            max_duration_secs: 10.0,
+        })
+        .unwrap();
+
+        let frames = 256;
+        let mut left = vec![0.5f32; frames];
+        let mut right = vec![0.5f32; frames];
+        slot.process_bridged_audio(&mut left, &mut right, frames);
+
+        assert_eq!(
+            slot.engine.record_state(),
+            RecordState::Recording,
+            "over-threshold input through the slot must start the take"
+        );
+
+        tx.push(CrumbsCommand::StopRecording).unwrap();
+        let mut flush_l = vec![0.0f32; 128];
+        let mut flush_r = vec![0.0f32; 128];
+        slot.process_bridged_audio(&mut flush_l, &mut flush_r, 128);
+
+        assert_eq!(slot.engine.record_state(), RecordState::Idle);
+        let sample_id = slot
+            .engine
+            .active_sample_id()
+            .expect("stopping an armed take must commit a pool sample");
+        let sample = slot
+            .engine
+            .sample_pool()
+            .get(sample_id)
+            .expect("committed sample lives in the pool");
+        assert_eq!(sample.meta.frame_count as usize, frames);
+        assert!(
+            sample.left.iter().all(|&s| (s - 0.5).abs() < 1.0e-6),
+            "committed buffer must hold the fed input, not silence"
+        );
+        assert!(
+            sample.right.iter().all(|&s| (s - 0.5).abs() < 1.0e-6),
+            "committed buffer must hold the fed input, not silence"
+        );
+    }
+
+    /// PR #564 review (blocking): the real CPAL callback interleaves bridge
+    /// bursts (real audio) with standalone process_block over zeroed
+    /// scratch. The record feed must be bridge-only, so the committed take
+    /// contains the real frames and NOTHING from the standalone path.
+    #[test]
+    fn crumbs_take_has_no_interleaved_silence_across_callback_paths() {
+        use daw_dsp::crumbs::types::{CrumbsMode, RecordState};
+
+        let (mut tx, rx) = rtrb::RingBuffer::new(8);
+        let mut slot = CrumbsPluginSlot {
+            engine: CrumbsEngine::new(48_000.0),
+            command_rx: rx,
+        };
+
+        tx.push(CrumbsCommand::SetMode(CrumbsMode::Record)).unwrap();
+        tx.push(CrumbsCommand::ArmRecording {
+            threshold: 0.01,
+            target_pad: 0,
+            max_duration_secs: 10.0,
+        })
+        .unwrap();
+
+        // Real callback pattern: 8 bridged 128-frame bursts of real audio
+        // (1024 frames), then a 4096-frame device buffer of zeroed
+        // standalone scratch (in the callback's 128-frame chunks).
+        for _ in 0..8 {
+            let mut left = vec![0.5f32; 128];
+            let mut right = vec![0.5f32; 128];
+            slot.process_bridged_audio(&mut left, &mut right, 128);
+        }
+        assert_eq!(slot.engine.record_state(), RecordState::Recording);
+
+        for _ in 0..32 {
+            let mut left = vec![0.0f32; 128];
+            let mut right = vec![0.0f32; 128];
+            slot.process_audio(&mut left, &mut right, 128);
+        }
+
+        tx.push(CrumbsCommand::StopRecording).unwrap();
+        let mut flush_l = vec![0.0f32; 128];
+        let mut flush_r = vec![0.0f32; 128];
+        slot.process_bridged_audio(&mut flush_l, &mut flush_r, 128);
+
+        let sample_id = slot
+            .engine
+            .active_sample_id()
+            .expect("stopping an armed take must commit a pool sample");
+        let sample = slot
+            .engine
+            .sample_pool()
+            .get(sample_id)
+            .expect("committed sample lives in the pool");
+        assert_eq!(
+            sample.meta.frame_count as usize, 1024,
+            "standalone-chain silence must not enter the take (got {} frames)",
+            sample.meta.frame_count
+        );
+        assert!(
+            sample.left.iter().all(|&s| (s - 0.5).abs() < 1.0e-6),
+            "take must be the 1024 real frames, no interleaved zeros"
+        );
+    }
+
+    /// The same wiring must leave the engine untouched when it is not armed:
+    /// feeding input in a non-Record mode captures nothing.
+    #[test]
+    fn crumbs_slot_ignores_record_input_when_not_armed() {
+        let (_tx, rx) = rtrb::RingBuffer::new(8);
+        let mut slot = CrumbsPluginSlot {
+            engine: CrumbsEngine::new(48_000.0),
+            command_rx: rx,
+        };
+
+        // No SetMode(Record), no ArmRecording — default mode.
+        let frames = 256;
+        let mut left = vec![0.5f32; frames];
+        let mut right = vec![0.5f32; frames];
+        slot.process_bridged_audio(&mut left, &mut right, frames);
+        slot.process_bridged_audio(&mut left, &mut right, frames);
+
+        assert_eq!(slot.engine.sample_pool().count(), 0);
+        assert_eq!(slot.engine.active_sample_id(), None);
+    }
 }
 
 /// Crumbs plugin slot — adapts CrumbsEngine for the native audio thread.
@@ -843,31 +986,21 @@ pub struct CrumbsPluginSlot {
     pub command_rx: Consumer<CrumbsCommand>,
 }
 
-impl NativePlugin for CrumbsPluginSlot {
-    fn process_audio(&mut self, left: &mut [f32], right: &mut [f32], num_samples: usize) {
-        // Drain commands from the UI thread
-        while let Ok(cmd) = self.command_rx.pop() {
-            self.engine.handle_command(cmd);
-        }
-
-        // CrumbsEngine adds to buffers, so we should zero them if we are the only generator
-        // in this slot. NativePlugin's contract is in-place, but for an instrument
-        // it usually means starting fresh in the given buffer.
-        left[..num_samples].fill(0.0);
-        right[..num_samples].fill(0.0);
-
-        self.engine.process_block(left, right);
-    }
-
-    fn process_with_events(
+impl CrumbsPluginSlot {
+    /// Shared block body. `feed_record_input` is true only for bridge
+    /// processing: bridge buffers carry real input audio from the app, while
+    /// the standalone native chain runs on silent scratch — feeding that
+    /// scratch into an armed take interleaved a device-buffer of silence
+    /// into every real burst (PR #564 review).
+    fn process_block_internal(
         &mut self,
         left: &mut [f32],
         right: &mut [f32],
         num_samples: usize,
         midi_events: &[MidiNoteEvent],
-        _transport: &TransportState,
+        feed_record_input: bool,
     ) {
-        // Drain commands
+        // Drain commands from the UI thread
         while let Ok(cmd) = self.command_rx.pop() {
             self.engine.handle_command(cmd);
         }
@@ -884,9 +1017,54 @@ impl NativePlugin for CrumbsPluginSlot {
             }
         }
 
+        if feed_record_input {
+            self.engine
+                .process_record_input(&left[..num_samples], &right[..num_samples]);
+        }
+
+        // CrumbsEngine adds to buffers, so we should zero them if we are the only generator
+        // in this slot. NativePlugin's contract is in-place, but for an instrument
+        // it usually means starting fresh in the given buffer.
         left[..num_samples].fill(0.0);
         right[..num_samples].fill(0.0);
+
         self.engine.process_block(left, right);
+    }
+}
+
+impl NativePlugin for CrumbsPluginSlot {
+    fn process_audio(&mut self, left: &mut [f32], right: &mut [f32], num_samples: usize) {
+        // Standalone native chain: scratch carries no app input, so no
+        // record feed here (bridge-only, see process_bridged_audio).
+        self.process_block_internal(left, right, num_samples, &[], false);
+    }
+
+    fn process_with_events(
+        &mut self,
+        left: &mut [f32],
+        right: &mut [f32],
+        num_samples: usize,
+        midi_events: &[MidiNoteEvent],
+        _transport: &TransportState,
+    ) {
+        self.process_block_internal(left, right, num_samples, midi_events, false);
+    }
+
+    fn process_bridged_audio(&mut self, left: &mut [f32], right: &mut [f32], num_samples: usize) {
+        // Bridge path: the buffers hold the worklet's real input block — the
+        // one and only record-input feed.
+        self.process_block_internal(left, right, num_samples, &[], true);
+    }
+
+    fn process_bridged_with_events(
+        &mut self,
+        left: &mut [f32],
+        right: &mut [f32],
+        num_samples: usize,
+        midi_events: &[MidiNoteEvent],
+        _transport: &TransportState,
+    ) {
+        self.process_block_internal(left, right, num_samples, midi_events, true);
     }
 
     fn name(&self) -> &str {
