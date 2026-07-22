@@ -33,12 +33,12 @@ export async function finalizeTemplate(input: FinalizeTemplateInput): Promise<vo
 
     syncArrangement(committedTracks);
 
+    for (const route of input.sidechainRoutes ?? []) {
+        addSidechainRoute(route.trigger.id, route.target.id, route.deviceId, route.parameterId ?? 'sc-comp-threshold');
+    }
+
     ensureTrackStrips();
 
     const { waitForDevices } = await import('#/modules/AudioEngine/useCases');
     await waitForDevices();
-
-    for (const route of input.sidechainRoutes ?? []) {
-        addSidechainRoute(route.trigger.id, route.target.id, route.deviceId, route.parameterId ?? 'sc-comp-threshold');
-    }
 }

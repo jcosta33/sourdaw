@@ -2328,9 +2328,6 @@ export async function demo5_NebulaDrift(): Promise<void> {
     setTrackPan(toasterFolder.id, toasterFolder.pan);
     setTrackMute(toasterFolder.id, toasterFolder.muted);
 
-    ensureTrackStrips();
-    await waitForDevices();
-
     projectStore.set({
         name: 'Nebula Drift (Demo)',
         createdAt: Date.now(),
@@ -2345,4 +2342,7 @@ export async function demo5_NebulaDrift(): Promise<void> {
             frequencies: Array.from({ length: 128 }, (_, index) => 440 * 2 ** ((index - 69) / 12)),
         },
     });
+
+    ensureTrackStrips();
+    await waitForDevices();
 }
