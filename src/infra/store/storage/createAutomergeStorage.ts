@@ -297,7 +297,6 @@ export const createAutomergeStorage = <TData>(
     const mutateCrdt = options?.mutateCrdt;
     const rebasePending = options?.rebasePending;
     type AdapterPendingWrite = {
-        baseRevision: number;
         baseValue: TData | null;
         message: string | undefined;
         rafId: number | null;
@@ -306,6 +305,8 @@ export const createAutomergeStorage = <TData>(
         write: PendingAutomergeStorageWrite;
     };
     let cachedValue: TData | null = null;
+    let committedCacheValue: TData | null = null;
+    let committedCacheRevision = 0;
     let cachedRevision = 0;
     let nextRevision = 0;
     const pendingWritesByOwner = new Map<object, AdapterPendingWrite>();
@@ -404,25 +405,29 @@ export const createAutomergeStorage = <TData>(
         if (unscopedCommitOwner === pending.write.commitOwner) {
             unscopedCommitOwner = undefined;
         }
-        if (cachedRevision === pending.revision) {
-            cachedValue = pending.baseValue;
-            cachedRevision = pending.baseRevision;
+        recomputeCachedValue();
+    };
+
+    const recomputeCachedValue = (): void => {
+        let visibleValue = committedCacheValue;
+        let visibleRevision = committedCacheRevision;
+        for (const remaining of pendingWritesByOwner.values()) {
+            if (remaining.revision > visibleRevision) {
+                visibleValue = remaining.value;
+                visibleRevision = remaining.revision;
+            }
         }
+        cachedValue = visibleValue;
+        cachedRevision = visibleRevision;
     };
 
     const recordCommittedWrite = (pending: AdapterPendingWrite): void => {
-        const committedRevision = ++nextRevision;
-        const hasVisiblePendingWrite = [...pendingWritesByOwner.values()].some(
-            (remaining) => remaining.revision === cachedRevision
-        );
+        committedCacheValue = pending.value;
+        committedCacheRevision = ++nextRevision;
         for (const remaining of pendingWritesByOwner.values()) {
             remaining.baseValue = pending.value;
-            remaining.baseRevision = committedRevision;
         }
-        if (!hasVisiblePendingWrite) {
-            cachedValue = pending.value;
-            cachedRevision = committedRevision;
-        }
+        recomputeCachedValue();
     };
 
     const createPendingWrite = (context: AutomergeStorageWriteContext): AdapterPendingWrite => {
@@ -444,7 +449,6 @@ export const createAutomergeStorage = <TData>(
             flush: () => flushPendingWrite(getPending()),
         };
         pending = {
-            baseRevision: cachedRevision,
             baseValue: cachedValue,
             message: getSemanticMessage(),
             rafId: null,
@@ -541,6 +545,9 @@ export const createAutomergeStorage = <TData>(
                     crdtData = resolveConflicts(normalizedValues);
                 }
 
+                committedCacheValue = crdtData;
+                committedCacheRevision = ++nextRevision;
+
                 const visiblePending = [...pendingWritesByOwner.values()].find(
                     (pending) => pending.revision === cachedRevision
                 );
@@ -567,8 +574,11 @@ export const createAutomergeStorage = <TData>(
                     visiblePending.revision = cachedRevision;
                 } else if (toCrdt && cachedValue !== null && typeof crdtData === 'object' && crdtData !== null) {
                     cachedValue = { ...cachedValue, ...crdtData };
+                    cachedRevision = committedCacheRevision;
+                    committedCacheValue = cachedValue;
                 } else {
                     cachedValue = crdtData;
+                    cachedRevision = committedCacheRevision;
                 }
                 lastHydratedJson = incomingJson;
                 return true;
@@ -581,6 +591,9 @@ export const createAutomergeStorage = <TData>(
                         return false;
                     }
                     cachedValue = missing_value;
+                    committedCacheValue = missing_value;
+                    committedCacheRevision = ++nextRevision;
+                    cachedRevision = committedCacheRevision;
                     lastHydratedJson = null;
                     return true;
                 }

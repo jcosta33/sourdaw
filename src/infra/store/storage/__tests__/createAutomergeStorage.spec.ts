@@ -380,6 +380,28 @@ describe('createAutomergeStorage', () => {
         expect(mutations).toEqual([{ docId: 'root', message: undefined, snapshotTransaction: undefined }]);
     });
 
+    it('does not resurrect an earlier aborted owner when a later overlapping owner also aborts', () => {
+        const { doc, mutations, port } = createTestPort({ initialDoc: { state: { count: 0 } } });
+        configureAutomergeStoragePort(port);
+        const storage = createAutomergeStorage<{ count: number }>('root', 'state');
+        expect(storage.hydrate?.()).toBe(true);
+
+        const firstTransaction = runWithAutomergeStorageTransaction(undefined, () => {
+            storage.set({ count: 1 });
+        });
+        const secondTransaction = runWithAutomergeStorageTransaction(undefined, () => {
+            storage.set({ count: 2 });
+        });
+
+        firstTransaction.abort();
+        expect(storage.get()).toEqual({ count: 2 });
+        secondTransaction.abort();
+
+        expect(storage.get()).toEqual({ count: 0 });
+        expect(doc.state).toEqual({ count: 0 });
+        expect(mutations).toEqual([]);
+    });
+
     it('keeps adapter cache aligned with overlapping owners committed in terminal order', () => {
         const { doc, mutations, port } = createTestPort({ initialDoc: { state: { count: 0 } } });
         configureAutomergeStoragePort(port);
