@@ -1,0 +1,55 @@
+src/modules/AudioEngine/useCases/offlineRender/shouldCreateOfflineStrip.ts
+  s_ac9b259eab20ba::t_66520be1d9b614 1
+  s_ac9b259eab20ba::t_d5d4ed0f257838 9
+src/modules/Transport/useCases/__tests__/ensureTrackStrips.spec.ts
+  s_ac9b259eab20ba::t_99c8fd1e91cc3f 30-35
+  s_ac9b259eab20ba::t_6f19abafa4eeab 159-160,162-175,178-179
+  s_ac9b259eab20ba::t_74174a26ba3aa2 161,176-177
+src/modules/Arrangement/useCases/toggleTrackState/__tests__/applySoloLogic.spec.ts
+  s_ac9b259eab20ba::t_99c8fd1e91cc3f 63,69
+  s_ac9b259eab20ba::t_6f19abafa4eeab 85-105
+src/modules/Arrangement/stores/__tests__/trackEligibility.spec.ts
+  s_ac9b259eab20ba::t_99c8fd1e91cc3f 3,121-130
+  s_ac9b259eab20ba::t_8d1fc7c1992825 131
+src/modules/Arrangement/useCases/__tests__/removeTrack.spec.ts
+  s_ac9b259eab20ba::t_6f19abafa4eeab 167,182-199
+  s_ac9b259eab20ba::t_74174a26ba3aa2 126-127,140-141
+  s_ac9b259eab20ba::t_d2ec18108f77cf 200-201
+src/modules/Arrangement/stores/index.ts
+  s_ac9b259eab20ba::t_d5d4ed0f257838 36
+src/modules/Arrangement/useCases/toggleTrackState/applySoloLogic.ts
+  s_ac9b259eab20ba::t_d5d4ed0f257838 5,16-18,23
+src/modules/Arrangement/stores/trackEligibility.ts
+  s_ac9b259eab20ba::t_d5d4ed0f257838 26-30,132-140
+  s_ac9b259eab20ba::t_8f7ea7c03f347e 141
+src/modules/Transport/useCases/ensureTrackStrips.ts
+  s_ac9b259eab20ba::t_d5d4ed0f257838 9-13,37,84-86,89
+  s_ac9b259eab20ba::t_1cd439f57fd9d8 8
+src/modules/AudioEngine/useCases/exportStems.ts
+  s_ac9b259eab20ba::t_d5d4ed0f257838 1,75,81
+src/modules/Arrangement/services/__tests__/applySoloLogic.spec.ts
+  s_ac9b259eab20ba::t_99c8fd1e91cc3f 17,38,60,81,96,106,108,110-120
+  s_ac9b259eab20ba::t_74174a26ba3aa2 107,109
+  s_ac9b259eab20ba::t_ce31e2dce452c4 121
+src/modules/Arrangement/services/applySoloLogic.ts
+  s_ac9b259eab20ba::t_d5d4ed0f257838 12,20-25,37,40,43-48,51-53,56,77
+src/modules/Arrangement/useCases/removeTrack.ts
+  s_ac9b259eab20ba::t_66520be1d9b614 12
+  s_ac9b259eab20ba::t_d5d4ed0f257838 61-63,67
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "f8111c616116082cd7b453f75c0ac16de1fe813d",
+  "prompts": {},
+  "sessions": {
+    "s_ac9b259eab20ba": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8699-3865-7842-8c54-afbac6cfd266",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
