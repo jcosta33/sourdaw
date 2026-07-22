@@ -6,10 +6,10 @@ import { projectStore } from '../../../stores/projectStore';
 import { addToRecentProjects } from '../../recentProjects/addToRecentProjects';
 import { buildProjectData } from '../fileIO/buildProjectData';
 
-export function saveProject(): void {
+export function saveProject(): Promise<void> {
     const project = projectStore.value;
     if (!project) {
-        return;
+        return Promise.resolve();
     }
 
     const updatedAt = Date.now();
@@ -20,7 +20,11 @@ export function saveProject(): void {
     // doesn't orphan the old key.
     const recentKey = `sourdaw:project:${project.createdAt}`;
 
-    persistCrdtProject()
+    // Returned so project-switching callers can await the snapshot before the
+    // successor transition resets the stores buildProjectData() reads —
+    // otherwise the deferred build can snapshot the SUCCESSOR's state under
+    // this project's recent key (audit #568 F2).
+    return persistCrdtProject()
         .then(async () => {
             const current = projectStore.value;
             if (current) {
@@ -41,10 +45,8 @@ export function saveProject(): void {
             // Only record the recent-projects entry once persistence succeeds —
             // otherwise we'd list a project that was never actually saved.
             addToRecentProjects(project.name, recentKey);
-            return null;
         })
         .catch((error) => {
             logger.warn('[saveProject] CRDT persistence failed:', error);
-            return null;
         });
 }

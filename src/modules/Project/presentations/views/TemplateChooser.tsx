@@ -339,18 +339,18 @@ export const TemplateChooser = ({ open, onClose, initialCategory = 'all' }: Temp
         const template = templates.find((time) => time.id === templateId);
         setLoadingName(template?.name ?? 'Project');
         setIsLoading(true);
-        void saveProject();
 
-        setTimeout(() => {
-            void (async () => {
-                try {
-                    await createFromTemplate(templateId);
-                } finally {
-                    setIsLoading(false);
-                    onClose();
-                }
-            })();
-        }, 50);
+        void (async () => {
+            try {
+                // Await the pre-switch save so its snapshot cannot capture the
+                // template project's state (audit #568 F2).
+                await saveProject();
+                await createFromTemplate(templateId);
+            } finally {
+                setIsLoading(false);
+                onClose();
+            }
+        })();
     };
 
     return (

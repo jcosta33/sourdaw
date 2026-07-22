@@ -1,7 +1,17 @@
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+import { notifyUser } from '#/utils/Notification/notifyUser';
+
+import { newProject } from '../../../useCases/projectPersistence/newProject';
+import { saveProject } from '../../../useCases/projectPersistence/saveProject/saveProject';
+import { loadRecentProject } from '../../../useCases/recentProjects/loadRecentProject';
+import { removeFromRecentProjects } from '../../../useCases/recentProjects/removeFromRecentProjects';
 import { RecentProjectsMenu } from '../RecentProjectsMenu';
+
+vi.mock('#/utils/Notification/notifyUser', () => ({
+    notifyUser: vi.fn(),
+}));
 
 vi.mock('../../../useCases/recentProjects/loadRecentProject', () => ({
     loadRecentProject: vi.fn(),
@@ -152,5 +162,45 @@ describe('RecentProjectsMenu', () => {
         fireEvent.click(button);
         const keycaps = screen.getAllByTestId('keycap');
         expect(keycaps.length).toBeGreaterThan(0);
+    });
+
+    it('awaits the pre-switch save before starting a new project', async () => {
+        let resolveSave: (() => void) | undefined;
+        vi.mocked(saveProject).mockImplementation(
+            () =>
+                new Promise<void>((resolve) => {
+                    resolveSave = resolve;
+                })
+        );
+        vi.mocked(newProject).mockResolvedValue(true);
+
+        render(<RecentProjectsMenu />);
+        fireEvent.click(screen.getByLabelText(/Project menu/i));
+        fireEvent.click(screen.getByRole('menuitem', { name: /New Project/i }));
+
+        await waitFor(() => expect(saveProject).toHaveBeenCalledOnce());
+        expect(newProject).not.toHaveBeenCalled();
+
+        resolveSave?.();
+        await waitFor(() => expect(newProject).toHaveBeenCalledOnce());
+    });
+
+    it('awaits the pre-switch save, then notifies and prunes a recent entry whose load fails', async () => {
+        vi.mocked(saveProject).mockResolvedValue(undefined);
+        vi.mocked(loadRecentProject).mockResolvedValue(false);
+
+        render(<RecentProjectsMenu />);
+        fireEvent.click(screen.getByLabelText(/Project menu/i));
+        fireEvent.click(screen.getByText('Project One'));
+
+        await waitFor(() => expect(saveProject).toHaveBeenCalledOnce());
+        await waitFor(() => expect(loadRecentProject).toHaveBeenCalledWith('proj-1'));
+        await waitFor(() =>
+            expect(notifyUser).toHaveBeenCalledWith(
+                'Could not open "Project One" — removing it from recent projects.',
+                'error'
+            )
+        );
+        expect(removeFromRecentProjects).toHaveBeenCalledWith('proj-1');
     });
 });

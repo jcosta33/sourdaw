@@ -17,6 +17,7 @@ import { DawKeycap } from '#/components/daw/DawKeycap';
 import { Button } from '#/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip';
 import { openExportDialog } from '#/modules/WorkspaceShell/useCases';
+import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { type TemplateCategory } from '../../models/ProjectTemplateTypes';
 import { exportProjectFile } from '../../useCases/projectPersistence/fileIO/exportProjectFile';
@@ -91,8 +92,10 @@ export const RecentProjectsMenu = (): ReactElement => {
     }, [open]);
 
     const handleNewProject = () => {
-        void saveProject();
-        void newProject();
+        void (async () => {
+            await saveProject();
+            void newProject();
+        })();
         setOpen(false);
     };
 
@@ -129,8 +132,18 @@ export const RecentProjectsMenu = (): ReactElement => {
     };
 
     const handleLoad = (entry: RecentProjectEntry) => {
-        void saveProject();
-        void loadRecentProject(entry.key);
+        void (async () => {
+            // Await the pre-switch save so its snapshot cannot capture the
+            // successor project's state (audit #568 F2), and surface failures
+            // instead of leaving a dead entry (audit #568 F3).
+            await saveProject();
+            const loaded = await loadRecentProject(entry.key);
+            if (!loaded) {
+                notifyUser(`Could not open "${entry.name}" — removing it from recent projects.`, 'error');
+                removeFromRecentProjects(entry.key);
+                setEntries(getRecentProjects());
+            }
+        })();
         setOpen(false);
     };
 
