@@ -1,0 +1,19 @@
+src/modules/CrdtDocument/repositories/__tests__/automergeWorkerTestHarness.ts
+  s_40ad4fb1cc4440::t_c95b849d1fe28d 5-6
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "0684f4485b06147384eb2ec40dbc28a383f9b220",
+  "prompts": {},
+  "sessions": {
+    "s_40ad4fb1cc4440": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f88d5-5be7-7910-9533-c6141b4a16ba",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
