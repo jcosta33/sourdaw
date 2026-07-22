@@ -1,5 +1,5 @@
 import { updateClip } from '../../repositories/track/updateClip';
 
-export function muteClip(clipId: string, muted: boolean): void {
-    updateClip(clipId, (context) => ({ ...context, muted }));
+export function muteClip(clipId: string, muted: boolean): boolean {
+    return updateClip(clipId, (context) => ({ ...context, muted }));
 }
