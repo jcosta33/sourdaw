@@ -1,0 +1,38 @@
+src/modules/Arrangement/useCases/device/addDevice.ts
+  s_ac9b259eab20ba::t_b2fe6472294b8e 63
+src/modules/Arrangement/useCases/__tests__/projectTrackToLiveStrip.spec.ts
+  s_ac9b259eab20ba::t_3c76bde6006dcc 17,23-26,88,96-106
+src/modules/Arrangement/useCases/device/__tests__/addDevice.spec.ts
+  s_ac9b259eab20ba::t_30efe9d33beba8 103-104
+  s_ac9b259eab20ba::t_3c76bde6006dcc 123-126
+src/modules/Arrangement/handlers/device/handleRemoveDevice.ts
+  s_ac9b259eab20ba::t_b2fe6472294b8e 7-14
+src/modules/Arrangement/handlers/device/__tests__/handleRemoveDevice.spec.ts
+  s_ac9b259eab20ba::t_3c76bde6006dcc 18-25,31
+src/modules/Arrangement/useCases/device/removeDevice.ts
+  s_ac9b259eab20ba::t_b2fe6472294b8e 11-13,16,26,32,38,91
+src/modules/Arrangement/useCases/device/__tests__/removeDevice.spec.ts
+  s_ac9b259eab20ba::t_a6b4e784d7d2e2 44-55,88,102,120,149,187,212
+  s_ac9b259eab20ba::t_3c76bde6006dcc 68,168,176-181
+  s_ac9b259eab20ba::t_7a853bd0d4c50b 182-183
+src/modules/Arrangement/useCases/projectTrackToLiveStrip.ts
+  s_ac9b259eab20ba::t_b2fe6472294b8e 10,24,47-51,75,81
+  s_ac9b259eab20ba::t_6037bbbda18fba 74
+  s_ac9b259eab20ba::t_f38ebc4078fb53 76-80
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "3b85438f2891be2f90062d1f7c8eeb16a5cf9ee2",
+  "prompts": {},
+  "sessions": {
+    "s_ac9b259eab20ba": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8699-3865-7842-8c54-afbac6cfd266",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
