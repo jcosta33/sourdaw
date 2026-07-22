@@ -366,6 +366,30 @@ describe('ChordTrackLane', () => {
         expect(screen.getByRole('button', { name: 'Clear all chords' })).toHaveFocus();
     });
 
+    it('contains chord opener and menu keys before global shortcuts observe them', () => {
+        const globalShortcutEffect = vi.fn();
+        window.addEventListener('keydown', globalShortcutEffect);
+        renderChordLane();
+        const block = getChordBlock();
+
+        block.focus();
+        fireEvent.keyDown(block, { key: 'Enter' });
+        let menu = screen.getByRole('menu');
+        fireEvent.keyDown(menu, { key: 'Home' });
+        fireEvent.keyDown(menu, { key: 'End' });
+        fireEvent.keyDown(document.activeElement!, { key: ' ' });
+        fireEvent.keyDown(document.activeElement!, { key: 'Enter' });
+        fireEvent.keyDown(menu, { key: 'Tab' });
+
+        block.focus();
+        fireEvent.keyDown(block, { key: ' ' });
+        menu = screen.getByRole('menu');
+        fireEvent.keyDown(menu, { key: 'Escape' });
+        window.removeEventListener('keydown', globalShortcutEffect);
+
+        expect(globalShortcutEffect).not.toHaveBeenCalled();
+    });
+
     it('restores a nested-label pointer opener on Escape', () => {
         renderChordLane();
         const block = getChordBlock();
@@ -378,6 +402,31 @@ describe('ChordTrackLane', () => {
 
         expect(screen.queryByRole('menu')).not.toBeInTheDocument();
         expect(block).toHaveFocus();
+    });
+
+    it('owns focus for empty-space Escape and directional Tab dismissal', () => {
+        render(
+            <div>
+                <ChordTrackLane pixelsPerBeat={16} scrollX={0} />
+                <button type="button">After lane</button>
+            </div>
+        );
+        const region = screen.getByRole('region', { name: 'Chord track' });
+        const addButton = screen.getByLabelText('Add chord event');
+
+        addButton.focus();
+        fireEvent.contextMenu(region, { clientX: 200, clientY: 10 });
+        fireEvent.keyDown(screen.getByRole('menu'), { key: 'Escape' });
+        expect(addButton).toHaveFocus();
+
+        fireEvent.contextMenu(region, { clientX: 200, clientY: 10 });
+        fireEvent.keyDown(screen.getByRole('menu'), { key: 'Tab' });
+        expect(screen.getByRole('button', { name: 'After lane' })).toHaveFocus();
+
+        addButton.focus();
+        fireEvent.contextMenu(region, { clientX: 200, clientY: 10 });
+        fireEvent.keyDown(screen.getByRole('menu'), { key: 'Tab', shiftKey: true });
+        expect(screen.getByLabelText('Enable harmonic following')).toHaveFocus();
     });
 
     it('labels root and quality as checked radio groups', () => {
@@ -419,6 +468,39 @@ describe('ChordTrackLane', () => {
         expect(status).toHaveTextContent('Moved C chord to beat 4.25');
         expect(alert).toBeEmptyDOMElement();
         expect(block).toHaveFocus();
+    });
+
+    it('shows only the committed-error alert after a keyboard move', async () => {
+        executeAppAction.mockRejectedValueOnce(
+            createAppActionCommittedError({ actionType: 'moveChordEvent', cause: new Error('history failed') })
+        );
+        renderChordLane();
+        const block = getChordBlock();
+        const status = screen.getByRole('status');
+        const alert = screen.getByRole('alert');
+
+        await runAndSettle(() => fireEvent.keyDown(block, { key: 'ArrowRight' }));
+
+        await waitFor(() => expect(alert).toHaveTextContent(/applied/i));
+        expect(status).toBeEmptyDOMElement();
+    });
+
+    it('shows only the committed-error alert and restores focus after keyboard delete', async () => {
+        executeAppAction.mockRejectedValueOnce(
+            createAppActionCommittedError({ actionType: 'removeChordEvent', cause: new Error('history failed') })
+        );
+        const view = renderChordLane();
+        const block = getChordBlock();
+        const status = screen.getByRole('status');
+        const alert = screen.getByRole('alert');
+
+        await runAndSettle(() => fireEvent.keyDown(block, { key: 'Delete' }));
+        mockChordState = { enabled: false, events: [] };
+        view.rerender(<ChordTrackLane pixelsPerBeat={16} scrollX={0} />);
+
+        await waitFor(() => expect(alert).toHaveTextContent(/applied/i));
+        expect(status).toBeEmptyDOMElement();
+        expect(screen.getByLabelText('Add chord event')).toHaveFocus();
     });
 
     it('restores focus and announces a keyboard deletion after rerender', async () => {

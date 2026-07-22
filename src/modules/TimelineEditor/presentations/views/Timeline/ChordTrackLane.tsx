@@ -130,9 +130,10 @@ export const ChordTrackLane = ({ pixelsPerBeat, scrollX }: ChordTrackLaneProps):
     const [actionStatus, setActionStatus] = useState<string | null>(null);
     const menuRef = useRef<HTMLDivElement>(null);
     const addRef = useRef<HTMLDivElement>(null);
-    const menuOpenerRef = useRef<HTMLButtonElement | null>(null);
+    const menuOpenerRef = useRef<HTMLElement | null>(null);
     const dragRef = useRef<DragState | null>(null);
     const committingPointerRef = useRef<number | null>(null);
+    const restoreAddFocusRef = useRef(false);
     const mountedRef = useRef(true);
     const pendingRef = useRef(false);
 
@@ -163,6 +164,7 @@ export const ChordTrackLane = ({ pixelsPerBeat, scrollX }: ChordTrackLaneProps):
             if (mountedRef.current) {
                 if (isAppActionCommittedError(error)) {
                     effects.onApplied?.();
+                    setActionStatus(null);
                     setActionError('Chord change applied, but undo history could not be recorded.');
                 } else {
                     setActionError('Chord change failed. Try again.');
@@ -218,19 +220,22 @@ export const ChordTrackLane = ({ pixelsPerBeat, scrollX }: ChordTrackLaneProps):
     }, [contextMenu]);
 
     useEffect(() => {
-        if (!pending && actionStatus?.startsWith('Removed ')) {
+        if (!pending && restoreAddFocusRef.current) {
+            restoreAddFocusRef.current = false;
             addRef.current?.querySelector<HTMLButtonElement>('button')?.focus();
         }
-    }, [actionStatus, pending]);
+    }, [pending]);
 
     const handleMenuKeyDown = (event: KeyboardEvent<HTMLDivElement>): void => {
         if (event.key === 'Escape') {
             event.preventDefault();
+            event.stopPropagation();
             closeContextMenu(true);
             return;
         }
         if (event.key === 'Tab') {
             event.preventDefault();
+            event.stopPropagation();
             const opener = menuOpenerRef.current;
             const pageControls = Array.from(document.querySelectorAll<HTMLElement>(PAGE_CONTROL_SELECTOR)).filter(
                 (control) => control.tabIndex >= 0 && !menuRef.current?.contains(control)
@@ -240,6 +245,10 @@ export const ChordTrackLane = ({ pixelsPerBeat, scrollX }: ChordTrackLaneProps):
             const nextControl = openerIndex >= 0 ? pageControls[nextIndex] : undefined;
             closeContextMenu(false);
             nextControl?.focus();
+            return;
+        }
+        if (event.key === 'Enter' || event.key === ' ') {
+            event.stopPropagation();
             return;
         }
         const items = Array.from(
@@ -258,6 +267,7 @@ export const ChordTrackLane = ({ pixelsPerBeat, scrollX }: ChordTrackLaneProps):
         }
         if (nextIndex !== null) {
             event.preventDefault();
+            event.stopPropagation();
             items[nextIndex]?.focus();
         }
     };
@@ -328,6 +338,13 @@ export const ChordTrackLane = ({ pixelsPerBeat, scrollX }: ChordTrackLaneProps):
         if (pendingRef.current) {
             return;
         }
+        const activeElement = document.activeElement;
+        menuOpenerRef.current =
+            activeElement instanceof HTMLElement &&
+            activeElement.matches(PAGE_CONTROL_SELECTOR) &&
+            activeElement.tabIndex >= 0
+                ? activeElement
+                : null;
         const rect = event.currentTarget.getBoundingClientRect();
         const localX = event.clientX - rect.left;
         const beat = (localX + scrollX) / pixelsPerBeat;
@@ -341,7 +358,9 @@ export const ChordTrackLane = ({ pixelsPerBeat, scrollX }: ChordTrackLaneProps):
 
         if (hitEvent) {
             const opener = event.target instanceof Element ? event.target.closest<HTMLButtonElement>('button') : null;
-            menuOpenerRef.current = opener?.dataset.chordEventId === hitEvent.id ? opener : null;
+            if (opener?.dataset.chordEventId === hitEvent.id) {
+                menuOpenerRef.current = opener;
+            }
             setContextMenu({ kind: 'chord', x: event.clientX, y: event.clientY, event: hitEvent });
         } else {
             setContextMenu({ kind: 'empty', x: event.clientX, y: event.clientY, beat });
@@ -361,6 +380,7 @@ export const ChordTrackLane = ({ pixelsPerBeat, scrollX }: ChordTrackLaneProps):
             return;
         }
         keyboardEvent.preventDefault();
+        keyboardEvent.stopPropagation();
         const rect = keyboardEvent.currentTarget.getBoundingClientRect();
         menuOpenerRef.current = keyboardEvent.currentTarget;
         setContextMenu({ kind: 'chord', x: rect.left + rect.width / 2, y: rect.bottom, event });
@@ -368,6 +388,7 @@ export const ChordTrackLane = ({ pixelsPerBeat, scrollX }: ChordTrackLaneProps):
 
     const finishKeyboardDelete = (event: ChordTrackEvent): void => {
         closeContextMenu(false);
+        restoreAddFocusRef.current = true;
         setActionStatus(`Removed ${formatChordName(event)} chord at beat ${String(event.beat)}.`);
     };
 
@@ -377,6 +398,7 @@ export const ChordTrackLane = ({ pixelsPerBeat, scrollX }: ChordTrackLaneProps):
         }
         if (keyboardEvent.key === 'ArrowLeft' || keyboardEvent.key === 'ArrowRight') {
             keyboardEvent.preventDefault();
+            keyboardEvent.stopPropagation();
             const direction = keyboardEvent.key === 'ArrowLeft' ? -1 : 1;
             const beat = Math.max(0, event.beat + direction * 0.25);
             void dispatchAction(
@@ -387,6 +409,7 @@ export const ChordTrackLane = ({ pixelsPerBeat, scrollX }: ChordTrackLaneProps):
         }
         if (keyboardEvent.key === 'Delete' || keyboardEvent.key === 'Backspace') {
             keyboardEvent.preventDefault();
+            keyboardEvent.stopPropagation();
             void dispatchAction(
                 { type: 'removeChordEvent', payload: { eventId: event.id } },
                 { onApplied: () => finishKeyboardDelete(event) }
