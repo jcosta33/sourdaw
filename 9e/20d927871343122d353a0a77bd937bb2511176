@@ -1,0 +1,28 @@
+src/modules/MIDI/stores/chordTrackStore.ts
+  s_ac9b259eab20ba::t_28d19c87bdaae8 97-98,100,104
+  s_ac9b259eab20ba::t_fa41cd8f687957 15-23,92-96,105-117,124-139,143-165,167-195,197-226,232-273,279-282,284-300
+  s_ac9b259eab20ba::t_4beccfd33693d3 103,166,196,274,276-278,301-305
+  s_ac9b259eab20ba::t_c289d512f265c7 118-123,140-142,227-231
+  s_ac9b259eab20ba::t_83e8081d82ab02 275
+src/modules/MIDI/stores/__tests__/chordTrackStore.spec.ts
+  s_ac9b259eab20ba::t_b3efd3ff708a9d 1,23-27,31-33,45-46,48,51-54,63-67,72,74,127-129,177-181,184-193,196-207,210-212,227-235,237-238,240,243,245-246,249-250,258-259,262,265-266
+  s_ac9b259eab20ba::t_08a851f9fc45e0 9-14,47,49-50,55-62,68-71,73,75-77,182-183,194-195,208-209,214-226,236,239,241-242,244,247-248
+  s_ac9b259eab20ba::t_8a2b3268f87ecd 78
+  s_ac9b259eab20ba::t_e14ce1726e91f7 213
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "9e20d927871343122d353a0a77bd937bb2511176",
+  "prompts": {},
+  "sessions": {
+    "s_ac9b259eab20ba": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8699-3865-7842-8c54-afbac6cfd266",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
