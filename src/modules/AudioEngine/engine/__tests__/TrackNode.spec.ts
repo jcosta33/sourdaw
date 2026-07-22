@@ -110,6 +110,30 @@ describe('TrackNode', () => {
         expect(track.strip.analyserNode.connect).toHaveBeenCalledWith(busGain);
     });
 
+    it('disconnects only its previous output destination when rerouting', () => {
+        const busGain = ctx.createGain();
+        vi.mocked(deps.getBusGainNode).mockReturnValue(busGain as unknown as GainNode);
+        const track = new TrackNode('track-1', deps);
+
+        track.setOutput('bus-1');
+
+        expect(track.strip.analyserNode.disconnect).toHaveBeenCalledTimes(1);
+        expect(track.strip.analyserNode.disconnect).toHaveBeenCalledWith(deps.masterGainNode);
+        expect(track.strip.analyserNode.disconnect).not.toHaveBeenCalledWith();
+    });
+
+    it('preserves analyser output, send, and sidechain edges across a chain rebuild', () => {
+        const track = new TrackNode('track-1', deps);
+        const unrelatedEdge = ctx.createGain();
+        track.strip.analyserNode.connect(unrelatedEdge as unknown as AudioNode);
+        vi.mocked(track.strip.analyserNode.disconnect).mockClear();
+
+        track.rebuildChain();
+
+        expect(track.strip.analyserNode.disconnect).not.toHaveBeenCalledWith();
+        expect(track.strip.analyserNode.disconnect).not.toHaveBeenCalledWith(unrelatedEdge);
+    });
+
     it('adds a built-in device through the use-case resolver and wires it into the track chain', () => {
         const track = new TrackNode('track-1', deps);
         vi.mocked(ctx.createGain).mockClear();
@@ -274,11 +298,16 @@ describe('TrackNode', () => {
         expect(bridgeSetParam).not.toHaveBeenCalled();
 
         // Resolve the bridge load and let the .then swap-in run.
+        const bridgeNode = { disconnect: vi.fn(), connect: vi.fn(), port: { close: vi.fn() } };
+        const destroy = vi.fn(() => {
+            bridgeNode.disconnect();
+            bridgeNode.port.close();
+        });
         resolveBridge!({
-            workletNode: { disconnect: vi.fn(), connect: vi.fn() },
+            workletNode: bridgeNode,
             setParam: bridgeSetParam,
             setBypass: vi.fn(),
-            destroy: vi.fn(),
+            destroy,
         });
         await Promise.all([...deps.pendingDevicePromises]);
 
@@ -287,5 +316,9 @@ describe('TrackNode', () => {
         expect(bridgeSetParam).toHaveBeenCalledWith(3, 0.75);
         expect(bridgeSetParam).toHaveBeenCalledWith(7, -2);
         expect(bridgeSetParam).toHaveBeenCalledTimes(2);
+        track.removeDevice('dev-1');
+        expect(destroy).toHaveBeenCalledTimes(1);
+        expect(bridgeNode.disconnect).toHaveBeenCalled();
+        expect(bridgeNode.port.close).toHaveBeenCalledTimes(1);
     });
 });

@@ -5,7 +5,12 @@
  * Used by startPlayback and toggleRecording before audio begins.
  */
 
-import { getTrackEligibility, resolveEligibleDeviceWriteTarget, trackStore } from '#/modules/Arrangement/stores';
+import {
+    getTrackEligibility,
+    resolveEligibleDeviceWriteTarget,
+    shouldCreateLiveTrackStrip,
+    trackStore,
+} from '#/modules/Arrangement/stores';
 import {
     addDeviceToStrip,
     ensureTrackStrip,
@@ -29,7 +34,7 @@ export function ensureTrackStrips(): void {
     }
 
     for (const track of tracks) {
-        if (!getTrackEligibility(track.kind).createsLiveStrip) {
+        if (!shouldCreateLiveTrackStrip(track)) {
             continue;
         }
         ensureTrackStrip(track.id);
@@ -76,10 +81,12 @@ export function ensureTrackStrips(): void {
     wireSidechainRoutes();
     // Apply solo state: if any track is soloed, mute all non-soloed tracks.
     // This ensures solo set before pressing play takes effect immediately.
-    const anySoloed = tracks.some((time) => time.soloed && getTrackEligibility(time.kind).createsLiveStrip);
+    const anySoloed = tracks.some(
+        (track) => track.kind !== 'master' && track.soloed && shouldCreateLiveTrackStrip(track)
+    );
     if (anySoloed) {
         for (const track of tracks) {
-            if (!getTrackEligibility(track.kind).createsLiveStrip || track.kind === 'master') {
+            if (!shouldCreateLiveTrackStrip(track) || track.kind === 'master') {
                 continue;
             }
             const shouldMute = !track.soloed;

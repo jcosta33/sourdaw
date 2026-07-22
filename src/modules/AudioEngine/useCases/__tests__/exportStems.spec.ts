@@ -21,6 +21,10 @@ const offlineRenderMocks = vi.hoisted(() => ({
     scheduleKitNote: vi.fn(),
     getDrumKitDefByIndex: vi.fn(() => null),
     scheduleDrumKitNote: vi.fn(),
+    createOfflineTrackStrip: vi.fn(),
+    renderWithTimeout: vi.fn(),
+    resolveRenderContext: vi.fn(),
+    scheduleTrackClips: vi.fn(),
 }));
 
 vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => {
@@ -89,9 +93,43 @@ vi.mock('../../repositories/offlineScheduler/automationScheduling', () => ({
     scheduleTrackAutomation: offlineRenderMocks.scheduleTrackAutomation,
 }));
 
+vi.mock('../offlineRender/createOfflineTrackStrip', () => ({
+    createOfflineTrackStrip: offlineRenderMocks.createOfflineTrackStrip,
+}));
+
+vi.mock('../offlineRender/renderWithTimeout', () => ({
+    renderWithTimeout: offlineRenderMocks.renderWithTimeout,
+}));
+
+vi.mock('../offlineRender/resolveRenderContext', () => ({
+    resolveRenderContext: offlineRenderMocks.resolveRenderContext,
+}));
+
+vi.mock('../offlineRender/scheduleTrackClips', () => ({
+    scheduleTrackClips: offlineRenderMocks.scheduleTrackClips,
+}));
+
+function createRenderContext(tracks: unknown[] | null) {
+    return {
+        tracks: tracks ? { selectedTrackId: null, tracks } : null,
+        midi: tracks ? { notesByClipId: {}, probabilitySeed: 1 } : null,
+        transport: null,
+        defaultTempo: 120,
+        changes: [],
+        startBeat: 0,
+        durationSeconds: 1,
+        tailSeconds: 0,
+        projectMidiEvents: vi.fn(),
+        selectMidiEventProbability: vi.fn(() => true),
+        projectPpqEndpoints: vi.fn(),
+        processYeastMidi: null,
+    };
+}
+
 describe('exportStems', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        offlineRenderMocks.resolveRenderContext.mockReturnValue(createRenderContext(null));
         configureOfflineMidiEventProjection({
             createProjector:
                 () =>
@@ -117,18 +155,14 @@ describe('exportStems', () => {
     });
 
     it('emits no stem or offline context for a dormant VCA, including Toaster residue', async () => {
-        offlineRenderMocks.getTrackStoreState.mockReturnValue({
-            tracks: [
-                {
-                    id: 'vca-1',
-                    kind: 'vca',
-                    disabled: false,
-                    muted: false,
-                    devices: [{ id: 'd1', type: 'toaster' }],
-                },
-            ],
-        });
-        offlineRenderMocks.getMidiStoreState.mockReturnValue({ notesByClipId: {}, probabilitySeed: 1 });
+        const dormantVca = {
+            id: 'vca-1',
+            kind: 'vca',
+            disabled: false,
+            muted: false,
+            devices: [{ id: 'd1', type: 'toaster' }],
+        };
+        offlineRenderMocks.resolveRenderContext.mockReturnValue(createRenderContext([dormantVca]));
         const OfflineContext = vi.fn();
         vi.stubGlobal('OfflineAudioContext', OfflineContext);
 
@@ -136,5 +170,42 @@ describe('exportStems', () => {
 
         expect(stems.size).toBe(0);
         expect(OfflineContext).not.toHaveBeenCalled();
+    });
+
+    it('exports a Toaster folder stem while excluding an ordinary folder', async () => {
+        const toasterFolder = {
+            id: 'toaster-folder',
+            kind: 'folder',
+            disabled: false,
+            devices: [{ id: 'toaster-device', type: 'toaster' }],
+        };
+        const ordinaryFolder = {
+            id: 'ordinary-folder',
+            kind: 'folder',
+            disabled: false,
+            devices: [],
+        };
+        const outputNode = { connect: vi.fn() };
+        const renderedBuffer = { id: 'toaster-stem' };
+        offlineRenderMocks.resolveRenderContext.mockReturnValue(createRenderContext([toasterFolder, ordinaryFolder]));
+        offlineRenderMocks.createOfflineTrackStrip.mockResolvedValue({
+            inputNode: {},
+            faderNode: {},
+            panNode: {},
+            outputNode,
+            deviceEntries: [],
+        });
+        offlineRenderMocks.renderWithTimeout.mockResolvedValue(renderedBuffer);
+        const OfflineContext = vi.fn(function OfflineContext() {
+            return { destination: {} };
+        });
+        vi.stubGlobal('OfflineAudioContext', OfflineContext);
+
+        const stems = await exportStems(4);
+
+        expect(OfflineContext).toHaveBeenCalledTimes(1);
+        expect(offlineRenderMocks.createOfflineTrackStrip).toHaveBeenCalledTimes(1);
+        expect(offlineRenderMocks.createOfflineTrackStrip).toHaveBeenCalledWith(expect.anything(), toasterFolder);
+        expect(stems).toEqual(new Map([['toaster-folder', renderedBuffer]]));
     });
 });

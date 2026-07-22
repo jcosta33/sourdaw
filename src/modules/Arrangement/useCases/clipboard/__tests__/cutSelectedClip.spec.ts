@@ -23,6 +23,7 @@ const mocks = vi.hoisted(() => ({
     removeWarpState: vi.fn(),
     getAutomationLanes: vi.fn(() => []),
     removeAutomationLane: vi.fn(),
+    resolveEligibleClipWriteTarget: vi.fn(),
     clipDragPreviewRef: { current: null },
     activeRecordingRef: { current: [] as string[] },
 }));
@@ -68,6 +69,10 @@ vi.mock('../../../stores/activeRecordingRef', () => ({
     activeRecordingRef: mocks.activeRecordingRef,
 }));
 
+vi.mock('../../../stores/resolveEligibleClipWriteTarget', () => ({
+    resolveEligibleClipWriteTarget: mocks.resolveEligibleClipWriteTarget,
+}));
+
 function createClip(overrides: Partial<Clip> & Pick<Clip, 'id' | 'trackId' | 'type'>): Clip {
     return {
         name: overrides.id,
@@ -89,11 +94,16 @@ describe('cutSelectedClip', () => {
         mocks.clipSelectionStore.value = null;
         mocks.midiStore.value = null;
         mocks.getTrackStoreState.mockReturnValue(null);
+        mocks.resolveEligibleClipWriteTarget.mockImplementation((input: { clipId: string }) => ({
+            status: 'eligible',
+            clipId: input.clipId,
+            trackId: input.clipId === 'clip-midi' ? 'track-midi' : 'track-audio',
+        }));
         clipboardStore.set({ clipClipboard: [], noteClipboard: null });
     });
 
     it('returns early when workspace is unavailable without calling removeClip', () => {
-        cutSelectedClip();
+        expect(cutSelectedClip()).toBe(false);
 
         expect(mocks.mapAllTracks).not.toHaveBeenCalled();
         expect(clipboardStore.value?.clipClipboard).toEqual([]);
@@ -130,7 +140,7 @@ describe('cutSelectedClip', () => {
             noteClipboard: { notes: [midiNote] },
         });
 
-        cutSelectedClip();
+        expect(cutSelectedClip()).toBe(true);
 
         expect(mocks.mapAllTracks).toHaveBeenCalledTimes(2);
         expect(clipboardStore.value).toEqual({
@@ -146,5 +156,32 @@ describe('cutSelectedClip', () => {
         expect(audioEntry?.clip).not.toBe(audioClip);
         expect(midiEntry?.midiNotes).not.toBe(midiNotes);
         expect(midiEntry?.midiNotes?.[0]).not.toBe(midiNote);
+    });
+
+    it('rejects a mixed valid and ineligible selection before cleanup or clipboard writes', () => {
+        const clip = createClip({ id: 'clip-audio', trackId: 'track-audio', type: 'audio' });
+        const existingClipboard = { clipClipboard: [], noteClipboard: null };
+        mocks.clipSelectionStore.value = {
+            selectedClipId: 'clip-audio',
+            selectedClipIds: ['clip-audio', 'vca-clip'],
+        };
+        mocks.getTrackStoreState.mockReturnValue({
+            tracks: [TrackDummy.create({ id: 'track-audio', clips: [clip] })],
+        });
+        mocks.resolveEligibleClipWriteTarget.mockImplementation((input: { clipId: string }) => {
+            if (input.clipId === 'vca-clip') {
+                return { status: 'ineligible' };
+            }
+            return { status: 'eligible', clipId: input.clipId, trackId: 'track-audio' };
+        });
+        clipboardStore.set(existingClipboard);
+
+        expect(cutSelectedClip()).toBe(false);
+
+        expect(mocks.mapAllTracks).not.toHaveBeenCalled();
+        expect(mocks.removeMidiClipData).not.toHaveBeenCalled();
+        expect(mocks.removeEnvelope).not.toHaveBeenCalled();
+        expect(mocks.removeWarpState).not.toHaveBeenCalled();
+        expect(clipboardStore.value).toEqual(existingClipboard);
     });
 });
