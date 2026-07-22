@@ -1,0 +1,23 @@
+crates/daw-dsp/src/crumbs/engine.rs
+  s_9d0680a660e50b::t_e195ebb9a7b161 88-96,158-159,165-192,250-257,519-536,551-555,855-992
+src-tauri/src/commands/crumbs.rs
+  s_9d0680a660e50b::t_b766e972807053 9,35-73,141-145,163-164,168-169,197-198,604,609,612-614,666-669,695,750-829
+src-tauri/src/host/native_bridge.rs
+  s_9d0680a660e50b::t_e8234ac85b3144 839-861,870,897-904,906,910,913,924,955-957,959-960,962,965,974,989-999,1003-1004,1038-1043,1056-1067
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "a13688286ef1157a36924466d0b5bad82bd3c6e3",
+  "prompts": {},
+  "sessions": {
+    "s_9d0680a660e50b": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f88d5-76a1-7392-a0cf-101e20764554",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
