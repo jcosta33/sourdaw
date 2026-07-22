@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
+import { getBuiltinPlugins } from '#/modules/Arrangement/useCases';
+
 import { isHydratableProjectData } from '../../../projectPersistence/helpers/isHydratableProjectData';
 import { createMyceliumAscendantBlueprint } from '../createMyceliumAscendantBlueprint';
 
@@ -89,6 +91,7 @@ describe('createMyceliumTopology', () => {
         const pulse = tracks.find((track) => track.name === 'Pulse Engine');
         const pads = tracks.filter((track) => track.parentId === pulse?.id);
         const deviceTypes = new Set(tracks.flatMap((track) => track.devices.map((device) => device.type)));
+        const chamberType = tracks.find((track) => track.name === 'Temple Chamber')?.devices[0]?.type;
 
         expect(pulse?.devices.map((device) => device.type)).toEqual(['toaster']);
         expect(pads.map((track) => track.name)).toEqual(PAD_NAMES);
@@ -96,6 +99,7 @@ describe('createMyceliumTopology', () => {
             pads.every((track, index) => track.outputId === pulse?.id && track.notes.includes(`GM note ${36 + index}`))
         ).toBe(true);
         expect(tracks.flatMap((track) => track.devices)).toHaveLength(59);
+        expect(getBuiltinPlugins().some((plugin) => plugin.id === chamberType)).toBe(true);
         expect(tracks.find((track) => track.name === 'Master')?.devices.map((device) => device.type)).toEqual([
             'builtin-eq',
             'gluten',
@@ -111,7 +115,7 @@ describe('createMyceliumTopology', () => {
                 'grand-boule',
                 'yeast',
                 'bacteria',
-                'proof-chamber',
+                'dutch-oven',
                 'gluten',
                 'proof',
                 'builtin-eq',

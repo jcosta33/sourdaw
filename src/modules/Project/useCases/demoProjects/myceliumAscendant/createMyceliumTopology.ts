@@ -96,7 +96,7 @@ const TRACK_SPECS: readonly TrackSpec[] = [
         ['fermenter', 'builtin-bitcrusher', 'builtin-delay'],
         ['Mutation Return'],
     ],
-    ['Temple Chamber', 'bus', null, ['proof-chamber']],
+    ['Temple Chamber', 'bus', null, ['dutch-oven']],
     ['Dub Tunnel', 'bus', null, ['builtin-delay']],
     ['Mutation Return', 'bus', null, ['bacteria', 'builtin-filter', 'builtin-bitcrusher']],
     ['Parallel Crush', 'bus', null, ['builtin-compressor', 'builtin-distortion']],
@@ -121,7 +121,7 @@ function createDeviceParams(type: string, kind: ProjectTrackKind): Record<string
     if (kind !== 'bus') {
         return {};
     }
-    if (type === 'proof-chamber') {
+    if (type === 'dutch-oven') {
         return { mix: 1, decay: 0.75 };
     }
     if (type === 'builtin-delay') {
