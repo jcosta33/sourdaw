@@ -1,0 +1,29 @@
+src/modules/TimelineEditor/presentations/views/Inspector/__tests__/TrackAutomationSection.spec.tsx
+  s_ac9b259eab20ba::t_24bb85694b7335 9
+src/modules/AiRuntime/models/RuntimeAction.ts
+  s_ac9b259eab20ba::t_c0c3385863aec9 124-128,130
+src/modules/TimelineEditor/presentations/views/Inspector/__tests__/DeviceParameterControl.spec.tsx
+  s_ac9b259eab20ba::t_24bb85694b7335 5,8,12,18,242-285
+  s_ac9b259eab20ba::t_989c6b6624076e 286-287
+src/utils/handlerContract.ts
+  s_ac9b259eab20ba::t_c0c3385863aec9 308,310
+src/modules/AiRuntime/useCases/__tests__/validateActionPayload.spec.ts
+  s_ac9b259eab20ba::t_98c43316e51343 175-183,185,190-196
+  s_ac9b259eab20ba::t_9274602af96df9 197
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "611681e604c62bfce60f41ca8b5f817f56a31244",
+  "prompts": {},
+  "sessions": {
+    "s_ac9b259eab20ba": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8699-3865-7842-8c54-afbac6cfd266",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
