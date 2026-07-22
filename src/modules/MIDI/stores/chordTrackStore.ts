@@ -16,12 +16,7 @@ const CHORD_EVENT_VALUE_FIELDS = ['beat', 'root', 'quality', 'duration'] as cons
 
 type MutableRecord = Record<string, unknown>;
 type ChordEventEntity = { deleted: boolean; value: ChordEvent };
-type ChordTrackCrdtState = {
-    schemaVersion: number;
-    enabled: boolean;
-    events: Record<string, ChordEventEntity>;
-};
-
+type ChordTrackCrdtState = { schemaVersion: number; enabled: boolean; events: Record<string, ChordEventEntity> };
 type ChordEventCandidate = {
     beat?: unknown;
     duration?: unknown;
@@ -96,7 +91,6 @@ function isChordTrackState(value: unknown): value is ChordTrackState {
 function isRecord(value: unknown): value is MutableRecord {
     return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
-
 function compareIds(left: string, right: string): number {
     if (left === right) {
         return 0;
@@ -204,10 +198,8 @@ function mutateCrdt({ doc, key, value }: { doc: MutableRecord; key: string; valu
 
 function mergeEntities(target: Record<string, ChordEventEntity>, source: Record<string, ChordEventEntity>): void {
     for (const id of Object.keys(source).sort(compareIds)) {
-        const incoming = source[id]!;
-        const existing = target[id];
-        if (existing?.deleted !== true && (!existing || incoming.deleted === true)) {
-            target[id] = structuredClone(incoming);
+        if (target[id]?.deleted !== true && (!target[id] || source[id]!.deleted === true)) {
+            target[id] = structuredClone(source[id]!);
         }
     }
 }
@@ -279,20 +271,37 @@ function rebasePending({ baseValue, pendingValue, hydratedValue }: RebasePending
 
 export function createChordTrackAutomergeStorage() {
     let reconciledConflictState: ChordTrackCrdtState | null = null;
+    let rejectedAuthority: Error | null = null;
+    function projectAuthority(project: () => ChordTrackState): ChordTrackState {
+        rejectedAuthority = null;
+        try {
+            return project();
+        } catch (error) {
+            rejectedAuthority =
+                error instanceof Error ? error : new Error('Chord-track authority rejected', { cause: error });
+            reconciledConflictState = null;
+            return defaultChordTrackState;
+        }
+    }
     return createAutomergeStorage<ChordTrackState>('root', 'chordTrack', {
         fromCrdt: (value) => {
             reconciledConflictState = null;
-            return decodeState(value);
+            return projectAuthority(() => decodeState(value));
         },
         hydrateMissing: () => {
             reconciledConflictState = null;
+            rejectedAuthority = null;
             return defaultChordTrackState;
         },
-        resolveCrdtConflicts: (values) => {
-            reconciledConflictState = reconcileRootConflicts(values);
-            return decodeState(reconciledConflictState);
-        },
+        resolveCrdtConflicts: (values) =>
+            projectAuthority(() => {
+                reconciledConflictState = reconcileRootConflicts(values);
+                return decodeState(reconciledConflictState);
+            }),
         mutateCrdt: (input) => {
+            if (rejectedAuthority !== null) {
+                throw rejectedAuthority;
+            }
             if (reconciledConflictState) {
                 input.doc[input.key] = structuredClone(reconciledConflictState);
             }

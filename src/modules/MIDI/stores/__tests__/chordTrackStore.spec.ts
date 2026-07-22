@@ -94,7 +94,7 @@ function chordState(id: string, root: number): ChordTrackState {
 
 const validEvent = { id: 'event', beat: 0, root: 5, quality: 'major' as const, duration: 4 };
 const validSchema = { schemaVersion: 1, enabled: true, events: {} };
-const malformedSchemas = [
+const rejectedAuthorities = [
     [
         'mismatched entity id',
         { ...validSchema, events: { expected: { deleted: false, value: { ...validEvent, id: 'other' } } } },
@@ -104,6 +104,7 @@ const malformedSchemas = [
         'invalid event value',
         { ...validSchema, events: { event: { deleted: false, value: { ...validEvent, root: 12 } } } },
     ],
+    ['unsupported version', { ...validSchema, schemaVersion: 2 }],
 ] as const;
 
 function projectPendingHydrate(
@@ -335,26 +336,25 @@ describe('chordTrackStore CRDT projection', () => {
         expect(projectPendingHydrate(initial, updated, { enabled: true, events: [] }).events).toEqual([]);
     });
 
-    it.each(malformedSchemas)(
-        'rejects schema-v1 state with a %s without changing the document',
+    it.each(rejectedAuthorities)(
+        'projects a safe public default for %s authority without allowing overwrite',
         (_label, malformed) => {
+            chordTrackStore.set(chordState('stale-project', 2));
+            flushAutomergeStorageWrites();
             const peer = createPeer(from<RootDocument>({ chordTrack: malformed }));
             const originalHeads = getHeads(peer.getDoc());
             const originalBytes = save(peer.getDoc());
             configureAutomergeStoragePort(peer.port);
-            const storage = createChordTrackAutomergeStorage();
-
-            expect(() => storage.hydrate?.()).toThrow('Malformed chord-track CRDT schema version 1');
+            chordTrackStore.hydrate();
+            expect(chordTrackStore.value).toEqual(defaultChordTrackState);
             expect(getHeads(peer.getDoc())).toEqual(originalHeads);
             expect(save(peer.getDoc())).toEqual(originalBytes);
-            if (_label === 'mismatched entity id') {
-                storage.set(chordState('replacement', 8));
-                expect(() => flushAutomergeStorageWrites()).toThrow('Malformed chord-track CRDT schema version 1');
-                expect(getHeads(peer.getDoc())).toEqual(originalHeads);
-                expect(save(peer.getDoc())).toEqual(originalBytes);
-                configureAutomergeStoragePort(null);
-                flushAutomergeStorageWrites();
-            }
+            chordTrackStore.set(chordState('replacement', 8));
+            expect(() => flushAutomergeStorageWrites()).toThrow();
+            expect(getHeads(peer.getDoc())).toEqual(originalHeads);
+            expect(save(peer.getDoc())).toEqual(originalBytes);
+            configureAutomergeStoragePort(null);
+            flushAutomergeStorageWrites();
         }
     );
 
