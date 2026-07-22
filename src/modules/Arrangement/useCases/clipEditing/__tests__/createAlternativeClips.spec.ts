@@ -111,6 +111,19 @@ describe('createAlternativeClips', () => {
         randomUuid.mockRestore();
     });
 
+    it('rejects a malformed later variation before allocating or writing any earlier variation', () => {
+        setState([ClipDummy.create({ id: 'c1', trackId: 't1', type: 'midi' })]);
+        const variations = [[note()], [note({ pitch: 64 })]];
+        Object.defineProperty(variations[1], 0, { value: null });
+        const randomUuid = vi.spyOn(crypto, 'randomUUID');
+
+        expect(createAlternativeClips('c1', variations)).toBe(false);
+
+        expect(randomUuid).not.toHaveBeenCalled();
+        expect(mocks.setNotesForClip).not.toHaveBeenCalled();
+        expect(mocks.updateTrack).not.toHaveBeenCalled();
+    });
+
     it('appends muted variation clips back-to-back after the original clip', () => {
         const original = ClipDummy.create({ id: 'c1', name: 'Lead', startBeat: 4, endBeat: 8, type: 'midi' });
         const track = setState([original]);

@@ -4,10 +4,13 @@ import { handleSwitchTrackAlternative } from '../handleSwitchTrackAlternative';
 
 type MockTrack = {
     id: string;
+    kind?: string;
     activeAlternativeId: string;
-    clips?: Array<{ id: string }>;
-    alternatives: Array<{ id: string; clips?: Array<{ id: string }> }>;
+    clips?: MockClip[];
+    alternatives: Array<{ id: string; clips?: MockClip[] }>;
 };
+
+type MockClip = { id: string; trackId?: string };
 
 const mocks = vi.hoisted(() => ({
     getTrackStoreState: vi.fn<() => { tracks: MockTrack[] }>(),
@@ -34,13 +37,13 @@ describe('handleSwitchTrackAlternative', () => {
     });
 
     it('switches between alternatives saving active clips', () => {
-        const alt2Clips = [{ id: 'c2' }];
+        const alt2Clips = [{ id: 'c2', trackId: 't1' }];
         mocks.getTrackStoreState.mockReturnValue({
             tracks: [
                 {
                     id: 't1',
                     activeAlternativeId: 'alt1',
-                    clips: [{ id: 'c1' }],
+                    clips: [{ id: 'c1', trackId: 't1' }],
                     alternatives: [
                         { id: 'alt1', clips: [] },
                         { id: 'alt2', clips: alt2Clips },
@@ -66,8 +69,120 @@ describe('handleSwitchTrackAlternative', () => {
         expect(track.clips).toEqual(alt2Clips);
 
         // Verify alt1 now contains the clips that were active
-        expect(track.alternatives[0]?.clips).toEqual([{ id: 'c1' }]);
+        expect(track.alternatives[0]?.clips).toEqual([{ id: 'c1', trackId: 't1' }]);
         expect(result).toEqual({ status: 'written' });
+    });
+
+    it('rejects a malformed selected-alternative clip without publishing', () => {
+        const targetClips = [{ id: 'c2', trackId: 't1' }];
+        Object.defineProperty(targetClips, 0, { value: null });
+        mocks.getTrackStoreState.mockReturnValue({
+            tracks: [
+                {
+                    id: 't1',
+                    activeAlternativeId: 'alt1',
+                    clips: [{ id: 'c1', trackId: 't1' }],
+                    alternatives: [
+                        { id: 'alt1', clips: [] },
+                        { id: 'alt2', clips: targetClips },
+                    ],
+                },
+            ],
+        });
+
+        const result = handleSwitchTrackAlternative.execute({
+            type: 'switchTrackAlternative',
+            payload: { trackId: 't1', alternativeId: 'alt2' },
+        });
+
+        expect(result).toEqual({ status: 'no-write' });
+        expect(mocks.setTrackStoreState).not.toHaveBeenCalled();
+    });
+
+    it('rejects duplicate selected-alternative clip ids without publishing', () => {
+        mocks.getTrackStoreState.mockReturnValue({
+            tracks: [
+                {
+                    id: 't1',
+                    activeAlternativeId: 'alt1',
+                    clips: [{ id: 'c1', trackId: 't1' }],
+                    alternatives: [
+                        { id: 'alt1', clips: [] },
+                        {
+                            id: 'alt2',
+                            clips: [
+                                { id: 'duplicate', trackId: 't1' },
+                                { id: 'duplicate', trackId: 't1' },
+                            ],
+                        },
+                    ],
+                },
+            ],
+        });
+
+        const result = handleSwitchTrackAlternative.execute({
+            type: 'switchTrackAlternative',
+            payload: { trackId: 't1', alternativeId: 'alt2' },
+        });
+
+        expect(result).toEqual({ status: 'no-write' });
+        expect(mocks.setTrackStoreState).not.toHaveBeenCalled();
+    });
+
+    it('rejects a selected-alternative clip owned by another track', () => {
+        mocks.getTrackStoreState.mockReturnValue({
+            tracks: [
+                {
+                    id: 't1',
+                    activeAlternativeId: 'alt1',
+                    clips: [{ id: 'c1', trackId: 't1' }],
+                    alternatives: [
+                        { id: 'alt1', clips: [] },
+                        { id: 'alt2', clips: [{ id: 'foreign', trackId: 't2' }] },
+                    ],
+                },
+            ],
+        });
+
+        const result = handleSwitchTrackAlternative.execute({
+            type: 'switchTrackAlternative',
+            payload: { trackId: 't1', alternativeId: 'alt2' },
+        });
+
+        expect(result).toEqual({ status: 'no-write' });
+        expect(mocks.setTrackStoreState).not.toHaveBeenCalled();
+    });
+
+    it('rejects a selected-alternative clip owned by a runtime VCA track', () => {
+        mocks.getTrackStoreState.mockReturnValue({
+            tracks: [
+                {
+                    id: 't1',
+                    kind: 'audio',
+                    activeAlternativeId: 'alt1',
+                    clips: [{ id: 'c1', trackId: 't1' }],
+                    alternatives: [
+                        { id: 'alt1', clips: [] },
+                        { id: 'alt2', clips: [{ id: 'vca-clip', trackId: 't1' }] },
+                    ],
+                },
+                {
+                    id: 'vca1',
+                    kind: 'vca',
+                    activeAlternativeId: 'vca-alt',
+                    clips: [{ id: 'vca-clip', trackId: 'vca1' }],
+                    alternatives: [{ id: 'vca-alt', clips: [] }],
+                },
+            ],
+        });
+
+        const result = handleSwitchTrackAlternative.execute({
+            type: 'switchTrackAlternative',
+            payload: { trackId: 't1', alternativeId: 'alt2' },
+        });
+
+        expect(result).toEqual({ status: 'no-write' });
+        expect(mocks.setTrackStoreState).not.toHaveBeenCalled();
     });
 
     it('bails if switching to the already active alternative', () => {

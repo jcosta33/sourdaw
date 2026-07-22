@@ -11,11 +11,64 @@ function clamp(value: number, min: number, max: number): number {
     return Math.min(max, Math.max(min, value));
 }
 
-export function createAlternativeClips(originalClipId: string, variationsData: VariationNote[][]): boolean {
-    if (!Array.isArray(variationsData) || variationsData.length === 0) {
-        return false;
+function normalizeVariationNote(value: unknown): VariationNote | null {
+    if (value === null || typeof value !== 'object') {
+        return null;
     }
-    if (!variationsData.every((variation) => Array.isArray(variation))) {
+
+    const pitch: unknown = Reflect.get(value, 'pitch');
+    const startBeat: unknown = Reflect.get(value, 'startBeat');
+    const duration: unknown = Reflect.get(value, 'duration');
+    const velocity: unknown = Reflect.get(value, 'velocity');
+    if (
+        typeof pitch !== 'number' ||
+        typeof startBeat !== 'number' ||
+        typeof duration !== 'number' ||
+        typeof velocity !== 'number'
+    ) {
+        return null;
+    }
+
+    return {
+        pitch: clamp(Math.round(Number.isFinite(pitch) ? pitch : 60), 0, 127),
+        startBeat: Math.max(0, Number.isFinite(startBeat) ? startBeat : 0),
+        duration: Math.max(0.0625, Number.isFinite(duration) ? duration : 0.5),
+        velocity: clamp(Math.round(Number.isFinite(velocity) ? velocity : 80), 1, 127),
+    };
+}
+
+function normalizeVariationData(value: unknown): VariationNote[][] | null {
+    if (!Array.isArray(value) || value.length === 0) {
+        return null;
+    }
+
+    const normalizedVariations: VariationNote[][] = [];
+    try {
+        for (const variationValue of value) {
+            if (!Array.isArray(variationValue)) {
+                return null;
+            }
+
+            const normalizedVariation: VariationNote[] = [];
+            for (const noteValue of variationValue) {
+                const normalizedNote = normalizeVariationNote(noteValue);
+                if (!normalizedNote) {
+                    return null;
+                }
+                normalizedVariation.push(normalizedNote);
+            }
+            normalizedVariations.push(normalizedVariation);
+        }
+    } catch {
+        return null;
+    }
+
+    return normalizedVariations;
+}
+
+export function createAlternativeClips(originalClipId: string, variationsData: VariationNote[][]): boolean {
+    const normalizedVariations = normalizeVariationData(variationsData);
+    if (!normalizedVariations) {
         return false;
     }
 
@@ -40,16 +93,15 @@ export function createAlternativeClips(originalClipId: string, variationsData: V
     const newClips: Clip[] = [];
 
     let currentStart = originalClip.endBeat;
-    for (const [index, variation] of variationsData.entries()) {
+    for (const [index, variation] of normalizedVariations.entries()) {
         const newClipId = `clip-var-${crypto.randomUUID().slice(0, 8)}`;
 
         const globalNotes = variation.map((node) => ({
             id: `note-${crypto.randomUUID().slice(0, 8)}`,
-            // Clamp MIDI values to valid ranges; guard against NaN/Infinity from LLM output
-            pitch: clamp(Math.round(isFinite(node.pitch) ? node.pitch : 60), 0, 127),
-            startBeat: currentStart + Math.max(0, isFinite(node.startBeat) ? node.startBeat : 0),
-            duration: Math.max(0.0625, isFinite(node.duration) ? node.duration : 0.5),
-            velocity: clamp(Math.round(isFinite(node.velocity) ? node.velocity : 80), 1, 127),
+            pitch: node.pitch,
+            startBeat: currentStart + node.startBeat,
+            duration: node.duration,
+            velocity: node.velocity,
             probability: 100,
         }));
 

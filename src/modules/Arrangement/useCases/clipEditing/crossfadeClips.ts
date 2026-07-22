@@ -30,6 +30,9 @@ export function crossfadeClips(clipAId: string, clipBId: string, durationBeats =
     if (!clipA || !clipB) {
         return false;
     }
+    if (!Number.isFinite(clipA.endBeat) || !Number.isFinite(clipB.startBeat)) {
+        return false;
+    }
 
     const halfLen = durationBeats / 2;
     const newClipAEnd = clipA.endBeat + halfLen;

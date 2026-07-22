@@ -91,6 +91,64 @@ describe('handleCreateTrackAlternative', () => {
         expect(mocks.setTrackStoreState).not.toHaveBeenCalled();
     });
 
+    it('rejects a non-string name before allocating, cloning, or publishing', () => {
+        const cloneProbe = vi.fn(() => 'clip1');
+        const clip = {};
+        Object.defineProperty(clip, 'id', { enumerable: true, get: cloneProbe });
+        mocks.getTrackStoreState.mockReturnValue({
+            tracks: [
+                {
+                    id: 't1',
+                    activeAlternativeId: 'alt1',
+                    clips: [clip],
+                    alternatives: [{ id: 'alt1', name: 'Alt 1', clips: [] }],
+                },
+            ],
+        });
+        const action = {
+            type: 'createTrackAlternative' as const,
+            payload: { trackId: 't1', name: 'Invalid', duplicateActive: true },
+        };
+        Object.defineProperty(action.payload, 'name', { value: 42 });
+        const randomUuid = vi.spyOn(crypto, 'randomUUID');
+
+        const result = handleCreateTrackAlternative.execute(action);
+
+        expect(result).toEqual({ status: 'no-write' });
+        expect(randomUuid).not.toHaveBeenCalled();
+        expect(cloneProbe).not.toHaveBeenCalled();
+        expect(mocks.setTrackStoreState).not.toHaveBeenCalled();
+    });
+
+    it('rejects a non-boolean duplicate flag before allocating, cloning, or publishing', () => {
+        const cloneProbe = vi.fn(() => 'clip1');
+        const clip = {};
+        Object.defineProperty(clip, 'id', { enumerable: true, get: cloneProbe });
+        mocks.getTrackStoreState.mockReturnValue({
+            tracks: [
+                {
+                    id: 't1',
+                    activeAlternativeId: 'alt1',
+                    clips: [clip],
+                    alternatives: [{ id: 'alt1', name: 'Alt 1', clips: [] }],
+                },
+            ],
+        });
+        const action = {
+            type: 'createTrackAlternative' as const,
+            payload: { trackId: 't1', name: 'Invalid', duplicateActive: true },
+        };
+        Object.defineProperty(action.payload, 'duplicateActive', { value: 'yes' });
+        const randomUuid = vi.spyOn(crypto, 'randomUUID');
+
+        const result = handleCreateTrackAlternative.execute(action);
+
+        expect(result).toEqual({ status: 'no-write' });
+        expect(randomUuid).not.toHaveBeenCalled();
+        expect(cloneProbe).not.toHaveBeenCalled();
+        expect(mocks.setTrackStoreState).not.toHaveBeenCalled();
+    });
+
     it('creates a new duplicated alternative and switches to it', () => {
         void handleCreateTrackAlternative.execute({
             type: 'createTrackAlternative',

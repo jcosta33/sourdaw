@@ -18,6 +18,9 @@ export function splitClip(clipId: string, splitBeat: number, rightClipId?: strin
     if (!Number.isFinite(splitBeat)) {
         return null;
     }
+    if (rightClipId !== undefined && (typeof rightClipId !== 'string' || rightClipId.length === 0)) {
+        return null;
+    }
 
     const resolution = resolveEligibleClipWriteTarget({ clipId });
     if (resolution.status !== 'eligible') {
@@ -27,6 +30,14 @@ export function splitClip(clipId: string, splitBeat: number, rightClipId?: strin
     const state = getTrackState();
     if (!state) {
         return null;
+    }
+    if (rightClipId !== undefined) {
+        const destinationIdIsUsed = state.tracks.some((track) =>
+            track.clips.some((context) => context.id === rightClipId)
+        );
+        if (destinationIdIsUsed) {
+            return null;
+        }
     }
 
     let newRightClipId: string | null = null;

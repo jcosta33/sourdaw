@@ -76,6 +76,24 @@ describe('crossfadeClips', () => {
         expect(mocks.mapAllTracks).not.toHaveBeenCalled();
     });
 
+    it('rejects a non-finite clip A end beat before invoking the mapper', () => {
+        const clips = [makeClip('a', 0, Number.NaN), makeClip('b', 4, 8)];
+        mocks.getTrackState.mockReturnValue({ tracks: [makeTrack(clips)], selectedTrackId: 't1' });
+
+        expect(crossfadeClips('a', 'b', 1)).toBe(false);
+
+        expect(mocks.mapAllTracks).not.toHaveBeenCalled();
+    });
+
+    it('rejects a non-finite clip B start beat before invoking the mapper', () => {
+        const clips = [makeClip('a', 0, 4), makeClip('b', Number.POSITIVE_INFINITY, 8)];
+        mocks.getTrackState.mockReturnValue({ tracks: [makeTrack(clips)], selectedTrackId: 't1' });
+
+        expect(crossfadeClips('a', 'b', 1)).toBe(false);
+
+        expect(mocks.mapAllTracks).not.toHaveBeenCalled();
+    });
+
     it('returns no-write when the requested crossfade already matches project truth', () => {
         const clips = [makeClip('a', 0, 4), makeClip('b', 4, 8)];
         mocks.getTrackState.mockReturnValue({ tracks: [makeTrack(clips)], selectedTrackId: 't1' });

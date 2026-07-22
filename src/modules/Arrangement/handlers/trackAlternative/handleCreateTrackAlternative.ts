@@ -39,6 +39,10 @@ function isValidAlternativeCollection(value: unknown): value is TrackAlternative
 export const handleCreateTrackAlternative = createHandler<'createTrackAlternative'>({
     execute: (action) => {
         const { trackId, name, duplicateActive } = action.payload;
+        if (typeof name !== 'string' || typeof duplicateActive !== 'boolean') {
+            return toHandlerExecutionResult(false);
+        }
+
         const resolution = resolveEligibleClipWriteTarget({ trackId });
         if (resolution.status !== 'eligible') {
             return toHandlerExecutionResult(false);
