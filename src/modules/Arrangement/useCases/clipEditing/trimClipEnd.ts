@@ -7,12 +7,16 @@ export function trimClipEnd(clipId: string, newEndBeat: number): boolean {
         return false;
     }
 
-    const state = getTrackState();
-    if (state) {
-        const target = findClipById({ clipId, tracks: state.tracks });
-        if (target && newEndBeat <= target.clip.startBeat) {
-            return false;
+    try {
+        const state = getTrackState();
+        if (state) {
+            const target = findClipById({ clipId, tracks: state.tracks });
+            if (target && newEndBeat <= target.clip.startBeat) {
+                return false;
+            }
         }
+    } catch {
+        return false;
     }
 
     return updateClip(clipId, (context) => {

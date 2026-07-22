@@ -10,12 +10,16 @@ export function nudgeClip(clipId: string, beats: number): boolean {
         return false;
     }
 
-    const state = getTrackState();
-    if (state) {
-        const target = findClipById({ clipId, tracks: state.tracks });
-        if (target?.clip.locked) {
-            return false;
+    try {
+        const state = getTrackState();
+        if (state) {
+            const target = findClipById({ clipId, tracks: state.tracks });
+            if (target?.clip.locked) {
+                return false;
+            }
         }
+    } catch {
+        return false;
     }
 
     let appliedDelta = 0;

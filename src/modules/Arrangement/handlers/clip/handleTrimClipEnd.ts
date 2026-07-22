@@ -9,14 +9,23 @@ export const handleTrimClipEnd = createHandler<'trimClipEnd'>({
         return toHandlerExecutionResult(trimClipEnd(alpha.payload.clipId, alpha.payload.newEndBeat));
     },
     describe: (alpha) => {
-        const state = getTrackStoreState();
-        const clip = state?.tracks.flatMap((time) => time.clips).find((context) => context.id === alpha.payload.clipId);
-        return {
-            label: 'Trim clip end',
-            inverseAction: clip
-                ? { type: 'trimClipEnd', payload: { clipId: clip.id, newEndBeat: clip.endBeat } }
-                : null,
-        };
+        const label = 'Trim clip end';
+        try {
+            const state = getTrackStoreState();
+            const clip = state?.tracks
+                .flatMap((time) => time.clips)
+                .find((context) => context.id === alpha.payload.clipId);
+            if (!clip) {
+                return { label, inverseAction: null };
+            }
+
+            return {
+                label,
+                inverseAction: { type: 'trimClipEnd', payload: { clipId: clip.id, newEndBeat: clip.endBeat } },
+            };
+        } catch {
+            return { label, inverseAction: null };
+        }
     },
     undoable: true,
 });

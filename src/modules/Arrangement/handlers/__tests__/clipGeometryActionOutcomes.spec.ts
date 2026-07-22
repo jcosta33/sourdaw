@@ -9,10 +9,13 @@ import { handleSetClipStretchMode } from '../clipStretch/handleSetClipStretchMod
 import { handleSetClipStretchRatio } from '../clipStretch/handleSetClipStretchRatio';
 
 type GetTrackState = typeof import('../../repositories/track/getTrackState').getTrackState;
+type GetTrackStoreState = typeof import('../../useCases/getTrackStoreState').getTrackStoreState;
 type UpdateClip = typeof import('../../repositories/track/updateClip').updateClip;
+type TrackState = NonNullable<ReturnType<GetTrackState>>;
 
 const mocks = vi.hoisted(() => ({
     getTrackState: vi.fn<GetTrackState>(),
+    getTrackStoreState: vi.fn<GetTrackStoreState>(),
     shiftClipAutomation: vi.fn<(clipId: string, deltaBeats: number) => void>(),
     shiftClipMidiNotes: vi.fn<(clipId: string, deltaBeats: number) => void>(),
     updateClip: vi.fn<UpdateClip>(),
@@ -24,6 +27,10 @@ vi.mock('../../repositories/track/getTrackState', () => ({
 
 vi.mock('../../repositories/track/updateClip', () => ({
     updateClip: mocks.updateClip,
+}));
+
+vi.mock('../../useCases/getTrackStoreState', () => ({
+    getTrackStoreState: mocks.getTrackStoreState,
 }));
 
 vi.mock('#/modules/Automation/useCases', () => ({
@@ -145,6 +152,122 @@ const geometryActions = [
 
 const nonFiniteNumbers = [Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY] as const;
 
+const malformedTrackStateCases = [
+    {
+        name: 'throwing tracks accessor',
+        createState: (): TrackState => {
+            const state: TrackState = { tracks: [], selectedTrackId: null };
+            Object.defineProperty(state, 'tracks', {
+                get() {
+                    throw new Error('tracks accessor failed');
+                },
+            });
+            return state;
+        },
+    },
+    {
+        name: 'throwing track proxy',
+        createState: (): TrackState => {
+            const track = new Proxy(makeTrack([makeClip()]), {
+                get(target, property, receiver) {
+                    if (property === 'clips') {
+                        throw new Error('track proxy failed');
+                    }
+                    return Reflect.get(target, property, receiver);
+                },
+            });
+            return { tracks: [track], selectedTrackId: null };
+        },
+    },
+    {
+        name: 'throwing clip proxy',
+        createState: (): TrackState => {
+            const clip = new Proxy(makeClip(), {
+                get(target, property, receiver) {
+                    if (property === 'id') {
+                        throw new Error('clip proxy failed');
+                    }
+                    return Reflect.get(target, property, receiver);
+                },
+            });
+            return { tracks: [makeTrack([clip])], selectedTrackId: null };
+        },
+    },
+] as const;
+
+const preflightActions = [
+    {
+        name: 'nudgeClip',
+        execute: () =>
+            handleNudgeClip.execute({
+                type: 'nudgeClip',
+                payload: { clipId: 'clip-1', beats: 2 },
+            }),
+    },
+    {
+        name: 'trimClipStart',
+        execute: () =>
+            handleTrimClipStart.execute({
+                type: 'trimClipStart',
+                payload: { clipId: 'clip-1', newStartBeat: 1 },
+            }),
+    },
+    {
+        name: 'trimClipEnd',
+        execute: () =>
+            handleTrimClipEnd.execute({
+                type: 'trimClipEnd',
+                payload: { clipId: 'clip-1', newEndBeat: 6 },
+            }),
+    },
+    {
+        name: 'fitClipToBeats',
+        execute: () =>
+            handleFitClipToBeats.execute({
+                type: 'fitClipToBeats',
+                payload: { clipId: 'clip-1', targetBeats: 8 },
+            }),
+    },
+] as const;
+
+const malformedPreflightCases = malformedTrackStateCases.flatMap((stateCase) =>
+    preflightActions.map((actionCase) => ({
+        name: `${actionCase.name} with ${stateCase.name}`,
+        createState: stateCase.createState,
+        execute: actionCase.execute,
+    }))
+);
+
+const descriptionCases = [
+    {
+        name: 'nudgeClip',
+        describe: () =>
+            handleNudgeClip.describe({
+                type: 'nudgeClip',
+                payload: { clipId: 'clip-1', beats: 2 },
+            }),
+        execute: preflightActions[0].execute,
+    },
+    {
+        name: 'trimClipStart',
+        describe: () =>
+            handleTrimClipStart.describe({
+                type: 'trimClipStart',
+                payload: { clipId: 'clip-1', newStartBeat: 1 },
+            }),
+        execute: preflightActions[1].execute,
+    },
+    {
+        name: 'trimClipEnd',
+        describe: () =>
+            handleTrimClipEnd.describe({
+                type: 'trimClipEnd',
+                payload: { clipId: 'clip-1', newEndBeat: 6 },
+            }),
+        execute: preflightActions[2].execute,
+    },
+] as const;
+
 describe('clip geometry action outcomes', () => {
     let currentClip: Clip;
 
@@ -152,6 +275,10 @@ describe('clip geometry action outcomes', () => {
         vi.clearAllMocks();
         currentClip = makeClip();
         mocks.getTrackState.mockImplementation(() => ({
+            tracks: [makeTrack([currentClip])],
+            selectedTrackId: null,
+        }));
+        mocks.getTrackStoreState.mockImplementation(() => ({
             tracks: [makeTrack([currentClip])],
             selectedTrackId: null,
         }));
@@ -176,6 +303,30 @@ describe('clip geometry action outcomes', () => {
         expect(execute()).toEqual({ status: 'written' });
         expect(mocks.updateClip).toHaveBeenCalledOnce();
     });
+
+    it.each(malformedPreflightCases)(
+        '$name fails closed before writes or dependent side effects',
+        ({ createState, execute }) => {
+            mocks.getTrackState.mockReturnValue(createState());
+
+            expect(execute()).toEqual({ status: 'no-write' });
+            expect(mocks.updateClip).not.toHaveBeenCalled();
+            expect(mocks.shiftClipMidiNotes).not.toHaveBeenCalled();
+            expect(mocks.shiftClipAutomation).not.toHaveBeenCalled();
+        }
+    );
+
+    it.each(descriptionCases)(
+        '$name describes and executes malformed state without throwing',
+        ({ describe, execute }) => {
+            mocks.getTrackStoreState.mockReturnValue(malformedTrackStateCases[0].createState());
+            mocks.getTrackState.mockReturnValue(malformedTrackStateCases[0].createState());
+
+            expect(describe()).toMatchObject({ inverseAction: null });
+            expect(execute()).toEqual({ status: 'no-write' });
+            expect(mocks.updateClip).not.toHaveBeenCalled();
+        }
+    );
 
     it.each([0, -1, ...nonFiniteNumbers])(
         'fitClipToBeats rejects target %s before reading or writing the repository',
