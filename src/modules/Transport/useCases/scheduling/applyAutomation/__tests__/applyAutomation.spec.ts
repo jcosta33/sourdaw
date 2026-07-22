@@ -128,6 +128,19 @@ describe('applyAutomation', () => {
         expect(typeof applyAutomation).toBe('function');
     });
 
+    it.each([
+        [-1, -50],
+        [0, 0],
+        [1, 50],
+    ])('maps canonical pan automation value %s to engine pan %s', (value, expectedPan) => {
+        seedDeviceLane({ devices: [], laneParameterId: 'pan' });
+        vi.mocked(getAutomationValueAtBeat).mockReturnValue(value);
+
+        applyAutomation(0);
+
+        expect(setTrackPan).toHaveBeenCalledWith('track-1', expectedPan);
+    });
+
     it('routes a canonical Fermenter lane through the mapped use-case with the bare param id', () => {
         seedDeviceLane({
             devices: [{ id: 'device-f1', type: 'fermenter', parameterValues: { filterCutoff: 0 } }],
@@ -188,7 +201,7 @@ describe('applyAutomation', () => {
 
         if (expectedTarget === 'gain' || expectedTarget === 'pan') {
             const setter = expectedTarget === 'gain' ? setTrackGain : setTrackPan;
-            expect(setter).toHaveBeenCalledWith('track-1', expectedTarget === 'gain' ? 0.75 : 25);
+            expect(setter).toHaveBeenCalledWith('track-1', expectedTarget === 'gain' ? 0.75 : 37.5);
             return;
         }
         if (expectedTarget && expectedTarget !== 'midi') {
