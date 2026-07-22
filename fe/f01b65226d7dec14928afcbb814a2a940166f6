@@ -1,0 +1,21 @@
+src/modules/MIDI/stores/__tests__/chordTrackStore.spec.ts
+  s_ac9b259eab20ba::t_c3776da05f2067 97,111,359-360,362-363,368-373,376-377
+src/modules/MIDI/stores/chordTrackStore.ts
+  s_ac9b259eab20ba::t_c3776da05f2067 223-224,321-332,336,340,343-347,349-351
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "fef01b65226d7dec14928afcbb814a2a940166f6",
+  "prompts": {},
+  "sessions": {
+    "s_ac9b259eab20ba": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8699-3865-7842-8c54-afbac6cfd266",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
