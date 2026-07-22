@@ -1,19 +1,33 @@
+import { trackStore } from '#/modules/Arrangement/stores';
 import { getBuiltinPlugins } from '#/modules/Arrangement/useCases';
+import { automationStore } from '#/modules/Automation/stores';
+import {
+    createDeviceAutomationTargetId,
+    getDeviceAutomationParameterId,
+    resolveDeviceAutomationTargetIndex,
+} from '#/utils/automationDeviceTarget';
 
 import { type AutomationPoint } from '../../models/AutomationViewTypes';
 
 export const LANE_HEIGHT = 100;
 
 export const getAutomatableParams = (
-    _trackId: string,
-    devices: { type: string; name: string }[]
+    trackId: string,
+    devices: { id?: string; type: string; name: string }[],
+    lanes?: readonly { trackId?: string; clipId?: string; parameterId: string }[]
 ): { id: string; name: string; min: number; max: number }[] => {
     const params: { id: string; name: string; min: number; max: number }[] = [
         { id: 'gain', name: 'Volume', min: 0, max: 1 },
         { id: 'pan', name: 'Pan', min: -1, max: 1 },
     ];
 
-    for (const device of devices) {
+    const trackDevices = trackStore.value?.tracks.find((track) => track.id === trackId)?.devices ?? [];
+    for (let index = 0; index < devices.length; index++) {
+        const device = devices[index]!;
+        const deviceId = device.id ?? trackDevices[index]?.id;
+        if (!deviceId) {
+            continue;
+        }
         const plugin = getBuiltinPlugins().find((param1) => param1.id === device.type);
         if (!plugin) {
             continue;
@@ -21,7 +35,7 @@ export const getAutomatableParams = (
         for (const param of plugin.parameters) {
             if (param.automatable) {
                 params.push({
-                    id: `${device.type}:${param.id}`,
+                    id: createDeviceAutomationTargetId(deviceId, param.id),
                     name: `${device.name} → ${param.name}`,
                     min: param.minValue,
                     max: param.maxValue,
@@ -30,8 +44,53 @@ export const getAutomatableParams = (
         }
     }
 
-    return params;
+    const trackLanes = (lanes ?? automationStore.value?.lanes ?? []).filter(
+        (lane) => (lane.trackId === undefined || lane.trackId === trackId) && !lane.clipId
+    );
+    return params.filter((param) => {
+        const exactLane = trackLanes.some((lane) => lane.parameterId === param.id);
+        if (exactLane || param.id === 'gain' || param.id === 'pan') {
+            return !exactLane;
+        }
+        return !findEquivalentAutomationLane(param.id, trackLanes, devices, trackId);
+    });
 };
+
+type AutomationTargetDevice = { id?: string; type: string; parameterValues?: Record<string, number> };
+
+function acceptsAutomationParameter(device: AutomationTargetDevice, parameterId: string): boolean {
+    if (device.parameterValues?.[parameterId] !== undefined) {
+        return true;
+    }
+    const plugin = getBuiltinPlugins().find((candidate) => candidate.id === device.type);
+    return plugin?.parameters.some((parameter) => parameter.id === parameterId && parameter.automatable) ?? false;
+}
+
+export function findEquivalentAutomationLane<Lane extends { parameterId: string }>(
+    targetId: string,
+    lanes: readonly Lane[],
+    devices: readonly AutomationTargetDevice[],
+    trackId?: string
+): Lane | undefined {
+    const storedDevices = trackStore.value?.tracks.find((track) => track.id === trackId)?.devices ?? [];
+    const candidates = devices.flatMap((device, index) => {
+        const storedDevice = storedDevices[index];
+        const id = device.id ?? (storedDevice?.type === device.type ? storedDevice.id : null);
+        return id ? [{ ...device, id }] : [];
+    });
+    const targetIndex = resolveDeviceAutomationTargetIndex(targetId, candidates, acceptsAutomationParameter);
+    const targetParameterId = getDeviceAutomationParameterId(targetId);
+    if (targetIndex < 0 || !targetParameterId) {
+        return undefined;
+    }
+    return lanes.find((lane) => {
+        if (lane.parameterId === 'gain' || lane.parameterId === 'pan') {
+            return false;
+        }
+        const laneIndex = resolveDeviceAutomationTargetIndex(lane.parameterId, candidates, acceptsAutomationParameter);
+        return laneIndex === targetIndex && getDeviceAutomationParameterId(lane.parameterId) === targetParameterId;
+    });
+}
 
 /**
  * Apply tension to a normalized t value using power curve.

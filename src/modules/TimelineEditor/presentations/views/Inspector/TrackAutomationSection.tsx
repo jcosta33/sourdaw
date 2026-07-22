@@ -10,9 +10,11 @@ import { useStore } from '#/infra/store/useStore';
 import { getBuiltinPlugins } from '#/modules/Arrangement/useCases';
 import { automationStore } from '#/modules/Automation/stores';
 import { addAutomationLane, toggleAutomationVisibility, removeAutomationLane } from '#/modules/Automation/useCases';
+import { createDeviceAutomationTargetId } from '#/utils/automationDeviceTarget';
 
 import { type Track } from '../../../models/TrackViewTypes';
 import { SurfaceCard } from '../../components/Inspector/SurfaceCard';
+import { findEquivalentAutomationLane } from '../../helpers/automationViewHelpers';
 
 type TrackAutomationSectionProps = {
     track: Track;
@@ -108,7 +110,15 @@ export const TrackAutomationSection = ({ track }: TrackAutomationSectionProps): 
                                             if (!plugin) {
                                                 return null;
                                             }
-                                            const autoParams = plugin.parameters.filter((param) => param.automatable);
+                                            const autoParams = plugin.parameters.filter(
+                                                (param) =>
+                                                    param.automatable &&
+                                                    !findEquivalentAutomationLane(
+                                                        createDeviceAutomationTargetId(device.id, param.id),
+                                                        trackLanes,
+                                                        track.devices
+                                                    )
+                                            );
                                             if (autoParams.length === 0) {
                                                 return null;
                                             }
@@ -124,7 +134,7 @@ export const TrackAutomationSection = ({ track }: TrackAutomationSectionProps): 
                                                             onClick={() => {
                                                                 addAutomationLane(
                                                                     track.id,
-                                                                    param.id,
+                                                                    createDeviceAutomationTargetId(device.id, param.id),
                                                                     `${device.name}: ${param.name}`
                                                                 );
                                                                 setShowAutoMenu(false);
