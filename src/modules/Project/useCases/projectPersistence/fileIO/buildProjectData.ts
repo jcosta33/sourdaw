@@ -7,7 +7,13 @@ import {
 } from '#/modules/Arrangement/stores';
 import { exportCachedAudioBuffers } from '#/modules/AudioEngine/useCases';
 import { automationStore } from '#/modules/Automation/stores';
-import { defaultGrooveTemplateState, grooveTemplateStore, midiStore } from '#/modules/MIDI/stores';
+import {
+    chordTrackStore,
+    defaultChordTrackState,
+    defaultGrooveTemplateState,
+    grooveTemplateStore,
+    midiStore,
+} from '#/modules/MIDI/stores';
 import { getAllSidechainRoutes } from '#/modules/Routing/useCases';
 import { tempoMapStore, timeSignatureMapStore, transportStore } from '#/modules/Transport/stores';
 import { yeastStore } from '#/modules/Yeast/stores';
@@ -157,6 +163,7 @@ export async function buildProjectData({
             buses: [],
         },
         midi: serializeProjectMidi(midi),
+        chordTrack: structuredClone(chordTrackStore.value ?? defaultChordTrackState),
         grooves: serializeProjectGrooves(grooveTemplateStore.value ?? defaultGrooveTemplateState),
         yeast,
         tempoMap: tempoMapStore.value ?? undefined,
