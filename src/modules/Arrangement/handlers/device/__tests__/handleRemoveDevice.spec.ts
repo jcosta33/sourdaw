@@ -15,13 +15,20 @@ describe('handleRemoveDevice', () => {
         vi.clearAllMocks();
     });
 
-    it('executes removeDevice with the provided payload', () => {
-        void handleRemoveDevice.execute({
+    it.each([
+        ['written', { status: 'written' }],
+        ['missing', { status: 'no-write' }],
+        ['conflict', { status: 'conflict' }],
+    ] as const)('maps the %s outcome to the handler result', (outcome, expected) => {
+        mocks.removeDevice.mockReturnValue(outcome);
+
+        const result = handleRemoveDevice.execute({
             type: 'removeDevice',
             payload: { deviceId: 'd1' },
         });
 
         expect(mocks.removeDevice).toHaveBeenCalledWith('d1');
+        expect(result).toEqual(expected);
     });
 
     it('provides a description', () => {
