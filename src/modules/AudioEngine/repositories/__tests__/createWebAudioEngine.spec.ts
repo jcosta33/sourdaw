@@ -75,9 +75,9 @@ vi.mock('../../engine/BusNode', () => ({
         dispose = vi.fn();
         setGain = vi.fn();
         getPeakLevel = vi.fn().mockReturnValue(0.3);
-        constructor(id: string) {
+        constructor(id: string, trackNode?: { strip?: { gainNode?: { connect: Mock } } }) {
             this.busId = id;
-            this.strip = { busId: id, gainNode: { connect: vi.fn() } };
+            this.strip = { busId: id, gainNode: trackNode?.strip?.gainNode ?? { connect: vi.fn() } };
         }
     },
 }));
@@ -185,6 +185,30 @@ describe('AudioEngine', () => {
     it('should handle master peak level', () => {
         const peak = engine.getMasterPeakLevel();
         expect(typeof peak).toBe('number');
+    });
+
+    it('routes sends into device-bearing and ordinary bus track inputs', () => {
+        const source = engine.ensureTrackStrip('source');
+        const deviceBus = engine.ensureTrackStrip('device-bus');
+        const ordinaryBus = engine.ensureTrackStrip('ordinary-bus');
+        deviceBus.deviceNodes.push({ deviceId: 'return-fx' } as never);
+
+        engine.setSend('source', 'device-bus', 0.6, false);
+        const deviceSendGain = mockCtx.createGain.mock.results.at(-1)!.value as { connect: Mock };
+        engine.setSend('source', 'ordinary-bus', 0.4, false);
+        const ordinarySendGain = mockCtx.createGain.mock.results.at(-1)!.value as { connect: Mock };
+
+        expect(source.analyserNode.connect).toHaveBeenCalledWith(deviceSendGain);
+        expect(deviceSendGain.connect).toHaveBeenCalledWith(deviceBus.gainNode);
+        expect(ordinarySendGain.connect).toHaveBeenCalledWith(ordinaryBus.gainNode);
+    });
+
+    it('removes the paired track strip when a bus facade is removed', () => {
+        engine.ensureBusStrip('return-bus');
+
+        engine.removeBusStrip('return-bus');
+
+        expect(engine.getTrackStrip('return-bus')).toBeUndefined();
     });
 
     // ── Fix 1: removeTrackStrip sweeps dependent send/sidechain entries ──────────

@@ -195,6 +195,8 @@ const toasterDescriptor: WasmDeviceDescriptor = {
                         setParam: result.setParam,
                         setPadParam: result.setPadParam,
                         setBypass: result.setBypass,
+                        connectPadOutput: result.connectPadOutput,
+                        disconnectPadOutput: result.disconnectPadOutput,
                         destroy: result.destroy,
                     },
                 });

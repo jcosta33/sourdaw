@@ -1,12 +1,5 @@
-import { type OfflineBusStrip } from './types';
+import { type OfflineBusStrip, type OfflineTrackStrip } from './types';
 
-export function createOfflineBusStrip(
-    offlineCtx: OfflineAudioContext,
-    trackGain: number,
-    masterGain: GainNode
-): OfflineBusStrip {
-    const gainNode = offlineCtx.createGain();
-    gainNode.gain.value = Math.max(0, Math.min(2, trackGain));
-    gainNode.connect(masterGain);
-    return { gainNode };
+export function createOfflineBusStrip(trackStrip: OfflineTrackStrip): OfflineBusStrip {
+    return { gainNode: trackStrip.inputNode };
 }
