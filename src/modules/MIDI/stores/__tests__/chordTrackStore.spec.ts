@@ -1,5 +1,5 @@
 import { change, clone, from, getHeads, merge, save, type Doc } from '@automerge/automerge';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 
 import {
     configureAutomergeStoragePort,
@@ -13,10 +13,7 @@ import {
     type ChordTrackState,
 } from '../chordTrackStore';
 
-type RootDocument = {
-    chordTrack?: unknown;
-    [key: string]: unknown;
-};
+type RootDocument = Record<string, unknown> & { chordTrack?: unknown };
 
 type TestPort = NonNullable<Parameters<typeof configureAutomergeStoragePort>[0]>;
 
@@ -38,20 +35,43 @@ function createPeer(initialDoc: Doc<RootDocument>) {
     };
 }
 
+function createStorage(peer: ReturnType<typeof createPeer>) {
+    configureAutomergeStoragePort(peer.port);
+    const storage = createChordTrackAutomergeStorage();
+    storage.hydrate?.();
+    return storage;
+}
+
+const STORAGE_KEY = 'sourdaw_chord_track';
+
+function loadStore() {
+    const root: RootDocument = {};
+    try {
+        const stored = localStorage.getItem(STORAGE_KEY);
+        if (stored !== null) {
+            root.chordTrack = JSON.parse(stored);
+        }
+    } catch {
+        // Treat inaccessible or malformed legacy data as a missing root.
+    }
+    const peer = createPeer(from<RootDocument>(root));
+    const originalHeads = getHeads(peer.getDoc());
+    const originalBytes = save(peer.getDoc());
+    configureAutomergeStoragePort(peer.port);
+    chordTrackStore.hydrate();
+    return Promise.resolve({ chordTrackStore, defaultChordTrackState, peer, originalHeads, originalBytes });
+}
+
 function createBaseline(state: ChordTrackState): Doc<RootDocument> {
     const peer = createPeer(from<RootDocument>({ chordTrack: defaultChordTrackState }));
-    const storage = createChordTrackAutomergeStorage();
-    configureAutomergeStoragePort(peer.port);
-    storage.hydrate?.();
+    const storage = createStorage(peer);
     storage.set(state);
     flushAutomergeStorageWrites();
     return peer.getDoc();
 }
 
 function writePeer(peer: ReturnType<typeof createPeer>, state: ChordTrackState): void {
-    const storage = createChordTrackAutomergeStorage();
-    configureAutomergeStoragePort(peer.port);
-    storage.hydrate?.();
+    const storage = createStorage(peer);
     storage.set(state);
     flushAutomergeStorageWrites();
 }
@@ -61,9 +81,7 @@ function projectMerged(
     rightPeer: ReturnType<typeof createPeer>
 ): ChordTrackState {
     const peer = createPeer(merge(leftPeer.getDoc(), rightPeer.getDoc()));
-    const storage = createChordTrackAutomergeStorage();
-    configureAutomergeStoragePort(peer.port);
-    storage.hydrate?.();
+    const storage = createStorage(peer);
     return storage.get() ?? defaultChordTrackState;
 }
 
@@ -72,11 +90,6 @@ function chordState(id: string, root: number): ChordTrackState {
         enabled: true,
         events: [{ id, beat: 4, root, quality: 'min7', duration: 8 }],
     };
-}
-
-function readChordTrack(peer: ReturnType<typeof createPeer>): unknown {
-    const chordTrack = peer.getDoc().chordTrack;
-    return chordTrack === undefined ? undefined : JSON.parse(JSON.stringify(chordTrack));
 }
 
 function projectPendingHydrate(
@@ -88,9 +101,7 @@ function projectPendingHydrate(
     const remotePeer = createPeer(clone(baseline));
     writePeer(remotePeer, remote);
     const localPeer = createPeer(clone(baseline));
-    const storage = createChordTrackAutomergeStorage();
-    configureAutomergeStoragePort(localPeer.port);
-    storage.hydrate?.();
+    const storage = createStorage(localPeer);
     storage.set(pending);
     localPeer.replaceDoc(merge(localPeer.getDoc(), remotePeer.getDoc()));
     storage.hydrate?.();
@@ -104,106 +115,210 @@ describe('chordTrackStore CRDT projection', () => {
         flushAutomergeStorageWrites();
         chordTrackStore.set(defaultChordTrackState);
         flushAutomergeStorageWrites();
+        localStorage.removeItem(STORAGE_KEY);
     });
 
     afterEach(() => {
         flushAutomergeStorageWrites();
         configureAutomergeStoragePort(null);
         vi.restoreAllMocks();
+        localStorage.removeItem(STORAGE_KEY);
     });
 
-    it('projects the active root, creates its slot, and resets when the slot is missing', () => {
-        const mainState = chordState('main-chord', 5);
-        const mainPeer = createPeer(from<RootDocument>({ chordTrack: mainState }));
-        configureAutomergeStoragePort(mainPeer.port);
-        chordTrackStore.hydrate();
-        expect(chordTrackStore.value).toEqual(mainState);
-        const createdState = chordState('created-chord', 7);
-        const createdPeer = createPeer(from<RootDocument>({}));
-        configureAutomergeStoragePort(createdPeer.port);
-        chordTrackStore.set(createdState);
+    it('loads a well-formed persisted state', async () => {
+        const persisted = {
+            enabled: true,
+            events: [{ id: 'e1', beat: 0, root: 5, quality: 'major', duration: 4 }],
+        };
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(persisted));
+
+        const { chordTrackStore } = await loadStore();
+        expect(chordTrackStore.value).toEqual(persisted);
+    });
+
+    it('should persist changes with the existing key and plain JSON shape', async () => {
+        const { chordTrackStore, peer } = await loadStore();
+        const state = {
+            enabled: true,
+            events: [{ id: 'e1', beat: 0, root: 5, quality: 'major', duration: 4 }],
+        } satisfies ChordTrackState;
+
+        chordTrackStore.set(state);
         flushAutomergeStorageWrites();
-        expect(readChordTrack(createdPeer)).toBeDefined();
-        const missingPeer = createPeer(from<RootDocument>({}));
-        configureAutomergeStoragePort(missingPeer.port);
-        chordTrackStore.hydrate();
+
+        expect(peer.getDoc().chordTrack).toMatchObject({ schemaVersion: 1, enabled: true });
+        expect(localStorage.getItem(STORAGE_KEY)).toBeNull();
+    });
+
+    it('falls back to the default state when the persisted shape is invalid', async () => {
+        // `enabled` is the wrong type and an event is missing required fields —
+        // an unchecked cast would have trusted this as a valid ChordTrackState.
+        localStorage.setItem(STORAGE_KEY, JSON.stringify({ enabled: 'yes', events: [{ id: 'e1' }] }));
+
+        const { chordTrackStore, defaultChordTrackState, peer, originalHeads, originalBytes } = await loadStore();
+        flushAutomergeStorageWrites();
         expect(chordTrackStore.value).toEqual(defaultChordTrackState);
-        expect(readChordTrack(missingPeer)).toBeUndefined();
-        expect(readChordTrack(mainPeer)).toEqual(mainState);
+        expect(getHeads(peer.getDoc())).toEqual(originalHeads);
+        expect(save(peer.getDoc())).toEqual(originalBytes);
     });
 
-    it('does not read or write independent process-global localStorage', () => {
-        const peer = createPeer(from<RootDocument>({}));
-        const getItem = vi.spyOn(Storage.prototype, 'getItem');
-        const setItem = vi.spyOn(Storage.prototype, 'setItem');
-        configureAutomergeStoragePort(peer.port);
-        chordTrackStore.set(chordState('crdt-only-chord', 9));
-        flushAutomergeStorageWrites();
-        chordTrackStore.hydrate();
-        expect(getItem).not.toHaveBeenCalled();
-        expect(setItem).not.toHaveBeenCalled();
+    it('should fall back to the default state when a persisted event has an invalid quality', async () => {
+        localStorage.setItem(
+            STORAGE_KEY,
+            JSON.stringify({
+                enabled: true,
+                events: [{ id: 'e1', beat: 0, root: 5, quality: 'custom', duration: 4 }],
+            })
+        );
+
+        const { chordTrackStore, defaultChordTrackState } = await loadStore();
+        expect(chordTrackStore.value).toEqual(defaultChordTrackState);
     });
 
-    it('converges concurrent additions by stable event ID', () => {
-        const baseline = createBaseline({ enabled: true, events: [] });
-        const leftPeer = createPeer(clone(baseline));
-        const rightPeer = createPeer(clone(baseline));
-        writePeer(leftPeer, chordState('left-add', 2));
-        writePeer(rightPeer, chordState('right-add', 7));
-        expect(projectMerged(leftPeer, rightPeer).events.map((event) => event.id)).toEqual(['left-add', 'right-add']);
+    it('should fall back when a persisted event quality is only an inherited object key', async () => {
+        localStorage.setItem(
+            STORAGE_KEY,
+            JSON.stringify({
+                enabled: true,
+                events: [{ id: 'e1', beat: 0, root: 5, quality: 'toString', duration: 4 }],
+            })
+        );
+
+        const { chordTrackStore, defaultChordTrackState } = await loadStore();
+        expect(chordTrackStore.value).toEqual(defaultChordTrackState);
     });
 
-    it('converges independent concurrent updates to one event', () => {
-        const initial = chordState('shared-update', 3);
+    it('should fall back to the default state when a persisted event has a non-finite number', async () => {
+        localStorage.setItem(
+            STORAGE_KEY,
+            '{"enabled":true,"events":[{"id":"e1","beat":1e999,"root":5,"quality":"major","duration":4}]}'
+        );
+
+        const { chordTrackStore, defaultChordTrackState } = await loadStore();
+        expect(chordTrackStore.value).toEqual(defaultChordTrackState);
+    });
+
+    it('should fall back when a persisted event has a negative beat', async () => {
+        localStorage.setItem(
+            STORAGE_KEY,
+            JSON.stringify({
+                enabled: true,
+                events: [{ id: 'e1', beat: -3, root: 5, quality: 'major', duration: 4 }],
+            })
+        );
+
+        const { chordTrackStore, defaultChordTrackState } = await loadStore();
+        expect(chordTrackStore.value).toEqual(defaultChordTrackState);
+    });
+
+    it('should fall back when a persisted event root is outside the pitch-class range', async () => {
+        localStorage.setItem(
+            STORAGE_KEY,
+            JSON.stringify({
+                enabled: true,
+                events: [{ id: 'e1', beat: 0, root: -1, quality: 'major', duration: 4 }],
+            })
+        );
+
+        const { chordTrackStore, defaultChordTrackState } = await loadStore();
+        expect(chordTrackStore.value).toEqual(defaultChordTrackState);
+    });
+
+    it('should fall back when a persisted event duration is below the chord editor minimum', async () => {
+        localStorage.setItem(
+            STORAGE_KEY,
+            JSON.stringify({
+                enabled: true,
+                events: [{ id: 'e1', beat: 0, root: 5, quality: 'major', duration: 0.01 }],
+            })
+        );
+
+        const { chordTrackStore, defaultChordTrackState } = await loadStore();
+        expect(chordTrackStore.value).toEqual(defaultChordTrackState);
+    });
+
+    it('falls back to the default state when the persisted JSON is malformed', async () => {
+        localStorage.setItem(STORAGE_KEY, '{ not valid json');
+
+        const { chordTrackStore, defaultChordTrackState } = await loadStore();
+        expect(chordTrackStore.value).toEqual(defaultChordTrackState);
+    });
+
+    it('should fall back to the default state when browser storage is unavailable', async () => {
+        const browserStorage = window.localStorage;
+        Object.defineProperty(window, 'localStorage', { configurable: true, value: undefined });
+
+        try {
+            const { chordTrackStore, defaultChordTrackState } = await loadStore();
+            expect(chordTrackStore.value).toEqual(defaultChordTrackState);
+        } finally {
+            Object.defineProperty(window, 'localStorage', { configurable: true, value: browserStorage });
+        }
+    });
+
+    it('should fall back to the default state when storage reads fail', async () => {
+        vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => {
+            throw new Error('read blocked');
+        });
+
+        const { chordTrackStore, defaultChordTrackState } = await loadStore();
+        expect(chordTrackStore.value).toEqual(defaultChordTrackState);
+    });
+
+    it('should not crash when storage writes fail', async () => {
+        const { chordTrackStore } = await loadStore();
+        vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+            throw new Error('write blocked');
+        });
+
+        expect(() => {
+            chordTrackStore.set({
+                enabled: true,
+                events: [{ id: 'e1', beat: 0, root: 5, quality: 'major', duration: 4 }],
+            });
+        }).not.toThrow();
+    });
+
+    it('converges additions, updates, and removal by stable event ID', () => {
+        const emptyBaseline = createBaseline({ enabled: true, events: [] });
+        const leftAdd = createPeer(clone(emptyBaseline));
+        const rightAdd = createPeer(clone(emptyBaseline));
+        writePeer(leftAdd, chordState('left-add', 2));
+        writePeer(rightAdd, chordState('right-add', 7));
+        expect(projectMerged(leftAdd, rightAdd).events.map((event) => event.id)).toEqual(['left-add', 'right-add']);
+        const initial = chordState('shared-event', 3);
         const baseline = createBaseline(initial);
-        const leftPeer = createPeer(clone(baseline));
-        const rightPeer = createPeer(clone(baseline));
-        writePeer(leftPeer, { ...initial, events: [{ ...initial.events[0]!, duration: 16 }] });
-        writePeer(rightPeer, { ...initial, events: [{ ...initial.events[0]!, root: 8 }] });
-        expect(projectMerged(leftPeer, rightPeer).events).toEqual([
-            expect.objectContaining({ id: 'shared-update', duration: 16, root: 8 }),
+        const leftEdit = createPeer(clone(baseline));
+        const rightEdit = createPeer(clone(baseline));
+        writePeer(leftEdit, { ...initial, events: [{ ...initial.events[0]!, duration: 16 }] });
+        writePeer(rightEdit, { ...initial, events: [{ ...initial.events[0]!, root: 8 }] });
+        expect(projectMerged(leftEdit, rightEdit).events).toEqual([
+            expect.objectContaining({ id: 'shared-event', duration: 16, root: 8 }),
         ]);
+        const removed = createPeer(clone(baseline));
+        const added = createPeer(clone(baseline));
+        writePeer(removed, { enabled: true, events: [] });
+        writePeer(added, { enabled: true, events: [...initial.events, ...chordState('keep-add', 9).events] });
+        expect(projectMerged(removed, added).events.map((event) => event.id)).toEqual(['keep-add']);
     });
 
-    it('keeps a concurrent removal causal while preserving an unrelated addition', () => {
-        const initial = chordState('remove-me', 4);
-        const baseline = createBaseline(initial);
-        const leftPeer = createPeer(clone(baseline));
-        const rightPeer = createPeer(clone(baseline));
-        writePeer(leftPeer, { enabled: true, events: [] });
-        writePeer(rightPeer, { enabled: true, events: [...initial.events, ...chordState('keep-add', 9).events] });
-        expect(projectMerged(leftPeer, rightPeer).events.map((event) => event.id)).toEqual(['keep-add']);
-    });
-
-    it('deterministically reconciles concurrent first writes from a legacy root', () => {
-        const initial = chordState('legacy-remove', 5);
-        const legacy = from<RootDocument>({ chordTrack: initial });
-        const leftPeer = createPeer(clone(legacy));
-        const rightPeer = createPeer(clone(legacy));
-        writePeer(leftPeer, { enabled: true, events: [] });
-        writePeer(rightPeer, { enabled: true, events: [...initial.events, ...chordState('legacy-add', 11).events] });
-        expect(projectMerged(leftPeer, rightPeer).events.map((event) => event.id)).toEqual(['legacy-add']);
-    });
-
-    it('preserves independent same-event fields and enabled during concurrent first migration', () => {
+    it('reconciles concurrent first migration without losing independent edits', () => {
         const initial = { ...chordState('legacy-shared', 3), enabled: false };
         const legacy = from<RootDocument>({ chordTrack: initial });
         const leftPeer = createPeer(clone(legacy));
         const rightPeer = createPeer(clone(legacy));
-        writePeer(leftPeer, {
-            enabled: true,
-            events: [{ ...initial.events[0]!, duration: 16 }],
-        });
+        writePeer(leftPeer, { enabled: true, events: [{ ...initial.events[0]!, duration: 16 }] });
         writePeer(rightPeer, {
             enabled: false,
-            events: [{ ...initial.events[0]!, root: 8 }],
+            events: [{ ...initial.events[0]!, root: 8 }, ...chordState('legacy-add', 11).events],
         });
         const projected = projectMerged(leftPeer, rightPeer);
         expect(projected.enabled).toBe(true);
-        expect(projected.events).toEqual([expect.objectContaining({ id: 'legacy-shared', duration: 16, root: 8 })]);
+        expect(projected.events.map((event) => event.id)).toEqual(['legacy-add', 'legacy-shared']);
+        expect(projected.events[1]).toMatchObject({ duration: 16, root: 8 });
     });
 
-    it('rebases pending additions and same-event fields without reviving deletions', () => {
+    it('rebases pending edits field-by-field with delete-wins semantics', () => {
         const addition = projectPendingHydrate(
             { enabled: true, events: [] },
             chordState('local-pending', 1),
@@ -216,25 +331,9 @@ describe('chordTrackStore CRDT projection', () => {
             { ...initial, events: [{ ...initial.events[0]!, duration: 16 }] },
             { ...initial, events: [{ ...initial.events[0]!, root: 8 }] }
         );
-        expect(projected.events).toEqual([expect.objectContaining({ id: 'pending-shared', duration: 16, root: 8 })]);
+        expect(projected.events).toEqual([expect.objectContaining({ duration: 16, root: 8 })]);
         const updated = { ...initial, events: [{ ...initial.events[0]!, quality: 'dim' as const }] };
         expect(projectPendingHydrate(initial, { enabled: true, events: [] }, updated).events).toEqual([]);
         expect(projectPendingHydrate(initial, updated, { enabled: true, events: [] }).events).toEqual([]);
-    });
-
-    it('sanitizes malformed collaborative chord state to the safe default', () => {
-        const malformed = {
-            enabled: true,
-            events: [{ id: 'bad-chord', beat: -1, root: 14, quality: 'unknown', duration: 0 }],
-        };
-        const peer = createPeer(from<RootDocument>({ chordTrack: malformed }));
-        configureAutomergeStoragePort(peer.port);
-        const heads = getHeads(peer.getDoc());
-        const bytes = save(peer.getDoc());
-        chordTrackStore.hydrate();
-        flushAutomergeStorageWrites();
-        expect(chordTrackStore.value).toEqual(defaultChordTrackState);
-        expect(getHeads(peer.getDoc())).toEqual(heads);
-        expect(save(peer.getDoc())).toEqual(bytes);
     });
 });

@@ -11,8 +11,8 @@ export type ChordTrackState = {
 
 export const defaultChordTrackState: ChordTrackState = { enabled: false, events: [] };
 
-const DOC_PREFIX_ROOT = 'root';
 const CHORD_TRACK_CRDT_SCHEMA_VERSION = 1;
+const CHORD_EVENT_VALUE_FIELDS = ['beat', 'root', 'quality', 'duration'] as const;
 
 type MutableRecord = Record<string, unknown>;
 type ChordEventEntity = { deleted: boolean; value: ChordEvent };
@@ -101,10 +101,6 @@ function compareIds(left: string, right: string): number {
     return left < right ? -1 : 1;
 }
 
-function copyEvent(event: ChordEvent): ChordEvent {
-    return { ...event };
-}
-
 function normalizeState(value: unknown): ChordTrackState {
     if (!isChordTrackState(value)) {
         return defaultChordTrackState;
@@ -138,9 +134,7 @@ function encodeState(value: ChordTrackState): ChordTrackCrdtState {
     return {
         schemaVersion: CHORD_TRACK_CRDT_SCHEMA_VERSION,
         enabled: state.enabled,
-        events: Object.fromEntries(
-            state.events.map((event) => [event.id, { deleted: false, value: copyEvent(event) }])
-        ),
+        events: Object.fromEntries(state.events.map((event) => [event.id, { deleted: false, value: { ...event } }])),
     };
 }
 
@@ -149,9 +143,9 @@ function decodeState(value: unknown): ChordTrackState {
     if (!isCrdtState(value)) {
         return normalizeState(value);
     }
-    const events = Object.entries(value.events)
-        .sort(([left], [right]) => compareIds(left, right))
-        .flatMap(([, entity]) => (isRecord(entity) && entity.deleted === false ? [entity.value] : []));
+    const events = Object.values(value.events).flatMap((entity) =>
+        isRecord(entity) && entity.deleted === false ? [entity.value] : []
+    );
     return normalizeState({ enabled: value.enabled, events });
 }
 
@@ -161,11 +155,11 @@ function encodeMigratedState(previous: unknown, desired: ChordTrackState): Chord
     if (!isChordTrackState(previous)) {
         return encoded;
     }
-    encoded.migrationBase = { enabled: legacy.enabled, events: legacy.events.map(copyEvent) };
+    encoded.migrationBase = { enabled: legacy.enabled, events: legacy.events.map((event) => ({ ...event })) };
     const desiredIds = new Set(desired.events.map((event) => event.id));
     for (const event of legacy.events) {
         if (!desiredIds.has(event.id)) {
-            encoded.events[event.id] = { deleted: true, value: copyEvent(event) };
+            encoded.events[event.id] = { deleted: true, value: { ...event } };
         }
     }
     return encoded;
@@ -175,14 +169,6 @@ function replaceIfChanged(target: MutableRecord, key: string, value: unknown): v
     if (JSON.stringify(target[key]) !== JSON.stringify(value)) {
         target[key] = value;
     }
-}
-
-function syncEventValue(target: MutableRecord, event: ChordEvent): void {
-    replaceIfChanged(target, 'id', event.id);
-    replaceIfChanged(target, 'beat', event.beat);
-    replaceIfChanged(target, 'root', event.root);
-    replaceIfChanged(target, 'quality', event.quality);
-    replaceIfChanged(target, 'duration', event.duration);
 }
 
 function syncEvents(current: MutableRecord, events: readonly ChordEvent[]): void {
@@ -195,11 +181,14 @@ function syncEvents(current: MutableRecord, events: readonly ChordEvent[]): void
     for (const [id, event] of desired) {
         const entity = current[id];
         if (!isRecord(entity) || !isRecord(entity.value)) {
-            current[id] = { deleted: false, value: copyEvent(event) };
+            current[id] = { deleted: false, value: { ...event } };
             continue;
         }
         replaceIfChanged(entity, 'deleted', false);
-        syncEventValue(entity.value, event);
+        replaceIfChanged(entity.value, 'id', event.id);
+        for (const field of CHORD_EVENT_VALUE_FIELDS) {
+            replaceIfChanged(entity.value, field, event[field]);
+        }
     }
 }
 
@@ -226,19 +215,12 @@ function mergeEntities(target: Record<string, ChordEventEntity>, source: Record<
 }
 
 function mergeEventFields(base: ChordEvent, values: readonly ChordEvent[]): ChordEvent {
-    const merged = copyEvent(base);
+    const merged = { ...base };
     for (const event of values) {
-        if (event.beat !== base.beat) {
-            merged.beat = event.beat;
-        }
-        if (event.root !== base.root) {
-            merged.root = event.root;
-        }
-        if (event.quality !== base.quality) {
-            merged.quality = event.quality;
-        }
-        if (event.duration !== base.duration) {
-            merged.duration = event.duration;
+        for (const field of CHORD_EVENT_VALUE_FIELDS) {
+            if (event[field] !== base[field]) {
+                Object.assign(merged, { [field]: event[field] });
+            }
         }
     }
     return merged;
@@ -272,11 +254,7 @@ function reconcileRootConflicts(values: readonly unknown[]): ChordTrackCrdtState
     if (migrationBase) {
         return mergeMigratedStates(states, normalizeState(migrationBase));
     }
-    const merged: ChordTrackCrdtState = {
-        schemaVersion: CHORD_TRACK_CRDT_SCHEMA_VERSION,
-        enabled: false,
-        events: {},
-    };
+    const merged = encodeState(defaultChordTrackState);
     for (const state of states) {
         merged.enabled = state.enabled;
         mergeEntities(merged.events, state.events);
@@ -284,15 +262,13 @@ function reconcileRootConflicts(values: readonly unknown[]): ChordTrackCrdtState
     return merged;
 }
 
-function rebasePending({
-    baseValue,
-    pendingValue,
-    hydratedValue,
-}: {
+type RebasePendingInput = {
     baseValue: ChordTrackState | null;
     pendingValue: ChordTrackState | null;
     hydratedValue: ChordTrackState;
-}): ChordTrackState | null {
+};
+
+function rebasePending({ baseValue, pendingValue, hydratedValue }: RebasePendingInput): ChordTrackState | null {
     if (!pendingValue) {
         return null;
     }
@@ -330,7 +306,7 @@ function rebasePending({
 
 export function createChordTrackAutomergeStorage() {
     let reconciledConflictState: ChordTrackCrdtState | null = null;
-    return createAutomergeStorage<ChordTrackState>(DOC_PREFIX_ROOT, 'chordTrack', {
+    return createAutomergeStorage<ChordTrackState>('root', 'chordTrack', {
         fromCrdt: (value) => {
             reconciledConflictState = null;
             return decodeState(value);
