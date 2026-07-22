@@ -1,0 +1,31 @@
+src/modules/Arrangement/useCases/device/addDevice.ts
+  s_ac9b259eab20ba::t_d5f5a34a4ad5a1 9-10,49,54-55
+src/modules/Arrangement/useCases/device/__tests__/removeDevice.spec.ts
+  s_ac9b259eab20ba::t_8c8dd56b9454eb 76-87,97-98,115,119-127,131,133,135-136
+src/modules/Arrangement/useCases/device/__tests__/addDevice.spec.ts
+  s_ac9b259eab20ba::t_8c8dd56b9454eb 12,36,91-125,129-149,162
+src/modules/Arrangement/useCases/device/__tests__/addExternalDevice.spec.ts
+  s_ac9b259eab20ba::t_8c8dd56b9454eb 52
+src/modules/Arrangement/useCases/device/activateTrackDevices.ts
+  s_ac9b259eab20ba::t_d5f5a34a4ad5a1 1-35
+src/modules/Arrangement/useCases/device/addExternalDevice.ts
+  s_ac9b259eab20ba::t_d5f5a34a4ad5a1 6-7,34,39-40
+src/modules/Arrangement/useCases/device/removeDevice.ts
+  s_ac9b259eab20ba::t_d5f5a34a4ad5a1 26-30
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "c69e2d97c5d22ecd1d5ecf0e0e32304ad4b16040",
+  "prompts": {},
+  "sessions": {
+    "s_ac9b259eab20ba": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8699-3865-7842-8c54-afbac6cfd266",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
