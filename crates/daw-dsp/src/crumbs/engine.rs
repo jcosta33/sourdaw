@@ -483,15 +483,19 @@ impl CrumbsEngine {
         self.record_buffer_left.clear();
         self.record_buffer_right.clear();
 
-        // RT-ALLOC HAZARD (audit F4, latent): the clone above allocates and
+        // RT-ALLOC HAZARD (audit F4): the clone above allocates and
         // memcpies len frames × 2 channels on the calling thread, which is
         // the audio thread when recording is driven from the native bridge
-        // — same class as the pool add/Arc::new below. The preferred fix is
-        // an off-thread commit handoff via the existing SPSC command queue
+        // — same class as the pool add/Arc::new below. As of ledger row 24
+        // this path IS reachable on the audio thread: the crumbs slot now
+        // feeds record input from the audio-bridge/CPAL paths, so Stop and
+        // capacity auto-commit both fire here on the RT thread. Mitigating
+        // factors: a commit happens once per take (never per block), and the
+        // copy is bounded by record_max_samples. The proper fix is an
+        // off-thread commit handoff via the existing SPSC command queue
         // (management thread owns pool insertion), which needs a new
-        // command variant + pool ownership changes (>100 lines); deferred
-        // because process_record_input currently has ZERO native callers,
-        // so no native audio thread ever reaches this code today.
+        // command variant + pool ownership changes (>100 lines) — tracked
+        // as a follow-up rather than half-done here.
         let sample_data =
             super::sample::SampleData::from_stereo(left, right, self.sample_rate as u32);
 

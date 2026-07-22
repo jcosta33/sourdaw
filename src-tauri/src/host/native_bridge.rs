@@ -835,6 +835,86 @@ mod tests {
         );
         assert!(!lifecycle.allows_process());
     }
+
+    /// Wiring-boundary regression (ledger #508 row 24): the slot must feed
+    /// the incoming audio buffers to the engine's record input before
+    /// zeroing them. Pre-fix the buffers were discarded unread, so an armed
+    /// recording captured silence end-to-end.
+    #[test]
+    fn crumbs_slot_feeds_record_input_to_engine() {
+        use daw_dsp::crumbs::types::{CrumbsMode, RecordState};
+
+        let (mut tx, rx) = rtrb::RingBuffer::new(8);
+        let mut slot = CrumbsPluginSlot {
+            engine: CrumbsEngine::new(48_000.0),
+            command_rx: rx,
+        };
+
+        tx.push(CrumbsCommand::SetMode(CrumbsMode::Record)).unwrap();
+        tx.push(CrumbsCommand::ArmRecording {
+            threshold: 0.01,
+            target_pad: 0,
+            max_duration_secs: 10.0,
+        })
+        .unwrap();
+
+        let frames = 256;
+        let mut left = vec![0.5f32; frames];
+        let mut right = vec![0.5f32; frames];
+        slot.process_audio(&mut left, &mut right, frames);
+
+        assert_eq!(
+            slot.engine.record_state(),
+            RecordState::Recording,
+            "over-threshold input through the slot must start the take"
+        );
+
+        tx.push(CrumbsCommand::StopRecording).unwrap();
+        let mut flush_l = vec![0.0f32; 128];
+        let mut flush_r = vec![0.0f32; 128];
+        slot.process_audio(&mut flush_l, &mut flush_r, 128);
+
+        assert_eq!(slot.engine.record_state(), RecordState::Idle);
+        let sample_id = slot
+            .engine
+            .active_sample_id()
+            .expect("stopping an armed take must commit a pool sample");
+        let sample = slot
+            .engine
+            .sample_pool()
+            .get(sample_id)
+            .expect("committed sample lives in the pool");
+        assert_eq!(sample.meta.frame_count as usize, frames);
+        assert!(
+            sample.left.iter().all(|&s| (s - 0.5).abs() < 1.0e-6),
+            "committed buffer must hold the fed input, not silence"
+        );
+        assert!(
+            sample.right.iter().all(|&s| (s - 0.5).abs() < 1.0e-6),
+            "committed buffer must hold the fed input, not silence"
+        );
+    }
+
+    /// The same wiring must leave the engine untouched when it is not armed:
+    /// feeding input in a non-Record mode captures nothing.
+    #[test]
+    fn crumbs_slot_ignores_record_input_when_not_armed() {
+        let (_tx, rx) = rtrb::RingBuffer::new(8);
+        let mut slot = CrumbsPluginSlot {
+            engine: CrumbsEngine::new(48_000.0),
+            command_rx: rx,
+        };
+
+        // No SetMode(Record), no ArmRecording — default mode.
+        let frames = 256;
+        let mut left = vec![0.5f32; frames];
+        let mut right = vec![0.5f32; frames];
+        slot.process_audio(&mut left, &mut right, frames);
+        slot.process_audio(&mut left, &mut right, frames);
+
+        assert_eq!(slot.engine.sample_pool().count(), 0);
+        assert_eq!(slot.engine.active_sample_id(), None);
+    }
 }
 
 /// Crumbs plugin slot — adapts CrumbsEngine for the native audio thread.
@@ -849,6 +929,13 @@ impl NativePlugin for CrumbsPluginSlot {
         while let Ok(cmd) = self.command_rx.pop() {
             self.engine.handle_command(cmd);
         }
+
+        // Feed record input BEFORE the buffers are zeroed. In the audio-bridge
+        // path these hold the worklet's input block; in the standalone native
+        // chain they hold the mix rendered by earlier effects. No-op unless
+        // the engine is armed in Record mode.
+        self.engine
+            .process_record_input(&left[..num_samples], &right[..num_samples]);
 
         // CrumbsEngine adds to buffers, so we should zero them if we are the only generator
         // in this slot. NativePlugin's contract is in-place, but for an instrument
@@ -883,6 +970,10 @@ impl NativePlugin for CrumbsPluginSlot {
                 self.engine.handle_command(CrumbsCommand::NoteOff { note: event.note });
             }
         }
+
+        // Same record-input feed as process_audio (see above).
+        self.engine
+            .process_record_input(&left[..num_samples], &right[..num_samples]);
 
         left[..num_samples].fill(0.0);
         right[..num_samples].fill(0.0);

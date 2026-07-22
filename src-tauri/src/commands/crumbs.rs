@@ -108,11 +108,27 @@ pub async fn create_crumbs(
         .map_err(|e| format!("Failed to lock engine: {e}"))?;
 
     let engine_plugin_id = if let Some(ref mut engine_handle) = *engine_guard {
+        // Reserve the id up front and register an audio bridge alongside the
+        // slot (mirrors the CLAP path in plugins.rs): the bridge is the only
+        // channel that carries real audio from the app into the native
+        // engine — the slot feeds incoming bridge blocks to the engine's
+        // record input before rendering, so without it armed recording can
+        // only ever capture silence.
+        let id = engine_handle.reserve_plugin_id();
+        let (bridge, bridge_handle) = daw_engine::audio_bridge::create_audio_bridge(id);
         let slot = CrumbsPluginSlot {
             engine,
             command_rx: rx,
         };
-        engine_handle.add_plugin(Box::new(slot))?
+        engine_handle.add_plugin_with_bridge(id, Box::new(slot), bridge)?;
+
+        let mut bridges = app_state
+            .audio_bridges
+            .lock()
+            .map_err(|e| format!("Failed to lock audio_bridges: {e}"))?;
+        bridges.insert(id, bridge_handle);
+
+        id
     } else {
         return Err("Native engine not running".to_string());
     };
@@ -155,6 +171,14 @@ pub async fn destroy_crumbs(
         if let Some(ref mut engine_handle) = *engine_guard {
             engine_handle.remove_plugin(instance.engine_plugin_id)?;
         }
+        drop(engine_guard);
+        // Drop the audio-bridge handle registered at create time (mirrors
+        // the CLAP unload path) so no stale ring keeps accepting blocks.
+        let mut bridges = app_state
+            .audio_bridges
+            .lock()
+            .map_err(|e| format!("Failed to lock audio_bridges: {e}"))?;
+        bridges.remove(&instance.engine_plugin_id);
     }
     Ok(())
 }
