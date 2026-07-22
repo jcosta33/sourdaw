@@ -11,12 +11,18 @@ const mocks = vi.hoisted(() => ({
     deleteTimelineMapsTimeRange: vi.fn(),
     removeMidiClipData: vi.fn(),
     splitMidiNotesAtBeat: vi.fn(),
+    markerStoreValue: { markers: [] as unknown[], sections: [] as unknown[] },
 }));
 
 vi.mock('../../../repositories/track/getTrackState', () => ({ getTrackState: mocks.getTrackState }));
 vi.mock('../../../repositories/track/setTrackState', () => ({ setTrackState: mocks.setTrackState }));
 vi.mock('../../../stores/markerStore', () => ({
-    markerStore: { value: { markers: [] }, set: mocks.markerStoreSet },
+    markerStore: {
+        get value() {
+            return mocks.markerStoreValue;
+        },
+        set: mocks.markerStoreSet,
+    },
 }));
 vi.mock('#/modules/Automation/useCases', () => ({
     deleteAutomationTimeRange: mocks.deleteAutomationTimeRange,
@@ -32,6 +38,7 @@ vi.mock('#/modules/MIDI/useCases', () => ({
 describe('deleteTime', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        mocks.markerStoreValue = { markers: [], sections: [] };
         setTimeOperationDependencies({
             shiftTimelineMapsAfterBeat: vi.fn(),
             deleteTimelineMapsTimeRange: mocks.deleteTimelineMapsTimeRange,
@@ -164,6 +171,35 @@ describe('deleteTime', () => {
         expect(mocks.markerStoreSet).toHaveBeenCalledWith(
             expect.objectContaining({
                 sections: [],
+            })
+        );
+    });
+
+    it('trims straddling sections instead of deleting them (PR #621 review)', () => {
+        mocks.markerStoreValue = {
+            markers: [],
+            sections: [
+                { id: 'before', startBeat: 0, endBeat: 1, name: 'Before', color: '' },
+                { id: 'inside', startBeat: 3, endBeat: 5, name: 'Inside', color: '' },
+                { id: 'left-cross', startBeat: 1, endBeat: 4, name: 'LeftCross', color: '' },
+                { id: 'right-cross', startBeat: 4, endBeat: 9, name: 'RightCross', color: '' },
+                { id: 'span', startBeat: 0, endBeat: 10, name: 'Span', color: '' },
+                { id: 'after', startBeat: 8, endBeat: 12, name: 'After', color: '' },
+            ],
+        };
+        mocks.getTrackState.mockReturnValue({ tracks: [], selectedTrackId: 't1' });
+        deleteTime(2, 6);
+
+        expect(mocks.markerStoreSet).toHaveBeenCalledWith(
+            expect.objectContaining({
+                sections: [
+                    { id: 'before', startBeat: 0, endBeat: 1, name: 'Before', color: '' },
+                    { id: 'left-cross', startBeat: 1, endBeat: 2, name: 'LeftCross', color: '' },
+                    { id: 'right-cross', startBeat: 2, endBeat: 5, name: 'RightCross', color: '' },
+                    { id: 'span', startBeat: 0, endBeat: 2, name: 'Span (L)', color: '' },
+                    { id: 'span', startBeat: 2, endBeat: 6, name: 'Span (R)', color: '' },
+                    { id: 'after', startBeat: 4, endBeat: 8, name: 'After', color: '' },
+                ],
             })
         );
     });

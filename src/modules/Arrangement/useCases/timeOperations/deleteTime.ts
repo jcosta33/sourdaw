@@ -132,16 +132,43 @@ export function deleteTime(startBeat: number, endBeat: number): void {
             markers: markerState.markers
                 .filter((message) => message.beat < startBeat || message.beat >= endBeat)
                 .map((message) => (message.beat >= endBeat ? { ...message, beat: message.beat - duration } : message)),
-            // Sections are timeline content too: drop sections inside the
-            // range and shift later ones left, or they misalign with the
-            // clips (ledger M-022).
-            sections: (markerState.sections ?? [])
-                .filter((section) => section.endBeat <= startBeat || section.startBeat >= endBeat)
-                .map((section) =>
-                    section.startBeat >= endBeat
-                        ? { ...section, startBeat: section.startBeat - duration, endBeat: section.endBeat - duration }
-                        : section
-                ),
+            // Sections are timeline content too (ledger M-022). Inside the
+            // range: dropped. Straddlers are trimmed, not deleted (PR #621
+            // review): left-crossers clamp to the range start, right-
+            // crossers re-base onto it, spanners split into both parts —
+            // the same geometry as clips. Later sections shift left.
+            sections: (markerState.sections ?? []).flatMap((section) => {
+                if (section.endBeat <= startBeat) {
+                    return [section];
+                }
+                if (section.startBeat >= endBeat) {
+                    return [
+                        {
+                            ...section,
+                            startBeat: section.startBeat - duration,
+                            endBeat: section.endBeat - duration,
+                        },
+                    ];
+                }
+                if (section.startBeat >= startBeat && section.endBeat <= endBeat) {
+                    return [];
+                }
+                if (section.startBeat < startBeat && section.endBeat > endBeat) {
+                    return [
+                        { ...section, endBeat: startBeat, name: `${section.name} (L)` },
+                        {
+                            ...section,
+                            startBeat,
+                            endBeat: section.endBeat - duration,
+                            name: `${section.name} (R)`,
+                        },
+                    ];
+                }
+                if (section.startBeat < startBeat) {
+                    return [{ ...section, endBeat: startBeat }];
+                }
+                return [{ ...section, startBeat, endBeat: section.endBeat - duration }];
+            }),
         });
     }
 
