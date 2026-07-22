@@ -13,7 +13,14 @@ import { resolveModulationBinding } from './resolveModulationBinding';
 
 const SLEW_ALPHA = 0.4;
 const SLEW_EPSILON = 5e-5;
-const automatedBaseByTarget = new Map<string, number>();
+type ModulationTrack = NonNullable<typeof trackStore.value>['tracks'][number];
+type AutomationLane = NonNullable<typeof automationStore.value>['lanes'][number];
+
+let indexedTracks: readonly ModulationTrack[] | undefined;
+let indexedLanes: readonly AutomationLane[] | undefined;
+const trackById = new Map<string, ModulationTrack>();
+const automatedBaseByTrack = new Map<string, Map<string, Map<string, number>>>();
+const automationVisited = new Set<string>();
 
 function deviceAcceptsAutomationParameter(
     device: { parameterValues: Record<string, number> },
@@ -32,15 +39,73 @@ function clamp(value: number, min: number, max: number): number {
     return value;
 }
 
-function indexAutomatedBases(currentBeat: number): ReadonlyMap<string, number> {
-    automatedBaseByTarget.clear();
+function refreshTrackIndex(): void {
+    const tracks = trackStore.value?.tracks;
+    if (tracks === indexedTracks) {
+        return;
+    }
+    indexedTracks = tracks;
+    trackById.clear();
+    if (!tracks) {
+        return;
+    }
+    for (const track of tracks) {
+        trackById.set(track.id, track);
+    }
+}
+
+function clearAutomatedBaseValues(): void {
+    for (const baseByDevice of automatedBaseByTrack.values()) {
+        for (const baseByParameter of baseByDevice.values()) {
+            baseByParameter.clear();
+        }
+    }
+}
+
+function setAutomatedBase(trackId: string, deviceId: string, parameterId: string, value: number): void {
+    let baseByDevice = automatedBaseByTrack.get(trackId);
+    if (!baseByDevice) {
+        baseByDevice = new Map<string, Map<string, number>>();
+        automatedBaseByTrack.set(trackId, baseByDevice);
+    }
+    let baseByParameter = baseByDevice.get(deviceId);
+    if (!baseByParameter) {
+        baseByParameter = new Map<string, number>();
+        baseByDevice.set(deviceId, baseByParameter);
+    }
+    baseByParameter.set(parameterId, value);
+}
+
+function getAutomatedBase(trackId: string, deviceId: string, parameterId: string): number | undefined {
+    return automatedBaseByTrack.get(trackId)?.get(deviceId)?.get(parameterId);
+}
+
+function isClipActive(track: ModulationTrack, clipId: string, currentBeat: number): boolean {
+    for (const clip of track.clips) {
+        if (clip.id === clipId) {
+            return currentBeat >= clip.startBeat && currentBeat <= clip.endBeat;
+        }
+    }
+    return false;
+}
+
+function indexAutomatedBases(currentBeat: number): void {
+    refreshTrackIndex();
     const autoState = automationStore.value;
     if (!autoState) {
-        return automatedBaseByTarget;
+        clearAutomatedBaseValues();
+        return;
+    }
+    const lanes = autoState.lanes;
+    if (lanes !== indexedLanes) {
+        indexedLanes = lanes;
+        automatedBaseByTrack.clear();
+    } else {
+        clearAutomatedBaseValues();
     }
 
-    for (const lane of autoState.lanes) {
-        const track = trackStore.value?.tracks.find((candidate) => candidate.id === lane.trackId);
+    for (const lane of lanes) {
+        const track = trackById.get(lane.trackId);
         if (
             !track ||
             track.automationMode === 'off' ||
@@ -48,6 +113,12 @@ function indexAutomatedBases(currentBeat: number): ReadonlyMap<string, number> {
             lane.parameterId === 'gain' ||
             lane.parameterId === 'pan'
         ) {
+            continue;
+        }
+        if (lane.clipId && !isClipActive(track, lane.clipId, currentBeat)) {
+            continue;
+        }
+        if (isRecordingAutomation(lane.trackId, lane.parameterId)) {
             continue;
         }
         const deviceIndex = resolveDeviceAutomationTargetIndex(
@@ -60,24 +131,13 @@ function indexAutomatedBases(currentBeat: number): ReadonlyMap<string, number> {
         if (!device || !laneParamId) {
             continue;
         }
-        if (lane.clipId) {
-            const clip = track.clips.find((candidate) => candidate.id === lane.clipId);
-            if (!clip || currentBeat < clip.startBeat || currentBeat > clip.endBeat) {
-                continue;
-            }
-        }
-        if (isRecordingAutomation(lane.trackId, lane.parameterId)) {
-            continue;
-        }
-        const value = getAutomationValueAtBeat(lane.id, currentBeat);
+        automationVisited.clear();
+        const value = getAutomationValueAtBeat(lane.id, currentBeat, automationVisited);
         if (value !== null) {
-            const key = `${lane.trackId} ${device.id} ${laneParamId}`;
-            if (!automatedBaseByTarget.has(key)) {
-                automatedBaseByTarget.set(key, value);
-            }
+            // Match applyAutomation array ordering: later equivalent lanes win.
+            setAutomatedBase(lane.trackId, device.id, laneParamId, value);
         }
     }
-    return automatedBaseByTarget;
 }
 
 /**
@@ -97,7 +157,17 @@ export function applyModulationToEngine(currentBeat: number): void {
     if (!state || state.modulators.length === 0) {
         return;
     }
-    const automatedBases = indexAutomatedBases(currentBeat);
+    let hasEnabledMapping = false;
+    for (const modulator of state.modulators) {
+        if (modulator.enabled && modulator.mappings.length > 0) {
+            hasEnabledMapping = true;
+            break;
+        }
+    }
+    if (!hasEnabledMapping) {
+        return;
+    }
+    indexAutomatedBases(currentBeat);
 
     for (const modulator of state.modulators) {
         if (!modulator.enabled || modulator.mappings.length === 0) {
@@ -116,7 +186,9 @@ export function applyModulationToEngine(currentBeat: number): void {
             }
 
             const key = `${mapping.targetTrackId} ${mapping.targetDeviceId} ${mapping.targetParamId}`;
-            const base = automatedBases.get(key) ?? binding.baseValue;
+            const base =
+                getAutomatedBase(mapping.targetTrackId, mapping.targetDeviceId, mapping.targetParamId) ??
+                binding.baseValue;
 
             const paramRange = binding.paramMax - binding.paramMin;
             const delta = modValue * mapping.amount * paramRange;
