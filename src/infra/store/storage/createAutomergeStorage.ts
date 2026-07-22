@@ -58,6 +58,7 @@ type AutomergeStorageWriteContext = {
 type PendingAutomergeStorageWrite = {
     readonly abort: () => void;
     readonly commitOwner: object;
+    readonly didCommit: () => void;
     readonly docId: AutomergeStorageDocId;
     readonly snapshotTransaction: object | undefined;
     readonly flush: () => AutomergeStorageMutationInput | null;
@@ -219,6 +220,9 @@ function flushMatchingAutomergeStorageWrites(matches: (pending: PendingAutomerge
 
             try {
                 commitAutomergeStorageMutations(mutations);
+                for (const write of writes) {
+                    write.didCommit();
+                }
             } catch (error) {
                 firstError ??= error;
             }
@@ -292,12 +296,19 @@ export const createAutomergeStorage = <TData>(
     const resolveCrdtConflicts = options?.resolveCrdtConflicts;
     const mutateCrdt = options?.mutateCrdt;
     const rebasePending = options?.rebasePending;
+    type AdapterPendingWrite = {
+        baseRevision: number;
+        baseValue: TData | null;
+        message: string | undefined;
+        rafId: number | null;
+        revision: number;
+        value: TData | null;
+        write: PendingAutomergeStorageWrite;
+    };
     let cachedValue: TData | null = null;
-    let pendingBaseValue: TData | null = null;
-    let pendingValue: TData | null = null;
-    let rafId: number | null = null;
-    let pendingMessage: string | undefined;
-    let pendingWrite: PendingAutomergeStorageWrite | null = null;
+    let cachedRevision = 0;
+    let nextRevision = 0;
+    const pendingWritesByOwner = new Map<object, AdapterPendingWrite>();
     let unscopedCommitOwner: object | undefined;
     /**
      * §119.2 — Cached canonical JSON of the last hydrate. Lets hydrate()
@@ -364,78 +375,94 @@ export const createAutomergeStorage = <TData>(
         };
     };
 
-    const flushPendingWrite = (write: PendingAutomergeStorageWrite): AutomergeStorageMutationInput | null => {
-        if (pendingWrite !== write) {
+    const flushPendingWrite = (pending: AdapterPendingWrite): AutomergeStorageMutationInput | null => {
+        if (pendingWritesByOwner.get(pending.write.commitOwner) !== pending) {
             return null;
         }
-        if (rafId !== null) {
-            cancelAnimationFrame(rafId);
-            rafId = null;
+        if (pending.rafId !== null) {
+            cancelAnimationFrame(pending.rafId);
+            pending.rafId = null;
         }
-        pendingAutomergeStorageWrites.delete(write);
-        pendingWrite = null;
-        if (unscopedCommitOwner === write.commitOwner) {
+        pendingAutomergeStorageWrites.delete(pending.write);
+        pendingWritesByOwner.delete(pending.write.commitOwner);
+        if (unscopedCommitOwner === pending.write.commitOwner) {
             unscopedCommitOwner = undefined;
         }
-        const message = pendingMessage;
-        pendingMessage = undefined;
-        const value = pendingValue;
-        pendingBaseValue = null;
-        pendingValue = null;
-        return createMutation(value, message, write.snapshotTransaction);
+        return createMutation(pending.value, pending.message, pending.write.snapshotTransaction);
     };
 
-    const abortPendingWrite = (write: PendingAutomergeStorageWrite): void => {
-        if (pendingWrite !== write) {
+    const abortPendingWrite = (pending: AdapterPendingWrite): void => {
+        if (pendingWritesByOwner.get(pending.write.commitOwner) !== pending) {
             return;
         }
-        if (rafId !== null) {
-            cancelAnimationFrame(rafId);
-            rafId = null;
+        if (pending.rafId !== null) {
+            cancelAnimationFrame(pending.rafId);
+            pending.rafId = null;
         }
-        pendingAutomergeStorageWrites.delete(write);
-        pendingWrite = null;
-        cachedValue = pendingBaseValue;
-        pendingBaseValue = null;
-        pendingValue = null;
-        pendingMessage = undefined;
-    };
-
-    const preparePendingWrite = (context: AutomergeStorageWriteContext): void => {
-        if (
-            pendingWrite &&
-            (pendingWrite.commitOwner !== context.commitOwner ||
-                pendingWrite.snapshotTransaction !== context.snapshotTransaction)
-        ) {
-            flushAutomergeStorageWriteOwner(pendingWrite);
+        pendingAutomergeStorageWrites.delete(pending.write);
+        pendingWritesByOwner.delete(pending.write.commitOwner);
+        if (unscopedCommitOwner === pending.write.commitOwner) {
+            unscopedCommitOwner = undefined;
+        }
+        if (cachedRevision === pending.revision) {
+            cachedValue = pending.baseValue;
+            cachedRevision = pending.baseRevision;
         }
     };
 
-    const schedulePendingWrite = (context: AutomergeStorageWriteContext): void => {
-        if (pendingWrite) {
-            return;
+    const recordCommittedWrite = (pending: AdapterPendingWrite): void => {
+        const committedRevision = ++nextRevision;
+        const hasVisiblePendingWrite = [...pendingWritesByOwner.values()].some(
+            (remaining) => remaining.revision === cachedRevision
+        );
+        for (const remaining of pendingWritesByOwner.values()) {
+            remaining.baseValue = pending.value;
+            remaining.baseRevision = committedRevision;
         }
+        if (!hasVisiblePendingWrite) {
+            cachedValue = pending.value;
+            cachedRevision = committedRevision;
+        }
+    };
 
+    const createPendingWrite = (context: AutomergeStorageWriteContext): AdapterPendingWrite => {
         // Capture the semantic context while the action is still active. The
         // first write in this adapter/action group owns its coalesced message.
-        pendingMessage = getSemanticMessage();
+        let pending: AdapterPendingWrite | undefined;
+        const getPending = (): AdapterPendingWrite => {
+            if (!pending) {
+                throw new Error('Automerge storage pending write was not initialized');
+            }
+            return pending;
+        };
         const write: PendingAutomergeStorageWrite = {
-            abort: () => abortPendingWrite(write),
+            abort: () => abortPendingWrite(getPending()),
             commitOwner: context.commitOwner,
+            didCommit: () => recordCommittedWrite(getPending()),
             docId,
             snapshotTransaction: context.snapshotTransaction,
-            flush: () => flushPendingWrite(write),
+            flush: () => flushPendingWrite(getPending()),
         };
-        pendingWrite = write;
+        pending = {
+            baseRevision: cachedRevision,
+            baseValue: cachedValue,
+            message: getSemanticMessage(),
+            rafId: null,
+            revision: cachedRevision,
+            value: cachedValue,
+            write,
+        };
+        pendingWritesByOwner.set(context.commitOwner, pending);
         pendingAutomergeStorageWrites.add(write);
-        rafId = requestAnimationFrame(() => {
-            rafId = null;
+        pending.rafId = requestAnimationFrame(() => {
+            pending.rafId = null;
             try {
                 flushAutomergeStorageWriteOwner(write);
             } catch (error) {
                 logger.warn('[AutomergeStorage] CRDT write failed, in-memory state still updated:', error);
             }
         });
+        return pending;
     };
 
     return {
@@ -445,24 +472,20 @@ export const createAutomergeStorage = <TData>(
 
         set(value: TData | null): void {
             const context = getWriteContext();
-            preparePendingWrite(context);
-            if (!pendingWrite) {
-                pendingBaseValue = cachedValue;
-            }
+            const pending = pendingWritesByOwner.get(context.commitOwner) ?? createPendingWrite(context);
             cachedValue = value;
-            pendingValue = value;
-            schedulePendingWrite(context);
+            cachedRevision = ++nextRevision;
+            pending.value = value;
+            pending.revision = cachedRevision;
         },
 
         clear(): void {
             const context = getWriteContext();
-            preparePendingWrite(context);
-            if (!pendingWrite) {
-                pendingBaseValue = cachedValue;
-            }
+            const pending = pendingWritesByOwner.get(context.commitOwner) ?? createPendingWrite(context);
             cachedValue = null;
-            pendingValue = null;
-            schedulePendingWrite(context);
+            cachedRevision = ++nextRevision;
+            pending.value = null;
+            pending.revision = cachedRevision;
         },
 
         isSupported(): boolean {
@@ -518,25 +541,30 @@ export const createAutomergeStorage = <TData>(
                     crdtData = resolveConflicts(normalizedValues);
                 }
 
-                if (pendingWrite) {
-                    let rebasedValue = pendingValue;
+                const visiblePending = [...pendingWritesByOwner.values()].find(
+                    (pending) => pending.revision === cachedRevision
+                );
+                if (visiblePending) {
+                    let rebasedValue = visiblePending.value;
                     if (rebasePending) {
                         rebasedValue = rebasePending({
-                            baseValue: pendingBaseValue,
-                            pendingValue,
+                            baseValue: visiblePending.baseValue,
+                            pendingValue: visiblePending.value,
                             hydratedValue: crdtData,
                         });
                     } else if (
                         toCrdt &&
-                        pendingValue !== null &&
-                        typeof pendingValue === 'object' &&
+                        visiblePending.value !== null &&
+                        typeof visiblePending.value === 'object' &&
                         typeof crdtData === 'object' &&
                         crdtData !== null
                     ) {
-                        rebasedValue = { ...pendingValue, ...crdtData };
+                        rebasedValue = { ...visiblePending.value, ...crdtData };
                     }
                     cachedValue = rebasedValue;
-                    pendingValue = rebasedValue;
+                    cachedRevision = ++nextRevision;
+                    visiblePending.value = rebasedValue;
+                    visiblePending.revision = cachedRevision;
                 } else if (toCrdt && cachedValue !== null && typeof crdtData === 'object' && crdtData !== null) {
                     cachedValue = { ...cachedValue, ...crdtData };
                 } else {

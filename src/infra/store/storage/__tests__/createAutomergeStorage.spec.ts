@@ -359,6 +359,48 @@ describe('createAutomergeStorage', () => {
         expect(mutations).toEqual([]);
     });
 
+    it('preserves a committed overlapping owner when an earlier owner aborts', () => {
+        const { doc, mutations, port } = createTestPort({ initialDoc: { state: { count: 0 } } });
+        configureAutomergeStoragePort(port);
+        const storage = createAutomergeStorage<{ count: number }>('root', 'state');
+        expect(storage.hydrate?.()).toBe(true);
+
+        const firstTransaction = runWithAutomergeStorageTransaction(undefined, () => {
+            storage.set({ count: 1 });
+        });
+        const secondTransaction = runWithAutomergeStorageTransaction(undefined, () => {
+            storage.set({ count: 2 });
+        });
+
+        secondTransaction.commit();
+        firstTransaction.abort();
+
+        expect(storage.get()).toEqual({ count: 2 });
+        expect(doc.state).toEqual({ count: 2 });
+        expect(mutations).toEqual([{ docId: 'root', message: undefined, snapshotTransaction: undefined }]);
+    });
+
+    it('keeps adapter cache aligned with overlapping owners committed in terminal order', () => {
+        const { doc, mutations, port } = createTestPort({ initialDoc: { state: { count: 0 } } });
+        configureAutomergeStoragePort(port);
+        const storage = createAutomergeStorage<{ count: number }>('root', 'state');
+        expect(storage.hydrate?.()).toBe(true);
+
+        const firstTransaction = runWithAutomergeStorageTransaction(undefined, () => {
+            storage.set({ count: 1 });
+        });
+        const secondTransaction = runWithAutomergeStorageTransaction(undefined, () => {
+            storage.set({ count: 2 });
+        });
+
+        secondTransaction.commit();
+        firstTransaction.commit();
+
+        expect(storage.get()).toEqual({ count: 1 });
+        expect(doc.state).toEqual({ count: 1 });
+        expect(mutations).toHaveLength(2);
+    });
+
     it('does not persist one key when a same-document multi-key commit fails', () => {
         const doc: TestDoc = {};
         const port: TestPort = {
