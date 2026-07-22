@@ -2,8 +2,13 @@ import { logger } from '#/infra/logger/appLogger';
 import { addTrack } from '#/modules/Arrangement/useCases';
 import { clearCachedAudioBuffers, resetAudioGraph } from '#/modules/AudioEngine/useCases';
 import { clearUndoHistory } from '#/modules/Command/useCases';
-import { createCrdtProject, projectActionHistoryToStore, startCrdtAutoSave } from '#/modules/CrdtDocument/useCases';
-import { stopPlayback } from '#/modules/Transport/useCases';
+import {
+    compactProject,
+    projectActionHistoryToStore,
+    resetCrdtProjectAuthority,
+    startCrdtAutoSave,
+} from '#/modules/CrdtDocument/useCases';
+import { ensureTrackStrips, stopPlayback } from '#/modules/Transport/useCases';
 
 import { removeProjectJson } from '../../repositories/project/removeProjectJson';
 import { arrangementStore, defaultArrangementStoreState } from '../../stores/arrangementStore';
@@ -33,11 +38,26 @@ function failNewProjectActivation({
     return false;
 }
 
+function restorePreviousProjectRuntime(): void {
+    try {
+        ensureTrackStrips();
+    } catch (error) {
+        logger.warn('[newProject] Previous audio graph restoration failed:', error);
+    }
+    try {
+        setAutoSaveHandle(startCrdtAutoSave());
+    } catch (error) {
+        logger.warn('[newProject] Previous autosave restoration failed:', error);
+    }
+}
+
 async function activateNewProject({
     name,
     previousTransientState,
     transaction,
 }: ActivateNewProjectInput): Promise<boolean> {
+    let graphTeardownStarted = false;
+    let previousPersistenceStopped = false;
     try {
         if (!(await transaction.prepare()) || !transaction.activate()) {
             return failNewProjectActivation({ previousTransientState, transaction });
@@ -47,17 +67,44 @@ async function activateNewProject({
         if (!transaction.isCurrent()) {
             return failNewProjectActivation({ previousTransientState, transaction });
         }
+        stopActiveAutoSave();
+        previousPersistenceStopped = true;
+        graphTeardownStarted = true;
         resetAudioGraph();
-
-        await createCrdtProject(name);
-        if (!transaction.isCurrent()) {
-            return failNewProjectActivation({ previousTransientState, transaction });
+        resetCrdtProjectAuthority(name);
+    } catch (error) {
+        logger.warn('[newProject] Failed to activate project:', error);
+        if (graphTeardownStarted || previousPersistenceStopped) {
+            restorePreviousProjectRuntime();
         }
-        projectActionHistoryToStore();
-        resetModuleStoresToDefault({ createNewMidiProbabilitySeed: true });
-        arrangementStore.set(structuredClone(defaultArrangementStoreState));
-        addTrack({ name: 'Master', kind: 'master', select: false });
+        return failNewProjectActivation({ previousTransientState, transaction });
+    }
 
+    let degraded = false;
+    function runCommittedStep(step: string, operation: () => void): void {
+        try {
+            operation();
+        } catch (error) {
+            degraded = true;
+            logger.warn(`[newProject] Committed project activation failed during ${step}:`, error);
+        }
+    }
+
+    try {
+        await compactProject();
+    } catch (error) {
+        degraded = true;
+        logger.warn('[newProject] Initial CRDT snapshot persistence failed:', error);
+    }
+    if (!transaction.isCurrent()) {
+        return false;
+    }
+
+    runCommittedStep('action history projection', projectActionHistoryToStore);
+    runCommittedStep('module store reset', () => resetModuleStoresToDefault({ createNewMidiProbabilitySeed: true }));
+    runCommittedStep('arrangement reset', () => arrangementStore.set(structuredClone(defaultArrangementStoreState)));
+    runCommittedStep('master track creation', () => addTrack({ name: 'Master', kind: 'master', select: false }));
+    runCommittedStep('project metadata publication', () => {
         projectStore.set({
             name,
             createdAt: Date.now(),
@@ -72,17 +119,16 @@ async function activateNewProject({
             },
             initialized: true,
         });
-        removeProjectJson();
-        clearCachedAudioBuffers();
-        clearUndoHistory();
+    });
+    runCommittedStep('project cache removal', removeProjectJson);
+    runCommittedStep('audio buffer reset', clearCachedAudioBuffers);
+    runCommittedStep('undo history reset', clearUndoHistory);
+    runCommittedStep('autosave start', () => setAutoSaveHandle(startCrdtAutoSave()));
 
-        stopActiveAutoSave();
-        setAutoSaveHandle(startCrdtAutoSave());
-        return true;
-    } catch (error) {
-        logger.warn('[newProject] Failed to activate project:', error);
-        return failNewProjectActivation({ previousTransientState, transaction });
+    if (degraded) {
+        logger.warn('[newProject] Project activated with recovery errors; save before closing.');
     }
+    return true;
 }
 
 export function newProject(name = 'Untitled Project'): Promise<boolean> {

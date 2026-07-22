@@ -6,6 +6,7 @@ const mocks = vi.hoisted(() => ({
     createPopSongTemplate: vi.fn(),
     ensureTrackStrips: vi.fn(),
     executeAppAction: vi.fn(),
+    isAppActionCommittedError: vi.fn(),
     newProject: vi.fn(),
     resetAudioGraph: vi.fn(),
     stopPlayback: vi.fn(),
@@ -17,6 +18,7 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
 
 vi.mock('#/modules/Command/useCases', () => ({
     executeAppAction: mocks.executeAppAction,
+    isAppActionCommittedError: mocks.isAppActionCommittedError,
 }));
 
 vi.mock('#/modules/Transport/useCases', () => ({
@@ -34,9 +36,10 @@ vi.mock('../../templateFiles/popSong', () => ({
 
 describe('createFromTemplate', () => {
     beforeEach(() => {
-        vi.clearAllMocks();
+        vi.resetAllMocks();
         mocks.createPopSongTemplate.mockResolvedValue(undefined);
         mocks.executeAppAction.mockResolvedValue(undefined);
+        mocks.isAppActionCommittedError.mockReturnValue(false);
         mocks.newProject.mockResolvedValue(true);
     });
 
@@ -52,10 +55,10 @@ describe('createFromTemplate', () => {
 
         expect(mocks.stopPlayback).toHaveBeenCalledOnce();
         expect(mocks.resetAudioGraph).toHaveBeenCalledOnce();
-        expect(mocks.executeAppAction).toHaveBeenCalledWith({
-            type: 'createProjectFromTemplate',
-            payload: { templateId: 'pop-song' },
-        });
+        expect(mocks.executeAppAction).toHaveBeenCalledWith(
+            { type: 'createProjectFromTemplate', payload: { templateId: 'pop-song' } },
+            { skipMacroRecording: true }
+        );
         const actionOrder = mocks.executeAppAction.mock.invocationCallOrder[0];
         const resetOrder = mocks.resetAudioGraph.mock.invocationCallOrder[0];
         if (actionOrder === undefined || resetOrder === undefined) {
@@ -79,6 +82,43 @@ describe('createFromTemplate', () => {
             throw new Error('expected graph recovery calls');
         }
         expect(rebuildOrder).toBeGreaterThan(recoveryResetOrder);
+    });
+
+    it('recovers when initial graph reset throws after partial teardown', async () => {
+        mocks.resetAudioGraph.mockImplementationOnce(() => {
+            throw new Error('partial teardown');
+        });
+
+        await expect(createFromTemplate('pop-song')).resolves.toBe(false);
+        expect(mocks.resetAudioGraph).toHaveBeenCalledTimes(2);
+        expect(mocks.ensureTrackStrips).toHaveBeenCalledOnce();
+        expect(mocks.executeAppAction).not.toHaveBeenCalled();
+    });
+
+    it('keeps recovery failures inside the boolean outcome boundary', async () => {
+        mocks.executeAppAction.mockRejectedValue(new Error('action failed'));
+        mocks.resetAudioGraph
+            .mockImplementationOnce(() => undefined)
+            .mockImplementationOnce(() => {
+                throw new Error('recovery reset failed');
+            });
+        mocks.ensureTrackStrips.mockImplementationOnce(() => {
+            throw new Error('strip rebuild failed');
+        });
+
+        await expect(createFromTemplate('pop-song')).resolves.toBe(false);
+        expect(mocks.resetAudioGraph).toHaveBeenCalledTimes(2);
+        expect(mocks.ensureTrackStrips).toHaveBeenCalledOnce();
+    });
+
+    it('reports success when template truth committed before a degraded post-commit failure', async () => {
+        const committedFailure = new Error('macro history failed after commit');
+        mocks.executeAppAction.mockRejectedValue(committedFailure);
+        mocks.isAppActionCommittedError.mockImplementation((error) => error === committedFailure);
+
+        await expect(createFromTemplate('pop-song')).resolves.toBe(true);
+        expect(mocks.resetAudioGraph).toHaveBeenCalledTimes(2);
+        expect(mocks.ensureTrackStrips).toHaveBeenCalledOnce();
     });
 
     it('lets project-replacement templates own the CRDT authority swap', async () => {
