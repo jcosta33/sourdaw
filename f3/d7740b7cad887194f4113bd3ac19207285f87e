@@ -1,0 +1,37 @@
+src/modules/AudioEngine/engine/BusNode.ts
+  s_ac9b259eab20ba::t_d3e0728443a153 1,9,13-15,20,24,28-29
+src/modules/AudioEngine/repositories/createWebAudioEngine.ts
+  s_ac9b259eab20ba::t_d3e0728443a153 489-494
+  s_ac9b259eab20ba::t_5ce37fe0cb3e69 511
+src/modules/AudioEngine/useCases/offlineRender/createOfflineBusStrip.ts
+  s_ac9b259eab20ba::t_460f680e09e04d 1,3-4
+src/modules/AudioEngine/engine/__tests__/BusNode.spec.ts
+  s_ac9b259eab20ba::t_3146e66d1588e7 6-7,10,14-24,28-29,32-34,37-38,41,44-45,51-52,55-56
+src/modules/AudioEngine/useCases/renderOffline.ts
+  s_ac9b259eab20ba::t_d3e0728443a153 96-98
+  s_ac9b259eab20ba::t_460f680e09e04d 108-110
+src/modules/AudioEngine/useCases/offlineRender/__tests__/createOfflineBusStrip.spec.ts
+  s_ac9b259eab20ba::t_460f680e09e04d 5,7-10,12,14-15
+src/modules/AudioEngine/repositories/__tests__/createWebAudioEngine.spec.ts
+  s_ac9b259eab20ba::t_5ce37fe0cb3e69 204,206-213
+  s_ac9b259eab20ba::t_366071573c1793 205
+  s_ac9b259eab20ba::t_d2ac6ed8a45374 78,80,190-203
+src/modules/AudioEngine/useCases/__tests__/renderOfflineGraph.spec.ts
+  s_ac9b259eab20ba::t_d2ac6ed8a45374 208-214,237-240,248-253,257-258,263-265,277-280,284,288
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "f3d7740b7cad887194f4113bd3ac19207285f87e",
+  "prompts": {},
+  "sessions": {
+    "s_ac9b259eab20ba": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8699-3865-7842-8c54-afbac6cfd266",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": null
+    }
+  }
+}
