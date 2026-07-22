@@ -16,7 +16,7 @@ export {
 export type { GrooveConsumerType, GrooveTemplateAssignment, GrooveTemplateState } from './grooveTemplateStore';
 export { grooveTemplateProjectRevisionStore } from './grooveTemplateProjectRevisionStore';
 
-export { chordTrackStore, defaultChordTrackState } from './chordTrackStore';
+export { chordTrackStore, defaultChordTrackState, isChordTrackState } from './chordTrackStore';
 export type { ChordTrackState } from './chordTrackStore';
 
 export { stepRecordStore, defaultStepRecordState } from './stepRecordStore';

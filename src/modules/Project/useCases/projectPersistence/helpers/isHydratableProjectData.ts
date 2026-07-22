@@ -1,4 +1,4 @@
-import { isGrooveTemplateState } from '#/modules/MIDI/stores';
+import { isChordTrackState, isGrooveTemplateState } from '#/modules/MIDI/stores';
 
 import {
     isSupportedProjectVersion,
@@ -6,6 +6,7 @@ import {
     type ProjectArrangementSnapshot,
     type ProjectAutomation,
     type ProjectClip,
+    type ProjectChordTrackState,
     type ProjectExportedAudioBuffer,
     type ProjectGrooveState,
     type ProjectMeta,
@@ -46,6 +47,7 @@ export type HydratableProjectData = {
     transport?: ProjectTransport;
     automation?: ProjectAutomation;
     midi?: ProjectMidi;
+    chordTrack?: ProjectChordTrackState;
     grooves?: ProjectGrooveState;
     yeast?: ProjectYeastState;
     markers?: ProjectMarker[];
@@ -732,6 +734,21 @@ function isAudioBuffers(value: unknown): value is Record<string, ProjectExported
     );
 }
 
+function isCanonicalChordTrackState(value: unknown): boolean {
+    if (!isChordTrackState(value)) {
+        return false;
+    }
+
+    let previousBeat = Number.NEGATIVE_INFINITY;
+    for (const event of value.events) {
+        if (event.beat < previousBeat) {
+            return false;
+        }
+        previousBeat = event.beat;
+    }
+    return true;
+}
+
 export function isHydratableProjectData(value: unknown): value is HydratableProjectData {
     if (!isRecord(value) || !Number.isInteger(value.version) || !isSupportedProjectVersion(value.version)) {
         return false;
@@ -743,6 +760,9 @@ export function isHydratableProjectData(value: unknown): value is HydratableProj
         return false;
     }
     if (value.midi !== undefined && !isMidi(value.midi)) {
+        return false;
+    }
+    if (value.chordTrack !== undefined && !isCanonicalChordTrackState(value.chordTrack)) {
         return false;
     }
     if (value.grooves !== undefined && !isGrooves(value.grooves)) {

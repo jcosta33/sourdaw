@@ -1,8 +1,9 @@
-import { chordTrackStore, type ChordTrackState } from '../../stores/chordTrackStore';
+import { chordTrackStore, defaultChordTrackState, type ChordTrackState } from '../../stores/chordTrackStore';
 
-export function replaceChordTrackState(state: ChordTrackState): void {
+export function replaceChordTrackState(state: ChordTrackState | undefined): void {
+    const nextState = state ?? defaultChordTrackState;
     chordTrackStore.set({
-        enabled: state.enabled,
-        events: state.events.map((event) => ({ ...event })),
+        enabled: nextState.enabled,
+        events: nextState.events.map((event) => ({ ...event })).sort((left, right) => left.beat - right.beat),
     });
 }
