@@ -1,0 +1,44 @@
+src/modules/Arrangement/handlers/clip/handleTrimClipStart.ts
+  s_c2fca615e81f34::t_d5fa2e259237a9 5,9
+src/modules/Arrangement/handlers/clipStretch/handleFitClipToBeats.ts
+  s_c2fca615e81f34::t_d5fa2e259237a9 4,8
+src/modules/Arrangement/handlers/clip/handleTrimClipEnd.ts
+  s_c2fca615e81f34::t_d5fa2e259237a9 5,9
+src/modules/Arrangement/handlers/clipStretch/handleSetClipStretchRatio.ts
+  s_c2fca615e81f34::t_d5fa2e259237a9 4,8
+src/modules/Arrangement/handlers/clip/handleNudgeClip.ts
+  s_c2fca615e81f34::t_d5fa2e259237a9 5,9
+src/modules/Arrangement/useCases/clipEditing/nudgeClip.ts
+  s_c2fca615e81f34::t_d5fa2e259237a9 6,8,22,26-27
+src/modules/Arrangement/useCases/clipEditing/trimClipEnd.ts
+  s_c2fca615e81f34::t_d5fa2e259237a9 3
+  s_c2fca615e81f34::t_16835ecb262cb5 4-10
+src/modules/Arrangement/useCases/clipEditing/trimClipStart.ts
+  s_c2fca615e81f34::t_d5fa2e259237a9 3-4
+src/modules/Arrangement/useCases/clipStretch/setClipStretchMode.ts
+  s_c2fca615e81f34::t_d5fa2e259237a9 4-5
+src/modules/Arrangement/handlers/clipStretch/handleSetClipStretchMode.ts
+  s_c2fca615e81f34::t_d5fa2e259237a9 4,8
+src/modules/Arrangement/useCases/clipStretch/fitClipToBeats.ts
+  s_c2fca615e81f34::t_d5fa2e259237a9 6,8,13,27,34-35
+src/modules/Arrangement/useCases/clipStretch/setClipStretchRatio.ts
+  s_c2fca615e81f34::t_d5fa2e259237a9 5,8
+src/modules/Arrangement/handlers/__tests__/clipGeometryActionOutcomes.spec.ts
+  s_c2fca615e81f34::t_ca5c3a2a7c6e07 1-298
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "c01924cf9bdd53d00bae52bd24ad86fa30fcb5d8",
+  "prompts": {},
+  "sessions": {
+    "s_c2fca615e81f34": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f74e9-e1c5-7142-85d2-4c577b3973c0",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
