@@ -7,7 +7,11 @@ import {
     flushAutomergeStorageWrites,
 } from '#/infra/store/storage/createAutomergeStorage';
 
-import { AppActionCommittedError, AppActionNotDispatchedError } from '../../errors/AppActionExecutionError';
+import {
+    AppActionCommittedError,
+    AppActionConflictError,
+    AppActionNotDispatchedError,
+} from '../../errors/AppActionExecutionError';
 import { clearActionReplayCapabilities, hasActionReplayCapability } from '../../stores/actionReplayCapabilities';
 import { clearHandlerRegistry, registerHandlerMap } from '../../stores/handlerRegistry';
 import { createAppActionCommittedError } from '../createAppActionCommittedError';
@@ -181,6 +185,101 @@ describe('executeAppAction', () => {
         expect(mocks.recordAction).not.toHaveBeenCalled();
         expect(mocks.recordActionHistoryMetadata).not.toHaveBeenCalled();
         expect(mocks.commitUndoEntry).not.toHaveBeenCalled();
+    });
+
+    it('aborts compensated storage writes when execution returns no-write', async () => {
+        const action: SetEditingToolAction = { type: 'setEditingTool', payload: { tool: 'marquee' } };
+        const doc: Record<string, unknown> = { editingTool: { tool: 'select' } };
+        const mutations: unknown[] = [];
+        configureAutomergeStoragePort({
+            getDoc: () => doc,
+            getSemanticMessage: () => undefined,
+            hasDoc: () => true,
+            mutateDoc: ({ changeFn }) => {
+                changeFn(doc);
+                mutations.push(structuredClone(doc));
+            },
+        });
+        const storage = createAutomergeStorage<{ tool: string }>('root', 'editingTool');
+        expect(storage.hydrate?.()).toBe(true);
+        const handler = create_mock_handler<SetEditingToolAction>({
+            execute: () => {
+                storage.set({ tool: 'marquee' });
+                storage.set({ tool: 'select' });
+                return { status: 'no-write' };
+            },
+        });
+        registerHandlerMap({ [action.type]: handler });
+
+        await executeAppAction(action);
+        flushAutomergeStorageWrites();
+
+        expect(storage.get()).toEqual({ tool: 'select' });
+        expect(doc.editingTool).toEqual({ tool: 'select' });
+        expect(mutations).toEqual([]);
+    });
+
+    it('aborts storage writes when execution reports a conflict', async () => {
+        const action: SetEditingToolAction = { type: 'setEditingTool', payload: { tool: 'marquee' } };
+        const doc: Record<string, unknown> = { editingTool: { tool: 'select' } };
+        const mutations: unknown[] = [];
+        configureAutomergeStoragePort({
+            getDoc: () => doc,
+            getSemanticMessage: () => undefined,
+            hasDoc: () => true,
+            mutateDoc: ({ changeFn }) => {
+                changeFn(doc);
+                mutations.push(structuredClone(doc));
+            },
+        });
+        const storage = createAutomergeStorage<{ tool: string }>('root', 'editingTool');
+        expect(storage.hydrate?.()).toBe(true);
+        const handler = create_mock_handler<SetEditingToolAction>({
+            execute: () => {
+                storage.set({ tool: 'marquee' });
+                return { status: 'conflict' };
+            },
+        });
+        registerHandlerMap({ [action.type]: handler });
+
+        await expect(executeAppAction(action)).rejects.toBeInstanceOf(AppActionConflictError);
+        flushAutomergeStorageWrites();
+
+        expect(storage.get()).toEqual({ tool: 'select' });
+        expect(doc.editingTool).toEqual({ tool: 'select' });
+        expect(mutations).toEqual([]);
+    });
+
+    it('aborts storage writes when the handler throws', async () => {
+        const action: SetEditingToolAction = { type: 'setEditingTool', payload: { tool: 'marquee' } };
+        const cause = new Error('handler failed after write');
+        const doc: Record<string, unknown> = { editingTool: { tool: 'select' } };
+        const mutations: unknown[] = [];
+        configureAutomergeStoragePort({
+            getDoc: () => doc,
+            getSemanticMessage: () => undefined,
+            hasDoc: () => true,
+            mutateDoc: ({ changeFn }) => {
+                changeFn(doc);
+                mutations.push(structuredClone(doc));
+            },
+        });
+        const storage = createAutomergeStorage<{ tool: string }>('root', 'editingTool');
+        expect(storage.hydrate?.()).toBe(true);
+        const handler = create_mock_handler<SetEditingToolAction>({
+            execute: () => {
+                storage.set({ tool: 'marquee' });
+                throw cause;
+            },
+        });
+        registerHandlerMap({ [action.type]: handler });
+
+        await expect(executeAppAction(action)).rejects.toBe(cause);
+        flushAutomergeStorageWrites();
+
+        expect(storage.get()).toEqual({ tool: 'select' });
+        expect(doc.editingTool).toEqual({ tool: 'select' });
+        expect(mutations).toEqual([]);
     });
 
     it('waits for snapshot ownership before describing or executing an action', async () => {
@@ -380,8 +479,21 @@ describe('executeAppAction', () => {
     it('should surface a committed error when metadata recording fails after handler execution', async () => {
         const action: SetSnapValueAction = { type: 'setSnapValue', payload: { value: 0.25 } };
         const metadata_failure = new Error('metadata failed');
+        const doc: Record<string, unknown> = {};
+        const mutations: unknown[] = [];
+        configureAutomergeStoragePort({
+            getDoc: () => doc,
+            getSemanticMessage: () => undefined,
+            hasDoc: () => true,
+            mutateDoc: ({ changeFn }) => {
+                changeFn(doc);
+                mutations.push(structuredClone(doc));
+            },
+        });
+        const storage = createAutomergeStorage<{ value: number }>('root', 'snap');
         const handler = create_mock_handler<SetSnapValueAction>({
             describe: () => ({ label: 'Replayable', inverseAction: { type: 'togglePlayback' } }),
+            execute: () => storage.set({ value: action.payload.value }),
         });
         mocks.recordActionHistoryMetadata.mockImplementation(() => {
             throw metadata_failure;
@@ -397,6 +509,8 @@ describe('executeAppAction', () => {
         const reported_error = mocks.logger.error.mock.calls.at(-1)?.[0];
         expect(reported_error).toBeInstanceOf(AppActionCommittedError);
         expect(reported_error?.cause).toBe(metadata_failure);
+        expect(doc.snap).toEqual({ value: 0.25 });
+        expect(mutations).toHaveLength(1);
     });
 
     // Dispatch-ordering invariant. `executeAppAction` documents that, for an

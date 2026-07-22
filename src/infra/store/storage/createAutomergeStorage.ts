@@ -56,6 +56,7 @@ type AutomergeStorageWriteContext = {
 };
 
 type PendingAutomergeStorageWrite = {
+    readonly abort: () => void;
     readonly commitOwner: object;
     readonly docId: AutomergeStorageDocId;
     readonly snapshotTransaction: object | undefined;
@@ -67,8 +68,24 @@ type ActiveAutomergeStorageTransaction = {
     readonly snapshotTransaction: object | undefined;
 };
 
+type AutomergeStorageTransactionControl = {
+    abort(): void;
+    commit(): void;
+};
+
+type AutomergeStorageTransactionOutcome<Result> =
+    | { readonly status: 'returned'; readonly value: Result }
+    | {
+          readonly status: 'threw';
+          readonly error: unknown;
+      };
+
+type AutomergeStorageTransactionResult<Result> = AutomergeStorageTransactionControl &
+    AutomergeStorageTransactionOutcome<Result>;
+
 let automergeStoragePort: AutomergeStoragePort | null = null;
 const pendingAutomergeStorageWrites = new Set<PendingAutomergeStorageWrite>();
+const openAutomergeStorageCommitOwners = new Set<object>();
 let activeAutomergeStorageTransaction: ActiveAutomergeStorageTransaction | undefined;
 
 /** One Automerge change is the atomic commit boundary for keys sharing a document and owner. */
@@ -100,17 +117,55 @@ function commitAutomergeStorageMutations(mutations: readonly AutomergeStorageMut
 export function runWithAutomergeStorageTransaction<Result>(
     snapshotTransaction: object | undefined,
     callback: () => Result
-): Result {
+): AutomergeStorageTransactionResult<Result> {
     const previousTransaction = activeAutomergeStorageTransaction;
-    activeAutomergeStorageTransaction = {
+    const transaction: ActiveAutomergeStorageTransaction = {
         commitOwner: Object.freeze({}),
         snapshotTransaction,
     };
+    activeAutomergeStorageTransaction = transaction;
+    openAutomergeStorageCommitOwners.add(transaction.commitOwner);
+    let terminalState: 'open' | 'committed' | 'aborted' = 'open';
+    let outcome: AutomergeStorageTransactionOutcome<Result>;
     try {
-        return callback();
+        outcome = { status: 'returned', value: callback() };
+    } catch (error) {
+        outcome = { status: 'threw', error };
     } finally {
         activeAutomergeStorageTransaction = previousTransaction;
     }
+
+    const control: AutomergeStorageTransactionControl = {
+        abort(): void {
+            if (terminalState !== 'open') {
+                return;
+            }
+            terminalState = 'aborted';
+            openAutomergeStorageCommitOwners.delete(transaction.commitOwner);
+            for (const pending of [...pendingAutomergeStorageWrites]) {
+                if (
+                    pending.commitOwner === transaction.commitOwner &&
+                    pending.snapshotTransaction === transaction.snapshotTransaction
+                ) {
+                    pending.abort();
+                }
+            }
+        },
+        commit(): void {
+            if (terminalState !== 'open') {
+                return;
+            }
+            terminalState = 'committed';
+            openAutomergeStorageCommitOwners.delete(transaction.commitOwner);
+            flushMatchingAutomergeStorageWrites(
+                (pending) =>
+                    pending.commitOwner === transaction.commitOwner &&
+                    pending.snapshotTransaction === transaction.snapshotTransaction
+            );
+        },
+    };
+
+    return { ...outcome, ...control };
 }
 
 function flushMatchingAutomergeStorageWrites(matches: (pending: PendingAutomergeStorageWrite) => boolean): void {
@@ -119,6 +174,9 @@ function flushMatchingAutomergeStorageWrites(matches: (pending: PendingAutomerge
 
     for (const pending of [...pendingAutomergeStorageWrites]) {
         if (!matches(pending)) {
+            continue;
+        }
+        if (openAutomergeStorageCommitOwners.has(pending.commitOwner)) {
             continue;
         }
 
@@ -327,6 +385,22 @@ export const createAutomergeStorage = <TData>(
         return createMutation(value, message, write.snapshotTransaction);
     };
 
+    const abortPendingWrite = (write: PendingAutomergeStorageWrite): void => {
+        if (pendingWrite !== write) {
+            return;
+        }
+        if (rafId !== null) {
+            cancelAnimationFrame(rafId);
+            rafId = null;
+        }
+        pendingAutomergeStorageWrites.delete(write);
+        pendingWrite = null;
+        cachedValue = pendingBaseValue;
+        pendingBaseValue = null;
+        pendingValue = null;
+        pendingMessage = undefined;
+    };
+
     const preparePendingWrite = (context: AutomergeStorageWriteContext): void => {
         if (
             pendingWrite &&
@@ -346,6 +420,7 @@ export const createAutomergeStorage = <TData>(
         // first write in this adapter/action group owns its coalesced message.
         pendingMessage = getSemanticMessage();
         const write: PendingAutomergeStorageWrite = {
+            abort: () => abortPendingWrite(write),
             commitOwner: context.commitOwner,
             docId,
             snapshotTransaction: context.snapshotTransaction,
