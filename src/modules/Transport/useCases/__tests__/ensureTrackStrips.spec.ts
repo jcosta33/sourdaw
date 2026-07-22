@@ -117,6 +117,47 @@ describe('ensureTrackStrips', () => {
         expect(mocks.setSend).toHaveBeenCalledWith('t1', 'b1', 0.1, false);
     });
 
+    it('reconstructs a persisted folder-hosted Toaster and its child outputs', () => {
+        const toasterFolder = createTrack({ id: 'toaster-folder', name: 'Toaster Kit', kind: 'folder' });
+        const ordinaryFolder = createTrack({ id: 'ordinary-folder', name: 'Group', kind: 'folder' });
+        toasterFolder.devices = [
+            {
+                id: 'toaster-device',
+                name: 'Toaster',
+                type: 'toaster',
+                bypassed: false,
+                parameterValues: { masterGain: 1.35, swing: 0.08 },
+            },
+        ];
+        const children = Array.from({ length: 16 }, (_, padIndex) => {
+            const child = createTrack({
+                id: `toaster-pad-${padIndex}`,
+                name: `Pad ${padIndex + 1}`,
+                kind: 'midi',
+                parentId: toasterFolder.id,
+            });
+            child.devices = [];
+            child.outputId = toasterFolder.id;
+            return child;
+        });
+        mocks.trackStoreValue.value = {
+            selectedTrackId: toasterFolder.id,
+            tracks: [ordinaryFolder, toasterFolder, ...children],
+        };
+
+        ensureTrackStrips();
+
+        expect(mocks.ensureTrackStrip).toHaveBeenCalledWith(toasterFolder.id);
+        expect(mocks.ensureTrackStrip).not.toHaveBeenCalledWith(ordinaryFolder.id);
+        expect(mocks.addDeviceToStrip).toHaveBeenCalledWith(toasterFolder.id, 'toaster-device', 'toaster');
+        expect(mocks.updateDeviceParam).toHaveBeenCalledWith(toasterFolder.id, 'toaster-device', 'masterGain', 1.35);
+        expect(mocks.updateDeviceParam).toHaveBeenCalledWith(toasterFolder.id, 'toaster-device', 'swing', 0.08);
+        for (const child of children) {
+            expect(mocks.setTrackOutput).toHaveBeenCalledWith(child.id, toasterFolder.id);
+        }
+        expect(mocks.wireSidechainRoutes).toHaveBeenCalledTimes(1);
+    });
+
     it('wires persisted sidechain routes into the engine after strips exist', () => {
         mocks.trackStoreValue.value = {
             selectedTrackId: null,

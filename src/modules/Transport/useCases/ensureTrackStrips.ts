@@ -29,7 +29,9 @@ export function ensureTrackStrips(): void {
     }
 
     for (const track of tracks) {
-        if (!getTrackEligibility(track.kind).createsLiveStrip) {
+        const createsLiveStrip = getTrackEligibility(track.kind).createsLiveStrip;
+        const hostsToaster = track.kind === 'folder' && track.devices.some((device) => device.type === 'toaster');
+        if (!createsLiveStrip && !hostsToaster) {
             continue;
         }
         ensureTrackStrip(track.id);
