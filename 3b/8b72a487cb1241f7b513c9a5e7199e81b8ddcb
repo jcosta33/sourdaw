@@ -1,0 +1,29 @@
+src/infra/store/storage/__tests__/createAutomergeStorage.spec.ts
+  s_9fb73f58e8b84e::t_ae7007108412c8 290-331
+src/infra/store/storage/createAutomergeStorage.ts
+  s_ac9b259eab20ba::t_b72e614835d993 55,352,418,424,437-448,524
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "3b8b72a487cb1241f7b513c9a5e7199e81b8ddcb",
+  "prompts": {},
+  "sessions": {
+    "s_9fb73f58e8b84e": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8a67-1803-75a2-b15d-4b73fd680357",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_ac9b259eab20ba": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8699-3865-7842-8c54-afbac6cfd266",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
