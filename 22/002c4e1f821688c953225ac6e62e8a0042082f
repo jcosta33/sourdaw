@@ -1,0 +1,26 @@
+src/modules/TimelineEditor/presentations/views/Timeline/__tests__/ChordTrackLane.spec.tsx
+  s_ac9b259eab20ba::t_7cbccffe098b36 1,278-292,295-328
+  s_ac9b259eab20ba::t_5587879cfe27a1 293-294
+  s_ac9b259eab20ba::t_98facdd082dfc1 145
+  s_ac9b259eab20ba::t_b0c918ebfbb335 329
+src/modules/TimelineEditor/presentations/views/Timeline/ChordTrackLane.tsx
+  s_ac9b259eab20ba::t_c44458145dfa51 120,123,146,197-209,216-241,320,327-349,363-366,369,379,507-508,538-544,557,568,586,589-590,597,615,618-619,633,636
+  s_ac9b259eab20ba::t_98facdd082dfc1 210-215
+  s_ac9b259eab20ba::t_b04f7e0e64afbe 393-399,469,471,545
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "22002c4e1f821688c953225ac6e62e8a0042082f",
+  "prompts": {},
+  "sessions": {
+    "s_ac9b259eab20ba": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8699-3865-7842-8c54-afbac6cfd266",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
