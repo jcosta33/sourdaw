@@ -41,7 +41,7 @@ describe('VCA activation quarantine', () => {
 
     it('keeps the dormant migration definition-only in production source', () => {
         const occurrences = productionSources().flatMap(({ path, text }) =>
-            matches(text, /migrateLegacyVcaGroups\(/g).map(() => path)
+            matches(text, /\bmigrateLegacyVcaGroups\b/g).map(() => path)
         );
 
         expect(occurrences).toEqual([
