@@ -144,6 +144,7 @@ const toasterDescriptor: WasmDeviceDescriptor = {
                 pendingParams.push([name, value]);
             },
             setPadParam: () => {},
+            setPadDryRouted: () => {},
             setBypass: () => {},
             destroy: () => {},
         };
@@ -153,14 +154,16 @@ const toasterDescriptor: WasmDeviceDescriptor = {
                 for (const [name, value] of pendingParams) {
                     result.setParam(name, value);
                 }
-                const mainOutput = context.createGain();
-                result.connect(mainOutput);
                 const accepted = onLoaded({
                     deviceId,
                     type: deviceType,
-                    nodes: [result.workletNode, mainOutput],
-                    inputNode: result.workletNode,
-                    outputNode: mainOutput,
+                    // Keep the stable output proxy at the graph boundary, while
+                    // retaining the worklet for lifecycle sweeps such as the
+                    // transport-wide all-notes-off release.
+                    nodes: [result.outputNode, result.workletNode],
+                    inputNode: result.outputNode,
+                    outputNode: result.outputNode,
+                    isGenerator: true,
                     dispose: result.destroy,
                     controller: {
                         ready: true,
@@ -196,6 +199,7 @@ const toasterDescriptor: WasmDeviceDescriptor = {
                         setFillActive: result.setFillActive,
                         setParam: result.setParam,
                         setPadParam: result.setPadParam,
+                        setPadDryRouted: result.setPadDryRouted,
                         setBypass: result.setBypass,
                         connectPadOutput: result.connectPadOutput,
                         disconnectPadOutput: result.disconnectPadOutput,

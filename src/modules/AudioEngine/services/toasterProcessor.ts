@@ -13,6 +13,8 @@
  *   { type: 'fillState', active }
  *   { type: 'param', name, value }
  *   { type: 'padParam', pad, name, value }
+ *   { type: 'padDryRouted', pad, routed }
+ *   { type: 'resetPadDryRouting' }
  */
 
 import { initSync, ToasterInstance } from '../wasm/daw_dsp.js';
@@ -73,7 +75,9 @@ type ToasterMsg =
     | { type: 'fillState'; active: boolean }
     | { type: 'allNotesOff' }
     | { type: 'param'; name: string; value: number }
-    | { type: 'padParam'; pad: number; name: string; value: number };
+    | { type: 'padParam'; pad: number; name: string; value: number }
+    | { type: 'padDryRouted'; pad: number; routed: boolean }
+    | { type: 'resetPadDryRouting' };
 
 type ToasterQueued =
     | { type: 'noteOn'; pad: number; velocity: number; note?: number; sampleFrame: number }
@@ -235,6 +239,12 @@ class ToasterProcessor extends AudioWorkletProcessor {
                 break;
             case 'padParam':
                 inst.set_pad_param(msg.pad, PAD_PARAM_MAP[msg.name] ?? msg.name, msg.value);
+                break;
+            case 'padDryRouted':
+                inst.set_pad_dry_routed(msg.pad, msg.routed);
+                break;
+            case 'resetPadDryRouting':
+                inst.reset_pad_dry_routing();
                 break;
         }
     }

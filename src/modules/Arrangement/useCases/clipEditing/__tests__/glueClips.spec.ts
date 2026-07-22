@@ -39,6 +39,22 @@ describe('glueClips', () => {
         mocks.resolveEligibleClipWriteTarget.mockReturnValue({ status: 'eligible', trackId: 't1', clipId: 'a' });
     });
 
+    it('refuses to glue audio clips instead of producing a silent clip (regression: ledger M-027)', () => {
+        const audioA = ClipDummy.create({ id: 'a', trackId: 't1', type: 'audio', startBeat: 0, endBeat: 4 });
+        const audioB = ClipDummy.create({ id: 'b', trackId: 't1', type: 'audio', startBeat: 4, endBeat: 8 });
+        mocks.getTrackState.mockReturnValue(
+            createTrackState([TrackDummy.create({ id: 't1', clips: [audioA, audioB] })])
+        );
+
+        expect(glueClips(['a', 'b'])).toBe(false);
+
+        // Sources must be untouched: no glued clip written, no MIDI gluing,
+        // and a warning explaining the refusal.
+        expect(mocks.updateTrack).not.toHaveBeenCalled();
+        expect(mocks.glueMidiClipData).not.toHaveBeenCalled();
+        expect(mocks.warn).toHaveBeenCalledOnce();
+    });
+
     it('does nothing with no state', () => {
         mocks.getTrackState.mockReturnValue(null);
         expect(glueClips(['a', 'b'])).toBe(false);

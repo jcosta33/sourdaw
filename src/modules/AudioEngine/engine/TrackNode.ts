@@ -296,7 +296,7 @@ export class TrackNode {
             if (dn.bypassed) {
                 continue;
             }
-            if (dn.inputNode.numberOfInputs > 0) {
+            if (!dn.isGenerator && dn.inputNode.numberOfInputs > 0) {
                 // Effect: all previous outputs connect to this input
                 for (const p of prevs) {
                     p.connect(dn.inputNode);

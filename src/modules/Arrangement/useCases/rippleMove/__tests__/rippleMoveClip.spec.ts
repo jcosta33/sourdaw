@@ -17,9 +17,58 @@ vi.mock('#/modules/Arrangement/useCases/clip/moveClip', () => ({
     moveClip: vi.fn(),
 }));
 
+const { shiftClipAutomation } = vi.hoisted(() => ({
+    shiftClipAutomation: vi.fn<(clipId: string, delta: number) => void>(),
+}));
+
+vi.mock('#/modules/Automation/useCases', () => ({
+    shiftClipAutomation,
+}));
+
 describe('rippleMoveClip', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+    });
+
+    it('shifts collateral clips automation by their net ripple delta (regression: ledger M-025)', () => {
+        const initialState = {
+            tracks: [
+                {
+                    id: 't1',
+                    clips: [
+                        { id: 'c1', startBeat: 30, endBeat: 34 },
+                        { id: 'c2', startBeat: 10, endBeat: 12 },
+                        { id: 'c3', startBeat: 20, endBeat: 22 },
+                        { id: 'c4', startBeat: 15, endBeat: 16 },
+                    ],
+                },
+            ],
+        };
+        vi.mocked(getTrackStoreState).mockReturnValue(initialState as any);
+
+        rippleMoveClip({
+            trackId: 't1',
+            clipId: 'c1',
+            newStartBeat: 30,
+            clipDuration: 4,
+            plan: {
+                gapClosedClips: [
+                    { clipId: 'c2', origStartBeat: 10, origEndBeat: 12 },
+                    { clipId: 'c4', origStartBeat: 15, origEndBeat: 16 },
+                ],
+                destinationOpenedClips: [
+                    { clipId: 'c3', origStartBeat: 20, origEndBeat: 22 },
+                    { clipId: 'c4', origStartBeat: 15, origEndBeat: 16 },
+                ],
+            },
+        });
+
+        // c2 closes the gap (-4), c3 opens the destination (+4), c4 nets to
+        // zero and must not be touched. Clip-relative MIDI notes need no work.
+        expect(shiftClipAutomation).toHaveBeenCalledTimes(2);
+        expect(shiftClipAutomation).toHaveBeenCalledWith('c2', -4);
+        expect(shiftClipAutomation).toHaveBeenCalledWith('c3', 4);
+        expect(shiftClipAutomation).not.toHaveBeenCalledWith('c4', expect.anything());
     });
 
     it('should call moveClip and shift surrounding clips', () => {

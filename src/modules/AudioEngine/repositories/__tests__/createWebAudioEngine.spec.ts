@@ -1102,10 +1102,11 @@ describe('AudioEngine', () => {
         function pushSynth(eng: AudioEngine, trackId: string, controlsKey: string) {
             const strip = eng.ensureTrackStrip(trackId);
             const workletNode = new FakeWorkletNode();
+            const nodes = controlsKey === 'toasterControls' ? [makeStripNode(), workletNode] : [workletNode];
             strip.deviceNodes.push({
                 deviceId: `${controlsKey}-dev`,
                 type: controlsKey,
-                nodes: [workletNode],
+                nodes,
                 [controlsKey]: { noteOff: vi.fn() },
             } as never);
             return workletNode;

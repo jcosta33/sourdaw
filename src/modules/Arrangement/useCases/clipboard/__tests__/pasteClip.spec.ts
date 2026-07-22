@@ -109,6 +109,24 @@ describe('pasteClip', () => {
         setClipClipboard([]);
     });
 
+    it('preserves midiOffsetBeats so offset-carrying sources paste aligned (regression: ledger M-024)', () => {
+        // Notes are clip-relative; playback is startBeat + note.startBeat -
+        // midiOffsetBeats. The clipboard stores notes verbatim, so the pasted
+        // clip must inherit the source offset or its notes shift by it.
+        const entry = createClipboardEntry({ startBeat: 4, endBeat: 8 });
+        entry.clip.midiOffsetBeats = 2;
+        setClipClipboard([entry]);
+        mocks.addClip.mockReturnValue({ id: 'pasted-clip' });
+        mocks.getTrackState.mockReturnValue({
+            selectedTrackId: 'selected-track',
+            tracks: [{ id: 'selected-track' }],
+        });
+
+        expect(pasteClip()).toBe(true);
+
+        expect(mocks.addClip).toHaveBeenCalledWith(expect.objectContaining({ midiOffsetBeats: 2 }));
+    });
+
     it('returns before transport or track work when the clip clipboard is empty', () => {
         expect(pasteClip()).toBe(false);
 

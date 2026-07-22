@@ -1,3 +1,5 @@
+import { shiftClipAutomation } from '#/modules/Automation/useCases';
+
 import { getTrackStoreState } from '../getTrackStoreState';
 import { setTrackState } from '../setTrackState';
 
@@ -42,4 +44,10 @@ export function rippleInsertClip({ trackId, insertDuration, plan }: RippleInsert
             };
         }),
     });
+
+    // Timeline-absolute clip-scoped automation follows the collateral shift
+    // (ledger M-025); clip-relative MIDI notes follow on their own.
+    for (const shifted of plan.shiftedClips) {
+        shiftClipAutomation(shifted.clipId, insertDuration);
+    }
 }

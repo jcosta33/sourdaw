@@ -49,4 +49,39 @@ describe('handleRenameTrackAlternative', () => {
         expect(newState.tracks[0]?.alternatives[0]?.name).toBe('New');
         expect(newState.tracks[0]?.alternatives[1]?.name).toBe('Other');
     });
+
+    it('describe restores the previous name as the inverse', () => {
+        mocks.getTrackStoreState.mockReturnValue({
+            tracks: [
+                {
+                    id: 't1',
+                    alternatives: [
+                        { id: 'alt1', name: 'Old' },
+                        { id: 'alt2', name: 'Other' },
+                    ],
+                },
+            ],
+        });
+
+        const desc = handleRenameTrackAlternative.describe({
+            type: 'renameTrackAlternative',
+            payload: { trackId: 't1', alternativeId: 'alt1', name: 'New' },
+        });
+
+        expect(desc.inverseAction).toEqual({
+            type: 'renameTrackAlternative',
+            payload: { trackId: 't1', alternativeId: 'alt1', name: 'Old' },
+        });
+    });
+
+    it('describe returns a null inverse when the alternative is not found', () => {
+        mocks.getTrackStoreState.mockReturnValue({ tracks: [{ id: 't1', alternatives: [] }] });
+
+        const desc = handleRenameTrackAlternative.describe({
+            type: 'renameTrackAlternative',
+            payload: { trackId: 't1', alternativeId: 'missing', name: 'New' },
+        });
+
+        expect(desc.inverseAction).toBeNull();
+    });
 });
