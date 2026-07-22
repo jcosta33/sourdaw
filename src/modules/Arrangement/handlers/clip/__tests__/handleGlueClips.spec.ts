@@ -13,15 +13,28 @@ vi.mock('../../../useCases/clipEditing/glueClips', () => ({
 describe('handleGlueClips', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        mocks.glueClips.mockReturnValue(true);
     });
 
     it('executes glueClips with the provided payload', () => {
-        void handleGlueClips.execute({
+        const result = handleGlueClips.execute({
             type: 'glueClips',
             payload: { clipIds: ['c1', 'c2'] },
         });
 
         expect(mocks.glueClips).toHaveBeenCalledWith(['c1', 'c2']);
+        expect(result).toEqual({ status: 'written' });
+    });
+
+    it('returns no-write when glue is rejected', () => {
+        mocks.glueClips.mockReturnValue(false);
+
+        const result = handleGlueClips.execute({
+            type: 'glueClips',
+            payload: { clipIds: ['c1', 'c2'] },
+        });
+
+        expect(result).toEqual({ status: 'no-write' });
     });
 
     it('provides a description', () => {

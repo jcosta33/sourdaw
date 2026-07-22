@@ -15,6 +15,7 @@ export { pickFiles } from './fileDialog';
 export { createFromTemplate } from './projectTemplates/templateDefinitions/createFromTemplate';
 export { getTemplates } from './projectTemplates/templateDefinitions/getTemplates';
 export { getPreviewLoop } from './projectTemplates/templatePreviews/previewLoops';
+export { getProjectHandlers } from './getProjectHandlers';
 
 export { exportProjectFile } from './projectPersistence/fileIO/exportProjectFile';
 export { pickAndImportProjectFile } from './projectPersistence/fileIO/pickAndImportProjectFile';

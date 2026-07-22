@@ -13,11 +13,15 @@ vi.mock('../../../useCases/clipboard/cutSelectedClip', () => ({
 describe('handleCutClip', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        mocks.cutSelectedClip.mockReturnValue(true);
     });
 
-    it('executes cutSelectedClip', () => {
-        void handleCutClip.execute({ type: 'cutClip' });
+    it('returns written only when cutSelectedClip writes', () => {
+        expect(handleCutClip.execute({ type: 'cutClip' })).toEqual({ status: 'written' });
         expect(mocks.cutSelectedClip).toHaveBeenCalledTimes(1);
+
+        mocks.cutSelectedClip.mockReturnValue(false);
+        expect(handleCutClip.execute({ type: 'cutClip' })).toEqual({ status: 'no-write' });
     });
 
     it('provides a description', () => {

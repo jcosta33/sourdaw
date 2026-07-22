@@ -2,22 +2,28 @@ import { transportStore } from '#/modules/Transport/stores';
 
 import { type Clip } from '../../models/Track';
 import { updateTrack } from '../../repositories/track/updateTrack';
+import { resolveEligibleClipWriteTarget } from '../../stores/resolveEligibleClipWriteTarget';
 import { trackStore } from '../../stores/trackStore';
 
-export function flattenTrack(trackId: string): void {
-    const state = trackStore.value;
-    if (!state) {
-        return;
+export function flattenTrack(trackId: string): boolean {
+    const target = resolveEligibleClipWriteTarget({ trackId });
+    if (target.status !== 'eligible') {
+        return false;
     }
 
-    const track = state.tracks.find((time) => time.id === trackId);
+    const state = trackStore.value;
+    if (!state) {
+        return false;
+    }
+
+    const track = state.tracks.find((candidate) => candidate.id === target.trackId);
     if (!track || track.freezeState.status !== 'frozen') {
-        return;
+        return false;
     }
 
     const { frozenBufferId } = track.freezeState;
     if (!frozenBufferId) {
-        return;
+        return false;
     }
 
     let startBeat = Infinity;
@@ -39,7 +45,7 @@ export function flattenTrack(trackId: string): void {
 
     const newClip: Clip = {
         id: `flattened-${crypto.randomUUID()}`,
-        trackId,
+        trackId: target.trackId,
         name: `${track.name} (Flattened)`,
         startBeat,
         endBeat:
@@ -56,7 +62,7 @@ export function flattenTrack(trackId: string): void {
     };
 
     const altId = `alt-flatten-${crypto.randomUUID().slice(0, 8)}`;
-    updateTrack(trackId, (time) => ({
+    updateTrack(target.trackId, (time) => ({
         ...time,
         kind: 'audio',
         clips: [newClip],
@@ -67,4 +73,5 @@ export function flattenTrack(trackId: string): void {
         activeAlternativeId: altId,
         alternatives: [{ id: altId, name: 'Flattened', clips: [newClip] }],
     }));
+    return true;
 }

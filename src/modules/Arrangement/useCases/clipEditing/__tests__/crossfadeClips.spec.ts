@@ -3,10 +3,14 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 const mocks = vi.hoisted(() => ({
     getTrackState: vi.fn<(typeof trackStateRepo)['getTrackState']>(),
     mapAllTracks: vi.fn<(typeof mapAllTracksRepo)['mapAllTracks']>(),
+    resolveEligibleClipWriteTarget: vi.fn<(typeof resolverModule)['resolveEligibleClipWriteTarget']>(),
 }));
 
 vi.mock('../../../repositories/track/getTrackState', () => ({ getTrackState: mocks.getTrackState }));
 vi.mock('../../../repositories/track/mapAllTracks', () => ({ mapAllTracks: mocks.mapAllTracks }));
+vi.mock('../../../stores/resolveEligibleClipWriteTarget', () => ({
+    resolveEligibleClipWriteTarget: mocks.resolveEligibleClipWriteTarget,
+}));
 
 import { ClipDummy } from '../../../__tests__/ClipDummy';
 import { TrackDummy } from '../../../__tests__/TrackDummy';
@@ -15,6 +19,7 @@ import { crossfadeClips } from '../crossfadeClips';
 
 import type * as trackStateRepo from '../../../repositories/track/getTrackState';
 import type * as mapAllTracksRepo from '../../../repositories/track/mapAllTracks';
+import type * as resolverModule from '../../../stores/resolveEligibleClipWriteTarget';
 
 function makeClip(id: string, start: number, end: number): Clip {
     return ClipDummy.create({ id, name: id, startBeat: start, endBeat: end });
@@ -33,17 +38,77 @@ function capturedMapper(): (track: Track) => Track {
 }
 
 describe('crossfadeClips', () => {
-    beforeEach(() => vi.clearAllMocks());
+    beforeEach(() => {
+        vi.clearAllMocks();
+        mocks.resolveEligibleClipWriteTarget.mockReturnValue({ status: 'eligible', trackId: 't1', clipId: 'a' });
+    });
 
     it('does nothing with no state', () => {
         mocks.getTrackState.mockReturnValue(null);
-        crossfadeClips('a', 'b');
+        expect(crossfadeClips('a', 'b')).toBe(false);
         expect(mocks.mapAllTracks).not.toHaveBeenCalled();
     });
 
     it('does nothing when clips not found', () => {
         mocks.getTrackState.mockReturnValue({ tracks: [makeTrack([])], selectedTrackId: 't1' });
-        crossfadeClips('missing-a', 'missing-b');
+        expect(crossfadeClips('missing-a', 'missing-b')).toBe(false);
+        expect(mocks.mapAllTracks).not.toHaveBeenCalled();
+    });
+
+    it('rejects duplicate clip targets before invoking the mapper', () => {
+        const clips = [makeClip('a', 0, 4)];
+        mocks.getTrackState.mockReturnValue({ tracks: [makeTrack(clips)], selectedTrackId: 't1' });
+
+        expect(crossfadeClips('a', 'a')).toBe(false);
+
+        expect(mocks.mapAllTracks).not.toHaveBeenCalled();
+    });
+
+    it('rejects a mixed eligible and ineligible pair before invoking the mapper', () => {
+        const clips = [makeClip('a', 0, 4), makeClip('b', 4, 8)];
+        mocks.getTrackState.mockReturnValue({ tracks: [makeTrack(clips)], selectedTrackId: 't1' });
+        mocks.resolveEligibleClipWriteTarget
+            .mockReturnValueOnce({ status: 'eligible', trackId: 't1', clipId: 'a' })
+            .mockReturnValueOnce({ status: 'ineligible' });
+
+        expect(crossfadeClips('a', 'b')).toBe(false);
+
+        expect(mocks.mapAllTracks).not.toHaveBeenCalled();
+    });
+
+    it('rejects a non-finite clip A end beat before invoking the mapper', () => {
+        const clips = [makeClip('a', 0, Number.NaN), makeClip('b', 4, 8)];
+        mocks.getTrackState.mockReturnValue({ tracks: [makeTrack(clips)], selectedTrackId: 't1' });
+
+        expect(crossfadeClips('a', 'b', 1)).toBe(false);
+
+        expect(mocks.mapAllTracks).not.toHaveBeenCalled();
+    });
+
+    it('rejects a non-finite clip B start beat before invoking the mapper', () => {
+        const clips = [makeClip('a', 0, 4), makeClip('b', Number.POSITIVE_INFINITY, 8)];
+        mocks.getTrackState.mockReturnValue({ tracks: [makeTrack(clips)], selectedTrackId: 't1' });
+
+        expect(crossfadeClips('a', 'b', 1)).toBe(false);
+
+        expect(mocks.mapAllTracks).not.toHaveBeenCalled();
+    });
+
+    it('rejects finite inputs whose derived crossfade geometry overflows', () => {
+        const clips = [makeClip('a', 0, Number.MAX_VALUE), makeClip('b', Number.MAX_VALUE, Number.MAX_VALUE)];
+        mocks.getTrackState.mockReturnValue({ tracks: [makeTrack(clips)], selectedTrackId: 't1' });
+
+        expect(crossfadeClips('a', 'b', Number.MAX_VALUE)).toBe(false);
+
+        expect(mocks.mapAllTracks).not.toHaveBeenCalled();
+    });
+
+    it('returns no-write when the requested crossfade already matches project truth', () => {
+        const clips = [makeClip('a', 0, 4), makeClip('b', 4, 8)];
+        mocks.getTrackState.mockReturnValue({ tracks: [makeTrack(clips)], selectedTrackId: 't1' });
+
+        expect(crossfadeClips('a', 'b', 0)).toBe(false);
+
         expect(mocks.mapAllTracks).not.toHaveBeenCalled();
     });
 
@@ -51,7 +116,7 @@ describe('crossfadeClips', () => {
         const clips = [makeClip('a', 0, 4), makeClip('b', 4, 8)];
         mocks.getTrackState.mockReturnValue({ tracks: [makeTrack(clips)], selectedTrackId: 't1' });
 
-        crossfadeClips('a', 'b', 1.0);
+        expect(crossfadeClips('a', 'b', 1.0)).toBe(true);
 
         expect(mocks.mapAllTracks).toHaveBeenCalledTimes(1);
         const result = capturedMapper()(makeTrack([makeClip('a', 0, 4), makeClip('b', 4, 8)]));

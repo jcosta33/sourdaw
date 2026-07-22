@@ -45,6 +45,7 @@ export type ProjectData = {
     arrangement: ProjectArrangement;
     automation: ProjectAutomation;
     midi: ProjectMidi;
+    chordTrack?: ProjectChordTrackState;
     grooves?: ProjectGrooveState;
     yeast?: ProjectYeastState;
     mixer: ProjectMixer;
@@ -192,6 +193,38 @@ export type ProjectMidi = {
     notesByClipId: Record<string, ProjectMidiNote[]>;
     ccByClipId: Record<string, ProjectMidiCC[]>;
     pitchBendByClipId: Record<string, ProjectMidiPitchBend[]>;
+};
+
+export type ProjectChordQuality =
+    | 'major'
+    | 'minor'
+    | 'dim'
+    | 'aug'
+    | 'sus2'
+    | 'sus4'
+    | '7'
+    | 'maj7'
+    | 'min7'
+    | 'dim7'
+    | 'aug7'
+    | '6'
+    | 'min6'
+    | '9'
+    | 'add9'
+    | 'min9'
+    | '7sus4';
+
+export type ProjectChordEvent = {
+    id: string;
+    beat: number;
+    root: number;
+    quality: ProjectChordQuality;
+    duration: number;
+};
+
+export type ProjectChordTrackState = {
+    enabled: boolean;
+    events: ProjectChordEvent[];
 };
 
 export type ProjectArrangementMidi = {

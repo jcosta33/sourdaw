@@ -24,7 +24,11 @@ const mocks = vi.hoisted(() => ({
     setClipSelection: vi.fn(),
     selectClip: vi.fn(),
     setWorkspaceMode: vi.fn(),
-    trackStoreValue: { value: { tracks: [] } },
+    trackStoreValue: {
+        value: {
+            tracks: [] as { id: string; clips: { id: string; startBeat: number; endBeat: number }[] }[],
+        },
+    },
     toggleLoop: vi.fn(),
     getTransportState: vi.fn(),
     setLoopRegion: vi.fn(),
@@ -331,6 +335,73 @@ describe('useTimelineInteractions', () => {
         expect(mocks.commitInlineAutomationPaint).toHaveBeenCalledTimes(1);
         expect(mocks.commitInlineAutomationPaint).toHaveBeenCalledWith(draft);
     });
+
+    const trimCases = [
+        {
+            name: 'trim start',
+            mode: 'trim-start',
+            edge: 'left',
+            lowerUseCase: mocks.trimClipStart,
+            expectedLabel: 'Trim clip start',
+        },
+        {
+            name: 'trim end',
+            mode: 'stretch',
+            edge: 'right',
+            lowerUseCase: mocks.trimClipEnd,
+            expectedLabel: 'Trim clip end',
+        },
+    ] as const;
+
+    const commitTrimPreview = ({ mode, edge }: Pick<(typeof trimCases)[number], 'mode' | 'edge'>) => {
+        mocks.trackStoreValue.value = {
+            tracks: [{ id: 'track-1', clips: [{ id: 'clip-1', startBeat: 0, endBeat: 4 }] }],
+        };
+        mocks.hitTestClip.mockReturnValue({ clipId: 'clip-1', trackId: 'track-1' });
+        mocks.hitTestClipEdge.mockReturnValue({ edge });
+        mocks.beginClipDrag.mockReturnValue({
+            clipId: 'clip-1',
+            sourceTrackId: 'track-1',
+            startBeat: 0,
+            endBeat: 4,
+            offsetBeat: 0,
+            mode,
+        });
+        const { result } = renderHook(() => useTimelineInteractions(canvasRef));
+
+        act(() => {
+            result.current.handleMouseDown({ button: 0, clientX: 0, clientY: 20 } as any);
+        });
+        act(() => {
+            result.current.handleMouseMove({ clientX: 200, clientY: 20 } as any);
+        });
+        act(() => {
+            result.current.handleMouseUp({ clientX: 200, clientY: 20 } as any);
+        });
+    };
+
+    it.each(trimCases)(
+        '$name publishes no callback undo entry after a rejected write',
+        ({ mode, edge, lowerUseCase }) => {
+            lowerUseCase.mockReturnValue(false);
+            commitTrimPreview({ mode, edge });
+
+            expect(lowerUseCase).toHaveBeenCalledWith('clip-1', 2);
+            expect(mocks.pushUndoEntry).not.toHaveBeenCalled();
+        }
+    );
+
+    it.each(trimCases)(
+        '$name preserves callback undo publication after a committed write',
+        ({ mode, edge, lowerUseCase, expectedLabel }) => {
+            lowerUseCase.mockReturnValue(true);
+            commitTrimPreview({ mode, edge });
+
+            expect(lowerUseCase).toHaveBeenCalledWith('clip-1', 2);
+            expect(mocks.pushUndoEntry).toHaveBeenCalledOnce();
+            expect(mocks.pushUndoEntry).toHaveBeenCalledWith(expectedLabel, expect.any(Function), expect.any(Function));
+        }
+    );
 
     const pointer = (pointerId: number, clientX: number, clientY: number) =>
         ({ pointerId, clientX, clientY, nativeEvent: { clientX, clientY } }) as any;

@@ -1,5 +1,5 @@
 import { restoreAdjustmentLayerSnapshot } from '#/modules/Arrangement/useCases';
-import { hydrateGrooveTemplates } from '#/modules/MIDI/useCases';
+import { hydrateGrooveTemplates, replaceChordTrackState } from '#/modules/MIDI/useCases';
 import { setSidechainRoutes } from '#/modules/Routing/useCases';
 import { restoreTransportSnapshot } from '#/modules/Transport/useCases';
 import { hydrateYeastState } from '#/modules/Yeast/useCases';
@@ -14,6 +14,7 @@ export function hydrateModuleStoresFromProjectData(data: HydratableProjectData):
     // Adjustment layers hydrate after the active arrangement so affectedTrackIds resolve.
     restoreAdjustmentLayerSnapshot(data.adjustmentLayers);
 
+    replaceChordTrackState(data.chordTrack);
     hydrateGrooveTemplates(data.grooves ?? { templates: [], assignments: [] });
     hydrateYeastState(data.yeast);
 

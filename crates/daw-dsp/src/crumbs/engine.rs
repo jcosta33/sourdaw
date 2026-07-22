@@ -85,6 +85,15 @@ pub struct CrumbsEngine {
     record_threshold: f32,
     record_target_pad: u8,
     record_max_samples: usize,
+    // Off-thread commit handoff (ledger #568 / audit F4 follow-up). When
+    // enabled, commit_recording moves the filled buffers into
+    // `pending_commit` in O(1) — no clone, no pool insertion on the audio
+    // thread. The host slot forwards them over an SPSC ring to the command
+    // side, which clones/builds the SampleData off-thread and mirrors it
+    // back through CrumbsCommand::AddSample/SetActiveSample; the emptied
+    // buffers are recycled via return_record_buffers.
+    commit_handoff: bool,
+    pending_commit: Option<(Vec<f32>, Vec<f32>)>,
 
     // Metering (shared with UI thread)
     metering: Arc<CrumbsMetering>,
@@ -146,8 +155,38 @@ impl CrumbsEngine {
             record_threshold: 0.01,
             record_target_pad: 0,
             record_max_samples: (60.0 * sample_rate) as usize,
+            commit_handoff: false,
+            pending_commit: None,
             metering,
             sample_rate,
+        }
+    }
+
+    // ── Recording commit handoff ───────────────────────────────────────
+
+    /// Enable the off-thread commit handoff. In handoff mode,
+    /// commit_recording performs only O(1) pointer moves (no clone, no pool
+    /// insertion) and the take is retrieved via take_pending_commit.
+    pub fn enable_commit_handoff(&mut self) {
+        self.commit_handoff = true;
+    }
+
+    /// Retrieve a committed take awaiting off-thread processing. The host
+    /// slot drains this after every process call and forwards the buffers
+    /// over its SPSC ring. O(1), allocation-free.
+    pub fn take_pending_commit(&mut self) -> Option<(Vec<f32>, Vec<f32>)> {
+        self.pending_commit.take()
+    }
+
+    /// Reinstall an emptied buffer pair returned by the command side after
+    /// it cloned the take off-thread. Adopted only when the take buffers
+    /// are currently checked out (capacity 0); a spare pair that arrives
+    /// while buffers are installed is dropped (off-thread dealloc).
+    /// O(1), allocation-free on the audio thread.
+    pub fn return_record_buffers(&mut self, left: Vec<f32>, right: Vec<f32>) {
+        if self.record_buffer_left.capacity() == 0 {
+            self.record_buffer_left = left;
+            self.record_buffer_right = right;
         }
     }
 
@@ -208,6 +247,14 @@ impl CrumbsEngine {
                 target_pad,
                 max_duration_secs,
             } => {
+                // Handoff mode: after a commit the take buffers are checked
+                // out (capacity 0) until the command side returns them.
+                // Never allocate replacements on the audio thread — refuse
+                // to arm instead; the next arm succeeds once the emptied
+                // pair has been recycled.
+                if self.commit_handoff && self.record_buffer_left.capacity() == 0 {
+                    return;
+                }
                 self.record_threshold = threshold.clamp(0.0, 1.0);
                 self.record_target_pad = target_pad;
                 let requested = if max_duration_secs > 0.0 {
@@ -469,6 +516,24 @@ impl CrumbsEngine {
             return;
         }
 
+        if self.commit_handoff {
+            // Off-thread commit (ledger #568): move the filled buffers out in
+            // O(1) — no clone, no pool insertion, no active-sample write on
+            // the audio thread. The host slot forwards the pair over its
+            // SPSC ring; the command side clones/builds the SampleData and
+            // mirrors it back via AddSample/SetActiveSample, then recycles
+            // the emptied buffers through return_record_buffers. Once-per-
+            // take semantics and the "is_empty means nothing recorded since
+            // the last commit" invariant are preserved: mem::take leaves the
+            // buffers empty, exactly like the clear-after-clone below.
+            let left = std::mem::take(&mut self.record_buffer_left);
+            let right = std::mem::take(&mut self.record_buffer_right);
+            self.pending_commit = Some((left, right));
+            self.record_state = RecordState::Idle;
+            let _ = self.record_target_pad;
+            return;
+        }
+
         // Clone, not take: the record buffers are pre-allocated once at
         // construction and must keep their capacity across takes — taking
         // them left capacity 0, so the next arm clamped record_max_samples
@@ -483,19 +548,11 @@ impl CrumbsEngine {
         self.record_buffer_left.clear();
         self.record_buffer_right.clear();
 
-        // RT-ALLOC HAZARD (audit F4): the clone above allocates and
-        // memcpies len frames × 2 channels on the calling thread, which is
-        // the audio thread when recording is driven from the native bridge
-        // — same class as the pool add/Arc::new below. As of ledger row 24
-        // this path IS reachable on the audio thread: the crumbs slot now
-        // feeds record input from the audio-bridge/CPAL paths, so Stop and
-        // capacity auto-commit both fire here on the RT thread. Mitigating
-        // factors: a commit happens once per take (never per block), and the
-        // copy is bounded by record_max_samples. The proper fix is an
-        // off-thread commit handoff via the existing SPSC command queue
-        // (management thread owns pool insertion), which needs a new
-        // command variant + pool ownership changes (>100 lines) — tracked
-        // as a follow-up rather than half-done here.
+        // RT-ALLOC (audit F4): this clone+insert path allocates and memcpies
+        // len frames × 2 channels on the calling thread. It remains the
+        // fallback for engines without a commit handoff (unit tests and
+        // non-wired hosts); production crumbs instances run with
+        // enable_commit_handoff, which never reaches this code.
         let sample_data =
             super::sample::SampleData::from_stereo(left, right, self.sample_rate as u32);
 
@@ -793,5 +850,143 @@ mod duplicate_commit_tests {
         );
         assert_eq!(engine.active_sample_id(), Some(first_id));
         assert_eq!(engine.record_state(), RecordState::Idle);
+    }
+}
+
+#[cfg(test)]
+mod commit_handoff_tests {
+    use super::*;
+    use assert_no_alloc::assert_no_alloc;
+
+    fn arm(engine: &mut CrumbsEngine) {
+        engine.handle_command(CrumbsCommand::ArmRecording {
+            threshold: 0.01,
+            target_pad: 0,
+            max_duration_secs: 10.0,
+        });
+    }
+
+    /// The RT commit path in handoff mode: arm, feed, stop, and the O(1)
+    /// take retrieval must perform ZERO allocations (the ~21 MB clone moves
+    /// to the command side), and the pool/active sample must be untouched
+    /// until the command side mirrors the take back.
+    #[test]
+    fn handoff_commit_does_no_rt_alloc_and_defers_pool_insert() {
+        let mut engine = CrumbsEngine::new(44100.0);
+        engine.enable_commit_handoff();
+        engine.handle_command(CrumbsCommand::SetMode(CrumbsMode::Record));
+
+        let left = vec![0.5f32; 256];
+        let right = vec![0.5f32; 256];
+        let mut pending = None;
+
+        assert_no_alloc(|| {
+            arm(&mut engine);
+            engine.process_record_input(&left, &right);
+            engine.handle_command(CrumbsCommand::StopRecording);
+            pending = engine.take_pending_commit();
+        });
+
+        assert_eq!(engine.record_state(), RecordState::Idle);
+        assert_eq!(
+            engine.sample_pool().count(),
+            0,
+            "handoff commit must not insert into the pool on the RT thread"
+        );
+        assert_eq!(engine.active_sample_id(), None);
+
+        let (take_left, take_right) = pending.expect("take handed off in O(1)");
+        assert_eq!(take_left.len(), 256);
+        assert_eq!(take_right.len(), 256);
+        assert!(take_left.iter().all(|&s| (s - 0.5).abs() < 1.0e-6));
+    }
+
+    /// Once-per-take across cycles: the command side returns the emptied
+    /// buffers, the next arm adopts them, and repeated takes keep working —
+    /// the only way multi-hundred-frame takes fit is if the recycled pair
+    /// kept its pre-allocated capacity (no RT re-allocation anywhere).
+    #[test]
+    fn handoff_repeated_takes_recycle_buffers_and_keep_semantics() {
+        let mut engine = CrumbsEngine::new(44100.0);
+        engine.enable_commit_handoff();
+        engine.handle_command(CrumbsCommand::SetMode(CrumbsMode::Record));
+
+        let left = vec![0.5f32; 1500];
+        let right = vec![0.5f32; 1500];
+
+        for take in 1..=3usize {
+            let frames = 500 * take;
+            arm(&mut engine);
+            assert_eq!(
+                engine.record_state(),
+                RecordState::Armed,
+                "take {take}: arm refused — recycled buffers were not adopted"
+            );
+            engine.process_record_input(&left[..frames], &right[..frames]);
+            engine.handle_command(CrumbsCommand::StopRecording);
+
+            let (mut take_left, mut take_right) = engine
+                .take_pending_commit()
+                .unwrap_or_else(|| panic!("take {take} handed off"));
+            assert_eq!(take_left.len(), frames, "take {take} frame count");
+
+            // Simulate the command side: clone into SampleData (off-RT in
+            // production), mirror via commands, recycle the emptied pair.
+            let sample = std::sync::Arc::new(super::super::sample::SampleData::from_stereo(
+                take_left.clone(),
+                take_right.clone(),
+                44100,
+            ));
+            let id = take as u32;
+            engine.handle_command(CrumbsCommand::AddSample { id, data: sample });
+            engine.handle_command(CrumbsCommand::SetActiveSample(id));
+            take_left.clear();
+            take_right.clear();
+            engine.return_record_buffers(take_left, take_right);
+
+            assert_eq!(engine.sample_pool().count(), take);
+            assert_eq!(engine.active_sample_id(), Some(id));
+            assert_eq!(
+                engine.sample_pool().get(id).unwrap().meta.frame_count as usize,
+                frames
+            );
+        }
+    }
+
+    /// Arm between commit and buffer recycle must refuse safely (no RT
+    /// allocation, no artifact take) instead of clamping max samples to 0.
+    #[test]
+    fn handoff_arm_without_recycled_buffers_is_refused_safely() {
+        let mut engine = CrumbsEngine::new(44100.0);
+        engine.enable_commit_handoff();
+        engine.handle_command(CrumbsCommand::SetMode(CrumbsMode::Record));
+
+        let left = vec![0.5f32; 256];
+        let right = vec![0.5f32; 256];
+        arm(&mut engine);
+        engine.process_record_input(&left, &right);
+        engine.handle_command(CrumbsCommand::StopRecording);
+        let _pending = engine.take_pending_commit().expect("first take handed off");
+
+        // Buffers still checked out: arm must no-op.
+        arm(&mut engine);
+        assert_eq!(
+            engine.record_state(),
+            RecordState::Idle,
+            "arm without take buffers must be refused, not clamped to 0"
+        );
+
+        // A stop right after produces nothing (empty-buffer guard).
+        engine.handle_command(CrumbsCommand::StopRecording);
+        assert!(engine.take_pending_commit().is_none());
+        assert_eq!(engine.sample_pool().count(), 0);
+
+        // Once the pair is recycled the next arm works again.
+        engine.return_record_buffers(
+            Vec::with_capacity((60.0 * 44100.0) as usize),
+            Vec::with_capacity((60.0 * 44100.0) as usize),
+        );
+        arm(&mut engine);
+        assert_eq!(engine.record_state(), RecordState::Armed);
     }
 }
