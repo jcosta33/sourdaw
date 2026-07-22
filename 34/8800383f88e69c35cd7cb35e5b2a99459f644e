@@ -1,0 +1,65 @@
+src/modules/TimelineEditor/presentations/views/AutomationView/TrackAutomationSection.tsx
+  s_ac9b259eab20ba::t_85a928c055954c 23
+  s_ac9b259eab20ba::t_c9fe35c92d9d75 92
+src/modules/TimelineEditor/presentations/views/Inspector/__tests__/DeviceParameterControl.spec.tsx
+  s_ac9b259eab20ba::t_033edc5a211e62 210,218-224
+src/modules/AudioEngine/repositories/offlineScheduler/automationScheduling.ts
+  s_ac9b259eab20ba::t_1e8ec64c9a97b0 1,20-26,54-61
+src/modules/TimelineEditor/presentations/views/Inspector/__tests__/TrackAutomationSection.spec.tsx
+  s_ac9b259eab20ba::t_033edc5a211e62 9-11,143-164
+  s_ac9b259eab20ba::t_35a37b9fe7a664 165-166
+src/modules/TimelineEditor/presentations/views/AutomationView.tsx
+  s_ac9b259eab20ba::t_85a928c055954c 78
+src/modules/TimelineEditor/presentations/views/AutomationBottomPanel.tsx
+  s_ac9b259eab20ba::t_c9fe35c92d9d75 141-142,145
+src/modules/AudioEngine/repositories/offlineScheduler/__tests__/automationScheduling.spec.ts
+  s_ac9b259eab20ba::t_19bf38d375d752 186,189,192,195,201,208,214
+src/modules/TimelineEditor/presentations/views/Inspector/TrackAutomationSection.tsx
+  s_ac9b259eab20ba::t_85a928c055954c 13,17,27,112-120,136
+src/modules/Automation/useCases/modulation/__tests__/applyModulationToEngine.spec.ts
+  s_ac9b259eab20ba::t_033edc5a211e62 326-328,369-371
+  s_ac9b259eab20ba::t_b85e065f4e8dce 329-359,361-368
+  s_ac9b259eab20ba::t_95ebc9f35487c4 360
+src/utils/automationDeviceTarget.ts
+  s_ac9b259eab20ba::t_1e8ec64c9a97b0 3-4,24-39,41-43,46,48-49,52,56-57,59,62,64-66,68,71,74,76-78,80,84,86
+src/modules/Transport/useCases/scheduling/applyAutomation/applyAutomation.ts
+  s_ac9b259eab20ba::t_1e8ec64c9a97b0 11-15,25-31,89-100,127
+src/modules/Automation/useCases/modulation/applyModulationToEngine.ts
+  s_ac9b259eab20ba::t_95ebc9f35487c4 62-67
+  s_ac9b259eab20ba::t_487d2e170effac 2,17-23,41-42,51,68-76,132,134
+src/modules/TimelineEditor/presentations/views/Inspector/DeviceParameterControl.tsx
+  s_ac9b259eab20ba::t_85a928c055954c 6,11,16,96-102,245,285
+  s_ac9b259eab20ba::t_26d1fe827cfe99 71
+src/modules/TimelineEditor/presentations/views/AutomationView/__tests__/TrackAutomationSection.spec.tsx
+  s_ac9b259eab20ba::t_85a928c055954c 96
+src/modules/TimelineEditor/presentations/helpers/automationViewHelpers.ts
+  s_ac9b259eab20ba::t_85a928c055954c 1,3-7,14,23-30,38,55-57,59-60,63-73,76,84-91,93-95
+  s_ac9b259eab20ba::t_88ce8e4d705348 58,74-75,77-83,92
+  s_ac9b259eab20ba::t_c9fe35c92d9d75 15-16,47-54
+  s_ac9b259eab20ba::t_5f56e97447fff0 96
+src/modules/Transport/useCases/scheduling/applyAutomation/__tests__/applyAutomation.spec.ts
+  s_ac9b259eab20ba::t_4d8d17a4c3aeaa 246,248
+  s_ac9b259eab20ba::t_033edc5a211e62 3-4,19-20,23,26-29,35,88-89,98,101,190,227-245,247,251
+  s_ac9b259eab20ba::t_18561a20e68374 249-250
+  s_ac9b259eab20ba::t_cb387779377b69 252-253
+src/modules/TimelineEditor/presentations/helpers/__tests__/automationViewHelpers.spec.ts
+  s_ac9b259eab20ba::t_95ebc9f35487c4 78-82
+  s_ac9b259eab20ba::t_033edc5a211e62 4-10,70-77,83
+  s_ac9b259eab20ba::t_736e7a7a2b0b0b 84
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "348800383f88e69c35cd7cb35e5b2a99459f644e",
+  "prompts": {},
+  "sessions": {
+    "s_ac9b259eab20ba": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8699-3865-7842-8c54-afbac6cfd266",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
