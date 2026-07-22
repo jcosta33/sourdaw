@@ -1,3 +1,4 @@
+import { logger } from '#/infra/logger/appLogger';
 import {
     addDeviceToStrip,
     ensureTrackStrip,
@@ -76,8 +77,12 @@ export function projectTrackToLiveStrip({
             addDeviceArgs[3] = device.externalInstanceId;
         }
         addDeviceToStrip(...addDeviceArgs);
-        if (addDeviceArgs[3] && device.externalPluginId) {
-            void loadPlugin(device.externalPluginId, addDeviceArgs[3]);
+        const instanceId = addDeviceArgs[3];
+        const pluginId = device.externalPluginId;
+        if (instanceId && pluginId) {
+            void loadPlugin(pluginId, instanceId).catch((error: unknown) => {
+                logger.warn(`Failed to load external plugin ${pluginId} for instance ${instanceId}: ${String(error)}`);
+            });
         }
         for (const [parameterId, value] of Object.entries(device.parameterValues)) {
             if (typeof value === 'number') {

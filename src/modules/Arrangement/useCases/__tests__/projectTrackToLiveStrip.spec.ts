@@ -15,10 +15,13 @@ const mocks = vi.hoisted(() => ({
     updateDeviceParam: vi.fn(),
     updateDeviceBypass: vi.fn(),
     loadPlugin: vi.fn(),
+    warn: vi.fn(),
     setSend: vi.fn(),
     wireSidechainRoutes: vi.fn(),
     soloMode: 'sip',
 }));
+
+vi.mock('#/infra/logger/appLogger', () => ({ logger: { warn: mocks.warn } }));
 
 vi.mock('#/modules/PluginHost/useCases', () => ({
     loadPlugin: mocks.loadPlugin,
@@ -56,7 +59,7 @@ describe('projectTrackToLiveStrip', () => {
         applySoloLogic({ resetSavedGains: true, applyActions: false });
     });
 
-    it('projects the current owned track in device-chain order and wires sidechains last', () => {
+    it('projects the current owned track in device-chain order and wires sidechains last', async () => {
         const track = createTrack({ id: 'audio-1', name: 'Audio', kind: 'audio' });
         track.gain = 0.75;
         track.pan = -0.25;
@@ -95,6 +98,8 @@ describe('projectTrackToLiveStrip', () => {
         );
 
         vi.clearAllMocks();
+        const loadFailure = new Error('load failed');
+        mocks.loadPlugin.mockRejectedValueOnce(loadFailure);
         projectTrackToLiveStrip({ trackId: track.id, activateDormantExternalPlugins: true });
 
         expect(mocks.addDeviceToStrip).toHaveBeenCalledWith(
@@ -104,6 +109,11 @@ describe('projectTrackToLiveStrip', () => {
             'persisted-native-instance'
         );
         expect(mocks.loadPlugin).toHaveBeenCalledWith('persisted-native-plugin', 'persisted-native-instance');
+        await vi.waitFor(() =>
+            expect(mocks.warn).toHaveBeenCalledWith(
+                'Failed to load external plugin persisted-native-plugin for instance persisted-native-instance: Error: load failed'
+            )
+        );
     });
 
     it('keeps solo-safe and solo-bus upstream tracks audible while muting unrelated tracks', () => {
