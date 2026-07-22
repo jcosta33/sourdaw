@@ -2,14 +2,20 @@ import { type ActionHandler, type AppAction } from '#/utils/handlerContract';
 
 import { handleAddChordEvent } from '../handlers/chordTrack/handleAddChordEvent';
 import { handleClearChordTrack } from '../handlers/chordTrack/handleClearChordTrack';
+import { handleMoveChordEvent } from '../handlers/chordTrack/handleMoveChordEvent';
 import { handleRemoveChordEvent } from '../handlers/chordTrack/handleRemoveChordEvent';
+import { handleRestoreChordTrackState } from '../handlers/chordTrack/handleRestoreChordTrackState';
 import { handleToggleChordTrack } from '../handlers/chordTrack/handleToggleChordTrack';
+import { handleUpdateChordEvent } from '../handlers/chordTrack/handleUpdateChordEvent';
 
 type ChordTrackAppAction =
     | Extract<AppAction, { type: 'addChordEvent' }>
+    | Extract<AppAction, { type: 'moveChordEvent' }>
+    | Extract<AppAction, { type: 'updateChordEvent' }>
     | Extract<AppAction, { type: 'removeChordEvent' }>
     | Extract<AppAction, { type: 'toggleChordTrack' }>
-    | Extract<AppAction, { type: 'clearChordTrack' }>;
+    | Extract<AppAction, { type: 'clearChordTrack' }>
+    | Extract<AppAction, { type: 'restoreChordTrackState' }>;
 
 export type ChordTrackHandlersMap = {
     [Action in ChordTrackAppAction as Action['type']]: ActionHandler<Action>;
@@ -21,8 +27,11 @@ export type ChordTrackHandlersMap = {
 export function getChordTrackHandlers(): ChordTrackHandlersMap {
     return {
         addChordEvent: handleAddChordEvent,
+        moveChordEvent: handleMoveChordEvent,
+        updateChordEvent: handleUpdateChordEvent,
         removeChordEvent: handleRemoveChordEvent,
         toggleChordTrack: handleToggleChordTrack,
         clearChordTrack: handleClearChordTrack,
+        restoreChordTrackState: handleRestoreChordTrackState,
     };
 }

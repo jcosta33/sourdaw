@@ -1,16 +1,17 @@
 import { createHandler } from '#/utils/createHandler';
 
 import { chordTrackStore } from '../../stores/chordTrackStore';
-import { toggleChordTrack } from '../../useCases/chordTrack/toggleChordTrack';
+import { updateChordEvent } from '../../useCases/chordTrack/updateChordEvent';
 
-export const handleToggleChordTrack = createHandler<'toggleChordTrack'>({
-    execute: (alpha) => {
-        toggleChordTrack(alpha.payload?.enabled);
+export const handleUpdateChordEvent = createHandler<'updateChordEvent'>({
+    execute: (action) => {
+        const { eventId, ...partial } = action.payload;
+        updateChordEvent(eventId, partial);
     },
-    describe: (alpha) => {
+    describe: () => {
         const state = chordTrackStore.value;
         return {
-            label: alpha.payload?.enabled === false ? 'Disable chord track' : 'Enable chord track',
+            label: 'Update chord event',
             inverseAction: state
                 ? {
                       type: 'restoreChordTrackState',
