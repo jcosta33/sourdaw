@@ -12,11 +12,13 @@ import { isToasterDevice, createToasterNode } from '../../engine/ToasterNode';
 import { type Device } from '../../models/TrackViewTypes';
 import { type OfflineDeviceNode } from '../devices/types';
 
-import { type AudioDeviceStrategy } from './AudioDeviceStrategy';
+import { type AudioDeviceStrategy, type OfflineAutomationSegment } from './AudioDeviceStrategy';
 
 type NativeDspNode = {
     workletNode: AudioWorkletNode;
     setParam?: (name: string, value: number) => void;
+    acceptsScheduledParam?: (name: string) => boolean;
+    scheduleParam?: (name: string, segments: readonly OfflineAutomationSegment[]) => void;
     setBypass?: (bypassed: boolean) => void;
     noteOn?: (noteOrPad: number, velocity: number, midiNote?: number, sampleFrame?: number) => void;
     noteOff?: (noteOrPad: number, sampleFrame?: number) => void;
@@ -29,6 +31,8 @@ type NativeDspNode = {
 
 export class NativeDspDeviceStrategy implements AudioDeviceStrategy {
     public readonly node: OfflineDeviceNode;
+    public readonly acceptsScheduledParam?: (name: string) => boolean;
+    public readonly scheduleParam?: (name: string, segments: readonly OfflineAutomationSegment[]) => void;
 
     constructor(private readonly dspNode: NativeDspNode) {
         this.node = {
@@ -36,6 +40,12 @@ export class NativeDspDeviceStrategy implements AudioDeviceStrategy {
             outputNode: dspNode.workletNode,
             nodes: [dspNode.workletNode],
         };
+        const scheduleParam = dspNode.scheduleParam;
+        const acceptsScheduledParam = dspNode.acceptsScheduledParam;
+        if (scheduleParam && acceptsScheduledParam) {
+            this.acceptsScheduledParam = (name) => acceptsScheduledParam(name);
+            this.scheduleParam = (name, segments) => scheduleParam(name, segments);
+        }
     }
 
     setParam(name: string, value: number): void {

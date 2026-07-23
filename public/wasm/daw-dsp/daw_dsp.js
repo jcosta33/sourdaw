@@ -202,6 +202,14 @@ export class FermenterInstance {
         const len0 = WASM_VECTOR_LEN;
         wasm.fermenterinstance_set_param(this.__wbg_ptr, ptr0, len0, value);
     }
+    /**
+     * Set a supported automation parameter without crossing the WASM string bridge.
+     * @param {number} param_id
+     * @param {number} value
+     */
+    set_param_by_id(param_id, value) {
+        wasm.fermenterinstance_set_param_by_id(this.__wbg_ptr, param_id, value);
+    }
 }
 if (Symbol.dispose) FermenterInstance.prototype[Symbol.dispose] = FermenterInstance.prototype.free;
 

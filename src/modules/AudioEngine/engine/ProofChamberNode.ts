@@ -8,10 +8,23 @@ import { createReadyHandshake, ensureWorkletRegistered, fetchWasmBinary } from '
 import proofChamberProcessorUrl from '../services/proofChamberProcessor.ts?worker&url';
 
 const DEFAULT_WASM_URL = '/wasm/proof-chamber/proof_chamber_bg.wasm';
+const PROOF_CHAMBER_AUTOMATION_PARAM_IDS: Readonly<Record<string, number>> = {
+    mix: 0,
+    decay: 1,
+};
+
+type OfflineAutomationSegment = {
+    startFrame: number;
+    endFrame: number;
+    startValue: number;
+    endValue: number;
+};
 
 export type ProofChamberNodeResult = {
     workletNode: AudioWorkletNode;
     setParam: (name: string, value: number) => void;
+    acceptsScheduledParam: (name: string) => boolean;
+    scheduleParam: (name: string, segments: readonly OfflineAutomationSegment[]) => void;
     setBypass: (bypassed: boolean) => void;
     connect: (dest: AudioNode) => void;
     disconnect: () => void;
@@ -54,6 +67,32 @@ export async function createProofChamberNode(ctx: BaseAudioContext): Promise<Pro
         }
     };
 
+    const acceptsScheduledParam = (name: string): boolean => {
+        return Object.hasOwn(PROOF_CHAMBER_AUTOMATION_PARAM_IDS, name);
+    };
+
+    const scheduleParam = (name: string, segments: readonly OfflineAutomationSegment[]): void => {
+        const paramId = Object.hasOwn(PROOF_CHAMBER_AUTOMATION_PARAM_IDS, name)
+            ? PROOF_CHAMBER_AUTOMATION_PARAM_IDS[name]
+            : undefined;
+        const valid =
+            paramId !== undefined &&
+            Number.isInteger(paramId) &&
+            segments.length > 0 &&
+            segments.every(
+                (segment) =>
+                    Number.isInteger(segment.startFrame) &&
+                    Number.isInteger(segment.endFrame) &&
+                    segment.startFrame >= 0 &&
+                    segment.endFrame >= segment.startFrame &&
+                    Number.isFinite(segment.startValue) &&
+                    Number.isFinite(segment.endValue)
+            );
+        if (valid) {
+            node.port.postMessage({ type: 'paramAutomation', paramId, segments });
+        }
+    };
+
     const setBypass = (bypassed: boolean): void => {
         node.port.postMessage({ type: 'bypass', bypassed });
     };
@@ -75,5 +114,15 @@ export async function createProofChamberNode(ctx: BaseAudioContext): Promise<Pro
         node.port.close();
     };
 
-    return { workletNode: node, setParam, setBypass, connect, disconnect, destroy, ready: readyPromise };
+    return {
+        workletNode: node,
+        setParam,
+        acceptsScheduledParam,
+        scheduleParam,
+        setBypass,
+        connect,
+        disconnect,
+        destroy,
+        ready: readyPromise,
+    };
 }

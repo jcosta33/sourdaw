@@ -42,6 +42,7 @@ export declare class FermenterInstance {
     note_on(note: number, velocity: number): void;
     process(block_size: number): number;
     set_param(name: string, value: number): void;
+    set_param_by_id(param_id: number, value: number): void;
 }
 
 export declare class GlutenInstance {

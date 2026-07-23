@@ -68,4 +68,26 @@ describe('createFermenterNode allNotesOff surface', () => {
 
         expect(postMessage).not.toHaveBeenCalled();
     });
+
+    it('posts validated frame-addressed parameter automation as one worklet message', async () => {
+        const ctx = { currentTime: 0, state: 'running' } as unknown as BaseAudioContext;
+        const result = await createFermenterNode(ctx);
+        postMessage.mockClear();
+        const segments = [{ startFrame: 0, endFrame: 48_000, startValue: 200, endValue: 2_000 }];
+        if (!result.scheduleParam || !result.acceptsScheduledParam) {
+            throw new Error('Expected Fermenter automation controls');
+        }
+
+        result.scheduleParam('filterCutoff', segments);
+
+        expect(result.acceptsScheduledParam('filterCutoff')).toBe(true);
+        expect(result.acceptsScheduledParam('missing')).toBe(false);
+        expect(postMessage).toHaveBeenCalledWith({ type: 'paramAutomation', paramId: 1, segments });
+
+        postMessage.mockClear();
+        result.scheduleParam('constructor', segments);
+
+        expect(result.acceptsScheduledParam('constructor')).toBe(false);
+        expect(postMessage).not.toHaveBeenCalled();
+    });
 });
