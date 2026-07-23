@@ -538,8 +538,11 @@ impl ToasterEngine {
                             .as_deref_mut()
                             .expect("validated pad output buffer");
                         let tap_start = pad_idx * 2 * pad_stride;
-                        outputs[tap_start + i] += sl;
-                        outputs[tap_start + pad_stride + i] += sr;
+                        // The engine owns master gain for both the parent mix and
+                        // routed pad taps so every output follows one render-quantum
+                        // automation clock.
+                        outputs[tap_start + i] += sl * self.master_gain;
+                        outputs[tap_start + pad_stride + i] += sr * self.master_gain;
                     }
 
                     let pad_dry_routed = pad_idx < u16::BITS as usize

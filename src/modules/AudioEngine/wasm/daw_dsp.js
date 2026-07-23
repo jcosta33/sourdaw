@@ -1201,11 +1201,7 @@ export class ToasterInstance {
      * @param {number} value
      */
     set_param_by_id(param_id, value) {
-        wasm.toasterinstance_set_param_by_id(
-            this.__wbg_ptr,
-            param_id,
-            value
-        );
+        wasm.toasterinstance_set_param_by_id(this.__wbg_ptr, param_id, value);
     }
 }
 if (Symbol.dispose) ToasterInstance.prototype[Symbol.dispose] = ToasterInstance.prototype.free;

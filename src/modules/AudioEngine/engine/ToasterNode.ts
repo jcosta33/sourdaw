@@ -11,7 +11,6 @@ import toasterProcessorUrl from '../services/toasterProcessor.ts?worker&url';
 
 const DEFAULT_WASM_URL = '/wasm/daw-dsp/daw_dsp_bg.wasm';
 const TOASTER_PAD_COUNT = 16;
-const TOASTER_DEFAULT_MASTER_GAIN = 0.8;
 const TOASTER_AUTOMATION_PARAM_IDS: Readonly<Record<string, number>> = {
     masterGain: 0,
     reverbMix: 1,
@@ -81,7 +80,7 @@ export async function createToasterNode(ctx: BaseAudioContext, wasmUrl?: string)
     node.connect(outputNode, 0, 0);
     const padOutputGains = Array.from({ length: TOASTER_PAD_COUNT }, (_, pad) => {
         const gainNode = ctx.createGain();
-        gainNode.gain.value = TOASTER_DEFAULT_MASTER_GAIN;
+        gainNode.gain.value = 1;
         node.connect(gainNode, pad + 1, 0);
         return gainNode;
     });
@@ -143,12 +142,6 @@ export async function createToasterNode(ctx: BaseAudioContext, wasmUrl?: string)
             if (!Number.isFinite(value)) {
                 return;
             }
-            if (name === 'masterGain' || name === 'master_gain') {
-                const clampedValue = Math.min(2, Math.max(0, value));
-                for (const gainNode of padOutputGains) {
-                    gainNode.gain.value = clampedValue;
-                }
-            }
             node.port.postMessage({ type: 'param', name, value });
         },
         acceptsScheduledParam(name: string) {
@@ -171,21 +164,6 @@ export async function createToasterNode(ctx: BaseAudioContext, wasmUrl?: string)
                         Number.isFinite(segment.endValue)
                 );
             if (valid) {
-                if (name === 'masterGain') {
-                    for (const gainNode of padOutputGains) {
-                        gainNode.gain.cancelScheduledValues(0);
-                        for (const segment of segments) {
-                            gainNode.gain.setValueAtTime(
-                                Math.min(2, Math.max(0, segment.startValue)),
-                                segment.startFrame / ctx.sampleRate
-                            );
-                            gainNode.gain.linearRampToValueAtTime(
-                                Math.min(2, Math.max(0, segment.endValue)),
-                                segment.endFrame / ctx.sampleRate
-                            );
-                        }
-                    }
-                }
                 node.port.postMessage({ type: 'paramAutomation', paramId, segments });
             }
         },

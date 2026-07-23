@@ -128,13 +128,14 @@ fn invalid_pad_and_reset_leave_legacy_parent_output_unchanged() {
 }
 
 #[test]
-fn stems_are_shaped_and_panned_before_shared_fx_and_master() {
+fn stems_follow_transient_pan_and_master_without_shared_fx() {
     let mut unshaped = ToasterEngine::new(48_000.0, PADS);
     let mut shaped = ToasterEngine::new(48_000.0, PADS);
     for engine in [&mut unshaped, &mut shaped] {
         engine.set_pad_param(0, "pan", 1.0);
         engine.note_on(0, 127.0, 60);
     }
+    unshaped.set_param("master_gain", 1.0);
     shaped.set_pad_param(0, "transient_attack", 0.5);
     shaped.set_pad_param(0, "transient_sustain", 0.5);
     shaped.set_pad_param(0, "send_reverb", 1.0);
@@ -175,14 +176,14 @@ fn stems_are_shaped_and_panned_before_shared_fx_and_master() {
         for frame in 0..FRAMES {
             assert_eq!(
                 shaped_pads[FRAMES + frame].to_bits(),
-                (unshaped_pads[FRAMES + frame] * 0.5).to_bits(),
-                "transient-shaped frame {frame} in block {block}"
+                (unshaped_pads[FRAMES + frame] * 0.5 * 0.25).to_bits(),
+                "transient-shaped and mastered frame {frame} in block {block}"
             );
             if block == 0 {
                 assert_eq!(
                     shaped_right[frame].to_bits(),
-                    (shaped_pads[FRAMES + frame] * 0.25).to_bits(),
-                    "pre-master frame {frame}"
+                    shaped_pads[FRAMES + frame].to_bits(),
+                    "parent and routed tap must share one master gain"
                 );
             }
         }
