@@ -1,0 +1,32 @@
+src/modules/Transport/useCases/scheduling/processLiveYeastTrackBlock.ts
+  s_ac9b259eab20ba::t_500151498bed62 33
+src/modules/Transport/useCases/scheduling/__tests__/processLiveYeastTrackBlock.spec.ts
+  s_ac9b259eab20ba::t_500151498bed62 44
+src/modules/AudioEngine/useCases/offlineRender/__tests__/projectOfflineYeastTrackNotes.spec.ts
+  s_ac9b259eab20ba::t_c7a4b745f35932 191-193,195,197-198,214,216
+  s_ac9b259eab20ba::t_8ff1abe5ab7533 160,164-165,170-171,194,196,205-208,215,217
+src/modules/Transport/useCases/scheduling/scheduleMidiNotes.ts
+  s_ac9b259eab20ba::t_500151498bed62 168,215-232,340,384-387
+src/modules/Transport/useCases/scheduling/__tests__/scheduleMidiNotes.spec.ts
+  s_ac9b259eab20ba::t_c7c636ed5e5b25 7-13,131,400-427
+  s_ac9b259eab20ba::t_ce716eb2b1c805 428-429
+src/modules/AudioEngine/useCases/offlineRender/projectOfflineYeastTrackNotes.ts
+  s_ac9b259eab20ba::t_500151498bed62 55-59,145-156,159
+  s_ac9b259eab20ba::t_c7a4b745f35932 174
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "65af7a72641fe5481ceb2c79c0a3ee1eaca7589f",
+  "prompts": {},
+  "sessions": {
+    "s_ac9b259eab20ba": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8699-3865-7842-8c54-afbac6cfd266",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
