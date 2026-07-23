@@ -18,12 +18,12 @@ const DEFAULT_NOTE_VOICE_CAPACITY = 4096;
  * `tryPush` lets processors choose their own bounded overflow policy.
  */
 export class BoundedNoteVoiceQueue<TValue> {
-    private readonly routes = new Map<string | undefined, Map<number, VoiceQueue<TValue>>>();
+    private readonly routes = new Map<string | undefined, Map<string | number, VoiceQueue<TValue>>>();
     private count = 0;
 
     constructor(private readonly capacity = DEFAULT_NOTE_VOICE_CAPACITY) {}
 
-    tryPush(routeId: string | undefined, key: number, value: TValue): boolean {
+    tryPush(routeId: string | undefined, key: string | number, value: TValue): boolean {
         if (this.count >= this.capacity) {
             return false;
         }
@@ -45,13 +45,13 @@ export class BoundedNoteVoiceQueue<TValue> {
         return true;
     }
 
-    push(routeId: string | undefined, key: number, value: TValue): void {
+    push(routeId: string | undefined, key: string | number, value: TValue): void {
         if (!this.tryPush(routeId, key, value)) {
             throw new Error(`Yeast note voice capacity exceeded (${this.capacity})`);
         }
     }
 
-    shift(routeId: string | undefined, key: number): TValue | undefined {
+    shift(routeId: string | undefined, key: string | number): TValue | undefined {
         const route = this.routes.get(routeId);
         const queue = route?.get(key);
         if (!route || !queue) {
@@ -71,7 +71,7 @@ export class BoundedNoteVoiceQueue<TValue> {
         return node.value;
     }
 
-    visit(visitVoice: (value: TValue, routeId: string | undefined, key: number) => void): void {
+    visit(visitVoice: (value: TValue, routeId: string | undefined, key: string | number) => void): void {
         for (const [routeId, route] of this.routes) {
             for (const [key, queue] of route) {
                 let node: VoiceNode<TValue> | null = queue.head;
