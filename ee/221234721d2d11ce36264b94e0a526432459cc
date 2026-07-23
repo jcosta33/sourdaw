@@ -1,0 +1,66 @@
+src/modules/MIDI/useCases/midiNoteCrud/__tests__/prepareMidiTimeShiftTransaction.spec.ts
+  s_c2fca615e81f34::t_fb0ed571ee58be 200,202
+src/modules/MIDI/useCases/index.ts
+  s_c2fca615e81f34::t_adb2bd42b2065c 93
+src/modules/MIDI/services/__tests__/transformMidiGlobalTimeState.spec.ts
+  s_c2fca615e81f34::t_666d00124da885 205-219
+  s_c2fca615e81f34::t_17079d984791be 1-3,6-71,73-96,99-183,186-204,233-234,237-239,253-254
+  s_c2fca615e81f34::t_63ad541f182315 72,97-98
+  s_c2fca615e81f34::t_a5028b8b7d2fda 240-241,243-252
+  s_c2fca615e81f34::t_9e3026e57139ee 4-5
+  s_c2fca615e81f34::t_5ea58209159797 184
+  s_c2fca615e81f34::t_234b9c2421b943 220-232
+  s_c2fca615e81f34::t_793dea67d5e0cf 235,242
+  s_c2fca615e81f34::t_bfe27465cd961a 236
+  s_c2fca615e81f34::t_9ee53549865e33 185
+src/modules/MIDI/useCases/midiClipData/removeMidiClipData.ts
+  s_c2fca615e81f34::t_a6bc833822c9d2 1,10-15,19
+src/modules/MIDI/useCases/midiNoteCrud/prepareMidiTimeShiftTransaction.ts
+  s_c2fca615e81f34::t_89c687fd2af56a 1-4,29,33,38-39,52,58,96,126,129,142,155-165,167,173-174
+src/modules/MIDI/useCases/midiNoteCrud/splitMidiNotesAtBeat.ts
+  s_c2fca615e81f34::t_a6bc833822c9d2 1-2,12,17-22,28-38,42-45,48
+src/modules/MIDI/useCases/midiNoteCrud/duplicateClipNotes.ts
+  s_c2fca615e81f34::t_a6bc833822c9d2 2,10-19,23-27,29
+src/modules/MIDI/services/transformMidiGlobalTimeState.ts
+  s_c2fca615e81f34::t_a5028b8b7d2fda 313-315,323-327,329-332,344,349-353,357-360,372,382-386,390-395,407
+  s_c2fca615e81f34::t_2a5bf9ee49ff2e 1-88,90-136,144-312,316-322,328,333-343,345-348,354-356,361-371,373-381,387-389,396-406,408-425,427-431,433-446,451-592
+  s_c2fca615e81f34::t_9e3026e57139ee 89,426,432,447-450
+  s_c2fca615e81f34::t_c714ffc0b7bfcc 137-143
+src/modules/MIDI/useCases/midiNoteCrud/__tests__/prepareMidiGlobalTimeTransaction.spec.ts
+  s_c2fca615e81f34::t_63ad541f182315 495-535
+  s_c2fca615e81f34::t_f74715b11fd8d8 89-105,126
+  s_c2fca615e81f34::t_60ddd51698a35a 1-26,76-77,80-86,106-109,111-117,213,218,494,536
+  s_c2fca615e81f34::t_1a1a68fdc88412 71,164,400
+  s_c2fca615e81f34::t_fcff5d87db27e1 27-70,72-75,78-79,87-88,110,118-125,127-163,165-212,214-217,219-389,397-399,401-493
+  s_c2fca615e81f34::t_12c94ef3f21e6b 390-396
+src/modules/MIDI/useCases/midiNoteCrud/__tests__/splitMidiNotesAtBeat.spec.ts
+  s_c2fca615e81f34::t_fb0ed571ee58be 25-26,78-79
+src/modules/MIDI/useCases/midiClipData/__tests__/removeMidiClipData.spec.ts
+  s_c2fca615e81f34::t_fb0ed571ee58be 80-81
+src/modules/MIDI/useCases/midiNoteCrud/prepareMidiGlobalTimeTransaction.ts
+  s_c2fca615e81f34::t_9e3026e57139ee 443-446,543-549,554
+  s_c2fca615e81f34::t_c714ffc0b7bfcc 56
+  s_c2fca615e81f34::t_5ea58209159797 57
+  s_c2fca615e81f34::t_c2013a38744d0d 461,464,466,469,474,478,521
+  s_c2fca615e81f34::t_737ad8eef251af 8-9,11-16,18-19,21-22,68,72-73,277-278,288,291,316-318,341,361,371,510-511,515,550-553,556-557,576-577,585-587,590-591,610-613,617-620
+  s_c2fca615e81f34::t_f4348166a9753f 1-7,10,17,20,23-55,58-67,69-71,74-276,279-287,289-290,292-315,319-340,342-356,358-360,362-370,372-381,385-409,411-442,447-460,462-463,465,467-468,470-473,475-477,479-509,512-514,516-520,522-542,555,558-575,578-584,588-589,592-609,614-616
+  s_c2fca615e81f34::t_1a1a68fdc88412 357,382-384,410
+src/modules/MIDI/useCases/midiNoteCrud/__tests__/duplicateClipNotes.spec.ts
+  s_c2fca615e81f34::t_fb0ed571ee58be 87-103
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "ee221234721d2d11ce36264b94e0a526432459cc",
+  "prompts": {},
+  "sessions": {
+    "s_c2fca615e81f34": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f74e9-e1c5-7142-85d2-4c577b3973c0",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
