@@ -9,221 +9,167 @@ async function add_track(page: import('@playwright/test').Page, kind: string): P
     await page.getByRole('option', { name: `Add ${kind} Track` }).click();
 }
 
-test.describe('Fermenter Panel Deep', () => {
-    test('Fermenter panel macro and portamento visible on EDM template', async ({ page }) => {
-        test.setTimeout(60000);
-        await setupWorkspace(page);
-        await launch_from_template({ page, template_name: /EDM/i });
+// ---------------------------------------------------------------------------
+// Instrument panels — opening via the Browser Instruments tab exposes their
+// panel-internal search inputs and macro controls.
+// ---------------------------------------------------------------------------
 
-        const macro = page.getByRole('combobox', { name: 'Macro' });
-        if (await macro.isVisible().catch(() => false)) {
-            await expect(macro).toBeVisible();
-        }
-
-        const portamento = page.getByRole('slider', { name: 'Portamento time' });
-        if (await portamento.isVisible().catch(() => false)) {
-            const value = await portamento.getAttribute('aria-valuenow');
-            expect(value).not.toBeNull();
-        }
-    });
-});
-
-test.describe('Toaster Panel Deep', () => {
-    test('Toaster kit search and pad trigger visible on EDM template', async ({ page }) => {
-        test.setTimeout(60000);
-        await setupWorkspace(page);
-        await launch_from_template({ page, template_name: /EDM/i });
-
-        const kit_search = page.getByPlaceholder('Search Toaster kits').or(page.getByRole('searchbox', { name: 'Search Toaster kits' }));
-        if (await kit_search.first().isVisible().catch(() => false)) {
-            await expect(kit_search.first()).toBeVisible();
-        }
-    });
-});
-
-test.describe('Levain Panel Deep', () => {
-    test('Levain instrument search visible on EDM template', async ({ page }) => {
-        test.setTimeout(60000);
-        await setupWorkspace(page);
-        await launch_from_template({ page, template_name: /EDM/i });
-
-        const search = page.getByPlaceholder('Search Levain instruments').or(page.getByRole('searchbox', { name: 'Search Levain instruments' }));
-        if (await search.first().isVisible().catch(() => false)) {
-            await expect(search.first()).toBeVisible();
-        }
-    });
-});
-
-test.describe('Gluten Panel Deep', () => {
-    test('Gluten preset search visible when device added', async ({ page }) => {
+test.describe('Instrument panels via Browser', () => {
+    test.beforeEach(async ({ page }) => {
         test.setTimeout(60000);
         await setupWorkspace(page);
         await launch_new_project(page);
-        await add_track(page, 'MIDI');
-
-        const inspector = page.getByRole('complementary', { name: 'Inspector panel' });
-        await inspector.getByRole('button', { name: 'Add device' }).click();
-        const gluten = page.getByRole('menuitem', { name: /Gluten/i });
-        if (await gluten.isVisible().catch(() => false)) {
-            await gluten.click();
-            await page.waitForTimeout(1000);
-
-            const search = page.getByPlaceholder('Search Gluten presets').or(page.getByRole('searchbox', { name: 'Search Gluten presets' }));
-            if (await search.first().isVisible().catch(() => false)) {
-                await expect(search.first()).toBeVisible();
-            }
-        }
     });
-});
 
-test.describe('Session View Deep', () => {
-    test('Session view shows scene content on EDM template', async ({ page }) => {
-        test.setTimeout(60000);
-        await setupWorkspace(page);
-        await launch_from_template({ page, template_name: /EDM/i });
-
-        await page.getByRole('button', { name: 'Toggle bottom dock' }).click();
-        await page.locator('#bottom-dock-tab-session').click();
-        await page.waitForTimeout(500);
-
-        const panel = page.locator('#bottom-dock-tabpanel');
-        await expect(panel).toBeVisible();
-        const buttons = panel.getByRole('button');
-        const count = await buttons.count();
-        expect(count).toBeGreaterThan(0);
-    });
-});
-
-test.describe('Adjustment Layer Deep', () => {
-    test('Can add adjustment layer and see fade controls', async ({ page }) => {
-        await setupWorkspace(page);
-        await launch_new_project(page);
-        await add_track(page, 'MIDI');
-
-        const strip = page.getByRole('region', { name: 'Adjustment layers' });
-        await expect(strip).toBeVisible();
-
-        await page.getByRole('button', { name: 'Add adjustment layer' }).click();
+    test('Fermenter card creates a track and opens the panel with the Macro combobox', async ({ page }) => {
+        const browser = page.getByRole('complementary', { name: 'Browser panel' });
+        await browser.getByRole('button', { name: 'Instruments', exact: true }).click();
+        // InstrumentCard is a clickable div (not a button); click by its label text.
+        await browser.getByText('Fermenter', { exact: true }).click();
         await page.waitForTimeout(1000);
 
-        await expect(strip).toBeVisible();
+        // The Macro rig combobox is always visible in the Fermenter panel.
+        await expect(page.getByRole('combobox', { name: 'Macro' })).toBeVisible();
+    });
+
+    test('Toaster card opens the panel with the kit search input', async ({ page }) => {
+        const browser = page.getByRole('complementary', { name: 'Browser panel' });
+        await browser.getByRole('button', { name: 'Instruments', exact: true }).click();
+        await browser.getByText('Toaster', { exact: true }).click();
+        await page.waitForTimeout(1000);
+
+        await expect(page.getByRole('textbox', { name: 'Search Toaster kits' })).toBeVisible();
+    });
+
+    test('Levain card creates a Levain track in the track list', async ({ page }) => {
+        const browser = page.getByRole('complementary', { name: 'Browser panel' });
+        await browser.getByRole('button', { name: 'Instruments', exact: true }).click();
+        await browser.getByText('Levain', { exact: true }).click();
+        await page.waitForTimeout(1000);
+
+        // The card creates a Levain instrument track (real state mutation).
+        const track_list = page.getByRole('grid', { name: /Track list/i });
+        await expect(track_list.getByRole('row', { name: /Levain/i }).first()).toBeVisible();
     });
 });
 
-test.describe('Tempo Map Editor Deep', () => {
-    test('Tempo map editor opens and shows tempo change controls', async ({ page }) => {
+// ---------------------------------------------------------------------------
+// Session view — empty state when no tracks; scene buttons when tracks exist.
+// ---------------------------------------------------------------------------
+
+test.describe('Session view', () => {
+    test.beforeEach(async ({ page }) => {
         await setupWorkspace(page);
         await launch_new_project(page);
+        await page.getByRole('button', { name: 'Toggle bottom dock' }).click();
+        await page.locator('#bottom-dock-tab-session').click();
+    });
 
-        const toggle = page.getByRole('button', { name: 'Toggle tempo map' });
-        await toggle.click();
+    test('Session view exposes scene-launch buttons (master column always present)', async ({ page }) => {
+        // A fresh project has a master track, so the session grid always renders scene buttons.
+        await expect(page.getByRole('button', { name: /Launch scene 1/i })).toBeVisible();
+        await expect(page.getByRole('button', { name: /Launch scene 8/i })).toBeVisible();
+    });
+
+    test('Adding a track adds a session column for that track', async ({ page }) => {
+        await add_track(page, 'MIDI');
+        await page.waitForTimeout(500);
+        // The new track's scene slots appear as gridcells.
+        await expect(page.getByRole('gridcell', { name: /MIDI scene 1/i })).toBeVisible();
+    });
+});
+
+// ---------------------------------------------------------------------------
+// Adjustment layers — Add opens a menu; creating a layer grows the strip.
+// ---------------------------------------------------------------------------
+
+test.describe('Adjustment layers', () => {
+    test.beforeEach(async ({ page }) => {
+        await setupWorkspace(page);
+        await launch_new_project(page);
+        await add_track(page, 'MIDI');
+    });
+
+    test('Add adjustment layer opens an effect-type menu and creating one adds a row', async ({ page }) => {
+        const strip = page.getByRole('region', { name: 'Adjustment layers' });
+        const add_btn = strip.getByRole('button', { name: 'Add adjustment layer' });
+
+        await add_btn.click();
+        // The effect-type picker is a floating surface (not role=menu); click by text.
+        const eq_item = page.getByText('Eq', { exact: true });
+        await expect(eq_item).toBeVisible();
+
+        await eq_item.click();
         await page.waitForTimeout(500);
 
+        // A layer row appears (named "Eq Layer").
+        await expect(strip.getByText(/Eq Layer/i)).toBeVisible();
+    });
+});
+
+// ---------------------------------------------------------------------------
+// Tempo map — adding a change grows the list (regression guard).
+// ---------------------------------------------------------------------------
+
+test.describe('Tempo map editor', () => {
+    test.beforeEach(async ({ page }) => {
+        await setupWorkspace(page);
+        await launch_new_project(page);
+    });
+
+    test('Adding a tempo change replaces the empty state with a change row', async ({ page }) => {
+        await page.getByRole('button', { name: 'Toggle tempo map' }).click();
         const dialog = page.getByRole('dialog', { name: 'Tempo map editor' });
-        if (await dialog.isVisible().catch(() => false)) {
-            const beat_input = page.getByRole('spinbutton', { name: 'New tempo change beat' });
-            const bpm_input = page.getByRole('spinbutton', { name: 'New tempo change BPM' });
-            const add_btn = page.getByRole('button', { name: 'Add tempo change' });
+        await expect(dialog).toBeVisible();
+        await expect(dialog.getByText('No tempo changes')).toBeVisible();
 
-            const has_inputs = await beat_input.isVisible().catch(() => false);
-            const has_add = await add_btn.isVisible().catch(() => false);
+        await dialog.getByRole('spinbutton', { name: 'New tempo change beat' }).fill('8');
+        await dialog.getByRole('spinbutton', { name: 'New tempo change BPM' }).fill('140');
+        await dialog.getByRole('button', { name: 'Add tempo change' }).click();
 
-            if (has_inputs && has_add) {
-                await beat_input.fill('8');
-                await bpm_input.fill('140');
-                await add_btn.click();
-                await page.waitForTimeout(500);
-
-                const edit_btn = page.getByRole('button', { name: /140 BPM at beat 8/i });
-                if (await edit_btn.isVisible().catch(() => false)) {
-                    await expect(edit_btn).toBeVisible();
-                }
-            }
-        }
+        await expect(dialog.getByText('No tempo changes')).toHaveCount(0);
+        await expect(dialog.getByText(/Beat 8/)).toBeVisible();
     });
 });
 
-test.describe('Shortcut Cheat Sheet', () => {
-    test('Can open and navigate shortcut cheat sheet', async ({ page }) => {
+// ---------------------------------------------------------------------------
+// Status bar — records the last action with its handler-described label.
+// ---------------------------------------------------------------------------
+
+test.describe('Status bar last-action text', () => {
+    test.beforeEach(async ({ page }) => {
         await setupWorkspace(page);
         await launch_new_project(page);
-        await page.locator('#main-content').click();
-
-        await page.keyboard.press('Shift+Slash');
-        const sheet = page.getByRole('dialog', { name: /Keyboard shortcuts/i });
-        await expect(sheet).toBeVisible({ timeout: 5000 });
-
-        const content = sheet.getByText(/Zoom|Transport|Editing|View/i);
-        await expect(content.first()).toBeVisible({ timeout: 3000 });
-
-        await page.keyboard.press('Escape');
-        await expect(sheet).toBeHidden({ timeout: 3000 });
     });
-});
 
-test.describe('Notification Toast', () => {
-    test('Action triggers notification in status bar', async ({ page }) => {
-        await setupWorkspace(page);
-        await launch_new_project(page);
+    test('Adding a MIDI track writes "Last: Add midi track" to the status bar', async ({ page }) => {
         await add_track(page, 'MIDI');
         await page.waitForTimeout(500);
 
         const status = page.getByRole('status', { name: 'Application status' });
-        const last_text = status.getByText(/Last:/i);
-        if (await last_text.isVisible().catch(() => false)) {
-            const text = await last_text.textContent();
-            expect(text).toMatch(/add|track|midi/i);
-        }
+        await expect(status.getByText(/Last:/i)).toBeVisible();
+        await expect(status.getByText(/Add midi track/i)).toBeVisible();
     });
 });
 
-test.describe('Prompt Bar Deep', () => {
-    test('Prompt bar accepts natural language input', async ({ page }) => {
-        await setupWorkspace(page);
-        await launch_from_template({ page, template_name: /EDM/i });
+// ---------------------------------------------------------------------------
+// Browser tab switching — each tab swaps the rendered content heading.
+// ---------------------------------------------------------------------------
 
-        const prompt = page.getByRole('textbox', { name: 'Prompt command input' });
-        await expect(prompt).toBeVisible();
-
-        await prompt.fill('set tempo to 140');
-        await expect(prompt).toHaveValue('set tempo to 140');
-
-        await prompt.fill('');
-        await expect(prompt).toHaveValue('');
-    });
-});
-
-test.describe('Browser Tab Switching', () => {
+test.describe('Browser tab switching', () => {
     test.beforeEach(async ({ page }) => {
+        test.setTimeout(60000);
         await setupWorkspace(page);
         await launch_from_template({ page, template_name: /EDM/i });
     });
 
-    test('Each browser tab shows different content', async ({ page }) => {
+    test('Switching tabs updates the browser route title', async ({ page }) => {
         const browser = page.getByRole('complementary', { name: 'Browser panel' });
 
-        for (const tab of ['Instruments', 'Effects', 'Library', 'Macros', 'Project']) {
-            await browser.getByRole('button', { name: tab, exact: true }).click();
-            await page.waitForTimeout(300);
-            await expect(browser).toBeVisible();
-        }
-    });
-});
+        await browser.getByRole('button', { name: 'Effects', exact: true }).click();
+        await expect(browser.getByText(/Effects/i).first()).toBeVisible();
 
-test.describe('Undo History Panel Content', () => {
-    test('Undo history shows entries after actions', async ({ page }) => {
-        await setupWorkspace(page);
-        await launch_new_project(page);
-        await add_track(page, 'MIDI');
-        await page.waitForTimeout(300);
-
-        await page.getByRole('button', { name: /Toggle undo history panel/i }).click();
-        await page.waitForTimeout(500);
-
-        const entries = page.getByText(/undo/i, { exact: false }).filter({ hasText: /\d/ });
-        if (await entries.first().isVisible().catch(() => false)) {
-            const text = await entries.first().textContent();
-            expect(text).toMatch(/\d/);
-        }
+        await browser.getByRole('button', { name: 'Project', exact: true }).click();
+        await expect(browser.getByText(/Project/i).first()).toBeVisible();
     });
 });

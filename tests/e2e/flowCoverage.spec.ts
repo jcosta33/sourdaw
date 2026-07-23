@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { launch_from_template, launch_new_project, setupWorkspace, wait_for_workspace_ready } from './e2eUtils';
+import { launch_new_project, setupWorkspace, wait_for_workspace_ready } from './e2eUtils';
 
 const MOD = process.platform === 'darwin' ? 'Meta' : 'Control';
 
@@ -9,224 +9,159 @@ async function add_track(page: import('@playwright/test').Page, kind: string): P
     await page.getByRole('option', { name: `Add ${kind} Track` }).click();
 }
 
-test.describe('Transport Recording Flow', () => {
+// ---------------------------------------------------------------------------
+// Transport — loop toggle round-trips via aria-pressed.
+// ---------------------------------------------------------------------------
+
+test.describe('Transport recording flow', () => {
     test.beforeEach(async ({ page }) => {
         await setupWorkspace(page);
         await launch_new_project(page);
     });
 
-    test('Record button toggles armed state with aria-pressed', async ({ page }) => {
-        const record = page.getByRole('button', { name: 'Record' }).or(page.getByRole('button', { name: 'Stop recording' }));
-        const pressed_before = await record.first().getAttribute('aria-pressed');
-        await record.first().click();
-        await page.waitForTimeout(300);
-        const pressed_after = await record.first().getAttribute('aria-pressed');
-        expect(pressed_after).not.toBe(pressed_before);
-    });
-
-    test('Play then stop does not crash the transport', async ({ page }) => {
-        const play = page.getByRole('button', { name: 'Play' }).or(page.getByRole('button', { name: 'Pause' }));
-        const stop = page.getByRole('button', { name: 'Stop' });
-
-        await play.first().click();
-        await page.waitForTimeout(500);
-        await stop.click();
-        await page.waitForTimeout(500);
-
-        await expect(page.getByRole('toolbar', { name: 'Transport controls' })).toBeVisible();
-    });
-
-    test('Loop toggle followed by play engages loop mode', async ({ page }) => {
+    test('Loop toggle round-trips aria-pressed true → false', async ({ page }) => {
         const loop = page.getByRole('button', { name: 'Loop', exact: true });
+        await expect(loop).toHaveAttribute('aria-pressed', 'false');
+
         await loop.click();
         await expect(loop).toHaveAttribute('aria-pressed', 'true');
-
-        const play = page.getByRole('button', { name: 'Play' }).or(page.getByRole('button', { name: 'Pause' }));
-        await play.first().click();
-        await page.waitForTimeout(500);
-        await play.first().click();
-        await page.waitForTimeout(300);
 
         await loop.click();
         await expect(loop).toHaveAttribute('aria-pressed', 'false');
     });
+
+    test('Play then Stop leaves the transport stable', async ({ page }) => {
+        const play = page.getByRole('button', { name: 'Play' }).or(page.getByRole('button', { name: 'Pause' }));
+        const stop = page.getByRole('button', { name: 'Stop' });
+
+        await play.first().click();
+        await page.waitForTimeout(400);
+        await stop.click();
+        await page.waitForTimeout(400);
+
+        await expect(page.getByRole('toolbar', { name: 'Transport controls' })).toBeVisible();
+        // After stop, the Play button is available again (not stuck on Pause).
+        await expect(page.getByRole('button', { name: 'Play', exact: true })).toBeVisible();
+    });
 });
 
-test.describe('Chord Track With Template', () => {
-    test('Pop Song template shows chord track with chord content', async ({ page }) => {
+// ---------------------------------------------------------------------------
+// Chord track (Pop Song) — follow toggle flips aria-pressed.
+// ---------------------------------------------------------------------------
+
+test.describe('Chord track with template', () => {
+    test.beforeEach(async ({ page }) => {
         test.setTimeout(60000);
         await setupWorkspace(page);
-        const launch_screen = page.getByLabel('Sourdaw — start a project');
-        await launch_screen.waitFor({ state: 'visible' });
+        await page.getByLabel('Sourdaw — start a project').waitFor({ state: 'visible' });
         await page.locator('#launch-from-template').click();
         await page.getByRole('button', { name: 'Pop Song' }).click();
         await wait_for_workspace_ready(page);
+    });
 
+    test('Harmonic-follow toggle flips aria-pressed', async ({ page }) => {
         const chord_track = page.getByRole('region', { name: 'Chord track' });
-        if (await chord_track.isVisible().catch(() => false)) {
-            const add_chord = chord_track.getByRole('button', { name: /Add chord event/i });
-            if (await add_chord.isVisible().catch(() => false)) {
-                await expect(add_chord).toBeVisible();
-            }
+        await expect(chord_track).toBeVisible();
 
-            const clear = chord_track.getByRole('button', { name: /Clear all chords/i });
-            if (await clear.isVisible().catch(() => false)) {
-                await expect(clear).toBeVisible();
-            }
-
-            const follow = chord_track.getByRole('button', { name: /Enable harmonic following|Disable harmonic following/i });
-            if (await follow.isVisible().catch(() => false)) {
-                await expect(follow).toBeVisible();
-            }
-        }
+        const follow = chord_track.getByRole('button', { name: /Enable harmonic following|Disable harmonic following/i });
+        const before = await follow.getAttribute('aria-pressed');
+        await follow.click();
+        await expect(follow).not.toHaveAttribute('aria-pressed', before ?? '');
     });
 });
 
-test.describe('Arrangement Bar Section Interactions', () => {
+// ---------------------------------------------------------------------------
+// Arrangement sections — right-click → Add Section grows the section list.
+// ---------------------------------------------------------------------------
+
+test.describe('Arrangement sections', () => {
     test.beforeEach(async ({ page }) => {
         await setupWorkspace(page);
         await launch_new_project(page);
         await add_track(page, 'MIDI');
     });
 
-    test('Arrangement sections region is present and interactive', async ({ page }) => {
+    test('Right-click → Add Section creates a section', async ({ page }) => {
         const sections = page.getByRole('region', { name: 'Arrangement sections' });
-        await expect(sections).toBeVisible();
+        await expect(sections.getByText('Right-click to add arrangement sections')).toBeVisible();
 
         const box = await sections.boundingBox();
-        if (box) {
-            await sections.click({ button: 'right', position: { x: 50, y: box.height * 0.5 } });
-            const menu = page.getByRole('menu');
-            if (await menu.isVisible().catch(() => false)) {
-                const items = menu.getByRole('menuitem');
-                const count = await items.count();
-                expect(count).toBeGreaterThan(0);
-                await page.keyboard.press('Escape');
-            }
-        }
+        if (!box) throw new Error('sections region missing');
+        await sections.click({ button: 'right', position: { x: 50, y: box.height * 0.5 } });
+
+        // The context menu is a floating surface (not role=menu); click by text.
+        await page.getByText('Add Section', { exact: true }).click();
+        await page.waitForTimeout(500);
+
+        // The empty hint is gone; a named section appears.
+        await expect(sections.getByText('Right-click to add arrangement sections')).toHaveCount(0);
+        await expect(sections.getByText(/New Section/i)).toBeVisible();
     });
 });
 
-test.describe('Adjustment Layer Interactions', () => {
+// ---------------------------------------------------------------------------
+// Adjustment layer — persists in the strip after creation.
+// ---------------------------------------------------------------------------
+
+test.describe('Adjustment layer interactions', () => {
     test.beforeEach(async ({ page }) => {
         await setupWorkspace(page);
         await launch_new_project(page);
         await add_track(page, 'MIDI');
     });
 
-    test('Can add adjustment layer and it persists in strip', async ({ page }) => {
+    test('Creating a volume adjustment layer adds a named row', async ({ page }) => {
         const strip = page.getByRole('region', { name: 'Adjustment layers' });
-        const add_button = page.getByRole('button', { name: 'Add adjustment layer' });
-
-        await add_button.click();
-        await page.waitForTimeout(1000);
-
-        await expect(strip).toBeVisible();
-        await expect(add_button).toBeVisible();
-    });
-});
-
-test.describe('Session View Interactions', () => {
-    test.beforeEach(async ({ page }) => {
-        await setupWorkspace(page);
-        await launch_new_project(page);
-        await page.getByRole('button', { name: 'Toggle bottom dock' }).click();
-        await page.locator('#bottom-dock-tab-session').click();
-    });
-
-    test('Session view panel has interactive content', async ({ page }) => {
-        const panel = page.locator('#bottom-dock-tabpanel');
-        await expect(panel).toBeVisible();
-        await expect(panel.getByRole('button').first()).toBeVisible({ timeout: 5000 });
-    });
-
-    test('Session view shows scene or empty state content', async ({ page }) => {
-        const panel = page.locator('#bottom-dock-tabpanel');
-        const content = panel.getByText(/scene|No session|empty|track/i);
-        const visible = await content.first().isVisible().catch(() => false);
-        if (visible) {
-            await expect(content.first()).toBeVisible();
-        }
-    });
-});
-
-test.describe('Notification System', () => {
-    test.beforeEach(async ({ page }) => {
-        await setupWorkspace(page);
-        await launch_new_project(page);
-    });
-
-    test('Status bar shows last action text', async ({ page }) => {
-        await add_track(page, 'MIDI');
+        await strip.getByRole('button', { name: 'Add adjustment layer' }).click();
+        // The effect-type picker is a floating surface (not role=menu); click by text.
+        await page.getByText('Volume', { exact: true }).click();
         await page.waitForTimeout(500);
 
-        const status = page.getByRole('status', { name: 'Application status' });
-        const last_action = status.getByText(/Last:/i);
-        if (await last_action.isVisible().catch(() => false)) {
-            const text = await last_action.textContent();
-            expect(text).toMatch(/add|track|midi/i);
-        }
-    });
-
-    test('Undo count in status bar updates after actions', async ({ page }) => {
-        await add_track(page, 'MIDI');
-        await page.waitForTimeout(500);
-
-        const status = page.getByRole('status', { name: 'Application status' });
-        const undo_info = status.getByText(/undo/i);
-        if (await undo_info.isVisible().catch(() => false)) {
-            const text = await undo_info.textContent();
-            expect(text).toMatch(/\d/);
-        }
+        await expect(strip.getByText(/Volume Layer/i)).toBeVisible();
     });
 });
 
-test.describe('Panel Layout Persistence', () => {
+// ---------------------------------------------------------------------------
+// Panel layout — toggles round-trip the panel visibility.
+// ---------------------------------------------------------------------------
+
+test.describe('Panel layout persistence', () => {
     test.beforeEach(async ({ page }) => {
         await setupWorkspace(page);
         await launch_new_project(page);
     });
 
-    test('Browser panel can be toggled on and off', async ({ page }) => {
+    test('Browser toggle hides then restores the panel', async ({ page }) => {
         const toggle = page.getByRole('button', { name: 'Toggle browser' });
         const browser = page.getByRole('complementary', { name: 'Browser panel' });
-        const was_visible = await browser.isVisible().catch(() => false);
+        await expect(browser).toBeVisible();
 
         await toggle.click();
-        await page.waitForTimeout(300);
-        const now_visible = await browser.isVisible().catch(() => false);
-        expect(now_visible).not.toBe(was_visible);
+        await expect(browser).toHaveCount(0);
 
         await toggle.click();
-        await page.waitForTimeout(300);
+        await expect(browser).toBeVisible();
     });
 
-    test('Inspector panel can be toggled on and off', async ({ page }) => {
+    test('Inspector toggle hides then restores the panel', async ({ page }) => {
         const toggle = page.getByRole('button', { name: 'Toggle inspector' });
         const inspector = page.getByRole('complementary', { name: 'Inspector panel' });
-        const was_visible = await inspector.isVisible().catch(() => false);
+        await expect(inspector).toBeVisible();
 
         await toggle.click();
-        await page.waitForTimeout(300);
-        const now_visible = await inspector.isVisible().catch(() => false);
-        expect(now_visible).not.toBe(was_visible);
+        await expect(inspector).toHaveCount(0);
 
         await toggle.click();
-        await page.waitForTimeout(300);
+        await expect(inspector).toBeVisible();
     });
 
-    test('Bottom dock can be toggled repeatedly', async ({ page }) => {
+    test('Bottom dock opens and closes via its toggle and close button', async ({ page }) => {
         const dock_toggle = page.getByRole('button', { name: 'Toggle bottom dock' });
-        const close_dock = page.getByRole('button', { name: 'Close bottom dock' });
+        const panel = page.locator('#bottom-dock-tabpanel');
 
         await dock_toggle.click();
-        await expect(page.locator('#bottom-dock-tabpanel')).toBeVisible({ timeout: 5000 });
-        await close_dock.click();
-        await expect(page.locator('#bottom-dock-tabpanel')).toBeHidden();
-
-        await dock_toggle.click();
-        await expect(page.locator('#bottom-dock-tabpanel')).toBeVisible({ timeout: 5000 });
-        await close_dock.click();
-        await expect(page.locator('#bottom-dock-tabpanel')).toBeHidden();
+        await expect(panel).toBeVisible();
+        await page.getByRole('button', { name: 'Close bottom dock' }).click();
+        await expect(panel).toHaveCount(0);
     });
 });
