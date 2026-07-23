@@ -22,6 +22,7 @@ const offlineRenderMocks = vi.hoisted(() => ({
     getDrumKitDefByIndex: vi.fn(() => null),
     scheduleDrumKitNote: vi.fn(),
     createOfflineTrackStrip: vi.fn(),
+    connectOfflineToasterPadRoutes: vi.fn(),
     renderWithTimeout: vi.fn(),
     resolveRenderContext: vi.fn(),
     scheduleTrackClips: vi.fn(),
@@ -95,6 +96,10 @@ vi.mock('../../repositories/offlineScheduler/automationScheduling', () => ({
 
 vi.mock('../offlineRender/createOfflineTrackStrip', () => ({
     createOfflineTrackStrip: offlineRenderMocks.createOfflineTrackStrip,
+}));
+
+vi.mock('../offlineRender/connectOfflineToasterPadRoutes', () => ({
+    connectOfflineToasterPadRoutes: offlineRenderMocks.connectOfflineToasterPadRoutes,
 }));
 
 vi.mock('../offlineRender/renderWithTimeout', () => ({
@@ -172,12 +177,20 @@ describe('exportStems', () => {
         expect(OfflineContext).not.toHaveBeenCalled();
     });
 
-    it('exports a Toaster folder stem while excluding an ordinary folder', async () => {
+    it('exports one grouped Toaster stem with its pad children while excluding duplicate child stems', async () => {
         const toasterFolder = {
             id: 'toaster-folder',
             kind: 'folder',
             disabled: false,
             devices: [{ id: 'toaster-device', type: 'toaster' }],
+        };
+        const padChild = {
+            id: 'kick-pad',
+            kind: 'midi',
+            parentId: toasterFolder.id,
+            disabled: false,
+            devices: [],
+            freezeState: { status: 'unfrozen' },
         };
         const ordinaryFolder = {
             id: 'ordinary-folder',
@@ -185,14 +198,25 @@ describe('exportStems', () => {
             disabled: false,
             devices: [],
         };
-        const outputNode = { connect: vi.fn() };
+        const parentInput = {};
+        const parentOutput = { connect: vi.fn() };
+        const childOutput = { connect: vi.fn() };
         const renderedBuffer = { id: 'toaster-stem' };
-        offlineRenderMocks.resolveRenderContext.mockReturnValue(createRenderContext([toasterFolder, ordinaryFolder]));
-        offlineRenderMocks.createOfflineTrackStrip.mockResolvedValue({
+        const allTracks = [toasterFolder, padChild, ordinaryFolder];
+        const groupedTracks = [toasterFolder, padChild];
+        offlineRenderMocks.resolveRenderContext.mockReturnValue(createRenderContext(allTracks));
+        offlineRenderMocks.createOfflineTrackStrip.mockResolvedValueOnce({
+            inputNode: parentInput,
+            faderNode: {},
+            panNode: {},
+            outputNode: parentOutput,
+            deviceEntries: [],
+        });
+        offlineRenderMocks.createOfflineTrackStrip.mockResolvedValueOnce({
             inputNode: {},
             faderNode: {},
             panNode: {},
-            outputNode,
+            outputNode: childOutput,
             deviceEntries: [],
         });
         offlineRenderMocks.renderWithTimeout.mockResolvedValue(renderedBuffer);
@@ -204,8 +228,238 @@ describe('exportStems', () => {
         const stems = await exportStems(4);
 
         expect(OfflineContext).toHaveBeenCalledTimes(1);
-        expect(offlineRenderMocks.createOfflineTrackStrip).toHaveBeenCalledTimes(1);
+        expect(offlineRenderMocks.createOfflineTrackStrip).toHaveBeenCalledTimes(2);
         expect(offlineRenderMocks.createOfflineTrackStrip).toHaveBeenCalledWith(expect.anything(), toasterFolder);
+        expect(offlineRenderMocks.createOfflineTrackStrip).toHaveBeenCalledWith(expect.anything(), padChild);
+        expect(offlineRenderMocks.connectOfflineToasterPadRoutes).toHaveBeenCalledWith(
+            expect.objectContaining({ tracks: groupedTracks })
+        );
+        expect(childOutput.connect).toHaveBeenCalledWith(parentInput);
+        expect(offlineRenderMocks.scheduleTrackClips).toHaveBeenNthCalledWith(
+            1,
+            expect.objectContaining({ track: toasterFolder, allTracks: groupedTracks })
+        );
+        expect(offlineRenderMocks.scheduleTrackClips).toHaveBeenNthCalledWith(
+            2,
+            expect.objectContaining({ track: { ...padChild, clips: [] }, allTracks: groupedTracks })
+        );
         expect(stems).toEqual(new Map([['toaster-folder', renderedBuffer]]));
+    });
+
+    it('keeps a child stem when its Toaster-bearing parent cannot own a grouped stem', async () => {
+        const dormantVca = {
+            id: 'vca-1',
+            kind: 'vca',
+            disabled: false,
+            devices: [{ id: 'd1', type: 'toaster' }],
+        };
+        const child = { id: 'midi-child', kind: 'midi', parentId: dormantVca.id, disabled: false, devices: [] };
+        const renderedBuffer = { id: 'child-stem' };
+        offlineRenderMocks.resolveRenderContext.mockReturnValue(createRenderContext([dormantVca, child]));
+        offlineRenderMocks.createOfflineTrackStrip.mockResolvedValue({
+            inputNode: {},
+            faderNode: {},
+            panNode: {},
+            outputNode: { connect: vi.fn() },
+            deviceEntries: [],
+        });
+        offlineRenderMocks.renderWithTimeout.mockResolvedValue(renderedBuffer);
+        vi.stubGlobal(
+            'OfflineAudioContext',
+            vi.fn(function OfflineContext() {
+                return { destination: {} };
+            })
+        );
+
+        const stems = await exportStems(4);
+
+        expect(offlineRenderMocks.createOfflineTrackStrip).toHaveBeenCalledTimes(1);
+        expect(offlineRenderMocks.createOfflineTrackStrip).toHaveBeenCalledWith(expect.anything(), child);
+        expect(offlineRenderMocks.scheduleTrackClips).toHaveBeenCalledWith(
+            expect.objectContaining({ track: child, allTracks: [child] })
+        );
+        expect(stems).toEqual(new Map([[child.id, renderedBuffer]]));
+    });
+
+    it('exports a seventeenth Toaster-folder child independently instead of dropping it', async () => {
+        const toasterFolder = {
+            id: 'toaster-folder',
+            kind: 'folder',
+            disabled: false,
+            devices: [{ id: 'toaster-device', type: 'toaster' }],
+        };
+        const children = Array.from({ length: 17 }, (_, index) => ({
+            id: `child-${index}`,
+            kind: 'midi',
+            parentId: toasterFolder.id,
+            disabled: false,
+            devices: [],
+            freezeState: { status: 'unfrozen' },
+        }));
+        const renderedBuffer = { id: 'stem' };
+        offlineRenderMocks.resolveRenderContext.mockReturnValue(createRenderContext([toasterFolder, ...children]));
+        offlineRenderMocks.createOfflineTrackStrip.mockResolvedValue({
+            inputNode: {},
+            faderNode: {},
+            panNode: {},
+            outputNode: { connect: vi.fn() },
+            deviceEntries: [],
+        });
+        offlineRenderMocks.renderWithTimeout.mockResolvedValue(renderedBuffer);
+        vi.stubGlobal(
+            'OfflineAudioContext',
+            vi.fn(function OfflineContext() {
+                return { destination: {} };
+            })
+        );
+
+        const stems = await exportStems(4);
+
+        expect(stems.has(toasterFolder.id)).toBe(true);
+        expect(stems.has(children[16]!.id)).toBe(true);
+        expect(stems.size).toBe(2);
+        expect(offlineRenderMocks.scheduleTrackClips).toHaveBeenCalledWith(
+            expect.objectContaining({ track: toasterFolder, allTracks: [toasterFolder, ...children.slice(0, 16)] })
+        );
+        expect(offlineRenderMocks.scheduleTrackClips).toHaveBeenCalledWith(
+            expect.objectContaining({ track: children[16], allTracks: [children[16]] })
+        );
+    });
+
+    it('isolates each grouped stem to pads owned by its Toaster parent', async () => {
+        const parentA = {
+            id: 'toaster-a',
+            kind: 'folder',
+            disabled: false,
+            devices: [{ id: 'toaster-device-a', type: 'toaster' }],
+        };
+        const parentB = {
+            id: 'toaster-b',
+            kind: 'folder',
+            disabled: false,
+            devices: [{ id: 'toaster-device-b', type: 'toaster' }],
+        };
+        const padA = {
+            id: 'pad-a',
+            kind: 'midi',
+            parentId: parentA.id,
+            disabled: false,
+            devices: [],
+            freezeState: { status: 'unfrozen' },
+        };
+        const padB = { ...padA, id: 'pad-b', parentId: parentB.id };
+        offlineRenderMocks.resolveRenderContext.mockReturnValue(createRenderContext([parentA, padA, parentB, padB]));
+        offlineRenderMocks.createOfflineTrackStrip.mockResolvedValue({
+            inputNode: {},
+            faderNode: {},
+            panNode: {},
+            outputNode: { connect: vi.fn() },
+            deviceEntries: [],
+        });
+        offlineRenderMocks.renderWithTimeout.mockResolvedValue({ id: 'stem' });
+        vi.stubGlobal(
+            'OfflineAudioContext',
+            vi.fn(function OfflineContext() {
+                return { destination: {} };
+            })
+        );
+
+        await exportStems(4);
+
+        expect(offlineRenderMocks.scheduleTrackClips).toHaveBeenCalledWith(
+            expect.objectContaining({ track: parentA, allTracks: [parentA, padA] })
+        );
+        expect(offlineRenderMocks.scheduleTrackClips).toHaveBeenCalledWith(
+            expect.objectContaining({ track: parentB, allTracks: [parentB, padB] })
+        );
+    });
+
+    it('keeps disabled pad placeholders so later pad indexes remain canonical', async () => {
+        const parent = {
+            id: 'toaster-parent',
+            kind: 'folder',
+            disabled: false,
+            devices: [{ id: 'toaster-device', type: 'toaster' }],
+        };
+        const disabledPad = {
+            id: 'pad-0',
+            kind: 'midi',
+            parentId: parent.id,
+            disabled: true,
+            devices: [],
+            freezeState: { status: 'unfrozen' },
+        };
+        const activePad = { ...disabledPad, id: 'pad-1', disabled: false };
+        const topology = [parent, disabledPad, activePad];
+        offlineRenderMocks.resolveRenderContext.mockReturnValue(createRenderContext(topology));
+        offlineRenderMocks.createOfflineTrackStrip.mockResolvedValue({
+            inputNode: {},
+            faderNode: {},
+            panNode: {},
+            outputNode: { connect: vi.fn() },
+            deviceEntries: [],
+        });
+        offlineRenderMocks.renderWithTimeout.mockResolvedValue({ id: 'stem' });
+        vi.stubGlobal(
+            'OfflineAudioContext',
+            vi.fn(function OfflineContext() {
+                return { destination: {} };
+            })
+        );
+
+        await exportStems(4);
+
+        expect(offlineRenderMocks.createOfflineTrackStrip).not.toHaveBeenCalledWith(expect.anything(), disabledPad);
+        expect(offlineRenderMocks.createOfflineTrackStrip).toHaveBeenCalledWith(expect.anything(), activePad);
+        expect(offlineRenderMocks.connectOfflineToasterPadRoutes).toHaveBeenCalledWith(
+            expect.objectContaining({ tracks: topology })
+        );
+        expect(offlineRenderMocks.scheduleTrackClips).toHaveBeenCalledWith(
+            expect.objectContaining({ track: parent, allTracks: topology })
+        );
+    });
+
+    it('removes frozen pad clips from the parent view while rendering the child buffer once', async () => {
+        const parent = {
+            id: 'toaster-parent',
+            kind: 'folder',
+            disabled: false,
+            devices: [{ id: 'toaster-device', type: 'toaster' }],
+        };
+        const clip = { id: 'stale-midi-clip' };
+        const frozenPad = {
+            id: 'frozen-pad',
+            kind: 'midi',
+            parentId: parent.id,
+            disabled: false,
+            devices: [],
+            clips: [clip],
+            freezeState: { status: 'frozen', frozenBufferId: 'frozen-buffer' },
+        };
+        offlineRenderMocks.resolveRenderContext.mockReturnValue(createRenderContext([parent, frozenPad]));
+        offlineRenderMocks.createOfflineTrackStrip.mockResolvedValue({
+            inputNode: {},
+            faderNode: {},
+            panNode: {},
+            outputNode: { connect: vi.fn() },
+            deviceEntries: [],
+        });
+        offlineRenderMocks.renderWithTimeout.mockResolvedValue({ id: 'stem' });
+        vi.stubGlobal(
+            'OfflineAudioContext',
+            vi.fn(function OfflineContext() {
+                return { destination: {} };
+            })
+        );
+
+        await exportStems(4);
+
+        const frozenTopology = [parent, { ...frozenPad, clips: [] }];
+        expect(offlineRenderMocks.scheduleTrackClips).toHaveBeenCalledWith(
+            expect.objectContaining({ track: parent, allTracks: frozenTopology })
+        );
+        expect(offlineRenderMocks.scheduleTrackClips).toHaveBeenCalledWith(
+            expect.objectContaining({ track: { ...frozenPad, clips: [] }, allTracks: frozenTopology })
+        );
     });
 });
