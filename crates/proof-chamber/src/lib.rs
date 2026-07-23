@@ -208,7 +208,10 @@ impl ProofChamberInstance {
 #[cfg(test)]
 mod tests {
     use super::ProofChamberInstance;
-    use assert_no_alloc::assert_no_alloc;
+    use assert_no_alloc::{assert_no_alloc, AllocDisabler};
+
+    #[global_allocator]
+    static ALLOCATOR: AllocDisabler = AllocDisabler;
 
     #[test]
     fn convolution_latency_matches_global_alignment_reference() {
