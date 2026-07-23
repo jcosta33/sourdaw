@@ -1,14 +1,27 @@
-import { type SidechainStoreState } from '#/modules/Routing/stores';
+import { type OfflineDeviceNode } from '../devices/types';
 
-import { type DeviceNodeEntry } from '../buildDeviceChain';
+type OfflineSidechainRoute = {
+    sourceTrackId: string;
+    targetTrackId: string;
+    targetDeviceId: string;
+    gain: number;
+};
 
-import { type OfflineTrackStrip } from './types';
+type OfflineSidechainStrip = {
+    outputNode: AudioNode;
+};
+
+type OfflineSidechainDeviceEntry = {
+    deviceId: string;
+    deviceType: string;
+    node: OfflineDeviceNode;
+};
 
 type ConnectOfflineSidechainRoutesInput = {
     offlineCtx: OfflineAudioContext;
-    routes: SidechainStoreState['routes'];
-    trackStripsById: ReadonlyMap<string, OfflineTrackStrip>;
-    deviceEntriesByTrack: ReadonlyMap<string, DeviceNodeEntry[]>;
+    routes: readonly OfflineSidechainRoute[];
+    trackStripsById: ReadonlyMap<string, OfflineSidechainStrip>;
+    deviceEntriesByTrack: ReadonlyMap<string, readonly OfflineSidechainDeviceEntry[]>;
 };
 
 export function connectOfflineSidechainRoutes({
@@ -34,7 +47,9 @@ export function connectOfflineSidechainRoutes({
         }
 
         const routeGain = offlineCtx.createGain();
-        routeGain.gain.value = Math.max(0, Math.min(1, route.gain));
+        // The live engine currently wires sidechains at unity. Preserve exact
+        // playback/export parity until route-gain control is supported live.
+        routeGain.gain.value = 1;
         sourceStrip.outputNode.connect(routeGain);
         routeGain.connect(targetDevice.node.inputNode, 0, 1);
         connectedRoutes.add(routeKey);

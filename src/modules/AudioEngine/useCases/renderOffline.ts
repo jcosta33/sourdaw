@@ -2,11 +2,11 @@ import { sidechainStore } from '#/modules/Routing/stores';
 
 import { createExportError } from '../errors/ExportError';
 import { prepareOfflineSidechainCompressor } from '../repositories/devices/dynamics/prepareOfflineSidechainCompressor';
+import { connectOfflineSidechainRoutes } from '../repositories/offlineRouting/connectOfflineSidechainRoutes';
 
 import { type DeviceNodeEntry } from './buildDeviceChain';
 import { acquireRenderLock } from './offlineRender/acquireRenderLock';
 import { checkCancel } from './offlineRender/checkCancel';
-import { connectOfflineSidechainRoutes } from './offlineRender/connectOfflineSidechainRoutes';
 import { connectOfflineToasterPadRoutes } from './offlineRender/connectOfflineToasterPadRoutes';
 import {
     MAX_OFFLINE_FRAMES,
@@ -95,11 +95,26 @@ export const renderOffline: RenderOfflineFn = async function renderOffline(
             tracks && midi ? tracks.tracks.filter((track) => !track.disabled && shouldCreateOfflineStrip(track)) : [];
         const sourceTracks = allRenderableTracks.filter((track) => !track.muted);
         const sidechainRoutes = sidechainStore.value?.routes ?? [];
-        const hasSidechainCompressor = allRenderableTracks.some((track) =>
-            track.devices.some((device) => !device.bypassed && device.type === 'builtin-sidechain-compressor')
-        );
-        if (hasSidechainCompressor) {
-            await prepareOfflineSidechainCompressor(offlineCtx);
+        const hasRoutableSidechain = sidechainRoutes.some((route) => {
+            const sourceTrack = allRenderableTracks.find((track) => track.id === route.sourceTrackId);
+            const targetTrack = allRenderableTracks.find((track) => track.id === route.targetTrackId);
+            return Boolean(
+                sourceTrack &&
+                targetTrack?.devices.some(
+                    (device) =>
+                        device.id === route.targetDeviceId &&
+                        !device.bypassed &&
+                        device.type === 'builtin-sidechain-compressor'
+                )
+            );
+        });
+        if (hasRoutableSidechain) {
+            try {
+                await prepareOfflineSidechainCompressor(offlineCtx);
+            } catch (error) {
+                const reason = error instanceof Error ? error.message : String(error);
+                onWarning?.(`Sidechain processor unavailable; using the offline compressor fallback. ${reason}`);
+            }
         }
         let scheduled = 0;
         const pendingWorkletEvents: PendingWorkletEvent[] = [];

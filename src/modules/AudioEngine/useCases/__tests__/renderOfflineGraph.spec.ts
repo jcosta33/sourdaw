@@ -61,6 +61,7 @@ type ScheduleTrackClipsInput = { track: Track };
 
 const mocks = vi.hoisted(() => ({
     sidechainStore: { value: { routes: [] as Array<Record<string, unknown>> } },
+    addWorkletModule: vi.fn<() => Promise<void>>(),
     resolveRenderContext: vi.fn(),
     createOfflineTrackStrip: vi.fn(),
     scheduleTrackClips: vi.fn<(input: ScheduleTrackClipsInput) => Promise<void>>(() => Promise.resolve()),
@@ -104,7 +105,7 @@ const createdContexts: Array<{
 class FakeOfflineAudioContext {
     gains: FakeGain[] = [];
     destination = {};
-    audioWorklet = { addModule: vi.fn(() => Promise.resolve()) };
+    audioWorklet = { addModule: mocks.addWorkletModule };
 
     constructor(channels: number, frames: number, sampleRate: number) {
         createdContexts.push({
@@ -170,6 +171,7 @@ describe('renderOffline — graph construction and lifecycle', () => {
         createdContexts.length = 0;
         vi.stubGlobal('OfflineAudioContext', FakeOfflineAudioContext);
         mocks.sidechainStore.value.routes = [];
+        mocks.addWorkletModule.mockResolvedValue();
         mocks.resolveRenderContext.mockReturnValue(makeContext());
         mocks.createOfflineTrackStrip.mockImplementation(() => Promise.resolve(makeStrip()));
         mocks.renderWithTimeout.mockResolvedValue(renderedBuffer);
@@ -358,9 +360,50 @@ describe('renderOffline — graph construction and lifecycle', () => {
             '/audio/worklets/sidechain-compressor-processor.js'
         );
         const routeGain = createdContexts[0]!.gains[1]!;
-        expect(routeGain.gain.value).toBe(0.6);
+        expect(routeGain.gain.value).toBe(1);
         expect(stripsByTrack.get(kick.id)!.outputNode.connect).toHaveBeenCalledWith(routeGain);
         expect(routeGain.connect).toHaveBeenCalledWith(sidechainInput, 0, 1);
+    });
+
+    it('warns and retains the compressor fallback when sidechain worklet preparation fails', async () => {
+        const kick = TrackDummy.create({ id: 'kick' });
+        const bass = TrackDummy.create({
+            id: 'bass',
+            devices: [{ id: 'compressor-1', type: 'builtin-sidechain-compressor', bypassed: false } as never],
+        });
+        mocks.sidechainStore.value.routes = [
+            {
+                id: 'route-1',
+                sourceTrackId: kick.id,
+                targetTrackId: bass.id,
+                targetDeviceId: 'compressor-1',
+                targetParameterId: 'sc-comp-threshold',
+                gain: 1,
+            },
+        ];
+        mocks.resolveRenderContext.mockReturnValue(
+            makeContext({ tracks: { tracks: [kick, bass] } as unknown as TrackStoreState })
+        );
+        mocks.addWorkletModule.mockRejectedValueOnce(new Error('worklets blocked'));
+        const onWarning = vi.fn();
+
+        await expect(renderOffline({ durationBeats: 4, onWarning })).resolves.toBe(renderedBuffer);
+
+        expect(onWarning).toHaveBeenCalledWith(expect.stringContaining('worklets blocked'));
+    });
+
+    it('does not prepare the sidechain worklet without a valid persisted route', async () => {
+        const bass = TrackDummy.create({
+            id: 'bass',
+            devices: [{ id: 'compressor-1', type: 'builtin-sidechain-compressor', bypassed: false } as never],
+        });
+        mocks.resolveRenderContext.mockReturnValue(
+            makeContext({ tracks: { tracks: [bass] } as unknown as TrackStoreState })
+        );
+
+        await renderOffline(4);
+
+        expect(mocks.addWorkletModule).not.toHaveBeenCalled();
     });
 
     it('wires sends from the right tap with a clamped level and drops sends to unknown buses', async () => {
