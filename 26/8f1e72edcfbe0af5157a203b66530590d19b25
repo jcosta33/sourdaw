@@ -1,0 +1,29 @@
+src/modules/Crumbs/presentations/components/__tests__/CrumbsControls.spec.tsx
+  s_10bff033089cab::t_52eb7539167268 4,7-75,78,81-146
+src/modules/GrandBoule/presentations/components/__tests__/MorphPanel.spec.tsx
+  s_ecfecc13af05f1::t_5620026eba30c0 1,4,7-78
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "268f1e72edcfbe0af5157a203b66530590d19b25",
+  "prompts": {},
+  "sessions": {
+    "s_10bff033089cab": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-a60cbe701331e5f39",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_ecfecc13af05f1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-a45159e371279e8f5",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
