@@ -1,0 +1,32 @@
+src/modules/AudioEngine/engine/__tests__/ToasterNode.spec.ts
+  s_ac9b259eab20ba::t_179159f5daf59c 183-186
+  s_ac9b259eab20ba::t_664fd3409a3e26 190
+src/modules/AudioEngine/services/__tests__/toasterProcessor.spec.ts
+  s_ac9b259eab20ba::t_179159f5daf59c 127-146,155,157
+src/modules/AudioEngine/services/toasterProcessor.ts
+  s_ac9b259eab20ba::t_fb04336e2a788c 50-53,56-57
+  s_ac9b259eab20ba::t_00c80177792642 64,67-75
+  s_ac9b259eab20ba::t_179159f5daf59c 42-49,54-55,58-63,65-66,76-77,228
+src/modules/AudioEngine/wasm/__tests__/dawDspToasterAutomation.spec.ts
+  s_ac9b259eab20ba::t_f5bb4ac129405f 2,10
+  s_ac9b259eab20ba::t_c1a25c4728bee0 1,3-9,11-68
+src/modules/AudioEngine/engine/ToasterNode.ts
+  s_ac9b259eab20ba::t_179159f5daf59c 27-44
+  s_ac9b259eab20ba::t_384283d5b03574 172
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "75dae5a5020e6e75b8432c88f7efd8f5854720a9",
+  "prompts": {},
+  "sessions": {
+    "s_ac9b259eab20ba": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8699-3865-7842-8c54-afbac6cfd266",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
