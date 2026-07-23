@@ -28,7 +28,6 @@ import {
     type OfflineTrackStrip,
     type PendingWorkletEvent,
 } from './offlineRender/types';
-import { wireOfflineSidechainRoutes } from './offlineRender/wireOfflineSidechainRoutes';
 import { yieldToMain } from './offlineRender/yieldToMain';
 
 type RenderOfflineFn = {
@@ -178,16 +177,6 @@ export const renderOffline: RenderOfflineFn = async function renderOffline(
                 sendGain.connect(busStrip.gainNode);
             }
         }
-
-        // Wire persisted sidechain routes into the offline graph, mirroring
-        // the live engine's applySidechainRoute — without them, exports
-        // render sidechain compressors keyless (M-041).
-        wireOfflineSidechainRoutes(
-            offlineCtx,
-            trackStripsById,
-            deviceEntriesByTrack,
-            sidechainStore.value?.routes ?? []
-        );
 
         // Schedule only audible source tracks, but keep the full routing graph alive so
         // buses, targets, and the master strip behave like live playback.
