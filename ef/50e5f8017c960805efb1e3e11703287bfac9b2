@@ -1,0 +1,60 @@
+src/modules/AudioEngine/useCases/offlineRender/resolveRenderContext.ts
+  s_ac9b259eab20ba::t_2804e1108d57b9 13,44,100
+src/modules/AudioEngine/useCases/renderOffline.ts
+  s_ac9b259eab20ba::t_2804e1108d57b9 74,208
+src/modules/AudioEngine/repositories/offlineScheduler/setOfflineMidiEventProjector.ts
+  s_ac9b259eab20ba::t_2804e1108d57b9 4,20
+  s_ac9b259eab20ba::t_98c0c5cedd5ca2 13,25
+src/modules/Transport/useCases/scheduling/__tests__/scheduleMidiNotes.spec.ts
+  s_ac9b259eab20ba::t_f83a43298119e4 6-7,33-38,120,269-282,284-293,295-307,309-317
+  s_ac9b259eab20ba::t_0236913e2e2694 283,294,308
+  s_ac9b259eab20ba::t_dd27334c04353f 318-319
+src/modules/AudioEngine/useCases/offlineRender/scheduleTrackClips.ts
+  s_ac9b259eab20ba::t_2804e1108d57b9 12,17,203-210,514-524,526-527
+  s_ac9b259eab20ba::t_c947bf7d41bbb0 163
+src/modules/AudioEngine/useCases/exportStems.ts
+  s_ac9b259eab20ba::t_2804e1108d57b9 63,179
+src/modules/Transport/useCases/scheduling/scheduleMidiNotes.ts
+  s_ac9b259eab20ba::t_3f357a8f9e1b08 10-11,21,106,291,313-326,383-388,407-408,417-420
+src/app/bootstrap.ts
+  s_ac9b259eab20ba::t_2804e1108d57b9 46,163
+src/app/__tests__/bootstrap.spec.ts
+  s_ac9b259eab20ba::t_e626fb2de3c405 113
+src/utils/__tests__/toasterSwingProjection.spec.ts
+  s_ac9b259eab20ba::t_67408bb0454ca1 1-46
+src/modules/AudioEngine/useCases/__tests__/exportStems.spec.ts
+  s_ac9b259eab20ba::t_98c0c5cedd5ca2 149
+src/modules/AudioEngine/useCases/configureOfflineMidiEventProjection.ts
+  s_ac9b259eab20ba::t_2804e1108d57b9 9,11-16
+src/utils/toasterSwingProjection.ts
+  s_ac9b259eab20ba::t_3f357a8f9e1b08 1-65
+src/modules/AudioEngine/useCases/offlineRender/__tests__/scheduleTrackClips.spec.ts
+  s_ac9b259eab20ba::t_7162c620dc247a 383
+  s_ac9b259eab20ba::t_56f01c404464f6 62-71
+  s_ac9b259eab20ba::t_cfb81e90a1e303 79,452-505,507-515
+  s_ac9b259eab20ba::t_c947bf7d41bbb0 363,440,506
+  s_ac9b259eab20ba::t_b9fb9115692c05 620
+  s_ac9b259eab20ba::t_2e602dbb0dc0a5 516-517
+src/modules/AudioEngine/useCases/__tests__/renderOfflineGraph.spec.ts
+  s_ac9b259eab20ba::t_0236913e2e2694 163
+src/modules/AudioEngine/useCases/offlineRender/__tests__/scheduleTrackClipsAudio.spec.ts
+  s_ac9b259eab20ba::t_c947bf7d41bbb0 274
+src/modules/AudioEngine/repositories/offlineScheduler/offlineMidiEventProjectorState.ts
+  s_ac9b259eab20ba::t_2804e1108d57b9 54-55,60,65
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "ef50e5f8017c960805efb1e3e11703287bfac9b2",
+  "prompts": {},
+  "sessions": {
+    "s_ac9b259eab20ba": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8699-3865-7842-8c54-afbac6cfd266",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
