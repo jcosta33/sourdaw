@@ -152,10 +152,19 @@ class ProofProcessor extends AudioWorkletProcessor {
             const outLeftPtr = inst.process(frames);
             const outRightPtr = inst.get_right_ptr();
 
-            out0.set(this._outLeftView.get(mem, outLeftPtr, frames));
+            // Re-read the live buffer AFTER process(): a Rust-side allocation can
+            // grow the linear memory mid-call and detach the buffer the inputs were
+            // written into, so output views must map the post-grow buffer (audit
+            // RT-7). Reusing the pre-call `mem` here would let the cache hand back a
+            // view over a detached (zero-length) buffer and silently emit stale
+            // samples. Steady state (no grow) leaves the identity unchanged and
+            // reuses the cached view with no allocation.
+            const outMem = this._memory?.buffer ?? mem;
+
+            out0.set(this._outLeftView.get(outMem, outLeftPtr, frames));
             const out1 = output[1];
             if (out1) {
-                out1.set(this._outRightView.get(mem, outRightPtr, frames));
+                out1.set(this._outRightView.get(outMem, outRightPtr, frames));
             }
 
             this._meterCounter++;

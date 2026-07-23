@@ -43,6 +43,9 @@ const OUT_RIGHT_PTR = 4096;
 
 const memory: { buffer: ArrayBuffer } = { buffer: new ArrayBuffer(HEAP_BYTES) };
 
+// When set, the next mocked inst.process() grows WASM memory mid-call.
+let growOnNextProcess = false;
+
 // Count only Float32Array constructions that map WASM memory (arg0 === the live
 // heap buffer). Input/output scratch arrays (length form) and the SAB telemetry
 // view (different buffer) are deliberately excluded.
@@ -63,6 +66,10 @@ class CountingFloat32Array extends RealFloat32Array {
 
 class ProofInstanceMock {
     process(): number {
+        if (growOnNextProcess) {
+            growOnNextProcess = false;
+            seedGrownBuffer();
+        }
         return OUT_LEFT_PTR;
     }
     get_input_left_ptr(): number {
@@ -123,6 +130,21 @@ vi.mock('../../wasm/daw_dsp.js', () => ({
 
 const MINIMAL_WASM = new Uint8Array([0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00]);
 const FRAMES = 128;
+const GROWN_OUT_LEFT_BASE = 900;
+
+// Simulate a Rust allocation that grows the linear memory *inside* a process()
+// call: detach the current buffer, install a fresh one, and seed the output-left
+// window of the NEW buffer with a recognizable ramp. A processor that maps its
+// output view over the post-grow buffer reads this ramp; one that reuses a
+// pre-call buffer reference reads a detached, zero-length view instead.
+function seedGrownBuffer(): void {
+    const grown = memory.buffer.transfer(HEAP_BYTES);
+    memory.buffer = grown;
+    const seededLeft = new RealFloat32Array(grown, OUT_LEFT_PTR, FRAMES);
+    for (let frame = 0; frame < FRAMES; frame++) {
+        seededLeft[frame] = GROWN_OUT_LEFT_BASE + frame;
+    }
+}
 
 async function loadProcessor(): Promise<ProofProcessorLike> {
     await import('../proofProcessor');
@@ -154,6 +176,7 @@ describe('ProofProcessor WASM-view lifecycle (audit RT-1 / RT-7)', () => {
     beforeEach(() => {
         memory.buffer = new ArrayBuffer(HEAP_BYTES);
         wasmViewConstructions = 0;
+        growOnNextProcess = false;
     });
 
     it('allocates no WASM-memory view across steady-state process() blocks once warmed up', async () => {
@@ -228,5 +251,30 @@ describe('ProofProcessor WASM-view lifecycle (audit RT-1 / RT-7)', () => {
         // Output right reads the seeded pattern from the new buffer — proof the view
         // maps the grown buffer at the correct offset, not stale/detached memory.
         expect(Array.from(second.output[1]!)).toEqual(Array.from(seededRight));
+    });
+
+    it('rebuilds output views when memory.grow() happens inside process() (mid-block) and emits the new buffer samples', async () => {
+        const proc = await loadProcessor();
+        send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
+
+        // Warm up so the output views are cached over the pre-grow buffer.
+        const warmup = makeBlock((_channel, frame) => frame);
+        proc.process([warmup.input], [warmup.output]);
+
+        // Arm the mock: the NEXT inst.process() grows the linear memory mid-block,
+        // detaching the buffer the inputs were just written into, and seeds the
+        // output-left window of the new buffer. Only a processor that re-reads the
+        // live buffer AFTER process() maps the grown buffer here; one that captured
+        // the buffer before the call reads a detached, zero-length view and emits
+        // stale silence.
+        growOnNextProcess = true;
+        const block = makeBlock((_channel, frame) => 500 + frame);
+        proc.process([block.input], [block.output]);
+
+        expect(proc.port.postMessage).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'error' }));
+        // Output left is exactly the ramp the mock wrote into the grown buffer —
+        // proof the output view maps the post-grow buffer, not the detached one.
+        const expected = Array.from({ length: FRAMES }, (_unused, frame) => GROWN_OUT_LEFT_BASE + frame);
+        expect(Array.from(block.output[0]!)).toEqual(expected);
     });
 });

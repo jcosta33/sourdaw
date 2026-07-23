@@ -292,13 +292,19 @@ class FermenterProcessor extends AudioWorkletProcessor {
             const leftPtr = inst.process(frames);
             const rightPtr = inst.get_right_ptr();
 
-            const outL = this._outLeftView.get(mem, leftPtr, frames);
+            // Re-read the live buffer AFTER process(): a Rust-side allocation can
+            // grow the linear memory mid-call and detach the previous buffer, so the
+            // output views (also read below for peak/scope telemetry) must map the
+            // post-grow buffer (audit RT-7). Steady state reuses the cached view.
+            const outMem = this._memory?.buffer ?? mem;
+
+            const outL = this._outLeftView.get(outMem, leftPtr, frames);
             out0.set(outL);
 
             const out1 = output[1];
             let outR: Float32Array | null = null;
             if (out1) {
-                outR = this._outRightView.get(mem, rightPtr, frames);
+                outR = this._outRightView.get(outMem, rightPtr, frames);
                 out1.set(outR);
             }
 

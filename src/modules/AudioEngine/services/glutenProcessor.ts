@@ -179,10 +179,17 @@ class GlutenProcessor extends AudioWorkletProcessor {
             const outLeftPtr = inst.process(frames);
             const outRightPtr = inst.get_right_ptr();
 
-            out0.set(this._outLeftView.get(mem, outLeftPtr, frames));
+            // Re-read the live buffer AFTER process(): a Rust-side allocation can
+            // grow the linear memory mid-call and detach the buffer inputs were
+            // written into, so output views must map the post-grow buffer (audit
+            // RT-7). Reusing pre-call `mem` would hand back a detached, zero-length
+            // view and silently emit stale samples; steady state reuses the cache.
+            const outMem = this._memory?.buffer ?? mem;
+
+            out0.set(this._outLeftView.get(outMem, outLeftPtr, frames));
             const out1 = output[1];
             if (out1) {
-                out1.set(this._outRightView.get(mem, outRightPtr, frames));
+                out1.set(this._outRightView.get(outMem, outRightPtr, frames));
             }
 
             this._meterCounter++;

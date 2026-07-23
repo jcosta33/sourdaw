@@ -152,9 +152,16 @@ class BacteriaProcessor extends AudioWorkletProcessor {
             const outLeftPtr = inst.process(frames);
             const outRightPtr = inst.get_right_ptr();
 
-            out0.set(this._outLeftView.get(mem, outLeftPtr, frames));
+            // Re-read the live buffer AFTER process(): a Rust-side allocation can
+            // grow the linear memory mid-call and detach the buffer inputs were
+            // written into, so every view read past this point (outputs and the
+            // band-levels telemetry) must map the post-grow buffer (audit RT-7).
+            // Steady state leaves the identity unchanged and reuses the cache.
+            const outMem = this._memory?.buffer ?? mem;
+
+            out0.set(this._outLeftView.get(outMem, outLeftPtr, frames));
             if (out1) {
-                out1.set(this._outRightView.get(mem, outRightPtr, frames));
+                out1.set(this._outRightView.get(outMem, outRightPtr, frames));
             }
 
             this._meterCounter++;
@@ -168,7 +175,7 @@ class BacteriaProcessor extends AudioWorkletProcessor {
                     // the SAB slot starting at index 3 (bandLevelsBase). Peak levels
                     // are linear amplitude; consumers convert to dB.
                     const bandPtr = inst.get_band_levels_ptr();
-                    const bandView = this._bandLevelsView.get(mem, bandPtr, 6);
+                    const bandView = this._bandLevelsView.get(outMem, bandPtr, 6);
                     this._sabView.set(bandView, 3);
                 }
             }

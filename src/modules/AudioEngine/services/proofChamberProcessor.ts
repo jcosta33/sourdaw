@@ -179,8 +179,14 @@ class ProofChamberProcessor extends AudioWorkletProcessor {
             const leftPtr = inst.process(leftIn, rightIn, frames);
             const rightPtr = inst.get_right_ptr();
 
-            out0.set(this._outLeftView.get(mem, leftPtr, frames));
-            out1.set(this._outRightView.get(mem, rightPtr, frames));
+            // Re-read the live buffer AFTER process(): a Rust-side allocation can
+            // grow the linear memory mid-call and detach the previous buffer, so the
+            // output views must map the post-grow buffer (audit RT-7). Steady state
+            // leaves the identity unchanged and reuses the cached view.
+            const outMem = this._memory?.buffer ?? mem;
+
+            out0.set(this._outLeftView.get(outMem, leftPtr, frames));
+            out1.set(this._outRightView.get(outMem, rightPtr, frames));
         } catch (error) {
             this._faulted = true;
             this.port.postMessage({ type: 'error', message: String(error) });

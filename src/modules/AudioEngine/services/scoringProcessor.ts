@@ -113,13 +113,19 @@ class ScoringProcessor extends AudioWorkletProcessor {
             const leftPtr = inst.process(in0, input[1] ?? in0, frames);
             const rightPtr = inst.get_right_ptr();
 
+            // Re-read the live buffer AFTER process(): a Rust-side allocation can
+            // grow the linear memory mid-call and detach the previous buffer, so the
+            // output views must map the post-grow buffer (audit RT-7). Steady state
+            // leaves the identity unchanged and reuses the cached view.
+            const outMem = this._memory?.buffer ?? mem;
+
             const out0 = output[0];
             if (out0) {
-                out0.set(this._outLeftView.get(mem, leftPtr, frames));
+                out0.set(this._outLeftView.get(outMem, leftPtr, frames));
             }
             const out1 = output[1];
             if (out1) {
-                out1.set(this._outRightView.get(mem, rightPtr, frames));
+                out1.set(this._outRightView.get(outMem, rightPtr, frames));
             }
 
             // Send telemetry periodically

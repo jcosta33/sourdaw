@@ -284,10 +284,16 @@ class LevainProcessor extends AudioWorkletProcessor {
             const leftPtr = inst.process(processFrames);
             const rightPtr = inst.get_right_ptr();
 
-            out0.set(this._outLeftView.get(mem, leftPtr, processFrames));
+            // Re-read the live buffer AFTER process(): a Rust-side allocation can
+            // grow the linear memory mid-call and detach the previous buffer, so the
+            // output views must map the post-grow buffer (audit RT-7). Steady state
+            // leaves the identity unchanged and reuses the cached view.
+            const outMem = this._memory?.buffer ?? mem;
+
+            out0.set(this._outLeftView.get(outMem, leftPtr, processFrames));
             const out1 = output[1];
             if (out1) {
-                out1.set(this._outRightView.get(mem, rightPtr, processFrames));
+                out1.set(this._outRightView.get(outMem, rightPtr, processFrames));
             }
         } catch (error) {
             this._faulted = true;
