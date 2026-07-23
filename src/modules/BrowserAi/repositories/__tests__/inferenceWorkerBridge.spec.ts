@@ -324,6 +324,11 @@ describe('inferenceWorkerBridge — releaseOnnxSession / releaseDdspSession', ()
         expect(installedWorkers).toHaveLength(0);
     });
 
+    it('is a no-op when no TF.js worker has been created yet', async () => {
+        await expect(inferenceWorkerBridge.releaseDdspSession('never-loaded')).resolves.toBeUndefined();
+        expect(installedWorkers).toHaveLength(0);
+    });
+
     it('posts a fire-and-forget release-session message to an existing ONNX worker', async () => {
         const load = inferenceWorkerBridge.loadOnnxSession({ modelId: 'm1', modelData: new ArrayBuffer(4) });
         await flush();

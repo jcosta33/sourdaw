@@ -22,4 +22,12 @@ describe('raveHandlers', () => {
         void handleSetRaveBlend.execute({ type: 'setRaveBlend', payload: { blend: 0.5 } });
         expect(setTransferBlend).toHaveBeenCalledWith(0.5);
     });
+
+    it('handleLoadRaveModel should describe its label', () => {
+        expect(handleLoadRaveModel.describe()).toEqual({ label: 'Load RAVE Model' });
+    });
+
+    it('handleSetRaveBlend should describe its label', () => {
+        expect(handleSetRaveBlend.describe()).toEqual({ label: 'Set RAVE Timbre Blend' });
+    });
 });
