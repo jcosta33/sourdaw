@@ -1,0 +1,19 @@
+src/modules/TimelineEditor/presentations/views/Inspector/__tests__/DeviceInspector.spec.tsx
+  s_0d39f3a4a4357a::t_91b0336832c7d8 6-7,11-12,17-20,24,26,37-45,57,65-69,72-79,81,86-87,91,96,101,106-112,114-173
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "4f6796b19365110baa4ce3b05cf5c06b0cb24b24",
+  "prompts": {},
+  "sessions": {
+    "s_0d39f3a4a4357a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "60da6a2e-7d79-4d98-8624-e993f5a9f94e",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
