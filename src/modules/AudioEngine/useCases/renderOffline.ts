@@ -1,8 +1,12 @@
+import { sidechainStore } from '#/modules/Routing/stores';
+
 import { createExportError } from '../errors/ExportError';
+import { prepareOfflineSidechainCompressor } from '../repositories/devices/dynamics/prepareOfflineSidechainCompressor';
 
 import { type DeviceNodeEntry } from './buildDeviceChain';
 import { acquireRenderLock } from './offlineRender/acquireRenderLock';
 import { checkCancel } from './offlineRender/checkCancel';
+import { connectOfflineSidechainRoutes } from './offlineRender/connectOfflineSidechainRoutes';
 import { connectOfflineToasterPadRoutes } from './offlineRender/connectOfflineToasterPadRoutes';
 import {
     MAX_OFFLINE_FRAMES,
@@ -90,6 +94,13 @@ export const renderOffline: RenderOfflineFn = async function renderOffline(
         const allRenderableTracks =
             tracks && midi ? tracks.tracks.filter((track) => !track.disabled && shouldCreateOfflineStrip(track)) : [];
         const sourceTracks = allRenderableTracks.filter((track) => !track.muted);
+        const sidechainRoutes = sidechainStore.value?.routes ?? [];
+        const hasSidechainCompressor = allRenderableTracks.some((track) =>
+            track.devices.some((device) => !device.bypassed && device.type === 'builtin-sidechain-compressor')
+        );
+        if (hasSidechainCompressor) {
+            await prepareOfflineSidechainCompressor(offlineCtx);
+        }
         let scheduled = 0;
         const pendingWorkletEvents: PendingWorkletEvent[] = [];
 
@@ -113,6 +124,7 @@ export const renderOffline: RenderOfflineFn = async function renderOffline(
         }
 
         connectOfflineToasterPadRoutes({ tracks: tracks?.tracks ?? [], trackStripsById, deviceEntriesByTrack });
+        connectOfflineSidechainRoutes({ offlineCtx, routes: sidechainRoutes, trackStripsById, deviceEntriesByTrack });
 
         for (const track of allRenderableTracks) {
             const strip = trackStripsById.get(track.id);

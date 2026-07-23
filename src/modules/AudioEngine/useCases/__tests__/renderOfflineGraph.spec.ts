@@ -60,6 +60,7 @@ const emptyMidi: NonNullable<MidiStoreState> = {
 type ScheduleTrackClipsInput = { track: Track };
 
 const mocks = vi.hoisted(() => ({
+    sidechainStore: { value: { routes: [] as Array<Record<string, unknown>> } },
     resolveRenderContext: vi.fn(),
     createOfflineTrackStrip: vi.fn(),
     scheduleTrackClips: vi.fn<(input: ScheduleTrackClipsInput) => Promise<void>>(() => Promise.resolve()),
@@ -67,6 +68,9 @@ const mocks = vi.hoisted(() => ({
     renderWithTimeout: vi.fn(),
 }));
 
+vi.mock('#/modules/Routing/stores', () => ({
+    sidechainStore: mocks.sidechainStore,
+}));
 vi.mock('../offlineRender/resolveRenderContext', () => ({
     resolveRenderContext: mocks.resolveRenderContext,
 }));
@@ -94,14 +98,23 @@ const createdContexts: Array<{
     sampleRate: number;
     gains: FakeGain[];
     destination: object;
+    audioWorklet: { addModule: ReturnType<typeof vi.fn> };
 }> = [];
 
 class FakeOfflineAudioContext {
     gains: FakeGain[] = [];
     destination = {};
+    audioWorklet = { addModule: vi.fn(() => Promise.resolve()) };
 
     constructor(channels: number, frames: number, sampleRate: number) {
-        createdContexts.push({ channels, frames, sampleRate, gains: this.gains, destination: this.destination });
+        createdContexts.push({
+            channels,
+            frames,
+            sampleRate,
+            gains: this.gains,
+            destination: this.destination,
+            audioWorklet: this.audioWorklet,
+        });
     }
 
     createGain(): FakeGain {
@@ -156,6 +169,7 @@ describe('renderOffline — graph construction and lifecycle', () => {
         vi.clearAllMocks();
         createdContexts.length = 0;
         vi.stubGlobal('OfflineAudioContext', FakeOfflineAudioContext);
+        mocks.sidechainStore.value.routes = [];
         mocks.resolveRenderContext.mockReturnValue(makeContext());
         mocks.createOfflineTrackStrip.mockImplementation(() => Promise.resolve(makeStrip()));
         mocks.renderWithTimeout.mockResolvedValue(renderedBuffer);
@@ -292,6 +306,61 @@ describe('renderOffline — graph construction and lifecycle', () => {
         expect(stripsByTrack.get(child.id)!.outputNode.connect).toHaveBeenCalledWith(
             stripsByTrack.get(parent.id)!.inputNode
         );
+    });
+
+    it('loads and wires a persisted sidechain route into compressor input one', async () => {
+        const kick = TrackDummy.create({ id: 'kick' });
+        const compressorDevice = {
+            id: 'compressor-1',
+            type: 'builtin-sidechain-compressor',
+            bypassed: false,
+        } as never;
+        const bass = TrackDummy.create({ id: 'bass', devices: [compressorDevice] });
+        const stripsByTrack = new Map<string, OfflineTrackStrip>();
+        const sidechainInput = { numberOfInputs: 2 } as AudioNode;
+        mocks.sidechainStore.value.routes = [
+            {
+                id: 'route-1',
+                sourceTrackId: kick.id,
+                targetTrackId: bass.id,
+                targetDeviceId: 'compressor-1',
+                targetParameterId: 'sc-comp-threshold',
+                gain: 0.6,
+            },
+        ];
+        mocks.resolveRenderContext.mockReturnValue(
+            makeContext({ tracks: { tracks: [kick, bass] } as unknown as TrackStoreState })
+        );
+        mocks.createOfflineTrackStrip.mockImplementation((_ctx: OfflineAudioContext, track: Track) => {
+            const strip = makeStrip();
+            if (track.id === bass.id) {
+                const node: DeviceNodeEntry['node'] = {
+                    inputNode: sidechainInput,
+                    outputNode: sidechainInput,
+                    nodes: [sidechainInput],
+                };
+                strip.deviceEntries = [
+                    {
+                        deviceId: 'compressor-1',
+                        deviceType: 'builtin-sidechain-compressor',
+                        node,
+                        strategy: { node, setParam: vi.fn<(name: string, value: number) => void>() },
+                    },
+                ];
+            }
+            stripsByTrack.set(track.id, strip);
+            return Promise.resolve(strip);
+        });
+
+        await renderOffline(4);
+
+        expect(createdContexts[0]!.audioWorklet.addModule).toHaveBeenCalledWith(
+            '/audio/worklets/sidechain-compressor-processor.js'
+        );
+        const routeGain = createdContexts[0]!.gains[1]!;
+        expect(routeGain.gain.value).toBe(0.6);
+        expect(stripsByTrack.get(kick.id)!.outputNode.connect).toHaveBeenCalledWith(routeGain);
+        expect(routeGain.connect).toHaveBeenCalledWith(sidechainInput, 0, 1);
     });
 
     it('wires sends from the right tap with a clamped level and drops sends to unknown buses', async () => {
