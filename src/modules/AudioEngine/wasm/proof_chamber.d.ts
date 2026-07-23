@@ -1,27 +1,66 @@
-/** TypeScript declarations for proof_chamber.js (wasm-bindgen generated). */
+/* tslint:disable */
+/* eslint-disable */
 
-export type InitSyncInput = BufferSource | WebAssembly.Module;
-
-export type InitSyncModule = { module: InitSyncInput };
-
-export type WasmExports = {
-    memory: WebAssembly.Memory;
-};
-
-export declare function initSync(input: InitSyncInput | InitSyncModule): WasmExports;
-export declare function default_init(
-    module_or_path?:
-        InitSyncInput | string | URL | Response | { module_or_path?: InitSyncInput | string | URL | Response }
-): Promise<WasmExports>;
-
-export declare class ProofChamberInstance {
-    constructor(sample_rate: number);
+export class ProofChamberInstance {
     free(): void;
     [Symbol.dispose](): void;
+    /**
+     * Report plugin latency in samples for PDC (delay compensation).
+     * The convolution wet path is aligned so every IR tap lands at its
+     * absolute index plus HEAD_SIZE: tail-stage inputs are delayed to their
+     * segment offsets, and the head/dry reference takes the remaining 128.
+     */
     get_latency(): number;
     get_param_names(): string;
     get_right_ptr(): number;
+    /**
+     * Load an IR for the convolution engine.
+     */
     load_ir(ir_data: Float32Array, channels: number): void;
+    constructor(sample_rate: number);
     process(left_in: Float32Array, right_in: Float32Array, frames: number): number;
     set_param(name: string, value: number): void;
+    set_param_by_id(param_id: number, value: number): void;
 }
+
+export type InitInput = RequestInfo | URL | Response | BufferSource | WebAssembly.Module;
+
+export interface InitOutput {
+    readonly memory: WebAssembly.Memory;
+    readonly __wbg_proofchamberinstance_free: (a: number, b: number) => void;
+    readonly proofchamberinstance_get_latency: (a: number) => number;
+    readonly proofchamberinstance_get_param_names: (a: number) => [number, number];
+    readonly proofchamberinstance_get_right_ptr: (a: number) => number;
+    readonly proofchamberinstance_load_ir: (a: number, b: number, c: number, d: number) => void;
+    readonly proofchamberinstance_new: (a: number) => number;
+    readonly proofchamberinstance_process: (a: number, b: number, c: number, d: number, e: number, f: number) => number;
+    readonly proofchamberinstance_set_param: (a: number, b: number, c: number, d: number) => void;
+    readonly proofchamberinstance_set_param_by_id: (a: number, b: number, c: number) => void;
+    readonly __wbindgen_externrefs: WebAssembly.Table;
+    readonly __wbindgen_free: (a: number, b: number, c: number) => void;
+    readonly __wbindgen_malloc: (a: number, b: number) => number;
+    readonly __wbindgen_realloc: (a: number, b: number, c: number, d: number) => number;
+    readonly __wbindgen_start: () => void;
+}
+
+export type SyncInitInput = BufferSource | WebAssembly.Module;
+
+/**
+ * Instantiates the given `module`, which can either be bytes or
+ * a precompiled `WebAssembly.Module`.
+ *
+ * @param {{ module: SyncInitInput }} module - Passing `SyncInitInput` directly is deprecated.
+ *
+ * @returns {InitOutput}
+ */
+export function initSync(module: { module: SyncInitInput } | SyncInitInput): InitOutput;
+
+/**
+ * If `module_or_path` is {RequestInfo} or {URL}, makes a request and
+ * for everything else, calls `WebAssembly.instantiate` directly.
+ *
+ * @param {{ module_or_path: InitInput | Promise<InitInput> }} module_or_path - Passing `InitInput` directly is deprecated.
+ *
+ * @returns {Promise<InitOutput>}
+ */
+export default function __wbg_init (module_or_path?: { module_or_path: InitInput | Promise<InitInput> } | InitInput | Promise<InitInput>): Promise<InitOutput>;

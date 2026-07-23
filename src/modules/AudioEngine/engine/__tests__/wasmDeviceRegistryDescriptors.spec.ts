@@ -323,6 +323,8 @@ describe('wasmDeviceRegistry descriptors', () => {
             const result: ProofChamberNodeResult = {
                 workletNode: makeWorkletNode(),
                 setParam: vi.fn(),
+                acceptsScheduledParam: vi.fn(),
+                scheduleParam: vi.fn(),
                 setBypass: vi.fn(),
                 connect: vi.fn(),
                 disconnect: vi.fn(),

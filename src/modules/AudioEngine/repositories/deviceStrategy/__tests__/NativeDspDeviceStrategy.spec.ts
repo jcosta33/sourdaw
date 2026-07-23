@@ -30,6 +30,23 @@ describe('NativeDspDeviceStrategy', () => {
         expect(setParam).toHaveBeenCalledWith('gain', 0.5);
     });
 
+    it('exposes scheduled parameters only when the node provides the complete capability pair', () => {
+        const acceptsScheduledParam = vi.fn((name: string) => name === 'mix');
+        const scheduleParam = vi.fn();
+        const segments = [{ startFrame: 0, endFrame: 128, startValue: 0.2, endValue: 0.8 }];
+        const strategy = new NativeDspDeviceStrategy(make_dsp_node({ acceptsScheduledParam, scheduleParam }));
+
+        expect(strategy.acceptsScheduledParam?.('mix')).toBe(true);
+        strategy.scheduleParam?.('mix', segments);
+
+        expect(acceptsScheduledParam).toHaveBeenCalledWith('mix');
+        expect(scheduleParam).toHaveBeenCalledWith('mix', segments);
+
+        const partial = new NativeDspDeviceStrategy(make_dsp_node({ scheduleParam }));
+        expect(partial.acceptsScheduledParam).toBeUndefined();
+        expect(partial.scheduleParam).toBeUndefined();
+    });
+
     it('forwards Toaster pad output and dry-ownership controls', () => {
         const connectPadOutput = vi.fn();
         const disconnectPadOutput = vi.fn();

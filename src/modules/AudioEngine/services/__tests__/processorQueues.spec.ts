@@ -2,7 +2,7 @@ import fs from 'fs';
 import path from 'path';
 
 import ts from 'typescript';
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 
 // Helper to evaluate an AudioWorklet script and extract its class
 function loadProcessorClass(filePath: string, className: string) {
@@ -149,6 +149,32 @@ describe('FermenterProcessor parameter automation', () => {
             { paramId: 1, value: 200 },
             { paramId: 1, value: 1_100 },
             { paramId: 1, value: 2_000 },
+        ]);
+    });
+});
+
+describe('ProofChamberProcessor parameter automation', () => {
+    it('interpolates a compiled segment at render quantum boundaries', () => {
+        const ProcessorClass = loadProcessorClass('../proofChamberProcessor.ts', 'ProofChamberProcessor');
+        const processor = new ProcessorClass();
+        const setParam = vi.fn();
+        processor._instance = { set_param_by_id: setParam };
+        processor.port.onmessage({
+            data: {
+                type: 'paramAutomation',
+                paramId: 0,
+                segments: [{ startFrame: 0, endFrame: 1_000, startValue: 0.2, endValue: 0.8 }],
+            },
+        });
+
+        processor._applyParamAutomation(0);
+        processor._applyParamAutomation(500);
+        processor._applyParamAutomation(1_000);
+
+        expect(setParam.mock.calls).toEqual([
+            [0, 0.2],
+            [0, 0.5],
+            [0, 0.8],
         ]);
     });
 });
