@@ -1,0 +1,21 @@
+src/modules/TimelineEditor/presentations/components/__tests__/ModulationLFO.spec.tsx
+  s_0d39f3a4a4357a::t_696ea3bf02d6a1 185-213
+  s_0d39f3a4a4357a::t_77b600bc8944ac 2,6-26,28-29,31-32,38-184
+  s_0d39f3a4a4357a::t_f437111df3dbee 30
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "fada302eb9eb0d95b9679e611ead53666996f3a1",
+  "prompts": {},
+  "sessions": {
+    "s_0d39f3a4a4357a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "60da6a2e-7d79-4d98-8624-e993f5a9f94e",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
