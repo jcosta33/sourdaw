@@ -209,10 +209,15 @@ export function compileAutomationEvents(
             continue;
         }
 
+        const beatSpan = visibleEndBeat - visibleStartBeat;
+        const timeSpan = visibleEnd - visibleStart;
+        const hasLinearTimeProjection =
+            Math.abs(projectBeat(visibleStartBeat + beatSpan / 4) - (visibleStart + timeSpan / 4)) < 1e-4 &&
+            Math.abs(projectBeat(visibleStartBeat + beatSpan / 2) - (visibleStart + timeSpan / 2)) < 1e-4;
         const steps =
-            current.point.curve === 'linear'
+            current.point.curve === 'linear' && hasLinearTimeProjection
                 ? 1
-                : Math.max(1, Math.ceil((visibleEnd - visibleStart) / AUTOMATION_SAMPLE_INTERVAL_SEC));
+                : Math.max(1, Math.ceil(timeSpan / AUTOMATION_SAMPLE_INTERVAL_SEC));
         for (let step = 1; step <= steps; step++) {
             const time = visibleStart + ((visibleEnd - visibleStart) * step) / steps;
             const beat = beatAtTime(visibleStartBeat, visibleEndBeat, time, projectBeat);
