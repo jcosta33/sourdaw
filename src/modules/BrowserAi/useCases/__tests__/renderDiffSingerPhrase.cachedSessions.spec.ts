@@ -66,6 +66,7 @@ vi.mock('../../stores/capabilityStore', () => ({
     capabilityStore,
 }));
 
+import { phonemize } from '../../services/phonemizer';
 import { type CapabilityState } from '../../stores/capabilityStore';
 import { renderDiffSingerPhrase } from '../renderDiffSingerPhrase';
 
@@ -171,5 +172,60 @@ describe('renderDiffSingerPhrase — cached-session re-read skip (item #13)', ()
             throw new Error('expected loadOnnxSession to have been called');
         }
         expect(firstLoadCall[0].modelId).toBe('shared/vocoder');
+    });
+});
+
+describe('renderDiffSingerPhrase — cache hit, SP word durations, missing model', () => {
+    beforeEach(() => {
+        getLoadedOnnxSessions.mockReset().mockResolvedValue([...ALL_SESSION_KEYS]);
+        loadOnnxSession.mockReset().mockResolvedValue(undefined);
+        runDiffSingerPhrase.mockReset().mockResolvedValue({
+            type: 'diffsinger-result',
+            requestId: 'r',
+            audio: new Float32Array(44100),
+        });
+        readModel.mockReset().mockImplementation(() => Promise.resolve(new ArrayBuffer(8)));
+        readRenderCache.mockReset().mockResolvedValue(null);
+        writeRenderCache.mockReset().mockResolvedValue(undefined);
+        computeRenderCacheKey.mockReset().mockResolvedValue('cache-key-1');
+        capabilityStore.value = { phase: 'idle' };
+        vi.mocked(phonemize).mockReturnValue({
+            tokenIds: [1, 2, 3],
+            phonemes: ['l', 'a', 'SP'],
+            wordDiv: [3],
+            wordIsSp: [false],
+        });
+    });
+
+    it('returns the cached render without touching the ONNX worker', async () => {
+        const cached = new Float32Array([0.1, 0.2, 0.3]);
+        readRenderCache.mockResolvedValue(cached);
+
+        const result = await callRender();
+
+        expect(result.audio).toBe(cached);
+        expect(getLoadedOnnxSessions).not.toHaveBeenCalled();
+        expect(runDiffSingerPhrase).not.toHaveBeenCalled();
+    });
+
+    it('maps an SP word-unit to a single separator frame', async () => {
+        vi.mocked(phonemize).mockReturnValue({
+            tokenIds: [1, 2, 3],
+            phonemes: ['SP', 'l', 'a'],
+            wordDiv: [1, 3],
+            wordIsSp: [true, false],
+        });
+
+        await callRender();
+
+        const call = runDiffSingerPhrase.mock.calls[0] as [{ wordDur: number[] }] | undefined;
+        expect(call?.[0].wordDur[0]).toBe(1);
+    });
+
+    it('throws with a re-download message when a voicebank model is absent from OPFS', async () => {
+        getLoadedOnnxSessions.mockResolvedValue([]);
+        readModel.mockResolvedValue(null);
+
+        await expect(callRender()).rejects.toThrow(/not found in OPFS for voicebank/);
     });
 });
