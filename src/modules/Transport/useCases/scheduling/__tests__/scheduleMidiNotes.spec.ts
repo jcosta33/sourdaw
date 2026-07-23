@@ -3,6 +3,8 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { type Clip, trackStore } from '#/modules/Arrangement/stores';
 import { resolveClipsWithComping, getSynthParamsForTrack } from '#/modules/Arrangement/useCases';
 import { ensureTrackStrip } from '#/modules/AudioEngine/useCases';
+import { automationStore } from '#/modules/Automation/stores';
+import { getAutomationValueAtBeat } from '#/modules/Automation/useCases';
 import { midiStore } from '#/modules/MIDI/stores';
 import {
     getChordAtBeat,
@@ -27,6 +29,12 @@ vi.mock('#/modules/Arrangement/stores', () => ({
 }));
 vi.mock('#/modules/MIDI/stores', () => ({
     midiStore: { value: null },
+}));
+vi.mock('#/modules/Automation/stores', () => ({
+    automationStore: { value: null },
+}));
+vi.mock('#/modules/Automation/useCases', () => ({
+    getAutomationValueAtBeat: vi.fn(() => null),
 }));
 vi.mock('../../../stores/tempoMapStore', () => ({
     tempoMapStore: { value: { changes: [] } },
@@ -109,6 +117,7 @@ describe('scheduleMidiNotes', () => {
         vi.clearAllMocks();
         (trackStore as { value: unknown }).value = { tracks: [] };
         (midiStore as { value: unknown }).value = null;
+        (automationStore as { value: unknown }).value = null;
         (tempoMapStore as { value: unknown }).value = { changes: [] };
         (timeSignatureMapStore as { value: unknown }).value = { changes: [] };
         vi.mocked(resolveClipsWithComping).mockImplementation((_trackId, clips) =>
@@ -255,6 +264,57 @@ describe('scheduleMidiNotes', () => {
 
         expect(toasterNoteOn).toHaveBeenCalledTimes(1);
         expect(transposeForChordTrack).not.toHaveBeenCalled();
+    });
+
+    it('applies the parent Toaster swing lane to live child-note timing', async () => {
+        const toasterNoteOn = vi.fn();
+        const parent = midiTrack({
+            id: 'toaster-parent',
+            kind: 'folder',
+            automationMode: 'read',
+            devices: [
+                {
+                    id: 'toaster',
+                    type: 'toaster',
+                    parameterValues: { swing: 0.08 },
+                },
+            ],
+        });
+        const child = midiTrack({ parentId: 'toaster-parent', clips: [midiClip()] });
+        (trackStore as { value: unknown }).value = { tracks: [parent, child] };
+        (midiStore as { value: unknown }).value = {
+            notesByClipId: {
+                'clip-1': [{ id: 'n1', pitch: 36, startBeat: 1.25, duration: 0.25, velocity: 100 }],
+            },
+        };
+        (automationStore as { value: unknown }).value = {
+            lanes: [
+                {
+                    id: 'swing-lane',
+                    trackId: 'toaster-parent',
+                    parameterId: 'toaster:swing',
+                    enabled: true,
+                    clipId: undefined,
+                },
+            ],
+        };
+        vi.mocked(getAutomationValueAtBeat).mockReturnValue(0.4);
+        vi.mocked(ensureTrackStrip).mockImplementation(
+            (trackId) =>
+                ({
+                    gainNode: {},
+                    preFaderTap: { connect: vi.fn() },
+                    deviceNodes:
+                        trackId === 'toaster-parent'
+                            ? [{ deviceId: 'toaster', type: 'toaster', toasterControls: { noteOn: toasterNoteOn } }]
+                            : [],
+                }) as never
+        );
+
+        await scheduleMidiNotes(0, 4, 0, -1, new Set<string>(), [], defaultTransportState, 120);
+
+        expect(getAutomationValueAtBeat).toHaveBeenCalledWith('swing-lane', 1.25);
+        expect(toasterNoteOn.mock.calls[0]?.[3]).toBe(31_200);
     });
 
     // §1 — Per-note probability must be deterministic so replays are identical.

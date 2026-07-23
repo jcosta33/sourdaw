@@ -72,6 +72,7 @@ export const renderOffline: RenderOfflineFn = async function renderOffline(
             projectPpqEndpoints,
             processYeastMidi,
             projectChordPitch,
+            evaluateAutomationValue,
         } = resolveRenderContext({
             durationBeats,
             startBeat,
@@ -215,6 +216,7 @@ export const renderOffline: RenderOfflineFn = async function renderOffline(
                     processYeastMidi,
                     selectMidiEventProbability,
                     projectChordPitch,
+                    evaluateAutomationValue,
                 },
                 onWarning,
                 pendingWorkletEvents,

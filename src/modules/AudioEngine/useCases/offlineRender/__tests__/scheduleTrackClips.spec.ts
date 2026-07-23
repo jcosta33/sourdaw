@@ -59,7 +59,16 @@ const mocks = vi.hoisted(() => {
         getCompensationDelay: vi.fn<(trackId: string) => number>(() => 0),
         scheduleTrackAutomation: vi.fn(),
         takeLaneValue: { value: null as TakeLaneStoreState | null },
-        automationValue: { value: null },
+        automationValue: {
+            value: null as {
+                lanes: Array<{
+                    id: string;
+                    trackId: string;
+                    parameterId: string;
+                    enabled: boolean;
+                }>;
+            } | null,
+        },
         audioBufferCache: { get: vi.fn(() => undefined) },
         projectMidiEvents: vi.fn<(input: unknown) => void>(),
         processYeastMidi: vi.fn<(input: unknown) => void>(),
@@ -67,6 +76,7 @@ const mocks = vi.hoisted(() => {
             ({ pitch, referenceBeat, targetBeat }: { pitch: number; referenceBeat: number; targetBeat: number }) =>
                 pitch + targetBeat - referenceBeat
         ),
+        evaluateAutomationValue: vi.fn<(laneId: string, beat: number) => number | null>(() => null),
         shouldPlayMidiEvent: vi.fn<OfflineMidiProbabilitySelector>(({ probabilityPercent }) => probabilityPercent > 0),
         projection,
     };
@@ -350,6 +360,7 @@ async function runSchedule({
             processYeastMidi,
             selectMidiEventProbability: mocks.shouldPlayMidiEvent,
             projectChordPitch: mocks.projectChordPitch,
+            evaluateAutomationValue: mocks.evaluateAutomationValue,
         },
         pendingWorkletEvents,
         allTracks: [track],
@@ -369,6 +380,7 @@ describe('scheduleTrackClips — MIDI plugin-delay compensation', () => {
         mocks.projection.startOffset = 0;
         mocks.projection.velocity = null;
         mocks.projection.yeastTranspose = 0;
+        mocks.evaluateAutomationValue.mockReturnValue(null);
         mocks.shouldPlayMidiEvent.mockImplementation(({ probabilityPercent }) => probabilityPercent > 0);
     });
 
@@ -429,6 +441,7 @@ describe('scheduleTrackClips — MIDI plugin-delay compensation', () => {
                 processYeastMidi,
                 selectMidiEventProbability: mocks.shouldPlayMidiEvent,
                 projectChordPitch: mocks.projectChordPitch,
+                evaluateAutomationValue: mocks.evaluateAutomationValue,
             },
             pendingWorkletEvents,
             allTracks: [parent, ...children],
@@ -438,6 +451,72 @@ describe('scheduleTrackClips — MIDI plugin-delay compensation', () => {
         const noteOns = pendingWorkletEvents.filter((event) => event.type === 'on');
         expect(noteOns).toHaveLength(1);
         expect(noteOns[0]?.toasterPadIndex).toBe(2);
+    });
+
+    it('applies the parent Toaster swing lane equally to offline child-note on/off timing', async () => {
+        const parent = TrackDummy.create({
+            id: 'toaster-parent',
+            kind: 'midi',
+            devices: [
+                {
+                    id: 'toaster-1',
+                    name: 'Toaster',
+                    type: 'toaster',
+                    bypassed: false,
+                    parameterValues: { swing: 0.08 },
+                },
+            ],
+        });
+        const child = makeMidiTrack();
+        child.id = 'active-pad';
+        child.parentId = parent.id;
+        child.clips[0] = { ...child.clips[0]!, id: 'pad-clip', trackId: child.id };
+        const midi = makeMidi();
+        midi.notesByClipId = {
+            'pad-clip': [{ id: 'pad-note', pitch: 36, startBeat: 1.25, duration: 0.25, velocity: 100 }],
+        };
+        mocks.automationValue.value = {
+            lanes: [
+                {
+                    id: 'swing-lane',
+                    trackId: parent.id,
+                    parameterId: 'toaster-1:swing',
+                    enabled: true,
+                },
+            ],
+        };
+        mocks.evaluateAutomationValue.mockReturnValue(0.4);
+        const entry = makeInstrumentEntry();
+        entry.deviceType = 'toaster';
+        const pendingWorkletEvents: PendingWorkletEvent[] = [];
+
+        await scheduleTrackClips({
+            offlineCtx: makeOfflineCtx(),
+            track: parent,
+            midi,
+            trackInputNode: {} as GainNode,
+            trackGainNode: {} as GainNode,
+            trackPanNode: {} as StereoPannerNode,
+            destination: {} as AudioNode,
+            durationSeconds: 60,
+            defaultTempo: 120,
+            changes: [],
+            projections: {
+                projectMidiEvents,
+                projectPpqEndpoints,
+                processYeastMidi,
+                selectMidiEventProbability: mocks.shouldPlayMidiEvent,
+                projectChordPitch: mocks.projectChordPitch,
+                evaluateAutomationValue: mocks.evaluateAutomationValue,
+            },
+            pendingWorkletEvents,
+            allTracks: [parent, child],
+            deviceEntriesByTrack: new Map([[parent.id, [entry]]]),
+        });
+
+        expect(mocks.evaluateAutomationValue).toHaveBeenCalledWith('swing-lane', 1.25);
+        expect(pendingWorkletEvents.find((event) => event.type === 'on')?.time).toBeCloseTo(0.65, 6);
+        expect(pendingWorkletEvents.find((event) => event.type === 'off')?.time).toBeCloseTo(0.775, 6);
     });
 
     it('shifts instrument note on/off times by the track compensation delay', async () => {
@@ -542,6 +621,7 @@ describe('scheduleTrackClips — MIDI plugin-delay compensation', () => {
                 processYeastMidi,
                 selectMidiEventProbability: mocks.shouldPlayMidiEvent,
                 projectChordPitch: mocks.projectChordPitch,
+                evaluateAutomationValue: mocks.evaluateAutomationValue,
             },
             pendingWorkletEvents: [],
             allTracks: [track],

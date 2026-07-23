@@ -9,10 +9,12 @@ import {
     scheduleNoteOffline,
 } from '#/modules/Synth/useCases';
 import { type TempoMapStoreState } from '#/modules/Transport/stores';
+import { getToasterSwingOffsetBeats } from '#/utils/toasterSwingProjection';
 
 import { scheduleTrackAutomation } from '../../repositories/offlineScheduler/automationScheduling';
 import {
     type OfflineMidiEventProjector,
+    type OfflineAutomationValueEvaluator,
     type OfflineChordPitchProjector,
     type OfflineMidiProbabilitySelector,
 } from '../../repositories/offlineScheduler/offlineMidiEventProjectorState';
@@ -158,6 +160,7 @@ type OfflineProjectionDependencies = {
     processYeastMidi: OfflineYeastMidiProcessor | null;
     selectMidiEventProbability: OfflineMidiProbabilitySelector;
     projectChordPitch: OfflineChordPitchProjector;
+    evaluateAutomationValue: OfflineAutomationValueEvaluator | null;
 };
 
 export type ScheduleTrackClipsInput = {
@@ -197,8 +200,14 @@ export async function scheduleTrackClips({
     deviceEntriesByTrack,
     regionStartBeat = 0,
 }: ScheduleTrackClipsInput): Promise<void> {
-    const { projectChordPitch, projectMidiEvents, projectPpqEndpoints, processYeastMidi, selectMidiEventProbability } =
-        projections;
+    const {
+        evaluateAutomationValue,
+        projectChordPitch,
+        projectMidiEvents,
+        projectPpqEndpoints,
+        processYeastMidi,
+        selectMidiEventProbability,
+    } = projections;
     function projectBeatToSeconds(beat: number): number {
         return projectPpqEndpoints({
             startPpq: beat,
@@ -523,9 +532,20 @@ export async function scheduleTrackClips({
                     phase: 'complete',
                 });
                 const scheduledNotes = notes.map((note) => {
+                    const swingOffsetBeats =
+                        toasterPadIndex >= 0 && evaluateAutomationValue
+                            ? getToasterSwingOffsetBeats({
+                                  parentTrackId: track.id,
+                                  automationMode: track.automationMode,
+                                  devices: track.devices,
+                                  lanes: automationLanes,
+                                  noteStartBeat: note.startBeat,
+                                  evaluateAutomationValue,
+                              })
+                            : 0;
                     const endpoints = projectPpqEndpoints({
-                        startPpq: note.startBeat,
-                        endPpq: note.startBeat + note.duration,
+                        startPpq: note.startBeat + swingOffsetBeats,
+                        endPpq: note.startBeat + note.duration + swingOffsetBeats,
                         defaultTempo,
                         sampleRate: offlineCtx.sampleRate,
                         changes,

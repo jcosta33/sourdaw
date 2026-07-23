@@ -60,6 +60,7 @@ export const exportStems: ExportStemsFn = async function exportStems(
             projectPpqEndpoints,
             processYeastMidi,
             projectChordPitch,
+            evaluateAutomationValue,
         } = resolveRenderContext({
             durationBeats,
             startBeat,
@@ -177,6 +178,7 @@ export const exportStems: ExportStemsFn = async function exportStems(
                         processYeastMidi,
                         selectMidiEventProbability,
                         projectChordPitch,
+                        evaluateAutomationValue,
                     },
                     onWarning,
                     pendingWorkletEvents,

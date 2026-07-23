@@ -7,6 +7,8 @@ import {
     getCurrentTime,
     scheduleFaustNote,
 } from '#/modules/AudioEngine/useCases';
+import { automationStore } from '#/modules/Automation/stores';
+import { getAutomationValueAtBeat } from '#/modules/Automation/useCases';
 import { midiStore } from '#/modules/MIDI/stores';
 import {
     getChordAtBeat,
@@ -16,6 +18,7 @@ import {
     transposeForChordTrack,
 } from '#/modules/MIDI/useCases';
 import { scheduleDrumKitNote, scheduleKitNote, scheduleNote } from '#/modules/Synth/useCases';
+import { getToasterSwingOffsetBeats } from '#/utils/toasterSwingProjection';
 
 import { beatToSamples } from '../../models/TempoMap';
 import { type TransportState } from '../../models/TransportState';
@@ -100,6 +103,7 @@ export async function scheduleMidiNotes(
     }
 
     const changes = tempoMapStore.value?.changes ?? [];
+    const automationLanes = automationStore.value?.lanes ?? [];
     for (const track of tracks) {
         if (!isCurrent()) {
             return;
@@ -284,6 +288,7 @@ export async function scheduleMidiNotes(
                 controls: ToasterControls;
                 pad: number;
                 pitchFallback: number;
+                getSwingOffsetBeats: (noteStartBeat: number) => number;
             } | null = null;
             if (track.parentId) {
                 const toasterParentTrack = tracks.find((time1) => time1.id === track.parentId);
@@ -305,7 +310,20 @@ export async function scheduleMidiNotes(
                                 childIdx++;
                             }
                         }
-                        toasterRoute = { controls: dn.toasterControls, pad, pitchFallback: 60 };
+                        toasterRoute = {
+                            controls: dn.toasterControls,
+                            pad,
+                            pitchFallback: 60,
+                            getSwingOffsetBeats: (noteStartBeat) =>
+                                getToasterSwingOffsetBeats({
+                                    parentTrackId: toasterParentTrack.id,
+                                    automationMode: toasterParentTrack.automationMode,
+                                    devices: toasterParentTrack.devices,
+                                    lanes: automationLanes,
+                                    noteStartBeat,
+                                    evaluateAutomationValue: getAutomationValueAtBeat,
+                                }),
+                        };
                     }
                 }
             }
@@ -362,8 +380,12 @@ export async function scheduleMidiNotes(
                     }
 
                     for (const projectedNote of projectedNotes) {
-                        const noteStartBeat = projectedNote.startBeat;
-                        if (noteStartBeat < fromBeat || noteStartBeat >= toBeat || noteStartBeat <= lastScheduledBeat) {
+                        const unswungStartBeat = projectedNote.startBeat;
+                        if (
+                            unswungStartBeat < fromBeat ||
+                            unswungStartBeat >= toBeat ||
+                            unswungStartBeat <= lastScheduledBeat
+                        ) {
                             continue;
                         }
                         if (!isCurrent()) {
@@ -382,6 +404,8 @@ export async function scheduleMidiNotes(
                             }
                         }
 
+                        const swingOffsetBeats = toasterRoute?.getSwingOffsetBeats(unswungStartBeat) ?? 0;
+                        const noteStartBeat = unswungStartBeat + swingOffsetBeats;
                         let pitch = note.pitch;
                         if (track.followChordTrack && !drumKitDef && !drumKit && !toasterRoute) {
                             const refChord = getChordAtBeat(clip.startBeat);
@@ -390,9 +414,10 @@ export async function scheduleMidiNotes(
                         }
 
                         const iterationEndBeat = Math.min(iterationStart + loopLen, clip.endBeat);
-                        const noteEndBeat = isTrackScopedYeastNote
-                            ? Math.min(noteStartBeat + projectedNote.duration, iterationEndBeat)
-                            : noteStartBeat + projectedNote.duration;
+                        const unswungEndBeat = isTrackScopedYeastNote
+                            ? Math.min(unswungStartBeat + projectedNote.duration, iterationEndBeat)
+                            : unswungStartBeat + projectedNote.duration;
+                        const noteEndBeat = unswungEndBeat + swingOffsetBeats;
                         const noteStartSamples = beatToSamples(changes, noteStartBeat, transport.tempo, sr);
                         const noteEndSamples = beatToSamples(changes, noteEndBeat, transport.tempo, sr);
                         const accumulatedSamples = beatToSamples(changes, accumulatedPosition, transport.tempo, sr);

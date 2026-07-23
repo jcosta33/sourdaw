@@ -6,6 +6,12 @@ export function configureOfflineMidiEventProjection({
     createProjector,
     selectProbability,
     createChordPitchProjector,
+    evaluateAutomationValue,
 }: ConfigureOfflineMidiEventProjectionInput): void {
-    setOfflineMidiEventProjector({ createProjector, selectProbability, createChordPitchProjector });
+    setOfflineMidiEventProjector({
+        createProjector,
+        selectProbability,
+        createChordPitchProjector,
+        evaluateAutomationValue,
+    });
 }
