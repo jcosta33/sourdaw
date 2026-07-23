@@ -20,6 +20,8 @@ correction), and `daw-dsp` DSP primitives/seeds. Measured against BOTH the indus
 and the project's approved `SPEC-time-stretch-engine` (AC-001..AC-019). Excluded: Tuner scoring,
 non-stretch Arrangement editing, unrelated device DSP.
 
+**Severity tally:** 1 Blocker, 5 Major, 4 Minor, 1 positive/informational (11 findings).
+
 ---
 
 ## Golden Standard (citations)
@@ -229,18 +231,34 @@ the dormant DSP foundation.
 ## Findings
 
 Severity is judged against SHIPPED claims: a missing engine the UI does not advertise is a gap; a UI
-control that implies real stretch while it resamples is severity-worthy.
+control that implies real stretch while it resamples — or that names third-party licensed engines the
+product does not run — is severity-worthy.
 
-### TS-1 — ElasticAudio advertises 9 named commercial-grade algorithms; none exist; playback resamples. **Major** (blocker for any "pro stretch" ship claim)
-Evidence: `audioWarp.ts:9-19` (`elastique-pro`…`slice`); `getAlgorithmInfo.ts` claims
-`quality:'high'`, `realTime:true`, "formant preservation" per name; `ElasticEditorPanel.tsx:37-46,
-398-410` renders all 9 in a live `<select>`. Real path: `scheduleAudioClips.ts:165` `playbackRate`.
-Failure mode: a user selecting "élastique Pro" / "Complex Pro (formant preserve)" hears plain
-resample (or nothing — the store is disconnected, M-103). The names also **impersonate third-party
-commercial engines (zplane Élastique, Rubber Band) that the spec explicitly excludes and that are
-not present in the tree.** Firing condition: any interaction with the Algorithm dropdown. Blast
-radius: whole ElasticAudio UI legitimacy. Spec target: collapse to exactly `repitch/phase-vocoder/
-wsola` (AC-002). Cross-ref M-103.
+### TS-1 — ElasticAudio's live dropdown advertises named third-party licensed engines the product neither ships nor licenses; none exist; playback resamples. **Blocker**
+Evidence: `audioWarp.ts:10-14` names **`elastique-pro`, `elastique-efficient`, `elastique-soloist`**
+(zplane élastique Pro/Efficient/Soloist) and **`rubber-band-r3`, `rubber-band-rt`** (Rubber Band R3
+and real-time) — real, commercially licensed third-party time-stretch products (`audioWarp.ts:9-19`
+also adds `complex`/`complex-pro`/`repitch`/`slice`). `getAlgorithmInfo.ts` renders them with brand
+display names ("élastique Pro", "Rubber Band R3") and claims `quality:'high'`, `realTime:true`, and
+"formant preservation" per name; `ElasticEditorPanel.tsx:37-46,398-410` surfaces all 9 in a live
+user-facing Algorithm `<select>`. Real path: `scheduleAudioClips.ts:165` `playbackRate` resample.
+
+**Misrepresentation / trademark dimension (why this re-ranks to Blocker).** These are protected
+product/brand names for engines that are **not present in the tree, not a dependency, and not
+licensed** (grep for any élastique/rubber-band implementation → only the label strings; the spec
+*explicitly excludes* Élastique, Rubber Band, and every third-party backend). Shipping a UI that
+names, brands, and attributes quality/CPU/real-time/formant characteristics to zplane and Rubber
+Band engines the product does not run is a false attribution to third-party trademark holders and a
+false capability claim to the user — a legitimacy/legal exposure, not merely an unimplemented
+control. It is severity-worthy on the audit's own rule (a UI control implying real, branded stretch
+that in fact resamples) *and* independently on the misrepresentation of licensed third-party marks.
+
+Failure mode: a user selecting "élastique Pro" / "Rubber Band R3" / "Complex Pro (formant preserve)"
+hears plain resample — or nothing, because the store is disconnected (M-103). Firing condition: any
+interaction with the Algorithm dropdown; the exposure exists whenever the app is shipped. Blast
+radius: ElasticAudio UI legitimacy + third-party-mark exposure across the whole product surface.
+Spec target: collapse to exactly `repitch/phase-vocoder/wsola` (AC-002). Cross-ref M-103. Remediation
+is immediate and independent of any real-engine work (see Roadmap step 1).
 
 ### TS-2 — "Time-stretch" is playback-rate resampling; pitch couples to tempo. **Major**
 Evidence: `scheduleAudioClips.ts:129,165`. `Clip.stretchMode` `'timestretch'` (`Track.ts:79`)
@@ -320,7 +338,8 @@ exists. Failure mode: any consolidation must reconcile four namespaces; risk of 
 ### None-observed statements
 - No third-party stretch library, binary, or copied fixture is present in the tree (grep for
   élastique/rubberband implementations → only the TS name strings; fixtures are in-house synthetic
-  per BASELINE). The 9 names are labels only.
+  per BASELINE). The 9 names are labels only — which is precisely the basis of TS-1's
+  misrepresentation finding.
 - No second phase-vocoder/WSOLA implementation exists beyond the Crumbs seeds and the dormant
   contract (grep → none).
 
@@ -332,13 +351,16 @@ Sequence to reach the spec's committed first-class engine. Follows the spec's ow
 dependency gates (AC-016); sizes are S/M/L. First-class only — no shims that re-advertise fake
 algorithms.
 
-1. **(Done) DSP foundation** — dormant `primitives::time_stretch` contract + fixtures (PR #541). No
+1. **IMMEDIATE — remove or honestly rename the third-party-branded algorithm surface (independent of
+   and prior to any real-engine work).** Delete the élastique/Rubber Band/Complex-Pro names,
+   brand-display labels, and unbacked `quality`/`cpuCost`/`realTime`/formant claims from
+   `audioWarp.ts:9-19`, `getAlgorithmInfo.ts`, and the `ElasticEditorPanel.tsx` Algorithm/Stretch
+   `<select>`s. Reduce the user-facing surface to the spec's `repitch|phase-vocoder|wsola`, and gate
+   PV/WSOLA behind a typed "engine unavailable → disclosed repitch fallback" state until real
+   executors exist (AC-002, AC-015). This is the Blocker fix (TS-1): it removes the misrepresentation
+   of licensed third-party marks and the false capability claim without waiting on any DSP. — **S/M**
+2. **(Done) DSP foundation** — dormant `primitives::time_stretch` contract + fixtures (PR #541). No
    AC claimed. — *shipped.*
-2. **Honest selector now (decouple UI legitimacy from the engine).** Collapse the 9-name
-   `WarpAlgorithm` + Ableton `StretchMode` surfaces to the spec's `repitch|phase-vocoder|wsola`,
-   remove `getAlgorithmInfo`'s unbacked quality/formant claims, and gate PV/WSOLA behind a typed
-   "engine unavailable → disclosed repitch fallback" state until real executors exist (AC-002,
-   AC-015). Addresses TS-1 head-on without waiting for DSP. — **S/M**
 3. **Crumbs convergence (Wave: shared-DSP 6 + Crumbs stretch).** Adapt PV/WSOLA behind the streaming
    contract: FFT (not DFT), stereo, preallocated streaming `process()`, transient detection + phase
    reset (Röbel), latency/tail/drain; differential goldens vs the frozen seeds; prove zero private
@@ -354,7 +376,7 @@ algorithms.
 6. **ElasticAudio engine surface.** `ElasticAudio/engine/`: `TimeStretchWorkletProcessor` (Rust/WASM
    in an AudioWorkletProcessor on the single AudioContext), WASM binding, typed capability/failure
    state (AC-008, AC-009, AC-015; fixes TS-4). Gated behind performance DG-001..DG-005 (AC-013,
-   AC-016). — **L**
+   AC-016). This is where step 1's `phase-vocoder`/`wsola` options become honestly selectable. — **L**
 7. **Offline/export parity adapter.** Consume the same validated segment map + shared engines in the
    offline graph; per-segment match within one 128-frame quantum (AC-014; fixes TS-10, M-029). Gated
    behind offline DG-002/Wave-2. — **M**
@@ -369,7 +391,7 @@ algorithms.
 
 1. **AC-007 provenance.** Is the current `playbackRate` resample the intended permanent `repitch`
    executor, or a placeholder to be re-expressed through the streaming contract? The spec preserves
-   its observables (AC-007) but the honest-selector step (roadmap 2) must not regress them.
+   its observables (AC-007) but the honest-selector step (roadmap 1) must not regress them.
 2. **Warp-state persistence owner.** `warpStates` is a deliberate in-memory store to break an
    AudioEngine↔Arrangement cycle (see its doc comment). Confirm the CRDT-backed replacement path with
    `CHANGE-elastic-audio-ownership-and-worker` before roadmap 4 to avoid re-introducing the cycle.
@@ -392,3 +414,6 @@ algorithms.
 - TS-8 (M-174) is static-only and register-marked UNCERTAIN.
 - Runtime confirmation that `audioWarpStore.clipSettings` reaches no consumer relies on grep +
   M-103; not exercised in a live app.
+- The trademark/licensing basis of TS-1 rests on the absence of any élastique/Rubber Band
+  implementation or dependency in-tree (grep → label strings only) plus the spec's explicit
+  exclusion; it is not a legal opinion.
