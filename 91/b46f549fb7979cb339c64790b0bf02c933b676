@@ -1,0 +1,30 @@
+src/modules/TimelineEditor/presentations/views/ClipView/__tests__/KneadEditor.spec.tsx
+  s_0d39f3a4a4357a::t_5345cd7a4d2be8 10
+  s_0d39f3a4a4357a::t_8cedf7b68047e7 131-133
+  s_0d39f3a4a4357a::t_68d61678ea4491 6
+  s_0d39f3a4a4357a::t_c27edaf78c62b7 390-391
+  s_0d39f3a4a4357a::t_f8bc725c9df844 352-361
+  s_0d39f3a4a4357a::t_5fe3ad1e35a5ab 211-235
+  s_0d39f3a4a4357a::t_a19dafa66d5fbf 454-566
+  s_0d39f3a4a4357a::t_52b8c53b39807b 351,389
+src/modules/TimelineEditor/presentations/views/__tests__/ClipView.spec.tsx
+  s_0d39f3a4a4357a::t_82d771f98a31d3 372,375,379-382
+  s_0d39f3a4a4357a::t_05834528cc7cd4 5,8-9,12-17,61,66-71,75-92,96-98,101-104,107-117,128-190,194-195,213-256,260-371,373-374,376-378,383-404
+  s_0d39f3a4a4357a::t_014738422a0731 257-259
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "91b46f549fb7979cb339c64790b0bf02c933b676",
+  "prompts": {},
+  "sessions": {
+    "s_0d39f3a4a4357a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "60da6a2e-7d79-4d98-8624-e993f5a9f94e",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
