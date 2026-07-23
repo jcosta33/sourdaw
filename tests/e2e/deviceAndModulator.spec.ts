@@ -1,91 +1,106 @@
 import { expect, test } from '@playwright/test';
-import { launch_new_project, setupWorkspace } from '../../tests/e2e/e2eUtils';
+import { launch_new_project, setupWorkspace } from './e2eUtils';
 
 const MOD = process.platform === 'darwin' ? 'Meta' : 'Control';
 
-test.describe('Device & Audio Settings', () => {
+async function add_track(page: import('@playwright/test').Page, kind: string): Promise<void> {
+    await page.keyboard.press(`${MOD}+k`);
+    await page.getByPlaceholder('Type a command...', { exact: true }).fill(`Add ${kind} Track`);
+    await page.getByRole('option', { name: `Add ${kind} Track` }).click();
+}
+
+async function open_dock_tab(page: import('@playwright/test').Page, tab_id: string): Promise<void> {
+    const toggle = page.getByRole('button', { name: 'Toggle bottom dock' });
+    const pressed = (await toggle.getAttribute('aria-pressed')) ?? '';
+    if (!pressed.match(/true/i)) {
+        await toggle.click();
+    }
+    await page.locator(`#bottom-dock-tab-${tab_id}`).click();
+}
+
+// ---------------------------------------------------------------------------
+// Modulation matrix — the New Modulator form opens and closes (aria-expanded).
+// ---------------------------------------------------------------------------
+
+test.describe('Modulation matrix form', () => {
     test.beforeEach(async ({ page }) => {
         await setupWorkspace(page);
         await launch_new_project(page);
-        await page.keyboard.press(`${MOD}+k`);
-        await page.getByPlaceholder('Type a command...', { exact: true }).fill('Add Audio Track');
-        await page.getByRole('option', { name: 'Add Audio Track' }).click();
+        await add_track(page, 'MIDI');
+        await open_dock_tab(page, 'modulation');
     });
 
-    test('Audio input device selector is present in inspector', async ({ page }) => {
-        const inspector = page.getByRole('complementary', { name: 'Inspector panel' });
-        const input = inspector.getByRole('combobox', { name: 'Audio input device' });
-        if (await input.isVisible().catch(() => false)) {
-            await expect(input).toBeVisible();
-        }
-    });
-
-    test('Refresh audio devices button is present', async ({ page }) => {
-        const inspector = page.getByRole('complementary', { name: 'Inspector panel' });
-        const refresh = inspector.getByRole('button', { name: 'Refresh audio devices' });
-        if (await refresh.isVisible().catch(() => false)) {
-            await expect(refresh).toBeVisible();
-        }
-    });
-});
-
-test.describe('Automation Modulator Form', () => {
-    test.beforeEach(async ({ page }) => {
-        await setupWorkspace(page);
-        await launch_new_project(page);
-        await page.keyboard.press(`${MOD}+k`);
-        await page.getByPlaceholder('Type a command...', { exact: true }).fill('Add MIDI Track');
-        await page.getByRole('option', { name: 'Add MIDI Track' }).click();
-        await page.getByRole('button', { name: 'Toggle bottom dock' }).click();
-        await page.locator('#bottom-dock-tab-modulation').click();
-    });
-
-    test('Modulation matrix has add modulator control', async ({ page }) => {
+    test('New Modulator toggles the form open and closed', async ({ page }) => {
         const matrix = page.getByRole('region', { name: 'Modulation matrix' });
-        await expect(matrix).toBeVisible({ timeout: 5000 });
-        const add_button = matrix.getByRole('button', { name: /Add|Create|New/i }).first();
-        if (await add_button.isVisible().catch(() => false)) {
-            await add_button.click();
-            await page.waitForTimeout(500);
+        const new_btn = matrix.getByRole('button', { name: 'New Modulator', exact: true });
 
-            const name_input = page.getByRole('textbox', { name: 'Modulator name' });
-            const kind_select = page.getByRole('combobox', { name: 'Modulator kind' });
-            const name_visible = await name_input.isVisible().catch(() => false);
-            const kind_visible = await kind_select.isVisible().catch(() => false);
-            if (name_visible) await expect(name_input).toBeVisible();
-            if (kind_visible) await expect(kind_select).toBeVisible();
-        }
+        await expect(new_btn).toHaveAttribute('aria-expanded', 'false');
+        await new_btn.click();
+        await expect(new_btn).toHaveAttribute('aria-expanded', 'true');
+        await expect(matrix.getByRole('textbox', { name: 'Modulator name' })).toBeVisible();
+        await expect(matrix.getByRole('combobox', { name: 'Modulator kind' })).toBeVisible();
+
+        // Closing the form removes the fields.
+        await new_btn.click();
+        await expect(new_btn).toHaveAttribute('aria-expanded', 'false');
+        await expect(matrix.getByRole('textbox', { name: 'Modulator name' })).toHaveCount(0);
     });
 });
 
-test.describe('Crust Module Controls', () => {
+// ---------------------------------------------------------------------------
+// Crust device — addDevice intentionally rejects it (not implemented).
+// ---------------------------------------------------------------------------
+
+test.describe('Crust device — not implemented', () => {
     test.beforeEach(async ({ page }) => {
         await setupWorkspace(page);
         await launch_new_project(page);
-        await page.keyboard.press(`${MOD}+k`);
-        await page.getByPlaceholder('Type a command...', { exact: true }).fill('Add MIDI Track');
-        await page.getByRole('option', { name: 'Add MIDI Track' }).click();
+        await add_track(page, 'MIDI');
+    });
 
+    test('Selecting Crust surfaces a not-implemented error and adds no device', async ({ page }) => {
         const inspector = page.getByRole('complementary', { name: 'Inspector panel' });
         await inspector.getByRole('button', { name: 'Add device' }).click();
-        const crust_item = page.getByRole('menuitem', { name: /Crust/i });
-        if (await crust_item.isVisible().catch(() => false)) {
-            await crust_item.click();
-            await page.waitForTimeout(1000);
-        }
+
+        const devices_before = await inspector.getByRole('button', { name: /^Bypass /i }).count();
+        await page.getByRole('menuitem', { name: /^Crust$/ }).click();
+
+        // Crust is intentionally unimplemented → error notification, no device added.
+        await expect(page.getByText(/Crust is not fully implemented|PluginNotImplementedError/i)).toBeVisible({ timeout: 5000 });
+        const devices_after = await inspector.getByRole('button', { name: /^Bypass /i }).count();
+        expect(devices_after).toBe(devices_before);
+    });
+});
+
+// ---------------------------------------------------------------------------
+// Gluten device — adding it creates a bypassable device card in the chain.
+// (Unlike Crust, Gluten is fully implemented.)
+// ---------------------------------------------------------------------------
+
+test.describe('Gluten device', () => {
+    test.beforeEach(async ({ page }) => {
+        await setupWorkspace(page);
+        await launch_new_project(page);
+        await add_track(page, 'MIDI');
     });
 
-    test('Crust dither mode selector is present', async ({ page }) => {
-        const dither = page.getByRole('combobox', { name: 'Dither mode' });
-        if (await dither.isVisible().catch(() => false)) {
-            await expect(dither).toBeVisible();
-        }
-    });
+    test('Adding Gluten creates a device card whose bypass toggle relabels on click', async ({ page }) => {
+        const inspector = page.getByRole('complementary', { name: 'Inspector panel' });
+        await inspector.getByRole('button', { name: 'Add device' }).click();
+        await page.getByRole('menuitem', { name: /^Gluten$/ }).click();
+        await page.waitForTimeout(800);
 
-    test('Crust reset peak button is present', async ({ page }) => {
-        const reset = page.getByRole('button', { name: 'Reset true peak indicator' });
-        if (await reset.isVisible().catch(() => false)) {
-            await expect(reset).toBeVisible();
-        }
+        // Initially not bypassed → button says "Bypass Gluten", pressed=false.
+        const bypass = inspector.getByRole('button', { name: /^Bypass Gluten/i });
+        await expect(bypass).toBeVisible();
+        await expect(bypass).toHaveAttribute('aria-pressed', 'false');
+
+        await bypass.click();
+
+        // After bypassing, the same button relabels to "Enable Gluten", pressed=true.
+        const enable = inspector.getByRole('button', { name: /^Enable Gluten/i });
+        await expect(enable).toBeVisible();
+        await expect(enable).toHaveAttribute('aria-pressed', 'true');
+        await expect(bypass).toHaveCount(0);
     });
 });
