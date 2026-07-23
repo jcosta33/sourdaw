@@ -1,0 +1,31 @@
+tests/e2e/clipInspectorControls.spec.ts
+  s_0d39f3a4a4357a::t_29a172615b88b9 2,6,8-15,17-30,32,35-39,43,46,49-53,55-57,62,64-72,75,77-85
+tests/e2e/panelDeepCoverage.spec.ts
+  s_58c1b5622304ae::t_cd8efe7074d73b 12-18,21-22,24-29,31-32,35-39,41,44-48,50-52,56-61,64-65,68-72,74-75,77-78,82-87,91,93,95,97-100,102,105-106,110-115,118,120-124,126-128,130-131,135-140,143-145,150-151,155-157,159,161,166,169-170,172-173
+tests/e2e/uncoveredControls.spec.ts
+  s_0d39f3a4a4357a::t_65b01ec27733a9 2,6-16,22,25-28,31-32,34-36,38-41,44-53,57-61,69-70,73,75-81,83-84,87,89-90,92-95,98,100,103-106,110-114,120,122-126,128-130,133,137,139,142-143,147-151,155,158-161,164,166-167,169-174,177,179
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "2f02fd96bb01ecea2d1d2457c9fa2eb1ce779558",
+  "prompts": {},
+  "sessions": {
+    "s_0d39f3a4a4357a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "60da6a2e-7d79-4d98-8624-e993f5a9f94e",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_58c1b5622304ae": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-a285528d9742f1677",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
