@@ -1,0 +1,23 @@
+src/modules/AudioEngine/useCases/offlineRender/__tests__/projectOfflineYeastTrackNotes.spec.ts
+  s_ac9b259eab20ba::t_30164778c7238f 195-202
+  s_ac9b259eab20ba::t_6ad0c7e9eb3356 211
+  s_ac9b259eab20ba::t_72c2ef7d5b8270 187-194,203,205,215-216,222-228
+src/modules/AudioEngine/useCases/offlineRender/projectOfflineYeastTrackNotes.ts
+  s_ac9b259eab20ba::t_72c2ef7d5b8270 51-54,128-131,145-146,175
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "0fb6db199dc5420d43db4b4e5318c526abb44a27",
+  "prompts": {},
+  "sessions": {
+    "s_ac9b259eab20ba": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8699-3865-7842-8c54-afbac6cfd266",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
