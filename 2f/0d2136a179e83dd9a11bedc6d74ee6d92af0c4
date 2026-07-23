@@ -1,0 +1,62 @@
+src/modules/PluginHost/useCases/index.ts
+  s_0d39f3a4a4357a::t_6d79996a44d321 18-19
+src/modules/Arrangement/useCases/getArrangementHandlers.ts
+  s_0d39f3a4a4357a::t_86448689110358 17,156
+src/modules/Project/models/ProjectData.ts
+  s_0d39f3a4a4357a::t_9888b7ac6d8aae 312-314
+src/modules/Arrangement/useCases/projectTrackToLiveStrip.ts
+  s_0d39f3a4a4357a::t_014f1edcf7e6da 12,92-102
+src/modules/Arrangement/handlers/device/handleSetExternalPluginState.ts
+  s_0d39f3a4a4357a::t_a8521a1ed4ab7a 1-13
+src/modules/PluginHost/useCases/pluginLifecycle/restorePluginState.ts
+  s_0d39f3a4a4357a::t_5e2b067020b773 1-23
+src/modules/Arrangement/models/Track.ts
+  s_0d39f3a4a4357a::t_c3e61651dca4d1 150-153
+src/modules/Arrangement/useCases/device/setExternalPluginState.ts
+  s_0d39f3a4a4357a::t_ca49449a8ac4e0 1-31
+src/modules/Arrangement/useCases/device/__tests__/setExternalPluginState.spec.ts
+  s_0d39f3a4a4357a::t_f483683b7fe589 1-3,5-50
+  s_0d39f3a4a4357a::t_cbcbbc0a55443a 4
+src/modules/Project/useCases/projectPersistence/saveProject/saveProject.ts
+  s_0d39f3a4a4357a::t_3c687e2e8bbae2 10-12,15,26-35
+  s_0d39f3a4a4357a::t_9e41e6ff38fa4a 36
+src/modules/Arrangement/handlers/device/__tests__/handleSetExternalPluginState.spec.ts
+  s_0d39f3a4a4357a::t_2ddbe411da2380 1-51
+src/modules/Project/useCases/__tests__/projectPersistence.spec.ts
+  s_0d39f3a4a4357a::t_e46e8f761d272e 25,72-77,178,180-183,185-187,189-191
+src/modules/Arrangement/stores/__tests__/trackStoreDeviceStateChunk.spec.ts
+  s_0d39f3a4a4357a::t_a0e29742dadb7a 1-50
+src/modules/PluginHost/useCases/pluginLifecycle/__tests__/pluginStateRoundtrip.spec.ts
+  s_0d39f3a4a4357a::t_6dad9cf619ba3d 1-57
+src/modules/Project/useCases/projectPersistence/saveProject/captureExternalPluginStates.ts
+  s_0d39f3a4a4357a::t_3c1b1409d92640 1-17,20-51
+  s_0d39f3a4a4357a::t_4b0692a89db3e1 18-19
+src/modules/Project/useCases/projectPersistence/saveProject/__tests__/captureExternalPluginStates.spec.ts
+  s_0d39f3a4a4357a::t_77f6a793f5c327 1-91
+  s_0d39f3a4a4357a::t_176ca30eb6267f 92-94
+  s_0d39f3a4a4357a::t_dfe9821a933450 95-97
+src/modules/Arrangement/stores/trackStore.ts
+  s_0d39f3a4a4357a::t_b3d8c9dd4ed8aa 344-346
+src/modules/Project/stores/arrangementStore.ts
+  s_0d39f3a4a4357a::t_da25e51e74c75e 74-76
+src/utils/handlerContract.ts
+  s_0d39f3a4a4357a::t_8b7afc5160103f 287
+src/modules/PluginHost/useCases/pluginLifecycle/readPluginState.ts
+  s_0d39f3a4a4357a::t_018c4576efb50b 1-23
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "2f0d2136a179e83dd9a11bedc6d74ee6d92af0c4",
+  "prompts": {},
+  "sessions": {
+    "s_0d39f3a4a4357a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "60da6a2e-7d79-4d98-8624-e993f5a9f94e",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
