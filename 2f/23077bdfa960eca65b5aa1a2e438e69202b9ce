@@ -1,0 +1,19 @@
+src/modules/Transport/useCases/__tests__/getTransportHandlers.spec.ts
+  s_8a4a5e208ed693::t_662ea3c1e7c160 5-27,31-32,35-52
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "2f23077bdfa960eca65b5aa1a2e438e69202b9ce",
+  "prompts": {},
+  "sessions": {
+    "s_8a4a5e208ed693": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-a149f2573c2c75afc",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
