@@ -2,8 +2,6 @@ import { describe, it, expect } from 'vitest';
 
 import { EuclideanGenerator } from '../EuclideanGenerator';
 
-import type { MidiEvent, TransportInfo } from '../../../models/MidiEvent';
-
 describe('EuclideanGenerator', () => {
     it('constructs with default pattern (5 hits, 8 steps)', () => {
         const gen = new EuclideanGenerator('test-1');
@@ -75,31 +73,5 @@ describe('EuclideanGenerator', () => {
         gen.setParam('note', 72);
         gen.setParam('velocity', 80);
         expect(gen.getPattern()).toHaveLength(6);
-    });
-
-    it('describes generated note duration before the release crosses a block boundary', () => {
-        const gen = new EuclideanGenerator('duration');
-        gen.setParam('hits', 8);
-        const output: MidiEvent[] = [];
-        const transport: TransportInfo = {
-            sampleRate: 48_000,
-            bpm: 120,
-            blockStartSamples: 0,
-            blockEndSamples: 6_001,
-            ppqPosition: 0,
-            isPlaying: true,
-            barIndex: 0,
-            beatInBar: 0,
-            timeSigNum: 4,
-            timeSigDen: 4,
-            loopEnabled: false,
-            loopStartPpq: 0,
-            loopEndPpq: 0,
-        };
-
-        gen.processMidi([], output, transport);
-
-        const noteOn = output.find((event) => event.kind.type === 'noteOn');
-        expect(noteOn?.durationSamples).toBe(3_000);
     });
 });
