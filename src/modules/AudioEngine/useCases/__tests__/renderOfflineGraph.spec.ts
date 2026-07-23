@@ -367,6 +367,58 @@ describe('renderOffline — graph construction and lifecycle', () => {
         expect(routeGain.connect).toHaveBeenCalledWith(sidechainInput, 0, 1);
     });
 
+    it('wires a persisted sidechain key into the compressor input exactly once (no double-wire)', async () => {
+        const kick = TrackDummy.create({ id: 'kick' });
+        const bass = TrackDummy.create({
+            id: 'bass',
+            devices: [{ id: 'compressor-1', type: 'builtin-sidechain-compressor', bypassed: false } as never],
+        });
+        const sidechainInput = { numberOfInputs: 2 } as AudioNode;
+        mocks.sidechainStore.value.routes = [
+            {
+                id: 'route-1',
+                sourceTrackId: kick.id,
+                targetTrackId: bass.id,
+                targetDeviceId: 'compressor-1',
+                targetParameterId: 'sc-comp-threshold',
+                gain: 1,
+            },
+        ];
+        mocks.resolveRenderContext.mockReturnValue(
+            makeContext({ tracks: { tracks: [kick, bass] } as unknown as TrackStoreState })
+        );
+        mocks.createOfflineTrackStrip.mockImplementation((_ctx: OfflineAudioContext, track: Track) => {
+            const strip = makeStrip();
+            if (track.id === bass.id) {
+                const node: DeviceNodeEntry['node'] = {
+                    inputNode: sidechainInput,
+                    outputNode: sidechainInput,
+                    nodes: [sidechainInput],
+                };
+                strip.deviceEntries = [
+                    {
+                        deviceId: 'compressor-1',
+                        deviceType: 'builtin-sidechain-compressor',
+                        node,
+                        strategy: { node, setParam: vi.fn<(name: string, value: number) => void>() },
+                    },
+                ];
+            }
+            return Promise.resolve(strip);
+        });
+
+        await renderOffline(4);
+
+        // Web Audio sums parallel edges: a second key wire over the same route
+        // would ~double the sidechain key amplitude (~+6 dB) and over-duck every
+        // sidechained mixdown. Exactly one gain must feed the compressor's key
+        // input (index 1).
+        const keyEdges = createdContexts[0]!.gains.filter((gain) =>
+            gain.connect.mock.calls.some((call) => call[0] === sidechainInput && call[1] === 0 && call[2] === 1)
+        );
+        expect(keyEdges).toHaveLength(1);
+    });
+
     it('warns and retains the compressor fallback when sidechain worklet preparation fails', async () => {
         const kick = TrackDummy.create({ id: 'kick' });
         const bass = TrackDummy.create({
