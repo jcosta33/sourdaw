@@ -12,6 +12,7 @@ const ownerUseCases = vi.hoisted(() => ({
     removeMidiClipData: vi.fn(),
     removeTrackStrip: vi.fn(),
     removeBusStrip: vi.fn(),
+    setTrackOutput: vi.fn(),
 }));
 
 vi.mock('../../repositories/track/getTrackState', () => ({
@@ -35,6 +36,7 @@ vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/AudioEngine/useCases')>()),
     removeTrackStrip: ownerUseCases.removeTrackStrip,
     removeBusStrip: ownerUseCases.removeBusStrip,
+    setTrackOutput: ownerUseCases.setTrackOutput,
 }));
 vi.mock('../../stores/takeLaneStore', () => ({
     takeLaneStore: {
@@ -58,6 +60,7 @@ describe('removeTrack', () => {
         ownerUseCases.removeMidiClipData.mockReset();
         ownerUseCases.removeTrackStrip.mockReset();
         ownerUseCases.removeBusStrip.mockReset();
+        ownerUseCases.setTrackOutput.mockReset();
     });
 
     it('should return early when track state is missing', () => {
@@ -105,6 +108,34 @@ describe('removeTrack', () => {
         // node keeps processing in the live graph (leaked node).
         expect(ownerUseCases.removeTrackStrip).toHaveBeenCalledWith('t1');
         expect(ownerUseCases.removeBusStrip).not.toHaveBeenCalled();
+    });
+
+    it('refreshes surviving Toaster siblings after removing a child stem', () => {
+        const parent = { id: 'parent', kind: 'folder', clips: [], parentId: null, devices: [{ type: 'toaster' }] };
+        const removed = { id: 'stem-1', kind: 'audio', clips: [], parentId: 'parent', devices: [], outputId: 'parent' };
+        const survivor = {
+            id: 'stem-2',
+            kind: 'audio',
+            clips: [],
+            parentId: 'parent',
+            devices: [],
+            outputId: 'parent',
+        };
+        vi.mocked(getTrackState).mockReturnValue({
+            tracks: [parent, removed, survivor] as never,
+            selectedTrackId: null,
+        });
+        vi.mocked(getTrackById).mockReturnValue(removed as never);
+
+        removeTrack('stem-1');
+
+        expect(ownerUseCases.setTrackOutput).toHaveBeenCalledWith('stem-2', 'parent', {
+            toasterParentTrackId: 'parent',
+            padIndex: 0,
+        });
+        expect(vi.mocked(setTrackState).mock.invocationCallOrder[0]).toBeLessThan(
+            ownerUseCases.setTrackOutput.mock.invocationCallOrder[0]!
+        );
     });
 
     it('should remove BOTH the engine bus strip and track strip when a bus track is deleted', () => {
