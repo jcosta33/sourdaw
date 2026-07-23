@@ -102,7 +102,43 @@ const TRACK_SPECS: readonly TrackSpec[] = [
     ['Parallel Crush', 'bus', null, ['builtin-compressor', 'builtin-distortion']],
 ];
 
-function createDeviceParams(type: string, kind: ProjectTrackKind): Record<string, number> {
+const FERMENTER_AUTOMATION_DEFAULTS: Readonly<Record<string, number>> = {
+    oscEngine: 0,
+    oscLevel: 0.8,
+    filterCutoff: 5_000,
+    filterResonance: 1,
+    lfoRate: 0,
+    lfoFilterAmount: 0,
+    lfoPitchAmount: 0,
+    filterEnvAmount: 0.5,
+    msegToFilter: 0,
+    unisonSpread: 0.7,
+    fmLevel2: 0.8,
+    fmFeedback: 0,
+    noiseLevel: 0,
+    grainDensity: 20,
+    grainSize: 50,
+    grainSpray: 0.1,
+};
+
+const FERMENTER_ROLE_OVERRIDES: Readonly<Record<string, Record<string, number>>> = {
+    'Sub Mycelium': { oscEngine: 1, oscLevel: 0.95, filterCutoff: 700 },
+    'Rolling Colony': { oscEngine: 1, filterCutoff: 1_600, filterResonance: 2.2 },
+    'Acid Tendril': { oscEngine: 1, lfoRate: 2.8, lfoFilterAmount: 0.7 },
+    'Triplet Helix': { lfoRate: 6, lfoPitchAmount: 0.12 },
+    'Psy Pluck': { filterCutoff: 4_200, filterEnvAmount: 0.8 },
+    'Main Vision': { oscEngine: 5, msegToFilter: 0.55, unisonSpread: 0.9 },
+    'Counter Vision': { lfoRate: 1.5, lfoFilterAmount: -0.4 },
+    'Harmonic Mist': { oscEngine: 5, msegToFilter: 0.3, filterCutoff: 7_500 },
+    'FM Spores': { oscEngine: 2, fmLevel2: 0.95, fmFeedback: 0.35 },
+    'Root Drone': { oscEngine: 1, filterCutoff: 800, noiseLevel: 0.12 },
+    'Granular Voices': { oscEngine: 4, grainDensity: 36, grainSize: 110, grainSpray: 0.45 },
+    'Fractal Riser': { oscEngine: 5, filterCutoff: 900, filterResonance: 3.5 },
+    'Impact Field': { oscEngine: 1, noiseLevel: 0.65, filterCutoff: 2_400 },
+    'Glitch Spirits': { oscEngine: 4, grainDensity: 72, grainSize: 24, grainSpray: 0.85 },
+};
+
+function createDeviceParams(type: string, kind: ProjectTrackKind, trackName: string): Record<string, number> {
     if (type === 'builtin-eq') {
         return { 'eq-low-freq': 90, 'eq-low-gain': 0, 'eq-high-freq': 10_000, 'eq-high-gain': 0 };
     }
@@ -117,6 +153,30 @@ function createDeviceParams(type: string, kind: ProjectTrackKind): Record<string
     }
     if (type === 'toaster') {
         return { masterGain: 1, swing: 0.08, reverbMix: 0.12, delayMix: 0.04 };
+    }
+    if (type === 'fermenter') {
+        return { ...FERMENTER_AUTOMATION_DEFAULTS, ...FERMENTER_ROLE_OVERRIDES[trackName] };
+    }
+    if (type === 'builtin-filter') {
+        return { 'filter-cutoff': 1_000, 'filter-resonance': 1 };
+    }
+    if (type === 'builtin-autopan') {
+        return { 'autopan-rate': 2, 'autopan-depth': 0.7 };
+    }
+    if (type === 'builtin-phaser') {
+        return { 'phaser-rate': 0.5, 'phaser-depth': 0.7 };
+    }
+    if (type === 'builtin-chorus') {
+        return { 'chorus-rate': 1.5, 'chorus-depth': 5 };
+    }
+    if (type === 'builtin-tremolo') {
+        return { 'trem-rate': 4, 'trem-depth': 0.5 };
+    }
+    if (type === 'builtin-distortion' && kind !== 'bus') {
+        return { 'dist-mix': 0.5 };
+    }
+    if (type === 'builtin-delay' && kind !== 'bus') {
+        return { 'delay-mix': 0.3, 'delay-feedback': 0.4 };
     }
     if (kind !== 'bus') {
         return {};
@@ -176,7 +236,7 @@ export function createMyceliumTopology(): { tracks: ProjectTrack[]; sidechainRou
                 name: type.replace('builtin-', '').replaceAll('-', ' '),
                 type,
                 bypassed: false,
-                parameterValues: createDeviceParams(type, kind),
+                parameterValues: createDeviceParams(type, kind, name),
             }));
             return {
                 id,

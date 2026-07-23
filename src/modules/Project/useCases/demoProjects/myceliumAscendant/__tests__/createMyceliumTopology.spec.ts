@@ -100,6 +100,28 @@ describe('createMyceliumTopology', () => {
         ).toBe(true);
         expect(tracks.flatMap((track) => track.devices)).toHaveLength(59);
         expect(getBuiltinPlugins().some((plugin) => plugin.id === chamberType)).toBe(true);
+        const requiredFermenterParams = [
+            'oscLevel',
+            'filterCutoff',
+            'filterResonance',
+            'lfoRate',
+            'lfoFilterAmount',
+            'lfoPitchAmount',
+            'filterEnvAmount',
+            'msegToFilter',
+            'unisonSpread',
+            'fmLevel2',
+            'fmFeedback',
+            'noiseLevel',
+            'grainDensity',
+            'grainSize',
+            'grainSpray',
+        ];
+        for (const device of tracks.flatMap((track) => track.devices).filter((device) => device.type === 'fermenter')) {
+            expect(requiredFermenterParams.every((id) => id in device.parameterValues)).toBe(true);
+        }
+        expect(tracks.find((track) => track.name === 'FM Spores')?.devices[0]?.parameterValues.oscEngine).toBe(2);
+        expect(tracks.find((track) => track.name === 'Granular Voices')?.devices[0]?.parameterValues.oscEngine).toBe(4);
         expect(tracks.find((track) => track.name === 'Master')?.devices.map((device) => device.type)).toEqual([
             'builtin-eq',
             'gluten',
