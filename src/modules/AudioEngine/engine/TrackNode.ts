@@ -20,6 +20,9 @@ export type TrackNodeDeps = {
     /** Adjustment-layer insert: when non-null for this track, `analyserNode`
      *  routes to this node instead of the track's default destination. */
     getAdjustmentBusForTrack?: (trackId: string) => AudioNode | null;
+    reconnectRoutingForTrack?: (trackId: string) => void;
+    onDeviceLoaded?: (trackId: string, device: BuiltinDeviceNode) => void;
+    onDeviceRemoved?: (trackId: string, device: BuiltinDeviceNode) => void;
 };
 
 type PendingDeviceLoad = {
@@ -234,7 +237,7 @@ export class TrackNode {
         for (const send of sends) {
             const tap = send.preFader ? this.strip.preFaderTap : this.strip.analyserNode;
             try {
-                tap.disconnect(send.gainNode);
+                send.sourceNode.disconnect(send.gainNode);
             } catch {
                 /* source edge already disconnected during chain teardown */
             }
@@ -244,6 +247,7 @@ export class TrackNode {
                 /* already disconnected */
             }
             tap.connect(send.gainNode);
+            send.sourceNode = tap;
 
             const busGain = this.deps.getBusGainNode(send.busId);
             if (busGain) {
@@ -292,7 +296,7 @@ export class TrackNode {
             if (dn.bypassed) {
                 continue;
             }
-            if (dn.inputNode.numberOfInputs > 0) {
+            if (!dn.isGenerator && dn.inputNode.numberOfInputs > 0) {
                 // Effect: all previous outputs connect to this input
                 for (const p of prevs) {
                     p.connect(dn.inputNode);
@@ -319,7 +323,11 @@ export class TrackNode {
         }
 
         this.routeOutput();
-        this.reconnectSends();
+        if (this.deps.reconnectRoutingForTrack) {
+            this.deps.reconnectRoutingForTrack(this.trackId);
+        } else {
+            this.reconnectSends();
+        }
     }
 
     private createPlaceholderController(
@@ -393,6 +401,7 @@ export class TrackNode {
         }
         pendingLoad.parameterWrites.length = 0;
         this.strip.deviceNodes[index] = finalDn;
+        this.deps.onDeviceLoaded?.(this.trackId, finalDn);
         this.scheduleRebuildChain();
         return true;
     }
@@ -554,6 +563,8 @@ export class TrackNode {
         }
 
         this.invalidatePendingDeviceLoad(deviceId);
+        this.strip.deviceNodes = this.strip.deviceNodes.filter((d) => d.deviceId !== deviceId);
+        this.deps.onDeviceRemoved?.(this.trackId, dn);
         if (dn.controller) {
             dn.controller.destroy?.();
         } else if (dn.dispose) {
@@ -568,7 +579,6 @@ export class TrackNode {
                 // throws on disconnect(); nothing to clean up in that case.
             }
         }
-        this.strip.deviceNodes = this.strip.deviceNodes.filter((d) => d.deviceId !== deviceId);
         this.rebuildChain();
     }
 

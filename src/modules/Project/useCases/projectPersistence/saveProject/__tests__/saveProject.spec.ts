@@ -10,6 +10,7 @@ const mocks = vi.hoisted(() => ({
     persistCrdtProject: vi.fn<() => Promise<void>>(),
     addToRecentProjects: vi.fn<(name: string, key: string) => void>(),
     loggerWarn: vi.fn<(...args: unknown[]) => void>(),
+    notifyUser: vi.fn<(message: string, level?: 'info' | 'success' | 'warning' | 'error') => void>(),
 }));
 
 vi.mock('../../../../stores/projectStore', () => ({
@@ -31,6 +32,10 @@ vi.mock('../../../recentProjects/addToRecentProjects', () => ({
 
 vi.mock('#/infra/logger/appLogger', () => ({
     logger: { warn: mocks.loggerWarn },
+}));
+
+vi.mock('#/utils/Notification/notifyUser', () => ({
+    notifyUser: mocks.notifyUser,
 }));
 
 function makeProject(): ProjectStoreState {
@@ -99,5 +104,23 @@ describe('saveProject', () => {
         await vi.waitFor(() => {
             expect(mocks.addToRecentProjects).toHaveBeenCalledTimes(1);
         });
+    });
+
+    it('resolves true once persistence succeeds', async () => {
+        await expect(saveProject()).resolves.toBe(true);
+    });
+
+    it('notifies and resolves false when persistence fails', async () => {
+        const failure = new Error('idb write failed');
+        mocks.persistCrdtProject.mockRejectedValue(failure);
+
+        await expect(saveProject()).resolves.toBe(false);
+
+        expect(mocks.loggerWarn).toHaveBeenCalled();
+        expect(mocks.notifyUser).toHaveBeenCalledWith(
+            'Save failed — your latest changes could not be persisted.',
+            'error'
+        );
+        expect(mocks.addToRecentProjects).not.toHaveBeenCalled();
     });
 });

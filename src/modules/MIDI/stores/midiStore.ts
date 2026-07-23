@@ -11,6 +11,10 @@ export type MidiStoreState = {
     notesByClipId: Record<string, MidiNote[]>;
     ccByClipId: Record<string, MidiCC[]>;
     pitchBendByClipId: Record<string, MidiPitchBend[]>;
+    /** Clip ids already converted by migrateAbsoluteMidiNotes — the
+     * migration must run exactly once per clip or every project load
+     * corrupts notes further (M-144). */
+    migratedAbsoluteNoteClipIds?: string[];
 };
 
 export type MidiStoreStateInput = Omit<MidiStoreState, 'probabilitySeed'> & {
@@ -27,6 +31,7 @@ export const defaultMidiStoreState: MidiStoreState = {
 };
 
 const MIDI_STORE_STATE_KEYS = ['probabilitySeed', 'notesByClipId', 'ccByClipId', 'pitchBendByClipId'] as const;
+const MIDI_STORE_STATE_OPTIONAL_KEYS = ['migratedAbsoluteNoteClipIds'] as const;
 const MIDI_NOTE_REQUIRED_KEYS = ['id', 'pitch', 'startBeat', 'duration', 'velocity'] as const;
 const MIDI_NOTE_OPTIONAL_KEYS = ['probability', 'pressure', 'slide', 'pitchBend', 'channel'] as const;
 const MIDI_CC_KEYS = ['id', 'controller', 'value', 'beat', 'channel'] as const;
@@ -229,14 +234,23 @@ function is_exact_pitch_bend_clip_map(value: unknown): value is Record<string, M
     );
 }
 
+function is_migrated_clip_id_list(value: unknown): value is string[] {
+    return Array.isArray(value) && value.every((entry) => typeof entry === 'string');
+}
+
 function is_exact_midi_store_state(value: unknown): value is MidiStoreState {
     return (
         is_plain_object(value) &&
-        has_exact_keys({ value, required_keys: MIDI_STORE_STATE_KEYS }) &&
+        has_exact_keys({
+            value,
+            required_keys: MIDI_STORE_STATE_KEYS,
+            optional_keys: MIDI_STORE_STATE_OPTIONAL_KEYS,
+        }) &&
         isValidMidiProbabilitySeed(value.probabilitySeed) &&
         is_exact_note_clip_map(value.notesByClipId) &&
         is_exact_cc_clip_map(value.ccByClipId) &&
-        is_exact_pitch_bend_clip_map(value.pitchBendByClipId)
+        is_exact_pitch_bend_clip_map(value.pitchBendByClipId) &&
+        (value.migratedAbsoluteNoteClipIds === undefined || is_migrated_clip_id_list(value.migratedAbsoluteNoteClipIds))
     );
 }
 
@@ -276,6 +290,9 @@ export function sanitize_midi_store_state(
             is_valid_row: is_valid_midi_pitch_bend,
             normalize_row: normalize_midi_pitch_bend,
         }),
+        ...(is_migrated_clip_id_list(candidate.migratedAbsoluteNoteClipIds)
+            ? { migratedAbsoluteNoteClipIds: candidate.migratedAbsoluteNoteClipIds }
+            : {}),
     };
 }
 

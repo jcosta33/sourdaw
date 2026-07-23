@@ -1,8 +1,13 @@
+import { sidechainStore } from '#/modules/Routing/stores';
+
 import { createExportError } from '../errors/ExportError';
+import { prepareOfflineSidechainCompressor } from '../repositories/devices/dynamics/prepareOfflineSidechainCompressor';
+import { connectOfflineSidechainRoutes } from '../repositories/offlineRouting/connectOfflineSidechainRoutes';
 
 import { type DeviceNodeEntry } from './buildDeviceChain';
 import { acquireRenderLock } from './offlineRender/acquireRenderLock';
 import { checkCancel } from './offlineRender/checkCancel';
+import { connectOfflineToasterPadRoutes } from './offlineRender/connectOfflineToasterPadRoutes';
 import {
     MAX_OFFLINE_FRAMES,
     MIN_RENDER_TIMEOUT_MS,
@@ -69,6 +74,7 @@ export const renderOffline: RenderOfflineFn = async function renderOffline(
             durationBeats,
             startBeat,
             tailSeconds,
+            sampleRate,
         });
         if (!projectMidiEvents || !selectMidiEventProbability || !projectPpqEndpoints) {
             throw new Error('Offline musical projection is not configured');
@@ -88,29 +94,54 @@ export const renderOffline: RenderOfflineFn = async function renderOffline(
         const allRenderableTracks =
             tracks && midi ? tracks.tracks.filter((track) => !track.disabled && shouldCreateOfflineStrip(track)) : [];
         const sourceTracks = allRenderableTracks.filter((track) => !track.muted);
+        const sidechainRoutes = sidechainStore.value?.routes ?? [];
+        const routableSidechainTargets = new Set<object>();
+        for (const route of sidechainRoutes) {
+            const sourceTrack = allRenderableTracks.find((track) => track.id === route.sourceTrackId);
+            const targetTrack = allRenderableTracks.find((track) => track.id === route.targetTrackId);
+            const targetDevice = targetTrack?.devices.find(
+                (device) => device.id === route.targetDeviceId && !device.bypassed
+            );
+            if (sourceTrack && targetDevice?.type === 'builtin-sidechain-compressor') {
+                routableSidechainTargets.add(targetDevice);
+            }
+        }
+        if (routableSidechainTargets.size > 0) {
+            try {
+                await prepareOfflineSidechainCompressor({
+                    offlineCtx,
+                    onWarning,
+                    targetDevices: routableSidechainTargets,
+                });
+            } catch (error) {
+                const reason = error instanceof Error ? error.message : String(error);
+                onWarning?.(`Sidechain processor unavailable; using the offline compressor fallback. ${reason}`);
+            }
+        }
         let scheduled = 0;
         const pendingWorkletEvents: PendingWorkletEvent[] = [];
 
         // Build the same strip topology the live engine uses:
         // Track input -> devices -> pre-fader tap -> fader -> mute -> pan -> output routing.
-        // Sends tap either pre-fader or post-pan, and buses sum into the master gain.
+        // Sends tap either pre-fader or post-pan. Return buses receive audio at
+        // their owning track input so the persisted device chain and mixer state
+        // are applied before the bus output reaches master.
         const trackStripsById = new Map<string, OfflineTrackStrip>();
         const deviceEntriesByTrack = new Map<string, DeviceNodeEntry[]>();
         const busStripsById = new Map<string, OfflineBusStrip>();
 
         for (const track of allRenderableTracks) {
             checkCancel();
-            if (track.kind === 'bus') {
-                busStripsById.set(track.id, createOfflineBusStrip(offlineCtx, track.gain, masterGain));
-            }
-        }
-
-        for (const track of allRenderableTracks) {
-            checkCancel();
             const strip = await createOfflineTrackStrip(offlineCtx, track);
             trackStripsById.set(track.id, strip);
             deviceEntriesByTrack.set(track.id, strip.deviceEntries);
+            if (track.kind === 'bus') {
+                busStripsById.set(track.id, createOfflineBusStrip(strip));
+            }
         }
+
+        connectOfflineToasterPadRoutes({ tracks: tracks?.tracks ?? [], trackStripsById, deviceEntriesByTrack });
+        connectOfflineSidechainRoutes({ offlineCtx, routes: sidechainRoutes, trackStripsById, deviceEntriesByTrack });
 
         for (const track of allRenderableTracks) {
             const strip = trackStripsById.get(track.id);
@@ -174,7 +205,9 @@ export const renderOffline: RenderOfflineFn = async function renderOffline(
                 },
                 onWarning,
                 pendingWorkletEvents,
-                allTracks: sourceTracks,
+                // Keep canonical project order for Toaster pad indexes. The
+                // scheduler skips inaudible children only after indexing.
+                allTracks: tracks?.tracks ?? [],
                 deviceEntriesByTrack,
                 regionStartBeat: startBeat,
             });

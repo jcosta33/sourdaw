@@ -49,6 +49,9 @@ export function createPatternInstance(sourceClipId: string, targetTrackId: strin
         muted: false,
         parentClipId: parentId,
         overrides: {},
+        // The notes are cloned clip-relative, so the instance must inherit
+        // the parent's media offset or slipped parents play displaced.
+        midiOffsetBeats: sourceClip.midiOffsetBeats,
     };
 
     const didAppend = appendClipToTrack(destinationTarget.trackId, instance);
@@ -58,11 +61,12 @@ export function createPatternInstance(sourceClipId: string, targetTrackId: strin
 
     const sourceNotes = getNotesForClip(sourceClipId);
     if (sourceNotes.length > 0) {
-        const offset = startBeat - sourceClip.startBeat;
+        // Notes are clip-relative: playback adds the instance clip's own
+        // start, so the clones keep the parent's beats verbatim (adding the
+        // instance-parent offset displaced or silenced instances, M-142).
         const clonedNotes = sourceNotes.map((node) => ({
             ...node,
             id: `note-inst-${instanceId}-${node.id}`,
-            startBeat: node.startBeat + offset,
         }));
         setNotesForClip(instanceId, clonedNotes);
     }
