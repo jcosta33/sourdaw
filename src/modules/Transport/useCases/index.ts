@@ -17,6 +17,7 @@ export { createSamplePositionProjector } from './createSamplePositionProjector';
 
 export { addTempoChange } from './tempoMap/addTempoChange';
 export { deleteTimelineMapsTimeRange } from './tempoMap/deleteTimelineMapsTimeRange';
+export { prepareTimelineMapTimeOperation } from './tempoMap/prepareTimelineMapTimeOperation';
 export { removeTempoChange } from './tempoMap/removeTempoChange';
 export { replaceTempoMap } from './tempoMap/replaceTempoMap';
 export { shiftTimelineMapsAfterBeat } from './tempoMap/shiftTimelineMapsAfterBeat';

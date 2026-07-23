@@ -26,6 +26,8 @@ type HarmonyVoice = {
     enabled: boolean;
 };
 
+type GeneratedHarmonyNote = { note: number; noteInstanceId: string };
+
 export class Harmonizer extends BaseMidiProcessor {
     readonly name = 'Harmonizer';
 
@@ -39,7 +41,7 @@ export class Harmonizer extends BaseMidiProcessor {
     // Track generated harmony notes for proper Note Off.
     // Numeric key (channel << 7) | note matches MidiRack/ScaleQuantizer and avoids a
     // per-event template-literal allocation on the audio thread.
-    private generatedVoices = new BoundedNoteVoiceQueue<number[]>();
+    private generatedVoices = new BoundedNoteVoiceQueue<GeneratedHarmonyNote[]>();
 
     constructor(id?: string) {
         super(id ?? `harmonizer-${Date.now()}`);
@@ -58,8 +60,8 @@ export class Harmonizer extends BaseMidiProcessor {
             output.push(event);
 
             if (event.kind.type === 'noteOn') {
-                const key = (event.kind.channel << 7) | event.kind.note;
-                const harmonyNotes: number[] = [];
+                const key = event.noteInstanceId ?? (event.kind.channel << 7) | event.kind.note;
+                const harmonyNotes: GeneratedHarmonyNote[] = [];
 
                 for (const voice of this.voices) {
                     if (!voice.enabled) {
@@ -71,12 +73,22 @@ export class Harmonizer extends BaseMidiProcessor {
                         continue;
                     }
 
-                    harmonyNotes.push(harmonyNote);
                     const vel = Math.max(1, Math.min(127, event.kind.velocity + voice.velocityOffset));
+                    const durationSamples =
+                        event.durationSamples === undefined
+                            ? undefined
+                            : Math.max(0, event.durationSamples - voice.timeOffsetSamples);
+                    if (durationSamples === 0) {
+                        continue;
+                    }
+                    const noteInstanceId = this.createGeneratedNoteInstanceId();
+                    harmonyNotes.push({ note: harmonyNote, noteInstanceId });
 
                     const generated: MidiEvent = {
                         timeSamples: event.timeSamples + voice.timeOffsetSamples,
+                        durationSamples,
                         trackId: event.trackId,
+                        noteInstanceId,
                         kind: { type: 'noteOn', channel: event.kind.channel, note: harmonyNote, velocity: vel },
                     };
                     output.push(generated);
@@ -85,14 +97,15 @@ export class Harmonizer extends BaseMidiProcessor {
 
                 this.generatedVoices.push(event.trackId, key, harmonyNotes);
             } else if (event.kind.type === 'noteOff') {
-                const key = (event.kind.channel << 7) | event.kind.note;
+                const key = event.noteInstanceId ?? (event.kind.channel << 7) | event.kind.note;
                 const generated = this.generatedVoices.shift(event.trackId, key);
                 if (generated) {
-                    for (const note of generated) {
+                    for (const generatedNote of generated) {
                         const noteOff: MidiEvent = {
                             timeSamples: event.timeSamples,
                             trackId: event.trackId,
-                            kind: { type: 'noteOff', channel: event.kind.channel, note },
+                            noteInstanceId: generatedNote.noteInstanceId,
+                            kind: { type: 'noteOff', channel: event.kind.channel, note: generatedNote.note },
                         };
                         output.push(noteOff);
                         preview?.transferDecisionLineage(event, noteOff);

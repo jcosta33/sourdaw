@@ -26,7 +26,10 @@ export const useAppEventHandlers = ({ onOpenExport, onOpenPreferences }: AppEven
         const unsubs = [
             onDialogOpenExport(() => onOpenExport()),
             onDialogOpenPreferences(() => onOpenPreferences()),
-            onProjectSave(() => saveProject()),
+            onProjectSave(() => {
+                // Fire-and-forget: saveProject notifies the user itself on failure.
+                void saveProject();
+            }),
             onProjectNew(() => {
                 void (async () => {
                     const ok = await confirmUser({

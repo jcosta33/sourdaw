@@ -10,6 +10,22 @@ type Track = TrackState['tracks'][number];
 type Clip = Track['clips'][number];
 type TrackAlternative = Track['alternatives'][number];
 
+type CreateTrackAlternativeAction = {
+    payload: { trackId: string; name: string; duplicateActive: boolean; alternativeId?: string };
+};
+
+// Mirror of handleDuplicateClip's ensureTargetClipId: the inverse needs the new
+// alternative's id before execute runs, so describe mints it onto the payload
+// and execute reuses it (describe always runs before execute).
+function ensureAlternativeId(action: CreateTrackAlternativeAction): string {
+    if (action.payload.alternativeId) {
+        return action.payload.alternativeId;
+    }
+    const alternativeId = `alt-${crypto.randomUUID()}`;
+    action.payload.alternativeId = alternativeId;
+    return alternativeId;
+}
+
 function isValidAlternativeCollection(value: unknown): value is TrackAlternative[] {
     if (!Array.isArray(value)) {
         return false;
@@ -71,7 +87,7 @@ export const handleCreateTrackAlternative = createHandler<'createTrackAlternativ
             return toHandlerExecutionResult(false);
         }
 
-        const newAltId = `alt-${crypto.randomUUID()}`;
+        const newAltId = ensureAlternativeId(action);
         if (targetTrack.alternatives.some((alternative) => alternative.id === newAltId)) {
             return toHandlerExecutionResult(false);
         }
@@ -109,6 +125,27 @@ export const handleCreateTrackAlternative = createHandler<'createTrackAlternativ
 
         return toHandlerExecutionResult(true);
     },
-    describe: () => ({ label: 'Create Alternative' }),
+    describe: (action) => {
+        // Undo deletes the newly created alternative and falls back to the
+        // pre-create active alternative (NOT deleteTrackAlternative's default
+        // first-in-list fallback — that could restore the wrong active index).
+        const prevActiveId = getTrackStoreState()?.tracks.find(
+            (track) => track.id === action.payload.trackId
+        )?.activeAlternativeId;
+        if (typeof prevActiveId !== 'string' || prevActiveId.length === 0) {
+            return { label: 'Create Alternative', inverseAction: null };
+        }
+        return {
+            label: 'Create Alternative',
+            inverseAction: {
+                type: 'deleteTrackAlternative',
+                payload: {
+                    trackId: action.payload.trackId,
+                    alternativeId: ensureAlternativeId(action),
+                    fallbackAlternativeId: prevActiveId,
+                },
+            },
+        };
+    },
     undoable: true,
 });

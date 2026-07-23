@@ -48,7 +48,7 @@ export function splitClip(clipId: string, splitBeat: number, rightClipId?: strin
 
     let newRightClipId: string | null = null;
     let splitClipType: 'audio' | 'midi' | null = null;
-    let adjustedSplit: number | null = null;
+    let adjustedMediaSplit: number | null = null;
 
     const newTracks = state.tracks.map((time) => {
         if (time.id !== resolution.trackId) {
@@ -69,7 +69,10 @@ export function splitClip(clipId: string, splitBeat: number, rightClipId?: strin
         const rightId = rightClipId ?? getNextClipId();
         newRightClipId = rightId;
         splitClipType = clip.type;
-        adjustedSplit = adjustedSplitBeat;
+        // MIDI notes are stored clip-relative (playback =
+        // clip.startBeat + note.startBeat - midiOffsetBeats), so the note
+        // partition must happen in clip-media beats, not timeline beats.
+        adjustedMediaSplit = adjustedSplitBeat - clip.startBeat + (clip.midiOffsetBeats ?? 0);
 
         const leftClip: Clip = {
             ...clip,
@@ -87,6 +90,9 @@ export function splitClip(clipId: string, splitBeat: number, rightClipId?: strin
             fadeInBeats: 0,
             fadeOutBeats: clip.fadeOutBeats,
             audioOffsetBeats: (clip.audioOffsetBeats ?? 0) + (adjustedSplitBeat - clip.startBeat),
+            // Right-side notes are re-based onto this clip at split time, so
+            // its MIDI media starts at the split point.
+            midiOffsetBeats: 0,
         };
 
         return {
@@ -101,15 +107,15 @@ export function splitClip(clipId: string, splitBeat: number, rightClipId?: strin
             tracks: newTracks,
         });
 
-        // For MIDI clips the notes are keyed by clip id with absolute startBeat —
+        // For MIDI clips the notes are keyed by clip id, clip-relative —
         // after trimming the source clip, any note past the split point would
         // become invisible. Partition the notes across the two clip ids so
         // every note stays visible and playable.
-        if (splitClipType === 'midi' && adjustedSplit !== null) {
+        if (splitClipType === 'midi' && adjustedMediaSplit !== null) {
             splitMidiNotesAtBeat({
                 sourceClipId: clipId,
                 newClipId: newRightClipId,
-                splitBeat: adjustedSplit,
+                splitBeat: adjustedMediaSplit,
             });
         }
 

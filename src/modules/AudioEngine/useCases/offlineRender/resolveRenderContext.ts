@@ -9,6 +9,7 @@ import {
 
 import {
     offlineMidiEventProjectorState,
+    type OfflineChordPitchProjector,
     type OfflineMidiEventProjector,
     type OfflineMidiProbabilitySelector,
 } from '../../repositories/offlineScheduler/offlineMidiEventProjectorState';
@@ -36,6 +37,7 @@ export type OfflineRenderContext = {
     tailSeconds: number;
     projectMidiEvents: OfflineMidiEventProjector | null;
     selectMidiEventProbability: OfflineMidiProbabilitySelector | null;
+    projectChordPitch: OfflineChordPitchProjector | null;
     projectPpqEndpoints: OfflinePpqEndpointProjector | null;
     processYeastMidi: OfflineYeastMidiProcessor | null;
 };
@@ -44,16 +46,18 @@ export type ResolveRenderContextInput = {
     durationBeats: number;
     startBeat?: number;
     tailSeconds?: number;
+    sampleRate?: number;
 };
 
 export function resolveRenderContext(input: ResolveRenderContextInput | number): OfflineRenderContext {
     const normalized: Required<ResolveRenderContextInput> =
         typeof input === 'number'
-            ? { durationBeats: input, startBeat: 0, tailSeconds: 0 }
+            ? { durationBeats: input, startBeat: 0, tailSeconds: 0, sampleRate: 44_100 }
             : {
                   durationBeats: input.durationBeats,
                   startBeat: input.startBeat ?? 0,
                   tailSeconds: input.tailSeconds ?? 0,
+                  sampleRate: input.sampleRate ?? 44_100,
               };
 
     const transport = transportStore.value;
@@ -63,9 +67,19 @@ export function resolveRenderContext(input: ResolveRenderContextInput | number):
     const defaultTempo = transport?.tempo ?? 120;
     const changes = tempoMap?.changes ?? [];
 
-    const regionStartSec = beatToSeconds(normalized.startBeat, defaultTempo, changes);
-    const regionEndSec = beatToSeconds(normalized.startBeat + normalized.durationBeats, defaultTempo, changes);
-    const durationSeconds = Math.max(0, regionEndSec - regionStartSec) + Math.max(0, normalized.tailSeconds);
+    const projectPpqEndpoints = offlinePpqEndpointProjectorState.project;
+    const projection = projectPpqEndpoints?.({
+        startPpq: normalized.startBeat,
+        endPpq: normalized.startBeat + normalized.durationBeats,
+        defaultTempo,
+        sampleRate: normalized.sampleRate,
+        changes,
+    });
+    const legacyDuration =
+        beatToSeconds(normalized.startBeat + normalized.durationBeats, defaultTempo, changes) -
+        beatToSeconds(normalized.startBeat, defaultTempo, changes);
+    const durationSeconds =
+        Math.max(0, projection?.durationSeconds ?? legacyDuration) + Math.max(0, normalized.tailSeconds);
 
     return {
         tracks,
@@ -78,7 +92,8 @@ export function resolveRenderContext(input: ResolveRenderContextInput | number):
         tailSeconds: Math.max(0, normalized.tailSeconds),
         projectMidiEvents: offlineMidiEventProjectorState.createProjector?.() ?? null,
         selectMidiEventProbability: offlineMidiEventProjectorState.selectProbability,
-        projectPpqEndpoints: offlinePpqEndpointProjectorState.project,
+        projectChordPitch: offlineMidiEventProjectorState.createChordPitchProjector?.() ?? null,
+        projectPpqEndpoints,
         processYeastMidi: offlineYeastMidiProcessorState.createProcessor?.() ?? null,
     };
 }

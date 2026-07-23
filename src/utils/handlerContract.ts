@@ -230,10 +230,16 @@ export type AppAction =
       }
     | { type: 'removeAllTracks'; payload?: undefined }
     | { type: 'renameTrack'; payload: { trackId: string; name: string } }
-    | { type: 'createTrackAlternative'; payload: { trackId: string; name: string; duplicateActive: boolean } }
+    | {
+          type: 'createTrackAlternative';
+          payload: { trackId: string; name: string; duplicateActive: boolean; alternativeId?: string };
+      }
     | { type: 'switchTrackAlternative'; payload: { trackId: string; alternativeId: string } }
     | { type: 'renameTrackAlternative'; payload: { trackId: string; alternativeId: string; name: string } }
-    | { type: 'deleteTrackAlternative'; payload: { trackId: string; alternativeId: string } }
+    | {
+          type: 'deleteTrackAlternative';
+          payload: { trackId: string; alternativeId: string; fallbackAlternativeId?: string };
+      }
     | { type: 'selectTrack'; payload: { trackId: string } }
     | { type: 'muteTrack'; payload: { trackId: string; muted: boolean } }
     | { type: 'soloTrack'; payload: { trackId: string; soloed: boolean } }
@@ -303,15 +309,14 @@ export type AppAction =
       }
     | { type: 'removeSection'; payload: { sectionId: string } }
     | { type: 'renameSection'; payload: { sectionId: string; name: string } }
-    | { type: 'addAutomationLane'; payload: { trackId: string; parameterId: string; parameterName: string } }
     | {
-          /** Inverse of `addAutomationLane`. Keyed by `(trackId, parameterId)` — the
-           *  identity a lane is created under — because the generated lane id is not
-           *  known when the inverse is captured (pre-execute). Emitted only by the
-           *  `addAutomationLane` handler's `describe()`. Keep mirrored in
-           *  src/utils/handlerContract.ts and AiRuntime/models/RuntimeAction.ts. */
+          type: 'addAutomationLane';
+          payload: { trackId: string; parameterId: string; parameterName: string; laneId?: string };
+      }
+    | {
+          /** Inverse of `addAutomationLane`, keyed by the exact id allocated before execute. */
           type: 'removeAutomationLane';
-          payload: { trackId: string; parameterId: string };
+          payload: { laneId: string };
       }
     | {
           type: 'addAutomationPoint';

@@ -1,96 +1,55 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+
+const executeGlobalTimeOperation = vi.hoisted(() => vi.fn());
+
+vi.mock('../executeGlobalTimeOperation', () => ({
+    executeGlobalTimeOperation,
+}));
 
 import { deleteTime } from '../deleteTime';
-import { setTimeOperationDependencies } from '../timeOperationDependencies';
-
-const mocks = vi.hoisted(() => ({
-    getTrackState: vi.fn(),
-    setTrackState: vi.fn(),
-    markerStoreSet: vi.fn(),
-    deleteAutomationTimeRange: vi.fn(),
-    deleteTimelineMapsTimeRange: vi.fn(),
-}));
-
-vi.mock('../../../repositories/track/getTrackState', () => ({ getTrackState: mocks.getTrackState }));
-vi.mock('../../../repositories/track/setTrackState', () => ({ setTrackState: mocks.setTrackState }));
-vi.mock('../../../stores/markerStore', () => ({
-    markerStore: { value: { markers: [] }, set: mocks.markerStoreSet },
-}));
-vi.mock('#/modules/Automation/useCases', () => ({
-    deleteAutomationTimeRange: mocks.deleteAutomationTimeRange,
-}));
-vi.mock('#/modules/Transport/useCases', () => ({
-    deleteTimelineMapsTimeRange: mocks.deleteTimelineMapsTimeRange,
-}));
 
 describe('deleteTime', () => {
     beforeEach(() => {
-        vi.clearAllMocks();
-        setTimeOperationDependencies({
-            shiftTimelineMapsAfterBeat: vi.fn(),
-            deleteTimelineMapsTimeRange: mocks.deleteTimelineMapsTimeRange,
+        executeGlobalTimeOperation.mockReset();
+    });
+
+    it('delegates the legacy numeric signature to the global transaction', () => {
+        const expected = {
+            status: 'applied',
+            hasChanges: true,
+            replayPlan: { version: 1 },
+        };
+        executeGlobalTimeOperation.mockReturnValue(expected);
+
+        const result = deleteTime(2, 6);
+
+        expect(executeGlobalTimeOperation).toHaveBeenCalledExactlyOnceWith({
+            operation: {
+                type: 'delete',
+                startBeat: 2,
+                endBeat: 6,
+            },
         });
+        expect(result).toBe(expected);
     });
 
-    it('does nothing with no state', () => {
-        mocks.getTrackState.mockReturnValue(null);
-        expect(() => deleteTime(0, 4)).not.toThrow();
-        expect(mocks.setTrackState).not.toHaveBeenCalled();
-        expect(mocks.deleteAutomationTimeRange).not.toHaveBeenCalled();
-        expect(mocks.deleteTimelineMapsTimeRange).not.toHaveBeenCalled();
-    });
+    it('forwards a supplied replay plan without cloning it', () => {
+        const replayPlan = {
+            version: 1 as const,
+            operation: { type: 'delete' as const, startBeat: 2, endBeat: 6 },
+            clips: [],
+            midi: { version: 1 as const, notes: [] },
+        };
 
-    it('throws before writing when dependencies are not registered', () => {
-        mocks.getTrackState.mockReturnValue({ tracks: [], selectedTrackId: null });
-        setTimeOperationDependencies(null);
+        deleteTime(2, 6, replayPlan);
 
-        expect(() => deleteTime(0, 4)).toThrow('Arrangement time operation dependencies are not registered');
-        expect(mocks.setTrackState).not.toHaveBeenCalled();
-        expect(mocks.markerStoreSet).not.toHaveBeenCalled();
-        expect(mocks.deleteAutomationTimeRange).not.toHaveBeenCalled();
-        expect(mocks.deleteTimelineMapsTimeRange).not.toHaveBeenCalled();
-    });
-
-    it('processes time deletion with empty tracks', () => {
-        mocks.getTrackState.mockReturnValue({ tracks: [], selectedTrackId: null });
-        expect(() => deleteTime(0, 4)).not.toThrow();
-    });
-
-    it('processes time deletion with tracks and clips', () => {
-        mocks.getTrackState.mockReturnValue({
-            tracks: [
-                {
-                    id: 't1',
-                    clips: [
-                        { id: 'c1', startBeat: 0, endBeat: 4 },
-                        { id: 'c2', startBeat: 4, endBeat: 8 },
-                    ],
-                },
-            ],
-            selectedTrackId: 't1',
+        expect(executeGlobalTimeOperation).toHaveBeenCalledExactlyOnceWith({
+            operation: {
+                type: 'delete',
+                startBeat: 2,
+                endBeat: 6,
+            },
+            replayPlan,
         });
-        deleteTime(2, 6);
-
-        expect(mocks.setTrackState).toHaveBeenCalledWith({
-            tracks: [
-                {
-                    id: 't1',
-                    clips: [
-                        { id: 'c1', startBeat: 0, endBeat: 2 },
-                        { id: 'c2', startBeat: 2, endBeat: 4 },
-                    ],
-                },
-            ],
-            selectedTrackId: 't1',
-        });
-        expect(mocks.deleteAutomationTimeRange).toHaveBeenCalledWith({ startBeat: 2, endBeat: 6 });
-        expect(mocks.deleteTimelineMapsTimeRange).toHaveBeenCalledWith({ startBeat: 2, endBeat: 6 });
-    });
-
-    it('handles zero-length deletion', () => {
-        mocks.getTrackState.mockReturnValue({ tracks: [], selectedTrackId: null });
-        deleteTime(4, 4);
-        expect(mocks.deleteAutomationTimeRange).toHaveBeenCalledWith({ startBeat: 4, endBeat: 4 });
-        expect(mocks.deleteTimelineMapsTimeRange).toHaveBeenCalledWith({ startBeat: 4, endBeat: 4 });
     });
 });

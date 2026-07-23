@@ -21,23 +21,26 @@ pub mod voice;
 use engine::ToasterEngine;
 use wasm_bindgen::prelude::*;
 
+const MAX_BLOCK_SIZE: usize = 4096;
+
 /// WASM-exported Toaster instance for AudioWorklet.
 #[wasm_bindgen]
 pub struct ToasterInstance {
     engine: ToasterEngine,
-    left_buf: Vec<f32>,
-    right_buf: Vec<f32>,
+    output_buf: Vec<f32>,
+    num_pads: usize,
 }
 
 #[wasm_bindgen]
 impl ToasterInstance {
     #[wasm_bindgen(constructor)]
     pub fn new(sample_rate: f32, num_pads: u32) -> Self {
-        let block_size = 4096; // Pre-allocate maximum likely block size
+        let num_pads = num_pads as usize;
+        let output_channels = 2 + num_pads * 2;
         Self {
-            engine: ToasterEngine::new(sample_rate, num_pads as usize),
-            left_buf: vec![0.0; block_size],
-            right_buf: vec![0.0; block_size],
+            engine: ToasterEngine::new(sample_rate, num_pads),
+            output_buf: vec![0.0; output_channels * MAX_BLOCK_SIZE],
+            num_pads,
         }
     }
 
@@ -61,21 +64,35 @@ impl ToasterInstance {
         self.engine.set_pad_param(pad, name, value);
     }
 
+    /// Transfer or restore ownership of a pad's dry contribution to output 0.
+    pub fn set_pad_dry_routed(&mut self, pad: u8, routed: bool) {
+        self.engine.set_pad_dry_routed(pad, routed);
+    }
+
+    /// Restore legacy parent-mix ownership for every pad.
+    pub fn reset_pad_dry_routing(&mut self) {
+        self.engine.reset_pad_dry_routing();
+    }
+
     /// Process a block of audio. Returns pointer to left channel buffer.
     /// Caller reads left + right from WASM memory.
     pub fn process(&mut self, block_size: u32) -> *const f32 {
-        let size = (block_size as usize).min(self.left_buf.len());
-        self.left_buf[..size].fill(0.0);
-        self.right_buf[..size].fill(0.0);
+        let size = (block_size as usize).min(MAX_BLOCK_SIZE);
+        let (left_buf, remaining) = self.output_buf.split_at_mut(MAX_BLOCK_SIZE);
+        let (right_buf, pad_outputs) = remaining.split_at_mut(MAX_BLOCK_SIZE);
+        let pad_output_len = self.num_pads * 2 * MAX_BLOCK_SIZE;
+        self.engine.process_block_with_pad_outputs(
+            &mut left_buf[..size],
+            &mut right_buf[..size],
+            &mut pad_outputs[..pad_output_len],
+            MAX_BLOCK_SIZE,
+        );
 
-        self.engine
-            .process_block(&mut self.left_buf[..size], &mut self.right_buf[..size]);
-
-        self.left_buf.as_ptr()
+        self.output_buf.as_ptr()
     }
 
     /// Get pointer to right channel buffer (call after process).
     pub fn get_right_ptr(&self) -> *const f32 {
-        self.right_buf.as_ptr()
+        self.output_buf.as_ptr().wrapping_add(MAX_BLOCK_SIZE)
     }
 }

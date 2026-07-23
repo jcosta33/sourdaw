@@ -62,6 +62,8 @@ type MidiProbabilitySelectionInput = {
 
 type MidiEventProbabilitySelector = (input: MidiProbabilitySelectionInput) => boolean;
 
+type ChordPitchProjector = (input: { pitch: number; referenceBeat: number; targetBeat: number }) => number;
+
 type OfflineYeastMidiEvent = {
     timeSamples: number;
     trackId?: string;
@@ -90,6 +92,7 @@ type OfflineRenderDependencies = {
     createMidiEventProjector: () => MidiEventProjector;
     createYeastMidiProcessor: () => OfflineYeastMidiProcessor;
     selectMidiEventProbability: MidiEventProbabilitySelector;
+    createChordPitchProjector: () => ChordPitchProjector;
 };
 
 export let offlineRenderDependencies: OfflineRenderDependencies | null = null;

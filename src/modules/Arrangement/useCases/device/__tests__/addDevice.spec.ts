@@ -93,7 +93,7 @@ describe('addDevice', () => {
         expect(mocks.updateDeviceParam).not.toHaveBeenCalled();
     });
 
-    it('delegates a false-to-true folder transition to owner-safe projection without direct retained work', () => {
+    it('reprojects child stems when restoring the last Toaster to a folder', () => {
         mocks.getTrackState.mockReturnValue({
             tracks: [
                 {
@@ -111,7 +111,8 @@ describe('addDevice', () => {
                         },
                     ],
                 },
-                { id: 'other', kind: 'audio', devices: [{ id: 'reverb-1', type: 'p1' }] },
+                { id: 'stem-1', kind: 'audio', parentId: 'folder-1', devices: [] },
+                { id: 'other', kind: 'audio', parentId: null, devices: [{ id: 'reverb-1', type: 'p1' }] },
             ],
         });
         mocks.getPlatformPlugins.mockReturnValue([
@@ -120,10 +121,15 @@ describe('addDevice', () => {
         const result = addDevice('folder-1', 'Toaster');
 
         expect(result).toMatchObject({ type: 'toaster' });
-        expect(mocks.projectTrackToLiveStrip).toHaveBeenCalledWith({
+        expect(mocks.projectTrackToLiveStrip).toHaveBeenNthCalledWith(1, {
             trackId: 'folder-1',
             activateDormantExternalPlugins: true,
         });
+        expect(mocks.projectTrackToLiveStrip).toHaveBeenNthCalledWith(2, {
+            trackId: 'stem-1',
+            activateDormantExternalPlugins: true,
+        });
+        expect(mocks.projectTrackToLiveStrip).toHaveBeenCalledTimes(2);
         expect(mocks.addDeviceToStrip).not.toHaveBeenCalled();
         expect(mocks.updateDeviceParam).not.toHaveBeenCalled();
         expect(mocks.compileFaustDSP).not.toHaveBeenCalled();

@@ -6,7 +6,9 @@ export class ProofChamberInstance {
     [Symbol.dispose](): void;
     /**
      * Report plugin latency in samples for PDC (delay compensation).
-     * The convolution head size is the minimum latency.
+     * The convolution wet path is aligned so every IR tap lands at its
+     * absolute index plus HEAD_SIZE: tail-stage inputs are delayed to their
+     * segment offsets, and the head/dry reference takes the remaining 128.
      */
     get_latency(): number;
     get_param_names(): string;
@@ -18,6 +20,7 @@ export class ProofChamberInstance {
     constructor(sample_rate: number);
     process(left_in: Float32Array, right_in: Float32Array, frames: number): number;
     set_param(name: string, value: number): void;
+    set_param_by_id(param_id: number, value: number): void;
 }
 
 export type InitInput = RequestInfo | URL | Response | BufferSource | WebAssembly.Module;
@@ -32,6 +35,7 @@ export interface InitOutput {
     readonly proofchamberinstance_new: (a: number) => number;
     readonly proofchamberinstance_process: (a: number, b: number, c: number, d: number, e: number, f: number) => number;
     readonly proofchamberinstance_set_param: (a: number, b: number, c: number, d: number) => void;
+    readonly proofchamberinstance_set_param_by_id: (a: number, b: number, c: number) => void;
     readonly __wbindgen_externrefs: WebAssembly.Table;
     readonly __wbindgen_free: (a: number, b: number, c: number) => void;
     readonly __wbindgen_malloc: (a: number, b: number) => number;

@@ -41,6 +41,8 @@ if (typeof FinalizationRegistry === 'undefined') {
         unregister() {}
     };
 }
+/* @ts-self-types="./daw_dsp.d.ts" */
+
 /**
  * WASM-exported Bacteria instance for AudioWorklet.
  */
@@ -242,6 +244,14 @@ export class FermenterInstance {
         const ptr0 = passStringToWasm0(name, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
         const len0 = WASM_VECTOR_LEN;
         wasm.fermenterinstance_set_param(this.__wbg_ptr, ptr0, len0, value);
+    }
+    /**
+     * Set a supported automation parameter without crossing the WASM string bridge.
+     * @param {number} param_id
+     * @param {number} value
+     */
+    set_param_by_id(param_id, value) {
+        wasm.fermenterinstance_set_param_by_id(this.__wbg_ptr, param_id, value);
     }
 }
 if (Symbol.dispose) FermenterInstance.prototype[Symbol.dispose] = FermenterInstance.prototype.free;
@@ -1149,6 +1159,20 @@ export class ToasterInstance {
     process(block_size) {
         const ret = wasm.toasterinstance_process(this.__wbg_ptr, block_size);
         return ret >>> 0;
+    }
+    /**
+     * Restore legacy parent-mix ownership for every pad.
+     */
+    reset_pad_dry_routing() {
+        wasm.toasterinstance_reset_pad_dry_routing(this.__wbg_ptr);
+    }
+    /**
+     * Transfer or restore ownership of a pad's dry contribution to output 0.
+     * @param {number} pad
+     * @param {boolean} routed
+     */
+    set_pad_dry_routed(pad, routed) {
+        wasm.toasterinstance_set_pad_dry_routed(this.__wbg_ptr, pad, routed);
     }
     /**
      * Set a per-pad parameter (volume, pan, tune, filter_cutoff, etc.).

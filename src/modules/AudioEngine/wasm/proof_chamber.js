@@ -41,6 +41,8 @@ if (typeof FinalizationRegistry === 'undefined') {
         unregister() {}
     };
 }
+/* @ts-self-types="./proof_chamber.d.ts" */
+
 export class ProofChamberInstance {
     __destroy_into_raw() {
         const ptr = this.__wbg_ptr;
@@ -126,6 +128,13 @@ export class ProofChamberInstance {
         const ptr0 = passStringToWasm0(name, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
         const len0 = WASM_VECTOR_LEN;
         wasm.proofchamberinstance_set_param(this.__wbg_ptr, ptr0, len0, value);
+    }
+    /**
+     * @param {number} param_id
+     * @param {number} value
+     */
+    set_param_by_id(param_id, value) {
+        wasm.proofchamberinstance_set_param_by_id(this.__wbg_ptr, param_id, value);
     }
 }
 if (Symbol.dispose) ProofChamberInstance.prototype[Symbol.dispose] = ProofChamberInstance.prototype.free;

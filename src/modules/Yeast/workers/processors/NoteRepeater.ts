@@ -65,11 +65,14 @@ export class NoteRepeater extends BaseMidiProcessor {
                     const time = event.timeSamples + r * intervalSamples;
                     const vel = Math.max(1, Math.round(event.kind.velocity * this.decay ** r));
                     const note = Math.max(0, Math.min(127, event.kind.note + r * this.pitchStep));
+                    const noteInstanceId = this.createGeneratedNoteInstanceId();
 
                     // Schedule Note On
                     const noteOn: MidiEvent = {
                         timeSamples: time,
+                        durationSamples: noteLenSamples,
                         trackId: event.trackId,
+                        noteInstanceId,
                         kind: { type: 'noteOn', channel: event.kind.channel, note, velocity: vel },
                     };
                     this.scheduled.push(noteOn);
@@ -86,6 +89,7 @@ export class NoteRepeater extends BaseMidiProcessor {
                     this.scheduled.push({
                         timeSamples: time + noteLenSamples,
                         trackId: event.trackId,
+                        noteInstanceId,
                         kind: { type: 'noteOff', channel: event.kind.channel, note },
                     });
                 }

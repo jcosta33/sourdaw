@@ -6,6 +6,11 @@ import { midiStore } from '../../stores/midiStore';
 /**
  * Data migration for M-01: Converts timeline-absolute stored MIDI notes to clip-relative.
  * AI-generated notes were previously stored as timeline-absolute.
+ *
+ * Runs on every project load, so it must be idempotent: migrated clip ids
+ * are recorded in `migratedAbsoluteNoteClipIds` and skipped on later loads
+ * (previously the heuristic re-fired and progressively corrupted clips on
+ * every load, M-144).
  */
 export function migrateAbsoluteMidiNotes(): void {
     const state = trackStore.value;
@@ -15,13 +20,17 @@ export function migrateAbsoluteMidiNotes(): void {
         return;
     }
 
+    const alreadyMigrated = new Set(midiState.migratedAbsoluteNoteClipIds ?? []);
     const tracks = state.tracks || [];
     const notesByClipId = { ...midiState.notesByClipId };
-    let migrated = false;
+    const newlyMigrated: string[] = [];
 
     for (const track of tracks) {
         for (const clip of track.clips) {
             if (clip.type !== 'midi' || clip.startBeat === 0) {
+                continue;
+            }
+            if (alreadyMigrated.has(clip.id)) {
                 continue;
             }
 
@@ -45,12 +54,16 @@ export function migrateAbsoluteMidiNotes(): void {
                     ...note,
                     startBeat: note.startBeat - clip.startBeat,
                 }));
-                migrated = true;
+                newlyMigrated.push(clip.id);
             }
         }
     }
 
-    if (migrated) {
-        midiStore.set({ ...midiState, notesByClipId });
+    if (newlyMigrated.length > 0) {
+        midiStore.set({
+            ...midiState,
+            notesByClipId,
+            migratedAbsoluteNoteClipIds: [...alreadyMigrated, ...newlyMigrated],
+        });
     }
 }

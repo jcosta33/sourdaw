@@ -12,6 +12,7 @@ import { takeLaneStore } from '../stores/takeLaneStore';
 import { shouldCreateLiveTrackStrip } from '../stores/trackEligibility';
 
 import { ArrangementEventBus } from './arrangementEventBus';
+import { refreshToasterPadBindings } from './refreshToasterPadBindings';
 
 export const removeTrack = inject({ eventBus: ArrangementEventBus })(
     ({ eventBus }) =>
@@ -28,9 +29,10 @@ export const removeTrack = inject({ eventBus: ArrangementEventBus })(
 
             const clipIds = collectTrackClipIds(track);
 
+            const tracks = state.tracks.filter((time) => time.id !== trackId);
             setTrackState({
                 ...state,
-                tracks: state.tracks.filter((time) => time.id !== trackId),
+                tracks,
                 selectedTrackId: state.selectedTrackId === trackId ? null : state.selectedTrackId,
             });
 
@@ -70,6 +72,7 @@ export const removeTrack = inject({ eventBus: ArrangementEventBus })(
             if (track.kind === 'bus') {
                 removeBusStrip(trackId);
             }
+            refreshToasterPadBindings(tracks, track.parentId);
             void eventBus.emit('track.removed', { trackId });
         }
 );

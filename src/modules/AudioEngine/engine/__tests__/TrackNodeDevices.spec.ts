@@ -248,7 +248,8 @@ describe('TrackNode — metering, devices, sends, and teardown', () => {
 
     describe('removeDevice', () => {
         it('destroys the controller, disconnects its nodes, and rewires the chain', () => {
-            const track = new TrackNode('t1', makeDeps(ctx));
+            const onDeviceRemoved = vi.fn();
+            const track = new TrackNode('t1', makeDeps(ctx, { onDeviceRemoved }));
             const { node, controller } = pushControllerDevice(track);
             track.rebuildChain();
             const gainNode = track.strip.gainNode as unknown as ReturnType<typeof createMockAudioNode<'gain'>>;
@@ -259,6 +260,7 @@ describe('TrackNode — metering, devices, sends, and teardown', () => {
             expect(controller.destroy).toHaveBeenCalledTimes(1);
             expect(node.disconnect).toHaveBeenCalled();
             expect(track.strip.deviceNodes).toHaveLength(0);
+            expect(onDeviceRemoved).toHaveBeenCalledWith('t1', expect.objectContaining({ deviceId: 'dev-1' }));
             // With no devices the dry path reconnects gain → preFaderTap.
             expect(gainNode.connect).toHaveBeenCalledWith(track.strip.preFaderTap);
         });
@@ -311,23 +313,38 @@ describe('TrackNode — metering, devices, sends, and teardown', () => {
     });
 
     describe('send reconnection', () => {
+        it('delegates live route reconciliation to the graph owner after a rebuild', () => {
+            const reconnectRoutingForTrack = vi.fn();
+            const track = new TrackNode('t1', makeDeps(ctx, { reconnectRoutingForTrack }));
+
+            track.rebuildChain();
+
+            expect(reconnectRoutingForTrack).toHaveBeenCalledWith('t1');
+        });
+
         it('taps pre-fader sends off the preFaderTap and post-fader sends off the analyser', () => {
             const busGain = createMockAudioNode('gain');
             const preFaderSend = {
+                sourceTrackId: 't1',
                 busId: 'bus-1',
                 preFader: true,
                 gainNode: createMockAudioNode('gain') as unknown as GainNode,
-            } as SendNode;
+                sourceNode: createMockAudioNode('gain'),
+            } satisfies SendNode;
             const postFaderSend = {
+                sourceTrackId: 't1',
                 busId: 'bus-1',
                 preFader: false,
                 gainNode: createMockAudioNode('gain') as unknown as GainNode,
-            } as SendNode;
+                sourceNode: createMockAudioNode('gain'),
+            } satisfies SendNode;
             const orphanSend = {
+                sourceTrackId: 't1',
                 busId: 'missing-bus',
                 preFader: false,
                 gainNode: createMockAudioNode('gain') as unknown as GainNode,
-            } as SendNode;
+                sourceNode: createMockAudioNode('gain'),
+            } satisfies SendNode;
             const deps = makeDeps(ctx, {
                 getSendsForTrack: vi.fn(() => [preFaderSend, postFaderSend, orphanSend]),
                 getBusGainNode: vi.fn((id: string) => (id === 'bus-1' ? (busGain as unknown as GainNode) : undefined)),
@@ -449,7 +466,8 @@ describe('TrackNode — metering, devices, sends, and teardown', () => {
         it('replays placeholder parameter writes once and in order when a wasm device resolves', async () => {
             const deferred = installDeferredWasmDevice();
             const pendingDevicePromises = new Set<Promise<unknown>>();
-            const track = new TrackNode('t1', makeDeps(ctx, { pendingDevicePromises }));
+            const onDeviceLoaded = vi.fn();
+            const track = new TrackNode('t1', makeDeps(ctx, { pendingDevicePromises, onDeviceLoaded }));
 
             track.addDevice('wasm-1', 'levain');
             track.updateParam('wasm-1', 'gain', 0.25);
@@ -468,6 +486,7 @@ describe('TrackNode — metering, devices, sends, and teardown', () => {
             ]);
             expect(loaded.controller.setBypass).toHaveBeenCalledWith(true);
             expect(loaded.device.bypassed).toBe(true);
+            expect(onDeviceLoaded).toHaveBeenCalledWith('t1', loaded.device);
 
             deferred.settle();
             await Promise.resolve();
@@ -502,7 +521,8 @@ describe('TrackNode — metering, devices, sends, and teardown', () => {
         it('invalidates a removed placeholder and destroys its late wasm result', async () => {
             const deferred = installDeferredWasmDevice();
             const pendingDevicePromises = new Set<Promise<unknown>>();
-            const track = new TrackNode('t1', makeDeps(ctx, { pendingDevicePromises }));
+            const onDeviceLoaded = vi.fn();
+            const track = new TrackNode('t1', makeDeps(ctx, { pendingDevicePromises, onDeviceLoaded }));
             track.addDevice('wasm-1', 'levain');
             const scheduleRebuild = vi.spyOn(track, 'scheduleRebuildChain');
 
@@ -516,6 +536,7 @@ describe('TrackNode — metering, devices, sends, and teardown', () => {
             expect(loaded.controller.destroy).not.toHaveBeenCalled();
             expect(loaded.node.disconnect).toHaveBeenCalled();
             expect(scheduleRebuild).not.toHaveBeenCalled();
+            expect(onDeviceLoaded).not.toHaveBeenCalled();
 
             deferred.settle();
             await Promise.resolve();

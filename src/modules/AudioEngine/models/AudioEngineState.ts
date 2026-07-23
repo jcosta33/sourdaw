@@ -68,6 +68,8 @@ export type BuiltinDeviceNode = {
     nodes: AudioNode[];
     inputNode: AudioNode;
     outputNode: AudioNode;
+    /** Treat a stable proxy as a source even though GainNode accepts input. */
+    isGenerator?: boolean;
     bypassed?: boolean;
     /** Stop oscillators and release resources when the device is removed. */
     dispose?: () => void;
@@ -100,7 +102,10 @@ export type BuiltinDeviceNode = {
         setFillActive: (active: boolean) => void;
         setParam: (name: string, value: number) => void;
         setPadParam: (pad: number, name: string, value: number) => void;
+        setPadDryRouted: (pad: number, routed: boolean) => void;
         setBypass: (bypassed: boolean) => void;
+        connectPadOutput?: (pad: number, dest: AudioNode) => void;
+        disconnectPadOutput?: (pad: number, dest: AudioNode) => void;
         destroy: () => void;
     };
     /** Controls for the Grand Boule piano (MIDI + pedals + param updates via MessagePort) */
@@ -194,6 +199,7 @@ export type SendNode = {
     sourceTrackId: string;
     busId: string;
     gainNode: GainNode;
+    sourceNode: AudioNode;
     preFader: boolean;
 };
 
@@ -239,7 +245,11 @@ export type AudioEngine = {
     setBusGain(busId: string, gain: number): void;
     setSend(sourceTrackId: string, busId: string, level: number, preFader?: boolean): void;
     removeSend(sourceTrackId: string, busId: string): void;
-    setTrackOutput(trackId: string, outputId: string): void;
+    setTrackOutput(
+        trackId: string,
+        outputId: string,
+        padBinding?: { toasterParentTrackId: string; padIndex: number }
+    ): void;
     scheduleOscillator(frequency: number, startTime: number, duration: number, gain?: number): void;
     scheduleClick(time: number, accent: boolean, volume?: number): void;
     stopAllScheduled(): void;

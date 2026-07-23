@@ -17,6 +17,8 @@ type StoredChord = {
     notes: number[]; // absolute MIDI notes
 };
 
+type GeneratedChordNote = { note: number; noteInstanceId: string };
+
 export class ChordMemory extends BaseMidiProcessor {
     readonly name = 'Chord Memory';
 
@@ -28,7 +30,7 @@ export class ChordMemory extends BaseMidiProcessor {
     // Track active chords for Note Off.
     // Numeric key (channel << 7) | triggerNote matches MidiRack/ScaleQuantizer and
     // avoids a per-event template-literal allocation on the audio thread.
-    private activeChordVoices = new BoundedNoteVoiceQueue<number[]>();
+    private activeChordVoices = new BoundedNoteVoiceQueue<GeneratedChordNote[]>();
 
     constructor(id?: string) {
         super(id ?? `chordmem-${Date.now()}`);
@@ -54,16 +56,19 @@ export class ChordMemory extends BaseMidiProcessor {
 
                 const stored = this.memory.get(event.kind.note);
                 if (stored) {
-                    const key = (event.kind.channel << 7) | event.kind.note;
-                    const emitted: number[] = [];
+                    const key = event.noteInstanceId ?? (event.kind.channel << 7) | event.kind.note;
+                    const emitted: GeneratedChordNote[] = [];
                     const transpose = this.transposeMode ? event.kind.note - stored.root : 0;
 
                     for (const node of stored.notes) {
                         const note = Math.max(0, Math.min(127, node + transpose));
-                        emitted.push(note);
+                        const noteInstanceId = this.createGeneratedNoteInstanceId();
+                        emitted.push({ note, noteInstanceId });
                         const generated: MidiEvent = {
                             timeSamples: event.timeSamples,
+                            durationSamples: event.durationSamples,
                             trackId: event.trackId,
+                            noteInstanceId,
                             kind: { type: 'noteOn', channel: event.kind.channel, note, velocity: event.kind.velocity },
                         };
                         output.push(generated);
@@ -90,14 +95,15 @@ export class ChordMemory extends BaseMidiProcessor {
                     continue;
                 }
 
-                const key = (event.kind.channel << 7) | event.kind.note;
+                const key = event.noteInstanceId ?? (event.kind.channel << 7) | event.kind.note;
                 const emitted = this.activeChordVoices.shift(event.trackId, key);
                 if (emitted) {
-                    for (const note of emitted) {
+                    for (const generatedNote of emitted) {
                         const noteOff: MidiEvent = {
                             timeSamples: event.timeSamples,
                             trackId: event.trackId,
-                            kind: { type: 'noteOff', channel: event.kind.channel, note },
+                            noteInstanceId: generatedNote.noteInstanceId,
+                            kind: { type: 'noteOff', channel: event.kind.channel, note: generatedNote.note },
                         };
                         output.push(noteOff);
                         preview?.transferDecisionLineage(event, noteOff);

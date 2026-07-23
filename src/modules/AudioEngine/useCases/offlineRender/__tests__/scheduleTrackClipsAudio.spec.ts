@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 
 import { type Track } from '#/modules/Arrangement/stores';
 import { LEGACY_MIDI_PROBABILITY_SEED, type MidiStoreState } from '#/modules/MIDI/stores';
+import { projectPpqEndpoints as projectTempoPpqEndpoints } from '#/modules/Transport/useCases';
 
 import { MICRO_FADE_SECONDS } from '../constants';
 import { scheduleTrackClips } from '../scheduleTrackClips';
@@ -140,6 +141,7 @@ vi.mock('#/modules/Synth/useCases', () => ({
     getSynthParamsFromDevices: vi.fn(() => null),
     scheduleDrumKitNote: vi.fn(),
     scheduleKitNote: vi.fn(),
+    scheduleNote: vi.fn(),
     scheduleNoteOffline: vi.fn(),
 }));
 
@@ -229,9 +231,19 @@ type RunInput = {
     onWarning?: (message: string) => void;
     regionStartBeat?: number;
     withPrebuiltChain?: boolean;
+    changes?: Parameters<typeof scheduleTrackClips>[0]['changes'];
+    projector?: Parameters<typeof scheduleTrackClips>[0]['projections']['projectPpqEndpoints'];
 };
 
-async function run({ track, ctx, onWarning, regionStartBeat = 0, withPrebuiltChain = true }: RunInput): Promise<{
+async function run({
+    track,
+    ctx,
+    onWarning,
+    regionStartBeat = 0,
+    withPrebuiltChain = true,
+    changes = [],
+    projector = projectPpqEndpoints,
+}: RunInput): Promise<{
     trackInputNode: GainNode;
     trackGainNode: GainNode;
     trackPanNode: StereoPannerNode;
@@ -252,12 +264,13 @@ async function run({ track, ctx, onWarning, regionStartBeat = 0, withPrebuiltCha
         destination,
         durationSeconds: 60,
         defaultTempo: 120,
-        changes: [],
+        changes,
         projections: {
             projectMidiEvents,
-            projectPpqEndpoints,
+            projectPpqEndpoints: projector,
             processYeastMidi: null,
             selectMidiEventProbability: () => true,
+            projectChordPitch: ({ pitch }) => pitch,
         },
         onWarning,
         pendingWorkletEvents: [],
@@ -434,6 +447,41 @@ describe('scheduleTrackClips — audio clip scheduling', () => {
         expect(sources).toHaveLength(1);
         // Starts at t=0 in region time, reading 1.0s into the buffer, for the remaining 1.0s.
         expect(sources[0]!.start).toHaveBeenCalledWith(0, 1, 1);
+    });
+
+    it('projects cropped audio timing and fades through a linear tempo ramp', async () => {
+        mocks.audioBufferCache.get.mockReturnValue(makeBuffer(10));
+        mocks.getCompensationDelay.mockReturnValue(0.1);
+        const { ctx, sources, gains } = makeRecordingOfflineCtx();
+        const changes = [
+            { id: 'start', beat: 0, tempo: 60, curve: 'linear' as const },
+            { id: 'end', beat: 8, tempo: 180, curve: 'instant' as const },
+        ];
+        function project(startPpq: number, endPpq: number) {
+            return projectTempoPpqEndpoints({
+                startPpq,
+                endPpq,
+                defaultTempo: 120,
+                sampleRate: ctx.sampleRate,
+                changes,
+            });
+        }
+        const track = TrackDummy.create({
+            clips: [makeAudioClip({ startBeat: 2, endBeat: 6, fadeInBeats: 1, fadeOutBeats: 1 })],
+        });
+
+        await run({ track, ctx, regionStartBeat: 2, changes, projector: projectTempoPpqEndpoints });
+
+        expect(sources[0]!.start).toHaveBeenCalledWith(expect.closeTo(0.1, 12), 0, project(2, 6).durationSeconds);
+        expect(gains[0]!.gain.linearRampToValueAtTime).toHaveBeenCalledWith(
+            0.8,
+            expect.closeTo(0.1 + project(2, 3).durationSeconds, 12)
+        );
+        expect(gains[0]!.gain.setValueAtTime).toHaveBeenCalledWith(
+            0.8,
+            expect.closeTo(0.1 + project(2, 5).durationSeconds, 12)
+        );
+        expect(gains[0]!.gain.linearRampToValueAtTime).toHaveBeenCalledWith(0, 0.1 + project(2, 6).durationSeconds);
     });
 
     it('drops clips that end before the export region starts', async () => {

@@ -1,85 +1,37 @@
-import { pushUndoEntry } from '#/modules/Command/useCases';
-import { removeMidiClipData, splitMidiNotesAtBeat } from '#/modules/MIDI/useCases';
+import { pushUndoEntry, REDO_NOT_APPLIED } from '#/modules/Command/useCases';
 
-import { getTrackState } from '../../repositories/track/getTrackState';
-import { setTrackState } from '../../repositories/track/setTrackState';
+import { executeSelectedTimeRangeDeletion } from './executeSelectedTimeRangeDeletion';
 
 export function deleteTimeRange(startBeat: number, endBeat: number, trackIds: string[]): void {
-    const state = getTrackState();
-    if (!state) {
+    const request = {
+        startBeat,
+        endBeat,
+        trackIds: [...trackIds],
+    };
+    const result = executeSelectedTimeRangeDeletion(request);
+    if (result.status !== 'applied') {
         return;
     }
 
-    const deletedClipIds: string[] = [];
-    const splitOps: Array<{ sourceClipId: string; newClipId: string; splitBeat: number }> = [];
-
-    const newTracks = state.tracks.map((track) => {
-        if (!trackIds.includes(track.id)) {
-            return track;
-        }
-
-        const finalClips: typeof track.clips extends (infer U)[] ? U[] : never = [];
-
-        for (const clip of track.clips) {
-            if (clip.startBeat >= startBeat && clip.endBeat <= endBeat) {
-                // Fully inside — remove clip and clean up MIDI
-                deletedClipIds.push(clip.id);
-                continue;
-            } else if (clip.startBeat < startBeat && clip.endBeat > endBeat) {
-                // Spans the range — split into left and right, removing the middle
-                const rightClipId = `clip-dtr-${crypto.randomUUID().slice(0, 8)}`;
-                const leftClip = { ...clip, endBeat: startBeat, name: `${clip.name} (L)` };
-                const rightClip = {
-                    ...clip,
-                    id: rightClipId,
-                    startBeat: endBeat,
-                    name: `${clip.name} (R)`,
-                    audioOffsetBeats: (clip.audioOffsetBeats ?? 0) + (endBeat - clip.startBeat),
-                };
-                finalClips.push(leftClip, rightClip);
-                if (clip.type === 'midi') {
-                    splitOps.push({ sourceClipId: clip.id, newClipId: rightClipId, splitBeat: startBeat });
-                }
-            } else if (clip.startBeat < startBeat && clip.endBeat > startBeat) {
-                finalClips.push({ ...clip, endBeat: startBeat });
-            } else if (clip.startBeat < endBeat && clip.endBeat > endBeat) {
-                finalClips.push({
-                    ...clip,
-                    startBeat: endBeat,
-                    audioOffsetBeats: (clip.audioOffsetBeats ?? 0) + (endBeat - clip.startBeat),
-                });
-            } else {
-                finalClips.push(clip);
-            }
-        }
-
-        return { ...track, clips: finalClips };
-    });
-
-    const originalTracks = state.tracks;
-
+    const replayPlan = result.replayPlan;
+    let activeTransaction = result;
     pushUndoEntry(
         'Delete Time Range',
         () => {
-            const currentState = getTrackState();
-            if (currentState) {
-                setTrackState({ ...currentState, tracks: originalTracks });
+            if (!activeTransaction.undo()) {
+                throw new Error('Delete Time Range undo was not applied');
             }
         },
         () => {
-            const currentState = getTrackState();
-            if (currentState) {
-                setTrackState({ ...currentState, tracks: newTracks });
+            const replay = executeSelectedTimeRangeDeletion({
+                ...request,
+                replayPlan,
+            });
+            if (replay.status !== 'applied') {
+                return REDO_NOT_APPLIED;
             }
+            activeTransaction = replay;
+            return undefined;
         }
     );
-
-    setTrackState({ ...state, tracks: newTracks });
-
-    for (const id of deletedClipIds) {
-        removeMidiClipData([id]);
-    }
-    for (const op of splitOps) {
-        splitMidiNotesAtBeat(op);
-    }
 }

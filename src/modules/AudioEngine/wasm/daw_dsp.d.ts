@@ -42,6 +42,7 @@ export declare class FermenterInstance {
     note_on(note: number, velocity: number): void;
     process(block_size: number): number;
     set_param(name: string, value: number): void;
+    set_param_by_id(param_id: number, value: number): void;
 }
 
 export declare class GlutenInstance {
@@ -193,6 +194,8 @@ export declare class ToasterInstance {
     note_off(pad: number): void;
     note_on(pad: number, velocity: number, midi_note: number): void;
     process(block_size: number): number;
+    reset_pad_dry_routing(): void;
+    set_pad_dry_routed(pad: number, routed: boolean): void;
     set_pad_param(pad: number, name: string, value: number): void;
     set_param(name: string, value: number): void;
 }

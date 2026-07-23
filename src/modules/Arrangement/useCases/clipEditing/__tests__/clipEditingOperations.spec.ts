@@ -37,12 +37,14 @@ describe('clip editing operations', () => {
     beforeEach(() => vi.clearAllMocks());
 
     describe('nudgeClip', () => {
-        it('moves clip by positive beats and shifts notes and automation along', () => {
+        it('moves clip by positive beats and shifts automation along (notes follow clip-relative)', () => {
             const result = captureUpdate(ClipDummy.create({ startBeat: 0, endBeat: 4, locked: false }));
             nudgeClip('c1', 2);
             expect(mocks.updateClip).toHaveBeenCalledWith('c1', expect.any(Function));
             expect(result[0]).toMatchObject({ startBeat: 2, endBeat: 6 });
-            expect(mocks.shiftClipMidiNotes).toHaveBeenCalledWith('c1', 2);
+            // Notes are clip-relative and follow the rectangle; shifting them
+            // here double-moved every note (ledger M-025 family finding).
+            expect(mocks.shiftClipMidiNotes).not.toHaveBeenCalled();
             expect(mocks.shiftClipAutomation).toHaveBeenCalledWith('c1', 2);
         });
 
@@ -54,11 +56,11 @@ describe('clip editing operations', () => {
             expect(mocks.shiftClipAutomation).not.toHaveBeenCalled();
         });
 
-        it('clamps to 0 minimum and shifts content by the applied delta only', () => {
+        it('clamps to 0 minimum and shifts automation by the applied delta only', () => {
             const result = captureUpdate(ClipDummy.create({ startBeat: 1, endBeat: 5, locked: false }));
             nudgeClip('c1', -10);
             expect(result[0]).toMatchObject({ startBeat: 0, endBeat: 4 });
-            expect(mocks.shiftClipMidiNotes).toHaveBeenCalledWith('c1', -1);
+            expect(mocks.shiftClipMidiNotes).not.toHaveBeenCalled();
             expect(mocks.shiftClipAutomation).toHaveBeenCalledWith('c1', -1);
         });
     });

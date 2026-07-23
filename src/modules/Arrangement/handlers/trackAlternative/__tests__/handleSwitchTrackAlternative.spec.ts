@@ -304,4 +304,31 @@ describe('handleSwitchTrackAlternative', () => {
         expect(result).toEqual({ status: 'no-write' });
         expect(mocks.setTrackStoreState).not.toHaveBeenCalled();
     });
+
+    it('describe switches back to the pre-switch active alternative as the inverse', () => {
+        mocks.getTrackStoreState.mockReturnValue({
+            tracks: [{ id: 't1', activeAlternativeId: 'alt1', alternatives: [{ id: 'alt1' }, { id: 'alt2' }] }],
+        });
+
+        const desc = handleSwitchTrackAlternative.describe({
+            type: 'switchTrackAlternative',
+            payload: { trackId: 't1', alternativeId: 'alt2' },
+        });
+
+        expect(desc.inverseAction).toEqual({
+            type: 'switchTrackAlternative',
+            payload: { trackId: 't1', alternativeId: 'alt1' },
+        });
+    });
+
+    it('describe returns a null inverse when the track is not found', () => {
+        mocks.getTrackStoreState.mockReturnValue({ tracks: [] });
+
+        const desc = handleSwitchTrackAlternative.describe({
+            type: 'switchTrackAlternative',
+            payload: { trackId: 'missing', alternativeId: 'alt2' },
+        });
+
+        expect(desc.inverseAction).toBeNull();
+    });
 });

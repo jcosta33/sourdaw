@@ -12,16 +12,19 @@
  *     Vite does not try to bundle the .wasm from src/ (it lives in public/ and is
  *     served statically). The async init() is never called from worklet processors —
  *     they always use initSync() with pre-fetched bytes.
- *  4. Writes to src/modules/AudioEngine/wasm/proof_chamber.js
+ *  4. Copies the generated declarations beside the worklet glue.
+ *  5. Writes to src/modules/AudioEngine/wasm/proof_chamber.js
  */
 
 import { readFileSync, writeFileSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
 import { join, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const srcFile = join(root, 'public/wasm/proof-chamber/proof_chamber.js');
 const destFile = join(root, 'src/modules/AudioEngine/wasm/proof_chamber.js');
+const srcTypes = join(root, 'public/wasm/proof-chamber/proof_chamber.d.ts');
+const destTypes = join(root, 'src/modules/AudioEngine/wasm/proof_chamber.d.ts');
 
 const polyfills = `\
 // AudioWorklet scope lacks TextDecoder/TextEncoder — polyfill before wasm-bindgen glue loads
@@ -79,4 +82,5 @@ generated = generated.replace(
 );
 
 writeFileSync(destFile, polyfills + generated, 'utf8');
+writeFileSync(destTypes, readFileSync(srcTypes, 'utf8'), 'utf8');
 console.log(`✓ Generated ${destFile}`);

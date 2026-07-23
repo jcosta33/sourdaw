@@ -74,7 +74,6 @@ const KNOWN_ACTION_TYPES_MAP = {
     removeSection: true,
     renameSection: true,
     addAutomationLane: true,
-    removeAutomationLane: true,
     addAutomationPoint: true,
     quantizeNotes: true,
     quantizeNoteLengths: true,
