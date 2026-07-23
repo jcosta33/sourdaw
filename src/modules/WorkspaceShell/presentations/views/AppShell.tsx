@@ -433,6 +433,13 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
     const projectReady = project.initialized && !project.loading;
     const launchExiting = showLaunch && launchReady;
 
+    // The `!launchReady` guard makes the launch screen strictly BOOT-ONLY: it is
+    // revealed once per session and never again. That matches today's product —
+    // there is no close-project / return-to-launch flow, so `initialized: false`
+    // only ever appears in the store defaults (cold start) or as the transient
+    // mid-load blip this latch is here to absorb. If a future "close project ->
+    // launch screen" feature lands, it must reset `launchReady` (setLaunchReady(false))
+    // wherever it re-reveals the launch screen, or this guard will suppress it.
     if (!project.initialized && !project.loading && !showLaunch && !launchReady) {
         setShowLaunch(true);
     }
