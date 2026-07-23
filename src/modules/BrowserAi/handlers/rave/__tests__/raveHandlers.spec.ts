@@ -24,10 +24,14 @@ describe('raveHandlers', () => {
     });
 
     it('handleLoadRaveModel should describe its label', () => {
-        expect(handleLoadRaveModel.describe()).toEqual({ label: 'Load RAVE Model' });
+        expect(
+            handleLoadRaveModel.describe({ type: 'loadRaveModel', payload: { modelId: 'rave-1' } })
+        ).toEqual({ label: 'Load RAVE Model' });
     });
 
     it('handleSetRaveBlend should describe its label', () => {
-        expect(handleSetRaveBlend.describe()).toEqual({ label: 'Set RAVE Timbre Blend' });
+        expect(
+            handleSetRaveBlend.describe({ type: 'setRaveBlend', payload: { blend: 0.5 } })
+        ).toEqual({ label: 'Set RAVE Timbre Blend' });
     });
 });

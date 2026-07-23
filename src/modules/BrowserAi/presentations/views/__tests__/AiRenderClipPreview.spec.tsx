@@ -148,7 +148,7 @@ describe('AiRenderClipPreview', () => {
 
         fireEvent.click(screen.getByRole('button', { name: 'Play A' }));
 
-        const { onEnded } = mocks.playCachedAudioBufferPreview.mock.calls[0][0] as { onEnded: () => void };
+        const { onEnded } = mocks.playCachedAudioBufferPreview.mock.calls[0]![0] as { onEnded: () => void };
         act(() => {
             onEnded();
         });
@@ -163,7 +163,7 @@ describe('AiRenderClipPreview', () => {
         render_preview();
 
         fireEvent.click(screen.getByRole('button', { name: 'Play A' }));
-        const { onEnded: firstOnEnded } = mocks.playCachedAudioBufferPreview.mock.calls[0][0] as {
+        const { onEnded: firstOnEnded } = mocks.playCachedAudioBufferPreview.mock.calls[0]![0] as {
             onEnded: () => void;
         };
 

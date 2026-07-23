@@ -1,6 +1,14 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 
 import { textToKokoroInputIds } from '../kokoroTokenizer';
+import { phonemize } from '../phonemizer';
+
+type PhonemizerModule = { phonemize: typeof phonemize };
+
+vi.mock('../phonemizer', async (importOriginal) => {
+    const actual = (await importOriginal()) as PhonemizerModule;
+    return { ...actual, phonemize: vi.fn(actual.phonemize) };
+});
 
 describe('textToKokoroInputIds', () => {
     it('produces padded int64 ids and no warnings for ordinary text', () => {
@@ -33,5 +41,20 @@ describe('textToKokoroInputIds', () => {
         expect(inputIds.length).toBe(512);
         expect(warnings.length).toBeGreaterThanOrEqual(1);
         expect(warnings.some((warning) => /truncat/i.test(warning))).toBe(true);
+    });
+
+    it('drops and warns about phonemes absent from the Kokoro vocabulary', () => {
+        const fakePhonemes = {
+            tokenIds: [0, 1, 0],
+            phonemes: ['SP', 'AH', 'ZZQ', 'SP'],
+            wordDiv: [1, 1, 1],
+            wordIsSp: [true, false, true],
+        };
+        vi.mocked(phonemize).mockReturnValueOnce(fakePhonemes);
+
+        const { warnings } = textToKokoroInputIds('placeholder');
+
+        expect(warnings.some((warning) => /dropped 1 phoneme/i.test(warning))).toBe(true);
+        expect(warnings.some((warning) => warning.includes('ZZQ'))).toBe(true);
     });
 });
