@@ -1,0 +1,23 @@
+src/modules/Yeast/workers/processors/__tests__/GrooveModule.spec.ts
+  s_ac9b259eab20ba::t_a44fc4fcff986d 115,138-139,144-147
+src/modules/Yeast/workers/processors/ChordGenerator.ts
+  s_ac9b259eab20ba::t_a44fc4fcff986d 96-97
+src/modules/Yeast/workers/processors/__tests__/ChordGenerator.spec.ts
+  s_ac9b259eab20ba::t_a44fc4fcff986d 56,65
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "2327f252bf1a1b45e0c294424a8b7665e73a169e",
+  "prompts": {},
+  "sessions": {
+    "s_ac9b259eab20ba": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8699-3865-7842-8c54-afbac6cfd266",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
