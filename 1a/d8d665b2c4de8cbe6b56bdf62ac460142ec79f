@@ -1,0 +1,25 @@
+src/components/daw/visualizers/__tests__/ADSREnvelope.spec.tsx
+  s_0d39f3a4a4357a::t_fd0144749f1b3c 6-12
+  s_0d39f3a4a4357a::t_6f3081810a7c32 1-2,13-66,69,72-75,77-137,140-217
+  s_0d39f3a4a4357a::t_2f5a6acf541a90 76
+  s_0d39f3a4a4357a::t_24493b8c5e95ea 138-139
+src/components/daw/visualizers/__tests__/DelayTaps.spec.tsx
+  s_0d39f3a4a4357a::t_dd5d6abde9e270 1-2,13-58,61,64-67,69-188
+  s_0d39f3a4a4357a::t_eb81d79612e458 6-12,68
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "1ad8d665b2c4de8cbe6b56bdf62ac460142ec79f",
+  "prompts": {},
+  "sessions": {
+    "s_0d39f3a4a4357a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "60da6a2e-7d79-4d98-8624-e993f5a9f94e",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
