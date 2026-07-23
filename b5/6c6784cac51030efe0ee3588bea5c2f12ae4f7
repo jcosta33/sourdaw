@@ -1,0 +1,27 @@
+src/modules/AudioEngine/useCases/exportStems.ts
+  s_ac9b259eab20ba::t_8fd96d2463b015 64
+src/modules/AudioEngine/useCases/renderOffline.ts
+  s_ac9b259eab20ba::t_8fd96d2463b015 73
+src/modules/AudioEngine/useCases/offlineRender/__tests__/resolveRenderContext.spec.ts
+  s_ac9b259eab20ba::t_8fd96d2463b015 3-8,15-17,42-48
+  s_ac9b259eab20ba::t_7146f9ac22b977 49-60
+src/modules/AudioEngine/useCases/offlineRender/resolveRenderContext.ts
+  s_ac9b259eab20ba::t_8fd96d2463b015 47,53,58,68-79
+  s_ac9b259eab20ba::t_bfbfa0b39c486c 80,93
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "b56c6784cac51030efe0ee3588bea5c2f12ae4f7",
+  "prompts": {},
+  "sessions": {
+    "s_ac9b259eab20ba": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8699-3865-7842-8c54-afbac6cfd266",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
