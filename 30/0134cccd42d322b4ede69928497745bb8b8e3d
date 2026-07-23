@@ -1,0 +1,21 @@
+public/wasm/daw-dsp/daw_dsp.d.ts
+  s_ac9b259eab20ba::t_b60061f2d37533 435,437-445,468-481,483-491,506-514,516-517,533,547-565
+public/wasm/daw-dsp/daw_dsp_bg.wasm.d.ts
+  s_ac9b259eab20ba::t_df5629242733b5 4,6-14,37-50,52-60,75-83,85-86,102,116-134
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "300134cccd42d322b4ede69928497745bb8b8e3d",
+  "prompts": {},
+  "sessions": {
+    "s_ac9b259eab20ba": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8699-3865-7842-8c54-afbac6cfd266",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
