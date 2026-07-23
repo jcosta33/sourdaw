@@ -241,7 +241,7 @@ nodes as zero-latency.
 
 ### RT-7 — Cache-at-init processors don't revalidate views on WASM `memory.grow()` — **minor, S**
 
-Status: FIXED in #722
+Status: FIXED in #722 — grinder, toaster, and the seven RT-1 processors now revalidate cached views against a re-read of `this._memory.buffer` taken *after* `inst.process()`, so a mid-call `memory.grow()` rebuilds them over the post-grow buffer. GrandBoule is N/A here: it consumes a fixed-size SAB Atomics ring buffer, not growable `WebAssembly.Memory`, so no `ArrayBuffer` detachment can occur and no view revalidation was needed.
 
 `grinderProcessor.ts:316-320`, `toasterProcessor.ts:195-203`, and GrandBoule cache WASM-memory
 views **once at init** and never check buffer identity again. If the WASM linear memory grows at
