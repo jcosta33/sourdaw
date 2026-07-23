@@ -56,11 +56,14 @@ test.describe('Panel toggles — aria-pressed state', () => {
         await expect(toggle).toHaveAttribute('aria-pressed', 'true');
     });
 
-    test('AI action history toggle flips aria-pressed', async ({ page }) => {
+    test('AI action history toggle reveals the history panel', async ({ page }) => {
         const toggle = page.getByRole('button', { name: 'Toggle AI action history' });
-        const before = await toggle.getAttribute('aria-pressed');
+        // The panel's Close button only renders when the panel is open.
+        const close = page.getByRole('button', { name: 'Close action history' });
+
+        await expect(close).toHaveCount(0);
         await toggle.click();
-        await expect(toggle).not.toHaveAttribute('aria-pressed', before ?? '');
+        await expect(close).toBeVisible();
     });
 });
 

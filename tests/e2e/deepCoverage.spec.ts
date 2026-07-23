@@ -182,17 +182,14 @@ test.describe('Setlist — list mutations', () => {
         const count_in = page.getByRole('spinbutton', { name: 'Count-in bars' });
 
         await count_in.fill('4');
-        await count_in.dispatchEvent('change');
         await expect(count_in).toHaveValue('4');
 
         // Out-of-range value is silently ignored — value must not become 9.
         await count_in.fill('9');
-        await count_in.dispatchEvent('change');
         await expect(count_in).not.toHaveValue('9');
 
         // 0 is valid.
         await count_in.fill('0');
-        await count_in.dispatchEvent('change');
         await expect(count_in).toHaveValue('0');
     });
 });
@@ -255,10 +252,9 @@ test.describe('Arrangement take lane — flatten comp state', () => {
         await setupWorkspace(page);
         await launch_new_project(page);
         await add_track(page, 'Audio');
-        // Variation lanes toggle is an icon-only button (Layers icon, no aria-label);
-        // open it on the first track to reveal the take-lane panel.
+        // Variation lanes toggle reveals the take-lane panel.
         const track_list = page.getByRole('grid', { name: /Track list/i });
-        await track_list.locator('button').filter({ has: page.locator('svg.lucide-layers') }).first().click();
+        await track_list.getByRole('button', { name: 'Toggle variation lanes' }).first().click();
     });
 
     test('Flatten comp is disabled until a take lane is initialized, then enabled', async ({ page }) => {
