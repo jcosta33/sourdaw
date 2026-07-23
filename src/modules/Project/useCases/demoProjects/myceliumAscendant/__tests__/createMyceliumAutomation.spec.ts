@@ -10,7 +10,6 @@ const PAD_NAMES =
     'Kick|Snare|Closed HH|Open HH|Clap|Rim|Low Tom|Mid Tom|Hi Tom|Crash|Ride|Cowbell|Clave|Shaker|Perc 1|Perc 2'.split(
         '|'
     );
-
 function valueAt(points: Array<{ beat: number; value: number }>, beat: number): number | undefined {
     return points.find((point) => point.beat === beat)?.value;
 }
@@ -24,7 +23,7 @@ describe('createMyceliumAutomation', () => {
         const laneKeys = lanes.map((lane) => `${lane.trackId}:${lane.parameterId}`);
 
         expect(lanes).toHaveLength(115);
-        expect(lanes.reduce((total, lane) => total + lane.points.length, 0)).toBe(1_495);
+        expect(lanes.reduce((total, lane) => total + lane.points.length, 0)).toBe(1_579);
         expect(new Set(lanes.map((lane) => lane.trackId)).size).toBe(39);
         expect(lanes.every((lane) => UUID_PATTERN.test(lane.id))).toBe(true);
         expect(new Set(lanes.map((lane) => lane.id)).size).toBe(lanes.length);
@@ -132,6 +131,7 @@ describe('createMyceliumAutomation', () => {
             expect(valueAt(lane?.points ?? [], 192)).toBeGreaterThan(0);
             expect(valueAt(lane?.points ?? [], 415.75)).toBe(0);
             expect(valueAt(lane?.points ?? [], 416)).toBeGreaterThan(0);
+            expect(valueAt(lane?.points ?? [], 479.75)).toBeGreaterThan(0);
             expect(valueAt(lane?.points ?? [], 480)).toBe(0);
             expect(lane?.points.find((point) => point.beat === 480)?.curve).toBe('step');
             expect(valueAt(lane?.points ?? [], 484)).toBeGreaterThan(0);
