@@ -25,4 +25,10 @@ describe('collaborationHandlers', () => {
 
         expect(createSession).toHaveBeenCalledWith('Host');
     });
+
+    it('describes itself for the command palette / undo log', () => {
+        expect(handleCreateCollabSession.describe({ type: 'createCollabSession', payload: {} })).toEqual({
+            label: 'Create collaboration session',
+        });
+    });
 });
