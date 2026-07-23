@@ -28,4 +28,10 @@ describe('handleJoinCollabSession', () => {
         });
         expect(mocks.joinSession).toHaveBeenCalledWith('xyz', 'Peer');
     });
+
+    it('describes itself for the command palette / undo log', () => {
+        expect(
+            handleJoinCollabSession.describe({ type: 'joinCollabSession', payload: { inviteString: 'abc' } })
+        ).toEqual({ label: 'Join collaboration session' });
+    });
 });

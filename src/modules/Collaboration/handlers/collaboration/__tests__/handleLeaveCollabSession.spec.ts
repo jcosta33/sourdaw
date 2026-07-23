@@ -20,4 +20,10 @@ describe('handleLeaveCollabSession', () => {
         });
         expect(mocks.leaveSession).toHaveBeenCalledTimes(1);
     });
+
+    it('describes itself for the command palette / undo log', () => {
+        expect(handleLeaveCollabSession.describe({ type: 'leaveCollabSession', payload: undefined })).toEqual({
+            label: 'Leave collaboration session',
+        });
+    });
 });

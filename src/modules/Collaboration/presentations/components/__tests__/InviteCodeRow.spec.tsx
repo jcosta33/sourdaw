@@ -20,4 +20,23 @@ describe('InviteCodeRow', () => {
         // ...but the accessible name carries the complete string.
         expect(code).toHaveAttribute('aria-label', fullInvite);
     });
+
+    it('shows a check icon once copied is true', () => {
+        const { container } = render(<InviteCodeRow value="abc-123" copied onCopy={vi.fn()} />);
+        expect(container.querySelector('svg.lucide-check')).toBeInTheDocument();
+        expect(container.querySelector('svg.lucide-copy')).not.toBeInTheDocument();
+    });
+
+    it('does not truncate a value at or under 40 characters', () => {
+        const value = 'x'.repeat(40);
+        const { container } = render(<InviteCodeRow value={value} copied={false} onCopy={vi.fn()} />);
+        expect(container.querySelector('code')?.textContent).toBe(value);
+    });
+
+    it('merges a custom className onto the row', () => {
+        const { container } = render(
+            <InviteCodeRow value="abc-123" copied={false} onCopy={vi.fn()} className="custom-row" />
+        );
+        expect(container.firstElementChild).toHaveClass('custom-row');
+    });
 });
