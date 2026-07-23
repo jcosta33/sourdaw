@@ -1,0 +1,25 @@
+src/components/daw/__tests__/spectrumMath.spec.ts
+  s_4a3a9ac19de269::t_805190606e7a10 1-83
+src/utils/Music/__tests__/MusicalScale.spec.ts
+  s_4a3a9ac19de269::t_3cc25326ec7110 1-82
+src/utils/TimelineMinimap/__tests__/timelineMinimapHeight.spec.ts
+  s_4a3a9ac19de269::t_92e4bb210af173 1-43
+src/utils/__tests__/path-basename.spec.ts
+  s_4a3a9ac19de269::t_643722c50c85bc 1-35
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "62fa972f5e00a3b0181c93ccf0a9e874caec42e4",
+  "prompts": {},
+  "sessions": {
+    "s_4a3a9ac19de269": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "4a1953fb-b074-451f-a9e0-2edbbc4fbbf3",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
