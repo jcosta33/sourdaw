@@ -1,0 +1,36 @@
+src/modules/Project/useCases/projectPersistence/saveProject/__tests__/captureExternalPluginStates.spec.ts
+  s_0d39f3a4a4357a::t_22821e62cb48ed 32,92-131
+  s_0d39f3a4a4357a::t_94618f6ea77b65 132
+  s_80b5ecf918a603::t_7d321b03645605 3
+.agents/artifacts/sourdaw/audits/AUDIT-plugin-hosting.md
+  s_0d39f3a4a4357a::t_1cb083f23b37b0 169
+src/modules/Project/useCases/projectPersistence/saveProject/capturedNativePluginStateCache.ts
+  s_0d39f3a4a4357a::t_48444809574b0d 1-16
+src/modules/Project/useCases/projectPersistence/saveProject/captureExternalPluginStates.ts
+  s_0d39f3a4a4357a::t_e4f2d549f87605 5-6,18-25,38-39,45,51-57,59-67
+  s_0d39f3a4a4357a::t_428dfb8a49a058 58
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "953690bd2b723de950bfc24ff2ccdd311dcffc7f",
+  "prompts": {},
+  "sessions": {
+    "s_0d39f3a4a4357a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "60da6a2e-7d79-4d98-8624-e993f5a9f94e",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_80b5ecf918a603": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-aa3b74db7f75ab9e6",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
