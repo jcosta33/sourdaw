@@ -1,0 +1,21 @@
+src/modules/Yeast/workers/processors/__tests__/Arpeggiator.spec.ts
+  s_ac9b259eab20ba::t_fd544cee548d9d 301-304,306,312,317,330,344
+src/modules/Yeast/workers/processors/Arpeggiator.ts
+  s_ac9b259eab20ba::t_1a7f3e5e6edc22 346-349
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "b5168aa5aa5e8af9a7589c5de9cb45062fc10a60",
+  "prompts": {},
+  "sessions": {
+    "s_ac9b259eab20ba": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8699-3865-7842-8c54-afbac6cfd266",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
