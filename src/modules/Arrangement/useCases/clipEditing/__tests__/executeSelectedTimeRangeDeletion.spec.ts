@@ -360,6 +360,51 @@ describe('executeSelectedTimeRangeDeletion', () => {
         expect(trackStore.value).toBe(originalState);
     });
 
+    it('uses canonical store order for split identities when selected track IDs are reversed', () => {
+        const firstSpan = createClip({
+            id: 'first-span',
+            trackId: 'first',
+            startBeat: 0,
+            endBeat: 10,
+        });
+        const secondSpan = createClip({
+            id: 'second-span',
+            trackId: 'second',
+            startBeat: 0,
+            endBeat: 10,
+        });
+        setArrangement([createTrack('first', [firstSpan]), createTrack('second', [secondSpan])]);
+        vi.spyOn(crypto, 'randomUUID')
+            .mockReturnValueOnce('11111111-1234-4123-8123-123456789abc')
+            .mockReturnValueOnce('22222222-1234-4123-8123-123456789abc');
+
+        const result = requireApplied(
+            executeSelectedTimeRangeDeletion({
+                startBeat: 3,
+                endBeat: 7,
+                trackIds: ['second', 'first'],
+            })
+        );
+
+        expect(result.replayPlan.operation.trackIds).toEqual(['second', 'first']);
+        expect(result.replayPlan.clips).toEqual([
+            {
+                role: 'selected-delete-right',
+                sourceTrackId: 'first',
+                sourceClipId: 'first-span',
+                targetClipId: 'clip-dtr-11111111',
+            },
+            {
+                role: 'selected-delete-right',
+                sourceTrackId: 'second',
+                sourceClipId: 'second-span',
+                targetClipId: 'clip-dtr-22222222',
+            },
+        ]);
+        expect(trackStore.value?.tracks[0]?.clips[1]?.id).toBe('clip-dtr-11111111');
+        expect(trackStore.value?.tracks[1]?.clips[1]?.id).toBe('clip-dtr-22222222');
+    });
+
     it('reuses the exact supplied replay plan and every generated clip and note identity', () => {
         const span = createClip({
             id: 'span',

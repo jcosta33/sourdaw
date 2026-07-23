@@ -378,11 +378,15 @@ function validateComputedValues(owners: readonly NormalizedOwner[], operation: S
 }
 
 function createClipIdentityRequests(
-    owners: readonly NormalizedOwner[],
+    normalized: NormalizedStore,
     operation: SelectedTimeRangeOperation
 ): readonly ClipIdentityRequest[] {
+    const selectedTrackIds = new Set(operation.trackIds);
     const requests: ClipIdentityRequest[] = [];
-    for (const owner of owners) {
+    for (const owner of normalized.tracks) {
+        if (!selectedTrackIds.has(owner.id)) {
+            continue;
+        }
         for (const normalizedClip of owner.clips) {
             const clip = normalizedClip.source;
             if (clip.startBeat < operation.startBeat && clip.endBeat > operation.endBeat) {
@@ -1046,7 +1050,7 @@ export function executeSelectedTimeRangeDeletion(
         throw new Error('Arrangement time operation dependencies are not registered');
     }
 
-    const requests = createClipIdentityRequests(requestedOwners, validated.operation);
+    const requests = createClipIdentityRequests(normalized, validated.operation);
     const existingClipIds = collectExistingClipIds(normalized);
     let identities: readonly ClipReplayIdentity[];
     let suppliedReplayPlan: SelectedTimeRangeDeletionReplayPlan | null = null;
