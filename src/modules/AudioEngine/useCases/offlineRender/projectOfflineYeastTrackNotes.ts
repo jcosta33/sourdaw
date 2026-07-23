@@ -48,14 +48,10 @@ type ScheduledOfflineYeastNote = {
     toasterPadIndex: number;
 };
 
-function findCarrierIteration(
-    iterations: readonly OfflineYeastClipIteration[],
-    beat: number
-): OfflineYeastClipIteration | undefined {
-    return iterations.find(
-        (iteration) =>
-            iteration.iterationStartBeat <= beat &&
-            beat < Math.min(iteration.iterationStartBeat + iteration.loopLengthBeats, iteration.clipEndBeat)
+function containsBeat(iteration: OfflineYeastClipIteration, beat: number): boolean {
+    return (
+        iteration.iterationStartBeat <= beat &&
+        beat < Math.min(iteration.iterationStartBeat + iteration.loopLengthBeats, iteration.clipEndBeat)
     );
 }
 
@@ -129,6 +125,10 @@ export function projectOfflineYeastTrackNotes({
             continue;
         }
 
+        if (!iterations.some((iteration) => containsBeat(iteration, note.startPpq))) {
+            continue;
+        }
+
         const generatedNotes = projectMidiEvents({
             events: [
                 {
@@ -142,7 +142,8 @@ export function projectOfflineYeastTrackNotes({
             phase: 'sequencer-groove',
         });
         for (const projected of generatedNotes) {
-            const carrierIteration = findCarrierIteration(iterations, projected.startBeat);
+            const carrierIterations = iterations.filter((iteration) => containsBeat(iteration, projected.startBeat));
+            const carrierIteration = carrierIterations[0];
             if (!carrierIteration) {
                 continue;
             }
@@ -171,7 +172,7 @@ export function projectOfflineYeastTrackNotes({
                 velocity: projected.velocity,
                 startSamples: endpoints.startSamples,
                 endSamples: endpoints.endSamples,
-                toasterPadIndex: carrierIteration.toasterPadIndex ?? -1,
+                toasterPadIndex: carrierIterations.length === 1 ? (carrierIteration.toasterPadIndex ?? -1) : -1,
             });
         }
     }

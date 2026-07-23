@@ -184,36 +184,47 @@ describe('projectOfflineYeastTrackNotes', () => {
             loopEnabled: false,
         };
 
-        const notes = projectOfflineYeastTrackNotes({
+        const secondIteration = {
+            ...firstIteration,
+            clipId: 'clip-2',
+            clipStartBeat: 2.5,
+            clipEndBeat: 4,
+            iterationStartBeat: 2.5,
+            toasterPadIndex: 7,
+        };
+        function projectMidiEvents<Event extends ProjectableEvent>(
+            input: Parameters<OfflineMidiEventProjector>[0]
+        ): readonly Event[] {
+            const events = input.events as readonly Event[];
+            return input.phase === 'sequencer-groove'
+                ? events.map((event) => ({ ...event, startBeat: event.startBeat + 1 }))
+                : events;
+        }
+        const input = {
             trackId: 'track-1',
-            iterations: [
-                firstIteration,
-                {
-                    ...firstIteration,
-                    clipId: 'clip-2',
-                    clipStartBeat: 2.5,
-                    clipEndBeat: 4,
-                    iterationStartBeat: 2.5,
-                    toasterPadIndex: 7,
-                },
-            ],
+            iterations: [firstIteration, secondIteration],
             sampleRate: 100,
             blockStartSamples: 0,
             blockEndSamples: 400,
             defaultTempo: 60,
             changes: [],
-            projectMidiEvents: (input) =>
-                input.phase === 'sequencer-groove'
-                    ? input.events.map((event) => ({ ...event, startBeat: event.startBeat + 1 }))
-                    : input.events,
+            projectMidiEvents,
             projectPpqEndpoints,
             processYeastMidi,
             projectPitch,
-        });
+        };
+        const notes = projectOfflineYeastTrackNotes(input);
 
         expect(notes).toEqual([
             expect.objectContaining({ pitch: 65, startSamples: 275, endSamples: 400, toasterPadIndex: 7 }),
         ]);
         expect(projectPitch).toHaveBeenCalledWith({ pitch: 64, referenceBeat: 2.5, targetBeat: 2.75 });
+        expect(projectOfflineYeastTrackNotes({ ...input, iterations: [secondIteration] })).toEqual([]);
+        expect(
+            projectOfflineYeastTrackNotes({
+                ...input,
+                iterations: [firstIteration, secondIteration, { ...secondIteration, toasterPadIndex: 8 }],
+            })[0]?.toasterPadIndex
+        ).toBe(-1);
     });
 });
