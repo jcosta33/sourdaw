@@ -43,6 +43,7 @@ import {
 } from '#/modules/AudioEngine/useCases';
 import {
     getAutomationHandlers,
+    getAutomationValueAtBeat,
     prepareAutomationTimeOperation,
     recordAutomationValue,
     setAutomationRecordingDependencies,
@@ -159,6 +160,7 @@ configureOfflineMidiEventProjection({
     createProjector: createGrooveMidiEventProjector,
     selectProbability: shouldPlayMidiEvent,
     createChordPitchProjector,
+    evaluateAutomationValue: getAutomationValueAtBeat,
 });
 configureOfflinePpqEndpointProjection({ project: projectPpqEndpoints });
 configureOfflineYeastMidiProcessing({ createProcessor: createOfflineYeastProcessor });

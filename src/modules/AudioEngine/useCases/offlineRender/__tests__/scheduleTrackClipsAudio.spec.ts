@@ -271,6 +271,7 @@ async function run({
             processYeastMidi: null,
             selectMidiEventProbability: () => true,
             projectChordPitch: ({ pitch }) => pitch,
+            evaluateAutomationValue: null,
         },
         onWarning,
         pendingWorkletEvents: [],

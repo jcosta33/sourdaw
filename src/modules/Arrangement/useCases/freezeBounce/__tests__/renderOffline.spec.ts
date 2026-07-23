@@ -651,6 +651,8 @@ describe('renderTrackOffline', () => {
                 startSamples: Math.round(2.5 * 44_100),
                 endSamples: Math.round(3 * 44_100),
                 toasterPadIndex: -1,
+                startBeat: 5,
+                endBeat: 6,
             },
         ]);
 

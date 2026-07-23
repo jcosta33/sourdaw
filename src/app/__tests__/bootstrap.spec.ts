@@ -110,6 +110,7 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
 
 vi.mock('#/modules/Automation/useCases', () => ({
     getAutomationHandlers: sentinelHandlers('Automation'),
+    getAutomationValueAtBeat: () => null,
     prepareAutomationTimeOperation: prepareAutomationTimeOperationMock,
     recordAutomationValue: noop,
     setAutomationRecordingDependencies: noop,

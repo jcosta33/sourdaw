@@ -146,6 +146,7 @@ describe('exportStems', () => {
                 () =>
                 ({ pitch }) =>
                     pitch,
+            evaluateAutomationValue: () => null,
         });
         configureOfflinePpqEndpointProjection({
             project: ({ startPpq, endPpq, sampleRate }) => ({
