@@ -72,15 +72,24 @@ if (typeof FinalizationRegistry === 'undefined') {
 }
 `;
 
-let generated = readFileSync(srcFile, 'utf8');
+const generated = readFileSync(srcFile, 'utf8');
 
-// Replace `new URL('proof_chamber_bg.wasm', import.meta.url)` so Vite doesn't try to
-// bundle the .wasm from src/ (it doesn't exist there — it lives in public/).
-generated = generated.replace(
-    "module_or_path = new URL('proof_chamber_bg.wasm', import.meta.url);",
-    "module_or_path = '/wasm/proof-chamber/proof_chamber_bg.wasm'; // served from public/"
-);
+// Rewrite `new URL('proof_chamber_bg.wasm', import.meta.url)` to a served string path
+// so Vite doesn't try to bundle the .wasm from src/ (it doesn't exist there — it lives
+// in public/). `String.replace` silently no-ops when the needle is absent, so assert
+// the wasm-bindgen async-init line matched exactly once; a wasm-bindgen output-format
+// change must fail loudly here rather than ship the co-located _bg.wasm path (WB-3).
+const needle = "module_or_path = new URL('proof_chamber_bg.wasm', import.meta.url);";
+const replacement = "module_or_path = '/wasm/proof-chamber/proof_chamber_bg.wasm'; // served from public/";
+const occurrences = generated.split(needle).length - 1;
+if (occurrences !== 1) {
+    throw new Error(
+        `gen-proof-chamber-worklet: expected exactly 1 wasm-bindgen async-init URL line to rewrite, found ${occurrences}. ` +
+            `The wasm-bindgen output format changed — update the needle in this script before regenerating.`
+    );
+}
+const worklet = generated.split(needle).join(replacement);
 
-writeFileSync(destFile, polyfills + generated, 'utf8');
+writeFileSync(destFile, polyfills + worklet, 'utf8');
 writeFileSync(destTypes, readFileSync(srcTypes, 'utf8'), 'utf8');
 console.log(`✓ Generated ${destFile}`);
