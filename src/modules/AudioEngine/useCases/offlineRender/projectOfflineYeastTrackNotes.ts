@@ -46,6 +46,8 @@ type ScheduledOfflineYeastNote = {
     startSamples: number;
     endSamples: number;
     toasterPadIndex: number;
+    startBeat: number;
+    endBeat: number;
 };
 
 function containsBeat(iteration: OfflineYeastClipIteration, beat: number): boolean {
@@ -177,6 +179,8 @@ export function projectOfflineYeastTrackNotes({
                 startSamples: endpoints.startSamples,
                 endSamples: endpoints.endSamples,
                 toasterPadIndex: hasUnambiguousPad ? carrierPadIndex : -1,
+                startBeat: projected.startBeat,
+                endBeat: noteEndBeat,
             });
         }
     }

@@ -1,7 +1,28 @@
-import { render, screen } from '@testing-library/react';
+import { render, screen, fireEvent } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+import {
+    addAutomationPoint,
+    removeAutomationPoint,
+    insertAutomationShape,
+    deleteSelectedPoints,
+    adjustYZoom,
+    zoomToUsedRange,
+    toggleVirginTerritory,
+    toggleAutomationVisibility,
+} from '#/modules/Automation/useCases';
+import { pushUndoEntry } from '#/modules/Command/useCases';
+
+import { type AutomationLane, type AutomationPoint } from '../../../../models/AutomationViewTypes';
+import { onDrawMouseDown, onRubberBandStart, applyCurveSelect } from '../../../helpers/automationDrag';
 import { AutomationLaneRow } from '../AutomationLaneRow';
+
+const { mockWorkspaceStoreRef, mockTransportStoreRef, mockWorkspaceState, mockTransportState } = vi.hoisted(() => ({
+    mockWorkspaceStoreRef: {},
+    mockTransportStoreRef: {},
+    mockWorkspaceState: { activeTool: 'pointer', snapValue: 1 },
+    mockTransportState: { playheadPosition: 0 },
+}));
 
 vi.mock('#/utils/Styles/cn', () => ({
     cn: (...inputs: (string | undefined | null | false | Record<string, boolean>)[]) => {
@@ -22,15 +43,43 @@ vi.mock('#/utils/Styles/cn', () => ({
 }));
 
 vi.mock('../AutomationLaneHeader', () => ({
-    AutomationLaneHeader: () => <div data-testid="lane-header">Header</div>,
+    AutomationLaneHeader: (props: { currentValue: number | null }) => (
+        <div data-testid="lane-header" data-current-value={String(props.currentValue)}>
+            Header
+        </div>
+    ),
 }));
 
 vi.mock('../AutomationLaneControls', () => ({
-    AutomationLaneControls: () => <div data-testid="lane-controls">Controls</div>,
+    AutomationLaneControls: (props: {
+        onToggleVirginTerritory: () => void;
+        onZoomToUsedRange: () => void;
+        onToggleVisibility: () => void;
+        onClose: () => void;
+    }) => (
+        <div data-testid="lane-controls">
+            <button onClick={props.onToggleVirginTerritory}>toggle-vt</button>
+            <button onClick={props.onZoomToUsedRange}>zoom-used-range</button>
+            <button onClick={props.onToggleVisibility}>toggle-visibility</button>
+            <button onClick={props.onClose}>close-lane</button>
+        </div>
+    ),
 }));
 
 vi.mock('../AutomationContextMenu', () => ({
-    AutomationContextMenu: () => null,
+    AutomationContextMenu: (props: {
+        beat: number;
+        section: 'curve' | 'shape' | null;
+        onCurveSelect: (curve: string) => void;
+        onShapeInsert: (shape: string) => void;
+        onClose: () => void;
+    }) => (
+        <div data-testid="context-menu" data-beat={props.beat} data-section={String(props.section)}>
+            <button onClick={() => props.onCurveSelect('exponential')}>select-curve</button>
+            <button onClick={() => props.onShapeInsert('sine')}>insert-shape</button>
+            <button onClick={props.onClose}>close-menu</button>
+        </div>
+    ),
 }));
 
 vi.mock('../../../helpers/automationViewHelpers', () => ({
@@ -40,7 +89,7 @@ vi.mock('../../../helpers/automationViewHelpers', () => ({
 
 vi.mock('../../../helpers/automationLaneConstants', () => ({
     formatParameterValue: vi.fn((value: number) => `${value.toFixed(2)}`),
-    curveLabel: vi.fn(() => 'curve'),
+    curveLabel: vi.fn((curve: string) => curve),
 }));
 
 vi.mock('../../../helpers/automationDrag', () => ({
@@ -52,25 +101,40 @@ vi.mock('../../../helpers/automationDrag', () => ({
 }));
 
 vi.mock('#/infra/store/useStore', () => ({
-    useStore: vi.fn(() => ({
-        activeTool: 'pointer',
-    })),
+    useStore: vi.fn((store: unknown) => (store === mockWorkspaceStoreRef ? mockWorkspaceState : mockTransportState)),
 }));
 
 vi.mock('#/modules/Transport/stores', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/Transport/stores')>()),
-    transportStore: { value: { playheadPosition: 0 } },
+    transportStore: mockTransportStoreRef,
 }));
 
 vi.mock('#/modules/WorkspaceShell/stores', () => ({
-    workspaceStore: { value: { activeTool: 'pointer' } },
-    defaultWorkspaceState: { activeTool: 'pointer' },
+    workspaceStore: mockWorkspaceStoreRef,
+    defaultWorkspaceState: { activeTool: 'pointer', snapValue: 1 },
 }));
 
 vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/Arrangement/useCases')>()),
     getAutomationRegions: vi.fn(() => []),
     interpolateAutomationValue: vi.fn(() => 0.5),
+}));
+
+vi.mock('#/modules/Automation/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Automation/useCases')>()),
+    addAutomationPoint: vi.fn(),
+    removeAutomationPoint: vi.fn(),
+    toggleAutomationVisibility: vi.fn(),
+    insertAutomationShape: vi.fn(),
+    deleteSelectedPoints: vi.fn(),
+    adjustYZoom: vi.fn(),
+    zoomToUsedRange: vi.fn(),
+    toggleVirginTerritory: vi.fn(),
+}));
+
+vi.mock('#/modules/Command/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Command/useCases')>()),
+    pushUndoEntry: vi.fn(),
 }));
 
 describe('AutomationLaneRow', () => {
@@ -82,8 +146,8 @@ describe('AutomationLaneRow', () => {
             parameterName: 'Volume',
             minValue: 0,
             maxValue: 1,
-            points: [],
-            objects: [],
+            points: [] as AutomationPoint[],
+            objects: [] as AutomationLane['objects'],
             visible: true,
             enabled: true,
             collapsed: false,
@@ -97,6 +161,9 @@ describe('AutomationLaneRow', () => {
 
     beforeEach(() => {
         vi.clearAllMocks();
+        mockWorkspaceState.activeTool = 'pointer';
+        mockWorkspaceState.snapValue = 1;
+        mockTransportState.playheadPosition = 0;
     });
 
     it('should render without crashing', () => {
@@ -130,5 +197,200 @@ describe('AutomationLaneRow', () => {
         const { container } = render(<AutomationLaneRow {...defaultProps} />);
         const laneDiv = container.firstChild as HTMLElement;
         expect(laneDiv).toHaveAttribute('tabIndex', '0');
+    });
+
+    it('should wire the lane controls callbacks to the virgin territory, zoom, visibility, and close use cases', () => {
+        render(<AutomationLaneRow {...defaultProps} />);
+
+        fireEvent.click(screen.getByText('toggle-vt'));
+        expect(toggleVirginTerritory).toHaveBeenCalledWith('lane-1');
+
+        fireEvent.click(screen.getByText('zoom-used-range'));
+        expect(zoomToUsedRange).toHaveBeenCalledWith('lane-1');
+
+        fireEvent.click(screen.getByText('toggle-visibility'));
+        expect(toggleAutomationVisibility).toHaveBeenCalledWith('lane-1');
+
+        fireEvent.click(screen.getByText('close-lane'));
+        expect(toggleAutomationVisibility).toHaveBeenCalledTimes(2);
+    });
+
+    it('should render breakpoint nodes only for in-viewport points and show curve labels for non-linear curves', () => {
+        const lane: AutomationLane = {
+            ...defaultProps.lane,
+            points: [
+                { beat: 0, value: 0.2, curve: 'exponential', tension: 0 },
+                { beat: 8, value: 0.6, curve: 'linear', tension: 0 },
+                { beat: 100, value: 0.9, curve: 'linear', tension: 0 },
+            ],
+        };
+        const { container } = render(<AutomationLaneRow {...defaultProps} lane={lane} />);
+
+        expect(container.querySelectorAll('[data-auto-point]')).toHaveLength(2);
+        expect(screen.getByText('exponential')).toBeInTheDocument();
+        expect(screen.queryByText('linear')).not.toBeInTheDocument();
+    });
+
+    it('should surface the interpolated current value at the playhead for before/between/after cases', () => {
+        const lane: AutomationLane = {
+            ...defaultProps.lane,
+            points: [
+                { beat: 0, value: 0.2, curve: 'linear', tension: 0 },
+                { beat: 8, value: 0.8, curve: 'linear', tension: 0 },
+            ],
+        };
+
+        mockTransportState.playheadPosition = -5;
+        const { rerender } = render(<AutomationLaneRow {...defaultProps} lane={lane} />);
+        expect(screen.getByTestId('lane-header')).toHaveAttribute('data-current-value', '0.2');
+
+        mockTransportState.playheadPosition = 4;
+        rerender(<AutomationLaneRow {...defaultProps} lane={lane} />);
+        expect(screen.getByTestId('lane-header')).toHaveAttribute('data-current-value', '0.5');
+
+        mockTransportState.playheadPosition = 100;
+        rerender(<AutomationLaneRow {...defaultProps} lane={lane} />);
+        expect(screen.getByTestId('lane-header')).toHaveAttribute('data-current-value', '0.8');
+    });
+
+    it('should render in-view automation objects with their name and pool icon, filtering out-of-view objects', () => {
+        const lane: AutomationLane = {
+            ...defaultProps.lane,
+            objects: [
+                { id: 'obj-1', laneId: 'lane-1', startBeat: 0, endBeat: 8, points: [], name: 'ObjA', poolId: 'pool-1' },
+                { id: 'obj-2', laneId: 'lane-1', startBeat: 200, endBeat: 210, points: [], name: 'ObjB' },
+            ],
+        };
+        render(<AutomationLaneRow {...defaultProps} lane={lane} />);
+
+        expect(screen.getByText('🔗 ObjA')).toBeInTheDocument();
+        expect(screen.queryByText('ObjB')).not.toBeInTheDocument();
+    });
+
+    it('should render a dashed zero baseline only when the value range crosses zero', () => {
+        const laneCrossingZero = { ...defaultProps.lane, minValue: -1, maxValue: 1 };
+        const { container, rerender } = render(<AutomationLaneRow {...defaultProps} lane={laneCrossingZero} />);
+        expect(container.querySelector('line[stroke-dasharray="4 3"]')).toBeInTheDocument();
+
+        const lanePositiveOnly = { ...defaultProps.lane, minValue: 0, maxValue: 1 };
+        rerender(<AutomationLaneRow {...defaultProps} lane={lanePositiveOnly} />);
+        expect(container.querySelector('line[stroke-dasharray="4 3"]')).not.toBeInTheDocument();
+    });
+
+    it('should dispatch draw or rubber-band handlers based on the active tool and ignore secondary buttons', () => {
+        const { container, rerender } = render(<AutomationLaneRow {...defaultProps} />);
+        const svg = container.querySelector('svg')!;
+
+        fireEvent.mouseDown(svg, { button: 1 });
+        expect(onDrawMouseDown).not.toHaveBeenCalled();
+        expect(onRubberBandStart).not.toHaveBeenCalled();
+
+        fireEvent.mouseDown(svg, { button: 0 });
+        expect(onRubberBandStart).toHaveBeenCalledTimes(1);
+        expect(onRubberBandStart).toHaveBeenCalledWith(
+            expect.anything(),
+            defaultProps.lane,
+            expect.any(Function),
+            expect.any(Function),
+            expect.anything()
+        );
+        expect(onDrawMouseDown).not.toHaveBeenCalled();
+
+        mockWorkspaceState.activeTool = 'draw';
+        rerender(<AutomationLaneRow {...defaultProps} />);
+        fireEvent.mouseDown(svg, { button: 0 });
+        expect(onDrawMouseDown).toHaveBeenCalledWith(expect.anything(), defaultProps.lane, 1, expect.anything());
+    });
+
+    it('should open a shape context menu on right-click and invoke curve/shape selection through it', () => {
+        const { container } = render(<AutomationLaneRow {...defaultProps} />);
+        const svg = container.querySelector('svg')!;
+        svg.getBoundingClientRect = vi.fn(() => ({
+            left: 0,
+            top: 0,
+            right: 800,
+            bottom: 120,
+            width: 800,
+            height: 120,
+            x: 0,
+            y: 0,
+            toJSON: () => ({}),
+        }));
+
+        fireEvent.contextMenu(svg, { clientX: 120, clientY: 20 });
+        const menu = screen.getByTestId('context-menu');
+        expect(menu).toHaveAttribute('data-section', 'shape');
+        expect(menu).toHaveAttribute('data-beat', '10');
+
+        fireEvent.click(screen.getByText('select-curve'));
+        expect(applyCurveSelect).toHaveBeenCalledWith('lane-1', 10, 'exponential');
+        expect(screen.queryByTestId('context-menu')).not.toBeInTheDocument();
+
+        fireEvent.contextMenu(svg, { clientX: 120, clientY: 20 });
+        fireEvent.click(screen.getByText('insert-shape'));
+        expect(insertAutomationShape).toHaveBeenCalledWith('lane-1', 'sine', 10, 14);
+    });
+
+    it('should open a point context menu on right-click and remove the point with an undoable entry on double-click', () => {
+        const lane: AutomationLane = {
+            ...defaultProps.lane,
+            points: [{ beat: 8, value: 0.5, curve: 'linear', tension: 0 }],
+        };
+        const { container } = render(<AutomationLaneRow {...defaultProps} lane={lane} />);
+
+        const pointGroup = container.querySelector('[data-auto-point]')!;
+        const captureCircle = pointGroup.querySelector('circle')!;
+
+        fireEvent.contextMenu(captureCircle, { clientX: 5, clientY: 5 });
+        const menu = screen.getByTestId('context-menu');
+        expect(menu).toHaveAttribute('data-section', 'null');
+        expect(menu).toHaveAttribute('data-beat', '8');
+
+        fireEvent.doubleClick(captureCircle);
+        expect(removeAutomationPoint).toHaveBeenCalledWith('lane-1', 8);
+        expect(pushUndoEntry).toHaveBeenCalledWith(
+            'Delete automation point',
+            expect.any(Function),
+            expect.any(Function)
+        );
+
+        const [, undoFn, redoFn] = vi.mocked(pushUndoEntry).mock.calls[0]!;
+        undoFn();
+        expect(addAutomationPoint).toHaveBeenCalledWith('lane-1', lane.points[0]);
+        redoFn();
+        expect(removeAutomationPoint).toHaveBeenCalledTimes(2);
+    });
+
+    it('should select all points on Ctrl+A and delete them on Delete, doing nothing without a selection', () => {
+        const lane: AutomationLane = {
+            ...defaultProps.lane,
+            points: [
+                { beat: 0, value: 0.2, curve: 'linear', tension: 0 },
+                { beat: 4, value: 0.6, curve: 'linear', tension: 0 },
+            ],
+        };
+        const { container } = render(<AutomationLaneRow {...defaultProps} lane={lane} />);
+        const laneDiv = container.firstChild as HTMLElement;
+
+        fireEvent.keyDown(laneDiv, { key: 'Delete' });
+        expect(deleteSelectedPoints).not.toHaveBeenCalled();
+
+        fireEvent.keyDown(laneDiv, { key: 'a', ctrlKey: true });
+        fireEvent.keyDown(laneDiv, { key: 'Delete' });
+        expect(deleteSelectedPoints).toHaveBeenCalledWith('lane-1', [0, 4]);
+    });
+
+    it('should adjust Y zoom on alt+wheel and ignore plain wheel scrolling', () => {
+        const { container } = render(<AutomationLaneRow {...defaultProps} />);
+        const laneDiv = container.firstChild as HTMLElement;
+
+        fireEvent.wheel(laneDiv, { deltaY: 10 });
+        expect(adjustYZoom).not.toHaveBeenCalled();
+
+        fireEvent.wheel(laneDiv, { deltaY: 10, altKey: true });
+        expect(adjustYZoom).toHaveBeenCalledWith('lane-1', -1);
+
+        fireEvent.wheel(laneDiv, { deltaY: -10, altKey: true });
+        expect(adjustYZoom).toHaveBeenCalledWith('lane-1', 1);
     });
 });

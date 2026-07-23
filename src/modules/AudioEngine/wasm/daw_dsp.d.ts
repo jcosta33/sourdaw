@@ -198,6 +198,7 @@ export declare class ToasterInstance {
     set_pad_dry_routed(pad: number, routed: boolean): void;
     set_pad_param(pad: number, name: string, value: number): void;
     set_param(name: string, value: number): void;
+    set_param_by_id(param_id: number, value: number): void;
 }
 
 export declare function analyze_pitch_wasm(samples: Float32Array, sample_rate: number): string;

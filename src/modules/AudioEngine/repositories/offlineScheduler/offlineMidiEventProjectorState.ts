@@ -51,12 +51,16 @@ export type OfflineChordPitchProjector = (input: {
 
 export type OfflineChordPitchProjectorFactory = () => OfflineChordPitchProjector;
 
+export type OfflineAutomationValueEvaluator = (laneId: string, beat: number) => number | null;
+
 export const offlineMidiEventProjectorState: {
     createProjector: OfflineMidiEventProjectorFactory | null;
     selectProbability: OfflineMidiProbabilitySelector | null;
     createChordPitchProjector: OfflineChordPitchProjectorFactory | null;
+    evaluateAutomationValue: OfflineAutomationValueEvaluator | null;
 } = {
     createProjector: null,
     selectProbability: null,
     createChordPitchProjector: null,
+    evaluateAutomationValue: null,
 };

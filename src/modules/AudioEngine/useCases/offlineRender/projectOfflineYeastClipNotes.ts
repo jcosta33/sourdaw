@@ -79,6 +79,8 @@ export function projectOfflineYeastClipNotes({
             startSamples: endpoints.startSamples,
             endSamples: endpoints.endSamples,
             toasterPadIndex,
+            startBeat: note.startBeat,
+            endBeat: note.startBeat + note.duration,
         };
     });
 }

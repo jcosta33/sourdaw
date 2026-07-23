@@ -1152,6 +1152,14 @@ export class ToasterInstance {
         const len0 = WASM_VECTOR_LEN;
         wasm.toasterinstance_set_param(this.__wbg_ptr, ptr0, len0, value);
     }
+    /**
+     * Set an automatable global parameter without string marshaling.
+     * @param {number} param_id
+     * @param {number} value
+     */
+    set_param_by_id(param_id, value) {
+        wasm.toasterinstance_set_param_by_id(this.__wbg_ptr, param_id, value);
+    }
 }
 if (Symbol.dispose) ToasterInstance.prototype[Symbol.dispose] = ToasterInstance.prototype.free;
 
