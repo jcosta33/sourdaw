@@ -298,6 +298,55 @@ describe('Arpeggiator', () => {
         ]);
     });
 
+    it('keeps an identified same-pitch voice held when its newer peer releases first', () => {
+        arp.setParam('rate_denom', 1024);
+        const firstBlock: MidiEvent[] = [];
+        arp.processMidi(
+            [
+                {
+                    timeSamples: 0,
+                    noteInstanceId: 'source-first',
+                    kind: { type: 'noteOn', channel: 0, note: 60, velocity: 100 },
+                },
+                {
+                    timeSamples: 0,
+                    noteInstanceId: 'source-second',
+                    kind: { type: 'noteOn', channel: 0, note: 60, velocity: 100 },
+                },
+            ],
+            firstBlock,
+            { ...transport, blockStartSamples: 0, blockEndSamples: 128 }
+        );
+
+        const afterSecondRelease: MidiEvent[] = [];
+        arp.processMidi(
+            [
+                {
+                    timeSamples: 128,
+                    noteInstanceId: 'source-second',
+                    kind: { type: 'noteOff', channel: 0, note: 60 },
+                },
+            ],
+            afterSecondRelease,
+            { ...transport, blockStartSamples: 128, blockEndSamples: 256 }
+        );
+        expect(afterSecondRelease.some(isNoteOn)).toBe(true);
+
+        const afterFirstRelease: MidiEvent[] = [];
+        arp.processMidi(
+            [
+                {
+                    timeSamples: 256,
+                    noteInstanceId: 'source-first',
+                    kind: { type: 'noteOff', channel: 0, note: 60 },
+                },
+            ],
+            afterFirstRelease,
+            { ...transport, blockStartSamples: 256, blockEndSamples: 384 }
+        );
+        expect(afterFirstRelease.some(isNoteOn)).toBe(false);
+    });
+
     it('selectStepNotes covers down, upDown, downUp, and order modes via reflectedIndex', () => {
         const input: MidiEvent[] = [
             { timeSamples: 0, kind: { type: 'noteOn', channel: 0, note: 60, velocity: 100 } },

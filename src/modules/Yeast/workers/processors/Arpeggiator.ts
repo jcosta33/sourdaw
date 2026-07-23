@@ -29,6 +29,7 @@ type HeldNote = {
     velocity: number;
     pressedOrder: number;
     trackId?: string;
+    noteInstanceId?: string;
 };
 
 type ArpMode = 'up' | 'down' | 'upDown' | 'downUp' | 'random' | 'order' | 'chord' | 'pattern';
@@ -90,13 +91,19 @@ export class Arpeggiator extends BaseMidiProcessor {
         // Handle incoming Note On/Off to update held notes
         for (const event of input) {
             if (event.kind.type === 'noteOn') {
-                this.addHeldNote(event.kind.channel, event.kind.note, event.kind.velocity, event.trackId);
+                this.addHeldNote(
+                    event.kind.channel,
+                    event.kind.note,
+                    event.kind.velocity,
+                    event.trackId,
+                    event.noteInstanceId
+                );
                 if (this.restartMode === 'restartOnNote') {
                     this.stepIndex = 0;
                     this.lastStepTimeSamples = event.timeSamples;
                 }
             } else if (event.kind.type === 'noteOff') {
-                this.removeHeldNote(event.kind.channel, event.kind.note, event.trackId);
+                this.removeHeldNote(event.kind.channel, event.kind.note, event.trackId, event.noteInstanceId);
             } else {
                 // Pass through non-note events
                 output.push(event);
@@ -329,14 +336,30 @@ export class Arpeggiator extends BaseMidiProcessor {
 
     // ── Internal ─────────────────────────────────────────────────────────
 
-    private addHeldNote(channel: number, note: number, velocity: number, trackId?: string): void {
-        // Avoid duplicates
-        if (this.held.some((h) => h.channel === channel && h.note === note && h.trackId === trackId)) {
+    private addHeldNote(
+        channel: number,
+        note: number,
+        velocity: number,
+        trackId?: string,
+        noteInstanceId?: string
+    ): void {
+        const isDuplicate = this.held.some((heldNote) => {
+            if (noteInstanceId !== undefined) {
+                return heldNote.trackId === trackId && heldNote.noteInstanceId === noteInstanceId;
+            }
+            return (
+                heldNote.trackId === trackId &&
+                heldNote.channel === channel &&
+                heldNote.note === note &&
+                heldNote.noteInstanceId === undefined
+            );
+        });
+        if (isDuplicate) {
             return;
         }
 
         this.pressCounter++;
-        const hn: HeldNote = { channel, note, velocity, pressedOrder: this.pressCounter, trackId };
+        const hn: HeldNote = { channel, note, velocity, pressedOrder: this.pressCounter, trackId, noteInstanceId };
         this.held.push(hn);
 
         if (this.latchEnabled) {
@@ -346,9 +369,19 @@ export class Arpeggiator extends BaseMidiProcessor {
         }
     }
 
-    private removeHeldNote(channel: number, note: number, trackId?: string): void {
+    private removeHeldNote(channel: number, note: number, trackId?: string, noteInstanceId?: string): void {
         // Audio-thread: in-place removal avoids allocating a new array
-        const idx = this.held.findIndex((h) => h.channel === channel && h.note === note && h.trackId === trackId);
+        const idx = this.held.findIndex((heldNote) => {
+            if (noteInstanceId !== undefined) {
+                return heldNote.trackId === trackId && heldNote.noteInstanceId === noteInstanceId;
+            }
+            return (
+                heldNote.trackId === trackId &&
+                heldNote.channel === channel &&
+                heldNote.note === note &&
+                heldNote.noteInstanceId === undefined
+            );
+        });
         if (idx !== -1) {
             this.held.splice(idx, 1);
         }

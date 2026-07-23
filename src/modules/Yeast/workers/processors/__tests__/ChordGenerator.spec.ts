@@ -86,11 +86,14 @@ describe('ChordGenerator', () => {
     });
 
     it('cancels strummed tones whose realtime source releases before they start', () => {
-        cg.setParam('strum_ms', 10);
+        cg.setParam('strum_ms', 1);
         const output: MidiEvent[] = [];
-        cg.processMidi([noteOnAt(0, 'tap')], output, { ...transport, blockStartSamples: 0, blockEndSamples: 128 });
-        cg.processMidi([noteOffAt(200, 'tap')], output, { ...transport, blockStartSamples: 128, blockEndSamples: 256 });
-        cg.processMidi([], output, { ...transport, blockStartSamples: 256, blockEndSamples: 1000 });
+        cg.processMidi([noteOnAt(0, 'tap'), noteOffAt(20, 'tap')], output, {
+            ...transport,
+            blockStartSamples: 0,
+            blockEndSamples: 128,
+        });
+        cg.processMidi([], output, { ...transport, blockStartSamples: 128, blockEndSamples: 256 });
 
         expect(output.filter(isNoteOn).map((event) => event.kind.note)).toEqual([60]);
         expect(output.filter(isNoteOff).map((event) => event.kind.note)).toEqual([60]);

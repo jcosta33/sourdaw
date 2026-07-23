@@ -112,7 +112,7 @@ export class ChordGenerator extends BaseMidiProcessor {
                         kind: { type: 'noteOn', channel: event.kind.channel, note, velocity: event.kind.velocity },
                     };
                     generatedNotes.push(generated);
-                    if (generated.timeSamples < blockEnd) {
+                    if (offset === 0 && generated.timeSamples < blockEnd) {
                         output.push(generated);
                     } else {
                         this.scheduled.push(generated);
