@@ -177,6 +177,7 @@ multi-bus / return-heavy session; small sessions rarely hit it.
 ---
 
 ### FX-3 — The Routing Matrix panel is a dead control: toggles change no audio — **Major**
+**Status: FIXED in #728** — the matrix now reads the real routing read-model (`track.sends` / `track.outputId`) and toggles dispatch the Arrangement `setSend`/`removeSend`/`setTrackOutput` use cases; the dead `routingMatrixStore` and `toggleRoutingConnection` are removed (per the #716 decision to wire, not retire).
 **Evidence.** `toggleRoutingConnection.ts` only mutates `routingMatrixStore` (`.set({ connections })`);
 it never calls `setSend`/`setTrackOutput`/any engine API. Whole-scope search for consumers of the store's
 connections: `grep -rln routingMatrixStore src/` → only `routingMatrixStore.ts`, `stores/index.ts`,
