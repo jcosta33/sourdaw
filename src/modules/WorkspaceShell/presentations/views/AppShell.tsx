@@ -418,10 +418,26 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
     // shows the launch screen; initialization derives the exit animation and the
     // existing timer unmounts it after 700ms.
     const [showLaunch, setShowLaunch] = useState(false);
-    const launchExiting = showLaunch && project.initialized && !project.loading;
+    // The launch-overlay exit must be MONOTONIC. `project.initialized` is a
+    // transient projectStore flag (stripped from the CRDT, reconstructed on
+    // every re-hydrate the projection bridge fires as a template loads); under
+    // load a template can finish loading — tracks and devices all live behind
+    // the overlay — yet the overlay stays wedged because `initialized`
+    // momentarily reads false again, or a store notification lands stale. The
+    // old `showLaunch && initialized && !loading` derivation let that single
+    // blip re-block the launch screen forever (intermittent template-launch
+    // hang under load). Latch "ready" the first time the project is ready under
+    // the launch screen so a later blip cannot un-exit it, and never re-reveal
+    // the launch screen once a project has been readied.
+    const [launchReady, setLaunchReady] = useState(false);
+    const projectReady = project.initialized && !project.loading;
+    const launchExiting = showLaunch && launchReady;
 
-    if (!project.initialized && !project.loading && !showLaunch) {
+    if (!project.initialized && !project.loading && !showLaunch && !launchReady) {
         setShowLaunch(true);
+    }
+    if (showLaunch && projectReady && !launchReady) {
+        setLaunchReady(true);
     }
 
     useEffect(() => {
