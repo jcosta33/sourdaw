@@ -1,0 +1,42 @@
+src/modules/Arrangement/useCases/clipEditing/executeSelectedTimeRangeDeletion.ts
+  s_c2fca615e81f34::t_81032e25e4b74d 1058
+  s_c2fca615e81f34::t_6c533a5a7544a3 136-139,464
+  s_c2fca615e81f34::t_4beb6ee6ff0989 70-71,1011
+  s_c2fca615e81f34::t_e86476b9431caa 1040-1044
+  s_c2fca615e81f34::t_e3e41438321687 558
+  s_c2fca615e81f34::t_0a2e1e2e02a223 897-901,915-923,925-927,973-980,982-984
+  s_c2fca615e81f34::t_2c82c1fd97f07e 5-6,18,36-39,68,807,958,961,987,1015-1016,1021-1022,1026,1103,1130
+  s_c2fca615e81f34::t_6d447be775d1ae 1-4,7-17,19-35,40-67,69,72-135,140-351,353-463,465-557,559-710,712-806,808-896,902-914,924,928-957,959-960,962-972,981,985-986,988-1010,1012-1014,1017-1020,1023-1025,1027-1039,1045-1057,1059-1064,1066-1102,1104-1129
+  s_c2fca615e81f34::t_612d019a87f100 352,711,1065
+src/modules/Arrangement/useCases/clipEditing/__tests__/deleteTimeRange.spec.ts
+  s_c2fca615e81f34::t_866d2457cb037b 1,3,10-11,14-62,65-77,81-122,124,126-141,146-180,182,184,186-187,189-198,200-201,203-205,208-241,246-250,252-254,258-271,273-275,278-281,283-301,303-304,306-321,323,325,328,335,337-353
+  s_c2fca615e81f34::t_612d019a87f100 4,6
+  s_c2fca615e81f34::t_e86476b9431caa 142,185,202,242,251,255
+src/modules/Arrangement/useCases/clipEditing/deleteTimeRange.ts
+  s_c2fca615e81f34::t_ca04ed0b6df93f 1,3,6-12,16-17,21-22,26-31,33-34
+src/modules/Arrangement/useCases/clipEditing/__tests__/executeSelectedTimeRangeDeletion.spec.ts
+  s_c2fca615e81f34::t_f8d38a6f5abc09 1,3,5,9-12,14-30,32-58,60-94,97,103-105,108-112,114,120,126-128,140-329,331-339,341-350,352-382,384-395,397-413,416-513,622-734,736-739,741-756
+  s_c2fca615e81f34::t_e86476b9431caa 330,340,383,396
+  s_c2fca615e81f34::t_6c533a5a7544a3 735,740
+  s_c2fca615e81f34::t_612d019a87f100 4,31
+  s_c2fca615e81f34::t_2c82c1fd97f07e 2,6-8,13,59,95-96,98-102,106-107,113,115-119,121-125,129-139,757-758
+  s_c2fca615e81f34::t_70ffed33d1af98 414-415
+  s_c2fca615e81f34::t_cc5ff673ce4129 514-621
+  s_c2fca615e81f34::t_81032e25e4b74d 351
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "563b78e5e21a2fa0e9480e0aff3f6925ff91ceb0",
+  "prompts": {},
+  "sessions": {
+    "s_c2fca615e81f34": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f74e9-e1c5-7142-85d2-4c577b3973c0",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
