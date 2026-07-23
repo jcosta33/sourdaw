@@ -2,7 +2,7 @@ import fs from 'fs';
 import path from 'path';
 
 import ts from 'typescript';
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 
 // Helper to evaluate an AudioWorklet script and extract its class
 function loadProcessorClass(filePath: string, className: string) {
@@ -158,11 +158,11 @@ describe('ProofChamberProcessor parameter automation', () => {
         const ProcessorClass = loadProcessorClass('../proofChamberProcessor.ts', 'ProofChamberProcessor');
         const processor = new ProcessorClass();
         const setParam = vi.fn();
-        processor._instance = { set_param: setParam };
+        processor._instance = { set_param_by_id: setParam };
         processor.port.onmessage({
             data: {
                 type: 'paramAutomation',
-                name: 'mix',
+                paramId: 0,
                 segments: [{ startFrame: 0, endFrame: 1_000, startValue: 0.2, endValue: 0.8 }],
             },
         });
@@ -172,9 +172,9 @@ describe('ProofChamberProcessor parameter automation', () => {
         processor._applyParamAutomation(1_000);
 
         expect(setParam.mock.calls).toEqual([
-            ['mix', 0.2],
-            ['mix', 0.5],
-            ['mix', 0.8],
+            [0, 0.2],
+            [0, 0.5],
+            [0, 0.8],
         ]);
     });
 });

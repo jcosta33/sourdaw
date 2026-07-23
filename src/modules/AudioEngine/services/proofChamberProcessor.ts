@@ -22,16 +22,16 @@ type ParamAutomationSegment = {
 };
 
 type ParamAutomationSchedule = {
-    name: string;
+    paramId: number;
     segments: ParamAutomationSegment[];
     segmentIndex: number;
-    lastValue: number;
+    lastValue: number | undefined;
 };
 
 type ProofChamberMsg =
     | { type: 'init'; wasmBytes: BufferSource }
     | { type: 'param'; name: string; value: number }
-    | { type: 'paramAutomation'; name: string; segments: ParamAutomationSegment[] }
+    | { type: 'paramAutomation'; paramId: number; segments: ParamAutomationSegment[] }
     | { type: 'bypass'; bypassed: boolean };
 
 class ProofChamberProcessor extends AudioWorkletProcessor {
@@ -55,7 +55,7 @@ class ProofChamberProcessor extends AudioWorkletProcessor {
                 } else if (msg.type === 'bypass') {
                     this._bypassed = msg.bypassed;
                 } else if (msg.type === 'paramAutomation' && this._instance !== null && !this._faulted) {
-                    this._setParamAutomation(msg.name, msg.segments);
+                    this._setParamAutomation(msg.paramId, msg.segments);
                 } else if (msg.type === 'param' && this._instance !== null && !this._faulted) {
                     this._instance.set_param(msg.name, msg.value);
                 }
@@ -82,12 +82,12 @@ class ProofChamberProcessor extends AudioWorkletProcessor {
         this.port.postMessage({ type: 'ready', latency: this._instance.get_latency() });
     }
 
-    _setParamAutomation(name: string, segments: ParamAutomationSegment[]): void {
-        if (name.length === 0 || segments.length === 0) {
+    _setParamAutomation(paramId: number, segments: ParamAutomationSegment[]): void {
+        if (!Number.isInteger(paramId) || paramId < 0 || paramId > 1 || segments.length === 0) {
             return;
         }
-        const schedule = { name, segments, segmentIndex: 0, lastValue: Number.NaN };
-        const existingIndex = this._paramAutomation.findIndex((candidate) => candidate.name === name);
+        const schedule: ParamAutomationSchedule = { paramId, segments, segmentIndex: 0, lastValue: undefined };
+        const existingIndex = this._paramAutomation.findIndex((candidate) => candidate.paramId === paramId);
         if (existingIndex >= 0) {
             this._paramAutomation[existingIndex] = schedule;
         } else {
@@ -117,7 +117,7 @@ class ProofChamberProcessor extends AudioWorkletProcessor {
                 value = segment.startValue + (segment.endValue - segment.startValue) * fraction;
             }
             if (value !== schedule.lastValue) {
-                inst.set_param(schedule.name, value);
+                inst.set_param_by_id(schedule.paramId, value);
                 schedule.lastValue = value;
             }
         }

@@ -5764,6 +5764,7 @@ dependencies = [
 name = "proof-chamber"
 version = "0.1.0"
 dependencies = [
+ "assert_no_alloc",
  "js-sys",
  "serde",
  "serde_json",

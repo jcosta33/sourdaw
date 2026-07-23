@@ -95,7 +95,14 @@ describe('createProofChamberNode', () => {
 
         node.scheduleParam('mix', segments);
 
-        expect(postMessage).toHaveBeenCalledWith({ type: 'paramAutomation', name: 'mix', segments });
+        expect(node.acceptsScheduledParam('mix')).toBe(true);
+        expect(node.acceptsScheduledParam('constructor')).toBe(false);
+        expect(postMessage).toHaveBeenCalledWith({ type: 'paramAutomation', paramId: 0, segments });
+
+        postMessage.mockClear();
+        node.scheduleParam('constructor', segments);
+
+        expect(postMessage).not.toHaveBeenCalled();
     });
 
     it('should forward setBypass as a bypass message', async () => {
