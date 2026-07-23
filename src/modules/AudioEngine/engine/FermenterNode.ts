@@ -10,6 +10,30 @@ import { createReadyHandshake, ensureWorkletRegistered, fetchWasmBinary } from '
 import fermenterProcessorUrl from '../services/fermenterProcessor.ts?worker&url';
 
 const DEFAULT_WASM_URL = '/wasm/daw-dsp/daw_dsp_bg.wasm';
+const FERMENTER_AUTOMATION_PARAM_IDS: Readonly<Record<string, number>> = {
+    oscLevel: 0,
+    filterCutoff: 1,
+    filterResonance: 2,
+    lfoRate: 3,
+    lfoFilterAmount: 4,
+    lfoPitchAmount: 5,
+    filterEnvAmount: 6,
+    msegToFilter: 7,
+    unisonSpread: 8,
+    fmLevel2: 9,
+    fmFeedback: 10,
+    noiseLevel: 11,
+    grainDensity: 12,
+    grainSize: 13,
+    grainSpray: 14,
+};
+
+type OfflineAutomationSegment = {
+    startFrame: number;
+    endFrame: number;
+    startValue: number;
+    endValue: number;
+};
 
 export type FermenterNodeResult = {
     workletNode: AudioWorkletNode;
@@ -17,6 +41,8 @@ export type FermenterNodeResult = {
     noteOff: (note: number, sampleFrame?: number) => void;
     allNotesOff: () => void;
     setParam: (name: string, value: number | number[], sampleFrame?: number) => void;
+    acceptsScheduledParam?: (name: string) => boolean;
+    scheduleParam?: (name: string, segments: readonly OfflineAutomationSegment[]) => void;
     setPatch: (patch: Record<string, unknown>) => void;
     setBypass: (bypassed: boolean) => void;
     onTelemetry: (callback: (data: { peakL: number; peakR: number; scopeBuffer: Float32Array }) => void) => void;
@@ -98,6 +124,30 @@ export async function createFermenterNode(ctx: BaseAudioContext, wasmUrl?: strin
         setParam(name: string, value: number | number[], sampleFrame?: number) {
             if (Array.isArray(value) || Number.isFinite(value)) {
                 node.port.postMessage({ type: 'param', name, value, sampleFrame });
+            }
+        },
+        acceptsScheduledParam(name: string) {
+            return Object.hasOwn(FERMENTER_AUTOMATION_PARAM_IDS, name);
+        },
+        scheduleParam(name: string, segments: readonly OfflineAutomationSegment[]) {
+            const paramId = Object.hasOwn(FERMENTER_AUTOMATION_PARAM_IDS, name)
+                ? FERMENTER_AUTOMATION_PARAM_IDS[name]
+                : undefined;
+            const valid =
+                paramId !== undefined &&
+                Number.isInteger(paramId) &&
+                segments.length > 0 &&
+                segments.every(
+                    (segment) =>
+                        Number.isInteger(segment.startFrame) &&
+                        Number.isInteger(segment.endFrame) &&
+                        segment.startFrame >= 0 &&
+                        segment.endFrame >= segment.startFrame &&
+                        Number.isFinite(segment.startValue) &&
+                        Number.isFinite(segment.endValue)
+                );
+            if (valid) {
+                node.port.postMessage({ type: 'paramAutomation', paramId, segments });
             }
         },
         setPatch(patch: Record<string, unknown>) {

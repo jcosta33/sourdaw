@@ -55,9 +55,9 @@ describe('Automation Handlers', () => {
     it('handleAddAutomationLane should delegate to addAutomationLane', () => {
         handleAddAutomationLane.execute({
             type: 'addAutomationLane',
-            payload: { trackId: 't1', parameterId: 'gain', parameterName: 'Gain' },
+            payload: { trackId: 't1', parameterId: 'gain', parameterName: 'Gain', laneId: 'lane-1' },
         });
-        expect(addAutomationLane).toHaveBeenCalledWith('t1', 'gain', 'Gain');
+        expect(addAutomationLane).toHaveBeenCalledWith('t1', 'gain', 'Gain', 'lane-1');
     });
 
     it('handleAddAutomationPoint should delegate to addAutomationPoint', () => {

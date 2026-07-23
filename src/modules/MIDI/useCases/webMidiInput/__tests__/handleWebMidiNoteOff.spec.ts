@@ -391,4 +391,59 @@ describe('handleWebMidiNoteOff', () => {
 
         expect(channelToNote.has(3)).toBe(false);
     });
+    /// Regression (M-143): played velocity was discarded — every recorded
+    /// note was written with velocity 100.
+    it('records the played velocity instead of hardcoded 100', async () => {
+        const create_midi_note = vi.fn(() => ({ id: 'n', pitch: 60, startBeat: 4, duration: 2, velocity: 87 }));
+        const fn = handleWebMidiNoteOff._factory(make_dependencies({ createMidiNote: create_midi_note }));
+        activeNotes.set(createWebMidiNoteKey(0, 60), {
+            channel: 0,
+            note: 60,
+            velocity: 87,
+            trackId: 'track-1',
+            instrumentTrackId: 'track-1',
+            startTime: 1,
+            startBeat: 4,
+        });
+
+        await fn(0, 60, 0);
+
+        expect(create_midi_note).toHaveBeenCalledWith(60, 4, 2, 87);
+    });
+
+    /// Regression (M-143): the recorded start beat was written
+    /// timeline-absolute into the clip-relative store, so overdubbing into
+    /// a clip not starting at beat 0 placed notes clip.startBeat late.
+    it('stores recorded notes relative to the recording clip start', async () => {
+        const create_midi_note = vi.fn(() => ({ id: 'n', pitch: 60, startBeat: 2, duration: 2, velocity: 100 }));
+        const fn = handleWebMidiNoteOff._factory(
+            make_dependencies({
+                createMidiNote: create_midi_note,
+                getTrackStoreState: () => ({
+                    tracks: [
+                        {
+                            id: 'track-1',
+                            armed: true,
+                            devices: [],
+                            clips: [{ id: 'clip-1', type: 'midi', startBeat: 8, endBeat: 16 }],
+                        },
+                    ],
+                    selectedTrackId: 'track-1',
+                }),
+            })
+        );
+        activeNotes.set(createWebMidiNoteKey(0, 60), {
+            channel: 0,
+            note: 60,
+            velocity: 100,
+            trackId: 'track-1',
+            instrumentTrackId: 'track-1',
+            startTime: 1,
+            startBeat: 10, // timeline-absolute playhead beat at note-on
+        });
+
+        await fn(0, 60, 0);
+
+        expect(create_midi_note).toHaveBeenCalledWith(60, 2, 2, 100);
+    });
 });

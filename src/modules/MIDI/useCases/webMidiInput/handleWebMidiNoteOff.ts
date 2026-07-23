@@ -182,9 +182,20 @@ export const handleWebMidiNoteOff = inject(midiMessageHandlerDependencies)((deps
             const context = audioEngine.context;
             const totalLatencySec = (context.baseLatency || 0) + (context.outputLatency || 0) + trackLatencySec;
             const offsetBeats = secondsToBeats(totalLatencySec, tempo);
-            const compensatedStartBeat = Math.max(0, noteData.startBeat - offsetBeats);
+            // noteData.startBeat is timeline-absolute (playhead at note-on);
+            // the store is clip-relative, so subtract the recording clip's
+            // media origin or notes land clip.startBeat late (M-143).
+            const recordingClip = track?.clips.find((candidate) => candidate.id === clipId);
+            const clipMediaOrigin = recordingClip ? recordingClip.startBeat - (recordingClip.midiOffsetBeats ?? 0) : 0;
+            const compensatedStartBeat = Math.max(0, noteData.startBeat - offsetBeats - clipMediaOrigin);
 
-            const midiNote = deps.createMidiNote(note, compensatedStartBeat, Math.max(durationBeats, 0.0625), 100);
+            // Preserve the played velocity (was hardcoded 100, M-143).
+            const midiNote = deps.createMidiNote(
+                note,
+                compensatedStartBeat,
+                Math.max(durationBeats, 0.0625),
+                noteData.velocity ?? 100
+            );
 
             if (getMpeEnabled()) {
                 if (noteData.pressure !== undefined) {

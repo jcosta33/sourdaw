@@ -262,6 +262,7 @@ type RunScheduleInput = {
     removeClips?: boolean;
     probability?: number;
     probabilityCorpus?: boolean;
+    regionStartBeat?: number;
 };
 
 async function runSchedule({
@@ -272,6 +273,7 @@ async function runSchedule({
     removeClips = false,
     probability,
     probabilityCorpus = false,
+    regionStartBeat = 0,
 }: RunScheduleInput = {}): Promise<PendingWorkletEvent[]> {
     const offlineCtx = makeOfflineCtx();
     const track = makeMidiTrack();
@@ -339,7 +341,7 @@ async function runSchedule({
         pendingWorkletEvents,
         allTracks: [track],
         deviceEntriesByTrack,
-        regionStartBeat: 0,
+        regionStartBeat,
     });
 
     return pendingWorkletEvents;
@@ -355,6 +357,69 @@ describe('scheduleTrackClips — MIDI plugin-delay compensation', () => {
         mocks.projection.velocity = null;
         mocks.projection.yeastTranspose = 0;
         mocks.shouldPlayMidiEvent.mockImplementation(({ probabilityPercent }) => probabilityPercent > 0);
+    });
+
+    it('threads a nonzero render-region offset into automation scheduling', async () => {
+        await runSchedule({ regionStartBeat: 128 });
+
+        const call = mocks.scheduleTrackAutomation.mock.calls.at(-1);
+        expect(call?.at(-3)).toBe(64);
+        const projectBeat = call?.at(-2) as ((beat: number) => number) | undefined;
+        expect(projectBeat?.(130)).toBe(65);
+        expect(call?.at(-1)).toBe(48_000);
+    });
+
+    it('keeps canonical Toaster pad indexes when earlier children are muted or disabled', async () => {
+        const parent = TrackDummy.create({
+            id: 'toaster-parent',
+            kind: 'midi',
+            devices: [{ id: 'toaster-1', name: 'Toaster', type: 'toaster', bypassed: false, parameterValues: {} }],
+        });
+        const children = ['muted-pad', 'disabled-pad', 'active-pad'].map((id, index) => {
+            const child = makeMidiTrack();
+            child.id = id;
+            child.parentId = parent.id;
+            child.muted = index === 0;
+            child.disabled = index === 1;
+            child.clips[0] = { ...child.clips[0]!, id: `${id}-clip`, trackId: id };
+            return child;
+        });
+        const midi = makeMidi();
+        midi.notesByClipId = Object.fromEntries(
+            children.map((child) => [
+                child.clips[0]!.id,
+                [{ id: `${child.id}-note`, pitch: 60, startBeat: 1, duration: 1, velocity: 100 }],
+            ])
+        );
+        const entry = makeInstrumentEntry();
+        entry.deviceType = 'toaster';
+        const pendingWorkletEvents: PendingWorkletEvent[] = [];
+
+        await scheduleTrackClips({
+            offlineCtx: makeOfflineCtx(),
+            track: parent,
+            midi,
+            trackInputNode: {} as GainNode,
+            trackGainNode: {} as GainNode,
+            trackPanNode: {} as StereoPannerNode,
+            destination: {} as AudioNode,
+            durationSeconds: 60,
+            defaultTempo: 120,
+            changes: [],
+            projections: {
+                projectMidiEvents,
+                projectPpqEndpoints,
+                processYeastMidi,
+                selectMidiEventProbability: mocks.shouldPlayMidiEvent,
+            },
+            pendingWorkletEvents,
+            allTracks: [parent, ...children],
+            deviceEntriesByTrack: new Map([[parent.id, [entry]]]),
+        });
+
+        const noteOns = pendingWorkletEvents.filter((event) => event.type === 'on');
+        expect(noteOns).toHaveLength(1);
+        expect(noteOns[0]?.toasterPadIndex).toBe(2);
     });
 
     it('shifts instrument note on/off times by the track compensation delay', async () => {

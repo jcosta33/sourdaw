@@ -2,17 +2,20 @@ import { render, screen, fireEvent } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { DeviceParameterControl } from '../DeviceParameterControl';
+import { TrackAutomationSection } from '../TrackAutomationSection';
 
 import type { DeviceParameterView } from '../../../../models/PluginDescriptorViewTypes';
-import type { Device } from '../../../../models/TrackViewTypes';
+import type { Device, Track } from '../../../../models/TrackViewTypes';
 
 // Mock external dependencies
 const mockSetDeviceParameter = vi.fn();
+const mockGetBuiltinPlugins = vi.fn<() => unknown[]>(() => []);
 vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => {
     const actual = await importOriginal<typeof import('#/modules/Arrangement/useCases')>();
     return {
         ...actual,
         setDeviceParameter: (...args: unknown[]) => mockSetDeviceParameter(...args),
+        getBuiltinPlugins: () => mockGetBuiltinPlugins(),
     };
 });
 
@@ -91,6 +94,15 @@ vi.mock('#/modules/ControlSurface/presentations/views', () => ({
         );
     },
 }));
+
+function useAutomationLanes(lanes: Array<{ id: string; trackId: string; parameterId: string; clipId?: string }>): void {
+    mockUseStore.mockImplementation((store: unknown, defaultState: unknown) => {
+        if (typeof store === 'object' && store !== null && 'id' in store && store.id === 'automation') {
+            return { lanes };
+        }
+        return defaultState;
+    });
+}
 
 describe('DeviceParameterControl', () => {
     const mockDevice: Device = {
@@ -207,23 +219,70 @@ describe('DeviceParameterControl', () => {
     it('should call addAutomationLane when automation button is clicked without active lane', () => {
         render(<DeviceParameterControl param={mockParam} device={mockDevice} trackId="track-1" />);
         fireEvent.click(screen.getByLabelText(/Automate Gain/i));
-        expect(mockAddAutomationLane).toHaveBeenCalledWith('track-1', 'gain', 'Gain');
+        expect(mockAddAutomationLane).toHaveBeenCalledWith('track-1', 'device-1:gain', 'Gain');
     });
 
     it('should call removeAutomationLane when automation button is clicked with active lane', () => {
-        mockUseStore.mockImplementation((store: any, defaultState: any) => {
-            if (store.id === 'automation') {
-                return {
-                    lanes: [
-                        { id: 'lane-1', trackId: 'track-1', parameterId: 'gain', parameterName: 'Gain', visible: true },
-                    ],
-                };
-            }
-            return defaultState;
-        });
+        useAutomationLanes([{ id: 'lane-1', trackId: 'track-1', parameterId: 'device-1:gain' }]);
         render(<DeviceParameterControl param={mockParam} device={mockDevice} trackId="track-1" />);
         fireEvent.click(screen.getByLabelText(/Automate Gain/i));
         expect(mockRemoveAutomationLane).toHaveBeenCalledWith('lane-1');
+    });
+
+    it('adds track automation instead of removing a matching clip lane', () => {
+        useAutomationLanes([{ id: 'clip-lane', trackId: 'track-1', clipId: 'clip-1', parameterId: 'device-1:gain' }]);
+
+        render(<DeviceParameterControl param={mockParam} device={mockDevice} trackId="track-1" />);
+        fireEvent.click(screen.getByLabelText(/Automate Gain/i));
+
+        expect(mockRemoveAutomationLane).not.toHaveBeenCalled();
+        expect(mockAddAutomationLane).toHaveBeenCalledWith('track-1', 'device-1:gain', 'Gain');
+    });
+
+    it('creates Inspector menu automation with the stable id of a legacy-named built-in', () => {
+        mockGetBuiltinPlugins.mockReturnValue([
+            { id: 'builtin-crumbs', name: 'Crumbs', parameters: [{ id: 'cutoff', name: 'Cutoff', automatable: true }] },
+        ]);
+        const track: Track = {
+            id: 'track-1',
+            name: 'Test Track',
+            kind: 'audio',
+            muted: false,
+            soloed: false,
+            armed: false,
+            gain: 1,
+            pan: 0,
+            color: '#ff0000',
+            clips: [],
+            devices: [{ id: 'device-1', name: 'Crumbs', type: 'builtin-crumbs', bypassed: false, parameterValues: {} }],
+            midiFx: [],
+            sends: [],
+            frozen: false,
+            freezeState: { status: 'unfrozen' },
+            parentId: null,
+            collapsed: false,
+            inputMonitoring: 'auto',
+            hidden: false,
+            disabled: false,
+            height: 100,
+            outputId: 'master',
+            automationMode: 'read',
+            groupId: null,
+            soloSafe: false,
+            notes: '',
+            inputId: null,
+            activeAlternativeId: 'alt-1',
+            alternatives: [],
+            vcaGroupId: null,
+            midiOutputTrackId: null,
+            followChordTrack: false,
+        };
+        render(<TrackAutomationSection track={track} />);
+
+        fireEvent.click(screen.getByLabelText('Add automation lane'));
+        fireEvent.click(screen.getByRole('menuitem', { name: 'Cutoff' }));
+
+        expect(mockAddAutomationLane).toHaveBeenCalledWith('track-1', 'device-1:cutoff', 'Crumbs: Cutoff');
     });
 
     it('should not render automation button for non-automatable parameters', () => {

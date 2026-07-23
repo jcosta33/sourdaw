@@ -5,9 +5,11 @@
   "version": "0.1.0",
   "files": [
     "daw_dsp_bg.wasm",
-    "daw_dsp.js"
+    "daw_dsp.js",
+    "daw_dsp.d.ts"
   ],
   "main": "daw_dsp.js",
+  "types": "daw_dsp.d.ts",
   "sideEffects": [
     "./snippets/*"
   ]

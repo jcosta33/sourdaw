@@ -89,6 +89,8 @@ export { duplicateClipNotes } from './midiNoteCrud/duplicateClipNotes';
 export { getNotesForClip } from './midiNoteCrud/getNotesForClip';
 export { migrateAbsoluteMidiNotes } from './midiNoteCrud/migrateAbsoluteMidiNotes';
 export { moveMidiNote } from './midiNoteCrud/moveMidiNote';
+export { prepareClipMidiShiftTransaction } from './midiNoteCrud/prepareClipMidiShiftTransaction';
+export { prepareMidiTimeShiftTransaction } from './midiNoteCrud/prepareMidiTimeShiftTransaction';
 export { removeMidiNote } from './midiNoteCrud/removeMidiNote';
 export { resizeMidiNote } from './midiNoteCrud/resizeMidiNote';
 export { setNoteProbability } from './midiNoteCrud/setNoteProbability';

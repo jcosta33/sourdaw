@@ -74,7 +74,7 @@ describe('moveClip', () => {
         moveClip('c1', 't1', 5);
 
         // delta = 5 - 0 = 5
-        expect(mocks.shiftClipMidiNotes).toHaveBeenCalledWith('c1', 5);
+        expect(mocks.shiftClipMidiNotes).not.toHaveBeenCalled();
     });
 
     it('shifts automation when moving', () => {
@@ -98,7 +98,7 @@ describe('moveClip', () => {
         // Automation delta should be 10 - 0 = 10.
         moveClip('c1', 't1', 10, 0);
 
-        expect(mocks.shiftClipMidiNotes).toHaveBeenCalledWith('c1', 8);
+        expect(mocks.shiftClipMidiNotes).not.toHaveBeenCalled();
         expect(mocks.shiftClipAutomation).toHaveBeenCalledWith('c1', 10);
     });
 

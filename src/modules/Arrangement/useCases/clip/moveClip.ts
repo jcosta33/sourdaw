@@ -1,5 +1,4 @@
 import { shiftClipAutomation } from '#/modules/Automation/useCases';
-import { shiftClipMidiNotes } from '#/modules/MIDI/useCases';
 
 import { type Clip } from '../../models/Track';
 import { getTrackState } from '../../repositories/track/getTrackState';
@@ -52,9 +51,8 @@ export function moveClip(clipId: string, targetTrackId: string, startBeat: numbe
         shiftClipAutomation(clipId, automationDelta);
     }
 
-    // MIDI: shift by the total delta from the clip's current position (preview no longer shifts incrementally)
-    const midiDelta = startBeat - oldStartBeat;
-    if (midiDelta !== 0) {
-        shiftClipMidiNotes(clipId, midiDelta);
-    }
+    // MIDI: no shift — notes are stored clip-relative (playback position is
+    // clip.startBeat + note.startBeat - midiOffsetBeats), so they follow the
+    // clip's rectangle automatically. Shifting them here double-moved every
+    // note on every drag (re-validation finding, ledger M-025 family).
 }

@@ -3,6 +3,7 @@ import { createExportError } from '../errors/ExportError';
 import { type DeviceNodeEntry } from './buildDeviceChain';
 import { acquireRenderLock } from './offlineRender/acquireRenderLock';
 import { checkCancel } from './offlineRender/checkCancel';
+import { connectOfflineToasterPadRoutes } from './offlineRender/connectOfflineToasterPadRoutes';
 import {
     MAX_OFFLINE_FRAMES,
     MIN_RENDER_TIMEOUT_MS,
@@ -69,6 +70,7 @@ export const renderOffline: RenderOfflineFn = async function renderOffline(
             durationBeats,
             startBeat,
             tailSeconds,
+            sampleRate,
         });
         if (!projectMidiEvents || !selectMidiEventProbability || !projectPpqEndpoints) {
             throw new Error('Offline musical projection is not configured');
@@ -93,24 +95,24 @@ export const renderOffline: RenderOfflineFn = async function renderOffline(
 
         // Build the same strip topology the live engine uses:
         // Track input -> devices -> pre-fader tap -> fader -> mute -> pan -> output routing.
-        // Sends tap either pre-fader or post-pan, and buses sum into the master gain.
+        // Sends tap either pre-fader or post-pan. Return buses receive audio at
+        // their owning track input so the persisted device chain and mixer state
+        // are applied before the bus output reaches master.
         const trackStripsById = new Map<string, OfflineTrackStrip>();
         const deviceEntriesByTrack = new Map<string, DeviceNodeEntry[]>();
         const busStripsById = new Map<string, OfflineBusStrip>();
 
         for (const track of allRenderableTracks) {
             checkCancel();
-            if (track.kind === 'bus') {
-                busStripsById.set(track.id, createOfflineBusStrip(offlineCtx, track.gain, masterGain));
-            }
-        }
-
-        for (const track of allRenderableTracks) {
-            checkCancel();
             const strip = await createOfflineTrackStrip(offlineCtx, track);
             trackStripsById.set(track.id, strip);
             deviceEntriesByTrack.set(track.id, strip.deviceEntries);
+            if (track.kind === 'bus') {
+                busStripsById.set(track.id, createOfflineBusStrip(strip));
+            }
         }
+
+        connectOfflineToasterPadRoutes({ tracks: tracks?.tracks ?? [], trackStripsById, deviceEntriesByTrack });
 
         for (const track of allRenderableTracks) {
             const strip = trackStripsById.get(track.id);
@@ -174,7 +176,9 @@ export const renderOffline: RenderOfflineFn = async function renderOffline(
                 },
                 onWarning,
                 pendingWorkletEvents,
-                allTracks: sourceTracks,
+                // Keep canonical project order for Toaster pad indexes. The
+                // scheduler skips inaudible children only after indexing.
+                allTracks: tracks?.tracks ?? [],
                 deviceEntriesByTrack,
                 regionStartBeat: startBeat,
             });

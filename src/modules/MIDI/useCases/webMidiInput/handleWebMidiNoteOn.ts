@@ -53,6 +53,7 @@ export const handleWebMidiNoteOn = inject({
                 startBeat: transport ? deps.playheadPositionRef.current : 0,
                 channel,
                 note,
+                velocity,
                 trackId: targetTrackId,
                 instrumentTrackId: targetTrackId,
                 noteInstanceId,

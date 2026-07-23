@@ -61,6 +61,7 @@ export const exportStems: ExportStemsFn = async function exportStems(
             durationBeats,
             startBeat,
             tailSeconds,
+            sampleRate,
         });
         const stems = new Map<string, AudioBuffer>();
 

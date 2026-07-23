@@ -88,6 +88,23 @@ describe('createProofChamberNode', () => {
         expect(postMessage).not.toHaveBeenCalled();
     });
 
+    it('posts validated frame-addressed parameter automation as one worklet message', async () => {
+        const node = await createProofChamberNode(makeCtx());
+        postMessage.mockClear();
+        const segments = [{ startFrame: 0, endFrame: 48_000, startValue: 0.2, endValue: 0.9 }];
+
+        node.scheduleParam('mix', segments);
+
+        expect(node.acceptsScheduledParam('mix')).toBe(true);
+        expect(node.acceptsScheduledParam('constructor')).toBe(false);
+        expect(postMessage).toHaveBeenCalledWith({ type: 'paramAutomation', paramId: 0, segments });
+
+        postMessage.mockClear();
+        node.scheduleParam('constructor', segments);
+
+        expect(postMessage).not.toHaveBeenCalled();
+    });
+
     it('should forward setBypass as a bypass message', async () => {
         const node = await createProofChamberNode(makeCtx());
         postMessage.mockClear();
