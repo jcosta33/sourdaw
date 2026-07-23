@@ -16,7 +16,7 @@ import { audioBufferCache } from '#/modules/AudioEngine/stores';
 import { defaultWorkspaceState, workspaceStore } from '#/modules/WorkspaceShell/stores';
 import { resolveToken } from '#/utils/UI/resolveToken';
 
-import { audioWarpStore, type WarpAlgorithm } from '../../stores/audioWarp';
+import { audioWarpStore, WARP_ALGORITHMS, type WarpAlgorithm } from '../../stores/audioWarp';
 import { defaultElasticAudioState, elasticAudioStore, type ElasticEditorTool } from '../../stores/elasticAudio';
 import { getAlgorithmInfo } from '../../useCases/audioWarping/getAlgorithmInfo';
 import { setDefaultAlgorithm } from '../../useCases/audioWarping/setDefaultAlgorithm';
@@ -34,17 +34,13 @@ type StretchMode = 'repitch' | 'complex' | 'texture' | 'beats';
 
 const STRETCH_MODES: StretchMode[] = ['repitch', 'complex', 'texture', 'beats'];
 
-const ALGORITHMS: WarpAlgorithm[] = [
-    'elastique-pro',
-    'elastique-efficient',
-    'elastique-soloist',
-    'rubber-band-r3',
-    'rubber-band-rt',
-    'complex',
-    'complex-pro',
-    'repitch',
-    'slice',
-];
+// Warp algorithms selectable today. Only executors that actually run are offered
+// (SPEC-time-stretch-engine AC-002 / AC-015). Repitch is the sole available mode;
+// phase-vocoder and wsola stay hidden until the in-house engine lands, so the
+// toolbar never presents a fake or third-party-branded choice.
+const AVAILABLE_ALGORITHMS: WarpAlgorithm[] = WARP_ALGORITHMS.filter(
+    (algorithm) => getAlgorithmInfo(algorithm).available
+);
 
 type WarpMarkerView = {
     id: string;
@@ -87,7 +83,7 @@ export const ElasticEditorPanel = (): ReactElement => {
     const trackState = useStore(trackStore, defaultTrackState);
     const warpSnapshot = useStore(audioWarpStore, {
         clipSettings: new Map(),
-        defaultAlgorithm: 'complex-pro' as WarpAlgorithm,
+        defaultAlgorithm: 'repitch' as WarpAlgorithm,
         globalPitchShift: 0,
     });
 
@@ -392,21 +388,23 @@ export const ElasticEditorPanel = (): ReactElement => {
                     </select>
                 </label>
 
-                <label className="flex items-center gap-1 text-[10px] text-muted-foreground">
-                    Algorithm
-                    <select
-                        className="daw-inset-surface rounded px-1 py-0.5 text-[10px] text-foreground"
-                        value={warpSnapshot.defaultAlgorithm}
-                        onChange={(e) => handleAlgorithm(e.target.value as WarpAlgorithm)}
-                        aria-label="Warp algorithm"
-                    >
-                        {ALGORITHMS.map((algo) => (
-                            <option key={algo} value={algo}>
-                                {getAlgorithmInfo(algo).name}
-                            </option>
-                        ))}
-                    </select>
-                </label>
+                {AVAILABLE_ALGORITHMS.length > 1 ? (
+                    <label className="flex items-center gap-1 text-[10px] text-muted-foreground">
+                        Algorithm
+                        <select
+                            className="daw-inset-surface rounded px-1 py-0.5 text-[10px] text-foreground"
+                            value={warpSnapshot.defaultAlgorithm}
+                            onChange={(e) => handleAlgorithm(e.target.value as WarpAlgorithm)}
+                            aria-label="Warp algorithm"
+                        >
+                            {AVAILABLE_ALGORITHMS.map((algo) => (
+                                <option key={algo} value={algo}>
+                                    {getAlgorithmInfo(algo).name}
+                                </option>
+                            ))}
+                        </select>
+                    </label>
+                ) : null}
 
                 <div className="ml-auto flex items-center gap-2 text-[10px] text-muted-foreground">
                     <span>Zoom</span>

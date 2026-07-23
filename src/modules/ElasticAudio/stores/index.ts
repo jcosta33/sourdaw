@@ -4,4 +4,4 @@ export type { ElasticAudioState, ElasticEditorTool } from './elasticAudio';
 export { elasticAudioStore, defaultElasticAudioState } from './elasticAudio';
 
 export type { WarpAlgorithm, WarpState, ClipWarpSettings } from './audioWarp';
-export { audioWarpStore, DEFAULT_WARP_SETTINGS } from './audioWarp';
+export { audioWarpStore, DEFAULT_WARP_SETTINGS, WARP_ALGORITHMS } from './audioWarp';

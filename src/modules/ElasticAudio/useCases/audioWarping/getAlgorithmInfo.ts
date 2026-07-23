@@ -1,87 +1,42 @@
 import { type WarpAlgorithm } from '../../stores/audioWarp';
 
 /**
- * Get the algorithm quality characteristics.
+ * Honest, spec-aligned metadata for a warp algorithm.
+ *
+ * `available` reflects whether an executor for this algorithm actually runs today.
+ * Only `repitch` (playback-rate resample) is available; `phase-vocoder` and
+ * `wsola` are reserved for the in-house streaming engine (SPEC-time-stretch-engine
+ * AC-002) and report `available: false` until real executors exist. No quality,
+ * CPU, real-time, or formant capability is claimed for a mode that does not run.
  */
 export function getAlgorithmInfo(algorithm: WarpAlgorithm): {
     name: string;
-    quality: 'high' | 'medium' | 'low';
-    cpuCost: 'high' | 'medium' | 'low';
-    bestFor: string;
-    realTime: boolean;
+    available: boolean;
+    description: string;
 } {
     const info: Record<
         WarpAlgorithm,
         {
             name: string;
-            quality: 'high' | 'medium' | 'low';
-            cpuCost: 'high' | 'medium' | 'low';
-            bestFor: string;
-            realTime: boolean;
+            available: boolean;
+            description: string;
         }
     > = {
-        'elastique-pro': {
-            name: 'élastique Pro',
-            quality: 'high',
-            cpuCost: 'high',
-            bestFor: 'General purpose, mixed content',
-            realTime: true,
-        },
-        'elastique-efficient': {
-            name: 'élastique Efficient',
-            quality: 'medium',
-            cpuCost: 'low',
-            bestFor: 'Real-time with many tracks',
-            realTime: true,
-        },
-        'elastique-soloist': {
-            name: 'élastique Soloist',
-            quality: 'high',
-            cpuCost: 'medium',
-            bestFor: 'Solo instruments, vocals',
-            realTime: true,
-        },
-        'rubber-band-r3': {
-            name: 'Rubber Band R3',
-            quality: 'high',
-            cpuCost: 'high',
-            bestFor: 'Offline rendering, highest quality',
-            realTime: false,
-        },
-        'rubber-band-rt': {
-            name: 'Rubber Band RT',
-            quality: 'medium',
-            cpuCost: 'medium',
-            bestFor: 'Real-time stretching',
-            realTime: true,
-        },
-        complex: {
-            name: 'Complex',
-            quality: 'medium',
-            cpuCost: 'medium',
-            bestFor: 'Mixed content, full mixes',
-            realTime: true,
-        },
-        'complex-pro': {
-            name: 'Complex Pro',
-            quality: 'high',
-            cpuCost: 'high',
-            bestFor: 'Full mixes with formant preservation',
-            realTime: true,
-        },
         repitch: {
-            name: 'Re-Pitch',
-            quality: 'low',
-            cpuCost: 'low',
-            bestFor: 'Simple speed changes, vinyl effect',
-            realTime: true,
+            name: 'Repitch',
+            available: true,
+            description: 'Resamples the clip — pitch follows tempo. The only stretch mode that runs today.',
         },
-        slice: {
-            name: 'Beat Slice',
-            quality: 'medium',
-            cpuCost: 'low',
-            bestFor: 'Drums, percussive content',
-            realTime: true,
+        'phase-vocoder': {
+            name: 'Phase Vocoder',
+            available: false,
+            description: 'Pitch-preserving spectral time-stretch. In-house engine not yet available.',
+        },
+        wsola: {
+            name: 'WSOLA',
+            available: false,
+            description:
+                'Pitch-preserving time-domain stretch for transient material. In-house engine not yet available.',
         },
     };
 

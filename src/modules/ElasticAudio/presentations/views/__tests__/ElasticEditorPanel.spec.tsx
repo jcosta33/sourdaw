@@ -100,7 +100,7 @@ vi.mock('#/infra/store/useStore', () => ({
             return mocks.workspaceStoreValue;
         }
         if (marker === 'warp') {
-            return { clipSettings: new Map(), defaultAlgorithm: 'complex-pro', globalPitchShift: 0 };
+            return { clipSettings: new Map(), defaultAlgorithm: 'repitch', globalPitchShift: 0 };
         }
         return fallback ?? null;
     },
@@ -177,15 +177,14 @@ vi.mock('#/modules/AudioEngine/stores', () => ({
 
 vi.mock('../../../stores/audioWarp', () => ({
     audioWarpStore: { __kind: 'warp' },
+    WARP_ALGORITHMS: ['repitch', 'phase-vocoder', 'wsola'],
 }));
 
 vi.mock('../../../useCases/audioWarping/getAlgorithmInfo', () => ({
     getAlgorithmInfo: (id: string) => ({
         name: `algo:${id}`,
-        quality: 'high',
-        cpuCost: 'high',
-        bestFor: '',
-        realTime: true,
+        available: id === 'repitch',
+        description: '',
     }),
 }));
 
@@ -257,6 +256,12 @@ describe('ElasticEditorPanel', () => {
         render(<ElasticEditorPanel />);
         expect(screen.getByTestId('elastic-waveform-canvas')).toBeInTheDocument();
         expect(screen.getByTestId('elastic-detail-strip')).toHaveTextContent('1 transient, 1 user, 0 locked');
+    });
+
+    it('hides the warp algorithm selector and surfaces no third-party engine while only repitch is available', () => {
+        render(<ElasticEditorPanel />);
+        expect(screen.queryByLabelText('Warp algorithm')).not.toBeInTheDocument();
+        expect(screen.queryByText(/élastique|elastique|rubber\s*band/i)).not.toBeInTheDocument();
     });
 
     it('calls setElasticSensitivity when the sensitivity slider changes', () => {

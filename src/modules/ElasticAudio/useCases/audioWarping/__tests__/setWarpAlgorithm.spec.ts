@@ -8,7 +8,7 @@ const mocks = vi.hoisted(() => ({
     audioWarpStoreValue: {
         value: {
             clipSettings: new Map<string, import('../../../stores/audioWarp').ClipWarpSettings>(),
-            defaultAlgorithm: 'complex-pro' as const,
+            defaultAlgorithm: 'repitch' as const,
             globalPitchShift: 0,
         },
     },
@@ -22,7 +22,7 @@ vi.mock('../../../stores/audioWarp', () => ({
         },
         set: mocks.audioWarpStoreSet,
     },
-    DEFAULT_WARP_SETTINGS: { algorithm: 'beats' },
+    DEFAULT_WARP_SETTINGS: { algorithm: 'repitch' },
 }));
 
 describe('setWarpAlgorithm', () => {
@@ -30,14 +30,14 @@ describe('setWarpAlgorithm', () => {
         vi.clearAllMocks();
         mocks.audioWarpStoreValue.value = {
             clipSettings: new Map<string, ClipWarpSettings>(),
-            defaultAlgorithm: 'complex-pro',
+            defaultAlgorithm: 'repitch',
             globalPitchShift: 0,
         };
     });
 
     it('sets the warping algorithm', () => {
-        setWarpAlgorithm('c1', 'complex');
+        setWarpAlgorithm('c1', 'wsola');
         const update = mocks.audioWarpStoreSet.mock.calls[0]?.[0];
-        expect(update?.clipSettings.get('c1')?.algorithm).toBe('complex');
+        expect(update?.clipSettings.get('c1')?.algorithm).toBe('wsola');
     });
 });
