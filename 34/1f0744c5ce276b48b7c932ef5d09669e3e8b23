@@ -1,0 +1,23 @@
+src/modules/Routing/presentations/views/__tests__/RoutingMatrix.spec.tsx
+  s_0d39f3a4a4357a::t_6f2c8f2d052a56 19-33,36-39,43-46,49-55,62-68,75-81,84-88,92,95-96,103-105,108-110,113,116,123-126,133-161,165-167,169,171,175-178,182,193,196-200,204-206
+  s_0d39f3a4a4357a::t_3c02f62b790b8b 58-60
+  s_0d39f3a4a4357a::t_2ae1736f96c2a2 69-74,97-102,127-132
+src/modules/Routing/presentations/views/RoutingMatrix.tsx
+  s_0d39f3a4a4357a::t_0561e3c80a85f5 4-23,36-40,47-62,68-75,77-79,81-111,114-122,124-131,140,176,184-185,191,194-197,199-203,205-207,209-214
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "341f0744c5ce276b48b7c932ef5d09669e3e8b23",
+  "prompts": {},
+  "sessions": {
+    "s_0d39f3a4a4357a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "60da6a2e-7d79-4d98-8624-e993f5a9f94e",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
