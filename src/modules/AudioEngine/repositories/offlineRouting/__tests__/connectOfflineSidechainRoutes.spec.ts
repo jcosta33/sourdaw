@@ -2,15 +2,11 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { connectOfflineSidechainRoutes } from '../connectOfflineSidechainRoutes';
 
-type ConnectInput = Parameters<typeof connectOfflineSidechainRoutes>[0];
-type DeviceEntries = ConnectInput['deviceEntriesByTrack'] extends ReadonlyMap<string, infer T> ? T : never;
-type DeviceEntry = DeviceEntries extends readonly (infer T)[] ? T : never;
-
 function makeStrip(outputNode: AudioNode): { outputNode: AudioNode } {
     return { outputNode };
 }
 
-function makeDeviceEntry(inputNode: AudioNode): DeviceEntry {
+function makeDeviceEntry(inputNode: AudioNode) {
     return {
         deviceId: 'compressor-1',
         deviceType: 'builtin-sidechain-compressor',
@@ -78,7 +74,6 @@ describe('connectOfflineSidechainRoutes', () => {
                     sourceTrackId: 'kick',
                     targetTrackId: 'bass',
                     targetDeviceId: 'compressor-1',
-                    gain: 1,
                 },
             ],
             trackStripsById: new Map([['kick', makeStrip({} as AudioNode)]]),

@@ -4,11 +4,9 @@ import { applySidechainCompressorParams } from '../applySidechainCompressorParam
 import { createSidechainCompressorFallback } from '../createSidechainCompressorFallback';
 import { prepareOfflineSidechainCompressor } from '../prepareOfflineSidechainCompressor';
 
-function makeFallbackContext(): {
-    compressor: DynamicsCompressorNode;
-    context: OfflineAudioContext;
-    makeup: GainNode;
-} {
+type FallbackContext = { compressor: DynamicsCompressorNode; context: OfflineAudioContext; makeup: GainNode };
+
+function makeFallbackContext(): FallbackContext {
     const compressor = {
         threshold: { value: 0 },
         ratio: { value: 0 },

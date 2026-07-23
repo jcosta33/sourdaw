@@ -4,7 +4,6 @@ type OfflineSidechainRoute = {
     sourceTrackId: string;
     targetTrackId: string;
     targetDeviceId: string;
-    gain: number;
 };
 
 type OfflineSidechainStrip = {
