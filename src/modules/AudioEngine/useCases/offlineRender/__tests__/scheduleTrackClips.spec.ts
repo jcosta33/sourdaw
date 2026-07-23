@@ -262,6 +262,7 @@ type RunScheduleInput = {
     removeClips?: boolean;
     probability?: number;
     probabilityCorpus?: boolean;
+    regionStartBeat?: number;
 };
 
 async function runSchedule({
@@ -272,6 +273,7 @@ async function runSchedule({
     removeClips = false,
     probability,
     probabilityCorpus = false,
+    regionStartBeat = 0,
 }: RunScheduleInput = {}): Promise<PendingWorkletEvent[]> {
     const offlineCtx = makeOfflineCtx();
     const track = makeMidiTrack();
@@ -339,7 +341,7 @@ async function runSchedule({
         pendingWorkletEvents,
         allTracks: [track],
         deviceEntriesByTrack,
-        regionStartBeat: 0,
+        regionStartBeat,
     });
 
     return pendingWorkletEvents;
@@ -355,6 +357,15 @@ describe('scheduleTrackClips — MIDI plugin-delay compensation', () => {
         mocks.projection.velocity = null;
         mocks.projection.yeastTranspose = 0;
         mocks.shouldPlayMidiEvent.mockImplementation(({ probabilityPercent }) => probabilityPercent > 0);
+    });
+
+    it('threads a nonzero render-region offset into automation scheduling', async () => {
+        await runSchedule({ regionStartBeat: 128 });
+
+        const call = mocks.scheduleTrackAutomation.mock.calls.at(-1);
+        expect(call?.at(-2)).toBe(64);
+        const projectBeat = call?.at(-1) as ((beat: number) => number) | undefined;
+        expect(projectBeat?.(130)).toBe(65);
     });
 
     it('keeps canonical Toaster pad indexes when earlier children are muted or disabled', async () => {
