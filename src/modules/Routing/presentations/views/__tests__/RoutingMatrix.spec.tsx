@@ -1,88 +1,208 @@
 import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-import { routingConnectionKey, routingMatrixStore } from '../../../stores/routingMatrixStore';
+import { removeSend, setSend, setTrackOutput } from '#/modules/Arrangement/useCases';
+
 import { useTracks } from '../../hooks/useTracks';
 import { RoutingMatrix } from '../RoutingMatrix';
 
-vi.mock('../../hooks/useTracks', () => ({
-    useTracks: vi.fn(() => ({
-        tracks: [
-            { id: 'src-1', name: 'Kick', kind: 'audio', color: '#f00', sends: [], outputId: 'bus-1' },
-            { id: 'bus-1', name: 'Drum Bus', kind: 'bus', color: '#0f0', sends: [], outputId: 'master' },
-        ],
-        selectedTrackId: null,
-    })),
+vi.mock('#/modules/Arrangement/useCases', () => ({
+    setSend: vi.fn(),
+    removeSend: vi.fn(),
+    setTrackOutput: vi.fn(),
 }));
+
+vi.mock('../../hooks/useTracks', () => ({
+    useTracks: vi.fn(),
+}));
+
+type Send = { busId: string; level: number; preFader: boolean };
+type TrackFixture = {
+    id: string;
+    name: string;
+    kind: 'audio' | 'midi' | 'bus' | 'folder' | 'master';
+    color: string;
+    sends: Send[];
+    outputId: string;
+};
+
+const track = (over: Partial<TrackFixture> & Pick<TrackFixture, 'id' | 'name' | 'kind'>): TrackFixture => ({
+    color: '#888',
+    sends: [],
+    outputId: 'master',
+    ...over,
+});
+
+const mockTracks = (tracks: TrackFixture[]): void => {
+    vi.mocked(useTracks).mockReturnValue({ tracks, selectedTrackId: null });
+};
 
 describe('RoutingMatrix', () => {
     beforeEach(() => {
         vi.clearAllMocks();
-        vi.mocked(useTracks).mockReturnValue({
-            tracks: [
-                { id: 'src-1', name: 'Kick', kind: 'audio', color: '#f00', sends: [], outputId: 'bus-1' },
-                { id: 'bus-1', name: 'Drum Bus', kind: 'bus', color: '#0f0', sends: [], outputId: 'master' },
-            ],
-            selectedTrackId: null,
-        });
-        routingMatrixStore.set({ connections: {} });
+        mockTracks([
+            track({ id: 'src-1', name: 'Kick', kind: 'audio' }),
+            track({ id: 'bus-1', name: 'Drum Bus', kind: 'bus' }),
+        ]);
     });
 
-    it('renders one destination column per bus plus a Master column', () => {
+    it('renders one destination column per bus plus a Master column, excluding folders', () => {
+        mockTracks([
+            track({ id: 'src-1', name: 'Kick', kind: 'audio' }),
+            track({ id: 'bus-1', name: 'Drum Bus', kind: 'bus' }),
+            track({ id: 'folder-1', name: 'Group Folder', kind: 'folder' }),
+        ]);
+
         render(<RoutingMatrix />);
 
-        expect(screen.getByText('Drum Bus')).toBeInTheDocument();
+        // Drum Bus appears both as a destination column and (being a bus) a
+        // source row, so assert at least one occurrence.
+        expect(screen.getAllByText('Drum Bus').length).toBeGreaterThan(0);
         expect(screen.getByText('Master')).toBeInTheDocument();
+        // A folder is never a routing endpoint anywhere in the app; it must not
+        // appear as a destination column (nor as a source row).
+        expect(screen.queryByText('Group Folder')).not.toBeInTheDocument();
     });
 
-    it('renders a disconnected cell with a Connect aria-label for a source/dest pair', () => {
-        render(<RoutingMatrix />);
-
-        const cell = screen.getByRole('button', { name: 'Connect Kick → Drum Bus' });
-        expect(cell).toBeInTheDocument();
-        expect(cell.textContent).toBe('');
-    });
-
-    it('toggles a connection on click and reflects the new state in the cell and store', () => {
-        render(<RoutingMatrix />);
-        const cell = screen.getByRole('button', { name: 'Connect Kick → Drum Bus' });
-
-        fireEvent.click(cell);
-
-        const key = routingConnectionKey('src-1', 'bus-1');
-        expect(routingMatrixStore.value?.connections[key]).toEqual({
-            sourceId: 'src-1',
-            destId: 'bus-1',
-            level: 1.0,
-        });
-        const connectedCell = screen.getByRole('button', { name: 'Disconnect Kick → Drum Bus' });
-        expect(connectedCell.textContent).toBe('●');
-    });
-
-    it('toggling twice removes the connection again', () => {
-        render(<RoutingMatrix />);
-        const cell = screen.getByRole('button', { name: 'Connect Kick → Drum Bus' });
-
-        fireEvent.click(cell);
-        fireEvent.click(screen.getByRole('button', { name: 'Disconnect Kick → Drum Bus' }));
-
-        const key = routingConnectionKey('src-1', 'bus-1');
-        expect(routingMatrixStore.value?.connections[key]).toBeUndefined();
-        expect(screen.getByRole('button', { name: 'Connect Kick → Drum Bus' })).toBeInTheDocument();
-    });
-
-    it('renders a dash instead of a toggle button when a source id collides with a destination id', () => {
-        // Regression guard: destinations always include the synthetic "master"
-        // column, so a data artifact where a non-bus track carries id "master"
-        // must still render as a self cell (dash), never a clickable route.
-        vi.mocked(useTracks).mockReturnValue({
-            tracks: [{ id: 'master', name: 'Stray Master', kind: 'audio', color: '#fff', sends: [], outputId: '' }],
-            selectedTrackId: null,
-        });
+    it('includes bus tracks as source rows so bus sends are routable', () => {
+        mockTracks([
+            track({
+                id: 'bus-1',
+                name: 'Drum Bus',
+                kind: 'bus',
+                sends: [{ busId: 'bus-2', level: 0.5, preFader: false }],
+            }),
+            track({ id: 'bus-2', name: 'Reverb Bus', kind: 'bus' }),
+        ]);
 
         render(<RoutingMatrix />);
 
-        expect(screen.queryByRole('button', { name: /Stray Master → Master/ })).not.toBeInTheDocument();
-        expect(screen.getByText('—')).toBeInTheDocument();
+        // The send FROM the Drum Bus row TO the Reverb Bus proves buses are rows.
+        expect(screen.getByRole('button', { name: 'Disconnect send Drum Bus → Reverb Bus' })).toBeInTheDocument();
+    });
+
+    it('does not render a folder as a source row', () => {
+        mockTracks([
+            track({ id: 'folder-1', name: 'Group Folder', kind: 'folder' }),
+            track({ id: 'bus-1', name: 'Drum Bus', kind: 'bus' }),
+        ]);
+
+        render(<RoutingMatrix />);
+
+        expect(screen.queryByText('Group Folder')).not.toBeInTheDocument();
+    });
+
+    it('reflects a real, non-unity send from the track read-model as a connected send cell', () => {
+        mockTracks([
+            track({
+                id: 'src-1',
+                name: 'Kick',
+                kind: 'audio',
+                sends: [{ busId: 'bus-1', level: 0.6, preFader: false }],
+            }),
+            track({ id: 'bus-1', name: 'Drum Bus', kind: 'bus' }),
+        ]);
+
+        render(<RoutingMatrix />);
+
+        const cell = screen.getByRole('button', { name: 'Disconnect send Kick → Drum Bus' });
+        expect(cell.textContent).toBe('●');
+        expect(cell).not.toBeDisabled();
+    });
+
+    it('dispatches setSend at unit level when a disconnected send cell is clicked', () => {
+        render(<RoutingMatrix />);
+
+        fireEvent.click(screen.getByRole('button', { name: 'Connect send Kick → Drum Bus' }));
+
+        expect(setSend).toHaveBeenCalledTimes(1);
+        expect(setSend).toHaveBeenCalledWith('src-1', 'bus-1', 1);
+        expect(removeSend).not.toHaveBeenCalled();
+    });
+
+    it('removes a tuned send on disconnect and re-creates it fresh on reconnect (explicit round-trip)', () => {
+        // Disconnect is an explicit removal, not a level-0 write, so a matrix
+        // round-trip does not silently keep a muted phantom send around.
+        mockTracks([
+            track({
+                id: 'src-1',
+                name: 'Kick',
+                kind: 'audio',
+                sends: [{ busId: 'bus-1', level: 0.6, preFader: false }],
+            }),
+            track({ id: 'bus-1', name: 'Drum Bus', kind: 'bus' }),
+        ]);
+        const { rerender } = render(<RoutingMatrix />);
+
+        fireEvent.click(screen.getByRole('button', { name: 'Disconnect send Kick → Drum Bus' }));
+        expect(removeSend).toHaveBeenCalledTimes(1);
+        expect(removeSend).toHaveBeenCalledWith('src-1', 'bus-1');
+        expect(setSend).not.toHaveBeenCalled();
+
+        // After the store drops the send, the cell is a fresh route-on at unity.
+        mockTracks([
+            track({ id: 'src-1', name: 'Kick', kind: 'audio' }),
+            track({ id: 'bus-1', name: 'Drum Bus', kind: 'bus' }),
+        ]);
+        rerender(<RoutingMatrix />);
+
+        fireEvent.click(screen.getByRole('button', { name: 'Connect send Kick → Drum Bus' }));
+        expect(setSend).toHaveBeenCalledTimes(1);
+        expect(setSend).toHaveBeenCalledWith('src-1', 'bus-1', 1);
+    });
+
+    it('renders an output edge distinctly and does not stack a send where the output already routes', () => {
+        // Kick's OUTPUT routes to Drum Bus. The cell must show the output edge
+        // (distinct cyan ▸ glyph), be read-only, and never let a click add a
+        // second, duplicate signal path via setSend.
+        mockTracks([
+            track({ id: 'src-1', name: 'Kick', kind: 'audio', outputId: 'bus-1' }),
+            track({ id: 'bus-1', name: 'Drum Bus', kind: 'bus' }),
+        ]);
+
+        render(<RoutingMatrix />);
+
+        const outputCell = screen.getByRole('button', { name: 'Kick output routed to Drum Bus' });
+        expect(outputCell.textContent).toBe('▸');
+        expect(outputCell).toBeDisabled();
+
+        fireEvent.click(outputCell);
+        expect(setSend).not.toHaveBeenCalled();
+        expect(removeSend).not.toHaveBeenCalled();
+    });
+
+    it('routes the track output to Master when a non-master output cell is clicked', () => {
+        mockTracks([
+            track({ id: 'src-1', name: 'Kick', kind: 'audio', outputId: 'bus-1' }),
+            track({ id: 'bus-1', name: 'Drum Bus', kind: 'bus' }),
+        ]);
+
+        render(<RoutingMatrix />);
+
+        fireEvent.click(screen.getByRole('button', { name: 'Route Kick output to Master' }));
+
+        expect(setTrackOutput).toHaveBeenCalledTimes(1);
+        expect(setTrackOutput).toHaveBeenCalledWith('src-1', 'master');
+    });
+
+    it('shows the Master output cell as the current output and disables it when already routed to master', () => {
+        render(<RoutingMatrix />);
+
+        const masterCell = screen.getByRole('button', { name: 'Kick output routed to Master' });
+        expect(masterCell).toBeDisabled();
+        expect(masterCell.textContent).toBe('▸');
+    });
+
+    it('renders a dash for the self cell where a bus source meets its own destination column', () => {
+        mockTracks([
+            track({ id: 'bus-1', name: 'Drum Bus', kind: 'bus' }),
+            track({ id: 'bus-2', name: 'Reverb Bus', kind: 'bus' }),
+        ]);
+
+        render(<RoutingMatrix />);
+
+        // Drum Bus → Drum Bus is a self cell (dash), never a clickable route.
+        expect(screen.queryByRole('button', { name: /Drum Bus → Drum Bus/ })).not.toBeInTheDocument();
+        expect(screen.getAllByText('—').length).toBeGreaterThan(0);
     });
 });
