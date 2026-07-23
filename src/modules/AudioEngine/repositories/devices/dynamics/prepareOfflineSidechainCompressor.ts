@@ -1,6 +1,9 @@
-export const preparedOfflineSidechainCompressorContexts = new WeakSet<BaseAudioContext>();
+export const preparedOfflineSidechainCompressorTargets = new WeakMap<BaseAudioContext, ReadonlySet<string>>();
 
-export async function prepareOfflineSidechainCompressor(offlineCtx: OfflineAudioContext): Promise<void> {
+export async function prepareOfflineSidechainCompressor(
+    offlineCtx: OfflineAudioContext,
+    targetDeviceIds: ReadonlySet<string>
+): Promise<void> {
     await offlineCtx.audioWorklet.addModule('/audio/worklets/sidechain-compressor-processor.js');
-    preparedOfflineSidechainCompressorContexts.add(offlineCtx);
+    preparedOfflineSidechainCompressorTargets.set(offlineCtx, new Set(targetDeviceIds));
 }

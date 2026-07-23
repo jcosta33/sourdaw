@@ -32,7 +32,7 @@ export type { OfflineDeviceNode };
 
 // ── Factory map ──────────────────────────────────────────────────────────
 
-const DEVICE_FACTORIES: Record<string, (ctx: BaseAudioContext) => OfflineDeviceNode> = {
+const DEVICE_FACTORIES: Record<string, (ctx: BaseAudioContext, deviceId?: string) => OfflineDeviceNode> = {
     'builtin-eq': createEq,
     'builtin-compressor': createCompressor,
     'builtin-sidechain-compressor': createSidechainCompressorFallback,
@@ -56,6 +56,7 @@ const DEVICE_FACTORIES: Record<string, (ctx: BaseAudioContext) => OfflineDeviceN
 
 type CreateOfflineDeviceNodeInput = {
     context: BaseAudioContext;
+    deviceId?: string;
     deviceType: string;
 };
 
@@ -63,6 +64,7 @@ type CreateOfflineDeviceNodeOutput = OfflineDeviceNode | null;
 
 export function createOfflineDeviceNode({
     context,
+    deviceId,
     deviceType,
 }: CreateOfflineDeviceNodeInput): CreateOfflineDeviceNodeOutput {
     const factory = DEVICE_FACTORIES[deviceType];
@@ -70,5 +72,5 @@ export function createOfflineDeviceNode({
         return null;
     }
 
-    return factory(context);
+    return factory(context, deviceId);
 }

@@ -4,6 +4,29 @@ import { applySidechainCompressorParams } from '../applySidechainCompressorParam
 import { createSidechainCompressorFallback } from '../createSidechainCompressorFallback';
 import { prepareOfflineSidechainCompressor } from '../prepareOfflineSidechainCompressor';
 
+function makeFallbackContext(): {
+    compressor: DynamicsCompressorNode;
+    context: OfflineAudioContext;
+    makeup: GainNode;
+} {
+    const compressor = {
+        threshold: { value: 0 },
+        ratio: { value: 0 },
+        attack: { value: 0 },
+        release: { value: 0 },
+        knee: { value: 0 },
+        connect: vi.fn(),
+    } as unknown as DynamicsCompressorNode;
+    const makeup = { gain: { value: 0 } } as GainNode;
+    const addModule = vi.fn<() => Promise<void>>(() => Promise.resolve());
+    const context = {
+        audioWorklet: { addModule },
+        createDynamicsCompressor: vi.fn(() => compressor),
+        createGain: vi.fn(() => makeup),
+    } as unknown as OfflineAudioContext;
+    return { compressor, context, makeup };
+}
+
 describe('createSidechainCompressorFallback', () => {
     afterEach(() => {
         vi.unstubAllGlobals();
@@ -32,8 +55,8 @@ describe('createSidechainCompressorFallback', () => {
         const addModule = vi.fn(() => Promise.resolve());
         const context = { audioWorklet: { addModule }, startRendering: vi.fn() } as unknown as OfflineAudioContext;
 
-        await prepareOfflineSidechainCompressor(context);
-        const deviceNode = createSidechainCompressorFallback(context);
+        await prepareOfflineSidechainCompressor(context, new Set(['compressor-1']));
+        const deviceNode = createSidechainCompressorFallback(context, 'compressor-1');
         applySidechainCompressorParams(deviceNode, {
             'sc-comp-threshold': -24,
             'sc-comp-ratio': 6,
@@ -58,25 +81,30 @@ describe('createSidechainCompressorFallback', () => {
         });
     });
 
-    it('keeps the single-input fallback when the worklet was not prepared', () => {
-        const compressor = {
-            threshold: { value: 0 },
-            ratio: { value: 0 },
-            attack: { value: 0 },
-            release: { value: 0 },
-            knee: { value: 0 },
-            connect: vi.fn(),
-        } as unknown as DynamicsCompressorNode;
-        const makeup = { gain: { value: 0 } } as GainNode;
-        const context = {
-            createDynamicsCompressor: vi.fn(() => compressor),
-            createGain: vi.fn(() => makeup),
-        } as unknown as BaseAudioContext;
+    it('keeps the single-input fallback for an unrelated device target', async () => {
+        const { compressor, context, makeup } = makeFallbackContext();
 
-        const deviceNode = createSidechainCompressorFallback(context);
+        await prepareOfflineSidechainCompressor(context, new Set(['other-compressor']));
+        const deviceNode = createSidechainCompressorFallback(context, 'compressor-1');
 
         expect(deviceNode.inputNode).toBe(compressor);
         expect(deviceNode.outputNode).toBe(makeup);
         expect(compressor.knee.value).toBe(30);
+    });
+
+    it('uses the single-input fallback when worklet construction fails', async () => {
+        const { compressor, context, makeup } = makeFallbackContext();
+        class ThrowingAudioWorkletNode {
+            constructor() {
+                throw new Error('processor construction failed');
+            }
+        }
+        vi.stubGlobal('AudioWorkletNode', ThrowingAudioWorkletNode);
+
+        await prepareOfflineSidechainCompressor(context, new Set(['compressor-1']));
+        const deviceNode = createSidechainCompressorFallback(context, 'compressor-1');
+
+        expect(deviceNode.inputNode).toBe(compressor);
+        expect(deviceNode.outputNode).toBe(makeup);
     });
 });
