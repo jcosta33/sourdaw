@@ -11,6 +11,9 @@
  *    does not mark the model 'error' after the user moved on.
  */
 
+import { createHash } from 'node:crypto';
+
+import { zipSync } from 'fflate';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { type ModelDownloadProgressPayload } from '../../models/ModelDownloadProgress';
@@ -233,5 +236,73 @@ describe('downloadModel — cancellation', () => {
 
         const init = fetchMock.mock.calls[0]?.[1];
         expect(init?.signal).toBe(controller.signal);
+    });
+});
+
+describe('downloadModel — buffered path (sha256 verification + ZIP extraction)', () => {
+    it('verifies a matching sha256 and writes the fully-buffered data via writeModel', async () => {
+        const bytes = new Uint8Array([1, 2, 3, 4, 5]);
+        const sha256 = createHash('sha256').update(bytes).digest('hex');
+        vi.stubGlobal(
+            'fetch',
+            vi.fn(() => Promise.resolve(streamingResponse([bytes], bytes.length)))
+        );
+
+        const stages: string[] = [];
+        await downloadModel({
+            spec: { ...baseSpec, sizeBytes: bytes.length, sha256 },
+            onProgress: (p: ModelDownloadProgressPayload) => stages.push(p.stage),
+        });
+
+        // Buffered path writes once, through writeModel — not the streaming writable.
+        expect(lastWritable?.writes).toEqual([bytes.length]);
+        expect(lastWritable?.closed).toBe(true);
+        expect(stages).toContain('verifying');
+        expect(stages).toContain('complete');
+        expect(stages).not.toContain('extracting');
+    });
+
+    it('retries and ultimately fails when the sha256 does not match', async () => {
+        const bytes = new Uint8Array([9, 9, 9]);
+        vi.stubGlobal(
+            'fetch',
+            vi.fn(() => Promise.resolve(streamingResponse([bytes], bytes.length)))
+        );
+
+        const errorEvents: ModelDownloadProgressPayload[] = [];
+        const promise = downloadModel({
+            spec: { ...baseSpec, sizeBytes: bytes.length, sha256: 'deadbeefdeadbeef' },
+            onProgress: (p: ModelDownloadProgressPayload) => {
+                if (p.stage === 'error') {
+                    errorEvents.push(p);
+                }
+            },
+        });
+
+        // Real exponential backoff between the 3 attempts (~1s + ~2s) — no fake
+        // timers here since the sha256 digest is a genuine async WebCrypto call.
+        await expect(promise).rejects.toThrow(/Failed to download/);
+        expect(errorEvents).toHaveLength(1);
+        expect(errorEvents[0]?.error).toContain('Integrity check failed');
+    }, 10_000);
+
+    it('extracts the .onnx entry from a .zip package and stores only its bytes', async () => {
+        const onnxBytes = new Uint8Array([10, 20, 30, 40]);
+        const zipped = zipSync({ 'model/weights.onnx': onnxBytes });
+        vi.stubGlobal(
+            'fetch',
+            vi.fn(() => Promise.resolve(streamingResponse([zipped], zipped.length)))
+        );
+
+        const stages: string[] = [];
+        await downloadModel({
+            spec: { ...baseSpec, url: 'https://cdn.example/violin-1.zip', sizeBytes: zipped.length },
+            onProgress: (p: ModelDownloadProgressPayload) => stages.push(p.stage),
+        });
+
+        expect(stages).toContain('extracting');
+        expect(stages).toContain('complete');
+        // Only the extracted .onnx bytes reach OPFS — not the whole ZIP.
+        expect(lastWritable?.writes).toEqual([onnxBytes.length]);
     });
 });
