@@ -1,8 +1,9 @@
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
-import { handleAiDenoiseClip } from '#/modules/AiGeneration/useCases';
-import { getWarpState } from '#/modules/Arrangement/stores';
+import { useStore } from '#/infra/store/useStore';
+import { handleAiDenoiseClip, handleStemSeparationPreview } from '#/modules/AiGeneration/useCases';
+import { getWarpState, trackStore, type Clip } from '#/modules/Arrangement/stores';
 import {
     addManualWarpMarker,
     commitWarpMarkerBeatDrag,
@@ -10,9 +11,15 @@ import {
     enableWarp,
     moveWarpMarker,
     normalizeClip,
+    normalizeTrack,
+    removeWarpMarker,
+    replaceClipAudioBuffer,
+    reverseClip,
     setStretchMode,
 } from '#/modules/Arrangement/useCases';
-import { getCachedAudioBufferWaveformPeaks } from '#/modules/AudioEngine/useCases';
+import { audioToMidi } from '#/modules/AudioAnalysis/useCases';
+import { decodeAudioFile, getCachedAudioBufferWaveformPeaks } from '#/modules/AudioEngine/useCases';
+import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { WaveformEditor } from '../WaveformEditor';
 
@@ -142,6 +149,7 @@ vi.mock('#/utils/UI/resolveToken', () => ({
 
 vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/AudioEngine/useCases')>()),
+    decodeAudioFile: vi.fn(),
     getCachedAudioBufferWaveformPeaks: vi.fn(() => new Float32Array([0.35, 0.15])),
     isTauri: vi.fn(() => false),
 }));
@@ -212,7 +220,7 @@ vi.mock('#/modules/Knead/stores', () => {
 });
 
 vi.mock('#/infra/store/useStore', () => ({
-    useStore: <T,>(_store: unknown, defaultValue: T): T => defaultValue,
+    useStore: vi.fn((_store: unknown, defaultValue: unknown) => defaultValue),
 }));
 
 describe('WaveformEditor', () => {
@@ -466,5 +474,309 @@ describe('WaveformEditor', () => {
         fireEvent.click(screen.getByRole('menuitem', { name: 'Normalize' }));
 
         expect(vi.mocked(normalizeClip)).toHaveBeenCalledWith('clip-uuid');
+    });
+
+    it('should ignore a drop that carries no files', () => {
+        render(<WaveformEditor {...defaultProps} />);
+        const dropZone = screen.getByLabelText('Waveform editor').parentElement as HTMLElement;
+
+        fireEvent.drop(dropZone, { dataTransfer: { files: [] } });
+
+        expect(vi.mocked(decodeAudioFile)).not.toHaveBeenCalled();
+        expect(vi.mocked(replaceClipAudioBuffer)).not.toHaveBeenCalled();
+    });
+
+    it('should ignore a drop of a non-audio file', () => {
+        render(<WaveformEditor {...defaultProps} />);
+        const dropZone = screen.getByLabelText('Waveform editor').parentElement as HTMLElement;
+        const textFile = new File(['hello'], 'notes.txt', { type: 'text/plain' });
+
+        fireEvent.drop(dropZone, { dataTransfer: { files: [textFile] } });
+
+        expect(vi.mocked(decodeAudioFile)).not.toHaveBeenCalled();
+        expect(vi.mocked(replaceClipAudioBuffer)).not.toHaveBeenCalled();
+    });
+
+    it('should replace the clip audio buffer when an audio file is dropped', async () => {
+        const decodedBuffer = {
+            numberOfChannels: 1,
+            length: 4,
+            sampleRate: 48_000,
+            getChannelData: () => new Float32Array(4),
+            copyFromChannel: () => {},
+            copyToChannel: () => {},
+            duration: 4 / 48_000,
+        } as AudioBuffer;
+        vi.mocked(decodeAudioFile).mockResolvedValue({ id: 'audio-dropped', buffer: decodedBuffer });
+        render(<WaveformEditor {...defaultProps} />);
+        const dropZone = screen.getByLabelText('Waveform editor').parentElement as HTMLElement;
+        const audioFile = new File(['data'], 'loop.wav', { type: 'audio/wav' });
+
+        fireEvent.drop(dropZone, { dataTransfer: { files: [audioFile] } });
+
+        await waitFor(() => {
+            expect(vi.mocked(replaceClipAudioBuffer)).toHaveBeenCalledWith('clip-1', 'audio-dropped');
+        });
+        expect(vi.mocked(decodeAudioFile)).toHaveBeenCalledWith(audioFile);
+    });
+
+    it('should notify the user when decoding a dropped file fails', async () => {
+        vi.mocked(decodeAudioFile).mockRejectedValue(new Error('bad format'));
+        render(<WaveformEditor {...defaultProps} />);
+        const dropZone = screen.getByLabelText('Waveform editor').parentElement as HTMLElement;
+        const audioFile = new File(['data'], 'corrupt.wav', { type: 'audio/wav' });
+
+        fireEvent.drop(dropZone, { dataTransfer: { files: [audioFile] } });
+
+        await waitFor(() => {
+            expect(vi.mocked(notifyUser)).toHaveBeenCalledWith(
+                'Failed to import "corrupt.wav" — unsupported format or corrupt file',
+                'error'
+            );
+        });
+        expect(vi.mocked(replaceClipAudioBuffer)).not.toHaveBeenCalled();
+    });
+
+    it('should show the drop overlay while dragging over and hide it on drag leave', () => {
+        render(<WaveformEditor {...defaultProps} />);
+        const dropZone = screen.getByLabelText('Waveform editor').parentElement as HTMLElement;
+
+        fireEvent.dragOver(dropZone);
+        expect(screen.getByText('Drop audio file here')).toBeInTheDocument();
+
+        fireEvent.dragLeave(dropZone);
+        expect(screen.queryByText('Drop audio file here')).not.toBeInTheDocument();
+    });
+
+    it('should dismiss the context menu when clicking outside of it', () => {
+        render(<WaveformEditor {...defaultProps} />);
+        fireEvent.contextMenu(screen.getByLabelText('Waveform editor'), { clientX: 32, clientY: 48 });
+        expect(screen.getByRole('menu')).toBeInTheDocument();
+
+        fireEvent.mouseDown(document.body);
+
+        expect(screen.queryByRole('menu')).not.toBeInTheDocument();
+    });
+
+    it('should dismiss the context menu when Escape is pressed', () => {
+        render(<WaveformEditor {...defaultProps} />);
+        fireEvent.contextMenu(screen.getByLabelText('Waveform editor'), { clientX: 32, clientY: 48 });
+        expect(screen.getByRole('menu')).toBeInTheDocument();
+
+        fireEvent.keyDown(document, { key: 'Escape' });
+
+        expect(screen.queryByRole('menu')).not.toBeInTheDocument();
+    });
+
+    it('should run the reverse action from the context menu', () => {
+        render(<WaveformEditor {...defaultProps} />);
+        fireEvent.contextMenu(screen.getByLabelText('Waveform editor'), { clientX: 32, clientY: 48 });
+
+        fireEvent.click(screen.getByRole('menuitem', { name: 'Reverse' }));
+
+        expect(vi.mocked(reverseClip)).toHaveBeenCalledWith('clip-1');
+        expect(screen.queryByRole('menu')).not.toBeInTheDocument();
+    });
+
+    it('should notify the user when AI denoise is attempted without an audio buffer', () => {
+        render(<WaveformEditor {...defaultProps} />);
+        fireEvent.contextMenu(screen.getByLabelText('Waveform editor'), { clientX: 32, clientY: 48 });
+
+        fireEvent.click(screen.getByRole('menuitem', { name: /AI Denoise/ }));
+
+        expect(vi.mocked(notifyUser)).toHaveBeenCalledWith('Denoise unavailable — clip has no audio buffer', 'error');
+        expect(vi.mocked(handleAiDenoiseClip)).not.toHaveBeenCalled();
+    });
+
+    it('should dispatch AI stem separation on the clip audioBufferId', () => {
+        render(<WaveformEditor clipId="clip-uuid" audioBufferId="audio-uuid" />);
+        fireEvent.contextMenu(screen.getByLabelText('Waveform editor'), { clientX: 32, clientY: 48 });
+
+        fireEvent.click(screen.getByRole('menuitem', { name: /AI Stem Separation/ }));
+
+        expect(vi.mocked(handleStemSeparationPreview)).toHaveBeenCalledWith('audio-uuid');
+    });
+
+    it('should notify the user when stem separation is attempted without an audio buffer', () => {
+        render(<WaveformEditor {...defaultProps} />);
+        fireEvent.contextMenu(screen.getByLabelText('Waveform editor'), { clientX: 32, clientY: 48 });
+
+        fireEvent.click(screen.getByRole('menuitem', { name: /AI Stem Separation/ }));
+
+        expect(vi.mocked(notifyUser)).toHaveBeenCalledWith(
+            'Stem separation unavailable — clip has no audio buffer',
+            'error'
+        );
+        expect(vi.mocked(handleStemSeparationPreview)).not.toHaveBeenCalled();
+    });
+
+    it('should dispatch audio to MIDI for the track that contains the clip', () => {
+        const clipFixture: Clip = {
+            id: 'clip-1',
+            trackId: 'track-1',
+            name: 'Clip',
+            startBeat: 0,
+            endBeat: 4,
+            type: 'audio',
+            fadeInBeats: 0,
+            fadeOutBeats: 0,
+            gain: 1,
+            color: '#000',
+            locked: false,
+            muted: false,
+        };
+        const track = normalizeTrack({ id: 'track-1', name: 'Track', kind: 'audio', clips: [clipFixture] });
+        vi.mocked(useStore).mockImplementation((store: unknown, defaultValue: unknown) =>
+            store === trackStore ? { tracks: [track], selectedTrackId: null, ghostClips: [] } : defaultValue
+        );
+        render(<WaveformEditor {...defaultProps} />);
+
+        fireEvent.contextMenu(screen.getByLabelText('Waveform editor'), { clientX: 32, clientY: 48 });
+        fireEvent.click(screen.getByRole('menuitem', { name: /AI Audio → MIDI/ }));
+
+        expect(vi.mocked(audioToMidi)).toHaveBeenCalledWith({ clipId: 'clip-1', trackId: 'track-1' });
+    });
+
+    it('should not dispatch audio to MIDI when no track contains the clip', () => {
+        const track = normalizeTrack({ id: 'track-1', name: 'Track', kind: 'audio', clips: [] });
+        vi.mocked(useStore).mockImplementation((store: unknown, defaultValue: unknown) =>
+            store === trackStore ? { tracks: [track], selectedTrackId: null, ghostClips: [] } : defaultValue
+        );
+        render(<WaveformEditor {...defaultProps} />);
+
+        fireEvent.contextMenu(screen.getByLabelText('Waveform editor'), { clientX: 32, clientY: 48 });
+        fireEvent.click(screen.getByRole('menuitem', { name: /AI Audio → MIDI/ }));
+
+        expect(vi.mocked(audioToMidi)).not.toHaveBeenCalled();
+    });
+
+    it('should enable warp from the context menu when disabled', () => {
+        vi.mocked(getWarpState).mockReturnValue({
+            enabled: false,
+            markers: [],
+            stretchMode: 'complex',
+            originalTempo: null,
+        });
+        render(<WaveformEditor {...defaultProps} />);
+        fireEvent.contextMenu(screen.getByLabelText('Waveform editor'), { clientX: 32, clientY: 48 });
+
+        fireEvent.click(screen.getByRole('menuitem', { name: 'Enable Warp' }));
+
+        expect(vi.mocked(enableWarp)).toHaveBeenCalledWith('clip-1');
+        expect(vi.mocked(disableWarp)).not.toHaveBeenCalled();
+    });
+
+    it('should disable warp from the context menu when enabled', () => {
+        vi.mocked(getWarpState).mockReturnValue({
+            enabled: true,
+            markers: [],
+            stretchMode: 'complex',
+            originalTempo: null,
+        });
+        render(<WaveformEditor {...defaultProps} />);
+        fireEvent.contextMenu(screen.getByLabelText('Waveform editor'), { clientX: 32, clientY: 48 });
+
+        fireEvent.click(screen.getByRole('menuitem', { name: 'Disable Warp' }));
+
+        expect(vi.mocked(disableWarp)).toHaveBeenCalledWith('clip-1');
+        expect(vi.mocked(enableWarp)).not.toHaveBeenCalled();
+    });
+
+    it('should update the zoom level from the zoom slider', () => {
+        render(<WaveformEditor {...defaultProps} />);
+        const zoomSlider = screen.getByLabelText('Waveform zoom');
+
+        fireEvent.change(zoomSlider, { target: { value: '200' } });
+
+        expect((zoomSlider as HTMLInputElement).value).toBe('200');
+    });
+
+    it('should remove an existing warp marker on double click', () => {
+        vi.mocked(getWarpState).mockReturnValue({
+            enabled: true,
+            markers: [{ id: 'm1', originalBeat: 2, warpedBeat: 2 }],
+            stretchMode: 'complex',
+            originalTempo: null,
+        });
+        render(<WaveformEditor {...defaultProps} />);
+
+        fireEvent.doubleClick(screen.getByLabelText('Waveform editor'), { clientX: 80 });
+
+        expect(vi.mocked(removeWarpMarker)).toHaveBeenCalledWith('clip-1', 'm1');
+        expect(vi.mocked(addManualWarpMarker)).not.toHaveBeenCalled();
+    });
+
+    it('should ignore double click when warp is disabled', () => {
+        vi.mocked(getWarpState).mockReturnValue({
+            enabled: false,
+            markers: [],
+            stretchMode: 'complex',
+            originalTempo: null,
+        });
+        render(<WaveformEditor {...defaultProps} />);
+
+        fireEvent.doubleClick(screen.getByLabelText('Waveform editor'), { clientX: 80 });
+
+        expect(vi.mocked(addManualWarpMarker)).not.toHaveBeenCalled();
+        expect(vi.mocked(removeWarpMarker)).not.toHaveBeenCalled();
+    });
+
+    it('should render placeholder waveform bars when no real peak data exists', () => {
+        vi.mocked(getCachedAudioBufferWaveformPeaks).mockReturnValue(new Float32Array([0, 0, 0]));
+        const canvasContext = {
+            scale: vi.fn(),
+            fillRect: vi.fn(),
+            beginPath: vi.fn(),
+            moveTo: vi.fn(),
+            lineTo: vi.fn(),
+            stroke: vi.fn(),
+            closePath: vi.fn(),
+            fill: vi.fn(),
+            setLineDash: vi.fn(),
+            fillText: vi.fn(),
+        };
+        Object.defineProperty(HTMLCanvasElement.prototype, 'getContext', {
+            configurable: true,
+            value: vi.fn((contextId: string) => (contextId === '2d' ? canvasContext : null)),
+        });
+        Object.defineProperty(HTMLElement.prototype, 'clientWidth', { configurable: true, get: () => 127 });
+        Object.defineProperty(HTMLElement.prototype, 'clientHeight', { configurable: true, get: () => 48 });
+
+        render(<WaveformEditor {...defaultProps} />);
+
+        expect(canvasContext.fillText).toHaveBeenCalledWith(
+            'Audio clip — drop an audio file to load waveform',
+            expect.any(Number),
+            expect.any(Number)
+        );
+    });
+
+    it('should not throw when the canvas cannot provide a 2d context', () => {
+        Object.defineProperty(HTMLCanvasElement.prototype, 'getContext', {
+            configurable: true,
+            value: vi.fn(() => null),
+        });
+
+        expect(() => render(<WaveformEditor {...defaultProps} />)).not.toThrow();
+    });
+
+    it('should redraw the waveform when the ResizeObserver reports a resize', () => {
+        class MockResizeObserver {
+            private readonly callback: ResizeObserverCallback;
+            constructor(callback: ResizeObserverCallback) {
+                this.callback = callback;
+            }
+            observe(): void {
+                this.callback([], this);
+            }
+            unobserve(): void {}
+            disconnect(): void {}
+        }
+        const originalResizeObserver = global.ResizeObserver;
+        global.ResizeObserver = MockResizeObserver;
+
+        expect(() => render(<WaveformEditor {...defaultProps} />)).not.toThrow();
+
+        global.ResizeObserver = originalResizeObserver;
     });
 });
