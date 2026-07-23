@@ -1,0 +1,19 @@
+tests/e2e/aiAndCollabFinal.spec.ts
+  s_872e1ff3914baf::t_be44bd4057c0ac 1-166
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "bb676c14d7364eca00b66f50f01dc273729cda93",
+  "prompts": {},
+  "sessions": {
+    "s_872e1ff3914baf": {
+      "agent_id": {
+        "tool": "opencode",
+        "id": "ses_0b3576681ffe5rKlnKBoMWUSQ1",
+        "model": "glm-5.2"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
