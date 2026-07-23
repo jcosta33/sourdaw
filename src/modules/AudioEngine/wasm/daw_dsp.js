@@ -193,6 +193,13 @@ export class FermenterInstance {
         return ret >>> 0;
     }
     /**
+     * @returns {number}
+     */
+    get_automation_values_ptr() {
+        const ret = wasm.fermenterinstance_get_automation_values_ptr(this.__wbg_ptr);
+        return ret >>> 0;
+    }
+    /**
      * Get pointer to right channel buffer (call after process).
      * @returns {number}
      */
@@ -236,6 +243,15 @@ export class FermenterInstance {
         return ret >>> 0;
     }
     /**
+     * Process sample-accurate numeric automation from the preallocated control buffer.
+     * @param {number} block_size
+     * @returns {number}
+     */
+    process_automated(block_size) {
+        const ret = wasm.fermenterinstance_process_automated(this.__wbg_ptr, block_size);
+        return ret >>> 0;
+    }
+    /**
      * Set a named parameter value.
      * @param {string} name
      * @param {number} value
@@ -244,6 +260,14 @@ export class FermenterInstance {
         const ptr0 = passStringToWasm0(name, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
         const len0 = WASM_VECTOR_LEN;
         wasm.fermenterinstance_set_param(this.__wbg_ptr, ptr0, len0, value);
+    }
+    /**
+     * Set a supported automation parameter without crossing the WASM string bridge.
+     * @param {number} param_id
+     * @param {number} value
+     */
+    set_param_by_id(param_id, value) {
+        wasm.fermenterinstance_set_param_by_id(this.__wbg_ptr, param_id, value);
     }
 }
 if (Symbol.dispose) FermenterInstance.prototype[Symbol.dispose] = FermenterInstance.prototype.free;

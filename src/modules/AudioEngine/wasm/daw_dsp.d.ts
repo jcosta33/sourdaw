@@ -37,11 +37,14 @@ export declare class FermenterInstance {
     free(): void;
     [Symbol.dispose](): void;
     active_voices(): number;
+    get_automation_values_ptr(): number;
     get_right_ptr(): number;
     note_off(note: number): void;
     note_on(note: number, velocity: number): void;
     process(block_size: number): number;
+    process_automated(block_size: number): number;
     set_param(name: string, value: number): void;
+    set_param_by_id(param_id: number, value: number): void;
 }
 
 export declare class GlutenInstance {
