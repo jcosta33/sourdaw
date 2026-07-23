@@ -5,6 +5,7 @@ import { createExportError } from '../errors/ExportError';
 import { type DeviceNodeEntry } from './buildDeviceChain';
 import { acquireRenderLock } from './offlineRender/acquireRenderLock';
 import { checkCancel } from './offlineRender/checkCancel';
+import { connectOfflineToasterPadRoutes } from './offlineRender/connectOfflineToasterPadRoutes';
 import {
     MAX_OFFLINE_FRAMES,
     MIN_RENDER_TIMEOUT_MS,
@@ -18,8 +19,9 @@ import { resetCancelFlag } from './offlineRender/resetCancelFlag';
 import { resolveRenderContext } from './offlineRender/resolveRenderContext';
 import { schedulePendingSuspends } from './offlineRender/schedulePendingSuspends';
 import { scheduleTrackClips } from './offlineRender/scheduleTrackClips';
-import { type OfflineRenderOptions, type PendingWorkletEvent } from './offlineRender/types';
+import { type OfflineRenderOptions, type OfflineTrackStrip, type PendingWorkletEvent } from './offlineRender/types';
 import { yieldToMain } from './offlineRender/yieldToMain';
+import { resolveToasterPadBinding } from './resolveToasterPadBinding';
 
 type ExportStemsFn = {
     (opts: OfflineRenderOptions): Promise<Map<string, AudioBuffer>>;
@@ -75,8 +77,20 @@ export const exportStems: ExportStemsFn = async function exportStems(
 
         const toasterParentIds = new Set(
             tracks.tracks
-                .filter((track) => track.devices.some((device) => device.type === 'toaster'))
+                .filter(
+                    (track) =>
+                        !track.disabled &&
+                        track.kind !== 'master' &&
+                        shouldCreateLiveTrackStrip(track) &&
+                        track.devices.some((device) => device.type === 'toaster')
+                )
                 .map((track) => track.id)
+        );
+        const groupedPadIds = new Set(
+            tracks.tracks.flatMap((track) => {
+                const binding = resolveToasterPadBinding(tracks.tracks, track.id);
+                return binding && toasterParentIds.has(binding.toasterParentTrackId) ? [track.id] : [];
+            })
         );
 
         // Toaster owns its children's sound generation, so export one grouped parent stem.
@@ -85,7 +99,7 @@ export const exportStems: ExportStemsFn = async function exportStems(
             if (time.disabled) {
                 return false;
             }
-            if (time.parentId && toasterParentIds.has(time.parentId)) {
+            if (groupedPadIds.has(time.id)) {
                 return false;
             }
             return time.kind !== 'master' && shouldCreateLiveTrackStrip(time);
@@ -107,34 +121,61 @@ export const exportStems: ExportStemsFn = async function exportStems(
 
             const offlineCtx = new OfflineAudioContext(2, frameCount, sampleRate);
             const pendingWorkletEvents: PendingWorkletEvent[] = [];
-            const strip = await createOfflineTrackStrip(offlineCtx, track);
+            const groupedPads = toasterParentIds.has(track.id)
+                ? tracks.tracks.filter(
+                      (candidate) =>
+                          groupedPadIds.has(candidate.id) &&
+                          !candidate.disabled &&
+                          shouldCreateLiveTrackStrip(candidate)
+                  )
+                : [];
+            const groupedTracks = [track, ...groupedPads];
+            const trackStripsById = new Map<string, OfflineTrackStrip>();
             const deviceEntriesByTrack = new Map<string, DeviceNodeEntry[]>();
-            deviceEntriesByTrack.set(track.id, strip.deviceEntries);
+            for (const groupedTrack of groupedTracks) {
+                const groupedStrip = await createOfflineTrackStrip(offlineCtx, groupedTrack);
+                trackStripsById.set(groupedTrack.id, groupedStrip);
+                deviceEntriesByTrack.set(groupedTrack.id, groupedStrip.deviceEntries);
+            }
+            const strip = trackStripsById.get(track.id)!;
+            if (groupedPads.length > 0) {
+                connectOfflineToasterPadRoutes({
+                    tracks: tracks.tracks,
+                    trackStripsById,
+                    deviceEntriesByTrack,
+                });
+                for (const pad of groupedPads) {
+                    trackStripsById.get(pad.id)?.outputNode.connect(strip.inputNode);
+                }
+            }
             strip.outputNode.connect(offlineCtx.destination);
 
-            await scheduleTrackClips({
-                offlineCtx,
-                track,
-                midi,
-                trackInputNode: strip.inputNode,
-                trackGainNode: strip.faderNode,
-                trackPanNode: strip.panNode,
-                destination: offlineCtx.destination,
-                durationSeconds,
-                defaultTempo,
-                changes,
-                projections: {
-                    projectMidiEvents,
-                    projectPpqEndpoints,
-                    processYeastMidi,
-                    selectMidiEventProbability,
-                },
-                onWarning,
-                pendingWorkletEvents,
-                allTracks: tracks.tracks,
-                deviceEntriesByTrack,
-                regionStartBeat: startBeat,
-            });
+            for (const groupedTrack of groupedTracks) {
+                const groupedStrip = trackStripsById.get(groupedTrack.id)!;
+                await scheduleTrackClips({
+                    offlineCtx,
+                    track: groupedTrack === track ? track : { ...groupedTrack, clips: [] },
+                    midi,
+                    trackInputNode: groupedStrip.inputNode,
+                    trackGainNode: groupedStrip.faderNode,
+                    trackPanNode: groupedStrip.panNode,
+                    destination: offlineCtx.destination,
+                    durationSeconds,
+                    defaultTempo,
+                    changes,
+                    projections: {
+                        projectMidiEvents,
+                        projectPpqEndpoints,
+                        processYeastMidi,
+                        selectMidiEventProbability,
+                    },
+                    onWarning,
+                    pendingWorkletEvents,
+                    allTracks: groupedPads.length > 0 ? tracks.tracks : [track],
+                    deviceEntriesByTrack,
+                    regionStartBeat: startBeat,
+                });
+            }
 
             schedulePendingSuspends(offlineCtx, pendingWorkletEvents, durationSeconds);
 
