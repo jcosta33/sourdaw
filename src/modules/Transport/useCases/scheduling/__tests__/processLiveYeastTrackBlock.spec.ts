@@ -70,4 +70,64 @@ describe('processLiveYeastTrackBlock', () => {
             expect.objectContaining({ pitch: 60, velocity: 90, startBeat: 0.25, duration: 0.5 }),
         ]);
     });
+
+    it('retains the authored duration when a note release falls beyond this scheduler block', async () => {
+        vi.mocked(projectCommittedGroove).mockImplementation(({ events }) => events);
+        vi.mocked(processYeastMidi).mockImplementation(({ events }) => Promise.resolve([...events]));
+
+        const result = await processLiveYeastTrackBlock({
+            context: { sampleRate: 48_000 } as BaseAudioContext,
+            rackId: 'rack-a',
+            trackId: 'track-a',
+            iterations: [
+                {
+                    routeId: 'route-a',
+                    clipId: 'clip-a',
+                    iterationStartBeat: 0,
+                    iterationEndBeat: 2,
+                    midiOffsetBeats: 0,
+                    sourceNotes: [{ id: 'long-note', pitch: 67, startBeat: 0, duration: 1.5, velocity: 96 }],
+                },
+            ],
+            fromBeat: 0,
+            toBeat: 0.5,
+            changes: [],
+            timeSignatureChanges: [],
+            transport: { ...defaultTransportState, tempo: 120 },
+            isCurrent: () => true,
+        });
+
+        expect(result?.notesByRoute.get('route-a')).toEqual([
+            expect.objectContaining({ pitch: 67, startBeat: 0, duration: 1.5 }),
+        ]);
+        expect(vi.mocked(processYeastMidi).mock.lastCall?.[0].events).toEqual([
+            expect.objectContaining({ durationSamples: 36_000, durationPpq: 1.5 }),
+        ]);
+    });
+
+    it('projects a source-free generator duration without waiting for a later release block', async () => {
+        vi.mocked(processYeastMidi).mockResolvedValue([
+            {
+                timeSamples: 0,
+                durationSamples: 12_000,
+                trackId: 'track-a',
+                kind: { type: 'noteOn', channel: 0, note: 72, velocity: 88 },
+            },
+        ]);
+
+        const result = await processLiveYeastTrackBlock({
+            context: { sampleRate: 48_000 } as BaseAudioContext,
+            rackId: 'rack-a',
+            trackId: 'track-a',
+            iterations: [],
+            fromBeat: 0,
+            toBeat: 0.5,
+            changes: [],
+            timeSignatureChanges: [],
+            transport: { ...defaultTransportState, tempo: 120 },
+            isCurrent: () => true,
+        });
+
+        expect(result?.generatedNotes).toEqual([expect.objectContaining({ pitch: 72, startBeat: 0, duration: 0.5 })]);
+    });
 });

@@ -16,6 +16,8 @@ export type MidiEvent = {
     /** Absolute sample time on the global timeline. */
     timeSamples: number;
     kind: MidiEventKind;
+    durationSamples?: number;
+    durationPpq?: number;
     /** Originating instrument track for runtime routing and panic recovery. */
     trackId?: string;
     /** Stable identity of this source endpoint across lookahead and Worker processing. */
@@ -156,12 +158,53 @@ function secondsAcrossTempoSegment(
     return (((toPpq - fromPpq) * 60) / startTempo) * (Math.log1p(relativeTempoDelta) / relativeTempoDelta);
 }
 
-export function projectPpqToSamples(ppq: number, transport: TransportInfo): number {
+function projectPpqToTimelineSamples(ppq: number, transport: TransportInfo): number {
     const tempoMap = transport.tempoMap;
     if (!tempoMap) {
-        return Math.round(ppq * samplesPerBeat(transport));
+        return ppq * samplesPerBeat(transport);
     }
-    return Math.round(secondsAcrossTempoRange(tempoMap.changes, 0, ppq, tempoMap.defaultTempo) * transport.sampleRate);
+    return secondsAcrossTempoRange(tempoMap.changes, 0, ppq, tempoMap.defaultTempo) * transport.sampleRate;
+}
+
+export function projectPpqToSamples(ppq: number, transport: TransportInfo): number {
+    return Math.round(projectPpqToTimelineSamples(ppq, transport));
+}
+
+export function projectSamplesToPpq(samples: number, transport: TransportInfo): number {
+    if (!transport.tempoMap) {
+        const blockStartSamples = transport.blockStartSamples;
+        return blockStartSamples === undefined
+            ? samples / samplesPerBeat(transport)
+            : transport.ppqPosition + (samples - blockStartSamples) / samplesPerBeat(transport);
+    }
+
+    const blockStartSamples = transport.blockStartSamples;
+    const timelineSamples =
+        blockStartSamples === undefined
+            ? samples
+            : projectPpqToTimelineSamples(transport.ppqPosition, transport) + samples - blockStartSamples;
+    if (timelineSamples === 0) {
+        return 0;
+    }
+
+    let maxTempo = transport.tempoMap.defaultTempo;
+    for (const change of transport.tempoMap.changes) {
+        maxTempo = Math.max(maxTempo, change.tempo);
+    }
+    const ppqBound = (Math.abs(timelineSamples) * maxTempo) / (transport.sampleRate * 60) + 1;
+    let low = -ppqBound;
+    let high = ppqBound;
+
+    for (let index = 0; index < 64; index++) {
+        const midpoint = (low + high) / 2;
+        const projected = projectPpqToTimelineSamples(midpoint, transport);
+        if (projected < timelineSamples) {
+            low = midpoint;
+        } else {
+            high = midpoint;
+        }
+    }
+    return (low + high) / 2;
 }
 
 /** Convert a musical rate (e.g., 1/8) to beat duration. */
