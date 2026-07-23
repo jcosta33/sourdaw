@@ -82,6 +82,7 @@ function createClip(input: {
     startBeat: number;
     endBeat: number;
     type?: 'audio' | 'midi';
+    audioOffsetBeats?: number;
     midiOffsetBeats?: number;
 }) {
     return {
@@ -91,6 +92,7 @@ function createClip(input: {
         startBeat: input.startBeat,
         endBeat: input.endBeat,
         type: input.type ?? 'midi',
+        ...(input.audioOffsetBeats === undefined ? {} : { audioOffsetBeats: input.audioOffsetBeats }),
         ...(input.midiOffsetBeats === undefined ? {} : { midiOffsetBeats: input.midiOffsetBeats }),
         fadeInBeats: 0,
         fadeOutBeats: 0,
@@ -436,6 +438,124 @@ describe('executeGlobalTimeOperation', () => {
         expect(dependencies.prepareTimelineMapTimeOperation).not.toHaveBeenCalled();
         expect(dependencies.prepareMidiGlobalTimeTransaction).not.toHaveBeenCalled();
         expect(randomUUID).not.toHaveBeenCalled();
+        expect(mocks.setTrackState).not.toHaveBeenCalled();
+        expect(mocks.setMarkerState).not.toHaveBeenCalled();
+    });
+
+    it('rejects computed insert clip overflow before writes or owner application', () => {
+        const overflowingClip = createClip({
+            id: 'overflowing',
+            startBeat: Number.MAX_VALUE / 2,
+            endBeat: Number.MAX_VALUE,
+        });
+        setStates({ tracks: [createTrack('track-1', 'midi', [overflowingClip])] });
+        const dependencies = registerDependencies();
+        const randomUUID = vi.spyOn(crypto, 'randomUUID');
+
+        const result = executeGlobalTimeOperation({
+            operation: {
+                type: 'insert',
+                atBeat: 1,
+                durationBeats: Number.MAX_VALUE,
+            },
+        });
+
+        expect(result).toEqual({ status: 'rejected', hasChanges: false, replayPlan: null });
+        expect(randomUUID).not.toHaveBeenCalled();
+        expect(mocks.setTrackState).not.toHaveBeenCalled();
+        expect(mocks.setMarkerState).not.toHaveBeenCalled();
+        expect(dependencies.prepareAutomationTimeOperation).not.toHaveBeenCalled();
+        expect(dependencies.prepareTimelineMapTimeOperation).not.toHaveBeenCalled();
+        expect(dependencies.prepareMidiGlobalTimeTransaction).not.toHaveBeenCalled();
+        expect(dependencies.automation.apply).not.toHaveBeenCalled();
+        expect(dependencies.transport.apply).not.toHaveBeenCalled();
+        expect(dependencies.midi.apply).not.toHaveBeenCalled();
+    });
+
+    it('rejects computed insert marker overflow before writes or owner application', () => {
+        setStates({
+            markers: [{ id: 'overflowing-marker', beat: Number.MAX_VALUE, name: 'Overflow', color: '' }],
+        });
+        const dependencies = registerDependencies();
+        const randomUUID = vi.spyOn(crypto, 'randomUUID');
+
+        const result = executeGlobalTimeOperation({
+            operation: {
+                type: 'insert',
+                atBeat: 1,
+                durationBeats: Number.MAX_VALUE,
+            },
+        });
+
+        expect(result).toEqual({ status: 'rejected', hasChanges: false, replayPlan: null });
+        expect(randomUUID).not.toHaveBeenCalled();
+        expect(mocks.setTrackState).not.toHaveBeenCalled();
+        expect(mocks.setMarkerState).not.toHaveBeenCalled();
+        expect(dependencies.prepareAutomationTimeOperation).not.toHaveBeenCalled();
+        expect(dependencies.prepareTimelineMapTimeOperation).not.toHaveBeenCalled();
+        expect(dependencies.prepareMidiGlobalTimeTransaction).not.toHaveBeenCalled();
+        expect(dependencies.automation.apply).not.toHaveBeenCalled();
+        expect(dependencies.transport.apply).not.toHaveBeenCalled();
+        expect(dependencies.midi.apply).not.toHaveBeenCalled();
+    });
+
+    it('rejects computed delete audio-offset overflow before identity allocation or writes', () => {
+        const overflowingClip = createClip({
+            id: 'overflowing-offset',
+            startBeat: 1,
+            endBeat: Number.MAX_VALUE,
+            type: 'audio',
+            audioOffsetBeats: Number.MAX_VALUE,
+        });
+        setStates({ tracks: [createTrack('track-1', 'audio', [overflowingClip])] });
+        const dependencies = registerDependencies();
+        const randomUUID = vi.spyOn(crypto, 'randomUUID').mockReturnValue('66666666-6666-4666-8666-666666666666');
+
+        const result = executeGlobalTimeOperation({
+            operation: {
+                type: 'delete',
+                startBeat: 0,
+                endBeat: Number.MAX_VALUE / 2,
+            },
+        });
+
+        expect(result).toEqual({ status: 'rejected', hasChanges: false, replayPlan: null });
+        expect(randomUUID).not.toHaveBeenCalled();
+        expect(mocks.setTrackState).not.toHaveBeenCalled();
+        expect(mocks.setMarkerState).not.toHaveBeenCalled();
+        expect(dependencies.prepareAutomationTimeOperation).not.toHaveBeenCalled();
+        expect(dependencies.prepareTimelineMapTimeOperation).not.toHaveBeenCalled();
+        expect(dependencies.prepareMidiGlobalTimeTransaction).not.toHaveBeenCalled();
+        expect(dependencies.automation.apply).not.toHaveBeenCalled();
+        expect(dependencies.transport.apply).not.toHaveBeenCalled();
+        expect(dependencies.midi.apply).not.toHaveBeenCalled();
+    });
+
+    it('rejects a present non-finite audio offset during ownership preflight', () => {
+        const malformedClip = createClip({
+            id: 'malformed-offset',
+            startBeat: 1,
+            endBeat: 4,
+            type: 'audio',
+            audioOffsetBeats: Number.POSITIVE_INFINITY,
+        });
+        setStates({ tracks: [createTrack('track-1', 'audio', [malformedClip])] });
+        const dependencies = registerDependencies();
+        const randomUUID = vi.spyOn(crypto, 'randomUUID');
+
+        const result = executeGlobalTimeOperation({
+            operation: {
+                type: 'delete',
+                startBeat: 1,
+                endBeat: 2,
+            },
+        });
+
+        expect(result).toEqual({ status: 'rejected', hasChanges: false, replayPlan: null });
+        expect(randomUUID).not.toHaveBeenCalled();
+        expect(dependencies.prepareAutomationTimeOperation).not.toHaveBeenCalled();
+        expect(dependencies.prepareTimelineMapTimeOperation).not.toHaveBeenCalled();
+        expect(dependencies.prepareMidiGlobalTimeTransaction).not.toHaveBeenCalled();
         expect(mocks.setTrackState).not.toHaveBeenCalled();
         expect(mocks.setMarkerState).not.toHaveBeenCalled();
     });

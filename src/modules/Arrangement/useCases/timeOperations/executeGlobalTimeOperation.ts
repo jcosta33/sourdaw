@@ -269,6 +269,11 @@ function validateClip(value: unknown): value is Clip {
             return false;
         }
     }
+    if (value.audioOffsetBeats !== undefined) {
+        if (typeof value.audioOffsetBeats !== 'number' || !Number.isFinite(value.audioOffsetBeats)) {
+            return false;
+        }
+    }
     if (typeof value.fadeInBeats !== 'number' || typeof value.fadeOutBeats !== 'number') {
         return false;
     }
@@ -295,6 +300,178 @@ function validateOwners(state: TrackState): readonly NormalizedOwner[] | null {
         }
     }
     return normalized.tracks;
+}
+
+function isValidComputedTime(value: number): boolean {
+    return Number.isFinite(value) && value >= 0;
+}
+
+function isValidComputedOffset(value: number): boolean {
+    return Number.isFinite(value);
+}
+
+function hasValidInsertedClipTimes(clip: Clip, operation: InsertGlobalTimeOperation): boolean {
+    if (clip.endBeat <= operation.atBeat) {
+        return true;
+    }
+    if (clip.startBeat >= operation.atBeat) {
+        if (!isValidComputedTime(clip.startBeat + operation.durationBeats)) {
+            return false;
+        }
+        return isValidComputedTime(clip.endBeat + operation.durationBeats);
+    }
+    return isValidComputedTime(clip.endBeat + operation.durationBeats);
+}
+
+function hasValidDeleteOffset(clip: Clip, operationEndBeat: number): boolean {
+    const audioOffsetBeats = clip.audioOffsetBeats ?? 0;
+    return isValidComputedOffset(audioOffsetBeats + (operationEndBeat - clip.startBeat));
+}
+
+function hasValidDeleteMidiSplitTimes(clip: Clip, splitTimelineBeat: number, discardTimelineBeat: number): boolean {
+    if (clip.type !== 'midi') {
+        return true;
+    }
+    const midiOffsetBeats = clip.midiOffsetBeats ?? 0;
+    if (!isValidComputedTime(splitTimelineBeat - clip.startBeat + midiOffsetBeats)) {
+        return false;
+    }
+    return isValidComputedTime(discardTimelineBeat - clip.startBeat + midiOffsetBeats);
+}
+
+function hasValidDeletedClipTimes(clip: Clip, operation: DeleteGlobalTimeOperation): boolean {
+    const durationBeats = operation.endBeat - operation.startBeat;
+    if (clip.endBeat <= operation.startBeat) {
+        return true;
+    }
+    if (clip.startBeat >= operation.endBeat) {
+        if (!isValidComputedTime(clip.startBeat - durationBeats)) {
+            return false;
+        }
+        return isValidComputedTime(clip.endBeat - durationBeats);
+    }
+    if (clip.startBeat >= operation.startBeat && clip.endBeat <= operation.endBeat) {
+        return true;
+    }
+    if (clip.startBeat < operation.startBeat && clip.endBeat > operation.endBeat) {
+        if (!isValidComputedTime(clip.endBeat - durationBeats)) {
+            return false;
+        }
+        if (!hasValidDeleteOffset(clip, operation.endBeat)) {
+            return false;
+        }
+        return hasValidDeleteMidiSplitTimes(clip, operation.endBeat, operation.startBeat);
+    }
+    if (clip.startBeat < operation.startBeat) {
+        return hasValidDeleteMidiSplitTimes(clip, operation.startBeat, operation.startBeat);
+    }
+    if (!isValidComputedTime(clip.endBeat - durationBeats)) {
+        return false;
+    }
+    if (!hasValidDeleteOffset(clip, operation.endBeat)) {
+        return false;
+    }
+    return hasValidDeleteMidiSplitTimes(clip, operation.endBeat, operation.endBeat);
+}
+
+function hasValidInsertedMarkerTimes(state: MarkerStoreState, operation: InsertGlobalTimeOperation): boolean {
+    for (const marker of state.markers) {
+        if (marker.beat >= operation.atBeat && !isValidComputedTime(marker.beat + operation.durationBeats)) {
+            return false;
+        }
+    }
+    return true;
+}
+
+function hasValidDeletedMarkerTimes(state: MarkerStoreState, operation: DeleteGlobalTimeOperation): boolean {
+    const durationBeats = operation.endBeat - operation.startBeat;
+    for (const marker of state.markers) {
+        if (marker.beat >= operation.endBeat && !isValidComputedTime(marker.beat - durationBeats)) {
+            return false;
+        }
+    }
+    for (const section of state.sections) {
+        if (section.endBeat <= operation.startBeat) {
+            continue;
+        }
+        if (section.startBeat >= operation.endBeat) {
+            if (!isValidComputedTime(section.startBeat - durationBeats)) {
+                return false;
+            }
+            if (!isValidComputedTime(section.endBeat - durationBeats)) {
+                return false;
+            }
+            continue;
+        }
+        if (section.startBeat >= operation.startBeat && section.endBeat <= operation.endBeat) {
+            continue;
+        }
+        if (section.startBeat < operation.startBeat && section.endBeat > operation.endBeat) {
+            if (!isValidComputedTime(section.endBeat - durationBeats)) {
+                return false;
+            }
+            continue;
+        }
+        if (section.startBeat >= operation.startBeat && !isValidComputedTime(section.endBeat - durationBeats)) {
+            return false;
+        }
+    }
+    return true;
+}
+
+function hasValidDuplicateCopyTimes(clip: Clip, operation: DuplicateGlobalTimeOperation): boolean {
+    if (clip.startBeat < operation.startBeat || clip.endBeat > operation.endBeat) {
+        return true;
+    }
+    const durationBeats = operation.endBeat - operation.startBeat;
+    if (!isValidComputedTime(clip.startBeat + durationBeats)) {
+        return false;
+    }
+    return isValidComputedTime(clip.endBeat + durationBeats);
+}
+
+function hasValidComputedTimes(
+    owners: readonly NormalizedOwner[],
+    markerState: MarkerStoreState,
+    operation: GlobalTimeOperation
+): boolean {
+    let insertionOperation: InsertGlobalTimeOperation | null = null;
+    if (operation.type === 'insert') {
+        insertionOperation = operation;
+    }
+    if (operation.type === 'duplicate') {
+        insertionOperation = {
+            type: 'insert',
+            atBeat: operation.endBeat,
+            durationBeats: operation.endBeat - operation.startBeat,
+        };
+    }
+
+    for (const owner of owners) {
+        if (!owner.acceptsClipUpdate) {
+            continue;
+        }
+        for (const normalizedClip of owner.clips) {
+            const clip = normalizedClip.source;
+            if (insertionOperation && !hasValidInsertedClipTimes(clip, insertionOperation)) {
+                return false;
+            }
+            if (operation.type === 'duplicate' && !hasValidDuplicateCopyTimes(clip, operation)) {
+                return false;
+            }
+            if (operation.type === 'delete' && !hasValidDeletedClipTimes(clip, operation)) {
+                return false;
+            }
+        }
+    }
+
+    if (insertionOperation) {
+        return hasValidInsertedMarkerTimes(markerState, insertionOperation);
+    }
+    if (operation.type !== 'delete') {
+        return false;
+    }
+    return hasValidDeletedMarkerTimes(markerState, operation);
 }
 
 function validateMarkerState(state: MarkerStoreState | null): state is MarkerStoreState {
@@ -1063,6 +1240,9 @@ export function executeGlobalTimeOperation(input: ExecuteGlobalTimeOperationInpu
     const owners = validateOwners(trackState);
     const markerState = markerStore.value;
     if (!owners || !validateMarkerState(markerState)) {
+        return rejectResult();
+    }
+    if (!hasValidComputedTimes(owners, markerState, validatedInput.operation)) {
         return rejectResult();
     }
 
