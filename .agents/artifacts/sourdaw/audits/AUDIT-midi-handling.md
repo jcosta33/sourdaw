@@ -127,6 +127,25 @@ Counts: 2 Blocker · 2 Major · 3 Minor · 1 Polish.
 
 Status: SURFACE FIXED in #719 — engine fix pending Wave 4 (WS-3)
 
+Surface scope covered by #719: the PianoRoll Expression MPE lanes
+(Pressure/Slide/Pitch Bend), the ClipView automation-lane MPE lanes, and the
+GrandBoule Per-Note editor are hidden behind honest-availability flags. The
+GrandBoule per-note surface is confirmed dead at the engine boundary, not only
+in TS: `GrandBouleEngine::set_param` (`crates/daw-dsp/src/grand_boule/engine.rs`,
+match ~line 391) has no `perNote.*` arm, so every
+`engine.setParam({ name: 'perNote.<key>.<param>' })` dispatch falls to the
+`_ => {}` default and is silently discarded; and `PerNoteValues` (engine.rs:24)
+is declared with a `Default` impl but never stored on the engine nor read by
+`note_on_with_pitch`, so the 8 per-note knobs are inert.
+
+Pending Wave 4 (WS-3) engine items, so the finding is not lost:
+- Fermenter/GrandBoule/Levain/Toaster per-note expression voice path
+  (member-channel bend/pressure/CC74 → voice), consumed by both live
+  `handleWebMidi*` and scheduled `scheduleMidiNotes` mpe branch.
+- GrandBoule engine: add a `perNote.*` arm to `set_param` (or a dedicated
+  per-note API) and make `note_on_with_pitch` read `PerNoteValues`, so the
+  captured per-key overrides actually voice.
+
 Per-note expression is captured but not sounded, and the feature is
 **user-facing** — exposed through the PianoRoll toolbar and GrandBoule panels —
 so an MPE-enabled session presents live controls that make no sound.

@@ -2,6 +2,7 @@ import { type ReactElement, useEffect, useRef, useState } from 'react';
 
 import { Power } from 'lucide-react';
 
+import { DawBlockedState } from '#/components/daw/DawBlockedState';
 import { DawPluginChip } from '#/components/daw/DawPluginChip';
 import { DawPluginMetricTile } from '#/components/daw/DawPluginMetricTile';
 import { DawPluginSectionCard } from '#/components/daw/DawPluginSectionCard';
@@ -46,6 +47,7 @@ import { PerNoteEditor } from '../components/PerNoteEditor';
 import { PianoModel3D } from '../components/PianoModel3D';
 import { SpectralWaterfall } from '../components/SpectralWaterfall';
 import { StringVibrationView } from '../components/StringVibrationView';
+import { GRAND_BOULE_PER_NOTE_AVAILABLE } from '../helpers/perNoteAvailability';
 
 /**
  * Grand Boule piano plugin panel view (§8).
@@ -405,39 +407,49 @@ export const GrandBoulePanel = ({ deviceId }: { deviceId: string }): ReactElemen
                         </div>
                     </SectionCard>
                     <SectionCard title="Per-Note" detail="Key-specific parameter editing (§3.1).">
-                        <PerNoteEditor
-                            perNoteOverrides={liveState.perNoteOverrides}
-                            onParamChange={(key, param, value) =>
-                                setGrandBoulePerNoteParam({
-                                    engine,
-                                    store,
-                                    key,
-                                    param,
-                                    value,
-                                    perNoteMap: liveState.perNoteOverrides,
-                                    setPerNoteMap: (next) => {
-                                        const s = store.value;
-                                        if (s !== null) {
-                                            store.set({ ...s, perNoteOverrides: next });
-                                        }
-                                    },
-                                })
-                            }
-                            onReset={(key) =>
-                                resetGrandBoulePerNoteParams({
-                                    engine,
-                                    store,
-                                    key,
-                                    perNoteMap: liveState.perNoteOverrides,
-                                    setPerNoteMap: (next) => {
-                                        const s = store.value;
-                                        if (s !== null) {
-                                            store.set({ ...s, perNoteOverrides: next });
-                                        }
-                                    },
-                                })
-                            }
-                        />
+                        {GRAND_BOULE_PER_NOTE_AVAILABLE ? (
+                            <PerNoteEditor
+                                perNoteOverrides={liveState.perNoteOverrides}
+                                onParamChange={(key, param, value) =>
+                                    setGrandBoulePerNoteParam({
+                                        engine,
+                                        store,
+                                        key,
+                                        param,
+                                        value,
+                                        perNoteMap: liveState.perNoteOverrides,
+                                        setPerNoteMap: (next) => {
+                                            const s = store.value;
+                                            if (s !== null) {
+                                                store.set({ ...s, perNoteOverrides: next });
+                                            }
+                                        },
+                                    })
+                                }
+                                onReset={(key) =>
+                                    resetGrandBoulePerNoteParams({
+                                        engine,
+                                        store,
+                                        key,
+                                        perNoteMap: liveState.perNoteOverrides,
+                                        setPerNoteMap: (next) => {
+                                            const s = store.value;
+                                            if (s !== null) {
+                                                store.set({ ...s, perNoteOverrides: next });
+                                            }
+                                        },
+                                    })
+                                }
+                            />
+                        ) : (
+                            <DawBlockedState
+                                compact
+                                eyebrow="Per-Note Voicing"
+                                title="Per-note voicing not yet active"
+                                description="Per-key overrides are captured but the piano engine does not apply them yet."
+                                summary="These controls return once the per-note engine path lands."
+                            />
+                        )}
                     </SectionCard>
 
                     <SectionCard title="MIDI Calibration" detail="Controller tuning (§3.1).">
