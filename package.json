@@ -29,7 +29,7 @@
         "deps:baseline:types": "node scripts/check-dependency-boundaries.mjs --write-baseline types",
         "tauri:dev": "tauri dev",
         "tauri:build": "tauri build",
-        "wasm:dsp": "cd crates/daw-dsp && wasm-pack build --target web --out-dir ../../public/wasm/daw-dsp --no-typescript && rm -f ../../public/wasm/daw-dsp/.gitignore && node --experimental-strip-types ../../scripts/gen-daw-dsp-worklet.ts",
+        "wasm:dsp": "cd crates/daw-dsp && wasm-pack build --target web --out-dir ../../public/wasm/daw-dsp && rm -f ../../public/wasm/daw-dsp/.gitignore && node --experimental-strip-types ../../scripts/gen-daw-dsp-worklet.ts",
         "wasm:proof-chamber": "cd crates/proof-chamber && wasm-pack build --target web --out-dir ../../public/wasm/proof-chamber --no-typescript && rm -f ../../public/wasm/proof-chamber/.gitignore && node --experimental-strip-types ../../scripts/gen-proof-chamber-worklet.ts",
         "wasm:scoring": "cd crates/scoring && wasm-pack build --target web --out-dir ../../public/wasm/scoring --no-typescript && rm -f ../../public/wasm/scoring/.gitignore && node --experimental-strip-types ../../scripts/gen-scoring-worklet.ts",
         "wasm:decoder": "cd crates/daw-wasm-decoder && wasm-pack build --target web --out-dir ../../public/wasm/daw-wasm-decoder --no-typescript && rm -f ../../public/wasm/daw-wasm-decoder/.gitignore",
