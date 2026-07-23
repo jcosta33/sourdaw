@@ -223,6 +223,12 @@ describe('projectOfflineYeastTrackNotes', () => {
         expect(
             projectOfflineYeastTrackNotes({
                 ...input,
+                iterations: [firstIteration, secondIteration, { ...secondIteration, clipId: 'clip-2-copy' }],
+            })[0]?.toasterPadIndex
+        ).toBe(7);
+        expect(
+            projectOfflineYeastTrackNotes({
+                ...input,
                 iterations: [firstIteration, secondIteration, { ...secondIteration, toasterPadIndex: 8 }],
             })[0]?.toasterPadIndex
         ).toBe(-1);

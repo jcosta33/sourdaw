@@ -212,6 +212,14 @@ export async function scheduleMidiNotes(
             }
             if (yeastResult.generatedNotes.length > 0) {
                 for (const note of yeastResult.generatedNotes) {
+                    const hasOriginCarrier = liveYeastIterations.some(
+                        (iteration) =>
+                            iteration.iterationStartBeat <= note.startBeat &&
+                            note.startBeat < iteration.iterationEndBeat
+                    );
+                    if (!hasOriginCarrier) {
+                        continue;
+                    }
                     const [projectedNote] = projectCommittedGroove({
                         events: [note],
                         consumerType: 'sequencer',

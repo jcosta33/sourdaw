@@ -399,7 +399,7 @@ describe('scheduleMidiNotes', () => {
 
     it('routes grooved generator notes by their final carrier and clips the note tail', async () => {
         const firstClip = midiClip({ id: 'clip-1', startBeat: 0, endBeat: 2 });
-        const secondClip = midiClip({ id: 'clip-2', startBeat: 2, endBeat: 4 });
+        const secondClip = midiClip({ id: 'clip-2', startBeat: 2.5, endBeat: 4 });
         const track = midiTrack({
             clips: [firstClip, secondClip],
             followChordTrack: true,
@@ -413,18 +413,25 @@ describe('scheduleMidiNotes', () => {
                 timePpq: 1.75,
                 kind: { type: 'noteOn', channel: 0, note: 64, velocity: 90 },
             },
+            {
+                timeSamples: 54_000,
+                timePpq: 2.25,
+                kind: { type: 'noteOn', channel: 0, note: 65, velocity: 80 },
+            },
+            { timeSamples: 72_000, timePpq: 3, kind: { type: 'noteOff', channel: 0, note: 65 } },
             { timeSamples: 120_000, timePpq: 5, kind: { type: 'noteOff', channel: 0, note: 64 } },
         ]);
         vi.mocked(projectCommittedGroove).mockImplementation(({ events }) =>
-            events.map((event) => ({ ...event, startBeat: event.startBeat + 0.5 }))
+            events.map((event) => ({ ...event, startBeat: event.startBeat + 1 }))
         );
 
         await scheduleMidiNotes(0, 4, 0, -1, new Set<string>(), [], defaultTransportState, 120);
 
-        expect(getChordAtBeat).toHaveBeenCalledWith(2);
-        expect(getChordAtBeat).toHaveBeenCalledWith(2.25);
+        expect(getChordAtBeat).toHaveBeenCalledWith(2.5);
+        expect(getChordAtBeat).toHaveBeenCalledWith(2.75);
         expect(getChordAtBeat).not.toHaveBeenCalledWith(0);
-        expect(vi.mocked(scheduleNote).mock.calls[0]?.[4]).toBe(0.875);
+        expect(scheduleNote).toHaveBeenCalledTimes(1);
+        expect(vi.mocked(scheduleNote).mock.calls[0]?.[4]).toBe(0.625);
     });
 
     it('pairs an equal-sample Note Off only when it follows the Note On in stable event order', async () => {

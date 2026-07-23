@@ -155,6 +155,10 @@ export function projectOfflineYeastTrackNotes({
             if (noteEndBeat <= projected.startBeat) {
                 continue;
             }
+            const carrierPadIndex = carrierIteration.toasterPadIndex;
+            const hasUnambiguousPad =
+                carrierPadIndex !== undefined &&
+                carrierIterations.every((iteration) => iteration.toasterPadIndex === carrierPadIndex);
             const endpoints = projectPpqEndpoints({
                 startPpq: projected.startBeat,
                 endPpq: noteEndBeat,
@@ -172,7 +176,7 @@ export function projectOfflineYeastTrackNotes({
                 velocity: projected.velocity,
                 startSamples: endpoints.startSamples,
                 endSamples: endpoints.endSamples,
-                toasterPadIndex: carrierIterations.length === 1 ? (carrierIteration.toasterPadIndex ?? -1) : -1,
+                toasterPadIndex: hasUnambiguousPad ? carrierPadIndex : -1,
             });
         }
     }
