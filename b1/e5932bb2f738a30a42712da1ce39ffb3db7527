@@ -1,0 +1,34 @@
+src/modules/Preferences/presentations/views/preferences/__tests__/MidiSection.spec.tsx
+  s_0d39f3a4a4357a::t_951d22bfb956c1 1-59
+src/modules/Preferences/presentations/views/preferences/__tests__/PerformanceSection.spec.tsx
+  s_0d39f3a4a4357a::t_76e5be641121f1 1-24,31-52
+  s_0d39f3a4a4357a::t_57e0a1755cb927 25-30
+src/modules/Preferences/presentations/views/preferences/__tests__/GeneralSection.spec.tsx
+  s_0d39f3a4a4357a::t_1aef4a0b0c5bca 100-103,105-106,108-109,117-119,122,129-136,138,140
+  s_0d39f3a4a4357a::t_c5e9c56ee6c09c 53
+  s_0d39f3a4a4357a::t_e26683f603d5a1 56
+  s_0d39f3a4a4357a::t_7e5ebc361c4273 1-44,49,51-52,54-55,57-58,60-87,92-99,104,107,110-116,120-121,123-128,137,139,141-168
+  s_0d39f3a4a4357a::t_2f01163eac61d2 45-48
+  s_0d39f3a4a4357a::t_f8a2cb39db1d23 50
+  s_0d39f3a4a4357a::t_f8821b99e25250 59
+  s_0d39f3a4a4357a::t_c87567ca54c163 88-91
+src/modules/Preferences/presentations/views/preferences/__tests__/AiSection.spec.tsx
+  s_0d39f3a4a4357a::t_7f28618cbc8f5b 1-8,11-113
+  s_0d39f3a4a4357a::t_765083db754b73 9-10
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "b1e5932bb2f738a30a42712da1ce39ffb3db7527",
+  "prompts": {},
+  "sessions": {
+    "s_0d39f3a4a4357a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "60da6a2e-7d79-4d98-8624-e993f5a9f94e",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
