@@ -1,0 +1,33 @@
+src/modules/BrowserAi/repositories/__tests__/browserAiPathHelpers.spec.ts
+  s_b6c327a08a4580::t_001a6d248344bd 1-42
+src/modules/CrdtDocument/repositories/crdtPersistence/__tests__/advancePersistenceAuthority.spec.ts
+  s_6108a2a0bac9d3::t_73aa999e383284 1-47
+src/modules/CrdtDocument/repositories/crdtPersistence/__tests__/arePersistenceAuthoritiesEqual.spec.ts
+  s_6108a2a0bac9d3::t_76c3e0b04e54df 1-27
+src/utils/__tests__/automationDeviceTarget.spec.ts
+  s_b6c327a08a4580::t_2cbbcf8c51ee44 1-150
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "1a9088ea14a5a69bc42dc7989e606e7a61dd2a97",
+  "prompts": {},
+  "sessions": {
+    "s_6108a2a0bac9d3": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-a0015e0080f3cb40e",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_b6c327a08a4580": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-a7724e8f2e331a8fa",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
