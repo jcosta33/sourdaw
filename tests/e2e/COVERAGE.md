@@ -296,6 +296,43 @@
 | 29 | 2026-07-11 | Deep interactions: export/palette/MIDI/timeline | Done — merged | [#223](https://github.com/jcosta33/sourdaw/pull/223) |
 | 30 | 2026-07-11 | Flow coverage: recording/chords/sessions/panels | Done — merged | [#224](https://github.com/jcosta33/sourdaw/pull/224) |
 | 31 | 2026-07-11 | Final batch: shortcut effects, device chains, metrics | Done — merged | [#225](https://github.com/jcosta33/sourdaw/pull/225) |
+| 32 | 2026-07-23 | E2E: replace 93 no-op visibility assertions (batch 1) | Done — merged | [#686](https://github.com/jcosta33/sourdaw/pull/686) |
+| 33 | 2026-07-23 | fix: keep launch overlay exited once project loads | Done — merged | [#687](https://github.com/jcosta33/sourdaw/pull/687) |
+| 34 | 2026-07-23 | Unit: proof presentation gap (analyser hook, tonal balance, limiter) | Done — merged | [#688](https://github.com/jcosta33/sourdaw/pull/688) |
+| 35 | 2026-07-23 | E2E: replace 52 no-op visibility assertions (batch 2) | Done — merged | [#689](https://github.com/jcosta33/sourdaw/pull/689) |
+| 36 | 2026-07-23 | Unit: TimelineEditor TrackMidiFxSection + DeviceInspector | Done — merged | [#690](https://github.com/jcosta33/sourdaw/pull/690) |
+| 37 | 2026-07-23 | E2E: eliminate final 54 no-op visibility assertions (batch 3) | Done — merged | [#692](https://github.com/jcosta33/sourdaw/pull/692) |
+| 38 | 2026-07-23 | Unit: YeastPreviewSidecar decision/page/route logic (17 tests) | Done — merged | [#696](https://github.com/jcosta33/sourdaw/pull/696) |
+| 39 | 2026-07-23 | Unit: GrooveTemplate + GrooveTemplateState pure logic (80 tests) | Done — merged | [#701](https://github.com/jcosta33/sourdaw/pull/701) |
+| 40 | 2026-07-23 | Unit: UndoTree branching + effects DSP bitcrush/feedbackDelay (23 tests) | Done — merged | [#704](https://github.com/jcosta33/sourdaw/pull/704) |
+
+---
+
+## Session 2026-07-23 — Depth + breadth push
+
+**Goal shift:** from "make green" to **maximum coverage with maximum depth**. Prior work left the suites honest but shallow (613 existence assertions vs 181 deep). This session eliminated all 198 remaining no-op `if (visible) { toBeVisible() }` patterns across 27 e2e files (batches 1-3: PRs #686, #689, #692) and then pivoted to **deep unit coverage** of pure-logic modules with zero/weak direct specs.
+
+**Procedure for bugs found:** sus-audit artifact first (document, don't prescribe), then campaign fix, then write the test against corrected behavior — never contort a test around a shortcoming.
+
+### Deep unit specs added this session
+
+| Spec | File under test | Tests | Coverage area |
+|------|-----------------|-------|---------------|
+| `YeastPreviewSidecar.spec.ts` | `workers/YeastPreviewSidecar.ts` (1232 LOC) | 17 | beat-time math, decision/lineage, route reset, provenance, capacity drops |
+| `GrooveTemplate.spec.ts` | `models/GrooveTemplate.ts` (190 LOC) | 46 | canonicalization, subdivision math, name collision, exact-shape guard |
+| `GrooveTemplateState.spec.ts` | `models/GrooveTemplateState.ts` (184 LOC) | 34 | assignment/state guards, sanitize legacy-id remap + dedup + rename |
+| `undoTreeDeep.spec.ts` | `models/UndoTree.ts` (96 LOC) | 12 | branching tree: sibling creation, activeBranch, immutability |
+| `effects.spec.ts` | `services/effects.ts` (36 LOC) | 11 | bitcrush quantization, feedbackDelay wet/dry + feedback decay |
+
+**Total new deep unit tests this session: 120.** All assert computed values/state diffs, not existence.
+
+### Review discipline applied
+Each PR passed a frozen stance-pool review (2-3 reviewers). PR #696 had 3 vacuous guard-clause tests removed and the `releasePage` test strengthened to verify state integrity. PR #701 had weak assertions tightened (exact collision names, non-canonical id canonicalization, builtin-dedup isolation) and 2 coverage gaps filled (invalid-consumerType drop, midi-clip provenance). PR #704 passed mutation testing proving assertions bite.
+
+### Known bugs/shortcomings documented
+- **Crust device** — `addDevice` intentionally rejects with `PluginNotImplementedError`. Not a regression; by design.
+- **Gain envelope toggle** renders outside the inspector DOM region — e2e works around via page scope (not a product bug, a DOM-scoping note).
+- **InstrumentCard** is a `<div>` with onClick, not a `<button>` — accessibility gap, tested via `getByText` not `getByRole`.
 
 ---
 
