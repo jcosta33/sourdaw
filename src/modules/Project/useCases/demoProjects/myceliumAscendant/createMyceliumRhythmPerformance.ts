@@ -40,9 +40,6 @@ const PAD_NAMES = [
     'Perc 2',
 ] as const;
 
-const DROP_TWO_PADS = new Set<string>(
-    PAD_NAMES.filter((name) => !['Crash', 'Ride', 'Cowbell', 'Clave'].includes(name))
-);
 const DROP_ONE_RANGES = [[192, 288]] as const;
 const DROP_TWO_RANGES = [
     [416, 480],
@@ -175,9 +172,6 @@ function drumSeeds(name: string, section: RhythmSection): NoteSeed[] {
         return name === 'Kick' ? stepped(352, 415.75, 4, 0.12, 94) : [];
     }
     if (section.key === 'drop-two') {
-        if (!DROP_TWO_PADS.has(name)) {
-            return [];
-        }
         return [...dropDrumSeeds(name, 416, 480, 16), ...dropDrumSeeds(name, 484, 544, 16)];
     }
     if (name === 'Kick') {
@@ -214,7 +208,8 @@ function bassSeeds(name: string, section: RhythmSection): NoteSeed[] {
     }
     if (section.key === 'drop-one' || section.key === 'drop-two') {
         const ranges = section.key === 'drop-one' ? DROP_ONE_RANGES : DROP_TWO_RANGES;
-        return ranges.flatMap(([startBeat, endBeat]) => stepped(startBeat, endBeat, 4, 0.22, 91));
+        const offset = name === 'Sub Mycelium' ? 0.25 : 1.75;
+        return ranges.flatMap(([startBeat, endBeat]) => stepped(startBeat + offset, endBeat, 4, 0.22, 91));
     }
     if (name === 'Acid Tendril' && section.key === 'pressure') {
         return stepped(160.5, 191.75, 4, 0.18, 86);

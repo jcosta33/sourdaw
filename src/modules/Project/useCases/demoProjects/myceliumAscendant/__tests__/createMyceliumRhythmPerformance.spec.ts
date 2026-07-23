@@ -130,9 +130,9 @@ describe('createMyceliumRhythmPerformance', () => {
             ...Array.from({ length: 60 }, (_, index) => 484 + index),
         ];
 
-        expect(
-            kick.filter((note) => dropKickBeats.includes(note.absoluteBeat)).map((note) => note.absoluteBeat)
-        ).toEqual(dropKickBeats);
+        expect([...inRange(kick, 192, 288), ...inRange(kick, 416, 544)].map((note) => note.absoluteBeat)).toEqual(
+            dropKickBeats
+        );
         for (const kickBeat of dropKickBeats) {
             expect(inRange(rolling, kickBeat, kickBeat + 1).map((note) => note.absoluteBeat)).toEqual([
                 kickBeat + 0.25,
@@ -142,6 +142,8 @@ describe('createMyceliumRhythmPerformance', () => {
         }
         expect(new Set(rolling.map((note) => note.velocity)).size).toBeGreaterThan(3);
         expect(new Set(rolling.map((note) => note.duration)).size).toBeGreaterThan(2);
+        expect(getNotes(projectData, BASS_NAMES).every((note) => note.absoluteBeat % 1 >= 0.25)).toBe(true);
+        expect(PAD_NAMES.every((name) => inRange(getNotes(projectData, [name]), 416, 544).length > 0)).toBe(true);
         expect(overlaps(getNotes(projectData, [...PAD_NAMES, ...BASS_NAMES]), 480, 484)).toEqual([]);
     });
 
