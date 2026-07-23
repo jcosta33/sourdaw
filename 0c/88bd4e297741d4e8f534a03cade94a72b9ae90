@@ -1,0 +1,23 @@
+src/modules/Arrangement/presentations/views/TrackHeader.tsx
+  s_0d39f3a4a4357a::t_62410d0bbc1656 215-216
+tests/e2e/deepCoverage.spec.ts
+  s_0d39f3a4a4357a::t_295ecf1567b30b 255,257
+tests/e2e/remainingCoverage.spec.ts
+  s_0d39f3a4a4357a::t_440b417ab9df60 59,61-64,66
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "0c88bd4e297741d4e8f534a03cade94a72b9ae90",
+  "prompts": {},
+  "sessions": {
+    "s_0d39f3a4a4357a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "60da6a2e-7d79-4d98-8624-e993f5a9f94e",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
