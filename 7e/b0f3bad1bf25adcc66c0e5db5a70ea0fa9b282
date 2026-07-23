@@ -1,0 +1,72 @@
+src/modules/AudioEngine/useCases/offlineRender/__tests__/scheduleTrackClipsAudio.spec.ts
+  s_ac9b259eab20ba::t_5cfb4b250d81c6 273
+src/modules/AudioEngine/useCases/offlineRender/projectOfflineYeastTrackNotes.ts
+  s_ac9b259eab20ba::t_c7fbbe8bd91108 39,62,115,143-147
+src/modules/AudioEngine/useCases/offlineRender/__tests__/projectOfflineYeastTrackNotes.spec.ts
+  s_ac9b259eab20ba::t_0b658c0bdf5f6e 77,149
+src/modules/Arrangement/useCases/freezeBounce/renderOffline.ts
+  s_ac9b259eab20ba::t_0c867018af99cb 56-63,128,130,231,256-260
+  s_ac9b259eab20ba::t_30a157bc7190f5 68,129
+src/modules/AudioEngine/useCases/__tests__/renderOffline.spec.ts
+  s_ac9b259eab20ba::t_91ca1505ef59cb 135
+src/modules/AudioEngine/useCases/offlineRender/resolveRenderContext.ts
+  s_ac9b259eab20ba::t_5680a1c39df0b2 12,40,95
+src/modules/AudioEngine/useCases/offlineRender/projectOfflineYeastClipNotes.ts
+  s_ac9b259eab20ba::t_be71ac8b18601a 77
+  s_ac9b259eab20ba::t_c7fbbe8bd91108 27,45
+src/modules/AudioEngine/useCases/exportStems.ts
+  s_ac9b259eab20ba::t_5680a1c39df0b2 62,75,177
+src/modules/AudioEngine/useCases/renderOffline.ts
+  s_ac9b259eab20ba::t_5680a1c39df0b2 73,80,206
+src/modules/AudioEngine/useCases/configureOfflineMidiEventProjection.ts
+  s_ac9b259eab20ba::t_30a157bc7190f5 8,10
+src/app/bootstrap.ts
+  s_ac9b259eab20ba::t_c1d8a10255fcff 88,90,161-162,171-172
+src/modules/AudioEngine/useCases/__tests__/renderOfflineGraph.spec.ts
+  s_ac9b259eab20ba::t_91ca1505ef59cb 153
+src/modules/AudioEngine/useCases/offlineRender/__tests__/scheduleTrackClips.spec.ts
+  s_ac9b259eab20ba::t_25fb91b445cb63 66-68,347,422,587
+  s_ac9b259eab20ba::t_42c3f68e0a2097 69,263,275,286,581-586
+  s_ac9b259eab20ba::t_5b7f3d2744f0d9 535
+  s_c2fca615e81f34::t_aa0aa03b70ead6 588-589
+src/modules/AudioEngine/useCases/offlineRender/scheduleTrackClips.ts
+  s_ac9b259eab20ba::t_5680a1c39df0b2 16,160,200-201,315
+  s_ac9b259eab20ba::t_c7fbbe8bd91108 303-314,316,434,514-518
+src/modules/Arrangement/useCases/freezeBounce/offlineRenderDependencies.ts
+  s_ac9b259eab20ba::t_0c867018af99cb 65-66,95
+src/modules/AudioEngine/useCases/__tests__/exportStems.spec.ts
+  s_ac9b259eab20ba::t_91ca1505ef59cb 129
+  s_ac9b259eab20ba::t_5cfb4b250d81c6 145
+src/modules/AudioEngine/repositories/offlineScheduler/offlineMidiEventProjectorState.ts
+  s_ac9b259eab20ba::t_c1d8a10255fcff 46-51,55,59
+src/modules/AudioEngine/repositories/offlineScheduler/setOfflineMidiEventProjector.ts
+  s_ac9b259eab20ba::t_c1d8a10255fcff 3,11,17,21
+src/modules/Arrangement/useCases/freezeBounce/__tests__/renderOffline.spec.ts
+  s_ac9b259eab20ba::t_a6d44ba1a62666 48
+  s_ac9b259eab20ba::t_6b6530c91513dd 64,331,459,466,482
+  s_ac9b259eab20ba::t_63068cd43dc230 308
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "7eb0f3bad1bf25adcc66c0e5db5a70ea0fa9b282",
+  "prompts": {},
+  "sessions": {
+    "s_ac9b259eab20ba": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8699-3865-7842-8c54-afbac6cfd266",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_c2fca615e81f34": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f74e9-e1c5-7142-85d2-4c577b3973c0",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
