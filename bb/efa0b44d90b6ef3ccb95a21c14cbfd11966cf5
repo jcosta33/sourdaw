@@ -1,0 +1,34 @@
+src/modules/Yeast/workers/processors/__tests__/GrooveModule.spec.ts
+  s_ac9b259eab20ba::t_876c9a7c8edf21 87,127-128,142,145,150
+  s_ac9b259eab20ba::t_ae9e15bdf10524 139-141,149
+  s_ac9b259eab20ba::t_0cc7f5f4ef4d23 28,82,85
+src/modules/Yeast/models/__tests__/MidiEvent.spec.ts
+  s_ac9b259eab20ba::t_876c9a7c8edf21 3
+src/modules/Yeast/workers/processors/__tests__/ChordGenerator.spec.ts
+  s_ac9b259eab20ba::t_876c9a7c8edf21 54,57,66
+src/modules/Yeast/workers/BoundedNoteVoiceQueue.ts
+  s_ac9b259eab20ba::t_236c6b00701540 21,26,48,54,74
+src/modules/Yeast/workers/processors/ChordGenerator.ts
+  s_ac9b259eab20ba::t_236c6b00701540 104-107
+src/modules/Yeast/workers/processors/GrooveModule.ts
+  s_ac9b259eab20ba::t_236c6b00701540 43-46,51-53,67,73
+  s_ac9b259eab20ba::t_7a6171068d8cc1 74-75,79,93,96-98,104
+src/modules/Yeast/models/MidiEvent.ts
+  s_ac9b259eab20ba::t_422ba0eeccf396 190-192,194-196
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "bbefa0b44d90b6ef3ccb95a21c14cbfd11966cf5",
+  "prompts": {},
+  "sessions": {
+    "s_ac9b259eab20ba": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8699-3865-7842-8c54-afbac6cfd266",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
