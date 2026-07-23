@@ -29,7 +29,11 @@ class FakeOfflineAudioContext {
     createBuffer(channels: number, length: number, sampleRate: number): FakeAudioBuffer {
         return new FakeAudioBuffer(channels, length, sampleRate);
     }
-    createBufferSource(): { buffer: FakeAudioBuffer | null; connect: ReturnType<typeof vi.fn>; start: ReturnType<typeof vi.fn> } {
+    createBufferSource(): {
+        buffer: FakeAudioBuffer | null;
+        connect: ReturnType<typeof vi.fn>;
+        start: ReturnType<typeof vi.fn>;
+    } {
         return { buffer: null, connect: vi.fn(), start: vi.fn() };
     }
     startRendering(): Promise<FakeAudioBuffer> {

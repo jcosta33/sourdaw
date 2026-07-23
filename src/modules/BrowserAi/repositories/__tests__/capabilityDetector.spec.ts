@@ -153,7 +153,8 @@ describe('detectCapabilities', () => {
         Object.defineProperty(globalThis, 'navigator', {
             configurable: true,
             value: {
-                userAgent: 'Mozilla/5.0 (Macintosh) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15',
+                userAgent:
+                    'Mozilla/5.0 (Macintosh) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15',
                 platform: 'MacIntel',
                 storage: { getDirectory: vi.fn() },
             },
