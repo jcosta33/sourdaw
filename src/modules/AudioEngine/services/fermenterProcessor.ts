@@ -13,6 +13,8 @@
 
 import { initSync, FermenterInstance } from '../wasm/daw_dsp.js';
 
+import { WasmView } from './wasmView';
+
 const AUTOMATION_PARAM_COUNT = 15;
 
 function camelToSnake(str: string): string {
@@ -76,6 +78,12 @@ class FermenterProcessor extends AudioWorkletProcessor {
     _queue: FermenterQueued[] = [];
     _queueHead = 0;
     _paramAutomation: ParamAutomationSchedule[] = [];
+    // Cached WASM linear-memory views — reused across render quanta so process()
+    // performs no per-block Float32Array allocation (audit RT-1); each revalidates
+    // on a memory.grow() buffer-identity change (audit RT-7). See wasmView.ts.
+    // (The 128-sample scope buffer below is a separate concern tracked as RT-3.)
+    _outLeftView = new WasmView();
+    _outRightView = new WasmView();
 
     constructor() {
         super();
@@ -284,13 +292,19 @@ class FermenterProcessor extends AudioWorkletProcessor {
             const leftPtr = inst.process(frames);
             const rightPtr = inst.get_right_ptr();
 
-            const outL = new Float32Array(mem, leftPtr, frames);
+            // Re-read the live buffer AFTER process(): a Rust-side allocation can
+            // grow the linear memory mid-call and detach the previous buffer, so the
+            // output views (also read below for peak/scope telemetry) must map the
+            // post-grow buffer (audit RT-7). Steady state reuses the cached view.
+            const outMem = this._memory?.buffer ?? mem;
+
+            const outL = this._outLeftView.get(outMem, leftPtr, frames);
             out0.set(outL);
 
             const out1 = output[1];
             let outR: Float32Array | null = null;
             if (out1) {
-                outR = new Float32Array(mem, rightPtr, frames);
+                outR = this._outRightView.get(outMem, rightPtr, frames);
                 out1.set(outR);
             }
 

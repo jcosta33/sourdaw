@@ -242,16 +242,28 @@ class KneadProcessor extends AudioWorkletProcessor {
             this._wasmInR.set(input[1] ?? in0);
 
             const resultPtr = inst.process(frames);
+            // Re-read the live buffer AFTER process(): a Rust-side allocation can
+            // grow the linear memory mid-call and detach the pre-call `mem`, so the
+            // output views must map the post-grow buffer (audit RT-7). Building them
+            // over the stale `mem` reads detached (zero) memory. A grow also stales
+            // the cached output pointers and the tracked view buffer, so invalidate
+            // both here for this quantum and the next.
+            const outMem = this._memory?.buffer ?? mem;
+            if (outMem !== mem) {
+                this._viewBuffer = outMem;
+                this._viewResultPtr = -1;
+                this._viewResultRightPtr = -1;
+            }
             // Older wasm binaries predate get_right_ptr; mirror left into the
             // right output there rather than faulting.
             const resultRightPtr = inst.get_right_ptr?.();
 
             if (!this._wasmOutL || resultPtr !== this._viewResultPtr) {
-                this._wasmOutL = new Float32Array(mem, resultPtr, frames);
+                this._wasmOutL = new Float32Array(outMem, resultPtr, frames);
                 this._viewResultPtr = resultPtr;
             }
             if (resultRightPtr !== undefined && (!this._wasmOutR || resultRightPtr !== this._viewResultRightPtr)) {
-                this._wasmOutR = new Float32Array(mem, resultRightPtr, frames);
+                this._wasmOutR = new Float32Array(outMem, resultRightPtr, frames);
                 this._viewResultRightPtr = resultRightPtr;
             }
             const wasmOutL = this._wasmOutL;

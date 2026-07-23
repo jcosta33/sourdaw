@@ -404,9 +404,16 @@ class ToasterProcessor extends AudioWorkletProcessor {
 
             this._applyParamAutomation(currentFrame);
             const leftPtr = inst.process(frames);
+            // Re-read the live buffer AFTER process(): a Rust-side allocation can
+            // grow the linear memory mid-call and detach the pre-call `mem`, so the
+            // cache must revalidate against the CURRENT buffer (audit RT-7).
+            // Comparing the stale cache against the equally-stale `mem` would match
+            // after a mid-process grow and skip the rebuild, leaving the output
+            // views mapping detached (NaN/zero) memory.
+            const liveMem = this._memory?.buffer ?? mem;
             const cachedMemory = this._outputViews[0]?.[0].buffer;
-            if (leftPtr !== this._outputBasePtr || cachedMemory !== mem) {
-                this._cacheOutputViews(leftPtr, mem);
+            if (leftPtr !== this._outputBasePtr || cachedMemory !== liveMem) {
+                this._cacheOutputViews(leftPtr, liveMem);
             }
 
             const outputCount = Math.min(outputs.length, this._outputViews.length);

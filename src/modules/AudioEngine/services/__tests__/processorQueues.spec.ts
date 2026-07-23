@@ -4,6 +4,11 @@ import path from 'path';
 import ts from 'typescript';
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 
+// The eval harness strips imports from the processor source, so any symbol a
+// processor imports and references at class-eval time (WasmView is used in field
+// initializers) must be re-supplied as an injected global. The real class is used.
+import { WasmView } from '../wasmView';
+
 // Helper to evaluate an AudioWorklet script and extract its class
 function loadProcessorClass(filePath: string, className: string) {
     const code = fs.readFileSync(path.resolve(__dirname, filePath), 'utf-8');
@@ -22,6 +27,7 @@ function loadProcessorClass(filePath: string, className: string) {
         currentFrame: 0,
         sampleRate: 48000,
         console,
+        WasmView,
     };
 
     // Strip TypeScript types so `new Function` can parse pure JS. Use ESNext

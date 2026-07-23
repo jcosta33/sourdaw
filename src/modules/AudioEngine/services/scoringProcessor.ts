@@ -15,6 +15,8 @@
 
 import { initSync, ScoringInstance } from '../wasm/scoring.js';
 
+import { WasmView } from './wasmView';
+
 type ScoringMsg =
     | { type: 'init'; wasmBytes: BufferSource }
     | { type: 'init-sab'; sab: SharedArrayBuffer; byteOffset: number }
@@ -30,6 +32,11 @@ class ScoringProcessor extends AudioWorkletProcessor {
     _frameCount = 0;
     _telemetryInterval = 4; // send telemetry every N process calls (~21ms at 128 samples/48kHz)
     _sabView: Float32Array | null = null;
+    // Cached WASM linear-memory views — reused across render quanta so process()
+    // performs no per-block Float32Array allocation (audit RT-1); each revalidates
+    // on a memory.grow() buffer-identity change (audit RT-7). See wasmView.ts.
+    _outLeftView = new WasmView();
+    _outRightView = new WasmView();
 
     constructor() {
         super();
@@ -106,13 +113,19 @@ class ScoringProcessor extends AudioWorkletProcessor {
             const leftPtr = inst.process(in0, input[1] ?? in0, frames);
             const rightPtr = inst.get_right_ptr();
 
+            // Re-read the live buffer AFTER process(): a Rust-side allocation can
+            // grow the linear memory mid-call and detach the previous buffer, so the
+            // output views must map the post-grow buffer (audit RT-7). Steady state
+            // leaves the identity unchanged and reuses the cached view.
+            const outMem = this._memory?.buffer ?? mem;
+
             const out0 = output[0];
             if (out0) {
-                out0.set(new Float32Array(mem, leftPtr, frames));
+                out0.set(this._outLeftView.get(outMem, leftPtr, frames));
             }
             const out1 = output[1];
             if (out1) {
-                out1.set(new Float32Array(mem, rightPtr, frames));
+                out1.set(this._outRightView.get(outMem, rightPtr, frames));
             }
 
             // Send telemetry periodically

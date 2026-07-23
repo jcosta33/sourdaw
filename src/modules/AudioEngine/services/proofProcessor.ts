@@ -11,6 +11,8 @@
 
 import { initSync, ProofInstance } from '../wasm/daw_dsp.js';
 
+import { WasmView } from './wasmView';
+
 // Seqlock counter index within the telemetry slot — kept in lockstep with
 // engine/telemetryAllocator.ts (TELEMETRY_SEQ_IDX = FLOATS_PER_SLOT - 1). The
 // writer bumps it odd before publishing the float fields and even after, so a
@@ -32,6 +34,13 @@ class ProofProcessor extends AudioWorkletProcessor {
     _meterCounter = 0;
     _sabView: Float32Array | null = null;
     _sabSeqView: Int32Array | null = null;
+    // Cached WASM linear-memory views — reused across render quanta so process()
+    // performs no per-block Float32Array allocation (audit RT-1); each revalidates
+    // on a memory.grow() buffer-identity change (audit RT-7). See wasmView.ts.
+    _inLeftView = new WasmView();
+    _inRightView = new WasmView();
+    _outLeftView = new WasmView();
+    _outRightView = new WasmView();
 
     constructor() {
         super();
@@ -137,16 +146,25 @@ class ProofProcessor extends AudioWorkletProcessor {
 
             const inLeftPtr = inst.get_input_left_ptr();
             const inRightPtr = inst.get_input_right_ptr();
-            new Float32Array(mem, inLeftPtr, frames).set(in0);
-            new Float32Array(mem, inRightPtr, frames).set(input[1] ?? in0);
+            this._inLeftView.get(mem, inLeftPtr, frames).set(in0);
+            this._inRightView.get(mem, inRightPtr, frames).set(input[1] ?? in0);
 
             const outLeftPtr = inst.process(frames);
             const outRightPtr = inst.get_right_ptr();
 
-            out0.set(new Float32Array(mem, outLeftPtr, frames));
+            // Re-read the live buffer AFTER process(): a Rust-side allocation can
+            // grow the linear memory mid-call and detach the buffer the inputs were
+            // written into, so output views must map the post-grow buffer (audit
+            // RT-7). Reusing the pre-call `mem` here would let the cache hand back a
+            // view over a detached (zero-length) buffer and silently emit stale
+            // samples. Steady state (no grow) leaves the identity unchanged and
+            // reuses the cached view with no allocation.
+            const outMem = this._memory?.buffer ?? mem;
+
+            out0.set(this._outLeftView.get(outMem, outLeftPtr, frames));
             const out1 = output[1];
             if (out1) {
-                out1.set(new Float32Array(mem, outRightPtr, frames));
+                out1.set(this._outRightView.get(outMem, outRightPtr, frames));
             }
 
             this._meterCounter++;
