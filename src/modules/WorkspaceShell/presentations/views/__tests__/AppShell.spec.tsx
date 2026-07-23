@@ -524,5 +524,45 @@ describe('AppShell', () => {
             });
             expect(screen.queryByTestId('launch-screen')).not.toBeInTheDocument();
         });
+
+        it('keeps the launch overlay exiting when initialized briefly flips back to false', () => {
+            vi.useFakeTimers();
+            projectState = createProjectState({ initialized: false, loading: false });
+
+            const { rerender } = render(<AppShell>Content</AppShell>);
+            expect(screen.getByTestId('launch-screen')).toHaveAttribute('data-exiting', 'false');
+
+            // Project readies -> overlay starts exiting and latches.
+            projectState = createProjectState({ initialized: true, loading: false });
+            rerender(<AppShell>Content</AppShell>);
+            expect(screen.getByTestId('launch-screen')).toHaveAttribute('data-exiting', 'true');
+
+            // A transient store blip re-reports the project as uninitialized
+            // (projectStore transient re-hydrate / stale notification under
+            // load). The overlay must stay exiting, not re-block — the
+            // intermittent template-launch hang this fix targets.
+            projectState = createProjectState({ initialized: false, loading: false });
+            rerender(<AppShell>Content</AppShell>);
+            expect(screen.getByTestId('launch-screen')).toHaveAttribute('data-exiting', 'true');
+        });
+
+        it('does not re-reveal the launch screen after it unmounts when the project blips uninitialized', () => {
+            vi.useFakeTimers();
+            projectState = createProjectState({ initialized: false, loading: false });
+
+            const { rerender } = render(<AppShell>Content</AppShell>);
+            projectState = createProjectState({ initialized: true, loading: false });
+            rerender(<AppShell>Content</AppShell>);
+
+            act(() => {
+                vi.advanceTimersByTime(700);
+            });
+            expect(screen.queryByTestId('launch-screen')).not.toBeInTheDocument();
+
+            // A late uninitialized blip must not bring the launch screen back.
+            projectState = createProjectState({ initialized: false, loading: false });
+            rerender(<AppShell>Content</AppShell>);
+            expect(screen.queryByTestId('launch-screen')).not.toBeInTheDocument();
+        });
     });
 });
