@@ -73,6 +73,24 @@ function duplicateInput(replayPlan?: ReplayPlan): PrepareInput {
     };
 }
 
+function deleteInput(): PrepareInput {
+    return {
+        operation: {
+            type: 'delete',
+            startBeat: 2,
+            endBeat: 4,
+            splits: [{ sourceClipId: 'source', newClipId: 'target', splitBeat: 2 }],
+            removeClipIds: [],
+        },
+        owners: [owner('track-1', true, [clip('source', 0, 8)])],
+    };
+}
+
+function withUnexpectedKey<Value extends object>(value: Value): Value {
+    Object.assign(value, { unexpected: true });
+    return value;
+}
+
 describe('prepareMidiGlobalTimeTransaction', () => {
     beforeEach(() => {
         vi.restoreAllMocks();
@@ -158,10 +176,10 @@ describe('prepareMidiGlobalTimeTransaction', () => {
                 type: 'delete',
                 startBeat: 4,
                 endBeat: 8,
-                splits: [{ sourceClipId: 'source', newClipId: 'right', splitBeat: 4 }],
+                splits: [{ sourceClipId: 'source', newClipId: 'right', splitBeat: 4, discardBeforeBeat: 4 }],
                 removeClipIds: ['remove'],
             },
-            owners: [owner('track-1', true, [clip('source'), clip('remove')])],
+            owners: [owner('track-1', true, [clip('source', 0, 8, 0), clip('remove')])],
         });
 
         expect(transaction.status).toBe('ready');
@@ -349,6 +367,108 @@ describe('prepareMidiGlobalTimeTransaction', () => {
         expect(mocks.set).not.toHaveBeenCalled();
     });
 
+    it('rejects mixed operation fields before identity allocation', () => {
+        const preparedState = state({
+            notesByClipId: {
+                source: [{ id: 'source-note', pitch: 60, startBeat: 1, duration: 1, velocity: 90 }],
+            },
+        });
+        mocks.state.value = preparedState;
+        const randomUuid = vi.spyOn(crypto, 'randomUUID');
+        const input = duplicateInput();
+        Object.assign(input.operation, { splits: [], removeClipIds: [] });
+
+        const transaction = prepareMidiGlobalTimeTransaction(input);
+
+        expect(transaction.status).toBe('rejected');
+        expect(transaction.hasChanges).toBe(false);
+        expect(randomUuid).not.toHaveBeenCalled();
+        expect(mocks.state.value).toBe(preparedState);
+        expect(mocks.set).not.toHaveBeenCalled();
+    });
+
+    it.each([
+        {
+            name: 'top-level input',
+            createInput: () => withUnexpectedKey(duplicateInput()),
+        },
+        {
+            name: 'owner snapshot',
+            createInput: () => ({
+                ...duplicateInput(),
+                owners: [withUnexpectedKey(owner('track-1', true, [clip('source')]))],
+            }),
+        },
+        {
+            name: 'clip snapshot',
+            createInput: () => ({
+                ...duplicateInput(),
+                owners: [owner('track-1', true, [withUnexpectedKey(clip('source'))])],
+            }),
+        },
+        {
+            name: 'insert operation',
+            createInput: () => ({
+                operation: withUnexpectedKey({ type: 'insert' as const, atBeat: 2, durationBeats: 2 }),
+                owners: [owner('track-1', true, [clip('source')])],
+            }),
+        },
+        {
+            name: 'delete operation',
+            createInput: () => {
+                const input = deleteInput();
+                withUnexpectedKey(input.operation);
+                return input;
+            },
+        },
+        {
+            name: 'split command',
+            createInput: () => {
+                const input = deleteInput();
+                if (input.operation.type !== 'delete') {
+                    throw new Error('Expected delete input');
+                }
+                const split = input.operation.splits[0];
+                if (!split) {
+                    throw new Error('Expected split command');
+                }
+                withUnexpectedKey(split);
+                return input;
+            },
+        },
+        {
+            name: 'copy command',
+            createInput: () => {
+                const input = duplicateInput();
+                if (input.operation.type !== 'duplicate') {
+                    throw new Error('Expected duplicate input');
+                }
+                const copy = input.operation.copies[0];
+                if (!copy) {
+                    throw new Error('Expected copy command');
+                }
+                withUnexpectedKey(copy);
+                return input;
+            },
+        },
+    ])('rejects an unexpected key in the $name schema before effects', ({ createInput }) => {
+        const preparedState = state({
+            notesByClipId: {
+                source: [{ id: 'source-note', pitch: 60, startBeat: 1, duration: 2, velocity: 90 }],
+            },
+        });
+        mocks.state.value = preparedState;
+        const randomUuid = vi.spyOn(crypto, 'randomUUID');
+
+        const transaction = prepareMidiGlobalTimeTransaction(createInput());
+
+        expect(transaction.status).toBe('rejected');
+        expect(transaction.hasChanges).toBe(false);
+        expect(randomUuid).not.toHaveBeenCalled();
+        expect(mocks.state.value).toBe(preparedState);
+        expect(mocks.set).not.toHaveBeenCalled();
+    });
+
     it.each([
         {
             name: 'duplicate owner',
@@ -453,7 +573,7 @@ describe('prepareMidiGlobalTimeTransaction', () => {
         expect(applied.revert()).toBe(false);
     });
 
-    it('fails closed for reentrant and failed publication', () => {
+    it('keeps an in-flight apply revertible after a synchronous reentrant revert', () => {
         const preparedState = state({
             notesByClipId: {
                 source: [{ id: 'source-note', pitch: 60, startBeat: 4, duration: 1, velocity: 90 }],
@@ -474,12 +594,21 @@ describe('prepareMidiGlobalTimeTransaction', () => {
             owners: [owner('track-1', true, [clip('source')])],
         });
 
-        expect(transaction.apply()).toBe(false);
+        expect(transaction.apply()).toBe(true);
         expect(reentrantResult).toBe(false);
-        expect(transaction.revert()).toBe(false);
+        expect(mocks.state.value).not.toBe(preparedState);
+        expect(transaction.revert()).toBe(true);
+        expect(mocks.state.value).toBe(preparedState);
+    });
 
+    it('fails closed for failed publication', () => {
+        const preparedState = state({
+            notesByClipId: {
+                source: [{ id: 'source-note', pitch: 60, startBeat: 4, duration: 1, velocity: 90 }],
+            },
+        });
         mocks.state.value = preparedState;
-        mocks.set.mockReset();
+
         const failure = new Error('publication failed');
         mocks.set.mockImplementationOnce(() => {
             throw failure;

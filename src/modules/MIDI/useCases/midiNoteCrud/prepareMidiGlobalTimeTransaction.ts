@@ -76,6 +76,7 @@ type IndexedMidiClip = MidiGlobalTimeShiftClip;
 type ValidatedPreparationInput = {
     operation: MidiGlobalTimeOperation;
     clipsById: ReadonlyMap<string, IndexedMidiClip>;
+    suppliedReplayPlan: unknown;
 };
 
 type PreparedMidiGlobalTimeState = {
@@ -88,6 +89,17 @@ type PreparedMidiGlobalTimeState = {
 type TransactionPhase = 'prepared' | 'publishing' | 'applied' | 'closed';
 
 const EMPTY_REPLAY_PLAN: MidiGlobalTimeReplayPlan = { version: 1, notes: [] };
+const INPUT_KEYS = ['operation', 'owners'] as const;
+const INPUT_WITH_REPLAY_PLAN_KEYS = ['operation', 'owners', 'replayPlan'] as const;
+const OWNER_KEYS = ['trackId', 'eligible', 'clips'] as const;
+const CLIP_KEYS = ['clipId', 'startBeat', 'endBeat'] as const;
+const CLIP_WITH_MIDI_OFFSET_KEYS = ['clipId', 'startBeat', 'endBeat', 'midiOffsetBeats'] as const;
+const INSERT_OPERATION_KEYS = ['type', 'atBeat', 'durationBeats'] as const;
+const DELETE_OPERATION_KEYS = ['type', 'startBeat', 'endBeat', 'splits', 'removeClipIds'] as const;
+const DUPLICATE_OPERATION_KEYS = ['type', 'startBeat', 'endBeat', 'copies'] as const;
+const SPLIT_OPERATION_KEYS = ['sourceClipId', 'newClipId', 'splitBeat'] as const;
+const SPLIT_WITH_DISCARD_KEYS = ['sourceClipId', 'newClipId', 'splitBeat', 'discardBeforeBeat'] as const;
+const COPY_OPERATION_KEYS = ['sourceClipId', 'newClipId'] as const;
 const REPLAY_PLAN_KEYS = ['version', 'notes'] as const;
 const REPLAY_NOTE_KEYS = [
     'role',
@@ -112,6 +124,19 @@ function hasExactKeys(value: Record<string, unknown>, keys: readonly string[]): 
     return valueKeys.length === keys.length && keys.every((key) => Object.hasOwn(value, key));
 }
 
+function hasExactKeysForOptionalProperty(
+    value: Record<string, unknown>,
+    optionalProperty: string,
+    keysWithoutOptionalProperty: readonly string[],
+    keysWithOptionalProperty: readonly string[]
+): boolean {
+    if (Object.hasOwn(value, optionalProperty)) {
+        return hasExactKeys(value, keysWithOptionalProperty);
+    }
+
+    return hasExactKeys(value, keysWithoutOptionalProperty);
+}
+
 function isFiniteNumber(value: unknown): value is number {
     return typeof value === 'number' && Number.isFinite(value);
 }
@@ -128,6 +153,9 @@ function validateSplitOperation(value: unknown): MidiGlobalTimeSplitOperation | 
     if (!isPlainObject(value)) {
         return null;
     }
+    if (!hasExactKeysForOptionalProperty(value, 'discardBeforeBeat', SPLIT_OPERATION_KEYS, SPLIT_WITH_DISCARD_KEYS)) {
+        return null;
+    }
 
     const sourceClipId = value.sourceClipId;
     const newClipId = value.newClipId;
@@ -136,22 +164,22 @@ function validateSplitOperation(value: unknown): MidiGlobalTimeSplitOperation | 
     if (!isNonEmptyId(sourceClipId) || !isNonEmptyId(newClipId) || !isFiniteNonNegative(splitBeat)) {
         return null;
     }
-    if (discardBeforeBeat !== undefined) {
+    if (Object.hasOwn(value, 'discardBeforeBeat')) {
         if (!isFiniteNonNegative(discardBeforeBeat) || discardBeforeBeat > splitBeat) {
             return null;
         }
+
+        return { sourceClipId, newClipId, splitBeat, discardBeforeBeat };
     }
 
-    return {
-        sourceClipId,
-        newClipId,
-        splitBeat,
-        ...(discardBeforeBeat === undefined ? {} : { discardBeforeBeat }),
-    };
+    return { sourceClipId, newClipId, splitBeat };
 }
 
 function validateCopyOperation(value: unknown): MidiGlobalTimeCopyOperation | null {
-    if (!isPlainObject(value) || !isNonEmptyId(value.sourceClipId) || !isNonEmptyId(value.newClipId)) {
+    if (!isPlainObject(value) || !hasExactKeys(value, COPY_OPERATION_KEYS)) {
+        return null;
+    }
+    if (!isNonEmptyId(value.sourceClipId) || !isNonEmptyId(value.newClipId)) {
         return null;
     }
 
@@ -162,6 +190,10 @@ function validateCopyOperation(value: unknown): MidiGlobalTimeCopyOperation | nu
 }
 
 function validateDeleteOperation(value: Record<string, unknown>): DeleteMidiGlobalTimeOperation | null {
+    if (!hasExactKeys(value, DELETE_OPERATION_KEYS)) {
+        return null;
+    }
+
     const startBeat = value.startBeat;
     const endBeat = value.endBeat;
     if (!isFiniteNonNegative(startBeat) || !isFiniteNumber(endBeat) || endBeat <= startBeat) {
@@ -192,6 +224,10 @@ function validateDeleteOperation(value: Record<string, unknown>): DeleteMidiGlob
 }
 
 function validateDuplicateOperation(value: Record<string, unknown>): DuplicateMidiGlobalTimeOperation | null {
+    if (!hasExactKeys(value, DUPLICATE_OPERATION_KEYS)) {
+        return null;
+    }
+
     const startBeat = value.startBeat;
     const endBeat = value.endBeat;
     if (!isFiniteNonNegative(startBeat) || !isFiniteNumber(endBeat) || endBeat <= startBeat) {
@@ -219,6 +255,9 @@ function validateOperation(value: unknown): MidiGlobalTimeOperation | null {
     }
 
     if (value.type === 'insert') {
+        if (!hasExactKeys(value, INSERT_OPERATION_KEYS)) {
+            return null;
+        }
         if (!isFiniteNonNegative(value.atBeat) || !isFiniteNumber(value.durationBeats) || value.durationBeats <= 0) {
             return null;
         }
@@ -246,7 +285,7 @@ function createClipIndex(owners: unknown): ReadonlyMap<string, IndexedMidiClip> 
     const trackIds = new Set<string>();
     const clipsById = new Map<string, IndexedMidiClip>();
     for (const owner of owners) {
-        if (!isPlainObject(owner)) {
+        if (!isPlainObject(owner) || !hasExactKeys(owner, OWNER_KEYS)) {
             return null;
         }
 
@@ -262,6 +301,9 @@ function createClipIndex(owners: unknown): ReadonlyMap<string, IndexedMidiClip> 
             if (!isPlainObject(clip)) {
                 return null;
             }
+            if (!hasExactKeysForOptionalProperty(clip, 'midiOffsetBeats', CLIP_KEYS, CLIP_WITH_MIDI_OFFSET_KEYS)) {
+                return null;
+            }
 
             const clipId = clip.clipId;
             const startBeat = clip.startBeat;
@@ -273,8 +315,12 @@ function createClipIndex(owners: unknown): ReadonlyMap<string, IndexedMidiClip> 
             if (!isFiniteNumber(startBeat) || !isFiniteNumber(endBeat) || endBeat <= startBeat) {
                 return null;
             }
-            if (midiOffsetBeats !== undefined && !isFiniteNumber(midiOffsetBeats)) {
-                return null;
+            let normalizedMidiOffsetBeats = 0;
+            if (Object.hasOwn(clip, 'midiOffsetBeats')) {
+                if (!isFiniteNumber(midiOffsetBeats)) {
+                    return null;
+                }
+                normalizedMidiOffsetBeats = midiOffsetBeats;
             }
 
             ownerClipIds.add(clipId);
@@ -283,7 +329,7 @@ function createClipIndex(owners: unknown): ReadonlyMap<string, IndexedMidiClip> 
                 eligible,
                 startBeat,
                 endBeat,
-                midiOffsetBeats: midiOffsetBeats ?? 0,
+                midiOffsetBeats: normalizedMidiOffsetBeats,
             });
         }
 
@@ -297,6 +343,9 @@ function validateInput(input: unknown): ValidatedPreparationInput | null {
     if (!isPlainObject(input)) {
         return null;
     }
+    if (!hasExactKeysForOptionalProperty(input, 'replayPlan', INPUT_KEYS, INPUT_WITH_REPLAY_PLAN_KEYS)) {
+        return null;
+    }
 
     const operation = validateOperation(input.operation);
     const clipsById = createClipIndex(input.owners);
@@ -304,7 +353,7 @@ function validateInput(input: unknown): ValidatedPreparationInput | null {
         return null;
     }
 
-    return { operation, clipsById };
+    return { operation, clipsById, suppliedReplayPlan: input.replayPlan };
 }
 
 function hasCompleteOwnership(state: MidiStoreState, clipsById: ReadonlyMap<string, IndexedMidiClip>): boolean {
@@ -490,11 +539,7 @@ function rejectPreparation(): PreparedMidiGlobalTimeState {
     return { status: 'rejected', hasChanges: false, nextState: null, replayPlan: EMPTY_REPLAY_PLAN };
 }
 
-function prepareState(
-    preparedState: MidiStoreState | null,
-    input: unknown,
-    suppliedReplayPlan: unknown
-): PreparedMidiGlobalTimeState {
+function prepareState(preparedState: MidiStoreState | null, input: unknown): PreparedMidiGlobalTimeState {
     if (!preparedState) {
         return rejectPreparation();
     }
@@ -515,13 +560,13 @@ function prepareState(
     }
 
     let replayPlan: MidiGlobalTimeReplayPlan;
-    if (suppliedReplayPlan === undefined) {
+    if (validatedInput.suppliedReplayPlan === undefined) {
         replayPlan = allocateReplayPlan(planned.identityRequests);
     } else {
-        if (!isValidReplayPlan(suppliedReplayPlan, planned.identityRequests)) {
+        if (!isValidReplayPlan(validatedInput.suppliedReplayPlan, planned.identityRequests)) {
             return rejectPreparation();
         }
-        replayPlan = suppliedReplayPlan;
+        replayPlan = validatedInput.suppliedReplayPlan;
     }
 
     const targetNoteIds = replayPlan.notes.map((note) => note.targetNoteId);
@@ -542,19 +587,15 @@ function isPublishingPhase(phase: TransactionPhase): boolean {
     return phase === 'publishing';
 }
 
-function readSuppliedReplayPlan(input: unknown): unknown {
-    if (!isPlainObject(input)) {
-        return undefined;
-    }
-    return input.replayPlan;
-}
-
 export function prepareMidiGlobalTimeTransaction(input: PrepareMidiGlobalTimeTransactionInput) {
     const preparedState = midiStore.value;
-    const prepared = prepareState(preparedState, input, readSuppliedReplayPlan(input));
+    const prepared = prepareState(preparedState, input);
     let phase: TransactionPhase = prepared.hasChanges ? 'prepared' : 'closed';
 
     function apply(): boolean {
+        if (phase === 'publishing') {
+            return false;
+        }
         if (phase !== 'prepared') {
             phase = 'closed';
             return false;
@@ -585,6 +626,9 @@ export function prepareMidiGlobalTimeTransaction(input: PrepareMidiGlobalTimeTra
     }
 
     function revert(): boolean {
+        if (phase === 'publishing') {
+            return false;
+        }
         if (phase !== 'applied') {
             phase = 'closed';
             return false;
