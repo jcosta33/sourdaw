@@ -1,0 +1,29 @@
+src/modules/Yeast/workers/processors/GrooveModule.ts
+  s_ac9b259eab20ba::t_6246d9905a4c8c 69
+  s_ac9b259eab20ba::t_377f4aafdc33cd 6-12,46,48-50,57,66-68,80,89-92
+src/modules/Yeast/models/__tests__/MidiEvent.spec.ts
+  s_ac9b259eab20ba::t_625d81e812252a 3-10,93-101
+  s_ac9b259eab20ba::t_e041a8832c51bf 102-103
+src/modules/Yeast/models/MidiEvent.ts
+  s_ac9b259eab20ba::t_377f4aafdc33cd 163,166-217
+  s_ac9b259eab20ba::t_20ab3b65067df3 219
+src/modules/Yeast/workers/processors/__tests__/GrooveModule.spec.ts
+  s_ac9b259eab20ba::t_5329a95bec7baf 4,115-116,135-136,144,147,153-154,161,164
+  s_ac9b259eab20ba::t_377f4aafdc33cd 165-166
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "7edd02605fcad404e22919a573f24e1d9d23265c",
+  "prompts": {},
+  "sessions": {
+    "s_ac9b259eab20ba": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8699-3865-7842-8c54-afbac6cfd266",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
