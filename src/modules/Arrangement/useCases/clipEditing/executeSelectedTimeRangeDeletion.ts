@@ -960,42 +960,44 @@ function compensateRestoredHandles(restored: readonly PreparedHandle[]): unknown
 }
 
 function undoAppliedHandles(handles: readonly PreparedHandle[]): boolean {
-    const restored: PreparedHandle[] = [];
-    for (let index = handles.length - 1; index >= 0; index--) {
-        const handle = handles[index];
-        if (!handle) {
-            continue;
-        }
-        let restoredSuccessfully: boolean;
-        try {
-            restoredSuccessfully = handle.revert();
-        } catch (error) {
-            const crossHandleFailures = compensateRestoredHandles(restored);
-            if (error instanceof UnrecoveredSelectedTimeRangeDeletionError) {
-                if (crossHandleFailures.length === 0) {
-                    throw error;
+    return batchStoreUpdates(() => {
+        const restored: PreparedHandle[] = [];
+        for (let index = handles.length - 1; index >= 0; index--) {
+            const handle = handles[index];
+            if (!handle) {
+                continue;
+            }
+            let restoredSuccessfully: boolean;
+            try {
+                restoredSuccessfully = handle.revert();
+            } catch (error) {
+                const crossHandleFailures = compensateRestoredHandles(restored);
+                if (error instanceof UnrecoveredSelectedTimeRangeDeletionError) {
+                    if (crossHandleFailures.length === 0) {
+                        throw error;
+                    }
+                    throw new UnrecoveredSelectedTimeRangeDeletionError(error.originalFailure, [
+                        ...error.compensationFailures,
+                        ...crossHandleFailures,
+                    ]);
                 }
-                throw new UnrecoveredSelectedTimeRangeDeletionError(error.originalFailure, [
-                    ...error.compensationFailures,
-                    ...crossHandleFailures,
-                ]);
+                if (crossHandleFailures.length > 0) {
+                    throw new UnrecoveredSelectedTimeRangeDeletionError(error, crossHandleFailures);
+                }
+                throw error;
             }
-            if (crossHandleFailures.length > 0) {
-                throw new UnrecoveredSelectedTimeRangeDeletionError(error, crossHandleFailures);
+            if (!restoredSuccessfully) {
+                const failure = new Error(`${handle.name} undo returned false`);
+                const compensationFailures = compensateRestoredHandles(restored);
+                if (compensationFailures.length > 0) {
+                    throw new UnrecoveredSelectedTimeRangeDeletionError(failure, compensationFailures);
+                }
+                throw failure;
             }
-            throw error;
+            restored.push(handle);
         }
-        if (!restoredSuccessfully) {
-            const failure = new Error(`${handle.name} undo returned false`);
-            const compensationFailures = compensateRestoredHandles(restored);
-            if (compensationFailures.length > 0) {
-                throw new UnrecoveredSelectedTimeRangeDeletionError(failure, compensationFailures);
-            }
-            throw failure;
-        }
-        restored.push(handle);
-    }
-    return true;
+        return true;
+    });
 }
 
 function rejectResult(): RejectedSelectedTimeRangeDeletion {

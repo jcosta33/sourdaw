@@ -755,4 +755,50 @@ describe('executeSelectedTimeRangeDeletion', () => {
             true
         );
     });
+
+    it('batches subscriber visibility across successful Arrangement and MIDI undo', () => {
+        const span = createClip({
+            id: 'span',
+            trackId: 'target',
+            startBeat: 0,
+            endBeat: 10,
+            type: 'midi',
+        });
+        const originalArrangement = setArrangement([createTrack('target', [span])]);
+        midiStore.set({
+            notesByClipId: {
+                span: [{ id: 'right', pitch: 64, startBeat: 8, duration: 1, velocity: 90 }],
+            },
+            ccByClipId: {},
+            pitchBendByClipId: {},
+        });
+        const originalMidi = midiStore.value;
+        const result = requireApplied(
+            executeSelectedTimeRangeDeletion({
+                startBeat: 3,
+                endBeat: 7,
+                trackIds: ['target'],
+            })
+        );
+        const observations: Array<{ arrangementRestored: boolean; midiRestored: boolean }> = [];
+        function observe(): void {
+            observations.push({
+                arrangementRestored: trackStore.value === originalArrangement,
+                midiRestored: midiStore.value === originalMidi,
+            });
+        }
+        const unsubscribeArrangement = trackStore.subscribe(observe);
+        const unsubscribeMidi = midiStore.subscribe(observe);
+
+        expect(result.undo()).toBe(true);
+
+        unsubscribeArrangement();
+        unsubscribeMidi();
+        expect(trackStore.value).toBe(originalArrangement);
+        expect(midiStore.value).toBe(originalMidi);
+        expect(observations.length).toBeGreaterThan(0);
+        expect(observations.every((observation) => observation.arrangementRestored && observation.midiRestored)).toBe(
+            true
+        );
+    });
 });
