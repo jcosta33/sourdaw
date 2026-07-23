@@ -40,12 +40,17 @@ export class GrooveModule extends BaseMidiProcessor {
     ): void {
         const beatLengthSamples = samplesPerBeat(transport);
         const blockStartSamples = transport.blockStartSamples;
+        const timelineOffsetSamples =
+            transport.tempoMap === undefined || blockStartSamples === undefined
+                ? 0
+                : blockStartSamples - projectPpqToSamples(transport.ppqPosition, transport);
 
         for (const event of input) {
             if (event.kind.type === 'noteOn') {
                 const sourcePpq =
-                    event.timePpq ??
-                    (transport.tempoMap === undefined ? undefined : projectSamplesToPpq(event.timeSamples, transport));
+                    transport.tempoMap === undefined
+                        ? event.timePpq
+                        : projectSamplesToPpq(event.timeSamples, transport);
                 const beatPosition =
                     sourcePpq ??
                     (blockStartSamples === undefined
@@ -59,18 +64,19 @@ export class GrooveModule extends BaseMidiProcessor {
                 const projectedSamples =
                     projectedPpq === undefined || transport.tempoMap === undefined
                         ? event.timeSamples + Math.round(offsetBeats * endpointBeatLengthSamples)
-                        : projectPpqToSamples(projectedPpq, transport);
+                        : projectPpqToSamples(projectedPpq, transport) + timelineOffsetSamples;
                 const velocityScale = 1 + this.dynamicsOffsets[templateIndex]! * this.amount;
                 const velocity = Math.max(1, Math.min(127, Math.round(event.kind.velocity * velocityScale)));
                 let durationSamples = event.durationSamples;
                 let durationPpq = event.durationPpq;
                 if (sourcePpq !== undefined && durationSamples !== undefined && transport.tempoMap !== undefined) {
-                    durationPpq ??= projectSamplesToPpq(event.timeSamples + durationSamples, transport) - sourcePpq;
-                    const projectedEndSamples = projectPpqToSamples(sourcePpq + offsetBeats + durationPpq, transport);
+                    durationPpq = projectSamplesToPpq(event.timeSamples + durationSamples, transport) - sourcePpq;
+                    const projectedEndSamples =
+                        projectPpqToSamples(sourcePpq + offsetBeats + durationPpq, transport) + timelineOffsetSamples;
                     durationSamples = Math.max(0, projectedEndSamples - projectedSamples);
                 }
 
-                const key = (event.kind.channel << 7) | event.kind.note;
+                const key = event.noteInstanceId ?? (event.kind.channel << 7) | event.kind.note;
                 this.noteVoices.push(event.trackId, key, offsetBeats);
 
                 const transformed: MidiEvent = {
@@ -84,17 +90,18 @@ export class GrooveModule extends BaseMidiProcessor {
                 output.push(transformed);
                 preview?.transferDecisionLineage(event, transformed);
             } else if (event.kind.type === 'noteOff') {
-                const key = (event.kind.channel << 7) | event.kind.note;
+                const key = event.noteInstanceId ?? (event.kind.channel << 7) | event.kind.note;
                 const offsetBeats = this.noteVoices.shift(event.trackId, key) ?? 0;
                 const sourcePpq =
-                    event.timePpq ??
-                    (transport.tempoMap === undefined ? undefined : projectSamplesToPpq(event.timeSamples, transport));
+                    transport.tempoMap === undefined
+                        ? event.timePpq
+                        : projectSamplesToPpq(event.timeSamples, transport);
                 const projectedPpq = sourcePpq === undefined ? undefined : sourcePpq + offsetBeats;
                 const endpointBeatLengthSamples = (transport.sampleRate * 60) / (event.tempoBpm ?? transport.bpm);
                 const projectedSamples =
                     projectedPpq === undefined || transport.tempoMap === undefined
                         ? event.timeSamples + Math.round(offsetBeats * endpointBeatLengthSamples)
-                        : projectPpqToSamples(projectedPpq, transport);
+                        : projectPpqToSamples(projectedPpq, transport) + timelineOffsetSamples;
 
                 const transformed: MidiEvent = {
                     ...event,

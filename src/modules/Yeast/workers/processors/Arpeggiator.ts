@@ -106,8 +106,6 @@ export class Arpeggiator extends BaseMidiProcessor {
         const blockStart = transport.blockStartSamples ?? transport.ppqPosition * samplesPerBeat(transport);
         const blockEnd = transport.blockEndSamples ?? blockStart + 128;
 
-        // If no notes are held, let already-announced voices finish at their
-        // immutable release times so cross-block duration hints stay exact.
         const pool = this.getEffectivePool();
         if (pool.length === 0) {
             this.drainScheduledNoteOffs(output, blockEnd);

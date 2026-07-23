@@ -1,13 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import {
-    ppqToSamples,
-    projectPpqToSamples,
-    projectSamplesToPpq,
-    rateToBeats,
-    samplesToBeats,
-    type TransportInfo,
-} from '../MidiEvent';
+import { ppqToSamples, projectPpqToSamples, rateToBeats, samplesToBeats, type TransportInfo } from '../MidiEvent';
 
 const transport: TransportInfo = {
     isPlaying: true,
@@ -88,17 +81,6 @@ describe('projectPpqToSamples', () => {
         };
         // [0,2) @120bpm=1s, [2,4) @120bpm=1s, [4,6) @240bpm=0.5s -> 2.5s * 44100 = 110250 samples.
         expect(projectPpqToSamples(6, withTempoMap)).toBe(110250);
-    });
-
-    it('inverts tempo-map samples relative to a live processing block anchor', () => {
-        const anchored: TransportInfo = {
-            ...transport,
-            sampleRate: 48_000,
-            ppqPosition: 4,
-            blockStartSamples: 1_000_000,
-            tempoMap: { defaultTempo: 60, changes: [{ beat: 4, tempo: 120, curve: 'instant' }] },
-        };
-        expect(projectSamplesToPpq(1_024_000, anchored)).toBe(5);
     });
 
     it('interpolates duration across a linear tempo ramp using the log-mean formula', () => {

@@ -16,9 +16,7 @@ export type MidiEvent = {
     /** Absolute sample time on the global timeline. */
     timeSamples: number;
     kind: MidiEventKind;
-    /** Eager Note On lifetime hint when its Note Off may arrive in a later processing block. */
     durationSamples?: number;
-    /** Musical Note On lifetime used when a processor shifts both endpoints in PPQ. */
     durationPpq?: number;
     /** Originating instrument track for runtime routing and panic recovery. */
     trackId?: string;
@@ -189,23 +187,13 @@ export function projectSamplesToPpq(samples: number, transport: TransportInfo): 
         return 0;
     }
 
-    let low = timelineSamples < 0 ? -1 : 0;
-    let high = timelineSamples < 0 ? 0 : 1;
-    for (let index = 0; index < 64; index++) {
-        const boundary = timelineSamples < 0 ? low : high;
-        const projected = projectPpqToTimelineSamples(boundary, transport);
-        if (
-            (timelineSamples < 0 && projected <= timelineSamples) ||
-            (timelineSamples > 0 && projected >= timelineSamples)
-        ) {
-            break;
-        }
-        if (timelineSamples < 0) {
-            low *= 2;
-        } else {
-            high *= 2;
-        }
+    let maxTempo = transport.tempoMap.defaultTempo;
+    for (const change of transport.tempoMap.changes) {
+        maxTempo = Math.max(maxTempo, change.tempo);
     }
+    const ppqBound = (Math.abs(timelineSamples) * maxTempo) / (transport.sampleRate * 60) + 1;
+    let low = -ppqBound;
+    let high = ppqBound;
 
     for (let index = 0; index < 64; index++) {
         const midpoint = (low + high) / 2;

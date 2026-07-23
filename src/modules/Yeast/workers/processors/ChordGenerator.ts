@@ -93,8 +93,6 @@ export class ChordGenerator extends BaseMidiProcessor {
                     if (note < 0 || note > 127) {
                         continue;
                     }
-                    notes.push(note);
-
                     const offset =
                         this.strumDirection === 'up'
                             ? index * strumSamples
@@ -103,6 +101,10 @@ export class ChordGenerator extends BaseMidiProcessor {
                     if (event.durationSamples !== undefined) {
                         durationSamples = Math.max(0, event.durationSamples - offset);
                     }
+                    if (durationSamples === 0) {
+                        continue;
+                    }
+                    notes.push(note);
                     const generated: MidiEvent = {
                         timeSamples: event.timeSamples + offset,
                         durationSamples,

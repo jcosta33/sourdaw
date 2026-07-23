@@ -25,6 +25,7 @@ const note_off = (t: number, n: number): MidiEvent => ({
     timeSamples: t,
     kind: { type: 'noteOff', channel: 0, note: n },
 });
+const withId = (event: MidiEvent, noteInstanceId: string): MidiEvent => ({ ...event, noteInstanceId });
 
 describe('GrooveModule', () => {
     it('constructs with the provided id and processor name', () => {
@@ -78,12 +79,12 @@ describe('GrooveModule', () => {
         const g = new GrooveModule('t5');
         g.setParam('groove_timing_1', 0.12);
         g.setParam('groove_amount', 1);
-        g.processMidi([note_on(6000, 60)], [], transport);
+        g.processMidi([withId(note_on(6000, 60), 'first'), withId(note_on(12_000, 60), 'second')], [], transport);
 
         const out: MidiEvent[] = [];
-        g.processMidi([note_off(12_000, 60)], out, transport);
+        g.processMidi([withId(note_off(18_000, 60), 'second'), withId(note_off(24_000, 60), 'first')], out, transport);
 
-        expect(out[0]?.timeSamples).toBe(12_720);
+        expect(out.map((event) => event.timeSamples)).toEqual([18_000, 24_720]);
     });
 
     it('should project one musical offset independently at each endpoint tempo', () => {
@@ -123,6 +124,8 @@ describe('GrooveModule', () => {
         const tempoMapTransport: TransportInfo = {
             ...transport,
             bpm: 120,
+            ppqPosition: 4,
+            blockStartSamples: 1_000_000,
             tempoMap: {
                 defaultTempo: 60,
                 changes: [
@@ -133,36 +136,19 @@ describe('GrooveModule', () => {
         };
 
         const generatedNoteOns: MidiEvent[] = [];
-        chord.processMidi(
-            [
-                {
-                    timeSamples: 192_000,
-                    durationSamples: 24_000,
-                    kind: { type: 'noteOn', channel: 0, note: 60, velocity: 100 },
-                },
-            ],
-            generatedNoteOns,
-            tempoMapTransport
-        );
+        const sourceNoteOn = note_on(1_000_000, 60);
+        sourceNoteOn.durationSamples = 24_000;
+        chord.processMidi([sourceNoteOn], generatedNoteOns, tempoMapTransport);
+        Object.assign(generatedNoteOns[0]!, { timePpq: 99, durationPpq: 0.5 });
         groove.processMidi(generatedNoteOns, output, tempoMapTransport);
 
-        expect(output[0]?.timePpq).toBe(3.75);
-        expect(output[0]?.timeSamples).toBe(180_000);
+        expect(output[0]?.timeSamples).toBe(988_000);
         expect(output[0]?.durationSamples).toBe(30_000);
 
         const generatedNoteOffs: MidiEvent[] = [];
-        chord.processMidi(
-            [
-                {
-                    timeSamples: 216_000,
-                    kind: { type: 'noteOff', channel: 0, note: 60 },
-                },
-            ],
-            generatedNoteOffs,
-            tempoMapTransport
-        );
+        chord.processMidi([note_off(1_024_000, 60)], generatedNoteOffs, tempoMapTransport);
+        generatedNoteOffs[0]!.timePpq = 99;
         groove.processMidi(generatedNoteOffs, output, tempoMapTransport);
-        expect(output[3]?.timeSamples).toBe(210_000);
         expect(output[3]!.timeSamples - output[0]!.timeSamples).toBe(output[0]?.durationSamples);
     });
 

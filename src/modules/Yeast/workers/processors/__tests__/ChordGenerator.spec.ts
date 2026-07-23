@@ -51,9 +51,10 @@ describe('ChordGenerator', () => {
 
     it('sends noteOffs for all generated notes', () => {
         cg.setParam('chord_type', 0);
+        cg.setParam('strum_ms', 10);
 
         const onInput: MidiEvent[] = [
-            { timeSamples: 0, kind: { type: 'noteOn', channel: 0, note: 60, velocity: 100 } },
+            { timeSamples: 0, durationSamples: 200, kind: { type: 'noteOn', channel: 0, note: 60, velocity: 100 } },
         ];
         const output: MidiEvent[] = [];
         cg.processMidi(onInput, output, transport);
@@ -62,7 +63,7 @@ describe('ChordGenerator', () => {
         cg.processMidi(offInput, output, transport);
 
         const offNotes = output.filter(isNoteOff).map((event) => event.kind.note);
-        expect(offNotes).toEqual([60, 64, 67]);
+        expect(offNotes).toEqual([60]);
     });
 
     it('applies spread voicing', () => {
