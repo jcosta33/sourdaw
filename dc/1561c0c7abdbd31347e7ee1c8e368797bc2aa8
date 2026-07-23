@@ -1,0 +1,20 @@
+tests/e2e/midiModSetlistDeep.spec.ts
+  s_872e1ff3914baf::t_0b92bde95bcc7a 195,202
+  s_872e1ff3914baf::t_438a6762abf47f 1-194,196-201,203-224
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "dc1561c0c7abdbd31347e7ee1c8e368797bc2aa8",
+  "prompts": {},
+  "sessions": {
+    "s_872e1ff3914baf": {
+      "agent_id": {
+        "tool": "opencode",
+        "id": "ses_0b3576681ffe5rKlnKBoMWUSQ1",
+        "model": "glm-5.2"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
