@@ -1,0 +1,499 @@
+src/modules/Arrangement/handlers/trackAlternative/handleSwitchTrackAlternative.ts
+  s_0d39f3a4a4357a::t_3bce1d2f1b5cc1 122-139
+src/modules/AudioEngine/repositories/devices/dynamics/prepareOfflineSidechainCompressor.ts
+  s_0d39f3a4a4357a::t_3bce1d2f1b5cc1 1-21
+src/modules/AudioEngine/repositories/offlineScheduler/setOfflineMidiEventProjector.ts
+  s_0d39f3a4a4357a::t_3bce1d2f1b5cc1 3,11,17,21
+src/modules/Automation/useCases/automation/__tests__/setAutomationPointCurve.spec.ts
+  s_0d39f3a4a4357a::t_3bce1d2f1b5cc1 1,3-47,50-87
+src/modules/Automation/useCases/automation/prepareAutomationTimeOperation.ts
+  s_0d39f3a4a4357a::t_3bce1d2f1b5cc1 37-38,40,45-50,57-70,72-85,88-105,108-112,117-123,158-181,263,265,267,279,286,299,318,325,334-345,347-370,414,416
+src/modules/Automation/useCases/automationZoom/__tests__/toggleVirginTerritory.spec.ts
+  s_0d39f3a4a4357a::t_3bce1d2f1b5cc1 1,3-44,47-75
+crates/daw-dsp/src/fermenter/mod.rs
+  s_0d39f3a4a4357a::t_3bce1d2f1b5cc1 30-47,73-79,113-128
+  s_0d39f3a4a4357a::t_bace1edcd6e62a 129-130
+src/modules/Arrangement/handlers/trackAlternative/__tests__/handleDeleteTrackAlternative.spec.ts
+  s_0d39f3a4a4357a::t_3bce1d2f1b5cc1 300-327
+src/modules/AudioEngine/repositories/deviceStrategy/WebAudioDeviceStrategy.ts
+  s_0d39f3a4a4357a::t_3bce1d2f1b5cc1 21
+src/modules/MIDI/useCases/midiNoteCrud/duplicateClipNotes.ts
+  s_0d39f3a4a4357a::t_3bce1d2f1b5cc1 2,10-19,23-27,29
+src/modules/MIDI/useCases/midiNoteCrud/prepareMidiTimeShiftTransaction.ts
+  s_0d39f3a4a4357a::t_3bce1d2f1b5cc1 1-253
+src/modules/WorkspaceShell/presentations/hooks/useAppEventHandlers.ts
+  s_0d39f3a4a4357a::t_3bce1d2f1b5cc1 29-32
+src/modules/MIDI/useCases/midiNoteCrud/prepareClipMidiShiftTransaction.ts
+  s_0d39f3a4a4357a::t_3bce1d2f1b5cc1 1-261
+src/modules/AudioEngine/useCases/renderOffline.ts
+  s_0d39f3a4a4357a::t_3bce1d2f1b5cc1 4-5,10,74,79,81,99-122,145-147,217,221-223
+src/modules/AudioEngine/services/toasterProcessor.ts
+  s_0d39f3a4a4357a::t_3bce1d2f1b5cc1 16-17,26-75,128-131,157,222-241,312-313,317-322,341-368,405
+src/modules/AudioEngine/engine/__tests__/TrackNodeDevices.spec.ts
+  s_0d39f3a4a4357a::t_3bce1d2f1b5cc1 251-252,263,316-324,328,332-333,335,339-340,342,346-347,469-470,489,524-525,539
+src/modules/AudioEngine/wasm/proof_chamber.js
+  s_0d39f3a4a4357a::t_3bce1d2f1b5cc1 44-45,132-137
+  s_0d39f3a4a4357a::t_8512411d1cd757 138
+src/modules/Arrangement/useCases/__tests__/projectTrackToLiveStrip.spec.ts
+  s_0d39f3a4a4357a::t_3bce1d2f1b5cc1 21,40,60,236-254
+  s_0d39f3a4a4357a::t_bcd16800751991 255-256
+src/modules/Arrangement/handlers/trackAlternative/handleCreateTrackAlternative.ts
+  s_0d39f3a4a4357a::t_3bce1d2f1b5cc1 13-28,90,128-148
+  s_0d39f3a4a4357a::t_ec1774141f1bdc 149
+src/modules/AudioEngine/services/fermenterProcessor.ts
+  s_0d39f3a4a4357a::t_3bce1d2f1b5cc1 16-17,44-57,64,78,129-153,197-198,229-256,283
+src/modules/Yeast/workers/processors/__tests__/EuclideanGenerator.spec.ts
+  s_0d39f3a4a4357a::t_3bce1d2f1b5cc1 5-6,79-105
+  s_0d39f3a4a4357a::t_fd2d539f5d0e72 106
+src/modules/Yeast/workers/processors/GrooveModule.ts
+  s_0d39f3a4a4357a::t_3bce1d2f1b5cc1 6-12,43-46,50-53,55,62,67,70-77,79,85-86,93,95-99,104
+src/modules/Arrangement/handlers/trackAlternative/handleDeleteTrackAlternative.ts
+  s_0d39f3a4a4357a::t_3bce1d2f1b5cc1 81-86
+src/modules/Arrangement/useCases/freezeBounce/offlineRenderDependencies.ts
+  s_0d39f3a4a4357a::t_3bce1d2f1b5cc1 65-66,95
+src/modules/AudioEngine/wasm/daw_dsp.js
+  s_0d39f3a4a4357a::t_3bce1d2f1b5cc1 44-45,248-255,1163-1176,1198-1205
+src/modules/MIDI/useCases/midiNoteCrud/prepareMidiGlobalTimeTransaction.ts
+  s_0d39f3a4a4357a::t_3bce1d2f1b5cc1 1-664
+src/modules/Arrangement/useCases/timeOperations/__tests__/insertTime.spec.ts
+  s_0d39f3a4a4357a::t_3bce1d2f1b5cc1 1,3,5-6,13,16-22,24,26-33
+src/modules/AudioEngine/repositories/devices/dynamics/applySidechainCompressorParams.ts
+  s_0d39f3a4a4357a::t_3bce1d2f1b5cc1 5-11,13-40
+src/modules/Arrangement/useCases/device/__tests__/addDevice.spec.ts
+  s_0d39f3a4a4357a::t_3bce1d2f1b5cc1 96,114-115,124,128-132
+src/modules/Project/useCases/demoProjects/myceliumAscendant/createMyceliumTopology.ts
+  s_0d39f3a4a4357a::t_3bce1d2f1b5cc1 1-296
+src/modules/Arrangement/useCases/clipEditing/glueClips.ts
+  s_0d39f3a4a4357a::t_3bce1d2f1b5cc1 43-49
+src/modules/Project/useCases/projectPersistence/saveProject/__tests__/saveProject.recentRoundTrip.spec.ts
+  s_0d39f3a4a4357a::t_3bce1d2f1b5cc1 175
+src/modules/AudioEngine/repositories/offlineScheduler/__tests__/scheduleAutomationOnParam.spec.ts
+  s_0d39f3a4a4357a::t_eb791ae2784cd0 20-24,28,32-34,37-43,46,50,56-59,62,66,69-72,75-78,81,83,85-86
+src/modules/Arrangement/useCases/clip/__tests__/moveClip.spec.ts
+  s_0d39f3a4a4357a::t_3bce1d2f1b5cc1 77,101
+src/modules/AudioEngine/useCases/__tests__/renderOffline.spec.ts
+  s_0d39f3a4a4357a::t_3bce1d2f1b5cc1 135
+src/modules/Arrangement/useCases/rippleDelete/__tests__/rippleDeleteClips.spec.ts
+  s_0d39f3a4a4357a::t_3bce1d2f1b5cc1 9,24-27,54-70
+  s_0d39f3a4a4357a::t_f4c287503e159a 71-72
+public/wasm/daw-dsp/daw_dsp.d.ts
+  s_0d39f3a4a4357a::t_3bce1d2f1b5cc1 96-99,256,258-265,268-273,295-300,331-336,409-416,425-428,431-434,439-471,485-500,506,510,517,521,529-556,574
+src/modules/Arrangement/useCases/freezeBounce/renderOffline.ts
+  s_0d39f3a4a4357a::t_3bce1d2f1b5cc1 56-63,68,128-139,240,265-269
+src/modules/AudioEngine/repositories/offlineRouting/connectOfflineSidechainRoutes.ts
+  s_0d39f3a4a4357a::t_3bce1d2f1b5cc1 1-56
+src/modules/AudioEngine/repositories/createWebAudioEngine.ts
+  s_0d39f3a4a4357a::t_3bce1d2f1b5cc1 17,32,36-42,127,372-465,491-493,519-524,533,535,616,618,798,810,823,827-831,842,850,854-858,862,871-875,881-911,980-981,986,997,1107-1108,1116
+src/modules/AudioEngine/services/deviceResolution.ts
+  s_0d39f3a4a4357a::t_3bce1d2f1b5cc1 21,24-89,92-126,128
+src/modules/Command/useCases/macro/__tests__/playback.spec.ts
+  s_0d39f3a4a4357a::t_3bce1d2f1b5cc1 267-406
+scripts/gen-proof-chamber-worklet.ts
+  s_0d39f3a4a4357a::t_3bce1d2f1b5cc1 15-16,21,26-27,85
+src/modules/Arrangement/useCases/timeOperations/deleteTime.ts
+  s_0d39f3a4a4357a::t_3bce1d2f1b5cc1 1-16,18
+src/modules/AudioEngine/useCases/index.ts
+  s_0d39f3a4a4357a::t_3bce1d2f1b5cc1 43
+src/modules/Arrangement/useCases/rippleMove/__tests__/rippleMoveClip.spec.ts
+  s_0d39f3a4a4357a::t_3bce1d2f1b5cc1 20-27,33-71
+  s_0d39f3a4a4357a::t_9512e761516f3e 72-73
+src/modules/AudioEngine/repositories/deviceStrategy/AudioDeviceStrategy.ts
+  s_0d39f3a4a4357a::t_3bce1d2f1b5cc1 4-10,14-15,19-21
+src/modules/AudioEngine/repositories/devices/modulation/__tests__/applyChorusParams.spec.ts
+  s_0d39f3a4a4357a::t_3bce1d2f1b5cc1 1-30
+src/modules/Arrangement/useCases/clipboard/__tests__/pasteClip.spec.ts
+  s_0d39f3a4a4357a::t_3bce1d2f1b5cc1 112-129
+src/modules/Arrangement/handlers/trackAlternative/__tests__/handleSwitchTrackAlternative.spec.ts
+  s_0d39f3a4a4357a::t_3bce1d2f1b5cc1 307-333
+src/modules/Automation/useCases/automation/__tests__/prepareAutomationTimeOperation.spec.ts
+  s_0d39f3a4a4357a::t_3bce1d2f1b5cc1 74-82,85,87,121,123-145,156,161-224,238,267-271,286-287,310-311,315-391,403-420,444-445,451,456,458,460-461,470-471,482-483,495-496
+src/modules/AudioEngine/repositories/offlineRouting/__tests__/connectOfflineSidechainRoutes.spec.ts
+  s_0d39f3a4a4357a::t_3bce1d2f1b5cc1 1-85
+src/modules/Arrangement/useCases/clipEditing/executeSelectedTimeRangeDeletion.ts
+  s_0d39f3a4a4357a::t_3bce1d2f1b5cc1 1-1136
+src/modules/AudioEngine/useCases/offlineRender/projectOfflineYeastTrackNotes.ts
+  s_0d39f3a4a4357a::t_3bce1d2f1b5cc1 39,51-57,69,122,128-131,145-161,164,171-175,179
+src/modules/MIDI/useCases/midiNoteCrud/__tests__/prepareMidiTimeShiftTransaction.spec.ts
+  s_0d39f3a4a4357a::t_3bce1d2f1b5cc1 1-728
+src/modules/AudioEngine/useCases/offlineRender/__tests__/scheduleTrackClips.spec.ts
+  s_0d39f3a4a4357a::t_93bd0002fa78b2 376-377,381-382,384-386
+  s_0d39f3a4a4357a::t_3bce1d2f1b5cc1 66-69,263-264,271,276-277,284,288,325-327,352,357,375,378-380,383,387-442,544,590-603
+  s_0d39f3a4a4357a::t_31502cf2780d42 604
+src/modules/AudioEngine/repositories/offlineScheduler/scheduleAutomationOnParam.ts
+  s_0d39f3a4a4357a::t_3bce1d2f1b5cc1 3,16,20-27,41,43
+  s_0d39f3a4a4357a::t_8962c85752e2fc 17,28,32-39,42,44,46
+src/modules/AudioEngine/useCases/exportStems.ts
+  s_0d39f3a4a4357a::t_0446f8e0312524 142-144
+  s_0d39f3a4a4357a::t_3bce1d2f1b5cc1 8,22,24,62,67,75,79-98,103-105,125-139,141,145-158,161-187
+src/modules/AudioEngine/engine/__tests__/ProofChamberNode.spec.ts
+  s_0d39f3a4a4357a::t_3bce1d2f1b5cc1 91-107
+src/modules/Project/presentations/views/RecentProjectsMenu.tsx
+  s_0d39f3a4a4357a::t_3bce1d2f1b5cc1 20,95-102,139-155
+src/modules/Yeast/workers/processors/__tests__/ChordMemory.spec.ts
+  s_0d39f3a4a4357a::t_3bce1d2f1b5cc1 73-81
+src/modules/AudioEngine/repositories/offlineScheduler/compileAutomationEvents.ts
+  s_0d39f3a4a4357a::t_3bce1d2f1b5cc1 1-241
+public/wasm/daw-dsp/daw_dsp_bg.wasm.d.ts
+  s_0d39f3a4a4357a::t_3bce1d2f1b5cc1 4-36,50-64,71,86,94-121,139
+src/modules/AudioEngine/repositories/devices/dynamics/createSidechainCompressorFallback.ts
+  s_0d39f3a4a4357a::t_3bce1d2f1b5cc1 4,8-35
+src/modules/MIDI/useCases/midiNoteCrud/__tests__/prepareClipMidiShiftTransaction.spec.ts
+  s_0d39f3a4a4357a::t_3bce1d2f1b5cc1 1-487
+src/modules/AudioEngine/useCases/offlineRender/__tests__/projectOfflineYeastTrackNotes.spec.ts
+  s_0d39f3a4a4357a::t_3bce1d2f1b5cc1 77,149,157-234
+  s_0d39f3a4a4357a::t_be62a1a9bc07c4 235
+src/modules/AudioEngine/engine/__tests__/FermenterNode.spec.ts
+  s_0d39f3a4a4357a::t_3bce1d2f1b5cc1 71-92
+src/modules/Arrangement/useCases/toggleTrackState/setTrackOutput.ts
+  s_0d39f3a4a4357a::t_3bce1d2f1b5cc1 1,3,20-25
+src/modules/AudioEngine/models/AudioEngineState.ts
+  s_0d39f3a4a4357a::t_3bce1d2f1b5cc1 71-72,105,202,248-252
+src/modules/AudioEngine/useCases/offlineRender/scheduleTrackClips.ts
+  s_0d39f3a4a4357a::t_3bce1d2f1b5cc1 16,160,200-211,269-270,291,324-337,455,535-539,576-577,623,640
+  s_0d39f3a4a4357a::t_95ca498c0f3dd2 271
+src/modules/Project/useCases/demoProjects/myceliumAscendant/__tests__/createMyceliumRhythmPerformance.spec.ts
+  s_0d39f3a4a4357a::t_3bce1d2f1b5cc1 1-190
+src/modules/Yeast/models/MidiEvent.ts
+  s_0d39f3a4a4357a::t_3bce1d2f1b5cc1 19-20,161,164-205,207
+src/modules/Arrangement/useCases/clipEditing/__tests__/clipEditingOperations.spec.ts
+  s_0d39f3a4a4357a::t_3bce1d2f1b5cc1 40,45-47,59,63
+src/modules/AudioEngine/repositories/offlineScheduler/offlineMidiEventProjectorState.ts
+  s_0d39f3a4a4357a::t_3bce1d2f1b5cc1 46-53,57,61
+src/modules/MIDI/services/__tests__/transformMidiGlobalTimeState.spec.ts
+  s_0d39f3a4a4357a::t_3bce1d2f1b5cc1 1-254
+src/modules/Project/useCases/projectPersistence/saveProject/saveProject.ts
+  s_0d39f3a4a4357a::t_3bce1d2f1b5cc1 3,10,13,24-28,49,53-54
+src/modules/AudioEngine/useCases/offlineRender/resolveRenderContext.ts
+  s_0d39f3a4a4357a::t_3bce1d2f1b5cc1 12,40,49,55,60,70-82,95-96
+src/modules/Arrangement/useCases/clipEditing/__tests__/executeSelectedTimeRangeDeletion.spec.ts
+  s_0d39f3a4a4357a::t_3bce1d2f1b5cc1 1-917
+src/modules/AudioEngine/engine/__tests__/ToasterNode.spec.ts
+  s_0d39f3a4a4357a::t_3bce1d2f1b5cc1 3-4,35,44,66,68-72,171-198,210-224,248,251-252,254,256-263,266,275-282,286-288,291-311,321,330
+src/modules/Automation/useCases/automation/__tests__/createAutomationLane.spec.ts
+  s_0d39f3a4a4357a::t_3bce1d2f1b5cc1 1,3,6-38
+public/wasm/proof-chamber/proof_chamber.js
+  s_0d39f3a4a4357a::t_3bce1d2f1b5cc1 1-2,89-94
+  s_0d39f3a4a4357a::t_4c484ae416902a 95
+src/modules/AudioEngine/useCases/trackAudioControls/setTrackOutput.ts
+  s_0d39f3a4a4357a::t_3bce1d2f1b5cc1 3-8
+crates/proof-chamber/src/lib.rs
+  s_0d39f3a4a4357a::t_3bce1d2f1b5cc1 116-124,211-214,229-239
+crates/daw-dsp/tests/toaster_pad_output.rs
+  s_0d39f3a4a4357a::t_3bce1d2f1b5cc1 56-131,138,179-180,185-186,210,213,215
+src/modules/Arrangement/useCases/projectTrackToLiveStrip.ts
+  s_0d39f3a4a4357a::t_3bce1d2f1b5cc1 5,65-70
+src/modules/AudioEngine/repositories/offlineScheduler/compileAutomationSegments.ts
+  s_0d39f3a4a4357a::t_3bce1d2f1b5cc1 1-51
+src/modules/AudioEngine/wasm/proof_chamber.d.ts
+  s_0d39f3a4a4357a::t_3bce1d2f1b5cc1 1-2,4,7-12,16-18,20,23,25-66
+src/modules/MIDI/useCases/midiNoteCrud/__tests__/duplicateClipNotes.spec.ts
+  s_0d39f3a4a4357a::t_3bce1d2f1b5cc1 87-103
+src/modules/Project/useCases/projectPersistence/fileIO/__tests__/pickAndImportProjectFile.spec.ts
+  s_0d39f3a4a4357a::t_3bce1d2f1b5cc1 14-27,41-52,71-72,147-193
+src/modules/Arrangement/useCases/freezeBounce/bounceSelection.ts
+  s_0d39f3a4a4357a::t_3bce1d2f1b5cc1 3-8,16-52,101-206,238-249,258-264,271-277
+src/modules/Project/useCases/projectTemplates/templateDefinitions/__tests__/createFromTemplate.spec.ts
+  s_0d39f3a4a4357a::t_3bce1d2f1b5cc1 6-7,13,15-19,21-25,33,38-44,54-69,81-92,180-252
+src/modules/WorkspaceShell/presentations/views/LaunchScreen.tsx
+  s_0d39f3a4a4357a::t_3bce1d2f1b5cc1 292
+src/modules/Transport/useCases/scheduling/processLiveYeastTrackBlock.ts
+  s_0d39f3a4a4357a::t_3bce1d2f1b5cc1 33,125-126,132-134,150,217-228,230-239,260
+src/modules/Project/useCases/demoProjects/myceliumAscendant/__tests__/createMyceliumTopology.spec.ts
+  s_0d39f3a4a4357a::t_3bce1d2f1b5cc1 1-192
+package.json
+  s_0d39f3a4a4357a::t_3bce1d2f1b5cc1 32-33
+crates/daw-dsp/src/toaster/mod.rs
+  s_0d39f3a4a4357a::t_3bce1d2f1b5cc1 62-66,72-81,104-153
+  s_0d39f3a4a4357a::t_a211b53e991e40 154
+src/modules/Arrangement/useCases/clipEditing/__tests__/glueClips.spec.ts
+  s_0d39f3a4a4357a::t_3bce1d2f1b5cc1 42-57
+src/modules/MIDI/services/transformMidiGlobalTimeState.ts
+  s_0d39f3a4a4357a::t_3bce1d2f1b5cc1 1-592
+src/modules/Arrangement/useCases/device/addDevice.ts
+  s_0d39f3a4a4357a::t_3bce1d2f1b5cc1 64-68
+src/modules/Yeast/workers/BoundedNoteVoiceQueue.ts
+  s_0d39f3a4a4357a::t_3bce1d2f1b5cc1 21,26,48,54,74
+src/modules/Command/useCases/macro/playback.ts
+  s_0d39f3a4a4357a::t_3bce1d2f1b5cc1 14,33-52,119-122,195-205,210,238
+src/modules/AudioEngine/useCases/offlineRender/connectOfflineToasterPadRoutes.ts
+  s_0d39f3a4a4357a::t_3bce1d2f1b5cc1 1-34
+crates/daw-dsp/src/toaster/engine.rs
+  s_0d39f3a4a4357a::t_3bce1d2f1b5cc1 24,45,77-78,86,115,136,224,305,379,407-417,435-451,541-545,548-560
+src/app/bootstrap.ts
+  s_0d39f3a4a4357a::t_3bce1d2f1b5cc1 46,88-89,121,161,170,190-194
+src/modules/Arrangement/useCases/timeOperations/executeGlobalTimeOperation.ts
+  s_0d39f3a4a4357a::t_3bce1d2f1b5cc1 1-1391
+src/modules/Arrangement/useCases/timeOperations/insertTime.ts
+  s_0d39f3a4a4357a::t_3bce1d2f1b5cc1 1-9
+src/modules/AudioEngine/repositories/deviceStrategy/NativeDspDeviceStrategy.ts
+  s_0d39f3a4a4357a::t_3bce1d2f1b5cc1 15,20-21,25-27,34-35,43-48,67-77
+  s_0d39f3a4a4357a::t_eca34188c01e2b 78
+src/modules/AudioEngine/useCases/offlineRender/__tests__/resolveRenderContext.spec.ts
+  s_0d39f3a4a4357a::t_3bce1d2f1b5cc1 3-8,15-17,42-58
+  s_0d39f3a4a4357a::t_4dcc9b95e94059 59-60
+src/modules/Arrangement/useCases/rippleMove/rippleMoveClip.ts
+  s_0d39f3a4a4357a::t_3bce1d2f1b5cc1 1-2,38,63,73-78
+src/modules/Arrangement/useCases/toggleTrackState/__tests__/reorderTrack.spec.ts
+  s_0d39f3a4a4357a::t_3bce1d2f1b5cc1 8-13,40-80
+  s_0d39f3a4a4357a::t_835abb67e79e88 81
+src/modules/Arrangement/useCases/freezeBounce/__tests__/bounceSelection.spec.ts
+  s_0d39f3a4a4357a::t_3bce1d2f1b5cc1 57-149,211-315,326
+src/modules/Arrangement/useCases/timeOperations/__tests__/globalTimeTransaction.spec.ts
+  s_0d39f3a4a4357a::t_3bce1d2f1b5cc1 1-880
+src/modules/AudioEngine/engine/ProofChamberNode.ts
+  s_0d39f3a4a4357a::t_3bce1d2f1b5cc1 11-21,26-27,70-95,117-127
+public/wasm/proof-chamber/package.json
+  s_0d39f3a4a4357a::t_3bce1d2f1b5cc1 8-9,12
+src/modules/AudioEngine/useCases/__tests__/resolveToasterPadBinding.spec.ts
+  s_0d39f3a4a4357a::t_3bce1d2f1b5cc1 1-35
+src/modules/AudioEngine/services/__tests__/toasterProcessor.spec.ts
+  s_0d39f3a4a4357a::t_3bce1d2f1b5cc1 34-35,37,50-52,56-64,69-70,107-109,111-158,291-318
+  s_0d39f3a4a4357a::t_27df761da05e3c 319
+src/modules/Automation/useCases/automation/prepareAutomationTimeStateRestore.ts
+  s_0d39f3a4a4357a::t_3bce1d2f1b5cc1 1-304
+src/modules/Transport/useCases/scheduling/scheduleMidiNotes.ts
+  s_0d39f3a4a4357a::t_3bce1d2f1b5cc1 168,215-240,348,386,392-395
+src/modules/Yeast/workers/MidiProcessor.ts
+  s_0d39f3a4a4357a::t_3bce1d2f1b5cc1 60,147-175,179,183-184
+src/modules/Yeast/workers/processors/__tests__/Harmonizer.spec.ts
+  s_0d39f3a4a4357a::t_3bce1d2f1b5cc1 56-58,60-64
+src/modules/Yeast/workers/processors/Harmonizer.ts
+  s_0d39f3a4a4357a::t_3bce1d2f1b5cc1 29-30,44,63-64,77-85,89,91,100,103,107-108
+src/modules/AudioEngine/wasm/daw_dsp.d.ts
+  s_0d39f3a4a4357a::t_3bce1d2f1b5cc1 45,197-198,201
+src/modules/Arrangement/handlers/__tests__/clipGeometryActionOutcomes.spec.ts
+  s_0d39f3a4a4357a::t_3bce1d2f1b5cc1 459,467-469
+src/modules/AudioEngine/repositories/devices/modulation/applyChorusParams.ts
+  s_0d39f3a4a4357a::t_3bce1d2f1b5cc1 8-10,13,16-17
+src/modules/Project/useCases/__tests__/recentProjects.spec.ts
+  s_0d39f3a4a4357a::t_3bce1d2f1b5cc1 122
+src/modules/Project/useCases/projectPersistence/fileIO/pickAndImportProjectFile.ts
+  s_0d39f3a4a4357a::t_3bce1d2f1b5cc1 4,7,21-25
+  s_0d39f3a4a4357a::t_f2661e7cfdaa70 26-28
+src/modules/Yeast/workers/processors/__tests__/GrooveModule.spec.ts
+  s_0d39f3a4a4357a::t_3bce1d2f1b5cc1 27,81,84,86,115,125-126,136-147
+src/modules/Automation/useCases/index.ts
+  s_0d39f3a4a4357a::t_3bce1d2f1b5cc1 16
+src/modules/AudioEngine/repositories/offlineScheduler/automationScheduling.ts
+  s_0d39f3a4a4357a::t_faa3c40f0ebcac 44,62,76,116
+  s_0d39f3a4a4357a::t_3bce1d2f1b5cc1 4,6,8,20,27-30,42-43,61,75,90-104,106-108,115
+src/modules/WorkspaceShell/presentations/hooks/useAppInitialization.ts
+  s_0d39f3a4a4357a::t_3bce1d2f1b5cc1 120-121
+src/modules/Transport/useCases/scheduling/__tests__/processLiveYeastTrackBlock.spec.ts
+  s_0d39f3a4a4357a::t_3bce1d2f1b5cc1 44,73-132
+src/modules/MIDI/useCases/midiNoteCrud/__tests__/prepareMidiGlobalTimeTransaction.spec.ts
+  s_0d39f3a4a4357a::t_3bce1d2f1b5cc1 1-665
+src/modules/Arrangement/useCases/clipEditing/deleteTimeRange.ts
+  s_0d39f3a4a4357a::t_3bce1d2f1b5cc1 1,3,6-12,16-17,21-22,26-31,33-34
+src/modules/Arrangement/useCases/rippleInsert/rippleInsertClip.ts
+  s_0d39f3a4a4357a::t_3bce1d2f1b5cc1 1-2,47-52
+src/modules/Yeast/workers/BaseMidiProcessor.ts
+  s_0d39f3a4a4357a::t_3bce1d2f1b5cc1 20,61-62
+  s_0d39f3a4a4357a::t_a4d52625d3b682 63-64
+src/modules/AudioEngine/services/__tests__/processorQueues.spec.ts
+  s_0d39f3a4a4357a::t_3bce1d2f1b5cc1 5,120-180
+src/modules/AudioEngine/engine/__tests__/wasmDeviceRegistryDescriptors.spec.ts
+  s_0d39f3a4a4357a::t_3bce1d2f1b5cc1 83,93-96,142,149-150,153,187-190,196,328-329
+src/modules/MIDI/useCases/index.ts
+  s_0d39f3a4a4357a::t_3bce1d2f1b5cc1 14,93-95
+src/modules/MIDI/useCases/midiClipData/removeMidiClipData.ts
+  s_0d39f3a4a4357a::t_3bce1d2f1b5cc1 1,10-15,19
+src/modules/Project/presentations/views/TemplateChooser.tsx
+  s_0d39f3a4a4357a::t_3bce1d2f1b5cc1 343-348,350-355
+  s_0d39f3a4a4357a::t_63190809342033 342
+src/modules/Yeast/workers/processors/Arpeggiator.ts
+  s_0d39f3a4a4357a::t_3bce1d2f1b5cc1 32,94-100,106,113-115,118,156,197,207,210,212,219,230,234,241,259,339-349,354,364,366-376,481-495,561-562,650,655-661,670-685,690-691,698-699
+src/modules/Arrangement/useCases/timeOperations/__tests__/deleteTime.spec.ts
+  s_0d39f3a4a4357a::t_3bce1d2f1b5cc1 1,3,5-6,9,13,16-31,33,36-53
+src/modules/Arrangement/useCases/timeOperations/duplicateTimeRange.ts
+  s_0d39f3a4a4357a::t_3bce1d2f1b5cc1 1,3,5-16,18
+src/modules/Arrangement/useCases/clipEditing/__tests__/deleteTimeRange.spec.ts
+  s_0d39f3a4a4357a::t_3bce1d2f1b5cc1 1,3-4,6,10-11,14-62,65-77,81-122,124,126-142,146-180,182,184-187,189-198,200-205,208-242,246-255,258-271,273-275,278-281,283-301,303-304,306-321,323,325,328,335,337-353
+public/wasm/daw-dsp/daw_dsp.js
+  s_0d39f3a4a4357a::t_3bce1d2f1b5cc1 1-2,205-212,1120-1133,1155-1162
+src/modules/Arrangement/useCases/removeTrack.ts
+  s_0d39f3a4a4357a::t_3bce1d2f1b5cc1 15,32,35,75
+src/modules/AudioEngine/useCases/__tests__/buildDeviceChain.spec.ts
+  s_0d39f3a4a4357a::t_3bce1d2f1b5cc1 1,30-33,59
+src/modules/Arrangement/useCases/timeOperations/timeOperationDependencies.ts
+  s_0d39f3a4a4357a::t_3bce1d2f1b5cc1 1-2,4-75,79-90
+src/modules/AudioEngine/repositories/devices/toneShaping/createDistortion.ts
+  s_0d39f3a4a4357a::t_3bce1d2f1b5cc1 27-32
+src/modules/Arrangement/useCases/toggleTrackState/reorderTrack.ts
+  s_0d39f3a4a4357a::t_3bce1d2f1b5cc1 3,21
+src/modules/AudioEngine/useCases/offlineRender/projectOfflineYeastClipNotes.ts
+  s_0d39f3a4a4357a::t_3bce1d2f1b5cc1 27,45,77
+src/modules/AudioEngine/wasm/__tests__/dawDspToasterAutomation.spec.ts
+  s_0d39f3a4a4357a::t_3bce1d2f1b5cc1 1-68
+src/modules/MIDI/useCases/chordTrack/createChordPitchProjector.ts
+  s_0d39f3a4a4357a::t_3bce1d2f1b5cc1 1-21
+src/modules/Automation/useCases/automation/__tests__/toggleAutomationVisibility.spec.ts
+  s_0d39f3a4a4357a::t_3bce1d2f1b5cc1 1,3-44,47-75
+public/wasm/daw-dsp/package.json
+  s_0d39f3a4a4357a::t_3bce1d2f1b5cc1 8-9,12
+src/modules/Arrangement/useCases/toggleTrackState/__tests__/setTrackOutput.spec.ts
+  s_0d39f3a4a4357a::t_3bce1d2f1b5cc1 7,22-25,49-66,95-97
+  s_0d39f3a4a4357a::t_a5936ba94b8569 98
+src/modules/MIDI/useCases/midiNoteCrud/__tests__/splitMidiNotesAtBeat.spec.ts
+  s_0d39f3a4a4357a::t_3bce1d2f1b5cc1 25-26,78-79
+src/modules/Transport/useCases/scheduling/__tests__/scheduleMidiNotes.spec.ts
+  s_0d39f3a4a4357a::t_3bce1d2f1b5cc1 5,7-13,131-139,224-259,400-434
+  s_0d39f3a4a4357a::t_57db5822ccb64d 435-436
+src/modules/Yeast/workers/processors/__tests__/MarkovChain.spec.ts
+  s_0d39f3a4a4357a::t_3bce1d2f1b5cc1 45-49
+src/modules/Yeast/workers/processors/__tests__/NoteRepeater.spec.ts
+  s_0d39f3a4a4357a::t_3bce1d2f1b5cc1 36,39-43
+src/modules/Yeast/workers/processors/ChordMemory.ts
+  s_0d39f3a4a4357a::t_3bce1d2f1b5cc1 20-21,33,59-60,65-66,69,71,98,101,105-106
+src/utils/handlerContract.ts
+  s_0d39f3a4a4357a::t_3bce1d2f1b5cc1 233-236,239-242
+src/modules/Arrangement/useCases/refreshToasterPadBindings.ts
+  s_0d39f3a4a4357a::t_3bce1d2f1b5cc1 1-23
+src/modules/MIDI/useCases/midiClipData/__tests__/removeMidiClipData.spec.ts
+  s_0d39f3a4a4357a::t_3bce1d2f1b5cc1 80-81
+src/modules/Arrangement/handlers/trackAlternative/__tests__/handleRenameTrackAlternative.spec.ts
+  s_0d39f3a4a4357a::t_3bce1d2f1b5cc1 52-86
+src/app/__tests__/bootstrap.spec.ts
+  s_0d39f3a4a4357a::t_3bce1d2f1b5cc1 29-32,46-49,86,113,199-200,260,362-367
+  s_0d39f3a4a4357a::t_b98215dfe4b5fc 368-369
+src/modules/Automation/useCases/automation/__tests__/prepareAutomationTimeStateRestore.spec.ts
+  s_0d39f3a4a4357a::t_3bce1d2f1b5cc1 1-578
+src/modules/AudioEngine/repositories/devices/dynamics/__tests__/createSidechainCompressorFallback.spec.ts
+  s_0d39f3a4a4357a::t_3bce1d2f1b5cc1 1-112
+src/modules/Arrangement/useCases/freezeBounce/__tests__/renderOffline.spec.ts
+  s_0d39f3a4a4357a::t_3bce1d2f1b5cc1 48,64,308,331,459,466,482,486-513
+  s_0d39f3a4a4357a::t_cdb9c01f81606f 514
+src/modules/Automation/useCases/automation/__tests__/toggleLaneCollapsed.spec.ts
+  s_0d39f3a4a4357a::t_3bce1d2f1b5cc1 1,3-44,47-75
+src/modules/Yeast/workers/processors/EuclideanGenerator.ts
+  s_0d39f3a4a4357a::t_3bce1d2f1b5cc1 91,94,96,102
+src/modules/AudioEngine/repositories/__tests__/createWebAudioEngine.spec.ts
+  s_0d39f3a4a4357a::t_3bce1d2f1b5cc1 35-37,52-66,72-74,147-169,250-344,1141,1145
+src/modules/AudioEngine/services/proofChamberProcessor.ts
+  s_0d39f3a4a4357a::t_3bce1d2f1b5cc1 17-30,34,43,57-58,85-125,170
+  s_0d39f3a4a4357a::t_67248aa45cc62a 171
+src/modules/Arrangement/useCases/rippleDelete/rippleDeleteClips.ts
+  s_0d39f3a4a4357a::t_3bce1d2f1b5cc1 1-2,36-49
+  s_0d39f3a4a4357a::t_7447724148c9ed 50
+src/modules/AudioEngine/useCases/__tests__/renderOfflineGraph.spec.ts
+  s_0d39f3a4a4357a::t_3bce1d2f1b5cc1 7,63-64,72-74,102,108,111-118,153,174-175,265-408
+  s_0d39f3a4a4357a::t_30d4b07b8d6efd 409
+src/modules/Yeast/workers/processors/__tests__/Arpeggiator.spec.ts
+  s_0d39f3a4a4357a::t_3bce1d2f1b5cc1 270-353
+src/modules/Yeast/engine/__tests__/YeastWorkerClient.spec.ts
+  s_0d39f3a4a4357a::t_3bce1d2f1b5cc1 815-820,893-920
+src/modules/Yeast/workers/processors/NoteRepeater.ts
+  s_0d39f3a4a4357a::t_3bce1d2f1b5cc1 68,73,75,92
+src/modules/AudioEngine/repositories/deviceStrategy/__tests__/NativeDspDeviceStrategy.spec.ts
+  s_0d39f3a4a4357a::t_3bce1d2f1b5cc1 33-67,102,106-108
+src/modules/Project/useCases/projectTemplates/templateDefinitions/createFromTemplate.ts
+  s_0d39f3a4a4357a::t_3bce1d2f1b5cc1 3-9,12-16,32-39,45-55,57,59-60,63-69,72-75,80-86,92-94
+src/modules/Yeast/workers/yeastWorker.ts
+  s_0d39f3a4a4357a::t_3bce1d2f1b5cc1 120-125
+src/modules/AudioEngine/useCases/offlineRender/__tests__/scheduleTrackClipsAudio.spec.ts
+  s_0d39f3a4a4357a::t_3bce1d2f1b5cc1 5,144,234-235,238-246,267,270,273,452-484
+  s_0d39f3a4a4357a::t_b994a71cf5f982 485-486
+public/wasm/proof-chamber/proof_chamber.d.ts
+  s_0d39f3a4a4357a::t_3bce1d2f1b5cc1 9-11,23,38
+src/modules/Project/useCases/demoProjects/myceliumAscendant/createMyceliumAscendantBlueprint.ts
+  s_0d39f3a4a4357a::t_3bce1d2f1b5cc1 4-5,66,113,115,119,174
+public/wasm/proof-chamber/proof_chamber_bg.wasm.d.ts
+  s_0d39f3a4a4357a::t_3bce1d2f1b5cc1 12
+src/modules/Arrangement/useCases/timeOperations/__tests__/duplicateTimeRange.spec.ts
+  s_0d39f3a4a4357a::t_3bce1d2f1b5cc1 1,3,5-6,13,16-33,36-44,46-52
+src/modules/AudioEngine/engine/wasmDeviceRegistry.ts
+  s_0d39f3a4a4357a::t_3bce1d2f1b5cc1 147,160-166,202
+src/modules/AudioEngine/repositories/devices/toneShaping/createFilter.ts
+  s_0d39f3a4a4357a::t_3bce1d2f1b5cc1 10
+src/modules/Automation/useCases/automation/__tests__/removeAutomationLane.spec.ts
+  s_0d39f3a4a4357a::t_3bce1d2f1b5cc1 1,3-43,46-76
+src/modules/Project/useCases/projectPersistence/saveProject/__tests__/saveProject.spec.ts
+  s_0d39f3a4a4357a::t_3bce1d2f1b5cc1 13,37-40,108-125
+src/modules/AudioEngine/repositories/deviceNodeFactory.ts
+  s_0d39f3a4a4357a::t_3bce1d2f1b5cc1 35,59,67,75
+src/modules/Arrangement/handlers/trackAlternative/handleRenameTrackAlternative.ts
+  s_0d39f3a4a4357a::t_3bce1d2f1b5cc1 29-42
+src/modules/Arrangement/useCases/clipEditing/nudgeClip.ts
+  s_0d39f3a4a4357a::t_3bce1d2f1b5cc1 35-38
+crates/proof-chamber/Cargo.toml
+  s_0d39f3a4a4357a::t_3bce1d2f1b5cc1 17-19
+src/modules/Yeast/workers/processors/MarkovChain.ts
+  s_0d39f3a4a4357a::t_3bce1d2f1b5cc1 183,187,189,195
+src/modules/AudioEngine/useCases/__tests__/exportStems.spec.ts
+  s_0d39f3a4a4357a::t_3bce1d2f1b5cc1 25,101-104,129,145-148,185,192-199,206-208,210-220,224,244-255,258-286,290-423,430-480
+  s_0d39f3a4a4357a::t_6842fa9bf9e40f 236,241-243,287-289,424-429
+src/modules/Yeast/workers/__tests__/yeastWorker.spec.ts
+  s_0d39f3a4a4357a::t_3bce1d2f1b5cc1 258-259,543-582
+src/modules/Arrangement/handlers/trackAlternative/__tests__/handleCreateTrackAlternative.spec.ts
+  s_0d39f3a4a4357a::t_3bce1d2f1b5cc1 174-227
+src/modules/Automation/useCases/automation/__tests__/shiftClipAutomation.spec.ts
+  s_0d39f3a4a4357a::t_3bce1d2f1b5cc1 1,3-48,51-82
+src/modules/Project/useCases/recentProjects/loadRecentProject.ts
+  s_0d39f3a4a4357a::t_3bce1d2f1b5cc1 10-19,28,33,41,46,55
+src/modules/AudioEngine/useCases/offlineRender/__tests__/connectOfflineToasterPadRoutes.spec.ts
+  s_0d39f3a4a4357a::t_3bce1d2f1b5cc1 1-93
+src/modules/MIDI/useCases/midiNoteCrud/splitMidiNotesAtBeat.ts
+  s_0d39f3a4a4357a::t_3bce1d2f1b5cc1 1-2,12,17-22,28-38,42-45,48
+src/modules/Arrangement/useCases/__tests__/removeTrack.spec.ts
+  s_0d39f3a4a4357a::t_3bce1d2f1b5cc1 15,39,63,113-141
+  s_0d39f3a4a4357a::t_f18182cf86a292 142-143
+src/modules/AudioEngine/useCases/buildDeviceChain.ts
+  s_0d39f3a4a4357a::t_3bce1d2f1b5cc1 97-98
+src/modules/Yeast/workers/processors/__tests__/ChordGenerator.spec.ts
+  s_0d39f3a4a4357a::t_3bce1d2f1b5cc1 17-24,64-69,74-76,79,82-115
+src/modules/Project/presentations/views/__tests__/RecentProjectsMenu.spec.tsx
+  s_0d39f3a4a4357a::t_3bce1d2f1b5cc1 1,4-9,12-15,166-248
+src/modules/Yeast/workers/processors/ChordGenerator.ts
+  s_0d39f3a4a4357a::t_3bce1d2f1b5cc1 13-14,40,91,102-107,109,111,114-115,123-124,126,129-142,146-147
+src/modules/MIDI/useCases/chordTrack/__tests__/createChordPitchProjector.spec.ts
+  s_0d39f3a4a4357a::t_3bce1d2f1b5cc1 1-32
+src/modules/Arrangement/useCases/rippleInsert/__tests__/rippleInsertClip.spec.ts
+  s_0d39f3a4a4357a::t_3bce1d2f1b5cc1 18-25,31-55
+  s_0d39f3a4a4357a::t_4e8b055e77e741 56-57
+src/modules/AudioEngine/engine/TrackNode.ts
+  s_0d39f3a4a4357a::t_3bce1d2f1b5cc1 23-25,240,250,299,326-330,404,566-567
+src/modules/AudioEngine/useCases/configureOfflineMidiEventProjection.ts
+  s_0d39f3a4a4357a::t_3bce1d2f1b5cc1 8,10
+src/modules/Arrangement/useCases/clipboard/pasteClip.ts
+  s_0d39f3a4a4357a::t_3bce1d2f1b5cc1 118
+src/modules/Project/useCases/demoProjects/myceliumAscendant/__tests__/createMyceliumAscendantBlueprint.spec.ts
+  s_0d39f3a4a4357a::t_3bce1d2f1b5cc1 35,105,123-124,156-157
+src/modules/WorkspaceShell/handlers/workspace/handleSaveProject.ts
+  s_0d39f3a4a4357a::t_3bce1d2f1b5cc1 6-7
+src/modules/AudioEngine/engine/FermenterNode.ts
+  s_0d39f3a4a4357a::t_3bce1d2f1b5cc1 13-36,44-45,129-150,152
+  s_0d39f3a4a4357a::t_3e6db8dbaffff6 151
+src/modules/AudioEngine/engine/ToasterNode.ts
+  s_0d39f3a4a4357a::t_3bce1d2f1b5cc1 14-42,56,64-65,67,95-103,119,159-173,181-185,191,199,205,209,215-227
+src/modules/AudioEngine/useCases/resolveToasterPadBinding.ts
+  s_0d39f3a4a4357a::t_3bce1d2f1b5cc1 1-23
+src/modules/Project/useCases/demoProjects/myceliumAscendant/createMyceliumRhythmPerformance.ts
+  s_0d39f3a4a4357a::t_3bce1d2f1b5cc1 1-291
+src/modules/AudioEngine/repositories/offlineScheduler/__tests__/automationScheduling.spec.ts
+  s_0d39f3a4a4357a::t_3bce1d2f1b5cc1 3,5-6,10-103,160-241,260-293,304-345,353,360-361,375,382-383,481-547
+  s_0d39f3a4a4357a::t_62b0ef7c8d7ec5 548
+src/modules/Arrangement/useCases/clip/moveClip.ts
+  s_0d39f3a4a4357a::t_3bce1d2f1b5cc1 54-57
+src/modules/Project/useCases/recentProjects/__tests__/loadRecentProject.spec.ts
+  s_0d39f3a4a4357a::t_3bce1d2f1b5cc1 117,145,157,168,194,211,254,264,296,306,315,343,365,373,399,418,426
+src/modules/Yeast/engine/YeastWorkerClient.ts
+  s_0d39f3a4a4357a::t_3bce1d2f1b5cc1 127-132
+Cargo.lock
+  s_0d39f3a4a4357a::t_fd5ca8bbada754 5767
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "f6d3788388a0ed56b89318ece3582429a5fb0beb",
+  "prompts": {},
+  "sessions": {
+    "s_0d39f3a4a4357a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "60da6a2e-7d79-4d98-8624-e993f5a9f94e",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
