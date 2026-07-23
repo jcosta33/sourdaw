@@ -136,6 +136,9 @@ describe('removeTrack', () => {
         expect(vi.mocked(setTrackState).mock.invocationCallOrder[0]).toBeLessThan(
             ownerUseCases.setTrackOutput.mock.invocationCallOrder[0]!
         );
+        expect(ownerUseCases.removeTrackStrip.mock.invocationCallOrder[0]).toBeLessThan(
+            ownerUseCases.setTrackOutput.mock.invocationCallOrder[0]!
+        );
     });
 
     it('should remove BOTH the engine bus strip and track strip when a bus track is deleted', () => {

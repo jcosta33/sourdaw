@@ -35,7 +35,6 @@ export const removeTrack = inject({ eventBus: ArrangementEventBus })(
                 tracks,
                 selectedTrackId: state.selectedTrackId === trackId ? null : state.selectedTrackId,
             });
-            refreshToasterPadBindings(tracks, track.parentId);
 
             // Clean up automation lanes for this track.
             removeAutomationLanesForTrack(trackId);
@@ -73,6 +72,7 @@ export const removeTrack = inject({ eventBus: ArrangementEventBus })(
             if (track.kind === 'bus') {
                 removeBusStrip(trackId);
             }
+            refreshToasterPadBindings(tracks, track.parentId);
             void eventBus.emit('track.removed', { trackId });
         }
 );

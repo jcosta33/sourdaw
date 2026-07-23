@@ -48,11 +48,13 @@ describe('reorderTrack', () => {
 
         reorderTrack('stem-1', 2);
 
-        expect(mocks.setTrackOutput).toHaveBeenNthCalledWith(1, 'stem-2', 'parent', {
+        expect(mocks.setTrackOutput).toHaveBeenNthCalledWith(1, 'stem-2', 'parent');
+        expect(mocks.setTrackOutput).toHaveBeenNthCalledWith(2, 'stem-1', 'parent');
+        expect(mocks.setTrackOutput).toHaveBeenNthCalledWith(3, 'stem-2', 'parent', {
             toasterParentTrackId: 'parent',
             padIndex: 0,
         });
-        expect(mocks.setTrackOutput).toHaveBeenNthCalledWith(2, 'stem-1', 'parent', {
+        expect(mocks.setTrackOutput).toHaveBeenNthCalledWith(4, 'stem-1', 'parent', {
             toasterParentTrackId: 'parent',
             padIndex: 1,
         });
@@ -74,7 +76,7 @@ describe('reorderTrack', () => {
 
         reorderTrack('stem-0', 17);
 
-        expect(mocks.setTrackOutput).toHaveBeenLastCalledWith('stem-0', 'parent', undefined);
+        expect(mocks.setTrackOutput).toHaveBeenCalledWith('stem-0', 'parent');
     });
 
     it('moves track to the end if newIndex is high', () => {

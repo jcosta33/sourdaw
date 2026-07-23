@@ -10,10 +10,14 @@ export function refreshToasterPadBindings(tracks: readonly Track[], parentId: st
     if (parents.length !== 1 || !parents[0]!.devices.some((device) => device.type === 'toaster')) {
         return;
     }
-    for (const child of tracks) {
-        if (child.parentId !== parentId) {
-            continue;
+    const children = tracks.filter((track) => track.parentId === parentId);
+    for (const child of children) {
+        setTrackOutput(child.id, child.outputId);
+    }
+    for (const child of children) {
+        const binding = resolveToasterPadBinding(tracks, child.id);
+        if (binding) {
+            setTrackOutput(child.id, child.outputId, binding);
         }
-        setTrackOutput(child.id, child.outputId, resolveToasterPadBinding(tracks, child.id));
     }
 }
