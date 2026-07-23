@@ -1,0 +1,71 @@
+src/modules/Yeast/workers/processors/NoteRepeater.ts
+  s_ac9b259eab20ba::t_784f59714bb305 68,73,75,92
+src/modules/Yeast/workers/processors/__tests__/EuclideanGenerator.spec.ts
+  s_ac9b259eab20ba::t_04f808c837ab2e 5-6,79-105
+  s_c2fca615e81f34::t_cc2c34cd8b6a32 106
+src/modules/Yeast/workers/processors/EuclideanGenerator.ts
+  s_ac9b259eab20ba::t_784f59714bb305 91,94,96,102
+src/modules/Yeast/workers/processors/ChordMemory.ts
+  s_ac9b259eab20ba::t_ce99ca21b4ab25 20-21,33,59-60,65-66,69,71,98,101,105-106
+src/modules/Yeast/workers/processors/__tests__/ChordGenerator.spec.ts
+  s_ac9b259eab20ba::t_724817567e4ecb 99-112
+  s_ac9b259eab20ba::t_10935818169bef 17-24
+  s_ac9b259eab20ba::t_2e0bfa2bcd9bca 64-69,74-76,79,82-97
+  s_ac9b259eab20ba::t_ac0b35eff25dc7 98
+src/modules/Yeast/workers/processors/__tests__/Harmonizer.spec.ts
+  s_ac9b259eab20ba::t_bdc5455bd41b07 56-58,60-61
+  s_ac9b259eab20ba::t_6ec83dff654236 62-64
+src/modules/Yeast/workers/MidiProcessor.ts
+  s_ac9b259eab20ba::t_7eedef1af098d3 60,156-157,166-172,175,179
+  s_ac9b259eab20ba::t_6bc79885f72059 147
+  s_ac9b259eab20ba::t_3041d05e6ffac6 148-155,158-165,173-174,183-184
+src/modules/Yeast/workers/processors/__tests__/NoteRepeater.spec.ts
+  s_ac9b259eab20ba::t_6ec83dff654236 41-43
+  s_ac9b259eab20ba::t_fdc07cc4ffd9d9 36,39-40
+src/modules/Yeast/workers/processors/MarkovChain.ts
+  s_ac9b259eab20ba::t_784f59714bb305 183,187,189,195
+src/modules/Yeast/workers/BaseMidiProcessor.ts
+  s_ac9b259eab20ba::t_7eedef1af098d3 20,61-62
+  s_ac9b259eab20ba::t_213f6611ccf12a 63-64
+src/modules/Yeast/workers/processors/__tests__/MarkovChain.spec.ts
+  s_ac9b259eab20ba::t_170c39606b4aef 45-49
+src/modules/Yeast/workers/processors/__tests__/Arpeggiator.spec.ts
+  s_ac9b259eab20ba::t_be2ab36365af86 270-300
+src/modules/Yeast/workers/processors/__tests__/ChordMemory.spec.ts
+  s_ac9b259eab20ba::t_99cde1760a499e 73-81
+src/modules/Yeast/workers/processors/Arpeggiator.ts
+  s_ac9b259eab20ba::t_2a2119616a9cd8 630-636,650-656,665-666,673-674
+  s_ac9b259eab20ba::t_4a038f4f71240c 106-108,111,149,190,200,203,205,212,223,227,234,252
+  s_ac9b259eab20ba::t_cf544c594a1c20 456-470,536-537,625,645-649,657-659
+  s_ac9b259eab20ba::t_5741a7aec9c418 660
+src/modules/Yeast/workers/processors/Harmonizer.ts
+  s_ac9b259eab20ba::t_a2518eb582e4a4 29-30,44,63-64,77-80,89,91,100,103,107-108
+  s_ac9b259eab20ba::t_2077144d893931 81-85
+src/modules/Yeast/workers/processors/ChordGenerator.ts
+  s_ac9b259eab20ba::t_688f538048b33f 134-135
+  s_ac9b259eab20ba::t_229df0f0a8855a 13-14,40,91,102-107,109,111,114,123-124,126,129-133,136-142,146-147
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "7cc0f9f106689ac08cd5562a5eb383e2056d1e82",
+  "prompts": {},
+  "sessions": {
+    "s_ac9b259eab20ba": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8699-3865-7842-8c54-afbac6cfd266",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_c2fca615e81f34": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f74e9-e1c5-7142-85d2-4c577b3973c0",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
