@@ -1,11 +1,9 @@
 import { type AutomationPoint } from '../../models/AutomationViewTypes';
 import { beatToSeconds } from '../../services/beatConversion';
-
 type AutomationTempoChange = { beat: number; tempo: number };
 export type CompiledAutomationEvent = { type: 'set' | 'linear'; timeSeconds: number; value: number };
 const AUTOMATION_SAMPLE_INTERVAL_SEC = 0.01;
 type BeatProjector = (beat: number) => number;
-
 function cubicBezier(a: number, b: number, c: number, d: number, value: number): number {
     const inverse = 1 - value;
     return inverse ** 3 * a + 3 * inverse ** 2 * value * b + 3 * inverse * value ** 2 * c + value ** 3 * d;
@@ -211,7 +209,11 @@ export function compileAutomationEvents(
 
         const beatSpan = visibleEndBeat - visibleStartBeat;
         const timeSpan = visibleEnd - visibleStart;
+        const hasTempoBoundary = changes.some(
+            (change) => change.beat > visibleStartBeat && change.beat < visibleEndBeat
+        );
         const hasLinearTimeProjection =
+            !hasTempoBoundary &&
             Math.abs(projectBeat(visibleStartBeat + beatSpan / 4) - (visibleStart + timeSpan / 4)) < 1e-4 &&
             Math.abs(projectBeat(visibleStartBeat + beatSpan / 2) - (visibleStart + timeSpan / 2)) < 1e-4;
         const steps =
