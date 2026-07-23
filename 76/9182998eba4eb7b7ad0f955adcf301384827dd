@@ -1,0 +1,53 @@
+crates/proof-chamber/Cargo.toml
+  s_ac9b259eab20ba::t_9a9c275b2316e0 17-19
+src/modules/AudioEngine/engine/ProofChamberNode.ts
+  s_ac9b259eab20ba::t_9a9c275b2316e0 11-21,26,70-73,75-77,79-80,92,117-127
+src/modules/AudioEngine/repositories/deviceStrategy/__tests__/NativeDspDeviceStrategy.spec.ts
+  s_ac9b259eab20ba::t_afe285a6efc195 33-49
+src/modules/AudioEngine/services/proofChamberProcessor.ts
+  s_ac9b259eab20ba::t_9a9c275b2316e0 25,28,34,58,85-86,89-90,120
+src/modules/AudioEngine/engine/__tests__/ProofChamberNode.spec.ts
+  s_ac9b259eab20ba::t_9a9c275b2316e0 98-105
+src/modules/AudioEngine/services/__tests__/processorQueues.spec.ts
+  s_ac9b259eab20ba::t_a0a1fd6ab51f6a 5
+  s_ac9b259eab20ba::t_9a9c275b2316e0 161,165,175-177
+crates/proof-chamber/src/lib.rs
+  s_ac9b259eab20ba::t_9a9c275b2316e0 116-124,211,226-236
+src/modules/AudioEngine/engine/__tests__/wasmDeviceRegistryDescriptors.spec.ts
+  s_ac9b259eab20ba::t_9a9c275b2316e0 326
+package.json
+  s_ac9b259eab20ba::t_9a9c275b2316e0 33
+scripts/gen-proof-chamber-worklet.ts
+  s_ac9b259eab20ba::t_8f25561494f217 15-16,26-27,85
+  s_ac9b259eab20ba::t_ada39093a0ba63 21
+public/wasm/proof-chamber/package.json
+  s_ac9b259eab20ba::t_72ed600e4a6c58 8-9,12
+public/wasm/proof-chamber/proof_chamber.d.ts
+  s_ac9b259eab20ba::t_e20531708b1943 9-11,23,38
+public/wasm/proof-chamber/proof_chamber.js
+  s_ac9b259eab20ba::t_dbce976ce9368a 1-2,89-95
+public/wasm/proof-chamber/proof_chamber_bg.wasm.d.ts
+  s_ac9b259eab20ba::t_170cfaac2b341d 12
+src/modules/AudioEngine/wasm/proof_chamber.d.ts
+  s_ac9b259eab20ba::t_33ce32ec4eb678 1-2,4,7-12,16-18,20,23,25-66
+src/modules/AudioEngine/wasm/proof_chamber.js
+  s_ac9b259eab20ba::t_4a9e6c5324880a 44-45,132-138
+Cargo.lock
+  s_ac9b259eab20ba::t_2d2e18b127bc6b 5767
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "769182998eba4eb7b7ad0f955adcf301384827dd",
+  "prompts": {},
+  "sessions": {
+    "s_ac9b259eab20ba": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8699-3865-7842-8c54-afbac6cfd266",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
