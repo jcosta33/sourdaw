@@ -1,0 +1,55 @@
+src/modules/Yeast/workers/processors/EuclideanGenerator.ts
+  s_ac9b259eab20ba::t_84f930bce4c13a 93
+src/modules/Yeast/engine/YeastWorkerClient.ts
+  s_ac9b259eab20ba::t_229057b1cdffda 127-129
+src/modules/Yeast/workers/yeastWorker.ts
+  s_ac9b259eab20ba::t_229057b1cdffda 120-122
+src/modules/Transport/useCases/scheduling/__tests__/processLiveYeastTrackBlock.spec.ts
+  s_ac9b259eab20ba::t_9d5fc77d556ed2 104-129
+  s_ac9b259eab20ba::t_43cb79100670fc 73-103
+src/modules/Yeast/workers/processors/Arpeggiator.ts
+  s_ac9b259eab20ba::t_3dbbd6d4d39954 214
+src/modules/Yeast/models/MidiEvent.ts
+  s_ac9b259eab20ba::t_84f930bce4c13a 19-20
+src/modules/Yeast/workers/processors/Harmonizer.ts
+  s_ac9b259eab20ba::t_bfd5fc4c1ac46d 76-79,83
+src/modules/Yeast/workers/processors/MarkovChain.ts
+  s_ac9b259eab20ba::t_84f930bce4c13a 186
+src/modules/Yeast/workers/processors/__tests__/EuclideanGenerator.spec.ts
+  s_ac9b259eab20ba::t_7eb64c76db975c 79-81,83-103
+  s_ac9b259eab20ba::t_7c03ac6546bd21 5
+  s_ac9b259eab20ba::t_3a166f3f52ff83 82
+  s_ac9b259eab20ba::t_eb67502bf032fc 6
+  s_ac9b259eab20ba::t_c63c11edcf8680 104
+src/modules/Yeast/workers/processors/NoteRepeater.ts
+  s_ac9b259eab20ba::t_84f930bce4c13a 72
+src/modules/Yeast/engine/__tests__/YeastWorkerClient.spec.ts
+  s_ac9b259eab20ba::t_17ca256834471a 815-819
+  s_ac9b259eab20ba::t_a61d88a613577c 892-905
+src/modules/Yeast/workers/__tests__/yeastWorker.spec.ts
+  s_ac9b259eab20ba::t_229057b1cdffda 542-561
+  s_ac9b259eab20ba::t_a61d88a613577c 258
+src/modules/Transport/useCases/scheduling/processLiveYeastTrackBlock.ts
+  s_ac9b259eab20ba::t_84f930bce4c13a 125-126,132-133,149,216-227,229-237
+  s_ac9b259eab20ba::t_b6ceeec5ae29c2 238,259
+src/modules/Yeast/workers/processors/ChordGenerator.ts
+  s_ac9b259eab20ba::t_bfd5fc4c1ac46d 102-105,108
+src/modules/Yeast/workers/processors/ChordMemory.ts
+  s_ac9b259eab20ba::t_84f930bce4c13a 66
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "5662b7809e8eb96bfd751b6dc841d51ec6b8128e",
+  "prompts": {},
+  "sessions": {
+    "s_ac9b259eab20ba": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8699-3865-7842-8c54-afbac6cfd266",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
