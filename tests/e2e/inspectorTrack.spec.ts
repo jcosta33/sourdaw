@@ -80,11 +80,9 @@ test.describe('Inspector — Track Properties', () => {
         await inspector.getByRole('button', { name: /Add automation lane/i }).click();
 
         const menu = page.getByRole('menu');
-        if (await menu.isVisible().catch(() => false)) {
-            const items = menu.getByRole('menuitem');
-            const count = await items.count();
-            expect(count).toBeGreaterThan(0);
-        }
+        await expect(menu).toBeVisible({ timeout: 5000 });
+        const items = menu.getByRole('menuitem');
+        expect(await items.count()).toBeGreaterThan(0);
     });
 
     test('Can toggle Follow Chord Track', async ({ page }) => {

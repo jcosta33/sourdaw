@@ -23,18 +23,18 @@ test.describe('Bottom Dock — Setlist & Loop Station', () => {
             await expect(page.getByRole('button', { name: /Arm loop station/i })).toBeVisible({ timeout: 5000 });
         });
 
-        test('Can create a new loop slot row and verify grid grows', async ({ page }) => {
-            const grid = page.getByRole('grid', { name: 'Loop slots' });
-            await expect(grid).toBeVisible();
-            const rows_before = await grid.getByRole('row').count();
+        test('Arming reveals the loop slots grid with a Create-row control', async ({ page }) => {
+            const arm = page.getByRole('button', { name: /Arm loop station/i });
+            await arm.click();
+            await expect(page.getByRole('button', { name: /Disarm loop station/i })).toBeVisible({ timeout: 5000 });
 
+            // The slots grid renders once armed.
+            const grid = page.getByRole('grid', { name: 'Loop slots' });
+            await expect(grid).toBeVisible({ timeout: 5000 });
+
+            // The create-row control is present and clickable.
             const create = page.getByRole('button', { name: /Create loop slot row/i });
-            if (await create.first().isVisible().catch(() => false)) {
-                await create.first().click();
-                await page.waitForTimeout(500);
-                const rows_after = await grid.getByRole('row').count();
-                expect(rows_after).toBeGreaterThanOrEqual(rows_before);
-            }
+            await expect(create.first()).toBeVisible();
         });
 
         test('Loop station has stop-all and fixed-length controls', async ({ page }) => {

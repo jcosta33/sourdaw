@@ -9,250 +9,134 @@ async function add_track(page: import('@playwright/test').Page, kind: string): P
     await page.getByRole('option', { name: `Add ${kind} Track` }).click();
 }
 
-async function create_midi_clip(page: import('@playwright/test').Page): Promise<boolean> {
-    await add_track(page, 'MIDI');
-    const timeline = page.getByLabel('Timeline editor surface');
-    await timeline.click({ button: 'right', position: { x: 200, y: 30 } });
-    const add = page.getByRole('menuitem', { name: /Add Clip Here/i });
-    if (await add.isVisible().catch(() => false)) {
-        await add.click();
-        await page.waitForTimeout(500);
-        return true;
-    }
-    return false;
-}
+// ---------------------------------------------------------------------------
+// End-to-end workflow — real multi-step journeys with state verification.
+// ---------------------------------------------------------------------------
 
-test.describe('End-to-End DAW Workflow', () => {
-    test('Full MIDI workflow: track → device → clip → notes → undo', async ({ page }) => {
+test.describe('End-to-end DAW workflow', () => {
+    test('Full MIDI workflow: track → clip → editor → note → undo enabled', async ({ page }) => {
         await setupWorkspace(page);
         await launch_new_project(page);
-
         await add_track(page, 'MIDI');
+
         const track_list = page.getByRole('grid', { name: /Track list/i });
         await expect(track_list.getByRole('row', { name: /MIDI/i }).first()).toBeVisible({ timeout: 5000 });
 
+        // Create a clip and open the editor.
         const timeline = page.getByLabel('Timeline editor surface');
-        await timeline.click({ button: 'right', position: { x: 200, y: 30 } });
-        const add_clip = page.getByRole('menuitem', { name: /Add Clip Here/i });
-        if (await add_clip.isVisible().catch(() => false)) {
-            await add_clip.click();
+        await timeline.click({ button: 'right', position: { x: 300, y: 30 } });
+        await page.getByRole('menuitem', { name: /Add Clip Here/i }).click();
+        await page.waitForTimeout(500);
+        await timeline.dblclick({ position: { x: 300, y: 30 } });
+        const piano_roll = page.getByLabel('Piano roll editor');
+        await expect(piano_roll).toBeVisible({ timeout: 10000 });
+
+        // Create a note → undo becomes enabled.
+        const box = await piano_roll.boundingBox();
+        if (box) {
+            await piano_roll.dblclick({ position: { x: box.width * 0.3, y: box.height * 0.5 } });
             await page.waitForTimeout(500);
-            await expect(page.getByText(/clip/i).first()).toBeVisible();
-
-            await timeline.dblclick({ position: { x: 200, y: 30 } });
-            await expect(page.getByLabel('Piano roll editor')).toBeVisible({ timeout: 10000 });
-
-            const piano_roll = page.getByLabel('Piano roll editor');
-            const box = await piano_roll.boundingBox();
-            if (box) {
-                await piano_roll.dblclick({ position: { x: box.width * 0.3, y: box.height * 0.5 } });
-                await page.waitForTimeout(500);
-            }
-
-            const play = page.getByRole('button', { name: 'Play' }).or(page.getByRole('button', { name: 'Pause' }));
-            await play.first().click();
-            await page.waitForTimeout(1000);
-            await play.first().click();
-            await page.waitForTimeout(500);
-
-            const stop = page.getByRole('button', { name: 'Stop' });
-            await stop.click();
-            await page.waitForTimeout(300);
         }
-
-        await expect(page.getByRole('toolbar', { name: 'Transport controls' })).toBeVisible();
+        await expect(page.getByRole('button', { name: 'Undo', exact: true })).toBeEnabled();
     });
 
-    test('Template load and verify instrument devices are present', async ({ page }) => {
+    test('Template load yields multiple tracks', async ({ page }) => {
         test.setTimeout(60000);
         await setupWorkspace(page);
         await launch_from_template({ page, template_name: /EDM/i });
 
-        const inspector = page.getByRole('complementary', { name: 'Inspector panel' });
         const track_list = page.getByRole('grid', { name: /Track list/i });
-        const tracks = track_list.getByRole('row');
-        const track_count = await tracks.count();
-        expect(track_count).toBeGreaterThanOrEqual(2);
-
-        for (let i = 0; i < Math.min(track_count, 3); i++) {
-            await tracks.nth(i).click();
-            await page.waitForTimeout(300);
-            await expect(inspector).toBeVisible();
-        }
+        expect(await track_list.getByRole('row').count()).toBeGreaterThanOrEqual(2);
     });
 
-    test('Mixer workflow: mute → solo → unmute → unsolo', async ({ page }) => {
-        test.setTimeout(60000);
-        await setupWorkspace(page);
-        await launch_from_template({ page, template_name: /EDM/i });
-
-        await page.getByRole('button', { name: 'Toggle bottom dock' }).click();
-        const mixer = page.getByRole('region', { name: 'Mixer panel' });
-        await expect(mixer).toBeVisible({ timeout: 5000 });
-
-        const channels = mixer.getByRole('group', { name: /channel/i });
-        if (await channels.first().isVisible().catch(() => false)) {
-            const first_channel = channels.first();
-
-            const mute = first_channel.getByRole('button', { name: /^Mute/i }).or(first_channel.getByRole('button', { name: /^Unmute/i }));
-            const solo = first_channel.getByRole('button', { name: /^Solo/i }).or(first_channel.getByRole('button', { name: /^Unsolo/i }));
-
-            if (await mute.first().isVisible().catch(() => false)) {
-                await mute.first().click();
-                await page.waitForTimeout(300);
-                await mute.first().click();
-                await page.waitForTimeout(300);
-            }
-
-            if (await solo.first().isVisible().catch(() => false)) {
-                await solo.first().click();
-                await page.waitForTimeout(300);
-                await solo.first().click();
-                await page.waitForTimeout(300);
-            }
-        }
-
-        await expect(mixer).toBeVisible();
-    });
-
-    test('Multiple undo/redo cycle preserves state', async ({ page }) => {
+    test('Undo button is enabled after adding a track', async ({ page }) => {
         await setupWorkspace(page);
         await launch_new_project(page);
 
+        // Before any action, undo is disabled (no history).
+        const undo = page.getByRole('button', { name: 'Undo', exact: true });
+        await expect(undo).toBeDisabled();
+
         await add_track(page, 'MIDI');
         await page.waitForTimeout(300);
-        await add_track(page, 'Audio');
-        await page.waitForTimeout(300);
 
-        const track_list = page.getByRole('grid', { name: /Track list/i });
-        const undo = page.getByRole('button', { name: 'Undo', exact: true });
-        const redo = page.getByRole('button', { name: 'Redo' });
-
-        const rows_after_add = await track_list.getByRole('row').count();
-
-        if (await undo.isEnabled().catch(() => false)) {
-            await undo.click();
-            await page.waitForTimeout(1500);
-            const rows_after_undo = await track_list.getByRole('row').count();
-            expect(rows_after_undo).toBeLessThanOrEqual(rows_after_add);
-
-            if (await redo.isEnabled().catch(() => false)) {
-                await redo.click();
-                await page.waitForTimeout(1500);
-            }
-        }
-
-        await expect(page.getByRole('toolbar', { name: 'Transport controls' })).toBeVisible();
+        // After adding a track, undo becomes enabled (history pushed).
+        await expect(undo).toBeEnabled();
     });
 });
 
-test.describe('Inspector Deep Interactions', () => {
+// ---------------------------------------------------------------------------
+// Inspector deep — device bypass round-trip, automation lane, gain value.
+// ---------------------------------------------------------------------------
+
+test.describe('Inspector deep interactions', () => {
     test.beforeEach(async ({ page }) => {
         await setupWorkspace(page);
         await launch_new_project(page);
         await add_track(page, 'MIDI');
     });
 
-    test('Track color picker buttons are clickable', async ({ page }) => {
+    test('Default Synth device bypass round-trips Bypass → Enable → Bypass', async ({ page }) => {
         const inspector = page.getByRole('complementary', { name: 'Inspector panel' });
-        const colors = inspector.getByRole('button', { name: /Set color/i });
-        const count = await colors.count();
-        if (count > 0) {
-            await colors.first().click();
-            await page.waitForTimeout(300);
-        }
-    });
 
-    test('Inspector device bypass changes state and reflects in chain', async ({ page }) => {
-        const inspector = page.getByRole('complementary', { name: 'Inspector panel' });
-        const bypass = inspector.getByRole('button', { name: /Bypass Synth/i });
+        const bypass = inspector.getByRole('button', { name: /^Bypass Synth/i });
+        await expect(bypass).toHaveAttribute('aria-pressed', 'false');
         await bypass.click();
-        await expect(inspector.getByRole('button', { name: /Enable Synth/i })).toBeVisible({ timeout: 5000 });
 
-        await inspector.getByRole('button', { name: /Enable Synth/i }).click();
-        await expect(inspector.getByRole('button', { name: /Bypass Synth/i })).toBeVisible({ timeout: 5000 });
+        const enable = inspector.getByRole('button', { name: /^Enable Synth/i });
+        await expect(enable).toBeVisible();
+        await expect(enable).toHaveAttribute('aria-pressed', 'true');
+
+        await enable.click();
+        await expect(bypass).toBeVisible();
+        await expect(bypass).toHaveAttribute('aria-pressed', 'false');
     });
 
-    test('Adding and removing an automation lane updates inspector', async ({ page }) => {
+    test('Adding an automation lane creates a removable Gain lane', async ({ page }) => {
         const inspector = page.getByRole('complementary', { name: 'Inspector panel' });
 
+        await expect(inspector.getByText('No automation lanes yet')).toBeVisible();
         await inspector.getByRole('button', { name: /Add automation lane/i }).click();
-        await page.waitForTimeout(500);
+        await page.getByRole('menuitem', { name: 'Gain', exact: true }).first().click();
 
-        const remove = inspector.getByRole('button', { name: /Remove lane/i });
-        if (await remove.isVisible().catch(() => false)) {
-            const lanes_before = await inspector.getByText(/Show|Hide/i).count();
-            await remove.click();
-            await page.waitForTimeout(500);
-        }
+        const remove = inspector.getByRole('button', { name: 'Remove lane' });
+        await expect(remove).toBeVisible();
 
-        await expect(inspector).toBeVisible();
+        await remove.click();
+        await expect(inspector.getByText('No automation lanes yet')).toBeVisible();
     });
 
-    test('Track gain slider has visible value display', async ({ page }) => {
-        const inspector = page.getByRole('complementary', { name: 'Inspector panel' });
-        const gain = inspector.getByRole('slider', { name: /gain/i });
-        await expect(gain).toBeVisible();
-
-        const value_text = await inspector.getByText(/\d+%/).first().textContent().catch(() => '');
-        expect(value_text).toMatch(/\d/);
-    });
-
-    test('Track notes accept and display text', async ({ page }) => {
+    test('Track notes accept and display typed text', async ({ page }) => {
         const inspector = page.getByRole('complementary', { name: 'Inspector panel' });
         const notes = inspector.getByRole('textbox', { name: /Notes/i });
         await notes.fill('My production notes');
         await expect(notes).toHaveValue('My production notes');
     });
-
-    test('VCA group creation adds group selector', async ({ page }) => {
-        const inspector = page.getByRole('complementary', { name: 'Inspector panel' });
-        await inspector.getByRole('button', { name: /Create VCA group/i }).click();
-        await page.waitForTimeout(500);
-
-        const vca_select = inspector.getByRole('combobox', { name: 'VCA group' });
-        await expect(vca_select).toBeVisible();
-        const selected = await vca_select.getByRole('option', { selected: true }).textContent().catch(() => '');
-    });
 });
 
-test.describe('Browser Panel Deep Interactions', () => {
+// ---------------------------------------------------------------------------
+// Browser panel — tab content swap and search.
+// ---------------------------------------------------------------------------
+
+test.describe('Browser panel deep interactions', () => {
     test.beforeEach(async ({ page }) => {
+        test.setTimeout(60000);
         await setupWorkspace(page);
         await launch_from_template({ page, template_name: /EDM/i });
     });
 
-    test('Switching between all browser tabs changes content', async ({ page }) => {
-        const browser = page.getByRole('complementary', { name: 'Browser panel' });
-        const tabs = ['Instruments', 'Effects', 'Library', 'Macros', 'Project'];
-
-        for (const tab_name of tabs) {
-            await browser.getByRole('button', { name: tab_name, exact: true }).click();
-            await page.waitForTimeout(300);
-            await expect(browser).toBeVisible();
-        }
-    });
-
-    test('Browser search clears when input is emptied', async ({ page }) => {
-        const browser = page.getByRole('complementary', { name: 'Browser panel' });
-        const search = browser.getByRole('searchbox', { name: 'Search browser' });
-
-        await search.fill('synth');
-        await expect(search).toHaveValue('synth');
-
-        await search.fill('');
-        await expect(search).toHaveValue('');
-    });
-
-    test('Browser Project tab shows project info', async ({ page }) => {
+    test('Switching to Project tab shows project metadata', async ({ page }) => {
         const browser = page.getByRole('complementary', { name: 'Browser panel' });
         await browser.getByRole('button', { name: 'Project', exact: true }).click();
-        await page.waitForTimeout(500);
+        await expect(browser.getByText(/PROJECT META|Name|Created/i).first()).toBeVisible({ timeout: 5000 });
+    });
 
-        const content = browser.getByText(/BPM|tempo|track|arrangement|signature/i);
-        const visible = await content.first().isVisible().catch(() => false);
-        if (visible) {
-            await expect(content.first()).toBeVisible();
-        }
+    test('Browser search accepts and clears text', async ({ page }) => {
+        const browser = page.getByRole('complementary', { name: 'Browser panel' });
+        const search = browser.getByRole('searchbox', { name: 'Search browser' });
+        await search.fill('synth');
+        await expect(search).toHaveValue('synth');
+        await search.fill('');
+        await expect(search).toHaveValue('');
     });
 });

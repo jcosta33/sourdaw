@@ -96,10 +96,8 @@ test.describe('Number Key Tool Selection', () => {
         await expect(tools.getByRole('radio', { name: /Select/i })).toBeChecked();
 
         await page.keyboard.press('3');
-        const draw = tools.getByRole('radio', { name: /Draw/i });
-        if (await draw.isVisible().catch(() => false)) {
-            await expect(draw).toBeChecked();
-        }
+        // Exact match: /Draw/i also matches "Auto-draw".
+        await expect(tools.getByRole('radio', { name: /^Draw/i })).toBeChecked();
 
         await page.keyboard.press('1');
         await expect(tools.getByRole('radio', { name: /Select/i })).toBeChecked();

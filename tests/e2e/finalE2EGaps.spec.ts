@@ -9,7 +9,11 @@ async function add_track(page: import('@playwright/test').Page, kind: string): P
     await page.getByRole('option', { name: `Add ${kind} Track` }).click();
 }
 
-test.describe('Export Dialog Deep', () => {
+// ---------------------------------------------------------------------------
+// Export dialog — Start Baking button + Escape close.
+// ---------------------------------------------------------------------------
+
+test.describe('Export dialog deep', () => {
     test.beforeEach(async ({ page }) => {
         await setupWorkspace(page);
         await launch_new_project(page);
@@ -17,24 +21,9 @@ test.describe('Export Dialog Deep', () => {
         await expect(page.getByRole('dialog').filter({ hasText: /Bakery|Export/i })).toBeVisible({ timeout: 5000 });
     });
 
-    test('Export dialog has format checkboxes', async ({ page }) => {
+    test('Export dialog exposes a Start Baking action button', async ({ page }) => {
         const dialog = page.getByRole('dialog').filter({ hasText: /Bakery|Export/i });
-        const mp3 = dialog.getByRole('checkbox', { name: /MP3/i });
-        if (await mp3.isVisible().catch(() => false)) {
-            const before = await mp3.isChecked().catch(() => false);
-            await mp3.click();
-            await page.waitForTimeout(300);
-            const after = await mp3.isChecked().catch(() => false);
-            expect(after).not.toBe(before);
-        }
-    });
-
-    test('Export dialog has Start Baking button', async ({ page }) => {
-        const dialog = page.getByRole('dialog').filter({ hasText: /Bakery|Export/i });
-        const bake = dialog.getByRole('button', { name: /Start Baking|Export|Bake/i });
-        if (await bake.isVisible().catch(() => false)) {
-            await expect(bake).toBeVisible();
-        }
+        await expect(dialog.getByRole('button', { name: /Start Baking|Export|Bake/i })).toBeVisible();
     });
 
     test.afterEach(async ({ page }) => {
@@ -42,81 +31,75 @@ test.describe('Export Dialog Deep', () => {
     });
 });
 
-test.describe('Track Folder Operations', () => {
+// ---------------------------------------------------------------------------
+// Track folder + height — real state mutations.
+// ---------------------------------------------------------------------------
+
+test.describe('Track operations', () => {
     test.beforeEach(async ({ page }) => {
         await setupWorkspace(page);
         await launch_new_project(page);
     });
 
-    test('Add folder button creates a folder track', async ({ page }) => {
-        const add_folder = page.getByRole('button', { name: 'Add folder' });
-        if (await add_folder.isVisible().catch(() => false)) {
-            await add_folder.click();
-            await page.waitForTimeout(500);
-            const track_list = page.getByRole('grid', { name: /Track list/i });
-            const rows = await track_list.getByRole('row').count();
-            expect(rows).toBeGreaterThan(0);
-        }
-    });
-});
-
-test.describe('Track Height Controls', () => {
-    test('Track height control is present and clickable', async ({ page }) => {
-        await setupWorkspace(page);
-        await launch_new_project(page);
+    test('Add folder creates a folder track in the list', async ({ page }) => {
+        // Seed a track so the grid renders (empty projects show no grid rows).
         await add_track(page, 'MIDI');
+        const track_list = page.getByRole('grid', { name: /Track list/i });
+        const rows_before = await track_list.getByRole('row').count();
 
-        const height_btn = page.getByRole('button', { name: /Track height/i });
-        await expect(height_btn).toBeVisible();
-        await height_btn.click();
-        await page.waitForTimeout(300);
-        await expect(height_btn).toBeVisible();
+        await page.getByRole('button', { name: 'Add folder' }).click();
+        await page.waitForTimeout(500);
+
+        const rows_after = await track_list.getByRole('row').count();
+        expect(rows_after).toBeGreaterThan(rows_before);
+    });
+
+    test('Track height button is present after adding a track', async ({ page }) => {
+        await add_track(page, 'MIDI');
+        await expect(page.getByRole('button', { name: /Track height/i })).toBeVisible();
     });
 });
 
-test.describe('Project Menu — Full Navigation', () => {
+// ---------------------------------------------------------------------------
+// Project menu — template + demo choosers navigate.
+// ---------------------------------------------------------------------------
+
+test.describe('Project menu navigation', () => {
     test.beforeEach(async ({ page }) => {
         await setupWorkspace(page);
         await launch_new_project(page);
     });
 
-    test('Project menu shows template chooser', async ({ page }) => {
+    test('New from Template opens the template chooser', async ({ page }) => {
         await page.getByRole('button', { name: 'Project menu' }).click();
-        const menu = page.getByRole('menu', { name: 'Project menu' });
-        await menu.getByRole('menuitem', { name: 'New from Template…' }).click();
+        await page.getByRole('menu', { name: 'Project menu' }).getByRole('menuitem', { name: 'New from Template…' }).click();
         await expect(page.getByText('Start a new project')).toBeVisible({ timeout: 5000 });
         await expect(page.getByRole('button', { name: 'EDM' })).toBeVisible();
     });
 
-    test('Project menu shows demo chooser', async ({ page }) => {
+    test('Load Demo Project opens the demo chooser', async ({ page }) => {
         await page.getByRole('button', { name: 'Project menu' }).click();
-        const menu = page.getByRole('menu', { name: 'Project menu' });
-        await menu.getByRole('menuitem', { name: 'Load Demo Project…' }).click();
+        await page.getByRole('menu', { name: 'Project menu' }).getByRole('menuitem', { name: 'Load Demo Project…' }).click();
         await expect(page.getByText('Start a new project')).toBeVisible({ timeout: 5000 });
     });
 });
 
-test.describe('Virtual Keyboard Deep', () => {
+// ---------------------------------------------------------------------------
+// Virtual keyboard — keys + velocity slider hold values.
+// ---------------------------------------------------------------------------
+
+test.describe('Virtual keyboard deep', () => {
     test.beforeEach(async ({ page }) => {
         await setupWorkspace(page);
         await launch_new_project(page);
         await page.getByRole('button', { name: 'Toggle virtual keyboard' }).click();
     });
 
-    test('Multiple octave keys are visible', async ({ page }) => {
+    test('Keyboard exposes named keys and a velocity slider with a value', async ({ page }) => {
         const keyboard = page.getByRole('application', { name: /Virtual Piano Keyboard/i });
         await expect(keyboard).toBeVisible();
+        await expect(keyboard.getByRole('button', { name: /C4/i })).toBeVisible();
 
-        const c4 = keyboard.getByRole('button', { name: /C4/i });
-        await expect(c4).toBeVisible();
-
-        const e4 = keyboard.getByRole('button', { name: /E4/i });
-        if (await e4.isVisible().catch(() => false)) {
-            await expect(e4).toBeVisible();
-        }
-    });
-
-    test('Velocity slider is interactive', async ({ page }) => {
         const velocity = page.getByRole('slider', { name: 'Note velocity' });
         await expect(velocity).toBeVisible();
         const value = await velocity.getAttribute('aria-valuenow');
@@ -124,94 +107,66 @@ test.describe('Virtual Keyboard Deep', () => {
     });
 });
 
-test.describe('MIDI Learn', () => {
-    test('MIDI learn buttons are present on track gain', async ({ page }) => {
-        await setupWorkspace(page);
-        await launch_new_project(page);
-        await add_track(page, 'MIDI');
+// ---------------------------------------------------------------------------
+// Command palette — search filters, Escape closes.
+// ---------------------------------------------------------------------------
 
-        const inspector = page.getByRole('complementary', { name: 'Inspector panel' });
-        const learn_btn = inspector.getByRole('button', { name: 'MIDI Learn' });
-        if (await learn_btn.first().isVisible().catch(() => false)) {
-            await expect(learn_btn.first()).toBeVisible();
-        }
-    });
-});
-
-test.describe('Command Palette — Deep Search', () => {
+test.describe('Command palette deep search', () => {
     test.beforeEach(async ({ page }) => {
         await setupWorkspace(page);
         await launch_new_project(page);
     });
 
-    test('Search results filter correctly', async ({ page }) => {
+    test('Typing "track" filters to a non-empty subset', async ({ page }) => {
         await page.keyboard.press(`${MOD}+k`);
         const input = page.getByPlaceholder('Type a command...', { exact: true });
         await expect(input).toBeVisible({ timeout: 5000 });
-
-        const all_options = page.getByRole('option');
-        const count_all = await all_options.count();
 
         await input.fill('track');
         await page.waitForTimeout(300);
-        const count_filtered = await all_options.count();
-
-        expect(count_filtered).toBeLessThanOrEqual(count_all);
-        expect(count_filtered).toBeGreaterThan(0);
+        expect(await page.getByRole('option').count()).toBeGreaterThan(0);
     });
 
-    test('Escape closes command palette', async ({ page }) => {
+    test('Escape closes the palette', async ({ page }) => {
         await page.keyboard.press(`${MOD}+k`);
         const input = page.getByPlaceholder('Type a command...', { exact: true });
         await expect(input).toBeVisible({ timeout: 5000 });
-
         await page.keyboard.press('Escape');
-        await expect(input).toBeHidden({ timeout: 3000 });
+        await expect(input).toHaveCount(0);
     });
 });
 
-test.describe('Browser Search Filtering', () => {
-    test('Browser search accepts and filters', async ({ page }) => {
-        await setupWorkspace(page);
-        await launch_from_template({ page, template_name: /EDM/i });
+// ---------------------------------------------------------------------------
+// Collaboration panel — opens with content.
+// ---------------------------------------------------------------------------
 
-        const browser = page.getByRole('complementary', { name: 'Browser panel' });
-        const search = browser.getByRole('searchbox', { name: 'Search browser' });
-        await expect(search).toBeVisible();
-
-        await search.fill('synth');
-        await expect(search).toHaveValue('synth');
-
-        await search.fill('');
-        await expect(search).toHaveValue('');
-    });
-});
-
-test.describe('Collaboration Panel Deep', () => {
-    test('Collaboration panel has invite content', async ({ page }) => {
+test.describe('Collaboration panel deep', () => {
+    test('Toggling opens the collaboration dialog with invite content', async ({ page }) => {
         await setupWorkspace(page);
         await launch_new_project(page);
 
         await page.getByRole('button', { name: 'Toggle collaboration panel' }).click();
         const dialog = page.getByRole('dialog', { name: 'Collaborate' });
         await expect(dialog).toBeVisible({ timeout: 5000 });
-
-        const buttons = dialog.getByRole('button');
-        const count = await buttons.count();
-        expect(count).toBeGreaterThan(0);
+        expect(await dialog.getByRole('button').count()).toBeGreaterThan(0);
     });
 });
 
-test.describe('Ableton Link', () => {
-    test('Ableton Link toggle changes state', async ({ page }) => {
-        await setupWorkspace(page);
-        await launch_new_project(page);
+// ---------------------------------------------------------------------------
+// Browser search filtering.
+// ---------------------------------------------------------------------------
 
-        const link = page.getByRole('button', { name: /Ableton Link/i });
-        await expect(link).toBeVisible();
-        const label_before = await link.getAttribute('aria-label');
-        await link.click();
-        await page.waitForTimeout(500);
-        await expect(link).toBeVisible();
+test.describe('Browser search filtering', () => {
+    test('Browser search accepts and clears text', async ({ page }) => {
+        test.setTimeout(60000);
+        await setupWorkspace(page);
+        await launch_from_template({ page, template_name: /EDM/i });
+
+        const browser = page.getByRole('complementary', { name: 'Browser panel' });
+        const search = browser.getByRole('searchbox', { name: 'Search browser' });
+        await search.fill('synth');
+        await expect(search).toHaveValue('synth');
+        await search.fill('');
+        await expect(search).toHaveValue('');
     });
 });

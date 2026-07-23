@@ -83,11 +83,9 @@ test.describe('Metronome Volume Slider', () => {
         await page.waitForTimeout(300);
 
         const volume = page.getByRole('slider', { name: /Metronome volume/i });
-        if (await volume.isVisible().catch(() => false)) {
-            await expect(volume).toBeVisible();
-            const value = await volume.getAttribute('aria-valuenow');
-            expect(value).not.toBeNull();
-        }
+        await expect(volume).toBeVisible({ timeout: 5000 });
+        const value = await volume.getAttribute('aria-valuenow');
+        expect(value).not.toBeNull();
     });
 });
 
@@ -126,9 +124,7 @@ test.describe('Punch Recording Controls', () => {
         await expect(punch).toHaveAttribute('aria-pressed', 'true');
 
         const punch_in = page.getByTestId('punch-in-beat');
-        if (await punch_in.isVisible().catch(() => false)) {
-            await expect(punch_in).toBeVisible();
-        }
+        await expect(punch_in).toBeVisible({ timeout: 5000 });
 
         await punch.click();
         await expect(punch).toHaveAttribute('aria-pressed', 'false');
@@ -163,12 +159,10 @@ test.describe('Editing Tools Deep', () => {
 
         const tools = page.getByRole('radiogroup', { name: 'Editing tools' });
 
-        for (const tool of [/Select/i, /Cut/i, /Draw/i, /Auto-draw/i, /Stretch/i, /Marquee/i]) {
+        for (const tool of [/Select/i, /Cut/i, /^Draw/i, /Auto-draw/i, /Stretch/i, /Marquee/i]) {
             const radio = tools.getByRole('radio', { name: tool });
-            if (await radio.isVisible().catch(() => false)) {
-                await radio.click();
-                await expect(radio).toBeChecked();
-            }
+            await radio.click();
+            await expect(radio).toBeChecked();
         }
 
         await tools.getByRole('radio', { name: /Select/i }).click();
