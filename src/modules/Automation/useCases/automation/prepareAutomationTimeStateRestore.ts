@@ -154,6 +154,14 @@ type AutomationTimeStateRestorePlan = {
     replacement: AutomationStoreState;
 };
 
+type PreparedRestoreState = {
+    capturedState: AutomationStoreState;
+    expectedValueSnapshot: AutomationStoreState;
+    replacementState: AutomationStoreState;
+    replacementValueSnapshot: AutomationStoreState;
+    hasChanges: boolean;
+};
+
 function validateRestorePlan(value: unknown): AutomationTimeStateRestorePlan | null {
     if (!isPlainJsonValue(value) || !isPlainObject(value)) {
         return null;
@@ -178,40 +186,89 @@ function validateRestorePlan(value: unknown): AutomationTimeStateRestorePlan | n
     };
 }
 
+function prepareRestoreStateUnchecked(
+    plan: unknown,
+    currentState: AutomationStoreState | null
+): PreparedRestoreState | null {
+    const validatedPlan = validateRestorePlan(plan);
+    if (!validatedPlan || !currentState) {
+        return null;
+    }
+
+    const validatedCurrentState = validateAutomationState(currentState);
+    if (!validatedCurrentState || !areAutomationStateValuesEqual(validatedCurrentState, validatedPlan.expected)) {
+        return null;
+    }
+
+    const expectedValueSnapshot = structuredClone(validatedPlan.expected);
+    const replacementValueSnapshot = structuredClone(validatedPlan.replacement);
+    if (
+        !areAutomationStateValuesEqual(validatedCurrentState, expectedValueSnapshot) ||
+        !areAutomationStateValuesEqual(validatedPlan.replacement, replacementValueSnapshot)
+    ) {
+        return null;
+    }
+
+    return {
+        capturedState: validatedCurrentState,
+        expectedValueSnapshot,
+        replacementState: validatedPlan.replacement,
+        replacementValueSnapshot,
+        hasChanges: !areAutomationStateValuesEqual(expectedValueSnapshot, replacementValueSnapshot),
+    };
+}
+
+function prepareRestoreState(plan: unknown, currentState: AutomationStoreState | null): PreparedRestoreState | null {
+    try {
+        return prepareRestoreStateUnchecked(plan, currentState);
+    } catch {
+        return null;
+    }
+}
+
+function matchesStateReferenceAndValue(
+    currentState: AutomationStoreState | null,
+    expectedReference: AutomationStoreState,
+    expectedValueSnapshot: AutomationStoreState
+): boolean {
+    if (currentState !== expectedReference) {
+        return false;
+    }
+
+    return areAutomationStateValuesEqual(currentState, expectedValueSnapshot);
+}
+
 export function prepareAutomationTimeStateRestore(plan: unknown) {
     const currentState = automationStore.value;
-    const validatedPlan = validateRestorePlan(plan);
-    let capturedState: AutomationStoreState | null = null;
-    let replacementState: AutomationStoreState | null = null;
+    const preparedRestore = prepareRestoreState(plan, currentState);
     let status: 'ready' | 'rejected' = 'rejected';
     let hasChanges = false;
     let phase: TransactionPhase = 'closed';
-    if (validatedPlan && currentState) {
-        const validatedCurrentState = validateAutomationState(currentState);
-        if (validatedCurrentState && areAutomationStateValuesEqual(validatedCurrentState, validatedPlan.expected)) {
-            status = 'ready';
-
-            if (!areAutomationStateValuesEqual(validatedPlan.expected, validatedPlan.replacement)) {
-                capturedState = validatedCurrentState;
-                replacementState = validatedPlan.replacement;
-                hasChanges = true;
-                phase = 'prepared';
-            }
+    if (preparedRestore) {
+        status = 'ready';
+        hasChanges = preparedRestore.hasChanges;
+        if (preparedRestore.hasChanges) {
+            phase = 'prepared';
         }
     }
 
     function apply(): boolean {
-        if (phase !== 'prepared' || !capturedState || !replacementState) {
+        if (phase !== 'prepared' || !preparedRestore || !preparedRestore.hasChanges) {
             return false;
         }
-        if (automationStore.value !== capturedState) {
+        const { capturedState, expectedValueSnapshot, replacementState, replacementValueSnapshot } = preparedRestore;
+        if (!matchesStateReferenceAndValue(automationStore.value, capturedState, expectedValueSnapshot)) {
+            phase = 'closed';
+            return false;
+        }
+        if (!areAutomationStateValuesEqual(replacementState, replacementValueSnapshot)) {
             phase = 'closed';
             return false;
         }
 
         phase = 'closed';
         automationStore.set(replacementState);
-        if (automationStore.value !== replacementState) {
+        if (!matchesStateReferenceAndValue(automationStore.value, replacementState, replacementValueSnapshot)) {
             return false;
         }
 
@@ -220,17 +277,22 @@ export function prepareAutomationTimeStateRestore(plan: unknown) {
     }
 
     function revert(): boolean {
-        if (phase !== 'applied' || !capturedState || !replacementState) {
+        if (phase !== 'applied' || !preparedRestore || !preparedRestore.hasChanges) {
             return false;
         }
-        if (automationStore.value !== replacementState) {
+        const { capturedState, expectedValueSnapshot, replacementState, replacementValueSnapshot } = preparedRestore;
+        if (!matchesStateReferenceAndValue(automationStore.value, replacementState, replacementValueSnapshot)) {
+            phase = 'closed';
+            return false;
+        }
+        if (!areAutomationStateValuesEqual(capturedState, expectedValueSnapshot)) {
             phase = 'closed';
             return false;
         }
 
         phase = 'closed';
         automationStore.set(capturedState);
-        return automationStore.value === capturedState;
+        return matchesStateReferenceAndValue(automationStore.value, capturedState, expectedValueSnapshot);
     }
 
     return {

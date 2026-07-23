@@ -274,6 +274,40 @@ describe('prepareAutomationTimeStateRestore', () => {
         expect(expectedGetter).not.toHaveBeenCalled();
     });
 
+    it('rejects revoked or throwing root and nested proxies without writing', () => {
+        const revokedRoot = Proxy.revocable(plan(stateAtBeat(6), stateAtBeat(4)), {});
+        revokedRoot.revoke();
+
+        const throwingRoot = new Proxy(plan(stateAtBeat(6), stateAtBeat(4)), {
+            ownKeys(): never {
+                throw new Error('root ownKeys failed');
+            },
+        });
+
+        const revokedExpected = Proxy.revocable(stateAtBeat(6), {});
+        revokedExpected.revoke();
+
+        const throwingPoint = new Proxy(point(6, 0.5), {
+            getPrototypeOf(): never {
+                throw new Error('nested prototype failed');
+            },
+        });
+        const throwingNestedState: AutomationStoreState = {
+            lanes: [lane({ points: [throwingPoint] })],
+        };
+
+        const malformedPlans = [
+            revokedRoot.proxy,
+            throwingRoot,
+            plan(revokedExpected.proxy, stateAtBeat(4)),
+            plan(throwingNestedState, stateAtBeat(4)),
+        ];
+
+        for (const malformedPlan of malformedPlans) {
+            expectRejectedWithoutWrite(malformedPlan, stateAtBeat(6));
+        }
+    });
+
     it.each([
         { lanes: [], extra: true },
         { lanes: [lane({ maxValue: -1 })] },
@@ -320,6 +354,105 @@ describe('prepareAutomationTimeStateRestore', () => {
 
         mocks.state.value = currentState;
         expect(transaction.apply()).toBe(false);
+        expect(transaction.revert()).toBe(false);
+    });
+
+    it('fails closed when the captured current state is mutated in place before apply', () => {
+        const currentState = stateAtBeat(6);
+        const replacementState = stateAtBeat(4);
+        mocks.state.value = currentState;
+        const transaction = prepareAutomationTimeStateRestore(plan(structuredClone(currentState), replacementState));
+        const currentPoint = currentState.lanes[0]?.points[0];
+        if (!currentPoint) {
+            throw new Error('expected current fixture point');
+        }
+        currentPoint.beat = 8;
+
+        expect(transaction.apply()).toBe(false);
+        expect(mocks.state.value).toBe(currentState);
+        expect(mocks.set).not.toHaveBeenCalled();
+        expect(transaction.apply()).toBe(false);
+        expect(transaction.revert()).toBe(false);
+    });
+
+    it('fails closed when the replacement is mutated in place during apply publication', () => {
+        const currentState = stateAtBeat(6);
+        const replacementState = stateAtBeat(4);
+        mocks.state.value = currentState;
+        mocks.set.mockImplementationOnce((nextState: AutomationStoreState | null): void => {
+            mocks.state.value = nextState;
+            const replacementPoint = nextState?.lanes[0]?.points[0];
+            if (!replacementPoint) {
+                throw new Error('expected replacement fixture point');
+            }
+            replacementPoint.beat = 10;
+        });
+        const transaction = prepareAutomationTimeStateRestore(plan(structuredClone(currentState), replacementState));
+
+        expect(transaction.apply()).toBe(false);
+        expect(mocks.state.value).toBe(replacementState);
+        expect(transaction.apply()).toBe(false);
+        expect(transaction.revert()).toBe(false);
+        expect(mocks.set).toHaveBeenCalledTimes(1);
+    });
+
+    it('fails closed when the published replacement is mutated in place before revert', () => {
+        const currentState = stateAtBeat(6);
+        const replacementState = stateAtBeat(4);
+        mocks.state.value = currentState;
+        const transaction = prepareAutomationTimeStateRestore(plan(structuredClone(currentState), replacementState));
+
+        expect(transaction.apply()).toBe(true);
+        const replacementPoint = replacementState.lanes[0]?.points[0];
+        if (!replacementPoint) {
+            throw new Error('expected replacement fixture point');
+        }
+        replacementPoint.beat = 10;
+
+        expect(transaction.revert()).toBe(false);
+        expect(mocks.state.value).toBe(replacementState);
+        expect(mocks.set).toHaveBeenCalledTimes(1);
+        expect(transaction.revert()).toBe(false);
+    });
+
+    it('fails closed when the captured state is mutated in place before revert', () => {
+        const currentState = stateAtBeat(6);
+        const replacementState = stateAtBeat(4);
+        mocks.state.value = currentState;
+        const transaction = prepareAutomationTimeStateRestore(plan(structuredClone(currentState), replacementState));
+
+        expect(transaction.apply()).toBe(true);
+        const currentPoint = currentState.lanes[0]?.points[0];
+        if (!currentPoint) {
+            throw new Error('expected current fixture point');
+        }
+        currentPoint.beat = 8;
+
+        expect(transaction.revert()).toBe(false);
+        expect(mocks.state.value).toBe(replacementState);
+        expect(mocks.set).toHaveBeenCalledTimes(1);
+        expect(transaction.revert()).toBe(false);
+    });
+
+    it('fails closed when the captured state is mutated during revert publication', () => {
+        const currentState = stateAtBeat(6);
+        const replacementState = stateAtBeat(4);
+        mocks.state.value = currentState;
+        const transaction = prepareAutomationTimeStateRestore(plan(structuredClone(currentState), replacementState));
+
+        expect(transaction.apply()).toBe(true);
+        mocks.set.mockImplementationOnce((nextState: AutomationStoreState | null): void => {
+            mocks.state.value = nextState;
+            const currentPoint = nextState?.lanes[0]?.points[0];
+            if (!currentPoint) {
+                throw new Error('expected current fixture point');
+            }
+            currentPoint.beat = 8;
+        });
+
+        expect(transaction.revert()).toBe(false);
+        expect(mocks.state.value).toBe(currentState);
+        expect(mocks.set).toHaveBeenCalledTimes(2);
         expect(transaction.revert()).toBe(false);
     });
 
