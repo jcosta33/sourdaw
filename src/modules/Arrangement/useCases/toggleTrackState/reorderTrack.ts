@@ -1,5 +1,6 @@
 import { getTrackState } from '../../repositories/track/getTrackState';
 import { updateTrackState } from '../../repositories/track/updateTrackState';
+import { refreshToasterPadBindings } from '../refreshToasterPadBindings';
 
 export function reorderTrack(trackId: string, newIndex: number): void {
     const state = getTrackState();
@@ -17,4 +18,5 @@ export function reorderTrack(trackId: string, newIndex: number): void {
     tracks.splice(Math.max(0, Math.min(tracks.length, newIndex)), 0, track!);
 
     updateTrackState({ tracks });
+    refreshToasterPadBindings(tracks, track!.parentId);
 }

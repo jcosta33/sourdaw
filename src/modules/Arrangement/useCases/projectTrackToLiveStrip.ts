@@ -2,6 +2,7 @@ import { logger } from '#/infra/logger/appLogger';
 import {
     addDeviceToStrip,
     ensureTrackStrip,
+    resolveToasterPadBinding,
     setTrackGain,
     setTrackOutput,
     setTrackPan,
@@ -61,7 +62,12 @@ export function projectTrackToLiveStrip({
 
     ensureTrackStrip(track.id);
     if (acceptsRoutingEndpoint(tracks, track.outputId)) {
-        setTrackOutput(track.id, track.outputId);
+        const padBinding = resolveToasterPadBinding(tracks, track.id);
+        if (padBinding) {
+            setTrackOutput(track.id, track.outputId, padBinding);
+        } else {
+            setTrackOutput(track.id, track.outputId);
+        }
     }
     setTrackGain(track.id, track.gain);
     setTrackPan(track.id, track.pan);
