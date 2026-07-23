@@ -285,12 +285,15 @@ export async function scheduleTrackClips({
         return;
     }
 
-    const clipsToProcess: { clip: ResolvedClip; padIndex: number }[] = [];
-    clipsToProcess.push(...resolveTrackClipsWithComping(track.id, track.clips).map((clip) => ({ clip, padIndex: -1 })));
+    const clipsToProcess: { clip: ResolvedClip; padIndex: number; sourceTrack: Track }[] = [];
+    for (const clip of resolveTrackClipsWithComping(track.id, track.clips)) {
+        clipsToProcess.push({ clip, padIndex: -1, sourceTrack: track });
+    }
 
     const instrumentEntry = deviceEntries.find((event) => event.instrumentControls);
     const instrumentControls = instrumentEntry?.instrumentControls ?? null;
     const isToaster = instrumentEntry?.deviceType === 'toaster';
+    const toasterDeviceId = isToaster ? instrumentEntry.deviceId : null;
 
     // If this is a Toaster track, gather all clips from its child tracks.
     if (isToaster && allTracks) {
@@ -301,7 +304,7 @@ export async function scheduleTrackClips({
                 continue;
             }
             const childClips = resolveTrackClipsWithComping(childTrack.id, childTrack.clips);
-            clipsToProcess.push(...childClips.map((clip) => ({ clip, padIndex: index })));
+            clipsToProcess.push(...childClips.map((clip) => ({ clip, padIndex: index, sourceTrack: childTrack })));
         }
     }
 
@@ -344,12 +347,33 @@ export async function scheduleTrackClips({
         }
         return projectChordPitch({ pitch, referenceBeat, targetBeat });
     }
-    const hasYeast = track.devices.some((device) => device.type === 'yeast');
     const parentTrack =
         track.parentId && allTracks ? allTracks.find((candidate) => candidate.id === track.parentId) : null;
     const isToasterChild = !instrumentControls && parentTrack?.devices.some((device) => device.type === 'toaster');
     const workletEvents: WorkletMidiEvent[] = [];
     let noteCount = 0;
+
+    function projectNoteEndpoints(startBeat: number, endBeat: number, toasterPadIndex: number) {
+        const swingOffsetBeats =
+            toasterPadIndex >= 0 && evaluateAutomationValue && toasterDeviceId
+                ? getToasterSwingOffsetBeats({
+                      parentTrackId: track.id,
+                      toasterDeviceId,
+                      automationMode: track.automationMode,
+                      devices: track.devices,
+                      lanes: automationLanes,
+                      noteStartBeat: startBeat,
+                      evaluateAutomationValue,
+                  })
+                : 0;
+        return projectPpqEndpoints({
+            startPpq: startBeat + swingOffsetBeats,
+            endPpq: endBeat + swingOffsetBeats,
+            defaultTempo,
+            sampleRate: offlineCtx.sampleRate,
+            changes,
+        });
+    }
 
     async function scheduleMidiNoteBatch(notes: readonly ScheduledMidiNote[]): Promise<void> {
         for (const note of notes) {
@@ -406,9 +430,23 @@ export async function scheduleTrackClips({
         }
     }
 
-    if (track.kind === 'midi' && hasYeast && processYeastMidi && !isToasterChild) {
+    const yeastSourceTracks = new Map<string, Track>();
+    if (processYeastMidi && !isToasterChild) {
+        for (const { sourceTrack } of clipsToProcess) {
+            if (sourceTrack.kind === 'midi' && sourceTrack.devices.some((device) => device.type === 'yeast')) {
+                yeastSourceTracks.set(sourceTrack.id, sourceTrack);
+            }
+        }
+    }
+    for (const yeastSourceTrack of yeastSourceTracks.values()) {
+        if (!processYeastMidi) {
+            break;
+        }
         const iterations: Parameters<typeof projectOfflineYeastTrackNotes>[0]['iterations'][number][] = [];
-        for (const { clip, padIndex } of clipsToProcess) {
+        for (const { clip, padIndex, sourceTrack } of clipsToProcess) {
+            if (sourceTrack.id !== yeastSourceTrack.id) {
+                continue;
+            }
             if (clip.type !== 'midi' || clip.muted || clip.endBeat <= regionStartBeat) {
                 continue;
             }
@@ -451,7 +489,7 @@ export async function scheduleTrackClips({
         }
         if (iterations.length > 0) {
             const scheduledNotes = projectOfflineYeastTrackNotes({
-                trackId: track.id,
+                trackId: yeastSourceTrack.id,
                 iterations,
                 sampleRate: offlineCtx.sampleRate,
                 blockStartSamples: Math.floor(regionStartSec * offlineCtx.sampleRate),
@@ -463,11 +501,19 @@ export async function scheduleTrackClips({
                 processYeastMidi,
                 projectPitch,
             });
-            await scheduleMidiNoteBatch(scheduledNotes);
+            await scheduleMidiNoteBatch(
+                scheduledNotes.map((note) => {
+                    if (note.toasterPadIndex < 0) {
+                        return note;
+                    }
+                    const endpoints = projectNoteEndpoints(note.startBeat, note.endBeat, note.toasterPadIndex);
+                    return { ...note, startSamples: endpoints.startSamples, endSamples: endpoints.endSamples };
+                })
+            );
         }
     }
 
-    for (const { clip, padIndex: toasterPadIndex } of clipsToProcess) {
+    for (const { clip, padIndex: toasterPadIndex, sourceTrack } of clipsToProcess) {
         // Skip muted clips — they should not render audio.
         if (clip.muted) {
             continue;
@@ -502,6 +548,7 @@ export async function scheduleTrackClips({
             if (!sourceNotes) {
                 continue;
             }
+            const hasYeast = sourceTrack.devices.some((device) => device.type === 'yeast');
             if (isToasterChild || (hasYeast && processYeastMidi)) {
                 continue;
             }
@@ -532,24 +579,11 @@ export async function scheduleTrackClips({
                     phase: 'complete',
                 });
                 const scheduledNotes = notes.map((note) => {
-                    const swingOffsetBeats =
-                        toasterPadIndex >= 0 && evaluateAutomationValue
-                            ? getToasterSwingOffsetBeats({
-                                  parentTrackId: track.id,
-                                  automationMode: track.automationMode,
-                                  devices: track.devices,
-                                  lanes: automationLanes,
-                                  noteStartBeat: note.startBeat,
-                                  evaluateAutomationValue,
-                              })
-                            : 0;
-                    const endpoints = projectPpqEndpoints({
-                        startPpq: note.startBeat + swingOffsetBeats,
-                        endPpq: note.startBeat + note.duration + swingOffsetBeats,
-                        defaultTempo,
-                        sampleRate: offlineCtx.sampleRate,
-                        changes,
-                    });
+                    const endpoints = projectNoteEndpoints(
+                        note.startBeat,
+                        note.startBeat + note.duration,
+                        toasterPadIndex
+                    );
                     return {
                         id: note.id,
                         pitch: projectPitch({

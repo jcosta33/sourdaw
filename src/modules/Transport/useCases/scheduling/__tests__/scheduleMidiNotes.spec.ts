@@ -35,7 +35,9 @@ vi.mock('#/modules/Automation/stores', () => ({
 }));
 vi.mock('#/modules/Automation/useCases', () => ({
     getAutomationValueAtBeat: vi.fn(() => null),
+    isRecordingAutomation: vi.fn(() => false),
 }));
+vi.mock('#/modules/Toaster/stores', () => ({ toasterStore: { value: null } }));
 vi.mock('../../../stores/tempoMapStore', () => ({
     tempoMapStore: { value: { changes: [] } },
 }));
@@ -276,11 +278,16 @@ describe('scheduleMidiNotes', () => {
                 {
                     id: 'toaster',
                     type: 'toaster',
-                    parameterValues: { swing: 0.08 },
+                    parameterValues: {},
                 },
+                { id: 'toaster-b', type: 'toaster', parameterValues: {} },
             ],
         });
-        const child = midiTrack({ parentId: 'toaster-parent', clips: [midiClip()] });
+        const child = midiTrack({
+            parentId: 'toaster-parent',
+            clips: [midiClip()],
+            devices: [{ id: 'yeast', type: 'yeast' }],
+        });
         (trackStore as { value: unknown }).value = { tracks: [parent, child] };
         (midiStore as { value: unknown }).value = {
             notesByClipId: {
@@ -290,15 +297,20 @@ describe('scheduleMidiNotes', () => {
         (automationStore as { value: unknown }).value = {
             lanes: [
                 {
+                    id: 'other-swing-lane',
+                    trackId: 'toaster-parent',
+                    parameterId: 'toaster-b:swing',
+                    enabled: true,
+                },
+                {
                     id: 'swing-lane',
                     trackId: 'toaster-parent',
                     parameterId: 'toaster:swing',
                     enabled: true,
-                    clipId: undefined,
                 },
             ],
         };
-        vi.mocked(getAutomationValueAtBeat).mockReturnValue(0.4);
+        vi.mocked(getAutomationValueAtBeat).mockImplementation((laneId) => (laneId === 'swing-lane' ? 0.4 : 1));
         vi.mocked(ensureTrackStrip).mockImplementation(
             (trackId) =>
                 ({
@@ -313,7 +325,7 @@ describe('scheduleMidiNotes', () => {
 
         await scheduleMidiNotes(0, 4, 0, -1, new Set<string>(), [], defaultTransportState, 120);
 
-        expect(getAutomationValueAtBeat).toHaveBeenCalledWith('swing-lane', 1.25);
+        expect(processYeastMidi).toHaveBeenCalled();
         expect(toasterNoteOn.mock.calls[0]?.[3]).toBe(31_200);
     });
 

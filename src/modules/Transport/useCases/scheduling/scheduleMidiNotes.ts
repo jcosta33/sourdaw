@@ -8,7 +8,7 @@ import {
     scheduleFaustNote,
 } from '#/modules/AudioEngine/useCases';
 import { automationStore } from '#/modules/Automation/stores';
-import { getAutomationValueAtBeat } from '#/modules/Automation/useCases';
+import { getAutomationValueAtBeat, isRecordingAutomation } from '#/modules/Automation/useCases';
 import { midiStore } from '#/modules/MIDI/stores';
 import {
     getChordAtBeat,
@@ -18,6 +18,7 @@ import {
     transposeForChordTrack,
 } from '#/modules/MIDI/useCases';
 import { scheduleDrumKitNote, scheduleKitNote, scheduleNote } from '#/modules/Synth/useCases';
+import { toasterStore } from '#/modules/Toaster/stores';
 import { getToasterSwingOffsetBeats } from '#/utils/toasterSwingProjection';
 
 import { beatToSamples } from '../../models/TempoMap';
@@ -317,11 +318,17 @@ export async function scheduleMidiNotes(
                             getSwingOffsetBeats: (noteStartBeat) =>
                                 getToasterSwingOffsetBeats({
                                     parentTrackId: toasterParentTrack.id,
+                                    toasterDeviceId: toasterDevice.id,
                                     automationMode: toasterParentTrack.automationMode,
                                     devices: toasterParentTrack.devices,
                                     lanes: automationLanes,
                                     noteStartBeat,
                                     evaluateAutomationValue: getAutomationValueAtBeat,
+                                    isAutomationRecording: isRecordingAutomation,
+                                    getCurrentSwingValue: (deviceId) =>
+                                        toasterStore.value?.[deviceId]?.kit.swing ??
+                                        toasterDevice.parameterValues.swing ??
+                                        0,
                                 }),
                         };
                     }

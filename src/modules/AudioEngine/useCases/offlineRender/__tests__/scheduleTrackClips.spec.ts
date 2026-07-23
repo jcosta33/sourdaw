@@ -463,13 +463,21 @@ describe('scheduleTrackClips — MIDI plugin-delay compensation', () => {
                     name: 'Toaster',
                     type: 'toaster',
                     bypassed: false,
-                    parameterValues: { swing: 0.08 },
+                    parameterValues: {},
+                },
+                {
+                    id: 'toaster-2',
+                    name: 'Other Toaster',
+                    type: 'toaster',
+                    bypassed: false,
+                    parameterValues: {},
                 },
             ],
         });
         const child = makeMidiTrack();
         child.id = 'active-pad';
         child.parentId = parent.id;
+        child.devices.push({ id: 'yeast', name: 'Yeast', type: 'yeast', bypassed: false, parameterValues: {} });
         child.clips[0] = { ...child.clips[0]!, id: 'pad-clip', trackId: child.id };
         const midi = makeMidi();
         midi.notesByClipId = {
@@ -478,6 +486,12 @@ describe('scheduleTrackClips — MIDI plugin-delay compensation', () => {
         mocks.automationValue.value = {
             lanes: [
                 {
+                    id: 'other-swing-lane',
+                    trackId: parent.id,
+                    parameterId: 'toaster-2:swing',
+                    enabled: true,
+                },
+                {
                     id: 'swing-lane',
                     trackId: parent.id,
                     parameterId: 'toaster-1:swing',
@@ -485,8 +499,9 @@ describe('scheduleTrackClips — MIDI plugin-delay compensation', () => {
                 },
             ],
         };
-        mocks.evaluateAutomationValue.mockReturnValue(0.4);
+        mocks.evaluateAutomationValue.mockImplementation((laneId) => (laneId === 'swing-lane' ? 0.4 : 1));
         const entry = makeInstrumentEntry();
+        entry.deviceId = 'toaster-1';
         entry.deviceType = 'toaster';
         const pendingWorkletEvents: PendingWorkletEvent[] = [];
 
@@ -514,7 +529,7 @@ describe('scheduleTrackClips — MIDI plugin-delay compensation', () => {
             deviceEntriesByTrack: new Map([[parent.id, [entry]]]),
         });
 
-        expect(mocks.evaluateAutomationValue).toHaveBeenCalledWith('swing-lane', 1.25);
+        expect(mocks.processYeastMidi).toHaveBeenCalled();
         expect(pendingWorkletEvents.find((event) => event.type === 'on')?.time).toBeCloseTo(0.65, 6);
         expect(pendingWorkletEvents.find((event) => event.type === 'off')?.time).toBeCloseTo(0.775, 6);
     });
