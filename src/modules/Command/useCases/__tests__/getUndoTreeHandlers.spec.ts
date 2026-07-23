@@ -1,11 +1,17 @@
 import { describe, it, expect } from 'vitest';
 
-import * as subject from '../getUndoTreeHandlers';
+import { handleLabelUndoBranch } from '../../handlers/undoTree/handleLabelUndoBranch';
+import { handleToggleUndoTree } from '../../handlers/undoTree/handleToggleUndoTree';
+import { getUndoTreeHandlers } from '../getUndoTreeHandlers';
 
 describe('getUndoTreeHandlers', () => {
-    it('should export getUndoTreeHandlers', () => {
-        expect(subject.getUndoTreeHandlers).toBeDefined();
-        const time = typeof subject.getUndoTreeHandlers;
-        expect(time === 'function' || time === 'object').toBe(true);
+    it('merges the toggleUndoTree and labelUndoBranch handlers into a single map keyed by action type', () => {
+        const handlers = getUndoTreeHandlers();
+
+        expect(handlers).toEqual({
+            toggleUndoTree: handleToggleUndoTree,
+            labelUndoBranch: handleLabelUndoBranch,
+        });
+        expect(Object.keys(handlers)).toEqual(['toggleUndoTree', 'labelUndoBranch']);
     });
 });
