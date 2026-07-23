@@ -1,29 +1,14 @@
 import { type AutomationPoint } from '../../models/AutomationViewTypes';
 import { beatToSeconds } from '../../services/beatConversion';
 
-type AutomationTempoChange = {
-    beat: number;
-    tempo: number;
-};
-
-export type CompiledAutomationEvent = {
-    type: 'set' | 'linear';
-    timeSeconds: number;
-    value: number;
-};
-
+type AutomationTempoChange = { beat: number; tempo: number };
+export type CompiledAutomationEvent = { type: 'set' | 'linear'; timeSeconds: number; value: number };
 const AUTOMATION_SAMPLE_INTERVAL_SEC = 0.01;
-
 type BeatProjector = (beat: number) => number;
 
 function cubicBezier(a: number, b: number, c: number, d: number, value: number): number {
     const inverse = 1 - value;
-    return (
-        inverse * inverse * inverse * a +
-        3 * inverse * inverse * value * b +
-        3 * inverse * value * value * c +
-        value * value * value * d
-    );
+    return inverse ** 3 * a + 3 * inverse ** 2 * value * b + 3 * inverse * value ** 2 * c + value ** 3 * d;
 }
 
 function cubicBezierDerivative(a: number, b: number, c: number, d: number, value: number): number {
@@ -43,7 +28,8 @@ function interpolateValue(
     }
     const fraction = Math.min(1, Math.max(0, (beat - first.beat) / (second.beat - first.beat)));
     if (first.curve === 'stairs') {
-        const stepped = Math.floor(fraction * (first.stairSteps ?? 4)) / (first.stairSteps ?? 4);
+        const stairSteps = Math.min(32, Math.max(2, Math.trunc(first.stairSteps ?? 4)));
+        const stepped = Math.floor(fraction * stairSteps) / stairSteps;
         return first.value + (second.value - first.value) * stepped;
     }
     if (first.curve === 'exponential') {
@@ -211,7 +197,7 @@ export function compileAutomationEvents(
         }
 
         if (current.point.curve === 'stairs') {
-            const stairSteps = current.point.stairSteps ?? 4;
+            const stairSteps = Math.min(32, Math.max(2, Math.trunc(current.point.stairSteps ?? 4)));
             for (let stair = 1; stair <= stairSteps; stair++) {
                 const beat = current.point.beat + ((next.point.beat - current.point.beat) * stair) / stairSteps;
                 const time = projectBeat(beat);

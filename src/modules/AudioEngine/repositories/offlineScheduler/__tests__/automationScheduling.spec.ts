@@ -273,6 +273,23 @@ describe('scheduleAutomationOnParam', () => {
         expect(param.setValueAtTime).toHaveBeenLastCalledWith(1, 2);
     });
 
+    it.each([0, 2.5])('normalizes persisted stair counts (%s) to finite complete events', (stairSteps) => {
+        const param = makeParam();
+        scheduleAutomationOnParam(
+            param as unknown as AudioParam,
+            [
+                { beat: 0, value: 0, curve: 'stairs', tension: 0, stairSteps },
+                { beat: 4, value: 1, curve: 'linear', tension: 0 },
+            ],
+            2,
+            120,
+            []
+        );
+
+        expect(param.setValueAtTime.mock.calls.flat().every(Number.isFinite)).toBe(true);
+        expect(param.setValueAtTime).toHaveBeenLastCalledWith(1, 2);
+    });
+
     it('schedules nothing for an empty point list', () => {
         const param = makeParam();
         scheduleAutomationOnParam(param as unknown as AudioParam, [], 10, 120, []);
