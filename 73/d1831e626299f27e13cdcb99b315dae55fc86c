@@ -1,0 +1,48 @@
+src/modules/Yeast/workers/processors/GrooveModule.ts
+  s_ac9b259eab20ba::t_0eacc0b431469d 56-60
+  s_ac9b259eab20ba::t_c0d2c6033032c3 68
+src/modules/Yeast/engine/__tests__/YeastWorkerClient.spec.ts
+  s_ac9b259eab20ba::t_36d3bb33f3d311 818,907-915
+  s_ac9b259eab20ba::t_f137822315e4b7 916-918
+  s_ac9b259eab20ba::t_5a4b271c3e4d4b 919-920
+src/modules/Yeast/workers/processors/Arpeggiator.ts
+  s_ac9b259eab20ba::t_9e4a7d98367a3a 151-152
+  s_ac9b259eab20ba::t_4d13feb9953854 106-108,113,193,205,213,224,251,455-469,535-536,637-644
+  s_ac9b259eab20ba::t_7346baa81ddc15 109-110
+  s_ac9b259eab20ba::t_4e3b352e9e11fc 645-646
+src/modules/Yeast/workers/processors/__tests__/Arpeggiator.spec.ts
+  s_ac9b259eab20ba::t_76b2b897725f5c 270-303
+src/modules/Transport/useCases/scheduling/processLiveYeastTrackBlock.ts
+  s_ac9b259eab20ba::t_0eacc0b431469d 134
+src/modules/Yeast/workers/yeastWorker.ts
+  s_ac9b259eab20ba::t_0eacc0b431469d 123-125
+src/modules/Yeast/workers/processors/__tests__/GrooveModule.spec.ts
+  s_ac9b259eab20ba::t_31b2945828e966 137-138,150-165
+src/modules/Yeast/workers/__tests__/yeastWorker.spec.ts
+  s_ac9b259eab20ba::t_36d3bb33f3d311 259,563-573
+  s_ac9b259eab20ba::t_0e01bd686e181c 574-576
+  s_ac9b259eab20ba::t_b509a68faaaea2 577-582
+src/modules/Yeast/engine/YeastWorkerClient.ts
+  s_ac9b259eab20ba::t_0eacc0b431469d 130-132
+src/modules/Transport/useCases/scheduling/__tests__/processLiveYeastTrackBlock.spec.ts
+  s_ac9b259eab20ba::t_b67a12f1f7374a 104-105
+  s_ac9b259eab20ba::t_a38a3b57a5a9ff 103
+src/modules/Yeast/models/MidiEvent.ts
+  s_ac9b259eab20ba::t_0eacc0b431469d 21-22
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "73d1831e626299f27e13cdcb99b315dae55fc86c",
+  "prompts": {},
+  "sessions": {
+    "s_ac9b259eab20ba": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8699-3865-7842-8c54-afbac6cfd266",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
