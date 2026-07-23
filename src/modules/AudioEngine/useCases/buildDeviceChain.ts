@@ -94,7 +94,8 @@ export const buildDeviceChain = inject({ logger })(
                 // the current chain position (trackGain) so:
                 //   Instrument.output → trackGain → [effects] → trackPan → destination
                 // This preserves gain/pan automation on the instrument's output.
-                const isSourceNode = dn.inputNode instanceof AudioWorkletNode && dn.inputNode.numberOfInputs === 0;
+                const isWorklet = typeof AudioWorkletNode !== 'undefined' && dn.inputNode instanceof AudioWorkletNode;
+                const isSourceNode = isWorklet && dn.inputNode.numberOfInputs === 0;
                 if (isSourceNode) {
                     dn.outputNode.connect(prev);
                     // Don't advance `prev` — subsequent effects chain from trackGain forward

@@ -1,3 +1,7 @@
+import {
+    transformMidiGlobalTimeState,
+    type MidiGlobalTimeShiftClip,
+} from '../../services/transformMidiGlobalTimeState';
 import { midiStore, type MidiStoreState } from '../../stores/midiStore';
 
 type MidiTimeShiftClipSnapshot = {
@@ -19,65 +23,19 @@ type PrepareMidiTimeShiftTransactionInput = {
     owners: readonly MidiTimeShiftOwnerSnapshot[];
 };
 
-type IndexedMidiClip = {
-    eligible: boolean;
-    startBeat: number;
-    endBeat: number;
-    midiOffsetBeats: number;
-};
-
 type PreparedMidiTimeShiftInput = {
     atBeat: number;
     beatDelta: number;
-    clipsById: ReadonlyMap<string, IndexedMidiClip>;
-};
-
-type TransactionStatus = 'ready' | 'rejected';
-
-type TransactionPhase = 'prepared' | 'publishing' | 'applied' | 'closed';
-
-type PreparedEventArray<TRow> =
-    | {
-          status: 'rejected';
-      }
-    | {
-          status: 'ready';
-          hasChanges: boolean;
-          events: TRow[];
-      };
-
-type PreparedEventMap<TRow> =
-    | {
-          status: 'rejected';
-      }
-    | {
-          status: 'ready';
-          hasChanges: boolean;
-          eventsByClipId: Record<string, TRow[]>;
-      };
-
-type PrepareEventArrayInput<TRow> = {
-    events: TRow[];
-    windowStartMedia: number;
-    beatDelta: number;
-    readBeat: (event: TRow) => number;
-    withBeat: (event: TRow, beat: number) => TRow;
-};
-
-type PrepareEventMapInput<TRow> = {
-    eventsByClipId: Record<string, TRow[]>;
-    clipsById: ReadonlyMap<string, IndexedMidiClip>;
-    atBeat: number;
-    beatDelta: number;
-    readBeat: (event: TRow) => number;
-    withBeat: (event: TRow, beat: number) => TRow;
+    clipsById: ReadonlyMap<string, MidiGlobalTimeShiftClip>;
 };
 
 type PreparedMidiState = {
-    status: TransactionStatus;
+    status: 'ready' | 'rejected';
     hasChanges: boolean;
     nextState: MidiStoreState | null;
 };
+
+type TransactionPhase = 'prepared' | 'publishing' | 'applied' | 'closed';
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
     return value !== null && typeof value === 'object' && !Array.isArray(value);
@@ -91,14 +49,13 @@ function isNonEmptyId(value: unknown): value is string {
     return typeof value === 'string' && value.trim().length > 0;
 }
 
-function createClipIndex(owners: unknown): ReadonlyMap<string, IndexedMidiClip> | null {
+function createClipIndex(owners: unknown): ReadonlyMap<string, MidiGlobalTimeShiftClip> | null {
     if (!Array.isArray(owners)) {
         return null;
     }
 
     const trackIds = new Set<string>();
-    const clipsById = new Map<string, IndexedMidiClip>();
-
+    const clipsById = new Map<string, MidiGlobalTimeShiftClip>();
     for (const owner of owners) {
         if (!isPlainObject(owner)) {
             return null;
@@ -136,6 +93,7 @@ function createClipIndex(owners: unknown): ReadonlyMap<string, IndexedMidiClip> 
 
             ownerClipIds.add(clipId);
             clipsById.set(clipId, {
+                clipId,
                 eligible,
                 startBeat,
                 endBeat,
@@ -165,14 +123,10 @@ function prepareInput(input: unknown): PreparedMidiTimeShiftInput | null {
         return null;
     }
 
-    return {
-        atBeat,
-        beatDelta,
-        clipsById,
-    };
+    return { atBeat, beatDelta, clipsById };
 }
 
-function hasCompleteOwnership(state: MidiStoreState, clipsById: ReadonlyMap<string, IndexedMidiClip>): boolean {
+function hasCompleteOwnership(state: MidiStoreState, clipsById: ReadonlyMap<string, MidiGlobalTimeShiftClip>): boolean {
     const dataMaps = [state.notesByClipId, state.ccByClipId, state.pitchBendByClipId];
     for (const dataMap of dataMaps) {
         for (const clipId of Object.keys(dataMap)) {
@@ -181,118 +135,11 @@ function hasCompleteOwnership(state: MidiStoreState, clipsById: ReadonlyMap<stri
             }
         }
     }
-
     return true;
 }
 
-function prepareEventArray<TRow>({
-    events,
-    windowStartMedia,
-    beatDelta,
-    readBeat,
-    withBeat,
-}: PrepareEventArrayInput<TRow>): PreparedEventArray<TRow> {
-    let hasChanges = false;
-    const nextEvents: TRow[] = [];
-
-    for (const event of events) {
-        const currentBeat = readBeat(event);
-        if (currentBeat < windowStartMedia) {
-            nextEvents.push(event);
-            continue;
-        }
-
-        const shiftedBeat = currentBeat + beatDelta;
-        if (!Number.isFinite(shiftedBeat)) {
-            return { status: 'rejected' };
-        }
-        if (shiftedBeat === currentBeat) {
-            nextEvents.push(event);
-            continue;
-        }
-
-        hasChanges = true;
-        nextEvents.push(withBeat(event, shiftedBeat));
-    }
-
-    if (!hasChanges) {
-        return {
-            status: 'ready',
-            hasChanges: false,
-            events,
-        };
-    }
-
-    return {
-        status: 'ready',
-        hasChanges: true,
-        events: nextEvents,
-    };
-}
-
-function prepareEventMap<TRow>({
-    eventsByClipId,
-    clipsById,
-    atBeat,
-    beatDelta,
-    readBeat,
-    withBeat,
-}: PrepareEventMapInput<TRow>): PreparedEventMap<TRow> {
-    let hasChanges = false;
-    let nextEventsByClipId = eventsByClipId;
-
-    for (const [clipId, events] of Object.entries(eventsByClipId)) {
-        if (events.length === 0) {
-            continue;
-        }
-
-        const clip = clipsById.get(clipId);
-        if (!clip || !clip.eligible) {
-            continue;
-        }
-        if (clip.startBeat >= atBeat || clip.endBeat <= atBeat) {
-            continue;
-        }
-
-        const windowStartMedia = atBeat - clip.startBeat + clip.midiOffsetBeats;
-        if (!Number.isFinite(windowStartMedia)) {
-            return { status: 'rejected' };
-        }
-
-        const preparedEvents = prepareEventArray({
-            events,
-            windowStartMedia,
-            beatDelta,
-            readBeat,
-            withBeat,
-        });
-        if (preparedEvents.status === 'rejected') {
-            return preparedEvents;
-        }
-        if (!preparedEvents.hasChanges) {
-            continue;
-        }
-
-        if (!hasChanges) {
-            nextEventsByClipId = { ...eventsByClipId };
-        }
-        hasChanges = true;
-        nextEventsByClipId[clipId] = preparedEvents.events;
-    }
-
-    return {
-        status: 'ready',
-        hasChanges,
-        eventsByClipId: nextEventsByClipId,
-    };
-}
-
 function rejectPreparation(): PreparedMidiState {
-    return {
-        status: 'rejected',
-        hasChanges: false,
-        nextState: null,
-    };
+    return { status: 'rejected', hasChanges: false, nextState: null };
 }
 
 function prepareNextState(preparedState: MidiStoreState | null, input: unknown): PreparedMidiState {
@@ -305,68 +152,26 @@ function prepareNextState(preparedState: MidiStoreState | null, input: unknown):
         return rejectPreparation();
     }
 
-    if (preparedInput.beatDelta === 0) {
-        return {
-            status: 'ready',
-            hasChanges: false,
-            nextState: preparedState,
-        };
-    }
-
-    const preparedNotes = prepareEventMap({
-        eventsByClipId: preparedState.notesByClipId,
-        clipsById: preparedInput.clipsById,
-        atBeat: preparedInput.atBeat,
-        beatDelta: preparedInput.beatDelta,
-        readBeat: (midiNote) => midiNote.startBeat,
-        withBeat: (midiNote, startBeat) => ({ ...midiNote, startBeat }),
+    const transformed = transformMidiGlobalTimeState({
+        state: preparedState,
+        commands: [
+            {
+                type: 'shift',
+                atBeat: preparedInput.atBeat,
+                beatDelta: preparedInput.beatDelta,
+                clips: [...preparedInput.clipsById.values()],
+            },
+        ],
+        targetNoteIds: [],
     });
-    if (preparedNotes.status === 'rejected') {
+    if (transformed.status === 'rejected') {
         return rejectPreparation();
-    }
-
-    const preparedCcs = prepareEventMap({
-        eventsByClipId: preparedState.ccByClipId,
-        clipsById: preparedInput.clipsById,
-        atBeat: preparedInput.atBeat,
-        beatDelta: preparedInput.beatDelta,
-        readBeat: (midiCc) => midiCc.beat,
-        withBeat: (midiCc, beat) => ({ ...midiCc, beat }),
-    });
-    if (preparedCcs.status === 'rejected') {
-        return rejectPreparation();
-    }
-
-    const preparedPitchBends = prepareEventMap({
-        eventsByClipId: preparedState.pitchBendByClipId,
-        clipsById: preparedInput.clipsById,
-        atBeat: preparedInput.atBeat,
-        beatDelta: preparedInput.beatDelta,
-        readBeat: (midiPitchBend) => midiPitchBend.beat,
-        withBeat: (midiPitchBend, beat) => ({ ...midiPitchBend, beat }),
-    });
-    if (preparedPitchBends.status === 'rejected') {
-        return rejectPreparation();
-    }
-
-    const hasChanges = preparedNotes.hasChanges || preparedCcs.hasChanges || preparedPitchBends.hasChanges;
-    if (!hasChanges) {
-        return {
-            status: 'ready',
-            hasChanges: false,
-            nextState: preparedState,
-        };
     }
 
     return {
         status: 'ready',
-        hasChanges: true,
-        nextState: {
-            ...preparedState,
-            notesByClipId: preparedNotes.eventsByClipId,
-            ccByClipId: preparedCcs.eventsByClipId,
-            pitchBendByClipId: preparedPitchBends.eventsByClipId,
-        },
+        hasChanges: transformed.hasChanges,
+        nextState: transformed.state,
     };
 }
 

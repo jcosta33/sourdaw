@@ -22,6 +22,8 @@ type StoredNote = {
     startBeat: number;
     duration: number;
     velocity: number;
+    probability?: number;
+    channel?: number;
 };
 
 function note(pitch: number, startBeat: number, duration: number, id?: string): StoredNote {
@@ -73,7 +75,8 @@ describe('splitMidiNotesAtBeat', () => {
         // 4; the straddler right half starts at 0 (right clip start).
         expect(right).toHaveLength(2);
         expect(right[0]).toMatchObject({ id: 'right', startBeat: 2, duration: 1 });
-        expect(right[1]).toMatchObject({ startBeat: 0, duration: 3, pitch: 67 });
+        expect(right[1]).toMatchObject({ startBeat: 0, duration: 3, pitch: 67, probability: 100 });
+        expect(right[1]).not.toHaveProperty('channel');
     });
 
     /// Regression (PR #608 review): range deletion (deleteTimeRange) must

@@ -1,4 +1,5 @@
 import { createMidiNote } from '../../models/MidiNote';
+import { transformMidiGlobalTimeState } from '../../services/transformMidiGlobalTimeState';
 import { midiStore } from '../../stores/midiStore';
 
 export function duplicateClipNotes(sourceClipId: string, destClipId: string): void {
@@ -6,44 +7,24 @@ export function duplicateClipNotes(sourceClipId: string, destClipId: string): vo
     if (!state) {
         return;
     }
-    const sourceNotes = state.notesByClipId[sourceClipId] ?? [];
-    if (sourceNotes.length === 0) {
+
+    const commands = [
+        {
+            type: 'copy-notes' as const,
+            sourceClipId,
+            targetClipId: destClipId,
+        },
+    ];
+    const planned = transformMidiGlobalTimeState({ state, commands });
+    if (planned.status === 'rejected' || !planned.hasChanges) {
         return;
     }
 
-    const clonedNotes = sourceNotes.map((note) => {
-        const safePitch = Math.round(Math.max(0, Math.min(127, note.pitch)));
-        const safeVelocity = Math.round(Math.max(1, Math.min(127, note.velocity ?? 100)));
-        const safeDuration = Math.max(0.0625, note.duration);
-        const clone = createMidiNote(safePitch, note.startBeat, safeDuration, safeVelocity);
+    const targetNoteIds = planned.identityRequests.map(() => createMidiNote(0, 0, 0).id);
+    const transformed = transformMidiGlobalTimeState({ state, commands, targetNoteIds });
+    if (transformed.status === 'rejected' || !transformed.hasChanges) {
+        return;
+    }
 
-        // Carry over the optional MPE / expression fields so duplicating a clip
-        // does not silently strip per-note expression. Only fields the source
-        // actually defines are copied; createMidiNote's probability default is
-        // overridden when the source carries an explicit value.
-        if (note.probability !== undefined) {
-            clone.probability = note.probability;
-        }
-        if (note.pressure !== undefined) {
-            clone.pressure = note.pressure;
-        }
-        if (note.slide !== undefined) {
-            clone.slide = note.slide;
-        }
-        if (note.pitchBend !== undefined) {
-            clone.pitchBend = note.pitchBend;
-        }
-
-        return clone;
-    });
-
-    const existing = state.notesByClipId[destClipId] ?? [];
-
-    midiStore.set({
-        ...state,
-        notesByClipId: {
-            ...state.notesByClipId,
-            [destClipId]: [...existing, ...clonedNotes],
-        },
-    });
+    midiStore.set(transformed.state);
 }
