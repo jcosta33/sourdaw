@@ -50,11 +50,9 @@ test.describe('Audio/MIDI Advanced & Misc', () => {
         await expect(page.getByLabel('Piano roll editor')).toBeVisible({ timeout: 10000 });
 
         const lane_select = page.getByRole('combobox', { name: /Automation lane type/i });
-        if (await lane_select.isVisible().catch(() => false)) {
-            const options = lane_select.getByRole('option');
-            const count = await options.count();
-            expect(count).toBeGreaterThan(1);
-        }
+        await expect(lane_select).toBeVisible({ timeout: 5000 });
+        const options = lane_select.getByRole('option');
+        expect(await options.count()).toBeGreaterThan(1);
     });
 
     test('Browser tabs switch content when clicked', async ({ page }) => {

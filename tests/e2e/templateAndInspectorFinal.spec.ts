@@ -103,10 +103,8 @@ test.describe('Inspector — MIDI FX Slots', () => {
         await add_track(page, 'MIDI');
 
         const inspector = page.getByRole('complementary', { name: 'Inspector panel' });
-        const midi_fx_text = inspector.getByText('MIDI FX');
-        if (await midi_fx_text.isVisible().catch(() => false)) {
-            await expect(midi_fx_text).toBeVisible();
-        }
+        // A MIDI track inspector always renders the MIDI FX section.
+        await expect(inspector.getByText('MIDI FX')).toBeVisible({ timeout: 5000 });
     });
 });
 

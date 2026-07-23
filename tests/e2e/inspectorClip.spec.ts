@@ -13,32 +13,26 @@ test.describe('Inspector — Clip Properties', () => {
         await page.getByRole('option', { name: 'Add MIDI Track' }).click();
 
         const timeline = page.getByLabel('Timeline editor surface');
-        await timeline.click({ button: 'right', position: { x: 200, y: 30 } });
+        await timeline.click({ button: 'right', position: { x: 300, y: 30 } });
         await page.getByRole('menuitem', { name: /Add Clip Here/i }).click();
         await page.waitForTimeout(500);
     });
 
-    test('Can rename a clip from inspector', async ({ page }) => {
-        const inspector = page.getByRole('complementary', { name: 'Inspector panel' });
+    test('Clip context menu exposes Rename Clip operation', async ({ page }) => {
         const timeline = page.getByLabel('Timeline editor surface');
-        await timeline.click({ position: { x: 200, y: 30 } });
-        await page.waitForTimeout(500);
+        // Right-click the clip to open its context menu.
+        await timeline.click({ button: 'right', position: { x: 300, y: 30 } });
 
-        const rename = inspector.getByRole('button', { name: /Rename clip/i });
-        if (await rename.isVisible().catch(() => false)) {
-            await rename.click();
-            const input = page.locator('input:focus');
-            if (await input.isVisible().catch(() => false)) {
-                await input.fill('My Clip');
-                await input.press('Enter');
-            }
-        }
-        await expect(inspector).toBeVisible();
+        const menu = page.getByRole('menu');
+        await expect(menu).toBeVisible({ timeout: 5000 });
+        const names = (await menu.getByRole('menuitem').allInnerTexts()).join(' | ');
+        expect(names).toMatch(/Rename Clip/);
     });
 
     test('Clip can be duplicated via keyboard shortcut', async ({ page }) => {
         const timeline = page.getByLabel('Timeline editor surface');
-        await timeline.click({ position: { x: 200, y: 30 } });
+        // Select the clip at x=300 (where it was created).
+        await timeline.click({ position: { x: 300, y: 30 } });
         await page.waitForTimeout(500);
 
         await page.locator('#main-content').click();
@@ -50,7 +44,7 @@ test.describe('Inspector — Clip Properties', () => {
 
     test('Double-clicking a clip opens the MIDI editor', async ({ page }) => {
         const timeline = page.getByLabel('Timeline editor surface');
-        await timeline.dblclick({ position: { x: 200, y: 30 } });
+        await timeline.dblclick({ position: { x: 300, y: 30 } });
 
         await expect(page.getByLabel('Piano roll editor')).toBeVisible({ timeout: 10000 });
     });

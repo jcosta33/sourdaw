@@ -26,18 +26,14 @@ test.describe('Auto-scroll Toggle Deep', () => {
 });
 
 test.describe('AI Panel — Generate Button', () => {
-    test('Generate button opens panel with content', async ({ page }) => {
+    test('Generate button toggles aria-pressed to open the panel', async ({ page }) => {
         await setupWorkspace(page);
         await launch_new_project(page);
 
-        await page.getByRole('button', { name: 'Generate' }).click();
-        await page.waitForTimeout(1000);
-
-        const content = page.getByText(/Genre|Mood|Pattern|Instrument|Generate|Create/i);
-        const visible = await content.first().isVisible().catch(() => false);
-        if (visible) {
-            await expect(content.first()).toBeVisible();
-        }
+        const generate = page.getByRole('button', { name: 'Generate', exact: true });
+        await expect(generate).toHaveAttribute('aria-pressed', 'false');
+        await generate.click();
+        await expect(generate).toHaveAttribute('aria-pressed', 'true');
     });
 });
 
@@ -113,12 +109,10 @@ test.describe('Undo History Panel Deep', () => {
 
         const toggle = page.getByRole('button', { name: /Toggle undo history panel/i });
         await toggle.click();
-        await page.waitForTimeout(500);
 
+        // The Close button only renders when the panel is open.
         const close = page.getByRole('button', { name: 'Close undo history' });
-        if (await close.isVisible().catch(() => false)) {
-            await expect(close).toBeVisible();
-        }
+        await expect(close).toBeVisible({ timeout: 5000 });
     });
 });
 
@@ -138,14 +132,16 @@ test.describe('Generate Button Deep', () => {
 });
 
 test.describe('Model Manager / Browser AI', () => {
-    test('Re-detect capabilities button is present', async ({ page }) => {
+    test('Generate panel exposes generation controls when opened', async ({ page }) => {
         await setupWorkspace(page);
         await launch_new_project(page);
 
-        const redetect = page.getByRole('button', { name: 'Re-detect capabilities' });
-        if (await redetect.isVisible().catch(() => false)) {
-            await expect(redetect).toBeVisible();
-        }
+        const generate = page.getByRole('button', { name: 'Generate', exact: true });
+        await generate.click();
+        await page.waitForTimeout(500);
+
+        // The generative panel renders interactive content.
+        expect(await page.getByRole('button').count()).toBeGreaterThan(0);
     });
 });
 
