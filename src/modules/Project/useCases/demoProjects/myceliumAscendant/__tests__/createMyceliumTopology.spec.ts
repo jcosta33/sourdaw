@@ -24,7 +24,6 @@ const PAD_NAMES = [
     'Perc 1',
     'Perc 2',
 ] as const;
-
 describe('createMyceliumTopology', () => {
     it('creates the exact 43-track hierarchy with deterministic full ids', () => {
         const { projectData } = createMyceliumAscendantBlueprint();
@@ -35,7 +34,6 @@ describe('createMyceliumTopology', () => {
             ...track.devices.map((device) => device.id),
         ]);
         ids.push(...(projectData.sidechainRoutes?.map((route) => route.id) ?? []));
-
         expect(tracks).toHaveLength(43);
         expect(tracks.map((track) => track.name)).toEqual([
             'Master',
@@ -85,14 +83,12 @@ describe('createMyceliumTopology', () => {
         }
         expect(isHydratableProjectData(projectData)).toBe(true);
     });
-
     it('builds the 16-child Toaster kit and supported device matrix', () => {
         const tracks = createMyceliumAscendantBlueprint().projectData.arrangement.tracks;
         const pulse = tracks.find((track) => track.name === 'Pulse Engine');
         const pads = tracks.filter((track) => track.parentId === pulse?.id);
         const deviceTypes = new Set(tracks.flatMap((track) => track.devices.map((device) => device.type)));
         const chamberType = tracks.find((track) => track.name === 'Temple Chamber')?.devices[0]?.type;
-
         expect(pulse?.devices.map((device) => device.type)).toEqual(['toaster']);
         expect(pads.map((track) => track.name)).toEqual(PAD_NAMES);
         expect(
@@ -157,21 +153,26 @@ describe('createMyceliumTopology', () => {
             ])
         );
     });
-
     it('creates a closed routing graph with four returns and one kick sidechain', () => {
         const { projectData } = createMyceliumAscendantBlueprint();
         const tracks = projectData.arrangement.tracks;
         const byId = new Map(tracks.map((track) => [track.id, track]));
+        const masterId = tracks.find((track) => track.name === 'Master')?.id;
+        const pulseId = tracks.find((track) => track.name === 'Pulse Engine')?.id;
         const returns = tracks.filter((track) => track.kind === 'bus');
         const route = projectData.sidechainRoutes?.[0];
-
         expect(returns.map((track) => track.name)).toEqual([
             'Temple Chamber',
             'Dub Tunnel',
             'Mutation Return',
             'Parallel Crush',
         ]);
-        expect(tracks.filter((track) => track.kind !== 'master').every((track) => byId.has(track.outputId))).toBe(true);
+        expect(byId.get(masterId ?? '')?.outputId).toBe('hw_out');
+        expect(
+            tracks
+                .filter((track) => track.kind !== 'master')
+                .every((track) => track.outputId === (track.parentId === pulseId ? pulseId : masterId))
+        ).toBe(true);
         expect(
             tracks.flatMap((track) => track.sends).every((send) => returns.some((track) => track.id === send.busId))
         ).toBe(true);

@@ -216,9 +216,9 @@ function resolveOutputId({
     parentName: string | null;
 }): string {
     if (kind === 'master') {
-        return '';
+        return 'hw_out';
     }
-    if (parentName) {
+    if (parentName === 'Pulse Engine') {
         return requireId(ids, parentName);
     }
     return masterId;
