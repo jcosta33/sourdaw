@@ -1,5 +1,5 @@
 import { markerStore, takeLaneStore, trackStore } from '#/modules/Arrangement/stores';
-import { automationStore } from '#/modules/Automation/stores';
+import { automationStore, modulationStore } from '#/modules/Automation/stores';
 import { cvGateStore } from '#/modules/CvGate/stores';
 import { hydrateKneadFromTrackStore } from '#/modules/Knead/useCases';
 import { hydrateMidiCrdtProjection } from '#/modules/MIDI/useCases';
@@ -14,6 +14,7 @@ import { actionHistoryStore } from '../../stores/actionHistoryStore';
 const projectStores = [
     trackStore,
     automationStore,
+    modulationStore,
     transportStore,
     tempoMapStore,
     timeSignatureMapStore,
