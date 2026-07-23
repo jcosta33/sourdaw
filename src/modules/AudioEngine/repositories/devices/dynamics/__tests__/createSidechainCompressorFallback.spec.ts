@@ -44,19 +44,14 @@ describe('createSidechainCompressorFallback', () => {
             constructor(_context: BaseAudioContext, name: string, options: AudioWorkletNodeOptions) {
                 constructions.push({ name, options });
             }
-
-            connect(): AudioNode {
-                return this as unknown as AudioNode;
-            }
-
-            disconnect(): void {}
         }
         vi.stubGlobal('AudioWorkletNode', TestAudioWorkletNode);
         const addModule = vi.fn(() => Promise.resolve());
         const context = { audioWorklet: { addModule }, startRendering: vi.fn() } as unknown as OfflineAudioContext;
+        const targetDevice = {};
 
-        await prepareOfflineSidechainCompressor(context, new Set(['compressor-1']));
-        const deviceNode = createSidechainCompressorFallback(context, 'compressor-1');
+        await prepareOfflineSidechainCompressor({ offlineCtx: context, targetDevices: new Set([targetDevice]) });
+        const deviceNode = createSidechainCompressorFallback(context, targetDevice);
         applySidechainCompressorParams(deviceNode, {
             'sc-comp-threshold': -24,
             'sc-comp-ratio': 6,
@@ -83,9 +78,11 @@ describe('createSidechainCompressorFallback', () => {
 
     it('keeps the single-input fallback for an unrelated device target', async () => {
         const { compressor, context, makeup } = makeFallbackContext();
+        const otherDevice = {};
+        const targetDevice = {};
 
-        await prepareOfflineSidechainCompressor(context, new Set(['other-compressor']));
-        const deviceNode = createSidechainCompressorFallback(context, 'compressor-1');
+        await prepareOfflineSidechainCompressor({ offlineCtx: context, targetDevices: new Set([otherDevice]) });
+        const deviceNode = createSidechainCompressorFallback(context, targetDevice);
 
         expect(deviceNode.inputNode).toBe(compressor);
         expect(deviceNode.outputNode).toBe(makeup);
@@ -94,6 +91,8 @@ describe('createSidechainCompressorFallback', () => {
 
     it('uses the single-input fallback when worklet construction fails', async () => {
         const { compressor, context, makeup } = makeFallbackContext();
+        const onWarning = vi.fn();
+        const targetDevice = {};
         class ThrowingAudioWorkletNode {
             constructor() {
                 throw new Error('processor construction failed');
@@ -101,10 +100,15 @@ describe('createSidechainCompressorFallback', () => {
         }
         vi.stubGlobal('AudioWorkletNode', ThrowingAudioWorkletNode);
 
-        await prepareOfflineSidechainCompressor(context, new Set(['compressor-1']));
-        const deviceNode = createSidechainCompressorFallback(context, 'compressor-1');
+        await prepareOfflineSidechainCompressor({
+            offlineCtx: context,
+            onWarning,
+            targetDevices: new Set([targetDevice]),
+        });
+        const deviceNode = createSidechainCompressorFallback(context, targetDevice);
 
         expect(deviceNode.inputNode).toBe(compressor);
         expect(deviceNode.outputNode).toBe(makeup);
+        expect(onWarning).toHaveBeenCalledWith(expect.stringContaining('processor construction failed'));
     });
 });

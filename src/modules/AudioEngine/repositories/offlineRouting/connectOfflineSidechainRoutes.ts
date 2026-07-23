@@ -32,7 +32,7 @@ export function connectOfflineSidechainRoutes({
 }: ConnectOfflineSidechainRoutesInput): void {
     const connectedRoutes = new Set<string>();
     for (const route of routes) {
-        const routeKey = `${route.sourceTrackId}→${route.targetDeviceId}`;
+        const routeKey = `${route.sourceTrackId}→${route.targetTrackId}:${route.targetDeviceId}`;
         const sourceStrip = trackStripsById.get(route.sourceTrackId);
         const targetDevice = deviceEntriesByTrack
             .get(route.targetTrackId)

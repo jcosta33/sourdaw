@@ -95,7 +95,7 @@ export const renderOffline: RenderOfflineFn = async function renderOffline(
             tracks && midi ? tracks.tracks.filter((track) => !track.disabled && shouldCreateOfflineStrip(track)) : [];
         const sourceTracks = allRenderableTracks.filter((track) => !track.muted);
         const sidechainRoutes = sidechainStore.value?.routes ?? [];
-        const routableSidechainTargetIds = new Set<string>();
+        const routableSidechainTargets = new Set<object>();
         for (const route of sidechainRoutes) {
             const sourceTrack = allRenderableTracks.find((track) => track.id === route.sourceTrackId);
             const targetTrack = allRenderableTracks.find((track) => track.id === route.targetTrackId);
@@ -103,12 +103,16 @@ export const renderOffline: RenderOfflineFn = async function renderOffline(
                 (device) => device.id === route.targetDeviceId && !device.bypassed
             );
             if (sourceTrack && targetDevice?.type === 'builtin-sidechain-compressor') {
-                routableSidechainTargetIds.add(targetDevice.id);
+                routableSidechainTargets.add(targetDevice);
             }
         }
-        if (routableSidechainTargetIds.size > 0) {
+        if (routableSidechainTargets.size > 0) {
             try {
-                await prepareOfflineSidechainCompressor(offlineCtx, routableSidechainTargetIds);
+                await prepareOfflineSidechainCompressor({
+                    offlineCtx,
+                    onWarning,
+                    targetDevices: routableSidechainTargets,
+                });
             } catch (error) {
                 const reason = error instanceof Error ? error.message : String(error);
                 onWarning?.(`Sidechain processor unavailable; using the offline compressor fallback. ${reason}`);

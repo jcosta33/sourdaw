@@ -18,7 +18,7 @@ export class WebAudioDeviceStrategy implements AudioDeviceStrategy {
 export function createWebAudioDevice(ctx: BaseAudioContext, device: Device): WebAudioDeviceStrategy {
     const node = createOfflineDeviceNode({
         context: ctx,
-        deviceId: device.id,
+        device,
         deviceType: device.type,
     });
     if (!node) {

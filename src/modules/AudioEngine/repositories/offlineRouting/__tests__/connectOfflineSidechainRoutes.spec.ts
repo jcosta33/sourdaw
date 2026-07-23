@@ -19,13 +19,16 @@ function makeDeviceEntry(inputNode: AudioNode): DeviceEntry {
 }
 
 describe('connectOfflineSidechainRoutes', () => {
-    it('routes the post-fader source into input one of the target compressor once', () => {
+    it('routes each exact target once even when device ids repeat across tracks', () => {
         const sourceConnect = vi.fn();
         const sourceNode = { connect: sourceConnect } as unknown as AudioNode;
         const targetNode = { numberOfInputs: 2 } as AudioNode;
+        const otherTargetNode = { numberOfInputs: 2 } as AudioNode;
         const routeConnect = vi.fn();
+        const otherRouteConnect = vi.fn();
         const routeGain = { gain: { value: 0 }, connect: routeConnect } as unknown as GainNode;
-        const createGain = vi.fn(() => routeGain);
+        const otherRouteGain = { gain: { value: 0 }, connect: otherRouteConnect } as unknown as GainNode;
+        const createGain = vi.fn().mockReturnValueOnce(routeGain).mockReturnValueOnce(otherRouteGain);
         const routes = [
             {
                 sourceTrackId: 'kick',
@@ -39,19 +42,29 @@ describe('connectOfflineSidechainRoutes', () => {
                 targetDeviceId: 'compressor-1',
                 gain: 1,
             },
+            {
+                sourceTrackId: 'kick',
+                targetTrackId: 'other-bass',
+                targetDeviceId: 'compressor-1',
+                gain: 1,
+            },
         ];
 
         connectOfflineSidechainRoutes({
             offlineCtx: { createGain } as unknown as OfflineAudioContext,
             routes,
             trackStripsById: new Map([['kick', makeStrip(sourceNode)]]),
-            deviceEntriesByTrack: new Map([['bass', [makeDeviceEntry(targetNode)]]]),
+            deviceEntriesByTrack: new Map([
+                ['bass', [makeDeviceEntry(targetNode)]],
+                ['other-bass', [makeDeviceEntry(otherTargetNode)]],
+            ]),
         });
 
         expect(routeGain.gain.value).toBe(1);
         expect(sourceConnect).toHaveBeenCalledWith(routeGain);
         expect(routeConnect).toHaveBeenCalledWith(targetNode, 0, 1);
-        expect(createGain).toHaveBeenCalledTimes(1);
+        expect(otherRouteConnect).toHaveBeenCalledWith(otherTargetNode, 0, 1);
+        expect(createGain).toHaveBeenCalledTimes(2);
     });
 
     it('ignores targets without a two-input built-in sidechain compressor', () => {

@@ -1,26 +1,35 @@
 import { type OfflineDeviceNode } from '../types';
 
 import { createCompressor } from './createCompressor';
-import { preparedOfflineSidechainCompressorTargets } from './prepareOfflineSidechainCompressor';
+import { preparedOfflineSidechainCompressors } from './prepareOfflineSidechainCompressor';
 
 // ── Sidechain compressor fallback ────────────────────────────────────────
 
-export function createSidechainCompressorFallback(ctx: BaseAudioContext, deviceId?: string): OfflineDeviceNode {
-    const preparedTargets = preparedOfflineSidechainCompressorTargets.get(ctx);
-    if (deviceId && preparedTargets?.has(deviceId) && typeof AudioWorkletNode !== 'undefined') {
-        try {
-            const workletNode = new AudioWorkletNode(ctx, 'sidechain-compressor-processor', {
-                numberOfInputs: 2,
-                numberOfOutputs: 1,
-                outputChannelCount: [2],
-            });
-            return {
-                inputNode: workletNode,
-                outputNode: workletNode,
-                nodes: [workletNode],
-            };
-        } catch {
-            // Continue into the established single-input compressor fallback.
+export function createSidechainCompressorFallback(ctx: BaseAudioContext, device?: object): OfflineDeviceNode {
+    const prepared = preparedOfflineSidechainCompressors.get(ctx);
+    if (device && prepared?.targets.has(device)) {
+        if (typeof AudioWorkletNode !== 'undefined') {
+            try {
+                const workletNode = new AudioWorkletNode(ctx, 'sidechain-compressor-processor', {
+                    numberOfInputs: 2,
+                    numberOfOutputs: 1,
+                    outputChannelCount: [2],
+                });
+                return {
+                    inputNode: workletNode,
+                    outputNode: workletNode,
+                    nodes: [workletNode],
+                };
+            } catch (error) {
+                const reason = error instanceof Error ? error.message : String(error);
+                prepared.onWarning?.(
+                    `Sidechain processor unavailable; using the offline compressor fallback. ${reason}`
+                );
+            }
+        } else {
+            prepared.onWarning?.(
+                'Sidechain processor unavailable; using the offline compressor fallback. AudioWorkletNode is unavailable.'
+            );
         }
     }
 
