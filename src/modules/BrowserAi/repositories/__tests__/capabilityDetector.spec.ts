@@ -147,4 +147,41 @@ describe('detectCapabilities', () => {
         expect(cached).not.toBeNull();
         expect(JSON.parse(cached ?? '')).toEqual(report);
     });
+
+    it('should mark non-Chrome browsers as unsupported', async () => {
+        vi.spyOn(Date, 'now').mockReturnValue(detected_at);
+        Object.defineProperty(globalThis, 'navigator', {
+            configurable: true,
+            value: {
+                userAgent:
+                    'Mozilla/5.0 (Macintosh) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15',
+                platform: 'MacIntel',
+                storage: { getDirectory: vi.fn() },
+            },
+        });
+
+        const report = await detectCapabilities();
+
+        expect(report.capability).toBe('unsupported-browser');
+        expect(report.chromeVersion).toBeNull();
+        expect(report.webGpuTier).toBe('unavailable');
+    });
+
+    it('should mark a Chrome browser without WebGPU as unsupported', async () => {
+        vi.spyOn(Date, 'now').mockReturnValue(detected_at);
+        Object.defineProperty(globalThis, 'navigator', {
+            configurable: true,
+            value: {
+                userAgent: 'Mozilla/5.0 Chrome/133.0.0.0 Safari/537.36',
+                platform: 'Win32',
+                storage: { getDirectory: vi.fn() },
+            },
+        });
+
+        const report = await detectCapabilities();
+
+        expect(report.capability).toBe('unsupported-browser');
+        expect(report.chromeVersion).toBe(133);
+        expect(report.webGpuTier).toBe('unavailable');
+    });
 });

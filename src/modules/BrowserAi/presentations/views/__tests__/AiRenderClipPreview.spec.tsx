@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { AiRenderClipPreview } from '../AiRenderClipPreview';
@@ -141,5 +141,39 @@ describe('AiRenderClipPreview', () => {
             JSON.stringify({ name: 'Clip A', bufferId: 'preview-buffer', durationSeconds: 3 / 48_000 })
         );
         expect(mocks.releasePreviewAudioBuffer).not.toHaveBeenCalled();
+    });
+
+    it('should clear play state when playback ends naturally', () => {
+        render_preview();
+
+        fireEvent.click(screen.getByRole('button', { name: 'Play A' }));
+
+        const { onEnded } = mocks.playCachedAudioBufferPreview.mock.calls[0]![0] as { onEnded: () => void };
+        act(() => {
+            onEnded();
+        });
+
+        expect(screen.getByRole('button', { name: 'Play A' })).toBeInTheDocument();
+    });
+
+    it('should ignore a stale onEnded callback from a superseded playback', () => {
+        const firstPlayback = { stop: vi.fn() };
+        const secondPlayback = { stop: vi.fn() };
+        mocks.playCachedAudioBufferPreview.mockReturnValueOnce(firstPlayback).mockReturnValueOnce(secondPlayback);
+        render_preview();
+
+        fireEvent.click(screen.getByRole('button', { name: 'Play A' }));
+        const { onEnded: firstOnEnded } = mocks.playCachedAudioBufferPreview.mock.calls[0]![0] as {
+            onEnded: () => void;
+        };
+
+        fireEvent.click(screen.getByRole('button', { name: 'Stop A' }));
+        fireEvent.click(screen.getByRole('button', { name: 'Play A' }));
+
+        act(() => {
+            firstOnEnded();
+        });
+
+        expect(screen.getByRole('button', { name: 'Stop A' })).toBeInTheDocument();
     });
 });

@@ -1,6 +1,45 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-import { normalizePeak, midiToHz, velocityToDb } from '../audioResampler';
+import { normalizePeak, midiToHz, velocityToDb, resampleTo44100 } from '../audioResampler';
+
+class FakeAudioBuffer {
+    private readonly channelData: Float32Array[];
+    constructor(
+        readonly numberOfChannels: number,
+        readonly length: number,
+        readonly sampleRate: number
+    ) {
+        this.channelData = Array.from({ length: numberOfChannels }, () => new Float32Array(length));
+    }
+    copyToChannel(source: Float32Array, channel: number): void {
+        this.channelData[channel]!.set(source);
+    }
+    getChannelData(channel: number): Float32Array {
+        return this.channelData[channel]!;
+    }
+}
+
+class FakeOfflineAudioContext {
+    destination = {};
+    constructor(
+        private readonly numberOfChannels: number,
+        private readonly length: number,
+        private readonly sampleRate: number
+    ) {}
+    createBuffer(channels: number, length: number, sampleRate: number): FakeAudioBuffer {
+        return new FakeAudioBuffer(channels, length, sampleRate);
+    }
+    createBufferSource(): {
+        buffer: FakeAudioBuffer | null;
+        connect: ReturnType<typeof vi.fn>;
+        start: ReturnType<typeof vi.fn>;
+    } {
+        return { buffer: null, connect: vi.fn(), start: vi.fn() };
+    }
+    startRendering(): Promise<FakeAudioBuffer> {
+        return Promise.resolve(new FakeAudioBuffer(this.numberOfChannels, this.length, this.sampleRate));
+    }
+}
 
 describe('normalizePeak', () => {
     it('scales the buffer so the peak magnitude becomes 1', () => {
@@ -52,6 +91,28 @@ describe('normalizePeak', () => {
     });
 });
 
+describe('resampleTo44100', () => {
+    beforeEach(() => {
+        vi.stubGlobal('OfflineAudioContext', FakeOfflineAudioContext);
+    });
+
+    it('returns the input untouched when already at the target sample rate', async () => {
+        const audio = new Float32Array([0.1, 0.2, 0.3]);
+
+        const result = await resampleTo44100({ audio, fromSampleRate: 44_100 });
+
+        expect(result).toBe(audio);
+    });
+
+    it('renders through an OfflineAudioContext when the sample rate differs', async () => {
+        const audio = new Float32Array([0.1, 0.2, 0.3, 0.4]);
+
+        const result = await resampleTo44100({ audio, fromSampleRate: 22_050 });
+
+        expect(result).toBeInstanceOf(Float32Array);
+        expect(result.length).toBe(Math.round(audio.length * (44_100 / 22_050)));
+    });
+});
 describe('midiToHz', () => {
     it('maps MIDI 69 (A4) to 440 Hz', () => {
         expect(midiToHz(69)).toBeCloseTo(440, 6);

@@ -93,4 +93,12 @@ describe('updateModelStatus', () => {
         expect(alphaAfter).toBe(alphaBefore);
         expect(betaAfter).toBe(betaBefore);
     });
+
+    it('is a no-op when the store has not been initialized', () => {
+        modelRegistryStore.clear();
+
+        updateModelStatus('alpha-pitch', { status: 'downloading', downloadProgress: 0.5 });
+
+        expect(modelRegistryStore.value).toBeNull();
+    });
 });

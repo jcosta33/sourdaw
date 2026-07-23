@@ -48,4 +48,11 @@ describe('checkModelCached', () => {
 
         await expect(checkModelCached({ family: 'ddsp', modelId: 'violin' })).rejects.toBe(ioError);
     });
+
+    it('returns false when a nested family segment is absent', async () => {
+        installStorage(dir({ models: dir({ diffsinger: dir({ linguistic: dir() }) }) }));
+
+        const result = await checkModelCached({ family: 'diffsinger/vocoder', modelId: 'nsf-hifigan' });
+        expect(result).toBe(false);
+    });
 });
