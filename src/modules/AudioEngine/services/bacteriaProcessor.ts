@@ -9,6 +9,8 @@
 
 import { BacteriaInstance, initSync } from '../wasm/daw_dsp.js';
 
+import { WasmView } from './wasmView';
+
 /** Bacteria passes param names through as-is (Rust engine uses camelCase matching). */
 const PARAM_MAP: Record<string, string> = {
     mix: 'mix',
@@ -60,6 +62,14 @@ class BacteriaProcessor extends AudioWorkletProcessor {
     _faulted = false;
     _meterCounter = 0;
     _sabView: Float32Array | null = null;
+    // Cached WASM linear-memory views — reused across render quanta so process()
+    // performs no per-block Float32Array allocation (audit RT-1); each revalidates
+    // on a memory.grow() buffer-identity change (audit RT-7). See wasmView.ts.
+    _inLeftView = new WasmView();
+    _inRightView = new WasmView();
+    _outLeftView = new WasmView();
+    _outRightView = new WasmView();
+    _bandLevelsView = new WasmView();
 
     constructor() {
         super();
@@ -136,15 +146,15 @@ class BacteriaProcessor extends AudioWorkletProcessor {
 
             const inLeftPtr = inst.get_input_left_ptr();
             const inRightPtr = inst.get_input_right_ptr();
-            new Float32Array(mem, inLeftPtr, frames).set(in0);
-            new Float32Array(mem, inRightPtr, frames).set(in1 ?? in0);
+            this._inLeftView.get(mem, inLeftPtr, frames).set(in0);
+            this._inRightView.get(mem, inRightPtr, frames).set(in1 ?? in0);
 
             const outLeftPtr = inst.process(frames);
             const outRightPtr = inst.get_right_ptr();
 
-            out0.set(new Float32Array(mem, outLeftPtr, frames));
+            out0.set(this._outLeftView.get(mem, outLeftPtr, frames));
             if (out1) {
-                out1.set(new Float32Array(mem, outRightPtr, frames));
+                out1.set(this._outRightView.get(mem, outRightPtr, frames));
             }
 
             this._meterCounter++;
@@ -158,7 +168,7 @@ class BacteriaProcessor extends AudioWorkletProcessor {
                     // the SAB slot starting at index 3 (bandLevelsBase). Peak levels
                     // are linear amplitude; consumers convert to dB.
                     const bandPtr = inst.get_band_levels_ptr();
-                    const bandView = new Float32Array(mem, bandPtr, 6);
+                    const bandView = this._bandLevelsView.get(mem, bandPtr, 6);
                     this._sabView.set(bandView, 3);
                 }
             }

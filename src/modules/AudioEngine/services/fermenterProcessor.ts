@@ -13,6 +13,8 @@
 
 import { initSync, FermenterInstance } from '../wasm/daw_dsp.js';
 
+import { WasmView } from './wasmView';
+
 const AUTOMATION_PARAM_COUNT = 15;
 
 function camelToSnake(str: string): string {
@@ -76,6 +78,12 @@ class FermenterProcessor extends AudioWorkletProcessor {
     _queue: FermenterQueued[] = [];
     _queueHead = 0;
     _paramAutomation: ParamAutomationSchedule[] = [];
+    // Cached WASM linear-memory views — reused across render quanta so process()
+    // performs no per-block Float32Array allocation (audit RT-1); each revalidates
+    // on a memory.grow() buffer-identity change (audit RT-7). See wasmView.ts.
+    // (The 128-sample scope buffer below is a separate concern tracked as RT-3.)
+    _outLeftView = new WasmView();
+    _outRightView = new WasmView();
 
     constructor() {
         super();
@@ -284,13 +292,13 @@ class FermenterProcessor extends AudioWorkletProcessor {
             const leftPtr = inst.process(frames);
             const rightPtr = inst.get_right_ptr();
 
-            const outL = new Float32Array(mem, leftPtr, frames);
+            const outL = this._outLeftView.get(mem, leftPtr, frames);
             out0.set(outL);
 
             const out1 = output[1];
             let outR: Float32Array | null = null;
             if (out1) {
-                outR = new Float32Array(mem, rightPtr, frames);
+                outR = this._outRightView.get(mem, rightPtr, frames);
                 out1.set(outR);
             }
 

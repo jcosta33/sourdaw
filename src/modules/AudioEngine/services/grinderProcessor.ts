@@ -367,6 +367,13 @@ class GrinderProcessor extends AudioWorkletProcessor {
         }
 
         try {
+            // Revalidate cached WASM-memory views each quantum: a Rust-side
+            // allocation can grow the linear memory and detach the old buffer,
+            // leaving the init-time views zero-length (audit RT-7). This is a
+            // buffer-identity compare in steady state — no allocation — and only
+            // rebuilds on an actual growth event. The message-path refresh above
+            // does not cover growth that happens purely from process() DSP.
+            this._refreshWasmViewsIfMemoryChanged();
             const inst = this._instance;
             const wasmInputLeft = this._wasmInputLeft;
             const wasmInputRight = this._wasmInputRight;

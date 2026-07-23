@@ -20,6 +20,8 @@
 
 import { initSync, LevainInstance } from '../wasm/daw_dsp.js';
 
+import { WasmView } from './wasmView';
+
 const PARAM_MAP: Record<string, string> = {
     masterGain: 'master_gain',
     humanize: 'humanize',
@@ -85,6 +87,11 @@ class LevainProcessor extends AudioWorkletProcessor {
     _pendingMessages: LevainMsg[] = [];
     _queue: LevainQueued[] = [];
     _queueHead = 0;
+    // Cached WASM linear-memory views — reused across render quanta so process()
+    // performs no per-block Float32Array allocation (audit RT-1); each revalidates
+    // on a memory.grow() buffer-identity change (audit RT-7). See wasmView.ts.
+    _outLeftView = new WasmView();
+    _outRightView = new WasmView();
 
     constructor() {
         super();
@@ -277,10 +284,10 @@ class LevainProcessor extends AudioWorkletProcessor {
             const leftPtr = inst.process(processFrames);
             const rightPtr = inst.get_right_ptr();
 
-            out0.set(new Float32Array(mem, leftPtr, processFrames));
+            out0.set(this._outLeftView.get(mem, leftPtr, processFrames));
             const out1 = output[1];
             if (out1) {
-                out1.set(new Float32Array(mem, rightPtr, processFrames));
+                out1.set(this._outRightView.get(mem, rightPtr, processFrames));
             }
         } catch (error) {
             this._faulted = true;

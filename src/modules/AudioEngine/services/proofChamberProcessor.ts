@@ -14,6 +14,8 @@
 
 import { initSync, ProofChamberInstance } from '../wasm/proof_chamber.js';
 
+import { WasmView } from './wasmView';
+
 type ParamAutomationSegment = {
     startFrame: number;
     endFrame: number;
@@ -41,6 +43,11 @@ class ProofChamberProcessor extends AudioWorkletProcessor {
     _faulted = false;
     _bypassed = false;
     _paramAutomation: ParamAutomationSchedule[] = [];
+    // Cached WASM linear-memory views — reused across render quanta so process()
+    // performs no per-block Float32Array allocation (audit RT-1); each revalidates
+    // on a memory.grow() buffer-identity change (audit RT-7). See wasmView.ts.
+    _outLeftView = new WasmView();
+    _outRightView = new WasmView();
 
     constructor() {
         super();
@@ -172,8 +179,8 @@ class ProofChamberProcessor extends AudioWorkletProcessor {
             const leftPtr = inst.process(leftIn, rightIn, frames);
             const rightPtr = inst.get_right_ptr();
 
-            out0.set(new Float32Array(mem, leftPtr, frames));
-            out1.set(new Float32Array(mem, rightPtr, frames));
+            out0.set(this._outLeftView.get(mem, leftPtr, frames));
+            out1.set(this._outRightView.get(mem, rightPtr, frames));
         } catch (error) {
             this._faulted = true;
             this.port.postMessage({ type: 'error', message: String(error) });

@@ -9,6 +9,8 @@
 
 import { initSync, GlutenInstance } from '../wasm/daw_dsp.js';
 
+import { WasmView } from './wasmView';
+
 /** Map camelCase param names from TypeScript to snake_case for Rust. */
 const PARAM_MAP: Record<string, string> = {
     threshold: 'threshold',
@@ -71,6 +73,15 @@ class GlutenProcessor extends AudioWorkletProcessor {
     _faulted = false;
     _meterCounter = 0;
     _sabView: Float32Array | null = null;
+    // Cached WASM linear-memory views — reused across render quanta so process()
+    // performs no per-block Float32Array allocation (audit RT-1); each revalidates
+    // on a memory.grow() buffer-identity change (audit RT-7). See wasmView.ts.
+    _inLeftView = new WasmView();
+    _inRightView = new WasmView();
+    _scLeftView = new WasmView();
+    _scRightView = new WasmView();
+    _outLeftView = new WasmView();
+    _outRightView = new WasmView();
 
     constructor() {
         super();
@@ -151,8 +162,8 @@ class GlutenProcessor extends AudioWorkletProcessor {
 
             const inLeftPtr = inst.get_input_left_ptr();
             const inRightPtr = inst.get_input_right_ptr();
-            new Float32Array(mem, inLeftPtr, frames).set(in0);
-            new Float32Array(mem, inRightPtr, frames).set(input[1] ?? in0);
+            this._inLeftView.get(mem, inLeftPtr, frames).set(in0);
+            this._inRightView.get(mem, inRightPtr, frames).set(input[1] ?? in0);
 
             const scInput = inputs[1];
             if (scInput && scInput.length > 0) {
@@ -160,18 +171,18 @@ class GlutenProcessor extends AudioWorkletProcessor {
                 if (sc0 && sc0.length > 0) {
                     const scLeftPtr = inst.get_sc_left_ptr();
                     const scRightPtr = inst.get_sc_right_ptr();
-                    new Float32Array(mem, scLeftPtr, frames).set(sc0);
-                    new Float32Array(mem, scRightPtr, frames).set(scInput[1] ?? sc0);
+                    this._scLeftView.get(mem, scLeftPtr, frames).set(sc0);
+                    this._scRightView.get(mem, scRightPtr, frames).set(scInput[1] ?? sc0);
                 }
             }
 
             const outLeftPtr = inst.process(frames);
             const outRightPtr = inst.get_right_ptr();
 
-            out0.set(new Float32Array(mem, outLeftPtr, frames));
+            out0.set(this._outLeftView.get(mem, outLeftPtr, frames));
             const out1 = output[1];
             if (out1) {
-                out1.set(new Float32Array(mem, outRightPtr, frames));
+                out1.set(this._outRightView.get(mem, outRightPtr, frames));
             }
 
             this._meterCounter++;
