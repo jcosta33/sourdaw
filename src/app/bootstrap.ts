@@ -43,6 +43,7 @@ import {
 } from '#/modules/AudioEngine/useCases';
 import {
     getAutomationHandlers,
+    prepareAutomationTimeOperation,
     recordAutomationValue,
     setAutomationRecordingDependencies,
     setModulationDependencies,
@@ -84,6 +85,8 @@ import {
     getMidiGrooveHandlers,
     getMidiNoteTransformHandlers,
     getPatternInstanceHandlers,
+    prepareMidiGlobalTimeTransaction,
+    createChordPitchProjector,
     createGrooveMidiEventProjector,
     shouldPlayMidiEvent,
     setWebMidiRealtimeProcessor,
@@ -112,12 +115,11 @@ import {
 import {
     getTransportHandlers,
     getTransportState,
-    deleteTimelineMapsTimeRange,
     createMusicalPositionProjector,
     createSamplePositionProjector,
     projectPpqEndpoints,
+    prepareTimelineMapTimeOperation,
     setStopPlaybackCallback,
-    shiftTimelineMapsAfterBeat,
     stopPlayback,
 } from '#/modules/Transport/useCases';
 import { updateTunerTelemetry } from '#/modules/Tuner/stores';
@@ -156,6 +158,7 @@ const createOfflineYeastProcessor = () =>
 configureOfflineMidiEventProjection({
     createProjector: createGrooveMidiEventProjector,
     selectProbability: shouldPlayMidiEvent,
+    createChordPitchProjector,
 });
 configureOfflinePpqEndpointProjection({ project: projectPpqEndpoints });
 configureOfflineYeastMidiProcessing({ createProcessor: createOfflineYeastProcessor });
@@ -164,6 +167,7 @@ setOfflineRenderDependencies({
     createMidiEventProjector: createGrooveMidiEventProjector,
     createYeastMidiProcessor: createOfflineYeastProcessor,
     selectMidiEventProbability: shouldPlayMidiEvent,
+    createChordPitchProjector,
 });
 setToasterGrooveAssignmentExecutor({ execute: executeAppAction });
 setArrangementEventBus(eventBus);
@@ -183,7 +187,11 @@ configureYeastRuntime({ panicOutputNotes: stopAllScheduled });
 const disposeWebMidiRealtimeProcessor = setWebMidiRealtimeProcessor({ processor: processRealtimeMidiInput });
 setWebMidiRuntimeEventBus({ eventBus });
 setNotificationEventBus(eventBus);
-setTimeOperationDependencies({ shiftTimelineMapsAfterBeat, deleteTimelineMapsTimeRange });
+setTimeOperationDependencies({
+    prepareAutomationTimeOperation,
+    prepareMidiGlobalTimeTransaction,
+    prepareTimelineMapTimeOperation,
+});
 setProjectIdentityTransitionDependencies({ leaveCollaborationSession: leaveSession });
 
 function disposeYeastRealtimeBridge(): void {

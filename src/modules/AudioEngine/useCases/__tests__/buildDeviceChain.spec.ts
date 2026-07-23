@@ -1,4 +1,4 @@
-import { beforeEach, describe, it, expect, vi } from 'vitest';
+import { afterEach, beforeEach, describe, it, expect, vi } from 'vitest';
 
 import { type Device } from '../../models/TrackViewTypes';
 import { buildDeviceChain } from '../buildDeviceChain';
@@ -27,6 +27,10 @@ vi.mock('../../repositories/faustDeviceFactory', () => ({
 }));
 
 describe('buildDeviceChain', () => {
+    afterEach(() => {
+        vi.unstubAllGlobals();
+    });
+
     beforeEach(() => {
         vi.clearAllMocks();
         mocks.isFaustModule.mockReturnValue(false);
@@ -52,6 +56,7 @@ describe('buildDeviceChain', () => {
     });
 
     it('should create Faust devices through Plugin-backed use-case composition', async () => {
+        vi.stubGlobal('AudioWorkletNode', undefined);
         const input = { connect: vi.fn(), disconnect: vi.fn() } as unknown as AudioNode;
         const output = { connect: vi.fn(), disconnect: vi.fn() } as unknown as AudioNode;
         const faustInput = { connect: vi.fn(), disconnect: vi.fn() } as unknown as AudioNode;

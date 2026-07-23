@@ -13,6 +13,7 @@ export { removeAutomationLane } from './automation/removeAutomationLane';
 export { removeAutomationLanesForTrack } from './automation/removeAutomationLanesForTrack';
 export { removeAutomationPoint } from './automation/removeAutomationPoint';
 export { prepareAutomationTimeOperation } from './automation/prepareAutomationTimeOperation';
+export { prepareAutomationTimeStateRestore } from './automation/prepareAutomationTimeStateRestore';
 export { prepareClipAutomationShiftTransaction } from './automation/prepareClipAutomationShiftTransaction';
 export { replaceAutomationLanePoints } from './automation/replaceAutomationLanePoints';
 export { restoreAutomationLanes } from './automation/restoreAutomationLanes';
@@ -21,7 +22,6 @@ export { shiftAutomationAfterBeat } from './automation/shiftAutomationAfterBeat'
 export { shiftClipAutomation } from './automation/shiftClipAutomation';
 export { updateAutomationPoint } from './automation/updateAutomationPoint';
 export { setAutomationPointCurve } from './automation/setAutomationPointCurve';
-export { interpolateAutomationPointValue } from './automation/interpolateAutomationPointValue';
 export { toggleAutomationVisibility } from './automation/toggleAutomationVisibility';
 export { toggleLaneCollapsed } from './automation/toggleLaneCollapsed';
 

@@ -24,6 +24,7 @@ const note_off = (t: number, n: number): MidiEvent => ({
     timeSamples: t,
     kind: { type: 'noteOff', channel: 0, note: n },
 });
+const withId = (event: MidiEvent, noteInstanceId: string): MidiEvent => ({ ...event, noteInstanceId });
 
 describe('GrooveModule', () => {
     it('constructs with the provided id and processor name', () => {
@@ -77,12 +78,12 @@ describe('GrooveModule', () => {
         const g = new GrooveModule('t5');
         g.setParam('groove_timing_1', 0.12);
         g.setParam('groove_amount', 1);
-        g.processMidi([note_on(6000, 60)], [], transport);
+        g.processMidi([withId(note_on(6000, 60), 'first'), withId(note_on(12_000, 60), 'second')], [], transport);
 
         const out: MidiEvent[] = [];
-        g.processMidi([note_off(12_000, 60)], out, transport);
+        g.processMidi([withId(note_off(18_000, 60), 'second'), withId(note_off(24_000, 60), 'first')], out, transport);
 
-        expect(out[0]?.timeSamples).toBe(12_720);
+        expect(out.map((event) => event.timeSamples)).toEqual([18_000, 24_720]);
     });
 
     it('should project one musical offset independently at each endpoint tempo', () => {
@@ -111,7 +112,7 @@ describe('GrooveModule', () => {
         expect(output.map((event) => event.timePpq)).toEqual([0.375, 1.125]);
     });
 
-    it('integrates a PPQ shift across an instant tempo change', () => {
+    it('repairs a sample-domain lifetime across blocks and an instant tempo change', () => {
         const groove = new GrooveModule('tempo-crossing');
         groove.setParam('groove_step_beats', 0.5);
         groove.setParam('groove_slot_count', 16);
@@ -121,6 +122,8 @@ describe('GrooveModule', () => {
         const tempoMapTransport: TransportInfo = {
             ...transport,
             bpm: 120,
+            ppqPosition: 4,
+            blockStartSamples: 1_000_000,
             tempoMap: {
                 defaultTempo: 60,
                 changes: [
@@ -130,21 +133,18 @@ describe('GrooveModule', () => {
             },
         };
 
-        groove.processMidi(
-            [
-                {
-                    timeSamples: 192_000,
-                    timePpq: 4,
-                    tempoBpm: 120,
-                    kind: { type: 'noteOn', channel: 0, note: 60, velocity: 100 },
-                },
-            ],
-            output,
-            tempoMapTransport
-        );
+        const sourceNoteOn = note_on(1_000_000, 60);
+        sourceNoteOn.durationSamples = 24_000;
+        Object.assign(sourceNoteOn, { timePpq: 99, durationPpq: 0.5 });
+        groove.processMidi([sourceNoteOn], output, tempoMapTransport);
 
-        expect(output[0]?.timePpq).toBe(3.75);
-        expect(output[0]?.timeSamples).toBe(180_000);
+        expect(output[0]?.timeSamples).toBe(988_000);
+        expect(output[0]?.durationSamples).toBe(30_000);
+
+        const sourceNoteOff = note_off(1_024_000, 60);
+        sourceNoteOff.timePpq = 99;
+        groove.processMidi([sourceNoteOff], output, tempoMapTransport);
+        expect(output[1]!.timeSamples - output[0]!.timeSamples).toBe(output[0]?.durationSamples);
     });
 
     it('should clear queued note-off timing state on reset', () => {

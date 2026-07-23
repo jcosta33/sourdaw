@@ -3,13 +3,26 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { createFromTemplate } from '../createFromTemplate';
 
 const mocks = vi.hoisted(() => ({
+    clearUndoHistory: vi.fn(),
+    compactProject: vi.fn(),
     createPopSongTemplate: vi.fn(),
     ensureTrackStrips: vi.fn(),
     executeAppAction: vi.fn(),
     isAppActionCommittedError: vi.fn(),
     newProject: vi.fn(),
+    projectActionHistoryToStore: vi.fn(),
     resetAudioGraph: vi.fn(),
+    resetCrdtProjectAuthority: vi.fn(),
+    resetModuleStoresToDefault: vi.fn(),
+    setAutoSaveHandle: vi.fn(),
+    startCrdtAutoSave: vi.fn(),
+    stopActiveAutoSave: vi.fn(),
     stopPlayback: vi.fn(),
+    transactionActivate: vi.fn(),
+    transactionCanActivate: vi.fn(),
+    transactionIsCurrent: vi.fn(),
+    transactionPrepare: vi.fn(),
+    runProjectLoadTransaction: vi.fn(),
 }));
 
 vi.mock('#/modules/AudioEngine/useCases', () => ({
@@ -17,8 +30,16 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
 }));
 
 vi.mock('#/modules/Command/useCases', () => ({
+    clearUndoHistory: mocks.clearUndoHistory,
     executeAppAction: mocks.executeAppAction,
     isAppActionCommittedError: mocks.isAppActionCommittedError,
+}));
+
+vi.mock('#/modules/CrdtDocument/useCases', () => ({
+    compactProject: mocks.compactProject,
+    projectActionHistoryToStore: mocks.projectActionHistoryToStore,
+    resetCrdtProjectAuthority: mocks.resetCrdtProjectAuthority,
+    startCrdtAutoSave: mocks.startCrdtAutoSave,
 }));
 
 vi.mock('#/modules/Transport/useCases', () => ({
@@ -28,6 +49,22 @@ vi.mock('#/modules/Transport/useCases', () => ({
 
 vi.mock('../../../projectPersistence/newProject', () => ({
     newProject: mocks.newProject,
+}));
+
+vi.mock('../../../projectPersistence/helpers/autoSaveHandle', () => ({
+    setAutoSaveHandle: mocks.setAutoSaveHandle,
+}));
+
+vi.mock('../../../projectPersistence/helpers/resetModuleStoresToDefault', () => ({
+    resetModuleStoresToDefault: mocks.resetModuleStoresToDefault,
+}));
+
+vi.mock('../../../projectPersistence/helpers/runProjectLoadTransaction', () => ({
+    runProjectLoadTransaction: mocks.runProjectLoadTransaction,
+}));
+
+vi.mock('../../../projectPersistence/helpers/stopActiveAutoSave', () => ({
+    stopActiveAutoSave: mocks.stopActiveAutoSave,
 }));
 
 vi.mock('../../templateFiles/popSong', () => ({
@@ -41,6 +78,18 @@ describe('createFromTemplate', () => {
         mocks.executeAppAction.mockResolvedValue(undefined);
         mocks.isAppActionCommittedError.mockReturnValue(false);
         mocks.newProject.mockResolvedValue(true);
+        mocks.compactProject.mockResolvedValue(undefined);
+        mocks.startCrdtAutoSave.mockReturnValue({});
+        mocks.transactionPrepare.mockResolvedValue(true);
+        mocks.transactionActivate.mockReturnValue(true);
+        mocks.transactionIsCurrent.mockReturnValue(true);
+        mocks.transactionCanActivate.mockReturnValue(true);
+        mocks.runProjectLoadTransaction.mockReturnValue({
+            prepare: mocks.transactionPrepare,
+            activate: mocks.transactionActivate,
+            isCurrent: mocks.transactionIsCurrent,
+            canActivate: mocks.transactionCanActivate,
+        });
     });
 
     it('rejects an unknown template before dispatch', async () => {
@@ -128,5 +177,78 @@ describe('createFromTemplate', () => {
         expect(mocks.stopPlayback).not.toHaveBeenCalled();
         expect(mocks.resetAudioGraph).not.toHaveBeenCalled();
         expect(mocks.executeAppAction).not.toHaveBeenCalled();
+        expect(mocks.runProjectLoadTransaction).not.toHaveBeenCalled();
+        expect(mocks.resetModuleStoresToDefault).not.toHaveBeenCalled();
+    });
+
+    it('runs the project-transition machinery before template construction', async () => {
+        await expect(createFromTemplate('pop-song')).resolves.toBe(true);
+
+        expect(mocks.transactionPrepare).toHaveBeenCalledOnce();
+        expect(mocks.transactionActivate).toHaveBeenCalledOnce();
+        expect(mocks.stopActiveAutoSave).toHaveBeenCalledOnce();
+        expect(mocks.resetCrdtProjectAuthority).toHaveBeenCalledWith('Pop Song');
+        expect(mocks.projectActionHistoryToStore).toHaveBeenCalledOnce();
+        expect(mocks.resetModuleStoresToDefault).toHaveBeenCalledOnce();
+        expect(mocks.clearUndoHistory).toHaveBeenCalledOnce();
+        expect(mocks.startCrdtAutoSave).toHaveBeenCalledOnce();
+        expect(mocks.compactProject).toHaveBeenCalledOnce();
+
+        // Transition machinery must land BEFORE the template action runs.
+        const prepareOrder = mocks.transactionPrepare.mock.invocationCallOrder[0];
+        const stopOrder = mocks.stopPlayback.mock.invocationCallOrder[0];
+        const storeResetOrder = mocks.resetModuleStoresToDefault.mock.invocationCallOrder[0];
+        const actionOrder = mocks.executeAppAction.mock.invocationCallOrder[0];
+        const autosaveOrder = mocks.startCrdtAutoSave.mock.invocationCallOrder[0];
+        if (
+            prepareOrder === undefined ||
+            stopOrder === undefined ||
+            storeResetOrder === undefined ||
+            actionOrder === undefined ||
+            autosaveOrder === undefined
+        ) {
+            throw new Error('expected all transition steps to be called');
+        }
+        expect(stopOrder).toBeGreaterThan(prepareOrder);
+        expect(storeResetOrder).toBeGreaterThan(stopOrder);
+        expect(actionOrder).toBeGreaterThan(storeResetOrder);
+        expect(autosaveOrder).toBeGreaterThan(actionOrder);
+    });
+
+    it('returns false without teardown when the transition is superseded', async () => {
+        mocks.transactionPrepare.mockResolvedValue(false);
+
+        await expect(createFromTemplate('pop-song')).resolves.toBe(false);
+
+        expect(mocks.stopPlayback).not.toHaveBeenCalled();
+        expect(mocks.resetModuleStoresToDefault).not.toHaveBeenCalled();
+        expect(mocks.clearUndoHistory).not.toHaveBeenCalled();
+        expect(mocks.executeAppAction).not.toHaveBeenCalled();
+    });
+
+    it('bails before any teardown when superseded mid-flight during stopPlayback', async () => {
+        mocks.transactionIsCurrent.mockReturnValueOnce(false);
+
+        await expect(createFromTemplate('pop-song')).resolves.toBe(false);
+
+        expect(mocks.stopPlayback).toHaveBeenCalledOnce();
+        expect(mocks.stopActiveAutoSave).not.toHaveBeenCalled();
+        expect(mocks.resetAudioGraph).not.toHaveBeenCalled();
+        expect(mocks.resetCrdtProjectAuthority).not.toHaveBeenCalled();
+        expect(mocks.resetModuleStoresToDefault).not.toHaveBeenCalled();
+        expect(mocks.clearUndoHistory).not.toHaveBeenCalled();
+        expect(mocks.executeAppAction).not.toHaveBeenCalled();
+        expect(mocks.startCrdtAutoSave).not.toHaveBeenCalled();
+        expect(mocks.compactProject).not.toHaveBeenCalled();
+    });
+
+    it('skips autosave restart and compaction when superseded during the template action', async () => {
+        mocks.transactionIsCurrent.mockReturnValueOnce(true).mockReturnValueOnce(false);
+
+        await expect(createFromTemplate('pop-song')).resolves.toBe(false);
+
+        expect(mocks.executeAppAction).toHaveBeenCalledOnce();
+        expect(mocks.startCrdtAutoSave).not.toHaveBeenCalled();
+        expect(mocks.compactProject).not.toHaveBeenCalled();
     });
 });

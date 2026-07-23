@@ -13,11 +13,11 @@ import { type TempoMapStoreState } from '#/modules/Transport/stores';
 import { scheduleTrackAutomation } from '../../repositories/offlineScheduler/automationScheduling';
 import {
     type OfflineMidiEventProjector,
+    type OfflineChordPitchProjector,
     type OfflineMidiProbabilitySelector,
 } from '../../repositories/offlineScheduler/offlineMidiEventProjectorState';
 import { type OfflinePpqEndpointProjector } from '../../repositories/offlineScheduler/offlinePpqEndpointProjectorState';
 import { type OfflineYeastMidiProcessor } from '../../repositories/offlineScheduler/offlineYeastMidiProcessorState';
-import { beatToSeconds } from '../../services/beatConversion';
 import { resolveDrumKit } from '../../services/deviceResolution';
 import { audioBufferCache } from '../../stores/audioBufferCache';
 import { type DeviceNodeEntry, buildDeviceChain } from '../buildDeviceChain';
@@ -157,6 +157,7 @@ type OfflineProjectionDependencies = {
     projectPpqEndpoints: OfflinePpqEndpointProjector;
     processYeastMidi: OfflineYeastMidiProcessor | null;
     selectMidiEventProbability: OfflineMidiProbabilitySelector;
+    projectChordPitch: OfflineChordPitchProjector;
 };
 
 export type ScheduleTrackClipsInput = {
@@ -196,14 +197,18 @@ export async function scheduleTrackClips({
     deviceEntriesByTrack,
     regionStartBeat = 0,
 }: ScheduleTrackClipsInput): Promise<void> {
-    const { projectMidiEvents, projectPpqEndpoints, processYeastMidi, selectMidiEventProbability } = projections;
-    const regionStartSec = projectPpqEndpoints({
-        startPpq: regionStartBeat,
-        endPpq: regionStartBeat,
-        defaultTempo,
-        sampleRate: offlineCtx.sampleRate,
-        changes,
-    }).startSeconds;
+    const { projectChordPitch, projectMidiEvents, projectPpqEndpoints, processYeastMidi, selectMidiEventProbability } =
+        projections;
+    function projectBeatToSeconds(beat: number): number {
+        return projectPpqEndpoints({
+            startPpq: beat,
+            endPpq: beat,
+            defaultTempo,
+            sampleRate: offlineCtx.sampleRate,
+            changes,
+        }).startSeconds;
+    }
+    const regionStartSec = projectBeatToSeconds(regionStartBeat);
     const compensationDelay = getCompensationDelay(track.id);
 
     const automationLanes = automationStore.value?.lanes ?? [];
@@ -261,7 +266,9 @@ export async function scheduleTrackClips({
         durationSeconds,
         defaultTempo,
         changes,
-        regionStartBeat,
+        regionStartSec,
+        projectBeatToSeconds,
+        offlineCtx.sampleRate,
         compensationDelay
     );
 
@@ -281,7 +288,7 @@ export async function scheduleTrackClips({
         const children = allTracks.filter((time) => time.parentId === track.id);
         for (let index = 0; index < children.length; index++) {
             const childTrack = children[index];
-            if (!childTrack) {
+            if (!childTrack || childTrack.muted || childTrack.disabled) {
                 continue;
             }
             const childClips = resolveTrackClipsWithComping(childTrack.id, childTrack.clips);
@@ -314,6 +321,20 @@ export async function scheduleTrackClips({
         ? getDrumKitDefByIndex(drumKitDevice.parameterValues.kit ?? drumKitDevice.parameterValues.kitId ?? 0)
         : null;
     const synthParams = drumKit || kitDef || instrumentControls ? null : getSynthParamsFromDevices(track.devices);
+    function projectPitch({
+        pitch,
+        referenceBeat,
+        targetBeat,
+    }: {
+        pitch: number;
+        referenceBeat: number;
+        targetBeat: number;
+    }): number {
+        if (!track.followChordTrack || drumKit || kitDef || isToaster) {
+            return pitch;
+        }
+        return projectChordPitch({ pitch, referenceBeat, targetBeat });
+    }
     const hasYeast = track.devices.some((device) => device.type === 'yeast');
     const parentTrack =
         track.parentId && allTracks ? allTracks.find((candidate) => candidate.id === track.parentId) : null;
@@ -431,6 +452,7 @@ export async function scheduleTrackClips({
                 projectMidiEvents,
                 projectPpqEndpoints,
                 processYeastMidi,
+                projectPitch,
             });
             await scheduleMidiNoteBatch(scheduledNotes);
         }
@@ -510,7 +532,11 @@ export async function scheduleTrackClips({
                     });
                     return {
                         id: note.id,
-                        pitch: note.pitch,
+                        pitch: projectPitch({
+                            pitch: note.pitch,
+                            referenceBeat: clip.startBeat,
+                            targetBeat: note.startBeat,
+                        }),
                         velocity: note.velocity,
                         startSamples: endpoints.startSamples,
                         endSamples: endpoints.endSamples,
@@ -547,8 +573,8 @@ export async function scheduleTrackClips({
                     continue;
                 }
 
-                const rawIterStartSec = beatToSeconds(iterStartBeat, defaultTempo, changes) + compensationDelay;
-                const rawIterEndSec = beatToSeconds(iterEndBeat, defaultTempo, changes) + compensationDelay;
+                const rawIterStartSec = projectBeatToSeconds(iterStartBeat) + compensationDelay;
+                const rawIterEndSec = projectBeatToSeconds(iterEndBeat) + compensationDelay;
                 const iterStartTime = rawIterStartSec - regionStartSec;
                 const iterEndTime = rawIterEndSec - regionStartSec;
                 if (iterStartTime >= durationSeconds) {
@@ -594,7 +620,7 @@ export async function scheduleTrackClips({
                 if (isFirstIter && trimBeforeSec === 0) {
                     if (clip.fadeInBeats > 0) {
                         const fadeInEndBeat = clip.startBeat + clip.fadeInBeats;
-                        const fadeInEndSec = beatToSeconds(fadeInEndBeat, defaultTempo, changes) - regionStartSec;
+                        const fadeInEndSec = projectBeatToSeconds(fadeInEndBeat) + compensationDelay - regionStartSec;
                         const fadeInDuration = Math.min(
                             Math.max(MICRO_FADE_SECONDS, fadeInEndSec - iterStartTime),
                             playDuration * 0.5
@@ -611,7 +637,7 @@ export async function scheduleTrackClips({
                     if (clip.fadeOutBeats > 0) {
                         const fadeOutStartBeat = clip.endBeat - clip.fadeOutBeats;
                         const fadeOutStartSec =
-                            beatToSeconds(fadeOutStartBeat, defaultTempo, changes) + compensationDelay - regionStartSec;
+                            projectBeatToSeconds(fadeOutStartBeat) + compensationDelay - regionStartSec;
                         const fadeOutOffset = Math.max(
                             startSec,
                             Math.max(fadeOutStartSec, endSec - playDuration * 0.5)

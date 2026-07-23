@@ -11,6 +11,35 @@ import toasterProcessorUrl from '../services/toasterProcessor.ts?worker&url';
 
 const DEFAULT_WASM_URL = '/wasm/daw-dsp/daw_dsp_bg.wasm';
 const TOASTER_PAD_COUNT = 16;
+const TOASTER_AUTOMATION_PARAM_IDS: Readonly<Record<string, number>> = {
+    masterGain: 0,
+    reverbMix: 1,
+    delayMix: 2,
+};
+
+type OfflineAutomationSegment = {
+    startFrame: number;
+    endFrame: number;
+    startValue: number;
+    endValue: number;
+};
+function isContiguousAutomationSchedule(segments: readonly OfflineAutomationSegment[]): boolean {
+    if (segments.length === 0 || segments[0]?.startFrame !== 0) {
+        return false;
+    }
+    return segments.every((segment, index) => {
+        const previous = segments[index - 1];
+        return (
+            Number.isInteger(segment.startFrame) &&
+            Number.isInteger(segment.endFrame) &&
+            segment.startFrame >= 0 &&
+            segment.endFrame >= segment.startFrame &&
+            (index === 0 || segment.startFrame === previous?.endFrame) &&
+            Number.isFinite(segment.startValue) &&
+            Number.isFinite(segment.endValue)
+        );
+    });
+}
 
 type ScheduleToasterHitInput = {
     pad: number;
@@ -24,6 +53,7 @@ type ScheduleToasterHitInput = {
 
 export type ToasterNodeResult = {
     workletNode: AudioWorkletNode;
+    outputNode: GainNode;
     noteOn: (pad: number, velocity: number, midiNote?: number, sampleFrame?: number) => void;
     noteOff: (pad: number, sampleFrame?: number) => void;
     scheduleHit: (input: ScheduleToasterHitInput) => void;
@@ -31,7 +61,10 @@ export type ToasterNodeResult = {
     allNotesOff: () => void;
     setFillActive: (active: boolean) => void;
     setParam: (name: string, value: number) => void;
+    acceptsScheduledParam: (name: string) => boolean;
+    scheduleParam: (name: string, segments: readonly OfflineAutomationSegment[]) => void;
     setPadParam: (pad: number, name: string, value: number) => void;
+    setPadDryRouted: (pad: number, routed: boolean) => void;
     setBypass: (bypassed: boolean) => void;
     connectPadOutput?: (pad: number, dest: AudioNode) => void;
     disconnectPadOutput?: (pad: number, dest: AudioNode) => void;
@@ -59,6 +92,15 @@ export async function createToasterNode(ctx: BaseAudioContext, wasmUrl?: string)
         channelCount: 2,
         channelCountMode: 'explicit',
     });
+    const outputNode = ctx.createGain();
+    outputNode.gain.value = 1;
+    node.connect(outputNode, 0, 0);
+    const padOutputGains = Array.from({ length: TOASTER_PAD_COUNT }, (_, pad) => {
+        const gainNode = ctx.createGain();
+        gainNode.gain.value = 1;
+        node.connect(gainNode, pad + 1, 0);
+        return gainNode;
+    });
 
     let bypassed = false;
 
@@ -74,6 +116,7 @@ export async function createToasterNode(ctx: BaseAudioContext, wasmUrl?: string)
 
     return {
         workletNode: node,
+        outputNode,
         noteOn(pad: number, velocity: number, midiNote: number = 60, sampleFrame?: number) {
             if (!bypassed) {
                 node.port.postMessage({
@@ -113,8 +156,21 @@ export async function createToasterNode(ctx: BaseAudioContext, wasmUrl?: string)
             node.port.postMessage({ type: 'fillState', active });
         },
         setParam(name: string, value: number) {
-            if (Number.isFinite(value)) {
-                node.port.postMessage({ type: 'param', name, value });
+            if (!Number.isFinite(value)) {
+                return;
+            }
+            node.port.postMessage({ type: 'param', name, value });
+        },
+        acceptsScheduledParam(name: string) {
+            return Object.hasOwn(TOASTER_AUTOMATION_PARAM_IDS, name);
+        },
+        scheduleParam(name: string, segments: readonly OfflineAutomationSegment[]) {
+            const paramId = Object.hasOwn(TOASTER_AUTOMATION_PARAM_IDS, name)
+                ? TOASTER_AUTOMATION_PARAM_IDS[name]
+                : undefined;
+            const valid = paramId !== undefined && isContiguousAutomationSchedule(segments);
+            if (valid) {
+                node.port.postMessage({ type: 'paramAutomation', paramId, segments });
             }
         },
         setPadParam(pad: number, name: string, value: number) {
@@ -122,12 +178,17 @@ export async function createToasterNode(ctx: BaseAudioContext, wasmUrl?: string)
                 node.port.postMessage({ type: 'padParam', pad, name, value });
             }
         },
+        setPadDryRouted(pad: number, routed: boolean) {
+            if (Number.isInteger(pad) && pad >= 0 && pad < TOASTER_PAD_COUNT) {
+                node.port.postMessage({ type: 'padDryRouted', pad, routed });
+            }
+        },
         setBypass(state: boolean) {
             bypassed = state;
         },
         connectPadOutput(pad: number, dest: AudioNode) {
             if (Number.isInteger(pad) && pad >= 0 && pad < TOASTER_PAD_COUNT) {
-                node.connect(dest, pad + 1, 0);
+                padOutputGains[pad]?.connect(dest);
             }
         },
         disconnectPadOutput(pad: number, dest: AudioNode) {
@@ -135,22 +196,35 @@ export async function createToasterNode(ctx: BaseAudioContext, wasmUrl?: string)
                 return;
             }
             try {
-                node.disconnect(dest, pad + 1, 0);
+                padOutputGains[pad]?.disconnect(dest);
             } catch {
                 // The output edge may already have been removed by device teardown.
             }
         },
         connect(dest: AudioNode) {
-            node.connect(dest);
+            outputNode.connect(dest);
         },
         disconnect() {
             try {
-                node.disconnect();
+                outputNode.disconnect();
             } catch {
                 // ignore
             }
         },
         destroy() {
+            node.port.postMessage({ type: 'resetPadDryRouting' });
+            for (const gainNode of padOutputGains) {
+                try {
+                    gainNode.disconnect();
+                } catch {
+                    // The pad output may already have been disconnected.
+                }
+            }
+            try {
+                outputNode.disconnect();
+            } catch {
+                // The parent output may already be detached from the track graph.
+            }
             try {
                 node.disconnect();
             } catch {

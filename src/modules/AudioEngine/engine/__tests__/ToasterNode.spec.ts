@@ -1,5 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
+import { createMockAudioNode } from '#/helpers/__tests__/audioContext.mock';
+
 import { createToasterNode, isToasterDevice } from '../ToasterNode';
 
 // Mock the worklet-init helpers so createToasterNode resolves without a real
@@ -30,6 +32,7 @@ describe('createToasterNode', () => {
     let connect: ReturnType<typeof vi.fn>;
     let close: ReturnType<typeof vi.fn>;
     let resume: ReturnType<typeof vi.fn>;
+    let padGainNodes: Array<ReturnType<typeof createMockAudioNode<'gain'>>>;
     let workletOptions: AudioWorkletNodeOptions | undefined;
 
     beforeEach(() => {
@@ -38,6 +41,7 @@ describe('createToasterNode', () => {
         connect = vi.fn();
         close = vi.fn();
         resume = vi.fn().mockResolvedValue(undefined);
+        padGainNodes = [];
         workletOptions = undefined;
 
         class FakeWorkletNode {
@@ -59,7 +63,13 @@ describe('createToasterNode', () => {
     function makeCtx(state: 'running' | 'suspended' = 'running') {
         class FakeAudioContext {
             state = state;
+            sampleRate = 48_000;
             resume = resume;
+            createGain() {
+                const gainNode = createMockAudioNode('gain');
+                padGainNodes.push(gainNode);
+                return gainNode;
+            }
         }
         vi.stubGlobal('AudioContext', FakeAudioContext);
         return new FakeAudioContext() as unknown as BaseAudioContext;
@@ -158,6 +168,34 @@ describe('createToasterNode', () => {
         expect(postMessage).toHaveBeenCalledWith({ type: 'param', name: 'drive', value: 0.6 });
     });
 
+    it('publishes bounded schedules only for audible Toaster mix controls', async () => {
+        const node = await createToasterNode(makeCtx());
+        const segments = [{ startFrame: 0, endFrame: 128, startValue: 0.2, endValue: 0.8 }];
+        postMessage.mockClear();
+
+        expect(node.acceptsScheduledParam('masterGain')).toBe(true);
+        expect(node.acceptsScheduledParam('reverbMix')).toBe(true);
+        expect(node.acceptsScheduledParam('delayMix')).toBe(true);
+        expect(node.acceptsScheduledParam('swing')).toBe(false);
+        node.scheduleParam('reverbMix', segments);
+        node.scheduleParam('masterGain', segments);
+        node.scheduleParam('swing', segments);
+        node.scheduleParam('delayMix', [
+            { startFrame: 0, endFrame: 64, startValue: 0, endValue: 0.5 },
+            { startFrame: 65, endFrame: 128, startValue: 0.5, endValue: 1 },
+        ]);
+
+        expect(postMessage).toHaveBeenNthCalledWith(1, { type: 'paramAutomation', paramId: 1, segments });
+        expect(postMessage).toHaveBeenNthCalledWith(2, { type: 'paramAutomation', paramId: 0, segments });
+        expect(postMessage).toHaveBeenCalledTimes(2);
+        const [, ...padOutputs] = padGainNodes;
+        expect(padOutputs.every((gainNode) => gainNode.gain.cancelScheduledValues.mock.calls.length === 0)).toBe(true);
+        expect(padOutputs.every((gainNode) => gainNode.gain.setValueAtTime.mock.calls.length === 0)).toBe(true);
+        expect(padOutputs.every((gainNode) => gainNode.gain.linearRampToValueAtTime.mock.calls.length === 0)).toBe(
+            true
+        );
+    });
+
     it('should forward a finite setPadParam value and drop a non-finite one', async () => {
         const node = await createToasterNode(makeCtx());
         postMessage.mockClear();
@@ -167,6 +205,21 @@ describe('createToasterNode', () => {
 
         expect(postMessage).toHaveBeenCalledTimes(1);
         expect(postMessage).toHaveBeenCalledWith({ type: 'padParam', pad: 1, name: 'decay', value: 0.3 });
+    });
+
+    it('should forward valid pad dry-routing ownership changes and ignore invalid pads', async () => {
+        const node = await createToasterNode(makeCtx());
+        postMessage.mockClear();
+
+        node.setPadDryRouted(0, true);
+        node.setPadDryRouted(15, false);
+        node.setPadDryRouted(-1, true);
+        node.setPadDryRouted(16, true);
+        node.setPadDryRouted(1.5, true);
+
+        expect(postMessage).toHaveBeenNthCalledWith(1, { type: 'padDryRouted', pad: 0, routed: true });
+        expect(postMessage).toHaveBeenNthCalledWith(2, { type: 'padDryRouted', pad: 15, routed: false });
+        expect(postMessage).toHaveBeenCalledTimes(2);
     });
 
     it('should gate noteOn and scheduleHit while bypassed, without gating noteOff', async () => {
@@ -192,19 +245,25 @@ describe('createToasterNode', () => {
         });
     });
 
-    it('should connect to the destination and swallow a disconnect error instead of throwing', async () => {
-        disconnect.mockImplementation(() => {
-            throw new Error('already disconnected');
-        });
+    it('keeps private worklet outputs connected when the parent output is rebuilt', async () => {
         const node = await createToasterNode(makeCtx());
         const dest = {} as AudioNode;
+        connect.mockClear();
+        disconnect.mockClear();
 
+        node.disconnect();
         node.connect(dest);
-        expect(connect).toHaveBeenCalledWith(dest);
-        expect(() => node.disconnect()).not.toThrow();
+
+        const [parentOutput, ...padOutputs] = padGainNodes;
+        expect(padGainNodes).toHaveLength(17);
+        expect(parentOutput?.disconnect).toHaveBeenCalledTimes(1);
+        expect(parentOutput?.connect).toHaveBeenCalledWith(dest);
+        expect(padOutputs.every((gainNode) => gainNode.disconnect.mock.calls.length === 0)).toBe(true);
+        expect(connect).not.toHaveBeenCalled();
+        expect(disconnect).not.toHaveBeenCalled();
     });
 
-    it('exposes one parent and 16 stereo pad outputs through stable output indexes', async () => {
+    it('routes stable pad outputs through unity routing nodes and tears them down', async () => {
         const node = await createToasterNode(makeCtx());
         const destination = {} as AudioNode;
         if (!node.connectPadOutput || !node.disconnectPadOutput) {
@@ -213,15 +272,43 @@ describe('createToasterNode', () => {
 
         expect(workletOptions?.numberOfOutputs).toBe(17);
         expect(workletOptions?.outputChannelCount).toEqual(Array.from({ length: 17 }, () => 2));
+        const [parentOutput, ...padOutputs] = padGainNodes;
+        expect(padGainNodes).toHaveLength(17);
+        expect(parentOutput?.gain.value).toBe(1);
+        expect(padOutputs.every((gainNode) => gainNode.gain.value === 1)).toBe(true);
+        expect(connect).toHaveBeenNthCalledWith(1, parentOutput, 0, 0);
+        expect(connect).toHaveBeenNthCalledWith(2, padOutputs[0], 1, 0);
+        expect(connect).toHaveBeenNthCalledWith(17, padOutputs[15], 16, 0);
+
         node.connectPadOutput(0, destination);
         node.connectPadOutput(15, destination);
         node.connectPadOutput(16, destination);
-        expect(connect).toHaveBeenNthCalledWith(1, destination, 1, 0);
-        expect(connect).toHaveBeenNthCalledWith(2, destination, 16, 0);
-        expect(connect).toHaveBeenCalledTimes(2);
+        expect(padOutputs[0]?.connect).toHaveBeenCalledWith(destination);
+        expect(padOutputs[15]?.connect).toHaveBeenCalledWith(destination);
+        expect(connect).toHaveBeenCalledTimes(17);
 
         node.disconnectPadOutput(15, destination);
-        expect(disconnect).toHaveBeenCalledWith(destination, 16, 0);
+        expect(padOutputs[15]?.disconnect).toHaveBeenCalledWith(destination);
+
+        postMessage.mockClear();
+        node.setParam('masterGain', 1.5);
+        node.setParam('masterGain', -0.25);
+        node.setParam('masterGain', 0.35);
+        node.setParam('masterGain', Number.NaN);
+        node.setParam('master_gain', 0.6);
+        expect(padOutputs.every((gainNode) => gainNode.gain.value === 1)).toBe(true);
+        expect(parentOutput?.gain.value).toBe(1);
+        expect(postMessage).toHaveBeenCalledTimes(4);
+        expect(postMessage).toHaveBeenNthCalledWith(1, { type: 'param', name: 'masterGain', value: 1.5 });
+        expect(postMessage).toHaveBeenNthCalledWith(2, { type: 'param', name: 'masterGain', value: -0.25 });
+        expect(postMessage).toHaveBeenNthCalledWith(3, { type: 'param', name: 'masterGain', value: 0.35 });
+        expect(postMessage).toHaveBeenNthCalledWith(4, { type: 'param', name: 'master_gain', value: 0.6 });
+
+        for (const gainNode of padGainNodes) {
+            gainNode.disconnect.mockClear();
+        }
+        node.destroy();
+        expect(padGainNodes.every((gainNode) => gainNode.disconnect.mock.calls.length === 1)).toBe(true);
     });
 
     it('should disconnect and close the port on destroy, swallowing a disconnect error', async () => {
@@ -231,6 +318,7 @@ describe('createToasterNode', () => {
         const node = await createToasterNode(makeCtx());
 
         expect(() => node.destroy()).not.toThrow();
+        expect(postMessage).toHaveBeenCalledWith({ type: 'resetPadDryRouting' });
         expect(disconnect).toHaveBeenCalled();
         expect(close).toHaveBeenCalled();
     });
@@ -239,6 +327,7 @@ describe('createToasterNode', () => {
         const node = await createToasterNode(makeCtx());
 
         expect(node.workletNode).toBeDefined();
+        expect(node.outputNode).toBe(padGainNodes[0]);
         await expect(node.ready).resolves.toEqual({});
     });
 });

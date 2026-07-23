@@ -88,14 +88,18 @@ export class EuclideanGenerator extends BaseMidiProcessor {
             const stepTime = this.lastStepTime + stepLen;
 
             if (this.pattern[this.stepIndex % this.pattern.length]) {
+                const noteInstanceId = this.createGeneratedNoteInstanceId();
                 output.push({
                     timeSamples: stepTime,
+                    durationSamples: noteLen,
                     trackId: this.trackId,
+                    noteInstanceId,
                     kind: { type: 'noteOn', channel: 0, note: this.note, velocity: this.velocity },
                 });
                 this.scheduled.push({
                     timeSamples: stepTime + noteLen,
                     trackId: this.trackId,
+                    noteInstanceId,
                     kind: { type: 'noteOff', channel: 0, note: this.note },
                 });
             }

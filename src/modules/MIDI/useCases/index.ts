@@ -11,6 +11,7 @@ export { CHORD_TYPE_KEYS } from './chordStamps/CHORD_TYPE_KEYS';
 // ── Chord Track ───────────────────────────────────────────────────────────────
 export { addChordEvent } from './chordTrack/addChordEvent';
 export { clearChordTrack } from './chordTrack/clearChordTrack';
+export { createChordPitchProjector } from './chordTrack/createChordPitchProjector';
 export { getChordAtBeat } from './chordTrack/getChordAtBeat';
 export { moveChordEvent } from './chordTrack/moveChordEvent';
 export { removeChordEvent } from './chordTrack/removeChordEvent';
@@ -89,6 +90,9 @@ export { duplicateClipNotes } from './midiNoteCrud/duplicateClipNotes';
 export { getNotesForClip } from './midiNoteCrud/getNotesForClip';
 export { migrateAbsoluteMidiNotes } from './midiNoteCrud/migrateAbsoluteMidiNotes';
 export { moveMidiNote } from './midiNoteCrud/moveMidiNote';
+export { prepareClipMidiShiftTransaction } from './midiNoteCrud/prepareClipMidiShiftTransaction';
+export { prepareMidiGlobalTimeTransaction } from './midiNoteCrud/prepareMidiGlobalTimeTransaction';
+export { prepareMidiTimeShiftTransaction } from './midiNoteCrud/prepareMidiTimeShiftTransaction';
 export { removeMidiNote } from './midiNoteCrud/removeMidiNote';
 export { resizeMidiNote } from './midiNoteCrud/resizeMidiNote';
 export { setNoteProbability } from './midiNoteCrud/setNoteProbability';

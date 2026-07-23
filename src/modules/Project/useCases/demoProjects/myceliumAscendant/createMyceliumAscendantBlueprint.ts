@@ -1,6 +1,8 @@
 import { CURRENT_PROJECT_VERSION, type ProjectData } from '../../../models/ProjectData';
 
 import { createMyceliumId } from './createMyceliumId';
+import { createMyceliumRhythmPerformance } from './createMyceliumRhythmPerformance';
+import { createMyceliumTopology } from './createMyceliumTopology';
 
 export type MyceliumSection = {
     id: string;
@@ -61,6 +63,7 @@ const CHORD_PATTERN = [
 ] as const;
 
 export function createMyceliumAscendantBlueprint(): MyceliumAscendantBlueprint {
+    const topology = createMyceliumTopology();
     const sections = SECTION_SPECS.map(([name, startBeat, endBeat], index) => ({
         id: createMyceliumId('section', name),
         name,
@@ -107,12 +110,13 @@ export function createMyceliumAscendantBlueprint(): MyceliumAscendantBlueprint {
             countInBars: 1,
             preRollEnabled: false,
             preRollBars: 0,
-            masterGain: 0.8,
+            masterGain: 80,
         },
-        arrangement: { tracks: [] },
+        arrangement: { tracks: topology.tracks },
         automation: { lanes: [] },
         midi: { notesByClipId: {}, ccByClipId: {}, pitchBendByClipId: {} },
         chordTrack: { enabled: true, events: chordEvents },
+        sidechainRoutes: topology.sidechainRoutes,
         mixer: { master: { gain: 0.8, pan: 0 }, buses: [] },
         markers: MARKER_SPECS.map(([name, beat], index) => ({
             id: createMyceliumId('marker', `${index}:${name}`),
@@ -167,5 +171,5 @@ export function createMyceliumAscendantBlueprint(): MyceliumAscendantBlueprint {
     ];
     projectData.activeArrangementId = activeArrangementId;
 
-    return { projectData, sections, chordEvents };
+    return { projectData: createMyceliumRhythmPerformance(projectData), sections, chordEvents };
 }

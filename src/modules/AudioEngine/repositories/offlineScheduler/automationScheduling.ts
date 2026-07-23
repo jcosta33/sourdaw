@@ -1,9 +1,11 @@
 import { getDeviceAutomationParameterId, resolveDeviceAutomationTargetIndex } from '#/utils/automationDeviceTarget';
 
 import { type AutomationLane } from '../../models/AutomationViewTypes';
-import { resolveDeviceParam, resolveDeviceParamScale } from '../../services/deviceResolution';
+import { resolveDeviceParamTargets } from '../../services/deviceResolution';
 import { type OfflineDeviceNode } from '../devices/types';
+import { type AudioDeviceStrategy } from '../deviceStrategy/AudioDeviceStrategy';
 
+import { compileAutomationSegments } from './compileAutomationSegments';
 import { scheduleAutomationOnParam } from './scheduleAutomationOnParam';
 
 type AutomationTempoChange = {
@@ -15,13 +17,17 @@ type ScheduleTrackAutomationDeviceEntry = {
     deviceId: string;
     deviceType: string;
     node: OfflineDeviceNode;
+    strategy?: Pick<AudioDeviceStrategy, 'acceptsScheduledParam' | 'scheduleParam'>;
 };
 
 function acceptsOfflineAutomationParameter(
     candidate: ScheduleTrackAutomationDeviceEntry,
     parameterId: string
 ): boolean {
-    return resolveDeviceParam(candidate.deviceType, parameterId, candidate.node) !== null;
+    return (
+        resolveDeviceParamTargets(candidate.deviceType, parameterId, candidate.node).length > 0 ||
+        candidate.strategy?.acceptsScheduledParam?.(parameterId) === true
+    );
 }
 
 export function scheduleTrackAutomation(
@@ -33,7 +39,9 @@ export function scheduleTrackAutomation(
     durationSeconds: number,
     defaultTempo: number,
     changes: AutomationTempoChange[],
-    regionStartBeat = 0,
+    regionStartSeconds = 0,
+    projectBeatToSeconds?: (beat: number) => number,
+    sampleRate = 44_100,
     compensationDelaySec = 0
 ): void {
     const trackLanes = lanes.filter((length) => length.trackId === trackId && !length.clipId);
@@ -50,7 +58,8 @@ export function scheduleTrackAutomation(
                 durationSeconds,
                 defaultTempo,
                 changes,
-                regionStartBeat,
+                regionStartSeconds,
+                projectBeatToSeconds,
                 compensationDelaySec
             );
             continue;
@@ -63,7 +72,8 @@ export function scheduleTrackAutomation(
                 durationSeconds,
                 defaultTempo,
                 changes,
-                regionStartBeat,
+                regionStartSeconds,
+                projectBeatToSeconds,
                 compensationDelaySec
             );
             continue;
@@ -77,18 +87,33 @@ export function scheduleTrackAutomation(
         const parameterId = getDeviceAutomationParameterId(lane.parameterId);
         if (deviceIndex >= 0 && parameterId) {
             const candidate = deviceEntries[deviceIndex]!;
-            const audioParam = resolveDeviceParam(candidate.deviceType, parameterId, candidate.node);
-            if (audioParam) {
-                const scale = resolveDeviceParamScale(candidate.deviceType, parameterId);
+            const targets = resolveDeviceParamTargets(candidate.deviceType, parameterId, candidate.node);
+            if (targets.length === 0 && candidate.strategy?.scheduleParam) {
+                const segments = compileAutomationSegments(
+                    lane.points,
+                    durationSeconds,
+                    defaultTempo,
+                    changes,
+                    sampleRate,
+                    regionStartSeconds,
+                    projectBeatToSeconds
+                );
+                candidate.strategy.scheduleParam(parameterId, segments);
+                continue;
+            }
+            for (const { audioParam, scale, offset } of targets) {
                 const points =
-                    scale !== 1 ? lane.points.map((param) => ({ ...param, value: param.value * scale })) : lane.points;
+                    scale !== 1 || offset !== 0
+                        ? lane.points.map((point) => ({ ...point, value: point.value * scale + offset }))
+                        : lane.points;
                 scheduleAutomationOnParam(
                     audioParam,
                     points,
                     durationSeconds,
                     defaultTempo,
                     changes,
-                    regionStartBeat,
+                    regionStartSeconds,
+                    projectBeatToSeconds,
                     compensationDelaySec
                 );
             }

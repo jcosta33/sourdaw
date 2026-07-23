@@ -11,13 +11,20 @@ const transactionSentinel: ProjectLoadTransaction = {
     isCurrent: vi.fn(),
 };
 
-const mocks = vi.hoisted(() => ({
-    pickFiles: vi.fn<() => Promise<File[] | null>>(),
-    runProjectLoadTransaction: vi.fn<() => ProjectLoadTransaction>(),
-    applyImportedProjectData: vi.fn<() => Promise<boolean>>(),
-    notifyUser: vi.fn<(message: string, level?: 'info' | 'success' | 'warning' | 'error') => void>(),
-    loggerError: vi.fn<(error: Error) => void>(),
-}));
+const mocks = vi.hoisted(() => {
+    const projectStoreValue: { value: { name: string; createdAt: number; dirty: boolean } | null } = {
+        value: null,
+    };
+    return {
+        pickFiles: vi.fn<() => Promise<File[] | null>>(),
+        runProjectLoadTransaction: vi.fn<() => ProjectLoadTransaction>(),
+        applyImportedProjectData: vi.fn<() => Promise<boolean>>(),
+        notifyUser: vi.fn<(message: string, level?: 'info' | 'success' | 'warning' | 'error') => void>(),
+        loggerError: vi.fn<(error: Error) => void>(),
+        saveProject: vi.fn<() => Promise<boolean>>(),
+        projectStoreValue,
+    };
+});
 
 vi.mock('../../../fileDialog', () => ({
     pickFiles: mocks.pickFiles,
@@ -29,6 +36,18 @@ vi.mock('../../helpers/runProjectLoadTransaction', () => ({
 
 vi.mock('../applyImportedProjectData', () => ({
     applyImportedProjectData: mocks.applyImportedProjectData,
+}));
+
+vi.mock('../../saveProject/saveProject', () => ({
+    saveProject: mocks.saveProject,
+}));
+
+vi.mock('../../../../stores/projectStore', () => ({
+    projectStore: {
+        get value() {
+            return mocks.projectStoreValue.value;
+        },
+    },
 }));
 
 vi.mock('#/utils/Notification/notifyUser', () => ({
@@ -49,6 +68,8 @@ describe('pickAndImportProjectFile', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         mocks.runProjectLoadTransaction.mockReturnValue(transactionSentinel);
+        mocks.saveProject.mockResolvedValue(true);
+        mocks.projectStoreValue.value = null;
     });
 
     it('returns false without starting a transaction when no file is selected', async () => {
@@ -122,5 +143,52 @@ describe('pickAndImportProjectFile', () => {
         expect(mocks.applyImportedProjectData).not.toHaveBeenCalled();
         expect(mocks.notifyUser).toHaveBeenCalledWith('Failed to read project file', 'error');
         expect(mocks.loggerError).toHaveBeenCalledWith(expect.objectContaining({ cause: readFailure }));
+    });
+
+    it('pre-saves a dirty open project before replacing it with the import', async () => {
+        const projectJson = { version: 1, meta: { name: 'Imported Song' } };
+        mocks.pickFiles.mockResolvedValue([makeFile(JSON.stringify(projectJson))]);
+        mocks.applyImportedProjectData.mockResolvedValue(true);
+        mocks.projectStoreValue.value = { name: 'Open Song', createdAt: 1, dirty: true };
+
+        let resolveSave: ((value: boolean) => void) | undefined;
+        mocks.saveProject.mockImplementation(
+            () =>
+                new Promise<boolean>((resolve) => {
+                    resolveSave = resolve;
+                })
+        );
+
+        const importOperation = pickAndImportProjectFile();
+        await vi.waitFor(() => expect(mocks.saveProject).toHaveBeenCalledOnce());
+        expect(mocks.applyImportedProjectData).not.toHaveBeenCalled();
+
+        resolveSave?.(true);
+        await expect(importOperation).resolves.toBe(true);
+        expect(mocks.applyImportedProjectData).toHaveBeenCalledOnce();
+    });
+
+    it('aborts the import when the pre-save of the dirty open project fails', async () => {
+        const projectJson = { version: 1, meta: { name: 'Imported Song' } };
+        mocks.pickFiles.mockResolvedValue([makeFile(JSON.stringify(projectJson))]);
+        mocks.projectStoreValue.value = { name: 'Open Song', createdAt: 1, dirty: true };
+        mocks.saveProject.mockResolvedValue(false);
+
+        await expect(pickAndImportProjectFile()).resolves.toBe(false);
+
+        expect(mocks.saveProject).toHaveBeenCalledOnce();
+        expect(mocks.applyImportedProjectData).not.toHaveBeenCalled();
+        expect(mocks.runProjectLoadTransaction).not.toHaveBeenCalled();
+    });
+
+    it('does not pre-save when the open project has no unsaved changes', async () => {
+        const projectJson = { version: 1, meta: { name: 'Imported Song' } };
+        mocks.pickFiles.mockResolvedValue([makeFile(JSON.stringify(projectJson))]);
+        mocks.applyImportedProjectData.mockResolvedValue(true);
+        mocks.projectStoreValue.value = { name: 'Open Song', createdAt: 1, dirty: false };
+
+        await expect(pickAndImportProjectFile()).resolves.toBe(true);
+
+        expect(mocks.saveProject).not.toHaveBeenCalled();
     });
 });

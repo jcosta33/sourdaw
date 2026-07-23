@@ -40,6 +40,13 @@ export function glueClips(clipIds: string[]): boolean {
     if (clips.length !== clipIds.length) {
         return false;
     }
+    // Audio glue would produce a clip with no audioBufferId — silent — while
+    // deleting the sources (ledger M-027). Refuse until a real audio-concat
+    // glue exists; the sources stay untouched.
+    if (clips.some((clip) => clip.type !== 'midi')) {
+        logger.warn('glueClips: only MIDI clips can be glued — refusing to create a silent audio clip');
+        return false;
+    }
     let startBeat = Infinity;
     let endBeat = -Infinity;
     for (const context of clips) {

@@ -36,6 +36,7 @@ type ProjectOfflineYeastTrackNotesInput = {
     projectMidiEvents: OfflineMidiEventProjector;
     projectPpqEndpoints: OfflinePpqEndpointProjector;
     processYeastMidi: OfflineYeastMidiProcessor;
+    projectPitch: (input: { pitch: number; referenceBeat: number; targetBeat: number }) => number;
 };
 
 type ScheduledOfflineYeastNote = {
@@ -46,6 +47,13 @@ type ScheduledOfflineYeastNote = {
     endSamples: number;
     toasterPadIndex: number;
 };
+
+function containsBeat(iteration: OfflineYeastClipIteration, beat: number): boolean {
+    return (
+        iteration.iterationStartBeat <= beat &&
+        beat < Math.min(iteration.iterationStartBeat + iteration.loopLengthBeats, iteration.clipEndBeat)
+    );
+}
 
 export function projectOfflineYeastTrackNotes({
     trackId,
@@ -58,6 +66,7 @@ export function projectOfflineYeastTrackNotes({
     projectMidiEvents,
     projectPpqEndpoints,
     processYeastMidi,
+    projectPitch,
 }: ProjectOfflineYeastTrackNotesInput): ScheduledOfflineYeastNote[] {
     const iterationsByRoute = new Map<string, OfflineYeastClipIteration>();
     const sourceNotes = iterations.flatMap((iteration, index) => {
@@ -110,8 +119,13 @@ export function projectOfflineYeastTrackNotes({
                     changes,
                     projectMidiEvents,
                     projectPpqEndpoints,
+                    projectPitch,
                 })
             );
+            continue;
+        }
+
+        if (!iterations.some((iteration) => containsBeat(iteration, note.startPpq))) {
             continue;
         }
 
@@ -128,20 +142,41 @@ export function projectOfflineYeastTrackNotes({
             phase: 'sequencer-groove',
         });
         for (const projected of generatedNotes) {
+            const carrierIterations = iterations.filter((iteration) => containsBeat(iteration, projected.startBeat));
+            const carrierIteration = carrierIterations[0];
+            if (!carrierIteration) {
+                continue;
+            }
+            const carrierEndBeat = Math.min(
+                carrierIteration.iterationStartBeat + carrierIteration.loopLengthBeats,
+                carrierIteration.clipEndBeat
+            );
+            const noteEndBeat = Math.min(projected.startBeat + projected.duration, carrierEndBeat);
+            if (noteEndBeat <= projected.startBeat) {
+                continue;
+            }
+            const carrierPadIndex = carrierIteration.toasterPadIndex;
+            const hasUnambiguousPad =
+                carrierPadIndex !== undefined &&
+                carrierIterations.every((iteration) => iteration.toasterPadIndex === carrierPadIndex);
             const endpoints = projectPpqEndpoints({
                 startPpq: projected.startBeat,
-                endPpq: projected.startBeat + projected.duration,
+                endPpq: noteEndBeat,
                 defaultTempo,
                 sampleRate,
                 changes,
             });
             scheduledNotes.push({
                 id: projected.id,
-                pitch: projected.pitch,
+                pitch: projectPitch({
+                    pitch: projected.pitch,
+                    referenceBeat: carrierIteration.clipStartBeat,
+                    targetBeat: projected.startBeat,
+                }),
                 velocity: projected.velocity,
                 startSamples: endpoints.startSamples,
                 endSamples: endpoints.endSamples,
-                toasterPadIndex: -1,
+                toasterPadIndex: hasUnambiguousPad ? carrierPadIndex : -1,
             });
         }
     }

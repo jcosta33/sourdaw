@@ -18,6 +18,7 @@ const mocks = vi.hoisted(() => ({
     warn: vi.fn(),
     setSend: vi.fn(),
     wireSidechainRoutes: vi.fn(),
+    resolveToasterPadBinding: vi.fn(),
     soloMode: 'sip',
 }));
 
@@ -36,6 +37,7 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     addDeviceToStrip: mocks.addDeviceToStrip,
     updateDeviceParam: mocks.updateDeviceParam,
     updateDeviceBypass: mocks.updateDeviceBypass,
+    resolveToasterPadBinding: mocks.resolveToasterPadBinding,
 }));
 
 vi.mock('#/modules/Routing/useCases', () => ({
@@ -55,6 +57,7 @@ describe('projectTrackToLiveStrip', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         mocks.soloMode = 'sip';
+        mocks.resolveToasterPadBinding.mockReturnValue(undefined);
         trackStore.set({ tracks: [], selectedTrackId: null });
         applySoloLogic({ resetSavedGains: true, applyActions: false });
     });
@@ -228,6 +231,27 @@ describe('projectTrackToLiveStrip', () => {
         expect(mocks.ensureTrackStrip).toHaveBeenCalledOnce();
         expect(mocks.ensureTrackStrip).toHaveBeenCalledWith(toaster.id);
         expect(mocks.addDeviceToStrip).toHaveBeenCalledWith(toaster.id, 'toaster-device', 'toaster');
+    });
+
+    it('projects Toaster pad ownership independently from the audible output', () => {
+        const toaster = createTrack({ id: 'toaster', name: 'Toaster', kind: 'folder' });
+        toaster.devices = [
+            { id: 'toaster-device', name: 'Toaster', type: 'toaster', bypassed: false, parameterValues: {} },
+        ];
+        const firstPad = createTrack({ id: 'pad-1', name: 'Pad 1', kind: 'audio' });
+        firstPad.parentId = toaster.id;
+        const routedPad = createTrack({ id: 'pad-2', name: 'Pad 2', kind: 'audio' });
+        routedPad.parentId = toaster.id;
+        routedPad.outputId = 'return-bus';
+        mocks.resolveToasterPadBinding.mockReturnValue({ toasterParentTrackId: toaster.id, padIndex: 1 });
+        trackStore.set({ tracks: [toaster, firstPad, routedPad], selectedTrackId: null });
+
+        projectTrackToLiveStrip({ trackId: routedPad.id });
+
+        expect(mocks.setTrackOutput).toHaveBeenCalledWith(routedPad.id, 'return-bus', {
+            toasterParentTrackId: toaster.id,
+            padIndex: 1,
+        });
     });
 
     it('skips resolved routing targets that cannot own audio endpoints', () => {

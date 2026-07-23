@@ -1,82 +1,55 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { trackState, setTrackState, insertTime } = vi.hoisted(() => ({
-    trackState: {
-        value: {
-            tracks: [
-                {
-                    id: 'track-1',
-                    clips: [
-                        { id: 'before', startBeat: 1, endBeat: 3 },
-                        { id: 'inside', startBeat: 4, endBeat: 6 },
-                        { id: 'after-inserted-copy', startBeat: 8, endBeat: 10 },
-                    ],
-                },
-            ],
-        },
-    },
-    setTrackState: vi.fn(),
-    insertTime: vi.fn(),
-}));
+const executeGlobalTimeOperation = vi.hoisted(() => vi.fn());
 
-vi.mock('../../../repositories/track/getTrackState', () => ({
-    getTrackState: () => trackState.value,
-}));
-
-vi.mock('../../../repositories/track/setTrackState', () => ({
-    setTrackState,
-}));
-
-vi.mock('../insertTime', () => ({
-    insertTime,
+vi.mock('../executeGlobalTimeOperation', () => ({
+    executeGlobalTimeOperation,
 }));
 
 import { duplicateTimeRange } from '../duplicateTimeRange';
 
 describe('duplicateTimeRange', () => {
     beforeEach(() => {
-        trackState.value = {
-            tracks: [
-                {
-                    id: 'track-1',
-                    clips: [
-                        { id: 'before', startBeat: 1, endBeat: 3 },
-                        { id: 'inside', startBeat: 4, endBeat: 6 },
-                        { id: 'after-inserted-copy', startBeat: 8, endBeat: 10 },
-                    ],
-                },
-            ],
+        executeGlobalTimeOperation.mockReset();
+    });
+
+    it('delegates the legacy numeric signature to the global transaction', () => {
+        const expected = {
+            status: 'applied',
+            hasChanges: true,
+            replayPlan: { version: 1 },
         };
-        setTrackState.mockClear();
-        insertTime.mockClear();
+        executeGlobalTimeOperation.mockReturnValue(expected);
+
+        const result = duplicateTimeRange(4, 6);
+
+        expect(executeGlobalTimeOperation).toHaveBeenCalledExactlyOnceWith({
+            operation: {
+                type: 'duplicate',
+                startBeat: 4,
+                endBeat: 6,
+            },
+        });
+        expect(result).toBe(expected);
     });
 
-    it('should export duplicateTimeRange', () => {
-        expect(duplicateTimeRange).toBeDefined();
-        const time = typeof duplicateTimeRange;
-        expect(time === 'function' || time === 'object').toBe(true);
-    });
+    it('forwards a supplied replay plan without cloning it', () => {
+        const replayPlan = {
+            version: 1 as const,
+            operation: { type: 'duplicate' as const, startBeat: 4, endBeat: 6 },
+            clips: [],
+            midi: { version: 1 as const, notes: [] },
+        };
 
-    it('should insert space and duplicate clips in the selected range', () => {
-        duplicateTimeRange(4, 6);
+        duplicateTimeRange(4, 6, replayPlan);
 
-        expect(insertTime).toHaveBeenCalledWith(6, 2);
-        expect(setTrackState).toHaveBeenCalledWith({
-            tracks: [
-                {
-                    id: 'track-1',
-                    clips: [
-                        { id: 'before', startBeat: 1, endBeat: 3 },
-                        { id: 'inside', startBeat: 4, endBeat: 6 },
-                        { id: 'after-inserted-copy', startBeat: 8, endBeat: 10 },
-                        {
-                            id: expect.stringMatching(/^clip-dup-/),
-                            startBeat: 6,
-                            endBeat: 8,
-                        },
-                    ],
-                },
-            ],
+        expect(executeGlobalTimeOperation).toHaveBeenCalledExactlyOnceWith({
+            operation: {
+                type: 'duplicate',
+                startBeat: 4,
+                endBeat: 6,
+            },
+            replayPlan,
         });
     });
 });

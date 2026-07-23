@@ -61,6 +61,11 @@ export function addDevice(trackId: string, deviceType: string): Device | null {
 
     if (activatesFolderStrip) {
         projectTrackToLiveStrip({ trackId, activateDormantExternalPlugins: true });
+        for (const child of state.tracks) {
+            if (child.parentId === trackId && shouldCreateLiveTrackStrip(child)) {
+                projectTrackToLiveStrip({ trackId: child.id, activateDormantExternalPlugins: true });
+            }
+        }
         return device;
     }
 

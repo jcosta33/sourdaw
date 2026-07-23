@@ -113,6 +113,15 @@ impl ProofChamberInstance {
         }
     }
 
+    pub fn set_param_by_id(&mut self, param_id: u32, value: f32) {
+        let name = match param_id {
+            0 => "mix",
+            1 => "decay",
+            _ => return,
+        };
+        self.set_param(name, value);
+    }
+
     /// Load an IR for the convolution engine.
     pub fn load_ir(&mut self, ir_data: Vec<f32>, channels: u8) {
         match &mut self.engine {
@@ -199,6 +208,10 @@ impl ProofChamberInstance {
 #[cfg(test)]
 mod tests {
     use super::ProofChamberInstance;
+    use assert_no_alloc::{assert_no_alloc, AllocDisabler};
+
+    #[global_allocator]
+    static ALLOCATOR: AllocDisabler = AllocDisabler;
 
     #[test]
     fn convolution_latency_matches_global_alignment_reference() {
@@ -212,5 +225,16 @@ mod tests {
             128,
             "tail-stage inputs are delayed to their absolute segment offsets and the head/dry reference takes the remainder, so the aligned wet path's latency is the head size (128)"
         );
+    }
+
+    #[test]
+    fn numeric_automation_setter_does_not_allocate() {
+        let mut instance = ProofChamberInstance::new(48_000.0);
+
+        assert_no_alloc(|| {
+            instance.set_param_by_id(0, 0.75);
+            instance.set_param_by_id(1, 0.8);
+            instance.set_param_by_id(u32::MAX, 0.5);
+        });
     }
 }

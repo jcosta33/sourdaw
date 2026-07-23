@@ -17,6 +17,7 @@ export abstract class BaseMidiProcessor implements MidiProcessor {
     abstract readonly name: string;
 
     private bypassed = false;
+    private generatedNoteSequence = 0;
     protected trackId: string | undefined;
 
     constructor(id: string) {
@@ -55,6 +56,10 @@ export abstract class BaseMidiProcessor implements MidiProcessor {
 
     setTrackId(trackId: string | undefined): void {
         this.trackId = trackId;
+    }
+
+    protected createGeneratedNoteInstanceId(): string {
+        return `${this.id}:generated:${this.generatedNoteSequence++}`;
     }
 
     latencySamples(): number {

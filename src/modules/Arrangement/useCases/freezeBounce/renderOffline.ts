@@ -53,11 +53,19 @@ export async function renderTrackOffline(
     const createMidiEventProjector = offlineRenderDependencies?.createMidiEventProjector;
     const createYeastMidiProcessor = offlineRenderDependencies?.createYeastMidiProcessor;
     const selectMidiEventProbability = offlineRenderDependencies?.selectMidiEventProbability;
-    if (!projectPpqEndpoints || !createMidiEventProjector || !createYeastMidiProcessor || !selectMidiEventProbability) {
+    const createChordPitchProjector = offlineRenderDependencies?.createChordPitchProjector;
+    if (
+        !projectPpqEndpoints ||
+        !createMidiEventProjector ||
+        !createYeastMidiProcessor ||
+        !selectMidiEventProbability ||
+        !createChordPitchProjector
+    ) {
         throw new Error('Arrangement offline render dependencies are not configured');
     }
     const projectMidiEvents = createMidiEventProjector();
     const processYeastMidi = createYeastMidiProcessor();
+    const chordPitchProjector = createChordPitchProjector();
 
     // Only audio and midi tracks produce renderable content on their own.
     // Bus / group / master tracks have no direct sound source — skip rendering.
@@ -117,6 +125,18 @@ export async function renderTrackOffline(
 
         let devices: DeviceNodeEntry[] = [];
         const inputNode: AudioNode = gainNode;
+        const parentTrack = time.parentId ? allTracks.find((candidate) => candidate.id === time.parentId) : undefined;
+        const isPercussionTrack =
+            time.devices.some(
+                (device) =>
+                    device.type === 'toaster' ||
+                    device.type === 'drum-kit' ||
+                    device.type === 'builtin-drum-kit' ||
+                    device.type.startsWith('builtin-drum-machine')
+            ) || parentTrack?.devices.some((device) => device.type === 'toaster');
+        function projectPitch(input: { pitch: number; referenceBeat: number; targetBeat: number }): number {
+            return time.followChordTrack && !isPercussionTrack ? chordPitchProjector(input) : input.pitch;
+        }
 
         if (includeInserts) {
             devices = await buildDeviceChain(offlineCtx, time.devices, gainNode, panNode);
@@ -217,6 +237,7 @@ export async function renderTrackOffline(
                         projectMidiEvents,
                         projectPpqEndpoints,
                         processYeastMidi,
+                        projectPitch,
                     });
                 } else {
                     scheduledNotes = clipIterations.flatMap((iteration) => {
@@ -241,7 +262,11 @@ export async function renderTrackOffline(
                             });
                             return {
                                 id: note.id,
-                                pitch: note.pitch,
+                                pitch: projectPitch({
+                                    pitch: note.pitch,
+                                    referenceBeat: iteration.clipStartBeat,
+                                    targetBeat: note.startBeat,
+                                }),
                                 velocity: note.velocity,
                                 startSamples: endpoint.startSamples,
                                 endSamples: endpoint.endSamples,

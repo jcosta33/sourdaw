@@ -32,6 +32,7 @@ describe('createMyceliumAscendantBlueprint', () => {
             timeSignatureDenominator: 4,
             loopStart: 0,
             loopEnd: 576,
+            masterGain: 80,
         });
         expect(projectData.tempoMap?.changes.map(({ beat, tempo, curve }) => [beat, tempo, curve])).toEqual([
             [0, 144, 'instant'],
@@ -101,7 +102,7 @@ describe('createMyceliumAscendantBlueprint', () => {
         expect(chordEvents.at(-1)).toMatchObject({ beat: 560, root: 9, quality: 'min9', duration: 16 });
     });
 
-    it('is serializable, structurally deterministic, and exposes empty content seams', () => {
+    it('is serializable, structurally deterministic, and leaves the automation seam empty', () => {
         const first = createMyceliumAscendantBlueprint();
         const second = createMyceliumAscendantBlueprint();
         const tempoIds = first.projectData.tempoMap?.changes.flatMap((change) => change.id ?? []) ?? [];
@@ -119,8 +120,8 @@ describe('createMyceliumAscendantBlueprint', () => {
         expect(JSON.parse(JSON.stringify(first))).toEqual(first);
         expect(ids.every((id) => UUID_PATTERN.test(id))).toBe(true);
         expect(new Set(ids).size).toBe(ids.length);
-        expect(first.projectData.arrangement).toEqual({ tracks: [] });
-        expect(first.projectData.midi).toEqual({ notesByClipId: {}, ccByClipId: {}, pitchBendByClipId: {} });
+        expect(first.projectData.arrangement.tracks.some((track) => track.clips.length > 0)).toBe(true);
+        expect(Object.keys(first.projectData.midi.notesByClipId).length).toBeGreaterThan(0);
         expect(first.projectData.automation).toEqual({ lanes: [] });
     });
 
@@ -152,6 +153,8 @@ describe('createMyceliumAscendantBlueprint', () => {
         const saved = await buildProjectData({ includeAudioBuffers: false });
         expect(saved?.data.arrangements?.[0]?.markers?.sections).toEqual(blueprint.sections);
         expect(saved?.data.chordTrack).toEqual(blueprint.projectData.chordTrack);
+        expect(saved?.data.midi.notesByClipId).toMatchObject(blueprint.projectData.midi.notesByClipId);
+        expect(saved?.data.arrangements?.[0]?.midi?.notesByClipId).toEqual(saved?.data.midi.notesByClipId);
         const reloaded = structuredClone(saved?.data);
         expect(isHydratableProjectData(reloaded)).toBe(true);
         if (!isHydratableProjectData(reloaded)) {

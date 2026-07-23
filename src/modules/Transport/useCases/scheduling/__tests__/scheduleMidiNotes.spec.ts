@@ -2,8 +2,15 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { type Clip, trackStore } from '#/modules/Arrangement/stores';
 import { resolveClipsWithComping, getSynthParamsForTrack } from '#/modules/Arrangement/useCases';
+import { ensureTrackStrip } from '#/modules/AudioEngine/useCases';
 import { midiStore } from '#/modules/MIDI/stores';
-import { projectClipMidiEvents, shouldPlayMidiEvent } from '#/modules/MIDI/useCases';
+import {
+    getChordAtBeat,
+    projectClipMidiEvents,
+    projectCommittedGroove,
+    shouldPlayMidiEvent,
+    transposeForChordTrack,
+} from '#/modules/MIDI/useCases';
 import { scheduleNote } from '#/modules/Synth/useCases';
 import { processYeastMidi } from '#/modules/Yeast/useCases';
 
@@ -121,6 +128,15 @@ describe('scheduleMidiNotes', () => {
             }))
         );
         vi.mocked(processYeastMidi).mockImplementation((input) => Promise.resolve([...input.events]));
+        vi.mocked(projectCommittedGroove).mockImplementation(({ events }) => events);
+        vi.mocked(ensureTrackStrip).mockImplementation(
+            () =>
+                ({
+                    gainNode: {},
+                    preFaderTap: { connect: vi.fn() },
+                    deviceNodes: [],
+                }) as never
+        );
         shouldPlayProbability.mockImplementation(() => true);
     });
 
@@ -203,6 +219,42 @@ describe('scheduleMidiNotes', () => {
         });
         expect(vi.mocked(scheduleNote).mock.calls[0]?.[3]).toBe(0.25);
         expect(vi.mocked(scheduleNote).mock.calls[0]?.[5]).toBe(40);
+    });
+
+    it('does not chord-project live Toaster child notes', async () => {
+        const toasterNoteOn = vi.fn();
+        const parent = midiTrack({
+            id: 'toaster-parent',
+            kind: 'folder',
+            devices: [{ id: 'toaster', type: 'toaster' }],
+        });
+        const child = midiTrack({
+            parentId: 'toaster-parent',
+            clips: [midiClip()],
+            followChordTrack: true,
+        });
+        (trackStore as { value: unknown }).value = { tracks: [parent, child] };
+        (midiStore as { value: unknown }).value = {
+            notesByClipId: {
+                'clip-1': [{ id: 'n1', pitch: 36, startBeat: 1, duration: 0.25, velocity: 100 }],
+            },
+        };
+        vi.mocked(ensureTrackStrip).mockImplementation(
+            (trackId) =>
+                ({
+                    gainNode: {},
+                    preFaderTap: { connect: vi.fn() },
+                    deviceNodes:
+                        trackId === 'toaster-parent'
+                            ? [{ deviceId: 'toaster', type: 'toaster', toasterControls: { noteOn: toasterNoteOn } }]
+                            : [],
+                }) as never
+        );
+
+        await scheduleMidiNotes(0, 4, 0, -1, new Set<string>(), [], defaultTransportState, 120);
+
+        expect(toasterNoteOn).toHaveBeenCalledTimes(1);
+        expect(transposeForChordTrack).not.toHaveBeenCalled();
     });
 
     // §1 — Per-note probability must be deterministic so replays are identical.
@@ -343,6 +395,43 @@ describe('scheduleMidiNotes', () => {
         expect(call[2]).toBe(64); // pitch from the generator
         expect(call[5]).toBe(90); // velocity carried through, not garbled
         // Probability defaults to 100 from the template, so the note is not gated out.
+    });
+
+    it('routes grooved generator notes by their final carrier and clips the note tail', async () => {
+        const firstClip = midiClip({ id: 'clip-1', startBeat: 0, endBeat: 2 });
+        const secondClip = midiClip({ id: 'clip-2', startBeat: 2.5, endBeat: 4 });
+        const track = midiTrack({
+            clips: [firstClip, secondClip],
+            followChordTrack: true,
+            devices: [{ id: 'y', type: 'yeast' }],
+        });
+        (trackStore as { value: unknown }).value = { tracks: [track] };
+        (midiStore as { value: unknown }).value = { notesByClipId: { 'clip-1': [], 'clip-2': [] } };
+        vi.mocked(processYeastMidi).mockResolvedValue([
+            {
+                timeSamples: 42_000,
+                timePpq: 1.75,
+                kind: { type: 'noteOn', channel: 0, note: 64, velocity: 90 },
+            },
+            {
+                timeSamples: 54_000,
+                timePpq: 2.25,
+                kind: { type: 'noteOn', channel: 0, note: 65, velocity: 80 },
+            },
+            { timeSamples: 72_000, timePpq: 3, kind: { type: 'noteOff', channel: 0, note: 65 } },
+            { timeSamples: 120_000, timePpq: 5, kind: { type: 'noteOff', channel: 0, note: 64 } },
+        ]);
+        vi.mocked(projectCommittedGroove).mockImplementation(({ events }) =>
+            events.map((event) => ({ ...event, startBeat: event.startBeat + 1 }))
+        );
+
+        await scheduleMidiNotes(0, 4, 0, -1, new Set<string>(), [], defaultTransportState, 120);
+
+        expect(getChordAtBeat).toHaveBeenCalledWith(2.5);
+        expect(getChordAtBeat).toHaveBeenCalledWith(2.75);
+        expect(getChordAtBeat).not.toHaveBeenCalledWith(0);
+        expect(scheduleNote).toHaveBeenCalledTimes(1);
+        expect(vi.mocked(scheduleNote).mock.calls[0]?.[4]).toBe(0.625);
     });
 
     it('pairs an equal-sample Note Off only when it follows the Note On in stable event order', async () => {

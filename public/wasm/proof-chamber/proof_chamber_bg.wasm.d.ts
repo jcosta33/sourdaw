@@ -9,6 +9,7 @@ export const proofchamberinstance_load_ir: (a: number, b: number, c: number, d: 
 export const proofchamberinstance_new: (a: number) => number;
 export const proofchamberinstance_process: (a: number, b: number, c: number, d: number, e: number, f: number) => number;
 export const proofchamberinstance_set_param: (a: number, b: number, c: number, d: number) => void;
+export const proofchamberinstance_set_param_by_id: (a: number, b: number, c: number) => void;
 export const __wbindgen_externrefs: WebAssembly.Table;
 export const __wbindgen_free: (a: number, b: number, c: number) => void;
 export const __wbindgen_malloc: (a: number, b: number) => number;

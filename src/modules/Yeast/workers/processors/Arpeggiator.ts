@@ -29,6 +29,7 @@ type HeldNote = {
     velocity: number;
     pressedOrder: number;
     trackId?: string;
+    noteInstanceId?: string;
 };
 
 type ArpMode = 'up' | 'down' | 'upDown' | 'downUp' | 'random' | 'order' | 'chord' | 'pattern';
@@ -90,23 +91,31 @@ export class Arpeggiator extends BaseMidiProcessor {
         // Handle incoming Note On/Off to update held notes
         for (const event of input) {
             if (event.kind.type === 'noteOn') {
-                this.addHeldNote(event.kind.channel, event.kind.note, event.kind.velocity, event.trackId);
+                this.addHeldNote(
+                    event.kind.channel,
+                    event.kind.note,
+                    event.kind.velocity,
+                    event.trackId,
+                    event.noteInstanceId
+                );
                 if (this.restartMode === 'restartOnNote') {
                     this.stepIndex = 0;
                     this.lastStepTimeSamples = event.timeSamples;
                 }
             } else if (event.kind.type === 'noteOff') {
-                this.removeHeldNote(event.kind.channel, event.kind.note, event.trackId);
+                this.removeHeldNote(event.kind.channel, event.kind.note, event.trackId, event.noteInstanceId);
             } else {
                 // Pass through non-note events
                 output.push(event);
             }
         }
 
-        // If no notes held (and no latch), kill active notes and stop
+        const blockStart = transport.blockStartSamples ?? transport.ppqPosition * samplesPerBeat(transport);
+        const blockEnd = transport.blockEndSamples ?? blockStart + 128;
+
         const pool = this.getEffectivePool();
         if (pool.length === 0) {
-            this.killActiveNotes(output, transport.blockStartSamples ?? input[0]?.timeSamples ?? 0);
+            this.drainScheduledNoteOffs(output, blockEnd);
             return;
         }
 
@@ -116,8 +125,6 @@ export class Arpeggiator extends BaseMidiProcessor {
         }
 
         const stepLenSamples = rateToBeats(this.rate) * samplesPerBeat(transport);
-        const blockStart = transport.blockStartSamples ?? transport.ppqPosition * samplesPerBeat(transport);
-        const blockEnd = transport.blockEndSamples ?? blockStart + 128;
 
         // Initialize lastStepTime if needed
         if (this.lastStepTimeSamples === -Infinity) {
@@ -146,21 +153,8 @@ export class Arpeggiator extends BaseMidiProcessor {
                 continue;
             }
 
-            // Tie: extend previous notes' duration, don't emit new Note Ons
+            // Tied lifetime was reserved on the preceding Note On.
             if (patternStep && patternStep.stepType === 'tie') {
-                for (const an of this.activeGenerated) {
-                    an.offTimeSamples += stepLenSamples;
-                    // Also update the scheduled Note Off
-                }
-                // Re-schedule Note Offs with extended times
-                this.scheduled.clear();
-                for (const an of this.activeGenerated) {
-                    this.scheduled.push({
-                        timeSamples: an.offTimeSamples,
-                        trackId: an.trackId,
-                        kind: { type: 'noteOff', channel: an.channel, note: an.note },
-                    });
-                }
                 this.advanceStep(pool.length);
                 this.lastStepTimeSamples = stepTime;
                 continue;
@@ -200,6 +194,7 @@ export class Arpeggiator extends BaseMidiProcessor {
             const ratchetInterval = stepLenSamples / ratchetCount;
             const baseGate = patternStep ? this.gate * patternStep.gateMul : this.gate;
             const noteDuration = ratchetInterval * baseGate;
+            const finalNoteDuration = noteDuration + this.countFollowingTieSteps() * stepLenSamples;
 
             for (let ratchetIdx = 0; ratchetIdx < ratchetCount; ratchetIdx++) {
                 const ratchetTime = actualTime + ratchetIdx * ratchetInterval;
@@ -209,16 +204,19 @@ export class Arpeggiator extends BaseMidiProcessor {
                         ? patternStep.velocity
                         : this.computeVelocity(sn.velocity);
 
+                    const noteInstanceId = this.createGeneratedNoteInstanceId();
                     const noteOn: MidiEvent = {
                         timeSamples: ratchetTime,
+                        durationSamples: finalNoteDuration,
                         trackId: sn.trackId,
+                        noteInstanceId,
                         kind: { type: 'noteOn', channel: sn.channel, note: sn.note, velocity: vel },
                     };
                     output.push(noteOn);
 
                     preview?.recordDecision(
                         ratchetTime,
-                        noteDuration,
+                        finalNoteDuration,
                         sn.note,
                         vel,
                         patternStep?.probability ?? null,
@@ -229,16 +227,18 @@ export class Arpeggiator extends BaseMidiProcessor {
                     );
 
                     // Schedule Note Off
-                    const offTime = ratchetTime + noteDuration;
+                    const offTime = ratchetTime + finalNoteDuration;
                     this.scheduled.push({
                         timeSamples: offTime,
                         trackId: sn.trackId,
+                        noteInstanceId,
                         kind: { type: 'noteOff', channel: sn.channel, note: sn.note },
                     });
 
                     this.activeGenerated.push({
                         channel: sn.channel,
                         note: sn.note,
+                        noteInstanceId,
                         offTimeSamples: offTime,
                         trackId: sn.trackId,
                     });
@@ -256,13 +256,7 @@ export class Arpeggiator extends BaseMidiProcessor {
         // sync in both directions so every generated note gets exactly one
         // Note Off (pre-fix each off left twice — once via expireNotes,
         // once via this drain; 8 ons → 14 offs in the audit probe).
-        const drained = this.scheduled.drainRange(0, blockEnd, this.trackId);
-        for (const event1 of drained) {
-            output.push(event1);
-            if (event1.kind.type === 'noteOff') {
-                this.removeActiveGenerated(event1.trackId, event1.kind.channel, event1.kind.note, event1.timeSamples);
-            }
-        }
+        this.drainScheduledNoteOffs(output, blockEnd);
     }
 
     reset(): void {
@@ -342,14 +336,22 @@ export class Arpeggiator extends BaseMidiProcessor {
 
     // ── Internal ─────────────────────────────────────────────────────────
 
-    private addHeldNote(channel: number, note: number, velocity: number, trackId?: string): void {
-        // Avoid duplicates
-        if (this.held.some((h) => h.channel === channel && h.note === note && h.trackId === trackId)) {
+    private addHeldNote(
+        channel: number,
+        note: number,
+        velocity: number,
+        trackId?: string,
+        noteInstanceId?: string
+    ): void {
+        if (
+            noteInstanceId !== undefined &&
+            this.held.some((heldNote) => heldNote.trackId === trackId && heldNote.noteInstanceId === noteInstanceId)
+        ) {
             return;
         }
 
         this.pressCounter++;
-        const hn: HeldNote = { channel, note, velocity, pressedOrder: this.pressCounter, trackId };
+        const hn: HeldNote = { channel, note, velocity, pressedOrder: this.pressCounter, trackId, noteInstanceId };
         this.held.push(hn);
 
         if (this.latchEnabled) {
@@ -359,9 +361,19 @@ export class Arpeggiator extends BaseMidiProcessor {
         }
     }
 
-    private removeHeldNote(channel: number, note: number, trackId?: string): void {
+    private removeHeldNote(channel: number, note: number, trackId?: string, noteInstanceId?: string): void {
         // Audio-thread: in-place removal avoids allocating a new array
-        const idx = this.held.findIndex((h) => h.channel === channel && h.note === note && h.trackId === trackId);
+        const idx = this.held.findIndex((heldNote) => {
+            if (noteInstanceId !== undefined) {
+                return heldNote.trackId === trackId && heldNote.noteInstanceId === noteInstanceId;
+            }
+            return (
+                heldNote.trackId === trackId &&
+                heldNote.channel === channel &&
+                heldNote.note === note &&
+                heldNote.noteInstanceId === undefined
+            );
+        });
         if (idx !== -1) {
             this.held.splice(idx, 1);
         }
@@ -466,6 +478,21 @@ export class Arpeggiator extends BaseMidiProcessor {
         this.stepIndex++;
     }
 
+    private countFollowingTieSteps(): number {
+        if (this.mode !== 'pattern' || this.pattern.length < 2) {
+            return 0;
+        }
+        let count = 0;
+        for (let offset = 1; offset < this.pattern.length; offset++) {
+            const step = this.pattern[(this.stepIndex + offset) % this.pattern.length];
+            if (!step?.active || step.stepType !== 'tie') {
+                break;
+            }
+            count++;
+        }
+        return count;
+    }
+
     private computeVelocity(inputVel: number): number {
         switch (this.velocityMode) {
             case 'input':
@@ -531,7 +558,8 @@ export class Arpeggiator extends BaseMidiProcessor {
         this.sortRejectedCandidates();
         const ratchetCount = step.ratchet;
         const ratchetInterval = stepLenSamples / ratchetCount;
-        const noteDuration = ratchetInterval * this.gate * step.gateMul;
+        const noteDuration =
+            ratchetInterval * this.gate * step.gateMul + this.countFollowingTieSteps() * stepLenSamples;
         const candidateStart = step.stepType === 'chord' ? 0 : this.stepIndex % this.rejectedCandidateCount;
         const candidateEnd = step.stepType === 'chord' ? this.rejectedCandidateCount : candidateStart + 1;
         const pitchOffset = step.octaveOffset * 12 + step.semitoneOffset;
@@ -610,18 +638,6 @@ export class Arpeggiator extends BaseMidiProcessor {
         }
     }
 
-    private killActiveNotes(output: MidiEvent[], now: number): void {
-        for (const an of this.activeGenerated) {
-            output.push({
-                timeSamples: now,
-                trackId: an.trackId,
-                kind: { type: 'noteOff', channel: an.channel, note: an.note },
-            });
-        }
-        this.activeGenerated = [];
-        this.scheduled.clear();
-    }
-
     private expireNotes(output: MidiEvent[], now: number): void {
         // Audio-thread: in-place removal avoids two .filter() allocations
         let writeIdx = 0;
@@ -631,11 +647,18 @@ export class Arpeggiator extends BaseMidiProcessor {
                 output.push({
                     timeSamples: node.offTimeSamples,
                     trackId: node.trackId,
+                    noteInstanceId: node.noteInstanceId,
                     kind: { type: 'noteOff', channel: node.channel, note: node.note },
                 });
                 // Keep the scheduled queue in sync: the off is emitted here,
                 // so the queue must not re-emit it at the block-end drain.
-                this.scheduled.removeNoteOff(node.trackId, node.channel, node.note, node.offTimeSamples);
+                this.scheduled.removeNoteOff(
+                    node.trackId,
+                    node.channel,
+                    node.note,
+                    node.offTimeSamples,
+                    node.noteInstanceId
+                );
             } else {
                 this.activeGenerated[writeIdx] = node;
                 writeIdx++;
@@ -644,18 +667,36 @@ export class Arpeggiator extends BaseMidiProcessor {
         this.activeGenerated.length = writeIdx;
     }
 
+    private drainScheduledNoteOffs(output: MidiEvent[], blockEnd: number): void {
+        const drained = this.scheduled.drainRange(0, blockEnd, this.trackId);
+        for (const event of drained) {
+            output.push(event);
+            if (event.kind.type === 'noteOff') {
+                this.removeActiveGenerated(
+                    event.trackId,
+                    event.kind.channel,
+                    event.kind.note,
+                    event.timeSamples,
+                    event.noteInstanceId
+                );
+            }
+        }
+    }
+
     private removeActiveGenerated(
         trackId: string | undefined,
         channel: number,
         note: number,
-        offTimeSamples: number
+        offTimeSamples: number,
+        noteInstanceId?: string
     ): void {
         const idx = this.activeGenerated.findIndex(
             (an) =>
                 an.trackId === trackId &&
                 an.channel === channel &&
                 an.note === note &&
-                an.offTimeSamples === offTimeSamples
+                an.offTimeSamples === offTimeSamples &&
+                (noteInstanceId === undefined || an.noteInstanceId === noteInstanceId)
         );
         if (idx !== -1) {
             this.activeGenerated.splice(idx, 1);

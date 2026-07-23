@@ -13,6 +13,8 @@
 
 import { initSync, FermenterInstance } from '../wasm/daw_dsp.js';
 
+const AUTOMATION_PARAM_COUNT = 15;
+
 function camelToSnake(str: string): string {
     const snake = str.replaceAll(/[A-Z]/g, (letter) => `_${letter.toLowerCase()}`);
     if (snake === 'filter_cutoff') {
@@ -39,12 +41,27 @@ function camelToSnake(str: string): string {
     return snake;
 }
 
+type ParamAutomationSegment = {
+    startFrame: number;
+    endFrame: number;
+    startValue: number;
+    endValue: number;
+};
+
+type ParamAutomationSchedule = {
+    paramId: number;
+    segments: ParamAutomationSegment[];
+    segmentIndex: number;
+    lastValue: number | undefined;
+};
+
 type FermenterMsg =
     | { type: 'init'; wasmBytes: BufferSource }
     | { type: 'noteOn'; note: number; velocity: number; sampleFrame?: number }
     | { type: 'noteOff'; note: number; sampleFrame?: number }
     | { type: 'allNotesOff' }
     | { type: 'param'; name: string; value: number }
+    | { type: 'paramAutomation'; paramId: number; segments: ParamAutomationSegment[] }
     | { type: 'patch'; patch: Record<string, number | number[]> };
 
 type FermenterQueued =
@@ -58,6 +75,7 @@ class FermenterProcessor extends AudioWorkletProcessor {
     _faulted = false;
     _queue: FermenterQueued[] = [];
     _queueHead = 0;
+    _paramAutomation: ParamAutomationSchedule[] = [];
 
     constructor() {
         super();
@@ -108,6 +126,31 @@ class FermenterProcessor extends AudioWorkletProcessor {
     }
 
     _handleMessage(msg: FermenterMsg): void {
+        if (msg.type === 'paramAutomation') {
+            if (
+                !Number.isInteger(msg.paramId) ||
+                msg.paramId < 0 ||
+                msg.paramId >= AUTOMATION_PARAM_COUNT ||
+                msg.segments.length === 0
+            ) {
+                return;
+            }
+            const schedule: ParamAutomationSchedule = {
+                paramId: msg.paramId,
+                segments: msg.segments,
+                segmentIndex: 0,
+                lastValue: undefined,
+            };
+            const existingIndex = this._paramAutomation.findIndex(
+                (candidate) => candidate.paramId === schedule.paramId
+            );
+            if (existingIndex >= 0) {
+                this._paramAutomation[existingIndex] = schedule;
+            } else {
+                this._paramAutomation.push(schedule);
+            }
+            return;
+        }
         if (
             (msg.type === 'noteOn' || msg.type === 'noteOff') &&
             msg.sampleFrame !== undefined &&
@@ -151,6 +194,8 @@ class FermenterProcessor extends AudioWorkletProcessor {
                 inst.set_param(rustName, msg.value);
                 break;
             }
+            case 'paramAutomation':
+                break;
             case 'patch': {
                 for (const [key, value] of Object.entries(msg.patch)) {
                     if (typeof value === 'number') {
@@ -181,6 +226,34 @@ class FermenterProcessor extends AudioWorkletProcessor {
         }
     }
 
+    _applyParamAutomation(frame: number): void {
+        const inst = this._instance;
+        if (!inst) {
+            return;
+        }
+        for (let scheduleIndex = 0; scheduleIndex < this._paramAutomation.length; scheduleIndex++) {
+            const schedule = this._paramAutomation[scheduleIndex]!;
+            while (
+                schedule.segmentIndex < schedule.segments.length - 1 &&
+                frame >= schedule.segments[schedule.segmentIndex]!.endFrame
+            ) {
+                schedule.segmentIndex++;
+            }
+            const segment = schedule.segments[schedule.segmentIndex]!;
+            let value = segment.startValue;
+            if (segment.endFrame <= segment.startFrame || frame >= segment.endFrame) {
+                value = segment.endValue;
+            } else if (frame > segment.startFrame) {
+                const fraction = (frame - segment.startFrame) / (segment.endFrame - segment.startFrame);
+                value = segment.startValue + (segment.endValue - segment.startValue) * fraction;
+            }
+            if (value !== schedule.lastValue) {
+                inst.set_param_by_id(schedule.paramId, value);
+                schedule.lastValue = value;
+            }
+        }
+    }
+
     process(_inputs: Float32Array[][], outputs: Float32Array[][]): boolean {
         if (!this._ready || this._faulted) {
             return true;
@@ -207,6 +280,7 @@ class FermenterProcessor extends AudioWorkletProcessor {
                 return true;
             }
 
+            this._applyParamAutomation(currentFrame);
             const leftPtr = inst.process(frames);
             const rightPtr = inst.get_right_ptr();
 

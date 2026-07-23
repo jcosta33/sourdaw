@@ -21,6 +21,7 @@ pub struct PlateReverb {
     feedback: [f32; 4], // per-line damping state
     decay: f32,
     damping: f32,
+    mix: f32,
 }
 
 // Prime delay lengths for dense, non-metallic reverb (at 44100Hz)
@@ -41,6 +42,7 @@ impl PlateReverb {
             feedback: [0.0; 4],
             decay: 0.75,
             damping: 0.4,
+            mix: 0.15,
         }
     }
 
@@ -72,8 +74,8 @@ impl PlateReverb {
         }
 
         // Stereo output (100% wet — this is a send effect)
-        let wet_l = (taps[0] + taps[2]) * 0.5;
-        let wet_r = (taps[1] + taps[3]) * 0.5;
+        let wet_l = (taps[0] + taps[2]) * 0.5 * self.mix;
+        let wet_r = (taps[1] + taps[3]) * 0.5 * self.mix;
         (wet_l, wet_r)
     }
 
@@ -81,7 +83,7 @@ impl PlateReverb {
         match name {
             "reverb_decay" => self.decay = value.clamp(0.1, 0.99),
             "reverb_damping" => self.damping = value.clamp(0.0, 1.0),
-            "reverb_mix" => { /* mix is controlled by pad send levels, not here */ }
+            "reverb_mix" => self.mix = value.clamp(0.0, 1.0),
             _ => {}
         }
     }
@@ -110,7 +112,7 @@ impl StereoDelay {
             size,
             delay_samples: delay_samples.min(size.saturating_sub(1)),
             feedback: 0.4,
-            mix: 0.25,
+            mix: 0.0,
         }
     }
 
@@ -131,8 +133,7 @@ impl StereoDelay {
 
         self.write_pos = (self.write_pos + 1) % self.size;
 
-        // 100% wet — this is a send effect, send levels control how much goes in
-        (tap_l, tap_r)
+        (tap_l * self.mix, tap_r * self.mix)
     }
 
     pub fn set_param(&mut self, name: &str, value: f32, sample_rate: f32) {
@@ -220,6 +221,7 @@ pub struct ToasterEngine {
     global_lofi: LofiProcessor,
     pad_l_gains: Vec<f32>,
     pad_r_gains: Vec<f32>,
+    pad_dry_routed_mask: u16,
     sample_rate: f32,
     master_gain: f32,
 }
@@ -300,6 +302,7 @@ impl ToasterEngine {
             global_lofi: LofiProcessor::new(),
             pad_l_gains: vec![0.70710677; num_pads],
             pad_r_gains: vec![0.70710677; num_pads],
+            pad_dry_routed_mask: 0,
             sample_rate,
             master_gain: 0.8,
         }
@@ -373,7 +376,7 @@ impl ToasterEngine {
 
     pub fn set_param(&mut self, name: &str, value: f32) {
         match name {
-            "master_gain" => self.master_gain = value.clamp(0.0, 1.0),
+            "master_gain" => self.master_gain = value.clamp(0.0, 2.0),
             n if n.starts_with("reverb_") => self.global_reverb.set_param(n, value),
             n if n.starts_with("delay_") => self.global_delay.set_param(n, value, self.sample_rate),
             "lofi_bits" => self.global_lofi.set_bit_depth(value as u8),
@@ -401,6 +404,17 @@ impl ToasterEngine {
         }
     }
 
+    pub fn set_param_by_id(&mut self, param_id: u32, value: f32) {
+        match param_id {
+            0 => self.master_gain = value.clamp(0.0, 2.0),
+            1 => self.global_reverb.set_param("reverb_mix", value),
+            2 => self
+                .global_delay
+                .set_param("delay_mix", value, self.sample_rate),
+            _ => {}
+        }
+    }
+
     pub fn set_pad_param(&mut self, pad: u8, name: &str, value: f32) {
         let pad_idx = pad as usize;
         if pad_idx >= self.pads.len() {
@@ -416,6 +430,23 @@ impl ToasterEngine {
                 _ => {}
             }
         }
+    }
+
+    pub fn set_pad_dry_routed(&mut self, pad: u8, routed: bool) {
+        let pad_idx = pad as usize;
+        if pad_idx >= self.pads.len() || pad_idx >= u16::BITS as usize {
+            return;
+        }
+        let pad_bit = 1_u16 << pad_idx;
+        if routed {
+            self.pad_dry_routed_mask |= pad_bit;
+        } else {
+            self.pad_dry_routed_mask &= !pad_bit;
+        }
+    }
+
+    pub fn reset_pad_dry_routing(&mut self) {
+        self.pad_dry_routed_mask = 0;
     }
 
     pub fn process_block(&mut self, left: &mut [f32], right: &mut [f32]) {
@@ -507,19 +538,26 @@ impl ToasterEngine {
                             .as_deref_mut()
                             .expect("validated pad output buffer");
                         let tap_start = pad_idx * 2 * pad_stride;
-                        outputs[tap_start + i] += sl;
-                        outputs[tap_start + pad_stride + i] += sr;
+                        // The engine owns master gain for both the parent mix and
+                        // routed pad taps so every output follows one render-quantum
+                        // automation clock.
+                        outputs[tap_start + i] += sl * self.master_gain;
+                        outputs[tap_start + pad_stride + i] += sr * self.master_gain;
                     }
 
-                    let bus = pad.bus_route;
-                    if bus >= 1 && (bus as usize) <= NUM_BUSES {
-                        let bi = (bus as usize) - 1;
-                        self.bus_buffers_l[bi][i] += sl;
-                        self.bus_buffers_r[bi][i] += sr;
-                    } else {
-                        // Route directly to master
-                        left[i] += sl;
-                        right[i] += sr;
+                    let pad_dry_routed = pad_idx < u16::BITS as usize
+                        && self.pad_dry_routed_mask & (1_u16 << pad_idx) != 0;
+                    if !pad_dry_routed {
+                        let bus = pad.bus_route;
+                        if bus >= 1 && (bus as usize) <= NUM_BUSES {
+                            let bi = (bus as usize) - 1;
+                            self.bus_buffers_l[bi][i] += sl;
+                            self.bus_buffers_r[bi][i] += sr;
+                        } else {
+                            // Route directly to master
+                            left[i] += sl;
+                            right[i] += sr;
+                        }
                     }
 
                     // Send levels (always go to global fx regardless of bus)

@@ -230,10 +230,16 @@ export type AppAction =
       }
     | { type: 'removeAllTracks'; payload?: undefined }
     | { type: 'renameTrack'; payload: { trackId: string; name: string } }
-    | { type: 'createTrackAlternative'; payload: { trackId: string; name: string; duplicateActive: boolean } }
+    | {
+          type: 'createTrackAlternative';
+          payload: { trackId: string; name: string; duplicateActive: boolean; alternativeId?: string };
+      }
     | { type: 'switchTrackAlternative'; payload: { trackId: string; alternativeId: string } }
     | { type: 'renameTrackAlternative'; payload: { trackId: string; alternativeId: string; name: string } }
-    | { type: 'deleteTrackAlternative'; payload: { trackId: string; alternativeId: string } }
+    | {
+          type: 'deleteTrackAlternative';
+          payload: { trackId: string; alternativeId: string; fallbackAlternativeId?: string };
+      }
     | { type: 'selectTrack'; payload: { trackId: string } }
     | { type: 'muteTrack'; payload: { trackId: string; muted: boolean } }
     | { type: 'soloTrack'; payload: { trackId: string; soloed: boolean } }

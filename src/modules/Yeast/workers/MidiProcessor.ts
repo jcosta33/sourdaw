@@ -57,6 +57,7 @@ export type MidiProcessor = {
 export type ActiveNote = {
     channel: number;
     note: number;
+    noteInstanceId?: string;
     offTimeSamples: number;
     trackId?: string;
 };
@@ -143,23 +144,44 @@ export class ScheduledEventQueue {
         this.events = [];
     }
 
-    /**
-     * Remove the first scheduled Note Off matching (trackId, channel, note,
-     * timeSamples); returns true when one was removed. A processor that
-     * emits a scheduled Note Off early (e.g. Arpeggiator's expireNotes at a
-     * step boundary) uses this so the queue cannot re-emit the same off
-     * later — the module contract is exactly one Note Off per Note On.
-     * In-place removal; no allocation.
-     */
-    removeNoteOff(trackId: string | undefined, channel: number, note: number, timeSamples: number): boolean {
+    /** Remove one exact scheduled endpoint in place. */
+    removeNoteOn(
+        trackId: string | undefined,
+        channel: number,
+        note: number,
+        timeSamples: number,
+        noteInstanceId?: string
+    ): boolean {
+        return this.removeNote('noteOn', trackId, channel, note, timeSamples, noteInstanceId);
+    }
+
+    removeNoteOff(
+        trackId: string | undefined,
+        channel: number,
+        note: number,
+        timeSamples: number,
+        noteInstanceId?: string
+    ): boolean {
+        return this.removeNote('noteOff', trackId, channel, note, timeSamples, noteInstanceId);
+    }
+
+    private removeNote(
+        kind: 'noteOn' | 'noteOff',
+        trackId: string | undefined,
+        channel: number,
+        note: number,
+        timeSamples: number,
+        noteInstanceId?: string
+    ): boolean {
         for (let index = 0; index < this.events.length; index++) {
             const event = this.events[index]!;
             if (
-                event.kind.type === 'noteOff' &&
+                event.kind.type === kind &&
                 event.trackId === trackId &&
                 event.kind.channel === channel &&
                 event.kind.note === note &&
-                event.timeSamples === timeSamples
+                event.timeSamples === timeSamples &&
+                (noteInstanceId === undefined || event.noteInstanceId === noteInstanceId)
             ) {
                 this.events.splice(index, 1);
                 return true;
