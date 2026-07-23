@@ -1,0 +1,20 @@
+tests/e2e/templateAndInspectorFinal.spec.ts
+  s_872e1ff3914baf::t_44442ba0a40dcf 1-177,179-182,184-229
+  s_872e1ff3914baf::t_03f1a995f0c7e1 178,183
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "bf8ea18c6f73b2f81425b5cd781e1f4afda45808",
+  "prompts": {},
+  "sessions": {
+    "s_872e1ff3914baf": {
+      "agent_id": {
+        "tool": "opencode",
+        "id": "ses_0b3576681ffe5rKlnKBoMWUSQ1",
+        "model": "glm-5.2"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
