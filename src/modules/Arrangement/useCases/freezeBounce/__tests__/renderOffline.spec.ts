@@ -328,7 +328,7 @@ describe('renderTrackOffline', () => {
             createYeastMidiProcessor: () => (input) =>
                 input.events.map((event) => ({ ...event, timePpq: event.timePpq ?? 0 })),
             selectMidiEventProbability: mocks.selectMidiEventProbability,
-            projectChordPitch: mocks.projectChordPitch,
+            createChordPitchProjector: () => mocks.projectChordPitch,
         });
         mocks.projectClipMidiEvents.mockImplementation((input) =>
             input.events.map((event) => ({
@@ -482,6 +482,35 @@ describe('renderTrackOffline', () => {
         expect(mocks.projectChordPitch).toHaveBeenCalledWith({ pitch: 60, referenceBeat: 0, targetBeat: 1.5 });
         expect(createdGains.at(-1)?.gain.linearRampToValueAtTime).toHaveBeenCalledWith((40 / 127) * 0.3, 0.755);
     });
+
+    it.each(['toaster', 'builtin-drum-kit'])(
+        'does not chord-project %s percussion during freeze or bounce',
+        async (type) => {
+            const clip = ClipDummy.create({
+                id: 'clip-percussion',
+                trackId: 'track-percussion',
+                type: 'midi',
+                startBeat: 0,
+                endBeat: 4,
+            });
+            const track = TrackDummy.create({
+                id: 'track-percussion',
+                kind: 'midi',
+                clips: [clip],
+                devices: [{ id: 'percussion', name: 'Percussion', type, bypassed: false, parameterValues: {} }],
+                followChordTrack: true,
+            });
+            const sourceNotes = [{ id: 'note-1', pitch: 36, startBeat: 1, duration: 1, velocity: 100 }];
+            mocks.trackStore.value = { tracks: [track], selectedTrackId: track.id, ghostClips: [] };
+            mocks.midiStore.value = { notesByClipId: { [clip.id]: sourceNotes } };
+            mocks.transportStore.value = { tempo: 120 };
+            mocks.projectClipMidiEvents.mockReturnValue(sourceNotes);
+
+            await renderTrackOffline(track, 0, 4, { includeInserts: false });
+
+            expect(mocks.projectChordPitch).not.toHaveBeenCalled();
+        }
+    );
 
     it.each([
         { label: 'without Yeast', hasYeast: false },

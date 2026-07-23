@@ -197,6 +197,7 @@ vi.mock('#/modules/MIDI/useCases', () => ({
     getMidiNoteTransformHandlers: sentinelHandlers('MidiNoteTransform'),
     getPatternInstanceHandlers: sentinelHandlers('PatternInstance'),
     prepareMidiGlobalTimeTransaction: prepareMidiGlobalTimeTransactionMock,
+    createChordPitchProjector: noop,
     createGrooveMidiEventProjector: noop,
     shouldPlayMidiEvent: () => true,
     setWebMidiRealtimeProcessor: noop,

@@ -49,12 +49,14 @@ export type OfflineChordPitchProjector = (input: {
     targetBeat: number;
 }) => number;
 
+export type OfflineChordPitchProjectorFactory = () => OfflineChordPitchProjector;
+
 export const offlineMidiEventProjectorState: {
     createProjector: OfflineMidiEventProjectorFactory | null;
     selectProbability: OfflineMidiProbabilitySelector | null;
-    projectChordPitch: OfflineChordPitchProjector | null;
+    createChordPitchProjector: OfflineChordPitchProjectorFactory | null;
 } = {
     createProjector: null,
     selectProbability: null,
-    projectChordPitch: null,
+    createChordPitchProjector: null,
 };

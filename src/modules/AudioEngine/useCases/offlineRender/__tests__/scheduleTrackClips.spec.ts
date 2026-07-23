@@ -260,6 +260,7 @@ function makeMidi(): NonNullable<MidiStoreState> {
 
 type RunScheduleInput = {
     withYeast?: boolean;
+    withToaster?: boolean;
     followChordTrack?: boolean;
     loopLengthBeats?: number;
     includeSecondClip?: boolean;
@@ -272,6 +273,7 @@ type RunScheduleInput = {
 
 async function runSchedule({
     withYeast = false,
+    withToaster = false,
     followChordTrack = false,
     loopLengthBeats,
     includeSecondClip = false,
@@ -320,6 +322,9 @@ async function runSchedule({
         midi.notesByClipId['clip-2'] = [{ id: 'note-2', pitch: 64, startBeat: 1, duration: 1, velocity: 90 }];
     }
     const entry = makeInstrumentEntry();
+    if (withToaster) {
+        entry.deviceType = 'toaster';
+    }
     const deviceEntriesByTrack = new Map<string, DeviceNodeEntry[]>([[track.id, [entry]]]);
     const pendingWorkletEvents: PendingWorkletEvent[] = [];
 
@@ -585,6 +590,12 @@ describe('scheduleTrackClips — MIDI plugin-delay compensation', () => {
         expect(direct.find((event) => event.type === 'on')?.pitch).toBe(61);
         expect(yeast.find((event) => event.type === 'on')?.pitch).toBe(61);
         expect(mocks.projectChordPitch).toHaveBeenCalledWith({ pitch: 60, referenceBeat: 0, targetBeat: 1 });
+    });
+
+    it('does not chord-project Toaster percussion notes', async () => {
+        await runSchedule({ followChordTrack: true, withToaster: true });
+
+        expect(mocks.projectChordPitch).not.toHaveBeenCalled();
     });
 
     it('processes all loop iterations and clips through Yeast in one chronological track pass', async () => {

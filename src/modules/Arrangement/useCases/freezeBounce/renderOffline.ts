@@ -53,19 +53,19 @@ export async function renderTrackOffline(
     const createMidiEventProjector = offlineRenderDependencies?.createMidiEventProjector;
     const createYeastMidiProcessor = offlineRenderDependencies?.createYeastMidiProcessor;
     const selectMidiEventProbability = offlineRenderDependencies?.selectMidiEventProbability;
-    const projectChordPitch = offlineRenderDependencies?.projectChordPitch;
+    const createChordPitchProjector = offlineRenderDependencies?.createChordPitchProjector;
     if (
         !projectPpqEndpoints ||
         !createMidiEventProjector ||
         !createYeastMidiProcessor ||
         !selectMidiEventProbability ||
-        !projectChordPitch
+        !createChordPitchProjector
     ) {
         throw new Error('Arrangement offline render dependencies are not configured');
     }
     const projectMidiEvents = createMidiEventProjector();
     const processYeastMidi = createYeastMidiProcessor();
-    const chordPitchProjector = projectChordPitch;
+    const chordPitchProjector = createChordPitchProjector();
 
     // Only audio and midi tracks produce renderable content on their own.
     // Bus / group / master tracks have no direct sound source — skip rendering.
@@ -125,8 +125,17 @@ export async function renderTrackOffline(
 
         let devices: DeviceNodeEntry[] = [];
         const inputNode: AudioNode = gainNode;
+        const parentTrack = time.parentId ? allTracks.find((candidate) => candidate.id === time.parentId) : undefined;
+        const isPercussionTrack =
+            time.devices.some(
+                (device) =>
+                    device.type === 'toaster' ||
+                    device.type === 'drum-kit' ||
+                    device.type === 'builtin-drum-kit' ||
+                    device.type.startsWith('builtin-drum-machine')
+            ) || parentTrack?.devices.some((device) => device.type === 'toaster');
         function projectPitch(input: { pitch: number; referenceBeat: number; targetBeat: number }): number {
-            return time.followChordTrack ? chordPitchProjector(input) : input.pitch;
+            return time.followChordTrack && !isPercussionTrack ? chordPitchProjector(input) : input.pitch;
         }
 
         if (includeInserts) {

@@ -154,4 +154,55 @@ describe('projectOfflineYeastTrackNotes', () => {
             expect.objectContaining({ pitch: 72, startSamples: 250, endSamples: 300, toasterPadIndex: 3 }),
         ]);
     });
+
+    it('anchors source-free generator notes to the active carrier clip chord', () => {
+        const projectPitch = vi.fn(
+            ({ pitch, referenceBeat, targetBeat }: { pitch: number; referenceBeat: number; targetBeat: number }) =>
+                pitch + targetBeat - referenceBeat
+        );
+        const processYeastMidi = vi.fn<OfflineYeastMidiProcessor>(() => [
+            {
+                timeSamples: 300,
+                timePpq: 3,
+                trackId: 'track-1',
+                kind: { type: 'noteOn', channel: 0, note: 64, velocity: 90 },
+            },
+            {
+                timeSamples: 350,
+                timePpq: 3.5,
+                trackId: 'track-1',
+                kind: { type: 'noteOff', channel: 0, note: 64 },
+            },
+        ]);
+        const firstIteration = {
+            sourceNotes: [],
+            clipId: 'clip-1',
+            clipStartBeat: 0,
+            clipEndBeat: 2,
+            iterationStartBeat: 0,
+            loopLengthBeats: 2,
+            midiOffsetBeats: 0,
+            loopEnabled: false,
+        };
+
+        const notes = projectOfflineYeastTrackNotes({
+            trackId: 'track-1',
+            iterations: [
+                firstIteration,
+                { ...firstIteration, clipId: 'clip-2', clipStartBeat: 2, clipEndBeat: 4, iterationStartBeat: 2 },
+            ],
+            sampleRate: 100,
+            blockStartSamples: 0,
+            blockEndSamples: 400,
+            defaultTempo: 60,
+            changes: [],
+            projectMidiEvents: (input) => input.events,
+            projectPpqEndpoints,
+            processYeastMidi,
+            projectPitch,
+        });
+
+        expect(notes).toEqual([expect.objectContaining({ pitch: 65, startSamples: 300, endSamples: 350 })]);
+        expect(projectPitch).toHaveBeenCalledWith({ pitch: 64, referenceBeat: 2, targetBeat: 3 });
+    });
 });

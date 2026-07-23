@@ -1,6 +1,6 @@
 import {
     offlineMidiEventProjectorState,
-    type OfflineChordPitchProjector,
+    type OfflineChordPitchProjectorFactory,
     type OfflineMidiEventProjectorFactory,
     type OfflineMidiProbabilitySelector,
 } from './offlineMidiEventProjectorState';
@@ -8,15 +8,15 @@ import {
 type SetOfflineMidiEventProjectorInput = {
     createProjector: OfflineMidiEventProjectorFactory;
     selectProbability: OfflineMidiProbabilitySelector;
-    projectChordPitch: OfflineChordPitchProjector;
+    createChordPitchProjector: OfflineChordPitchProjectorFactory;
 };
 
 export function setOfflineMidiEventProjector({
     createProjector,
     selectProbability,
-    projectChordPitch,
+    createChordPitchProjector,
 }: SetOfflineMidiEventProjectorInput): void {
     offlineMidiEventProjectorState.createProjector = createProjector;
     offlineMidiEventProjectorState.selectProbability = selectProbability;
-    offlineMidiEventProjectorState.projectChordPitch = projectChordPitch;
+    offlineMidiEventProjectorState.createChordPitchProjector = createChordPitchProjector;
 }

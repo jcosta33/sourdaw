@@ -48,6 +48,19 @@ type ScheduledOfflineYeastNote = {
     toasterPadIndex: number;
 };
 
+function findCarrierIteration(
+    iterations: readonly OfflineYeastClipIteration[],
+    beat: number
+): OfflineYeastClipIteration | undefined {
+    return iterations.find((iteration) => {
+        const iterationEndBeat = Math.min(
+            iteration.iterationStartBeat + iteration.loopLengthBeats,
+            iteration.clipEndBeat
+        );
+        return iteration.iterationStartBeat <= beat && beat < iterationEndBeat;
+    });
+}
+
 export function projectOfflineYeastTrackNotes({
     trackId,
     iterations,
@@ -118,6 +131,10 @@ export function projectOfflineYeastTrackNotes({
             continue;
         }
 
+        const carrierIteration = findCarrierIteration(iterations, note.startPpq);
+        if (!carrierIteration) {
+            continue;
+        }
         const generatedNotes = projectMidiEvents({
             events: [
                 {
@@ -142,7 +159,7 @@ export function projectOfflineYeastTrackNotes({
                 id: projected.id,
                 pitch: projectPitch({
                     pitch: projected.pitch,
-                    referenceBeat: projected.startBeat,
+                    referenceBeat: carrierIteration.clipStartBeat,
                     targetBeat: projected.startBeat,
                 }),
                 velocity: projected.velocity,

@@ -2,8 +2,9 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { type Clip, trackStore } from '#/modules/Arrangement/stores';
 import { resolveClipsWithComping, getSynthParamsForTrack } from '#/modules/Arrangement/useCases';
+import { ensureTrackStrip } from '#/modules/AudioEngine/useCases';
 import { midiStore } from '#/modules/MIDI/stores';
-import { projectClipMidiEvents, shouldPlayMidiEvent } from '#/modules/MIDI/useCases';
+import { projectClipMidiEvents, shouldPlayMidiEvent, transposeForChordTrack } from '#/modules/MIDI/useCases';
 import { scheduleNote } from '#/modules/Synth/useCases';
 import { processYeastMidi } from '#/modules/Yeast/useCases';
 
@@ -121,6 +122,14 @@ describe('scheduleMidiNotes', () => {
             }))
         );
         vi.mocked(processYeastMidi).mockImplementation((input) => Promise.resolve([...input.events]));
+        vi.mocked(ensureTrackStrip).mockImplementation(
+            () =>
+                ({
+                    gainNode: {},
+                    preFaderTap: { connect: vi.fn() },
+                    deviceNodes: [],
+                }) as never
+        );
         shouldPlayProbability.mockImplementation(() => true);
     });
 
@@ -203,6 +212,42 @@ describe('scheduleMidiNotes', () => {
         });
         expect(vi.mocked(scheduleNote).mock.calls[0]?.[3]).toBe(0.25);
         expect(vi.mocked(scheduleNote).mock.calls[0]?.[5]).toBe(40);
+    });
+
+    it('does not chord-project live Toaster child notes', async () => {
+        const toasterNoteOn = vi.fn();
+        const parent = midiTrack({
+            id: 'toaster-parent',
+            kind: 'folder',
+            devices: [{ id: 'toaster', type: 'toaster' }],
+        });
+        const child = midiTrack({
+            parentId: 'toaster-parent',
+            clips: [midiClip()],
+            followChordTrack: true,
+        });
+        (trackStore as { value: unknown }).value = { tracks: [parent, child] };
+        (midiStore as { value: unknown }).value = {
+            notesByClipId: {
+                'clip-1': [{ id: 'n1', pitch: 36, startBeat: 1, duration: 0.25, velocity: 100 }],
+            },
+        };
+        vi.mocked(ensureTrackStrip).mockImplementation(
+            (trackId) =>
+                ({
+                    gainNode: {},
+                    preFaderTap: { connect: vi.fn() },
+                    deviceNodes:
+                        trackId === 'toaster-parent'
+                            ? [{ deviceId: 'toaster', type: 'toaster', toasterControls: { noteOn: toasterNoteOn } }]
+                            : [],
+                }) as never
+        );
+
+        await scheduleMidiNotes(0, 4, 0, -1, new Set<string>(), [], defaultTransportState, 120);
+
+        expect(toasterNoteOn).toHaveBeenCalledTimes(1);
+        expect(transposeForChordTrack).not.toHaveBeenCalled();
     });
 
     // §1 — Per-note probability must be deterministic so replays are identical.

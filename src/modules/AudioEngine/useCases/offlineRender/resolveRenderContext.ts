@@ -92,7 +92,7 @@ export function resolveRenderContext(input: ResolveRenderContextInput | number):
         tailSeconds: Math.max(0, normalized.tailSeconds),
         projectMidiEvents: offlineMidiEventProjectorState.createProjector?.() ?? null,
         selectMidiEventProbability: offlineMidiEventProjectorState.selectProbability,
-        projectChordPitch: offlineMidiEventProjectorState.projectChordPitch,
+        projectChordPitch: offlineMidiEventProjectorState.createChordPitchProjector?.() ?? null,
         projectPpqEndpoints,
         processYeastMidi: offlineYeastMidiProcessorState.createProcessor?.() ?? null,
     };

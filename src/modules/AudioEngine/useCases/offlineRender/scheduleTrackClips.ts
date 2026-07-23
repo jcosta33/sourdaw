@@ -309,7 +309,7 @@ export async function scheduleTrackClips({
         referenceBeat: number;
         targetBeat: number;
     }): number {
-        if (!track.followChordTrack || drumKit || kitDef) {
+        if (!track.followChordTrack || drumKit || kitDef || isToaster) {
             return pitch;
         }
         return projectChordPitch({ pitch, referenceBeat, targetBeat });

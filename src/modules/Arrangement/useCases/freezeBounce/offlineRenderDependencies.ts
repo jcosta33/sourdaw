@@ -92,7 +92,7 @@ type OfflineRenderDependencies = {
     createMidiEventProjector: () => MidiEventProjector;
     createYeastMidiProcessor: () => OfflineYeastMidiProcessor;
     selectMidiEventProbability: MidiEventProbabilitySelector;
-    projectChordPitch: ChordPitchProjector;
+    createChordPitchProjector: () => ChordPitchProjector;
 };
 
 export let offlineRenderDependencies: OfflineRenderDependencies | null = null;

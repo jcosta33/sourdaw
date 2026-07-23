@@ -142,7 +142,10 @@ describe('exportStems', () => {
                 ({ events }) =>
                     events,
             selectProbability: () => true,
-            projectChordPitch: ({ pitch }) => pitch,
+            createChordPitchProjector:
+                () =>
+                ({ pitch }) =>
+                    pitch,
         });
         configureOfflinePpqEndpointProjection({
             project: ({ startPpq, endPpq, sampleRate }) => ({
