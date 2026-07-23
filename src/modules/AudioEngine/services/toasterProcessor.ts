@@ -38,7 +38,6 @@ type ParamAutomationSchedule = {
     segmentIndex: number;
     lastValue: number | undefined;
 };
-
 function isParamAutomationSegment(value: unknown): value is ParamAutomationSegment {
     return (
         typeof value === 'object' &&

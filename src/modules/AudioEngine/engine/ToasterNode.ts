@@ -23,7 +23,6 @@ type OfflineAutomationSegment = {
     startValue: number;
     endValue: number;
 };
-
 function isContiguousAutomationSchedule(segments: readonly OfflineAutomationSegment[]): boolean {
     if (segments.length === 0 || segments[0]?.startFrame !== 0) {
         return false;
