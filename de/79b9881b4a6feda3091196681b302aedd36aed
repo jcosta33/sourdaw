@@ -1,0 +1,21 @@
+src/modules/WorkspaceShell/presentations/views/AppShell.tsx
+  s_0d39f3a4a4357a::t_c608a5f84f5e2e 421-434,436,439-441
+src/modules/WorkspaceShell/presentations/views/__tests__/AppShell.spec.tsx
+  s_0d39f3a4a4357a::t_ca11578bd54446 527-566
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "de79b9881b4a6feda3091196681b302aedd36aed",
+  "prompts": {},
+  "sessions": {
+    "s_0d39f3a4a4357a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "60da6a2e-7d79-4d98-8624-e993f5a9f94e",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
