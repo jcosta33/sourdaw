@@ -198,7 +198,9 @@ describe('handleCutTool undo/redo on a MIDI clip', () => {
         handleCutTool(10, 10, 4);
         const firstRightId = rightClipId();
         const firstRightNotes = midiStore.value?.notesByClipId[firstRightId] ?? [];
-        const straddleRightId = firstRightNotes.find((note) => note.startBeat === 4)?.id;
+        // Clip-relative convention: the straddler's right half starts at 0
+        // on the right clip (playback: 4 + 0 = 4, its original position).
+        const straddleRightId = firstRightNotes.find((note) => note.startBeat === 0)?.id;
         expect(straddleRightId).toBeDefined();
 
         await undo();
@@ -207,8 +209,9 @@ describe('handleCutTool undo/redo on a MIDI clip', () => {
         const notes = midiStore.value?.notesByClipId ?? {};
         expect(notes.c1).toEqual([leftNote, { ...straddleNote, duration: 1 }]);
         expect(notes[rightClipId()]).toEqual([
-            { ...straddleNote, id: straddleRightId, startBeat: 4, duration: 1, probability: 100 },
-            rightNote,
+            { ...straddleNote, id: straddleRightId, startBeat: 0, duration: 1, probability: 100 },
+            // Re-based 5 -> 1: plays at 4 + 1 = 5, its original position.
+            { ...rightNote, startBeat: 1 },
         ]);
     });
 
@@ -254,6 +257,8 @@ describe('handleCutTool undo/redo on a MIDI clip', () => {
         expect(Object.keys(notes).every((key) => liveIds.has(key))).toBe(true);
         expect(notes.c1).toEqual([leftNote, { ...straddleNote, duration: 1 }]);
         expect(notes[firstRightId]).toHaveLength(2);
-        expect(notes[secondRightId]).toEqual([farRightNote]);
+        // Re-based across both cuts: 7 -> 3 (cut at 4) -> 1 (cut at 6), so
+        // the note still plays at 6 + 1 = 7, its original position.
+        expect(notes[secondRightId]).toEqual([{ ...farRightNote, startBeat: 1 }]);
     });
 });

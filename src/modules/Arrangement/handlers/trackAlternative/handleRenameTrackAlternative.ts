@@ -26,6 +26,19 @@ export const handleRenameTrackAlternative = createHandler<'renameTrackAlternativ
             }),
         });
     },
-    describe: () => ({ label: 'Rename Alternative' }),
+    describe: (action) => {
+        const prev = getTrackStoreState()
+            ?.tracks.find((track) => track.id === action.payload.trackId)
+            ?.alternatives.find((alt) => alt.id === action.payload.alternativeId);
+        return {
+            label: 'Rename Alternative',
+            inverseAction: prev
+                ? {
+                      type: 'renameTrackAlternative',
+                      payload: { trackId: action.payload.trackId, alternativeId: prev.id, name: prev.name },
+                  }
+                : null,
+        };
+    },
     undoable: true,
 });

@@ -70,9 +70,6 @@ describe('removeMidiClipData', () => {
         removeMidiClipData(['clip-note-only']);
 
         const nextState = midiStore.value;
-        if (!nextState) {
-            throw new Error('Expected MIDI state after removal');
-        }
 
         expect(midiStore.set).toHaveBeenCalledTimes(1);
         expect(nextState.notesByClipId).not.toBe(state.notesByClipId);
@@ -80,6 +77,8 @@ describe('removeMidiClipData', () => {
         expect(nextState.pitchBendByClipId).not.toBe(state.pitchBendByClipId);
         expect(nextState.ccByClipId).toEqual(state.ccByClipId);
         expect(nextState.pitchBendByClipId).toEqual(state.pitchBendByClipId);
+        expect(nextState.ccByClipId['clip-keep']).toBe(state.ccByClipId['clip-keep']);
+        expect(nextState.pitchBendByClipId['clip-keep']).toBe(state.pitchBendByClipId['clip-keep']);
     });
 
     it('does not write when the MIDI store is unavailable', () => {

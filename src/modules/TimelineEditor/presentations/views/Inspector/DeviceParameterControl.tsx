@@ -3,14 +3,17 @@ import { type ReactElement, type ChangeEvent } from 'react';
 import { DawCompactSelect } from '#/components/daw/DawCompactSelect';
 import { BipolarSlider } from '#/components/ui/bipolar-slider';
 import { useStore } from '#/infra/store/useStore';
+import { trackStore } from '#/modules/Arrangement/stores';
 import { setDeviceParameter } from '#/modules/Arrangement/useCases';
 import { automationStore, modulationStore, modulationRuntimeStore } from '#/modules/Automation/stores';
 import { addAutomationLane, removeAutomationLane } from '#/modules/Automation/useCases';
 import { MidiLearnButton, MidiLearnRotaryKnob as RotaryKnob } from '#/modules/ControlSurface/presentations/views';
+import { createDeviceAutomationTargetId } from '#/utils/automationDeviceTarget';
 import { cn } from '#/utils/Styles/cn';
 
 import { type DeviceParameterView as DeviceParameter } from '../../../models/PluginDescriptorViewTypes';
 import { type Device } from '../../../models/TrackViewTypes';
+import { findEquivalentAutomationLane } from '../../helpers/automationViewHelpers';
 
 type DeviceParameterControlProps = {
     param: DeviceParameter;
@@ -22,6 +25,7 @@ type DeviceAutomationState = {
     lanes: Array<{
         id: string;
         trackId: string;
+        clipId?: string;
         parameterId: string;
     }>;
 };
@@ -35,6 +39,9 @@ type DeviceAutomationState = {
 function buildLaneLookup(lanes: DeviceAutomationState['lanes']): Map<string, DeviceAutomationState['lanes'][number]> {
     const map = new Map<string, DeviceAutomationState['lanes'][number]>();
     for (const lane of lanes) {
+        if (lane.clipId) {
+            continue;
+        }
         map.set(`${lane.trackId}|${lane.parameterId}`, lane);
     }
     return map;
@@ -79,6 +86,7 @@ function formatDisplayValue(value: number, param: DeviceParameter): string {
 
 export const DeviceParameterControl = ({ param, device, trackId }: DeviceParameterControlProps): ReactElement => {
     const autoState = useStore<DeviceAutomationState>(automationStore, { lanes: [] });
+    const trackState = useStore(trackStore, { tracks: [], selectedTrackId: null });
     const modState = useStore(modulationStore, { modulators: [] });
     const modRtState = useStore(modulationRuntimeStore, { runtimeValues: {} });
 
@@ -104,8 +112,15 @@ export const DeviceParameterControl = ({ param, device, trackId }: DeviceParamet
     })();
 
     const laneLookup = buildLaneLookup(autoState.lanes);
-
-    const activeLane = laneLookup.get(`${trackId}|${param.id}`);
+    const targetId = createDeviceAutomationTargetId(device.id, param.id);
+    const devices = trackState.tracks.find((track) => track.id === trackId)?.devices ?? [device];
+    const activeLane =
+        laneLookup.get(`${trackId}|${targetId}`) ??
+        findEquivalentAutomationLane(
+            targetId,
+            autoState.lanes.filter((lane) => lane.trackId === trackId && !lane.clipId),
+            devices
+        );
     const hasAutomation = !!activeLane;
 
     const value = device.parameterValues[param.id] ?? param.value;
@@ -248,7 +263,7 @@ export const DeviceParameterControl = ({ param, device, trackId }: DeviceParamet
                                     if (activeLane) {
                                         removeAutomationLane(activeLane.id);
                                     } else {
-                                        addAutomationLane(trackId, param.id, param.name);
+                                        addAutomationLane(trackId, targetId, param.name);
                                     }
                                 }}
                                 aria-label={`Automate ${param.name}`}
@@ -288,7 +303,7 @@ export const DeviceParameterControl = ({ param, device, trackId }: DeviceParamet
                                     if (activeLane) {
                                         removeAutomationLane(activeLane.id);
                                     } else {
-                                        addAutomationLane(trackId, param.id, param.name);
+                                        addAutomationLane(trackId, targetId, param.name);
                                     }
                                 }}
                                 aria-label={`Automate ${param.name}`}

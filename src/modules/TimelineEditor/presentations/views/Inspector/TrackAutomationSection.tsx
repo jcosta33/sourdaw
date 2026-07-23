@@ -7,12 +7,13 @@ import { DawHeaderBand } from '#/components/daw/DawHeaderBand';
 import { DawMenuSectionLabel, DawMenuSeparator } from '#/components/daw/DawMenuParts';
 import { Button } from '#/components/ui/button';
 import { useStore } from '#/infra/store/useStore';
-import { getBuiltinPlugins } from '#/modules/Arrangement/useCases';
 import { automationStore } from '#/modules/Automation/stores';
 import { addAutomationLane, toggleAutomationVisibility, removeAutomationLane } from '#/modules/Automation/useCases';
+import { createDeviceAutomationTargetId } from '#/utils/automationDeviceTarget';
 
 import { type Track } from '../../../models/TrackViewTypes';
 import { SurfaceCard } from '../../components/Inspector/SurfaceCard';
+import { findAutomationDeviceDescriptor, findEquivalentAutomationLane } from '../../helpers/automationViewHelpers';
 
 type TrackAutomationSectionProps = {
     track: Track;
@@ -22,6 +23,8 @@ type TrackAutomationState = {
     lanes: Array<{
         id: string;
         trackId: string;
+        clipId?: string;
+        parameterId: string;
         parameterName: string;
         visible: boolean;
     }>;
@@ -33,7 +36,7 @@ export const TrackAutomationSection = ({ track }: TrackAutomationSectionProps): 
 
     const autoState = useStore<TrackAutomationState>(automationStore, { lanes: [] });
 
-    const trackLanes = autoState.lanes.filter((length) => length.trackId === track.id);
+    const trackLanes = autoState.lanes.filter((lane) => lane.trackId === track.id && !lane.clipId);
 
     useEffect(() => {
         if (!showAutoMenu) {
@@ -100,13 +103,19 @@ export const TrackAutomationSection = ({ track }: TrackAutomationSectionProps): 
                                     <>
                                         <DawMenuSeparator />
                                         {track.devices.map((device) => {
-                                            const plugin = getBuiltinPlugins().find(
-                                                (param) => param.name.toLowerCase() === device.type.toLowerCase()
-                                            );
+                                            const plugin = findAutomationDeviceDescriptor(device.type);
                                             if (!plugin) {
                                                 return null;
                                             }
-                                            const autoParams = plugin.parameters.filter((param) => param.automatable);
+                                            const autoParams = plugin.parameters.filter(
+                                                (param) =>
+                                                    param.automatable &&
+                                                    !findEquivalentAutomationLane(
+                                                        createDeviceAutomationTargetId(device.id, param.id),
+                                                        trackLanes,
+                                                        track.devices
+                                                    )
+                                            );
                                             if (autoParams.length === 0) {
                                                 return null;
                                             }
@@ -122,7 +131,7 @@ export const TrackAutomationSection = ({ track }: TrackAutomationSectionProps): 
                                                             onClick={() => {
                                                                 addAutomationLane(
                                                                     track.id,
-                                                                    param.id,
+                                                                    createDeviceAutomationTargetId(device.id, param.id),
                                                                     `${device.name}: ${param.name}`
                                                                 );
                                                                 setShowAutoMenu(false);

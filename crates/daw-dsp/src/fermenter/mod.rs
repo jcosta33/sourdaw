@@ -27,6 +27,24 @@ pub mod voice;
 use synth::MasterSynth;
 use wasm_bindgen::prelude::*;
 
+const AUTOMATION_PARAM_NAMES: [&str; 15] = [
+    "osc_level",
+    "cutoff",
+    "resonance",
+    "lfo_rate",
+    "lfo_filter_amount",
+    "mod_lfo_to_pitch",
+    "mod_env_to_filter",
+    "mseg_to_filter",
+    "unison_spread",
+    "fm_level2",
+    "fm_feedback",
+    "noise_level",
+    "grain_density",
+    "grain_size",
+    "grain_spray",
+];
+
 /// WASM-exported Fermenter instance for AudioWorklet.
 #[wasm_bindgen]
 pub struct FermenterInstance {
@@ -50,6 +68,13 @@ impl FermenterInstance {
     /// Set a named parameter value.
     pub fn set_param(&mut self, name: &str, value: f32) {
         self.synth.set_param(name, value);
+    }
+
+    /// Set a supported automation parameter without crossing the WASM string bridge.
+    pub fn set_param_by_id(&mut self, param_id: u32, value: f32) {
+        if let Some(name) = AUTOMATION_PARAM_NAMES.get(param_id as usize) {
+            self.synth.set_param(name, value);
+        }
     }
 
     /// Process a MIDI note on event.
@@ -83,5 +108,23 @@ impl FermenterInstance {
     /// Get number of currently sounding voices.
     pub fn active_voices(&self) -> u32 {
         self.synth.active_voice_count() as u32
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use assert_no_alloc::assert_no_alloc;
+
+    use super::FermenterInstance;
+
+    #[test]
+    fn numeric_automation_setter_does_not_allocate() {
+        let mut instance = FermenterInstance::new(48_000.0, 32);
+        assert_no_alloc(|| {
+            for param_id in 0..15 {
+                instance.set_param_by_id(param_id, 0.5);
+            }
+            instance.set_param_by_id(u32::MAX, 0.5);
+        });
     }
 }

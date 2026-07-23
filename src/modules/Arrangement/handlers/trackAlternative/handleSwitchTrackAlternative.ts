@@ -119,6 +119,23 @@ export const handleSwitchTrackAlternative = createHandler<'switchTrackAlternativ
 
         return toHandlerExecutionResult(true);
     },
-    describe: () => ({ label: 'Switch Alternative' }),
+    describe: (action) => {
+        // Switching is a symmetric swap: undo switches back to the captured
+        // pre-switch active alternative. Switching to the already-active
+        // alternative is a forward no-write, so no undo entry is recorded then.
+        const prevActiveId = getTrackStoreState()?.tracks.find(
+            (track) => track.id === action.payload.trackId
+        )?.activeAlternativeId;
+        return {
+            label: 'Switch Alternative',
+            inverseAction:
+                typeof prevActiveId === 'string' && prevActiveId.length > 0
+                    ? {
+                          type: 'switchTrackAlternative',
+                          payload: { trackId: action.payload.trackId, alternativeId: prevActiveId },
+                      }
+                    : null,
+        };
+    },
     undoable: true,
 });

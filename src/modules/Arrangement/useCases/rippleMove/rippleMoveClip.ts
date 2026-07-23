@@ -1,3 +1,5 @@
+import { shiftClipAutomation } from '#/modules/Automation/useCases';
+
 import { moveClip } from '../clip/moveClip';
 import { getTrackStoreState } from '../getTrackStoreState';
 import { setTrackState } from '../setTrackState';
@@ -33,6 +35,7 @@ export function rippleMoveClip({ trackId, clipId, newStartBeat, clipDuration, pl
 
     // gap close = -duration, destination open = +duration
     // A clip in both sets gets net zero shift (adjacent positions)
+    const collateralDeltas = new Map<string, number>();
     setTrackState({
         ...state,
         tracks: state.tracks.map((track) => {
@@ -57,6 +60,7 @@ export function rippleMoveClip({ trackId, clipId, newStartBeat, clipDuration, pl
                     if (delta === 0) {
                         return clip;
                     }
+                    collateralDeltas.set(clip.id, delta);
                     return {
                         ...clip,
                         startBeat: clip.startBeat + delta,
@@ -66,4 +70,10 @@ export function rippleMoveClip({ trackId, clipId, newStartBeat, clipDuration, pl
             };
         }),
     });
+
+    // Timeline-absolute clip-scoped automation follows each collateral shift
+    // (ledger M-025); clip-relative MIDI notes follow on their own.
+    for (const [collateralClipId, delta] of collateralDeltas) {
+        shiftClipAutomation(collateralClipId, delta);
+    }
 }

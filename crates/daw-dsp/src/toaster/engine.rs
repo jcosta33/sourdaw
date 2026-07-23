@@ -220,6 +220,7 @@ pub struct ToasterEngine {
     global_lofi: LofiProcessor,
     pad_l_gains: Vec<f32>,
     pad_r_gains: Vec<f32>,
+    pad_dry_routed_mask: u16,
     sample_rate: f32,
     master_gain: f32,
 }
@@ -300,6 +301,7 @@ impl ToasterEngine {
             global_lofi: LofiProcessor::new(),
             pad_l_gains: vec![0.70710677; num_pads],
             pad_r_gains: vec![0.70710677; num_pads],
+            pad_dry_routed_mask: 0,
             sample_rate,
             master_gain: 0.8,
         }
@@ -418,8 +420,60 @@ impl ToasterEngine {
         }
     }
 
+    pub fn set_pad_dry_routed(&mut self, pad: u8, routed: bool) {
+        let pad_idx = pad as usize;
+        if pad_idx >= self.pads.len() || pad_idx >= u16::BITS as usize {
+            return;
+        }
+        let pad_bit = 1_u16 << pad_idx;
+        if routed {
+            self.pad_dry_routed_mask |= pad_bit;
+        } else {
+            self.pad_dry_routed_mask &= !pad_bit;
+        }
+    }
+
+    pub fn reset_pad_dry_routing(&mut self) {
+        self.pad_dry_routed_mask = 0;
+    }
+
     pub fn process_block(&mut self, left: &mut [f32], right: &mut [f32]) {
+        self.process_block_inner(left, right, None, 0);
+    }
+
+    pub fn process_block_with_pad_outputs(
+        &mut self,
+        left: &mut [f32],
+        right: &mut [f32],
+        pad_outputs: &mut [f32],
+        pad_stride: usize,
+    ) {
+        self.process_block_inner(left, right, Some(pad_outputs), pad_stride);
+    }
+
+    fn process_block_inner(
+        &mut self,
+        left: &mut [f32],
+        right: &mut [f32],
+        mut pad_outputs: Option<&mut [f32]>,
+        pad_stride: usize,
+    ) {
         let len = left.len().min(right.len()).min(self.bus_buffers_l[0].len());
+        let required_pad_samples = self.pads.len().saturating_mul(2).saturating_mul(pad_stride);
+        let pad_outputs_valid = pad_stride >= len
+            && pad_outputs
+                .as_ref()
+                .is_some_and(|outputs| outputs.len() >= required_pad_samples);
+
+        if pad_outputs_valid {
+            let outputs = pad_outputs
+                .as_deref_mut()
+                .expect("validated pad output buffer");
+            for channel in 0..self.pads.len() * 2 {
+                let start = channel * pad_stride;
+                outputs[start..start + len].fill(0.0);
+            }
+        }
 
         // Precompute panning gains per pad for this block to avoid sqrt() in the inner loop
         for p in 0..self.pads.len() {
@@ -467,15 +521,28 @@ impl ToasterEngine {
                     let sl = sample * l_gain;
                     let sr = sample * r_gain;
 
-                    let bus = pad.bus_route;
-                    if bus >= 1 && (bus as usize) <= NUM_BUSES {
-                        let bi = (bus as usize) - 1;
-                        self.bus_buffers_l[bi][i] += sl;
-                        self.bus_buffers_r[bi][i] += sr;
-                    } else {
-                        // Route directly to master
-                        left[i] += sl;
-                        right[i] += sr;
+                    if pad_outputs_valid {
+                        let outputs = pad_outputs
+                            .as_deref_mut()
+                            .expect("validated pad output buffer");
+                        let tap_start = pad_idx * 2 * pad_stride;
+                        outputs[tap_start + i] += sl;
+                        outputs[tap_start + pad_stride + i] += sr;
+                    }
+
+                    let pad_dry_routed = pad_idx < u16::BITS as usize
+                        && self.pad_dry_routed_mask & (1_u16 << pad_idx) != 0;
+                    if !pad_dry_routed {
+                        let bus = pad.bus_route;
+                        if bus >= 1 && (bus as usize) <= NUM_BUSES {
+                            let bi = (bus as usize) - 1;
+                            self.bus_buffers_l[bi][i] += sl;
+                            self.bus_buffers_r[bi][i] += sr;
+                        } else {
+                            // Route directly to master
+                            left[i] += sl;
+                            right[i] += sr;
+                        }
                     }
 
                     // Send levels (always go to global fx regardless of bus)

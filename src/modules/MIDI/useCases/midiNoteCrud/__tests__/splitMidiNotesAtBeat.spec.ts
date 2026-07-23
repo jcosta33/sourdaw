@@ -2,8 +2,6 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { splitMidiNotesAtBeat } from '../splitMidiNotesAtBeat';
 
-import type { MidiStoreState } from '../../../stores/midiStore';
-
 const mocks = vi.hoisted(() => ({
     midiStoreValue: { value: { notesByClipId: {}, ccByClipId: {}, pitchBendByClipId: {} } },
     midiStoreSet: vi.fn(),
@@ -18,91 +16,123 @@ vi.mock('../../../stores/midiStore', () => ({
     },
 }));
 
+type StoredNote = {
+    id?: string;
+    pitch: number;
+    startBeat: number;
+    duration: number;
+    velocity: number;
+    probability?: number;
+    channel?: number;
+};
+
+function note(pitch: number, startBeat: number, duration: number, id?: string): StoredNote {
+    return { id, pitch, startBeat, duration, velocity: 100 };
+}
+
 describe('splitMidiNotesAtBeat', () => {
     beforeEach(() => {
         vi.clearAllMocks();
-        mocks.midiStoreValue.value = { notesByClipId: {}, ccByClipId: {}, pitchBendByClipId: {} };
+        mocks.midiStoreValue.value = {
+            notesByClipId: {},
+            ccByClipId: {},
+            pitchBendByClipId: {},
+        };
     });
 
-    it.each([
-        {
-            label: 'keeps a note that ends before the split on the source clip',
-            note: { id: 'n1', pitch: 60, startBeat: 0, duration: 2, velocity: 100 },
-            expectSrc: [{ id: 'n1', pitch: 60, startBeat: 0, duration: 2, velocity: 100 }],
-            expectNew: [] as unknown[],
-        },
-        {
-            label: 'moves a note starting at or after the split to the new clip unchanged',
-            note: { id: 'n1', pitch: 62, startBeat: 4, duration: 2, velocity: 90 },
-            expectSrc: [] as unknown[],
-            expectNew: [{ id: 'n1', pitch: 62, startBeat: 4, duration: 2, velocity: 90 }],
-        },
-    ])('$label', ({ note, expectSrc, expectNew }) => {
-        mocks.midiStoreValue.value = { notesByClipId: { src: [note] }, ccByClipId: {}, pitchBendByClipId: {} };
-
-        splitMidiNotesAtBeat({ sourceClipId: 'src', newClipId: 'new', splitBeat: 4 });
-
-        expect(mocks.midiStoreSet).toHaveBeenCalledWith(
-            expect.objectContaining({ notesByClipId: { src: expectSrc, new: expectNew } })
-        );
-    });
-
-    it('cuts a straddling note, appending the fresh right half onto any notes already on the new clip', () => {
-        // Note spans [2, 6); split at 4 -> left [2,4) duration 2, right [4,6) duration 2.
+    /// Regression (M-140): notes are stored clip-relative (playback =
+    /// clip.startBeat + note.startBeat - midiOffsetBeats), so the split
+    /// point arrives in clip media beats and right-side notes must be
+    /// re-based onto the right clip — keeping media beats displaced them by
+    /// the split offset or dropped them from playback entirely.
+    it('re-bases right-side and straddler notes onto the right clip', () => {
         mocks.midiStoreValue.value = {
             notesByClipId: {
-                src: [
-                    {
-                        id: 'n1',
-                        pitch: 64,
-                        startBeat: 2,
-                        duration: 4,
-                        velocity: 80,
-                        probability: 90,
-                        pressure: 0.5,
-                        slide: 0.1,
-                        pitchBend: 0.2,
-                    },
-                ],
-                new: [{ id: 'existing', pitch: 67, startBeat: 0, duration: 1, velocity: 100 }],
+                source: [note(60, 1, 1, 'left'), note(64, 6, 1, 'right'), note(67, 3, 4, 'straddler')],
             },
             ccByClipId: {},
             pitchBendByClipId: {},
         };
 
-        splitMidiNotesAtBeat({ sourceClipId: 'src', newClipId: 'new', splitBeat: 4 });
+        // Clip [0, 8) split at media beat 4 (caller converts the
+        // timeline-absolute split before invoking).
+        splitMidiNotesAtBeat({ sourceClipId: 'source', newClipId: 'right', splitBeat: 4 });
 
-        const [written] = mocks.midiStoreSet.mock.calls[0] as [MidiStoreState];
-        expect(written.notesByClipId.src).toEqual([
-            expect.objectContaining({ id: 'n1', startBeat: 2, duration: 2, pitch: 64 }),
-        ]);
-        expect(written.notesByClipId.new).toHaveLength(2);
-        expect(written.notesByClipId.new?.[0]).toMatchObject({ id: 'existing' });
-        const rightHalf = written.notesByClipId.new?.[1];
-        if (!rightHalf) {
-            throw new Error('expected a right-half note appended after the existing one');
-        }
-        expect(rightHalf).toMatchObject({
-            pitch: 64,
-            startBeat: 4,
-            duration: 2,
-            velocity: 80,
-            probability: 90,
-            pressure: 0.5,
-            slide: 0.1,
-            pitchBend: 0.2,
-        });
-        // The right half is a fresh note — it must not reuse the source note's id.
-        expect(rightHalf.id).not.toBe('n1');
+        expect(mocks.midiStoreSet).toHaveBeenCalledTimes(1);
+        const written = mocks.midiStoreSet.mock.calls[0]![0] as {
+            notesByClipId: Record<string, StoredNote[]>;
+        };
+        const left = written.notesByClipId.source!;
+        const right = written.notesByClipId.right!;
+
+        // Left: untouched note + trimmed straddler half.
+        expect(left).toHaveLength(2);
+        expect(left[0]).toMatchObject({ id: 'left', startBeat: 1, duration: 1 });
+        expect(left[1]).toMatchObject({ id: 'straddler', startBeat: 3, duration: 1 });
+
+        // Right (source order): the fully-right note re-bases from 6 to 2
+        // so it still plays at absolute beat 6 on a right clip starting at
+        // 4; the straddler right half starts at 0 (right clip start).
+        expect(right).toHaveLength(2);
+        expect(right[0]).toMatchObject({ id: 'right', startBeat: 2, duration: 1 });
+        expect(right[1]).toMatchObject({ startBeat: 0, duration: 3, pitch: 67, probability: 100 });
+        expect(right[1]).not.toHaveProperty('channel');
     });
 
-    it('does nothing when the store is unavailable or the source clip has no notes', () => {
-        mocks.midiStoreValue.value = null as unknown as MidiStoreState;
-        splitMidiNotesAtBeat({ sourceClipId: 'src', newClipId: 'new', splitBeat: 4 });
-        expect(mocks.midiStoreSet).not.toHaveBeenCalled();
+    /// Regression (PR #608 review): range deletion (deleteTimeRange) must
+    /// drop the notes inside the deleted media window — feeding only the
+    /// hole-start beat resurrected hole notes on the right clip and pushed
+    /// post-hole notes out of their clip.
+    it('discards notes inside the deleted window and re-bases post-window notes onto the right clip', () => {
+        mocks.midiStoreValue.value = {
+            notesByClipId: {
+                source: [
+                    note(60, 1, 1, 'left'),
+                    note(62, 2, 3, 'hole-start-straddler'), // [2,5) — trim to [2,3)
+                    note(64, 4, 1, 'hole-note'), // [4,5) — deleted
+                    note(65, 1.5, 7, 'hole-spanner'), // [1.5,8.5) — stubs on both sides
+                    note(67, 8, 1, 'post'), // [8,9) — re-base to 1
+                ],
+            },
+            ccByClipId: {},
+            pitchBendByClipId: {},
+        };
 
-        mocks.midiStoreValue.value = { notesByClipId: {}, ccByClipId: {}, pitchBendByClipId: {} };
-        splitMidiNotesAtBeat({ sourceClipId: 'src', newClipId: 'new', splitBeat: 4 });
-        expect(mocks.midiStoreSet).not.toHaveBeenCalled();
+        // Clip [0, 10), deleted media window [3, 7).
+        splitMidiNotesAtBeat({ sourceClipId: 'source', newClipId: 'right', splitBeat: 7, discardBeforeBeat: 3 });
+
+        const written = mocks.midiStoreSet.mock.calls[0]![0] as {
+            notesByClipId: Record<string, StoredNote[]>;
+        };
+        const left = written.notesByClipId.source!;
+        const right = written.notesByClipId.right!;
+
+        expect(left).toEqual([
+            note(60, 1, 1, 'left'),
+            note(62, 2, 1, 'hole-start-straddler'),
+            note(65, 1.5, 1.5, 'hole-spanner'),
+        ]);
+        // Hole note is gone entirely; survivors on the right clip start at
+        // the hole end (media 7 -> 0).
+        expect(right).toHaveLength(2);
+        expect(right[0]).toMatchObject({ startBeat: 0, duration: 1.5, pitch: 65 });
+        expect(right[1]).toMatchObject({ id: 'post', startBeat: 1, duration: 1 });
+        expect(right.some((entry) => entry.id === 'hole-note')).toBe(false);
+    });
+
+    it('keeps notes on the source clip when nothing crosses the split', () => {
+        mocks.midiStoreValue.value = {
+            notesByClipId: { source: [note(60, 0, 2, 'a'), note(62, 2, 1, 'b')] },
+            ccByClipId: {},
+            pitchBendByClipId: {},
+        };
+
+        splitMidiNotesAtBeat({ sourceClipId: 'source', newClipId: 'right', splitBeat: 6 });
+
+        const written = mocks.midiStoreSet.mock.calls[0]![0] as {
+            notesByClipId: Record<string, StoredNote[]>;
+        };
+        expect(written.notesByClipId.source).toHaveLength(2);
+        expect(written.notesByClipId.right).toHaveLength(0);
     });
 });
