@@ -1,0 +1,21 @@
+src/modules/TimelineEditor/presentations/views/AutomationView/__tests__/AutomationLaneRow.spec.tsx
+  s_4a3a9ac19de269::t_92a9f45e87b068 355-359
+  s_4a3a9ac19de269::t_0e5e08f12f212d 1,4-16,19-25,45-49,53-65,69-81,91,103,108,112-113,122-138,148-157,171-173,208-314,326-354,360-399
+  s_4a3a9ac19de269::t_79770151561344 315-325
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "c0980dfdc98c5a02f960d6adc6bccd9a8288534a",
+  "prompts": {},
+  "sessions": {
+    "s_4a3a9ac19de269": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "4a1953fb-b074-451f-a9e0-2edbbc4fbbf3",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}

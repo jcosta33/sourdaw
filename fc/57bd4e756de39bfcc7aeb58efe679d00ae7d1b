@@ -1,0 +1,22 @@
+src/modules/TimelineEditor/presentations/views/__tests__/TempoEditor.spec.tsx
+  s_4a3a9ac19de269::t_ca831f109cde2a 68-77
+  s_4a3a9ac19de269::t_7266e7dd06d33f 17-20,22-39
+  s_4a3a9ac19de269::t_17b7325bea3b23 173-176
+  s_4a3a9ac19de269::t_548c7c36010bc6 109-172,177-226
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "fc57bd4e756de39bfcc7aeb58efe679d00ae7d1b",
+  "prompts": {},
+  "sessions": {
+    "s_4a3a9ac19de269": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "4a1953fb-b074-451f-a9e0-2edbbc4fbbf3",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
