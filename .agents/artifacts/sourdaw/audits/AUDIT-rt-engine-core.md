@@ -127,6 +127,8 @@ measurable RT risk under realistic load) / **minor** (bounded, cosmetic, or late
 
 ### RT-1 — Per-render-quantum heap allocation in 7 of the WASM worklet processors — **major, M**
 
+Status: FIXED in #722
+
 `process()` builds fresh `new Float32Array(memory, ptr, frames)` views **every block** in:
 `proofProcessor.ts:143-155` (×4), `glutenProcessor.ts:153-176` (×4–6 incl. sidechain),
 `bacteriaProcessor.ts:139-161` (×4 + `bandView`), `scoringProcessor.ts:111-115` (×2),
@@ -238,6 +240,8 @@ nodes as zero-latency.
 - Standard: golden #5.
 
 ### RT-7 — Cache-at-init processors don't revalidate views on WASM `memory.grow()` — **minor, S**
+
+Status: FIXED in #722
 
 `grinderProcessor.ts:316-320`, `toasterProcessor.ts:195-203`, and GrandBoule cache WASM-memory
 views **once at init** and never check buffer identity again. If the WASM linear memory grows at
