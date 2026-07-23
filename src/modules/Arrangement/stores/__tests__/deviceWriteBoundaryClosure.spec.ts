@@ -161,6 +161,17 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         'src/modules/AudioEngine/engine/LevainNode.ts': 1,
         'src/modules/AudioEngine/engine/wasmDeviceRegistry.ts': 1,
         'src/modules/AudioEngine/repositories/faustDeviceFactory.ts': 3,
+        // Count provenance: the offline automation compilers
+        // (compileAutomationEvents/compileAutomationSegments and their callers)
+        // are pure point-list → scheduling-event transforms introduced with the
+        // offline automation region/curve work; they hold no device writes.
+        // Counts are bare `compile[A-Z]…` identifier references (import + call
+        // sites), censused so any future real sink added to these files still
+        // trips the closure.
+        'src/modules/AudioEngine/repositories/offlineScheduler/automationScheduling.ts': 3,
+        'src/modules/AudioEngine/repositories/offlineScheduler/compileAutomationEvents.ts': 1,
+        'src/modules/AudioEngine/repositories/offlineScheduler/compileAutomationSegments.ts': 4,
+        'src/modules/AudioEngine/repositories/offlineScheduler/scheduleAutomationOnParam.ts': 3,
         'src/modules/AudioEngine/useCases/buildDeviceChain.ts': 2,
         'src/modules/AudioEngine/useCases/deviceResolvers/createFaustDeviceNode.ts': 2,
         'src/modules/Bacteria/models/BacteriaPatch.ts': 3,
@@ -232,6 +243,12 @@ const DEVICE_DATA_COUNTS = {
         'src/modules/Arrangement/useCases/saveTrackAsTemplate.ts': 1,
         'src/modules/Project/stores/arrangementStore.ts': 3,
         'src/modules/Project/useCases/demoProjects/demoUtils/applyPreset.ts': 4,
+        // Count provenance: the Mycelium demo generators read/clone track
+        // device data to seed deterministic automation targets and topology
+        // (same class as the Nebula Drift generator above) — no live device
+        // writes; mutations stay on cloned project data.
+        'src/modules/Project/useCases/demoProjects/myceliumAscendant/createMyceliumAutomation.ts': 2,
+        'src/modules/Project/useCases/demoProjects/myceliumAscendant/createMyceliumTopology.ts': 2,
         'src/modules/Project/useCases/demoProjects/nebulaDrift/createNebulaDriftDemo.ts': 8,
         'src/modules/Project/useCases/projectPersistence/fileIO/hydrateArrangementTracks.ts': 1,
         'src/modules/Project/useCases/projectPersistence/helpers/migrateLegacyVcaGroups.ts': 1,
