@@ -1,0 +1,20 @@
+tests/e2e/transportAndWorkspaceDeep.spec.ts
+  s_872e1ff3914baf::t_9a44f4a95dc7a4 1-34,36,38-39,42-268
+  s_872e1ff3914baf::t_03eb1b806561d7 35,37,40-41
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "e1d39e9a449a42fe6aea983eca5c15e4c64ce5eb",
+  "prompts": {},
+  "sessions": {
+    "s_872e1ff3914baf": {
+      "agent_id": {
+        "tool": "opencode",
+        "id": "ses_0b3576681ffe5rKlnKBoMWUSQ1",
+        "model": "glm-5.2"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
