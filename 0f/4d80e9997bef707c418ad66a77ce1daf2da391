@@ -1,0 +1,27 @@
+src/modules/AudioEngine/useCases/offlineRender/__tests__/projectOfflineYeastTrackNotes.spec.ts
+  s_ac9b259eab20ba::t_85ffc7779e91bc 226-228
+  s_ac9b259eab20ba::t_e1b350f4891368 223-225
+src/modules/Transport/useCases/scheduling/__tests__/scheduleMidiNotes.spec.ts
+  s_ac9b259eab20ba::t_fe0aa61b560269 402,416-421,425,430-431,433-434
+src/modules/Transport/useCases/scheduling/scheduleMidiNotes.ts
+  s_ac9b259eab20ba::t_fe0aa61b560269 215-221
+  s_ac9b259eab20ba::t_852defdbbca02e 222
+src/modules/AudioEngine/useCases/offlineRender/projectOfflineYeastTrackNotes.ts
+  s_ac9b259eab20ba::t_85ffc7779e91bc 158-161,179
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "0f4d80e9997bef707c418ad66a77ce1daf2da391",
+  "prompts": {},
+  "sessions": {
+    "s_ac9b259eab20ba": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8699-3865-7842-8c54-afbac6cfd266",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
