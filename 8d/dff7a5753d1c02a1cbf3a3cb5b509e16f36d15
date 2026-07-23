@@ -1,0 +1,19 @@
+src/modules/Arrangement/stores/__tests__/vcaGroupStoreDeep.spec.ts
+  s_872e1ff3914baf::t_9be8fd47f67717 2-3,45-47
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "8ddff7a5753d1c02a1cbf3a3cb5b509e16f36d15",
+  "prompts": {},
+  "sessions": {
+    "s_872e1ff3914baf": {
+      "agent_id": {
+        "tool": "opencode",
+        "id": "ses_0b3576681ffe5rKlnKBoMWUSQ1",
+        "model": "glm-5.2"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
