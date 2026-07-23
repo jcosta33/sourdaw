@@ -3,7 +3,13 @@
  * Receives canonical groove projections from MIDI through numeric runtime params.
  */
 
-import { type MidiEvent, type TransportInfo, projectPpqToSamples, samplesPerBeat } from '../../models/MidiEvent';
+import {
+    type MidiEvent,
+    type TransportInfo,
+    projectPpqToSamples,
+    projectSamplesToPpq,
+    samplesPerBeat,
+} from '../../models/MidiEvent';
 import { BaseMidiProcessor } from '../BaseMidiProcessor';
 import { BoundedNoteVoiceQueue } from '../BoundedNoteVoiceQueue';
 
@@ -37,15 +43,18 @@ export class GrooveModule extends BaseMidiProcessor {
 
         for (const event of input) {
             if (event.kind.type === 'noteOn') {
-                const beatPosition =
+                const sourcePpq =
                     event.timePpq ??
+                    (transport.tempoMap === undefined ? undefined : projectSamplesToPpq(event.timeSamples, transport));
+                const beatPosition =
+                    sourcePpq ??
                     (blockStartSamples === undefined
                         ? event.timeSamples / beatLengthSamples
                         : transport.ppqPosition + (event.timeSamples - blockStartSamples) / beatLengthSamples);
                 const stepIndex = Math.round(beatPosition / this.stepBeats);
                 const templateIndex = ((stepIndex % this.slotCount) + this.slotCount) % this.slotCount;
                 const offsetBeats = this.timingOffsets[templateIndex]! * this.amount * this.stepBeats;
-                const projectedPpq = event.timePpq === undefined ? undefined : event.timePpq + offsetBeats;
+                const projectedPpq = sourcePpq === undefined ? undefined : sourcePpq + offsetBeats;
                 const endpointBeatLengthSamples = (transport.sampleRate * 60) / (event.tempoBpm ?? transport.bpm);
                 const projectedSamples =
                     projectedPpq === undefined || transport.tempoMap === undefined
@@ -54,8 +63,10 @@ export class GrooveModule extends BaseMidiProcessor {
                 const velocityScale = 1 + this.dynamicsOffsets[templateIndex]! * this.amount;
                 const velocity = Math.max(1, Math.min(127, Math.round(event.kind.velocity * velocityScale)));
                 let durationSamples = event.durationSamples;
-                if (projectedPpq !== undefined && event.durationPpq !== undefined && transport.tempoMap !== undefined) {
-                    const projectedEndSamples = projectPpqToSamples(projectedPpq + event.durationPpq, transport);
+                let durationPpq = event.durationPpq;
+                if (sourcePpq !== undefined && durationSamples !== undefined && transport.tempoMap !== undefined) {
+                    durationPpq ??= projectSamplesToPpq(event.timeSamples + durationSamples, transport) - sourcePpq;
+                    const projectedEndSamples = projectPpqToSamples(sourcePpq + offsetBeats + durationPpq, transport);
                     durationSamples = Math.max(0, projectedEndSamples - projectedSamples);
                 }
 
@@ -66,6 +77,7 @@ export class GrooveModule extends BaseMidiProcessor {
                     ...event,
                     timeSamples: projectedSamples,
                     durationSamples,
+                    durationPpq,
                     timePpq: projectedPpq,
                     kind: { ...event.kind, velocity },
                 };
@@ -74,7 +86,10 @@ export class GrooveModule extends BaseMidiProcessor {
             } else if (event.kind.type === 'noteOff') {
                 const key = (event.kind.channel << 7) | event.kind.note;
                 const offsetBeats = this.noteVoices.shift(event.trackId, key) ?? 0;
-                const projectedPpq = event.timePpq === undefined ? undefined : event.timePpq + offsetBeats;
+                const sourcePpq =
+                    event.timePpq ??
+                    (transport.tempoMap === undefined ? undefined : projectSamplesToPpq(event.timeSamples, transport));
+                const projectedPpq = sourcePpq === undefined ? undefined : sourcePpq + offsetBeats;
                 const endpointBeatLengthSamples = (transport.sampleRate * 60) / (event.tempoBpm ?? transport.bpm);
                 const projectedSamples =
                     projectedPpq === undefined || transport.tempoMap === undefined
