@@ -1,0 +1,35 @@
+src/modules/BrowserAi/presentations/views/__tests__/CapabilityReportPanel.spec.tsx
+  s_0d39f3a4a4357a::t_69550d4ee5da60 1-133
+src/modules/BrowserAi/useCases/__tests__/renderKokoroTts.spec.ts
+  s_0d39f3a4a4357a::t_5827c0f527e436 147-150
+  s_0d39f3a4a4357a::t_01c5a433075ec9 1-146,151-191
+  s_0d39f3a4a4357a::t_a594ae559d762a 192-193
+src/modules/BrowserAi/presentations/views/__tests__/KokoroVoiceSelector.spec.tsx
+  s_0d39f3a4a4357a::t_9dd4a72cfc56c9 1-37
+src/modules/BrowserAi/presentations/views/__tests__/ModelManagerPanel.spec.tsx
+  s_0d39f3a4a4357a::t_2946cc0dfdf343 115-291
+  s_0d39f3a4a4357a::t_8708a9e1043c72 1,4-6,9,22-33
+  s_0d39f3a4a4357a::t_309b1328533953 49-91
+  s_0d39f3a4a4357a::t_a20136c323ca37 34
+src/modules/BrowserAi/useCases/__tests__/initBrowserAi.spec.ts
+  s_0d39f3a4a4357a::t_df59edf031c9b3 218,245
+  s_0d39f3a4a4357a::t_31ebf656b6d491 1,21,62-67
+  s_0d39f3a4a4357a::t_c77848c3c44829 5-9
+  s_0d39f3a4a4357a::t_5648627a53b9b9 134-217,219-244,246-257
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "f0fc2172c97c973707292791d9715530b14ef96b",
+  "prompts": {},
+  "sessions": {
+    "s_0d39f3a4a4357a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "60da6a2e-7d79-4d98-8624-e993f5a9f94e",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
