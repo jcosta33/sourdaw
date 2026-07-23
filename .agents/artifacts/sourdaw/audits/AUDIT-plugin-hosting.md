@@ -166,6 +166,7 @@ known/accepted debt — but it is the single largest blast radius in the subsyst
 ### PH-3 — Plugin state chunk is never persisted to the project — major, M
 
 Status: FIXED in #730
+Residual (out of scope, Wave 10 / PH-5–PH-9): a remote peer's synced chunk is stored in project truth but not applied to the live local plugin instance (restore runs only at load, via `projectTrackToLiveStrip`); capture converges without ping-pong via a self-referential skip (per-instance cache of this peer's own last host read).
 
 `getPluginState`/`setPluginState` exist as repository functions
 (`repositories/pluginBridge/getPluginState.ts`, `setPluginState.ts`) and Tauri
