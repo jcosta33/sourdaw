@@ -262,7 +262,13 @@ export function sanitize_modulation_store_state(value: unknown): ModulationStore
 }
 
 export const modulationStore = createStore<ModulationStoreState>({
-    storage: createAutomergeStorage(DOC_PREFIX_ROOT, 'modulation'),
+    storage: createAutomergeStorage(DOC_PREFIX_ROOT, 'modulation', {
+        // A document without the `modulation` slot (fresh or legacy project)
+        // resets the store to its empty default rather than back-writing the
+        // stale cache into the new document — projection stays a pure reader,
+        // never a second writer (audit CC-2).
+        hydrateMissing: () => ({ modulators: [] }),
+    }),
     initialData: defaultModulationStoreState,
     sanitize: sanitize_modulation_store_state,
 });
