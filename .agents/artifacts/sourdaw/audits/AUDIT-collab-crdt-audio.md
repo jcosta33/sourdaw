@@ -7,6 +7,7 @@ branch: audit/collab-crdt-audio
 date: 2026-07-23
 method: sus-audit (observe, prove, prescribe nothing) + crdt-collaboration project invariants
 disposition: AUDIT ONLY — no fixes applied. Artifact-only diff.
+severity_counts: { blocker: 1, major: 3, minor: 4, polish: 1, sound: 5 }
 ---
 
 # Collaboration / CRDT under audio constraints — audit
@@ -40,7 +41,8 @@ only for visible regions"
 ([Ink & Switch, Local-first software](https://www.inkandswitch.com/local-first/);
 [Collabs, Weidner et al.](https://arxiv.org/abs/2212.02618)). A projection that writes *back* into
 the document is a second source of truth — the anti-pattern local-first architectures exist to
-remove.
+remove. Its dual is just as fatal: a truth slot that is written but **never projected back** is
+data the app can never read again.
 
 **G3 — Convergence ≠ meaning; undo/intention preservation is a separate, hard problem.** Automerge
 guarantees concurrent edits converge ([Shapiro et al., *Conflict-free Replicated Data Types*, INRIA
@@ -94,7 +96,7 @@ executeAppAction (Command/useCases/executeAppAction.ts)
 - **Projection bridge** `useCases/projection/setupProjectionBridge.ts` — subscribes `onChange`;
   narrows on the `DOC_PREFIX_ROOT` hint (§138.1) then calls `projectCrdtToStores()`.
   `projection/projectProjection.ts` lists **11 stores** + `hydrateMidi/Yeast/Knead/Sidechain`
-  functions.
+  functions — and **no modulation entry** (CC-4).
 - **executeAppAction** `src/modules/Command/useCases/executeAppAction.ts` — scoped transaction;
   `no-write`/`conflict` → `abort()`; success → `commit()`; action-history metadata recorded
   **after** commit (unscoped, separate write path).
@@ -116,6 +118,41 @@ executeAppAction (Command/useCases/executeAppAction.ts)
 ---
 
 ## Findings
+
+Severity tally: **1 blocker, 3 major, 4 minor, 1 polish** (9 findings), plus **5 axes confirmed
+sound**. Dynamic-timing items are labelled *(static; unproven at runtime)* — this lane did not run
+the app.
+
+### CC-4 — Every user modulation setup is silently lost on reload — `modulationStore` is a write-only CRDT truth slot — **blocker / S**
+
+**Shipped-feature data loss.** `modulationStore` persists to
+`createAutomergeStorage(DOC_PREFIX_ROOT, 'modulation')` (modulationStore.ts:265) and is mutated by
+`addMapping`/`addModulator`/`updateModulator`/`removeMapping`/… so its slot **is written into the
+document, persisted to IDB, and broadcast to peers**. But projection is one-directional: the slot
+is **never read back**. Whole-scope evidence — `projection/projectProjection.ts` contains **zero**
+modulation references (its `projectStores` list hydrates the sibling stores
+tracks/automation/transport/tempoMap/markers/… but **not** modulation), and none of
+`hydrateMidi/Yeast/Knead/Sidechain` covers it; `grep -r modulationStore.hydrate src` → **0 hits**.
+
+The store constructs at module init (before any project loads) and is never re-hydrated, so the
+persisted `modulation` slot is orphaned. **Every modulation mapping and modulator a user configures
+silently vanishes the next time the project is opened**, and a collaborating peer never receives it
+even though the local edits are broadcast to them. This is not a latent or edge hazard — it fires
+on the ordinary save→reload path for any project that uses modulation at all. Data written to truth
+that the app can never read back is data lost.
+
+This outranks the audio/interaction-thread findings on this campaign's bar (shipped-feature data
+loss > deliverable-audio corruption), hence Blocker despite the S-sized fix.
+
+Failure mode: silent, total loss of a shipped feature's state on every reload; non-convergent
+modulation in collaboration. Firing condition: reload (or remote peer) of any project with
+modulation. Blast radius: all modulation state, every session.
+
+*Minimal fix shape (S):* register the `modulation` slot in the projection hydrate set —
+`modulationStore.hydrate()` inside `projectCrdtToStores()` (projectProjection.ts), with a
+`hydrateMissing` default matching the store's empty state — and pin it with a regression spec that
+writes a modulation mapping, re-projects from the doc, and asserts the store recovers it. See
+roadmap #1.
 
 ### CC-1 — Full 15-store re-projection fires on *every* CRDT change, local included — O(project size) per frame — **major / M**
 
@@ -202,24 +239,6 @@ The clear is defensible as a safety measure (a locally-held `inverseAction` may 
 remotely-merged doc), but its granularity — all capabilities, every message — is far wider than the
 risk. Failure mode: feature degradation (collaborative selective-undo non-functional). Firing
 condition: any inbound sync. Blast radius: all history-panel reverts for the duration of a session.
-
-### CC-4 — `modulationStore` is written and synced to the CRDT but never projected back — write-only truth slot — **major / S**
-
-`modulationStore` persists to `createAutomergeStorage(DOC_PREFIX_ROOT, 'modulation')`
-(modulationStore.ts:265) and is mutated by `addMapping`/`addModulator`/`updateModulator`/… so its
-slot is written into the document, persisted to IDB, and synced to peers. But it is **absent from
-`projectCrdtToStores()`** and **no hydrate function covers it** (whole-scope grep:
-`modulationStore.hydrate` → 0 hits; not in projectProjection.ts's `projectStores` nor in
-`hydrateMidi/Yeast/Knead/Sidechain`).
-
-Because the store constructs at module init (before any project loads) and is never re-hydrated,
-the persisted `modulation` slot is never read back: modulation mappings are **lost on reload** and
-**never received from a peer** even though the local edits are broadcast to them. This is a
-one-directional truth slot — writes reach the document, projection never returns. Either the store
-must be in the projection set or it should not be CRDT-backed; the current asymmetry is a defect
-under any reading. Failure mode: silent data loss on reload + non-convergent modulation in collab.
-Firing condition: reload or remote peer with modulation edits. Blast radius: all modulation
-state.
 
 ### CC-5 — Discard terminal (`didDiscard`) recomputes and notifies nothing — sound for the superseded case, a narrow gap for the doc-absent case — **minor / S**
 
@@ -308,10 +327,15 @@ automation.
 
 ## Remediation Roadmap (first-class directions; sizing S/M/L)
 
-1. **CC-4 (S, do first — data loss).** Resolve the `modulation` slot asymmetry: add
-   `modulationStore` to `projectCrdtToStores()` (with a `hydrateMissing` default), or remove its
-   CRDT backing if modulation is meant to be derived. Add a projection-completeness test asserting
-   every `createAutomergeStorage(DOC_PREFIX_ROOT, …)` slot has exactly one projection consumer.
+1. **CC-4 — BLOCKER (S). Ship first: silent data loss.** Register the `modulation` slot in the
+   projection hydrate set: add `modulationStore.hydrate()` to `projectCrdtToStores()`
+   (projectProjection.ts) with a `hydrateMissing` default matching the store's empty state, so the
+   persisted slot is read back on load and remote sync. Pin it with a regression spec that writes a
+   modulation mapping, re-projects the doc into the stores, and asserts recovery — plus a
+   projection-completeness assertion that every `createAutomergeStorage(DOC_PREFIX_ROOT, …)` slot has
+   exactly one projection consumer, so a future write-only slot fails CI. (If a design review instead
+   rules modulation should be engine-derived, the alternative fix is removing its CRDT backing — but
+   the default, lowest-risk shape is registering the projection.)
 2. **CC-2 (M).** Make projection purely derived: remove the `writeToCrdt(cachedValue)` back-write
    from `hydrate()`; give every project store a `hydrateMissing` default (or an explicit reset), and
    clear project-store caches on authority switch so a fresh doc cannot inherit stale caches. Kills
@@ -332,8 +356,11 @@ automation.
 
 ## Open Questions
 
-- **CC-4 intent:** is `modulation` meant to be collaborative project truth (then projection is the
-  bug) or engine-derived local state (then the CRDT slot is the bug)? Needs an owner decision.
+- **CC-4 intent:** the default remediation (register the projection) assumes `modulation` is
+  collaborative project truth — which its CRDT-backed, peer-broadcast slot already asserts. If an
+  owner instead intends it as engine-derived local state, the CRDT slot itself is the bug; either
+  way the current write-only asymmetry is a defect. The Blocker grading holds under both readings
+  because state is being lost today.
 - **CC-2 reachability:** is a truly-blank `createCrdtProject` (no template) reachable from the UI,
   and does any flow project before the first store write? A live repro would confirm/deny stale-bleed
   — out of scope for this static audit lane.
