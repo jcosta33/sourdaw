@@ -124,7 +124,7 @@ const FERMENTER_AUTOMATION_DEFAULTS: Readonly<Record<string, number>> = {
 const FERMENTER_ROLE_OVERRIDES: Readonly<Record<string, Record<string, number>>> = {
     'Sub Mycelium': { oscEngine: 1, oscLevel: 0.95, filterCutoff: 700 },
     'Rolling Colony': { oscEngine: 1, filterCutoff: 1_600, filterResonance: 2.2 },
-    'Acid Tendril': { oscEngine: 1, lfoRate: 2.8, lfoFilterAmount: 0.7 },
+    'Acid Tendril': { oscEngine: 2, filterModel: 5, lfoRate: 2.8, lfoFilterAmount: 0.7 },
     'Triplet Helix': { lfoRate: 6, lfoPitchAmount: 0.12 },
     'Psy Pluck': { filterCutoff: 4_200, filterEnvAmount: 0.8 },
     'Main Vision': { oscEngine: 5, msegToFilter: 0.55, unisonSpread: 0.9 },
@@ -133,7 +133,7 @@ const FERMENTER_ROLE_OVERRIDES: Readonly<Record<string, Record<string, number>>>
     'FM Spores': { oscEngine: 2, fmLevel2: 0.95, fmFeedback: 0.35 },
     'Root Drone': { oscEngine: 1, filterCutoff: 800, noiseLevel: 0.12 },
     'Granular Voices': { oscEngine: 4, grainDensity: 36, grainSize: 110, grainSpray: 0.45 },
-    'Fractal Riser': { oscEngine: 5, filterCutoff: 900, filterResonance: 3.5 },
+    'Fractal Riser': { oscEngine: 5, filterModel: 5, filterCutoff: 900, filterResonance: 3.5 },
     'Impact Field': { oscEngine: 1, noiseLevel: 0.65, filterCutoff: 2_400 },
     'Glitch Spirits': { oscEngine: 4, grainDensity: 72, grainSize: 24, grainSpray: 0.85 },
 };

@@ -122,6 +122,8 @@ describe('createMyceliumTopology', () => {
         }
         expect(tracks.find((track) => track.name === 'FM Spores')?.devices[0]?.parameterValues.oscEngine).toBe(2);
         expect(tracks.find((track) => track.name === 'Granular Voices')?.devices[0]?.parameterValues.oscEngine).toBe(4);
+        expect(tracks.find((track) => track.name === 'Acid Tendril')?.devices[0]?.parameterValues.filterModel).toBe(5);
+        expect(tracks.find((track) => track.name === 'Fractal Riser')?.devices[0]?.parameterValues.filterModel).toBe(5);
         expect(tracks.find((track) => track.name === 'Master')?.devices.map((device) => device.type)).toEqual([
             'builtin-eq',
             'gluten',
