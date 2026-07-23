@@ -122,14 +122,20 @@ export const exportStems: ExportStemsFn = async function exportStems(
             const offlineCtx = new OfflineAudioContext(2, frameCount, sampleRate);
             const pendingWorkletEvents: PendingWorkletEvent[] = [];
             const groupedPads = toasterParentIds.has(track.id)
-                ? tracks.tracks.filter(
-                      (candidate) =>
-                          groupedPadIds.has(candidate.id) &&
+                ? tracks.tracks.filter((candidate) => {
+                      const binding = resolveToasterPadBinding(tracks.tracks, candidate.id);
+                      return (
+                          binding?.toasterParentTrackId === track.id &&
                           !candidate.disabled &&
                           shouldCreateLiveTrackStrip(candidate)
-                  )
+                      );
+                  })
                 : [];
             const groupedTracks = [track, ...groupedPads];
+            const groupedTopology = [
+                track,
+                ...groupedPads.map((pad) => (pad.freezeState.status === 'frozen' ? { ...pad, clips: [] } : pad)),
+            ];
             const trackStripsById = new Map<string, OfflineTrackStrip>();
             const deviceEntriesByTrack = new Map<string, DeviceNodeEntry[]>();
             for (const groupedTrack of groupedTracks) {
@@ -140,7 +146,7 @@ export const exportStems: ExportStemsFn = async function exportStems(
             const strip = trackStripsById.get(track.id)!;
             if (groupedPads.length > 0) {
                 connectOfflineToasterPadRoutes({
-                    tracks: tracks.tracks,
+                    tracks: groupedTopology,
                     trackStripsById,
                     deviceEntriesByTrack,
                 });
@@ -171,7 +177,7 @@ export const exportStems: ExportStemsFn = async function exportStems(
                     },
                     onWarning,
                     pendingWorkletEvents,
-                    allTracks: groupedPads.length > 0 ? tracks.tracks : [track],
+                    allTracks: groupedTopology,
                     deviceEntriesByTrack,
                     regionStartBeat: startBeat,
                 });
