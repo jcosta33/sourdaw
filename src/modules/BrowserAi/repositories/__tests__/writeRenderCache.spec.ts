@@ -33,4 +33,30 @@ describe('writeRenderCache', () => {
 
         expect(writable.abort).toHaveBeenCalledOnce();
     });
+
+    it('writes and closes the cache file on success', async () => {
+        const writable = {
+            write: vi.fn(() => Promise.resolve()),
+            close: vi.fn(() => Promise.resolve()),
+            abort: vi.fn(() => Promise.resolve()),
+        } as unknown as FileSystemWritableFileStream;
+        const fileHandle = {
+            createWritable: vi.fn(() => Promise.resolve(writable)),
+        } as unknown as FileSystemFileHandle;
+        const cacheDirectory = {
+            getFileHandle: vi.fn(() => Promise.resolve(fileHandle)),
+        } as unknown as FileSystemDirectoryHandle;
+        const root = {
+            getDirectoryHandle: vi.fn(() => Promise.resolve(cacheDirectory)),
+        } as unknown as FileSystemDirectoryHandle;
+        installStorage(dir(), {
+            getDirectory: vi.fn(() => Promise.resolve(root)) as unknown as StorageManager['getDirectory'],
+        });
+
+        await writeRenderCache({ cacheKey: 'phrase', audio: new Float32Array([0.5]) });
+
+        expect(writable.write).toHaveBeenCalledOnce();
+        expect(writable.close).toHaveBeenCalledOnce();
+        expect(writable.abort).not.toHaveBeenCalled();
+    });
 });

@@ -27,4 +27,12 @@ describe('getStorageStatus', () => {
 
         await expect(getStorageStatus()).resolves.toMatchObject({ usedBytes: 0 });
     });
+
+    it('falls back to zero used bytes when measuring storage throws', async () => {
+        installStorage(dir(), {
+            getDirectory: vi.fn(() => Promise.reject(new Error('opfs unavailable'))) as unknown as StorageManager['getDirectory'],
+        });
+
+        await expect(getStorageStatus()).resolves.toMatchObject({ usedBytes: 0, persisted: false });
+    });
 });

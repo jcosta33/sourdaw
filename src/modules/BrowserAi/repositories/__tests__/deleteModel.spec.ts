@@ -44,4 +44,22 @@ describe('deleteModel', () => {
 
         await expect(deleteModel({ family: 'ddsp', modelId: 'violin' })).rejects.toBe(permissionError);
     });
+
+    it('resolves silently when the model file is already gone', async () => {
+        const removeEntry = vi.fn(() => Promise.reject(notFound()));
+        const familyDirectory = { removeEntry } as unknown as FileSystemDirectoryHandle;
+        const modelsDirectory = {
+            getDirectoryHandle: vi.fn(() => Promise.resolve(familyDirectory)),
+        } as unknown as FileSystemDirectoryHandle;
+        installStorage(dir(), {
+            getDirectory: vi.fn(() =>
+                Promise.resolve({
+                    getDirectoryHandle: vi.fn(() => Promise.resolve(modelsDirectory)),
+                })
+            ) as unknown as StorageManager['getDirectory'],
+        });
+
+        await expect(deleteModel({ family: 'ddsp', modelId: 'violin' })).resolves.toBeUndefined();
+        expect(removeEntry).toHaveBeenCalledWith('violin');
+    });
 });
