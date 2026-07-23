@@ -56,11 +56,21 @@ export async function createFromTemplate(templateId: string): Promise<boolean> {
     let graphWasReset = false;
     let persistenceStopped = false;
     try {
-        if (!(await transaction.prepare()) || !transaction.activate()) {
+        const prepared = await transaction.prepare();
+        const activated = prepared ? transaction.activate() : false;
+        if (!prepared || !activated) {
+            // Every false return here silently kicks the user back to the
+            // LaunchScreen with a generic toast — without this line the field
+            // has no way to tell WHICH rejection fired (found chasing an
+            // intermittent template-launch failure under load).
+            logger.warn(
+                `[createFromTemplate] transition rejected for "${templateId}" (prepared=${String(prepared)}, activated=${String(activated)})`
+            );
             return false;
         }
         await stopPlayback();
         if (!transaction.isCurrent()) {
+            logger.info(`[createFromTemplate] superseded during stopPlayback for "${templateId}"`);
             // Superseded mid-flight: the successor transition owns the project
             // now — no teardown, no persistence touch (mirror newProject).
             return false;
@@ -78,6 +88,7 @@ export async function createFromTemplate(templateId: string): Promise<boolean> {
             { skipMacroRecording: true }
         );
         if (!transaction.isCurrent()) {
+            logger.info(`[createFromTemplate] superseded during the template action for "${templateId}"`);
             // Superseded while the template action ran: the successor owns
             // persistence — do not restart autosave or compact here.
             return false;
