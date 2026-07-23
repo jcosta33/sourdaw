@@ -1,0 +1,52 @@
+src/modules/AudioEngine/services/glutenProcessor.ts
+  s_0d39f3a4a4357a::t_111c2b485cc3e8 76-84,165-166,174-175,182,185
+  s_0d39f3a4a4357a::t_bac386a3098fc4 12-13
+src/modules/AudioEngine/services/scoringProcessor.ts
+  s_0d39f3a4a4357a::t_3e0fe878892c2c 35-39,118,122
+  s_0d39f3a4a4357a::t_98c7ad875fc96e 18-19
+src/modules/AudioEngine/services/__tests__/processorQueues.spec.ts
+  s_0d39f3a4a4357a::t_9d8b1081572b1c 7-11,30
+src/modules/AudioEngine/services/grinderProcessor.ts
+  s_0d39f3a4a4357a::t_dad710cba36537 370-376
+src/modules/AudioEngine/services/fermenterProcessor.ts
+  s_0d39f3a4a4357a::t_faa60fac45c3c6 81-86,295,301
+  s_0d39f3a4a4357a::t_36745b480f16a2 16-17
+src/modules/AudioEngine/services/proofProcessor.ts
+  s_0d39f3a4a4357a::t_ab17d0e9653cb4 37-43,149-150,158
+  s_0d39f3a4a4357a::t_566c28914be553 155
+  s_0d39f3a4a4357a::t_13df963a8437ab 14-15
+src/modules/AudioEngine/services/__tests__/proofProcessorWasmViews.spec.ts
+  s_0d39f3a4a4357a::t_ffe2776c3b7528 44,52,210
+  s_0d39f3a4a4357a::t_aeee6b6bc789b6 140-143
+  s_0d39f3a4a4357a::t_601b60951b0528 1-43,45-51,53-139,144-209,211-232
+src/modules/AudioEngine/services/bacteriaProcessor.ts
+  s_0d39f3a4a4357a::t_035bdb5c01f44b 65-72,149-150,155,157,171
+  s_0d39f3a4a4357a::t_4b13b084ac20e9 12-13
+src/modules/AudioEngine/services/wasmView.ts
+  s_0d39f3a4a4357a::t_30adcd6c53238f 1-53
+src/modules/AudioEngine/services/proofChamberProcessor.ts
+  s_0d39f3a4a4357a::t_9203b2f28b7a6b 46-50,182-183
+  s_0d39f3a4a4357a::t_412c3aeba69a8b 17-18
+src/modules/AudioEngine/services/__tests__/wasmView.spec.ts
+  s_0d39f3a4a4357a::t_be40e245131d4d 1-101,105-122
+  s_0d39f3a4a4357a::t_2dda783bae943f 102-104
+src/modules/AudioEngine/services/levainProcessor.ts
+  s_0d39f3a4a4357a::t_10618abf259fd7 90-94,287,290
+  s_0d39f3a4a4357a::t_15fff7bab9ff09 23-24
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "844ad6cd2fbab357bf5162ed26da6eee08f92813",
+  "prompts": {},
+  "sessions": {
+    "s_0d39f3a4a4357a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "60da6a2e-7d79-4d98-8624-e993f5a9f94e",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
