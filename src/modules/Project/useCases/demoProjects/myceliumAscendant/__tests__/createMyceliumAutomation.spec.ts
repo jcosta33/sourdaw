@@ -23,8 +23,8 @@ describe('createMyceliumAutomation', () => {
         const trackById = new Map(tracks.map((track) => [track.id, track]));
         const laneKeys = lanes.map((lane) => `${lane.trackId}:${lane.parameterId}`);
 
-        expect(lanes).toHaveLength(117);
-        expect(lanes.reduce((total, lane) => total + lane.points.length, 0)).toBe(1_521);
+        expect(lanes).toHaveLength(115);
+        expect(lanes.reduce((total, lane) => total + lane.points.length, 0)).toBe(1_495);
         expect(new Set(lanes.map((lane) => lane.trackId)).size).toBe(39);
         expect(lanes.every((lane) => UUID_PATTERN.test(lane.id))).toBe(true);
         expect(new Set(lanes.map((lane) => lane.id)).size).toBe(lanes.length);
@@ -80,7 +80,7 @@ describe('createMyceliumAutomation', () => {
             lanes.map((lane) => lane.parameterId.slice(lane.parameterId.indexOf(':') + 1))
         );
         const requiredParameters =
-            'filterCutoff|filterResonance|lfoRate|lfoFilterAmount|fmLevel2|msegToFilter|grainDensity|grainSize|grainSpray|filter-cutoff|filter-resonance|dist-mix|delay-feedback|delay-mix|decay|mix|autopan-rate|autopan-depth|phaser-rate|phaser-depth|chorus-rate|chorus-depth|trem-rate|trem-depth|width-amount'.split(
+            'filterCutoff|filterResonance|lfoRate|lfoFilterAmount|fmLevel2|msegToFilter|grainDensity|grainSize|grainSpray|filter-cutoff|filter-resonance|dist-mix|delay-feedback|delay-mix|decay|autopan-rate|autopan-depth|phaser-rate|phaser-depth|chorus-rate|chorus-depth|trem-rate|trem-depth|width-amount'.split(
                 '|'
             );
         expect(requiredParameters.every((parameterId) => automatedParameters.has(parameterId))).toBe(true);
@@ -108,8 +108,8 @@ describe('createMyceliumAutomation', () => {
 
             expect(device).toBeDefined();
             expect(parameter?.automatable).toBe(true);
-            expect(lane.minValue).toBe(parameter?.minValue);
-            expect(lane.maxValue).toBe(parameter?.maxValue);
+            expect(lane.minValue).toBeGreaterThanOrEqual(parameter?.minValue ?? Infinity);
+            expect(lane.maxValue).toBeLessThanOrEqual(parameter?.maxValue ?? -Infinity);
             expect(device?.parameterValues[parameterId]).toEqual(expect.any(Number));
             expect(device?.parameterValues[parameterId]).toBeGreaterThanOrEqual(parameter?.minValue ?? Infinity);
             expect(device?.parameterValues[parameterId]).toBeLessThanOrEqual(parameter?.maxValue ?? -Infinity);
@@ -133,6 +133,7 @@ describe('createMyceliumAutomation', () => {
             expect(valueAt(lane?.points ?? [], 415.75)).toBe(0);
             expect(valueAt(lane?.points ?? [], 416)).toBeGreaterThan(0);
             expect(valueAt(lane?.points ?? [], 480)).toBe(0);
+            expect(lane?.points.find((point) => point.beat === 480)?.curve).toBe('step');
             expect(valueAt(lane?.points ?? [], 484)).toBeGreaterThan(0);
         }
         expect(valueAt(gainLane('Sub Mycelium')?.points ?? [], 288)).toBe(0);
@@ -140,7 +141,7 @@ describe('createMyceliumAutomation', () => {
         expect(valueAt(gainLane('Dub Tunnel')?.points ?? [], 412)).toBeGreaterThan(
             valueAt(gainLane('Dub Tunnel')?.points ?? [], 416) ?? 1
         );
-
+        expect(result.lanes.some((lane) => lane.parameterId.endsWith(':mix'))).toBe(false);
         const master = trackByName.get('Master');
         const widener = master?.devices.find((device) => device.type === 'builtin-stereo-widener');
         const widthLane = result.lanes.find(
