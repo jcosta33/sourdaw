@@ -1,0 +1,41 @@
+src/modules/DawInterchange/useCases/__tests__/xmlHelpers.spec.ts
+  s_6108a2a0bac9d3::t_817dcac755bb8a 1-102
+src/modules/DawInterchange/useCases/__tests__/parseMetadataXml.spec.ts
+  s_b6c327a08a4580::t_9155944275ac6e 1-43
+src/modules/DawInterchange/useCases/__tests__/parseXml.spec.ts
+  s_8a4a5e208ed693::t_c21de3174047f4 1-30
+src/modules/Toaster/useCases/__tests__/getToasterPatternGrooveStatus.spec.ts
+  s_8a4a5e208ed693::t_953472e3b427d1 1-197
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "adc333e43e806e33f84bc4811b12fa40659b6ae6",
+  "prompts": {},
+  "sessions": {
+    "s_6108a2a0bac9d3": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-a0015e0080f3cb40e",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_8a4a5e208ed693": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-a149f2573c2c75afc",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_b6c327a08a4580": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-a7724e8f2e331a8fa",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
