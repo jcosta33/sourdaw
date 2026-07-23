@@ -11,7 +11,18 @@ import toasterProcessorUrl from '../services/toasterProcessor.ts?worker&url';
 
 const DEFAULT_WASM_URL = '/wasm/daw-dsp/daw_dsp_bg.wasm';
 const TOASTER_PAD_COUNT = 16;
-const TOASTER_DEFAULT_MASTER_GAIN = 0.8;
+const TOASTER_AUTOMATION_PARAM_IDS: Readonly<Record<string, number>> = {
+    masterGain: 0,
+    reverbMix: 1,
+    delayMix: 2,
+};
+
+type OfflineAutomationSegment = {
+    startFrame: number;
+    endFrame: number;
+    startValue: number;
+    endValue: number;
+};
 
 type ScheduleToasterHitInput = {
     pad: number;
@@ -33,6 +44,8 @@ export type ToasterNodeResult = {
     allNotesOff: () => void;
     setFillActive: (active: boolean) => void;
     setParam: (name: string, value: number) => void;
+    acceptsScheduledParam: (name: string) => boolean;
+    scheduleParam: (name: string, segments: readonly OfflineAutomationSegment[]) => void;
     setPadParam: (pad: number, name: string, value: number) => void;
     setPadDryRouted: (pad: number, routed: boolean) => void;
     setBypass: (bypassed: boolean) => void;
@@ -67,7 +80,7 @@ export async function createToasterNode(ctx: BaseAudioContext, wasmUrl?: string)
     node.connect(outputNode, 0, 0);
     const padOutputGains = Array.from({ length: TOASTER_PAD_COUNT }, (_, pad) => {
         const gainNode = ctx.createGain();
-        gainNode.gain.value = TOASTER_DEFAULT_MASTER_GAIN;
+        gainNode.gain.value = 1;
         node.connect(gainNode, pad + 1, 0);
         return gainNode;
     });
@@ -129,13 +142,30 @@ export async function createToasterNode(ctx: BaseAudioContext, wasmUrl?: string)
             if (!Number.isFinite(value)) {
                 return;
             }
-            if (name === 'masterGain' || name === 'master_gain') {
-                const clampedValue = Math.min(1, Math.max(0, value));
-                for (const gainNode of padOutputGains) {
-                    gainNode.gain.value = clampedValue;
-                }
-            }
             node.port.postMessage({ type: 'param', name, value });
+        },
+        acceptsScheduledParam(name: string) {
+            return Object.hasOwn(TOASTER_AUTOMATION_PARAM_IDS, name);
+        },
+        scheduleParam(name: string, segments: readonly OfflineAutomationSegment[]) {
+            const paramId = Object.hasOwn(TOASTER_AUTOMATION_PARAM_IDS, name)
+                ? TOASTER_AUTOMATION_PARAM_IDS[name]
+                : undefined;
+            const valid =
+                paramId !== undefined &&
+                segments.length > 0 &&
+                segments.every(
+                    (segment) =>
+                        Number.isInteger(segment.startFrame) &&
+                        Number.isInteger(segment.endFrame) &&
+                        segment.startFrame >= 0 &&
+                        segment.endFrame >= segment.startFrame &&
+                        Number.isFinite(segment.startValue) &&
+                        Number.isFinite(segment.endValue)
+                );
+            if (valid) {
+                node.port.postMessage({ type: 'paramAutomation', paramId, segments });
+            }
         },
         setPadParam(pad: number, name: string, value: number) {
             if (Number.isFinite(value)) {

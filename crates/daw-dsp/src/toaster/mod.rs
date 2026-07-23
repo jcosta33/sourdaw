@@ -59,6 +59,11 @@ impl ToasterInstance {
         self.engine.set_param(name, value);
     }
 
+    /// Set an automatable global parameter without string marshaling.
+    pub fn set_param_by_id(&mut self, param_id: u32, value: f32) {
+        self.engine.set_param_by_id(param_id, value);
+    }
+
     /// Set a per-pad parameter (volume, pan, tune, filter_cutoff, etc.).
     pub fn set_pad_param(&mut self, pad: u8, name: &str, value: f32) {
         self.engine.set_pad_param(pad, name, value);
@@ -94,5 +99,56 @@ impl ToasterInstance {
     /// Get pointer to right channel buffer (call after process).
     pub fn get_right_ptr(&self) -> *const f32 {
         self.output_buf.as_ptr().wrapping_add(MAX_BLOCK_SIZE)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use assert_no_alloc::assert_no_alloc;
+
+    use super::engine::{PlateReverb, StereoDelay};
+    use super::ToasterInstance;
+
+    #[test]
+    fn numeric_mix_setter_does_not_allocate() {
+        let mut instance = ToasterInstance::new(48_000.0, 16);
+        assert_no_alloc(|| {
+            for param_id in 0..3 {
+                instance.set_param_by_id(param_id, 0.5);
+            }
+            instance.set_param_by_id(u32::MAX, 0.5);
+        });
+    }
+
+    #[test]
+    fn reverb_and_delay_mix_scale_their_wet_outputs() {
+        let mut wet_reverb = PlateReverb::new(100.0);
+        let mut muted_reverb = PlateReverb::new(100.0);
+        wet_reverb.set_param("reverb_mix", 1.0);
+        muted_reverb.set_param("reverb_mix", 0.0);
+        let mut wet_energy = 0.0;
+        let mut muted_energy = 0.0;
+        for frame in 0..12 {
+            let input = if frame == 0 { 1.0 } else { 0.0 };
+            let wet = wet_reverb.process(input);
+            let muted = muted_reverb.process(input);
+            wet_energy += wet.0.abs() + wet.1.abs();
+            muted_energy += muted.0.abs() + muted.1.abs();
+        }
+
+        let mut wet_delay = StereoDelay::new(100.0);
+        let mut muted_delay = StereoDelay::new(100.0);
+        for delay in [&mut wet_delay, &mut muted_delay] {
+            delay.set_param("delay_time", 0.01, 100.0);
+        }
+        wet_delay.set_param("delay_mix", 1.0, 100.0);
+        muted_delay.set_param("delay_mix", 0.0, 100.0);
+        wet_delay.process(1.0);
+        muted_delay.process(1.0);
+
+        assert!(wet_energy > 0.0);
+        assert_eq!(muted_energy, 0.0);
+        assert!(wet_delay.process(0.0).0 > 0.0);
+        assert_eq!(muted_delay.process(0.0), (0.0, 0.0));
     }
 }
