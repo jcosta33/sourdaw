@@ -770,6 +770,46 @@ describe('executeGlobalTimeOperation', () => {
         expect(dependencies.midi.apply).not.toHaveBeenCalled();
     });
 
+    it('reports unrecovered state when a throwing local write leaves an unexpected reference', () => {
+        setStates({
+            tracks: [createTrack('track-1', 'midi', [createClip({ id: 'clip-1', startBeat: 2, endBeat: 6 })])],
+        });
+        const unexpectedTrackState = {
+            tracks: [],
+            selectedTrackId: 'unexpected',
+        };
+        const publicationError = new Error('track publication left an unexpected state');
+        mocks.setTrackState.mockImplementationOnce(() => {
+            mocks.trackState.value = unexpectedTrackState;
+            throw publicationError;
+        });
+        const dependencies = registerDependencies();
+
+        let thrown: unknown;
+        try {
+            executeGlobalTimeOperation({
+                operation: { type: 'insert', atBeat: 4, durationBeats: 2 },
+            });
+        } catch (error) {
+            thrown = error;
+        }
+
+        expect(thrown).toBeInstanceOf(UnrecoveredGlobalTimeStateError);
+        if (!(thrown instanceof UnrecoveredGlobalTimeStateError)) {
+            throw new Error('Expected explicit unrecovered global-time error');
+        }
+        expect(thrown.originalFailure).toBe(publicationError);
+        expect(thrown.compensationFailures).toEqual([
+            expect.objectContaining({
+                message: 'Arrangement cannot safely compensate an unexpected published reference',
+            }),
+        ]);
+        expect(mocks.trackState.value).toBe(unexpectedTrackState);
+        expect(dependencies.automation.apply).not.toHaveBeenCalled();
+        expect(dependencies.transport.apply).not.toHaveBeenCalled();
+        expect(dependencies.midi.apply).not.toHaveBeenCalled();
+    });
+
     it('rethrows an owner publication error after successful cross-owner recovery', () => {
         setStates({
             tracks: [createTrack('track-1', 'midi', [createClip({ id: 'clip-1', startBeat: 2, endBeat: 6 })])],

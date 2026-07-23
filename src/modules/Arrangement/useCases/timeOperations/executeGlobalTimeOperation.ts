@@ -1111,7 +1111,8 @@ function createLocalHandle<TState>(input: {
         try {
             input.write(input.nextState);
         } catch (error) {
-            if (input.read() === input.nextState) {
+            const publishedState = input.read();
+            if (publishedState === input.nextState) {
                 phase = 'applied';
                 const compensationFailures: unknown[] = [];
                 try {
@@ -1127,6 +1128,12 @@ function createLocalHandle<TState>(input: {
                 throw error;
             }
             phase = 'closed';
+            if (publishedState !== input.capturedState) {
+                const unsafeCompensation = new Error(
+                    `${input.name} cannot safely compensate an unexpected published reference`
+                );
+                throw new UnrecoveredGlobalTimeStateError(error, [unsafeCompensation]);
+            }
             throw error;
         }
         const publishedState = input.read();
