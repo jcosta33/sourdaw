@@ -314,20 +314,31 @@ describe('PromptBar', () => {
             expect(screen.getByLabelText('Destructive action')).toBeInTheDocument();
         });
 
-        it('shows a "no matching commands" hint when there is a query but zero results', () => {
+        it('shows the "no matching commands" hint when a focused query has zero results', () => {
             setPromptState({
                 value: 'zzz',
-                fuzzyResults: [
-                    { preset: { id: 'p1', label: 'Play', category: 'Transport', isDestructive: false }, score: 1 },
-                ],
+                isFocused: true,
+                fuzzyResults: [],
             });
 
             render(<PromptBar />);
 
-            // Dropdown only renders when fuzzyResults.length > 0; the "no matches" copy
-            // is dead unless the caller keeps stale results around while typing, so this
-            // asserts the dropdown-open branch coexists with a populated results list.
             expect(screen.getByRole('listbox')).toBeInTheDocument();
+            expect(screen.getByText('No matching commands — press Enter to try AI')).toBeInTheDocument();
+            expect(screen.getByLabelText('Prompt command input')).toHaveAttribute('aria-expanded', 'true');
+        });
+
+        it('closes the empty-results hint when the input is not focused', () => {
+            setPromptState({
+                value: 'zzz',
+                isFocused: false,
+                fuzzyResults: [],
+            });
+
+            render(<PromptBar />);
+
+            expect(screen.queryByRole('listbox')).not.toBeInTheDocument();
+            expect(screen.getByLabelText('Prompt command input')).toHaveAttribute('aria-expanded', 'false');
         });
 
         it('sets aria-expanded and aria-controls on the input to match the dropdown', () => {
