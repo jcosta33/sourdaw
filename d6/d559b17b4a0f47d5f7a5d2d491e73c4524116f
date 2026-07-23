@@ -1,0 +1,19 @@
+src/modules/FactorySynthesis/services/__tests__/effects.spec.ts
+  s_f51c6a14dfd0a0::t_0dcd67738716f2 1-135
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "d6d559b17b4a0f47d5f7a5d2d491e73c4524116f",
+  "prompts": {},
+  "sessions": {
+    "s_f51c6a14dfd0a0": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-a3cfe19c665611a5f",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
