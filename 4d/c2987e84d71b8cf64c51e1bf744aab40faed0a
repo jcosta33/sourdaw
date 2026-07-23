@@ -1,0 +1,42 @@
+src/modules/ElasticAudio/presentations/views/ElasticEditorPanel.tsx
+  s_0d39f3a4a4357a::t_b8b5010c0f6566 391-407
+  s_0d39f3a4a4357a::t_4e851e69e7daf2 86
+  s_0d39f3a4a4357a::t_9db18c03f169a9 37-43
+  s_0d39f3a4a4357a::t_3db04641b11a87 19
+src/modules/ElasticAudio/stores/index.ts
+  s_0d39f3a4a4357a::t_5e79fe6cc89920 7
+src/modules/ElasticAudio/useCases/audioWarping/__tests__/setWarpAlgorithm.spec.ts
+  s_0d39f3a4a4357a::t_7160cb573820c5 11,25,33,39,41
+src/modules/ElasticAudio/presentations/views/__tests__/ElasticEditorPanel.spec.tsx
+  s_0d39f3a4a4357a::t_ffbdeb51bedc13 180
+  s_0d39f3a4a4357a::t_3beb52e3a236b3 186-187
+  s_0d39f3a4a4357a::t_dbd7d87bc428f4 261-266
+  s_0d39f3a4a4357a::t_509dd4c72b2f24 103
+.agents/specs/elastic-audio/spec.md
+  s_0d39f3a4a4357a::t_594a2421877b3d 187-191
+  s_0d39f3a4a4357a::t_6a1d65b5cfc9a5 212
+src/modules/ElasticAudio/stores/__tests__/audioWarp.spec.ts
+  s_0d39f3a4a4357a::t_47fce4822ac7bd 3,6-7,13-18
+src/modules/ElasticAudio/stores/audioWarp.ts
+  s_0d39f3a4a4357a::t_5dec26e1a830fe 5-15,21-26,43,45,54,60
+src/modules/ElasticAudio/useCases/audioWarping/__tests__/getAlgorithmInfo.spec.ts
+  s_0d39f3a4a4357a::t_93a40ce769e6ab 6,8-10,13-24
+src/modules/ElasticAudio/useCases/audioWarping/getAlgorithmInfo.ts
+  s_0d39f3a4a4357a::t_5f57010ce8ba5e 4-10,14-15,21-22,26-39
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "4dc2987e84d71b8cf64c51e1bf744aab40faed0a",
+  "prompts": {},
+  "sessions": {
+    "s_0d39f3a4a4357a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "60da6a2e-7d79-4d98-8624-e993f5a9f94e",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
