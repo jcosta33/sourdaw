@@ -1,0 +1,24 @@
+src/modules/Arrangement/useCases/timeOperations/executeGlobalTimeOperation.ts
+  s_c2fca615e81f34::t_f5bbe3f11a51f1 331,470-472
+  s_c2fca615e81f34::t_0c636a7345fdad 272-276,305-330,332-469,473-476,1245,1247
+  s_c2fca615e81f34::t_8f043cad7d3773 1246
+src/modules/Arrangement/useCases/timeOperations/__tests__/globalTimeTransaction.spec.ts
+  s_c2fca615e81f34::t_29b6715052f9df 85,95,442-466,470-493,497-527,531-533
+  s_c2fca615e81f34::t_18c50a31b7b313 467-469,494-496,528-530,534-559
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "e091609de46b3e7eaf807e337b49f959c9b2dff3",
+  "prompts": {},
+  "sessions": {
+    "s_c2fca615e81f34": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f74e9-e1c5-7142-85d2-4c577b3973c0",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
