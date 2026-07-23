@@ -119,29 +119,36 @@ describe('AudioWorklet Processor Queues (_queueHead Read Index)', () => {
 });
 
 describe('FermenterProcessor parameter automation', () => {
-    it('writes exact ramp and step values inside one render quantum', () => {
+    it('evaluates compiled automation at render-quantum boundaries', () => {
         const ProcessorClass = loadProcessorClass('../fermenterProcessor.ts', 'FermenterProcessor');
         const processor = new ProcessorClass();
-        processor._automationValues = new Float32Array(15 * 129);
+        const applied: Array<{ paramId: number; value: number }> = [];
+        processor._instance = {
+            set_param_by_id(paramId: number, value: number) {
+                applied.push({ paramId, value });
+            },
+        };
         processor._ready = true;
         processor.port.onmessage({
             data: {
                 type: 'paramAutomation',
                 paramId: 1,
                 segments: [
-                    { startFrame: 0, endFrame: 64, startValue: 200, endValue: 1_000 },
-                    { startFrame: 64, endFrame: 64, startValue: 2_000, endValue: 2_000 },
+                    { startFrame: 0, endFrame: 1_000, startValue: 200, endValue: 2_000 },
+                    { startFrame: 1_000, endFrame: 1_000, startValue: 2_000, endValue: 2_000 },
                 ],
             },
         });
 
-        expect(processor._writeParamAutomation(0, 128)).toBe(true);
+        processor._applyParamAutomation(0);
+        processor._applyParamAutomation(500);
+        processor._applyParamAutomation(500);
+        processor._applyParamAutomation(1_000);
 
-        const offset = 15 + 128;
-        expect(processor._automationValues[1]).toBe(128);
-        expect(processor._automationValues[offset]).toBe(200);
-        expect(processor._automationValues[offset + 32]).toBe(600);
-        expect(processor._automationValues[offset + 63]).toBe(987.5);
-        expect(processor._automationValues[offset + 64]).toBe(2_000);
+        expect(applied).toEqual([
+            { paramId: 1, value: 200 },
+            { paramId: 1, value: 1_100 },
+            { paramId: 1, value: 2_000 },
+        ]);
     });
 });
