@@ -172,12 +172,19 @@ describe('exportStems', () => {
         expect(OfflineContext).not.toHaveBeenCalled();
     });
 
-    it('exports a Toaster folder stem while excluding an ordinary folder', async () => {
+    it('exports one grouped Toaster stem with its pad children while excluding duplicate child stems', async () => {
         const toasterFolder = {
             id: 'toaster-folder',
             kind: 'folder',
             disabled: false,
             devices: [{ id: 'toaster-device', type: 'toaster' }],
+        };
+        const padChild = {
+            id: 'kick-pad',
+            kind: 'midi',
+            parentId: toasterFolder.id,
+            disabled: false,
+            devices: [],
         };
         const ordinaryFolder = {
             id: 'ordinary-folder',
@@ -187,7 +194,8 @@ describe('exportStems', () => {
         };
         const outputNode = { connect: vi.fn() };
         const renderedBuffer = { id: 'toaster-stem' };
-        offlineRenderMocks.resolveRenderContext.mockReturnValue(createRenderContext([toasterFolder, ordinaryFolder]));
+        const allTracks = [toasterFolder, padChild, ordinaryFolder];
+        offlineRenderMocks.resolveRenderContext.mockReturnValue(createRenderContext(allTracks));
         offlineRenderMocks.createOfflineTrackStrip.mockResolvedValue({
             inputNode: {},
             faderNode: {},
@@ -206,6 +214,9 @@ describe('exportStems', () => {
         expect(OfflineContext).toHaveBeenCalledTimes(1);
         expect(offlineRenderMocks.createOfflineTrackStrip).toHaveBeenCalledTimes(1);
         expect(offlineRenderMocks.createOfflineTrackStrip).toHaveBeenCalledWith(expect.anything(), toasterFolder);
+        expect(offlineRenderMocks.scheduleTrackClips).toHaveBeenCalledWith(
+            expect.objectContaining({ track: toasterFolder, allTracks })
+        );
         expect(stems).toEqual(new Map([['toaster-folder', renderedBuffer]]));
     });
 });

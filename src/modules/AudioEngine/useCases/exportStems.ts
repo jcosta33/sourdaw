@@ -73,10 +73,19 @@ export const exportStems: ExportStemsFn = async function exportStems(
             throw new Error('Offline musical projection is not configured');
         }
 
-        // Exclude disabled and non-strip tracks; muted tracks are included as stems
-        // (users may want silent-in-mixdown stems for later use in a DAW).
+        const toasterParentIds = new Set(
+            tracks.tracks
+                .filter((track) => track.devices.some((device) => device.type === 'toaster'))
+                .map((track) => track.id)
+        );
+
+        // Toaster owns its children's sound generation, so export one grouped parent stem.
+        // Other muted tracks remain eligible (users may want silent-in-mixdown stems).
         const eligible = tracks.tracks.filter((time) => {
             if (time.disabled) {
+                return false;
+            }
+            if (time.parentId && toasterParentIds.has(time.parentId)) {
                 return false;
             }
             return time.kind !== 'master' && shouldCreateLiveTrackStrip(time);
@@ -122,7 +131,7 @@ export const exportStems: ExportStemsFn = async function exportStems(
                 },
                 onWarning,
                 pendingWorkletEvents,
-                allTracks: [track],
+                allTracks: tracks.tracks,
                 deviceEntriesByTrack,
                 regionStartBeat: startBeat,
             });
