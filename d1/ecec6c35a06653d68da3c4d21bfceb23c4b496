@@ -1,0 +1,19 @@
+tests/e2e/shortcutBehavioralE2E.spec.ts
+  s_872e1ff3914baf::t_0b93343f6e20b3 1-179
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "d1ecec6c35a06653d68da3c4d21bfceb23c4b496",
+  "prompts": {},
+  "sessions": {
+    "s_872e1ff3914baf": {
+      "agent_id": {
+        "tool": "opencode",
+        "id": "ses_0b3576681ffe5rKlnKBoMWUSQ1",
+        "model": "glm-5.2"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
