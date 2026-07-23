@@ -1,5 +1,5 @@
 import { render, screen, fireEvent } from '@testing-library/react';
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 import { AutomationLane } from '../AutomationLane';
 
@@ -135,5 +135,49 @@ describe('AutomationLane', () => {
         const { container } = render(<AutomationLane {...defaultProps} />);
         const gutter = container.querySelector('[style*="40px"]');
         expect(gutter).toBeTruthy();
+    });
+
+    // When Wave 4 flips MPE_EXPRESSION_AVAILABLE to true the MPE lanes return.
+    // Cover the pressure/slide/pitchBend switch wiring (the render branches kept
+    // in source) so a broken prop wire on those lanes cannot ship undetected.
+    describe('MPE lanes when per-note expression is available (Wave-4 reversal)', () => {
+        beforeEach(() => {
+            vi.resetModules();
+            vi.doMock('../../../helpers/mpeAvailability', async () => {
+                const actual = await vi.importActual<typeof import('../../../helpers/mpeAvailability')>(
+                    '../../../helpers/mpeAvailability'
+                );
+                return { ...actual, MPE_EXPRESSION_AVAILABLE: true };
+            });
+        });
+
+        afterEach(() => {
+            vi.doUnmock('../../../helpers/mpeAvailability');
+            vi.resetModules();
+        });
+
+        it('switches to the pressure lane once available', async () => {
+            const { AutomationLane: LiveAutomationLane } = await import('../AutomationLane');
+            render(<LiveAutomationLane {...defaultProps} />);
+            const select = screen.getByLabelText('Automation lane type');
+            fireEvent.change(select, { target: { value: 'pressure' } });
+            expect(screen.getByTestId('pressure-lane')).toBeInTheDocument();
+        });
+
+        it('switches to the slide lane once available', async () => {
+            const { AutomationLane: LiveAutomationLane } = await import('../AutomationLane');
+            render(<LiveAutomationLane {...defaultProps} />);
+            const select = screen.getByLabelText('Automation lane type');
+            fireEvent.change(select, { target: { value: 'slide' } });
+            expect(screen.getByTestId('slide-lane')).toBeInTheDocument();
+        });
+
+        it('switches to the pitch bend lane once available', async () => {
+            const { AutomationLane: LiveAutomationLane } = await import('../AutomationLane');
+            render(<LiveAutomationLane {...defaultProps} />);
+            const select = screen.getByLabelText('Automation lane type');
+            fireEvent.change(select, { target: { value: 'pitchBend' } });
+            expect(screen.getByTestId('pitchbend-lane')).toBeInTheDocument();
+        });
     });
 });
