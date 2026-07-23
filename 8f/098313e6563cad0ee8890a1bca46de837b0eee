@@ -1,0 +1,19 @@
+src/modules/MIDI/useCases/grooveTemplates/__tests__/createGrooveSourceRevision.spec.ts
+  s_0d39f3a4a4357a::t_6148267d5b050c 1-73
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "8f098313e6563cad0ee8890a1bca46de837b0eee",
+  "prompts": {},
+  "sessions": {
+    "s_0d39f3a4a4357a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "60da6a2e-7d79-4d98-8624-e993f5a9f94e",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
