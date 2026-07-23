@@ -184,11 +184,11 @@ Verify with: `manual` — open the Elastic toolbar, switch the stretch-mode drop
   tempo-guess pass that re-enables Quantize for one-shots is open.
 - [ ] (non-blocking) (deferred-gap from intake/full-spec.md) AI warp mode
   auto-detection: analyze audio content and auto-select the optimal warp mode
-  from the 9 existing algorithms (elastique Pro/Efficient/Soloist, Rubber Band
-  R3/RT, Complex/Pro, Re-Pitch, Slice — `audioWarpingUseCases.ts`), which users
-  currently pick by hand. Classification targets: drums/percussive → Beats/Slice
-  mode; vocals/monophonic → Soloist/Re-Pitch mode; complex polyphonic → Complex
-  Pro mode; textures/pads → Texture mode. Implementation guidance: a new
+  from the app's canonical warp family (`repitch` today; the in-house
+  `phase-vocoder` and `wsola` once the engine lands — `getAlgorithmInfo.ts`),
+  which users currently pick by hand. Classification targets map material class
+  (percussive, monophonic, polyphonic, textural) to the most suitable stretch
+  algorithm. Implementation guidance: a new
   `src/modules/Arrangement/useCases/audioWarp/autoDetectWarpMode.ts` using pure
   DSP spectral analysis (spectral centroid variance, onset density,
   harmonic-to-noise ratio) to classify material type — no ML model needed; the
@@ -209,6 +209,6 @@ Verify with: `manual` — open the Elastic toolbar, switch the stretch-mode drop
 
 - Automatic source-tempo detection — deferred; v1 quantizes against the project
   grid only.
-- Per-marker stretch-algorithm selection (e.g. élastique vs phase vocoder) —
+- Per-marker stretch-algorithm selection (e.g. a different stretch algorithm per marker) —
   uses the existing engine's single algorithm.
 - A marker-count safety cap — captured as an open question, not a v1 requirement.

@@ -325,16 +325,4 @@ export const miscCommands: CallableCommandEntry[] = [
             }
         },
     },
-    {
-        id: 'set-warp-elastique',
-        label: 'Set Warp: élastique Pro',
-        description: 'Switch the selected clip to élastique Pro stretching algorithm',
-        category: 'Editing',
-        action: () => {
-            const clipId = getSelectedClipId();
-            if (clipId) {
-                void executeAppAction({ type: 'setWarpAlgorithm', payload: { clipId, algorithm: 'elastique-pro' } });
-            }
-        },
-    },
 ];

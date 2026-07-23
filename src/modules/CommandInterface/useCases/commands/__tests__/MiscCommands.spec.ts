@@ -68,7 +68,6 @@ describe('miscCommands', () => {
             { id: 'connect-push-2', label: 'Connect Ableton Push 2', category: 'Hardware' },
             { id: 'connect-push-3', label: 'Connect Ableton Push 3', category: 'Hardware' },
             { id: 'enable-warping', label: 'Enable Audio Warping', category: 'Editing' },
-            { id: 'set-warp-elastique', label: 'Set Warp: élastique Pro', category: 'Editing' },
         ]);
     });
 
@@ -180,22 +179,12 @@ describe('miscCommands', () => {
         expect(executeAppAction).toHaveBeenCalledWith({ type: 'enableWarping', payload: { clipId: 'clip-1' } });
     });
 
-    it('set-warp-elastique dispatches setWarpAlgorithm with the élastique Pro algorithm', () => {
-        runAction('set-warp-elastique');
-
-        expect(executeAppAction).toHaveBeenCalledWith({
-            type: 'setWarpAlgorithm',
-            payload: { clipId: 'clip-1', algorithm: 'elastique-pro' },
-        });
-    });
-
     it('does not dispatch clip-scoped actions when no clip is selected', async () => {
         const { getSelectedClipId } = await import('../../selectionHelpers/getSelectedClipId');
         vi.mocked(getSelectedClipId).mockReturnValue(null);
 
         runAction('quantize-to-grid-elastic');
         runAction('enable-warping');
-        runAction('set-warp-elastique');
 
         expect(executeAppAction).not.toHaveBeenCalled();
     });
