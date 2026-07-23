@@ -1,0 +1,35 @@
+src/modules/Grinder/useCases/__tests__/grinderPresets.spec.ts
+  s_0d39f3a4a4357a::t_3560c8cc2d2dc2 3,11-13,15-17,22-34,38-40,46-53
+src/modules/Bacteria/useCases/__tests__/bacteriaPresets.spec.ts
+  s_0d39f3a4a4357a::t_b1ea29bde92a88 10-12,14-16,21-49
+src/modules/Crust/useCases/__tests__/crustPresets.spec.ts
+  s_6108a2a0bac9d3::t_2ea62268051224 3,11-13,15-17,22-52
+src/modules/Gluten/useCases/__tests__/glutenPresets.spec.ts
+  s_0d39f3a4a4357a::t_4c0e763048dd67 10-12,14-16,21-47
+src/modules/Proof/useCases/__tests__/proofPresets.spec.ts
+  s_0d39f3a4a4357a::t_2570f42c88d654 3,11-13,15-17,27-56
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "3d770c9590d9d7cb19ca7fb1e7f4e6f0ccbf51e3",
+  "prompts": {},
+  "sessions": {
+    "s_0d39f3a4a4357a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "60da6a2e-7d79-4d98-8624-e993f5a9f94e",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_6108a2a0bac9d3": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-a0015e0080f3cb40e",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
