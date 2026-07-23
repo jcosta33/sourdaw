@@ -124,6 +124,26 @@ describe('ToasterProcessor allNotesOff', () => {
             paramId: 3,
             segments: [{ startFrame: 0, endFrame: 256, startValue: 0, endValue: 1 }],
         });
+        for (const segments of [
+            [{ startFrame: 64, endFrame: 256, startValue: 0, endValue: 1 }],
+            [{ startFrame: 0, endFrame: 256, startValue: Number.NaN, endValue: 1 }],
+            [
+                { startFrame: 0, endFrame: 64, startValue: 0, endValue: 0.5 },
+                { startFrame: 65, endFrame: 256, startValue: 0.5, endValue: 1 },
+            ],
+        ]) {
+            send(proc, { type: 'paramAutomation', paramId: 2, segments });
+        }
+        send(proc, {
+            type: 'paramAutomation',
+            paramId: 2,
+            segments: [{ startFrame: 0, endFrame: 256, startValue: 0.1, endValue: 0.9 }],
+        });
+        send(proc, {
+            type: 'paramAutomation',
+            paramId: 2,
+            segments: [{ startFrame: 0, endFrame: 128, startValue: 0.3, endValue: 0.7 }],
+        });
         const output = [new Float32Array(8), new Float32Array(8)];
 
         proc.process([[]], [output]);
@@ -132,7 +152,9 @@ describe('ToasterProcessor allNotesOff', () => {
 
         expect(paramByIdCalls).toEqual([
             [1, 0.2],
+            [2, 0.3],
             [1, 0.5],
+            [2, 0.7],
         ]);
     });
 

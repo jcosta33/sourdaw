@@ -24,6 +24,24 @@ type OfflineAutomationSegment = {
     endValue: number;
 };
 
+function isContiguousAutomationSchedule(segments: readonly OfflineAutomationSegment[]): boolean {
+    if (segments.length === 0 || segments[0]?.startFrame !== 0) {
+        return false;
+    }
+    return segments.every((segment, index) => {
+        const previous = segments[index - 1];
+        return (
+            Number.isInteger(segment.startFrame) &&
+            Number.isInteger(segment.endFrame) &&
+            segment.startFrame >= 0 &&
+            segment.endFrame >= segment.startFrame &&
+            (index === 0 || segment.startFrame === previous?.endFrame) &&
+            Number.isFinite(segment.startValue) &&
+            Number.isFinite(segment.endValue)
+        );
+    });
+}
+
 type ScheduleToasterHitInput = {
     pad: number;
     velocity: number;
@@ -151,18 +169,7 @@ export async function createToasterNode(ctx: BaseAudioContext, wasmUrl?: string)
             const paramId = Object.hasOwn(TOASTER_AUTOMATION_PARAM_IDS, name)
                 ? TOASTER_AUTOMATION_PARAM_IDS[name]
                 : undefined;
-            const valid =
-                paramId !== undefined &&
-                segments.length > 0 &&
-                segments.every(
-                    (segment) =>
-                        Number.isInteger(segment.startFrame) &&
-                        Number.isInteger(segment.endFrame) &&
-                        segment.startFrame >= 0 &&
-                        segment.endFrame >= segment.startFrame &&
-                        Number.isFinite(segment.startValue) &&
-                        Number.isFinite(segment.endValue)
-                );
+            const valid = paramId !== undefined && isContiguousAutomationSchedule(segments);
             if (valid) {
                 node.port.postMessage({ type: 'paramAutomation', paramId, segments });
             }

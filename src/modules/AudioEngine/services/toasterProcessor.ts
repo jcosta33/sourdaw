@@ -39,6 +39,42 @@ type ParamAutomationSchedule = {
     lastValue: number | undefined;
 };
 
+function isParamAutomationSegment(value: unknown): value is ParamAutomationSegment {
+    return (
+        typeof value === 'object' &&
+        value !== null &&
+        'startFrame' in value &&
+        'endFrame' in value &&
+        'startValue' in value &&
+        'endValue' in value &&
+        typeof value.startFrame === 'number' &&
+        typeof value.endFrame === 'number' &&
+        typeof value.startValue === 'number' &&
+        typeof value.endValue === 'number' &&
+        Number.isInteger(value.startFrame) &&
+        Number.isInteger(value.endFrame) &&
+        value.startFrame >= 0 &&
+        value.endFrame >= value.startFrame &&
+        Number.isFinite(value.startValue) &&
+        Number.isFinite(value.endValue)
+    );
+}
+
+function isContiguousAutomationSchedule(value: unknown): value is ParamAutomationSegment[] {
+    if (!Array.isArray(value) || value.length === 0) {
+        return false;
+    }
+    const candidates: unknown[] = value;
+    let previousEndFrame = 0;
+    for (const candidate of candidates) {
+        if (!isParamAutomationSegment(candidate) || candidate.startFrame !== previousEndFrame) {
+            return false;
+        }
+        previousEndFrame = candidate.endFrame;
+    }
+    return true;
+}
+
 /** Map camelCase pad param names from TypeScript to snake_case for Rust. */
 const PAD_PARAM_MAP: Record<string, string> = {
     volume: 'volume',
@@ -189,7 +225,7 @@ class ToasterProcessor extends AudioWorkletProcessor {
                 !Number.isInteger(msg.paramId) ||
                 msg.paramId < 0 ||
                 msg.paramId >= TOASTER_AUTOMATION_PARAM_COUNT ||
-                msg.segments.length === 0
+                !isContiguousAutomationSchedule(msg.segments)
             ) {
                 return;
             }

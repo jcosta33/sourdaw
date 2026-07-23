@@ -180,9 +180,14 @@ describe('createToasterNode', () => {
         node.scheduleParam('reverbMix', segments);
         node.scheduleParam('masterGain', segments);
         node.scheduleParam('swing', segments);
+        node.scheduleParam('delayMix', [
+            { startFrame: 0, endFrame: 64, startValue: 0, endValue: 0.5 },
+            { startFrame: 65, endFrame: 128, startValue: 0.5, endValue: 1 },
+        ]);
 
         expect(postMessage).toHaveBeenNthCalledWith(1, { type: 'paramAutomation', paramId: 1, segments });
         expect(postMessage).toHaveBeenNthCalledWith(2, { type: 'paramAutomation', paramId: 0, segments });
+        expect(postMessage).toHaveBeenCalledTimes(2);
         const [, ...padOutputs] = padGainNodes;
         expect(padOutputs.every((gainNode) => gainNode.gain.cancelScheduledValues.mock.calls.length === 0)).toBe(true);
         expect(padOutputs.every((gainNode) => gainNode.gain.setValueAtTime.mock.calls.length === 0)).toBe(true);
