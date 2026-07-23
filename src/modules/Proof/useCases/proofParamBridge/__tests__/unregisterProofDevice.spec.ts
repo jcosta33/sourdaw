@@ -1,11 +1,28 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 
-import * as subject from '../unregisterProofDevice';
+import { bridges, type ProofAudioBridge } from '../helpers';
+import { unregisterProofDevice } from '../unregisterProofDevice';
 
 describe('unregisterProofDevice', () => {
-    it('should export unregisterProofDevice', () => {
-        expect(subject.unregisterProofDevice).toBeDefined();
-        const t = typeof subject.unregisterProofDevice;
-        expect(t === 'function' || t === 'object').toBe(true);
+    beforeEach(() => {
+        bridges.clear();
+    });
+
+    it('removes the bridge so later syncs for that device become no-ops', () => {
+        const bridge: ProofAudioBridge = {
+            setParam: vi.fn(),
+            reorderModules: vi.fn(),
+            resetIntegrated: vi.fn(),
+        };
+        bridges.set('dev-1', bridge);
+
+        unregisterProofDevice('dev-1');
+
+        expect(bridges.has('dev-1')).toBe(false);
+    });
+
+    it('is a no-op when the device was never registered', () => {
+        expect(() => unregisterProofDevice('missing-device')).not.toThrow();
+        expect(bridges.has('missing-device')).toBe(false);
     });
 });

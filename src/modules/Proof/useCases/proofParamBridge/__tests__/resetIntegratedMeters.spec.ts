@@ -1,11 +1,27 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 
-import * as subject from '../resetIntegratedMeters';
+import { bridges, type ProofAudioBridge } from '../helpers';
+import { resetIntegratedMeters } from '../resetIntegratedMeters';
 
 describe('resetIntegratedMeters', () => {
-    it('should export resetIntegratedMeters', () => {
-        expect(subject.resetIntegratedMeters).toBeDefined();
-        const t = typeof subject.resetIntegratedMeters;
-        expect(t === 'function' || t === 'object').toBe(true);
+    beforeEach(() => {
+        bridges.clear();
+    });
+
+    it('forwards the reset to the registered bridge for that device', () => {
+        const bridge: ProofAudioBridge = {
+            setParam: vi.fn(),
+            reorderModules: vi.fn(),
+            resetIntegrated: vi.fn(),
+        };
+        bridges.set('dev-1', bridge);
+
+        resetIntegratedMeters('dev-1');
+
+        expect(bridge.resetIntegrated).toHaveBeenCalledTimes(1);
+    });
+
+    it('is a no-op when no bridge is registered for the device', () => {
+        expect(() => resetIntegratedMeters('missing-device')).not.toThrow();
     });
 });

@@ -83,4 +83,35 @@ describe('hydrateKneadFromTrackStore', () => {
         // (which would spuriously fire the syncKneadToEngine subscriber).
         expect(mocks.kneadStore.set).not.toHaveBeenCalled();
     });
+
+    it('does nothing when the trackStore has not been hydrated yet', () => {
+        mocks.trackStore.value = null;
+        mocks.kneadStore.value = baseKneadState({ c1: clipState('c1') });
+
+        hydrateKneadFromTrackStore();
+
+        expect(mocks.kneadStore.set).not.toHaveBeenCalled();
+    });
+
+    it('does nothing when the kneadStore has not been initialised yet', () => {
+        mocks.trackStore.value = trackWithClips([{ id: 'c1', kneadState: clipState('c1') }]);
+        mocks.kneadStore.value = null;
+
+        hydrateKneadFromTrackStore();
+
+        expect(mocks.kneadStore.set).not.toHaveBeenCalled();
+    });
+
+    it('writes the store when an existing clip is replaced by a differently-referenced projected state', () => {
+        const stale = clipState('c1');
+        const fresh = clipState('c1');
+        mocks.trackStore.value = trackWithClips([{ id: 'c1', kneadState: fresh }]);
+        mocks.kneadStore.value = baseKneadState({ c1: stale });
+
+        hydrateKneadFromTrackStore();
+
+        expect(mocks.kneadStore.set).toHaveBeenCalledTimes(1);
+        const written = mocks.kneadStore.set.mock.calls[0]![0] as ReturnType<typeof baseKneadState>;
+        expect(written.clips.c1).toBe(fresh);
+    });
 });

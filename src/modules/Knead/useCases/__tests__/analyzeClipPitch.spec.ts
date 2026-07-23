@@ -245,4 +245,41 @@ describe('analyzeClipPitch', () => {
             expect(kneadState().contours.c1?.algorithm).toBe('second');
         }
     );
+
+    it('ignores a stray progress callback after its run has already finished', async () => {
+        let capturedProgress: ((progress: number) => void) | undefined;
+        analyzePitchForClip.mockImplementation((input: PitchAnalysisInput) => {
+            input.onStart();
+            capturedProgress = input.onProgress;
+            return Promise.resolve({ status: 'analyzed', contour: createContour('done') });
+        });
+
+        await analyzeClipPitch('c1');
+        expect(kneadStore.value).toMatchObject({ isAnalyzing: false, analysisProgress: 1 });
+
+        // The run's runId was already deleted from activeAnalysisProgress on
+        // completion; a late progress event for it must be a no-op rather than
+        // reviving isAnalyzing/analysisProgress state for a dead run.
+        capturedProgress?.(0.5);
+        expect(kneadStore.value).toMatchObject({ isAnalyzing: false, analysisProgress: 1 });
+    });
+
+    it('does not throw when the knead store is unset while an analysis is in flight', async () => {
+        let capturedOnStart: (() => void) | undefined;
+        let capturedProgress: ((progress: number) => void) | undefined;
+        analyzePitchForClip.mockImplementation((input: PitchAnalysisInput) => {
+            capturedOnStart = input.onStart;
+            capturedProgress = input.onProgress;
+            return Promise.resolve({ status: 'analyzed', contour: createContour('unset') });
+        });
+
+        kneadStore.set(null);
+
+        const run = analyzeClipPitch('c1');
+        expect(() => capturedOnStart?.()).not.toThrow();
+        expect(() => capturedProgress?.(0.5)).not.toThrow();
+        expect(kneadStore.value).toBeNull();
+
+        await run;
+    });
 });
