@@ -23,6 +23,21 @@ import { initSync, ToasterInstance } from '../wasm/daw_dsp.js';
 const TOASTER_PAD_COUNT = 16;
 const TOASTER_MAX_BLOCK_SIZE = 4096;
 const TOASTER_OUTPUT_COUNT = 1 + TOASTER_PAD_COUNT;
+const TOASTER_AUTOMATION_PARAM_COUNT = 3;
+
+type ParamAutomationSegment = {
+    startFrame: number;
+    endFrame: number;
+    startValue: number;
+    endValue: number;
+};
+
+type ParamAutomationSchedule = {
+    paramId: number;
+    segments: ParamAutomationSegment[];
+    segmentIndex: number;
+    lastValue: number | undefined;
+};
 
 /** Map camelCase pad param names from TypeScript to snake_case for Rust. */
 const PAD_PARAM_MAP: Record<string, string> = {
@@ -75,6 +90,7 @@ type ToasterMsg =
     | { type: 'fillState'; active: boolean }
     | { type: 'allNotesOff' }
     | { type: 'param'; name: string; value: number }
+    | { type: 'paramAutomation'; paramId: number; segments: ParamAutomationSegment[] }
     | { type: 'padParam'; pad: number; name: string; value: number }
     | { type: 'padDryRouted'; pad: number; routed: boolean }
     | { type: 'resetPadDryRouting' };
@@ -103,6 +119,7 @@ class ToasterProcessor extends AudioWorkletProcessor {
     _fillActive = false;
     _outputBasePtr = 0;
     _outputViews: Array<[Float32Array, Float32Array]> = [];
+    _paramAutomation: ParamAutomationSchedule[] = [];
 
     constructor() {
         super();
@@ -167,6 +184,26 @@ class ToasterProcessor extends AudioWorkletProcessor {
     }
 
     _handleMessage(msg: ToasterMsg): void {
+        if (msg.type === 'paramAutomation') {
+            if (
+                !Number.isInteger(msg.paramId) ||
+                msg.paramId < 0 ||
+                msg.paramId >= TOASTER_AUTOMATION_PARAM_COUNT ||
+                msg.segments.length === 0
+            ) {
+                return;
+            }
+            const schedule = { paramId: msg.paramId, segments: msg.segments, segmentIndex: 0, lastValue: undefined };
+            const existingIndex = this._paramAutomation.findIndex(
+                (candidate) => candidate.paramId === schedule.paramId
+            );
+            if (existingIndex >= 0) {
+                this._paramAutomation[existingIndex] = schedule;
+            } else {
+                this._paramAutomation.push(schedule);
+            }
+            return;
+        }
         if (msg.type === 'noteOn' || msg.type === 'noteOff' || msg.type === 'scheduledHit') {
             if (msg.sampleFrame !== undefined && msg.sampleFrame > currentFrame) {
                 this._enqueue({ ...msg, sampleFrame: msg.sampleFrame });
@@ -237,6 +274,8 @@ class ToasterProcessor extends AudioWorkletProcessor {
             case 'param':
                 inst.set_param(KIT_PARAM_MAP[msg.name] ?? msg.name, msg.value);
                 break;
+            case 'paramAutomation':
+                break;
             case 'padParam':
                 inst.set_pad_param(msg.pad, PAD_PARAM_MAP[msg.name] ?? msg.name, msg.value);
                 break;
@@ -261,6 +300,34 @@ class ToasterProcessor extends AudioWorkletProcessor {
         if (this._queueHead >= this._queue.length) {
             this._queue.length = 0;
             this._queueHead = 0;
+        }
+    }
+
+    _applyParamAutomation(frame: number): void {
+        const inst = this._instance;
+        if (!inst) {
+            return;
+        }
+        for (let scheduleIndex = 0; scheduleIndex < this._paramAutomation.length; scheduleIndex++) {
+            const schedule = this._paramAutomation[scheduleIndex]!;
+            while (
+                schedule.segmentIndex < schedule.segments.length - 1 &&
+                frame >= schedule.segments[schedule.segmentIndex]!.endFrame
+            ) {
+                schedule.segmentIndex++;
+            }
+            const segment = schedule.segments[schedule.segmentIndex]!;
+            let value = segment.startValue;
+            if (segment.endFrame <= segment.startFrame || frame >= segment.endFrame) {
+                value = segment.endValue;
+            } else if (frame > segment.startFrame) {
+                const fraction = (frame - segment.startFrame) / (segment.endFrame - segment.startFrame);
+                value = segment.startValue + (segment.endValue - segment.startValue) * fraction;
+            }
+            if (value !== schedule.lastValue) {
+                inst.set_param_by_id(schedule.paramId, value);
+                schedule.lastValue = value;
+            }
         }
     }
 
@@ -300,6 +367,7 @@ class ToasterProcessor extends AudioWorkletProcessor {
                 return true;
             }
 
+            this._applyParamAutomation(currentFrame);
             const leftPtr = inst.process(frames);
             const cachedMemory = this._outputViews[0]?.[0].buffer;
             if (leftPtr !== this._outputBasePtr || cachedMemory !== mem) {

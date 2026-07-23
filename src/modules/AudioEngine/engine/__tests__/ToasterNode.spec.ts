@@ -63,6 +63,7 @@ describe('createToasterNode', () => {
     function makeCtx(state: 'running' | 'suspended' = 'running') {
         class FakeAudioContext {
             state = state;
+            sampleRate = 48_000;
             resume = resume;
             createGain() {
                 const gainNode = createMockAudioNode('gain');
@@ -167,6 +168,27 @@ describe('createToasterNode', () => {
         expect(postMessage).toHaveBeenCalledWith({ type: 'param', name: 'drive', value: 0.6 });
     });
 
+    it('publishes bounded schedules only for audible Toaster mix controls', async () => {
+        const node = await createToasterNode(makeCtx());
+        const segments = [{ startFrame: 0, endFrame: 128, startValue: 0.2, endValue: 0.8 }];
+        postMessage.mockClear();
+
+        expect(node.acceptsScheduledParam('masterGain')).toBe(true);
+        expect(node.acceptsScheduledParam('reverbMix')).toBe(true);
+        expect(node.acceptsScheduledParam('delayMix')).toBe(true);
+        expect(node.acceptsScheduledParam('swing')).toBe(false);
+        node.scheduleParam('reverbMix', segments);
+        node.scheduleParam('masterGain', segments);
+        node.scheduleParam('swing', segments);
+
+        expect(postMessage).toHaveBeenNthCalledWith(1, { type: 'paramAutomation', paramId: 1, segments });
+        expect(postMessage).toHaveBeenNthCalledWith(2, { type: 'paramAutomation', paramId: 0, segments });
+        const [, ...padOutputs] = padGainNodes;
+        expect(padOutputs.every((gainNode) => gainNode.gain.cancelScheduledValues.mock.calls.length === 1)).toBe(true);
+        expect(padOutputs[0]?.gain.setValueAtTime).toHaveBeenCalledWith(0.2, 0);
+        expect(padOutputs[0]?.gain.linearRampToValueAtTime).toHaveBeenCalledWith(0.8, 128 / 48_000);
+    });
+
     it('should forward a finite setPadParam value and drop a non-finite one', async () => {
         const node = await createToasterNode(makeCtx());
         postMessage.mockClear();
@@ -263,7 +285,7 @@ describe('createToasterNode', () => {
 
         postMessage.mockClear();
         node.setParam('masterGain', 1.5);
-        expect(padOutputs.every((gainNode) => gainNode.gain.value === 1)).toBe(true);
+        expect(padOutputs.every((gainNode) => gainNode.gain.value === 1.5)).toBe(true);
         node.setParam('masterGain', -0.25);
         expect(padOutputs.every((gainNode) => gainNode.gain.value === 0)).toBe(true);
         node.setParam('masterGain', 0.35);
