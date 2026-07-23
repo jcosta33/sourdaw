@@ -1,0 +1,19 @@
+src/modules/AudioAnalysis/useCases/__tests__/getAnalysisHandlers.spec.ts
+  s_0d39f3a4a4357a::t_ff601480601d7c 10-50
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "25a79cce6a44c18a859d766e2c3f68372105eada",
+  "prompts": {},
+  "sessions": {
+    "s_0d39f3a4a4357a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "60da6a2e-7d79-4d98-8624-e993f5a9f94e",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
