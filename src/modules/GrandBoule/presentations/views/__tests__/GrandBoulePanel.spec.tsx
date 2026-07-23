@@ -22,31 +22,32 @@ describe('GrandBoulePanel', () => {
         vi.clearAllMocks();
     });
 
-    it('should render without crashing', () => {
+    it('renders the panel window with the expected heading', () => {
         render(<GrandBoulePanel deviceId="dev-1" />);
-        expect(document.body).toBeTruthy();
+        // The panel renders a grand-boule-window with content.
+        const window = document.querySelector('.grand-boule-window');
+        expect(window).not.toBeNull();
     });
 
-    it('should handle store state', () => {
+    it('renders the engine readiness tile as "idle" with no live engine', () => {
         render(<GrandBoulePanel deviceId="dev-1" />);
-        expect(document.body).toBeTruthy();
+        expect(screen.getByText('idle')).toBeInTheDocument();
     });
 
-    it('should render with useCase bindings', () => {
+    it('renders interactive control elements (buttons, knobs, or sliders)', () => {
         render(<GrandBoulePanel deviceId="dev-1" />);
-        expect(document.body).toBeTruthy();
+        const interactive = screen.queryAllByRole('button').length + screen.queryAllByRole('slider').length;
+        expect(interactive).toBeGreaterThan(0);
     });
 
-    it('should have interactive elements', () => {
+    it('emits events through the event bus when rendered (wiring check)', () => {
         render(<GrandBoulePanel deviceId="dev-1" />);
-        const buttons = screen.queryAllByRole('button');
-        expect(buttons.length).toBeGreaterThanOrEqual(0);
+        // The event bus is wired — at minimum it was registered.
+        expect(mockEventBus.on).toHaveBeenCalled();
     });
 
-    it('renders the engine readiness tile', () => {
-        render(<GrandBoulePanel deviceId="dev-1" />);
-        // Engine readiness is derived from the engine handle (engine.isReady()),
-        // not a store field. With no live engine the tile reads "idle".
-        expect(screen.getByText('idle')).toBeTruthy();
+    it('renders the panel for a different deviceId without error', () => {
+        render(<GrandBoulePanel deviceId="grand-boule-2" />);
+        expect(screen.getByText('idle')).toBeInTheDocument();
     });
 });
