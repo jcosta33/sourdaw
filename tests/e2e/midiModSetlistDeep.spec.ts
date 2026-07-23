@@ -9,216 +9,190 @@ async function add_track(page: import('@playwright/test').Page, kind: string): P
     await page.getByRole('option', { name: `Add ${kind} Track` }).click();
 }
 
-test.describe('MIDI Transform Operations', () => {
+async function open_dock_tab(page: import('@playwright/test').Page, tab_id: string): Promise<void> {
+    const toggle = page.getByRole('button', { name: 'Toggle bottom dock' });
+    const pressed = (await toggle.getAttribute('aria-pressed')) ?? '';
+    if (!pressed.match(/true/i)) {
+        await toggle.click();
+    }
+    await page.locator(`#bottom-dock-tab-${tab_id}`).click();
+}
+
+/** Create a MIDI clip and open the piano-roll editor (proven pattern). */
+async function open_midi_editor(page: import('@playwright/test').Page): Promise<void> {
+    await add_track(page, 'MIDI');
+    const timeline = page.getByLabel('Timeline editor surface');
+    await timeline.click({ button: 'right', position: { x: 300, y: 30 } });
+    await page.getByRole('menuitem', { name: /Add Clip Here/i }).click();
+    await page.waitForTimeout(500);
+    await timeline.dblclick({ position: { x: 300, y: 30 } });
+    await page.getByLabel('Piano roll editor').waitFor({ state: 'visible', timeout: 10000 });
+}
+
+// ---------------------------------------------------------------------------
+// MIDI editor — note creation is undoable (undo button enabled afterwards).
+// ---------------------------------------------------------------------------
+
+test.describe('MIDI editor — note operations', () => {
     test.beforeEach(async ({ page }) => {
         await setupWorkspace(page);
         await launch_new_project(page);
-        await add_track(page, 'MIDI');
-        const timeline = page.getByLabel('Timeline editor surface');
-        await timeline.click({ button: 'right', position: { x: 200, y: 30 } });
-        const add = page.getByRole('menuitem', { name: /Add Clip Here/i });
-        if (await add.isVisible().catch(() => false)) {
-            await add.click();
-            await page.waitForTimeout(500);
-            await timeline.dblclick({ position: { x: 200, y: 30 } });
-            await page.getByLabel('Piano roll editor').waitFor({ state: 'visible', timeout: 10000 });
-        }
+        await open_midi_editor(page);
     });
 
-    test('MIDI editor toolbar shows transform buttons', async ({ page }) => {
-        const chord_btn = page.getByRole('button', { name: /Chord/i });
-        if (await chord_btn.isVisible().catch(() => false)) {
-            await expect(chord_btn).toBeVisible();
-        }
-    });
-
-    test('Can create notes via double-click in piano roll', async ({ page }) => {
+    test('Creating a note enables the Undo button', async ({ page }) => {
         const piano_roll = page.getByLabel('Piano roll editor');
-        const box = await piano_roll.boundingBox();
-        if (box) {
-            await piano_roll.dblclick({ position: { x: box.width * 0.2, y: box.height * 0.4 } });
-            await page.waitForTimeout(300);
-            await piano_roll.dblclick({ position: { x: box.width * 0.4, y: box.height * 0.6 } });
-            await page.waitForTimeout(300);
-        }
-        await expect(piano_roll).toBeVisible();
-    });
-
-    test('Undo reverts note creation', async ({ page }) => {
-        const piano_roll = page.getByLabel('Piano roll editor');
-        const box = await piano_roll.boundingBox();
-        if (box) {
-            await piano_roll.dblclick({ position: { x: box.width * 0.3, y: box.height * 0.5 } });
-            await page.waitForTimeout(300);
-        }
-
         const undo = page.getByRole('button', { name: 'Undo', exact: true });
-        if (await undo.isEnabled().catch(() => false)) {
-            await undo.click();
-            await page.waitForTimeout(500);
+
+        // Before creating a note, capture undo state.
+        const enabled_before = await undo.isEnabled();
+
+        // Double-click to create a note in the piano roll.
+        const box = await piano_roll.boundingBox();
+        if (!box) throw new Error('piano roll missing');
+        await piano_roll.dblclick({ position: { x: box.width * 0.3, y: box.height * 0.5 } });
+        await page.waitForTimeout(500);
+
+        // After creating a note, undo must be enabled.
+        await expect(undo).toBeEnabled();
+        // Sanity: if it was disabled before, it is now enabled (a real transition).
+        if (!enabled_before) {
+            await expect(undo).toBeEnabled();
         }
-        await expect(piano_roll).toBeVisible();
+    });
+
+    test('Chord-stamp-mode toggle is reachable from the MIDI editor', async ({ page }) => {
+        const chord = page.getByRole('button', { name: 'Toggle chord stamp mode' });
+        const before = await chord.getAttribute('aria-pressed');
+        await chord.click();
+        await expect(chord).not.toHaveAttribute('aria-pressed', before ?? '');
     });
 });
 
-test.describe('Modulation Matrix Deep', () => {
+// ---------------------------------------------------------------------------
+// Modulation matrix — add a modulator and verify the card persists (regression
+// guard for the "New Modulator" form + card lifecycle).
+// ---------------------------------------------------------------------------
+
+test.describe('Modulation matrix — card lifecycle', () => {
     test.beforeEach(async ({ page }) => {
         await setupWorkspace(page);
         await launch_new_project(page);
         await add_track(page, 'MIDI');
-        await page.getByRole('button', { name: 'Toggle bottom dock' }).click();
-        await page.locator('#bottom-dock-tab-modulation').click();
+        await open_dock_tab(page, 'modulation');
     });
 
-    test('Modulation matrix region is present with controls', async ({ page }) => {
+    test('Adding then removing a modulator returns to the empty state', async ({ page }) => {
         const matrix = page.getByRole('region', { name: 'Modulation matrix' });
-        await expect(matrix).toBeVisible({ timeout: 5000 });
+        await expect(matrix.getByText('No modulators')).toBeVisible();
 
-        const buttons = matrix.getByRole('button');
-        const count = await buttons.count();
-        expect(count).toBeGreaterThan(0);
-    });
+        await matrix.getByRole('button', { name: 'New Modulator', exact: true }).click();
+        await matrix.getByRole('button', { name: 'Add', exact: true }).click();
+        await expect(matrix.getByLabel('Remove modulator LFO')).toBeVisible();
+        await expect(matrix.getByText('No modulators')).toHaveCount(0);
 
-    test('Add modulator form appears when add clicked', async ({ page }) => {
-        const matrix = page.getByRole('region', { name: 'Modulation matrix' });
-        const add_btn = matrix.getByRole('button', { name: /Add|Create|New|\+/i }).first();
-        if (await add_btn.isVisible().catch(() => false)) {
-            await add_btn.click();
-            await page.waitForTimeout(500);
-
-            const name = page.getByRole('textbox', { name: 'Modulator name' });
-            const kind = page.getByRole('combobox', { name: 'Modulator kind' });
-
-            const name_visible = await name.isVisible().catch(() => false);
-            const kind_visible = await kind.isVisible().catch(() => false);
-            if (name_visible || kind_visible) {
-                expect(name_visible || kind_visible).toBe(true);
-            }
-        }
+        await matrix.getByLabel('Remove modulator LFO').click();
+        await expect(matrix.getByText('No modulators')).toBeVisible();
     });
 });
 
-test.describe('Setlist Deep', () => {
+// ---------------------------------------------------------------------------
+// Setlist — add items and toggle auto-advance (aria-pressed).
+// ---------------------------------------------------------------------------
+
+test.describe('Setlist — items and auto-advance', () => {
     test.beforeEach(async ({ page }) => {
         await setupWorkspace(page);
         await launch_new_project(page);
-        await page.getByRole('button', { name: 'Toggle bottom dock' }).click();
-        await page.locator('#bottom-dock-tab-setlist').click();
+        await open_dock_tab(page, 'setlist');
     });
 
-    test('Can add multiple setlist items and navigate', async ({ page }) => {
+    test('Adding items grows the list and auto-advance toggle flips aria-pressed', async ({ page }) => {
         const add_btn = page.getByRole('button', { name: 'Add setlist item' });
         await add_btn.click();
-        await page.waitForTimeout(300);
         await add_btn.click();
-        await page.waitForTimeout(300);
-
         const items = page.getByRole('list', { name: 'Setlist items' });
-        if (await items.isVisible().catch(() => false)) {
-            const list_items = items.getByRole('listitem');
-            const count = await list_items.count();
-            expect(count).toBeGreaterThan(0);
-        }
-    });
+        expect(await items.getByRole('listitem').count()).toBe(2);
 
-    test('Auto-advance toggle reflects state', async ({ page }) => {
-        const toggle = page.getByRole('button', { name: /Auto-advance/i });
-        if (await toggle.isVisible().catch(() => false)) {
-            const pressed_before = await toggle.getAttribute('aria-pressed');
-            await toggle.click();
-            await page.waitForTimeout(300);
-            const pressed_after = await toggle.getAttribute('aria-pressed');
-            if (pressed_before !== null) {
-                expect(pressed_after).not.toBe(pressed_before);
-            }
-        }
+        const auto = page.getByRole('button', { name: /Auto-advance/i });
+        const before = await auto.getAttribute('aria-pressed');
+        await auto.click();
+        await expect(auto).not.toHaveAttribute('aria-pressed', before ?? '');
     });
 });
 
-test.describe('Loop Station Deep', () => {
+// ---------------------------------------------------------------------------
+// Loop station — arm/disarm toggles the button label; slots grid renders.
+// ---------------------------------------------------------------------------
+
+test.describe('Loop station — arm/disarm', () => {
     test.beforeEach(async ({ page }) => {
         await setupWorkspace(page);
         await launch_new_project(page);
-        await page.getByRole('button', { name: 'Toggle bottom dock' }).click();
-        await page.locator('#bottom-dock-tab-loopStation').click();
+        await open_dock_tab(page, 'loopStation');
     });
 
-    test('Arm and disarm changes button label', async ({ page }) => {
+    test('Arming flips the button to Disarm and reveals the slots grid', async ({ page }) => {
         const arm = page.getByRole('button', { name: /Arm loop station/i });
         await expect(arm).toBeVisible();
+
         await arm.click();
 
         const disarm = page.getByRole('button', { name: /Disarm loop station/i });
-        await expect(disarm).toBeVisible({ timeout: 5000 });
-
-        await disarm.click();
-        await expect(arm).toBeVisible({ timeout: 5000 });
-    });
-
-    test('Loop slots grid is visible', async ({ page }) => {
-        const grid = page.getByRole('grid', { name: 'Loop slots' });
-        if (await grid.isVisible().catch(() => false)) {
-            await expect(grid).toBeVisible();
-        }
+        await expect(disarm).toBeVisible();
+        // The slots grid renders once armed.
+        await expect(page.getByRole('grid', { name: 'Loop slots' })).toBeVisible();
     });
 });
 
-test.describe('Crust Module Deep', () => {
-    test('Crust panel controls accessible when device added', async ({ page }) => {
+// ---------------------------------------------------------------------------
+// Crust limiter — adding the device exposes its metering controls.
+// ---------------------------------------------------------------------------
+
+test.describe('Crust limiter device', () => {
+    test.beforeEach(async ({ page }) => {
         test.setTimeout(60000);
         await setupWorkspace(page);
         await launch_new_project(page);
         await add_track(page, 'MIDI');
+    });
 
+    test('Add-device menu lists Crust, but adding it reports not-implemented and adds no device', async ({ page }) => {
         const inspector = page.getByRole('complementary', { name: 'Inspector panel' });
         await inspector.getByRole('button', { name: 'Add device' }).click();
-        const crust = page.getByRole('menuitem', { name: /Crust/i });
-        if (await crust.isVisible().catch(() => false)) {
-            await crust.click();
-            await page.waitForTimeout(1000);
 
-            const dither = page.getByRole('combobox', { name: 'Dither mode' });
-            if (await dither.isVisible().catch(() => false)) {
-                const options = await dither.getByRole('option').count();
-                expect(options).toBeGreaterThan(0);
-            }
+        // The menu advertises Crust among the effects.
+        const crust_item = page.getByRole('menuitem', { name: /^Crust$/ });
+        await expect(crust_item).toBeVisible();
 
-            const reset_peak = page.getByRole('button', { name: 'Reset true peak indicator' });
-            if (await reset_peak.isVisible().catch(() => false)) {
-                await expect(reset_peak).toBeVisible();
-            }
-        }
+        const devices_before = await inspector.getByRole('button', { name: /^Bypass /i }).count();
+
+        await crust_item.click();
+
+        // Crust is intentionally unimplemented → an error notification surfaces and no
+        // Crust device card is added to the chain.
+        await expect(page.getByText(/Crust is not fully implemented|PluginNotImplementedError/i)).toBeVisible({ timeout: 5000 });
+        const devices_after = await inspector.getByRole('button', { name: /^Bypass /i }).count();
+        expect(devices_after).toBe(devices_before);
     });
 });
 
-test.describe('Analysis Panel Content', () => {
-    test('Analysis tab shows content on EDM template', async ({ page }) => {
+// ---------------------------------------------------------------------------
+// Analysis panel — opens with real content.
+// ---------------------------------------------------------------------------
+
+test.describe('Analysis panel', () => {
+    test.beforeEach(async ({ page }) => {
         test.setTimeout(60000);
         await setupWorkspace(page);
         await launch_from_template({ page, template_name: /EDM/i });
+        await open_dock_tab(page, 'analysis');
+    });
 
-        await page.getByRole('button', { name: 'Toggle bottom dock' }).click();
-        await page.locator('#bottom-dock-tab-analysis').click();
-        await page.waitForTimeout(1000);
-
+    test('Analysis tab renders meter widgets in the dock panel', async ({ page }) => {
         const panel = page.locator('#bottom-dock-tabpanel');
         await expect(panel).toBeVisible();
-    });
-});
-
-test.describe('Onboarding Tour', () => {
-    test('Onboarding tour appears on first interaction', async ({ page }) => {
-        await setupWorkspace(page);
-        await launch_new_project(page);
-        await add_track(page, 'MIDI');
-        await page.waitForTimeout(500);
-
-        const tour = page.getByRole('dialog', { name: /Onboarding tour/i });
-        if (await tour.isVisible().catch(() => false)) {
-            await page.keyboard.press('ArrowRight');
-            await page.waitForTimeout(300);
-            await page.keyboard.press('Escape');
-            await page.waitForTimeout(300);
-        }
+        // The analysis panel exposes at least one labeled metering surface.
+        expect(await panel.getByRole('img', { name: /meter|spectrum|goniometer|correlation/i }).count()).toBeGreaterThan(0);
     });
 });

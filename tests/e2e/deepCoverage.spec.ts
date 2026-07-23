@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { launch_from_template, launch_new_project, setupWorkspace } from './e2eUtils';
+import { launch_new_project, setupWorkspace } from './e2eUtils';
 
 const MOD = process.platform === 'darwin' ? 'Meta' : 'Control';
 
@@ -9,210 +9,294 @@ async function add_track(page: import('@playwright/test').Page, kind: string): P
     await page.getByRole('option', { name: `Add ${kind} Track` }).click();
 }
 
-test.describe('Automation Modulator Form Fields', () => {
+/**
+ * Open the bottom dock and switch to a tab identified by its id suffix.
+ */
+async function open_dock_tab(page: import('@playwright/test').Page, tab_id: string): Promise<void> {
+    const toggle = page.getByRole('button', { name: 'Toggle bottom dock' });
+    const pressed = (await toggle.getAttribute('aria-pressed')) ?? '';
+    if (!pressed.match(/true/i)) {
+        await toggle.click();
+    }
+    await page.locator(`#bottom-dock-tab-${tab_id}`).click();
+}
+
+/** The AI change toast is a DawUtilityPanel[role=status] with Undo/Dismiss buttons. */
+function ai_toast(page: import('@playwright/test').Page) {
+    return page.getByRole('status').filter({ hasText: /Undo|Dismiss/ });
+}
+
+// ---------------------------------------------------------------------------
+// Modulation matrix — verify real state mutations (modulator card count,
+// empty-state presence, aria-expanded form toggle, name persistence).
+// ---------------------------------------------------------------------------
+
+test.describe('Modulation matrix — real state mutations', () => {
     test.beforeEach(async ({ page }) => {
         await setupWorkspace(page);
         await launch_new_project(page);
         await add_track(page, 'MIDI');
-        await page.getByRole('button', { name: 'Toggle bottom dock' }).click();
-        await page.locator('#bottom-dock-tab-modulation').click();
+        await open_dock_tab(page, 'modulation');
     });
 
-    test('Modulation matrix add button reveals modulator form', async ({ page }) => {
+    test('New Modulator toggles aria-expanded and reveals the form fields', async ({ page }) => {
         const matrix = page.getByRole('region', { name: 'Modulation matrix' });
-        const add_btn = matrix.getByRole('button', { name: /Add|Create|New|\+/i }).first();
-        if (await add_btn.isVisible().catch(() => false)) {
-            await add_btn.click();
-            await page.waitForTimeout(500);
+        // exact name: otherwise "Close new modulator form" matches /New Modulator/i.
+        const new_btn = matrix.getByRole('button', { name: 'New Modulator', exact: true });
 
-            const kind = page.getByRole('combobox', { name: 'Modulator kind' });
-            if (await kind.isVisible().catch(() => false)) {
-                await expect(kind).toBeVisible();
-                const options = await kind.getByRole('option').count();
-                expect(options).toBeGreaterThan(0);
-            }
+        // Before: collapsed, empty state visible.
+        await expect(new_btn).toHaveAttribute('aria-expanded', 'false');
+        await expect(matrix.getByText('No modulators')).toBeVisible();
 
-            const scope = page.getByRole('combobox', { name: 'Modulator track scope' });
-            if (await scope.isVisible().catch(() => false)) {
-                await expect(scope).toBeVisible();
-            }
+        await new_btn.click();
 
-            const close = page.getByRole('button', { name: 'Close new modulator form' });
-            if (await close.isVisible().catch(() => false)) {
-                await expect(close).toBeVisible();
-            }
-        }
+        // After: expanded, form fields render.
+        await expect(new_btn).toHaveAttribute('aria-expanded', 'true');
+        await expect(matrix.getByRole('textbox', { name: 'Modulator name' })).toBeVisible();
+        await expect(matrix.getByRole('combobox', { name: 'Modulator kind' })).toBeVisible();
+        await expect(matrix.getByRole('combobox', { name: 'Modulator track scope' })).toBeVisible();
     });
 
-    test('Modulator name input accepts text', async ({ page }) => {
+    test('Modulator kind combobox exposes LFO and Step options (not Envelope)', async ({ page }) => {
         const matrix = page.getByRole('region', { name: 'Modulation matrix' });
-        const add_btn = matrix.getByRole('button', { name: /Add|Create|New|\+/i }).first();
-        if (await add_btn.isVisible().catch(() => false)) {
-            await add_btn.click();
-            await page.waitForTimeout(500);
+        await matrix.getByRole('button', { name: 'New Modulator', exact: true }).click();
 
-            const name = page.getByRole('textbox', { name: 'Modulator name' });
-            if (await name.isVisible().catch(() => false)) {
-                await name.fill('LFO 1');
-                await expect(name).toHaveValue('LFO 1');
-            }
-        }
+        const kind = matrix.getByRole('combobox', { name: 'Modulator kind' });
+        await kind.click();
+        const option_names = await page.getByRole('option').allInnerTexts();
+        const trimmed = option_names.map((n) => n.trim());
+        expect(trimmed).toContain('LFO');
+        expect(trimmed).toContain('Step');
+        expect(trimmed).not.toContain('Envelope');
     });
 
-    test('Modulator form has target mapping selectors', async ({ page }) => {
+    test('Creating an LFO modulator removes the empty state and adds a card', async ({ page }) => {
         const matrix = page.getByRole('region', { name: 'Modulation matrix' });
-        const add_btn = matrix.getByRole('button', { name: /Add|Create|New|\+/i }).first();
-        if (await add_btn.isVisible().catch(() => false)) {
-            await add_btn.click();
-            await page.waitForTimeout(500);
 
-            const target_track = page.getByRole('combobox', { name: 'Target track' });
-            const target_device = page.getByRole('combobox', { name: 'Target device' });
-            const target_param = page.getByRole('combobox', { name: 'Target parameter' });
+        // Before: no cards, empty state shown.
+        await expect(matrix.getByText('No modulators')).toBeVisible();
+        expect(await matrix.getByRole('checkbox', { name: /^Enabled$/i }).count()).toBe(0);
 
-            const track_visible = await target_track.isVisible().catch(() => false);
-            const device_visible = await target_device.isVisible().catch(() => false);
-            const param_visible = await target_param.isVisible().catch(() => false);
+        await matrix.getByRole('button', { name: 'New Modulator', exact: true }).click();
+        // Name is retained in the persisted card.
+        const name_input = matrix.getByRole('textbox', { name: 'Modulator name' });
+        await name_input.fill('My LFO');
+        // A track exists from beforeEach, so the Add button is enabled.
+        await matrix.getByRole('button', { name: 'Add', exact: true }).click();
 
-            if (track_visible) await expect(target_track).toBeVisible();
-            if (device_visible) await expect(target_device).toBeVisible();
-            if (param_visible) await expect(target_param).toBeVisible();
-        }
+        // After: empty state gone, one card. The card exposes a rename box (labelled by
+        // the modulator id) carrying the name we typed, plus a remove button by name.
+        await expect(matrix.getByText('No modulators')).toHaveCount(0);
+        const rename = matrix.getByRole('textbox', { name: /^Rename modulator/ });
+        await expect(rename).toBeVisible();
+        await expect(rename).toHaveValue('My LFO');
+        await expect(matrix.getByLabel('Remove modulator My LFO')).toBeVisible();
+        expect(await matrix.getByRole('checkbox', { name: /^Enabled$/i }).count()).toBe(1);
+    });
+
+    test('Removing a modulator decrements the card count back to the empty state', async ({ page }) => {
+        const matrix = page.getByRole('region', { name: 'Modulation matrix' });
+
+        await matrix.getByRole('button', { name: 'New Modulator', exact: true }).click();
+        await matrix.getByRole('button', { name: 'Add', exact: true }).click();
+        await expect(matrix.getByLabel('Remove modulator LFO')).toBeVisible();
+
+        await matrix.getByLabel('Remove modulator LFO').click();
+
+        await expect(matrix.getByText('No modulators')).toBeVisible();
+        expect(await matrix.getByLabel(/Remove modulator/).count()).toBe(0);
     });
 });
 
-test.describe('Setlist Move Operations', () => {
+// ---------------------------------------------------------------------------
+// Setlist — add/remove/move/reorder mutate the items list verifiably.
+// The list only renders when items exist; the empty state appears otherwise.
+// ---------------------------------------------------------------------------
+
+test.describe('Setlist — list mutations', () => {
     test.beforeEach(async ({ page }) => {
         await setupWorkspace(page);
         await launch_new_project(page);
-        await page.getByRole('button', { name: 'Toggle bottom dock' }).click();
-        await page.locator('#bottom-dock-tab-setlist').click();
+        await open_dock_tab(page, 'setlist');
     });
 
-    test('Move up and move down are present', async ({ page }) => {
-        const move_up = page.getByRole('button', { name: 'Move up' });
-        const move_down = page.getByRole('button', { name: 'Move down' });
+    test('Add setlist item creates a list, removes the empty state, names items sequentially', async ({ page }) => {
+        // Before: empty state, no list.
+        await expect(page.getByText('No setlist items')).toBeVisible();
+        await expect(page.getByRole('list', { name: 'Setlist items' })).toHaveCount(0);
 
-        const up_visible = await move_up.first().isVisible().catch(() => false);
-        const down_visible = await move_down.first().isVisible().catch(() => false);
-
-        if (up_visible) {
-            await move_up.first().click({ timeout: 5000 }).catch(() => {});
-            await page.waitForTimeout(300);
-        }
-        if (down_visible) {
-            await move_down.first().click({ timeout: 5000 }).catch(() => {});
-            await page.waitForTimeout(300);
-        }
-    });
-
-    test('Setlist count-in bars is present', async ({ page }) => {
-        const count_in = page.getByRole('spinbutton', { name: /Count-in bars/i });
-        if (await count_in.isVisible().catch(() => false)) {
-            await expect(count_in).toBeVisible();
-        }
-    });
-
-    test('Setlist items can be removed', async ({ page }) => {
         await page.getByRole('button', { name: 'Add setlist item' }).click();
-        await page.waitForTimeout(500);
 
-        const remove = page.getByRole('button', { name: /Remove/i });
-        if (await remove.first().isVisible().catch(() => false)) {
-            const items_before = await page.getByRole('list', { name: 'Setlist items' }).getByRole('listitem').count().catch(() => 0);
-            await remove.first().click();
-            await page.waitForTimeout(500);
-        }
+        // After: list exists with one item named "Song 1".
+        const items = page.getByRole('list', { name: 'Setlist items' });
+        await expect(items).toBeVisible();
+        expect(await items.getByRole('listitem').count()).toBe(1);
+        await expect(items.getByText('Song 1')).toBeVisible();
+
+        // Second add → "Song 2".
+        await page.getByRole('button', { name: 'Add setlist item' }).click();
+        expect(await items.getByRole('listitem').count()).toBe(2);
+        await expect(items.getByText('Song 2')).toBeVisible();
+    });
+
+    test('Remove setlist item decrements count and restores empty state when last', async ({ page }) => {
+        await page.getByRole('button', { name: 'Add setlist item' }).click();
+        await page.getByRole('button', { name: 'Add setlist item' }).click();
+        const items = page.getByRole('list', { name: 'Setlist items' });
+        expect(await items.getByRole('listitem').count()).toBe(2);
+
+        await page.getByLabel('Remove Song 1').click();
+
+        expect(await items.getByRole('listitem').count()).toBe(1);
+        await expect(items.getByText('Song 2')).toBeVisible();
+
+        // Remove the last one → empty state returns.
+        await page.getByLabel('Remove Song 2').click();
+        await expect(page.getByText('No setlist items')).toBeVisible();
+        await expect(items).toHaveCount(0);
+    });
+
+    test('Move down reorders items (first item swaps below second)', async ({ page }) => {
+        await page.getByRole('button', { name: 'Add setlist item' }).click();
+        await page.getByRole('button', { name: 'Add setlist item' }).click();
+        const items = page.getByRole('list', { name: 'Setlist items' });
+
+        // Capture the rendered name order via the listitem text (each row shows "Song N").
+        const rows = items.getByRole('listitem');
+        const name_of = async (i: number) => (await rows.nth(i).innerText()).match(/Song \d+/)?.[0] ?? '';
+        const before_first = await name_of(0);
+        const before_second = await name_of(1);
+
+        // Move-down on the first item (buttons are opacity-0 until hover; still in the DOM).
+        await items.getByRole('button', { name: 'Move down' }).first().click({ force: true });
+
+        const after_first = await name_of(0);
+        const after_second = await name_of(1);
+
+        // The two names must have swapped positions.
+        expect(after_first).toBe(before_second);
+        expect(after_second).toBe(before_first);
+    });
+
+    test('Count-in bars spinbutton commits in-range values and ignores out-of-range', async ({ page }) => {
+        const count_in = page.getByRole('spinbutton', { name: 'Count-in bars' });
+
+        await count_in.fill('4');
+        await count_in.dispatchEvent('change');
+        await expect(count_in).toHaveValue('4');
+
+        // Out-of-range value is silently ignored — value must not become 9.
+        await count_in.fill('9');
+        await count_in.dispatchEvent('change');
+        await expect(count_in).not.toHaveValue('9');
+
+        // 0 is valid.
+        await count_in.fill('0');
+        await count_in.dispatchEvent('change');
+        await expect(count_in).toHaveValue('0');
     });
 });
 
-test.describe('Prompt Bar AI Controls', () => {
+// ---------------------------------------------------------------------------
+// Prompt bar — destructive commands open a confirm/cancel preview; cancelling
+// preserves state, confirming mutates state and shows an AI change toast.
+// ---------------------------------------------------------------------------
+
+test.describe('Prompt bar — preview and execution', () => {
     test.beforeEach(async ({ page }) => {
         await setupWorkspace(page);
-        await launch_from_template({ page, template_name: /EDM/i });
+        await launch_new_project(page);
+        await add_track(page, 'MIDI');
     });
 
-    test('Prompt bar has confirm and cancel action buttons when populated', async ({ page }) => {
+    test('Destructive command opens a confirm/cancel preview; cancelling keeps tracks', async ({ page }) => {
         const prompt = page.getByRole('textbox', { name: 'Prompt command input' });
-        await prompt.fill('add a drum beat');
-        await page.waitForTimeout(500);
+        await prompt.fill('Delete All Tracks');
+        await page.getByRole('option', { name: /Delete All Tracks/i }).click();
 
-        const confirm = page.getByRole('button', { name: /Confirm actions/i });
-        const cancel = page.getByRole('button', { name: /Cancel actions/i });
+        // Preview row appears only for destructive actions.
+        const confirm = page.getByRole('button', { name: 'Confirm actions' });
+        const cancel = page.getByRole('button', { name: 'Cancel actions' });
+        await expect(confirm).toBeVisible();
+        await expect(cancel).toBeVisible();
 
-        const confirm_visible = await confirm.isVisible().catch(() => false);
-        const cancel_visible = await cancel.isVisible().catch(() => false);
-
-        if (confirm_visible || cancel_visible) {
-            expect(confirm_visible || cancel_visible).toBe(true);
-        }
+        // Cancelling clears the preview without removing any track.
+        const track_rows_before = await page.getByRole('grid', { name: /Track list/i }).getByRole('row').count();
+        await cancel.click();
+        await expect(confirm).toHaveCount(0);
+        const track_rows_after = await page.getByRole('grid', { name: /Track list/i }).getByRole('row').count();
+        expect(track_rows_after).toBe(track_rows_before);
     });
 
-    test('Cancel AI processing button is present', async ({ page }) => {
-        const cancel_ai = page.getByRole('button', { name: /Cancel AI processing/i });
-        const visible = await cancel_ai.isVisible().catch(() => false);
-    });
+    test('Confirming a destructive command removes tracks and shows an AI change toast', async ({ page }) => {
+        const track_list = page.getByRole('grid', { name: /Track list/i });
+        const rows_before = await track_list.getByRole('row').count();
+        expect(rows_before).toBeGreaterThan(0);
 
-    test('AI voice command overlay stop button appears on press', async ({ page }) => {
-        const voice = page.getByRole('button', { name: /Voice command/i });
-        await voice.click();
-        await page.waitForTimeout(300);
+        await page.getByRole('textbox', { name: 'Prompt command input' }).fill('Delete All Tracks');
+        await page.getByRole('option', { name: /Delete All Tracks/i }).click();
+        await page.getByRole('button', { name: 'Confirm actions' }).click();
 
-        const stop_voice = page.getByRole('button', { name: 'Stop voice input' });
-        if (await stop_voice.isVisible().catch(() => false)) {
-            await expect(stop_voice).toBeVisible();
-            await stop_voice.click();
-        }
+        // The AI change toast (role=status with Undo/Dismiss) reports the confirmed action.
+        const toast = ai_toast(page);
+        await expect(toast).toBeVisible();
+        await expect(toast.getByText(/Confirmed:.*Delete All Tracks/i)).toBeVisible();
     });
 });
 
-test.describe('Arrangement Take Lane Controls', () => {
+// ---------------------------------------------------------------------------
+// Take lane / comping — the Flatten comp + Initialize buttons only appear once
+// variation lanes are toggled on the track header. Flatten is disabled until a
+// lane is initialized, then becomes enabled.
+// ---------------------------------------------------------------------------
+
+test.describe('Arrangement take lane — flatten comp state', () => {
     test.beforeEach(async ({ page }) => {
         await setupWorkspace(page);
         await launch_new_project(page);
         await add_track(page, 'Audio');
-    });
-
-    test('Audio track inspector has flatten comp button when takes exist', async ({ page }) => {
-        const inspector = page.getByRole('complementary', { name: 'Inspector panel' });
-        const flatten = inspector.getByRole('button', { name: /Flatten comp/i });
-        if (await flatten.isVisible().catch(() => false)) {
-            await expect(flatten).toBeVisible();
-        }
-    });
-
-    test('Audio track has input monitoring selector', async ({ page }) => {
+        // Variation lanes toggle is an icon-only button (Layers icon, no aria-label);
+        // open it on the first track to reveal the take-lane panel.
         const track_list = page.getByRole('grid', { name: /Track list/i });
-        const monitor = track_list.getByRole('button', { name: /Input monitoring/i });
-        if (await monitor.first().isVisible().catch(() => false)) {
-            const label = await monitor.first().getAttribute('aria-label');
-            expect(label).toContain('Input monitoring');
-        }
+        await track_list.locator('button').filter({ has: page.locator('svg.lucide-layers') }).first().click();
+    });
+
+    test('Flatten comp is disabled until a take lane is initialized, then enabled', async ({ page }) => {
+        const flatten = page.getByRole('button', { name: 'Flatten comp' });
+        await expect(flatten).toBeVisible();
+        await expect(flatten).toBeDisabled();
+
+        await page.getByRole('button', { name: 'Initialize take lane' }).click();
+        await expect(flatten).toBeEnabled();
     });
 });
 
-test.describe('Master Track Controls', () => {
+// ---------------------------------------------------------------------------
+// Master track — on a fresh project the inspector already falls back to the
+// master track, so "Analysis & Metering" is visible immediately. Selecting a
+// different track removes it; re-selecting master via the spectrum widget
+// brings it back. This is the real selection-state behavior.
+// ---------------------------------------------------------------------------
+
+test.describe('Master track selection', () => {
     test.beforeEach(async ({ page }) => {
         await setupWorkspace(page);
         await launch_new_project(page);
     });
 
-    test('Master track is visible in track list', async ({ page }) => {
-        const track_list = page.getByRole('grid', { name: /Track list/i });
-        const master = track_list.getByRole('row', { name: /Master/i });
-        if (await master.isVisible().catch(() => false)) {
-            await expect(master).toBeVisible();
-        } else {
-            const master_button = page.getByRole('button', { name: /Master/i });
-            const visible = await master_button.first().isVisible().catch(() => false);
-            expect(typeof visible).toBe('boolean');
-        }
-    });
+    test('Adding a track hides master Analysis & Metering; Master Track Spectrum restores it', async ({ page }) => {
+        const inspector = page.getByRole('complementary', { name: 'Inspector panel' });
+        const am = inspector.getByText('Analysis & Metering');
 
-    test('Master track spectrum button is present', async ({ page }) => {
-        const master_spectrum = page.getByRole('button', { name: 'Master Track Spectrum' });
-        if (await master_spectrum.isVisible().catch(() => false)) {
-            await expect(master_spectrum).toBeVisible();
-        }
+        // Fresh launch: nothing else selected → master is the fallback selection → section visible.
+        await expect(am).toBeVisible();
+
+        // Adding a MIDI track selects it → master-only section disappears.
+        await add_track(page, 'MIDI');
+        await expect(am).toHaveCount(0);
+
+        // Re-select master via the spectrum widget → section returns.
+        await page.getByRole('button', { name: 'Master Track Spectrum' }).click();
+        await expect(am).toBeVisible();
     });
 });

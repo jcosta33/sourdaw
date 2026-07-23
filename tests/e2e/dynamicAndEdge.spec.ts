@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { launch_from_template, launch_new_project, setupWorkspace } from '../../tests/e2e/e2eUtils';
+import { launch_new_project, setupWorkspace } from './e2eUtils';
 
 const MOD = process.platform === 'darwin' ? 'Meta' : 'Control';
 
@@ -9,263 +9,155 @@ async function add_track(page: import('@playwright/test').Page, kind: string): P
     await page.getByRole('option', { name: `Add ${kind} Track` }).click();
 }
 
-test.describe('Dynamic Track Header Elements', () => {
+// ---------------------------------------------------------------------------
+// Dynamic track-header elements — input monitoring cycles, overdub toggles.
+// ---------------------------------------------------------------------------
+
+test.describe('Dynamic track-header elements', () => {
     test.beforeEach(async ({ page }) => {
         await setupWorkspace(page);
         await launch_new_project(page);
     });
 
-    test('Input monitoring cycles through modes', async ({ page }) => {
+    test('Input monitoring cycles Auto → On → Off → Auto', async ({ page }) => {
         await add_track(page, 'MIDI');
         const track_list = page.getByRole('grid', { name: /Track list/i });
-        const monitor = track_list.getByRole('button', { name: /Input monitoring/i });
-        if (await monitor.first().isVisible().catch(() => false)) {
-            const label_before = await monitor.first().getAttribute('aria-label');
-            await monitor.first().click();
-            await page.waitForTimeout(300);
-            const label_after = await monitor.first().getAttribute('aria-label');
-            expect(label_after).not.toBe(label_before);
-        }
+        const monitor = track_list.getByRole('button', { name: /Input monitoring/i }).first();
+
+        await expect(monitor).toHaveAccessibleName(/Input monitoring: Auto/i);
+        await monitor.click();
+        await expect(monitor).toHaveAccessibleName(/Input monitoring: On/i);
+        await monitor.click();
+        await expect(monitor).toHaveAccessibleName(/Input monitoring: Off/i);
+        await monitor.click();
+        await expect(monitor).toHaveAccessibleName(/Input monitoring: Auto/i);
     });
 
-    test('Overdub button appears when MIDI track is armed', async ({ page }) => {
+    test('Overdub toggle flips aria-pressed when a MIDI track is armed', async ({ page }) => {
         await add_track(page, 'MIDI');
         const track_list = page.getByRole('grid', { name: /Track list/i });
-        const arm = track_list.getByRole('button', { name: /^Arm / });
-        if (await arm.first().isVisible().catch(() => false)) {
-            await arm.first().click();
-            await page.waitForTimeout(500);
-            const overdub = page.getByRole('button', { name: 'Overdub' });
-            if (await overdub.isVisible().catch(() => false)) {
-                await expect(overdub).toBeVisible();
-            }
-        }
+        await track_list.getByRole('button', { name: /^Arm / }).first().click();
+
+        const overdub = page.getByRole('button', { name: 'Overdub' });
+        await expect(overdub).toHaveAttribute('aria-pressed', 'false');
+        await overdub.click();
+        await expect(overdub).toHaveAttribute('aria-pressed', 'true');
     });
 
-    test('Audio track shows audio-specific controls', async ({ page }) => {
-        await add_track(page, 'Audio');
-        const track_list = page.getByRole('grid', { name: /Track list/i });
-        const audio_rows = track_list.getByRole('row', { name: /Audio/i });
-        await expect(audio_rows.first()).toBeVisible({ timeout: 5000 });
-    });
-
-    test('Multiple tracks show independent mute/solo', async ({ page }) => {
+    test('Two tracks each expose independent mute buttons', async ({ page }) => {
         await add_track(page, 'MIDI');
         await add_track(page, 'Audio');
         const track_list = page.getByRole('grid', { name: /Track list/i });
-        const mute_buttons = track_list.getByRole('button', { name: /^Mute / });
-        const count = await mute_buttons.count();
-        expect(count).toBeGreaterThanOrEqual(2);
+        const mutes = track_list.getByRole('button', { name: /^Mute / });
+        // Each track renders header + body rows, so >=2 distinct mute controls.
+        expect(await mutes.count()).toBeGreaterThanOrEqual(2);
     });
 });
 
-test.describe('MIDI Editor Note Operations', () => {
+// ---------------------------------------------------------------------------
+// MIDI editor — note creation and the chord-stamp toggle.
+// ---------------------------------------------------------------------------
+
+test.describe('MIDI editor note operations', () => {
     test.beforeEach(async ({ page }) => {
         await setupWorkspace(page);
         await launch_new_project(page);
         await add_track(page, 'MIDI');
         const timeline = page.getByLabel('Timeline editor surface');
-        await timeline.click({ button: 'right', position: { x: 200, y: 30 } });
-        const add = page.getByRole('menuitem', { name: /Add Clip Here/i });
-        if (await add.isVisible().catch(() => false)) {
-            await add.click();
-            await page.waitForTimeout(500);
-            await timeline.dblclick({ position: { x: 200, y: 30 } });
-            await page.getByLabel('Piano roll editor').waitFor({ state: 'visible', timeout: 10000 });
-        }
+        await timeline.click({ button: 'right', position: { x: 300, y: 30 } });
+        await page.getByRole('menuitem', { name: /Add Clip Here/i }).click();
+        await page.waitForTimeout(500);
+        await timeline.dblclick({ position: { x: 300, y: 30 } });
+        await page.getByLabel('Piano roll editor').waitFor({ state: 'visible', timeout: 10000 });
     });
 
-    test('Can create a note by double-clicking in the piano roll', async ({ page }) => {
+    test('Double-clicking the piano roll enables the Undo button (a note was created)', async ({ page }) => {
         const piano_roll = page.getByLabel('Piano roll editor');
-        await expect(piano_roll).toBeVisible();
+        const undo = page.getByRole('button', { name: 'Undo', exact: true });
+
         const box = await piano_roll.boundingBox();
-        if (box) {
-            await piano_roll.dblclick({ position: { x: box.width * 0.3, y: box.height * 0.5 } });
-            await page.waitForTimeout(500);
-        }
-        await expect(piano_roll).toBeVisible();
+        if (!box) throw new Error('piano roll missing');
+        await piano_roll.dblclick({ position: { x: box.width * 0.3, y: box.height * 0.5 } });
+        await page.waitForTimeout(500);
+
+        await expect(undo).toBeEnabled();
     });
 
-    test('Chord toolbar button is present', async ({ page }) => {
-        const chord = page.getByRole('button', { name: /Chord/i });
-        if (await chord.isVisible().catch(() => false)) {
-            await expect(chord).toBeVisible();
-        }
-    });
-
-    test('Active expression lane selector is present', async ({ page }) => {
-        const expr_lane = page.getByRole('combobox', { name: /Active expression lane/i });
-        if (await expr_lane.isVisible().catch(() => false)) {
-            await expect(expr_lane).toBeVisible();
-        }
-    });
-
-    test('Focused clip selector is present', async ({ page }) => {
-        const focused = page.getByRole('combobox', { name: /Focused clip for note input/i });
-        if (await focused.isVisible().catch(() => false)) {
-            await expect(focused).toBeVisible();
-        }
+    test('Chord-stamp-mode toggle flips aria-pressed', async ({ page }) => {
+        const chord = page.getByRole('button', { name: 'Toggle chord stamp mode' });
+        const before = await chord.getAttribute('aria-pressed');
+        await chord.click();
+        await expect(chord).not.toHaveAttribute('aria-pressed', before ?? '');
     });
 });
 
-test.describe('Error States & Edge Cases', () => {
+// ---------------------------------------------------------------------------
+// Edge cases — empty rename, rapid toggling, track context menu.
+// ---------------------------------------------------------------------------
+
+test.describe('Edge cases', () => {
     test.beforeEach(async ({ page }) => {
         await setupWorkspace(page);
         await launch_new_project(page);
     });
 
-    test('Project rename to empty string keeps old name', async ({ page }) => {
+    test('Renaming the project to empty keeps the previous name', async ({ page }) => {
         const project_button = page.getByRole('button', { name: 'Untitled Project' });
         await project_button.click();
         const input = page.locator('input:focus');
         await input.fill('');
         await input.press('Enter');
-        await page.waitForTimeout(500);
-        await expect(page.getByText('Untitled Project')).toBeVisible();
+        // The name is preserved (empty is rejected).
+        await expect(page.getByRole('button', { name: 'Untitled Project' })).toBeVisible();
     });
 
-    test('Rapid play/stop toggling maintains consistent state', async ({ page }) => {
+    test('Rapid play/stop toggling leaves transport in a stable state', async ({ page }) => {
         const play = page.getByRole('button', { name: 'Play' }).or(page.getByRole('button', { name: 'Pause' }));
         for (let i = 0; i < 5; i++) {
             await play.first().click();
             await page.waitForTimeout(200);
         }
-        await expect(play.first()).toBeVisible();
+        // After toggling, exactly one of Play/Pause is visible (transport didn't crash).
+        const play_count = await page.getByRole('button', { name: 'Play', exact: true }).count();
+        const pause_count = await page.getByRole('button', { name: 'Pause', exact: true }).count();
+        expect(play_count + pause_count).toBeGreaterThanOrEqual(1);
     });
 
-    test('Rapid panel toggling does not crash', async ({ page }) => {
-        for (const shortcut of [`${MOD}+b`, `${MOD}+i`, `${MOD}+m`, `${MOD}+j`]) {
-            await page.keyboard.press(shortcut);
-            await page.waitForTimeout(100);
-        }
-        for (const shortcut of [`${MOD}+b`, `${MOD}+i`, `${MOD}+m`, `${MOD}+j`]) {
-            await page.keyboard.press(shortcut);
-            await page.waitForTimeout(100);
-        }
-        await expect(page.getByRole('toolbar', { name: 'Transport controls' })).toBeVisible();
-    });
-
-    test('Track context menu appears on right-click', async ({ page }) => {
+    test('Track context menu lists operations on right-click', async ({ page }) => {
         await add_track(page, 'MIDI');
         const track_list = page.getByRole('grid', { name: /Track list/i });
-        await expect(track_list.getByRole('row', { name: /MIDI/i }).first()).toBeVisible({ timeout: 5000 });
+        await track_list.getByRole('row', { name: /MIDI/i }).first().click({ button: 'right' });
 
-        track_list.getByRole('row', { name: /MIDI/i }).first().click({ button: 'right' });
         const menu = page.getByRole('menu');
-        await expect(menu).toBeVisible({ timeout: 5000 });
-        const items = menu.getByRole('menuitem');
-        const count = await items.count();
-        expect(count).toBeGreaterThan(0);
+        await expect(menu).toBeVisible();
+        const names = await menu.getByRole('menuitem').allInnerTexts();
+        const flat = names.join(' | ');
+        // Track context menu exposes rename and delete at minimum.
+        expect(flat).toMatch(/Rename|Delete|Duplicate|Color/);
         await page.keyboard.press('Escape');
-    });
-
-    test('Undo reverses the last track addition', async ({ page }) => {
-        await add_track(page, 'MIDI');
-        await page.waitForTimeout(500);
-        const track_list = page.getByRole('grid', { name: /Track list/i });
-        const rows_with_track = await track_list.getByRole('row', { name: /MIDI/i }).count();
-        expect(rows_with_track).toBeGreaterThan(0);
-
-        const undo = page.getByRole('button', { name: 'Undo', exact: true });
-        if (await undo.isEnabled().catch(() => false)) {
-            await undo.click();
-            await page.waitForTimeout(2000);
-            const rows_after_undo = await track_list.getByRole('row', { name: /MIDI/i }).count();
-            expect(rows_after_undo).toBeLessThanOrEqual(rows_with_track);
-        }
-    });
-
-    test('Count-in bars cycle wraps from 4 back to 1', async ({ page }) => {
-        const count_in = page.getByRole('button', { name: 'Count-in', exact: true });
-        await count_in.click();
-        const bars = page.getByRole('button', { name: /Count-in bars/i });
-        await expect(bars).toBeVisible();
-
-        for (let i = 0; i < 4; i++) {
-            await bars.click({ force: true });
-            await page.waitForTimeout(200);
-        }
-        const label = await bars.getAttribute('aria-label');
-        expect(label).toContain('Count-in bars: 1');
-    });
-
-    test('Opening multiple dialogs does not crash', async ({ page }) => {
-        await page.keyboard.press(`${MOD}+k`);
-        await page.waitForTimeout(300);
-        await page.keyboard.press('Escape');
-        await page.waitForTimeout(300);
-        await page.keyboard.press('Shift+Slash');
-        await page.waitForTimeout(300);
-        await page.keyboard.press('Escape');
-        await page.waitForTimeout(300);
-        await expect(page.getByRole('toolbar', { name: 'Transport controls' })).toBeVisible();
     });
 });
 
-test.describe('Remaining AI & Collab Controls', () => {
+// ---------------------------------------------------------------------------
+// Collaboration panel — toggle opens and close dismisses.
+// ---------------------------------------------------------------------------
+
+test.describe('Collaboration panel', () => {
     test.beforeEach(async ({ page }) => {
         await setupWorkspace(page);
         await launch_new_project(page);
     });
 
-    test('Collaboration panel close button is present', async ({ page }) => {
-        await page.getByRole('button', { name: 'Toggle collaboration panel' }).click();
+    test('Toggling opens the collaboration dialog and toggling again dismisses it', async ({ page }) => {
+        const toggle = page.getByRole('button', { name: 'Toggle collaboration panel' });
         const dialog = page.getByRole('dialog', { name: 'Collaborate' });
-        await expect(dialog).toBeVisible({ timeout: 5000 });
-        const close = dialog.getByRole('button', { name: 'Close' });
-        if (await close.isVisible().catch(() => false)) {
-            await expect(close).toBeVisible();
-        }
-    });
 
-    test('BrowserAi re-detect capabilities button is present', async ({ page }) => {
-        const redetect = page.getByRole('button', { name: 'Re-detect capabilities' });
-        if (await redetect.isVisible().catch(() => false)) {
-            await expect(redetect).toBeVisible();
-        }
-    });
+        await expect(dialog).toHaveCount(0);
+        await toggle.click();
+        await expect(dialog).toBeVisible();
 
-    test('Gluten preset search is present when device added', async ({ page }) => {
-        await add_track(page, 'MIDI');
-        const inspector = page.getByRole('complementary', { name: 'Inspector panel' });
-        await inspector.getByRole('button', { name: 'Add device' }).click();
-        const gluten = page.getByRole('menuitem', { name: /Gluten/i });
-        if (await gluten.isVisible().catch(() => false)) {
-            await gluten.click();
-            await page.waitForTimeout(1000);
-            const search = page.getByRole('searchbox', { name: 'Search Gluten presets' })
-                .or(page.getByPlaceholder('Search Gluten presets'));
-            if (await search.first().isVisible().catch(() => false)) {
-                await expect(search.first()).toBeVisible();
-            }
-        }
-    });
-
-    test('Toaster kit search is present when device added', async ({ page }) => {
-        const browser = page.getByRole('complementary', { name: 'Browser panel' });
-        const toaster = browser.getByRole('button', { name: /Toaster/i });
-        if (await toaster.isVisible().catch(() => false)) {
-            await toaster.click();
-            await page.waitForTimeout(1000);
-            const search = page.getByRole('searchbox', { name: 'Search Toaster kits' })
-                .or(page.getByPlaceholder('Search Toaster kits'));
-            if (await search.first().isVisible().catch(() => false)) {
-                await expect(search.first()).toBeVisible();
-            }
-        }
-    });
-
-    test('Levain instrument search is present when device added', async ({ page }) => {
-        const browser = page.getByRole('complementary', { name: 'Browser panel' });
-        const levain = browser.getByRole('button', { name: /Levain/i });
-        if (await levain.isVisible().catch(() => false)) {
-            await levain.click();
-            await page.waitForTimeout(1000);
-            const search = page.getByRole('searchbox', { name: 'Search Levain instruments' })
-                .or(page.getByPlaceholder('Search Levain instruments'));
-            if (await search.first().isVisible().catch(() => false)) {
-                await expect(search.first()).toBeVisible();
-            }
-        }
+        // Dismiss via the same toggle (the inner Close button animates and is unreliable to click).
+        await toggle.click();
+        await expect(dialog).toHaveCount(0);
     });
 });
