@@ -1,0 +1,51 @@
+src/modules/Arrangement/useCases/timeOperations/__tests__/deleteTime.spec.ts
+  s_c2fca615e81f34::t_b4e0ed08a90e7c 1,3,5-6,9,13,16-20,22,24,26-33,36-41,44,46-53
+src/modules/Arrangement/useCases/timeOperations/deleteTime.ts
+  s_c2fca615e81f34::t_b6d7df21fa928f 10-16,18
+  s_c2fca615e81f34::t_52599310f19f86 1-9
+src/app/bootstrap.ts
+  s_c2fca615e81f34::t_d8ab3c2a9bc057 46,88,120,187-191
+src/modules/Arrangement/useCases/timeOperations/duplicateTimeRange.ts
+  s_c2fca615e81f34::t_52599310f19f86 1,3,5-9
+  s_c2fca615e81f34::t_b6d7df21fa928f 10-16,18
+src/modules/Arrangement/useCases/timeOperations/insertTime.ts
+  s_c2fca615e81f34::t_52599310f19f86 1-9
+src/modules/Arrangement/useCases/timeOperations/timeOperationDependencies.ts
+  s_c2fca615e81f34::t_543f10ec8cca07 1-2,4-75,79-90
+src/modules/Arrangement/useCases/timeOperations/__tests__/globalTimeTransaction.spec.ts
+  s_c2fca615e81f34::t_67e5f181374025 3-31,34,39,51,58,68,73,79-86,88-94,101-125,127-131,134-149,151-156,175,178-282,284-442,444-445,447-473,478-526,531-532,534-565,567-580,584-586,591-600,604,606-607,615,628-630,632-633,635,658-679,681-714,717-720
+  s_c2fca615e81f34::t_c22ac92a105c03 715
+  s_c2fca615e81f34::t_52599310f19f86 1-2,32-33,35-38,40-50,52-57,59-67,69-72,74-78,87,95-100,126,132-133,150,157-159,173-174,176-177,582-583,587-590,601-603,608-614,616-627,716
+  s_c2fca615e81f34::t_d67698d62ece3b 283,474-477,566,581,605,631,634,636-657,680
+  s_c2fca615e81f34::t_212f4a1ce029c8 160-172,443,446,527-530,533
+src/modules/Arrangement/useCases/timeOperations/executeGlobalTimeOperation.ts
+  s_c2fca615e81f34::t_7bb955a0e40e02 944-945
+  s_c2fca615e81f34::t_699fda9dcb1c8f 937-943,946-951,955-956,958-964,1000-1003
+  s_c2fca615e81f34::t_9afd3b7d5d6a66 246-254,256-270,272,275,278,442,447,449,453,455-456,459,462,464,467,472,774-776,778-779,781-783,789,1095-1102,1105,1109,1169,1189,1193,1196
+  s_c2fca615e81f34::t_52599310f19f86 1-77,87-245,255,271,273-274,276-277,279-441,443-446,448,450-452,454,457-458,460-461,463,465-466,468-471,473-773,777,780,784-788,790-914,919-936,952-954,957,965-999,1004-1023,1025-1094,1103-1104,1106-1108,1110,1112-1114,1121-1168,1170-1188,1190-1192,1194-1195,1197-1204
+  s_c2fca615e81f34::t_b6d7df21fa928f 78-86,915-918,1111,1115-1120
+  s_c2fca615e81f34::t_abd4a5f6d56748 1024
+src/modules/Arrangement/useCases/timeOperations/__tests__/insertTime.spec.ts
+  s_c2fca615e81f34::t_b4e0ed08a90e7c 1,3,5-6,13,16-22,24,26-33
+src/app/__tests__/bootstrap.spec.ts
+  s_c2fca615e81f34::t_d8ab3c2a9bc057 29-32,46-49,86,113,199,259,361-366
+  s_c2fca615e81f34::t_7e975a2bf06051 367-368
+src/modules/Arrangement/useCases/timeOperations/__tests__/duplicateTimeRange.spec.ts
+  s_c2fca615e81f34::t_b4e0ed08a90e7c 1,3,5-6,12-14,16-20,22,24,26-33,36-42,44,46-52
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "3152de975ec4008af854d23f576d5d9503e0255b",
+  "prompts": {},
+  "sessions": {
+    "s_c2fca615e81f34": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f74e9-e1c5-7142-85d2-4c577b3973c0",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
