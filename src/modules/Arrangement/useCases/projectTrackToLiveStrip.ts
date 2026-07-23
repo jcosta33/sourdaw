@@ -9,7 +9,7 @@ import {
     updateDeviceBypass,
     updateDeviceParam,
 } from '#/modules/AudioEngine/useCases';
-import { loadPlugin } from '#/modules/PluginHost/useCases';
+import { loadPlugin, restorePluginState } from '#/modules/PluginHost/useCases';
 import { setSend, wireSidechainRoutes } from '#/modules/Routing/useCases';
 
 import { resolveEligibleDeviceWriteTarget } from '../stores/resolveEligibleDeviceWriteTarget';
@@ -89,6 +89,17 @@ export function projectTrackToLiveStrip({
             void loadPlugin(pluginId, instanceId).catch((error: unknown) => {
                 logger.warn(`Failed to load external plugin ${pluginId} for instance ${instanceId}: ${String(error)}`);
             });
+            // Restore the saved opaque state chunk once instantiation settles.
+            // serializePluginLifecycle queues this behind the loadPlugin above on
+            // the same instance id, so state lands before audio flows (PH-3).
+            const storedStateChunk = device.externalStateChunk;
+            if (storedStateChunk) {
+                void restorePluginState(instanceId, storedStateChunk).catch((error: unknown) => {
+                    logger.warn(
+                        `Failed to restore state for external plugin ${pluginId} instance ${instanceId}: ${String(error)}`
+                    );
+                });
+            }
         }
         for (const [parameterId, value] of Object.entries(device.parameterValues)) {
             if (typeof value === 'number') {

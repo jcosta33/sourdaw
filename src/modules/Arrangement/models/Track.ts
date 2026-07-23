@@ -147,6 +147,10 @@ export type Device = {
     parameterValues: Record<string, number>;
     externalPluginId?: string;
     externalInstanceId?: string;
+    /** Opaque native-plugin state chunk (CLAP `clap_ostream` blob), base64. Captured
+     *  into project truth at save so editor-driven state survives reopen; preserved
+     *  verbatim when the referenced plugin is absent (Decision 0003). */
+    externalStateChunk?: string;
 };
 
 export type Send = {

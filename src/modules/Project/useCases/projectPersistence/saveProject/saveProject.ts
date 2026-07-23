@@ -7,10 +7,12 @@ import { projectStore } from '../../../stores/projectStore';
 import { addToRecentProjects } from '../../recentProjects/addToRecentProjects';
 import { buildProjectData } from '../fileIO/buildProjectData';
 
-export function saveProject(): Promise<boolean> {
+import { captureExternalPluginStates } from './captureExternalPluginStates';
+
+export async function saveProject(): Promise<boolean> {
     const project = projectStore.value;
     if (!project) {
-        return Promise.resolve(true);
+        return true;
     }
 
     const updatedAt = Date.now();
@@ -20,6 +22,17 @@ export function saveProject(): Promise<boolean> {
     // mutable display name — so duplicate names don't collide and a rename
     // doesn't orphan the old key.
     const recentKey = `sourdaw:project:${project.createdAt}`;
+
+    // Capture each loaded native plugin's live state chunk into project truth
+    // before serialization, so a reopened project restores editor-driven state
+    // (presets, oversampling, internal routing) instead of plugin defaults
+    // (PH-3). A capture failure must not abort the save — the rest of the
+    // project still persists.
+    try {
+        await captureExternalPluginStates();
+    } catch (error) {
+        logger.warn('[saveProject] Native plugin state capture failed:', error);
+    }
 
     // Returned so project-switching callers can await the snapshot before the
     // successor transition resets the stores buildProjectData() reads — and

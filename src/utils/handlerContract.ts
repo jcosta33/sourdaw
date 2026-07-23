@@ -284,6 +284,7 @@ export type AppAction =
     | { type: 'bypassDevice'; payload: { deviceId: string; bypassed: boolean } }
     | { type: 'removeDevice'; payload: { deviceId: string } }
     | { type: 'setDeviceParameter'; payload: { deviceId: string; paramId: string; value: number } }
+    | { type: 'setExternalPluginState'; payload: { deviceId: string; stateChunk: string } }
     | { type: 'createBus'; payload: { name: string } }
     | { type: 'createFolder'; payload: { name: string } }
     | { type: 'setSend'; payload: { trackId: string; busId: string; level: number } }

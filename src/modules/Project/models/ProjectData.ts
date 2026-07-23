@@ -309,6 +309,9 @@ export type ProjectDevice = {
     parameterValues: Record<string, number>;
     externalPluginId?: string;
     externalInstanceId?: string;
+    /** Opaque native-plugin state chunk (base64) persisted in the `.sourdaw` snapshot
+     *  so a native plugin reopens with its saved state (PH-3). */
+    externalStateChunk?: string;
 };
 
 export type ProjectSend = {
