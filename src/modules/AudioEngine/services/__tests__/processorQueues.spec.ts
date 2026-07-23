@@ -2,7 +2,7 @@ import fs from 'fs';
 import path from 'path';
 
 import ts from 'typescript';
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach } from 'vitest';
 
 // Helper to evaluate an AudioWorklet script and extract its class
 function loadProcessorClass(filePath: string, className: string) {
@@ -119,28 +119,29 @@ describe('AudioWorklet Processor Queues (_queueHead Read Index)', () => {
 });
 
 describe('FermenterProcessor parameter automation', () => {
-    it('interpolates a compiled segment without allocating events per render quantum', () => {
+    it('writes exact ramp and step values inside one render quantum', () => {
         const ProcessorClass = loadProcessorClass('../fermenterProcessor.ts', 'FermenterProcessor');
         const processor = new ProcessorClass();
-        const setParam = vi.fn();
-        processor._instance = { set_param_by_id: setParam };
+        processor._automationValues = new Float32Array(15 * 129);
         processor._ready = true;
         processor.port.onmessage({
             data: {
                 type: 'paramAutomation',
                 paramId: 1,
-                segments: [{ startFrame: 0, endFrame: 1_000, startValue: 200, endValue: 2_000 }],
+                segments: [
+                    { startFrame: 0, endFrame: 64, startValue: 200, endValue: 1_000 },
+                    { startFrame: 64, endFrame: 64, startValue: 2_000, endValue: 2_000 },
+                ],
             },
         });
 
-        processor._applyParamAutomation(0);
-        processor._applyParamAutomation(500);
-        processor._applyParamAutomation(1_000);
+        expect(processor._writeParamAutomation(0, 128)).toBe(true);
 
-        expect(setParam.mock.calls).toEqual([
-            [1, 200],
-            [1, 1_100],
-            [1, 2_000],
-        ]);
+        const offset = 15 + 128;
+        expect(processor._automationValues[1]).toBe(128);
+        expect(processor._automationValues[offset]).toBe(200);
+        expect(processor._automationValues[offset + 32]).toBe(600);
+        expect(processor._automationValues[offset + 63]).toBe(987.5);
+        expect(processor._automationValues[offset + 64]).toBe(2_000);
     });
 });

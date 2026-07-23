@@ -127,12 +127,15 @@ export async function createFermenterNode(ctx: BaseAudioContext, wasmUrl?: strin
             }
         },
         acceptsScheduledParam(name: string) {
-            return FERMENTER_AUTOMATION_PARAM_IDS[name] !== undefined;
+            return Object.hasOwn(FERMENTER_AUTOMATION_PARAM_IDS, name);
         },
         scheduleParam(name: string, segments: readonly OfflineAutomationSegment[]) {
-            const paramId = FERMENTER_AUTOMATION_PARAM_IDS[name];
+            const paramId = Object.hasOwn(FERMENTER_AUTOMATION_PARAM_IDS, name)
+                ? FERMENTER_AUTOMATION_PARAM_IDS[name]
+                : undefined;
             const valid =
                 paramId !== undefined &&
+                Number.isInteger(paramId) &&
                 segments.length > 0 &&
                 segments.every(
                     (segment) =>

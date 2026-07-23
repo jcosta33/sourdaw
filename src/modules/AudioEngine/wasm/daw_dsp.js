@@ -41,6 +41,8 @@ if (typeof FinalizationRegistry === 'undefined') {
         unregister() {}
     };
 }
+/* @ts-self-types="./daw_dsp.d.ts" */
+
 /**
  * WASM-exported Bacteria instance for AudioWorklet.
  */
@@ -191,6 +193,13 @@ export class FermenterInstance {
         return ret >>> 0;
     }
     /**
+     * @returns {number}
+     */
+    get_automation_values_ptr() {
+        const ret = wasm.fermenterinstance_get_automation_values_ptr(this.__wbg_ptr);
+        return ret >>> 0;
+    }
+    /**
      * Get pointer to right channel buffer (call after process).
      * @returns {number}
      */
@@ -231,6 +240,15 @@ export class FermenterInstance {
      */
     process(block_size) {
         const ret = wasm.fermenterinstance_process(this.__wbg_ptr, block_size);
+        return ret >>> 0;
+    }
+    /**
+     * Process sample-accurate numeric automation from the preallocated control buffer.
+     * @param {number} block_size
+     * @returns {number}
+     */
+    process_automated(block_size) {
+        const ret = wasm.fermenterinstance_process_automated(this.__wbg_ptr, block_size);
         return ret >>> 0;
     }
     /**

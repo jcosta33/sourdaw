@@ -83,5 +83,11 @@ describe('createFermenterNode allNotesOff surface', () => {
         expect(result.acceptsScheduledParam('filterCutoff')).toBe(true);
         expect(result.acceptsScheduledParam('missing')).toBe(false);
         expect(postMessage).toHaveBeenCalledWith({ type: 'paramAutomation', paramId: 1, segments });
+
+        postMessage.mockClear();
+        result.scheduleParam('constructor', segments);
+
+        expect(result.acceptsScheduledParam('constructor')).toBe(false);
+        expect(postMessage).not.toHaveBeenCalled();
     });
 });

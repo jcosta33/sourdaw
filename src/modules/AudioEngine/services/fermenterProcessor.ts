@@ -13,6 +13,10 @@
 
 import { initSync, FermenterInstance } from '../wasm/daw_dsp.js';
 
+const AUTOMATION_PARAM_COUNT = 15;
+const MAX_AUTOMATION_BLOCK_SIZE = 128;
+const AUTOMATION_BUFFER_SIZE = AUTOMATION_PARAM_COUNT * (MAX_AUTOMATION_BLOCK_SIZE + 1);
+
 function camelToSnake(str: string): string {
     const snake = str.replaceAll(/[A-Z]/g, (letter) => `_${letter.toLowerCase()}`);
     if (snake === 'filter_cutoff') {
@@ -50,7 +54,6 @@ type ParamAutomationSchedule = {
     paramId: number;
     segments: ParamAutomationSegment[];
     segmentIndex: number;
-    lastValue: number;
 };
 
 type FermenterMsg =
@@ -74,6 +77,7 @@ class FermenterProcessor extends AudioWorkletProcessor {
     _queue: FermenterQueued[] = [];
     _queueHead = 0;
     _paramAutomation: ParamAutomationSchedule[] = [];
+    _automationValues: Float32Array | null = null;
 
     constructor() {
         super();
@@ -104,6 +108,11 @@ class FermenterProcessor extends AudioWorkletProcessor {
         const wasmExports = initSync({ module: new WebAssembly.Module(wasmBytes) });
         this._memory = wasmExports.memory;
         this._instance = new FermenterInstance(sampleRate, 32);
+        this._automationValues = new Float32Array(
+            this._memory.buffer,
+            this._instance.get_automation_values_ptr(),
+            AUTOMATION_BUFFER_SIZE
+        );
         this._ready = true;
         this.port.postMessage({ type: 'ready' });
     }
@@ -125,14 +134,18 @@ class FermenterProcessor extends AudioWorkletProcessor {
 
     _handleMessage(msg: FermenterMsg): void {
         if (msg.type === 'paramAutomation') {
-            if (!Number.isInteger(msg.paramId) || msg.paramId < 0 || msg.segments.length === 0) {
+            if (
+                !Number.isInteger(msg.paramId) ||
+                msg.paramId < 0 ||
+                msg.paramId >= AUTOMATION_PARAM_COUNT ||
+                msg.segments.length === 0
+            ) {
                 return;
             }
             const schedule: ParamAutomationSchedule = {
                 paramId: msg.paramId,
                 segments: msg.segments,
                 segmentIndex: 0,
-                lastValue: Number.NaN,
             };
             const existingIndex = this._paramAutomation.findIndex(
                 (candidate) => candidate.paramId === schedule.paramId
@@ -219,32 +232,36 @@ class FermenterProcessor extends AudioWorkletProcessor {
         }
     }
 
-    _applyParamAutomation(frame: number): void {
-        const inst = this._instance;
-        if (!inst) {
-            return;
+    _writeParamAutomation(frame: number, frames: number): boolean {
+        const values = this._automationValues;
+        if (!values || frames > MAX_AUTOMATION_BLOCK_SIZE || this._paramAutomation.length === 0) {
+            return false;
         }
+        values.fill(0, 0, AUTOMATION_PARAM_COUNT);
         for (let scheduleIndex = 0; scheduleIndex < this._paramAutomation.length; scheduleIndex++) {
             const schedule = this._paramAutomation[scheduleIndex]!;
-            while (
-                schedule.segmentIndex < schedule.segments.length - 1 &&
-                frame >= schedule.segments[schedule.segmentIndex]!.endFrame
-            ) {
-                schedule.segmentIndex++;
-            }
-            const segment = schedule.segments[schedule.segmentIndex]!;
-            let value = segment.startValue;
-            if (segment.endFrame <= segment.startFrame || frame >= segment.endFrame) {
-                value = segment.endValue;
-            } else if (frame > segment.startFrame) {
-                const fraction = (frame - segment.startFrame) / (segment.endFrame - segment.startFrame);
-                value = segment.startValue + (segment.endValue - segment.startValue) * fraction;
-            }
-            if (value !== schedule.lastValue) {
-                inst.set_param_by_id(schedule.paramId, value);
-                schedule.lastValue = value;
+            values[schedule.paramId] = frames;
+            const valueOffset = AUTOMATION_PARAM_COUNT + schedule.paramId * MAX_AUTOMATION_BLOCK_SIZE;
+            for (let sample = 0; sample < frames; sample++) {
+                const sampleFrame = frame + sample;
+                while (
+                    schedule.segmentIndex < schedule.segments.length - 1 &&
+                    sampleFrame >= schedule.segments[schedule.segmentIndex]!.endFrame
+                ) {
+                    schedule.segmentIndex++;
+                }
+                const segment = schedule.segments[schedule.segmentIndex]!;
+                let value = segment.startValue;
+                if (segment.endFrame <= segment.startFrame || sampleFrame >= segment.endFrame) {
+                    value = segment.endValue;
+                } else if (sampleFrame > segment.startFrame) {
+                    const fraction = (sampleFrame - segment.startFrame) / (segment.endFrame - segment.startFrame);
+                    value = segment.startValue + (segment.endValue - segment.startValue) * fraction;
+                }
+                values[valueOffset + sample] = value;
             }
         }
+        return true;
     }
 
     process(_inputs: Float32Array[][], outputs: Float32Array[][]): boolean {
@@ -265,7 +282,6 @@ class FermenterProcessor extends AudioWorkletProcessor {
 
         const blockEndFrame = currentFrame + frames;
         this._drainQueue(blockEndFrame);
-        this._applyParamAutomation(currentFrame);
 
         try {
             const inst = this._instance;
@@ -274,7 +290,9 @@ class FermenterProcessor extends AudioWorkletProcessor {
                 return true;
             }
 
-            const leftPtr = inst.process(frames);
+            const leftPtr = this._writeParamAutomation(currentFrame, frames)
+                ? inst.process_automated(frames)
+                : inst.process(frames);
             const rightPtr = inst.get_right_ptr();
 
             const outL = new Float32Array(mem, leftPtr, frames);
