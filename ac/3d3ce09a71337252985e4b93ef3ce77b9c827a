@@ -1,0 +1,27 @@
+src/infra/store/storage/__tests__/createAutomergeStorage.spec.ts
+  s_0d39f3a4a4357a::t_dbc9d604674db2 149-156,158-160,168-172,174,176,178-179
+  s_0d39f3a4a4357a::t_5eecb6ef5f3745 157,161-167,173,175,177,180-183
+src/infra/store/storage/createAutomergeStorage.ts
+  s_0d39f3a4a4357a::t_dcc4084935318b 379-396,499,501-503,523,531-533,604-608
+  s_0d39f3a4a4357a::t_b98c5835cd9e8f 609-610
+src/infra/store/storage/types.ts
+  s_0d39f3a4a4357a::t_dcc4084935318b 9-13
+src/infra/store/createStore.ts
+  s_0d39f3a4a4357a::t_dcc4084935318b 169-176
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "ac3d3ce09a71337252985e4b93ef3ce77b9c827a",
+  "prompts": {},
+  "sessions": {
+    "s_0d39f3a4a4357a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "60da6a2e-7d79-4d98-8624-e993f5a9f94e",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
