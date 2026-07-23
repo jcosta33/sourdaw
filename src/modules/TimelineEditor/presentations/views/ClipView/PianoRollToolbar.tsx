@@ -11,6 +11,7 @@ import { Slider } from '#/components/ui/slider';
 import { CHORD_TYPE_KEYS } from '#/modules/MIDI/useCases';
 import { cn } from '#/utils/Styles/cn';
 
+import { MPE_EXPRESSION_AVAILABLE } from '../../helpers/mpeAvailability';
 import { SCALES, SCALE_ROOT_LABELS } from '../../helpers/pianoRollConstants';
 
 const ToolbarDivider = (): ReactElement => (
@@ -331,9 +332,13 @@ export const PianoRollToolbar = ({
                 aria-label="Active expression lane"
             >
                 <option value="velocity">Velocity</option>
-                <option value="pressure">Pressure (MPE)</option>
-                <option value="slide">Slide (MPE)</option>
-                <option value="pitchBend">Pitch Bend (MPE)</option>
+                {MPE_EXPRESSION_AVAILABLE ? (
+                    <>
+                        <option value="pressure">Pressure (MPE)</option>
+                        <option value="slide">Slide (MPE)</option>
+                        <option value="pitchBend">Pitch Bend (MPE)</option>
+                    </>
+                ) : null}
             </DawCompactSelect>
         ) : null}
 

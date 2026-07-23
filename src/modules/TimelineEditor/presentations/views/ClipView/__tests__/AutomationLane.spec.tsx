@@ -1,5 +1,5 @@
 import { render, screen, fireEvent } from '@testing-library/react';
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 import { AutomationLane } from '../AutomationLane';
 
@@ -89,25 +89,33 @@ describe('AutomationLane', () => {
         expect(screen.getByTestId('probability-lane')).toBeInTheDocument();
     });
 
-    it('should switch to pressure lane', () => {
+    it('does not offer the MPE Pressure lane while per-note expression is unavailable (MD-2)', () => {
         render(<AutomationLane {...defaultProps} />);
-        const select = screen.getByLabelText('Automation lane type');
-        fireEvent.change(select, { target: { value: 'pressure' } });
-        expect(screen.getByTestId('pressure-lane')).toBeInTheDocument();
+        const values = screen.getAllByRole('option').map((option) => (option as HTMLOptionElement).value);
+        expect(values).not.toContain('pressure');
+        expect(screen.queryByTestId('pressure-lane')).not.toBeInTheDocument();
     });
 
-    it('should switch to slide lane', () => {
+    it('does not offer the MPE Slide (CC74) lane while per-note expression is unavailable (MD-2)', () => {
         render(<AutomationLane {...defaultProps} />);
-        const select = screen.getByLabelText('Automation lane type');
-        fireEvent.change(select, { target: { value: 'slide' } });
-        expect(screen.getByTestId('slide-lane')).toBeInTheDocument();
+        const values = screen.getAllByRole('option').map((option) => (option as HTMLOptionElement).value);
+        expect(values).not.toContain('slide');
+        expect(screen.queryByTestId('slide-lane')).not.toBeInTheDocument();
     });
 
-    it('should switch to pitch bend lane', () => {
+    it('does not offer the MPE Pitch Bend lane while per-note expression is unavailable (MD-2)', () => {
         render(<AutomationLane {...defaultProps} />);
-        const select = screen.getByLabelText('Automation lane type');
-        fireEvent.change(select, { target: { value: 'pitchBend' } });
-        expect(screen.getByTestId('pitchbend-lane')).toBeInTheDocument();
+        const values = screen.getAllByRole('option').map((option) => (option as HTMLOptionElement).value);
+        expect(values).not.toContain('pitchBend');
+        expect(screen.queryByTestId('pitchbend-lane')).not.toBeInTheDocument();
+    });
+
+    it('still offers the non-MPE lanes (velocity, probability, CC)', () => {
+        render(<AutomationLane {...defaultProps} />);
+        const values = screen.getAllByRole('option').map((option) => (option as HTMLOptionElement).value);
+        expect(values).toContain('velocity');
+        expect(values).toContain('probability');
+        expect(values).toContain('cc1');
     });
 
     it('should switch to CC lane', () => {
@@ -127,5 +135,49 @@ describe('AutomationLane', () => {
         const { container } = render(<AutomationLane {...defaultProps} />);
         const gutter = container.querySelector('[style*="40px"]');
         expect(gutter).toBeTruthy();
+    });
+
+    // When Wave 4 flips MPE_EXPRESSION_AVAILABLE to true the MPE lanes return.
+    // Cover the pressure/slide/pitchBend switch wiring (the render branches kept
+    // in source) so a broken prop wire on those lanes cannot ship undetected.
+    describe('MPE lanes when per-note expression is available (Wave-4 reversal)', () => {
+        beforeEach(() => {
+            vi.resetModules();
+            vi.doMock('../../../helpers/mpeAvailability', async () => {
+                const actual = await vi.importActual<typeof import('../../../helpers/mpeAvailability')>(
+                    '../../../helpers/mpeAvailability'
+                );
+                return { ...actual, MPE_EXPRESSION_AVAILABLE: true };
+            });
+        });
+
+        afterEach(() => {
+            vi.doUnmock('../../../helpers/mpeAvailability');
+            vi.resetModules();
+        });
+
+        it('switches to the pressure lane once available', async () => {
+            const { AutomationLane: LiveAutomationLane } = await import('../AutomationLane');
+            render(<LiveAutomationLane {...defaultProps} />);
+            const select = screen.getByLabelText('Automation lane type');
+            fireEvent.change(select, { target: { value: 'pressure' } });
+            expect(screen.getByTestId('pressure-lane')).toBeInTheDocument();
+        });
+
+        it('switches to the slide lane once available', async () => {
+            const { AutomationLane: LiveAutomationLane } = await import('../AutomationLane');
+            render(<LiveAutomationLane {...defaultProps} />);
+            const select = screen.getByLabelText('Automation lane type');
+            fireEvent.change(select, { target: { value: 'slide' } });
+            expect(screen.getByTestId('slide-lane')).toBeInTheDocument();
+        });
+
+        it('switches to the pitch bend lane once available', async () => {
+            const { AutomationLane: LiveAutomationLane } = await import('../AutomationLane');
+            render(<LiveAutomationLane {...defaultProps} />);
+            const select = screen.getByLabelText('Automation lane type');
+            fireEvent.change(select, { target: { value: 'pitchBend' } });
+            expect(screen.getByTestId('pitchbend-lane')).toBeInTheDocument();
+        });
     });
 });
