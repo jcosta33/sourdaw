@@ -1,0 +1,21 @@
+src/modules/Arrangement/services/__tests__/createEffectiveAdjustmentLayerSignature.spec.ts
+  s_b53487bb2a7550::t_0efb3c3c3ad22a 1-132
+src/modules/Proof/services/__tests__/getProofPatchParameterValues.spec.ts
+  s_b53487bb2a7550::t_df62f4a15e0231 1-135
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "fbfaebc7bf4858992d7240e31d472ad0250cbd05",
+  "prompts": {},
+  "sessions": {
+    "s_b53487bb2a7550": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-a6601ced767227ac5",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
