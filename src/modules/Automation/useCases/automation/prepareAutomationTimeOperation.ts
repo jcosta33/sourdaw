@@ -42,6 +42,12 @@ type PreparedAutomationState = {
     nextState: AutomationStoreState | null;
 };
 
+type AutomationTimeStateRestorePlan = {
+    version: 1;
+    expected: AutomationStoreState;
+    replacement: AutomationStoreState;
+};
+
 type TransactionPhase = 'prepared' | 'applied' | 'closed';
 
 function isFiniteNonNegative(value: number): boolean {
@@ -325,6 +331,17 @@ function prepareNextState(
     };
 }
 
+function createInversePlan(
+    expected: AutomationStoreState,
+    replacement: AutomationStoreState
+): AutomationTimeStateRestorePlan {
+    return {
+        version: 1,
+        expected: structuredClone(expected),
+        replacement: structuredClone(replacement),
+    };
+}
+
 export function prepareAutomationTimeOperation(input: PrepareAutomationTimeOperationInput) {
     const preparedState = automationStore.value;
     const validatedInput = validateInput(input);
@@ -338,7 +355,19 @@ export function prepareAutomationTimeOperation(input: PrepareAutomationTimeOpera
     } else {
         preparedOperation = prepareNextState(preparedState, validatedInput.operation, validatedInput.ownersByTrackId);
     }
-    let phase: TransactionPhase = preparedOperation.hasChanges ? 'prepared' : 'closed';
+    let inversePlan: AutomationTimeStateRestorePlan | null = null;
+    if (
+        preparedOperation.status === 'ready' &&
+        preparedOperation.hasChanges &&
+        preparedState &&
+        preparedOperation.nextState
+    ) {
+        inversePlan = createInversePlan(preparedOperation.nextState, preparedState);
+    }
+    let phase: TransactionPhase = 'closed';
+    if (preparedOperation.hasChanges) {
+        phase = 'prepared';
+    }
 
     function apply(): boolean {
         if (phase !== 'prepared') {
@@ -384,6 +413,7 @@ export function prepareAutomationTimeOperation(input: PrepareAutomationTimeOpera
     return {
         status: preparedOperation.status,
         hasChanges: preparedOperation.hasChanges,
+        inversePlan,
         apply,
         revert,
     };
