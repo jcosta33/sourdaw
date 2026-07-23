@@ -363,9 +363,10 @@ describe('scheduleTrackClips — MIDI plugin-delay compensation', () => {
         await runSchedule({ regionStartBeat: 128 });
 
         const call = mocks.scheduleTrackAutomation.mock.calls.at(-1);
-        expect(call?.at(-2)).toBe(64);
-        const projectBeat = call?.at(-1) as ((beat: number) => number) | undefined;
+        expect(call?.at(-3)).toBe(64);
+        const projectBeat = call?.at(-2) as ((beat: number) => number) | undefined;
         expect(projectBeat?.(130)).toBe(65);
+        expect(call?.at(-1)).toBe(48_000);
     });
 
     it('keeps canonical Toaster pad indexes when earlier children are muted or disabled', async () => {

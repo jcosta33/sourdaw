@@ -117,3 +117,38 @@ describe('AudioWorklet Processor Queues (_queueHead Read Index)', () => {
         });
     }
 });
+
+describe('FermenterProcessor parameter automation', () => {
+    it('evaluates compiled automation at render-quantum boundaries', () => {
+        const ProcessorClass = loadProcessorClass('../fermenterProcessor.ts', 'FermenterProcessor');
+        const processor = new ProcessorClass();
+        const applied: Array<{ paramId: number; value: number }> = [];
+        processor._instance = {
+            set_param_by_id(paramId: number, value: number) {
+                applied.push({ paramId, value });
+            },
+        };
+        processor._ready = true;
+        processor.port.onmessage({
+            data: {
+                type: 'paramAutomation',
+                paramId: 1,
+                segments: [
+                    { startFrame: 0, endFrame: 1_000, startValue: 200, endValue: 2_000 },
+                    { startFrame: 1_000, endFrame: 1_000, startValue: 2_000, endValue: 2_000 },
+                ],
+            },
+        });
+
+        processor._applyParamAutomation(0);
+        processor._applyParamAutomation(500);
+        processor._applyParamAutomation(500);
+        processor._applyParamAutomation(1_000);
+
+        expect(applied).toEqual([
+            { paramId: 1, value: 200 },
+            { paramId: 1, value: 1_100 },
+            { paramId: 1, value: 2_000 },
+        ]);
+    });
+});

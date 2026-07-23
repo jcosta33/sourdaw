@@ -478,6 +478,74 @@ describe('scheduleTrackAutomation', () => {
         expect(pan.setValueAtTime).not.toHaveBeenCalled();
     });
 
+    it('compiles a canonical native-device lane into frame-addressed automation segments', () => {
+        const scheduleParam = vi.fn();
+
+        scheduleTrackAutomation(
+            [
+                makeLane({
+                    parameterId: 'fermenter-1:filterCutoff',
+                    points: [
+                        { beat: 128, value: 200, curve: 'linear', tension: 0 },
+                        { beat: 130, value: 2_000, curve: 'linear', tension: 0 },
+                    ],
+                }),
+            ],
+            'track-1',
+            { gain: makeParam() } as unknown as GainNode,
+            { pan: makeParam() } as unknown as StereoPannerNode,
+            [
+                {
+                    deviceId: 'fermenter-1',
+                    deviceType: 'fermenter',
+                    node: { inputNode: {} as AudioNode, outputNode: {} as AudioNode, nodes: [] },
+                    strategy: { acceptsScheduledParam: (name) => name === 'filterCutoff', scheduleParam },
+                },
+            ],
+            2,
+            120,
+            [],
+            64,
+            undefined,
+            1_000
+        );
+
+        expect(scheduleParam).toHaveBeenCalledWith('filterCutoff', [
+            { startFrame: 0, endFrame: 1_000, startValue: 200, endValue: 2_000 },
+            { startFrame: 1_000, endFrame: 1_000, startValue: 2_000, endValue: 2_000 },
+        ]);
+    });
+
+    it('does not let a native strategy steal a legacy bare Web Audio lane', () => {
+        const delayMix = makeParam();
+        const delayNode = {
+            inputNode: {} as AudioNode,
+            outputNode: {} as AudioNode,
+            nodes: [{} as AudioNode, {} as AudioNode, { gain: delayMix } as unknown as AudioNode],
+        };
+
+        scheduleTrackAutomation(
+            [makeLane({ parameterId: 'delay-mix', points: [{ beat: 0, value: 0.7, curve: 'linear', tension: 0 }] })],
+            'track-1',
+            { gain: makeParam() } as unknown as GainNode,
+            { pan: makeParam() } as unknown as StereoPannerNode,
+            [
+                {
+                    deviceId: 'fermenter-1',
+                    deviceType: 'fermenter',
+                    node: { inputNode: {} as AudioNode, outputNode: {} as AudioNode, nodes: [] },
+                    strategy: { acceptsScheduledParam: (name) => name === 'filterCutoff', scheduleParam: vi.fn() },
+                },
+                { deviceId: 'delay-1', deviceType: 'builtin-delay', node: delayNode },
+            ],
+            2,
+            120,
+            []
+        );
+
+        expect(delayMix.setValueAtTime).toHaveBeenCalledWith(0.7, 0);
+    });
+
     it.each<[string, string, boolean, string | null]>([
         ['unique bare', 'gain-level', false, 'device-1'],
         ['same-type canonical', 'device-2:gain-level', true, 'device-2'],
