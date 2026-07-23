@@ -1,1 +1,8 @@
-# Keep generated WASM bindings tracked — they're small (~54KB) and needed for Vercel builds
+# Keep generated WASM bindings tracked — they're small (~54KB) and needed for Vercel builds.
+#
+# The _bg.wasm binaries are NOT tracked here: they are served from public/wasm/ and the
+# worklet glue's async-init path is rewritten to that served location. A co-located
+# _bg.wasm under this directory is always a stale, schema-mismatched twin (WB-2 / #657),
+# so the pattern below keeps one from being re-added and `pnpm wasm:verify` fails on any
+# that slips in.
+*_bg.wasm

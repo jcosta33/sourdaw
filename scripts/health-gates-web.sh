@@ -34,6 +34,7 @@ run_lint_with_heartbeat() {
     return "$lint_status"
 }
 
+pnpm wasm:verify
 pnpm deps:validate
 pnpm typecheck
 pnpm typecheck:test
