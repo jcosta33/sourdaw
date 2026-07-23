@@ -321,6 +321,27 @@ describe('AudioEngine', () => {
         expect(lateControls.connectPadOutput).not.toHaveBeenCalled();
     });
 
+    it('leaves both final pads dry-routed after an atomic sibling swap', () => {
+        engine.ensureTrackStrip('stem-a');
+        engine.ensureTrackStrip('stem-b');
+        engine.ensureTrackStrip('toaster-parent');
+        const parentNode = getMockTrackNode(engine, 'toaster-parent');
+        const controls = { connectPadOutput: vi.fn(), disconnectPadOutput: vi.fn(), setPadDryRouted: vi.fn() };
+        parentNode.notifyDeviceLoaded({ deviceId: 'toaster', type: 'toaster', nodes: [], toasterControls: controls });
+        setPadTrackOutput(engine, 'stem-a', 'toaster-parent', 'toaster-parent', 0);
+        setPadTrackOutput(engine, 'stem-b', 'toaster-parent', 'toaster-parent', 1);
+
+        engine.setTrackOutput('stem-a', 'toaster-parent');
+        engine.setTrackOutput('stem-b', 'toaster-parent');
+        setPadTrackOutput(engine, 'stem-b', 'toaster-parent', 'toaster-parent', 0);
+        setPadTrackOutput(engine, 'stem-a', 'toaster-parent', 'toaster-parent', 1);
+
+        expect(controls.setPadDryRouted.mock.calls.slice(-2)).toEqual([
+            [0, true],
+            [1, true],
+        ]);
+    });
+
     it('removes the paired track strip when a bus facade is removed', () => {
         engine.ensureBusStrip('return-bus');
 
