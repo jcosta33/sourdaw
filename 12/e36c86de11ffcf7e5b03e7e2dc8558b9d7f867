@@ -1,0 +1,21 @@
+src/modules/AiRuntime/models/__tests__/classifyEditPlan.spec.ts
+  s_0d39f3a4a4357a::t_7ef6b46e857267 1-73
+src/modules/Proof/models/__tests__/getProofPatchSnapshot.spec.ts
+  s_0d39f3a4a4357a::t_4881f627d515f8 1-95
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "12e36c86de11ffcf7e5b03e7e2dc8558b9d7f867",
+  "prompts": {},
+  "sessions": {
+    "s_0d39f3a4a4357a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "60da6a2e-7d79-4d98-8624-e993f5a9f94e",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
