@@ -436,13 +436,13 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
 
                 // Collision-free per-stem filenames (OE-2): key disambiguation off the
                 // already-unique track id so a second track sharing a name cannot overwrite
-                // the first stem on disk (native dir) or in the web zip map.
-                const stemBaseNames = deriveStemFileBaseNames(
-                    [...stems.keys()].map((id) => ({
-                        trackId: id,
-                        name: tracks.find((time) => time.id === id)?.name,
-                    }))
-                );
+                // the first stem on disk (native dir) or in the web zip map. Derive from the
+                // stable store track order — not the pool's render-completion order — so the
+                // track→filename mapping is reproducible across identical exports.
+                const stemBaseNames = deriveStemFileBaseNames({
+                    stemTrackIds: stems.keys(),
+                    orderedTracks: tracks,
+                });
 
                 for (const [trackId, buffer] of stems) {
                     if (cancelledRef.current) {
