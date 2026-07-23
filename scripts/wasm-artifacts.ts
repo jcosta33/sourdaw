@@ -205,12 +205,129 @@ function pathDepClosure(crateDir: string): string[] {
     return [...seen].sort();
 }
 
+/** A single [[package]] entry resolved in Cargo.lock. */
+type LockPackage = {
+    name: string;
+    version: string;
+    source: string;
+    checksum: string;
+    dependencies: string[];
+};
+
+/** The `[package] name` declared in a crate's Cargo.toml. */
+function readCrateName(crateDir: string): string {
+    const cargoToml = readFileSync(absolute(join(crateDir, 'Cargo.toml')), 'utf8');
+    const match = /(?:^|\n)name = "([^"]+)"/.exec(cargoToml);
+    if (!match) {
+        throw new Error(`No [package] name found in ${crateDir}/Cargo.toml`);
+    }
+    return match[1];
+}
+
+/** Parse Cargo.lock's [[package]] graph, indexed by crate name (a name may have several versions). */
+function parseCargoLock(): Map<string, LockPackage[]> {
+    const text = readFileSync(absolute('Cargo.lock'), 'utf8');
+    const byName = new Map<string, LockPackage[]>();
+    for (const block of text.split('[[package]]').slice(1)) {
+        const name = /(?:^|\n)name = "([^"]+)"/.exec(block)?.[1];
+        const version = /(?:^|\n)version = "([^"]+)"/.exec(block)?.[1];
+        if (name === undefined || version === undefined) {
+            continue;
+        }
+        const dependencies: string[] = [];
+        const depsBlock = /(?:^|\n)dependencies = \[([^\]]*)\]/.exec(block);
+        for (const dep of (depsBlock?.[1] ?? '').matchAll(/"([^"]+)"/g)) {
+            const value = dep[1];
+            if (value !== undefined) {
+                dependencies.push(value);
+            }
+        }
+        const pkg: LockPackage = {
+            name,
+            version,
+            source: /(?:^|\n)source = "([^"]+)"/.exec(block)?.[1] ?? '',
+            checksum: /(?:^|\n)checksum = "([^"]+)"/.exec(block)?.[1] ?? '',
+            dependencies,
+        };
+        const list = byName.get(name) ?? [];
+        list.push(pkg);
+        byName.set(name, list);
+    }
+    return byName;
+}
+
+/** Resolve a Cargo.lock dependency string (`"name"` | `"name version"` | `"name version (source)"`). */
+function resolveLockDep(byName: Map<string, LockPackage[]>, depString: string): LockPackage | undefined {
+    const parts = depString.split(' ');
+    const name = parts[0] ?? '';
+    const version = parts[1];
+    const candidates = byName.get(name);
+    if (candidates === undefined || candidates.length === 0) {
+        return undefined;
+    }
+    if (version === undefined) {
+        return candidates[0];
+    }
+    return candidates.find((candidate) => candidate.version === version) ?? candidates[0];
+}
+
+/**
+ * Fingerprint only the Cargo.lock entries in `crateName`'s resolved dependency
+ * closure — the crate plus every package transitively reachable through the lock
+ * `dependencies` graph. A locked version/checksum change to a dependency this
+ * crate actually builds against trips it; a bump confined to an unrelated crate
+ * (`src-tauri`, `daw-engine`, …) that shares the one workspace lock does not.
+ */
+function lockClosureFingerprint(crateName: string): string {
+    const byName = parseCargoLock();
+    const seen = new Set<string>();
+    const closure: LockPackage[] = [];
+    const queue: string[] = [crateName];
+    while (queue.length > 0) {
+        const depString = queue.shift();
+        if (depString === undefined) {
+            continue;
+        }
+        const pkg = resolveLockDep(byName, depString);
+        if (pkg === undefined) {
+            continue;
+        }
+        const key = `${pkg.name} ${pkg.version}`;
+        if (seen.has(key)) {
+            continue;
+        }
+        seen.add(key);
+        closure.push(pkg);
+        for (const dep of pkg.dependencies) {
+            queue.push(dep);
+        }
+    }
+    closure.sort((left, right) => {
+        const leftKey = `${left.name} ${left.version}`;
+        const rightKey = `${right.name} ${right.version}`;
+        if (leftKey < rightKey) {
+            return -1;
+        }
+        if (leftKey > rightKey) {
+            return 1;
+        }
+        return 0;
+    });
+
+    const digest = createHash('sha256');
+    for (const pkg of closure) {
+        digest.update(`${pkg.name}\0${pkg.version}\0${pkg.source}\0${pkg.checksum}\0${pkg.dependencies.join(',')}\n`);
+    }
+    return digest.digest('hex');
+}
+
 /**
  * Hash every input that determines the compiled cdylib for `crateDir`: the crate
- * and its transitive path-dependency closure (each dep's `src/**` + `Cargo.toml`),
- * plus the workspace-root `Cargo.toml` (`[profile.*]` affects emitted bytes) and
- * `Cargo.lock` (pins every resolved dependency version). `tests/`/`benches/` are
- * excluded — they never reach the cdylib.
+ * and its transitive workspace path-dependency closure (each dep's `src/**` +
+ * `Cargo.toml`), the workspace-root `Cargo.toml` (`[profile.*]` affects emitted
+ * bytes), and the Cargo.lock entries in the crate's resolved dependency closure
+ * (the registry + path deps it actually builds against — not the whole lock).
+ * `tests/`/`benches/` are excluded — they never reach the cdylib.
  */
 function hashCrateClosure(crateDir: string): string {
     const files: string[] = [];
@@ -219,7 +336,6 @@ function hashCrateClosure(crateDir: string): string {
         files.push(absolute(join(dir, 'Cargo.toml')));
     }
     files.push(absolute('Cargo.toml'));
-    files.push(absolute('Cargo.lock'));
     files.sort();
 
     const digest = createHash('sha256');
@@ -229,6 +345,9 @@ function hashCrateClosure(crateDir: string): string {
         digest.update(createHash('sha256').update(readFileSync(fileAbs)).digest('hex'));
         digest.update('\n');
     }
+    digest.update('Cargo.lock closure\0');
+    digest.update(lockClosureFingerprint(readCrateName(crateDir)));
+    digest.update('\n');
     return `sha256:${digest.digest('hex')}`;
 }
 

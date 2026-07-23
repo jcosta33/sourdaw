@@ -11,10 +11,10 @@
  *     wasm-bindgen exactly to the Cargo.lock version (WB-8).
  *  2. Schema pairing — the `.js` glue and the `_bg.wasm` binary of each package
  *     must share one wasm-bindgen schema id (the #657 / WB-2 drift signature).
- *  3. Source freshness — the crate source closure (the crate plus its transitive
- *     path-dependency crates, the workspace-root `Cargo.toml`, and `Cargo.lock`)
- *     hash must match the manifest; a Rust edit merged without regenerating
- *     artifacts fails here.
+ *  3. Source freshness — the crate source closure (the crate and its transitive
+ *     path-dependency crates, the workspace-root `Cargo.toml`, and the crate's
+ *     resolved-dependency Cargo.lock entries) hash must match the manifest; a
+ *     Rust or dependency edit merged without regenerating artifacts fails here.
  *  4. Artifact integrity — every committed artifact must match its recorded
  *     hash; a hand-edited or half-regenerated artifact fails here.
  *  5. Stray-binary guard — no `_bg.wasm` may live anywhere under the src worklet
@@ -100,7 +100,7 @@ function checkPackages(manifest: WasmManifest): void {
             if (actual !== recorded.schemaHash) {
                 fail(
                     `${source}: wasm-bindgen schema "${actual}" != package "${spec.id}" schema "${recorded.schemaHash}" ` +
-                        `(glue/binary drift — regenerate with \`pnpm wasm:${spec.id}\`)`
+                        `(glue/binary drift — regenerate with \`pnpm wasm:${spec.id} && pnpm wasm:manifest\`)`
                 );
             }
         }
@@ -110,7 +110,7 @@ function checkPackages(manifest: WasmManifest): void {
         if (currentSourceHash !== recorded.crateSourceHash) {
             fail(
                 `${spec.crateDir}: source hash ${currentSourceHash} != manifest ${recorded.crateSourceHash} — ` +
-                    `crate changed without a matching \`pnpm wasm:${spec.id}\` + manifest regeneration`
+                    `crate changed — run \`pnpm wasm:${spec.id} && pnpm wasm:manifest\``
             );
         }
 
