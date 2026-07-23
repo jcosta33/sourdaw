@@ -1,13 +1,146 @@
 import { render } from '@testing-library/react';
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi, afterEach } from 'vitest';
 
 import { TonalBalance } from '../TonalBalance';
 
+type GetContext2d = (contextId: '2d', options?: CanvasRenderingContext2DSettings) => CanvasRenderingContext2D | null;
+
+function spyOnGetContext(ctx: CanvasRenderingContext2D | null): void {
+    const proto: { getContext: GetContext2d } = HTMLCanvasElement.prototype;
+    vi.spyOn(proto, 'getContext').mockReturnValue(ctx);
+}
+
+function make2dContext(): CanvasRenderingContext2D {
+    return document.createElement('canvas').getContext('2d')!;
+}
+
 describe('TonalBalance', () => {
+    afterEach(() => {
+        vi.restoreAllMocks();
+    });
+
     it('should render', () => {
         const { container } = render(
             <TonalBalance fftData={null} fftVersion={0} sampleRate={44100} fftSize={2048} width={200} height={80} />
         );
         expect(container.querySelector('canvas')).toBeTruthy();
+    });
+
+    it('scales the backing store to devicePixelRatio before painting', () => {
+        const ctx = make2dContext();
+        const scaleSpy = vi.spyOn(ctx, 'scale');
+        spyOnGetContext(ctx);
+        vi.stubGlobal('devicePixelRatio', 2);
+
+        const { container } = render(
+            <TonalBalance fftData={null} fftVersion={0} sampleRate={44100} fftSize={2048} width={200} height={80} />
+        );
+        const canvas = container.querySelector('canvas');
+        if (!(canvas instanceof HTMLCanvasElement)) {
+            throw new TypeError('Expected a TonalBalance canvas');
+        }
+
+        expect(canvas.width).toBe(400);
+        expect(canvas.height).toBe(160);
+        expect(scaleSpy).toHaveBeenCalledWith(2, 2);
+
+        vi.unstubAllGlobals();
+    });
+
+    it('paints the grid, Harman target curve, and target-band fill even with no signal', () => {
+        const ctx = make2dContext();
+        const strokeSpy = vi.spyOn(ctx, 'stroke');
+        const fillSpy = vi.spyOn(ctx, 'fill');
+        const fillTextSpy = vi.spyOn(ctx, 'fillText');
+        const setLineDashSpy = vi.spyOn(ctx, 'setLineDash');
+        spyOnGetContext(ctx);
+
+        render(
+            <TonalBalance fftData={null} fftVersion={0} sampleRate={44100} fftSize={2048} width={200} height={80} />
+        );
+
+        // Grid lines + the dashed target curve are stroked; the tolerance band is filled.
+        expect(strokeSpy).toHaveBeenCalled();
+        expect(fillSpy).toHaveBeenCalled();
+        // The dashed target curve toggles the line dash on then clears it.
+        expect(setLineDashSpy).toHaveBeenCalledWith([4, 4]);
+        expect(setLineDashSpy).toHaveBeenCalledWith([]);
+        // The always-drawn legend label identifies the target curve.
+        expect(fillTextSpy).toHaveBeenCalledWith('Harman Target', expect.any(Number), expect.any(Number));
+    });
+
+    it('bails out without painting when the 2d context is unavailable', () => {
+        spyOnGetContext(null);
+
+        // No throw and nothing to assert on the context — the guard returns early.
+        expect(() =>
+            render(
+                <TonalBalance fftData={null} fftVersion={0} sampleRate={44100} fftSize={2048} width={200} height={80} />
+            )
+        ).not.toThrow();
+    });
+
+    it('draws the filled spectrum area and stroked spectrum line when FFT data is present', () => {
+        const ctx = make2dContext();
+        const createGradientSpy = vi.spyOn(ctx, 'createLinearGradient');
+        const fillSpy = vi.spyOn(ctx, 'fill');
+        spyOnGetContext(ctx);
+
+        // In-band magnitudes (above the -50 dB floor) so the spectrum path is drawn.
+        const fftData = new Float32Array(1024).fill(-20);
+        render(
+            <TonalBalance fftData={fftData} fftVersion={1} sampleRate={44100} fftSize={2048} width={200} height={80} />
+        );
+
+        // The idle draw makes one gradient (background); the live spectrum area adds a second.
+        expect(createGradientSpy).toHaveBeenCalledTimes(2);
+        expect(fillSpy).toHaveBeenCalled();
+    });
+
+    it('applies genre adjustments to the target curve so a bass-forward genre moves points off Harman neutral', () => {
+        const collectLinePoints = (genre: string | undefined): number[] => {
+            const ctx = make2dContext();
+            const points: number[] = [];
+            vi.spyOn(ctx, 'lineTo').mockImplementation((_x, y) => {
+                points.push(y);
+            });
+            spyOnGetContext(ctx);
+
+            render(
+                <TonalBalance
+                    fftData={null}
+                    fftVersion={0}
+                    sampleRate={44100}
+                    fftSize={2048}
+                    width={200}
+                    height={80}
+                    genre={genre}
+                />
+            );
+            vi.restoreAllMocks();
+            return points;
+        };
+
+        // Grid and target-band line points are genre-independent; only the Harman
+        // target curve's interior points move, so the full lineTo sequence differs.
+        const neutral = collectLinePoints(undefined);
+        const edm = collectLinePoints('edm');
+
+        expect(edm).toHaveLength(neutral.length);
+        expect(edm).not.toEqual(neutral);
+    });
+
+    it('treats an empty FFT buffer as no signal and skips the spectrum gradient', () => {
+        const ctx = make2dContext();
+        const createGradientSpy = vi.spyOn(ctx, 'createLinearGradient');
+        spyOnGetContext(ctx);
+
+        const empty = new Float32Array(0);
+        render(
+            <TonalBalance fftData={empty} fftVersion={1} sampleRate={44100} fftSize={2048} width={200} height={80} />
+        );
+
+        // Only the background gradient is created — no spectrum area gradient.
+        expect(createGradientSpy).toHaveBeenCalledTimes(1);
     });
 });
