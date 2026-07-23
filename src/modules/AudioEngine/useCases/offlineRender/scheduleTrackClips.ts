@@ -242,7 +242,9 @@ export async function scheduleTrackClips({
         deviceEntries,
         durationSeconds,
         defaultTempo,
-        changes
+        changes,
+        regionStartSec,
+        projectBeatToSeconds
     );
 
     if (track.freezeState.status === 'frozen' && track.freezeState.frozenBufferId) {

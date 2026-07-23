@@ -32,7 +32,9 @@ export function scheduleTrackAutomation(
     deviceEntries: ScheduleTrackAutomationDeviceEntry[],
     durationSeconds: number,
     defaultTempo: number,
-    changes: AutomationTempoChange[]
+    changes: AutomationTempoChange[],
+    regionStartSeconds = 0,
+    projectBeatToSeconds?: (beat: number) => number
 ): void {
     const trackLanes = lanes.filter((length) => length.trackId === trackId && !length.clipId);
 
@@ -42,12 +44,28 @@ export function scheduleTrackAutomation(
         }
 
         if (lane.parameterId === 'gain') {
-            scheduleAutomationOnParam(trackGainNode.gain, lane.points, durationSeconds, defaultTempo, changes);
+            scheduleAutomationOnParam(
+                trackGainNode.gain,
+                lane.points,
+                durationSeconds,
+                defaultTempo,
+                changes,
+                regionStartSeconds,
+                projectBeatToSeconds
+            );
             continue;
         }
 
         if (lane.parameterId === 'pan') {
-            scheduleAutomationOnParam(trackPanNode.pan, lane.points, durationSeconds, defaultTempo, changes);
+            scheduleAutomationOnParam(
+                trackPanNode.pan,
+                lane.points,
+                durationSeconds,
+                defaultTempo,
+                changes,
+                regionStartSeconds,
+                projectBeatToSeconds
+            );
             continue;
         }
 
@@ -65,7 +83,15 @@ export function scheduleTrackAutomation(
                     scale !== 1 || offset !== 0
                         ? lane.points.map((point) => ({ ...point, value: point.value * scale + offset }))
                         : lane.points;
-                scheduleAutomationOnParam(audioParam, points, durationSeconds, defaultTempo, changes);
+                scheduleAutomationOnParam(
+                    audioParam,
+                    points,
+                    durationSeconds,
+                    defaultTempo,
+                    changes,
+                    regionStartSeconds,
+                    projectBeatToSeconds
+                );
             }
         }
     }
