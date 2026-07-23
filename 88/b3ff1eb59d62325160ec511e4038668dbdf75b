@@ -1,0 +1,19 @@
+.agents/artifacts/sourdaw/audits/AUDIT-effects-routing.md
+  s_0d39f3a4a4357a::t_a4187b4d973cc7 1-362
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "88b3ff1eb59d62325160ec511e4038668dbdf75b",
+  "prompts": {},
+  "sessions": {
+    "s_0d39f3a4a4357a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "60da6a2e-7d79-4d98-8624-e993f5a9f94e",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
