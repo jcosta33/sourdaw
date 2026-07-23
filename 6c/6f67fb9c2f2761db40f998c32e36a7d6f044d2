@@ -1,0 +1,25 @@
+src/modules/AudioEngine/repositories/offlineRouting/__tests__/connectOfflineSidechainRoutes.spec.ts
+  s_ac9b259eab20ba::t_f0a2508b68baf5 9
+src/modules/AudioEngine/repositories/devices/dynamics/__tests__/createSidechainCompressorFallback.spec.ts
+  s_ac9b259eab20ba::t_f0a2508b68baf5 7-9
+src/modules/AudioEngine/useCases/__tests__/buildDeviceChain.spec.ts
+  s_ac9b259eab20ba::t_c96c25a64564c1 1,30-33,59
+src/modules/AudioEngine/useCases/buildDeviceChain.ts
+  s_ac9b259eab20ba::t_c96c25a64564c1 97-98
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "6c6f67fb9c2f2761db40f998c32e36a7d6f044d2",
+  "prompts": {},
+  "sessions": {
+    "s_ac9b259eab20ba": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8699-3865-7842-8c54-afbac6cfd266",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
