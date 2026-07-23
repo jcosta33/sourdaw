@@ -1,0 +1,21 @@
+src/modules/Arrangement/handlers/trackAlternative/__tests__/isPromotableRuntimeClipCollection.spec.ts
+  s_bba9f47efe476f::t_02cfe0b4e9f2e1 1-254
+src/modules/AudioEngine/repositories/devices/__tests__/createStereoWidener.spec.ts
+  s_bba9f47efe476f::t_76073015fa3ca8 1-50
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "c117b9e44d977f16f30e20b9809cb35597f44bc1",
+  "prompts": {},
+  "sessions": {
+    "s_bba9f47efe476f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-a32a6fee6cfab1010",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
