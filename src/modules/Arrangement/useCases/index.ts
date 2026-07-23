@@ -131,6 +131,7 @@ export { bypassDevice } from './device/bypassDevice';
 export { removeDevice } from './device/removeDevice';
 export { reorderDevices } from './device/reorderDevices';
 export { setSend } from './device/sendManagement/setSend';
+export { removeSend } from './device/sendManagement/removeSend';
 export { toggleSendPreFader } from './device/sendManagement/toggleSendPreFader';
 export { setDeviceParameter } from './device/setDeviceParameter/setDeviceParameter';
 export { persistDevicePatch } from './device/setDeviceParameter/persistDevicePatch';
