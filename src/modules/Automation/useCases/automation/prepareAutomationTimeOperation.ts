@@ -34,7 +34,10 @@ type IndexedAutomationOwner = {
 
 type PreparedPoints = { status: 'invalid' } | { status: 'valid'; hasChanges: boolean; points: AutomationPoint[] };
 
+type PreparationStatus = 'ready' | 'rejected';
+
 type PreparedAutomationState = {
+    status: PreparationStatus;
     hasChanges: boolean;
     nextState: AutomationStoreState | null;
 };
@@ -45,32 +48,73 @@ function isFiniteNonNegative(value: number): boolean {
     return Number.isFinite(value) && value >= 0;
 }
 
-function isValidOperation(operation: AutomationTimeOperation): boolean {
-    if (operation.type === 'insert') {
-        return (
-            isFiniteNonNegative(operation.atBeat) &&
-            Number.isFinite(operation.durationBeats) &&
-            operation.durationBeats > 0
-        );
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+    if (typeof value !== 'object' || value === null) {
+        return false;
     }
 
-    return (
-        isFiniteNonNegative(operation.startBeat) &&
-        Number.isFinite(operation.endBeat) &&
-        operation.endBeat > operation.startBeat
-    );
+    const prototype: unknown = Object.getPrototypeOf(value);
+    return prototype === Object.prototype || prototype === null;
 }
 
-function createOwnerIndex(
-    owners: readonly AutomationOwnerSnapshot[]
-): ReadonlyMap<string, IndexedAutomationOwner> | null {
+function validateOperation(operation: unknown): AutomationTimeOperation | null {
+    if (!isPlainObject(operation)) {
+        return null;
+    }
+
+    if (operation.type === 'insert') {
+        const atBeat = operation.atBeat;
+        const durationBeats = operation.durationBeats;
+        if (typeof atBeat !== 'number' || !isFiniteNonNegative(atBeat)) {
+            return null;
+        }
+        if (typeof durationBeats !== 'number' || !Number.isFinite(durationBeats) || durationBeats <= 0) {
+            return null;
+        }
+
+        return {
+            type: 'insert',
+            atBeat,
+            durationBeats,
+        };
+    }
+
+    if (operation.type === 'delete') {
+        const startBeat = operation.startBeat;
+        const endBeat = operation.endBeat;
+        if (typeof startBeat !== 'number' || !isFiniteNonNegative(startBeat)) {
+            return null;
+        }
+        if (typeof endBeat !== 'number' || !Number.isFinite(endBeat) || endBeat <= startBeat) {
+            return null;
+        }
+
+        return {
+            type: 'delete',
+            startBeat,
+            endBeat,
+        };
+    }
+
+    return null;
+}
+
+function createOwnerIndex(owners: unknown): ReadonlyMap<string, IndexedAutomationOwner> | null {
+    if (!Array.isArray(owners)) {
+        return null;
+    }
+
     const ownersByTrackId = new Map<string, IndexedAutomationOwner>();
     const clipOwnerById = new Map<string, string>();
 
     for (const owner of owners) {
-        const runtimeTrackId: unknown = owner.trackId;
-        const runtimeEligible: unknown = owner.eligible;
-        const runtimeClipIds: unknown = owner.clipIds;
+        if (!isPlainObject(owner)) {
+            return null;
+        }
+
+        const runtimeTrackId = owner.trackId;
+        const runtimeEligible = owner.eligible;
+        const runtimeClipIds = owner.clipIds;
         if (
             typeof runtimeTrackId !== 'string' ||
             runtimeTrackId.trim().length === 0 ||
@@ -103,6 +147,30 @@ function createOwnerIndex(
     }
 
     return ownersByTrackId;
+}
+
+function validateInput(input: unknown): {
+    operation: AutomationTimeOperation;
+    ownersByTrackId: ReadonlyMap<string, IndexedAutomationOwner>;
+} | null {
+    if (!isPlainObject(input)) {
+        return null;
+    }
+
+    const operation = validateOperation(input.operation);
+    if (!operation) {
+        return null;
+    }
+
+    const ownersByTrackId = createOwnerIndex(input.owners);
+    if (!ownersByTrackId) {
+        return null;
+    }
+
+    return {
+        operation,
+        ownersByTrackId,
+    };
 }
 
 function prepareInsertedPoints(
@@ -186,18 +254,11 @@ function prepareLanePoints(lane: AutomationLane, operation: AutomationTimeOperat
 function prepareNextState(
     preparedState: AutomationStoreState | null,
     operation: AutomationTimeOperation,
-    owners: readonly AutomationOwnerSnapshot[]
+    ownersByTrackId: ReadonlyMap<string, IndexedAutomationOwner>
 ): PreparedAutomationState {
-    if (!preparedState || !isValidOperation(operation)) {
+    if (!preparedState) {
         return {
-            hasChanges: false,
-            nextState: preparedState,
-        };
-    }
-
-    const ownersByTrackId = createOwnerIndex(owners);
-    if (!ownersByTrackId) {
-        return {
+            status: 'rejected',
             hasChanges: false,
             nextState: preparedState,
         };
@@ -209,12 +270,14 @@ function prepareNextState(
         const owner = ownersByTrackId.get(lane.trackId);
         if (!owner) {
             return {
+                status: 'rejected',
                 hasChanges: false,
                 nextState: preparedState,
             };
         }
         if (lane.clipId !== undefined && !owner.clipIds.has(lane.clipId)) {
             return {
+                status: 'rejected',
                 hasChanges: false,
                 nextState: preparedState,
             };
@@ -227,6 +290,7 @@ function prepareNextState(
         const preparedPoints = prepareLanePoints(lane, operation);
         if (preparedPoints.status === 'invalid') {
             return {
+                status: 'rejected',
                 hasChanges: false,
                 nextState: preparedState,
             };
@@ -245,12 +309,14 @@ function prepareNextState(
 
     if (!hasChanges) {
         return {
+            status: 'ready',
             hasChanges: false,
             nextState: preparedState,
         };
     }
 
     return {
+        status: 'ready',
         hasChanges: true,
         nextState: {
             ...preparedState,
@@ -259,9 +325,19 @@ function prepareNextState(
     };
 }
 
-export function prepareAutomationTimeOperation({ operation, owners }: PrepareAutomationTimeOperationInput) {
+export function prepareAutomationTimeOperation(input: PrepareAutomationTimeOperationInput) {
     const preparedState = automationStore.value;
-    const preparedOperation = prepareNextState(preparedState, operation, owners);
+    const validatedInput = validateInput(input);
+    let preparedOperation: PreparedAutomationState;
+    if (!validatedInput) {
+        preparedOperation = {
+            status: 'rejected',
+            hasChanges: false,
+            nextState: preparedState,
+        };
+    } else {
+        preparedOperation = prepareNextState(preparedState, validatedInput.operation, validatedInput.ownersByTrackId);
+    }
     let phase: TransactionPhase = preparedOperation.hasChanges ? 'prepared' : 'closed';
 
     function apply(): boolean {
@@ -306,6 +382,7 @@ export function prepareAutomationTimeOperation({ operation, owners }: PrepareAut
     }
 
     return {
+        status: preparedOperation.status,
         hasChanges: preparedOperation.hasChanges,
         apply,
         revert,

@@ -71,9 +71,18 @@ function owner(trackId: string, eligible: boolean, clipIds: readonly string[]): 
     return { trackId, eligible, clipIds };
 }
 
-function expectClosedWithoutWrite(input: PrepareInput, preparedState: AutomationStoreState): void {
+function prepareRuntimeInput(input: unknown): ReturnType<typeof prepareAutomationTimeOperation> {
+    return prepareAutomationTimeOperation(input as PrepareInput);
+}
+
+function expectClosedWithoutWrite(
+    input: PrepareInput,
+    preparedState: AutomationStoreState,
+    expectedStatus: 'ready' | 'rejected'
+): void {
     const transaction = prepareAutomationTimeOperation(input);
 
+    expect(transaction).toHaveProperty('status', expectedStatus);
     expect(transaction.hasChanges).toBe(false);
     expect(transaction.apply()).toBe(false);
     expect(transaction.revert()).toBe(false);
@@ -108,6 +117,7 @@ describe('prepareAutomationTimeOperation', () => {
             owners: [owner('track-1', true, ['clip-1']), owner('track-vca', false, ['clip-vca'])],
         });
 
+        expect(transaction).toHaveProperty('status', 'ready');
         expect(transaction.hasChanges).toBe(true);
         expect(mocks.state.value).toBe(preparedState);
         expect(mocks.set).not.toHaveBeenCalled();
@@ -136,6 +146,7 @@ describe('prepareAutomationTimeOperation', () => {
             owners: [owner('track-1', true, ['clip-1'])],
         });
 
+        expect(transaction).toHaveProperty('status', 'ready');
         expect(transaction.apply()).toBe(true);
         const appliedState = mocks.state.value;
         expect(appliedState.lanes[0]?.points.map(({ beat }) => beat)).toEqual([2, 3, 5]);
@@ -165,6 +176,11 @@ describe('prepareAutomationTimeOperation', () => {
             owners: [owner('track-1', true, []), owner('track-2', true, ['clip-1'])],
         },
         {
+            name: 'unknown clip owner',
+            state: { lanes: [lane()] },
+            owners: [owner('track-1', true, ['clip-2'])],
+        },
+        {
             name: 'empty track id',
             state: { lanes: [lane()] },
             owners: [owner('', true, ['clip-1'])],
@@ -178,7 +194,8 @@ describe('prepareAutomationTimeOperation', () => {
                 operation: { type: 'insert', atBeat: 0, durationBeats: 1 },
                 owners,
             },
-            preparedState
+            preparedState,
+            'rejected'
         );
     });
 
@@ -201,8 +218,86 @@ describe('prepareAutomationTimeOperation', () => {
                 operation,
                 owners: [owner('track-1', true, ['clip-1'])],
             },
-            preparedState
+            preparedState,
+            'rejected'
         );
+    });
+
+    it.each([
+        undefined,
+        null,
+        [],
+        new Date(0),
+        {},
+        { operation: { type: 'insert', atBeat: 0, durationBeats: 1 } },
+        { owners: [] },
+        { operation: { type: 'insert', atBeat: 0, durationBeats: 1 }, owners: {} },
+    ])('rejects a malformed runtime root without throwing or writing', (input) => {
+        const preparedState: AutomationStoreState = { lanes: [lane({ points: [point(4, 0.5)] })] };
+        mocks.state.value = preparedState;
+
+        const transaction = prepareRuntimeInput(input);
+
+        expect(transaction).toHaveProperty('status', 'rejected');
+        expect(transaction.hasChanges).toBe(false);
+        expect(transaction.apply()).toBe(false);
+        expect(transaction.revert()).toBe(false);
+        expect(mocks.state.value).toBe(preparedState);
+        expect(mocks.set).not.toHaveBeenCalled();
+    });
+
+    it.each([
+        null,
+        [],
+        new Date(0),
+        {},
+        { type: 'unknown' },
+        { type: 'insert', atBeat: '0', durationBeats: 1 },
+        { type: 'insert', atBeat: 0, durationBeats: '1' },
+        { type: 'delete', startBeat: '0', endBeat: 1 },
+        { type: 'delete', startBeat: 0, endBeat: '1' },
+    ])('rejects malformed runtime operation data without writing', (operation) => {
+        const preparedState: AutomationStoreState = { lanes: [lane({ points: [point(4, 0.5)] })] };
+        mocks.state.value = preparedState;
+
+        const transaction = prepareRuntimeInput({
+            operation,
+            owners: [owner('track-1', true, ['clip-1'])],
+        });
+
+        expect(transaction).toHaveProperty('status', 'rejected');
+        expect(transaction.hasChanges).toBe(false);
+        expect(transaction.apply()).toBe(false);
+        expect(transaction.revert()).toBe(false);
+        expect(mocks.state.value).toBe(preparedState);
+        expect(mocks.set).not.toHaveBeenCalled();
+    });
+
+    it.each([
+        [null],
+        [[]],
+        [new Date(0)],
+        [{}],
+        [{ trackId: 1, eligible: true, clipIds: ['clip-1'] }],
+        [{ trackId: 'track-1', eligible: 'yes', clipIds: ['clip-1'] }],
+        [{ trackId: 'track-1', eligible: true, clipIds: {} }],
+        [{ trackId: 'track-1', eligible: true, clipIds: [''] }],
+        [{ trackId: 'track-1', eligible: true, clipIds: ['clip-1', 'clip-1'] }],
+    ])('rejects malformed runtime owner rows without writing', (owners) => {
+        const preparedState: AutomationStoreState = { lanes: [lane({ points: [point(4, 0.5)] })] };
+        mocks.state.value = preparedState;
+
+        const transaction = prepareRuntimeInput({
+            operation: { type: 'insert', atBeat: 0, durationBeats: 1 },
+            owners,
+        });
+
+        expect(transaction).toHaveProperty('status', 'rejected');
+        expect(transaction.hasChanges).toBe(false);
+        expect(transaction.apply()).toBe(false);
+        expect(transaction.revert()).toBe(false);
+        expect(mocks.state.value).toBe(preparedState);
+        expect(mocks.set).not.toHaveBeenCalled();
     });
 
     it('rejects a finite insert whose resulting point beat overflows', () => {
@@ -216,7 +311,24 @@ describe('prepareAutomationTimeOperation', () => {
                 operation: { type: 'insert', atBeat: 0, durationBeats: Number.MAX_VALUE },
                 owners: [owner('track-1', true, ['clip-1'])],
             },
-            preparedState
+            preparedState,
+            'rejected'
+        );
+    });
+
+    it('rejects a delete whose resulting point beat is non-finite', () => {
+        const preparedState: AutomationStoreState = {
+            lanes: [lane({ points: [point(Number.POSITIVE_INFINITY, 0.5)] })],
+        };
+        mocks.state.value = preparedState;
+
+        expectClosedWithoutWrite(
+            {
+                operation: { type: 'delete', startBeat: 0, endBeat: 1 },
+                owners: [owner('track-1', true, ['clip-1'])],
+            },
+            preparedState,
+            'rejected'
         );
     });
 
@@ -240,19 +352,23 @@ describe('prepareAutomationTimeOperation', () => {
                 operation,
                 owners: [owner('track-1', true, ['clip-1'])],
             },
-            preparedState
+            preparedState,
+            'ready'
         );
         expect(mocks.state.value.lanes[0]).toBe(unchangedLane);
         expect(mocks.state.value.lanes[0]?.points[0]).toBe(unchangedPoint);
     });
 
-    it('reports truthful no-change for missing, empty, and ineligible owner state', () => {
+    it('distinguishes missing state from valid empty and ineligible no-change', () => {
         const missingTransaction = prepareAutomationTimeOperation({
             operation: { type: 'insert', atBeat: 4, durationBeats: 2 },
             owners: [],
         });
+        expect(missingTransaction).toHaveProperty('status', 'rejected');
         expect(missingTransaction.hasChanges).toBe(false);
         expect(missingTransaction.apply()).toBe(false);
+        expect(missingTransaction.revert()).toBe(false);
+        expect(mocks.set).not.toHaveBeenCalled();
 
         const emptyState: AutomationStoreState = { lanes: [] };
         mocks.state.value = emptyState;
@@ -261,7 +377,8 @@ describe('prepareAutomationTimeOperation', () => {
                 operation: { type: 'insert', atBeat: 4, durationBeats: 2 },
                 owners: [],
             },
-            emptyState
+            emptyState,
+            'ready'
         );
 
         const unchangedLane = lane({ points: [point(1, 0.25)] });
@@ -272,7 +389,8 @@ describe('prepareAutomationTimeOperation', () => {
                 operation: { type: 'insert', atBeat: 4, durationBeats: 2 },
                 owners: [owner('track-1', true, ['clip-1'])],
             },
-            unchangedState
+            unchangedState,
+            'ready'
         );
         expect(mocks.state.value.lanes[0]).toBe(unchangedLane);
 
@@ -284,7 +402,8 @@ describe('prepareAutomationTimeOperation', () => {
                 operation: { type: 'insert', atBeat: 4, durationBeats: 2 },
                 owners: [owner('track-vca', false, ['clip-vca'])],
             },
-            dormantState
+            dormantState,
+            'ready'
         );
         expect(mocks.state.value.lanes[0]).toBe(dormantLane);
     });
