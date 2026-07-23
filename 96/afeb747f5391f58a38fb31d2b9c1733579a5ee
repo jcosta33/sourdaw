@@ -1,0 +1,46 @@
+src/modules/AudioEngine/services/__tests__/bacteriaProcessorWasmViews.spec.ts
+  s_0d39f3a4a4357a::t_05761e8319a387 1-171
+src/modules/AudioEngine/services/__tests__/scoringProcessorWasmViews.spec.ts
+  s_0d39f3a4a4357a::t_4360c4f6019c83 1,18
+  s_0d39f3a4a4357a::t_b69e2205b541e7 2-17,19-125
+src/modules/AudioEngine/services/__tests__/levainProcessorWasmViews.spec.ts
+  s_0d39f3a4a4357a::t_21c11eb569cd81 1-126
+src/modules/AudioEngine/services/__tests__/fermenterProcessorWasmViews.spec.ts
+  s_0d39f3a4a4357a::t_8a59c2d83e45a9 1-149
+src/modules/AudioEngine/services/__tests__/proofChamberProcessorWasmViews.spec.ts
+  s_0d39f3a4a4357a::t_1951e19ddd26c0 1-126
+src/modules/AudioEngine/services/__tests__/grinderProcessorWasmViews.spec.ts
+  s_0d39f3a4a4357a::t_60884245288164 1-143
+src/modules/AudioEngine/services/__tests__/glutenProcessorWasmViews.spec.ts
+  s_0d39f3a4a4357a::t_01482128a51fe6 1-146
+src/modules/AudioEngine/services/__tests__/wasmViewGrowthHarness.ts
+  s_0d39f3a4a4357a::t_e803751a47dede 1-146
+  s_0d39f3a4a4357a::t_dca1b055221ea0 147-149
+  s_ef109dd6892d3a::t_a3a9a7e742d9c0 150
+.agents/artifacts/sourdaw/audits/AUDIT-rt-engine-core.md
+  s_0d39f3a4a4357a::t_89c0fd7ee21a34 244
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "96afeb747f5391f58a38fb31d2b9c1733579a5ee",
+  "prompts": {},
+  "sessions": {
+    "s_0d39f3a4a4357a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "60da6a2e-7d79-4d98-8624-e993f5a9f94e",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_ef109dd6892d3a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-ad1e392968cf175b7",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
