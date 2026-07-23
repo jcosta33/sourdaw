@@ -74,6 +74,7 @@ describe('projectOfflineYeastTrackNotes', () => {
             projectMidiEvents,
             projectPpqEndpoints,
             processYeastMidi,
+            projectPitch: ({ pitch }) => pitch,
         });
 
         expect(processYeastMidi).toHaveBeenCalledTimes(1);
@@ -145,11 +146,91 @@ describe('projectOfflineYeastTrackNotes', () => {
             projectMidiEvents,
             projectPpqEndpoints,
             processYeastMidi,
+            projectPitch: ({ pitch }) => pitch,
         });
 
         expect(notes).toEqual([
             expect.objectContaining({ pitch: 72, startSamples: 50, endSamples: 100, toasterPadIndex: 2 }),
             expect.objectContaining({ pitch: 72, startSamples: 250, endSamples: 300, toasterPadIndex: 3 }),
         ]);
+    });
+
+    it('anchors source-free generator notes to the active carrier clip chord', () => {
+        const projectPitch = vi.fn(
+            ({ pitch }: { pitch: number; referenceBeat: number; targetBeat: number }) => pitch + 1
+        );
+        const processYeastMidi = vi.fn<OfflineYeastMidiProcessor>(() => [
+            {
+                timeSamples: 175,
+                timePpq: 1.75,
+                trackId: 'track-1',
+                kind: { type: 'noteOn', channel: 0, note: 64, velocity: 90 },
+            },
+            {
+                timeSamples: 375,
+                timePpq: 3.75,
+                trackId: 'track-1',
+                kind: { type: 'noteOff', channel: 0, note: 64 },
+            },
+        ]);
+        const firstIteration = {
+            sourceNotes: [],
+            clipId: 'clip-1',
+            clipStartBeat: 0,
+            clipEndBeat: 2,
+            iterationStartBeat: 0,
+            loopLengthBeats: 2,
+            midiOffsetBeats: 0,
+            loopEnabled: false,
+        };
+
+        const secondIteration = {
+            ...firstIteration,
+            clipId: 'clip-2',
+            clipStartBeat: 2.5,
+            clipEndBeat: 4,
+            iterationStartBeat: 2.5,
+            toasterPadIndex: 7,
+        };
+        function projectMidiEvents<Event extends ProjectableEvent>(
+            input: Parameters<OfflineMidiEventProjector>[0]
+        ): readonly Event[] {
+            const events = input.events as readonly Event[];
+            return input.phase === 'sequencer-groove'
+                ? events.map((event) => ({ ...event, startBeat: event.startBeat + 1 }))
+                : events;
+        }
+        const input = {
+            trackId: 'track-1',
+            iterations: [firstIteration, secondIteration],
+            sampleRate: 100,
+            blockStartSamples: 0,
+            blockEndSamples: 400,
+            defaultTempo: 60,
+            changes: [],
+            projectMidiEvents,
+            projectPpqEndpoints,
+            processYeastMidi,
+            projectPitch,
+        };
+        const notes = projectOfflineYeastTrackNotes(input);
+
+        expect(notes).toEqual([
+            expect.objectContaining({ pitch: 65, startSamples: 275, endSamples: 400, toasterPadIndex: 7 }),
+        ]);
+        expect(projectPitch).toHaveBeenCalledWith({ pitch: 64, referenceBeat: 2.5, targetBeat: 2.75 });
+        expect(projectOfflineYeastTrackNotes({ ...input, iterations: [secondIteration] })).toEqual([]);
+        expect(
+            projectOfflineYeastTrackNotes({
+                ...input,
+                iterations: [firstIteration, secondIteration, { ...secondIteration, clipId: 'clip-2-copy' }],
+            })[0]?.toasterPadIndex
+        ).toBe(7);
+        expect(
+            projectOfflineYeastTrackNotes({
+                ...input,
+                iterations: [firstIteration, secondIteration, { ...secondIteration, toasterPadIndex: 8 }],
+            })[0]?.toasterPadIndex
+        ).toBe(-1);
     });
 });

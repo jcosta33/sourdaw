@@ -13,6 +13,7 @@ import { type TempoMapStoreState } from '#/modules/Transport/stores';
 import { scheduleTrackAutomation } from '../../repositories/offlineScheduler/automationScheduling';
 import {
     type OfflineMidiEventProjector,
+    type OfflineChordPitchProjector,
     type OfflineMidiProbabilitySelector,
 } from '../../repositories/offlineScheduler/offlineMidiEventProjectorState';
 import { type OfflinePpqEndpointProjector } from '../../repositories/offlineScheduler/offlinePpqEndpointProjectorState';
@@ -156,6 +157,7 @@ type OfflineProjectionDependencies = {
     projectPpqEndpoints: OfflinePpqEndpointProjector;
     processYeastMidi: OfflineYeastMidiProcessor | null;
     selectMidiEventProbability: OfflineMidiProbabilitySelector;
+    projectChordPitch: OfflineChordPitchProjector;
 };
 
 export type ScheduleTrackClipsInput = {
@@ -195,7 +197,8 @@ export async function scheduleTrackClips({
     deviceEntriesByTrack,
     regionStartBeat = 0,
 }: ScheduleTrackClipsInput): Promise<void> {
-    const { projectMidiEvents, projectPpqEndpoints, processYeastMidi, selectMidiEventProbability } = projections;
+    const { projectChordPitch, projectMidiEvents, projectPpqEndpoints, processYeastMidi, selectMidiEventProbability } =
+        projections;
     function projectBeatToSeconds(beat: number): number {
         return projectPpqEndpoints({
             startPpq: beat,
@@ -297,6 +300,20 @@ export async function scheduleTrackClips({
         ? getDrumKitDefByIndex(drumKitDevice.parameterValues.kit ?? drumKitDevice.parameterValues.kitId ?? 0)
         : null;
     const synthParams = drumKit || kitDef || instrumentControls ? null : getSynthParamsFromDevices(track.devices);
+    function projectPitch({
+        pitch,
+        referenceBeat,
+        targetBeat,
+    }: {
+        pitch: number;
+        referenceBeat: number;
+        targetBeat: number;
+    }): number {
+        if (!track.followChordTrack || drumKit || kitDef || isToaster) {
+            return pitch;
+        }
+        return projectChordPitch({ pitch, referenceBeat, targetBeat });
+    }
     const hasYeast = track.devices.some((device) => device.type === 'yeast');
     const parentTrack =
         track.parentId && allTracks ? allTracks.find((candidate) => candidate.id === track.parentId) : null;
@@ -414,6 +431,7 @@ export async function scheduleTrackClips({
                 projectMidiEvents,
                 projectPpqEndpoints,
                 processYeastMidi,
+                projectPitch,
             });
             await scheduleMidiNoteBatch(scheduledNotes);
         }
@@ -493,7 +511,11 @@ export async function scheduleTrackClips({
                     });
                     return {
                         id: note.id,
-                        pitch: note.pitch,
+                        pitch: projectPitch({
+                            pitch: note.pitch,
+                            referenceBeat: clip.startBeat,
+                            targetBeat: note.startBeat,
+                        }),
                         velocity: note.velocity,
                         startSamples: endpoints.startSamples,
                         endSamples: endpoints.endSamples,

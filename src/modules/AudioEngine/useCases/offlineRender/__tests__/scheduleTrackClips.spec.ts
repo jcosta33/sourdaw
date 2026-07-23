@@ -63,6 +63,10 @@ const mocks = vi.hoisted(() => {
         audioBufferCache: { get: vi.fn(() => undefined) },
         projectMidiEvents: vi.fn<(input: unknown) => void>(),
         processYeastMidi: vi.fn<(input: unknown) => void>(),
+        projectChordPitch: vi.fn(
+            ({ pitch, referenceBeat, targetBeat }: { pitch: number; referenceBeat: number; targetBeat: number }) =>
+                pitch + targetBeat - referenceBeat
+        ),
         shouldPlayMidiEvent: vi.fn<OfflineMidiProbabilitySelector>(({ probabilityPercent }) => probabilityPercent > 0),
         projection,
     };
@@ -256,6 +260,8 @@ function makeMidi(): NonNullable<MidiStoreState> {
 
 type RunScheduleInput = {
     withYeast?: boolean;
+    withToaster?: boolean;
+    followChordTrack?: boolean;
     loopLengthBeats?: number;
     includeSecondClip?: boolean;
     emptyNotes?: boolean;
@@ -267,6 +273,8 @@ type RunScheduleInput = {
 
 async function runSchedule({
     withYeast = false,
+    withToaster = false,
+    followChordTrack = false,
     loopLengthBeats,
     includeSecondClip = false,
     emptyNotes = false,
@@ -277,6 +285,7 @@ async function runSchedule({
 }: RunScheduleInput = {}): Promise<PendingWorkletEvent[]> {
     const offlineCtx = makeOfflineCtx();
     const track = makeMidiTrack();
+    track.followChordTrack = followChordTrack;
     const midi = makeMidi();
     if (probability !== undefined) {
         midi.notesByClipId['clip-1']![0]!.probability = probability;
@@ -313,6 +322,9 @@ async function runSchedule({
         midi.notesByClipId['clip-2'] = [{ id: 'note-2', pitch: 64, startBeat: 1, duration: 1, velocity: 90 }];
     }
     const entry = makeInstrumentEntry();
+    if (withToaster) {
+        entry.deviceType = 'toaster';
+    }
     const deviceEntriesByTrack = new Map<string, DeviceNodeEntry[]>([[track.id, [entry]]]);
     const pendingWorkletEvents: PendingWorkletEvent[] = [];
 
@@ -337,6 +349,7 @@ async function runSchedule({
             projectPpqEndpoints,
             processYeastMidi,
             selectMidiEventProbability: mocks.shouldPlayMidiEvent,
+            projectChordPitch: mocks.projectChordPitch,
         },
         pendingWorkletEvents,
         allTracks: [track],
@@ -411,6 +424,7 @@ describe('scheduleTrackClips — MIDI plugin-delay compensation', () => {
                 projectPpqEndpoints,
                 processYeastMidi,
                 selectMidiEventProbability: mocks.shouldPlayMidiEvent,
+                projectChordPitch: mocks.projectChordPitch,
             },
             pendingWorkletEvents,
             allTracks: [parent, ...children],
@@ -523,6 +537,7 @@ describe('scheduleTrackClips — MIDI plugin-delay compensation', () => {
                 projectPpqEndpoints,
                 processYeastMidi,
                 selectMidiEventProbability: mocks.shouldPlayMidiEvent,
+                projectChordPitch: mocks.projectChordPitch,
             },
             pendingWorkletEvents: [],
             allTracks: [track],
@@ -566,6 +581,21 @@ describe('scheduleTrackClips — MIDI plugin-delay compensation', () => {
         expect(events.find((event) => event.type === 'off')).toMatchObject({ pitch: 72 });
         expect(mocks.projectMidiEvents).toHaveBeenNthCalledWith(1, expect.objectContaining({ phase: 'clip-groove' }));
         expect(mocks.projectMidiEvents).toHaveBeenNthCalledWith(2, expect.objectContaining({ phase: 'complete' }));
+    });
+
+    it('applies chord-follow projection to direct and Yeast offline notes', async () => {
+        const direct = await runSchedule({ followChordTrack: true });
+        const yeast = await runSchedule({ followChordTrack: true, withYeast: true });
+
+        expect(direct.find((event) => event.type === 'on')?.pitch).toBe(61);
+        expect(yeast.find((event) => event.type === 'on')?.pitch).toBe(61);
+        expect(mocks.projectChordPitch).toHaveBeenCalledWith({ pitch: 60, referenceBeat: 0, targetBeat: 1 });
+    });
+
+    it('does not chord-project Toaster percussion notes', async () => {
+        await runSchedule({ followChordTrack: true, withToaster: true });
+
+        expect(mocks.projectChordPitch).not.toHaveBeenCalled();
     });
 
     it('processes all loop iterations and clips through Yeast in one chronological track pass', async () => {

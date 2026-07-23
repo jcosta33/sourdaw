@@ -86,6 +86,7 @@ import {
     getMidiNoteTransformHandlers,
     getPatternInstanceHandlers,
     prepareMidiGlobalTimeTransaction,
+    createChordPitchProjector,
     createGrooveMidiEventProjector,
     shouldPlayMidiEvent,
     setWebMidiRealtimeProcessor,
@@ -157,6 +158,7 @@ const createOfflineYeastProcessor = () =>
 configureOfflineMidiEventProjection({
     createProjector: createGrooveMidiEventProjector,
     selectProbability: shouldPlayMidiEvent,
+    createChordPitchProjector,
 });
 configureOfflinePpqEndpointProjection({ project: projectPpqEndpoints });
 configureOfflineYeastMidiProcessing({ createProcessor: createOfflineYeastProcessor });
@@ -165,6 +167,7 @@ setOfflineRenderDependencies({
     createMidiEventProjector: createGrooveMidiEventProjector,
     createYeastMidiProcessor: createOfflineYeastProcessor,
     selectMidiEventProbability: shouldPlayMidiEvent,
+    createChordPitchProjector,
 });
 setToasterGrooveAssignmentExecutor({ execute: executeAppAction });
 setArrangementEventBus(eventBus);

@@ -126,6 +126,7 @@ function createRenderContext(tracks: unknown[] | null) {
         tailSeconds: 0,
         projectMidiEvents: vi.fn(),
         selectMidiEventProbability: vi.fn(() => true),
+        projectChordPitch: ({ pitch }: { pitch: number }) => pitch,
         projectPpqEndpoints: vi.fn(),
         processYeastMidi: null,
     };
@@ -141,6 +142,10 @@ describe('exportStems', () => {
                 ({ events }) =>
                     events,
             selectProbability: () => true,
+            createChordPitchProjector:
+                () =>
+                ({ pitch }) =>
+                    pitch,
         });
         configureOfflinePpqEndpointProjection({
             project: ({ startPpq, endPpq, sampleRate }) => ({

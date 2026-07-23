@@ -132,6 +132,7 @@ describe('renderOffline', () => {
             durationSeconds: 1,
             projectMidiEvents: vi.fn(),
             selectMidiEventProbability: vi.fn(() => true),
+            projectChordPitch: ({ pitch }: { pitch: number }) => pitch,
             projectPpqEndpoints: vi.fn(),
             processYeastMidi: vi.fn(),
         });
