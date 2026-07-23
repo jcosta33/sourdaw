@@ -1,0 +1,22 @@
+src/modules/BrowserAi/repositories/__tests__/modelDownloadManager.spec.ts
+  s_0d39f3a4a4357a::t_b1231dc41a9c84 265,282-283,287
+  s_0d39f3a4a4357a::t_6007bda7f28964 14-16
+  s_0d39f3a4a4357a::t_b454b8426d2e68 241-264,266-281,284-286,288-307
+  s_0d39f3a4a4357a::t_7d4aafec442eea 308
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "f5b1f84b02ad4dc728121e2666c2ba19654f64bd",
+  "prompts": {},
+  "sessions": {
+    "s_0d39f3a4a4357a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "60da6a2e-7d79-4d98-8624-e993f5a9f94e",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
