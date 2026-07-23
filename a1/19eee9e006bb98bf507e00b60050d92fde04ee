@@ -1,0 +1,19 @@
+src/modules/GrandBoule/presentations/views/__tests__/GrandBoulePanel.spec.tsx
+  s_6108a2a0bac9d3::t_467123d8b8d941 25,27-29,32,34,37,39-40,43,45-46,49-51
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "a119eee9e006bb98bf507e00b60050d92fde04ee",
+  "prompts": {},
+  "sessions": {
+    "s_6108a2a0bac9d3": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-a0015e0080f3cb40e",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
