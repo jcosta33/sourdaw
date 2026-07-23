@@ -129,7 +129,9 @@ describe('removeModel', () => {
 
         await expect(removeModel({ modelId: 'ddsp-violin', family: 'ddsp' })).rejects.toThrow('permission denied');
 
-        const untouched = modelRegistryStore.value?.ddspInstruments.find((instrument) => instrument.id === 'ddsp-violin');
+        const untouched = modelRegistryStore.value?.ddspInstruments.find(
+            (instrument) => instrument.id === 'ddsp-violin'
+        );
         expect(untouched?.status).toBe('ready');
         expect(get_storage_status).not.toHaveBeenCalled();
         expect(modelRegistryStore.value?.storageUsedBytes).toBe(82_000_000);
