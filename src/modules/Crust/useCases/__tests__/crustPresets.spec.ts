@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 
+import { DEFAULT_CRUST_PATCH } from '../../models/CrustPatch';
 import { CRUST_PRESETS } from '../crustPresets';
 
 describe('CRUST_PRESETS', () => {
@@ -7,18 +8,47 @@ describe('CRUST_PRESETS', () => {
         expect(CRUST_PRESETS.length).toBeGreaterThan(0);
     });
 
-    it('every preset has id, name, category, and a patch', () => {
+    it('every preset has a unique id, a non-empty name, and a matching patch name', () => {
+        const ids = CRUST_PRESETS.map((preset) => preset.id);
+        expect(new Set(ids).size).toBe(ids.length);
         for (const preset of CRUST_PRESETS) {
-            expect(preset.id).toBeTruthy();
-            expect(preset.name).toBeTruthy();
-            expect(preset.category).toBeTruthy();
-            expect(preset.patch).toBeDefined();
+            expect(preset.id.length).toBeGreaterThan(0);
+            expect(preset.name.length).toBeGreaterThan(0);
+            expect(preset.category.length).toBeGreaterThan(0);
             expect(preset.patch.name).toBe(preset.name);
         }
     });
 
-    it('preset ids are unique', () => {
-        const ids = CRUST_PRESETS.map((p) => p.id);
-        expect(new Set(ids).size).toBe(ids.length);
+    it('every preset patch has numeric fields within documented ranges', () => {
+        for (const preset of CRUST_PRESETS) {
+            const patch = preset.patch;
+            // gain: 0–18 dB
+            expect(patch.gain).toBeGreaterThanOrEqual(0);
+            expect(patch.gain).toBeLessThanOrEqual(18);
+            // ceiling: -6 to 0 dBTP
+            expect(patch.ceiling).toBeGreaterThanOrEqual(-6);
+            expect(patch.ceiling).toBeLessThanOrEqual(0);
+            // lookahead: 0–10 ms
+            expect(patch.lookahead).toBeGreaterThanOrEqual(0);
+            expect(patch.lookahead).toBeLessThanOrEqual(10);
+            // channel link: 0–100 %
+            expect(patch.channelLinkTransient).toBeGreaterThanOrEqual(0);
+            expect(patch.channelLinkTransient).toBeLessThanOrEqual(100);
+            expect(patch.channelLinkRelease).toBeGreaterThanOrEqual(0);
+            expect(patch.channelLinkRelease).toBeLessThanOrEqual(100);
+            // oversampling must be a valid value
+            expect([1, 4, 8, 16, 32]).toContain(patch.oversampling);
+            // crossovers in Hz
+            expect(patch.crossover1).toBeGreaterThan(0);
+            expect(patch.crossover2).toBeGreaterThan(0);
+        }
+    });
+
+    it('each preset patch differs from the default init patch', () => {
+        for (const preset of CRUST_PRESETS) {
+            const snapshot = JSON.stringify({ ...preset.patch, name: 'Init' });
+            const defaultSnapshot = JSON.stringify(DEFAULT_CRUST_PATCH);
+            expect(snapshot).not.toBe(defaultSnapshot);
+        }
     });
 });
