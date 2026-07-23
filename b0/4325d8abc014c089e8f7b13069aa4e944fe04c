@@ -1,0 +1,19 @@
+.agents/artifacts/sourdaw/audits/AUDIT-collab-crdt-audio.md
+  s_f51c6a14dfd0a0::t_bb8a869282b541 10,44-45,99,122-156,330-338,359-363
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "b04325d8abc014c089e8f7b13069aa4e944fe04c",
+  "prompts": {},
+  "sessions": {
+    "s_f51c6a14dfd0a0": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-a3cfe19c665611a5f",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
