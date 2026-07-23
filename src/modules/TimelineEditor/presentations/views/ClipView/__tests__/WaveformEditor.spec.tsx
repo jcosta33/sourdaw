@@ -6,8 +6,11 @@ import { getWarpState } from '#/modules/Arrangement/stores';
 import {
     addManualWarpMarker,
     commitWarpMarkerBeatDrag,
+    disableWarp,
+    enableWarp,
     moveWarpMarker,
     normalizeClip,
+    setStretchMode,
 } from '#/modules/Arrangement/useCases';
 import { getCachedAudioBufferWaveformPeaks } from '#/modules/AudioEngine/useCases';
 
@@ -240,6 +243,50 @@ describe('WaveformEditor', () => {
     it('should render warp toggle button', () => {
         render(<WaveformEditor {...defaultProps} />);
         expect(screen.getByLabelText('Toggle warp mode')).toBeInTheDocument();
+    });
+
+    it('should enable warp when the warp toggle is clicked while disabled', () => {
+        vi.mocked(getWarpState).mockReturnValue({
+            enabled: false,
+            markers: [],
+            stretchMode: 'complex',
+            originalTempo: null,
+        });
+        render(<WaveformEditor {...defaultProps} />);
+
+        fireEvent.click(screen.getByLabelText('Toggle warp mode'));
+
+        expect(vi.mocked(enableWarp)).toHaveBeenCalledWith('clip-1');
+        expect(vi.mocked(disableWarp)).not.toHaveBeenCalled();
+    });
+
+    it('should disable warp when the warp toggle is clicked while enabled', () => {
+        vi.mocked(getWarpState).mockReturnValue({
+            enabled: true,
+            markers: [],
+            stretchMode: 'complex',
+            originalTempo: null,
+        });
+        render(<WaveformEditor {...defaultProps} />);
+
+        fireEvent.click(screen.getByLabelText('Toggle warp mode'));
+
+        expect(vi.mocked(disableWarp)).toHaveBeenCalledWith('clip-1');
+        expect(vi.mocked(enableWarp)).not.toHaveBeenCalled();
+    });
+
+    it('should switch the warp stretch mode when a mode button is clicked', () => {
+        vi.mocked(getWarpState).mockReturnValue({
+            enabled: true,
+            markers: [],
+            stretchMode: 'complex',
+            originalTempo: null,
+        });
+        render(<WaveformEditor {...defaultProps} />);
+
+        fireEvent.click(screen.getByRole('button', { name: 'repitch' }));
+
+        expect(vi.mocked(setStretchMode)).toHaveBeenCalledWith('clip-1', 'repitch');
     });
 
     it('should render canvas element', () => {

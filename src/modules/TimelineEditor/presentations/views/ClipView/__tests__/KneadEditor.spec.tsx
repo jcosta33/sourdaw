@@ -3,9 +3,11 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 import { injectDependencies } from '#/infra/di/testing/injectDependencies';
 import { useStore } from '#/infra/store/useStore';
+import { addDevice } from '#/modules/Arrangement/useCases';
 import { type KneadClipState, type NoteBlob } from '#/modules/Knead/stores';
 import { analyzeClipPitch, updateClipKneadState } from '#/modules/Knead/useCases';
 import { setProjectKeyRoot, setProjectScaleName } from '#/modules/Project/useCases';
+import { defaultTransportState } from '#/modules/Transport/stores';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { useTracks } from '../../../hooks/useTracks';
@@ -126,6 +128,9 @@ describe('KneadEditor', () => {
     it('should render enable pitch editor button when no knead device', () => {
         render(<KneadEditor {...defaultProps} />);
         expect(screen.getByText('Enable Pitch Editor')).toBeInTheDocument();
+
+        fireEvent.click(screen.getByText('Enable Pitch Editor'));
+        expect(addDevice).toHaveBeenCalledWith('track-1', 'Knead');
     });
 
     it('should render canvas element', () => {
@@ -202,6 +207,31 @@ describe('KneadEditor', () => {
             render(<KneadEditor {...defaultProps} />);
 
             expect(analyzeClipPitch).toHaveBeenCalledWith('clip-1');
+        });
+
+        it('logs and notifies when pitch analysis rejects', async () => {
+            vi.mocked(useStore).mockImplementation((_store: unknown, fallback: unknown) => {
+                if (fallback && typeof fallback === 'object' && 'isAnalyzing' in fallback) {
+                    return {
+                        activeClipId: null,
+                        clips: {},
+                        contours: {},
+                        isAnalyzing: false,
+                        analysisProgress: 0,
+                    };
+                }
+                return fallback ?? {};
+            });
+            const emit = vi.fn().mockResolvedValue(undefined);
+            injectDependencies(notifyUser, { eventBus: { emit } });
+            vi.mocked(analyzeClipPitch).mockRejectedValueOnce(new Error('analysis exploded'));
+
+            render(<KneadEditor {...defaultProps} />);
+
+            await vi.waitFor(() => {
+                expect(emit).toHaveBeenCalled();
+            });
+            expect(emit.mock.calls.some((call) => JSON.stringify(call).includes('Pitch analysis failed'))).toBe(true);
         });
     });
 
@@ -318,6 +348,17 @@ describe('KneadEditor', () => {
 
                 expect(lastUpdater()(makeClipState([makeBlob()])).formantPreserve).toBe(false);
             });
+
+            it('the zoom slider updates the zoom percentage shown on the control', () => {
+                render(<KneadEditor {...defaultProps} />);
+                const sliders = screen.getAllByRole('slider');
+                const zoomSlider = sliders[sliders.length - 1]! as HTMLInputElement;
+                expect(zoomSlider.value).toBe('100');
+
+                fireEvent.change(zoomSlider, { target: { value: '150' } });
+
+                expect(zoomSlider.value).toBe('150');
+            });
         });
 
         describe('blob pointer interactions', () => {
@@ -345,6 +386,9 @@ describe('KneadEditor', () => {
 
                 fireEvent.pointerMove(canvas, { clientX: 300, clientY: 2 });
                 expect(canvas.style.cursor).toBe('crosshair');
+
+                fireEvent.pointerMove(canvas, { clientX: 90, clientY: 6 });
+                expect(canvas.style.cursor).toBe('ns-resize');
             });
 
             it('dragging the lower centre shifts pitch freely in cents', () => {
@@ -405,6 +449,119 @@ describe('KneadEditor', () => {
                 fireEvent.pointerMove(canvas, { pointerId: 1, clientX: 90, clientY: -10 });
 
                 expect(updateClipKneadState).not.toHaveBeenCalled();
+            });
+        });
+
+        describe('canvas draw loop', () => {
+            type GetContext2d = (
+                contextId: '2d',
+                options?: CanvasRenderingContext2DSettings
+            ) => CanvasRenderingContext2D | null;
+
+            const make2dContext = (): CanvasRenderingContext2D => document.createElement('canvas').getContext('2d')!;
+
+            const spyOnGetContext = (ctx: CanvasRenderingContext2D | null): ReturnType<typeof vi.spyOn> => {
+                const proto: { getContext: GetContext2d } = HTMLCanvasElement.prototype;
+                return vi.spyOn(proto, 'getContext').mockReturnValue(ctx);
+            };
+
+            const stubContainerSize = (width: number, height: number): (() => void) => {
+                const widthDescriptor = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'clientWidth');
+                const heightDescriptor = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'clientHeight');
+                Object.defineProperty(HTMLElement.prototype, 'clientWidth', { configurable: true, value: width });
+                Object.defineProperty(HTMLElement.prototype, 'clientHeight', { configurable: true, value: height });
+                return () => {
+                    if (widthDescriptor) {
+                        Object.defineProperty(HTMLElement.prototype, 'clientWidth', widthDescriptor);
+                    }
+                    if (heightDescriptor) {
+                        Object.defineProperty(HTMLElement.prototype, 'clientHeight', heightDescriptor);
+                    }
+                };
+            };
+
+            it('draws grid lines, the raw contour, and blob shapes with the playhead when pitch data is present', () => {
+                const restoreSize = stubContainerSize(800, 240);
+                const ctx = make2dContext();
+                const getContextSpy = spyOnGetContext(ctx);
+                const rafSpy = vi.spyOn(window, 'requestAnimationFrame').mockReturnValue(1);
+                const fillTextSpy = vi.spyOn(ctx, 'fillText');
+                const roundRectSpy = vi.spyOn(ctx, 'roundRect');
+                const moveToSpy = vi.spyOn(ctx, 'moveTo');
+                const strokeSpy = vi.spyOn(ctx, 'stroke');
+
+                vi.mocked(useStore).mockImplementation((_store: unknown, fallback: unknown) => {
+                    if (fallback && typeof fallback === 'object' && 'isAnalyzing' in fallback) {
+                        return {
+                            activeClipId: null,
+                            clips: { 'clip-1': makeClipState([makeBlob({ pitchCurveCents: [10, -10, 5] })]) },
+                            contours: {
+                                'clip-1': {
+                                    points: [{ time_ms: 100, frequency_hz: 440, confidence: 0.9, voiced: true }],
+                                    sample_rate: 48000,
+                                    hop_size: 256,
+                                },
+                            },
+                            isAnalyzing: false,
+                            analysisProgress: 0,
+                        };
+                    }
+                    if (fallback && typeof fallback === 'object' && 'isPlaying' in fallback) {
+                        return { ...defaultTransportState, isPlaying: true, playheadPosition: 2 };
+                    }
+                    return { keyRoot: 0, scaleName: 'major' };
+                });
+
+                render(<KneadEditor {...defaultProps} />);
+
+                expect(getContextSpy).toHaveBeenCalledWith('2d');
+                expect(roundRectSpy).toHaveBeenCalled();
+                expect(moveToSpy).toHaveBeenCalled();
+                expect(strokeSpy.mock.calls.length).toBeGreaterThan(0);
+                expect(fillTextSpy).not.toHaveBeenCalledWith(
+                    'No pitch data analyzed.',
+                    expect.any(Number),
+                    expect.any(Number)
+                );
+                expect(rafSpy).toHaveBeenCalled();
+
+                getContextSpy.mockRestore();
+                rafSpy.mockRestore();
+                restoreSize();
+            });
+
+            it('draws the empty-state text on the canvas when no blobs have been analyzed', () => {
+                const ctx = make2dContext();
+                const getContextSpy = spyOnGetContext(ctx);
+                const rafSpy = vi.spyOn(window, 'requestAnimationFrame').mockReturnValue(1);
+                const fillTextSpy = vi.spyOn(ctx, 'fillText');
+
+                vi.mocked(useStore).mockImplementation((_store: unknown, fallback: unknown) => {
+                    if (fallback && typeof fallback === 'object' && 'isAnalyzing' in fallback) {
+                        return {
+                            activeClipId: null,
+                            clips: {},
+                            contours: {},
+                            isAnalyzing: false,
+                            analysisProgress: 0,
+                        };
+                    }
+                    if (fallback && typeof fallback === 'object' && 'isPlaying' in fallback) {
+                        return fallback;
+                    }
+                    return { keyRoot: 0, scaleName: 'major' };
+                });
+
+                render(<KneadEditor {...defaultProps} />);
+
+                expect(fillTextSpy).toHaveBeenCalledWith(
+                    'No pitch data analyzed.',
+                    expect.any(Number),
+                    expect.any(Number)
+                );
+
+                getContextSpy.mockRestore();
+                rafSpy.mockRestore();
             });
         });
     });
