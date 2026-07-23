@@ -70,6 +70,7 @@ export const renderOffline: RenderOfflineFn = async function renderOffline(
             durationBeats,
             startBeat,
             tailSeconds,
+            sampleRate,
         });
         if (!projectMidiEvents || !selectMidiEventProbability || !projectPpqEndpoints) {
             throw new Error('Offline musical projection is not configured');
