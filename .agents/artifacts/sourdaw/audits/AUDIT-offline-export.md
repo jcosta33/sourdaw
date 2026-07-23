@@ -85,6 +85,35 @@ UI + native write: `AudioRendering/presentations/views/ExportDialog.tsx`
 Solo (live): `Arrangement/useCases/toggleTrackState/applySoloLogic.ts` →
 `AudioEngine/useCases/trackAudioControls/setTrackMute.ts` (engine node only, not the project store).
 
+### 2a. Verified parity — the master-track device chain (Proof/Crust) IS applied offline
+
+Resolved empirically at the coordinator's request. The first pass raised this as an open question on a
+**false premise** — that tracks default to `hw_out` / a bare master gain. They do not. Non-master tracks
+default to `outputId: 'master'` and route **through the master strip** in both runtimes, so the master
+track's device chain processes the summed mix live **and** offline. **Verdict: no master-chain parity
+gap, not a blocker; no cross-reference to the RT-core audit is warranted.**
+
+Evidence:
+- Master track id is the literal `'master'`; non-master tracks default `outputId: 'master'` — only the
+  master track itself outputs to `hw_out` — `Arrangement/models/Track.ts:179`, `:200`, `:251`.
+- **Live**: `TrackNode.getDefaultDestination` resolves `outputId==='master'` to
+  `getTrackGainNode('master')` (**not** the raw `masterGainNode`) — `engine/TrackNode.ts:205-212`,
+  `repositories/createWebAudioEngine.ts:485` (`trackNodes.get(id)?.strip.gainNode`). The master strip's
+  `gainNode` is the **device-chain input**: `let prevs = [s.gainNode]` → device chain → `preFaderTap` →
+  `faderNode` — `engine/TrackNode.ts:294,300-315`. Incoming track audio therefore passes **through** the
+  master devices before `preFaderTap`, then master output → `hw_out` → `masterGainNode` → meter →
+  destination (`createWebAudioEngine.ts:186-187,291-293`).
+- **Offline**: a regular track with `outputId==='master'` is not a bus, so it resolves to
+  `trackStripsById.get('master')` and connects to the master strip's **inputNode** —
+  `renderOffline.ts:158-163`. The offline master strip is `inputNode →
+  buildDeviceChain(...,inputNode,preFaderTap) → preFaderTap → faderNode → postFaderGain → panNode →
+  outputNode` — `offlineRender/createOfflineTrackStrip.ts:29,49-54`. Incoming audio passes **through**
+  the master devices, then master output (`outputId==='hw_out'`) → `masterGain` —
+  `renderOffline.ts:155-156`.
+
+Both paths route the sum through the master device chain. (Static graph-topology proof; not a
+decoded-audio A/B of live vs offline master output — see §6.)
+
 ---
 
 ## 3. Findings (severity-ranked)
@@ -160,13 +189,25 @@ and `setTrackMute.ts:3-5` calls **`audioEngine.setTrackMute` only** — it does 
 (grep for `solo` in `useCases/renderOffline.ts`, `exportStems.ts`, `offlineRender/*` → none). Thus a
 session with an active solo exports **every non-muted track**, including ones silent during monitoring.
 
+**Root cause — the store-vs-engine solo-state split.** Solo state lives in two places that only the live
+path reconciles. `track.soloed` is written to the **project store** (`trackStore`) by
+`toggleTrackState/soloTrack.ts` / `soloTrackExclusive.ts`. But the *audible consequence* of solo —
+muting/attenuating the non-soloed tracks — is computed by `applySoloLogic.ts:38-55` and applied **only to
+the live engine nodes**: it emits `setGain`/`setMute` actions, and `setTrackMute.ts:3-5` forwards to
+`audioEngine.setTrackMute(...)` (an engine-node write) with **no `updateTrack` / project-store write**.
+Consequently `track.muted` in the project store stays `false` for solo-muted tracks. The offline paths
+read that store (`renderOffline.ts:99` `!t.muted`; stems `honorMuted:false`), so the engine-only solo
+attenuation is **structurally invisible to export**. Solo is thus derived, engine-resident state that the
+project-store-driven export pipeline never sees.
+
 **Why it violates the standard.** "Export = what you hear" is violated when solo is engaged (golden
 standard #3/#4). (Note: some DAWs deliberately ignore solo on bounce; the defect here is the *silent
 mismatch* between live monitoring and export, driven by solo state living only on engine nodes.)
 
-**Remediation sketch (M).** Compute effective audibility (mute ∪ solo) from project + workspace
-`soloMode` at export time and apply it to source-track selection, or persist solo-implied muting into a
-read model both live and offline consume.
+**Remediation sketch (M).** Compute effective audibility (mute ∪ solo, honoring workspace `soloMode`)
+from `trackStore` + `workspaceStore` at export time and apply it to offline source-track selection, OR
+persist solo-implied muting into a project-store read model that both `applySoloLogic` (live) and the
+offline paths consume — i.e. close the store-vs-engine split rather than duplicate the solo math offline.
 
 ---
 
@@ -271,11 +312,14 @@ progress from `suspend()` checkpoints instead of a timer.
 
 ## 4. Remediation Roadmap (sequenced)
 
+Findings total: **5 Major, 5 Minor, 1 Polish** (OE-1…OE-11). The master-chain question is resolved as
+**no gap** (§2a) and adds no finding.
+
 1. **Correctness of the master file first** — OE-1 (shared float→PCM/dither/normalize stage) and OE-8
    (FLAC depth), since they change the delivered bytes for every export.
 2. **Silent data loss** — OE-2 (stem name collisions): small, high-value.
-3. **Parity** — OE-4 (solo) then OE-3 (device-automation coverage): both make "export = what you hear"
-   true; OE-3 is the larger contract change.
+3. **Parity** — OE-4 (solo — close the store-vs-engine split) then OE-3 (device-automation coverage):
+   both make "export = what you hear" true; OE-3 is the larger contract change.
 4. **Robustness** — OE-5 (IPC bytes), OE-6 (segmented cancel/progress, which also unlocks OE-11 real
    progress).
 5. **Delivery polish** — OE-7 (optional R128/true-peak), OE-9 (device-declared tails), OE-10 (seeded/
@@ -285,11 +329,6 @@ progress from `suspend()` checkpoints instead of a timer.
 
 ## 5. Open Questions
 
-- **Master-track device chain in the mix path.** Both offline (`renderOffline.ts:155-166`, hw_out tracks
-  → bare `masterGain`) and live (`TrackNode.ts:208-209`, hw_out → `masterGainNode`) route to a plain
-  gain, so master-kind device chains (Proof/Crust on the master) appear to sit outside the summed path in
-  **both**. Needs confirmation whether master-track devices are meant to process the sum at all; if they
-  are (live), offline drops them and this becomes a Major parity finding rather than an open question.
 - **Native-DSP device automatable-param inventory.** OE-3's blast radius depends on which non-
   Fermenter/Toaster/ProofChamber native devices (Grinder, Gluten, Bacteria, Levain, GrandBoule, Knead,
   Crumbs, Crust) actually expose automatable params live; each such param that lacks an offline target is
@@ -300,12 +339,16 @@ progress from `suspend()` checkpoints instead of a timer.
 - **True-peak/loudness scope.** Is delivery-loudness normalization in scope for this app, or intentionally
   left to a mastering device (Proof)? Affects whether OE-7 is a gap or a non-goal.
 
+*Resolved and removed from this list:* master-track device chain in the mix path — verified applied in
+**both** live and offline (§2a).
+
 ---
 
 ## 6. Unverified / not covered
 
 - No dynamic run of a full browser export was performed (static + targeted read only); timing/OOM claims
-  (OE-5) are argued from the serialization shape, not measured.
+  (OE-5) are argued from the serialization shape, not measured. §2a is a static graph-topology proof, not
+  a decoded-audio A/B of live vs offline master output.
 - Freeze/bounce (`Arrangement/useCases/freezeBounce/*`) shares the offline strip/scheduler code but its
   file-writing and cleanup paths were not independently audited here.
 - Correctness of the FLAC bitstream/CRC and the LAME MP3 wrapper was not validated against a reference
