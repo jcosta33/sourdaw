@@ -1,4 +1,8 @@
+import { sidechainStore } from '#/modules/Routing/stores';
+
 import { createExportError } from '../errors/ExportError';
+import { prepareOfflineSidechainCompressor } from '../repositories/devices/dynamics/prepareOfflineSidechainCompressor';
+import { connectOfflineSidechainRoutes } from '../repositories/offlineRouting/connectOfflineSidechainRoutes';
 
 import { type DeviceNodeEntry } from './buildDeviceChain';
 import { acquireRenderLock } from './offlineRender/acquireRenderLock';
@@ -90,6 +94,30 @@ export const renderOffline: RenderOfflineFn = async function renderOffline(
         const allRenderableTracks =
             tracks && midi ? tracks.tracks.filter((track) => !track.disabled && shouldCreateOfflineStrip(track)) : [];
         const sourceTracks = allRenderableTracks.filter((track) => !track.muted);
+        const sidechainRoutes = sidechainStore.value?.routes ?? [];
+        const routableSidechainTargets = new Set<object>();
+        for (const route of sidechainRoutes) {
+            const sourceTrack = allRenderableTracks.find((track) => track.id === route.sourceTrackId);
+            const targetTrack = allRenderableTracks.find((track) => track.id === route.targetTrackId);
+            const targetDevice = targetTrack?.devices.find(
+                (device) => device.id === route.targetDeviceId && !device.bypassed
+            );
+            if (sourceTrack && targetDevice?.type === 'builtin-sidechain-compressor') {
+                routableSidechainTargets.add(targetDevice);
+            }
+        }
+        if (routableSidechainTargets.size > 0) {
+            try {
+                await prepareOfflineSidechainCompressor({
+                    offlineCtx,
+                    onWarning,
+                    targetDevices: routableSidechainTargets,
+                });
+            } catch (error) {
+                const reason = error instanceof Error ? error.message : String(error);
+                onWarning?.(`Sidechain processor unavailable; using the offline compressor fallback. ${reason}`);
+            }
+        }
         let scheduled = 0;
         const pendingWorkletEvents: PendingWorkletEvent[] = [];
 
@@ -113,6 +141,7 @@ export const renderOffline: RenderOfflineFn = async function renderOffline(
         }
 
         connectOfflineToasterPadRoutes({ tracks: tracks?.tracks ?? [], trackStripsById, deviceEntriesByTrack });
+        connectOfflineSidechainRoutes({ offlineCtx, routes: sidechainRoutes, trackStripsById, deviceEntriesByTrack });
 
         for (const track of allRenderableTracks) {
             const strip = trackStripsById.get(track.id);
