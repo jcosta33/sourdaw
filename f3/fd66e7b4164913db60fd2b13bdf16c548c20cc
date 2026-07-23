@@ -1,0 +1,21 @@
+src/modules/TimelineEditor/presentations/views/ClipView/__tests__/AutomationLane.spec.tsx
+  s_0d39f3a4a4357a::t_20b619f025c394 2,139-145,149-154,156-181
+  s_0d39f3a4a4357a::t_1e80366d8a6f23 146-148,155
+  s_0d39f3a4a4357a::t_b11964eb2d3258 182
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "f3fd66e7b4164913db60fd2b13bdf16c548c20cc",
+  "prompts": {},
+  "sessions": {
+    "s_0d39f3a4a4357a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "60da6a2e-7d79-4d98-8624-e993f5a9f94e",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
