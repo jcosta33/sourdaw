@@ -26,6 +26,10 @@ const {
     loggerMock,
     actionHistoryStoreMock,
     trackStoreMock,
+    setTimeOperationDependenciesMock,
+    prepareAutomationTimeOperationMock,
+    prepareMidiGlobalTimeTransactionMock,
+    prepareTimelineMapTimeOperationMock,
 } = vi.hoisted(() => {
     const noop = vi.fn();
     const sentinelHandlers = (moduleId: string) => vi.fn<() => HandlerMapSentinel>(() => ({ moduleId }));
@@ -39,6 +43,10 @@ const {
         loggerMock: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn(), setWriters: vi.fn() },
         actionHistoryStoreMock: { value: { entries: [] as unknown[] }, subscribe: vi.fn() },
         trackStoreMock: { subscribe: vi.fn() },
+        setTimeOperationDependenciesMock: vi.fn(),
+        prepareAutomationTimeOperationMock: vi.fn(),
+        prepareMidiGlobalTimeTransactionMock: vi.fn(),
+        prepareTimelineMapTimeOperationMock: vi.fn(),
     };
 });
 
@@ -75,7 +83,7 @@ vi.mock('#/modules/Arrangement/useCases', () => ({
     initStalenessDetection: noop,
     setArrangementEventBus: noop,
     setOfflineRenderDependencies: noop,
-    setTimeOperationDependencies: noop,
+    setTimeOperationDependencies: setTimeOperationDependenciesMock,
     getSongStructureHandlers: sentinelHandlers('SongStructure'),
 }));
 
@@ -102,6 +110,7 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
 
 vi.mock('#/modules/Automation/useCases', () => ({
     getAutomationHandlers: sentinelHandlers('Automation'),
+    prepareAutomationTimeOperation: prepareAutomationTimeOperationMock,
     recordAutomationValue: noop,
     setAutomationRecordingDependencies: noop,
     setModulationDependencies: noop,
@@ -187,6 +196,7 @@ vi.mock('#/modules/MIDI/useCases', () => ({
     getMidiGrooveHandlers: sentinelHandlers('MidiGroove'),
     getMidiNoteTransformHandlers: sentinelHandlers('MidiNoteTransform'),
     getPatternInstanceHandlers: sentinelHandlers('PatternInstance'),
+    prepareMidiGlobalTimeTransaction: prepareMidiGlobalTimeTransactionMock,
     createGrooveMidiEventProjector: noop,
     shouldPlayMidiEvent: () => true,
     setWebMidiRealtimeProcessor: noop,
@@ -243,12 +253,11 @@ vi.mock('#/modules/Toaster/useCases', () => ({
 vi.mock('#/modules/Transport/useCases', () => ({
     getTransportHandlers: sentinelHandlers('Transport'),
     getTransportState: noop,
-    deleteTimelineMapsTimeRange: noop,
     createMusicalPositionProjector: noop,
     createSamplePositionProjector: noop,
     projectPpqEndpoints: noop,
+    prepareTimelineMapTimeOperation: prepareTimelineMapTimeOperationMock,
     setStopPlaybackCallback: noop,
-    shiftTimelineMapsAfterBeat: noop,
     stopPlayback: noop,
 }));
 
@@ -347,6 +356,14 @@ describe('bootstrap', () => {
 
     it('wires global error handlers to the app runtime logger', () => {
         expect(registerGlobalErrorHandlersMock).toHaveBeenCalledExactlyOnceWith({ logger: loggerMock });
+    });
+
+    it('registers the exact three global-time owner preparations', () => {
+        expect(setTimeOperationDependenciesMock).toHaveBeenCalledExactlyOnceWith({
+            prepareAutomationTimeOperation: prepareAutomationTimeOperationMock,
+            prepareMidiGlobalTimeTransaction: prepareMidiGlobalTimeTransactionMock,
+            prepareTimelineMapTimeOperation: prepareTimelineMapTimeOperationMock,
+        });
     });
 
     it('kicks off browser AI initialization exactly once as a non-blocking boot step', () => {

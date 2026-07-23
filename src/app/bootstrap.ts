@@ -43,6 +43,7 @@ import {
 } from '#/modules/AudioEngine/useCases';
 import {
     getAutomationHandlers,
+    prepareAutomationTimeOperation,
     recordAutomationValue,
     setAutomationRecordingDependencies,
     setModulationDependencies,
@@ -84,6 +85,7 @@ import {
     getMidiGrooveHandlers,
     getMidiNoteTransformHandlers,
     getPatternInstanceHandlers,
+    prepareMidiGlobalTimeTransaction,
     createGrooveMidiEventProjector,
     getChordAtBeat,
     shouldPlayMidiEvent,
@@ -114,12 +116,11 @@ import {
 import {
     getTransportHandlers,
     getTransportState,
-    deleteTimelineMapsTimeRange,
     createMusicalPositionProjector,
     createSamplePositionProjector,
     projectPpqEndpoints,
+    prepareTimelineMapTimeOperation,
     setStopPlaybackCallback,
-    shiftTimelineMapsAfterBeat,
     stopPlayback,
 } from '#/modules/Transport/useCases';
 import { updateTunerTelemetry } from '#/modules/Tuner/stores';
@@ -189,7 +190,11 @@ configureYeastRuntime({ panicOutputNotes: stopAllScheduled });
 const disposeWebMidiRealtimeProcessor = setWebMidiRealtimeProcessor({ processor: processRealtimeMidiInput });
 setWebMidiRuntimeEventBus({ eventBus });
 setNotificationEventBus(eventBus);
-setTimeOperationDependencies({ shiftTimelineMapsAfterBeat, deleteTimelineMapsTimeRange });
+setTimeOperationDependencies({
+    prepareAutomationTimeOperation,
+    prepareMidiGlobalTimeTransaction,
+    prepareTimelineMapTimeOperation,
+});
 setProjectIdentityTransitionDependencies({ leaveCollaborationSession: leaveSession });
 
 function disposeYeastRealtimeBridge(): void {
