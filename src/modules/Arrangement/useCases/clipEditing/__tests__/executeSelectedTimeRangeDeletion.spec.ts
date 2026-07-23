@@ -18,6 +18,8 @@ const EMPTY_MIDI_STATE = {
     pitchBendByClipId: {},
 };
 
+const CANONICAL_TRACK_KINDS = ['audio', 'midi', 'bus', 'master', 'folder'] as const;
+
 function noChangePreparation() {
     return {
         status: 'ready' as const,
@@ -57,8 +59,12 @@ function createClip(input: {
     });
 }
 
-function createTrack(id: string, clips: ReturnType<typeof createClip>[]) {
-    return TrackDummy.create({ id, clips });
+function createTrack(
+    id: string,
+    clips: ReturnType<typeof createClip>[],
+    kind: (typeof CANONICAL_TRACK_KINDS)[number] = 'audio'
+) {
+    return TrackDummy.create({ id, clips, kind });
 }
 
 function createDormantTrack(id: string, clips: ReturnType<typeof createClip>[]) {
@@ -404,6 +410,68 @@ describe('executeSelectedTimeRangeDeletion', () => {
         expect(trackStore.value?.tracks[0]?.clips[1]?.id).toBe('clip-dtr-11111111');
         expect(trackStore.value?.tracks[1]?.clips[1]?.id).toBe('clip-dtr-22222222');
     });
+
+    it.each(CANONICAL_TRACK_KINDS)(
+        'applies identical selected-range geometry and preserves state for %s tracks',
+        (kind) => {
+            const drop = createClip({
+                id: 'drop',
+                trackId: 'target',
+                startBeat: 4,
+                endBeat: 5,
+            });
+            const span = createClip({
+                id: 'span',
+                trackId: 'target',
+                startBeat: 0,
+                endBeat: 10,
+            });
+            const untouched = createClip({
+                id: 'untouched',
+                trackId: 'target',
+                startBeat: 12,
+                endBeat: 14,
+            });
+            const otherClip = createClip({
+                id: 'other-clip',
+                trackId: 'other',
+                startBeat: 2,
+                endBeat: 4,
+            });
+            const target = createTrack('target', [drop, span, untouched], kind);
+            const other = createTrack('other', [otherClip]);
+            const originalState = setArrangement([target, other]);
+            const originalMidiState = midiStore.value;
+
+            requireApplied(
+                executeSelectedTimeRangeDeletion({
+                    startBeat: 3,
+                    endBeat: 7,
+                    trackIds: ['target'],
+                })
+            );
+
+            expect(trackStore.value?.tracks[0]).toEqual({
+                ...target,
+                clips: [
+                    { ...span, endBeat: 3, name: 'Test Clip (L)' },
+                    {
+                        ...span,
+                        id: 'clip-dtr-12345678',
+                        startBeat: 7,
+                        name: 'Test Clip (R)',
+                        audioOffsetBeats: 7,
+                        midiOffsetBeats: 0,
+                    },
+                    untouched,
+                ],
+            });
+            expect(trackStore.value?.tracks[1]).toBe(other);
+            expect(trackStore.value?.selectedTrackId).toBe(originalState.selectedTrackId);
+            expect(trackStore.value?.ghostClips).toBe(originalState.ghostClips);
+            expect(midiStore.value).toBe(originalMidiState);
+        }
+    );
 
     it('reuses the exact supplied replay plan and every generated clip and note identity', () => {
         const span = createClip({
