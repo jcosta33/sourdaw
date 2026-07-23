@@ -165,6 +165,7 @@ export async function scheduleMidiNotes(
                         routeId,
                         clipId: clip.id,
                         iterationStartBeat,
+                        iterationEndBeat,
                         midiOffsetBeats: clip.midiOffsetBeats ?? 0,
                         sourceNotes: sourceNotes.filter((note) =>
                             shouldPlayMidiEvent({
@@ -210,12 +211,25 @@ export async function scheduleMidiNotes(
                 liveYeastNotesByRoute.set(routeId, routeNotes);
             }
             if (yeastResult.generatedNotes.length > 0) {
-                liveYeastNotesByRoute.set(activeYeastCarrierRouteId, [
-                    ...(liveYeastNotesByRoute.get(activeYeastCarrierRouteId) ?? []),
-                    ...yeastResult.generatedNotes,
-                ]);
                 for (const note of yeastResult.generatedNotes) {
-                    trackScopedYeastNoteIds.add(note.id);
+                    const [projectedNote] = projectCommittedGroove({
+                        events: [note],
+                        consumerType: 'sequencer',
+                        consumerId: 'project',
+                    });
+                    const carrierIteration = liveYeastIterations.find(
+                        (iteration) =>
+                            projectedNote &&
+                            iteration.iterationStartBeat <= projectedNote.startBeat &&
+                            projectedNote.startBeat < iteration.iterationEndBeat
+                    );
+                    if (!projectedNote || !carrierIteration) {
+                        continue;
+                    }
+                    const carrierNotes = liveYeastNotesByRoute.get(carrierIteration.routeId) ?? [];
+                    carrierNotes.push(projectedNote);
+                    liveYeastNotesByRoute.set(carrierIteration.routeId, carrierNotes);
+                    trackScopedYeastNoteIds.add(projectedNote.id);
                 }
             }
         }
@@ -323,11 +337,7 @@ export async function scheduleMidiNotes(
                     const iterationStart = clip.startBeat + iterOffset;
                     let projectedNotes: readonly LiveYeastNote[];
                     if (isTrackScopedYeastNote) {
-                        projectedNotes = projectCommittedGroove({
-                            events: [note],
-                            consumerType: 'sequencer',
-                            consumerId: 'project',
-                        });
+                        projectedNotes = [note];
                     } else {
                         projectedNotes = projectClipMidiEvents({
                             events: [note],
@@ -371,7 +381,10 @@ export async function scheduleMidiNotes(
                             pitch = transposeForChordTrack(pitch, refChord, targetChord);
                         }
 
-                        const noteEndBeat = noteStartBeat + projectedNote.duration;
+                        const iterationEndBeat = Math.min(iterationStart + loopLen, clip.endBeat);
+                        const noteEndBeat = isTrackScopedYeastNote
+                            ? Math.min(noteStartBeat + projectedNote.duration, iterationEndBeat)
+                            : noteStartBeat + projectedNote.duration;
                         const noteStartSamples = beatToSamples(changes, noteStartBeat, transport.tempo, sr);
                         const noteEndSamples = beatToSamples(changes, noteEndBeat, transport.tempo, sr);
                         const accumulatedSamples = beatToSamples(changes, accumulatedPosition, transport.tempo, sr);

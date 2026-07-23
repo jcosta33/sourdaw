@@ -41,6 +41,7 @@ describe('processLiveYeastTrackBlock', () => {
                     routeId: 'route-a',
                     clipId: 'clip-a',
                     iterationStartBeat: 0,
+                    iterationEndBeat: 2,
                     midiOffsetBeats: 0,
                     sourceNotes: [
                         { id: 'voice-a', pitch: 60, startBeat: 0, duration: 1, velocity: 100 },

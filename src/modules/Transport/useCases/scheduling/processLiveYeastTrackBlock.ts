@@ -30,6 +30,7 @@ export type LiveYeastIteration = {
     routeId: string;
     clipId: string;
     iterationStartBeat: number;
+    iterationEndBeat: number;
     midiOffsetBeats: number;
     sourceNotes: readonly LiveYeastNote[];
 };

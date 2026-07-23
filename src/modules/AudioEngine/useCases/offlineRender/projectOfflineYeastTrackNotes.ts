@@ -52,13 +52,11 @@ function findCarrierIteration(
     iterations: readonly OfflineYeastClipIteration[],
     beat: number
 ): OfflineYeastClipIteration | undefined {
-    return iterations.find((iteration) => {
-        const iterationEndBeat = Math.min(
-            iteration.iterationStartBeat + iteration.loopLengthBeats,
-            iteration.clipEndBeat
-        );
-        return iteration.iterationStartBeat <= beat && beat < iterationEndBeat;
-    });
+    return iterations.find(
+        (iteration) =>
+            iteration.iterationStartBeat <= beat &&
+            beat < Math.min(iteration.iterationStartBeat + iteration.loopLengthBeats, iteration.clipEndBeat)
+    );
 }
 
 export function projectOfflineYeastTrackNotes({
@@ -131,10 +129,6 @@ export function projectOfflineYeastTrackNotes({
             continue;
         }
 
-        const carrierIteration = findCarrierIteration(iterations, note.startPpq);
-        if (!carrierIteration) {
-            continue;
-        }
         const generatedNotes = projectMidiEvents({
             events: [
                 {
@@ -148,9 +142,21 @@ export function projectOfflineYeastTrackNotes({
             phase: 'sequencer-groove',
         });
         for (const projected of generatedNotes) {
+            const carrierIteration = findCarrierIteration(iterations, projected.startBeat);
+            if (!carrierIteration) {
+                continue;
+            }
+            const carrierEndBeat = Math.min(
+                carrierIteration.iterationStartBeat + carrierIteration.loopLengthBeats,
+                carrierIteration.clipEndBeat
+            );
+            const noteEndBeat = Math.min(projected.startBeat + projected.duration, carrierEndBeat);
+            if (noteEndBeat <= projected.startBeat) {
+                continue;
+            }
             const endpoints = projectPpqEndpoints({
                 startPpq: projected.startBeat,
-                endPpq: projected.startBeat + projected.duration,
+                endPpq: noteEndBeat,
                 defaultTempo,
                 sampleRate,
                 changes,
@@ -165,7 +171,7 @@ export function projectOfflineYeastTrackNotes({
                 velocity: projected.velocity,
                 startSamples: endpoints.startSamples,
                 endSamples: endpoints.endSamples,
-                toasterPadIndex: -1,
+                toasterPadIndex: carrierIteration.toasterPadIndex ?? -1,
             });
         }
     }

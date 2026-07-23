@@ -157,19 +157,18 @@ describe('projectOfflineYeastTrackNotes', () => {
 
     it('anchors source-free generator notes to the active carrier clip chord', () => {
         const projectPitch = vi.fn(
-            ({ pitch, referenceBeat, targetBeat }: { pitch: number; referenceBeat: number; targetBeat: number }) =>
-                pitch + targetBeat - referenceBeat
+            ({ pitch }: { pitch: number; referenceBeat: number; targetBeat: number }) => pitch + 1
         );
         const processYeastMidi = vi.fn<OfflineYeastMidiProcessor>(() => [
             {
-                timeSamples: 300,
-                timePpq: 3,
+                timeSamples: 175,
+                timePpq: 1.75,
                 trackId: 'track-1',
                 kind: { type: 'noteOn', channel: 0, note: 64, velocity: 90 },
             },
             {
-                timeSamples: 350,
-                timePpq: 3.5,
+                timeSamples: 375,
+                timePpq: 3.75,
                 trackId: 'track-1',
                 kind: { type: 'noteOff', channel: 0, note: 64 },
             },
@@ -189,20 +188,32 @@ describe('projectOfflineYeastTrackNotes', () => {
             trackId: 'track-1',
             iterations: [
                 firstIteration,
-                { ...firstIteration, clipId: 'clip-2', clipStartBeat: 2, clipEndBeat: 4, iterationStartBeat: 2 },
+                {
+                    ...firstIteration,
+                    clipId: 'clip-2',
+                    clipStartBeat: 2.5,
+                    clipEndBeat: 4,
+                    iterationStartBeat: 2.5,
+                    toasterPadIndex: 7,
+                },
             ],
             sampleRate: 100,
             blockStartSamples: 0,
             blockEndSamples: 400,
             defaultTempo: 60,
             changes: [],
-            projectMidiEvents: (input) => input.events,
+            projectMidiEvents: (input) =>
+                input.phase === 'sequencer-groove'
+                    ? input.events.map((event) => ({ ...event, startBeat: event.startBeat + 1 }))
+                    : input.events,
             projectPpqEndpoints,
             processYeastMidi,
             projectPitch,
         });
 
-        expect(notes).toEqual([expect.objectContaining({ pitch: 65, startSamples: 300, endSamples: 350 })]);
-        expect(projectPitch).toHaveBeenCalledWith({ pitch: 64, referenceBeat: 2, targetBeat: 3 });
+        expect(notes).toEqual([
+            expect.objectContaining({ pitch: 65, startSamples: 275, endSamples: 400, toasterPadIndex: 7 }),
+        ]);
+        expect(projectPitch).toHaveBeenCalledWith({ pitch: 64, referenceBeat: 2.5, targetBeat: 2.75 });
     });
 });

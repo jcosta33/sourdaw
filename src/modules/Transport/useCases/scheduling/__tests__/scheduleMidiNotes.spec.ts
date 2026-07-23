@@ -4,7 +4,13 @@ import { type Clip, trackStore } from '#/modules/Arrangement/stores';
 import { resolveClipsWithComping, getSynthParamsForTrack } from '#/modules/Arrangement/useCases';
 import { ensureTrackStrip } from '#/modules/AudioEngine/useCases';
 import { midiStore } from '#/modules/MIDI/stores';
-import { projectClipMidiEvents, shouldPlayMidiEvent, transposeForChordTrack } from '#/modules/MIDI/useCases';
+import {
+    getChordAtBeat,
+    projectClipMidiEvents,
+    projectCommittedGroove,
+    shouldPlayMidiEvent,
+    transposeForChordTrack,
+} from '#/modules/MIDI/useCases';
 import { scheduleNote } from '#/modules/Synth/useCases';
 import { processYeastMidi } from '#/modules/Yeast/useCases';
 
@@ -122,6 +128,7 @@ describe('scheduleMidiNotes', () => {
             }))
         );
         vi.mocked(processYeastMidi).mockImplementation((input) => Promise.resolve([...input.events]));
+        vi.mocked(projectCommittedGroove).mockImplementation(({ events }) => events);
         vi.mocked(ensureTrackStrip).mockImplementation(
             () =>
                 ({
@@ -388,6 +395,36 @@ describe('scheduleMidiNotes', () => {
         expect(call[2]).toBe(64); // pitch from the generator
         expect(call[5]).toBe(90); // velocity carried through, not garbled
         // Probability defaults to 100 from the template, so the note is not gated out.
+    });
+
+    it('routes grooved generator notes by their final carrier and clips the note tail', async () => {
+        const firstClip = midiClip({ id: 'clip-1', startBeat: 0, endBeat: 2 });
+        const secondClip = midiClip({ id: 'clip-2', startBeat: 2, endBeat: 4 });
+        const track = midiTrack({
+            clips: [firstClip, secondClip],
+            followChordTrack: true,
+            devices: [{ id: 'y', type: 'yeast' }],
+        });
+        (trackStore as { value: unknown }).value = { tracks: [track] };
+        (midiStore as { value: unknown }).value = { notesByClipId: { 'clip-1': [], 'clip-2': [] } };
+        vi.mocked(processYeastMidi).mockResolvedValue([
+            {
+                timeSamples: 42_000,
+                timePpq: 1.75,
+                kind: { type: 'noteOn', channel: 0, note: 64, velocity: 90 },
+            },
+            { timeSamples: 120_000, timePpq: 5, kind: { type: 'noteOff', channel: 0, note: 64 } },
+        ]);
+        vi.mocked(projectCommittedGroove).mockImplementation(({ events }) =>
+            events.map((event) => ({ ...event, startBeat: event.startBeat + 0.5 }))
+        );
+
+        await scheduleMidiNotes(0, 4, 0, -1, new Set<string>(), [], defaultTransportState, 120);
+
+        expect(getChordAtBeat).toHaveBeenCalledWith(2);
+        expect(getChordAtBeat).toHaveBeenCalledWith(2.25);
+        expect(getChordAtBeat).not.toHaveBeenCalledWith(0);
+        expect(vi.mocked(scheduleNote).mock.calls[0]?.[4]).toBe(0.875);
     });
 
     it('pairs an equal-sample Note Off only when it follows the Note On in stable event order', async () => {
