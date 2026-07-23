@@ -10,6 +10,8 @@ import { ScheduledEventQueue } from '../MidiProcessor';
 
 import type { YeastPreviewDecisionSink } from '../YeastPreviewSidecar';
 
+type GeneratedChordNote = MidiEvent & { kind: Extract<MidiEvent['kind'], { type: 'noteOn' }> };
+
 const CHORD_FORMULAS: Record<string, number[]> = {
     major: [0, 4, 7],
     minor: [0, 3, 7],
@@ -35,7 +37,7 @@ export class ChordGenerator extends BaseMidiProcessor {
     // Track which notes we generated so we can send proper Note Offs.
     // Numeric key (channel << 7) | note matches MidiRack/ScaleQuantizer and avoids a
     // per-event template-literal allocation on the audio thread.
-    private generatedVoices = new BoundedNoteVoiceQueue<number[]>();
+    private generatedVoices = new BoundedNoteVoiceQueue<GeneratedChordNote[]>();
     // Strummed tones whose time falls beyond the current block. They must
     // not leave the processor with a future timestamp (see processMidi).
     private scheduled = new ScheduledEventQueue();
@@ -86,24 +88,30 @@ export class ChordGenerator extends BaseMidiProcessor {
                 }
 
                 const strumSamples = this.strumMs * 0.001 * transport.sampleRate;
-                const notes: number[] = [];
+                const generatedNotes: GeneratedChordNote[] = [];
 
                 for (let index = 0; index < intervals.length; index++) {
                     const note = event.kind.note + intervals[index]!;
                     if (note < 0 || note > 127) {
                         continue;
                     }
-                    notes.push(note);
-
                     const offset =
                         this.strumDirection === 'up'
                             ? index * strumSamples
                             : (intervals.length - 1 - index) * strumSamples;
-                    const generated: MidiEvent = {
+                    const durationSamples =
+                        event.durationSamples === undefined ? undefined : Math.max(0, event.durationSamples - offset);
+                    if (durationSamples === 0) {
+                        continue;
+                    }
+                    const generated: GeneratedChordNote = {
                         timeSamples: event.timeSamples + offset,
+                        durationSamples,
                         trackId: event.trackId,
+                        noteInstanceId: this.createGeneratedNoteInstanceId(),
                         kind: { type: 'noteOn', channel: event.kind.channel, note, velocity: event.kind.velocity },
                     };
+                    generatedNotes.push(generated);
                     if (generated.timeSamples < blockEnd) {
                         output.push(generated);
                     } else {
@@ -112,16 +120,31 @@ export class ChordGenerator extends BaseMidiProcessor {
                     preview?.transferDecisionLineage(event, generated);
                 }
 
-                this.generatedVoices.push(event.trackId, (event.kind.channel << 7) | event.kind.note, notes);
+                const key = event.noteInstanceId ?? (event.kind.channel << 7) | event.kind.note;
+                this.generatedVoices.push(event.trackId, key, generatedNotes);
             } else if (event.kind.type === 'noteOff') {
-                const key = (event.kind.channel << 7) | event.kind.note;
+                const key = event.noteInstanceId ?? (event.kind.channel << 7) | event.kind.note;
                 const generated = this.generatedVoices.shift(event.trackId, key);
                 if (generated) {
-                    for (const note of generated) {
+                    for (const generatedNote of generated) {
+                        const pending = this.scheduled.removeNoteOn(
+                            generatedNote.trackId,
+                            generatedNote.kind.channel,
+                            generatedNote.kind.note,
+                            generatedNote.timeSamples,
+                            generatedNote.noteInstanceId
+                        );
+                        if (pending && generatedNote.timeSamples >= event.timeSamples) {
+                            continue;
+                        }
+                        if (pending) {
+                            output.push(generatedNote);
+                        }
                         const noteOff: MidiEvent = {
                             timeSamples: event.timeSamples,
                             trackId: event.trackId,
-                            kind: { type: 'noteOff', channel: event.kind.channel, note },
+                            noteInstanceId: generatedNote.noteInstanceId,
+                            kind: { type: 'noteOff', channel: event.kind.channel, note: generatedNote.kind.note },
                         };
                         output.push(noteOff);
                         preview?.transferDecisionLineage(event, noteOff);

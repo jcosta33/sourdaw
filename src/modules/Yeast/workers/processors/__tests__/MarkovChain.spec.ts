@@ -42,7 +42,11 @@ describe('MarkovChain', () => {
         mc.setParam('rate_denom', 1024);
         const output: MidiEvent[] = [];
         mc.processMidi([noteOn(0, 60)], output, transport);
-        expect(output.some((event) => event.kind.type === 'noteOn')).toBe(true);
+        const generated = output.find((event) => event.kind.type === 'noteOn');
+        expect(generated).toEqual(expect.objectContaining({ durationSamples: 65.625 }));
+        const later: MidiEvent[] = [];
+        mc.processMidi([], later, { ...transport, blockStartSamples: 128, blockEndSamples: 256 });
+        expect(later).toContainEqual(expect.objectContaining({ noteInstanceId: generated?.noteInstanceId }));
     });
 
     it('reset returns to state 0', () => {

@@ -53,9 +53,15 @@ describe('Harmonizer', () => {
     it('note off emits harmony note offs', () => {
         const h = new Harmonizer('t4');
         const out: MidiEvent[] = [];
-        h.processMidi([note_on(0, 60)], out, transport);
-        h.processMidi([note_off(100, 60)], out, transport);
+        const sourceOn = { ...note_on(0, 60), durationSamples: 100, noteInstanceId: 'source-a' };
+        h.processMidi([sourceOn], out, transport);
+        h.processMidi([{ ...note_off(100, 60), noteInstanceId: 'source-a' }], out, transport);
         expect(out.filter((e) => e.kind.type === 'noteOff').length).toBe(2);
+        const harmonyOn = out.find((event) => event.kind.type === 'noteOn' && event.kind.note !== 60);
+        expect(harmonyOn).toEqual(expect.objectContaining({ durationSamples: 100 }));
+        expect(
+            out.some((event) => event.kind.type === 'noteOff' && event.noteInstanceId === harmonyOn?.noteInstanceId)
+        ).toBe(true);
     });
 
     it('reset clears state', () => {

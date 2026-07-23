@@ -33,9 +33,14 @@ describe('NoteRepeater', () => {
         const r = new NoteRepeater('t2');
         r.setParam('repeat_count', 3);
         const out: MidiEvent[] = [];
-        r.processMidi([note_on(0, 60)], out, transport);
+        r.processMidi([note_on(0, 60)], out, { ...transport, blockStartSamples: 0, blockEndSamples: 10_000 });
         const note_ons = out.filter((e) => e.kind.type === 'noteOn');
         expect(note_ons.length).toBeGreaterThanOrEqual(1);
+        const generated = note_ons.find((event) => event.noteInstanceId !== undefined);
+        expect(generated).toEqual(expect.objectContaining({ durationSamples: 3_000 }));
+        expect(
+            out.some((event) => event.kind.type === 'noteOff' && event.noteInstanceId === generated?.noteInstanceId)
+        ).toBe(true);
     });
 
     it('decay reduces velocity on repeats', () => {
