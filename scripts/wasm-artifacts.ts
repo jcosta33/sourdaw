@@ -22,7 +22,7 @@
 
 import { createHash } from 'node:crypto';
 import { readdirSync, readFileSync, statSync } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 /** Absolute path to the repository root (this file lives in `<root>/scripts`). */
@@ -32,15 +32,13 @@ const repoRoot = join(dirname(fileURLToPath(import.meta.url)), '..');
 const manifestPath = join(repoRoot, 'public/wasm/manifest.json');
 
 /**
- * Pinned generation toolchain (WB-8). Every field affects the produced bytes or
- * the wasm-bindgen schema version, so reproducibility requires all of them.
- * `wasm-opt` ships bundled inside the pinned `wasm-pack`, so it is pinned by
- * proxy rather than as a separate PATH binary.
+ * Constants for the toolchain parts with no independent in-repo source to verify
+ * against: the `wasm-pack` CLI version and the `wasm-opt` (binaryen) it bundles.
+ * `wasm-bindgen` is read live from `Cargo.lock` and the rust toolchain from
+ * `rust-toolchain.toml`, so those are not hard-coded here (WB-8).
  */
 const pinnedToolchain = {
     wasmPack: '0.14.0',
-    wasmBindgen: '0.2.126',
-    rustToolchain: 'nightly-2026-04-14',
     wasmOpt: 'bundled-by-wasm-pack@0.14.0',
 } as const;
 
@@ -182,26 +180,76 @@ function collectRustSources(dirAbs: string, acc: string[]): void {
     }
 }
 
+/** Matches a Cargo `path = "..."` dependency (any dependency section). */
+const pathDepPattern = /path\s*=\s*"([^"]+)"/g;
+
 /**
- * Hash the files that determine the compiled cdylib: every `.rs` under the
- * crate `src/` tree plus its `Cargo.toml`. Excludes `tests/` and `benches/`,
- * which never reach the wasm output, so a test-only edit does not trip the gate.
+ * Repo-relative crate directories in `crateDir`'s transitive path-dependency
+ * closure, including `crateDir` itself. Only workspace path deps are walked;
+ * registry deps are pinned by Cargo.lock and covered separately.
  */
-function hashCrateSources(crateDir: string): string {
+function pathDepClosure(crateDir: string): string[] {
+    const seen = new Set<string>();
+    const queue: string[] = [crateDir];
+    while (queue.length > 0) {
+        const current = queue.shift();
+        if (current === undefined || seen.has(current)) {
+            continue;
+        }
+        seen.add(current);
+        const cargoToml = readFileSync(absolute(join(current, 'Cargo.toml')), 'utf8');
+        for (const match of cargoToml.matchAll(pathDepPattern)) {
+            queue.push(relative(repoRoot, resolve(absolute(current), match[1])));
+        }
+    }
+    return [...seen].sort();
+}
+
+/**
+ * Hash every input that determines the compiled cdylib for `crateDir`: the crate
+ * and its transitive path-dependency closure (each dep's `src/**` + `Cargo.toml`),
+ * plus the workspace-root `Cargo.toml` (`[profile.*]` affects emitted bytes) and
+ * `Cargo.lock` (pins every resolved dependency version). `tests/`/`benches/` are
+ * excluded — they never reach the cdylib.
+ */
+function hashCrateClosure(crateDir: string): string {
     const files: string[] = [];
-    collectRustSources(absolute(join(crateDir, 'src')), files);
-    files.push(absolute(join(crateDir, 'Cargo.toml')));
+    for (const dir of pathDepClosure(crateDir)) {
+        collectRustSources(absolute(join(dir, 'src')), files);
+        files.push(absolute(join(dir, 'Cargo.toml')));
+    }
+    files.push(absolute('Cargo.toml'));
+    files.push(absolute('Cargo.lock'));
     files.sort();
 
     const digest = createHash('sha256');
     for (const fileAbs of files) {
-        const rel = fileAbs.slice(absolute(crateDir).length + 1);
-        digest.update(rel);
+        digest.update(relative(repoRoot, fileAbs));
         digest.update('\0');
         digest.update(createHash('sha256').update(readFileSync(fileAbs)).digest('hex'));
         digest.update('\n');
     }
     return `sha256:${digest.digest('hex')}`;
+}
+
+/** The exact `wasm-bindgen` version resolved in Cargo.lock — an independent source. */
+function wasmBindgenLockVersion(): string {
+    const lock = readFileSync(absolute('Cargo.lock'), 'utf8');
+    const match = /\nname = "wasm-bindgen"\nversion = "([^"]+)"/.exec(lock);
+    if (!match) {
+        throw new Error('Could not find the wasm-bindgen version in Cargo.lock');
+    }
+    return match[1];
+}
+
+/** The rust toolchain channel pinned in rust-toolchain.toml — an independent source. */
+function rustToolchainChannel(): string {
+    const toml = readFileSync(absolute('rust-toolchain.toml'), 'utf8');
+    const match = /channel\s*=\s*"([^"]+)"/.exec(toml);
+    if (!match) {
+        throw new Error('Could not find the channel in rust-toolchain.toml');
+    }
+    return match[1];
 }
 
 /** Extract the embedded wasm-bindgen schema id, or throw if the marker is gone. */
@@ -228,7 +276,7 @@ function buildPackageManifest(spec: WasmPackageSpec): WasmPackageManifest {
 
     return {
         crate: spec.crateDir,
-        crateSourceHash: hashCrateSources(spec.crateDir),
+        crateSourceHash: hashCrateClosure(spec.crateDir),
         schemaHash: [...schemaHashes][0],
         artifacts,
     };
@@ -244,7 +292,12 @@ function buildManifest(): WasmManifest {
         comment:
             'Generated by scripts/gen-wasm-manifest.ts during `pnpm wasm:all`. ' +
             'Do not edit by hand — run `pnpm wasm:verify` to check drift.',
-        toolchain: { ...pinnedToolchain },
+        toolchain: {
+            wasmPack: pinnedToolchain.wasmPack,
+            wasmBindgen: wasmBindgenLockVersion(),
+            rustToolchain: rustToolchainChannel(),
+            wasmOpt: pinnedToolchain.wasmOpt,
+        },
         packages,
     };
 }
@@ -319,8 +372,11 @@ export const wasmArtifacts = {
     packages: wasmPackages,
     absolute,
     hashFile,
-    hashCrateSources,
+    hashCrateClosure,
+    pathDepClosure,
     extractSchemaHash,
+    wasmBindgenLockVersion,
+    rustToolchainChannel,
     buildManifest,
     readManifest,
 };

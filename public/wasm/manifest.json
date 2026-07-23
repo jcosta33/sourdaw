@@ -9,7 +9,7 @@
   "packages": {
     "daw-dsp": {
       "crate": "crates/daw-dsp",
-      "crateSourceHash": "sha256:f6e97c3a852ee2d7314c8d00bc4f34daa50d7b65522ad6802b010de75231aff6",
+      "crateSourceHash": "sha256:e8f4342d727c58e9993c5bd350feba3f3398fdaa004be5a8186f35e667a92752",
       "schemaHash": "344f42d3211c4765",
       "artifacts": {
         "public/wasm/daw-dsp/daw_dsp.js": "sha256:f2e9c731ec7fa42e0fd7948df22170466ebd119bd268cf527dc1e6d22e272f7a",
@@ -23,7 +23,7 @@
     },
     "proof-chamber": {
       "crate": "crates/proof-chamber",
-      "crateSourceHash": "sha256:bd00fbcdae9d352616e5aad07eac0f7517b31ae99237bbc710ee7fd0ddbb6542",
+      "crateSourceHash": "sha256:23e340bb1c859b0fc0d64530699a9ef819cede911677eb7554b234cca2d04ce4",
       "schemaHash": "344f42d3211c4765",
       "artifacts": {
         "public/wasm/proof-chamber/proof_chamber.js": "sha256:868daffef91d516538f90984006ec3b879379f14474d577b3290c14bbd400cc6",
@@ -37,7 +37,7 @@
     },
     "scoring": {
       "crate": "crates/scoring",
-      "crateSourceHash": "sha256:c90889874e07166a01f14388a798091f93470db3a00f6d706144d9c1ddeea03d",
+      "crateSourceHash": "sha256:389a2b29518cdc261dd0d74e11f7e3e9ca946120ea2e5aee2e271cc47ba688a6",
       "schemaHash": "344f42d3211c4765",
       "artifacts": {
         "public/wasm/scoring/scoring.js": "sha256:463d72fdce4b55dcaba7af3240afe061403ea03c46e0089c21a77df9ec5b54cc",
@@ -51,7 +51,7 @@
     },
     "daw-wasm-decoder": {
       "crate": "crates/daw-wasm-decoder",
-      "crateSourceHash": "sha256:dd0b5e4fff953a8a89c557383c94e3da86bdebe77215e2d0ce0df577acdf55b5",
+      "crateSourceHash": "sha256:1e8b96b0b6932eb5ec48e9d7536b77f37cb7cc144349a3d1c133be2e0a79731e",
       "schemaHash": "344f42d3211c4765",
       "artifacts": {
         "public/wasm/daw-wasm-decoder/daw_wasm_decoder.js": "sha256:11eaa6d6e17756ec0ea5fa2feb628180a5b41e89c21b9c434af70db53c4c797f",

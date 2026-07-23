@@ -5,17 +5,20 @@
  * (wasm-opt is bundled per wasm-pack build and not independently pinnable), so
  * this gate uses the fingerprint manifest written by `gen-wasm-manifest.ts`:
  *
- *  1. Toolchain pin — the manifest records the pinned wasm-pack / wasm-bindgen /
- *     rust / wasm-opt; each crate's `Cargo.toml` must pin the exact wasm-bindgen
- *     version (WB-8).
+ *  1. Toolchain pin — wasm-pack / wasm-opt are checked against pinned constants,
+ *     wasm-bindgen against the version resolved in `Cargo.lock`, and the rust
+ *     channel against `rust-toolchain.toml`; each crate's `Cargo.toml` must pin
+ *     wasm-bindgen exactly to the Cargo.lock version (WB-8).
  *  2. Schema pairing — the `.js` glue and the `_bg.wasm` binary of each package
  *     must share one wasm-bindgen schema id (the #657 / WB-2 drift signature).
- *  3. Source freshness — the crate `src/**` + `Cargo.toml` hash must match the
- *     manifest; a Rust edit merged without regenerating artifacts fails here.
+ *  3. Source freshness — the crate source closure (the crate plus its transitive
+ *     path-dependency crates, the workspace-root `Cargo.toml`, and `Cargo.lock`)
+ *     hash must match the manifest; a Rust edit merged without regenerating
+ *     artifacts fails here.
  *  4. Artifact integrity — every committed artifact must match its recorded
  *     hash; a hand-edited or half-regenerated artifact fails here.
- *  5. Stray-binary guard — no `_bg.wasm` may live under the src worklet glue
- *     directory (permanently closes the WB-2 twin).
+ *  5. Stray-binary guard — no `_bg.wasm` may live anywhere under the src worklet
+ *     glue tree (permanently closes the WB-2 twin).
  *
  * Exit code 0 = clean, 1 = drift (with a per-check report). Runnable locally and
  * by agents as part of verification; no rebuild, no network, no toolchain calls.
@@ -39,15 +42,32 @@ function readCargoToml(crateDir: string): string {
 function checkToolchain(manifest: WasmManifest): void {
     const pinned = wasmArtifacts.pinnedToolchain;
     const recorded = manifest.toolchain;
-    const fields = ['wasmPack', 'wasmBindgen', 'rustToolchain', 'wasmOpt'] as const;
-    for (const field of fields) {
-        if (recorded[field] !== pinned[field]) {
-            fail(`toolchain.${field}: manifest records "${recorded[field]}" but the pin is "${pinned[field]}"`);
-        }
+
+    // Constants with no independent in-repo source to verify against.
+    if (recorded.wasmPack !== pinned.wasmPack) {
+        fail(`toolchain.wasmPack: manifest records "${recorded.wasmPack}" but the pin is "${pinned.wasmPack}"`);
+    }
+    if (recorded.wasmOpt !== pinned.wasmOpt) {
+        fail(`toolchain.wasmOpt: manifest records "${recorded.wasmOpt}" but the pin is "${pinned.wasmOpt}"`);
     }
 
+    // Independent sources: Cargo.lock for wasm-bindgen, rust-toolchain.toml for the channel.
+    const lockWasmBindgen = wasmArtifacts.wasmBindgenLockVersion();
+    if (recorded.wasmBindgen !== lockWasmBindgen) {
+        fail(
+            `toolchain.wasmBindgen: manifest records "${recorded.wasmBindgen}" but Cargo.lock resolves "${lockWasmBindgen}"`
+        );
+    }
+    const channel = wasmArtifacts.rustToolchainChannel();
+    if (recorded.rustToolchain !== channel) {
+        fail(
+            `toolchain.rustToolchain: manifest records "${recorded.rustToolchain}" but rust-toolchain.toml pins "${channel}"`
+        );
+    }
+
+    // Each wasm crate must pin wasm-bindgen exactly to the Cargo.lock version.
     const crateWasmBindgen = /wasm-bindgen\s*=\s*"([^"]+)"/;
-    const expected = `=${pinned.wasmBindgen}`;
+    const expected = `=${lockWasmBindgen}`;
     for (const spec of wasmArtifacts.packages) {
         const cargoToml = readCargoToml(spec.crateDir);
         const match = crateWasmBindgen.exec(cargoToml);
@@ -86,7 +106,7 @@ function checkPackages(manifest: WasmManifest): void {
         }
 
         // Source freshness: crate edited without regenerating artifacts.
-        const currentSourceHash = wasmArtifacts.hashCrateSources(spec.crateDir);
+        const currentSourceHash = wasmArtifacts.hashCrateClosure(spec.crateDir);
         if (currentSourceHash !== recorded.crateSourceHash) {
             fail(
                 `${spec.crateDir}: source hash ${currentSourceHash} != manifest ${recorded.crateSourceHash} — ` +
@@ -114,11 +134,19 @@ function checkPackages(manifest: WasmManifest): void {
 }
 
 function checkNoStrayBinaries(): void {
-    const glueDir = 'src/modules/AudioEngine/wasm';
-    for (const entry of readdirSync(wasmArtifacts.absolute(glueDir))) {
-        if (entry.endsWith('_bg.wasm')) {
+    collectStrayBinaries('src/modules/AudioEngine/wasm');
+}
+
+function collectStrayBinaries(relDir: string): void {
+    for (const entry of readdirSync(wasmArtifacts.absolute(relDir), { withFileTypes: true })) {
+        const relPath = `${relDir}/${entry.name}`;
+        if (entry.isDirectory()) {
+            collectStrayBinaries(relPath);
+            continue;
+        }
+        if (entry.name.endsWith('_bg.wasm')) {
             fail(
-                `${glueDir}/${entry}: no _bg.wasm may be tracked beside the worklet glue — ` +
+                `${relPath}: no _bg.wasm may be tracked under the worklet glue tree — ` +
                     `the binary is served from public/wasm/ (WB-2)`
             );
         }
