@@ -165,6 +165,8 @@ known/accepted debt — but it is the single largest blast radius in the subsyst
 
 ### PH-3 — Plugin state chunk is never persisted to the project — major, M
 
+Status: FIXED in #730
+
 `getPluginState`/`setPluginState` exist as repository functions
 (`repositories/pluginBridge/getPluginState.ts`, `setPluginState.ts`) and Tauri
 commands (`plugins.rs:445/:516`, faithfully serializing the CLAP chunk), but they
