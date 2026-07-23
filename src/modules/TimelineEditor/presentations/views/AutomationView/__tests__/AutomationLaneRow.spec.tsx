@@ -13,6 +13,7 @@ import {
 } from '#/modules/Automation/useCases';
 import { pushUndoEntry } from '#/modules/Command/useCases';
 
+import { type AutomationLane, type AutomationPoint } from '../../../../models/AutomationViewTypes';
 import { onDrawMouseDown, onRubberBandStart, applyCurveSelect } from '../../../helpers/automationDrag';
 import { AutomationLaneRow } from '../AutomationLaneRow';
 
@@ -145,16 +146,8 @@ describe('AutomationLaneRow', () => {
             parameterName: 'Volume',
             minValue: 0,
             maxValue: 1,
-            points: [] as { beat: number; value: number; curve: string; tension: number }[],
-            objects: [] as {
-                id: string;
-                laneId: string;
-                startBeat: number;
-                endBeat: number;
-                points: unknown[];
-                name: string;
-                poolId?: string;
-            }[],
+            points: [] as AutomationPoint[],
+            objects: [] as AutomationLane['objects'],
             visible: true,
             enabled: true,
             collapsed: false,
@@ -223,7 +216,7 @@ describe('AutomationLaneRow', () => {
     });
 
     it('should render breakpoint nodes only for in-viewport points and show curve labels for non-linear curves', () => {
-        const lane = {
+        const lane: AutomationLane = {
             ...defaultProps.lane,
             points: [
                 { beat: 0, value: 0.2, curve: 'exponential', tension: 0 },
@@ -239,7 +232,7 @@ describe('AutomationLaneRow', () => {
     });
 
     it('should surface the interpolated current value at the playhead for before/between/after cases', () => {
-        const lane = {
+        const lane: AutomationLane = {
             ...defaultProps.lane,
             points: [
                 { beat: 0, value: 0.2, curve: 'linear', tension: 0 },
@@ -261,7 +254,7 @@ describe('AutomationLaneRow', () => {
     });
 
     it('should render in-view automation objects with their name and pool icon, filtering out-of-view objects', () => {
-        const lane = {
+        const lane: AutomationLane = {
             ...defaultProps.lane,
             objects: [
                 { id: 'obj-1', laneId: 'lane-1', startBeat: 0, endBeat: 8, points: [], name: 'ObjA', poolId: 'pool-1' },
@@ -339,7 +332,10 @@ describe('AutomationLaneRow', () => {
     });
 
     it('should open a point context menu on right-click and remove the point with an undoable entry on double-click', () => {
-        const lane = { ...defaultProps.lane, points: [{ beat: 8, value: 0.5, curve: 'linear', tension: 0 }] };
+        const lane: AutomationLane = {
+            ...defaultProps.lane,
+            points: [{ beat: 8, value: 0.5, curve: 'linear', tension: 0 }],
+        };
         const { container } = render(<AutomationLaneRow {...defaultProps} lane={lane} />);
 
         const pointGroup = container.querySelector('[data-auto-point]')!;
@@ -366,7 +362,7 @@ describe('AutomationLaneRow', () => {
     });
 
     it('should select all points on Ctrl+A and delete them on Delete, doing nothing without a selection', () => {
-        const lane = {
+        const lane: AutomationLane = {
             ...defaultProps.lane,
             points: [
                 { beat: 0, value: 0.2, curve: 'linear', tension: 0 },
