@@ -1,0 +1,29 @@
+src/modules/WorkspaceShell/presentations/views/__tests__/BounceOptionsDialog.spec.tsx
+  s_0d39f3a4a4357a::t_20f37f5dd49366 1-10,12-115
+  s_0d39f3a4a4357a::t_b6e1b086cf4c9e 11
+src/modules/WorkspaceShell/presentations/components/Mixer/__tests__/MixerStripValue.spec.tsx
+  s_0d39f3a4a4357a::t_838c47b84992f0 1-39
+src/modules/WorkspaceShell/presentations/views/Prompt/__tests__/LlmStatusBadge.spec.tsx
+  s_0d39f3a4a4357a::t_9295bed60b6eb9 6-15,17-24,26-43,45-54,61-63
+  s_0d39f3a4a4357a::t_4022a81e12b54f 1,16,25,44,55-60,64-65,69-72,75-77,79-81,84,86-87,90-162
+src/modules/WorkspaceShell/presentations/views/__tests__/MidiStatusBadge.spec.tsx
+  s_0d39f3a4a4357a::t_08305e5018949f 1-19,23-78,80-103
+  s_0d39f3a4a4357a::t_c5519de370c38a 79
+  s_0d39f3a4a4357a::t_ce15a96ba8b8eb 20-22
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "891e72618ee0b44d6fb2f9a8509c092136720087",
+  "prompts": {},
+  "sessions": {
+    "s_0d39f3a4a4357a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "60da6a2e-7d79-4d98-8624-e993f5a9f94e",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
