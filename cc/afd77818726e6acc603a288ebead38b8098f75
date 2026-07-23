@@ -1,0 +1,19 @@
+.agents/artifacts/sourdaw/audits/AUDIT-rt-engine-core.md
+  s_b6c327a08a4580::t_8f8d6356ec7526 130-131,244-245
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "ccafd77818726e6acc603a288ebead38b8098f75",
+  "prompts": {},
+  "sessions": {
+    "s_b6c327a08a4580": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-a7724e8f2e331a8fa",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
