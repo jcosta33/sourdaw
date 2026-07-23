@@ -146,6 +146,41 @@ describe('createAutomergeStorage', () => {
         expect(storage.get()).toEqual({ count: 1 });
     });
 
+    /// Regression (template-load e2e): a scoped action write set the store,
+    /// an authority swap left the doc slot missing so an interleaved hydrate
+    /// rolled the visible value back to the hydrateMissing default, and the
+    /// scoped commit then restored the written value inside the adapter
+    /// without notifying store subscribers — the UI wedged on the hydrated
+    /// snapshot while getSnapshot() already held the committed value.
+    it('notifies store subscribers when a scoped commit restores the value a hydrate rolled back', () => {
+        const { port } = createTestPort({ initialDoc: {} });
+        configureAutomergeStoragePort(port);
+        const storage = createAutomergeStorage<{ count: number }>('root', 'state', {
+            hydrateMissing: () => ({ count: 0 }),
+        });
+        const store = createStore({ storage });
+
+        const seenValues: Array<{ count: number } | null> = [];
+        store.subscribe((value) => {
+            seenValues.push(value);
+        });
+
+        const transaction = runWithAutomergeStorageTransaction(undefined, () => {
+            store.set({ count: 1 });
+        });
+        // The doc slot is still missing (fresh authority): hydrate rolls the
+        // visible value back to the default…
+        store.hydrate();
+        expect(seenValues.at(-1)).toEqual({ count: 0 });
+
+        transaction.commit();
+
+        // …and the scoped commit must re-notify subscribers with the
+        // committed value, not leave them on the hydrated one.
+        expect(seenValues.at(-1)).toEqual({ count: 1 });
+        expect(store.value).toEqual({ count: 1 });
+    });
+
     it('should synchronously flush a pending frame before CRDT compaction', () => {
         const { doc, mutations, port } = createTestPort();
         configureAutomergeStoragePort(port);
