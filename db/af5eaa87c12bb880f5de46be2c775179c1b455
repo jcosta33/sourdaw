@@ -1,0 +1,30 @@
+src/modules/TimelineEditor/presentations/views/ClipView/__tests__/AutomationLane.spec.tsx
+  s_0d39f3a4a4357a::t_04e2fbfc7589f0 92,94-96,99,101-103,106,108-118
+src/modules/TimelineEditor/presentations/views/ClipView/AutomationLane.tsx
+  s_0d39f3a4a4357a::t_3d96317eaf052a 5,34-44,141
+src/modules/TimelineEditor/presentations/helpers/mpeAvailability.ts
+  s_0d39f3a4a4357a::t_bdc06247655a36 1-14,18-29
+  s_0d39f3a4a4357a::t_0d8f1eceece5b5 15-17
+src/modules/TimelineEditor/presentations/views/ClipView/PianoRollToolbar.tsx
+  s_0d39f3a4a4357a::t_1849ff361e99bf 14,335-341
+src/modules/TimelineEditor/presentations/helpers/__tests__/mpeAvailability.spec.ts
+  s_0d39f3a4a4357a::t_b36f497af8de47 1-34
+src/modules/TimelineEditor/presentations/views/ClipView/__tests__/PianoRollToolbar.spec.tsx
+  s_0d39f3a4a4357a::t_f743772d8d4400 235-265
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "dbaf5eaa87c12bb880f5de46be2c775179c1b455",
+  "prompts": {},
+  "sessions": {
+    "s_0d39f3a4a4357a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "60da6a2e-7d79-4d98-8624-e993f5a9f94e",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
