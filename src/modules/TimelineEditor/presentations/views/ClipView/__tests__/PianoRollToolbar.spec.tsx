@@ -232,4 +232,35 @@ describe('PianoRollToolbar', () => {
         render(<PianoRollToolbar {...defaultProps} />);
         expect(screen.getByLabelText('Piano roll zoom')).toBeInTheDocument();
     });
+
+    it('offers the Velocity lane in the Expression view', () => {
+        render(
+            <PianoRollToolbar
+                {...defaultProps}
+                showExpressionView={true}
+                activeExpressionLane="velocity"
+                onActiveExpressionLaneChange={vi.fn()}
+            />
+        );
+        const values = screen.getAllByRole('option').map((option) => (option as HTMLOptionElement).value);
+        expect(values).toContain('velocity');
+    });
+
+    it('hides the MPE expression lanes (Pressure/Slide/Pitch Bend) while per-note expression is unavailable (MD-2)', () => {
+        render(
+            <PianoRollToolbar
+                {...defaultProps}
+                showExpressionView={true}
+                activeExpressionLane="velocity"
+                onActiveExpressionLaneChange={vi.fn()}
+            />
+        );
+        const values = screen.getAllByRole('option').map((option) => (option as HTMLOptionElement).value);
+        expect(values).not.toContain('pressure');
+        expect(values).not.toContain('slide');
+        expect(values).not.toContain('pitchBend');
+        expect(screen.queryByText('Pressure (MPE)')).not.toBeInTheDocument();
+        expect(screen.queryByText('Slide (MPE)')).not.toBeInTheDocument();
+        expect(screen.queryByText('Pitch Bend (MPE)')).not.toBeInTheDocument();
+    });
 });

@@ -2,6 +2,7 @@ import { type ReactElement, type RefObject, useState } from 'react';
 
 import { DawCompactSelect } from '#/components/daw/DawCompactSelect';
 
+import { MPE_EXPRESSION_AVAILABLE, isMpeExpressionLane } from '../../helpers/mpeAvailability';
 import { CCLane } from '../AutomationLane/CCLane';
 import { PitchBendLane } from '../AutomationLane/PitchBendLane';
 import { PressureLane } from '../AutomationLane/PressureLane';
@@ -29,6 +30,17 @@ const LANE_OPTIONS: { value: string; label: string; mode: LaneMode }[] = [
     { value: 'cc64', label: 'CC 64 (Sustain)', mode: { kind: 'cc', controller: 64, label: 'Sustain' } },
     { value: 'pitchBend', label: 'Pitch Bend', mode: { kind: 'pitchBend' } },
 ];
+
+/**
+ * Lanes offered in the selector. The MPE per-note expression lanes (Pressure,
+ * Slide/CC74, Pitch Bend) capture state that no shipping instrument sounds yet
+ * (audit MD-2), so they are withheld until the per-note expression engine path
+ * lands (Wave 4). `LANE_OPTIONS`, the lane components and the MIDI use cases
+ * they call are left intact — flipping MPE_EXPRESSION_AVAILABLE restores them.
+ */
+const VISIBLE_LANE_OPTIONS = MPE_EXPRESSION_AVAILABLE
+    ? LANE_OPTIONS
+    : LANE_OPTIONS.filter((opt) => !isMpeExpressionLane(opt.value));
 
 /** Width of the piano-key gutter in PianoRoll (w-10 = 2.5rem = 40px) */
 const PIANO_KEY_GUTTER = 40;
@@ -126,7 +138,7 @@ export const AutomationLane = ({
                     size="micro"
                     aria-label="Automation lane type"
                 >
-                    {LANE_OPTIONS.map((opt) => (
+                    {VISIBLE_LANE_OPTIONS.map((opt) => (
                         <option key={opt.value} value={opt.value}>
                             {opt.label}
                         </option>

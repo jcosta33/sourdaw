@@ -89,25 +89,33 @@ describe('AutomationLane', () => {
         expect(screen.getByTestId('probability-lane')).toBeInTheDocument();
     });
 
-    it('should switch to pressure lane', () => {
+    it('does not offer the MPE Pressure lane while per-note expression is unavailable (MD-2)', () => {
         render(<AutomationLane {...defaultProps} />);
-        const select = screen.getByLabelText('Automation lane type');
-        fireEvent.change(select, { target: { value: 'pressure' } });
-        expect(screen.getByTestId('pressure-lane')).toBeInTheDocument();
+        const values = screen.getAllByRole('option').map((option) => (option as HTMLOptionElement).value);
+        expect(values).not.toContain('pressure');
+        expect(screen.queryByTestId('pressure-lane')).not.toBeInTheDocument();
     });
 
-    it('should switch to slide lane', () => {
+    it('does not offer the MPE Slide (CC74) lane while per-note expression is unavailable (MD-2)', () => {
         render(<AutomationLane {...defaultProps} />);
-        const select = screen.getByLabelText('Automation lane type');
-        fireEvent.change(select, { target: { value: 'slide' } });
-        expect(screen.getByTestId('slide-lane')).toBeInTheDocument();
+        const values = screen.getAllByRole('option').map((option) => (option as HTMLOptionElement).value);
+        expect(values).not.toContain('slide');
+        expect(screen.queryByTestId('slide-lane')).not.toBeInTheDocument();
     });
 
-    it('should switch to pitch bend lane', () => {
+    it('does not offer the MPE Pitch Bend lane while per-note expression is unavailable (MD-2)', () => {
         render(<AutomationLane {...defaultProps} />);
-        const select = screen.getByLabelText('Automation lane type');
-        fireEvent.change(select, { target: { value: 'pitchBend' } });
-        expect(screen.getByTestId('pitchbend-lane')).toBeInTheDocument();
+        const values = screen.getAllByRole('option').map((option) => (option as HTMLOptionElement).value);
+        expect(values).not.toContain('pitchBend');
+        expect(screen.queryByTestId('pitchbend-lane')).not.toBeInTheDocument();
+    });
+
+    it('still offers the non-MPE lanes (velocity, probability, CC)', () => {
+        render(<AutomationLane {...defaultProps} />);
+        const values = screen.getAllByRole('option').map((option) => (option as HTMLOptionElement).value);
+        expect(values).toContain('velocity');
+        expect(values).toContain('probability');
+        expect(values).toContain('cc1');
     });
 
     it('should switch to CC lane', () => {
