@@ -121,20 +121,19 @@ export const exportStems: ExportStemsFn = async function exportStems(
 
             const offlineCtx = new OfflineAudioContext(2, frameCount, sampleRate);
             const pendingWorkletEvents: PendingWorkletEvent[] = [];
-            const groupedPads = toasterParentIds.has(track.id)
+            const boundPads = toasterParentIds.has(track.id)
                 ? tracks.tracks.filter((candidate) => {
                       const binding = resolveToasterPadBinding(tracks.tracks, candidate.id);
-                      return (
-                          binding?.toasterParentTrackId === track.id &&
-                          !candidate.disabled &&
-                          shouldCreateLiveTrackStrip(candidate)
-                      );
+                      return binding?.toasterParentTrackId === track.id;
                   })
                 : [];
+            const groupedPads = boundPads.filter(
+                (candidate) => !candidate.disabled && shouldCreateLiveTrackStrip(candidate)
+            );
             const groupedTracks = [track, ...groupedPads];
             const groupedTopology = [
                 track,
-                ...groupedPads.map((pad) => (pad.freezeState.status === 'frozen' ? { ...pad, clips: [] } : pad)),
+                ...boundPads.map((pad) => (pad.freezeState.status === 'frozen' ? { ...pad, clips: [] } : pad)),
             ];
             const trackStripsById = new Map<string, OfflineTrackStrip>();
             const deviceEntriesByTrack = new Map<string, DeviceNodeEntry[]>();

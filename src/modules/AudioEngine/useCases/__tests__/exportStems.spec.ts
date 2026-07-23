@@ -374,6 +374,51 @@ describe('exportStems', () => {
         );
     });
 
+    it('keeps disabled pad placeholders so later pad indexes remain canonical', async () => {
+        const parent = {
+            id: 'toaster-parent',
+            kind: 'folder',
+            disabled: false,
+            devices: [{ id: 'toaster-device', type: 'toaster' }],
+        };
+        const disabledPad = {
+            id: 'pad-0',
+            kind: 'midi',
+            parentId: parent.id,
+            disabled: true,
+            devices: [],
+            freezeState: { status: 'unfrozen' },
+        };
+        const activePad = { ...disabledPad, id: 'pad-1', disabled: false };
+        const topology = [parent, disabledPad, activePad];
+        offlineRenderMocks.resolveRenderContext.mockReturnValue(createRenderContext(topology));
+        offlineRenderMocks.createOfflineTrackStrip.mockResolvedValue({
+            inputNode: {},
+            faderNode: {},
+            panNode: {},
+            outputNode: { connect: vi.fn() },
+            deviceEntries: [],
+        });
+        offlineRenderMocks.renderWithTimeout.mockResolvedValue({ id: 'stem' });
+        vi.stubGlobal(
+            'OfflineAudioContext',
+            vi.fn(function OfflineContext() {
+                return { destination: {} };
+            })
+        );
+
+        await exportStems(4);
+
+        expect(offlineRenderMocks.createOfflineTrackStrip).not.toHaveBeenCalledWith(expect.anything(), disabledPad);
+        expect(offlineRenderMocks.createOfflineTrackStrip).toHaveBeenCalledWith(expect.anything(), activePad);
+        expect(offlineRenderMocks.connectOfflineToasterPadRoutes).toHaveBeenCalledWith(
+            expect.objectContaining({ tracks: topology })
+        );
+        expect(offlineRenderMocks.scheduleTrackClips).toHaveBeenCalledWith(
+            expect.objectContaining({ track: parent, allTracks: topology })
+        );
+    });
+
     it('removes frozen pad clips from the parent view while rendering the child buffer once', async () => {
         const parent = {
             id: 'toaster-parent',
