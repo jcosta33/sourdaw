@@ -1,0 +1,25 @@
+scripts/verify-wasm-artifacts.ts
+  s_0d39f3a4a4357a::t_f6d9ba86bbca8a 8-11,14-17,20-21,45-65,68,70,109,137-147,149
+scripts/health-gates-web.sh
+  s_0d39f3a4a4357a::t_0301fe9a244781 37
+scripts/wasm-artifacts.ts
+  s_0d39f3a4a4357a::t_360dd592d4f87a 25,35-38,183-207,209-213,215,217-222,227,235-254,279,295-300,375-376,378-379
+public/wasm/manifest.json
+  s_0d39f3a4a4357a::t_9a4666919f5cfb 12,26,40,54
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "3c3b54820e7571d138b3ab70ff20e6485b36bc61",
+  "prompts": {},
+  "sessions": {
+    "s_0d39f3a4a4357a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "60da6a2e-7d79-4d98-8624-e993f5a9f94e",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
