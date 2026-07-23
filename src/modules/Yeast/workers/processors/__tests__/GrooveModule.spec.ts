@@ -134,6 +134,8 @@ describe('GrooveModule', () => {
             [
                 {
                     timeSamples: 192_000,
+                    durationSamples: 24_000,
+                    durationPpq: 1,
                     timePpq: 4,
                     tempoBpm: 120,
                     kind: { type: 'noteOn', channel: 0, note: 60, velocity: 100 },
@@ -145,6 +147,22 @@ describe('GrooveModule', () => {
 
         expect(output[0]?.timePpq).toBe(3.75);
         expect(output[0]?.timeSamples).toBe(180_000);
+        expect(output[0]?.durationSamples).toBe(30_000);
+
+        groove.processMidi(
+            [
+                {
+                    timeSamples: 216_000,
+                    timePpq: 5,
+                    tempoBpm: 120,
+                    kind: { type: 'noteOff', channel: 0, note: 60 },
+                },
+            ],
+            output,
+            tempoMapTransport
+        );
+        expect(output[1]?.timeSamples).toBe(210_000);
+        expect(output[1]!.timeSamples - output[0]!.timeSamples).toBe(output[0]?.durationSamples);
     });
 
     it('should clear queued note-off timing state on reset', () => {

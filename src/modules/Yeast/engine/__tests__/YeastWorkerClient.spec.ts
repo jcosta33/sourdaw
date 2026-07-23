@@ -815,6 +815,7 @@ describe('createYeastWorker — processBlock lifecycle', () => {
         const event = {
             timeSamples: 0,
             durationSamples: 24_000,
+            durationPpq: 1,
             kind: { type: 'noteOn', channel: 0, note: 60, velocity: 100 },
         };
 
@@ -898,6 +899,20 @@ describe('createYeastWorker — processBlock lifecycle', () => {
                     {
                         timeSamples: 0,
                         durationSamples: -1,
+                        kind: { type: 'noteOn', channel: 0, note: 60, velocity: 100 },
+                    },
+                ],
+            },
+        ],
+        [
+            'non-finite PPQ duration hint',
+            {
+                type: 'processed',
+                requestId: 0,
+                events: [
+                    {
+                        timeSamples: 0,
+                        durationPpq: Number.NaN,
                         kind: { type: 'noteOn', channel: 0, note: 60, velocity: 100 },
                     },
                 ],

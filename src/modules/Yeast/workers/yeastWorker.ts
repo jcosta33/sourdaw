@@ -120,6 +120,9 @@ function isMidiEvent(value: unknown): value is MidiEvent {
     if (value.durationSamples !== undefined && (!isFiniteNumber(value.durationSamples) || value.durationSamples < 0)) {
         return false;
     }
+    if (value.durationPpq !== undefined && (!isFiniteNumber(value.durationPpq) || value.durationPpq < 0)) {
+        return false;
+    }
     if (value.sourceEventId !== undefined && typeof value.sourceEventId !== 'string') {
         return false;
     }

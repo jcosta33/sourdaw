@@ -100,6 +100,9 @@ describe('processLiveYeastTrackBlock', () => {
         expect(result?.notesByRoute.get('route-a')).toEqual([
             expect.objectContaining({ pitch: 67, startBeat: 0, duration: 1.5 }),
         ]);
+        expect(vi.mocked(processYeastMidi).mock.lastCall?.[0].events).toEqual([
+            expect.objectContaining({ durationSamples: 36_000, durationPpq: 1.5 }),
+        ]);
     });
 
     it('projects a source-free generator duration without waiting for a later release block', async () => {

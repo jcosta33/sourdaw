@@ -103,10 +103,14 @@ export class Arpeggiator extends BaseMidiProcessor {
             }
         }
 
-        // If no notes held (and no latch), kill active notes and stop
+        const blockStart = transport.blockStartSamples ?? transport.ppqPosition * samplesPerBeat(transport);
+        const blockEnd = transport.blockEndSamples ?? blockStart + 128;
+
+        // If no notes are held, let already-announced voices finish at their
+        // immutable release times so cross-block duration hints stay exact.
         const pool = this.getEffectivePool();
         if (pool.length === 0) {
-            this.killActiveNotes(output, transport.blockStartSamples ?? input[0]?.timeSamples ?? 0);
+            this.drainScheduledNoteOffs(output, blockEnd);
             return;
         }
 
@@ -116,8 +120,6 @@ export class Arpeggiator extends BaseMidiProcessor {
         }
 
         const stepLenSamples = rateToBeats(this.rate) * samplesPerBeat(transport);
-        const blockStart = transport.blockStartSamples ?? transport.ppqPosition * samplesPerBeat(transport);
-        const blockEnd = transport.blockEndSamples ?? blockStart + 128;
 
         // Initialize lastStepTime if needed
         if (this.lastStepTimeSamples === -Infinity) {
@@ -146,21 +148,9 @@ export class Arpeggiator extends BaseMidiProcessor {
                 continue;
             }
 
-            // Tie: extend previous notes' duration, don't emit new Note Ons
+            // Tied lifetime was reserved on the preceding Note On; advance
+            // without retriggering or mutating the announced release time.
             if (patternStep && patternStep.stepType === 'tie') {
-                for (const an of this.activeGenerated) {
-                    an.offTimeSamples += stepLenSamples;
-                    // Also update the scheduled Note Off
-                }
-                // Re-schedule Note Offs with extended times
-                this.scheduled.clear();
-                for (const an of this.activeGenerated) {
-                    this.scheduled.push({
-                        timeSamples: an.offTimeSamples,
-                        trackId: an.trackId,
-                        kind: { type: 'noteOff', channel: an.channel, note: an.note },
-                    });
-                }
                 this.advanceStep(pool.length);
                 this.lastStepTimeSamples = stepTime;
                 continue;
@@ -200,6 +190,7 @@ export class Arpeggiator extends BaseMidiProcessor {
             const ratchetInterval = stepLenSamples / ratchetCount;
             const baseGate = patternStep ? this.gate * patternStep.gateMul : this.gate;
             const noteDuration = ratchetInterval * baseGate;
+            const finalNoteDuration = noteDuration + this.countFollowingTieSteps() * stepLenSamples;
 
             for (let ratchetIdx = 0; ratchetIdx < ratchetCount; ratchetIdx++) {
                 const ratchetTime = actualTime + ratchetIdx * ratchetInterval;
@@ -211,7 +202,7 @@ export class Arpeggiator extends BaseMidiProcessor {
 
                     const noteOn: MidiEvent = {
                         timeSamples: ratchetTime,
-                        durationSamples: noteDuration,
+                        durationSamples: finalNoteDuration,
                         trackId: sn.trackId,
                         kind: { type: 'noteOn', channel: sn.channel, note: sn.note, velocity: vel },
                     };
@@ -219,7 +210,7 @@ export class Arpeggiator extends BaseMidiProcessor {
 
                     preview?.recordDecision(
                         ratchetTime,
-                        noteDuration,
+                        finalNoteDuration,
                         sn.note,
                         vel,
                         patternStep?.probability ?? null,
@@ -230,7 +221,7 @@ export class Arpeggiator extends BaseMidiProcessor {
                     );
 
                     // Schedule Note Off
-                    const offTime = ratchetTime + noteDuration;
+                    const offTime = ratchetTime + finalNoteDuration;
                     this.scheduled.push({
                         timeSamples: offTime,
                         trackId: sn.trackId,
@@ -257,13 +248,7 @@ export class Arpeggiator extends BaseMidiProcessor {
         // sync in both directions so every generated note gets exactly one
         // Note Off (pre-fix each off left twice — once via expireNotes,
         // once via this drain; 8 ons → 14 offs in the audit probe).
-        const drained = this.scheduled.drainRange(0, blockEnd, this.trackId);
-        for (const event1 of drained) {
-            output.push(event1);
-            if (event1.kind.type === 'noteOff') {
-                this.removeActiveGenerated(event1.trackId, event1.kind.channel, event1.kind.note, event1.timeSamples);
-            }
-        }
+        this.drainScheduledNoteOffs(output, blockEnd);
     }
 
     reset(): void {
@@ -467,6 +452,21 @@ export class Arpeggiator extends BaseMidiProcessor {
         this.stepIndex++;
     }
 
+    private countFollowingTieSteps(): number {
+        if (this.mode !== 'pattern' || this.pattern.length < 2) {
+            return 0;
+        }
+        let count = 0;
+        for (let offset = 1; offset < this.pattern.length; offset++) {
+            const step = this.pattern[(this.stepIndex + offset) % this.pattern.length];
+            if (!step?.active || step.stepType !== 'tie') {
+                break;
+            }
+            count++;
+        }
+        return count;
+    }
+
     private computeVelocity(inputVel: number): number {
         switch (this.velocityMode) {
             case 'input':
@@ -532,7 +532,8 @@ export class Arpeggiator extends BaseMidiProcessor {
         this.sortRejectedCandidates();
         const ratchetCount = step.ratchet;
         const ratchetInterval = stepLenSamples / ratchetCount;
-        const noteDuration = ratchetInterval * this.gate * step.gateMul;
+        const noteDuration =
+            ratchetInterval * this.gate * step.gateMul + this.countFollowingTieSteps() * stepLenSamples;
         const candidateStart = step.stepType === 'chord' ? 0 : this.stepIndex % this.rejectedCandidateCount;
         const candidateEnd = step.stepType === 'chord' ? this.rejectedCandidateCount : candidateStart + 1;
         const pitchOffset = step.octaveOffset * 12 + step.semitoneOffset;
@@ -611,18 +612,6 @@ export class Arpeggiator extends BaseMidiProcessor {
         }
     }
 
-    private killActiveNotes(output: MidiEvent[], now: number): void {
-        for (const an of this.activeGenerated) {
-            output.push({
-                timeSamples: now,
-                trackId: an.trackId,
-                kind: { type: 'noteOff', channel: an.channel, note: an.note },
-            });
-        }
-        this.activeGenerated = [];
-        this.scheduled.clear();
-    }
-
     private expireNotes(output: MidiEvent[], now: number): void {
         // Audio-thread: in-place removal avoids two .filter() allocations
         let writeIdx = 0;
@@ -643,6 +632,16 @@ export class Arpeggiator extends BaseMidiProcessor {
             }
         }
         this.activeGenerated.length = writeIdx;
+    }
+
+    private drainScheduledNoteOffs(output: MidiEvent[], blockEnd: number): void {
+        const drained = this.scheduled.drainRange(0, blockEnd, this.trackId);
+        for (const event of drained) {
+            output.push(event);
+            if (event.kind.type === 'noteOff') {
+                this.removeActiveGenerated(event.trackId, event.kind.channel, event.kind.note, event.timeSamples);
+            }
+        }
     }
 
     private removeActiveGenerated(

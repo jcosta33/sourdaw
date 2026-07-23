@@ -18,6 +18,8 @@ export type MidiEvent = {
     kind: MidiEventKind;
     /** Eager Note On lifetime hint when its Note Off may arrive in a later processing block. */
     durationSamples?: number;
+    /** Musical Note On lifetime used when a processor shifts both endpoints in PPQ. */
+    durationPpq?: number;
     /** Originating instrument track for runtime routing and panic recovery. */
     trackId?: string;
     /** Stable identity of this source endpoint across lookahead and Worker processing. */

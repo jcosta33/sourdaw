@@ -53,6 +53,11 @@ export class GrooveModule extends BaseMidiProcessor {
                         : projectPpqToSamples(projectedPpq, transport);
                 const velocityScale = 1 + this.dynamicsOffsets[templateIndex]! * this.amount;
                 const velocity = Math.max(1, Math.min(127, Math.round(event.kind.velocity * velocityScale)));
+                let durationSamples = event.durationSamples;
+                if (projectedPpq !== undefined && event.durationPpq !== undefined && transport.tempoMap !== undefined) {
+                    const projectedEndSamples = projectPpqToSamples(projectedPpq + event.durationPpq, transport);
+                    durationSamples = Math.max(0, projectedEndSamples - projectedSamples);
+                }
 
                 const key = (event.kind.channel << 7) | event.kind.note;
                 this.noteVoices.push(event.trackId, key, offsetBeats);
@@ -60,6 +65,7 @@ export class GrooveModule extends BaseMidiProcessor {
                 const transformed: MidiEvent = {
                     ...event,
                     timeSamples: projectedSamples,
+                    durationSamples,
                     timePpq: projectedPpq,
                     kind: { ...event.kind, velocity },
                 };

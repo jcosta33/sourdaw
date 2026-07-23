@@ -131,6 +131,7 @@ export async function processLiveYeastTrackBlock({
                     inputEvents.push({
                         timeSamples: noteStartSamples,
                         durationSamples: Math.max(0, noteEndSamples - noteStartSamples),
+                        durationPpq: Math.max(0, groovedNote.duration),
                         trackId: iteration.routeId,
                         sourceEventId: `${noteInstanceId}:on`,
                         noteInstanceId,

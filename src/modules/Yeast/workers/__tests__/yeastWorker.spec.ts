@@ -256,6 +256,7 @@ describe('YeastWorker', () => {
             {
                 timeSamples: 0,
                 durationSamples: 24_000,
+                durationPpq: 1,
                 trackId: 'clip-route-a',
                 kind: { type: 'noteOn', channel: 0, note: 60, velocity: 100 },
             },
@@ -550,6 +551,26 @@ describe('YeastWorker', () => {
                     {
                         timeSamples: 0,
                         durationSamples: -1,
+                        kind: { type: 'noteOn', channel: 0, note: 60, velocity: 100 },
+                    },
+                ],
+                blockStart: 0,
+                blockEnd: 128,
+                transport,
+            },
+            messages
+        );
+        dispatch(
+            rack,
+            {
+                type: 'processBlock',
+                requestId: 14,
+                captureEpoch: 0,
+                trackId: 'track-a',
+                events: [
+                    {
+                        timeSamples: 0,
+                        durationPpq: Number.NaN,
                         kind: { type: 'noteOn', channel: 0, note: 60, velocity: 100 },
                     },
                 ],
