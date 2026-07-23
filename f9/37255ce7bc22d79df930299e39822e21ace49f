@@ -1,0 +1,55 @@
+src/modules/Collaboration/repositories/__tests__/peerConnection.spec.ts
+  s_0d39f3a4a4357a::t_b42dd9d205af73 75-80,83-88
+  s_0d39f3a4a4357a::t_a47b6676289feb 264-270
+  s_0d39f3a4a4357a::t_929da6a27b3b89 334
+  s_0d39f3a4a4357a::t_5ba559cc5472ca 45-46
+  s_0d39f3a4a4357a::t_e877174381c3db 203-263,271-333,335-346
+src/modules/Collaboration/handlers/collaboration/__tests__/handleJoinCollabSession.spec.ts
+  s_0d39f3a4a4357a::t_1ea629aba82035 33-35
+  s_0d39f3a4a4357a::t_d86ffb9e4f73ca 31-32,36
+src/modules/Collaboration/presentations/components/__tests__/CollaborationStatusRow.spec.tsx
+  s_0d39f3a4a4357a::t_4f3eb27280a7d7 19-41
+src/modules/Collaboration/presentations/components/__tests__/PeerPresenceRow.spec.tsx
+  s_0d39f3a4a4357a::t_9cf94552170578 12-26
+  s_0d39f3a4a4357a::t_009417c2f1ee7a 27-32
+src/modules/Collaboration/handlers/collaboration/__tests__/handleLeaveCollabSession.spec.ts
+  s_0d39f3a4a4357a::t_bf6fbd7b5c38cd 23-24,28
+  s_0d39f3a4a4357a::t_79b69d51ef0211 25-27
+src/modules/Collaboration/useCases/__tests__/automergeSync.spec.ts
+  s_0d39f3a4a4357a::t_d41d9b2421f4a5 289-292,304-307
+  s_0d39f3a4a4357a::t_fe0cf20a03c489 10-11
+  s_0d39f3a4a4357a::t_62b864fcfc8bc0 210-288,293-303,308-348
+src/modules/Collaboration/presentations/views/__tests__/QrInvite.spec.tsx
+  s_0d39f3a4a4357a::t_b59ec87bf9275c 70-129
+  s_0d39f3a4a4357a::t_408c617f6a7863 1-2
+src/modules/Collaboration/presentations/views/__tests__/CollaborationPanel.spec.tsx
+  s_0d39f3a4a4357a::t_9cba2623a7862f 1-2,4,10-17,28-35,37-38,40-41,43-44,46-47,49-71,76-77,80-81,84,89-91,113-130,132-168,170-256,260-275,279-298,300-313,321-330,335-337,340,344-352,354-376
+  s_0d39f3a4a4357a::t_f1238a5fcc16b8 131,169
+  s_0d39f3a4a4357a::t_afb5d2a9c2a3b4 257-259,276-278,299,341-343,353
+  s_0d39f3a4a4357a::t_abc88f27fa56ed 314-320,331-334,338-339
+  s_0d39f3a4a4357a::t_de196819b1cd66 36,39,42,45,48
+  s_0d39f3a4a4357a::t_6ed2e65309d87e 377-396
+src/modules/Collaboration/presentations/components/__tests__/InviteCodeRow.spec.tsx
+  s_0d39f3a4a4357a::t_518e78372b4c9d 23-41
+src/modules/Collaboration/handlers/collaboration/__tests__/handleCreateCollabSession.spec.ts
+  s_0d39f3a4a4357a::t_b09b32fc79a585 28-29,33
+  s_0d39f3a4a4357a::t_6648e41c0e8f4c 30-32
+src/modules/Collaboration/presentations/hooks/__tests__/useCollaborationState.spec.ts
+  s_0d39f3a4a4357a::t_39cd205a7880b0 1-54
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "f937255ce7bc22d79df930299e39822e21ace49f",
+  "prompts": {},
+  "sessions": {
+    "s_0d39f3a4a4357a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "60da6a2e-7d79-4d98-8624-e993f5a9f94e",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
