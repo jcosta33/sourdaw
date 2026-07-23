@@ -83,6 +83,19 @@ describe('createGlutenNode', () => {
         expect(resume).not.toHaveBeenCalled();
     });
 
+    /// Regression: Gluten fetched the legacy /wasm/gluten/ snapshot, which
+    /// goes stale on every daw-dsp rebuild — its wasm-bindgen import symbols
+    /// stop matching the generated glue and initSync throws ("function import
+    /// requires a callable"), silently killing every template whose bus chain
+    /// carries the compressor.
+    it('should fetch the canonical combined daw-dsp binary, not the legacy gluten snapshot', async () => {
+        const { fetchWasmBinary } = await import('#/infra/audioWorklet/workletInitShared');
+
+        await createGlutenNode(makeCtx());
+
+        expect(fetchWasmBinary).toHaveBeenCalledWith('/wasm/daw-dsp/daw_dsp_bg.wasm');
+    });
+
     it('should guard on SharedArrayBuffer availability and post init-sab only when a slot was allocated', async () => {
         const { requireSharedArrayBuffer } = await import('../pluginHostingErrors');
         const { telemetryAllocator } = await import('../telemetryAllocator');

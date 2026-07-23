@@ -14,7 +14,10 @@ import glutenProcessorUrl from '../services/glutenProcessor.ts?worker&url';
 import { requireSharedArrayBuffer } from './pluginHostingErrors';
 import { telemetryAllocator, GLUTEN_IDX, type TelemetrySlot } from './telemetryAllocator';
 
-const DEFAULT_WASM_URL = '/wasm/gluten/gluten_bg.wasm';
+// Canonical combined DSP build — the legacy /wasm/gluten/ snapshot goes stale
+// on every daw-dsp rebuild and its wasm-bindgen symbols stop matching the
+// generated glue (initSync then throws "function import requires a callable").
+const DEFAULT_WASM_URL = '/wasm/daw-dsp/daw_dsp_bg.wasm';
 
 export type GlutenMeterData = {
     grDb: number;
