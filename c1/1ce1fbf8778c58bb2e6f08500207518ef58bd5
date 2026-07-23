@@ -1,0 +1,47 @@
+scripts/gen-wasm-manifest.ts
+  s_0d39f3a4a4357a::t_269ec2671390e6 1-43
+crates/daw-dsp/Cargo.toml
+  s_0d39f3a4a4357a::t_7df4efb16f43f1 11
+crates/proof-chamber/Cargo.toml
+  s_0d39f3a4a4357a::t_8edfb5ae3decf3 11
+scripts/wasm-artifacts.ts
+  s_0d39f3a4a4357a::t_ae96d63b1acac7 1-326
+scripts/verify-wasm-artifacts.ts
+  s_0d39f3a4a4357a::t_f6960083a48540 24,35-38
+  s_0d39f3a4a4357a::t_53f601abaac8b8 1-23,25-34,39-168,172-174
+  s_0d39f3a4a4357a::t_408902aec655a1 169-171
+crates/scoring/Cargo.toml
+  s_0d39f3a4a4357a::t_803e75c4a93f81 11
+scripts/gen-scoring-worklet.ts
+  s_0d39f3a4a4357a::t_4064c035119206 20
+  s_0d39f3a4a4357a::t_f983131a6b7a99 72,74-88,90
+src/modules/AudioEngine/wasm/.gitignore
+  s_0d39f3a4a4357a::t_370ae2a9d8bdf1 1-8
+scripts/gen-daw-dsp-worklet.ts
+  s_0d39f3a4a4357a::t_fdc9ee839f80fc 20
+  s_0d39f3a4a4357a::t_5e68f6278040b8 72,74-88,90
+crates/daw-wasm-decoder/Cargo.toml
+  s_0d39f3a4a4357a::t_2230c0f1f53d94 11
+package.json
+  s_0d39f3a4a4357a::t_73a13c9b0b4475 36-38
+scripts/gen-proof-chamber-worklet.ts
+  s_0d39f3a4a4357a::t_d0896fac3baa8a 75,77-91,93
+public/wasm/manifest.json
+  s_0d39f3a4a4357a::t_62da1ca712d7cd 1-63
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "c11ce1fbf8778c58bb2e6f08500207518ef58bd5",
+  "prompts": {},
+  "sessions": {
+    "s_0d39f3a4a4357a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "60da6a2e-7d79-4d98-8624-e993f5a9f94e",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
