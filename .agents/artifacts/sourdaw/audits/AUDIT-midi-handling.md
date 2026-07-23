@@ -125,6 +125,8 @@ Counts: 2 Blocker · 2 Major · 3 Minor · 1 Polish.
 
 ### MD-2 — MPE per-note expression never reaches any real instrument — Blocker (fix L)
 
+Status: SURFACE FIXED in #719 — engine fix pending Wave 4 (WS-3)
+
 Per-note expression is captured but not sounded, and the feature is
 **user-facing** — exposed through the PianoRoll toolbar and GrandBoule panels —
 so an MPE-enabled session presents live controls that make no sound.
