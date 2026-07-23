@@ -69,6 +69,7 @@ export class NoteRepeater extends BaseMidiProcessor {
                     // Schedule Note On
                     const noteOn: MidiEvent = {
                         timeSamples: time,
+                        durationSamples: noteLenSamples,
                         trackId: event.trackId,
                         kind: { type: 'noteOn', channel: event.kind.channel, note, velocity: vel },
                     };

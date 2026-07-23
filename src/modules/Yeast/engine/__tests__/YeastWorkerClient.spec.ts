@@ -812,7 +812,11 @@ describe('createYeastWorker — processBlock lifecycle', () => {
     it('ignores wrong, duplicate, and late processed replies', async () => {
         const node = await createYeastWorker(makeContext());
         const worker = lastWorker();
-        const event = { timeSamples: 0, kind: { type: 'noteOn', channel: 0, note: 60, velocity: 100 } };
+        const event = {
+            timeSamples: 0,
+            durationSamples: 24_000,
+            kind: { type: 'noteOn', channel: 0, note: 60, velocity: 100 },
+        };
 
         const first = node.processBlock([], 0, 128, transport, 'track-a');
         replyProcessed(worker, 99, [event]);
@@ -880,6 +884,20 @@ describe('createYeastWorker — processBlock lifecycle', () => {
                     {
                         timeSamples: 0,
                         tempoBpm: '120',
+                        kind: { type: 'noteOn', channel: 0, note: 60, velocity: 100 },
+                    },
+                ],
+            },
+        ],
+        [
+            'negative duration hint',
+            {
+                type: 'processed',
+                requestId: 0,
+                events: [
+                    {
+                        timeSamples: 0,
+                        durationSamples: -1,
                         kind: { type: 'noteOn', channel: 0, note: 60, velocity: 100 },
                     },
                 ],

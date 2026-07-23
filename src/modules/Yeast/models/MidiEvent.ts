@@ -16,6 +16,8 @@ export type MidiEvent = {
     /** Absolute sample time on the global timeline. */
     timeSamples: number;
     kind: MidiEventKind;
+    /** Eager Note On lifetime hint when its Note Off may arrive in a later processing block. */
+    durationSamples?: number;
     /** Originating instrument track for runtime routing and panic recovery. */
     trackId?: string;
     /** Stable identity of this source endpoint across lookahead and Worker processing. */

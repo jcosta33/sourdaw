@@ -211,6 +211,7 @@ export class Arpeggiator extends BaseMidiProcessor {
 
                     const noteOn: MidiEvent = {
                         timeSamples: ratchetTime,
+                        durationSamples: noteDuration,
                         trackId: sn.trackId,
                         kind: { type: 'noteOn', channel: sn.channel, note: sn.note, velocity: vel },
                     };

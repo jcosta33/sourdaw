@@ -99,8 +99,13 @@ export class ChordGenerator extends BaseMidiProcessor {
                         this.strumDirection === 'up'
                             ? index * strumSamples
                             : (intervals.length - 1 - index) * strumSamples;
+                    let durationSamples: number | undefined;
+                    if (event.durationSamples !== undefined) {
+                        durationSamples = Math.max(0, event.durationSamples - offset);
+                    }
                     const generated: MidiEvent = {
                         timeSamples: event.timeSamples + offset,
+                        durationSamples,
                         trackId: event.trackId,
                         kind: { type: 'noteOn', channel: event.kind.channel, note, velocity: event.kind.velocity },
                     };

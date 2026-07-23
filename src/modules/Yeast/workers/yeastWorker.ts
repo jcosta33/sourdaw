@@ -117,6 +117,9 @@ function isMidiEvent(value: unknown): value is MidiEvent {
     if (value.trackId !== undefined && !isTrackId(value.trackId)) {
         return false;
     }
+    if (value.durationSamples !== undefined && (!isFiniteNumber(value.durationSamples) || value.durationSamples < 0)) {
+        return false;
+    }
     if (value.sourceEventId !== undefined && typeof value.sourceEventId !== 'string') {
         return false;
     }

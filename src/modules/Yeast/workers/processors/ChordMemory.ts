@@ -63,6 +63,7 @@ export class ChordMemory extends BaseMidiProcessor {
                         emitted.push(note);
                         const generated: MidiEvent = {
                             timeSamples: event.timeSamples,
+                            durationSamples: event.durationSamples,
                             trackId: event.trackId,
                             kind: { type: 'noteOn', channel: event.kind.channel, note, velocity: event.kind.velocity },
                         };

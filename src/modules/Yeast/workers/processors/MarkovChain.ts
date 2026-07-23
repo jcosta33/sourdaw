@@ -183,6 +183,7 @@ export class MarkovChain extends BaseMidiProcessor {
 
             output.push({
                 timeSamples: stepTime,
+                durationSamples: noteLen,
                 trackId: this.stateToTrack[this.currentState % this.stateNoteCount],
                 kind: { type: 'noteOn', channel: 0, note, velocity: this.velocity },
             });
