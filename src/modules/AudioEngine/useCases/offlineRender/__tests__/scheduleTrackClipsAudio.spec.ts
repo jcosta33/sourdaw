@@ -270,6 +270,7 @@ async function run({
             projectPpqEndpoints: projector,
             processYeastMidi: null,
             selectMidiEventProbability: () => true,
+            projectChordPitch: ({ pitch }) => pitch,
         },
         onWarning,
         pendingWorkletEvents: [],

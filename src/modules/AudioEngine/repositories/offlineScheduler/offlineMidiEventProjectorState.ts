@@ -43,10 +43,18 @@ export type OfflineMidiProbabilitySelectionInput = {
 
 export type OfflineMidiProbabilitySelector = (input: OfflineMidiProbabilitySelectionInput) => boolean;
 
+export type OfflineChordPitchProjector = (input: {
+    pitch: number;
+    referenceBeat: number;
+    targetBeat: number;
+}) => number;
+
 export const offlineMidiEventProjectorState: {
     createProjector: OfflineMidiEventProjectorFactory | null;
     selectProbability: OfflineMidiProbabilitySelector | null;
+    projectChordPitch: OfflineChordPitchProjector | null;
 } = {
     createProjector: null,
     selectProbability: null,
+    projectChordPitch: null,
 };

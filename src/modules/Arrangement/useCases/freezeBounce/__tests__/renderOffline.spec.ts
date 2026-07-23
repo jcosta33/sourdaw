@@ -45,6 +45,7 @@ type RenderOfflineMocks = {
     projectClipMidiEvents: Mock<typeof projectClipMidiEvents>;
     projectOfflineYeastTrackNotes: Mock<typeof projectOfflineYeastTrackNotes>;
     selectMidiEventProbability: Mock<(input: MidiProbabilitySelectionInput) => boolean>;
+    projectChordPitch: Mock<(input: { pitch: number; referenceBeat: number; targetBeat: number }) => number>;
 };
 
 const mocks = vi.hoisted<RenderOfflineMocks>(() => ({
@@ -60,6 +61,7 @@ const mocks = vi.hoisted<RenderOfflineMocks>(() => ({
     projectClipMidiEvents: vi.fn<typeof projectClipMidiEvents>(),
     projectOfflineYeastTrackNotes: vi.fn<typeof projectOfflineYeastTrackNotes>(() => []),
     selectMidiEventProbability: vi.fn<(input: MidiProbabilitySelectionInput) => boolean>(() => true),
+    projectChordPitch: vi.fn(({ pitch }) => pitch),
 }));
 
 vi.mock('#/modules/AudioEngine/useCases', () => ({
@@ -303,6 +305,7 @@ describe('renderTrackOffline', () => {
         mocks.getAudioContext.mockReturnValue({ sampleRate: 44100 } as AudioContext);
         mocks.getCachedAudioBuffer.mockReturnValue(null);
         mocks.getUpstreamSubgraph.mockReturnValue(new Set<string>());
+        mocks.projectChordPitch.mockImplementation(({ pitch }) => pitch);
         setOfflineRenderDependencies({
             projectPpqEndpoints: ({ startPpq, endPpq, defaultTempo, sampleRate }) => {
                 const startSamples = Math.round((startPpq / defaultTempo) * 60 * sampleRate);
@@ -325,6 +328,7 @@ describe('renderTrackOffline', () => {
             createYeastMidiProcessor: () => (input) =>
                 input.events.map((event) => ({ ...event, timePpq: event.timePpq ?? 0 })),
             selectMidiEventProbability: mocks.selectMidiEventProbability,
+            projectChordPitch: mocks.projectChordPitch,
         });
         mocks.projectClipMidiEvents.mockImplementation((input) =>
             input.events.map((event) => ({
@@ -452,12 +456,14 @@ describe('renderTrackOffline', () => {
             kind: 'midi',
             clips: [midiClip],
             devices: [],
+            followChordTrack: true,
         });
         const sourceNotes = [{ id: 'note-1', pitch: 60, startBeat: 1, duration: 1, velocity: 100 }];
         mocks.trackStore.value = { tracks: [midiTrack], selectedTrackId: 'track-midi', ghostClips: [] };
         mocks.midiStore.value = { notesByClipId: { 'clip-midi': sourceNotes } };
         mocks.transportStore.value = { tempo: 120 };
         mocks.projectClipMidiEvents.mockReturnValue([{ ...sourceNotes[0]!, startBeat: 1.5, velocity: 40 }]);
+        mocks.projectChordPitch.mockImplementation(({ pitch }) => pitch + 12);
 
         await renderTrackOffline(midiTrack, 0, 4, { includeInserts: false });
 
@@ -473,6 +479,7 @@ describe('renderTrackOffline', () => {
             phase: 'complete',
         });
         expect(createdOscillators[0]?.start).toHaveBeenCalledWith(0.75);
+        expect(mocks.projectChordPitch).toHaveBeenCalledWith({ pitch: 60, referenceBeat: 0, targetBeat: 1.5 });
         expect(createdGains.at(-1)?.gain.linearRampToValueAtTime).toHaveBeenCalledWith((40 / 127) * 0.3, 0.755);
     });
 

@@ -53,11 +53,19 @@ export async function renderTrackOffline(
     const createMidiEventProjector = offlineRenderDependencies?.createMidiEventProjector;
     const createYeastMidiProcessor = offlineRenderDependencies?.createYeastMidiProcessor;
     const selectMidiEventProbability = offlineRenderDependencies?.selectMidiEventProbability;
-    if (!projectPpqEndpoints || !createMidiEventProjector || !createYeastMidiProcessor || !selectMidiEventProbability) {
+    const projectChordPitch = offlineRenderDependencies?.projectChordPitch;
+    if (
+        !projectPpqEndpoints ||
+        !createMidiEventProjector ||
+        !createYeastMidiProcessor ||
+        !selectMidiEventProbability ||
+        !projectChordPitch
+    ) {
         throw new Error('Arrangement offline render dependencies are not configured');
     }
     const projectMidiEvents = createMidiEventProjector();
     const processYeastMidi = createYeastMidiProcessor();
+    const chordPitchProjector = projectChordPitch;
 
     // Only audio and midi tracks produce renderable content on their own.
     // Bus / group / master tracks have no direct sound source — skip rendering.
@@ -117,6 +125,9 @@ export async function renderTrackOffline(
 
         let devices: DeviceNodeEntry[] = [];
         const inputNode: AudioNode = gainNode;
+        function projectPitch(input: { pitch: number; referenceBeat: number; targetBeat: number }): number {
+            return time.followChordTrack ? chordPitchProjector(input) : input.pitch;
+        }
 
         if (includeInserts) {
             devices = await buildDeviceChain(offlineCtx, time.devices, gainNode, panNode);
@@ -217,6 +228,7 @@ export async function renderTrackOffline(
                         projectMidiEvents,
                         projectPpqEndpoints,
                         processYeastMidi,
+                        projectPitch,
                     });
                 } else {
                     scheduledNotes = clipIterations.flatMap((iteration) => {
@@ -241,7 +253,11 @@ export async function renderTrackOffline(
                             });
                             return {
                                 id: note.id,
-                                pitch: note.pitch,
+                                pitch: projectPitch({
+                                    pitch: note.pitch,
+                                    referenceBeat: iteration.clipStartBeat,
+                                    targetBeat: note.startBeat,
+                                }),
                                 velocity: note.velocity,
                                 startSamples: endpoint.startSamples,
                                 endSamples: endpoint.endSamples,

@@ -5,6 +5,7 @@ type ConfigureOfflineMidiEventProjectionInput = Parameters<typeof setOfflineMidi
 export function configureOfflineMidiEventProjection({
     createProjector,
     selectProbability,
+    projectChordPitch,
 }: ConfigureOfflineMidiEventProjectionInput): void {
-    setOfflineMidiEventProjector({ createProjector, selectProbability });
+    setOfflineMidiEventProjector({ createProjector, selectProbability, projectChordPitch });
 }

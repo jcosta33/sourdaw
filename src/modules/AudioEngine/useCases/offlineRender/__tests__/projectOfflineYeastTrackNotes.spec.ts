@@ -74,6 +74,7 @@ describe('projectOfflineYeastTrackNotes', () => {
             projectMidiEvents,
             projectPpqEndpoints,
             processYeastMidi,
+            projectPitch: ({ pitch }) => pitch,
         });
 
         expect(processYeastMidi).toHaveBeenCalledTimes(1);
@@ -145,6 +146,7 @@ describe('projectOfflineYeastTrackNotes', () => {
             projectMidiEvents,
             projectPpqEndpoints,
             processYeastMidi,
+            projectPitch: ({ pitch }) => pitch,
         });
 
         expect(notes).toEqual([

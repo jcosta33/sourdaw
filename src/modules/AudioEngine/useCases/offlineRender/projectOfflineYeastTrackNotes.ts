@@ -36,6 +36,7 @@ type ProjectOfflineYeastTrackNotesInput = {
     projectMidiEvents: OfflineMidiEventProjector;
     projectPpqEndpoints: OfflinePpqEndpointProjector;
     processYeastMidi: OfflineYeastMidiProcessor;
+    projectPitch: (input: { pitch: number; referenceBeat: number; targetBeat: number }) => number;
 };
 
 type ScheduledOfflineYeastNote = {
@@ -58,6 +59,7 @@ export function projectOfflineYeastTrackNotes({
     projectMidiEvents,
     projectPpqEndpoints,
     processYeastMidi,
+    projectPitch,
 }: ProjectOfflineYeastTrackNotesInput): ScheduledOfflineYeastNote[] {
     const iterationsByRoute = new Map<string, OfflineYeastClipIteration>();
     const sourceNotes = iterations.flatMap((iteration, index) => {
@@ -110,6 +112,7 @@ export function projectOfflineYeastTrackNotes({
                     changes,
                     projectMidiEvents,
                     projectPpqEndpoints,
+                    projectPitch,
                 })
             );
             continue;
@@ -137,7 +140,11 @@ export function projectOfflineYeastTrackNotes({
             });
             scheduledNotes.push({
                 id: projected.id,
-                pitch: projected.pitch,
+                pitch: projectPitch({
+                    pitch: projected.pitch,
+                    referenceBeat: projected.startBeat,
+                    targetBeat: projected.startBeat,
+                }),
                 velocity: projected.velocity,
                 startSamples: endpoints.startSamples,
                 endSamples: endpoints.endSamples,
