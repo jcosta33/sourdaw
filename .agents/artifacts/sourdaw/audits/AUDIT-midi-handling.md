@@ -81,7 +81,7 @@ Properties expected of first-class MIDI in a browser+native DAW, with authoritie
 | Live state / reset panic | `.../repositories/webMidi/lifecycle/resetMidiState.ts`, `destroyWebMidi.ts`, `routeYeastNoteOff.ts` |
 | Engine All-Notes-Off surfaces | `src/modules/AudioEngine/engine/{FermenterNode,GrandBouleNode,LevainNode,ToasterNode}.ts` |
 | Stop → engine note release | `src/modules/AudioEngine/repositories/createWebAudioEngine.ts:1049` `stopAllScheduled` |
-| Offline MIDI render (freeze/bounce) | `src/modules/Arrangement/useCases/freezeBounce/renderOffline.ts` |
+| Offline MIDI render (freeze/bounce) | `src/modules/Arrangement/useCases/freezeBounce/renderOffline.ts`, consumed by `freezeTrack.ts:63`, `bounceTrack.ts:52`, `bounceSelection.ts` |
 | Offline Yeast note projection | `src/modules/AudioEngine/useCases/offlineRender/projectOfflineYeastTrackNotes.ts` |
 | MIDI file export | `src/modules/MIDI/useCases/exportMidiFile.ts` |
 
@@ -113,27 +113,21 @@ Properties expected of first-class MIDI in a browser+native DAW, with authoritie
 ## Findings
 
 Severity: Blocker / Major / Minor / Polish. Remediation effort S/M/L.
-Counts: 0 Blocker · 4 Major · 3 Minor · 1 Polish.
+Counts: 2 Blocker · 2 Major · 3 Minor · 1 Polish.
 
-### MD-1 — Live input ignores the MIDI event timestamp; notes fire at handler-run time — Major (fix M)
+> **PR #693 review adjudication (both open questions closed):** MD-2 and MD-4
+> are escalated to **Blocker**. MPE is user-facing (PianoRoll toolbar + GrandBoule
+> panels), so a non-sounding MPE feature ships a visible dead control. And
+> `renderTrackOffline` output is **deliverable audio** — `freezeTrack.ts:63` and
+> `bounceTrack.ts:52` consume it, the frozen buffer plays live and bounced
+> buffers are cached as clips (`bounceTrack.ts:64-70`) that enter exports — so
+> the triangle-oscillator stub corrupts shipped audio, not just a preview.
 
-`parseWebMidiMessage` (`repositories/webMidi/messageHandlers.ts:39-84`) reads
-only `event.data` and **discards `event.timeStamp`**. Every live handler then
-reads `engine.context.currentTime` at the moment it runs
-(`handleWebMidiNoteOn.ts`: `const now = engine.context.currentTime`) and
-dispatches the voice immediately (non-Yeast Fermenter path:
-`fermenterControls.noteOn(note, velocity)` with no sampleFrame → "now").
+### MD-2 — MPE per-note expression never reaches any real instrument — Blocker (fix L)
 
-- Failure mode: live-note onset jitter equals main-thread event-loop + GC +
-  render jitter, not the sub-ms-class of golden-standard §2/§3. The high-res
-  arrival time the browser already provides is thrown away.
-- Firing condition: every live note, always; worst under UI load.
-- Blast radius: all live keyboard/controller performance and (via
-  `handleWebMidiNoteOff` wall-clock duration) recorded note lengths.
-
-### MD-2 — MPE per-note expression never reaches any real instrument — Major (blocker if MPE is advertised) (fix L)
-
-Per-note expression is captured but not sounded:
+Per-note expression is captured but not sounded, and the feature is
+**user-facing** — exposed through the PianoRoll toolbar and GrandBoule panels —
+so an MPE-enabled session presents live controls that make no sound.
 
 - Pitch Bend (`handleWebMidiPitchBend.ts`) applies only to `noteData.osc`
   (the fallback oscillator). Fermenter/GrandBoule/Levain/Toaster notes set
@@ -156,8 +150,56 @@ Per-note expression is captured but not sounded:
 
 Failure mode: `setMpeEnabled` / zone tracking (`channelToNote`) exist and route
 note-stealing correctly, but expression is inaudible on every shipping
-instrument. MPE is effectively non-functional. Blast radius: all MPE
-controllers; the feature reads as present but does nothing musical.
+instrument. MPE reads as present (visible toolbar/panel controls) yet does
+nothing musical. Blast radius: all MPE controllers and every user who toggles
+the visible MPE controls.
+
+### MD-4 — Offline freeze/bounce renders every MIDI instrument as a triangle oscillator, into deliverable audio — Blocker (fix L)
+
+`renderTrackOffline` (`freezeBounce/renderOffline.ts`) is the sole offline
+render for freeze, bounce-track and bounce-selection, and its output is
+**shipped audio**, not a preview:
+
+- `freezeTrack.ts:63` renders the track offline and installs the buffer as the
+  track's frozen source — the frozen buffer plays back live in place of the
+  instrument.
+- `bounceTrack.ts:52` renders offline, then caches the buffer as a real clip
+  (`bounceTrack.ts:64-70`, `cacheAudioBuffer` → `bouncedClip`); bounced clips
+  are project material that flows into exports.
+
+Its MIDI branch synthesises every scheduled note with a fixed placeholder voice
+(`renderOffline.ts:289-303`): `osc.type = 'triangle'`, a hard-coded
+5 ms/10 ms AD envelope, `velocity/127*0.3` gain — regardless of the track's
+actual device. No `createFermenterNode`/WASM instrument is instantiated in the
+offline path (confirmed: `OfflineAudioContext` there only drives oscillators
+and buffer sources).
+
+- Note *timing/pitch/probability* parity is good — offline reuses
+  `projectPpqEndpoints`, `projectOfflineYeastTrackNotes`,
+  `selectMidiEventProbability`, `projectPitch` (`renderOffline.ts:181-276`).
+- But *timbre* parity is absent: a frozen/bounced Fermenter/GrandBoule/Levain/
+  Grinder/Toaster track sounds nothing like live playback.
+
+Failure mode: freeze and bounce corrupt shipped audio for any MIDI instrument
+track — the deliverable is a triangle-oscillator caricature of the real synth.
+Blast radius: every freeze/bounce of a non-drum MIDI instrument track, and any
+export that includes bounced/frozen material.
+
+### MD-1 — Live input ignores the MIDI event timestamp; notes fire at handler-run time — Major (fix M)
+
+`parseWebMidiMessage` (`repositories/webMidi/messageHandlers.ts:39-84`) reads
+only `event.data` and **discards `event.timeStamp`**. Every live handler then
+reads `engine.context.currentTime` at the moment it runs
+(`handleWebMidiNoteOn.ts`: `const now = engine.context.currentTime`) and
+dispatches the voice immediately (non-Yeast Fermenter path:
+`fermenterControls.noteOn(note, velocity)` with no sampleFrame → "now").
+
+- Failure mode: live-note onset jitter equals main-thread event-loop + GC +
+  render jitter, not the sub-ms-class of golden-standard §2/§3. The high-res
+  arrival time the browser already provides is thrown away.
+- Firing condition: every live note, always; worst under UI load.
+- Blast radius: all live keyboard/controller performance and (via
+  `handleWebMidiNoteOff` wall-clock duration) recorded note lengths.
 
 ### MD-3 — Expression events race ahead of the async note-event tail; initial MPE expression is dropped — Major (fix M)
 
@@ -181,29 +223,6 @@ tail**.
 Failure mode: dropped opening expression + variable added latency. Firing
 condition: any MPE controller, or any Yeast-track live input under load.
 (Closing this to a measured number would need a controller/emulated-input run.)
-
-### MD-4 — Offline freeze/bounce renders every MIDI instrument as a triangle oscillator — Major (fix L)
-
-`renderTrackOffline` (`freezeBounce/renderOffline.ts`) is the sole offline
-render for freeze, bounce-track and bounce-selection (imported by
-`freezeTrack.ts`, `bounceTrack.ts`, `bounceSelection.ts`). Its MIDI branch
-synthesises every scheduled note with a fixed placeholder voice
-(`renderOffline.ts:289-303`): `osc.type = 'triangle'`, a hard-coded
-5 ms/10 ms AD envelope, `velocity/127*0.3` gain — regardless of the track's
-actual device. No `createFermenterNode`/WASM instrument is instantiated in the
-offline path (confirmed: `OfflineAudioContext` there only drives oscillators
-and buffer sources).
-
-- Note *timing/pitch/probability* parity is good — offline reuses
-  `projectPpqEndpoints`, `projectOfflineYeastTrackNotes`,
-  `selectMidiEventProbability`, `projectPitch` (`renderOffline.ts:181-276`).
-- But *timbre* parity is absent: a frozen/bounced Fermenter/GrandBoule/Levain/
-  Grinder/Toaster track sounds nothing like live playback.
-
-Failure mode: freeze and bounce produce audibly wrong audio for any MIDI
-instrument track. Blast radius: every freeze/bounce of a MIDI track; if bounce
-feeds export/delivery this is blocker-class. Firing condition: freeze or bounce
-any non-drum MIDI instrument track.
 
 ### MD-5 — Mid-playback tempo/loop edit cuts in-window MIDI notes without re-emitting them — Minor (fix M)
 
@@ -254,17 +273,22 @@ incorrectly.
 
 ## Remediation Roadmap
 
-Ordered by musical impact. (Roadmap only — no changes made.)
+Ordered by musical impact — the two Blockers lead. (Roadmap only — no changes
+made.)
 
-1. **MD-2 / MD-4 first-class instrument path (L).** Give the worklet
-   instruments a per-note expression surface (member-channel bend/pressure/CC74
-   → voice) and route both live (`handleWebMidi*`) and scheduled
-   (`scheduleMidiNotes` mpe branch) through it; render freeze/bounce through the
-   real instrument graph rather than the placeholder oscillator. These share the
-   root cause "the real synth voice is not addressable per-note off the audio
-   thread," so scope them together.
-2. **MD-1 / MD-3 live-timing correctness (M).** Thread `event.timeStamp` into a
-   short output-side schedule-ahead; put note and expression events on **one**
+1. **MD-2 / MD-4 — first-class real-synth voice path (L, Blockers).** Root cause
+   is shared: the real synth voice is not addressable per-note off the audio
+   thread, and the offline path never instantiates it.
+   - Give the worklet instruments a per-note expression surface (member-channel
+     bend/pressure/CC74 → voice) and route both live (`handleWebMidi*`) and
+     scheduled (`scheduleMidiNotes` mpe branch) through it — fixes MD-2.
+   - **Converge freeze/bounce onto the real-synth graph**, targeting
+     `AudioEngine/useCases/renderOffline.ts` (render through the actual
+     instrument nodes in an `OfflineAudioContext`) rather than improving the
+     `Arrangement/.../freezeBounce/renderOffline.ts` triangle stub — fixes MD-4.
+     Do not invest in the stub; replace it.
+2. **MD-1 / MD-3 — live-timing correctness (M).** Thread `event.timeStamp` into
+   a short output-side schedule-ahead; put note and expression events on **one**
    ordered queue (drop the split sync/async dispatch) so per-note expression
    cannot overtake its note-on.
 3. **MD-5 (M).** Give MIDI the same re-emit-on-edit treatment as audio clips
@@ -278,8 +302,9 @@ Ordered by musical impact. (Roadmap only — no changes made.)
   track asserts the value reaches the worklet control (fails today — MD-2).
 - `handleWebMidiMessage`: pitch-bend delivered immediately after a Yeast-track
   note-on asserts the bend is applied to that note (fails today — MD-3).
-- `renderTrackOffline`: a Fermenter MIDI track asserts the offline graph
-  instantiates the Fermenter node, not a bare oscillator (fails today — MD-4).
+- `renderTrackOffline` / new `AudioEngine/.../renderOffline`: a Fermenter MIDI
+  track asserts the offline graph instantiates the Fermenter node, not a bare
+  oscillator (fails today — MD-4).
 - `startPlayheadScheduler`: tempo edit mid-lookahead asserts a note in the
   window still sounds at the new rate (fails today — MD-5).
 
@@ -287,10 +312,11 @@ Ordered by musical impact. (Roadmap only — no changes made.)
 
 ## Open Questions
 
-- Is MPE advertised as a shipping feature? If yes, MD-2 escalates to Blocker.
-- Does bounce/export ever consume `renderTrackOffline` output as deliverable
-  audio? If yes, MD-4 escalates to Blocker.
+Both prior open questions were adjudicated in PR #693 review and folded in
+(MD-2 and MD-4 escalated to Blocker). Remaining:
+
 - MD-1/MD-3 severity in real jitter terms needs a controller-in-the-loop or
   emulated-`MIDIMessageEvent` run; this audit did not execute one.
-- Is there an intended future real-instrument offline render that supersedes the
-  triangle-oscillator path? None found in scope.
+- Whether the intended `AudioEngine/useCases/renderOffline.ts` convergence
+  target already has partial real-instrument offline scaffolding to build on, or
+  is net-new.
