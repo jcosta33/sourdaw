@@ -1,0 +1,32 @@
+src/modules/BrowserAi/stores/__tests__/modelRegistryStore.spec.ts
+  s_0d39f3a4a4357a::t_807f8faf5627cc 96-103
+src/modules/BrowserAi/repositories/__tests__/readModel.spec.ts
+  s_0d39f3a4a4357a::t_382ef2a0a2c366 26-46
+src/modules/BrowserAi/presentations/views/__tests__/AiRenderClipPreview.spec.tsx
+  s_0d39f3a4a4357a::t_f10d5f65475634 145-151,155-172,176-178
+  s_0d39f3a4a4357a::t_d40b09f73f2341 1
+  s_0d39f3a4a4357a::t_4215cda469780c 152-154,173-175
+src/modules/BrowserAi/repositories/__tests__/getStorageStatus.spec.ts
+  s_0d39f3a4a4357a::t_96c641a8a61ca8 30-37
+src/modules/BrowserAi/repositories/__tests__/writeRenderCache.spec.ts
+  s_0d39f3a4a4357a::t_7dda49890e61de 36-61
+src/modules/BrowserAi/repositories/__tests__/deleteModel.spec.ts
+  s_0d39f3a4a4357a::t_74eea9418b7636 47-50,54-56,58-64
+  s_0d39f3a4a4357a::t_12f9aa3fa557dc 51-53,57
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "448cc20995feb42d08fcc5b9641e3548097b2e2e",
+  "prompts": {},
+  "sessions": {
+    "s_0d39f3a4a4357a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "60da6a2e-7d79-4d98-8624-e993f5a9f94e",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}

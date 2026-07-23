@@ -1,0 +1,26 @@
+src/modules/BrowserAi/handlers/rave/__tests__/raveHandlers.spec.ts
+  s_0d39f3a4a4357a::t_8e1f4a97446fae 25-32
+src/modules/BrowserAi/repositories/__tests__/inferenceWorkerBridge.spec.ts
+  s_0d39f3a4a4357a::t_e493014737fed0 327-328
+  s_0d39f3a4a4357a::t_689856e3229666 324-326
+src/modules/BrowserAi/repositories/__tests__/capabilityDetector.spec.ts
+  s_0d39f3a4a4357a::t_f534a9e23f461c 150-185
+src/modules/BrowserAi/repositories/__tests__/checkModelCached.spec.ts
+  s_0d39f3a4a4357a::t_067e2823b5a465 51-58
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "e97ac5abf00c17eb269e592d8bba83f6c67051f3",
+  "prompts": {},
+  "sessions": {
+    "s_0d39f3a4a4357a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "60da6a2e-7d79-4d98-8624-e993f5a9f94e",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
