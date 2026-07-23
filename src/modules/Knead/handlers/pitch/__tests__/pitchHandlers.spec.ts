@@ -108,5 +108,11 @@ describe('Command Pitch Handlers', () => {
         expect(handleRestoreClipFileId.undoable).toBe(false);
         handleRestoreClipFileId.execute({ type: 'restoreClipFileId', payload: { clipId: 'c1', fileId: 'orig.wav' } });
         expect(updateClipInStore).toHaveBeenCalledWith('c1', expect.any(Function));
+        expect(
+            handleRestoreClipFileId.describe({
+                type: 'restoreClipFileId',
+                payload: { clipId: 'c1', fileId: 'orig.wav' },
+            })
+        ).toEqual({ label: 'Restore Clip Audio' });
     });
 });
