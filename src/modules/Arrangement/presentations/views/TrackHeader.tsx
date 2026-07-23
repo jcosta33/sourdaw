@@ -212,6 +212,8 @@ export const TrackHeader = ({ track, isSelected }: TrackHeaderProps): ReactEleme
                             <TooltipTrigger asChild>
                                 <button
                                     type="button"
+                                    aria-label="Toggle variation lanes"
+                                    aria-pressed={track.showVariationLanes}
                                     className={cn(
                                         'size-5 rounded flex items-center justify-center transition-colors',
                                         track.showVariationLanes

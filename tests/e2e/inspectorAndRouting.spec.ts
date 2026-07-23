@@ -9,56 +9,98 @@ async function add_track(page: import('@playwright/test').Page, kind: string): P
     await page.getByRole('option', { name: `Add ${kind} Track` }).click();
 }
 
-test.describe('Inspector — Automation Lane Management', () => {
+// ---------------------------------------------------------------------------
+// Inspector — Automation lane add/remove mutates the lane list.
+// ---------------------------------------------------------------------------
+
+test.describe('Inspector — Automation lane add/remove', () => {
     test.beforeEach(async ({ page }) => {
         await setupWorkspace(page);
         await launch_new_project(page);
         await add_track(page, 'MIDI');
     });
 
-    test('Can add and remove an automation lane', async ({ page }) => {
+    test('Adding a Gain automation lane creates a removable lane row', async ({ page }) => {
         const inspector = page.getByRole('complementary', { name: 'Inspector panel' });
+
+        // Before: empty state, no Remove-lane buttons.
+        await expect(inspector.getByText('No automation lanes yet')).toBeVisible();
+        expect(await inspector.getByRole('button', { name: 'Remove lane' }).count()).toBe(0);
+
         await inspector.getByRole('button', { name: /Add automation lane/i }).click();
-        await page.waitForTimeout(500);
+        // "Gain" appears under the Track section (first); a device Gain also exists, so take first.
+        await page.getByRole('menuitem', { name: 'Gain', exact: true }).first().click();
 
-        const remove_btn = inspector.getByRole('button', { name: /Remove.*lane/i });
-        if (await remove_btn.first().isVisible().catch(() => false)) {
-            await remove_btn.first().click();
-            await page.waitForTimeout(500);
-        }
+        // After: a lane row showing "Gain" exists and is removable.
+        await expect(inspector.getByText('Gain', { exact: true }).first()).toBeVisible();
+        const remove = inspector.getByRole('button', { name: 'Remove lane' });
+        await expect(remove).toBeVisible();
+
+        await remove.click();
+        // Back to empty state.
+        await expect(inspector.getByText('No automation lanes yet')).toBeVisible();
+        expect(await inspector.getByRole('button', { name: 'Remove lane' }).count()).toBe(0);
     });
 });
 
-test.describe('Inspector — Track Alternatives', () => {
+// ---------------------------------------------------------------------------
+// Inspector — Track alternatives: create increments the count; delete buttons
+// appear only once more than one alternative exists.
+// ---------------------------------------------------------------------------
+
+test.describe('Inspector — Track alternatives', () => {
     test.beforeEach(async ({ page }) => {
         await setupWorkspace(page);
         await launch_new_project(page);
         await add_track(page, 'MIDI');
     });
 
-    test('Can create and delete a track alternative', async ({ page }) => {
+    test('Creating an alternative adds a row and reveals delete buttons', async ({ page }) => {
         const inspector = page.getByRole('complementary', { name: 'Inspector panel' });
-        const create_alt = inspector.getByRole('button', { name: /Create new alternative/i });
-        if (await create_alt.isVisible().catch(() => false)) {
-            await create_alt.click();
-            await page.waitForTimeout(500);
 
-            const delete_alt = inspector.getByRole('button', { name: /Delete.*alternative/i });
-            if (await delete_alt.first().isVisible().catch(() => false)) {
-                await delete_alt.first().click();
-                await page.waitForTimeout(300);
-            }
-        }
-    });
+        // A fresh track starts with exactly one alternative → no delete buttons.
+        expect(await inspector.getByRole('button', { name: /^Delete / }).count()).toBe(0);
 
-    test('Can flatten comp from inspector', async ({ page }) => {
-        const inspector = page.getByRole('complementary', { name: 'Inspector panel' });
-        const flatten = inspector.getByRole('button', { name: /Flatten comp/i });
-        if (await flatten.isVisible().catch(() => false)) {
-            await expect(flatten).toBeVisible();
-        }
+        await inspector.getByRole('button', { name: 'Create new alternative' }).click();
+
+        // Now two alternatives exist → a delete button for each is visible.
+        const deletes = inspector.getByRole('button', { name: /^Delete / });
+        await expect(deletes.first()).toBeVisible();
+        expect(await deletes.count()).toBeGreaterThanOrEqual(2);
     });
 });
+
+// ---------------------------------------------------------------------------
+// Inspector — Signal Flow section expands to reveal the routing graph SVG.
+// ---------------------------------------------------------------------------
+
+test.describe('Inspector — Signal Flow section', () => {
+    test.beforeEach(async ({ page }) => {
+        await setupWorkspace(page);
+        await launch_from_template({ page, template_name: /EDM/i });
+        // Select the first track so the inspector renders track sections.
+        await page.getByRole('grid', { name: /Track list/i }).getByRole('row').first().click();
+    });
+
+    test('Signal Flow button toggles aria-expanded and reveals the routing graph', async ({ page }) => {
+        const inspector = page.getByRole('complementary', { name: 'Inspector panel' });
+        const signal_flow = inspector.getByRole('button', { name: 'Signal Flow' });
+        const graph = page.getByRole('img', { name: 'Signal routing graph' });
+
+        await expect(signal_flow).toHaveAttribute('aria-expanded', 'false');
+        await expect(graph).toHaveCount(0);
+
+        await signal_flow.click();
+
+        await expect(signal_flow).toHaveAttribute('aria-expanded', 'true');
+        await expect(graph).toBeVisible();
+    });
+});
+
+// ---------------------------------------------------------------------------
+// Inspector — Create Bus adds new rows to the track list grid.
+// (Each track occupies two grid rows: header + body.)
+// ---------------------------------------------------------------------------
 
 test.describe('Inspector — Sends & Bus Routing', () => {
     test.beforeEach(async ({ page }) => {
@@ -67,201 +109,208 @@ test.describe('Inspector — Sends & Bus Routing', () => {
         await add_track(page, 'Audio');
     });
 
-    test('Create Bus button creates a bus track', async ({ page }) => {
+    test('Create Bus button adds a bus track to the track list', async ({ page }) => {
         const inspector = page.getByRole('complementary', { name: 'Inspector panel' });
         const create_bus = inspector.getByRole('button', { name: 'Create Bus' });
-        if (await create_bus.isVisible().catch(() => false)) {
-            const track_list = page.getByRole('grid', { name: /Track list/i });
-            const rows_before = await track_list.getByRole('row').count();
-            await create_bus.click();
-            await page.waitForTimeout(500);
-            const rows_after = await track_list.getByRole('row').count();
-            expect(rows_after).toBeGreaterThanOrEqual(rows_before);
-        }
+
+        const track_list = page.getByRole('grid', { name: /Track list/i });
+        const rows_before = await track_list.getByRole('row').count();
+
+        await create_bus.click();
+
+        const rows_after = await track_list.getByRole('row').count();
+        expect(rows_after).toBeGreaterThan(rows_before);
+        // The new bus track is visible by name.
+        await expect(track_list.getByText('Bus 1', { exact: true }).first()).toBeVisible();
     });
 });
 
-test.describe('Arrangement Selector', () => {
+// ---------------------------------------------------------------------------
+// Clip context menu — verify the real menuitem names appear for a MIDI clip.
+// Clips are canvas-rendered; we assert menu content, not DOM clip elements.
+// ---------------------------------------------------------------------------
+
+test.describe('Clip context menu operations', () => {
     test.beforeEach(async ({ page }) => {
         await setupWorkspace(page);
         await launch_new_project(page);
         await add_track(page, 'MIDI');
-    });
-
-    test('Arrangement selector appears after creating second arrangement', async ({ page }) => {
-        await page.getByRole('button', { name: 'Project menu' }).click();
-        const menu = page.getByRole('menu', { name: 'Project menu' });
-
-        // Try to find "New Arrangement" or similar
-        const new_arr_item = menu.getByRole('menuitem', { name: /New Arrangement/i });
-        if (await new_arr_item.isVisible().catch(() => false)) {
-            await new_arr_item.click();
-            await page.waitForTimeout(500);
-
-            const selector = page.getByRole('button', { name: /Arrangement selector/i });
-            if (await selector.isVisible().catch(() => false)) {
-                await selector.click();
-                await page.waitForTimeout(300);
-                const arr_menu = page.getByRole('menu', { name: /Arrangement menu/i });
-                if (await arr_menu.isVisible().catch(() => false)) {
-                    const items = arr_menu.getByRole('menuitem');
-                    const count = await items.count();
-                    expect(count).toBeGreaterThan(0);
-                }
-            }
-        }
-        await page.keyboard.press('Escape');
-    });
-});
-
-test.describe('Clip Context Menu Operations', () => {
-    test.beforeEach(async ({ page }) => {
-        await setupWorkspace(page);
-        await launch_new_project(page);
-        await add_track(page, 'MIDI');
-        const timeline = page.getByLabel('Timeline editor surface');
-        await timeline.click({ button: 'right', position: { x: 200, y: 30 } });
+        const canvas = page.getByLabel('Timeline editor surface');
+        // Create a clip via the empty-surface menu at the first track lane (y=30).
+        await canvas.click({ button: 'right', position: { x: 200, y: 30 } });
         const add = page.getByRole('menuitem', { name: /Add Clip Here/i });
-        if (await add.isVisible().catch(() => false)) {
-            await add.click();
-            await page.waitForTimeout(500);
-        }
+        await add.click();
+        await page.waitForTimeout(500);
     });
 
-    test('Clip context menu shows audio-specific operations', async ({ page }) => {
-        const timeline = page.getByLabel('Timeline editor surface');
-        const box = await timeline.boundingBox();
-        if (!box) return;
-
-        await timeline.click({ position: { x: 200, y: box.height * 0.5 } });
-        await page.waitForTimeout(300);
-        await timeline.click({ button: 'right', position: { x: 200, y: box.height * 0.5 } });
+    test('MIDI clip context menu exposes the exact operation names', async ({ page }) => {
+        const canvas = page.getByLabel('Timeline editor surface');
+        // Right-click the clip at the same position to open the clip menu.
+        await canvas.click({ button: 'right', position: { x: 200, y: 30 } });
 
         const menu = page.getByRole('menu');
-        if (await menu.isVisible().catch(() => false)) {
-            const items = await menu.getByRole('menuitem').allInnerTexts();
-            const has_edit_op = items.some((t) => /normalize|reverse|strip|bounce|split|duplicate|copy|paste|delete|rename/i.test(t));
-            expect(has_edit_op).toBe(true);
-        }
+        await expect(menu).toBeVisible();
+        const names = await menu.getByRole('menuitem').allInnerTexts();
+        const flat = names.join(' | ');
+
+        // Core operations present for any clip.
+        expect(flat).toMatch(/Split at Cursor/);
+        expect(flat).toMatch(/Duplicate/);
+        expect(flat).toMatch(/Delete/);
+        expect(flat).toMatch(/Rename Clip/);
+        // MIDI-only operations.
+        expect(flat).toMatch(/Open Inline Editor|Arpeggiate/);
+    });
+
+    test('Rename Clip opens an inline editor that commits the new name', async ({ page }) => {
+        const canvas = page.getByLabel('Timeline editor surface');
+        await canvas.click({ button: 'right', position: { x: 200, y: 30 } });
+
+        await page.getByRole('menuitem', { name: /Rename Clip/i }).click();
+
+        const editor = page.getByRole('menu').getByRole('textbox');
+        await expect(editor).toBeVisible();
+        await editor.fill('Renamed Clip');
+        await editor.press('Enter');
+
+        // The inline editor closes on commit.
+        await expect(editor).toHaveCount(0);
     });
 });
 
-test.describe('MIDI Editor — Advanced Lane Controls', () => {
+// ---------------------------------------------------------------------------
+// MIDI editor — expression view toggle + fold-to-scale toggle (aria-pressed).
+// ---------------------------------------------------------------------------
+
+test.describe('MIDI editor — advanced lane controls', () => {
     test.beforeEach(async ({ page }) => {
         await setupWorkspace(page);
-        await launch_from_template({ page, template_name: /EDM/i });
+        await launch_new_project(page);
+        await add_track(page, 'MIDI');
+        // Create a MIDI clip then open the editor by double-clicking it (proven pattern).
+        const canvas = page.getByLabel('Timeline editor surface');
+        await canvas.click({ button: 'right', position: { x: 300, y: 30 } });
+        await page.getByRole('menuitem', { name: /Add Clip Here/i }).click();
+        await page.waitForTimeout(500);
+        await canvas.dblclick({ position: { x: 300, y: 30 } });
     });
 
-    test('MIDI clip opens editor with expression lane selector', async ({ page }) => {
-        const track_list = page.getByRole('grid', { name: /Track list/i });
-        const midi_rows = track_list.getByRole('row', { name: /MIDI/i });
-        if (await midi_rows.first().isVisible().catch(() => false)) {
-            const timeline = page.getByLabel('Timeline editor surface');
-            const box = await timeline.boundingBox();
-            if (box) {
-                await timeline.dblclick({ position: { x: box.width * 0.3, y: 30 } });
-                await page.waitForTimeout(1000);
+    test('Fold-to-scale toggle flips aria-pressed', async ({ page }) => {
+        const fold = page.getByRole('button', { name: 'Toggle fold to scale' });
+        await fold.waitFor({ state: 'visible' });
 
-                const expr_lane = page.getByRole('combobox', { name: /Active expression lane/i });
-                if (await expr_lane.isVisible().catch(() => false)) {
-                    await expect(expr_lane).toBeVisible();
-                }
-            }
-        }
+        const fold_before = await fold.getAttribute('aria-pressed');
+        await fold.click();
+        await expect(fold).not.toHaveAttribute('aria-pressed', fold_before ?? '');
     });
 
-    test('MIDI editor has scale constraint toggles', async ({ page }) => {
-        const fold = page.getByRole('button', { name: /Toggle fold to scale/i });
-        if (await fold.isVisible().catch(() => false)) {
-            await expect(fold).toBeVisible();
-        }
+    test('Expression view toggle reveals the Active expression lane combobox', async ({ page }) => {
+        const expr_toggle = page.getByRole('button', { name: /Toggle Expression View/i });
+        await expr_toggle.waitFor({ state: 'visible' });
+
+        // Before enabling, the lane combobox is absent.
+        const lane = page.getByRole('combobox', { name: /Active expression lane/i });
+        await expect(lane).toHaveCount(0);
+
+        await expr_toggle.click();
+
+        await expect(lane).toBeVisible();
+        // Verify the real lane options (velocity/pitch bend at least).
+        const opts = await lane.locator('option').allInnerTexts();
+        const joined = opts.join('|');
+        expect(joined).toMatch(/Velocity/);
+        expect(joined).toMatch(/Pitch Bend/);
     });
 });
 
-test.describe('Track Header — Input Monitoring', () => {
+// ---------------------------------------------------------------------------
+// Track header — Input monitoring cycles Auto → On → Off → Auto.
+// The label (not aria-pressed) is the observable state.
+// ---------------------------------------------------------------------------
+
+test.describe('Track header — Input monitoring cycle', () => {
     test.beforeEach(async ({ page }) => {
         await setupWorkspace(page);
         await launch_new_project(page);
         await add_track(page, 'Audio');
     });
 
-    test('Input monitoring button cycles modes', async ({ page }) => {
+    test('Input monitoring cycles Auto → On → Off → Auto via aria-label', async ({ page }) => {
         const track_list = page.getByRole('grid', { name: /Track list/i });
-        const monitor = track_list.getByRole('button', { name: /Input monitoring/i });
-        if (await monitor.first().isVisible().catch(() => false)) {
-            const label_before = await monitor.first().getAttribute('aria-label');
-            await monitor.first().click();
-            await page.waitForTimeout(300);
-            const label_after = await monitor.first().getAttribute('aria-label');
-            // Label should change (Auto → In → Auto, or similar cycle)
-            if (label_before && label_after) {
-                expect(typeof label_after).toBe('string');
-            }
-        }
+        const monitor = track_list.getByRole('button', { name: /Input monitoring/i }).first();
+
+        await expect(monitor).toHaveAccessibleName(/Input monitoring: Auto/i);
+
+        await monitor.click();
+        await expect(monitor).toHaveAccessibleName(/Input monitoring: On/i);
+
+        await monitor.click();
+        await expect(monitor).toHaveAccessibleName(/Input monitoring: Off/i);
+
+        await monitor.click();
+        await expect(monitor).toHaveAccessibleName(/Input monitoring: Auto/i);
     });
 });
 
-test.describe('Routing & Signal Flow', () => {
+// ---------------------------------------------------------------------------
+// Routing tab — toggle a route cell and observe the Connect/Disconnect flip.
+// ---------------------------------------------------------------------------
+
+test.describe('Routing matrix — route toggle', () => {
     test.beforeEach(async ({ page }) => {
         await setupWorkspace(page);
         await launch_from_template({ page, template_name: /EDM/i });
-    });
-
-    test('Routing tab shows content when opened', async ({ page }) => {
         await page.getByRole('button', { name: 'Toggle bottom dock' }).click();
         await page.locator('#bottom-dock-tab-routing').click();
-        const panel = page.locator('#bottom-dock-tabpanel');
-        await expect(panel).toBeVisible();
-        await expect(panel.getByRole('button').first()).toBeVisible({ timeout: 5000 });
     });
 
-    test('Signal Flow button opens from inspector', async ({ page }) => {
-        const track_list = page.getByRole('grid', { name: /Track list/i });
-        await track_list.getByRole('row').first().click();
-        await page.waitForTimeout(300);
-        const inspector = page.getByRole('complementary', { name: 'Inspector panel' });
-        const signal_flow = inspector.getByRole('button', { name: 'Signal Flow' });
-        if (await signal_flow.isVisible().catch(() => false)) {
-            await signal_flow.click();
-            await page.waitForTimeout(500);
-        }
+    test('Clicking a routing cell flips its aria-label Connect → Disconnect', async ({ page }) => {
+        // The first Connect cell toggles a route between a source and a destination.
+        const connect_cell = page.getByRole('button', { name: /^Connect / }).first();
+        await expect(connect_cell).toBeVisible();
+
+        const label_before = await connect_cell.getAttribute('aria-label');
+        await connect_cell.click();
+
+        // After connecting, the same cell is now labelled Disconnect.
+        const disconnect_cell = page.getByRole('button', { name: /^Disconnect / }).first();
+        await expect(disconnect_cell).toBeVisible();
+        const label_after = await disconnect_cell.getAttribute('aria-label');
+
+        expect(label_before).toMatch(/^Connect /);
+        expect(label_after).toMatch(/^Disconnect /);
     });
 });
 
-test.describe('Master Track Interactions', () => {
+// ---------------------------------------------------------------------------
+// Chord track (Pop Song template) — clear empties the chord list and hides
+// the clear button (gated on events.length > 0).
+// ---------------------------------------------------------------------------
+
+test.describe('Chord track — add and clear', () => {
     test.beforeEach(async ({ page }) => {
-        await setupWorkspace(page);
-        await launch_new_project(page);
-    });
-
-    test('Master track spectrum button is clickable', async ({ page }) => {
-        const master_btn = page.getByRole('button', { name: /Master Track Spectrum/i });
-        if (await master_btn.isVisible().catch(() => false)) {
-            await master_btn.click();
-            await page.waitForTimeout(500);
-        }
-    });
-});
-
-test.describe('Chord Track — Add and Clear', () => {
-    test('Pop Song template chord track has add and clear buttons', async ({ page }) => {
         test.setTimeout(60000);
         await setupWorkspace(page);
-        const launch_screen = page.getByLabel('Sourdaw — start a project');
-        await launch_screen.waitFor({ state: 'visible' });
+        await page.getByLabel('Sourdaw — start a project').waitFor({ state: 'visible' });
         await page.locator('#launch-from-template').click();
         await page.getByRole('button', { name: 'Pop Song' }).click();
         await page.getByRole('group', { name: 'Playback controls' }).waitFor({ state: 'visible', timeout: 10000 });
+    });
 
+    test('Clear all chords removes every chord block and hides itself', async ({ page }) => {
         const chord_track = page.getByRole('region', { name: 'Chord track' });
-        if (await chord_track.isVisible().catch(() => false)) {
-            const add_chord = chord_track.getByRole('button', { name: /Add chord event/i });
-            await expect(add_chord).toBeVisible();
+        await expect(chord_track).toBeVisible();
 
-            const clear = chord_track.getByRole('button', { name: /Clear all chords/i });
-            if (await clear.isVisible().catch(() => false)) {
-                await expect(clear).toBeVisible();
-            }
-        }
+        // Pop Song seeds chords → chord blocks exist.
+        const chord_blocks = chord_track.getByRole('button', { name: /chord at beat/i });
+        const initial = await chord_blocks.count();
+        expect(initial).toBeGreaterThan(0);
+
+        const clear = chord_track.getByRole('button', { name: 'Clear all chords' });
+        await clear.click();
+
+        // All chord blocks gone, and the Clear button hides itself (gated on events>0).
+        await expect(chord_blocks).toHaveCount(0);
+        await expect(clear).toHaveCount(0);
     });
 });
