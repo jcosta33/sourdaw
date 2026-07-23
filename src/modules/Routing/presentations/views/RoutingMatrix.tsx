@@ -1,11 +1,26 @@
 /**
  * Mixer Routing Matrix component.
  *
- * Grid-based view over the real routing read-model: rows are source tracks,
- * bus/folder columns are post-fader sends (`track.sends`), and the Master
- * column reflects each track's primary output (`track.outputId`). Cells write
- * through the Arrangement send/output use cases — the same CRDT-backed path the
- * mixer strips use — so every toggle changes the audio graph and undo history.
+ * Grid over the real routing read-model. Rows are signal sources (audio, MIDI,
+ * and bus tracks — buses both send and output); columns are the bus tracks plus
+ * the Master output. Every cell reflects and writes real routing truth through
+ * the same CRDT-backed Arrangement use cases the mixer strips use:
+ *
+ * - A bus column shows the source's PRIMARY OUTPUT edge (`track.outputId`) when
+ *   the output routes there — rendered distinctly from a send and read-only, so
+ *   the matrix never stacks a duplicate send on top of an existing output path
+ *   (output routing is changed in the mixer I/O section). Otherwise the cell is
+ *   a post-fader SEND toggle: connected when an active send (`level > 0`) exists.
+ * - The Master column shows the output edge to master; clicking a non-master
+ *   track routes its output back to master, and the cell is the current-output
+ *   indicator (disabled) once it already outputs there.
+ *
+ * Folders are excluded from both axes: the rest of the app restricts routing
+ * endpoints to `kind === 'bus'`, and a folder target would manufacture a phantom
+ * audible bus strip. Sends are created at unit level — there is no mixer
+ * send-creation default (the Sends strip tunes from a 0 slider), so the matrix,
+ * a binary on/off router, connects at full and delegates level tuning to the
+ * mixer; disconnecting removes the send outright (reconnecting starts fresh).
  */
 import { type ReactElement } from 'react';
 
@@ -18,38 +33,102 @@ import { useTracks } from '../hooks/useTracks';
 
 const MASTER_ID = 'master';
 
+// A matrix "connect" is a binary route-on: there is no mixer send-creation
+// default (the Sends strip tunes from a 0 slider), so the matrix routes at full
+// level and leaves level tuning to the mixer.
+const NEW_SEND_LEVEL = 1;
+
 type Destination = {
     id: string;
     name: string;
     kind: Track['kind'];
 };
 
-function isSourceSentToBus(source: Track, busId: string): boolean {
-    return source.sends.some((send) => send.busId === busId);
+type CellKind = 'output' | 'send-on' | 'send-off';
+
+type CellDescriptor = {
+    kind: CellKind;
+    ariaLabel: string;
+    title: string;
+    disabled: boolean;
+    onClick: (() => void) | undefined;
+};
+
+function findActiveSendLevel(source: Track, busId: string): number | null {
+    const send = source.sends.find((state) => state.busId === busId);
+    if (!send || send.level <= 0) {
+        return null;
+    }
+    return send.level;
 }
 
 export const RoutingMatrix = (): ReactElement => {
     const { tracks } = useTracks();
 
-    const buses = tracks.filter((track: Track) => track.kind === 'bus' || track.kind === 'folder');
-    const sources = tracks.filter((track: Track) => track.kind !== 'bus' && track.kind !== 'folder');
+    const busTracks = tracks.filter((track: Track) => track.kind === 'bus');
+    // Buses are sources too — they carry sends and an output. Folders/master are
+    // never sources; folders never appear as endpoints anywhere in the app.
+    const sources = tracks.filter(
+        (track: Track) => track.kind === 'audio' || track.kind === 'midi' || track.kind === 'bus'
+    );
 
-    // Destination columns: buses/folders (send targets) plus the Master output.
-    const destinations: Destination[] = [...buses, { id: MASTER_ID, name: 'Master', kind: 'master' }];
+    const destinations: Destination[] = [...busTracks, { id: MASTER_ID, name: 'Master', kind: 'master' }];
 
-    const toggleSend = (source: Track, busId: string, connected: boolean): void => {
-        if (connected) {
-            removeSend(source.id, busId);
-            return;
+    const describeCell = (src: Track, dest: Destination): CellDescriptor => {
+        const isMaster = dest.id === MASTER_ID;
+        const routesOutputHere = src.outputId === dest.id;
+
+        if (isMaster) {
+            if (routesOutputHere) {
+                return {
+                    kind: 'output',
+                    ariaLabel: `${src.name} output routed to Master`,
+                    title: 'Track output — already routed to Master',
+                    disabled: true,
+                    onClick: undefined,
+                };
+            }
+            return {
+                kind: 'send-off',
+                ariaLabel: `Route ${src.name} output to Master`,
+                title: `Route ${src.name} output to Master`,
+                disabled: false,
+                onClick: () => setTrackOutput(src.id, MASTER_ID),
+            };
         }
-        setSend(source.id, busId, 1);
-    };
 
-    const routeOutputToMaster = (source: Track, connected: boolean): void => {
-        if (connected) {
-            return;
+        if (routesOutputHere) {
+            // The track's primary output already lands on this bus. Rendering a
+            // send toggle here would let a click stack a second, duplicate signal
+            // path onto the same bus, so the cell is a read-only output marker;
+            // output routing is changed in the mixer I/O section.
+            return {
+                kind: 'output',
+                ariaLabel: `${src.name} output routed to ${dest.name}`,
+                title: `Track output — routes to ${dest.name} (change in the mixer I/O section)`,
+                disabled: true,
+                onClick: undefined,
+            };
         }
-        setTrackOutput(source.id, MASTER_ID);
+
+        const sendLevel = findActiveSendLevel(src, dest.id);
+        if (sendLevel !== null) {
+            return {
+                kind: 'send-on',
+                ariaLabel: `Disconnect send ${src.name} → ${dest.name}`,
+                title: `Send ${(sendLevel * 100).toFixed(0)}% — click to remove`,
+                disabled: false,
+                onClick: () => removeSend(src.id, dest.id),
+            };
+        }
+
+        return {
+            kind: 'send-off',
+            ariaLabel: `Connect send ${src.name} → ${dest.name}`,
+            title: `Send ${src.name} → ${dest.name}`,
+            disabled: false,
+            onClick: () => setSend(src.id, dest.id, NEW_SEND_LEVEL),
+        };
     };
 
     return (
@@ -58,7 +137,7 @@ export const RoutingMatrix = (): ReactElement => {
             className="h-full"
             footer={
                 <div className="text-[10px] text-muted-foreground">
-                    Click a bus cell to toggle a send; the Master column shows each track&rsquo;s output.
+                    Bus cells toggle sends; the cyan glyph marks a track&rsquo;s output routing.
                 </div>
             }
         >
@@ -94,8 +173,7 @@ export const RoutingMatrix = (): ReactElement => {
                                     {src.name}
                                 </td>
                                 {destinations.map((dest) => {
-                                    const isSelf = src.id === dest.id;
-                                    if (isSelf) {
+                                    if (src.id === dest.id) {
                                         return (
                                             <td key={dest.id} className="p-0.5 text-center border-l border-border/10">
                                                 <span className="text-muted-foreground/30">—</span>
@@ -103,45 +181,37 @@ export const RoutingMatrix = (): ReactElement => {
                                         );
                                     }
 
-                                    const isMaster = dest.id === MASTER_ID;
-                                    const isConnected = isMaster
-                                        ? src.outputId === MASTER_ID
-                                        : isSourceSentToBus(src, dest.id);
-
-                                    let ariaLabel: string;
-                                    if (isMaster) {
-                                        ariaLabel = isConnected
-                                            ? `${src.name} output routed to Master`
-                                            : `Route ${src.name} output to Master`;
-                                    } else {
-                                        ariaLabel = `${isConnected ? 'Disconnect' : 'Connect'} ${src.name} → ${dest.name}`;
-                                    }
-
-                                    const handleClick = (): void => {
-                                        if (isMaster) {
-                                            routeOutputToMaster(src, isConnected);
-                                            return;
-                                        }
-                                        toggleSend(src, dest.id, isConnected);
-                                    };
+                                    const cell = describeCell(src, dest);
+                                    const isOutput = cell.kind === 'output';
 
                                     return (
                                         <td key={dest.id} className="p-0.5 text-center border-l border-border/10">
                                             <button
                                                 type="button"
-                                                disabled={isMaster && isConnected}
+                                                disabled={cell.disabled}
                                                 className={cn(
                                                     'size-4 rounded-sm border transition-colors',
-                                                    isConnected
+                                                    isOutput
+                                                        ? 'bg-[var(--color-state-linked)]/40 border-[var(--color-state-linked)]/60'
+                                                        : null,
+                                                    cell.kind === 'send-on'
                                                         ? 'bg-[var(--color-state-success)]/40 border-[var(--color-state-success)]/60 hover:bg-[var(--color-state-success)]/50'
-                                                        : 'bg-muted/10 border-border/20 hover:bg-muted/30',
-                                                    isMaster && isConnected ? 'cursor-default' : null
+                                                        : null,
+                                                    cell.kind === 'send-off'
+                                                        ? 'bg-muted/10 border-border/20 hover:bg-muted/30'
+                                                        : null,
+                                                    cell.disabled ? 'cursor-default' : null
                                                 )}
-                                                onClick={handleClick}
-                                                aria-label={ariaLabel}
-                                                title={`${src.name} → ${dest.name}`}
+                                                onClick={cell.onClick}
+                                                aria-label={cell.ariaLabel}
+                                                title={cell.title}
                                             >
-                                                {isConnected ? (
+                                                {isOutput ? (
+                                                    <span className="text-[7px] text-[var(--color-state-linked)]">
+                                                        ▸
+                                                    </span>
+                                                ) : null}
+                                                {cell.kind === 'send-on' ? (
                                                     <span className="text-[6px] text-[var(--color-state-success)]">
                                                         ●
                                                     </span>
