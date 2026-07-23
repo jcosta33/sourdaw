@@ -73,14 +73,9 @@ export class Harmonizer extends BaseMidiProcessor {
 
                     harmonyNotes.push(harmonyNote);
                     const vel = Math.max(1, Math.min(127, event.kind.velocity + voice.velocityOffset));
-                    let durationSamples: number | undefined;
-                    if (event.durationSamples !== undefined) {
-                        durationSamples = Math.max(0, event.durationSamples - voice.timeOffsetSamples);
-                    }
 
                     const generated: MidiEvent = {
                         timeSamples: event.timeSamples + voice.timeOffsetSamples,
-                        durationSamples,
                         trackId: event.trackId,
                         kind: { type: 'noteOn', channel: event.kind.channel, note: harmonyNote, velocity: vel },
                     };

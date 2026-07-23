@@ -1,7 +1,6 @@
 import { describe, it, expect } from 'vitest';
 
 import { type MidiEvent, type TransportInfo } from '../../../models/MidiEvent';
-import { ChordGenerator } from '../ChordGenerator';
 import { GrooveModule } from '../GrooveModule';
 
 const transport: TransportInfo = {
@@ -113,8 +112,7 @@ describe('GrooveModule', () => {
         expect(output.map((event) => event.timePpq)).toEqual([0.375, 1.125]);
     });
 
-    it('repairs a generated chord lifetime across blocks and an instant tempo change', () => {
-        const chord = new ChordGenerator('tempo-chord');
+    it('repairs a sample-domain lifetime across blocks and an instant tempo change', () => {
         const groove = new GrooveModule('tempo-crossing');
         groove.setParam('groove_step_beats', 0.5);
         groove.setParam('groove_slot_count', 16);
@@ -135,21 +133,18 @@ describe('GrooveModule', () => {
             },
         };
 
-        const generatedNoteOns: MidiEvent[] = [];
         const sourceNoteOn = note_on(1_000_000, 60);
         sourceNoteOn.durationSamples = 24_000;
-        chord.processMidi([sourceNoteOn], generatedNoteOns, tempoMapTransport);
-        Object.assign(generatedNoteOns[0]!, { timePpq: 99, durationPpq: 0.5 });
-        groove.processMidi(generatedNoteOns, output, tempoMapTransport);
+        Object.assign(sourceNoteOn, { timePpq: 99, durationPpq: 0.5 });
+        groove.processMidi([sourceNoteOn], output, tempoMapTransport);
 
         expect(output[0]?.timeSamples).toBe(988_000);
         expect(output[0]?.durationSamples).toBe(30_000);
 
-        const generatedNoteOffs: MidiEvent[] = [];
-        chord.processMidi([note_off(1_024_000, 60)], generatedNoteOffs, tempoMapTransport);
-        generatedNoteOffs[0]!.timePpq = 99;
-        groove.processMidi(generatedNoteOffs, output, tempoMapTransport);
-        expect(output[3]!.timeSamples - output[0]!.timeSamples).toBe(output[0]?.durationSamples);
+        const sourceNoteOff = note_off(1_024_000, 60);
+        sourceNoteOff.timePpq = 99;
+        groove.processMidi([sourceNoteOff], output, tempoMapTransport);
+        expect(output[1]!.timeSamples - output[0]!.timeSamples).toBe(output[0]?.durationSamples);
     });
 
     it('should clear queued note-off timing state on reset', () => {
