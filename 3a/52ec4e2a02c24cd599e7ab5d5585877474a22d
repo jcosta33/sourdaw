@@ -1,0 +1,19 @@
+src/modules/Proof/presentations/components/__tests__/ProofLimiterSection.spec.tsx
+  s_0d39f3a4a4357a::t_ebe704eecf273a 1,4,7-15,63-181
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "3a52ec4e2a02c24cd599e7ab5d5585877474a22d",
+  "prompts": {},
+  "sessions": {
+    "s_0d39f3a4a4357a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "60da6a2e-7d79-4d98-8624-e993f5a9f94e",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
