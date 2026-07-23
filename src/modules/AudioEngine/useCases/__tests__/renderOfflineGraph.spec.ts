@@ -150,6 +150,7 @@ function makeContext(overrides?: Partial<OfflineRenderContext>): OfflineRenderCo
         tailSeconds: 0,
         projectMidiEvents: ({ events }) => events,
         selectMidiEventProbability: () => true,
+        projectChordPitch: ({ pitch }) => pitch,
         projectPpqEndpoints: ({ startPpq, endPpq, sampleRate }) => ({
             startSamples: startPpq * sampleRate,
             endSamples: endPpq * sampleRate,

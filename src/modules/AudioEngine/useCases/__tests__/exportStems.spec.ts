@@ -126,6 +126,7 @@ function createRenderContext(tracks: unknown[] | null) {
         tailSeconds: 0,
         projectMidiEvents: vi.fn(),
         selectMidiEventProbability: vi.fn(() => true),
+        projectChordPitch: ({ pitch }: { pitch: number }) => pitch,
         projectPpqEndpoints: vi.fn(),
         processYeastMidi: null,
     };
@@ -141,6 +142,10 @@ describe('exportStems', () => {
                 ({ events }) =>
                     events,
             selectProbability: () => true,
+            createChordPitchProjector:
+                () =>
+                ({ pitch }) =>
+                    pitch,
         });
         configureOfflinePpqEndpointProjection({
             project: ({ startPpq, endPpq, sampleRate }) => ({
@@ -229,8 +234,13 @@ describe('exportStems', () => {
 
         expect(OfflineContext).toHaveBeenCalledTimes(1);
         expect(offlineRenderMocks.createOfflineTrackStrip).toHaveBeenCalledTimes(2);
-        expect(offlineRenderMocks.createOfflineTrackStrip).toHaveBeenCalledWith(expect.anything(), toasterFolder);
-        expect(offlineRenderMocks.createOfflineTrackStrip).toHaveBeenCalledWith(expect.anything(), padChild);
+        // Stem path opts out of baked-in mute (M-037).
+        expect(offlineRenderMocks.createOfflineTrackStrip).toHaveBeenCalledWith(expect.anything(), toasterFolder, {
+            honorMuted: false,
+        });
+        expect(offlineRenderMocks.createOfflineTrackStrip).toHaveBeenCalledWith(expect.anything(), padChild, {
+            honorMuted: false,
+        });
         expect(offlineRenderMocks.connectOfflineToasterPadRoutes).toHaveBeenCalledWith(
             expect.objectContaining({ tracks: groupedTracks })
         );
@@ -274,7 +284,9 @@ describe('exportStems', () => {
         const stems = await exportStems(4);
 
         expect(offlineRenderMocks.createOfflineTrackStrip).toHaveBeenCalledTimes(1);
-        expect(offlineRenderMocks.createOfflineTrackStrip).toHaveBeenCalledWith(expect.anything(), child);
+        expect(offlineRenderMocks.createOfflineTrackStrip).toHaveBeenCalledWith(expect.anything(), child, {
+            honorMuted: false,
+        });
         expect(offlineRenderMocks.scheduleTrackClips).toHaveBeenCalledWith(
             expect.objectContaining({ track: child, allTracks: [child] })
         );
@@ -409,8 +421,12 @@ describe('exportStems', () => {
 
         await exportStems(4);
 
-        expect(offlineRenderMocks.createOfflineTrackStrip).not.toHaveBeenCalledWith(expect.anything(), disabledPad);
-        expect(offlineRenderMocks.createOfflineTrackStrip).toHaveBeenCalledWith(expect.anything(), activePad);
+        expect(offlineRenderMocks.createOfflineTrackStrip).not.toHaveBeenCalledWith(expect.anything(), disabledPad, {
+            honorMuted: false,
+        });
+        expect(offlineRenderMocks.createOfflineTrackStrip).toHaveBeenCalledWith(expect.anything(), activePad, {
+            honorMuted: false,
+        });
         expect(offlineRenderMocks.connectOfflineToasterPadRoutes).toHaveBeenCalledWith(
             expect.objectContaining({ tracks: topology })
         );

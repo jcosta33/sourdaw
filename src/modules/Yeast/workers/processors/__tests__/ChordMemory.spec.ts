@@ -70,6 +70,15 @@ describe('ChordMemory', () => {
         cm.processMidi([note_on(0, 60), note_on(0, 64), note_on(0, 67)], out, transport);
         cm.processMidi([note_off(100, 60), note_off(100, 64), note_off(100, 67)], out, transport);
         expect(cm.getStoredCount()).toBeGreaterThan(0);
+
+        out.length = 0;
+        cm.processMidi([{ ...note_on(200, 60), durationSamples: 100, noteInstanceId: 'source-a' }], out, transport);
+        const generatedOns = out.filter((event) => event.kind.type === 'noteOn');
+        cm.processMidi([{ ...note_off(300, 60), noteInstanceId: 'source-a' }], out, transport);
+        expect(generatedOns.every((event) => event.durationSamples === 100 && event.noteInstanceId)).toBe(true);
+        expect(out.filter((event) => event.kind.type === 'noteOff').map((event) => event.noteInstanceId)).toEqual(
+            generatedOns.map((event) => event.noteInstanceId)
+        );
     });
 
     it('reset clears learn mode', () => {

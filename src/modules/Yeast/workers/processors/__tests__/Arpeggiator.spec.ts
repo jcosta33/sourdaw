@@ -267,6 +267,90 @@ describe('Arpeggiator', () => {
         expect(notes[0]?.kind.note).toBe(74); // 60 + 12 (octave) + 2 (semitone)
     });
 
+    it('publishes one identified tied lifetime before its later release', () => {
+        transport.sampleRate = 48_000;
+        arp.setParam('mode', 7);
+        arp.setPattern([
+            defaultStep(),
+            { ...defaultStep(), stepType: 'tie' },
+            { ...defaultStep(), stepType: 'tie' },
+            { ...defaultStep(), active: false },
+        ]);
+
+        const firstBlock: MidiEvent[] = [];
+        arp.processMidi(
+            [{ timeSamples: 0, kind: { type: 'noteOn', channel: 0, note: 60, velocity: 100 } }],
+            firstBlock,
+            { ...transport, blockStartSamples: 0, blockEndSamples: 12_001 }
+        );
+        const noteOn = firstBlock.find(isNoteOn);
+        expect(noteOn).toEqual(expect.objectContaining({ durationSamples: 33_600 }));
+
+        arp.processMidi([{ timeSamples: 12_001, kind: { type: 'noteOff', channel: 0, note: 60 } }], [], {
+            ...transport,
+            blockStartSamples: 12_001,
+            blockEndSamples: 24_001,
+        });
+        const finalBlock: MidiEvent[] = [];
+        arp.processMidi([], finalBlock, { ...transport, blockStartSamples: 24_001, blockEndSamples: 45_601 });
+        expect(finalBlock).toEqual([
+            expect.objectContaining({ timeSamples: 45_600, noteInstanceId: noteOn?.noteInstanceId }),
+        ]);
+    });
+
+    it.each([
+        ['identified reverse release', 'source-first', 'source-second'],
+        ['legacy FIFO', undefined, undefined],
+    ])('keeps one overlapping same-pitch voice held after the first release (%s)', (_label, firstId, secondId) => {
+        arp.setParam('rate_denom', 1024);
+        const withIdentity = (noteInstanceId?: string) => (noteInstanceId ? { noteInstanceId } : {});
+        const firstBlock: MidiEvent[] = [];
+        arp.processMidi(
+            [
+                {
+                    timeSamples: 0,
+                    ...withIdentity(firstId),
+                    kind: { type: 'noteOn', channel: 0, note: 60, velocity: 100 },
+                },
+                {
+                    timeSamples: 0,
+                    ...withIdentity(secondId),
+                    kind: { type: 'noteOn', channel: 0, note: 60, velocity: 100 },
+                },
+            ],
+            firstBlock,
+            { ...transport, blockStartSamples: 0, blockEndSamples: 128 }
+        );
+
+        const afterSecondRelease: MidiEvent[] = [];
+        arp.processMidi(
+            [
+                {
+                    timeSamples: 128,
+                    ...withIdentity(secondId),
+                    kind: { type: 'noteOff', channel: 0, note: 60 },
+                },
+            ],
+            afterSecondRelease,
+            { ...transport, blockStartSamples: 128, blockEndSamples: 256 }
+        );
+        expect(afterSecondRelease.some(isNoteOn)).toBe(true);
+
+        const afterFirstRelease: MidiEvent[] = [];
+        arp.processMidi(
+            [
+                {
+                    timeSamples: 256,
+                    ...withIdentity(firstId),
+                    kind: { type: 'noteOff', channel: 0, note: 60 },
+                },
+            ],
+            afterFirstRelease,
+            { ...transport, blockStartSamples: 256, blockEndSamples: 384 }
+        );
+        expect(afterFirstRelease.some(isNoteOn)).toBe(false);
+    });
+
     it('selectStepNotes covers down, upDown, downUp, and order modes via reflectedIndex', () => {
         const input: MidiEvent[] = [
             { timeSamples: 0, kind: { type: 'noteOn', channel: 0, note: 60, velocity: 100 } },

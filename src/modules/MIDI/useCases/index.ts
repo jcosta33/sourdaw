@@ -11,6 +11,7 @@ export { CHORD_TYPE_KEYS } from './chordStamps/CHORD_TYPE_KEYS';
 // ── Chord Track ───────────────────────────────────────────────────────────────
 export { addChordEvent } from './chordTrack/addChordEvent';
 export { clearChordTrack } from './chordTrack/clearChordTrack';
+export { createChordPitchProjector } from './chordTrack/createChordPitchProjector';
 export { getChordAtBeat } from './chordTrack/getChordAtBeat';
 export { moveChordEvent } from './chordTrack/moveChordEvent';
 export { removeChordEvent } from './chordTrack/removeChordEvent';

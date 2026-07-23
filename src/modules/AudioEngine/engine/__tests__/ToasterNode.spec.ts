@@ -63,6 +63,7 @@ describe('createToasterNode', () => {
     function makeCtx(state: 'running' | 'suspended' = 'running') {
         class FakeAudioContext {
             state = state;
+            sampleRate = 48_000;
             resume = resume;
             createGain() {
                 const gainNode = createMockAudioNode('gain');
@@ -167,6 +168,34 @@ describe('createToasterNode', () => {
         expect(postMessage).toHaveBeenCalledWith({ type: 'param', name: 'drive', value: 0.6 });
     });
 
+    it('publishes bounded schedules only for audible Toaster mix controls', async () => {
+        const node = await createToasterNode(makeCtx());
+        const segments = [{ startFrame: 0, endFrame: 128, startValue: 0.2, endValue: 0.8 }];
+        postMessage.mockClear();
+
+        expect(node.acceptsScheduledParam('masterGain')).toBe(true);
+        expect(node.acceptsScheduledParam('reverbMix')).toBe(true);
+        expect(node.acceptsScheduledParam('delayMix')).toBe(true);
+        expect(node.acceptsScheduledParam('swing')).toBe(false);
+        node.scheduleParam('reverbMix', segments);
+        node.scheduleParam('masterGain', segments);
+        node.scheduleParam('swing', segments);
+        node.scheduleParam('delayMix', [
+            { startFrame: 0, endFrame: 64, startValue: 0, endValue: 0.5 },
+            { startFrame: 65, endFrame: 128, startValue: 0.5, endValue: 1 },
+        ]);
+
+        expect(postMessage).toHaveBeenNthCalledWith(1, { type: 'paramAutomation', paramId: 1, segments });
+        expect(postMessage).toHaveBeenNthCalledWith(2, { type: 'paramAutomation', paramId: 0, segments });
+        expect(postMessage).toHaveBeenCalledTimes(2);
+        const [, ...padOutputs] = padGainNodes;
+        expect(padOutputs.every((gainNode) => gainNode.gain.cancelScheduledValues.mock.calls.length === 0)).toBe(true);
+        expect(padOutputs.every((gainNode) => gainNode.gain.setValueAtTime.mock.calls.length === 0)).toBe(true);
+        expect(padOutputs.every((gainNode) => gainNode.gain.linearRampToValueAtTime.mock.calls.length === 0)).toBe(
+            true
+        );
+    });
+
     it('should forward a finite setPadParam value and drop a non-finite one', async () => {
         const node = await createToasterNode(makeCtx());
         postMessage.mockClear();
@@ -234,7 +263,7 @@ describe('createToasterNode', () => {
         expect(disconnect).not.toHaveBeenCalled();
     });
 
-    it('routes stable pad outputs through gain mirrors of the clamped master gain and tears them down', async () => {
+    it('routes stable pad outputs through unity routing nodes and tears them down', async () => {
         const node = await createToasterNode(makeCtx());
         const destination = {} as AudioNode;
         if (!node.connectPadOutput || !node.disconnectPadOutput) {
@@ -246,7 +275,7 @@ describe('createToasterNode', () => {
         const [parentOutput, ...padOutputs] = padGainNodes;
         expect(padGainNodes).toHaveLength(17);
         expect(parentOutput?.gain.value).toBe(1);
-        expect(padOutputs.every((gainNode) => gainNode.gain.value === 0.8)).toBe(true);
+        expect(padOutputs.every((gainNode) => gainNode.gain.value === 1)).toBe(true);
         expect(connect).toHaveBeenNthCalledWith(1, parentOutput, 0, 0);
         expect(connect).toHaveBeenNthCalledWith(2, padOutputs[0], 1, 0);
         expect(connect).toHaveBeenNthCalledWith(17, padOutputs[15], 16, 0);
@@ -263,13 +292,11 @@ describe('createToasterNode', () => {
 
         postMessage.mockClear();
         node.setParam('masterGain', 1.5);
-        expect(padOutputs.every((gainNode) => gainNode.gain.value === 1)).toBe(true);
         node.setParam('masterGain', -0.25);
-        expect(padOutputs.every((gainNode) => gainNode.gain.value === 0)).toBe(true);
         node.setParam('masterGain', 0.35);
         node.setParam('masterGain', Number.NaN);
         node.setParam('master_gain', 0.6);
-        expect(padOutputs.every((gainNode) => gainNode.gain.value === 0.6)).toBe(true);
+        expect(padOutputs.every((gainNode) => gainNode.gain.value === 1)).toBe(true);
         expect(parentOutput?.gain.value).toBe(1);
         expect(postMessage).toHaveBeenCalledTimes(4);
         expect(postMessage).toHaveBeenNthCalledWith(1, { type: 'param', name: 'masterGain', value: 1.5 });

@@ -32,6 +32,7 @@ const noteOffCalls: number[] = [];
 const noteOnCalls: number[] = [];
 const padParamCalls: Array<[number, string, number]> = [];
 const padDryRoutedCalls: Array<[number, boolean]> = [];
+const paramByIdCalls: Array<[number, number]> = [];
 const processCalls: number[] = [];
 let padZeroDryRouted = false;
 const WASM_BLOCK_SAMPLES = 4096;
@@ -46,6 +47,9 @@ class ToasterInstanceMock {
         noteOffCalls.push(pad);
     }
     set_param(): void {}
+    set_param_by_id(paramId: number, value: number): void {
+        paramByIdCalls.push([paramId, value]);
+    }
     set_pad_param(pad: number, name: string, value: number): void {
         padParamCalls.push([pad, name, value]);
     }
@@ -101,8 +105,57 @@ describe('ToasterProcessor allNotesOff', () => {
         noteOnCalls.length = 0;
         padParamCalls.length = 0;
         padDryRoutedCalls.length = 0;
+        paramByIdCalls.length = 0;
         padZeroDryRouted = false;
         processCalls.length = 0;
+        vi.stubGlobal('currentFrame', 0);
+    });
+
+    it('evaluates numeric parameter schedules once per render quantum', async () => {
+        const proc = await loadProcessor();
+        send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
+        send(proc, {
+            type: 'paramAutomation',
+            paramId: 1,
+            segments: [{ startFrame: 0, endFrame: 256, startValue: 0.2, endValue: 0.8 }],
+        });
+        send(proc, {
+            type: 'paramAutomation',
+            paramId: 3,
+            segments: [{ startFrame: 0, endFrame: 256, startValue: 0, endValue: 1 }],
+        });
+        for (const segments of [
+            [{ startFrame: 64, endFrame: 256, startValue: 0, endValue: 1 }],
+            [{ startFrame: 0, endFrame: 256, startValue: Number.NaN, endValue: 1 }],
+            [
+                { startFrame: 0, endFrame: 64, startValue: 0, endValue: 0.5 },
+                { startFrame: 65, endFrame: 256, startValue: 0.5, endValue: 1 },
+            ],
+        ]) {
+            send(proc, { type: 'paramAutomation', paramId: 2, segments });
+        }
+        send(proc, {
+            type: 'paramAutomation',
+            paramId: 2,
+            segments: [{ startFrame: 0, endFrame: 256, startValue: 0.1, endValue: 0.9 }],
+        });
+        send(proc, {
+            type: 'paramAutomation',
+            paramId: 2,
+            segments: [{ startFrame: 0, endFrame: 128, startValue: 0.3, endValue: 0.7 }],
+        });
+        const output = [new Float32Array(8), new Float32Array(8)];
+
+        proc.process([[]], [output]);
+        vi.stubGlobal('currentFrame', 128);
+        proc.process([[]], [output]);
+
+        expect(paramByIdCalls).toEqual([
+            [1, 0.2],
+            [2, 0.3],
+            [1, 0.5],
+            [2, 0.7],
+        ]);
     });
 
     // ── Fix 4: a single allNotesOff message releases every pad ──

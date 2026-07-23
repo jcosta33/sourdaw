@@ -270,6 +270,7 @@ async function run({
             projectPpqEndpoints: projector,
             processYeastMidi: null,
             selectMidiEventProbability: () => true,
+            projectChordPitch: ({ pitch }) => pitch,
         },
         onWarning,
         pendingWorkletEvents: [],
@@ -528,11 +529,82 @@ describe('scheduleTrackClips — frozen tracks', () => {
         const source = sources[0]!;
         expect(source.buffer).toBe(frozenBuffer);
         expect(source.connect).toHaveBeenCalledWith(trackGainNode);
-        expect(source.start).toHaveBeenCalledWith(0);
+        // Default region (start 0): the fixture clip at beat 2 (1.0s)
+        // anchors the frozen buffer, so it starts 1.0s into the export.
+        expect(source.start).toHaveBeenCalledWith(1, 0, 3);
         // Automation still runs for the frozen strip.
         expect(mocks.scheduleTrackAutomation).toHaveBeenCalledTimes(1);
         // The device chain is never built for a frozen track.
         expect(mocks.buildDeviceChain).not.toHaveBeenCalled();
+    });
+
+    /// Regression (M-036): a frozen buffer is rendered from timeline 0, so
+    /// a region export must start regionStartSec INTO the buffer — starting
+    /// at 0 shifted the frozen content early by the region offset.
+    it('starts region exports regionStartSec into the frozen buffer', async () => {
+        const frozenBuffer = makeBuffer(3);
+        mocks.audioBufferCache.get.mockImplementation((id) => (id === 'frozen-buf' ? frozenBuffer : undefined));
+        const { ctx, sources } = makeRecordingOfflineCtx();
+        const track = TrackDummy.create({
+            freezeState: { status: 'frozen', frozenBufferId: 'frozen-buf' },
+        });
+
+        // regionStartBeat 2 at 120bpm = 1.0s region start.
+        await run({ track, ctx, regionStartBeat: 2 });
+
+        expect(sources).toHaveLength(1);
+        expect(sources[0]!.start).toHaveBeenCalledWith(0, 1, 2);
+    });
+
+    /// Regression (PR #616 review): frozen buffers render from the track's
+    /// EARLIEST CLIP startBeat, not timeline 0 — the anchor must use the
+    /// clip-derived track start, and a region starting before the track
+    /// content starts the buffer later at offset 0.
+    it('anchors the frozen buffer at the earliest clip start, not timeline 0', async () => {
+        const frozenBuffer = makeBuffer(3);
+        mocks.audioBufferCache.get.mockImplementation((id) => (id === 'frozen-buf' ? frozenBuffer : undefined));
+        const { ctx, sources } = makeRecordingOfflineCtx();
+        const track = TrackDummy.create({
+            freezeState: { status: 'frozen', frozenBufferId: 'frozen-buf' },
+            clips: [makeAudioClip({ startBeat: 4, endBeat: 8 })],
+        });
+
+        // Track content starts at beat 4 (2.0s); region starts at beat 2
+        // (1.0s) — the buffer must start 1.0s into the export at offset 0.
+        await run({ track, ctx, regionStartBeat: 2 });
+
+        expect(sources).toHaveLength(1);
+        expect(sources[0]!.start).toHaveBeenCalledWith(1, 0, 3);
+    });
+
+    it('starts into the frozen buffer by region minus track start when the region begins mid-track', async () => {
+        const frozenBuffer = makeBuffer(3);
+        mocks.audioBufferCache.get.mockImplementation((id) => (id === 'frozen-buf' ? frozenBuffer : undefined));
+        const { ctx, sources } = makeRecordingOfflineCtx();
+        const track = TrackDummy.create({
+            freezeState: { status: 'frozen', frozenBufferId: 'frozen-buf' },
+            clips: [makeAudioClip({ startBeat: 4, endBeat: 8 })],
+        });
+
+        // Track starts at 2.0s, region starts at 3.0s — 1.0s into the buffer.
+        await run({ track, ctx, regionStartBeat: 6 });
+
+        expect(sources).toHaveLength(1);
+        expect(sources[0]!.start).toHaveBeenCalledWith(0, 1, 2);
+    });
+
+    it('renders nothing when the region starts beyond the frozen buffer', async () => {
+        const frozenBuffer = makeBuffer(3);
+        mocks.audioBufferCache.get.mockImplementation((id) => (id === 'frozen-buf' ? frozenBuffer : undefined));
+        const { ctx, sources } = makeRecordingOfflineCtx();
+        const track = TrackDummy.create({
+            freezeState: { status: 'frozen', frozenBufferId: 'frozen-buf' },
+        });
+
+        // regionStartBeat 8 at 120bpm = 4.0s > 3s buffer.
+        await run({ track, ctx, regionStartBeat: 8 });
+
+        expect(sources).toHaveLength(0);
     });
 
     it('warns when the frozen buffer is gone so the user knows the track will be silent', async () => {

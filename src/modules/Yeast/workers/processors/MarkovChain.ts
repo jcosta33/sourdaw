@@ -180,15 +180,19 @@ export class MarkovChain extends BaseMidiProcessor {
             // Sample next state via Markov transition
             this.currentState = this.sampleNext();
             const note = this.stateToNote[this.currentState % this.stateNoteCount]!;
+            const noteInstanceId = this.createGeneratedNoteInstanceId();
 
             output.push({
                 timeSamples: stepTime,
+                durationSamples: noteLen,
                 trackId: this.stateToTrack[this.currentState % this.stateNoteCount],
+                noteInstanceId,
                 kind: { type: 'noteOn', channel: 0, note, velocity: this.velocity },
             });
             this.scheduled.push({
                 timeSamples: stepTime + noteLen,
                 trackId: this.stateToTrack[this.currentState % this.stateNoteCount],
+                noteInstanceId,
                 kind: { type: 'noteOff', channel: 0, note },
             });
 

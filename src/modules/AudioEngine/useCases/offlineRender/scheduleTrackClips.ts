@@ -13,6 +13,7 @@ import { type TempoMapStoreState } from '#/modules/Transport/stores';
 import { scheduleTrackAutomation } from '../../repositories/offlineScheduler/automationScheduling';
 import {
     type OfflineMidiEventProjector,
+    type OfflineChordPitchProjector,
     type OfflineMidiProbabilitySelector,
 } from '../../repositories/offlineScheduler/offlineMidiEventProjectorState';
 import { type OfflinePpqEndpointProjector } from '../../repositories/offlineScheduler/offlinePpqEndpointProjectorState';
@@ -156,6 +157,7 @@ type OfflineProjectionDependencies = {
     projectPpqEndpoints: OfflinePpqEndpointProjector;
     processYeastMidi: OfflineYeastMidiProcessor | null;
     selectMidiEventProbability: OfflineMidiProbabilitySelector;
+    projectChordPitch: OfflineChordPitchProjector;
 };
 
 export type ScheduleTrackClipsInput = {
@@ -195,7 +197,8 @@ export async function scheduleTrackClips({
     deviceEntriesByTrack,
     regionStartBeat = 0,
 }: ScheduleTrackClipsInput): Promise<void> {
-    const { projectMidiEvents, projectPpqEndpoints, processYeastMidi, selectMidiEventProbability } = projections;
+    const { projectChordPitch, projectMidiEvents, projectPpqEndpoints, processYeastMidi, selectMidiEventProbability } =
+        projections;
     function projectBeatToSeconds(beat: number): number {
         return projectPpqEndpoints({
             startPpq: beat,
@@ -214,10 +217,28 @@ export async function scheduleTrackClips({
     if (track.freezeState.status === 'frozen' && track.freezeState.frozenBufferId) {
         const frozenBuf = audioBufferCache.get(track.freezeState.frozenBufferId);
         if (frozenBuf) {
-            const source = offlineCtx.createBufferSource();
-            source.buffer = frozenBuf;
-            source.connect(trackGainNode); // Skip trackInputNode to bypass device chain processing, but keep fader/pan
-            source.start(0);
+            // Frozen buffers render from the track's earliest clip startBeat
+            // (scheduleFrozenTrack), not from timeline 0 — anchor the source
+            // the same way: region exports start (regionStart - trackStart)
+            // into the buffer; regions starting before the track content
+            // start the buffer later at offset 0.
+            const trackStartBeat = track.clips.length > 0 ? Math.min(...track.clips.map((clip) => clip.startBeat)) : 0;
+            const trackStartSec = projectPpqEndpoints({
+                startPpq: trackStartBeat,
+                endPpq: trackStartBeat,
+                defaultTempo,
+                sampleRate: offlineCtx.sampleRate,
+                changes,
+            }).startSeconds;
+            const when = Math.max(0, trackStartSec - regionStartSec);
+            const bufferOffset = Math.max(0, regionStartSec - trackStartSec);
+            const remaining = frozenBuf.duration - bufferOffset;
+            if (remaining > 0) {
+                const source = offlineCtx.createBufferSource();
+                source.buffer = frozenBuf;
+                source.connect(trackGainNode); // Skip trackInputNode to bypass device chain processing, but keep fader/pan
+                source.start(when, bufferOffset, remaining);
+            }
         } else {
             onWarning?.(
                 `Track "${track.name}" is frozen but its frozen buffer is missing and will be silent in the export. ` +
@@ -234,6 +255,8 @@ export async function scheduleTrackClips({
         }
     }
 
+    // Apply the same region/latency corrections clip scheduling gets, so
+    // automation lands on the audio it shapes (M-038).
     scheduleTrackAutomation(
         automationLanes,
         track.id,
@@ -245,7 +268,8 @@ export async function scheduleTrackClips({
         changes,
         regionStartSec,
         projectBeatToSeconds,
-        offlineCtx.sampleRate
+        offlineCtx.sampleRate,
+        compensationDelay
     );
 
     if (track.freezeState.status === 'frozen' && track.freezeState.frozenBufferId) {
@@ -297,6 +321,20 @@ export async function scheduleTrackClips({
         ? getDrumKitDefByIndex(drumKitDevice.parameterValues.kit ?? drumKitDevice.parameterValues.kitId ?? 0)
         : null;
     const synthParams = drumKit || kitDef || instrumentControls ? null : getSynthParamsFromDevices(track.devices);
+    function projectPitch({
+        pitch,
+        referenceBeat,
+        targetBeat,
+    }: {
+        pitch: number;
+        referenceBeat: number;
+        targetBeat: number;
+    }): number {
+        if (!track.followChordTrack || drumKit || kitDef || isToaster) {
+            return pitch;
+        }
+        return projectChordPitch({ pitch, referenceBeat, targetBeat });
+    }
     const hasYeast = track.devices.some((device) => device.type === 'yeast');
     const parentTrack =
         track.parentId && allTracks ? allTracks.find((candidate) => candidate.id === track.parentId) : null;
@@ -414,6 +452,7 @@ export async function scheduleTrackClips({
                 projectMidiEvents,
                 projectPpqEndpoints,
                 processYeastMidi,
+                projectPitch,
             });
             await scheduleMidiNoteBatch(scheduledNotes);
         }
@@ -493,7 +532,11 @@ export async function scheduleTrackClips({
                     });
                     return {
                         id: note.id,
-                        pitch: note.pitch,
+                        pitch: projectPitch({
+                            pitch: note.pitch,
+                            referenceBeat: clip.startBeat,
+                            targetBeat: note.startBeat,
+                        }),
                         velocity: note.velocity,
                         startSamples: endpoints.startSamples,
                         endSamples: endpoints.endSamples,

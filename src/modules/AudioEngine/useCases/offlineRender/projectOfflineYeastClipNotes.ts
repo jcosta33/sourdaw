@@ -24,6 +24,7 @@ type ProjectOfflineYeastClipNotesInput = {
     changes: Parameters<OfflinePpqEndpointProjector>[0]['changes'];
     projectMidiEvents: OfflineMidiEventProjector;
     projectPpqEndpoints: OfflinePpqEndpointProjector;
+    projectPitch: (input: { pitch: number; referenceBeat: number; targetBeat: number }) => number;
 };
 
 export function projectOfflineYeastClipNotes({
@@ -41,6 +42,7 @@ export function projectOfflineYeastClipNotes({
     changes,
     projectMidiEvents,
     projectPpqEndpoints,
+    projectPitch,
 }: ProjectOfflineYeastClipNotesInput) {
     const projectedNotes = projectMidiEvents({
         events: notes.map((note) => ({
@@ -72,7 +74,7 @@ export function projectOfflineYeastClipNotes({
         });
         return {
             id: note.id,
-            pitch: note.pitch,
+            pitch: projectPitch({ pitch: note.pitch, referenceBeat: clipStartBeat, targetBeat: note.startBeat }),
             velocity: note.velocity,
             startSamples: endpoints.startSamples,
             endSamples: endpoints.endSamples,

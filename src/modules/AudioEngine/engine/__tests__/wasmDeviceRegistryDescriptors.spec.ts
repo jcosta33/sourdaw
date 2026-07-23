@@ -146,6 +146,8 @@ describe('wasmDeviceRegistry descriptors', () => {
                 cancelScheduled: vi.fn(),
                 allNotesOff: vi.fn(),
                 setFillActive: vi.fn(),
+                acceptsScheduledParam: vi.fn(),
+                scheduleParam: vi.fn(),
                 setParam: vi.fn(),
                 setPadParam: vi.fn(),
                 setPadDryRouted: vi.fn(),

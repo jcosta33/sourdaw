@@ -41,7 +41,8 @@ export function scheduleTrackAutomation(
     changes: AutomationTempoChange[],
     regionStartSeconds = 0,
     projectBeatToSeconds?: (beat: number) => number,
-    sampleRate = 44_100
+    sampleRate = 44_100,
+    compensationDelaySec = 0
 ): void {
     const trackLanes = lanes.filter((length) => length.trackId === trackId && !length.clipId);
 
@@ -58,7 +59,8 @@ export function scheduleTrackAutomation(
                 defaultTempo,
                 changes,
                 regionStartSeconds,
-                projectBeatToSeconds
+                projectBeatToSeconds,
+                compensationDelaySec
             );
             continue;
         }
@@ -71,7 +73,8 @@ export function scheduleTrackAutomation(
                 defaultTempo,
                 changes,
                 regionStartSeconds,
-                projectBeatToSeconds
+                projectBeatToSeconds,
+                compensationDelaySec
             );
             continue;
         }
@@ -110,7 +113,8 @@ export function scheduleTrackAutomation(
                     defaultTempo,
                     changes,
                     regionStartSeconds,
-                    projectBeatToSeconds
+                    projectBeatToSeconds,
+                    compensationDelaySec
                 );
             }
         }

@@ -30,6 +30,7 @@ export type LiveYeastIteration = {
     routeId: string;
     clipId: string;
     iterationStartBeat: number;
+    iterationEndBeat: number;
     midiOffsetBeats: number;
     sourceNotes: readonly LiveYeastNote[];
 };
@@ -121,12 +122,16 @@ export async function processLiveYeastTrackBlock({
 
                 const noteStartBeat = iteration.iterationStartBeat + groovedNote.startBeat;
                 const noteEndBeat = noteStartBeat + groovedNote.duration;
+                const noteStartSamples = beatToSamples(changes, noteStartBeat, transport.tempo, sampleRate);
+                const noteEndSamples = beatToSamples(changes, noteEndBeat, transport.tempo, sampleRate);
                 const noteInstanceId = `${iteration.routeId}:${sourceNote.id}`;
                 const ownsNoteOn = noteStartBeat >= block.fromBeat && noteStartBeat < block.toBeat;
                 const ownsNoteOff = noteEndBeat >= block.fromBeat && noteEndBeat < block.toBeat;
                 if (ownsNoteOn) {
                     inputEvents.push({
-                        timeSamples: beatToSamples(changes, noteStartBeat, transport.tempo, sampleRate),
+                        timeSamples: noteStartSamples,
+                        durationSamples: Math.max(0, noteEndSamples - noteStartSamples),
+                        durationPpq: Math.max(0, groovedNote.duration),
                         trackId: iteration.routeId,
                         sourceEventId: `${noteInstanceId}:on`,
                         noteInstanceId,
@@ -142,7 +147,7 @@ export async function processLiveYeastTrackBlock({
                 }
                 if (ownsNoteOff) {
                     inputEvents.push({
-                        timeSamples: beatToSamples(changes, noteEndBeat, transport.tempo, sampleRate),
+                        timeSamples: noteEndSamples,
                         trackId: iteration.routeId,
                         sourceEventId: `${noteInstanceId}:off`,
                         noteInstanceId,
@@ -209,15 +214,29 @@ export async function processLiveYeastTrackBlock({
         }
 
         if (event.kind.type === 'noteOn') {
-            const template = iteration?.sourceNotes[0] ?? {
-                id: iteration?.clipId ?? trackId,
-                pitch: 60,
-                startBeat: 0,
-                duration: 0,
-                velocity: 100,
-                probability: 100,
-            };
+            const identifiedTemplate = iteration?.sourceNotes.find(
+                (sourceNote) => `${iteration.routeId}:${sourceNote.id}` === event.noteInstanceId
+            );
+            const template = identifiedTemplate ??
+                iteration?.sourceNotes[0] ?? {
+                    id: iteration?.clipId ?? trackId,
+                    pitch: 60,
+                    startBeat: 0,
+                    duration: 0,
+                    velocity: 100,
+                    probability: 100,
+                };
             const eventPpq = event.timePpq ?? samplesToBeat(changes, event.timeSamples, transport.tempo, sampleRate);
+            let duration = iteration ? template.duration : 0.25;
+            if (event.durationSamples !== undefined) {
+                const endPpq = samplesToBeat(
+                    changes,
+                    event.timeSamples + Math.max(0, event.durationSamples),
+                    transport.tempo,
+                    sampleRate
+                );
+                duration = Math.max(0, endPpq - eventPpq);
+            }
             const noteIndex = targetNotes.length;
             if (event.noteInstanceId) {
                 pendingByInstance.set(event.noteInstanceId, {
@@ -238,7 +257,7 @@ export async function processLiveYeastTrackBlock({
                 pitch: event.kind.note,
                 velocity: event.kind.velocity,
                 startBeat: eventPpq - (iteration?.midiOffsetBeats ?? 0),
-                duration: 0.25,
+                duration,
             });
             continue;
         }

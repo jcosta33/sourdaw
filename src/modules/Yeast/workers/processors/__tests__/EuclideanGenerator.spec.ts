@@ -2,6 +2,8 @@ import { describe, it, expect } from 'vitest';
 
 import { EuclideanGenerator } from '../EuclideanGenerator';
 
+import type { MidiEvent, TransportInfo } from '../../../models/MidiEvent';
+
 describe('EuclideanGenerator', () => {
     it('constructs with default pattern (5 hits, 8 steps)', () => {
         const gen = new EuclideanGenerator('test-1');
@@ -73,5 +75,33 @@ describe('EuclideanGenerator', () => {
         gen.setParam('note', 72);
         gen.setParam('velocity', 80);
         expect(gen.getPattern()).toHaveLength(6);
+    });
+
+    it('pairs a generated lifetime across blocks by instance id', () => {
+        const gen = new EuclideanGenerator('duration');
+        gen.setParam('hits', 8);
+        const transport: TransportInfo = {
+            sampleRate: 48_000,
+            bpm: 120,
+            blockStartSamples: 0,
+            blockEndSamples: 6_001,
+            ppqPosition: 0,
+            isPlaying: true,
+            barIndex: 0,
+            beatInBar: 0,
+            timeSigNum: 4,
+            timeSigDen: 4,
+            loopEnabled: false,
+            loopStartPpq: 0,
+            loopEndPpq: 0,
+        };
+        const noteOns: MidiEvent[] = [];
+        gen.processMidi([], noteOns, transport);
+        const noteOn = noteOns.find((event) => event.kind.type === 'noteOn');
+
+        const noteOffs: MidiEvent[] = [];
+        gen.processMidi([], noteOffs, { ...transport, blockStartSamples: 6_001, blockEndSamples: 9_001 });
+        expect(noteOn).toEqual(expect.objectContaining({ durationSamples: 3_000 }));
+        expect(noteOffs).toEqual([expect.objectContaining({ noteInstanceId: noteOn?.noteInstanceId })]);
     });
 });
