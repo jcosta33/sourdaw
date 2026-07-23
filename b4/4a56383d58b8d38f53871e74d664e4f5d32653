@@ -1,0 +1,29 @@
+src/modules/MIDI/models/__tests__/GrooveTemplateState.spec.ts
+  s_052002bf03b542::t_23d5aebad983b2 1-307
+src/modules/MIDI/models/__tests__/GrooveTemplate.spec.ts
+  s_11c46abf6ce22d::t_4af31cc972ed1c 1-285
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "b44a56383d58b8d38f53871e74d664e4f5d32653",
+  "prompts": {},
+  "sessions": {
+    "s_052002bf03b542": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-afdfbe0026ed44fd4",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_11c46abf6ce22d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-a27534ce561561832",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
