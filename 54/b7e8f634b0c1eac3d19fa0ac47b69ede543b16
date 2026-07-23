@@ -1,0 +1,21 @@
+package.json
+  s_ac9b259eab20ba::t_6470eb7ceaf6ca 32
+src/modules/AudioEngine/wasm/daw_dsp.js
+  s_ac9b259eab20ba::t_afb1cf2f960952 44-45
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "54b7e8f634b0c1eac3d19fa0ac47b69ede543b16",
+  "prompts": {},
+  "sessions": {
+    "s_ac9b259eab20ba": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8699-3865-7842-8c54-afbac6cfd266",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
