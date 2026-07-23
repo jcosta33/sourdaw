@@ -376,6 +376,24 @@ export const createAutomergeStorage = <TData>(
      * collaboration).
      */
     let lastHydratedJson: string | null = null;
+    /**
+     * Listeners for visible-value changes that happen outside a synchronous
+     * get/set/clear/hydrate call — a deferred rAF commit or abort landing
+     * after an interleaved hydrate changed what get() returns, so the owning
+     * store must re-notify its subscribers (the template-load e2e regression:
+     * UI wedged on the hydrated value while get() already held the commit).
+     */
+    const deferredChangeListeners = new Set<() => void>();
+
+    const notifyDeferredChange = (): void => {
+        for (const listener of [...deferredChangeListeners]) {
+            try {
+                listener();
+            } catch (error) {
+                logger.warn('[AutomergeStorage] deferred-change listener failed:', error);
+            }
+        }
+    };
 
     const toDocSafe = <TValue>(value: TValue): TValue => JSON.parse(JSON.stringify(value)) as TValue;
 
@@ -478,7 +496,11 @@ export const createAutomergeStorage = <TData>(
         if (!releasePendingWrite(pending)) {
             return;
         }
+        const visibleBefore = cachedValue;
         recomputeCachedValue();
+        if (!Object.is(visibleBefore, cachedValue)) {
+            notifyDeferredChange();
+        }
     };
 
     const recomputeCachedValue = (): void => {
@@ -498,6 +520,7 @@ export const createAutomergeStorage = <TData>(
         if (!releasePendingWrite(pending)) {
             return;
         }
+        const visibleBefore = cachedValue;
         committedCacheValue = pending.value;
         committedCacheRevision = ++nextRevision;
         committedSetRevision = pending.revision;
@@ -505,6 +528,9 @@ export const createAutomergeStorage = <TData>(
             remaining.baseValue = pending.value;
         }
         recomputeCachedValue();
+        if (!Object.is(visibleBefore, cachedValue)) {
+            notifyDeferredChange();
+        }
     };
 
     const createPendingWrite = (context: AutomergeStorageWriteContext): AdapterPendingWrite => {
@@ -573,6 +599,13 @@ export const createAutomergeStorage = <TData>(
 
         isSupported(): boolean {
             return true;
+        },
+
+        subscribe(listener: () => void): () => void {
+            deferredChangeListeners.add(listener);
+            return () => {
+                deferredChangeListeners.delete(listener);
+            };
         },
 
         hydrate(): boolean {

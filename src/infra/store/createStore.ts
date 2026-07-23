@@ -166,5 +166,13 @@ export const createStore = <TData>(options: StoreOptions<TData> = {}): Store<TDa
         },
     };
 
+    // Deferred storage-side visibility changes (e.g. a rAF-batched CRDT write
+    // committing after an interleaved hydrate) must reach subscribers too —
+    // otherwise the UI keeps rendering the pre-commit snapshot while
+    // getSnapshot() already returns the committed value.
+    storage.subscribe?.(() => {
+        queueStoreNotification(notify);
+    });
+
     return store;
 };
