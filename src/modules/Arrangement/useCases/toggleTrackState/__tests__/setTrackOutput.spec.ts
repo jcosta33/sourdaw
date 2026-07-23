@@ -4,6 +4,7 @@ import { setTrackOutput } from '../setTrackOutput';
 
 const mocks = vi.hoisted(() => ({
     getTrackById: vi.fn(),
+    getAllTracks: vi.fn(),
     updateTrack: vi.fn(),
     engineSetTrackOutput: vi.fn(),
 }));
@@ -18,7 +19,10 @@ vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
 }));
 
 describe('setTrackOutput', () => {
-    beforeEach(() => vi.clearAllMocks());
+    beforeEach(() => {
+        vi.clearAllMocks();
+        mocks.getAllTracks.mockReturnValue([]);
+    });
 
     it('should update the track output id in the store and notify the audio engine', () => {
         mocks.getTrackById.mockImplementation((trackId: string) => {
@@ -40,6 +44,24 @@ describe('setTrackOutput', () => {
 
         expect(mocks.engineSetTrackOutput).toHaveBeenCalledWith('t1', 'bus-main');
         expect(didWrite).toBe(true);
+    });
+
+    it('preserves Toaster pad ownership across audible output round-trips', () => {
+        const parent = {
+            id: 'toaster-parent',
+            kind: 'folder',
+            devices: [{ id: 'toaster-device', type: 'toaster' }],
+        };
+        const child = { id: 'pad-track', kind: 'audio', parentId: parent.id };
+        mocks.getAllTracks.mockReturnValue([parent, child]);
+        mocks.getTrackById.mockImplementation((trackId: string) => (trackId === child.id ? child : undefined));
+
+        setTrackOutput(child.id, 'return-bus');
+        setTrackOutput(child.id, 'master');
+
+        const padBinding = { toasterParentTrackId: parent.id, padIndex: 0 };
+        expect(mocks.engineSetTrackOutput).toHaveBeenNthCalledWith(1, child.id, 'return-bus', padBinding);
+        expect(mocks.engineSetTrackOutput).toHaveBeenNthCalledWith(2, child.id, 'master', padBinding);
     });
 
     it('rejects dormant VCA output assignment before project or engine work', () => {
@@ -69,4 +91,8 @@ describe('setTrackOutput', () => {
 });
 vi.mock('#/modules/Arrangement/repositories/track/getTrackById', () => ({
     getTrackById: mocks.getTrackById,
+}));
+
+vi.mock('#/modules/Arrangement/repositories/track/getAllTracks', () => ({
+    getAllTracks: mocks.getAllTracks,
 }));

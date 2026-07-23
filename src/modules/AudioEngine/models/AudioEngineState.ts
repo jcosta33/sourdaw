@@ -199,6 +199,7 @@ export type SendNode = {
     sourceTrackId: string;
     busId: string;
     gainNode: GainNode;
+    sourceNode: AudioNode;
     preFader: boolean;
 };
 
@@ -244,7 +245,11 @@ export type AudioEngine = {
     setBusGain(busId: string, gain: number): void;
     setSend(sourceTrackId: string, busId: string, level: number, preFader?: boolean): void;
     removeSend(sourceTrackId: string, busId: string): void;
-    setTrackOutput(trackId: string, outputId: string): void;
+    setTrackOutput(
+        trackId: string,
+        outputId: string,
+        padBinding?: { toasterParentTrackId: string; padIndex: number }
+    ): void;
     scheduleOscillator(frequency: number, startTime: number, duration: number, gain?: number): void;
     scheduleClick(time: number, accent: boolean, volume?: number): void;
     stopAllScheduled(): void;
