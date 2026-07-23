@@ -197,7 +197,9 @@ describe('prepareMidiTimeShiftTransaction', () => {
         expect(appliedState.notesByClipId.straddler).toEqual([beforeWindowNote, { ...shiftedNote, startBeat: -4 }]);
         expect(appliedState.notesByClipId.straddler?.[0]).toBe(beforeWindowNote);
         expect(appliedState.notesByClipId.straddler?.[1]).not.toBe(shiftedNote);
+        expect(appliedState.notesByClipId).not.toBe(preparedState.notesByClipId);
         expect(appliedState.ccByClipId.straddler).toEqual([{ ...shiftedCc, beat: -4 }]);
+        expect(appliedState.ccByClipId).not.toBe(preparedState.ccByClipId);
         expect(appliedState.pitchBendByClipId.straddler).toEqual([{ ...shiftedPitchBend, beat: -3 }]);
         expect(appliedState.notesByClipId.dormant).toBe(dormantNotes);
         expect(appliedState.notesByClipId.moved).toBe(movedNotes);
