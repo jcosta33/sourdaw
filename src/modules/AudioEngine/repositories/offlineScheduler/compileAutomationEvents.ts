@@ -1,5 +1,6 @@
 import { type AutomationPoint } from '../../models/AutomationViewTypes';
 import { beatToSeconds } from '../../services/beatConversion';
+
 type AutomationTempoChange = { beat: number; tempo: number };
 export type CompiledAutomationEvent = { type: 'set' | 'linear'; timeSeconds: number; value: number };
 const AUTOMATION_SAMPLE_INTERVAL_SEC = 0.01;
