@@ -1116,6 +1116,20 @@ export class ToasterInstance {
         return ret >>> 0;
     }
     /**
+     * Restore legacy parent-mix ownership for every pad.
+     */
+    reset_pad_dry_routing() {
+        wasm.toasterinstance_reset_pad_dry_routing(this.__wbg_ptr);
+    }
+    /**
+     * Transfer or restore ownership of a pad's dry contribution to output 0.
+     * @param {number} pad
+     * @param {boolean} routed
+     */
+    set_pad_dry_routed(pad, routed) {
+        wasm.toasterinstance_set_pad_dry_routed(this.__wbg_ptr, pad, routed);
+    }
+    /**
      * Set a per-pad parameter (volume, pan, tune, filter_cutoff, etc.).
      * @param {number} pad
      * @param {string} name

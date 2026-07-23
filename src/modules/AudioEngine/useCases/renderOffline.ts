@@ -3,6 +3,7 @@ import { createExportError } from '../errors/ExportError';
 import { type DeviceNodeEntry } from './buildDeviceChain';
 import { acquireRenderLock } from './offlineRender/acquireRenderLock';
 import { checkCancel } from './offlineRender/checkCancel';
+import { connectOfflineToasterPadRoutes } from './offlineRender/connectOfflineToasterPadRoutes';
 import {
     MAX_OFFLINE_FRAMES,
     MIN_RENDER_TIMEOUT_MS,
@@ -69,6 +70,7 @@ export const renderOffline: RenderOfflineFn = async function renderOffline(
             durationBeats,
             startBeat,
             tailSeconds,
+            sampleRate,
         });
         if (!projectMidiEvents || !selectMidiEventProbability || !projectPpqEndpoints) {
             throw new Error('Offline musical projection is not configured');
@@ -109,6 +111,8 @@ export const renderOffline: RenderOfflineFn = async function renderOffline(
                 busStripsById.set(track.id, createOfflineBusStrip(strip));
             }
         }
+
+        connectOfflineToasterPadRoutes({ tracks: tracks?.tracks ?? [], trackStripsById, deviceEntriesByTrack });
 
         for (const track of allRenderableTracks) {
             const strip = trackStripsById.get(track.id);
@@ -172,7 +176,9 @@ export const renderOffline: RenderOfflineFn = async function renderOffline(
                 },
                 onWarning,
                 pendingWorkletEvents,
-                allTracks: sourceTracks,
+                // Keep canonical project order for Toaster pad indexes. The
+                // scheduler skips inaudible children only after indexing.
+                allTracks: tracks?.tracks ?? [],
                 deviceEntriesByTrack,
                 regionStartBeat: startBeat,
             });

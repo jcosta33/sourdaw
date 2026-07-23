@@ -1,35 +1,20 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+import {
+    projectPpqEndpoints,
+    restoreTimelineMapSnapshot,
+    restoreTransportSnapshot,
+} from '#/modules/Transport/useCases';
+
 import { configureOfflinePpqEndpointProjection } from '../../configureOfflinePpqEndpointProjection';
 import { resolveRenderContext } from '../resolveRenderContext';
-
-const mocks = vi.hoisted(() => ({
-    getTrackStoreState: vi.fn(),
-    getMidiStoreState: vi.fn(),
-    getTransportStoreValue: vi.fn(),
-    getTempoMapState: vi.fn(),
-}));
-
-vi.mock('#/modules/Arrangement/useCases', () => ({
-    getTrackStoreState: mocks.getTrackStoreState,
-}));
-
-vi.mock('#/modules/MIDI/useCases', () => ({
-    getMidiStoreState: mocks.getMidiStoreState,
-}));
-
-vi.mock('#/modules/Transport/useCases', () => ({
-    getTransportStoreValue: mocks.getTransportStoreValue,
-    getTempoMapState: mocks.getTempoMapState,
-}));
 
 describe('resolveRenderContext', () => {
     beforeEach(() => {
         vi.clearAllMocks();
-        mocks.getTrackStoreState.mockReturnValue({ tracks: [] });
-        mocks.getMidiStoreState.mockReturnValue({ notesByClipId: {} });
-        mocks.getTransportStoreValue.mockReturnValue({ tempo: 120, masterGain: 80 });
-        mocks.getTempoMapState.mockReturnValue({ changes: [] });
+        restoreTransportSnapshot({ tempo: 120 });
+        restoreTimelineMapSnapshot({ tempoMap: { changes: [] } });
+        configureOfflinePpqEndpointProjection({ project: projectPpqEndpoints });
     });
 
     it('returns durationSeconds for a plain duration (no start offset, no tail)', () => {
@@ -52,6 +37,25 @@ describe('resolveRenderContext', () => {
         // 4 beats at 120 bpm = 2 seconds, plus 3s tail = 5s
         expect(ctx.durationSeconds).toBeCloseTo(5, 6);
         expect(ctx.tailSeconds).toBe(3);
+    });
+
+    it('uses canonical linear-tempo projection for a cropped render duration', () => {
+        const changes = [
+            { id: 'start', beat: 0, tempo: 60, curve: 'linear' as const },
+            { id: 'end', beat: 8, tempo: 180, curve: 'instant' as const },
+        ];
+        restoreTimelineMapSnapshot({ tempoMap: { changes } });
+        const expected = projectPpqEndpoints({
+            startPpq: 2,
+            endPpq: 6,
+            defaultTempo: 120,
+            sampleRate: 48_000,
+            changes,
+        });
+
+        const ctx = resolveRenderContext({ durationBeats: 4, startBeat: 2, sampleRate: 48_000 });
+
+        expect(ctx.durationSeconds).toBe(expected.durationSeconds);
     });
 
     it('supports the legacy numeric input form', () => {

@@ -157,6 +157,88 @@ describe('scheduleAutomationOnParam', () => {
         expect(param.linearRampToValueAtTime).toHaveBeenCalledWith(1, 2);
     });
 
+    it('crops a linear ramp to the rendered region with interpolated boundary values', () => {
+        const param = makeParam();
+        scheduleAutomationOnParam(
+            param as unknown as AudioParam,
+            [
+                { beat: 0, value: 0, curve: 'linear', tension: 0 },
+                { beat: 4, value: 1, curve: 'linear', tension: 0 },
+            ],
+            0.5,
+            120,
+            [],
+            1
+        );
+
+        expect(param.setValueAtTime.mock.calls[0]?.[0]).toBeCloseTo(0.5, 10);
+        expect(param.setValueAtTime.mock.calls[0]?.[1]).toBe(0);
+        expect(param.linearRampToValueAtTime.mock.calls.at(-1)?.[0]).toBeCloseTo(0.75, 10);
+        expect(param.linearRampToValueAtTime.mock.calls.at(-1)?.[1]).toBeCloseTo(0.5, 10);
+    });
+
+    it('samples exponential curves only inside the rendered region', () => {
+        const param = makeParam();
+        scheduleAutomationOnParam(
+            param as unknown as AudioParam,
+            [
+                { beat: 0, value: 0, curve: 'exponential', tension: 0 },
+                { beat: 130, value: 1, curve: 'linear', tension: 0 },
+            ],
+            1,
+            120,
+            [],
+            64,
+            (beat) => (beat / 130) ** 2 * 65
+        );
+
+        expect(param.setValueAtTime.mock.calls[0]?.[0]).toBeCloseTo(Math.sqrt(64 / 65), 10);
+        expect(param.setValueAtTime.mock.calls[0]?.[1]).toBe(0);
+        expect(param.linearRampToValueAtTime.mock.calls.length).toBeLessThanOrEqual(101);
+        expect(param.linearRampToValueAtTime).toHaveBeenLastCalledWith(1, 1);
+        const times = param.linearRampToValueAtTime.mock.calls.map((call) => call[1]);
+        expect(Math.max(...times.slice(1).map((time, index) => time - times[index]!))).toBeLessThanOrEqual(0.010_001);
+    });
+
+    it('uses the canonical beat projector at both cropped boundaries', () => {
+        const param = makeParam();
+        scheduleAutomationOnParam(
+            param as unknown as AudioParam,
+            [
+                { beat: 0, value: 0, curve: 'linear', tension: 0 },
+                { beat: 4, value: 1, curve: 'linear', tension: 0 },
+            ],
+            5,
+            120,
+            [],
+            4,
+            (beat) => beat * beat
+        );
+
+        expect(param.setValueAtTime.mock.calls[0]?.[0]).toBeCloseTo(0.5, 10);
+        expect(param.setValueAtTime.mock.calls[0]?.[1]).toBe(0);
+        expect(param.linearRampToValueAtTime).toHaveBeenCalledWith(expect.closeTo(Math.sqrt(6.5) / 4, 10), 2.5);
+        expect(param.linearRampToValueAtTime.mock.calls.at(-1)?.[0]).toBeCloseTo(0.75, 10);
+        expect(param.linearRampToValueAtTime.mock.calls.at(-1)?.[1]).toBeCloseTo(5, 10);
+    });
+
+    it('collapses equal-beat points with the last value winning', () => {
+        const param = makeParam();
+        scheduleAutomationOnParam(
+            param as unknown as AudioParam,
+            [
+                { beat: 0, value: 0, curve: 'linear', tension: 0 },
+                { beat: 2, value: 0.5, curve: 'linear', tension: 0 },
+                { beat: 2, value: 0.9, curve: 'linear', tension: 0 },
+            ],
+            1,
+            120,
+            []
+        );
+
+        expect(param.linearRampToValueAtTime).toHaveBeenLastCalledWith(0.9, 1);
+    });
+
     it('holds (step) a value rather than ramping when the curve is step', () => {
         const param = makeParam();
         scheduleAutomationOnParam(
@@ -173,6 +255,40 @@ describe('scheduleAutomationOnParam', () => {
         expect(param.linearRampToValueAtTime).not.toHaveBeenCalled();
         // A step lane re-asserts its value just before the next point's time.
         expect(param.setValueAtTime).toHaveBeenCalledWith(0.5, expect.any(Number));
+    });
+
+    it('emits stairs as instantaneous set events', () => {
+        const param = makeParam();
+        scheduleAutomationOnParam(
+            param as unknown as AudioParam,
+            [
+                { beat: 0, value: 0, curve: 'stairs', tension: 0, stairSteps: 4 },
+                { beat: 4, value: 1, curve: 'linear', tension: 0 },
+            ],
+            2,
+            120,
+            []
+        );
+
+        expect(param.linearRampToValueAtTime).not.toHaveBeenCalled();
+        expect(param.setValueAtTime).toHaveBeenLastCalledWith(1, 2);
+    });
+
+    it.each([0, 2.5])('normalizes persisted stair counts (%s) to finite complete events', (stairSteps) => {
+        const param = makeParam();
+        scheduleAutomationOnParam(
+            param as unknown as AudioParam,
+            [
+                { beat: 0, value: 0, curve: 'stairs', tension: 0, stairSteps },
+                { beat: 4, value: 1, curve: 'linear', tension: 0 },
+            ],
+            2,
+            120,
+            []
+        );
+
+        expect(param.setValueAtTime.mock.calls.flat().every(Number.isFinite)).toBe(true);
+        expect(param.setValueAtTime).toHaveBeenLastCalledWith(1, 2);
     });
 
     it('schedules nothing for an empty point list', () => {
@@ -204,8 +320,8 @@ describe('scheduleTrackAutomation', () => {
                         minValue: min,
                         maxValue: max,
                         points: [
-                            { beat: 0, value: min, curve: 'linear', tension: 0 },
-                            { beat: 2, value: max, curve: 'linear', tension: 0 },
+                            { beat: 128, value: min, curve: 'linear', tension: 0 },
+                            { beat: 130, value: max, curve: 'linear', tension: 0 },
                         ],
                     }),
                 ],
@@ -215,7 +331,8 @@ describe('scheduleTrackAutomation', () => {
                 [{ deviceId: 'device-1', deviceType, node: device }],
                 10,
                 120,
-                []
+                [],
+                64
             );
 
             for (const [index, [, , scale, offset]] of targetSpecs.entries()) {
@@ -233,14 +350,15 @@ describe('scheduleTrackAutomation', () => {
         const panNode = { pan } as unknown as StereoPannerNode;
 
         scheduleTrackAutomation(
-            [makeLane({ parameterId: 'gain', points: [{ beat: 0, value: 0.8, curve: 'linear', tension: 0 }] })],
+            [makeLane({ parameterId: 'gain', points: [{ beat: 128, value: 0.8, curve: 'linear', tension: 0 }] })],
             'track-1',
             gainNode,
             panNode,
             [],
             10,
             120,
-            []
+            [],
+            64
         );
 
         expect(gain.setValueAtTime).toHaveBeenCalledWith(0.8, 0);
@@ -254,14 +372,15 @@ describe('scheduleTrackAutomation', () => {
         const panNode = { pan } as unknown as StereoPannerNode;
 
         scheduleTrackAutomation(
-            [makeLane({ parameterId: 'pan', points: [{ beat: 0, value: -0.5, curve: 'linear', tension: 0 }] })],
+            [makeLane({ parameterId: 'pan', points: [{ beat: 128, value: -0.5, curve: 'linear', tension: 0 }] })],
             'track-1',
             gainNode,
             panNode,
             [],
             10,
             120,
-            []
+            [],
+            64
         );
 
         expect(pan.setValueAtTime).toHaveBeenCalledWith(-0.5, 0);
@@ -386,8 +505,9 @@ describe('scheduleTrackAutomation', () => {
             2,
             120,
             [],
-            1_000,
-            64
+            64,
+            undefined,
+            1_000
         );
 
         expect(scheduleParam).toHaveBeenCalledWith('filterCutoff', [

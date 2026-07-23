@@ -16,6 +16,9 @@ export type AudioDeviceStrategy = {
     setBypass?(bypassed: boolean): void;
     noteOn?(noteOrPad: number, velocity: number, midiNote?: number, sampleFrame?: number): void;
     noteOff?(noteOrPad: number, sampleFrame?: number): void;
+    connectPadOutput?(pad: number, destination: AudioNode): void;
+    disconnectPadOutput?(pad: number, destination: AudioNode): void;
+    setPadDryRouted?(pad: number, routed: boolean): void;
     destroy?(): void;
 };
 

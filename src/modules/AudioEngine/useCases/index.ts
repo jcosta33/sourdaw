@@ -40,6 +40,7 @@ export { scheduleFaustNote } from './faustScheduler/scheduleFaustNote';
 export { startFaustNote } from './faustScheduler/startFaustNote';
 
 export { buildDeviceChain } from './buildDeviceChain';
+export { resolveToasterPadBinding } from './resolveToasterPadBinding';
 
 export { decodeAudioFile } from './decodeAudioFile';
 export { decodeAudioFileBuffer } from './decodeAudioFileBuffer';
