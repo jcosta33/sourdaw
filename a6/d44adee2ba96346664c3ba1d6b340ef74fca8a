@@ -1,0 +1,19 @@
+src/modules/BrowserAi/useCases/__tests__/removeModel.spec.ts
+  s_0d39f3a4a4357a::t_eb2149666a02ca 132-134
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "a6d44adee2ba96346664c3ba1d6b340ef74fca8a",
+  "prompts": {},
+  "sessions": {
+    "s_0d39f3a4a4357a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "60da6a2e-7d79-4d98-8624-e993f5a9f94e",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
