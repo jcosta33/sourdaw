@@ -574,7 +574,7 @@ export async function scheduleTrackClips({
                 if (isFirstIter && trimBeforeSec === 0) {
                     if (clip.fadeInBeats > 0) {
                         const fadeInEndBeat = clip.startBeat + clip.fadeInBeats;
-                        const fadeInEndSec = projectBeatToSeconds(fadeInEndBeat) - regionStartSec;
+                        const fadeInEndSec = projectBeatToSeconds(fadeInEndBeat) + compensationDelay - regionStartSec;
                         const fadeInDuration = Math.min(
                             Math.max(MICRO_FADE_SECONDS, fadeInEndSec - iterStartTime),
                             playDuration * 0.5

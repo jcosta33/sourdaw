@@ -450,6 +450,7 @@ describe('scheduleTrackClips — audio clip scheduling', () => {
 
     it('projects cropped audio timing and fades through a linear tempo ramp', async () => {
         mocks.audioBufferCache.get.mockReturnValue(makeBuffer(10));
+        mocks.getCompensationDelay.mockReturnValue(0.1);
         const { ctx, sources, gains } = makeRecordingOfflineCtx();
         const changes = [
             { id: 'start', beat: 0, tempo: 60, curve: 'linear' as const },
@@ -470,16 +471,16 @@ describe('scheduleTrackClips — audio clip scheduling', () => {
 
         await run({ track, ctx, regionStartBeat: 2, changes, projector: projectTempoPpqEndpoints });
 
-        expect(sources[0]!.start).toHaveBeenCalledWith(0, 0, project(2, 6).durationSeconds);
+        expect(sources[0]!.start).toHaveBeenCalledWith(expect.closeTo(0.1, 12), 0, project(2, 6).durationSeconds);
         expect(gains[0]!.gain.linearRampToValueAtTime).toHaveBeenCalledWith(
             0.8,
-            expect.closeTo(project(2, 3).durationSeconds, 12)
+            expect.closeTo(0.1 + project(2, 3).durationSeconds, 12)
         );
         expect(gains[0]!.gain.setValueAtTime).toHaveBeenCalledWith(
             0.8,
-            expect.closeTo(project(2, 5).durationSeconds, 12)
+            expect.closeTo(0.1 + project(2, 5).durationSeconds, 12)
         );
-        expect(gains[0]!.gain.linearRampToValueAtTime).toHaveBeenCalledWith(0, project(2, 6).durationSeconds);
+        expect(gains[0]!.gain.linearRampToValueAtTime).toHaveBeenCalledWith(0, 0.1 + project(2, 6).durationSeconds);
     });
 
     it('drops clips that end before the export region starts', async () => {
