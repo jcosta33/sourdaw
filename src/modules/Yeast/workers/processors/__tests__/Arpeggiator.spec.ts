@@ -298,19 +298,23 @@ describe('Arpeggiator', () => {
         ]);
     });
 
-    it('keeps an identified same-pitch voice held when its newer peer releases first', () => {
+    it.each([
+        ['identified reverse release', 'source-first', 'source-second'],
+        ['legacy FIFO', undefined, undefined],
+    ])('keeps one overlapping same-pitch voice held after the first release (%s)', (_label, firstId, secondId) => {
         arp.setParam('rate_denom', 1024);
+        const withIdentity = (noteInstanceId?: string) => (noteInstanceId ? { noteInstanceId } : {});
         const firstBlock: MidiEvent[] = [];
         arp.processMidi(
             [
                 {
                     timeSamples: 0,
-                    noteInstanceId: 'source-first',
+                    ...withIdentity(firstId),
                     kind: { type: 'noteOn', channel: 0, note: 60, velocity: 100 },
                 },
                 {
                     timeSamples: 0,
-                    noteInstanceId: 'source-second',
+                    ...withIdentity(secondId),
                     kind: { type: 'noteOn', channel: 0, note: 60, velocity: 100 },
                 },
             ],
@@ -323,7 +327,7 @@ describe('Arpeggiator', () => {
             [
                 {
                     timeSamples: 128,
-                    noteInstanceId: 'source-second',
+                    ...withIdentity(secondId),
                     kind: { type: 'noteOff', channel: 0, note: 60 },
                 },
             ],
@@ -337,7 +341,7 @@ describe('Arpeggiator', () => {
             [
                 {
                     timeSamples: 256,
-                    noteInstanceId: 'source-first',
+                    ...withIdentity(firstId),
                     kind: { type: 'noteOff', channel: 0, note: 60 },
                 },
             ],

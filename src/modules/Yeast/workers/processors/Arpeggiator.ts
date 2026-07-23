@@ -343,18 +343,10 @@ export class Arpeggiator extends BaseMidiProcessor {
         trackId?: string,
         noteInstanceId?: string
     ): void {
-        const isDuplicate = this.held.some((heldNote) => {
-            if (noteInstanceId !== undefined) {
-                return heldNote.trackId === trackId && heldNote.noteInstanceId === noteInstanceId;
-            }
-            return (
-                heldNote.trackId === trackId &&
-                heldNote.channel === channel &&
-                heldNote.note === note &&
-                heldNote.noteInstanceId === undefined
-            );
-        });
-        if (isDuplicate) {
+        if (
+            noteInstanceId !== undefined &&
+            this.held.some((heldNote) => heldNote.trackId === trackId && heldNote.noteInstanceId === noteInstanceId)
+        ) {
             return;
         }
 
