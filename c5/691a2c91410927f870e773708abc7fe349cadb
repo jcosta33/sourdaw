@@ -1,0 +1,25 @@
+.agents/artifacts/sourdaw/audits/AUDIT-midi-handling.md
+  s_0d39f3a4a4357a::t_fd6f6ab29700df 130-148
+src/modules/GrandBoule/presentations/helpers/perNoteAvailability.ts
+  s_0d39f3a4a4357a::t_d8a0c4c281eaef 1-22
+src/modules/GrandBoule/presentations/views/__tests__/GrandBoulePanelPerNoteGate.spec.tsx
+  s_0d39f3a4a4357a::t_bbc7389f2284dc 1-49
+src/modules/GrandBoule/presentations/views/GrandBoulePanel.tsx
+  s_0d39f3a4a4357a::t_6a783fd30353c2 5,50,410-452
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "c5691a2c91410927f870e773708abc7fe349cadb",
+  "prompts": {},
+  "sessions": {
+    "s_0d39f3a4a4357a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "60da6a2e-7d79-4d98-8624-e993f5a9f94e",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
