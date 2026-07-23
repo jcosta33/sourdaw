@@ -1,0 +1,62 @@
+src/modules/MIDI/useCases/chordTrack/createChordPitchProjector.ts
+  s_ac9b259eab20ba::t_bfa5636a180f56 1-21
+src/modules/AudioEngine/repositories/offlineScheduler/offlineMidiEventProjectorState.ts
+  s_ac9b259eab20ba::t_bfa5636a180f56 52-53,57,61
+src/modules/Transport/useCases/scheduling/scheduleMidiNotes.ts
+  s_ac9b259eab20ba::t_18fc4fb21d96e6 368
+src/modules/AudioEngine/useCases/__tests__/exportStems.spec.ts
+  s_ac9b259eab20ba::t_13f8e3a5f54f6d 145
+  s_ac9b259eab20ba::t_6afd4ed104f7e4 146-148
+src/app/bootstrap.ts
+  s_ac9b259eab20ba::t_bfa5636a180f56 89,161,170
+src/modules/AudioEngine/useCases/offlineRender/scheduleTrackClips.ts
+  s_ac9b259eab20ba::t_18fc4fb21d96e6 312
+src/modules/AudioEngine/repositories/offlineScheduler/setOfflineMidiEventProjector.ts
+  s_ac9b259eab20ba::t_bfa5636a180f56 3,11,17,21
+src/modules/Transport/useCases/scheduling/__tests__/scheduleMidiNotes.spec.ts
+  s_ac9b259eab20ba::t_39eb778a4377f9 5,7,125-132,217-221,223-235,237-244
+  s_ac9b259eab20ba::t_46efb1b5775972 222,236
+  s_ac9b259eab20ba::t_c2127ec52c00ce 245-247
+  s_ac9b259eab20ba::t_afc92b1c49fbc1 248-252
+src/modules/MIDI/useCases/index.ts
+  s_ac9b259eab20ba::t_bfa5636a180f56 14
+src/modules/Arrangement/useCases/freezeBounce/renderOffline.ts
+  s_ac9b259eab20ba::t_18fc4fb21d96e6 128-136,138
+  s_ac9b259eab20ba::t_bfa5636a180f56 56,62,68
+src/modules/AudioEngine/useCases/offlineRender/projectOfflineYeastTrackNotes.ts
+  s_ac9b259eab20ba::t_07fa0f72797e68 51-63,134-137,162
+src/modules/Arrangement/useCases/freezeBounce/__tests__/renderOffline.spec.ts
+  s_ac9b259eab20ba::t_13f8e3a5f54f6d 331
+  s_ac9b259eab20ba::t_f3ed68c617e4ed 486-514
+src/app/__tests__/bootstrap.spec.ts
+  s_ac9b259eab20ba::t_1e4ff9c14b004f 200
+src/modules/AudioEngine/useCases/offlineRender/__tests__/scheduleTrackClips.spec.ts
+  s_ac9b259eab20ba::t_18fc4fb21d96e6 263,276,325-327,595-598
+  s_ac9b259eab20ba::t_39665cb65638b1 599-600
+src/modules/Arrangement/useCases/freezeBounce/offlineRenderDependencies.ts
+  s_ac9b259eab20ba::t_bfa5636a180f56 95
+src/modules/AudioEngine/useCases/offlineRender/__tests__/projectOfflineYeastTrackNotes.spec.ts
+  s_ac9b259eab20ba::t_07fa0f72797e68 157-207
+src/modules/MIDI/useCases/chordTrack/__tests__/createChordPitchProjector.spec.ts
+  s_ac9b259eab20ba::t_bfa5636a180f56 1-32
+src/modules/AudioEngine/useCases/configureOfflineMidiEventProjection.ts
+  s_ac9b259eab20ba::t_bfa5636a180f56 8,10
+src/modules/AudioEngine/useCases/offlineRender/resolveRenderContext.ts
+  s_ac9b259eab20ba::t_bfa5636a180f56 95
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "863ccab0fd1509f439a56c205ab475af30dcb1e3",
+  "prompts": {},
+  "sessions": {
+    "s_ac9b259eab20ba": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8699-3865-7842-8c54-afbac6cfd266",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
