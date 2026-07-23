@@ -1,11 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import {
-    vcaGroupStore,
-    getVcaGroupsState,
-    setVcaGroupsState,
-    defaultVcaGroupState,
-    type VcaGroup,
-} from '../vcaGroupStore';
+
+import { vcaGroupStore, getVcaGroupsState, setVcaGroupsState, type VcaGroup } from '../vcaGroupStore';
 
 const make_group = (id: string): VcaGroup => ({
     id,
@@ -47,7 +42,9 @@ describe('vcaGroupStore', () => {
 
     it('subscribe fires on set', () => {
         let called = false;
-        const unsub = vcaGroupStore.subscribe(() => { called = true; });
+        const unsub = vcaGroupStore.subscribe(() => {
+            called = true;
+        });
         setVcaGroupsState([make_group('g1')]);
         expect(called).toBe(true);
         unsub();
