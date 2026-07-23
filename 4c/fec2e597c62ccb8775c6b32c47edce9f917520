@@ -1,0 +1,23 @@
+src/modules/Automation/useCases/automation/__tests__/prepareAutomationTimeStateRestore.spec.ts
+  s_c2fca615e81f34::t_563b43f456ba42 277-310,360-457
+  s_c2fca615e81f34::t_df22cc58a012e2 458
+src/modules/Automation/useCases/automation/prepareAutomationTimeStateRestore.ts
+  s_c2fca615e81f34::t_5cf7872ebe810f 256,259,280,283
+  s_c2fca615e81f34::t_2a686f2b0cf90d 157-164,189-240,243,247-251,257-258,260-261,264,271,281-282,284-285,288,295
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "4cfec2e597c62ccb8775c6b32c47edce9f917520",
+  "prompts": {},
+  "sessions": {
+    "s_c2fca615e81f34": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f74e9-e1c5-7142-85d2-4c577b3973c0",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
