@@ -1,0 +1,21 @@
+src/modules/TimelineEditor/presentations/views/ClipView/__tests__/PianoRoll.spec.tsx
+  s_0d39f3a4a4357a::t_792c3b0046fe0f 4-10,296-300,303-351
+  s_0d39f3a4a4357a::t_1a5044aede0ba5 1,11-12,15-33,86-101,122-125,129-139,180-185,188-190,232-295,301-302,352-408
+  s_0d39f3a4a4357a::t_4ba765472d181e 409-412
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "f4da52e7c21bc16fcae2ef9ce8fac1cea08d39b3",
+  "prompts": {},
+  "sessions": {
+    "s_0d39f3a4a4357a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "60da6a2e-7d79-4d98-8624-e993f5a9f94e",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
