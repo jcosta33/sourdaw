@@ -1,0 +1,19 @@
+tests/e2e/deepInteractions.spec.ts
+  s_0d39f3a4a4357a::t_ae36a84ff1a9a5 2,12-27,35-36,39,41,44-46,48,52-56,62,67-68,72,75,84,87,93,97-101,105,108-112,115-122,126-130,136-138,141,143,145-150,153,156-157,166-170,178-179,182,184,186-188
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "bbfc649bda5a6eb0766a3dd2fc9957fcfcba26f6",
+  "prompts": {},
+  "sessions": {
+    "s_0d39f3a4a4357a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "60da6a2e-7d79-4d98-8624-e993f5a9f94e",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
