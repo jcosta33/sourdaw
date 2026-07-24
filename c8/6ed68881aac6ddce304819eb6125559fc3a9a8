@@ -1,0 +1,33 @@
+src/modules/MIDI/useCases/__tests__/exportMidiFile.spec.ts
+  s_0d39f3a4a4357a::t_9bb5eaf6e3df16 3-4,12-32,34-198,201-236,242,251,256,267-279
+src/modules/MIDI/useCases/grooveTemplates/__tests__/projectClipMidiEvents.spec.ts
+  s_cc939d1983cb3f::t_07ea968fa3c335 136-190
+src/modules/MIDI/useCases/grooveTemplates/__tests__/projectCommittedGroove.spec.ts
+  s_cc939d1983cb3f::t_243fd1c89ae3b1 1-74
+src/modules/MIDI/useCases/webMidiInput/__tests__/handleWebMidiNoteOff.spec.ts
+  s_cc939d1983cb3f::t_088dd7c7c224a9 449-544
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "c86ed68881aac6ddce304819eb6125559fc3a9a8",
+  "prompts": {},
+  "sessions": {
+    "s_0d39f3a4a4357a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "60da6a2e-7d79-4d98-8624-e993f5a9f94e",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_cc939d1983cb3f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-a388262aa92a9fe53",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
