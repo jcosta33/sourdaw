@@ -1,0 +1,121 @@
+crates/daw-dsp/src/grand_boule/longitudinal.rs
+  s_0d39f3a4a4357a::t_8d04dc60085883 136
+  s_0d39f3a4a4357a::t_866e3a82a8d3f0 25
+crates/daw-dsp/src/toaster/engines/cr78.rs
+  s_0d39f3a4a4357a::t_7c01770bbb3bfd 11,227-228
+crates/daw-dsp/src/toaster/engines/kick_909.rs
+  s_0d39f3a4a4357a::t_272d1dec2c9068 13,221-222
+crates/daw-dsp/src/gluten/opto.rs
+  s_0d39f3a4a4357a::t_379c0ff123dd78 7
+  s_0d39f3a4a4357a::t_e236797f7f65b2 109
+  s_0d39f3a4a4357a::t_dd2534a572c95f 96
+crates/daw-dsp/src/bacteria/crossover.rs
+  s_0d39f3a4a4357a::t_41e640ef1beafc 71-73
+  s_0d39f3a4a4357a::t_8f88966600c161 7
+crates/daw-dsp/src/levain/realism/biquad.rs
+  s_0d39f3a4a4357a::t_1b51df607e6074 8
+  s_0d39f3a4a4357a::t_9a13b3b5b3b1d4 50-55
+crates/daw-dsp/src/gluten/diode.rs
+  s_0d39f3a4a4357a::t_a8e83a2d2108b5 145-146
+  s_0d39f3a4a4357a::t_9fe915f6f48ffa 134
+  s_0d39f3a4a4357a::t_d07c3db08d1e4c 9
+crates/daw-dsp/src/bacteria/filter.rs
+  s_0d39f3a4a4357a::t_530dc9564d5f51 6
+  s_0d39f3a4a4357a::t_5b7b4737233b80 156-158
+  s_0d39f3a4a4357a::t_3954380b81907d 129-130
+crates/daw-dsp/src/toaster/engines/clap_909.rs
+  s_0d39f3a4a4357a::t_bc3b8d0cf0516a 8,185-186
+crates/daw-dsp/src/toaster/engines/clap_808.rs
+  s_0d39f3a4a4357a::t_cb2ca93f4a51a5 10,219-220
+crates/daw-dsp/src/grand_boule/soundboard.rs
+  s_0d39f3a4a4357a::t_5b7727924957f5 15-16
+  s_0d39f3a4a4357a::t_0b961872358288 208
+crates/daw-dsp/src/toaster/voice.rs
+  s_0d39f3a4a4357a::t_d8153bb601ff14 10
+  s_0d39f3a4a4357a::t_fd01eefc73f734 53-54
+crates/daw-dsp/src/gluten/detector.rs
+  s_0d39f3a4a4357a::t_485411a9a95cec 3-4
+  s_0d39f3a4a4357a::t_68f01585bc3bcf 28-30
+crates/daw-dsp/src/bacteria/chorus.rs
+  s_0d39f3a4a4357a::t_e997eeebf806db 170
+  s_0d39f3a4a4357a::t_1c9431020f55be 126-129
+  s_0d39f3a4a4357a::t_44957391a067cc 261-262
+  s_0d39f3a4a4357a::t_eaedb14f7435cb 6
+crates/daw-dsp/src/grinder/power_amp.rs
+  s_0d39f3a4a4357a::t_5a3fe54c285fd6 247-248
+  s_0d39f3a4a4357a::t_6182d7ae591b96 5-6
+  s_0d39f3a4a4357a::t_9f6e8f84b5a557 160-163
+crates/daw-dsp/src/gluten/vca.rs
+  s_0d39f3a4a4357a::t_82dd7d6b608a6f 7
+  s_0d39f3a4a4357a::t_01661336c91cec 47-50
+  s_0d39f3a4a4357a::t_e8fbcfbeded0e0 37-40
+  s_0d39f3a4a4357a::t_d1e9b006906aa2 182
+crates/daw-dsp/src/gluten/sidechain.rs
+  s_0d39f3a4a4357a::t_12300fd64319a7 60-64,134-138,281-285
+  s_0d39f3a4a4357a::t_4882747df15d99 3
+crates/daw-dsp/src/gluten/smoother.rs
+  s_0d39f3a4a4357a::t_8d5d923cb2681e 41
+  s_0d39f3a4a4357a::t_b910aba0b638b9 3-4
+crates/daw-dsp/src/grand_boule/sympathetic.rs
+  s_0d39f3a4a4357a::t_d73edf242d7823 15
+  s_0d39f3a4a4357a::t_6f51c3b91b2cf8 132
+crates/daw-dsp/src/grand_boule/duplex.rs
+  s_0d39f3a4a4357a::t_f2729e5d02c538 13
+  s_0d39f3a4a4357a::t_56c9d75775903a 103
+crates/daw-dsp/src/toaster/dc_block.rs
+  s_0d39f3a4a4357a::t_a90b98ed4864e8 9-10,47
+crates/daw-dsp/src/toaster/sp1200.rs
+  s_0d39f3a4a4357a::t_aff3c782558174 19-20,191-195,253-254,296
+crates/daw-dsp/src/toaster/bridged_t.rs
+  s_0d39f3a4a4357a::t_968d86e4f8b84d 19-20,108-109
+crates/daw-dsp/src/crumbs/filter.rs
+  s_0d39f3a4a4357a::t_4d8e3f21ddb256 127-131
+  s_0d39f3a4a4357a::t_8cbe37efd3f3a8 10
+crates/daw-dsp/src/fermenter/filter.rs
+  s_0d39f3a4a4357a::t_afd5935cfcdd18 5
+  s_0d39f3a4a4357a::t_cc7601c164b99d 176
+  s_0d39f3a4a4357a::t_f7b9013dcdbfc9 412-413
+  s_0d39f3a4a4357a::t_6fd2bdf3aa4c94 353-355
+  s_0d39f3a4a4357a::t_92af40945f4600 57-59
+  s_0d39f3a4a4357a::t_27b2159baf5072 344-345
+  s_0d39f3a4a4357a::t_b1077276284e0d 6
+  s_0d39f3a4a4357a::t_5d1779942cf8fd 126
+crates/daw-dsp/src/crumbs/smooth.rs
+  s_0d39f3a4a4357a::t_ee78a528eaa266 59-60
+  s_0d39f3a4a4357a::t_aabd513ef69fd6 4-5
+crates/daw-dsp/src/toaster/engines/modal.rs
+  s_0d39f3a4a4357a::t_f7e6a1efef64e2 81-84
+  s_0d39f3a4a4357a::t_10fd9e09c05a27 9
+crates/daw-dsp/src/grand_boule/string.rs
+  s_0d39f3a4a4357a::t_07f9449120b7a7 321,359
+  s_0d39f3a4a4357a::t_dd0ec530a633a7 335,371
+  s_0d39f3a4a4357a::t_ea22a36bb617ec 21
+crates/daw-dsp/src/toaster/engines/snare_808.rs
+  s_0d39f3a4a4357a::t_99738435907c0b 11,200-201
+crates/daw-dsp/src/grinder/triode.rs
+  s_0d39f3a4a4357a::t_bf6a0196be6cb1 9-10
+  s_0d39f3a4a4357a::t_00782cf5c231a9 221-223
+crates/daw-dsp/src/toaster/engines/hihat_808.rs
+  s_0d39f3a4a4357a::t_444219b85e8d3d 20,192-193
+crates/daw-dsp/src/toaster/engines/perc_808.rs
+  s_0d39f3a4a4357a::t_f5639d6b3c3628 8,276-277
+crates/daw-dsp/src/gluten/fet.rs
+  s_0d39f3a4a4357a::t_2806914cbf998a 8
+  s_0d39f3a4a4357a::t_6e4789ad8113bf 134
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "b4f5df5435074e30cba60d5c888cc8b0ed5c6cae",
+  "prompts": {},
+  "sessions": {
+    "s_0d39f3a4a4357a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "60da6a2e-7d79-4d98-8624-e993f5a9f94e",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
