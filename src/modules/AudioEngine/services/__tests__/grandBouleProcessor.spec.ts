@@ -11,11 +11,23 @@ import { describe, it, expect, vi, beforeAll } from 'vitest';
  * are shimmed before importing the real function.
  */
 
-// Worklet-scope globals the module references at load time.
+// Worklet-scope globals the module references at load time. The registry
+// captures the processor constructor so the real instance can be exercised.
+const registry = new Map<string, new () => GrandBouleProcessorLike>();
 (globalThis as unknown as { AudioWorkletProcessor: unknown }).AudioWorkletProcessor = class {
     port = { onmessage: null as unknown, postMessage: vi.fn() };
 };
-(globalThis as unknown as { registerProcessor: unknown }).registerProcessor = () => {};
+(globalThis as unknown as { registerProcessor: unknown }).registerProcessor = (
+    name: string,
+    proc: new () => GrandBouleProcessorLike
+) => {
+    registry.set(name, proc);
+};
+
+type GrandBouleProcessorLike = {
+    port: { onmessage: ((event: { data: unknown }) => void) | null; postMessage: ReturnType<typeof vi.fn> };
+    process(inputs: Float32Array[][], outputs: Float32Array[][]): boolean;
+};
 
 let readBlockAcquire: typeof import('../grandBouleProcessor').readBlockAcquire;
 beforeAll(async () => {
@@ -27,6 +39,7 @@ const READ_HEAD_IDX = 1;
 
 /** Build a SAB with `ringFrames` stereo frames and the two atomic head ints. */
 function makeSab(ringFrames: number): {
+    sab: SharedArrayBuffer;
     controlInts: Int32Array;
     leftRing: Float32Array;
     rightRing: Float32Array;
@@ -36,7 +49,7 @@ function makeSab(ringFrames: number): {
     const controlInts = new Int32Array(sab, 0, 2);
     const leftRing = new Float32Array(sab, headerBytes, ringFrames);
     const rightRing = new Float32Array(sab, headerBytes + ringFrames * Float32Array.BYTES_PER_ELEMENT, ringFrames);
-    return { controlInts, leftRing, rightRing };
+    return { sab, controlInts, leftRing, rightRing };
 }
 
 describe('readBlockAcquire (SPSC acquire read)', () => {
@@ -142,5 +155,79 @@ describe('readBlockAcquire (SPSC acquire read)', () => {
         const { consumed } = readBlockAcquire(controlInts, leftRing, rightRing, ringFrames, out0, undefined, 2);
         expect(consumed).toBe(2);
         expect(Array.from(out0)).toEqual([1, 2]);
+    });
+});
+
+describe('GrandBouleProcessor (real instance)', () => {
+    let GrandBouleProcessor: new () => GrandBouleProcessorLike;
+
+    beforeAll(() => {
+        GrandBouleProcessor = registry.get('grand-boule-processor')!;
+    });
+
+    function newProc(): GrandBouleProcessorLike {
+        return new GrandBouleProcessor();
+    }
+
+    function send(proc: GrandBouleProcessorLike, sab: SharedArrayBuffer): void {
+        proc.port.onmessage?.({ data: { type: 'init', sab } });
+    }
+
+    it('init posts ready, parses the ring layout, and ignores a second init', () => {
+        const proc = newProc();
+        const { sab } = makeSab(8);
+        send(proc, sab);
+        expect(proc.port.postMessage).toHaveBeenCalledWith({ type: 'ready' });
+        // Second init is ignored (already ready).
+        const callsBefore = proc.port.postMessage.mock.calls.length;
+        send(proc, sab);
+        expect(proc.port.postMessage.mock.calls.length).toBe(callsBefore);
+    });
+
+    it('process is a no-op before init (no ring wired)', () => {
+        const proc = newProc();
+        const out = [new Float32Array(4).fill(9), new Float32Array(4).fill(9)];
+        proc.process([], [out]);
+        expect(Array.from(out[0]!)).toEqual([9, 9, 9, 9]);
+    });
+
+    it('process guards: returns early when output absent, empty, or left channel absent', () => {
+        const proc = newProc();
+        const { sab } = makeSab(8);
+        send(proc, sab);
+        // No output bus.
+        proc.process([], []);
+        // Empty output bus.
+        proc.process([], [[]]);
+        // Left channel absent.
+        proc.process([], [[undefined as unknown as Float32Array, new Float32Array(4)]]);
+        // None of these throw.
+        expect(true).toBe(true);
+    });
+
+    it('consumes published frames and advances the read head; underrun leaves output untouched', () => {
+        const proc = newProc();
+        const { controlInts, leftRing, rightRing, sab } = makeSab(8);
+        send(proc, sab);
+
+        // Publish 4 frames.
+        for (let i = 0; i < 4; i++) {
+            leftRing[i] = i + 1;
+            rightRing[i] = -(i + 1);
+        }
+        Atomics.store(controlInts, WRITE_HEAD_IDX, 4);
+
+        const out = [new Float32Array(4).fill(0), new Float32Array(4).fill(0)];
+        proc.process([], [out]);
+        expect(Array.from(out[0]!)).toEqual([1, 2, 3, 4]);
+        expect(Array.from(out[1]!)).toEqual([-1, -2, -3, -4]);
+        // Read head advanced by the consumed count.
+        expect(Atomics.load(controlInts, READ_HEAD_IDX)).toBe(4);
+
+        // Next call underruns (nothing published) → output untouched, head unchanged.
+        const out2 = [new Float32Array(4).fill(5), new Float32Array(4).fill(5)];
+        proc.process([], [out2]);
+        expect(Array.from(out2[0]!)).toEqual([5, 5, 5, 5]);
+        expect(Atomics.load(controlInts, READ_HEAD_IDX)).toBe(4);
     });
 });

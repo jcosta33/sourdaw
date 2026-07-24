@@ -134,6 +134,35 @@ describe('createGrinderNode', () => {
         expect(postMessage).toHaveBeenCalledWith({ type: 'param', name: 'bypass', value: 0 });
     });
 
+    it('ramps a named AudioParam directly when the worklet exposes it', async () => {
+        const node = await createGrinderNode(makeCtx());
+        postMessage.mockClear();
+        // Inject a real AudioParam-backed slot so setParam takes the
+        // `node.parameters.get(name)` path (setTargetAtTime) instead of the
+        // message-port coalescing path.
+        const setTarget = vi.fn();
+        (node.workletNode.parameters as Map<string, unknown>).set('drive', { setTargetAtTime: setTarget });
+
+        node.setParam('drive', 0.7);
+
+        expect(setTarget).toHaveBeenCalledWith(0.7, 0, 0.01);
+        // The message-port path was NOT taken.
+        expect(postMessage).not.toHaveBeenCalled();
+    });
+
+    it('drops a non-finite setParam value without touching the param or port', async () => {
+        const node = await createGrinderNode(makeCtx());
+        postMessage.mockClear();
+        const setTarget = vi.fn();
+        (node.workletNode.parameters as Map<string, unknown>).set('drive', { setTargetAtTime: setTarget });
+
+        node.setParam('drive', Number.NaN);
+        node.setParam('drive', Number.POSITIVE_INFINITY);
+
+        expect(setTarget).not.toHaveBeenCalled();
+        expect(postMessage).not.toHaveBeenCalled();
+    });
+
     it('should invoke the latency callback only for a latency-changed message with a numeric latency', async () => {
         const node = await createGrinderNode(makeCtx());
         const cb = vi.fn();
@@ -259,6 +288,20 @@ describe('createGrinderNode', () => {
         expect(cancelRaf).toHaveBeenCalledWith(11);
         expect(cancelRaf).toHaveBeenCalledWith(12);
         expect(telemetryAllocator.releaseSlot).toHaveBeenCalledWith(96);
+        expect(disconnect).toHaveBeenCalled();
+        expect(close).toHaveBeenCalled();
+    });
+
+    it('destroy is a safe no-op when no slot, poll, or param flush is active', async () => {
+        // Default allocateSlot returns null; onMeterData and setParam never
+        // called → all three destroy guards take their false arms.
+        const cancelRaf = vi.fn();
+        vi.stubGlobal('cancelAnimationFrame', cancelRaf);
+
+        const node = await createGrinderNode(makeCtx());
+        node.destroy();
+
+        expect(cancelRaf).not.toHaveBeenCalled();
         expect(disconnect).toHaveBeenCalled();
         expect(close).toHaveBeenCalled();
     });

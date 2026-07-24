@@ -285,6 +285,55 @@ describe('audioBufferCache conversions', () => {
         expect(audioBufferCache.get('archived')).toBeUndefined();
     });
 
+    it('rejects exported buffers with invalid header fields or mismatched channel lengths', () => {
+        const context = createTestContext(
+            vi.fn((_numberOfChannels: number, length: number, sampleRate: number) =>
+                createAudioBuffer({ length, sampleRate })
+            )
+        );
+
+        // Invalid sampleRate (non-finite / <= 0) → rejected.
+        expect(
+            audioBufferCache.importBuffers({
+                context,
+                buffers: {
+                    a: { sampleRate: Number.NaN, numberOfChannels: 1, channelData: [encodeFloat32([0.1])] },
+                },
+            })
+        ).toBeNull();
+        expect(
+            audioBufferCache.importBuffers({
+                context,
+                buffers: {
+                    a: { sampleRate: 0, numberOfChannels: 1, channelData: [encodeFloat32([0.1])] },
+                },
+            })
+        ).toBeNull();
+
+        // channelData length !== numberOfChannels → rejected.
+        expect(
+            audioBufferCache.importBuffers({
+                context,
+                buffers: {
+                    a: { sampleRate: 48_000, numberOfChannels: 2, channelData: [encodeFloat32([0.1])] },
+                },
+            })
+        ).toBeNull();
+
+        // A valid 2-channel buffer with unequal channel lengths → rejected by
+        // the byte-length-equality check inside isValidExportedAudioBuffer.
+        const longB64 = encodeFloat32([0.1, 0.2]);
+        const shortB64 = encodeFloat32([0.3]);
+        expect(
+            audioBufferCache.importBuffers({
+                context,
+                buffers: {
+                    a: { sampleRate: 48_000, numberOfChannels: 2, channelData: [longB64, shortB64] },
+                },
+            })
+        ).toBeNull();
+    });
+
     it('preserves a colliding durable buffer until the replacement candidate is published', async () => {
         const backing = installFakeIndexedDb();
         backing.set('shared', {

@@ -224,4 +224,58 @@ describe('createBacteriaNode', () => {
         expect(node.workletNode).toBeDefined();
         await expect(node.ready).resolves.toEqual({});
     });
+
+    it('cancels a prior meter rAF before installing a new polling loop', async () => {
+        const { telemetryAllocator } = await import('../telemetryAllocator');
+        vi.mocked(telemetryAllocator.allocateSlot).mockReturnValue({
+            sab: {} as SharedArrayBuffer,
+            byteOffset: 0,
+            view: new Float32Array(32),
+            seqView: new Int32Array(32),
+        });
+        const rafCallbacks: FrameRequestCallback[] = [];
+        vi.stubGlobal('requestAnimationFrame', (cb: FrameRequestCallback) => {
+            rafCallbacks.push(cb);
+            return rafCallbacks.length;
+        });
+        const cancelRaf = vi.fn();
+        vi.stubGlobal('cancelAnimationFrame', cancelRaf);
+
+        const node = await createBacteriaNode(makeCtx());
+        node.onMeterData(vi.fn());
+        // A second registration cancels the first scheduled frame (the
+        // `meterRafId !== null` guard) before starting a fresh loop.
+        node.onMeterData(vi.fn());
+
+        expect(cancelRaf).toHaveBeenCalledWith(1);
+    });
+
+    it('destroy is a safe no-op when no slot was allocated and no poll is running', async () => {
+        const cancelRaf = vi.fn();
+        vi.stubGlobal('cancelAnimationFrame', cancelRaf);
+
+        const node = await createBacteriaNode(makeCtx());
+        node.destroy();
+
+        expect(cancelRaf).not.toHaveBeenCalled();
+        expect(disconnect).toHaveBeenCalled();
+        expect(close).toHaveBeenCalled();
+    });
+
+    it('skips the latency handler when the handshake classifies the message as ready/late', async () => {
+        const { createReadyHandshake } = await import('#/infra/audioWorklet/workletInitShared');
+        vi.mocked(createReadyHandshake).mockReturnValueOnce({
+            promise: Promise.resolve({}),
+            onMessage: () => 'ready' as const,
+            isSettled: () => true,
+        });
+
+        const node = await createBacteriaNode(makeCtx());
+        const cb = vi.fn();
+        node.onLatencyChanged(cb);
+
+        node.workletNode.port.onmessage?.({ data: { type: 'latency-changed', latency: 9 } } as MessageEvent);
+        // outcome was 'ready', not 'other' → latency handler skipped.
+        expect(cb).not.toHaveBeenCalled();
+    });
 });

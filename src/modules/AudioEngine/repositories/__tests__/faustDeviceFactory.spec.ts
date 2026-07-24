@@ -166,6 +166,66 @@ describe('createFaustDevice — offline note scheduling (suspend batching)', () 
 
         expect(suspendCalls).toEqual([1, 2]);
     });
+
+    it('fires a note immediately when ctx.suspend throws synchronously', async () => {
+        const node = makeKeyNode();
+        mocks.createFaustNode.mockResolvedValue(node);
+
+        // Reinstall the OfflineAudioContext so suspend() throws synchronously
+        // (some implementations throw instead of rejecting the promise).
+        class ThrowingSuspendCtx {
+            readonly sampleRate = 48_000;
+            currentTime = 0;
+            suspend(): Promise<void> {
+                throw new Error('suspend sync throw');
+            }
+            resume(): Promise<void> {
+                return Promise.resolve();
+            }
+        }
+        globalThis.OfflineAudioContext = ThrowingSuspendCtx as unknown as typeof OfflineAudioContext;
+        const throwingCtx = new ThrowingSuspendCtx() as unknown as OfflineAudioContext;
+
+        const device = await createFaustDeviceForTest({ ctx: throwingCtx, faustModuleId: 'faust' });
+        const controls = device!.wamControls!;
+
+        // time > currentTime so it enters the suspend path; suspend throws
+        // synchronously and the catch fires the call immediately.
+        expect(() => controls.keyOn!(0, 60, 100, 1)).not.toThrow();
+        expect(node.keyOn).toHaveBeenCalledWith(0, 60, 100);
+    });
+
+    it('fires a note immediately in the offline path when time is undefined or already in the past', async () => {
+        const node = makeKeyNode();
+        mocks.createFaustNode.mockResolvedValue(node);
+
+        // Bump currentTime into the future-of-some-notes so the "past" branch fires.
+        class FutureCtx {
+            readonly sampleRate = 48_000;
+            currentTime = 5;
+            suspend(): Promise<void> {
+                suspendCalls.push(-1);
+                return Promise.resolve();
+            }
+            resume(): Promise<void> {
+                return Promise.resolve();
+            }
+        }
+        globalThis.OfflineAudioContext = FutureCtx as unknown as typeof OfflineAudioContext;
+        const futureCtx = new FutureCtx() as unknown as OfflineAudioContext;
+
+        const device = await createFaustDeviceForTest({ ctx: futureCtx, faustModuleId: 'faust' });
+        const controls = device!.wamControls!;
+
+        // undefined time → immediate.
+        controls.keyOn!(0, 60, 100);
+        // time <= currentTime (5) → immediate, no suspend.
+        controls.keyOff!(0, 60, 0, 1);
+
+        expect(node.keyOn).toHaveBeenCalledWith(0, 60, 100);
+        expect(node.keyOff).toHaveBeenCalledWith(0, 60, 0);
+        expect(suspendCalls).not.toContain(-1);
+    });
 });
 
 // Characterization tests for the live path. The live change (per-call setTimeout
@@ -233,5 +293,212 @@ describe('createFaustDevice — live note scheduling (sample-frame-sorted queue)
         await vi.advanceTimersByTimeAsync(400);
 
         expect(order).toEqual(['on', 'off']);
+    });
+
+    it('fires notes immediately when time is undefined or in the past (live path, no queue)', async () => {
+        const node = makeKeyNode();
+        mocks.createFaustNode.mockResolvedValue(node);
+
+        const device = await createFaustDeviceForTest({ ctx, faustModuleId: 'faust' });
+        const controls = device!.wamControls!;
+
+        now = 1; // present time
+
+        // undefined time → immediate fire.
+        controls.keyOn!(0, 60, 100);
+        expect(node.keyOn).toHaveBeenCalledWith(0, 60, 100);
+
+        // time in the past (<= currentTime) → immediate fire.
+        controls.keyOff!(0, 60, 0, 0.5);
+        expect(node.keyOff).toHaveBeenCalledWith(0, 60, 0);
+    });
+});
+
+// wamControls surface: setParam (resolved-via-cache + error swallow),
+// scheduleParam (non-AudioWorkletNode skip, param hit/miss, bare-name
+// resolution), destroy (success + error swallow), and the param-address
+// cache duplicate-bare-name warning branch.
+describe('createFaustDevice — wamControls param & lifecycle surface', () => {
+    beforeEach(() => {
+        vi.clearAllMocks();
+        mocks.compileFaustDSP.mockResolvedValue(true);
+    });
+
+    it('setParam resolves via the bare-name cache and swallows setParamValue errors', async () => {
+        const setParamValue = vi.fn();
+        setParamValue.mockImplementationOnce(() => {
+            throw new Error('boom');
+        });
+        const node = {
+            keyOn: vi.fn(),
+            keyOff: vi.fn(),
+            setParamValue,
+            destroy: vi.fn(),
+        };
+        mocks.createFaustNode.mockResolvedValue(node);
+
+        const ctx = {} as BaseAudioContext;
+        const device = await createFaustDeviceForTest({ ctx, faustModuleId: 'faust' });
+
+        // First call: setParamValue throws — must be caught + warned, not thrown.
+        device!.wamControls!.setParam('gain', 0.5);
+        expect(mocks.logger.warn).toHaveBeenCalledWith(
+            expect.stringContaining('Failed to set param'),
+            expect.any(Error)
+        );
+
+        // Second call: succeeds.
+        setParamValue.mockClear();
+        mocks.logger.warn.mockClear();
+        device!.wamControls!.setParam('gain', 0.8);
+        expect(setParamValue).toHaveBeenCalledWith('gain', 0.8); // bare name passed through (no cache entry)
+        expect(mocks.logger.warn).not.toHaveBeenCalled();
+    });
+
+    it('scheduleParam is a no-op for non-AudioWorkletNode devices, and otherwise sets value at time on resolved params', async () => {
+        // Non-AudioWorkletNode: makeKeyNode() is a plain object.
+        const plainNode = makeKeyNode();
+        mocks.createFaustNode.mockResolvedValue(plainNode);
+        const ctx = {} as BaseAudioContext;
+        const device = await createFaustDeviceForTest({ ctx, faustModuleId: 'faust' });
+        expect(() => device!.wamControls!.scheduleParam('gain', 0.5, 1)).not.toThrow();
+    });
+
+    it('scheduleParam resolves bare param names via the address cache and calls setValueAtTime on hit, ignores miss', async () => {
+        const setValueAtTime = vi.fn();
+        const params = new Map<string, { setValueAtTime: typeof setValueAtTime }>([
+            ['/foo/gain', { setValueAtTime }],
+            // '/bar/cutoff' intentionally absent to exercise the miss branch.
+        ]);
+        const awNode = {
+            parameters: params,
+            keyOn: vi.fn(),
+            keyOff: vi.fn(),
+            setParamValue: vi.fn(),
+            destroy: vi.fn(),
+        };
+        // Force `instanceof AudioWorkletNode` true via a stubbed global.
+        class FakeAudioWorkletNode {}
+        vi.stubGlobal('AudioWorkletNode', FakeAudioWorkletNode);
+        Object.setPrototypeOf(awNode, FakeAudioWorkletNode.prototype);
+        mocks.createFaustNode.mockResolvedValue(awNode);
+
+        const ctx = {} as BaseAudioContext;
+        const device = await createFaustDeviceForTest({ ctx, faustModuleId: 'faust' });
+
+        // Bare "gain" resolves to "/foo/gain" via the cache.
+        device!.wamControls!.scheduleParam('gain', 0.9, 2);
+        expect(setValueAtTime).toHaveBeenCalledWith(0.9, 2);
+
+        // Unknown bare name → no param found → silent skip.
+        setValueAtTime.mockClear();
+        device!.wamControls!.scheduleParam('cutoff', 0.1, 3);
+        expect(setValueAtTime).not.toHaveBeenCalled();
+
+        vi.unstubAllGlobals();
+    });
+
+    it('destroy calls node.destroy() and swallows its errors', async () => {
+        const destroy = vi.fn();
+        destroy.mockImplementationOnce(() => {
+            throw new Error('destroy failed');
+        });
+        const node = {
+            keyOn: vi.fn(),
+            keyOff: vi.fn(),
+            setParamValue: vi.fn(),
+            destroy,
+        };
+        mocks.createFaustNode.mockResolvedValue(node);
+        const ctx = {} as BaseAudioContext;
+        const device = await createFaustDeviceForTest({ ctx, faustModuleId: 'faust' });
+
+        // First destroy throws — caught + warned.
+        device!.wamControls!.destroy!();
+        expect(mocks.logger.warn).toHaveBeenCalledWith(
+            expect.stringContaining('Failed to destroy node'),
+            expect.any(Error)
+        );
+
+        // Second destroy succeeds.
+        mocks.logger.warn.mockClear();
+        device!.wamControls!.destroy!();
+        expect(destroy).toHaveBeenCalledTimes(2);
+        expect(mocks.logger.warn).not.toHaveBeenCalled();
+    });
+
+    it('buildParamAddressCache warns on duplicate bare param names and keeps the first', async () => {
+        const setValueAtTime = vi.fn();
+        const params = new Map<string, { setValueAtTime: typeof setValueAtTime }>([
+            ['/pathA/gain', { setValueAtTime }],
+            ['/pathB/gain', { setValueAtTime }], // duplicate bare name "gain"
+        ]);
+        const awNode = {
+            parameters: params,
+            keyOn: vi.fn(),
+            keyOff: vi.fn(),
+            setParamValue: vi.fn(),
+            destroy: vi.fn(),
+        };
+        class FakeAudioWorkletNode {}
+        vi.stubGlobal('AudioWorkletNode', FakeAudioWorkletNode);
+        Object.setPrototypeOf(awNode, FakeAudioWorkletNode.prototype);
+        mocks.createFaustNode.mockResolvedValue(awNode);
+
+        const ctx = {} as BaseAudioContext;
+        const device = await createFaustDeviceForTest({ ctx, faustModuleId: 'faust' });
+
+        expect(mocks.logger.warn).toHaveBeenCalledWith(expect.stringContaining('Duplicate bare param "gain"'));
+        // The cache kept the first (/pathA/gain).
+        device!.wamControls!.scheduleParam('gain', 0.4, 0);
+        expect(setValueAtTime).toHaveBeenCalledTimes(1);
+
+        vi.unstubAllGlobals();
+    });
+
+    it('keyOn/keyOff no-op when the node lacks the method (no keyOn/keyOff in node)', async () => {
+        // Node without keyOn/keyOff: the `'keyOn' in node` guard is false.
+        const node = {
+            setParamValue: vi.fn(),
+            destroy: vi.fn(),
+        };
+        mocks.createFaustNode.mockResolvedValue(node);
+        const ctx = { currentTime: 0, sampleRate: 48_000 } as unknown as AudioContext;
+        const device = await createFaustDeviceForTest({ ctx, faustModuleId: 'faust' });
+
+        expect(() => {
+            device!.wamControls!.keyOn!(0, 60, 100, 1);
+            device!.wamControls!.keyOff!(0, 60, 0, 1);
+        }).not.toThrow();
+    });
+
+    it('buildParamAddressCache skips parameter keys whose bare name is empty', async () => {
+        // A key that is just "/" splits to ['', ''], pop() → '' (falsy) → skipped.
+        const setValueAtTime = vi.fn();
+        const params = new Map<string, { setValueAtTime: typeof setValueAtTime }>([
+            ['/', { setValueAtTime }],
+            ['/real/gain', { setValueAtTime }],
+        ]);
+        const awNode = {
+            parameters: params,
+            keyOn: vi.fn(),
+            keyOff: vi.fn(),
+            setParamValue: vi.fn(),
+            destroy: vi.fn(),
+        };
+        class FakeAudioWorkletNode {}
+        vi.stubGlobal('AudioWorkletNode', FakeAudioWorkletNode);
+        Object.setPrototypeOf(awNode, FakeAudioWorkletNode.prototype);
+        mocks.createFaustNode.mockResolvedValue(awNode);
+
+        const ctx = {} as BaseAudioContext;
+        const device = await createFaustDeviceForTest({ ctx, faustModuleId: 'faust' });
+
+        // 'gain' resolves to /real/gain; the empty-bare-name key was skipped
+        // without polluting the cache.
+        device!.wamControls!.scheduleParam('gain', 0.3, 0);
+        expect(setValueAtTime).toHaveBeenCalledWith(0.3, 0);
+
+        vi.unstubAllGlobals();
     });
 });

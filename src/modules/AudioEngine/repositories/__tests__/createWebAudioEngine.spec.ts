@@ -855,6 +855,31 @@ describe('AudioEngine', () => {
             expect(() => fbEngine.updateMidiFxParam('t1', 'fx1', 'p', 0.5)).not.toThrow();
             expect(() => fbEngine.updateMidiFxBypass('t1', 'fx1', true)).not.toThrow();
         });
+
+        it('lifecycle, transport and meter methods short-circuit without touching the noop graph', async () => {
+            // initialize / resume / suspend are no-ops in fallback mode.
+            await expect(fbEngine.initialize()).resolves.toBeUndefined();
+            await expect(fbEngine.resume()).resolves.toBeUndefined();
+            await expect(fbEngine.suspend()).resolves.toBeUndefined();
+
+            // Master gain setters/readers return the fallback defaults without
+            // ramping on the noop context.
+            expect(() => fbEngine.setMasterGain(0.5)).not.toThrow();
+            expect(fbEngine.getMasterGain()).toBe(0);
+            expect(fbEngine.getMasterPeakLevel()).toBe(0);
+
+            // Transport / metering guards — each must return before touching the
+            // noop graph; an unguarded method would dereference a noop node and
+            // throw. No throw is the regression signal.
+            expect(() => fbEngine.cancelTrackAutomationRamps()).not.toThrow();
+            expect(() => fbEngine.registerTuningTable([440])).not.toThrow();
+            expect(() => fbEngine.setSend('t1', 'bus1', 0.5)).not.toThrow();
+            expect(() => fbEngine.refreshSidechainAlignment(() => 0)).not.toThrow();
+            expect(() => fbEngine.scheduleOscillator(440, 0, 0.1, 0.3)).not.toThrow();
+            expect(() => fbEngine.scheduleClick(0, true, 1)).not.toThrow();
+            expect(() => fbEngine.stopAllScheduled()).not.toThrow();
+            expect(() => fbEngine.syncKneadState('t1', {})).not.toThrow();
+        });
     });
 
     it('does not allocate a strip when parameter and patch executors target an absent strip', () => {
@@ -1349,6 +1374,46 @@ describe('AudioEngine', () => {
             } finally {
                 vi.stubGlobal('SharedArrayBuffer', savedSAB);
             }
+        });
+    });
+
+    // Guards over missing endpoints: setSend/removeBusStrip/removeSend on
+    // absent targets short-circuit instead of dereferencing undefined nodes.
+    describe('missing-target send/bus guards', () => {
+        it('setSend ignores a source track that has no strip', () => {
+            // No ensureTrackStrip('ghost') → trackNode lookup is undefined.
+            engine.setSend('ghost', 'some-bus', 0.5);
+            // No bus or send materialized.
+            expect(engine.getTrackStrip('ghost')).toBeUndefined();
+        });
+
+        it('removeBusStrip is a clean no-op for a bus that was never created', () => {
+            expect(() => engine.removeBusStrip('never-existed')).not.toThrow();
+        });
+
+        it('removeBusStrip leaves unrelated sends intact (the bus-id mismatch branch)', () => {
+            // Build two buses with sends, then remove one; the send to the other
+            // must survive (the false arm of `send.busId === busId`).
+            engine.ensureTrackStrip('srcA');
+            engine.ensureTrackStrip('srcB');
+            engine.setSend('srcA', 'busA', 0.5);
+            engine.setSend('srcB', 'busB', 0.5);
+
+            engine.removeBusStrip('busA');
+
+            // busB's send survived the sweep.
+            const sends = (engine as unknown as { sendNodes: Map<string, unknown> }).sendNodes;
+            const keys = Array.from(sends.keys());
+            expect(keys.some((k) => k.includes('busB'))).toBe(true);
+            expect(keys.some((k) => k.includes('busA'))).toBe(false);
+        });
+
+        it('removeSend tolerates an absent send key', () => {
+            expect(() => engine.removeSend('no-src', 'no-bus')).not.toThrow();
+        });
+
+        it('setTrackOutput is a no-op when the track has no strip', () => {
+            expect(() => engine.setTrackOutput('ghost-track', 'hw_out')).not.toThrow();
         });
     });
 });

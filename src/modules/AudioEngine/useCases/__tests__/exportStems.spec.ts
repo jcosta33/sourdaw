@@ -3,6 +3,7 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { configureOfflineMidiEventProjection } from '../configureOfflineMidiEventProjection';
 import { configureOfflinePpqEndpointProjection } from '../configureOfflinePpqEndpointProjection';
 import { exportStems } from '../exportStems';
+import { exportCancellationState } from '../offlineRender/exportCancellationState';
 
 const offlineRenderMocks = vi.hoisted(() => ({
     getTrackStoreState: vi.fn<() => unknown>(() => null),
@@ -478,5 +479,179 @@ describe('exportStems', () => {
         expect(offlineRenderMocks.scheduleTrackClips).toHaveBeenCalledWith(
             expect.objectContaining({ track: { ...frozenPad, clips: [] }, allTracks: frozenTopology })
         );
+    });
+});
+
+// Option-parsing branches (object form vs number form), validation throws,
+// the missing-projection guard, progress callbacks, and the cancel path.
+describe('exportStems — option parsing, validation & control flow', () => {
+    beforeEach(() => {
+        vi.clearAllMocks();
+        offlineRenderMocks.resolveRenderContext.mockReturnValue(createRenderContext(null));
+        configureOfflineMidiEventProjection({
+            createProjector:
+                () =>
+                ({ events }) =>
+                    events,
+            selectProbability: () => true,
+            createChordPitchProjector:
+                () =>
+                ({ pitch }) =>
+                    pitch,
+            evaluateAutomationValue: () => null,
+        });
+        configureOfflinePpqEndpointProjection({
+            project: ({ startPpq, endPpq, sampleRate }) => ({
+                startSamples: startPpq * sampleRate,
+                endSamples: endPpq * sampleRate,
+                durationSamples: (endPpq - startPpq) * sampleRate,
+                startSeconds: startPpq,
+                endSeconds: endPpq,
+                durationSeconds: endPpq - startPpq,
+            }),
+        });
+    });
+
+    it('throws on invalid (non-positive) duration beats', async () => {
+        await expect(exportStems(0)).rejects.toThrow(/Invalid export duration/);
+        await expect(exportStems(-4)).rejects.toThrow(/Invalid export duration/);
+        await expect(exportStems(Number.NaN)).rejects.toThrow(/Invalid export duration/);
+    });
+
+    it('parses the OfflineRenderOptions object form (sampleRate, startBeat, tailSeconds, callbacks)', async () => {
+        const onProgress = vi.fn();
+        const onWarning = vi.fn();
+        // Empty tracks → returns early after parsing; assert resolveRenderContext
+        // received the parsed values derived from the object form.
+        const stems = await exportStems({
+            durationBeats: 8,
+            sampleRate: 48_000,
+            startBeat: 2,
+            tailSeconds: 1.5,
+            onProgress,
+            onWarning,
+        });
+
+        expect(stems.size).toBe(0);
+        expect(offlineRenderMocks.resolveRenderContext).toHaveBeenCalledWith(
+            expect.objectContaining({
+                durationBeats: 8,
+                sampleRate: 48_000,
+                startBeat: 2,
+                tailSeconds: 1.5,
+            })
+        );
+        // Empty-tracks early-return calls onProgress(1).
+        expect(onProgress).toHaveBeenCalledWith(1);
+    });
+
+    it('parses the number form with an explicit sampleRate override', async () => {
+        await exportStems(4, 96_000);
+
+        expect(offlineRenderMocks.resolveRenderContext).toHaveBeenCalledWith(
+            expect.objectContaining({ durationBeats: 4, sampleRate: 96_000, startBeat: 0, tailSeconds: 0 })
+        );
+    });
+
+    it('throws when offline musical projection is not configured', async () => {
+        // Provide a context with tracks but null out the projection functions.
+        const ctx = createRenderContext([{ id: 't1', kind: 'midi', disabled: false, devices: [] }]);
+        (ctx as { projectMidiEvents: unknown }).projectMidiEvents = null;
+        offlineRenderMocks.resolveRenderContext.mockReturnValue(ctx);
+
+        await expect(exportStems(4)).rejects.toThrow('Offline musical projection is not configured');
+    });
+
+    it('skips the progress interval when onProgress is not provided (no-op timer path)', async () => {
+        const track = { id: 't1', kind: 'midi', disabled: false, devices: [] };
+        offlineRenderMocks.resolveRenderContext.mockReturnValue(createRenderContext([track]));
+        offlineRenderMocks.createOfflineTrackStrip.mockResolvedValue({
+            inputNode: {},
+            faderNode: {},
+            panNode: {},
+            outputNode: { connect: vi.fn() },
+            deviceEntries: [],
+        });
+        offlineRenderMocks.renderWithTimeout.mockResolvedValue({ id: 'stem' });
+        vi.stubGlobal(
+            'OfflineAudioContext',
+            vi.fn(function OfflineContext() {
+                return { destination: {} };
+            })
+        );
+
+        const setIntervalSpy = vi.spyOn(globalThis, 'setInterval');
+        await exportStems(4); // no onProgress → stemTimer stays null
+
+        // setInterval was never called for the stem progress simulator.
+        expect(setIntervalSpy).not.toHaveBeenCalled();
+        setIntervalSpy.mockRestore();
+        vi.unstubAllGlobals();
+    });
+
+    it('runs the progress-easing interval and clears it after render when onProgress is set', async () => {
+        vi.useFakeTimers();
+        const track = { id: 't1', kind: 'midi', disabled: false, devices: [] };
+        offlineRenderMocks.resolveRenderContext.mockReturnValue(createRenderContext([track]));
+        offlineRenderMocks.createOfflineTrackStrip.mockResolvedValue({
+            inputNode: {},
+            faderNode: {},
+            panNode: {},
+            outputNode: { connect: vi.fn() },
+            deviceEntries: [],
+        });
+        // Defer the render resolution so the interval ticks at least once.
+        let resolveRender!: (v: unknown) => void;
+        offlineRenderMocks.renderWithTimeout.mockReturnValue(
+            new Promise((res) => {
+                resolveRender = res;
+            })
+        );
+        vi.stubGlobal(
+            'OfflineAudioContext',
+            vi.fn(function OfflineContext() {
+                return { destination: {} };
+            })
+        );
+
+        const onProgress = vi.fn();
+        const exportPromise = exportStems({ durationBeats: 4, onProgress });
+
+        // Let the scheduling pass + interval registration settle, then tick
+        // the interval so the progress-easing callback (lines 203-204) runs.
+        await vi.advanceTimersByTimeAsync(0);
+        await vi.advanceTimersByTimeAsync(150); // > 100ms interval cadence
+
+        // Resolve the render; the finally clears the interval (line 211).
+        resolveRender({ id: 'stem' });
+        await exportPromise;
+
+        // The easing callback emitted intermediate progress values.
+        expect(onProgress).toHaveBeenCalled();
+        vi.useRealTimers();
+        vi.unstubAllGlobals();
+    });
+
+    it('rejects when a cancel is requested before the render pool starts', async () => {
+        const track = { id: 't1', kind: 'midi', disabled: false, devices: [] };
+        // resolveRenderContext runs AFTER resetCancelFlag (line 38) clears the
+        // flag, so setting it here as a side effect of resolving the context
+        // makes the pool's isCancelRequested() guard (line 226) observe true.
+        offlineRenderMocks.resolveRenderContext.mockImplementation(() => {
+            exportCancellationState.cancelFlag = true;
+            return createRenderContext([track]);
+        });
+        vi.stubGlobal(
+            'OfflineAudioContext',
+            vi.fn(function OfflineContext() {
+                return { destination: {} };
+            })
+        );
+
+        await expect(exportStems(4)).rejects.toThrow('Export cancelled');
+
+        // Reset for subsequent tests.
+        exportCancellationState.cancelFlag = false;
+        vi.unstubAllGlobals();
     });
 });

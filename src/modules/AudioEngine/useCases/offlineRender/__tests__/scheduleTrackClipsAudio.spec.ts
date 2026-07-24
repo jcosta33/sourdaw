@@ -624,3 +624,136 @@ describe('scheduleTrackClips — frozen tracks', () => {
         expect(onWarning).toHaveBeenCalledWith(expect.stringContaining('Pad'));
     });
 });
+
+// Comping (take-lane) resolution: resolveTrackClipsWithComping expands a track's
+// clips into the comp-region segments plus the gap-fills between them. Each
+// resolved clip schedules one source, so the source count is the observable
+// proof of which resolution branches ran.
+describe('scheduleTrackClips — comping (take-lane) resolution edges', () => {
+    beforeEach(() => {
+        vi.clearAllMocks();
+        mocks.takeLaneValue.value = null;
+        mocks.automationValue.value = null;
+        mocks.getCompensationDelay.mockReturnValue(0);
+        mocks.audioBufferCache.get.mockReturnValue(makeBuffer(20));
+        mocks.buildDeviceChain.mockResolvedValue([]);
+    });
+
+    function setLane(lane: unknown): void {
+        mocks.takeLaneValue.value = { lanes: [lane] };
+    }
+
+    it('falls back to the plain clip when the lane exists but has no comp regions', async () => {
+        // lane.activeCompRegions is empty → the `length === 0` guard returns the
+        // original clip unchanged (one source, at the original beat range).
+        setLane({ id: 'lane-1', trackId: 'track-1', takes: [], activeCompRegions: [] });
+        const { ctx, sources } = makeRecordingOfflineCtx();
+        const track = TrackDummy.create({ clips: [makeAudioClip({ startBeat: 0, endBeat: 4 })] });
+
+        await run({ track, ctx });
+
+        expect(sources).toHaveLength(1);
+    });
+
+    it('skips a comp region whose takeId is not in the lane takes (silence, no gap-fill)', async () => {
+        // region references 'take-missing' but takes only has 'take-1' → the
+        // `!take` continue drops the segment. The gap-fill loop still treats the
+        // declared region as covered (it iterates activeCompRegions, not resolved
+        // segments), so NO gap is emitted either → the clip renders silence.
+        setLane({
+            id: 'lane-1',
+            trackId: 'track-1',
+            takes: [{ id: 'take-1', clipId: 'clip-1', name: 'T1', startBeat: 0, endBeat: 4, selected: true }],
+            activeCompRegions: [{ startBeat: 0, endBeat: 4, takeId: 'take-missing' }],
+        });
+        const { ctx, sources } = makeRecordingOfflineCtx();
+        const track = TrackDummy.create({ clips: [makeAudioClip({ startBeat: 0, endBeat: 4 })] });
+
+        await run({ track, ctx });
+
+        // Neither segment nor gap → zero sources (the take-less region is a hole).
+        expect(sources).toHaveLength(0);
+    });
+
+    it('skips a comp region whose take clipId is not among the track clips (silence)', async () => {
+        setLane({
+            id: 'lane-1',
+            trackId: 'track-1',
+            takes: [{ id: 'take-1', clipId: 'clip-other', name: 'T1', startBeat: 0, endBeat: 4, selected: true }],
+            activeCompRegions: [{ startBeat: 0, endBeat: 4, takeId: 'take-1' }],
+        });
+        const { ctx, sources } = makeRecordingOfflineCtx();
+        const track = TrackDummy.create({ clips: [makeAudioClip({ startBeat: 0, endBeat: 4 })] });
+
+        await run({ track, ctx });
+
+        // No source clip matched → segment dropped; region still counts as
+        // covered for gap purposes → silence.
+        expect(sources).toHaveLength(0);
+    });
+
+    it('skips a comp region that does not overlap its source clip', async () => {
+        // The region range is checked against the SOURCE CLIP's beat range, not
+        // the take's. Region 10..12 vs source clip 0..8 → overlap empty
+        // (max(10,0)=10 >= min(12,8)=8) → segment dropped. The gap loop then
+        // treats the disjoint region as before-the-clip (skipped), so the whole
+        // clip 0..8 fills as one gap.
+        setLane({
+            id: 'lane-1',
+            trackId: 'track-1',
+            takes: [{ id: 'take-1', clipId: 'clip-src', name: 'T1', startBeat: 0, endBeat: 8, selected: true }],
+            activeCompRegions: [{ startBeat: 10, endBeat: 12, takeId: 'take-1' }],
+        });
+        const { ctx, sources } = makeRecordingOfflineCtx();
+        const track = TrackDummy.create({ clips: [makeAudioClip({ id: 'clip-src', startBeat: 0, endBeat: 8 })] });
+
+        await run({ track, ctx });
+
+        // Region disjoint from clip in the gap loop too (startBeat 10 >= endBeat 8)
+        // → no split → whole clip is one gap → 1 source.
+        expect(sources).toHaveLength(1);
+    });
+
+    it('splits a clip into a comp segment plus the trailing gap', async () => {
+        // Clip 0..8, one comp region 0..4 from take-1. The region covers the first
+        // half; the gap loop fills 4..8 as a trailing gap (the `cursor < endBeat`
+        // branch). Two resolved clips → two sources.
+        mocks.audioBufferCache.get.mockReturnValue(makeBuffer(40));
+        setLane({
+            id: 'lane-1',
+            trackId: 'track-1',
+            takes: [{ id: 'take-1', clipId: 'clip-1', name: 'T1', startBeat: 0, endBeat: 8, selected: true }],
+            activeCompRegions: [{ startBeat: 0, endBeat: 4, takeId: 'take-1' }],
+        });
+        const { ctx, sources } = makeRecordingOfflineCtx();
+        const track = TrackDummy.create({ clips: [makeAudioClip({ startBeat: 0, endBeat: 8 })] });
+
+        await run({ track, ctx });
+
+        expect(sources).toHaveLength(2);
+    });
+
+    it('skips a region disjoint from the clip in the gap-detection loop', async () => {
+        // Clip 0..4. A region wholly before (endBeat <= clip.startBeat) and one
+        // wholly after (startBeat >= clip.endBeat) are both skipped by the
+        // disjoint guard, so neither injects a gap split — the clip renders once.
+        setLane({
+            id: 'lane-1',
+            trackId: 'track-1',
+            takes: [{ id: 'take-1', clipId: 'clip-1', name: 'T1', startBeat: 0, endBeat: 4, selected: true }],
+            activeCompRegions: [
+                { startBeat: -2, endBeat: 0, takeId: 'take-1' }, // before clip
+                { startBeat: 4, endBeat: 6, takeId: 'take-1' }, // after clip
+                { startBeat: 1, endBeat: 3, takeId: 'take-1' }, // inside → 1 segment
+            ],
+        });
+        mocks.audioBufferCache.get.mockReturnValue(makeBuffer(40));
+        const { ctx, sources } = makeRecordingOfflineCtx();
+        const track = TrackDummy.create({ clips: [makeAudioClip({ startBeat: 0, endBeat: 4 })] });
+
+        await run({ track, ctx });
+
+        // One comp segment (1..3) plus two gaps (0..1, 3..4) → 3 sources.
+        expect(sources).toHaveLength(3);
+    });
+});

@@ -1,6 +1,16 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+import {
+    scheduleDrumKitNote as scheduleDrumKitNoteReal,
+    getDrumKitDefByIndex as getDrumKitDefByIndexReal,
+} from '#/modules/Synth/useCases';
+
 import { playAuditionNote } from '../audition';
+import { startFaustNote as startFaustNoteReal } from '../faustScheduler/startFaustNote';
+
+const scheduleDrumKitNote = vi.mocked(scheduleDrumKitNoteReal);
+const getDrumKitDefByIndex = vi.mocked(getDrumKitDefByIndexReal);
+const startFaustNote = vi.mocked(startFaustNoteReal);
 
 type MockToasterControls = {
     ready: boolean;
@@ -12,6 +22,9 @@ type MockDeviceNode = {
     deviceId: string;
     type: string;
     toasterControls?: MockToasterControls;
+    fermenterControls?: { ready: boolean; noteOn: (p: number, v: number) => void; noteOff: (p: number) => void };
+    grandBouleControls?: { ready: boolean; noteOn: (p: number, v: number) => void; noteOff: (p: number) => void };
+    levainControls?: { ready: boolean; noteOn: (p: number, v: number) => void; noteOff: (p: number) => void };
 };
 
 type MockTrackStrip = {
@@ -244,5 +257,244 @@ describe('playAuditionNote', () => {
         expect(toasterNoteOn).toHaveBeenCalledWith(1, 64, 48);
         stopNote();
         expect(toasterNoteOff).toHaveBeenCalledWith(1);
+    });
+});
+
+describe('playAuditionNote device dispatch', () => {
+    function setTrack(track: unknown): void {
+        mocks.trackStoreValue = track;
+    }
+
+    function setStrip(trackId: string, deviceNodes: MockDeviceNode[]): void {
+        mocks.trackStrips.set(trackId, { gainNode: {} as AudioNode, deviceNodes });
+    }
+
+    beforeEach(() => {
+        mocks.trackStoreValue = null;
+        mocks.trackStrips.clear();
+        mocks.ensureTrackStrip.mockClear();
+        mocks.scheduleNote.mockClear();
+        mocks.getSynthParamsFromDevices.mockClear();
+        scheduleDrumKitNote.mockClear();
+        getDrumKitDefByIndex.mockReset();
+        startFaustNote.mockClear();
+    });
+
+    it.each([
+        ['builtin-drum-kit', 2],
+        ['drum-kit', 3],
+        ['builtin-drum-machine-808', 4],
+    ] as const)('dispatches a %s device to the drum-kit scheduler using kit index', (type, kitIndex) => {
+        const kitDef = { name: 'kit' };
+        getDrumKitDefByIndex.mockReturnValueOnce(kitDef as never);
+        setTrack({
+            tracks: [{ id: 'tk', devices: [{ id: 'd', type, parameterValues: { kit: kitIndex } }], parentId: null }],
+        });
+
+        playAuditionNote('tk', 38, 90);
+
+        expect(getDrumKitDefByIndex).toHaveBeenCalledWith(kitIndex);
+        expect(scheduleDrumKitNote).toHaveBeenCalledWith(
+            mocks.audioContext,
+            mocks.defaultTrackStrip.gainNode,
+            kitDef,
+            38,
+            expect.any(Number),
+            90
+        );
+    });
+
+    it('drum-kit falls back to kitId when kit is absent, and no-ops when the kit def is missing', () => {
+        // kit absent → uses kitId (5).
+        setTrack({
+            tracks: [
+                { id: 'tk', devices: [{ id: 'd', type: 'drum-kit', parameterValues: { kitId: 5 } }], parentId: null },
+            ],
+        });
+        getDrumKitDefByIndex.mockReturnValueOnce(null);
+        playAuditionNote('tk', 38, 90);
+        expect(getDrumKitDefByIndex).toHaveBeenCalledWith(5);
+        expect(scheduleDrumKitNote).not.toHaveBeenCalled();
+    });
+
+    it('fermenter device: triggers noteOn when ready and noteOff on release', () => {
+        const noteOn = vi.fn();
+        const noteOff = vi.fn();
+        setStrip('tk', [
+            { deviceId: 'fermenter-d', type: 'fermenter', fermenterControls: { ready: true, noteOn, noteOff } },
+        ]);
+        setTrack({
+            tracks: [
+                { id: 'tk', devices: [{ id: 'fermenter-d', type: 'fermenter', parameterValues: {} }], parentId: null },
+            ],
+        });
+        const stop = playAuditionNote('tk', 64, 110);
+        expect(noteOn).toHaveBeenCalledWith(64, 110);
+        stop();
+        expect(noteOff).toHaveBeenCalledWith(64);
+    });
+
+    it('fermenter device: no-ops when controls not ready', () => {
+        setStrip('tk', [
+            {
+                deviceId: 'fermenter-d',
+                type: 'fermenter',
+                fermenterControls: { ready: false, noteOn: vi.fn(), noteOff: vi.fn() },
+            },
+        ]);
+        setTrack({
+            tracks: [
+                { id: 'tk', devices: [{ id: 'fermenter-d', type: 'fermenter', parameterValues: {} }], parentId: null },
+            ],
+        });
+        const stop = playAuditionNote('tk', 64, 110);
+        expect(() => stop()).not.toThrow();
+        expect(mocks.scheduleNote).not.toHaveBeenCalled();
+    });
+
+    it('grand-boule device: triggers noteOn with normalized velocity (0..1) and noteOff on release', () => {
+        const noteOn = vi.fn();
+        const noteOff = vi.fn();
+        setStrip('tk', [
+            { deviceId: 'gb-d', type: 'grand-boule', grandBouleControls: { ready: true, noteOn, noteOff } },
+        ]);
+        setTrack({
+            tracks: [{ id: 'tk', devices: [{ id: 'gb-d', type: 'grand-boule', parameterValues: {} }], parentId: null }],
+        });
+        const stop = playAuditionNote('tk', 60, 127);
+        expect(noteOn).toHaveBeenCalledWith(60, 1); // 127/127
+        stop();
+        expect(noteOff).toHaveBeenCalledWith(60);
+    });
+
+    it('grand-boule device: no-ops when controls not ready (does not trigger noteOn)', () => {
+        const noteOn = vi.fn();
+        setStrip('tk', [
+            { deviceId: 'gb-d', type: 'grand-boule', grandBouleControls: { ready: false, noteOn, noteOff: vi.fn() } },
+        ]);
+        setTrack({
+            tracks: [{ id: 'tk', devices: [{ id: 'gb-d', type: 'grand-boule', parameterValues: {} }], parentId: null }],
+        });
+        playAuditionNote('tk', 60, 127);
+        // Not ready → noteOn never called (the ready guard skips the trigger).
+        expect(noteOn).not.toHaveBeenCalled();
+    });
+
+    it('levain device: triggers noteOn and noteOff on release', () => {
+        const noteOn = vi.fn();
+        const noteOff = vi.fn();
+        setStrip('tk', [{ deviceId: 'lev-d', type: 'levain', levainControls: { ready: true, noteOn, noteOff } }]);
+        setTrack({
+            tracks: [{ id: 'tk', devices: [{ id: 'lev-d', type: 'levain', parameterValues: {} }], parentId: null }],
+        });
+        const stop = playAuditionNote('tk', 55, 80);
+        expect(noteOn).toHaveBeenCalledWith(55, 80);
+        stop();
+        expect(noteOff).toHaveBeenCalledWith(55);
+    });
+
+    it('faust device: delegates to startFaustNote', () => {
+        setTrack({
+            tracks: [
+                { id: 'tk', devices: [{ id: 'faust-d', type: 'faust-osc', parameterValues: {} }], parentId: null },
+            ],
+        });
+        playAuditionNote('tk', 60, 100);
+        expect(startFaustNote).toHaveBeenCalledWith('tk', 'faust-d', 60, 100, expect.any(Number));
+    });
+
+    it('toaster device: no-ops when controls not ready', () => {
+        setStrip('tk', [
+            {
+                deviceId: 'toaster-d',
+                type: 'toaster',
+                toasterControls: { ready: false, noteOn: vi.fn(), noteOff: vi.fn() },
+            },
+        ]);
+        setTrack({
+            tracks: [
+                { id: 'tk', devices: [{ id: 'toaster-d', type: 'toaster', parameterValues: {} }], parentId: null },
+            ],
+        });
+        playAuditionNote('tk', 43, 100);
+        expect(mocks.scheduleNote).not.toHaveBeenCalled();
+    });
+
+    // ── kit default and device-node-by-type fallbacks (wiring assertions) ──────
+
+    it('drum-kit defaults to kit index 0 when neither kit nor kitId is set', () => {
+        const kitDef = { name: 'default-kit' };
+        getDrumKitDefByIndex.mockReturnValueOnce(kitDef as never);
+        setTrack({
+            tracks: [{ id: 'tk', devices: [{ id: 'd', type: 'drum-kit', parameterValues: {} }], parentId: null }],
+        });
+        playAuditionNote('tk', 38, 90);
+        // Both kit and kitId absent ⇒ `?? 0` default.
+        expect(getDrumKitDefByIndex).toHaveBeenCalledWith(0);
+    });
+
+    it('fermenter device node is resolved by type when no node matches the device id', () => {
+        const noteOn = vi.fn();
+        const noteOff = vi.fn();
+        // The device-node entry has a different id but type 'fermenter' ⇒ the
+        // `|| data.type === 'fermenter'` arm resolves it.
+        setStrip('tk', [
+            { deviceId: 'mismatch', type: 'fermenter', fermenterControls: { ready: true, noteOn, noteOff } },
+        ]);
+        setTrack({
+            tracks: [
+                { id: 'tk', devices: [{ id: 'fermenter-d', type: 'fermenter', parameterValues: {} }], parentId: null },
+            ],
+        });
+        const stop = playAuditionNote('tk', 64, 110);
+        expect(noteOn).toHaveBeenCalledWith(64, 110);
+        stop();
+        expect(noteOff).toHaveBeenCalledWith(64);
+    });
+
+    it('toaster device node falls back to a type match when the exact device id is absent', () => {
+        const noteOn = vi.fn();
+        const noteOff = vi.fn();
+        // exactDeviceNode (by id) is undefined; the `?? parentStrip...find(type)` arm
+        // resolves the node carrying toasterControls.
+        setStrip('tk', [{ deviceId: 'unrelated', type: 'toaster', toasterControls: { ready: true, noteOn, noteOff } }]);
+        setTrack({
+            tracks: [
+                { id: 'tk', devices: [{ id: 'toaster-d', type: 'toaster', parameterValues: {} }], parentId: null },
+            ],
+        });
+        const stop = playAuditionNote('tk', 40, 88);
+        // pitch 40 - 36 = pad 4.
+        expect(noteOn).toHaveBeenCalledWith(4, 88, 40);
+        stop();
+        expect(noteOff).toHaveBeenCalledWith(4);
+    });
+
+    it('grand-boule device node is resolved by type when no node matches the device id', () => {
+        const noteOn = vi.fn();
+        const noteOff = vi.fn();
+        setStrip('tk', [
+            { deviceId: 'mismatch', type: 'grand-boule', grandBouleControls: { ready: true, noteOn, noteOff } },
+        ]);
+        setTrack({
+            tracks: [{ id: 'tk', devices: [{ id: 'gb-d', type: 'grand-boule', parameterValues: {} }], parentId: null }],
+        });
+        const stop = playAuditionNote('tk', 60, 127);
+        expect(noteOn).toHaveBeenCalledWith(60, 1);
+        stop();
+        expect(noteOff).toHaveBeenCalledWith(60);
+    });
+
+    it('levain device node is resolved by type and triggers noteOn when no node matches the device id', () => {
+        const noteOn = vi.fn();
+        const noteOff = vi.fn();
+        setStrip('tk', [{ deviceId: 'mismatch', type: 'levain', levainControls: { ready: true, noteOn, noteOff } }]);
+        setTrack({
+            tracks: [{ id: 'tk', devices: [{ id: 'lev-d', type: 'levain', parameterValues: {} }], parentId: null }],
+        });
+        const stop = playAuditionNote('tk', 55, 80);
+        expect(noteOn).toHaveBeenCalledWith(55, 80);
+        stop();
+        expect(noteOff).toHaveBeenCalledWith(55);
     });
 });

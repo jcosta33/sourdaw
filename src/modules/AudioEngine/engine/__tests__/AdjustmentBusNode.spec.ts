@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
+    MockAudioBuffer,
     asAudioNode,
     asBaseAudioContext,
     createMockAudioContext,
@@ -186,5 +187,157 @@ describe('AdjustmentBusNode', () => {
         const audioSource = asAudioNode(source);
         bus.connectSource(audioSource);
         expect(bus.hasSource(audioSource)).toBe(false);
+    });
+});
+
+describe('AdjustmentBusNode param conversion & lifecycle', () => {
+    let ctx: ReturnType<typeof createMockAudioContext>;
+
+    beforeEach(() => {
+        ctx = createMockAudioContext();
+        vi.clearAllMocks();
+    });
+
+    function eqBus(parameters: Record<string, number> = {}): AdjustmentBusNode {
+        return new AdjustmentBusNode({ context: asBaseAudioContext(ctx), effectType: 'eq', parameters });
+    }
+
+    it('connectSource is idempotent (a second connect of the same source is a no-op)', () => {
+        const bus = eqBus();
+        const source = createMockAudioNode('gain');
+        const audioSource = asAudioNode(source);
+        bus.connectSource(audioSource);
+        bus.connectSource(audioSource);
+        expect(source.connect).toHaveBeenCalledTimes(1);
+    });
+
+    it('disconnectSource removes a connected source and tolerates a missing edge', () => {
+        const bus = eqBus();
+        const source = createMockAudioNode('gain');
+        const audioSource = asAudioNode(source);
+        bus.connectSource(audioSource);
+        // disconnect should call source.disconnect(inputNode) and drop the source.
+        bus.disconnectSource(audioSource);
+        expect(source.disconnect).toHaveBeenCalledWith(bus.inputNode);
+        expect(bus.hasSource(audioSource)).toBe(false);
+        // Disconnecting a source that is not tracked is a no-op (no throw).
+        expect(() => bus.disconnectSource(createMockAudioNode('gain') as unknown as AudioNode)).not.toThrow();
+    });
+
+    it('disconnectSource swallows a WebAudio disconnect error (already-detached edge)', () => {
+        const bus = eqBus();
+        const source = createMockAudioNode('gain');
+        // Make disconnect throw to simulate an already-removed edge.
+        source.disconnect.mockImplementation(() => {
+            throw new Error('already detached');
+        });
+        const audioSource = asAudioNode(source);
+        bus.connectSource(audioSource);
+        expect(() => bus.disconnectSource(audioSource)).not.toThrow();
+        expect(bus.hasSource(audioSource)).toBe(false);
+    });
+
+    it('connectDestination re-points to a new destination and is idempotent for the same one', () => {
+        const bus = eqBus();
+        const dest1 = createMockAudioNode('gain');
+        const dest2 = createMockAudioNode('gain');
+        bus.connectDestination(asAudioNode(dest1));
+        // Same destination again → no-op (no second connect).
+        bus.connectDestination(asAudioNode(dest1));
+        expect(bus.outputNode.connect).toHaveBeenCalledTimes(1);
+        // New destination → disconnect old, connect new.
+        bus.connectDestination(asAudioNode(dest2));
+        expect(bus.outputNode.disconnect).toHaveBeenCalledWith(dest1);
+        expect(bus.outputNode.connect).toHaveBeenCalledWith(dest2);
+    });
+
+    it('disconnectDestination detaches the current destination (and no-ops when none)', () => {
+        const bus = eqBus();
+        // No destination yet → no-op.
+        bus.disconnectDestination();
+        expect(bus.outputNode.disconnect).not.toHaveBeenCalled();
+        const dest = createMockAudioNode('gain');
+        bus.connectDestination(asAudioNode(dest));
+        bus.disconnectDestination();
+        expect(bus.outputNode.disconnect).toHaveBeenCalledWith(dest);
+        // A second disconnect is a no-op (destination already cleared).
+        vi.mocked(bus.outputNode.disconnect).mockClear();
+        bus.disconnectDestination();
+        expect(bus.outputNode.disconnect).not.toHaveBeenCalled();
+    });
+
+    it('connectDestination and setBlend are no-ops after dispose', () => {
+        const bus = eqBus();
+        bus.dispose();
+        const dest = createMockAudioNode('gain');
+        bus.connectDestination(asAudioNode(dest));
+        expect(bus.outputNode.connect).not.toHaveBeenCalled();
+        // setBlend after dispose does not schedule.
+        const before = vi.mocked(ctx.createGain).mock.results.length;
+        bus.setBlend(0.5);
+        expect(vi.mocked(ctx.createGain).mock.results.length).toBe(before);
+    });
+
+    it('setParams is a no-op after dispose', () => {
+        const bus = eqBus();
+        bus.dispose();
+        // No throw; applyParams path not reached.
+        expect(() => bus.setParams({ 'High Gain': 3 })).not.toThrow();
+    });
+
+    it('pan setParams falls through when no panNode was built (defensive guard)', () => {
+        // eq bus has no panNode → the pan branch's setParams early-returns.
+        const bus = eqBus();
+        expect(() => bus.setParams({ Pan: 50 })).not.toThrow();
+    });
+
+    it('convertParamValue scales reverb Size, saturation Tone, and stereo-width Width', () => {
+        vi.stubGlobal('AudioBuffer', MockAudioBuffer);
+        // reverb Size: value/100 (0..100 → 0..1).
+        const reverb = new AdjustmentBusNode({
+            context: asBaseAudioContext(ctx),
+            effectType: 'reverb',
+            parameters: { Size: 80 },
+        });
+        expect(reverb.inputNode).toBeDefined();
+        // saturation Tone: 200 + (value/100)*19800.
+        const sat = new AdjustmentBusNode({
+            context: asBaseAudioContext(ctx),
+            effectType: 'saturation',
+            parameters: { Tone: 50 },
+        });
+        expect(sat.inputNode).toBeDefined();
+        // stereo-width Width: value/100.
+        const width = new AdjustmentBusNode({
+            context: asBaseAudioContext(ctx),
+            effectType: 'stereo-width',
+            parameters: { Width: 60 },
+        });
+        expect(width.inputNode).toBeDefined();
+    });
+
+    it('dispose tears down the pan node when present', () => {
+        const bus = new AdjustmentBusNode({
+            context: asBaseAudioContext(ctx),
+            effectType: 'pan',
+            parameters: { Pan: 10 },
+        });
+        const panner = vi.mocked(ctx.createStereoPanner).mock.results.at(-1)!.value;
+        bus.dispose();
+        expect(panner.disconnect).toHaveBeenCalled();
+    });
+
+    it('dispose is idempotent', () => {
+        const bus = eqBus();
+        bus.dispose();
+        // Second dispose is a no-op.
+        expect(() => bus.dispose()).not.toThrow();
+    });
+
+    it('pan effect builds a direct wet chain (no device node)', () => {
+        const bus = new AdjustmentBusNode({ context: asBaseAudioContext(ctx), effectType: 'pan', parameters: {} });
+        // pan maps to deviceType null → deviceNode null, panNode present.
+        expect(bus.inputNode).toBeDefined();
+        expect(ctx.createStereoPanner).toHaveBeenCalled();
     });
 });

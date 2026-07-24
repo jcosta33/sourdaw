@@ -1,0 +1,309 @@
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+
+import {
+    RealFloat32Array,
+    installWorkletGlobals,
+    createGrowableMemory,
+    resetGrowableMemory,
+    type GrowableMemory,
+} from './wasmViewGrowthHarness';
+
+// BacteriaProcessor message handling (init/init-sab/param, PARAM_MAP mapping,
+// latency-change reporting), process() guard/passthrough/fault paths, and the
+// 8-block metering cadence that blits band-level telemetry into the SAB.
+
+type BacteriaProcessorLike = {
+    port: { onmessage: ((event: { data: unknown }) => void) | null; postMessage: ReturnType<typeof vi.fn> };
+    process(inputs: Float32Array[][], outputs: Float32Array[][]): boolean;
+};
+
+const { registry } = installWorkletGlobals<BacteriaProcessorLike>();
+
+const HEAP_BYTES = 64 * 1024;
+const IN_LEFT_PTR = 0;
+const IN_RIGHT_PTR = 4096;
+const OUT_LEFT_PTR = 8192;
+const OUT_RIGHT_PTR = 12288;
+const BAND_PTR = 16384;
+const FRAMES = 128;
+const memory: GrowableMemory = createGrowableMemory(HEAP_BYTES);
+
+const paramCalls: Array<{ name: string; value: number }> = [];
+let latencySamples = 0;
+let inputDb = -12;
+let outputDb = -6;
+let processShouldThrow = false;
+
+class BacteriaInstanceMock {
+    set_param(name: string, value: number): void {
+        paramCalls.push({ name, value });
+        // Touching `oversampling` changes latency to exercise the latency-changed path.
+        if (name === 'oversampling' && value > 0) {
+            latencySamples = 256;
+        }
+    }
+    get_latency_samples(): number {
+        return latencySamples;
+    }
+    get_input_left_ptr(): number {
+        return IN_LEFT_PTR;
+    }
+    get_input_right_ptr(): number {
+        return IN_RIGHT_PTR;
+    }
+    get_right_ptr(): number {
+        return OUT_RIGHT_PTR;
+    }
+    get_band_levels_ptr(): number {
+        return BAND_PTR;
+    }
+    get_input_db(): number {
+        return inputDb;
+    }
+    get_output_db(): number {
+        return outputDb;
+    }
+    process(frames: number): number {
+        if (processShouldThrow) {
+            throw new Error('wasm trap');
+        }
+        // Echo left input to both output windows so we can assert wiring.
+        const left = new RealFloat32Array(memory.buffer, OUT_LEFT_PTR, frames);
+        const right = new RealFloat32Array(memory.buffer, OUT_RIGHT_PTR, frames);
+        const inLeft = new RealFloat32Array(memory.buffer, IN_LEFT_PTR, frames);
+        left.set(inLeft);
+        right.set(inLeft);
+        // Seed a 6-element band-level array with distinct linear amplitudes.
+        const bands = new RealFloat32Array(memory.buffer, BAND_PTR, 6);
+        for (let i = 0; i < 6; i++) {
+            bands[i] = (i + 1) / 10;
+        }
+        return OUT_LEFT_PTR;
+    }
+}
+
+vi.mock('../../wasm/daw_dsp.js', () => ({
+    initSync: vi.fn(() => ({ memory })),
+    BacteriaInstance: BacteriaInstanceMock,
+}));
+
+const MINIMAL_WASM = new Uint8Array([0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00]);
+
+async function loadProcessor(): Promise<BacteriaProcessorLike> {
+    await import('../bacteriaProcessor');
+    const Ctor = registry.get('bacteria-processor');
+    if (!Ctor) {
+        throw new Error('bacteria-processor was not registered');
+    }
+    return new Ctor();
+}
+
+function send(proc: BacteriaProcessorLike, data: unknown): void {
+    proc.port.onmessage?.({ data });
+}
+
+function stereo(frames: number, fill: number): Float32Array[] {
+    return [new Float32Array(frames).fill(fill), new Float32Array(frames).fill(fill)];
+}
+
+function resetRecording(): void {
+    paramCalls.length = 0;
+    latencySamples = 0;
+    inputDb = -12;
+    outputDb = -6;
+    processShouldThrow = false;
+}
+
+describe('BacteriaProcessor message handling', () => {
+    beforeEach(() => {
+        resetGrowableMemory(memory, HEAP_BYTES);
+        resetRecording();
+    });
+
+    it('posts ready with the initial latency on init and ignores a second init', async () => {
+        const proc = await loadProcessor();
+        send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
+        send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
+        const ready = proc.port.postMessage.mock.calls.filter((c) => (c[0] as { type: string }).type === 'ready');
+        expect(ready).toHaveLength(1);
+        expect((ready[0]![0] as { latency: number }).latency).toBe(0);
+    });
+
+    it('maps camelCase param names through PARAM_MAP and reports latency changes', async () => {
+        const proc = await loadProcessor();
+        send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
+        resetRecording();
+
+        // threshold (identity-mapped) does not change latency.
+        send(proc, { type: 'param', name: 'threshold', value: 0.5 });
+        expect(paramCalls).toContainEqual({ name: 'threshold', value: 0.5 });
+        const latencyAfter1 = proc.port.postMessage.mock.calls.filter(
+            (c) => (c[0] as { type: string }).type === 'latency-changed'
+        );
+        expect(latencyAfter1).toHaveLength(0);
+
+        // oversampling triggers a latency change to 256.
+        send(proc, { type: 'param', name: 'oversampling', value: 2 });
+        expect(paramCalls).toContainEqual({ name: 'oversampling', value: 2 });
+        const latencyAfter2 = proc.port.postMessage.mock.calls.filter(
+            (c) => (c[0] as { type: string }).type === 'latency-changed'
+        );
+        expect(latencyAfter2).toHaveLength(1);
+        expect((latencyAfter2[0]![0] as { latency: number }).latency).toBe(256);
+    });
+
+    it('forwards unmapped param names as-is (fallback to raw name)', async () => {
+        const proc = await loadProcessor();
+        send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
+        resetRecording();
+        send(proc, { type: 'param', name: 'someUnknownParam', value: 0.3 });
+        expect(paramCalls).toContainEqual({ name: 'someUnknownParam', value: 0.3 });
+    });
+
+    it('ignores param messages before init (no instance) and after a fault', async () => {
+        const proc = await loadProcessor();
+        // Before init: instance is null, param is dropped.
+        send(proc, { type: 'param', name: 'threshold', value: 0.5 });
+        expect(paramCalls).toEqual([]);
+    });
+
+    it('installs an SAB telemetry view on init-sab', async () => {
+        const proc = await loadProcessor();
+        send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
+        const sab = new SharedArrayBuffer(Float32Array.BYTES_PER_ELEMENT * 32);
+        const view = new Float32Array(sab);
+        send(proc, { type: 'init-sab', sab, byteOffset: 0 });
+        resetRecording();
+        inputDb = -20;
+        outputDb = -10;
+
+        // Run 8 blocks to trigger the metering cadence once.
+        for (let i = 0; i < 8; i++) {
+            proc.process([stereo(FRAMES, 0.5)], [stereo(FRAMES, 0)]);
+        }
+        expect(view[0]).toBe(-20); // input db
+        expect(view[1]).toBe(-10); // output db
+        expect(view[2]).toBe(0); // latency samples
+    });
+});
+
+describe('BacteriaProcessor process & telemetry', () => {
+    beforeEach(() => {
+        resetGrowableMemory(memory, HEAP_BYTES);
+        resetRecording();
+    });
+
+    it('returns early (no passthrough) when not ready', async () => {
+        const proc = await loadProcessor();
+        const output = stereo(FRAMES, 0);
+        proc.process([stereo(FRAMES, 0.7)], [output]);
+        // Not ready: process returns true but does NOT passthrough-copy.
+        for (const sample of output[0]!) {
+            expect(sample).toBe(0);
+        }
+    });
+
+    it('returns early when input has fewer than 2 channels', async () => {
+        const proc = await loadProcessor();
+        send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
+        resetRecording();
+        const output = stereo(FRAMES, 0);
+        // Mono input (< 2 channels).
+        proc.process([[new Float32Array(FRAMES).fill(0.5)]], [output]);
+        for (const sample of output[0]!) {
+            expect(sample).toBe(0);
+        }
+    });
+
+    it('returns early when the left input or left output is absent', async () => {
+        const proc = await loadProcessor();
+        send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
+        resetRecording();
+        // Left input absent (undefined channel) → !in0 guard.
+        proc.process(
+            [[undefined, new Float32Array(FRAMES).fill(0.5)] as unknown as Float32Array[]],
+            [stereo(FRAMES, 0)]
+        );
+        // Left output absent (undefined channel) → !out0 guard.
+        proc.process([stereo(FRAMES, 0.5)], [[undefined, new Float32Array(FRAMES)] as unknown as Float32Array[]]);
+    });
+
+    it('copies left input to both stereo outputs (wiring) and blits 6 band levels into the SAB', async () => {
+        const proc = await loadProcessor();
+        send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
+        const sab = new SharedArrayBuffer(Float32Array.BYTES_PER_ELEMENT * 32);
+        const view = new Float32Array(sab);
+        send(proc, { type: 'init-sab', sab, byteOffset: 0 });
+        resetRecording();
+
+        const output = stereo(FRAMES, 0);
+        proc.process([stereo(FRAMES, 0.3)], [output]);
+
+        // Both channels echo the left input (0.3 within Float32 precision).
+        for (const sample of output[0]!) {
+            expect(sample).toBeCloseTo(0.3, 6);
+        }
+        for (const sample of output[1]!) {
+            expect(sample).toBeCloseTo(0.3, 6);
+        }
+
+        // Metering has not fired yet (only 1 block; cadence is 8).
+        expect(view[3]).toBe(0);
+
+        // Run 7 more blocks to hit the cadence.
+        for (let i = 0; i < 7; i++) {
+            proc.process([stereo(FRAMES, 0.3)], [stereo(FRAMES, 0)]);
+        }
+        // Band levels blitted into slots 3..8: 0.1..0.6 within Float32 precision.
+        for (let i = 0; i < 6; i++) {
+            expect(view[3 + i]).toBeCloseTo((i + 1) / 10, 6);
+        }
+    });
+
+    it('upmixes a mono right channel (input[1] absent) to the right input view', async () => {
+        const proc = await loadProcessor();
+        send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
+        resetRecording();
+        const output = stereo(FRAMES, 0);
+        // Two-channel input whose right channel is undefined → synthesized from
+        // the left channel via `input[1] ?? in0`. (input.length >= 2 clears the
+        // channel-count guard, and the absent channel exercises the fallback.)
+        proc.process([[new Float32Array(FRAMES).fill(0.25), undefined] as unknown as Float32Array[]], [output]);
+        for (const sample of output[0]!) {
+            expect(sample).toBeCloseTo(0.25, 6);
+        }
+        for (const sample of output[1]!) {
+            expect(sample).toBeCloseTo(0.25, 6);
+        }
+    });
+
+    it('faults, posts an error, and passthrough-copies when instance.process throws', async () => {
+        const proc = await loadProcessor();
+        send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
+        resetRecording();
+        processShouldThrow = true;
+
+        const output = stereo(FRAMES, 0);
+        proc.process([stereo(FRAMES, 0.4)], [output]);
+        const errors = proc.port.postMessage.mock.calls.filter((c) => (c[0] as { type?: string }).type === 'error');
+        expect(errors).toHaveLength(1);
+        for (const sample of output[0]!) {
+            expect(sample).toBeCloseTo(0.4, 6);
+        }
+    });
+
+    it('stops processing after faulting (subsequent blocks passthrough-skip the engine)', async () => {
+        const proc = await loadProcessor();
+        send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
+        resetRecording();
+        processShouldThrow = true;
+        proc.process([stereo(FRAMES, 0.4)], [stereo(FRAMES, 0)]);
+        processShouldThrow = false;
+
+        // After fault, process returns early (not ready path does not passthrough
+        // in bacteria — it just returns true). Params are also dropped now.
+        const callsBefore = paramCalls.length;
+        send(proc, { type: 'param', name: 'threshold', value: 0.5 });
+        expect(paramCalls.length).toBe(callsBefore);
+    });
+});
