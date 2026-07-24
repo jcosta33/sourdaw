@@ -305,6 +305,38 @@
 | 38 | 2026-07-23 | Unit: YeastPreviewSidecar decision/page/route logic (17 tests) | Done — merged | [#696](https://github.com/jcosta33/sourdaw/pull/696) |
 | 39 | 2026-07-23 | Unit: GrooveTemplate + GrooveTemplateState pure logic (80 tests) | Done — merged | [#701](https://github.com/jcosta33/sourdaw/pull/701) |
 | 40 | 2026-07-23 | Unit: UndoTree branching + effects DSP bitcrush/feedbackDelay (23 tests) | Done — merged | [#704](https://github.com/jcosta33/sourdaw/pull/704) |
+| 41 | 2026-07-24 | Unit: deep SetlistPanel + PresetBrowser + DawPickerRow component specs (60 tests) | Done — merged | [#739](https://github.com/jcosta33/sourdaw/pull/739) |
+| 42 | 2026-07-24 | Unit: deep PunchRecordingControls + CrustWaveformDisplay specs (25 tests) | Done — merged | [#740](https://github.com/jcosta33/sourdaw/pull/740) |
+
+---
+
+## Session 2026-07-24 — Presentation-component branch coverage
+
+**Frontier:** the pure-logic and shallow-spec wells were exhausted (PRs #686-#704, 120 deep unit tests). This session pivoted to **React presentation components** with zero or 1-expect smoke specs — components with rich computed-output branches (formatting, conditional rendering, disabled states, canvas paint layers) that were completely untested.
+
+**Procedure:** seed real stores or mock `useStore` so derived render values are genuine; mock mutation use cases to assert callback wiring without DI/undo/CRDT coupling; assert against rendered text, className branches, aria attributes, and (for canvas) recorded 2d-context calls. Every assertion verifies a computed output, state mutation, callback argument, or rejection — no existence-only checks.
+
+### Deep component specs added this session
+
+| Spec | File under test | Tests | Coverage area |
+|------|-----------------|-------|---------------|
+| `SetlistPanel.spec.tsx` | `SetlistPanel.tsx` (433 LOC, ZERO spec) | 38 | empty-state readout, computed progress (N of M), m:ss formatting + negative clamp, remaining-duration derivation, current-item marker, move-button disabled states + reorder args, auto-advance aria-pressed/variant, count-in spinbutton clamp, name edit commit/blank-reject/escape, per-item autoStop toggle, drag-and-drop reorder (drop/dragOver/dragEnd/no-op guards), row navigation |
+| `PresetBrowser.spec.tsx` | `PresetBrowser.tsx` (182 LOC, 1 expect) | 17 | search filter (name + tag), category narrow + tag reset, user-patches derivation + tag-bar hide, tag toggle on/off + highlight, Fermenter prefix strip, empty-state, active-pill inline color (incl. lavender fallback), current-preset highlight, onLoadPreset callback, footer count |
+| `DawPickerRow.spec.tsx` | `DawPickerRow.tsx` (111 LOC, 2 expects) | 17 | element-type selection (a/button/div + href precedence), active vs inactive classes, compact vs expanded padding/text-size, slot + description conditional render + text-size branches, className merge, passthrough attrs (title/role/tabIndex/onKeyDown) |
+| `PunchRecordingControls.spec.tsx` | `PunchRecordingControls.tsx` (184 LOC, ZERO spec) | 13 | background-capture latch aria-label/aria-pressed toggle, four NumberFields seeded values + blur/Enter commit + below-min clamp + non-numeric fallback + per-field routing, Mark-region disabled/active styles + definePunchRegion args + recording-capture selection |
+| `CrustWaveformDisplay.spec.tsx` | `CrustWaveformDisplay.tsx` (canvas, 273 LOC, 1 expect) | 12 | canvas attrs (role=img, aria-label, backing size, pixelated), wrapper bg (jsdom-rgb), delta-mode bg+banner+red GR fill + input/output layer absence, normal-mode bg+input fill+GR-gap fill, delta-banner absence, target-LUFS dashed line present/absent, peak-GR label above/below 3dB threshold |
+
+**Total new deep component tests this session: 97** (PR #739: 60; PR #740: 25; +12 review-driven additions across both). All assert computed outputs, not existence.
+
+### Canvas-component testing approach
+`CrustWaveformDisplay` is rAF-driven canvas with no DOM-expressible output. Tested via a **single-shot `requestAnimationFrame`** (one synchronous draw pass, then inert — the component self-reschedules at the top of `draw()`, so an always-firing rAF recurses forever) plus a **recording 2d context** capturing `fillStyle` assignments (via a setter) and method calls. Uses `scrollSpeed: 'fast'` (frameSkip=1) so the single pass reaches the paint body; `normal`/`slow` early-return on `tick % frameSkip`.
+
+### Review discipline applied
+Each PR passed a hand-trace review (expected values verified against component source by an independent reviewer). PR #739: DnD reorder branches, per-item Enter/Escape commit, and PresetBrowser active-pill inline-color were added post-review; the `goToItem` row-navigation test was corrected (item-name button `stopPropagation` means row nav fires only via non-button children). PR #740: one vacuous test removed (`fireEvent.click` on a disabled button never fires `onClick`, so the no-capture guard was unexercised) and the GR-gap fill (`rgba(196,64,48,0.18)`) assertion added.
+
+### Known tooling friction
+- **oxlint vs tsc type-resolution conflict** on `testing-library` query returns: `getByRole('spinbutton')`/`getByTestId` resolve to `HTMLInputElement` in oxlint's type-aware lint (flagging `as HTMLInputElement` as unnecessary) but to `HTMLElement` in `tsc`/`tsconfig.test.json` (requiring the cast). Worked around with `getByLabelText` + `toHaveValue` matcher (no cast needed).
+- **Radix `TooltipContent` is not queryable via `getByText` in jsdom** (portal/delayed render) — state is already covered by aria-label/aria-pressed/className, so tooltip-text assertions were dropped rather than worked around.
 
 ---
 
