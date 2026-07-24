@@ -1,0 +1,23 @@
+src/modules/Arrangement/stores/__tests__/groupComping.spec.ts
+  s_0d39f3a4a4357a::t_4f45eb1c3eb4bf 1-99
+src/modules/Arrangement/stores/__tests__/timelineViewStore.spec.ts
+  s_0d39f3a4a4357a::t_1d2a7b746d56d5 1,91-168
+src/modules/Arrangement/stores/__tests__/trackStoreTransientState.spec.ts
+  s_0d39f3a4a4357a::t_7f6990396d7b46 1-136
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "95f62b8a2deb288d5401111b30bff3e620666408",
+  "prompts": {},
+  "sessions": {
+    "s_0d39f3a4a4357a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "60da6a2e-7d79-4d98-8624-e993f5a9f94e",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
