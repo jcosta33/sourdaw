@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { type MidiNote } from '../../../models/MidiNoteViewTypes';
-import { setClipClipboard, type ClipboardEntry } from '../../../stores/clipboardStore';
+import { clipboardStore, setClipClipboard, type ClipboardEntry } from '../../../stores/clipboardStore';
 import { pasteClip } from '../pasteClip';
 
 type AddClipInput = {
@@ -460,6 +460,65 @@ describe('pasteClip', () => {
         expect(randomUuid).not.toHaveBeenCalled();
         expect(mocks.setNotesForClip).not.toHaveBeenCalled();
         expect(mocks.removeClip).not.toHaveBeenCalled();
+    });
+
+    it('returns before transport or track work when the clipboard store has been cleared', () => {
+        // After clear() the store value is null, so clipClipboard falls back to
+        // [] via the ?? arm and the function bails before touching transport.
+        clipboardStore.clear();
+
+        expect(pasteClip()).toBe(false);
+
+        expect(mocks.readTransportState).not.toHaveBeenCalled();
+        expect(mocks.getTrackState).not.toHaveBeenCalled();
+        expect(mocks.addClip).not.toHaveBeenCalled();
+    });
+
+    it('rejects the paste when the playhead is not a finite beat', () => {
+        setClipClipboard([createClipboardEntry()]);
+        mocks.transportState.value = {};
+        mocks.getTrackState.mockReturnValue({ selectedTrackId: null, tracks: [{ id: 'source-track' }] });
+        mocks.playheadPositionRef.current = Number.NaN;
+
+        expect(pasteClip()).toBe(false);
+
+        expect(mocks.addClip).not.toHaveBeenCalled();
+    });
+
+    it('rejects the paste when an entry source track id is empty but its clip owner is valid', () => {
+        // clip.trackId is a valid string while sourceTrackId is empty: this
+        // isolates the sourceTrackId guard (L49) from the clip-owner guard.
+        const entry = createClipboardEntry();
+        entry.clip.trackId = 'source-track';
+        entry.sourceTrackId = '';
+        mocks.getTrackState.mockReturnValue({
+            selectedTrackId: 'selected-track',
+            tracks: [{ id: 'selected-track' }],
+        });
+        setClipClipboard([entry]);
+
+        expect(pasteClip()).toBe(false);
+
+        expect(mocks.resolveEligibleClipWriteTarget).not.toHaveBeenCalled();
+        expect(mocks.addClip).not.toHaveBeenCalled();
+    });
+
+    it('rejects the paste when the offset-adjusted span lands below zero', () => {
+        // A negative playhead passes the finite check (L24) but the offset
+        // pushes the pasted startBeat below zero, failing the post-offset
+        // range guard (L99) before any clip is allocated.
+        setClipClipboard([createClipboardEntry({ startBeat: 4, endBeat: 8 })]);
+        mocks.transportState.value = {};
+        mocks.getTrackState.mockReturnValue({
+            selectedTrackId: 'selected-track',
+            tracks: [{ id: 'selected-track' }],
+        });
+        // offset = -10 - 4 = -14 -> pasted startBeat = 4 + (-14) = -10 < 0.
+        mocks.playheadPositionRef.current = -10;
+
+        expect(pasteClip()).toBe(false);
+
+        expect(mocks.addClip).not.toHaveBeenCalled();
     });
 
     it('rolls back Arrangement and MIDI state when the second add fails', () => {

@@ -108,6 +108,57 @@ describe('acceptGhostClip', () => {
         expect(mocks.state.value).toBe(state);
     });
 
+    it('returns false when the track store is empty', () => {
+        expect(acceptGhostClip('ghost-1')).toBe(false);
+        expect(mocks.appendClipToTrack).not.toHaveBeenCalled();
+        expect(mocks.updateClipInStore).not.toHaveBeenCalled();
+    });
+
+    it('falls back to an empty ghost list when ghostClips is undefined', () => {
+        // ghostClips omitted -> the ?? [] arm yields [] so no ghost matches,
+        // routing through the legacy flag-clear gateway.
+        const ghost = createClip({ id: 'ghost-1', trackId: 'track-1', isGhost: true });
+        mocks.state.value = {
+            tracks: [TrackDummy.create({ id: 'track-1', clips: [ghost] })],
+            selectedTrackId: null,
+        };
+
+        expect(acceptGhostClip('ghost-1')).toBe(true);
+        expect(mocks.updateClipInStore).toHaveBeenCalledWith('ghost-1', expect.any(Function));
+    });
+
+    it('rejects a ghost whose type is neither audio nor midi', () => {
+        // Clip's type union is audio | midi at the type level, so the runtime
+        // invalid-type guard is only reachable via a corrupted value.
+        const ghost = createClip({ id: 'ghost-1', trackId: 'track-1', isGhost: true });
+        Reflect.set(ghost, 'type', 'video');
+        mocks.state.value = {
+            tracks: [TrackDummy.create({ id: 'track-1', clips: [] })],
+            selectedTrackId: null,
+            ghostClips: [ghost],
+        };
+
+        expect(acceptGhostClip('ghost-1')).toBe(false);
+        expect(mocks.appendClipToTrack).not.toHaveBeenCalled();
+    });
+
+    it('publishes a valid midi ghost clip', () => {
+        const ghost = { ...createClip({ id: 'ghost-1', trackId: 'track-1', isGhost: true }), type: 'midi' as const };
+        const state: TrackStoreState = {
+            tracks: [TrackDummy.create({ id: 'track-1', clips: [] })],
+            selectedTrackId: null,
+            ghostClips: [ghost],
+        };
+        mocks.state.value = state;
+        mocks.appendClipToTrack.mockImplementation(() => {
+            mocks.state.value = state;
+            return true;
+        });
+
+        expect(acceptGhostClip('ghost-1')).toBe(true);
+        expect(mocks.appendClipToTrack).toHaveBeenCalledWith('track-1', { ...ghost, isGhost: false });
+    });
+
     it('uses the clip-update gateway for legacy ghost flags and reports its result', () => {
         const ghost = createClip({ id: 'ghost-1', trackId: 'track-1', isGhost: true });
         mocks.state.value = {
