@@ -1,0 +1,46 @@
+src/modules/Arrangement/useCases/timelineInteractions/commitInlineAutomationPaint.ts
+  s_0d39f3a4a4357a::t_b88cb10cdf78a7 7,74-77
+src/modules/Automation/useCases/modulation/resetModulationSlew.ts
+  s_0d39f3a4a4357a::t_67464e33568cc4 1,11
+src/modules/Automation/useCases/automation/__tests__/simplifyGesturePoints.spec.ts
+  s_0d39f3a4a4357a::t_3ebf9020ea87f2 1-48
+src/modules/Automation/useCases/modulation/__tests__/applyModulationToEngineDiscontinuity.spec.ts
+  s_0d39f3a4a4357a::t_c389575c7b93c7 1-79
+src/modules/Automation/useCases/automationRecording/flushPendingPoints.ts
+  s_0d39f3a4a4357a::t_ded18dc38249d6 2,19-23
+src/modules/Transport/useCases/playheadScheduler/startPlayheadScheduler.ts
+  s_0d39f3a4a4357a::t_bf100546be2e5f 324
+src/modules/Automation/useCases/automation/simplifyGesturePoints.ts
+  s_0d39f3a4a4357a::t_370fd9801d34a4 1-21,24,26-27
+  s_0d39f3a4a4357a::t_943be3d56beb9b 22-23,25
+src/modules/Automation/useCases/modulation/modulationSlewState.ts
+  s_0d39f3a4a4357a::t_53f5af53a745c6 7-15
+src/modules/Automation/services/automationPointAlgorithms.ts
+  s_0d39f3a4a4357a::t_d5fee5d34666a5 30-31
+  s_0d39f3a4a4357a::t_67792f3f36f19c 24-25,29,32
+src/modules/Arrangement/useCases/timelineInteractions/__tests__/commitInlineAutomationPaint.spec.ts
+  s_0d39f3a4a4357a::t_bbae8f799920b1 200,202-214,222
+  s_0d39f3a4a4357a::t_f23479ced4e285 201,215-221
+  s_0d39f3a4a4357a::t_b9d9b76aab60ac 14-18,28
+src/modules/Automation/useCases/index.ts
+  s_0d39f3a4a4357a::t_42e974d726fcb2 25
+src/modules/Automation/useCases/modulation/applyModulationToEngine.ts
+  s_0d39f3a4a4357a::t_221d7cabda9f8d 12,169-172,174,189-200,238,241
+  s_0d39f3a4a4357a::t_23839309f98f87 242-246
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "7e1ff9e5c48f9fac90d01f7fbce4d095717426b5",
+  "prompts": {},
+  "sessions": {
+    "s_0d39f3a4a4357a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "60da6a2e-7d79-4d98-8624-e993f5a9f94e",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
