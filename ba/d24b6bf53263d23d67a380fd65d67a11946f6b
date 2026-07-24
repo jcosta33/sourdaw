@@ -1,0 +1,43 @@
+src/modules/AudioEngine/repositories/devices/dynamics/__tests__/applyLimiterParams.spec.ts
+  s_a294031860c4c2::t_686ead2de0127b 1-32
+src/modules/AudioEngine/repositories/devices/modulation/__tests__/applyModulationParams.spec.ts
+  s_4893e9e0e15ba8::t_5cf922c2467e82 1-272
+src/modules/AudioEngine/repositories/devices/reverbDelay/__tests__/applyConvolutionReverbParams.spec.ts
+  s_4893e9e0e15ba8::t_bbab8a81a75421 1-83
+src/modules/AudioEngine/repositories/devices/toneShaping/__tests__/applyToneShapingParams.spec.ts
+  s_a294031860c4c2::t_0eae3541b6e02e 1-101
+src/modules/AudioEngine/useCases/latencyCompensation/compensation/__tests__/getLatencyReport.spec.ts
+  s_37727fa1e6cd60::t_fc4f7b3d786ff9 1,3-44,47-90
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "bad24b6bf53263d23d67a380fd65d67a11946f6b",
+  "prompts": {},
+  "sessions": {
+    "s_37727fa1e6cd60": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-af46d12dd2362f0b0",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_4893e9e0e15ba8": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-a19aee8989218521f",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_a294031860c4c2": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-a7ed6a0a4332dad1d",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
