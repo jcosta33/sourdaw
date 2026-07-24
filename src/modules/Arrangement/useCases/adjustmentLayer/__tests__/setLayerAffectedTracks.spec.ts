@@ -2,10 +2,13 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { setLayerAffectedTracks } from '../setLayerAffectedTracks';
 
-const mocks = vi.hoisted(() => ({
-    adjustmentLayerStoreValue: { value: { layers: [] } },
-    adjustmentLayerStoreSet: vi.fn(),
-}));
+const mocks = vi.hoisted(() => {
+    const adjustmentLayerStoreValue: { value: { layers: unknown[] } | null } = { value: { layers: [] } };
+    return {
+        adjustmentLayerStoreValue,
+        adjustmentLayerStoreSet: vi.fn(),
+    };
+});
 
 vi.mock('#/modules/Arrangement/stores/adjustmentLayer', () => ({
     adjustmentLayerStore: {
@@ -27,7 +30,7 @@ describe('setLayerAffectedTracks', () => {
                 { id: 'l1', affectedTrackIds: ['t0'] },
                 { id: 'l2', affectedTrackIds: ['tx'] },
             ],
-        } as any;
+        };
 
         setLayerAffectedTracks('l1', ['t1', 't2', 't2']);
 
@@ -35,8 +38,16 @@ describe('setLayerAffectedTracks', () => {
         if (!setCall) {
             throw new Error('expected adjustmentLayerStore.set to be called');
         }
-        const layers = setCall[0].layers;
-        expect(layers[0].affectedTrackIds).toEqual(['t1', 't2']);
-        expect(layers[1].affectedTrackIds).toEqual(['tx']);
+        const layers = setCall[0].layers as Array<{ affectedTrackIds: string[] }>;
+        expect(layers[0]?.affectedTrackIds).toEqual(['t1', 't2']);
+        expect(layers[1]?.affectedTrackIds).toEqual(['tx']);
+    });
+
+    it('is a no-op when the store has not loaded', () => {
+        mocks.adjustmentLayerStoreValue.value = null;
+
+        setLayerAffectedTracks('l1', ['t1']);
+
+        expect(mocks.adjustmentLayerStoreSet).not.toHaveBeenCalled();
     });
 });

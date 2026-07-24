@@ -222,4 +222,197 @@ describe('bounceTrack', () => {
         expect(mocks.trackStore.set).not.toHaveBeenCalled();
         expect(didWrite).toBe(false);
     });
+
+    it('returns false when the track store has not loaded', async () => {
+        mocks.trackStore.value = null;
+
+        const didWrite = await bounceTrack('track-1', {
+            includeInserts: false,
+            includeSends: false,
+            includeAutomation: false,
+            normalization: 'off',
+            tailHandling: 'off',
+            destination: 'replace',
+        });
+
+        expect(didWrite).toBe(false);
+        expect(mocks.renderTrackOffline).not.toHaveBeenCalled();
+    });
+
+    it('returns false when the track is missing or has no clips', async () => {
+        const sourceTrack = createAudioTrack({ clips: [] });
+        setTrackStoreState({ tracks: [sourceTrack], selectedTrackId: 'track-1' });
+
+        const didWrite = await bounceTrack('track-1', {
+            includeInserts: false,
+            includeSends: false,
+            includeAutomation: false,
+            normalization: 'off',
+            tailHandling: 'off',
+            destination: 'replace',
+        });
+
+        expect(didWrite).toBe(false);
+        expect(mocks.renderTrackOffline).not.toHaveBeenCalled();
+    });
+
+    it('returns false when offline render produces no buffer', async () => {
+        const sourceTrack = createAudioTrack();
+        setTrackStoreState({ tracks: [sourceTrack], selectedTrackId: 'track-1' });
+        mocks.renderTrackOffline.mockResolvedValue(null);
+
+        const didWrite = await bounceTrack('track-1', {
+            includeInserts: false,
+            includeSends: false,
+            includeAutomation: false,
+            normalization: 'off',
+            tailHandling: 'off',
+            destination: 'replace',
+        });
+
+        expect(didWrite).toBe(false);
+        expect(mocks.cacheAudioBuffer).not.toHaveBeenCalled();
+        expect(mocks.trackStore.set).not.toHaveBeenCalled();
+    });
+
+    it('adds a fixed 5-second tail when tailHandling is manual', async () => {
+        const renderedBuffer = createTestAudioBuffer();
+        const sourceClip = createAudioClip({ startBeat: 0, endBeat: 4 });
+        const sourceTrack = createAudioTrack({ clips: [sourceClip] });
+        setTrackStoreState({ tracks: [sourceTrack], selectedTrackId: 'track-1' });
+        mocks.renderTrackOffline.mockResolvedValue(renderedBuffer);
+        mocks.transportStore.value = { tempo: 120 };
+
+        await bounceTrack('track-1', {
+            includeInserts: true,
+            includeSends: false,
+            includeAutomation: false,
+            normalization: 'off',
+            tailHandling: 'manual',
+            destination: 'replace',
+        });
+
+        // 5s at 120bpm = 10 beats → endBeat 4 + 10 = 14
+        expect(mocks.renderTrackOffline).toHaveBeenCalledWith(sourceTrack, 0, 14, expect.objectContaining({}));
+    });
+
+    it('falls back to 120bpm for the tail when transport has no tempo', async () => {
+        const renderedBuffer = createTestAudioBuffer();
+        const sourceTrack = createAudioTrack({ clips: [createAudioClip({ startBeat: 0, endBeat: 4 })] });
+        setTrackStoreState({ tracks: [sourceTrack], selectedTrackId: 'track-1' });
+        mocks.renderTrackOffline.mockResolvedValue(renderedBuffer);
+        mocks.transportStore.value = null;
+
+        await bounceTrack('track-1', {
+            includeInserts: true,
+            includeSends: false,
+            includeAutomation: false,
+            normalization: 'off',
+            tailHandling: 'manual',
+            destination: 'replace',
+        });
+
+        // null tempo → 120bpm → same 10-beat tail
+        expect(mocks.renderTrackOffline).toHaveBeenCalledWith(sourceTrack, 0, 14, expect.objectContaining({}));
+    });
+
+    it('creates a new audio track with the bounced clip when destination is new-track', async () => {
+        const renderedBuffer = createTestAudioBuffer();
+        const sourceClip = createAudioClip({ startBeat: 0, endBeat: 4 });
+        const sourceTrack = createAudioTrack({
+            clips: [sourceClip],
+            devices: [{ id: 'd1', name: 'EQ', type: 'eq', bypassed: false, parameterValues: {} }],
+            sends: [{ busId: 'bus', level: 1, preFader: false }],
+        });
+        setTrackStoreState({ tracks: [sourceTrack], selectedTrackId: 'track-1' });
+        mocks.renderTrackOffline.mockResolvedValue(renderedBuffer);
+
+        const didWrite = await bounceTrack('track-1', {
+            includeInserts: false,
+            includeSends: true,
+            includeAutomation: false,
+            normalization: 'off',
+            tailHandling: 'off',
+            destination: 'new-track',
+        });
+
+        expect(didWrite).toBe(true);
+        // two tracks now: original + new bounced track inserted right after source
+        const tracks = mocks.trackStore.value?.tracks ?? [];
+        expect(tracks).toHaveLength(2);
+        const newTrack = tracks[1];
+        expect(newTrack?.kind).toBe('audio');
+        expect(newTrack?.name).toBe('Guitar (bounce)');
+        expect(newTrack?.clips[0]?.audioBufferId).toBe('bounce-track-1-1234567890');
+        // includeInserts false → keep devices; includeSends true → clear sends
+        expect(newTrack?.devices).toEqual(sourceTrack.devices);
+        expect(newTrack?.sends).toEqual([]);
+        expect(newTrack?.alternatives).toHaveLength(1);
+    });
+
+    it('preserves devices and sends on the new track when neither inserts nor sends are included', async () => {
+        const renderedBuffer = createTestAudioBuffer();
+        const devices = [{ id: 'd1', name: 'EQ', type: 'eq', bypassed: false, parameterValues: {} }];
+        const sends = [{ busId: 'bus', level: 1, preFader: false }];
+        const sourceTrack = createAudioTrack({ clips: [createAudioClip({})], devices, sends });
+        setTrackStoreState({ tracks: [sourceTrack], selectedTrackId: 'track-1' });
+        mocks.renderTrackOffline.mockResolvedValue(renderedBuffer);
+
+        await bounceTrack('track-1', {
+            includeInserts: false,
+            includeSends: false,
+            includeAutomation: false,
+            normalization: 'off',
+            tailHandling: 'off',
+            destination: 'new-track',
+        });
+
+        const newTrack = mocks.trackStore.value?.tracks[1];
+        expect(newTrack?.devices).toEqual(devices);
+        expect(newTrack?.sends).toEqual(sends);
+    });
+
+    it('keeps the original devices on replace when inserts are not included', async () => {
+        const renderedBuffer = createTestAudioBuffer();
+        const devices = [{ id: 'd1', name: 'EQ', type: 'eq', bypassed: false, parameterValues: {} }];
+        const sourceTrack = createAudioTrack({ clips: [createAudioClip({})], devices });
+        setTrackStoreState({ tracks: [sourceTrack], selectedTrackId: 'track-1' });
+        mocks.renderTrackOffline.mockResolvedValue(renderedBuffer);
+
+        await bounceTrack('track-1', {
+            includeInserts: false,
+            includeSends: false,
+            includeAutomation: false,
+            normalization: 'off',
+            tailHandling: 'off',
+            destination: 'replace',
+        });
+
+        const replaced = mocks.trackStore.value?.tracks[0];
+        expect(replaced?.devices).toEqual(devices);
+    });
+
+    it('returns false when the store is cleared between render and commit', async () => {
+        const renderedBuffer = createTestAudioBuffer();
+        const sourceTrack = createAudioTrack();
+        setTrackStoreState({ tracks: [sourceTrack], selectedTrackId: 'track-1' });
+        mocks.renderTrackOffline.mockResolvedValue(renderedBuffer);
+        // Simulate the store being torn down during the async render gap
+        mocks.renderTrackOffline.mockImplementation(async () => {
+            mocks.trackStore.value = null;
+            return renderedBuffer;
+        });
+
+        const didWrite = await bounceTrack('track-1', {
+            includeInserts: false,
+            includeSends: false,
+            includeAutomation: false,
+            normalization: 'off',
+            tailHandling: 'off',
+            destination: 'replace',
+        });
+
+        expect(didWrite).toBe(false);
+        expect(mocks.pushUndoEntry).not.toHaveBeenCalled();
+    });
 });
