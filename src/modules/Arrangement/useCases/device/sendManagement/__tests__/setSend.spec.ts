@@ -4,12 +4,18 @@ import { setSend } from '../setSend';
 
 const mocks = vi.hoisted(() => ({
     getTrackById: vi.fn(),
+    getAllTracks: vi.fn(),
     updateTrack: vi.fn(),
     engineSetSend: vi.fn(),
+    getAllSidechainRoutes: vi.fn(),
 }));
 
 vi.mock('../../../../repositories/track/getTrackById', () => ({
     getTrackById: mocks.getTrackById,
+}));
+
+vi.mock('../../../../repositories/track/getAllTracks', () => ({
+    getAllTracks: mocks.getAllTracks,
 }));
 
 vi.mock('../../../../repositories/track/updateTrack', () => ({
@@ -19,10 +25,15 @@ vi.mock('../../../../repositories/track/updateTrack', () => ({
 vi.mock('#/modules/Routing/useCases', async (importOriginal) => ({
     ...(await importOriginal<any>()),
     setSend: mocks.engineSetSend,
+    getAllSidechainRoutes: mocks.getAllSidechainRoutes,
 }));
 
 describe('setSend', () => {
-    beforeEach(() => vi.clearAllMocks());
+    beforeEach(() => {
+        vi.clearAllMocks();
+        mocks.getAllTracks.mockReturnValue([]);
+        mocks.getAllSidechainRoutes.mockReturnValue([]);
+    });
 
     it('adds a new send and notifies engine', () => {
         mocks.getTrackById.mockReturnValue({ id: 't1', kind: 'audio', sends: [] });
@@ -82,6 +93,71 @@ describe('setSend', () => {
         });
 
         const didWrite = setSend('audio-1', 'vca-1', 0.5);
+
+        expect(mocks.updateTrack).not.toHaveBeenCalled();
+        expect(mocks.engineSetSend).not.toHaveBeenCalled();
+        expect(didWrite).toBe(false);
+    });
+
+    // FX-2: a Web Audio cycle with no DelayNode in it is muted by the spec's
+    // rendering algorithm, so an unguarded self-send silently kills the track
+    // rather than howling. The invariant lives here, at the mutation boundary.
+    it('rejects a self-send before project or engine work', () => {
+        const track = { id: 't1', kind: 'audio', outputId: 'master', sends: [] };
+        mocks.getTrackById.mockReturnValue(track);
+        mocks.getAllTracks.mockReturnValue([track]);
+
+        const didWrite = setSend('t1', 't1', 0.5);
+
+        expect(mocks.updateTrack).not.toHaveBeenCalled();
+        expect(mocks.engineSetSend).not.toHaveBeenCalled();
+        expect(didWrite).toBe(false);
+    });
+
+    it('rejects a send that closes an indirect bus A→B→C→A cycle', () => {
+        // busA already reaches busC downstream: busA →(send) busB →(output) busC.
+        // Sending busC → busA would close the loop.
+        const busA = { id: 'busA', kind: 'bus', outputId: 'master', sends: [{ busId: 'busB', level: 1 }] };
+        const busB = { id: 'busB', kind: 'bus', outputId: 'busC', sends: [] };
+        const busC = { id: 'busC', kind: 'bus', outputId: 'master', sends: [] };
+        mocks.getAllTracks.mockReturnValue([busA, busB, busC]);
+        mocks.getTrackById.mockImplementation((trackId: string) =>
+            [busA, busB, busC].find((track) => track.id === trackId)
+        );
+
+        const didWrite = setSend('busC', 'busA', 0.75);
+
+        expect(mocks.updateTrack).not.toHaveBeenCalled();
+        expect(mocks.engineSetSend).not.toHaveBeenCalled();
+        expect(didWrite).toBe(false);
+    });
+
+    it('accepts a send onto a bus that does not route back to the source', () => {
+        // Same topology, opposite direction: busA → busC adds a diamond, not a loop.
+        const busA = { id: 'busA', kind: 'bus', outputId: 'master', sends: [{ busId: 'busB', level: 1 }] };
+        const busB = { id: 'busB', kind: 'bus', outputId: 'busC', sends: [] };
+        const busC = { id: 'busC', kind: 'bus', outputId: 'master', sends: [] };
+        mocks.getAllTracks.mockReturnValue([busA, busB, busC]);
+        mocks.getTrackById.mockImplementation((trackId: string) =>
+            [busA, busB, busC].find((track) => track.id === trackId)
+        );
+
+        const didWrite = setSend('busA', 'busC', 0.25);
+
+        expect(mocks.engineSetSend).toHaveBeenCalledWith('busA', 'busC', 0.25, false);
+        expect(didWrite).toBe(true);
+    });
+
+    it('rejects a send that closes a cycle through an existing sidechain edge', () => {
+        // busA →(sidechain key) busB. A send busB → busA closes the loop even
+        // though neither sends nor outputs alone reach back.
+        const busA = { id: 'busA', kind: 'bus', outputId: 'master', sends: [] };
+        const busB = { id: 'busB', kind: 'bus', outputId: 'master', sends: [] };
+        mocks.getAllTracks.mockReturnValue([busA, busB]);
+        mocks.getTrackById.mockImplementation((trackId: string) => [busA, busB].find((track) => track.id === trackId));
+        mocks.getAllSidechainRoutes.mockReturnValue([{ sourceTrackId: 'busA', targetTrackId: 'busB' }]);
+
+        const didWrite = setSend('busB', 'busA', 0.5);
 
         expect(mocks.updateTrack).not.toHaveBeenCalled();
         expect(mocks.engineSetSend).not.toHaveBeenCalled();

@@ -1,33 +1,15 @@
 import { getTrackEligibility, trackStore } from '#/modules/Arrangement/stores';
 import { wireSidechainRoute } from '#/modules/AudioEngine/useCases';
+import { wouldCreateRoutingCycle } from '#/utils/routingCycle';
 
 import { SidechainCycleError } from '../../errors/RoutingErrors';
-import { createSidechainRoute, type SidechainRoute } from '../../models/SidechainRoute';
+import { createSidechainRoute } from '../../models/SidechainRoute';
 import { sidechainStore } from '../../stores/sidechainStore';
 
-function wouldCreateCycle(sourceTrackId: string, targetTrackId: string, routes: SidechainRoute[]): boolean {
-    if (sourceTrackId === targetTrackId) {
-        return true;
-    }
-    const visited = new Set<string>();
-    const queue = [targetTrackId];
-    while (queue.length > 0) {
-        const current = queue.shift()!;
-        if (current === sourceTrackId) {
-            return true;
-        }
-        if (visited.has(current)) {
-            continue;
-        }
-        visited.add(current);
-        for (const route of routes) {
-            if (route.sourceTrackId === current) {
-                queue.push(route.targetTrackId);
-            }
-        }
-    }
-    return false;
-}
+// FX-2: this guard used to walk sidechain routes alone, so it could not see a
+// return path that ran through an output or a send — A keys B, B sends back to
+// A was accepted as acyclic. It now shares the one detector the send and output
+// mutators use, over all three edge relations.
 
 export function addSidechainRoute(
     sourceTrackId: string,
@@ -55,7 +37,14 @@ export function addSidechainRoute(
         return false;
     }
 
-    if (wouldCreateCycle(sourceTrackId, targetTrackId, state.routes)) {
+    if (
+        wouldCreateRoutingCycle({
+            sourceId: sourceTrackId,
+            targetId: targetTrackId,
+            tracks: tracks ?? [],
+            sidechainRoutes: state.routes,
+        })
+    ) {
         throw new SidechainCycleError(sourceTrackId, targetTrackId);
     }
 

@@ -87,6 +87,8 @@ describe('removeTrack', () => {
             name: 'One',
             kind: 'audio' as const,
             clips: [{ id: 'c1' }],
+            outputId: 'master',
+            sends: [],
             alternatives: [
                 { id: 'alt-active', name: 'Active', clips: [{ id: 'c1' }, { id: 'c2' }] },
                 { id: 'alt-inactive', name: 'Inactive', clips: [{ id: 'c3' }, { id: 'c1' }] },
@@ -111,8 +113,24 @@ describe('removeTrack', () => {
     });
 
     it('refreshes surviving Toaster siblings after removing a child stem', () => {
-        const parent = { id: 'parent', kind: 'folder', clips: [], parentId: null, devices: [{ type: 'toaster' }] };
-        const removed = { id: 'stem-1', kind: 'audio', clips: [], parentId: 'parent', devices: [], outputId: 'parent' };
+        const parent = {
+            id: 'parent',
+            kind: 'folder',
+            clips: [],
+            parentId: null,
+            devices: [{ type: 'toaster' }],
+            outputId: 'master',
+            sends: [],
+        };
+        const removed = {
+            id: 'stem-1',
+            kind: 'audio',
+            clips: [],
+            parentId: 'parent',
+            devices: [],
+            outputId: 'parent',
+            sends: [],
+        };
         const survivor = {
             id: 'stem-2',
             kind: 'audio',
@@ -120,6 +138,7 @@ describe('removeTrack', () => {
             parentId: 'parent',
             devices: [],
             outputId: 'parent',
+            sends: [],
         };
         vi.mocked(getTrackState).mockReturnValue({
             tracks: [parent, removed, survivor] as never,
@@ -147,6 +166,8 @@ describe('removeTrack', () => {
             name: 'Reverb Bus',
             kind: 'bus' as const,
             clips: [],
+            outputId: 'master',
+            sends: [],
         };
         vi.mocked(getTrackState).mockReturnValue({
             tracks: [bus as never],
@@ -178,6 +199,8 @@ describe('removeTrack', () => {
             name: 'Master',
             kind: 'master' as const,
             clips: [],
+            outputId: 'hw_out',
+            sends: [],
         };
         vi.mocked(getTrackState).mockReturnValue({
             tracks: [master as never],
@@ -199,6 +222,8 @@ describe('removeTrack', () => {
             kind: 'folder' as const,
             clips: [],
             devices: [],
+            outputId: 'master',
+            sends: [],
         };
         vi.mocked(getTrackState).mockReturnValue({
             tracks: [folder as never],
@@ -220,6 +245,8 @@ describe('removeTrack', () => {
             kind: 'folder' as const,
             clips: [],
             devices: [{ id: 'toaster-device', type: 'toaster' }],
+            outputId: 'master',
+            sends: [],
         };
         vi.mocked(getTrackState).mockReturnValue({
             tracks: [toasterFolder as never],
@@ -239,6 +266,8 @@ describe('removeTrack', () => {
             name: 'Legacy',
             kind: 'midi' as const,
             clips: [{ id: 'legacy-clip' }],
+            outputId: 'master',
+            sends: [],
         };
         vi.mocked(getTrackState).mockReturnValue({
             tracks: [track as never],
@@ -250,5 +279,127 @@ describe('removeTrack', () => {
 
         expect(ownerUseCases.removeMidiClipData).toHaveBeenCalledWith(['legacy-clip']);
         expect(mockEventBus.emit).toHaveBeenCalledWith('track.removed', { trackId: 'legacy-track' });
+    });
+
+    // FX-6: deleting a bus used to leave every dependent's `outputId` and every
+    // send pointing at an id no track owns. The engine then resolved that dead
+    // id through `getDefaultDestination`'s fallback and silently reseated the
+    // track on master at full level.
+    describe('bus-removal reconciliation (FX-6)', () => {
+        const busB = { id: 'busB', name: 'B', kind: 'bus' as const, clips: [], outputId: 'master', sends: [] };
+        const busA = { id: 'busA', name: 'A', kind: 'bus' as const, clips: [], outputId: 'busB', sends: [] };
+
+        function readReconciledTracks(): { id: string; outputId: string; sends: { busId: string }[] }[] {
+            const call = vi.mocked(setTrackState).mock.calls[0];
+            if (!call) {
+                throw new Error('expected setTrackState to have been called');
+            }
+            return (call[0] as { tracks: { id: string; outputId: string; sends: { busId: string }[] }[] }).tracks;
+        }
+
+        it('repoints a dependent output to the removed bus own destination', () => {
+            // audio-1 → busA → busB. Deleting busA must leave audio-1 → busB:
+            // that is where its signal already flowed, so busB's processing and
+            // trim are preserved. Falling back to master would bypass both.
+            const dependent = {
+                id: 'audio-1',
+                name: 'Kick',
+                kind: 'audio' as const,
+                clips: [],
+                outputId: 'busA',
+                sends: [],
+            };
+            vi.mocked(getTrackState).mockReturnValue({
+                tracks: [busA, busB, dependent] as never,
+                selectedTrackId: null,
+            });
+            vi.mocked(getTrackById).mockReturnValue(busA as never);
+
+            removeTrack('busA');
+
+            const tracks = readReconciledTracks();
+            expect(tracks.find((track) => track.id === 'audio-1')?.outputId).toBe('busB');
+            // The live graph must agree with project truth, not fall to hw_out.
+            expect(ownerUseCases.setTrackOutput).toHaveBeenCalledWith('audio-1', 'busB');
+        });
+
+        it('drops sends that targeted the removed bus instead of leaving them dangling', () => {
+            const dependent = {
+                id: 'audio-1',
+                name: 'Kick',
+                kind: 'audio' as const,
+                clips: [],
+                outputId: 'master',
+                sends: [
+                    { busId: 'busA', level: 0.5, preFader: false },
+                    { busId: 'busB', level: 0.25, preFader: true },
+                ],
+            };
+            vi.mocked(getTrackState).mockReturnValue({
+                tracks: [busA, busB, dependent] as never,
+                selectedTrackId: null,
+            });
+            vi.mocked(getTrackById).mockReturnValue(busA as never);
+
+            removeTrack('busA');
+
+            const tracks = readReconciledTracks();
+            expect(tracks.find((track) => track.id === 'audio-1')?.sends).toEqual([
+                { busId: 'busB', level: 0.25, preFader: true },
+            ]);
+        });
+
+        it('falls back to master when the removed bus own output is also gone', () => {
+            const orphanBus = {
+                id: 'busA',
+                name: 'A',
+                kind: 'bus' as const,
+                clips: [],
+                outputId: 'deleted-earlier',
+                sends: [],
+            };
+            const dependent = {
+                id: 'audio-1',
+                name: 'Kick',
+                kind: 'audio' as const,
+                clips: [],
+                outputId: 'busA',
+                sends: [],
+            };
+            vi.mocked(getTrackState).mockReturnValue({
+                tracks: [orphanBus, dependent] as never,
+                selectedTrackId: null,
+            });
+            vi.mocked(getTrackById).mockReturnValue(orphanBus as never);
+
+            removeTrack('busA');
+
+            const tracks = readReconciledTracks();
+            expect(tracks.find((track) => track.id === 'audio-1')?.outputId).toBe('master');
+        });
+
+        it('leaves tracks that never referenced the removed bus untouched', () => {
+            const unrelated = {
+                id: 'audio-2',
+                name: 'Bass',
+                kind: 'audio' as const,
+                clips: [],
+                outputId: 'busB',
+                sends: [{ busId: 'busB', level: 0.4, preFader: false }],
+            };
+            vi.mocked(getTrackState).mockReturnValue({
+                tracks: [busA, busB, unrelated] as never,
+                selectedTrackId: null,
+            });
+            vi.mocked(getTrackById).mockReturnValue(busA as never);
+
+            removeTrack('busA');
+
+            const tracks = readReconciledTracks();
+            const survivor = tracks.find((track) => track.id === 'audio-2');
+            expect(survivor?.outputId).toBe('busB');
+            expect(survivor?.sends).toEqual([{ busId: 'busB', level: 0.4, preFader: false }]);
+            expect(ownerUseCases.setTrackOutput).not.toHaveBeenCalledWith('audio-2', expect.anything());
+        });
     });
 });

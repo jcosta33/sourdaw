@@ -8,6 +8,7 @@ import { DawMicroBadge } from '#/components/daw/DawMicroBadge';
 import { Button } from '#/components/ui/button';
 import { Slider } from '#/components/ui/slider';
 import { setSend, toggleSendPreFader, addTrack } from '#/modules/Arrangement/useCases';
+import { gainToDb, levelToSendPosition, sendPositionToLevel } from '#/utils/audioLevelLaw';
 import { cn } from '#/utils/Styles/cn';
 
 import { type Track } from '../../../models/TrackViewTypes';
@@ -19,6 +20,17 @@ type SendsEditorProps = {
     track: Track;
 };
 
+/**
+ * Sends read out in decibels, matching the control law (FX-7). A percentage of
+ * a linear amplitude is not a level a mixing engineer can act on: "50%" is
+ * -6 dB, not half as loud.
+ */
+function formatSendLevel(level: number): string {
+    if (level <= 0) {
+        return '-∞ dB';
+    }
+    return `${gainToDb(level).toFixed(1)} dB`;
+}
 export const SendsEditor = ({ track }: SendsEditorProps): ReactElement => {
     const { tracks: allTracks } = useTracks();
     const buses = allTracks.filter((time) => time.kind === 'bus');
@@ -42,7 +54,7 @@ export const SendsEditor = ({ track }: SendsEditorProps): ReactElement => {
                                         value={
                                             <div className="flex items-center gap-1.5">
                                                 <span className="text-[10px] font-mono text-muted-foreground w-8 text-right">
-                                                    {(level * 100).toFixed(0)}%
+                                                    {formatSendLevel(level)}
                                                 </span>
                                                 <button
                                                     type="button"
@@ -72,10 +84,10 @@ export const SendsEditor = ({ track }: SendsEditorProps): ReactElement => {
                                     />
                                     <div className="w-full px-1 flex items-center justify-center">
                                         <Slider
-                                            value={[level * 100]}
+                                            value={[levelToSendPosition(level)]}
                                             onValueChange={([value]) => {
                                                 if (value !== undefined) {
-                                                    setSend(track.id, bus.id, value / 100);
+                                                    setSend(track.id, bus.id, sendPositionToLevel(value));
                                                 }
                                             }}
                                             max={100}

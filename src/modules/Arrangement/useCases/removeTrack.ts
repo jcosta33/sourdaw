@@ -1,5 +1,5 @@
 import { inject } from '#/infra/di/inject';
-import { removeBusStrip, removeTrackStrip } from '#/modules/AudioEngine/useCases';
+import { removeBusStrip, removeTrackStrip, setTrackOutput } from '#/modules/AudioEngine/useCases';
 import { removeAutomationLanesForTrack } from '#/modules/Automation/useCases';
 import { removeMidiClipData } from '#/modules/MIDI/useCases';
 import { getAllSidechainRoutes, removeSidechainRoute } from '#/modules/Routing/useCases';
@@ -8,6 +8,7 @@ import { getTrackById } from '../repositories/track/getTrackById';
 import { getTrackState } from '../repositories/track/getTrackState';
 import { setTrackState } from '../repositories/track/setTrackState';
 import { collectTrackClipIds } from '../services/collectTrackClipIds';
+import { reconcileRoutingAfterRemoval } from '../services/reconcileRoutingAfterRemoval';
 import { takeLaneStore } from '../stores/takeLaneStore';
 import { shouldCreateLiveTrackStrip } from '../stores/trackEligibility';
 
@@ -29,7 +30,17 @@ export const removeTrack = inject({ eventBus: ArrangementEventBus })(
 
             const clipIds = collectTrackClipIds(track);
 
-            const tracks = state.tracks.filter((time) => time.id !== trackId);
+            // FX-6: dropping the row is not enough. Any surviving track that
+            // routed its output here, or held a send to it, would keep a
+            // reference no track answers to — and the engine resolves a dead id
+            // by silently falling back to master. Resolve both in the same store
+            // write so project truth is never observable in the dangling state.
+            const survivors = state.tracks.filter((time) => time.id !== trackId);
+            const { tracks, repointedOutputs } = reconcileRoutingAfterRemoval({
+                removedTrackId: trackId,
+                removedOutputId: track.outputId,
+                remainingTracks: survivors,
+            });
             setTrackState({
                 ...state,
                 tracks,
@@ -71,6 +82,15 @@ export const removeTrack = inject({ eventBus: ArrangementEventBus })(
             }
             if (track.kind === 'bus') {
                 removeBusStrip(trackId);
+            }
+            // FX-6: `removeTrackStrip` re-seats the engine's dependents on
+            // `hw_out`, which bypasses master entirely and disagrees with the
+            // destination project truth just inherited. Replay the reconciled
+            // outputs so the live graph matches the store. This runs after the
+            // teardown for the same reason the Toaster refresh below does — the
+            // strip sweep would otherwise overwrite it.
+            for (const repointed of repointedOutputs) {
+                setTrackOutput(repointed.trackId, repointed.outputId);
             }
             refreshToasterPadBindings(tracks, track.parentId);
             void eventBus.emit('track.removed', { trackId });

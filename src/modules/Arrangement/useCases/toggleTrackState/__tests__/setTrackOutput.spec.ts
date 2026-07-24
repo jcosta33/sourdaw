@@ -7,6 +7,12 @@ const mocks = vi.hoisted(() => ({
     getAllTracks: vi.fn(),
     updateTrack: vi.fn(),
     engineSetTrackOutput: vi.fn(),
+    getAllSidechainRoutes: vi.fn(),
+}));
+
+vi.mock('#/modules/Routing/useCases', async (importOriginal) => ({
+    ...(await importOriginal<any>()),
+    getAllSidechainRoutes: mocks.getAllSidechainRoutes,
 }));
 
 vi.mock('#/modules/Arrangement/repositories/track/updateTrack', () => ({
@@ -22,6 +28,7 @@ describe('setTrackOutput', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         mocks.getAllTracks.mockReturnValue([]);
+        mocks.getAllSidechainRoutes.mockReturnValue([]);
     });
 
     it('should update the track output id in the store and notify the audio engine', () => {
@@ -87,6 +94,51 @@ describe('setTrackOutput', () => {
         expect(mocks.updateTrack).not.toHaveBeenCalled();
         expect(mocks.engineSetTrackOutput).not.toHaveBeenCalled();
         expect(didWrite).toBe(false);
+    });
+
+    // FX-2: output edges close loops just as readily as sends do, and the
+    // engine resolves outputId with no ancestry check, so the guard has to
+    // cover this mutator too — not just setSend.
+    it('rejects routing a track output to itself before project or engine work', () => {
+        const track = { id: 't1', kind: 'audio', outputId: 'master', sends: [] };
+        mocks.getTrackById.mockImplementation((trackId: string) => (trackId === 't1' ? track : undefined));
+        mocks.getAllTracks.mockReturnValue([track]);
+
+        const didWrite = setTrackOutput('t1', 't1');
+
+        expect(mocks.updateTrack).not.toHaveBeenCalled();
+        expect(mocks.engineSetTrackOutput).not.toHaveBeenCalled();
+        expect(didWrite).toBe(false);
+    });
+
+    it('rejects an output that closes an indirect bus A→B→C→A cycle', () => {
+        // busA →(output) busB →(send) busC. Routing busC's output to busA closes it.
+        const busA = { id: 'busA', kind: 'bus', outputId: 'busB', sends: [] };
+        const busB = { id: 'busB', kind: 'bus', outputId: 'master', sends: [{ busId: 'busC', level: 1 }] };
+        const busC = { id: 'busC', kind: 'bus', outputId: 'master', sends: [] };
+        const tracks = [busA, busB, busC];
+        mocks.getAllTracks.mockReturnValue(tracks);
+        mocks.getTrackById.mockImplementation((trackId: string) => tracks.find((track) => track.id === trackId));
+
+        const didWrite = setTrackOutput('busC', 'busA');
+
+        expect(mocks.updateTrack).not.toHaveBeenCalled();
+        expect(mocks.engineSetTrackOutput).not.toHaveBeenCalled();
+        expect(didWrite).toBe(false);
+    });
+
+    it('accepts an output change that leaves the graph acyclic', () => {
+        const busA = { id: 'busA', kind: 'bus', outputId: 'busB', sends: [] };
+        const busB = { id: 'busB', kind: 'bus', outputId: 'master', sends: [{ busId: 'busC', level: 1 }] };
+        const busC = { id: 'busC', kind: 'bus', outputId: 'master', sends: [] };
+        const tracks = [busA, busB, busC];
+        mocks.getAllTracks.mockReturnValue(tracks);
+        mocks.getTrackById.mockImplementation((trackId: string) => tracks.find((track) => track.id === trackId));
+
+        const didWrite = setTrackOutput('busA', 'busC');
+
+        expect(mocks.engineSetTrackOutput).toHaveBeenCalledWith('busA', 'busC');
+        expect(didWrite).toBe(true);
     });
 });
 vi.mock('#/modules/Arrangement/repositories/track/getTrackById', () => ({

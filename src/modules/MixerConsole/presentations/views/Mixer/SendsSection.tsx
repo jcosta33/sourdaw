@@ -3,6 +3,7 @@ import { type ReactElement } from 'react';
 import { LatchButton } from '#/components/daw/LatchButton';
 import { Slider } from '#/components/ui/slider';
 import { setSend, toggleSendPreFader } from '#/modules/Arrangement/useCases';
+import { levelToSendPosition, sendPositionToLevel } from '#/utils/audioLevelLaw';
 
 import { type Track } from '../../../models/TrackViewTypes';
 import { MixerSection } from '../../components/Mixer/MixerSection';
@@ -29,10 +30,10 @@ export const SendsSection = ({ track }: SendsSectionProps): ReactElement | null 
                     <div key={bus.id} className="flex items-center gap-0.5">
                         <span className="text-[6px] text-muted-foreground truncate w-6">{bus.name}</span>
                         <Slider
-                            value={[level * 100]}
+                            value={[levelToSendPosition(level)]}
                             onValueChange={([value]) => {
                                 if (value !== undefined) {
-                                    setSend(track.id, bus.id, value / 100);
+                                    setSend(track.id, bus.id, sendPositionToLevel(value));
                                 }
                             }}
                             max={100}
