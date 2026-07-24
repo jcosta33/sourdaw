@@ -215,11 +215,14 @@ test.describe('MIDI editor — advanced lane controls', () => {
         await expr_toggle.click();
 
         await expect(lane).toBeVisible();
-        // Verify the real lane options (velocity/pitch bend at least).
+        // Velocity is the only always-available expression lane. The MPE per-note
+        // lanes (Pitch Bend / Pressure / Slide) are intentionally hidden until the
+        // engine sounds them (audit MD-2, honest-availability flag — #719), so the
+        // combobox must surface Velocity and must NOT surface the MPE lanes.
         const opts = await lane.locator('option').allInnerTexts();
         const joined = opts.join('|');
         expect(joined).toMatch(/Velocity/);
-        expect(joined).toMatch(/Pitch Bend/);
+        expect(joined).not.toMatch(/Pitch Bend|Pressure|Slide/);
     });
 });
 

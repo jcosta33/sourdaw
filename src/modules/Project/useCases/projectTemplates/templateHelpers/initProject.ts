@@ -37,8 +37,15 @@ export function initProject(input: InitProjectInput): Track {
         createdAt: Date.now(),
         updatedAt: Date.now(),
         dirty: false,
-        loading: false,
-        initialized: true,
+        loading: true,
+        // Ready is NOT latched here. initProject runs at the START of an async
+        // template build (before finalizeTemplate commits tracks + selection);
+        // latching `initialized` now signals workspace-ready before the build's
+        // writes settle, so the template's late-landing setTrackState clobbers any
+        // track the user selects in that window (CC-10 manifestation). The ready
+        // latch is published by createFromTemplate AFTER the template action
+        // completes and its writes are committed.
+        initialized: false,
         keyRoot: input.keyRoot ?? 0,
         scaleName: input.scaleName ?? 'chromatic',
         tuning: {

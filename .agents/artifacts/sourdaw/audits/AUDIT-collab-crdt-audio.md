@@ -306,6 +306,28 @@ correctness under concurrent in-flight `executeAppAction`s (the transaction cont
 today), so the safe direction is per-action async context propagation rather than a shared mutable
 `activeAutomergeStorageTransaction`.
 
+*Second manifestation — ready-before-settle clobbers user selection (runtime-PROVEN; wave-1 e2e
+milestone, #738):* the same structural cause (a handler write landing after a dependent signal)
+surfaces a distinct, higher-severity symptom on the template path — it silently steals a user's
+action. `initProject` (and the nebulaDrift demo) latched workspace-ready
+(`projectStore.initialized = true`) at the **start** of the async template build, before
+`finalizeTemplate` committed `setTrackState({ tracks, selectedTrackId })`. Under contention the
+launch overlay exits on that early signal while the template's writes are still in flight; the
+template's scoped `setTrackState` then commits at the `executeAppAction` commit (after
+`await waitForDevices()`) and **overwrites the track the user selected in that window**. Captured
+from `devices.spec.ts:11` under realistic full-suite contention: after the test selected the Kick
+track and added a Grinder device, the Inspector snapshot at the 60 s timeout showed **"Bypass
+Supersaw"** — the selection had reverted to the EDM template's lead track, so the just-added Grinder
+(and its `Enable Grinder` toggle) was no longer displayed. Any user who clicks a track the instant
+the workspace paints hits this. *Fix shipped (#738):* the template path no longer signals ready
+during the build — `initProject` and the demo leave `initialized` false, and `createFromTemplate`
+publishes the ready latch only **after** `executeAppAction` commits (before the non-clobbering
+`restorePersistence`/`compact`). Monotonic per #687 — a single latch, never un-set. Pinned red-first
+(`initProject.spec.ts`: initProject does not signal ready; `createFromTemplate.spec.ts`: ready is
+latched only after the action). This closes the observed clobber; the deeper structural fix
+(transaction spanning the async handler) remains the WS-6 item above and would subsume both
+manifestations.
+
 ### CC-5 — Discard terminal (`didDiscard`) recomputes and notifies nothing — sound for the superseded case, a narrow gap for the doc-absent case — **minor / S**
 
 `flushMatchingAutomergeStorageWrites` routes a write whose `prepare()` returns null into

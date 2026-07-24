@@ -2333,8 +2333,13 @@ export async function demo5_NebulaDrift(): Promise<void> {
         createdAt: Date.now(),
         updatedAt: Date.now(),
         dirty: false,
-        loading: false,
-        initialized: true,
+        loading: true,
+        // Ready is NOT latched here — same seam as initProject. This demo runs as
+        // an app-action template inside executeAppAction; latching `initialized`
+        // before its track/selection writes settle lets the late-landing writes
+        // clobber a user's early track click (CC-10). createFromTemplate publishes
+        // the ready latch after the action completes.
+        initialized: false,
         keyRoot: 0,
         scaleName: 'chromatic',
         tuning: {

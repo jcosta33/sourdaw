@@ -12,6 +12,7 @@ const mocks = vi.hoisted(() => ({
     flushAutomergeStorageWrites: vi.fn(),
     newProject: vi.fn(),
     projectActionHistoryToStore: vi.fn(),
+    projectSet: vi.fn(),
     resetAudioGraph: vi.fn(),
     resetCrdtProjectAuthority: vi.fn(),
     resetModuleStoresToDefault: vi.fn(),
@@ -75,6 +76,15 @@ vi.mock('../../../projectPersistence/helpers/stopActiveAutoSave', () => ({
 
 vi.mock('../../templateFiles/popSong', () => ({
     createPopSongTemplate: mocks.createPopSongTemplate,
+}));
+
+vi.mock('#/modules/Project/stores/projectStore', () => ({
+    projectStore: {
+        get value() {
+            return { name: 'Pop Song', initialized: false, loading: true };
+        },
+        set: mocks.projectSet,
+    },
 }));
 
 describe('createFromTemplate', () => {
@@ -278,5 +288,27 @@ describe('createFromTemplate', () => {
         }
         expect(flushOrder).toBeGreaterThan(storeResetOrder);
         expect(actionOrder).toBeGreaterThan(flushOrder);
+    });
+
+    it('publishes workspace-ready only after the template action commits, never during the async build', async () => {
+        // CC-10 (ready-before-settle): initProject deliberately leaves the project
+        // not-ready during the async build; createFromTemplate is the single seam
+        // that latches workspace-ready (initialized: true) — and only AFTER the
+        // template action's writes (tracks + selection) have committed, so a track
+        // the user clicks the instant the workspace paints is not clobbered by the
+        // template's late-landing setTrackState (devices.spec.ts:11 under load).
+        await expect(createFromTemplate('pop-song')).resolves.toBe(true);
+
+        const readyCallIndex = mocks.projectSet.mock.calls.findIndex(
+            (call) => (call[0] as { initialized?: boolean } | undefined)?.initialized === true
+        );
+        expect(readyCallIndex).toBeGreaterThanOrEqual(0);
+
+        const readyOrder = mocks.projectSet.mock.invocationCallOrder[readyCallIndex];
+        const actionOrder = mocks.executeAppAction.mock.invocationCallOrder[0];
+        if (readyOrder === undefined || actionOrder === undefined) {
+            throw new Error('expected the template action and the ready latch to both run');
+        }
+        expect(readyOrder).toBeGreaterThan(actionOrder);
     });
 });
