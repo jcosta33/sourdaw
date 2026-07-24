@@ -1,0 +1,21 @@
+src/modules/Arrangement/stores/__tests__/vcaGroupStoreDeep.spec.ts
+  s_cc939d1983cb3f::t_c9ff7e11bb1639 61-67
+src/modules/Arrangement/useCases/clipEditing/__tests__/createAlternativeClips.spec.ts
+  s_cc939d1983cb3f::t_fe85e6533d263d 260-339
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "348ab09313a2a8b49eb293abac1cffa4eeeeece9",
+  "prompts": {},
+  "sessions": {
+    "s_cc939d1983cb3f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-a388262aa92a9fe53",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
