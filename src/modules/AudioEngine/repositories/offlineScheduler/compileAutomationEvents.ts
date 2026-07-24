@@ -1,4 +1,4 @@
-import { evaluateAutomationCurve } from '#/utils/automationCurve';
+import { clampStairSteps, evaluateAutomationCurve } from '#/utils/automationCurve';
 
 import { type AutomationPoint } from '../../models/AutomationViewTypes';
 import { beatToSeconds } from '../../services/beatConversion';
@@ -147,7 +147,7 @@ export function compileAutomationEvents(
         }
 
         if (current.point.curve === 'stairs') {
-            const stairSteps = Math.min(32, Math.max(2, Math.trunc(current.point.stairSteps ?? 4)));
+            const stairSteps = clampStairSteps(current.point.stairSteps);
             for (let stair = 1; stair <= stairSteps; stair++) {
                 const beat = current.point.beat + ((next.point.beat - current.point.beat) * stair) / stairSteps;
                 const time = projectBeat(beat);

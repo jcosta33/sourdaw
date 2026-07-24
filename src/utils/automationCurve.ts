@@ -3,17 +3,24 @@
  * seven automation curve shapes (linear / exponential / step / s-curve /
  * stairs / smooth / bezier).
  *
- * Both runtimes evaluate automation through THIS function:
+ * The two runtimes finding AU-1 audited — the paths whose divergence changes
+ * what you hear versus what you bounce — evaluate automation through THIS
+ * function:
  *  - the live apply path (Transport scheduling → Automation
  *    `interpolateAutomationPointValue` → this evaluator), and
  *  - the offline compile path (AudioEngine offlineScheduler
  *    `compileAutomationEvents` → this evaluator).
  *
- * Audit finding AU-1 (AUDIT-automation.md): the two runtimes previously
- * carried independently hand-maintained copies of this math and had already
- * drifted (documented `stairs` clamping divergence). Collapsing to one kernel
- * makes monitor == bounce by construction. Do not fork this math back into a
- * runtime; the automation curve-conformance specs guard against re-divergence.
+ * Audit finding AU-1 (AUDIT-automation.md): these two paths previously carried
+ * independently hand-maintained copies of this math and had already drifted
+ * (documented `stairs` clamping divergence). Collapsing them onto one kernel
+ * makes monitor == bounce by construction. Do not fork this math back into
+ * either path; the automation curve-conformance specs guard re-divergence.
+ *
+ * Not (yet) unified: other, non-playback evaluators still carry their own curve
+ * math — Arrangement's `interpolateAutomationValue` (editor playhead value
+ * readout) and TimelineEditor's `buildCurvePath` (SVG rendering). They are
+ * tracked as AU-1 residuals; route them here as they are addressed.
  *
  * This kernel lives in `src/utils/` because it is the only home both a module
  * `services/` file (live) and a module `repositories/` file (offline) may
@@ -47,6 +54,17 @@ export type AutomationCurvePoint = {
 const MIN_STAIR_STEPS = 2;
 const MAX_STAIR_STEPS = 32;
 const DEFAULT_STAIR_STEPS = 4;
+
+/**
+ * The `stairs` step count as actually applied: an integer clamped to [2,32]
+ * (see AutomationPoint docs). The single source of these bounds — the offline
+ * event-emission loop samples stair boundaries with the same count, so it
+ * imports this rather than re-inlining the arithmetic (AU-1: no second copy).
+ */
+export function clampStairSteps(stairSteps: number | undefined): number {
+    const truncated = Math.trunc(stairSteps ?? DEFAULT_STAIR_STEPS);
+    return Math.min(MAX_STAIR_STEPS, Math.max(MIN_STAIR_STEPS, truncated));
+}
 
 /** Default cubic-Bézier x control points, matching the automation renderer. */
 const DEFAULT_BEZIER_CX1 = 0.33;
@@ -134,8 +152,7 @@ export function evaluateAutomationCurve({
     const span = secondPoint.value - firstPoint.value;
 
     if (firstPoint.curve === 'stairs') {
-        const rawSteps = Math.trunc(firstPoint.stairSteps ?? DEFAULT_STAIR_STEPS);
-        const steps = Math.min(MAX_STAIR_STEPS, Math.max(MIN_STAIR_STEPS, rawSteps));
+        const steps = clampStairSteps(firstPoint.stairSteps);
         const steppedFraction = Math.floor(fraction * steps) / steps;
         return firstPoint.value + span * steppedFraction;
     }

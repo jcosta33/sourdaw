@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
+import { AUTOMATION_CURVE_CASES, CASE_FIRST_BEAT, CASE_SECOND_BEAT } from '#/utils/__tests__/automationCurveCases';
 import { evaluateAutomationCurve } from '#/utils/automationCurve';
 
 import { type AutomationPoint } from '../../../models/AutomationViewTypes';
@@ -8,34 +9,31 @@ import { compileAutomationEvents } from '../compileAutomationEvents';
 /**
  * AU-1 cross-conformance gate — OFFLINE side. Do not delete without replacing.
  *
- * The offline compiler (`compileAutomationEvents`) and the live apply path must
- * evaluate the *same* automation curve, or the bounce differs from what was
- * monitored. PR #616 deleted the curve-conformance spec that guarded this and
- * the two copies drifted (`stairs` clamping). This spec drives the real offline
- * compiler and asserts every emitted sample equals the single shared kernel
- * (`#/utils/automationCurve`, which the live evaluator also routes through),
- * evaluated with the same bracketing the live lookup (`getAutomationValueAtBeat`)
- * uses. Its sibling on the live side pins that half. If either runtime re-forks
- * the curve math, one of these specs trips.
+ * The offline compiler (`compileAutomationEvents`) and the live apply path —
+ * the two runtimes finding AU-1 audited — must evaluate the *same* automation
+ * curve, or the bounce differs from what was monitored. PR #616 deleted the
+ * curve-conformance spec that guarded this and the two copies drifted (`stairs`
+ * clamping). This spec drives the real offline compiler and asserts every
+ * emitted sample equals the single shared kernel (`#/utils/automationCurve`,
+ * which the live evaluator also routes through), evaluated with the same
+ * bracketing the live lookup (`getAutomationValueAtBeat`) uses. Its sibling on
+ * the live side pins that half. Both consume one shared case table
+ * (`#/utils/__tests__/automationCurveCases`). If either runtime re-forks the
+ * curve math, one of these specs trips.
  *
  * A neutral identity beat→seconds projector is injected so an emitted event's
  * `timeSeconds` is exactly its beat, making the offline sample directly
- * comparable to the kernel value at that beat.
+ * comparable to the kernel value at that beat. Each case is mapped to a
+ * two-point lane on beats [0, 4]; the offline compiler derives `smooth`
+ * neighbors from the lane, so no explicit neighbor points are needed here.
  */
 
 const DEFAULT_TEMPO = 120;
 const NO_CHANGES: { beat: number; tempo: number }[] = [];
+const LANE_DURATION_SECONDS = CASE_SECOND_BEAT - CASE_FIRST_BEAT;
+
 function identityProjector(beat: number): number {
     return beat;
-}
-
-function point(
-    beat: number,
-    value: number,
-    curve: AutomationPoint['curve'] = 'linear',
-    extra: Partial<AutomationPoint> = {}
-): AutomationPoint {
-    return { beat, value, curve, tension: 0, ...extra };
 }
 
 /**
@@ -67,42 +65,29 @@ function liveValueAtBeat(points: AutomationPoint[], beat: number): number {
     });
 }
 
-type Lane = {
-    points: AutomationPoint[];
-    durationSeconds: number;
-};
-
-const LANES: Record<string, Lane> = {
-    linear: { points: [point(0, 0.2), point(4, 0.9)], durationSeconds: 4 },
-    step: { points: [point(0, 0.3, 'step'), point(4, 0.9, 'step')], durationSeconds: 4 },
-    'stairs-default': { points: [point(0, 0, 'stairs'), point(4, 1)], durationSeconds: 4 },
-    'stairs-8': { points: [point(0, 0, 'stairs', { stairSteps: 8 }), point(4, 1)], durationSeconds: 4 },
-    // AU-1 demonstrators: these stairSteps values were the drift point. The
-    // offline path clamps them; this asserts the shared kernel (hence the live
-    // path too, post-collapse) produces the identical clamped stepping.
-    'stairs-zero': { points: [point(0, 0, 'stairs', { stairSteps: 0 }), point(4, 1)], durationSeconds: 4 },
-    'stairs-one': { points: [point(0, 0, 'stairs', { stairSteps: 1 }), point(4, 1)], durationSeconds: 4 },
-    'stairs-fractional': { points: [point(0, 0, 'stairs', { stairSteps: 2.7 }), point(4, 1)], durationSeconds: 4 },
-    'stairs-over-max': { points: [point(0, 0, 'stairs', { stairSteps: 100 }), point(32, 1)], durationSeconds: 32 },
-    'exponential-pos': { points: [point(0, 0, 'exponential', { tension: 1 }), point(4, 1)], durationSeconds: 4 },
-    'exponential-neg': { points: [point(0, 0, 'exponential', { tension: -0.6 }), point(4, 1)], durationSeconds: 4 },
-    's-curve': { points: [point(0, 0, 's-curve', { tension: 0.5 }), point(4, 1)], durationSeconds: 4 },
-    'smooth-multi': {
-        points: [point(0, 0, 'smooth'), point(1, 0.3, 'smooth'), point(3, 0.7, 'smooth'), point(4, 1, 'smooth')],
-        durationSeconds: 4,
-    },
-    bezier: {
-        points: [point(0, 0, 'bezier', { cp1: { x: 0.25, y: 0.9 }, cp2: { x: 0.75, y: 0.1 } }), point(4, 1)],
-        durationSeconds: 4,
-    },
-};
-
 describe('automation curve conformance — offline compiler matches the shared kernel', () => {
-    for (const [name, lane] of Object.entries(LANES)) {
-        it(`"${name}" — every compiled sample equals the shared kernel at its beat`, () => {
+    for (const curveCase of AUTOMATION_CURVE_CASES) {
+        it(`"${curveCase.name}" — every compiled sample equals the shared kernel at its beat`, () => {
+            const points: AutomationPoint[] = [
+                {
+                    beat: CASE_FIRST_BEAT,
+                    value: curveCase.startValue,
+                    curve: curveCase.curve,
+                    tension: curveCase.tension ?? 0,
+                    stairSteps: curveCase.stairSteps,
+                    cp1: curveCase.cp1,
+                    cp2: curveCase.cp2,
+                },
+                {
+                    beat: CASE_SECOND_BEAT,
+                    value: curveCase.endValue,
+                    curve: curveCase.curve,
+                    tension: curveCase.tension ?? 0,
+                },
+            ];
             const events = compileAutomationEvents(
-                lane.points,
-                lane.durationSeconds,
+                points,
+                LANE_DURATION_SECONDS,
                 DEFAULT_TEMPO,
                 NO_CHANGES,
                 0,
@@ -111,9 +96,15 @@ describe('automation curve conformance — offline compiler matches the shared k
             expect(events.length).toBeGreaterThan(0);
             for (const event of events) {
                 // Identity projector → event.timeSeconds is the beat.
-                const expected = liveValueAtBeat(lane.points, event.timeSeconds);
-                expect(Number.isFinite(event.value), `curve "${name}" sample at beat ${event.timeSeconds}`).toBe(true);
-                expect(event.value, `curve "${name}" sample at beat ${event.timeSeconds}`).toBeCloseTo(expected, 8);
+                const expected = liveValueAtBeat(points, event.timeSeconds);
+                expect(
+                    Number.isFinite(event.value),
+                    `curve "${curveCase.name}" sample at beat ${event.timeSeconds}`
+                ).toBe(true);
+                expect(event.value, `curve "${curveCase.name}" sample at beat ${event.timeSeconds}`).toBeCloseTo(
+                    expected,
+                    8
+                );
             }
         });
     }
