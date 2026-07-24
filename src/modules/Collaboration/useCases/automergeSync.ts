@@ -1,7 +1,18 @@
-import { type Doc, type SyncState, initSyncState, generateSyncMessage, receiveSyncMessage } from '@automerge/automerge';
+import {
+    type Doc,
+    type Heads,
+    type Patch,
+    type SyncState,
+    diff,
+    getHeads,
+    initSyncState,
+    generateSyncMessage,
+    receiveSyncMessage,
+} from '@automerge/automerge';
 
 import { logger } from '#/infra/logger/appLogger';
-import { resetActionReplayAuthority } from '#/modules/Command/useCases';
+import { syncActionReplayMetadata } from '#/modules/Command/useCases';
+import { actionHistoryStore } from '#/modules/CrdtDocument/stores';
 import {
     subscribeToCrdtChanges,
     getCrdtDoc,
@@ -27,6 +38,64 @@ type PeerSyncTransport = {
 // crdtBranching (forkProjectBranch). CrdtDocument exposes no constant for the
 // prefix, so the routing predicate keeps a local one.
 const DOC_PREFIX_BRANCH = 'branch_';
+
+/**
+ * Top-level slot of the root document that backs the action-replay capability
+ * table. `actionHistoryStore` is built with
+ * `createAutomergeStorage(DOC_PREFIX_ROOT, 'actionHistory')`, and
+ * `createAutomergeStorage` writes each slot as a top-level document key — so no
+ * other document and no other slot can invalidate a replay capability.
+ */
+const ACTION_HISTORY_SLOT = 'actionHistory';
+
+function haveSameHeads(left: Heads, right: Heads): boolean {
+    if (left.length !== right.length) {
+        return false;
+    }
+    const sorted_left = [...left].sort();
+    const sorted_right = [...right].sort();
+    return sorted_left.every((hash, index) => hash === sorted_right[index]);
+}
+
+type TouchesActionHistoryInput = {
+    docId: string;
+    beforeHeads: Heads;
+    syncedDoc: Doc<unknown>;
+};
+
+/**
+ * CC-3 — how much replay authority a received sync is allowed to invalidate.
+ *
+ * The previous behaviour cleared every capability and tombstone on every
+ * inbound message, so a peer's unrelated edit (or an empty sync round) made
+ * every history-panel revert inert for the rest of the session. Replay
+ * authority can only be affected by a change to the root document's
+ * `actionHistory` slot, so that is the only thing worth reacting to.
+ */
+function touchesActionHistory({ docId, beforeHeads, syncedDoc }: TouchesActionHistoryInput): boolean {
+    if (docId !== DOC_PREFIX_ROOT) {
+        return false;
+    }
+
+    const after_heads = getHeads(syncedDoc);
+    if (haveSameHeads(beforeHeads, after_heads)) {
+        // A no-op sync round moved nothing.
+        return false;
+    }
+
+    let patches: Patch[];
+    try {
+        patches = diff(syncedDoc, beforeHeads, after_heads);
+    } catch (error) {
+        // The document cannot span both head sets (a peer replaced the
+        // lineage wholesale). No slot evidence is available, so reconcile
+        // conservatively against whatever history the sync leaves behind.
+        logger.warn('[AutomergeSync] Could not diff a received root sync; reconciling all replay entries', error);
+        return true;
+    }
+
+    return patches.some((patch) => patch.path[0] === ACTION_HISTORY_SLOT);
+}
 
 /**
  * Optional hooks supplied by the session layer so AutomergeSync can enforce
@@ -169,6 +238,8 @@ export class AutomergeSync {
 
         const peerStates = this.syncStates.get(peerId) ?? new Map<string, SyncState>();
         const syncState = peerStates.get(docId) ?? initSyncState();
+        // Captured before the merge so the applied change set can be measured.
+        const before_heads = getHeads(doc);
 
         let newDoc: Doc<unknown>;
         let newSyncState: SyncState;
@@ -191,15 +262,31 @@ export class AutomergeSync {
         peerStates.set(docId, newSyncState);
         this.syncStates.set(peerId, peerStates);
 
+        // CC-3 — decide what this sync is allowed to invalidate *before* the
+        // repository moves, while `doc` still holds the pre-sync heads.
+        const reconciles_replay_authority = touchesActionHistory({
+            docId,
+            beforeHeads: before_heads,
+            syncedDoc: sanitized_doc,
+        });
+
         // Update the document in the repository.
         // This triggers onChange → hydration. Guard the broadcast so the
         // resulting change isn't echoed straight back to every peer.
-        resetActionReplayAuthority();
         this.isApplyingRemoteSync = true;
         try {
             replaceCrdtDoc({ id: docId, doc: sanitized_doc });
         } finally {
             this.isApplyingRemoteSync = false;
+        }
+
+        // Entry-level invalidation, run against the projected post-sync
+        // history: capabilities whose entry the sync removed or whose metadata
+        // it rewrote are revoked; every untouched entry keeps its replay
+        // authority, so collaborative revert-from-history stays usable during
+        // a live session.
+        if (reconciles_replay_authority) {
+            syncActionReplayMetadata(actionHistoryStore.value?.entries ?? []);
         }
 
         // Persist asynchronously — don't block the sync loop.

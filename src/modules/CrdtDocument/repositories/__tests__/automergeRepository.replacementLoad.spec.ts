@@ -83,7 +83,7 @@ describe('AutomergeRepository replacement load authority', () => {
             queueMicrotask(() => {
                 if (request.type === 'loadBundle') {
                     respondToLoad(worker, request);
-                } else {
+                } else if (request.type === 'mergeBundle') {
                     respondToMerge(worker, request);
                 }
             });

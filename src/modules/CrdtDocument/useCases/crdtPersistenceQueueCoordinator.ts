@@ -561,7 +561,12 @@ async function compactCrdtProject(generation: number): Promise<void> {
     }
 
     if (failedSnapshot) {
-        const currentBundle = automergeRepository.saveAll();
+        // CC-8 — the full re-encode runs in the CRDT worker; it degrades to a
+        // synchronous main-thread save if the worker's replica is unusable.
+        const currentBundle = await automergeRepository.saveAllOffThread();
+        if (generation !== persistenceState.persistenceGeneration) {
+            return;
+        }
         if (areDocumentBundlesEqual(failedSnapshot.bundle, currentBundle)) {
             return;
         }
@@ -573,9 +578,14 @@ async function compactCrdtProject(generation: number): Promise<void> {
         return;
     }
 
+    const bundle = await automergeRepository.saveAllOffThread();
+    if (generation !== persistenceState.persistenceGeneration) {
+        return;
+    }
+
     await persistFullSnapshot({
         generation,
-        bundle: automergeRepository.saveAll(),
+        bundle,
     });
 }
 

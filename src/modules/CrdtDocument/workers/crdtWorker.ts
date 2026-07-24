@@ -2,31 +2,68 @@
 /**
  * CRDT Worker — runs Automerge WASM operations off the main thread.
  *
- * `loadBundle` and `mergeBundle` are the two blocking Automerge operations
- * (they parse WASM binary data). Moving them here keeps the main thread free
- * during project load and collaboration patch ingestion.
+ * `loadBundle`, `mergeBundle` and `compactShadow` are the blocking Automerge
+ * operations (they parse or re-encode WASM binary data). Moving them here keeps
+ * the main thread free during project load, collaboration patch ingestion and
+ * periodic compaction.
  *
  * Port protocol (self.onmessage):
- *   ← { id, type: 'loadBundle',  bundle:  [string, Uint8Array][] }
+ *   ← { id, type: 'loadBundle',  bundle:  [string, Uint8Array][], retainShadow?: boolean }
  *   → { id, type: 'loaded',      compacted: [string, Uint8Array][], rootId: string }
  *
  *   ← { id, type: 'mergeBundle', current: [string, Uint8Array][], incoming: [string, Uint8Array][] }
  *   → { id, type: 'merged',      compacted: [string, Uint8Array][], mergedDocIds: string[], newDocIds: string[] }
  *
+ *   ← { id, type: 'compactShadow', seeds: [string, Uint8Array][], deltas: [string, Uint8Array][],
+ *        removedDocIds: string[], expectedHeads: [string, string[]][] }
+ *   → { id, type: 'compacted',     bundle: [string, Uint8Array][] }
+ *   → { id, type: 'compactStale',  reason: string }
+ *
  *   → { id, type: 'error', message: string }  (on any failure)
  */
 
-import { type Doc, load, loadIncremental, merge, save } from '@automerge/automerge';
+import { type Doc, type Heads, getHeads, load, loadIncremental, merge, save } from '@automerge/automerge';
 
 const DOC_PREFIX_ROOT = 'root';
+
+type AnyShadowDoc = Record<string, unknown>;
+
+/**
+ * Worker-side replica of the repository's live documents.
+ *
+ * `loadBundle` (when the caller marks the bundle as the state it is about to
+ * install) and `mergeBundle` already materialise every document here, so
+ * retaining them is free. `compactShadow` then re-encodes the replica instead of
+ * the main thread encoding its own copies — the CC-8 offload. The replica is
+ * only ever trusted when its per-document heads match the heads the caller
+ * observed on its live documents, so a drifted replica can never be persisted.
+ */
+const shadowDocs = new Map<string, Doc<AnyShadowDoc>>();
+
+function replaceShadowDocs(docs: Map<string, Doc<AnyShadowDoc>>): void {
+    shadowDocs.clear();
+    for (const [id, doc] of docs) {
+        shadowDocs.set(id, doc);
+    }
+}
+
+function haveSameHeads(left: Heads, right: Heads): boolean {
+    if (left.length !== right.length) {
+        return false;
+    }
+    const sortedLeft = [...left].sort();
+    const sortedRight = [...right].sort();
+    return sortedLeft.every((hash, index) => hash === sortedRight[index]);
+}
 
 // ── loadBundle ────────────────────────────────────────────────────────────────
 
 export function processLoad(bundle: Map<string, Uint8Array>): {
     compacted: [string, Uint8Array][];
     rootId: string;
+    documents: Map<string, Doc<AnyShadowDoc>>;
 } {
-    type AnyDoc = Record<string, unknown>;
+    type AnyDoc = AnyShadowDoc;
 
     const baseDocs = new Map<string, Uint8Array>();
     const incrementals: Array<{ key: string; bytes: Uint8Array }> = [];
@@ -85,7 +122,7 @@ export function processLoad(bundle: Map<string, Uint8Array>): {
         compacted.push([id, save(doc)]);
     }
 
-    return { compacted, rootId };
+    return { compacted, rootId, documents: docs };
 }
 
 // ── mergeBundle ───────────────────────────────────────────────────────────────
@@ -97,8 +134,9 @@ function processMerge(
     compacted: [string, Uint8Array][];
     mergedDocIds: string[];
     newDocIds: string[];
+    documents: Map<string, Doc<AnyShadowDoc>>;
 } {
-    type AnyDoc = Record<string, unknown>;
+    type AnyDoc = AnyShadowDoc;
 
     const docs = new Map<string, Doc<AnyDoc>>();
     for (const [id, bytes] of current) {
@@ -125,14 +163,79 @@ function processMerge(
         compacted.push([id, save(doc)]);
     }
 
-    return { compacted, mergedDocIds, newDocIds };
+    return { compacted, mergedDocIds, newDocIds, documents: docs };
+}
+
+// ── compactShadow ─────────────────────────────────────────────────────────────
+
+type CompactShadowInput = {
+    /** Full document saves for ids the replica does not hold (or must relearn). */
+    seeds: Map<string, Uint8Array>;
+    /** `saveSince` deltas for ids the replica already holds, keyed by doc id. */
+    deltas: Map<string, Uint8Array>;
+    /** Ids the caller has dropped since the replica was last updated. */
+    removedDocIds: string[];
+    /** Heads the caller observed on its own live documents, per doc id. */
+    expectedHeads: Map<string, Heads>;
+};
+
+type CompactShadowOutput =
+    { status: 'compacted'; bundle: [string, Uint8Array][] } | { status: 'stale'; reason: string };
+
+export function processCompactShadow({
+    seeds,
+    deltas,
+    removedDocIds,
+    expectedHeads,
+}: CompactShadowInput): CompactShadowOutput {
+    for (const id of removedDocIds) {
+        shadowDocs.delete(id);
+    }
+    for (const [id, bytes] of seeds) {
+        shadowDocs.set(id, load<AnyShadowDoc>(bytes));
+    }
+    for (const [id, bytes] of deltas) {
+        const doc = shadowDocs.get(id);
+        if (!doc) {
+            return { status: 'stale', reason: `no replica for ${id}` };
+        }
+        shadowDocs.set(id, loadIncremental(doc, bytes));
+    }
+
+    if (shadowDocs.size !== expectedHeads.size) {
+        return { status: 'stale', reason: `replica holds ${shadowDocs.size} docs, caller holds ${expectedHeads.size}` };
+    }
+
+    // The replica is only allowed to produce persisted bytes when it provably
+    // holds the same change graph as the caller's live documents. Heads are
+    // content hashes, so an equal head set means an equal change set.
+    for (const [id, doc] of shadowDocs) {
+        const expected = expectedHeads.get(id);
+        if (!expected || !haveSameHeads(getHeads(doc), expected)) {
+            return { status: 'stale', reason: `heads diverged for ${id}` };
+        }
+    }
+
+    const bundle: [string, Uint8Array][] = [];
+    for (const [id, doc] of shadowDocs) {
+        bundle.push([id, save(doc)]);
+    }
+    return { status: 'compacted', bundle };
 }
 
 // ── Message dispatcher ────────────────────────────────────────────────────────
 
 type WorkerInMsg =
-    | { id: number; type: 'loadBundle'; bundle: [string, Uint8Array][] }
-    | { id: number; type: 'mergeBundle'; current: [string, Uint8Array][]; incoming: [string, Uint8Array][] };
+    | { id: number; type: 'loadBundle'; bundle: [string, Uint8Array][]; retainShadow?: boolean }
+    | { id: number; type: 'mergeBundle'; current: [string, Uint8Array][]; incoming: [string, Uint8Array][] }
+    | {
+          id: number;
+          type: 'compactShadow';
+          seeds: [string, Uint8Array][];
+          deltas: [string, Uint8Array][];
+          removedDocIds: string[];
+          expectedHeads: [string, Heads][];
+      };
 
 self.onmessage = ({ data }: MessageEvent<WorkerInMsg>): void => {
     const { id } = data;
@@ -140,11 +243,27 @@ self.onmessage = ({ data }: MessageEvent<WorkerInMsg>): void => {
         if (data.type === 'loadBundle') {
             const bundle = new Map<string, Uint8Array>(data.bundle);
             const result = processLoad(bundle);
+            if (data.retainShadow === true) {
+                replaceShadowDocs(result.documents);
+            }
             self.postMessage({ id, type: 'loaded', compacted: result.compacted, rootId: result.rootId });
+        } else if (data.type === 'compactShadow') {
+            const result = processCompactShadow({
+                seeds: new Map<string, Uint8Array>(data.seeds),
+                deltas: new Map<string, Uint8Array>(data.deltas),
+                removedDocIds: data.removedDocIds,
+                expectedHeads: new Map<string, Heads>(data.expectedHeads),
+            });
+            if (result.status === 'stale') {
+                self.postMessage({ id, type: 'compactStale', reason: result.reason });
+            } else {
+                self.postMessage({ id, type: 'compacted', bundle: result.bundle });
+            }
         } else {
             const current = new Map<string, Uint8Array>(data.current);
             const incoming = new Map<string, Uint8Array>(data.incoming);
             const result = processMerge(current, incoming);
+            replaceShadowDocs(result.documents);
             self.postMessage({
                 id,
                 type: 'merged',
