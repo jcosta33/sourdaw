@@ -202,8 +202,13 @@ describe('FaustDeviceStrategy.resolveOfflineAutomation', () => {
             []
         );
 
-        // 120 bpm → beatToSeconds(beat) === beat / 2.
+        // 120 bpm → beatToSeconds(beat) === beat / 2. AU-2: device automation is
+        // slewed offline (matching the live path), so the ramp is not a raw jump
+        // — it seeds at 200, glides through intermediate values, and settles
+        // exactly on 2000 (never a frozen snapshot).
         expect(cutoff.setValueAtTime).toHaveBeenCalledWith(200, 0);
-        expect(cutoff.linearRampToValueAtTime).toHaveBeenCalledWith(2_000, 2);
+        const ramps = cutoff.linearRampToValueAtTime.mock.calls.map((call) => call[0] as number);
+        expect(ramps.at(-1)).toBeCloseTo(2_000, 6);
+        expect(ramps.some((value) => value > 201 && value < 1_999)).toBe(true);
     });
 });

@@ -266,6 +266,13 @@ export async function scheduleTrackClips({
 
     // Apply the same region/latency corrections clip scheduling gets, so
     // automation lands on the audio it shapes (M-038).
+    // AU-12: clip-scoped automation lanes gate on their clip's beat span offline
+    // exactly as the live path does (applyAutomation clip-bounds gate). Raw clip
+    // bounds (pre-comping) match the live `track.clips.find(id)` lookup.
+    const clipBoundsById = new Map<string, { startBeat: number; endBeat: number }>();
+    for (const clip of track.clips) {
+        clipBoundsById.set(clip.id, { startBeat: clip.startBeat, endBeat: clip.endBeat });
+    }
     scheduleTrackAutomation(
         automationLanes,
         track.id,
@@ -278,7 +285,8 @@ export async function scheduleTrackClips({
         regionStartSec,
         projectBeatToSeconds,
         offlineCtx.sampleRate,
-        compensationDelay
+        compensationDelay,
+        clipBoundsById
     );
 
     if (track.freezeState.status === 'frozen' && track.freezeState.frozenBufferId) {

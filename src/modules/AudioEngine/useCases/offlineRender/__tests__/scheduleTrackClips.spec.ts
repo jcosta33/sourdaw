@@ -390,12 +390,15 @@ describe('scheduleTrackClips — MIDI plugin-delay compensation', () => {
         await runSchedule({ regionStartBeat: 128 });
 
         const call = mocks.scheduleTrackAutomation.mock.calls.at(-1);
-        expect(call?.at(-4)).toBe(64);
-        const projectBeat = call?.at(-3) as ((beat: number) => number) | undefined;
+        // Positional args (clipBoundsById is the trailing AU-12 arg).
+        expect(call?.[8]).toBe(64);
+        const projectBeat = call?.[9] as ((beat: number) => number) | undefined;
         expect(projectBeat?.(130)).toBe(65);
-        expect(call?.at(-2)).toBe(48_000);
+        expect(call?.[10]).toBe(48_000);
         // Automation gets the same latency compensation clip scheduling applies (M-038).
-        expect(call?.at(-1)).toBe(0.05);
+        expect(call?.[11]).toBe(0.05);
+        // AU-12: clip-scoped automation lanes are gated by clip bounds offline.
+        expect(call?.[12]).toBeInstanceOf(Map);
     });
 
     it('keeps canonical Toaster pad indexes when earlier children are muted or disabled', async () => {

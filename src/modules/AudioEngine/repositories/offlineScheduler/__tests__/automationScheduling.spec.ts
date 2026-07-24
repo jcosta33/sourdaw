@@ -1,5 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 
+import { evaluateAutomationCurve } from '#/utils/automationCurve';
+
 import { asBaseAudioContext, createMockAudioContext } from '../../../../../helpers/__tests__/audioContext.mock';
 import { type AutomationLane } from '../../../models/AutomationViewTypes';
 import { resolveDeviceParam, resolveDeviceParamScale } from '../../../services/deviceResolution';
@@ -344,8 +346,18 @@ describe('scheduleTrackAutomation', () => {
             );
 
             for (const [index, [, , scale, offset]] of targetSpecs.entries()) {
-                expect(params[index]!.setValueAtTime).toHaveBeenCalledWith(min * scale + offset, 0);
-                expect(params[index]!.linearRampToValueAtTime).toHaveBeenCalledWith(max * scale + offset, 1);
+                // AU-2: device params carry the control slew offline. The seed
+                // still lands at the start value; the slew glides through
+                // intermediate values and settles exactly on the end value.
+                const startTarget = min * scale + offset;
+                const endTarget = max * scale + offset;
+                expect(params[index]!.setValueAtTime).toHaveBeenCalledWith(startTarget, 0);
+                const ramps = vi.mocked(params[index]!.linearRampToValueAtTime).mock.calls.map((call) => call[0]);
+                expect(ramps.at(-1)).toBeCloseTo(endTarget, 9);
+                const intermediate = ramps.some(
+                    (value) => Math.abs(value - startTarget) > 1e-6 && Math.abs(value - endTarget) > 1e-6
+                );
+                expect(intermediate).toBe(true);
             }
             device.dispose?.();
         }
@@ -421,11 +433,13 @@ describe('scheduleTrackAutomation', () => {
         expect(gain.setValueAtTime).not.toHaveBeenCalled();
     });
 
-    it('ignores clip-scoped lanes (only track-level automation is scheduled here)', () => {
+    it('schedules a clip-scoped lane within its clip span (AU-12 parity with live)', () => {
         const gain = makeParam();
         const pan = makeParam();
         const gainNode = { gain } as unknown as GainNode;
         const panNode = { pan } as unknown as StereoPannerNode;
+        // Clip spans beats 128..132 → 64..66s at 120bpm; region starts at 64s.
+        const clipBounds = new Map([['clip-1', { startBeat: 128, endBeat: 132 }]]);
 
         scheduleTrackAutomation(
             [
@@ -433,7 +447,10 @@ describe('scheduleTrackAutomation', () => {
                     trackId: 'track-1',
                     clipId: 'clip-1',
                     parameterId: 'gain',
-                    points: [{ beat: 0, value: 0.4, curve: 'linear', tension: 0 }],
+                    points: [
+                        { beat: 128, value: 0.2, curve: 'linear', tension: 0 },
+                        { beat: 132, value: 0.8, curve: 'linear', tension: 0 },
+                    ],
                 }),
             ],
             'track-1',
@@ -442,7 +459,49 @@ describe('scheduleTrackAutomation', () => {
             [],
             10,
             120,
-            []
+            [],
+            64,
+            undefined,
+            44_100,
+            0,
+            clipBounds
+        );
+
+        // Before AU-12 clip automation was dropped from the bounce; now it seeds
+        // at the clip-start value and ramps to the clip-end value.
+        expect(gain.setValueAtTime).toHaveBeenCalledWith(0.2, 0);
+        expect(gain.linearRampToValueAtTime.mock.calls.at(-1)?.[0]).toBeCloseTo(0.8, 10);
+    });
+
+    it('skips a clip-scoped lane whose clip bounds are unknown (AU-12)', () => {
+        const gain = makeParam();
+        const gainNode = { gain } as unknown as GainNode;
+        const panNode = { pan: makeParam() } as unknown as StereoPannerNode;
+
+        scheduleTrackAutomation(
+            [
+                makeLane({
+                    trackId: 'track-1',
+                    clipId: 'missing-clip',
+                    parameterId: 'gain',
+                    points: [
+                        { beat: 128, value: 0.2, curve: 'linear', tension: 0 },
+                        { beat: 132, value: 0.8, curve: 'linear', tension: 0 },
+                    ],
+                }),
+            ],
+            'track-1',
+            gainNode,
+            panNode,
+            [],
+            10,
+            120,
+            [],
+            64,
+            undefined,
+            44_100,
+            0,
+            new Map()
         );
 
         expect(gain.setValueAtTime).not.toHaveBeenCalled();
@@ -529,10 +588,17 @@ describe('scheduleTrackAutomation', () => {
             1_000
         );
 
-        expect(scheduleParam).toHaveBeenCalledWith('filterCutoff', [
-            { startFrame: 0, endFrame: 1_000, startValue: 200, endValue: 2_000 },
-            { startFrame: 1_000, endFrame: 1_000, startValue: 2_000, endValue: 2_000 },
-        ]);
+        // AU-2: the native worklet lane is slewed offline too. The first segment
+        // starts at the seed value, intermediate segments glide, and the last
+        // segment lands exactly on the target; frames stay within the render.
+        type Segment = { startFrame: number; endFrame: number; startValue: number; endValue: number };
+        const segments = scheduleParam.mock.calls[0]![1] as Segment[];
+        expect(segments[0]!.startValue).toBe(200);
+        expect(segments.at(-1)!.endValue).toBeCloseTo(2_000, 6);
+        expect(segments.some((segment) => segment.startValue > 201 && segment.startValue < 1_999)).toBe(true);
+        expect(segments.every((segment) => segment.startFrame >= 0 && segment.endFrame >= segment.startFrame)).toBe(
+            true
+        );
     });
 
     it('does not let a native strategy steal a legacy bare Web Audio lane', () => {
@@ -615,5 +681,168 @@ describe('scheduleTrackAutomation', () => {
         expect(secondParam.setValueAtTime.mock.calls.length > 0).toBe(expectedId === 'device-2');
         expect(gain.setValueAtTime).not.toHaveBeenCalled();
         expect(pan.setValueAtTime).not.toHaveBeenCalled();
+    });
+
+    it('slews device automation offline to match the live IIR recurrence (AU-2)', () => {
+        const deviceParam = makeParam();
+        const deviceNode = {
+            inputNode: {} as AudioNode,
+            outputNode: {} as AudioNode,
+            nodes: [{ gain: deviceParam } as unknown as AudioNode],
+        };
+        // A stepped 0 -> 1 device lane. Live low-passes the step through its
+        // exponential slew (alpha 0.4 at 100Hz); offline must reproduce the glide
+        // rather than the instantaneous step it emitted before AU-2.
+        scheduleTrackAutomation(
+            [
+                makeLane({
+                    parameterId: 'device-1:gain-level',
+                    points: [
+                        { beat: 128, value: 0, curve: 'step', tension: 0 },
+                        { beat: 130, value: 1, curve: 'step', tension: 0 },
+                    ],
+                }),
+            ],
+            'track-1',
+            { gain: makeParam() } as unknown as GainNode,
+            { pan: makeParam() } as unknown as StereoPannerNode,
+            [webAudioEntry('device-1', 'builtin-gain', deviceNode)],
+            10,
+            120,
+            [],
+            64
+        );
+
+        const ramps = deviceParam.linearRampToValueAtTime.mock.calls.map((call) => call[0] as number);
+        const postStep = ramps.filter((value) => value > 0);
+        // The slew produces the exact IIR sequence y[n]=y[n-1]+0.4*(1-y[n-1]):
+        // 0.4, 0.64, 0.784, ... and settles exactly on the target.
+        expect(postStep[0]).toBeCloseTo(0.4, 10);
+        expect(postStep[1]).toBeCloseTo(0.64, 10);
+        expect(postStep[2]).toBeCloseTo(0.784, 10);
+        expect(ramps.at(-1)).toBe(1);
+        expect(postStep.length).toBeGreaterThan(5);
+    });
+
+    it('follows a linked lane offline, scaled by linkScale (AU-3 parity with live)', () => {
+        const gain = makeParam();
+        const gainNode = { gain } as unknown as GainNode;
+        const panNode = { pan: makeParam() } as unknown as StereoPannerNode;
+
+        const source = makeLane({
+            id: 'source',
+            trackId: 'source-track',
+            parameterId: 'gain',
+            points: [
+                { beat: 128, value: 0.2, curve: 'linear', tension: 0 },
+                { beat: 130, value: 0.8, curve: 'linear', tension: 0 },
+            ],
+        });
+        // A link-only follower on track-1: empty local points, inverting link.
+        const follower: AutomationLane = {
+            ...makeLane({ id: 'follower', trackId: 'track-1', parameterId: 'gain', points: [] }),
+            linkedLaneId: 'source',
+            linkScale: -1,
+        };
+
+        scheduleTrackAutomation([source, follower], 'track-1', gainNode, panNode, [], 10, 120, [], 64);
+
+        // Before AU-3 offline read the follower's empty points and rendered
+        // silent; now it renders the source curve inverted (linkScale -1).
+        expect(gain.setValueAtTime).toHaveBeenCalledWith(-0.2, 0);
+        expect(gain.linearRampToValueAtTime.mock.calls.at(-1)?.[0]).toBeCloseTo(-0.8, 10);
+    });
+
+    it('scales a linked bezier lane by the resolved scalar, not by pre-scaling points (AU-3)', () => {
+        const gain = makeParam();
+        const gainNode = { gain } as unknown as GainNode;
+        const panNode = { pan: makeParam() } as unknown as StereoPannerNode;
+
+        // A bezier source whose control-point altitudes (cp1.y/cp2.y) shape the
+        // segment. Pre-scaling point.value would leave cp1.y/cp2.y unscaled and
+        // distort the curve; live evaluates the curve, then multiplies the scalar.
+        const sourceA = {
+            beat: 0,
+            value: 0,
+            curve: 'bezier' as const,
+            tension: 0,
+            cp1: { x: 0.33, y: 0.8 },
+            cp2: { x: 0.66, y: 0.8 },
+        };
+        const sourceB = { beat: 4, value: 1, curve: 'linear' as const, tension: 0 };
+        const source = makeLane({
+            id: 'source',
+            trackId: 'source-track',
+            parameterId: 'gain',
+            points: [sourceA, sourceB],
+        });
+        const follower: AutomationLane = {
+            ...makeLane({ id: 'follower', trackId: 'track-1', parameterId: 'gain', points: [] }),
+            linkedLaneId: 'source',
+            linkScale: 2,
+        };
+
+        scheduleTrackAutomation([source, follower], 'track-1', gainNode, panNode, [], 10, 120, []);
+
+        // Altitude parity at the segment midpoint (beat 2 → 1s at 120bpm): offline
+        // must equal the live-scaled kernel output, not the point-pre-scaled
+        // distortion the pre-scale produced.
+        const expected = evaluateAutomationCurve({ firstPoint: sourceA, secondPoint: sourceB, beat: 2 }) * 2;
+        const calls = gain.linearRampToValueAtTime.mock.calls as [number, number][];
+        const nearest = calls.reduce((best, call) => (Math.abs(call[1] - 1) < Math.abs(best[1] - 1) ? call : best));
+        expect(nearest[0]).toBeCloseTo(expected, 6);
+        // The scaled altitude clears 1.0 (endpoints scale to [0,2]); the pre-scale
+        // bug landed it well under, so this also fences the regression.
+        expect(expected).toBeGreaterThan(1.2);
+    });
+
+    it('renders a chained link cross-track, multiplying linkScale (AU-3)', () => {
+        const gain = makeParam();
+        const gainNode = { gain } as unknown as GainNode;
+        const panNode = { pan: makeParam() } as unknown as StereoPannerNode;
+
+        // C (source) <- B (scale 0.5) <- A (scale -1, on track-1). Cumulative -0.5.
+        const laneC = makeLane({
+            id: 'C',
+            trackId: 't-c',
+            parameterId: 'gain',
+            points: [
+                { beat: 128, value: 0.4, curve: 'linear', tension: 0 },
+                { beat: 130, value: 0.4, curve: 'linear', tension: 0 },
+            ],
+        });
+        const laneB: AutomationLane = {
+            ...makeLane({ id: 'B', trackId: 't-b', parameterId: 'gain', points: [] }),
+            linkedLaneId: 'C',
+            linkScale: 0.5,
+        };
+        const laneA: AutomationLane = {
+            ...makeLane({ id: 'A', trackId: 'track-1', parameterId: 'gain', points: [] }),
+            linkedLaneId: 'B',
+            linkScale: -1,
+        };
+
+        scheduleTrackAutomation([laneA, laneB, laneC], 'track-1', gainNode, panNode, [], 10, 120, [], 64);
+
+        expect(gain.setValueAtTime).toHaveBeenCalledWith(-0.2, 0);
+    });
+
+    it('skips a link cycle offline, leaving the param untouched (AU-3)', () => {
+        const gain = makeParam();
+        const gainNode = { gain } as unknown as GainNode;
+        const panNode = { pan: makeParam() } as unknown as StereoPannerNode;
+
+        const laneA: AutomationLane = {
+            ...makeLane({ id: 'A', trackId: 'track-1', parameterId: 'gain', points: [] }),
+            linkedLaneId: 'B',
+        };
+        const laneB: AutomationLane = {
+            ...makeLane({ id: 'B', trackId: 't-b', parameterId: 'gain', points: [] }),
+            linkedLaneId: 'A',
+        };
+
+        scheduleTrackAutomation([laneA, laneB], 'track-1', gainNode, panNode, [], 10, 120, [], 64);
+
+        expect(gain.setValueAtTime).not.toHaveBeenCalled();
     });
 });

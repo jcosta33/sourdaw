@@ -19,6 +19,10 @@ export type AutomationLane = {
     id: string;
     trackId: string;
     clipId?: string;
+    // F3.3 linked/inverted automation — offline follows these exactly as the
+    // live path does (AU-3), via the shared #/utils/automationLaneLink resolver.
+    linkedLaneId?: string;
+    linkScale?: number;
     parameterId: string;
     parameterName: string;
     points: AutomationPoint[];
