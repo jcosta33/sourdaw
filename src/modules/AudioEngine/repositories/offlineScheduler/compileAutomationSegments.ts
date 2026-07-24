@@ -1,7 +1,7 @@
 import { type AutomationPoint } from '../../models/AutomationViewTypes';
 import { type OfflineAutomationSegment } from '../deviceStrategy/AudioDeviceStrategy';
 
-import { compileAutomationEvents } from './compileAutomationEvents';
+import { compileAutomationEvents, type CompileAutomationEventsOptions } from './compileAutomationEvents';
 
 type AutomationTempoChange = { beat: number; tempo: number };
 
@@ -16,7 +16,8 @@ export function compileAutomationSegments(
     changes: AutomationTempoChange[],
     sampleRate: number,
     regionStartSeconds = 0,
-    projectBeatToSeconds?: (beat: number) => number
+    projectBeatToSeconds?: (beat: number) => number,
+    options?: CompileAutomationEventsOptions
 ): OfflineAutomationSegment[] {
     if (sampleRate <= 0) {
         return [];
@@ -27,7 +28,8 @@ export function compileAutomationSegments(
         defaultTempo,
         changes,
         regionStartSeconds,
-        projectBeatToSeconds
+        projectBeatToSeconds,
+        options
     );
     if (events.length === 0) {
         return [];

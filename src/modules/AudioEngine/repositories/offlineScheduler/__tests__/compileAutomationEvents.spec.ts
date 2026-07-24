@@ -234,3 +234,53 @@ describe('compileAutomationEvents — event types', () => {
         }
     });
 });
+
+describe('compileAutomationEvents — device-param slew (AU-2)', () => {
+    const SLEW = { slew: { alpha: 0.4, tickSeconds: 0.01 } };
+
+    it('replicates the live IIR over a stepped device curve and settles on the target', () => {
+        // step 0 -> 1 at beat 2 (1s at 120bpm).
+        const events = compileAutomationEvents(
+            [point(0, 0, 'step'), point(2, 1, 'step')],
+            1,
+            DEFAULT_TEMPO,
+            [],
+            0,
+            undefined,
+            SLEW
+        );
+        expect(events[0]).toEqual({ type: 'set', timeSeconds: 0, value: 0 });
+        const post = events.map((event) => event.value).filter((value) => value > 0);
+        // First slewed samples after the step: y=0.4, 0.64, 0.784 (alpha 0.4).
+        expect(post[0]).toBeCloseTo(0.4, 10);
+        expect(post[1]).toBeCloseTo(0.64, 10);
+        expect(post[2]).toBeCloseTo(0.784, 10);
+        // Lands exactly on the target so the param holds the right value.
+        expect(events.at(-1)!.value).toBe(1);
+    });
+
+    it('leaves a single-point lane unslewed (nothing to smooth)', () => {
+        const events = compileAutomationEvents([point(0, 0.5)], 1, DEFAULT_TEMPO, [], 0, undefined, SLEW);
+        expect(events).toEqual([{ type: 'set', timeSeconds: 0, value: 0.5 }]);
+    });
+});
+
+describe('compileAutomationEvents — clip active window (AU-12)', () => {
+    it('crops emission to the clip span while keeping the export time origin', () => {
+        // Linear 0 -> 1 over beats 0..8 (0..4s); clip active only 1..3s.
+        const events = compileAutomationEvents([point(0, 0), point(8, 1)], 4, DEFAULT_TEMPO, [], 0, undefined, {
+            activeWindowSeconds: { startSeconds: 1, endSeconds: 3 },
+        });
+        expect(events[0]!.timeSeconds).toBeCloseTo(1, 10);
+        expect(events[0]!.value).toBeCloseTo(0.25, 10);
+        expect(events.at(-1)!.timeSeconds).toBeCloseTo(3, 10);
+        expect(events.at(-1)!.value).toBeCloseTo(0.75, 10);
+    });
+
+    it('emits nothing when the clip window is entirely outside the region', () => {
+        const events = compileAutomationEvents([point(0, 0), point(8, 1)], 4, DEFAULT_TEMPO, [], 0, undefined, {
+            activeWindowSeconds: { startSeconds: 10, endSeconds: 12 },
+        });
+        expect(events).toEqual([]);
+    });
+});

@@ -1,6 +1,6 @@
 import { type AutomationPoint } from '../../models/AutomationViewTypes';
 
-import { compileAutomationEvents } from './compileAutomationEvents';
+import { compileAutomationEvents, type CompileAutomationEventsOptions } from './compileAutomationEvents';
 
 type AutomationTempoChange = {
     beat: number;
@@ -15,7 +15,8 @@ export function scheduleAutomationOnParam(
     changes: AutomationTempoChange[],
     regionStartSeconds = 0,
     projectBeatToSeconds?: (beat: number) => number,
-    compensationDelaySec = 0
+    compensationDelaySec = 0,
+    options?: CompileAutomationEventsOptions
 ): void {
     const events = compileAutomationEvents(
         points,
@@ -23,7 +24,8 @@ export function scheduleAutomationOnParam(
         defaultTempo,
         changes,
         regionStartSeconds,
-        projectBeatToSeconds
+        projectBeatToSeconds,
+        options
     );
     if (events.length === 0) {
         return;

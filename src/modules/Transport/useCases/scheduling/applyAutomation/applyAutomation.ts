@@ -16,14 +16,17 @@ import {
     resolveDeviceAutomationTargetIndex,
     UNRESOLVED_DEVICE_AUTOMATION_TARGET,
 } from '#/utils/automationDeviceTarget';
+import { AUTOMATION_SLEW_ALPHA, slewStep } from '#/utils/automationSlew';
 
 import { schedulerSession } from '../../playheadScheduler/schedulerSession';
 
 /**
- * Per-parameter exponential slew state for plugin automation.
- * Alpha = 0.4 → ~95% of target reached in ~9 scheduler ticks (~90ms at 100Hz).
+ * Per-parameter exponential slew state for plugin automation. The IIR
+ * coefficient (AUTOMATION_SLEW_ALPHA, 0.4) and its one-tick step (slewStep) are
+ * the shared #/utils/automationSlew kernel the offline render replicates for
+ * device-param parity (AU-2). ~95% of target reached in ~9 ticks (~90ms at
+ * 100Hz). Do not re-inline the coefficient here.
  */
-const SLEW_ALPHA = 0.4;
 /** Skip dispatch when the smoothed value has moved less than this per tick. */
 const SLEW_EPSILON = 5e-5;
 
@@ -170,7 +173,7 @@ export function applyAutomation(currentBeat: number): Set<string> {
                 }
 
                 const prev = laneSlew.get(device.id) ?? value;
-                const smoothed = isDiscontinuity ? value : prev + (value - prev) * SLEW_ALPHA;
+                const smoothed = isDiscontinuity ? value : slewStep(prev, value, AUTOMATION_SLEW_ALPHA);
                 laneSlew.set(device.id, smoothed);
                 if (isDiscontinuity || Math.abs(smoothed - prev) > SLEW_EPSILON) {
                     if (device.type === 'fermenter') {
@@ -201,7 +204,7 @@ export function applyAutomation(currentBeat: number): Set<string> {
                         automationState.pluginParamSlew.set(lane.id, laneSlew);
                     }
                     const prev = laneSlew.get(fx.id) ?? value;
-                    const smoothed = isDiscontinuity ? value : prev + (value - prev) * SLEW_ALPHA;
+                    const smoothed = isDiscontinuity ? value : slewStep(prev, value, AUTOMATION_SLEW_ALPHA);
                     laneSlew.set(fx.id, smoothed);
                     if (isDiscontinuity || Math.abs(smoothed - prev) > SLEW_EPSILON) {
                         updateMidiFxParam(lane.trackId, fx.id, lane.parameterId, smoothed);

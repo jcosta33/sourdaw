@@ -1,3 +1,5 @@
+import { resolveLinkedLane } from '#/utils/automationLaneLink';
+
 import { interpolateAutomationPointValue } from '../../services/automationPointAlgorithms';
 import { automationStore } from '../../stores/automationStore';
 
@@ -29,31 +31,19 @@ export function getAutomationValueAtBeat(
             _laneByIdCache.set(candidate.id, candidate);
         }
     }
-    const lane = _laneByIdCache.get(laneId);
-    if (!lane) {
+    // R-F3.3: resolve any linked-lane chain (cycle-guarded, linkScale
+    // accumulated) to the authoritative point holder. A linked lane *is* its
+    // source — it never falls through to its own points — so this replaces the
+    // former inline recursion and shares the resolver with the offline render
+    // path (finding AU-3). `_visited` is reused to avoid a per-tick allocation.
+    const resolved = resolveLinkedLane(laneId, (id) => _laneByIdCache.get(id), _visited);
+    if (!resolved) {
         return null;
     }
 
-    // R-F3.3: Follow linked lane if set. A linked lane *is* its source — it does
-    // not consult its own points, so the linked source is authoritative even
-    // when the source is empty: an empty source yields null (no value to report),
-    // never a silent fall-through to this lane's local points.
-    if (lane.linkedLaneId) {
-        // Guard against circular links (A→B→A) — break the cycle by reporting
-        // "no value" (null), matching every other no-value path in this function
-        // (empty lanes, missing lanes, empty linked source). The scheduler treats
-        // null as "skip this lane" (applyAutomation.ts), so a cycle leaves the
-        // param untouched rather than driving it to a real 0.
-        if (_visited.has(lane.linkedLaneId)) {
-            return null;
-        }
-        _visited.add(laneId);
-        const sourceVal = getAutomationValueAtBeat(lane.linkedLaneId, beat, _visited);
-        if (sourceVal === null) {
-            return null;
-        }
-        const scale = lane.linkScale ?? 1;
-        return sourceVal * scale;
+    const lane = _laneByIdCache.get(resolved.sourceLaneId);
+    if (!lane) {
+        return null;
     }
 
     if (lane.points.length === 0) {
@@ -78,10 +68,10 @@ export function getAutomationValueAtBeat(
     }
 
     if (beforeIdx === -1) {
-        return points[0]!.value;
+        return points[0]!.value * resolved.scale;
     }
     if (beforeIdx === points.length - 1) {
-        return points[beforeIdx]!.value;
+        return points[beforeIdx]!.value * resolved.scale;
     }
 
     // Pass the surrounding points so a 'smooth' (Catmull-Rom) segment uses its
@@ -89,11 +79,12 @@ export function getAutomationValueAtBeat(
     // a 2-point Hermite that ignores curvature. `previousPoint`/`nextPoint` are
     // optional — undefined at the ends, where the spline already degrades to the
     // endpoint tangents by design.
-    return interpolateAutomationPointValue({
+    const interpolated = interpolateAutomationPointValue({
         firstPoint: points[beforeIdx]!,
         secondPoint: points[beforeIdx + 1]!,
         beat,
         previousPoint: points[beforeIdx - 1],
         nextPoint: points[beforeIdx + 2],
     });
+    return interpolated * resolved.scale;
 }
