@@ -184,4 +184,62 @@ describe('cutSelectedClip', () => {
         expect(mocks.removeWarpState).not.toHaveBeenCalled();
         expect(clipboardStore.value).toEqual(existingClipboard);
     });
+
+    it('falls back to the singular selectedClipId when the multi-selection list is empty', () => {
+        const clip = createClip({ id: 'clip-audio', trackId: 'track-audio', type: 'audio' });
+        mocks.clipSelectionStore.value = {
+            selectedClipId: 'clip-audio',
+            selectedClipIds: [], // empty plural list -> singular fallback used
+        };
+        mocks.getTrackStoreState.mockReturnValue({
+            tracks: [TrackDummy.create({ id: 'track-audio', clips: [clip] })],
+        });
+
+        expect(cutSelectedClip()).toBe(true);
+
+        expect(clipboardStore.value?.clipClipboard).toHaveLength(1);
+        expect(clipboardStore.value?.clipClipboard[0]?.clip.id).toBe('clip-audio');
+    });
+
+    it('returns false when neither a singular nor a plural selection is present', () => {
+        mocks.clipSelectionStore.value = { selectedClipId: null, selectedClipIds: [] };
+
+        expect(cutSelectedClip()).toBe(false);
+
+        expect(mocks.mapAllTracks).not.toHaveBeenCalled();
+        expect(clipboardStore.value?.clipClipboard).toEqual([]);
+    });
+
+    it('rejects a selection containing a duplicate id before any cleanup', () => {
+        const clip = createClip({ id: 'clip-audio', trackId: 'track-audio', type: 'audio' });
+        mocks.clipSelectionStore.value = {
+            selectedClipId: 'clip-audio',
+            selectedClipIds: ['clip-audio', 'clip-audio'], // duplicate
+        };
+        mocks.getTrackStoreState.mockReturnValue({
+            tracks: [TrackDummy.create({ id: 'track-audio', clips: [clip] })],
+        });
+
+        expect(cutSelectedClip()).toBe(false);
+
+        expect(mocks.mapAllTracks).not.toHaveBeenCalled();
+        expect(clipboardStore.value?.clipClipboard).toEqual([]);
+    });
+
+    it('returns false when the eligible clip is no longer in the track store', () => {
+        // Eligibility passes, but findClipById cannot locate the clip in tracks
+        // (torn down between eligibility resolution and the lookup).
+        mocks.clipSelectionStore.value = {
+            selectedClipId: 'ghost',
+            selectedClipIds: ['ghost'],
+        };
+        mocks.getTrackStoreState.mockReturnValue({
+            tracks: [TrackDummy.create({ id: 'track-audio', clips: [] })],
+        });
+
+        expect(cutSelectedClip()).toBe(false);
+
+        expect(mocks.mapAllTracks).not.toHaveBeenCalled();
+        expect(clipboardStore.value?.clipClipboard).toEqual([]);
+    });
 });

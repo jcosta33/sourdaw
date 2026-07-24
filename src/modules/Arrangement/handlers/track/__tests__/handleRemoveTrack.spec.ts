@@ -273,6 +273,44 @@ describe('handleRemoveTrack', () => {
                 c3: [pitchBendC3],
             });
         });
+
+        it('omits clip ids that have no midi data and skips automation when the store is empty', () => {
+            // Track has two midi clips: c1 carries notes+cc+pitch-bend; c2 has none.
+            const clipC1 = ClipDummy.create({ id: 'c1', trackId: 't1', type: 'midi' });
+            const clipC2 = ClipDummy.create({ id: 'c2', trackId: 't1', type: 'midi' });
+            const track = TrackDummy.create({ id: 't1', name: 'Vocals', kind: 'midi', clips: [clipC1, clipC2] });
+            mocks.getTrackStoreState.mockReturnValue({ tracks: [track] });
+
+            // automationStore is null -> the `?: []` fallback arm fires (no lanes captured).
+            mocks.automationStoreValue.value = null;
+
+            const noteC1 = createMidiNote('note-c1', 60);
+            const ccC1 = createMidiControlChange('cc-c1', 10);
+            const pitchBendC1 = createMidiPitchBend('pitch-bend-c1', 0);
+            mocks.midiStoreValue.value = {
+                // Only c1 has entries; c2 is absent for every kind -> skipped branches fire.
+                notesByClipId: { c1: [noteC1] },
+                ccByClipId: { c1: [ccC1] },
+                pitchBendByClipId: { c1: [pitchBendC1] },
+            };
+
+            const desc = handleRemoveTrack.describe({
+                type: 'removeTrack',
+                payload: { trackId: 't1' },
+            });
+
+            const inverseAction = desc.inverseAction;
+            if (!inverseAction || inverseAction.type !== 'restoreTrack') {
+                throw new Error('expected a restoreTrack inverse action');
+            }
+            const payload = inverseAction.payload;
+            // c1 captured, c2 omitted entirely (no entries of any kind).
+            expect(payload.midiNotesByClipId).toEqual({ c1: [noteC1] });
+            expect(payload.midiCcByClipId).toEqual({ c1: [ccC1] });
+            expect(payload.midiPitchBendByClipId).toEqual({ c1: [pitchBendC1] });
+            // Automation store was null -> empty snapshot.
+            expect(payload.automationLaneSnapshots).toEqual([]);
+        });
     });
 
     it('is undoable', () => {
