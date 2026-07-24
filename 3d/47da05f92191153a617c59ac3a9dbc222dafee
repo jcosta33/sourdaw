@@ -1,0 +1,31 @@
+src/modules/Yeast/useCases/__tests__/sendYeastProcessorCommand.spec.ts
+  s_0d39f3a4a4357a::t_7a4694c1f83435 3-5,10,16,48,59-93
+src/modules/Yeast/useCases/__tests__/setYeastProcessorBypass.spec.ts
+  s_0d39f3a4a4357a::t_a84e4ca6dcb9fc 1,3-32,35-68
+src/modules/Yeast/workers/__tests__/ScheduledEventQueue.spec.ts
+  s_0d39f3a4a4357a::t_4ff9c749864c9c 1-179
+src/modules/Yeast/workers/processors/__tests__/ChordGenerator.spec.ts
+  s_0d39f3a4a4357a::t_39fb330f420536 135-388
+src/modules/Yeast/workers/processors/__tests__/NoteRepeater.spec.ts
+  s_0d39f3a4a4357a::t_489913fdb6e4e6 6-56,245-417
+src/modules/Yeast/workers/processors/__tests__/ScaleQuantizer.spec.ts
+  s_0d39f3a4a4357a::t_868e566f0702b7 7,12-14,54-236,277-281
+src/modules/Yeast/workers/processors/__tests__/Transposer.spec.ts
+  s_0d39f3a4a4357a::t_e5fdde50e139b3 193-240
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "3d47da05f92191153a617c59ac3a9dbc222dafee",
+  "prompts": {},
+  "sessions": {
+    "s_0d39f3a4a4357a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "60da6a2e-7d79-4d98-8624-e993f5a9f94e",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
