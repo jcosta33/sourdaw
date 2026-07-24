@@ -1,6 +1,8 @@
 //! Lo-fi vintage processing — bit reduction, sample rate reduction, analog filter.
 //! Inspired by E-mu SP-1200 (12-bit @ 26.04kHz).
 
+use crate::primitives::flush_denormal;
+
 pub struct LofiProcessor {
     // Bit reduction
     bit_depth: u8, // 4-16 (16 = off)
@@ -69,8 +71,12 @@ impl LofiProcessor {
             }
 
             // Analog reconstruction filter (one-pole lowpass)
-            self.filter_state_l += self.filter_coeff * (self.hold_value_l - self.filter_state_l);
-            self.filter_state_r += self.filter_coeff * (self.hold_value_r - self.filter_state_r);
+            self.filter_state_l = flush_denormal(
+                self.filter_state_l + self.filter_coeff * (self.hold_value_l - self.filter_state_l),
+            );
+            self.filter_state_r = flush_denormal(
+                self.filter_state_r + self.filter_coeff * (self.hold_value_r - self.filter_state_r),
+            );
 
             // Mix
             left[i] = dry_l * (1.0 - self.mix) + self.filter_state_l * self.mix;

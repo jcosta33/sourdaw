@@ -106,9 +106,11 @@ impl SvfFilter {
         // Update envelope follower
         let abs_input = input.abs();
         if abs_input > self.env_level {
-            self.env_level = abs_input + self.env_attack_coeff * (self.env_level - abs_input);
+            self.env_level =
+                flush_denormal(abs_input + self.env_attack_coeff * (self.env_level - abs_input));
         } else {
-            self.env_level = abs_input + self.env_release_coeff * (self.env_level - abs_input);
+            self.env_level =
+                flush_denormal(abs_input + self.env_release_coeff * (self.env_level - abs_input));
         }
 
         // Modulate cutoff with envelope

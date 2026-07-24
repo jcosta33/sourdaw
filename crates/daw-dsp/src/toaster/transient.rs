@@ -1,6 +1,8 @@
 //! Transient shaper — split into transient and sustain, apply independent gain.
 //! Uses dual envelope followers (fast + slow) to detect transients.
 
+use crate::primitives::flush_denormal;
+
 pub struct TransientShaper {
     fast_env: f32,     // fast envelope follower state
     slow_env: f32,     // slow envelope follower state
@@ -34,8 +36,8 @@ impl TransientShaper {
     pub fn process(&mut self, input: f32) -> f32 {
         let rect = input.abs();
 
-        self.fast_env += self.fast_coeff * (rect - self.fast_env);
-        self.slow_env += self.slow_coeff * (rect - self.slow_env);
+        self.fast_env = flush_denormal(self.fast_env + self.fast_coeff * (rect - self.fast_env));
+        self.slow_env = flush_denormal(self.slow_env + self.slow_coeff * (rect - self.slow_env));
 
         let transient_measure = (self.fast_env - self.slow_env).max(0.0);
         let is_transient = transient_measure > 0.01;

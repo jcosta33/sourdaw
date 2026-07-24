@@ -1,5 +1,6 @@
 //! Pedalboard DSP: compressor plus core drive pedals.
 
+use crate::primitives::flush_denormal;
 use std::f32::consts::PI;
 
 pub struct OverdrivePedal {
@@ -47,24 +48,29 @@ impl OverdrivePedal {
         let dt = 1.0 / self.sample_rate;
         let pre_hp_freq = 95.0 + self.drive * 220.0;
         let pre_hp_coeff = (2.0 * PI * pre_hp_freq * dt).min(0.45);
-        self.input_hp_state += pre_hp_coeff * (input - self.input_hp_state);
+        self.input_hp_state =
+            flush_denormal(self.input_hp_state + pre_hp_coeff * (input - self.input_hp_state));
         let tightened = input - self.input_hp_state;
 
         let gain = 1.0 + self.drive * 4.4;
         let pushed = tightened * gain;
 
-        self.sag_state += 0.0014 * (pushed.abs() - self.sag_state);
+        self.sag_state =
+            flush_denormal(self.sag_state + 0.0014 * (pushed.abs() - self.sag_state));
         let headroom = (1.08 - self.sag_state * (0.10 + self.drive * 0.14)).clamp(0.72, 1.02);
         let clipped = Self::soft_clip(pushed / headroom.max(0.55), self.drive) * headroom;
 
         let tone_freq = 720.0 + self.tone * 3_600.0;
         let tone_coeff = (2.0 * PI * tone_freq * dt).min(0.72);
-        self.tone_lp_state += tone_coeff * (clipped - self.tone_lp_state);
+        self.tone_lp_state =
+            flush_denormal(self.tone_lp_state + tone_coeff * (clipped - self.tone_lp_state));
         let brightness = clipped - self.tone_lp_state;
         let voiced = self.tone_lp_state * (1.02 - self.tone * 0.06) + brightness * (0.10 + self.tone * 0.46);
 
         let output_hp_coeff = (2.0 * PI * 75.0 * dt).min(0.35);
-        self.output_hp_state += output_hp_coeff * (voiced - self.output_hp_state);
+        self.output_hp_state = flush_denormal(
+            self.output_hp_state + output_hp_coeff * (voiced - self.output_hp_state),
+        );
         let dc_trimmed = voiced - self.output_hp_state;
 
         let level = 0.28 + self.level * 1.04;
@@ -137,12 +143,15 @@ impl DistortionPedal {
         let dt = 1.0 / self.sample_rate;
         let pre_hp_freq = 110.0 + self.drive * 160.0;
         let pre_hp_coeff = (2.0 * PI * pre_hp_freq * dt).min(0.36);
-        self.input_hp_state += pre_hp_coeff * (input - self.input_hp_state);
+        self.input_hp_state =
+            flush_denormal(self.input_hp_state + pre_hp_coeff * (input - self.input_hp_state));
         let tightened = input - self.input_hp_state;
 
         let pre_shape_hz = 2_200.0 + (1.0 - self.drive) * 2_000.0;
         let pre_shape_coeff = (2.0 * PI * pre_shape_hz * dt).min(0.48);
-        self.pre_shape_state += pre_shape_coeff * (tightened - self.pre_shape_state);
+        self.pre_shape_state = flush_denormal(
+            self.pre_shape_state + pre_shape_coeff * (tightened - self.pre_shape_state),
+        );
         let conditioned = tightened * 0.58 + self.pre_shape_state * 0.42;
 
         let gain = 1.35 + self.drive * 7.2;
@@ -154,17 +163,22 @@ impl DistortionPedal {
 
         let low_pass_hz = 1_000.0 + self.tone * 5_200.0;
         let low_pass_coeff = (2.0 * PI * low_pass_hz * dt).min(0.92);
-        self.tone_lp_state += low_pass_coeff * (clipped - self.tone_lp_state);
+        self.tone_lp_state =
+            flush_denormal(self.tone_lp_state + low_pass_coeff * (clipped - self.tone_lp_state));
 
         let high_pass_hz = 120.0 + (1.0 - self.tone) * 320.0;
         let high_pass_coeff = (2.0 * PI * high_pass_hz * dt).min(0.42);
-        self.tone_hp_state += high_pass_coeff * (self.tone_lp_state - self.tone_hp_state);
+        self.tone_hp_state = flush_denormal(
+            self.tone_hp_state + high_pass_coeff * (self.tone_lp_state - self.tone_hp_state),
+        );
         let body = self.tone_lp_state - self.tone_hp_state;
         let edge = clipped - self.tone_lp_state;
         let voiced = body * (0.96 - self.tone * 0.08) + edge * (0.08 + self.tone * 0.32);
 
         let output_hp_coeff = (2.0 * PI * 70.0 * dt).min(0.34);
-        self.output_hp_state += output_hp_coeff * (voiced - self.output_hp_state);
+        self.output_hp_state = flush_denormal(
+            self.output_hp_state + output_hp_coeff * (voiced - self.output_hp_state),
+        );
         let dc_trimmed = voiced - self.output_hp_state;
 
         let level = 0.36 + self.level * 0.98;
@@ -247,14 +261,17 @@ impl FuzzPedal {
         let dt = 1.0 / self.sample_rate;
         let pre_hp_freq = 75.0 + self.fuzz * 120.0;
         let pre_hp_coeff = (2.0 * PI * pre_hp_freq * dt).min(0.34);
-        self.input_hp_state += pre_hp_coeff * (input - self.input_hp_state);
+        self.input_hp_state =
+            flush_denormal(self.input_hp_state + pre_hp_coeff * (input - self.input_hp_state));
         let tightened = input - self.input_hp_state;
 
-        self.cleanup_state += 0.0025 * (tightened.abs() - self.cleanup_state);
+        self.cleanup_state =
+            flush_denormal(self.cleanup_state + 0.0025 * (tightened.abs() - self.cleanup_state));
         let cleanup = (1.0 - self.cleanup_state * (0.28 + self.fuzz * 0.18)).clamp(0.68, 1.0);
 
         let bias_target = tightened * (0.06 + self.fuzz * 0.10);
-        self.bias_state += 0.0020 * (bias_target - self.bias_state);
+        self.bias_state =
+            flush_denormal(self.bias_state + 0.0020 * (bias_target - self.bias_state));
 
         let conditioned = (tightened + self.bias_state) * cleanup;
         let pushed = conditioned * (1.9 + self.fuzz * 10.5);
@@ -267,13 +284,16 @@ impl FuzzPedal {
 
         let tone_freq = 420.0 + self.tone * 5_600.0;
         let tone_coeff = (2.0 * PI * tone_freq * dt).min(0.92);
-        self.tone_lp_state += tone_coeff * (saturated - self.tone_lp_state);
+        self.tone_lp_state =
+            flush_denormal(self.tone_lp_state + tone_coeff * (saturated - self.tone_lp_state));
         let edge = saturated - self.tone_lp_state;
         let voiced =
             self.tone_lp_state * (1.08 - self.tone * 0.24) + edge * (0.12 + self.tone * 0.68);
 
         let output_hp_coeff = (2.0 * PI * 65.0 * dt).min(0.34);
-        self.output_hp_state += output_hp_coeff * (voiced - self.output_hp_state);
+        self.output_hp_state = flush_denormal(
+            self.output_hp_state + output_hp_coeff * (voiced - self.output_hp_state),
+        );
         let dc_trimmed = voiced - self.output_hp_state;
 
         let level = 0.22 + self.level * 0.84;
@@ -362,9 +382,10 @@ impl CompressorPedal {
 
         let abs_in = input.abs();
         if abs_in > self.envelope {
-            self.envelope = abs_in + self.attack_coeff * (self.envelope - abs_in);
+            self.envelope = flush_denormal(abs_in + self.attack_coeff * (self.envelope - abs_in));
         } else {
-            self.envelope = abs_in + self.release_coeff * (self.envelope - abs_in);
+            self.envelope =
+                flush_denormal(abs_in + self.release_coeff * (self.envelope - abs_in));
         }
 
         let gain = if self.envelope > self.threshold {

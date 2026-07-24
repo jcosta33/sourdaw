@@ -1,6 +1,7 @@
 //! Cabinet engine with non-uniform partitioned convolution,
 //! parametric speaker model, and back-EMF interaction.
 
+use crate::primitives::flush_denormal;
 use std::f32::consts::PI;
 
 /// Non-uniform partitioned convolution: short head (time-domain) + long tail (FFT).
@@ -180,14 +181,14 @@ impl CabinetConvolver {
         let cut1 = ((1.0 - (self.mic_1_pos_x * 0.3 + self.mic_1_pos_y * 0.5).min(0.8))
             * (1.0 - self.mic_1_distance * 0.55))
             .clamp(0.08, 1.0);
-        self.mic_1_lp += (out1 - self.mic_1_lp) * cut1;
+        self.mic_1_lp = flush_denormal(self.mic_1_lp + (out1 - self.mic_1_lp) * cut1);
         let distance_gain_1 = 1.0 - self.mic_1_distance * 0.45;
         out1 = self.mic_1_lp * self.mic_1_gain * distance_gain_1;
 
         let cut2 = ((1.0 - (self.mic_2_pos_x * 0.3 + self.mic_2_pos_y * 0.5).min(0.8))
             * (1.0 - self.mic_2_distance * 0.55))
             .clamp(0.08, 1.0);
-        self.mic_2_lp += (out2 - self.mic_2_lp) * cut2;
+        self.mic_2_lp = flush_denormal(self.mic_2_lp + (out2 - self.mic_2_lp) * cut2);
         let distance_gain_2 = 1.0 - self.mic_2_distance * 0.45;
         out2 = self.mic_2_lp * self.mic_2_gain * distance_gain_2;
 
@@ -207,7 +208,8 @@ impl CabinetConvolver {
             let reflections = tap_1 * 0.52 + tap_2 * 0.31 + tap_3 * 0.17;
             let room_cut_hz = 2_400.0 - blended_distance * 1_100.0;
             let room_coeff = (2.0 * PI * room_cut_hz.max(400.0) / self.sample_rate).min(0.65);
-            self.room_lp += (reflections - self.room_lp) * room_coeff;
+            self.room_lp =
+                flush_denormal(self.room_lp + (reflections - self.room_lp) * room_coeff);
             self.room_lp * self.room_amount * (0.18 + blended_distance * 0.22)
         } else {
             0.0
@@ -327,8 +329,8 @@ impl SpeakerModel {
         let v1 = a1 * self.res_bp_state + a2 * v3;
         let v2 = self.res_lp_state + a2 * self.res_bp_state + g * a2 * v3;
 
-        self.res_bp_state = 2.0 * v1 - self.res_bp_state;
-        self.res_lp_state = 2.0 * v2 - self.res_lp_state;
+        self.res_bp_state = flush_denormal(2.0 * v1 - self.res_bp_state);
+        self.res_lp_state = flush_denormal(2.0 * v2 - self.res_lp_state);
 
         // Open-back: reduce low-frequency content, add phase cancellation character
         let resonance_boost = if self.open_back {

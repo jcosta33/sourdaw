@@ -1,5 +1,7 @@
 //! Input conditioning: impedance, noise gate, calibration.
 
+use crate::primitives::flush_denormal;
+
 use super::params::db_to_linear;
 
 #[derive(Clone, Copy)]
@@ -93,9 +95,11 @@ impl NoiseGate {
         // Envelope follower
         let abs_in = input.abs();
         if abs_in > self.envelope {
-            self.envelope = abs_in + self.detector_attack_coeff * (self.envelope - abs_in);
+            self.envelope =
+                flush_denormal(abs_in + self.detector_attack_coeff * (self.envelope - abs_in));
         } else {
-            self.envelope = abs_in + self.detector_release_coeff * (self.envelope - abs_in);
+            self.envelope =
+                flush_denormal(abs_in + self.detector_release_coeff * (self.envelope - abs_in));
         }
 
         // Add a little hysteresis so the gate doesn't chatter on marginal notes.
@@ -191,7 +195,9 @@ impl InputConditioner {
         let load_freq = 4_000.0 + impedance_norm * 24_000.0;
         let dt = 1.0 / self.sample_rate;
         let coeff = (2.0 * std::f32::consts::PI * load_freq * dt).min(0.99);
-        self.impedance_filter_state += coeff * (input - self.impedance_filter_state);
+        self.impedance_filter_state = flush_denormal(
+            self.impedance_filter_state + coeff * (input - self.impedance_filter_state),
+        );
 
         let tilt_cutoff_hz = match self.input_mode {
             InputMode::Instrument => 360.0,
@@ -199,7 +205,10 @@ impl InputConditioner {
             InputMode::Reamp => 280.0,
         };
         let tilt_coeff = (2.0 * std::f32::consts::PI * tilt_cutoff_hz * dt).min(0.18);
-        self.mode_tilt_state += tilt_coeff * (self.impedance_filter_state - self.mode_tilt_state);
+        self.mode_tilt_state = flush_denormal(
+            self.mode_tilt_state
+                + tilt_coeff * (self.impedance_filter_state - self.mode_tilt_state),
+        );
         let low = self.mode_tilt_state;
         let edge = self.impedance_filter_state - low;
         let conditioned = low * low_mix + edge * edge_mix;

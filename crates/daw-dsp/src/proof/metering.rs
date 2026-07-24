@@ -1,5 +1,7 @@
 //! Mastering metering — LUFS (ITU-R BS.1770), LRA, true peak, crest factor.
 
+use crate::primitives::{flush_denormal, flush_denormal_f64};
+
 /// K-weighting pre-filter for LUFS measurement.
 /// Two cascaded biquads: high-frequency shelf + highpass (RLB weighting).
 pub struct KWeightingFilter {
@@ -81,19 +83,26 @@ impl KWeightingFilter {
 
     #[inline]
     pub fn process(&mut self, x: f64) -> f64 {
-        // Stage 1
-        let y1 = self.s1_b0 * x + self.s1_b1 * self.s1_x1 + self.s1_b2 * self.s1_x2
-            - self.s1_a1 * self.s1_y1
-            - self.s1_a2 * self.s1_y2;
+        // Stage 1. DSP-2: both stages are recursive and this filter runs on the
+        // audio thread for every Proof instance (four per chain), so a silent
+        // passage drives all four y-state words into the subnormal range.
+        let y1 = flush_denormal_f64(
+            self.s1_b0 * x + self.s1_b1 * self.s1_x1 + self.s1_b2 * self.s1_x2
+                - self.s1_a1 * self.s1_y1
+                - self.s1_a2 * self.s1_y2,
+        );
         self.s1_x2 = self.s1_x1;
         self.s1_x1 = x;
         self.s1_y2 = self.s1_y1;
         self.s1_y1 = y1;
 
-        // Stage 2
-        let y2 = self.s2_b0 * y1 + self.s2_b1 * self.s2_x1 + self.s2_b2 * self.s2_x2
-            - self.s2_a1 * self.s2_y1
-            - self.s2_a2 * self.s2_y2;
+        // Stage 2 — the RLB highpass, whose pole sits at ~0.995, so it decays
+        // slowest of anything in the metering path.
+        let y2 = flush_denormal_f64(
+            self.s2_b0 * y1 + self.s2_b1 * self.s2_x1 + self.s2_b2 * self.s2_x2
+                - self.s2_a1 * self.s2_y1
+                - self.s2_a2 * self.s2_y2,
+        );
         self.s2_x2 = self.s2_x1;
         self.s2_x1 = y1;
         self.s2_y2 = self.s2_y1;
@@ -421,15 +430,17 @@ impl MeterTap {
         if al > self.peak_l {
             self.peak_l = al;
         } else {
-            self.peak_l *= 0.9995;
+            self.peak_l = flush_denormal(self.peak_l * 0.9995);
         }
         if ar > self.peak_r {
             self.peak_r = ar;
         } else {
-            self.peak_r *= 0.9995;
+            self.peak_r = flush_denormal(self.peak_r * 0.9995);
         }
-        self.rms_sq_l = self.coeff * self.rms_sq_l + (1.0 - self.coeff) * l * l;
-        self.rms_sq_r = self.coeff * self.rms_sq_r + (1.0 - self.coeff) * r * r;
+        // DSP-2: squared signal, so this underflows about twice as fast as a
+        // linear follower. Runs per sample for every tap in the chain.
+        self.rms_sq_l = flush_denormal(self.coeff * self.rms_sq_l + (1.0 - self.coeff) * l * l);
+        self.rms_sq_r = flush_denormal(self.coeff * self.rms_sq_r + (1.0 - self.coeff) * r * r);
     }
 
     pub fn peak_db_l(&self) -> f32 {
@@ -459,5 +470,142 @@ impl MeterTap {
         } else {
             -100.0
         }
+    }
+}
+
+#[cfg(test)]
+mod denormal_tests {
+    use super::KWeightingFilter;
+
+    /// Unguarded twin of `KWeightingFilter::process` — what it was before
+    /// DSP-2. Kept here so the failure mode is demonstrated, not asserted from
+    /// memory. Coefficients are the exact ITU-R BS.1770-4 48 kHz set.
+    #[derive(Default)]
+    struct UnguardedKWeighting {
+        s1_x1: f64,
+        s1_x2: f64,
+        s1_y1: f64,
+        s1_y2: f64,
+        s2_x1: f64,
+        s2_x2: f64,
+        s2_y1: f64,
+        s2_y2: f64,
+    }
+
+    const S1: [f64; 5] = [
+        1.535_124_859_586_97,
+        -2.691_696_189_406_38,
+        1.198_392_810_852_85,
+        -1.690_659_293_182_41,
+        0.732_480_774_215_85,
+    ];
+    const S2: [f64; 5] = [
+        1.0,
+        -2.0,
+        1.0,
+        -1.990_047_454_833_98,
+        0.990_072_250_366_88,
+    ];
+
+    impl UnguardedKWeighting {
+        fn process(&mut self, x: f64) -> f64 {
+            let y1 = S1[0] * x + S1[1] * self.s1_x1 + S1[2] * self.s1_x2
+                - S1[3] * self.s1_y1
+                - S1[4] * self.s1_y2;
+            self.s1_x2 = self.s1_x1;
+            self.s1_x1 = x;
+            self.s1_y2 = self.s1_y1;
+            self.s1_y1 = y1;
+
+            let y2 = S2[0] * y1 + S2[1] * self.s2_x1 + S2[2] * self.s2_x2
+                - S2[3] * self.s2_y1
+                - S2[4] * self.s2_y2;
+            self.s2_x2 = self.s2_x1;
+            self.s2_x1 = y1;
+            self.s2_y2 = self.s2_y1;
+            self.s2_y1 = y2;
+
+            y2
+        }
+    }
+
+    /// The RLB highpass pole sits at ~0.995, so the tail is long. f64 has to
+    /// fall ~308 decades to reach subnormal, which needs a big silent run.
+    const SILENT_TAIL: usize = 400_000;
+
+    #[test]
+    fn unguarded_k_weighting_decays_into_the_subnormal_range() {
+        let mut unguarded = UnguardedKWeighting::default();
+        unguarded.process(1.0);
+
+        let mut first_subnormal = None;
+        for _ in 0..SILENT_TAIL {
+            let out = unguarded.process(0.0);
+            if out != 0.0 && !out.is_normal() && first_subnormal.is_none() {
+                first_subnormal = Some(out);
+            }
+        }
+
+        let value = first_subnormal.expect(
+            "the unguarded K-weighting filter fed to silence must land in the \
+             subnormal range — if it stops doing so the guard test below is vacuous",
+        );
+        assert!(
+            value.abs() < f64::MIN_POSITIVE,
+            "raw unguarded state {value:e} must be below the f64 normal boundary {:e}",
+            f64::MIN_POSITIVE
+        );
+        assert!(value != 0.0, "raw unguarded state must be a nonzero subnormal");
+        assert!(
+            !unguarded.s2_y1.is_normal() && unguarded.s2_y1 != 0.0,
+            "the stored stage-2 state ends subnormal, not just one output sample"
+        );
+    }
+
+    #[test]
+    fn guarded_k_weighting_flushes_to_exact_zero() {
+        let mut guarded = KWeightingFilter::new(48_000.0);
+        guarded.process(1.0);
+
+        for _ in 0..SILENT_TAIL {
+            let out = guarded.process(0.0);
+            assert!(
+                out == 0.0 || out.is_normal(),
+                "guarded K-weighting output {out:e} must never be subnormal"
+            );
+        }
+
+        assert_eq!(guarded.s1_y1, 0.0, "stage-1 state must reach exact zero");
+        assert_eq!(guarded.s1_y2, 0.0);
+        assert_eq!(guarded.s2_y1, 0.0, "stage-2 state must reach exact zero");
+        assert_eq!(guarded.s2_y2, 0.0);
+    }
+
+    #[test]
+    fn k_weighting_guard_is_bit_exact_in_normal_range() {
+        let mut guarded = KWeightingFilter::new(48_000.0);
+        let mut unguarded = UnguardedKWeighting::default();
+
+        let mut compared = 0;
+        for index in 0..SILENT_TAIL {
+            let input = if index == 0 { 1.0 } else { 0.0 };
+            let reference = unguarded.process(input);
+            let actual = guarded.process(input);
+            if reference == 0.0 || reference.is_normal() {
+                assert_eq!(
+                    actual.to_bits(),
+                    reference.to_bits(),
+                    "sample {index} diverged while still in normal range"
+                );
+                compared += 1;
+            } else {
+                break;
+            }
+        }
+
+        assert!(
+            compared > 1_000,
+            "expected a long normal-range run to compare, got {compared} samples"
+        );
     }
 }

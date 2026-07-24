@@ -4,6 +4,7 @@
 //! where adjusting one control affects the others. Modeled using a simplified
 //! DK-method inspired approach with coupled filter coefficients.
 
+use crate::primitives::flush_denormal;
 use std::f32::consts::PI;
 
 /// Tone stack topology.
@@ -186,18 +187,18 @@ impl ToneStack {
 
         // Low-pass path (bass)
         let lp_coeff = (2.0 * PI * self.lp_freq * dt).min(0.99);
-        self.lp_state += lp_coeff * (input - self.lp_state);
+        self.lp_state = flush_denormal(self.lp_state + lp_coeff * (input - self.lp_state));
         let lp_out = self.lp_state * self.bass;
 
         // High-pass path (treble)
         let hp_coeff = (2.0 * PI * self.hp_freq * dt).min(0.99);
-        self.hp_state += hp_coeff * (input - self.hp_state);
+        self.hp_state = flush_denormal(self.hp_state + hp_coeff * (input - self.hp_state));
         let hp_out = (input - self.hp_state) * self.treble;
 
         // Band-pass path (mid) — derived from interaction
         let mid_freq = (self.lp_freq * self.hp_freq).sqrt();
         let bp_coeff = (2.0 * PI * mid_freq * dt).min(0.99);
-        self.bp_state += bp_coeff * (input - self.bp_state);
+        self.bp_state = flush_denormal(self.bp_state + bp_coeff * (input - self.bp_state));
         let bp_raw = self.bp_state - self.lp_state;
         let bp_out = bp_raw * self.mid * self.mid_q;
 

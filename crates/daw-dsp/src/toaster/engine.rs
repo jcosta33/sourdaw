@@ -8,6 +8,7 @@ use super::lofi::LofiProcessor;
 use super::pad::Pad;
 use super::transient::TransientShaper;
 use super::voice::DrumVoice;
+use crate::primitives::flush_denormal;
 
 // ---------------------------------------------------------------------------
 // Global effects (simple implementations to keep toaster self-contained)
@@ -66,7 +67,10 @@ impl PlateReverb {
         // Damping + feedback + write
         let input_per_line = input * 0.25;
         for i in 0..4 {
-            let damped = self.feedback[i] + (1.0 - self.damping) * (mixed[i] - self.feedback[i]);
+            // DSP-2: the tank feedback state decays toward zero once input stops.
+            let damped = flush_denormal(
+                self.feedback[i] + (1.0 - self.damping) * (mixed[i] - self.feedback[i]),
+            );
             self.feedback[i] = damped;
             let len = self.buffers[i].len();
             self.buffers[i][self.write_pos[i]] = input_per_line + damped * self.decay;
@@ -188,7 +192,7 @@ impl BusEffects {
         } else {
             self.release_coeff
         };
-        self.comp_env += coeff * (abs - self.comp_env);
+        self.comp_env = flush_denormal(self.comp_env + coeff * (abs - self.comp_env));
 
         let gain = if self.comp_env > self.comp_threshold && self.comp_threshold > 0.0 {
             let over = self.comp_env / self.comp_threshold;

@@ -69,8 +69,10 @@ pub const DENORMAL_THRESHOLD: f32 = f32::MIN_POSITIVE;
 
 /// Magnitude below which an `f64` is subnormal and must be flushed to zero.
 ///
-/// `f64::MIN_POSITIVE` = 2^-1022 ≈ `2.225_073_858_507_201_4e-308`. Used by the
-/// f64 state paths (Grand Boule's low partials, Proof's K-weighting filter).
+/// `f64::MIN_POSITIVE` = 2^-1022 ≈ `2.225_073_858_507_201_4e-308`. Applies to
+/// any recursive state the crate keeps in `f64`: Grand Boule's low partials
+/// (`grand_boule/string.rs`), Proof's K-weighting filter
+/// (`proof/metering.rs`), and Grinder's Miller low-pass (`grinder/triode.rs`).
 pub const DENORMAL_THRESHOLD_F64: f64 = f64::MIN_POSITIVE;
 
 /// Flush `x` to `0.0` if it is subnormal; return it bit-unchanged otherwise.

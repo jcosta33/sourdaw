@@ -4,6 +4,7 @@
 //! across 20 Hz – 20 kHz. Coefficients optimized with Chebyshev approximation
 //! for ~1% phase accuracy down to 20 Hz.
 
+use crate::primitives::flush_denormal;
 use std::f32::consts::PI;
 
 /// First-order all-pass filter for Hilbert transform network.
@@ -20,7 +21,7 @@ impl HilbertAllPass {
 
     fn process(&mut self, input: f32) -> f32 {
         // First-order all-pass: y[n] = a * (x[n] - y[n-1]) + x[n-1]
-        let y = self.coeff * (input - self.z1) + self.z1;
+        let y = flush_denormal(self.coeff * (input - self.z1) + self.z1);
         self.z1 = y;
         y
     }
