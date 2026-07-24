@@ -17,7 +17,9 @@ export function saveTrackAsTemplate(trackId: string, name: string, category?: st
         category: category ?? 'User',
         createdAt: Date.now(),
         trackKind: track.kind,
-        devices: track.devices.map((device) => ({ ...device })),
+        // Saved templates carry each plugin's state chunk (the sound) but not the live
+        // instance id — a persisted instance id would dangle or collide on load (PH-3).
+        devices: track.devices.map((device) => ({ ...device, externalInstanceId: undefined })),
         sends: track.sends.map((send) => ({ ...send })),
         gain: track.gain,
         pan: track.pan,

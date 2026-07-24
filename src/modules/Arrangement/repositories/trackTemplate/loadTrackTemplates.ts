@@ -62,6 +62,10 @@ function validateStoredDevice(value: unknown): Device | null {
         return null;
     }
 
+    if (value.externalStateChunk !== undefined && typeof value.externalStateChunk !== 'string') {
+        return null;
+    }
+
     return {
         id: value.id,
         name: value.name,
@@ -70,6 +74,7 @@ function validateStoredDevice(value: unknown): Device | null {
         parameterValues,
         externalPluginId: value.externalPluginId,
         externalInstanceId: value.externalInstanceId,
+        externalStateChunk: value.externalStateChunk,
     };
 }
 
