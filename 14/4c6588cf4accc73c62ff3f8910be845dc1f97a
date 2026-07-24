@@ -1,0 +1,83 @@
+src/modules/Fermenter/presentations/components/__tests__/AdditiveSection.spec.tsx
+  s_0d39f3a4a4357a::t_60f233bf27b96a 1,6-16,18-58
+src/modules/Fermenter/presentations/components/__tests__/EffectsSection.spec.tsx
+  s_0d39f3a4a4357a::t_90755e580858f0 1-2,6-7,11-33,37-93,95-112,115-127,130-134,136-142,145-244,246-255
+src/modules/Fermenter/presentations/components/__tests__/FilterSection.spec.tsx
+  s_0d39f3a4a4357a::t_60b91623b5a079 1-3,6-7,11-60,62-201
+src/modules/Fermenter/presentations/components/__tests__/MacroMatrixEditor.spec.tsx
+  s_0d39f3a4a4357a::t_610e9052759ed6 4,7-27,29-55,57-111,114-192,195-201,203-205
+src/modules/Fermenter/presentations/components/__tests__/SpectrumAnalyzer.spec.tsx
+  s_0d39f3a4a4357a::t_1647fff8a91c6d 2,4,7-14,16-54
+src/modules/Fermenter/presentations/components/__tests__/UnisonSection.spec.tsx
+  s_0d39f3a4a4357a::t_80e0d9b0530d46 1-3,6-7,10-41,43-78
+src/modules/Fermenter/useCases/user-patches/__tests__/load-user-patches.spec.ts
+  s_0d39f3a4a4357a::t_5829f8e9ff983a 143-338
+src/modules/Fermenter/presentations/components/__tests__/EnvelopeSection.spec.tsx
+  s_0d39f3a4a4357a::t_75666a30a80415 72,74,77-79,82,86
+src/modules/Fermenter/presentations/components/__tests__/FmSection.spec.tsx
+  s_37727fa1e6cd60::t_3eb574459e2755 92,94-98
+src/modules/Fermenter/presentations/components/__tests__/GranularSection.spec.tsx
+  s_37727fa1e6cd60::t_067f90881ef84f 1,6-18,20-61
+src/modules/Fermenter/presentations/components/__tests__/LayerStack.spec.tsx
+  s_87f220a974d6eb::t_37469e46f3500e 1,6-20,22-103
+src/modules/Fermenter/presentations/components/__tests__/LfoSection.spec.tsx
+  s_4893e9e0e15ba8::t_63e2b82b85ccbc 94-117
+src/modules/Fermenter/presentations/components/__tests__/MacroStrip.spec.tsx
+  s_87f220a974d6eb::t_2ef29e644b25c3 1,4,8-50
+src/modules/Fermenter/presentations/components/__tests__/ModulationSection.spec.tsx
+  s_87f220a974d6eb::t_b6cd888563e9d6 1,6-15,17-51
+src/modules/Fermenter/presentations/components/__tests__/Oscilloscope.spec.tsx
+  s_4893e9e0e15ba8::t_ca4e6e55ff9e99 2,4,7-14,16-59
+src/modules/Fermenter/presentations/components/__tests__/OutputMeter.spec.tsx
+  s_a294031860c4c2::t_01335cba02390f 2,4,7-35,37-42,44-88
+src/modules/Fermenter/presentations/components/__tests__/SectionNav.spec.tsx
+  s_4893e9e0e15ba8::t_af409a2f634a17 4-13,16-23,26-27
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "144c6588cf4accc73c62ff3f8910be845dc1f97a",
+  "prompts": {},
+  "sessions": {
+    "s_0d39f3a4a4357a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "60da6a2e-7d79-4d98-8624-e993f5a9f94e",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_37727fa1e6cd60": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-af46d12dd2362f0b0",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_4893e9e0e15ba8": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-a19aee8989218521f",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_87f220a974d6eb": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-a41d46a2f7d8c51f6",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_a294031860c4c2": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-a7ed6a0a4332dad1d",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
