@@ -924,6 +924,9 @@ module.exports = {
                     '^src/modules/Arrangement/__tests__/TrackDummy\\.ts$',
                     '^src/modules/Arrangement/__tests__/PluginDummy\\.ts$',
                     '^src/modules/Arrangement/__tests__/ClipDummy\\.ts$',
+                    // Shared AU-1 automation curve-conformance case table,
+                    // imported only from the live/offline conformance specs.
+                    '^src/utils/__tests__/automationCurveCases\\.ts$',
                     // Reachable type/helper files imported by runtime code, but
                     // currently invisible to dependency-cruiser's orphan graph.
                     '^src/utils/DOM/GestureEvent\\.ts$',

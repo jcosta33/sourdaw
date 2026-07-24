@@ -3,30 +3,23 @@
  * No I/O — mathematical functions for interpolating and shaping automation curves.
  */
 
+import { evaluateAutomationCurve } from '#/utils/automationCurve';
+
 import { type AutomationPoint } from '../models/AutomationViewTypes';
 
 /**
- * Apply tension to a normalized t value (0–1).
- * tension < 0: logarithmic (fast start, slow end)
- * tension = 0: linear
- * tension > 0: exponential (slow start, fast end)
- */
-function applyTension(time: number, tension: number): number {
-    if (Math.abs(tension) < 0.01) {
-        return time;
-    }
-    // Use power curve with tension mapping
-    const power = 2 ** (tension * 3); // Maps -1..+1 to 0.125..8
-    return time ** power;
-}
-
-function readAutomationTension(point: { tension?: unknown }, fallback: number): number {
-    return typeof point.tension === 'number' ? point.tension : fallback;
-}
-
-/**
  * Interpolates an automation value at a given beat position between two points.
- * Supports linear, step, exponential, s-curve, stairs, and smooth interpolation.
+ *
+ * Delegates to the shared curve kernel `evaluateAutomationCurve`
+ * (`#/utils/automationCurve`) — the single implementation the live apply path
+ * (`interpolateAutomationPointValue`) and offline compile path
+ * (`compileAutomationEvents`) also route through (finding AU-1). This is the
+ * editor playhead value readout (AutomationLaneRow); routing it through the
+ * kernel keeps the number under the cursor equal to what plays and bounces.
+ * Previously this was an independent copy that clamped no `stairs` bounds and
+ * had no `bezier` branch (bezier lanes read as linear). Do not reintroduce
+ * local curve math here; the automation curve-conformance specs guard against
+ * re-divergence.
  */
 export function interpolateAutomationValue(
     p1: AutomationPoint,
@@ -35,55 +28,7 @@ export function interpolateAutomationValue(
     prevPoint?: AutomationPoint,
     nextPoint?: AutomationPoint
 ): number {
-    if (p2.beat === p1.beat) {
-        return p1.value;
-    }
-
-    if (p1.curve === 'step') {
-        return p1.value;
-    }
-
-    const time = (beat - p1.beat) / (p2.beat - p1.beat);
-
-    if (p1.curve === 'stairs') {
-        const steps = p1.stairSteps ?? 4;
-        const steppedT = Math.floor(time * steps) / steps;
-        return p1.value + (p2.value - p1.value) * steppedT;
-    }
-
-    if (p1.curve === 'exponential') {
-        const tension = readAutomationTension(p1, 0);
-        const expT = applyTension(time, tension);
-        return p1.value + (p2.value - p1.value) * expT;
-    }
-
-    if (p1.curve === 's-curve') {
-        const tension = readAutomationTension(p1, 0.5);
-        const st = time * time * (3 - 2 * time); // Hermite basis
-        const curved = time + (st - time) * Math.abs(tension);
-        return p1.value + (p2.value - p1.value) * curved;
-    }
-
-    if (p1.curve === 'smooth') {
-        // Catmull-Rom spline: uses neighboring points for tangents
-        const v0 = prevPoint?.value ?? p1.value;
-        const v1 = p1.value;
-        const v2 = p2.value;
-        const v3 = nextPoint?.value ?? p2.value;
-
-        const t2 = time * time;
-        const t3 = t2 * time;
-
-        // Catmull-Rom coefficients
-        const result =
-            0.5 *
-            (2 * v1 + (-v0 + v2) * time + (2 * v0 - 5 * v1 + 4 * v2 - v3) * t2 + (-v0 + 3 * v1 - 3 * v2 + v3) * t3);
-
-        return result;
-    }
-
-    // Linear
-    return p1.value + (p2.value - p1.value) * time;
+    return evaluateAutomationCurve({ firstPoint: p1, secondPoint: p2, beat, previousPoint: prevPoint, nextPoint });
 }
 
 /**
