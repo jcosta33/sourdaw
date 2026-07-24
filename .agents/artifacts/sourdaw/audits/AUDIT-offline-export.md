@@ -139,6 +139,7 @@ only in container/codec, not in level or quantization treatment.
 ---
 
 ### OE-2 — Stem filename collisions overwrite stems (native dir + web zip) — **Major**
+**Status:** FIXED in #731
 **Evidence.** `ExportDialog.tsx:440` `safeTName = (track?.name || trackId).replaceAll(/[^a-zA-Z0-9_\- ]/g,'_')`;
 written as `${name}.${freq}` to a native directory (`writeNativeAudioStemFile.ts:16-18`, `join(dir,fileName)`)
 or into the web zip map `zipDirectory[finalFileName]` (`ExportDialog.tsx` `serializeAudio`). No

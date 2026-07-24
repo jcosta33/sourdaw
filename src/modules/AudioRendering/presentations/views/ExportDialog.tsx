@@ -39,6 +39,7 @@ import { writeNativeAudioMixdownFile } from '../../useCases/audioExport/writeNat
 import { writeNativeAudioStemFile } from '../../useCases/audioExport/writeNativeAudioStemFile';
 import { renderToClip } from '../../useCases/renderToClip';
 
+import { deriveStemFileBaseNames } from './deriveStemFileBaseNames';
 import { loadExportSettings, saveExportSettings, type ExportFormat, type Mp3BitRate } from './exportSettings';
 
 type ExportMode = 'mixdown' | 'stems' | 'render-to-clip';
@@ -433,12 +434,21 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                 let doneStems = 0;
                 const totalStems = stems.size;
 
+                // Collision-free per-stem filenames (OE-2): key disambiguation off the
+                // already-unique track id so a second track sharing a name cannot overwrite
+                // the first stem on disk (native dir) or in the web zip map. Derive from the
+                // stable store track order — not the pool's render-completion order — so the
+                // track→filename mapping is reproducible across identical exports.
+                const stemBaseNames = deriveStemFileBaseNames({
+                    stemTrackIds: stems.keys(),
+                    orderedTracks: tracks,
+                });
+
                 for (const [trackId, buffer] of stems) {
                     if (cancelledRef.current) {
                         return;
                     }
-                    const track = tracks.find((time) => time.id === trackId);
-                    const safeTName = (track?.name || trackId).replaceAll(/[^a-zA-Z0-9_\- ]/g, '_');
+                    const safeTName = stemBaseNames.get(trackId) ?? trackId;
 
                     // We map the remaining 50% of the progress bar to encoding the slices
                     const stemOffset = 50 + (doneStems / totalStems) * 50;

@@ -65,6 +65,9 @@ type ExportDialogMocks = {
     useStore: ReturnType<typeof vi.fn<(store: TestStore<unknown>, defaultValue?: unknown) => unknown>>;
     clipSelectionStore: TestStore<TestClipSelectionState>;
     writeNativeAudioMixdownFile: ReturnType<typeof vi.fn>;
+    exportStems: ReturnType<typeof vi.fn>;
+    selectNativeAudioExportDirectory: ReturnType<typeof vi.fn>;
+    writeNativeAudioStemFile: ReturnType<typeof vi.fn<(input: { bytes: Uint8Array; directoryPath: string; fileName: string }) => Promise<void>>>;
 };
 
 const mocks = vi.hoisted((): ExportDialogMocks => {
@@ -94,6 +97,9 @@ const mocks = vi.hoisted((): ExportDialogMocks => {
         useStore: vi.fn((store: TestStore<unknown>, defaultValue?: unknown) => store.value ?? defaultValue),
         clipSelectionStore,
         writeNativeAudioMixdownFile: vi.fn(),
+        exportStems: vi.fn(),
+        selectNativeAudioExportDirectory: vi.fn(),
+        writeNativeAudioStemFile: vi.fn<(input: { bytes: Uint8Array; directoryPath: string; fileName: string }) => Promise<void>>(),
     };
 });
 
@@ -124,7 +130,7 @@ vi.mock('#/modules/Arrangement/stores', () => ({
 
 vi.mock('#/modules/AudioEngine/useCases', () => ({
     cancelExport: vi.fn(),
-    exportStems: vi.fn(),
+    exportStems: mocks.exportStems,
     getAudioContext: mocks.getAudioContext,
     getAutoDetectedTailSeconds: vi.fn(() => 2),
     isExportActive: mocks.isExportActive,
@@ -154,7 +160,7 @@ vi.mock('#/utils/Notification/notifyUser', () => ({
 }));
 
 vi.mock('../../../useCases/audioExport/selectNativeAudioExportDirectory', () => ({
-    selectNativeAudioExportDirectory: vi.fn(),
+    selectNativeAudioExportDirectory: mocks.selectNativeAudioExportDirectory,
 }));
 
 vi.mock('../../../useCases/audioExport/selectNativeAudioExportFile', () => ({
@@ -166,7 +172,7 @@ vi.mock('../../../useCases/audioExport/writeNativeAudioMixdownFile', () => ({
 }));
 
 vi.mock('../../../useCases/audioExport/writeNativeAudioStemFile', () => ({
-    writeNativeAudioStemFile: vi.fn(),
+    writeNativeAudioStemFile: mocks.writeNativeAudioStemFile,
 }));
 
 vi.mock('../../../useCases/renderToClip', () => ({
@@ -215,6 +221,14 @@ function setProjectClips(clips: TestClip[]): void {
     };
 }
 
+function setProjectTracks(tracks: TestTrack[]): void {
+    mocks.trackStore.value = {
+        tracks,
+        selectedTrackId: tracks[0]?.id ?? null,
+        ghostClips: [],
+    };
+}
+
 async function startMixdownExport(): Promise<void> {
     render(<ExportDialog open={true} onClose={vi.fn()} />);
 
@@ -235,6 +249,8 @@ describe('ExportDialog', () => {
         mocks.renderOffline.mockResolvedValue(MockAudioBuffer.create(2, 128, 44100));
         mocks.encodeWav.mockResolvedValue(new Uint8Array([1, 2, 3]));
         mocks.writeNativeAudioMixdownFile.mockResolvedValue(undefined);
+        mocks.selectNativeAudioExportDirectory.mockResolvedValue('/tmp/sourdaw-stems');
+        mocks.writeNativeAudioStemFile.mockResolvedValue(undefined);
         setProjectClips([
             createClip({ id: 'clip-1', audioBufferId: 'buffer-1' }),
             createClip({ id: 'clip-2', audioBufferId: 'buffer-2' }),
@@ -259,5 +275,33 @@ describe('ExportDialog', () => {
             audioContext: mocks.audioContext,
             bufferIds: undefined,
         });
+    });
+
+    it('should write two same-named stems to distinct filenames instead of overwriting one (OE-2 wiring guard)', async () => {
+        setProjectTracks([
+            { id: 'track-bass-a', name: 'Bass', kind: 'audio', clips: [] },
+            { id: 'track-bass-b', name: 'Bass', kind: 'audio', clips: [] },
+        ]);
+        const stemBuffer = MockAudioBuffer.create(2, 128, 44100);
+        mocks.exportStems.mockResolvedValue(
+            new Map([
+                ['track-bass-a', stemBuffer],
+                ['track-bass-b', stemBuffer],
+            ])
+        );
+
+        render(<ExportDialog open={true} onClose={vi.fn()} />);
+        fireEvent.click(screen.getByRole('button', { name: /slices/i }));
+        fireEvent.click(screen.getByRole('button', { name: /start baking/i }));
+
+        await waitFor(() => {
+            expect(mocks.writeNativeAudioStemFile).toHaveBeenCalledTimes(2);
+        });
+
+        const fileNames = mocks.writeNativeAudioStemFile.mock.calls.map((call) => call[0].fileName);
+        // Both stems must land on disk under distinct names — the collision would otherwise
+        // overwrite the first 'Bass.wav' with the second.
+        expect(new Set(fileNames).size).toBe(2);
+        expect(fileNames).toContain('Bass.wav');
     });
 });
