@@ -6,6 +6,7 @@ import { playheadPositionRef } from '#/modules/Transport/stores';
 import { createTrack } from '../../models/Track';
 import { activeRecordingRef } from '../../stores/activeRecordingRef';
 import { clipDragPreviewRef } from '../../stores/clipDragPreviewRef';
+import { inlineMidiNotePreviewRef } from '../../stores/inlineMidiNotePreviewRef';
 import { buildTimelineRenderModel } from '../buildTimelineRenderModel';
 
 import type { MidiStoreState } from '#/modules/MIDI/stores';
@@ -63,6 +64,10 @@ vi.mock('#/modules/Preferences/stores', async (importOriginal) => {
 vi.mock('../../stores/clipDragPreviewRef', async (importOriginal) => {
     const actual = await importOriginal<Record<string, unknown>>();
     return { ...actual, clipDragPreviewRef: { current: null } };
+});
+vi.mock('../../stores/inlineMidiNotePreviewRef', async (importOriginal) => {
+    const actual = await importOriginal<Record<string, unknown>>();
+    return { ...actual, inlineMidiNotePreviewRef: { current: null } };
 });
 vi.mock('../../stores/activeRecordingRef', async (importOriginal) => {
     const actual = await importOriginal<Record<string, unknown>>();
@@ -172,5 +177,391 @@ describe('buildTimelineRenderModel', () => {
         const third = buildTimelineRenderModel();
         expect(third.tracks).not.toBe(tracksRef);
         expect(third.tempo).toBe(140);
+    });
+});
+
+// Minimal clip/note factories: fill required Clip/MidiNote fields the render-
+// model does not read, so fixtures specify only the fields under test.
+type TestClip = TrackStoreState['tracks'][number]['clips'][number];
+type TestNote = MidiStoreState['notesByClipId'][string][number];
+
+function clip(overrides: Partial<TestClip> & Pick<TestClip, 'id'>): TestClip {
+    return {
+        trackId: 't',
+        name: 'clip',
+        startBeat: 0,
+        endBeat: 4,
+        type: 'midi',
+        color: '#000',
+        fadeInBeats: 0,
+        fadeOutBeats: 0,
+        gain: 1,
+        locked: false,
+        muted: false,
+        ...overrides,
+    };
+}
+
+function note(overrides: Partial<TestNote>): TestNote {
+    return { id: 'n1', pitch: 60, startBeat: 0, duration: 1, velocity: 100, ...overrides };
+}
+
+// Seed all stores to a clean baseline, then apply overrides. Each test gets a
+// deterministically fresh renderCache (cleared by changing the track ref).
+function seedStores(overrides: {
+    tracks?: TrackStoreState['tracks'];
+    midiByClip?: Record<string, TestNote[]>;
+    selectedClipId?: string | null;
+    transport?: Partial<TransportState>;
+    view?: Partial<TimelineViewState>;
+    ghostClips?: NonNullable<TrackStoreState['ghostClips']>;
+}): void {
+    trackStoreMock.value = {
+        tracks: overrides.tracks ?? [],
+        selectedTrackId: null,
+        ghostClips: overrides.ghostClips ?? [],
+    };
+    transportStoreMock.value = { tempo: 120, isRecording: false, ...overrides.transport };
+    timelineViewStoreMock.value = { pixelsPerBeat: 12, scrollX: 0, scrollY: 0, ...overrides.view };
+    midiStoreMock.value = {
+        probabilitySeed: LEGACY_MIDI_PROBABILITY_SEED,
+        notesByClipId: overrides.midiByClip ?? {},
+        ccByClipId: {},
+        pitchBendByClipId: {},
+    };
+    clipSelectionStoreMock.value = {
+        selectedClipId: overrides.selectedClipId ?? null,
+        selectedClipIds: [],
+    };
+    preferencesStoreMock.value = { trackHeight: 'normal' };
+    clipDragPreviewRef.current = null;
+    activeRecordingRef.current = [];
+    inlineMidiNotePreviewRef.current = null;
+    playheadPositionRef.current = 0;
+    Object.defineProperty(window, 'innerWidth', { writable: true, configurable: true, value: 800 });
+}
+
+describe('buildTimelineRenderModel — track visibility', () => {
+    it('hides master tracks from the rendered list', () => {
+        seedStores({
+            tracks: [
+                {
+                    ...createTrack({ id: 'm', name: 'Master', kind: 'master' }),
+                    clips: [],
+                    color: '#000',
+                    alternatives: [],
+                    showVariationLanes: false,
+                },
+                {
+                    ...createTrack({ id: 't', name: 'Track', kind: 'midi' }),
+                    clips: [],
+                    color: '#000',
+                    alternatives: [],
+                    showVariationLanes: false,
+                },
+            ],
+        });
+        expect(buildTimelineRenderModel().tracks.map((t) => t.id)).toEqual(['t']);
+    });
+
+    it('hides children of a collapsed folder but shows top-level tracks', () => {
+        seedStores({
+            tracks: [
+                {
+                    ...createTrack({ id: 'folder', name: 'Folder', kind: 'folder' }),
+                    clips: [],
+                    color: '#000',
+                    collapsed: true,
+                    alternatives: [],
+                    showVariationLanes: false,
+                },
+                {
+                    ...createTrack({ id: 'child', name: 'Child', kind: 'midi', parentId: 'folder' }),
+                    clips: [],
+                    color: '#000',
+                    alternatives: [],
+                    showVariationLanes: false,
+                },
+                {
+                    ...createTrack({ id: 'top', name: 'Top', kind: 'midi' }),
+                    clips: [],
+                    color: '#000',
+                    alternatives: [],
+                    showVariationLanes: false,
+                },
+            ],
+        });
+        const ids = buildTimelineRenderModel().tracks.map((t) => t.id);
+        expect(ids).toContain('folder');
+        expect(ids).toContain('top');
+        expect(ids).not.toContain('child');
+    });
+
+    it('uses the folder height (26) for folder tracks and the track height otherwise', () => {
+        seedStores({
+            tracks: [
+                {
+                    ...createTrack({ id: 'f', name: 'F', kind: 'folder' }),
+                    clips: [],
+                    color: '#000',
+                    height: 80,
+                    alternatives: [],
+                    showVariationLanes: false,
+                },
+                {
+                    ...createTrack({ id: 'm', name: 'M', kind: 'midi' }),
+                    clips: [],
+                    color: '#000',
+                    height: 48,
+                    alternatives: [],
+                    showVariationLanes: false,
+                },
+            ],
+        });
+        const model = buildTimelineRenderModel();
+        expect(model.tracks.find((t) => t.id === 'f')?.height).toBe(26);
+        expect(model.tracks.find((t) => t.id === 'm')?.height).toBe(48);
+    });
+});
+
+describe('buildTimelineRenderModel — clip mapping', () => {
+    it('falls back to the track colour when the clip has none', () => {
+        seedStores({
+            tracks: [
+                {
+                    ...createTrack({ id: 't', name: 'T', kind: 'midi' }),
+                    clips: [clip({ id: 'c1', color: '' })],
+                    color: '#abc123',
+                    alternatives: [],
+                    showVariationLanes: false,
+                },
+            ],
+        });
+        const mapped = buildTimelineRenderModel().tracks[0]!.clips[0]!;
+        expect(mapped.color).toBe('#abc123');
+    });
+
+    it('maps midi notes from the midi store onto the clip', () => {
+        seedStores({
+            tracks: [
+                {
+                    ...createTrack({ id: 't', name: 'T', kind: 'midi' }),
+                    clips: [clip({ id: 'c1' })],
+                    color: '#000',
+                    alternatives: [],
+                    showVariationLanes: false,
+                },
+            ],
+            midiByClip: { c1: [note({ pitch: 60 }), note({ pitch: 64, startBeat: 1 })] },
+        });
+        const notes = buildTimelineRenderModel().tracks[0]!.clips[0]!.midiNotes;
+        expect(notes.map((n) => n.pitch)).toEqual([60, 64]);
+    });
+
+    it('marks a clip linked when it is a linked instance or has a parentClipId', () => {
+        seedStores({
+            tracks: [
+                {
+                    ...createTrack({ id: 't', name: 'T', kind: 'midi' }),
+                    clips: [
+                        clip({ id: 'c1', isLinkedInstance: true }),
+                        clip({ id: 'c2', parentClipId: 'c1' }),
+                        clip({ id: 'c3' }),
+                    ],
+                    color: '#000',
+                    alternatives: [],
+                    showVariationLanes: false,
+                },
+            ],
+        });
+        const clips = buildTimelineRenderModel().tracks[0]!.clips;
+        expect(clips.find((c) => c.id === 'c1')?.isLinkedInstance).toBe(true);
+        expect(clips.find((c) => c.id === 'c2')?.isLinkedInstance).toBe(true);
+        expect(clips.find((c) => c.id === 'c3')?.isLinkedInstance).toBe(false);
+    });
+
+    it('appends ghost clips for the track and marks them isGhost', () => {
+        seedStores({
+            tracks: [
+                {
+                    ...createTrack({ id: 't', name: 'T', kind: 'audio' }),
+                    clips: [],
+                    color: '#000',
+                    alternatives: [],
+                    showVariationLanes: false,
+                },
+            ],
+            ghostClips: [
+                {
+                    ...clip({
+                        id: 'g1',
+                        trackId: 't',
+                        name: 'ghost',
+                        startBeat: 8,
+                        endBeat: 12,
+                        type: 'audio',
+                        color: '',
+                    }),
+                },
+            ],
+        });
+        const clips = buildTimelineRenderModel().tracks[0]!.clips;
+        expect(clips[0]!.id).toBe('g1');
+        expect(clips[0]!.isGhost).toBe(true);
+        expect(clips[0]!.startBeat).toBe(8);
+    });
+});
+
+describe('buildTimelineRenderModel — recording overlay', () => {
+    it('extends a recording clip’s endBeat to the live playhead position', () => {
+        seedStores({
+            tracks: [
+                {
+                    ...createTrack({ id: 't', name: 'T', kind: 'audio' }),
+                    clips: [clip({ id: 'rec', startBeat: 0, endBeat: 2, type: 'audio' })],
+                    color: '#000',
+                    alternatives: [],
+                    showVariationLanes: false,
+                },
+            ],
+            transport: { isRecording: true },
+        });
+        playheadPositionRef.current = 7;
+        activeRecordingRef.current = ['rec'];
+        const model = buildTimelineRenderModel();
+        expect(model.dataDirty).toBe(true);
+        expect(model.tracks[0]!.clips[0]!.endBeat).toBe(7);
+    });
+
+    it('clamps the recording endBeat to at least the clip start', () => {
+        seedStores({
+            tracks: [
+                {
+                    ...createTrack({ id: 't', name: 'T', kind: 'audio' }),
+                    clips: [clip({ id: 'rec', startBeat: 5, endBeat: 6, type: 'audio' })],
+                    color: '#000',
+                    alternatives: [],
+                    showVariationLanes: false,
+                },
+            ],
+            transport: { isRecording: true },
+        });
+        playheadPositionRef.current = 1;
+        activeRecordingRef.current = ['rec'];
+        expect(buildTimelineRenderModel().tracks[0]!.clips[0]!.endBeat).toBe(5);
+    });
+});
+
+describe('buildTimelineRenderModel — drag preview', () => {
+    it('repositions clips present in the drag preview and leaves others in place', () => {
+        seedStores({
+            tracks: [
+                {
+                    ...createTrack({ id: 't', name: 'T', kind: 'midi' }),
+                    clips: [clip({ id: 'c1' }), clip({ id: 'c2', startBeat: 8, endBeat: 12 })],
+                    color: '#000',
+                    alternatives: [],
+                    showVariationLanes: false,
+                },
+            ],
+        });
+        clipDragPreviewRef.current = {
+            positions: new Map([['c1', { trackId: 't', startBeat: 100, endBeat: 104 }]]),
+            originals: new Map(),
+        };
+        const clips = buildTimelineRenderModel().tracks[0]!.clips;
+        expect(clips.find((c) => c.id === 'c1')?.startBeat).toBe(100);
+        expect(clips.find((c) => c.id === 'c2')?.startBeat).toBe(8);
+        expect(buildTimelineRenderModel().dataDirty).toBe(true);
+    });
+
+    it('returns the unchanged model when the preview is empty', () => {
+        seedStores({
+            tracks: [
+                {
+                    ...createTrack({ id: 't', name: 'T', kind: 'midi' }),
+                    clips: [clip({ id: 'c1' })],
+                    color: '#000',
+                    alternatives: [],
+                    showVariationLanes: false,
+                },
+            ],
+        });
+        clipDragPreviewRef.current = { positions: new Map(), originals: new Map() };
+        expect(buildTimelineRenderModel().tracks[0]!.clips[0]!.startBeat).toBe(0);
+    });
+});
+
+describe('buildTimelineRenderModel — variation lanes', () => {
+    it('builds variation-lane clips when the track shows variation lanes', () => {
+        seedStores({
+            tracks: [
+                {
+                    ...createTrack({ id: 't', name: 'T', kind: 'midi' }),
+                    clips: [],
+                    color: '#000',
+                    showVariationLanes: true,
+                    alternatives: [
+                        { id: 'alt-1', name: 'Alt 1', clips: [clip({ id: 'altclip', startBeat: 0, endBeat: 2 })] },
+                    ],
+                },
+            ],
+        });
+        const track = buildTimelineRenderModel().tracks[0]!;
+        expect(track.variationLanes).toHaveLength(1);
+        expect(track.variationLanes?.[0]!.clips[0]!.id).toBe('altclip');
+    });
+
+    it('omits variation lanes when showVariationLanes is false', () => {
+        seedStores({
+            tracks: [
+                {
+                    ...createTrack({ id: 't', name: 'T', kind: 'midi' }),
+                    clips: [],
+                    color: '#000',
+                    showVariationLanes: false,
+                    alternatives: [{ id: 'alt-1', name: 'Alt 1', clips: [] }],
+                },
+            ],
+        });
+        expect(buildTimelineRenderModel().tracks[0]!.variationLanes).toBeUndefined();
+    });
+});
+
+describe('buildTimelineRenderModel — inline midi note preview', () => {
+    it('overlays a pending note edit (pitch + startBeat) onto the matching clip note', () => {
+        seedStores({
+            tracks: [
+                {
+                    ...createTrack({ id: 't', name: 'T', kind: 'midi' }),
+                    clips: [clip({ id: 'c1' })],
+                    color: '#000',
+                    alternatives: [],
+                    showVariationLanes: false,
+                },
+            ],
+            midiByClip: { c1: [note({ id: 'n1', pitch: 60, startBeat: 0 })] },
+        });
+        inlineMidiNotePreviewRef.current = { clipId: 'c1', noteId: 'n1', pitch: 72, startBeat: 2 };
+        const n = buildTimelineRenderModel().tracks[0]!.clips[0]!.midiNotes[0]!;
+        expect(n.pitch).toBe(72);
+        expect(n.startBeat).toBe(2);
+    });
+
+    it('leaves notes unchanged when the preview targets a non-existent note', () => {
+        seedStores({
+            tracks: [
+                {
+                    ...createTrack({ id: 't', name: 'T', kind: 'midi' }),
+                    clips: [clip({ id: 'c1' })],
+                    color: '#000',
+                    alternatives: [],
+                    showVariationLanes: false,
+                },
+            ],
+            midiByClip: { c1: [note({ pitch: 60, startBeat: 0 })] },
+        });
+        inlineMidiNotePreviewRef.current = { clipId: 'c1', noteId: 'missing', pitch: 72, startBeat: 2 };
+        expect(buildTimelineRenderModel().tracks[0]!.clips[0]!.midiNotes[0]!.pitch).toBe(60);
     });
 });
