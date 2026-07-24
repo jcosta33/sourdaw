@@ -58,4 +58,11 @@ describe('vcaGroupStore', () => {
         expect(g.muted).toBe(false);
         expect(g.trackIds).toEqual(['t1', 't2']);
     });
+
+    it('returns an empty array when the store has no value yet', () => {
+        // Before the store is ever written, .value is null — readers must never see null.
+        vcaGroupStore.set(null);
+
+        expect(getVcaGroupsState()).toEqual([]);
+    });
 });
