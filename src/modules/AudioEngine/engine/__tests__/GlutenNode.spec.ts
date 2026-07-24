@@ -228,4 +228,65 @@ describe('createGlutenNode', () => {
         expect(node.workletNode).toBeDefined();
         await expect(node.ready).resolves.toEqual({});
     });
+
+    it('cancels a prior meter rAF before installing a new polling loop', async () => {
+        const { telemetryAllocator } = await import('../telemetryAllocator');
+        vi.mocked(telemetryAllocator.allocateSlot).mockReturnValue({
+            sab: {} as SharedArrayBuffer,
+            byteOffset: 0,
+            view: new Float32Array(32),
+            seqView: new Int32Array(32),
+        });
+        const rafIds: number[] = [];
+        vi.stubGlobal('requestAnimationFrame', () => {
+            rafIds.push(rafIds.length + 1);
+            return rafIds[rafIds.length - 1]!;
+        });
+        const cancelRaf = vi.fn();
+        vi.stubGlobal('cancelAnimationFrame', cancelRaf);
+
+        const node = await createGlutenNode(makeCtx());
+        node.onMeterData(vi.fn());
+        // A second onMeterData must cancel the first polling rAF before
+        // starting a new one.
+        node.onMeterData(vi.fn());
+
+        expect(cancelRaf).toHaveBeenCalledWith(expect.any(Number));
+    });
+
+    it('ignores a non-latency "other" message without invoking the latency callback', async () => {
+        const node = await createGlutenNode(makeCtx());
+        const cb = vi.fn();
+        node.onLatencyChanged(cb);
+
+        // An "other" message that is NOT latency-changed must not fire the cb.
+        node.workletNode.port.onmessage?.({ data: { type: 'telemetry' } } as MessageEvent);
+        expect(cb).not.toHaveBeenCalled();
+    });
+
+    it('destroy is a no-op for the meter rAF and slot when neither was active', async () => {
+        const { telemetryAllocator } = await import('../telemetryAllocator');
+        // No slot allocated (default mock returns null), no onMeterData call.
+        const cancelRaf = vi.fn();
+        vi.stubGlobal('cancelAnimationFrame', cancelRaf);
+
+        const node = await createGlutenNode(makeCtx());
+        node.destroy();
+
+        // No meter rAF was ever armed → cancel not called; no slot → release not called.
+        expect(cancelRaf).not.toHaveBeenCalled();
+        expect(telemetryAllocator.releaseSlot).not.toHaveBeenCalled();
+        expect(close).toHaveBeenCalled();
+    });
+
+    it('does not invoke the latency callback for a non-number latency field', async () => {
+        const node = await createGlutenNode(makeCtx());
+        const cb = vi.fn();
+        node.onLatencyChanged(cb);
+
+        node.workletNode.port.onmessage?.({
+            data: { type: 'latency-changed', latency: 'nope' },
+        } as MessageEvent);
+        expect(cb).not.toHaveBeenCalled();
+    });
 });
