@@ -9,6 +9,16 @@ import { findWasmDescriptor } from './wasmDeviceRegistry';
 
 import type { TrackChannelStrip, BuiltinDeviceNode, DeviceController, SendNode } from '../models/AudioEngineState';
 
+/**
+ * Minimum a-rate ramp span, in seconds, for a compensation-aligned automation
+ * write (see `rampAutomationParam`). On a track that carries no PDC, the
+ * requested land time equals `currentTime`; a zero-length ramp would step the
+ * value — the very scheduler-grain stair-step RT-5 removes — so the ramp is
+ * floored to this short glide instead. Sized at one scheduler grain so an
+ * uncompensated track moves as smoothly as the old `setTargetAtTime(.., 0.01)`.
+ */
+const AUTOMATION_RAMP_MIN_SEC = 0.01;
+
 export type TrackNodeDeps = {
     context: AudioContext;
     masterGainNode: GainNode;
@@ -173,6 +183,58 @@ export class TrackNode {
             this.deps.context.currentTime,
             0.01
         );
+    }
+
+    /**
+     * RT-5: sample-accurate, PDC-aligned automation write for the two track
+     * families backed by a real native AudioParam — the fader `GainNode.gain`
+     * and the `StereoPannerNode.pan`. `time` is the absolute context time at
+     * which the value should be heard: the caller (Transport `applyAutomation`)
+     * has already added the track's `getCompensationDelay`, so the automation
+     * lands on the same delayed clock as the clips it shapes (scheduleAudioClips
+     * uses the identical `getCurrentTime() + .. + compensation` mapping). Unlike
+     * `setGain` (an immediate fader/VCA write anchored at `currentTime`), this
+     * ramps a-rate to the target so the trajectory stays continuous across ticks
+     * instead of stepping at the ~10ms scheduler grain.
+     */
+    public scheduleGainAutomation(gain: number, time: number): void {
+        this.rampAutomationParam(this.strip.faderNode.gain, Math.max(0, Math.min(1, gain)), time);
+    }
+
+    /** RT-5 companion to {@link scheduleGainAutomation} for the panner. `pan` is
+     *  the canonical −50..50 range `setPan` accepts; it is scaled to −1..1. */
+    public schedulePanAutomation(pan: number, time: number): void {
+        this.rampAutomationParam(this.strip.panNode.pan, Math.max(-1, Math.min(1, pan / 50)), time);
+    }
+
+    private rampAutomationParam(param: AudioParam, value: number, time: number): void {
+        const now = this.deps.context.currentTime;
+        // Never land before a minimum ramp past `now`: an uncompensated track
+        // requests `time === now`, and a zero-length ramp would step.
+        const landTime = Math.max(time, now + AUTOMATION_RAMP_MIN_SEC);
+        // Re-anchor at the current value and drop stale future events so each
+        // tick's ramp continues the trajectory rather than compounding onto an
+        // older, already-scheduled target.
+        param.cancelScheduledValues(now);
+        param.setValueAtTime(param.value, now);
+        param.linearRampToValueAtTime(value, landTime);
+    }
+
+    /**
+     * RT-5: hold the fader gain and pan at their current value and drop any
+     * pending scheduled automation ramp. Wired to transport stop so a ramp
+     * scheduled toward a compensated future time does not keep gliding after
+     * playback ends — the AudioParam analog of stopActiveSources' source
+     * cleanup. Seek needs no equivalent: the scheduler keeps ticking, and the
+     * next tick's rampAutomationParam re-anchors (cancelScheduledValues(now)),
+     * dropping any stale ramp within one grain.
+     */
+    public cancelAutomationRamps(): void {
+        const now = this.deps.context.currentTime;
+        for (const param of [this.strip.faderNode.gain, this.strip.panNode.pan]) {
+            param.cancelScheduledValues(now);
+            param.setValueAtTime(param.value, now);
+        }
     }
 
     public setMute(muted: boolean): void {

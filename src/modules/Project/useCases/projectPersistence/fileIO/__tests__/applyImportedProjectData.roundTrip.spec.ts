@@ -98,6 +98,7 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     resetAudioGraph,
     stopAllScheduled,
     stopAudioRecording,
+    cancelTrackAutomationRamps: vi.fn(),
 }));
 vi.mock('#/modules/MIDI/useCases', async (importOriginal) => {
     const actual = await importOriginal<typeof import('#/modules/MIDI/useCases')>();

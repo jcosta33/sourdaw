@@ -84,4 +84,19 @@ describe('applyVcaGains', () => {
         expect(setTrackGain).toHaveBeenNthCalledWith(1, 'track-1', 1);
         expect(setTrackGain).toHaveBeenNthCalledWith(2, 'track-3', 0.5);
     });
+
+    it('defers on a VCA-member track whose gain the automation path already composed and wrote this tick', () => {
+        vi.mocked(getEffectiveGain).mockReturnValue(0.42);
+        mutableTrackStore.value = {
+            tracks: [{ id: 'track-1', vcaGroupId: 'vca-1', muted: false, gain: 0.8 }],
+        };
+
+        applyVcaGains(new Set(['track-1']));
+
+        // applyAutomation already folded the VCA multiplier into its own write for
+        // this track, so the VCA path must not issue a competing setTargetAtTime
+        // (which our per-tick cancelScheduledValues would then erase).
+        expect(getEffectiveGain).not.toHaveBeenCalled();
+        expect(setTrackGain).not.toHaveBeenCalled();
+    });
 });

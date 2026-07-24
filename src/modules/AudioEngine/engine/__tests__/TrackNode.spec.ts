@@ -86,6 +86,67 @@ describe('TrackNode', () => {
         expect(panParam.setTargetAtTime).toHaveBeenCalledWith(-0.5, ctx.currentTime, 0.01);
     });
 
+    it('RT-5: schedules a compensation-aligned gain ramp landing at the requested time', () => {
+        const track = new TrackNode('track-1', deps);
+        const faderGain = track.strip.faderNode.gain;
+        faderGain.value = 0.3;
+
+        track.scheduleGainAutomation(0.5, ctx.currentTime + 0.02);
+
+        // Re-anchor at the current value, drop stale future events, then ramp
+        // a-rate to the target at the compensated land time — no setTargetAtTime
+        // step, and the land time honours the caller's PDC-shifted `time`.
+        expect(faderGain.cancelScheduledValues).toHaveBeenCalledWith(ctx.currentTime);
+        expect(faderGain.setValueAtTime).toHaveBeenCalledWith(0.3, ctx.currentTime);
+        expect(faderGain.linearRampToValueAtTime).toHaveBeenCalledWith(0.5, ctx.currentTime + 0.02);
+    });
+
+    it('RT-5: clamps a scheduled gain to [0,1]', () => {
+        const track = new TrackNode('track-1', deps);
+        const faderGain = track.strip.faderNode.gain;
+
+        track.scheduleGainAutomation(1.5, ctx.currentTime + 0.02);
+
+        expect(faderGain.linearRampToValueAtTime).toHaveBeenCalledWith(1, ctx.currentTime + 0.02);
+    });
+
+    it('RT-5: floors an uncompensated gain write (time === now) to a minimum glide, not a step', () => {
+        const track = new TrackNode('track-1', deps);
+        const faderGain = track.strip.faderNode.gain;
+
+        track.scheduleGainAutomation(0.5, ctx.currentTime);
+
+        // A zero-length ramp would step; the write lands one scheduler grain past now.
+        expect(faderGain.linearRampToValueAtTime).toHaveBeenCalledWith(0.5, ctx.currentTime + 0.01);
+    });
+
+    it('RT-5: scales and ramps a scheduled pan write (-50..50 -> -1..1)', () => {
+        const track = new TrackNode('track-1', deps);
+        const panParam = track.strip.panNode.pan;
+
+        track.schedulePanAutomation(50, ctx.currentTime + 0.02);
+
+        expect(panParam.linearRampToValueAtTime).toHaveBeenCalledWith(1, ctx.currentTime + 0.02);
+    });
+
+    it('RT-5: cancelAutomationRamps holds fader gain and pan at their current value and drops pending ramps', () => {
+        const track = new TrackNode('track-1', deps);
+        const faderGain = track.strip.faderNode.gain;
+        const panParam = track.strip.panNode.pan;
+        faderGain.value = 0.6;
+        panParam.value = -0.4;
+
+        track.cancelAutomationRamps();
+
+        expect(faderGain.cancelScheduledValues).toHaveBeenCalledWith(ctx.currentTime);
+        expect(faderGain.setValueAtTime).toHaveBeenCalledWith(0.6, ctx.currentTime);
+        expect(panParam.cancelScheduledValues).toHaveBeenCalledWith(ctx.currentTime);
+        expect(panParam.setValueAtTime).toHaveBeenCalledWith(-0.4, ctx.currentTime);
+        // Held, not ramped — no fresh ramp is scheduled toward a post-stop time.
+        expect(faderGain.linearRampToValueAtTime).not.toHaveBeenCalled();
+        expect(panParam.linearRampToValueAtTime).not.toHaveBeenCalled();
+    });
+
     it('should set mute state', () => {
         const track = new TrackNode('track-1', deps);
         const postFaderGain = track.strip.postFaderGain.gain;

@@ -1,7 +1,10 @@
 import { getTrackEligibility, resolveEligibleDeviceWriteTarget, trackStore } from '#/modules/Arrangement/stores';
+import { getEffectiveGain } from '#/modules/Arrangement/useCases';
 import {
-    setTrackGain as engineSetTrackGain,
-    setTrackPan as engineSetTrackPan,
+    getCompensationDelay,
+    getCurrentTime,
+    scheduleTrackGain,
+    scheduleTrackPan,
     updateDeviceParam,
     updateMidiFxParam,
 } from '#/modules/AudioEngine/useCases';
@@ -46,10 +49,14 @@ const automationState: {
     lastDiscontinuityEpoch: undefined,
 };
 
-export function applyAutomation(currentBeat: number): void {
+export function applyAutomation(currentBeat: number): Set<string> {
+    // Track ids whose fader gain this tick's automation composed and wrote.
+    // applyVcaGains skips these so the VCA writer defers to the composed value
+    // instead of racing it (see the gain branch below).
+    const gainAutomationTrackIds = new Set<string>();
     const autoState = automationStore.value;
     if (!autoState) {
-        return;
+        return gainAutomationTrackIds;
     }
 
     // A transport discontinuity (seek, loop-wrap, follow-action jump) advances
@@ -60,6 +67,21 @@ export function applyAutomation(currentBeat: number): void {
     const isDiscontinuity =
         automationState.lastDiscontinuityEpoch !== undefined && currentEpoch !== automationState.lastDiscontinuityEpoch;
     automationState.lastDiscontinuityEpoch = currentEpoch;
+
+    // RT-5: gain/pan automation must land on the same PDC-delayed clock as the
+    // clips it shapes. Read the engine clock once per tick and memoize each
+    // track's compensation so every lane schedules at `now + compensation`.
+    const now = getCurrentTime();
+    const compensationByTrack = new Map<string, number>();
+    const compensationFor = (trackId: string): number => {
+        const cached = compensationByTrack.get(trackId);
+        if (cached !== undefined) {
+            return cached;
+        }
+        const compensation = getCompensationDelay(trackId);
+        compensationByTrack.set(trackId, compensation);
+        return compensation;
+    };
 
     const tracks = trackStore.value?.tracks;
 
@@ -96,11 +118,33 @@ export function applyAutomation(currentBeat: number): void {
             continue;
         }
 
+        // RT-5 param-family split. `gain` and `pan` are the only automation
+        // targets backed by a real native AudioParam (fader GainNode.gain /
+        // StereoPannerNode.pan), so they adopt sample-accurate, PDC-aligned
+        // scheduling: the value lands at `getCurrentTime() +
+        // getCompensationDelay(track)` — the same delayed clock scheduleAudioClips
+        // places the compensated audio on — and ramps a-rate instead of stepping
+        // at the tick grid. Device params (below) and MIDI-FX params reach their
+        // DSP through worklet MessagePort writes (updateDeviceParam /
+        // setFermenterMappedParam / updateMidiFxParam), which apply on the next
+        // render block and cannot be JS-scheduled a-rate here — they keep the
+        // tick-grid apply + exponential slew (with the #746 discontinuity snap).
+        // Offline export already schedules every family a-rate
+        // (scheduleAutomationOnParam); this closes the live half for the
+        // AudioParam-backed families only.
         if (lane.parameterId === 'gain') {
             const linearGain = lane.minValue < 0 ? 10 ** (value / 20) : value;
-            engineSetTrackGain(lane.trackId, linearGain);
+            // Compose the VCA master multiplier so a gain lane on a VCA-member
+            // track scales WITH its group rather than nullifying it. getEffectiveGain
+            // with a base of 1 returns just the multiplier (1 for a non-VCA track).
+            // The track id is recorded so applyVcaGains skips its own write for it —
+            // the two writers compose instead of competing (our cancelScheduledValues
+            // would otherwise erase applyVcaGains' setTargetAtTime every tick).
+            const vcaMultiplier = getEffectiveGain(lane.trackId, 1);
+            scheduleTrackGain(lane.trackId, linearGain * vcaMultiplier, now + compensationFor(lane.trackId));
+            gainAutomationTrackIds.add(lane.trackId);
         } else if (lane.parameterId === 'pan') {
-            engineSetTrackPan(lane.trackId, value * 50);
+            scheduleTrackPan(lane.trackId, value * 50, now + compensationFor(lane.trackId));
         } else {
             let laneSlew = automationState.pluginParamSlew.get(lane.id);
 
@@ -167,4 +211,6 @@ export function applyAutomation(currentBeat: number): void {
             }
         }
     }
+
+    return gainAutomationTrackIds;
 }
