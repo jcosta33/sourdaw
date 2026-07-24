@@ -1,18 +1,17 @@
 import { describe, expect, it } from 'vitest';
 
 import { asBaseAudioContext, createMockAudioContext } from '../../../../../../helpers/__tests__/audioContext.mock';
-import { type OfflineDeviceNode } from '../../types';
 import { applyBitcrusherParams } from '../applyBitcrusherParams';
 import { applyDeEsserParams } from '../applyDeEsserParams';
 import { applyDistortionParams } from '../applyDistortionParams';
-import { makeBitcrusherCurve } from '../makeBitcrusherCurve';
-import { makeDistortionCurve } from '../makeDistortionCurve';
 import { createBitcrusher } from '../createBitcrusher';
 import { createDeEsser } from '../createDeEsser';
 import { createDistortion } from '../createDistortion';
+import { makeBitcrusherCurve } from '../makeBitcrusherCurve';
+import { makeDistortionCurve } from '../makeDistortionCurve';
 
 function param(node: unknown, property: string): { value: number } {
-    const candidate = node ? Reflect.get(node as object, property) : null;
+    const candidate = node ? Reflect.get(node, property) : null;
     if (typeof candidate !== 'object' || candidate === null || !('value' in candidate)) {
         throw new Error(`Expected AudioParam at .${property}`);
     }

@@ -14,7 +14,7 @@ import { createStereoWidener } from '../createStereoWidener';
 import { createTremolo } from '../createTremolo';
 
 function param(node: unknown, property: string): { value: number } {
-    const candidate = node ? Reflect.get(node as object, property) : null;
+    const candidate = node ? Reflect.get(node, property) : null;
     if (typeof candidate !== 'object' || candidate === null || !('value' in candidate)) {
         throw new Error(`Expected AudioParam at .${property}`);
     }
@@ -167,7 +167,7 @@ describe('applyAutoPanParams', () => {
         expect(param(device.namedNodes!.lfo, 'frequency').value).toBe(4);
         expect(param(device.namedNodes!.lfoGainL, 'gain').value).toBe(0.9 * 0.5);
         expect(param(device.namedNodes!.lfoGainR, 'gain').value).toBe(-(0.9 * 0.5));
-        expect(device.namedNodes!.lfo.type).toBe('triangle');
+        expect((device.namedNodes!.lfo as OscillatorNode).type).toBe('triangle');
         device.dispose?.();
     });
 
@@ -175,7 +175,7 @@ describe('applyAutoPanParams', () => {
         const ctx = createMockAudioContext();
         const device = createAutoPan(asBaseAudioContext(ctx));
         applyAutoPanParams(device, { 'autopan-shape': 0 });
-        expect(device.namedNodes!.lfo.type).toBe('sine');
+        expect((device.namedNodes!.lfo as OscillatorNode).type).toBe('sine');
         device.dispose?.();
     });
 
@@ -238,7 +238,7 @@ describe('applyTremoloParams', () => {
         applyTremoloParams(device, { 'trem-rate': 7, 'trem-depth': 0.6, 'trem-shape': 1 });
         expect(param(device.namedNodes!.lfo, 'frequency').value).toBe(7);
         expect(param(device.namedNodes!.lfoDepth, 'gain').value).toBe(0.6);
-        expect(device.namedNodes!.lfo.type).toBe('square');
+        expect((device.namedNodes!.lfo as OscillatorNode).type).toBe('square');
         device.dispose?.();
     });
 
@@ -246,7 +246,7 @@ describe('applyTremoloParams', () => {
         const ctx = createMockAudioContext();
         const device = createTremolo(asBaseAudioContext(ctx));
         applyTremoloParams(device, { 'trem-shape': 2 });
-        expect(device.namedNodes!.lfo.type).toBe('sine');
+        expect((device.namedNodes!.lfo as OscillatorNode).type).toBe('sine');
         device.dispose?.();
     });
 

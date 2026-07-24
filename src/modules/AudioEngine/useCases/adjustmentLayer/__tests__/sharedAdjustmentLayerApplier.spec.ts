@@ -216,4 +216,77 @@ describe('getSharedAdjustmentLayerApplier', () => {
         expect(adjustmentApplicationStore.value?.applied).toEqual([]);
         expect(mocks.engine.resetAdjustmentLayers).toHaveBeenCalledTimes(1);
     });
+
+    it('restores the remembered user pan when a pan layer deactivates', () => {
+        setTracks([{ id: 't1', gain: 1, pan: 20 }]);
+        const applier = getSharedAdjustmentLayerApplier();
+        const panLayer = makeLayer({
+            id: 'layer-pan',
+            effectType: 'pan',
+            parameters: [{ name: 'Pan', value: 50, min: -100, max: 100, unit: '%' }],
+        });
+        applier.applyLayers({ activeLayers: [panLayer], beat: 0 });
+        mocks.engine.setTrackPan.mockClear();
+
+        // Remove the pan layer from the active set → its override is cleared and
+        // the remembered base pan (20) is restored.
+        applier.applyLayers({ activeLayers: [], beat: 1 });
+
+        const panCalls = mocks.engine.setTrackPan.mock.calls.filter((c) => c[0] === 't1');
+        expect(panCalls.at(-1)![1]).toBeCloseTo(20, 6);
+    });
+
+    it('recomposes pan from the new base when the user moves the pan knob mid-layer', () => {
+        setTracks([{ id: 't1', gain: 1, pan: 10 }]);
+        const applier = getSharedAdjustmentLayerApplier();
+        const panLayer = makeLayer({
+            id: 'layer-pan',
+            effectType: 'pan',
+            parameters: [{ name: 'Pan', value: 100, min: -100, max: 100, unit: '%' }],
+        });
+        applier.applyLayers({ activeLayers: [panLayer], beat: 0 });
+        mocks.engine.setTrackPan.mockClear();
+
+        // User pans hard left (-50) → composed = clamp(-50 + 50, -50, 50) = 0... but
+        // the layer adds +50 (100% blend), base now -50: -50 + 50 = 0.
+        setTracks([{ id: 't1', gain: 1, pan: -50 }]);
+        fireTrackStoreSubscribers();
+
+        const panCalls = mocks.engine.setTrackPan.mock.calls.filter((c) => c[0] === 't1');
+        expect(panCalls.at(-1)![1]).toBeCloseTo(0, 6);
+    });
+
+    it('stacks multiple pan layers additively', () => {
+        setTracks([{ id: 't1', gain: 1, pan: 0 }]);
+        const applier = getSharedAdjustmentLayerApplier();
+        const panA = makeLayer({
+            id: 'pan-a',
+            effectType: 'pan',
+            parameters: [{ name: 'Pan', value: 50, min: -100, max: 100, unit: '%' }],
+        });
+        const panB = makeLayer({
+            id: 'pan-b',
+            effectType: 'pan',
+            parameters: [{ name: 'Pan', value: -100, min: -100, max: 100, unit: '%' }],
+        });
+        applier.applyLayers({ activeLayers: [panA, panB], beat: 0 });
+        // base 0 + (0.5*50) + (-1.0*50) = 0 + 25 - 50 = -25.
+        const panCalls = mocks.engine.setTrackPan.mock.calls.filter((c) => c[0] === 't1');
+        expect(panCalls.at(-1)![1]).toBeCloseTo(-25, 6);
+    });
+
+    it('track-store subscriber no-ops when tracks are absent and defaults base gain/pan when track is missing', () => {
+        mocks.trackState = null; // no tracks at all
+        const applier = getSharedAdjustmentLayerApplier();
+        // Firing subscribers with no tracks must not throw.
+        expect(() => fireTrackStoreSubscribers()).not.toThrow();
+
+        // A volume layer on an unknown track id uses the default base gain of 1.
+        setTracks([]); // empty track list
+        const layer = makeLayer({ affectedTrackIds: ['ghost'] });
+        applier.applyLayers({ activeLayers: [layer], beat: 0 });
+        const gainCall = mocks.engine.setTrackGain.mock.calls.find((c) => c[0] === 'ghost');
+        // Default base gain 1 * GAIN_6DB.
+        expect(gainCall![1]).toBeCloseTo(GAIN_6DB, 6);
+    });
 });

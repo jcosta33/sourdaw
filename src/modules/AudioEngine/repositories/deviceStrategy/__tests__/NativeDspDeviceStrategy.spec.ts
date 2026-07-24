@@ -1,6 +1,71 @@
 import { describe, it, expect, vi } from 'vitest';
 
-import { NativeDspDeviceStrategy } from '../NativeDspDeviceStrategy';
+import { NativeDspDeviceStrategy, createNativeDspStrategy } from '../NativeDspDeviceStrategy';
+
+// --- factory tests: mock every engine node creator + predicate so the device-
+// type dispatch table in createNativeDspStrategy can be exercised per branch.
+const { creators } = vi.hoisted(() => {
+    const nodeMock = { workletNode: {} as AudioWorkletNode, ready: Promise.resolve({}) };
+    const creators = {
+        createFermenterNode: vi.fn(() => Promise.resolve(nodeMock)),
+        createToasterNode: vi.fn(() => Promise.resolve(nodeMock)),
+        createLevainNode: vi.fn(() => Promise.resolve(nodeMock)),
+        createGlutenNode: vi.fn(() => Promise.resolve(nodeMock)),
+        createBacteriaNode: vi.fn(() => Promise.resolve(nodeMock)),
+        createGrinderNode: vi.fn(() => Promise.resolve(nodeMock)),
+        createProofNode: vi.fn(() => Promise.resolve(nodeMock)),
+        createProofChamberNode: vi.fn(() => Promise.resolve(nodeMock)),
+        createScoringNode: vi.fn(() => Promise.resolve(nodeMock)),
+        createGrandBouleNode: vi.fn(() => Promise.resolve(nodeMock)),
+        createKneadNode: vi.fn(() => Promise.resolve(nodeMock)),
+    };
+    return { creators };
+});
+
+vi.mock('../../../engine/FermenterNode', () => ({
+    isFermenterDevice: (t: string) => t === 'fermenter',
+    createFermenterNode: creators.createFermenterNode,
+}));
+vi.mock('../../../engine/ToasterNode', () => ({
+    isToasterDevice: (t: string) => t === 'toaster',
+    createToasterNode: creators.createToasterNode,
+}));
+vi.mock('../../../engine/LevainNode', () => ({
+    isLevainDevice: (t: string) => t === 'levain',
+    createLevainNode: creators.createLevainNode,
+}));
+vi.mock('../../../engine/GlutenNode', () => ({
+    isGlutenDevice: (t: string) => t === 'gluten',
+    createGlutenNode: creators.createGlutenNode,
+}));
+vi.mock('../../../engine/BacteriaNode', () => ({
+    isBacteriaDevice: (t: string) => t === 'bacteria',
+    createBacteriaNode: creators.createBacteriaNode,
+}));
+vi.mock('../../../engine/GrinderNode', () => ({
+    isGrinderDevice: (t: string) => t === 'grinder',
+    createGrinderNode: creators.createGrinderNode,
+}));
+vi.mock('../../../engine/ProofNode', () => ({
+    isProofDevice: (t: string) => t === 'proof',
+    createProofNode: creators.createProofNode,
+}));
+vi.mock('../../../engine/ProofChamberNode', () => ({
+    isProofChamberDevice: (t: string) => t === 'proofChamber',
+    createProofChamberNode: creators.createProofChamberNode,
+}));
+vi.mock('../../../engine/ScoringNode', () => ({
+    isScoringDevice: (t: string) => t === 'scoring',
+    createScoringNode: creators.createScoringNode,
+}));
+vi.mock('../../../engine/GrandBouleNode', () => ({
+    isGrandBouleDevice: (t: string) => t === 'grandBoule',
+    createGrandBouleNode: creators.createGrandBouleNode,
+}));
+vi.mock('../../../engine/KneadNode', () => ({
+    isKneadDevice: (t: string) => t === 'knead',
+    createKneadNode: creators.createKneadNode,
+}));
 
 type NativeDspNode = ConstructorParameters<typeof NativeDspDeviceStrategy>[0];
 
@@ -107,5 +172,75 @@ describe('NativeDspDeviceStrategy', () => {
         expect(() => strategy.disconnectPadOutput(0, destination)).not.toThrow();
         expect(() => strategy.setPadDryRouted(0, false)).not.toThrow();
         expect(() => strategy.destroy()).not.toThrow();
+    });
+
+    it('resolveOfflineAutomation returns null when no schedule capability, and a binding when accepted', () => {
+        // No scheduleParam at all → null.
+        const bare = new NativeDspDeviceStrategy(make_dsp_node());
+        expect(bare.resolveOfflineAutomation('mix')).toBeNull();
+
+        // Schedule present but parameter not accepted → null.
+        const acceptsScheduledParam = vi.fn((name: string) => name === 'mix');
+        const scheduleParam = vi.fn();
+        const partial = new NativeDspDeviceStrategy(make_dsp_node({ acceptsScheduledParam, scheduleParam }));
+        expect(partial.resolveOfflineAutomation('other')).toBeNull();
+
+        // Accepted → returns a segments binding whose apply forwards to scheduleParam.
+        const ok = new NativeDspDeviceStrategy(make_dsp_node({ acceptsScheduledParam, scheduleParam }));
+        const binding = ok.resolveOfflineAutomation('mix');
+        expect(binding?.kind).toBe('segments');
+        const segments = [{ startFrame: 0, endFrame: 128, startValue: 0, endValue: 1 }];
+        if (binding?.kind === 'segments') {
+            binding.apply(segments);
+        }
+        expect(scheduleParam).toHaveBeenCalledWith('mix', segments);
+    });
+});
+
+describe('createNativeDspStrategy factory dispatch', () => {
+    const ctx = {} as BaseAudioContext;
+
+    it.each([
+        ['fermenter', 'createFermenterNode'],
+        ['toaster', 'createToasterNode'],
+        ['levain', 'createLevainNode'],
+        ['gluten', 'createGlutenNode'],
+        ['bacteria', 'createBacteriaNode'],
+        ['grinder', 'createGrinderNode'],
+        ['proof', 'createProofNode'],
+        ['proofChamber', 'createProofChamberNode'],
+        ['scoring', 'createScoringNode'],
+        ['grandBoule', 'createGrandBouleNode'],
+        ['knead', 'createKneadNode'],
+    ] as const)('dispatches %s to the matching node creator', async (type, fnName) => {
+        for (const [, fn] of Object.entries(creators)) {
+            fn.mockClear();
+        }
+        const strategy = await createNativeDspStrategy(ctx, {
+            type,
+            parameterValues: { gain: 0.5 },
+        } as unknown as ConstructorParameters<typeof NativeDspDeviceStrategy> extends never
+            ? never
+            : Parameters<typeof createNativeDspStrategy>[1]);
+        expect(strategy).toBeInstanceOf(NativeDspDeviceStrategy);
+        expect(creators[fnName]).toHaveBeenCalledTimes(1);
+    });
+
+    it('throws when the device type is not a native DSP device', async () => {
+        await expect(createNativeDspStrategy(ctx, { type: 'unknown', parameterValues: {} } as never)).rejects.toThrow(
+            /Failed to create Native DSP device/
+        );
+    });
+
+    it('seeds the strategy with the device parameterValues after ready', async () => {
+        const setParam = vi.fn();
+        const seeded = { workletNode: {} as AudioWorkletNode, ready: Promise.resolve({}), setParam };
+        creators.createFermenterNode.mockResolvedValueOnce(seeded);
+        await createNativeDspStrategy(ctx, {
+            type: 'fermenter',
+            parameterValues: { gain: 0.3, mix: 0.7 },
+        } as never);
+        expect(setParam).toHaveBeenCalledWith('gain', 0.3);
+        expect(setParam).toHaveBeenCalledWith('mix', 0.7);
     });
 });

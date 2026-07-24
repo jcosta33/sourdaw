@@ -1,8 +1,7 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 
-import { notifyUser } from '#/utils/Notification/notifyUser';
-
 import * as detectUc from '#/modules/ElasticAudio/useCases';
+import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { handleDetectTransients } from '../handleDetectTransients';
 import { handleQuantizeTransients } from '../handleQuantizeTransients';
@@ -46,7 +45,7 @@ describe('handleDetectTransients', () => {
 
     it('is not undoable and describes itself', () => {
         expect(handleDetectTransients.undoable).toBe(false);
-        expect(handleDetectTransients.describe().label).toBe('Detect Transients');
+        expect(handleDetectTransients.describe({} as never).label).toBe('Detect Transients');
     });
 });
 
@@ -72,6 +71,6 @@ describe('handleQuantizeTransients', () => {
 
     it('is undoable and describes itself', () => {
         expect(handleQuantizeTransients.undoable).toBe(true);
-        expect(handleQuantizeTransients.describe().label).toBe('Quantize to Grid (Elastic Audio)');
+        expect(handleQuantizeTransients.describe({} as never).label).toBe('Quantize to Grid (Elastic Audio)');
     });
 });

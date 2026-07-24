@@ -1,0 +1,309 @@
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+
+import {
+    RealFloat32Array,
+    installWorkletGlobals,
+    type GrowableMemory,
+    createGrowableMemory,
+    resetGrowableMemory,
+} from './wasmViewGrowthHarness';
+
+// GlutenProcessor message handling (param latency-change reporting, init guards,
+// SAB metering) and process() guard/passthrough/fault paths. The existing
+// glutenProcessorWasmViews spec covers only the RT-1/RT-7 WASM-view growth.
+
+type GlutenProcessorLike = {
+    port: { onmessage: ((event: { data: unknown }) => void) | null; postMessage: ReturnType<typeof vi.fn> };
+    process(inputs: Float32Array[][], outputs: Float32Array[][]): boolean;
+};
+
+const { registry } = installWorkletGlobals<GlutenProcessorLike>();
+
+const HEAP_BYTES = 128 * 1024;
+const IN_LEFT_PTR = 0;
+const IN_RIGHT_PTR = 1024;
+const SC_LEFT_PTR = 2048;
+const SC_RIGHT_PTR = 3072;
+const OUT_LEFT_PTR = 4096;
+const OUT_RIGHT_PTR = 5120;
+const FRAMES = 128;
+const memory: GrowableMemory = createGrowableMemory(HEAP_BYTES);
+
+const paramCalls: Array<{ name: string; value: number }> = [];
+const processCalls: number[] = [];
+let nextLatency = 0; // controllable so the latency-change branch can fire
+let processShouldThrow = false;
+
+class GlutenInstanceMock {
+    set_param(name: string, value: number): void {
+        paramCalls.push({ name, value });
+    }
+    get_input_left_ptr(): number {
+        return IN_LEFT_PTR;
+    }
+    get_input_right_ptr(): number {
+        return IN_RIGHT_PTR;
+    }
+    get_sc_left_ptr(): number {
+        return SC_LEFT_PTR;
+    }
+    get_sc_right_ptr(): number {
+        return SC_RIGHT_PTR;
+    }
+    get_right_ptr(): number {
+        return OUT_RIGHT_PTR;
+    }
+    process(frames: number): number {
+        processCalls.push(frames);
+        if (processShouldThrow) {
+            throw new Error('wasm trap');
+        }
+        // Copy main input into the output windows so process() reads it back.
+        const inLeft = new RealFloat32Array(memory.buffer, IN_LEFT_PTR, frames);
+        const outLeft = new RealFloat32Array(memory.buffer, OUT_LEFT_PTR, frames);
+        const outRight = new RealFloat32Array(memory.buffer, OUT_RIGHT_PTR, frames);
+        outLeft.set(inLeft);
+        outRight.set(inLeft); // duplicate left to right
+        return OUT_LEFT_PTR;
+    }
+    get_latency_samples(): number {
+        return nextLatency;
+    }
+    get_gr_db(): number {
+        return -3;
+    }
+    get_input_db(): number {
+        return -12;
+    }
+    get_output_db(): number {
+        return -10;
+    }
+    get_crest(): number {
+        return 6;
+    }
+    get_phase_corr(): number {
+        return 0.9;
+    }
+}
+
+vi.mock('../../wasm/daw_dsp.js', () => ({
+    initSync: vi.fn(() => ({ memory })),
+    GlutenInstance: GlutenInstanceMock,
+}));
+
+const MINIMAL_WASM = new Uint8Array([0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00]);
+
+async function loadProcessor(): Promise<GlutenProcessorLike> {
+    await import('../glutenProcessor');
+    const Ctor = registry.get('gluten-processor');
+    if (!Ctor) {
+        throw new Error('gluten-processor was not registered');
+    }
+    return new Ctor();
+}
+
+function send(proc: GlutenProcessorLike, data: unknown): void {
+    proc.port.onmessage?.({ data });
+}
+
+function stereo(frames: number, fill: number): Float32Array[] {
+    return [new Float32Array(frames).fill(fill), new Float32Array(frames).fill(fill)];
+}
+
+function resetRecording(): void {
+    paramCalls.length = 0;
+    processCalls.length = 0;
+    nextLatency = 0;
+    processShouldThrow = false;
+}
+
+describe('GlutenProcessor message handling', () => {
+    beforeEach(() => {
+        resetGrowableMemory(memory, HEAP_BYTES);
+        resetRecording();
+    });
+
+    it('posts ready with latency and ignores a second init', async () => {
+        const proc = await loadProcessor();
+        nextLatency = 64;
+        send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
+        send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
+
+        const ready = proc.port.postMessage.mock.calls.filter((c) => (c[0] as { type: string }).type === 'ready');
+        expect(ready).toHaveLength(1);
+        expect((ready[0]![0] as { latency: number }).latency).toBe(64);
+    });
+
+    it('reports an init error when wasm compilation throws', async () => {
+        const proc = await loadProcessor();
+        send(proc, { type: 'init', wasmBytes: new Uint8Array(0) });
+        const errors = proc.port.postMessage.mock.calls.filter((c) => (c[0] as { type?: string }).type === 'error');
+        expect(errors).toHaveLength(1);
+    });
+
+    it('maps known params and reports a latency-changed event when latency shifts', async () => {
+        const proc = await loadProcessor();
+        send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
+        resetRecording();
+
+        // First get_latency_samples() returns 0; bump to 32 before the second call
+        // so the post-set_param comparison detects a change.
+        nextLatency = 0;
+        let latencyBumpCount = 0;
+        const orig = GlutenInstanceMock.prototype.get_latency_samples;
+        GlutenInstanceMock.prototype.get_latency_samples = function (): number {
+            latencyBumpCount++;
+            // 1st call (oldLatency) → 0; 2nd call (newLatency) → 32 ⇒ change detected.
+            return latencyBumpCount === 1 ? 0 : 32;
+        };
+        try {
+            send(proc, { type: 'param', name: 'lookahead', value: 5 });
+        } finally {
+            GlutenInstanceMock.prototype.get_latency_samples = orig;
+        }
+
+        expect(paramCalls).toContainEqual({ name: 'lookahead', value: 5 });
+        const changed = proc.port.postMessage.mock.calls
+            .map((c) => c[0] as { type?: string; latency?: number })
+            .find((m) => m.type === 'latency-changed');
+        expect(changed).toBeDefined();
+        expect(changed!.latency).toBe(32);
+    });
+
+    it('does not report latency-changed when the param leaves latency unchanged', async () => {
+        const proc = await loadProcessor();
+        send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
+        resetRecording();
+        // nextLatency stays 0 for both calls ⇒ no change.
+        send(proc, { type: 'param', name: 'ratio', value: 4 });
+        const changed = proc.port.postMessage.mock.calls
+            .map((c) => c[0] as { type?: string })
+            .find((m) => m.type === 'latency-changed');
+        expect(changed).toBeUndefined();
+    });
+
+    it('falls back to the raw name for unmapped params', async () => {
+        const proc = await loadProcessor();
+        send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
+        resetRecording();
+        send(proc, { type: 'param', name: 'futureKnob', value: 9 });
+        expect(paramCalls).toContainEqual({ name: 'futureKnob', value: 9 });
+    });
+
+    it('ignores param messages before init (no instance)', async () => {
+        const proc = await loadProcessor();
+        send(proc, { type: 'param', name: 'ratio', value: 4 });
+        expect(paramCalls).toEqual([]);
+    });
+});
+
+describe('GlutenProcessor process paths', () => {
+    beforeEach(() => {
+        resetGrowableMemory(memory, HEAP_BYTES);
+        resetRecording();
+    });
+
+    it('returns early (no processing) when not ready', async () => {
+        const proc = await loadProcessor();
+        proc.process([stereo(FRAMES, 0.5)], [stereo(FRAMES, 0)]);
+        expect(processCalls).toEqual([]);
+    });
+
+    it('returns early when main input or output has fewer than 2 channels', async () => {
+        const proc = await loadProcessor();
+        send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
+        resetRecording();
+
+        // mono main input
+        proc.process([[new Float32Array(FRAMES).fill(0.5)]], [stereo(FRAMES, 0)]);
+        expect(processCalls).toEqual([]);
+
+        // mono output
+        proc.process([stereo(FRAMES, 0.5)], [[new Float32Array(FRAMES)]]);
+        expect(processCalls).toEqual([]);
+    });
+
+    it('copies main input to output and processes a sidechain input when present', async () => {
+        const proc = await loadProcessor();
+        send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
+        resetRecording();
+
+        const main = stereo(FRAMES, 0.4);
+        const sidechain = stereo(FRAMES, 0.2);
+        const output = stereo(FRAMES, 0);
+        proc.process([main, sidechain], [output]);
+
+        expect(processCalls).toEqual([FRAMES]);
+        // instance copied main-left into both output channels.
+        for (const sample of output[0]!) {
+            expect(sample).toBeCloseTo(0.4, 6);
+        }
+    });
+
+    it('processes without a sidechain input (sc branch skipped)', async () => {
+        const proc = await loadProcessor();
+        send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
+        resetRecording();
+
+        const output = stereo(FRAMES, 0);
+        proc.process([stereo(FRAMES, 0.6)], [output]);
+        expect(processCalls).toEqual([FRAMES]);
+        for (const sample of output[0]!) {
+            expect(sample).toBeCloseTo(0.6, 6);
+        }
+    });
+
+    it('writes meter telemetry into the SAB every 8 rendered blocks', async () => {
+        const proc = await loadProcessor();
+        send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
+        const sab = new SharedArrayBuffer(Float32Array.BYTES_PER_ELEMENT * 32);
+        const view = new Float32Array(sab);
+        send(proc, { type: 'init-sab', sab, byteOffset: 0 });
+        resetRecording();
+
+        const render = (): void => {
+            proc.process([stereo(FRAMES, 0.5)], [stereo(FRAMES, 0)]);
+        };
+
+        for (let i = 0; i < 7; i++) {
+            render();
+        }
+        expect(view[0]).toBe(0); // gate not tripped yet
+        render(); // 8th ⇒ trip
+        expect(view[0]).toBe(-3); // get_gr_db()
+        expect(view[1]).toBe(-12); // get_input_db()
+        expect(view[5]).toBe(0); // get_latency_samples()
+    });
+
+    it('does not throw when no SAB was initialised', async () => {
+        const proc = await loadProcessor();
+        send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
+        resetRecording();
+        for (let i = 0; i < 9; i++) {
+            proc.process([stereo(FRAMES, 0.5)], [stereo(FRAMES, 0)]);
+        }
+        expect(true).toBe(true);
+    });
+
+    it('faults and passthrough-copies when instance.process throws, then stops processing', async () => {
+        const proc = await loadProcessor();
+        send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
+        resetRecording();
+        processShouldThrow = true;
+
+        const output = stereo(FRAMES, 0);
+        proc.process([stereo(FRAMES, 0.3)], [output]);
+
+        const errors = proc.port.postMessage.mock.calls.filter((c) => (c[0] as { type?: string }).type === 'error');
+        expect(errors).toHaveLength(1);
+        // Fault path ran passthrough after the trap.
+        for (const sample of output[0]!) {
+            expect(sample).toBeCloseTo(0.3, 6);
+        }
+
+        processCalls.length = 0;
+        processShouldThrow = false;
+        proc.process([stereo(FRAMES, 0.3)], [stereo(FRAMES, 0)]);
+        expect(processCalls).toEqual([]); // faulted ⇒ short-circuit
+    });
+});

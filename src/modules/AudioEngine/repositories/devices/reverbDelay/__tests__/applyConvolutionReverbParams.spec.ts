@@ -6,14 +6,14 @@ import {
     MockAudioBuffer,
 } from '../../../../../../helpers/__tests__/audioContext.mock';
 import { applyConvolutionReverbParams, IR_NAMES } from '../applyConvolutionReverbParams';
-import { IR_GENERATORS } from '../helpers';
 import { createConvolutionReverb } from '../createConvolutionReverb';
+import { IR_GENERATORS } from '../helpers';
 
 // generateIR() in helpers.ts uses the `new AudioBuffer(...)` constructor form; jsdom omits it.
 vi.stubGlobal('AudioBuffer', MockAudioBuffer);
 
 function param(node: unknown, property: string): { value: number } {
-    const candidate = node ? Reflect.get(node as object, property) : null;
+    const candidate = node ? Reflect.get(node, property) : null;
     if (typeof candidate !== 'object' || candidate === null || !('value' in candidate)) {
         throw new Error(`Expected AudioParam at .${property}`);
     }
@@ -68,7 +68,7 @@ describe('applyConvolutionReverbParams', () => {
         const device = createConvolutionReverb(asBaseAudioContext(ctx));
         const convolver = device.nodes[3] as unknown as ConvolverNode & { context: BaseAudioContext | null };
         const before = convolver.buffer;
-        convolver.context = null; // break the `gen && convolverNode.context` guard
+        (convolver as { context: BaseAudioContext | null }).context = null; // break the guard
         applyConvolutionReverbParams(device, { 'conv-ir': 0 });
         expect(convolver.buffer).toBe(before); // unchanged
     });

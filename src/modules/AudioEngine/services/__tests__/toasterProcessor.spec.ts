@@ -33,6 +33,7 @@ const noteOnCalls: number[] = [];
 const padParamCalls: Array<[number, string, number]> = [];
 const padDryRoutedCalls: Array<[number, boolean]> = [];
 const paramByIdCalls: Array<[number, number]> = [];
+const kitParamCalls: Array<[string, number]> = [];
 const processCalls: number[] = [];
 let padZeroDryRouted = false;
 const WASM_BLOCK_SAMPLES = 4096;
@@ -46,7 +47,9 @@ class ToasterInstanceMock {
     note_off(pad: number): void {
         noteOffCalls.push(pad);
     }
-    set_param(): void {}
+    set_param(name: string, value: number): void {
+        kitParamCalls.push([name, value]);
+    }
     set_param_by_id(paramId: number, value: number): void {
         paramByIdCalls.push([paramId, value]);
     }
@@ -331,5 +334,174 @@ describe('ToasterProcessor allNotesOff', () => {
         expect(outputs.every((output) => output.every((channel) => channel.every((sample) => sample === 0)))).toBe(
             true
         );
+    });
+});
+
+describe('ToasterProcessor dispatch paths & process guards', () => {
+    beforeEach(() => {
+        kitParamCalls.length = 0;
+        noteOnCalls.length = 0;
+        noteOffCalls.length = 0;
+        padParamCalls.length = 0;
+        padDryRoutedCalls.length = 0;
+        padZeroDryRouted = false;
+        processCalls.length = 0;
+        vi.stubGlobal('currentFrame', 0);
+    });
+
+    it('ignores messages before init (not ready) and reports init compile errors', async () => {
+        const proc = await loadProcessor();
+        // Before init: every message is dropped (the ready guard).
+        send(proc, { type: 'noteOn', pad: 0, velocity: 1 });
+        send(proc, { type: 'param', name: 'swing', value: 0.5 });
+        expect(noteOnCalls).toEqual([]);
+        expect(kitParamCalls).toEqual([]);
+
+        // A malformed wasm triggers a compile error, reported once.
+        send(proc, { type: 'init', wasmBytes: new Uint8Array(0) });
+        const postMessage = vi.mocked(proc.port.postMessage);
+        const errors = postMessage.mock.calls.filter((c) => (c[0] as { type?: string }).type === 'error');
+        expect(errors).toHaveLength(1);
+    });
+
+    it('dispatches kit param (KIT_PARAM_MAP), pad param (PAD_PARAM_MAP), and unmapped fallbacks', async () => {
+        const proc = await loadProcessor();
+        send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
+        send(proc, { type: 'param', name: 'swing', value: 0.6 }); // → swing
+        send(proc, { type: 'param', name: 'unknownKit', value: 0.1 }); // fallback as-is
+        send(proc, { type: 'padParam', pad: 2, name: 'engineType', value: 3 }); // → engine_type
+        send(proc, { type: 'padParam', pad: 2, name: 'unknownPad', value: 0.4 }); // fallback as-is
+        expect(kitParamCalls).toContainEqual(['swing', 0.6]);
+        expect(kitParamCalls).toContainEqual(['unknownKit', 0.1]);
+        expect(padParamCalls).toContainEqual([2, 'engine_type', 3]);
+        expect(padParamCalls).toContainEqual([2, 'unknownPad', 0.4]);
+    });
+
+    it('dispatches immediate noteOn/noteOff (sampleFrame <= currentFrame) without queueing', async () => {
+        const proc = await loadProcessor();
+        send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
+        vi.stubGlobal('currentFrame', 1000);
+        // sampleFrame absent → dispatched immediately (not enqueued).
+        send(proc, { type: 'noteOn', pad: 4, velocity: 0.8, note: 64 });
+        // sampleFrame == currentFrame → dispatched immediately (<= guard).
+        send(proc, { type: 'noteOff', pad: 4, sampleFrame: 1000 });
+        expect(noteOnCalls).toContain(4);
+        expect(noteOffCalls).toContain(4);
+    });
+
+    it('scheduledHit with restoreEngineType omitted does not call set_pad_param a second time', async () => {
+        const proc = await loadProcessor();
+        send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
+        vi.stubGlobal('currentFrame', 1000);
+        send(proc, {
+            type: 'scheduledHit',
+            pad: 1,
+            velocity: 0.9,
+            sampleFrame: 1000,
+            padParams: [{ name: 'volume', value: 0.5 }],
+            // restoreEngineType deliberately omitted → undefined branch.
+        });
+        expect(noteOnCalls).toContain(1);
+        expect(padParamCalls).toContainEqual([1, 'volume', 0.5]);
+    });
+
+    it('resetPadDryRouting clears all per-pad dry routing', async () => {
+        const proc = await loadProcessor();
+        send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
+        send(proc, { type: 'padDryRouted', pad: 0, routed: true });
+        expect(padZeroDryRouted).toBe(true);
+        send(proc, { type: 'resetPadDryRouting' });
+        expect(padZeroDryRouted).toBe(false);
+    });
+
+    it('process guards: returns early when not ready, when output < 2 channels, when out0 absent', async () => {
+        const proc = await loadProcessor();
+        // Not ready → returns true, no process call.
+        expect(proc.process([[]], [[new Float32Array(8), new Float32Array(8)]])).toBe(true);
+        expect(processCalls).toEqual([]);
+
+        send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
+        // Parent output < 2 channels → early return.
+        proc.process([[]], [[new Float32Array(8)]]);
+        // out0 absent → early return (output[0] is undefined).
+        proc.process([[]], [[undefined, new Float32Array(8)] as unknown as Float32Array[]]);
+        // init calls process(0) once; no render process added.
+        expect(processCalls).toEqual([0]);
+    });
+
+    it('automation: interpolates mid-segment and snaps to endValue at/after endFrame', async () => {
+        const proc = await loadProcessor();
+        send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
+        paramByIdCalls.length = 0;
+        send(proc, {
+            type: 'paramAutomation',
+            paramId: 0,
+            segments: [
+                { startFrame: 0, endFrame: 128, startValue: 0, endValue: 1 },
+                { startFrame: 128, endFrame: 384, startValue: 1, endValue: 0 },
+            ],
+        });
+        // Frame 64 → mid-segment interpolation: 0 + (1-0)*(64/128) = 0.5.
+        vi.stubGlobal('currentFrame', 64);
+        proc.process([[]], [[new Float32Array(8), new Float32Array(8)]]);
+        expect(paramByIdCalls).toContainEqual([0, 0.5]);
+
+        // Frame 128 → at endFrame of segment 0 → endValue 1; segmentIndex advances.
+        paramByIdCalls.length = 0;
+        vi.stubGlobal('currentFrame', 128);
+        proc.process([[]], [[new Float32Array(8), new Float32Array(8)]]);
+        expect(paramByIdCalls).toContainEqual([0, 1]);
+
+        // Frame 384 → past endFrame of segment 1 → endValue 0.
+        paramByIdCalls.length = 0;
+        vi.stubGlobal('currentFrame', 384);
+        proc.process([[]], [[new Float32Array(8), new Float32Array(8)]]);
+        expect(paramByIdCalls).toContainEqual([0, 0]);
+
+        vi.stubGlobal('currentFrame', 0);
+    });
+
+    it('automation rejects malformed schedules (bad paramId, gaps, non-contiguous frames)', async () => {
+        const proc = await loadProcessor();
+        send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
+        // paramId out of range (>= TOASTER_AUTOMATION_PARAM_COUNT=3).
+        send(proc, {
+            type: 'paramAutomation',
+            paramId: 5,
+            segments: [{ startFrame: 0, endFrame: 128, startValue: 0, endValue: 1 }],
+        });
+        // Non-contiguous: segment 1 startFrame (130) != previousEnd (128).
+        send(proc, {
+            type: 'paramAutomation',
+            paramId: 0,
+            segments: [
+                { startFrame: 0, endFrame: 128, startValue: 0, endValue: 1 },
+                { startFrame: 130, endFrame: 256, startValue: 1, endValue: 0 },
+            ],
+        });
+        // Empty segments.
+        send(proc, { type: 'paramAutomation', paramId: 0, segments: [] });
+        paramByIdCalls.length = 0;
+        proc.process([[]], [[new Float32Array(8), new Float32Array(8)]]);
+        expect(paramByIdCalls).toEqual([]);
+    });
+
+    it('drainQueue stops at a future sampleFrame and resets the head when drained', async () => {
+        const proc = await loadProcessor();
+        send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
+        // Queue a hit far in the future.
+        send(proc, { type: 'noteOn', pad: 6, velocity: 1, sampleFrame: 50_000 });
+        expect(proc._queue.length).toBe(1);
+        // Render a block well before the queue head → drains nothing (break).
+        vi.stubGlobal('currentFrame', 0);
+        proc.process([[]], [[new Float32Array(128), new Float32Array(128)]]);
+        expect(noteOnCalls).not.toContain(6);
+        // Now advance to drain it → head resets to 0 (empty queue path).
+        vi.stubGlobal('currentFrame', 50_000);
+        proc.process([[]], [[new Float32Array(128), new Float32Array(128)]]);
+        expect(noteOnCalls).toContain(6);
+        expect(proc._queue.length).toBe(0);
+        expect(proc._queueHead).toBe(0);
+        vi.stubGlobal('currentFrame', 0);
     });
 });

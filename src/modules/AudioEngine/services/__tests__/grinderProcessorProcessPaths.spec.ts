@@ -4,7 +4,6 @@ import {
     createReadyGrinderProcessor,
     loadGrinderProcessorConstructor,
     resetGrinderProcessorCalls,
-    type GrinderProcessorLike,
 } from './grinderProcessorTestHarness';
 
 // GrinderProcessor.process() side paths not covered by the automation specs:
@@ -29,7 +28,7 @@ describe('GrinderProcessor.process passthrough & guards', () => {
         processor.process([input], [output], {});
 
         for (const ch of output) {
-            for (const sample of ch!) {
+            for (const sample of ch ?? []) {
                 expect(sample).toBeCloseTo(0.5, 6);
             }
         }
@@ -73,7 +72,7 @@ describe('GrinderProcessor.process passthrough & guards', () => {
         // channels read back the (mono-upmixed) signal. Float32 storage rounds
         // 0.3, so compare with tolerance rather than strict equality.
         for (const ch of output) {
-            for (const sample of ch!) {
+            for (const sample of ch ?? []) {
                 expect(sample).toBeCloseTo(0.3, 6);
             }
         }
@@ -92,11 +91,7 @@ describe('GrinderProcessor SAB metering cadence', () => {
         processor.port.onmessage?.({ data: { type: 'init-sab', sab, byteOffset: 0 } });
 
         const render = (): void => {
-            processor.process(
-                [stereo(4)],
-                [new Float32Array(4), new Float32Array(4)],
-                {}
-            );
+            processor.process([stereo(4)], [[new Float32Array(4), new Float32Array(4)]], {});
         };
 
         // 7 blocks: meter counter increments but the 8-block gate has not tripped.
@@ -123,11 +118,7 @@ describe('GrinderProcessor SAB metering cadence', () => {
         const processor = await createReadyGrinderProcessor();
         // No init-sab ⇒ _sabView stays null; the meter branch guards on it.
         for (let i = 0; i < 9; i++) {
-            processor.process(
-                [stereo(4)],
-                [new Float32Array(4), new Float32Array(4)],
-                {}
-            );
+            processor.process([stereo(4)], [[new Float32Array(4), new Float32Array(4)]], {});
         }
         // Reaching here without throwing is the success condition.
         expect(true).toBe(true);

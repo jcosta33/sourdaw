@@ -129,7 +129,7 @@ describe('ProofChamberProcessor message handling', () => {
         resetRecording();
         send(proc, { type: 'bypass', bypassed: true });
 
-        const output = makeChannels(2, FRAMES, (_ch, frame) => 0); // zeroed
+        const output = makeChannels(2, FRAMES, (_ch, _frame) => 0); // zeroed
         proc.process([stereo(FRAMES, 0.4)], [output]);
         // bypassed ⇒ passthrough copies input
         for (const sample of output[0]!) {
@@ -141,7 +141,11 @@ describe('ProofChamberProcessor message handling', () => {
     it('ignores param and paramAutomation messages before init (no instance)', async () => {
         const proc = await loadProcessor();
         send(proc, { type: 'param', name: 'decay', value: 1 });
-        send(proc, { type: 'paramAutomation', paramId: 0, segments: [{ startFrame: 0, endFrame: 10, startValue: 0, endValue: 1 }] });
+        send(proc, {
+            type: 'paramAutomation',
+            paramId: 0,
+            segments: [{ startFrame: 0, endFrame: 10, startValue: 0, endValue: 1 }],
+        });
         expect(paramCalls).toEqual([]);
         expect(paramByIdCalls).toEqual([]);
     });
@@ -159,9 +163,21 @@ describe('ProofChamberProcessor param automation', () => {
         resetRecording();
 
         // Only paramId 0 and 1 are valid.
-        send(proc, { type: 'paramAutomation', paramId: 2, segments: [{ startFrame: 0, endFrame: 10, startValue: 0, endValue: 1 }] });
-        send(proc, { type: 'paramAutomation', paramId: 1.5, segments: [{ startFrame: 0, endFrame: 10, startValue: 0, endValue: 1 }] });
-        send(proc, { type: 'paramAutomation', paramId: -1, segments: [{ startFrame: 0, endFrame: 10, startValue: 0, endValue: 1 }] });
+        send(proc, {
+            type: 'paramAutomation',
+            paramId: 2,
+            segments: [{ startFrame: 0, endFrame: 10, startValue: 0, endValue: 1 }],
+        });
+        send(proc, {
+            type: 'paramAutomation',
+            paramId: 1.5,
+            segments: [{ startFrame: 0, endFrame: 10, startValue: 0, endValue: 1 }],
+        });
+        send(proc, {
+            type: 'paramAutomation',
+            paramId: -1,
+            segments: [{ startFrame: 0, endFrame: 10, startValue: 0, endValue: 1 }],
+        });
         send(proc, { type: 'paramAutomation', paramId: 0, segments: [] });
 
         proc.process([stereo(FRAMES, 0)], makeChannels(2, FRAMES, () => 0) as unknown as Float32Array[][]);
@@ -195,8 +211,16 @@ describe('ProofChamberProcessor param automation', () => {
         send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
         resetRecording();
 
-        send(proc, { type: 'paramAutomation', paramId: 0, segments: [{ startFrame: 0, endFrame: 64, startValue: 0, endValue: 5 }] });
-        send(proc, { type: 'paramAutomation', paramId: 0, segments: [{ startFrame: 0, endFrame: 64, startValue: 2, endValue: 9 }] });
+        send(proc, {
+            type: 'paramAutomation',
+            paramId: 0,
+            segments: [{ startFrame: 0, endFrame: 64, startValue: 0, endValue: 5 }],
+        });
+        send(proc, {
+            type: 'paramAutomation',
+            paramId: 0,
+            segments: [{ startFrame: 0, endFrame: 64, startValue: 2, endValue: 9 }],
+        });
 
         proc.process([stereo(FRAMES, 0)], [makeChannels(2, FRAMES, () => 0)]);
         // Second schedule's startValue wins.

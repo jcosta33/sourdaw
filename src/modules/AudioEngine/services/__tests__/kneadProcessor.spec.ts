@@ -281,3 +281,150 @@ describe('KneadProcessor pitch-shift computation', () => {
         expect(errorMessages).toHaveLength(0);
     });
 });
+
+describe('KneadProcessor message handling & process guards', () => {
+    beforeEach(() => {
+        shiftCalls.length = 0;
+        postedMessages.length = 0;
+        legacyBinary = false;
+    });
+
+    it('forwards shift_semitones param to the instance and ignores other param names before init', async () => {
+        const proc = await loadProcessor();
+        // Before init: param is dropped (instance is null / not ready).
+        sendMessage(proc, { type: 'param', name: 'shift_semitones', value: 7 });
+        expect(shiftCalls).toEqual([]);
+
+        sendMessage(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
+        // After init: shift_semitones is forwarded.
+        sendMessage(proc, { type: 'param', name: 'shift_semitones', value: 3 });
+        expect(shiftCalls).toEqual([3]);
+        // An unrelated param name does not call set_shift_semitones.
+        const before = shiftCalls.length;
+        sendMessage(proc, { type: 'param', name: 'somethingElse', value: 1 });
+        expect(shiftCalls.length).toBe(before);
+    });
+
+    it('toggles bypass without affecting the instance', async () => {
+        const proc = await loadProcessor();
+        sendMessage(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
+        sendMessage(proc, { type: 'bypass', bypassed: true });
+        sendMessage(proc, { type: 'bypass', bypassed: false });
+        // bypass stores a flag; no error posted.
+        const errors = postedMessages.filter(
+            (m) => typeof m === 'object' && m !== null && 'type' in m && (m as { type: string }).type === 'error'
+        );
+        expect(errors).toHaveLength(0);
+    });
+
+    it('passthrough-copies when not ready (input && output present) and returns early with no input', async () => {
+        const proc = await loadProcessor();
+        const output = [new Float32Array(4).fill(0), new Float32Array(4).fill(0)];
+        // Not ready, but input && output present → passthrough copies in→out.
+        proc.process([[new Float32Array([0.1, 0.2, 0.3, 0.4])], []], [output]);
+        expect(Array.from(output[0]!)).toEqual([0.1, 0.2, 0.3, 0.4].map((v) => new Float32Array([v])[0]));
+
+        // Not ready, no input → early return (no passthrough).
+        const output2 = [new Float32Array(4).fill(9), new Float32Array(4).fill(9)];
+        proc.process([], [output2]);
+        expect(Array.from(output2[0]!)).toEqual([9, 9, 9, 9]);
+    });
+
+    it('returns early when the left input channel is absent (ready instance)', async () => {
+        const proc = await loadProcessor();
+        sendMessage(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
+        const output = [new Float32Array(4).fill(0), new Float32Array(4).fill(0)];
+        // input[0] absent → !in0 guard → early return, no shift applied.
+        proc.process([[]], [output]);
+        expect(shiftCalls.every((s) => s === 0)).toBe(true);
+    });
+
+    it('computes zero shift when transport is not playing', async () => {
+        const proc = await loadProcessor();
+        // Transport SAB left at defaults → isPlaying (slot 5) = 0 → not playing.
+        const sab = new SharedArrayBuffer(16 * 8);
+        const f64 = new Float64Array(sab);
+        f64[TRANSPORT_BEAT_F64] = 2;
+        f64[TRANSPORT_TEMPO_F64] = 120;
+        f64[TRANSPORT_IS_PLAYING_F64] = 0; // stopped
+        sendMessage(proc, { type: 'init', wasmBytes: MINIMAL_WASM, transportSAB: sab });
+        sendMessage(proc, {
+            type: 'update-state',
+            clips: {
+                c1: {
+                    startBeat: 0,
+                    endBeat: 4,
+                    blobs: [{ startTime: 0, endTime: 10, pitchCenterCents: 6200, originalPitchCenterCents: 6000 }],
+                },
+            },
+        });
+        proc.process(
+            [[new Float32Array(128)], [new Float32Array(128)]],
+            [[new Float32Array(128), new Float32Array(128)]]
+        );
+        // Not playing → no clip lookup → shift stays 0.
+        expect(shiftCalls.at(-1)).toBe(0);
+    });
+
+    it('computes zero shift when the playhead is outside every clip range', async () => {
+        const proc = await loadProcessor();
+        const transportSAB = makePlayingTransport(99, 120); // beat 9, outside clip [0,4]
+        sendMessage(proc, { type: 'init', wasmBytes: MINIMAL_WASM, transportSAB });
+        sendMessage(proc, {
+            type: 'update-state',
+            clips: {
+                c1: {
+                    startBeat: 0,
+                    endBeat: 4,
+                    blobs: [{ startTime: 0, endTime: 10, pitchCenterCents: 6200, originalPitchCenterCents: 6000 }],
+                },
+            },
+        });
+        proc.process(
+            [[new Float32Array(128)], [new Float32Array(128)]],
+            [[new Float32Array(128), new Float32Array(128)]]
+        );
+        expect(shiftCalls.at(-1)).toBe(0);
+    });
+
+    it('computes zero shift when the active clip has no blob at the playhead', async () => {
+        const proc = await loadProcessor();
+        const transportSAB = makePlayingTransport(2, 120); // inside clip range
+        sendMessage(proc, { type: 'init', wasmBytes: MINIMAL_WASM, transportSAB });
+        // Blob window [1000, 2000]s — playhead (beat 2 @120bpm = 1s) is before it.
+        sendMessage(proc, {
+            type: 'update-state',
+            clips: {
+                c1: {
+                    startBeat: 0,
+                    endBeat: 4,
+                    blobs: [{ startTime: 1000, endTime: 2000, pitchCenterCents: 6200, originalPitchCenterCents: 6000 }],
+                },
+            },
+        });
+        proc.process(
+            [[new Float32Array(128)], [new Float32Array(128)]],
+            [[new Float32Array(128), new Float32Array(128)]]
+        );
+        expect(shiftCalls.at(-1)).toBe(0);
+    });
+
+    it('faults and passthrough-copies when the WASM instance throws mid-process', async () => {
+        const proc = await loadProcessor();
+        sendMessage(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
+        // Sabotage the instance by replacing process() to throw.
+        const inst = (proc as unknown as { _instance: { process(): number } })._instance;
+        inst.process = () => {
+            throw new Error('wasm trap');
+        };
+        const output = [new Float32Array([0, 0, 0, 0]), new Float32Array([0, 0, 0, 0])];
+        proc.process([[new Float32Array([0.5, 0.6, 0.7, 0.8])], [new Float32Array([0.5, 0.6, 0.7, 0.8])]], [output]);
+        const errors = postedMessages.filter(
+            (m) => typeof m === 'object' && m !== null && 'type' in m && (m as { type: string }).type === 'error'
+        );
+        expect(errors).toHaveLength(1);
+        // Passthrough copied the input into the (4-frame) output (Float32).
+        expect(Array.from(output[0]!)).toEqual([0.5, 0.6, 0.7, 0.8].map((v) => new Float32Array([v])[0]));
+        expect(proc._faulted).toBe(true);
+    });
+});

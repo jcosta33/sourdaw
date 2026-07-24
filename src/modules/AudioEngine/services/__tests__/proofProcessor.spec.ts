@@ -30,6 +30,9 @@ const WASM_HEAP = new ArrayBuffer(64 * 1024);
 
 class ProofInstanceMock {
     process(): number {
+        if (proofProcessShouldThrow) {
+            throw new Error('wasm trap');
+        }
         return 0;
     }
     get_input_left_ptr(): number {
@@ -42,7 +45,8 @@ class ProofInstanceMock {
         return 4096;
     }
     get_latency_samples(): number {
-        return 256;
+        // Returns queued values so the latency-change branch can be exercised.
+        return proofLatencyQueue.length > 1 ? (proofLatencyQueue.shift() as number) : (proofLatencyQueue[0] ?? 256);
     }
     // Each meter getter returns a distinct, recognizable value so a torn read
     // (fields mixed across writes) would be detectable.
@@ -79,10 +83,23 @@ class ProofInstanceMock {
     get_tap_peak_r(tap: number): number {
         return -20 - tap;
     }
-    set_param(): void {}
-    reorder(): void {}
-    reset_integrated(): void {}
+    set_param(name: string, value: number): void {
+        proofParamCalls.push({ name, value });
+    }
+    reorder(a: number, b: number, c: number, d: number, e: number): void {
+        proofReorderCalls.push([a, b, c, d, e]);
+    }
+    reset_integrated(): void {
+        proofResetCalls++;
+    }
 }
+
+// Shared recording/controllable state for the message-handling describe block.
+const proofParamCalls: Array<{ name: string; value: number }> = [];
+let proofReorderCalls: number[][] = [];
+let proofResetCalls = 0;
+let proofLatencyQueue: number[] = [256];
+let proofProcessShouldThrow = false;
 
 vi.mock('../../wasm/daw_dsp.js', () => ({
     initSync: vi.fn(() => ({ memory: { buffer: WASM_HEAP } })),
@@ -194,5 +211,114 @@ describe('ProofProcessor telemetry seqlock', () => {
         }
         expect(cleanFirstTry).toBe(true);
         expect(integrated).toBeCloseTo(-16, 5);
+    });
+});
+
+describe('ProofProcessor message handling & process guards', () => {
+    beforeEach(() => {
+        proofParamCalls.length = 0;
+        proofReorderCalls = [];
+        proofResetCalls = 0;
+        proofLatencyQueue = [256];
+        proofProcessShouldThrow = false;
+    });
+
+    it('ignores a second init once ready', async () => {
+        const proc = await loadProcessor();
+        send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
+        send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
+        const ready = vi
+            .mocked(proc.port.postMessage)
+            .mock.calls.filter((c) => (c[0] as { type: string }).type === 'ready');
+        expect(ready).toHaveLength(1);
+    });
+
+    it('reports an init error when wasm compilation throws', async () => {
+        const proc = await loadProcessor();
+        send(proc, { type: 'init', wasmBytes: new Uint8Array(0) });
+        const errors = vi
+            .mocked(proc.port.postMessage)
+            .mock.calls.filter((c) => (c[0] as { type?: string }).type === 'error');
+        expect(errors).toHaveLength(1);
+    });
+
+    it('forwards param, reorder (5-tuple) and reset_integrated', async () => {
+        const proc = await loadProcessor();
+        send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
+
+        send(proc, { type: 'param', name: 'lim_threshold', value: -1 });
+        send(proc, { type: 'reorder', order: [3, 1, 2, 0, 4] });
+        send(proc, { type: 'reset_integrated' });
+
+        expect(proofParamCalls).toContainEqual({ name: 'lim_threshold', value: -1 });
+        expect(proofReorderCalls).toEqual([[3, 1, 2, 0, 4]]);
+        expect(proofResetCalls).toBe(1);
+    });
+
+    it('reports a latency-changed event when a message shifts the reported latency', async () => {
+        const proc = await loadProcessor();
+        send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
+        // _handleMessage reads latency before and after; queue 0 then 64 ⇒ change.
+        proofLatencyQueue = [0, 64];
+
+        send(proc, { type: 'param', name: 'lim_lookahead', value: 1 });
+
+        const postMessage = vi.mocked(proc.port.postMessage);
+        const changed = postMessage.mock.calls
+            .map((c) => c[0] as { type?: string; latency?: number })
+            .find((m) => m.type === 'latency-changed');
+        expect(changed).toBeDefined();
+        expect(changed!.latency).toBe(64);
+    });
+
+    it('does not report latency-changed when the message leaves latency unchanged', async () => {
+        const proc = await loadProcessor();
+        send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
+        proofLatencyQueue = [256, 256]; // both calls identical
+        send(proc, { type: 'param', name: 'lim_threshold', value: -1 });
+        const postMessage = vi.mocked(proc.port.postMessage);
+        const changed = postMessage.mock.calls
+            .map((c) => c[0] as { type?: string })
+            .find((m) => m.type === 'latency-changed');
+        expect(changed).toBeUndefined();
+    });
+
+    it('ignores control messages before init (no instance)', async () => {
+        const proc = await loadProcessor();
+        send(proc, { type: 'param', name: 'lim_threshold', value: -1 });
+        send(proc, { type: 'reorder', order: [0, 1, 2, 3, 4] });
+        expect(proofParamCalls).toEqual([]);
+        expect(proofReorderCalls).toEqual([]);
+    });
+
+    it('returns early when not ready or when input/output has fewer than 2 channels', async () => {
+        const proc = await loadProcessor();
+        const out = [new Float32Array(128), new Float32Array(128)];
+        // not ready
+        proc.process([[new Float32Array(128), new Float32Array(128)]], [out]);
+        // (no throw; reaching here is success)
+
+        send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
+        // mono input ⇒ early return
+        proc.process([[new Float32Array(128)]], [out]);
+        // mono output ⇒ early return
+        proc.process([[new Float32Array(128), new Float32Array(128)]], [[new Float32Array(128)]]);
+        expect(true).toBe(true);
+    });
+
+    it('faults and posts an error when instance.process throws', async () => {
+        const proc = await loadProcessor();
+        send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
+        proofProcessShouldThrow = true;
+
+        const out = [new Float32Array(128), new Float32Array(128)];
+        proc.process([[new Float32Array(128).fill(0.5), new Float32Array(128).fill(0.5)]], [out]);
+
+        const errors = vi
+            .mocked(proc.port.postMessage)
+            .mock.calls.filter((c) => (c[0] as { type?: string }).type === 'error');
+        expect(errors).toHaveLength(1);
+        // Fault path ran passthrough after the trap.
+        expect(out[0]![0]).toBeCloseTo(0.5, 6);
     });
 });
