@@ -1,4 +1,4 @@
-import { modulationParamSlew } from './modulationSlewState';
+import { modulationParamSlew, modulationSlewEpoch } from './modulationSlewState';
 
 /**
  * Clears all per-param slew state. The slew map is module-level (it must survive
@@ -8,4 +8,5 @@ import { modulationParamSlew } from './modulationSlewState';
  */
 export function resetModulationSlew(): void {
     modulationParamSlew.clear();
+    modulationSlewEpoch.last = undefined;
 }

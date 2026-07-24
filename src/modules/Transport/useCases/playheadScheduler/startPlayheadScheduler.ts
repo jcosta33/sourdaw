@@ -321,7 +321,7 @@ export function startPlayheadScheduler(): void {
         applyVcaGains();
         applyAutomation(newPosition);
         applyModulation(newPosition);
-        applyModulationToEngine(newPosition);
+        applyModulationToEngine(newPosition, schedulerSession.discontinuityEpoch);
         scheduleAdjustmentLayers(newPosition);
 
         schedulerSession.lastScheduledBeat = scheduleUpTo;
