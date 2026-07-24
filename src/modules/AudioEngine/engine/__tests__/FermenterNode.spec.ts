@@ -131,10 +131,21 @@ describe('createFermenterNode telemetry over the SAB slot', () => {
 
     /** Publish one telemetry block the way the worklet does: bracketed by the seqlock. */
     function publish(peakL: number, peakR: number, sampleAt: (index: number) => number): void {
+        beginPublish(peakL, peakR);
+        endPublish(sampleAt);
+    }
+
+    /** Open the seqlock and write only the peaks — the publish is now mid-flight. */
+    function beginPublish(peakL: number, peakR: number): void {
         const { view, seqView } = slotViews();
         Atomics.store(seqView, SEQ_IDX, Atomics.load(seqView, SEQ_IDX) + 1);
         view[0] = peakL;
         view[1] = peakR;
+    }
+
+    /** Write the waveform and close the seqlock, settling the generation. */
+    function endPublish(sampleAt: (index: number) => number): void {
+        const { view, seqView } = slotViews();
         for (let index = 0; index < SCOPE_SAMPLES; index++) {
             view[SCOPE_BASE + index] = sampleAt(index);
         }
@@ -237,7 +248,7 @@ describe('createFermenterNode telemetry over the SAB slot', () => {
         expect(received[0]!.scopeBuffer).not.toBe(received[1]!.scopeBuffer);
     });
 
-    it('does not emit a snapshot torn across a publish still in progress', async () => {
+    it('holds emission while a publish is still mid-flight', async () => {
         const ctx = { currentTime: 0, state: 'running' } as unknown as BaseAudioContext;
         const result = await createFermenterNode(ctx);
         const received: FermenterTelemetryData[] = [];
@@ -249,21 +260,41 @@ describe('createFermenterNode telemetry over the SAB slot', () => {
         callback.mockClear();
         received.length = 0;
 
-        // Open the seqlock and write only the peaks: the waveform still holds the
-        // previous generation's samples. The counter is left odd, so the reader
-        // must exhaust its budget and hand back the last validated snapshot.
-        const { view, seqView } = slotViews();
-        Atomics.store(seqView, SEQ_IDX, Atomics.load(seqView, SEQ_IDX) + 1);
-        view[0] = 0.99;
-        view[1] = 0.99;
+        // Peaks written behind an open counter; the waveform still holds the
+        // previous generation's samples. Emitting here would hand the UI 0.99
+        // paired with the old waveform — exactly the torn read.
+        beginPublish(0.99, 0.99);
+        tickFrame();
 
+        expect(callback).not.toHaveBeenCalled();
+    });
+
+    it('emits once — not twice — when a poll races a publish that then settles', async () => {
+        const ctx = { currentTime: 0, state: 'running' } as unknown as BaseAudioContext;
+        const result = await createFermenterNode(ctx);
+        const received: FermenterTelemetryData[] = [];
+        const callback = vi.fn((data: FermenterTelemetryData) => received.push(data));
+        result.onTelemetry(callback);
+
+        // Frame 1 lands mid-publish and samples the odd generation. Storing that
+        // odd value would desync the gate and emit again on frame 2 for the same
+        // publish, so the cadence gate must ignore it entirely.
+        beginPublish(0.8, 0.8);
+        tickFrame();
+        expect(callback).not.toHaveBeenCalled();
+
+        // Frame 2 sees the settled counter and the complete block.
+        endPublish(() => 0.8);
         tickFrame();
 
         expect(callback).toHaveBeenCalledTimes(1);
-        const emitted = received[0]!;
-        // 0.99 paired with the old waveform would be exactly the torn read.
-        expect(emitted.peakL).toBe(Math.fround(0.4));
-        expect(emitted.scopeBuffer[0]).toBe(Math.fround(0.4));
+        expect(received[0]!.peakL).toBe(Math.fround(0.8));
+        expect(received[0]!.scopeBuffer[0]).toBe(Math.fround(0.8));
+
+        // Frame 3: nothing new published, so the gate stays closed.
+        tickFrame();
+
+        expect(callback).toHaveBeenCalledTimes(1);
     });
 
     it('stops polling once destroyed', async () => {

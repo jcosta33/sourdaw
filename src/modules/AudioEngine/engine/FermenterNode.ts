@@ -220,10 +220,18 @@ export async function createFermenterNode(ctx: BaseAudioContext, wasmUrl?: strin
             // only when the generation counter has moved, so downstream keeps the
             // one-callback-per-publish cadence the port delivered instead of
             // re-broadcasting (and re-rendering) the same waveform three times.
+            //
+            // Only *settled* (even) generations advance the gate. A poll can land
+            // mid-publish and sample the odd value; storing that would desync the
+            // gate by one, so the same publish would emit twice — once on the odd
+            // sample and again when the counter settles to the next even value.
+            // Skipping odd samples costs nothing: the publish that is in flight
+            // lands in the next frame, ~16 ms later.
             let lastGeneration = Atomics.load(seqView, TELEMETRY_SEQ_IDX);
             const poll = () => {
                 const generation = Atomics.load(seqView, TELEMETRY_SEQ_IDX);
-                if (generation !== lastGeneration) {
+                const settled = (generation & 1) === 0;
+                if (settled && generation !== lastGeneration) {
                     lastGeneration = generation;
                     cb(readTelemetry());
                 }
