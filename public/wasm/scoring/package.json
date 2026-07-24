@@ -5,9 +5,11 @@
   "version": "0.1.0",
   "files": [
     "scoring_bg.wasm",
-    "scoring.js"
+    "scoring.js",
+    "scoring.d.ts"
   ],
   "main": "scoring.js",
+  "types": "scoring.d.ts",
   "sideEffects": [
     "./snippets/*"
   ]

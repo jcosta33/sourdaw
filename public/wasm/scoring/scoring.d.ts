@@ -1,3 +1,4 @@
+// @wasm-bindgen-dts crate-source: sha256:326652ea9eb3586b5224ea810b313e7c10bf8619cec5ae2e2131210f4c1d6eef
 /* tslint:disable */
 /* eslint-disable */
 
@@ -8,6 +9,11 @@ export class ScoringInstance {
     get_confidence(): number;
     get_frequency(): number;
     get_midi_note(): number;
+    /**
+     * Number of non-finite output samples scrubbed to silence since
+     * construction (DSP-8). Non-zero means a poisoned block was caught at the
+     * wasm output boundary and surfaced for health telemetry.
+     */
     get_nan_flush_count(): number;
     get_note_index(): number;
     get_octave(): number;
@@ -30,11 +36,20 @@ export class ScoringInstance {
     set_param(name: string, value: number): void;
 }
 
+/**
+ * Install `console_error_panic_hook` once at wasm module init so a Rust panic
+ * surfaces a readable message on the JS console instead of an opaque
+ * `unreachable` trap that silently poisons the AudioWorklet instance (WB-6).
+ * Wasm-only by construction; the native build is unaffected.
+ */
+export function init_panic_hook(): void;
+
 export type InitInput = RequestInfo | URL | Response | BufferSource | WebAssembly.Module;
 
 export interface InitOutput {
     readonly memory: WebAssembly.Memory;
     readonly __wbg_scoringinstance_free: (a: number, b: number) => void;
+    readonly init_panic_hook: () => void;
     readonly scoringinstance_get_cents: (a: number) => number;
     readonly scoringinstance_get_confidence: (a: number) => number;
     readonly scoringinstance_get_frequency: (a: number) => number;
@@ -53,9 +68,10 @@ export interface InitOutput {
     readonly scoringinstance_new: (a: number) => number;
     readonly scoringinstance_process: (a: number, b: number, c: number, d: number, e: number, f: number) => number;
     readonly scoringinstance_set_param: (a: number, b: number, c: number, d: number) => void;
-    readonly __wbindgen_externrefs: WebAssembly.Table;
+    readonly __wbindgen_free: (a: number, b: number, c: number) => void;
     readonly __wbindgen_malloc: (a: number, b: number) => number;
     readonly __wbindgen_realloc: (a: number, b: number, c: number, d: number) => number;
+    readonly __wbindgen_externrefs: WebAssembly.Table;
     readonly __wbindgen_start: () => void;
 }
 

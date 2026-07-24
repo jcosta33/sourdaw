@@ -19,6 +19,12 @@
  *     hash; a hand-edited or half-regenerated artifact fails here.
  *  5. Stray-binary guard — no `_bg.wasm` may live anywhere under the src worklet
  *     glue tree (permanently closes the WB-2 twin).
+ *  6. Declaration provenance — every generated `.d.ts` carries the crate-source
+ *     hash it was produced from; a stamp that no longer matches the live crate
+ *     hash means the declaration went stale while the crate (and its `.js`/
+ *     `.wasm`) regenerated — the WB-4 / #732 blind spot that byte integrity
+ *     alone cannot see, since the freshly written manifest records the stale
+ *     `.d.ts` hash without complaint.
  *
  * Exit code 0 = clean, 1 = drift (with a per-check report). Runnable locally and
  * by agents as part of verification; no rebuild, no network, no toolchain calls.
@@ -133,6 +139,32 @@ function checkPackages(manifest: WasmManifest): void {
     }
 }
 
+function checkDeclarations(): void {
+    for (const spec of wasmArtifacts.packages) {
+        if (!spec.declarations) {
+            continue;
+        }
+        const crateSourceHash = wasmArtifacts.hashCrateClosure(spec.crateDir);
+        for (const relPath of [spec.declarations.public, spec.declarations.publicBg, spec.declarations.src]) {
+            const stamp = safeDeclarationStamp(relPath);
+            if (stamp === null) {
+                fail(
+                    `${relPath}: no crate-source provenance stamp (missing or unstamped) — ` +
+                        `regenerate with \`pnpm wasm:${spec.id} && pnpm wasm:manifest\``
+                );
+                continue;
+            }
+            if (stamp !== crateSourceHash) {
+                fail(
+                    `${relPath}: declaration crate-source stamp ${stamp} != crate ${crateSourceHash} — ` +
+                        `the .d.ts is stale for the current ${spec.crateDir} (WB-4 / #732 blind spot); ` +
+                        `regenerate with \`pnpm wasm:${spec.id} && pnpm wasm:manifest\``
+                );
+            }
+        }
+    }
+}
+
 function checkNoStrayBinaries(): void {
     collectStrayBinaries('src/modules/AudioEngine/wasm');
 }
@@ -170,6 +202,14 @@ function safeHash(relPath: string): string | null {
     }
 }
 
+function safeDeclarationStamp(relPath: string): string | null {
+    try {
+        return wasmArtifacts.extractDeclarationStamp(relPath);
+    } catch {
+        return null;
+    }
+}
+
 function run(): void {
     let manifest: WasmManifest;
     try {
@@ -183,6 +223,7 @@ function run(): void {
 
     checkToolchain(manifest);
     checkPackages(manifest);
+    checkDeclarations();
     checkNoStrayBinaries();
 
     if (failures.length > 0) {
@@ -195,7 +236,7 @@ function run(): void {
     }
 
     console.log(
-        `✓ wasm:verify — ${wasmArtifacts.packages.length} packages fresh (schema, source, artifacts, toolchain).`
+        `✓ wasm:verify — ${wasmArtifacts.packages.length} packages fresh (schema, source, artifacts, declarations, toolchain).`
     );
 }
 

@@ -13,11 +13,15 @@
  *     served statically). The async init() is never called from worklet processors —
  *     they always use initSync() with pre-fetched bytes.
  *  4. Writes to src/modules/AudioEngine/wasm/scoring.js
+ *  5. Mirrors the wasm-pack .d.ts into the worklet tree and stamps every
+ *     generated declaration with the crate-source hash (WB-4 drift gate).
  */
 
 import { readFileSync, writeFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
+
+import { wasmArtifacts } from './wasm-artifacts.ts';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const srcFile = join(root, 'public/wasm/scoring/scoring.js');
@@ -88,4 +92,5 @@ if (occurrences !== 1) {
 const worklet = generated.split(needle).join(replacement);
 
 writeFileSync(destFile, polyfills + worklet, 'utf8');
-console.log(`✓ Generated ${destFile}`);
+wasmArtifacts.regenerateDeclarations('scoring');
+console.log(`✓ Generated ${destFile} (+ stamped declarations)`);
