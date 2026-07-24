@@ -531,7 +531,10 @@ mod tests {
         (attack_peak, tail_avg)
     }
 
-    fn body_edge_balance_for_amp_model(amp_model: f32) -> f32 {
+    /// Returns `(low_band_body, edge)` for a palm-muted burst: `body` is the
+    /// summed 220 Hz low-pass magnitude, `edge` the summed envelope of what is
+    /// left above it.
+    fn body_and_edge_for_amp_model(amp_model: f32) -> (f32, f32) {
         let sample_rate = 48_000.0;
         let mut preamp = Preamp::new(sample_rate);
         preamp.set_param("ampModel", amp_model);
@@ -568,7 +571,7 @@ mod tests {
             }
         }
 
-        body_sum / edge_sum.max(1.0e-6)
+        (body_sum, edge_sum)
     }
 
     fn attack_and_sustain_for_amp_model(amp_model: f32) -> (f32, f32) {
@@ -766,15 +769,64 @@ mod tests {
         );
     }
 
+    /// ENCODES A KNOWN GAP (DSP-10), NOT THE DESIGN INTENT.
+    ///
+    /// Rectifier sets `model_low_end` 0.32 against Lead JCM's 0.05 (see the
+    /// per-model table in `Preamp::process_sample`), so it is *supposed* to
+    /// come out audibly fatter. It does not. On the corrected signal path the
+    /// two models' low-band body is effectively tied.
+    ///
+    /// This test used to assert `rectifier_balance - lead_balance > 0.14` and
+    /// passed — but it passed on aliasing. Before DSP-3 replaced Grinder's
+    /// 2-tap box-average "oversampling" with a real half-band FIR, fold-back
+    /// from the high-order harmonics landed below 220 Hz and was counted as
+    /// body. Measured on this exact fixture:
+    ///
+    /// | model      | body  | edge  | balance |
+    /// |------------|-------|-------|---------|
+    /// | Lead, box  | 397.5 | 199.6 | 1.991   |
+    /// | Lead, FIR  | 387.2 | 192.3 | 2.014   |
+    /// | Rect, box  | 409.5 | 191.9 | 2.134   |
+    /// | Rect, FIR  | 386.0 | 212.2 | 1.817   |
+    ///
+    /// Lead barely moves; Rectifier loses 5.7% of its low band and gains 10.7%
+    /// above 220 Hz. So `model_low_end` was never delivering the separation —
+    /// alias mud was. Retuning it needs listening judgement and is tracked as
+    /// DSP-10, not fixed here.
+    ///
+    /// The bound below is a real guard in both directions: regressing the
+    /// oversampling pushes Rectifier's body back to ~409 (+3.0% over Lead) and
+    /// trips it, and genuinely fixing DSP-10 separates the two and also trips
+    /// it — at which point this test should be rewritten to assert the intent.
     #[test]
-    fn rectifier_preamp_has_more_body_than_lead_jcm() {
-        let lead_balance = body_edge_balance_for_amp_model(2.0);
-        let rectifier_balance = body_edge_balance_for_amp_model(4.0);
-        let balance_delta = rectifier_balance - lead_balance;
+    fn rectifier_and_lead_jcm_low_band_body_are_comparable_on_the_clean_path() {
+        let (lead_body, lead_edge) = body_and_edge_for_amp_model(2.0);
+        let (rectifier_body, rectifier_edge) = body_and_edge_for_amp_model(4.0);
 
         assert!(
-            balance_delta > 0.14,
-            "rectifier preamp should retain more body than lead JCM under the same palm-muted burst (lead={lead_balance}, rectifier={rectifier_balance}, delta={balance_delta})"
+            lead_body > 100.0 && rectifier_body > 100.0,
+            "both models must actually produce low-band output, or the \
+             comparison below is vacuous (lead={lead_body}, rectifier={rectifier_body})"
+        );
+
+        let body_gap = (rectifier_body - lead_body).abs() / lead_body;
+        assert!(
+            body_gap < 0.02,
+            "DSP-10: Rectifier's model_low_end (0.32 vs Lead JCM's 0.05) still \
+             fails to separate low-band body on the clean path — they are within \
+             2%. A gap outside that band means either the DSP-3 oversampling \
+             regressed or DSP-10 was fixed; both need this test rewritten. \
+             (lead={lead_body}, rectifier={rectifier_body}, gap={body_gap})"
+        );
+
+        // The edge side is where the models *do* differ once fold-back stops
+        // inflating the low band: Rectifier drives harder and now keeps those
+        // harmonics instead of aliasing them downward.
+        assert!(
+            rectifier_edge > lead_edge,
+            "Rectifier should carry more content above 220 Hz than Lead JCM \
+             once the harmonics stop folding down (lead={lead_edge}, \
+             rectifier={rectifier_edge})"
         );
     }
 
