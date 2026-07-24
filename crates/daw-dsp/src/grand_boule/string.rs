@@ -18,6 +18,7 @@
 //! path beyond the partial-count cap.
 
 use super::parameters::inharmonicity_b;
+use crate::primitives::{flush_denormal, flush_denormal_f64};
 
 /// Maximum number of modal partials tracked per resonator bank.
 /// 80 covers partials up to ~20 kHz even for bass notes and aligns to
@@ -317,7 +318,7 @@ impl ModalString {
             self.x2_64[index] = self.x1_64[index];
             self.x1_64[index] = input_64;
             self.y2_64[index] = self.y1_64[index];
-            self.y1_64[index] = y;
+            self.y1_64[index] = flush_denormal_f64(y);
             output += y as f32;
         }
 
@@ -331,7 +332,7 @@ impl ModalString {
             self.x2[index] = self.x1[index];
             self.x1[index] = input;
             self.y2[index] = self.y1[index];
-            self.y1[index] = y;
+            self.y1[index] = flush_denormal(y);
             output += y;
         }
         output
@@ -355,7 +356,7 @@ impl ModalString {
             self.x2_64[index] = self.x1_64[index];
             self.x1_64[index] = input_64;
             self.y2_64[index] = self.y1_64[index];
-            self.y1_64[index] = y;
+            self.y1_64[index] = flush_denormal_f64(y);
             output += y as f32;
         }
 
@@ -367,7 +368,7 @@ impl ModalString {
             self.x2[index] = self.x1[index];
             self.x1[index] = input;
             self.y2[index] = self.y1[index];
-            self.y1[index] = y;
+            self.y1[index] = flush_denormal(y);
             output += y;
         }
         output

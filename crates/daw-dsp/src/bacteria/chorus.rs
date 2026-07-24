@@ -3,6 +3,7 @@
 //! Chorus/Flanger: modulated delay lines with feedback.
 //! Phaser: series of all-pass filters creating moving notches.
 
+use crate::primitives::flush_denormal;
 use std::f32::consts::PI;
 
 // ── Modulated Delay Line (shared by Chorus & Flanger) ────────────────────────
@@ -122,8 +123,10 @@ impl ChorusFlanger {
         let wet_l = self.delay_l.read(delay_l_samples);
         let wet_r = self.delay_r.read(delay_r_samples);
 
-        self.fb_sample_l = wet_l;
-        self.fb_sample_r = wet_r;
+        // DSP-2: these latches close the delay feedback loop — flushing here
+        // stops a decaying tail recirculating as subnormals forever.
+        self.fb_sample_l = flush_denormal(wet_l);
+        self.fb_sample_r = flush_denormal(wet_r);
 
         // Mix
         let out_l = left * (1.0 - self.mix) + wet_l * self.mix;
@@ -164,7 +167,7 @@ impl AllPass1 {
 
     fn process(&mut self, input: f32) -> f32 {
         let output = self.coeff * input + self.z1;
-        self.z1 = input - self.coeff * output;
+        self.z1 = flush_denormal(input - self.coeff * output);
         output
     }
 
@@ -255,8 +258,8 @@ impl Phaser {
             ap_r = stage.process(ap_r);
         }
 
-        self.fb_l = ap_l;
-        self.fb_r = ap_r;
+        self.fb_l = flush_denormal(ap_l);
+        self.fb_r = flush_denormal(ap_r);
 
         let out_l = left * (1.0 - self.mix) + ap_l * self.mix;
         let out_r = right * (1.0 - self.mix) + ap_r * self.mix;

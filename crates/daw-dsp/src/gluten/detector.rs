@@ -1,5 +1,7 @@
 //! Level detection — RMS and peak detectors for sidechain analysis.
 
+use crate::primitives::flush_denormal;
+
 /// One-pole IIR RMS estimator.
 pub struct RmsDetector {
     rms_sq: f32,
@@ -23,7 +25,9 @@ impl RmsDetector {
     #[inline]
     pub fn process(&mut self, sample: f32) -> f32 {
         let x_sq = sample * sample;
-        self.rms_sq = self.coeff * self.rms_sq + (1.0 - self.coeff) * x_sq;
+        // DSP-2: the `1e-20` below is a log-domain guard on the *read*, not a
+        // flush — `rms_sq` itself keeps decaying into subnormals on silence.
+        self.rms_sq = flush_denormal(self.coeff * self.rms_sq + (1.0 - self.coeff) * x_sq);
         // 10 * log10(rms_sq) = 20 * log10(sqrt(rms_sq))
         if self.rms_sq > 1e-20 {
             10.0 * self.rms_sq.log10()

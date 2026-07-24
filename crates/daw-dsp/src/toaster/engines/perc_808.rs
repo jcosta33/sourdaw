@@ -5,6 +5,7 @@
 //! Rimshot:  Two bridged-T oscillators at 1667 Hz and 455 Hz, ~10ms decay, with HPF for snap.
 //! Maracas:  White noise through VCA with 25–35ms decay. Broadband, no resonant filter.
 
+use crate::primitives::flush_denormal_in_place;
 use crate::toaster::bridged_t::BridgedTFilter;
 use crate::toaster::dc_block::DcBlocker;
 use crate::toaster::poly_blep::PolyBlepSquare;
@@ -272,12 +273,8 @@ fn svf_bandpass_cowbell(
     *ic1 = 2.0 * v1 - *ic1;
     *ic2 = 2.0 * v2 - *ic2;
 
-    if ic1.abs() < 1e-20 {
-        *ic1 = 0.0;
-    }
-    if ic2.abs() < 1e-20 {
-        *ic2 = 0.0;
-    }
+    flush_denormal_in_place(ic1);
+    flush_denormal_in_place(ic2);
 
     v1
 }

@@ -1,5 +1,7 @@
 //! Attack/release smoothing filters for gain reduction envelope.
 
+use crate::primitives::flush_denormal;
+
 /// Branching smooth filter (Giannoulis et al.)
 /// Applies separate one-pole coefficients for attack vs release.
 pub struct BranchingSmoother {
@@ -36,7 +38,7 @@ impl BranchingSmoother {
             // Release: compression recovering
             self.release_coeff
         };
-        self.state = coeff * self.state + (1.0 - coeff) * gc;
+        self.state = flush_denormal(coeff * self.state + (1.0 - coeff) * gc);
         self.state
     }
 

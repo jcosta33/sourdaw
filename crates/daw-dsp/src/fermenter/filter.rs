@@ -2,6 +2,8 @@
 /// Implements LP, HP, BP, Notch with zero-delay feedback.
 /// Based on Vadim Zavalishin's "The Art of VA Filter Design."
 
+use crate::primitives::flush_denormal;
+
 #[derive(Clone, Copy, PartialEq)]
 pub enum FilterMode {
     Lowpass,
@@ -52,8 +54,9 @@ impl SvfFilter {
         let v1 = a1 * self.ic1eq + a2 * v3;
         let v2 = self.ic2eq + a2 * self.ic1eq + a3 * v3;
 
-        self.ic1eq = 2.0 * v1 - self.ic1eq;
-        self.ic2eq = 2.0 * v2 - self.ic2eq;
+        // DSP-2: zero-delay-feedback integrator state, unflushed until now.
+        self.ic1eq = flush_denormal(2.0 * v1 - self.ic1eq);
+        self.ic2eq = flush_denormal(2.0 * v2 - self.ic2eq);
 
         let output = match self.mode {
             FilterMode::Lowpass => v2,
@@ -120,7 +123,7 @@ impl MoogLadder {
         for i in 0..4 {
             let v = fast_tanh(x);
             let y = g * (v - self.s[i]) + self.s[i];
-            self.s[i] = 2.0 * y - self.s[i];
+            self.s[i] = flush_denormal(2.0 * y - self.s[i]);
             x = y;
         }
         x
@@ -170,7 +173,7 @@ impl DiodeLadder {
         for i in 0..4 {
             let v = Self::diode_clip(sig - self.s[i], vt);
             let y = f * v + self.s[i];
-            self.s[i] = f * v + y;
+            self.s[i] = flush_denormal(f * v + y);
             self.y[i] = y;
             sig = y;
         }
@@ -338,8 +341,8 @@ impl Ms20Filter {
             (driven - fb_hp - self.hp_s1 * (2.0 + k) - self.hp_s2) / (1.0 + (2.0 + k) * g + g * g);
         let v1_hp = hp * g;
         let v2_hp = (v1_hp + self.hp_s1 - self.hp_s2) * g;
-        self.hp_s1 += 2.0 * v1_hp;
-        self.hp_s2 += 2.0 * v2_hp;
+        self.hp_s1 = flush_denormal(self.hp_s1 + 2.0 * v1_hp);
+        self.hp_s2 = flush_denormal(self.hp_s2 + 2.0 * v2_hp);
 
         // Low-pass Sallen-Key on HP output
         let fb_lp = fast_tanh(self.lp_s2 * k);
@@ -347,8 +350,9 @@ impl Ms20Filter {
         let y1_lp = v1_lp + self.lp_s1;
         let v2_lp = (y1_lp - self.lp_s2) * g;
         let y2_lp = v2_lp + self.lp_s2;
-        self.lp_s1 += 2.0 * g * (hp - fb_lp - self.lp_s1) / (1.0 + 2.0 * g + g * g);
-        self.lp_s2 += 2.0 * g * (y1_lp - self.lp_s2);
+        self.lp_s1 =
+            flush_denormal(self.lp_s1 + 2.0 * g * (hp - fb_lp - self.lp_s1) / (1.0 + 2.0 * g + g * g));
+        self.lp_s2 = flush_denormal(self.lp_s2 + 2.0 * g * (y1_lp - self.lp_s2));
 
         y2_lp
     }
@@ -405,8 +409,8 @@ impl SemFilter {
         let v3 = x - self.ic2eq;
         let v1 = (self.ic1eq * k + v3) / (1.0 + k * g + g * g);
         let v2 = self.ic2eq + g * v1;
-        self.ic1eq = 2.0 * v1 - self.ic1eq;
-        self.ic2eq = 2.0 * v2 - self.ic2eq;
+        self.ic1eq = flush_denormal(2.0 * v1 - self.ic1eq);
+        self.ic2eq = flush_denormal(2.0 * v2 - self.ic2eq);
 
         // All four outputs
         let lp = v2;

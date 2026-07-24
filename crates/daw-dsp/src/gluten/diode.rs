@@ -6,6 +6,7 @@
 
 use super::gain_computer::{apply_range, db_to_linear, gain_computer, linear_to_db};
 use super::oversample::ConfigurableOversample;
+use crate::primitives::flush_denormal;
 
 pub struct DiodeCompressor {
     sample_rate: f32,
@@ -130,7 +131,7 @@ impl DiodeCompressor {
         } else {
             self.release_coeff
         };
-        self.gr_state = coeff * self.gr_state + (1.0 - coeff) * gc;
+        self.gr_state = flush_denormal(coeff * self.gr_state + (1.0 - coeff) * gc);
 
         // Limiter section (brickwall-ish, fast attack)
         let limiter_gc = gain_computer(input_db + self.gr_state, self.limiter_threshold, 20.0, 1.0);
@@ -141,7 +142,8 @@ impl DiodeCompressor {
         } else {
             limiter_coeff_r
         };
-        self.limiter_state = lim_coeff * self.limiter_state + (1.0 - lim_coeff) * limiter_gc;
+        self.limiter_state =
+            flush_denormal(lim_coeff * self.limiter_state + (1.0 - lim_coeff) * limiter_gc);
 
         let total_gr = self.gr_state + self.limiter_state;
         let gr_linear = db_to_linear(total_gr);

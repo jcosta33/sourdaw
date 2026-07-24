@@ -6,6 +6,8 @@
 //! E₁ = (Vpk/Kp) · ln[1 + exp(Kp · (1/μ + (Vgk + Vct)/√(Kvb + Vpk²)))]
 //! Ip = (E₁^Ex / Kg) · (1 + sgn(E₁))
 
+use crate::primitives::flush_denormal_f64;
+
 #[derive(Clone, Copy)]
 enum AmpModel {
     CleanTwin,
@@ -216,7 +218,9 @@ impl TriodeStage {
             .clamp(0.0, 10.0);
         let miller_freq = 20000.0 / (1.0 + self.miller_cap_factor * stage_gain * 2.0);
         let miller_coeff = (-2.0 * std::f64::consts::PI * miller_freq * dt).exp();
-        self.miller_lp_state = output + miller_coeff * (self.miller_lp_state - output);
+        // DSP-2: Miller low-pass state trails `output` to zero on silence.
+        self.miller_lp_state =
+            flush_denormal_f64(output + miller_coeff * (self.miller_lp_state - output));
 
         self.miller_lp_state
     }

@@ -22,6 +22,7 @@
 //! octaves at fortissimo, so the bank stays disabled above C5 (key ≥ 52).
 
 use super::parameters::{has_longitudinal_modes, inharmonicity_b, key_fundamental_hz};
+use crate::primitives::flush_denormal;
 
 /// Number of phantom-partial resonators per voice.
 ///
@@ -132,7 +133,7 @@ impl LongitudinalBank {
             self.x2[index] = self.x1[index];
             self.x1[index] = input;
             self.y2[index] = self.y1[index];
-            self.y1[index] = y;
+            self.y1[index] = flush_denormal(y);
             output += y;
         }
         output

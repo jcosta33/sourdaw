@@ -4,6 +4,7 @@
 //! THAT 2181 VCA distortion modeling (2nd harmonic).
 
 use super::gain_computer::{apply_range, db_to_linear, gain_computer, linear_to_db};
+use crate::primitives::flush_denormal;
 
 /// SSL-style auto-release with dual RC networks.
 struct AutoRelease {
@@ -33,16 +34,20 @@ impl AutoRelease {
         if rectified > self.env_fast {
             self.env_fast += (1.0 - coeff_attack) * (rectified - self.env_fast);
         } else {
-            self.env_fast = self.coeff_release_fast * self.env_fast
-                + (1.0 - self.coeff_release_fast) * rectified;
+            self.env_fast = flush_denormal(
+                self.coeff_release_fast * self.env_fast
+                    + (1.0 - self.coeff_release_fast) * rectified,
+            );
         }
 
         // Slow envelope
         if rectified > self.env_slow {
             self.env_slow += (1.0 - coeff_attack) * (rectified - self.env_slow);
         } else {
-            self.env_slow = self.coeff_release_slow * self.env_slow
-                + (1.0 - self.coeff_release_slow) * rectified;
+            self.env_slow = flush_denormal(
+                self.coeff_release_slow * self.env_slow
+                    + (1.0 - self.coeff_release_slow) * rectified,
+            );
         }
 
         self.env_fast.max(self.env_slow)
@@ -174,7 +179,7 @@ impl VcaCompressor {
             } else {
                 self.release_coeff
             };
-            self.gr_state = coeff * self.gr_state + (1.0 - coeff) * gc;
+            self.gr_state = flush_denormal(coeff * self.gr_state + (1.0 - coeff) * gc);
             self.gr_state
         };
 

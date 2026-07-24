@@ -38,9 +38,6 @@ pub const LOOP_CROSSFADE_MIN: u32 = 50;
 /// Maximum crossfade length (samples).
 pub const LOOP_CROSSFADE_MAX: u32 = 500;
 
-/// DC offset for denormal prevention in smoothers/filters.
-pub const DENORMAL_DC: f32 = 1e-18;
-
 /// Waveform mipmap base block size (samples per min/max pair at level 0).
 pub const MIPMAP_BASE_BLOCK: usize = 64;
 

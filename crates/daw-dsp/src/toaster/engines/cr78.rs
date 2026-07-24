@@ -8,6 +8,7 @@
 //! Hi-hat: Square waves mixed with white noise through a bridged-T bandpass filter.
 //! The CR-78 sounds more delicate and organic than the 808, owing to simpler VCA envelopes.
 
+use crate::primitives::flush_denormal;
 use crate::toaster::bridged_t::BridgedTFilter;
 use crate::toaster::dc_block::DcBlocker;
 use crate::toaster::poly_blep::PolyBlepSquare;
@@ -223,8 +224,8 @@ impl Cr78Engine {
                 self.rlc_s1 = self.rlc_b1 * mixed - self.rlc_a1 * out + self.rlc_s2;
                 self.rlc_s2 = self.rlc_b2 * mixed - self.rlc_a2 * out;
 
-                if self.rlc_s1.abs() < 1e-20 { self.rlc_s1 = 0.0; }
-                if self.rlc_s2.abs() < 1e-20 { self.rlc_s2 = 0.0; }
+                self.rlc_s1 = flush_denormal(self.rlc_s1);
+                self.rlc_s2 = flush_denormal(self.rlc_s2);
 
                 out
             }

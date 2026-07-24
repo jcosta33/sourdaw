@@ -2,6 +2,8 @@
 //!
 //! dV_B+/dt = (V_nominal - V_B+) / τ_sag - k·|x(t)|
 
+use crate::primitives::flush_denormal;
+
 /// Power tube family.
 #[derive(Clone, Copy, PartialEq)]
 pub enum PowerTubeType {
@@ -155,8 +157,10 @@ impl PowerAmp {
         // Presence/resonance shape the negative-feedback loop by reducing
         // feedback in the high and low bands respectively.
         let feedback_low_coeff = (2.0 * std::f32::consts::PI * 180.0 * dt).min(0.35);
-        self.feedback_low_state +=
-            feedback_low_coeff * (self.feedback_state - self.feedback_low_state);
+        self.feedback_low_state = flush_denormal(
+            self.feedback_low_state
+                + feedback_low_coeff * (self.feedback_state - self.feedback_low_state),
+        );
         let feedback_low = self.feedback_low_state;
         let feedback_high = self.feedback_state - feedback_low;
         let low_feedback = feedback_low * (1.0 - self.resonance * 0.75);
@@ -240,8 +244,8 @@ impl PowerAmp {
         let low_hold = 1.0 + damping_amount * (0.55 + self.resonance * 0.28);
         output = low * low_hold + edge * (1.0 - damping_amount);
 
-        // Update negative feedback state
-        self.feedback_state = output;
+        // Update negative feedback state (DSP-2: closes the NFB loop).
+        self.feedback_state = flush_denormal(output);
 
         // Update peak meter
         let peak = output.abs();

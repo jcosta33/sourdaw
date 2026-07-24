@@ -16,6 +16,8 @@
 //! α₀ = 1
 //! ```
 
+use crate::primitives::flush_denormal;
+
 /// Time-varying biquad bridged-T filter in Transposed Direct Form II.
 pub struct BridgedTFilter {
     /// TDF-II delay state 1
@@ -103,12 +105,8 @@ impl BridgedTFilter {
         self.s2 = self.b2 * input - self.a2 * output;
 
         // Denormal protection: flush states that have decayed near zero
-        if self.s1.abs() < 1e-20 {
-            self.s1 = 0.0;
-        }
-        if self.s2.abs() < 1e-20 {
-            self.s2 = 0.0;
-        }
+        self.s1 = flush_denormal(self.s1);
+        self.s2 = flush_denormal(self.s2);
 
         output
     }

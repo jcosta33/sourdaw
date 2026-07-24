@@ -7,6 +7,7 @@
 use std::f32::consts::TAU;
 
 use super::engines::{DrumEngineType, DrumSynthEngine};
+use crate::primitives::flush_denormal;
 
 /// Simple state-variable filter for per-voice filtering.
 pub struct SvfFilter {
@@ -49,8 +50,8 @@ impl SvfFilter {
         let v3 = input - self.ic2;
         let v1 = a1 * self.ic1 + a2 * v3;
         let v2 = self.ic2 + a2 * self.ic1 + a3 * v3;
-        self.ic1 = 2.0 * v1 - self.ic1;
-        self.ic2 = 2.0 * v2 - self.ic2;
+        self.ic1 = flush_denormal(2.0 * v1 - self.ic1);
+        self.ic2 = flush_denormal(2.0 * v2 - self.ic2);
 
         v2 // lowpass output
     }

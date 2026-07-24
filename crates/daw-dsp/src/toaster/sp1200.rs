@@ -16,6 +16,8 @@
 //! Reference: Yeh, Nolting, Smith (Stanford CCRMA 2007) — "Discretization of the
 //! '1973 Maestro Phase Shifter'"
 
+use crate::primitives::flush_denormal_in_place;
+
 const SP1200_RATE: f32 = 26_040.0;
 const SP1200_BUF_LEN: usize = 26_040; // ~1 second at 26.04 kHz
 
@@ -186,11 +188,11 @@ impl Sp1200Effect {
             self.cheby_pole_b0 * v2 + self.cheby_pole_a1 * self.cheby_pole_state;
 
         // Denormal protection
-        if self.cheby_biquad1_s1.abs() < 1e-20 { self.cheby_biquad1_s1 = 0.0; }
-        if self.cheby_biquad1_s2.abs() < 1e-20 { self.cheby_biquad1_s2 = 0.0; }
-        if self.cheby_biquad2_s1.abs() < 1e-20 { self.cheby_biquad2_s1 = 0.0; }
-        if self.cheby_biquad2_s2.abs() < 1e-20 { self.cheby_biquad2_s2 = 0.0; }
-        if self.cheby_pole_state.abs() < 1e-20 { self.cheby_pole_state = 0.0; }
+        flush_denormal_in_place(&mut self.cheby_biquad1_s1);
+        flush_denormal_in_place(&mut self.cheby_biquad1_s2);
+        flush_denormal_in_place(&mut self.cheby_biquad2_s1);
+        flush_denormal_in_place(&mut self.cheby_biquad2_s2);
+        flush_denormal_in_place(&mut self.cheby_pole_state);
 
         self.cheby_pole_state
     }
@@ -248,8 +250,8 @@ impl EllipticFilter {
             *s1 = b1 * x - a1 * y + *s2;
             *s2 = b2 * x - a2 * y;
 
-            if s1.abs() < 1e-20 { *s1 = 0.0; }
-            if s2.abs() < 1e-20 { *s2 = 0.0; }
+            flush_denormal_in_place(s1);
+            flush_denormal_in_place(s2);
 
             x = y;
         }
@@ -291,7 +293,7 @@ impl Ssm2044Filter {
         for s in self.states.iter_mut() {
             *s += g * (v - *s);
             v = *s;
-            if s.abs() < 1e-20 { *s = 0.0; }
+            flush_denormal_in_place(s);
         }
 
         self.states[3]
