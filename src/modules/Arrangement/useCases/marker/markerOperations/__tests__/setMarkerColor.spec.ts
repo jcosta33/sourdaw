@@ -2,10 +2,16 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { setMarkerColor } from '../setMarkerColor';
 
-const mocks = vi.hoisted(() => ({
-    markerStoreValue: { value: { markers: [] as { id: string; color: string }[] } },
-    markerStoreSet: vi.fn(),
-}));
+type MockMarker = { id: string; color: string };
+type MarkerHolder = { value: { markers: MockMarker[] } | null };
+
+const mocks = vi.hoisted(() => {
+    const holder: MarkerHolder = { value: { markers: [] } };
+    return {
+        markerStoreValue: holder,
+        markerStoreSet: vi.fn(),
+    };
+});
 
 vi.mock('../../../../stores/markerStore', () => ({
     markerStore: {
@@ -29,5 +35,13 @@ describe('setMarkerColor', () => {
         expect(mocks.markerStoreSet).toHaveBeenCalledWith({
             markers: [{ id: 'm1', color: '#fff' }],
         });
+    });
+
+    it('is a no-op when the marker store has not loaded', () => {
+        mocks.markerStoreValue.value = null;
+
+        setMarkerColor('m1', '#fff');
+
+        expect(mocks.markerStoreSet).not.toHaveBeenCalled();
     });
 });

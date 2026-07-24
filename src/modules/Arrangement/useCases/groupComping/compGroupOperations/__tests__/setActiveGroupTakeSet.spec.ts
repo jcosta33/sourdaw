@@ -2,10 +2,16 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { setActiveGroupTakeSet } from '../setActiveGroupTakeSet';
 
-const mocks = vi.hoisted(() => ({
-    groupCompingStoreValue: { value: { groups: [] } },
-    groupCompingStoreSet: vi.fn(),
-}));
+type MockGroup = { id: string; activeTakeSetId: string };
+type GroupHolder = { value: { groups: MockGroup[] } | null };
+
+const mocks = vi.hoisted(() => {
+    const holder: GroupHolder = { value: { groups: [] } };
+    return {
+        groupCompingStoreValue: holder,
+        groupCompingStoreSet: vi.fn(),
+    };
+});
 
 vi.mock('#/modules/Arrangement/stores/groupComping', () => ({
     groupCompingStore: {
@@ -19,15 +25,29 @@ vi.mock('#/modules/Arrangement/stores/groupComping', () => ({
 describe('setActiveGroupTakeSet', () => {
     beforeEach(() => vi.clearAllMocks());
 
-    it('updates activeTakeSetId for the group', () => {
+    it('updates activeTakeSetId for the group and leaves other groups untouched', () => {
         mocks.groupCompingStoreValue.value = {
-            groups: [{ id: 'g1', activeTakeSetId: 'old' }],
-        } as any;
+            groups: [
+                { id: 'other', activeTakeSetId: 'keep' },
+                { id: 'g1', activeTakeSetId: 'old' },
+            ],
+        };
 
         setActiveGroupTakeSet('g1', 'new');
 
         expect(mocks.groupCompingStoreSet).toHaveBeenCalledWith({
-            groups: [{ id: 'g1', activeTakeSetId: 'new' }],
+            groups: [
+                { id: 'other', activeTakeSetId: 'keep' },
+                { id: 'g1', activeTakeSetId: 'new' },
+            ],
         });
+    });
+
+    it('is a no-op when the group-comping store has not loaded', () => {
+        mocks.groupCompingStoreValue.value = null;
+
+        setActiveGroupTakeSet('g1', 'new');
+
+        expect(mocks.groupCompingStoreSet).not.toHaveBeenCalled();
     });
 });

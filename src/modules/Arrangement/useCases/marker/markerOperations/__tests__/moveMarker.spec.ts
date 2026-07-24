@@ -2,10 +2,13 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { moveMarker } from '../moveMarker';
 
+type MockMarker = { id: string; beat: number };
+type MarkerHolder = { value: { markers: MockMarker[] } | null };
+
 const mocks = vi.hoisted(() => {
-    type MockMarker = { id: string; beat: number };
+    const holder: MarkerHolder = { value: { markers: [] } };
     return {
-        markerStoreValue: { value: { markers: [] as MockMarker[] } },
+        markerStoreValue: holder,
         markerStoreSet: vi.fn(),
     };
 });
@@ -44,5 +47,13 @@ describe('moveMarker', () => {
         expect(mocks.markerStoreSet).toHaveBeenCalledWith({
             markers: [{ id: 'm1', beat: 0 }],
         });
+    });
+
+    it('is a no-op when the marker store has not loaded', () => {
+        mocks.markerStoreValue.value = null;
+
+        moveMarker('m1', 4);
+
+        expect(mocks.markerStoreSet).not.toHaveBeenCalled();
     });
 });

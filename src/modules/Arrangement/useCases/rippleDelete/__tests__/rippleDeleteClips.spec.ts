@@ -74,4 +74,53 @@ describe('rippleDeleteClips', () => {
         mocks.planRippleDelete.mockReturnValue(null);
         expect(rippleDeleteClips({ trackId: 't1', clipIds: [] })).toBeNull();
     });
+
+    it('returns null and writes nothing when the track store has not loaded', () => {
+        mocks.planRippleDelete.mockReturnValue({
+            removedClips: [{ id: 'c1' }],
+            shiftedClips: [],
+            nextClips: [{ id: 'c2' }],
+        });
+        mocks.getTrackStoreState.mockReturnValue(null);
+
+        const result = rippleDeleteClips({ trackId: 't1', clipIds: ['c1'] });
+
+        expect(result).toBeNull();
+        expect(mocks.setTrackState).not.toHaveBeenCalled();
+    });
+
+    it('skips a shifted clip whose id is missing from the next-clips set', () => {
+        const mockPlan = {
+            removedClips: [{ id: 'c1' }],
+            // shifted clip references c2, but nextClips only has c3 → no next
+            shiftedClips: [{ clipId: 'c2', origStartBeat: 8, origEndBeat: 10 }],
+            nextClips: [{ id: 'c3', startBeat: 0, endBeat: 4 }],
+        };
+        mocks.planRippleDelete.mockReturnValue(mockPlan);
+        mocks.getTrackStoreState.mockReturnValue({
+            tracks: [{ id: 't1', clips: [{ id: 'c1' }, { id: 'c3' }] }],
+        });
+
+        rippleDeleteClips({ trackId: 't1', clipIds: ['c1'] });
+
+        // c2 is not in nextClips → continue, no shift attempted
+        expect(mocks.shiftClipAutomation).not.toHaveBeenCalled();
+    });
+
+    it('does not shift automation when the ripple delta is zero', () => {
+        const mockPlan = {
+            removedClips: [{ id: 'c1' }],
+            // next clip starts at the same beat as before → delta 0
+            shiftedClips: [{ clipId: 'c2', origStartBeat: 4, origEndBeat: 8 }],
+            nextClips: [{ id: 'c2', startBeat: 4, endBeat: 8 }],
+        };
+        mocks.planRippleDelete.mockReturnValue(mockPlan);
+        mocks.getTrackStoreState.mockReturnValue({
+            tracks: [{ id: 't1', clips: [{ id: 'c1' }, { id: 'c2' }] }],
+        });
+
+        rippleDeleteClips({ trackId: 't1', clipIds: ['c1'] });
+
+        expect(mocks.shiftClipAutomation).not.toHaveBeenCalled();
+    });
 });
