@@ -1,59 +1,9 @@
 /**
  * Transformer: pure automation point algorithms.
- * No I/O — mathematical functions for simplifying and interpolating automation curves.
+ * No I/O — mathematical functions for interpolating and shaping automation curves.
  */
 
 import { type AutomationPoint } from '../models/AutomationViewTypes';
-
-function perpendicularDistance(
-    point: { beat: number; value: number },
-    lineStart: { beat: number; value: number },
-    lineEnd: { beat: number; value: number }
-): number {
-    const dx = lineEnd.beat - lineStart.beat;
-    const dy = lineEnd.value - lineStart.value;
-    const lengthSq = dx * dx + dy * dy;
-    if (lengthSq === 0) {
-        const dbx = point.beat - lineStart.beat;
-        const dby = point.value - lineStart.value;
-        return Math.sqrt(dbx * dbx + dby * dby);
-    }
-    const num = Math.abs(
-        dy * point.beat - dx * point.value + lineEnd.beat * lineStart.value - lineEnd.value * lineStart.beat
-    );
-    return num / Math.sqrt(lengthSq);
-}
-
-/**
- * Ramer-Douglas-Peucker algorithm for simplifying automation point curves
- * while preserving shape within a given tolerance.
- */
-export function rdpSimplify(points: AutomationPoint[], tolerance: number): AutomationPoint[] {
-    if (points.length <= 2) {
-        return points;
-    }
-
-    let maxDist = 0;
-    let maxIdx = 0;
-    const first = points[0]!;
-    const last = points[points.length - 1]!;
-
-    for (let index = 1; index < points.length - 1; index++) {
-        const dist = perpendicularDistance(points[index]!, first, last);
-        if (dist > maxDist) {
-            maxDist = dist;
-            maxIdx = index;
-        }
-    }
-
-    if (maxDist > tolerance) {
-        const left = rdpSimplify(points.slice(0, maxIdx + 1), tolerance);
-        const right = rdpSimplify(points.slice(maxIdx), tolerance);
-        return [...left.slice(0, -1), ...right];
-    }
-
-    return [first, last];
-}
 
 /**
  * Apply tension to a normalized t value (0–1).

@@ -21,12 +21,15 @@ function perpendicularDistance({ point, lineStart, lineEnd }: PerpendicularDista
     return num / Math.sqrt(lengthSq);
 }
 
-type SimplifyAutomationPointsInput = {
-    points: AutomationPoint[];
+type SimplifyAutomationPointsInput<Point> = {
+    points: Point[];
     tolerance: number;
 };
 
-export function simplifyAutomationPoints({ points, tolerance }: SimplifyAutomationPointsInput): AutomationPoint[] {
+export function simplifyAutomationPoints<Point extends Pick<AutomationPoint, 'beat' | 'value'>>({
+    points,
+    tolerance,
+}: SimplifyAutomationPointsInput<Point>): Point[] {
     if (points.length <= 2) {
         return points;
     }

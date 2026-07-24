@@ -282,7 +282,7 @@ Subject: `src/modules/Arrangement/transformers/automationTransformers.ts` — pu
 ```typescript
 // src/modules/Arrangement/transformers/__tests__/automationTransformers.spec.ts
 import { describe, it, expect } from 'vitest';
-import { interpolateAutomationValue, rdpSimplify } from '../automationTransformers';
+import { interpolateAutomationValue, generateShapePoints } from '../automationTransformers';
 
 describe('interpolateAutomationValue', () => {
     it('should return the endpoint value when the requested beat equals p2.beat', () => {
@@ -298,13 +298,12 @@ describe('interpolateAutomationValue', () => {
     });
 });
 
-describe('rdpSimplify', () => {
-    it('should return the input unchanged when it has two or fewer points', () => {
-        const points = [
-            { beat: 0, value: 0 },
-            { beat: 1, value: 1 },
-        ];
-        expect(rdpSimplify(points, 0.1)).toEqual(points);
+describe('generateShapePoints', () => {
+    it('should build a two-point ramp for sawtooth-up between min and max', () => {
+        expect(generateShapePoints('sawtooth-up', 0, 4, 0, 1)).toEqual([
+            { beat: 0, value: 0, curve: 'linear', tension: 0 },
+            { beat: 4, value: 1, curve: 'linear', tension: 0 },
+        ]);
     });
 });
 ```

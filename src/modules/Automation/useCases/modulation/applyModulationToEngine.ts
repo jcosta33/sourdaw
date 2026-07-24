@@ -9,7 +9,7 @@ import { makeKey } from '../automationRecording/makeKey';
 
 import { computeModulatorValue } from './computeModulatorValue';
 import { getModulationDependencies } from './getModulationDependencies';
-import { modulationParamSlew } from './modulationSlewState';
+import { modulationParamSlew, modulationSlewEpoch } from './modulationSlewState';
 import { resolveModulationBinding } from './resolveModulationBinding';
 
 const SLEW_ALPHA = 0.4;
@@ -166,8 +166,12 @@ function indexAutomatedBases(currentBeat: number): void {
  * the automated value (not the persisted base), so the two combine. Each write
  * is exponentially slewed per param to avoid zipper noise, matching
  * `applyAutomation`'s slew.
+ *
+ * On a transport discontinuity (a change in the scheduler discontinuity epoch
+ * passed in) the slew is snapped straight to the combined target on the first
+ * tick — the modulation analog of `applyAutomation`'s slew reset.
  */
-export function applyModulationToEngine(currentBeat: number): void {
+export function applyModulationToEngine(currentBeat: number, discontinuityEpoch?: number): void {
     const state = modulationStore.value;
     if (!state || state.modulators.length === 0) {
         return;
@@ -181,6 +185,18 @@ export function applyModulationToEngine(currentBeat: number): void {
     }
     if (!hasEnabledMapping) {
         return;
+    }
+
+    // Snap every modulated target on the first tick after a transport
+    // discontinuity (seek, loop-wrap, follow-action jump) instead of gliding
+    // ~90ms from the pre-jump smoothed value. The scheduler passes its
+    // discontinuity epoch; a change means a jump.
+    const isDiscontinuity =
+        discontinuityEpoch !== undefined &&
+        modulationSlewEpoch.last !== undefined &&
+        discontinuityEpoch !== modulationSlewEpoch.last;
+    if (discontinuityEpoch !== undefined) {
+        modulationSlewEpoch.last = discontinuityEpoch;
     }
     indexAutomatedBases(currentBeat);
 
@@ -219,10 +235,15 @@ export function applyModulationToEngine(currentBeat: number): void {
             // jitter and zipper noise.
             const hadPrev = modulationParamSlew.has(key);
             const prev = modulationParamSlew.get(key) ?? target;
-            const smoothed = hadPrev ? prev + (target - prev) * SLEW_ALPHA : target;
+            const smoothed = hadPrev && !isDiscontinuity ? prev + (target - prev) * SLEW_ALPHA : target;
             modulationParamSlew.set(key, smoothed);
 
-            if (!hadPrev || Math.abs(smoothed - prev) > SLEW_EPSILON || hasCompetingAutomationWrites) {
+            if (
+                !hadPrev ||
+                isDiscontinuity ||
+                Math.abs(smoothed - prev) > SLEW_EPSILON ||
+                hasCompetingAutomationWrites
+            ) {
                 getModulationDependencies().updateDeviceParam(
                     targetOwner.trackId,
                     targetOwner.deviceId,

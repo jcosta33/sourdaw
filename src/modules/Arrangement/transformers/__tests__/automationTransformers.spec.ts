@@ -1,12 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { type AutomationPoint } from '../../models/AutomationViewTypes';
-import {
-    generateShapePoints,
-    getAutomationRegions,
-    interpolateAutomationValue,
-    rdpSimplify,
-} from '../automationTransformers';
+import { generateShapePoints, getAutomationRegions, interpolateAutomationValue } from '../automationTransformers';
 
 function pt(
     beat: number,
@@ -17,18 +12,6 @@ function pt(
 ): AutomationPoint {
     return stairSteps !== undefined ? { beat, value, curve, tension, stairSteps } : { beat, value, curve, tension };
 }
-
-describe('rdpSimplify', () => {
-    it('should return two or fewer points unchanged', () => {
-        const alpha = [pt(0, 0), pt(1, 1)];
-        expect(rdpSimplify(alpha, 0.01)).toEqual(alpha);
-    });
-
-    it('should collapse near-colinear middle points within tolerance', () => {
-        const pts = [pt(0, 0), pt(0.5, 0.5), pt(1, 1)];
-        expect(rdpSimplify(pts, 0.05)).toEqual([pt(0, 0), pt(1, 1)]);
-    });
-});
 
 describe('interpolateAutomationValue', () => {
     it('should return the first value when both points share the same beat', () => {

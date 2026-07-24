@@ -11,6 +11,11 @@ const mocks = vi.hoisted(() => ({
     removeAutomationLane: vi.fn(),
     removeAutomationPoint: vi.fn(),
     replaceAutomationLanePoints: vi.fn(),
+    // Identity passthrough: this spec proves the inline-paint commit ROUTES the
+    // drawn stroke through the shared gesture-thinning use case; the real
+    // decimation behaviour is proven directly in simplifyGesturePoints.spec.ts.
+    // Keeping it a barrel-level mock avoids a cross-module deep import.
+    simplifyGesturePoints: vi.fn((points: unknown) => points),
 }));
 
 vi.mock('#/modules/Automation/useCases', () => ({
@@ -20,6 +25,7 @@ vi.mock('#/modules/Automation/useCases', () => ({
     removeAutomationLane: mocks.removeAutomationLane,
     removeAutomationPoint: mocks.removeAutomationPoint,
     replaceAutomationLanePoints: mocks.replaceAutomationLanePoints,
+    simplifyGesturePoints: mocks.simplifyGesturePoints,
 }));
 
 vi.mock('#/modules/Command/useCases', () => ({
@@ -190,5 +196,28 @@ describe('commitInlineAutomationPaint', () => {
         undo();
 
         expect(mocks.removeAutomationLane).toHaveBeenCalledWith('lane-created');
+    });
+
+    it('routes the drawn stroke through the shared gesture-thinning use case, persisting its result', () => {
+        const dense: AutomationPoint[] = [];
+        for (let index = 0; index <= 10; index += 1) {
+            dense.push({ beat: index * 0.1, value: index * 0.05, curve: 'linear', tension: 0 });
+        }
+
+        commitInlineAutomationPaint({
+            laneId: 'lane-1',
+            trackId: 'track-1',
+            parameterId: 'gain',
+            parameterName: 'Gain',
+            points: dense,
+        });
+
+        // The commit thins the cloned stroke through the shared RDP use case, then
+        // persists exactly what that use case returned (its real decimation is
+        // proven in simplifyGesturePoints.spec.ts).
+        expect(mocks.simplifyGesturePoints).toHaveBeenCalledTimes(1);
+        expect(mocks.simplifyGesturePoints.mock.calls[0]![0]).toEqual(dense);
+        const thinned = mocks.simplifyGesturePoints.mock.results[0]!.value;
+        expect(mocks.batchAddAutomationPoints).toHaveBeenCalledWith('lane-1', thinned);
     });
 });

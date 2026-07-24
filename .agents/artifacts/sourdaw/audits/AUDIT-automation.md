@@ -143,6 +143,7 @@ guard (`:50`) and renders **silent** in the bounce while playing correctly live.
 project using F3.3 linked/inverted automation.
 
 ### AU-4 — `pluginParamSlew` is never reset on transport discontinuity — **major**, S
+**Status: FIXED in #746.**
 The device-param slew map (`applyAutomation.ts:33,87,107,139`) has no reset path — grep finds no clear
 on seek, loop-wrap, or follow-action jump, and no `resetAutomationSlew` exists. On a loop wrap or seek
 the next `applyAutomation` seeds `prev` from the stale smoothed value and glides toward the new target
@@ -153,6 +154,7 @@ boundary and after every locate. (The scheduler does advance a discontinuity epo
 the same latent glide.
 
 ### AU-5 — Recorded gestures are never thinned; two RDP implementations — **major**, M
+**Status: FIXED in #746.**
 `recordAutomationValue` pushes one raw `AutomationPoint` per incoming UI/MIDI event
 (`recordAutomationValue.ts:66-74`); `flushPendingPoints` → `batchAddAutomationPoints` with **no**
 decimation (`flushPendingPoints.ts:6-19`). `thinAutomationPoints` / `simplifyAutomationPoints` run only

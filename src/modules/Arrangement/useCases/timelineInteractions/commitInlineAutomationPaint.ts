@@ -4,6 +4,7 @@ import {
     getAutomationLanes,
     removeAutomationLane,
     replaceAutomationLanePoints,
+    simplifyGesturePoints,
 } from '#/modules/Automation/useCases';
 import { pushUndoEntry } from '#/modules/Command/useCases';
 
@@ -70,7 +71,10 @@ export function commitInlineAutomationPaint(input: CommitInlineAutomationPaintIn
         return false;
     }
 
-    const points = input.points.map((point) => ({ ...point }));
+    // Thin the drawn stroke before it persists (and before the undo snapshot),
+    // through the same shared RDP as record-flush — a per-mousemove inline drag
+    // otherwise dumps raw points into project truth. Endpoints preserved exactly.
+    const points = simplifyGesturePoints(input.points.map((point) => ({ ...point })));
     const previousSnapshot = previousLane ? cloneLane(previousLane) : null;
     let activeLaneId = targetLane.id;
 
