@@ -10,6 +10,7 @@ import {
 } from '#/modules/CrdtDocument/useCases';
 import { ensureTrackStrips, stopPlayback } from '#/modules/Transport/useCases';
 
+import { projectStore } from '../../../stores/projectStore';
 import { setAutoSaveHandle } from '../../projectPersistence/helpers/autoSaveHandle';
 import { resetModuleStoresToDefault } from '../../projectPersistence/helpers/resetModuleStoresToDefault';
 import { runProjectLoadTransaction } from '../../projectPersistence/helpers/runProjectLoadTransaction';
@@ -102,6 +103,16 @@ export async function createFromTemplate(templateId: string): Promise<boolean> {
             // Superseded while the template action ran: the successor owns
             // persistence — do not restart autosave or compact here.
             return false;
+        }
+        // The template's project writes — tracks, selection, metadata — are now
+        // committed by the action above. Publish workspace-ready ONLY now, never
+        // during the async build (initProject deliberately leaves `initialized`
+        // false), so a track the user clicks the instant the workspace paints is
+        // not clobbered by a late template write (CC-10). Monotonic per #687: this
+        // is the single ready latch on the template path and is never un-set.
+        const readyProject = projectStore.value;
+        if (readyProject) {
+            projectStore.set({ ...readyProject, loading: false, initialized: true });
         }
         restorePersistence();
         await compactProject();
