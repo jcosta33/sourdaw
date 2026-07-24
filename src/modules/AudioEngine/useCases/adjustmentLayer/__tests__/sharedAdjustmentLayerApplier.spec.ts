@@ -289,4 +289,124 @@ describe('getSharedAdjustmentLayerApplier', () => {
         // Default base gain 1 * GAIN_6DB.
         expect(gainCall![1]).toBeCloseTo(GAIN_6DB, 6);
     });
+
+    // ── subscriber recompose paths: fader/pan move while an override is active ──
+
+    it('recomposes the engine gain when the user moves the fader while a volume override is active', () => {
+        setTracks([{ id: 't1', gain: 0.8, pan: 0 }]);
+        const applier = getSharedAdjustmentLayerApplier();
+        applier.applyLayers({ activeLayers: [makeLayer()], beat: 0 });
+        mocks.engine.setTrackGain.mockClear();
+
+        // User drags fader 0.8 → 0.4 while the override is active.
+        setTracks([{ id: 't1', gain: 0.4, pan: 0 }]);
+        fireTrackStoreSubscribers();
+
+        // composedGain recomposes from the new base: 0.4 * GAIN_6DB.
+        const [, gain] = mocks.engine.setTrackGain.mock.calls[0]!;
+        expect(gain).toBeCloseTo(0.4 * GAIN_6DB, 6);
+    });
+
+    it('does not re-apply gain when the fader moves but no override is active for that track', () => {
+        setTracks([
+            { id: 't1', gain: 0.8, pan: 0 },
+            { id: 't2', gain: 1, pan: 0 },
+        ]);
+        const applier = getSharedAdjustmentLayerApplier();
+        // Active override only on t1.
+        applier.applyLayers({ activeLayers: [makeLayer({ affectedTrackIds: ['t1'] })], beat: 0 });
+        mocks.engine.setTrackGain.mockClear();
+
+        // Move t2's fader (no override) — the subscriber evicts the t2 cache but
+        // gainOverridesByTrack.has('t2') is false, so setTrackGain is NOT called.
+        setTracks([
+            { id: 't1', gain: 0.8, pan: 0 },
+            { id: 't2', gain: 0.5, pan: 0 },
+        ]);
+        fireTrackStoreSubscribers();
+
+        expect(mocks.engine.setTrackGain).not.toHaveBeenCalled();
+    });
+
+    it('recomposes the engine pan when the user moves the pan knob while a pan override is active', () => {
+        setTracks([{ id: 't1', gain: 1, pan: 20 }]);
+        const applier = getSharedAdjustmentLayerApplier();
+        const panLayer = makeLayer({
+            id: 'layer-pan',
+            effectType: 'pan',
+            parameters: [{ name: 'Pan', value: 100, min: -100, max: 100, unit: '%' }],
+        });
+        applier.applyLayers({ activeLayers: [panLayer], beat: 0 });
+        mocks.engine.setTrackPan.mockClear();
+
+        // User pans 20 → 0 while the override is active.
+        setTracks([{ id: 't1', gain: 1, pan: 0 }]);
+        fireTrackStoreSubscribers();
+
+        // base 0 + 50 = 50.
+        const panCalls = mocks.engine.setTrackPan.mock.calls.filter((c) => c[0] === 't1');
+        expect(panCalls.at(-1)![1]).toBeCloseTo(50, 6);
+    });
+
+    it('defaults the base pan to 0 for a pan layer on an unknown track', () => {
+        setTracks([]); // no tracks
+        const applier = getSharedAdjustmentLayerApplier();
+        const panLayer = makeLayer({
+            id: 'layer-pan',
+            effectType: 'pan',
+            affectedTrackIds: ['ghost'],
+            parameters: [{ name: 'Pan', value: 100, min: -100, max: 100, unit: '%' }],
+        });
+        applier.applyLayers({ activeLayers: [panLayer], beat: 0 });
+        const panCall = mocks.engine.setTrackPan.mock.calls.find((c) => c[0] === 'ghost');
+        // base 0 + 50 = 50.
+        expect(panCall![1]).toBeCloseTo(50, 6);
+    });
+
+    // ── clear paths: removing the last override restores the base and evicts cache ──
+
+    it('clears the gain-override map entry when the last gain override is removed', () => {
+        setTracks([{ id: 't1', gain: 0.8, pan: 0 }]);
+        const applier = getSharedAdjustmentLayerApplier();
+        applier.applyLayers({ activeLayers: [makeLayer({ id: 'only' })], beat: 0 });
+        mocks.engine.setTrackGain.mockClear();
+
+        // Deactivate the only layer ⇒ clearGainOverride removes the map entry,
+        // size===0 ⇒ delete from gainOverridesByTrack, restore base 0.8.
+        applier.applyLayers({ activeLayers: [], beat: 1 });
+
+        const restore = mocks.engine.setTrackGain.mock.calls.findLast((c) => c[0] === 't1')!;
+        expect(restore[1]).toBeCloseTo(0.8, 6);
+    });
+
+    it('clears the pan-override map entry when the last pan override is removed', () => {
+        setTracks([{ id: 't1', gain: 1, pan: 25 }]);
+        const applier = getSharedAdjustmentLayerApplier();
+        const panLayer = makeLayer({
+            id: 'only-pan',
+            effectType: 'pan',
+            parameters: [{ name: 'Pan', value: 50, min: -100, max: 100, unit: '%' }],
+        });
+        applier.applyLayers({ activeLayers: [panLayer], beat: 0 });
+        mocks.engine.setTrackPan.mockClear();
+
+        applier.applyLayers({ activeLayers: [], beat: 1 });
+
+        const restore = mocks.engine.setTrackPan.mock.calls.findLast((c) => c[0] === 't1')!;
+        // Remembered base pan restored.
+        expect(restore[1]).toBeCloseTo(25, 6);
+    });
+
+    it('getAllTrackIds falls back to an empty array when trackStore.value is null', () => {
+        mocks.trackState = null;
+        const applier = getSharedAdjustmentLayerApplier();
+        // A layer with no explicit tracks and insertionIndex 0 ⇒ targets every
+        // track id, but there are none ⇒ no records produced, no engine calls.
+        const records = applier.applyLayers({
+            activeLayers: [makeLayer({ affectedTrackIds: [], insertionIndex: 0 })],
+            beat: 0,
+        });
+        expect(records).toEqual([]);
+        expect(mocks.engine.setTrackGain).not.toHaveBeenCalled();
+    });
 });

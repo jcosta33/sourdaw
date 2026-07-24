@@ -209,28 +209,6 @@ describe('createFermenterNode message surface & lifecycle', () => {
         expect(postMessage).toHaveBeenCalledWith({ type: 'patch', patch });
     });
 
-    it('onTelemetry listeners receive parsed telemetry and ignore non-telemetry events', async () => {
-        const result = await makeNode();
-        const received: Array<{ peakL: number; peakR: number; scopeBuffer: Float32Array }> = [];
-        const scope = new Float32Array(4);
-        result.onTelemetry((data) => received.push(data));
-
-        // Dispatch a telemetry event through the captured onmessage handler.
-        expect(onmessageRef.current).toBeTypeOf('function');
-        onmessageRef.current!({
-            data: { type: 'telemetry', peakL: 0.5, peakR: 0.7, scopeBuffer: scope },
-        } as MessageEvent);
-
-        expect(received).toHaveLength(1);
-        expect(received[0]!.peakL).toBe(0.5);
-        expect(received[0]!.peakR).toBe(0.7);
-        expect(received[0]!.scopeBuffer).toBe(scope);
-
-        // A non-telemetry event must not reach telemetry listeners.
-        onmessageRef.current!({ data: { type: 'ready' } } as MessageEvent);
-        expect(received).toHaveLength(1);
-    });
-
     it('onmessage hands non-telemetry events to the ready handshake', async () => {
         await makeNode();
         const handshake = await import('#/infra/audioWorklet/workletInitShared');

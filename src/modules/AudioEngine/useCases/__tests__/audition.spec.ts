@@ -419,4 +419,82 @@ describe('playAuditionNote device dispatch', () => {
         playAuditionNote('tk', 43, 100);
         expect(mocks.scheduleNote).not.toHaveBeenCalled();
     });
+
+    // ── kit default and device-node-by-type fallbacks (wiring assertions) ──────
+
+    it('drum-kit defaults to kit index 0 when neither kit nor kitId is set', () => {
+        const kitDef = { name: 'default-kit' };
+        getDrumKitDefByIndex.mockReturnValueOnce(kitDef as never);
+        setTrack({
+            tracks: [{ id: 'tk', devices: [{ id: 'd', type: 'drum-kit', parameterValues: {} }], parentId: null }],
+        });
+        playAuditionNote('tk', 38, 90);
+        // Both kit and kitId absent ⇒ `?? 0` default.
+        expect(getDrumKitDefByIndex).toHaveBeenCalledWith(0);
+    });
+
+    it('fermenter device node is resolved by type when no node matches the device id', () => {
+        const noteOn = vi.fn();
+        const noteOff = vi.fn();
+        // The device-node entry has a different id but type 'fermenter' ⇒ the
+        // `|| data.type === 'fermenter'` arm resolves it.
+        setStrip('tk', [
+            { deviceId: 'mismatch', type: 'fermenter', fermenterControls: { ready: true, noteOn, noteOff } },
+        ]);
+        setTrack({
+            tracks: [
+                { id: 'tk', devices: [{ id: 'fermenter-d', type: 'fermenter', parameterValues: {} }], parentId: null },
+            ],
+        });
+        const stop = playAuditionNote('tk', 64, 110);
+        expect(noteOn).toHaveBeenCalledWith(64, 110);
+        stop();
+        expect(noteOff).toHaveBeenCalledWith(64);
+    });
+
+    it('toaster device node falls back to a type match when the exact device id is absent', () => {
+        const noteOn = vi.fn();
+        const noteOff = vi.fn();
+        // exactDeviceNode (by id) is undefined; the `?? parentStrip...find(type)` arm
+        // resolves the node carrying toasterControls.
+        setStrip('tk', [{ deviceId: 'unrelated', type: 'toaster', toasterControls: { ready: true, noteOn, noteOff } }]);
+        setTrack({
+            tracks: [
+                { id: 'tk', devices: [{ id: 'toaster-d', type: 'toaster', parameterValues: {} }], parentId: null },
+            ],
+        });
+        const stop = playAuditionNote('tk', 40, 88);
+        // pitch 40 - 36 = pad 4.
+        expect(noteOn).toHaveBeenCalledWith(4, 88, 40);
+        stop();
+        expect(noteOff).toHaveBeenCalledWith(4);
+    });
+
+    it('grand-boule device node is resolved by type when no node matches the device id', () => {
+        const noteOn = vi.fn();
+        const noteOff = vi.fn();
+        setStrip('tk', [
+            { deviceId: 'mismatch', type: 'grand-boule', grandBouleControls: { ready: true, noteOn, noteOff } },
+        ]);
+        setTrack({
+            tracks: [{ id: 'tk', devices: [{ id: 'gb-d', type: 'grand-boule', parameterValues: {} }], parentId: null }],
+        });
+        const stop = playAuditionNote('tk', 60, 127);
+        expect(noteOn).toHaveBeenCalledWith(60, 1);
+        stop();
+        expect(noteOff).toHaveBeenCalledWith(60);
+    });
+
+    it('levain device node is resolved by type and triggers noteOn when no node matches the device id', () => {
+        const noteOn = vi.fn();
+        const noteOff = vi.fn();
+        setStrip('tk', [{ deviceId: 'mismatch', type: 'levain', levainControls: { ready: true, noteOn, noteOff } }]);
+        setTrack({
+            tracks: [{ id: 'tk', devices: [{ id: 'lev-d', type: 'levain', parameterValues: {} }], parentId: null }],
+        });
+        const stop = playAuditionNote('tk', 55, 80);
+        expect(noteOn).toHaveBeenCalledWith(55, 80);
+        stop();
+        expect(noteOff).toHaveBeenCalledWith(55);
+    });
 });
