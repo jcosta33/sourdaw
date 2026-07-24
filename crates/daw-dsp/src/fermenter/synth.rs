@@ -544,6 +544,12 @@ impl MasterSynth {
     }
 
     pub fn note_on(&mut self, note: u8, velocity: u8) {
+        self.note_on_with_channel(note, velocity, 0);
+    }
+
+    /// Note-on carrying the MPE member channel that owns the note. Channel 0 is
+    /// the non-MPE default and what `note_on` uses.
+    pub fn note_on_with_channel(&mut self, note: u8, velocity: u8, channel: u8) {
         let any_solo = self.layers[..self.num_active_layers].iter().any(|l| l.solo);
         for layer in &mut self.layers[..self.num_active_layers] {
             if layer.muted {
@@ -552,13 +558,35 @@ impl MasterSynth {
             if any_solo && !layer.solo {
                 continue;
             }
-            layer.note_on(note, velocity);
+            layer.note_on_with_channel(note, velocity, channel);
         }
     }
 
     pub fn note_off(&mut self, note: u8) {
+        self.note_off_matching(note, None);
+    }
+
+    /// Note-off narrowed to one MPE member channel. `None` releases every voice
+    /// at that pitch — see `Layer::note_off_matching`.
+    pub fn note_off_matching(&mut self, note: u8, channel: Option<u8>) {
         for layer in &mut self.layers[..self.num_active_layers] {
-            layer.note_off(note);
+            layer.note_off_matching(note, channel);
+        }
+    }
+
+    /// Apply MPE per-note expression to every playable layer holding `note` on
+    /// `channel` (audit MD-2). Mirrors `note_on`'s layer fan-out so a stacked
+    /// patch bends as one instrument.
+    pub fn note_expression(
+        &mut self,
+        note: u8,
+        channel: u8,
+        bend_semitones: f32,
+        pressure: f32,
+        slide: f32,
+    ) {
+        for layer in &mut self.layers[..self.num_active_layers] {
+            layer.note_expression(note, channel, bend_semitones, pressure, slide);
         }
     }
 
@@ -875,5 +903,244 @@ mod tests {
         assert_eq!(synth.comp_ratio, 8.0);
         assert_eq!(synth.master_gain.target(), 1.5);
         assert_eq!(synth.stereo_width.target(), 1.7);
+    }
+
+    // ── MPE per-note expression (audit MD-2) ───────────────────────────────
+    //
+    // Every assertion below is a measurement of rendered samples, not a
+    // presence check: zero-crossing rate for pitch, RMS for level, and
+    // high-band energy for timbre. Removing the expression wiring in
+    // `Voice::render` makes each of them fail.
+
+    /// Render `blocks` × 128 frames of one sustained note, optionally applying
+    /// per-note expression right after the note-on.
+    fn render_expressive_note(
+        cutoff_hz: f32,
+        expression: Option<(f32, f32, f32)>,
+        blocks: usize,
+    ) -> Vec<f32> {
+        let mut synth = MasterSynth::new(48_000.0, 8);
+        synth.set_param("cutoff", cutoff_hz);
+        synth.set_param("attack", 0.001);
+        synth.set_param("decay", 0.001);
+        synth.set_param("sustain", 1.0);
+        synth.note_on(69, 100);
+        if let Some((bend, pressure, slide)) = expression {
+            synth.note_expression(69, 0, bend, pressure, slide);
+        }
+
+        let mut collected = Vec::with_capacity(blocks * 128);
+        let mut left = [0.0f32; 128];
+        let mut right = [0.0f32; 128];
+        for _ in 0..blocks {
+            left.fill(0.0);
+            right.fill(0.0);
+            synth.process_block(&mut left, &mut right, &[]);
+            collected.extend_from_slice(&left);
+        }
+        collected
+    }
+
+    fn zero_crossings(samples: &[f32]) -> usize {
+        samples
+            .windows(2)
+            .filter(|pair| (pair[0] < 0.0) != (pair[1] < 0.0))
+            .count()
+    }
+
+    fn rms(samples: &[f32]) -> f32 {
+        let sum: f32 = samples.iter().map(|value| value * value).sum();
+        (sum / samples.len() as f32).sqrt()
+    }
+
+    /// Energy above roughly 4 kHz, measured as the RMS of the first difference
+    /// (a one-zero high-pass). Rises when the voice is opened up, falls when
+    /// it is darkened.
+    fn high_band_rms(samples: &[f32]) -> f32 {
+        let differences: Vec<f32> = samples.windows(2).map(|pair| pair[1] - pair[0]).collect();
+        rms(&differences)
+    }
+
+    #[test]
+    fn per_note_pitch_bend_raises_the_rendered_frequency() {
+        let plain = render_expressive_note(20_000.0, None, 24);
+        let bent = render_expressive_note(20_000.0, Some((12.0, 0.0, 0.0)), 24);
+
+        let plain_crossings = zero_crossings(&plain[1024..]);
+        let bent_crossings = zero_crossings(&bent[1024..]);
+
+        // +12 semitones is exactly one octave, so the waveform must cross zero
+        // about twice as often. Allow 10% for envelope/drift skew.
+        let ratio = bent_crossings as f32 / plain_crossings as f32;
+        assert!(
+            (1.8..=2.2).contains(&ratio),
+            "expected ~2x zero crossings for a +12 st bend, got {ratio} \
+             ({plain_crossings} -> {bent_crossings})"
+        );
+    }
+
+    #[test]
+    fn per_note_pitch_bend_lowers_the_rendered_frequency_when_negative() {
+        let plain = render_expressive_note(20_000.0, None, 24);
+        let bent = render_expressive_note(20_000.0, Some((-12.0, 0.0, 0.0)), 24);
+
+        let ratio = zero_crossings(&bent[1024..]) as f32 / zero_crossings(&plain[1024..]) as f32;
+        assert!(
+            (0.4..=0.6).contains(&ratio),
+            "expected ~0.5x zero crossings for a -12 st bend, got {ratio}"
+        );
+    }
+
+    #[test]
+    fn per_note_pressure_raises_the_rendered_level() {
+        let plain = render_expressive_note(20_000.0, None, 24);
+        let pressed = render_expressive_note(20_000.0, Some((0.0, 1.0, 0.0)), 24);
+
+        let ratio = rms(&pressed[1024..]) / rms(&plain[1024..]);
+        assert!(
+            (1.9..=2.1).contains(&ratio),
+            "full pressure must double voice gain (+6 dB), got {ratio}x"
+        );
+    }
+
+    #[test]
+    fn per_note_slide_opens_and_closes_the_voice_filter() {
+        // A 500 Hz cutoff sits just above the 440 Hz fundamental, so ±2
+        // octaves of slide has head-room in both directions.
+        let neutral = render_expressive_note(500.0, None, 24);
+        let bright = render_expressive_note(500.0, Some((0.0, 0.0, 1.0)), 24);
+        let dark = render_expressive_note(500.0, Some((0.0, 0.0, -1.0)), 24);
+
+        let neutral_high = high_band_rms(&neutral[1024..]);
+        let bright_high = high_band_rms(&bright[1024..]);
+        let dark_high = high_band_rms(&dark[1024..]);
+
+        assert!(
+            bright_high > neutral_high * 1.2,
+            "positive slide must open the filter: {neutral_high} -> {bright_high}"
+        );
+        assert!(
+            dark_high < neutral_high * 0.8,
+            "negative slide must close the filter: {neutral_high} -> {dark_high}"
+        );
+    }
+
+    /// Hold A4 + C4 and render, applying `bends` as (note, semitones) pairs.
+    fn render_dyad_crossings(bends: &[(u8, f32)]) -> usize {
+        let mut synth = MasterSynth::new(48_000.0, 8);
+        synth.set_param("cutoff", 20_000.0);
+        synth.note_on(69, 100);
+        synth.note_on(60, 100);
+        for (note, semitones) in bends {
+            synth.note_expression(*note, 0, *semitones, 0.0, 0.0);
+        }
+
+        let mut left = [0.0f32; 128];
+        let mut right = [0.0f32; 128];
+        let mut crossings = 0;
+        for _ in 0..24 {
+            left.fill(0.0);
+            right.fill(0.0);
+            synth.process_block(&mut left, &mut right, &[]);
+            crossings += zero_crossings(&left);
+        }
+        crossings
+    }
+
+    #[test]
+    fn per_note_expression_only_reaches_the_addressed_note() {
+        let unbent = render_dyad_crossings(&[]);
+        let one_bent = render_dyad_crossings(&[(69, 12.0)]);
+        let both_bent = render_dyad_crossings(&[(69, 12.0), (60, 12.0)]);
+
+        // Bending A4 alone must move the dyad — otherwise expression is inert.
+        assert!(
+            one_bent > unbent,
+            "bending A4 must raise the dyad's crossing rate ({unbent} -> {one_bent})"
+        );
+        // …but strictly less than bending both notes, which is what a
+        // channel-wide (non per-note) bend would have produced.
+        assert!(
+            one_bent < both_bent,
+            "bending A4 must leave C4 at its own pitch \
+             (one bent {one_bent} vs both bent {both_bent})"
+        );
+    }
+
+    /// Two member channels holding the *same* pitch, rendered together.
+    /// `bent_channels` lists the member channels that receive a +12 st bend.
+    fn render_same_pitch_pair(bent_channels: &[u8]) -> Vec<f32> {
+        let mut synth = MasterSynth::new(48_000.0, 8);
+        synth.set_param("cutoff", 20_000.0);
+        synth.set_param("attack", 0.001);
+        synth.set_param("decay", 0.001);
+        synth.set_param("sustain", 1.0);
+        synth.note_on_with_channel(60, 100, 2);
+        synth.note_on_with_channel(60, 100, 3);
+        for channel in bent_channels {
+            synth.note_expression(60, *channel, 12.0, 0.0, 0.0);
+        }
+
+        let mut collected = Vec::with_capacity(24 * 128);
+        let mut left = [0.0f32; 128];
+        let mut right = [0.0f32; 128];
+        for _ in 0..24 {
+            left.fill(0.0);
+            right.fill(0.0);
+            synth.process_block(&mut left, &mut right, &[]);
+            collected.extend_from_slice(&left);
+        }
+        collected
+    }
+
+    fn difference_rms(left: &[f32], right: &[f32]) -> f32 {
+        let differences: Vec<f32> = left
+            .iter()
+            .zip(right.iter())
+            .map(|(a, b)| a - b)
+            .collect();
+        rms(&differences)
+    }
+
+    /// audit MD-2 (review round 1) — the audible half of the targeting fix.
+    /// Two voices sounding one pitch on two member channels is ordinary MPE;
+    /// bending one must not drag the other with it.
+    ///
+    /// Compared sample-for-sample rather than by a spectral summary: when
+    /// expression is addressed by MIDI note alone, bending one member channel
+    /// and bending both produce *bit-identical* audio, so any non-zero
+    /// difference between them is exactly the defect being absent.
+    #[test]
+    fn bending_one_member_channel_leaves_the_other_at_its_pitch() {
+        let neither = render_same_pitch_pair(&[]);
+        let one = render_same_pitch_pair(&[2]);
+        let both = render_same_pitch_pair(&[2, 3]);
+
+        let signal = rms(&both[1024..]);
+        let moved = difference_rms(&one[1024..], &neither[1024..]);
+        let partial = difference_rms(&one[1024..], &both[1024..]);
+
+        assert!(
+            moved > signal * 0.05,
+            "bending one member channel must change the rendered pair \
+             (difference {moved} vs signal {signal})"
+        );
+        assert!(
+            partial > signal * 0.05,
+            "bending one member channel must not equal bending both — \
+             note-only addressing makes these identical \
+             (difference {partial} vs signal {signal})"
+        );
+    }
+
+    #[test]
+    fn expression_for_a_silent_note_is_ignored() {
+        let sounding = render_dyad_crossings(&[]);
+        let addressed_elsewhere = render_dyad_crossings(&[(72, 12.0)]);
+
+        assert_eq!(
+            sounding, addressed_elsewhere,
+            "expression addressed to a note nobody is holding must change nothing"
+        );
     }
 }

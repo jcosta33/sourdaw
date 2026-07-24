@@ -79,19 +79,34 @@ type ParamAutomationSchedule = {
     lastValue: number | undefined;
 };
 
+/**
+ * MPE per-note expression (audit MD-2). Values arrive already normalised to
+ * engine units by `applyNoteExpression`, so the worklet only routes them.
+ */
+type NoteExpressionMsg = {
+    type: 'noteExpression';
+    note: number;
+    channel: number;
+    bendSemitones: number;
+    pressure: number;
+    slide: number;
+    sampleFrame?: number;
+};
 type FermenterMsg =
     | { type: 'init'; wasmBytes: BufferSource }
     | { type: 'init-sab'; sab: SharedArrayBuffer; byteOffset: number }
-    | { type: 'noteOn'; note: number; velocity: number; sampleFrame?: number }
-    | { type: 'noteOff'; note: number; sampleFrame?: number }
+    | { type: 'noteOn'; note: number; velocity: number; sampleFrame?: number; channel?: number }
+    | { type: 'noteOff'; note: number; sampleFrame?: number; channel?: number }
+    | NoteExpressionMsg
     | { type: 'allNotesOff' }
     | { type: 'param'; name: string; value: number }
     | { type: 'paramAutomation'; paramId: number; segments: ParamAutomationSegment[] }
     | { type: 'patch'; patch: Record<string, number | number[]> };
 
 type FermenterQueued =
-    | { type: 'noteOn'; note: number; velocity: number; sampleFrame: number }
-    | { type: 'noteOff'; note: number; sampleFrame: number };
+    | { type: 'noteOn'; note: number; velocity: number; sampleFrame: number; channel?: number }
+    | { type: 'noteOff'; note: number; sampleFrame: number; channel?: number }
+    | (NoteExpressionMsg & { sampleFrame: number });
 
 class FermenterProcessor extends AudioWorkletProcessor {
     _instance: FermenterInstance | null = null;
@@ -189,7 +204,7 @@ class FermenterProcessor extends AudioWorkletProcessor {
             return;
         }
         if (
-            (msg.type === 'noteOn' || msg.type === 'noteOff') &&
+            (msg.type === 'noteOn' || msg.type === 'noteOff' || msg.type === 'noteExpression') &&
             msg.sampleFrame !== undefined &&
             msg.sampleFrame > currentFrame
         ) {
@@ -211,10 +226,22 @@ class FermenterProcessor extends AudioWorkletProcessor {
             case 'init-sab':
                 break;
             case 'noteOn':
-                inst.note_on(msg.note, msg.velocity);
+                inst.note_on_with_channel(msg.note, msg.velocity, msg.channel ?? 0);
                 break;
             case 'noteOff':
-                inst.note_off(msg.note);
+                // Without a channel every voice at the pitch is released —
+                // the historical behaviour channel-unaware callers rely on.
+                if (msg.channel === undefined) {
+                    inst.note_off(msg.note);
+                } else {
+                    inst.note_off_on_channel(msg.note, msg.channel);
+                }
+                break;
+            case 'noteExpression':
+                // MPE per-note expression (audit MD-2). Scheduled expression
+                // carries the note's own start frame and is enqueued behind the
+                // noteOn at that frame, so the voice exists before it is bent.
+                inst.note_expression(msg.note, msg.channel, msg.bendSemitones, msg.pressure, msg.slide);
                 break;
             case 'allNotesOff':
                 // Release every held voice in one message instead of the main

@@ -117,7 +117,7 @@ export const handleWebMidiNoteOff = inject(midiMessageHandlerDependencies)((deps
                 (candidate) => candidate.deviceId === noteData.fermenterDeviceId
             );
             if (deviceNode?.fermenterControls) {
-                deviceNode.fermenterControls.noteOff(note);
+                deviceNode.fermenterControls.noteOff(note, undefined, noteData.channel);
             }
         }
 
@@ -129,7 +129,7 @@ export const handleWebMidiNoteOff = inject(midiMessageHandlerDependencies)((deps
                 (candidate) => candidate.deviceId === noteData.grandBouleDeviceId
             );
             if (deviceNode?.grandBouleControls) {
-                deviceNode.grandBouleControls.noteOff(note, undefined, releaseVelocity);
+                deviceNode.grandBouleControls.noteOff(note, undefined, releaseVelocity, noteData.channel);
             }
             void deps.eventBus.emit('midi.noteOff', {
                 deviceId: noteData.grandBouleDeviceId,
@@ -143,7 +143,7 @@ export const handleWebMidiNoteOff = inject(midiMessageHandlerDependencies)((deps
             const levainId = noteData.levainDeviceId;
             const deviceNode = strip?.deviceNodes.find((candidate) => candidate.deviceId === levainId);
             if (deviceNode?.levainControls) {
-                deviceNode.levainControls.noteOff(note);
+                deviceNode.levainControls.noteOff(note, undefined, noteData.channel);
             }
         }
 

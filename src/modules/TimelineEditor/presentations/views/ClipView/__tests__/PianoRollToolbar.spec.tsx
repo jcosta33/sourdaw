@@ -246,13 +246,14 @@ describe('PianoRollToolbar', () => {
         expect(values).toContain('velocity');
     });
 
-    it('hides the MPE expression lanes (Pressure/Slide/Pitch Bend) while per-note expression is unavailable (MD-2)', () => {
+    it('hides every MPE expression lane when the track instrument sounds none (MD-2)', () => {
         render(
             <PianoRollToolbar
                 {...defaultProps}
                 showExpressionView={true}
                 activeExpressionLane="velocity"
                 onActiveExpressionLaneChange={vi.fn()}
+                mpeExpressionLanes={[]}
             />
         );
         const values = screen.getAllByRole('option').map((option) => (option as HTMLOptionElement).value);
@@ -262,5 +263,37 @@ describe('PianoRollToolbar', () => {
         expect(screen.queryByText('Pressure (MPE)')).not.toBeInTheDocument();
         expect(screen.queryByText('Slide (MPE)')).not.toBeInTheDocument();
         expect(screen.queryByText('Pitch Bend (MPE)')).not.toBeInTheDocument();
+    });
+
+    it('offers the MPE expression lanes when the track instrument sounds them (MD-2)', () => {
+        render(
+            <PianoRollToolbar
+                {...defaultProps}
+                showExpressionView={true}
+                activeExpressionLane="velocity"
+                onActiveExpressionLaneChange={vi.fn()}
+                mpeExpressionLanes={['pressure', 'slide', 'pitchBend']}
+            />
+        );
+        const values = screen.getAllByRole('option').map((option) => (option as HTMLOptionElement).value);
+        expect(values).toContain('pressure');
+        expect(values).toContain('slide');
+        expect(values).toContain('pitchBend');
+    });
+
+    it('reports the selected MPE lane back to the caller', () => {
+        const onActiveExpressionLaneChange = vi.fn();
+        render(
+            <PianoRollToolbar
+                {...defaultProps}
+                showExpressionView={true}
+                activeExpressionLane="velocity"
+                onActiveExpressionLaneChange={onActiveExpressionLaneChange}
+                mpeExpressionLanes={['pressure', 'slide', 'pitchBend']}
+            />
+        );
+        fireEvent.change(screen.getByLabelText('Active expression lane'), { target: { value: 'slide' } });
+
+        expect(onActiveExpressionLaneChange).toHaveBeenCalledWith('slide');
     });
 });

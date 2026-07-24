@@ -188,11 +188,39 @@ export class FermenterInstance {
         return this;
     }
     /**
-     * Process a MIDI note off event.
+     * Apply MPE per-note expression to the voices held on `channel` at `note`
+     * (audit MD-2).
+     *
+     * `bend_semitones` is the member-channel pitch bend already resolved
+     * against the controller's bend range; `pressure` is 0..1; `slide` is the
+     * CC74 timbre as -1..1 with 0 neutral. Normalisation from wire units lives
+     * on the TypeScript side so the live and scheduled paths share one
+     * conversion.
+     * @param {number} note
+     * @param {number} channel
+     * @param {number} bend_semitones
+     * @param {number} pressure
+     * @param {number} slide
+     */
+    note_expression(note, channel, bend_semitones, pressure, slide) {
+        wasm.fermenterinstance_note_expression(this.__wbg_ptr, note, channel, bend_semitones, pressure, slide);
+    }
+    /**
+     * Process a MIDI note off event. Releases every voice at that pitch.
      * @param {number} note
      */
     note_off(note) {
         wasm.fermenterinstance_note_off(this.__wbg_ptr, note);
+    }
+    /**
+     * Note-off narrowed to one MPE member channel, so releasing a note on one
+     * member channel cannot silence a different note sounding the same pitch
+     * on another (audit MD-2).
+     * @param {number} note
+     * @param {number} channel
+     */
+    note_off_on_channel(note, channel) {
+        wasm.fermenterinstance_note_off_on_channel(this.__wbg_ptr, note, channel);
     }
     /**
      * Process a MIDI note on event.
@@ -201,6 +229,15 @@ export class FermenterInstance {
      */
     note_on(note, velocity) {
         wasm.fermenterinstance_note_on(this.__wbg_ptr, note, velocity);
+    }
+    /**
+     * Process a MIDI note on carrying its MPE member channel.
+     * @param {number} note
+     * @param {number} velocity
+     * @param {number} channel
+     */
+    note_on_with_channel(note, velocity, channel) {
+        wasm.fermenterinstance_note_on_with_channel(this.__wbg_ptr, note, velocity, channel);
     }
     /**
      * Process a block of 128 samples. Returns pointer to left channel.
@@ -437,11 +474,36 @@ export class GrandBouleInstance {
         return this;
     }
     /**
+     * Apply MPE per-note expression to the voice held on `channel` at
+     * `midi_note` (audit MD-2).
+     *
+     * Grand Boule sounds `bend_semitones` only: the ringing modal strings are
+     * retuned in place. `pressure` and `slide` have no physical counterpart on
+     * a struck string and are dropped — the expression registry advertises
+     * pitch bend alone, so the editor never offers those lanes for this device.
+     * @param {number} midi_note
+     * @param {number} channel
+     * @param {number} bend_semitones
+     * @param {number} pressure
+     * @param {number} slide
+     */
+    note_expression(midi_note, channel, bend_semitones, pressure, slide) {
+        wasm.grandbouleinstance_note_expression(this.__wbg_ptr, midi_note, channel, bend_semitones, pressure, slide);
+    }
+    /**
      * Begin the release phase for any voice holding this note.
      * @param {number} midi_note
      */
     note_off(midi_note) {
         wasm.grandbouleinstance_note_off(this.__wbg_ptr, midi_note);
+    }
+    /**
+     * Note-off narrowed to one MPE member channel (audit MD-2).
+     * @param {number} midi_note
+     * @param {number} channel
+     */
+    note_off_on_channel(midi_note, channel) {
+        wasm.grandbouleinstance_note_off_on_channel(this.__wbg_ptr, midi_note, channel);
     }
     /**
      * Trigger a note. `midi_note` covers the full MIDI range; out-of-piano
@@ -460,6 +522,15 @@ export class GrandBouleInstance {
      */
     note_on_midi2(midi_note, velocity_16bit, pitch_offset_q24) {
         wasm.grandbouleinstance_note_on_midi2(this.__wbg_ptr, midi_note, velocity_16bit, pitch_offset_q24);
+    }
+    /**
+     * Trigger a note carrying its MPE member channel.
+     * @param {number} midi_note
+     * @param {number} velocity
+     * @param {number} channel
+     */
+    note_on_with_channel(midi_note, velocity, channel) {
+        wasm.grandbouleinstance_note_on_with_channel(this.__wbg_ptr, midi_note, velocity, channel);
     }
     /**
      * Render a block of audio and return a pointer to the left channel.
@@ -897,11 +968,39 @@ export class LevainInstance {
         return this;
     }
     /**
+     * Apply MPE per-note expression to the voices held on `channel` at `note`
+     * (audit MD-2).
+     *
+     * `bend_semitones` is the member-channel pitch bend already resolved
+     * against the controller's bend range; `pressure` is 0..1; `slide` is the
+     * CC74 timbre as -1..1 with 0 neutral. Normalisation from wire units lives
+     * on the TypeScript side so the live and scheduled paths share one
+     * conversion.
+     * @param {number} note
+     * @param {number} channel
+     * @param {number} bend_semitones
+     * @param {number} pressure
+     * @param {number} slide
+     */
+    note_expression(note, channel, bend_semitones, pressure, slide) {
+        wasm.levaininstance_note_expression(this.__wbg_ptr, note, channel, bend_semitones, pressure, slide);
+    }
+    /**
      * Process a MIDI note off event.
      * @param {number} note
      */
     note_off(note) {
         wasm.levaininstance_note_off(this.__wbg_ptr, note);
+    }
+    /**
+     * Note-off narrowed to one MPE member channel, so releasing a note on one
+     * member channel cannot silence a different note sounding the same pitch
+     * on another (audit MD-2).
+     * @param {number} note
+     * @param {number} channel
+     */
+    note_off_on_channel(note, channel) {
+        wasm.levaininstance_note_off_on_channel(this.__wbg_ptr, note, channel);
     }
     /**
      * Process a MIDI note on event.
@@ -910,6 +1009,15 @@ export class LevainInstance {
      */
     note_on(note, velocity) {
         wasm.levaininstance_note_on(this.__wbg_ptr, note, velocity);
+    }
+    /**
+     * Process a MIDI note on carrying its MPE member channel.
+     * @param {number} note
+     * @param {number} velocity
+     * @param {number} channel
+     */
+    note_on_with_channel(note, velocity, channel) {
+        wasm.levaininstance_note_on_with_channel(this.__wbg_ptr, note, velocity, channel);
     }
     /**
      * Process a block of audio. Returns pointer to left channel.

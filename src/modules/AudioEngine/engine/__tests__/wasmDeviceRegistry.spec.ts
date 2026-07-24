@@ -293,6 +293,7 @@ function createFermenterNodeResult(): FermenterNodeResult {
         connect: vi.fn(),
         destroy: fermenterNodeMocks.destroy,
         disconnect: vi.fn(),
+        noteExpression: vi.fn(),
         noteOff: fermenterNodeMocks.noteOff,
         noteOn: fermenterNodeMocks.noteOn,
         onTelemetry: fermenterNodeMocks.onTelemetry,

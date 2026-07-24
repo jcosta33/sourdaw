@@ -1,5 +1,5 @@
 import { inject } from '#/infra/di/inject';
-import { audioEngine } from '#/modules/AudioEngine/useCases';
+import { applyNoteExpression, audioEngine } from '#/modules/AudioEngine/useCases';
 
 import { MPE_SLIDE_CC } from '../../models/WebMidiTypes';
 import { getMpeEnabled } from '../../repositories/webMidi/getMpeEnabled';
@@ -23,6 +23,18 @@ export const handleWebMidiCC = inject(midiMessageHandlerDependencies)(
                     const noteData = activeNotes.get(noteForChannel);
                     if (noteData) {
                         noteData.slide = value;
+                        // Reach the instrument voice through the one expression
+                        // surface the scheduled path also uses (audit MD-2).
+                        applyNoteExpression({
+                            trackId: noteData.instrumentTrackId,
+                            note: noteData.note,
+                            channel: noteData.channel,
+                            expression: {
+                                pitchBend: noteData.pitchBend,
+                                pressure: noteData.pressure,
+                                slide: noteData.slide,
+                            },
+                        });
                     }
                 }
                 return;

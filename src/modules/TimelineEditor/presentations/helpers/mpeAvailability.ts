@@ -1,29 +1,49 @@
+import { getNoteExpressionDimensions } from '#/modules/AudioEngine/useCases';
+
 /**
  * MPE per-note expression availability (audit MD-2 — honest surface).
  *
- * The editor can capture per-note MPE expression — Pitch Bend, Pressure
- * (channel pressure) and Slide (CC74) — but no shipping instrument currently
- * sounds it: those values are stored on note data yet never reach any live or
- * scheduled synth voice. Surfacing the controls therefore claims a capability
- * the engine does not provide. Until the per-note expression engine path lands
- * (Wave 4, WS-3), the MPE expression lanes are hidden while the underlying
- * state model, use cases and stores are left fully intact.
+ * The editor captures per-note MPE expression — Pitch Bend, Pressure (channel
+ * pressure) and Slide (CC74). Whether a given dimension is *sounded* depends on
+ * the track's instrument, so availability is derived from the engine's
+ * note-expression registry rather than restated here: a device gaining or
+ * losing a dimension moves this surface with it, and the editor can never claim
+ * a capability the engine does not have.
  *
- * Wave 4 reversal: flip this to `true` once per-note expression reaches the
- * instrument voices — that alone re-surfaces every MPE lane. One-line change.
+ * As of the MD-2 engine lane: Fermenter and Levain sound all three dimensions;
+ * Grand Boule sounds pitch bend only (a struck string has no continuous
+ * pressure or timbre response); Toaster and the drum kits sound none.
  */
-// Typed `boolean` (not the literal `false`) so consumers gate on a flag that is
-// meant to flip, not a value narrowed to a constant.
-export const MPE_EXPRESSION_AVAILABLE: boolean = false;
 
-/**
- * Expression-lane identifiers that carry MPE per-note expression and are gated
- * by {@link MPE_EXPRESSION_AVAILABLE}. Velocity and probability are not MPE and
- * are never gated.
- */
+/** Expression-lane identifiers that carry MPE per-note expression. */
 export const MPE_EXPRESSION_LANES = ['pressure', 'slide', 'pitchBend'] as const;
+
+export type MpeExpressionLane = (typeof MPE_EXPRESSION_LANES)[number];
 
 /** True when `lane` is an MPE expression lane gated behind availability. */
 export function isMpeExpressionLane(lane: string): boolean {
     return (MPE_EXPRESSION_LANES as readonly string[]).includes(lane);
+}
+
+/**
+ * The MPE lanes worth offering for a track, given its devices. Lane ids match
+ * the note-data field names, which are also the engine registry's dimension
+ * names, so no mapping table can drift between them.
+ */
+export function getMpeExpressionLanesForDeviceTypes(deviceTypes: readonly string[]): MpeExpressionLane[] {
+    const sounded = new Set<string>();
+    for (const deviceType of deviceTypes) {
+        for (const dimension of getNoteExpressionDimensions(deviceType)) {
+            sounded.add(dimension);
+        }
+    }
+    return MPE_EXPRESSION_LANES.filter((lane) => sounded.has(lane));
+}
+
+/** True when the given lane is sounded by one of the track's devices. */
+export function isMpeLaneAvailableForDeviceTypes(lane: string, deviceTypes: readonly string[]): boolean {
+    if (!isMpeExpressionLane(lane)) {
+        return true;
+    }
+    return getMpeExpressionLanesForDeviceTypes(deviceTypes).includes(lane as MpeExpressionLane);
 }

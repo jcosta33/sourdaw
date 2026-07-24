@@ -233,6 +233,52 @@ impl Default for CoupledStringAssembly {
 mod tests {
     use super::*;
 
+    /// Measured evidence for audit MD-2: what a *block-rate* per-note pitch
+    /// bend would cost this engine.
+    ///
+    /// `reset_decay` is the engine's existing mid-note retune primitive — it
+    /// rewrites c1/c2 for a new fundamental and never touches the ringing
+    /// state (x1/x2/y1/y2), which only `reset()` clears. `PianoVoice::tick`
+    /// already calls it mid-note for the §A5.2 pitch glide, so retuning a
+    /// sounding string is a shipping code path, not a redesign. The open
+    /// question is only whether doing it *every block, per bent voice* fits
+    /// the audio deadline.
+    ///
+    /// Ignored by default (it is a timing measurement, not an assertion).
+    /// Run with:
+    ///   cargo test -p daw-dsp --release grand_boule::coupled_strings::tests::\
+    ///     measure_block_rate_retune_cost -- --ignored --nocapture
+    #[test]
+    #[ignore = "timing measurement, not an assertion — see audit MD-2"]
+    fn measure_block_rate_retune_cost() {
+        const SAMPLE_RATE: f32 = 48_000.0;
+        const BLOCK: f32 = 128.0;
+        const VOICES: usize = 32;
+        const ITERATIONS: usize = 2_000;
+
+        // A4 (key 49) — a trichord, so the full 3 unisons × 2 polarizations.
+        let mut assembly = CoupledStringAssembly::new();
+        assembly.configure(440.0, 49, 0.12, SAMPLE_RATE, 0.14, 0.0);
+
+        let start = std::time::Instant::now();
+        let mut bend = 0.0_f32;
+        for iteration in 0..ITERATIONS {
+            bend = 1.0 + 0.001 * ((iteration % 100) as f32);
+            assembly.reset_decay(440.0 * bend, 49, SAMPLE_RATE, 0.14, 0.0);
+        }
+        let per_voice_secs = start.elapsed().as_secs_f64() / ITERATIONS as f64;
+        std::hint::black_box(bend);
+
+        let block_budget_secs = (BLOCK / SAMPLE_RATE) as f64;
+        let full_polyphony_secs = per_voice_secs * VOICES as f64;
+        let budget_fraction = full_polyphony_secs / block_budget_secs;
+
+        println!("grand-boule block-rate retune (audit MD-2 measurement)");
+        println!("  per voice          : {:.1} µs", per_voice_secs * 1e6);
+        println!("  {VOICES} voices bent   : {:.1} µs", full_polyphony_secs * 1e6);
+        println!("  block budget       : {:.1} µs", block_budget_secs * 1e6);
+        println!("  budget consumed    : {:.1}%", budget_fraction * 100.0);
+    }
     #[test]
     fn trichord_key_has_three_unisons() {
         let mut assembly = CoupledStringAssembly::new();

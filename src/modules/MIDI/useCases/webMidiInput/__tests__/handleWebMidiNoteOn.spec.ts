@@ -116,8 +116,10 @@ describe('handleWebMidiNoteOn', () => {
 
         await fn(0, 60, 100);
 
-        expect(grand_boule_note_on).toHaveBeenCalledWith(67, 100 / 127, 96_240);
-        expect(grand_boule_note_off).toHaveBeenCalledWith(67, 96_480);
+        // The member channel is stamped on the voice so per-note expression
+        // can address this note rather than the pitch (audit MD-2).
+        expect(grand_boule_note_on).toHaveBeenCalledWith(67, 100 / 127, 96_240, 0);
+        expect(grand_boule_note_off).toHaveBeenCalledWith(67, 96_480, undefined, 0);
         expect(emitted).toContainEqual({
             type: 'midi.noteOn',
             payload: { deviceId: 'gb-1', midiNote: 67, velocity: 100 / 127 },
@@ -154,7 +156,7 @@ describe('handleWebMidiNoteOn', () => {
 
         await fn(0, 60, 100);
 
-        expect(grand_boule_note_on).toHaveBeenCalledWith(67, 100 / 127, 96_240);
+        expect(grand_boule_note_on).toHaveBeenCalledWith(67, 100 / 127, 96_240, 0);
     });
 
     it('reuses the note-on identity for the paired Yeast note-off', async () => {
@@ -233,7 +235,7 @@ describe('handleWebMidiNoteOn', () => {
 
         await fn(0, 60, 100);
 
-        expect(grand_boule_note_on).toHaveBeenCalledWith(67, 100 / 127, 96_000);
+        expect(grand_boule_note_on).toHaveBeenCalledWith(67, 100 / 127, 96_000, 0);
     });
 
     it('releases an existing same-channel pitch before retriggering it', async () => {
@@ -351,7 +353,7 @@ describe('handleWebMidiNoteOn', () => {
 
         await fn(0, 64, 95);
 
-        expect(fermenter_note_on).toHaveBeenCalledWith(64, 95);
+        expect(fermenter_note_on).toHaveBeenCalledWith(64, 95, undefined, 0);
         expect(activeNotes.get(createWebMidiNoteKey(0, 64))?.fermenterDeviceId).toBe('ferm-1');
     });
 
@@ -402,7 +404,8 @@ describe('handleWebMidiNoteOn', () => {
     });
 
     it('routes a Grand Boule note-on applying the velocity curve from calibration', async () => {
-        const grand_boule_note_on = vi.fn<(note: number, velocity: number) => void>();
+        const grand_boule_note_on =
+            vi.fn<(note: number, velocity: number, sampleFrame?: number, channel?: number) => void>();
         const emitted: Array<{ type: string; payload: Record<string, unknown> }> = [];
         const fn = handleWebMidiNoteOn._factory(
             make_dependencies({
@@ -433,7 +436,7 @@ describe('handleWebMidiNoteOn', () => {
         await fn(0, 60, 100);
 
         // Without a calibration store the velocity falls back to velocity/127.
-        expect(grand_boule_note_on).toHaveBeenCalledWith(60, 100 / 127);
+        expect(grand_boule_note_on).toHaveBeenCalledWith(60, 100 / 127, undefined, 0);
         expect(activeNotes.get(createWebMidiNoteKey(0, 60))?.grandBouleDeviceId).toBe('gb-1');
         expect(emitted).toContainEqual({
             type: 'midi.noteOn',
@@ -460,7 +463,7 @@ describe('handleWebMidiNoteOn', () => {
 
         await fn(0, 72, 88);
 
-        expect(levain_note_on).toHaveBeenCalledWith(72, 88);
+        expect(levain_note_on).toHaveBeenCalledWith(72, 88, undefined, 0);
         expect(activeNotes.get(createWebMidiNoteKey(0, 72))?.levainDeviceId).toBe('lev-1');
     });
 

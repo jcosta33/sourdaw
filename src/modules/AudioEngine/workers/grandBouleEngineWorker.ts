@@ -11,7 +11,8 @@
  * Port protocol (self.onmessage):
  *   ← { type: 'init', wasmBytes: ArrayBuffer, sab: SharedArrayBuffer, sampleRate: number }
  *   → { type: 'ready' }
- *   ← { type: 'noteOn', midiNote, velocity }
+ *   ← { type: 'noteOn', midiNote, velocity, channel? }
+ *   ← { type: 'noteExpression', midiNote, channel, bendSemitones, pressure, slide }
  *   ← { type: 'noteOff', midiNote, releaseVelocity }
  *   ← { type: 'param', name, value }
  *   ← { type: 'sustain', position }
@@ -174,8 +175,22 @@ function renderLoop(): void {
 }
 
 type GrandBouleDispatchMsg =
-    | { type: 'noteOn'; midiNote: number; velocity: number }
-    | { type: 'noteOff'; midiNote: number; sampleFrame?: number; releaseVelocity?: number }
+    | { type: 'noteOn'; midiNote: number; velocity: number; channel?: number }
+    | {
+          type: 'noteOff';
+          midiNote: number;
+          sampleFrame?: number;
+          releaseVelocity?: number;
+          channel?: number;
+      }
+    | {
+          type: 'noteExpression';
+          midiNote: number;
+          channel: number;
+          bendSemitones: number;
+          pressure: number;
+          slide: number;
+      }
     | { type: 'param'; name: string; value: number }
     | { type: 'sustain'; position: number }
     | { type: 'unaCorda'; engaged: boolean }
@@ -196,7 +211,12 @@ function dispatch(msg: GrandBouleDispatchMsg): void {
     }
     switch (msg.type) {
         case 'noteOn':
-            instance.note_on(msg.midiNote, msg.velocity);
+            instance.note_on_with_channel(msg.midiNote, msg.velocity, msg.channel ?? 0);
+            break;
+        case 'noteExpression':
+            // Grand Boule sounds bend only; pressure and slide are dropped
+            // inside the engine rather than faked (audit MD-2).
+            instance.note_expression(msg.midiNote, msg.channel, msg.bendSemitones, msg.pressure, msg.slide);
             break;
         case 'noteOff':
             // `msg.releaseVelocity` (normalized 0..1) is threaded to this engine
@@ -204,7 +224,13 @@ function dispatch(msg: GrandBouleDispatchMsg): void {
             // (`note_off(midi_note)`) does not yet consume it; it is forwarded as
             // part of the typed message so the release dynamic is no longer
             // dropped at the control boundary.
-            instance.note_off(msg.midiNote);
+            // Without a channel every voice at the pitch is released — the
+            // historical behaviour channel-unaware callers rely on.
+            if (msg.channel === undefined) {
+                instance.note_off(msg.midiNote);
+            } else {
+                instance.note_off_on_channel(msg.midiNote, msg.channel);
+            }
             break;
         case 'param':
             instance.set_param(PARAM_MAP[msg.name] ?? msg.name, msg.value);

@@ -75,8 +75,16 @@ function projectFermenterTelemetry(view: Float32Array): FermenterTelemetryData {
 }
 export type FermenterNodeResult = {
     workletNode: AudioWorkletNode;
-    noteOn: (note: number, velocity: number, sampleFrame?: number) => void;
-    noteOff: (note: number, sampleFrame?: number) => void;
+    noteOn: (note: number, velocity: number, sampleFrame?: number, channel?: number) => void;
+    noteOff: (note: number, sampleFrame?: number, channel?: number) => void;
+    noteExpression: (
+        note: number,
+        channel: number,
+        bendSemitones: number,
+        pressure: number,
+        slide: number,
+        sampleFrame?: number
+    ) => void;
     allNotesOff: () => void;
     setParam: (name: string, value: number | number[], sampleFrame?: number) => void;
     acceptsScheduledParam?: (name: string) => boolean;
@@ -145,18 +153,47 @@ export async function createFermenterNode(ctx: BaseAudioContext, wasmUrl?: strin
 
     return {
         workletNode: node,
-        noteOn(note: number, velocity: number, sampleFrame?: number) {
+        noteOn(note: number, velocity: number, sampleFrame?: number, channel?: number) {
             if (!bypassed && note >= 0 && note < 128) {
                 node.port.postMessage({
                     type: 'noteOn',
                     note,
                     velocity: Math.min(127, Math.max(0, velocity)),
                     sampleFrame,
+                    channel,
                 });
             }
         },
-        noteOff(note: number, sampleFrame?: number) {
-            node.port.postMessage({ type: 'noteOff', note, sampleFrame });
+        // `channel` narrows the release to one MPE member channel; omit it
+        // and every voice at that pitch is released, as before.
+        noteOff(note: number, sampleFrame?: number, channel?: number) {
+            node.port.postMessage({ type: 'noteOff', note, sampleFrame, channel });
+        },
+        noteExpression(
+            note: number,
+            channel: number,
+            bendSemitones: number,
+            pressure: number,
+            slide: number,
+            sampleFrame?: number
+        ) {
+            // MPE per-note expression (audit MD-2). Bypass gates new notes but
+            // not expression on voices already sounding, matching noteOff.
+            if (note < 0 || note > 127) {
+                return;
+            }
+            if (!Number.isFinite(bendSemitones) || !Number.isFinite(pressure) || !Number.isFinite(slide)) {
+                return;
+            }
+            node.port.postMessage({
+                type: 'noteExpression',
+                note,
+                channel,
+                bendSemitones,
+                pressure,
+                slide,
+                sampleFrame,
+            });
         },
         allNotesOff() {
             // Single-message voice release the Fermenter worklet honors: drops

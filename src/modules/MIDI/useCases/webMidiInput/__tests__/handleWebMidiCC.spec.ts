@@ -16,12 +16,15 @@ vi.mock('../../../repositories/webMidi/getTargetTrackId', () => ({
     getTargetTrackId: () => target_track_id.value,
 }));
 
+const apply_note_expression = vi.hoisted(() => vi.fn());
+
 vi.mock('#/modules/AudioEngine/useCases', () => ({
     audioEngine: {
         getTrackStrip: get_track_strip,
         setTrackGain: set_track_gain,
         setTrackPan: set_track_pan,
     },
+    applyNoteExpression: apply_note_expression,
     getCompensationDelay: () => 0,
     getFactoryDrumKitByIndex: () => null,
 }));
@@ -50,6 +53,7 @@ describe('handleWebMidiCC', () => {
     beforeEach(() => {
         activeNotes.clear();
         channelToNote.clear();
+        apply_note_expression.mockClear();
         mpe_enabled.value = false;
         target_track_id.value = null;
         set_track_gain.mockReset();
@@ -122,6 +126,15 @@ describe('handleWebMidiCC', () => {
 
         expect(activeNotes.get(matchingKey)?.slide).toBe(52);
         expect(activeNotes.get(otherKey)?.slide).toBeUndefined();
+        // audit MD-2 — slide must also reach the instrument voice, addressed to
+        // the matching note only.
+        expect(apply_note_expression).toHaveBeenCalledTimes(1);
+        expect(apply_note_expression).toHaveBeenCalledWith({
+            trackId: 'track-a',
+            note: 60,
+            channel: 4,
+            expression: { pitchBend: undefined, pressure: undefined, slide: 52 },
+        });
     });
 
     it('maps CC 7 (Channel Volume) to track gain normalized to 0..1', () => {

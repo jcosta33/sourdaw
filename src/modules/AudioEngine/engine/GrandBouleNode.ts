@@ -47,8 +47,23 @@ async function fetchGrandBouleWasm(url: string): Promise<ArrayBuffer> {
 
 export type GrandBouleNodeResult = {
     workletNode: AudioWorkletNode;
-    noteOn: (midiNote: number, velocity: number, sampleFrame?: number) => void;
-    noteOff: (midiNote: number, sampleFrame?: number, releaseVelocity?: number) => void;
+    noteOn: (midiNote: number, velocity: number, sampleFrame?: number, channel?: number) => void;
+    noteOff: (midiNote: number, sampleFrame?: number, releaseVelocity?: number, channel?: number) => void;
+    /**
+     * MPE per-note expression (audit MD-2). Grand Boule sounds
+     * `bendSemitones` only — its ringing modal strings are retuned in
+     * place; `pressure` and `slide` have no counterpart on a struck string
+     * and are dropped at the engine. The expression registry advertises
+     * pitch bend alone for this device, so the editor never offers them.
+     */
+    noteExpression: (
+        midiNote: number,
+        channel: number,
+        bendSemitones: number,
+        pressure: number,
+        slide: number,
+        sampleFrame?: number
+    ) => void;
     setParam: (name: string, value: number) => void;
     setSustain: (position: number) => void;
     setUnaCorda: (engaged: boolean) => void;
@@ -123,13 +138,45 @@ export async function createGrandBouleNode(ctx: BaseAudioContext, wasmUrl?: stri
 
     return {
         workletNode: node,
-        noteOn(midiNote: number, velocity: number, sampleFrame?: number) {
+        noteOn(midiNote: number, velocity: number, sampleFrame?: number, channel?: number) {
             if (!bypassed) {
-                post({ type: 'noteOn', midiNote, velocity, sampleFrame });
+                post({ type: 'noteOn', midiNote, velocity, sampleFrame, channel });
             }
         },
-        noteOff(midiNote: number, sampleFrame?: number, releaseVelocity?: number) {
-            post({ type: 'noteOff', midiNote, sampleFrame, releaseVelocity: releaseVelocity ?? 0 });
+        // `channel` narrows the release to one MPE member channel; omit it
+        // and every voice at that pitch is released, as before.
+        noteOff(midiNote: number, sampleFrame?: number, releaseVelocity?: number, channel?: number) {
+            post({
+                type: 'noteOff',
+                midiNote,
+                sampleFrame,
+                releaseVelocity: releaseVelocity ?? 0,
+                channel,
+            });
+        },
+        noteExpression(
+            midiNote: number,
+            channel: number,
+            bendSemitones: number,
+            pressure: number,
+            slide: number,
+            sampleFrame?: number
+        ) {
+            if (midiNote < 0 || midiNote > 127) {
+                return;
+            }
+            if (!Number.isFinite(bendSemitones) || !Number.isFinite(pressure) || !Number.isFinite(slide)) {
+                return;
+            }
+            post({
+                type: 'noteExpression',
+                midiNote,
+                channel,
+                bendSemitones,
+                pressure,
+                slide,
+                sampleFrame,
+            });
         },
         setParam(name: string, value: number) {
             if (Number.isFinite(value)) {

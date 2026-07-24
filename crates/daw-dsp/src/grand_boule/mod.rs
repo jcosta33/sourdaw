@@ -67,6 +67,35 @@ impl GrandBouleInstance {
         self.engine.note_off(midi_note);
     }
 
+    /// Trigger a note carrying its MPE member channel.
+    pub fn note_on_with_channel(&mut self, midi_note: u8, velocity: f32, channel: u8) {
+        self.engine.note_on_with_channel(midi_note, velocity, channel);
+    }
+
+    /// Note-off narrowed to one MPE member channel (audit MD-2).
+    pub fn note_off_on_channel(&mut self, midi_note: u8, channel: u8) {
+        self.engine.note_off_on_channel(midi_note, channel);
+    }
+
+    /// Apply MPE per-note expression to the voice held on `channel` at
+    /// `midi_note` (audit MD-2).
+    ///
+    /// Grand Boule sounds `bend_semitones` only: the ringing modal strings are
+    /// retuned in place. `pressure` and `slide` have no physical counterpart on
+    /// a struck string and are dropped — the expression registry advertises
+    /// pitch bend alone, so the editor never offers those lanes for this device.
+    pub fn note_expression(
+        &mut self,
+        midi_note: u8,
+        channel: u8,
+        bend_semitones: f32,
+        pressure: f32,
+        slide: f32,
+    ) {
+        self.engine
+            .note_expression(midi_note, channel, bend_semitones, pressure, slide);
+    }
+
     /// Set a global parameter (`master_gain`, `soundboard_send`,
     /// `sympathetic_send`).
     pub fn set_param(&mut self, name: &str, value: f32) {

@@ -15,8 +15,16 @@ const DEFAULT_WASM_URL = '/wasm/daw-dsp/daw_dsp_bg.wasm';
 
 export type LevainNodeResult = {
     workletNode: AudioWorkletNode;
-    noteOn: (note: number, velocity: number, sampleFrame?: number) => void;
-    noteOff: (note: number, sampleFrame?: number) => void;
+    noteOn: (note: number, velocity: number, sampleFrame?: number, channel?: number) => void;
+    noteOff: (note: number, sampleFrame?: number, channel?: number) => void;
+    noteExpression: (
+        note: number,
+        channel: number,
+        bendSemitones: number,
+        pressure: number,
+        slide: number,
+        sampleFrame?: number
+    ) => void;
     allNotesOff: () => void;
     setParam: (name: string, value: number) => void;
     handleCc: (cc: number, value: number) => void;
@@ -91,14 +99,43 @@ export async function createLevainNode(
     // instrument here — doing so races the patch-driven load and wastes bandwidth
     // on samples the user did not ask for.
 
-    const noteOn = (note: number, velocity: number, sampleFrame?: number): void => {
+    const noteOn = (note: number, velocity: number, sampleFrame?: number, channel?: number): void => {
         if (!bypassed) {
-            node.port.postMessage({ type: 'noteOn', note, velocity, sampleFrame });
+            node.port.postMessage({ type: 'noteOn', note, velocity, sampleFrame, channel });
         }
     };
 
-    const noteOff = (note: number, sampleFrame?: number): void => {
-        node.port.postMessage({ type: 'noteOff', note, sampleFrame });
+    // `channel` narrows the release to one MPE member channel; omit it and
+    // every voice at that pitch is released, as before.
+    const noteOff = (note: number, sampleFrame?: number, channel?: number): void => {
+        node.port.postMessage({ type: 'noteOff', note, sampleFrame, channel });
+    };
+
+    // MPE per-note expression (audit MD-2). Bypass gates new notes but not
+    // expression on voices already sounding, matching noteOff.
+    const noteExpression = (
+        note: number,
+        channel: number,
+        bendSemitones: number,
+        pressure: number,
+        slide: number,
+        sampleFrame?: number
+    ): void => {
+        if (note < 0 || note > 127) {
+            return;
+        }
+        if (!Number.isFinite(bendSemitones) || !Number.isFinite(pressure) || !Number.isFinite(slide)) {
+            return;
+        }
+        node.port.postMessage({
+            type: 'noteExpression',
+            note,
+            channel,
+            bendSemitones,
+            pressure,
+            slide,
+            sampleFrame,
+        });
     };
 
     // Silent all-notes-off used by the transport on stop. Avoids fanning
@@ -156,6 +193,7 @@ export async function createLevainNode(
         workletNode: node,
         noteOn,
         noteOff,
+        noteExpression,
         allNotesOff,
         setParam,
         handleCc,

@@ -50,6 +50,15 @@ pub struct VoiceParams<'a> {
 pub struct Voice {
     pub active: bool,
     pub note: u8,
+    /// MIDI channel this voice was triggered on. Together with `note` and
+    /// `held` this is the voice's per-note expression address (audit MD-2):
+    /// under MPE each sounding note owns its own member channel, so two
+    /// simultaneous voices at the same pitch are told apart by channel.
+    pub channel: u8,
+    /// True from note-on until note-off. A voice whose release tail is still
+    /// ringing stays `active` but is no longer `held`, so a same-pitch
+    /// retrigger cannot bend the note the player already let go.
+    pub held: bool,
     pub velocity: f32,
     pub frequency: f32,
 
@@ -99,6 +108,16 @@ pub struct Voice {
     drift_value: f32,
     drift_amount: f32, // 0-1, maps to 0-5 cents of random drift
 
+    // MPE per-note expression (audit MD-2). Continuous, per-voice, held for the
+    // note's whole lifetime. Every neutral default is the identity, so a note
+    // that carries no expression renders exactly as it did before.
+    /// Member-channel pitch bend in semitones (MPE member default range ±48).
+    expr_bend_semitones: f32,
+    /// Channel pressure, 0..1. Adds gain on top of velocity.
+    expr_pressure: f32,
+    /// Timbre / CC74 slide, bipolar -1..1 with 0 neutral. Scales filter cutoff.
+    expr_slide: f32,
+
     // Stealing fade
     steal_fade: f32,
     stealing: bool,
@@ -109,6 +128,8 @@ impl Voice {
         Self {
             active: false,
             note: 0,
+            channel: 0,
+            held: false,
             velocity: 0.0,
             frequency: 440.0,
             osc: WavetableOsc::new(),
@@ -143,6 +164,9 @@ impl Voice {
             drift_phase: 0.0,
             drift_value: 0.0,
             drift_amount: 0.0,
+            expr_bend_semitones: 0.0,
+            expr_pressure: 0.0,
+            expr_slide: 0.0,
             unison_voices: 1,
             unison_detune: 0.0,
             unison_spread: 0.5,
@@ -151,10 +175,17 @@ impl Voice {
         }
     }
 
-    pub fn note_on(&mut self, note: u8, velocity: f32, sample_rate: f32) {
+    pub fn note_on(&mut self, note: u8, channel: u8, velocity: f32, sample_rate: f32) {
         self.active = true;
         self.note = note;
+        self.channel = channel;
+        self.held = true;
         self.velocity = velocity;
+        // A fresh note starts from neutral expression; the controller's
+        // opening bend/pressure/timbre arrives as its own expression message.
+        self.expr_bend_semitones = 0.0;
+        self.expr_pressure = 0.0;
+        self.expr_slide = 0.0;
         let new_freq = 440.0 * 2.0f32.powf((note as f32 - 69.0) / 12.0);
         self.target_freq = new_freq;
         self.frequency = new_freq;
@@ -347,7 +378,29 @@ impl Voice {
         self.polyblep_osc.set_pulse_width(pw);
     }
 
+    /// Apply MPE per-note expression to this sounding voice (audit MD-2).
+    ///
+    /// `bend_semitones` is the member-channel pitch bend, `pressure` the
+    /// channel pressure in 0..1 and `slide` the CC74 timbre in -1..1 with 0
+    /// neutral. Values are held until the next expression message or note-on;
+    /// the render loop reads them at block rate, so this allocates nothing and
+    /// is safe to call from the audio thread's message drain.
+    pub fn set_expression(&mut self, bend_semitones: f32, pressure: f32, slide: f32) {
+        self.expr_bend_semitones = bend_semitones.clamp(-96.0, 96.0);
+        self.expr_pressure = pressure.clamp(0.0, 1.0);
+        self.expr_slide = slide.clamp(-1.0, 1.0);
+    }
+
+    /// Current per-note expression as (bend semitones, pressure, slide).
+    pub fn expression(&self) -> (f32, f32, f32) {
+        (self.expr_bend_semitones, self.expr_pressure, self.expr_slide)
+    }
+
     pub fn note_off(&mut self) {
+        // The voice keeps rendering its release tail, so `active` stays true —
+        // but it is no longer the note the player is holding, and per-note
+        // expression must stop addressing it (audit MD-2).
+        self.held = false;
         self.amp_env.note_off();
         self.filter_env.note_off();
         self.mseg.note_off();
@@ -426,7 +479,22 @@ impl Voice {
         let has_lfo_filter = p.lfo_filter_amount.abs() > 0.001;
         let has_mseg_filter = p.mseg_to_filter.abs() > 0.001;
         let has_seq_pitch = p.seq_to_pitch.abs() > 0.001;
-        let base_cutoff_kt = p.base_cutoff * keytrack_ratio;
+
+        // MPE per-note expression, resolved once per block (audit MD-2):
+        //  • bend  → octaves added to the per-sample pitch modulation
+        //  • slide → filter cutoff ratio, ±2 octaves around the patch cutoff
+        //  • pressure → linear gain on top of velocity, up to +6 dB
+        // A voice with neutral expression yields 0.0 / 1.0 / 1.0 and the inner
+        // loop behaves exactly as before.
+        let expr_bend_octaves = self.expr_bend_semitones / 12.0;
+        let expr_cutoff_ratio = if self.expr_slide.abs() > 0.001 {
+            2.0f32.powf(self.expr_slide * 2.0)
+        } else {
+            1.0
+        };
+        let expr_gain = 1.0 + self.expr_pressure;
+
+        let base_cutoff_kt = p.base_cutoff * keytrack_ratio * expr_cutoff_ratio;
 
         // Time-domain warp setup (per-block)
         self.spectral_warp.set_mode(p.warp_mode);
@@ -508,7 +576,8 @@ impl Voice {
             };
 
             // Pitch with modulation — avoid powf when no mod
-            let total_pitch_mod = mods.pitch + seq_pitch_mod + audio_fm_mod + chaos_pitch;
+            let total_pitch_mod =
+                mods.pitch + seq_pitch_mod + audio_fm_mod + chaos_pitch + expr_bend_octaves;
             let freq_before_drift = if total_pitch_mod.abs() > 0.0001 {
                 self.current_freq * pitch_offset_ratio * 2.0f32.powf(total_pitch_mod)
             } else {
@@ -669,7 +738,7 @@ impl Voice {
             };
 
             // Amplitude (with chaos tremolo from Perlin noise)
-            let gain = amp * self.velocity * (1.0 + chaos_amp);
+            let gain = amp * self.velocity * (1.0 + chaos_amp) * expr_gain;
 
             // Voice stealing fade
             if self.stealing {
@@ -699,5 +768,41 @@ impl Voice {
         if !self.amp_env.is_active() && !self.stealing {
             self.active = false;
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Voice;
+
+    #[test]
+    fn note_on_clears_expression_so_a_recycled_voice_starts_neutral() {
+        let mut voice = Voice::new(48_000.0);
+        voice.note_on(69, 0, 0.8, 48_000.0);
+        voice.set_expression(12.0, 1.0, -1.0);
+        assert_eq!(voice.expr_bend_semitones, 12.0);
+        assert_eq!(voice.expr_pressure, 1.0);
+        assert_eq!(voice.expr_slide, -1.0);
+
+        // Voice stealing hands the same struct to a different MIDI note, so a
+        // stale bend would detune an unrelated note (audit MD-2).
+        voice.note_on(60, 0, 0.8, 48_000.0);
+        assert_eq!(voice.expr_bend_semitones, 0.0);
+        assert_eq!(voice.expr_pressure, 0.0);
+        assert_eq!(voice.expr_slide, 0.0);
+    }
+
+    #[test]
+    fn set_expression_clamps_to_the_documented_ranges() {
+        let mut voice = Voice::new(48_000.0);
+        voice.set_expression(500.0, 4.0, 9.0);
+        assert_eq!(voice.expr_bend_semitones, 96.0);
+        assert_eq!(voice.expr_pressure, 1.0);
+        assert_eq!(voice.expr_slide, 1.0);
+
+        voice.set_expression(-500.0, -4.0, -9.0);
+        assert_eq!(voice.expr_bend_semitones, -96.0);
+        assert_eq!(voice.expr_pressure, 0.0);
+        assert_eq!(voice.expr_slide, -1.0);
     }
 }

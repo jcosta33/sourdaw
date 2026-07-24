@@ -77,6 +77,11 @@ pub struct GrandBouleEngine {
     hammer_mass_scale: f32,
     /// Soundboard brightness: interpolates the soundboard drive amount (0..1).
     soundboard_brightness: f32,
+    /// MPE member channel the in-flight note-on belongs to (audit MD-2).
+    /// `note_on_with_pitch` has three voice-allocation exits; rather than
+    /// thread the channel through all of them, `note_on_with_channel` sets this
+    /// for the duration of one call. Defaults to 0 (non-MPE).
+    pending_channel: u8,
     /// Sympathetic resonance level from piano model (0..1).
     sympathetic_level: f32,
     /// Soundboard body resonance strength from piano model (0..1).
@@ -120,6 +125,7 @@ impl GrandBouleEngine {
             hammer_hardness_scale: 1.0,
             hammer_mass_scale: 1.0,
             soundboard_brightness: 0.55,
+            pending_channel: 0,
             sympathetic_level: 0.5,
             body_resonance: 0.6,
             tone_color: 0.0,
@@ -147,6 +153,14 @@ impl GrandBouleEngine {
     /// Trigger a note-on. Notes outside A0..C8 are ignored silently.
     pub fn note_on(&mut self, midi_note: u8, velocity: f32) {
         self.note_on_with_pitch(midi_note, velocity, 1.0);
+    }
+
+    /// Note-on carrying the MPE member channel that owns the note.
+    /// Channel 0 is the non-MPE default and what `note_on` uses.
+    pub fn note_on_with_channel(&mut self, midi_note: u8, velocity: f32, channel: u8) {
+        self.pending_channel = channel;
+        self.note_on_with_pitch(midi_note, velocity, 1.0);
+        self.pending_channel = 0;
     }
 
     /// Trigger a note-on with a microtuning frequency ratio. `pitch_ratio`
@@ -197,6 +211,7 @@ impl GrandBouleEngine {
             if !voice.is_idle() && voice.midi_note() == midi_note {
                 voice.note_on(
                     midi_note,
+                    self.pending_channel,
                     shaped_velocity,
                     key,
                     combined_ratio,
@@ -231,6 +246,7 @@ impl GrandBouleEngine {
             if let Some(voice) = oldest {
                 voice.note_on(
                     midi_note,
+                    self.pending_channel,
                     shaped_velocity,
                     key,
                     combined_ratio,
@@ -247,6 +263,7 @@ impl GrandBouleEngine {
         }
         voice.note_on(
             midi_note,
+            self.pending_channel,
             shaped_velocity,
             key,
             combined_ratio,
@@ -411,9 +428,72 @@ impl GrandBouleEngine {
     }
 
     /// Render one block of stereo audio. Buffers are mixed into additively.
+    /// Apply MPE per-note expression to the voice held on `channel` at `note`
+    /// (audit MD-2).
+    ///
+    /// Only `bend_semitones` is consumed. A struck piano string has no
+    /// continuous pressure or timbre response to model — key aftertouch does
+    /// not re-excite a string, and the engine has no per-voice brightness
+    /// control — so `pressure` and `slide` are accepted and deliberately
+    /// dropped rather than faked. The device's expression registry advertises
+    /// pitch bend only, so the editor never offers those two lanes here.
+    pub fn note_expression(
+        &mut self,
+        midi_note: u8,
+        channel: u8,
+        bend_semitones: f32,
+        _pressure: f32,
+        _slide: f32,
+    ) {
+        for voice in self.voices.iter_mut() {
+            if !voice.is_idle()
+                && voice.is_held()
+                && voice.midi_note() == midi_note
+                && voice.channel() == channel
+            {
+                voice.set_expression_bend(bend_semitones);
+            }
+        }
+    }
+
+    /// Note-off narrowed to one MPE member channel, so releasing a note on one
+    /// member channel cannot silence a different note sounding the same pitch
+    /// on another (audit MD-2). Pedal, damper and release-noise handling is
+    /// shared with `note_off`; only the voice release is narrowed.
+    pub fn note_off_on_channel(&mut self, midi_note: u8, channel: u8) {
+        let mut sounding_on_other_channel = false;
+        for voice in self.voices.iter() {
+            if !voice.is_idle() && voice.is_held() && voice.midi_note() == midi_note {
+                if voice.channel() != channel {
+                    sounding_on_other_channel = true;
+                }
+            }
+        }
+        if !sounding_on_other_channel {
+            self.note_off(midi_note);
+            return;
+        }
+        // Another member channel still holds this pitch: release only ours and
+        // leave the pedal/damper state alone, since the key is still down.
+        for voice in self.voices.iter_mut() {
+            if !voice.is_idle()
+                && voice.is_held()
+                && voice.midi_note() == midi_note
+                && voice.channel() == channel
+            {
+                voice.note_off();
+            }
+        }
+    }
+
     pub fn process_block(&mut self, left: &mut [f32], right: &mut [f32]) {
         let frames = left.len().min(right.len());
         self.apply_damper_state();
+        // Per-note bend is resolved once per block, and only for voices whose
+        // bend actually moved (audit MD-2).
+        for voice in self.voices.iter_mut() {
+            voice.apply_pending_bend();
+        }
 
         for frame in 0..frames {
             // 1. Sum voice outputs into the bridge bus, blending sampled
@@ -943,5 +1023,162 @@ mod tests {
         eprintln!("  Bass C2 at 3s: {bass_3s:.8}");
         eprintln!("  Mid  C4 at 3s: {mid_3s:.8}");
         eprintln!("  A4 at 5s:      {a4_5s:.8}");
+    }
+
+    // ── MPE per-note pitch bend (audit MD-2, review round 1) ───────────────
+    //
+    // `ModalString::reset_decay` rewrites c1/c2 and never touches the ringing
+    // state, so a sounding string can be retuned in place — the same primitive
+    // the SS A5.2 pitch glide already uses mid-note. These prove the bend is
+    // audible on rendered samples and addressed per note, not per pitch.
+
+    fn render_engine(engine: &mut GrandBouleEngine, blocks: usize) -> Vec<f32> {
+        let mut collected = Vec::with_capacity(blocks * 128);
+        let mut left = [0.0f32; 128];
+        let mut right = [0.0f32; 128];
+        for _ in 0..blocks {
+            left.fill(0.0);
+            right.fill(0.0);
+            engine.process_block(&mut left, &mut right);
+            collected.extend_from_slice(&left);
+        }
+        collected
+    }
+
+    fn zero_crossings(samples: &[f32]) -> usize {
+        samples
+            .windows(2)
+            .filter(|pair| (pair[0] < 0.0) != (pair[1] < 0.0))
+            .count()
+    }
+
+    /// Strike A4, let the string settle, then bend and keep rendering.
+    fn render_bent_tail(bend_semitones: Option<f32>) -> Vec<f32> {
+        let mut engine = GrandBouleEngine::new(48_000.0, 8);
+        engine.note_on_with_channel(69, 0.8, 2);
+        // Let the attack transient and the SS A5.2 pitch glide settle first.
+        let _ = render_engine(&mut engine, 60);
+        if let Some(semitones) = bend_semitones {
+            engine.note_expression(69, 2, semitones, 0.0, 0.0);
+        }
+        render_engine(&mut engine, 60)
+    }
+
+    #[test]
+    fn per_note_pitch_bend_retunes_the_ringing_string() {
+        let plain = render_bent_tail(None);
+        let bent = render_bent_tail(Some(12.0));
+
+        let ratio = zero_crossings(&bent) as f32 / zero_crossings(&plain) as f32;
+        assert!(
+            (1.7..=2.3).contains(&ratio),
+            "a +12 st per-note bend must roughly double the ringing string's \
+             crossing rate, got {ratio}x"
+        );
+    }
+
+    #[test]
+    fn per_note_pitch_bend_keeps_the_string_ringing_through_the_retune() {
+        let bent = render_bent_tail(Some(7.0));
+        let energy: f32 = bent.iter().map(|sample| sample * sample).sum::<f32>() / bent.len() as f32;
+
+        // A retune that reset the biquad state would silence the note; the
+        // string must still be sounding after it.
+        assert!(
+            energy.sqrt() > 1.0e-4,
+            "the string must keep ringing through the retune, got RMS {}",
+            energy.sqrt()
+        );
+    }
+
+    fn voices_at(engine: &GrandBouleEngine, midi_note: u8) -> Vec<(u8, bool, f32)> {
+        engine
+            .voices
+            .iter()
+            .filter(|voice| !voice.is_idle() && voice.midi_note() == midi_note)
+            .map(|voice| (voice.channel(), voice.is_held(), voice.bend_ratio()))
+            .collect()
+    }
+
+    #[test]
+    fn expression_addressed_to_another_member_channel_is_ignored() {
+        let mut engine = GrandBouleEngine::new(48_000.0, 8);
+        engine.note_on_with_channel(69, 0.8, 2);
+
+        // Same pitch, wrong member channel — a note this voice does not own.
+        engine.note_expression(69, 3, 12.0, 0.0, 0.0);
+        assert_eq!(
+            voices_at(&engine, 69),
+            vec![(2, true, 1.0)],
+            "a voice must only take expression addressed to its own channel"
+        );
+
+        engine.note_expression(69, 2, 12.0, 0.0, 0.0);
+        let bent = voices_at(&engine, 69);
+        assert!(
+            (bent[0].2 - 2.0).abs() < 1.0e-4,
+            "its own channel must bend it an octave up, got {}",
+            bent[0].2
+        );
+    }
+
+    /// A grand piano has one string group per key, and the engine models that:
+    /// a second note-on at a sounding pitch retriggers the same voice rather
+    /// than allocating a second one. Two member channels therefore cannot hold
+    /// one pitch here — recorded because it is the reason the cross-channel
+    /// coexistence case is untestable on this engine, and because the surviving
+    /// voice must take the newer channel or its expression would be orphaned.
+    #[test]
+    fn a_same_pitch_note_on_retriggers_the_key_voice_and_takes_the_new_channel() {
+        let mut engine = GrandBouleEngine::new(48_000.0, 8);
+        engine.note_on_with_channel(69, 0.8, 2);
+        engine.note_on_with_channel(69, 0.8, 3);
+
+        assert_eq!(
+            voices_at(&engine, 69),
+            vec![(3, true, 1.0)],
+            "one key, one string group — the newer member channel owns it"
+        );
+
+        engine.note_expression(69, 3, 12.0, 0.0, 0.0);
+        let bent = voices_at(&engine, 69);
+        assert!((bent[0].2 - 2.0).abs() < 1.0e-4);
+    }
+
+    #[test]
+    fn per_note_bend_skips_a_still_ringing_voice_at_the_same_pitch() {
+        let mut engine = GrandBouleEngine::new(48_000.0, 8);
+        engine.note_on_with_channel(69, 0.8, 2);
+        engine.note_off_on_channel(69, 2);
+        // The released voice is still ringing but idle-bound; a retrigger of the
+        // same key reuses it, so drive a second key into the same slot instead.
+        let ringing = voices_at(&engine, 69);
+        assert_eq!(ringing.len(), 1);
+        assert_eq!(ringing[0].1, false, "the released voice is no longer held");
+
+        // Expression addressed to that pitch must not revive the released note.
+        engine.note_expression(69, 2, 12.0, 0.0, 0.0);
+        assert_eq!(
+            voices_at(&engine, 69),
+            vec![(2, false, 1.0)],
+            "a ringing tail must keep its own pitch"
+        );
+    }
+
+    #[test]
+    fn pressure_and_slide_are_dropped_rather_than_faked() {
+        let mut engine = GrandBouleEngine::new(48_000.0, 8);
+        engine.note_on_with_channel(69, 0.8, 2);
+        let plain = render_engine(&mut engine, 40);
+
+        let mut expressive = GrandBouleEngine::new(48_000.0, 8);
+        expressive.note_on_with_channel(69, 0.8, 2);
+        // Full pressure and full timbre, zero bend: a struck string has no
+        // physical response to either, so the render must be untouched. The
+        // expression registry advertises pitch bend only for this device.
+        expressive.note_expression(69, 2, 0.0, 1.0, 1.0);
+        let pressed = render_engine(&mut expressive, 40);
+
+        assert_eq!(plain, pressed);
     }
 }

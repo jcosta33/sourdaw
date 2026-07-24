@@ -575,8 +575,8 @@ mod tests {
 
         let mut voice_a = LevainVoice::new(SAMPLE_RATE);
         let mut voice_b = LevainVoice::new(SAMPLE_RATE);
-        voice_a.trigger(60, 100, &zone, 0, 1.0, &pool);
-        voice_b.trigger(60, 100, &zone, 0, 1.0, &pool);
+        voice_a.trigger(60, 0, 100, &zone, 0, 1.0, &pool);
+        voice_b.trigger(60, 0, 100, &zone, 0, 1.0, &pool);
         voice_a.vibrato_phase = 0.10;
         voice_b.vibrato_phase = 0.60; // 180° from a after sin
         voice_a.vibrato_rate_scale = 1.0;
@@ -679,7 +679,7 @@ mod tests {
         };
 
         let mut voice = LevainVoice::new(SAMPLE_RATE);
-        voice.trigger(60, 100, &zone, 0, 1.0, &pool);
+        voice.trigger(60, 0, 100, &zone, 0, 1.0, &pool);
         // Force a phase that gives a non-zero sin so onset is the only
         // thing keeping the modulation small.
         voice.vibrato_phase = 0.25; // sin(2π·0.25) = 1.0
@@ -766,7 +766,7 @@ mod tests {
         };
 
         let mut voice = LevainVoice::new(SAMPLE_RATE);
-        voice.trigger(60, 100, &zone, 0, 1.0, &pool);
+        voice.trigger(60, 0, 100, &zone, 0, 1.0, &pool);
         voice.samples_since_on = SAMPLE_RATE as u32;
         voice.vibrato_phase = 0.95;
 

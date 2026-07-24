@@ -1,8 +1,10 @@
 import { type ReactElement, type RefObject, useState } from 'react';
 
 import { DawCompactSelect } from '#/components/daw/DawCompactSelect';
+import { useStore } from '#/infra/store/useStore';
+import { defaultTrackState, trackStore } from '#/modules/Arrangement/stores';
 
-import { MPE_EXPRESSION_AVAILABLE, isMpeExpressionLane } from '../../helpers/mpeAvailability';
+import { isMpeLaneAvailableForDeviceTypes } from '../../helpers/mpeAvailability';
 import { CCLane } from '../AutomationLane/CCLane';
 import { PitchBendLane } from '../AutomationLane/PitchBendLane';
 import { PressureLane } from '../AutomationLane/PressureLane';
@@ -32,15 +34,17 @@ const LANE_OPTIONS: { value: string; label: string; mode: LaneMode }[] = [
 ];
 
 /**
- * Lanes offered in the selector. The MPE per-note expression lanes (Pressure,
- * Slide/CC74, Pitch Bend) capture state that no shipping instrument sounds yet
- * (audit MD-2), so they are withheld until the per-note expression engine path
- * lands (Wave 4). `LANE_OPTIONS`, the lane components and the MIDI use cases
- * they call are left intact — flipping MPE_EXPRESSION_AVAILABLE restores them.
+ * Lanes offered in the selector. Each MPE per-note expression lane (Pressure,
+ * Slide/CC74, Pitch Bend) is offered only when the *track's own instrument*
+ * sounds that dimension (audit MD-2); the availability list is derived from the
+ * engine registry, so the editor never offers a lane the track's instrument
+ * would silently swallow — a Grand Boule track gets Pitch Bend but not Pressure
+ * or Slide. `LANE_OPTIONS`, the lane components and the MIDI use cases they
+ * call stay intact for every track.
  */
-const VISIBLE_LANE_OPTIONS = MPE_EXPRESSION_AVAILABLE
-    ? LANE_OPTIONS
-    : LANE_OPTIONS.filter((opt) => !isMpeExpressionLane(opt.value));
+function visibleLaneOptions(deviceTypes: readonly string[]): typeof LANE_OPTIONS {
+    return LANE_OPTIONS.filter((option) => isMpeLaneAvailableForDeviceTypes(option.value, deviceTypes));
+}
 
 /** Width of the piano-key gutter in PianoRoll (w-10 = 2.5rem = 40px) */
 const PIANO_KEY_GUTTER = 40;
@@ -63,6 +67,10 @@ export const AutomationLane = ({
     scrollRef,
 }: AutomationLaneProps): ReactElement => {
     const [selectedLane, setSelectedLane] = useState('velocity');
+    const trackState = useStore(trackStore, defaultTrackState);
+
+    const track = trackState.tracks.find((candidate) => candidate.id === trackId);
+    const laneOptions = visibleLaneOptions(track?.devices.map((device) => device.type) ?? []);
 
     const laneOption = LANE_OPTIONS.find((output) => output.value === selectedLane) ?? LANE_OPTIONS[0]!;
     const mode = laneOption.mode;
@@ -138,7 +146,7 @@ export const AutomationLane = ({
                     size="micro"
                     aria-label="Automation lane type"
                 >
-                    {VISIBLE_LANE_OPTIONS.map((opt) => (
+                    {laneOptions.map((opt) => (
                         <option key={opt.value} value={opt.value}>
                             {opt.label}
                         </option>
