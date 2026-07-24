@@ -300,6 +300,9 @@ export const projectStore = createStore<ProjectStoreState>({
             tuning,
         }),
         fromCrdt: normalize_project_meta_from_crdt,
+        // Audit CC-2 — projection default for a document without this slot, so
+        // hydrate never writes the previous project's cache back into truth.
+        hydrateMissing: () => defaultProjectStoreState,
     }),
     initialData: defaultProjectStoreState,
     sanitize: sanitize_project_store_state,

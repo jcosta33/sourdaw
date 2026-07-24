@@ -345,6 +345,9 @@ function sanitize_transport_state(value: unknown): TransportState {
 export const transportStore = createStore<TransportState>({
     storage: createAutomergeStorage(DOC_PREFIX_ROOT, 'transport', {
         fromCrdt: sanitize_transport_state,
+        // Audit CC-2 — projection default for a document without this slot, so
+        // hydrate never writes the previous project's cache back into truth.
+        hydrateMissing: () => defaultTransportState,
         toCrdt: ({
             tempo,
             timeSignatureNumerator,

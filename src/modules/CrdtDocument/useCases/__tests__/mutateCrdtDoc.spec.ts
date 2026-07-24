@@ -20,7 +20,7 @@ describe('mutateCrdtDoc', () => {
         mutateCrdtDoc({ id: 'root', changeFn });
 
         expect(automergeRepository.changeDoc).toHaveBeenCalledTimes(1);
-        expect(automergeRepository.changeDoc).toHaveBeenCalledWith('root', changeFn, undefined, undefined);
+        expect(automergeRepository.changeDoc).toHaveBeenCalledWith('root', changeFn, undefined, undefined, undefined);
     });
 
     it('forwards the optional change message to the repository', () => {
@@ -28,7 +28,13 @@ describe('mutateCrdtDoc', () => {
 
         mutateCrdtDoc({ id: 'root', changeFn, message: 'edited clip name' });
 
-        expect(automergeRepository.changeDoc).toHaveBeenCalledWith('root', changeFn, 'edited clip name', undefined);
+        expect(automergeRepository.changeDoc).toHaveBeenCalledWith(
+            'root',
+            changeFn,
+            'edited clip name',
+            undefined,
+            undefined
+        );
     });
 
     it('forwards the exact snapshot transaction handle', () => {
@@ -37,6 +43,23 @@ describe('mutateCrdtDoc', () => {
 
         mutateCrdtDoc({ id: 'root', changeFn, snapshotTransaction });
 
-        expect(automergeRepository.changeDoc).toHaveBeenCalledWith('root', changeFn, undefined, snapshotTransaction);
+        expect(automergeRepository.changeDoc).toHaveBeenCalledWith(
+            'root',
+            changeFn,
+            undefined,
+            snapshotTransaction,
+            undefined
+        );
+    });
+
+    it('forwards the local slot keys a storage-adapter write reported', () => {
+        const changeFn = vi.fn();
+
+        mutateCrdtDoc({ id: 'root', changeFn, localSlots: ['tracks', 'markers'] });
+
+        expect(automergeRepository.changeDoc).toHaveBeenCalledWith('root', changeFn, undefined, undefined, [
+            'tracks',
+            'markers',
+        ]);
     });
 });

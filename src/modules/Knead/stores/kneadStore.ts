@@ -332,6 +332,9 @@ export const kneadStore = createStore<KneadStoreState>({
         // Older documents may still carry the transient flags; force them back
         // to their idle defaults on hydrate so a crashed run never resurfaces.
         fromCrdt: (state) => sanitize_crdt_knead_state(state),
+        // Audit CC-2 — projection default for a document without this slot, so
+        // hydrate never writes the previous project's cache back into truth.
+        hydrateMissing: () => defaultKneadState,
     }),
     initialData: defaultKneadState,
 });

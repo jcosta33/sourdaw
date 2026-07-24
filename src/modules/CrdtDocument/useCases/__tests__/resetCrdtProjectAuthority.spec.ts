@@ -103,4 +103,28 @@ describe('resetCrdtProjectAuthority', () => {
         expect(oldRoot).toEqual({ oldProject: { value: 'old' } });
         expect(newRoot).toEqual({ newBranch: { value: 'new' } });
     });
+
+    // Audit CC-2 stale-bleed. The projected caches used to survive the
+    // authority switch, and the first hydrate against the fresh (slot-less)
+    // document wrote them straight back — a blank project silently inheriting
+    // the previous project's tracks, then persisting and syncing them.
+    it('drops the outgoing project caches so a fresh document cannot inherit them', () => {
+        const trackProjection = createAutomergeStorage<{ tracks: string[] }>('root', 'tracks', {
+            hydrateMissing: () => ({ tracks: [] }),
+        });
+        trackProjection.set({ tracks: ['previous-project-track'] });
+
+        resetCrdtProjectAuthority('New Project');
+        const newRoot = mocks.rootDocs[1];
+
+        expect(trackProjection.get()).toEqual({ tracks: [] });
+
+        // A projection pass against the new empty document must stay a pure
+        // read: no slot appears, and the stale value is gone for good.
+        trackProjection.hydrate?.();
+        flushAutomergeStorageWrites();
+
+        expect(newRoot && Object.hasOwn(newRoot, 'tracks')).toBe(false);
+        expect(trackProjection.get()).toEqual({ tracks: [] });
+    });
 });

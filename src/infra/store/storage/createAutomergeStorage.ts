@@ -16,6 +16,21 @@ type AutomergeStorageMutableDoc = {
 
 type AutomergeStorageMutationInput = {
     docId: AutomergeStorageDocId;
+    /** The document slot this mutation writes. Wire format — never renamed. */
+    key: string;
+    changeFn: (doc: AutomergeStorageMutableDoc) => void;
+    message?: string;
+    snapshotTransaction?: object;
+};
+
+/**
+ * One coalesced document write. `changedKeys` names every slot the change
+ * touches so the projection bridge can re-project just those slots instead of
+ * every root store (audit CC-1).
+ */
+type AutomergeStoragePortMutationInput = {
+    docId: AutomergeStorageDocId;
+    changedKeys: readonly string[];
     changeFn: (doc: AutomergeStorageMutableDoc) => void;
     message?: string;
     snapshotTransaction?: object;
@@ -25,7 +40,13 @@ type AutomergeStoragePort = {
     getSemanticMessage(): string | undefined;
     hasDoc(docId: AutomergeStorageDocId): boolean;
     getDoc(docId: AutomergeStorageDocId): AutomergeStorageReadableDoc | undefined;
-    mutateDoc(input: AutomergeStorageMutationInput): void;
+    /**
+     * Current document version identity. When it has not moved since the last
+     * hydrate the slot cannot have changed, so hydrate can skip its
+     * `JSON.stringify` compare entirely (audit CC-1).
+     */
+    getDocHeads?(docId: AutomergeStorageDocId): readonly string[] | undefined;
+    mutateDoc(input: AutomergeStoragePortMutationInput): void;
     waitForSnapshotTransaction?(snapshotTransaction?: object): Promise<void>;
 };
 
@@ -125,8 +146,10 @@ function commitAutomergeStorageMutations(mutations: readonly AutomergeStorageMut
     }
 
     const message = mutations.find((mutation) => mutation.message !== undefined)?.message;
+    const changedKeys = [...new Set(mutations.map((mutation) => mutation.key))];
     port.mutateDoc({
         docId: firstMutation.docId,
+        changedKeys,
         changeFn: (doc) => {
             for (const mutation of mutations) {
                 mutation.changeFn(doc);
@@ -301,6 +324,29 @@ export function configureAutomergeStoragePort(port: AutomergeStoragePort | null)
     automergeStoragePort = port;
 }
 
+/**
+ * Every live adapter, so an authority switch can drop the outgoing project's
+ * caches. Without this the stores keep the previous project's values and the
+ * first projection against the fresh document resurrects them (audit CC-2).
+ */
+const automergeStorageProjections = new Set<{
+    docId: AutomergeStorageDocId;
+    resetProjection: () => void;
+}>();
+
+/**
+ * Drop the projected caches of every store backed by `docId` and restore each
+ * one to its `hydrateMissing` default. Call this when the document authority is
+ * replaced, before anything projects from the new document.
+ */
+export function resetAutomergeStorageProjections(docId: AutomergeStorageDocId): void {
+    for (const projection of [...automergeStorageProjections]) {
+        if (projection.docId === docId) {
+            projection.resetProjection();
+        }
+    }
+}
+
 const getAutomergeStoragePort = (): AutomergeStoragePort | null => {
     return automergeStoragePort;
 };
@@ -377,6 +423,16 @@ export const createAutomergeStorage = <TData>(
      */
     let lastHydratedJson: string | null = null;
     /**
+     * Audit CC-1 — document version identity at the last completed hydrate of a
+     * *present* slot. Heads that have not moved mean the slot's bytes cannot
+     * have changed, so the `lastHydratedJson` compare above would early-return
+     * anyway; the check lets us reach that answer without stringifying the
+     * slot. Only the present branch records it (the absent branch clears
+     * `lastHydratedJson`), so the fast path stays exactly equivalent to the
+     * JSON compare it replaces.
+     */
+    let lastHydratedHeads: string | null = null;
+    /**
      * Listeners for visible-value changes that happen outside a synchronous
      * get/set/clear/hydrate call — a deferred rAF commit or abort landing
      * after an interleaved hydrate changed what get() returns, so the owning
@@ -415,6 +471,7 @@ export const createAutomergeStorage = <TData>(
 
         return {
             docId,
+            key,
             changeFn: (doc) => {
                 if (crdtValue === null) {
                     delete doc[key];
@@ -427,13 +484,6 @@ export const createAutomergeStorage = <TData>(
             message,
             snapshotTransaction,
         };
-    };
-
-    const writeToCrdt = (value: TData | null, message?: string, snapshotTransaction?: object): void => {
-        const mutation = createMutation(value, message, snapshotTransaction);
-        if (mutation) {
-            commitAutomergeStorageMutations([mutation]);
-        }
     };
 
     const getSemanticMessage = (): string | undefined => {
@@ -574,7 +624,31 @@ export const createAutomergeStorage = <TData>(
         return pending;
     };
 
-    return {
+    /**
+     * Audit CC-2 — drop this projection so the outgoing project's value cannot
+     * survive an authority switch. Pending writes are released (never flushed:
+     * they belong to the replaced document), and the cache falls back to the
+     * store's declared default.
+     */
+    const resetProjection = (): void => {
+        for (const pending of [...pendingWritesByOwner.values()]) {
+            releasePendingWrite(pending);
+        }
+        const visibleBefore = cachedValue;
+        const defaultValue = hydrateMissing ? toDocSafe(hydrateMissing()) : null;
+        committedCacheValue = defaultValue;
+        committedCacheRevision = ++nextRevision;
+        committedSetRevision = committedCacheRevision;
+        cachedValue = defaultValue;
+        cachedRevision = committedCacheRevision;
+        lastHydratedJson = null;
+        lastHydratedHeads = null;
+        if (!Object.is(visibleBefore, cachedValue)) {
+            notifyDeferredChange();
+        }
+    };
+
+    const adapter: StorageAdapter<TData> = {
         get(): TData | null {
             return cachedValue;
         },
@@ -609,8 +683,15 @@ export const createAutomergeStorage = <TData>(
         },
 
         hydrate(): boolean {
-            const doc = getAutomergeStoragePort()?.getDoc(docId);
+            const port = getAutomergeStoragePort();
+            const doc = port?.getDoc(docId);
             if (!doc) {
+                return false;
+            }
+
+            const heads = port?.getDocHeads?.(docId);
+            const headsKey = heads ? heads.join(',') : null;
+            if (headsKey !== null && headsKey === lastHydratedHeads) {
                 return false;
             }
 
@@ -694,27 +775,36 @@ export const createAutomergeStorage = <TData>(
                     cachedRevision = committedCacheRevision;
                 }
                 lastHydratedJson = incomingJson;
+                lastHydratedHeads = headsKey;
                 return true;
             }
 
-            if (cachedValue !== null) {
-                if (hydrateMissing) {
-                    const missing_value = toDocSafe(hydrateMissing());
-                    if (JSON.stringify(cachedValue) === JSON.stringify(missing_value)) {
-                        return false;
-                    }
-                    cachedValue = missing_value;
-                    committedCacheValue = missing_value;
-                    committedCacheRevision = ++nextRevision;
-                    committedSetRevision = committedCacheRevision;
-                    cachedRevision = committedCacheRevision;
-                    lastHydratedJson = null;
-                    return true;
+            // Audit CC-2 — the slot is absent from the document. A projection
+            // is a pure reader: it supplies the store's default, it never
+            // writes the stale cache back into truth. Writing here made the
+            // projection a second writer, recursed into itself through the
+            // projection bridge, and bled the previous project's cache into a
+            // fresh document.
+            lastHydratedHeads = null;
+            if (cachedValue !== null && hydrateMissing) {
+                const missing_value = toDocSafe(hydrateMissing());
+                if (JSON.stringify(cachedValue) === JSON.stringify(missing_value)) {
+                    return false;
                 }
-                writeToCrdt(cachedValue);
+                cachedValue = missing_value;
+                committedCacheValue = missing_value;
+                committedCacheRevision = ++nextRevision;
+                committedSetRevision = committedCacheRevision;
+                cachedRevision = committedCacheRevision;
+                lastHydratedJson = null;
+                return true;
             }
 
             return false;
         },
     };
+
+    automergeStorageProjections.add({ docId, resetProjection });
+
+    return adapter;
 };

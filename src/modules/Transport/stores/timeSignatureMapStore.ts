@@ -110,7 +110,11 @@ export function sanitize_time_signature_map_state(value: unknown): TimeSignature
 }
 
 export const timeSignatureMapStore = createStore<TimeSignatureMapStoreState>({
-    storage: createAutomergeStorage(DOC_PREFIX_ROOT, 'timeSignatureMap'),
+    storage: createAutomergeStorage(DOC_PREFIX_ROOT, 'timeSignatureMap', {
+        // Audit CC-2 — projection default for a document without this slot, so
+        // hydrate never writes the previous project's cache back into truth.
+        hydrateMissing: () => create_empty_time_signature_map_state(),
+    }),
     initialData: create_empty_time_signature_map_state(),
     sanitize: sanitize_time_signature_map_state,
 });

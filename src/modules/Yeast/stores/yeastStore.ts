@@ -10,14 +10,13 @@ import { type Store } from '#/infra/store/types';
 
 import { type YeastState } from '../models/YeastState';
 
-import { createYeastAutomergeStorage } from './yeastAutomergeStorage';
+import { createYeastAutomergeStorage, defaultYeastState } from './yeastAutomergeStorage';
 
 export type { YeastProcessorInfo, YeastProcessorType, YeastState } from '../models/YeastState';
 
-const defaultState: YeastState = {
-    processors: [],
-    uiLevel: 1,
-};
+// Single source for the empty rack: the store seeds with it and the storage
+// adapter projects it when the document has no `yeast` slot (audit CC-2).
+const defaultState: YeastState = defaultYeastState;
 
 function readInitialYeastState(): YeastState | null {
     return null;

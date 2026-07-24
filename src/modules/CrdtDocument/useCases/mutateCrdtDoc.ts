@@ -14,6 +14,13 @@ export type MutateCrdtDocInput<DocShape> = {
     message?: string;
     /** Opaque snapshot owner supplied by the repository transaction boundary. */
     snapshotTransaction?: object;
+    /**
+     * Document keys written by a local CRDT-backed store. Supplied only by the
+     * Automerge storage adapter, which already holds the projected truth for
+     * those slots — the projection bridge uses them to re-project just what
+     * changed instead of every root store (audit CC-1).
+     */
+    localSlots?: readonly string[];
 };
 
 /**
@@ -23,5 +30,11 @@ export type MutateCrdtDocInput<DocShape> = {
  * code applies incremental changes to local documents.
  */
 export function mutateCrdtDoc<DocShape = Record<string, unknown>>(input: MutateCrdtDocInput<DocShape>): void {
-    automergeRepository.changeDoc<DocShape>(input.id, input.changeFn, input.message, input.snapshotTransaction);
+    automergeRepository.changeDoc<DocShape>(
+        input.id,
+        input.changeFn,
+        input.message,
+        input.snapshotTransaction,
+        input.localSlots
+    );
 }

@@ -86,7 +86,7 @@ describe('createAutomergeStorage', () => {
         expect(storage.hydrate?.()).toBe(false);
     });
 
-    it('should preserve store initial data until late CRDT port registration hydrates it', () => {
+    it('should preserve store initial data across a late CRDT port registration without writing it back', () => {
         const storage = createAutomergeStorage<{ count: number }>('root', 'state');
         const store = createStore({
             storage,
@@ -104,8 +104,17 @@ describe('createAutomergeStorage', () => {
         store.hydrate();
 
         expect(store.value).toEqual({ count: 7 });
+        // Audit CC-2 — hydrate is a pure reader. The seeded value stays visible
+        // to the UI, but projection must not push it into the document; only a
+        // real store write (below) may do that.
+        expect(mutations).toEqual([]);
+        expect(Object.hasOwn(doc, 'state')).toBe(false);
+
+        store.set({ count: 8 });
+        flushAutomergeStorageWrites();
+
         expect(mutations).toEqual([{ docId: 'root', message: undefined, snapshotTransaction: undefined }]);
-        expect(doc.state).toEqual({ count: 7 });
+        expect(doc.state).toEqual({ count: 8 });
     });
 
     it('should coalesce frame writes while keeping the first semantic message', () => {
@@ -258,7 +267,12 @@ describe('createAutomergeStorage', () => {
         expect(storage.get()).toBe(value);
     });
 
-    it('should write cached local data into the doc when hydrate finds a missing key', () => {
+    // Audit CC-2 — this used to assert the opposite: hydrate() wrote the cached
+    // value back into the document when the slot was missing. That back-write
+    // made the projection a second writer, recursed through the projection
+    // bridge, and let a previous project's cache seed a fresh document. The
+    // deferred write below is the only sanctioned path into the doc.
+    it('should not write cached local data into the doc when hydrate finds a missing key', () => {
         const { doc, mutations, port } = createTestPort();
         configureAutomergeStoragePort(port);
 
@@ -266,6 +280,12 @@ describe('createAutomergeStorage', () => {
         storage.set({ count: 9 });
 
         expect(storage.hydrate?.()).toBe(false);
+        expect(mutations).toEqual([]);
+        expect(Object.hasOwn(doc, 'state')).toBe(false);
+        expect(storage.get()).toEqual({ count: 9 });
+
+        flushAutomergeStorageWrites();
+
         expect(mutations).toEqual([{ docId: 'root', message: undefined, snapshotTransaction: undefined }]);
         expect(doc.state).toEqual({ count: 9 });
     });

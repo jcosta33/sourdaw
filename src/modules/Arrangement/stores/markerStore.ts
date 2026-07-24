@@ -164,7 +164,11 @@ export function sanitize_marker_store_state(value: unknown): MarkerStoreState {
 }
 
 export const markerStore = createStore<MarkerStoreState>({
-    storage: createAutomergeStorage(DOC_PREFIX_ROOT, 'markers'),
+    storage: createAutomergeStorage(DOC_PREFIX_ROOT, 'markers', {
+        // Audit CC-2 — projection default for a document without this slot, so
+        // hydrate never writes the previous project's cache back into truth.
+        hydrateMissing: () => defaultMarkerStoreState,
+    }),
     initialData: defaultMarkerStoreState,
     sanitize: sanitize_marker_store_state,
 });

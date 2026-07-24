@@ -1,129 +1,119 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, afterEach, type MockInstance } from 'vitest';
 
-import { projectCrdtToStores } from '../projectProjection';
+import { projectChangedCrdtSlots, projectCrdtToStores, projectSlotProjections } from '../projectProjection';
 
-const mocks = vi.hoisted(() => ({
-    trackStore: { hydrate: vi.fn() },
-    automationStore: { hydrate: vi.fn() },
-    midiStore: { hydrate: vi.fn() },
-    grooveTemplateStore: { hydrate: vi.fn() },
-    transportStore: { hydrate: vi.fn() },
-    tempoMapStore: { hydrate: vi.fn() },
-    timeSignatureMapStore: { hydrate: vi.fn() },
-    markerStore: { hydrate: vi.fn() },
-    takeLaneStore: { hydrate: vi.fn() },
-    arrangementStore: { hydrate: vi.fn() },
-    projectStore: { hydrate: vi.fn() },
-    cvGateStore: { hydrate: vi.fn() },
-    actionHistoryStore: { hydrate: vi.fn() },
-    hydrateMidiCrdtProjection: vi.fn(),
-    hydrateYeastCrdtProjection: vi.fn(),
-    hydrateSidechainRoutes: vi.fn(),
-}));
+/**
+ * The projection registry is the single source for which document slot feeds
+ * which store, so these tests drive the real registry and observe dispatch on
+ * the real store objects instead of re-listing the stores in mocks (a second
+ * hand-maintained list would drift from production the moment a slot moves).
+ */
 
-vi.mock('../../../stores/actionHistoryStore', () => {
-    return { actionHistoryStore: mocks.actionHistoryStore };
-});
+type DispatchRecord = {
+    slots: string[];
+    restore: () => void;
+};
 
-// Mock Arrangement stores
-vi.mock('#/modules/Arrangement/stores', async (importOriginal) => {
-    const actual = await importOriginal<typeof import('#/modules/Arrangement/stores')>();
+function spyOnProjections(): DispatchRecord {
+    const slots: string[] = [];
+    const spies: MockInstance[] = [];
+    for (const projection of projectSlotProjections) {
+        const spy = vi.spyOn(projection, 'hydrate');
+        spy.mockImplementation(() => {
+            slots.push(projection.slot);
+        });
+        spies.push(spy);
+    }
     return {
-        ...actual,
-        trackStore: mocks.trackStore,
-        markerStore: mocks.markerStore,
-        takeLaneStore: mocks.takeLaneStore,
+        slots,
+        restore: () => {
+            for (const spy of spies) {
+                spy.mockRestore();
+            }
+        },
     };
-});
-
-// Mock Automation
-vi.mock('#/modules/Automation/stores', async (importOriginal) => {
-    const actual = await importOriginal<typeof import('#/modules/Automation/stores')>();
-    return {
-        ...actual,
-        automationStore: mocks.automationStore,
-    };
-});
-
-// Mock MIDI
-vi.mock('#/modules/MIDI/stores', async (importOriginal) => {
-    const actual = await importOriginal<typeof import('#/modules/MIDI/stores')>();
-    return {
-        ...actual,
-        midiStore: mocks.midiStore,
-        grooveTemplateStore: mocks.grooveTemplateStore,
-    };
-});
-
-vi.mock('#/modules/MIDI/useCases', () => ({
-    hydrateMidiCrdtProjection: mocks.hydrateMidiCrdtProjection,
-}));
-
-vi.mock('#/modules/Yeast/useCases', () => ({
-    hydrateYeastCrdtProjection: mocks.hydrateYeastCrdtProjection,
-}));
-
-// Mock Project
-vi.mock('#/modules/Project/stores', async (importOriginal) => {
-    const actual = await importOriginal<typeof import('#/modules/Project/stores')>();
-    return {
-        ...actual,
-        arrangementStore: mocks.arrangementStore,
-        projectStore: mocks.projectStore,
-    };
-});
-
-// Mock Routing
-vi.mock('#/modules/Routing/useCases', async (importOriginal) => {
-    const actual = await importOriginal<typeof import('#/modules/Routing/useCases')>();
-    return {
-        ...actual,
-        hydrateSidechainRoutes: mocks.hydrateSidechainRoutes,
-    };
-});
-
-// Mock CvGate
-vi.mock('#/modules/CvGate/stores', async (importOriginal) => {
-    const actual = await importOriginal<typeof import('#/modules/CvGate/stores')>();
-    return {
-        ...actual,
-        cvGateStore: mocks.cvGateStore,
-    };
-});
-
-// Mock Transport
-vi.mock('#/modules/Transport/stores', async (importOriginal) => {
-    const actual = await importOriginal<typeof import('#/modules/Transport/stores')>();
-    return {
-        ...actual,
-        transportStore: mocks.transportStore,
-        tempoMapStore: mocks.tempoMapStore,
-        timeSignatureMapStore: mocks.timeSignatureMapStore,
-    };
-});
+}
 
 describe('projectCrdtToStores', () => {
-    beforeEach(() => vi.clearAllMocks());
+    let dispatched: DispatchRecord | null = null;
 
-    it('calls hydrate on all project stores and hydrates sidechain routes', () => {
+    afterEach(() => {
+        dispatched?.restore();
+        dispatched = null;
+    });
+
+    it('runs the projection of every registered root slot exactly once', () => {
+        dispatched = spyOnProjections();
+
         projectCrdtToStores();
 
-        expect(mocks.trackStore.hydrate).toHaveBeenCalledTimes(1);
-        expect(mocks.automationStore.hydrate).toHaveBeenCalledTimes(1);
-        expect(mocks.midiStore.hydrate).not.toHaveBeenCalled();
-        expect(mocks.grooveTemplateStore.hydrate).not.toHaveBeenCalled();
-        expect(mocks.hydrateMidiCrdtProjection).toHaveBeenCalledTimes(1);
-        expect(mocks.transportStore.hydrate).toHaveBeenCalledTimes(1);
-        expect(mocks.tempoMapStore.hydrate).toHaveBeenCalledTimes(1);
-        expect(mocks.timeSignatureMapStore.hydrate).toHaveBeenCalledTimes(1);
-        expect(mocks.markerStore.hydrate).toHaveBeenCalledTimes(1);
-        expect(mocks.takeLaneStore.hydrate).toHaveBeenCalledTimes(1);
-        expect(mocks.arrangementStore.hydrate).toHaveBeenCalledTimes(1);
-        expect(mocks.projectStore.hydrate).toHaveBeenCalledTimes(1);
-        expect(mocks.cvGateStore.hydrate).toHaveBeenCalledTimes(1);
-        expect(mocks.actionHistoryStore.hydrate).toHaveBeenCalledTimes(1);
-        expect(mocks.hydrateYeastCrdtProjection).toHaveBeenCalledTimes(1);
+        expect(dispatched.slots).toEqual(projectSlotProjections.map((projection) => projection.slot));
+    });
+});
 
-        expect(mocks.hydrateSidechainRoutes).toHaveBeenCalledTimes(1);
+describe('projectChangedCrdtSlots (audit CC-1)', () => {
+    let dispatched: DispatchRecord | null = null;
+
+    afterEach(() => {
+        dispatched?.restore();
+        dispatched = null;
+    });
+
+    it('projects only the changed slot for a document-origin change', () => {
+        dispatched = spyOnProjections();
+
+        projectChangedCrdtSlots({ changedSlots: ['transport'], origin: 'document' });
+
+        expect(dispatched.slots).toEqual(['transport']);
+    });
+
+    it('projects several changed slots in registry order', () => {
+        dispatched = spyOnProjections();
+
+        projectChangedCrdtSlots({ changedSlots: ['markers', 'tracks'], origin: 'document' });
+
+        expect(dispatched.slots).toEqual(['tracks', 'markers', 'knead']);
+    });
+
+    it('skips the writing adapter own slot for a local-store change', () => {
+        dispatched = spyOnProjections();
+
+        projectChangedCrdtSlots({ changedSlots: ['transport'], origin: 'local-store' });
+
+        expect(dispatched.slots).toEqual([]);
+    });
+
+    it('still projects a slot derived from the locally written sibling slot', () => {
+        dispatched = spyOnProjections();
+
+        // `knead` is rebuilt from trackStore clip state, so a local `tracks`
+        // write must refresh it even though `tracks` itself is skipped.
+        projectChangedCrdtSlots({ changedSlots: ['tracks'], origin: 'local-store' });
+
+        expect(dispatched.slots).toEqual(['knead']);
+    });
+
+    it('re-runs the Yeast projection when the groove-template slot changes', () => {
+        dispatched = spyOnProjections();
+
+        projectChangedCrdtSlots({ changedSlots: ['grooveTemplates'], origin: 'local-store' });
+
+        expect(dispatched.slots).toEqual(['yeast']);
+    });
+
+    it('projects nothing when a change reports no slots', () => {
+        dispatched = spyOnProjections();
+
+        projectChangedCrdtSlots({ changedSlots: [], origin: 'document' });
+
+        expect(dispatched.slots).toEqual([]);
+    });
+
+    it('ignores slot keys that back no projection', () => {
+        dispatched = spyOnProjections();
+
+        projectChangedCrdtSlots({ changedSlots: ['notASlot'], origin: 'document' });
+
+        expect(dispatched.slots).toEqual([]);
     });
 });

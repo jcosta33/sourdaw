@@ -14,14 +14,16 @@ type StorageRuntimeDoc = {
 export function registerCrdtStorageRuntime(): void {
     configureAutomergeStoragePort({
         getDoc: (docId) => getCrdtDoc<StorageRuntimeDoc>(docId),
+        getDocHeads: (docId) => automergeRepository.getHeads(docId),
         getSemanticMessage: () => getSemanticContext()?.message,
         hasDoc: (docId) => hasCrdtDoc(docId),
-        mutateDoc: ({ docId, changeFn, message, snapshotTransaction }) => {
+        mutateDoc: ({ docId, changedKeys, changeFn, message, snapshotTransaction }) => {
             mutateCrdtDoc<StorageRuntimeDoc>({
                 id: docId,
                 changeFn,
                 message,
                 snapshotTransaction,
+                localSlots: changedKeys,
             });
         },
         waitForSnapshotTransaction: (snapshotTransaction) =>
