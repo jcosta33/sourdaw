@@ -86,6 +86,7 @@ type Contribution = {
 };
 
 const contributions: Contribution[] = [];
+const createdGains: { gain: { value: number } }[] = [];
 
 function triangleSample(frequency: number, frame: number): number {
     const phase = ((frequency * frame) / SAMPLE_RATE) % 1;
@@ -130,7 +131,9 @@ class RenderHarnessContext {
     ) {}
 
     createGain() {
-        return { ...createNode(), gain: createParam(1) };
+        const gain = { ...createNode(), gain: createParam(1) };
+        createdGains.push(gain);
+        return gain;
     }
 
     createStereoPanner() {
@@ -260,6 +263,7 @@ describe('renderTrackSubgraphOffline', () => {
     beforeEach(async () => {
         vi.clearAllMocks();
         contributions.length = 0;
+        createdGains.length = 0;
         vi.stubGlobal('OfflineAudioContext', RenderHarnessContext);
         mocks.getAudioContext.mockReturnValue({ sampleRate: SAMPLE_RATE });
         mocks.buildDeviceChain.mockResolvedValue([]);
@@ -378,6 +382,35 @@ describe('renderTrackSubgraphOffline', () => {
         });
 
         expect(mocks.buildDeviceChain.mock.calls[0]?.[1]).toEqual([track.devices[0]]);
+    });
+
+    // MD-4 review — freeze and bounce are deliverables, not monitoring
+    // snapshots. Baking mute in hands back a zeroed buffer, and
+    // bounce-to-new-track then installs that silent waveform on a track it
+    // marks unmuted. The renderer this replaced never consulted `muted`.
+    it('does not bake a muted source track down to silence', async () => {
+        const track = TrackDummy.create({
+            id: 'track-1',
+            kind: 'midi',
+            muted: true,
+            clips: [midiClip()],
+            devices: [
+                { id: 'fermenter-1', name: 'Fermenter', type: 'fermenter', bypassed: false, parameterValues: {} },
+            ],
+        });
+        mocks.buildDeviceChain.mockResolvedValue([createInstrumentEntry('fermenter-1', 'fermenter')]);
+
+        const buffer = await renderTrackSubgraphOffline({
+            targetTrackId: track.id,
+            renderTracks: [track],
+            startBeat: 0,
+            endBeat: 4,
+        });
+
+        // No node in the rendered graph is zeroed: the mute never reached the strip.
+        expect(createdGains.filter((node) => node.gain.value === 0)).toEqual([]);
+        const note = buffer!.getChannelData(0).subarray(0, Math.round(0.5 * SAMPLE_RATE));
+        expect(magnitudeAt(note, 440)).toBeGreaterThan(0.4);
     });
 
     it('rejects an already-aborted render instead of returning a buffer', async () => {

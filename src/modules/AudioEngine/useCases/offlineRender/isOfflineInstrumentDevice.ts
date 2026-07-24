@@ -1,3 +1,5 @@
+import { isFaustInstrumentModule } from '#/modules/PluginHost/useCases';
+
 /**
  * Device types that are sound *sources* in an offline render rather than
  * pass-through inserts.
@@ -21,9 +23,11 @@ const OFFLINE_INSTRUMENT_DEVICE_TYPES = new Set([
 ]);
 
 export function isOfflineInstrumentDevice(deviceType: string): boolean {
-    return (
-        OFFLINE_INSTRUMENT_DEVICE_TYPES.has(deviceType) ||
-        deviceType.startsWith('builtin-drum-machine') ||
-        deviceType.startsWith('faust-')
-    );
+    if (OFFLINE_INSTRUMENT_DEVICE_TYPES.has(deviceType) || deviceType.startsWith('builtin-drum-machine')) {
+        return true;
+    }
+    // A Faust device id is the module id, and `registerFaustDSP` records
+    // whether that module is an instrument. Matching the `faust-` prefix would
+    // keep every Faust *effect* too, so a dry bounce would come back wet.
+    return isFaustInstrumentModule(deviceType);
 }

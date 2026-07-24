@@ -196,7 +196,13 @@ export async function renderTrackSubgraphOffline({
                 isTarget: track.id === targetTrackId,
                 includeInserts,
                 includeAutomation,
-            })
+            }),
+            // Freeze and bounce produce deliverable audio, not a monitoring
+            // snapshot — the same reason exportStems opts out. Baking mute in
+            // would hand back a zeroed buffer, and bounce-to-new-track then
+            // shows that silent waveform on an unmuted track. The renderer this
+            // replaced never consulted `muted` at all.
+            { honorMuted: false }
         );
         trackStripsById.set(track.id, strip);
         deviceEntriesByTrack.set(track.id, strip.deviceEntries);
