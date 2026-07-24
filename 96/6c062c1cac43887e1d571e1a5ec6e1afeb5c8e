@@ -1,0 +1,62 @@
+src/modules/AudioEngine/engine/telemetryAllocator.ts
+  s_0d39f3a4a4357a::t_149fc3457d8269 113-139
+  s_0d39f3a4a4357a::t_8aa0e76330f761 260-301
+  s_0d39f3a4a4357a::t_4a209a8dceb8ac 198-201
+src/modules/AudioEngine/services/meteringProcessor.ts
+  s_0d39f3a4a4357a::t_a98a49724d317c 1-17,70-71
+src/modules/WorkspaceShell/presentations/hooks/useAppInitialization.ts
+  s_0d39f3a4a4357a::t_f0848049a92215 89-90,92-94
+  s_0d39f3a4a4357a::t_20c048124040f0 67-83,85-88,91,95-98,100-101
+src/modules/AudioEngine/services/__tests__/fermenterProcessorTelemetry.spec.ts
+  s_0d39f3a4a4357a::t_790555ae51ab15 1-228
+src/modules/AudioEngine/services/__tests__/wasmViewGrowthHarness.ts
+  s_0d39f3a4a4357a::t_1ad21571aed22f 85-120
+src/modules/WorkspaceShell/presentations/hooks/__tests__/useAppInitialization.spec.ts
+  s_0d39f3a4a4357a::t_cb1077b978a0d6 104-127,133-135,138-142,145-146,149-151,153-164,166-195
+  s_0d39f3a4a4357a::t_ba5b3efa5b4ce8 128-132,136-137,143-144,147-148
+  s_0d39f3a4a4357a::t_2f49bd2c413a24 152,165
+src/modules/AudioEngine/engine/FermenterNode.ts
+  s_0d39f3a4a4357a::t_29bc9e3f9af1d1 6-9,16-24
+  s_0d39f3a4a4357a::t_799e520f6c10e0 52-75,86
+  s_0d39f3a4a4357a::t_b2e6ee65049faf 120-135,138
+  s_0d39f3a4a4357a::t_881efda5c6864e 205-232,245-251
+  s_0d39f3a4a4357a::t_af299f80963823 25
+src/modules/AudioEngine/engine/TrackNode.ts
+  s_0d39f3a4a4357a::t_085168ec14595b 257-261
+src/modules/AudioEngine/services/fermenterProcessor.ts
+  s_0d39f3a4a4357a::t_76465eda1608d7 84,104-107,124-126
+  s_0d39f3a4a4357a::t_24e9a30b091d7f 9,13-19,24,29-40
+  s_0d39f3a4a4357a::t_dfad1ceac060de 208-209,211
+  s_0d39f3a4a4357a::t_6025b0cc844c44 343-351,366-371,373
+  s_0d39f3a4a4357a::t_47aef3763e677d 41
+src/modules/AudioEngine/services/__tests__/fermenterProcessorWasmViews.spec.ts
+  s_0d39f3a4a4357a::t_d365300aa963ef 95-99,115-117,132,150-151
+  s_0d39f3a4a4357a::t_75ca23dd232706 11,18-22,24-27
+src/modules/AudioEngine/engine/__tests__/FermenterNode.spec.ts
+  s_0d39f3a4a4357a::t_48bb0c3557416f 156-158,160-162
+  s_0d39f3a4a4357a::t_ab1f947be3f262 200-201,219
+  s_0d39f3a4a4357a::t_374bf8794e0d2b 3
+  s_0d39f3a4a4357a::t_0dc7f43a6f096e 104-106,110-111
+  s_0d39f3a4a4357a::t_2b4d184b7f51ba 218,265-266
+  s_0d39f3a4a4357a::t_be5f9cb6ae3ae1 94-103,107-109,112-145,148-155,159,163-199,202-217,220-242,245-249,251-262,264,267-281
+  s_0d39f3a4a4357a::t_9449a5ad2ef4fc 146-147
+  s_0d39f3a4a4357a::t_738bd067907f9a 243-244,250,263
+src/modules/AudioEngine/repositories/createWebAudioEngine.ts
+  s_0d39f3a4a4357a::t_057b7afa3039f3 650-652
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "966c062c1cac43887e1d571e1a5ec6e1afeb5c8e",
+  "prompts": {},
+  "sessions": {
+    "s_0d39f3a4a4357a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "60da6a2e-7d79-4d98-8624-e993f5a9f94e",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
