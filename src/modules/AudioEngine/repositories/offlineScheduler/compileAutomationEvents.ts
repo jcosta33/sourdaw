@@ -21,6 +21,14 @@ export type CompileAutomationEventsOptions = {
     // Restrict emission to a clip's active span, in project seconds (AU-12). The
     // event time origin stays the export region start; only visibility is cropped.
     activeWindowSeconds?: ActiveWindowSeconds;
+    // Affine post-transform on the interpolated values: value → value*valueScale
+    // + valueOffset. This is how the live path applies a linked lane's linkScale
+    // (and any device binding scale/offset) — it scales the *resolved scalar*
+    // once, AFTER interpolation, so a bezier segment's cp1.y/cp2.y shape is
+    // evaluated unscaled and then scaled (AU-3). Applied before the slew; the IIR
+    // is affine so the order does not change the result.
+    valueScale?: number;
+    valueOffset?: number;
 };
 function interpolateValue(
     first: AutomationPoint,
@@ -277,6 +285,13 @@ export function compileAutomationEvents(
                     timed[index + 2]?.point
                 ),
             });
+        }
+    }
+    const valueScale = options?.valueScale ?? 1;
+    const valueOffset = options?.valueOffset ?? 0;
+    if (valueScale !== 1 || valueOffset !== 0) {
+        for (const event of events) {
+            event.value = event.value * valueScale + valueOffset;
         }
     }
     if (options?.slew) {

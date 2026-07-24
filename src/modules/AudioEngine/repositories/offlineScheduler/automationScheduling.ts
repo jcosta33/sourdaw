@@ -80,12 +80,17 @@ export function scheduleTrackAutomation(
         if (!sourceLane || sourceLane.points.length === 0) {
             continue;
         }
-        const points =
-            resolved.scale === 1
-                ? sourceLane.points
-                : sourceLane.points.map((point) => ({ ...point, value: point.value * resolved.scale }));
+        // AU-3: the live path evaluates the source curve, then multiplies the
+        // resolved scale into the *scalar output* once — so a bezier segment's
+        // cp1.y/cp2.y are evaluated unscaled. Match it: pass the unscaled source
+        // points and apply linkScale as compileAutomationEvents' affine
+        // `valueScale`, never a pre-scale of point.value (which would leave
+        // bezier control points unscaled and distort the curve).
+        const points = sourceLane.points;
+        const laneScale = resolved.scale;
 
-        const windowOptions = activeWindowSeconds ? { activeWindowSeconds } : undefined;
+        const laneOptions =
+            activeWindowSeconds || laneScale !== 1 ? { activeWindowSeconds, valueScale: laneScale } : undefined;
 
         if (lane.parameterId === 'gain') {
             scheduleAutomationOnParam(
@@ -97,7 +102,7 @@ export function scheduleTrackAutomation(
                 regionStartSeconds,
                 projectBeatToSeconds,
                 compensationDelaySec,
-                windowOptions
+                laneOptions
             );
             continue;
         }
@@ -112,7 +117,7 @@ export function scheduleTrackAutomation(
                 regionStartSeconds,
                 projectBeatToSeconds,
                 compensationDelaySec,
-                windowOptions
+                laneOptions
             );
             continue;
         }
@@ -129,7 +134,6 @@ export function scheduleTrackAutomation(
             if (!binding) {
                 continue;
             }
-            const deviceOptions = { slew: deviceSlew, activeWindowSeconds };
             if (binding.kind === 'segments') {
                 const segments = compileAutomationSegments(
                     points,
@@ -139,26 +143,26 @@ export function scheduleTrackAutomation(
                     sampleRate,
                     regionStartSeconds,
                     projectBeatToSeconds,
-                    deviceOptions
+                    { slew: deviceSlew, activeWindowSeconds, valueScale: laneScale }
                 );
                 binding.apply(segments);
                 continue;
             }
             for (const { audioParam, scale, offset } of binding.targets) {
-                const targetPoints =
-                    scale !== 1 || offset !== 0
-                        ? points.map((point) => ({ ...point, value: point.value * scale + offset }))
-                        : points;
+                // Compose linkScale with the device binding's unit scale/offset as
+                // one affine post-transform: paramValue = interpolate(source) *
+                // (linkScale * scale) + offset — evaluated on the unscaled source
+                // curve (AU-3), never a pre-scale of point.value.
                 scheduleAutomationOnParam(
                     audioParam,
-                    targetPoints,
+                    points,
                     durationSeconds,
                     defaultTempo,
                     changes,
                     regionStartSeconds,
                     projectBeatToSeconds,
                     compensationDelaySec,
-                    deviceOptions
+                    { slew: deviceSlew, activeWindowSeconds, valueScale: laneScale * scale, valueOffset: offset }
                 );
             }
         }

@@ -1,5 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 
+import { evaluateAutomationCurve } from '#/utils/automationCurve';
+
 import { asBaseAudioContext, createMockAudioContext } from '../../../../../helpers/__tests__/audioContext.mock';
 import { type AutomationLane } from '../../../models/AutomationViewTypes';
 import { resolveDeviceParam, resolveDeviceParamScale } from '../../../services/deviceResolution';
@@ -749,6 +751,49 @@ describe('scheduleTrackAutomation', () => {
         // silent; now it renders the source curve inverted (linkScale -1).
         expect(gain.setValueAtTime).toHaveBeenCalledWith(-0.2, 0);
         expect(gain.linearRampToValueAtTime.mock.calls.at(-1)?.[0]).toBeCloseTo(-0.8, 10);
+    });
+
+    it('scales a linked bezier lane by the resolved scalar, not by pre-scaling points (AU-3)', () => {
+        const gain = makeParam();
+        const gainNode = { gain } as unknown as GainNode;
+        const panNode = { pan: makeParam() } as unknown as StereoPannerNode;
+
+        // A bezier source whose control-point altitudes (cp1.y/cp2.y) shape the
+        // segment. Pre-scaling point.value would leave cp1.y/cp2.y unscaled and
+        // distort the curve; live evaluates the curve, then multiplies the scalar.
+        const sourceA = {
+            beat: 0,
+            value: 0,
+            curve: 'bezier' as const,
+            tension: 0,
+            cp1: { x: 0.33, y: 0.8 },
+            cp2: { x: 0.66, y: 0.8 },
+        };
+        const sourceB = { beat: 4, value: 1, curve: 'linear' as const, tension: 0 };
+        const source = makeLane({
+            id: 'source',
+            trackId: 'source-track',
+            parameterId: 'gain',
+            points: [sourceA, sourceB],
+        });
+        const follower: AutomationLane = {
+            ...makeLane({ id: 'follower', trackId: 'track-1', parameterId: 'gain', points: [] }),
+            linkedLaneId: 'source',
+            linkScale: 2,
+        };
+
+        scheduleTrackAutomation([source, follower], 'track-1', gainNode, panNode, [], 10, 120, []);
+
+        // Altitude parity at the segment midpoint (beat 2 → 1s at 120bpm): offline
+        // must equal the live-scaled kernel output, not the point-pre-scaled
+        // distortion the pre-scale produced.
+        const expected = evaluateAutomationCurve({ firstPoint: sourceA, secondPoint: sourceB, beat: 2 }) * 2;
+        const calls = gain.linearRampToValueAtTime.mock.calls as [number, number][];
+        const nearest = calls.reduce((best, call) => (Math.abs(call[1] - 1) < Math.abs(best[1] - 1) ? call : best));
+        expect(nearest[0]).toBeCloseTo(expected, 6);
+        // The scaled altitude clears 1.0 (endpoints scale to [0,2]); the pre-scale
+        // bug landed it well under, so this also fences the regression.
+        expect(expected).toBeGreaterThan(1.2);
     });
 
     it('renders a chained link cross-track, multiplying linkScale (AU-3)', () => {
