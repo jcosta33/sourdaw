@@ -111,6 +111,8 @@ Severity: **blocker** (silent corruption/loss on a common path) / **major** (wro
 artifact under a normal feature) / **minor** (edge case, papercut, latent). Remediation: S/M/L.
 
 ### AU-1 — Two hand-maintained curve implementations with no cross-conformance test; already drifting — **major**, M
+
+Status: FIXED in #747 — collapsed both runtimes onto one shared kernel (`src/utils/automationCurve.ts`, `evaluateAutomationCurve`); the live copy adopted the offline-aligned `stairs` clamp [2,32] + fraction clamp, the offline copy adopted the absent-tension default; a permanent cross-conformance gate (live-side + offline-side `automationCurveConformance` specs) now guards re-divergence.
 Live `interpolateAutomationPointValue`
 (`services/automationPointAlgorithms.ts:89-178`) and offline `interpolateValue`
 (`offlineScheduler/compileAutomationEvents.ts:18-79`) are independent copies of the same seven-curve
