@@ -1,0 +1,241 @@
+src/modules/AudioEngine/models/AudioEngineState.ts
+  s_0d39f3a4a4357a::t_5d073066025135 113-114,118-122,124-128
+  s_0d39f3a4a4357a::t_8266aedadd6277 195-197,199-203
+  s_0d39f3a4a4357a::t_690a65f55df405 109-112,115-117,123,155,165-178,193-194,198
+src/modules/MIDI/useCases/webMidiInput/__tests__/handleWebMidiPitchBend.spec.ts
+  s_0d39f3a4a4357a::t_b0a35fac0b379e 45,50-72,74-94,96-102
+  s_0d39f3a4a4357a::t_35367076ea842b 16-17,22
+  s_0d39f3a4a4357a::t_bfc747c38fbb53 103
+  s_0d39f3a4a4357a::t_09cd10d1b7490c 73,95
+src/modules/MIDI/useCases/webMidiInput/__tests__/handleWebMidiCC.spec.ts
+  s_0d39f3a4a4357a::t_9280c9f4d115b4 129-134,136-137
+  s_0d39f3a4a4357a::t_8596074e8ab4b1 19-20,27
+  s_0d39f3a4a4357a::t_bd431e8a3fc6be 56
+  s_0d39f3a4a4357a::t_0cd95e365c53f8 135
+src/modules/AudioEngine/engine/wasmDeviceRegistry.ts
+  s_0d39f3a4a4357a::t_cd476ab171dd33 284
+  s_0d39f3a4a4357a::t_a6aefadfebc45f 234
+  s_0d39f3a4a4357a::t_8d880c21847dd7 70
+  s_0d39f3a4a4357a::t_5cf68b5c21ea7e 114
+  s_0d39f3a4a4357a::t_e80e8229fa9c92 701,746
+src/modules/AudioEngine/useCases/index.ts
+  s_0d39f3a4a4357a::t_56c9d076905bdd 42,44
+  s_0d39f3a4a4357a::t_3b6bb22066c6e8 43
+crates/daw-dsp/src/fermenter/voice.rs
+  s_0d39f3a4a4357a::t_10a3532b27f218 111-120
+  s_0d39f3a4a4357a::t_4f8105ee2ec674 381-393
+  s_0d39f3a4a4357a::t_ba92ca0dc83c12 167-169,184-188
+  s_0d39f3a4a4357a::t_dfb20b5cc0eb67 482-497
+  s_0d39f3a4a4357a::t_47159f65a743fa 579-580,741
+  s_0d39f3a4a4357a::t_dc5fd4db7eb21a 773-780,782-788,790-808
+  s_0d39f3a4a4357a::t_eb935ab3daf861 53-61
+  s_0d39f3a4a4357a::t_9354debf6c3bd9 131-132
+  s_0d39f3a4a4357a::t_c2a5420537c799 400-403
+  s_0d39f3a4a4357a::t_7940b05c9f70df 394-398
+  s_0d39f3a4a4357a::t_f688654f03e701 178,181-182
+  s_0d39f3a4a4357a::t_34bfeb6ca70133 781,789
+src/modules/TimelineEditor/presentations/views/ClipView/PianoRollToolbar.tsx
+  s_0d39f3a4a4357a::t_89e8fa46d70193 91,93,96
+  s_0d39f3a4a4357a::t_9459d363a0db17 17-22
+  s_0d39f3a4a4357a::t_9e2f06330d241a 23
+  s_88ffc5326d9b0b::t_7e0269d6e464f6 14,92,94-95,97,134,350-354
+src/modules/TimelineEditor/presentations/views/ClipView/__tests__/AutomationLane.spec.tsx
+  s_0d39f3a4a4357a::t_bb3630010e091c 157-161,166-171,184-188,192-196,200-204
+  s_0d39f3a4a4357a::t_ef6ddcee6eb02a 56-72
+  s_0d39f3a4a4357a::t_2ec4b44926c045 164-165,174-183
+src/modules/MIDI/useCases/webMidiInput/__tests__/handleWebMidiChannelPressure.spec.ts
+  s_0d39f3a4a4357a::t_0f16ea126e79e4 7-8,13-14
+  s_0d39f3a4a4357a::t_34d9e09f51b984 24,28-47,49-57
+  s_0d39f3a4a4357a::t_d2c7811befba19 15-16
+  s_0d39f3a4a4357a::t_9964051c10add2 58
+  s_0d39f3a4a4357a::t_d9010a5477cf24 48
+src/modules/TimelineEditor/presentations/views/ClipView/__tests__/PianoRollToolbar.spec.tsx
+  s_0d39f3a4a4357a::t_99617e6ae0ab79 267-274,276-291,293-298
+  s_0d39f3a4a4357a::t_b0e3d2eaead16e 249,256,275,292
+src/modules/AudioEngine/engine/FermenterNode.ts
+  s_0d39f3a4a4357a::t_5e575e54dfa3d5 180-190,192-197
+  s_0d39f3a4a4357a::t_500233a4d6dee2 80-81,83-87
+  s_0d39f3a4a4357a::t_e09085665084b5 78-79,82,156,163,167-170,172-179,191
+crates/daw-dsp/src/levain/engine.rs
+  s_0d39f3a4a4357a::t_929966b5398b65 628-632
+  s_0d39f3a4a4357a::t_24fdec4ce6258d 882-885,890,892-901,903-904
+  s_0d39f3a4a4357a::t_27ac0bc3eae1ac 610-627,633-685,687-759,761-774,881,886,888-889,891,902,905-907
+  s_0d39f3a4a4357a::t_02bf407027e194 365-366
+  s_0d39f3a4a4357a::t_70e0613dcbb7eb 31-35
+  s_0d39f3a4a4357a::t_ffee5bb568c348 809,813-814,818-819,821-823,826-830,832,836-843,845-850,852-854,860,867
+  s_0d39f3a4a4357a::t_3ea56f4a092ecf 164,321,775-808,810-812,815-817,820,824-825,831,833-835,844,851,855-859,861-866,868-880
+  s_0d39f3a4a4357a::t_14581366193c6e 84
+  s_0d39f3a4a4357a::t_4065f444d9f3d1 163,165-168,234,251,281-284,287,320,322-329,352-364,686,760,887
+crates/daw-dsp/src/fermenter/layer.rs
+  s_0d39f3a4a4357a::t_d257989370b8ee 306,308-312
+  s_0d39f3a4a4357a::t_04a82b4be830b1 197-200
+  s_0d39f3a4a4357a::t_64bc309ec4298e 266-274,276-282,307
+  s_0d39f3a4a4357a::t_3b76be6f84918c 288-305
+  s_0d39f3a4a4357a::t_fed302ff14860d 284,634-739
+  s_0d39f3a4a4357a::t_7f4c5100d75f44 201-202,241,740-744
+src/modules/AudioEngine/engine/__tests__/wasmDeviceRegistryDescriptors.spec.ts
+  s_0d39f3a4a4357a::t_e16551a636d5ee 241
+  s_0d39f3a4a4357a::t_212dbb073b97dc 617
+crates/daw-dsp/src/levain/voice.rs
+  s_0d39f3a4a4357a::t_f0affaf36b1064 675-686,690,693
+  s_0d39f3a4a4357a::t_181d30f13c6ca4 522-528,532-542
+  s_0d39f3a4a4357a::t_36b48f49a26eaf 439-454,482-488
+  s_0d39f3a4a4357a::t_5b0e65c13e777b 595-597,599-601,622-623
+  s_0d39f3a4a4357a::t_21672020d62677 543-544
+  s_0d39f3a4a4357a::t_3831c904412135 389-396
+  s_0d39f3a4a4357a::t_128ee0fd8cdf4b 496,505-506
+  s_0d39f3a4a4357a::t_eb55546103b711 463-464
+  s_0d39f3a4a4357a::t_79f1139c8dcbe9 545-546,548
+  s_0d39f3a4a4357a::t_0e8d36884da7da 785-803
+  s_0d39f3a4a4357a::t_3ae6b94c814c92 756-763,765-766,768-773
+src/modules/AudioEngine/useCases/noteExpression/applyNoteExpression.ts
+  s_0d39f3a4a4357a::t_43c3c6b7a1d9e6 1-13,21-40,45-48,50-68,70-71
+  s_0d39f3a4a4357a::t_c9351242737628 14-20,41-44,49,69
+src/modules/AudioEngine/engine/LevainNode.ts
+  s_0d39f3a4a4357a::t_00bdff6827b31c 20-21,23-27,114-117,119-129,139-140,196
+  s_0d39f3a4a4357a::t_d57dbcda0c5960 18-19,22,102,104,108-111,118,130-138
+src/modules/AudioEngine/useCases/__tests__/applyNoteExpression.spec.ts
+  s_0d39f3a4a4357a::t_a78c6b6c9ddd59 1-9,11,14-32,34-40,43,45-51,62-72,74-90,92-109,111-133,161-162
+  s_0d39f3a4a4357a::t_1473caaaa953b5 10,12-13,33,41-42,44,52-61,73,91,110,134-160
+src/modules/AudioEngine/engine/__tests__/wasmDeviceRegistry.spec.ts
+  s_0d39f3a4a4357a::t_3f9c18444cd205 296
+src/modules/TimelineEditor/presentations/helpers/__tests__/mpeAvailability.spec.ts
+  s_0d39f3a4a4357a::t_9bc2baf9a19a72 6,7,9,11,15,22-23,44
+  s_0d39f3a4a4357a::t_7af76628e9bea5 3,8,10,14,16-21,24-43,45-47
+src/modules/AudioEngine/services/fermenterProcessor.ts
+  s_0d39f3a4a4357a::t_e29dc94c8b0817 82-88,90-94,100,109
+  s_0d39f3a4a4357a::t_312d44c4972a69 207,240-243
+  s_0d39f3a4a4357a::t_0712324c04f2d2 245
+  s_0d39f3a4a4357a::t_7b4da70a1406c6 89,98-99,107-108,229,232-238,244
+crates/daw-dsp/src/fermenter/mod.rs
+  s_0d39f3a4a4357a::t_e4baa413b7f708 107-112,121,123-124
+  s_0d39f3a4a4357a::t_819a39582c14d9 88-93,98-106,113-120,122
+src/modules/TimelineEditor/presentations/helpers/mpeAvailability.ts
+  s_0d39f3a4a4357a::t_2230d509e2cf27 2,6,17,20,22,26
+  s_0d39f3a4a4357a::t_241e2af34e59c6 1,7-11,13-15,18-19,21,23-25,29-31,33-41,43-48
+src/modules/MIDI/useCases/webMidiInput/handleWebMidiPitchBend.ts
+  s_0d39f3a4a4357a::t_d8766bfcfb0184 2,11,29-33,35-40,53-55,58-60,62,64-68
+  s_0d39f3a4a4357a::t_deb3718f7b20c9 56-57,63
+  s_0d39f3a4a4357a::t_901d0c6edff37b 34,61
+src/modules/MIDI/useCases/webMidiInput/handleWebMidiCC.ts
+  s_0d39f3a4a4357a::t_9205f2aac426a7 26-30,32-37
+  s_0d39f3a4a4357a::t_36e0573cc3d0b0 2
+  s_0d39f3a4a4357a::t_63fcef7a355b9f 31
+src/modules/AudioEngine/engine/noteExpression.ts
+  s_0d39f3a4a4357a::t_f01d4910423477 1-8,12-17,24-41,45-47,54,62,77,79-83,85-91,104-139,141-142,144-154
+  s_0d39f3a4a4357a::t_0bb4762e476253 9-11,18-23,42-44,48-53,55-61,63-76,78,84,92-103,140,143
+src/modules/AudioEngine/services/levainProcessor.ts
+  s_0d39f3a4a4357a::t_b83ae8c30ad011 63-69,71-75,80,94
+  s_0d39f3a4a4357a::t_05bbb8a4d6a677 169,199-202
+  s_0d39f3a4a4357a::t_565d774677d600 204
+  s_0d39f3a4a4357a::t_840d21a2722af3 70,78-79,92-93,188,191-197,203
+crates/daw-dsp/src/fermenter/synth.rs
+  s_0d39f3a4a4357a::t_64ede737a84da4 588,590-592
+  s_0d39f3a4a4357a::t_f39d4ad5a17e68 1028-1029,1034,1036,1040,1045,1047-1048,1050-1062,1064-1066
+  s_0d39f3a4a4357a::t_7b20f2aef72431 907-928,930-1007,1013-1027,1030-1033,1037-1039,1041-1044,1046,1049,1063,1067-1069,1136,1144-1145
+  s_0d39f3a4a4357a::t_defa69ce474f1c 1137-1143
+  s_0d39f3a4a4357a::t_1d11a4c4d7219c 1008-1012
+  s_0d39f3a4a4357a::t_027e3e4adffe26 561
+  s_0d39f3a4a4357a::t_1cd4dc15e0c0f0 547-552
+  s_0d39f3a4a4357a::t_545e4fa774df10 1070-1071,1073-1074,1078-1083,1085-1090,1092,1103-1107,1113-1114,1122-1123,1127-1128,1133-1135
+  s_0d39f3a4a4357a::t_7634cc5c825b65 566-571,573,577-587,589
+  s_0d39f3a4a4357a::t_e94655f58dcdaf 1075-1077,1084,1091
+  s_0d39f3a4a4357a::t_0e3524114fa0c2 1072,1093-1102,1108-1112,1115-1121,1124-1126,1129-1132
+  s_0d39f3a4a4357a::t_0f7756776d0384 929,1035
+src/modules/Transport/useCases/scheduling/__tests__/scheduleMidiNotes.spec.ts
+  s_0d39f3a4a4357a::t_e2f63000588cc5 874
+  s_0d39f3a4a4357a::t_08904df5db799b 59
+  s_0d39f3a4a4357a::t_20b1d2d3d20eea 5
+  s_0d39f3a4a4357a::t_ed5e19e913295a 916
+  s_0d39f3a4a4357a::t_3e056ec02f5c7f 851-873,875-892,894-906,908-910,914-915,917-933,935-939
+  s_0d39f3a4a4357a::t_d17ab811312e47 893,907,911-913,934
+crates/daw-dsp/src/levain/mod.rs
+  s_0d39f3a4a4357a::t_1f0e625726b79b 85-90,99,101-102
+  s_0d39f3a4a4357a::t_8328185c5dcbb9 71-84,91-98,100
+src/modules/TimelineEditor/presentations/views/ClipView/AutomationLane.tsx
+  s_0d39f3a4a4357a::t_698611ac2c078a 4
+  s_0d39f3a4a4357a::t_fa878182f2ab14 5,47
+  s_0d39f3a4a4357a::t_8f71604c9c16d6 149
+  s_0d39f3a4a4357a::t_85a3e4548736e8 70-72
+  s_0d39f3a4a4357a::t_41f16a6a305b25 7
+  s_88ffc5326d9b0b::t_d98f324c17358c 37-43,45-46,73
+src/modules/Transport/useCases/scheduling/scheduleMidiNotes.ts
+  s_0d39f3a4a4357a::t_46653648f4eb86 4
+  s_0d39f3a4a4357a::t_25c48efe9d78e3 481-487,489-495
+  s_0d39f3a4a4357a::t_ea258d4b248a87 479-480,488,496
+src/modules/MIDI/useCases/webMidiInput/handleWebMidiChannelPressure.ts
+  s_0d39f3a4a4357a::t_1021aee9c23536 1-2
+  s_0d39f3a4a4357a::t_201b470d7c8f23 19-23,25-30
+  s_0d39f3a4a4357a::t_d70f26fe026319 24
+public/wasm/daw-dsp/daw_dsp.d.ts
+  s_0d39f3a4a4357a::t_a115d0799eb81e 92,95-101,400,403-409,599,600-622,624,697-712
+  s_0d39f3a4a4357a::t_167d375dce2614 93-94,102,104,107-112,117-120,230-239,244-247,257-260,401-402,410,415-420,425-428,562,564-578,579-598,646,648,650
+public/wasm/daw-dsp/daw_dsp.js
+  s_0d39f3a4a4357a::t_ea4e3c8319e47f 190,193-199,201-204,207,970,973-979,981-984,987
+  s_0d39f3a4a4357a::t_1ce1b3c9312fd8 191-192,200,205-206,209,215-224,233-241,476-492,500-507,526-534,971-972,980,985-986,995-1004,1013-1021
+public/wasm/daw-dsp/daw_dsp_bg.wasm.d.ts
+  s_0d39f3a4a4357a::t_b60436a9ff3a7e 42,43-65,67,140-155
+  s_0d39f3a4a4357a::t_afda6acba2ec00 5,7-21,22-41,89,91,93
+src/modules/AudioEngine/wasm/daw_dsp.d.ts
+  s_0d39f3a4a4357a::t_204f629df6069e 92,95-101,400,403-409,599,600-622,624,697-712
+  s_0d39f3a4a4357a::t_30faa29335b230 93-94,102,104,107-112,117-120,230-239,244-247,257-260,401-402,410,415-420,425-428,562,564-578,579-598,646,648,650
+src/modules/AudioEngine/wasm/daw_dsp.js
+  s_0d39f3a4a4357a::t_6d5da6a5139883 233,236-242,244-247,250,1013,1016-1022,1024-1027,1030
+  s_0d39f3a4a4357a::t_fe80828f60b9fa 234-235,243,248-249,252,258-267,276-284,519-535,543-550,569-577,1014-1015,1023,1028-1029,1038-1047,1056-1064
+src/modules/AudioEngine/useCases/noteExpression/getNoteExpressionDimensions.ts
+  s_0d39f3a4a4357a::t_5324f6664cf02d 1-17
+src/modules/MIDI/useCases/webMidiInput/__tests__/handleWebMidiNoteOff.spec.ts
+  s_0d39f3a4a4357a::t_d7d4bef234ece6 373-376
+  s_0d39f3a4a4357a::t_5702d92b2a0cd8 286-287,322,330-331
+crates/daw-dsp/src/grand_boule/coupled_strings.rs
+  s_0d39f3a4a4357a::t_794d2cbd0b6164 236-281
+crates/daw-dsp/src/grand_boule/engine.rs
+  s_0d39f3a4a4357a::t_1a93e099059a9a 164,1027-1093,1103,1105-1107,1115,1118,1141,1146-1152,1158,1160,1165-1183
+  s_0d39f3a4a4357a::t_ac523762c5cafd 431-488,492-496
+  s_0d39f3a4a4357a::t_92988b6857feae 128
+  s_0d39f3a4a4357a::t_582454e583942a 1094-1102,1104,1108-1114,1116-1117,1119-1140,1142-1145,1153-1157,1159,1161-1164
+  s_0d39f3a4a4357a::t_c40cff6997d99c 80-84
+  s_0d39f3a4a4357a::t_93ba3bd4c92412 158-163,165,214,249,266
+crates/daw-dsp/src/grand_boule/mod.rs
+  s_0d39f3a4a4357a::t_a853102b3ee0f6 70-98
+crates/daw-dsp/src/grand_boule/voice.rs
+  s_0d39f3a4a4357a::t_8bf77122392349 67-80,115-118,248,256-261,363-365,376-378,395-425,427,431,433-450,470-472
+crates/daw-dsp/src/levain/realism/mod.rs
+  s_0d39f3a4a4357a::t_5aabf598df1eb2 578-579,682,769
+public/wasm/manifest.json
+  s_0d39f3a4a4357a::t_f95f4792e0b3d5 15,20
+src/modules/AudioEngine/engine/GrandBouleNode.ts
+  s_0d39f3a4a4357a::t_7c78e29da8934a 50-66,141,143,146-179
+src/modules/AudioEngine/workers/grandBouleEngineWorker.ts
+  s_0d39f3a4a4357a::t_ca592e38cc8780 14-15,178-193,214-219,227-233
+src/modules/MIDI/useCases/webMidiInput/__tests__/handleWebMidiNoteOn.spec.ts
+  s_0d39f3a4a4357a::t_ef7f5912816180 119-122,159,238,356,407-408,439,466
+src/modules/MIDI/useCases/webMidiInput/handleWebMidiNoteOff.ts
+  s_0d39f3a4a4357a::t_45209f9d4e438d 120,132,146
+src/modules/MIDI/useCases/webMidiInput/handleWebMidiNoteOn.ts
+  s_0d39f3a4a4357a::t_b235717e08d6d8 113,121-126,137,155,163,173,187,226,243
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "b23ee5ad941acb9ceee492d544a00a5ed93e64a8",
+  "prompts": {},
+  "sessions": {
+    "s_0d39f3a4a4357a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "60da6a2e-7d79-4d98-8624-e993f5a9f94e",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_88ffc5326d9b0b": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-ad18badee0d6bb8b2",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
