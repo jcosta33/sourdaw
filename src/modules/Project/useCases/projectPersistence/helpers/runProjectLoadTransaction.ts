@@ -84,22 +84,29 @@ export function runProjectLoadTransaction({
                 if (transitionId < latestPreparedProjectTransitionId) {
                     return false;
                 }
+                // Commit to preparing: claim the latest-prepared slot and join the
+                // in-flight count. Everything from here — the replay-authority
+                // reset and the collaboration teardown — runs inside one guarded
+                // region so that a throw anywhere (not just the awaited teardown)
+                // releases the count. The idempotent guard makes the release safe
+                // even though the success path deliberately keeps this transition
+                // counted until it activates.
                 latestPreparedProjectTransitionId = transitionId;
                 countedAsPreparing = true;
                 preparingProjectTransitionCount += 1;
-                resetActionReplayAuthority();
                 try {
+                    resetActionReplayAuthority();
                     await projectIdentityTransitionDependencies.leaveCollaborationSession();
+                    if (transitionId !== latestPreparedProjectTransitionId) {
+                        releasePreparingCount();
+                        return false;
+                    }
+                    prepared = true;
+                    return true;
                 } catch (error) {
                     releasePreparingCount();
                     throw error;
                 }
-                if (transitionId !== latestPreparedProjectTransitionId) {
-                    releasePreparingCount();
-                    return false;
-                }
-                prepared = true;
-                return true;
             })();
             return preparation;
         },

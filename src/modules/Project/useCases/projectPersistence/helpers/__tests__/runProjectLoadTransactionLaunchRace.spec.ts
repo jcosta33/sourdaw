@@ -22,10 +22,12 @@ async function loadFreshMachinery() {
     vi.resetModules();
     const machinery = await import('../runProjectLoadTransaction');
     const dependencies = await import('../../projectIdentityTransitionDependencies');
-    dependencies.setProjectIdentityTransitionDependencies({
-        leaveCollaborationSession: () => Promise.resolve(),
-    });
-    return machinery;
+    const command = await import('#/modules/Command/useCases');
+    dependencies.setProjectIdentityTransitionDependencies({ leaveCollaborationSession: () => Promise.resolve() });
+    return {
+        runProjectLoadTransaction: machinery.runProjectLoadTransaction,
+        resetActionReplayAuthorityMock: vi.mocked(command.resetActionReplayAuthority),
+    };
 }
 
 describe('runProjectLoadTransaction — launch race', () => {
@@ -77,5 +79,46 @@ describe('runProjectLoadTransaction — launch race', () => {
         expect(user.activate()).toBe(true);
         expect(user.isCurrent()).toBe(true);
         expect(boot.isCurrent()).toBe(false);
+    });
+
+    it('lets a later user template supersede a boot restore that is still mid-flight', async () => {
+        // The pre-fix working case, kept pinned: the boot restore commits to
+        // preparing first, then the user picks a template. The template is created
+        // later (higher id) and wins by the normal last-wins rule; the boot restore
+        // observes it was superseded during its own await and stands down.
+        const { runProjectLoadTransaction } = await loadFreshMachinery();
+
+        const boot = runProjectLoadTransaction({ yieldToInFlight: true });
+        const bootPrepare = boot.prepare();
+        const template = runProjectLoadTransaction();
+        const templatePrepare = template.prepare();
+        const bootPrepared = await bootPrepare;
+        const templatePrepared = await templatePrepare;
+
+        expect(bootPrepared).toBe(false);
+        expect(templatePrepared).toBe(true);
+        expect(boot.activate()).toBe(false);
+        expect(template.activate()).toBe(true);
+        expect(template.isCurrent()).toBe(true);
+    });
+
+    it('releases the in-flight count when prepare throws before the await, so a later boot restore still proceeds', async () => {
+        // Throw from resetActionReplayAuthority — the synchronous prepare-side step
+        // that now sits inside the guarded region. Before the guard covered it, this
+        // throw leaked the in-flight count and every future yielding boot restore
+        // stood down forever. The catch must decrement so the count self-heals: the
+        // subsequent yielding boot restore proceeds instead of yielding.
+        const { runProjectLoadTransaction, resetActionReplayAuthorityMock } = await loadFreshMachinery();
+
+        resetActionReplayAuthorityMock.mockImplementationOnce(() => {
+            throw new Error('replay authority reset failed');
+        });
+        const failing = runProjectLoadTransaction();
+        await expect(failing.prepare()).rejects.toThrow('replay authority reset failed');
+
+        const boot = runProjectLoadTransaction({ yieldToInFlight: true });
+        await expect(boot.prepare()).resolves.toBe(true);
+        expect(boot.activate()).toBe(true);
+        expect(boot.isCurrent()).toBe(true);
     });
 });
