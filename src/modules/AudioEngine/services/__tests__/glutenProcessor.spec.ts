@@ -33,6 +33,9 @@ const paramCalls: Array<{ name: string; value: number }> = [];
 const processCalls: number[] = [];
 let nextLatency = 0; // controllable so the latency-change branch can fire
 let processShouldThrow = false;
+// When non-null, initSync throws this value (covers String(error) + the
+// error-after-ready arm of the onmessage catch).
+let initShouldThrow: unknown = null;
 
 class GlutenInstanceMock {
     set_param(name: string, value: number): void {
@@ -87,7 +90,13 @@ class GlutenInstanceMock {
 }
 
 vi.mock('../../wasm/daw_dsp.js', () => ({
-    initSync: vi.fn(() => ({ memory })),
+    initSync: vi.fn(() => {
+        if (initShouldThrow !== null) {
+            // eslint-disable-next-line @typescript-eslint/only-throw-error -- intentionally throws a non-Error value to exercise the String(error) catch arm
+            throw initShouldThrow;
+        }
+        return { memory };
+    }),
     GlutenInstance: GlutenInstanceMock,
 }));
 
@@ -115,6 +124,7 @@ function resetRecording(): void {
     processCalls.length = 0;
     nextLatency = 0;
     processShouldThrow = false;
+    initShouldThrow = null;
 }
 
 describe('GlutenProcessor message handling', () => {
@@ -194,6 +204,40 @@ describe('GlutenProcessor message handling', () => {
         const proc = await loadProcessor();
         send(proc, { type: 'param', name: 'ratio', value: 4 });
         expect(paramCalls).toEqual([]);
+    });
+
+    // ── onmessage catch arms (glutenProcessor.ts:109, 112) ───────────────────
+
+    it('reports String(error) when init throws a non-Error value', async () => {
+        initShouldThrow = 'gluten-boom';
+        const proc = await loadProcessor();
+        send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
+
+        const errorMsg = proc.port.postMessage.mock.calls.find((c) => (c[0] as { type?: string }).type === 'error');
+        expect(errorMsg).toBeDefined();
+        expect((errorMsg![0] as { message: string }).message).toBe('gluten-boom');
+    });
+
+    it('does not post an error when set_param throws while already ready', async () => {
+        const proc = await loadProcessor();
+        send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
+        resetRecording();
+
+        const beforeErrorCount = proc.port.postMessage.mock.calls.filter(
+            (c) => (c[0] as { type?: string }).type === 'error'
+        ).length;
+        // set_param is called for a 'param' message; make it throw while ready so
+        // the onmessage catch hits the `!this._ready` false arm (no error posted).
+        const spy = vi.spyOn(GlutenInstanceMock.prototype, 'set_param').mockImplementation(() => {
+            throw new Error('param trap while ready');
+        });
+        send(proc, { type: 'param', name: 'ratio', value: 4 });
+        spy.mockRestore();
+
+        const afterErrorCount = proc.port.postMessage.mock.calls.filter(
+            (c) => (c[0] as { type?: string }).type === 'error'
+        ).length;
+        expect(afterErrorCount).toBe(beforeErrorCount);
     });
 });
 
@@ -305,5 +349,74 @@ describe('GlutenProcessor process paths', () => {
         processShouldThrow = false;
         proc.process([stereo(FRAMES, 0.3)], [stereo(FRAMES, 0)]);
         expect(processCalls).toEqual([]); // faulted ⇒ short-circuit
+    });
+
+    // ── process() input guards and channel fallbacks ─────────────────────────
+
+    it('returns early when the first main input channel is missing', async () => {
+        const proc = await loadProcessor();
+        send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
+        resetRecording();
+
+        const out = stereo(FRAMES, 0);
+        // input[0] is nullish ⇒ `!in0` true arm (line 151).
+        proc.process([[null as unknown as Float32Array, new Float32Array(FRAMES)]], [out]);
+        expect(processCalls).toEqual([]);
+        // Output untouched.
+        expect(out[0]![0]).toBe(0);
+    });
+
+    it('feeds the left channel into the right input slot when the right is absent (main path)', async () => {
+        const proc = await loadProcessor();
+        send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
+        resetRecording();
+
+        // 2-channel input with a hole at index 1 ⇒ `input[1] ?? in0` (line 166).
+        const out = stereo(FRAMES, 0);
+        proc.process([[new Float32Array(FRAMES).fill(0.5), undefined as unknown as Float32Array]], [out]);
+        // process() ran without throwing and copied left→both outputs.
+        expect(processCalls).toEqual([FRAMES]);
+        for (const sample of out[0]!) {
+            expect(sample).toBeCloseTo(0.5, 6);
+        }
+    });
+
+    it('skips the sidechain copy when the sidechain first channel is empty, and falls back for a mono sidechain', async () => {
+        const proc = await loadProcessor();
+        send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
+        resetRecording();
+
+        // Sidechain present but first channel zero-length ⇒ sc0.length > 0 false.
+        const outA = stereo(FRAMES, 0);
+        proc.process([stereo(FRAMES, 0.4), [new Float32Array(0)]], [outA]);
+        expect(processCalls).toEqual([FRAMES]);
+
+        // Sidechain present with a single (mono) channel ⇒ `scInput[1] ?? sc0`.
+        processCalls.length = 0;
+        const outB = stereo(FRAMES, 0);
+        proc.process([stereo(FRAMES, 0.4), [new Float32Array(FRAMES).fill(0.2)]], [outB]);
+        expect(processCalls).toEqual([FRAMES]);
+    });
+
+    it('passthrough falls back to the left channel for the right output when the right input is absent (fault path)', async () => {
+        const proc = await loadProcessor();
+        send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
+        resetRecording();
+        processShouldThrow = true;
+
+        // 2-channel input with a hole at index 1 ⇒ _passthrough `input[1] ?? in0`.
+        const in0 = new Float32Array(FRAMES).fill(0.8);
+        const out = stereo(FRAMES, 0);
+        proc.process([[in0, undefined as unknown as Float32Array]], [out]);
+
+        const errors = proc.port.postMessage.mock.calls.filter((c) => (c[0] as { type?: string }).type === 'error');
+        expect(errors).toHaveLength(1);
+        // Left copied to both outputs via the ?? fallback in _passthrough.
+        for (const sample of out[0]!) {
+            expect(sample).toBeCloseTo(0.8, 6);
+        }
+        for (const sample of out[1]!) {
+            expect(sample).toBeCloseTo(0.8, 6);
+        }
     });
 });

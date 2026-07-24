@@ -100,9 +100,18 @@ let proofReorderCalls: number[][] = [];
 let proofResetCalls = 0;
 let proofLatencyQueue: number[] = [256];
 let proofProcessShouldThrow = false;
+// When true, make initSync throw a non-Error value so the catch falls into the
+// String(error) arm (proofProcessor.ts:67).
+let proofInitShouldThrow: unknown = null;
 
 vi.mock('../../wasm/daw_dsp.js', () => ({
-    initSync: vi.fn(() => ({ memory: { buffer: WASM_HEAP } })),
+    initSync: vi.fn(() => {
+        if (proofInitShouldThrow !== null) {
+            // eslint-disable-next-line @typescript-eslint/only-throw-error -- intentionally throws a non-Error value to exercise the String(error) catch arm
+            throw proofInitShouldThrow;
+        }
+        return { memory: { buffer: WASM_HEAP } };
+    }),
     ProofInstance: ProofInstanceMock,
 }));
 
@@ -221,6 +230,7 @@ describe('ProofProcessor message handling & process guards', () => {
         proofResetCalls = 0;
         proofLatencyQueue = [256];
         proofProcessShouldThrow = false;
+        proofInitShouldThrow = null;
     });
 
     it('ignores a second init once ready', async () => {
@@ -320,5 +330,97 @@ describe('ProofProcessor message handling & process guards', () => {
         expect(errors).toHaveLength(1);
         // Fault path ran passthrough after the trap.
         expect(out[0]![0]).toBeCloseTo(0.5, 6);
+    });
+
+    // ── error-after-ready (proofProcessor.ts:64 `!this._ready` false arm):
+    // once ready, a control handler that throws enters the onmessage catch with
+    // _ready true, so the catch's error-post guard is false → no 'error' posted. ──
+    it('does not post an error when a control handler throws while already ready', async () => {
+        const proc = await loadProcessor();
+        send(proc, { type: 'init', wasmBytes: MINIMAL_WASM }); // _ready = true
+
+        // Make the switch handler throw while ready: set_param is called for a
+        // 'param' message. We count messages BEFORE so we can isolate the delta.
+        const beforeErrorCount = vi
+            .mocked(proc.port.postMessage)
+            .mock.calls.filter((c) => (c[0] as { type?: string }).type === 'error').length;
+
+        const spy = vi.spyOn(ProofInstanceMock.prototype, 'set_param').mockImplementation(() => {
+            throw new Error('param trap while ready');
+        });
+        send(proc, { type: 'param', name: 'lim_threshold', value: -1 });
+        spy.mockRestore();
+
+        const afterErrorCount = vi
+            .mocked(proc.port.postMessage)
+            .mock.calls.filter((c) => (c[0] as { type?: string }).type === 'error').length;
+        // _ready was true ⇒ the `if (!this._ready)` guard is false ⇒ no new error.
+        expect(afterErrorCount).toBe(beforeErrorCount);
+    });
+
+    // ── line 67 String(error) arm: init throws a non-Error value. ──
+    it('reports String(error) when init throws a non-Error value', async () => {
+        proofInitShouldThrow = 'boom-string';
+        const proc = await loadProcessor();
+        send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
+
+        const errorMsg = vi
+            .mocked(proc.port.postMessage)
+            .mock.calls.find((c) => (c[0] as { type?: string }).type === 'error');
+        expect(errorMsg).toBeDefined();
+        expect((errorMsg![0] as { message: string }).message).toBe('boom-string');
+    });
+
+    // ── process() guards: missing first input channel, missing first output,
+    // and the mono `input[1] ?? in0` fallback at line 150. ──
+    it('returns early when the first input channel is missing', async () => {
+        const proc = await loadProcessor();
+        send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
+
+        const out = [new Float32Array(128), new Float32Array(128)];
+        // input[0] present but null-ish guard: pass [null] to hit `!in0`.
+        proc.process([[null as unknown as Float32Array, new Float32Array(128)]], [out]);
+        // Output untouched (early return before process call).
+        expect(out[0]![0]).toBe(0);
+    });
+
+    it('falls back to the left input for the right channel when only one is provided', async () => {
+        const proc = await loadProcessor();
+        send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
+
+        const rightSpy = vi.spyOn(ProofInstanceMock.prototype, 'get_input_right_ptr');
+        // Only one input channel ⇒ input[1] is undefined ⇒ `input[1] ?? in0` copies left.
+        const input = [new Float32Array(128).fill(0.25)];
+        const out = [new Float32Array(128), new Float32Array(128)];
+        // This requires input.length >= 2 to pass the first guard, so we provide
+        // a second undefined entry: [left, undefined] — but length is 2 with a hole.
+        const inputHole = [new Float32Array(128).fill(0.25), undefined as unknown as Float32Array];
+        proc.process([inputHole], [out]);
+
+        // process() ran without throwing; the right-input view was fed in0.
+        expect(rightSpy).toHaveBeenCalled();
+        void input;
+    });
+
+    // ── _passthrough mono fallback (proofProcessor.ts:113 `input[1] ?? in0`):
+    // the fault path's _passthrough copies the left channel into the right output
+    // when the input declares a second-channel slot that is absent (undefined). ──
+    it('passthrough falls back to the left channel for the right output when the right input is absent', async () => {
+        const proc = await loadProcessor();
+        send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
+        proofProcessShouldThrow = true;
+
+        // Two-channel input whose right entry is a hole ⇒ `input[1] ?? in0`.
+        const in0 = new Float32Array(128).fill(0.7);
+        const out = [new Float32Array(128), new Float32Array(128)];
+        proc.process([[in0, undefined as unknown as Float32Array]], [out]);
+
+        const errors = vi
+            .mocked(proc.port.postMessage)
+            .mock.calls.filter((c) => (c[0] as { type?: string }).type === 'error');
+        expect(errors).toHaveLength(1);
+        // Left copied to both outputs (right got in0 via the ?? fallback).
+        expect(out[0]![0]).toBeCloseTo(0.7, 6);
+        expect(out[1]![0]).toBeCloseTo(0.7, 6);
     });
 });

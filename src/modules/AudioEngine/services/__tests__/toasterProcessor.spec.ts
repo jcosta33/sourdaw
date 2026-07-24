@@ -36,6 +36,9 @@ const paramByIdCalls: Array<[number, number]> = [];
 const kitParamCalls: Array<[string, number]> = [];
 const processCalls: number[] = [];
 let padZeroDryRouted = false;
+// When non-null, initSync throws this value (used to cover the String(error)
+// arm and the error-after-ready arm of the onmessage catch).
+let toasterInitShouldThrow: unknown = null;
 const WASM_BLOCK_SAMPLES = 4096;
 const WASM_CHANNEL_BYTES = WASM_BLOCK_SAMPLES * Float32Array.BYTES_PER_ELEMENT;
 const WASM_HEAP = new ArrayBuffer((2 + 16 * 2) * WASM_CHANNEL_BYTES);
@@ -83,7 +86,13 @@ class ToasterInstanceMock {
 }
 
 vi.mock('../../wasm/daw_dsp.js', () => ({
-    initSync: vi.fn(() => ({ memory: { buffer: WASM_HEAP } })),
+    initSync: vi.fn(() => {
+        if (toasterInitShouldThrow !== null) {
+            // eslint-disable-next-line @typescript-eslint/only-throw-error -- intentionally throws a non-Error value to exercise the String(error) catch arm
+            throw toasterInitShouldThrow;
+        }
+        return { memory: { buffer: WASM_HEAP } };
+    }),
     ToasterInstance: ToasterInstanceMock,
 }));
 
@@ -345,6 +354,7 @@ describe('ToasterProcessor dispatch paths & process guards', () => {
         padParamCalls.length = 0;
         padDryRoutedCalls.length = 0;
         padZeroDryRouted = false;
+        toasterInitShouldThrow = null;
         processCalls.length = 0;
         vi.stubGlobal('currentFrame', 0);
     });
@@ -502,6 +512,116 @@ describe('ToasterProcessor dispatch paths & process guards', () => {
         expect(noteOnCalls).toContain(6);
         expect(proc._queue.length).toBe(0);
         expect(proc._queueHead).toBe(0);
+        vi.stubGlobal('currentFrame', 0);
+    });
+
+    // ── onmessage guards (lines 165, 174, 177) ──────────────────────────────
+
+    it('ignores a second init once already ready (posts ready exactly once)', async () => {
+        const proc = await loadProcessor();
+        send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
+        send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
+
+        const ready = vi
+            .mocked(proc.port.postMessage)
+            .mock.calls.filter((c) => (c[0] as { type?: string }).type === 'ready');
+        expect(ready).toHaveLength(1);
+    });
+
+    it('reports String(error) when init throws a non-Error value', async () => {
+        toasterInitShouldThrow = 'wasm-boom';
+        const proc = await loadProcessor();
+        send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
+
+        const errorMsg = vi
+            .mocked(proc.port.postMessage)
+            .mock.calls.find((c) => (c[0] as { type?: string }).type === 'error');
+        expect(errorMsg).toBeDefined();
+        expect((errorMsg![0] as { message: string }).message).toBe('wasm-boom');
+    });
+
+    it('does not post an error when a dispatched message throws while already ready', async () => {
+        const proc = await loadProcessor();
+        send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
+
+        const beforeErrorCount = vi
+            .mocked(proc.port.postMessage)
+            .mock.calls.filter((c) => (c[0] as { type?: string }).type === 'error').length;
+
+        // set_param is called for a 'param' message; make it throw while ready
+        // so the onmessage catch hits the `!this._ready` false arm (no error post).
+        const spy = vi.spyOn(ToasterInstanceMock.prototype, 'set_param').mockImplementation(() => {
+            throw new Error('param trap while ready');
+        });
+        send(proc, { type: 'param', name: 'swing', value: 0.5 });
+        spy.mockRestore();
+
+        const afterErrorCount = vi
+            .mocked(proc.port.postMessage)
+            .mock.calls.filter((c) => (c[0] as { type?: string }).type === 'error').length;
+        expect(afterErrorCount).toBe(beforeErrorCount);
+    });
+
+    // ── scheduledHit fill-condition suppression (line 266) ───────────────────
+
+    it('suppresses a fill-conditioned scheduledHit when the fill is not active', async () => {
+        const proc = await loadProcessor();
+        send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
+        vi.stubGlobal('currentFrame', 1000);
+        // fillCondition 'fill' but _fillActive is false ⇒ break, no note_on.
+        send(proc, {
+            type: 'scheduledHit',
+            pad: 2,
+            velocity: 0.9,
+            sampleFrame: 1000,
+            padParams: [],
+            fillCondition: 'fill',
+        });
+        expect(noteOnCalls).not.toContain(2);
+        vi.stubGlobal('currentFrame', 0);
+    });
+
+    // ── scheduledHit unmapped padParam fallback (line 273) ───────────────────
+
+    it('forwards an unmapped padParam name as-is during a scheduled hit', async () => {
+        const proc = await loadProcessor();
+        send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
+        vi.stubGlobal('currentFrame', 1000);
+        send(proc, {
+            type: 'scheduledHit',
+            pad: 3,
+            velocity: 0.8,
+            sampleFrame: 1000,
+            padParams: [{ name: 'unknownPad', value: 0.42 }],
+        });
+        // PAD_PARAM_MAP has no 'unknownPad' ⇒ forwarded verbatim.
+        expect(padParamCalls).toContainEqual([3, 'unknownPad', 0.42]);
+        vi.stubGlobal('currentFrame', 0);
+    });
+
+    // ── automation: value unchanged suppresses a redundant set_param_by_id ──
+
+    it('does not re-apply an automation value that equals the last applied value', async () => {
+        const proc = await loadProcessor();
+        send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
+        // A flat segment: startValue == endValue, so every frame computes the
+        // same value. The first apply writes it; the second finds value ===
+        // lastValue and skips the set_param_by_id call.
+        send(proc, {
+            type: 'paramAutomation',
+            paramId: 1,
+            segments: [{ startFrame: 0, endFrame: 1024, startValue: 0.5, endValue: 0.5 }],
+        });
+        paramByIdCalls.length = 0;
+        // First render: value 0.5 != lastValue(undefined) ⇒ applied.
+        vi.stubGlobal('currentFrame', 0);
+        proc.process([[]], [[new Float32Array(8), new Float32Array(8)]]);
+        expect(paramByIdCalls).toEqual([[1, 0.5]]);
+        // Second render: value 0.5 === lastValue(0.5) ⇒ suppressed.
+        paramByIdCalls.length = 0;
+        vi.stubGlobal('currentFrame', 128);
+        proc.process([[]], [[new Float32Array(8), new Float32Array(8)]]);
+        expect(paramByIdCalls).toEqual([]);
         vi.stubGlobal('currentFrame', 0);
     });
 });

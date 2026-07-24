@@ -30,6 +30,9 @@ const paramCalls: Array<{ name: string; value: number }> = [];
 const paramByIdCalls: Array<{ id: number; value: number }> = [];
 const processCalls: number[] = [];
 let processShouldThrow = false;
+// When non-null, initSync throws this value (covers String(error) + the
+// error-after-ready arm of the onmessage catch).
+let initShouldThrow: unknown = null;
 
 class ProofChamberInstanceMock {
     set_param(name: string, value: number): void {
@@ -62,7 +65,13 @@ class ProofChamberInstanceMock {
 }
 
 vi.mock('../../wasm/proof_chamber.js', () => ({
-    initSync: vi.fn(() => ({ memory })),
+    initSync: vi.fn(() => {
+        if (initShouldThrow !== null) {
+            // eslint-disable-next-line @typescript-eslint/only-throw-error -- intentionally throws a non-Error value to exercise the String(error) catch arm
+            throw initShouldThrow;
+        }
+        return { memory };
+    }),
     ProofChamberInstance: ProofChamberInstanceMock,
 }));
 
@@ -90,6 +99,7 @@ function resetRecording(): void {
     paramByIdCalls.length = 0;
     processCalls.length = 0;
     processShouldThrow = false;
+    initShouldThrow = null;
 }
 
 describe('ProofChamberProcessor message handling', () => {
@@ -148,6 +158,40 @@ describe('ProofChamberProcessor message handling', () => {
         });
         expect(paramCalls).toEqual([]);
         expect(paramByIdCalls).toEqual([]);
+    });
+
+    // ── onmessage catch arms (proofChamberProcessor.ts:71, 74) ────────────────
+
+    it('reports String(error) when init throws a non-Error value', async () => {
+        initShouldThrow = 'chamber-boom';
+        const proc = await loadProcessor();
+        send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
+
+        const errorMsg = proc.port.postMessage.mock.calls.find((c) => (c[0] as { type?: string }).type === 'error');
+        expect(errorMsg).toBeDefined();
+        expect((errorMsg![0] as { message: string }).message).toBe('chamber-boom');
+    });
+
+    it('does not post an error when set_param throws while already ready', async () => {
+        const proc = await loadProcessor();
+        send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
+        resetRecording();
+
+        const beforeErrorCount = proc.port.postMessage.mock.calls.filter(
+            (c) => (c[0] as { type?: string }).type === 'error'
+        ).length;
+        // set_param is called for a 'param' message; make it throw while ready so
+        // the onmessage catch hits the `!this._ready` false arm (no error posted).
+        const spy = vi.spyOn(ProofChamberInstanceMock.prototype, 'set_param').mockImplementation(() => {
+            throw new Error('param trap while ready');
+        });
+        send(proc, { type: 'param', name: 'decay', value: 2 });
+        spy.mockRestore();
+
+        const afterErrorCount = proc.port.postMessage.mock.calls.filter(
+            (c) => (c[0] as { type?: string }).type === 'error'
+        ).length;
+        expect(afterErrorCount).toBe(beforeErrorCount);
     });
 });
 
@@ -226,6 +270,39 @@ describe('ProofChamberProcessor param automation', () => {
         // Second schedule's startValue wins.
         expect(paramByIdCalls).toEqual([{ id: 0, value: 2 }]);
     });
+
+    // ── automation value math (lines 113, 120, 122) ──────────────────────────
+
+    it('interpolates mid-segment, snaps to endValue at/after endFrame, and advances segments', async () => {
+        const proc = await loadProcessor();
+        send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
+        resetRecording();
+
+        // Two contiguous segments: 0..128 (0→10), 128..256 (10→0).
+        send(proc, {
+            type: 'paramAutomation',
+            paramId: 0,
+            segments: [
+                { startFrame: 0, endFrame: 128, startValue: 0, endValue: 10 },
+                { startFrame: 128, endFrame: 256, startValue: 10, endValue: 0 },
+            ],
+        });
+
+        // Frame 64 ⇒ mid-segment interpolation: 0 + (10-0)*(64/128) = 5.
+        paramByIdCalls.length = 0;
+        vi.stubGlobal('currentFrame', 64);
+        proc.process([stereo(FRAMES, 0)], [makeChannels(2, FRAMES, () => 0)]);
+        expect(paramByIdCalls).toContainEqual({ id: 0, value: 5 });
+        vi.stubGlobal('currentFrame', 0);
+
+        // Frame 300 ⇒ past endFrame of the last segment ⇒ endValue 0. The
+        // segment-advance while-loop (line 113) runs because frame >= endFrame(128).
+        paramByIdCalls.length = 0;
+        vi.stubGlobal('currentFrame', 300);
+        proc.process([stereo(FRAMES, 0)], [makeChannels(2, FRAMES, () => 0)]);
+        expect(paramByIdCalls).toContainEqual({ id: 0, value: 0 });
+        vi.stubGlobal('currentFrame', 0);
+    });
 });
 
 describe('ProofChamberProcessor process paths', () => {
@@ -302,6 +379,18 @@ describe('ProofChamberProcessor process paths', () => {
         processCalls.length = 0;
         processShouldThrow = false;
         proc.process([stereo(FRAMES, 0.3)], [makeChannels(2, FRAMES, () => 0)]);
+        expect(processCalls).toEqual([]);
+    });
+
+    it('skips passthrough when bypassed with no input and no output', async () => {
+        const proc = await loadProcessor();
+        send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
+        resetRecording();
+        send(proc, { type: 'bypass', bypassed: true });
+
+        // inputs[0] and outputs[0] both absent ⇒ `if (input && output)` false arm.
+        // Must not throw (passthrough is skipped entirely).
+        expect(proc.process([], [])).toBe(true);
         expect(processCalls).toEqual([]);
     });
 });
