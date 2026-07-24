@@ -54,4 +54,22 @@ describe('toggleAdjustmentLayer', () => {
 
         expect(mocks.adjustmentLayerStoreSet).not.toHaveBeenCalled();
     });
+
+    it('leaves unrelated layers untouched when toggling the target', () => {
+        mocks.adjustmentLayerStoreValue.value = {
+            layers: [
+                { id: 'l1', enabled: true } as Partial<AdjustmentLayer> as AdjustmentLayer,
+                { id: 'l2', enabled: false } as Partial<AdjustmentLayer> as AdjustmentLayer,
+            ],
+        };
+
+        toggleAdjustmentLayer('l1');
+
+        const call = mocks.adjustmentLayerStoreSet.mock.calls[0]!;
+        // l1 flips to disabled; l2 passes through the map short-circuit unchanged.
+        expect(call[0].layers.map((l) => ({ id: l.id, enabled: l.enabled }))).toEqual([
+            { id: 'l1', enabled: false },
+            { id: 'l2', enabled: false },
+        ]);
+    });
 });

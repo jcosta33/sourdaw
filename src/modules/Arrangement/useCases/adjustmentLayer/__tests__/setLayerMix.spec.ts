@@ -66,4 +66,19 @@ describe('setLayerMix', () => {
 
         expect(mocks.adjustmentLayerStoreSet).not.toHaveBeenCalled();
     });
+
+    it('leaves unrelated layers untouched when updating the target', () => {
+        mocks.adjustmentLayerStoreValue.value = {
+            layers: [makeLayer({ id: 'l1', mix: 1 }), makeLayer({ id: 'l2', mix: 0.25 })],
+        };
+
+        setLayerMix('l1', 0.5);
+
+        const call = mocks.adjustmentLayerStoreSet.mock.calls[0]!;
+        // l1 is updated; l2 passes through the map short-circuit unchanged.
+        expect(call[0].layers.map((l) => ({ id: l.id, mix: l.mix }))).toEqual([
+            { id: 'l1', mix: 0.5 },
+            { id: 'l2', mix: 0.25 },
+        ]);
+    });
 });
