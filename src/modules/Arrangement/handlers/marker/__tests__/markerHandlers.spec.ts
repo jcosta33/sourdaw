@@ -153,6 +153,21 @@ describe('marker action handlers', () => {
         });
     });
 
+    it('handleRemoveSection describes a null inverse when the section is not found', () => {
+        const desc = handleRemoveSection.describe({ type: 'removeSection', payload: { sectionId: 'missing' } });
+
+        expect(desc.inverseAction).toBeNull();
+    });
+
+    it('handleRenameSection describes a null inverse when the section is not found', () => {
+        const desc = handleRenameSection.describe({
+            type: 'renameSection',
+            payload: { sectionId: 'missing', name: 'New Name' },
+        });
+
+        expect(desc.inverseAction).toBeNull();
+    });
+
     it('handleSetMarkerColor describes an inverse restoring the previous color', () => {
         mocks.getMarkerState.mockReturnValue({
             markers: [{ id: 'm1', beat: 8, name: 'Verse', color: '#old' }],

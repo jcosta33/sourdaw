@@ -113,4 +113,49 @@ describe('handleDuplicateClipToNextBar', () => {
             })
         ).toEqual({ status: 'no-write' });
     });
+
+    it('is a noop when the destination track is ineligible for a clip add', () => {
+        mocks.resolveEligibleClipWriteTarget.mockImplementation((input: { clipId?: string; trackId?: string }) => {
+            if (input.clipId === 'c1') {
+                return { status: 'eligible', clipId: 'c1', trackId: 't1' };
+            }
+            // Destination track lookup fails.
+            return { status: 'ineligible' };
+        });
+
+        expect(
+            handleDuplicateClipToNextBar.isNoop?.({
+                type: 'duplicateClipToNextBar',
+                payload: { clipId: 'c1' },
+            })
+        ).toBe(true);
+    });
+
+    it('is a noop when an explicit target clip id is the empty string', () => {
+        mocks.resolveEligibleClipWriteTarget.mockImplementation((input: { clipId?: string; trackId?: string }) => {
+            if (input.clipId === 'c1') {
+                return { status: 'eligible', clipId: 'c1', trackId: 't1' };
+            }
+            if (input.trackId === 't1') {
+                return { status: 'eligible', trackId: 't1' };
+            }
+            return { status: 'missing' };
+        });
+
+        expect(
+            handleDuplicateClipToNextBar.isNoop?.({
+                type: 'duplicateClipToNextBar',
+                payload: { clipId: 'c1', targetClipId: '' },
+            })
+        ).toBe(true);
+    });
+
+    it('is not a noop when no explicit target is given and everything is eligible', () => {
+        expect(
+            handleDuplicateClipToNextBar.isNoop?.({
+                type: 'duplicateClipToNextBar',
+                payload: { clipId: 'c1' },
+            })
+        ).toBe(false);
+    });
 });

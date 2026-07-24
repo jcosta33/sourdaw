@@ -64,6 +64,15 @@ describe('handleSavePreset', () => {
         expect(desc.label).toBe('Save preset "P" from Lead');
     });
 
+    it('provides a generic description when the source track cannot be found', () => {
+        mocks.getTrackStoreState.mockReturnValue({ tracks: [] });
+        const desc = handleSavePreset.describe({
+            type: 'savePreset',
+            payload: { trackId: 'ghost', name: 'P', category: 'Synth' },
+        });
+        expect(desc.label).toBe('Save preset "P" from track');
+    });
+
     it('is not undoable', () => {
         expect(handleSavePreset.undoable).toBe(false);
     });
