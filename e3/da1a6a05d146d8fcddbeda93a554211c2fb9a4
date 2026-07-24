@@ -1,0 +1,67 @@
+src/modules/AudioEngine/engine/BacteriaNode.ts
+  s_0d39f3a4a4357a::t_ab2b2b24662b2e 13-19
+  s_0d39f3a4a4357a::t_724a5887bfceb2 131,133-137
+  s_0d39f3a4a4357a::t_462014848c8d2a 38-52
+src/modules/AudioEngine/engine/ProofNode.ts
+  s_0d39f3a4a4357a::t_7c2f23de300371 52-55,57-59
+  s_0d39f3a4a4357a::t_9e47237467cc12 125
+  s_0d39f3a4a4357a::t_44b2f8ee4a3d2d 60-77
+  s_0d39f3a4a4357a::t_9e3672aa226cbd 15
+src/modules/AudioEngine/services/telemetrySeqlock.ts
+  s_0d39f3a4a4357a::t_cefedc3d6e7510 1-50
+src/modules/AudioEngine/services/bacteriaProcessor.ts
+  s_0d39f3a4a4357a::t_c31ed6c68599c4 12
+  s_0d39f3a4a4357a::t_0ce44529afa85d 66-67
+  s_0d39f3a4a4357a::t_2bb66da60759cf 89
+  s_0d39f3a4a4357a::t_dd4d4ef3d7679a 175-179,189
+src/modules/AudioEngine/engine/GlutenNode.ts
+  s_0d39f3a4a4357a::t_70f51f1dda536f 15
+  s_0d39f3a4a4357a::t_04d3cbfb9afe46 122,124-127
+  s_0d39f3a4a4357a::t_a6417fc0ff48ef 31-42
+src/modules/AudioEngine/engine/GrinderNode.ts
+  s_0d39f3a4a4357a::t_335edef2104182 42-57
+  s_0d39f3a4a4357a::t_42871f8b71084a 187,189-191
+  s_0d39f3a4a4357a::t_041ecfb610cf68 11
+src/modules/AudioEngine/services/scoringProcessor.ts
+  s_0d39f3a4a4357a::t_ad9d46b539d151 18
+  s_0d39f3a4a4357a::t_93cb8824ba9012 141-146,158
+  s_0d39f3a4a4357a::t_7f8ed0a1822758 36-37
+  s_0d39f3a4a4357a::t_5e1c40c2c02265 56
+src/modules/AudioEngine/engine/ScoringNode.ts
+  s_0d39f3a4a4357a::t_9e57b60c659230 13
+  s_0d39f3a4a4357a::t_dacf9faf27766e 28-56
+  s_0d39f3a4a4357a::t_6b982501689f03 125,127-130
+src/modules/AudioEngine/engine/telemetryAllocator.ts
+  s_0d39f3a4a4357a::t_24da48a56a5357 125-177
+src/modules/AudioEngine/services/glutenProcessor.ts
+  s_0d39f3a4a4357a::t_be5394d0ba1cc1 77-78
+  s_0d39f3a4a4357a::t_8c635877c6f5eb 101
+  s_0d39f3a4a4357a::t_02ea003cfdd701 12
+  s_0d39f3a4a4357a::t_84d04cfe5a60dc 203-207,214
+src/modules/AudioEngine/services/grinderProcessor.ts
+  s_0d39f3a4a4357a::t_0aad07621056d3 472
+  s_0d39f3a4a4357a::t_3fdf4c934ab526 13
+  s_0d39f3a4a4357a::t_ae4ef59718a7cd 269
+  s_0d39f3a4a4357a::t_b63a0170c0f942 458-461
+  s_0d39f3a4a4357a::t_af26f8615faf07 254-255
+src/modules/AudioEngine/services/proofProcessor.ts
+  s_0d39f3a4a4357a::t_7760e090aae8f7 169-174
+  s_0d39f3a4a4357a::t_fe4be2457ea8b0 14
+  s_0d39f3a4a4357a::t_a380c04b4c97f1 200-201
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "e3da1a6a05d146d8fcddbeda93a554211c2fb9a4",
+  "prompts": {},
+  "sessions": {
+    "s_0d39f3a4a4357a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "60da6a2e-7d79-4d98-8624-e993f5a9f94e",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
