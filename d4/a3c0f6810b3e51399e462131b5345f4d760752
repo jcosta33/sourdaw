@@ -1,0 +1,23 @@
+src/modules/ContentBrowser/presentations/views/Sidebar/InstrumentsTab.tsx
+  s_0d39f3a4a4357a::t_6093ebc533dc9f 224-227
+src/modules/ContentBrowser/presentations/views/Sidebar/__tests__/InstrumentsTab.spec.tsx
+  s_0d39f3a4a4357a::t_64fb20928ac48f 7
+  s_0d39f3a4a4357a::t_130ee0a69f2491 1,8-29,35-51,145-169
+  s_0d39f3a4a4357a::t_fde096198f7a85 170
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "d4a3c0f6810b3e51399e462131b5345f4d760752",
+  "prompts": {},
+  "sessions": {
+    "s_0d39f3a4a4357a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "60da6a2e-7d79-4d98-8624-e993f5a9f94e",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
