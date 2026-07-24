@@ -1,0 +1,27 @@
+crates/daw-dsp/src/proof/true_peak.rs
+  s_0d39f3a4a4357a::t_d63e5fa80ee74b 24-28
+public/wasm/daw-dsp/daw_dsp.d.ts
+  s_0d39f3a4a4357a::t_4dac3bc02c78e8 1
+public/wasm/daw-dsp/daw_dsp_bg.wasm.d.ts
+  s_0d39f3a4a4357a::t_f7211faa9af573 1
+public/wasm/manifest.json
+  s_0d39f3a4a4357a::t_d4d1279abad3d3 12,17-18,21
+src/modules/AudioEngine/wasm/daw_dsp.d.ts
+  s_0d39f3a4a4357a::t_8d846c3c5cf4d0 1
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "1b79bfe9e89e8460e7cf135c60efd374d34c5ec0",
+  "prompts": {},
+  "sessions": {
+    "s_0d39f3a4a4357a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "60da6a2e-7d79-4d98-8624-e993f5a9f94e",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
