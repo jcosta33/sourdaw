@@ -5,7 +5,13 @@ import { shiftMidiNotesAfterBeat } from '../shiftMidiNotesAfterBeat';
 const mocks = vi.hoisted(() => {
     const trackStoreValue: { current: unknown } = { current: null };
     return {
-        midiStoreValue: { value: { notesByClipId: {}, ccByClipId: {}, pitchBendByClipId: {} } },
+        midiStoreValue: {
+            value: null as {
+                notesByClipId: Record<string, unknown[]>;
+                ccByClipId: Record<string, unknown[]>;
+                pitchBendByClipId: Record<string, unknown[]>;
+            } | null,
+        },
         midiStoreSet: vi.fn(),
         trackStoreValue,
     };
@@ -100,6 +106,96 @@ describe('shiftMidiNotesAfterBeat', () => {
 
         shiftMidiNotesAfterBeat({ atBeat: 8, delta: 4 });
 
+        expect(mocks.midiStoreSet).not.toHaveBeenCalled();
+    });
+
+    it('returns immediately when delta is 0 (no-op)', () => {
+        mocks.midiStoreValue.value = {
+            notesByClipId: { straddler: [{ pitch: 60, startBeat: 6, duration: 1 }] },
+            ccByClipId: {},
+            pitchBendByClipId: {},
+        };
+        shiftMidiNotesAfterBeat({ atBeat: 8, delta: 0 });
+        expect(mocks.midiStoreSet).not.toHaveBeenCalled();
+    });
+
+    it('returns immediately when the midi store has no state', () => {
+        mocks.midiStoreValue.value = null;
+        shiftMidiNotesAfterBeat({ atBeat: 8, delta: 4 });
+        expect(mocks.midiStoreSet).not.toHaveBeenCalled();
+    });
+
+    it('shifts pitch-bend events inside a straddling clip', () => {
+        mocks.midiStoreValue.value = {
+            notesByClipId: {},
+            ccByClipId: {},
+            pitchBendByClipId: {
+                straddler: [
+                    { beat: 6, value: 0.5 },
+                    { beat: 2, value: 0.1 },
+                ],
+            },
+        };
+        shiftMidiNotesAfterBeat({ atBeat: 8, delta: 4 });
+        const written = mocks.midiStoreSet.mock.calls[0]![0] as {
+            pitchBendByClipId: Record<string, Array<{ beat: number; value: number }>>;
+        };
+        // windowStartMedia = 8 - 4 = 4; beat 6 >= 4 → shifts to 10; beat 2 < 4 → stays
+        expect(written.pitchBendByClipId.straddler).toEqual([
+            { beat: 10, value: 0.5 },
+            { beat: 2, value: 0.1 },
+        ]);
+    });
+
+    it('leaves clips entirely before the window untouched (clip.endBeat <= atBeat)', () => {
+        mocks.midiStoreValue.value = {
+            notesByClipId: {
+                before: [{ pitch: 60, startBeat: 1, duration: 1 }],
+            },
+            ccByClipId: {},
+            pitchBendByClipId: {},
+        };
+        mocks.trackStoreValue.current = {
+            tracks: [{ id: 't', clips: [{ id: 'before', type: 'midi', startBeat: 0, endBeat: 4 }] }],
+        };
+        shiftMidiNotesAfterBeat({ atBeat: 8, delta: 4 });
+        // clip ends at 4 ≤ 8 → not a straddler → no shift, no write (nothing changed)
+        expect(mocks.midiStoreSet).not.toHaveBeenCalled();
+    });
+
+    it('does not write when a straddling clip has no events past the window', () => {
+        mocks.midiStoreValue.value = {
+            notesByClipId: {
+                straddler: [{ pitch: 60, startBeat: 1, duration: 1 }], // before windowStartMedia(4)
+            },
+            ccByClipId: {},
+            pitchBendByClipId: {},
+        };
+        shiftMidiNotesAfterBeat({ atBeat: 8, delta: 4 });
+        // straddler spans the window but its only note is before it → changed stays false
+        expect(mocks.midiStoreSet).not.toHaveBeenCalled();
+    });
+
+    it('accounts for midiOffsetBeats when computing the window start', () => {
+        mocks.midiStoreValue.value = {
+            notesByClipId: {
+                straddler: [{ pitch: 60, startBeat: 5, duration: 1 }],
+            },
+            ccByClipId: {},
+            pitchBendByClipId: {},
+        };
+        mocks.trackStoreValue.current = {
+            tracks: [
+                {
+                    id: 't',
+                    clips: [{ id: 'straddler', type: 'midi', startBeat: 4, endBeat: 16, midiOffsetBeats: 2 }],
+                },
+            ],
+        };
+        shiftMidiNotesAfterBeat({ atBeat: 8, delta: 4 });
+        // windowStartMedia = 8 - 4 + 2(offset) = 6. Note at 5 < 6 → NOT shifted.
+        // Without the offset the window would be 4 and the note (5≥4) WOULD shift.
+        // No write happens because changed stayed false.
         expect(mocks.midiStoreSet).not.toHaveBeenCalled();
     });
 });
