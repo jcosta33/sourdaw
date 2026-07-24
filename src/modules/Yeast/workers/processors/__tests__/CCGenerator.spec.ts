@@ -135,4 +135,75 @@ describe('CCGenerator', () => {
             expect(cc?.kind.type === 'cc' && cc.kind.value).toBeLessThanOrEqual(100);
         });
     });
+
+    describe('LFO shape DSP (evalShape branches)', () => {
+        // A wide block window + fast free-running rate sweeps a full cycle, so the
+        // emitted CC values must span the whole waveform range for each shape.
+        function emittedValues(gen: CCGenerator): number[] {
+            const output: MidiEvent[] = [];
+            const fastTransport: TransportInfo = {
+                ...transport,
+                blockStartSamples: 0,
+                blockEndSamples: 44100, // 1 second at 44.1kHz
+            };
+            gen.processMidi([], output, fastTransport);
+            return output
+                .filter((event) => event.kind.type === 'cc')
+                .map((event) => (event.kind.type === 'cc' ? event.kind.value : -1));
+        }
+
+        it('triangle rises and then falls across a full cycle (both halves exercised)', () => {
+            const gen = new CCGenerator('tri');
+            gen.setParam('shape', 1); // triangle
+            gen.setParam('sync', 0);
+            gen.setParam('free_rate_hz', 1); // 1 cycle over the 1s block
+            gen.setParam('min', 0);
+            gen.setParam('max', 127);
+            const values = emittedValues(gen);
+            // The triangle is param*2 on the rising half then 2-param*2 on the
+            // falling half. Across a full cycle the emitted sequence must climb
+            // to a peak and then descend — proving both branches of the shape ran.
+            // (A square wave would never descend; a sawUp would never descend.)
+            const peakIndex = values.indexOf(Math.max(...values));
+            expect(peakIndex).toBeGreaterThan(0);
+            expect(peakIndex).toBeLessThan(values.length - 1);
+            // After the peak, at least one value drops below it (the falling half).
+            const afterPeak = values.slice(peakIndex + 1);
+            expect(Math.min(...afterPeak)).toBeLessThan(values[peakIndex]!);
+        });
+
+        it('square emits only the two rail values 0 and 127', () => {
+            const gen = new CCGenerator('sq');
+            gen.setParam('shape', 2); // square
+            gen.setParam('sync', 0);
+            gen.setParam('free_rate_hz', 2);
+            gen.setParam('min', 0);
+            gen.setParam('max', 127);
+            const values = emittedValues(gen);
+            // Both halves of the square (param < 0.5 → 127, param >= 0.5 → 0) must
+            // appear; every value is exactly one of the two rails.
+            const unique = new Set(values);
+            expect(unique.has(127)).toBe(true);
+            expect(unique.has(0)).toBe(true);
+            for (const value of values) {
+                expect(value === 0 || value === 127).toBe(true);
+            }
+        });
+    });
+
+    describe('transport stopped', () => {
+        it('emits no CC while transport.isPlaying is false', () => {
+            const gen = new CCGenerator('stopped');
+            const stopped: TransportInfo = { ...transport, isPlaying: false };
+            const output: MidiEvent[] = [];
+            gen.processMidi(
+                [{ timeSamples: 0, kind: { type: 'noteOn', channel: 0, note: 60, velocity: 100 } }],
+                output,
+                stopped
+            );
+            // Input passes through but no CC is generated while stopped.
+            expect(output.some((event) => event.kind.type === 'cc')).toBe(false);
+            expect(output.some((event) => event.kind.type === 'noteOn')).toBe(true);
+        });
+    });
 });
