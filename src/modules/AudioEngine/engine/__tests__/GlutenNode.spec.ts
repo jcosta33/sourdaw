@@ -264,6 +264,26 @@ describe('createGlutenNode', () => {
         expect(cb).not.toHaveBeenCalled();
     });
 
+    it('skips the latency handler when the handshake classifies the message as ready/late', async () => {
+        // Override the handshake so onMessage returns a non-'other' outcome,
+        // exercising the `outcome === 'other'` false arm: the latency handler
+        // body must not run even for a latency-changed-shaped payload.
+        const { createReadyHandshake } = await import('#/infra/audioWorklet/workletInitShared');
+        vi.mocked(createReadyHandshake).mockReturnValueOnce({
+            promise: Promise.resolve({}),
+            onMessage: () => 'ready' as const,
+            isSettled: () => true,
+        });
+
+        const node = await createGlutenNode(makeCtx());
+        const cb = vi.fn();
+        node.onLatencyChanged(cb);
+
+        node.workletNode.port.onmessage?.({ data: { type: 'latency-changed', latency: 9 } } as MessageEvent);
+        // outcome was 'ready', not 'other' → latency handler skipped.
+        expect(cb).not.toHaveBeenCalled();
+    });
+
     it('destroy is a no-op for the meter rAF and slot when neither was active', async () => {
         const { telemetryAllocator } = await import('../telemetryAllocator');
         // No slot allocated (default mock returns null), no onMeterData call.
