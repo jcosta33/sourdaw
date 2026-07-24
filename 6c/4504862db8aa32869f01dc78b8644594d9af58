@@ -1,0 +1,37 @@
+src/modules/Arrangement/useCases/comping/__tests__/selectTake.spec.ts
+  s_0d39f3a4a4357a::t_cdbf88a757a780 9,21-24,36-56,69-97
+src/modules/Arrangement/useCases/groove/__tests__/applyGrooveTemplate.spec.ts
+  s_0d39f3a4a4357a::t_36643ca5bf964b 38-44
+src/modules/Arrangement/repositories/track/__tests__/updateTrack.spec.ts
+  s_88ffc5326d9b0b::t_28e4236ff11884 4-6,44-51
+src/modules/Arrangement/repositories/track/__tests__/updateTracks.spec.ts
+  s_88ffc5326d9b0b::t_1f33658e066210 4-6,48-58
+src/modules/Arrangement/useCases/adjustmentLayer/__tests__/setLayerMix.spec.ts
+  s_88ffc5326d9b0b::t_157da88bb6853c 69-83
+src/modules/Arrangement/useCases/adjustmentLayer/__tests__/toggleAdjustmentLayer.spec.ts
+  s_88ffc5326d9b0b::t_c71f520877c282 57-74
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "6c4504862db8aa32869f01dc78b8644594d9af58",
+  "prompts": {},
+  "sessions": {
+    "s_0d39f3a4a4357a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "60da6a2e-7d79-4d98-8624-e993f5a9f94e",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_88ffc5326d9b0b": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-ad18badee0d6bb8b2",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
