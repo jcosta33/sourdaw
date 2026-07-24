@@ -29,6 +29,23 @@ describe('planRippleInsert', () => {
         expect(planRippleInsert({ trackId: 't1', insertBeat: 0, insertDuration: 1 })).toBeNull();
     });
 
+    it('should return null when the workspace store is empty (ripple defaults to off)', () => {
+        mocks.workspaceStoreValue.value = null;
+        expect(planRippleInsert({ trackId: 't1', insertBeat: 0, insertDuration: 1 })).toBeNull();
+    });
+
+    it('should return null when the track store is empty', () => {
+        mocks.workspaceStoreValue.value = { rippleEditing: true };
+        vi.mocked(getTrackStoreState).mockReturnValue(null);
+        expect(planRippleInsert({ trackId: 't1', insertBeat: 0, insertDuration: 1 })).toBeNull();
+    });
+
+    it('should return null when the track id is unknown', () => {
+        mocks.workspaceStoreValue.value = { rippleEditing: true };
+        vi.mocked(getTrackStoreState).mockReturnValue({ tracks: [], selectedTrackId: null });
+        expect(planRippleInsert({ trackId: 'missing', insertBeat: 0, insertDuration: 1 })).toBeNull();
+    });
+
     it('should return shifted clips forward in time from insert point', () => {
         mocks.workspaceStoreValue.value = { rippleEditing: true };
         (getTrackStoreState as any).mockReturnValue({

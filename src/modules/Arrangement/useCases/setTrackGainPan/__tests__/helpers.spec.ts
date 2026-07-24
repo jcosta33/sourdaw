@@ -3,6 +3,18 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { syncToasterPadParam } from '../helpers';
 import { maybeRecordAutomation } from '../maybeRecordAutomation';
 
+const hoisted = vi.hoisted(() => ({
+    defaultResolver: vi.fn((deviceId: string): { status: 'eligible'; trackId: string; deviceId: string } => ({
+        status: 'eligible',
+        trackId: 'parent1',
+        deviceId,
+    })),
+}));
+
+vi.mock('../../../stores/resolveEligibleDeviceWriteTarget', () => ({
+    resolveEligibleDeviceWriteTarget: hoisted.defaultResolver,
+}));
+
 describe('setTrackGainPan helpers', () => {
     describe('syncToasterPadParam', () => {
         const deps = {
@@ -51,6 +63,42 @@ describe('setTrackGainPan helpers', () => {
             syncToasterPadParam('t1', 'volume', 0.7, deps);
 
             expect(deps.updateDeviceParam).not.toHaveBeenCalled();
+        });
+
+        it('bails when the referenced parent track does not exist', () => {
+            deps.getAllTracks.mockReturnValue([{ id: 't1', parentId: 'ghost-parent' }]);
+
+            syncToasterPadParam('t1', 'volume', 0.7, deps);
+
+            expect(deps.updateDeviceParam).not.toHaveBeenCalled();
+        });
+
+        it('bails when the parent track has no Toaster device', () => {
+            deps.getAllTracks.mockReturnValue([
+                { id: 'parent1', devices: [{ type: 'eq', id: 'd1' }] },
+                { id: 't1', parentId: 'parent1' },
+            ]);
+
+            syncToasterPadParam('t1', 'volume', 0.7, deps);
+
+            expect(deps.updateDeviceParam).not.toHaveBeenCalled();
+        });
+
+        it('falls back to the default resolver when deps omits one', () => {
+            const tracks = [
+                { id: 'parent1', devices: [{ type: 'toaster', id: 'd1' }] },
+                { id: 't1', parentId: 'parent1' },
+            ];
+            const depsWithoutResolver = {
+                updateDeviceParam: deps.updateDeviceParam,
+                getAllTracks: vi.fn().mockReturnValue(tracks),
+            };
+            hoisted.defaultResolver.mockClear();
+
+            syncToasterPadParam('t1', 'volume', 0.7, depsWithoutResolver);
+
+            expect(hoisted.defaultResolver).toHaveBeenCalledWith('d1');
+            expect(depsWithoutResolver.updateDeviceParam).toHaveBeenCalledWith('parent1', 'd1', 'pad_0_volume', 0.7);
         });
     });
 
