@@ -4,6 +4,7 @@ import { asBaseAudioContext, createMockAudioContext } from '../../../../../helpe
 import { type AutomationLane } from '../../../models/AutomationViewTypes';
 import { resolveDeviceParam, resolveDeviceParamScale } from '../../../services/deviceResolution';
 import { createOfflineDeviceNode, type OfflineDeviceNode } from '../../deviceNodeFactory';
+import { WebAudioDeviceStrategy } from '../../deviceStrategy/WebAudioDeviceStrategy';
 import { scheduleTrackAutomation } from '../automationScheduling';
 import { scheduleAutomationOnParam } from '../scheduleAutomationOnParam';
 
@@ -123,6 +124,13 @@ function makeLane(overrides: Partial<AutomationLane>): AutomationLane {
         minValue: overrides.minValue ?? 0,
         maxValue: overrides.maxValue ?? 1,
     };
+}
+
+// Every offline device entry now carries a strategy that answers the single
+// offline-automation capability; built-in Web Audio devices resolve through the
+// real WebAudioDeviceStrategy over their offline node (OE-3).
+function webAudioEntry(deviceId: string, deviceType: string, node: OfflineDeviceNode) {
+    return { deviceId, deviceType, strategy: new WebAudioDeviceStrategy(node, deviceType) };
 }
 
 describe('scheduleAutomationOnParam', () => {
@@ -328,7 +336,7 @@ describe('scheduleTrackAutomation', () => {
                 'track-1',
                 { gain: makeParam() } as unknown as GainNode,
                 { pan: makeParam() } as unknown as StereoPannerNode,
-                [{ deviceId: 'device-1', deviceType, node: device }],
+                [webAudioEntry('device-1', deviceType, device)],
                 10,
                 120,
                 [],
@@ -467,7 +475,7 @@ describe('scheduleTrackAutomation', () => {
             'track-1',
             gainNode,
             panNode,
-            [{ deviceId: 'device-1', deviceType: 'builtin-delay', node: deviceNode }],
+            [webAudioEntry('device-1', 'builtin-delay', deviceNode)],
             10,
             120,
             []
@@ -498,8 +506,19 @@ describe('scheduleTrackAutomation', () => {
                 {
                     deviceId: 'fermenter-1',
                     deviceType: 'fermenter',
-                    node: { inputNode: {} as AudioNode, outputNode: {} as AudioNode, nodes: [] },
-                    strategy: { acceptsScheduledParam: (name) => name === 'filterCutoff', scheduleParam },
+                    strategy: {
+                        resolveOfflineAutomation: (name: string) => {
+                            if (name !== 'filterCutoff') {
+                                return null;
+                            }
+                            return {
+                                kind: 'segments',
+                                apply: (segments) => {
+                                    scheduleParam('filterCutoff', segments);
+                                },
+                            };
+                        },
+                    },
                 },
             ],
             2,
@@ -533,10 +552,16 @@ describe('scheduleTrackAutomation', () => {
                 {
                     deviceId: 'fermenter-1',
                     deviceType: 'fermenter',
-                    node: { inputNode: {} as AudioNode, outputNode: {} as AudioNode, nodes: [] },
-                    strategy: { acceptsScheduledParam: (name) => name === 'filterCutoff', scheduleParam: vi.fn() },
+                    strategy: {
+                        resolveOfflineAutomation: (name: string) => {
+                            if (name !== 'filterCutoff') {
+                                return null;
+                            }
+                            return { kind: 'segments', apply: () => {} };
+                        },
+                    },
                 },
-                { deviceId: 'delay-1', deviceType: 'builtin-delay', node: delayNode },
+                webAudioEntry('delay-1', 'builtin-delay', delayNode),
             ],
             2,
             120,
@@ -565,9 +590,9 @@ describe('scheduleTrackAutomation', () => {
             nodes: [{ gain: deviceParam } as unknown as AudioNode],
         };
         const secondNode = { ...deviceNode, nodes: [{ gain: secondParam } as unknown as AudioNode] };
-        const entries = [{ deviceId: 'device-1', deviceType: 'builtin-gain', node: deviceNode }];
+        const entries = [webAudioEntry('device-1', 'builtin-gain', deviceNode)];
         if (includeSecond) {
-            entries.push({ deviceId: 'device-2', deviceType: 'builtin-gain', node: secondNode });
+            entries.push(webAudioEntry('device-2', 'builtin-gain', secondNode));
         }
 
         scheduleTrackAutomation(

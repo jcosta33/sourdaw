@@ -1,8 +1,6 @@
 import { getDeviceAutomationParameterId, resolveDeviceAutomationTargetIndex } from '#/utils/automationDeviceTarget';
 
 import { type AutomationLane } from '../../models/AutomationViewTypes';
-import { resolveDeviceParamTargets } from '../../services/deviceResolution';
-import { type OfflineDeviceNode } from '../devices/types';
 import { type AudioDeviceStrategy } from '../deviceStrategy/AudioDeviceStrategy';
 
 import { compileAutomationSegments } from './compileAutomationSegments';
@@ -16,18 +14,14 @@ type AutomationTempoChange = {
 type ScheduleTrackAutomationDeviceEntry = {
     deviceId: string;
     deviceType: string;
-    node: OfflineDeviceNode;
-    strategy?: Pick<AudioDeviceStrategy, 'acceptsScheduledParam' | 'scheduleParam'>;
+    strategy: Pick<AudioDeviceStrategy, 'resolveOfflineAutomation'>;
 };
 
 function acceptsOfflineAutomationParameter(
     candidate: ScheduleTrackAutomationDeviceEntry,
     parameterId: string
 ): boolean {
-    return (
-        resolveDeviceParamTargets(candidate.deviceType, parameterId, candidate.node).length > 0 ||
-        candidate.strategy?.acceptsScheduledParam?.(parameterId) === true
-    );
+    return candidate.strategy.resolveOfflineAutomation(parameterId) !== null;
 }
 
 export function scheduleTrackAutomation(
@@ -87,8 +81,11 @@ export function scheduleTrackAutomation(
         const parameterId = getDeviceAutomationParameterId(lane.parameterId);
         if (deviceIndex >= 0 && parameterId) {
             const candidate = deviceEntries[deviceIndex]!;
-            const targets = resolveDeviceParamTargets(candidate.deviceType, parameterId, candidate.node);
-            if (targets.length === 0 && candidate.strategy?.scheduleParam) {
+            const binding = candidate.strategy.resolveOfflineAutomation(parameterId);
+            if (!binding) {
+                continue;
+            }
+            if (binding.kind === 'segments') {
                 const segments = compileAutomationSegments(
                     lane.points,
                     durationSeconds,
@@ -98,10 +95,10 @@ export function scheduleTrackAutomation(
                     regionStartSeconds,
                     projectBeatToSeconds
                 );
-                candidate.strategy.scheduleParam(parameterId, segments);
+                binding.apply(segments);
                 continue;
             }
-            for (const { audioParam, scale, offset } of targets) {
+            for (const { audioParam, scale, offset } of binding.targets) {
                 const points =
                     scale !== 1 || offset !== 0
                         ? lane.points.map((point) => ({ ...point, value: point.value * scale + offset }))
