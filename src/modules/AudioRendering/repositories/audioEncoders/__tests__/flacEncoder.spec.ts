@@ -68,7 +68,7 @@ describe('flacEncoder', () => {
         const buffer = createMockAudioBuffer(1, length, sampleRate);
         const onProgress = vi.fn();
 
-        const promise = audioBufferToFlac(buffer, onProgress);
+        const promise = audioBufferToFlac(buffer, 16, onProgress);
 
         // Wait for first yield
         await vi.runAllTimersAsync();

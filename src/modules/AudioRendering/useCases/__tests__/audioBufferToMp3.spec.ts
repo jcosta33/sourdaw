@@ -18,8 +18,8 @@ describe('audioBufferToMp3', () => {
         const onProgress = vi.fn();
         vi.mocked(encode).mockResolvedValue(out);
 
-        await expect(audioBufferToMp3(buffer, 192, onProgress)).resolves.toBe(out);
-        expect(encode).toHaveBeenCalledWith(buffer, 192, onProgress);
+        await expect(audioBufferToMp3(buffer, 192, onProgress, { mode: 'tpdf', seed: 9 })).resolves.toBe(out);
+        expect(encode).toHaveBeenCalledWith(buffer, 192, onProgress, { mode: 'tpdf', seed: 9 });
     });
 
     it('should default bitrate to 128 and omit progress when not provided', async () => {
@@ -29,6 +29,6 @@ describe('audioBufferToMp3', () => {
 
         await audioBufferToMp3(buffer);
 
-        expect(encode).toHaveBeenCalledWith(buffer, 128, undefined);
+        expect(encode).toHaveBeenCalledWith(buffer, 128, undefined, undefined);
     });
 });
