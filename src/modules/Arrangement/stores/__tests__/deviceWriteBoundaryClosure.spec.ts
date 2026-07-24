@@ -179,7 +179,11 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         // Counts are bare `compile[A-Z]…` identifier references (import + call
         // sites), censused so any future real sink added to these files still
         // trips the closure.
-        'src/modules/AudioEngine/repositories/offlineScheduler/automationScheduling.ts': 3,
+        // Count provenance: 4 = the compileAutomationSegments import line
+        // (matched twice: named import + module path), its single call site,
+        // and one doc-comment mention added by the AU-3 affine-scale fix
+        // (#765). The executable call surface is unchanged and singular.
+        'src/modules/AudioEngine/repositories/offlineScheduler/automationScheduling.ts': 4,
         'src/modules/AudioEngine/repositories/offlineScheduler/compileAutomationEvents.ts': 1,
         'src/modules/AudioEngine/repositories/offlineScheduler/compileAutomationSegments.ts': 4,
         'src/modules/AudioEngine/repositories/offlineScheduler/scheduleAutomationOnParam.ts': 3,
