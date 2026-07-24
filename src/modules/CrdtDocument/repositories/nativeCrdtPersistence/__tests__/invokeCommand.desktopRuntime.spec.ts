@@ -63,3 +63,28 @@ describe('nativeCrdtPersistence on the real Tauri desktop runtime', () => {
         expect(result).toBe('native-ok');
     });
 });
+
+describe('nativeCrdtPersistence on the browser (non-Tauri) runtime', () => {
+    beforeEach(() => {
+        vi.clearAllMocks();
+        // Neither runtime marker is present in a plain browser tab.
+        Reflect.deleteProperty(window, '__TAURI__');
+        Reflect.deleteProperty(window, '__TAURI_INTERNALS__');
+    });
+
+    it('returns null without invoking any native command when not on Tauri', async () => {
+        const result = await invokeCommand('crdt_apply_change', { docId: 'd1' });
+
+        // The native bridge must be a no-op outside the desktop webview so the
+        // app falls back to the IndexedDB persistence path silently.
+        expect(result).toBeNull();
+        expect(mockInvoke).not.toHaveBeenCalled();
+    });
+
+    it('isNativeCrdtAvailable reports unavailable when no runtime marker is present', async () => {
+        vi.resetModules();
+        // Re-import to re-evaluate the live (marker-less) window.
+        const { isNativeCrdtAvailable } = await import('../isNativeCrdtAvailable');
+        expect(isNativeCrdtAvailable()).toBe(false);
+    });
+});
