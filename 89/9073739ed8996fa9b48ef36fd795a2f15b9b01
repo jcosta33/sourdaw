@@ -1,0 +1,62 @@
+src/modules/Arrangement/useCases/device/addExternalDevice.ts
+  s_0d39f3a4a4357a::t_d2e57fd3878afb 2,44
+src/modules/PluginHost/useCases/pluginLifecycle/restorePluginState.ts
+  s_0d39f3a4a4357a::t_ffb5910879b947 11-14
+src/modules/Transport/useCases/__tests__/ensureTrackStrips.spec.ts
+  s_0d39f3a4a4357a::t_42139920de258b 132,137,182
+  s_0d39f3a4a4357a::t_6cd068727483ff 183-184
+  s_3cb47c1b5330ab::t_214bc97119dd6f 268,292,316
+src/modules/PluginHost/useCases/pluginLifecycle/activateExternalPlugin.ts
+  s_0d39f3a4a4357a::t_0f3d0d8a939c96 34-37,41-56
+  s_0d39f3a4a4357a::t_32f030b24553ee 1-28,30-33,38-40,57
+  s_0d39f3a4a4357a::t_cd59731aa78258 29
+src/modules/Arrangement/useCases/device/__tests__/addExternalDevice.spec.ts
+  s_0d39f3a4a4357a::t_614257a82ea4ba 9,25,42,59
+  s_0d39f3a4a4357a::t_7d4a58898123cc 60-62
+  s_3cb47c1b5330ab::t_36f3b0c4684748 80-83,97,106
+src/modules/PluginHost/useCases/pluginLifecycle/clearLoadedExternalPlugins.ts
+  s_0d39f3a4a4357a::t_433da33cef2905 1-10
+.agents/artifacts/sourdaw/audits/AUDIT-plugin-hosting.md
+  s_0d39f3a4a4357a::t_e2777ef974190c 170
+src/modules/Project/useCases/projectPersistence/helpers/replaceProjectData.ts
+  s_0d39f3a4a4357a::t_0e24ebf9437200 16,110-112
+src/modules/PluginHost/useCases/index.ts
+  s_0d39f3a4a4357a::t_233c2d10e5b438 20-21
+src/modules/Transport/useCases/ensureTrackStrips.ts
+  s_0d39f3a4a4357a::t_5c2353c4e1c671 5-7,43-47
+src/modules/PluginHost/useCases/pluginLifecycle/unloadPlugin.ts
+  s_0d39f3a4a4357a::t_240381af36bef3 3,8
+src/modules/Arrangement/useCases/projectTrackToLiveStrip.ts
+  s_0d39f3a4a4357a::t_36e5132025e32c 11,88-90
+src/modules/PluginHost/useCases/pluginLifecycle/loadedExternalInstances.ts
+  s_0d39f3a4a4357a::t_cab83e1dde192e 1-13
+src/modules/Arrangement/useCases/__tests__/projectTrackToLiveStrip.spec.ts
+  s_0d39f3a4a4357a::t_0e776fa47985d0 17,28,65,80,95,113-117
+src/modules/PluginHost/useCases/pluginLifecycle/__tests__/activateExternalPlugin.spec.ts
+  s_0d39f3a4a4357a::t_942e36d534b311 46,49-50,53-54
+  s_0d39f3a4a4357a::t_328dd92e9dc016 1-45,47-48,51-52,55-78
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "899073739ed8996fa9b48ef36fd795a2f15b9b01",
+  "prompts": {},
+  "sessions": {
+    "s_0d39f3a4a4357a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "60da6a2e-7d79-4d98-8624-e993f5a9f94e",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_3cb47c1b5330ab": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-a54945814489186ff",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
