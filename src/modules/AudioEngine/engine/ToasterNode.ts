@@ -11,7 +11,7 @@ import toasterProcessorUrl from '../services/toasterProcessor.ts?worker&url';
 
 const DEFAULT_WASM_URL = '/wasm/daw-dsp/daw_dsp_bg.wasm';
 const TOASTER_PAD_COUNT = 16;
-const TOASTER_AUTOMATION_PARAM_IDS: Readonly<Record<string, number>> = {
+export const TOASTER_AUTOMATION_PARAM_IDS: Readonly<Record<string, number>> = {
     masterGain: 0,
     reverbMix: 1,
     delayMix: 2,

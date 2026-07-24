@@ -8,9 +8,35 @@ export type OfflineAutomationSegment = {
     endValue: number;
 };
 
+/** A single AudioParam an offline automation lane drives, with its unit scaling. */
+export type OfflineAutomationTarget = {
+    readonly audioParam: AudioParam;
+    readonly scale: number;
+    readonly offset: number;
+};
+
+/**
+ * How offline device-param automation for one parameter reaches a device. A
+ * device either exposes one or more real `AudioParam`s (scheduled with the
+ * shared AU-1 curve kernel) or accepts frame-addressed segments its worklet
+ * interpolates. This is the single capability the offline scheduler routes all
+ * device automation through — no hardcoded param map, no opt-in node list
+ * (finding OE-3).
+ */
+export type OfflineAutomationBinding =
+    | { readonly kind: 'audioParam'; readonly targets: readonly OfflineAutomationTarget[] }
+    | { readonly kind: 'segments'; readonly apply: (segments: readonly OfflineAutomationSegment[]) => void };
+
 export type AudioDeviceStrategy = {
     readonly node: OfflineDeviceNode;
     setParam(name: string, value: number): void;
+    /**
+     * Resolve how offline automation of `parameterId` reaches this device, or
+     * `null` when the device cannot automate that parameter offline. Every
+     * automatable device implements this; the offline scheduler asks each device
+     * rather than consulting an allow-list (OE-3).
+     */
+    resolveOfflineAutomation(parameterId: string): OfflineAutomationBinding | null;
     acceptsScheduledParam?(name: string): boolean;
     scheduleParam?(name: string, segments: readonly OfflineAutomationSegment[]): void;
     setBypass?(bypassed: boolean): void;

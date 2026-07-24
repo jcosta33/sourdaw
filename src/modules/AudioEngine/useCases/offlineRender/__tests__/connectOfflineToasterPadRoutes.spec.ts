@@ -24,7 +24,13 @@ function toasterEntry(connectPadOutput: ConnectPadOutput, setPadDryRouted: SetPa
         deviceId: 'toaster-device',
         deviceType: 'toaster',
         node,
-        strategy: { node, setParam: vi.fn<(name: string, value: number) => void>(), connectPadOutput, setPadDryRouted },
+        strategy: {
+            node,
+            setParam: vi.fn<(name: string, value: number) => void>(),
+            resolveOfflineAutomation: () => null,
+            connectPadOutput,
+            setPadDryRouted,
+        },
     };
 }
 

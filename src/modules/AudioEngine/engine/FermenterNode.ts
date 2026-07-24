@@ -10,7 +10,7 @@ import { createReadyHandshake, ensureWorkletRegistered, fetchWasmBinary } from '
 import fermenterProcessorUrl from '../services/fermenterProcessor.ts?worker&url';
 
 const DEFAULT_WASM_URL = '/wasm/daw-dsp/daw_dsp_bg.wasm';
-const FERMENTER_AUTOMATION_PARAM_IDS: Readonly<Record<string, number>> = {
+export const FERMENTER_AUTOMATION_PARAM_IDS: Readonly<Record<string, number>> = {
     oscLevel: 0,
     filterCutoff: 1,
     filterResonance: 2,

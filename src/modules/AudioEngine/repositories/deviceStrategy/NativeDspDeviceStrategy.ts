@@ -12,7 +12,11 @@ import { isToasterDevice, createToasterNode } from '../../engine/ToasterNode';
 import { type Device } from '../../models/TrackViewTypes';
 import { type OfflineDeviceNode } from '../devices/types';
 
-import { type AudioDeviceStrategy, type OfflineAutomationSegment } from './AudioDeviceStrategy';
+import {
+    type AudioDeviceStrategy,
+    type OfflineAutomationBinding,
+    type OfflineAutomationSegment,
+} from './AudioDeviceStrategy';
 
 type NativeDspNode = {
     workletNode: AudioWorkletNode;
@@ -50,6 +54,14 @@ export class NativeDspDeviceStrategy implements AudioDeviceStrategy {
 
     setParam(name: string, value: number): void {
         this.dspNode.setParam?.(name, value);
+    }
+
+    resolveOfflineAutomation(parameterId: string): OfflineAutomationBinding | null {
+        const schedule = this.scheduleParam;
+        if (!schedule || this.acceptsScheduledParam?.(parameterId) !== true) {
+            return null;
+        }
+        return { kind: 'segments', apply: (segments) => schedule(parameterId, segments) };
     }
 
     setBypass(bypassed: boolean): void {

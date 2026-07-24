@@ -293,6 +293,7 @@ describe('renderOffline — graph construction and lifecycle', () => {
                         strategy: {
                             node,
                             setParam: vi.fn<(name: string, value: number) => void>(),
+                            resolveOfflineAutomation: () => null,
                             connectPadOutput,
                             setPadDryRouted,
                         },
@@ -348,7 +349,11 @@ describe('renderOffline — graph construction and lifecycle', () => {
                         deviceId: 'compressor-1',
                         deviceType: 'builtin-sidechain-compressor',
                         node,
-                        strategy: { node, setParam: vi.fn<(name: string, value: number) => void>() },
+                        strategy: {
+                            node,
+                            setParam: vi.fn<(name: string, value: number) => void>(),
+                            resolveOfflineAutomation: () => null,
+                        },
                     },
                 ];
             }
@@ -400,7 +405,11 @@ describe('renderOffline — graph construction and lifecycle', () => {
                         deviceId: 'compressor-1',
                         deviceType: 'builtin-sidechain-compressor',
                         node,
-                        strategy: { node, setParam: vi.fn<(name: string, value: number) => void>() },
+                        strategy: {
+                            node,
+                            setParam: vi.fn<(name: string, value: number) => void>(),
+                            resolveOfflineAutomation: () => null,
+                        },
                     },
                 ];
             }

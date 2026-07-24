@@ -1,8 +1,9 @@
 import { type Device } from '../../models/TrackViewTypes';
+import { resolveDeviceParamTargets } from '../../services/deviceResolution';
 import { applyParams } from '../applyParams';
 import { type OfflineDeviceNode, createOfflineDeviceNode } from '../deviceNodeFactory';
 
-import { type AudioDeviceStrategy } from './AudioDeviceStrategy';
+import { type AudioDeviceStrategy, type OfflineAutomationBinding } from './AudioDeviceStrategy';
 
 export class WebAudioDeviceStrategy implements AudioDeviceStrategy {
     constructor(
@@ -12,6 +13,14 @@ export class WebAudioDeviceStrategy implements AudioDeviceStrategy {
 
     setParam(name: string, value: number): void {
         applyParams(this.node, this.deviceType, { [name]: value });
+    }
+
+    resolveOfflineAutomation(parameterId: string): OfflineAutomationBinding | null {
+        const targets = resolveDeviceParamTargets(this.deviceType, parameterId, this.node);
+        if (targets.length === 0) {
+            return null;
+        }
+        return { kind: 'audioParam', targets };
     }
 }
 

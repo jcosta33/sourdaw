@@ -1,6 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+import { logger } from '#/infra/logger/appLogger';
+
+import { type AutomationLane } from '../../../models/AutomationViewTypes';
 import { type Device } from '../../../models/TrackViewTypes';
+import { scheduleTrackAutomation } from '../../offlineScheduler/automationScheduling';
 import { FaustDeviceStrategy, createFaustStrategy } from '../FaustDeviceStrategy';
 
 type FaustNodeLike = ConstructorParameters<typeof FaustDeviceStrategy>[1];
@@ -93,5 +97,113 @@ describe('createFaustStrategy', () => {
         await createFaustStrategy({ ctx, device, createFaustDevice });
         expect(createFaustDevice).toHaveBeenCalledWith({ ctx, faustModuleId: 'faust-x' });
         expect(setParamValue).toHaveBeenCalledWith('gain', 0.25);
+    });
+});
+
+function make_faust_param() {
+    return {
+        value: 0,
+        setValueAtTime: vi.fn(),
+        linearRampToValueAtTime: vi.fn(),
+        setTargetAtTime: vi.fn(),
+    };
+}
+
+// A Faust AudioWorkletNode stand-in: params keyed by their full Faust address.
+function make_faust_strategy(addresses: string[]) {
+    const params = new Map(addresses.map((address) => [address, make_faust_param()] as const));
+    const faustNode = Object.assign(make_audio_node(), { setParamValue: vi.fn(), parameters: params });
+    const offlineNode = {
+        inputNode: {} as AudioNode,
+        outputNode: {} as AudioNode,
+        nodes: [faustNode],
+    };
+    return { strategy: new FaustDeviceStrategy(offlineNode, faustNode as unknown as FaustNodeLike), params };
+}
+
+function make_lane(overrides: Partial<AutomationLane>): AutomationLane {
+    return {
+        id: 'lane-1',
+        trackId: 'track-1',
+        parameterId: 'gain',
+        parameterName: 'Cutoff',
+        points: [],
+        enabled: true,
+        minValue: 0,
+        maxValue: 20_000,
+        ...overrides,
+    };
+}
+
+describe('FaustDeviceStrategy.resolveOfflineAutomation', () => {
+    it('resolves a bare parameter id to the full-path Faust AudioParam', () => {
+        const { strategy, params } = make_faust_strategy(['/reverb/cutoff']);
+
+        const binding = strategy.resolveOfflineAutomation('cutoff');
+
+        expect(binding?.kind).toBe('audioParam');
+        if (binding?.kind !== 'audioParam') {
+            throw new Error('expected an audioParam binding');
+        }
+        expect(binding.targets).toEqual([{ audioParam: params.get('/reverb/cutoff'), scale: 1, offset: 0 }]);
+    });
+
+    it('resolves an exact full-path parameter id directly', () => {
+        const { strategy, params } = make_faust_strategy(['/reverb/cutoff']);
+
+        const binding = strategy.resolveOfflineAutomation('/reverb/cutoff');
+
+        expect(binding?.kind === 'audioParam' && binding.targets[0]?.audioParam).toBe(params.get('/reverb/cutoff'));
+    });
+
+    it('returns null for a parameter the Faust node does not expose', () => {
+        const { strategy } = make_faust_strategy(['/reverb/cutoff']);
+
+        expect(strategy.resolveOfflineAutomation('resonance')).toBeNull();
+    });
+
+    it('keeps the first address and warns on an ambiguous bare param name', () => {
+        const warnSpy = vi.spyOn(logger, 'warn').mockImplementation(() => {});
+        const { strategy, params } = make_faust_strategy(['/a/cutoff', '/b/cutoff']);
+
+        const binding = strategy.resolveOfflineAutomation('cutoff');
+
+        // First address wins; the shadowed duplicate is warned, mirroring the live cache.
+        expect(binding?.kind === 'audioParam' && binding.targets[0]?.audioParam).toBe(params.get('/a/cutoff'));
+        expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('Duplicate bare param'));
+        warnSpy.mockRestore();
+    });
+
+    // OE-3 red-first: a Faust device sits outside the hardcoded offline param map
+    // and exposes no scheduleParam, so before this capability its parameter
+    // automation was frozen at the create-time snapshot offline. Drive the full
+    // offline scheduler and assert the Faust AudioParam receives the real
+    // interpolated ramp — not a single flat value.
+    it('renders offline parameter automation as real ramped values, not a frozen snapshot', () => {
+        const { strategy, params } = make_faust_strategy(['/reverb/cutoff']);
+        const cutoff = params.get('/reverb/cutoff')!;
+
+        scheduleTrackAutomation(
+            [
+                make_lane({
+                    parameterId: 'faust-1:cutoff',
+                    points: [
+                        { beat: 0, value: 200, curve: 'linear', tension: 0 },
+                        { beat: 4, value: 2_000, curve: 'linear', tension: 0 },
+                    ],
+                }),
+            ],
+            'track-1',
+            { gain: make_faust_param() } as unknown as GainNode,
+            { pan: make_faust_param() } as unknown as StereoPannerNode,
+            [{ deviceId: 'faust-1', deviceType: 'faust-reverb', strategy }],
+            10,
+            120,
+            []
+        );
+
+        // 120 bpm → beatToSeconds(beat) === beat / 2.
+        expect(cutoff.setValueAtTime).toHaveBeenCalledWith(200, 0);
+        expect(cutoff.linearRampToValueAtTime).toHaveBeenCalledWith(2_000, 2);
     });
 });
