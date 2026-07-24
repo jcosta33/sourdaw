@@ -66,4 +66,33 @@ describe('beginClipDrag', () => {
 
         expect(beginClipDrag(0, 0)).toBeNull();
     });
+
+    it('returns null when the timeline view store has not loaded', () => {
+        mockHitTestClip.mockReturnValue({ clipId: 'c1', trackId: 't1' });
+        mockTimelineViewValue = null;
+        mockTrackValue = { tracks: [], selectedTrackId: null };
+
+        expect(beginClipDrag(0, 0)).toBeNull();
+    });
+
+    it('returns null when the track store has not loaded', () => {
+        mockHitTestClip.mockReturnValue({ clipId: 'c1', trackId: 't1' });
+        mockTimelineViewValue = { pixelsPerBeat: 10, scrollX: 0, scrollY: 0 };
+        mockTrackValue = null;
+
+        expect(beginClipDrag(0, 0)).toBeNull();
+    });
+
+    it('returns null when the hit clip is absent from the track store', () => {
+        // hitTestClip resolves an id, but the track/clip no longer exists in the
+        // store (torn down between the hit and the drag start).
+        mockHitTestClip.mockReturnValue({ clipId: 'ghost', trackId: 't1' });
+        mockTimelineViewValue = { pixelsPerBeat: 10, scrollX: 0, scrollY: 0 };
+        mockTrackValue = {
+            tracks: [{ id: 't1', clips: [{ id: 'c1', startBeat: 0, endBeat: 8 }] }],
+            selectedTrackId: null,
+        };
+
+        expect(beginClipDrag(0, 0)).toBeNull();
+    });
 });

@@ -59,4 +59,31 @@ describe('copySelectedNotes', () => {
         copySelectedNotes('c1', ['n1']);
         expect(setNoteClipboard).not.toHaveBeenCalled();
     });
+
+    it('no-ops when the clip has no notes in midi state', () => {
+        mocks.midiStoreValue.value = {
+            notesByClipId: {},
+            ccByClipId: {},
+            pitchBendByClipId: {},
+        };
+
+        copySelectedNotes('c1', ['n1']);
+
+        expect(setNoteClipboard).not.toHaveBeenCalled();
+    });
+
+    it('no-ops when none of the requested note ids are present on the clip', () => {
+        mocks.midiStoreValue.value = {
+            notesByClipId: {
+                c1: [{ id: 'n1', pitch: 60, velocity: 100, startBeat: 0, duration: 0.25 }],
+            },
+            ccByClipId: {},
+            pitchBendByClipId: {},
+        };
+
+        // The clip exists but none of the requested ids match -> nothing copied.
+        copySelectedNotes('c1', ['not-present']);
+
+        expect(setNoteClipboard).not.toHaveBeenCalled();
+    });
 });
