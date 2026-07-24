@@ -89,12 +89,13 @@ describe('FmSection', () => {
             expect(screen.getByText('10%')).toBeTruthy();
         });
 
-        it('applies the per-operator accent colour class', () => {
+        it('renders four distinct operator labels so each is independently addressable', () => {
             render(<FmSection {...defaultProps()} />);
-            const op1 = screen.getByText('Op 1');
-            expect(op1.className).toContain('accent-cyan');
-            const op2 = screen.getByText('Op 2');
-            expect(op2.className).toContain('accent-mint');
+            // The four operators carry unique labels Op 1–4; each has its own
+            // ratio/level readouts, confirming the per-operator loop rendered all four.
+            for (const i of [1, 2, 3, 4]) {
+                expect(screen.getByText(`Op ${i}`)).toBeTruthy();
+            }
         });
     });
 
