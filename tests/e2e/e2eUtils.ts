@@ -82,3 +82,33 @@ export async function launch_from_template({ page, template_name }: LaunchFromTe
 
     await wait_for_workspace_ready(page);
 }
+
+const PANEL_OPEN_TIMEOUT_MS = 30_000;
+
+type OpenBrowserInstrumentInput = {
+    page: Page;
+    /** The instrument card label, which is also its device-panel label. */
+    instrument: string;
+};
+
+/**
+ * Open an instrument's device panel from the Browser → Instruments tab, waiting
+ * on the panel-mounted contract instead of a fixed sleep.
+ *
+ * Clicking an instrument card creates the track + device and mounts the
+ * InstrumentBottomPanel. Under full-suite worker contention that mount can take
+ * several seconds, so a hard `waitForTimeout` before asserting the panel's inner
+ * controls flakes (the panel is not up yet at the fixed deadline). The card label
+ * doubles as the panel label, so the panel's `Close <instrument>` control is a
+ * uniform "panel is mounted" signal. Callers then assert the panel's own controls
+ * with the default timeout, since by then the panel is present.
+ */
+export async function open_browser_instrument({ page, instrument }: OpenBrowserInstrumentInput): Promise<void> {
+    const browser = page.getByRole('complementary', { name: 'Browser panel' });
+    await browser.getByRole('button', { name: 'Instruments', exact: true }).click();
+    // InstrumentCard is a clickable div (not a button) — click by its label text.
+    await browser.getByText(instrument, { exact: true }).click();
+    await expect(page.getByRole('button', { name: `Close ${instrument}` })).toBeVisible({
+        timeout: PANEL_OPEN_TIMEOUT_MS,
+    });
+}

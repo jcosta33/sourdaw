@@ -49,22 +49,25 @@ test.describe('Automation Lanes', () => {
         // Check that its default value is Velocity
         await expect(laneSelector).toHaveValue('velocity');
 
-        // Switch to pitch bend or CC
-        await laneSelector.selectOption('pitchBend');
-        await expect(laneSelector).toHaveValue('pitchBend');
+        // Switch to a non-MPE lane. The MPE per-note lanes (Pitch Bend / Pressure
+        // / Slide) are intentionally hidden until the engine sounds them (audit
+        // MD-2, honest-availability flag — #719); the CC lanes remain available, so
+        // switch parameters via CC 11 (Expression).
+        await laneSelector.selectOption('cc11');
+        await expect(laneSelector).toHaveValue('cc11');
 
-        // The pitch bend automation lane should be visible
-        const pitchBendLane = page.locator('[aria-label="Pitch bend automation lane"]');
-        await expect(pitchBendLane).toBeVisible();
+        // The CC 11 automation lane should be visible.
+        const ccLane = page.locator('[aria-label="CC 11 automation lane"]');
+        await expect(ccLane).toBeVisible();
 
-        const box = await pitchBendLane.boundingBox();
+        const box = await ccLane.boundingBox();
         expect(box).not.toBeNull();
 
         if (box) {
-            // Click to add a point in the pitch bend lane
+            // Click to add a point in the CC lane
             await page.mouse.click(box.x + 50, box.y + box.height / 2);
             await page.waitForTimeout(100);
-            
+
             // Drag the point slightly
             await page.mouse.move(box.x + 50, box.y + box.height / 2);
             await page.mouse.down();

@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { launch_from_template, setupWorkspace } from './e2eUtils';
+import { launch_from_template, open_browser_instrument, setupWorkspace } from './e2eUtils';
 
 // ---------------------------------------------------------------------------
 // Audio clip operations — EDM template tracks + inspector selection.
@@ -64,11 +64,9 @@ test.describe('Fermenter panel controls', () => {
         await setupWorkspace(page);
         await launch_from_template({ page, template_name: /EDM/i });
 
-        const browser = page.getByRole('complementary', { name: 'Browser panel' });
-        await browser.getByRole('button', { name: 'Instruments', exact: true }).click();
-        await browser.getByText('Fermenter', { exact: true }).click();
-        await page.waitForTimeout(1000);
+        await open_browser_instrument({ page, instrument: 'Fermenter' });
 
+        // The Macro rig combobox is always present in the mounted Fermenter panel.
         await expect(page.getByRole('combobox', { name: 'Macro' })).toBeVisible();
     });
 });

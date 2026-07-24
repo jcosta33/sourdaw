@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { launch_from_template, launch_new_project, setupWorkspace } from './e2eUtils';
+import { launch_from_template, launch_new_project, open_browser_instrument, setupWorkspace } from './e2eUtils';
 
 const MOD = process.platform === 'darwin' ? 'Meta' : 'Control';
 
@@ -22,30 +22,20 @@ test.describe('Instrument panels via Browser', () => {
     });
 
     test('Fermenter card creates a track and opens the panel with the Macro combobox', async ({ page }) => {
-        const browser = page.getByRole('complementary', { name: 'Browser panel' });
-        await browser.getByRole('button', { name: 'Instruments', exact: true }).click();
-        // InstrumentCard is a clickable div (not a button); click by its label text.
-        await browser.getByText('Fermenter', { exact: true }).click();
-        await page.waitForTimeout(1000);
+        await open_browser_instrument({ page, instrument: 'Fermenter' });
 
         // The Macro rig combobox is always visible in the Fermenter panel.
         await expect(page.getByRole('combobox', { name: 'Macro' })).toBeVisible();
     });
 
     test('Toaster card opens the panel with the kit search input', async ({ page }) => {
-        const browser = page.getByRole('complementary', { name: 'Browser panel' });
-        await browser.getByRole('button', { name: 'Instruments', exact: true }).click();
-        await browser.getByText('Toaster', { exact: true }).click();
-        await page.waitForTimeout(1000);
+        await open_browser_instrument({ page, instrument: 'Toaster' });
 
         await expect(page.getByRole('textbox', { name: 'Search Toaster kits' })).toBeVisible();
     });
 
     test('Levain card creates a Levain track in the track list', async ({ page }) => {
-        const browser = page.getByRole('complementary', { name: 'Browser panel' });
-        await browser.getByRole('button', { name: 'Instruments', exact: true }).click();
-        await browser.getByText('Levain', { exact: true }).click();
-        await page.waitForTimeout(1000);
+        await open_browser_instrument({ page, instrument: 'Levain' });
 
         // The card creates a Levain instrument track (real state mutation).
         const track_list = page.getByRole('grid', { name: /Track list/i });

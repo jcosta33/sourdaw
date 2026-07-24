@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { launch_from_template, launch_new_project, setupWorkspace } from './e2eUtils';
+import { launch_from_template, launch_new_project, open_browser_instrument, setupWorkspace } from './e2eUtils';
 
 const MOD = process.platform === 'darwin' ? 'Meta' : 'Control';
 
@@ -121,13 +121,9 @@ test.describe('Browser instrument interaction', () => {
         await setupWorkspace(page);
         await launch_from_template({ page, template_name: /EDM/i });
 
-        const browser = page.getByRole('complementary', { name: 'Browser panel' });
-        await browser.getByRole('button', { name: 'Instruments', exact: true }).click();
-        // InstrumentCard is a clickable div; click by label text.
-        await browser.getByText('Toaster', { exact: true }).click();
-        await page.waitForTimeout(1000);
+        await open_browser_instrument({ page, instrument: 'Toaster' });
 
-        // The Toaster panel's kit search input appears.
+        // The Toaster panel's kit search input appears once the panel is mounted.
         await expect(page.getByRole('textbox', { name: 'Search Toaster kits' })).toBeVisible();
     });
 
