@@ -1,0 +1,50 @@
+src/modules/MIDI/repositories/webMidi/__tests__/sendPanicToMidiOutputs.spec.ts
+  s_0d39f3a4a4357a::t_c2c00e0bc7f450 1-66
+src/modules/Transport/useCases/scheduling/__tests__/scheduleMidiNotes.spec.ts
+  s_0d39f3a4a4357a::t_68d60e4b50930e 207-224
+  s_0d39f3a4a4357a::t_744f1df12a43e2 61
+  s_0d39f3a4a4357a::t_16b7c740c31314 26
+src/modules/MIDI/repositories/webMidi/lifecycle/__tests__/resetMidiState.spec.ts
+  s_0d39f3a4a4357a::t_81347d37979516 127-192
+  s_0d39f3a4a4357a::t_bd02df052223be 45
+src/modules/CommandInterface/useCases/commands/__tests__/TransportCommands.spec.ts
+  s_0d39f3a4a4357a::t_0ddb5f51665392 10-13
+  s_0d39f3a4a4357a::t_7846f5c0545c7a 3
+  s_0d39f3a4a4357a::t_d0edd0f6431500 44,48-52
+  s_0d39f3a4a4357a::t_53752522e36722 53-54
+src/modules/Transport/useCases/transportControls/__tests__/panicAllNotes.spec.ts
+  s_0d39f3a4a4357a::t_acf80ca5c137b8 1-79
+src/modules/Crumbs/useCases/__tests__/panicCrumbs.spec.ts
+  s_0d39f3a4a4357a::t_0a35a3640b7396 3
+  s_0d39f3a4a4357a::t_f79a23d954dcc0 1-2,4-34
+src/modules/AudioEngine/repositories/__tests__/createWebAudioEngine.spec.ts
+  s_0d39f3a4a4357a::t_80626f15094746 1236,1238-1241,1243-1244,1247-1250,1252,1255-1265,1269-1284,1286,1289,1292-1294,1296-1297,1299,1302-1330,1333
+src/modules/CommandInterface/useCases/keyboardShortcutActions/handleKeyboardShortcut/__tests__/handleKeydown.spec.ts
+  s_0d39f3a4a4357a::t_eaefb468b2496c 273-326
+  s_0d39f3a4a4357a::t_503c092d59d7d5 69
+  s_0d39f3a4a4357a::t_e4aef25e970bab 125
+  s_0d39f3a4a4357a::t_2b26eb665c5cd7 53
+  s_0d39f3a4a4357a::t_8c9fbe2f24385b 327-330
+src/modules/MIDI/useCases/webMidiInput/__tests__/handleWebMidiPitchBend.spec.ts
+  s_0d39f3a4a4357a::t_57073e7f6a389c 209,230,249,269
+src/modules/MIDI/useCases/webMidiInput/handleWebMidiCC.ts
+  s_0d39f3a4a4357a::t_993baca73fb29c 4
+src/modules/MIDI/useCases/webMidiInput/resolveBendRangeSemitones.ts
+  s_0d39f3a4a4357a::t_5e121df692d88f 3-7
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "d8405a7eb841ae4c03e65a2302e34de49a1c24f7",
+  "prompts": {},
+  "sessions": {
+    "s_0d39f3a4a4357a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "60da6a2e-7d79-4d98-8624-e993f5a9f94e",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
