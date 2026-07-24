@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
+import { dropoutCounters } from '../dropoutCounter';
 import { createGrandBouleNode, isGrandBouleDevice } from '../GrandBouleNode';
 
 describe('isGrandBouleDevice', () => {
@@ -135,7 +136,13 @@ describe('createGrandBouleNode', () => {
 
         lastWorker?.onmessage?.({ data: { type: 'ready' } } as MessageEvent);
 
-        expect(nodePostMessage).toHaveBeenCalledWith({ type: 'init', sab: expect.anything() });
+        // The worklet is handed the ring SAB plus the shared dropout counters, so
+        // ring starvation is tallied instead of silently emitting silence (RT-10).
+        expect(nodePostMessage).toHaveBeenCalledWith({
+            type: 'init',
+            sab: expect.anything(),
+            dropoutSab: dropoutCounters.getSab(),
+        });
     });
 
     it('should post noteOn to the engine worker unless bypassed', async () => {

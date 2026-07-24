@@ -16,6 +16,7 @@ import { createReadyHandshake, ensureWorkletRegistered } from '#/infra/audioWork
 
 import grandBouleProcessorUrl from '../services/grandBouleProcessor.ts?worker&url';
 
+import { dropoutCounters } from './dropoutCounter';
 import { requireSharedArrayBuffer } from './pluginHostingErrors';
 
 const DEFAULT_WASM_URL = '/wasm/daw-dsp/daw_dsp_bg.wasm';
@@ -102,8 +103,10 @@ export async function createGrandBouleNode(ctx: BaseAudioContext, wasmUrl?: stri
     engineWorker.onmessage = (event: MessageEvent) => {
         const outcome = handshake.onMessage(event);
         if (outcome === 'ready') {
-            // Now init the worklet side with the same SAB.
-            node.port.postMessage({ type: 'init', sab });
+            // Now init the worklet side with the same SAB, plus the shared
+            // dropout counters so ring starvation is tallied instead of silently
+            // producing silence (audit RT-10).
+            node.port.postMessage({ type: 'init', sab, dropoutSab: dropoutCounters.getSab() });
         }
     };
     const readyPromise = handshake.promise;
