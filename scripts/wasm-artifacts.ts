@@ -21,7 +21,7 @@
  */
 
 import { createHash } from 'node:crypto';
-import { readdirSync, readFileSync, statSync } from 'node:fs';
+import { readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -49,6 +49,24 @@ export type WasmToolchain = {
     wasmOpt: string;
 };
 
+/**
+ * The generated TypeScript declaration files of a package. A `.d.ts` embeds no
+ * wasm-bindgen schema id, so schema pairing cannot tie it to the build it
+ * describes — the WB-4 / #732 blind spot. Each declaration therefore carries a
+ * crate-source-provenance stamp (prepended at generation, see `stampDeclaration`)
+ * that `pnpm wasm:verify` asserts against the live crate hash, so a `.d.ts` left
+ * stale while the crate (and its `.js`/`.wasm`) regenerated fails even though
+ * every byte hash is self-consistent in the freshly written manifest.
+ */
+export type WasmDeclarationFiles = {
+    /** The public served API-surface declaration (wasm-pack output). */
+    public: string;
+    /** The public raw-export declaration paired with `_bg.wasm` (wasm-pack output). */
+    publicBg: string;
+    /** The worklet-tree mirror, copied from `public` by the gen script. */
+    src: string;
+};
+
 export type WasmPackageSpec = {
     /** Package directory name under `public/wasm/`. */
     id: string;
@@ -62,6 +80,11 @@ export type WasmPackageSpec = {
     schemaSources: string[];
     /** Committed files fingerprinted for byte integrity, relative to the root. */
     artifacts: string[];
+    /**
+     * Generated `.d.ts` files carrying a crate-source-provenance stamp, or
+     * `undefined` for packages with no declarations (`daw-wasm-decoder`).
+     */
+    declarations?: WasmDeclarationFiles;
 };
 
 export type WasmPackageManifest = {
@@ -100,6 +123,11 @@ const wasmPackages: readonly WasmPackageSpec[] = [
             'src/modules/AudioEngine/wasm/daw_dsp.js',
             'src/modules/AudioEngine/wasm/daw_dsp.d.ts',
         ],
+        declarations: {
+            public: 'public/wasm/daw-dsp/daw_dsp.d.ts',
+            publicBg: 'public/wasm/daw-dsp/daw_dsp_bg.wasm.d.ts',
+            src: 'src/modules/AudioEngine/wasm/daw_dsp.d.ts',
+        },
     },
     {
         id: 'proof-chamber',
@@ -118,6 +146,11 @@ const wasmPackages: readonly WasmPackageSpec[] = [
             'src/modules/AudioEngine/wasm/proof_chamber.js',
             'src/modules/AudioEngine/wasm/proof_chamber.d.ts',
         ],
+        declarations: {
+            public: 'public/wasm/proof-chamber/proof_chamber.d.ts',
+            publicBg: 'public/wasm/proof-chamber/proof_chamber_bg.wasm.d.ts',
+            src: 'src/modules/AudioEngine/wasm/proof_chamber.d.ts',
+        },
     },
     {
         id: 'scoring',
@@ -136,6 +169,11 @@ const wasmPackages: readonly WasmPackageSpec[] = [
             'src/modules/AudioEngine/wasm/scoring.js',
             'src/modules/AudioEngine/wasm/scoring.d.ts',
         ],
+        declarations: {
+            public: 'public/wasm/scoring/scoring.d.ts',
+            publicBg: 'public/wasm/scoring/scoring_bg.wasm.d.ts',
+            src: 'src/modules/AudioEngine/wasm/scoring.d.ts',
+        },
     },
     {
         id: 'daw-wasm-decoder',
@@ -381,6 +419,63 @@ function extractSchemaHash(relPath: string): string {
     return match[1];
 }
 
+/**
+ * A generated `.d.ts` carries no wasm-bindgen schema id, so it cannot join the
+ * schema-pairing check. Instead every declaration is prepended at generation
+ * with the crate-source hash it was produced from; `pnpm wasm:verify` re-derives
+ * the live crate hash and rejects any stamp that no longer matches, so a `.d.ts`
+ * left stale while the crate and its `.js`/`.wasm` regenerated carries an old
+ * stamp and fails, even though the freshly written manifest records its (stale)
+ * byte hash without complaint. Scope: this is a *provenance* check, not a content
+ * proof — the stamp attests the crate source is unchanged since this file was
+ * generated; it does NOT prove the body matches the current bindings (only
+ * regeneration does), so a hand-forged stamp over a stale body plus a rebuilt
+ * manifest still passes clean.
+ */
+const declarationStampPrefix = '// @wasm-bindgen-dts crate-source: ';
+const declarationStampMarker = /^\/\/ @wasm-bindgen-dts crate-source: (sha256:[0-9a-f]{64})\n/;
+
+/** Prepend (replacing any prior stamp) the crate-source provenance line. */
+function stampDeclaration(relPath: string, crateSourceHash: string): void {
+    const abs = absolute(relPath);
+    const body = readFileSync(abs, 'utf8').replace(declarationStampMarker, '');
+    writeFileSync(abs, `${declarationStampPrefix}${crateSourceHash}\n${body}`, 'utf8');
+}
+
+/** Read back the stamped crate-source hash, or null when the stamp is absent. */
+function extractDeclarationStamp(relPath: string): string | null {
+    const match = declarationStampMarker.exec(readFileSync(absolute(relPath), 'utf8'));
+    return match ? match[1] : null;
+}
+
+/** Look up a package spec by id, or throw for an unknown id. */
+function packageSpec(id: string): WasmPackageSpec {
+    const spec = wasmPackages.find((candidate) => candidate.id === id);
+    if (!spec) {
+        throw new Error(`Unknown wasm package id: ${id}`);
+    }
+    return spec;
+}
+
+/**
+ * Mirror the wasm-pack `.d.ts` into the worklet tree and stamp every generated
+ * declaration of the package with the current crate-source hash. Each
+ * `gen-*-worklet.ts` calls this after writing the worklet `.js`, so the compiled
+ * TypeScript contract always tracks the crate it was generated from (WB-4).
+ */
+function regenerateDeclarations(id: string): void {
+    const spec = packageSpec(id);
+    if (!spec.declarations) {
+        return;
+    }
+    const { public: publicDts, publicBg, src } = spec.declarations;
+    writeFileSync(absolute(src), readFileSync(absolute(publicDts), 'utf8'), 'utf8');
+    const crateSourceHash = hashCrateClosure(spec.crateDir);
+    for (const relPath of [publicDts, publicBg, src]) {
+        stampDeclaration(relPath, crateSourceHash);
+    }
+}
+
 function buildPackageManifest(spec: WasmPackageSpec): WasmPackageManifest {
     const schemaHashes = new Set(spec.schemaSources.map((file) => extractSchemaHash(file)));
     if (schemaHashes.size !== 1) {
@@ -498,4 +593,6 @@ export const wasmArtifacts = {
     rustToolchainChannel,
     buildManifest,
     readManifest,
+    extractDeclarationStamp,
+    regenerateDeclarations,
 };

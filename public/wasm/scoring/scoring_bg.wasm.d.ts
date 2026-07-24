@@ -1,7 +1,9 @@
+// @wasm-bindgen-dts crate-source: sha256:326652ea9eb3586b5224ea810b313e7c10bf8619cec5ae2e2131210f4c1d6eef
 /* tslint:disable */
 /* eslint-disable */
 export const memory: WebAssembly.Memory;
 export const __wbg_scoringinstance_free: (a: number, b: number) => void;
+export const init_panic_hook: () => void;
 export const scoringinstance_get_cents: (a: number) => number;
 export const scoringinstance_get_confidence: (a: number) => number;
 export const scoringinstance_get_frequency: (a: number) => number;
@@ -20,7 +22,8 @@ export const scoringinstance_is_poly_string_active: (a: number, b: number) => nu
 export const scoringinstance_new: (a: number) => number;
 export const scoringinstance_process: (a: number, b: number, c: number, d: number, e: number, f: number) => number;
 export const scoringinstance_set_param: (a: number, b: number, c: number, d: number) => void;
-export const __wbindgen_externrefs: WebAssembly.Table;
+export const __wbindgen_free: (a: number, b: number, c: number) => void;
 export const __wbindgen_malloc: (a: number, b: number) => number;
 export const __wbindgen_realloc: (a: number, b: number, c: number, d: number) => number;
+export const __wbindgen_externrefs: WebAssembly.Table;
 export const __wbindgen_start: () => void;

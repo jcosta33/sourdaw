@@ -41,6 +41,8 @@ if (typeof FinalizationRegistry === 'undefined') {
         unregister() {}
     };
 }
+/* @ts-self-types="./scoring.d.ts" */
+
 export class ScoringInstance {
     __destroy_into_raw() {
         const ptr = this.__wbg_ptr;
