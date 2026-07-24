@@ -103,6 +103,11 @@ export class MarkovChain extends BaseMidiProcessor {
     }
 
     private sampleNext(): number {
+        // Defensive guards. sampleNext is only reached after the
+        // `stateNoteCount === 0` early-return in processMidi, so stateCount is
+        // always >= 1 here; and probs is pre-allocated to MAX_STATES rows, so
+        // `row` is never undefined. Both branches are therefore unreachable
+        // through the public API but kept as audio-thread safety nets.
         if (this.stateCount === 0) {
             return 0;
         }

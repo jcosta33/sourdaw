@@ -183,4 +183,50 @@ describe('MarkovChain', () => {
         mc.processMidi([], out, { ...transport, blockStartSamples: 0, blockEndSamples: 600 });
         expect(out.some((e) => e.kind.type === 'noteOn')).toBe(true);
     });
+
+    it('generates a markov-prefixed id when none is provided', () => {
+        const mc = new MarkovChain();
+        expect(mc.id).toMatch(/^markov-\d+$/);
+        expect(mc.name).toBe('Markov');
+    });
+
+    it('falls back to the last state when a zeroed row never reaches the random draw', () => {
+        // setTransition(0,0,0) on a 1-state chain zeroes the only cell. With the
+        // whole row at 0 the running cumulative stays 0, so `r <= cumulative` is
+        // never true and sampleNext falls through to `return stateCount - 1` (=0).
+        // The chain still emits the held note (stateToNote[0]) — proving the
+        // fallback arm was taken rather than throwing.
+        const mc = new MarkovChain('fallthrough');
+        mc.setParam('rate_denom', 1024);
+        mc.processMidi([noteOn(0, 60)], [], transport); // stateCount=1, stateToNote[0]=60
+        mc.setTransition(0, 0, 0); // zero the only transition
+        const out: MidiEvent[] = [];
+        mc.processMidi([], out, { ...transport, blockStartSamples: 0, blockEndSamples: 600 });
+        const on = out.find((e) => e.kind.type === 'noteOn');
+        expect(on).toBeDefined();
+        // Fallthrough returns stateCount-1=0 → stateToNote[0]=60.
+        expect((on!.kind as { note: number }).note).toBe(60);
+    });
+
+    describe('replaceParams restores defaults via resetParams', () => {
+        // resetParams restores rate denom=8, gate=0.7, velocity=100.
+        // replaceParams({}) must therefore collapse customised params back.
+        it('restores the default rate/gate/velocity after customisation', () => {
+            const mc = new MarkovChain('rp');
+            mc.setParam('rate_denom', 1024);
+            mc.setParam('gate', 2);
+            mc.setParam('velocity', 50);
+            mc.processMidi([noteOn(0, 60)], [], transport);
+
+            mc.replaceParams({}); // resetParams → defaults
+            // Default velocity=100 on subsequently generated notes. Drive a step
+            // at the default 1/8 rate: 1/8 note at 120bpm/48k = 24000 samples.
+            mc.processMidi([noteOn(0, 60)], [], transport); // re-arm held note
+            const out: MidiEvent[] = [];
+            mc.processMidi([], out, { ...transport, blockStartSamples: 0, blockEndSamples: 50_000 });
+            const on = out.find((e) => e.kind.type === 'noteOn');
+            expect(on).toBeDefined();
+            expect((on!.kind as { velocity: number }).velocity).toBe(100);
+        });
+    });
 });

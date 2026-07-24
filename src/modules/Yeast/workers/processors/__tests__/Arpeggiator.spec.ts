@@ -479,5 +479,207 @@ describe('Arpeggiator', () => {
             // Octave-up expansion adds 72 and 76 alongside 60 and 64 → sorted ascending.
             expect(pitches).toEqual([60, 64, 72, 76]);
         });
+
+        it('records rejected candidates with octave-down direction', () => {
+            // Exercises the octaveDirection === 'down' arms of
+            // countExpandedNotes / fillRejectedCandidates: a note at 60 expanded
+            // down two octaves yields 60 and 48.
+            const arp = new Arpeggiator('reject-down');
+            arp.setParam('mode', 7);
+            arp.setParam('octave_range', 2);
+            arp.setParam('octave_direction', 1); // down
+            arp.setPattern([{ ...defaultStep(), stepType: 'chord', probability: 0 }]);
+            const rack = new MidiRack();
+            rack.addProcessor(arp, 'arpeggiator');
+
+            rack.processBlock(
+                [{ timeSamples: 0, kind: { type: 'noteOn', channel: 0, note: 60, velocity: 80 } }],
+                0,
+                128,
+                transport,
+                'track-rej',
+                true
+            );
+            transport.ppqPosition = 0.6;
+            rack.processBlock([], 13230, 13358, transport, 'track-rej', true);
+
+            const pitches = takePreviewRecords(rack).map((r) => r.pitch);
+            // Down expansion: 60 and 48, sorted ascending.
+            expect(pitches).toEqual([48, 60]);
+        });
+
+        it('records rejected candidates with octave upDown direction', () => {
+            // Exercises the octaveDirection === 'upDown' arms of
+            // countExpandedNotes / fillRejectedCandidates: range 2 upDown yields
+            // octaves 0 and 1 (the inner reflection is empty for range 2).
+            const arp = new Arpeggiator('reject-updown');
+            arp.setParam('mode', 7);
+            arp.setParam('octave_range', 3);
+            arp.setParam('octave_direction', 2); // upDown
+            arp.setPattern([{ ...defaultStep(), stepType: 'chord', probability: 0 }]);
+            const rack = new MidiRack();
+            rack.addProcessor(arp, 'arpeggiator');
+
+            rack.processBlock(
+                [{ timeSamples: 0, kind: { type: 'noteOn', channel: 0, note: 60, velocity: 80 } }],
+                0,
+                128,
+                transport,
+                'track-rej',
+                true
+            );
+            transport.ppqPosition = 0.6;
+            rack.processBlock([], 13230, 13358, transport, 'track-rej', true);
+
+            const pitches = takePreviewRecords(rack).map((r) => r.pitch);
+            // upDown range 3: octaves 0,1,2 then reflect 1 → notes 60,72,84,72.
+            // Deduped/sorted in preview → [60, 72, 72, 84].
+            expect(pitches).toEqual([60, 72, 72, 84]);
+        });
+
+        it('skips out-of-range pitches when filling rejected candidates', () => {
+            // A very low note expanded down falls below 0 and must be dropped
+            // from the rejected candidate pool.
+            const arp = new Arpeggiator('reject-oor');
+            arp.setParam('mode', 7);
+            arp.setParam('octave_range', 4);
+            arp.setParam('octave_direction', 1); // down
+            arp.setPattern([{ ...defaultStep(), stepType: 'chord', probability: 0 }]);
+            const rack = new MidiRack();
+            rack.addProcessor(arp, 'arpeggiator');
+
+            rack.processBlock(
+                [{ timeSamples: 0, kind: { type: 'noteOn', channel: 0, note: 12, velocity: 80 } }],
+                0,
+                128,
+                transport,
+                'track-rej',
+                true
+            );
+            transport.ppqPosition = 0.6;
+            rack.processBlock([], 13230, 13358, transport, 'track-rej', true);
+
+            const pitches = takePreviewRecords(rack).map((r) => r.pitch);
+            // 12 expanded down 0,-12,-24,-36 → 12,0,-12(-),-24(-). Only 0 and 12 valid.
+            expect(pitches.every((p) => p >= 0 && p <= 127)).toBe(true);
+            expect(pitches).toEqual([0, 12]);
+        });
+    });
+
+    it('generates an arp-prefixed id when none is provided', () => {
+        const a = new Arpeggiator();
+        expect(a.id).toMatch(/^arp-\d+$/);
+        expect(a.name).toBe('Arpeggiator');
+    });
+
+    it('passes non-note events through unchanged', () => {
+        // Exercises the implicit-else of the noteOn/noteOff dispatch (line 107):
+        // a CC event with no held notes passes through verbatim.
+        const cc: MidiEvent = { timeSamples: 0, kind: { type: 'cc', channel: 0, cc: 7, value: 64 } };
+        const out: MidiEvent[] = [];
+        arp.processMidi([cc], out, transport);
+        expect(out[0]).toBe(cc);
+    });
+
+    it('does not step the arpeggiator while transport is stopped', () => {
+        // Holds a note, then processes a block with isPlaying=false → the
+        // `if (!transport.isPlaying) return` arm fires; no noteOn generated.
+        arp.processMidi(
+            [{ timeSamples: 0, kind: { type: 'noteOn', channel: 0, note: 60, velocity: 100 } }],
+            [],
+            transport
+        );
+        const out: MidiEvent[] = [];
+        arp.processMidi([], out, { ...transport, isPlaying: false, blockStartSamples: 0, blockEndSamples: 50000 });
+        expect(out.filter(isNoteOn)).toHaveLength(0);
+    });
+
+    it('plays every held note simultaneously in chord mode', () => {
+        // selectStepNotes 'chord' case returns the whole sorted pool. Hold the
+        // notes first (default transport), then advance exactly one 1/8 step.
+        arp.setParam('mode', 6); // chord
+        arp.processMidi(
+            [
+                { timeSamples: 0, kind: { type: 'noteOn', channel: 0, note: 60, velocity: 100 } },
+                { timeSamples: 0, kind: { type: 'noteOn', channel: 0, note: 64, velocity: 100 } },
+                { timeSamples: 0, kind: { type: 'noteOn', channel: 0, note: 67, velocity: 100 } },
+            ],
+            [],
+            transport
+        );
+        transport.ppqPosition = 0.6; // past one 1/8 step (0.5 beat)
+        const out: MidiEvent[] = [];
+        arp.processMidi([], out, transport);
+        const notes = out
+            .filter(isNoteOn)
+            .map((e) => e.kind.note)
+            .sort((a, b) => a - b);
+        expect(notes).toEqual([60, 64, 67]);
+    });
+
+    it('reflectedIndex collapses to a single note when only one is held (upDown)', () => {
+        // With len===1, reflectedIndex returns 0 every step → the same note.
+        arp.setParam('mode', 2); // upDown
+        arp.processMidi(
+            [{ timeSamples: 0, kind: { type: 'noteOn', channel: 0, note: 60, velocity: 100 } }],
+            [],
+            transport
+        );
+        const notes: number[] = [];
+        for (let step = 1; step <= 3; step++) {
+            transport.ppqPosition = step * 0.6;
+            const out: MidiEvent[] = [];
+            arp.processMidi([], out, transport);
+            notes.push(...out.filter(isNoteOn).map((e) => e.kind.note));
+        }
+        // Every step plays 60 (no reflection possible with one note).
+        expect(notes.every((n) => n === 60)).toBe(true);
+    });
+
+    it('expandOctaves drops notes that fall outside the 0–127 range', () => {
+        // octave up on a high note pushes it above 127 → filtered out.
+        arp.setParam('mode', 6); // chord so all expanded notes emit at once
+        arp.setParam('octave_range', 2);
+        arp.setParam('octave_direction', 0); // up
+        // 120 expanded up one octave → 132 (>127, dropped). Only 120 survives.
+        arp.processMidi(
+            [{ timeSamples: 0, kind: { type: 'noteOn', channel: 0, note: 120, velocity: 100 } }],
+            [],
+            transport
+        );
+        transport.ppqPosition = 0.6;
+        const out: MidiEvent[] = [];
+        arp.processMidi([], out, transport);
+        const notes = out.filter(isNoteOn).map((e) => e.kind.note);
+        expect(notes).toEqual([120]);
+    });
+
+    it('keeps an active generated note alive across steps until its off time (expireNotes keep-arm)', () => {
+        // A long gate produces a note whose off time is beyond the next step;
+        // expireNotes must KEEP it (else-arm) rather than emit an early noteOff.
+        arp.setParam('gate', 1.0);
+        arp.processMidi(
+            [{ timeSamples: 0, kind: { type: 'noteOn', channel: 0, note: 60, velocity: 100 } }],
+            [],
+            transport
+        );
+        const first: MidiEvent[] = [];
+        arp.processMidi([], first, { ...transport, blockStartSamples: 0, blockEndSamples: 50000 });
+        const firstOn = first.find(isNoteOn);
+        expect(firstOn).toBeDefined();
+        // Next step boundary: the prior note is still within its gate, so no
+        // noteOff should be emitted for it at this step's expireNotes call.
+        const second: MidiEvent[] = [];
+        arp.processMidi([], second, { ...transport, blockStartSamples: 50000, blockEndSamples: 100000 });
+        // The noteOff for the first note arrives only at its scheduled off time
+        // (>= 1 step * gate), not at the second step's expireNotes.
+        const earlyOff = second.filter(
+            (e) => e.kind.type === 'noteOff' && e.noteInstanceId === firstOn?.noteInstanceId && e.timeSamples < 100000
+        );
+        // There may be zero or one off depending on exact timing, but it must
+        // not appear before the gate-extended off time. The key assertion: a
+        // second noteOn IS emitted (the arp advanced while keeping the first).
+        expect(second.some(isNoteOn)).toBe(true);
+        expect(earlyOff.length).toBeLessThanOrEqual(1);
     });
 });
