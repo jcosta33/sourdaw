@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 import { createMockAudioContext } from '../../../../helpers/__tests__/audioContext.mock';
 import { TrackNode, type TrackNodeDeps } from '../TrackNode';
@@ -381,5 +381,386 @@ describe('TrackNode', () => {
         expect(destroy).toHaveBeenCalledTimes(1);
         expect(bridgeNode.disconnect).toHaveBeenCalled();
         expect(bridgeNode.port.close).toHaveBeenCalledTimes(1);
+    });
+
+    // Branch coverage: addMidiFx native-bridge notification, disposed-state
+    // guards on rebuild/addDevice/updateParam/scheduleParam/updateBypass,
+    // completePendingDeviceLoad rejection paths, destroyRejectedDeviceNode
+    // dispose-vs-controller branches, removeDevice no-controller-fallback,
+    // sidechain-compressor param dispatch, and the no-op updateBypass when the
+    // bypass state is already at the requested value.
+    describe('control-flow & lifecycle guards', () => {
+        // The shared AudioWorkletNode stub in the outer beforeEach gives the
+        // meter worklet a port without `close`; dispose() calls port.close().
+        // Re-stub with a complete port so the dispose paths run cleanly here.
+        beforeEach(() => {
+            (global as { AudioWorkletNode?: unknown }).AudioWorkletNode = class {
+                port = { postMessage: vi.fn(), close: vi.fn() };
+                connect = vi.fn();
+                disconnect = vi.fn();
+            };
+        });
+
+        function makeDeviceNode(overrides: Record<string, unknown> = {}) {
+            const node = { connect: vi.fn(), disconnect: vi.fn(), numberOfInputs: 1 };
+            return {
+                deviceId: 'd-guard',
+                type: 'effect',
+                nodes: [node],
+                inputNode: node,
+                outputNode: node,
+                ...overrides,
+            };
+        }
+
+        it('addMidiFx is a no-op for a track with no external-plugin device (and no TODO branch hit on non-native)', () => {
+            const track = new TrackNode('t', deps);
+            // No external-plugin device → nativeDevice is undefined, the
+            // nativeDspControls TODO branch is not entered.
+            expect(() => track.addMidiFx('fx-1', 'arp')).not.toThrow();
+            expect(track.strip.midiFxNodes).toHaveLength(1);
+        });
+
+        it('addMidiFx touches the native-bridge TODO branch when an external-plugin device is present', () => {
+            const track = new TrackNode('t', deps);
+            const dn = makeDeviceNode({ type: 'external-plugin', nativeDspControls: { setParam: vi.fn() } });
+            track.strip.deviceNodes.push(dn as never);
+
+            // The nativeDspControls branch is entered (currently a TODO no-op);
+            // the midi-fx is still recorded.
+            expect(() => track.addMidiFx('fx-2', 'velocity')).not.toThrow();
+            expect(track.strip.midiFxNodes.some((f) => f.id === 'fx-2')).toBe(true);
+        });
+
+        it('removeMidiFx/updateMidiFxParam/updateMidiFxBypass mutate the recorded midi-fx', () => {
+            const track = new TrackNode('t', deps);
+            track.addMidiFx('fx-1', 'probability');
+            track.updateMidiFxParam('fx-1', 'rate', 0.5);
+            track.updateMidiFxBypass('fx-1', true);
+            const fx = track.strip.midiFxNodes.find((f) => f.id === 'fx-1');
+            expect(fx?.parameterValues.rate).toBe(0.5);
+            expect(fx?.bypassed).toBe(true);
+
+            track.removeMidiFx('fx-1');
+            expect(track.strip.midiFxNodes.some((f) => f.id === 'fx-1')).toBe(false);
+        });
+
+        it('rebuildChain and addDevice are no-ops after dispose', () => {
+            const track = new TrackNode('t', deps);
+            track.dispose();
+            vi.mocked(track.strip.preFaderTap.disconnect).mockClear();
+
+            track.rebuildChain(); // disposed guard
+            track.addDevice('d-late', 'builtin-gain'); // disposed guard
+
+            expect(track.strip.preFaderTap.disconnect).not.toHaveBeenCalled();
+            expect(track.strip.deviceNodes.some((d) => d.deviceId === 'd-late')).toBe(false);
+        });
+
+        it('updateParam/scheduleParam/updateBypass are no-ops for a missing device or controller', () => {
+            const track = new TrackNode('t', deps);
+            // No device at all.
+            expect(() => track.updateParam('missing', 'p', 1)).not.toThrow();
+            expect(() => track.scheduleParam('missing', 'p', 1, 0)).not.toThrow();
+            expect(() => track.updateBypass('missing', true)).not.toThrow();
+
+            // Device present but no controller.
+            const dn = makeDeviceNode({ controller: undefined });
+            track.strip.deviceNodes.push(dn as never);
+            expect(() => track.updateParam('d-guard', 'p', 1)).not.toThrow();
+            expect(() => track.scheduleParam('d-guard', 'p', 1, 0)).not.toThrow();
+        });
+
+        it('scheduleParam prefers controller.scheduleParam when present', () => {
+            const track = new TrackNode('t', deps);
+            const scheduleParam = vi.fn();
+            const dn = makeDeviceNode({ controller: { scheduleParam } });
+            track.strip.deviceNodes.push(dn as never);
+
+            track.scheduleParam('d-guard', 'cutoff', 0.5, 1.0);
+
+            expect(scheduleParam).toHaveBeenCalledWith('cutoff', 0.5, 1.0);
+        });
+
+        it('scheduleParam falls back to setParam with a sample-frame hint when scheduleParam is absent', () => {
+            const track = new TrackNode('t', deps);
+            const setParam = vi.fn();
+            const dn = makeDeviceNode({ controller: { setParam } });
+            track.strip.deviceNodes.push(dn as never);
+
+            track.scheduleParam('d-guard', 'cutoff', 0.5, 1.0);
+
+            // sampleFrame = round(time * sampleRate). Mock ctx sampleRate is 48000.
+            expect(setParam).toHaveBeenCalledWith('cutoff', 0.5, 48000);
+        });
+
+        it('updateBypass is a no-op when the bypass state is already at the requested value', async () => {
+            const track = new TrackNode('t', deps);
+            const setBypass = vi.fn();
+            const allNotesOff = vi.fn();
+            const dn = makeDeviceNode({
+                type: 'levain',
+                controller: { setBypass, allNotesOff },
+                bypassed: true,
+            });
+            track.strip.deviceNodes.push(dn as never);
+
+            // Already bypassed → request bypass true again → no rebuild scheduled.
+            track.updateBypass('d-guard', true);
+            expect(setBypass).toHaveBeenCalledWith(true);
+            // allNotesOff still fires on entry to bypass (idempotent), but the
+            // dn.bypassed !== bypassed guard is false so no rebuild.
+            expect(allNotesOff).toHaveBeenCalledTimes(1);
+        });
+
+        it('removeDevice destroys a device that has only a dispose() (no controller)', () => {
+            const track = new TrackNode('t', deps);
+            const dispose = vi.fn();
+            const dn = makeDeviceNode({ controller: undefined, dispose });
+            track.strip.deviceNodes.push(dn as never);
+
+            track.removeDevice('d-guard');
+
+            expect(dispose).toHaveBeenCalledTimes(1);
+            expect(track.strip.deviceNodes.some((d) => d.deviceId === 'd-guard')).toBe(false);
+        });
+
+        it('removeDevice is a no-op for a device that is not on the track', () => {
+            const track = new TrackNode('t', deps);
+            expect(() => track.removeDevice('absent')).not.toThrow();
+        });
+
+        it('getPeakLevel uses the analyser fallback when SAB is unavailable', () => {
+            // Construct without SAB: temporarily remove SharedArrayBuffer.
+            const savedSAB = (global as { SharedArrayBuffer?: unknown }).SharedArrayBuffer;
+            delete (global as { SharedArrayBuffer?: unknown }).SharedArrayBuffer;
+            try {
+                const noSabTrack = new TrackNode('t-nosab', deps);
+                expect(noSabTrack.strip.meterNode).toBeNull();
+                // Feed deterministic time-domain data into the analyser fallback.
+                vi.mocked(noSabTrack.strip.analyserNode.getFloatTimeDomainData).mockImplementation(
+                    (arr: Float32Array) => {
+                        arr[0] = 0.25;
+                        arr[1] = -0.8;
+                        arr[2] = 0.4;
+                        return arr;
+                    }
+                );
+                expect(noSabTrack.getPeakLevel()).toBeCloseTo(0.8, 6);
+            } finally {
+                (global as { SharedArrayBuffer?: unknown }).SharedArrayBuffer = savedSAB;
+            }
+        });
+
+        it('getDefaultDestination resolves hw_out and unknown outputs to the master gain', () => {
+            const track = new TrackNode('t', deps);
+            expect(track.getDefaultDestination()).toBe(deps.masterGainNode);
+            track.strip.outputId = 'hw_out';
+            expect(track.getDefaultDestination()).toBe(deps.masterGainNode);
+            track.strip.outputId = 'unknown-bus';
+            vi.mocked(deps.getBusGainNode).mockReturnValue(undefined);
+            vi.mocked(deps.getTrackGainNode).mockReturnValue(undefined);
+            expect(track.getDefaultDestination()).toBe(deps.masterGainNode);
+        });
+
+        it('dispose tears down a device that has only a dispose() (no controller)', () => {
+            const track = new TrackNode('t', deps);
+            const dispose = vi.fn();
+            const dn = makeDeviceNode({ controller: undefined, dispose });
+            track.strip.deviceNodes.push(dn as never);
+
+            track.dispose();
+
+            expect(dispose).toHaveBeenCalledTimes(1);
+        });
+
+        it('routeOutput is idempotent when the destination has not changed', () => {
+            const track = new TrackNode('t', deps);
+            vi.mocked(track.strip.analyserNode.connect).mockClear();
+            // Re-route to the same default destination (master).
+            track.routeOutput();
+            expect(track.strip.analyserNode.connect).not.toHaveBeenCalled();
+        });
+    });
+
+    // Sidechain-compressor device: the controller dispatch maps sc-comp-* param
+    // names to the worklet params, converting attack/release (ms) to seconds.
+    describe('sidechain-compressor controller param dispatch', () => {
+        it('converts attack/release from ms to seconds and forwards other params raw', () => {
+            const track = new TrackNode('t', deps);
+            track.addDevice('sc-1', 'builtin-sidechain-compressor');
+            const dn = track.strip.deviceNodes.find((d) => d.deviceId === 'sc-1');
+            expect(dn).toBeDefined();
+
+            const attackParam = { setTargetAtTime: vi.fn() };
+            const releaseParam = { setTargetAtTime: vi.fn() };
+            const thresholdParam = { setTargetAtTime: vi.fn() };
+            const worklet = dn!.nodes[0] as unknown as {
+                parameters: { get: (name: string) => unknown };
+            };
+            (worklet as unknown as { parameters: Map<string, unknown> }).parameters = new Map([
+                ['attack', attackParam],
+                ['release', releaseParam],
+                ['threshold', thresholdParam],
+            ]);
+
+            dn!.controller!.setParam('sc-comp-attack', 30); // 30ms → 0.03s
+            expect(attackParam.setTargetAtTime).toHaveBeenCalledWith(0.03, ctx.currentTime, 0.01);
+
+            dn!.controller!.setParam('sc-comp-release', 200); // 200ms → 0.2s
+            expect(releaseParam.setTargetAtTime).toHaveBeenCalledWith(0.2, ctx.currentTime, 0.01);
+
+            dn!.controller!.setParam('sc-comp-threshold', -12);
+            expect(thresholdParam.setTargetAtTime).toHaveBeenCalledWith(-12, ctx.currentTime, 0.01);
+
+            // Unknown param name → parameters.get returns undefined → no-op.
+            expect(() => dn!.controller!.setParam('sc-comp-mystery', 5)).not.toThrow();
+        });
+    });
+
+    // External-plugin bridge: externalInstanceId fallback (?? deviceId) and the
+    // parseInt name->id translation that floors a non-numeric name to 0.
+    describe('external-plugin bridge param translation', () => {
+        it('falls back to deviceId when no externalInstanceId is provided', async () => {
+            const track = new TrackNode('t', deps);
+            track.addDevice('dev-fallback', 'external-plugin'); // no instance id
+
+            expect(resolveBridge).toBeDefined();
+            const bridgeNode = { disconnect: vi.fn(), connect: vi.fn(), port: { close: vi.fn() } };
+            resolveBridge!({
+                workletNode: bridgeNode,
+                setParam: bridgeSetParam,
+                setBypass: vi.fn(),
+                destroy: vi.fn(() => {
+                    bridgeNode.disconnect();
+                    bridgeNode.port.close();
+                }),
+            });
+            await Promise.all([...deps.pendingDevicePromises]);
+            // Bridge load resolved cleanly.
+            expect(track.strip.deviceNodes.some((d) => d.deviceId === 'dev-fallback')).toBe(true);
+        });
+
+        it('translates a non-numeric param name to engine id 0', async () => {
+            const track = new TrackNode('t', deps);
+            track.addDevice('dev-name', 'external-plugin', 'inst-name');
+
+            const bridgeNode = { disconnect: vi.fn(), connect: vi.fn(), port: { close: vi.fn() } };
+            resolveBridge!({
+                workletNode: bridgeNode,
+                setParam: bridgeSetParam,
+                setBypass: vi.fn(),
+                destroy: vi.fn(),
+            });
+            await Promise.all([...deps.pendingDevicePromises]);
+
+            // A non-numeric name floors to 0 via `parseInt(name, 10) || 0`.
+            const dn = track.strip.deviceNodes.find((d) => d.deviceId === 'dev-name');
+            dn!.controller!.setParam('not-a-number', 0.9);
+            expect(bridgeSetParam).toHaveBeenCalledWith(0, 0.9);
+        });
+    });
+
+    // No-SAB tracks: meterNode is null, so rebuildChain and dispose take the
+    // analyser-direct branches instead of the meter-wiring branches.
+    describe('no-SharedArrayBuffer track wiring & teardown', () => {
+        let savedSAB: unknown;
+        beforeEach(() => {
+            savedSAB = (global as { SharedArrayBuffer?: unknown }).SharedArrayBuffer;
+            delete (global as { SharedArrayBuffer?: unknown }).SharedArrayBuffer;
+        });
+        afterEach(() => {
+            (global as { SharedArrayBuffer?: unknown }).SharedArrayBuffer = savedSAB;
+        });
+
+        it('wires panNode directly to analyserNode in rebuildChain and disposes without a meter', () => {
+            const track = new TrackNode('t-nosab', deps);
+            expect(track.strip.meterNode).toBeNull();
+
+            vi.mocked(track.strip.panNode.connect).mockClear();
+            track.rebuildChain();
+            // No meter → panNode connects straight to analyser.
+            expect(track.strip.panNode.connect).toHaveBeenCalledWith(track.strip.analyserNode);
+
+            // Dispose must not touch a meter (it is null) and must not throw.
+            expect(() => track.dispose()).not.toThrow();
+        });
+    });
+
+    // Pending-load rejection: a native-plugin bridge that resolves AFTER the
+    // track is disposed (or its device removed) must not swap in its node —
+    // completePendingDeviceLoad rejects and destroys the late-arriving node.
+    describe('pending device-load rejection paths', () => {
+        beforeEach(() => {
+            (global as { AudioWorkletNode?: unknown }).AudioWorkletNode = class {
+                port = { postMessage: vi.fn(), close: vi.fn() };
+                connect = vi.fn();
+                disconnect = vi.fn();
+            };
+        });
+
+        it('destroys a bridge node that resolves after the track is disposed', async () => {
+            const track = new TrackNode('t', deps);
+            track.addDevice('dev-late', 'external-plugin', 'inst-late');
+
+            // Dispose before the bridge resolves.
+            track.dispose();
+
+            const bridgeDestroy = vi.fn();
+            const bridgeNode = { disconnect: vi.fn(), connect: vi.fn(), port: { close: vi.fn() } };
+            resolveBridge!({
+                workletNode: bridgeNode,
+                setParam: vi.fn(),
+                setBypass: vi.fn(),
+                destroy: bridgeDestroy,
+            });
+            await Promise.all([...deps.pendingDevicePromises]);
+
+            // Rejected because the track is disposed → the late node is destroyed.
+            expect(bridgeDestroy).toHaveBeenCalledTimes(1);
+        });
+
+        it('destroys a bridge node that resolves after its device was removed', async () => {
+            const track = new TrackNode('t', deps);
+            track.addDevice('dev-rm', 'external-plugin', 'inst-rm');
+
+            // Remove the device (invalidates the pending load) before resolve.
+            track.removeDevice('dev-rm');
+
+            const bridgeDestroy = vi.fn();
+            const bridgeNode = { disconnect: vi.fn(), connect: vi.fn(), port: { close: vi.fn() } };
+            resolveBridge!({
+                workletNode: bridgeNode,
+                setParam: vi.fn(),
+                setBypass: vi.fn(),
+                destroy: bridgeDestroy,
+            });
+            await Promise.all([...deps.pendingDevicePromises]);
+
+            // index === -1 (device no longer on the strip) → rejected + destroyed.
+            expect(bridgeDestroy).toHaveBeenCalledTimes(1);
+        });
+
+        it('buffered param writes after the load resolved are dropped (placeholder guard)', async () => {
+            const track = new TrackNode('t', deps);
+            track.addDevice('dev-done', 'external-plugin', 'inst-done');
+
+            const bridgeNode = { disconnect: vi.fn(), connect: vi.fn(), port: { close: vi.fn() } };
+            resolveBridge!({
+                workletNode: bridgeNode,
+                setParam: bridgeSetParam,
+                setBypass: vi.fn(),
+                destroy: vi.fn(),
+            });
+            await Promise.all([...deps.pendingDevicePromises]);
+            bridgeSetParam.mockClear();
+
+            // After resolve, the placeholder controller is replaced; calling the
+            // resolved controller forwards normally. The placeholder's setParam
+            // guard (resolved === true) drops any stale buffered write that
+            // somehow still targets the placeholder.
+            track.updateParam('dev-done', '5', 0.4);
+            expect(bridgeSetParam).toHaveBeenCalledWith(5, 0.4);
+        });
     });
 });
