@@ -26,6 +26,7 @@ import { type ReactElement } from 'react';
 
 import { DawDiagramFrame } from '#/components/daw/DawDiagramFrame';
 import { removeSend, setSend, setTrackOutput } from '#/modules/Arrangement/useCases';
+import { wouldCreateRoutingCycle } from '#/utils/routingCycle';
 import { cn } from '#/utils/Styles/cn';
 
 import { type Track } from '../../models/TrackViewTypes';
@@ -119,6 +120,22 @@ export const RoutingMatrix = (): ReactElement => {
                 title: `Send ${(sendLevel * 100).toFixed(0)}% — click to remove`,
                 disabled: false,
                 onClick: () => removeSend(src.id, dest.id),
+            };
+        }
+
+        // FX-2: `setSend` rejects a loop-closing edge outright, so an
+        // ordinary-looking cell here would be a control that silently does
+        // nothing. Reflect the same verdict the mutation boundary will reach —
+        // the boundary stays the invariant, this is only its readout. Scoped to
+        // the output/send edges the matrix itself shows; a loop closed through a
+        // sidechain key is still caught (and logged) by the guard on click.
+        if (wouldCreateRoutingCycle({ sourceId: src.id, targetId: dest.id, tracks })) {
+            return {
+                kind: 'send-off',
+                ariaLabel: `Cannot send ${src.name} → ${dest.name}: would create a feedback loop`,
+                title: `${dest.name} already routes back to ${src.name} — a send here would feed the bus into itself`,
+                disabled: true,
+                onClick: undefined,
             };
         }
 

@@ -33,7 +33,11 @@ export async function createOfflineTrackStrip(
     preFaderTap.gain.value = 1;
 
     const faderNode = offlineCtx.createGain();
-    faderNode.gain.value = Math.max(0, track.gain);
+    // FX-7: the live fader clamps to [0, 1] (`TrackNode.setGain`). This path
+    // clamped only the floor, so a stored gain above unity — which importers and
+    // older projects can carry — rendered louder on export than it ever played
+    // back. The two runtimes must apply the same level law.
+    faderNode.gain.value = Math.max(0, Math.min(1, track.gain));
 
     const postFaderGain = offlineCtx.createGain();
     // Mixdown bakes mute into the strip; stem exports opt out so muted

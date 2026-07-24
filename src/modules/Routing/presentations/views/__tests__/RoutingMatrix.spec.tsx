@@ -205,4 +205,42 @@ describe('RoutingMatrix', () => {
         expect(screen.queryByRole('button', { name: /Drum Bus → Drum Bus/ })).not.toBeInTheDocument();
         expect(screen.getAllByText('—').length).toBeGreaterThan(0);
     });
+
+    // FX-2: the guard in setSend rejects loop-closing edges, so the cell must
+    // not present itself as an ordinary connect target that quietly no-ops.
+    it('disables a send cell whose destination already routes back to the source', () => {
+        // Reverb Bus outputs into Drum Bus, so Drum Bus → Reverb Bus is a loop.
+        mockTracks([
+            track({ id: 'bus-1', name: 'Drum Bus', kind: 'bus' }),
+            track({ id: 'bus-2', name: 'Reverb Bus', kind: 'bus', outputId: 'bus-1' }),
+        ]);
+
+        render(<RoutingMatrix />);
+
+        expect(screen.queryByRole('button', { name: 'Connect send Drum Bus → Reverb Bus' })).not.toBeInTheDocument();
+        const blocked = screen.getByRole('button', {
+            name: 'Cannot send Drum Bus → Reverb Bus: would create a feedback loop',
+        });
+        expect(blocked).toBeDisabled();
+
+        fireEvent.click(blocked);
+        expect(setSend).not.toHaveBeenCalled();
+    });
+
+    it('still offers the send cell for a source the destination does not reach', () => {
+        mockTracks([
+            track({ id: 'src-1', name: 'Kick', kind: 'audio' }),
+            track({ id: 'bus-1', name: 'Drum Bus', kind: 'bus' }),
+            track({ id: 'bus-2', name: 'Reverb Bus', kind: 'bus', outputId: 'bus-1' }),
+        ]);
+
+        render(<RoutingMatrix />);
+
+        // Reverb Bus routes to Drum Bus, never back to Kick, so this is a DAG edge.
+        const connect = screen.getByRole('button', { name: 'Connect send Kick → Reverb Bus' });
+        expect(connect).toBeEnabled();
+
+        fireEvent.click(connect);
+        expect(setSend).toHaveBeenCalledWith('src-1', 'bus-2', 1);
+    });
 });
