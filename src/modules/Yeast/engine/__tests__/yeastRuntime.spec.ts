@@ -36,6 +36,10 @@ type RuntimeWithTransaction = typeof import('../yeastRuntime') & {
     processYeastRuntimeTransaction: (input: RuntimeBlockInput) => Promise<MidiEvent[] | null>;
 };
 
+type RuntimeWithStandaloneBlock = typeof import('../yeastRuntime') & {
+    processYeastRuntimeBlock: (input: Omit<RuntimeBlockInput, 'projection'>) => Promise<MidiEvent[] | null>;
+};
+
 function deferred<T>(): Deferred<T> {
     let resolveDeferred!: (value: T) => void;
     let rejectDeferred!: (reason?: unknown) => void;
@@ -1405,5 +1409,143 @@ describe('yeastRuntime', () => {
         await expect(replacement).resolves.toBe(nodeB);
         await expect(staleProcessing).resolves.toBeNull();
         expect(nodeB.processBlock).not.toHaveBeenCalled();
+    });
+
+    describe('processYeastRuntimeBlock (standalone ready-runtime fast path)', () => {
+        it('returns null when no runtime is ready', async () => {
+            const runtime = (await loadRuntime()) as RuntimeWithStandaloneBlock;
+            const context = {} as BaseAudioContext;
+
+            const output = await runtime.processYeastRuntimeBlock({
+                context,
+                trackId: 'track-a',
+                events: [],
+                blockStartSamples: 0,
+                blockEndSamples: 128,
+                transport: makeRuntimeBlockInput(context).transport,
+            });
+
+            expect(output).toBeNull();
+        });
+
+        it('returns null when the node context does not match the request', async () => {
+            const runtime = (await loadRuntime()) as RuntimeWithStandaloneBlock;
+            const contextA = {} as BaseAudioContext;
+            const contextB = {} as BaseAudioContext;
+            const node = makeNode(contextA);
+            createNode.mockResolvedValueOnce(node);
+
+            await runtime.ensureYeastRuntime({ context: contextA, projection: projectionA });
+
+            const output = await runtime.processYeastRuntimeBlock({
+                context: contextB,
+                trackId: 'track-a',
+                events: [],
+                blockStartSamples: 0,
+                blockEndSamples: 128,
+                transport: makeRuntimeBlockInput(contextA).transport,
+            });
+
+            expect(output).toBeNull();
+            expect(node.processBlock).not.toHaveBeenCalled();
+        });
+
+        it('processes a block against the ready runtime without re-applying the projection', async () => {
+            const runtime = (await loadRuntime()) as RuntimeWithStandaloneBlock;
+            const context = {} as BaseAudioContext;
+            const node = makeNode(context);
+            const events: MidiEvent[] = [
+                { timeSamples: 0, trackId: 'track-a', kind: { type: 'noteOn', channel: 0, note: 60, velocity: 90 } },
+            ];
+            node.processBlock.mockResolvedValueOnce(events);
+            createNode.mockResolvedValueOnce(node);
+
+            await runtime.ensureYeastRuntime({ context, projection: projectionA });
+            node.setProjection.mockClear();
+
+            const output = await runtime.processYeastRuntimeBlock({
+                context,
+                rackId: 'rack-a',
+                routeId: 'track-a',
+                trackId: 'track-a',
+                events,
+                blockStartSamples: 0,
+                blockEndSamples: 128,
+                transport: makeRuntimeBlockInput(context).transport,
+            });
+
+            // Standalone block never re-applies the projection; that is the
+            // transaction path's responsibility.
+            expect(node.setProjection).not.toHaveBeenCalled();
+            expect(output).toBe(events);
+            expect(node.processBlock).toHaveBeenCalledTimes(1);
+        });
+
+        it('remembers a preview binding when capture is enabled for the block scope', async () => {
+            const runtime = (await loadRuntime()) as RuntimeWithStandaloneBlock;
+            const { yeastPreviewTap } = await import('../yeastPreviewTap');
+            const previewScope = { rackId: 'rack-a', routeId: 'track-a', trackId: 'track-a' };
+            yeastPreviewTap.setEnabled(previewScope, false);
+            yeastPreviewTap.setEnabled(previewScope, true);
+            const context = {} as BaseAudioContext;
+            const node = makeNode(context);
+            const expectedEpoch = yeastPreviewTap.getCaptureState(previewScope).captureEpoch;
+            node.processBlock.mockResolvedValueOnce([]);
+            createNode.mockResolvedValueOnce(node);
+
+            await runtime.ensureYeastRuntime({ context, projection: projectionA });
+
+            await runtime.processYeastRuntimeBlock({
+                context,
+                rackId: 'rack-a',
+                routeId: 'track-a',
+                trackId: 'track-a',
+                events: [],
+                blockStartSamples: 0,
+                blockEndSamples: 128,
+                transport: makeRuntimeBlockInput(context).transport,
+            });
+
+            expect(node.processBlock).toHaveBeenCalledWith(
+                [],
+                0,
+                128,
+                expect.any(Object),
+                'track-a',
+                true,
+                'rack-a',
+                'track-a',
+                expectedEpoch,
+                undefined
+            );
+            yeastPreviewTap.setEnabled(previewScope, false);
+        });
+
+        it('fails the runtime when processBlock rejects on the standalone path', async () => {
+            const runtime = (await loadRuntime()) as RuntimeWithStandaloneBlock;
+            const context = {} as BaseAudioContext;
+            const node = makeNode(context);
+            node.processBlock.mockRejectedValueOnce(new Error('boom'));
+            createNode.mockResolvedValueOnce(node);
+
+            await runtime.ensureYeastRuntime({ context, projection: projectionA });
+            expect(runtime.getYeastRuntimeStatus()).toBe('ready');
+
+            await expect(
+                runtime.processYeastRuntimeBlock({
+                    context,
+                    trackId: 'track-a',
+                    events: [],
+                    blockStartSamples: 0,
+                    blockEndSamples: 128,
+                    transport: makeRuntimeBlockInput(context).transport,
+                })
+            ).rejects.toThrow('boom');
+
+            // A processing failure invalidates the runtime and surfaces the error.
+            expect(runtime.getYeastRuntimeStatus()).toBe('unavailable');
+            expect(runtime.getYeastRuntimeError()).toBe('boom');
+            expect(node.destroy).toHaveBeenCalled();
+        });
     });
 });

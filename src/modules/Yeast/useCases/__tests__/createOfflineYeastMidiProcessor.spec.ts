@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { yeastStore } from '../../stores/yeastStore';
 import { createOfflineYeastMidiProcessor } from '../createOfflineYeastMidiProcessor';
@@ -17,6 +17,11 @@ describe('createOfflineYeastMidiProcessor', () => {
                 },
             ],
         });
+    });
+
+    afterEach(() => {
+        // Restore a valid default so a null store never leaks across suites.
+        yeastStore.set({ uiLevel: 1, processors: [] });
     });
 
     it('should execute a deterministic processor snapshot after live state changes', () => {
@@ -206,5 +211,41 @@ describe('createOfflineYeastMidiProcessor', () => {
 
         expect(routedNotes.some((event) => event.timeSamples > 128)).toBe(true);
         expect(routedNotes.every((event) => event.trackId === 'clip-route-a')).toBe(true);
+    });
+
+    it('builds an empty rack from an unhydrated (null) store and passes events through unchanged', () => {
+        // No explicit processors + a null store must still produce a valid
+        // offline processor over an empty rack, rather than throw.
+        yeastStore.set(null);
+        const processSnapshot = createOfflineYeastMidiProcessor({
+            resolvePpqPosition: ({ samples, sampleRate }) => samples / (sampleRate * 0.5),
+            resolveMusicalPosition: () => ({
+                bpm: 120,
+                barIndex: 0,
+                beatInBar: 0,
+                timeSigNum: 4,
+                timeSigDen: 4,
+                loopEnabled: false,
+                loopStartPpq: 0,
+                loopEndPpq: 0,
+            }),
+        });
+
+        const output = processSnapshot({
+            trackId: 'track-a',
+            sampleRate: 48_000,
+            blockStartSamples: 0,
+            blockEndSamples: 96_000,
+            events: [
+                {
+                    timeSamples: 0,
+                    timePpq: 0,
+                    trackId: 'track-a',
+                    kind: { type: 'noteOn', channel: 0, note: 60, velocity: 100 },
+                },
+            ],
+        });
+
+        expect(output.map((event) => event.kind)).toEqual([{ type: 'noteOn', channel: 0, note: 60, velocity: 100 }]);
     });
 });
