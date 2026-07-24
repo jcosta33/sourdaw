@@ -1,0 +1,65 @@
+src/modules/Yeast/workers/processors/__tests__/MarkovChain.spec.ts
+  s_0d39f3a4a4357a::t_aa5fa4c3315377 186-231
+src/modules/Yeast/presentations/components/__tests__/ProcessorParams.spec.tsx
+  s_fd418caa9d3af9::t_f0ad5f94360da2 6-56,58-59,61-77,81-92,95,97,102-114,116-117,119-137,140-204,239-271
+src/modules/Yeast/workers/processors/Harmonizer.ts
+  s_88ffc5326d9b0b::t_ddb248b5a8b7e6 56-59,166,169,172,175,178,181,184,187,190
+src/modules/Yeast/workers/processors/MarkovChain.ts
+  s_88ffc5326d9b0b::t_7792c1514c678d 106-110
+src/modules/Yeast/workers/processors/ScaleQuantizer.ts
+  s_d84579a75be54f::t_440ee9068ea27a 99-102,104,106,108-109,117-120,137-138
+src/modules/Yeast/workers/processors/__tests__/Arpeggiator.spec.ts
+  s_fd418caa9d3af9::t_20622501aa2456 482-683
+src/modules/Yeast/workers/processors/__tests__/ChordMemory.spec.ts
+  s_88ffc5326d9b0b::t_54bd49c8ebc08d 91-104,166-241
+src/modules/Yeast/workers/processors/__tests__/EuclideanGenerator.spec.ts
+  s_88ffc5326d9b0b::t_9434efe336c0fc 8-13,113-286
+src/modules/Yeast/workers/processors/__tests__/Harmonizer.spec.ts
+  s_88ffc5326d9b0b::t_8067434dddd9e6 29-48
+src/modules/Yeast/workers/processors/__tests__/MutationEngine.spec.ts
+  s_88ffc5326d9b0b::t_e957ae22d70343 20-37,45-58,73-95,97-367
+src/modules/Yeast/workers/processors/__tests__/ScaleQuantizer.spec.ts
+  s_88ffc5326d9b0b::t_77878cf121e674 125-145
+src/modules/Yeast/workers/processors/__tests__/VelocityProcessor.spec.ts
+  s_fd418caa9d3af9::t_80dd3c1ec6cd7a 28-41,43-47,49-55,58-70,72-86,89-127,130-141,144-147,149-175,178-191,194-210
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "7fdabc7fcf32e1a27e4ff70aa401f89824c7264a",
+  "prompts": {},
+  "sessions": {
+    "s_0d39f3a4a4357a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "60da6a2e-7d79-4d98-8624-e993f5a9f94e",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_88ffc5326d9b0b": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-ad18badee0d6bb8b2",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_d84579a75be54f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-ab77999985083d716",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_fd418caa9d3af9": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-aa1fab191c0beeaeb",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
