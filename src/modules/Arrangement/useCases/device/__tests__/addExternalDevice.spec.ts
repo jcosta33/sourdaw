@@ -6,7 +6,7 @@ const mocks = vi.hoisted(() => ({
     getTrackState: vi.fn(),
     updateTrack: vi.fn(),
     addDeviceToStrip: vi.fn(),
-    loadPlugin: vi.fn(),
+    activateExternalPlugin: vi.fn(),
 }));
 
 vi.mock('../../../repositories/track/getTrackState', () => ({
@@ -22,7 +22,7 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
 }));
 
 vi.mock('#/modules/PluginHost/useCases', () => ({
-    loadPlugin: mocks.loadPlugin,
+    activateExternalPlugin: mocks.activateExternalPlugin,
 }));
 
 describe('addExternalDevice', () => {
@@ -39,7 +39,7 @@ describe('addExternalDevice', () => {
         expect(device).toMatchObject({ type: 'external-plugin' });
         expect(mocks.updateTrack).toHaveBeenCalledWith('folder-1', expect.any(Function));
         expect(mocks.addDeviceToStrip).not.toHaveBeenCalled();
-        expect(mocks.loadPlugin).not.toHaveBeenCalled();
+        expect(mocks.activateExternalPlugin).not.toHaveBeenCalled();
     });
 
     it('adds an external plugin to an already-live Toaster folder', () => {
@@ -56,7 +56,10 @@ describe('addExternalDevice', () => {
             'external-plugin',
             device?.externalInstanceId
         );
-        expect(mocks.loadPlugin).toHaveBeenCalledWith('plugin-1', device?.externalInstanceId);
+        expect(mocks.activateExternalPlugin).toHaveBeenCalledWith({
+            pluginId: 'plugin-1',
+            instanceId: device?.externalInstanceId,
+        });
     });
 
     it('preserves ordinary external plugin creation and runtime loading', () => {
@@ -74,7 +77,10 @@ describe('addExternalDevice', () => {
             'external-plugin',
             device?.externalInstanceId
         );
-        expect(mocks.loadPlugin).toHaveBeenCalledWith('plugin-1', device?.externalInstanceId);
+        expect(mocks.activateExternalPlugin).toHaveBeenCalledWith({
+            pluginId: 'plugin-1',
+            instanceId: device?.externalInstanceId,
+        });
     });
 
     it('rejects duplicate track identity before truth, engine, or host work', () => {
@@ -88,7 +94,7 @@ describe('addExternalDevice', () => {
         expect(addExternalDevice('duplicate', 'plugin-1', 'Plugin')).toBeNull();
         expect(mocks.updateTrack).not.toHaveBeenCalled();
         expect(mocks.addDeviceToStrip).not.toHaveBeenCalled();
-        expect(mocks.loadPlugin).not.toHaveBeenCalled();
+        expect(mocks.activateExternalPlugin).not.toHaveBeenCalled();
     });
 
     it('rejects a dormant VCA before ID, instance, project, engine, or plugin work', () => {
@@ -97,6 +103,6 @@ describe('addExternalDevice', () => {
         expect(addExternalDevice('vca-1', 'plugin-1', 'Plugin')).toBeNull();
         expect(mocks.updateTrack).not.toHaveBeenCalled();
         expect(mocks.addDeviceToStrip).not.toHaveBeenCalled();
-        expect(mocks.loadPlugin).not.toHaveBeenCalled();
+        expect(mocks.activateExternalPlugin).not.toHaveBeenCalled();
     });
 });

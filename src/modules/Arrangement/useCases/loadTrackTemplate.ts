@@ -20,7 +20,15 @@ export function loadTrackTemplate(templateId: string): void {
     const track = createTrack({ name: template.name, kind: template.trackKind });
     const applied = {
         ...track,
-        devices: template.devices.map((device) => ({ ...device, id: `dev-${crypto.randomUUID().slice(0, 8)}` })),
+        devices: template.devices.map((device) => ({
+            ...device,
+            id: `dev-${crypto.randomUUID().slice(0, 8)}`,
+            // A template-instantiated native plugin must not reuse the template's live
+            // host instance id: clear it so the device starts dormant and gets its own
+            // instance on activation, while the copied externalStateChunk carries the
+            // sound (PH-3). Also guards legacy templates saved with a stale instance id.
+            externalInstanceId: undefined,
+        })),
         sends: template.sends.map((send) => ({ ...send })),
         gain: template.gain,
         pan: template.pan,

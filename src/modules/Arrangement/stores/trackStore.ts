@@ -341,6 +341,9 @@ function normalize_device(value: unknown): Device | null {
     if (typeof value.externalInstanceId === 'string') {
         device.externalInstanceId = value.externalInstanceId;
     }
+    if (typeof value.externalStateChunk === 'string') {
+        device.externalStateChunk = value.externalStateChunk;
+    }
 
     return device;
 }

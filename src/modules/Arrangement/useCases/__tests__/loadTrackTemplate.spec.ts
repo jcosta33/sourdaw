@@ -153,4 +153,48 @@ describe('loadTrackTemplate', () => {
         expect(appliedTrack.pan).toBe(0.2);
         expect(appliedTrack.color).toBe('#00ffaa');
     });
+
+    it('starts a template native plugin dormant while carrying its saved state chunk', () => {
+        const nativeDevice = {
+            id: 'source-native',
+            name: 'Reverb',
+            type: 'external-plugin',
+            bypassed: false,
+            parameterValues: {},
+            externalPluginId: 'plugin-abc',
+            externalInstanceId: 'plugin-abc-live',
+            externalStateChunk: 'c2F2ZWQ=',
+        };
+        const createdTrack = TrackDummy.create({
+            id: 'new-track',
+            name: 'Lead Template',
+            kind: 'midi',
+            devices: [],
+            sends: [],
+        });
+        const template = createTemplate({ devices: [nativeDevice] });
+
+        trackTemplateCache.templates = [template];
+        vi.mocked(createTrack).mockReturnValue(createdTrack);
+        vi.mocked(getTrackState).mockReturnValue({ tracks: [], selectedTrackId: null, ghostClips: [] });
+        vi.spyOn(crypto, 'randomUUID').mockReturnValueOnce('cccccccc-cccc-4ccc-8ccc-cccccccccccc');
+
+        loadTrackTemplate('template-1');
+
+        const nextState = vi.mocked(setTrackState).mock.calls[0]?.[0];
+        if (!nextState) {
+            throw new Error('Expected setTrackState to receive next track state');
+        }
+        const appliedDevice = nextState.tracks[0]?.devices[0];
+        if (!appliedDevice) {
+            throw new Error('Expected applied template device');
+        }
+
+        // Must NOT reuse the template's live host instance id.
+        expect(appliedDevice.externalInstanceId).toBeUndefined();
+        // But it inherits the plugin binding and the saved state chunk (the sound).
+        expect(appliedDevice.externalPluginId).toBe('plugin-abc');
+        expect(appliedDevice.externalStateChunk).toBe('c2F2ZWQ=');
+        expect(appliedDevice.id).toBe('dev-cccccccc');
+    });
 });

@@ -137,4 +137,38 @@ describe('saveTrackAsTemplate', () => {
         expect(trackTemplateCache.templates).not.toBe(cachedTemplates);
         expect(result.category).toBe('Drums');
     });
+
+    it('carries the plugin state chunk into the saved template but strips the live instance id', () => {
+        const track = TrackDummy.create({
+            id: 'track-1',
+            name: 'Lead',
+            kind: 'midi',
+            devices: [
+                {
+                    id: 'device-native',
+                    name: 'Reverb',
+                    type: 'external-plugin',
+                    bypassed: false,
+                    parameterValues: {},
+                    externalPluginId: 'plugin-abc',
+                    externalInstanceId: 'plugin-abc-live',
+                    externalStateChunk: 'c2F2ZWQ=',
+                },
+            ],
+        });
+        vi.mocked(getTrackById).mockReturnValue(track);
+        vi.mocked(loadTrackTemplates).mockReturnValue([]);
+
+        const result = saveTrackAsTemplate('track-1', 'Lead Template');
+
+        // A persisted template must not carry a live host instance id (it would dangle
+        // or collide on load) but must keep the state chunk (the sound).
+        expect(result?.devices[0]?.externalInstanceId).toBeUndefined();
+        expect(result?.devices[0]?.externalStateChunk).toBe('c2F2ZWQ=');
+        expect(result?.devices[0]?.externalPluginId).toBe('plugin-abc');
+
+        const persistedDevice = vi.mocked(saveTrackTemplates).mock.calls[0]?.[0]?.at(-1)?.devices[0];
+        expect(persistedDevice?.externalInstanceId).toBeUndefined();
+        expect(persistedDevice?.externalStateChunk).toBe('c2F2ZWQ=');
+    });
 });

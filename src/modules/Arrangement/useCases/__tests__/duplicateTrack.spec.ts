@@ -698,4 +698,38 @@ describe('duplicateTrack', () => {
             copies: [{ sourceClipId: sourceAudio.id, targetClipId: copiedAudio.id, targetTrackId: updatedTrack.id }],
         });
     });
+
+    it('starts a duplicated native plugin dormant while inheriting its saved state chunk', () => {
+        const source = createTrack({
+            id: 'track-source',
+            devices: [
+                {
+                    id: 'device-native',
+                    name: 'Reverb',
+                    type: 'external-plugin',
+                    bypassed: false,
+                    parameterValues: {},
+                    externalPluginId: 'plugin-abc',
+                    externalInstanceId: 'plugin-abc-live',
+                    externalStateChunk: 'c2F2ZWQ=',
+                },
+            ],
+            alternatives: [{ id: 'alt-source', name: 'Source alternative', clips: [] }],
+            activeAlternativeId: 'alt-source',
+        });
+        mocks.getTrackById.mockReturnValue(source);
+        returnCreatedTrack();
+
+        duplicateTrack(source.id);
+
+        const copiedDevice = requireFirst(requireUpdatedTrack().devices, 'copied native device');
+        // Must NOT share the source's live host instance — sharing caused capture to be
+        // skipped and load-time restores to overwrite one instance, last-writer-wins.
+        expect(copiedDevice.externalInstanceId).toBeUndefined();
+        // But it inherits the plugin binding and the saved state chunk (the sound).
+        expect(copiedDevice.externalPluginId).toBe('plugin-abc');
+        expect(copiedDevice.externalStateChunk).toBe('c2F2ZWQ=');
+        expect(copiedDevice.id).toMatch(/^dev-dup-[0-9a-f-]{36}$/);
+        expect(copiedDevice.id).not.toBe('device-native');
+    });
 });

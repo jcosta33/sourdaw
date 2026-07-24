@@ -22,6 +22,7 @@ const mocks = vi.hoisted(() => ({
     addToRecentProjects: vi.fn<(...args: unknown[]) => void>(),
     prepareCachedAudioBuffersFromIdb: vi.fn(),
     publishPreparedBuffers: vi.fn(() => 1),
+    captureExternalPluginStates: vi.fn<() => Promise<void>>().mockResolvedValue(undefined),
 }));
 
 // Mock the dependencies of the use cases we are testing
@@ -66,6 +67,12 @@ vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => {
 // Relative to saveProject.ts: ../../recentProjects/addToRecentProjects
 vi.mock('../recentProjects/addToRecentProjects', () => ({
     addToRecentProjects: mocks.addToRecentProjects,
+}));
+
+// captureExternalPluginStates has its own dedicated spec; stub it here so this
+// suite stays focused on persist / recent-projects behaviour.
+vi.mock('../projectPersistence/saveProject/captureExternalPluginStates', () => ({
+    captureExternalPluginStates: mocks.captureExternalPluginStates,
 }));
 
 describe('Project Persistence Use Cases', () => {
@@ -168,21 +175,20 @@ describe('Project Persistence Use Cases', () => {
                 dirty: true,
             } as unknown as ProjectStoreState;
 
-            saveProject();
+            const savePromise = saveProject();
 
-            // persistCrdtProject() is kicked off synchronously...
+            // Native plugin state is captured into project truth before persistence,
+            // so persistCrdtProject() now runs after that async capture step rather
+            // than synchronously. Wait for the save to settle, then assert effects.
+            await savePromise;
+
+            expect(mocks.captureExternalPluginStates).toHaveBeenCalled();
             expect(mocks.persistCrdtProject).toHaveBeenCalled();
-            // ...but the recent-projects entry is only recorded once persistence
-            // resolves (inside the .then()), and is keyed by the stable per-project
-            // createdAt, not the mutable display name. So it has not happened yet.
-            expect(mocks.addToRecentProjects).not.toHaveBeenCalled();
+            expect(mocks.projectStoreSet).toHaveBeenCalledWith(expect.objectContaining({ dirty: false }));
 
-            await vi.waitFor(() => {
-                expect(mocks.projectStoreSet).toHaveBeenCalledWith(expect.objectContaining({ dirty: false }));
-            });
-
-            // After the persist promise flushes, the entry is recorded against the
-            // createdAt-keyed id (sourdaw:project:<createdAt>), not the name.
+            // The recent-projects entry is recorded once persistence resolves, keyed
+            // by the stable per-project createdAt (sourdaw:project:<createdAt>), not
+            // the mutable display name.
             expect(mocks.addToRecentProjects).toHaveBeenCalledWith('My Song', 'sourdaw:project:1700000000000');
         });
     });

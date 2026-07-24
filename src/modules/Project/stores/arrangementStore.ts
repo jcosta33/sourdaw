@@ -71,6 +71,9 @@ export type ProjectDevice = {
     parameterValues: Record<string, number>;
     externalPluginId?: string;
     externalInstanceId?: string;
+    /** Opaque native-plugin state chunk (base64) carried through arrangement
+     *  snapshots so per-arrangement native plugin state survives reopen (PH-3). */
+    externalStateChunk?: string;
 };
 
 export type ProjectSend = {

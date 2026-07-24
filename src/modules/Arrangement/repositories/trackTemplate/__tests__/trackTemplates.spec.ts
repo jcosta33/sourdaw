@@ -88,6 +88,30 @@ describe('trackTemplate repository', () => {
             expect(loadTrackTemplates()).toEqual([template]);
         });
 
+        it('should preserve a native plugin state chunk on a stored device', () => {
+            const nativeDevice = {
+                ...createDevice(),
+                id: 'native-1',
+                type: 'external-plugin',
+                externalPluginId: 'plugin-abc',
+                externalStateChunk: 'c2F2ZWQ=',
+            };
+            const template = createTemplate({ devices: [nativeDevice] });
+            vi.mocked(storage.get).mockReturnValue([template]);
+
+            expect(loadTrackTemplates()[0]?.devices[0]?.externalStateChunk).toBe('c2F2ZWQ=');
+        });
+
+        it('should drop a device whose state chunk is not a string', () => {
+            const good = createTemplate({ id: 'template-2', name: 'Good' });
+            mockStoredTemplates([
+                createStoredTemplate({ devices: [{ ...createDevice(), externalStateChunk: 42 }] }),
+                good,
+            ]);
+
+            expect(loadTrackTemplates()).toEqual([good]);
+        });
+
         it('should return an empty array when stored data is not an array', () => {
             mockStoredTemplates({ id: 'template-1', name: 'Drums' });
 

@@ -14,6 +14,7 @@ import { handleRemoveDevice } from '../handlers/device/handleRemoveDevice';
 import { handleRemoveSend } from '../handlers/device/handleRemoveSend';
 import { handleRemoveSidechainRoute } from '../handlers/device/handleRemoveSidechainRoute';
 import { handleSetDeviceParameter } from '../handlers/device/handleSetDeviceParameter';
+import { handleSetExternalPluginState } from '../handlers/device/handleSetExternalPluginState';
 import { handleSetSend } from '../handlers/device/handleSetSend';
 import { handleAddMarker } from '../handlers/marker/handleAddMarker';
 import { handleAddSection } from '../handlers/marker/handleAddSection';
@@ -152,6 +153,7 @@ export function getArrangementHandlers() {
         bypassDevice: handleBypassDevice,
         removeDevice: handleRemoveDevice,
         setDeviceParameter: handleSetDeviceParameter,
+        setExternalPluginState: handleSetExternalPluginState,
         setSend: handleSetSend,
         addSend: handleAddSend,
         removeSend: handleRemoveSend,

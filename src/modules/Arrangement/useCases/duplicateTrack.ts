@@ -107,6 +107,11 @@ export const duplicateTrack = inject({ eventBus: ArrangementEventBus })(
                     devices: source.devices.map((data) => ({
                         ...data,
                         id: `dev-dup-${crypto.randomUUID()}`,
+                        // A duplicated native plugin must not share the source's live
+                        // host instance. Clear the instance id so the duplicate starts
+                        // dormant and gets its own instance on activation, while the
+                        // copied externalStateChunk lets it hydrate to the same sound (PH-3).
+                        externalInstanceId: undefined,
                     })),
                     sends: [...source.sends],
                     alternatives: newAlternatives,
