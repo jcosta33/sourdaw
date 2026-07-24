@@ -1,0 +1,39 @@
+src/modules/Arrangement/transformers/automationTransformers.ts
+  s_0d39f3a4a4357a::t_2847651b3b84d5 12-22,31
+  s_0d39f3a4a4357a::t_5cedecfd360b82 6
+  s_0a9dfa6eefecc7::t_f284bb6df44b0e 8
+src/modules/Arrangement/transformers/__tests__/automationCurveConformance.spec.ts
+  s_0d39f3a4a4357a::t_3a3be93cdc4550 1-74
+src/utils/automationCurve.ts
+  s_0d39f3a4a4357a::t_b3e852045c807d 6-8,10,12-14,16,18-21,23-25
+.agents/artifacts/sourdaw/audits/AUDIT-automation.md
+  s_0d39f3a4a4357a::t_379533d0db0944 115
+src/modules/Arrangement/stores/__tests__/deviceWriteBoundaryClosure.spec.ts
+  s_0d39f3a4a4357a::t_08113f4477dd45 159-162
+  s_0d39f3a4a4357a::t_81ba0c41ef9132 223-226
+  s_0d39f3a4a4357a::t_18ae1fa5af03eb 165-167
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "385f52b9438ec40605911588f8daa9349a19c2eb",
+  "prompts": {},
+  "sessions": {
+    "s_0a9dfa6eefecc7": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-a5f9156cf35c7f752",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_0d39f3a4a4357a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "60da6a2e-7d79-4d98-8624-e993f5a9f94e",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
