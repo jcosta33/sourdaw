@@ -109,7 +109,11 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         'src/modules/Proof/useCases/proofParamBridge/setProofParam.ts': 2,
         'src/modules/Proof/useCases/proofParamBridge/setProofParamWithPatch.ts': 3,
         'src/modules/Proof/useCases/proofParamBridge/setProofTarget.ts': 2,
-        'src/modules/Transport/useCases/scheduling/applyAutomation/applyAutomation.ts': 2,
+        // Count provenance: pre-#746 this file scored 2 (import + the single
+        // canonical updateDeviceParam call). #746/#760 (slew snap + a-rate
+        // gain/pan scheduling) restructured the tick path and added one
+        // doc-comment mention; the reviewed live write path stays singular.
+        'src/modules/Transport/useCases/scheduling/applyAutomation/applyAutomation.ts': 3,
     },
     'strip-add': {
         'src/modules/Arrangement/useCases/device/addDevice.ts': 2,
