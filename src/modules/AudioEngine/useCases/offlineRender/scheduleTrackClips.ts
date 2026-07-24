@@ -180,6 +180,11 @@ export type ScheduleTrackClipsInput = {
     allTracks?: ReadonlyArray<Track>;
     deviceEntriesByTrack?: Map<string, DeviceNodeEntry[]>;
     regionStartBeat?: number;
+    /**
+     * False bakes the take without the track's automation moves — a bounce
+     * option, not an export one, so the mixdown and stem callers leave it unset.
+     */
+    includeAutomation?: boolean;
 };
 
 export async function scheduleTrackClips({
@@ -199,6 +204,7 @@ export async function scheduleTrackClips({
     allTracks,
     deviceEntriesByTrack,
     regionStartBeat = 0,
+    includeAutomation = true,
 }: ScheduleTrackClipsInput): Promise<void> {
     const {
         evaluateAutomationValue,
@@ -273,21 +279,23 @@ export async function scheduleTrackClips({
     for (const clip of track.clips) {
         clipBoundsById.set(clip.id, { startBeat: clip.startBeat, endBeat: clip.endBeat });
     }
-    scheduleTrackAutomation(
-        automationLanes,
-        track.id,
-        trackGainNode,
-        trackPanNode,
-        deviceEntries,
-        durationSeconds,
-        defaultTempo,
-        changes,
-        regionStartSec,
-        projectBeatToSeconds,
-        offlineCtx.sampleRate,
-        compensationDelay,
-        clipBoundsById
-    );
+    if (includeAutomation) {
+        scheduleTrackAutomation(
+            automationLanes,
+            track.id,
+            trackGainNode,
+            trackPanNode,
+            deviceEntries,
+            durationSeconds,
+            defaultTempo,
+            changes,
+            regionStartSec,
+            projectBeatToSeconds,
+            offlineCtx.sampleRate,
+            compensationDelay,
+            clipBoundsById
+        );
+    }
 
     if (track.freezeState.status === 'frozen' && track.freezeState.frozenBufferId) {
         return;

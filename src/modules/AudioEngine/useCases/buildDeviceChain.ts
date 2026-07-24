@@ -114,10 +114,17 @@ export const buildDeviceChain = inject({ logger })(
                         setParam: (name, value) => strategy.setParam(name, value),
                         setBypass: (bypassed) => strategy.setBypass?.(bypassed),
                     },
-                    instrumentControls: {
-                        noteOn: (note, vel, midi, sampleFrame) => strategy.noteOn?.(note, vel, midi, sampleFrame),
-                        noteOff: (note, sampleFrame) => strategy.noteOff?.(note, sampleFrame),
-                    },
+                    // Only devices that actually voice notes get a note surface.
+                    // Attaching it unconditionally made every first device in a
+                    // chain look like an instrument to the offline scheduler, so
+                    // a MIDI track carrying only effects routed its notes into a
+                    // no-op instead of the fallback synth (MD-4).
+                    instrumentControls: strategy.noteOn
+                        ? {
+                              noteOn: (note, vel, midi, sampleFrame) => strategy.noteOn?.(note, vel, midi, sampleFrame),
+                              noteOff: (note, sampleFrame) => strategy.noteOff?.(note, sampleFrame),
+                          }
+                        : undefined,
                 });
             }
 

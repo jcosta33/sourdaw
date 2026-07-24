@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-import { cacheAudioBuffer } from '#/modules/AudioEngine/useCases';
+import { cacheAudioBuffer, getCompensationDelay } from '#/modules/AudioEngine/useCases';
 
 import { createTrack } from '../../../models/Track';
 import { updateTrack } from '../../../repositories/track/updateTrack';
@@ -22,6 +22,7 @@ vi.mock('../renderOffline', () => ({
 
 vi.mock('#/modules/AudioEngine/useCases', () => ({
     cacheAudioBuffer: vi.fn(),
+    getCompensationDelay: vi.fn(() => 0),
 }));
 
 describe('freezeTrack', () => {
@@ -114,6 +115,7 @@ describe('freezeTrack', () => {
             freezeId: expectedBufferId,
             frozenBufferId: expectedBufferId,
             sourceContentHash: 'mock-hash',
+            compensationSeconds: 0,
             renderSettings: {
                 sampleRate: 44100,
                 bitDepth: 32,
@@ -126,6 +128,39 @@ describe('freezeTrack', () => {
         expect(cacheAudioBuffer).toHaveBeenCalledWith({ buffer: renderedBuffer, bufferId: expectedBufferId });
         expect(renderTrackOffline).toHaveBeenCalledWith(expect.any(Object), 2, 6 + 4, expect.any(Object)); // 6 end + 4 tail
         expect(didWrite).toBe(true);
+    });
+
+    it('pins the freeze-time delay compensation onto the freeze state', async () => {
+        trackStore.set({
+            tracks: [
+                {
+                    id: 't1',
+                    kind: 'audio',
+                    clips: [{ startBeat: 0, endBeat: 4 }],
+                    devices: [],
+                    freezeState: { status: 'unfrozen' },
+                } as any,
+            ],
+            selectedTrackId: null,
+        });
+        // FX-4 residual — the buffer bakes the chain's latency as it stands now,
+        // so playback must compensate against this value rather than re-reading
+        // a chain that a later plugin-latency change can move underneath it.
+        vi.mocked(getCompensationDelay).mockReturnValue(0.032);
+        vi.mocked(renderTrackOffline).mockResolvedValue({
+            sampleRate: 44100,
+            numberOfChannels: 2,
+        } as any);
+
+        await freezeTrack('t1');
+
+        const frozenCall = vi.mocked(updateTrack).mock.calls[1];
+        if (!frozenCall) {
+            throw new Error('expected second updateTrack call');
+        }
+        const storedTrack = trackStore.value!.tracks[0]!;
+        expect(frozenCall[1](storedTrack).freezeState.compensationSeconds).toBe(0.032);
+        expect(getCompensationDelay).toHaveBeenCalledWith('t1');
     });
 
     it('handles render failure gracefully', async () => {

@@ -90,4 +90,53 @@ describe('buildDeviceChain', () => {
         expect(input.connect).toHaveBeenCalledWith(faustInput);
         expect(faustOutput.connect).toHaveBeenCalledWith(output);
     });
+
+    // MD-4 review — this is why a registry matcher gap is silent rather than
+    // loud: an unclaimed device type makes createDevice throw, the chain logs a
+    // warning and drops the device, and an instrument track renders nothing.
+    it('drops a device no registry matcher claims, leaving the chain without it', async () => {
+        vi.stubGlobal('AudioWorkletNode', undefined);
+        const input = { connect: vi.fn(), disconnect: vi.fn() } as unknown as AudioNode;
+        const output = { connect: vi.fn(), disconnect: vi.fn() } as unknown as AudioNode;
+        mocks.isFaustModule.mockReturnValue(false);
+        const unclaimed: Device = {
+            id: 'd1',
+            name: 'Unclaimed instrument',
+            type: 'no-matcher-claims-this',
+            bypassed: false,
+            parameterValues: {},
+        };
+
+        const entries = await buildDeviceChain({} as BaseAudioContext, [unclaimed], input, output);
+
+        expect(entries).toEqual([]);
+        // Nothing generates into the chain — the track is silent, not merely dry.
+        expect(input.connect).toHaveBeenCalledWith(output);
+    });
+
+    // MD-4 — the note surface used to be attached to every entry, so the offline
+    // scheduler read the first device in any chain as the track's instrument and
+    // routed MIDI into a no-op instead of the fallback synth.
+    it('gives no note surface to a device whose strategy cannot voice notes', async () => {
+        vi.stubGlobal('AudioWorkletNode', undefined);
+        const input = { connect: vi.fn(), disconnect: vi.fn() } as unknown as AudioNode;
+        const output = { connect: vi.fn(), disconnect: vi.fn() } as unknown as AudioNode;
+        mocks.isFaustModule.mockImplementation((type) => type === 'faust-reverb');
+        mocks.createFaustDevice.mockResolvedValue({
+            inputNode: { connect: vi.fn(), disconnect: vi.fn() } as unknown as AudioNode,
+            outputNode: { connect: vi.fn(), disconnect: vi.fn() } as unknown as AudioNode,
+            nodes: [],
+        });
+        const device: Device = {
+            id: 'd1',
+            name: 'Faust Reverb',
+            type: 'faust-reverb',
+            bypassed: false,
+            parameterValues: {},
+        };
+
+        const entries = await buildDeviceChain({} as BaseAudioContext, [device], input, output);
+
+        expect(entries[0]?.instrumentControls).toBeUndefined();
+    });
 });

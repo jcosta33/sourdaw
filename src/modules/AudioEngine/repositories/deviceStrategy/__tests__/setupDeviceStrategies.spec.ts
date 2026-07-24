@@ -7,17 +7,6 @@ const { strategyMocks } = vi.hoisted(() => ({
     },
 }));
 
-vi.mock('../../../engine/FermenterNode', () => ({ isFermenterDevice: vi.fn() }));
-vi.mock('../../../engine/ToasterNode', () => ({ isToasterDevice: vi.fn() }));
-vi.mock('../../../engine/LevainNode', () => ({ isLevainDevice: vi.fn() }));
-vi.mock('../../../engine/GlutenNode', () => ({ isGlutenDevice: vi.fn() }));
-vi.mock('../../../engine/BacteriaNode', () => ({ isBacteriaDevice: vi.fn() }));
-vi.mock('../../../engine/GrinderNode', () => ({ isGrinderDevice: vi.fn() }));
-vi.mock('../../../engine/ProofNode', () => ({ isProofDevice: vi.fn() }));
-vi.mock('../../../engine/ProofChamberNode', () => ({ isProofChamberDevice: vi.fn() }));
-vi.mock('../../../engine/ScoringNode', () => ({ isScoringDevice: vi.fn() }));
-vi.mock('../../../engine/KneadNode', () => ({ isKneadDevice: vi.fn() }));
-
 vi.mock('../WebAudioDeviceStrategy', () => ({
     createWebAudioDevice: vi.fn(() => strategyMocks.builtinStrategy),
 }));
@@ -26,8 +15,12 @@ vi.mock('../NativeDspDeviceStrategy', () => ({
     createNativeDspStrategy: vi.fn(() => strategyMocks.nativeStrategy),
 }));
 
-import { isFermenterDevice } from '../../../engine/FermenterNode';
-import { isProofChamberDevice } from '../../../engine/ProofChamberNode';
+// The registry matcher and the factory dispatch now read one table, so the
+// matcher this registry registers is the factory table's own.
+vi.mock('../nativeDspDeviceFactories', () => ({
+    isNativeDspDevice: vi.fn((type: string) => type === 'fermenter' || type === 'dutch-oven'),
+}));
+
 import { createNativeDspStrategy } from '../NativeDspDeviceStrategy';
 import { createDeviceRegistry } from '../setupDeviceStrategies';
 import { createWebAudioDevice } from '../WebAudioDeviceStrategy';
@@ -77,8 +70,10 @@ describe('setupDeviceStrategies', () => {
         expect(setParamValue).toHaveBeenCalledWith('gain', 0.5);
     });
 
-    it('should create native DSP devices with a custom matcher', async () => {
-        vi.mocked(isFermenterDevice).mockReturnValue(true);
+    // MD-4 review — the matcher registered here is the strategy module's own,
+    // so a device the factory can build can never be one the registry refuses.
+    // They used to be two hand-kept lists and `grand-boule` fell through the gap.
+    it('routes every device its native strategy claims to that strategy', async () => {
         const registry = createDeviceRegistry({
             faustModuleMatcher: () => false,
             createFaustDevice: vi.fn(),
@@ -91,11 +86,21 @@ describe('setupDeviceStrategies', () => {
         expect(strategy).toBe(strategyMocks.nativeStrategy);
         expect(createNativeDspStrategy).toHaveBeenCalledWith(ctx, device);
 
-        vi.mocked(isFermenterDevice).mockReturnValue(false);
-        vi.mocked(isProofChamberDevice).mockReturnValue(true);
-        await registry.createDevice(ctx, createDevice({ type: 'proof-chamber' }));
+        await registry.createDevice(ctx, createDevice({ type: 'dutch-oven' }));
 
         expect(createNativeDspStrategy).toHaveBeenCalledTimes(2);
+    });
+
+    it('refuses a device its native strategy does not claim', async () => {
+        const registry = createDeviceRegistry({
+            faustModuleMatcher: () => false,
+            createFaustDevice: vi.fn(),
+        });
+
+        await expect(
+            registry.createDevice({} as BaseAudioContext, createDevice({ type: 'not-a-native-device' }))
+        ).rejects.toThrow('No device factory registered for type: not-a-native-device');
+        expect(createNativeDspStrategy).not.toHaveBeenCalled();
     });
 });
 
