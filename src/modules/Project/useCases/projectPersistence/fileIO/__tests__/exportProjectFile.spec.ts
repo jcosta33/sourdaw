@@ -6,6 +6,8 @@ import { CURRENT_PROJECT_VERSION, type ProjectData } from '../../../../models/Pr
 import { downloadProjectFile } from '../../../../repositories/project/downloadProjectFile';
 import { exportProjectFile } from '../exportProjectFile';
 
+const captureExternalPluginStatesMock = vi.hoisted(() => vi.fn<() => Promise<void>>(() => Promise.resolve()));
+
 vi.mock('../../../../repositories/project/downloadProjectFile', () => ({
     downloadProjectFile: vi.fn(() => Promise.resolve()),
 }));
@@ -46,12 +48,16 @@ vi.mock('../../../../stores/projectStore', () => ({
         },
     },
 }));
+vi.mock('../../saveProject/captureExternalPluginStates', () => ({
+    captureExternalPluginStates: captureExternalPluginStatesMock,
+}));
 
 describe('exportProjectFile', () => {
     beforeEach(() => {
         vi.mocked(downloadProjectFile).mockClear();
         vi.mocked(exportCachedAudioBuffers).mockClear();
         vi.mocked(exportCachedAudioBuffers).mockResolvedValue({});
+        captureExternalPluginStatesMock.mockClear();
     });
 
     it('writes the current project version into the exported data', async () => {
@@ -60,5 +66,16 @@ describe('exportProjectFile', () => {
         expect(downloadProjectFile).toHaveBeenCalledTimes(1);
         const written = vi.mocked(downloadProjectFile).mock.calls[0]?.[0] as ProjectData;
         expect(written.version).toBe(CURRENT_PROJECT_VERSION);
+    });
+
+    it('captures live native plugin state before building the export (no prior save required)', async () => {
+        await exportProjectFile();
+
+        expect(captureExternalPluginStatesMock).toHaveBeenCalledTimes(1);
+        // Capture must run before the snapshot is downloaded, so an export with no
+        // prior save still ships the current host chunk rather than a stale one.
+        const captureOrder = captureExternalPluginStatesMock.mock.invocationCallOrder[0]!;
+        const downloadOrder = vi.mocked(downloadProjectFile).mock.invocationCallOrder[0]!;
+        expect(captureOrder).toBeLessThan(downloadOrder);
     });
 });

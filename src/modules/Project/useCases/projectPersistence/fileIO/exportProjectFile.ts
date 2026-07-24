@@ -1,10 +1,15 @@
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { downloadProjectFile } from '../../../repositories/project/downloadProjectFile';
+import { captureExternalPluginStates } from '../saveProject/captureExternalPluginStates';
 
 import { buildProjectData } from './buildProjectData';
 
 export async function exportProjectFile(): Promise<void> {
+    // Capture live native plugin state into project truth first, so an export that
+    // happens without a prior save still ships the current host chunk rather than a
+    // stale or empty one (PH-3; matches saveProject).
+    await captureExternalPluginStates();
     const built = await buildProjectData();
     if (!built) {
         return;
