@@ -15,8 +15,14 @@ const mocks = vi.hoisted(() => ({
     mapAllTracks: vi.fn<typeof mapAllTracks>(),
     removeDeviceFromStrip: vi.fn<typeof removeDeviceFromStrip>(),
     removeTrackStrip: vi.fn(),
+    clearReportedLatency: vi.fn<(deviceId: string) => void>(),
     unloadPlugin: vi.fn<typeof unloadPlugin>(),
 }));
+
+/** Device ids whose reported latency this removal dropped. */
+function clearedLatencyDeviceIds(): string[] {
+    return mocks.clearReportedLatency.mock.calls.map(([deviceId]) => deviceId).sort();
+}
 
 vi.mock('#/infra/logger/appLogger', () => ({
     logger: mocks.logger,
@@ -34,6 +40,7 @@ vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/AudioEngine/useCases')>()),
     removeDeviceFromStrip: mocks.removeDeviceFromStrip,
     removeTrackStrip: mocks.removeTrackStrip,
+    clearReportedLatency: mocks.clearReportedLatency,
 }));
 
 vi.mock('#/modules/PluginHost/useCases', async (importOriginal) => ({
@@ -113,6 +120,43 @@ describe('removeDevice', () => {
         );
         expect(mocks.unloadPlugin).toHaveBeenCalledTimes(1);
         expect(mocks.unloadPlugin).toHaveBeenCalledWith('instance-1');
+    });
+
+    it('drops reported latency for every sibling plugin the strip teardown unloads', () => {
+        // Deactivating the strip tears down BOTH retained external instances even
+        // though neither was the removed device. Their registry entries would
+        // otherwise survive as phantom compensation on a track with no plugins.
+        const folder = createTrack({ id: 'folder-1', name: 'Folder', kind: 'folder' });
+        folder.devices = [
+            createExternalDevice('external-1', 'instance-1'),
+            createExternalDevice('external-2', 'instance-2'),
+            { id: 'toaster-1', name: 'Toaster', type: 'toaster', bypassed: false, parameterValues: {} },
+        ];
+        mocks.getTrackState.mockReturnValue({ tracks: [folder], selectedTrackId: null });
+
+        removeDevice('toaster-1');
+
+        expect(mocks.removeTrackStrip).toHaveBeenCalledWith('folder-1');
+        expect(mocks.unloadPlugin.mock.calls.map(([id]) => id).sort()).toEqual(['instance-1', 'instance-2']);
+        expect(clearedLatencyDeviceIds()).toEqual(['external-1', 'external-2']);
+    });
+
+    it('keeps reported latency for siblings that stay loaded when the strip survives', () => {
+        // The strip stays live (the folder keeps a Toaster), so the sibling plugin
+        // is still processing — clearing its latency would under-compensate.
+        const folder = createTrack({ id: 'folder-1', name: 'Folder', kind: 'folder' });
+        folder.devices = [
+            createExternalDevice('external-1', 'instance-1'),
+            createExternalDevice('external-2', 'instance-2'),
+            { id: 'toaster-1', name: 'Toaster', type: 'toaster', bypassed: false, parameterValues: {} },
+        ];
+        mocks.getTrackState.mockReturnValue({ tracks: [folder], selectedTrackId: null });
+
+        removeDevice('external-1');
+
+        expect(mocks.removeTrackStrip).not.toHaveBeenCalled();
+        expect(mocks.unloadPlugin.mock.calls.map(([id]) => id)).toEqual(['instance-1']);
+        expect(clearedLatencyDeviceIds()).toEqual(['external-1']);
     });
 
     it('does not unload a removed external plugin from a never-live ordinary folder', () => {

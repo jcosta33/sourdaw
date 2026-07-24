@@ -21,7 +21,25 @@ export type PluginInstance = {
     name: string;
     parameters: PluginParameter[];
     is_active: boolean;
+    /**
+     * Raw CLAP latency in frames of the rate the plugin was activated with (the
+     * native device rate). Informational only — this process does not share that
+     * clock, so converting it here would mis-scale. Use `latency_ms`.
+     */
     latency_samples: number;
+    /** Latency in milliseconds, converted host-side at the activation sample rate. */
+    latency_ms: number;
+};
+
+/**
+ * Payload of the `plugin-latency-changed` event: a native plugin reported a new
+ * latency mid-session (it called `clap_host_latency.changed()` or
+ * `request_restart()`, and the host re-queried it after a reactivation).
+ */
+export type PluginLatencyChange = {
+    instance_id: string;
+    /** Already converted host-side; see `PluginInstance.latency_ms`. */
+    latency_ms: number;
 };
 
 export type ScanResult = {

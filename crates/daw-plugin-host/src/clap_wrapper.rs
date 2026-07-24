@@ -13,7 +13,7 @@ const MAX_MIDI: usize = 64;
 /// Maximum parameter events processed per audio block. Extra pending values remain host-side.
 const MAX_PARAMETER_EVENTS: usize = 64;
 
-use crate::clap_host::{create_host_descriptor, HostCallbackState};
+use crate::clap_host::{create_host_descriptor, HostCallbackState, LatencyChangeNotifier};
 use crate::params::PluginParameter;
 use crate::traits::AudioPlugin;
 use clap_sys::audio_buffer::clap_audio_buffer;
@@ -862,6 +862,27 @@ impl ClapWrapper {
         unsafe { read_latency_ext(self.latency_ext, self.plugin) }
     }
 
+    /// The plugin's current reported latency in **milliseconds**.
+    ///
+    /// CLAP reports latency as a frame count in the clock the plugin was
+    /// ACTIVATED with (`self.sample_rate`, the CPAL device rate). This wrapper is
+    /// the only place that rate is known, so it is the only place the conversion
+    /// is sound — a consumer on another clock (e.g. a webview `AudioContext`
+    /// running at a different rate) would silently mis-scale the sample count.
+    pub fn latency_ms(&self) -> f64 {
+        if !self.sample_rate.is_finite() || self.sample_rate <= 0.0 {
+            return 0.0;
+        }
+        f64::from(self.latency_samples()) / self.sample_rate * 1000.0
+    }
+
+    /// Install the wake fired when this plugin flags a runtime latency change.
+    /// Call before the wrapper reaches the audio thread. First install wins; a
+    /// second call changes nothing and reports `false`.
+    pub fn set_latency_change_notifier(&self, notifier: LatencyChangeNotifier) -> bool {
+        self.host_state.set_latency_notifier(notifier)
+    }
+
     /// Deactivate then reactivate the plugin so a runtime latency change can be
     /// re-read, and return the freshly queried latency. CLAP forbids latency
     /// changes while active, so latency is only re-queried after this cycle.
@@ -914,6 +935,11 @@ impl ClapWrapper {
             return Ok(None);
         }
         let latency = self.reactivate_for_latency()?;
+        // Plugins are allowed to call changed() / request_restart() from inside
+        // activate(). The value just read already reflects whatever they set, so
+        // consume the flag rather than schedule another cycle — otherwise a
+        // plugin that always re-flags on activate would loop forever.
+        self.host_state.clear_latency_dirty();
         Ok(Some(latency))
     }
 
@@ -1117,7 +1143,7 @@ mod tests {
 
     // ── Latency query + change notification (PH-4) ──────────────────────
 
-    use std::sync::atomic::{AtomicU32, Ordering};
+    use std::sync::atomic::{AtomicU32, AtomicUsize, Ordering};
 
     // Latency the stub plugin reports on its next `get`. Serialised by the lock
     // below because Rust runs tests in parallel and this static is shared.
@@ -1151,6 +1177,24 @@ mod tests {
     ) -> bool {
         true
     }
+    /// Address of the `HostCallbackState` that `stub_activate_reflagging` should
+    /// re-flag, mimicking a plugin that calls `clap_host_latency.changed()` from
+    /// inside `activate()`. `0` disables the behaviour.
+    static REFLAG_TARGET: AtomicUsize = AtomicUsize::new(0);
+
+    unsafe extern "C" fn stub_activate_reflagging(
+        _plugin: *const clap_plugin,
+        _sample_rate: f64,
+        _min_frames: u32,
+        _max_frames: u32,
+    ) -> bool {
+        let target = REFLAG_TARGET.load(Ordering::Relaxed);
+        if target != 0 {
+            (*(target as *const HostCallbackState)).mark_latency_dirty();
+        }
+        true
+    }
+
     unsafe extern "C" fn stub_deactivate(_plugin: *const clap_plugin) {}
     unsafe extern "C" fn stub_start_processing(_plugin: *const clap_plugin) -> bool {
         true
@@ -1246,6 +1290,63 @@ mod tests {
 
         // Flag consumed -> the next poll is a no-op.
         assert_eq!(wrapper.poll_latency_change().unwrap(), None);
+    }
+
+    #[test]
+    fn poll_latency_change_swallows_a_flag_its_own_reactivation_provoked() {
+        let _guard = LATENCY_TEST_LOCK.lock().unwrap();
+        STUB_LATENCY.store(64, Ordering::Relaxed);
+
+        // A plugin that re-flags from inside activate() — without the post-poll
+        // clear this schedules an endless reactivate/re-query loop.
+        let mut plugin: clap_plugin = unsafe { mem::zeroed() };
+        plugin.get_extension = Some(stub_get_extension);
+        plugin.activate = Some(stub_activate_reflagging);
+        plugin.deactivate = Some(stub_deactivate);
+        plugin.start_processing = Some(stub_start_processing);
+        plugin.stop_processing = Some(stub_stop_processing);
+        let mut wrapper = stub_wrapper(Box::into_raw(Box::new(plugin)) as *const clap_plugin);
+
+        REFLAG_TARGET.store(
+            (&*wrapper.host_state as *const HostCallbackState) as usize,
+            Ordering::Relaxed,
+        );
+        wrapper.host_callback_state().mark_latency_dirty();
+        STUB_LATENCY.store(2048, Ordering::Relaxed);
+
+        assert_eq!(wrapper.poll_latency_change().unwrap(), Some(2048));
+        assert_eq!(
+            wrapper.poll_latency_change().unwrap(),
+            None,
+            "the flag activate() re-raised is consumed, not carried into another cycle"
+        );
+
+        REFLAG_TARGET.store(0, Ordering::Relaxed);
+    }
+
+    #[test]
+    fn latency_ms_converts_at_the_rate_the_plugin_activated_with() {
+        let _guard = LATENCY_TEST_LOCK.lock().unwrap();
+        STUB_LATENCY.store(2205, Ordering::Relaxed);
+        let mut wrapper = stub_wrapper(stub_plugin_ptr());
+
+        // 2205 frames at the 44.1 kHz activation rate is 50 ms — NOT the 45.9375 ms
+        // a 48 kHz consumer would compute from the same sample count.
+        wrapper.sample_rate = 44_100.0;
+        assert_eq!(wrapper.latency_ms(), 50.0);
+
+        // Same plugin, different activation rate -> different milliseconds.
+        wrapper.sample_rate = 96_000.0;
+        assert_eq!(wrapper.latency_ms(), 2205.0 / 96_000.0 * 1000.0);
+
+        // A nonsense rate cannot produce an infinite compensation value.
+        wrapper.sample_rate = 0.0;
+        assert_eq!(wrapper.latency_ms(), 0.0);
+
+        // An inactive plugin reports no latency, so no milliseconds either.
+        wrapper.sample_rate = 48_000.0;
+        wrapper.activated = false;
+        assert_eq!(wrapper.latency_ms(), 0.0);
     }
 
     #[test]

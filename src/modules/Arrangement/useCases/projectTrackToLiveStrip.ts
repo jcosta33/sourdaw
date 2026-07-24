@@ -1,7 +1,7 @@
 import {
     addDeviceToStrip,
     ensureTrackStrip,
-    reportPluginLatencySamples,
+    reportLatency,
     resolveToasterPadBinding,
     setTrackGain,
     setTrackOutput,
@@ -92,7 +92,7 @@ export function projectTrackToLiveStrip({
                 pluginId,
                 instanceId,
                 stateChunk: device.externalStateChunk,
-                onLatencySamples: (latencySamples) => reportPluginLatencySamples(target.deviceId, latencySamples),
+                onLatencyMs: (latencyMs) => reportLatency(target.deviceId, latencyMs),
             });
         }
         for (const [parameterId, value] of Object.entries(device.parameterValues)) {

@@ -11,33 +11,75 @@ use clap_sys::version::CLAP_VERSION;
 use std::ffi::CStr;
 use std::os::raw::c_void;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::OnceLock;
+
+/// Host-supplied wake invoked whenever a plugin flags a latency change.
+///
+/// Runs on whatever thread the plugin called the host callback from, so it must
+/// not block, allocate unboundedly, or re-enter the wrapper. The host
+/// application installs it to wake its own control path; keeping it an opaque
+/// closure is what lets this crate stay free of any transport dependency.
+pub type LatencyChangeNotifier = Box<dyn Fn() + Send + Sync>;
 
 /// Per-instance host callback state, reachable from a plugin's host callbacks
 /// through `clap_host::host_data`. Each `ClapWrapper` owns one of these and pins
 /// its address into the host descriptor before the plugin is created.
 ///
-/// Today it only carries the latency-invalidation flag. A plugin signals that
-/// its reported latency changed via `clap_host_latency.changed()` (main-thread)
-/// and/or `clap_host.request_restart()`; both set `latency_dirty`. The main /
-/// control thread later observes the flag, re-activates the plugin, and
-/// re-queries `clap_plugin_latency.get()` — CLAP forbids latency changes while
-/// active, so a re-query must follow a deactivate/reactivate cycle.
-#[derive(Debug, Default)]
+/// It carries the latency-invalidation flag and the wake that turns it into a
+/// push. A plugin signals that its reported latency changed via
+/// `clap_host_latency.changed()` (main-thread) and/or
+/// `clap_host.request_restart()`; both set `latency_dirty` and then fire the
+/// notifier. The control thread reacts by re-activating the plugin and
+/// re-querying `clap_plugin_latency.get()` — CLAP forbids latency changes while
+/// active, so a re-query must follow a deactivate/reactivate cycle, which is
+/// exactly why the callback cannot do the work itself.
+#[derive(Default)]
 pub struct HostCallbackState {
     latency_dirty: AtomicBool,
+    latency_notifier: OnceLock<LatencyChangeNotifier>,
+}
+
+impl std::fmt::Debug for HostCallbackState {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("HostCallbackState")
+            .field("latency_dirty", &self.latency_dirty.load(Ordering::Relaxed))
+            .field("has_latency_notifier", &self.latency_notifier.get().is_some())
+            .finish()
+    }
 }
 
 impl HostCallbackState {
+    /// Install the wake fired on a latency change. First install wins; a second
+    /// call changes nothing and reports `false` so the caller can flag the bug.
+    pub fn set_latency_notifier(&self, notifier: LatencyChangeNotifier) -> bool {
+        self.latency_notifier.set(notifier).is_ok()
+    }
+
     /// Mark that the plugin's latency may have changed and must be re-queried
-    /// after a deactivate/reactivate cycle.
+    /// after a deactivate/reactivate cycle, then wake the observer.
     pub fn mark_latency_dirty(&self) {
         self.latency_dirty.store(true, Ordering::Release);
+        // Wake only after the flag is visible, so an observer this call wakes
+        // always sees the dirt it is being woken for. `OnceLock::get` is
+        // lock-free, so a plugin that (against spec) calls back from the audio
+        // thread does not take a lock here.
+        if let Some(notify) = self.latency_notifier.get() {
+            notify();
+        }
     }
 
     /// Atomically read-and-clear the latency-dirty flag. Returns `true` if a
     /// latency change was pending since the last call.
     pub fn take_latency_dirty(&self) -> bool {
         self.latency_dirty.swap(false, Ordering::AcqRel)
+    }
+
+    /// Clear the flag without reporting it. Used after a completed re-query to
+    /// swallow a flag that the re-query's own reactivation provoked — the value
+    /// just read already reflects it, so scheduling another cycle would loop.
+    pub fn clear_latency_dirty(&self) {
+        self.latency_dirty.store(false, Ordering::Release);
     }
 }
 
@@ -252,6 +294,51 @@ mod tests {
         assert!(
             state.take_latency_dirty(),
             "request_restart() marks the instance dirty so latency is re-queried"
+        );
+    }
+
+    #[test]
+    fn latency_callbacks_wake_the_installed_notifier() {
+        use std::sync::atomic::AtomicUsize;
+        use std::sync::Arc;
+
+        let wakes = Arc::new(AtomicUsize::new(0));
+        let state = HostCallbackState::default();
+        let counter = Arc::clone(&wakes);
+        assert!(
+            state.set_latency_notifier(Box::new(move || {
+                counter.fetch_add(1, Ordering::Relaxed);
+            })),
+            "first install wins"
+        );
+        let host = host_with_state(&state);
+
+        assert_eq!(wakes.load(Ordering::Relaxed), 0, "no wake before a callback");
+        unsafe { host_latency_changed(&host as *const clap_host) };
+        assert_eq!(wakes.load(Ordering::Relaxed), 1, "changed() wakes the observer");
+        unsafe { host_request_restart(&host as *const clap_host) };
+        assert_eq!(
+            wakes.load(Ordering::Relaxed),
+            2,
+            "request_restart() also wakes the observer"
+        );
+
+        // A second install is refused, so the wake cannot be hijacked mid-life.
+        assert!(!state.set_latency_notifier(Box::new(|| {})));
+        unsafe { host_latency_changed(&host as *const clap_host) };
+        assert_eq!(wakes.load(Ordering::Relaxed), 3, "original notifier still fires");
+    }
+
+    #[test]
+    fn clear_latency_dirty_drops_a_pending_flag_without_reporting_it() {
+        let state = HostCallbackState::default();
+        state.mark_latency_dirty();
+
+        state.clear_latency_dirty();
+
+        assert!(
+            !state.take_latency_dirty(),
+            "a cleared flag is not reported to the next observer"
         );
     }
 

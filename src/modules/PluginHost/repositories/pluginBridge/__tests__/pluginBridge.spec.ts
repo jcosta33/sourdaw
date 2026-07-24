@@ -1,18 +1,21 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-import { isTauri, tauriInvoke } from '#/utils/tauriBridge';
+import { isTauri, tauriInvoke, tauriListen } from '#/utils/tauriBridge';
 
-import { getPluginLatency } from '../getPluginLatency';
 import { loadPlugin } from '../loadPlugin';
+import { onPluginLatencyChanged } from '../onPluginLatencyChanged';
 import { processAudioIPC } from '../processAudioIPC';
 import { scanPlugins } from '../scanPlugins';
 import { setPluginParameter } from '../setPluginParameter';
 import { setPluginState } from '../setPluginState';
 import { unloadPlugin } from '../unloadPlugin';
 
+import type { PluginLatencyChange } from '../types';
+
 vi.mock('#/utils/tauriBridge', () => ({
     isTauri: vi.fn(),
     tauriInvoke: vi.fn(),
+    tauriListen: vi.fn(),
 }));
 
 describe('pluginBridge repository', () => {
@@ -162,20 +165,59 @@ describe('pluginBridge repository', () => {
         });
     });
 
-    describe('getPluginLatency', () => {
-        it('reports zero latency outside the desktop app', async () => {
+    describe('onPluginLatencyChanged', () => {
+        it('does not subscribe outside the desktop app and returns a usable unlisten', async () => {
             vi.mocked(isTauri).mockReturnValue(false);
-            const result = await getPluginLatency('i1');
-            expect(result).toBe(0);
-            expect(tauriInvoke).not.toHaveBeenCalled();
+            const handler = vi.fn<(change: PluginLatencyChange) => void>();
+
+            const unlisten = await onPluginLatencyChanged(handler);
+
+            expect(tauriListen).not.toHaveBeenCalled();
+            expect(() => unlisten()).not.toThrow();
+            expect(handler).not.toHaveBeenCalled();
         });
 
-        it('pulls the reported latency from the native command in desktop', async () => {
+        it('unwraps the native event envelope and hands the change to the handler', async () => {
             vi.mocked(isTauri).mockReturnValue(true);
-            vi.mocked(tauriInvoke).mockResolvedValue(512);
-            const result = await getPluginLatency('i1');
-            expect(tauriInvoke).toHaveBeenCalledWith('get_plugin_latency', { instanceId: 'i1' });
-            expect(result).toBe(512);
+            let emit: ((payload: unknown) => void) | undefined;
+            const unlistenSpy = vi.fn();
+            vi.mocked(tauriListen).mockImplementation((_event, listener) => {
+                emit = listener;
+                return Promise.resolve(unlistenSpy);
+            });
+            const handler = vi.fn<(change: PluginLatencyChange) => void>();
+
+            const unlisten = await onPluginLatencyChanged(handler);
+
+            expect(tauriListen).toHaveBeenCalledWith('plugin-latency-changed', expect.any(Function));
+            emit?.({ payload: { instance_id: 'inst-1', latency_ms: 12.5 } });
+            expect(handler).toHaveBeenCalledWith({ instance_id: 'inst-1', latency_ms: 12.5 });
+
+            expect(unlisten).toBe(unlistenSpy);
+        });
+
+        it('drops malformed payloads instead of reporting a non-numeric latency', async () => {
+            vi.mocked(isTauri).mockReturnValue(true);
+            let emit: ((payload: unknown) => void) | undefined;
+            vi.mocked(tauriListen).mockImplementation((_event, listener) => {
+                emit = listener;
+                return Promise.resolve(() => {});
+            });
+            const handler = vi.fn<(change: PluginLatencyChange) => void>();
+
+            await onPluginLatencyChanged(handler);
+
+            emit?.({ payload: { instance_id: 'inst-1', latency_ms: 'lots' } });
+            emit?.({ payload: { instance_id: 'inst-1' } });
+            emit?.({ payload: { instance_id: 7, latency_ms: 3 } });
+            emit?.({ payload: null });
+            emit?.({});
+
+            expect(handler).not.toHaveBeenCalled();
+
+            // A well-formed change after the bad ones still lands.
+            emit?.({ payload: { instance_id: 'inst-1', latency_ms: 0 } });
+            expect(handler).toHaveBeenCalledWith({ instance_id: 'inst-1', latency_ms: 0 });
         });
     });
 });
