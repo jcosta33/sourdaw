@@ -1,0 +1,45 @@
+src/modules/Arrangement/useCases/adjustmentLayer/__tests__/moveAdjustmentRegion.spec.ts
+  s_0d39f3a4a4357a::t_51b2a733e9092b 5-11,38,46-48,51-70,76,84,87-94
+src/modules/Arrangement/useCases/adjustmentLayer/__tests__/setLayerAffectedTracks.spec.ts
+  s_0d39f3a4a4357a::t_d316f6fd25ab70 5-11,33,41-51
+src/modules/Arrangement/useCases/adjustmentLayer/__tests__/setLayerInsertionIndex.spec.ts
+  s_0d39f3a4a4357a::t_97d4960b10a7ec 5-11,33,41-42,48,56-65
+src/modules/Arrangement/useCases/adjustmentLayer/__tests__/addAdjustmentRegion.spec.ts
+  s_88ffc5326d9b0b::t_4cf79de5bc561a 6-13,81-140
+src/modules/Arrangement/useCases/adjustmentLayer/__tests__/createAdjustmentLayer.spec.ts
+  s_1bba6b102d8389::t_1ac26785dc6432 6-13,53-71
+src/modules/Arrangement/useCases/freezeBounce/__tests__/bounceTrack.spec.ts
+  s_1bba6b102d8389::t_2b3c3e1a90d893 225-417
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "1a0f3e907c817639298411bd9ed355931d7e55ee",
+  "prompts": {},
+  "sessions": {
+    "s_0d39f3a4a4357a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "60da6a2e-7d79-4d98-8624-e993f5a9f94e",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_1bba6b102d8389": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-a84710227036685a8",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_88ffc5326d9b0b": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-ad18badee0d6bb8b2",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
