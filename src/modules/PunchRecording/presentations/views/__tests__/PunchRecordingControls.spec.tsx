@@ -1,7 +1,7 @@
 import { render, screen, fireEvent } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-import { defaultTransportState } from '#/modules/Transport/models/TransportState';
+import { defaultTransportState } from '#/modules/Transport/stores';
 import { setPunchIn, setPunchOut } from '#/modules/Transport/useCases';
 
 import { definePunchRegion } from '../../../useCases/punchRecording/definePunchRegion';
