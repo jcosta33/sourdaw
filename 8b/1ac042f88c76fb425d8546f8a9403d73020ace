@@ -1,0 +1,81 @@
+src/modules/AudioEngine/repositories/__tests__/createWebAudioEngine.spec.ts
+  s_0d39f3a4a4357a::t_76c16c976fd628 265-267
+  s_0d39f3a4a4357a::t_7596fb7a20248a 499,504-506,508
+  s_0d39f3a4a4357a::t_837fe501a701f8 287-288
+  s_0d39f3a4a4357a::t_a2c098d698d20b 472,477
+  s_0d39f3a4a4357a::t_2585d9ac05e69d 1003
+  s_0d39f3a4a4357a::t_e275227b810a7f 300
+  s_0d39f3a4a4357a::t_440b18762d4b73 990-994
+  s_0d39f3a4a4357a::t_2784671c724aea 443,448-451
+  s_0d39f3a4a4357a::t_97fd2a0f6fabb7 988-989,995-1002,1004-1079
+src/modules/AudioEngine/models/AudioEngineState.ts
+  s_0d39f3a4a4357a::t_77e5642b3b2651 266-270
+src/modules/Transport/useCases/scheduling/scheduleFrozenTrack.ts
+  s_0d39f3a4a4357a::t_fc84260376e8ab 42-51
+  s_0d39f3a4a4357a::t_f3ca5686b8f394 6
+src/modules/Transport/useCases/playheadScheduler/startPlayheadScheduler.ts
+  s_0d39f3a4a4357a::t_5d4e003ac04a00 12
+  s_0d39f3a4a4357a::t_fd4ac1e9fccae2 327-331
+src/modules/AudioEngine/useCases/engineAccess/__tests__/wireSidechainRoute.spec.ts
+  s_0d39f3a4a4357a::t_6ecfb0d7959c0c 1,3-21,24-57
+src/modules/AudioEngine/useCases/latencyCompensation/compensation/helpers.ts
+  s_0d39f3a4a4357a::t_4e103d80dca1a2 3-18,21-23
+src/modules/AudioEngine/useCases/latencyCompensation/compensation/__tests__/livePdcGaps.spec.ts
+  s_0d39f3a4a4357a::t_aa029ae5c927c0 1-31,42-46,48-82,84-92,94-110,113-119,121-151,157-163,166-167,175-185,187-189,192-194,197-209
+  s_0d39f3a4a4357a::t_ee6c55bd82ccaf 32-41,47,83,93,111-112,120,152-156,164-165,168-174,186,190-191,195-196
+src/modules/AudioEngine/useCases/engineAccess/refreshSidechainAlignment.ts
+  s_0d39f3a4a4357a::t_a600c88ba7b7aa 1-20
+src/modules/AudioEngine/useCases/engineAccess/wireSidechainRoute.ts
+  s_0d39f3a4a4357a::t_946dcc7a1549fa 3-4,9-12
+src/modules/AudioEngine/repositories/createWebAudioEngine.ts
+  s_0d39f3a4a4357a::t_1cdd92f49bda50 427-429,432,436
+  s_0d39f3a4a4357a::t_2391a08ec2661e 102-118
+  s_0d39f3a4a4357a::t_1e07c30d152aa2 31,34-38,42-49
+  s_0d39f3a4a4357a::t_e588ab083d195c 1033-1040,1042-1043,1047,1050-1051,1056-1090,1097,1101-1105
+  s_0d39f3a4a4357a::t_43ea15ee10373a 50
+  s_0d39f3a4a4357a::t_928518591d0c0c 101
+src/modules/Transport/useCases/scheduling/__tests__/scheduleFrozenTrack.spec.ts
+  s_0d39f3a4a4357a::t_f2f2458f14c9f2 7
+  s_0d39f3a4a4357a::t_71d67f10f410e8 20
+  s_0d39f3a4a4357a::t_e894940bb25727 155-203
+src/modules/AudioEngine/repositories/offlineRouting/__tests__/connectOfflineSidechainRoutes.spec.ts
+  s_0d39f3a4a4357a::t_1af5d7b6aaf2dc 28-30
+  s_0d39f3a4a4357a::t_08f5854deb8f48 120,124
+  s_0d39f3a4a4357a::t_f8df051d7c1db9 53,60,64-67,71-101
+  s_0d39f3a4a4357a::t_94c238c405b47a 106,110
+src/modules/AudioEngine/useCases/__tests__/renderOfflineGraph.spec.ts
+  s_0d39f3a4a4357a::t_4369fae862bc62 106,113,123,134-138
+  s_0d39f3a4a4357a::t_fc851db25636dc 96-100
+  s_0d39f3a4a4357a::t_6006ed69d69afb 385-389
+  s_0d39f3a4a4357a::t_c566ce59ccdd13 139
+src/modules/AudioEngine/repositories/offlineRouting/connectOfflineSidechainRoutes.ts
+  s_0d39f3a4a4357a::t_b329a11f3a0f99 62-69
+  s_0d39f3a4a4357a::t_c9dfcef67d5af9 28-32,40
+  s_0d39f3a4a4357a::t_937676c3310200 3-6
+src/modules/AudioEngine/useCases/latencyCompensation/compensation/getSidechainKeyDelay.ts
+  s_0d39f3a4a4357a::t_2ba274e2fd07b2 1-67
+src/modules/AudioEngine/useCases/renderOffline.ts
+  s_0d39f3a4a4357a::t_05451c6ba1157f 10
+  s_0d39f3a4a4357a::t_45adc9aba5f08f 168-176
+src/modules/AudioEngine/useCases/index.ts
+  s_0d39f3a4a4357a::t_3a25d61cb8f847 92
+  s_0d39f3a4a4357a::t_aff72d89a2336f 84
+src/modules/AudioEngine/useCases/__tests__/engineAccess.spec.ts
+  s_0d39f3a4a4357a::t_ba44f7f0a76cb0 32
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "8b1ac042f88c76fb425d8546f8a9403d73020ace",
+  "prompts": {},
+  "sessions": {
+    "s_0d39f3a4a4357a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "60da6a2e-7d79-4d98-8624-e993f5a9f94e",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
