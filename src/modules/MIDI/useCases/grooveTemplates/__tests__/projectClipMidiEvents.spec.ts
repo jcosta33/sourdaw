@@ -133,4 +133,59 @@ describe('projectClipMidiEvents', () => {
         expect(snapshotAfterMutation).toEqual(snapshotBeforeMutation);
         expect(liveNote?.startBeat).toBeCloseTo(4.2, 12);
     });
+
+    it('createGrooveMidiEventProjector applies only the clip assignment in the clip-groove phase', () => {
+        // The clip-groove phase projects events through the clip-consumer groove without the
+        // sequencer-consumer pass and without clip-boundary looping. Velocity here is changed
+        // only by the clip template slot (slot 0 dynamicsOffset 0.1 -> 80 * 1.1 = 88).
+        const project = createGrooveMidiEventProjector();
+        const projected = project({
+            events: [{ id: 'n1', startBeat: 0, duration: 0.25, velocity: 80 }],
+            clipId: 'clip-a',
+            clipStartBeat: 0,
+            clipEndBeat: 4,
+            iterationStartBeat: 0,
+            loopLengthBeats: 4,
+            midiOffsetBeats: 0,
+            phase: 'clip-groove',
+        });
+
+        expect(projected).toHaveLength(1);
+        // Clip template slot 0: timingOffset -0.4 * 0.25 * 1 = -0.1 -> startBeat -0.1 is left
+        // alone (no boundary clipping in this phase); velocity 80 * 1.1 = 88.
+        expect(projected[0]?.velocity).toBe(88);
+    });
+
+    it('createGrooveMidiEventProjector applies only the sequencer assignment in the sequencer-groove phase', () => {
+        // The sequencer-groove phase projects through the sequencer-consumer groove only,
+        // treating events as already-placed (no clip/loop logic). The sequencer template
+        // slot 0 has timingOffset -0.4 -> the absolute startBeat shifts.
+        const project = createGrooveMidiEventProjector();
+        const projected = project({
+            events: [{ id: 'n1', startBeat: 4, duration: 0.25, velocity: 80 }],
+            phase: 'sequencer-groove',
+        });
+
+        expect(projected).toHaveLength(1);
+        // startBeat 4 + (-0.4 * 0.25 * 1) = 4 - 0.1 = 3.9; velocity 80 * 1.1 = 88.
+        expect(projected[0]?.startBeat).toBeCloseTo(3.9, 6);
+        expect(projected[0]?.velocity).toBe(88);
+    });
+
+    it('treats eventsAreAbsolute events as already-clip-positioned (skips the loop-relative drop)', () => {
+        // A relative event whose (startBeat - midiOffset) reaches loopLength would normally be
+        // dropped. With eventsAreAbsolute the drop is skipped and the event is projected at its
+        // given beat.
+        const [projected] = projectClipMidiEvents({
+            events: [{ id: 'abs', startBeat: 4, duration: 0.25, velocity: 80 }],
+            clipId: 'clip-a',
+            clipStartBeat: 4,
+            clipEndBeat: 8,
+            iterationStartBeat: 4,
+            loopLengthBeats: 4,
+            midiOffsetBeats: 0,
+            eventsAreAbsolute: true,
+        });
+        expect(projected).toEqual(expect.objectContaining({ id: 'abs', startBeat: 4 }));
+    });
 });

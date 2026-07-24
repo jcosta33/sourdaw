@@ -446,4 +446,100 @@ describe('handleWebMidiNoteOff', () => {
 
         expect(create_midi_note).toHaveBeenCalledWith(60, 2, 2, 100);
     });
+
+    it('records MPE expression (pressure, slide, pitchBend) onto the captured note', async () => {
+        mpe_enabled.value = true;
+        const captured: Array<{ note: Record<string, unknown> }> = [];
+        const create_midi_note = vi.fn(() => ({ id: 'n', pitch: 60, startBeat: 4, duration: 2, velocity: 80 }));
+        const append_recorded_midi_note = vi.fn<(input: { clipId: string; note: Record<string, unknown> }) => void>(
+            (input) => {
+                captured.push({ note: input.note });
+            }
+        );
+        const fn = handleWebMidiNoteOff._factory(
+            make_dependencies({ createMidiNote: create_midi_note, appendRecordedMidiNote: append_recorded_midi_note })
+        );
+        activeNotes.set(createWebMidiNoteKey(1, 60), {
+            channel: 1,
+            note: 60,
+            velocity: 80,
+            trackId: 'track-1',
+            instrumentTrackId: 'track-1',
+            startTime: 1,
+            startBeat: 4,
+            pressure: 42,
+            slide: 30,
+            pitchBend: -100,
+        });
+
+        await fn(1, 60, 0);
+
+        expect(captured[0]?.note.pressure).toBe(42);
+        expect(captured[0]?.note.slide).toBe(30);
+        expect(captured[0]?.note.pitchBend).toBe(-100);
+    });
+
+    it('does not attach MPE expression when MPE is disabled', async () => {
+        mpe_enabled.value = false;
+        const captured: Array<{ note: Record<string, unknown> }> = [];
+        const create_midi_note = vi.fn(() => ({ id: 'n', pitch: 60, startBeat: 4, duration: 2, velocity: 80 }));
+        const append_recorded_midi_note = vi.fn<(input: { clipId: string; note: Record<string, unknown> }) => void>(
+            (input) => {
+                captured.push({ note: input.note });
+            }
+        );
+        const fn = handleWebMidiNoteOff._factory(
+            make_dependencies({ createMidiNote: create_midi_note, appendRecordedMidiNote: append_recorded_midi_note })
+        );
+        // Even though the live note carried expression, MPE is off so the recorded note must
+        // carry only pitch/start/duration/velocity.
+        activeNotes.set(createWebMidiNoteKey(0, 60), {
+            channel: 0,
+            note: 60,
+            velocity: 80,
+            trackId: 'track-1',
+            instrumentTrackId: 'track-1',
+            startTime: 1,
+            startBeat: 4,
+            pressure: 42,
+            slide: 30,
+            pitchBend: -100,
+        });
+
+        await fn(0, 60, 0);
+
+        expect(captured[0]?.note.pressure).toBeUndefined();
+        expect(captured[0]?.note.slide).toBeUndefined();
+        expect(captured[0]?.note.pitchBend).toBeUndefined();
+    });
+
+    it('skips recording when no clip is found for the armed track', async () => {
+        const create_midi_note = vi.fn();
+        const append_recorded_midi_note = vi.fn();
+        const fn = handleWebMidiNoteOff._factory(
+            make_dependencies({
+                createMidiNote: create_midi_note,
+                appendRecordedMidiNote: append_recorded_midi_note,
+                getTrackStoreState: () => ({
+                    // Track is armed and transport is recording, but it has no midi clips.
+                    tracks: [{ id: 'track-1', armed: true, devices: [], clips: [] }],
+                    selectedTrackId: 'track-1',
+                }),
+            })
+        );
+        activeNotes.set(createWebMidiNoteKey(0, 60), {
+            channel: 0,
+            note: 60,
+            velocity: 80,
+            trackId: 'track-1',
+            instrumentTrackId: 'track-1',
+            startTime: 1,
+            startBeat: 4,
+        });
+
+        await fn(0, 60, 0);
+
+        expect(create_midi_note).not.toHaveBeenCalled();
+        expect(append_recorded_midi_note).not.toHaveBeenCalled();
+    });
 });

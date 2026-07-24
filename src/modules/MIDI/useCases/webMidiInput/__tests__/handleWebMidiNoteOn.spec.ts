@@ -1,8 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { logger } from '#/infra/logger/appLogger';
+
 import { createWebMidiNoteKey } from '../../../models/WebMidiTypes';
 
-const target_track_id = vi.hoisted(() => ({ value: 'track-1' }));
+const target_track_id = vi.hoisted<{ value: string | null }>(() => ({ value: 'track-1' }));
 const mpe_enabled = vi.hoisted(() => ({ value: false }));
 const ensure_track_strip = vi.hoisted(() => vi.fn());
 const get_track_strip = vi.hoisted(() => vi.fn());
@@ -324,5 +326,207 @@ describe('handleWebMidiNoteOn', () => {
 
         expect(activeNotes.has(createWebMidiNoteKey(1, 60))).toBe(false);
         expect(channelToNote.has(1)).toBe(false);
+    });
+
+    it('routes a Fermenter note-on to the device and records its id for later release', async () => {
+        const fermenter_note_on = vi.fn<(note: number, velocity: number) => void>();
+        const fn = handleWebMidiNoteOn._factory(
+            make_dependencies({
+                getTrackStoreState: () => ({
+                    tracks: [{ id: 'track-1', devices: [{ id: 'ferm-1', type: 'fermenter' }] }],
+                    selectedTrackId: 'track-1',
+                }),
+            })
+        );
+        ensure_track_strip.mockReturnValue({
+            gainNode: {},
+            deviceNodes: [
+                {
+                    type: 'fermenter',
+                    deviceId: 'ferm-1',
+                    fermenterControls: { ready: true, noteOn: fermenter_note_on },
+                },
+            ],
+        });
+
+        await fn(0, 64, 95);
+
+        expect(fermenter_note_on).toHaveBeenCalledWith(64, 95);
+        expect(activeNotes.get(createWebMidiNoteKey(0, 64))?.fermenterDeviceId).toBe('ferm-1');
+    });
+
+    it('maps a Toaster note to pad 0 with a fixed 60 pitch when no child pad is resolved', async () => {
+        // With no resolved child pad, the toaster maps by MIDI note: pad = note - 36, and
+        // notes in the second octave (note 60..75) wrap back to pads 0..15. The pitched
+        // sample is fixed at 60.
+        const toaster_note_on = vi.fn<(pad: number, velocity: number, pitchNote: number) => void>();
+        const fn = handleWebMidiNoteOn._factory(
+            make_dependencies({
+                getTrackStoreState: () => ({
+                    tracks: [{ id: 'track-1', devices: [{ id: 'toast-1', type: 'toaster' }] }],
+                    selectedTrackId: 'track-1',
+                }),
+            })
+        );
+        ensure_track_strip.mockReturnValue({
+            gainNode: {},
+            deviceNodes: [{ type: 'toaster', deviceId: 'toast-1', toasterControls: { noteOn: toaster_note_on } }],
+        });
+
+        // note 60 -> pad = 60 - 36 = 24, in [24,39] so pad -= 24 -> 0, pitchNote 60.
+        await fn(0, 60, 100);
+
+        expect(toaster_note_on).toHaveBeenCalledWith(0, 100, 60);
+        expect(activeNotes.get(createWebMidiNoteKey(0, 60))?.toasterRoute).toEqual({ deviceId: 'toast-1', pad: 0 });
+    });
+
+    it('maps a low Toaster note (36) to pad 0 in the first octave', async () => {
+        const toaster_note_on = vi.fn<(pad: number, velocity: number, pitchNote: number) => void>();
+        const fn = handleWebMidiNoteOn._factory(
+            make_dependencies({
+                getTrackStoreState: () => ({
+                    tracks: [{ id: 'track-1', devices: [{ id: 'toast-1', type: 'toaster' }] }],
+                    selectedTrackId: 'track-1',
+                }),
+            })
+        );
+        ensure_track_strip.mockReturnValue({
+            gainNode: {},
+            deviceNodes: [{ type: 'toaster', deviceId: 'toast-1', toasterControls: { noteOn: toaster_note_on } }],
+        });
+
+        // note 36 -> pad = 0 (first octave), not in [24,39], pitchNote 60.
+        await fn(0, 36, 100);
+
+        expect(toaster_note_on).toHaveBeenCalledWith(0, 100, 60);
+    });
+
+    it('routes a Grand Boule note-on applying the velocity curve from calibration', async () => {
+        const grand_boule_note_on = vi.fn<(note: number, velocity: number) => void>();
+        const emitted: Array<{ type: string; payload: Record<string, unknown> }> = [];
+        const fn = handleWebMidiNoteOn._factory(
+            make_dependencies({
+                getTrackStoreState: () => ({
+                    tracks: [{ id: 'track-1', devices: [{ id: 'gb-1', type: 'grand-boule' }] }],
+                    selectedTrackId: 'track-1',
+                }),
+                eventBus: {
+                    emit: (type: string, payload: Record<string, unknown>) => {
+                        emitted.push({ type, payload });
+                        return Promise.resolve();
+                    },
+                    on: () => () => {},
+                },
+            })
+        );
+        ensure_track_strip.mockReturnValue({
+            gainNode: {},
+            deviceNodes: [
+                {
+                    type: 'grand-boule',
+                    deviceId: 'gb-1',
+                    grandBouleControls: { ready: true, noteOn: grand_boule_note_on },
+                },
+            ],
+        });
+
+        await fn(0, 60, 100);
+
+        // Without a calibration store the velocity falls back to velocity/127.
+        expect(grand_boule_note_on).toHaveBeenCalledWith(60, 100 / 127);
+        expect(activeNotes.get(createWebMidiNoteKey(0, 60))?.grandBouleDeviceId).toBe('gb-1');
+        expect(emitted).toContainEqual({
+            type: 'midi.noteOn',
+            payload: { deviceId: 'gb-1', midiNote: 60, velocity: 100 / 127 },
+        });
+    });
+
+    it('routes a Levain note-on to the device controls', async () => {
+        const levain_note_on = vi.fn<(note: number, velocity: number) => void>();
+        const fn = handleWebMidiNoteOn._factory(
+            make_dependencies({
+                getTrackStoreState: () => ({
+                    tracks: [{ id: 'track-1', devices: [{ id: 'lev-1', type: 'levain' }] }],
+                    selectedTrackId: 'track-1',
+                }),
+            })
+        );
+        ensure_track_strip.mockReturnValue({
+            gainNode: {},
+            deviceNodes: [
+                { type: 'levain', deviceId: 'lev-1', levainControls: { ready: true, noteOn: levain_note_on } },
+            ],
+        });
+
+        await fn(0, 72, 88);
+
+        expect(levain_note_on).toHaveBeenCalledWith(72, 88);
+        expect(activeNotes.get(createWebMidiNoteKey(0, 72))?.levainDeviceId).toBe('lev-1');
+    });
+
+    it('schedules a builtin synth note and stores the oscillator for later release', async () => {
+        const oscillator = { _env: { gain: {} } };
+        const schedule_note = vi.fn(() => oscillator);
+        const fn = handleWebMidiNoteOn._factory(
+            make_dependencies({
+                getTrackStoreState: () => ({
+                    tracks: [{ id: 'track-1', devices: [{ id: 'syn-1', type: 'builtin-synth-foo' }] }],
+                    selectedTrackId: 'track-1',
+                }),
+                scheduleNote: schedule_note,
+            })
+        );
+        ensure_track_strip.mockReturnValue({ gainNode: {}, deviceNodes: [] });
+
+        await fn(0, 60, 100);
+
+        expect(schedule_note).toHaveBeenCalledTimes(1);
+        expect(activeNotes.get(createWebMidiNoteKey(0, 60))?.osc).toBe(oscillator);
+    });
+
+    it('schedules a builtin drum kit note using the kit definition when available', async () => {
+        const schedule_drum_kit_note = vi.fn();
+        const fn = handleWebMidiNoteOn._factory(
+            make_dependencies({
+                getTrackStoreState: () => ({
+                    tracks: [
+                        {
+                            id: 'track-1',
+                            devices: [{ id: 'kit-1', type: 'builtin-drum-kit', parameterValues: { kit: 2 } }],
+                        },
+                    ],
+                    selectedTrackId: 'track-1',
+                }),
+                getDrumKitDefByIndex: () => ({ id: 'kit-def-2' }),
+                scheduleDrumKitNote: schedule_drum_kit_note,
+            })
+        );
+        ensure_track_strip.mockReturnValue({ gainNode: {}, deviceNodes: [] });
+
+        await fn(0, 36, 110);
+
+        expect(schedule_drum_kit_note).toHaveBeenCalledWith(
+            expect.anything(),
+            expect.anything(),
+            { id: 'kit-def-2' },
+            36,
+            expect.anything(),
+            110
+        );
+    });
+
+    it('logs a warning and returns early when no target track is selected', async () => {
+        target_track_id.value = null;
+        const warn = vi.spyOn(logger, 'warn').mockImplementation(() => {});
+        const fn = handleWebMidiNoteOn._factory(make_dependencies());
+        ensure_track_strip.mockReturnValue({ gainNode: {}, deviceNodes: [] });
+
+        await fn(0, 60, 100);
+
+        expect(warn).toHaveBeenCalledWith(expect.stringContaining('No target track'));
+        // With no target track the note-on is abandoned: it is not registered in activeNotes
+        // and no device is engaged.
+        expect(activeNotes.has(createWebMidiNoteKey(0, 60))).toBe(false);
+        warn.mockRestore();
     });
 });
