@@ -82,6 +82,42 @@ export function measureWasmViewAllocations(counter: ViewCounter, run: () => void
     return counter.count();
 }
 
+/**
+ * Build a counting `Float32Array` subclass that counts **every** construction,
+ * length-form scratch arrays included.
+ *
+ * `createViewCounter` deliberately ignores those, because RT-1/RT-7 are about
+ * views mapped over WASM linear memory. RT-3 is the stricter invariant — a
+ * steady-state `process()` must allocate nothing at all — so proving it needs a
+ * counter that sees `new Float32Array(128)`, which is exactly the allocation the
+ * Fermenter scope buffer used to make on the render thread every ~46 ms.
+ */
+export function createTotalViewCounter(): ViewCounter {
+    let count = 0;
+    class CountingFloat32Array extends RealFloat32Array {
+        constructor(bufferOrLength: ArrayBuffer | number, byteOffset?: number, length?: number) {
+            if (typeof bufferOrLength === 'number') {
+                super(bufferOrLength);
+            } else {
+                super(bufferOrLength, byteOffset, length);
+            }
+            count++;
+        }
+    }
+    return {
+        CountingFloat32Array: CountingFloat32Array as unknown as typeof Float32Array,
+        reset() {
+            count = 0;
+        },
+        count() {
+            return count;
+        },
+    };
+}
+
+/** The same stub-measure-restore harness, named for the total-allocation counter. */
+export const measureAllocations = measureWasmViewAllocations;
+
 export type RampSeed = { ptr: number; length: number; base: number };
 
 /**

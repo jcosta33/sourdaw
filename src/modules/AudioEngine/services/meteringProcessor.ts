@@ -1,3 +1,20 @@
+/**
+ * Pass-through peak meter: one f32 in a SharedArrayBuffer, written here on the
+ * render thread and read-and-reset by the main thread (TrackNode.getPeakLevel,
+ * WebAudioEngine.getMasterPeakLevel).
+ *
+ * **The plain, non-`Atomics` access below is deliberate (audit RT-9), not an
+ * oversight and not a missing seqlock — do not "fix" it into one.** The multi-
+ * field telemetry slots need the seqlock in engine/telemetryAllocator.ts because
+ * a reader there can pair field A from one block with field B from the next: a
+ * torn *snapshot* across fields. This buffer holds a single 4-byte-aligned
+ * scalar with exactly one writer and one reader, so there is no cross-field
+ * pairing to tear and no real hardware on which the value itself tears. The only
+ * race is benign and already accepted by the design: a peak written between the
+ * reader's load and its reset is dropped, costing at most one meter frame of a
+ * value that is decaying anyway. Wrapping it in Atomics would add render-thread
+ * RMWs to buy nothing.
+ */
 type MeteringMsg = { type: 'init'; sab: SharedArrayBuffer };
 
 export class MeteringWorkletProcessor extends AudioWorkletProcessor {
@@ -50,7 +67,8 @@ export class MeteringWorkletProcessor extends AudioWorkletProcessor {
         }
 
         // Write the peak to SAB (UI reads and resets to 0 periodically)
-        // Using Math.max so we don't drop peaks between UI polling frames
+        // Using Math.max so we don't drop peaks between UI polling frames.
+        // Non-atomic by design — see the RT-9 note in the module header.
         if (peak > this._sab[0]!) {
             this._sab[0] = peak;
         }

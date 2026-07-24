@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
-import { createFermenterNode, isFermenterDevice } from '../FermenterNode';
+import { createFermenterNode, isFermenterDevice, type FermenterTelemetryData } from '../FermenterNode';
 
 describe('isFermenterDevice', () => {
     it('should return true only for the fermenter device type string', () => {
@@ -89,5 +89,193 @@ describe('createFermenterNode allNotesOff surface', () => {
 
         expect(result.acceptsScheduledParam('constructor')).toBe(false);
         expect(postMessage).not.toHaveBeenCalled();
+    });
+});
+
+// Telemetry read path (audit RT-3). The worklet no longer posts a telemetry
+// message; it publishes peaks + the scope waveform into a SAB slot under the
+// shared seqlock, and the node polls that slot.
+describe('createFermenterNode telemetry over the SAB slot', () => {
+    const SEQ_IDX = 31;
+    const SCOPE_BASE = 32;
+    const SCOPE_SAMPLES = 128;
+
+    let postMessage: ReturnType<typeof vi.fn>;
+    /** Pending rAF callbacks by handle — a real registry so cancellation is real. */
+    let rafCallbacks: Map<number, FrameRequestCallback>;
+    let nextRafHandle: number;
+
+    /** Run every rAF callback queued so far (the poll re-arms itself each tick). */
+    function tickFrame(): void {
+        const pending = [...rafCallbacks.values()];
+        rafCallbacks.clear();
+        for (const callback of pending) {
+            callback(0);
+        }
+    }
+
+    /** The slot the node handed the worklet via `init-sab`. */
+    function slotViews(): { view: Float32Array; seqView: Int32Array } {
+        const initSab = postMessage.mock.calls.find(
+            (call) => (call[0] as { type?: string } | undefined)?.type === 'init-sab'
+        );
+        if (!initSab) {
+            throw new Error('Expected the node to send an init-sab message');
+        }
+        const { sab, byteOffset } = initSab[0] as { sab: SharedArrayBuffer; byteOffset: number };
+        return {
+            view: new Float32Array(sab, byteOffset),
+            seqView: new Int32Array(sab, byteOffset),
+        };
+    }
+
+    /** Publish one telemetry block the way the worklet does: bracketed by the seqlock. */
+    function publish(peakL: number, peakR: number, sampleAt: (index: number) => number): void {
+        const { view, seqView } = slotViews();
+        Atomics.store(seqView, SEQ_IDX, Atomics.load(seqView, SEQ_IDX) + 1);
+        view[0] = peakL;
+        view[1] = peakR;
+        for (let index = 0; index < SCOPE_SAMPLES; index++) {
+            view[SCOPE_BASE + index] = sampleAt(index);
+        }
+        Atomics.store(seqView, SEQ_IDX, Atomics.load(seqView, SEQ_IDX) + 1);
+    }
+
+    beforeEach(() => {
+        postMessage = vi.fn();
+        rafCallbacks = new Map();
+        nextRafHandle = 1;
+        const port = { postMessage, onmessage: null, close: vi.fn() };
+        class FakeWorkletNode {
+            port = port;
+            connect = vi.fn();
+            disconnect = vi.fn();
+        }
+        vi.stubGlobal('AudioWorkletNode', FakeWorkletNode);
+        vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
+            const handle = nextRafHandle++;
+            rafCallbacks.set(handle, callback);
+            return handle;
+        });
+        vi.stubGlobal('cancelAnimationFrame', (handle: number) => {
+            rafCallbacks.delete(handle);
+        });
+    });
+
+    afterEach(() => {
+        vi.unstubAllGlobals();
+        vi.clearAllMocks();
+    });
+
+    it('hands the worklet a slot wide enough for the scope waveform', async () => {
+        const ctx = { currentTime: 0, state: 'running' } as unknown as BaseAudioContext;
+        await createFermenterNode(ctx);
+
+        const { view } = slotViews();
+
+        // 32 scalar header floats (counter at 31) + 128 waveform samples.
+        expect(view.length).toBe(160);
+        expect(SCOPE_BASE + SCOPE_SAMPLES).toBe(view.length);
+    });
+
+    it('delivers the published peaks and waveform to the telemetry callback', async () => {
+        const ctx = { currentTime: 0, state: 'running' } as unknown as BaseAudioContext;
+        const result = await createFermenterNode(ctx);
+        const received: { peakL: number; peakR: number; scopeBuffer: Float32Array }[] = [];
+        result.onTelemetry((data) => received.push(data));
+
+        publish(0.75, 0.25, (index) => index / SCOPE_SAMPLES);
+        tickFrame();
+
+        expect(received).toHaveLength(1);
+        expect(received[0]!.peakL).toBe(0.75);
+        expect(received[0]!.peakR).toBe(0.25);
+        expect(received[0]!.scopeBuffer).toHaveLength(SCOPE_SAMPLES);
+        expect(received[0]!.scopeBuffer[64]).toBe(Math.fround(64 / SCOPE_SAMPLES));
+    });
+
+    it('emits once per publish, not once per polled frame', async () => {
+        const ctx = { currentTime: 0, state: 'running' } as unknown as BaseAudioContext;
+        const result = await createFermenterNode(ctx);
+        const received: FermenterTelemetryData[] = [];
+        const callback = vi.fn((data: FermenterTelemetryData) => received.push(data));
+        result.onTelemetry(callback);
+
+        publish(0.5, 0.5, () => 0.1);
+        tickFrame();
+        // Three further frames with no new publish — the worklet publishes every
+        // ~46 ms while rAF runs at ~16 ms, so most polls must be no-ops.
+        tickFrame();
+        tickFrame();
+        tickFrame();
+
+        expect(callback).toHaveBeenCalledTimes(1);
+
+        publish(0.9, 0.9, () => 0.2);
+        tickFrame();
+
+        expect(callback).toHaveBeenCalledTimes(2);
+        // fround: the slot is Float32, so 0.9 round-trips as the nearest f32.
+        expect(received[1]!.peakL).toBe(Math.fround(0.9));
+    });
+
+    it('copies the waveform out of shared memory so a later publish cannot rewrite it', async () => {
+        const ctx = { currentTime: 0, state: 'running' } as unknown as BaseAudioContext;
+        const result = await createFermenterNode(ctx);
+        const received: { scopeBuffer: Float32Array }[] = [];
+        result.onTelemetry((data) => received.push(data));
+
+        publish(0.5, 0.5, () => 0.25);
+        tickFrame();
+        publish(0.5, 0.5, () => 0.75);
+        tickFrame();
+
+        // The consumer store holds the first buffer until it swaps in the second;
+        // handing out a live SAB view would have mutated it under the store.
+        expect(received[0]!.scopeBuffer[0]).toBe(0.25);
+        expect(received[1]!.scopeBuffer[0]).toBe(0.75);
+        expect(received[0]!.scopeBuffer).not.toBe(received[1]!.scopeBuffer);
+    });
+
+    it('does not emit a snapshot torn across a publish still in progress', async () => {
+        const ctx = { currentTime: 0, state: 'running' } as unknown as BaseAudioContext;
+        const result = await createFermenterNode(ctx);
+        const received: FermenterTelemetryData[] = [];
+        const callback = vi.fn((data: FermenterTelemetryData) => received.push(data));
+        result.onTelemetry(callback);
+
+        publish(0.4, 0.4, () => 0.4);
+        tickFrame();
+        callback.mockClear();
+        received.length = 0;
+
+        // Open the seqlock and write only the peaks: the waveform still holds the
+        // previous generation's samples. The counter is left odd, so the reader
+        // must exhaust its budget and hand back the last validated snapshot.
+        const { view, seqView } = slotViews();
+        Atomics.store(seqView, SEQ_IDX, Atomics.load(seqView, SEQ_IDX) + 1);
+        view[0] = 0.99;
+        view[1] = 0.99;
+
+        tickFrame();
+
+        expect(callback).toHaveBeenCalledTimes(1);
+        const emitted = received[0]!;
+        // 0.99 paired with the old waveform would be exactly the torn read.
+        expect(emitted.peakL).toBe(Math.fround(0.4));
+        expect(emitted.scopeBuffer[0]).toBe(Math.fround(0.4));
+    });
+
+    it('stops polling once destroyed', async () => {
+        const ctx = { currentTime: 0, state: 'running' } as unknown as BaseAudioContext;
+        const result = await createFermenterNode(ctx);
+        const callback = vi.fn();
+        result.onTelemetry(callback);
+
+        result.destroy();
+        publish(0.6, 0.6, () => 0.6);
+        tickFrame();
+
+        expect(callback).not.toHaveBeenCalled();
     });
 });

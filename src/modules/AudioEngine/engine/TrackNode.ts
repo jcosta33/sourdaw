@@ -254,6 +254,11 @@ export class TrackNode {
             }
             return peak;
         }
+        // Read-and-reset of a single f32, deliberately without Atomics (audit
+        // RT-9) — the scalar-meter exception to the Atomics discipline the
+        // multi-field telemetry slots follow. Rationale in the module header of
+        // services/meteringProcessor.ts (the writer); the worst case is one
+        // dropped peak frame, never a torn value.
         const peak = this.strip.meterBuffer[0]!;
         this.strip.meterBuffer[0] = 0;
         return peak;

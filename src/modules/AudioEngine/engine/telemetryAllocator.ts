@@ -110,6 +110,33 @@ export const PROOF_IDX = Object.freeze({
     latency: 24,
 });
 
+// ── Wide slot layout: Fermenter ──────────────────────────────────────────────
+//
+// Fermenter's telemetry is a 128-sample oscilloscope waveform plus two peak
+// scalars — 130 floats, which does not fit the pooled 32-float slot. It gets a
+// dedicated SharedArrayBuffer (see {@link createWideTelemetrySlot}) laid out as
+// a *superset* of the pooled slot rather than a new shape: floats 0..30 are the
+// same scalar header any slot has, {@link TELEMETRY_SEQ_IDX} (31) carries the
+// seqlock generation exactly as it does in every other telemetry SAB, and the
+// waveform follows it. Keeping the counter at one fixed index for every
+// telemetry SAB in the engine is what lets the worklet-side writer
+// (services/telemetrySeqlock.ts) and {@link createTelemetryReader} be shared
+// verbatim instead of forked per layout — the scalar indices 2..30 are unused
+// headroom, not padding hiding a different protocol.
+
+/** Oscilloscope samples Fermenter publishes per telemetry block. */
+export const FERMENTER_SCOPE_SAMPLES = 128;
+
+export const FERMENTER_IDX = Object.freeze({
+    peakL: 0,
+    peakR: 1,
+    /** First waveform sample — immediately past the seqlock counter. */
+    scopeBase: FLOATS_PER_SLOT,
+});
+
+/** Total floats in a Fermenter telemetry SAB: scalar header + counter + waveform. */
+export const FERMENTER_SLOT_FLOATS = FLOATS_PER_SLOT + FERMENTER_SCOPE_SAMPLES;
+
 export type TelemetrySlot = {
     sab: SharedArrayBuffer;
     byteOffset: number;
@@ -168,8 +195,10 @@ export function createTelemetryReader<TSnapshot>({
     project,
 }: CreateTelemetryReaderInput<TSnapshot>): () => TSnapshot {
     const { view, seqView } = slot;
-    // Built once, here on the main thread, so no poll ever allocates it.
-    let lastConsistent = project(new Float32Array(FLOATS_PER_SLOT));
+    // Built once, here on the main thread, so no poll ever allocates it. Sized
+    // from the slot's own view so a wide layout (Fermenter) zero-projects its
+    // whole payload, not just the first FLOATS_PER_SLOT of it.
+    let lastConsistent = project(new Float32Array(view.length));
 
     return (): TSnapshot => {
         for (let attempt = 0; attempt <= TELEMETRY_SEQ_MAX_RETRIES; attempt++) {
@@ -228,3 +257,45 @@ class TelemetryAllocator {
 }
 
 export const telemetryAllocator = new TelemetryAllocator();
+
+export type CreateWideTelemetrySlotInput = {
+    /** Total floats in the layout. Must exceed {@link TELEMETRY_SEQ_IDX}. */
+    floats: number;
+    /** Device name, for the diagnostic thrown when the layout is too small. */
+    deviceName: string;
+};
+
+/**
+ * Mint a standalone telemetry SAB for a device whose payload does not fit the
+ * pooled {@link FLOATS_PER_SLOT} slot (today: Fermenter's 128-sample scope).
+ *
+ * It is deliberately NOT part of the 64-slot pool: the pool's slot stride is
+ * what makes `releaseSlot(byteOffset)` reversible, and a wide buffer has no
+ * index in it. A wide slot is owned outright by its node and reclaimed by GC
+ * when the node drops it — never pass its `byteOffset` (always 0) to
+ * `releaseSlot`, which would free pool slot 0 out from under its real tenant.
+ *
+ * The returned shape is an ordinary {@link TelemetrySlot}, so the shared
+ * seqlock reader and the worklet-side writer work on it unchanged.
+ */
+export function createWideTelemetrySlot({ floats, deviceName }: CreateWideTelemetrySlotInput): TelemetrySlot | null {
+    if (floats <= TELEMETRY_SEQ_IDX) {
+        logger.warn(
+            `[TelemetryAllocator] ${deviceName} wide slot of ${String(floats)} floats cannot hold the seqlock counter at index ${String(TELEMETRY_SEQ_IDX)}`
+        );
+        return null;
+    }
+    if (typeof SharedArrayBuffer === 'undefined') {
+        // Not cross-origin-isolated. Fermenter's audio path does not depend on
+        // the slot, so the caller degrades to a flat scope rather than failing
+        // the device — see createFermenterNode.
+        return null;
+    }
+    const sab = new SharedArrayBuffer(floats * Float32Array.BYTES_PER_ELEMENT);
+    return {
+        sab,
+        byteOffset: 0,
+        view: new Float32Array(sab, 0, floats),
+        seqView: new Int32Array(sab, 0, floats),
+    };
+}
