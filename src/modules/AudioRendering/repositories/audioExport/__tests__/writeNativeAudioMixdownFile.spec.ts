@@ -35,8 +35,11 @@ describe('writeNativeAudioMixdownFile', () => {
             headers: { 'x-sourdaw-path': encodeURIComponent('/exports/Sourdaw_Bake_1.mp3') },
         });
 
-        const calls = vi.mocked(invoke).mock.calls as unknown as [string, ArrayBuffer][];
-        expect(new Uint8Array(calls[0][1])).toEqual(wavBytes);
-        expect(new Uint8Array(calls[1][1])).toEqual(mp3Bytes);
+        const [firstCall, secondCall] = vi.mocked(invoke).mock.calls as unknown as [string, ArrayBuffer][];
+        if (!firstCall || !secondCall) {
+            throw new Error('Expected two native mixdown writes');
+        }
+        expect(new Uint8Array(firstCall[1])).toEqual(wavBytes);
+        expect(new Uint8Array(secondCall[1])).toEqual(mp3Bytes);
     });
 });

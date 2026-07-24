@@ -1,6 +1,6 @@
-import { type ProjectData } from '../../models/ProjectData';
-
 import { writeFileBytes } from '#/utils/tauriBridge';
+
+import { type ProjectData } from '../../models/ProjectData';
 
 import { isTauriAvailable } from './helpers';
 

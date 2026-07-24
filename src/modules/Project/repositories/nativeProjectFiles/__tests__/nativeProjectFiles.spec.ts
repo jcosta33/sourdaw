@@ -1,10 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+import { writeFileBytes } from '#/utils/tauriBridge';
+
 import { getProjectDirectory } from '../getProjectDirectory';
 import { isTauriAvailable } from '../helpers';
 import { isNativeFileSystemAvailable } from '../isNativeFileSystemAvailable';
-import { writeFileBytes } from '#/utils/tauriBridge';
-
 import { tauriInvoke } from '../tauriInvoke';
 
 vi.mock('../helpers', () => ({
