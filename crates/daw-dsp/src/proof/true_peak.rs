@@ -21,6 +21,11 @@ pub const PHASES: usize = 4;
 
 /// Polyphase branches of the BS.1770-4 4x over-sampling filter. Branch `p`
 /// reconstructs the waveform at base-rate offset `p / 4`.
+///
+/// Transcribed at the recommendation's own decimal precision so the table can
+/// be diffed against the published one; every value is a dyadic rational and
+/// lands exactly in f32.
+#[allow(clippy::excessive_precision, reason = "verbatim BS.1770-4 Table 3")]
 const PHASE_COEFFS: [[f32; TAPS]; PHASES] = [
     [
         0.001_708_984_375,
