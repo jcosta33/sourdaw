@@ -1,0 +1,23 @@
+src/modules/AudioRendering/presentations/views/__tests__/deriveStemFileBaseNames.spec.ts
+  s_0d39f3a4a4357a::t_28cb7ced1b290e 122-140
+src/modules/AudioRendering/presentations/views/__tests__/ExportDialog.spec.tsx
+  s_0d39f3a4a4357a::t_fd71249a7af0b5 70,102
+  s_0d39f3a4a4357a::t_b2951bd1bd9048 68-69,100-101,133,163,175,224-231,252-253,279-305
+  s_0d39f3a4a4357a::t_b3169c389f2b87 306
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "95b22aee1eaae83226176a983bf891f7b0bb5497",
+  "prompts": {},
+  "sessions": {
+    "s_0d39f3a4a4357a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "60da6a2e-7d79-4d98-8624-e993f5a9f94e",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
