@@ -100,10 +100,21 @@ export const renderOffline: RenderOfflineFn = async function renderOffline(
         // Effective audibility (mute ∪ solo): the offline mixdown consumes the
         // same Arrangement read model the live solo path does, so a soloed
         // session exports exactly the tracks the engineer monitors (OE-4).
+        //
+        // Mirror the live solo path's ambiguous-owner guard (#593): a track id
+        // that appears more than once in the document has no unambiguous solo
+        // owner, so — exactly as toggleTrackState/applySoloLogic does — it is
+        // dropped from the strip-id set and can neither engage nor answer solo.
+        const projectTracks = tracks?.tracks ?? [];
+        const stripTrackIds = new Set(
+            allRenderableTracks
+                .filter((track) => projectTracks.filter((candidate) => candidate.id === track.id).length === 1)
+                .map((track) => track.id)
+        );
         const { audibleByTrackId } = deriveEffectiveAudibility({
-            tracks: tracks?.tracks ?? [],
+            tracks: projectTracks,
             soloMode: workspaceStore.value?.soloMode ?? 'sip',
-            stripTrackIds: new Set(allRenderableTracks.map((track) => track.id)),
+            stripTrackIds,
         });
         const sourceTracks = allRenderableTracks.filter((track) => audibleByTrackId.get(track.id) ?? !track.muted);
         const sidechainRoutes = sidechainStore.value?.routes ?? [];

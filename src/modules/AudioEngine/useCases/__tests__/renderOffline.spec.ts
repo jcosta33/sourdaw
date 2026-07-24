@@ -1,5 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 
+import { defaultWorkspaceState, workspaceStore } from '#/modules/WorkspaceShell/stores';
+
 import { renderOffline } from '../renderOffline';
 
 const offlineRenderMocks = vi.hoisted(() => ({
@@ -162,6 +164,8 @@ describe('renderOffline', () => {
 describe('renderOffline effective audibility (OE-4)', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        // Each case starts from the default solo mode (SIP); PFL cases opt in.
+        workspaceStore.set(defaultWorkspaceState);
     });
 
     const audioTrack = (over: { id: string; soloed?: boolean; muted?: boolean }) => ({
@@ -236,5 +240,37 @@ describe('renderOffline effective audibility (OE-4)', () => {
         await renderOffline(4);
 
         expect(scheduledTrackIds()).toEqual(['a', 'c']);
+    });
+
+    it('keeps a muted, soloed track audible in the mixdown under PFL (WYSIWYG export ruling)', async () => {
+        workspaceStore.set({ ...defaultWorkspaceState, soloMode: 'pfl' });
+        offlineRenderMocks.resolveRenderContext.mockReturnValue(
+            renderContext([audioTrack({ id: 'solo', soloed: true, muted: true }), audioTrack({ id: 'other' })])
+        );
+        primeRender();
+
+        await renderOffline(4);
+
+        // Live PFL plays the soloed track on the main bus even though it is muted;
+        // WYSIWYG export follows that model through the shared derivation, so the
+        // muted+soloed track is rendered and the non-soloed track is dropped.
+        expect(scheduledTrackIds()).toEqual(['solo']);
+    });
+
+    it('ignores solo owned by a duplicated track id, matching the live ambiguous-owner guard', async () => {
+        offlineRenderMocks.resolveRenderContext.mockReturnValue(
+            renderContext([
+                audioTrack({ id: 'dup', soloed: true }),
+                audioTrack({ id: 'dup' }),
+                audioTrack({ id: 'unique' }),
+            ])
+        );
+        primeRender();
+
+        await renderOffline(4);
+
+        // 'dup' appears twice, so it is not an unambiguous solo owner: no solo
+        // engages and 'unique' stays audible — exactly as the live path behaves.
+        expect(scheduledTrackIds()).toContain('unique');
     });
 });
