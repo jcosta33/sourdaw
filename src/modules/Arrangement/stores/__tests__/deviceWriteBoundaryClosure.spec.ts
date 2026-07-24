@@ -258,7 +258,10 @@ const DEVICE_DATA_COUNTS = {
         'src/modules/Arrangement/useCases/duplicateTrack.ts': 1,
         'src/modules/Arrangement/useCases/freezeBounce/bounceTrack.ts': 2,
         'src/modules/Arrangement/useCases/freezeBounce/flattenTrack.ts': 1,
-        'src/modules/Arrangement/useCases/freezeBounce/renderOffline.ts': 2,
+        // MD-4 (#716) retired the two sinks this file used to carry: the freeze/
+        // bounce renderer no longer reads `track.devices` to build its own device
+        // chain — it hands the render subgraph to the AudioEngine offline graph,
+        // which owns device instantiation.
         'src/modules/Arrangement/useCases/loadTrackTemplate.ts': 1,
         'src/modules/Arrangement/useCases/preset/presetLoading.ts': 3,
         'src/modules/Arrangement/useCases/preset/presetStorage/saveCurrentAsPreset.ts': 3,

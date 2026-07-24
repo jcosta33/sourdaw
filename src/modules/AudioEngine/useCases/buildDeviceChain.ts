@@ -121,8 +121,7 @@ export const buildDeviceChain = inject({ logger })(
                     // no-op instead of the fallback synth (MD-4).
                     instrumentControls: strategy.noteOn
                         ? {
-                              noteOn: (note, vel, midi, sampleFrame) =>
-                                  strategy.noteOn?.(note, vel, midi, sampleFrame),
+                              noteOn: (note, vel, midi, sampleFrame) => strategy.noteOn?.(note, vel, midi, sampleFrame),
                               noteOff: (note, sampleFrame) => strategy.noteOff?.(note, sampleFrame),
                           }
                         : undefined,

@@ -285,9 +285,9 @@ describe('renderTrackSubgraphOffline', () => {
             createProjector: () => (input) => input.events,
             selectProbability: () => true,
             createChordPitchProjector: () => (input) => input.pitch,
-            evaluateAutomationValue: null,
+            evaluateAutomationValue: () => 0,
         });
-        configureOfflineYeastMidiProcessing({ createProcessor: () => (input) => [] });
+        configureOfflineYeastMidiProcessing({ createProcessor: () => () => [] });
 
         const { trackStore } = await import('#/modules/Arrangement/stores');
         const { midiStore } = await import('#/modules/MIDI/stores');
@@ -307,7 +307,9 @@ describe('renderTrackSubgraphOffline', () => {
             id: 'track-1',
             kind: 'midi',
             clips: [midiClip()],
-            devices: [{ id: 'fermenter-1', name: 'Fermenter', type: 'fermenter', bypassed: false, parameterValues: {} }],
+            devices: [
+                { id: 'fermenter-1', name: 'Fermenter', type: 'fermenter', bypassed: false, parameterValues: {} },
+            ],
         });
         mocks.buildDeviceChain.mockResolvedValue([createInstrumentEntry('fermenter-1', 'fermenter')]);
 
@@ -338,7 +340,9 @@ describe('renderTrackSubgraphOffline', () => {
             id: 'track-1',
             kind: 'midi',
             clips: [midiClip()],
-            devices: [{ id: 'fermenter-1', name: 'Fermenter', type: 'fermenter', bypassed: false, parameterValues: {} }],
+            devices: [
+                { id: 'fermenter-1', name: 'Fermenter', type: 'fermenter', bypassed: false, parameterValues: {} },
+            ],
         });
         mocks.buildDeviceChain.mockResolvedValue([createInstrumentEntry('fermenter-1', 'fermenter')]);
 
