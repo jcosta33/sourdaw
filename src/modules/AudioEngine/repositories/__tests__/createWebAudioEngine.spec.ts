@@ -262,6 +262,9 @@ describe('AudioEngine', () => {
         } as never);
         engine.wireSidechainRoute('pad-track', 'sidechain-target', 'sidechain-device');
         const sidechainGain = mockCtx.createGain.mock.results.at(-1)!.value;
+        // FX-5 — the post-fader tap now lands on the key alignment line, which
+        // feeds the route gain; rebuilds must re-attach that same edge.
+        const sidechainKeyDelay = mockCtx.createDelay.mock.results.at(-1)!.value;
 
         setPadTrackOutput(engine, 'pad-track', 'post-bus', 'toaster-parent', 3);
         const firstControls = {
@@ -281,7 +284,8 @@ describe('AudioEngine', () => {
         );
         expect(child.preFaderTap.connect).toHaveBeenCalledWith(preSendGain);
         expect(child.analyserNode.connect).toHaveBeenCalledWith(postSendGain);
-        expect(child.analyserNode.connect).toHaveBeenCalledWith(sidechainGain);
+        expect(child.analyserNode.connect).toHaveBeenCalledWith(sidechainKeyDelay);
+        expect(sidechainKeyDelay.connect).toHaveBeenCalledWith(sidechainGain);
 
         setPadTrackOutput(engine, 'pad-track', 'hw_out', 'toaster-parent', 3);
         setPadTrackOutput(engine, 'pad-track', 'post-bus', 'toaster-parent', 3);
@@ -293,7 +297,7 @@ describe('AudioEngine', () => {
         getMockTrackNode(engine, 'pad-track').rebuildChain();
         expect(child.preFaderTap.connect).toHaveBeenCalledWith(preSendGain);
         expect(child.analyserNode.connect).toHaveBeenCalledWith(postSendGain);
-        expect(child.analyserNode.connect).toHaveBeenCalledWith(sidechainGain);
+        expect(child.analyserNode.connect).toHaveBeenCalledWith(sidechainKeyDelay);
 
         const replacementControls = {
             connectPadOutput: vi.fn(),
@@ -436,11 +440,15 @@ describe('AudioEngine', () => {
 
             // The sidechain GainNode is the most recent createGain() result.
             const scGain = mockCtx.createGain.mock.results.at(-1)!.value as { disconnect: Mock };
+            const scKeyDelay = mockCtx.createDelay.mock.results.at(-1)!.value;
             expect(scGain.disconnect).not.toHaveBeenCalled();
 
             engine.removeTrackStrip('scSrc');
             expect(scGain.disconnect).toHaveBeenCalled();
-            expect(srcStrip.analyserNode.disconnect).toHaveBeenCalledWith(scGain);
+            // FX-5 — teardown drops both new edges: the tap→delay edge and the
+            // delay's own outgoing edge, so the alignment line cannot outlive it.
+            expect(srcStrip.analyserNode.disconnect).toHaveBeenCalledWith(scKeyDelay);
+            expect(scKeyDelay.disconnect).toHaveBeenCalled();
 
             // Re-wiring proves the entry was deleted (no early `has(key)` return).
             engine.ensureTrackStrip('scSrc');
@@ -461,11 +469,12 @@ describe('AudioEngine', () => {
             } as never);
             engine.wireSidechainRoute('scSrc', 'scTgt', 'dev1');
             const oldSidechainGain = mockCtx.createGain.mock.results.at(-1)!.value as { disconnect: Mock };
+            const oldKeyDelay = mockCtx.createDelay.mock.results.at(-1)!.value;
 
             engine.removeTrackStrip('scTgt');
 
             expect(oldSidechainGain.disconnect).toHaveBeenCalledTimes(1);
-            expect(sourceStrip.analyserNode.disconnect).toHaveBeenCalledWith(oldSidechainGain);
+            expect(sourceStrip.analyserNode.disconnect).toHaveBeenCalledWith(oldKeyDelay);
             const replacementTarget = engine.ensureTrackStrip('scTgt');
             replacementTarget.deviceNodes.push({
                 deviceId: 'dev1',
@@ -487,12 +496,16 @@ describe('AudioEngine', () => {
             } as never);
             engine.wireSidechainRoute('ordered-source', 'ordered-target', 'ordered-device');
             const sidechainGain = mockCtx.createGain.mock.results.at(-1)!.value as { disconnect: Mock };
+            const keyDelay = mockCtx.createDelay.mock.results.at(-1)!.value;
 
             engine.unwireSidechainRoute('ordered-source', 'ordered-device');
             engine.removeTrackStrip('ordered-source');
 
-            expect(sourceStrip.analyserNode.disconnect).toHaveBeenCalledWith(sidechainGain);
+            expect(sourceStrip.analyserNode.disconnect).toHaveBeenCalledWith(keyDelay);
+            // Still exactly one teardown: the strip removal must not re-detach a
+            // route the explicit unwire already dropped.
             expect(sidechainGain.disconnect).toHaveBeenCalledTimes(1);
+            expect(keyDelay.disconnect).toHaveBeenCalledTimes(1);
         });
 
         it('forgets pending sidechains owned by a removed source, target track, or target device', () => {
@@ -969,6 +982,98 @@ describe('AudioEngine', () => {
             } as never);
             expect(() => engine.wireSidechainRoute('scSrc', 'scTgt', 'not-a-compressor')).not.toThrow();
             expect(mockCtx.createGain.mock.calls.length).toBe(createGainBefore);
+        });
+    });
+
+    // ── FX-5: the sidechain key alignment line follows the resolved PDC value ───
+    describe('sidechain key alignment', () => {
+        type KeyDelayNode = {
+            delayTime: { cancelScheduledValues: Mock; setValueAtTime: Mock; linearRampToValueAtTime: Mock };
+        };
+
+        function wireKeyedRoute(): KeyDelayNode {
+            const targetStrip = engine.ensureTrackStrip('scTgt');
+            engine.ensureTrackStrip('scSrc');
+            targetStrip.deviceNodes.push({
+                deviceId: 'dev1',
+                type: 'builtin-sidechain-compressor',
+                inputNode: makeStripNode() as unknown as AudioNode,
+            } as never);
+            engine.wireSidechainRoute('scSrc', 'scTgt', 'dev1');
+            return mockCtx.createDelay.mock.results.at(-1)!.value;
+        }
+
+        it('ramps the key delay onto the resolved alignment instead of stepping it', () => {
+            const { delayTime } = wireKeyedRoute();
+
+            engine.refreshSidechainAlignment(() => 0.03);
+
+            // Anchor-then-ramp, the same idiom the automation writes use: stale
+            // events dropped, current value pinned, then an a-rate glide to the
+            // target. A bare setValueAtTime here would click the key.
+            expect(delayTime.cancelScheduledValues).toHaveBeenCalled();
+            expect(delayTime.setValueAtTime).toHaveBeenCalled();
+            const [rampValue, rampTime] = delayTime.linearRampToValueAtTime.mock.calls.at(-1)!;
+            expect(rampValue).toBeCloseTo(0.03, 10);
+            expect(rampTime).toBeGreaterThan(mockCtx.currentTime);
+        });
+
+        it('passes the wired route identity to the resolver', () => {
+            wireKeyedRoute();
+            const keyDelayFor = vi.fn(() => 0.01);
+
+            engine.refreshSidechainAlignment(keyDelayFor);
+
+            expect(keyDelayFor).toHaveBeenCalledWith({
+                sourceTrackId: 'scSrc',
+                targetTrackId: 'scTgt',
+                targetDeviceId: 'dev1',
+            });
+        });
+
+        it('follows a mid-session latency change down as well as up', () => {
+            const { delayTime } = wireKeyedRoute();
+
+            engine.refreshSidechainAlignment(() => 0.03);
+            engine.refreshSidechainAlignment(() => 0.008);
+
+            const [rampValue] = delayTime.linearRampToValueAtTime.mock.calls.at(-1)!;
+            expect(rampValue).toBeCloseTo(0.008, 10);
+            expect(delayTime.linearRampToValueAtTime).toHaveBeenCalledTimes(2);
+        });
+
+        it('schedules nothing when the resolved alignment has not moved', () => {
+            const { delayTime } = wireKeyedRoute();
+
+            engine.refreshSidechainAlignment(() => 0.03);
+            const rampsAfterFirst = delayTime.linearRampToValueAtTime.mock.calls.length;
+            // The refresh runs once per scheduler tick; an unchanged alignment
+            // must not churn AudioParam events on every one of them.
+            engine.refreshSidechainAlignment(() => 0.03);
+            engine.refreshSidechainAlignment(() => 0.03);
+
+            expect(delayTime.linearRampToValueAtTime.mock.calls.length).toBe(rampsAfterFirst);
+        });
+
+        it('clamps a negative resolution to zero rather than writing it', () => {
+            const { delayTime } = wireKeyedRoute();
+
+            engine.refreshSidechainAlignment(() => 0.03);
+            engine.refreshSidechainAlignment(() => -0.5);
+
+            const [rampValue] = delayTime.linearRampToValueAtTime.mock.calls.at(-1)!;
+            expect(rampValue).toBe(0);
+        });
+
+        it('stops driving a route once it is unwired', () => {
+            const { delayTime } = wireKeyedRoute();
+            engine.refreshSidechainAlignment(() => 0.03);
+            const rampsWhileWired = delayTime.linearRampToValueAtTime.mock.calls.length;
+
+            engine.unwireSidechainRoute('scSrc', 'dev1');
+            engine.refreshSidechainAlignment(() => 0.05);
+
+            expect(delayTime.linearRampToValueAtTime.mock.calls.length).toBe(rampsWhileWired);
         });
     });
 

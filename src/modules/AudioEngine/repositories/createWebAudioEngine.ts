@@ -28,10 +28,25 @@ type NoopMeterNode = {
 
 type SidechainConnection = {
     sourceTrackId: string;
+    targetTrackId: string;
     targetDeviceId: string;
     sourceNode: AudioNode;
+    /** FX-5 — key alignment line sitting between the tap and the route gain. */
+    keyDelayNode: DelayNode;
+    /** Last value written to {@link keyDelayNode}, so a per-tick refresh that
+     *  resolves the same alignment schedules nothing at all. */
+    appliedKeyDelaySec: number;
     gainNode: GainNode;
 };
+
+/** Resolves the seconds of key delay a wired sidechain route currently needs.
+ *  Supplied by the use-case layer (`refreshSidechainAlignment`) so the engine
+ *  never reaches into project state for it. */
+export type SidechainKeyDelayResolver = (route: {
+    sourceTrackId: string;
+    targetTrackId: string;
+    targetDeviceId: string;
+}) => number;
 
 type ToasterPadRoute = {
     toasterParentTrackId: string;
@@ -82,6 +97,24 @@ const SEND_TAP_CROSSFADE_SECONDS = 0.01;
 
 /** Extra margin (seconds) before the faded-out old send node is disconnected. */
 const SEND_TAP_CROSSFADE_TEARDOWN_MARGIN_SECONDS = 0.02;
+
+/**
+ * Ceiling (seconds) on a sidechain key alignment line. PDC values are single-
+ * digit milliseconds to low tens; a `DelayNode` allocates its ring buffer from
+ * this maximum, so it is generous enough that no realistic chain is clipped and
+ * small enough that the buffer stays trivial.
+ */
+const SIDECHAIN_KEY_MAX_DELAY_SECONDS = 1;
+
+/** Glide span (seconds) for a key-alignment change — one scheduler grain, the
+ *  same span the automation ramps use. Stepping `delayTime` resamples the key
+ *  and clicks; a short a-rate ramp does not. */
+const SIDECHAIN_KEY_DELAY_RAMP_SECONDS = 0.01;
+
+/** Below this (seconds, well under a sample at any rate) a re-resolved key
+ *  alignment counts as unchanged and schedules nothing — the alignment refresh
+ *  runs every scheduler tick and must not churn AudioParam events. */
+const SIDECHAIN_KEY_DELAY_EPSILON_SECONDS = 1e-6;
 
 /**
  * Builds a silent stand-in for {@link AudioContext} from an
@@ -391,13 +424,16 @@ class AudioEngineImpl implements AudioEngine {
             if (connection.sourceTrackId !== trackId) {
                 continue;
             }
+            // The tap stays post-fader (`analyserNode`); the key alignment line
+            // sits between it and the route gain, so a rebuild re-attaches the
+            // tap to the delay rather than straight to the gain.
             const sourceNode = strip.analyserNode;
             try {
-                connection.sourceNode.disconnect(connection.gainNode);
+                connection.sourceNode.disconnect(connection.keyDelayNode);
             } catch {
                 // A wider rebuild may already have removed the prior source edge.
             }
-            sourceNode.connect(connection.gainNode);
+            sourceNode.connect(connection.keyDelayNode);
             connection.sourceNode = sourceNode;
         }
     }
@@ -994,15 +1030,62 @@ class AudioEngineImpl implements AudioEngine {
 
         const scGain = this.context.createGain();
         scGain.gain.value = 1;
+        // FX-5 — the key is tapped post-fader, so it reaches the detector on the
+        // source track's clock, not the detector's. The alignment line goes
+        // between the tap and the route gain: after the metering/sends tap (which
+        // must keep reading the un-delayed signal) and before the detector input.
+        // It starts at zero and is filled in by refreshSidechainAlignment, which
+        // owns every write to it so there is exactly one place the value lands.
+        const keyDelayNode = this.context.createDelay(SIDECHAIN_KEY_MAX_DELAY_SECONDS);
+        keyDelayNode.delayTime.value = 0;
         const sourceNode = sourceStrip.analyserNode;
-        sourceNode.connect(scGain);
+        sourceNode.connect(keyDelayNode);
+        keyDelayNode.connect(scGain);
         scGain.connect(deviceNode.inputNode, 0, 1);
         this.sidechainConnections.set(key, {
             sourceTrackId,
+            targetTrackId,
             targetDeviceId,
             sourceNode,
+            keyDelayNode,
+            appliedKeyDelaySec: 0,
             gainNode: scGain,
         });
+    }
+
+    /**
+     * FX-5 — re-resolve every wired route's key alignment and glide the delay
+     * lines onto it. Called on wire and once per scheduler tick, so a mid-session
+     * latency push (a native plugin reporting a new lookahead, a device added or
+     * bypassed) lands within one grain instead of holding a stale alignment for
+     * the rest of the session. Nothing is cached across calls beyond the value
+     * last written, which exists purely to keep an unchanged alignment from
+     * scheduling AudioParam events every tick.
+     */
+    public refreshSidechainAlignment(keyDelayFor: SidechainKeyDelayResolver): void {
+        if (this.fallbackMode || this.sidechainConnections.size === 0) {
+            return;
+        }
+        const now = this.context.currentTime;
+        for (const connection of this.sidechainConnections.values()) {
+            const resolved = keyDelayFor({
+                sourceTrackId: connection.sourceTrackId,
+                targetTrackId: connection.targetTrackId,
+                targetDeviceId: connection.targetDeviceId,
+            });
+            const nextSeconds = Math.min(Math.max(resolved, 0), SIDECHAIN_KEY_MAX_DELAY_SECONDS);
+            if (Math.abs(nextSeconds - connection.appliedKeyDelaySec) < SIDECHAIN_KEY_DELAY_EPSILON_SECONDS) {
+                continue;
+            }
+            // Same anchor-then-ramp idiom the automation writes use: a stepped
+            // delayTime resamples the key and clicks, so re-anchor at the live
+            // value, drop stale future events, and glide over one grain.
+            const param = connection.keyDelayNode.delayTime;
+            param.cancelScheduledValues(now);
+            param.setValueAtTime(param.value, now);
+            param.linearRampToValueAtTime(nextSeconds, now + SIDECHAIN_KEY_DELAY_RAMP_SECONDS);
+            connection.appliedKeyDelaySec = nextSeconds;
+        }
     }
 
     private removeLiveSidechainConnection(key: string): void {
@@ -1011,9 +1094,14 @@ class AudioEngineImpl implements AudioEngine {
             return;
         }
         try {
-            connection.sourceNode.disconnect(connection.gainNode);
+            connection.sourceNode.disconnect(connection.keyDelayNode);
         } catch {
             // The source edge was already detached by a wider graph teardown.
+        }
+        try {
+            connection.keyDelayNode.disconnect();
+        } catch {
+            // The alignment line was already detached by a wider graph teardown.
         }
         try {
             connection.gainNode.disconnect();

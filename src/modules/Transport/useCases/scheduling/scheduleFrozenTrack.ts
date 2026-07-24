@@ -3,6 +3,7 @@ import {
     ensureTrackStrip,
     getAudioContext,
     getCachedAudioBuffer,
+    getCompensationDelay,
     getCurrentTime,
 } from '#/modules/AudioEngine/useCases';
 
@@ -38,7 +39,16 @@ export function scheduleFrozenTrack(
     // the project origin.
     const trackStartBeat = track.clips.length > 0 ? Math.min(...track.clips.map((clip) => clip.startBeat)) : 0;
     const beatOffset = trackStartBeat - accumulatedPosition;
-    const startTime = getCurrentTime() + beatOffset / (currentTempo / 60);
+
+    // FX-4 — the frozen buffer bypasses the device chain (it feeds preFaderTap
+    // directly) but its content already carries that chain's latency, and the
+    // track's downstream buses still add theirs; `getTrackLatency` sums exactly
+    // those two, so the track's own compensation is the right shift here. Every
+    // other live source path applies it (scheduleAudioClips, scheduleMidiNotes,
+    // applyAutomation) — without it a frozen track is the one thing in the
+    // session playing on the uncompensated clock.
+    const compensation = getCompensationDelay(track.id);
+    const startTime = getCurrentTime() + beatOffset / (currentTempo / 60) + compensation;
     const now = getCurrentTime();
 
     if (startTime >= now) {

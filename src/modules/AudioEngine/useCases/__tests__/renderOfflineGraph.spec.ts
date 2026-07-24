@@ -93,17 +93,24 @@ type FakeGain = {
     connect: ReturnType<typeof vi.fn>;
 };
 
+type FakeDelay = {
+    delayTime: { value: number };
+    connect: ReturnType<typeof vi.fn>;
+};
+
 const createdContexts: Array<{
     channels: number;
     frames: number;
     sampleRate: number;
     gains: FakeGain[];
+    delays: FakeDelay[];
     destination: object;
     audioWorklet: { addModule: ReturnType<typeof vi.fn> };
 }> = [];
 
 class FakeOfflineAudioContext {
     gains: FakeGain[] = [];
+    delays: FakeDelay[] = [];
     destination = {};
     audioWorklet = { addModule: mocks.addWorkletModule };
 
@@ -113,6 +120,7 @@ class FakeOfflineAudioContext {
             frames,
             sampleRate,
             gains: this.gains,
+            delays: this.delays,
             destination: this.destination,
             audioWorklet: this.audioWorklet,
         });
@@ -122,6 +130,12 @@ class FakeOfflineAudioContext {
         const gain: FakeGain = { gain: { value: 1 }, connect: vi.fn() };
         this.gains.push(gain);
         return gain;
+    }
+
+    createDelay(): FakeDelay {
+        const delay: FakeDelay = { delayTime: { value: 0 }, connect: vi.fn() };
+        this.delays.push(delay);
+        return delay;
     }
 }
 
@@ -368,7 +382,11 @@ describe('renderOffline — graph construction and lifecycle', () => {
         );
         const routeGain = createdContexts[0]!.gains[1]!;
         expect(routeGain.gain.value).toBe(1);
-        expect(stripsByTrack.get(kick.id)!.outputNode.connect).toHaveBeenCalledWith(routeGain);
+        // FX-5 — the key runs source → alignment delay → route gain → detector
+        // input, so the source tap feeds the delay, not the gain directly.
+        const keyDelay = createdContexts[0]!.delays[0]!;
+        expect(stripsByTrack.get(kick.id)!.outputNode.connect).toHaveBeenCalledWith(keyDelay);
+        expect(keyDelay.connect).toHaveBeenCalledWith(routeGain);
         expect(routeGain.connect).toHaveBeenCalledWith(sidechainInput, 0, 1);
     });
 
