@@ -1,0 +1,42 @@
+src/modules/AudioEngine/useCases/trackAudioControls/scheduleTrackGain.ts
+  s_0d39f3a4a4357a::t_64661ed09163c9 1-12
+src/modules/Transport/useCases/scheduling/applyAutomation/applyAutomation.ts
+  s_0d39f3a4a4357a::t_a4a22ea664e3c5 3-6,66-80,116-129,132,134
+src/modules/AudioEngine/engine/TrackNode.ts
+  s_0d39f3a4a4357a::t_080958f22720ef 12-21,188-221
+  s_0d39f3a4a4357a::t_769aad057c77c3 222
+src/modules/AudioEngine/useCases/trackAudioControls/__tests__/scheduleTrackPan.spec.ts
+  s_0d39f3a4a4357a::t_b799ab67b43697 1-21
+src/modules/AudioEngine/repositories/createWebAudioEngine.ts
+  s_0d39f3a4a4357a::t_5de9ec48f62270 579-586
+src/modules/AudioEngine/useCases/trackAudioControls/scheduleTrackPan.ts
+  s_0d39f3a4a4357a::t_d8ff408e8e4c40 1-10
+src/modules/AudioEngine/useCases/index.ts
+  s_0d39f3a4a4357a::t_f2497011bdb9c0 116-117
+src/modules/Transport/useCases/scheduling/applyAutomation/__tests__/applyAutomation.spec.ts
+  s_0d39f3a4a4357a::t_7f3e881588af2e 4-11,64-67,133-134,152,214-215,241-280,282-293
+  s_0d39f3a4a4357a::t_c8fae41141dbc5 281
+  s_0d39f3a4a4357a::t_b85a82c2b424b4 294
+src/modules/AudioEngine/useCases/trackAudioControls/__tests__/scheduleTrackGain.spec.ts
+  s_0d39f3a4a4357a::t_e4f01b7b533fed 1-21
+src/modules/AudioEngine/engine/__tests__/TrackNode.spec.ts
+  s_0d39f3a4a4357a::t_f9459837e6f3cc 89-131
+src/modules/AudioEngine/models/AudioEngineState.ts
+  s_0d39f3a4a4357a::t_e9cb85d1a20b53 225-229
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "9e2d8ec3997677cc759be41a38ac62da8d562493",
+  "prompts": {},
+  "sessions": {
+    "s_0d39f3a4a4357a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "60da6a2e-7d79-4d98-8624-e993f5a9f94e",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
