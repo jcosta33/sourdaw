@@ -160,6 +160,55 @@ describe('TrackNode', () => {
         expect(postFaderGain.setTargetAtTime).toHaveBeenCalledWith(1, ctx.currentTime, 0.005);
     });
 
+    // FX-8 — the two silencing reasons act at different points of the strip, and
+    // that difference is the whole finding. `setMute` is the user's mute button:
+    // it zeroes `postFaderGain`, which sits downstream of `preFaderTap`, so a
+    // pre-fader (cue) send keeps feeding its bus — the documented purpose of a
+    // pre-fader tap. `setSoloGate` is solo-in-place silencing a track the engineer
+    // is not listening to: it must stop the track everywhere, so it zeroes
+    // `preFaderTap` itself, upstream of every send tap and of the frozen-buffer
+    // injection point.
+    it('leaves the pre-fader tap open under an individual mute so cue sends keep feeding their bus', () => {
+        const track = new TrackNode('track-1', deps);
+        const preFaderTapGain = track.strip.preFaderTap.gain;
+
+        track.setMute(true);
+
+        expect(preFaderTapGain.setTargetAtTime).not.toHaveBeenCalled();
+        expect(preFaderTapGain.value).toBe(1);
+    });
+
+    it('closes the pre-fader tap when solo-in-place gates the track, and reopens it on release', () => {
+        const track = new TrackNode('track-1', deps);
+        const preFaderTapGain = track.strip.preFaderTap.gain;
+        const postFaderGain = track.strip.postFaderGain.gain;
+
+        track.setSoloGate(true);
+
+        expect(track.strip.soloGated).toBe(true);
+        expect(preFaderTapGain.setTargetAtTime).toHaveBeenCalledWith(0, ctx.currentTime, 0.005);
+        // The gate is a distinct reason from the mute button: it must not forge a
+        // mute the user never pressed, or releasing solo would unmute the track.
+        expect(track.strip.muted).toBe(false);
+        expect(postFaderGain.setTargetAtTime).not.toHaveBeenCalled();
+
+        track.setSoloGate(false);
+
+        expect(track.strip.soloGated).toBe(false);
+        expect(preFaderTapGain.setTargetAtTime).toHaveBeenLastCalledWith(1, ctx.currentTime, 0.005);
+    });
+
+    it('keeps a solo-gated track silent at the pre-fader tap even after the user unmutes it', () => {
+        const track = new TrackNode('track-1', deps);
+        const preFaderTapGain = track.strip.preFaderTap.gain;
+
+        track.setSoloGate(true);
+        track.setMute(false);
+
+        expect(track.strip.soloGated).toBe(true);
+        expect(preFaderTapGain.setTargetAtTime).toHaveBeenLastCalledWith(0, ctx.currentTime, 0.005);
+    });
+
     it('should route output to a bus if provided', () => {
         const busGain = ctx.createGain();
         vi.mocked(deps.getBusGainNode).mockReturnValue(busGain as any);

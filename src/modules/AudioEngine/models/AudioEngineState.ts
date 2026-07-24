@@ -233,17 +233,25 @@ export type MidiFxNode = {
 
 export type TrackChannelStrip = {
     trackId: string;
+    /** Pre-fader send tap, and the solo-in-place gate (FX-8): closing this node
+     *  stops the track feeding sends, buses and sidechain keys alike, which the
+     *  downstream `postFaderGain` mute deliberately does not. */
     preFaderTap: GainNode;
     /** The track's generic input node, where clips and synths route audio BEFORE effects. */
     gainNode: GainNode;
     /** The actual track volume fader (post-inserts). */
     faderNode: GainNode;
-    /** Post-device mute node — sits after all devices, before pan. Mute/solo targets this. */
+    /** Post-device mute node — sits after all devices, before pan. The track's
+     *  own mute targets this; solo-in-place targets `preFaderTap` instead. */
     postFaderGain: GainNode;
     panNode: StereoPannerNode;
     meterNode: AudioWorkletNode | null;
     analyserNode: AnalyserNode;
     muted: boolean;
+    /** FX-8: silenced because solo is engaged elsewhere, not because the user
+     *  muted this track. Tracked apart from `muted` so releasing solo cannot
+     *  clear a real mute. */
+    soloGated: boolean;
     soloed: boolean;
     deviceNodes: BuiltinDeviceNode[];
     midiFxNodes: MidiFxNode[];
@@ -294,6 +302,9 @@ export type AudioEngine = {
      *  pending automation ramp so none lands after playback ends. */
     cancelTrackAutomationRamps(): void;
     setTrackMute(trackId: string, muted: boolean): void;
+    /** FX-8: solo-in-place gating, applied at the pre-fader tap so a non-soloed
+     *  track stops feeding return buses too. Separate from `setTrackMute`. */
+    setTrackSoloGate(trackId: string, gated: boolean): void;
     getTrackPeakLevel(trackId: string): number;
     getMasterPeakLevel(): number;
     getBusPeakLevel(busId: string): number;

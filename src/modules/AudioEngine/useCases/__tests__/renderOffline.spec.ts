@@ -173,16 +173,24 @@ describe('renderOffline effective audibility (OE-4)', () => {
         workspaceStore.set(defaultWorkspaceState);
     });
 
-    const audioTrack = (over: { id: string; soloed?: boolean; muted?: boolean }) => ({
+    type SendFixture = { busId: string; level: number; preFader: boolean };
+
+    const audioTrack = (over: {
+        id: string;
+        kind?: string;
+        soloed?: boolean;
+        muted?: boolean;
+        sends?: SendFixture[];
+    }) => ({
         id: over.id,
-        kind: 'audio',
+        kind: over.kind ?? 'audio',
         disabled: false,
         muted: over.muted ?? false,
         soloed: over.soloed ?? false,
         soloSafe: false,
         outputId: 'hw_out',
         devices: [],
-        sends: [],
+        sends: over.sends ?? ([] as SendFixture[]),
     });
 
     const renderContext = (tracks: ReturnType<typeof audioTrack>[]) => ({
@@ -277,6 +285,94 @@ describe('renderOffline effective audibility (OE-4)', () => {
         // 'dup' appears twice, so it is not an unambiguous solo owner: no solo
         // engages and 'unique' stays audible — exactly as the live path behaves.
         expect(scheduledTrackIds()).toContain('unique');
+    });
+
+    // FX-8 — the mixdown expressed "muted" twice: `postFaderGain = 0` on the strip
+    // AND exclusion from the scheduling set. The first is the live topology (mute
+    // sits downstream of `preFaderTap`, so a pre-fader send survives it); the
+    // second silences the strip entirely, killing the pre-fader send the live
+    // engine keeps feeding. Export therefore lost cue-send content the engineer
+    // was monitoring. Scheduling is now driven by "the track can still feed
+    // something", with the strip's own mute node still bearing the mute.
+    describe('pre-fader sends under mute and solo (FX-8)', () => {
+        const busTrack = (id: string) => audioTrack({ id, kind: 'bus' });
+
+        const withSend = (track: ReturnType<typeof audioTrack>, send: { busId: string; preFader: boolean }) => ({
+            ...track,
+            sends: [{ busId: send.busId, level: 0.7, preFader: send.preFader }],
+        });
+
+        it('still schedules an individually muted track that carries a pre-fader send, so its bus keeps receiving it', async () => {
+            offlineRenderMocks.resolveRenderContext.mockReturnValue(
+                renderContext([
+                    busTrack('reverb-bus'),
+                    withSend(audioTrack({ id: 'cue', muted: true }), { busId: 'reverb-bus', preFader: true }),
+                ])
+            );
+            primeRender();
+
+            await renderOffline(4);
+
+            expect(scheduledTrackIds()).toContain('cue');
+        });
+
+        it('does not schedule a muted track whose only send is post-fader, because the mute node already kills it', async () => {
+            offlineRenderMocks.resolveRenderContext.mockReturnValue(
+                renderContext([
+                    busTrack('reverb-bus'),
+                    withSend(audioTrack({ id: 'fx', muted: true }), { busId: 'reverb-bus', preFader: false }),
+                ])
+            );
+            primeRender();
+
+            await renderOffline(4);
+
+            expect(scheduledTrackIds()).not.toContain('fx');
+        });
+
+        it('does not schedule a muted track whose pre-fader send targets a bus that no longer exists', async () => {
+            offlineRenderMocks.resolveRenderContext.mockReturnValue(
+                renderContext([
+                    withSend(audioTrack({ id: 'orphan', muted: true }), { busId: 'deleted-bus', preFader: true }),
+                ])
+            );
+            primeRender();
+
+            await renderOffline(4);
+
+            expect(scheduledTrackIds()).not.toContain('orphan');
+        });
+
+        it('drops a solo-gated track even when it carries a pre-fader send, so solo does not leak into return buses', async () => {
+            offlineRenderMocks.resolveRenderContext.mockReturnValue(
+                renderContext([
+                    busTrack('reverb-bus'),
+                    audioTrack({ id: 'lead', soloed: true }),
+                    withSend(audioTrack({ id: 'strings' }), { busId: 'reverb-bus', preFader: true }),
+                ])
+            );
+            primeRender();
+
+            await renderOffline(4);
+
+            expect(scheduledTrackIds()).not.toContain('strings');
+            expect(scheduledTrackIds()).toContain('lead');
+        });
+
+        it('drops a track that is both muted and solo-gated despite its pre-fader send', async () => {
+            offlineRenderMocks.resolveRenderContext.mockReturnValue(
+                renderContext([
+                    busTrack('reverb-bus'),
+                    audioTrack({ id: 'lead', soloed: true }),
+                    withSend(audioTrack({ id: 'strings', muted: true }), { busId: 'reverb-bus', preFader: true }),
+                ])
+            );
+            primeRender();
+
+            await renderOffline(4);
+
+            expect(scheduledTrackIds()).not.toContain('strings');
+        });
     });
 });
 

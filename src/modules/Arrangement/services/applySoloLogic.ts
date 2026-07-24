@@ -15,6 +15,21 @@ export type ApplySoloLogicInput = {
 export type ApplySoloLogicOutput = {
     actions: SoloLogicAction[];
     savedGains: ReadonlyMap<string, number>;
+    /**
+     * FX-8 — the tracks solo is silencing *because they are not being listened
+     * to*, as opposed to the tracks the user muted by hand. `actions` cannot
+     * carry that distinction: a `setMute` is `soloMuted || track.muted`, so the
+     * two reasons arrive collapsed into one boolean.
+     *
+     * They must be told apart because they act at different points of the
+     * channel strip. An individual mute is downstream of the pre-fader tap, so a
+     * pre-fader (cue) send keeps feeding its bus — that is what "pre-fader"
+     * means and the whole reason cue sends are wired that way. Solo-in-place is
+     * not a mix state at all; it is "play me only this", so a gated track must
+     * stop feeding *everything*, return buses included, or a solo still carries
+     * the reverb tails of the material it was supposed to isolate.
+     */
+    soloGatedTrackIds: ReadonlySet<string>;
 };
 
 function isRoutedToSoloedTrack(
@@ -52,6 +67,7 @@ export function applySoloLogic({
 }: ApplySoloLogicInput): ApplySoloLogicOutput {
     const nextSavedGains = new Map(savedGains);
     const actions: SoloLogicAction[] = [];
+    const soloGatedTrackIds = new Set<string>();
     const anySoloed = tracks.some(
         (track) => track.kind !== 'master' && track.soloed && liveStripTrackIds.has(track.id)
     );
@@ -92,7 +108,14 @@ export function applySoloLogic({
             const shouldMute = !track.soloed && !routedToSoloed;
             actions.push({ type: 'setMute', trackId: track.id, muted: shouldMute || track.muted });
         }
+
+        // Solo-safe and soloed tracks returned above or are explicitly audible;
+        // everything else that solo is silencing is gated. Reached only while a
+        // solo is engaged, so an unsoloed session gates nothing.
+        if (!track.soloed && !routedToSoloed) {
+            soloGatedTrackIds.add(track.id);
+        }
     }
 
-    return { actions, savedGains: nextSavedGains };
+    return { actions, savedGains: nextSavedGains, soloGatedTrackIds };
 }

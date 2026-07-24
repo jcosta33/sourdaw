@@ -639,6 +639,11 @@ class AudioEngineImpl implements AudioEngine {
         this.trackNodes.get(trackId)?.setMute(muted);
     }
 
+    public setTrackSoloGate(trackId: string, gated: boolean): void {
+        this.ensureTrackStrip(trackId);
+        this.trackNodes.get(trackId)?.setSoloGate(gated);
+    }
+
     public getTrackPeakLevel(trackId: string): number {
         return this.trackNodes.get(trackId)?.getPeakLevel() ?? 0;
     }

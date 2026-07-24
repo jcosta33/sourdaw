@@ -11,6 +11,7 @@ const mocks = vi.hoisted(() => ({
     setTrackGain: vi.fn(),
     setTrackPan: vi.fn(),
     setTrackMute: vi.fn(),
+    setTrackSoloGate: vi.fn(),
     addDeviceToStrip: vi.fn(),
     updateDeviceParam: vi.fn(),
     updateDeviceBypass: vi.fn(),
@@ -35,6 +36,7 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     setTrackGain: mocks.setTrackGain,
     setTrackPan: mocks.setTrackPan,
     setTrackMute: mocks.setTrackMute,
+    setTrackSoloGate: mocks.setTrackSoloGate,
     addDeviceToStrip: mocks.addDeviceToStrip,
     updateDeviceParam: mocks.updateDeviceParam,
     updateDeviceBypass: mocks.updateDeviceBypass,
@@ -182,6 +184,10 @@ describe('projectTrackToLiveStrip', () => {
             ['soloed', 0.4],
         ]);
         expect(mocks.setTrackMute).toHaveBeenCalledWith('soloed', false);
+        // FX-8 — projecting a strip also settles its solo gate, so a strip built
+        // while a solo is up starts closed instead of leaking into return buses.
+        // Here the only track is the soloed one, so it is never gated.
+        expect(mocks.setTrackSoloGate).toHaveBeenCalledWith('soloed', false);
     });
 
     it('resets saved PFL gain state at project startup without runtime writes', () => {
