@@ -215,6 +215,69 @@ describe('detectSongStructure — section classification', () => {
         expect(outro?.confidence).toBe(0.8);
     });
 
+    it('classifies a high-energy segment in the first half as Chorus', () => {
+        // High energy before the midpoint: dense early block flanked by sparse regions.
+        const names = detectForRanges([
+            { start: 0, end: 16 }, // sparse intro
+            { start: 32, end: 64 },
+            { start: 32, end: 64 },
+            { start: 32, end: 64 },
+            { start: 32, end: 64 }, // dense early → high energy at progress < 0.5 → Chorus
+            { start: 96, end: 128 }, // sparse tail keeps last segment from being Chorus
+        ]);
+        expect(names).toContain('Chorus');
+    });
+
+    it('classifies a mid-energy segment leading into a high-energy one as Pre-Chorus', () => {
+        // Energy profile (per 4-beat window): seg0=1, seg1=4, seg2=1 (Verse candidate),
+        // seg3=4 (Drop), seg4=1. seg2 is the only Verse-range segment and is followed by
+        // the dense seg3, so it is reclassified as Pre-Chorus.
+        const clips: Clip[] = [
+            create_clip({ id: 'a', trackId: 't', startBeat: 0, endBeat: 32, type: 'midi' }),
+            create_clip({ id: 'b1', trackId: 't', startBeat: 32, endBeat: 48, type: 'midi' }),
+            create_clip({ id: 'b2', trackId: 't', startBeat: 32, endBeat: 48, type: 'midi' }),
+            create_clip({ id: 'b3', trackId: 't', startBeat: 32, endBeat: 48, type: 'midi' }),
+            create_clip({ id: 'b4', trackId: 't', startBeat: 32, endBeat: 48, type: 'midi' }),
+            create_clip({ id: 'c', trackId: 't', startBeat: 48, endBeat: 80, type: 'midi' }),
+            create_clip({ id: 'd1', trackId: 't', startBeat: 80, endBeat: 96, type: 'midi' }),
+            create_clip({ id: 'd2', trackId: 't', startBeat: 80, endBeat: 96, type: 'midi' }),
+            create_clip({ id: 'd3', trackId: 't', startBeat: 80, endBeat: 96, type: 'midi' }),
+            create_clip({ id: 'd4', trackId: 't', startBeat: 80, endBeat: 96, type: 'midi' }),
+            create_clip({ id: 'e', trackId: 't', startBeat: 96, endBeat: 128, type: 'midi' }),
+        ];
+        trackStore.set({
+            tracks: [TrackDummy.create({ id: 't', kind: 'midi', clips })],
+            selectedTrackId: null,
+            ghostClips: [],
+        });
+        expect(detectSongStructure().map((s) => s.name)).toContain('Pre-Chorus');
+    });
+
+    it('alternates consecutive Verse sections into Bridge', () => {
+        // Energy profile engineered for two adjacent Verse-range segments separated by a
+        // boundary: dense intro, two mid-energy blocks (both Verse) with an energy dip
+        // between them, then a dense tail. The second Verse is promoted to Bridge.
+        const clips: Clip[] = [
+            create_clip({ id: 'a1', trackId: 't', startBeat: 0, endBeat: 16, type: 'midi' }),
+            create_clip({ id: 'a2', trackId: 't', startBeat: 0, endBeat: 16, type: 'midi' }),
+            create_clip({ id: 'a3', trackId: 't', startBeat: 0, endBeat: 16, type: 'midi' }),
+            create_clip({ id: 'b1', trackId: 't', startBeat: 16, endBeat: 32, type: 'midi' }),
+            create_clip({ id: 'b2', trackId: 't', startBeat: 16, endBeat: 32, type: 'midi' }),
+            create_clip({ id: 'c1', trackId: 't', startBeat: 32, endBeat: 36, type: 'midi' }),
+            create_clip({ id: 'd1', trackId: 't', startBeat: 36, endBeat: 52, type: 'midi' }),
+            create_clip({ id: 'd2', trackId: 't', startBeat: 36, endBeat: 52, type: 'midi' }),
+            create_clip({ id: 'e1', trackId: 't', startBeat: 52, endBeat: 80, type: 'midi' }),
+            create_clip({ id: 'e2', trackId: 't', startBeat: 52, endBeat: 80, type: 'midi' }),
+            create_clip({ id: 'e3', trackId: 't', startBeat: 52, endBeat: 80, type: 'midi' }),
+        ];
+        trackStore.set({
+            tracks: [TrackDummy.create({ id: 't', kind: 'midi', clips })],
+            selectedTrackId: null,
+            ghostClips: [],
+        });
+        expect(detectSongStructure().map((s) => s.name)).toContain('Bridge');
+    });
+
     it('clamps each section endBeat to the global maxBeat', () => {
         trackStore.set({
             tracks: [

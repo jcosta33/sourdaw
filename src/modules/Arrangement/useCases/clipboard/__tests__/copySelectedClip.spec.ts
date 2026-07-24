@@ -110,4 +110,42 @@ describe('copySelectedClip', () => {
 
         expect(mocks.setClipClipboard).not.toHaveBeenCalled();
     });
+
+    it('falls back to the single legacy selectedClipId when the multi-id list is empty', () => {
+        mocks.clipSelectionStore.value = { selectedClipId: 'clip-1', selectedClipIds: [] };
+        mocks.getTrackStoreState.mockReturnValue({
+            tracks: [{ id: 'track-1', clips: [{ id: 'clip-1', type: 'audio' }] }],
+        });
+
+        expect(copySelectedClip()).toBe(true);
+
+        expect(mocks.setClipClipboard).toHaveBeenCalledWith([
+            { clip: { id: 'clip-1', type: 'audio' }, midiNotes: undefined, sourceTrackId: 'track-1' },
+        ]);
+    });
+
+    it('aborts when nothing is selected (no list and no single id)', () => {
+        mocks.clipSelectionStore.value = { selectedClipId: null, selectedClipIds: [] };
+
+        expect(copySelectedClip()).toBe(false);
+        expect(mocks.setClipClipboard).not.toHaveBeenCalled();
+    });
+
+    it('aborts when the track store has not loaded', () => {
+        mocks.clipSelectionStore.value = { selectedClipId: 'clip-1', selectedClipIds: ['clip-1'] };
+        mocks.getTrackStoreState.mockReturnValue(null);
+
+        expect(copySelectedClip()).toBe(false);
+        expect(mocks.setClipClipboard).not.toHaveBeenCalled();
+    });
+
+    it('aborts when a selected clip cannot be located in any track', () => {
+        mocks.clipSelectionStore.value = { selectedClipId: 'ghost', selectedClipIds: ['ghost'] };
+        mocks.getTrackStoreState.mockReturnValue({
+            tracks: [{ id: 'track-1', clips: [{ id: 'clip-1', type: 'audio' }] }],
+        });
+
+        expect(copySelectedClip()).toBe(false);
+        expect(mocks.setClipClipboard).not.toHaveBeenCalled();
+    });
 });
