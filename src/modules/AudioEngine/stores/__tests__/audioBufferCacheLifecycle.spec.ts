@@ -283,6 +283,54 @@ describe('audioBufferCache lifecycle', () => {
 
             expect(Array.from(peaks).map((value) => Number(value.toFixed(4)))).toEqual([0.8, 0, 0.4, 0]);
         });
+
+        it('reuses the cached mipmap on a second zoomed-out read over a partial window', () => {
+            installFakeIndexedDb();
+            audioBufferCache.set('long', createAudioBuffer({ length: 1024, fill: () => 0 }));
+
+            // First read builds the mipmap; a windowed second read must reuse it
+            // and exercise the mipmap single-sample-bin path (start === end).
+            audioBufferCache.getWaveformPeaks('long', 4);
+            // Many bins over a narrow window → mipmapSamplesPerBin < 1 → some
+            // bins collapse to start === end (single mipmap sample).
+            const peaks = audioBufferCache.getWaveformPeaks('long', 8, {
+                startSample: 0,
+                endSample: 256,
+            });
+            expect(peaks).toHaveLength(8);
+        });
+
+        it('computes a single-sample bin peak in the high-zoom path when samplesPerBin < 1', () => {
+            installFakeIndexedDb();
+            // 4 samples, 8 bins → samplesPerBin = 0.5 → several bins hit
+            // start === end and read a single channel sample.
+            audioBufferCache.set(
+                'clip',
+                createAudioBuffer({ length: 4, fill: (index) => [0.1, 0.6, -0.4, 0.2][index]! })
+            );
+
+            const peaks = audioBufferCache.getWaveformPeaks('clip', 8);
+
+            expect(peaks).toHaveLength(8);
+            // Each bin maps to at most one sample; the max absolute value
+            // observed is 0.6.
+            const max = Math.max(...Array.from(peaks));
+            expect(max).toBeCloseTo(0.6, 6);
+        });
+
+        it('clamps a window whose start/end exceed the buffer length', () => {
+            installFakeIndexedDb();
+            audioBufferCache.set('clip', createAudioBuffer({ length: 8, fill: () => 0.5 }));
+
+            // windowEnd beyond the buffer is clamped to totalSamples;
+            // windowStart negative is clamped to 0.
+            const peaks = audioBufferCache.getWaveformPeaks('clip', 2, {
+                startSample: -5,
+                endSample: 9999,
+            });
+
+            expect(Array.from(peaks)).toEqual([0.5, 0.5]);
+        });
     });
 
     describe('serialization and export', () => {
