@@ -1,0 +1,41 @@
+src/modules/Arrangement/useCases/device/__tests__/midiFxEligibility.spec.ts
+  s_0d39f3a4a4357a::t_4c41c6710c0565 169-223
+src/modules/Arrangement/useCases/device/sendManagement/__tests__/toggleSendPreFader.spec.ts
+  s_0d39f3a4a4357a::t_fbfc2f549d6a46 37-52,85-106
+src/modules/Arrangement/services/__tests__/createTrackFreezeSourceSignature.spec.ts
+  s_45e865b9bcf70b::t_c9eb883f353ebe 43-66
+src/modules/Arrangement/stores/__tests__/arrangementMiscStores.spec.ts
+  s_6a2b6cf5ab79aa::t_7655f18c8fcd4c 34-52
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "3d5cebb42f6068adf94857f986ee971e09d1dbd8",
+  "prompts": {},
+  "sessions": {
+    "s_0d39f3a4a4357a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "60da6a2e-7d79-4d98-8624-e993f5a9f94e",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_45e865b9bcf70b": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-a6c09648937e79483",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_6a2b6cf5ab79aa": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-a2575060aeb780acd",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
