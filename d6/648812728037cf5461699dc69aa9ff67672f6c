@@ -1,0 +1,31 @@
+.agents/artifacts/sourdaw/audits/AUDIT-collab-crdt-audio.md
+  s_0d39f3a4a4357a::t_55aa58cd697db1 309-330
+src/modules/Project/useCases/demoProjects/nebulaDrift/createNebulaDriftDemo.ts
+  s_0d39f3a4a4357a::t_4b792c076757b4 2336-2342
+src/modules/Project/useCases/projectTemplates/templateDefinitions/createFromTemplate.ts
+  s_0d39f3a4a4357a::t_4d2532fa9fcce9 13,107-115
+  s_0d39f3a4a4357a::t_3d4fd514d5d0ca 116
+src/modules/Project/useCases/projectTemplates/templateDefinitions/__tests__/createFromTemplate.spec.ts
+  s_0d39f3a4a4357a::t_a17527748ab781 15,81-89,292-312
+  s_0d39f3a4a4357a::t_e0def8b4b8abd0 313
+src/modules/Project/useCases/projectTemplates/templateHelpers/initProject.ts
+  s_0d39f3a4a4357a::t_66e8382fa07ec8 40-48
+src/modules/Project/useCases/projectTemplates/templateHelpers/__tests__/initProject.spec.ts
+  s_0d39f3a4a4357a::t_6e72b1705d947c 1-52
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "d6648812728037cf5461699dc69aa9ff67672f6c",
+  "prompts": {},
+  "sessions": {
+    "s_0d39f3a4a4357a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "60da6a2e-7d79-4d98-8624-e993f5a9f94e",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
