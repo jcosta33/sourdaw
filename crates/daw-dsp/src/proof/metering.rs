@@ -284,31 +284,33 @@ impl IntegratedLufs {
 }
 
 /// True peak detector — 4x oversampled peak measurement per ITU-R BS.1770.
-/// Uses a 4x FIR interpolation filter for inter-sample peak detection.
+///
+/// Runs the recommendation's own 4x polyphase interpolation filter
+/// (`super::true_peak`), the same reconstruction the limiter's gain computer
+/// detects with, so the dBTP the meter shows and the dBTP the limiter enforces
+/// come from one filter.
 pub struct TruePeakDetector {
     peak: f32,
-    os_l: super::oversample::Oversampler4x,
-    os_r: super::oversample::Oversampler4x,
+    os_l: super::true_peak::TruePeakUpsampler,
+    os_r: super::true_peak::TruePeakUpsampler,
 }
 
 impl TruePeakDetector {
     pub fn new() -> Self {
         Self {
             peak: 0.0,
-            os_l: super::oversample::Oversampler4x::new(),
-            os_r: super::oversample::Oversampler4x::new(),
+            os_l: super::true_peak::TruePeakUpsampler::new(),
+            os_r: super::true_peak::TruePeakUpsampler::new(),
         }
     }
 
     pub fn process_sample(&mut self, l: f32, r: f32) {
-        // 4x upsample and measure peak of all interpolated samples
-        let up_l = self.os_l.upsample(l);
-        let up_r = self.os_r.upsample(r);
-        for k in 0..4 {
-            let p = up_l[k].abs().max(up_r[k].abs());
-            if p > self.peak {
-                self.peak = p;
-            }
+        // Reconstructed inter-sample peak, floored at the sample magnitude so
+        // the reading is never optimistic where the 4x filter reads low.
+        let reconstructed = self.os_l.push_max_abs(l).max(self.os_r.push_max_abs(r));
+        let peak = reconstructed.max(l.abs()).max(r.abs());
+        if peak > self.peak {
+            self.peak = peak;
         }
     }
 
@@ -322,6 +324,8 @@ impl TruePeakDetector {
 
     pub fn reset(&mut self) {
         self.peak = 0.0;
+        self.os_l.reset();
+        self.os_r.reset();
     }
 }
 
