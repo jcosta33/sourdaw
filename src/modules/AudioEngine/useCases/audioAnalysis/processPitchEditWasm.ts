@@ -10,9 +10,10 @@ export function processPitchEditWasm(
     outputAudioPath: string
 ): void {
     const channelData = originalBuffer.getChannelData(0);
-    // wasm-bindgen types the return as Float32Array<ArrayBufferLike>; copy it into a
-    // plain-ArrayBuffer Float32Array so AudioBuffer.copyToChannel accepts it and the
-    // samples stop aliasing wasm linear memory.
+    // The regenerated .d.ts types the return as generic Float32Array
+    // (Float32Array<ArrayBufferLike>), but AudioBuffer.copyToChannel requires
+    // Float32Array<ArrayBuffer>; re-wrapping narrows the buffer generic cast-free.
+    // (The glue already .slice()s the wasm memory, so no aliasing is involved.)
     const newSamples = new Float32Array(
         commit_pitch_edit_wasm(
             channelData,
