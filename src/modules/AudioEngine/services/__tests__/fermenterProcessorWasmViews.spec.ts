@@ -8,14 +8,23 @@ import {
     makeChannels,
     measureWasmViewAllocations,
     ramp,
+    RealFloat32Array,
     resetGrowableMemory,
 } from './wasmViewGrowthHarness';
 
 // Fermenter WASM-view lifecycle (audit RT-1 / RT-7): two output views revalidated
 // against a post-process() re-read of the live buffer. The peak/scope telemetry
 // reads the left-output view, so it too must map the post-grow buffer.
+//
+// Telemetry now lands in the SAB slot rather than a port message (audit RT-3),
+// so the grow assertions read the slot. Whether telemetry is published at all
+// (cadence, seqlock, zero allocation) is covered by
+// fermenterProcessorTelemetry.spec.ts.
 
-type FermenterTelemetry = { type: 'telemetry'; peakL: number; peakR: number; scopeBuffer: Float32Array };
+// Mirrors engine/telemetryAllocator.ts FERMENTER_IDX / FERMENTER_SLOT_FLOATS.
+const SLOT_FLOATS = 160;
+const PEAK_L_IDX = 0;
+const SCOPE_BASE = 32;
 
 type FermenterProcessorLike = {
     port: { onmessage: ((event: { data: unknown }) => void) | null; postMessage: ReturnType<typeof vi.fn> };
@@ -83,15 +92,11 @@ function makeBlock(): { inputs: Float32Array[][]; outputs: Float32Array[][] } {
     return { inputs: [], outputs: [output] };
 }
 
-function lastTelemetry(proc: FermenterProcessorLike): FermenterTelemetry | undefined {
-    const calls = proc.port.postMessage.mock.calls;
-    for (let index = calls.length - 1; index >= 0; index--) {
-        const message = calls[index]?.[0] as { type?: string } | undefined;
-        if (message?.type === 'telemetry') {
-            return message as FermenterTelemetry;
-        }
-    }
-    return undefined;
+/** Attach a telemetry slot to `proc` and return the float view over it. */
+function attachSlot(proc: FermenterProcessorLike): Float32Array {
+    const sab = new ArrayBuffer(SLOT_FLOATS * 4);
+    send(proc, { type: 'init-sab', sab, byteOffset: 0 });
+    return new RealFloat32Array(sab, 0, SLOT_FLOATS);
 }
 
 describe('FermenterProcessor WASM-view lifecycle (audit RT-1 / RT-7)', () => {
@@ -107,9 +112,9 @@ describe('FermenterProcessor WASM-view lifecycle (audit RT-1 / RT-7)', () => {
         const warmup = makeBlock();
         proc.process(warmup.inputs, warmup.outputs);
 
-        // The 128-sample scope buffer is a length-form allocation (RT-3, tracked
-        // separately) — the counter deliberately ignores it and flags only views
-        // minted over WASM memory.
+        // This counter flags only views minted over WASM memory. That steady-state
+        // process() allocates nothing at all — the stricter RT-3 invariant — is
+        // asserted in fermenterProcessorTelemetry.spec.ts.
         const counter = createViewCounter(memory);
         const allocations = measureWasmViewAllocations(counter, () => {
             for (let block = 0; block < 16; block++) {
@@ -124,6 +129,7 @@ describe('FermenterProcessor WASM-view lifecycle (audit RT-1 / RT-7)', () => {
     it('maps output and peak/scope views over the new buffer when memory.grow() happens inside process()', async () => {
         const proc = await loadProcessor();
         send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
+        const slotView = attachSlot(proc);
 
         const warmup = makeBlock();
         proc.process(warmup.inputs, warmup.outputs);
@@ -141,9 +147,7 @@ describe('FermenterProcessor WASM-view lifecycle (audit RT-1 / RT-7)', () => {
         // Peak telemetry is computed from the (rebuilt) left-output view — its peak
         // is the maximum of the seeded ramp on the grown buffer, proving the scope
         // path also reads the post-grow buffer, not a detached one.
-        const telemetry = lastTelemetry(proc);
-        expect(telemetry).toBeDefined();
-        expect(telemetry!.peakL).toBe(GROWN_LEFT_BASE + FRAMES - 1);
-        expect(telemetry!.scopeBuffer[0]).toBe(GROWN_LEFT_BASE);
+        expect(slotView[PEAK_L_IDX]).toBe(GROWN_LEFT_BASE + FRAMES - 1);
+        expect(slotView[SCOPE_BASE]).toBe(GROWN_LEFT_BASE);
     });
 });

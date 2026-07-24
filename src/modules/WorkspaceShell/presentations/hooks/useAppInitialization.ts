@@ -6,7 +6,6 @@ import {
     getAudioContext,
     setMasterGainValue,
     resumeEngine,
-    requestMicPermission,
 } from '#/modules/AudioEngine/useCases';
 import { syncKneadToEngine } from '#/modules/Knead/useCases';
 import { initWebMidi } from '#/modules/MIDI/useCases';
@@ -65,19 +64,41 @@ export const useAppInitialization = (): void => {
     }, []);
 
     useEffect(() => {
+        // A trusted gesture is what unlocks a suspended AudioContext. These two
+        // listeners used to be registered `{ once: true }`, which made unlocking
+        // single-use (audit RT-8): a first-gesture resume failure auto-removed the
+        // listener that fired, so the "click anywhere to try again" prompt had
+        // nothing behind it, and once both had fired an OS-level suspend or audio
+        // interrupt later in the session left the app silent with no way back
+        // short of a reload. They now stay armed for the effect's lifetime and
+        // re-resume on every suspend/interrupt cycle. `resumeEngine()` already
+        // no-ops on a running context, so a gesture during normal playback costs
+        // one state check.
+        //
+        // `requestMicPermission()` used to fire from here on the first gesture,
+        // prompting every user for the microphone whether or not they ever
+        // record. It is gone: the recording path acquires its own stream
+        // (acquireSharedMediaStream -> getUserMedia), so the browser asks at
+        // first actual record/monitor use instead of at first click.
+        let resumeInFlight = false;
         const onGesture = (): void => {
-            // This is the user-activation gesture that unlocks a suspended
-            // AudioContext. If resume rejects, the context stays suspended and the
-            // app is silent, so surface it (re-arm prompt) rather than discarding
-            // the rejection with `void`.
-            Promise.resolve(resumeEngine()).catch((error: unknown) => {
-                logger.warn(new Error('Audio engine resume failed on first gesture', { cause: error }));
-                notifyUser('Audio could not start — click anywhere to try again.', 'warning');
-            });
-            void requestMicPermission();
+            if (resumeInFlight) {
+                return;
+            }
+            resumeInFlight = true;
+            // `finally` before `catch` so the in-flight guard clears on both
+            // outcomes and the chain still terminates in a handler.
+            Promise.resolve(resumeEngine())
+                .finally(() => {
+                    resumeInFlight = false;
+                })
+                .catch((error: unknown) => {
+                    logger.warn(new Error('Audio engine resume failed on user gesture', { cause: error }));
+                    notifyUser('Audio could not start — click anywhere to try again.', 'warning');
+                });
         };
-        window.addEventListener('click', onGesture, { once: true });
-        window.addEventListener('keydown', onGesture, { once: true });
+        window.addEventListener('click', onGesture);
+        window.addEventListener('keydown', onGesture);
         return () => {
             window.removeEventListener('click', onGesture);
             window.removeEventListener('keydown', onGesture);

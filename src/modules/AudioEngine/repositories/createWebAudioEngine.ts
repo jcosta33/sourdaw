@@ -647,6 +647,9 @@ class AudioEngineImpl implements AudioEngine {
         if (this.fallbackMode) {
             return 0;
         }
+        // Read-and-reset of a single f32, deliberately without Atomics (audit
+        // RT-9) — same scalar-meter exception as TrackNode.getPeakLevel.
+        // Rationale in the module header of services/meteringProcessor.ts.
         const peak = this.masterMeterBuffer[0]!;
         this.masterMeterBuffer[0] = 0;
         return peak;

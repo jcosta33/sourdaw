@@ -101,6 +101,98 @@ describe('useAppInitialization — first-gesture engine resume', () => {
             expect(notifyUser).toHaveBeenCalledWith(expect.stringContaining('Audio'), 'warning');
         });
     });
+
+    // audit RT-8 — the listeners were registered `{ once: true }`, so unlocking
+    // audio was single-use: the listener that fired removed itself whether or not
+    // the resume succeeded.
+    it('re-arms after a failed resume so a second gesture can retry', async () => {
+        vi.mocked(resumeEngine).mockRejectedValueOnce(new Error('resume blocked')).mockResolvedValue(undefined);
+
+        renderHook(() => useAppInitialization());
+        window.dispatchEvent(new MouseEvent('click'));
+
+        await vi.waitFor(() => {
+            expect(notifyUser).toHaveBeenCalledWith(expect.stringContaining('Audio'), 'warning');
+        });
+
+        // The prompt says "click anywhere to try again" — with a one-shot listener
+        // there was nothing behind it and this second click did nothing.
+        window.dispatchEvent(new MouseEvent('click'));
+
+        await vi.waitFor(() => {
+            expect(resumeEngine).toHaveBeenCalledTimes(2);
+        });
+    });
+
+    it('resumes again on a later gesture after a suspend/interrupt cycle', async () => {
+        // The handler drops a gesture while a resume is still in flight, and the
+        // guard clears in a `finally` microtask — so settle the chain between
+        // cycles rather than dispatching straight after the call-count assertion.
+        const settleResume = () => new Promise((resolve) => setTimeout(resolve, 0));
+
+        renderHook(() => useAppInitialization());
+
+        window.dispatchEvent(new MouseEvent('click'));
+        await settleResume();
+        expect(resumeEngine).toHaveBeenCalledTimes(1);
+
+        // An OS-level interrupt or an explicit suspend later in the session leaves
+        // the context suspended again; the next gesture has to unlock it. Once both
+        // one-shot listeners had fired, nothing remained armed to do that.
+        window.dispatchEvent(new MouseEvent('click'));
+        await settleResume();
+        expect(resumeEngine).toHaveBeenCalledTimes(2);
+
+        window.dispatchEvent(new KeyboardEvent('keydown'));
+        await settleResume();
+        expect(resumeEngine).toHaveBeenCalledTimes(3);
+    });
+
+    it('collapses a rapid double gesture into a single in-flight resume', async () => {
+        let releaseResume = (): void => {};
+        vi.mocked(resumeEngine).mockReturnValue(
+            new Promise<void>((resolve) => {
+                releaseResume = () => resolve();
+            })
+        );
+
+        renderHook(() => useAppInitialization());
+        window.dispatchEvent(new MouseEvent('click'));
+        window.dispatchEvent(new MouseEvent('click'));
+
+        expect(resumeEngine).toHaveBeenCalledTimes(1);
+
+        releaseResume();
+        await vi.waitFor(() => {
+            expect(notifyUser).not.toHaveBeenCalledWith(expect.stringContaining('Audio'), 'warning');
+        });
+    });
+
+    it('does not prompt for the microphone on a gesture', () => {
+        renderHook(() => useAppInitialization());
+
+        window.dispatchEvent(new MouseEvent('click'));
+
+        // The mic prompt used to fire on the first gesture for every user. The
+        // recording path acquires its own stream, so the browser asks at first
+        // actual record/monitor use instead.
+        expect(requestMicPermission).not.toHaveBeenCalled();
+    });
+
+    it('stops resuming on gestures after unmount', async () => {
+        const { unmount } = renderHook(() => useAppInitialization());
+
+        window.dispatchEvent(new MouseEvent('click'));
+        await vi.waitFor(() => {
+            expect(resumeEngine).toHaveBeenCalledTimes(1);
+        });
+
+        unmount();
+        window.dispatchEvent(new MouseEvent('click'));
+        window.dispatchEvent(new KeyboardEvent('keydown'));
+
+        expect(resumeEngine).toHaveBeenCalledTimes(1);
+    });
 });
 
 describe('useAppInitialization — knead engine subscription teardown', () => {

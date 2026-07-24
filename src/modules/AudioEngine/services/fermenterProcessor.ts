@@ -6,16 +6,38 @@
  *
  * Messages from main thread:
  *   { type: 'init', wasmBytes: ArrayBuffer }
+ *   { type: 'init-sab', sab: SharedArrayBuffer, byteOffset: number }
  *   { type: 'noteOn', note, velocity, sampleFrame? }
  *   { type: 'noteOff', note, sampleFrame? }
  *   { type: 'param', name, value }
+ *
+ * Telemetry (peaks + oscilloscope waveform) is published into the SAB slot under
+ * the shared seqlock (audit RT-3). It used to be a `postMessage` carrying a
+ * freshly-allocated `Float32Array(128)` with a transfer list, issued from inside
+ * `process()` — an allocation *and* a MessagePort send on the render thread.
+ * Neither remains: steady-state `process()` now performs plain stores into an
+ * already-mapped view between two `Atomics` counter bumps.
  */
 
 import { initSync, FermenterInstance } from '../wasm/daw_dsp.js';
 
+import { beginTelemetryPublish, endTelemetryPublish } from './telemetrySeqlock';
 import { WasmView } from './wasmView';
 
 const AUTOMATION_PARAM_COUNT = 15;
+
+// Fermenter telemetry SAB layout. Duplicated (not imported) from
+// engine/telemetryAllocator.ts on purpose — worklet code stays isolated from app
+// modules, so both sides pin the same literals and the processor specs assert
+// against them. Must match FERMENTER_IDX / FERMENTER_SLOT_FLOATS there.
+const TELEMETRY_SLOT_FLOATS = 160;
+const TELEMETRY_PEAK_L_IDX = 0;
+const TELEMETRY_PEAK_R_IDX = 1;
+const TELEMETRY_SCOPE_BASE = 32;
+const TELEMETRY_SCOPE_SAMPLES = 128;
+
+/** Publish cadence in frames (~46 ms at 44.1 kHz) — unchanged from the port era. */
+const TELEMETRY_PERIOD_FRAMES = 2048;
 
 function camelToSnake(str: string): string {
     const snake = str.replaceAll(/[A-Z]/g, (letter) => `_${letter.toLowerCase()}`);
@@ -59,6 +81,7 @@ type ParamAutomationSchedule = {
 
 type FermenterMsg =
     | { type: 'init'; wasmBytes: BufferSource }
+    | { type: 'init-sab'; sab: SharedArrayBuffer; byteOffset: number }
     | { type: 'noteOn'; note: number; velocity: number; sampleFrame?: number }
     | { type: 'noteOff'; note: number; sampleFrame?: number }
     | { type: 'allNotesOff' }
@@ -78,10 +101,13 @@ class FermenterProcessor extends AudioWorkletProcessor {
     _queue: FermenterQueued[] = [];
     _queueHead = 0;
     _paramAutomation: ParamAutomationSchedule[] = [];
+    /** Telemetry slot floats (peaks + scope waveform); null until `init-sab`. */
+    _telemetryView: Float32Array | null = null;
+    /** Int32 view over the same slot bytes — carries the seqlock counter (RT-2/RT-3). */
+    _telemetrySeqView: Int32Array | null = null;
     // Cached WASM linear-memory views — reused across render quanta so process()
     // performs no per-block Float32Array allocation (audit RT-1); each revalidates
     // on a memory.grow() buffer-identity change (audit RT-7). See wasmView.ts.
-    // (The 128-sample scope buffer below is a separate concern tracked as RT-3.)
     _outLeftView = new WasmView();
     _outRightView = new WasmView();
 
@@ -95,6 +121,9 @@ class FermenterProcessor extends AudioWorkletProcessor {
                         return;
                     }
                     this._initWasm(msg.wasmBytes);
+                } else if (msg.type === 'init-sab') {
+                    this._telemetryView = new Float32Array(msg.sab, msg.byteOffset, TELEMETRY_SLOT_FLOATS);
+                    this._telemetrySeqView = new Int32Array(msg.sab, msg.byteOffset, TELEMETRY_SLOT_FLOATS);
                 } else if (this._ready && !this._faulted) {
                     this._handleMessage(msg);
                 }
@@ -176,7 +205,10 @@ class FermenterProcessor extends AudioWorkletProcessor {
             return;
         }
         switch (msg.type) {
+            // Both are consumed by the constructor's port handler and never
+            // reach the dispatcher; listed so the switch stays exhaustive.
             case 'init':
+            case 'init-sab':
                 break;
             case 'noteOn':
                 inst.note_on(msg.note, msg.velocity);
@@ -308,8 +340,15 @@ class FermenterProcessor extends AudioWorkletProcessor {
                 out1.set(outR);
             }
 
-            // Compute Telemetry (Peak & Scope) every 2048 frames (~46ms at 44.1kHz)
-            if (currentFrame % 2048 < frames) {
+            // Publish telemetry (peaks + scope waveform) every 2048 frames
+            // (~46 ms at 44.1 kHz) into the SAB slot (audit RT-3). Every store
+            // below targets the already-mapped `telemetryView`, so this branch
+            // allocates nothing and sends no port message; the two Atomics bumps
+            // bracketing it are the shared seqlock, so a main-thread poll landing
+            // mid-publish retries instead of pairing a new peak with a half-written
+            // waveform. Skipped entirely when no slot was supplied.
+            const telemetryView = this._telemetryView;
+            if (telemetryView && currentFrame % TELEMETRY_PERIOD_FRAMES < frames) {
                 let peakL = 0;
                 let peakR = 0;
                 for (let index = 0; index < frames; index++) {
@@ -324,12 +363,14 @@ class FermenterProcessor extends AudioWorkletProcessor {
                         }
                     }
                 }
-                const scopeBuffer = new Float32Array(128);
-                const step = frames / 128;
-                for (let index = 0; index < 128; index++) {
-                    scopeBuffer[index] = outL[Math.floor(index * step)] ?? 0;
+                const step = frames / TELEMETRY_SCOPE_SAMPLES;
+                beginTelemetryPublish(this._telemetrySeqView);
+                telemetryView[TELEMETRY_PEAK_L_IDX] = peakL;
+                telemetryView[TELEMETRY_PEAK_R_IDX] = peakR;
+                for (let index = 0; index < TELEMETRY_SCOPE_SAMPLES; index++) {
+                    telemetryView[TELEMETRY_SCOPE_BASE + index] = outL[Math.floor(index * step)] ?? 0;
                 }
-                this.port.postMessage({ type: 'telemetry', peakL, peakR, scopeBuffer }, [scopeBuffer.buffer]);
+                endTelemetryPublish(this._telemetrySeqView);
             }
         } catch (error) {
             this._faulted = true;

@@ -3,11 +3,25 @@
  *
  * Creates and manages the WASM-powered worklet. Provides noteOn/noteOff/setParam
  * methods that forward via MessagePort. Caches WASM binary and worklet registration.
+ *
+ * Telemetry (peaks + oscilloscope) comes back through a SAB slot, not the port
+ * (audit RT-3) — the worklet publishes under the shared seqlock and this node
+ * polls it, so the render thread neither allocates nor sends a message.
  */
 
 import { createReadyHandshake, ensureWorkletRegistered, fetchWasmBinary } from '#/infra/audioWorklet/workletInitShared';
 
 import fermenterProcessorUrl from '../services/fermenterProcessor.ts?worker&url';
+
+import {
+    createTelemetryReader,
+    createWideTelemetrySlot,
+    FERMENTER_IDX,
+    FERMENTER_SCOPE_SAMPLES,
+    FERMENTER_SLOT_FLOATS,
+    TELEMETRY_SEQ_IDX,
+    type TelemetrySlot,
+} from './telemetryAllocator';
 
 const DEFAULT_WASM_URL = '/wasm/daw-dsp/daw_dsp_bg.wasm';
 export const FERMENTER_AUTOMATION_PARAM_IDS: Readonly<Record<string, number>> = {
@@ -35,6 +49,30 @@ type OfflineAutomationSegment = {
     endValue: number;
 };
 
+export type FermenterTelemetryData = {
+    peakL: number;
+    peakR: number;
+    scopeBuffer: Float32Array;
+};
+
+/**
+ * Slot floats → telemetry snapshot. Pure, so the seqlock reader may re-run it on
+ * retry. The waveform is copied out of shared memory into a fresh array rather
+ * than handed out as a view: consumers keep the reference (the store holds it
+ * until the next publish and selects on identity), and a live view would be
+ * rewritten underneath them by the next render-thread publish.
+ */
+function projectFermenterTelemetry(view: Float32Array): FermenterTelemetryData {
+    const scopeBuffer = new Float32Array(FERMENTER_SCOPE_SAMPLES);
+    for (let index = 0; index < FERMENTER_SCOPE_SAMPLES; index++) {
+        scopeBuffer[index] = view[FERMENTER_IDX.scopeBase + index] ?? 0;
+    }
+    return {
+        peakL: view[FERMENTER_IDX.peakL] ?? 0,
+        peakR: view[FERMENTER_IDX.peakR] ?? 0,
+        scopeBuffer,
+    };
+}
 export type FermenterNodeResult = {
     workletNode: AudioWorkletNode;
     noteOn: (note: number, velocity: number, sampleFrame?: number) => void;
@@ -45,7 +83,7 @@ export type FermenterNodeResult = {
     scheduleParam?: (name: string, segments: readonly OfflineAutomationSegment[]) => void;
     setPatch: (patch: Record<string, unknown>) => void;
     setBypass: (bypassed: boolean) => void;
-    onTelemetry: (callback: (data: { peakL: number; peakR: number; scopeBuffer: Float32Array }) => void) => void;
+    onTelemetry: (callback: (data: FermenterTelemetryData) => void) => void;
     connect: (dest: AudioNode) => void;
     disconnect: () => void;
     destroy: () => void;
@@ -79,19 +117,25 @@ export async function createFermenterNode(ctx: BaseAudioContext, wasmUrl?: strin
 
     let bypassed = false;
 
+    // Fermenter's scope waveform (128 floats) does not fit the pooled 32-float
+    // telemetry slot, so it owns a wide one. Unlike Gluten/Scoring this is NOT a
+    // hard requirement: without cross-origin isolation there is no SAB, the
+    // worklet skips its publish, and the device still plays — only the scope and
+    // peak meters stay flat. Failing the flagship instrument over a meter would
+    // be a worse trade than the previous port-based path allowed.
+    let slot: TelemetrySlot | null = createWideTelemetrySlot({
+        floats: FERMENTER_SLOT_FLOATS,
+        deviceName: 'Fermenter',
+    });
+    let telemetryRafId: number | null = null;
+
+    if (slot) {
+        node.port.postMessage({ type: 'init-sab', sab: slot.sab, byteOffset: slot.byteOffset });
+    }
+
     const handshake = createReadyHandshake({ pluginName: 'FermenterNode' });
-    const telemetryListeners = new Set<(data: { peakL: number; peakR: number; scopeBuffer: Float32Array }) => void>();
     node.port.onmessage = (event: MessageEvent) => {
-        const payload = event.data as
-            { type?: string; peakL: number; peakR: number; scopeBuffer: Float32Array } | undefined;
-        if (payload?.type === 'telemetry') {
-            const data = { peakL: payload.peakL, peakR: payload.peakR, scopeBuffer: payload.scopeBuffer };
-            for (const listener of telemetryListeners) {
-                listener(data);
-            }
-        } else {
-            handshake.onMessage(event);
-        }
+        handshake.onMessage(event);
     };
     const readyPromise = handshake.promise;
 
@@ -158,8 +202,42 @@ export async function createFermenterNode(ctx: BaseAudioContext, wasmUrl?: strin
             // entry is owned by TrackNode.updateBypass via controller.allNotesOff.
             bypassed = state;
         },
-        onTelemetry(cb: (data: { peakL: number; peakR: number; scopeBuffer: Float32Array }) => void) {
-            telemetryListeners.add(cb);
+        onTelemetry(cb: (data: FermenterTelemetryData) => void) {
+            if (telemetryRafId !== null) {
+                cancelAnimationFrame(telemetryRafId);
+                telemetryRafId = null;
+            }
+            if (!slot) {
+                return;
+            }
+            // Read under the slot seqlock (audit RT-2): peaks and the 128 waveform
+            // samples are published as one block, so a raw read could pair a new
+            // peak with a half-overwritten waveform. Built once, outside the poll,
+            // since it retains the last consistent snapshot.
+            const readTelemetry = createTelemetryReader({ slot, project: projectFermenterTelemetry });
+            const seqView = slot.seqView;
+            // The worklet publishes every ~46 ms but rAF fires every ~16 ms. Emit
+            // only when the generation counter has moved, so downstream keeps the
+            // one-callback-per-publish cadence the port delivered instead of
+            // re-broadcasting (and re-rendering) the same waveform three times.
+            //
+            // Only *settled* (even) generations advance the gate. A poll can land
+            // mid-publish and sample the odd value; storing that would desync the
+            // gate by one, so the same publish would emit twice — once on the odd
+            // sample and again when the counter settles to the next even value.
+            // Skipping odd samples costs nothing: the publish that is in flight
+            // lands in the next frame, ~16 ms later.
+            let lastGeneration = Atomics.load(seqView, TELEMETRY_SEQ_IDX);
+            const poll = () => {
+                const generation = Atomics.load(seqView, TELEMETRY_SEQ_IDX);
+                const settled = (generation & 1) === 0;
+                if (settled && generation !== lastGeneration) {
+                    lastGeneration = generation;
+                    cb(readTelemetry());
+                }
+                telemetryRafId = requestAnimationFrame(poll);
+            };
+            telemetryRafId = requestAnimationFrame(poll);
         },
         connect(dest: AudioNode) {
             node.connect(dest);
@@ -172,6 +250,13 @@ export async function createFermenterNode(ctx: BaseAudioContext, wasmUrl?: strin
             }
         },
         destroy() {
+            if (telemetryRafId !== null) {
+                cancelAnimationFrame(telemetryRafId);
+                telemetryRafId = null;
+            }
+            // A wide slot owns its SharedArrayBuffer outright and has no index in
+            // the pooled allocator — dropping the reference is the whole release.
+            slot = null;
             try {
                 node.disconnect();
             } catch {
