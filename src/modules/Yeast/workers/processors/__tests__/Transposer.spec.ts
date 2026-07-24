@@ -190,4 +190,52 @@ describe('Transposer', () => {
         trans.processMidi([{ timeSamples: 1, kind: { type: 'noteOff', channel: 0, note: 60 } }], out, transport);
         expect(out.find(isNoteOff)?.kind.note).toBe(60);
     });
+
+    // replaceParams calls resetParams() first (semitones/octaves/random/clamp →
+    // defaults: 0 offset, no random, full 0–127 range), then re-applies.
+    describe('replaceParams resets params to defaults before re-applying', () => {
+        it('clears a configured transpose offset back to unison', () => {
+            trans.setParam('semitones', 12);
+            let out: MidiEvent[] = [];
+            trans.processMidi(
+                [{ timeSamples: 0, kind: { type: 'noteOn', channel: 0, note: 60, velocity: 100 } }],
+                out,
+                transport
+            );
+            expect(out.find(isNoteOn)?.kind.note).toBe(72); // +12
+
+            // replaceParams with empty map → semitones reset to 0 → unison.
+            trans.replaceParams({});
+            out = [];
+            trans.processMidi(
+                [{ timeSamples: 0, kind: { type: 'noteOn', channel: 0, note: 60, velocity: 100 } }],
+                out,
+                transport
+            );
+            expect(out.find(isNoteOn)?.kind.note).toBe(60);
+        });
+
+        it('clears a configured random range and clamp window back to defaults', () => {
+            trans.setParam('random_range', 12);
+            trans.setParam('clamp_min', 60);
+            trans.setParam('clamp_max', 60);
+            let out: MidiEvent[] = [];
+            trans.processMidi(
+                [{ timeSamples: 0, kind: { type: 'noteOn', channel: 0, note: 50, velocity: 100 } }],
+                out,
+                transport
+            );
+            expect(out.find(isNoteOn)?.kind.note).toBe(60); // clamped to 60
+
+            // replaceParams with empty map → no random, full range → note passes at 50.
+            trans.replaceParams({});
+            out = [];
+            trans.processMidi(
+                [{ timeSamples: 0, kind: { type: 'noteOn', channel: 0, note: 50, velocity: 100 } }],
+                out,
+                transport
+            );
+            expect(out.find(isNoteOn)?.kind.note).toBe(50);
+        });
+    });
 });

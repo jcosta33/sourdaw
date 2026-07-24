@@ -161,4 +161,30 @@ describe('Harmonizer', () => {
         const harmony = out.find((e) => e.kind.type === 'noteOn' && e.kind.note !== 60);
         expect(harmony?.kind).toMatchObject({ note: 64 });
     });
+
+    // replaceParams calls resetParams() first (root/scale/voices → defaults),
+    // then reapplies the given params. The default voice config is a single
+    // enabled diatonic-third (+2 degrees); the other two voices start disabled.
+    describe('replaceParams resets voices to defaults before re-applying', () => {
+        it('restores the default single-third harmony after custom voices are configured', () => {
+            const h = new Harmonizer('reset-voices');
+            // Configure a custom 2-voice harmony (third + fifth), confirming it
+            // produces 3 noteOns (original + 2 harmony voices).
+            h.setParam('voice1_enabled', 1);
+            let out: MidiEvent[] = [];
+            h.processMidi([note_on(0, 60)], out, transport);
+            expect(out.filter((e) => e.kind.type === 'noteOn').length).toBe(3);
+
+            // replaceParams with an empty map resets to defaults: only the
+            // third voice is enabled again → 2 noteOns (original + 1 harmony).
+            h.replaceParams({});
+            out = [];
+            h.processMidi([note_on(0, 60)], out, transport);
+            const ons = out.filter((e) => e.kind.type === 'noteOn');
+            expect(ons.length).toBe(2);
+            // Default harmony is a diatonic third above C in C major → E(64).
+            const harmony = ons.find((e) => (e.kind as { note: number }).note !== 60);
+            expect(harmony?.kind).toMatchObject({ note: 64 });
+        });
+    });
 });

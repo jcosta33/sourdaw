@@ -376,4 +376,108 @@ describe('Arpeggiator', () => {
         expect(stepNotesFor(3)).toEqual([67, 64, 60]); // 'downUp': reflects at the bottom
         expect(stepNotesFor(5)).toEqual([60, 64, 67]); // 'order': admission order
     });
+
+    describe('preview rejection sorts would-be candidates by pitch', () => {
+        // Intent: when a pattern step is rejected by probability, the preview must
+        // still show the notes that WOULD have played — sorted by ascending pitch,
+        // independent of the order notes were held. This lets the UI render the
+        // rejected arpeggiation shape faithfully. A probability of 0 forces every
+        // step to reject, so every candidate surfaces in the preview as unrealized.
+        it('records rejected single-note steps in ascending pitch order regardless of admission order', () => {
+            const arp = new Arpeggiator('reject-sort');
+            arp.setParam('mode', 7); // pattern
+            arp.setPattern([{ ...defaultStep(), probability: 0 }]);
+            const rack = new MidiRack();
+            rack.addProcessor(arp, 'arpeggiator');
+
+            // Hold notes in NON-pitch order: 64, then 60, then 67.
+            rack.processBlock(
+                [
+                    { timeSamples: 0, kind: { type: 'noteOn', channel: 0, note: 64, velocity: 90 } },
+                    { timeSamples: 0, kind: { type: 'noteOn', channel: 0, note: 60, velocity: 80 } },
+                    { timeSamples: 0, kind: { type: 'noteOn', channel: 0, note: 67, velocity: 100 } },
+                ],
+                0,
+                128,
+                transport,
+                'track-rej',
+                true
+            );
+
+            // Step the arp past its rate (1/8 = 0.5 beat) so a step is evaluated & rejected.
+            transport.ppqPosition = 0.6;
+            rack.processBlock([], 13230, 13358, transport, 'track-rej', true);
+
+            const records = takePreviewRecords(rack);
+            // The rejected decision is the pitch the step would have played.
+            // In 'up' selection, step 0 picks the lowest note → 60.
+            expect(records).toContainEqual(
+                expect.objectContaining({ pitch: 60, velocity: 80, probability: 0, realized: false })
+            );
+        });
+
+        it('sorts all held notes by pitch when a chord step is rejected', () => {
+            // A 'chord' stepType plays every held note at once; when rejected by
+            // probability, ALL held notes surface in the preview as unrealized
+            // decisions, sorted ascending by pitch.
+            const arp = new Arpeggiator('reject-chord');
+            arp.setParam('mode', 7); // pattern
+            arp.setPattern([{ ...defaultStep(), stepType: 'chord', probability: 0 }]);
+            const rack = new MidiRack();
+            rack.addProcessor(arp, 'arpeggiator');
+
+            rack.processBlock(
+                [
+                    { timeSamples: 0, kind: { type: 'noteOn', channel: 0, note: 67, velocity: 100 } },
+                    { timeSamples: 0, kind: { type: 'noteOn', channel: 0, note: 60, velocity: 80 } },
+                    { timeSamples: 0, kind: { type: 'noteOn', channel: 0, note: 64, velocity: 90 } },
+                ],
+                0,
+                128,
+                transport,
+                'track-rej',
+                true
+            );
+
+            transport.ppqPosition = 0.6;
+            rack.processBlock([], 13230, 13358, transport, 'track-rej', true);
+
+            const records = takePreviewRecords(rack);
+            const pitches = records.map((r) => r.pitch);
+            // All three held notes are recorded, ascending.
+            expect(pitches).toEqual([60, 64, 67]);
+            expect(records.every((r) => r.realized === false && r.probability === 0)).toBe(true);
+        });
+
+        it('records rejected candidates across expanded octaves', () => {
+            // With octave expansion, the rejected candidate pool spans multiple
+            // octaves and must still be sorted by absolute pitch in the preview.
+            const arp = new Arpeggiator('reject-octave');
+            arp.setParam('mode', 7); // pattern
+            arp.setParam('octave_range', 2); // expand up an octave
+            arp.setPattern([{ ...defaultStep(), stepType: 'chord', probability: 0 }]);
+            const rack = new MidiRack();
+            rack.addProcessor(arp, 'arpeggiator');
+
+            rack.processBlock(
+                [
+                    { timeSamples: 0, kind: { type: 'noteOn', channel: 0, note: 64, velocity: 90 } },
+                    { timeSamples: 0, kind: { type: 'noteOn', channel: 0, note: 60, velocity: 80 } },
+                ],
+                0,
+                128,
+                transport,
+                'track-rej',
+                true
+            );
+
+            transport.ppqPosition = 0.6;
+            rack.processBlock([], 13230, 13358, transport, 'track-rej', true);
+
+            const records = takePreviewRecords(rack);
+            const pitches = records.map((r) => r.pitch);
+            // Octave-up expansion adds 72 and 76 alongside 60 and 64 → sorted ascending.
+            expect(pitches).toEqual([60, 64, 72, 76]);
+        });
+    });
 });
