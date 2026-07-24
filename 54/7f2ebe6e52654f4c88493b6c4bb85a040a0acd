@@ -1,0 +1,36 @@
+src/utils/automationCurve.ts
+  s_0d39f3a4a4357a::t_03e25463580ed5 1-201
+src/modules/Automation/services/automationPointAlgorithms.ts
+  s_0d39f3a4a4357a::t_4cab800b668955 1
+  s_0d39f3a4a4357a::t_f8987042e6f789 2
+  s_0d39f3a4a4357a::t_b0cc7d2fe6df0f 66-75,83
+src/utils/__tests__/automationCurve.spec.ts
+  s_0d39f3a4a4357a::t_6ce30edc04b554 1-193
+  s_0d39f3a4a4357a::t_90775c660a726e 194
+src/modules/Automation/services/__tests__/automationCurveConformance.spec.ts
+  s_0d39f3a4a4357a::t_5c6c73211837cb 2-3
+  s_0d39f3a4a4357a::t_597bb84fa233d4 1,4-152
+src/modules/AudioEngine/repositories/offlineScheduler/__tests__/automationCurveConformance.spec.ts
+  s_0d39f3a4a4357a::t_2ed98817b665eb 1-27,31-108,110-120
+  s_0d39f3a4a4357a::t_8c2ba2dc287d19 109
+  s_0d39f3a4a4357a::t_dfd622ba9ceebd 28-30
+src/modules/AudioEngine/repositories/offlineScheduler/compileAutomationEvents.ts
+  s_0d39f3a4a4357a::t_edce06cf28a003 17-29
+  s_0d39f3a4a4357a::t_81b5828e1042ac 1-2
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "547f2ebe6e52654f4c88493b6c4bb85a040a0acd",
+  "prompts": {},
+  "sessions": {
+    "s_0d39f3a4a4357a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "60da6a2e-7d79-4d98-8624-e993f5a9f94e",
+        "model": "claude-fable-5"
+      },
+      "human_author": null
+    }
+  }
+}
