@@ -221,8 +221,10 @@ export const InstrumentsTab = ({
             author: 'Sourdaw',
             isFactory: true,
         };
-        createTrackFromPreset(preset);
-        panelActions?.showLevain(null);
+        const trackId = createTrackFromPreset(preset);
+        const track = trackId ? getAllTracks().find((time) => time.id === trackId) : null;
+        const device = track?.devices.find((data) => data.type === 'levain');
+        panelActions?.showLevain(device?.id ?? null);
     };
 
     const handleAddCrumbsTrack = () => {

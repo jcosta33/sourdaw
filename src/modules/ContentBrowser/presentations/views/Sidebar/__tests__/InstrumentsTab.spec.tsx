@@ -1,13 +1,53 @@
-import { render, screen } from '@testing-library/react';
+import { render, screen, fireEvent } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { TooltipProvider } from '#/components/ui/tooltip';
 
 import { InstrumentsTab } from '../InstrumentsTab';
+import { type SidebarPanelActions } from '../SidebarTypes';
+
+// The Levain card must resolve the track it just created and forward the new
+// device's id to showLevain — mirror Fermenter/Toaster. Mock the create + lookup
+// so the handler has a concrete device id to pass on.
+vi.mock('#/modules/Arrangement/useCases', () => ({
+    addTrack: vi.fn(),
+    getFactoryPresets: vi.fn(() => []),
+    getUserPresets: vi.fn(() => []),
+    saveCurrentAsPreset: vi.fn(),
+    deleteUserPreset: vi.fn(),
+    loadPresetToTrack: vi.fn(),
+    createTrackFromPreset: vi.fn(() => 'levain-track-1'),
+    getAllTracks: vi.fn(() => [
+        {
+            id: 'levain-track-1',
+            devices: [{ id: 'levain-device-9', type: 'levain', name: 'Levain', parameterValues: {} }],
+        },
+    ]),
+}));
+
+vi.mock('#/modules/GrandBoule/useCases', () => ({ createGrandBouleTrack: vi.fn(() => 'grand-boule-1') }));
+vi.mock('#/modules/Toaster/useCases', () => ({ createDrumTrackStack: vi.fn(() => 'toaster-1') }));
 
 const renderWithTooltip = (ui: React.ReactElement) => {
     return render(<TooltipProvider>{ui}</TooltipProvider>);
 };
+
+const makePanelActions = (overrides: Partial<SidebarPanelActions> = {}): SidebarPanelActions => ({
+    showBacteria: vi.fn(),
+    showCrust: vi.fn(),
+    showDevice: vi.fn(),
+    showDutchOven: vi.fn(),
+    showGluten: vi.fn(),
+    showProof: vi.fn(),
+    showScoring: vi.fn(),
+    showYeast: vi.fn(),
+    showCrumbs: vi.fn(),
+    showFermenter: vi.fn(),
+    showGrandBoule: vi.fn(),
+    showLevain: vi.fn(),
+    showToaster: vi.fn(),
+    ...overrides,
+});
 
 describe('InstrumentsTab', () => {
     const mockTrack = {
@@ -101,5 +141,31 @@ describe('InstrumentsTab', () => {
         );
         const buttons = screen.queryAllByRole('button');
         expect(buttons.length).toBeGreaterThanOrEqual(0);
+    });
+
+    it('opens the Levain device panel for the track it just created (showLevain receives the new device id)', () => {
+        const showLevain = vi.fn();
+        renderWithTooltip(
+            <InstrumentsTab
+                selectedTrackId={mockTrack.id}
+                searchQuery=""
+                selectedTrack={mockTrack}
+                favorites={new Set()}
+                onToggleFavorite={vi.fn()}
+                preview={mockPreview as any}
+                currentRoute={mockRoute}
+                pushRoute={vi.fn()}
+                panelActions={makePanelActions({ showLevain })}
+            />
+        );
+
+        fireEvent.click(screen.getByRole('button', { name: /^Levain/ }));
+
+        // Regression guard (#716 wave-2): the handler must forward the created
+        // device's id, not null. Passing null left the Levain bottom panel
+        // unmounted — the card created a track but never opened its panel, unlike
+        // every other instrument card.
+        expect(showLevain).toHaveBeenCalledTimes(1);
+        expect(showLevain).toHaveBeenCalledWith('levain-device-9');
     });
 });
