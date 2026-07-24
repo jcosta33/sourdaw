@@ -1,0 +1,27 @@
+src/modules/AudioEngine/engine/__tests__/AdjustmentLayerRuntime.spec.ts
+  s_0d39f3a4a4357a::t_41bb3b404dc51f 125-244
+src/modules/AudioEngine/engine/__tests__/FermenterNode.spec.ts
+  s_0d39f3a4a4357a::t_ba0db94b4848aa 20-21,95-278
+src/modules/AudioEngine/engine/__tests__/TrackNode.spec.ts
+  s_0d39f3a4a4357a::t_0e67dc604be2a4 1,385-765
+src/modules/AudioEngine/repositories/__tests__/faustDeviceFactory.spec.ts
+  s_0d39f3a4a4357a::t_e7dfe894c90ad4 169-228,297-503
+src/modules/AudioEngine/useCases/__tests__/exportStems.spec.ts
+  s_0d39f3a4a4357a::t_9e0c1d2fd9708f 6,484-657
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "b25075925f8807f37910a9aff0e31c2cad47cacc",
+  "prompts": {},
+  "sessions": {
+    "s_0d39f3a4a4357a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "60da6a2e-7d79-4d98-8624-e993f5a9f94e",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
