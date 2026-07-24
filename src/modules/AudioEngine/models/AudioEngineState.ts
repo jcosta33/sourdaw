@@ -108,6 +108,19 @@ export type BuiltinDeviceNode = {
         ready: boolean;
         noteOn: (note: number, velocity: number, sampleFrame?: number) => void;
         noteOff: (note: number, sampleFrame?: number) => void;
+        /**
+         * MPE per-note expression in engine units — bend in semitones, pressure
+         * 0..1, timbre/CC74 slide -1..1 (audit MD-2). Reached only through
+         * `applyNoteExpression`, which owns the wire-unit conversion for both
+         * the live and the scheduled path.
+         */
+        noteExpression: (
+            note: number,
+            bendSemitones: number,
+            pressure: number,
+            slide: number,
+            sampleFrame?: number
+        ) => void;
         allNotesOff: () => void;
         setParam: (name: string, value: number | number[], sampleFrame?: number) => void;
         setPatch?: (patch: Record<string, unknown>) => void;
@@ -161,6 +174,14 @@ export type BuiltinDeviceNode = {
         ready: boolean;
         noteOn: (note: number, velocity: number, sampleFrame?: number) => void;
         noteOff: (note: number, sampleFrame?: number) => void;
+        /** MPE per-note expression in engine units — see `fermenterControls.noteExpression`. */
+        noteExpression: (
+            note: number,
+            bendSemitones: number,
+            pressure: number,
+            slide: number,
+            sampleFrame?: number
+        ) => void;
         allNotesOff: () => void;
         handleCc: (cc: number, value: number) => void;
         setParam: (name: string, value: number) => void;

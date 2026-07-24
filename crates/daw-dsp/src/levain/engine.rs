@@ -324,6 +324,17 @@ impl LevainEngine {
         self.pedal_deferred.clear();
     }
 
+    /// Apply MPE per-note expression to every voice sounding `note`
+    /// (audit MD-2). A divisi or legato-crossfading note can own more than one
+    /// voice, so every match is addressed rather than the first.
+    pub fn note_expression(&mut self, note: u8, bend_semitones: f32, pressure: f32, slide: f32) {
+        for voice in self.voice_pool.voices.iter_mut() {
+            if voice.active && voice.note == note {
+                voice.set_expression(bend_semitones, pressure, slide);
+            }
+        }
+    }
+
     pub fn handle_cc(&mut self, cc: u8, value: u8) {
         let was_pedal_held = self.expression.sustain_pedal;
         self.expression.handle_cc(cc, value);
@@ -565,5 +576,197 @@ fn cc1_to_dynamic(cc1: f32) -> Dynamic {
         Dynamic::F
     } else {
         Dynamic::FF
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::LevainEngine;
+    use crate::levain::types::{
+        AdsrParams, KeyRange, LoopMode, SampleRef, VelRange, Zone,
+    };
+
+    const SAMPLE_RATE: f32 = 48_000.0;
+    const SAMPLE_FRAMES: u32 = 4_800;
+    /// Sawtooth period in frames — 200 Hz at 48 kHz, and an exact divisor of
+    /// `SAMPLE_FRAMES` so the loop point is click-free.
+    const PERIOD_FRAMES: u32 = 240;
+
+    /// A Levain engine holding one looped 200 Hz sawtooth zone across the whole
+    /// keyboard. Real sample playback, so bend/pressure/timbre are measurable
+    /// on the rendered output rather than on the fallback tone.
+    fn engine_with_sawtooth_zone() -> LevainEngine {
+        engine_with_sawtooth_zone_voices(8)
+    }
+
+    fn engine_with_sawtooth_zone_voices(max_voices: usize) -> LevainEngine {
+        let mut engine = LevainEngine::new(SAMPLE_RATE, max_voices);
+        let data: Vec<f32> = (0..SAMPLE_FRAMES)
+            .map(|frame| (frame % PERIOD_FRAMES) as f32 / PERIOD_FRAMES as f32 * 2.0 - 1.0)
+            .collect();
+        let sample_id = engine.add_sample(data, SAMPLE_FRAMES, 1, SAMPLE_RATE);
+        engine.add_zone(Zone {
+            id: 0,
+            key: KeyRange { lo: 0, hi: 127 },
+            vel: VelRange { lo: 0, hi: 127 },
+            articulation: 0,
+            rr_pos: 0,
+            rr_len: 1,
+            mic: 0,
+            is_release: false,
+            sample: SampleRef {
+                sample_id,
+                root_key: 60,
+                tune_cents: 0,
+                start: 0,
+                end: SAMPLE_FRAMES,
+                loop_mode: LoopMode::Forward,
+                loop_start: 0,
+                loop_end: SAMPLE_FRAMES,
+                loop_crossfade: 0,
+            },
+            amp_env: AdsrParams {
+                attack: 0.001,
+                decay: 0.001,
+                sustain: 1.0,
+                release: 0.2,
+            },
+            gain_db: 0.0,
+        });
+        engine.build_zone_map(1, 1);
+        engine
+    }
+
+    fn render(engine: &mut LevainEngine, blocks: usize) -> Vec<f32> {
+        let mut collected = Vec::with_capacity(blocks * 128);
+        let mut left = [0.0f32; 128];
+        let mut right = [0.0f32; 128];
+        for _ in 0..blocks {
+            left.fill(0.0);
+            right.fill(0.0);
+            engine.process_block(&mut left, &mut right, &[]);
+            collected.extend_from_slice(&left);
+        }
+        collected
+    }
+
+    fn render_expressive_note(expression: Option<(f32, f32, f32)>) -> Vec<f32> {
+        let mut engine = engine_with_sawtooth_zone();
+        engine.note_on(60, 100);
+        if let Some((bend, pressure, slide)) = expression {
+            engine.note_expression(60, bend, pressure, slide);
+        }
+        render(&mut engine, 24)
+    }
+
+    fn zero_crossings(samples: &[f32]) -> usize {
+        samples
+            .windows(2)
+            .filter(|pair| (pair[0] < 0.0) != (pair[1] < 0.0))
+            .count()
+    }
+
+    fn rms(samples: &[f32]) -> f32 {
+        let sum: f32 = samples.iter().map(|value| value * value).sum();
+        (sum / samples.len() as f32).sqrt()
+    }
+
+    fn high_band_rms(samples: &[f32]) -> f32 {
+        let differences: Vec<f32> = samples.windows(2).map(|pair| pair[1] - pair[0]).collect();
+        rms(&differences)
+    }
+
+    // ── MPE per-note expression (audit MD-2) ───────────────────────────────
+
+    #[test]
+    fn per_note_pitch_bend_repitches_sample_playback() {
+        let plain = render_expressive_note(None);
+        let bent = render_expressive_note(Some((12.0, 0.0, 0.0)));
+
+        let ratio = zero_crossings(&bent[1024..]) as f32 / zero_crossings(&plain[1024..]) as f32;
+        assert!(
+            (1.8..=2.2).contains(&ratio),
+            "a +12 st per-note bend must double sample playback rate, got {ratio}x"
+        );
+    }
+
+    #[test]
+    fn per_note_pressure_raises_the_rendered_level() {
+        let plain = render_expressive_note(None);
+        let pressed = render_expressive_note(Some((0.0, 1.0, 0.0)));
+
+        let ratio = rms(&pressed[2048..]) / rms(&plain[2048..]);
+        assert!(
+            (1.8..=2.1).contains(&ratio),
+            "full pressure must roughly double the voice gain, got {ratio}x"
+        );
+    }
+
+    #[test]
+    fn per_note_slide_tilts_the_voice_spectrum() {
+        let neutral = render_expressive_note(None);
+        let bright = render_expressive_note(Some((0.0, 0.0, 1.0)));
+        let dark = render_expressive_note(Some((0.0, 0.0, -1.0)));
+
+        let neutral_high = high_band_rms(&neutral[1024..]);
+        let bright_high = high_band_rms(&bright[1024..]);
+        let dark_high = high_band_rms(&dark[1024..]);
+
+        assert!(
+            bright_high > neutral_high * 1.2,
+            "positive slide must brighten the voice: {neutral_high} -> {bright_high}"
+        );
+        assert!(
+            dark_high < neutral_high * 0.8,
+            "negative slide must darken the voice: {neutral_high} -> {dark_high}"
+        );
+    }
+
+    #[test]
+    fn per_note_expression_only_reaches_the_addressed_note() {
+        let mut engine = engine_with_sawtooth_zone();
+        engine.note_on(60, 100);
+        engine.note_on(67, 100);
+        // Address a note that is not sounding — nothing may change.
+        engine.note_expression(72, 12.0, 1.0, 1.0);
+        let untouched = render(&mut engine, 24);
+
+        let mut reference = engine_with_sawtooth_zone();
+        reference.note_on(60, 100);
+        reference.note_on(67, 100);
+        let baseline = render(&mut reference, 24);
+
+        assert_eq!(
+            zero_crossings(&untouched[1024..]),
+            zero_crossings(&baseline[1024..]),
+            "expression addressed to a silent note must not touch sounding voices"
+        );
+    }
+
+    #[test]
+    fn a_recycled_voice_starts_from_neutral_expression() {
+        // One voice only, so the second note-on is guaranteed to steal and
+        // re-trigger the very voice that carried the expression.
+        let mut engine = engine_with_sawtooth_zone_voices(1);
+        engine.note_on(60, 100);
+        engine.note_expression(60, 12.0, 1.0, 1.0);
+        engine.note_off(60);
+        engine.note_on(60, 100);
+        let recycled = render(&mut engine, 24);
+
+        let mut reference = engine_with_sawtooth_zone_voices(1);
+        reference.note_on(60, 100);
+        let baseline = render(&mut reference, 24);
+
+        assert_eq!(
+            zero_crossings(&recycled[2048..]),
+            zero_crossings(&baseline[2048..]),
+            "a stolen voice must not inherit the previous note's bend"
+        );
+        let ratio = rms(&recycled[2048..]) / rms(&baseline[2048..]);
+        assert!(
+            (0.95..=1.05).contains(&ratio),
+            "a stolen voice must not inherit the previous note's pressure, got {ratio}x"
+        );
     }
 }

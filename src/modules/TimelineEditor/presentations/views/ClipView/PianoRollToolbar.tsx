@@ -81,6 +81,13 @@ type PianoRollToolbarProps = {
     onToggleExpressionView?: () => void;
     activeExpressionLane?: 'velocity' | 'pressure' | 'slide' | 'pitchBend';
     onActiveExpressionLaneChange?: (lane: 'velocity' | 'pressure' | 'slide' | 'pitchBend') => void;
+    /**
+     * Whether the edited track's instrument sounds MPE per-note expression
+     * (audit MD-2). Callers pass per-track truth from
+     * `isMpeExpressionAvailableForDeviceTypes`; omitted, it falls back to
+     * "some shipping instrument sounds it", derived from the engine registry.
+     */
+    mpeExpressionAvailable?: boolean;
 };
 
 export const PianoRollToolbar = ({
@@ -117,6 +124,7 @@ export const PianoRollToolbar = ({
     onToggleExpressionView,
     activeExpressionLane,
     onActiveExpressionLaneChange,
+    mpeExpressionAvailable = MPE_EXPRESSION_AVAILABLE,
 }: PianoRollToolbarProps): ReactElement => (
     <DawControlStrip>
         <span className="text-[10px] text-muted-foreground">Snap:</span>
@@ -332,7 +340,7 @@ export const PianoRollToolbar = ({
                 aria-label="Active expression lane"
             >
                 <option value="velocity">Velocity</option>
-                {MPE_EXPRESSION_AVAILABLE ? (
+                {mpeExpressionAvailable ? (
                     <>
                         <option value="pressure">Pressure (MPE)</option>
                         <option value="slide">Slide (MPE)</option>

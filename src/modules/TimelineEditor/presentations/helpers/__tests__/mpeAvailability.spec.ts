@@ -1,14 +1,30 @@
 import { describe, it, expect } from 'vitest';
 
+import { getNoteExpressionDeviceTypes } from '#/modules/AudioEngine/useCases';
 import { addPitchBend, setNotePressure, setNoteSlide } from '#/modules/MIDI/useCases';
 
-import { MPE_EXPRESSION_AVAILABLE, MPE_EXPRESSION_LANES, isMpeExpressionLane } from '../mpeAvailability';
+import {
+    MPE_EXPRESSION_AVAILABLE,
+    MPE_EXPRESSION_DEVICE_TYPES,
+    MPE_EXPRESSION_LANES,
+    isMpeExpressionAvailableForDeviceTypes,
+    isMpeExpressionLane,
+} from '../mpeAvailability';
 
 describe('mpeAvailability', () => {
-    it('gates MPE per-note expression off until the engine path lands (audit MD-2)', () => {
-        // The honest surface hides the MPE lanes while the flag is false. Wave 4
-        // flips this to true once per-note expression reaches instrument voices.
-        expect(MPE_EXPRESSION_AVAILABLE).toBe(false);
+    it('derives availability from the engine registry rather than a hand-kept list (audit MD-2)', () => {
+        // One source of truth: the editor cannot drift from what the engines
+        // actually sound.
+        expect([...MPE_EXPRESSION_DEVICE_TYPES]).toEqual([...getNoteExpressionDeviceTypes()]);
+        expect(MPE_EXPRESSION_AVAILABLE).toBe(getNoteExpressionDeviceTypes().length > 0);
+    });
+
+    it('offers the MPE lanes only for tracks whose instrument sounds per-note expression', () => {
+        const [expressive] = getNoteExpressionDeviceTypes();
+
+        expect(isMpeExpressionAvailableForDeviceTypes([expressive!, 'builtin-eq'])).toBe(true);
+        expect(isMpeExpressionAvailableForDeviceTypes(['grand-boule', 'toaster'])).toBe(false);
+        expect(isMpeExpressionAvailableForDeviceTypes([])).toBe(false);
     });
 
     it('classifies exactly the three MPE per-note expression dimensions', () => {

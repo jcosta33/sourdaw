@@ -17,6 +17,13 @@ export type LevainNodeResult = {
     workletNode: AudioWorkletNode;
     noteOn: (note: number, velocity: number, sampleFrame?: number) => void;
     noteOff: (note: number, sampleFrame?: number) => void;
+    noteExpression: (
+        note: number,
+        bendSemitones: number,
+        pressure: number,
+        slide: number,
+        sampleFrame?: number
+    ) => void;
     allNotesOff: () => void;
     setParam: (name: string, value: number) => void;
     handleCc: (cc: number, value: number) => void;
@@ -101,6 +108,24 @@ export async function createLevainNode(
         node.port.postMessage({ type: 'noteOff', note, sampleFrame });
     };
 
+    // MPE per-note expression (audit MD-2). Bypass gates new notes but not
+    // expression on voices already sounding, matching noteOff.
+    const noteExpression = (
+        note: number,
+        bendSemitones: number,
+        pressure: number,
+        slide: number,
+        sampleFrame?: number
+    ): void => {
+        if (note < 0 || note > 127) {
+            return;
+        }
+        if (!Number.isFinite(bendSemitones) || !Number.isFinite(pressure) || !Number.isFinite(slide)) {
+            return;
+        }
+        node.port.postMessage({ type: 'noteExpression', note, bendSemitones, pressure, slide, sampleFrame });
+    };
+
     // Silent all-notes-off used by the transport on stop. Avoids fanning
     // out 128 individual note-off messages, which would otherwise trigger
     // the per-noteOff realism release burst 128 times and produce the
@@ -156,6 +181,7 @@ export async function createLevainNode(
         workletNode: node,
         noteOn,
         noteOff,
+        noteExpression,
         allNotesOff,
         setParam,
         handleCc,

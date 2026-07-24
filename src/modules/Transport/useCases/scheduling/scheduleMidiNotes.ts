@@ -1,6 +1,7 @@
 import { trackStore } from '#/modules/Arrangement/stores';
 import { resolveClipsWithComping, getSynthParamsForTrack } from '#/modules/Arrangement/useCases';
 import {
+    applyNoteExpression,
     ensureTrackStrip,
     getAudioContext,
     getCompensationDelay,
@@ -476,6 +477,20 @@ export async function scheduleMidiNotes(
                                 ? workletSynthEntry.velocityTransform(rawVel)
                                 : rawVel;
                             workletSynthControls.noteOn(pitch, vel, sampleFrame);
+                            // MPE per-note expression (audit MD-2). Same
+                            // surface the live Web MIDI handlers call, at the
+                            // note's own start frame so the worklet applies it
+                            // to the voice this noteOn just started.
+                            applyNoteExpression({
+                                trackId: track.id,
+                                note: pitch,
+                                expression: {
+                                    pressure: note.pressure,
+                                    slide: note.slide,
+                                    pitchBend: note.pitchBend,
+                                },
+                                sampleFrame,
+                            });
                             workletSynthControls.noteOff(pitch, endSampleFrame);
                         } else if (faustDevice) {
                             scheduleFaustNote(

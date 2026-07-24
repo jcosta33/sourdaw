@@ -1,20 +1,33 @@
+import { getNoteExpressionDeviceTypes } from '#/modules/AudioEngine/useCases';
+
 /**
  * MPE per-note expression availability (audit MD-2 — honest surface).
  *
- * The editor can capture per-note MPE expression — Pitch Bend, Pressure
- * (channel pressure) and Slide (CC74) — but no shipping instrument currently
- * sounds it: those values are stored on note data yet never reach any live or
- * scheduled synth voice. Surfacing the controls therefore claims a capability
- * the engine does not provide. Until the per-note expression engine path lands
- * (Wave 4, WS-3), the MPE expression lanes are hidden while the underlying
- * state model, use cases and stores are left fully intact.
+ * The editor captures per-note MPE expression — Pitch Bend, Pressure (channel
+ * pressure) and Slide (CC74). Whether those values are *sounded* depends on the
+ * track's instrument, so availability is derived from the engine's note-
+ * expression registry rather than restated here: a device gaining or losing a
+ * per-note expression path moves this surface with it, and the editor can never
+ * claim a capability the engine does not have.
  *
- * Wave 4 reversal: flip this to `true` once per-note expression reaches the
- * instrument voices — that alone re-surfaces every MPE lane. One-line change.
+ * As of the MD-2 engine lane, Fermenter and Levain sound per-note expression.
+ * Grand Boule and Toaster do not — see `getNoteExpressionDeviceTypes`.
  */
-// Typed `boolean` (not the literal `false`) so consumers gate on a flag that is
-// meant to flip, not a value narrowed to a constant.
-export const MPE_EXPRESSION_AVAILABLE: boolean = false;
+
+/** Device types whose engine sounds per-note expression. Derived, never hand-listed. */
+export const MPE_EXPRESSION_DEVICE_TYPES: readonly string[] = getNoteExpressionDeviceTypes();
+
+/**
+ * True when at least one shipping instrument sounds per-note expression, i.e.
+ * the lanes are worth offering at all. Per-track truth is
+ * {@link isMpeExpressionAvailableForDeviceTypes}.
+ */
+export const MPE_EXPRESSION_AVAILABLE: boolean = MPE_EXPRESSION_DEVICE_TYPES.length > 0;
+
+/** True when one of a track's devices sounds per-note expression. */
+export function isMpeExpressionAvailableForDeviceTypes(deviceTypes: readonly string[]): boolean {
+    return deviceTypes.some((deviceType) => MPE_EXPRESSION_DEVICE_TYPES.includes(deviceType));
+}
 
 /**
  * Expression-lane identifiers that carry MPE per-note expression and are gated

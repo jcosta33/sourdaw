@@ -1,5 +1,5 @@
 import { inject } from '#/infra/di/inject';
-import { audioEngine } from '#/modules/AudioEngine/useCases';
+import { applyNoteExpression, audioEngine } from '#/modules/AudioEngine/useCases';
 
 import { getMpeEnabled } from '../../repositories/webMidi/getMpeEnabled';
 import { getTargetTrackId } from '../../repositories/webMidi/getTargetTrackId';
@@ -8,6 +8,7 @@ import { activeNotes, channelToNote } from '../../repositories/webMidi/state';
 import { midiMessageHandlerDependencies } from './midiMessageHandlerDependencies';
 
 const STANDARD_BEND_RANGE_CENTS = 200;
+const STANDARD_BEND_RANGE_SEMITONES = STANDARD_BEND_RANGE_CENTS / 100;
 const MPE_BEND_RANGE_CENTS = 48 * 100;
 
 export const handleWebMidiPitchBend = inject(midiMessageHandlerDependencies)(
@@ -25,6 +26,17 @@ export const handleWebMidiPitchBend = inject(midiMessageHandlerDependencies)(
                     return;
                 }
                 noteData.pitchBend = bendValue;
+                // Reach the instrument voice through the one expression surface
+                // the scheduled path also uses (audit MD-2).
+                applyNoteExpression({
+                    trackId: noteData.instrumentTrackId,
+                    note: noteData.note,
+                    expression: {
+                        pitchBend: noteData.pitchBend,
+                        pressure: noteData.pressure,
+                        slide: noteData.slide,
+                    },
+                });
                 if (noteData.osc) {
                     const bendCents = (bendValue / 8192) * MPE_BEND_RANGE_CENTS;
                     const baseDetune = getTargetTrackId() ? deps.getSynthParamsForTrack(getTargetTrackId()!).detune : 0;
@@ -37,6 +49,21 @@ export const handleWebMidiPitchBend = inject(midiMessageHandlerDependencies)(
             const baseDetune = getTargetTrackId() ? deps.getSynthParamsForTrack(getTargetTrackId()!).detune : 0;
             const now = audioEngine.context.currentTime;
             for (const noteData of activeNotes.values()) {
+                // A channel-wide bend is not MPE, but it reaches the instrument
+                // through the same surface — applied to every sounding note at
+                // the standard ±2 semitone range rather than the MPE member range.
+                // It is deliberately *not* written back onto the note record:
+                // only MPE member-channel bend is per-note data worth recording.
+                applyNoteExpression({
+                    trackId: noteData.instrumentTrackId,
+                    note: noteData.note,
+                    expression: {
+                        pitchBend: bendValue,
+                        pressure: noteData.pressure,
+                        slide: noteData.slide,
+                    },
+                    bendRangeSemitones: STANDARD_BEND_RANGE_SEMITONES,
+                });
                 if (noteData.osc) {
                     noteData.osc.detune.setTargetAtTime(baseDetune + bendCents, now, 0.003);
                 }

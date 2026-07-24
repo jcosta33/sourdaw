@@ -428,6 +428,22 @@ pub struct LevainVoice {
     /// "machine vibrato" lock-step a section of voices would otherwise
     /// produce.
     pub vibrato_rate_scale: f32,
+
+    // MPE per-note expression (audit MD-2). Held for the note's lifetime and
+    // read at block rate (bend, pressure) or per sample (slide tilt). Neutral
+    // defaults are the identity, so an unexpressive note is bit-unchanged.
+    /// Member-channel pitch bend in semitones, summed with vibrato.
+    pub expr_bend_semitones: f32,
+    /// Channel pressure 0..1, scaling the voice gain on top of velocity.
+    pub expr_pressure: f32,
+    /// Timbre / CC74 slide, bipolar -1..1 with 0 neutral, driving the tilt.
+    pub expr_slide: f32,
+    /// Voice gain before pressure is applied, so pressure is re-derivable.
+    base_gain: f32,
+    /// One-pole state of the timbre tilt filter (audit MD-2).
+    tilt_lp: f32,
+    /// Tilt one-pole coefficient for a ~1.2 kHz split, fixed at construction.
+    tilt_coeff: f32,
 }
 
 impl LevainVoice {
@@ -453,6 +469,13 @@ impl LevainVoice {
             samples_since_on: 0,
             vibrato_phase: 0.0,
             vibrato_rate_scale: 1.0,
+            expr_bend_semitones: 0.0,
+            expr_pressure: 0.0,
+            expr_slide: 0.0,
+            base_gain: 1.0,
+            tilt_lp: 0.0,
+            tilt_coeff: 1.0
+                - (-std::f32::consts::TAU * 1200.0 / sample_rate.max(1.0)).exp(),
         }
     }
 
@@ -483,7 +506,27 @@ impl LevainVoice {
 
         self.amp_env.configure(&zone.amp_env);
         self.amp_env.trigger();
+        // A fresh note starts from neutral expression; the controller's opening
+        // bend/pressure/timbre arrives as its own expression message.
+        self.expr_bend_semitones = 0.0;
+        self.expr_pressure = 0.0;
+        self.expr_slide = 0.0;
+        self.tilt_lp = 0.0;
+        self.base_gain = gain;
         self.gain.snap(gain);
+    }
+
+    /// Apply MPE per-note expression to this sounding voice (audit MD-2).
+    ///
+    /// `bend_semitones` is summed into the per-block pitch modulation alongside
+    /// vibrato, `pressure` (0..1) scales the voice gain above the trigger gain,
+    /// and `slide` (-1..1, 0 neutral) tilts the voice's spectrum. Stores only —
+    /// no allocation — so it is safe on the audio thread's message drain.
+    pub fn set_expression(&mut self, bend_semitones: f32, pressure: f32, slide: f32) {
+        self.expr_bend_semitones = bend_semitones.clamp(-96.0, 96.0);
+        self.expr_pressure = pressure.clamp(0.0, 1.0);
+        self.expr_slide = slide.clamp(-1.0, 1.0);
+        self.gain.set_target(self.base_gain * (1.0 + self.expr_pressure));
     }
 
     /// Start releasing this voice.
@@ -534,9 +577,13 @@ impl LevainVoice {
         if !self.active {
             return;
         }
+        // MPE per-note bend rides the same pitch-modulation slot as vibrato
+        // (audit MD-2), so a bent note still vibratos and a vibrato-less patch
+        // still bends.
         if depth_cents < 0.1 || base_rate_hz <= 0.0 {
-            self.playback.apply_pitch_mod(0.0);
-            self.crossfade_playback.apply_pitch_mod(0.0);
+            self.playback.apply_pitch_mod(self.expr_bend_semitones);
+            self.crossfade_playback
+                .apply_pitch_mod(self.expr_bend_semitones);
             return;
         }
 
@@ -557,7 +604,8 @@ impl LevainVoice {
         }
 
         let lfo = (self.vibrato_phase * std::f32::consts::TAU).sin();
-        let semitones = (depth_cents / 100.0) * onset_gain * lfo;
+        let semitones =
+            (depth_cents / 100.0) * onset_gain * lfo + self.expr_bend_semitones;
 
         self.playback.apply_pitch_mod(semitones);
         // The crossfade-in playback (active during legato transitions)
@@ -609,13 +657,25 @@ impl LevainVoice {
             self.amp_env.release();
         }
 
+        // MPE timbre / CC74 (audit MD-2). A one-pole split gives the low band;
+        // the residual is the high band, and adding a signed fraction of it
+        // back tilts the voice bright (slide > 0) or dark (slide < 0). Neutral
+        // slide skips the filter entirely, so the sample is untouched.
+        let shaped = if self.expr_slide.abs() > 0.001 {
+            self.tilt_lp += self.tilt_coeff * (sample - self.tilt_lp);
+            let high = sample - self.tilt_lp;
+            sample + self.expr_slide * high
+        } else {
+            sample
+        };
+
         let gain = self.gain.tick();
 
         // Track energy for voice stealing (simple exponential RMS).
-        let abs_sample = (sample * env * gain).abs();
+        let abs_sample = (shaped * env * gain).abs();
         self.energy = self.energy * self.energy_decay + abs_sample * (1.0 - self.energy_decay);
 
-        sample * env * gain
+        shaped * env * gain
     }
 
     /// Voice stealing score: lower = more likely to be stolen.

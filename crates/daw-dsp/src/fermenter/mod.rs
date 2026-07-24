@@ -90,6 +90,18 @@ impl FermenterInstance {
         self.synth.note_off(note);
     }
 
+    /// Apply MPE per-note expression to the voices sounding `note` (audit MD-2).
+    ///
+    /// `bend_semitones` is the member-channel pitch bend already resolved
+    /// against the controller's bend range; `pressure` is 0..1; `slide` is the
+    /// CC74 timbre as -1..1 with 0 neutral. Normalisation from wire units lives
+    /// on the TypeScript side so the live and scheduled paths share one
+    /// conversion.
+    pub fn note_expression(&mut self, note: u8, bend_semitones: f32, pressure: f32, slide: f32) {
+        self.synth
+            .note_expression(note, bend_semitones, pressure, slide);
+    }
+
     /// Process a block of 128 samples. Returns pointer to left channel.
     /// Caller reads left + right from WASM memory.
     pub fn process(&mut self, block_size: u32) -> *const f32 {

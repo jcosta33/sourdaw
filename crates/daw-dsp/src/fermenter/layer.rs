@@ -264,6 +264,17 @@ impl Layer {
         }
     }
 
+    /// Route MPE per-note expression to every sounding voice holding `note`
+    /// (audit MD-2). Unison/layer stacking means one MIDI note can own several
+    /// voices, so this addresses all of them rather than the first match.
+    pub fn note_expression(&mut self, note: u8, bend_semitones: f32, pressure: f32, slide: f32) {
+        for voice in &mut self.voices {
+            if voice.active && voice.note == note {
+                voice.set_expression(bend_semitones, pressure, slide);
+            }
+        }
+    }
+
     pub fn all_notes_off(&mut self) {
         for voice in &mut self.voices {
             if voice.active {

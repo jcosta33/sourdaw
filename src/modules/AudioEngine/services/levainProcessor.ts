@@ -60,10 +60,23 @@ type LevainAddZoneMsg = {
     release: number;
 };
 
+/**
+ * MPE per-note expression (audit MD-2). Values arrive already normalised to
+ * engine units by `applyNoteExpression`, so the worklet only routes them.
+ */
+type NoteExpressionMsg = {
+    type: 'noteExpression';
+    note: number;
+    bendSemitones: number;
+    pressure: number;
+    slide: number;
+    sampleFrame?: number;
+};
 type LevainMsg =
     | { type: 'init'; wasmBytes: BufferSource }
     | { type: 'noteOn'; note: number; velocity: number; sampleFrame?: number }
     | { type: 'noteOff'; note: number; sampleFrame?: number }
+    | NoteExpressionMsg
     | { type: 'allNotesOff' }
     | { type: 'param'; name: string; value: number }
     | { type: 'cc'; cc: number; value: number }
@@ -76,7 +89,8 @@ type LevainMsg =
 
 type LevainQueued =
     | { type: 'noteOn'; note: number; velocity: number; sampleFrame: number }
-    | { type: 'noteOff'; note: number; sampleFrame: number };
+    | { type: 'noteOff'; note: number; sampleFrame: number }
+    | (NoteExpressionMsg & { sampleFrame: number });
 
 class LevainProcessor extends AudioWorkletProcessor {
     _instance: LevainInstance | null = null;
@@ -151,7 +165,7 @@ class LevainProcessor extends AudioWorkletProcessor {
 
     _handleMessage(msg: LevainMsg): void {
         if (
-            (msg.type === 'noteOn' || msg.type === 'noteOff') &&
+            (msg.type === 'noteOn' || msg.type === 'noteOff' || msg.type === 'noteExpression') &&
             msg.sampleFrame !== undefined &&
             msg.sampleFrame > currentFrame
         ) {
@@ -174,6 +188,12 @@ class LevainProcessor extends AudioWorkletProcessor {
                 break;
             case 'noteOff':
                 inst.note_off(msg.note);
+                break;
+            case 'noteExpression':
+                // MPE per-note expression (audit MD-2). Scheduled expression
+                // carries the note's own start frame and is enqueued behind the
+                // noteOn at that frame, so the voice exists before it is bent.
+                inst.note_expression(msg.note, msg.bendSemitones, msg.pressure, msg.slide);
                 break;
             case 'allNotesOff':
                 inst.all_notes_off();

@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { type Clip, trackStore } from '#/modules/Arrangement/stores';
 import { resolveClipsWithComping, getSynthParamsForTrack } from '#/modules/Arrangement/useCases';
-import { ensureTrackStrip } from '#/modules/AudioEngine/useCases';
+import { applyNoteExpression, ensureTrackStrip } from '#/modules/AudioEngine/useCases';
 import { automationStore } from '#/modules/Automation/stores';
 import { getAutomationValueAtBeat } from '#/modules/Automation/useCases';
 import { midiStore } from '#/modules/MIDI/stores';
@@ -56,6 +56,7 @@ vi.mock('#/modules/Arrangement/useCases', () => ({
     getSynthParamsForTrack: vi.fn(() => ({})),
 }));
 vi.mock('#/modules/AudioEngine/useCases', () => ({
+    applyNoteExpression: vi.fn(),
     getCompensationDelay: vi.fn(() => 0),
     ensureTrackStrip: vi.fn(() => ({ gainNode: {}, preFaderTap: { connect: vi.fn() } })),
     getCurrentTime: vi.fn(() => 0),
@@ -846,5 +847,88 @@ describe('scheduleMidiNotes', () => {
         // New behaviour: clamped to the iteration start (0) and scheduled.
         expect(scheduleNote).toHaveBeenCalledTimes(1);
         expect(vi.mocked(scheduleNote).mock.calls[0]![2]).toBe(60);
+    });
+
+    // audit MD-2 — a recorded MPE note must sound its captured expression on
+    // playback, through the same surface the live Web MIDI handlers use.
+    describe('MPE per-note expression on scheduled playback', () => {
+        function fermenterStripWithNoteCapture() {
+            const noteOn = vi.fn();
+            vi.mocked(ensureTrackStrip).mockImplementation(
+                () =>
+                    ({
+                        gainNode: {},
+                        preFaderTap: { connect: vi.fn() },
+                        deviceNodes: [
+                            {
+                                type: 'fermenter',
+                                deviceId: 'device-1',
+                                fermenterControls: { noteOn, noteOff: vi.fn(), noteExpression: vi.fn() },
+                            },
+                        ],
+                    }) as never
+            );
+            return noteOn;
+        }
+
+        it('applies the captured pressure, slide and bend at the note own start frame', async () => {
+            const noteOn = fermenterStripWithNoteCapture();
+            const track = midiTrack({
+                clips: [midiClip()],
+                devices: [{ id: 'device-1', type: 'fermenter' }],
+            });
+            (trackStore as { value: unknown }).value = { tracks: [track] };
+            (midiStore as { value: unknown }).value = {
+                notesByClipId: {
+                    'clip-1': [
+                        {
+                            id: 'n0',
+                            pitch: 64,
+                            startBeat: 0,
+                            duration: 1,
+                            velocity: 100,
+                            pressure: 90,
+                            slide: 20,
+                            pitchBend: -4096,
+                        },
+                    ],
+                },
+            };
+
+            await scheduleMidiNotes(0, 4, 0, -1, new Set<string>(), [], defaultTransportState, 120);
+
+            expect(noteOn).toHaveBeenCalledTimes(1);
+            const noteSampleFrame = vi.mocked(noteOn).mock.calls[0]![2] as number;
+            expect(applyNoteExpression).toHaveBeenCalledTimes(1);
+            expect(applyNoteExpression).toHaveBeenCalledWith({
+                trackId: 'track-1',
+                note: 64,
+                expression: { pressure: 90, slide: 20, pitchBend: -4096 },
+                sampleFrame: noteSampleFrame,
+            });
+        });
+
+        it('forwards an unexpressive note as three neutral dimensions, never a stale value', async () => {
+            fermenterStripWithNoteCapture();
+            const track = midiTrack({
+                clips: [midiClip()],
+                devices: [{ id: 'device-1', type: 'fermenter' }],
+            });
+            (trackStore as { value: unknown }).value = { tracks: [track] };
+            (midiStore as { value: unknown }).value = {
+                notesByClipId: {
+                    'clip-1': [{ id: 'n0', pitch: 64, startBeat: 0, duration: 1, velocity: 100 }],
+                },
+            };
+
+            await scheduleMidiNotes(0, 4, 0, -1, new Set<string>(), [], defaultTransportState, 120);
+
+            expect(applyNoteExpression).toHaveBeenCalledWith({
+                trackId: 'track-1',
+                note: 64,
+                expression: { pressure: undefined, slide: undefined, pitchBend: undefined },
+                sampleFrame: expect.any(Number),
+            });
+        });
     });
 });

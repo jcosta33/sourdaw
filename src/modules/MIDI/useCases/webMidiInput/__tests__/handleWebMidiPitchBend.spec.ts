@@ -13,10 +13,13 @@ vi.mock('../../../repositories/webMidi/getTargetTrackId', () => ({
     getTargetTrackId: () => target_track_id.value,
 }));
 
+const apply_note_expression = vi.hoisted(() => vi.fn());
+
 vi.mock('#/modules/AudioEngine/useCases', () => ({
     audioEngine: {
         context: { currentTime: 2 },
     },
+    applyNoteExpression: apply_note_expression,
     getCompensationDelay: () => 0,
     getFactoryDrumKitByIndex: () => null,
 }));
@@ -39,8 +42,61 @@ describe('handleWebMidiPitchBend', () => {
     beforeEach(() => {
         activeNotes.clear();
         channelToNote.clear();
+        apply_note_expression.mockClear();
         mpe_enabled.value = true;
         target_track_id.value = 'track-1';
+    });
+
+    // audit MD-2 — the captured bend must reach the instrument voice, not only
+    // the fallback oscillator.
+    it('routes an MPE member-channel bend to the note instrument through the shared surface', () => {
+        const key = createWebMidiNoteKey(2, 64);
+        activeNotes.set(key, {
+            channel: 2,
+            note: 64,
+            trackId: 'source-track',
+            instrumentTrackId: 'instrument-track',
+            startTime: 0,
+            startBeat: 0,
+            pressure: 100,
+            slide: 20,
+        });
+        channelToNote.set(2, key);
+
+        // 14-bit value 12288 => +4096 offset from centre.
+        handleWebMidiPitchBend(2, 0, 96);
+
+        expect(apply_note_expression).toHaveBeenCalledTimes(1);
+        expect(apply_note_expression).toHaveBeenCalledWith({
+            trackId: 'instrument-track',
+            note: 64,
+            expression: { pitchBend: 4096, pressure: 100, slide: 20 },
+        });
+    });
+
+    it('routes a channel-wide bend at the standard ±2 semitone range without recording it on the note', () => {
+        mpe_enabled.value = false;
+        const key = createWebMidiNoteKey(0, 60);
+        activeNotes.set(key, {
+            channel: 0,
+            note: 60,
+            trackId: 'source-track',
+            instrumentTrackId: 'instrument-track',
+            startTime: 0,
+            startBeat: 0,
+        });
+
+        handleWebMidiPitchBend(0, 0, 96);
+
+        expect(apply_note_expression).toHaveBeenCalledWith({
+            trackId: 'instrument-track',
+            note: 60,
+            expression: { pitchBend: 4096, pressure: undefined, slide: undefined },
+            bendRangeSemitones: 2,
+        });
+        // Channel-wide bend is performance, not per-note data: it must not be
+        // written onto the note record that recording later reads.
+        expect(activeNotes.get(key)?.pitchBend).toBeUndefined();
     });
 
     it('should store MPE pitch bend and retune only the note on the matching channel', () => {

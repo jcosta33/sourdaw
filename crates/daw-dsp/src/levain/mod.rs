@@ -68,6 +68,18 @@ impl LevainInstance {
         self.engine.note_off(note);
     }
 
+    /// Apply MPE per-note expression to the voices sounding `note` (audit MD-2).
+    ///
+    /// `bend_semitones` is the member-channel pitch bend already resolved
+    /// against the controller's bend range; `pressure` is 0..1; `slide` is the
+    /// CC74 timbre as -1..1 with 0 neutral. Normalisation from wire units lives
+    /// on the TypeScript side so the live and scheduled paths share one
+    /// conversion.
+    pub fn note_expression(&mut self, note: u8, bend_semitones: f32, pressure: f32, slide: f32) {
+        self.engine
+            .note_expression(note, bend_semitones, pressure, slide);
+    }
+
     /// Silent all-notes-off. Releases every active voice without firing
     /// per-note realism release transients. Used by the transport on stop
     /// so we don't spawn a 128-note bow-lift noise burst.

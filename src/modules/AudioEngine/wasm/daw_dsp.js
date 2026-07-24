@@ -231,6 +231,22 @@ export class FermenterInstance {
         return this;
     }
     /**
+     * Apply MPE per-note expression to the voices sounding `note` (audit MD-2).
+     *
+     * `bend_semitones` is the member-channel pitch bend already resolved
+     * against the controller's bend range; `pressure` is 0..1; `slide` is the
+     * CC74 timbre as -1..1 with 0 neutral. Normalisation from wire units lives
+     * on the TypeScript side so the live and scheduled paths share one
+     * conversion.
+     * @param {number} note
+     * @param {number} bend_semitones
+     * @param {number} pressure
+     * @param {number} slide
+     */
+    note_expression(note, bend_semitones, pressure, slide) {
+        wasm.fermenterinstance_note_expression(this.__wbg_ptr, note, bend_semitones, pressure, slide);
+    }
+    /**
      * Process a MIDI note off event.
      * @param {number} note
      */
@@ -938,6 +954,22 @@ export class LevainInstance {
         this.__wbg_ptr = ret;
         LevainInstanceFinalization.register(this, this.__wbg_ptr, this);
         return this;
+    }
+    /**
+     * Apply MPE per-note expression to the voices sounding `note` (audit MD-2).
+     *
+     * `bend_semitones` is the member-channel pitch bend already resolved
+     * against the controller's bend range; `pressure` is 0..1; `slide` is the
+     * CC74 timbre as -1..1 with 0 neutral. Normalisation from wire units lives
+     * on the TypeScript side so the live and scheduled paths share one
+     * conversion.
+     * @param {number} note
+     * @param {number} bend_semitones
+     * @param {number} pressure
+     * @param {number} slide
+     */
+    note_expression(note, bend_semitones, pressure, slide) {
+        wasm.levaininstance_note_expression(this.__wbg_ptr, note, bend_semitones, pressure, slide);
     }
     /**
      * Process a MIDI note off event.

@@ -77,6 +77,13 @@ export type FermenterNodeResult = {
     workletNode: AudioWorkletNode;
     noteOn: (note: number, velocity: number, sampleFrame?: number) => void;
     noteOff: (note: number, sampleFrame?: number) => void;
+    noteExpression: (
+        note: number,
+        bendSemitones: number,
+        pressure: number,
+        slide: number,
+        sampleFrame?: number
+    ) => void;
     allNotesOff: () => void;
     setParam: (name: string, value: number | number[], sampleFrame?: number) => void;
     acceptsScheduledParam?: (name: string) => boolean;
@@ -157,6 +164,24 @@ export async function createFermenterNode(ctx: BaseAudioContext, wasmUrl?: strin
         },
         noteOff(note: number, sampleFrame?: number) {
             node.port.postMessage({ type: 'noteOff', note, sampleFrame });
+        },
+        noteExpression(note: number, bendSemitones: number, pressure: number, slide: number, sampleFrame?: number) {
+            // MPE per-note expression (audit MD-2). Bypass gates new notes but
+            // not expression on voices already sounding, matching noteOff.
+            if (note < 0 || note > 127) {
+                return;
+            }
+            if (!Number.isFinite(bendSemitones) || !Number.isFinite(pressure) || !Number.isFinite(slide)) {
+                return;
+            }
+            node.port.postMessage({
+                type: 'noteExpression',
+                note,
+                bendSemitones,
+                pressure,
+                slide,
+                sampleFrame,
+            });
         },
         allNotesOff() {
             // Single-message voice release the Fermenter worklet honors: drops

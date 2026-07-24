@@ -1,3 +1,5 @@
+import { applyNoteExpression } from '#/modules/AudioEngine/useCases';
+
 import { getMpeEnabled } from '../../repositories/webMidi/getMpeEnabled';
 import { activeNotes, channelToNote } from '../../repositories/webMidi/state';
 
@@ -14,5 +16,16 @@ export function handleWebMidiChannelPressure(channel: number, pressure: number):
     const noteData = activeNotes.get(noteForChannel);
     if (noteData) {
         noteData.pressure = pressure;
+        // Reach the instrument voice through the one expression surface the
+        // scheduled path also uses (audit MD-2).
+        applyNoteExpression({
+            trackId: noteData.instrumentTrackId,
+            note: noteData.note,
+            expression: {
+                pitchBend: noteData.pitchBend,
+                pressure: noteData.pressure,
+                slide: noteData.slide,
+            },
+        });
     }
 }

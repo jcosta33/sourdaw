@@ -39,6 +39,9 @@ export { serializeAudioBuffersForProject } from './serializeAudioBuffersForProje
 export { scheduleFaustNote } from './faustScheduler/scheduleFaustNote';
 export { startFaustNote } from './faustScheduler/startFaustNote';
 
+export { applyNoteExpression } from './noteExpression/applyNoteExpression';
+export { getNoteExpressionDeviceTypes } from './noteExpression/getNoteExpressionDeviceTypes';
+
 export { buildDeviceChain } from './buildDeviceChain';
 export { resolveToasterPadBinding } from './resolveToasterPadBinding';
 

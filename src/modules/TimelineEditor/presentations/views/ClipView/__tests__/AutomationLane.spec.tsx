@@ -53,6 +53,23 @@ vi.mock('../../AutomationLane/PitchBendLane', () => ({
     PitchBendLane: () => <div data-testid="pitchbend-lane">Pitch Bend Lane</div>,
 }));
 
+// The lane selector reads the edited track's devices to decide whether the MPE
+// lanes are worth offering (audit MD-2), so the spec drives that store.
+const trackDevices = vi.hoisted(() => ({ value: [] as { type: string }[] }));
+
+function setTrackDevices(devices: { type: string }[]): void {
+    trackDevices.value = devices;
+}
+
+vi.mock('#/infra/store/useStore', () => ({
+    useStore: () => ({ tracks: [{ id: 'track-1', devices: trackDevices.value }] }),
+}));
+
+vi.mock('#/modules/Arrangement/stores', () => ({
+    trackStore: { value: null },
+    defaultTrackState: { tracks: [] },
+}));
+
 describe('AutomationLane', () => {
     const defaultProps = {
         clipId: 'clip-1',
@@ -137,46 +154,44 @@ describe('AutomationLane', () => {
         expect(gutter).toBeTruthy();
     });
 
-    // When Wave 4 flips MPE_EXPRESSION_AVAILABLE to true the MPE lanes return.
-    // Cover the pressure/slide/pitchBend switch wiring (the render branches kept
-    // in source) so a broken prop wire on those lanes cannot ship undetected.
-    describe('MPE lanes when per-note expression is available (Wave-4 reversal)', () => {
-        beforeEach(() => {
-            vi.resetModules();
-            vi.doMock('../../../helpers/mpeAvailability', async () => {
-                const actual = await vi.importActual<typeof import('../../../helpers/mpeAvailability')>(
-                    '../../../helpers/mpeAvailability'
-                );
-                return { ...actual, MPE_EXPRESSION_AVAILABLE: true };
-            });
-        });
-
+    // audit MD-2 — the MPE lanes follow the track's own instrument: offered when
+    // the engine sounds per-note expression, withheld when it does not.
+    describe('MPE lanes track the instrument that would sound them', () => {
         afterEach(() => {
-            vi.doUnmock('../../../helpers/mpeAvailability');
-            vi.resetModules();
+            setTrackDevices([]);
         });
 
-        it('switches to the pressure lane once available', async () => {
-            const { AutomationLane: LiveAutomationLane } = await import('../AutomationLane');
-            render(<LiveAutomationLane {...defaultProps} />);
-            const select = screen.getByLabelText('Automation lane type');
-            fireEvent.change(select, { target: { value: 'pressure' } });
+        it('withholds the MPE lanes for a track whose instrument cannot sound them', () => {
+            setTrackDevices([{ type: 'grand-boule' }]);
+            render(<AutomationLane {...defaultProps} />);
+
+            const values = screen.getAllByRole('option').map((option) => (option as HTMLOptionElement).value);
+            expect(values).not.toContain('pressure');
+            expect(values).not.toContain('slide');
+            expect(values).not.toContain('pitchBend');
+        });
+
+        it('routes the pressure lane for a track whose instrument sounds per-note expression', () => {
+            setTrackDevices([{ type: 'fermenter' }]);
+            render(<AutomationLane {...defaultProps} />);
+
+            fireEvent.change(screen.getByLabelText('Automation lane type'), { target: { value: 'pressure' } });
             expect(screen.getByTestId('pressure-lane')).toBeInTheDocument();
         });
 
-        it('switches to the slide lane once available', async () => {
-            const { AutomationLane: LiveAutomationLane } = await import('../AutomationLane');
-            render(<LiveAutomationLane {...defaultProps} />);
-            const select = screen.getByLabelText('Automation lane type');
-            fireEvent.change(select, { target: { value: 'slide' } });
+        it('routes the slide lane for a track whose instrument sounds per-note expression', () => {
+            setTrackDevices([{ type: 'fermenter' }]);
+            render(<AutomationLane {...defaultProps} />);
+
+            fireEvent.change(screen.getByLabelText('Automation lane type'), { target: { value: 'slide' } });
             expect(screen.getByTestId('slide-lane')).toBeInTheDocument();
         });
 
-        it('switches to the pitch bend lane once available', async () => {
-            const { AutomationLane: LiveAutomationLane } = await import('../AutomationLane');
-            render(<LiveAutomationLane {...defaultProps} />);
-            const select = screen.getByLabelText('Automation lane type');
-            fireEvent.change(select, { target: { value: 'pitchBend' } });
+        it('routes the pitch bend lane for a track whose instrument sounds per-note expression', () => {
+            setTrackDevices([{ type: 'levain' }]);
+            render(<AutomationLane {...defaultProps} />);
+
+            fireEvent.change(screen.getByLabelText('Automation lane type'), { target: { value: 'pitchBend' } });
             expect(screen.getByTestId('pitchbend-lane')).toBeInTheDocument();
         });
     });
