@@ -1,0 +1,41 @@
+src/modules/Arrangement/models/__tests__/DeviceParameter.spec.ts
+  s_45e865b9bcf70b::t_9db549c025cd3d 27-39
+src/modules/Arrangement/useCases/rippleDelete/__tests__/planRippleDelete.spec.ts
+  s_45e865b9bcf70b::t_3dbe4bccaa0086 68-131
+src/modules/Arrangement/useCases/rippleInsert/__tests__/planRippleInsert.spec.ts
+  s_4bfc7ec8a99659::t_07f0609d5ace20 32-48
+src/modules/Arrangement/useCases/setTrackGainPan/__tests__/helpers.spec.ts
+  s_006c6596b00f77::t_457daa8a3fefd8 6-17,67-102
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "642136c7c776727da4b1bed84b0c33736978f7d9",
+  "prompts": {},
+  "sessions": {
+    "s_006c6596b00f77": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-aae53669d9971f59a",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_45e865b9bcf70b": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-a6c09648937e79483",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_4bfc7ec8a99659": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-aedaa2168dc44456a",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
