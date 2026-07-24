@@ -5,7 +5,7 @@ import { toggleAdjustmentLayer } from '../toggleAdjustmentLayer';
 import type { AdjustmentLayer, AdjustmentLayerState } from '#/modules/Arrangement/stores/adjustmentLayer';
 
 const mocks = vi.hoisted(() => {
-    const adjustmentLayerStoreValue: { value: AdjustmentLayerState } = { value: { layers: [] } };
+    const adjustmentLayerStoreValue: { value: AdjustmentLayerState | null } = { value: { layers: [] } };
     return {
         adjustmentLayerStoreValue,
         adjustmentLayerStoreSet: vi.fn<(state: AdjustmentLayerState) => void>(),
@@ -45,5 +45,13 @@ describe('toggleAdjustmentLayer', () => {
             throw new Error('expected second adjustmentLayerStore.set call');
         }
         expect(secondCall[0].layers[0]?.enabled).toBe(true);
+    });
+
+    it('is a no-op when the store has not loaded', () => {
+        mocks.adjustmentLayerStoreValue.value = null;
+
+        toggleAdjustmentLayer('l1');
+
+        expect(mocks.adjustmentLayerStoreSet).not.toHaveBeenCalled();
     });
 });

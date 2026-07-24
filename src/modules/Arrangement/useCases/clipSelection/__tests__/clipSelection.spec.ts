@@ -114,6 +114,67 @@ describe('clip selection use cases', () => {
 
         setMarqueeSelection({ startBeat: 0, endBeat: 2, trackIds: [] });
 
+        // store stays null; the guard returns before writing any marquee
         expect(clipSelectionStore.value).toBeNull();
+    });
+
+    it('selectClip falls back to the default state when the store is null', () => {
+        clipSelectionStore.set(null);
+
+        selectClip('clip-1');
+
+        // builds from defaultClipSelectionState rather than crashing on null
+        expect(clipSelectionStore.value).toEqual({
+            ...defaultClipSelectionState,
+            selectedClipId: 'clip-1',
+        });
+    });
+
+    it('clearClipSelection falls back to the default state when the store is null', () => {
+        clipSelectionStore.set(null);
+
+        clearClipSelection();
+
+        expect(clipSelectionStore.value).toEqual({
+            ...defaultClipSelectionState,
+            selectedClipId: null,
+            selectedClipIds: [],
+        });
+    });
+
+    it('selectAllClips falls back to the default state when the store is null', () => {
+        clipSelectionStore.set(null);
+
+        selectAllClips(() => ['a', 'b']);
+
+        expect(clipSelectionStore.value).toEqual({
+            ...defaultClipSelectionState,
+            selectedClipIds: ['a', 'b'],
+            selectedClipId: null,
+        });
+    });
+
+    it('selectClipWithFocus falls back to the default state when the store is null', () => {
+        clipSelectionStore.set(null);
+
+        selectClipWithFocus('clip-1');
+
+        expect(clipSelectionStore.value).toEqual({
+            ...defaultClipSelectionState,
+            selectedClipId: 'clip-1',
+            selectedClipIds: ['clip-1'],
+        });
+    });
+
+    it('setClipSelection falls back to the default state when the store is null', () => {
+        clipSelectionStore.set(null);
+
+        setClipSelection(['a']);
+
+        expect(clipSelectionStore.value).toEqual({
+            ...defaultClipSelectionState,
+            selectedClipId: 'a',
+            selectedClipIds: ['a'],
+        });
     });
 });

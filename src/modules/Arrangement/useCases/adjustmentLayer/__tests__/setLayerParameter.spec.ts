@@ -6,7 +6,7 @@ const mocks = vi.hoisted(() => {
     type Parameter = { name: string; value: number; min: number; max: number };
     type Layer = { id: string; parameters: Parameter[] };
     type State = { layers: Layer[] };
-    const adjustmentLayerStoreValue: { value: State } = { value: { layers: [] } };
+    const adjustmentLayerStoreValue: { value: State | null } = { value: { layers: [] } };
     return {
         adjustmentLayerStoreValue,
         adjustmentLayerStoreSet: vi.fn<(newState: State) => void>(),
@@ -46,5 +46,13 @@ describe('setLayerParameter', () => {
             throw new Error('expected parameter in set state');
         }
         expect(parameter.value).toBe(20000);
+    });
+
+    it('is a no-op when the store has not loaded', () => {
+        mocks.adjustmentLayerStoreValue.value = null;
+
+        setLayerParameter('l1', 'Freq', 500);
+
+        expect(mocks.adjustmentLayerStoreSet).not.toHaveBeenCalled();
     });
 });

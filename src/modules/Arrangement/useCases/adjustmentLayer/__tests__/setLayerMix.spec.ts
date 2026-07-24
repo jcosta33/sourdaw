@@ -5,9 +5,9 @@ import { setLayerMix } from '../setLayerMix';
 import type { AdjustmentLayer, AdjustmentLayerState } from '../../../stores/adjustmentLayer';
 
 const mocks = vi.hoisted(() => {
-    const initialState: AdjustmentLayerState = { layers: [] };
+    const adjustmentLayerStoreValue: { value: AdjustmentLayerState | null } = { value: { layers: [] } };
     return {
-        adjustmentLayerStoreValue: { value: initialState },
+        adjustmentLayerStoreValue,
         adjustmentLayerStoreSet: vi.fn<(state: AdjustmentLayerState) => void>(),
     };
 });
@@ -57,5 +57,13 @@ describe('setLayerMix', () => {
             throw new Error('expected second adjustmentLayerStore.set call');
         }
         expect(secondCall[0].layers[0]?.mix).toBe(1);
+    });
+
+    it('is a no-op when the store has not loaded', () => {
+        mocks.adjustmentLayerStoreValue.value = null;
+
+        setLayerMix('l1', 0.5);
+
+        expect(mocks.adjustmentLayerStoreSet).not.toHaveBeenCalled();
     });
 });
