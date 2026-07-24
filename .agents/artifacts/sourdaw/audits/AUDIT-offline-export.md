@@ -182,6 +182,7 @@ each resolves either an `AudioParam` target or `acceptsScheduledParam===true` of
 ---
 
 ### OE-4 — Solo is ignored by offline export (live↔offline parity break) — **Major**
+**Status:** FIXED in #750
 **Evidence.** Solo-in-place applies through `applySoloLogic.ts:45-55` → `setTrackGain`/`setTrackMute`,
 and `setTrackMute.ts:3-5` calls **`audioEngine.setTrackMute` only** — it does **not** write
 `track.muted` in the project store. Offline reads project-store state: mixdown filters
