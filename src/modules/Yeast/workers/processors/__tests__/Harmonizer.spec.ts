@@ -116,4 +116,49 @@ describe('Harmonizer', () => {
         h.processMidi([note_on(0, 60)], out, transport);
         expect(out.length).toBeGreaterThan(0);
     });
+
+    it('transposes a major-scale note up two diatonic degrees (C→E, 60→64)', () => {
+        // major pattern [0,2,4,5,7,9,11]; C(60)=degree 0 → +2 degrees = degree 2 = E(64)
+        const h = new Harmonizer('dia');
+        const out: MidiEvent[] = [];
+        h.processMidi([note_on(0, 60)], out, transport);
+        const harmony = out.find((e) => e.kind.type === 'noteOn' && e.kind.note !== 60);
+        expect(harmony?.kind).toMatchObject({ type: 'noteOn', note: 64 });
+    });
+
+    it('clamps the harmony velocity to [1,127]', () => {
+        const h = new Harmonizer('clamp');
+        h.setParam('voice0_vel_offset', -200); // 100 - 200 → clamped to 1
+        const out: MidiEvent[] = [];
+        h.processMidi([note_on(0, 60, 100)], out, transport);
+        const harmony = out.find((e) => e.kind.type === 'noteOn' && e.kind.note !== 60);
+        expect(harmony?.kind).toMatchObject({ velocity: 1 });
+    });
+
+    it('skips a harmony voice whose transposed note falls outside 0–127', () => {
+        const h = new Harmonizer('oor');
+        h.setParam('voice2_enabled', 1); // degrees -1, below
+        h.setParam('voice0_enabled', 0); // disable the 3rd voice
+        const out: MidiEvent[] = [];
+        // note 0 transposed down a degree → negative → skipped; only original passes
+        h.processMidi([note_on(0, 0)], out, transport);
+        expect(out.filter((e) => e.kind.type === 'noteOn').length).toBe(1);
+    });
+
+    it('skips a harmony voice whose computed duration is zero', () => {
+        const h = new Harmonizer('zero');
+        const out: MidiEvent[] = [];
+        h.processMidi([{ ...note_on(0, 60), durationSamples: 0 }], out, transport);
+        // original always passes; the harmony voice is skipped (duration 0)
+        expect(out.filter((e) => e.kind.type === 'noteOn').length).toBe(1);
+    });
+
+    it('falls back to the major scale for an out-of-range scale index', () => {
+        const h = new Harmonizer('fallback');
+        h.setParam('scale', 99);
+        const out: MidiEvent[] = [];
+        h.processMidi([note_on(0, 60)], out, transport);
+        const harmony = out.find((e) => e.kind.type === 'noteOn' && e.kind.note !== 60);
+        expect(harmony?.kind).toMatchObject({ note: 64 });
+    });
 });
