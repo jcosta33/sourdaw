@@ -1,0 +1,20 @@
+.agents/artifacts/sourdaw/audits/AUDIT-automation.md
+  s_0d39f3a4a4357a::t_b3b2680d4d525e 146
+  s_0d39f3a4a4357a::t_ca978687a64bba 157
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "168f6df620c9732eff8b14fb5bc768f7d3dfc954",
+  "prompts": {},
+  "sessions": {
+    "s_0d39f3a4a4357a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "60da6a2e-7d79-4d98-8624-e993f5a9f94e",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
