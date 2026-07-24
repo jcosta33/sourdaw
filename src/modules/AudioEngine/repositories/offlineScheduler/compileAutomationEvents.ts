@@ -1,3 +1,5 @@
+import { evaluateAutomationCurve } from '#/utils/automationCurve';
+
 import { type AutomationPoint } from '../../models/AutomationViewTypes';
 import { beatToSeconds } from '../../services/beatConversion';
 
@@ -5,16 +7,6 @@ type AutomationTempoChange = { beat: number; tempo: number };
 export type CompiledAutomationEvent = { type: 'set' | 'linear'; timeSeconds: number; value: number };
 const AUTOMATION_SAMPLE_INTERVAL_SEC = 0.01;
 type BeatProjector = (beat: number) => number;
-function cubicBezier(a: number, b: number, c: number, d: number, value: number): number {
-    const inverse = 1 - value;
-    return inverse ** 3 * a + 3 * inverse ** 2 * value * b + 3 * inverse * value ** 2 * c + value ** 3 * d;
-}
-
-function cubicBezierDerivative(a: number, b: number, c: number, d: number, value: number): number {
-    const inverse = 1 - value;
-    return 3 * inverse * inverse * (b - a) + 6 * inverse * value * (c - b) + 3 * value * value * (d - c);
-}
-
 function interpolateValue(
     first: AutomationPoint,
     second: AutomationPoint,
@@ -22,60 +14,19 @@ function interpolateValue(
     previous?: AutomationPoint,
     next?: AutomationPoint
 ): number {
-    if (first.curve === 'step' || second.beat <= first.beat) {
-        return first.value;
-    }
-    const fraction = Math.min(1, Math.max(0, (beat - first.beat) / (second.beat - first.beat)));
-    if (first.curve === 'stairs') {
-        const stairSteps = Math.min(32, Math.max(2, Math.trunc(first.stairSteps ?? 4)));
-        const stepped = Math.floor(fraction * stairSteps) / stairSteps;
-        return first.value + (second.value - first.value) * stepped;
-    }
-    if (first.curve === 'exponential') {
-        const power = Math.abs(first.tension) < 0.01 ? 1 : 2 ** (first.tension * 3);
-        return first.value + (second.value - first.value) * fraction ** power;
-    }
-    if (first.curve === 's-curve') {
-        const smooth = fraction * fraction * (3 - 2 * fraction);
-        const curved = fraction + (smooth - fraction) * Math.abs(first.tension ?? 0.5);
-        return first.value + (second.value - first.value) * curved;
-    }
-    if (first.curve === 'smooth') {
-        const v0 = previous?.value ?? first.value;
-        const v1 = first.value;
-        const v2 = second.value;
-        const v3 = next?.value ?? second.value;
-        const squared = fraction * fraction;
-        const cubed = squared * fraction;
-        return (
-            0.5 *
-            (2 * v1 +
-                (-v0 + v2) * fraction +
-                (2 * v0 - 5 * v1 + 4 * v2 - v3) * squared +
-                (-v0 + 3 * v1 - 3 * v2 + v3) * cubed)
-        );
-    }
-    if (first.curve === 'bezier') {
-        const x1 = first.cp1?.x ?? 0.33;
-        const x2 = first.cp2?.x ?? 0.66;
-        let parameter = fraction;
-        for (let iteration = 0; iteration < 6; iteration++) {
-            const delta = cubicBezier(0, x1, x2, 1, parameter) - fraction;
-            const derivative = cubicBezierDerivative(0, x1, x2, 1, parameter);
-            if (Math.abs(delta) < 1e-6 || Math.abs(derivative) < 1e-9) {
-                break;
-            }
-            parameter = Math.min(1, Math.max(0, parameter - delta / derivative));
-        }
-        return cubicBezier(
-            first.value,
-            first.cp1?.y ?? first.value,
-            first.cp2?.y ?? second.value,
-            second.value,
-            parameter
-        );
-    }
-    return first.value + (second.value - first.value) * fraction;
+    // Curve math is the shared evaluateAutomationCurve kernel
+    // (#/utils/automationCurve) — the identical implementation the live apply
+    // path (Automation `interpolateAutomationPointValue`) routes through.
+    // Finding AU-1: the offline and live curve copies had drifted (`stairs`
+    // clamping) with no cross-conformance gate. Do not reintroduce local curve
+    // math here; the automation curve-conformance specs guard re-divergence.
+    return evaluateAutomationCurve({
+        firstPoint: first,
+        secondPoint: second,
+        beat,
+        previousPoint: previous,
+        nextPoint: next,
+    });
 }
 
 function beatAtTime(firstBeat: number, secondBeat: number, time: number, projectBeat: BeatProjector): number {
