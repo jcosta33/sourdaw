@@ -231,6 +231,10 @@ const DEVICE_DATA_COUNTS = {
         'src/modules/Arrangement/useCases/device/removeDevice.ts': 1,
         'src/modules/Arrangement/useCases/device/setDeviceParameter/persistDevicePatch.ts': 1,
         'src/modules/Arrangement/useCases/device/setDeviceParameter/setDeviceParameter.ts': 2,
+        // Count provenance: PH-3 (#730) — setExternalPluginState maps track
+        // devices to store the captured native-plugin state chunk; the single
+        // `devices:` is the reviewed CRDT-backed write through executeAppAction.
+        'src/modules/Arrangement/useCases/device/setExternalPluginState.ts': 1,
         'src/modules/Arrangement/useCases/device/updateMidiFxParam.ts': 1,
         'src/modules/Arrangement/useCases/duplicateTrack.ts': 1,
         'src/modules/Arrangement/useCases/freezeBounce/bounceTrack.ts': 2,
