@@ -1,0 +1,28 @@
+crates/daw-dsp/src/proof/biquad.rs
+  s_0d39f3a4a4357a::t_2841f9668acd8b 160-273
+  s_0d39f3a4a4357a::t_13ed7e2f7d9ee0 4
+  s_0d39f3a4a4357a::t_3c092cb02f56fb 141-145
+crates/daw-dsp/src/primitives/denormal.rs
+  s_0d39f3a4a4357a::t_52b94eab1f313e 1-77,84-87,91-189,200-246
+  s_0d39f3a4a4357a::t_c35fd27faf26cc 78-83
+  s_0d39f3a4a4357a::t_ea9885ca217c34 88-90
+  s_0d39f3a4a4357a::t_c95934bf0f18b3 190-199
+crates/daw-dsp/src/primitives/mod.rs
+  s_0d39f3a4a4357a::t_064b5b8fc462a2 3,7
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "86f5377a9b9dfc12453fc699c26baea764556627",
+  "prompts": {},
+  "sessions": {
+    "s_0d39f3a4a4357a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "60da6a2e-7d79-4d98-8624-e993f5a9f94e",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
