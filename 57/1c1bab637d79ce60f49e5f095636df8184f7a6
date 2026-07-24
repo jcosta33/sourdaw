@@ -1,0 +1,29 @@
+public/wasm/scoring/scoring.d.ts
+  s_0d39f3a4a4357a::t_15a4bb8461f03d 11,42
+public/wasm/scoring/scoring_bg.wasm.d.ts
+  s_0d39f3a4a4357a::t_cd439a172b95e8 9
+.agents/artifacts/sourdaw/audits/AUDIT-rust-wasm-boundary.md
+  s_0d39f3a4a4357a::t_76ff98036bea1b 174
+src/modules/AudioEngine/wasm/scoring.d.ts
+  s_0d39f3a4a4357a::t_1ff7fdbe8e5768 25
+Cargo.lock
+  s_0d39f3a4a4357a::t_4f97f6dc0b5c80 1837,2095,4727,5301,5907,6504,6563,6884,8453,8484,9845
+public/wasm/manifest.json
+  s_0d39f3a4a4357a::t_9e3550e5bdd3ce 45-46,49
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "571c1bab637d79ce60f49e5f095636df8184f7a6",
+  "prompts": {},
+  "sessions": {
+    "s_0d39f3a4a4357a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "60da6a2e-7d79-4d98-8624-e993f5a9f94e",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
