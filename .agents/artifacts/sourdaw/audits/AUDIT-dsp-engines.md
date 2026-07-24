@@ -184,6 +184,8 @@ defense in the wasm build.
 - Remediation size: **S** (precompute off-thread / double-buffer the FIR).
 
 ### DSP-8 — No NaN/Inf sanitization at the wasm output boundary — Minor (large blast radius)
+
+Status: FIXED in #732
 - **Evidence:** each device's `#[wasm_bindgen] pub fn process(&mut self, …) -> *const f32`
   (`proof/mod.rs:71`, `fermenter/mod.rs:92`, `grinder/mod.rs:73,90`, …) returns the raw output buffer
   with no `is_finite` sweep. Internal `is_finite` guards exist but are inconsistent per device

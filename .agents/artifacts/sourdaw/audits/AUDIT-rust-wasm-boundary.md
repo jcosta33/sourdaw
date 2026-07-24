@@ -179,6 +179,8 @@ Status: FIXED in #721
 - **Blast radius:** memory/throughput cliff on large exports; Tauri's zero-JSON paths (`ipc::Response`, raw `ArrayBuffer` request body, `Channel<&[u8]>`) are available and partly wired but unused. Argued from serialization shape, not measured (see Open Questions).
 
 ### WB-6 — Production wasm has no panic hook and no explicit `panic="abort"`; Rust panics surface as opaque traps that poison the instance — **Major, S/M**
+
+Status: FIXED in #732
 - **Evidence:** whole-scope grep of `crates/` for `console_error_panic_hook`/`set_hook`/`panic::set_hook` — empty. Root `Cargo.toml:16-18` sets `opt-level`/`lto` only, no `panic="abort"`.
 - **Failure mode:** on `wasm32-unknown-unknown` a panic traps to `unreachable`; the JS boundary sees `RuntimeError: unreachable executed` with no message, and the instance is poisoned — every later exported call throws. On the AudioWorklet render thread the device goes silent with no diagnostic.
 - **Firing condition:** any panic in DSP under extreme input — index/slice bounds, `unwrap`, or a NaN/Inf-driven arithmetic assert (compounds DSP-8: no NaN/Inf boundary guard, `AUDIT-dsp-engines.md:186`).
