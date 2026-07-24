@@ -119,4 +119,23 @@ describe('deriveStemFileBaseNames', () => {
         expect(mappingA.get('trk_kick_2')).toBe('Kick_trk_kick');
         expect(mappingA.get('trk_snare')).toBe('Snare');
     });
+
+    it('should trim leading and trailing whitespace from the track name (behaviour change vs the old inline code)', () => {
+        // The old inline `(track?.name || trackId)` kept surrounding whitespace, producing
+        // filenames with leading/trailing spaces; the helper trims it.
+        const names = baseNamesFor([{ id: 'trk_1', name: '  Vocals  ' }]);
+
+        expect(names.get('trk_1')).toBe('Vocals');
+    });
+
+    it('should treat names that differ only in surrounding whitespace as colliding', () => {
+        const names = baseNamesFor([
+            { id: 'trk_a', name: 'Vocals' },
+            { id: 'trk_b', name: ' Vocals ' },
+        ]);
+
+        expect(names.get('trk_a')).toBe('Vocals');
+        expect(names.get('trk_b')).toBe('Vocals_trk_b');
+        expect(names.get('trk_a')).not.toBe(names.get('trk_b'));
+    });
 });
