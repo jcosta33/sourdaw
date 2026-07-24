@@ -12,6 +12,8 @@
 //! Struct-of-Arrays layout mirrors [`super::string::ModalString`] for the
 //! same SIMD auto-vectorisation properties.
 
+use crate::primitives::flush_denormal;
+
 /// Number of soundboard modes. 192 = 24 × 8 for `f32x8` SIMD alignment and
 /// sits near the upper end of the spec's 100–200 range.
 pub const SOUNDBOARD_MODES: usize = 192;
@@ -203,7 +205,7 @@ impl Soundboard {
             self.x2[index] = self.x1[index];
             self.x1[index] = input;
             self.y2[index] = self.y1[index];
-            self.y1[index] = y;
+            self.y1[index] = flush_denormal(y);
             left += self.gain_left[index] * y;
             right += self.gain_right[index] * y;
         }

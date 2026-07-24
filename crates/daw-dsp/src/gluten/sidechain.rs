@@ -1,5 +1,6 @@
 //! Sidechain processing — HPF, LPF, tilt filter (Thrust), parametric EQ.
 
+use crate::primitives::flush_denormal;
 use std::f32::consts::{FRAC_1_SQRT_2, PI};
 
 /// 2nd-order Butterworth highpass filter for sidechain.
@@ -56,9 +57,11 @@ impl SidechainHpf {
         if !self.enabled {
             return x;
         }
-        let y = self.b0 * x + self.b1 * self.x1 + self.b2 * self.x2
-            - self.a1 * self.y1
-            - self.a2 * self.y2;
+        let y = flush_denormal(
+            self.b0 * x + self.b1 * self.x1 + self.b2 * self.x2
+                - self.a1 * self.y1
+                - self.a2 * self.y2,
+        );
         self.x2 = self.x1;
         self.x1 = x;
         self.y2 = self.y1;
@@ -128,9 +131,11 @@ impl SidechainLpf {
         if !self.enabled {
             return x;
         }
-        let y = self.b0 * x + self.b1 * self.x1 + self.b2 * self.x2
-            - self.a1 * self.y1
-            - self.a2 * self.y2;
+        let y = flush_denormal(
+            self.b0 * x + self.b1 * self.x1 + self.b2 * self.x2
+                - self.a1 * self.y1
+                - self.a2 * self.y2,
+        );
         self.x2 = self.x1;
         self.x1 = x;
         self.y2 = self.y1;
@@ -273,9 +278,11 @@ impl SidechainEq {
         if !self.enabled || self.gain_db.abs() < 0.01 {
             return x;
         }
-        let y = self.b0 * x + self.b1 * self.x1 + self.b2 * self.x2
-            - self.a1 * self.y1
-            - self.a2 * self.y2;
+        let y = flush_denormal(
+            self.b0 * x + self.b1 * self.x1 + self.b2 * self.x2
+                - self.a1 * self.y1
+                - self.a2 * self.y2,
+        );
         self.x2 = self.x1;
         self.x1 = x;
         self.y2 = self.y1;

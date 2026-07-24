@@ -17,6 +17,7 @@
 //!
 //! Choke: closed hat triggers fast fade (≤1 ms = ~48 samples at 48 kHz).
 
+use crate::primitives::flush_denormal_in_place;
 use crate::toaster::dc_block::DcBlocker;
 use crate::toaster::poly_blep::PolyBlepSquare;
 
@@ -188,12 +189,8 @@ fn svf_bandpass(
     *ic2 = 2.0 * v2 - *ic2;
 
     // Denormal protection
-    if ic1.abs() < 1e-20 {
-        *ic1 = 0.0;
-    }
-    if ic2.abs() < 1e-20 {
-        *ic2 = 0.0;
-    }
+    flush_denormal_in_place(ic1);
+    flush_denormal_in_place(ic2);
 
     v1 // bandpass
 }

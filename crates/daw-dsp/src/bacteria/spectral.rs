@@ -3,6 +3,8 @@
 //! Placeholder module — full STFT implementation and Hilbert transform
 //! frequency shifter will be expanded in Phase 3.
 
+use crate::primitives::flush_denormal;
+
 /// Spectral blur processor using simple recursive averaging.
 /// This is a time-domain approximation; full STFT follows in Phase 3.
 pub struct SpectralProcessor {
@@ -43,8 +45,12 @@ impl SpectralProcessor {
         }
 
         // Simple time-domain spectral blur: recursive smoothing
-        let smoothed =
-            self.blur_alpha * input + (1.0 - self.blur_alpha) * self.smooth_buffer[self.buffer_pos];
+        // DSP-2: the smoothing recursion runs through the ring buffer, so the tail
+        // decays into the subnormal range one slot at a time.
+        let smoothed = flush_denormal(
+            self.blur_alpha * input
+                + (1.0 - self.blur_alpha) * self.smooth_buffer[self.buffer_pos],
+        );
         self.smooth_buffer[self.buffer_pos] = smoothed;
         self.buffer_pos = (self.buffer_pos + 1) % self.smooth_buffer.len();
         self.frozen_value = smoothed;

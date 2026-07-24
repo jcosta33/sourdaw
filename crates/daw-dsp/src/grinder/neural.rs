@@ -6,6 +6,8 @@
 //! - Model tiering (Standard/Lite/Nano/Recurrent)
 //! - Pre-allocated weight and activation buffers
 
+use crate::primitives::flush_denormal;
+
 /// Neural model tier.
 #[derive(Clone, Copy, PartialEq)]
 pub enum ModelTier {
@@ -332,7 +334,8 @@ impl NeuralCapture {
         };
 
         let contour_coeff = (2.0 * std::f32::consts::PI * 1_800.0 / self.sample_rate).min(0.3);
-        self.contour_state += contour_coeff * (processed - self.contour_state);
+        self.contour_state =
+            flush_denormal(self.contour_state + contour_coeff * (processed - self.contour_state));
         let edge = processed - self.contour_state;
         let voiced = self.contour_state * (1.0 - self.contour_mix) + edge * self.contour_mix;
         let profiled = voiced * self.output_trim;

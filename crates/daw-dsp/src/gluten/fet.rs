@@ -5,6 +5,7 @@
 
 use super::gain_computer::{apply_range, db_to_linear, gain_computer, linear_to_db};
 use super::oversample::ConfigurableOversample;
+use crate::primitives::flush_denormal;
 
 pub struct FetCompressor {
     sample_rate: f32,
@@ -130,7 +131,7 @@ impl FetCompressor {
         } else {
             self.release_coeff
         };
-        self.gr_state = coeff * self.gr_state + (1.0 - coeff) * gc;
+        self.gr_state = flush_denormal(coeff * self.gr_state + (1.0 - coeff) * gc);
 
         // Track peak timer for all-buttons mode
         if gc < self.gr_state - 1.0 {

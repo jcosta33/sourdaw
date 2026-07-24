@@ -7,7 +7,7 @@
 /// Reference: Zavalishin, "The Art of VA Filter Design" (2018), Chapter 4.
 use std::f32::consts::PI;
 
-use super::types::DENORMAL_DC;
+use crate::primitives::flush_denormal;
 
 // ── Filter Output ──────────────────────────────────────────────────────
 
@@ -124,10 +124,11 @@ impl TptSvf {
         let v1 = self.a1 * *s1 + self.a2 * v3;
         let v2 = *s2 + self.a2 * *s1 + self.a3 * v3;
 
-        *s1 = 2.0 * v1 - *s1 + DENORMAL_DC;
-        *s2 = 2.0 * v2 - *s2 + DENORMAL_DC;
-        *s1 -= DENORMAL_DC;
-        *s2 -= DENORMAL_DC;
+        // DSP-9: was an add-then-subtract `DENORMAL_DC` offset, which biased the
+        // integrator state to keep it out of the subnormal range. The shared
+        // guard flushes instead, leaving normal-range state bit-exact.
+        *s1 = flush_denormal(2.0 * v1 - *s1);
+        *s2 = flush_denormal(2.0 * v2 - *s2);
 
         SvfOutput {
             lowpass: v2,

@@ -6,6 +6,8 @@
 //! R ≈ 0.995 at 44.1 kHz gives ~32 Hz cutoff.
 //! Scaled proportionally for 48 kHz: R = exp(-2π × 32 / 48000) ≈ 0.9958.
 
+use crate::primitives::flush_denormal;
+
 /// DC blocker with configurable pole radius.
 pub struct DcBlocker {
     x_prev: f32,
@@ -42,9 +44,7 @@ impl DcBlocker {
         self.y_prev = y;
 
         // Denormal protection
-        if self.y_prev.abs() < 1e-20 {
-            self.y_prev = 0.0;
-        }
+        self.y_prev = flush_denormal(self.y_prev);
 
         y
     }

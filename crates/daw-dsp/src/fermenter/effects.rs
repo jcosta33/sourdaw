@@ -1,3 +1,5 @@
+use crate::primitives::flush_denormal;
+
 /// Stereo ping-pong delay effect.
 pub struct StereoDelay {
     buffer_l: Vec<f32>,
@@ -209,7 +211,7 @@ impl StereoPhaser {
             let mut wet_l = left[i];
             for s in 0..4 {
                 let y = a1 * wet_l + self.allpass_l[s];
-                self.allpass_l[s] = wet_l - a1 * y;
+                self.allpass_l[s] = flush_denormal(wet_l - a1 * y);
                 wet_l = y;
             }
             left[i] = dry_l * (1.0 - mix) + wet_l * mix;
@@ -223,7 +225,7 @@ impl StereoPhaser {
             let a1_r = (coeff_r - 1.0) / (coeff_r + 1.0);
             for s in 0..4 {
                 let y = a1_r * wet_r + self.allpass_r[s];
-                self.allpass_r[s] = wet_r - a1_r * y;
+                self.allpass_r[s] = flush_denormal(wet_r - a1_r * y);
                 wet_r = y;
             }
             right[i] = dry_r * (1.0 - mix) + wet_r * mix;
@@ -287,8 +289,8 @@ impl Distortion {
             let dist_r = (ws1_r + ws2_r) * 0.5;
 
             // Tone filter (one-pole lowpass on the distorted signal)
-            self.ds_l += lp_coeff * (dist_l - self.ds_l);
-            self.ds_r += lp_coeff * (dist_r - self.ds_r);
+            self.ds_l = flush_denormal(self.ds_l + lp_coeff * (dist_l - self.ds_l));
+            self.ds_r = flush_denormal(self.ds_r + lp_coeff * (dist_r - self.ds_r));
 
             left[i] = dry_l * (1.0 - mix) + self.ds_l * mix;
             right[i] = dry_r * (1.0 - mix) + self.ds_r * mix;
@@ -455,7 +457,10 @@ impl FdnReverb {
         let inputs = [input_l, input_r, input_l, input_r];
 
         for i in 0..4 {
-            let damped = self.feedback[i] + (1.0 - self.damping) * (mixed[i] - self.feedback[i]);
+            // DSP-2: the tank feedback state decays toward zero once input stops.
+            let damped = flush_denormal(
+                self.feedback[i] + (1.0 - self.damping) * (mixed[i] - self.feedback[i]),
+            );
             self.feedback[i] = damped;
             let len = self.delays[i].len();
             self.delays[i][self.write_pos[i]] = inputs[i] + damped * self.decay;
@@ -542,7 +547,11 @@ impl BiquadCoeffs {
 impl BiquadState {
     #[inline]
     fn process(&mut self, x: f32, c: &BiquadCoeffs) -> f32 {
-        let y = c.b0 * x + c.b1 * self.x1 + c.b2 * self.x2 - c.a1 * self.y1 - c.a2 * self.y2;
+        let raw = c.b0 * x + c.b1 * self.x1 + c.b2 * self.x2 - c.a1 * self.y1 - c.a2 * self.y2;
+        // DSP-2: Direct-Form-I copy of proof::biquad — the recursive y-state decays
+        // into the subnormal range on silence. Flushing once keeps both the stored
+        // state and the returned sample clean.
+        let y = flush_denormal(raw);
         self.x2 = self.x1;
         self.x1 = x;
         self.y2 = self.y1;
@@ -731,7 +740,9 @@ impl PlateReverb {
         self.del1.write(t1);
         let t2 = self.del1.read(self.del1_len);
         // Damping (one-pole lowpass)
-        self.damp_state_l = t2 * (1.0 - self.damping) + self.damp_state_l * self.damping;
+        // DSP-2: the tank damping state decays toward zero once the tank empties.
+        self.damp_state_l =
+            flush_denormal(t2 * (1.0 - self.damping) + self.damp_state_l * self.damping);
         self.del2.write(self.damp_state_l * self.decay);
         self.tank_l = self.del2.read(self.del2_len);
 
@@ -741,7 +752,9 @@ impl PlateReverb {
         self.del3.write(t3);
         let t4 = self.del3.read(self.del3_len);
         // Damping (one-pole lowpass)
-        self.damp_state_r = t4 * (1.0 - self.damping) + self.damp_state_r * self.damping;
+        // DSP-2: the tank damping state decays toward zero once the tank empties.
+        self.damp_state_r =
+            flush_denormal(t4 * (1.0 - self.damping) + self.damp_state_r * self.damping);
         self.del4.write(self.damp_state_r * self.decay);
         self.tank_r = self.del4.read(self.del4_len);
 

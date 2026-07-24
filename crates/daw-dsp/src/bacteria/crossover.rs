@@ -4,6 +4,7 @@
 //! Each crossover point splits signal into low-pass and high-pass outputs.
 //! Supports 1–6 bands with up to 5 crossover points.
 
+use crate::primitives::flush_denormal;
 use std::f32::consts::PI;
 
 /// Butterworth Q for one stage of an LR4 cascade (1/√2), matching the sister
@@ -67,9 +68,9 @@ impl Biquad {
 
     fn process_sample(&mut self, input: f32) -> f32 {
         // Direct Form II Transposed
-        let out = self.b0 * input + self.z1;
-        self.z1 = self.b1 * input - self.a1 * out + self.z2;
-        self.z2 = self.b2 * input - self.a2 * out;
+        let out = flush_denormal(self.b0 * input + self.z1);
+        self.z1 = flush_denormal(self.b1 * input - self.a1 * out + self.z2);
+        self.z2 = flush_denormal(self.b2 * input - self.a2 * out);
         out
     }
 

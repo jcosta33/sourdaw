@@ -10,6 +10,7 @@
 //! Results in more midrange punch, less sub-bass, audible click.
 
 use super::lfsr::Lfsr31;
+use crate::primitives::flush_denormal_in_place;
 use crate::toaster::adaa::{antiderivative_tanh, adaa_first_order};
 use crate::toaster::dc_block::DcBlocker;
 
@@ -217,12 +218,8 @@ fn svf_bandpass_909(
     *ic1 = 2.0 * v1 - *ic1;
     *ic2 = 2.0 * v2 - *ic2;
 
-    if ic1.abs() < 1e-20 {
-        *ic1 = 0.0;
-    }
-    if ic2.abs() < 1e-20 {
-        *ic2 = 0.0;
-    }
+    flush_denormal_in_place(ic1);
+    flush_denormal_in_place(ic2);
 
     v1
 }

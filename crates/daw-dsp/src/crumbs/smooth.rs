@@ -1,8 +1,8 @@
 /// One-pole exponential parameter smoother.
 ///
 /// Prevents zipper noise when parameters change during playback.
-/// Includes denormal prevention via a tiny DC offset (1e-18).
-use super::types::DENORMAL_DC;
+/// Includes denormal prevention via the shared flush guard.
+use crate::primitives::flush_denormal;
 
 #[derive(Debug, Clone)]
 pub struct ParamSmoother {
@@ -56,9 +56,8 @@ impl ParamSmoother {
     /// Advance one sample and return the smoothed value.
     pub fn tick(&mut self) -> f32 {
         // One-pole IIR: current += coeff * (target - current)
-        // With denormal prevention via DC offset.
-        self.current = self.current + self.coeff * (self.target - self.current) + DENORMAL_DC;
-        self.current -= DENORMAL_DC;
+        // DSP-9: flush guard replaces the old add/subtract DC offset.
+        self.current = flush_denormal(self.current + self.coeff * (self.target - self.current));
         self.current
     }
 

@@ -6,6 +6,7 @@
 //! decay, and gain. Nonlinear damping: decay increases (rings longer) at
 //! lower amplitudes for a more natural feel.
 
+use crate::primitives::flush_denormal;
 use std::f32::consts::TAU;
 
 /// xorshift32 noise
@@ -77,9 +78,10 @@ impl ModalMode {
     /// Process one sample through the biquad (direct form II transposed).
     #[inline]
     fn tick(&mut self, input: f32) -> f32 {
-        let out = self.b0 * input + self.s1;
-        self.s1 = self.b1 * input - self.a1 * out + self.s2;
-        self.s2 = self.b2 * input - self.a2 * out;
+        // DSP-2: high-Q modal resonators ring longest of any Toaster engine.
+        let out = flush_denormal(self.b0 * input + self.s1);
+        self.s1 = flush_denormal(self.b1 * input - self.a1 * out + self.s2);
+        self.s2 = flush_denormal(self.b2 * input - self.a2 * out);
         out * self.gain
     }
 

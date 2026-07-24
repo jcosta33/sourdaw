@@ -3,6 +3,7 @@
 //! Supports: low-pass, high-pass, band-pass, notch, formant, comb.
 //! Stable under audio-rate modulation.
 
+use crate::primitives::flush_denormal;
 use std::f32::consts::PI;
 
 /// Filter mode selector.
@@ -105,9 +106,11 @@ impl SvfFilter {
         // Update envelope follower
         let abs_input = input.abs();
         if abs_input > self.env_level {
-            self.env_level = abs_input + self.env_attack_coeff * (self.env_level - abs_input);
+            self.env_level =
+                flush_denormal(abs_input + self.env_attack_coeff * (self.env_level - abs_input));
         } else {
-            self.env_level = abs_input + self.env_release_coeff * (self.env_level - abs_input);
+            self.env_level =
+                flush_denormal(abs_input + self.env_release_coeff * (self.env_level - abs_input));
         }
 
         // Modulate cutoff with envelope
@@ -125,8 +128,8 @@ impl SvfFilter {
         let v1 = a1 * self.ic1eq + a2 * v3;
         let v2 = self.ic2eq + a2 * self.ic1eq + a3 * v3;
 
-        self.ic1eq = 2.0 * v1 - self.ic1eq;
-        self.ic2eq = 2.0 * v2 - self.ic2eq;
+        self.ic1eq = flush_denormal(2.0 * v1 - self.ic1eq);
+        self.ic2eq = flush_denormal(2.0 * v2 - self.ic2eq);
 
         match self.mode {
             FilterMode::LowPass => v2,
@@ -152,7 +155,9 @@ impl SvfFilter {
         };
 
         let delayed = self.comb_buffer[read_pos];
-        let output = input + delayed * self.resonance;
+        // DSP-2: the comb loop recirculates its own output, so an unflushed
+        // tail keeps subnormals alive in the delay line indefinitely.
+        let output = flush_denormal(input + delayed * self.resonance);
 
         self.comb_buffer[self.comb_write_pos] = output;
         self.comb_write_pos = (self.comb_write_pos + 1) % self.comb_buffer.len();

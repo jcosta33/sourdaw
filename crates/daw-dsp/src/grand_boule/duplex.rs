@@ -10,6 +10,7 @@
 //! is around −35 dB per the spec.
 
 use super::parameters::{has_duplex_resonance, key_fundamental_hz};
+use crate::primitives::flush_denormal;
 
 /// Number of duplex resonators per voice.
 pub const DUPLEX_MODES: usize = 2;
@@ -99,7 +100,7 @@ impl DuplexBank {
             self.x2[index] = self.x1[index];
             self.x1[index] = bridge_sample;
             self.y2[index] = self.y1[index];
-            self.y1[index] = y;
+            self.y1[index] = flush_denormal(y);
             output += y;
         }
         output

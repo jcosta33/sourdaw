@@ -1,5 +1,7 @@
 //! Stereo imager — per-band width control, auto mono bass, correlation meter.
 
+use crate::primitives::flush_denormal_f64;
+
 use super::crossover::FourBandSplitter;
 
 const NUM_BANDS: usize = 4;
@@ -119,9 +121,11 @@ impl StereoImager {
         for i in 0..left.len() {
             let l = left[i] as f64;
             let r = right[i] as f64;
-            self.lr_sum = a * self.lr_sum + (1.0 - a) * l * r;
-            self.l_sq_sum = a * self.l_sq_sum + (1.0 - a) * l * l;
-            self.r_sq_sum = a * self.r_sq_sum + (1.0 - a) * r * r;
+            // DSP-2: the correlation meter runs every sample even when bypassed,
+            // so these leaky sums keep decaying long after the signal stops.
+            self.lr_sum = flush_denormal_f64(a * self.lr_sum + (1.0 - a) * l * r);
+            self.l_sq_sum = flush_denormal_f64(a * self.l_sq_sum + (1.0 - a) * l * l);
+            self.r_sq_sum = flush_denormal_f64(a * self.r_sq_sum + (1.0 - a) * r * r);
         }
         let denom = (self.l_sq_sum * self.r_sq_sum).sqrt();
         self.meter_correlation = if denom < 1e-9 {

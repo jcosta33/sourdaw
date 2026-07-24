@@ -4,6 +4,7 @@
 //! Feedback topology with soft, inherently program-dependent ratio.
 
 use super::gain_computer::{db_to_linear, linear_to_db};
+use crate::primitives::flush_denormal;
 
 pub struct OptoCompressor {
     sample_rate: f32,
@@ -92,7 +93,7 @@ impl OptoCompressor {
             self.memory_state += charge_alpha * (1.0 - self.memory_state);
         } else {
             let decay_alpha = 1.0 - (-1.0 / (self.tau_memory_decay * self.sample_rate)).exp();
-            self.memory_state -= decay_alpha * self.memory_state;
+            self.memory_state = flush_denormal(self.memory_state - decay_alpha * self.memory_state);
         }
 
         // Release time stretches with memory
@@ -105,7 +106,7 @@ impl OptoCompressor {
             1.0 - (-1.0 / (tau_release * self.sample_rate)).exp()
         };
 
-        self.gr_state += alpha * (desired_gr_db - self.gr_state);
+        self.gr_state = flush_denormal(self.gr_state + alpha * (desired_gr_db - self.gr_state));
 
         let gain = db_to_linear(-self.gr_state);
         let out_l = left * gain;

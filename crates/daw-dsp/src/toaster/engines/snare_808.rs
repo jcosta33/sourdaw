@@ -8,6 +8,7 @@
 //! Snappy knob controls noise VCA amplitude.
 //! Noise source: white noise through Sallen-Key 2-pole HPF at ~2749 Hz.
 
+use crate::primitives::flush_denormal;
 use crate::toaster::bridged_t::BridgedTFilter;
 use crate::toaster::dc_block::DcBlocker;
 use crate::toaster::tolerance::{cap, prng_state, res};
@@ -196,12 +197,8 @@ impl Snare808Engine {
         self.hpf_s1 = self.hpf_b1 * input - self.hpf_a1 * output + self.hpf_s2;
         self.hpf_s2 = self.hpf_b2 * input - self.hpf_a2 * output;
 
-        if self.hpf_s1.abs() < 1e-20 {
-            self.hpf_s1 = 0.0;
-        }
-        if self.hpf_s2.abs() < 1e-20 {
-            self.hpf_s2 = 0.0;
-        }
+        self.hpf_s1 = flush_denormal(self.hpf_s1);
+        self.hpf_s2 = flush_denormal(self.hpf_s2);
 
         output
     }

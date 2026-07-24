@@ -4,6 +4,8 @@
 //!
 //! Uses a smooth nonlinear flux model for magnetic saturation.
 
+use crate::primitives::flush_denormal;
+
 /// Output transformer with hysteresis-like behavior.
 pub struct Transformer {
     // Saturation parameters
@@ -84,7 +86,7 @@ impl Transformer {
 
         // Low-frequency emphasis: extract LF content for heavier saturation
         let lf_coeff = (2.0 * std::f32::consts::PI * self.lf_freq * dt).min(0.5);
-        self.lf_state += lf_coeff * (input - self.lf_state);
+        self.lf_state = flush_denormal(self.lf_state + lf_coeff * (input - self.lf_state));
         let lf_content = self.lf_state;
         let hf_content = input - lf_content;
 
@@ -96,7 +98,11 @@ impl Transformer {
 
         // Hysteresis: flux state has memory between samples
         let hysteresis_blend = self.hysteresis * 0.5;
-        self.flux_state = flux * (1.0 - hysteresis_blend) + self.flux_state * hysteresis_blend;
+        // DSP-2: the hysteresis memory term keeps decaying after the input stops,
+        // so it lands in the subnormal range instead of reaching zero.
+        self.flux_state = flush_denormal(
+            flux * (1.0 - hysteresis_blend) + self.flux_state * hysteresis_blend,
+        );
 
         // LF saturation emphasis: saturate LF more heavily
         let lf_saturated = self.flux_response(lf_content * (1.0 + self.lf_saturation * 4.0));

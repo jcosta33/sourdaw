@@ -5,6 +5,7 @@
 //!   Reverb tail path: Simple AR envelope with longer decay.
 
 use super::lfsr::Lfsr31;
+use crate::primitives::flush_denormal_in_place;
 use crate::toaster::dc_block::DcBlocker;
 
 const CLAP_BPF_FREQ: f32 = 1140.0;
@@ -181,12 +182,8 @@ fn svf_bandpass_909_clap(
     *ic1 = 2.0 * v1 - *ic1;
     *ic2 = 2.0 * v2 - *ic2;
 
-    if ic1.abs() < 1e-20 {
-        *ic1 = 0.0;
-    }
-    if ic2.abs() < 1e-20 {
-        *ic2 = 0.0;
-    }
+    flush_denormal_in_place(ic1);
+    flush_denormal_in_place(ic2);
 
     v1
 }
