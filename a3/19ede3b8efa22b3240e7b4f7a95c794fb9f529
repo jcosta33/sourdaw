@@ -1,0 +1,29 @@
+src/modules/AudioEngine/engine/__tests__/ScoringNode.spec.ts
+  s_88ffc5326d9b0b::t_c7d12c4c289d5f 253-293
+src/modules/AudioEngine/repositories/devices/modulation/__tests__/applyChorusParams.spec.ts
+  s_0d39f3a4a4357a::t_28ebfd81f6c850 30-87
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "a319ede3b8efa22b3240e7b4f7a95c794fb9f529",
+  "prompts": {},
+  "sessions": {
+    "s_0d39f3a4a4357a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "60da6a2e-7d79-4d98-8624-e993f5a9f94e",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_88ffc5326d9b0b": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-ad18badee0d6bb8b2",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
