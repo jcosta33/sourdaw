@@ -250,4 +250,45 @@ describe('createScoringNode', () => {
         expect(node.workletNode).toBeDefined();
         await expect(node.ready).resolves.toEqual({});
     });
+
+    it('cancels a prior polling loop when onTelemetry is registered again', async () => {
+        const { telemetryAllocator } = await import('../telemetryAllocator');
+        vi.mocked(telemetryAllocator.allocateSlot).mockReturnValue({
+            sab: {} as SharedArrayBuffer,
+            byteOffset: 0,
+            view: new Float32Array(32),
+            seqView: new Int32Array(32),
+        });
+        const rafCallbacks: FrameRequestCallback[] = [];
+        vi.stubGlobal('requestAnimationFrame', (cb: FrameRequestCallback) => {
+            rafCallbacks.push(cb);
+            return rafCallbacks.length;
+        });
+        const cancelRaf = vi.fn();
+        vi.stubGlobal('cancelAnimationFrame', cancelRaf);
+
+        const node = await createScoringNode(makeCtx());
+        node.onTelemetry(vi.fn());
+        // A second registration must cancel the first scheduled frame before
+        // starting a new poll loop (the `telemetryRafId !== null` guard).
+        node.onTelemetry(vi.fn());
+
+        expect(cancelRaf).toHaveBeenCalledWith(1);
+    });
+
+    it('destroy is a safe no-op when no slot was allocated and no poll is running', async () => {
+        // No slot (allocateSlot returns null) and onTelemetry never called →
+        // both destroy guards (telemetryRafId null, slot null) take their false
+        // arms: nothing to cancel, nothing to release.
+        const cancelRaf = vi.fn();
+        vi.stubGlobal('cancelAnimationFrame', cancelRaf);
+
+        const node = await createScoringNode(makeCtx());
+        node.destroy();
+
+        expect(cancelRaf).not.toHaveBeenCalled();
+        // Still disconnects and closes the port.
+        expect(disconnect).toHaveBeenCalled();
+        expect(close).toHaveBeenCalled();
+    });
 });

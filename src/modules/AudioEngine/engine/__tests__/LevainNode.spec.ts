@@ -72,6 +72,18 @@ describe('createLevainNode runtime-fault notification', () => {
 
         expect(onFault).not.toHaveBeenCalled();
     });
+
+    it('reports "Unknown error" for an error event that omits the message field', async () => {
+        const onFault = vi.fn();
+        const ctx = { currentTime: 0, state: 'running' } as unknown as BaseAudioContext;
+
+        await createLevainNode(ctx, undefined, onFault);
+
+        // An error with no `message` key exercises the cond-expr false arm.
+        node.port.onmessage?.({ data: { type: 'error' } } as MessageEvent);
+
+        expect(onFault).toHaveBeenCalledWith('Unknown error');
+    });
 });
 
 // Bypass-entry voice release is owned by TrackNode.updateBypass, which calls
@@ -128,5 +140,62 @@ describe('createLevainNode bypass and allNotesOff surfaces', () => {
 
         expect(postMessage).toHaveBeenCalledTimes(1);
         expect(postMessage).toHaveBeenCalledWith({ type: 'bypass', bypassed: false });
+    });
+
+    it('noteOn posts while unbypassed and is suppressed while bypassed', async () => {
+        const ctx = { currentTime: 0, state: 'running' } as unknown as BaseAudioContext;
+        const result = await createLevainNode(ctx);
+        postMessage.mockClear();
+
+        // Unbypassed → noteOn forwards to the worklet.
+        result.noteOn(60, 100);
+        expect(postMessage).toHaveBeenCalledWith({ type: 'noteOn', note: 60, velocity: 100, sampleFrame: undefined });
+
+        // Bypassed → noteOn is a no-op. setBypass itself posts the bypass mute;
+        // clear after it so only the subsequent noteOn is observed.
+        result.setBypass(true);
+        postMessage.mockClear();
+        result.noteOn(60, 100);
+        expect(postMessage).not.toHaveBeenCalled();
+    });
+
+    it('noteOff always forwards regardless of bypass state', async () => {
+        const ctx = { currentTime: 0, state: 'running' } as unknown as BaseAudioContext;
+        const result = await createLevainNode(ctx);
+        postMessage.mockClear();
+
+        result.noteOff(60, 128);
+        expect(postMessage).toHaveBeenCalledWith({ type: 'noteOff', note: 60, sampleFrame: 128 });
+    });
+
+    it('setParam forwards finite values and drops non-finite ones', async () => {
+        const ctx = { currentTime: 0, state: 'running' } as unknown as BaseAudioContext;
+        const result = await createLevainNode(ctx);
+        postMessage.mockClear();
+
+        result.setParam('gain', 0.5);
+        expect(postMessage).toHaveBeenCalledWith({ type: 'param', name: 'gain', value: 0.5 });
+
+        // NaN and Infinity must be dropped (never forwarded to the worklet).
+        postMessage.mockClear();
+        result.setParam('gain', Number.NaN);
+        result.setParam('gain', Number.POSITIVE_INFINITY);
+        expect(postMessage).not.toHaveBeenCalled();
+    });
+
+    it('resumes a suspended AudioContext before wiring the worklet', async () => {
+        const resume = vi.fn().mockResolvedValue(undefined);
+        const suspendedCtx = {
+            currentTime: 0,
+            state: 'suspended',
+            resume,
+        } as unknown as AudioContext;
+        // Stub the global so `instanceof AudioContext` holds for the fake ctx.
+        class FakeAudioContext {}
+        vi.stubGlobal('AudioContext', FakeAudioContext);
+        Object.setPrototypeOf(suspendedCtx, FakeAudioContext.prototype);
+
+        await createLevainNode(suspendedCtx);
+        expect(resume).toHaveBeenCalledTimes(1);
     });
 });
