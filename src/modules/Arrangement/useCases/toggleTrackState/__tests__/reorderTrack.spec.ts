@@ -96,4 +96,10 @@ describe('reorderTrack', () => {
         reorderTrack('missing', 0);
         expect(mocks.updateTrackState).not.toHaveBeenCalled();
     });
+
+    it('bails when the track store has not loaded', () => {
+        mocks.getTrackState.mockReturnValue(null);
+        reorderTrack('t1', 0);
+        expect(mocks.updateTrackState).not.toHaveBeenCalled();
+    });
 });

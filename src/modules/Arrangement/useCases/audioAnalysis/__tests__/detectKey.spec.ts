@@ -73,4 +73,14 @@ describe('detectKey', () => {
 
         expect(await subject.detectKey('c1')).toBe('G Major');
     });
+
+    it('still resolves when every chroma bin is equal (zero-variance correlation)', async () => {
+        // A constant chroma profile has zero variance, so the Pearson
+        // denominator is zero — the guard must fall back to a 0 correlation
+        // rather than emitting NaN. With all correlations tied, the initial
+        // C Major default wins.
+        mocks.summarizeFeatures.mockReturnValue({ chromaProfile: [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1] });
+
+        expect(await subject.detectKey('c1')).toBe('C Major');
+    });
 });

@@ -122,4 +122,13 @@ describe('moveClip', () => {
         expect(mocks.shiftClipAutomation).not.toHaveBeenCalled();
         expect(mocks.shiftClipMidiNotes).not.toHaveBeenCalled();
     });
+
+    it('bails when the track store has not loaded', () => {
+        mocks.getTrackState.mockReturnValue(null as unknown as { tracks: never[] });
+
+        moveClip('c1', 't1', 10);
+
+        expect(mocks.setTrackState).not.toHaveBeenCalled();
+        expect(mocks.shiftClipAutomation).not.toHaveBeenCalled();
+    });
 });

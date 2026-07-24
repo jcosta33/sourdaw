@@ -41,4 +41,20 @@ describe('getGainAtBeat', () => {
         });
         expect(getGainAtBeat('c4', 0.5)).toBeCloseTo(3);
     });
+
+    it('should interpolate within the correct segment when multiple segments exist', () => {
+        // Three points form two segments; a beat in the second segment must
+        // skip the first segment (its if-guard evaluates false) before matching.
+        setEnvelope('c5', {
+            clipId: 'c5',
+            enabled: true,
+            points: [
+                { id: 'a', beatOffset: 0, gainDb: 0 },
+                { id: 'b', beatOffset: 2, gainDb: 4 },
+                { id: 'c', beatOffset: 4, gainDb: 8 },
+            ],
+        });
+        // Beat 3 sits in the [2,4] segment: halfway between 4 and 8 -> 6.
+        expect(getGainAtBeat('c5', 3)).toBeCloseTo(6);
+    });
 });

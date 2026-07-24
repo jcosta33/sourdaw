@@ -27,4 +27,10 @@ describe('createVcaGroup', () => {
         expect(created.trackIds).toEqual([track.id]);
         expect(getTrackById(track.id)?.vcaGroupId).toBe(created.id);
     });
+
+    it('throws when the requested vca group id already exists', () => {
+        setVcaGroupsState([{ id: 'vca-dup', name: 'Existing', gain: 1, muted: false, trackIds: [] }]);
+
+        expect(() => createVcaGroup('Dup', [], 'vca-dup')).toThrowError(/already exists/);
+    });
 });

@@ -225,6 +225,62 @@ describe('removeDevice', () => {
         expect(mocks.removeDeviceFromStrip).not.toHaveBeenCalled();
     });
 
+    it('returns missing when the track store itself is absent', () => {
+        mocks.getTrackState.mockReturnValue(null);
+
+        expect(removeDevice('d1')).toBe('missing');
+        expect(mocks.mapAllTracks).not.toHaveBeenCalled();
+        expect(mocks.removeDeviceFromStrip).not.toHaveBeenCalled();
+    });
+
+    it('fails closed when a single track owns its id more than once in project truth', () => {
+        // A corrupted state where the same track id appears twice would let the
+        // removal pick the first occurrence but mutate the wrong record; the
+        // owner-count guard rejects it as a conflict before any write.
+        const track = createTrack({ id: 'audio-1', name: 'Audio', kind: 'audio' });
+        track.devices = [{ id: 'd1', name: 'D', type: 'delay', bypassed: false, parameterValues: {} }];
+        mocks.getTrackState.mockReturnValue({ tracks: [track, { ...track }], selectedTrackId: null });
+
+        expect(removeDevice('d1')).toBe('conflict');
+        expect(mocks.mapAllTracks).not.toHaveBeenCalled();
+        expect(mocks.removeDeviceFromStrip).not.toHaveBeenCalled();
+    });
+
+    it('passes unrelated tracks through the map untouched while editing the owner', () => {
+        mocks.getTrackState.mockReturnValue({
+            tracks: [
+                { id: 't1', kind: 'audio', devices: [{ id: 'd1', type: 'reverb' }] } as unknown as Track,
+                { id: 't2', kind: 'audio', devices: [{ id: 'd2', type: 'eq' }] } as unknown as Track,
+            ],
+            selectedTrackId: null,
+        });
+
+        removeDevice('d1');
+
+        const updater = mocks.mapAllTracks.mock.calls[0]![0] as (track: Partial<Track>) => Partial<Track>;
+        const unrelated = { id: 't2', devices: [{ id: 'd2', type: 'eq' }] as unknown as Device[] };
+        // The non-owner track is returned by reference, unmutated.
+        expect(updater(unrelated)).toBe(unrelated);
+    });
+
+    it('skips non-external retained siblings during strip-deactivation unload', () => {
+        // Removing the last Toaster deactivates the strip; only external-plugin
+        // siblings with live instances are unloaded, builtin siblings are skipped.
+        const folder = createTrack({ id: 'folder-1', name: 'Folder', kind: 'folder' });
+        folder.devices = [
+            { id: 'builtin-1', name: 'Builtin', type: 'delay', bypassed: false, parameterValues: {} },
+            createExternalDevice('external-1', 'instance-1'),
+            { id: 'toaster-1', name: 'Toaster', type: 'toaster', bypassed: false, parameterValues: {} },
+        ];
+        mocks.getTrackState.mockReturnValue({ tracks: [folder], selectedTrackId: null });
+
+        removeDevice('toaster-1');
+
+        expect(mocks.removeTrackStrip).toHaveBeenCalledWith('folder-1');
+        // Only the external sibling is unloaded; the builtin sibling is not.
+        expect(mocks.unloadPlugin.mock.calls.map(([id]) => id)).toEqual(['instance-1']);
+    });
+
     it('commits truth before independently reporting device, strip, and host cleanup failures', async () => {
         const folder = createTrack({ id: 'folder-1', name: 'Folder', kind: 'folder' });
         folder.devices = [

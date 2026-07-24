@@ -123,6 +123,19 @@ describe('MIDI-track MIDI FX operations', () => {
         expect(mocks.updatedTrack?.midiFx[0]?.name).toBe('ARP');
     });
 
+    it('addMidiFx initializes the fx array when the midi track has none yet', () => {
+        // A midi track may carry no midiFx array at all; the spread must fall
+        // back to [] instead of crashing on undefined.
+        mocks.updateTrack.mockImplementation((_trackId: string, updater: (track: TestTrack) => TestTrack) => {
+            mocks.updatedTrack = updater({ kind: 'midi' } as TestTrack);
+        });
+
+        addMidiFx('midi-1', 'arp');
+
+        expect(mocks.updatedTrack?.midiFx).toHaveLength(1);
+        expect(mocks.updatedTrack?.midiFx[0]?.type).toBe('arp');
+    });
+
     it('bypassMidiFx flips the bypassed flag on the matched fx and syncs the engine', () => {
         mocks.updateTrack.mockImplementation((_trackId: string, updater: (track: TestTrack) => TestTrack) => {
             mocks.updatedTrack = updater({ kind: 'midi', midiFx: [residue] });

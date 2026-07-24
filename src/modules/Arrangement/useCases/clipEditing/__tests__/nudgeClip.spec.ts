@@ -7,10 +7,15 @@ import type { updateClip as originalUpdateClip } from '#/modules/Arrangement/rep
 
 const mocks = vi.hoisted(() => ({
     updateClip: vi.fn<typeof originalUpdateClip>(),
+    getTrackState: vi.fn<() => { tracks: unknown[] } | null>(),
 }));
 
 vi.mock('#/modules/Arrangement/repositories/track/updateClip', () => ({
     updateClip: mocks.updateClip,
+}));
+
+vi.mock('#/modules/Arrangement/repositories/track/getTrackState', () => ({
+    getTrackState: mocks.getTrackState,
 }));
 
 describe('nudgeClip', () => {
@@ -59,5 +64,15 @@ describe('nudgeClip', () => {
         const result = updater(mockClip);
 
         expect(result).toBe(mockClip);
+    });
+
+    it('skips the lock pre-check and still nudges when the track store is absent', () => {
+        // state is null -> the findClipById locked pre-check is skipped, but
+        // the nudge write still proceeds through updateClip.
+        mocks.getTrackState.mockReturnValue(null);
+        mocks.updateClip.mockReturnValue(true);
+
+        expect(nudgeClip('c1', 2)).toBe(true);
+        expect(mocks.updateClip).toHaveBeenCalledWith('c1', expect.any(Function));
     });
 });
