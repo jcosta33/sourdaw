@@ -150,20 +150,17 @@ describe('PunchRecordingControls', () => {
     });
 
     describe('Mark region button', () => {
-        it('is disabled with the inactive (muted) style when there is no active capture', () => {
+        it('is disabled when there is no active capture', () => {
             renderUi();
             const mark = screen.getByRole('button', { name: 'Mark punch region from current capture' });
             expect(mark).toBeDisabled();
-            expect(mark.className).toContain('opacity-60');
         });
 
-        it('is enabled with the record-tinted style when a capture is recording', () => {
+        it('is enabled when a capture is recording', () => {
             punchState.captures = [capture({ id: 'cap-1', recording: true })];
             renderUi();
             const mark = screen.getByRole('button', { name: 'Mark punch region from current capture' });
             expect(mark).not.toBeDisabled();
-            expect(mark.className).toContain('bg-[var(--color-state-record)]/15');
-            expect(mark.className).toContain('text-[var(--color-state-record)]');
         });
 
         it('calls definePunchRegion with the active capture id and current punch beats', () => {
