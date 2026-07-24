@@ -22,7 +22,11 @@ import { runProjectLoadTransaction } from './helpers/runProjectLoadTransaction';
 import { stopActiveAutoSave } from './helpers/stopActiveAutoSave';
 
 export async function loadProject(): Promise<boolean> {
-    const transaction = runProjectLoadTransaction();
+    // Boot restore is subordinate: if the user picked a project on the
+    // LaunchScreen while `initializeAudioEngine()` was resolving, that
+    // transition is already preparing and must win. Yield to any mid-flight
+    // transition rather than superseding it with the implicit startup restore.
+    const transaction = runProjectLoadTransaction({ yieldToInFlight: true });
     try {
         if (!(await transaction.prepare()) || !transaction.activate()) {
             return false;

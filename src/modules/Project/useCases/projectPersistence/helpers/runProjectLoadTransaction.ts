@@ -6,6 +6,13 @@ import { projectIdentityTransitionDependencies } from '../projectIdentityTransit
 let nextProjectTransitionId = 0;
 let activeProjectTransitionId = 0;
 let latestPreparedProjectTransitionId = 0;
+// Count of transitions that have committed to preparing and not yet settled
+// (activated, or failed/superseded during prepare). A yielding boot restore
+// stands down while this is non-zero. Unlike a `latestPrepared > active`
+// comparison, the counter self-heals: a prepare that throws or loses the race
+// decrements it, so a failed transition never strands the machinery in a
+// permanent "mid-flight" state.
+let preparingProjectTransitionCount = 0;
 
 export type ProjectLoadTransaction = {
     prepare: () => Promise<boolean>;
@@ -23,24 +30,72 @@ export const projectLoadEpoch = {
     },
 };
 
+type RunProjectLoadTransactionInput = {
+    // Marks a subordinate startup-restore transition (the boot `loadProject`)
+    // that must NEVER supersede a user-initiated transition that is mid-flight.
+    //
+    // Ordering is by creation id: the last-created transition wins. That is the
+    // right rule between two explicit user actions (click "New" then "Open" and
+    // "Open" should win), and between two boot loads (a newer restore supersedes
+    // an older one still in flight). But it inverts for the boot restore versus
+    // a user's launch choice, because the boot restore is created LATE — it is
+    // gated behind `await initializeAudioEngine()` in useAppInitialization. If
+    // the user clicks a template on the LaunchScreen before that slow init
+    // resolves, the template transition is created first (lower id) and starts
+    // preparing, yet the boot transition is created second (higher id) and would
+    // supersede the user's explicit choice, dropping them on an empty "Untitled
+    // Project". A yielding transition stands down while any other transition is
+    // mid-flight (committed to preparing, not yet settled), so the user's choice
+    // wins; once every transition has settled the normal last-wins rule applies,
+    // which keeps boot-vs-boot supersession intact.
+    yieldToInFlight?: boolean;
+};
+
 type RunProjectLoadTransactionOutput = ProjectLoadTransaction;
 
-export function runProjectLoadTransaction(): RunProjectLoadTransactionOutput {
+export function runProjectLoadTransaction({
+    yieldToInFlight = false,
+}: RunProjectLoadTransactionInput = {}): RunProjectLoadTransactionOutput {
     const transitionId = ++nextProjectTransitionId;
     let activated = false;
     let prepared = false;
+    let countedAsPreparing = false;
     let preparation: Promise<boolean> | null = null;
+
+    // Settle this transition exactly once: drop it from the in-flight count. Safe
+    // to call repeatedly and before prepare ever ran.
+    function releasePreparingCount(): void {
+        if (countedAsPreparing) {
+            countedAsPreparing = false;
+            preparingProjectTransitionCount -= 1;
+        }
+    }
 
     return {
         prepare: () => {
             preparation ??= (async () => {
+                // A yielding (boot restore) transition defers to any other
+                // transition that is mid-flight: standing down before any side
+                // effect (no replay-authority reset, no collaboration teardown)
+                // leaves that transition untouched so it can win.
+                if (yieldToInFlight && preparingProjectTransitionCount > 0) {
+                    return false;
+                }
                 if (transitionId < latestPreparedProjectTransitionId) {
                     return false;
                 }
                 latestPreparedProjectTransitionId = transitionId;
+                countedAsPreparing = true;
+                preparingProjectTransitionCount += 1;
                 resetActionReplayAuthority();
-                await projectIdentityTransitionDependencies.leaveCollaborationSession();
+                try {
+                    await projectIdentityTransitionDependencies.leaveCollaborationSession();
+                } catch (error) {
+                    releasePreparingCount();
+                    throw error;
+                }
                 if (transitionId !== latestPreparedProjectTransitionId) {
+                    releasePreparingCount();
                     return false;
                 }
                 prepared = true;
@@ -49,6 +104,9 @@ export function runProjectLoadTransaction(): RunProjectLoadTransactionOutput {
             return preparation;
         },
         activate: () => {
+            // Activation is the terminal event for a prepared transition, whether
+            // it wins or is superseded: settle it out of the in-flight count.
+            releasePreparingCount();
             if (activated) {
                 return transitionId === activeProjectTransitionId && transitionId === latestPreparedProjectTransitionId;
             }
