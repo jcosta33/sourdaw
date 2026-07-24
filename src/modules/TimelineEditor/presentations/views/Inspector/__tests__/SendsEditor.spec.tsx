@@ -151,12 +151,21 @@ describe('SendsEditor', () => {
         expect(screen.getByTestId('slider')).toBeInTheDocument();
     });
 
-    it('should display send level percentage', () => {
+    // FX-7: the readout is decibels, not a percentage of a linear amplitude —
+    // "50%" claimed half as loud when 0.5 gain is only -6 dB down.
+    it('reads out the send level in decibels', () => {
         const busTrack: Track = { ...mockTrack, id: 'bus-1', name: 'Bus 1', kind: 'bus' };
         mockUseTracks.mockReturnValue({ tracks: [busTrack] });
         const trackWithSend = { ...mockTrack, sends: [{ busId: 'bus-1', level: 0.5, preFader: false }] };
         render(<SendsEditor track={trackWithSend} />);
-        expect(screen.getByText('50%')).toBeInTheDocument();
+        expect(screen.getByText('-6.0 dB')).toBeInTheDocument();
+    });
+
+    it('reads out a closed send as silence rather than a finite level', () => {
+        const busTrack: Track = { ...mockTrack, id: 'bus-1', name: 'Bus 1', kind: 'bus' };
+        mockUseTracks.mockReturnValue({ tracks: [busTrack] });
+        render(<SendsEditor track={{ ...mockTrack, sends: [] }} />);
+        expect(screen.getByText('-∞ dB')).toBeInTheDocument();
     });
 
     it('should show PRE badge for pre-fader sends', () => {

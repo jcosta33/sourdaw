@@ -84,7 +84,7 @@ export const SendsEditor = ({ track }: SendsEditorProps): ReactElement => {
                                     />
                                     <div className="w-full px-1 flex items-center justify-center">
                                         <Slider
-                                            value={[levelToSendPosition(level)]}
+                                            value={[Math.round(levelToSendPosition(level))]}
                                             onValueChange={([value]) => {
                                                 if (value !== undefined) {
                                                     setSend(track.id, bus.id, sendPositionToLevel(value));

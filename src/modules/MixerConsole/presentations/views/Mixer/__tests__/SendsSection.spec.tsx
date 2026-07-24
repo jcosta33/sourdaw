@@ -82,7 +82,10 @@ describe('SendsSection', () => {
 
         expect(screen.getByText('Reverb')).toBeInTheDocument();
         expect(screen.getByText('Delay')).toBeInTheDocument();
-        expect(screen.getByRole('slider', { name: 'Send to Reverb' })).toHaveAttribute('aria-valuenow', '50');
+        // FX-7: the control is linear in dB, not in amplitude. A stored level of
+        // 0.5 is -6.02 dB, which sits near the top of a -60 dB travel (~90),
+        // not at the midpoint the old linear law put it at.
+        expect(screen.getByRole('slider', { name: 'Send to Reverb' })).toHaveAttribute('aria-valuenow', '90');
         // No matching send entry for bus-2 -> defaults to 0.
         expect(screen.getByRole('slider', { name: 'Send to Delay' })).toHaveAttribute('aria-valuenow', '0');
     });
@@ -95,11 +98,17 @@ describe('SendsSection', () => {
 
         const slider = screen.getByRole('slider', { name: 'Send to Reverb' });
         fireEvent.doubleClick(slider);
-        const input = screen.getByDisplayValue('20');
+        // Stored 0.2 is -13.98 dB, which reads as position 77 on the dB travel.
+        const input = screen.getByDisplayValue('77');
         fireEvent.change(input, { target: { value: '65' } });
         fireEvent.keyDown(input, { key: 'Enter' });
 
-        expect(mocks.setSend).toHaveBeenCalledWith('track-9', 'bus-1', 0.65);
+        // Position 65 of a -60 dB travel is -21 dB, i.e. a gain of 0.0891 — the
+        // old linear law would have stored 0.65 for the same control position.
+        const [trackId, busId, level] = mocks.setSend.mock.calls[0]!;
+        expect(trackId).toBe('track-9');
+        expect(busId).toBe('bus-1');
+        expect(level).toBeCloseTo(0.0891, 4);
     });
 
     it('shows POST for a post-fader send and toggles it to pre-fader on click', () => {

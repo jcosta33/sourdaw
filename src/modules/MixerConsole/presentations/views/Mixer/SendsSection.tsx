@@ -30,7 +30,7 @@ export const SendsSection = ({ track }: SendsSectionProps): ReactElement | null 
                     <div key={bus.id} className="flex items-center gap-0.5">
                         <span className="text-[6px] text-muted-foreground truncate w-6">{bus.name}</span>
                         <Slider
-                            value={[levelToSendPosition(level)]}
+                            value={[Math.round(levelToSendPosition(level))]}
                             onValueChange={([value]) => {
                                 if (value !== undefined) {
                                     setSend(track.id, bus.id, sendPositionToLevel(value));
