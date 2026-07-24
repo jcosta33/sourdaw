@@ -1,4 +1,5 @@
 import { logger } from '#/infra/logger/appLogger';
+import { flushAutomergeStorageWrites } from '#/infra/store/storage/createAutomergeStorage';
 import { resetAudioGraph } from '#/modules/AudioEngine/useCases';
 import { clearUndoHistory, executeAppAction, isAppActionCommittedError } from '#/modules/Command/useCases';
 import {
@@ -82,6 +83,15 @@ export async function createFromTemplate(templateId: string): Promise<boolean> {
         resetCrdtProjectAuthority(template.name);
         projectActionHistoryToStore();
         resetModuleStoresToDefault({ createNewMidiProbabilitySeed: true });
+        // Commit the teardown baseline before the async rebuild action runs.
+        // resetModuleStoresToDefault writes an empty tracks slot to the
+        // CRDT-backed trackStore OUTSIDE the executeAppAction transaction, so it
+        // schedules an unscoped requestAnimationFrame flush. Because the template
+        // handler is async, that deferred empty write can land AFTER the rebuilt
+        // tracks are set, reverting the projection to zero tracks (the workspace
+        // then shows an empty "Untitled Project"). Flushing here commits the empty
+        // baseline now, so no stale write survives to overwrite the built project.
+        flushAutomergeStorageWrites();
         clearUndoHistory();
         await executeAppAction(
             { type: 'createProjectFromTemplate', payload: { templateId } },

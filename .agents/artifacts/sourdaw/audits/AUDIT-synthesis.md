@@ -31,8 +31,8 @@ Total finding inventory (area-artifact counts of record):
 | Rust/WASM boundary (WB-1…9) | 0 | 5 | 3 | 1 | — |
 | Plugin hosting (PH-1…14) | 1 | 8 | 4 | 1 | — |
 | Time-stretch & pitch (TS-1…11) | 1 | 5 | 4 | 0 | 1 positive |
-| Collab/CRDT (CC-1…9) | 1 | 3 | 4 | 1 | 5 sound |
-| **Totals** | **6** | **45** | **43** | **7** | — |
+| Collab/CRDT (CC-1…10) | 1 | 4 | 4 | 1 | 5 sound |
+| **Totals** | **6** | **46** | **43** | **7** | — |
 
 (Severity-count anomalies vs the ledger summary comments are recorded in the Anomalies section; the
 per-artifact finding headers are treated as authoritative.)
@@ -159,7 +159,10 @@ back-writes → projection is a second writer; re-entrant O(n²) storm; cross-pr
 (full 15-store re-projection with O(project-size) `JSON.stringify` on every change, local included; the
 action-history post-commit write doubles it), **CC-3** (every inbound sync wipes all action-replay
 capabilities → collaborative revert-from-history is inert during live sessions), **CC-5/CC-7** (discard/
-prepare-failure terminals don't recompute/re-arm), **CC-8** (full-save/compaction on the main thread).
+prepare-failure terminals don't recompute/re-arm), **CC-8** (full-save/compaction on the main thread),
+**CC-10** (async action handlers escape the storage transaction scope; post-`await` CRDT writes commit
+as unscoped rAF writes — discovered during the wave-1 e2e milestone, #737; wave-1 mitigation shipped at
+the template-launch boundary).
 **Confirmed sound (honored):** presence-channel isolation (G4), sync loop guard, unknown-doc rejection,
 autosave starvation cap, §138.1 single-doc sync.
 **Worst harm.** Silent data loss (CC-4) — the single highest-harm finding in the campaign under the
@@ -308,6 +311,11 @@ Depends on PH-4 (Wave 1-adjacent) reporting real latency.
 - **CC-3** (S) — scope replay-authority invalidation to touched docs/entries. **CC-8** (M) — offload
   `save`/compaction to the CRDT worker. **CC-6/CC-5/CC-7** (S/M) — conflict-aware undo replay; fix the
   discard/prepare-failure terminals.
+- **CC-10** (M) — async action handlers escape the storage transaction scope; post-`await` CRDT writes
+  commit as unscoped rAF writes (discovered during the wave-1 e2e milestone, #737 — a template launch
+  transiently painted an empty project). Keep the storage transaction active across the async handler so
+  every write joins the action's scoped commit owner and commits atomically. The wave-1 mitigation
+  (flush the teardown baseline before the async rebuild) is shipped; this is the structural fix.
 
 ### Wave 9 — In-house time-stretch engine (WS-8 remainder) — L engine-work
 Per `SPEC-time-stretch-engine` run-order (AC-016 dependency gates).
@@ -368,7 +376,7 @@ paths). "Fixed" reflects merged/in-flight remediation, not the artifact-of-recor
 | Rust/WASM boundary | 0 | 5 | 3 | 1 | — | WB-1 no wasm freshness gate | **C−** — #657 drift class can recur silently; stale twin binary still tracked |
 | Plugin hosting | 1 | 8 | 4 | 1 | — | PH-2 no crash isolation (audio-thread inline) | **D** — spec exists, largely unimplemented; largest blast radius; CLAP partially works, VST3 is passthrough |
 | Time-stretch & pitch | 1 | 5 | 4 | 0 | **TS-1 (PR #709)** | TS-3 inert warp editor | **D+** (**C−** post-fix) — 16/19 ACs absent; but Knead PSOLA/YIN pitch is golden-class (TS-9) |
-| Collab/CRDT | 1 | 3 | 4 | 1 | **CC-4 in flight** | CC-4 write-only modulation slot | **B−** — 5 axes confirmed sound, disciplined write path; one silent-data-loss Blocker, projection storm |
+| Collab/CRDT | 1 | 4 | 4 | 1 | **CC-4 in flight** | CC-4 write-only modulation slot | **B−** — 5 axes confirmed sound, disciplined write path; one silent-data-loss Blocker, projection storm |
 
 Campaign posture: **no area is broken across the board**; the recurring pattern is *a correct core with
 an uneven or incomplete edge* — parity, projection completeness, latency reporting, and artifact
