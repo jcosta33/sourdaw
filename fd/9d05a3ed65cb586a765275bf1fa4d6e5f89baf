@@ -1,0 +1,77 @@
+src/modules/DawInterchange/repositories/writeDawProjectFile.ts
+  s_0d39f3a4a4357a::t_e94132a620bf59 1,11
+src/modules/Project/repositories/nativeFileDialog/pickFiles.ts
+  s_0d39f3a4a4357a::t_9492b882e95efe 2
+  s_0d39f3a4a4357a::t_f9f4b692df710a 82
+src/modules/AudioAnalysis/repositories/__tests__/separateStems.spec.ts
+  s_0d39f3a4a4357a::t_731906ea6d6b7f 81,94-100,107,109,111,117-118
+  s_0d39f3a4a4357a::t_6ac70dc7ad196d 6,14-15,47-49
+src/modules/Project/repositories/nativeProjectFiles/loadProjectFromFile.ts
+  s_0d39f3a4a4357a::t_8705680cc1d7a2 3-5,14-18
+src/utils/tauriBridge.ts
+  s_0d39f3a4a4357a::t_cb37acd45c9db6 34-113
+src/modules/Project/repositories/nativeProjectFiles/getProjectDirectory.ts
+  s_0d39f3a4a4357a::t_2d45ab49bdd1db 1-2,31,33
+src/modules/Project/repositories/nativeProjectFiles/__tests__/nativeProjectFiles.spec.ts
+  s_0d39f3a4a4357a::t_9690f034dd9145 6-7,18-19
+  s_0d39f3a4a4357a::t_f5c4f2b793b54b 47-50,74
+  s_0d39f3a4a4357a::t_3c407f973604e5 20-21
+src/modules/AudioAnalysis/repositories/separateStems.ts
+  s_0d39f3a4a4357a::t_cba029c4016e3c 3,11,28-32
+src-tauri/src/lib.rs
+  s_0d39f3a4a4357a::t_13f7a9cb9fc8d9 47-48
+src/modules/AudioRendering/repositories/audioExport/__tests__/writeNativeAudioStemFile.spec.ts
+  s_0d39f3a4a4357a::t_dbfcf7f0079ae4 33-34,36-38
+src/modules/AudioRendering/repositories/audioExport/__tests__/writeNativeAudioMixdownFile.spec.ts
+  s_0d39f3a4a4357a::t_e5363e759488dc 31-32,34-35,37-40
+src/modules/DawInterchange/repositories/__tests__/saveDawProjectFileDialog.spec.ts
+  s_0d39f3a4a4357a::t_a53074c2c1374d 48-49,51-53
+src/modules/SampleLibrary/repositories/__tests__/readTauriAudioFileBytes.spec.ts
+  s_0d39f3a4a4357a::t_7ce5876005b287 16-26,34,38,46
+src/modules/Crumbs/repositories/get-dropped-crumbs-file-path.ts
+  s_0d39f3a4a4357a::t_397d0eb7ddc690 2,44
+src/utils/__tests__/tauriBridge.spec.ts
+  s_0d39f3a4a4357a::t_bae8fffd136d85 49-150,157,159-234
+  s_0d39f3a4a4357a::t_234df45619bf64 151-156,158
+  s_0d39f3a4a4357a::t_b2b54fa8b12645 1
+  s_0d39f3a4a4357a::t_926941cebe3244 18
+src/modules/Crumbs/repositories/__tests__/get-dropped-crumbs-file-path.spec.ts
+  s_0d39f3a4a4357a::t_6e741d284519db 6,10,22,29,46,48,50,52
+src/modules/SampleLibrary/repositories/readTauriAudioFileBytes.ts
+  s_0d39f3a4a4357a::t_34deeb4bb34391 1,10
+src/modules/AudioAnalysis/repositories/__tests__/generateAudio.spec.ts
+  s_0d39f3a4a4357a::t_bd022f55c35030 13,64-69,84,90-91
+  s_0d39f3a4a4357a::t_086c7b0b639a22 6
+src/types/tauri-api.d.ts
+  s_0d39f3a4a4357a::t_1c5e17ed598ccf 2-13
+src/modules/Project/repositories/nativeProjectFiles/saveProjectToFile.ts
+  s_0d39f3a4a4357a::t_789245fef74674 3-5,14-16,18-19
+src/modules/AudioAnalysis/repositories/generateAudio.ts
+  s_0d39f3a4a4357a::t_c26092ed1c913b 3,34-38
+src/modules/AudioRendering/repositories/audioExport/writeNativeAudioMixdownFile.ts
+  s_0d39f3a4a4357a::t_c67a7270968426 1,17
+src/modules/Project/repositories/nativeFileDialog/__tests__/nativeFileDialog.spec.ts
+  s_0d39f3a4a4357a::t_3cc92a9dc3b55c 6,16
+  s_0d39f3a4a4357a::t_f630e0fb8adcb3 81-82,87-88,99,105
+src/modules/AudioRendering/repositories/audioExport/writeNativeAudioStemFile.ts
+  s_0d39f3a4a4357a::t_4c4edea1723410 1,18
+src-tauri/src/commands/filesystem.rs
+  s_0d39f3a4a4357a::t_8720527b1981e5 345-398
+  s_0d39f3a4a4357a::t_c734bab16914b7 41-127
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "fd9d05a3ed65cb586a765275bf1fa4d6e5f89baf",
+  "prompts": {},
+  "sessions": {
+    "s_0d39f3a4a4357a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "60da6a2e-7d79-4d98-8624-e993f5a9f94e",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
