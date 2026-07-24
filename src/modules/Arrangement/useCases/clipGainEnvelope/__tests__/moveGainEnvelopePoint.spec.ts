@@ -26,4 +26,28 @@ describe('moveGainEnvelopePoint', () => {
         expect(pts[1]!.beatOffset).toBe(0.5);
         expect(pts[1]!.gainDb).toBe(3);
     });
+
+    it('is a no-op when the clip has no envelope', () => {
+        // No envelope set for c1 -> getEnvelope returns null and nothing is written.
+        moveGainEnvelopePoint('c1', 'p1', 1, 0);
+
+        expect(getEnvelope('c1')).toBeUndefined();
+    });
+
+    it('clamps beat offset to a minimum of 0 and gain to [-60, 12]', () => {
+        setEnvelope('c1', {
+            clipId: 'c1',
+            enabled: true,
+            points: [{ id: 'p1', beatOffset: 1, gainDb: 0 }],
+        });
+
+        moveGainEnvelopePoint('c1', 'p1', -5, 99);
+
+        const point = getEnvelope('c1')!.points[0]!;
+        expect(point.beatOffset).toBe(0);
+        expect(point.gainDb).toBe(12);
+
+        moveGainEnvelopePoint('c1', 'p1', 2, -100);
+        expect(getEnvelope('c1')!.points[0]!.gainDb).toBe(-60);
+    });
 });

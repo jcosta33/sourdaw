@@ -38,4 +38,21 @@ describe('addTake', () => {
         expect(next.lanes[0]!.takes[0]!.clipId).toBe('clip-1');
         expect(next.lanes[0]!.takes[0]!.name).toBe('Take 1');
     });
+
+    it('appends only to the matching lane and leaves unrelated lanes untouched', () => {
+        const matchingLane = createTakeLane('t1');
+        const otherLane = {
+            ...createTakeLane('t2'),
+            takes: [{ id: 'existing', clipId: 'c2', name: 'Old', startBeat: 0, endBeat: 4, selected: true }],
+        };
+        mocks.takeLaneStoreValue.value = { lanes: [matchingLane, otherLane] };
+
+        addTake('t1', 'clip-1', 'Take 1', 0, 4);
+
+        const next = vi.mocked(takeLaneStore.set).mock.calls[0]![0] as { lanes: ReturnType<typeof createTakeLane>[] };
+        // The unrelated t2 lane passes through the map short-circuit unchanged.
+        expect(next.lanes[1]!.takes).toHaveLength(1);
+        expect(next.lanes[1]!.takes[0]!.clipId).toBe('c2');
+        expect(next.lanes[0]!.takes).toHaveLength(1);
+    });
 });

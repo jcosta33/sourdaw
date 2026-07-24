@@ -38,4 +38,12 @@ describe('flattenComp', () => {
         expect(next.lanes).toHaveLength(1);
         expect(next.lanes[0]).toEqual(laneB);
     });
+
+    it('is a no-op when the track has no comping lane', () => {
+        mocks.takeLaneStoreValue.value = { lanes: [createTakeLane('other')] };
+
+        flattenComp('t1');
+
+        expect(takeLaneStore.set).not.toHaveBeenCalled();
+    });
 });
