@@ -1,0 +1,30 @@
+src/modules/Arrangement/useCases/loadTrackTemplate.ts
+  s_0d39f3a4a4357a::t_9e4c0776a10a66 30
+  s_0d39f3a4a4357a::t_64647155bb2bdd 23-29,31
+src/modules/Arrangement/useCases/saveTrackAsTemplate.ts
+  s_0d39f3a4a4357a::t_240955296edd07 20-22
+src/modules/Arrangement/useCases/__tests__/loadTrackTemplate.spec.ts
+  s_0d39f3a4a4357a::t_c31d32edc714f3 156-199
+src/modules/Arrangement/repositories/trackTemplate/loadTrackTemplates.ts
+  s_0d39f3a4a4357a::t_42952ec62ec133 65-68,77
+src/modules/Arrangement/useCases/__tests__/saveTrackAsTemplate.spec.ts
+  s_0d39f3a4a4357a::t_8038ac920e1cdc 140-173
+src/modules/Arrangement/repositories/trackTemplate/__tests__/trackTemplates.spec.ts
+  s_0d39f3a4a4357a::t_d90f91bfaec315 91-114
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "3cd86ba4f21dd71a6c3a008e4d41d13cf4f45f36",
+  "prompts": {},
+  "sessions": {
+    "s_0d39f3a4a4357a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "60da6a2e-7d79-4d98-8624-e993f5a9f94e",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
