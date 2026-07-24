@@ -1,0 +1,64 @@
+src/modules/AudioEngine/useCases/index.ts
+  s_0d39f3a4a4357a::t_0334a191febb24 92-93
+crates/daw-plugin-host/src/clap_host.rs
+  s_0d39f3a4a4357a::t_93581bd125bdc0 101-103
+  s_0d39f3a4a4357a::t_c194df31ecdbfd 2,13-56
+  s_0d39f3a4a4357a::t_8cd817b0f6176d 110-117
+  s_0d39f3a4a4357a::t_f452968fb717b6 206-278
+src/modules/AudioEngine/useCases/latencyCompensation/compensation/__tests__/reportPluginLatencySamples.spec.ts
+  s_0d39f3a4a4357a::t_bddca7a003fb38 1-36
+src/modules/PluginHost/useCases/pluginLifecycle/activateExternalPlugin.ts
+  s_0d39f3a4a4357a::t_5669af7a7b4cd2 11-16,34
+  s_0d39f3a4a4357a::t_3270bd49c892de 35-37
+  s_0d39f3a4a4357a::t_6e7b1829092e1d 38-39,47-51
+src/modules/Arrangement/useCases/projectTrackToLiveStrip.ts
+  s_0d39f3a4a4357a::t_a2d8eab3578d8e 91-96
+  s_0d39f3a4a4357a::t_117bce55b279f3 4
+src-tauri/src/lib.rs
+  s_0d39f3a4a4357a::t_cdb3a5c1eb544b 53
+crates/daw-plugin-host/src/clap_wrapper.rs
+  s_0d39f3a4a4357a::t_42781232faeccd 35
+  s_0d39f3a4a4357a::t_1ec681a73da911 16
+  s_0d39f3a4a4357a::t_4f6946d095b97b 336-337,366-367
+  s_0d39f3a4a4357a::t_6df0a731c680ef 1118-1250
+  s_0d39f3a4a4357a::t_c8116cce902d1b 245-249
+  s_0d39f3a4a4357a::t_6fcfb989df0e5c 72-77
+  s_0d39f3a4a4357a::t_489325e0e55b59 831-927
+  s_0d39f3a4a4357a::t_a36f6ad552801e 293-294
+src-tauri/src/commands/plugins.rs
+  s_0d39f3a4a4357a::t_24e6b8df08c010 482-508
+  s_0d39f3a4a4357a::t_42d41017d01643 147-150,226
+src/modules/Arrangement/useCases/device/removeDevice.ts
+  s_0d39f3a4a4357a::t_629f39574556e7 74-80
+  s_0d39f3a4a4357a::t_63839b39cce0e9 2
+src/modules/Arrangement/useCases/device/addExternalDevice.ts
+  s_0d39f3a4a4357a::t_f1b8a11eae8c42 1,44-48
+src-tauri/src/host/native_bridge.rs
+  s_0d39f3a4a4357a::t_e76fc330d3c3b4 372-386
+src/modules/PluginHost/repositories/pluginBridge/getPluginLatency.ts
+  s_0d39f3a4a4357a::t_e3435c42edb217 1-13
+src/modules/AudioEngine/useCases/latencyCompensation/compensation/reportPluginLatencySamples.ts
+  s_0d39f3a4a4357a::t_d52efe6dd7066f 1-24
+src/modules/PluginHost/useCases/pluginLifecycle/__tests__/activateExternalPlugin.spec.ts
+  s_0d39f3a4a4357a::t_cd6172c77a4923 78-97
+src/modules/PluginHost/repositories/pluginBridge/__tests__/pluginBridge.spec.ts
+  s_0d39f3a4a4357a::t_9453779f2c22bb 164-179
+  s_0d39f3a4a4357a::t_8e34d3e297ddef 5
+  s_0d39f3a4a4357a::t_0055b8fd33849e 180
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "51274b20ed9b00bc282f8a5d86dd47f3267d5675",
+  "prompts": {},
+  "sessions": {
+    "s_0d39f3a4a4357a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "60da6a2e-7d79-4d98-8624-e993f5a9f94e",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
