@@ -1,0 +1,19 @@
+.agents/artifacts/sourdaw/audits/AUDIT-offline-export.md
+  s_1f9dea76e32196::t_f492a0664701da 185
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "760a14fdf7b12dc0d755a408f2cca46461bb5b11",
+  "prompts": {},
+  "sessions": {
+    "s_1f9dea76e32196": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-a4ba7914bcb00b285",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
