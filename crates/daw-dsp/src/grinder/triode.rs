@@ -6,6 +6,7 @@
 //! E₁ = (Vpk/Kp) · ln[1 + exp(Kp · (1/μ + (Vgk + Vct)/√(Kvb + Vpk²)))]
 //! Ip = (E₁^Ex / Kg) · (1 + sgn(E₁))
 
+use super::oversample::StageOversampler2x;
 use crate::primitives::flush_denormal_f64;
 
 #[derive(Clone, Copy)]
@@ -74,7 +75,7 @@ pub struct TriodeStage {
     grid_conduction_amount: f64,
     coupling_cap_charge: f64,
     coupling_cap_tau: f64,
-    oversample_input_state: f64,
+    oversampler: StageOversampler2x,
 
     // Miller capacitance
     miller_cap_factor: f64,
@@ -101,7 +102,7 @@ impl TriodeStage {
             grid_conduction_amount: 0.5,
             coupling_cap_charge: 0.0,
             coupling_cap_tau: 0.01, // 10ms RC time constant
-            oversample_input_state: 0.0,
+            oversampler: StageOversampler2x::new(),
             miller_cap_factor: 0.5,
             miller_lp_state: 0.0,
             bias_offset: 0.0,
@@ -226,16 +227,18 @@ impl TriodeStage {
     }
 
     /// Process a single sample through the triode stage.
+    ///
+    /// DSP-3: the ODE still takes two substeps per host sample, but the rate
+    /// conversion around it is now a real half-band pair instead of linear
+    /// interpolation up and a 2-tap box average down.
     pub fn process_sample(&mut self, input: f32) -> f32 {
-        let current_input = input as f64;
-        let intermediate_input = 0.5 * (self.oversample_input_state + current_input);
+        let (first_input, second_input) = self.oversampler.upsample(input);
         let substep_dt = 0.5 / self.sample_rate;
 
-        let first = self.process_substep(intermediate_input, substep_dt);
-        let second = self.process_substep(current_input, substep_dt);
-        self.oversample_input_state = current_input;
+        let first = self.process_substep(first_input as f64, substep_dt);
+        let second = self.process_substep(second_input as f64, substep_dt);
 
-        ((first + second) * 0.5) as f32
+        self.oversampler.downsample(first as f32, second as f32)
     }
 
     pub fn reset(&mut self) {
@@ -243,7 +246,7 @@ impl TriodeStage {
         self.plate_voltage = self.quiescent_plate_voltage;
         self.coupling_cap_charge = 0.0;
         self.grid_current = 0.0;
-        self.oversample_input_state = 0.0;
+        self.oversampler.reset();
         self.miller_lp_state = 0.0;
     }
 }

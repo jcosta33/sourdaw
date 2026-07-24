@@ -10,6 +10,7 @@ pub mod cabinet;
 pub mod engine;
 pub mod input;
 pub mod neural;
+pub mod oversample;
 pub mod params;
 pub mod pedals;
 pub mod power_amp;

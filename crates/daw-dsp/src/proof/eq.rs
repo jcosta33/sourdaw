@@ -1,6 +1,6 @@
 //! Mastering EQ — 8-band parametric with M/S per-band option.
 
-use super::biquad::{BiquadCoeffs, BiquadState};
+use super::biquad::{BiquadCoeffs, BiquadState, SmoothedBiquadCoeffs};
 
 const NUM_BANDS: usize = 8;
 
@@ -30,7 +30,9 @@ struct MasteringEqBand {
     freq: f64,
     gain_db: f64,
     q: f64,
-    coeffs: BiquadCoeffs,
+    /// DSP-4: automation drives freq/gain/q continuously, so the band ramps to
+    /// new coefficients instead of swapping them under the running filter.
+    coeffs: SmoothedBiquadCoeffs,
     // For stereo mode: L/R states
     state_l: BiquadState,
     state_r: BiquadState,
@@ -40,7 +42,7 @@ struct MasteringEqBand {
 }
 
 impl MasteringEqBand {
-    fn new(freq: f64, band_type: EqBandType) -> Self {
+    fn new(freq: f64, band_type: EqBandType, sr: f64) -> Self {
         Self {
             enabled: false,
             band_type,
@@ -48,7 +50,7 @@ impl MasteringEqBand {
             freq,
             gain_db: 0.0,
             q: 1.0,
-            coeffs: BiquadCoeffs::unity(),
+            coeffs: SmoothedBiquadCoeffs::new(BiquadCoeffs::unity(), sr),
             state_l: BiquadState::new(),
             state_r: BiquadState::new(),
             state_m: BiquadState::new(),
@@ -56,14 +58,19 @@ impl MasteringEqBand {
         }
     }
 
-    fn recompute(&mut self, sr: f64) {
-        self.coeffs = match self.band_type {
+    fn designed_coeffs(&self, sr: f64) -> BiquadCoeffs {
+        match self.band_type {
             EqBandType::Peak => BiquadCoeffs::peak(self.freq, self.gain_db, self.q, sr),
             EqBandType::LowShelf => BiquadCoeffs::low_shelf(self.freq, self.gain_db, self.q, sr),
             EqBandType::HighShelf => BiquadCoeffs::high_shelf(self.freq, self.gain_db, self.q, sr),
             EqBandType::HighPass => BiquadCoeffs::highpass(self.freq, self.q, sr),
             EqBandType::LowPass => BiquadCoeffs::lowpass(self.freq, self.q, sr),
-        };
+        }
+    }
+
+    fn recompute(&mut self, sr: f64) {
+        let designed = self.designed_coeffs(sr);
+        self.coeffs.set_target(designed);
     }
 }
 
@@ -90,7 +97,7 @@ impl MasteringEq {
 
         let bands = (0..NUM_BANDS)
             .map(|i| {
-                let mut band = MasteringEqBand::new(default_freqs[i], default_types[i]);
+                let mut band = MasteringEqBand::new(default_freqs[i], default_types[i], sr);
                 if i >= 2 && i <= 5 {
                     band.enabled = true;
                 }
@@ -184,22 +191,25 @@ impl MasteringEq {
                     continue;
                 }
 
+                // One ramp step per band per sample, shared by both channels.
+                let coeffs = band.coeffs.next();
+
                 match band.channel {
                     EqBandChannel::Stereo => {
-                        l = band.state_l.process(l, &band.coeffs);
-                        r = band.state_r.process(r, &band.coeffs);
+                        l = band.state_l.process(l, &coeffs);
+                        r = band.state_r.process(r, &coeffs);
                     }
                     EqBandChannel::Mid => {
                         let m = (l + r) * inv_sqrt2;
                         let s = (l - r) * inv_sqrt2;
-                        let m_eq = band.state_m.process(m, &band.coeffs);
+                        let m_eq = band.state_m.process(m, &coeffs);
                         l = (m_eq + s) * inv_sqrt2;
                         r = (m_eq - s) * inv_sqrt2;
                     }
                     EqBandChannel::Side => {
                         let m = (l + r) * inv_sqrt2;
                         let s = (l - r) * inv_sqrt2;
-                        let s_eq = band.state_s.process(s, &band.coeffs);
+                        let s_eq = band.state_s.process(s, &coeffs);
                         l = (m + s_eq) * inv_sqrt2;
                         r = (m - s_eq) * inv_sqrt2;
                     }

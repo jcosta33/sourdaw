@@ -7,7 +7,7 @@
 //! This allows frequency-selective compression: e.g., tame 2-4kHz harshness
 //! only when it gets too loud, without affecting quiet passages.
 
-use super::biquad::{BiquadCoeffs, BiquadState};
+use super::biquad::{BiquadCoeffs, BiquadState, SmoothedBiquadCoeffs};
 
 const MAX_DYN_BANDS: usize = 4;
 
@@ -32,15 +32,26 @@ struct DynEqBand {
     // Sidechain bandpass filter for level detection
     sc_bp_l: BiquadState,
     sc_bp_r: BiquadState,
-    sc_bp_coeffs: BiquadCoeffs,
+    /// DSP-4: freq/q are automatable, so the detector's bandpass ramps too.
+    sc_bp_coeffs: SmoothedBiquadCoeffs,
     // EQ band filter for applying the gain
     eq_l: BiquadState,
     eq_r: BiquadState,
-    eq_coeffs: BiquadCoeffs,
+    /// DSP-4: the envelope drives this continuously; the ramp both removes the
+    /// step at each redesign and lets the redesign itself be decimated.
+    eq_coeffs: SmoothedBiquadCoeffs,
+    /// Gain reduction the current `eq_coeffs` target was designed for.
+    designed_gr_db: f32,
     // Envelope
     envelope: f32,
     sample_rate: f64,
 }
+
+/// Redesign the peak filter only once the requested gain reduction has moved
+/// this far. The ramp covers the gap, so this trades an inaudible amount of
+/// tracking accuracy for dropping a `powf`/`sin`/`cos`/`sqrt` design pass off
+/// the per-sample path — it used to run on **every** sample.
+const GR_REDESIGN_STEP_DB: f32 = 0.05;
 
 impl DynEqBand {
     fn new(freq: f64, sr: f64) -> Self {
@@ -57,17 +68,22 @@ impl DynEqBand {
             max_gain_db: 12.0,
             sc_bp_l: BiquadState::new(),
             sc_bp_r: BiquadState::new(),
-            sc_bp_coeffs: BiquadCoeffs::bandpass(freq, q, sr),
+            sc_bp_coeffs: SmoothedBiquadCoeffs::new(
+                BiquadCoeffs::bandpass(freq, q, sr),
+                sr,
+            ),
             eq_l: BiquadState::new(),
             eq_r: BiquadState::new(),
-            eq_coeffs: BiquadCoeffs::unity(),
+            eq_coeffs: SmoothedBiquadCoeffs::new(BiquadCoeffs::unity(), sr),
+            designed_gr_db: 0.0,
             envelope: -100.0,
             sample_rate: sr,
         }
     }
 
     fn recompute_sc(&mut self) {
-        self.sc_bp_coeffs = BiquadCoeffs::bandpass(self.freq, self.q, self.sample_rate);
+        let designed = BiquadCoeffs::bandpass(self.freq, self.q, self.sample_rate);
+        self.sc_bp_coeffs.set_target(designed);
     }
 
     fn set_attack(&mut self, ms: f32) {
@@ -86,8 +102,9 @@ impl DynEqBand {
         }
 
         // 1. Sidechain: bandpass filter the input to detect level in target frequency range
-        let sc_l = self.sc_bp_l.process(l, &self.sc_bp_coeffs);
-        let sc_r = self.sc_bp_r.process(r, &self.sc_bp_coeffs);
+        let sc_coeffs = self.sc_bp_coeffs.next();
+        let sc_l = self.sc_bp_l.process(l, &sc_coeffs);
+        let sc_r = self.sc_bp_r.process(r, &sc_coeffs);
         let level = sc_l.abs().max(sc_r.abs());
 
         // 2. Envelope follower
@@ -125,17 +142,24 @@ impl DynEqBand {
         // Clamp to range
         let gr_db = gr_db.clamp(-self.max_gain_db, self.max_gain_db);
 
-        // 4. Rebuild EQ coefficients with modulated gain and apply
-        // For efficiency, we blend between dry and fully-EQ'd based on GR amount
-        // rather than rebuilding coefficients per-sample
-        if gr_db.abs() < 0.01 {
-            return (l, r);
+        // 4. Retarget the EQ band for the computed dynamic gain.
+        //
+        // DSP-4: this used to `return (l, r)` whenever |gr_db| < 0.01, which
+        // made the band snap between bypassed and engaged — and it left the
+        // filter state stale while bypassed, so re-engaging rang. There is no
+        // need for the shortcut: a peak section at 0 dB has numerator ==
+        // denominator, i.e. it is *exactly* unity, so simply running the filter
+        // is transparent and continuous through the crossing.
+        if (gr_db - self.designed_gr_db).abs() >= GR_REDESIGN_STEP_DB {
+            self.designed_gr_db = gr_db;
+            let designed =
+                BiquadCoeffs::peak(self.freq, gr_db as f64, self.q, self.sample_rate);
+            self.eq_coeffs.set_target(designed);
         }
 
-        // Update EQ band with the computed dynamic gain
-        self.eq_coeffs = BiquadCoeffs::peak(self.freq, gr_db as f64, self.q, self.sample_rate);
-        let eq_l = self.eq_l.process(l, &self.eq_coeffs);
-        let eq_r = self.eq_r.process(r, &self.eq_coeffs);
+        let eq_coeffs = self.eq_coeffs.next();
+        let eq_l = self.eq_l.process(l, &eq_coeffs);
+        let eq_r = self.eq_r.process(r, &eq_coeffs);
 
         (eq_l, eq_r)
     }
