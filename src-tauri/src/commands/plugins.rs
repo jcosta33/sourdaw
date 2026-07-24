@@ -28,7 +28,13 @@ pub struct PluginInstance {
     pub name: String,
     pub parameters: Vec<PluginParameter>,
     pub is_active: bool,
+    /// Raw CLAP latency, in frames of the rate the plugin was activated with.
+    /// Informational only — do not convert it outside this process, the frontend
+    /// does not share that clock. Use `latency_ms`.
     pub latency_samples: u32,
+    /// Latency in milliseconds, converted host-side at the activation sample rate.
+    /// This is the value the frontend feeds into latency compensation.
+    pub latency_ms: f64,
     pub engine_plugin_id: Option<usize>,
 }
 
@@ -144,6 +150,31 @@ pub async fn load_plugin(
             let name = wrapper.get_name().to_string();
             let params = wrapper.get_parameters();
             let has_gui = wrapper.has_gui();
+            // Query CLAP_EXT_LATENCY on the control thread while the plugin is
+            // active (the wrapper just activated it). Captured before the wrapper
+            // moves into the engine-owned runtime below.
+            //
+            // The conversion to milliseconds happens HERE, against `sample_rate` —
+            // the exact rate this plugin was activated with. The webview's
+            // AudioContext is a different clock domain, so shipping raw frames for
+            // it to divide would mis-scale compensation whenever the two rates
+            // differ.
+            let latency_samples = wrapper.latency_samples();
+            let latency_ms = wrapper.latency_ms();
+
+            // Wake the latency watcher when this instance flags a runtime latency
+            // change, so `clap_host_latency.changed()` / `request_restart()` reach
+            // the frontend as a `plugin-latency-changed` event. Installed before
+            // the wrapper is handed to the audio thread.
+            let notified_instance_id = instance_id.0.clone();
+            if !wrapper.set_latency_change_notifier(Box::new(move || {
+                crate::host::latency_watcher::notify_latency_change(&notified_instance_id);
+            })) {
+                eprintln!(
+                    "[Plugin] latency notifier already installed for instance {}",
+                    instance_id.0
+                );
+            }
 
             // Send the plugin to the native audio thread for real-time processing
             // and create an audio bridge for worklet ↔ Rust data transfer
@@ -219,7 +250,8 @@ pub async fn load_plugin(
                 name,
                 parameters: params,
                 is_active: true,
-                latency_samples: 0,
+                latency_samples,
+                latency_ms,
                 engine_plugin_id,
             };
 
@@ -249,6 +281,7 @@ pub async fn load_plugin(
                 parameters: params,
                 is_active: true,
                 latency_samples: 0,
+                latency_ms: 0.0,
                 engine_plugin_id: None,
             })
         }

@@ -1,13 +1,26 @@
 import { logger } from '#/infra/logger/appLogger';
 
+import { externalLatencyReporters } from './externalLatencyReporters';
 import { loadedExternalInstances } from './loadedExternalInstances';
 import { loadPlugin } from './loadPlugin';
 import { restorePluginState } from './restorePluginState';
+import { watchExternalPluginLatency } from './watchExternalPluginLatency';
 
 type ActivateExternalPluginInput = {
     pluginId: string;
     instanceId: string;
     stateChunk?: string;
+    /**
+     * Sink for this instance's latency in MILLISECONDS (PH-4): the value read at
+     * activation, and every runtime change the native host pushes afterwards.
+     * Callers wire it to their latency registry keyed by engine device id;
+     * injected rather than imported so this module keeps no AudioEngine edge.
+     *
+     * Milliseconds, not samples: the host converts at the rate the plugin was
+     * activated with (the native device rate), which the webview's AudioContext
+     * does not share.
+     */
+    onLatencyMs?: (latencyMs: number) => void;
 };
 
 /**
@@ -25,18 +38,38 @@ type ActivateExternalPluginInput = {
  * (`add_plugin_with_bridge` enqueues to the RT ring before the restore command
  * returns); state converges to the saved chunk shortly after.
  */
-export function activateExternalPlugin({ pluginId, instanceId, stateChunk }: ActivateExternalPluginInput): void {
+export function activateExternalPlugin({
+    pluginId,
+    instanceId,
+    stateChunk,
+    onLatencyMs,
+}: ActivateExternalPluginInput): void {
     if (loadedExternalInstances.has(instanceId)) {
         return;
     }
     loadedExternalInstances.add(instanceId);
 
+    if (onLatencyMs) {
+        // Register before the load so a latency change the plugin flags during
+        // its very first activation still finds a sink, and make sure the single
+        // push subscription is running.
+        externalLatencyReporters.set(instanceId, onLatencyMs);
+        watchExternalPluginLatency();
+    }
+
     void (async () => {
         try {
-            await loadPlugin(pluginId, instanceId);
+            const instance = await loadPlugin(pluginId, instanceId);
+            // Report the latency read at activation (PH-4). loadPlugin always
+            // resolves a PluginInstance with a numeric latency_ms (0 in the
+            // browser stub), so no runtime guard is needed. Later changes arrive
+            // through the plugin-latency-changed subscription instead.
+            onLatencyMs?.(instance.latency_ms);
         } catch (error) {
-            // Instantiation failed: drop the guard so a later rebuild can retry.
+            // Instantiation failed: drop the guard so a later rebuild can retry,
+            // and the sink with it — nothing is live to report for.
             loadedExternalInstances.delete(instanceId);
+            externalLatencyReporters.delete(instanceId);
             logger.warn(`Failed to load external plugin ${pluginId} for instance ${instanceId}: ${String(error)}`);
             return;
         }

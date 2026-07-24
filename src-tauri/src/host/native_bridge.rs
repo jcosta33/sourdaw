@@ -369,6 +369,25 @@ impl SharedClapPlugin {
         self.ensure_active_lifecycle()
     }
 
+    /// Apply any pending latency change the plugin flagged (via
+    /// `clap_host_latency.changed()` / `request_restart()`) and report the new
+    /// latency in **milliseconds**, or `None` when nothing was pending.
+    ///
+    /// Milliseconds, not samples: the plugin counts latency in frames of the rate
+    /// it was ACTIVATED with (the CPAL device rate). That is a different clock
+    /// from the webview's `AudioContext`, so a sample count must not cross the
+    /// IPC boundary — `ClapWrapper::latency_ms` converts where the rate is known.
+    ///
+    /// Runs on the non-RT control path through the existing CAS control seam, so
+    /// the deactivate/reactivate a latency change requires cannot race the RT
+    /// `process` path — and it adds no new audio-thread calls.
+    pub fn poll_latency_change_ms(&self, timeout: Duration) -> Result<Option<f64>, String> {
+        self.with_control(timeout, |plugin| match plugin.poll_latency_change()? {
+            Some(_) => Ok(Some(plugin.latency_ms())),
+            None => Ok(None),
+        })
+    }
+
     pub fn with_control<ResultValue>(
         &self,
         timeout: Duration,

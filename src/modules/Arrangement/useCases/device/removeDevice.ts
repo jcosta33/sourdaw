@@ -1,5 +1,5 @@
 import { logger } from '#/infra/logger/appLogger';
-import { removeDeviceFromStrip, removeTrackStrip } from '#/modules/AudioEngine/useCases';
+import { clearReportedLatency, removeDeviceFromStrip, removeTrackStrip } from '#/modules/AudioEngine/useCases';
 import { unloadPlugin } from '#/modules/PluginHost/useCases';
 
 import { getTrackState } from '../../repositories/track/getTrackState';
@@ -46,17 +46,23 @@ export function removeDevice(deviceId: string): RemoveDeviceOutcome {
         (track.kind === 'folder' && remainingDevices.some((candidate) => candidate.type === 'toaster'));
     const deactivatesStrip = wasLive && !remainsLive;
     const shouldUnloadRemovedExternal = wasLive || !trackEligibility.acceptsDeviceUpdate;
-    const externalInstanceIds = new Set<string>();
+    // Every external-plugin device whose native instance this removal tears down,
+    // keyed by engine device id — the same key the latency registry uses — so the
+    // unload set and the registry-clear set cannot drift apart. Deactivating the
+    // strip unloads the retained siblings too, and their reported latency has to
+    // go with them.
+    const unloadedExternalDevices = new Map<string, string>();
     if (deactivatesStrip) {
         for (const retainedDevice of remainingDevices) {
             if (retainedDevice.type === 'external-plugin' && retainedDevice.externalInstanceId) {
-                externalInstanceIds.add(retainedDevice.externalInstanceId);
+                unloadedExternalDevices.set(retainedDevice.id, retainedDevice.externalInstanceId);
             }
         }
     }
     if (device.type === 'external-plugin' && device.externalInstanceId && shouldUnloadRemovedExternal) {
-        externalInstanceIds.add(device.externalInstanceId);
+        unloadedExternalDevices.set(device.id, device.externalInstanceId);
     }
+    const externalInstanceIds = new Set<string>(unloadedExternalDevices.values());
 
     mapAllTracks((candidate) => {
         if (candidate.id !== track.id) {
@@ -69,6 +75,22 @@ export function removeDevice(deviceId: string): RemoveDeviceOutcome {
         removeDeviceFromStrip(track.id, deviceId);
     } catch (error) {
         logger.warn(`Failed to remove device ${deviceId} from track strip ${track.id}: ${String(error)}`);
+    }
+
+    // Drop reported-latency entries (PH-4) so the registry keeps no phantom
+    // compensation: getDeviceLatencyMs reads it unconditionally and getTrackLatency
+    // sums it, so a surviving entry inflates the whole track's delay forever.
+    //
+    // Two reasons an entry must go: the removed device leaves the chain even when
+    // its instance stays loaded, and every sibling whose instance this removal
+    // unloads stops processing audio. One set, so an entry that qualifies on both
+    // counts is still cleared exactly once.
+    const latencyDeviceIdsToClear = new Set<string>(unloadedExternalDevices.keys());
+    if (device.type === 'external-plugin') {
+        latencyDeviceIdsToClear.add(deviceId);
+    }
+    for (const clearedDeviceId of latencyDeviceIdsToClear) {
+        clearReportedLatency(clearedDeviceId);
     }
 
     if (deactivatesStrip) {

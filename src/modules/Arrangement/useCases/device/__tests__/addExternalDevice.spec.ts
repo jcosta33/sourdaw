@@ -7,7 +7,19 @@ const mocks = vi.hoisted(() => ({
     updateTrack: vi.fn(),
     addDeviceToStrip: vi.fn(),
     activateExternalPlugin: vi.fn(),
+    reportLatency: vi.fn(),
 }));
+
+/** The latency sink `addExternalDevice` injected into the activation call. */
+function injectedLatencySink(): (latencyMs: number) => void {
+    const lastCall = mocks.activateExternalPlugin.mock.calls.at(-1);
+    const input = lastCall?.[0] as { onLatencyMs?: (latencyMs: number) => void } | undefined;
+    const sink = input?.onLatencyMs;
+    if (!sink) {
+        throw new Error('activateExternalPlugin was called without a latency sink');
+    }
+    return sink;
+}
 
 vi.mock('../../../repositories/track/getTrackState', () => ({
     getTrackState: mocks.getTrackState,
@@ -19,6 +31,7 @@ vi.mock('../../../repositories/track/updateTrack', () => ({
 
 vi.mock('#/modules/AudioEngine/useCases', () => ({
     addDeviceToStrip: mocks.addDeviceToStrip,
+    reportLatency: mocks.reportLatency,
 }));
 
 vi.mock('#/modules/PluginHost/useCases', () => ({
@@ -56,10 +69,12 @@ describe('addExternalDevice', () => {
             'external-plugin',
             device?.externalInstanceId
         );
-        expect(mocks.activateExternalPlugin).toHaveBeenCalledWith({
-            pluginId: 'plugin-1',
-            instanceId: device?.externalInstanceId,
-        });
+        expect(mocks.activateExternalPlugin).toHaveBeenCalledWith(
+            expect.objectContaining({
+                pluginId: 'plugin-1',
+                instanceId: device?.externalInstanceId,
+            })
+        );
     });
 
     it('preserves ordinary external plugin creation and runtime loading', () => {
@@ -77,10 +92,23 @@ describe('addExternalDevice', () => {
             'external-plugin',
             device?.externalInstanceId
         );
-        expect(mocks.activateExternalPlugin).toHaveBeenCalledWith({
-            pluginId: 'plugin-1',
-            instanceId: device?.externalInstanceId,
-        });
+        expect(mocks.activateExternalPlugin).toHaveBeenCalledWith(
+            expect.objectContaining({
+                pluginId: 'plugin-1',
+                instanceId: device?.externalInstanceId,
+            })
+        );
+    });
+
+    it('routes the injected latency sink to the registry under this device id', () => {
+        const device = addExternalDevice('audio-1', 'plugin-1', 'Plugin');
+
+        // The sink is keyed by the engine DEVICE id, not the plugin instance id:
+        // per-track compensation sums the registry by device.
+        injectedLatencySink()(12.5);
+
+        expect(mocks.reportLatency).toHaveBeenCalledWith(device?.id, 12.5);
+        expect(device?.id).not.toBe(device?.externalInstanceId);
     });
 
     it('rejects duplicate track identity before truth, engine, or host work', () => {

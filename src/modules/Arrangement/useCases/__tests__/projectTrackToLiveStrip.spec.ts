@@ -19,6 +19,7 @@ const mocks = vi.hoisted(() => ({
     setSend: vi.fn(),
     wireSidechainRoutes: vi.fn(),
     resolveToasterPadBinding: vi.fn(),
+    reportLatency: vi.fn(),
     soloMode: 'sip',
 }));
 
@@ -38,6 +39,7 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     updateDeviceParam: mocks.updateDeviceParam,
     updateDeviceBypass: mocks.updateDeviceBypass,
     resolveToasterPadBinding: mocks.resolveToasterPadBinding,
+    reportLatency: mocks.reportLatency,
 }));
 
 vi.mock('#/modules/Routing/useCases', () => ({
@@ -110,11 +112,22 @@ describe('projectTrackToLiveStrip', () => {
             'external-plugin',
             'persisted-native-instance'
         );
-        expect(mocks.activateExternalPlugin).toHaveBeenCalledWith({
-            pluginId: 'persisted-native-plugin',
-            instanceId: 'persisted-native-instance',
-            stateChunk: 'c2F2ZWQ=',
-        });
+        expect(mocks.activateExternalPlugin).toHaveBeenCalledWith(
+            expect.objectContaining({
+                pluginId: 'persisted-native-plugin',
+                instanceId: 'persisted-native-instance',
+                stateChunk: 'c2F2ZWQ=',
+            })
+        );
+
+        // The injected latency sink writes under the engine DEVICE id, so the
+        // rebuilt strip reports compensation against the same key the removal
+        // path clears — not the plugin instance id.
+        const activation = mocks.activateExternalPlugin.mock.calls.at(-1)?.[0] as {
+            onLatencyMs?: (latencyMs: number) => void;
+        };
+        activation.onLatencyMs?.(7.25);
+        expect(mocks.reportLatency).toHaveBeenCalledWith('device-1', 7.25);
     });
 
     it('keeps solo-safe and solo-bus upstream tracks audible while muting unrelated tracks', () => {

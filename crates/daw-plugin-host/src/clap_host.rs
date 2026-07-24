@@ -1,4 +1,5 @@
 use clap_sys::ext::gui::{clap_host_gui, CLAP_EXT_GUI};
+use clap_sys::ext::latency::{clap_host_latency, CLAP_EXT_LATENCY};
 use clap_sys::ext::params::{clap_host_params, CLAP_EXT_PARAMS};
 use clap_sys::ext::state::{clap_host_state, CLAP_EXT_STATE};
 /// CLAP Host implementation — provides the `clap_host_t` and host extensions.
@@ -9,6 +10,92 @@ use clap_sys::host::clap_host;
 use clap_sys::version::CLAP_VERSION;
 use std::ffi::CStr;
 use std::os::raw::c_void;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::OnceLock;
+
+/// Host-supplied wake invoked whenever a plugin flags a latency change.
+///
+/// Runs on whatever thread the plugin called the host callback from, so it must
+/// not block, allocate unboundedly, or re-enter the wrapper. The host
+/// application installs it to wake its own control path; keeping it an opaque
+/// closure is what lets this crate stay free of any transport dependency.
+pub type LatencyChangeNotifier = Box<dyn Fn() + Send + Sync>;
+
+/// Per-instance host callback state, reachable from a plugin's host callbacks
+/// through `clap_host::host_data`. Each `ClapWrapper` owns one of these and pins
+/// its address into the host descriptor before the plugin is created.
+///
+/// It carries the latency-invalidation flag and the wake that turns it into a
+/// push. A plugin signals that its reported latency changed via
+/// `clap_host_latency.changed()` (main-thread) and/or
+/// `clap_host.request_restart()`; both set `latency_dirty` and then fire the
+/// notifier. The control thread reacts by re-activating the plugin and
+/// re-querying `clap_plugin_latency.get()` — CLAP forbids latency changes while
+/// active, so a re-query must follow a deactivate/reactivate cycle, which is
+/// exactly why the callback cannot do the work itself.
+#[derive(Default)]
+pub struct HostCallbackState {
+    latency_dirty: AtomicBool,
+    latency_notifier: OnceLock<LatencyChangeNotifier>,
+}
+
+impl std::fmt::Debug for HostCallbackState {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("HostCallbackState")
+            .field("latency_dirty", &self.latency_dirty.load(Ordering::Relaxed))
+            .field("has_latency_notifier", &self.latency_notifier.get().is_some())
+            .finish()
+    }
+}
+
+impl HostCallbackState {
+    /// Install the wake fired on a latency change. First install wins; a second
+    /// call changes nothing and reports `false` so the caller can flag the bug.
+    pub fn set_latency_notifier(&self, notifier: LatencyChangeNotifier) -> bool {
+        self.latency_notifier.set(notifier).is_ok()
+    }
+
+    /// Mark that the plugin's latency may have changed and must be re-queried
+    /// after a deactivate/reactivate cycle, then wake the observer.
+    pub fn mark_latency_dirty(&self) {
+        self.latency_dirty.store(true, Ordering::Release);
+        // Wake only after the flag is visible, so an observer this call wakes
+        // always sees the dirt it is being woken for. `OnceLock::get` is
+        // lock-free, so a plugin that (against spec) calls back from the audio
+        // thread does not take a lock here.
+        if let Some(notify) = self.latency_notifier.get() {
+            notify();
+        }
+    }
+
+    /// Atomically read-and-clear the latency-dirty flag. Returns `true` if a
+    /// latency change was pending since the last call.
+    pub fn take_latency_dirty(&self) -> bool {
+        self.latency_dirty.swap(false, Ordering::AcqRel)
+    }
+
+    /// Clear the flag without reporting it. Used after a completed re-query to
+    /// swallow a flag that the re-query's own reactivation provoked — the value
+    /// just read already reflects it, so scheduling another cycle would loop.
+    pub fn clear_latency_dirty(&self) {
+        self.latency_dirty.store(false, Ordering::Release);
+    }
+}
+
+/// Borrow the host callback state pinned into a `clap_host`'s `host_data`.
+/// Returns `None` when `host` or `host_data` is null (e.g. a descriptor created
+/// without per-instance state, such as legacy test fixtures).
+unsafe fn host_state<'a>(host: *const clap_host) -> Option<&'a HostCallbackState> {
+    if host.is_null() {
+        return None;
+    }
+    let data = (*host).host_data as *const HostCallbackState;
+    if data.is_null() {
+        return None;
+    }
+    Some(&*data)
+}
 
 static HOST_NAME: &[u8] = b"Sourdaw\0";
 static HOST_VENDOR: &[u8] = b"Sourdaw Team\0";
@@ -53,15 +140,24 @@ unsafe extern "C" fn host_get_extension(
     if id == CLAP_EXT_STATE {
         return &HOST_STATE as *const clap_host_state as *const c_void;
     }
+    if id == CLAP_EXT_LATENCY {
+        return &HOST_LATENCY as *const clap_host_latency as *const c_void;
+    }
 
     std::ptr::null()
 }
 
 // ── Host callbacks ─────────────────────────────────────────────────────
 
-unsafe extern "C" fn host_request_restart(_host: *const clap_host) {
+unsafe extern "C" fn host_request_restart(host: *const clap_host) {
+    // A restart request is how a running plugin asks to change latency (and other
+    // activation-time invariants). CLAP forbids latency changes while active, so
+    // flag the instance dirty; the control thread reacts by deactivating,
+    // reactivating, and re-querying `clap_plugin_latency.get()`.
+    if let Some(state) = host_state(host) {
+        state.mark_latency_dirty();
+    }
     eprintln!("[CLAP Host] Plugin requested restart — scheduling deactivate/reactivate");
-    // TODO: Schedule deactivation + reactivation via rtrb command
 }
 
 unsafe extern "C" fn host_request_process(_host: *const clap_host) {
@@ -148,4 +244,122 @@ static HOST_STATE: clap_host_state = clap_host_state {
 unsafe extern "C" fn host_state_mark_dirty(_host: *const clap_host) {
     // Plugin state changed — mark the project as unsaved
     eprintln!("[CLAP Host] Plugin state marked dirty");
+}
+
+// ── clap_host_latency extension ────────────────────────────────────────
+
+static HOST_LATENCY: clap_host_latency = clap_host_latency {
+    changed: Some(host_latency_changed),
+};
+
+/// The plugin reports that its latency changed. Per CLAP this is called on the
+/// main thread; latency itself may only change across a deactivate/reactivate,
+/// so we flag the instance dirty and let the control thread re-query.
+unsafe extern "C" fn host_latency_changed(host: *const clap_host) {
+    if let Some(state) = host_state(host) {
+        state.mark_latency_dirty();
+    }
+    eprintln!("[CLAP Host] Plugin reported a latency change");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Build a host descriptor whose `host_data` points at `state`, mimicking
+    /// how `ClapWrapper::new` pins per-instance state before plugin creation.
+    fn host_with_state(state: &HostCallbackState) -> clap_host {
+        let mut host = create_host_descriptor();
+        host.host_data = (state as *const HostCallbackState) as *mut c_void;
+        host
+    }
+
+    #[test]
+    fn latency_changed_callback_sets_the_dirty_flag() {
+        let state = HostCallbackState::default();
+        let host = host_with_state(&state);
+
+        assert!(!state.take_latency_dirty(), "flag starts clear");
+        unsafe { host_latency_changed(&host as *const clap_host) };
+        assert!(state.take_latency_dirty(), "changed() marks the instance dirty");
+        assert!(!state.take_latency_dirty(), "take clears the flag");
+    }
+
+    #[test]
+    fn request_restart_marks_latency_dirty() {
+        let state = HostCallbackState::default();
+        let host = host_with_state(&state);
+
+        unsafe { host_request_restart(&host as *const clap_host) };
+        assert!(
+            state.take_latency_dirty(),
+            "request_restart() marks the instance dirty so latency is re-queried"
+        );
+    }
+
+    #[test]
+    fn latency_callbacks_wake_the_installed_notifier() {
+        use std::sync::atomic::AtomicUsize;
+        use std::sync::Arc;
+
+        let wakes = Arc::new(AtomicUsize::new(0));
+        let state = HostCallbackState::default();
+        let counter = Arc::clone(&wakes);
+        assert!(
+            state.set_latency_notifier(Box::new(move || {
+                counter.fetch_add(1, Ordering::Relaxed);
+            })),
+            "first install wins"
+        );
+        let host = host_with_state(&state);
+
+        assert_eq!(wakes.load(Ordering::Relaxed), 0, "no wake before a callback");
+        unsafe { host_latency_changed(&host as *const clap_host) };
+        assert_eq!(wakes.load(Ordering::Relaxed), 1, "changed() wakes the observer");
+        unsafe { host_request_restart(&host as *const clap_host) };
+        assert_eq!(
+            wakes.load(Ordering::Relaxed),
+            2,
+            "request_restart() also wakes the observer"
+        );
+
+        // A second install is refused, so the wake cannot be hijacked mid-life.
+        assert!(!state.set_latency_notifier(Box::new(|| {})));
+        unsafe { host_latency_changed(&host as *const clap_host) };
+        assert_eq!(wakes.load(Ordering::Relaxed), 3, "original notifier still fires");
+    }
+
+    #[test]
+    fn clear_latency_dirty_drops_a_pending_flag_without_reporting_it() {
+        let state = HostCallbackState::default();
+        state.mark_latency_dirty();
+
+        state.clear_latency_dirty();
+
+        assert!(
+            !state.take_latency_dirty(),
+            "a cleared flag is not reported to the next observer"
+        );
+    }
+
+    #[test]
+    fn callbacks_tolerate_a_null_host_state() {
+        // Legacy descriptors (e.g. command fixtures) carry a null host_data.
+        let host = create_host_descriptor();
+        assert!(host.host_data.is_null());
+        unsafe {
+            host_latency_changed(&host as *const clap_host);
+            host_request_restart(&host as *const clap_host);
+        }
+    }
+
+    #[test]
+    fn get_extension_exposes_the_latency_extension() {
+        unsafe {
+            let ptr = host_get_extension(std::ptr::null(), CLAP_EXT_LATENCY.as_ptr());
+            assert!(!ptr.is_null(), "host advertises clap.latency");
+            let ext = &*(ptr as *const clap_host_latency);
+            assert!(ext.changed.is_some());
+        }
+    }
 }

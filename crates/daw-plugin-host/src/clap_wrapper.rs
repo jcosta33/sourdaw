@@ -13,7 +13,13 @@ const MAX_MIDI: usize = 64;
 /// Maximum parameter events processed per audio block. Extra pending values remain host-side.
 const MAX_PARAMETER_EVENTS: usize = 64;
 
-use crate::clap_host::create_host_descriptor;
+/// How many deactivate/reactivate/re-query passes one `poll_latency_change` will
+/// make before giving up on settling. Each extra pass exists to catch a
+/// `request_restart()` that landed during the previous one; the cap keeps a
+/// plugin that re-flags from inside every `activate()` from spinning forever.
+const MAX_LATENCY_REQUERY_PASSES: u32 = 4;
+
+use crate::clap_host::{create_host_descriptor, HostCallbackState, LatencyChangeNotifier};
 use crate::params::PluginParameter;
 use crate::traits::AudioPlugin;
 use clap_sys::audio_buffer::clap_audio_buffer;
@@ -32,6 +38,7 @@ use clap_sys::ext::params::{
     CLAP_PARAM_IS_HIDDEN, CLAP_PARAM_IS_READONLY,
 };
 use clap_sys::ext::state::{clap_plugin_state, CLAP_EXT_STATE};
+use clap_sys::ext::latency::{clap_plugin_latency, CLAP_EXT_LATENCY};
 use clap_sys::factory::plugin_factory::{clap_plugin_factory, CLAP_PLUGIN_FACTORY_ID};
 use clap_sys::host::clap_host;
 use clap_sys::plugin::clap_plugin;
@@ -68,6 +75,12 @@ pub struct ClapWrapper {
     state_ext: *const clap_plugin_state,
     /// Cached pointer to the plugin's GUI extension (may be null).
     gui_ext: *const clap_plugin_gui,
+    /// Cached pointer to the plugin's latency extension (may be null).
+    latency_ext: *const clap_plugin_latency,
+    /// Per-instance host callback state, pinned into `host.host_data`. Owns the
+    /// latency-dirty flag the plugin sets via `clap_host_latency.changed()` /
+    /// `request_restart()`. Must outlive the plugin (dropped after it in field order).
+    host_state: Box<HostCallbackState>,
     /// Whether the GUI is currently open.
     gui_open: bool,
     /// Preallocated input channel scratch (2 ch × MAX_BUFFER samples). No RT allocation.
@@ -235,7 +248,11 @@ impl ClapWrapper {
             let factory = &*(factory_ptr as *const clap_plugin_factory);
 
             // 5. Create host descriptor
-            let host = Box::new(create_host_descriptor());
+            // Pin per-instance host callback state into the descriptor BEFORE the
+            // plugin is created, so latency-change callbacks can reach this instance.
+            let host_state = Box::new(HostCallbackState::default());
+            let mut host = Box::new(create_host_descriptor());
+            host.host_data = (&*host_state as *const HostCallbackState) as *mut c_void;
             let host_ptr: *const clap_host = &*host;
 
             // 6. Create the plugin instance
@@ -279,6 +296,8 @@ impl ClapWrapper {
                 Self::query_extension::<clap_plugin_params>(plugin_ref, CLAP_EXT_PARAMS);
             let state_ext = Self::query_extension::<clap_plugin_state>(plugin_ref, CLAP_EXT_STATE);
             let gui_ext = Self::query_extension::<clap_plugin_gui>(plugin_ref, CLAP_EXT_GUI);
+            let latency_ext =
+                Self::query_extension::<clap_plugin_latency>(plugin_ref, CLAP_EXT_LATENCY);
 
             if !params_ext.is_null() {
                 eprintln!("[CLAP] Plugin '{}' supports CLAP_EXT_PARAMS", name);
@@ -320,6 +339,8 @@ impl ClapWrapper {
                 params_ext,
                 state_ext,
                 gui_ext,
+                latency_ext,
+                host_state,
                 gui_open: false,
                 input_scratch: Box::new([[0.0f32; MAX_BUFFER]; 2]),
                 output_scratch: Box::new([[0.0f32; MAX_BUFFER]; 2]),
@@ -348,6 +369,8 @@ impl ClapWrapper {
             params_ext: ptr::null(),
             state_ext: ptr::null(),
             gui_ext: ptr::null(),
+            latency_ext: ptr::null(),
+            host_state: Box::new(HostCallbackState::default()),
             gui_open: false,
             input_scratch: Box::new([[0.0f32; MAX_BUFFER]; 2]),
             output_scratch: Box::new([[0.0f32; MAX_BUFFER]; 2]),
@@ -811,6 +834,156 @@ impl ClapWrapper {
     }
 }
 
+/// Read a CLAP plugin's reported latency through its latency extension.
+/// Returns 0 when the extension pointer, its `get` callback, or the plugin
+/// pointer is null. Free function so it can be unit-tested against a stub
+/// `clap_plugin_latency` without a live plugin.
+unsafe fn read_latency_ext(
+    latency_ext: *const clap_plugin_latency,
+    plugin: *const clap_plugin,
+) -> u32 {
+    if latency_ext.is_null() || plugin.is_null() {
+        return 0;
+    }
+    match (*latency_ext).get {
+        Some(get) => get(plugin),
+        None => 0,
+    }
+}
+
+impl ClapWrapper {
+    /// The plugin's current reported latency in samples. `0` when the plugin has
+    /// no latency extension or is not active — CLAP defines `clap_plugin_latency.get`
+    /// as `[main-thread & (being-activated | active)]`, so it is only meaningful
+    /// while active. Call from the main/control thread only.
+    pub fn latency_samples(&self) -> u32 {
+        #[cfg(feature = "engine-owned-command-fixture")]
+        if self.command_fixture.is_some() {
+            return 0;
+        }
+
+        if !self.activated {
+            return 0;
+        }
+        unsafe { read_latency_ext(self.latency_ext, self.plugin) }
+    }
+
+    /// The plugin's current reported latency in **milliseconds**.
+    ///
+    /// CLAP reports latency as a frame count in the clock the plugin was
+    /// ACTIVATED with (`self.sample_rate`, the CPAL device rate). This wrapper is
+    /// the only place that rate is known, so it is the only place the conversion
+    /// is sound — a consumer on another clock (e.g. a webview `AudioContext`
+    /// running at a different rate) would silently mis-scale the sample count.
+    pub fn latency_ms(&self) -> f64 {
+        if !self.sample_rate.is_finite() || self.sample_rate <= 0.0 {
+            return 0.0;
+        }
+        f64::from(self.latency_samples()) / self.sample_rate * 1000.0
+    }
+
+    /// Install the wake fired when this plugin flags a runtime latency change.
+    /// Call before the wrapper reaches the audio thread. First install wins; a
+    /// second call changes nothing and reports `false`.
+    pub fn set_latency_change_notifier(&self, notifier: LatencyChangeNotifier) -> bool {
+        self.host_state.set_latency_notifier(notifier)
+    }
+
+    /// Deactivate then reactivate the plugin so a runtime latency change can be
+    /// re-read, and return the freshly queried latency. CLAP forbids latency
+    /// changes while active, so latency is only re-queried after this cycle.
+    ///
+    /// Main/control-thread only: the caller (the `SharedClapPlugin` control seam)
+    /// holds the exclusive control lock, so the RT `process` path cannot run
+    /// concurrently. Introduces no new audio-thread calls.
+    pub fn reactivate_for_latency(&mut self) -> Result<u32, String> {
+        if self.plugin.is_null() {
+            return Ok(self.latency_samples());
+        }
+
+        unsafe {
+            let plugin_ref = &*self.plugin;
+
+            if self.activated {
+                if let Some(stop_processing) = plugin_ref.stop_processing {
+                    stop_processing(self.plugin);
+                }
+                if let Some(deactivate) = plugin_ref.deactivate {
+                    deactivate(self.plugin);
+                }
+                self.activated = false;
+            }
+
+            if let Some(activate_fn) = plugin_ref.activate {
+                if !activate_fn(self.plugin, self.sample_rate, 32, 4096) {
+                    return Err(format!(
+                        "[CLAP] reactivation for latency change failed for {}",
+                        self.name
+                    ));
+                }
+                self.activated = true;
+                if let Some(start_processing) = plugin_ref.start_processing {
+                    start_processing(self.plugin);
+                }
+            }
+        }
+
+        Ok(self.latency_samples())
+    }
+
+    /// If the plugin flagged a latency change (via `clap_host_latency.changed()`
+    /// or `request_restart()`), reactivate and re-read latency, returning
+    /// `Some(new_samples)`. Returns `Ok(None)` when nothing changed. The flag is
+    /// consumed (read-and-cleared) whether or not a reactivation follows.
+    /// Main/control-thread only.
+    pub fn poll_latency_change(&mut self) -> Result<Option<u32>, String> {
+        if !self.host_state.take_latency_dirty() {
+            return Ok(None);
+        }
+
+        let mut latency = self.reactivate_for_latency()?;
+
+        // A flag raised WHILE that cycle ran is ambiguous, and the two cases are
+        // indistinguishable from here:
+        //
+        //   a) the plugin re-flagged from inside its own activate() — the value
+        //      just read already covers it, another pass is wasted work;
+        //   b) an independent `request_restart()` landed from another thread
+        //      (CLAP allows it from any thread, unlike `changed()`) — CLAP cannot
+        //      report that latency until a FURTHER cycle completes.
+        //
+        // So re-query instead of clearing. Clearing blindly would resolve (b) as
+        // a lost update: the queued wake reads a false flag, no event fires, and
+        // compensation stays stale until some unrelated later change happens by.
+        // A wasted cycle is cheap; a dropped change is silent and long-lived.
+        for _ in 1..MAX_LATENCY_REQUERY_PASSES {
+            if !self.host_state.take_latency_dirty() {
+                return Ok(Some(latency));
+            }
+            latency = self.reactivate_for_latency()?;
+        }
+
+        // Bounded so case (a) cannot spin forever: a plugin that re-flags on every
+        // activate never lets the loop settle. Drop the flag and report the last
+        // value read — the alternative is an unbounded reactivation loop.
+        if self.host_state.take_latency_dirty() {
+            eprintln!(
+                "[CLAP] '{}' re-flagged a latency change on all {} re-query passes; \
+                 reporting the last value read and dropping the flag",
+                self.name, MAX_LATENCY_REQUERY_PASSES
+            );
+        }
+        Ok(Some(latency))
+    }
+
+    /// Expose the per-instance host callback state for tests and control-path
+    /// callers that need to arm the latency-dirty flag directly.
+    #[cfg(test)]
+    fn host_callback_state(&self) -> &HostCallbackState {
+        &self.host_state
+    }
+}
+
 impl AudioPlugin for ClapWrapper {
     fn process(&mut self, inputs: &[&[f32]], outputs: &mut [&mut [f32]], num_samples: usize) {
         self.process_audio_internal(inputs, outputs, num_samples, &EMPTY_INPUT_EVENTS);
@@ -1000,6 +1173,280 @@ impl AudioPlugin for ClapWrapper {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // ── Latency query + change notification (PH-4) ──────────────────────
+
+    use std::sync::atomic::{AtomicU32, AtomicUsize, Ordering};
+
+    // Latency the stub plugin reports on its next `get`. Serialised by the lock
+    // below because Rust runs tests in parallel and this static is shared.
+    static STUB_LATENCY: AtomicU32 = AtomicU32::new(0);
+    static LATENCY_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    unsafe extern "C" fn stub_latency_get(_plugin: *const clap_plugin) -> u32 {
+        STUB_LATENCY.load(Ordering::Relaxed)
+    }
+
+    static STUB_LATENCY_EXT: clap_plugin_latency = clap_plugin_latency {
+        get: Some(stub_latency_get),
+    };
+
+    unsafe extern "C" fn stub_get_extension(
+        _plugin: *const clap_plugin,
+        id: *const i8,
+    ) -> *const c_void {
+        let id = CStr::from_ptr(id);
+        if id == CLAP_EXT_LATENCY {
+            return &STUB_LATENCY_EXT as *const clap_plugin_latency as *const c_void;
+        }
+        ptr::null()
+    }
+
+    unsafe extern "C" fn stub_activate(
+        _plugin: *const clap_plugin,
+        _sample_rate: f64,
+        _min_frames: u32,
+        _max_frames: u32,
+    ) -> bool {
+        true
+    }
+    /// Address of the `HostCallbackState` that `stub_activate_reflagging` should
+    /// re-flag, mimicking a plugin that calls `clap_host_latency.changed()` from
+    /// inside `activate()`. `0` disables the behaviour.
+    static REFLAG_TARGET: AtomicUsize = AtomicUsize::new(0);
+
+    unsafe extern "C" fn stub_activate_reflagging(
+        _plugin: *const clap_plugin,
+        _sample_rate: f64,
+        _min_frames: u32,
+        _max_frames: u32,
+    ) -> bool {
+        let target = REFLAG_TARGET.load(Ordering::Relaxed);
+        if target != 0 {
+            (*(target as *const HostCallbackState)).mark_latency_dirty();
+        }
+        true
+    }
+
+    /// Models an INDEPENDENT `request_restart()` landing from another thread while
+    /// a re-query is already in flight. On the first activation it raises the flag
+    /// but leaves the reported latency alone — CLAP cannot surface the new value
+    /// until a further cycle completes — and only the second activation applies
+    /// it. A host that clears the flag after one pass loses this change entirely.
+    static RACE_TARGET: AtomicUsize = AtomicUsize::new(0);
+    static RACE_ACTIVATIONS: AtomicU32 = AtomicU32::new(0);
+    static RACE_PENDING_LATENCY: AtomicU32 = AtomicU32::new(0);
+
+    unsafe extern "C" fn stub_activate_racing(
+        _plugin: *const clap_plugin,
+        _sample_rate: f64,
+        _min_frames: u32,
+        _max_frames: u32,
+    ) -> bool {
+        let pass = RACE_ACTIVATIONS.fetch_add(1, Ordering::Relaxed);
+        if pass == 0 {
+            let target = RACE_TARGET.load(Ordering::Relaxed);
+            if target != 0 {
+                (*(target as *const HostCallbackState)).mark_latency_dirty();
+            }
+        } else if pass == 1 {
+            STUB_LATENCY.store(RACE_PENDING_LATENCY.load(Ordering::Relaxed), Ordering::Relaxed);
+        }
+        true
+    }
+
+    unsafe extern "C" fn stub_deactivate(_plugin: *const clap_plugin) {}
+    unsafe extern "C" fn stub_start_processing(_plugin: *const clap_plugin) -> bool {
+        true
+    }
+    unsafe extern "C" fn stub_stop_processing(_plugin: *const clap_plugin) {}
+
+    /// A leaked stub `clap_plugin` that advertises CLAP_EXT_LATENCY and supports
+    /// the activate/deactivate lifecycle. Leaked so the pointer outlives the test.
+    fn stub_plugin_ptr() -> *const clap_plugin {
+        let mut plugin: clap_plugin = unsafe { mem::zeroed() };
+        plugin.get_extension = Some(stub_get_extension);
+        plugin.activate = Some(stub_activate);
+        plugin.deactivate = Some(stub_deactivate);
+        plugin.start_processing = Some(stub_start_processing);
+        plugin.stop_processing = Some(stub_stop_processing);
+        Box::into_raw(Box::new(plugin)) as *const clap_plugin
+    }
+
+    fn stub_wrapper(plugin: *const clap_plugin) -> ClapWrapper {
+        let latency_ext =
+            unsafe { ClapWrapper::query_extension::<clap_plugin_latency>(&*plugin, CLAP_EXT_LATENCY) };
+        ClapWrapper {
+            _library: None,
+            plugin,
+            host: Box::new(create_host_descriptor()),
+            activated: true,
+            name: "stub".to_string(),
+            sample_rate: 48_000.0,
+            params_ext: ptr::null(),
+            state_ext: ptr::null(),
+            gui_ext: ptr::null(),
+            latency_ext,
+            host_state: Box::new(HostCallbackState::default()),
+            gui_open: false,
+            input_scratch: Box::new([[0.0f32; MAX_BUFFER]; 2]),
+            output_scratch: Box::new([[0.0f32; MAX_BUFFER]; 2]),
+            midi_scratch: Vec::with_capacity(MAX_MIDI),
+            parameter_scratch: Vec::with_capacity(MAX_PARAMETER_EVENTS),
+            #[cfg(feature = "engine-owned-command-fixture")]
+            command_fixture: None,
+        }
+    }
+
+    #[test]
+    fn read_latency_ext_is_zero_without_the_extension_and_the_reported_value_with_it() {
+        let _guard = LATENCY_TEST_LOCK.lock().unwrap();
+        let plugin = stub_plugin_ptr();
+
+        // Before wiring: no latency extension queried -> host sees 0.
+        assert_eq!(unsafe { read_latency_ext(ptr::null(), plugin) }, 0);
+
+        // After wiring: query the extension the stub advertises, then read it.
+        let ext =
+            unsafe { ClapWrapper::query_extension::<clap_plugin_latency>(&*plugin, CLAP_EXT_LATENCY) };
+        assert!(!ext.is_null(), "stub advertises CLAP_EXT_LATENCY");
+
+        STUB_LATENCY.store(0, Ordering::Relaxed);
+        assert_eq!(unsafe { read_latency_ext(ext, plugin) }, 0);
+        STUB_LATENCY.store(512, Ordering::Relaxed);
+        assert_eq!(unsafe { read_latency_ext(ext, plugin) }, 512);
+    }
+
+    #[test]
+    fn latency_samples_reflects_the_active_plugin_and_zero_when_inactive() {
+        let _guard = LATENCY_TEST_LOCK.lock().unwrap();
+        STUB_LATENCY.store(128, Ordering::Relaxed);
+        let mut wrapper = stub_wrapper(stub_plugin_ptr());
+
+        assert_eq!(wrapper.latency_samples(), 128);
+        wrapper.activated = false;
+        assert_eq!(wrapper.latency_samples(), 0, "inactive plugin reports no latency");
+    }
+
+    #[test]
+    fn poll_latency_change_requeries_only_after_the_plugin_flags_a_change() {
+        let _guard = LATENCY_TEST_LOCK.lock().unwrap();
+        STUB_LATENCY.store(64, Ordering::Relaxed);
+        let mut wrapper = stub_wrapper(stub_plugin_ptr());
+
+        // No change flagged -> no re-query, no reactivation.
+        assert_eq!(wrapper.poll_latency_change().unwrap(), None);
+        assert_eq!(wrapper.latency_samples(), 64);
+
+        // Plugin reports a latency change (as clap_host_latency.changed would),
+        // then the reported latency moves.
+        wrapper.host_callback_state().mark_latency_dirty();
+        STUB_LATENCY.store(1024, Ordering::Relaxed);
+        assert_eq!(
+            wrapper.poll_latency_change().unwrap(),
+            Some(1024),
+            "a flagged change reactivates and re-reads the new latency"
+        );
+
+        // Flag consumed -> the next poll is a no-op.
+        assert_eq!(wrapper.poll_latency_change().unwrap(), None);
+    }
+
+    #[test]
+    fn poll_latency_change_swallows_a_flag_its_own_reactivation_provoked() {
+        let _guard = LATENCY_TEST_LOCK.lock().unwrap();
+        STUB_LATENCY.store(64, Ordering::Relaxed);
+
+        // A plugin that re-flags from inside activate() — without the post-poll
+        // clear this schedules an endless reactivate/re-query loop.
+        let mut plugin: clap_plugin = unsafe { mem::zeroed() };
+        plugin.get_extension = Some(stub_get_extension);
+        plugin.activate = Some(stub_activate_reflagging);
+        plugin.deactivate = Some(stub_deactivate);
+        plugin.start_processing = Some(stub_start_processing);
+        plugin.stop_processing = Some(stub_stop_processing);
+        let mut wrapper = stub_wrapper(Box::into_raw(Box::new(plugin)) as *const clap_plugin);
+
+        REFLAG_TARGET.store(
+            (&*wrapper.host_state as *const HostCallbackState) as usize,
+            Ordering::Relaxed,
+        );
+        wrapper.host_callback_state().mark_latency_dirty();
+        STUB_LATENCY.store(2048, Ordering::Relaxed);
+
+        assert_eq!(wrapper.poll_latency_change().unwrap(), Some(2048));
+        assert_eq!(
+            wrapper.poll_latency_change().unwrap(),
+            None,
+            "the flag activate() re-raised is consumed, not carried into another cycle"
+        );
+
+        REFLAG_TARGET.store(0, Ordering::Relaxed);
+    }
+
+    #[test]
+    fn poll_latency_change_keeps_a_restart_that_landed_during_the_reactivation() {
+        let _guard = LATENCY_TEST_LOCK.lock().unwrap();
+        STUB_LATENCY.store(64, Ordering::Relaxed);
+        RACE_ACTIVATIONS.store(0, Ordering::Relaxed);
+        RACE_PENDING_LATENCY.store(900, Ordering::Relaxed);
+
+        let mut plugin: clap_plugin = unsafe { mem::zeroed() };
+        plugin.get_extension = Some(stub_get_extension);
+        plugin.activate = Some(stub_activate_racing);
+        plugin.deactivate = Some(stub_deactivate);
+        plugin.start_processing = Some(stub_start_processing);
+        plugin.stop_processing = Some(stub_stop_processing);
+        let mut wrapper = stub_wrapper(Box::into_raw(Box::new(plugin)) as *const clap_plugin);
+
+        RACE_TARGET.store(
+            (&*wrapper.host_state as *const HostCallbackState) as usize,
+            Ordering::Relaxed,
+        );
+        wrapper.host_callback_state().mark_latency_dirty();
+
+        // `request_restart()` is callable from ANY thread, so a second one can
+        // land mid-cycle. Clearing the flag after a single pass would report the
+        // stale 64 and drop the concurrent change on the floor: the queued wake
+        // would read a false flag and never emit.
+        assert_eq!(
+            wrapper.poll_latency_change().unwrap(),
+            Some(900),
+            "a restart raised during the reactivation window must still be re-queried"
+        );
+        assert_eq!(
+            wrapper.poll_latency_change().unwrap(),
+            None,
+            "once settled, the flag is consumed and the next poll is a no-op"
+        );
+
+        RACE_TARGET.store(0, Ordering::Relaxed);
+    }
+
+    #[test]
+    fn latency_ms_converts_at_the_rate_the_plugin_activated_with() {
+        let _guard = LATENCY_TEST_LOCK.lock().unwrap();
+        STUB_LATENCY.store(2205, Ordering::Relaxed);
+        let mut wrapper = stub_wrapper(stub_plugin_ptr());
+
+        // 2205 frames at the 44.1 kHz activation rate is 50 ms — NOT the 45.9375 ms
+        // a 48 kHz consumer would compute from the same sample count.
+        wrapper.sample_rate = 44_100.0;
+        assert_eq!(wrapper.latency_ms(), 50.0);
+
+        // Same plugin, different activation rate -> different milliseconds.
+        wrapper.sample_rate = 96_000.0;
+        assert_eq!(wrapper.latency_ms(), 2205.0 / 96_000.0 * 1000.0);
+
+        // A nonsense rate cannot produce an infinite compensation value.
+        wrapper.sample_rate = 0.0;
+        assert_eq!(wrapper.latency_ms(), 0.0);
+
+        // An inactive plugin reports no latency, so no milliseconds either.
+        wrapper.sample_rate = 48_000.0;
+        wrapper.activated = false;
+        assert_eq!(wrapper.latency_ms(), 0.0);
+    }
 
     #[test]
     fn state_load_result_returns_ok_when_clap_load_succeeds() {

@@ -2,6 +2,8 @@ mod commands;
 pub mod host;
 pub mod state;
 
+use tauri::Manager;
+
 const APP_VERSION: &str = env!("CARGO_PKG_VERSION");
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -110,7 +112,19 @@ pub fn run() {
             // Tuning
             commands::tuning::parse_scl,
         ])
-        .setup(|_app| Ok(()))
+        .setup(|app| {
+            // Start the CLAP latency watcher: it turns a plugin's
+            // clap_host_latency.changed() / request_restart() callback into a
+            // `plugin-latency-changed` event on the webview (PH-4). Started here
+            // rather than at first load so the sender exists before any plugin
+            // can flag.
+            let engine_plugins = {
+                let app_state = app.state::<state::AppState>();
+                std::sync::Arc::clone(&app_state.engine_plugins)
+            };
+            host::latency_watcher::start(app.handle().clone(), engine_plugins);
+            Ok(())
+        })
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
