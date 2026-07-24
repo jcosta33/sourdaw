@@ -8,6 +8,12 @@ type ActivateExternalPluginInput = {
     pluginId: string;
     instanceId: string;
     stateChunk?: string;
+    /**
+     * Invoked once, after a successful load, with the plugin's reported latency
+     * in samples (PH-4). Callers wire this to the AudioEngine latency registry;
+     * injected rather than imported so this module keeps no AudioEngine edge.
+     */
+    onLatencySamples?: (latencySamples: number) => void;
 };
 
 /**
@@ -25,7 +31,12 @@ type ActivateExternalPluginInput = {
  * (`add_plugin_with_bridge` enqueues to the RT ring before the restore command
  * returns); state converges to the saved chunk shortly after.
  */
-export function activateExternalPlugin({ pluginId, instanceId, stateChunk }: ActivateExternalPluginInput): void {
+export function activateExternalPlugin({
+    pluginId,
+    instanceId,
+    stateChunk,
+    onLatencySamples,
+}: ActivateExternalPluginInput): void {
     if (loadedExternalInstances.has(instanceId)) {
         return;
     }
@@ -33,7 +44,11 @@ export function activateExternalPlugin({ pluginId, instanceId, stateChunk }: Act
 
     void (async () => {
         try {
-            await loadPlugin(pluginId, instanceId);
+            const instance = await loadPlugin(pluginId, instanceId);
+            // Report the freshly queried plugin latency (PH-4). loadPlugin always
+            // resolves a PluginInstance with a numeric latency_samples (0 in the
+            // browser stub), so no runtime guard is needed.
+            onLatencySamples?.(instance.latency_samples);
         } catch (error) {
             // Instantiation failed: drop the guard so a later rebuild can retry.
             loadedExternalInstances.delete(instanceId);

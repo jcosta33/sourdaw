@@ -1,4 +1,4 @@
-import { addDeviceToStrip } from '#/modules/AudioEngine/useCases';
+import { addDeviceToStrip, reportPluginLatencySamples } from '#/modules/AudioEngine/useCases';
 import { activateExternalPlugin } from '#/modules/PluginHost/useCases';
 
 import { getTrackState } from '../../repositories/track/getTrackState';
@@ -41,7 +41,11 @@ export function addExternalDevice(trackId: string, pluginId: string, pluginName:
 
     if (hadLiveStrip) {
         addDeviceToStrip(trackId, device.id, 'external-plugin', instanceId);
-        activateExternalPlugin({ pluginId, instanceId });
+        activateExternalPlugin({
+            pluginId,
+            instanceId,
+            onLatencySamples: (latencySamples) => reportPluginLatencySamples(device.id, latencySamples),
+        });
     }
 
     return device;

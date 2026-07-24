@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { isTauri, tauriInvoke } from '#/utils/tauriBridge';
 
+import { getPluginLatency } from '../getPluginLatency';
 import { loadPlugin } from '../loadPlugin';
 import { processAudioIPC } from '../processAudioIPC';
 import { scanPlugins } from '../scanPlugins';
@@ -158,6 +159,23 @@ describe('pluginBridge repository', () => {
             });
 
             expect(result).toBeNull();
+        });
+    });
+
+    describe('getPluginLatency', () => {
+        it('reports zero latency outside the desktop app', async () => {
+            vi.mocked(isTauri).mockReturnValue(false);
+            const result = await getPluginLatency('i1');
+            expect(result).toBe(0);
+            expect(tauriInvoke).not.toHaveBeenCalled();
+        });
+
+        it('pulls the reported latency from the native command in desktop', async () => {
+            vi.mocked(isTauri).mockReturnValue(true);
+            vi.mocked(tauriInvoke).mockResolvedValue(512);
+            const result = await getPluginLatency('i1');
+            expect(tauriInvoke).toHaveBeenCalledWith('get_plugin_latency', { instanceId: 'i1' });
+            expect(result).toBe(512);
         });
     });
 });

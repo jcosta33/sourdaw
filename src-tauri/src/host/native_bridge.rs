@@ -369,6 +369,21 @@ impl SharedClapPlugin {
         self.ensure_active_lifecycle()
     }
 
+    /// Apply any pending latency change the plugin flagged (via
+    /// `clap_host_latency.changed()` / `request_restart()`) and return the
+    /// plugin's current reported latency in samples.
+    ///
+    /// Runs on the non-RT control path through the existing CAS control seam, so
+    /// the deactivate/reactivate a latency change requires cannot race the RT
+    /// `process` path — and it adds no new audio-thread calls. `0` for a plugin
+    /// that reports no latency.
+    pub fn latency_samples_refreshed(&self, timeout: Duration) -> Result<u32, String> {
+        self.with_control(timeout, |plugin| {
+            plugin.poll_latency_change()?;
+            Ok(plugin.latency_samples())
+        })
+    }
+
     pub fn with_control<ResultValue>(
         &self,
         timeout: Duration,

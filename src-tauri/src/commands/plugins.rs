@@ -144,6 +144,10 @@ pub async fn load_plugin(
             let name = wrapper.get_name().to_string();
             let params = wrapper.get_parameters();
             let has_gui = wrapper.has_gui();
+            // Query CLAP_EXT_LATENCY on the control thread while the plugin is
+            // active (the wrapper just activated it). Captured before the wrapper
+            // moves into the engine-owned runtime below.
+            let latency_samples = wrapper.latency_samples();
 
             // Send the plugin to the native audio thread for real-time processing
             // and create an audio bridge for worklet ↔ Rust data transfer
@@ -219,7 +223,7 @@ pub async fn load_plugin(
                 name,
                 parameters: params,
                 is_active: true,
-                latency_samples: 0,
+                latency_samples,
                 engine_plugin_id,
             };
 
@@ -473,6 +477,33 @@ pub async fn get_plugin_state(
     }
 
     Err(format!("No plugin instance: {}", instance_id.0))
+}
+
+/// Report a native plugin's current latency in samples, applying any pending
+/// runtime latency change first (PH-4). This is the pull half of the bridge seam
+/// the TS side mirrors onto `externalLatencyRegistry`; feeding PDC from the
+/// registry is a separate concern (RT-4). Non-engine-owned instances (browser
+/// dev stub, VST3 passthrough) report `0`.
+#[tauri::command]
+#[specta::specta]
+pub async fn get_plugin_latency(
+    instance_id: PluginInstanceId,
+    state: tauri::State<'_, AppState>,
+) -> Result<u32, String> {
+    let runtime = {
+        let engine_plugins = state
+            .engine_plugins
+            .lock()
+            .map_err(|e| format!("Failed to lock engine_plugins: {}", e))?;
+        engine_plugins
+            .get(&instance_id.0)
+            .map(|instance| Arc::clone(&instance.runtime))
+    };
+    if let Some(runtime) = runtime {
+        return runtime.latency_samples_refreshed(std::time::Duration::from_secs(2));
+    }
+
+    Ok(0)
 }
 
 #[tauri::command]

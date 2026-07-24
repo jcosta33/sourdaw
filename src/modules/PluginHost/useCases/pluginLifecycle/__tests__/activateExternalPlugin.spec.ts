@@ -75,4 +75,24 @@ describe('activateExternalPlugin', () => {
         await vi.waitFor(() => expect(mocks.loadPluginRepo).toHaveBeenCalledTimes(2));
         expect(loadedExternalInstances.has('inst-1')).toBe(true);
     });
+
+    it('reports the loaded plugin latency to the injected reporter (bridge seam into the registry)', async () => {
+        mocks.loadPluginRepo.mockResolvedValueOnce({ instance_id: 'inst-1', latency_samples: 256 });
+        const onLatencySamples = vi.fn<(latencySamples: number) => void>();
+
+        activateExternalPlugin({ pluginId: 'p', instanceId: 'inst-1', onLatencySamples });
+
+        await vi.waitFor(() => expect(onLatencySamples).toHaveBeenCalledWith(256));
+        expect(onLatencySamples).toHaveBeenCalledTimes(1);
+    });
+
+    it('does not report latency when instantiation fails', async () => {
+        mocks.loadPluginRepo.mockRejectedValueOnce(new Error('boom'));
+        const onLatencySamples = vi.fn<(latencySamples: number) => void>();
+
+        activateExternalPlugin({ pluginId: 'p', instanceId: 'inst-1', onLatencySamples });
+
+        await vi.waitFor(() => expect(loadedExternalInstances.has('inst-1')).toBe(false));
+        expect(onLatencySamples).not.toHaveBeenCalled();
+    });
 });

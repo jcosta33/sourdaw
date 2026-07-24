@@ -1,6 +1,7 @@
 import {
     addDeviceToStrip,
     ensureTrackStrip,
+    reportPluginLatencySamples,
     resolveToasterPadBinding,
     setTrackGain,
     setTrackOutput,
@@ -87,7 +88,12 @@ export function projectTrackToLiveStrip({
         if (instanceId && pluginId) {
             // Idempotent load + state restore; skips if the instance is already live,
             // so the project-open rebuild and every Play/record rebuild stay cheap.
-            activateExternalPlugin({ pluginId, instanceId, stateChunk: device.externalStateChunk });
+            activateExternalPlugin({
+                pluginId,
+                instanceId,
+                stateChunk: device.externalStateChunk,
+                onLatencySamples: (latencySamples) => reportPluginLatencySamples(target.deviceId, latencySamples),
+            });
         }
         for (const [parameterId, value] of Object.entries(device.parameterValues)) {
             if (typeof value === 'number') {

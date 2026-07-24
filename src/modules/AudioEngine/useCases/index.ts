@@ -89,6 +89,8 @@ export { initializeAudioEngine } from './initializeAudioEngine';
 export { getTrackLatency } from './latencyCompensation/compensation/getTrackLatency';
 export { getCompensationDelay } from './latencyCompensation/compensation/getCompensationDelay';
 export { getLatencyReport } from './latencyCompensation/compensation/getLatencyReport';
+export { reportPluginLatencySamples } from './latencyCompensation/compensation/reportPluginLatencySamples';
+export { clearReportedLatency } from './latencyCompensation/compensation/clearReportedLatency';
 
 export { cancelExport } from './offlineRender/exportCancellation';
 export { isExportActive } from './offlineRender/isExportActive';

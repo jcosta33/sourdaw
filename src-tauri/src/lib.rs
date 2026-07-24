@@ -50,6 +50,7 @@ pub fn run() {
             commands::plugins::set_plugin_parameter,
             commands::plugins::get_plugin_parameters,
             commands::plugins::get_plugin_state,
+            commands::plugins::get_plugin_latency,
             commands::plugins::set_plugin_state,
             commands::plugins::start_native_engine,
             commands::plugins::send_plugin_midi,

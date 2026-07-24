@@ -1,5 +1,5 @@
 import { logger } from '#/infra/logger/appLogger';
-import { removeDeviceFromStrip, removeTrackStrip } from '#/modules/AudioEngine/useCases';
+import { clearReportedLatency, removeDeviceFromStrip, removeTrackStrip } from '#/modules/AudioEngine/useCases';
 import { unloadPlugin } from '#/modules/PluginHost/useCases';
 
 import { getTrackState } from '../../repositories/track/getTrackState';
@@ -69,6 +69,13 @@ export function removeDevice(deviceId: string): RemoveDeviceOutcome {
         removeDeviceFromStrip(track.id, deviceId);
     } catch (error) {
         logger.warn(`Failed to remove device ${deviceId} from track strip ${track.id}: ${String(error)}`);
+    }
+
+    if (device.type === 'external-plugin') {
+        // Drop this device's reported-latency entry (PH-4) so the registry does
+        // not retain stale latency for a removed native plugin. Keyed by the
+        // engine device id, matching how it was reported at activation.
+        clearReportedLatency(deviceId);
     }
 
     if (deactivatesStrip) {
