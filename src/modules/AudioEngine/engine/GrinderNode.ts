@@ -8,7 +8,7 @@ import { logger } from '#/infra/logger/appLogger';
 import grinderProcessorUrl from '../services/grinderProcessor.ts?worker&url';
 
 import { requireSharedArrayBuffer } from './pluginHostingErrors';
-import { telemetryAllocator, readTelemetrySnapshot, GRINDER_IDX, type TelemetrySlot } from './telemetryAllocator';
+import { telemetryAllocator, createTelemetryReader, GRINDER_IDX, type TelemetrySlot } from './telemetryAllocator';
 
 const DEFAULT_WASM_URL = '/wasm/daw-dsp/daw_dsp_bg.wasm';
 
@@ -184,11 +184,12 @@ export async function createGrinderNode(ctx: BaseAudioContext, wasmUrl?: string)
             if (!slot) {
                 return;
             }
-            const { view, seqView } = slot;
+            // Read under the slot seqlock (audit RT-2): without it a poll could pair
+            // a gate state with a latency reported from a different quantum. Built
+            // once, outside the poll, since it retains the last consistent snapshot.
+            const readMeter = createTelemetryReader({ slot, project: projectGrinderMeter });
             const poll = () => {
-                // Read under the slot seqlock (audit RT-2): without it a poll could
-                // pair a gate state with a latency reported from a different quantum.
-                cb(readTelemetrySnapshot({ view, seqView, project: projectGrinderMeter }));
+                cb(readMeter());
                 meterRafId = requestAnimationFrame(poll);
             };
             meterRafId = requestAnimationFrame(poll);

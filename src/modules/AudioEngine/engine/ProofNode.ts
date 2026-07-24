@@ -12,7 +12,7 @@ import { createReadyHandshake, ensureWorkletRegistered, fetchWasmBinary } from '
 import proofProcessorUrl from '../services/proofProcessor.ts?worker&url';
 
 import { requireSharedArrayBuffer } from './pluginHostingErrors';
-import { telemetryAllocator, readTelemetrySnapshot, PROOF_IDX } from './telemetryAllocator';
+import { telemetryAllocator, createTelemetryReader, PROOF_IDX } from './telemetryAllocator';
 
 const DEFAULT_WASM_URL = '/wasm/daw-dsp/daw_dsp_bg.wasm';
 
@@ -118,11 +118,12 @@ export async function createProofNode(ctx: BaseAudioContext, wasmUrl?: string): 
         // On ready: wire up SAB telemetry polling (§90.2 — see worklet note).
         if (sabSlot) {
             node.port.postMessage({ type: 'init-sab', sab: sabSlot.sab, byteOffset: sabSlot.byteOffset });
-            const view = sabSlot.view;
-            const seqView = sabSlot.seqView;
+            // Built once, outside the interval, since it retains the last
+            // consistent snapshot to hand back on retry exhaustion (audit RT-2).
+            const readMeter = createTelemetryReader({ slot: sabSlot, project: projectProofMeter });
             pollInterval = setInterval(() => {
                 if (meterCallback) {
-                    meterCallback(readTelemetrySnapshot({ view, seqView, project: projectProofMeter }));
+                    meterCallback(readMeter());
                 }
             }, 16);
         }

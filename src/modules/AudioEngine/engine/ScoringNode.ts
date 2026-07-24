@@ -10,7 +10,7 @@ import { NOTE_NAMES } from '#/utils/noteNames';
 import scoringProcessorUrl from '../services/scoringProcessor.ts?worker&url';
 
 import { requireSharedArrayBuffer } from './pluginHostingErrors';
-import { telemetryAllocator, readTelemetrySnapshot, SCORING_IDX, type TelemetrySlot } from './telemetryAllocator';
+import { telemetryAllocator, createTelemetryReader, SCORING_IDX, type TelemetrySlot } from './telemetryAllocator';
 
 const DEFAULT_WASM_URL = '/wasm/scoring/scoring_bg.wasm';
 
@@ -122,12 +122,13 @@ export async function createScoringNode(ctx: BaseAudioContext): Promise<ScoringN
             if (!slot) {
                 return;
             }
-            const { view, seqView } = slot;
+            // Read under the slot seqlock (audit RT-2): the active flag and the pitch
+            // fields are published together, so without the retry the tuner can show
+            // `active` next to the previous detection's note. Built once, outside the
+            // poll, since it retains the last consistent snapshot.
+            const readTelemetry = createTelemetryReader({ slot, project: projectTunerTelemetry });
             const poll = () => {
-                // Read under the slot seqlock (audit RT-2): the active flag and the
-                // pitch fields are published together, so without the retry the
-                // tuner can show `active` next to the previous detection's note.
-                callback(readTelemetrySnapshot({ view, seqView, project: projectTunerTelemetry }));
+                callback(readTelemetry());
                 telemetryRafId = requestAnimationFrame(poll);
             };
             telemetryRafId = requestAnimationFrame(poll);

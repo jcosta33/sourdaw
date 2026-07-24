@@ -131,11 +131,9 @@ export type TelemetrySlot = {
  */
 export const TELEMETRY_SEQ_MAX_RETRIES = 8;
 
-export type ReadTelemetrySnapshotInput<TSnapshot> = {
-    /** Float view over the device's slot. */
-    view: Float32Array;
-    /** Int32 view over the same slot bytes, carrying the generation counter. */
-    seqView: Int32Array;
+export type CreateTelemetryReaderInput<TSnapshot> = {
+    /** The device's telemetry slot — supplies both the float view and the counter. */
+    slot: TelemetrySlot;
     /**
      * Projects the raw slot floats into the device's snapshot shape. Called once
      * per attempt, so it must be pure — no side effects the retry would repeat.
@@ -144,35 +142,51 @@ export type ReadTelemetrySnapshotInput<TSnapshot> = {
 };
 
 /**
- * Read a torn-free telemetry snapshot out of a device slot (audit RT-2).
+ * Build the torn-free reader for one device slot (audit RT-2).
  *
  * The worklet publishes its fields under a generation counter (odd while
- * writing, even when settled — see services/telemetrySeqlock.ts). This samples
- * the counter before and after the projection and retries while it is odd or
- * moved, so a poll landing mid-write never mixes fields from two blocks.
+ * writing, even when settled — see services/telemetrySeqlock.ts). Each read
+ * samples the counter before and after the projection and retries while it is
+ * odd or moved, so a poll landing mid-write never mixes fields from two blocks.
  *
- * On retry exhaustion it returns the last projection rather than spinning: a
- * bounded, possibly-torn snapshot beats blocking the main thread, and the next
- * poll retries from scratch.
+ * **Guarantee: a torn snapshot is never returned, in any case.** When the retry
+ * budget runs out — a writer stalled or died with the counter stuck odd — the
+ * reader returns the last snapshot that *passed* validation rather than the
+ * projection that just failed it. Stale-but-consistent is the right failure
+ * mode for a meter; handing the UI permanently torn cross-field data is not.
+ * Before anything has validated, it returns the projection of a zeroed slot —
+ * exactly what a freshly-allocated, never-written slot reads as, which is a
+ * single consistent generation by construction.
+ *
+ * The retained snapshot is one value held in this closure, so it cannot grow
+ * and it dies with the reader. Readers are built per node from that node's own
+ * slot, and `allocateSlot()` mints fresh views every time, so a recycled slot
+ * index can never inherit the previous tenant's cached snapshot.
  */
-export function readTelemetrySnapshot<TSnapshot>({
-    view,
-    seqView,
+export function createTelemetryReader<TSnapshot>({
+    slot,
     project,
-}: ReadTelemetrySnapshotInput<TSnapshot>): TSnapshot {
-    let attempt = 0;
-    for (;;) {
-        const before = Atomics.load(seqView, TELEMETRY_SEQ_IDX);
-        const snapshot = project(view);
-        const after = Atomics.load(seqView, TELEMETRY_SEQ_IDX);
-        if (before === after && (before & 1) === 0) {
-            return snapshot;
+}: CreateTelemetryReaderInput<TSnapshot>): () => TSnapshot {
+    const { view, seqView } = slot;
+    // Built once, here on the main thread, so no poll ever allocates it.
+    let lastConsistent = project(new Float32Array(FLOATS_PER_SLOT));
+
+    return (): TSnapshot => {
+        for (let attempt = 0; attempt <= TELEMETRY_SEQ_MAX_RETRIES; attempt++) {
+            const before = Atomics.load(seqView, TELEMETRY_SEQ_IDX);
+            const snapshot = project(view);
+            const after = Atomics.load(seqView, TELEMETRY_SEQ_IDX);
+            if (before === after && (before & 1) === 0) {
+                lastConsistent = snapshot;
+                return snapshot;
+            }
         }
-        attempt++;
-        if (attempt > TELEMETRY_SEQ_MAX_RETRIES) {
-            return snapshot;
-        }
-    }
+        // Budget spent without a clean read. `snapshot` from the last attempt
+        // failed validation, so it may be torn — discard it and hand back the
+        // newest snapshot known to be internally consistent. The next poll
+        // (16 ms / one frame) retries from scratch.
+        return lastConsistent;
+    };
 }
 
 // ── Allocator ────────────────────────────────────────────────────────────────

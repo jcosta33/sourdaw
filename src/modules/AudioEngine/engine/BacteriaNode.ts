@@ -12,7 +12,7 @@ import bacteriaProcessorUrl from '../services/bacteriaProcessor.ts?worker&url';
 import { requireSharedArrayBuffer } from './pluginHostingErrors';
 import {
     telemetryAllocator,
-    readTelemetrySnapshot,
+    createTelemetryReader,
     BACTERIA_IDX,
     BACTERIA_BAND_COUNT,
     type TelemetrySlot,
@@ -128,13 +128,14 @@ export async function createBacteriaNode(ctx: BaseAudioContext, wasmUrl?: string
             if (!slot) {
                 return;
             }
-            const { view, seqView } = slot;
+            // Read under the slot seqlock (audit RT-2). This is the tear the audit
+            // called out by name: the worklet blits all six band levels in one
+            // `.set()`, but a raw poll could still straddle the blit and show bands
+            // from two different blocks side by side. Built once, outside the poll,
+            // since it retains the last consistent snapshot.
+            const readMeter = createTelemetryReader({ slot, project: projectBacteriaMeter });
             const poll = () => {
-                // Read under the slot seqlock (audit RT-2). This is the tear the
-                // audit called out by name: the worklet blits all six band levels
-                // in one `.set()`, but a raw poll could still straddle the blit and
-                // show bands from two different blocks side by side.
-                cb(readTelemetrySnapshot({ view, seqView, project: projectBacteriaMeter }));
+                cb(readMeter());
                 meterRafId = requestAnimationFrame(poll);
             };
             meterRafId = requestAnimationFrame(poll);

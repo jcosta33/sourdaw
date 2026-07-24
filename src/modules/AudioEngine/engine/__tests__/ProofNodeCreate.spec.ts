@@ -207,15 +207,18 @@ describe('createProofNode', () => {
         expect(frames).toHaveLength(3);
     });
 
-    it('still delivers a bounded snapshot when the seqlock counter never settles', async () => {
+    it('delivers the neutral snapshot — never the open-seqlock fields — when the counter never settles', async () => {
         const slot = makeSlot();
         mocks.allocateSlot.mockReturnValue(slot);
         const node = await createProofNode(makeContext());
         const { port } = lastWorklet();
         port.onmessage?.({ data: { type: 'ready' } } as MessageEvent);
 
-        // Odd counter = writer mid-block, forever. The poll must not hang.
+        // Odd counter = writer mid-block, forever. The poll must not hang, and
+        // must not publish the fields sitting behind the open seqlock — those
+        // may be torn across two blocks (audit RT-2).
         slot.view[PROOF_IDX.inputLufs] = -20;
+        slot.view[PROOF_IDX.latency] = 512;
         slot.seqView[TELEMETRY_SEQ_IDX] = 3;
 
         const frames: ProofMeterData[] = [];
@@ -223,7 +226,37 @@ describe('createProofNode', () => {
         vi.advanceTimersByTime(16);
 
         expect(frames).toHaveLength(1);
-        expect(frames[0]!.inputLufs).toBe(-20);
+        expect(frames[0]!.inputLufs).toBe(0);
+        expect(frames[0]!.latency).toBe(0);
+    });
+
+    it('holds the last settled snapshot when the writer dies mid-publish', async () => {
+        const slot = makeSlot();
+        mocks.allocateSlot.mockReturnValue(slot);
+        const node = await createProofNode(makeContext());
+        const { port } = lastWorklet();
+        port.onmessage?.({ data: { type: 'ready' } } as MessageEvent);
+
+        // One good published block.
+        slot.view[PROOF_IDX.inputLufs] = -18;
+        slot.view[PROOF_IDX.latency] = 256;
+        slot.seqView[TELEMETRY_SEQ_IDX] = 2;
+
+        const frames: ProofMeterData[] = [];
+        node.onMeterData((data) => frames.push(data));
+        vi.advanceTimersByTime(16);
+        expect(frames[0]!.inputLufs).toBe(-18);
+
+        // Writer opens the seqlock, overwrites one field, and never closes it:
+        // the slot now holds a genuinely torn pair (-20 with the old latency).
+        slot.seqView[TELEMETRY_SEQ_IDX] = 3;
+        slot.view[PROOF_IDX.inputLufs] = -20;
+
+        vi.advanceTimersByTime(16);
+
+        // Stale-but-consistent, not the mixed generation.
+        expect(frames).toHaveLength(2);
+        expect(frames[1]).toMatchObject({ inputLufs: -18, latency: 256 });
     });
 
     it('skips SAB wiring entirely when no telemetry slot is available', async () => {
