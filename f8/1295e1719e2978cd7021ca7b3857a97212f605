@@ -1,0 +1,55 @@
+src/modules/AudioEngine/useCases/index.ts
+  s_0d39f3a4a4357a::t_2b128fc8a9adb0 106
+src/modules/AudioEngine/useCases/offlineRender/__tests__/renderTrackSubgraphOffline.spec.ts
+  s_0d39f3a4a4357a::t_e6b02448627a94 1-408
+src/modules/AudioEngine/useCases/offlineRender/isOfflineInstrumentDevice.ts
+  s_0d39f3a4a4357a::t_598c9138feb546 1-29
+src/modules/Transport/useCases/scheduling/scheduleFrozenTrack.ts
+  s_0d39f3a4a4357a::t_149d56040de906 54-61
+  s_0d39f3a4a4357a::t_565767f42bf76a 13-17
+src/modules/Arrangement/useCases/freezeBounce/__tests__/freezeTrack.spec.ts
+  s_0d39f3a4a4357a::t_e48a30ea6da8b0 3
+  s_0d39f3a4a4357a::t_e0f25e73a0f931 133-165
+  s_0d39f3a4a4357a::t_fe445ca60de46b 25
+  s_0d39f3a4a4357a::t_873263ee035ea4 118
+src/modules/AudioEngine/useCases/__tests__/buildDeviceChain.spec.ts
+  s_0d39f3a4a4357a::t_2b5a341202a340 93-118
+src/modules/AudioEngine/useCases/offlineRender/scheduleTrackClips.ts
+  s_0d39f3a4a4357a::t_13157261ef0efe 207
+  s_0d39f3a4a4357a::t_66b0989eca9ae2 282-298
+  s_0d39f3a4a4357a::t_c2d738a264f152 183-187
+src/modules/AudioEngine/useCases/offlineRender/renderTrackSubgraphOffline.ts
+  s_0d39f3a4a4357a::t_f21ec7555daa58 26-33
+  s_0d39f3a4a4357a::t_1cc9948c2c6577 1-15,17-25,34-247,251-253,255-260,262-291
+  s_0d39f3a4a4357a::t_31061a131d68eb 16
+  s_0d39f3a4a4357a::t_83c761cfd9b539 248-250,254,261
+src/modules/Arrangement/models/Track.ts
+  s_0d39f3a4a4357a::t_e3bfa2d8fe27a3 28-36
+src/modules/Arrangement/useCases/freezeBounce/freezeTrack.ts
+  s_0d39f3a4a4357a::t_7a89461b165678 82-87,97
+  s_0d39f3a4a4357a::t_4a2f0a6056fe38 1
+src/modules/Transport/useCases/scheduling/__tests__/scheduleFrozenTrack.spec.ts
+  s_0d39f3a4a4357a::t_8e71c7232d709b 182-208
+src/modules/AudioEngine/useCases/buildDeviceChain.ts
+  s_0d39f3a4a4357a::t_f94199788b2d5f 117-128
+src/modules/Arrangement/useCases/freezeBounce/__tests__/renderOffline.spec.ts
+  s_0d39f3a4a4357a::t_7432ca54822d46 8,11,18,25,40-45,47-52,54-56,58-60,62-64,66-69,72-73,81,137,140-146,148,150-155,163,166,185,187,191,204-207,211-212,215,218-226,229-239,243-244,246-250,252,254-256,260-262,264,268,272-275,277,282-287,289-295,297
+src/modules/Arrangement/useCases/freezeBounce/renderOffline.ts
+  s_0d39f3a4a4357a::t_ae04b5153d27ce 1,9-10,22-35,54,56-57,61,64-80,83-84
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "f81295e1719e2978cd7021ca7b3857a97212f605",
+  "prompts": {},
+  "sessions": {
+    "s_0d39f3a4a4357a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "60da6a2e-7d79-4d98-8624-e993f5a9f94e",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
