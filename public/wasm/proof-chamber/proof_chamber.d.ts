@@ -11,6 +11,12 @@ export class ProofChamberInstance {
      * segment offsets, and the head/dry reference takes the remaining 128.
      */
     get_latency(): number;
+    /**
+     * Number of non-finite output samples scrubbed to silence since
+     * construction (DSP-8). Non-zero means a poisoned block was caught at the
+     * wasm output boundary and surfaced for health telemetry.
+     */
+    get_nan_flush_count(): number;
     get_param_names(): string;
     get_right_ptr(): number;
     /**
@@ -23,12 +29,22 @@ export class ProofChamberInstance {
     set_param_by_id(param_id: number, value: number): void;
 }
 
+/**
+ * Install `console_error_panic_hook` once at wasm module init so a Rust panic
+ * surfaces a readable message on the JS console instead of an opaque
+ * `unreachable` trap that silently poisons the AudioWorklet instance (WB-6).
+ * Wasm-only by construction; the native build is unaffected.
+ */
+export function init_panic_hook(): void;
+
 export type InitInput = RequestInfo | URL | Response | BufferSource | WebAssembly.Module;
 
 export interface InitOutput {
     readonly memory: WebAssembly.Memory;
     readonly __wbg_proofchamberinstance_free: (a: number, b: number) => void;
+    readonly init_panic_hook: () => void;
     readonly proofchamberinstance_get_latency: (a: number) => number;
+    readonly proofchamberinstance_get_nan_flush_count: (a: number) => number;
     readonly proofchamberinstance_get_param_names: (a: number) => [number, number];
     readonly proofchamberinstance_get_right_ptr: (a: number) => number;
     readonly proofchamberinstance_load_ir: (a: number, b: number, c: number, d: number) => void;
@@ -36,10 +52,10 @@ export interface InitOutput {
     readonly proofchamberinstance_process: (a: number, b: number, c: number, d: number, e: number, f: number) => number;
     readonly proofchamberinstance_set_param: (a: number, b: number, c: number, d: number) => void;
     readonly proofchamberinstance_set_param_by_id: (a: number, b: number, c: number) => void;
-    readonly __wbindgen_externrefs: WebAssembly.Table;
     readonly __wbindgen_free: (a: number, b: number, c: number) => void;
     readonly __wbindgen_malloc: (a: number, b: number) => number;
     readonly __wbindgen_realloc: (a: number, b: number, c: number, d: number) => number;
+    readonly __wbindgen_externrefs: WebAssembly.Table;
     readonly __wbindgen_start: () => void;
 }
 

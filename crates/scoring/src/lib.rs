@@ -20,6 +20,34 @@ use tuning::TuningSystem;
 use wasm_bindgen::prelude::*;
 use yin::YinDetector;
 
+/// Replace every non-finite sample (NaN, +Inf, -Inf) in `block` with silence,
+/// returning the count scrubbed (DSP-8). The tuner passes audio through, so a
+/// non-finite sample would otherwise reach the WebAudio output buffer and can
+/// silence the whole downstream graph; the block is scrubbed at the boundary
+/// before the pointer is returned to the AudioWorklet. RT-safe: no allocation,
+/// one branch per sample.
+#[inline]
+fn sanitize_block(block: &mut [f32]) -> usize {
+    let mut scrubbed = 0;
+    for sample in block.iter_mut() {
+        if !sample.is_finite() {
+            *sample = 0.0;
+            scrubbed += 1;
+        }
+    }
+    scrubbed
+}
+
+/// Install `console_error_panic_hook` once at wasm module init so a Rust panic
+/// surfaces a readable message on the JS console instead of an opaque
+/// `unreachable` trap that silently poisons the AudioWorklet instance (WB-6).
+/// Wasm-only by construction; the native build is unaffected.
+#[cfg(target_arch = "wasm32")]
+#[wasm_bindgen::prelude::wasm_bindgen(start)]
+fn init_panic_hook() {
+    console_error_panic_hook::set_once();
+}
+
 // ---------------------------------------------------------------------------
 // Analysis ring buffer
 // ---------------------------------------------------------------------------
@@ -388,6 +416,7 @@ pub struct ScoringInstance {
     engine: ScoringEngine,
     out_left: Vec<f32>,
     out_right: Vec<f32>,
+    nan_flush_count: u64,
 }
 
 #[wasm_bindgen]
@@ -398,6 +427,7 @@ impl ScoringInstance {
             engine: ScoringEngine::new(sample_rate),
             out_left: vec![0.0; 1024],
             out_right: vec![0.0; 1024],
+            nan_flush_count: 0,
         }
     }
 
@@ -411,7 +441,16 @@ impl ScoringInstance {
         self.out_right[..size].copy_from_slice(&right_in[..size]);
         self.engine
             .process(&mut self.out_left[..size], &mut self.out_right[..size]);
+        self.nan_flush_count += sanitize_block(&mut self.out_left[..size]) as u64;
+        self.nan_flush_count += sanitize_block(&mut self.out_right[..size]) as u64;
         self.out_left.as_ptr()
+    }
+
+    /// Number of non-finite output samples scrubbed to silence since
+    /// construction (DSP-8). Non-zero means a poisoned block was caught at the
+    /// wasm output boundary and surfaced for health telemetry.
+    pub fn get_nan_flush_count(&self) -> f64 {
+        self.nan_flush_count as f64
     }
 
     pub fn get_right_ptr(&self) -> *const f32 {

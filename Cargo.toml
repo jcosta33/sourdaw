@@ -18,3 +18,21 @@ opt-level = 3
 lto = true
 codegen-units = 16
 split-debuginfo = "unpacked"
+
+# WB-6 — panic behaviour of the wasm DSP builds.
+#
+# The `wasm32-unknown-unknown` target already ships with `panic-strategy =
+# "abort"` (verified: `rustc --target wasm32-unknown-unknown --print
+# target-spec-json` reports `"panic-strategy": "abort"`), so every wasm release
+# build produced by `wasm-pack` aborts on panic — a panic traps to
+# `unreachable` and definitively kills the instance rather than leaving it
+# half-alive. The missing half of WB-6 was *identifiability*, which is now
+# provided by the per-crate `console_error_panic_hook` installed at wasm module
+# init.
+#
+# `panic = "abort"` is deliberately NOT set on this shared release profile:
+# Cargo profiles cannot be scoped by target, so setting it here would also
+# switch the native Tauri/CPAL build from unwinding to aborting — an
+# out-of-scope change to desktop crash semantics (loss of unwind-based
+# isolation around Tauri command dispatch). The native build keeps its default
+# unwind strategy; the wasm build is abort-by-target with a loud panic hook.

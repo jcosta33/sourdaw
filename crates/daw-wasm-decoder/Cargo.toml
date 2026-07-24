@@ -13,3 +13,7 @@ daw-io = { path = "../daw-io" }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 js-sys = "0.3"
+# WB-6: surface Rust panics as readable JS-console diagnostics instead of an
+# opaque `unreachable` trap that silently poisons the decoder wasm instance.
+# Scoped to wasm so the native build is unaffected.
+console_error_panic_hook = "0.1"

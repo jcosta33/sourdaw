@@ -25,6 +25,7 @@ pub mod voice;
 use engine::{GrandBouleEngine, DEFAULT_VOICE_COUNT};
 use parameters::Temperament;
 use wasm_bindgen::prelude::*;
+use crate::primitives::sanitize_block;
 
 /// Pre-allocated maximum block size exposed to the AudioWorklet side.
 const MAX_BLOCK_SIZE: usize = 4096;
@@ -35,6 +36,7 @@ pub struct GrandBouleInstance {
     engine: GrandBouleEngine,
     left_buf: Vec<f32>,
     right_buf: Vec<f32>,
+    nan_flush_count: u64,
 }
 
 #[wasm_bindgen]
@@ -50,6 +52,7 @@ impl GrandBouleInstance {
             engine: GrandBouleEngine::new(sample_rate, count),
             left_buf: vec![0.0; MAX_BLOCK_SIZE],
             right_buf: vec![0.0; MAX_BLOCK_SIZE],
+            nan_flush_count: 0,
         }
     }
 
@@ -120,7 +123,17 @@ impl GrandBouleInstance {
         self.engine
             .process_block(&mut self.left_buf[..size], &mut self.right_buf[..size]);
 
+        self.nan_flush_count += sanitize_block(&mut self.left_buf[..size]) as u64;
+        self.nan_flush_count += sanitize_block(&mut self.right_buf[..size]) as u64;
+
         self.left_buf.as_ptr()
+    }
+
+    /// Number of non-finite output samples scrubbed to silence since
+    /// construction (DSP-8). Non-zero means a poisoned block was caught at the
+    /// wasm output boundary and surfaced for health telemetry.
+    pub fn get_nan_flush_count(&self) -> f64 {
+        self.nan_flush_count as f64
     }
 
     /// Pointer to the right channel buffer (call after `process`).
