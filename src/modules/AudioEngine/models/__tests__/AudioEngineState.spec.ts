@@ -6,10 +6,17 @@ import type { AudioEngine, AudioEngineHealth } from '../AudioEngineState';
 // of the contract the engine implementation must satisfy. They guard the fix-6
 // reconciliation (dead members removed) and the fix-4/fix-5 health surface.
 
+const NO_DROPOUTS = { detectedUnderrunBlocks: 0, silentFrames: 0, lastUnderrunAtFrame: 0 };
+
 describe('AudioEngineHealth contract', () => {
-    it('carries exactly the worklet-ready flag and the two last-error slots', () => {
-        const ok: AudioEngineHealth = { workletReady: true, lastInitError: null, lastResumeError: null };
-        expect(Object.keys(ok).sort()).toEqual(['lastInitError', 'lastResumeError', 'workletReady']);
+    it('carries the worklet-ready flag, the two last-error slots and the dropout tally', () => {
+        const ok: AudioEngineHealth = {
+            workletReady: true,
+            lastInitError: null,
+            lastResumeError: null,
+            dropouts: NO_DROPOUTS,
+        };
+        expect(Object.keys(ok).sort()).toEqual(['dropouts', 'lastInitError', 'lastResumeError', 'workletReady']);
 
         // The error slots accept an Error or null (so a caller can detect a
         // poisoned worklet load / failed resume and re-arm).
@@ -17,9 +24,26 @@ describe('AudioEngineHealth contract', () => {
             workletReady: false,
             lastInitError: new Error('worklet 404'),
             lastResumeError: new Error('resume blocked'),
+            dropouts: NO_DROPOUTS,
         };
         expect(failed.lastInitError).toBeInstanceOf(Error);
         expect(failed.lastResumeError).toBeInstanceOf(Error);
+    });
+
+    it('reports the runtime dropout tally as three numeric counters (audit RT-10)', () => {
+        const glitchy: AudioEngineHealth = {
+            workletReady: true,
+            lastInitError: null,
+            lastResumeError: null,
+            dropouts: { detectedUnderrunBlocks: 4, silentFrames: 512, lastUnderrunAtFrame: 96_000 },
+        };
+
+        expect(Object.keys(glitchy.dropouts).sort()).toEqual([
+            'detectedUnderrunBlocks',
+            'lastUnderrunAtFrame',
+            'silentFrames',
+        ]);
+        expect(glitchy.dropouts.silentFrames).toBe(512);
     });
 });
 

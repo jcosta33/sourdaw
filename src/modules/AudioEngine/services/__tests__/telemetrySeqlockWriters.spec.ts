@@ -359,8 +359,8 @@ describe.each(DEVICE_CASES)('$device telemetry seqlock writer (audit RT-2)', (te
         const { values, acceptedOnAttempt } = seqlockRead(floatView, seqView, indices);
 
         expect(acceptedOnAttempt).toBe(0);
-        testCase.expectedFields.forEach(([, expected], position) => {
+        for (const [position, [, expected]] of testCase.expectedFields.entries()) {
             expect(values[position]).toBeCloseTo(expected, 4);
-        });
+        }
     });
 });
