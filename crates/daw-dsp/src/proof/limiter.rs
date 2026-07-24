@@ -1,5 +1,13 @@
-//! Look-ahead brickwall limiter with true peak detection.
+//! Look-ahead brickwall limiter with ITU-R BS.1770 true-peak detection.
+//!
+//! The `lim_ceiling` parameter is advertised in dBTP, so the gain computer is
+//! fed a 4x-oversampled inter-sample peak (`true_peak::TruePeakUpsampler`),
+//! not the raw sample magnitude: samples sitting under the ceiling can still
+//! reconstruct above it at the DAC or after a lossy re-encode. The detector
+//! takes `max(sample peak, reconstructed peak)` so the sample-domain ceiling
+//! is honoured even where the 4x reconstruction reads marginally low.
 
+use super::true_peak::TruePeakUpsampler;
 use std::collections::VecDeque;
 
 struct MonotonicPeakWindow {
@@ -65,6 +73,9 @@ impl MonotonicPeakWindow {
         }
     }
 
+    /// Re-seed the window after a look-ahead resize. Only the delayed samples
+    /// survive a resize, so the window restarts from their sample magnitudes;
+    /// true-peak entries resume as soon as fresh samples arrive.
     fn rebuild_from_delays(&mut self, delay_l: &VecDeque<f32>, delay_r: &VecDeque<f32>) {
         self.peaks.clear();
         self.window_start = 0;
@@ -80,6 +91,8 @@ pub struct LookaheadLimiter {
     delay_l: VecDeque<f32>,
     delay_r: VecDeque<f32>,
     max_peaks: MonotonicPeakWindow,
+    true_peak_l: TruePeakUpsampler,
+    true_peak_r: TruePeakUpsampler,
     ceiling: f32, // linear
     ceiling_db: f32,
     release_coeff: f32,
@@ -108,6 +121,8 @@ impl LookaheadLimiter {
             delay_l,
             delay_r,
             max_peaks,
+            true_peak_l: TruePeakUpsampler::new(),
+            true_peak_r: TruePeakUpsampler::new(),
             ceiling: 10.0_f32.powf(-1.0 / 20.0), // -1.0 dBTP default
             ceiling_db: -1.0,
             release_coeff: (-1.0 / (release_ms * 0.001 * sr)).exp(),
@@ -162,8 +177,16 @@ impl LookaheadLimiter {
             self.delay_l.push_back(left[i]);
             self.delay_r.push_back(right[i]);
 
-            // Record peak for lookahead
-            let peak = left[i].abs().max(right[i].abs());
+            // Record the true (inter-sample) peak for look-ahead. The 4x
+            // reconstruction is causal with ~6 base-rate samples of group
+            // delay, so it costs 6 samples of the look-ahead window; the
+            // remainder still runs ahead of the delayed output sample.
+            let sample_peak = left[i].abs().max(right[i].abs());
+            let reconstructed_peak = self
+                .true_peak_l
+                .push_max_abs(left[i])
+                .max(self.true_peak_r.push_max_abs(right[i]));
+            let peak = sample_peak.max(reconstructed_peak);
             self.max_peaks.push(peak);
             let future_peak = self.max_peaks.max();
 
@@ -224,7 +247,7 @@ impl LookaheadLimiter {
 
 #[cfg(test)]
 mod tests {
-    use super::LookaheadLimiter;
+    use super::{LookaheadLimiter, TruePeakUpsampler};
     use assert_no_alloc::assert_no_alloc;
     #[cfg(debug_assertions)]
     use assert_no_alloc::AllocDisabler;
@@ -250,12 +273,18 @@ mod tests {
         let mut current_gain = 1.0_f32;
         let mut output_left = input_left.to_vec();
         let mut output_right = input_right.to_vec();
+        let mut reference_true_peak_l = TruePeakUpsampler::new();
+        let mut reference_true_peak_r = TruePeakUpsampler::new();
 
         for i in 0..output_left.len() {
             delay_l.push_back(output_left[i]);
             delay_r.push_back(output_right[i]);
 
-            let peak = output_left[i].abs().max(output_right[i].abs());
+            let peak = output_left[i].abs().max(output_right[i].abs()).max(
+                reference_true_peak_l
+                    .push_max_abs(output_left[i])
+                    .max(reference_true_peak_r.push_max_abs(output_right[i])),
+            );
             gain_buffer.push_back(peak);
             if peak >= max_peak {
                 max_peak = peak;
@@ -389,5 +418,112 @@ mod tests {
 
         assert_eq!(limiter.latency_samples(), 480);
         assert_eq!(limiter.max_peaks.max(), 1.0);
+    }
+
+    /// Reconstruct the continuous waveform between samples with a
+    /// Blackman-windowed sinc interpolator (32x, 96 taps) and return its peak
+    /// magnitude over `[first, last)`. Deliberately *not* the BS.1770
+    /// polyphase filter the limiter detects with, so it cannot rubber-stamp
+    /// that filter: on the fs/4 test tone it recovers the analytic amplitude.
+    fn reconstructed_peak(signal: &[f32], first: usize, last: usize) -> f32 {
+        const UPSAMPLE: usize = 32;
+        const HALF_WIDTH: isize = 48;
+
+        let mut peak = 0.0_f64;
+        for n in first..last {
+            for step in 0..UPSAMPLE {
+                let fraction = step as f64 / UPSAMPLE as f64;
+                let mut accumulator = 0.0_f64;
+                for j in (-HALF_WIDTH + 1)..=HALF_WIDTH {
+                    let index = n as isize + j;
+                    if index < 0 || index as usize >= signal.len() {
+                        continue;
+                    }
+                    let t = fraction - j as f64;
+                    let sinc = if t.abs() < 1e-9 {
+                        1.0
+                    } else {
+                        (std::f64::consts::PI * t).sin() / (std::f64::consts::PI * t)
+                    };
+                    let window = 0.42
+                        + 0.5 * (std::f64::consts::PI * t / HALF_WIDTH as f64).cos()
+                        + 0.08 * (2.0 * std::f64::consts::PI * t / HALF_WIDTH as f64).cos();
+                    accumulator += f64::from(signal[index as usize]) * sinc * window;
+                }
+                peak = peak.max(accumulator.abs());
+            }
+        }
+        peak as f32
+    }
+
+    /// A 12 kHz (fs/4) tone offset 45 degrees at amplitude 0.99: every sample
+    /// sits at +-0.6999 while the reconstructed waveform reaches 0.99
+    /// (-0.09 dBTP). Sample-peak detection sees nothing above the -1.0 dBTP
+    /// ceiling and passes the inter-sample peak straight through (DSP-1).
+    #[test]
+    fn inter_sample_peaks_above_the_ceiling_are_limited() {
+        let ceiling = 10.0_f32.powf(-1.0 / 20.0);
+        let mut left = (0..3_000)
+            .map(|n| {
+                let phase =
+                    (n % 4) as f32 * std::f32::consts::FRAC_PI_2 + std::f32::consts::FRAC_PI_4;
+                0.99 * phase.sin()
+            })
+            .collect::<Vec<_>>();
+        let mut right = left.clone();
+
+        let input_sample_peak = left.iter().fold(0.0_f32, |acc, s| acc.max(s.abs()));
+        let input_true_peak = reconstructed_peak(&left, 1_000, 1_010);
+        assert!(
+            input_sample_peak < ceiling,
+            "sample peak {input_sample_peak:.4} must sit under the ceiling {ceiling:.4}, \
+             otherwise the tone is not an inter-sample-peak case"
+        );
+        assert!(
+            input_true_peak > ceiling,
+            "reconstructed input peak must exceed the ceiling, got {input_true_peak:.4}"
+        );
+
+        let mut limiter = LookaheadLimiter::new(48_000.0);
+        limiter.process(&mut left, &mut right);
+
+        let output_true_peak = reconstructed_peak(&left, 2_000, 2_010);
+        assert!(
+            output_true_peak <= ceiling,
+            "output must land at or under the -1.0 dBTP ceiling, got {output_true_peak:.4} \
+             ({:+.2} dBTP)",
+            20.0 * output_true_peak.log10()
+        );
+        assert!(
+            output_true_peak > ceiling * 0.95,
+            "the ceiling must be approached, not over-attenuated: {output_true_peak:.4}"
+        );
+        assert!(
+            limiter.get_gr_db() < -0.8,
+            "gain reduction must cover the ~0.9 dB inter-sample overshoot, got {:.2} dB",
+            limiter.get_gr_db()
+        );
+    }
+
+    /// Sample-peak content already under the ceiling must not be attenuated by
+    /// the new detector: a 1 kHz tone at -3 dBFS reconstructs to -3 dBTP.
+    #[test]
+    fn low_frequency_content_under_the_ceiling_passes_unattenuated() {
+        let mut left = (0..2_000)
+            .map(|n| 0.707 * (2.0 * std::f32::consts::PI * 1_000.0 * n as f32 / 48_000.0).sin())
+            .collect::<Vec<_>>();
+        let mut right = left.clone();
+
+        let mut limiter = LookaheadLimiter::new(48_000.0);
+        limiter.process(&mut left, &mut right);
+
+        let output_peak = left[500..2_000]
+            .iter()
+            .fold(0.0_f32, |acc, s| acc.max(s.abs()));
+        assert!(
+            (0.700..=0.708).contains(&output_peak),
+            "a -3 dBFS tone must pass at its own level, got {output_peak:.4}"
+        );
+        assert_eq!(limiter.get_gr_db(), 0.0);
     }
 }

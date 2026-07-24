@@ -129,8 +129,11 @@ mod tests {
         (2.0 * std::f32::consts::PI * 1000.0 * n as f32 / 48000.0).sin()
     }
 
-    /// True-peak path (metering.rs): a 0 dBFS sine whose peak lands on a
-    /// sample must measure ~0 dBTP, not +24 dBTP from resampling gain.
+    /// Cascade gain: a 0 dBFS sine whose peak lands on a sample must stay at
+    /// ~0 dB through the 4x cascade, not gain +24 dB from zero-stuffing.
+    /// (dBTP measurement itself lives in `true_peak.rs` — this half-band
+    /// cascade under-reconstructs the continuous peak and is not a true-peak
+    /// oracle.)
     #[test]
     fn upsampled_true_peak_of_full_scale_sine_stays_near_unity() {
         let mut os = Oversampler4x::new();
