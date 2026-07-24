@@ -263,6 +263,11 @@ export type AudioEngine = {
     stopAllScheduled(): void;
     wireSidechainRoute(sourceTrackId: string, targetTrackId: string, targetDeviceId: string): void;
     unwireSidechainRoute(sourceTrackId: string, targetDeviceId: string): void;
+    /** FX-5 — re-resolve and glide every wired key-alignment delay. The resolver
+     *  is supplied by the caller so the engine never reads project state. */
+    refreshSidechainAlignment(
+        keyDelayFor: (route: { sourceTrackId: string; targetTrackId: string; targetDeviceId: string }) => number
+    ): void;
     waitForDevices(): Promise<void>;
     setTransportInfo(
         beat: number,

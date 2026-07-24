@@ -7,6 +7,7 @@ import { prepareOfflineSidechainCompressor } from '../repositories/devices/dynam
 import { connectOfflineSidechainRoutes } from '../repositories/offlineRouting/connectOfflineSidechainRoutes';
 
 import { type DeviceNodeEntry } from './buildDeviceChain';
+import { getSidechainKeyDelay } from './latencyCompensation/compensation/getSidechainKeyDelay';
 import { acquireRenderLock } from './offlineRender/acquireRenderLock';
 import { checkCancel } from './offlineRender/checkCancel';
 import { connectOfflineToasterPadRoutes } from './offlineRender/connectOfflineToasterPadRoutes';
@@ -164,7 +165,15 @@ export const renderOffline: RenderOfflineFn = async function renderOffline(
         }
 
         connectOfflineToasterPadRoutes({ tracks: tracks?.tracks ?? [], trackStripsById, deviceEntriesByTrack });
-        connectOfflineSidechainRoutes({ offlineCtx, routes: sidechainRoutes, trackStripsById, deviceEntriesByTrack });
+        connectOfflineSidechainRoutes({
+            offlineCtx,
+            routes: sidechainRoutes,
+            trackStripsById,
+            deviceEntriesByTrack,
+            // FX-5 — the export aligns the key off the same resolver the live
+            // graph does, so a bounce ducks on the same phase as monitoring.
+            keyDelaySecFor: getSidechainKeyDelay,
+        });
 
         for (const track of allRenderableTracks) {
             const strip = trackStripsById.get(track.id);

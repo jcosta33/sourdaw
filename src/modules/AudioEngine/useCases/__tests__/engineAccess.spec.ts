@@ -29,6 +29,7 @@ const engineMocks = vi.hoisted(() => {
             removeBusStrip: vi.fn(),
             wireSidechainRoute: vi.fn(),
             unwireSidechainRoute: vi.fn(),
+            refreshSidechainAlignment: vi.fn(),
             resume: vi.fn(() => Promise.resolve()),
             waitForDevices: vi.fn(() => Promise.resolve()),
         },

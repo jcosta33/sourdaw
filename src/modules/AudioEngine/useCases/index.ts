@@ -81,6 +81,7 @@ export { setSend } from './engineAccess/setSend';
 export { removeSend } from './engineAccess/removeSend';
 export { wireSidechainRoute } from './engineAccess/wireSidechainRoute';
 export { unwireSidechainRoute } from './engineAccess/unwireSidechainRoute';
+export { refreshSidechainAlignment } from './engineAccess/refreshSidechainAlignment';
 export { getFinalFeatureHandlers } from './getFinalFeatureHandlers';
 
 export { configureAudioDeviceRuntimeSink } from './configureAudioDeviceRuntimeSink';
@@ -88,6 +89,7 @@ export { initializeAudioEngine } from './initializeAudioEngine';
 
 export { getTrackLatency } from './latencyCompensation/compensation/getTrackLatency';
 export { getCompensationDelay } from './latencyCompensation/compensation/getCompensationDelay';
+export { getSidechainKeyDelay } from './latencyCompensation/compensation/getSidechainKeyDelay';
 export { getLatencyReport } from './latencyCompensation/compensation/getLatencyReport';
 export { reportLatency } from './latencyCompensation/compensation/reportLatency';
 export { clearReportedLatency } from './latencyCompensation/compensation/clearReportedLatency';

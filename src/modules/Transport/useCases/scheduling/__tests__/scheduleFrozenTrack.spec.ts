@@ -4,6 +4,7 @@ import {
     createBufferSource,
     ensureTrackStrip,
     getCachedAudioBuffer,
+    getCompensationDelay,
     getCurrentTime,
 } from '#/modules/AudioEngine/useCases';
 
@@ -16,6 +17,7 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
         createGain: vi.fn(() => ({ connect: vi.fn() })),
     })),
     getCachedAudioBuffer: vi.fn(() => null),
+    getCompensationDelay: vi.fn(() => 0),
     getCurrentTime: vi.fn(() => 0),
 }));
 
@@ -149,5 +151,54 @@ describe('scheduleFrozenTrack', () => {
 
         expect(activeAudioSources).not.toContain(source as never);
         expect(activeAudioSources).toEqual([otherSource]);
+    });
+
+    // FX-4 — every other live source path (scheduleAudioClips, scheduleMidiNotes,
+    // applyAutomation) shifts by getCompensationDelay; the frozen buffer path was
+    // the one that did not, so a frozen track flammed against the whole session.
+    it('pushes the frozen buffer back by the track compensation delay (FX-4)', () => {
+        const start = vi.fn();
+        const source = { start, connect: vi.fn(), onended: null } as never;
+        vi.mocked(createBufferSource).mockReturnValue(source);
+        vi.mocked(getCachedAudioBuffer).mockReturnValue({ duration: 100 } as never);
+        vi.mocked(ensureTrackStrip).mockReturnValue({ preFaderTap: { connect: vi.fn() } } as never);
+        vi.mocked(getCurrentTime).mockReturnValue(0);
+        vi.mocked(getCompensationDelay).mockReturnValue(0.02);
+
+        const track = {
+            id: 'track-frozen',
+            freezeState: { status: 'frozen', frozenBufferId: 'buf-1' },
+            clips: [{ startBeat: 8 }],
+        };
+
+        const scheduled = scheduleFrozenTrack(track, 0, [], 120);
+
+        expect(scheduled).toBe(true);
+        expect(getCompensationDelay).toHaveBeenCalledWith('track-frozen');
+        // 8 beats at 120bpm = 4s, plus the track's 20ms compensation.
+        expect(start).toHaveBeenCalledWith(4.02);
+    });
+
+    it('keeps the compensation on the already-elapsed branch', () => {
+        const start = vi.fn();
+        const source = { start, connect: vi.fn(), onended: null } as never;
+        vi.mocked(createBufferSource).mockReturnValue(source);
+        vi.mocked(getCachedAudioBuffer).mockReturnValue({ duration: 100 } as never);
+        vi.mocked(ensureTrackStrip).mockReturnValue({ preFaderTap: { connect: vi.fn() } } as never);
+        vi.mocked(getCurrentTime).mockReturnValue(0);
+        vi.mocked(getCompensationDelay).mockReturnValue(0.02);
+
+        const track = {
+            id: 'track-frozen',
+            freezeState: { status: 'frozen', frozenBufferId: 'buf-1' },
+            clips: [{ startBeat: 0 }],
+        };
+
+        // beatOffset −2 beats = −1s, so the compensated start is −0.98s: the
+        // buffer must resume 0.98s in, not the uncompensated 1s.
+        const scheduled = scheduleFrozenTrack(track, 2, [], 120);
+
+        expect(scheduled).toBe(true);
+        expect(start).toHaveBeenCalledWith(0, 0.98);
     });
 });

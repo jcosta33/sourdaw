@@ -9,6 +9,7 @@ import {
     audioEngine,
     scheduleAdjustmentLayers,
     cacheAudioBuffer,
+    refreshSidechainAlignment,
 } from '#/modules/AudioEngine/useCases';
 import { startAutomationRecording, applyModulation, applyModulationToEngine } from '#/modules/Automation/useCases';
 
@@ -323,6 +324,11 @@ export function startPlayheadScheduler(): void {
         // VCA-member tracks it did NOT write, so the two never race the fader.
         const gainAutomatedTrackIds = applyAutomation(newPosition);
         applyVcaGains(gainAutomatedTrackIds);
+        // FX-5 — same per-tick recompute discipline applyAutomation uses for its
+        // compensation: a latency change anywhere (native plugin push, device
+        // added/removed/bypassed) moves the sidechain key alignment within one
+        // grain instead of holding a stale value for the rest of the session.
+        refreshSidechainAlignment();
         applyModulation(newPosition);
         applyModulationToEngine(newPosition, schedulerSession.discontinuityEpoch);
         scheduleAdjustmentLayers(newPosition);
