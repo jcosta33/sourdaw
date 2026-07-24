@@ -9,6 +9,7 @@ const mocks = vi.hoisted(() => ({
     ensureTrackStrips: vi.fn(),
     executeAppAction: vi.fn(),
     isAppActionCommittedError: vi.fn(),
+    flushAutomergeStorageWrites: vi.fn(),
     newProject: vi.fn(),
     projectActionHistoryToStore: vi.fn(),
     resetAudioGraph: vi.fn(),
@@ -46,6 +47,11 @@ vi.mock('#/modules/Transport/useCases', () => ({
     ensureTrackStrips: mocks.ensureTrackStrips,
     stopPlayback: mocks.stopPlayback,
 }));
+
+vi.mock('#/infra/store/storage/createAutomergeStorage', async (importOriginal) => {
+    const actual = (await importOriginal()) as Record<string, unknown>;
+    return { ...actual, flushAutomergeStorageWrites: mocks.flushAutomergeStorageWrites };
+});
 
 vi.mock('../../../projectPersistence/newProject', () => ({
     newProject: mocks.newProject,
@@ -250,5 +256,27 @@ describe('createFromTemplate', () => {
         expect(mocks.executeAppAction).toHaveBeenCalledOnce();
         expect(mocks.startCrdtAutoSave).not.toHaveBeenCalled();
         expect(mocks.compactProject).not.toHaveBeenCalled();
+    });
+
+    it('flushes pending CRDT writes after the store reset and before the async template action', async () => {
+        // CC-10 regression: the pre-build resetModuleStoresToDefault writes an
+        // empty tracks slot to the CRDT-backed trackStore OUTSIDE the action
+        // transaction, scheduling an unscoped requestAnimationFrame flush. Because
+        // the template handler is async, that deferred empty write can land AFTER
+        // the rebuilt tracks, reverting the projection to an empty "Untitled
+        // Project". createFromTemplate must commit that teardown baseline (flush)
+        // between the reset and the rebuild action so no stale write survives.
+        await expect(createFromTemplate('pop-song')).resolves.toBe(true);
+
+        expect(mocks.flushAutomergeStorageWrites).toHaveBeenCalledOnce();
+
+        const storeResetOrder = mocks.resetModuleStoresToDefault.mock.invocationCallOrder[0];
+        const flushOrder = mocks.flushAutomergeStorageWrites.mock.invocationCallOrder[0];
+        const actionOrder = mocks.executeAppAction.mock.invocationCallOrder[0];
+        if (storeResetOrder === undefined || flushOrder === undefined || actionOrder === undefined) {
+            throw new Error('expected the store reset, flush, and template action to all be called');
+        }
+        expect(flushOrder).toBeGreaterThan(storeResetOrder);
+        expect(actionOrder).toBeGreaterThan(flushOrder);
     });
 });

@@ -7,7 +7,7 @@ branch: audit/collab-crdt-audio
 date: 2026-07-23
 method: sus-audit (observe, prove, prescribe nothing) + crdt-collaboration project invariants
 disposition: AUDIT ONLY — no fixes applied. Artifact-only diff.
-severity_counts: { blocker: 1, major: 3, minor: 4, polish: 1, sound: 5 }
+severity_counts: { blocker: 1, major: 4, minor: 4, polish: 1, sound: 5 }
 ---
 
 # Collaboration / CRDT under audio constraints — audit
@@ -119,7 +119,7 @@ executeAppAction (Command/useCases/executeAppAction.ts)
 
 ## Findings
 
-Severity tally: **1 blocker, 3 major, 4 minor, 1 polish** (9 findings), plus **5 axes confirmed
+Severity tally: **1 blocker, 4 major, 4 minor, 1 polish** (10 findings), plus **5 axes confirmed
 sound**. Dynamic-timing items are labelled *(static; unproven at runtime)* — this lane did not run
 the app.
 
@@ -239,6 +239,72 @@ The clear is defensible as a safety measure (a locally-held `inverseAction` may 
 remotely-merged doc), but its granularity — all capabilities, every message — is far wider than the
 risk. Failure mode: feature degradation (collaborative selective-undo non-functional). Firing
 condition: any inbound sync. Blast radius: all history-panel reverts for the duration of a session.
+
+### CC-10 — Async action handlers escape the Automerge storage transaction scope; post-`await` CRDT writes commit as unscoped rAF writes — **major / M — status: OPEN — scheduled: Wave 8 (WS-6)**
+
+**(runtime-PROVEN — captured Browser Console trace under the wave-1 milestone e2e at tip
+`c478a8057`, not the audit base SHA. This is the one finding in this artifact backed by a live
+trace rather than static reading.)**
+
+`runWithAutomergeStorageTransaction` (createAutomergeStorage.ts) installs
+`activeAutomergeStorageTransaction` for the **synchronous** execution of its callback, then a
+`finally` restores the previous transaction. `executeAppAction` (executeAppAction.ts) invokes it as
+`runWithAutomergeStorageTransaction(snapshotTransaction, () => handler.execute(action))` and later
+`await`s the returned promise before `commit()`. For an **async** handler, `callback()` returns its
+promise the moment the handler hits its first `await`, so the `finally` clears
+`activeAutomergeStorageTransaction` **immediately** — every store write the handler performs *after*
+that first `await` runs **unscoped** (its own `unscopedCommitOwner`, deferred to a private
+`requestAnimationFrame`), not inside the action's scoped commit owner. `commit()` only flushes
+writes matching the scoped owner, so those post-`await` writes are never part of the action's atomic
+commit; they land whenever their rAF fires, racing each other and any unscoped teardown write.
+
+The template-launch path is the load-bearing victim. `createFromTemplate` runs
+`resetModuleStoresToDefault()` **outside** the action (an unscoped `trackStore.set({tracks:[]})`,
+scheduling a deferred rAF), then dispatches the large async rebuild handler
+(`createProjectFromTemplate` → `createEdmTemplate`) whose track writes cross `await` points
+(`await import(...)`, `await waitForDevices()`). Because the empty-reset write and the rebuild
+writes are all unscoped and rAF-deferred, their commit order is nondeterministic under load.
+
+Captured commit trace at the collapse (from `recordCommittedWrite`, key `tracks`):
+
+```
+COMMIT key=tracks n=0 scoped=false rev=2 committedSetRev=0
+```
+
+The empty reset write commits **unscoped** with `committedSetRevision` still `0`, so the #601
+superseded-write guard (`!pending.scoped && pending.revision < committedSetRevision` — see CC-5)
+cannot skip it (`2 < 0` is false), and it overwrites the just-built tracks slot. Instrumented
+contended runs show every EDM-template context perform `TRACKSTORE 0->18` then `18->0` then
+`0->18` — a transient collapse of a CRDT-backed store to empty, then recovery.
+
+**Failure mode: transient CRDT-backed store collapse (18→0→18) that is *revealed to the user*
+because the launch overlay latches `initialized=true` early** — `initProject` publishes it at the
+start of the template build (before tracks are committed and the projection settles), and the #687
+monotonic overlay latch keeps the workspace mounted through the collapse. Under worker contention
+the collapse-to-recover window is wide enough that the workspace paints the empty projection: an
+`"Untitled Project"` (the `projectStore` default name) with **0 track rows**. Firing condition: any
+async action handler that writes CRDT-backed stores after an `await`, concurrent with an unscoped
+write (canonically: template launch under load). Blast radius: correctness/UX of every large async
+action — templates, demos, imports — and, more broadly, the atomicity guarantee of `executeAppAction`
+for async handlers.
+
+Relationship to existing findings: this is the *mechanism* behind the class CC-5 documents as a
+"narrow gap" and CC-2 documents as authority-boundary stale-bleed — the scope-escape is what puts
+otherwise-guarded writes onto the racing unscoped path in the first place.
+
+*Wave-1 mitigation shipped (this milestone, `createFromTemplate`):* `flushAutomergeStorageWrites()`
+immediately after the pre-build `resetModuleStoresToDefault()`, committing the empty teardown
+baseline before the async rebuild so no stale unscoped reset write survives to revert the built
+project (mirrors the flush `resetCrdtProjectAuthority` already performs). This closes the
+template-launch symptom (contended e2e: `audioAndPluginOps:9` and `e2eWorkflow:43` green; 28/28
+template contexts recover) but does **not** fix the structural scope-escape.
+
+*Structural fix shape (M — WS-6):* keep the storage transaction active across the async handler so
+every write the handler makes — before or after an `await` — joins the action's scoped commit owner
+and commits atomically at `commit()`, instead of leaking onto the unscoped rAF path. Must preserve
+correctness under concurrent in-flight `executeAppAction`s (the transaction context is module-level
+today), so the safe direction is per-action async context propagation rather than a shared mutable
+`activeAutomergeStorageTransaction`.
 
 ### CC-5 — Discard terminal (`didDiscard`) recomputes and notifies nothing — sound for the superseded case, a narrow gap for the doc-absent case — **minor / S**
 
