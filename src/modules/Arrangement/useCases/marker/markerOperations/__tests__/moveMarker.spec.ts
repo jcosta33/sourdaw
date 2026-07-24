@@ -49,6 +49,24 @@ describe('moveMarker', () => {
         });
     });
 
+    it('updates only the targeted marker and leaves others untouched', () => {
+        mocks.markerStoreValue.value = {
+            markers: [
+                { id: 'm1', beat: 0 },
+                { id: 'm2', beat: 8 },
+            ],
+        };
+
+        moveMarker('m1', 4);
+
+        expect(mocks.markerStoreSet).toHaveBeenCalledWith({
+            markers: [
+                { id: 'm1', beat: 4 },
+                { id: 'm2', beat: 8 },
+            ],
+        });
+    });
+
     it('is a no-op when the marker store has not loaded', () => {
         mocks.markerStoreValue.value = null;
 

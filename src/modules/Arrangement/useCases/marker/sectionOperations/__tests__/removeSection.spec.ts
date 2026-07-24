@@ -2,10 +2,13 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { removeSection } from '../removeSection';
 
+type MockSection = { id: string };
+type MarkerHolder = { value: { sections: MockSection[] } | null };
+
 const mocks = vi.hoisted(() => {
-    type MockSection = { id: string };
+    const holder: MarkerHolder = { value: { sections: [] } };
     return {
-        markerStoreValue: { value: { sections: [] as MockSection[] } },
+        markerStoreValue: holder,
         markerStoreSet: vi.fn(),
     };
 });
@@ -32,5 +35,13 @@ describe('removeSection', () => {
         expect(mocks.markerStoreSet).toHaveBeenCalledWith({
             sections: [{ id: 's2' }],
         });
+    });
+
+    it('is a no-op when the marker store has not loaded', () => {
+        mocks.markerStoreValue.value = null;
+
+        removeSection('s1');
+
+        expect(mocks.markerStoreSet).not.toHaveBeenCalled();
     });
 });

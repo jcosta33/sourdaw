@@ -37,6 +37,24 @@ describe('renameMarker', () => {
         });
     });
 
+    it('updates only the targeted marker and leaves others untouched', () => {
+        mocks.markerStoreValue.value = {
+            markers: [
+                { id: 'm1', name: 'Verse' },
+                { id: 'm2', name: 'Chorus' },
+            ],
+        };
+
+        renameMarker('m1', 'Bridge');
+
+        expect(mocks.markerStoreSet).toHaveBeenCalledWith({
+            markers: [
+                { id: 'm1', name: 'Bridge' },
+                { id: 'm2', name: 'Chorus' },
+            ],
+        });
+    });
+
     it('is a no-op when the marker store has not loaded', () => {
         mocks.markerStoreValue.value = null;
 
