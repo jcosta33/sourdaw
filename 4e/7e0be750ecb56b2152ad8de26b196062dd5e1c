@@ -1,0 +1,19 @@
+src/modules/Yeast/workers/processors/__tests__/Transposer.spec.ts
+  s_1f9dea76e32196::t_88777936d27168 79-192
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "4e7e0be750ecb56b2152ad8de26b196062dd5e1c",
+  "prompts": {},
+  "sessions": {
+    "s_1f9dea76e32196": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-a4ba7914bcb00b285",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
