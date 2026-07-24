@@ -140,4 +140,200 @@ describe('loadUserPatches', () => {
 
         expect(loadUserPatches()).toEqual([]);
     });
+
+    describe('macro target sanitization (per-field rejection)', () => {
+        // Each case hits one rejection branch inside sanitizeMacroTarget; the
+        // whole mapping falls back to DEFAULT_MACRO_MAPPINGS when any target
+        // field is invalid.
+        const baseTarget = { target: 'filterCutoff', center: 0, depth: 1, min: 0, max: 1, curve: 'linear' };
+
+        function withBadTarget(overrides: Record<string, unknown>): void {
+            window.localStorage.setItem(
+                STORAGE_KEY,
+                JSON.stringify([
+                    {
+                        id: 'row',
+                        name: 'Row',
+                        patch: {
+                            macroMappings: [{ targets: [{ ...baseTarget, ...overrides }] }],
+                        },
+                    },
+                ])
+            );
+        }
+
+        it('rejects a target whose target is not a known numeric patch key', () => {
+            withBadTarget({ target: 'noSuchParam' });
+            expect(loadUserPatches()[0]!.patch.macroMappings).toEqual(DEFAULT_PATCH.macroMappings);
+        });
+
+        it('rejects a target whose center is not a finite number', () => {
+            withBadTarget({ center: Infinity });
+            expect(loadUserPatches()[0]!.patch.macroMappings).toEqual(DEFAULT_PATCH.macroMappings);
+        });
+
+        it('rejects a target whose depth is not a finite number', () => {
+            withBadTarget({ depth: 'deep' });
+            expect(loadUserPatches()[0]!.patch.macroMappings).toEqual(DEFAULT_PATCH.macroMappings);
+        });
+
+        it('rejects a target whose min is not a finite number', () => {
+            withBadTarget({ min: NaN });
+            expect(loadUserPatches()[0]!.patch.macroMappings).toEqual(DEFAULT_PATCH.macroMappings);
+        });
+
+        it('rejects a target whose max is not a finite number', () => {
+            withBadTarget({ max: null });
+            expect(loadUserPatches()[0]!.patch.macroMappings).toEqual(DEFAULT_PATCH.macroMappings);
+        });
+
+        it('rejects a target whose curve is neither linear nor exponential', () => {
+            withBadTarget({ curve: 'logarithmic' });
+            expect(loadUserPatches()[0]!.patch.macroMappings).toEqual(DEFAULT_PATCH.macroMappings);
+        });
+    });
+
+    describe('macro mapping sanitization', () => {
+        it('falls back to defaults when macroMappings is not an array', () => {
+            window.localStorage.setItem(
+                STORAGE_KEY,
+                JSON.stringify([{ id: 'r', name: 'n', patch: { macroMappings: 'nope' } }])
+            );
+            expect(loadUserPatches()[0]!.patch.macroMappings).toEqual(DEFAULT_PATCH.macroMappings);
+        });
+
+        it('falls back to defaults when macroMappings does not have exactly eight entries', () => {
+            // seven entries → wrong length → defaults.
+            const seven = Array.from({ length: 7 }, () => ({ targets: [] }));
+            window.localStorage.setItem(
+                STORAGE_KEY,
+                JSON.stringify([{ id: 'r', name: 'n', patch: { macroMappings: seven } }])
+            );
+            expect(loadUserPatches()[0]!.patch.macroMappings).toEqual(DEFAULT_PATCH.macroMappings);
+        });
+
+        it('falls back to defaults when a macro mapping is not an object', () => {
+            const mappings: FermenterMacroMapping[] = Array.from({ length: 8 }, () => ({ targets: [] }));
+            mappings[3] = 'not-an-object' as unknown as FermenterMacroMapping;
+            window.localStorage.setItem(
+                STORAGE_KEY,
+                JSON.stringify([{ id: 'r', name: 'n', patch: { macroMappings: mappings } }])
+            );
+            expect(loadUserPatches()[0]!.patch.macroMappings).toEqual(DEFAULT_PATCH.macroMappings);
+        });
+
+        it('falls back to defaults when a macro mapping has no targets array', () => {
+            const mappings: FermenterMacroMapping[] = Array.from({ length: 8 }, () => ({ targets: [] }));
+            mappings[5] = { targets: 'not-array' } as unknown as FermenterMacroMapping;
+            window.localStorage.setItem(
+                STORAGE_KEY,
+                JSON.stringify([{ id: 'r', name: 'n', patch: { macroMappings: mappings } }])
+            );
+            expect(loadUserPatches()[0]!.patch.macroMappings).toEqual(DEFAULT_PATCH.macroMappings);
+        });
+    });
+
+    describe('macros tuple sanitization', () => {
+        it('keeps a valid 8-element finite-number macros tuple', () => {
+            const macros = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8];
+            window.localStorage.setItem(STORAGE_KEY, JSON.stringify([{ id: 'r', name: 'n', patch: { macros } }]));
+            expect(loadUserPatches()[0]!.patch.macros).toEqual(macros);
+        });
+
+        it('falls back to default macros when the tuple contains a non-number', () => {
+            const macros = [0.1, 0.2, 'x', 0.4, 0.5, 0.6, 0.7, 0.8];
+            window.localStorage.setItem(STORAGE_KEY, JSON.stringify([{ id: 'r', name: 'n', patch: { macros } }]));
+            expect(loadUserPatches()[0]!.patch.macros).toEqual(DEFAULT_PATCH.macros);
+        });
+
+        it('falls back to default macros when the tuple contains a non-finite number', () => {
+            const macros = [0.1, 0.2, Infinity, 0.4, 0.5, 0.6, 0.7, 0.8];
+            window.localStorage.setItem(STORAGE_KEY, JSON.stringify([{ id: 'r', name: 'n', patch: { macros } }]));
+            expect(loadUserPatches()[0]!.patch.macros).toEqual(DEFAULT_PATCH.macros);
+        });
+
+        it('falls back to default macros when the tuple is not length 8', () => {
+            const macros = [0.1, 0.2, 0.3];
+            window.localStorage.setItem(STORAGE_KEY, JSON.stringify([{ id: 'r', name: 'n', patch: { macros } }]));
+            expect(loadUserPatches()[0]!.patch.macros).toEqual(DEFAULT_PATCH.macros);
+        });
+
+        it('falls back to default macros when macros is not an array', () => {
+            window.localStorage.setItem(
+                STORAGE_KEY,
+                JSON.stringify([{ id: 'r', name: 'n', patch: { macros: 'nope' } }])
+            );
+            expect(loadUserPatches()[0]!.patch.macros).toEqual(DEFAULT_PATCH.macros);
+        });
+    });
+
+    describe('patch numeric field sanitization', () => {
+        it('skips a stored numeric field whose value is not finite', () => {
+            window.localStorage.setItem(
+                STORAGE_KEY,
+                JSON.stringify([{ id: 'r', name: 'n', patch: { filterCutoff: NaN, oscLevel: Infinity } }])
+            );
+            const patch = loadUserPatches()[0]!.patch;
+            expect(patch.filterCutoff).toBe(DEFAULT_PATCH.filterCutoff);
+            expect(patch.oscLevel).toBe(DEFAULT_PATCH.oscLevel);
+        });
+
+        it('skips a stored field whose key is not a numeric patch key', () => {
+            window.localStorage.setItem(
+                STORAGE_KEY,
+                JSON.stringify([{ id: 'r', name: 'n', patch: { unknownField: 42 } }])
+            );
+            // Unknown key is ignored; default patch is returned otherwise intact.
+            const patch = loadUserPatches()[0]!.patch;
+            expect((patch as unknown as Record<string, unknown>).unknownField).toBeUndefined();
+        });
+    });
+
+    describe('row sanitization', () => {
+        it('rejects a row that is not an object', () => {
+            window.localStorage.setItem(STORAGE_KEY, JSON.stringify(['string-row', 42, null]));
+            expect(loadUserPatches()).toEqual([]);
+        });
+
+        it('rejects a row whose id is missing', () => {
+            window.localStorage.setItem(STORAGE_KEY, JSON.stringify([{ name: 'n', patch: {} }]));
+            expect(loadUserPatches()).toEqual([]);
+        });
+
+        it('rejects a row whose patch is not an object', () => {
+            window.localStorage.setItem(STORAGE_KEY, JSON.stringify([{ id: 'r', name: 'n', patch: 'not-object' }]));
+            expect(loadUserPatches()).toEqual([]);
+        });
+
+        it('coerces a valid exponential-curve target through the curve guard', () => {
+            window.localStorage.setItem(
+                STORAGE_KEY,
+                JSON.stringify([
+                    {
+                        id: 'r',
+                        name: 'n',
+                        patch: {
+                            macroMappings: [
+                                {
+                                    targets: [
+                                        {
+                                            target: 'filterCutoff',
+                                            center: 1,
+                                            depth: 1,
+                                            min: 0,
+                                            max: 2,
+                                            curve: 'exponential',
+                                        },
+                                    ],
+                                },
+                                ...Array.from({ length: 7 }, () => ({ targets: [] })),
+                            ],
+                        },
+                    },
+                ])
+            );
+            const mapping = loadUserPatches()[0]!.patch.macroMappings![0]!.targets[0]!;
+            expect(mapping.curve).toBe('exponential');
+        });
+    });
 });

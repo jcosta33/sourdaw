@@ -96,13 +96,17 @@ export class ScaleQuantizer extends BaseMidiProcessor {
                     if (dist < bestDist) {
                         bestDist = dist;
                         const diff = scalePc - pc;
+                        // Shortest signed distance from `pc` to `scalePc` on the
+                        // circle of 12 semitones. `diff` is in [-11, 11]; when its
+                        // magnitude exceeds 6 the shorter path wraps across the
+                        // octave boundary.
                         let octaveDiff: number;
-                        if (Math.abs(diff) <= 6) {
-                            octaveDiff = diff;
-                        } else if (diff > 0) {
+                        if (diff > 6) {
                             octaveDiff = diff - 12;
-                        } else {
+                        } else if (diff < -6) {
                             octaveDiff = diff + 12;
+                        } else {
+                            octaveDiff = diff;
                         }
                         bestNote = note + octaveDiff;
                     }
@@ -110,6 +114,10 @@ export class ScaleQuantizer extends BaseMidiProcessor {
                 return bestNote;
             }
             case 'up': {
+                // The loop scans all 12 pitch classes; `pc` is out-of-scale
+                // (guaranteed by the early return above) and every scale pattern
+                // contains at least one in-scale tone, so a match is always found
+                // within the 12 iterations.
                 for (let offset = 1; offset <= 12; offset++) {
                     if (pattern.includes((((pc + offset) % 12) + 12) % 12)) {
                         return note + offset;
@@ -125,16 +133,9 @@ export class ScaleQuantizer extends BaseMidiProcessor {
                 }
                 return note;
             }
-            default:
-                // Audio-thread no-op fallback. setParam clamps `remapMode` to a
-                // valid RemapMode, so this is unreachable in practice.
-                // MidiRack.processBlock now wraps each processMidi call in
-                // try/catch and treats a throw as a transparent bypass for the
-                // block, so a throw here would no longer abort the chain — but it
-                // would silently drop this processor's output for the block.
-                // Pass the note through unchanged instead.
-                return note;
         }
+        // Unreachable: `remapMode` is typed as the exhaustive union above.
+        return note;
     }
 
     private diatonicTranspose(note: number, degrees: number, pattern: number[]): number {

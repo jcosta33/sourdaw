@@ -122,6 +122,27 @@ describe('ScaleQuantizer', () => {
         });
     });
 
+    describe('nearest mode octave-wrap (diff < -6 arm)', () => {
+        // C pentatonic major scale tones are C D E G A = {0,2,4,7,9}. B (pc=11)
+        // is out of scale; its nearest scale tone is C(0), reached by going UP
+        // one semitone across the octave boundary. In pitch-class space the
+        // winning `diff = scalePc - pc = 0 - 11 = -11`; since -11 < -6 the
+        // octave-wrap arm maps it to -11 + 12 = +1, so note 71 (B4) -> 72 (C5).
+        it('wraps B up to C in C pentatonic major (nearest)', () => {
+            const gen = new ScaleQuantizer('sq-penta-wrap');
+            gen.setParam('scale', 8); // pentatonicMajor
+            expect(quantize(gen, 71)).toBe(72); // B4 -> C5
+        });
+
+        // F (pc=5) in C pentatonic major is out of scale; equidistant from
+        // E(4) and G(7) but E is visited first → snaps down to E via diff = -1.
+        it('snaps F down to E in C pentatonic major (no-wrap arm)', () => {
+            const gen = new ScaleQuantizer('sq-penta-nodiff');
+            gen.setParam('scale', 8); // pentatonicMajor
+            expect(quantize(gen, 65)).toBe(64); // F4 -> E4
+        });
+    });
+
     describe('non-C roots recenter the scale', () => {
         // With root=G(7), the G-major scale tones are G A B C D E F# =
         // {7,9,11,0,2,4,6} modulo 12. F(5) is not in G major (F# is) and snaps

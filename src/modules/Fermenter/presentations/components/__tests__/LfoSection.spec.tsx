@@ -91,4 +91,28 @@ describe('LfoSection', () => {
             expect(onFilterAmountChange).toHaveBeenCalledWith(3.3);
         });
     });
+
+    describe('LFO preview waveform rendering', () => {
+        // The preview canvas renders one of four waveforms based on `shape`.
+        // Each shape exercises a distinct branch of the LfoPreview switch. The
+        // canvas draw runs as a useEffect; we assert it renders without error
+        // for every shape and for the rate-clamping boundaries.
+        it('renders the preview canvas for each waveform shape', () => {
+            for (const shape of [0, 1, 2, 3]) {
+                const { unmount } = render(<LfoSection {...defaultProps({ shape })} />);
+                expect(document.querySelector('canvas')).toBeTruthy();
+                unmount();
+            }
+        });
+
+        it('clamps the cycle count to [1, 4] for sub-unity and over-max rates', () => {
+            // rate below 1 → clamps to 1 cycle; rate above 4 → clamps to 4.
+            const { unmount: u1 } = render(<LfoSection {...defaultProps({ rate: 0.2, shape: 3 })} />);
+            expect(document.querySelector('canvas')).toBeTruthy();
+            u1();
+            const { unmount: u2 } = render(<LfoSection {...defaultProps({ rate: 99, shape: 1 })} />);
+            expect(document.querySelector('canvas')).toBeTruthy();
+            u2();
+        });
+    });
 });

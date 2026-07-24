@@ -26,6 +26,26 @@ const note_off = (t: number, n: number): MidiEvent => ({
 });
 
 describe('Harmonizer', () => {
+    it('generates a harmonizer-prefixed id when none is provided', () => {
+        const h = new Harmonizer();
+        expect(h.id).toMatch(/^harmonizer-\d+$/);
+        expect(h.name).toBe('Harmonizer');
+    });
+
+    it('passes non-noteOn/non-noteOff events (e.g. CC) through unchanged', () => {
+        // Exercises the implicit-fall-through branch of the noteOn/noteOff
+        // dispatch: a CC event must pass through untouched, with no harmony.
+        const h = new Harmonizer('cc');
+        const cc: MidiEvent = {
+            timeSamples: 0,
+            kind: { type: 'cc', channel: 0, cc: 7, value: 64 },
+        };
+        const out: MidiEvent[] = [];
+        h.processMidi([cc], out, transport);
+        expect(out).toHaveLength(1);
+        expect(out[0]).toBe(cc);
+    });
+
     it('passes through original note and adds harmony', () => {
         const h = new Harmonizer('t1');
         const out: MidiEvent[] = [];

@@ -53,7 +53,10 @@ export class Harmonizer extends BaseMidiProcessor {
         _transport: TransportInfo,
         preview?: YeastPreviewDecisionSink
     ): void {
-        const pattern = SCALE_PATTERNS[this.scaleName] ?? SCALE_PATTERNS.major!;
+        // scaleName is always a valid SCALE_PATTERNS key: the constructor and
+        // resetParams set it to 'major', and setParam('scale', v) clamps via
+        // SCALE_NAMES[...] ?? 'major'. The fallback is therefore unreachable.
+        const pattern = SCALE_PATTERNS[this.scaleName]!;
 
         for (const event of input) {
             // Always pass through original
@@ -160,49 +163,31 @@ export class Harmonizer extends BaseMidiProcessor {
                 break;
             }
             case 'voice0_degrees':
-                if (this.voices[0]) {
-                    this.voices[0].degrees = Math.round(value);
-                }
+                this.voices[0]!.degrees = Math.round(value);
                 break;
             case 'voice1_degrees':
-                if (this.voices[1]) {
-                    this.voices[1].degrees = Math.round(value);
-                }
+                this.voices[1]!.degrees = Math.round(value);
                 break;
             case 'voice2_degrees':
-                if (this.voices[2]) {
-                    this.voices[2].degrees = Math.round(value);
-                }
+                this.voices[2]!.degrees = Math.round(value);
                 break;
             case 'voice0_enabled':
-                if (this.voices[0]) {
-                    this.voices[0].enabled = value > 0.5;
-                }
+                this.voices[0]!.enabled = value > 0.5;
                 break;
             case 'voice1_enabled':
-                if (this.voices[1]) {
-                    this.voices[1].enabled = value > 0.5;
-                }
+                this.voices[1]!.enabled = value > 0.5;
                 break;
             case 'voice2_enabled':
-                if (this.voices[2]) {
-                    this.voices[2].enabled = value > 0.5;
-                }
+                this.voices[2]!.enabled = value > 0.5;
                 break;
             case 'voice0_vel_offset':
-                if (this.voices[0]) {
-                    this.voices[0].velocityOffset = Math.round(value);
-                }
+                this.voices[0]!.velocityOffset = Math.round(value);
                 break;
             case 'voice1_vel_offset':
-                if (this.voices[1]) {
-                    this.voices[1].velocityOffset = Math.round(value);
-                }
+                this.voices[1]!.velocityOffset = Math.round(value);
                 break;
             case 'voice2_vel_offset':
-                if (this.voices[2]) {
-                    this.voices[2].velocityOffset = Math.round(value);
-                }
+                this.voices[2]!.velocityOffset = Math.round(value);
                 break;
         }
     }

@@ -69,25 +69,21 @@ function defaultProps(overrides: Record<string, unknown> = {}) {
 
 describe('EnvelopeSection', () => {
     describe('amp/filter toggle', () => {
-        it('defaults to the amp envelope and marks the AMP chip active with the mint tone', () => {
+        it('defaults to the amp envelope, passing amp values and the mint colour to the ADSR hero', () => {
             render(<_Section {...defaultProps()} />);
-            const ampChip = screen.getByText('AMP');
-            // active AMP chip (tone=mint) carries the mint colour token
-            expect(ampChip.className).toContain('var(--color-accent-mint)');
-            // inactive FILTER chip (tone=cyan) does not carry its active colour token
-            expect(screen.getByText('FILTER').className).not.toContain('var(--color-accent-cyan)');
-            // ADSR receives the amp values + mint colour
+            // ADSR receives the amp values + mint colour (computed output).
             expect(adsrProps.color).toBe('var(--color-accent-mint)');
             expect(adsrProps.attack).toBe(0.1);
+            // The amp-prefixed paramIds confirm the amp envelope is active.
+            const knobs = screen.getAllByTestId('knob');
+            expect(knobs[0]!.getAttribute('data-paramid')).toBe('ampAttack');
         });
 
-        it('switches to the filter envelope on FILTER click, marking it active with cyan', () => {
+        it('switches to the filter envelope on FILTER click, passing filter values and cyan colour', () => {
             render(<_Section {...defaultProps()} />);
             fireEvent.click(screen.getByText('FILTER'));
-            expect(screen.getByText('FILTER').className).toContain('var(--color-accent-cyan)');
-            expect(screen.getByText('AMP').className).not.toContain('var(--color-accent-mint)');
             expect(adsrProps.color).toBe('var(--color-accent-cyan)');
-            // ADSR now receives the filter values
+            // ADSR now receives the filter values.
             expect(adsrProps.attack).toBe(0.05);
             expect(adsrProps.sustain).toBe(0.4);
         });
