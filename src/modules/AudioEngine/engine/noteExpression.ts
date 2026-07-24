@@ -6,15 +6,21 @@
  * Both normalise through this module and dispatch through
  * `applyNoteExpression`, so there is exactly one wire-unit conversion, one
  * device registry and one control-surface shape. Adding an expression-capable
- * instrument means adding it to {@link NOTE_EXPRESSION_DEVICE_CONTROLS} — the
- * live path, the scheduled path and the editor's availability surface all read
- * that same table.
+ * instrument means adding it to {@link NOTE_EXPRESSION_DEVICES} — the live
+ * path, the scheduled path and the editor's availability surface all read that
+ * same table.
  *
  * Wire units are the ones already stored on project truth and on live note
  * state; they are consumed, never renamed:
  *   • `pitchBend` — 14-bit signed offset, -8192..8191
  *   • `pressure`  — channel pressure, 0..127
  *   • `slide`     — timbre / CC74, 0..127
+ *
+ * Expression is addressed per *note instance*, not per pitch: the engines match
+ * on (member channel, note, still-held). Two voices can sound one pitch at once
+ * — a retrigger over a ringing release tail, or a genuine MPE overlap on two
+ * member channels — and bending both would be exactly the defect this exists to
+ * prevent.
  */
 
 import { type BuiltinDeviceNode } from '../models/AudioEngineState';
@@ -33,31 +39,67 @@ export type NoteExpressionEngineValues = {
     slide: number;
 };
 
+/** The three MPE dimensions, named as they appear on note data. */
+export type NoteExpressionDimension = 'pitchBend' | 'pressure' | 'slide';
+
 /** MPE member-channel default pitch-bend range (MPE spec v1.0 §2.2). */
 export const MPE_MEMBER_BEND_RANGE_SEMITONES = 48;
 
-/**
- * Device types whose engine sounds per-note expression, mapped to the control
- * surface on their strip device node. This table is the single source of truth
- * for expression capability — do not maintain a parallel list.
- */
-export const NOTE_EXPRESSION_DEVICE_CONTROLS = {
-    fermenter: 'fermenterControls',
-    levain: 'levainControls',
-} as const satisfies Partial<Record<string, keyof BuiltinDeviceNode>>;
+type NoteExpressionDeviceEntry = {
+    controlsKey: keyof BuiltinDeviceNode;
+    /** The dimensions this engine actually sounds — not the ones it accepts. */
+    dimensions: readonly NoteExpressionDimension[];
+};
 
-export type NoteExpressionDeviceType = keyof typeof NOTE_EXPRESSION_DEVICE_CONTROLS;
+/**
+ * Device types whose engine sounds per-note expression, and which dimensions
+ * each one genuinely voices. This table is the single source of truth for
+ * expression capability — do not maintain a parallel list.
+ *
+ * Grand Boule is bend-only on purpose: its ringing modal strings are retuned in
+ * place, but a struck string has no continuous pressure or timbre response to
+ * model, so those two are dropped at the engine rather than faked.
+ */
+export const NOTE_EXPRESSION_DEVICES = {
+    fermenter: {
+        controlsKey: 'fermenterControls',
+        dimensions: ['pitchBend', 'pressure', 'slide'],
+    },
+    levain: {
+        controlsKey: 'levainControls',
+        dimensions: ['pitchBend', 'pressure', 'slide'],
+    },
+    'grand-boule': {
+        controlsKey: 'grandBouleControls',
+        dimensions: ['pitchBend'],
+    },
+} as const satisfies Record<string, NoteExpressionDeviceEntry>;
+
+export type NoteExpressionDeviceType = keyof typeof NOTE_EXPRESSION_DEVICES;
 
 /** The method an expression-capable instrument node exposes. */
 export type NoteExpressionControls = {
     noteExpression: (
         note: number,
+        channel: number,
         bendSemitones: number,
         pressure: number,
         slide: number,
         sampleFrame?: number
     ) => void;
 };
+
+function isNoteExpressionDeviceType(deviceType: string): deviceType is NoteExpressionDeviceType {
+    return Object.hasOwn(NOTE_EXPRESSION_DEVICES, deviceType);
+}
+
+/** Dimensions the given device type sounds; empty when it has no expression path. */
+export function getNoteExpressionDimensions(deviceType: string): readonly NoteExpressionDimension[] {
+    if (!isNoteExpressionDeviceType(deviceType)) {
+        return [];
+    }
+    return NOTE_EXPRESSION_DEVICES[deviceType].dimensions;
+}
 
 /** True when any of the three MPE dimensions carries a value. */
 export function hasNoteExpression(values: NoteExpressionWireValues | undefined): boolean {
@@ -95,11 +137,10 @@ export function resolveNoteExpressionControls(
     deviceNodes: readonly BuiltinDeviceNode[]
 ): NoteExpressionControls | null {
     for (const deviceNode of deviceNodes) {
-        if (!Object.hasOwn(NOTE_EXPRESSION_DEVICE_CONTROLS, deviceNode.type)) {
+        if (!isNoteExpressionDeviceType(deviceNode.type)) {
             continue;
         }
-        const controlsKey = NOTE_EXPRESSION_DEVICE_CONTROLS[deviceNode.type as NoteExpressionDeviceType];
-        const controls: unknown = deviceNode[controlsKey];
+        const controls: unknown = deviceNode[NOTE_EXPRESSION_DEVICES[deviceNode.type].controlsKey];
         if (
             typeof controls === 'object' &&
             controls !== null &&

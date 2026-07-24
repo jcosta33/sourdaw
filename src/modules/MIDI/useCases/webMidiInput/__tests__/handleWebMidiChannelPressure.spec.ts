@@ -45,6 +45,7 @@ describe('handleWebMidiChannelPressure', () => {
         expect(apply_note_expression).toHaveBeenCalledWith({
             trackId: 'instrument-track',
             note: 62,
+            channel: 3,
             expression: { pitchBend: -2048, pressure: 96, slide: undefined },
         });
     });

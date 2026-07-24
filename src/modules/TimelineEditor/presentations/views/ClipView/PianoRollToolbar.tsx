@@ -11,8 +11,15 @@ import { Slider } from '#/components/ui/slider';
 import { CHORD_TYPE_KEYS } from '#/modules/MIDI/useCases';
 import { cn } from '#/utils/Styles/cn';
 
-import { MPE_EXPRESSION_AVAILABLE } from '../../helpers/mpeAvailability';
+import { MPE_EXPRESSION_LANES, type MpeExpressionLane } from '../../helpers/mpeAvailability';
 import { SCALES, SCALE_ROOT_LABELS } from '../../helpers/pianoRollConstants';
+
+/** Labels for the MPE expression lanes offered in the Expression view. */
+const MPE_LANE_LABELS: Record<MpeExpressionLane, string> = {
+    pressure: 'Pressure (MPE)',
+    slide: 'Slide (MPE)',
+    pitchBend: 'Pitch Bend (MPE)',
+};
 
 const ToolbarDivider = (): ReactElement => (
     <div
@@ -82,12 +89,12 @@ type PianoRollToolbarProps = {
     activeExpressionLane?: 'velocity' | 'pressure' | 'slide' | 'pitchBend';
     onActiveExpressionLaneChange?: (lane: 'velocity' | 'pressure' | 'slide' | 'pitchBend') => void;
     /**
-     * Whether the edited track's instrument sounds MPE per-note expression
+     * MPE expression lanes the edited track's instrument actually sounds
      * (audit MD-2). Callers pass per-track truth from
-     * `isMpeExpressionAvailableForDeviceTypes`; omitted, it falls back to
-     * "some shipping instrument sounds it", derived from the engine registry.
+     * `getMpeExpressionLanesForDeviceTypes`; omitted, no MPE lane is offered,
+     * because a caller that does not know the instrument cannot promise one.
      */
-    mpeExpressionAvailable?: boolean;
+    mpeExpressionLanes?: readonly MpeExpressionLane[];
 };
 
 export const PianoRollToolbar = ({
@@ -124,7 +131,7 @@ export const PianoRollToolbar = ({
     onToggleExpressionView,
     activeExpressionLane,
     onActiveExpressionLaneChange,
-    mpeExpressionAvailable = MPE_EXPRESSION_AVAILABLE,
+    mpeExpressionLanes = [],
 }: PianoRollToolbarProps): ReactElement => (
     <DawControlStrip>
         <span className="text-[10px] text-muted-foreground">Snap:</span>
@@ -340,13 +347,11 @@ export const PianoRollToolbar = ({
                 aria-label="Active expression lane"
             >
                 <option value="velocity">Velocity</option>
-                {mpeExpressionAvailable ? (
-                    <>
-                        <option value="pressure">Pressure (MPE)</option>
-                        <option value="slide">Slide (MPE)</option>
-                        <option value="pitchBend">Pitch Bend (MPE)</option>
-                    </>
-                ) : null}
+                {MPE_EXPRESSION_LANES.filter((lane) => mpeExpressionLanes.includes(lane)).map((lane) => (
+                    <option key={lane} value={lane}>
+                        {MPE_LANE_LABELS[lane]}
+                    </option>
+                ))}
             </DawCompactSelect>
         ) : null}
 

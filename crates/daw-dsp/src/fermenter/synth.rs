@@ -544,6 +544,12 @@ impl MasterSynth {
     }
 
     pub fn note_on(&mut self, note: u8, velocity: u8) {
+        self.note_on_with_channel(note, velocity, 0);
+    }
+
+    /// Note-on carrying the MPE member channel that owns the note. Channel 0 is
+    /// the non-MPE default and what `note_on` uses.
+    pub fn note_on_with_channel(&mut self, note: u8, velocity: u8, channel: u8) {
         let any_solo = self.layers[..self.num_active_layers].iter().any(|l| l.solo);
         for layer in &mut self.layers[..self.num_active_layers] {
             if layer.muted {
@@ -552,22 +558,35 @@ impl MasterSynth {
             if any_solo && !layer.solo {
                 continue;
             }
-            layer.note_on(note, velocity);
+            layer.note_on_with_channel(note, velocity, channel);
         }
     }
 
     pub fn note_off(&mut self, note: u8) {
+        self.note_off_matching(note, None);
+    }
+
+    /// Note-off narrowed to one MPE member channel. `None` releases every voice
+    /// at that pitch — see `Layer::note_off_matching`.
+    pub fn note_off_matching(&mut self, note: u8, channel: Option<u8>) {
         for layer in &mut self.layers[..self.num_active_layers] {
-            layer.note_off(note);
+            layer.note_off_matching(note, channel);
         }
     }
 
-    /// Apply MPE per-note expression to every playable layer holding `note`
-    /// (audit MD-2). Mirrors `note_on`'s layer fan-out so a stacked patch bends
-    /// as one instrument.
-    pub fn note_expression(&mut self, note: u8, bend_semitones: f32, pressure: f32, slide: f32) {
+    /// Apply MPE per-note expression to every playable layer holding `note` on
+    /// `channel` (audit MD-2). Mirrors `note_on`'s layer fan-out so a stacked
+    /// patch bends as one instrument.
+    pub fn note_expression(
+        &mut self,
+        note: u8,
+        channel: u8,
+        bend_semitones: f32,
+        pressure: f32,
+        slide: f32,
+    ) {
         for layer in &mut self.layers[..self.num_active_layers] {
-            layer.note_expression(note, bend_semitones, pressure, slide);
+            layer.note_expression(note, channel, bend_semitones, pressure, slide);
         }
     }
 
@@ -907,7 +926,7 @@ mod tests {
         synth.set_param("sustain", 1.0);
         synth.note_on(69, 100);
         if let Some((bend, pressure, slide)) = expression {
-            synth.note_expression(69, bend, pressure, slide);
+            synth.note_expression(69, 0, bend, pressure, slide);
         }
 
         let mut collected = Vec::with_capacity(blocks * 128);
@@ -1013,7 +1032,7 @@ mod tests {
         synth.note_on(69, 100);
         synth.note_on(60, 100);
         for (note, semitones) in bends {
-            synth.note_expression(*note, *semitones, 0.0, 0.0);
+            synth.note_expression(*note, 0, *semitones, 0.0, 0.0);
         }
 
         let mut left = [0.0f32; 128];
@@ -1045,6 +1064,72 @@ mod tests {
             one_bent < both_bent,
             "bending A4 must leave C4 at its own pitch \
              (one bent {one_bent} vs both bent {both_bent})"
+        );
+    }
+
+    /// Two member channels holding the *same* pitch, rendered together.
+    /// `bent_channels` lists the member channels that receive a +12 st bend.
+    fn render_same_pitch_pair(bent_channels: &[u8]) -> Vec<f32> {
+        let mut synth = MasterSynth::new(48_000.0, 8);
+        synth.set_param("cutoff", 20_000.0);
+        synth.set_param("attack", 0.001);
+        synth.set_param("decay", 0.001);
+        synth.set_param("sustain", 1.0);
+        synth.note_on_with_channel(60, 100, 2);
+        synth.note_on_with_channel(60, 100, 3);
+        for channel in bent_channels {
+            synth.note_expression(60, *channel, 12.0, 0.0, 0.0);
+        }
+
+        let mut collected = Vec::with_capacity(24 * 128);
+        let mut left = [0.0f32; 128];
+        let mut right = [0.0f32; 128];
+        for _ in 0..24 {
+            left.fill(0.0);
+            right.fill(0.0);
+            synth.process_block(&mut left, &mut right, &[]);
+            collected.extend_from_slice(&left);
+        }
+        collected
+    }
+
+    fn difference_rms(left: &[f32], right: &[f32]) -> f32 {
+        let differences: Vec<f32> = left
+            .iter()
+            .zip(right.iter())
+            .map(|(a, b)| a - b)
+            .collect();
+        rms(&differences)
+    }
+
+    /// audit MD-2 (review round 1) — the audible half of the targeting fix.
+    /// Two voices sounding one pitch on two member channels is ordinary MPE;
+    /// bending one must not drag the other with it.
+    ///
+    /// Compared sample-for-sample rather than by a spectral summary: when
+    /// expression is addressed by MIDI note alone, bending one member channel
+    /// and bending both produce *bit-identical* audio, so any non-zero
+    /// difference between them is exactly the defect being absent.
+    #[test]
+    fn bending_one_member_channel_leaves_the_other_at_its_pitch() {
+        let neither = render_same_pitch_pair(&[]);
+        let one = render_same_pitch_pair(&[2]);
+        let both = render_same_pitch_pair(&[2, 3]);
+
+        let signal = rms(&both[1024..]);
+        let moved = difference_rms(&one[1024..], &neither[1024..]);
+        let partial = difference_rms(&one[1024..], &both[1024..]);
+
+        assert!(
+            moved > signal * 0.05,
+            "bending one member channel must change the rendered pair \
+             (difference {moved} vs signal {signal})"
+        );
+        assert!(
+            partial > signal * 0.05,
+            "bending one member channel must not equal bending both — \
+             note-only addressing makes these identical \
+             (difference {partial} vs signal {signal})"
         );
     }
 

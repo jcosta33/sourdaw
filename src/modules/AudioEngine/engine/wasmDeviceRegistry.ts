@@ -698,6 +698,7 @@ const grandBouleDescriptor: WasmDeviceDescriptor = {
             ready: false,
             noteOn: () => {},
             noteOff: () => {},
+            noteExpression: () => {},
             setParam: (name, value) => {
                 pendingParams.push([name, value]);
             },
@@ -742,6 +743,7 @@ const grandBouleDescriptor: WasmDeviceDescriptor = {
                         ready: true,
                         noteOn: result.noteOn,
                         noteOff: result.noteOff,
+                        noteExpression: result.noteExpression,
                         setParam: result.setParam,
                         setSustain: result.setSustain,
                         setUnaCorda: result.setUnaCorda,

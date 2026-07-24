@@ -386,6 +386,14 @@ impl SamplePlayback {
 pub struct LevainVoice {
     pub active: bool,
     pub note: u8,
+    /// MIDI channel this voice was triggered on — half of the per-note
+    /// expression address (audit MD-2). Under MPE each note owns its own
+    /// member channel, so two voices at one pitch are told apart by it.
+    pub channel: u8,
+    /// True from trigger until release. A voice whose release tail is still
+    /// audible stays `active` but is no longer `held`, so a same-pitch
+    /// retrigger cannot bend the note the player already let go.
+    pub held: bool,
     pub velocity: u8,
     pub age: u32,
     /// Energy estimate (RMS over last N samples) for voice stealing.
@@ -452,6 +460,8 @@ impl LevainVoice {
         Self {
             active: false,
             note: 0,
+            channel: 0,
+            held: false,
             velocity: 0,
             age: 0,
             energy: 0.0,
@@ -483,6 +493,7 @@ impl LevainVoice {
     pub fn trigger(
         &mut self,
         note: u8,
+        channel: u8,
         velocity: u8,
         zone: &Zone,
         articulation: ArticulationId,
@@ -491,6 +502,8 @@ impl LevainVoice {
     ) {
         self.active = true;
         self.note = note;
+        self.channel = channel;
+        self.held = true;
         self.velocity = velocity;
         self.age = 0;
         self.energy = 0.0;
@@ -529,8 +542,10 @@ impl LevainVoice {
         self.gain.set_target(self.base_gain * (1.0 + self.expr_pressure));
     }
 
-    /// Start releasing this voice.
+    /// Start releasing this voice. The tail keeps sounding, but the voice is no
+    /// longer held, so per-note expression stops addressing it (audit MD-2).
     pub fn release(&mut self) {
+        self.held = false;
         self.amp_env.release();
     }
 
@@ -738,10 +753,24 @@ impl VoicePool {
 
     /// Release all voices playing a specific note.
     pub fn release_note(&mut self, note: u8) {
+        self.release_note_matching(note, None);
+    }
+
+    /// Release the voices playing `note`. `channel` narrows the release to one
+    /// MPE member channel; `None` releases every voice at that pitch, which is
+    /// the historical behaviour and what channel-unaware callers still get — so
+    /// omitting the channel can never leave a voice hanging.
+    pub fn release_note_matching(&mut self, note: u8, channel: Option<u8>) {
         for voice in self.voices.iter_mut() {
-            if voice.active && voice.note == note {
-                voice.release();
+            if !voice.active || voice.note != note {
+                continue;
             }
+            if let Some(target) = channel {
+                if voice.channel != target {
+                    continue;
+                }
+            }
+            voice.release();
         }
     }
 
@@ -750,6 +779,25 @@ impl VoicePool {
         for voice in self.voices.iter_mut() {
             if voice.active {
                 voice.release();
+            }
+        }
+    }
+
+    /// Apply MPE per-note expression to the voices currently *held* on
+    /// `channel` at `note` (audit MD-2). Addressing by note alone would also
+    /// bend a still-ringing release tail at that pitch, or the other member
+    /// channel of a genuine MPE same-pitch overlap.
+    pub fn set_note_expression(
+        &mut self,
+        note: u8,
+        channel: u8,
+        bend_semitones: f32,
+        pressure: f32,
+        slide: f32,
+    ) {
+        for voice in self.voices.iter_mut() {
+            if voice.active && voice.held && voice.note == note && voice.channel == channel {
+                voice.set_expression(bend_semitones, pressure, slide);
             }
         }
     }

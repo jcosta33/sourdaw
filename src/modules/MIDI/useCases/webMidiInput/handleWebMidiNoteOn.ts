@@ -110,7 +110,7 @@ export const handleWebMidiNoteOn = inject({
                         const fermenterDevice = instrumentTrack?.devices.find((device) => device.type === 'fermenter');
                         if (fermenterDevice) {
                             const deviceNode = strip.deviceNodes.find((candidate) => candidate.type === 'fermenter');
-                            deviceNode?.fermenterControls?.noteOn(eventNote, eventVelocity, eventSampleFrame);
+                            deviceNode?.fermenterControls?.noteOn(eventNote, eventVelocity, eventSampleFrame, channel);
                             continue;
                         }
                         const grandBouleDevice = instrumentTrack?.devices.find(
@@ -118,7 +118,12 @@ export const handleWebMidiNoteOn = inject({
                         );
                         if (grandBouleDevice) {
                             const deviceNode = strip.deviceNodes.find((candidate) => candidate.type === 'grand-boule');
-                            deviceNode?.grandBouleControls?.noteOn(eventNote, eventVelocity / 127, eventSampleFrame);
+                            deviceNode?.grandBouleControls?.noteOn(
+                                eventNote,
+                                eventVelocity / 127,
+                                eventSampleFrame,
+                                channel
+                            );
                             void deps.eventBus.emit('midi.noteOn', {
                                 deviceId: grandBouleDevice.id,
                                 midiNote: eventNote,
@@ -129,7 +134,7 @@ export const handleWebMidiNoteOn = inject({
                         const levainDevice = instrumentTrack?.devices.find((device) => device.type === 'levain');
                         if (levainDevice) {
                             const deviceNode = strip.deviceNodes.find((candidate) => candidate.type === 'levain');
-                            deviceNode?.levainControls?.noteOn(eventNote, eventVelocity, eventSampleFrame);
+                            deviceNode?.levainControls?.noteOn(eventNote, eventVelocity, eventSampleFrame, channel);
                             continue;
                         }
                         const synthParams = deps.getSynthParamsForTrack(instrumentTrackId);
@@ -147,7 +152,7 @@ export const handleWebMidiNoteOn = inject({
                         const fermenterDevice = instrumentTrack?.devices.find((device) => device.type === 'fermenter');
                         if (fermenterDevice) {
                             const deviceNode = strip.deviceNodes.find((candidate) => candidate.type === 'fermenter');
-                            deviceNode?.fermenterControls?.noteOff(eventNote, eventSampleFrame);
+                            deviceNode?.fermenterControls?.noteOff(eventNote, eventSampleFrame, channel);
                             continue;
                         }
                         const grandBouleDevice = instrumentTrack?.devices.find(
@@ -155,7 +160,7 @@ export const handleWebMidiNoteOn = inject({
                         );
                         if (grandBouleDevice) {
                             const deviceNode = strip.deviceNodes.find((candidate) => candidate.type === 'grand-boule');
-                            deviceNode?.grandBouleControls?.noteOff(eventNote, eventSampleFrame);
+                            deviceNode?.grandBouleControls?.noteOff(eventNote, eventSampleFrame, undefined, channel);
                             void deps.eventBus.emit('midi.noteOff', {
                                 deviceId: grandBouleDevice.id,
                                 midiNote: eventNote,
@@ -165,7 +170,7 @@ export const handleWebMidiNoteOn = inject({
                         const levainDevice = instrumentTrack?.devices.find((device) => device.type === 'levain');
                         if (levainDevice) {
                             const deviceNode = strip.deviceNodes.find((candidate) => candidate.type === 'levain');
-                            deviceNode?.levainControls?.noteOff(eventNote, eventSampleFrame);
+                            deviceNode?.levainControls?.noteOff(eventNote, eventSampleFrame, channel);
                             continue;
                         }
                     }
@@ -179,7 +184,7 @@ export const handleWebMidiNoteOn = inject({
                     (candidate) => candidate.deviceId === fermenterDevice.id || candidate.type === 'fermenter'
                 );
                 if (deviceNode?.fermenterControls?.ready) {
-                    deviceNode.fermenterControls.noteOn(note, velocity);
+                    deviceNode.fermenterControls.noteOn(note, velocity, undefined, channel);
                     noteData.fermenterDeviceId = fermenterDevice.id;
                 }
                 return;
@@ -218,7 +223,7 @@ export const handleWebMidiNoteOn = inject({
                     const grandBouleStore = createGrandBouleStore(grandBouleDevice.id);
                     const calibration = grandBouleStore.value?.midiCalibration;
                     const finalVelocity = calibration ? applyVelocityCurve(velocity, calibration) : velocity / 127;
-                    deviceNode.grandBouleControls.noteOn(note, finalVelocity);
+                    deviceNode.grandBouleControls.noteOn(note, finalVelocity, undefined, channel);
                     noteData.grandBouleDeviceId = grandBouleDevice.id;
                     void deps.eventBus.emit('midi.noteOn', {
                         deviceId: grandBouleDevice.id,
@@ -235,7 +240,7 @@ export const handleWebMidiNoteOn = inject({
                     (candidate) => candidate.deviceId === levainDevice.id || candidate.type === 'levain'
                 );
                 if (deviceNode?.levainControls?.ready) {
-                    deviceNode.levainControls.noteOn(note, velocity);
+                    deviceNode.levainControls.noteOn(note, velocity, undefined, channel);
                     noteData.levainDeviceId = levainDevice.id;
                     return;
                 }

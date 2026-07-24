@@ -70,6 +70,7 @@ describe('handleWebMidiPitchBend', () => {
         expect(apply_note_expression).toHaveBeenCalledWith({
             trackId: 'instrument-track',
             note: 64,
+            channel: 2,
             expression: { pitchBend: 4096, pressure: 100, slide: 20 },
         });
     });
@@ -91,6 +92,7 @@ describe('handleWebMidiPitchBend', () => {
         expect(apply_note_expression).toHaveBeenCalledWith({
             trackId: 'instrument-track',
             note: 60,
+            channel: 0,
             expression: { pitchBend: 4096, pressure: undefined, slide: undefined },
             bendRangeSemitones: 2,
         });

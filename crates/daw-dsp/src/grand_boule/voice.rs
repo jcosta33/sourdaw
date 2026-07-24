@@ -64,6 +64,20 @@ pub enum VoiceQuality {
 pub struct PianoVoice {
     stage: VoiceStage,
     midi_note: u8,
+    /// MIDI channel this voice was struck on. With `midi_note` and
+    /// `held` this is the per-note expression address (audit MD-2):
+    /// under MPE each note owns its own member channel, so two voices
+    /// at one pitch are told apart by it.
+    channel: u8,
+    /// True from note-on until note-off. A voice whose release tail is
+    /// still ringing stays non-idle but is no longer held, so a
+    /// same-pitch retrigger cannot bend the note already let go.
+    held: bool,
+    /// Per-note pitch bend as a frequency ratio; 1.0 is neutral.
+    expr_bend_ratio: f32,
+    /// Ratio the resonator coefficients were last tuned to, so the
+    /// retune runs only when the bend actually moves.
+    expr_bend_tuned: f32,
     velocity: f32,
     age_samples: u64,
     hammer: HammerState,
@@ -98,6 +112,10 @@ impl PianoVoice {
     pub fn new(sample_rate: f32) -> Self {
         Self {
             stage: VoiceStage::Idle,
+            channel: 0,
+            held: false,
+            expr_bend_ratio: 1.0,
+            expr_bend_tuned: 1.0,
             midi_note: 0,
             velocity: 0.0,
             age_samples: 0,
@@ -227,6 +245,7 @@ impl PianoVoice {
     pub fn note_on(
         &mut self,
         midi_note: u8,
+        channel: u8,
         velocity: f32,
         key: u32,
         pitch_ratio: f32,
@@ -234,6 +253,12 @@ impl PianoVoice {
         mass_scale: f32,
     ) {
         self.midi_note = midi_note;
+        self.channel = channel;
+        self.held = true;
+        // A fresh strike starts from neutral bend; the controller's
+        // opening bend arrives as its own expression message.
+        self.expr_bend_ratio = 1.0;
+        self.expr_bend_tuned = 1.0;
         self.velocity = velocity.clamp(0.0, 1.0);
         self.age_samples = 0;
         self.amplitude = 1.0;
@@ -335,6 +360,9 @@ impl PianoVoice {
         if self.stage == VoiceStage::Idle {
             return;
         }
+        // The string keeps ringing, but it is no longer the note being
+        // held, so per-note expression stops addressing it (audit MD-2).
+        self.held = false;
         self.stage = VoiceStage::Releasing;
         // ~300 ms release tail — realistic felt-damper mute time for a grand
         // piano (150 ms was too fast, giving a harpsichord-like cut-off).
@@ -345,6 +373,9 @@ impl PianoVoice {
     /// Force the voice back to idle immediately.
     pub fn kill(&mut self) {
         self.stage = VoiceStage::Idle;
+        self.held = false;
+        self.expr_bend_ratio = 1.0;
+        self.expr_bend_tuned = 1.0;
         self.amplitude = 0.0;
         self.age_samples = 0;
         self.last_string_displacement = 0.0;
@@ -361,13 +392,62 @@ impl PianoVoice {
             return;
         }
         self.extra_damping_hz = extra_damping_hz;
+        self.retune_strings();
+    }
+
+    /// This voice's per-note expression address (audit MD-2).
+    pub fn channel(&self) -> u8 {
+        self.channel
+    }
+
+    /// True while the note is held — a ringing release tail is not.
+    pub fn is_held(&self) -> bool {
+        self.held
+    }
+
+    /// Current per-note bend as a frequency ratio; 1.0 is neutral.
+    pub fn bend_ratio(&self) -> f32 {
+        self.expr_bend_ratio
+    }
+
+    /// Set the per-note pitch bend in semitones. Takes effect on the
+    /// next block via `apply_pending_bend`.
+    pub fn set_expression_bend(&mut self, bend_semitones: f32) {
+        self.expr_bend_ratio = (2.0_f32).powf(bend_semitones.clamp(-96.0, 96.0) / 12.0);
+    }
+
+    /// Retune the ringing strings to the current fundamental x bend.
+    ///
+    /// `reset_decay` rewrites c1/c2 only and never touches the biquad
+    /// state (x1/x2/y1/y2), which only `reset()` clears — so the string
+    /// rings straight through the retune. This is the same primitive the
+    /// SS A5.2 pitch glide already uses mid-note.
+    fn retune_strings(&mut self) {
         self.strings.reset_decay(
-            self.fundamental_hz,
+            self.fundamental_hz * self.expr_bend_ratio,
             self.key,
             self.sample_rate,
             self.base_bandwidth,
-            extra_damping_hz,
+            self.extra_damping_hz,
         );
+        self.expr_bend_tuned = self.expr_bend_ratio;
+    }
+
+    /// Block-rate hook: retune only when the bend moved since the last
+    /// retune, so an unbent voice costs one comparison.
+    ///
+    /// Measured cost when it does run: ~3.2 us per voice (3 unisons x 2
+    /// polarizations), i.e. ~3.8% of a 128-frame block at 48 kHz with all
+    /// 32 voices bending — see
+    /// `coupled_strings::tests::measure_block_rate_retune_cost`.
+    pub fn apply_pending_bend(&mut self) {
+        if self.stage == VoiceStage::Idle {
+            return;
+        }
+        if (self.expr_bend_ratio - self.expr_bend_tuned).abs() < 1.0e-6 {
+            return;
+        }
+        self.retune_strings();
     }
 
     /// Render one output sample from this voice.
@@ -387,13 +467,9 @@ impl PianoVoice {
             self.pitch_glide_samples_remaining -= 1;
             if self.pitch_glide_samples_remaining == 0 {
                 self.fundamental_hz = self.nominal_fundamental_hz;
-                self.strings.reset_decay(
-                    self.fundamental_hz,
-                    self.key,
-                    self.sample_rate,
-                    self.base_bandwidth,
-                    self.extra_damping_hz,
-                );
+                // Through `retune_strings` so the glide snap-back keeps
+                // whatever per-note bend is currently applied.
+                self.retune_strings();
             }
         }
 

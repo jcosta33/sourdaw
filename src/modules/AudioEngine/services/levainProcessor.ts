@@ -67,6 +67,7 @@ type LevainAddZoneMsg = {
 type NoteExpressionMsg = {
     type: 'noteExpression';
     note: number;
+    channel: number;
     bendSemitones: number;
     pressure: number;
     slide: number;
@@ -74,8 +75,8 @@ type NoteExpressionMsg = {
 };
 type LevainMsg =
     | { type: 'init'; wasmBytes: BufferSource }
-    | { type: 'noteOn'; note: number; velocity: number; sampleFrame?: number }
-    | { type: 'noteOff'; note: number; sampleFrame?: number }
+    | { type: 'noteOn'; note: number; velocity: number; sampleFrame?: number; channel?: number }
+    | { type: 'noteOff'; note: number; sampleFrame?: number; channel?: number }
     | NoteExpressionMsg
     | { type: 'allNotesOff' }
     | { type: 'param'; name: string; value: number }
@@ -88,8 +89,8 @@ type LevainMsg =
     | { type: 'clearZones' };
 
 type LevainQueued =
-    | { type: 'noteOn'; note: number; velocity: number; sampleFrame: number }
-    | { type: 'noteOff'; note: number; sampleFrame: number }
+    | { type: 'noteOn'; note: number; velocity: number; sampleFrame: number; channel?: number }
+    | { type: 'noteOff'; note: number; sampleFrame: number; channel?: number }
     | (NoteExpressionMsg & { sampleFrame: number });
 
 class LevainProcessor extends AudioWorkletProcessor {
@@ -184,16 +185,22 @@ class LevainProcessor extends AudioWorkletProcessor {
             case 'init':
                 break;
             case 'noteOn':
-                inst.note_on(msg.note, msg.velocity);
+                inst.note_on_with_channel(msg.note, msg.velocity, msg.channel ?? 0);
                 break;
             case 'noteOff':
-                inst.note_off(msg.note);
+                // Without a channel every voice at the pitch is released —
+                // the historical behaviour channel-unaware callers rely on.
+                if (msg.channel === undefined) {
+                    inst.note_off(msg.note);
+                } else {
+                    inst.note_off_on_channel(msg.note, msg.channel);
+                }
                 break;
             case 'noteExpression':
                 // MPE per-note expression (audit MD-2). Scheduled expression
                 // carries the note's own start frame and is enqueued behind the
                 // noteOn at that frame, so the voice exists before it is bent.
-                inst.note_expression(msg.note, msg.bendSemitones, msg.pressure, msg.slide);
+                inst.note_expression(msg.note, msg.channel, msg.bendSemitones, msg.pressure, msg.slide);
                 break;
             case 'allNotesOff':
                 inst.all_notes_off();

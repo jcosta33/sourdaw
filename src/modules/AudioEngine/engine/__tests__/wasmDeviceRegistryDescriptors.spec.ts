@@ -614,6 +614,7 @@ describe('wasmDeviceRegistry descriptors', () => {
                 workletNode: makeWorkletNode(),
                 noteOn: vi.fn(),
                 noteOff: vi.fn(),
+                noteExpression: vi.fn(),
                 setParam: vi.fn(),
                 setSustain: vi.fn(),
                 setUnaCorda: vi.fn(),

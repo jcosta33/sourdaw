@@ -106,16 +106,21 @@ export type BuiltinDeviceNode = {
     /** Controls for the Fermenter synthesizer (MIDI + param updates via MessagePort) */
     fermenterControls?: {
         ready: boolean;
-        noteOn: (note: number, velocity: number, sampleFrame?: number) => void;
-        noteOff: (note: number, sampleFrame?: number) => void;
+        /** `channel` is the MPE member channel that owns the note; 0 is non-MPE. */
+        noteOn: (note: number, velocity: number, sampleFrame?: number, channel?: number) => void;
+        /** Omitting `channel` releases every voice at that pitch, as before. */
+        noteOff: (note: number, sampleFrame?: number, channel?: number) => void;
         /**
          * MPE per-note expression in engine units — bend in semitones, pressure
-         * 0..1, timbre/CC74 slide -1..1 (audit MD-2). Reached only through
+         * 0..1, timbre/CC74 slide -1..1 (audit MD-2). Addressed by (channel,
+         * note) so a ringing release tail or a second member channel at the
+         * same pitch is left alone. Reached only through
          * `applyNoteExpression`, which owns the wire-unit conversion for both
          * the live and the scheduled path.
          */
         noteExpression: (
             note: number,
+            channel: number,
             bendSemitones: number,
             pressure: number,
             slide: number,
@@ -147,7 +152,7 @@ export type BuiltinDeviceNode = {
     /** Controls for the Grand Boule piano (MIDI + pedals + param updates via MessagePort) */
     grandBouleControls?: {
         ready: boolean;
-        noteOn: (midiNote: number, velocity: number, sampleFrame?: number) => void;
+        noteOn: (midiNote: number, velocity: number, sampleFrame?: number, channel?: number) => void;
         /**
          * Release the note. `releaseVelocity` is the normalized (0..1) MIDI
          * note-off velocity; it is threaded to the engine worker so the release
@@ -157,7 +162,20 @@ export type BuiltinDeviceNode = {
          * (`scheduleMidiNotes`) can call `noteOff(note, sampleFrame)` uniformly
          * across fermenter / grand-boule / levain.
          */
-        noteOff: (midiNote: number, sampleFrame?: number, releaseVelocity?: number) => void;
+        noteOff: (midiNote: number, sampleFrame?: number, releaseVelocity?: number, channel?: number) => void;
+        /**
+         * MPE per-note expression (audit MD-2). Grand Boule sounds bend only —
+         * pressure and slide are dropped at the engine, and its registry entry
+         * advertises pitch bend alone so the editor never offers those lanes.
+         */
+        noteExpression: (
+            midiNote: number,
+            channel: number,
+            bendSemitones: number,
+            pressure: number,
+            slide: number,
+            sampleFrame?: number
+        ) => void;
         setParam: (name: string, value: number) => void;
         setSustain: (position: number) => void;
         setUnaCorda: (engaged: boolean) => void;
@@ -172,11 +190,12 @@ export type BuiltinDeviceNode = {
     /** Controls for the Levain suite (MIDI + CC + param updates via MessagePort) */
     levainControls?: {
         ready: boolean;
-        noteOn: (note: number, velocity: number, sampleFrame?: number) => void;
-        noteOff: (note: number, sampleFrame?: number) => void;
+        noteOn: (note: number, velocity: number, sampleFrame?: number, channel?: number) => void;
+        noteOff: (note: number, sampleFrame?: number, channel?: number) => void;
         /** MPE per-note expression in engine units — see `fermenterControls.noteExpression`. */
         noteExpression: (
             note: number,
+            channel: number,
             bendSemitones: number,
             pressure: number,
             slide: number,

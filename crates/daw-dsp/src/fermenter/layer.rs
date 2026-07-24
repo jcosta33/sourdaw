@@ -194,6 +194,12 @@ impl Layer {
     }
 
     pub fn note_on(&mut self, note: u8, velocity: u8) {
+        self.note_on_with_channel(note, velocity, 0);
+    }
+
+    /// Note-on carrying the MPE member channel that owns the note. Channel 0
+    /// is the non-MPE default and what `note_on` uses.
+    pub fn note_on_with_channel(&mut self, note: u8, velocity: u8, channel: u8) {
         let vel = velocity as f32 / 127.0;
 
         // Find a free voice, or steal the quietest
@@ -232,7 +238,7 @@ impl Layer {
             voice.set_additive_odd(self.additive_odd);
             voice.set_additive_inharm(self.additive_inharm);
             voice.set_sampler_params(self.sampler_mode, self.sampler_start, self.sampler_end);
-            voice.note_on(note, vel, self.sample_rate);
+            voice.note_on(note, channel, vel, self.sample_rate);
             voice.set_envelopes(
                 self.amp_attack,
                 self.amp_decay,
@@ -257,19 +263,48 @@ impl Layer {
     }
 
     pub fn note_off(&mut self, note: u8) {
+        self.note_off_matching(note, None);
+    }
+
+    /// Release the voices sounding `note`. `channel` narrows the release to one
+    /// MPE member channel; `None` releases every voice at that pitch, which is
+    /// the historical behaviour and what callers that do not track channels
+    /// (scheduled playback, all-notes-off) still get — so a caller can never
+    /// leave a voice hanging by omitting the channel.
+    pub fn note_off_matching(&mut self, note: u8, channel: Option<u8>) {
         for voice in &mut self.voices {
-            if voice.active && voice.note == note {
-                voice.note_off();
+            if !voice.active || voice.note != note {
+                continue;
             }
+            if let Some(target) = channel {
+                if voice.channel != target {
+                    continue;
+                }
+            }
+            voice.note_off();
         }
     }
 
-    /// Route MPE per-note expression to every sounding voice holding `note`
-    /// (audit MD-2). Unison/layer stacking means one MIDI note can own several
-    /// voices, so this addresses all of them rather than the first match.
-    pub fn note_expression(&mut self, note: u8, bend_semitones: f32, pressure: f32, slide: f32) {
+    /// Route MPE per-note expression to the voices currently *held* on
+    /// `channel` at `note` (audit MD-2).
+    ///
+    /// The address is (channel, note, held) — not note alone. Two voices can
+    /// sound one pitch at the same time: a same-pitch retrigger over a still-
+    /// ringing release tail (the tail is `active` but no longer `held`), and a
+    /// genuine MPE overlap where two member channels carry the same pitch.
+    /// Addressing by note alone bends both, which is precisely the per-note
+    /// promise this exists to keep. Layer/unison stacking still means one held
+    /// note can own several voices, so every match is addressed.
+    pub fn note_expression(
+        &mut self,
+        note: u8,
+        channel: u8,
+        bend_semitones: f32,
+        pressure: f32,
+        slide: f32,
+    ) {
         for voice in &mut self.voices {
-            if voice.active && voice.note == note {
+            if voice.active && voice.held && voice.note == note && voice.channel == channel {
                 voice.set_expression(bend_semitones, pressure, slide);
             }
         }
@@ -595,5 +630,116 @@ mod tests {
         assert_eq!(layer.warp_mode, 6);
         assert_eq!(layer.audio_mod_target, 3);
         assert_eq!(layer.chaos_amount, 0.4);
+    }
+
+    // ── Per-note expression targeting (audit MD-2, review round 1) ─────────
+    //
+    // Two voices can sound one pitch at the same time. Addressing expression by
+    // MIDI note alone bends both, which breaks the per-note promise. These
+    // assert on voice state — which voice carries which bend — because the
+    // defect is exactly a mis-addressed voice.
+
+    /// Bends carried by every currently active voice at `note`, oldest slot
+    /// first, paired with whether that voice is still held.
+    fn active_bends_at(layer: &Layer, note: u8) -> Vec<(bool, f32)> {
+        layer
+            .voices
+            .iter()
+            .filter(|voice| voice.active && voice.note == note)
+            .map(|voice| (voice.held, voice.expression().0))
+            .collect()
+    }
+
+    #[test]
+    fn expression_skips_a_still_ringing_voice_at_the_same_pitch() {
+        let mut layer = Layer::new(48_000.0);
+        // Long release so the first voice is unambiguously still active.
+        layer.set_param("release", 2.0);
+        layer.note_on(60, 100);
+        layer.note_off(60);
+        layer.note_on(60, 100);
+
+        let before = active_bends_at(&layer, 60);
+        assert_eq!(
+            before.len(),
+            2,
+            "the release tail and the retrigger must both be active"
+        );
+        assert_eq!(before[0].0, false, "the first voice is releasing, not held");
+        assert_eq!(before[1].0, true, "the retrigger is held");
+
+        layer.note_expression(60, 0, 12.0, 0.0, 0.0);
+
+        assert_eq!(
+            active_bends_at(&layer, 60),
+            vec![(false, 0.0), (true, 12.0)],
+            "only the held voice may take the bend; the ringing tail keeps its pitch"
+        );
+    }
+
+    #[test]
+    fn expression_does_not_cross_mpe_member_channels_at_one_pitch() {
+        let mut layer = Layer::new(48_000.0);
+        // Two member channels holding the same pitch — ordinary MPE.
+        layer.note_on_with_channel(60, 100, 2);
+        layer.note_on_with_channel(60, 100, 3);
+
+        layer.note_expression(60, 2, 12.0, 0.5, 0.25);
+
+        let channels: Vec<(u8, f32, f32, f32)> = layer
+            .voices
+            .iter()
+            .filter(|voice| voice.active && voice.note == 60)
+            .map(|voice| {
+                let (bend, pressure, slide) = voice.expression();
+                (voice.channel, bend, pressure, slide)
+            })
+            .collect();
+
+        assert_eq!(
+            channels,
+            vec![(2, 12.0, 0.5, 0.25), (3, 0.0, 0.0, 0.0)],
+            "expression on one member channel must not reach the other"
+        );
+    }
+
+    #[test]
+    fn note_off_can_be_narrowed_to_one_member_channel() {
+        let mut layer = Layer::new(48_000.0);
+        layer.note_on_with_channel(60, 100, 2);
+        layer.note_on_with_channel(60, 100, 3);
+
+        layer.note_off_matching(60, Some(2));
+
+        let held: Vec<(u8, bool)> = layer
+            .voices
+            .iter()
+            .filter(|voice| voice.active && voice.note == 60)
+            .map(|voice| (voice.channel, voice.held))
+            .collect();
+        assert_eq!(
+            held,
+            vec![(2, false), (3, true)],
+            "releasing one member channel must leave the other sounding"
+        );
+    }
+
+    #[test]
+    fn channel_agnostic_note_off_still_releases_every_voice_at_the_pitch() {
+        let mut layer = Layer::new(48_000.0);
+        layer.note_on_with_channel(60, 100, 2);
+        layer.note_on_with_channel(60, 100, 3);
+
+        // What channel-unaware callers (scheduled playback, panic) get: no
+        // voice can be left hanging by omitting the channel.
+        layer.note_off(60);
+
+        let held: Vec<bool> = layer
+            .voices
+            .iter()
+            .filter(|voice| voice.active && voice.note == 60)
+            .map(|voice| voice.held)
+            .collect();
+        assert_eq!(held, vec![false, false]);
     }
 }

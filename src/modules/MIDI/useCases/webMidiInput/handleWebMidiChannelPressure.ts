@@ -21,6 +21,7 @@ export function handleWebMidiChannelPressure(channel: number, pressure: number):
         applyNoteExpression({
             trackId: noteData.instrumentTrackId,
             note: noteData.note,
+            channel: noteData.channel,
             expression: {
                 pitchBend: noteData.pitchBend,
                 pressure: noteData.pressure,

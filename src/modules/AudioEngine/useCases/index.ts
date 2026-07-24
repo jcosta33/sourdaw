@@ -40,7 +40,7 @@ export { scheduleFaustNote } from './faustScheduler/scheduleFaustNote';
 export { startFaustNote } from './faustScheduler/startFaustNote';
 
 export { applyNoteExpression } from './noteExpression/applyNoteExpression';
-export { getNoteExpressionDeviceTypes } from './noteExpression/getNoteExpressionDeviceTypes';
+export { getNoteExpressionDimensions } from './noteExpression/getNoteExpressionDimensions';
 
 export { buildDeviceChain } from './buildDeviceChain';
 export { resolveToasterPadBinding } from './resolveToasterPadBinding';

@@ -161,14 +161,24 @@ describe('AutomationLane', () => {
             setTrackDevices([]);
         });
 
-        it('withholds the MPE lanes for a track whose instrument cannot sound them', () => {
-            setTrackDevices([{ type: 'grand-boule' }]);
+        it('withholds every MPE lane for a track whose instrument sounds none', () => {
+            setTrackDevices([{ type: 'toaster' }]);
             render(<AutomationLane {...defaultProps} />);
 
             const values = screen.getAllByRole('option').map((option) => (option as HTMLOptionElement).value);
             expect(values).not.toContain('pressure');
             expect(values).not.toContain('slide');
             expect(values).not.toContain('pitchBend');
+        });
+
+        it('offers Grand Boule pitch bend but withholds pressure and slide, which it cannot sound', () => {
+            setTrackDevices([{ type: 'grand-boule' }]);
+            render(<AutomationLane {...defaultProps} />);
+
+            const values = screen.getAllByRole('option').map((option) => (option as HTMLOptionElement).value);
+            expect(values).toContain('pitchBend');
+            expect(values).not.toContain('pressure');
+            expect(values).not.toContain('slide');
         });
 
         it('routes the pressure lane for a track whose instrument sounds per-note expression', () => {

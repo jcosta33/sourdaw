@@ -4,7 +4,7 @@ import { DawCompactSelect } from '#/components/daw/DawCompactSelect';
 import { useStore } from '#/infra/store/useStore';
 import { defaultTrackState, trackStore } from '#/modules/Arrangement/stores';
 
-import { isMpeExpressionAvailableForDeviceTypes, isMpeExpressionLane } from '../../helpers/mpeAvailability';
+import { isMpeLaneAvailableForDeviceTypes } from '../../helpers/mpeAvailability';
 import { CCLane } from '../AutomationLane/CCLane';
 import { PitchBendLane } from '../AutomationLane/PitchBendLane';
 import { PressureLane } from '../AutomationLane/PressureLane';
@@ -34,18 +34,16 @@ const LANE_OPTIONS: { value: string; label: string; mode: LaneMode }[] = [
 ];
 
 /**
- * Lanes offered in the selector. The MPE per-note expression lanes (Pressure,
- * Slide/CC74, Pitch Bend) are offered only when the *track's own instrument*
- * sounds per-note expression (audit MD-2); the availability list is derived from
- * the engine registry, so the editor never offers a lane the track's instrument
- * would silently swallow. `LANE_OPTIONS`, the lane components and the MIDI use
- * cases they call stay intact for every track.
+ * Lanes offered in the selector. Each MPE per-note expression lane (Pressure,
+ * Slide/CC74, Pitch Bend) is offered only when the *track's own instrument*
+ * sounds that dimension (audit MD-2); the availability list is derived from the
+ * engine registry, so the editor never offers a lane the track's instrument
+ * would silently swallow — a Grand Boule track gets Pitch Bend but not Pressure
+ * or Slide. `LANE_OPTIONS`, the lane components and the MIDI use cases they
+ * call stay intact for every track.
  */
-function visibleLaneOptions(expressionAvailable: boolean): typeof LANE_OPTIONS {
-    if (expressionAvailable) {
-        return LANE_OPTIONS;
-    }
-    return LANE_OPTIONS.filter((option) => !isMpeExpressionLane(option.value));
+function visibleLaneOptions(deviceTypes: readonly string[]): typeof LANE_OPTIONS {
+    return LANE_OPTIONS.filter((option) => isMpeLaneAvailableForDeviceTypes(option.value, deviceTypes));
 }
 
 /** Width of the piano-key gutter in PianoRoll (w-10 = 2.5rem = 40px) */
@@ -72,10 +70,7 @@ export const AutomationLane = ({
     const trackState = useStore(trackStore, defaultTrackState);
 
     const track = trackState.tracks.find((candidate) => candidate.id === trackId);
-    const expressionAvailable = isMpeExpressionAvailableForDeviceTypes(
-        track?.devices.map((device) => device.type) ?? []
-    );
-    const laneOptions = visibleLaneOptions(expressionAvailable);
+    const laneOptions = visibleLaneOptions(track?.devices.map((device) => device.type) ?? []);
 
     const laneOption = LANE_OPTIONS.find((output) => output.value === selectedLane) ?? LANE_OPTIONS[0]!;
     const mode = laneOption.mode;

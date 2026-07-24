@@ -890,6 +890,7 @@ describe('scheduleMidiNotes', () => {
                             pressure: 90,
                             slide: 20,
                             pitchBend: -4096,
+                            channel: 3,
                         },
                     ],
                 },
@@ -903,9 +904,13 @@ describe('scheduleMidiNotes', () => {
             expect(applyNoteExpression).toHaveBeenCalledWith({
                 trackId: 'track-1',
                 note: 64,
+                channel: 3,
                 expression: { pressure: 90, slide: 20, pitchBend: -4096 },
                 sampleFrame: noteSampleFrame,
             });
+            // The note-on and note-off carry the same member channel, so the
+            // engine can address this note rather than the pitch.
+            expect(vi.mocked(noteOn).mock.calls[0]![3]).toBe(3);
         });
 
         it('forwards an unexpressive note as three neutral dimensions, never a stale value', async () => {
@@ -926,6 +931,7 @@ describe('scheduleMidiNotes', () => {
             expect(applyNoteExpression).toHaveBeenCalledWith({
                 trackId: 'track-1',
                 note: 64,
+                channel: 0,
                 expression: { pressure: undefined, slide: undefined, pitchBend: undefined },
                 sampleFrame: expect.any(Number),
             });

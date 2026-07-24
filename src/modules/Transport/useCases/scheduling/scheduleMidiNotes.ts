@@ -476,7 +476,8 @@ export async function scheduleMidiNotes(
                             const vel = workletSynthEntry.velocityTransform
                                 ? workletSynthEntry.velocityTransform(rawVel)
                                 : rawVel;
-                            workletSynthControls.noteOn(pitch, vel, sampleFrame);
+                            const noteChannel = note.channel ?? 0;
+                            workletSynthControls.noteOn(pitch, vel, sampleFrame, noteChannel);
                             // MPE per-note expression (audit MD-2). Same
                             // surface the live Web MIDI handlers call, at the
                             // note's own start frame so the worklet applies it
@@ -484,6 +485,7 @@ export async function scheduleMidiNotes(
                             applyNoteExpression({
                                 trackId: track.id,
                                 note: pitch,
+                                channel: noteChannel,
                                 expression: {
                                     pressure: note.pressure,
                                     slide: note.slide,
@@ -491,7 +493,7 @@ export async function scheduleMidiNotes(
                                 },
                                 sampleFrame,
                             });
-                            workletSynthControls.noteOff(pitch, endSampleFrame);
+                            workletSynthControls.noteOff(pitch, endSampleFrame, noteChannel);
                         } else if (faustDevice) {
                             scheduleFaustNote(
                                 track.id,

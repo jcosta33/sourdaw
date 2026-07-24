@@ -11,6 +11,13 @@ type ApplyNoteExpressionInput = {
     trackId: string;
     /** MIDI note number the expression addresses. */
     note: number;
+    /**
+     * MPE member channel that owns the note. Together with `note` this is the
+     * per-note address: the engines only touch a voice that is still held on
+     * this channel, so a ringing release tail or a second member channel at the
+     * same pitch is left alone. Defaults to 0, the non-MPE channel.
+     */
+    channel?: number;
     /** Captured expression in wire units (`pitchBend` / `pressure` / `slide`). */
     expression: NoteExpressionWireValues;
     /**
@@ -31,10 +38,15 @@ type ApplyNoteExpressionInput = {
  * played back. Returns `true` when an expression-capable instrument consumed
  * the values, `false` when the track has no such instrument — callers use that
  * to fall back to their own (non-per-note) handling.
+ *
+ * Dimensions an engine does not voice are still forwarded and dropped at the
+ * engine; the editor gates those lanes per device from the same registry, so a
+ * user is never offered a control the instrument cannot sound.
  */
 export function applyNoteExpression({
     trackId,
     note,
+    channel = 0,
     expression,
     sampleFrame,
     bendRangeSemitones,
@@ -54,6 +66,6 @@ export function applyNoteExpression({
     }
 
     const { bendSemitones, pressure, slide } = normalizeNoteExpression(expression, bendRangeSemitones);
-    controls.noteExpression(note, bendSemitones, pressure, slide, sampleFrame);
+    controls.noteExpression(note, channel, bendSemitones, pressure, slide, sampleFrame);
     return true;
 }

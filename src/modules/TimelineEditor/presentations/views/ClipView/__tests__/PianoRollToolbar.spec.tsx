@@ -246,14 +246,14 @@ describe('PianoRollToolbar', () => {
         expect(values).toContain('velocity');
     });
 
-    it('hides the MPE expression lanes when the track instrument cannot sound them (MD-2)', () => {
+    it('hides every MPE expression lane when the track instrument sounds none (MD-2)', () => {
         render(
             <PianoRollToolbar
                 {...defaultProps}
                 showExpressionView={true}
                 activeExpressionLane="velocity"
                 onActiveExpressionLaneChange={vi.fn()}
-                mpeExpressionAvailable={false}
+                mpeExpressionLanes={[]}
             />
         );
         const values = screen.getAllByRole('option').map((option) => (option as HTMLOptionElement).value);
@@ -272,7 +272,7 @@ describe('PianoRollToolbar', () => {
                 showExpressionView={true}
                 activeExpressionLane="velocity"
                 onActiveExpressionLaneChange={vi.fn()}
-                mpeExpressionAvailable={true}
+                mpeExpressionLanes={['pressure', 'slide', 'pitchBend']}
             />
         );
         const values = screen.getAllByRole('option').map((option) => (option as HTMLOptionElement).value);
@@ -289,7 +289,7 @@ describe('PianoRollToolbar', () => {
                 showExpressionView={true}
                 activeExpressionLane="velocity"
                 onActiveExpressionLaneChange={onActiveExpressionLaneChange}
-                mpeExpressionAvailable={true}
+                mpeExpressionLanes={['pressure', 'slide', 'pitchBend']}
             />
         );
         fireEvent.change(screen.getByLabelText('Active expression lane'), { target: { value: 'slide' } });

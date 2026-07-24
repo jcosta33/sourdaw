@@ -50,6 +50,15 @@ pub struct VoiceParams<'a> {
 pub struct Voice {
     pub active: bool,
     pub note: u8,
+    /// MIDI channel this voice was triggered on. Together with `note` and
+    /// `held` this is the voice's per-note expression address (audit MD-2):
+    /// under MPE each sounding note owns its own member channel, so two
+    /// simultaneous voices at the same pitch are told apart by channel.
+    pub channel: u8,
+    /// True from note-on until note-off. A voice whose release tail is still
+    /// ringing stays `active` but is no longer `held`, so a same-pitch
+    /// retrigger cannot bend the note the player already let go.
+    pub held: bool,
     pub velocity: f32,
     pub frequency: f32,
 
@@ -119,6 +128,8 @@ impl Voice {
         Self {
             active: false,
             note: 0,
+            channel: 0,
+            held: false,
             velocity: 0.0,
             frequency: 440.0,
             osc: WavetableOsc::new(),
@@ -164,9 +175,11 @@ impl Voice {
         }
     }
 
-    pub fn note_on(&mut self, note: u8, velocity: f32, sample_rate: f32) {
+    pub fn note_on(&mut self, note: u8, channel: u8, velocity: f32, sample_rate: f32) {
         self.active = true;
         self.note = note;
+        self.channel = channel;
+        self.held = true;
         self.velocity = velocity;
         // A fresh note starts from neutral expression; the controller's
         // opening bend/pressure/timbre arrives as its own expression message.
@@ -378,7 +391,16 @@ impl Voice {
         self.expr_slide = slide.clamp(-1.0, 1.0);
     }
 
+    /// Current per-note expression as (bend semitones, pressure, slide).
+    pub fn expression(&self) -> (f32, f32, f32) {
+        (self.expr_bend_semitones, self.expr_pressure, self.expr_slide)
+    }
+
     pub fn note_off(&mut self) {
+        // The voice keeps rendering its release tail, so `active` stays true —
+        // but it is no longer the note the player is holding, and per-note
+        // expression must stop addressing it (audit MD-2).
+        self.held = false;
         self.amp_env.note_off();
         self.filter_env.note_off();
         self.mseg.note_off();
@@ -756,7 +778,7 @@ mod tests {
     #[test]
     fn note_on_clears_expression_so_a_recycled_voice_starts_neutral() {
         let mut voice = Voice::new(48_000.0);
-        voice.note_on(69, 0.8, 48_000.0);
+        voice.note_on(69, 0, 0.8, 48_000.0);
         voice.set_expression(12.0, 1.0, -1.0);
         assert_eq!(voice.expr_bend_semitones, 12.0);
         assert_eq!(voice.expr_pressure, 1.0);
@@ -764,7 +786,7 @@ mod tests {
 
         // Voice stealing hands the same struct to a different MIDI note, so a
         // stale bend would detune an unrelated note (audit MD-2).
-        voice.note_on(60, 0.8, 48_000.0);
+        voice.note_on(60, 0, 0.8, 48_000.0);
         assert_eq!(voice.expr_bend_semitones, 0.0);
         assert_eq!(voice.expr_pressure, 0.0);
         assert_eq!(voice.expr_slide, 0.0);

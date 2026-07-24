@@ -28,6 +28,11 @@ pub struct LevainEngine {
     zone_map: ZoneMap,
     /// Sample pool (in-memory PCM data).
     sample_pool: SamplePool,
+    /// Member channel a channel-narrowed note-off is currently running for
+    /// (audit MD-2). `note_off` has a long body — keyswitches, release
+    /// triggers, pedal deferral — so `note_off_on_channel` sets this for the
+    /// duration of one call rather than duplicating that body.
+    pending_note_off_channel: Option<u8>,
     /// Expression state (CC1/CC11/velocity/vibrato).
     expression: ExpressionState,
     /// Articulation state machine.
@@ -76,6 +81,7 @@ impl LevainEngine {
             voice_pool: VoicePool::new(max_voices, sample_rate),
             zone_map: ZoneMap::new(),
             sample_pool: SamplePool::new(),
+            pending_note_off_channel: None,
             expression: ExpressionState::new(sample_rate, &config),
             articulation: ArticulationState::new(),
             legato: LegatoEngine::new(sample_rate),
@@ -154,6 +160,12 @@ impl LevainEngine {
     // -----------------------------------------------------------------------
 
     pub fn note_on(&mut self, note: u8, velocity: u8) {
+        self.note_on_with_channel(note, velocity, 0);
+    }
+
+    /// Note-on carrying the MPE member channel that owns the note.
+    /// Channel 0 is the non-MPE default and what `note_on` uses.
+    pub fn note_on_with_channel(&mut self, note: u8, velocity: u8, channel: u8) {
         // Check if this is a keyswitch.
         if self.articulation.handle_note_on(note, velocity) {
             return; // consumed as keyswitch
@@ -219,7 +231,7 @@ impl LevainEngine {
         match legato_result {
             LegatoResult::Normal => {
                 let voice = &mut self.voice_pool.voices[voice_idx];
-                voice.trigger(note, velocity, &zone, art, gain, &self.sample_pool);
+                voice.trigger(note, channel, velocity, &zone, art, gain, &self.sample_pool);
                 voice.vibrato_phase = vibrato_phase;
                 voice.vibrato_rate_scale = vibrato_rate_scale;
             }
@@ -236,7 +248,7 @@ impl LevainEngine {
                 // TODO: when transition sample zones are populated, look up the
                 // transition zone by sample_id and play that instead of the sustain zone.
                 let voice = &mut self.voice_pool.voices[voice_idx];
-                voice.trigger(note, velocity, &zone, art, gain, &self.sample_pool);
+                voice.trigger(note, channel, velocity, &zone, art, gain, &self.sample_pool);
                 voice.vibrato_phase = vibrato_phase;
                 voice.vibrato_rate_scale = vibrato_rate_scale;
                 voice.start_crossfade(
@@ -266,9 +278,13 @@ impl LevainEngine {
                         &self.sample_pool,
                     );
                     self.voice_pool.voices[from_voice].note = note;
+                    // A synthetic glide reuses the sounding voice, so it
+                    // must inherit the new note's expression address.
+                    self.voice_pool.voices[from_voice].channel = channel;
+                    self.voice_pool.voices[from_voice].held = true;
                 } else {
                     let voice = &mut self.voice_pool.voices[voice_idx];
-                    voice.trigger(note, velocity, &zone, art, gain, &self.sample_pool);
+                    voice.trigger(note, channel, velocity, &zone, art, gain, &self.sample_pool);
                     voice.vibrato_phase = vibrato_phase;
                     voice.vibrato_rate_scale = vibrato_rate_scale;
                 }
@@ -301,7 +317,16 @@ impl LevainEngine {
         // Fire release trigger if available.
         let (_should_trigger, _release_vol) = self.release_tracker.note_off(note, cc1);
         self.fallback.note_off(note);
-        self.voice_pool.release_note(note);
+        self.voice_pool.release_note_matching(note, self.pending_note_off_channel);
+    }
+
+    /// Note-off narrowed to one MPE member channel, so releasing a note on
+    /// one member channel cannot silence a different note sounding the same
+    /// pitch on another (audit MD-2).
+    pub fn note_off_on_channel(&mut self, note: u8, channel: u8) {
+        self.pending_note_off_channel = Some(channel);
+        self.note_off(note);
+        self.pending_note_off_channel = None;
     }
 
     /// Silent all-notes-off used by the transport on stop. Releases every
@@ -324,15 +349,19 @@ impl LevainEngine {
         self.pedal_deferred.clear();
     }
 
-    /// Apply MPE per-note expression to every voice sounding `note`
-    /// (audit MD-2). A divisi or legato-crossfading note can own more than one
-    /// voice, so every match is addressed rather than the first.
-    pub fn note_expression(&mut self, note: u8, bend_semitones: f32, pressure: f32, slide: f32) {
-        for voice in self.voice_pool.voices.iter_mut() {
-            if voice.active && voice.note == note {
-                voice.set_expression(bend_semitones, pressure, slide);
-            }
-        }
+    /// Apply MPE per-note expression to the voices held on `channel` at
+    /// `note` (audit MD-2). A divisi or legato-crossfading note can own more
+    /// than one voice, so every match is addressed rather than the first.
+    pub fn note_expression(
+        &mut self,
+        note: u8,
+        channel: u8,
+        bend_semitones: f32,
+        pressure: f32,
+        slide: f32,
+    ) {
+        self.voice_pool
+            .set_note_expression(note, channel, bend_semitones, pressure, slide);
     }
 
     pub fn handle_cc(&mut self, cc: u8, value: u8) {
@@ -654,7 +683,7 @@ mod tests {
         let mut engine = engine_with_sawtooth_zone();
         engine.note_on(60, 100);
         if let Some((bend, pressure, slide)) = expression {
-            engine.note_expression(60, bend, pressure, slide);
+            engine.note_expression(60, 0, bend, pressure, slide);
         }
         render(&mut engine, 24)
     }
@@ -728,7 +757,7 @@ mod tests {
         engine.note_on(60, 100);
         engine.note_on(67, 100);
         // Address a note that is not sounding — nothing may change.
-        engine.note_expression(72, 12.0, 1.0, 1.0);
+        engine.note_expression(72, 0, 12.0, 1.0, 1.0);
         let untouched = render(&mut engine, 24);
 
         let mut reference = engine_with_sawtooth_zone();
@@ -743,13 +772,119 @@ mod tests {
         );
     }
 
+    // ── Per-note expression targeting (audit MD-2, review round 1) ─────────
+
+    /// Every active voice at `note` as (channel, held, bend semitones).
+    fn active_voices_at(engine: &LevainEngine, note: u8) -> Vec<(u8, bool, f32)> {
+        engine
+            .voice_pool
+            .voices
+            .iter()
+            .filter(|voice| voice.active && voice.note == note)
+            .map(|voice| (voice.channel, voice.held, voice.expr_bend_semitones))
+            .collect()
+    }
+
+    #[test]
+    fn expression_skips_a_still_ringing_voice_at_the_same_pitch() {
+        let mut engine = engine_with_sawtooth_zone();
+        engine.note_on(60, 100);
+        engine.note_off(60);
+        engine.note_on(60, 100);
+
+        let before = active_voices_at(&engine, 60);
+        assert_eq!(before.len(), 2, "the release tail and the retrigger must both be active");
+        assert_eq!((before[0].1, before[1].1), (false, true));
+
+        engine.note_expression(60, 0, 12.0, 0.0, 0.0);
+
+        assert_eq!(
+            active_voices_at(&engine, 60),
+            vec![(0, false, 0.0), (0, true, 12.0)],
+            "only the held voice may take the bend; the ringing tail keeps its pitch"
+        );
+    }
+
+    #[test]
+    fn expression_addressed_to_another_member_channel_is_ignored() {
+        let mut engine = engine_with_sawtooth_zone();
+        engine.note_on_with_channel(60, 100, 2);
+
+        // Same pitch, wrong member channel — a note this voice does not own.
+        engine.note_expression(60, 3, 12.0, 1.0, 1.0);
+
+        assert_eq!(
+            active_voices_at(&engine, 60),
+            vec![(2, true, 0.0)],
+            "a voice must only take expression addressed to its own channel"
+        );
+
+        engine.note_expression(60, 2, 12.0, 0.0, 0.0);
+        assert_eq!(active_voices_at(&engine, 60), vec![(2, true, 12.0)]);
+    }
+
+    /// Levain collapses a second note-on at a pitch it is already sounding into
+    /// a legato transition, so unlike Fermenter it never holds two voices at one
+    /// pitch from two member channels — the surviving voice carries the newer
+    /// channel. Recorded because it is the reason the cross-channel coexistence
+    /// case is untestable here, not because it is desirable.
+    #[test]
+    fn a_same_pitch_note_on_hands_the_voice_to_the_new_member_channel() {
+        let mut engine = engine_with_sawtooth_zone();
+        engine.note_on_with_channel(60, 100, 2);
+        engine.note_on_with_channel(60, 100, 3);
+
+        let voices = active_voices_at(&engine, 60);
+        assert_eq!(voices.len(), 1, "legato collapses the pair into one voice");
+        assert_eq!(voices[0].0, 3, "the surviving voice carries the newer channel");
+
+        engine.note_expression(60, 3, 12.0, 0.0, 0.0);
+        assert_eq!(active_voices_at(&engine, 60), vec![(3, true, 12.0)]);
+    }
+
+    #[test]
+    fn note_off_can_be_narrowed_to_one_member_channel() {
+        let mut engine = engine_with_sawtooth_zone();
+        // A retrigger over a ringing tail is how Levain ends up with two voices
+        // at one pitch; give them distinct channels to narrow against.
+        engine.note_on_with_channel(60, 100, 2);
+        engine.note_off_on_channel(60, 2);
+        engine.note_on_with_channel(60, 100, 3);
+
+        engine.note_off_on_channel(60, 3);
+
+        let held: Vec<(u8, bool)> = active_voices_at(&engine, 60)
+            .into_iter()
+            .map(|(channel, held, _)| (channel, held))
+            .collect();
+        assert_eq!(held, vec![(2, false), (3, false)]);
+    }
+
+    #[test]
+    fn channel_agnostic_note_off_still_releases_every_voice_at_the_pitch() {
+        let mut engine = engine_with_sawtooth_zone();
+        engine.note_on_with_channel(60, 100, 2);
+        engine.note_off(60);
+        engine.note_on_with_channel(60, 100, 3);
+
+        // Channel-unaware callers (scheduled playback, panic) must not be able
+        // to leave a voice hanging.
+        engine.note_off(60);
+
+        let held: Vec<bool> = active_voices_at(&engine, 60)
+            .into_iter()
+            .map(|(_, held, _)| held)
+            .collect();
+        assert_eq!(held, vec![false, false]);
+    }
+
     #[test]
     fn a_recycled_voice_starts_from_neutral_expression() {
         // One voice only, so the second note-on is guaranteed to steal and
         // re-trigger the very voice that carried the expression.
         let mut engine = engine_with_sawtooth_zone_voices(1);
         engine.note_on(60, 100);
-        engine.note_expression(60, 12.0, 1.0, 1.0);
+        engine.note_expression(60, 0, 12.0, 1.0, 1.0);
         engine.note_off(60);
         engine.note_on(60, 100);
         let recycled = render(&mut engine, 24);

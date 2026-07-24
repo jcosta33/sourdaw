@@ -68,16 +68,36 @@ impl LevainInstance {
         self.engine.note_off(note);
     }
 
-    /// Apply MPE per-note expression to the voices sounding `note` (audit MD-2).
+    /// Process a MIDI note on carrying its MPE member channel.
+    pub fn note_on_with_channel(&mut self, note: u8, velocity: u8, channel: u8) {
+        self.engine.note_on_with_channel(note, velocity, channel);
+    }
+
+    /// Note-off narrowed to one MPE member channel, so releasing a note on one
+    /// member channel cannot silence a different note sounding the same pitch
+    /// on another (audit MD-2).
+    pub fn note_off_on_channel(&mut self, note: u8, channel: u8) {
+        self.engine.note_off_on_channel(note, channel);
+    }
+
+    /// Apply MPE per-note expression to the voices held on `channel` at `note`
+    /// (audit MD-2).
     ///
     /// `bend_semitones` is the member-channel pitch bend already resolved
     /// against the controller's bend range; `pressure` is 0..1; `slide` is the
     /// CC74 timbre as -1..1 with 0 neutral. Normalisation from wire units lives
     /// on the TypeScript side so the live and scheduled paths share one
     /// conversion.
-    pub fn note_expression(&mut self, note: u8, bend_semitones: f32, pressure: f32, slide: f32) {
+    pub fn note_expression(
+        &mut self,
+        note: u8,
+        channel: u8,
+        bend_semitones: f32,
+        pressure: f32,
+        slide: f32,
+    ) {
         self.engine
-            .note_expression(note, bend_semitones, pressure, slide);
+            .note_expression(note, channel, bend_semitones, pressure, slide);
     }
 
     /// Silent all-notes-off. Releases every active voice without firing

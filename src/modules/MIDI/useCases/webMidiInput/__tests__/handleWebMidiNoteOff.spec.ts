@@ -283,7 +283,8 @@ describe('handleWebMidiNoteOff', () => {
     });
 
     it('should pass Grand Boule release velocity to controls and event payloads', async () => {
-        const grand_boule_note_off = vi.fn<(note: number, pad: number | undefined, releaseVelocity: number) => void>();
+        const grand_boule_note_off =
+            vi.fn<(note: number, pad: number | undefined, releaseVelocity: number, channel?: number) => void>();
         const emitted: Array<{ type: string; payload: Record<string, unknown> }> = [];
         const fn = handleWebMidiNoteOff._factory(
             make_dependencies({
@@ -318,7 +319,7 @@ describe('handleWebMidiNoteOff', () => {
 
         await fn(0, 60, 96 / 127);
 
-        expect(grand_boule_note_off).toHaveBeenCalledWith(60, undefined, 96 / 127);
+        expect(grand_boule_note_off).toHaveBeenCalledWith(60, undefined, 96 / 127, 0);
         expect(emitted).toContainEqual({
             type: 'midi.noteOff',
             payload: { deviceId: 'gb-1', midiNote: 60, releaseVelocity: 96 / 127 },
@@ -326,8 +327,8 @@ describe('handleWebMidiNoteOff', () => {
     });
 
     it('releases same-pitch notes on two channels through their original tracks', async () => {
-        const note_off_a = vi.fn<(note: number) => void>();
-        const note_off_b = vi.fn<(note: number) => void>();
+        const note_off_a = vi.fn<(note: number, sampleFrame?: number, channel?: number) => void>();
+        const note_off_b = vi.fn<(note: number, sampleFrame?: number, channel?: number) => void>();
         const fn = handleWebMidiNoteOff._factory(
             make_dependencies({
                 getTrackStoreState: () => ({
@@ -369,8 +370,10 @@ describe('handleWebMidiNoteOff', () => {
         await fn(1, 60);
         await fn(2, 60);
 
-        expect(note_off_a).toHaveBeenCalledWith(60);
-        expect(note_off_b).toHaveBeenCalledWith(60);
+        // Each release is narrowed to its own member channel, so the two
+        // same-pitch notes cannot silence one another (audit MD-2).
+        expect(note_off_a).toHaveBeenCalledWith(60, undefined, 1);
+        expect(note_off_b).toHaveBeenCalledWith(60, undefined, 2);
         expect(activeNotes.size).toBe(0);
     });
 

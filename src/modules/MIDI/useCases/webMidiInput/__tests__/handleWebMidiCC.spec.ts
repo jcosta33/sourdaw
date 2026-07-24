@@ -132,6 +132,7 @@ describe('handleWebMidiCC', () => {
         expect(apply_note_expression).toHaveBeenCalledWith({
             trackId: 'track-a',
             note: 60,
+            channel: 4,
             expression: { pitchBend: undefined, pressure: undefined, slide: 52 },
         });
     });

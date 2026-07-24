@@ -28,6 +28,7 @@ export const handleWebMidiCC = inject(midiMessageHandlerDependencies)(
                         applyNoteExpression({
                             trackId: noteData.instrumentTrackId,
                             note: noteData.note,
+                            channel: noteData.channel,
                             expression: {
                                 pitchBend: noteData.pitchBend,
                                 pressure: noteData.pressure,
