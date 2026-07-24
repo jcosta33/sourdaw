@@ -1,0 +1,21 @@
+src/components/daw/__tests__/DawPickerRow.spec.tsx
+  s_d9dd0e0cf104d4::t_737083cd166948 7-82,85-139
+src/modules/Fermenter/presentations/components/__tests__/PresetBrowser.spec.tsx
+  s_d9dd0e0cf104d4::t_c80bfa4a555f2c 1-3,8-26,28-181
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "48d62cbc85dc7a3d329ca3b1d47e4459370dd73d",
+  "prompts": {},
+  "sessions": {
+    "s_d9dd0e0cf104d4": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-ad41d9f58383a7105",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
