@@ -1,0 +1,35 @@
+src/modules/Automation/useCases/automationRecording/flushPendingPoints.ts
+  s_0d39f3a4a4357a::t_2211dca9d2a8f5 1,7-16,29-30
+src/modules/Arrangement/transformers/__tests__/automationTransformersDeep.spec.ts
+  s_0d39f3a4a4357a::t_430d8e3467f2b3 3
+src/modules/Automation/useCases/automationRecording/__tests__/flushPendingPointsThinning.spec.ts
+  s_0d39f3a4a4357a::t_c4caa4dfa5a79c 1-102
+src/modules/Transport/useCases/scheduling/applyAutomation/__tests__/applyAutomationDiscontinuity.spec.ts
+  s_0d39f3a4a4357a::t_d46ac897bb0aed 3-4
+  s_0d39f3a4a4357a::t_5783dc1d42db2b 1-2,5-132
+src/modules/Transport/useCases/scheduling/applyAutomation/applyAutomation.ts
+  s_0d39f3a4a4357a::t_eb573faa0f8415 17-18,37-42,46,55-63
+  s_0d39f3a4a4357a::t_a2bd60b5fe4e97 129,131,160,162
+src/modules/Arrangement/transformers/automationTransformers.ts
+  s_0d39f3a4a4357a::t_1097c93db0c633 3
+docs/06-testing.md
+  s_0d39f3a4a4357a::t_b97f146e0fa9bb 285,301-306
+src/modules/Arrangement/transformers/__tests__/automationTransformers.spec.ts
+  s_0d39f3a4a4357a::t_770bd0c31c6948 4
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "b63c5e1877d4a731591097194555851f25f527ef",
+  "prompts": {},
+  "sessions": {
+    "s_0d39f3a4a4357a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "60da6a2e-7d79-4d98-8624-e993f5a9f94e",
+        "model": "claude-fable-5"
+      },
+      "human_author": null
+    }
+  }
+}
