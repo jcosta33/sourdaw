@@ -1,0 +1,21 @@
+src/modules/AudioEngine/repositories/offlineScheduler/__tests__/compileAutomationEvents.spec.ts
+  s_0d39f3a4a4357a::t_ea4ba5b135fbd8 242-243,246
+src/modules/AudioEngine/repositories/offlineScheduler/compileAutomationEvents.ts
+  s_0d39f3a4a4357a::t_cba096c23e2aaa 10-12,87-91,96-101,105-110,129-130,132-144,283
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "bd1501c9cc05ccf7c5f360b5b721dc83aea4cf64",
+  "prompts": {},
+  "sessions": {
+    "s_0d39f3a4a4357a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "60da6a2e-7d79-4d98-8624-e993f5a9f94e",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
