@@ -180,7 +180,7 @@ Status: FIXED in #721
 
 ### WB-6 — Production wasm has no panic hook and no explicit `panic="abort"`; Rust panics surface as opaque traps that poison the instance — **Major, S/M**
 
-Status: FIXED in #732
+Status: FIXED in #732 — `console_error_panic_hook` is installed at each wasm crate's init (daw-dsp, proof-chamber, scoring, daw-wasm-decoder), scoped to the wasm target so the native build is unaffected. `wasm32-unknown-unknown` is already `panic-strategy = "abort"` (verified via `--print target-spec-json`), so panics now fail loudly and identifiably; `panic = "abort"` is deliberately **not** set on the shared release profile (Cargo cannot scope it per-target — it would also switch the native Tauri build to abort), a choice documented inline in `Cargo.toml`. Paired with DSP-8's boundary guard, whose flush counter is exposed at the wasm boundary via `get_nan_flush_count()` with TS-side surfacing deferred to RT-10 (Wave 6).
 - **Evidence:** whole-scope grep of `crates/` for `console_error_panic_hook`/`set_hook`/`panic::set_hook` — empty. Root `Cargo.toml:16-18` sets `opt-level`/`lto` only, no `panic="abort"`.
 - **Failure mode:** on `wasm32-unknown-unknown` a panic traps to `unreachable`; the JS boundary sees `RuntimeError: unreachable executed` with no message, and the instance is poisoned — every later exported call throws. On the AudioWorklet render thread the device goes silent with no diagnostic.
 - **Firing condition:** any panic in DSP under extreme input — index/slice bounds, `unwrap`, or a NaN/Inf-driven arithmetic assert (compounds DSP-8: no NaN/Inf boundary guard, `AUDIT-dsp-engines.md:186`).

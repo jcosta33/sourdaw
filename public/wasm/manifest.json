@@ -51,11 +51,11 @@
     },
     "daw-wasm-decoder": {
       "crate": "crates/daw-wasm-decoder",
-      "crateSourceHash": "sha256:361a9dca8eade3833190f1541af1f0a9d4d919ef4f0b8b7f0aa8eaeba91c6816",
+      "crateSourceHash": "sha256:365f5f4b11f36d6cf7f9ec9f07a8529568338af66453bf7497ab4d40133b88b6",
       "schemaHash": "344f42d3211c4765",
       "artifacts": {
         "public/wasm/daw-wasm-decoder/daw_wasm_decoder.js": "sha256:e0b1de35143c032a33452f5bac665e4ffc1a5a4e7d4eb95589c29bff0e8f28d0",
-        "public/wasm/daw-wasm-decoder/daw_wasm_decoder_bg.wasm": "sha256:615d5e25aed16a8c89bdf7778a95d13f75b1837e6608ba75c779775628f89f20",
+        "public/wasm/daw-wasm-decoder/daw_wasm_decoder_bg.wasm": "sha256:fa7e16bcb48dd902ae05c717167b9c1b2c185b58eb5107b996ff215157b35c67",
         "public/wasm/daw-wasm-decoder/package.json": "sha256:2acac618c43f403e04faea3c67e7620916384a355bcf71ed2808ec045287b2a6"
       }
     }

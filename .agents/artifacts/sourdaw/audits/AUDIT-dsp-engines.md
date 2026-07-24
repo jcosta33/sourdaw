@@ -185,7 +185,7 @@ defense in the wasm build.
 
 ### DSP-8 — No NaN/Inf sanitization at the wasm output boundary — Minor (large blast radius)
 
-Status: FIXED in #732
+Status: FIXED in #732 — a shared, zero-alloc `sanitize_block` scrubs NaN/Inf to silence at every wasm float output boundary: all daw-dsp device families, proof-chamber, scoring, and the decoder's `take_samples`. The per-device flush counter is exposed **at the wasm boundary** via `get_nan_flush_count()` (the decoder is scrub-only — it is a transient one-shot value with no persistent instance to poll); TS-side surfacing of the counter rides RT-10 (Wave 6), not this PR.
 - **Evidence:** each device's `#[wasm_bindgen] pub fn process(&mut self, …) -> *const f32`
   (`proof/mod.rs:71`, `fermenter/mod.rs:92`, `grinder/mod.rs:73,90`, …) returns the raw output buffer
   with no `is_finite` sweep. Internal `is_finite` guards exist but are inconsistent per device
