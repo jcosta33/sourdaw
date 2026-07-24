@@ -1,0 +1,35 @@
+src/modules/MIDI/repositories/webMidi/__tests__/releaseAllActiveNotes.spec.ts
+  s_0d39f3a4a4357a::t_c5403705d0d5a2 1-217
+src/modules/Transport/useCases/__tests__/playheadScheduler.spec.ts
+  s_0d39f3a4a4357a::t_a350df899a949c 347-405
+  s_0d39f3a4a4357a::t_250a35d3ca5823 130-134
+src/modules/MIDI/repositories/webMidi/__tests__/ingestChannelControlChange.spec.ts
+  s_0d39f3a4a4357a::t_d1ff3c5760955a 1-227
+src/modules/MIDI/useCases/webMidiInput/__tests__/handleWebMidiCC.spec.ts
+  s_0d39f3a4a4357a::t_7e37f21467167b 186
+  s_0d39f3a4a4357a::t_5c1a7d721bbbcc 344-454
+  s_0d39f3a4a4357a::t_506aaa6acd1c76 34
+  s_0d39f3a4a4357a::t_247fa883703782 101-103
+  s_0d39f3a4a4357a::t_dec95d5f8214a6 49,58
+src/modules/MIDI/useCases/webMidiInput/__tests__/handleWebMidiPitchBend.spec.ts
+  s_0d39f3a4a4357a::t_8649b6229f9460 23,30-39
+  s_0d39f3a4a4357a::t_a603a9700ab6f7 190-298
+  s_0d39f3a4a4357a::t_c3647a5ba596a4 87-89
+  s_0d39f3a4a4357a::t_1ac2d67c8d5be3 57
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "861cc91a0ad952234fdcf0f44d11880e4b33f9e9",
+  "prompts": {},
+  "sessions": {
+    "s_0d39f3a4a4357a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "60da6a2e-7d79-4d98-8624-e993f5a9f94e",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
