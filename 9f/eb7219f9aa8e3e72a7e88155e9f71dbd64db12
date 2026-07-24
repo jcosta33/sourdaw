@@ -1,0 +1,27 @@
+src/modules/PluginHost/useCases/pluginLifecycle/__tests__/activateExternalPlugin.spec.ts
+  s_0d39f3a4a4357a::t_75963f94a837ea 147-154
+crates/daw-plugin-host/src/clap_wrapper.rs
+  s_0d39f3a4a4357a::t_6064406001e122 16-21
+  s_0d39f3a4a4357a::t_aa22cd3e25f0ed 1231-1257
+  s_0d39f3a4a4357a::t_c6d96ecfa4dada 943-975
+  s_0d39f3a4a4357a::t_d753423040256f 1388-1425
+  s_0d39f3a4a4357a::t_3424c2db5d8d08 1387
+src-tauri/src/host/latency_watcher.rs
+  s_0d39f3a4a4357a::t_240936a955d022 61-74
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "9feb7219f9aa8e3e72a7e88155e9f71dbd64db12",
+  "prompts": {},
+  "sessions": {
+    "s_0d39f3a4a4357a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "60da6a2e-7d79-4d98-8624-e993f5a9f94e",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
