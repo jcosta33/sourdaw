@@ -122,6 +122,59 @@ export type TelemetrySlot = {
     seqView: Int32Array;
 };
 
+// ── Seqlock reader ───────────────────────────────────────────────────────────
+
+/**
+ * Bound the seqlock retry so a misbehaving or stalled writer can never hang a
+ * main-thread poll. At the 16 ms / rAF poll rates the nodes use, a snapshot that
+ * loses this many races in a row is pathological, not routine.
+ */
+export const TELEMETRY_SEQ_MAX_RETRIES = 8;
+
+export type ReadTelemetrySnapshotInput<TSnapshot> = {
+    /** Float view over the device's slot. */
+    view: Float32Array;
+    /** Int32 view over the same slot bytes, carrying the generation counter. */
+    seqView: Int32Array;
+    /**
+     * Projects the raw slot floats into the device's snapshot shape. Called once
+     * per attempt, so it must be pure — no side effects the retry would repeat.
+     */
+    project: (view: Float32Array) => TSnapshot;
+};
+
+/**
+ * Read a torn-free telemetry snapshot out of a device slot (audit RT-2).
+ *
+ * The worklet publishes its fields under a generation counter (odd while
+ * writing, even when settled — see services/telemetrySeqlock.ts). This samples
+ * the counter before and after the projection and retries while it is odd or
+ * moved, so a poll landing mid-write never mixes fields from two blocks.
+ *
+ * On retry exhaustion it returns the last projection rather than spinning: a
+ * bounded, possibly-torn snapshot beats blocking the main thread, and the next
+ * poll retries from scratch.
+ */
+export function readTelemetrySnapshot<TSnapshot>({
+    view,
+    seqView,
+    project,
+}: ReadTelemetrySnapshotInput<TSnapshot>): TSnapshot {
+    let attempt = 0;
+    for (;;) {
+        const before = Atomics.load(seqView, TELEMETRY_SEQ_IDX);
+        const snapshot = project(view);
+        const after = Atomics.load(seqView, TELEMETRY_SEQ_IDX);
+        if (before === after && (before & 1) === 0) {
+            return snapshot;
+        }
+        attempt++;
+        if (attempt > TELEMETRY_SEQ_MAX_RETRIES) {
+            return snapshot;
+        }
+    }
+}
+
 // ── Allocator ────────────────────────────────────────────────────────────────
 
 class TelemetryAllocator {

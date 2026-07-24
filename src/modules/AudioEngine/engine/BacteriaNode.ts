@@ -10,7 +10,13 @@ import { createReadyHandshake, ensureWorkletRegistered, fetchWasmBinary } from '
 import bacteriaProcessorUrl from '../services/bacteriaProcessor.ts?worker&url';
 
 import { requireSharedArrayBuffer } from './pluginHostingErrors';
-import { telemetryAllocator, BACTERIA_IDX, BACTERIA_BAND_COUNT, type TelemetrySlot } from './telemetryAllocator';
+import {
+    telemetryAllocator,
+    readTelemetrySnapshot,
+    BACTERIA_IDX,
+    BACTERIA_BAND_COUNT,
+    type TelemetrySlot,
+} from './telemetryAllocator';
 
 /** Linear amplitude → dB with a -100 dB floor (matches input/output dB range). */
 function linearToDb(linear: number): number {
@@ -28,6 +34,21 @@ export type BacteriaMeterData = {
     bandLevels: number[];
     latency: number;
 };
+
+/** Slot floats → meter snapshot. Pure: the seqlock reader may re-run it on retry. */
+function projectBacteriaMeter(view: Float32Array): BacteriaMeterData {
+    const bandLevels = Array.from({ length: BACTERIA_BAND_COUNT }, (): number => 0);
+    for (let index = 0; index < BACTERIA_BAND_COUNT; index++) {
+        const linear = view[BACTERIA_IDX.bandLevelsBase + index] ?? 0;
+        bandLevels[index] = linearToDb(linear);
+    }
+    return {
+        inputDb: view[BACTERIA_IDX.inputDb] ?? 0,
+        outputDb: view[BACTERIA_IDX.outputDb] ?? 0,
+        bandLevels,
+        latency: view[BACTERIA_IDX.latency] ?? 0,
+    };
+}
 
 export type BacteriaNodeResult = {
     workletNode: AudioWorkletNode;
@@ -107,19 +128,13 @@ export async function createBacteriaNode(ctx: BaseAudioContext, wasmUrl?: string
             if (!slot) {
                 return;
             }
-            const view = slot.view;
+            const { view, seqView } = slot;
             const poll = () => {
-                const bandLevels = Array.from({ length: BACTERIA_BAND_COUNT }, (): number => 0);
-                for (let index = 0; index < BACTERIA_BAND_COUNT; index++) {
-                    const linear = view[BACTERIA_IDX.bandLevelsBase + index] ?? 0;
-                    bandLevels[index] = linearToDb(linear);
-                }
-                cb({
-                    inputDb: view[BACTERIA_IDX.inputDb] ?? 0,
-                    outputDb: view[BACTERIA_IDX.outputDb] ?? 0,
-                    bandLevels,
-                    latency: view[BACTERIA_IDX.latency] ?? 0,
-                });
+                // Read under the slot seqlock (audit RT-2). This is the tear the
+                // audit called out by name: the worklet blits all six band levels
+                // in one `.set()`, but a raw poll could still straddle the blit and
+                // show bands from two different blocks side by side.
+                cb(readTelemetrySnapshot({ view, seqView, project: projectBacteriaMeter }));
                 meterRafId = requestAnimationFrame(poll);
             };
             meterRafId = requestAnimationFrame(poll);

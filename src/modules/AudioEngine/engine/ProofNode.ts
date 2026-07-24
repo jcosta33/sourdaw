@@ -12,7 +12,7 @@ import { createReadyHandshake, ensureWorkletRegistered, fetchWasmBinary } from '
 import proofProcessorUrl from '../services/proofProcessor.ts?worker&url';
 
 import { requireSharedArrayBuffer } from './pluginHostingErrors';
-import { telemetryAllocator, PROOF_IDX, TELEMETRY_SEQ_IDX } from './telemetryAllocator';
+import { telemetryAllocator, readTelemetrySnapshot, PROOF_IDX } from './telemetryAllocator';
 
 const DEFAULT_WASM_URL = '/wasm/daw-dsp/daw_dsp_bg.wasm';
 
@@ -48,71 +48,34 @@ export function isProofDevice(deviceType: string): boolean {
     return deviceType === 'proof';
 }
 
-/** Bound the seqlock retry so a misbehaving writer can never hang the poll. */
-const TELEMETRY_SEQ_MAX_RETRIES = 8;
-
 /**
- * Read a torn-free Proof meter snapshot from the telemetry slot.
- *
- * The worklet publishes the 25 fields under a seqlock counter (odd while
- * writing, even when settled). This samples the counter before and after the
- * field read and retries while it is odd or moved, so a poll landing mid-write
- * never mixes fields from two different blocks (e.g. tap0 from a new write with
- * tap5 from the old). On retry exhaustion it returns the last read — a bounded,
- * possibly-stale snapshot beats spinning the main thread.
+ * Slot floats → Proof meter snapshot. Pure: the seqlock reader may re-run it on
+ * retry. Reading it under `readTelemetrySnapshot` is what stops a poll from
+ * mixing fields across two writes (e.g. tap0 from a new write with tap5 from
+ * the old).
  */
-function readProofMeterSnapshot(view: Float32Array, seqView: Int32Array): ProofMeterData {
-    let snapshot: ProofMeterData = EMPTY_PROOF_METER;
-    for (let attempt = 0; attempt <= TELEMETRY_SEQ_MAX_RETRIES; attempt++) {
-        const before = Atomics.load(seqView, TELEMETRY_SEQ_IDX);
-        snapshot = {
-            inputLufs: view[PROOF_IDX.inputLufs]!,
-            outputLufs: view[PROOF_IDX.outputLufs]!,
-            outputStLufs: view[PROOF_IDX.outputStLufs]!,
-            integratedLufs: view[PROOF_IDX.integratedLufs]!,
-            truePeakDb: view[PROOF_IDX.truePeakDb]!,
-            lra: view[PROOF_IDX.lra]!,
-            correlation: view[PROOF_IDX.correlation]!,
-            limiterGrDb: view[PROOF_IDX.limiterGrDb]!,
-            dynGr: [view[PROOF_IDX.dynGr0]!, view[PROOF_IDX.dynGr1]!, view[PROOF_IDX.dynGr2]!, view[PROOF_IDX.dynGr3]!],
-            tapPeaks: [
-                { peakL: view[PROOF_IDX.tap0PeakL]!, peakR: view[PROOF_IDX.tap0PeakR]! },
-                { peakL: view[PROOF_IDX.tap1PeakL]!, peakR: view[PROOF_IDX.tap1PeakR]! },
-                { peakL: view[PROOF_IDX.tap2PeakL]!, peakR: view[PROOF_IDX.tap2PeakR]! },
-                { peakL: view[PROOF_IDX.tap3PeakL]!, peakR: view[PROOF_IDX.tap3PeakR]! },
-                { peakL: view[PROOF_IDX.tap4PeakL]!, peakR: view[PROOF_IDX.tap4PeakR]! },
-                { peakL: view[PROOF_IDX.tap5PeakL]!, peakR: view[PROOF_IDX.tap5PeakR]! },
-            ],
-            latency: view[PROOF_IDX.latency]!,
-        };
-        const after = Atomics.load(seqView, TELEMETRY_SEQ_IDX);
-        if (before === after && (before & 1) === 0) {
-            break;
-        }
-    }
-    return snapshot;
+function projectProofMeter(view: Float32Array): ProofMeterData {
+    return {
+        inputLufs: view[PROOF_IDX.inputLufs]!,
+        outputLufs: view[PROOF_IDX.outputLufs]!,
+        outputStLufs: view[PROOF_IDX.outputStLufs]!,
+        integratedLufs: view[PROOF_IDX.integratedLufs]!,
+        truePeakDb: view[PROOF_IDX.truePeakDb]!,
+        lra: view[PROOF_IDX.lra]!,
+        correlation: view[PROOF_IDX.correlation]!,
+        limiterGrDb: view[PROOF_IDX.limiterGrDb]!,
+        dynGr: [view[PROOF_IDX.dynGr0]!, view[PROOF_IDX.dynGr1]!, view[PROOF_IDX.dynGr2]!, view[PROOF_IDX.dynGr3]!],
+        tapPeaks: [
+            { peakL: view[PROOF_IDX.tap0PeakL]!, peakR: view[PROOF_IDX.tap0PeakR]! },
+            { peakL: view[PROOF_IDX.tap1PeakL]!, peakR: view[PROOF_IDX.tap1PeakR]! },
+            { peakL: view[PROOF_IDX.tap2PeakL]!, peakR: view[PROOF_IDX.tap2PeakR]! },
+            { peakL: view[PROOF_IDX.tap3PeakL]!, peakR: view[PROOF_IDX.tap3PeakR]! },
+            { peakL: view[PROOF_IDX.tap4PeakL]!, peakR: view[PROOF_IDX.tap4PeakR]! },
+            { peakL: view[PROOF_IDX.tap5PeakL]!, peakR: view[PROOF_IDX.tap5PeakR]! },
+        ],
+        latency: view[PROOF_IDX.latency]!,
+    };
 }
-
-const EMPTY_PROOF_METER: ProofMeterData = {
-    inputLufs: 0,
-    outputLufs: 0,
-    outputStLufs: 0,
-    integratedLufs: 0,
-    truePeakDb: 0,
-    lra: 0,
-    correlation: 0,
-    limiterGrDb: 0,
-    dynGr: [0, 0, 0, 0],
-    tapPeaks: [
-        { peakL: 0, peakR: 0 },
-        { peakL: 0, peakR: 0 },
-        { peakL: 0, peakR: 0 },
-        { peakL: 0, peakR: 0 },
-        { peakL: 0, peakR: 0 },
-        { peakL: 0, peakR: 0 },
-    ],
-    latency: 0,
-};
 
 export async function createProofNode(ctx: BaseAudioContext, wasmUrl?: string): Promise<ProofNodeResult> {
     // Proof's mastering telemetry (LUFS, true-peak, limiter GR) is SAB-backed.
@@ -159,7 +122,7 @@ export async function createProofNode(ctx: BaseAudioContext, wasmUrl?: string): 
             const seqView = sabSlot.seqView;
             pollInterval = setInterval(() => {
                 if (meterCallback) {
-                    meterCallback(readProofMeterSnapshot(view, seqView));
+                    meterCallback(readTelemetrySnapshot({ view, seqView, project: projectProofMeter }));
                 }
             }, 16);
         }

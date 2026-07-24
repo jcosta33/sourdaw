@@ -15,6 +15,7 @@
 
 import { initSync, ScoringInstance } from '../wasm/scoring.js';
 
+import { beginTelemetryPublish, endTelemetryPublish } from './telemetrySeqlock';
 import { WasmView } from './wasmView';
 
 type ScoringMsg =
@@ -32,6 +33,8 @@ class ScoringProcessor extends AudioWorkletProcessor {
     _frameCount = 0;
     _telemetryInterval = 4; // send telemetry every N process calls (~21ms at 128 samples/48kHz)
     _sabView: Float32Array | null = null;
+    /** Int32 view over the same slot bytes — carries the seqlock counter (RT-2). */
+    _sabSeqView: Int32Array | null = null;
     // Cached WASM linear-memory views — reused across render quanta so process()
     // performs no per-block Float32Array allocation (audit RT-1); each revalidates
     // on a memory.grow() buffer-identity change (audit RT-7). See wasmView.ts.
@@ -50,6 +53,7 @@ class ScoringProcessor extends AudioWorkletProcessor {
                     this._initWasm(msg.wasmBytes);
                 } else if (msg.type === 'init-sab') {
                     this._sabView = new Float32Array(msg.sab, msg.byteOffset, 32);
+                    this._sabSeqView = new Int32Array(msg.sab, msg.byteOffset, 32);
                 } else if (msg.type === 'bypass') {
                     this._bypassed = msg.bypassed;
                 } else if (msg.type === 'param' && this._instance !== null && !this._faulted) {
@@ -134,6 +138,12 @@ class ScoringProcessor extends AudioWorkletProcessor {
                 this._frameCount = 0;
                 const active = inst.is_active();
                 if (this._sabView) {
+                    // Seqlock publish (audit RT-2): the active flag and the six
+                    // pitch fields must be consumed as one snapshot, or a poll can
+                    // read active=1 next to a frequency/note from the previous
+                    // detection. The bracket spans both branches so the flag flip
+                    // is published under the same cycle.
+                    beginTelemetryPublish(this._sabSeqView);
                     if (active) {
                         this._sabView[0] = 1;
                         this._sabView[1] = inst.get_frequency();
@@ -145,6 +155,7 @@ class ScoringProcessor extends AudioWorkletProcessor {
                     } else {
                         this._sabView[0] = 0;
                     }
+                    endTelemetryPublish(this._sabSeqView);
                 }
             }
         } catch (error) {

@@ -11,13 +11,8 @@
 
 import { initSync, ProofInstance } from '../wasm/daw_dsp.js';
 
+import { beginTelemetryPublish, endTelemetryPublish } from './telemetrySeqlock';
 import { WasmView } from './wasmView';
-
-// Seqlock counter index within the telemetry slot — kept in lockstep with
-// engine/telemetryAllocator.ts (TELEMETRY_SEQ_IDX = FLOATS_PER_SLOT - 1). The
-// writer bumps it odd before publishing the float fields and even after, so a
-// main-thread poll never reads a snapshot torn across the 25 non-atomic writes.
-const TELEMETRY_SEQ_IDX = 31;
 
 type ProofMsg =
     | { type: 'init'; wasmBytes: BufferSource }
@@ -171,15 +166,12 @@ class ProofProcessor extends AudioWorkletProcessor {
             if (this._meterCounter >= 8) {
                 this._meterCounter = 0;
                 if (this._sabView) {
-                    // Seqlock publish: bump the counter odd (write in progress),
-                    // write the 25 fields, then bump it even (write complete). A
-                    // reader that samples an odd or changed counter around its read
-                    // retries, so it never consumes a snapshot torn across these
-                    // non-atomic float writes. No-op-safe when seqView is absent.
-                    const seq = this._sabSeqView;
-                    if (seq) {
-                        Atomics.store(seq, TELEMETRY_SEQ_IDX, Atomics.load(seq, TELEMETRY_SEQ_IDX) + 1);
-                    }
+                    // Seqlock publish (audit RT-2): bump the counter odd (write in
+                    // progress), write the 25 fields, then bump it even (write
+                    // complete). A reader that samples an odd or changed counter
+                    // around its read retries, so it never consumes a snapshot torn
+                    // across these non-atomic float writes.
+                    beginTelemetryPublish(this._sabSeqView);
                     this._sabView[0] = inst.get_input_lufs();
                     this._sabView[1] = inst.get_output_lufs();
                     this._sabView[2] = inst.get_output_st_lufs();
@@ -205,10 +197,8 @@ class ProofProcessor extends AudioWorkletProcessor {
                     this._sabView[22] = inst.get_tap_peak_l(5);
                     this._sabView[23] = inst.get_tap_peak_r(5);
                     this._sabView[24] = inst.get_latency_samples();
-                    if (seq) {
-                        // Close the seqlock: counter back to even (write complete).
-                        Atomics.store(seq, TELEMETRY_SEQ_IDX, Atomics.load(seq, TELEMETRY_SEQ_IDX) + 1);
-                    }
+                    // Close the seqlock: counter back to even (write complete).
+                    endTelemetryPublish(this._sabSeqView);
                 }
             }
         } catch (error) {
