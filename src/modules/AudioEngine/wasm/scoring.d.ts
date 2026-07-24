@@ -22,6 +22,7 @@ export declare class ScoringInstance {
     get_confidence(): number;
     get_frequency(): number;
     get_midi_note(): number;
+    get_nan_flush_count(): number;
     get_note_index(): number;
     get_octave(): number;
     get_poly_string_cents(idx: number): number;

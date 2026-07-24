@@ -42,11 +42,11 @@
       "artifacts": {
         "public/wasm/scoring/scoring.js": "sha256:81f7b243b63434e43312e6aaab50931b3e87b63319a798a3b7f58e7770da3bf7",
         "public/wasm/scoring/scoring_bg.wasm": "sha256:06e6f94a809390520d24462c66e36fb04094130a64c9ff68411e36136e970844",
-        "public/wasm/scoring/scoring.d.ts": "sha256:6a779fe2ea858ef8a35396a88d38decae6af64166247de7444d46a69883b734b",
-        "public/wasm/scoring/scoring_bg.wasm.d.ts": "sha256:90b7cf4b84c7becd997ec910f1b53d49c3a3e00148230824910c288daf5cca66",
+        "public/wasm/scoring/scoring.d.ts": "sha256:c6d1ce1388d315b61839932d6ec829737efdc38339149ea2a06564725e018409",
+        "public/wasm/scoring/scoring_bg.wasm.d.ts": "sha256:5f57797d8b7957c8bbd2594f276f10367e3fbc303f395d31cd289099bf21ed20",
         "public/wasm/scoring/package.json": "sha256:9de47d5f4a605d62446b8d0c81a32a61d250eeaa79e3bae2ebe5a285fe013f43",
         "src/modules/AudioEngine/wasm/scoring.js": "sha256:cb1248a6a26debd56499bb232bfbeb5dee17b8e0edabf3416247c471bc2bdc7a",
-        "src/modules/AudioEngine/wasm/scoring.d.ts": "sha256:d48bc689fe62edbabaf34ab7cfaaaa4e78f3639d326593e340ae515bac98b8ef"
+        "src/modules/AudioEngine/wasm/scoring.d.ts": "sha256:b0a88138e91bebc709627ca99cb5260ed8c157a361ab278dc8ee4b0d771b4054"
       }
     },
     "daw-wasm-decoder": {
