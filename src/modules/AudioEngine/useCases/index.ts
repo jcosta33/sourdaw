@@ -103,6 +103,7 @@ export { configureOfflineMidiEventProjection } from './configureOfflineMidiEvent
 export { configureOfflinePpqEndpointProjection } from './configureOfflinePpqEndpointProjection';
 export { configureOfflineYeastMidiProcessing } from './configureOfflineYeastMidiProcessing';
 export { projectOfflineYeastTrackNotes } from './offlineRender/projectOfflineYeastTrackNotes';
+export { renderTrackSubgraphOffline } from './offlineRender/renderTrackSubgraphOffline';
 // Audio encoders (audioBufferToWav/Mp3/Flac) moved to AudioRendering (ADR 0011 W4).
 
 export { scheduleAdjustmentLayers } from './adjustmentLayer/scheduleAdjustmentLayers';

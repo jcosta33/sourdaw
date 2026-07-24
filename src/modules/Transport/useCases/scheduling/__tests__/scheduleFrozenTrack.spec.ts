@@ -179,6 +179,33 @@ describe('scheduleFrozenTrack', () => {
         expect(start).toHaveBeenCalledWith(4.02);
     });
 
+    // FX-4 residual — the buffer bakes the chain as it stood at freeze time. A
+    // plugin latency change moves the live lookup but never marks the track
+    // stale (computeTrackHash sees no clip/device change), so playback must
+    // follow the freeze-time snapshot or drift permanently.
+    it('compensates frozen playback against the freeze-time snapshot, not the current chain', () => {
+        const start = vi.fn();
+        const source = { start, connect: vi.fn(), onended: null } as never;
+        vi.mocked(createBufferSource).mockReturnValue(source);
+        vi.mocked(getCachedAudioBuffer).mockReturnValue({ duration: 100 } as never);
+        vi.mocked(ensureTrackStrip).mockReturnValue({ preFaderTap: { connect: vi.fn() } } as never);
+        vi.mocked(getCurrentTime).mockReturnValue(0);
+        // The chain now reports 0.5s — a plugin latency change since the freeze.
+        vi.mocked(getCompensationDelay).mockReturnValue(0.5);
+
+        const track = {
+            id: 'track-frozen',
+            freezeState: { status: 'frozen', frozenBufferId: 'buf-1', compensationSeconds: 0.02 },
+            clips: [{ startBeat: 8 }],
+        };
+
+        scheduleFrozenTrack(track, 0, [], 120);
+
+        // 8 beats at 120bpm = 4s, plus the 20ms the chain carried at freeze time.
+        expect(start).toHaveBeenCalledWith(4.02);
+        expect(getCompensationDelay).not.toHaveBeenCalled();
+    });
+
     it('keeps the compensation on the already-elapsed branch', () => {
         const start = vi.fn();
         const source = { start, connect: vi.fn(), onended: null } as never;

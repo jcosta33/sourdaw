@@ -90,4 +90,30 @@ describe('buildDeviceChain', () => {
         expect(input.connect).toHaveBeenCalledWith(faustInput);
         expect(faustOutput.connect).toHaveBeenCalledWith(output);
     });
+
+    // MD-4 — the note surface used to be attached to every entry, so the offline
+    // scheduler read the first device in any chain as the track's instrument and
+    // routed MIDI into a no-op instead of the fallback synth.
+    it('gives no note surface to a device whose strategy cannot voice notes', async () => {
+        vi.stubGlobal('AudioWorkletNode', undefined);
+        const input = { connect: vi.fn(), disconnect: vi.fn() } as unknown as AudioNode;
+        const output = { connect: vi.fn(), disconnect: vi.fn() } as unknown as AudioNode;
+        mocks.isFaustModule.mockImplementation((type) => type === 'faust-reverb');
+        mocks.createFaustDevice.mockResolvedValue({
+            inputNode: { connect: vi.fn(), disconnect: vi.fn() } as unknown as AudioNode,
+            outputNode: { connect: vi.fn(), disconnect: vi.fn() } as unknown as AudioNode,
+            nodes: [],
+        });
+        const device: Device = {
+            id: 'd1',
+            name: 'Faust Reverb',
+            type: 'faust-reverb',
+            bypassed: false,
+            parameterValues: {},
+        };
+
+        const entries = await buildDeviceChain({} as BaseAudioContext, [device], input, output);
+
+        expect(entries[0]?.instrumentControls).toBeUndefined();
+    });
 });

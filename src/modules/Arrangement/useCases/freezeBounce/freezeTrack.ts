@@ -1,4 +1,4 @@
-import { cacheAudioBuffer } from '#/modules/AudioEngine/useCases';
+import { cacheAudioBuffer, getCompensationDelay } from '#/modules/AudioEngine/useCases';
 import { transportStore } from '#/modules/Transport/stores';
 
 import { updateTrack } from '../../repositories/track/updateTrack';
@@ -79,6 +79,12 @@ export async function freezeTrack(trackId: string): Promise<boolean> {
         const freezeId = `freeze-${trackId}-${Date.now()}`;
         cacheAudioBuffer({ buffer: renderedBuffer, bufferId: freezeId });
 
+        // FX-4 residual — pin the compensation the chain carried while the
+        // buffer was baked. Frozen playback compensates against this, so a later
+        // plugin-latency change cannot drift the frozen take out of alignment
+        // (nothing marks a frozen track stale on a latency change).
+        const compensationSeconds = getCompensationDelay(trackId);
+
         updateTrack(trackId, (time) => ({
             ...time,
             frozen: true,
@@ -88,6 +94,7 @@ export async function freezeTrack(trackId: string): Promise<boolean> {
                 freezeId,
                 frozenBufferId: freezeId,
                 sourceContentHash: hash,
+                compensationSeconds,
                 renderSettings: {
                     sampleRate: renderedBuffer.sampleRate,
                     bitDepth: 32,

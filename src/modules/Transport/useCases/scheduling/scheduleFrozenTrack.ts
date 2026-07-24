@@ -10,7 +10,11 @@ import {
 import { type SourceWithFade } from '../playheadScheduler/schedulerSession';
 
 export function scheduleFrozenTrack(
-    track: { id: string; freezeState: { status: string; frozenBufferId?: string }; clips: { startBeat: number }[] },
+    track: {
+        id: string;
+        freezeState: { status: string; frozenBufferId?: string; compensationSeconds?: number };
+        clips: { startBeat: number }[];
+    },
     accumulatedPosition: number,
     activeAudioSources: AudioBufferSourceNode[],
     currentTempo: number
@@ -47,7 +51,14 @@ export function scheduleFrozenTrack(
     // other live source path applies it (scheduleAudioClips, scheduleMidiNotes,
     // applyAutomation) — without it a frozen track is the one thing in the
     // session playing on the uncompensated clock.
-    const compensation = getCompensationDelay(track.id);
+    //
+    // FX-4 residual — the buffer bakes the chain as it stood at freeze time, so
+    // the freeze-time snapshot is the value that matches its content. Resolving
+    // the *current* chain instead drifts the moment a plugin's reported latency
+    // changes, and nothing marks the track stale to force a re-render, so the
+    // drift is permanent. Tracks frozen before the snapshot existed fall back
+    // to the live lookup — the pre-existing behaviour, not a worse one.
+    const compensation = track.freezeState.compensationSeconds ?? getCompensationDelay(track.id);
     const startTime = getCurrentTime() + beatOffset / (currentTempo / 60) + compensation;
     const now = getCurrentTime();
 

@@ -25,6 +25,15 @@ export type FreezeState = {
         channelCount: number;
         tailLengthSeconds: number;
     };
+    /**
+     * Seconds of plugin-delay compensation the track carried when the buffer
+     * was baked. Frozen playback must shift by *this* value, not by the live
+     * chain's current latency: the buffer bypasses the device chain, and a
+     * plugin latency change does not mark the track stale (`computeTrackHash`
+     * sees no clip/device change), so compensating against the current chain
+     * drifts silently and never self-corrects (FX-4 residual).
+     */
+    compensationSeconds?: number;
     renderProgress?: number; // 0.0-1.0 during freezing
     errorMessage?: string; // Set when status is 'error'
     renderedAt?: number; // Unix epoch ms
