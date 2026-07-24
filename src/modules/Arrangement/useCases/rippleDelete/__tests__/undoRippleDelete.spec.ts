@@ -48,4 +48,46 @@ describe('undoRippleDelete', () => {
         const c2 = track.clips.find((context: any) => context.id === 'c2');
         expect(c2).toMatchObject({ id: 'c2', startBeat: 4, endBeat: 8 });
     });
+
+    it('is a no-op when there is no track state', () => {
+        mocks.getTrackStoreState.mockReturnValue(null);
+
+        undoRippleDelete({ trackId: 't1', removedClips: [], shiftedClips: [] });
+
+        expect(mocks.setTrackState).not.toHaveBeenCalled();
+    });
+
+    it('leaves tracks other than the target untouched', () => {
+        const otherClip = { id: 'c-other', startBeat: 0, endBeat: 4 };
+        mocks.getTrackStoreState.mockReturnValue({
+            tracks: [
+                { id: 'other', clips: [otherClip] },
+                { id: 't1', clips: [{ id: 'c1', startBeat: 2, endBeat: 6 }] },
+            ],
+        });
+
+        undoRippleDelete({
+            trackId: 't1',
+            removedClips: [],
+            shiftedClips: [{ clipId: 'c1', origStartBeat: 8, origEndBeat: 12 }],
+        });
+
+        const newState = mocks.setTrackState.mock.calls[0]?.[0];
+        // the non-target track is returned unchanged
+        expect(newState.tracks[0].clips).toEqual([otherClip]);
+    });
+
+    it('leaves clips with no recorded shift in place', () => {
+        const unshifted = { id: 'c-unshifted', startBeat: 0, endBeat: 4 };
+        mocks.getTrackStoreState.mockReturnValue({
+            tracks: [{ id: 't1', clips: [unshifted] }],
+        });
+
+        undoRippleDelete({ trackId: 't1', removedClips: [], shiftedClips: [] });
+
+        const newState = mocks.setTrackState.mock.calls[0]?.[0];
+        const clip = newState.tracks[0].clips[0];
+        // no shift entry → returned unchanged
+        expect(clip).toMatchObject({ startBeat: 0, endBeat: 4 });
+    });
 });

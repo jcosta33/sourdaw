@@ -90,3 +90,80 @@ describe('dormant VCA MIDI FX eligibility', () => {
         expect(mocks.removeMidiFxFromStrip).toHaveBeenCalledWith('audio-1', 'fx-1');
     });
 });
+
+describe('MIDI-track MIDI FX operations', () => {
+    const midiTrack = { id: 'midi-1', kind: 'midi', midiFx: [residue] };
+
+    beforeEach(() => {
+        vi.clearAllMocks();
+        mocks.updatedTrack = null;
+        mocks.getTrackById.mockReturnValue(midiTrack);
+    });
+
+    it('addMidiFx appends a new fx to a midi track and notifies the engine', () => {
+        mocks.updateTrack.mockImplementation((_trackId: string, updater: (track: TestTrack) => TestTrack) => {
+            mocks.updatedTrack = updater({ kind: 'midi', midiFx: [residue] });
+        });
+
+        addMidiFx('midi-1', 'velocity', 'Vel');
+
+        expect(mocks.updatedTrack?.midiFx).toHaveLength(2);
+        const added = mocks.updatedTrack?.midiFx[1];
+        expect(added).toMatchObject({ name: 'Vel', type: 'velocity', bypassed: false });
+        expect(mocks.addMidiFxToStrip).toHaveBeenCalledWith('midi-1', expect.any(String), 'velocity');
+    });
+
+    it('addMidiFx defaults the fx name to the uppercased type when none is given', () => {
+        mocks.updateTrack.mockImplementation((_trackId: string, updater: (track: TestTrack) => TestTrack) => {
+            mocks.updatedTrack = updater({ kind: 'midi', midiFx: [] });
+        });
+
+        addMidiFx('midi-1', 'arp');
+
+        expect(mocks.updatedTrack?.midiFx[0]?.name).toBe('ARP');
+    });
+
+    it('bypassMidiFx flips the bypassed flag on the matched fx and syncs the engine', () => {
+        mocks.updateTrack.mockImplementation((_trackId: string, updater: (track: TestTrack) => TestTrack) => {
+            mocks.updatedTrack = updater({ kind: 'midi', midiFx: [residue] });
+        });
+
+        bypassMidiFx('midi-1', 'fx-1', true);
+
+        expect(mocks.updatedTrack?.midiFx[0]?.bypassed).toBe(true);
+        expect(mocks.updateMidiFxBypass).toHaveBeenCalledWith('midi-1', 'fx-1', true);
+    });
+
+    it('updateMidiFxParam sets the parameter on the matched fx and syncs the engine', () => {
+        mocks.updateTrack.mockImplementation((_trackId: string, updater: (track: TestTrack) => TestTrack) => {
+            mocks.updatedTrack = updater({ kind: 'midi', midiFx: [residue] });
+        });
+
+        updateMidiFxParam('midi-1', 'fx-1', 'rate', 4);
+
+        expect(mocks.updatedTrack?.midiFx[0]?.parameterValues).toEqual({ rate: 4 });
+        expect(mocks.updateMidiFxParam).toHaveBeenCalledWith('midi-1', 'fx-1', 'rate', 4);
+    });
+
+    it('continues when the engine throws (logged, project truth still updated)', () => {
+        mocks.addMidiFxToStrip.mockImplementation(() => {
+            throw new Error('engine down');
+        });
+        mocks.updateTrack.mockImplementation((_trackId: string, updater: (track: TestTrack) => TestTrack) => {
+            mocks.updatedTrack = updater({ kind: 'midi', midiFx: [] });
+        });
+
+        // must not rethrow — failure is logged but the project write stands
+        expect(() => addMidiFx('midi-1', 'arp')).not.toThrow();
+        expect(mocks.updatedTrack?.midiFx).toHaveLength(1);
+    });
+
+    it('rejects the operation when the track cannot be found', () => {
+        mocks.getTrackById.mockReturnValue(null);
+
+        addMidiFx('missing', 'arp');
+
+        expect(mocks.updateTrack).not.toHaveBeenCalled();
+        expect(mocks.addMidiFxToStrip).not.toHaveBeenCalled();
+    });
+});
