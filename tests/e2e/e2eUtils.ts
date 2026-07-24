@@ -60,22 +60,24 @@ export async function wait_for_workspace_ready(page: Page): Promise<void> {
 }
 
 export async function launch_new_project(page: Page): Promise<void> {
-    const launch_screen = page.getByLabel(LAUNCH_SCREEN_NAME);
-    await launch_screen.waitFor({ state: 'visible' });
+    // Bounded independently of the 60s suite ceiling: the overlay is the app's
+    // first paint, so a genuine hang here should fail fast, not ride the slow
+    // multi-step allowance.
+    await expect(page.getByLabel(LAUNCH_SCREEN_NAME)).toBeVisible({ timeout: 15_000 });
 
     await page.locator('#launch-new-project').click();
     await wait_for_workspace_ready(page);
 }
 
 export async function launch_from_template({ page, template_name }: LaunchFromTemplateInput): Promise<void> {
-    const launch_screen = page.getByLabel(LAUNCH_SCREEN_NAME);
-    await launch_screen.waitFor({ state: 'visible' });
+    // Same fast-fail bound as launch_new_project — see comment there.
+    await expect(page.getByLabel(LAUNCH_SCREEN_NAME)).toBeVisible({ timeout: 15_000 });
 
     await page.locator('#launch-from-template').click();
     await expect(page.getByText('Start a new project')).toBeVisible();
 
     const template_button = page.getByRole('button', { name: template_name });
-    await template_button.waitFor({ state: 'visible' });
+    await expect(template_button).toBeVisible({ timeout: 10_000 });
     await template_button.click();
 
     await wait_for_workspace_ready(page);
