@@ -1,0 +1,35 @@
+src/utils/__tests__/automationCurveCases.ts
+  s_0d39f3a4a4357a::t_5a322bb819ba12 1-62
+src/utils/automationCurve.ts
+  s_0d39f3a4a4357a::t_17af836d521b9c 155
+  s_0d39f3a4a4357a::t_a676d5753bcb0f 6-8,14-23
+  s_0d39f3a4a4357a::t_0baecb5155fada 58-68
+src/modules/AudioEngine/repositories/offlineScheduler/compileAutomationEvents.ts
+  s_0d39f3a4a4357a::t_c903b741226741 150
+  s_0d39f3a4a4357a::t_9ee792ac4b88d4 1
+src/modules/AudioEngine/repositories/offlineScheduler/__tests__/automationCurveConformance.spec.ts
+  s_0d39f3a4a4357a::t_cda5b6274906e7 3,12-22,26-28,33-34,69-87,89-90,99-107
+.dependency-cruiser.cjs
+  s_0d39f3a4a4357a::t_06b10491dea1ab 927-929
+src/modules/Automation/services/__tests__/automationCurveConformance.spec.ts
+  s_0d39f3a4a4357a::t_6588311217b16e 3-11,20-25,29,32-34,38,43-67,71-74,76-77,79-80,82-83,88-99
+  s_0d39f3a4a4357a::t_c09e6a199ee71d 100-109
+.agents/artifacts/sourdaw/audits/AUDIT-automation.md
+  s_0d39f3a4a4357a::t_da0f2e3645d62a 115
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "7784a7fb86a0abb353b4cd94fdd22d6919316e09",
+  "prompts": {},
+  "sessions": {
+    "s_0d39f3a4a4357a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "60da6a2e-7d79-4d98-8624-e993f5a9f94e",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
