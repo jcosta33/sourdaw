@@ -1,0 +1,19 @@
+src/modules/Automation/useCases/__tests__/automationShapes.spec.ts
+  s_750bfb8b8bb315::t_35a0ed073e07cc 78-123
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "112f2c70a0b3e555878556276b0cee6aeb2cdfe8",
+  "prompts": {},
+  "sessions": {
+    "s_750bfb8b8bb315": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-ab319f0c63dc251fc",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
