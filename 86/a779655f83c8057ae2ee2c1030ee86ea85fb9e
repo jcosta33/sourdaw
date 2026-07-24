@@ -1,0 +1,25 @@
+src/modules/MIDI/repositories/webMidi/lifecycle/__tests__/webMidiLifecycle.spec.ts
+  s_0d39f3a4a4357a::t_fb71951fde5ed4 79,153-269
+src/modules/MIDI/services/__tests__/transformMidiGlobalTimeState.spec.ts
+  s_0d39f3a4a4357a::t_910763e8c50c9b 255-761
+src/modules/MIDI/stores/__tests__/chordTrackStore.spec.ts
+  s_0d39f3a4a4357a::t_532dd65c55589d 13,384-536,556-597
+src/modules/MIDI/stores/__tests__/midiStore.spec.ts
+  s_0d39f3a4a4357a::t_1da4af1cdec56a 11,296-374
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "86a779655f83c8057ae2ee2c1030ee86ea85fb9e",
+  "prompts": {},
+  "sessions": {
+    "s_0d39f3a4a4357a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "60da6a2e-7d79-4d98-8624-e993f5a9f94e",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
