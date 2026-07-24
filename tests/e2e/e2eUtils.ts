@@ -106,8 +106,12 @@ type OpenBrowserInstrumentInput = {
 export async function open_browser_instrument({ page, instrument }: OpenBrowserInstrumentInput): Promise<void> {
     const browser = page.getByRole('complementary', { name: 'Browser panel' });
     await browser.getByRole('button', { name: 'Instruments', exact: true }).click();
-    // InstrumentCard is a clickable div (not a button) — click by its label text.
-    await browser.getByText(instrument, { exact: true }).click();
+    // The InstrumentCard is a real <button> (DawChooserCard) whose accessible
+    // name begins with the instrument label, e.g. "Levain Orchestra …". Target it
+    // by role + name-prefix, not a bare getByText: a text-node click can resolve
+    // to a stray same-text node (a preset row, a prompt-context chip) under a
+    // render race, whereas the card button is unambiguous.
+    await browser.getByRole('button', { name: new RegExp(`^${instrument}`) }).click();
     await expect(page.getByRole('button', { name: `Close ${instrument}` })).toBeVisible({
         timeout: PANEL_OPEN_TIMEOUT_MS,
     });
