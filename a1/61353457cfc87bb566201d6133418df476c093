@@ -1,0 +1,19 @@
+src/modules/AudioEngine/services/__tests__/proofProcessor.spec.ts
+  s_88ffc5326d9b0b::t_79a0f5a9b333e4 103-105,108-114,233,334-425
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "a161353457cfc87bb566201d6133418df476c093",
+  "prompts": {},
+  "sessions": {
+    "s_88ffc5326d9b0b": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-ad18badee0d6bb8b2",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
