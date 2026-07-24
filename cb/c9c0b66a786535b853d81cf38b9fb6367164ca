@@ -1,0 +1,29 @@
+tests/e2e/automation.spec.ts
+  s_0d39f3a4a4357a::t_c92dc07e66de8e 52-63,67,70
+tests/e2e/finalBatch.spec.ts
+  s_0d39f3a4a4357a::t_7a8c2cae52e22b 2,124,126
+tests/e2e/inspectorAndRouting.spec.ts
+  s_0d39f3a4a4357a::t_19c2e99d91bfd3 218-221,225
+tests/e2e/e2eUtils.ts
+  s_0d39f3a4a4357a::t_37998671ccb950 85-114
+tests/e2e/audioAndPluginOps.spec.ts
+  s_0d39f3a4a4357a::t_a7171bf62123f4 2,67,69
+tests/e2e/panelDeepCoverage.spec.ts
+  s_0d39f3a4a4357a::t_374051673b4cdb 2,25,32,38
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "cbc9c0b66a786535b853d81cf38b9fb6367164ca",
+  "prompts": {},
+  "sessions": {
+    "s_0d39f3a4a4357a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "60da6a2e-7d79-4d98-8624-e993f5a9f94e",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
