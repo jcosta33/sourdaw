@@ -1,0 +1,25 @@
+.agents/artifacts/sourdaw/audits/AUDIT-dsp-engines.md
+  s_0d39f3a4a4357a::t_29cbae0988c989 188
+.agents/artifacts/sourdaw/audits/AUDIT-rust-wasm-boundary.md
+  s_0d39f3a4a4357a::t_d1cd1b51332851 183
+crates/daw-wasm-decoder/src/lib.rs
+  s_0d39f3a4a4357a::t_526dd765d37ee4 22-39,70-76,113-143
+public/wasm/manifest.json
+  s_0d39f3a4a4357a::t_228bb628cbc87b 54,58
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "95b25253a748dc6b2f6c91af1837755fc61c6193",
+  "prompts": {},
+  "sessions": {
+    "s_0d39f3a4a4357a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "60da6a2e-7d79-4d98-8624-e993f5a9f94e",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
