@@ -10,6 +10,7 @@ import {
     chordTrackStore,
     createChordTrackAutomergeStorage,
     defaultChordTrackState,
+    isChordTrackState,
     type ChordTrackState,
 } from '../chordTrackStore';
 
@@ -380,6 +381,159 @@ describe('chordTrackStore CRDT projection', () => {
         }
     );
 
+    it('discards a whole-slot clear pending when a concurrent remote change hydrates', () => {
+        // Domain: a `clear()` (null pending) is a terminal whole-slot intent, not a
+        // field-level edit, so rebasePending returns null and the cached value stays
+        // null (the slot is cleared) rather than field-merging a deletion against the
+        // concurrent remote addition.
+        const initial = chordState('shared', 3);
+        const baseline = createBaseline(initial);
+        const remotePeer = createPeer(clone(baseline));
+        writePeer(remotePeer, chordState('remote-add', 6));
+        const localPeer = createPeer(clone(baseline));
+        const storage = createStorage(localPeer);
+
+        storage.clear();
+        localPeer.replaceDoc(merge(localPeer.getDoc(), remotePeer.getDoc()));
+        storage.hydrate?.();
+        flushAutomergeStorageWrites();
+
+        expect(storage.get()).toBeNull();
+    });
+
+    it('preserves a pending enabled toggle over a concurrent remote event edit', () => {
+        // Domain: `enabled` is whole-track state, not an event field. A local toggle
+        // must win the rebase, while a concurrent per-event edit on the remote still
+        // merges in field-by-field.
+        const initial = chordState('shared', 3);
+        const baseline = createBaseline(initial);
+        const remotePeer = createPeer(clone(baseline));
+        writePeer(remotePeer, { ...initial, events: [{ ...initial.events[0]!, root: 8 }] });
+        const localPeer = createPeer(clone(baseline));
+        const storage = createStorage(localPeer);
+
+        storage.set({ ...initial, enabled: false });
+        localPeer.replaceDoc(merge(localPeer.getDoc(), remotePeer.getDoc()));
+        storage.hydrate?.();
+        flushAutomergeStorageWrites();
+
+        const projected = storage.get() ?? defaultChordTrackState;
+        expect(projected.enabled).toBe(false);
+        expect(projected.events).toEqual([expect.objectContaining({ id: 'shared', root: 8 })]);
+    });
+
+    it('lets an unchanged pending event track a concurrent remote edit to that event', () => {
+        // Domain: when pending carries an event forward untouched (same JSON as base),
+        // rebasePending skips it so the hydrated/remote version of that event wins.
+        const kept = { id: 'keep', beat: 0, root: 3, quality: 'major' as const, duration: 4 };
+        const initial = { enabled: true, events: [kept] };
+        const baseline = createBaseline(initial);
+        const remotePeer = createPeer(clone(baseline));
+        writePeer(remotePeer, {
+            enabled: true,
+            events: [{ ...kept, root: 7 }, ...chordState('remote-add', 6).events],
+        });
+        const localPeer = createPeer(clone(baseline));
+        const storage = createStorage(localPeer);
+
+        storage.set({ enabled: true, events: [...initial.events, ...chordState('local-add', 2).events] });
+        localPeer.replaceDoc(merge(localPeer.getDoc(), remotePeer.getDoc()));
+        storage.hydrate?.();
+        flushAutomergeStorageWrites();
+
+        const projected = storage.get() ?? defaultChordTrackState;
+        expect(projected.events).toEqual([
+            expect.objectContaining({ id: 'keep', root: 7 }),
+            expect.objectContaining({ id: 'local-add' }),
+            expect.objectContaining({ id: 'remote-add' }),
+        ]);
+    });
+
+    it('migrates from a defined legacy plain shape, tombstoning removed events', () => {
+        // Domain: a pre-CRDT plain {enabled,events} already in the doc is a valid prior
+        // state, so the first CRDT write derives its migrationBase from it and records
+        // tombstones for events the new state drops.
+        const legacy = {
+            enabled: true,
+            events: [{ id: 'legacy', beat: 0, root: 5, quality: 'major', duration: 4 }],
+        };
+        const peer = createPeer(from<RootDocument>({ chordTrack: legacy }));
+        const storage = createStorage(peer);
+
+        storage.set({ enabled: true, events: chordState('new', 2).events });
+        flushAutomergeStorageWrites();
+
+        const crdt = peer.getDoc().chordTrack as {
+            events: Record<string, { deleted?: boolean }>;
+            migrationBase?: unknown;
+        };
+        const eventIds = Object.keys(crdt.events);
+        expect(crdt.events.legacy?.deleted).toBe(true);
+        expect(eventIds).toContain('new');
+        expect(crdt.migrationBase).toBeDefined();
+    });
+
+    it('migrates from defined garbage without deriving a migration base', () => {
+        // Domain: a defined-but-invalid prior slot has no trustworthy prior state, so the
+        // CRDT write encodes the desired state from scratch and carries no migrationBase
+        // (the slot is treated as a fresh migration, not a rebase over real history).
+        const peer = createPeer(from<RootDocument>({ chordTrack: { garbage: true, nope: 123 } }));
+        const storage = createStorage(peer);
+
+        storage.set(chordState('fresh', 2));
+        flushAutomergeStorageWrites();
+
+        const crdt = peer.getDoc().chordTrack as {
+            schemaVersion: number;
+            events: Record<string, unknown>;
+            migrationBase?: unknown;
+        };
+        expect(crdt.schemaVersion).toBe(1);
+        expect(Object.keys(crdt.events)).toEqual(['fresh']);
+        expect(crdt.migrationBase).toBeUndefined();
+    });
+
+    it('reconciles conflicting plain-legacy values with last-writer enabled and unioned events', () => {
+        // Domain: when two replicas each carry a plain legacy shape that conflicts,
+        // neither side advertises a migrationBase. The reconciler falls back to a
+        // last-writer `enabled` merge plus a union of both sides' events.
+        const left = createPeer(
+            from<RootDocument>({
+                chordTrack: { enabled: true, events: [{ id: 'a', beat: 0, root: 0, quality: 'major', duration: 4 }] },
+            })
+        );
+        const right = createPeer(
+            from<RootDocument>({
+                chordTrack: { enabled: false, events: [{ id: 'b', beat: 0, root: 2, quality: 'minor', duration: 4 }] },
+            })
+        );
+        const peer = createPeer(merge(left.getDoc(), right.getDoc()));
+        const storage = createStorage(peer);
+
+        const projected = storage.get() ?? defaultChordTrackState;
+        expect(projected.events.map((event) => event.id).sort()).toEqual(['a', 'b']);
+    });
+
+    it('commits the reconciled conflict state before the next CRDT mutation', () => {
+        // Domain: after resolveCrdtConflicts materializes a reconciled doc, the next
+        // set() must first write that whole reconciled state (so causal identity and
+        // tombstones survive) before applying the new mutation. Two replicas diverging
+        // from a shared empty baseline with conflicting `enabled` flags forces a real
+        // Automerge conflict that resolveCrdtConflicts must reconcile.
+        const left = createPeer(from<RootDocument>({ chordTrack: defaultChordTrackState }));
+        const right = createPeer(from<RootDocument>({ chordTrack: defaultChordTrackState }));
+        writePeer(left, { enabled: true, events: chordState('left', 4).events });
+        writePeer(right, { enabled: false, events: chordState('right', 7).events });
+        const peer = createPeer(merge(left.getDoc(), right.getDoc()));
+        const storage = createStorage(peer);
+
+        storage.set(chordState('after-conflict', 9));
+        flushAutomergeStorageWrites();
+
+        const crdt = peer.getDoc().chordTrack as { events: Record<string, unknown> };
+        expect(Object.keys(crdt.events).sort()).toEqual(['after-conflict', 'left', 'right']);
+    });
+
     it('drops reconciled conflict state when the same adapter hydrates a new missing authority', () => {
         const legacy = from<RootDocument>({ chordTrack: chordState('legacy', 3) });
         const left = createPeer(clone(legacy));
@@ -397,5 +551,47 @@ describe('chordTrackStore CRDT projection', () => {
         expect(Object.keys((peer.getDoc().chordTrack as { events: Record<string, unknown> }).events)).toEqual([
             'fresh',
         ]);
+    });
+});
+
+describe('isChordTrackState', () => {
+    // Domain: this guard validates untrusted persisted/synced data before any unchecked
+    // cast to ChordTrackState. Each rejection path must fail closed (return false) so the
+    // store falls back to the default state instead of trusting malformed input.
+    it.each([
+        ['non-object top-level', 42],
+        ['null top-level', null],
+        ['array top-level', []],
+        ['enabled is not a boolean', { enabled: 'yes', events: [] }],
+        ['events is not an array', { enabled: true, events: {} }],
+    ])('rejects %s', (_label, value) => {
+        expect(isChordTrackState(value)).toBe(false);
+    });
+
+    it('rejects a non-object chord event entry', () => {
+        expect(isChordTrackState({ enabled: true, events: ['not-an-event'] })).toBe(false);
+    });
+
+    it('rejects an event whose quality is not a string', () => {
+        expect(
+            isChordTrackState({
+                enabled: true,
+                events: [{ id: 'e1', beat: 0, root: 5, quality: 7, duration: 4 }],
+            })
+        ).toBe(false);
+    });
+
+    it('rejects duplicate event ids (an unchecked cast would silently drop a duplicate)', () => {
+        const event = { id: 'dup', beat: 0, root: 5, quality: 'major', duration: 4 };
+        expect(isChordTrackState({ enabled: true, events: [event, { ...event }] })).toBe(false);
+    });
+
+    it('accepts a well-formed state', () => {
+        expect(
+            isChordTrackState({
+                enabled: true,
+                events: [{ id: 'e1', beat: 0, root: 5, quality: 'major', duration: 4 }],
+            })
+        ).toBe(true);
     });
 });

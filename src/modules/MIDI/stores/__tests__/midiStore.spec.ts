@@ -8,6 +8,7 @@ import {
     isValidMidiProbabilitySeed,
     LEGACY_MIDI_PROBABILITY_SEED,
     midiStore,
+    sanitize_midi_store_state,
     type MidiStoreState,
 } from '../midiStore';
 
@@ -290,5 +291,84 @@ describe('midiStore', () => {
             )
             .map((note) => note.id);
         expect(acceptedIds).toEqual(['event-alpha']);
+    });
+});
+
+describe('sanitize_midi_store_state', () => {
+    it('returns the default state with the fallback seed for a non-object input', () => {
+        const result = sanitize_midi_store_state('not-an-object', 42);
+        expect(result).toEqual({ ...defaultMidiStoreState, probabilitySeed: 42 });
+    });
+
+    it('preserves a fully-exact state including optional note fields and the migrated list', () => {
+        const exact = {
+            probabilitySeed: 7,
+            notesByClipId: {
+                'clip-1': [
+                    {
+                        id: 'n1',
+                        pitch: 60,
+                        startBeat: 0,
+                        duration: 1,
+                        velocity: 90,
+                        probability: 50,
+                        pressure: 0.5,
+                        slide: 0.25,
+                        pitchBend: -0.1,
+                        channel: 3,
+                    },
+                ],
+            },
+            ccByClipId: {},
+            pitchBendByClipId: {},
+            migratedAbsoluteNoteClipIds: ['clip-1'],
+        };
+        const result = sanitize_midi_store_state(exact);
+        expect(result).toEqual(exact);
+    });
+
+    it('rebuilds the state, carrying the migrated list only when it is a valid string array', () => {
+        const result = sanitize_midi_store_state({
+            probabilitySeed: 5,
+            notesByClipId: { 'clip-1': [{ id: 'n1', pitch: 60, startBeat: 0, duration: 1, velocity: 90 }] },
+            ccByClipId: {},
+            pitchBendByClipId: {},
+            migratedAbsoluteNoteClipIds: ['clip-1'],
+        });
+        expect(result.migratedAbsoluteNoteClipIds).toEqual(['clip-1']);
+
+        const dropped = sanitize_midi_store_state({
+            probabilitySeed: 5,
+            notesByClipId: {},
+            ccByClipId: {},
+            pitchBendByClipId: {},
+            migratedAbsoluteNoteClipIds: [1, 2, 3],
+        });
+        expect(dropped.migratedAbsoluteNoteClipIds).toBeUndefined();
+    });
+
+    it('falls back to the legacy seed when the input seed is invalid', () => {
+        const result = sanitize_midi_store_state({
+            probabilitySeed: -5,
+            notesByClipId: {},
+            ccByClipId: {},
+            pitchBendByClipId: {},
+        });
+        expect(result.probabilitySeed).toBe(LEGACY_MIDI_PROBABILITY_SEED);
+    });
+
+    it('drops rows that fail validation while keeping valid ones in the same clip', () => {
+        const result = sanitize_midi_store_state({
+            probabilitySeed: 1,
+            notesByClipId: {
+                'clip-1': [
+                    { id: 'good', pitch: 60, startBeat: 0, duration: 1, velocity: 90 },
+                    { id: 'bad', pitch: 'no', startBeat: 0, duration: 1, velocity: 90 },
+                ],
+            },
+            ccByClipId: {},
+            pitchBendByClipId: {},
+        });
+        expect(result.notesByClipId['clip-1']?.map((n) => n.id)).toEqual(['good']);
     });
 });

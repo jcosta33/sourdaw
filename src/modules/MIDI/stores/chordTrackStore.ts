@@ -96,6 +96,23 @@ export function isChordTrackState(value: unknown): value is ChordTrackState {
 function isRecord(value: unknown): value is MutableRecord {
     return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
+
+/**
+ * Order-independent ChordEvent equality. JSON.stringify is key-order sensitive, so a
+ * round-tripped CRDT value (sorted keys) would never equal an in-memory value
+ * (insertion-order keys) even when semantically identical. Comparing the finite,
+ * known field set directly keeps the rebase "unchanged event" check correct.
+ */
+function isSameChordEvent(left: ChordEvent, right: ChordEvent): boolean {
+    return (
+        left.id === right.id &&
+        left.beat === right.beat &&
+        left.root === right.root &&
+        left.quality === right.quality &&
+        left.duration === right.duration
+    );
+}
+
 function compareIds(left: string, right: string): number {
     if (left === right) {
         return 0;
@@ -297,7 +314,7 @@ function rebasePending({ baseValue, pendingValue, hydratedValue }: RebasePending
         const original = baseById.get(id);
         const local = pendingById.get(id);
         const remote = rebasedById.get(id);
-        if (JSON.stringify(original) === JSON.stringify(local)) {
+        if (original === local || (original && local && isSameChordEvent(original, local))) {
             continue;
         }
         // Existing-event deletion wins over a concurrent update in either direction.
