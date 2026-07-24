@@ -576,6 +576,14 @@ class AudioEngineImpl implements AudioEngine {
         this.trackNodes.get(trackId)?.setPan(pan);
     }
 
+    public scheduleTrackGain(trackId: string, gain: number, time: number): void {
+        this.trackNodes.get(trackId)?.scheduleGainAutomation(gain, time);
+    }
+
+    public scheduleTrackPan(trackId: string, pan: number, time: number): void {
+        this.trackNodes.get(trackId)?.schedulePanAutomation(pan, time);
+    }
+
     public setTrackMute(trackId: string, muted: boolean): void {
         this.ensureTrackStrip(trackId);
         this.trackNodes.get(trackId)?.setMute(muted);

@@ -1,7 +1,14 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { resolveEligibleDeviceWriteTarget, trackStore } from '#/modules/Arrangement/stores';
-import { setTrackGain, setTrackPan, updateDeviceParam, updateMidiFxParam } from '#/modules/AudioEngine/useCases';
+import {
+    getCompensationDelay,
+    getCurrentTime,
+    scheduleTrackGain,
+    scheduleTrackPan,
+    updateDeviceParam,
+    updateMidiFxParam,
+} from '#/modules/AudioEngine/useCases';
 import { automationStore } from '#/modules/Automation/stores';
 import { getAutomationValueAtBeat, isRecordingAutomation } from '#/modules/Automation/useCases';
 import { setFermenterMappedParam } from '#/modules/Fermenter/useCases';
@@ -54,8 +61,10 @@ vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => {
     const mod = await importOriginal<typeof import('#/modules/AudioEngine/useCases')>();
     return {
         ...mod,
-        setTrackGain: vi.fn(),
-        setTrackPan: vi.fn(),
+        scheduleTrackGain: vi.fn(),
+        scheduleTrackPan: vi.fn(),
+        getCurrentTime: vi.fn(() => 5),
+        getCompensationDelay: vi.fn(() => 0),
         updateDeviceParam: vi.fn(),
         updateMidiFxParam: vi.fn(),
     };
@@ -121,6 +130,8 @@ describe('applyAutomation', () => {
         // Re-arm the mocked value-at-beat after clearAllMocks resets it.
         vi.mocked(getAutomationValueAtBeat).mockReturnValue(0.75);
         vi.mocked(isRecordingAutomation).mockReturnValue(false);
+        vi.mocked(getCurrentTime).mockReturnValue(5);
+        vi.mocked(getCompensationDelay).mockReturnValue(0);
     });
 
     it('should export applyAutomation', () => {
@@ -138,7 +149,7 @@ describe('applyAutomation', () => {
 
         applyAutomation(0);
 
-        expect(setTrackPan).toHaveBeenCalledWith('track-1', expectedPan);
+        expect(scheduleTrackPan).toHaveBeenCalledWith('track-1', expectedPan, 5);
     });
 
     it('routes a canonical Fermenter lane through the mapped use-case with the bare param id', () => {
@@ -200,8 +211,8 @@ describe('applyAutomation', () => {
         applyAutomation(1);
 
         if (expectedTarget === 'gain' || expectedTarget === 'pan') {
-            const setter = expectedTarget === 'gain' ? setTrackGain : setTrackPan;
-            expect(setter).toHaveBeenCalledWith('track-1', expectedTarget === 'gain' ? 0.75 : 37.5);
+            const setter = expectedTarget === 'gain' ? scheduleTrackGain : scheduleTrackPan;
+            expect(setter).toHaveBeenCalledWith('track-1', expectedTarget === 'gain' ? 0.75 : 37.5, 5);
             return;
         }
         if (expectedTarget && expectedTarget !== 'midi') {
@@ -226,5 +237,59 @@ describe('applyAutomation', () => {
 
         expect(updateDeviceParam).not.toHaveBeenCalled();
         expect(setFermenterMappedParam).not.toHaveBeenCalled();
+    });
+
+    describe('RT-5 compensation-aligned, sample-accurate gain/pan scheduling', () => {
+        it('schedules a gain lane at getCurrentTime() when the track carries no PDC (aligned to the musical position)', () => {
+            seedDeviceLane({ devices: [], laneParameterId: 'gain' });
+            vi.mocked(getCurrentTime).mockReturnValue(12);
+            vi.mocked(getCompensationDelay).mockReturnValue(0);
+
+            applyAutomation(0);
+
+            expect(scheduleTrackGain).toHaveBeenCalledWith('track-1', 0.75, 12);
+        });
+
+        it('delays the gain write by getCompensationDelay so it lands on the same clock as the compensated audio', () => {
+            seedDeviceLane({ devices: [], laneParameterId: 'gain' });
+            vi.mocked(getCurrentTime).mockReturnValue(12);
+            vi.mocked(getCompensationDelay).mockReturnValue(0.25);
+
+            applyAutomation(0);
+
+            // Before RT-5 this landed at getCurrentTime() (12), leading the
+            // compensated audio by the track latency; it must now be shifted by
+            // exactly the compensation delay.
+            expect(scheduleTrackGain).toHaveBeenCalledWith('track-1', 0.75, 12.25);
+            expect(scheduleTrackGain).not.toHaveBeenCalledWith('track-1', 0.75, 12);
+        });
+
+        it('shifts pan by the same compensation delay', () => {
+            seedDeviceLane({ devices: [], laneParameterId: 'pan' });
+            vi.mocked(getCurrentTime).mockReturnValue(4);
+            vi.mocked(getCompensationDelay).mockReturnValue(0.5);
+            vi.mocked(getAutomationValueAtBeat).mockReturnValue(1);
+
+            applyAutomation(0);
+
+            // canonical pan 1 → engine pan 50, landing at now + compensation.
+            expect(scheduleTrackPan).toHaveBeenCalledWith('track-1', 50, 4.5);
+        });
+
+        it('reads getCompensationDelay once per track across gain and pan lanes in one tick', () => {
+            seedDeviceLane({ devices: [], laneParameterId: 'gain' });
+            mutableAutomationStore.value.lanes.push({
+                id: 'lane-2',
+                trackId: 'track-1',
+                parameterId: 'pan',
+                minValue: 0,
+                points: [{ beat: 0, value: 0.75 }],
+            });
+
+            applyAutomation(0);
+
+            expect(getCompensationDelay).toHaveBeenCalledTimes(1);
+            expect(getCompensationDelay).toHaveBeenCalledWith('track-1');
+        });
     });
 });

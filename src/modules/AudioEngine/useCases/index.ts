@@ -113,6 +113,8 @@ export { setMasterGain } from './setMasterGain';
 
 export { setTrackGain } from './trackAudioControls/setTrackGain';
 export { setTrackPan } from './trackAudioControls/setTrackPan';
+export { scheduleTrackGain } from './trackAudioControls/scheduleTrackGain';
+export { scheduleTrackPan } from './trackAudioControls/scheduleTrackPan';
 export { setTrackMute } from './trackAudioControls/setTrackMute';
 export { setTrackOutput } from './trackAudioControls/setTrackOutput';
 export { getTrackPeakLevel } from './trackAudioControls/getTrackPeakLevel';
