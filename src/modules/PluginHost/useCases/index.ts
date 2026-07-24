@@ -17,6 +17,8 @@ export { processAudioIPC } from './pluginLifecycle/processAudioIPC';
 export { setPluginParameter } from './pluginLifecycle/setPluginParameter';
 export { readPluginState } from './pluginLifecycle/readPluginState';
 export { restorePluginState } from './pluginLifecycle/restorePluginState';
+export { activateExternalPlugin } from './pluginLifecycle/activateExternalPlugin';
+export { clearLoadedExternalPlugins } from './pluginLifecycle/clearLoadedExternalPlugins';
 
 export { findPluginByName } from './pluginScan/queries';
 

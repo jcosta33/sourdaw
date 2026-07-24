@@ -1,4 +1,3 @@
-import { logger } from '#/infra/logger/appLogger';
 import {
     addDeviceToStrip,
     ensureTrackStrip,
@@ -9,7 +8,7 @@ import {
     updateDeviceBypass,
     updateDeviceParam,
 } from '#/modules/AudioEngine/useCases';
-import { loadPlugin, restorePluginState } from '#/modules/PluginHost/useCases';
+import { activateExternalPlugin } from '#/modules/PluginHost/useCases';
 import { setSend, wireSidechainRoutes } from '#/modules/Routing/useCases';
 
 import { resolveEligibleDeviceWriteTarget } from '../stores/resolveEligibleDeviceWriteTarget';
@@ -86,20 +85,9 @@ export function projectTrackToLiveStrip({
         const instanceId = addDeviceArgs[3];
         const pluginId = device.externalPluginId;
         if (instanceId && pluginId) {
-            void loadPlugin(pluginId, instanceId).catch((error: unknown) => {
-                logger.warn(`Failed to load external plugin ${pluginId} for instance ${instanceId}: ${String(error)}`);
-            });
-            // Restore the saved opaque state chunk once instantiation settles.
-            // serializePluginLifecycle queues this behind the loadPlugin above on
-            // the same instance id, so state lands before audio flows (PH-3).
-            const storedStateChunk = device.externalStateChunk;
-            if (storedStateChunk) {
-                void restorePluginState(instanceId, storedStateChunk).catch((error: unknown) => {
-                    logger.warn(
-                        `Failed to restore state for external plugin ${pluginId} instance ${instanceId}: ${String(error)}`
-                    );
-                });
-            }
+            // Idempotent load + state restore; skips if the instance is already live,
+            // so the project-open rebuild and every Play/record rebuild stay cheap.
+            activateExternalPlugin({ pluginId, instanceId, stateChunk: device.externalStateChunk });
         }
         for (const [parameterId, value] of Object.entries(device.parameterValues)) {
             if (typeof value === 'number') {

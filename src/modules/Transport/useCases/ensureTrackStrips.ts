@@ -2,7 +2,9 @@
  * Ensures all track and bus strips exist in the audio engine
  * and syncs their gain/pan/mute/solo/sends/devices from the store state.
  *
- * Used by startPlayback and toggleRecording before audio begins.
+ * Used by startPlayback, toggleRecording, and the project-open rebuild. Instantiates
+ * dormant native (external) plugins idempotently, so reopening a project restores their
+ * state and repeated rebuilds (each Play/record) do not re-issue load/restore IPC.
  */
 
 import { shouldCreateLiveTrackStrip, trackStore } from '#/modules/Arrangement/stores';
@@ -38,7 +40,11 @@ export function ensureTrackStrips(): void {
     }
 
     for (const track of liveTracks) {
-        projectTrackToLiveStrip({ trackId: track.id, deferSidechainWiring: true });
+        projectTrackToLiveStrip({
+            trackId: track.id,
+            deferSidechainWiring: true,
+            activateDormantExternalPlugins: true,
+        });
     }
 
     // Re-wire persisted sidechain routes now that every track/bus strip and its

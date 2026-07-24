@@ -129,10 +129,12 @@ describe('ensureTrackStrips', () => {
         expect(mocks.projectTrackToLiveStrip).toHaveBeenNthCalledWith(1, {
             trackId: 't1',
             deferSidechainWiring: true,
+            activateDormantExternalPlugins: true,
         });
         expect(mocks.projectTrackToLiveStrip).toHaveBeenNthCalledWith(2, {
             trackId: 'b1',
             deferSidechainWiring: true,
+            activateDormantExternalPlugins: true,
         });
     });
 
@@ -177,7 +179,9 @@ describe('ensureTrackStrips', () => {
             }
             expect(mocks.ensureTrackStrip).not.toHaveBeenCalledWith(ordinaryFolder.id);
             expect(mocks.projectTrackToLiveStrip.mock.calls).toEqual(
-                liveTrackIds.map((trackId) => [{ trackId, deferSidechainWiring: true }])
+                liveTrackIds.map((trackId) => [
+                    { trackId, deferSidechainWiring: true, activateDormantExternalPlugins: true },
+                ])
             );
             expect(mocks.wireSidechainRoutes).toHaveBeenCalledTimes(1);
 
@@ -261,6 +265,7 @@ describe('ensureTrackStrips', () => {
         expect(mocks.projectTrackToLiveStrip).toHaveBeenCalledWith({
             trackId: 'toaster-1',
             deferSidechainWiring: true,
+            activateDormantExternalPlugins: true,
         });
     });
 
@@ -284,6 +289,7 @@ describe('ensureTrackStrips', () => {
         expect(mocks.projectTrackToLiveStrip).toHaveBeenCalledWith({
             trackId: 'audio-1',
             deferSidechainWiring: true,
+            activateDormantExternalPlugins: true,
         });
     });
 
@@ -307,6 +313,7 @@ describe('ensureTrackStrips', () => {
         expect(mocks.projectTrackToLiveStrip).toHaveBeenCalledWith({
             trackId: 'audio-1',
             deferSidechainWiring: true,
+            activateDormantExternalPlugins: true,
         });
     });
 });
