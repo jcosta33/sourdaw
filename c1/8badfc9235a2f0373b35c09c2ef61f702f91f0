@@ -1,0 +1,106 @@
+src/modules/Arrangement/useCases/device/__tests__/addExternalDevice.spec.ts
+  s_0d39f3a4a4357a::t_36a179061a33f5 10,13-14,17-22
+  s_0d39f3a4a4357a::t_2393927bab7410 15-16
+  s_0d39f3a4a4357a::t_3edfc08a5c647d 72-77
+  s_0d39f3a4a4357a::t_ada1b251a59783 95-111
+  s_0d39f3a4a4357a::t_d177a96c894d2b 34
+  s_0d39f3a4a4357a::t_6f4f7db869ac05 23
+src/modules/PluginHost/repositories/pluginBridge/__tests__/pluginBridge.spec.ts
+  s_0d39f3a4a4357a::t_308a122e20b0a1 168-169,171-183,185,187-196,199,201,203,205-220
+  s_0d39f3a4a4357a::t_2c59ccb9a05e97 3
+  s_0d39f3a4a4357a::t_7cc77fc8299593 202,204
+  s_0d39f3a4a4357a::t_605011fe3f4e66 18
+  s_0d39f3a4a4357a::t_6a7567d4433b4c 6
+  s_0d39f3a4a4357a::t_17b95fb3d62183 13-14
+  s_0d39f3a4a4357a::t_e37156357a76f1 184,186
+src-tauri/src/host/latency_watcher.rs
+  s_0d39f3a4a4357a::t_a2b51157823306 1-171
+src-tauri/src/commands/plugins.rs
+  s_0d39f3a4a4357a::t_4b04db8a60e8bb 31-33,35-37
+  s_0d39f3a4a4357a::t_f21ebc556e9776 156-161,163-177
+  s_0d39f3a4a4357a::t_069c694599b52d 284
+  s_0d39f3a4a4357a::t_b84cdf3b5855ae 254
+src/modules/Arrangement/useCases/__tests__/projectTrackToLiveStrip.spec.ts
+  s_0d39f3a4a4357a::t_daead3e5fcb2f4 42
+  s_0d39f3a4a4357a::t_d4e5cbc60dd2e1 22
+  s_0d39f3a4a4357a::t_7def8148f4ea48 115-130
+src/modules/PluginHost/repositories/pluginBridge/onPluginLatencyChanged.ts
+  s_0d39f3a4a4357a::t_3ff2bd016bae47 22
+  s_0d39f3a4a4357a::t_2e266f4ecd6823 1-21,23-33
+src/modules/PluginHost/useCases/pluginLifecycle/activateExternalPlugin.ts
+  s_0d39f3a4a4357a::t_ad3abb21d0ee06 45,52-59,63-67,69-70,72
+  s_0d39f3a4a4357a::t_29415900af536d 3,7,14-16,18-21,23
+crates/daw-plugin-host/src/clap_wrapper.rs
+  s_0d39f3a4a4357a::t_704f1f25cfa246 938-941
+  s_0d39f3a4a4357a::t_fb73f283b3a50e 1146
+  s_0d39f3a4a4357a::t_e0ac3b1f32d747 1180-1197
+  s_0d39f3a4a4357a::t_5a51b0b2bd8a49 1296-1351
+  s_0d39f3a4a4357a::t_47d0ed93df94e7 16
+  s_0d39f3a4a4357a::t_c38e6a85566826 865-872,874-885
+  s_0d39f3a4a4357a::t_8b7d5f008ad096 873
+  s_0d39f3a4a4357a::t_5b00cac78be7a8 942,1295
+src/modules/Arrangement/useCases/projectTrackToLiveStrip.ts
+  s_0d39f3a4a4357a::t_c55e22ca93872d 4
+  s_0d39f3a4a4357a::t_7fb4d1d6c19efd 95
+src/modules/PluginHost/useCases/pluginLifecycle/__tests__/activateExternalPlugin.spec.ts
+  s_0d39f3a4a4357a::t_386082807facad 180,188-191
+  s_0d39f3a4a4357a::t_3832020a4e44ba 6-8,13-14,18-19,25-28,31-41,43-44,46-54
+  s_0d39f3a4a4357a::t_6193abaf0df2f0 42,45
+  s_0d39f3a4a4357a::t_cdc0f9adf49880 114-122,124,126-179,181-187,196,198,201-205
+  s_0d39f3a4a4357a::t_d52268f9dc2a86 55
+src-tauri/src/lib.rs
+  s_0d39f3a4a4357a::t_517dcc3bef6d82 5-6
+  s_0d39f3a4a4357a::t_7cd498cc68e30e 115-127
+src/modules/PluginHost/useCases/pluginLifecycle/watchExternalPluginLatency.ts
+  s_0d39f3a4a4357a::t_972bdeae0a0523 1-27,29-34
+  s_0d39f3a4a4357a::t_955d4bde93fc18 28
+  s_0d39f3a4a4357a::t_0bc8bff3dcfb72 35-38
+src/modules/Arrangement/useCases/device/addExternalDevice.ts
+  s_0d39f3a4a4357a::t_abfb68b34f1350 47
+  s_0d39f3a4a4357a::t_ec1baf0ec32e8c 1
+src-tauri/src/host/mod.rs
+  s_0d39f3a4a4357a::t_fbc52f4925366e 1
+src-tauri/src/host/native_bridge.rs
+  s_0d39f3a4a4357a::t_75cbcb4969c80c 373-379,383-387
+src/modules/PluginHost/repositories/pluginBridge/loadPlugin.ts
+  s_0d39f3a4a4357a::t_cd33e7c93c32a0 14
+src/modules/PluginHost/useCases/pluginLifecycle/unloadPlugin.ts
+  s_0d39f3a4a4357a::t_4a93f02396d564 3,10-12
+src/modules/PluginHost/useCases/pluginLifecycle/externalLatencyReporters.ts
+  s_0d39f3a4a4357a::t_34754ed2006143 1-17
+src/modules/Arrangement/useCases/device/__tests__/removeDevice.spec.ts
+  s_0d39f3a4a4357a::t_ec5175877e0c42 18,22-25
+  s_0d39f3a4a4357a::t_56d0838f0653e0 125-161
+  s_0d39f3a4a4357a::t_aa9d4c28b4618a 43
+  s_0d39f3a4a4357a::t_be52732a2673f1 26
+src/modules/PluginHost/repositories/pluginBridge/types.ts
+  s_0d39f3a4a4357a::t_63e6217beeb665 24-28,30-42
+src/modules/AudioEngine/useCases/index.ts
+  s_0d39f3a4a4357a::t_977fcb690c8d1a 92
+crates/daw-plugin-host/src/clap_host.rs
+  s_0d39f3a4a4357a::t_4cfb10125fa56c 14-22,28-36,39-49,53-58,60,63-69,77-82
+  s_0d39f3a4a4357a::t_dec5af2032177d 83,300-344
+src/modules/Arrangement/useCases/device/removeDevice.ts
+  s_0d39f3a4a4357a::t_77a40c4dd35a5a 88
+  s_0d39f3a4a4357a::t_1114ce28c1075a 49-54,58,63,65
+  s_0d39f3a4a4357a::t_3b060abbe8f9d5 84-87,90,92-93
+  s_0d39f3a4a4357a::t_3a95f472a2f2dd 80-83,91
+src/modules/PluginHost/useCases/pluginLifecycle/clearLoadedExternalPlugins.ts
+  s_0d39f3a4a4357a::t_6cf48658b769c0 1,8-11,15
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "c18badfc9235a2f0373b35c09c2ef61f702f91f0",
+  "prompts": {},
+  "sessions": {
+    "s_0d39f3a4a4357a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "60da6a2e-7d79-4d98-8624-e993f5a9f94e",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
