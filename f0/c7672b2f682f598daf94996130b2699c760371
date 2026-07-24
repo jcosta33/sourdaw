@@ -1,0 +1,22 @@
+.agents/artifacts/sourdaw/audits/AUDIT-synthesis.md
+  s_0d39f3a4a4357a::t_7fd3ff2311a058 162-165
+  s_0d39f3a4a4357a::t_1e300471345243 34-35
+  s_0d39f3a4a4357a::t_8afea329ee5a31 314-318
+  s_0d39f3a4a4357a::t_a88ff303913a7c 379
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "f0c7672b2f682f598daf94996130b2699c760371",
+  "prompts": {},
+  "sessions": {
+    "s_0d39f3a4a4357a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "60da6a2e-7d79-4d98-8624-e993f5a9f94e",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
