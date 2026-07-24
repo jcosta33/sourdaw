@@ -1,0 +1,31 @@
+src/modules/Arrangement/presentations/helpers/__tests__/timelineMouse.spec.ts
+  s_0d39f3a4a4357a::t_05371961a2b5f4 1,4-17,36-77
+src/modules/Arrangement/useCases/__tests__/songStructureDetection.spec.ts
+  s_88ffc5326d9b0b::t_b669b0d8670c6e 218-280
+src/modules/Arrangement/useCases/timelineInteractions/hitTestClip/__tests__/hitTestClip.spec.ts
+  s_88ffc5326d9b0b::t_b4231b6c6f1545 8-19,99,103,105-106,122-231
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "c6779c96205f6e0c39307187c253908f80dc5507",
+  "prompts": {},
+  "sessions": {
+    "s_0d39f3a4a4357a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "60da6a2e-7d79-4d98-8624-e993f5a9f94e",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_88ffc5326d9b0b": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-ad18badee0d6bb8b2",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
