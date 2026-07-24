@@ -1,0 +1,68 @@
+src/modules/AudioRendering/repositories/audioEncoders/convertFloatChannelsToPcm.ts
+  s_0d39f3a4a4357a::t_5ffb86e7ecc511 1-160
+src/modules/AudioRendering/presentations/views/__tests__/ExportDialog.spec.tsx
+  s_0d39f3a4a4357a::t_76c55c96fb03e6 355
+  s_0d39f3a4a4357a::t_03f64270cf53d9 8,10,309-354,356-359
+src/modules/AudioRendering/repositories/audioEncoders/__tests__/convertFloatChannelsToPcm.spec.ts
+  s_0d39f3a4a4357a::t_fa5ff1ad25c07c 20-22
+  s_0d39f3a4a4357a::t_7205715dbe0b5c 1-19,23-111
+src/modules/AudioRendering/repositories/audioEncoders/flacEncoder.ts
+  s_0d39f3a4a4357a::t_e708c20eacf38d 97,273-275,343-344,346,350-351,356-362,364,366
+  s_0d39f3a4a4357a::t_8459b401c505c5 438-443,447,454-465,467-468,473,503-504,535,549,570-583
+  s_0d39f3a4a4357a::t_0f9907e0b4342e 3,5-8,98-104,108-113,198-207
+  s_0d39f3a4a4357a::t_61283adc09f975 11-12
+  s_0d39f3a4a4357a::t_fe0808d42a790f 372,376-377,382,384,404-410,412,420-421,430,432
+src/modules/AudioRendering/presentations/views/ExportDialog.tsx
+  s_0d39f3a4a4357a::t_baf74b43e56be0 934,940
+  s_0d39f3a4a4357a::t_c3b2a838da3d00 289,318-321,579-583
+  s_0d39f3a4a4357a::t_c77d6f86c44845 44,141-153
+src/modules/AudioRendering/presentations/views/__tests__/resolveExportBitDepths.spec.ts
+  s_0d39f3a4a4357a::t_ce57cac45836a7 1-36
+src/modules/AudioRendering/useCases/__tests__/conversions.spec.ts
+  s_0d39f3a4a4357a::t_d0dd7112b76364 38-39
+  s_0d39f3a4a4357a::t_1104c3950b3514 31-32
+  s_0d39f3a4a4357a::t_ec3717129854f0 45
+src/modules/AudioRendering/useCases/__tests__/audioBufferToWav.spec.ts
+  s_0d39f3a4a4357a::t_edb372df51a9c2 21-22
+  s_0d39f3a4a4357a::t_0d64a00092e786 32
+src/modules/AudioRendering/useCases/audioBufferToWav.ts
+  s_0d39f3a4a4357a::t_caceebf2f6a76c 1,13-14,16
+src/modules/AudioRendering/repositories/audioEncoders/__tests__/flacEncoder.spec.ts
+  s_0d39f3a4a4357a::t_6f3a8bb3b5689f 71
+src/modules/AudioRendering/repositories/audioEncoders/__tests__/exportFormatParity.spec.ts
+  s_0d39f3a4a4357a::t_8d3203eee493b3 1-182
+src/modules/AudioRendering/presentations/views/resolveExportBitDepths.ts
+  s_0d39f3a4a4357a::t_e23d2c3957081f 1-45
+src/modules/AudioRendering/useCases/__tests__/audioBufferToMp3.spec.ts
+  s_0d39f3a4a4357a::t_6da54dc3bb4a34 21-22
+  s_0d39f3a4a4357a::t_fa2bbe35152828 32
+src/modules/AudioRendering/repositories/audioEncoders/mp3Encoder.ts
+  s_0d39f3a4a4357a::t_8ad86955e4eb18 3-4,13-14,20-30,33-34
+  s_0d39f3a4a4357a::t_db9e9ed971e3c7 75-76,80
+src/modules/AudioRendering/useCases/audioBufferToFlac.ts
+  s_0d39f3a4a4357a::t_1786be4f4ef96f 1-2,5,10-16
+src/modules/AudioRendering/useCases/audioBufferToMp3.ts
+  s_0d39f3a4a4357a::t_ad2f74d406a5c6 1,13-14,16
+src/modules/AudioRendering/repositories/audioEncoders/wavEncoder.ts
+  s_0d39f3a4a4357a::t_b551d95d99e58d 53-57,63-66,68,71,73,75-77,79
+  s_0d39f3a4a4357a::t_beb0e8849430ad 1-2,6-7
+src/modules/AudioRendering/useCases/__tests__/audioBufferToFlac.spec.ts
+  s_0d39f3a4a4357a::t_ee6ef1500159cd 21-22
+  s_0d39f3a4a4357a::t_da14c9affd5dc5 25,32
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "60c12f315036ff0abc149b7bb65622c8103dad79",
+  "prompts": {},
+  "sessions": {
+    "s_0d39f3a4a4357a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "60da6a2e-7d79-4d98-8624-e993f5a9f94e",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
