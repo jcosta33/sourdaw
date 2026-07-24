@@ -20,6 +20,7 @@ pub mod triode;
 use engine::GrinderEngine;
 use params::GRINDER_AUTOMATABLE_PARAM_COUNT;
 use wasm_bindgen::prelude::*;
+use crate::primitives::sanitize_block;
 
 const MAX_GRINDER_BLOCK_SIZE: usize = 2048;
 const GRINDER_AUTOMATION_BUFFER_SIZE: usize =
@@ -34,6 +35,7 @@ pub struct GrinderInstance {
     output_left: Vec<f32>,
     output_right: Vec<f32>,
     automation_values: Vec<f32>,
+    nan_flush_count: u64,
 }
 
 #[wasm_bindgen]
@@ -47,6 +49,7 @@ impl GrinderInstance {
             output_left: vec![0.0; MAX_GRINDER_BLOCK_SIZE],
             output_right: vec![0.0; MAX_GRINDER_BLOCK_SIZE],
             automation_values: vec![0.0; GRINDER_AUTOMATION_BUFFER_SIZE],
+            nan_flush_count: 0,
         }
     }
 
@@ -84,6 +87,9 @@ impl GrinderInstance {
             &mut self.output_right[..size],
         );
 
+        self.nan_flush_count += sanitize_block(&mut self.output_left[..size]) as u64;
+        self.nan_flush_count += sanitize_block(&mut self.output_right[..size]) as u64;
+
         self.output_left.as_ptr()
     }
 
@@ -103,7 +109,17 @@ impl GrinderInstance {
             MAX_GRINDER_BLOCK_SIZE,
         );
 
+        self.nan_flush_count += sanitize_block(&mut self.output_left[..size]) as u64;
+        self.nan_flush_count += sanitize_block(&mut self.output_right[..size]) as u64;
+
         self.output_left.as_ptr()
+    }
+
+    /// Number of non-finite output samples scrubbed to silence since
+    /// construction (DSP-8). Non-zero means a poisoned block was caught at the
+    /// wasm output boundary and surfaced for health telemetry.
+    pub fn get_nan_flush_count(&self) -> f64 {
+        self.nan_flush_count as f64
     }
 
     pub fn get_right_ptr(&self) -> *const f32 {

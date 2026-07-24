@@ -22,6 +22,7 @@ pub mod zone;
 
 use engine::LevainEngine;
 use wasm_bindgen::prelude::*;
+use crate::primitives::sanitize_block;
 
 /// WASM-exported Levain instance for AudioWorklet.
 #[wasm_bindgen]
@@ -29,6 +30,7 @@ pub struct LevainInstance {
     engine: LevainEngine,
     left_buf: Vec<f32>,
     right_buf: Vec<f32>,
+    nan_flush_count: u64,
 }
 
 #[wasm_bindgen]
@@ -40,6 +42,7 @@ impl LevainInstance {
             engine: LevainEngine::new(sample_rate, max_voices as usize),
             left_buf: vec![0.0; max_block],
             right_buf: vec![0.0; max_block],
+            nan_flush_count: 0,
         }
     }
 
@@ -182,7 +185,17 @@ impl LevainInstance {
         self.engine
             .process_block(&mut self.left_buf[..size], &mut self.right_buf[..size], &[]);
 
+        self.nan_flush_count += sanitize_block(&mut self.left_buf[..size]) as u64;
+        self.nan_flush_count += sanitize_block(&mut self.right_buf[..size]) as u64;
+
         self.left_buf.as_ptr()
+    }
+
+    /// Number of non-finite output samples scrubbed to silence since
+    /// construction (DSP-8). Non-zero means a poisoned block was caught at the
+    /// wasm output boundary and surfaced for health telemetry.
+    pub fn get_nan_flush_count(&self) -> f64 {
+        self.nan_flush_count as f64
     }
 
     /// Get pointer to right channel buffer (call after process).

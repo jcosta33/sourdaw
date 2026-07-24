@@ -6,6 +6,7 @@ export const scoringinstance_get_cents: (a: number) => number;
 export const scoringinstance_get_confidence: (a: number) => number;
 export const scoringinstance_get_frequency: (a: number) => number;
 export const scoringinstance_get_midi_note: (a: number) => number;
+export const scoringinstance_get_nan_flush_count: (a: number) => number;
 export const scoringinstance_get_note_index: (a: number) => number;
 export const scoringinstance_get_octave: (a: number) => number;
 export const scoringinstance_get_poly_string_cents: (a: number, b: number) => number;

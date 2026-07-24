@@ -1109,6 +1109,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "console_error_panic_hook"
+version = "0.1.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a06aeb73f470f66dcdbf7223caeebb85984942f22f1adb2a088cf9668146bbbc"
+dependencies = [
+ "cfg-if",
+ "wasm-bindgen",
+]
+
+[[package]]
 name = "const-oid"
 version = "0.10.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1605,6 +1615,7 @@ name = "daw-dsp"
 version = "0.1.0"
 dependencies = [
  "assert_no_alloc",
+ "console_error_panic_hook",
  "js-sys",
  "serde",
  "serde_json",
@@ -1645,6 +1656,7 @@ dependencies = [
 name = "daw-wasm-decoder"
 version = "0.1.0"
 dependencies = [
+ "console_error_panic_hook",
  "daw-io",
  "js-sys",
  "wasm-bindgen",
@@ -5765,6 +5777,7 @@ name = "proof-chamber"
 version = "0.1.0"
 dependencies = [
  "assert_no_alloc",
+ "console_error_panic_hook",
  "js-sys",
  "serde",
  "serde_json",
@@ -6724,6 +6737,7 @@ name = "scoring"
 version = "0.1.0"
 dependencies = [
  "assert_no_alloc",
+ "console_error_panic_hook",
  "js-sys",
  "serde",
  "serde_json",

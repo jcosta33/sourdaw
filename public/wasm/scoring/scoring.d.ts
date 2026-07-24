@@ -8,6 +8,7 @@ export class ScoringInstance {
     get_confidence(): number;
     get_frequency(): number;
     get_midi_note(): number;
+    get_nan_flush_count(): number;
     get_note_index(): number;
     get_octave(): number;
     get_poly_string_cents(idx: number): number;
@@ -38,6 +39,7 @@ export interface InitOutput {
     readonly scoringinstance_get_confidence: (a: number) => number;
     readonly scoringinstance_get_frequency: (a: number) => number;
     readonly scoringinstance_get_midi_note: (a: number) => number;
+    readonly scoringinstance_get_nan_flush_count: (a: number) => number;
     readonly scoringinstance_get_note_index: (a: number) => number;
     readonly scoringinstance_get_octave: (a: number) => number;
     readonly scoringinstance_get_poly_string_cents: (a: number, b: number) => number;

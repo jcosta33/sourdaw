@@ -20,6 +20,7 @@ pub mod voice;
 
 use engine::ToasterEngine;
 use wasm_bindgen::prelude::*;
+use crate::primitives::sanitize_block;
 
 const MAX_BLOCK_SIZE: usize = 4096;
 
@@ -29,6 +30,7 @@ pub struct ToasterInstance {
     engine: ToasterEngine,
     output_buf: Vec<f32>,
     num_pads: usize,
+    nan_flush_count: u64,
 }
 
 #[wasm_bindgen]
@@ -41,6 +43,7 @@ impl ToasterInstance {
             engine: ToasterEngine::new(sample_rate, num_pads),
             output_buf: vec![0.0; output_channels * MAX_BLOCK_SIZE],
             num_pads,
+            nan_flush_count: 0,
         }
     }
 
@@ -93,7 +96,19 @@ impl ToasterInstance {
             MAX_BLOCK_SIZE,
         );
 
+        let mut scrubbed = sanitize_block(&mut left_buf[..size]);
+        scrubbed += sanitize_block(&mut right_buf[..size]);
+        scrubbed += sanitize_block(&mut pad_outputs[..pad_output_len]);
+        self.nan_flush_count += scrubbed as u64;
+
         self.output_buf.as_ptr()
+    }
+
+    /// Number of non-finite output samples scrubbed to silence since
+    /// construction (DSP-8). Covers the main stereo pair and every pad output;
+    /// non-zero means a poisoned block was caught at the wasm output boundary.
+    pub fn get_nan_flush_count(&self) -> f64 {
+        self.nan_flush_count as f64
     }
 
     /// Get pointer to right channel buffer (call after process).

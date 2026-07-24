@@ -23,6 +23,7 @@ pub mod oversample;
 
 use chain::ProofChain;
 use wasm_bindgen::prelude::*;
+use crate::primitives::sanitize_block;
 
 const NUM_MODULES: usize = 5;
 const NUM_TAPS: usize = 6;
@@ -35,6 +36,7 @@ pub struct ProofInstance {
     input_right: Vec<f32>,
     output_left: Vec<f32>,
     output_right: Vec<f32>,
+    nan_flush_count: u64,
 }
 
 #[wasm_bindgen]
@@ -48,6 +50,7 @@ impl ProofInstance {
             input_right: vec![0.0; block_size],
             output_left: vec![0.0; block_size],
             output_right: vec![0.0; block_size],
+            nan_flush_count: 0,
         }
     }
 
@@ -79,7 +82,17 @@ impl ProofInstance {
             &mut self.output_right[..size],
         );
 
+        self.nan_flush_count += sanitize_block(&mut self.output_left[..size]) as u64;
+        self.nan_flush_count += sanitize_block(&mut self.output_right[..size]) as u64;
+
         self.output_left.as_ptr()
+    }
+
+    /// Number of non-finite output samples scrubbed to silence since
+    /// construction (DSP-8). Non-zero means a poisoned block was caught at the
+    /// wasm output boundary and surfaced for health telemetry.
+    pub fn get_nan_flush_count(&self) -> f64 {
+        self.nan_flush_count as f64
     }
 
     pub fn get_right_ptr(&self) -> *const f32 {

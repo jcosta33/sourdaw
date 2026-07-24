@@ -123,6 +123,16 @@ export class BacteriaInstance {
         return ret >>> 0;
     }
     /**
+     * Number of non-finite output samples scrubbed to silence since
+     * construction (DSP-8). Non-zero means a poisoned block was caught at the
+     * wasm output boundary and surfaced for health telemetry.
+     * @returns {number}
+     */
+    get_nan_flush_count() {
+        const ret = wasm.bacteriainstance_get_nan_flush_count(this.__wbg_ptr);
+        return ret;
+    }
+    /**
      * Get current output level in dB (for metering).
      * @returns {number}
      */
@@ -191,6 +201,16 @@ export class FermenterInstance {
     active_voices() {
         const ret = wasm.fermenterinstance_active_voices(this.__wbg_ptr);
         return ret >>> 0;
+    }
+    /**
+     * Number of non-finite output samples scrubbed to silence since
+     * construction (DSP-8). Non-zero means a poisoned block was caught at the
+     * wasm output boundary and surfaced for health telemetry.
+     * @returns {number}
+     */
+    get_nan_flush_count() {
+        const ret = wasm.fermenterinstance_get_nan_flush_count(this.__wbg_ptr);
+        return ret;
     }
     /**
      * Get pointer to right channel buffer (call after process).
@@ -320,6 +340,16 @@ export class GlutenInstance {
         return ret >>> 0;
     }
     /**
+     * Number of non-finite output samples scrubbed to silence since
+     * construction (DSP-8). Non-zero means a poisoned block was caught at the
+     * wasm output boundary and surfaced for health telemetry.
+     * @returns {number}
+     */
+    get_nan_flush_count() {
+        const ret = wasm.gluteninstance_get_nan_flush_count(this.__wbg_ptr);
+        return ret;
+    }
+    /**
      * Get current output level in dB (for metering).
      * @returns {number}
      */
@@ -410,6 +440,16 @@ export class GrandBouleInstance {
      */
     all_notes_off() {
         wasm.grandbouleinstance_all_notes_off(this.__wbg_ptr);
+    }
+    /**
+     * Number of non-finite output samples scrubbed to silence since
+     * construction (DSP-8). Non-zero means a poisoned block was caught at the
+     * wasm output boundary and surfaced for health telemetry.
+     * @returns {number}
+     */
+    get_nan_flush_count() {
+        const ret = wasm.grandbouleinstance_get_nan_flush_count(this.__wbg_ptr);
+        return ret;
     }
     /**
      * Pointer to the right channel buffer (call after `process`).
@@ -581,6 +621,16 @@ export class GrinderInstance {
         return ret >>> 0;
     }
     /**
+     * Number of non-finite output samples scrubbed to silence since
+     * construction (DSP-8). Non-zero means a poisoned block was caught at the
+     * wasm output boundary and surfaced for health telemetry.
+     * @returns {number}
+     */
+    get_nan_flush_count() {
+        const ret = wasm.grinderinstance_get_nan_flush_count(this.__wbg_ptr);
+        return ret;
+    }
+    /**
      * @returns {number}
      */
     get_neural_cpu_percent() {
@@ -704,6 +754,16 @@ export class KneadInstance {
     get_input_right_ptr() {
         const ret = wasm.kneadinstance_get_input_right_ptr(this.__wbg_ptr);
         return ret >>> 0;
+    }
+    /**
+     * Number of non-finite output samples scrubbed to silence since
+     * construction (DSP-8). Non-zero means a poisoned block was caught at the
+     * wasm output boundary and surfaced for health telemetry.
+     * @returns {number}
+     */
+    get_nan_flush_count() {
+        const ret = wasm.kneadinstance_get_nan_flush_count(this.__wbg_ptr);
+        return ret;
     }
     /**
      * @returns {number}
@@ -842,6 +902,16 @@ export class LevainInstance {
      */
     clear_zones() {
         wasm.levaininstance_clear_zones(this.__wbg_ptr);
+    }
+    /**
+     * Number of non-finite output samples scrubbed to silence since
+     * construction (DSP-8). Non-zero means a poisoned block was caught at the
+     * wasm output boundary and surfaced for health telemetry.
+     * @returns {number}
+     */
+    get_nan_flush_count() {
+        const ret = wasm.levaininstance_get_nan_flush_count(this.__wbg_ptr);
+        return ret;
     }
     /**
      * Get pointer to right channel buffer (call after process).
@@ -1014,6 +1084,16 @@ export class ProofInstance {
         return v1;
     }
     /**
+     * Number of non-finite output samples scrubbed to silence since
+     * construction (DSP-8). Non-zero means a poisoned block was caught at the
+     * wasm output boundary and surfaced for health telemetry.
+     * @returns {number}
+     */
+    get_nan_flush_count() {
+        const ret = wasm.proofinstance_get_nan_flush_count(this.__wbg_ptr);
+        return ret;
+    }
+    /**
      * @returns {number}
      */
     get_output_lufs() {
@@ -1115,6 +1195,16 @@ export class ToasterInstance {
     free() {
         const ptr = this.__destroy_into_raw();
         wasm.__wbg_toasterinstance_free(ptr, 0);
+    }
+    /**
+     * Number of non-finite output samples scrubbed to silence since
+     * construction (DSP-8). Covers the main stereo pair and every pad output;
+     * non-zero means a poisoned block was caught at the wasm output boundary.
+     * @returns {number}
+     */
+    get_nan_flush_count() {
+        const ret = wasm.toasterinstance_get_nan_flush_count(this.__wbg_ptr);
+        return ret;
     }
     /**
      * Get pointer to right channel buffer (call after process).
@@ -1245,11 +1335,43 @@ export function commit_pitch_edit_wasm(samples, sample_rate, segments_json, cont
     wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
     return v4;
 }
+
+/**
+ * Install `console_error_panic_hook` once at wasm module init so a Rust panic
+ * surfaces a readable message on the JS console instead of an opaque
+ * `unreachable` trap that silently poisons the AudioWorklet instance (WB-6).
+ * Wasm-only by construction; the native build is unaffected.
+ */
+export function init_panic_hook() {
+    wasm.init_panic_hook();
+}
 function __wbg_get_imports() {
     const import0 = {
         __proto__: null,
         __wbg___wbindgen_throw_344f42d3211c4765: function(arg0, arg1) {
             throw new Error(getStringFromWasm0(arg0, arg1));
+        },
+        __wbg_error_a6fa202b58aa1cd3: function(arg0, arg1) {
+            let deferred0_0;
+            let deferred0_1;
+            try {
+                deferred0_0 = arg0;
+                deferred0_1 = arg1;
+                console.error(getStringFromWasm0(arg0, arg1));
+            } finally {
+                wasm.__wbindgen_free(deferred0_0, deferred0_1, 1);
+            }
+        },
+        __wbg_new_227d7c05414eb861: function() {
+            const ret = new Error();
+            return ret;
+        },
+        __wbg_stack_3b0d974bbf31e44f: function(arg0, arg1) {
+            const ret = arg1.stack;
+            const ptr1 = passStringToWasm0(ret, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+            const len1 = WASM_VECTOR_LEN;
+            getDataViewMemory0().setInt32(arg0 + 4 * 1, len1, true);
+            getDataViewMemory0().setInt32(arg0 + 4 * 0, ptr1, true);
         },
         __wbindgen_init_externref_table: function() {
             const table = wasm.__wbindgen_externrefs;
@@ -1303,6 +1425,14 @@ function getArrayF32FromWasm0(ptr, len) {
 function getArrayU8FromWasm0(ptr, len) {
     ptr = ptr >>> 0;
     return getUint8ArrayMemory0().subarray(ptr / 1, ptr / 1 + len);
+}
+
+let cachedDataViewMemory0 = null;
+function getDataViewMemory0() {
+    if (cachedDataViewMemory0 === null || cachedDataViewMemory0.buffer.detached === true || (cachedDataViewMemory0.buffer.detached === undefined && cachedDataViewMemory0.buffer !== wasm.memory.buffer)) {
+        cachedDataViewMemory0 = new DataView(wasm.memory.buffer);
+    }
+    return cachedDataViewMemory0;
 }
 
 let cachedFloat32ArrayMemory0 = null;
@@ -1403,6 +1533,7 @@ function __wbg_finalize_init(instance, module) {
     wasmInstance = instance;
     wasm = instance.exports;
     wasmModule = module;
+    cachedDataViewMemory0 = null;
     cachedFloat32ArrayMemory0 = null;
     cachedUint8ArrayMemory0 = null;
     wasm.__wbindgen_start();

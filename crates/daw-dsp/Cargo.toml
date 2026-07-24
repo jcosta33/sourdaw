@@ -17,3 +17,8 @@ assert_no_alloc = "1.1"
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 js-sys = "0.3"
+# WB-6: surface Rust panics as readable JS-console diagnostics instead of an
+# opaque `unreachable` trap that silently poisons the AudioWorklet instance.
+# Scoped to wasm so the native build's dependency graph and panic behaviour are
+# unaffected.
+console_error_panic_hook = "0.1"

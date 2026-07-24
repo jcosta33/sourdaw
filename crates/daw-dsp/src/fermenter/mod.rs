@@ -26,6 +26,7 @@ pub mod voice;
 
 use synth::MasterSynth;
 use wasm_bindgen::prelude::*;
+use crate::primitives::sanitize_block;
 
 const AUTOMATION_PARAM_NAMES: [&str; 15] = [
     "osc_level",
@@ -51,6 +52,7 @@ pub struct FermenterInstance {
     synth: MasterSynth,
     left_buf: Vec<f32>,
     right_buf: Vec<f32>,
+    nan_flush_count: u64,
 }
 
 #[wasm_bindgen]
@@ -62,6 +64,7 @@ impl FermenterInstance {
             synth: MasterSynth::new(sample_rate, max_voices as usize),
             left_buf: vec![0.0; block_size],
             right_buf: vec![0.0; block_size],
+            nan_flush_count: 0,
         }
     }
 
@@ -97,7 +100,17 @@ impl FermenterInstance {
         self.synth
             .process_block(&mut self.left_buf[..size], &mut self.right_buf[..size], &[]);
 
+        self.nan_flush_count += sanitize_block(&mut self.left_buf[..size]) as u64;
+        self.nan_flush_count += sanitize_block(&mut self.right_buf[..size]) as u64;
+
         self.left_buf.as_ptr()
+    }
+
+    /// Number of non-finite output samples scrubbed to silence since
+    /// construction (DSP-8). Non-zero means a poisoned block was caught at the
+    /// wasm output boundary and surfaced for health telemetry.
+    pub fn get_nan_flush_count(&self) -> f64 {
+        self.nan_flush_count as f64
     }
 
     /// Get pointer to right channel buffer (call after process).

@@ -22,6 +22,7 @@ pub mod vca;
 
 use engine::GlutenEngine;
 use wasm_bindgen::prelude::*;
+use crate::primitives::sanitize_block;
 
 /// WASM-exported Gluten instance for AudioWorklet.
 /// Unlike instruments, this is an *effect* — it processes input audio.
@@ -32,6 +33,7 @@ pub struct GlutenInstance {
     input_right: Vec<f32>,
     output_left: Vec<f32>,
     output_right: Vec<f32>,
+    nan_flush_count: u64,
     /// External sidechain input buffers
     sc_left: Vec<f32>,
     sc_right: Vec<f32>,
@@ -48,6 +50,7 @@ impl GlutenInstance {
             input_right: vec![0.0; block_size],
             output_left: vec![0.0; block_size],
             output_right: vec![0.0; block_size],
+            nan_flush_count: 0,
             sc_left: vec![0.0; block_size],
             sc_right: vec![0.0; block_size],
         }
@@ -98,7 +101,17 @@ impl GlutenInstance {
             &mut self.output_right[..size],
         );
 
+        self.nan_flush_count += sanitize_block(&mut self.output_left[..size]) as u64;
+        self.nan_flush_count += sanitize_block(&mut self.output_right[..size]) as u64;
+
         self.output_left.as_ptr()
+    }
+
+    /// Number of non-finite output samples scrubbed to silence since
+    /// construction (DSP-8). Non-zero means a poisoned block was caught at the
+    /// wasm output boundary and surfaced for health telemetry.
+    pub fn get_nan_flush_count(&self) -> f64 {
+        self.nan_flush_count as f64
     }
 
     /// Get pointer to output right buffer (call after process).
