@@ -1,0 +1,25 @@
+src/modules/Project/useCases/projectPersistence/helpers/runProjectLoadTransaction.ts
+  s_0d39f3a4a4357a::t_e4a1801f88eb85 87-93,100-105
+  s_0d39f3a4a4357a::t_bb6fd938693e11 98
+src/modules/Project/useCases/projectPersistence/helpers/__tests__/runProjectLoadTransactionLaunchRace.spec.ts
+  s_0d39f3a4a4357a::t_694a1f77766d03 25,27-30
+  s_0d39f3a4a4357a::t_aa3baf26fa52d8 26
+  s_0d39f3a4a4357a::t_700c259560a91d 105-111,113-115,117
+  s_0d39f3a4a4357a::t_6f2211b9a3679e 83-104,112,116,118-123
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "8eb11e7237d953841db9c309b02a3d80f017e3cf",
+  "prompts": {},
+  "sessions": {
+    "s_0d39f3a4a4357a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "60da6a2e-7d79-4d98-8624-e993f5a9f94e",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
