@@ -239,10 +239,11 @@ describe('compileAutomationEvents — device-param slew (AU-2)', () => {
     const SLEW = { slew: { alpha: 0.4, tickSeconds: 0.01 } };
 
     it('replicates the live IIR over a stepped device curve and settles on the target', () => {
-        // step 0 -> 1 at beat 2 (1s at 120bpm).
+        // step 0 -> 1 at beat 2 (1s at 120bpm); 3s render leaves room for the
+        // post-step glide to settle inside the window.
         const events = compileAutomationEvents(
             [point(0, 0, 'step'), point(2, 1, 'step')],
-            1,
+            3,
             DEFAULT_TEMPO,
             [],
             0,

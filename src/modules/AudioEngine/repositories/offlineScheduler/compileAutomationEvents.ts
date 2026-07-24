@@ -7,11 +7,10 @@ import { beatToSeconds } from '../../services/beatConversion';
 type AutomationTempoChange = { beat: number; tempo: number };
 export type CompiledAutomationEvent = { type: 'set' | 'linear'; timeSeconds: number; value: number };
 const AUTOMATION_SAMPLE_INTERVAL_SEC = 0.01;
-// Slew settling tail bounds (AU-2): after the last point the offline slew keeps
-// gliding to the held value so the render lands on the true target, not a
-// mid-glide undershoot — matching the live path that keeps ticking past it.
+// The offline slew, once past the last point, glides to the held target; below
+// this residual it is treated as settled and the exact target is emitted so the
+// render holds the true value (not a mid-glide undershoot).
 const SLEW_SETTLE_EPSILON = 1e-6;
-const MAX_SLEW_SETTLE_TICKS = 128;
 type BeatProjector = (beat: number) => number;
 type SlewConfig = { alpha: number; tickSeconds: number };
 type ActiveWindowSeconds = { startSeconds: number; endSeconds: number };
@@ -85,21 +84,30 @@ function appendEvent(events: CompiledAutomationEvent[], event: CompiledAutomatio
     events.push(event);
 }
 
-function slewEvents(events: CompiledAutomationEvent[], { alpha, tickSeconds }: SlewConfig): CompiledAutomationEvent[] {
+function slewEvents(
+    events: CompiledAutomationEvent[],
+    { alpha, tickSeconds }: SlewConfig,
+    windowEndSeconds: number
+): CompiledAutomationEvent[] {
     if (events.length <= 1 || tickSeconds <= 0) {
         return events;
     }
     const startTime = events[0]!.timeSeconds;
-    const endTime = events.at(-1)!.timeSeconds;
+    const lastEventTime = events.at(-1)!.timeSeconds;
+    // Slew across the curve and on to the active-window end — the live path keeps
+    // ticking to the same boundary (region end for a track lane; clip end for a
+    // clip lane, where it then skips the lane). After the last point the held
+    // value is finalTarget, so x(t) is finalTarget in the tail.
+    const endTime = Math.max(lastEventTime, windowEndSeconds);
     if (endTime <= startTime) {
         return events;
     }
-    // AU-2: replicate the live device-param slew offline. Resample the compiled
-    // piecewise curve on the slew tick grid and run the identical one-pole IIR
-    // (slewStep: y[n] = y[n-1] + alpha*(x[n]-y[n-1]), seeded y[0]=x[0]). The
-    // compiled events already carry the true curve at <= tick resolution, so the
-    // resampled x[n] equals what the live path reads and y[n] matches it
-    // sample-for-sample. Emit the slewed samples as linear ramps.
+    // AU-2: replicate the live device-param slew offline. Resample x(t) on the
+    // slew tick grid and run the identical one-pole IIR (slewStep). The compiled
+    // events already carry the true curve at <= tick resolution, so x[n] equals
+    // what the live path reads and y[n] matches it sample-for-sample. Emit the
+    // slewed samples as linear ramps.
+    const finalTarget = events.at(-1)!.value;
     let cursor = 0;
     const sampleAt = (time: number): number => {
         while (cursor + 1 < events.length && events[cursor + 1]!.timeSeconds <= time) {
@@ -118,30 +126,22 @@ function slewEvents(events: CompiledAutomationEvent[], { alpha, tickSeconds }: S
     };
     let smoothed = sampleAt(startTime);
     const slewed: CompiledAutomationEvent[] = [{ type: 'set', timeSeconds: startTime, value: smoothed }];
-    const mainSamples = Math.ceil((endTime - startTime) / tickSeconds);
-    for (let index = 1; index <= mainSamples; index++) {
+    const sampleCount = Math.ceil((endTime - startTime) / tickSeconds);
+    for (let index = 1; index <= sampleCount; index++) {
         const time = Math.min(endTime, startTime + index * tickSeconds);
-        smoothed = slewStep(smoothed, sampleAt(time), alpha);
-        appendEvent(slewed, { type: 'linear', timeSeconds: time, value: smoothed });
-    }
-    // Settling tail: after the last point the curve holds its final value while
-    // the live path keeps ticking, so the slew keeps gliding toward it. Without
-    // this the param would be held at a mid-glide undershoot instead of the true
-    // target. Continue past the last event until settled (bounded), then land
-    // exactly on the target so WebAudio holds the correct value.
-    const finalTarget = events.at(-1)!.value;
-    let tick = mainSamples;
-    for (
-        let extra = 0;
-        extra < MAX_SLEW_SETTLE_TICKS && Math.abs(smoothed - finalTarget) > SLEW_SETTLE_EPSILON;
-        extra++
-    ) {
-        tick++;
-        smoothed = slewStep(smoothed, finalTarget, alpha);
-        appendEvent(slewed, { type: 'linear', timeSeconds: startTime + tick * tickSeconds, value: smoothed });
-    }
-    if (slewed.at(-1)!.value !== finalTarget) {
-        appendEvent(slewed, { type: 'linear', timeSeconds: startTime + (tick + 1) * tickSeconds, value: finalTarget });
+        // Past the last point the curve holds finalTarget; before it, sample the
+        // compiled curve.
+        const target = time <= lastEventTime ? sampleAt(time) : finalTarget;
+        smoothed = slewStep(smoothed, target, alpha);
+        // Once settled past the last point the value is held: emit the exact
+        // target and stop. WebAudio holds it, and the live path has settled too.
+        // If the window ends first (short clip), the loop stops mid-glide and the
+        // param holds that value — matching the live clip-bounds skip.
+        const settledHold = time > lastEventTime && Math.abs(smoothed - finalTarget) <= SLEW_SETTLE_EPSILON;
+        appendEvent(slewed, { type: 'linear', timeSeconds: time, value: settledHold ? finalTarget : smoothed });
+        if (settledHold) {
+            break;
+        }
     }
     return slewed;
 }
@@ -280,7 +280,7 @@ export function compileAutomationEvents(
         }
     }
     if (options?.slew) {
-        return slewEvents(events, options.slew);
+        return slewEvents(events, options.slew, windowEnd - regionStartSeconds);
     }
     return events;
 }
