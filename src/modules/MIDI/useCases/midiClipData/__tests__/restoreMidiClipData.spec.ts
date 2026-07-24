@@ -154,6 +154,30 @@ const INVALID_SNAPSHOT_CASES = [
     { label: 'sparse notes', snapshots: createSnapshots({ notesSnapshot: createSparseSnapshot() }) },
     { label: 'sparse control changes', snapshots: createSnapshots({ controlChangeSnapshot: createSparseSnapshot() }) },
     { label: 'sparse pitch bends', snapshots: createSnapshots({ pitchBendSnapshot: createSparseSnapshot() }) },
+    {
+        label: 'non-array notes snapshot',
+        snapshots: createSnapshots({ notesSnapshot: { id: 'note-invalid' } as unknown as unknown[] }),
+    },
+    {
+        label: 'non-array control-change snapshot',
+        snapshots: createSnapshots({ controlChangeSnapshot: 42 as unknown as unknown[] }),
+    },
+    {
+        label: 'non-array pitch-bend snapshot',
+        snapshots: createSnapshots({ pitchBendSnapshot: 'nope' as unknown as unknown[] }),
+    },
+    {
+        label: 'null note row',
+        snapshots: createSnapshots({ notesSnapshot: [null] }),
+    },
+    {
+        label: 'primitive note row',
+        snapshots: createSnapshots({ notesSnapshot: [60] }),
+    },
+    {
+        label: 'array note row',
+        snapshots: createSnapshots({ notesSnapshot: [[60, 0, 1, 100]] }),
+    },
 ] satisfies readonly InvalidSnapshotCase[];
 
 describe('restoreMidiClipData', () => {
@@ -345,5 +369,65 @@ describe('restoreMidiClipData', () => {
         expect(nextState.notesByClipId['clip-restore']).toEqual([note]);
         expect(nextState.ccByClipId['clip-restore']).toEqual([controlChange]);
         expect(nextState.pitchBendByClipId['clip-restore']).toEqual([pitchBend]);
+    });
+
+    it('accepts a prototype-less plain note object (Object.create(null))', () => {
+        // Intent: isPlainObject must accept both Object.prototype objects and
+        // prototype-less dictionary objects. A note built with a null prototype
+        // but identical own-keys/shape is a valid row.
+        const prototypelessNote = {
+            id: 'note-prototypeless',
+            pitch: 60,
+            startBeat: 0,
+            duration: 1,
+            velocity: 100,
+        };
+        // Strip the prototype so Reflect.getPrototypeOf returns null, exercising
+        // the `prototype === null` branch of isPlainObject.
+        Object.setPrototypeOf(prototypelessNote, null);
+
+        restoreMidiClipData({
+            clipId: 'clip-restore',
+            notesSnapshot: [prototypelessNote],
+            controlChangeSnapshot: null,
+            pitchBendSnapshot: null,
+        });
+
+        expectOneStoreRead();
+        const restoredNote = requireMidiState().notesByClipId['clip-restore']?.[0];
+        expect(restoredNote).toEqual({
+            id: 'note-prototypeless',
+            pitch: 60,
+            startBeat: 0,
+            duration: 1,
+            velocity: 100,
+        });
+    });
+
+    it('leaves the notes map untouched when restoring only control changes and pitch bends', () => {
+        // Intent: a null notesSnapshot means "no notes change" — the store's
+        // notesByClipId reference must be preserved exactly (not cloned), while
+        // the supplied cc and pitch-bend maps are replaced.
+        const previousState = requireMidiState();
+        const controlChangeSnapshot = [createControlChange('cc-restored')];
+        const pitchBendSnapshot = [createPitchBend('pitch-restored')];
+
+        restoreMidiClipData({
+            clipId: 'clip-restore',
+            notesSnapshot: null,
+            controlChangeSnapshot,
+            pitchBendSnapshot,
+        });
+
+        expectOneStoreRead();
+        const nextState = requireMidiState();
+        expect(mocks.set).toHaveBeenCalledTimes(1);
+        expect(nextState).not.toBe(previousState);
+        // notes map is the SAME reference — untouched.
+        expect(nextState.notesByClipId).toBe(previousState.notesByClipId);
+        expect(nextState.ccByClipId).not.toBe(previousState.ccByClipId);
+        expect(nextState.pitchBendByClipId).not.toBe(previousState.pitchBendByClipId);
+        expect(nextState.ccByClipId['clip-restore']).toEqual(controlChangeSnapshot);
+        expect(nextState.pitchBendByClipId['clip-restore']).toEqual(pitchBendSnapshot);
     });
 });
