@@ -101,4 +101,123 @@ describe('NoteFilter', () => {
         filter.processMidi([{ timeSamples: 100, kind: { type: 'noteOff', channel: 0, note: 72 } }], offOut, transport);
         expect(offOut).toHaveLength(1); // its Note Off is forwarded
     });
+
+    it('forwards a Note Off with no recorded decision (no matching Note On)', () => {
+        // An off with no prior on has passed===undefined → forwarded (not suppressed).
+        const filter = new NoteFilter('test-filter');
+        const offOut: MidiEvent[] = [];
+        filter.processMidi([{ timeSamples: 0, kind: { type: 'noteOff', channel: 0, note: 60 } }], offOut, transport);
+        expect(offOut).toHaveLength(1);
+    });
+
+    it('filters by velocity range (vel_min/vel_max)', () => {
+        const filter = new NoteFilter('test-filter');
+        filter.setParam('vel_min', 50);
+        filter.setParam('vel_max', 100);
+
+        const low: MidiEvent[] = [];
+        filter.processMidi(
+            [{ timeSamples: 0, kind: { type: 'noteOn', channel: 0, note: 60, velocity: 30 } }],
+            low,
+            transport
+        );
+        expect(low).toHaveLength(0); // below vel_min → filtered
+
+        const inRange: MidiEvent[] = [];
+        filter.processMidi(
+            [{ timeSamples: 0, kind: { type: 'noteOn', channel: 0, note: 60, velocity: 80 } }],
+            inRange,
+            transport
+        );
+        expect(inRange).toHaveLength(1); // within range → passes
+
+        const high: MidiEvent[] = [];
+        filter.processMidi(
+            [{ timeSamples: 0, kind: { type: 'noteOn', channel: 0, note: 60, velocity: 120 } }],
+            high,
+            transport
+        );
+        expect(high).toHaveLength(0); // above vel_max → filtered
+    });
+
+    it('clamps the velocity params into [0,127]', () => {
+        const filter = new NoteFilter('test-filter');
+        filter.setParam('vel_min', -50);
+        filter.setParam('vel_max', 999);
+        // everything passes (0..127): velocity 0 and 127 both forward
+        const out: MidiEvent[] = [];
+        filter.processMidi(
+            [
+                { timeSamples: 0, kind: { type: 'noteOn', channel: 0, note: 60, velocity: 0 } },
+                { timeSamples: 1, kind: { type: 'noteOn', channel: 0, note: 61, velocity: 127 } },
+            ],
+            out,
+            transport
+        );
+        expect(out).toHaveLength(2);
+    });
+
+    it('filters by allowed pitch class', () => {
+        const filter = new NoteFilter('test-filter');
+        // only C (class 0): notes 60, 72 pass; 61 filtered
+        filter.setAllowedPitchClasses([0]);
+
+        const out: MidiEvent[] = [];
+        filter.processMidi(
+            [
+                { timeSamples: 0, kind: { type: 'noteOn', channel: 0, note: 60, velocity: 100 } },
+                { timeSamples: 1, kind: { type: 'noteOn', channel: 0, note: 61, velocity: 100 } },
+                { timeSamples: 2, kind: { type: 'noteOn', channel: 0, note: 72, velocity: 100 } },
+            ],
+            out,
+            transport
+        );
+        expect(out.map((e) => (e.kind as { note: number }).note)).toEqual([60, 72]);
+    });
+
+    it('inverts the filter so excluded notes pass instead', () => {
+        const filter = new NoteFilter('test-filter');
+        filter.setParam('note_min', 60); // normally notes >= 60 pass
+        filter.setParam('invert', 1); // invert: notes < 60 pass
+
+        const out: MidiEvent[] = [];
+        filter.processMidi(
+            [
+                { timeSamples: 0, kind: { type: 'noteOn', channel: 0, note: 40, velocity: 100 } },
+                { timeSamples: 1, kind: { type: 'noteOn', channel: 0, note: 72, velocity: 100 } },
+            ],
+            out,
+            transport
+        );
+        // inverted: 40 (below range) now passes, 72 (in range) now filtered
+        expect(out.map((e) => (e.kind as { note: number }).note)).toEqual([40]);
+    });
+
+    it('passes through non-note events unchanged', () => {
+        const filter = new NoteFilter('test-filter');
+        const cc = {
+            timeSamples: 0,
+            kind: { type: 'cc', channel: 0, cc: 7, value: 64 },
+        } as MidiEvent;
+        const out: MidiEvent[] = [];
+        filter.processMidi([cc], out, transport);
+        expect(out[0]).toBe(cc);
+    });
+
+    it('clamps note_min/note_max into [0,127]', () => {
+        const filter = new NoteFilter('test-filter');
+        filter.setParam('note_min', -50);
+        filter.setParam('note_max', 999);
+        // full range: notes 0 and 127 both pass
+        const out: MidiEvent[] = [];
+        filter.processMidi(
+            [
+                { timeSamples: 0, kind: { type: 'noteOn', channel: 0, note: 0, velocity: 100 } },
+                { timeSamples: 1, kind: { type: 'noteOn', channel: 0, note: 127, velocity: 100 } },
+            ],
+            out,
+            transport
+        );
+        expect(out).toHaveLength(2);
+    });
 });
