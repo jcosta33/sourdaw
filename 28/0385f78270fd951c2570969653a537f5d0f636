@@ -1,0 +1,29 @@
+src/modules/AudioEngine/useCases/__tests__/audition.spec.ts
+  s_006c6596b00f77::t_2c47ba8210a269 422-499
+src/modules/AudioEngine/useCases/adjustmentLayer/__tests__/sharedAdjustmentLayerApplier.spec.ts
+  s_4bfc7ec8a99659::t_0e9f9503e8d20c 292-411
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "280385f78270fd951c2570969653a537f5d0f636",
+  "prompts": {},
+  "sessions": {
+    "s_006c6596b00f77": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-aae53669d9971f59a",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_4bfc7ec8a99659": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-aedaa2168dc44456a",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
