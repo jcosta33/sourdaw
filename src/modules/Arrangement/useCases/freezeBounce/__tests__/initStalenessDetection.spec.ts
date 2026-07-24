@@ -126,4 +126,174 @@ describe('initStalenessDetection', () => {
         expect(updateTrack).not.toHaveBeenCalled();
         unsub();
     });
+
+    it('ignores a track that was not present in the previous state', async () => {
+        trackStore.set({ tracks: [], selectedTrackId: null });
+        const unsub = initStalenessDetection();
+
+        // A brand-new frozen track appears; it has no prevTrack → continue.
+        trackStore.set({
+            tracks: [
+                {
+                    id: 't1',
+                    freezeState: { status: 'frozen', sourceContentHash: 'old-hash' },
+                    clips: [{}],
+                    devices: [],
+                } as any,
+            ],
+            selectedTrackId: null,
+        });
+
+        await new Promise((resolve) => setTimeout(resolve, 0));
+
+        expect(computeTrackHash).not.toHaveBeenCalled();
+        expect(updateTrack).not.toHaveBeenCalled();
+        unsub();
+    });
+
+    it('detects staleness when only the devices chain reference changes', async () => {
+        trackStore.set({
+            tracks: [
+                {
+                    id: 't1',
+                    freezeState: { status: 'frozen', sourceContentHash: 'old-hash' },
+                    clips: [],
+                    devices: [],
+                } as any,
+            ],
+            selectedTrackId: null,
+        });
+
+        const unsub = initStalenessDetection();
+        vi.mocked(computeTrackHash).mockResolvedValue('new-hash');
+
+        // Same clips reference, but a new devices array reference.
+        trackStore.set({
+            tracks: [
+                {
+                    id: 't1',
+                    freezeState: { status: 'frozen', sourceContentHash: 'old-hash' },
+                    clips: [],
+                    devices: [{ type: 'Reverb' }],
+                } as any,
+            ],
+            selectedTrackId: null,
+        });
+
+        await new Promise((resolve) => setTimeout(resolve, 0));
+
+        expect(computeTrackHash).toHaveBeenCalled();
+        expect(updateTrack).toHaveBeenCalledWith('t1', expect.any(Function));
+        unsub();
+    });
+
+    it('skips evaluation when the new state is null (store torn down)', async () => {
+        trackStore.set({
+            tracks: [
+                {
+                    id: 't1',
+                    freezeState: { status: 'frozen', sourceContentHash: 'old-hash' },
+                    clips: [],
+                    devices: [],
+                } as any,
+            ],
+            selectedTrackId: null,
+        });
+        const unsub = initStalenessDetection();
+
+        // Tear the store down — the subscriber receives a null state.
+        trackStore.set(null);
+
+        await new Promise((resolve) => setTimeout(resolve, 0));
+
+        expect(computeTrackHash).not.toHaveBeenCalled();
+        expect(updateTrack).not.toHaveBeenCalled();
+        unsub();
+    });
+
+    it('skips evaluation when there was no previous state captured at init', async () => {
+        // Initialise while the store is empty so prevState is captured as null.
+        trackStore.set(null);
+        const unsub = initStalenessDetection();
+
+        // A real state arrives, but there is no baseline to compare against.
+        trackStore.set({
+            tracks: [
+                {
+                    id: 't1',
+                    freezeState: { status: 'frozen', sourceContentHash: 'old-hash' },
+                    clips: [{}],
+                    devices: [],
+                } as any,
+            ],
+            selectedTrackId: null,
+        });
+
+        await new Promise((resolve) => setTimeout(resolve, 0));
+
+        expect(computeTrackHash).not.toHaveBeenCalled();
+        expect(updateTrack).not.toHaveBeenCalled();
+        unsub();
+    });
+
+    it('does not recompute the hash of an unfrozen track present in both states', async () => {
+        // The track exists in the previous state and stays unfrozen — the
+        // frozen-status guard short-circuits before any hashing.
+        const unfrozenTrack = {
+            id: 't1',
+            freezeState: { status: 'unfrozen' },
+            clips: [{}] as never[],
+            devices: [] as never[],
+        } as any;
+        trackStore.set({ tracks: [unfrozenTrack], selectedTrackId: null });
+        const unsub = initStalenessDetection();
+
+        // Re-set with a new clips reference but still unfrozen.
+        trackStore.set({
+            tracks: [{ ...unfrozenTrack, clips: [{}] as never[] }],
+            selectedTrackId: null,
+        });
+
+        await new Promise((resolve) => setTimeout(resolve, 0));
+
+        expect(computeTrackHash).not.toHaveBeenCalled();
+        expect(updateTrack).not.toHaveBeenCalled();
+        unsub();
+    });
+
+    it('does not recompute the hash when a frozen track clips and devices refs are unchanged', async () => {
+        const sharedClips = [] as never[];
+        const sharedDevices = [] as never[];
+        trackStore.set({
+            tracks: [
+                {
+                    id: 't1',
+                    freezeState: { status: 'frozen', sourceContentHash: 'old-hash' },
+                    clips: sharedClips,
+                    devices: sharedDevices,
+                } as any,
+            ],
+            selectedTrackId: null,
+        });
+        const unsub = initStalenessDetection();
+
+        // Re-set carrying the SAME array references → no ref change → no hash.
+        trackStore.set({
+            tracks: [
+                {
+                    id: 't1',
+                    freezeState: { status: 'frozen', sourceContentHash: 'old-hash' },
+                    clips: sharedClips,
+                    devices: sharedDevices,
+                } as any,
+            ],
+            selectedTrackId: null,
+        });
+
+        await new Promise((resolve) => setTimeout(resolve, 0));
+
+        expect(computeTrackHash).not.toHaveBeenCalled();
+        expect(updateTrack).not.toHaveBeenCalled();
+        unsub();
+    });
 });

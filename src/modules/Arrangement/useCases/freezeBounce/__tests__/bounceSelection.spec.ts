@@ -34,6 +34,10 @@ const mocks = vi.hoisted(() => {
         cacheAudioBuffer: vi.fn<(input: CacheAudioBufferInput) => string>(),
         pushUndoEntry: vi.fn<PushUndoEntry>(),
         renderTrackOffline: vi.fn<RenderTrackOffline>(),
+        resolveEligibleClipWriteTarget: vi.fn((): { status: string; trackId?: string } => ({
+            status: 'eligible',
+            trackId: 'track-1',
+        })),
         trackStore,
     };
 });
@@ -52,6 +56,10 @@ vi.mock('../../../stores/trackStore', () => ({
 
 vi.mock('../renderOffline', () => ({
     renderTrackOffline: mocks.renderTrackOffline,
+}));
+
+vi.mock('../../../stores/resolveEligibleClipWriteTarget', () => ({
+    resolveEligibleClipWriteTarget: mocks.resolveEligibleClipWriteTarget,
 }));
 
 const midiMocks = vi.hoisted(() => {
@@ -417,6 +425,171 @@ describe('bounceSelection', () => {
         expect(mocks.cacheAudioBuffer).not.toHaveBeenCalled();
         expect(crypto.randomUUID).not.toHaveBeenCalled();
         expect(mocks.trackStore.set).not.toHaveBeenCalled();
+        expect(mocks.pushUndoEntry).not.toHaveBeenCalled();
+        expect(didWrite).toBe(false);
+    });
+
+    it('reports no-write when the track store has not loaded', async () => {
+        mocks.trackStore.value = null;
+
+        const didWrite = await bounceSelection('track-1', 0, 4);
+
+        expect(mocks.renderTrackOffline).not.toHaveBeenCalled();
+        expect(didWrite).toBe(false);
+    });
+
+    it('reports no-write when the target track does not exist', async () => {
+        setTrackStoreState({ tracks: [], selectedTrackId: null });
+
+        const didWrite = await bounceSelection('missing-track', 0, 4);
+
+        expect(mocks.renderTrackOffline).not.toHaveBeenCalled();
+        expect(didWrite).toBe(false);
+    });
+
+    it('reports no-write when no clips fall inside the selection range', async () => {
+        // Clip sits entirely outside [2,6) → clipsInRange is empty.
+        const outsideClip = createAudioClip({ id: 'clip-outside', startBeat: 8, endBeat: 12 });
+        const sourceTrack = createAudioTrack({ clips: [outsideClip] });
+        setTrackStoreState({ tracks: [sourceTrack], selectedTrackId: 'track-1' });
+
+        const didWrite = await bounceSelection('track-1', 2, 6);
+
+        expect(mocks.renderTrackOffline).not.toHaveBeenCalled();
+        expect(didWrite).toBe(false);
+    });
+
+    it('reports no-write when the offline render returns no buffer', async () => {
+        const selectedClip = createAudioClip({ id: 'clip-selected', startBeat: 2, endBeat: 6 });
+        const sourceTrack = createAudioTrack({ clips: [selectedClip] });
+        setTrackStoreState({ tracks: [sourceTrack], selectedTrackId: 'track-1' });
+        mocks.renderTrackOffline.mockResolvedValue(null);
+
+        const didWrite = await bounceSelection('track-1', 2, 6);
+
+        expect(mocks.cacheAudioBuffer).not.toHaveBeenCalled();
+        expect(mocks.pushUndoEntry).not.toHaveBeenCalled();
+        expect(didWrite).toBe(false);
+    });
+
+    it('keeps both outside parts when a clip spans the entire selection', async () => {
+        // A single clip [0,10) over selection [2,8): kept as a left part [0,2)
+        // and a right part [8,10), with the bounce filling [2,8).
+        const spanningClip = createAudioClip({ id: 'clip-span', startBeat: 0, endBeat: 10 });
+        const sourceTrack = createAudioTrack({ clips: [spanningClip] });
+        setTrackStoreState({ tracks: [sourceTrack], selectedTrackId: 'track-1' });
+        mocks.renderTrackOffline.mockResolvedValue(createTestAudioBuffer());
+
+        const didWrite = await bounceSelection('track-1', 2, 8);
+
+        expect(didWrite).toBe(true);
+        const written = mocks.trackStore.set.mock.calls.at(-1)?.[0];
+        if (!written) {
+            throw new Error('expected trackStore.set');
+        }
+        const clips = written.tracks[0]!.clips;
+        // left part keeps the original id, trimmed to the left edge
+        const left = clips.find((c) => c.id === 'clip-span');
+        expect(left?.startBeat).toBe(0);
+        expect(left?.endBeat).toBe(2);
+        // right part on a fresh id at the selection end
+        const right = clips.find((c) => c.id.startsWith('clip-bsel-') && c.startBeat === 8);
+        expect(right?.endBeat).toBe(10);
+        // bounce fills the selection
+        expect(clips.some((c) => c.type === 'audio' && c.startBeat === 2 && c.endBeat === 8)).toBe(true);
+    });
+
+    it('partitions MIDI notes when a midi clip spans the entire selection', async () => {
+        // A midi clip [0,10) over selection [2,8): the spanning branch must
+        // register a split op so the in-selection notes move to the right part.
+        midiMocks.state.value = {
+            notesByClipId: {
+                'clip-span-midi': [
+                    { id: 'n-in', pitch: 60, startBeat: 5, duration: 0.5, velocity: 100 },
+                    { id: 'n-out', pitch: 64, startBeat: 9, duration: 0.5, velocity: 100 },
+                ],
+            },
+            ccByClipId: {},
+            pitchBendByClipId: {},
+        };
+        const spanningMidi = createAudioClip({ id: 'clip-span-midi', startBeat: 0, endBeat: 10, type: 'midi' });
+        const track = normalizeTrack({
+            id: 'track-1',
+            name: 'Midi',
+            kind: 'midi',
+            clips: [spanningMidi],
+        } as unknown as Track);
+        setTrackStoreState({ tracks: [track], selectedTrackId: 'track-1' });
+        mocks.renderTrackOffline.mockResolvedValue(createTestAudioBuffer());
+
+        await bounceSelection('track-1', 2, 8);
+
+        // The spanning midi clip triggers exactly one split op for the right part.
+        expect(midiMocks.splitMidiNotesAtBeat).toHaveBeenCalledTimes(1);
+        const splitCall = midiMocks.splitMidiNotesAtBeat.mock.calls[0]?.[0];
+        expect(splitCall?.sourceClipId).toBe('clip-span-midi');
+        expect(splitCall?.newClipId.startsWith('clip-bsel-')).toBe(true);
+    });
+
+    it('reports no-write when the track store is torn down after a successful render', async () => {
+        const selectedClip = createAudioClip({ id: 'clip-selected', startBeat: 2, endBeat: 6 });
+        const sourceTrack = createAudioTrack({ clips: [selectedClip] });
+        let finishRender = (_buffer: AudioBuffer | null): void => {
+            throw new Error('Expected the render promise to be controlled by the test');
+        };
+        const pendingRender = new Promise<AudioBuffer | null>((resolve) => {
+            finishRender = resolve;
+        });
+        setTrackStoreState({ tracks: [sourceTrack], selectedTrackId: 'track-1' });
+        mocks.renderTrackOffline.mockReturnValue(pendingRender);
+
+        const pendingBounce = bounceSelection('track-1', 2, 6);
+        // Store torn down while the render is in flight (freshState null path).
+        mocks.trackStore.value = null;
+        finishRender(createTestAudioBuffer());
+
+        const didWrite = await pendingBounce;
+
+        expect(mocks.cacheAudioBuffer).not.toHaveBeenCalled();
+        expect(mocks.pushUndoEntry).not.toHaveBeenCalled();
+        expect(didWrite).toBe(false);
+    });
+
+    it('reports no-write when the destination track index cannot be resolved after render', async () => {
+        const selectedClip = createAudioClip({ id: 'clip-selected', startBeat: 2, endBeat: 6 });
+        const sourceTrack = createAudioTrack({ clips: [selectedClip] });
+        let finishRender = (_buffer: AudioBuffer | null): void => {
+            throw new Error('Expected the render promise to be controlled by the test');
+        };
+        const pendingRender = new Promise<AudioBuffer | null>((resolve) => {
+            finishRender = resolve;
+        });
+        setTrackStoreState({ tracks: [sourceTrack], selectedTrackId: 'track-1' });
+        mocks.renderTrackOffline.mockReturnValue(pendingRender);
+
+        const pendingBounce = bounceSelection('track-1', 2, 6);
+        // The eligible target resolves to track-1, but the track vanishes from
+        // the store during the render → findIndex returns -1.
+        setTrackStoreState({ tracks: [], selectedTrackId: null });
+        finishRender(createTestAudioBuffer());
+
+        const didWrite = await pendingBounce;
+
+        expect(mocks.cacheAudioBuffer).not.toHaveBeenCalled();
+        expect(mocks.pushUndoEntry).not.toHaveBeenCalled();
+        expect(didWrite).toBe(false);
+    });
+
+    it('discards a completed render when the clip-write target is no longer eligible', async () => {
+        const selectedClip = createAudioClip({ id: 'clip-selected', startBeat: 2, endBeat: 6 });
+        const sourceTrack = createAudioTrack({ clips: [selectedClip] });
+        setTrackStoreState({ tracks: [sourceTrack], selectedTrackId: 'track-1' });
+        mocks.renderTrackOffline.mockResolvedValue(createTestAudioBuffer());
+        mocks.resolveEligibleClipWriteTarget.mockReturnValueOnce({ status: 'ineligible' });
+
+        const didWrite = await bounceSelection('track-1', 2, 6);
+
+        expect(mocks.cacheAudioBuffer).not.toHaveBeenCalled();
         expect(mocks.pushUndoEntry).not.toHaveBeenCalled();
         expect(didWrite).toBe(false);
     });
