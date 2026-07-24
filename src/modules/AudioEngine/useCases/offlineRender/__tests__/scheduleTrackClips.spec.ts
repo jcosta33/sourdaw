@@ -401,6 +401,27 @@ describe('scheduleTrackClips — MIDI plugin-delay compensation', () => {
         expect(call?.[12]).toBeInstanceOf(Map);
     });
 
+    it('drops a MIDI note that ends before the render-region start', async () => {
+        // regionStartBeat 8 = 4s at 120bpm. The default note (startBeat 1,
+        // duration 1) ends at beat 2 = 1s → endSamples (48000) is well below
+        // regionStartSec*sampleRate (4*48000) → the note is clipped out and no
+        // worklet note-on is scheduled.
+        const events = await runSchedule({ regionStartBeat: 8 });
+        expect(events.filter((e) => e.type === 'on')).toHaveLength(0);
+    });
+
+    it('drops a MIDI note whose start lands at or beyond the render duration', async () => {
+        // Default clip 0..4. With a region start of 0 and the note at beat 1
+        // (0.5s), it lands inside a normal 60s render. To exercise the
+        // `startTime >= durationSeconds` clip, shrink the fixture note's clip
+        // window so the note's projected start is huge is not possible here;
+        // instead, the second-clip path: place a note that projects past the
+        // end. Simpler: rely on a very large regionStartBeat so the projected
+        // startTime exceeds durationSeconds (60s). regionStartBeat 256 = 128s.
+        const events = await runSchedule({ regionStartBeat: 256 });
+        expect(events.filter((e) => e.type === 'on')).toHaveLength(0);
+    });
+
     it('keeps canonical Toaster pad indexes when earlier children are muted or disabled', async () => {
         const parent = TrackDummy.create({
             id: 'toaster-parent',

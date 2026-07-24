@@ -77,6 +77,64 @@ describe('GrinderProcessor.process passthrough & guards', () => {
             }
         }
     });
+
+    it('passthrough upmixes a mono input when the processor is not ready', async () => {
+        const Ctor = await loadGrinderProcessorConstructor();
+        const processor = new Ctor(); // not ready → _passthrough path
+        const mono = new Float32Array(4).fill(0.7);
+        // Mono input (no right channel) → input[1] ?? leftIn falls back to left.
+        const output: Float32Array[] = [new Float32Array(4), new Float32Array(4)];
+
+        processor.process([[mono]], [output], {});
+
+        // Both output channels carry the (mono-upmixed) signal via the fallback.
+        for (const ch of output) {
+            for (const sample of ch ?? []) {
+                expect(sample).toBeCloseTo(0.7, 6);
+            }
+        }
+    });
+
+    it('not-ready passthrough is a no-op when input or output is absent', async () => {
+        const Ctor = await loadGrinderProcessorConstructor();
+        const processor = new Ctor(); // not ready → _passthrough guard
+
+        // No input at all → `input && output` is false → no passthrough, no throw.
+        expect(() => processor.process([], [[]], {})).not.toThrow();
+        // No output at all.
+        expect(() => processor.process([stereo(4)], [], {})).not.toThrow();
+    });
+
+    it('not-ready passthrough tolerates missing output channels', async () => {
+        const Ctor = await loadGrinderProcessorConstructor();
+        const processor = new Ctor(); // not ready → _passthrough path
+
+        const input = stereo(4, 0.4);
+        // output[0] missing → `output[0] && leftIn` false → skip left copy.
+        // output[1] missing → `output[1] && rightIn` false → skip right copy.
+        const output: Float32Array[] = [];
+
+        expect(() => processor.process([input], [output], {})).not.toThrow();
+        // Nothing was written (no channels to write into).
+        expect(output).toHaveLength(0);
+    });
+
+    it('bails when the ready output bus has an undefined first channel', async () => {
+        const processor = await createReadyGrinderProcessor();
+        // output has length 1 so the empty-bus guard passes, but output[0] is
+        // undefined → the `!out0` guard returns early without processing.
+        const ok = processor.process([stereo(4)], [[undefined as unknown as Float32Array]], {});
+        expect(ok).toBe(true);
+    });
+
+    it('falls back to passthrough when the ready input has an undefined first channel', async () => {
+        const processor = await createReadyGrinderProcessor();
+        // input has length 1 so the empty-bus guard passes, but input[0] is
+        // undefined → the `!in0` guard falls back to passthrough and returns.
+        const output: Float32Array[] = [new Float32Array(4), new Float32Array(4)];
+        const ok = processor.process([[undefined as unknown as Float32Array]], [output], {});
+        expect(ok).toBe(true);
+    });
 });
 
 describe('GrinderProcessor SAB metering cadence', () => {

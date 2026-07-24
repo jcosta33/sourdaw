@@ -220,15 +220,18 @@ describe('FermenterProcessor message handling', () => {
             send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
             resetRecording();
 
-            send(proc, { type: 'patch', patch: {
-                filterCutoff: 1000,
-                filterResonance: 0.7,
-                filterEnvAmount: 0.3,
-                lfoPitchAmount: 0.2,
-                oscEngine: 1,
-                oscDrift: 0.1,
-                portamentoTime: 0.05,
-            } });
+            send(proc, {
+                type: 'patch',
+                patch: {
+                    filterCutoff: 1000,
+                    filterResonance: 0.7,
+                    filterEnvAmount: 0.3,
+                    lfoPitchAmount: 0.2,
+                    oscEngine: 1,
+                    oscDrift: 0.1,
+                    portamentoTime: 0.05,
+                },
+            });
 
             const byName = Object.fromEntries(paramCalls.map((p) => [p.name, p.value]));
             expect(byName['cutoff']).toBe(1000);
@@ -251,6 +254,19 @@ describe('FermenterProcessor message handling', () => {
             expect(paramCalls).toContainEqual({ name: 'macro1', value: 0.9 });
         });
 
+        it('defaults a sparse/holey macros slot to 0 via the nullish guard', async () => {
+            const proc = await loadProcessor();
+            send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
+            resetRecording();
+
+            // Array(1) is a holey array: index 0 is undefined → value[index] ?? 0
+            // must fall back to 0 so a missing macro does not forward undefined
+            // into the Rust set_param (which expects a number).
+            send(proc, { type: 'patch', patch: { macros: Array(1) } });
+
+            expect(paramCalls).toContainEqual({ name: 'macro0', value: 0 });
+        });
+
         it('ignores non-number, non-macros patch entries', async () => {
             const proc = await loadProcessor();
             send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
@@ -267,9 +283,21 @@ describe('FermenterProcessor message handling', () => {
             send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
             resetRecording();
 
-            send(proc, { type: 'paramAutomation', paramId: 99, segments: [{ startFrame: 0, endFrame: 10, startValue: 0, endValue: 1 }] });
-            send(proc, { type: 'paramAutomation', paramId: 1.5, segments: [{ startFrame: 0, endFrame: 10, startValue: 0, endValue: 1 }] });
-            send(proc, { type: 'paramAutomation', paramId: -1, segments: [{ startFrame: 0, endFrame: 10, startValue: 0, endValue: 1 }] });
+            send(proc, {
+                type: 'paramAutomation',
+                paramId: 99,
+                segments: [{ startFrame: 0, endFrame: 10, startValue: 0, endValue: 1 }],
+            });
+            send(proc, {
+                type: 'paramAutomation',
+                paramId: 1.5,
+                segments: [{ startFrame: 0, endFrame: 10, startValue: 0, endValue: 1 }],
+            });
+            send(proc, {
+                type: 'paramAutomation',
+                paramId: -1,
+                segments: [{ startFrame: 0, endFrame: 10, startValue: 0, endValue: 1 }],
+            });
             send(proc, { type: 'paramAutomation', paramId: 1, segments: [] });
 
             proc.process([], makeStereoBlock());
@@ -306,12 +334,85 @@ describe('FermenterProcessor message handling', () => {
             send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
             resetRecording();
 
-            send(proc, { type: 'paramAutomation', paramId: 2, segments: [{ startFrame: 0, endFrame: 64, startValue: 0, endValue: 5 }] });
-            send(proc, { type: 'paramAutomation', paramId: 2, segments: [{ startFrame: 0, endFrame: 64, startValue: 1, endValue: 9 }] });
+            send(proc, {
+                type: 'paramAutomation',
+                paramId: 2,
+                segments: [{ startFrame: 0, endFrame: 64, startValue: 0, endValue: 5 }],
+            });
+            send(proc, {
+                type: 'paramAutomation',
+                paramId: 2,
+                segments: [{ startFrame: 0, endFrame: 64, startValue: 1, endValue: 9 }],
+            });
 
             // The second schedule wins: first applied value is its startValue (1).
             proc.process([], makeStereoBlock());
             expect(paramByIdCalls).toEqual([{ id: 2, value: 1 }]);
+        });
+
+        it('linearly interpolates the value when the playhead is mid-segment', async () => {
+            const proc = await loadProcessor();
+            send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
+            resetRecording();
+
+            // Segment 0..256 ramping 0→256. Advance the playhead into the middle
+            // so frame (128) is strictly between start and end → the interpolation
+            // branch computes startValue + (endValue-startValue)*fraction.
+            send(proc, {
+                type: 'paramAutomation',
+                paramId: 4,
+                segments: [{ startFrame: 0, endFrame: 256, startValue: 0, endValue: 256 }],
+            });
+            vi.stubGlobal('currentFrame', 128);
+
+            proc.process([], makeStereoBlock());
+
+            // fraction = (128-0)/(256-0) = 0.5 → value = 0 + (256-0)*0.5 = 128.
+            expect(paramByIdCalls).toContainEqual({ id: 4, value: 128 });
+
+            vi.stubGlobal('currentFrame', 0);
+        });
+
+        it('clamps to the end value once the playhead reaches or passes endFrame', async () => {
+            const proc = await loadProcessor();
+            send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
+            resetRecording();
+
+            // Segment 0..64. With the playhead at 128 (>= endFrame), the
+            // endValue branch fires instead of the interpolation branch.
+            send(proc, {
+                type: 'paramAutomation',
+                paramId: 5,
+                segments: [{ startFrame: 0, endFrame: 64, startValue: 0, endValue: 42 }],
+            });
+            vi.stubGlobal('currentFrame', 128);
+
+            proc.process([], makeStereoBlock());
+
+            expect(paramByIdCalls).toContainEqual({ id: 5, value: 42 });
+
+            vi.stubGlobal('currentFrame', 0);
+        });
+
+        it('uses the end value when a segment is degenerate (endFrame <= startFrame)', async () => {
+            const proc = await loadProcessor();
+            send(proc, { type: 'init', wasmBytes: MINIMAL_WASM });
+            resetRecording();
+
+            // A zero-duration segment: endFrame == startFrame. The first arm of
+            // the guard (`endFrame <= startFrame`) fires → value = endValue.
+            send(proc, {
+                type: 'paramAutomation',
+                paramId: 6,
+                segments: [{ startFrame: 64, endFrame: 64, startValue: 0, endValue: 7 }],
+            });
+            vi.stubGlobal('currentFrame', 64);
+
+            proc.process([], makeStereoBlock());
+
+            expect(paramByIdCalls).toContainEqual({ id: 6, value: 7 });
+
+            vi.stubGlobal('currentFrame', 0);
         });
     });
 
