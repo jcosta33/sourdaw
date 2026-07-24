@@ -1,7 +1,53 @@
+import { logger } from '#/infra/logger/appLogger';
+import { wouldCreateRoutingCycle } from '#/utils/routingCycle';
+
 import { type Track } from '../models/Track';
 
 /** Endpoints that are not tracks and therefore always survive a removal. */
 const TERMINAL_ENDPOINTS = new Set(['master', 'hw_out']);
+
+/** The one destination that can never close a loop: it owns no outgoing edge. */
+const HARDWARE_OUT = 'hw_out';
+const MASTER = 'master';
+
+/**
+ * Picks a destination for `trackId` that does not close a routing cycle.
+ *
+ * Reconciliation writes a routing edge, so it is bound by the same invariant
+ * the FX-2 mutation guards enforce on `setSend` / `setTrackOutput` — and unlike
+ * those paths a bad write here is unprompted, so it must not be silent either.
+ * Pre-existing cycles are the live case: nothing guarded these writes before,
+ * and `hydrateArrangementTracks` / the DAWproject import still do not validate,
+ * so a stored project can hand us `Kick → busA → Kick`. Inheriting verbatim
+ * would write `Kick.outputId = Kick`, and a Web Audio cycle with no `DelayNode`
+ * is muted outright — deleting a bus to *fix* a loop would yield silence.
+ */
+function resolveAcyclicDestination(
+    trackId: string,
+    candidate: string,
+    tracks: readonly Track[],
+    removedTrackId: string
+): string {
+    if (!wouldCreateRoutingCycle({ sourceId: trackId, targetId: candidate, tracks })) {
+        return candidate;
+    }
+
+    logger.warn(
+        `[reconcileRoutingAfterRemoval] Removing "${removedTrackId}" would have routed "${trackId}" to ` +
+            `"${candidate}", closing a routing feedback loop that already existed in this project. ` +
+            `Falling back to "${MASTER}".`
+    );
+    if (!wouldCreateRoutingCycle({ sourceId: trackId, targetId: MASTER, tracks })) {
+        return MASTER;
+    }
+
+    // Only reachable when the project routes master itself back into this track.
+    logger.warn(
+        `[reconcileRoutingAfterRemoval] "${MASTER}" also routes back to "${trackId}"; falling back to ` +
+            `"${HARDWARE_OUT}", which owns no outgoing edge.`
+    );
+    return HARDWARE_OUT;
+}
 
 type ReconcileRoutingAfterRemovalInput = {
     /** Id of the track/bus being deleted. */
@@ -39,8 +85,10 @@ type ReconcileRoutingAfterRemovalOutput = {
  *   the signal already flowed, so BusB's processing and level are preserved.
  *   A blanket fallback to master would instead bypass BusB entirely, which is
  *   the silent re-summing this finding is about. Master is used only when the
- *   inherited destination is itself gone (or self-referential, which stored
- *   projects can carry since nothing guarded these writes before).
+ *   inherited destination is itself gone, self-referential, or would close a
+ *   routing cycle — see {@link resolveAcyclicDestination}. Reconciliation writes
+ *   real routing edges, so it is bound by the same no-cycle invariant the FX-2
+ *   guards enforce on `setSend` / `setTrackOutput`.
  * - **A send to the removed bus is dropped.** A send is an *additional*
  *   parallel path, not the signal's route to the speakers. Repointing it to the
  *   inherited destination would inject a second, unattenuated copy of the source
@@ -55,31 +103,37 @@ export function reconcileRoutingAfterRemoval({
 }: ReconcileRoutingAfterRemovalInput): ReconcileRoutingAfterRemovalOutput {
     const survivingIds = new Set(remainingTracks.map((track) => track.id));
 
-    let inheritedOutputId = 'master';
+    let inheritedOutputId = MASTER;
     if (removedOutputId && removedOutputId !== removedTrackId) {
         if (TERMINAL_ENDPOINTS.has(removedOutputId) || survivingIds.has(removedOutputId)) {
             inheritedOutputId = removedOutputId;
         }
     }
 
-    const repointedOutputs: { trackId: string; outputId: string }[] = [];
-    const tracks = remainingTracks.map((track) => {
-        const referencesOutput = track.outputId === removedTrackId;
-        const staleSends = track.sends.some((send) => send.busId === removedTrackId);
-        if (!referencesOutput && !staleSends) {
+    // Pass 1 — drop sends to the removed bus. Outputs that referenced it are
+    // deliberately left pointing at the dead id for now: no track owns that id,
+    // so it is a terminal with no successors and contributes no edge to the
+    // cycle checks in pass 2. Repointing them first would instead have every
+    // not-yet-validated dependent carrying a provisional edge.
+    const tracks: Track[] = remainingTracks.map((track) => {
+        if (!track.sends.some((send) => send.busId === removedTrackId)) {
             return track;
         }
-
-        const next = { ...track };
-        if (referencesOutput) {
-            next.outputId = inheritedOutputId;
-            repointedOutputs.push({ trackId: track.id, outputId: inheritedOutputId });
-        }
-        if (staleSends) {
-            next.sends = track.sends.filter((send) => send.busId !== removedTrackId);
-        }
-        return next;
+        return { ...track, sends: track.sends.filter((send) => send.busId !== removedTrackId) };
     });
+
+    // Pass 2 — repoint outputs one at a time, each validated against the graph
+    // as it actually stands at that moment (including edges pass 2 has already
+    // written), so no reconciled edge can close a loop.
+    const repointedOutputs: { trackId: string; outputId: string }[] = [];
+    for (const [index, track] of tracks.entries()) {
+        if (track.outputId !== removedTrackId) {
+            continue;
+        }
+        const outputId = resolveAcyclicDestination(track.id, inheritedOutputId, tracks, removedTrackId);
+        tracks[index] = { ...track, outputId };
+        repointedOutputs.push({ trackId: track.id, outputId });
+    }
 
     return { tracks, repointedOutputs };
 }
