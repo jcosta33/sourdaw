@@ -8,7 +8,7 @@ import { createReadyHandshake, ensureWorkletRegistered, fetchWasmBinary } from '
 import proofChamberProcessorUrl from '../services/proofChamberProcessor.ts?worker&url';
 
 const DEFAULT_WASM_URL = '/wasm/proof-chamber/proof_chamber_bg.wasm';
-const PROOF_CHAMBER_AUTOMATION_PARAM_IDS: Readonly<Record<string, number>> = {
+export const PROOF_CHAMBER_AUTOMATION_PARAM_IDS: Readonly<Record<string, number>> = {
     mix: 0,
     decay: 1,
 };

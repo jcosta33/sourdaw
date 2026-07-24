@@ -1,5 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+import { logger } from '#/infra/logger/appLogger';
+
 import { type AutomationLane } from '../../../models/AutomationViewTypes';
 import { type Device } from '../../../models/TrackViewTypes';
 import { scheduleTrackAutomation } from '../../offlineScheduler/automationScheduling';
@@ -158,6 +160,18 @@ describe('FaustDeviceStrategy.resolveOfflineAutomation', () => {
         const { strategy } = make_faust_strategy(['/reverb/cutoff']);
 
         expect(strategy.resolveOfflineAutomation('resonance')).toBeNull();
+    });
+
+    it('keeps the first address and warns on an ambiguous bare param name', () => {
+        const warnSpy = vi.spyOn(logger, 'warn').mockImplementation(() => {});
+        const { strategy, params } = make_faust_strategy(['/a/cutoff', '/b/cutoff']);
+
+        const binding = strategy.resolveOfflineAutomation('cutoff');
+
+        // First address wins; the shadowed duplicate is warned, mirroring the live cache.
+        expect(binding?.kind === 'audioParam' && binding.targets[0]?.audioParam).toBe(params.get('/a/cutoff'));
+        expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('Duplicate bare param'));
+        warnSpy.mockRestore();
     });
 
     // OE-3 red-first: a Faust device sits outside the hardcoded offline param map

@@ -24,7 +24,14 @@ function buildFaustParamAddressCache(parameters: ReadonlyMap<string, AudioParam>
     }
     for (const [key] of parameters) {
         const bareName = key.split('/').pop();
-        if (!bareName || cache.has(bareName)) {
+        if (!bareName) {
+            continue;
+        }
+        const existing = cache.get(bareName);
+        if (existing !== undefined) {
+            // Parity with the live factory cache: keep the first address for an
+            // ambiguous bare name and warn rather than silently shadowing it.
+            logger.warn(`[Faust] Duplicate bare param "${bareName}" — keeping "${existing}", ignoring "${key}"`);
             continue;
         }
         cache.set(bareName, key);
