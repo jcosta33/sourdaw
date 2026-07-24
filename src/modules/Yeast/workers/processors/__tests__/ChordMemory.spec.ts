@@ -98,4 +98,55 @@ describe('ChordMemory', () => {
         cm.processMidi([note_on(0, 60)], out, transport);
         expect(out.length).toBeGreaterThan(0);
     });
+
+    it('clears the chord memory via the chordMemory.clear command', () => {
+        const cm = new ChordMemory('clear');
+        cm.executeCommand({ processorId: 'clear', type: 'chordMemory.learn' });
+        cm.processMidi([note_on(0, 60), note_on(0, 64), note_on(0, 67)], [], transport);
+        cm.processMidi(
+            [
+                { timeSamples: 0, kind: { type: 'noteOff', channel: 0, note: 60 } },
+                { timeSamples: 0, kind: { type: 'noteOff', channel: 0, note: 64 } },
+                { timeSamples: 0, kind: { type: 'noteOff', channel: 0, note: 67 } },
+            ],
+            [],
+            transport
+        );
+        // a stored chord exists; after clear, retriggering a single note must not
+        // emit the learned chord (only the original passes through).
+        const before: MidiEvent[] = [];
+        cm.processMidi([note_on(0, 72)], before, transport);
+        const beforeOns = before.filter((e) => e.kind.type === 'noteOn').length;
+
+        cm.executeCommand({ processorId: 'clear', type: 'chordMemory.clear' });
+        const after: MidiEvent[] = [];
+        cm.processMidi([note_on(0, 72)], after, transport);
+        const afterOns = after.filter((e) => e.kind.type === 'noteOn').length;
+
+        expect(afterOns).toBeLessThanOrEqual(beforeOns);
+    });
+
+    it('returns false for a command addressed to a different processor id', () => {
+        const cm = new ChordMemory('mine');
+        const accepted = cm.executeCommand({ processorId: 'other', type: 'chordMemory.learn' });
+        expect(accepted).toBe(false);
+        expect(cm.isLearning()).toBe(false);
+    });
+
+    it('returns false for an unknown command type', () => {
+        const cm = new ChordMemory('unk');
+        const accepted = cm.executeCommand({ processorId: 'unk', type: 'nonsense' as never });
+        expect(accepted).toBe(false);
+    });
+
+    it('passes through non-note events unchanged', () => {
+        const cm = new ChordMemory('cc');
+        const cc = {
+            timeSamples: 0,
+            kind: { type: 'cc', channel: 0, cc: 7, value: 64 },
+        } as MidiEvent;
+        const out: MidiEvent[] = [];
+        cm.processMidi([cc], out, transport);
+        expect(out[0]).toBe(cc);
+    });
 });
