@@ -1,0 +1,19 @@
+src/modules/Yeast/workers/processors/__tests__/NoteFilter.spec.ts
+  s_ef86d3bd712656::t_e8b803d74d4005 104-222
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "2b60937bf80c1368896482eaf453d6cb694693a6",
+  "prompts": {},
+  "sessions": {
+    "s_ef86d3bd712656": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-a39952223dce20737",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
