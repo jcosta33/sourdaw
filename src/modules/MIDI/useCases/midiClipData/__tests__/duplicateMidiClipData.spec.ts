@@ -322,4 +322,225 @@ describe('duplicateMidiClipData', () => {
         expect(compensatedState.ccByClipId.target).toBeUndefined();
         expect(compensatedState.pitchBendByClipId.target).toBeUndefined();
     });
+
+    it('rollback restores the previously-existing target notes instead of deleting them', () => {
+        // Intent: rollback must return a clip to exactly its pre-duplicate
+        // state. When the target already held notes before the duplicate, the
+        // restore path must put those original notes back — not delete the slot.
+        const oldTargetNotes = [createNote('note-original-target')];
+        const previousState: MidiStoreStateInput = {
+            notesByClipId: { source: [createNote('note-source')], target: oldTargetNotes },
+            ccByClipId: {},
+            pitchBendByClipId: {},
+        };
+        mocks.state.value = previousState;
+        vi.spyOn(crypto, 'randomUUID').mockReturnValueOnce('aaaaaaaa-0000-4000-8000-000000000000');
+
+        const rollback = duplicate([{ sourceClipId: 'source', targetClipId: 'target' }]);
+        const duplicatedState = requireMidiState();
+        const committedNotes = requireRows(duplicatedState.notesByClipId, 'target');
+        expect(committedNotes[0]?.id).toBe('note-dup-aaaaaaaa-0000-4000-8000-000000000000');
+
+        // No intervening change to the target slot -> committed value is still
+        // in place -> rollback restores the pre-duplicate value.
+        rollback();
+        const rolledBackState = requireMidiState();
+        expect(rolledBackState.notesByClipId.target).toBe(oldTargetNotes);
+        expect(rolledBackState.notesByClipId.target?.[0]?.id).toBe('note-original-target');
+    });
+
+    it('rollback skips a target whose control changes were changed by intervening state', () => {
+        // Intent: rollback must not clobber a clip that a newer owner wrote to
+        // after the duplicate committed. Here the duplicate commits CC into the
+        // target, then an intervening write replaces that CC slot; rollback
+        // must leave the newer CC untouched.
+        const previousState: MidiStoreStateInput = {
+            notesByClipId: {},
+            ccByClipId: { source: [createControlChange('cc-source')] },
+            pitchBendByClipId: {},
+        };
+        mocks.state.value = previousState;
+        vi.spyOn(crypto, 'randomUUID').mockReturnValueOnce('bbbbbbbb-0000-4000-8000-000000000000');
+
+        const rollback = duplicate([{ sourceClipId: 'source', targetClipId: 'target' }]);
+        const duplicatedState = requireMidiState();
+        const committedControlChanges = requireRows(duplicatedState.ccByClipId, 'target');
+        expect(committedControlChanges[0]?.id).toBe('cc-dup-bbbbbbbb-0000-4000-8000-000000000000');
+
+        // Intervening owner writes a fresh CC set into the same target slot.
+        const newerControlChanges = [createControlChange('cc-newer')];
+        mocks.state.value = {
+            ...duplicatedState,
+            ccByClipId: { ...duplicatedState.ccByClipId, target: newerControlChanges },
+        };
+
+        rollback();
+        const rolledBackState = requireMidiState();
+        expect(rolledBackState.ccByClipId.target).toBe(newerControlChanges);
+    });
+
+    it('rollback skips a target whose pitch bends were changed by intervening state', () => {
+        const previousState: MidiStoreStateInput = {
+            notesByClipId: {},
+            ccByClipId: {},
+            pitchBendByClipId: { source: [createPitchBend('pb-source')] },
+        };
+        mocks.state.value = previousState;
+        vi.spyOn(crypto, 'randomUUID').mockReturnValueOnce('cccccccc-0000-4000-8000-000000000000');
+
+        const rollback = duplicate([{ sourceClipId: 'source', targetClipId: 'target' }]);
+        const duplicatedState = requireMidiState();
+        const committedPitchBends = requireRows(duplicatedState.pitchBendByClipId, 'target');
+        expect(committedPitchBends[0]?.id).toBe('pb-dup-cccccccc-0000-4000-8000-000000000000');
+
+        const newerPitchBends = [createPitchBend('pb-newer')];
+        mocks.state.value = {
+            ...duplicatedState,
+            pitchBendByClipId: { ...duplicatedState.pitchBendByClipId, target: newerPitchBends },
+        };
+
+        rollback();
+        const rolledBackState = requireMidiState();
+        expect(rolledBackState.pitchBendByClipId.target).toBe(newerPitchBends);
+    });
+
+    it('rollback restores previously-existing target control changes and pitch bends', () => {
+        // Mirrors the notes case for CC and pitch bend: when the target already
+        // held rows, rollback restores them rather than deleting the slot.
+        const oldTargetControlChanges = [createControlChange('cc-original-target')];
+        const oldTargetPitchBends = [createPitchBend('pb-original-target')];
+        const previousState: MidiStoreStateInput = {
+            notesByClipId: {},
+            ccByClipId: { source: [createControlChange('cc-source')], target: oldTargetControlChanges },
+            pitchBendByClipId: { source: [createPitchBend('pb-source')], target: oldTargetPitchBends },
+        };
+        mocks.state.value = previousState;
+        vi.spyOn(crypto, 'randomUUID')
+            .mockReturnValueOnce('dddddddd-0000-4000-8000-000000000000')
+            .mockReturnValueOnce('eeeeeeee-0000-4000-8000-000000000000');
+
+        const rollback = duplicate([{ sourceClipId: 'source', targetClipId: 'target' }]);
+        const duplicatedState = requireMidiState();
+        expect(requireRows(duplicatedState.ccByClipId, 'target')[0]?.id).toBe(
+            'cc-dup-dddddddd-0000-4000-8000-000000000000'
+        );
+        expect(requireRows(duplicatedState.pitchBendByClipId, 'target')[0]?.id).toBe(
+            'pb-dup-eeeeeeee-0000-4000-8000-000000000000'
+        );
+
+        rollback();
+        const rolledBackState = requireMidiState();
+        expect(rolledBackState.ccByClipId.target).toBe(oldTargetControlChanges);
+        expect(rolledBackState.pitchBendByClipId.target).toBe(oldTargetPitchBends);
+    });
+
+    it('rollback deletes a freshly-created target slot and restores an existing one in the same pass', () => {
+        // Intent: in one rollback, the compensation must distinguish clips the
+        // duplicate created (no previous value -> delete) from clips that
+        // pre-existed (previous value -> restore). Using two targets forces the
+        // notes map to be shallow-copied once then mutated again on the second
+        // target, exercising the "already spread" path of the copy-on-write.
+        const existingTargetNotes = [createNote('note-original')];
+        const previousState: MidiStoreStateInput = {
+            notesByClipId: {
+                source: [createNote('note-source')],
+                targetExisting: existingTargetNotes,
+            },
+            ccByClipId: {},
+            pitchBendByClipId: {},
+        };
+        mocks.state.value = previousState;
+        vi.spyOn(crypto, 'randomUUID')
+            .mockReturnValueOnce('f1f1f1f1-0000-4000-8000-000000000000')
+            .mockReturnValueOnce('f2f2f2f2-0000-4000-8000-000000000000');
+
+        const rollback = duplicate([
+            { sourceClipId: 'source', targetClipId: 'targetFresh' },
+            { sourceClipId: 'source', targetClipId: 'targetExisting' },
+        ]);
+        const duplicatedState = requireMidiState();
+        // Both targets now hold duplicated notes.
+        expect(requireRows(duplicatedState.notesByClipId, 'targetFresh')[0]?.id).toBe(
+            'note-dup-f1f1f1f1-0000-4000-8000-000000000000'
+        );
+        expect(requireRows(duplicatedState.notesByClipId, 'targetExisting')[0]?.id).toBe(
+            'note-dup-f2f2f2f2-0000-4000-8000-000000000000'
+        );
+
+        rollback();
+        const rolledBackState = requireMidiState();
+        // targetFresh had no previous notes -> deleted.
+        expect(rolledBackState.notesByClipId.targetFresh).toBeUndefined();
+        // targetExisting had previous notes -> restored.
+        expect(rolledBackState.notesByClipId.targetExisting).toBe(existingTargetNotes);
+    });
+
+    it('rollback is a no-op when the store has become null before it runs', () => {
+        // Intent: rollback must tolerate the store being torn down between
+        // commit and rollback without throwing. It marks itself consumed so a
+        // later call is still safe.
+        const previousState: MidiStoreStateInput = {
+            notesByClipId: { source: [createNote('note-source')] },
+            ccByClipId: {},
+            pitchBendByClipId: {},
+        };
+        mocks.state.value = previousState;
+        vi.spyOn(crypto, 'randomUUID').mockReturnValueOnce('f3f3f3f3-0000-4000-8000-000000000000');
+
+        const rollback = duplicate([{ sourceClipId: 'source', targetClipId: 'target' }]);
+
+        // Store is torn down before rollback runs.
+        mocks.state.value = null;
+        expect(() => rollback()).not.toThrow();
+        // A second rollback must also be safe (consumed guard).
+        expect(() => rollback()).not.toThrow();
+        expect(mocks.state.value).toBeNull();
+    });
+
+    it('rollback restores multiple control-change and pitch-bend targets in one pass', () => {
+        // Two CC targets (one fresh, one pre-existing) and two pitch-bend
+        // targets likewise — exercises the copy-on-write "already spread" path
+        // for both maps plus the delete-vs-restore branch for each.
+        const existingCc = [createControlChange('cc-original')];
+        const existingPb = [createPitchBend('pb-original')];
+        const previousState: MidiStoreStateInput = {
+            notesByClipId: {},
+            ccByClipId: { source: [createControlChange('cc-source')], targetExisting: existingCc },
+            pitchBendByClipId: { source: [createPitchBend('pb-source')], targetExisting: existingPb },
+        };
+        mocks.state.value = previousState;
+        vi.spyOn(crypto, 'randomUUID')
+            .mockReturnValueOnce('a1a1a1a1-0000-4000-8000-000000000000')
+            .mockReturnValueOnce('a2a2a2a2-0000-4000-8000-000000000000')
+            .mockReturnValueOnce('a3a3a3a3-0000-4000-8000-000000000000')
+            .mockReturnValueOnce('a4a4a4a4-0000-4000-8000-000000000000');
+
+        const rollback = duplicate([
+            { sourceClipId: 'source', targetClipId: 'ccFresh' },
+            { sourceClipId: 'source', targetClipId: 'targetExisting' },
+        ]);
+        const duplicatedState = requireMidiState();
+        // Copies are processed in order; within each copy the order is
+        // notes -> cc -> pb. notes source is empty, so the UUID sequence is:
+        // copy1 cc=a1, copy1 pb=a2, copy2 cc=a3, copy2 pb=a4.
+        expect(requireRows(duplicatedState.ccByClipId, 'ccFresh')[0]?.id).toBe(
+            'cc-dup-a1a1a1a1-0000-4000-8000-000000000000'
+        );
+        expect(requireRows(duplicatedState.ccByClipId, 'targetExisting')[0]?.id).toBe(
+            'cc-dup-a3a3a3a3-0000-4000-8000-000000000000'
+        );
+        expect(requireRows(duplicatedState.pitchBendByClipId, 'ccFresh')[0]?.id).toBe(
+            'pb-dup-a2a2a2a2-0000-4000-8000-000000000000'
+        );
+        expect(requireRows(duplicatedState.pitchBendByClipId, 'targetExisting')[0]?.id).toBe(
+            'pb-dup-a4a4a4a4-0000-4000-8000-000000000000'
+        );
+
+        rollback();
+        const rolledBackState = requireMidiState();
+        expect(rolledBackState.ccByClipId.ccFresh).toBeUndefined();
+        expect(rolledBackState.ccByClipId.targetExisting).toBe(existingCc);
+        expect(rolledBackState.pitchBendByClipId.ccFresh).toBeUndefined();
+        expect(rolledBackState.pitchBendByClipId.targetExisting).toBe(existingPb);
+    });
 });
