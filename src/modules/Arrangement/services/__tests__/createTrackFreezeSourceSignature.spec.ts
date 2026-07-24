@@ -40,6 +40,30 @@ describe('createTrackFreezeSourceSignature', () => {
         expect(sigForward).toBe(sigReversed);
     });
 
+    it('breaks start-beat ties by clip id so same-start clips are ordered deterministically', () => {
+        // Both clips start at beat 0, so the comparator must fall through to
+        // id.localeCompare — otherwise the sort (and the signature) would be
+        // unstable across runs.
+        const sigOrdered = createTrackFreezeSourceSignature({
+            clips: [
+                { id: 'alpha', startBeat: 0, endBeat: 2, gain: 1 },
+                { id: 'beta', startBeat: 0, endBeat: 2, gain: 1 },
+            ],
+            devices: [],
+        });
+        const sigReversed = createTrackFreezeSourceSignature({
+            clips: [
+                { id: 'beta', startBeat: 0, endBeat: 2, gain: 1 },
+                { id: 'alpha', startBeat: 0, endBeat: 2, gain: 1 },
+            ],
+            devices: [],
+        });
+
+        // alpha before beta regardless of input order.
+        expect(sigOrdered).toBe('alpha:0:2::1|beta:0:2::1||');
+        expect(sigOrdered).toBe(sigReversed);
+    });
+
     it('is independent of device parameter insertion order', () => {
         const sigA = createTrackFreezeSourceSignature({
             clips: [],

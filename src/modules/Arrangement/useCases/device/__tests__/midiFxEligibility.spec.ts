@@ -166,4 +166,59 @@ describe('MIDI-track MIDI FX operations', () => {
         expect(mocks.updateTrack).not.toHaveBeenCalled();
         expect(mocks.addMidiFxToStrip).not.toHaveBeenCalled();
     });
+
+    it('leaves a non-midi track untouched on bypass and param update but still syncs the engine', () => {
+        // bypassMidiFx/updateMidiFxParam early-return the track inside the
+        // updater when kind !== 'midi', so the fx list is unchanged even though
+        // the engine call still fires.
+        mocks.updateTrack.mockImplementation((_trackId: string, updater: (track: TestTrack) => TestTrack) => {
+            mocks.updatedTrack = updater({ kind: 'audio', midiFx: [residue] });
+        });
+
+        bypassMidiFx('audio-1', 'fx-1', true);
+        expect(mocks.updatedTrack).toEqual({ kind: 'audio', midiFx: [residue] });
+        expect(mocks.updateMidiFxBypass).toHaveBeenCalledWith('audio-1', 'fx-1', true);
+
+        mocks.updateTrack.mockClear();
+        mocks.updateMidiFxParam.mockClear();
+        mocks.updateTrack.mockImplementation((_trackId: string, updater: (track: TestTrack) => TestTrack) => {
+            mocks.updatedTrack = updater({ kind: 'audio', midiFx: [residue] });
+        });
+
+        updateMidiFxParam('audio-1', 'fx-1', 'rate', 4);
+        expect(mocks.updatedTrack).toEqual({ kind: 'audio', midiFx: [residue] });
+        expect(mocks.updateMidiFxParam).toHaveBeenCalledWith('audio-1', 'fx-1', 'rate', 4);
+    });
+
+    it('treats a midi track with no midiFx array as an empty list on bypass, update, and remove', () => {
+        // midiFx is undefined -> the `?? []` fallback must yield an empty list
+        // so map/filter never throw on a missing array.
+        mocks.updateTrack.mockImplementation((_trackId: string, updater: (track: TestTrack) => TestTrack) => {
+            mocks.updatedTrack = updater({ kind: 'midi' } as TestTrack);
+        });
+
+        bypassMidiFx('midi-1', 'fx-1', true);
+        expect(mocks.updatedTrack).toEqual({ kind: 'midi', midiFx: [] });
+        expect(mocks.updateMidiFxBypass).toHaveBeenCalledWith('midi-1', 'fx-1', true);
+
+        mocks.updateTrack.mockClear();
+        mocks.updateMidiFxParam.mockClear();
+        mocks.updateTrack.mockImplementation((_trackId: string, updater: (track: TestTrack) => TestTrack) => {
+            mocks.updatedTrack = updater({ kind: 'midi' } as TestTrack);
+        });
+
+        updateMidiFxParam('midi-1', 'fx-1', 'rate', 4);
+        expect(mocks.updatedTrack).toEqual({ kind: 'midi', midiFx: [] });
+        expect(mocks.updateMidiFxParam).toHaveBeenCalledWith('midi-1', 'fx-1', 'rate', 4);
+
+        mocks.updateTrack.mockClear();
+        mocks.removeMidiFxFromStrip.mockClear();
+        mocks.updateTrack.mockImplementation((_trackId: string, updater: (track: TestTrack) => TestTrack) => {
+            mocks.updatedTrack = updater({ kind: 'midi' } as TestTrack);
+        });
+
+        removeMidiFx('midi-1', 'fx-1');
+        expect(mocks.updatedTrack).toEqual({ kind: 'midi', midiFx: [] });
+        expect(mocks.removeMidiFxFromStrip).toHaveBeenCalledWith('midi-1', 'fx-1');
+    });
 });

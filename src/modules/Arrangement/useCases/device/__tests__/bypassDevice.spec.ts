@@ -61,4 +61,39 @@ describe('bypassDevice', () => {
         expect(mocks.updateDeviceBypass).not.toHaveBeenCalled();
         expect(didWrite).toBe(false);
     });
+
+    it('skips engine lookup and still maps the store when track state is absent', async () => {
+        // No project tracks -> the engine forwarding loop is skipped entirely,
+        // but the device record is still updated in project truth.
+        mocks.getTrackState.mockReturnValue(null);
+
+        const didWrite = bypassDevice('d1', true);
+
+        expect(mocks.mapAllTracks).toHaveBeenCalled();
+        await Promise.resolve();
+        expect(mocks.updateDeviceBypass).not.toHaveBeenCalled();
+        expect(didWrite).toBe(true);
+    });
+
+    it('leaves sibling devices unchanged while toggling only the target', () => {
+        mocks.getTrackState.mockReturnValue({
+            tracks: [{ id: 't1', kind: 'audio', devices: [{ id: 'd1' }, { id: 'd2' }] }],
+        });
+
+        bypassDevice('d1', true);
+
+        const updater = mocks.mapAllTracks.mock.calls[0]![0] as (track: {
+            devices: { id: string; bypassed: boolean }[];
+        }) => { devices: { id: string; bypassed: boolean }[] };
+        const result = updater({
+            devices: [
+                { id: 'd1', bypassed: false },
+                { id: 'd2', bypassed: false },
+            ],
+        });
+        expect(result.devices).toEqual([
+            { id: 'd1', bypassed: true },
+            { id: 'd2', bypassed: false },
+        ]);
+    });
 });

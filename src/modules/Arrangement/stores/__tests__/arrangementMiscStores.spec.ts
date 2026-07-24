@@ -31,6 +31,25 @@ describe('Arrangement Misc Stores', () => {
             setNoteClipboard(null);
             expect(clipboardStore.value?.noteClipboard).toBeNull();
         });
+
+        it('rehydrates an empty clipClipboard when the store has been cleared', () => {
+            // After clear() the store value is null, so setNoteClipboard must
+            // fall back to [] for clipClipboard (the ?? [] arm) rather than
+            // crashing on current.clipClipboard.
+            clipboardStore.clear();
+            expect(clipboardStore.value).toBeNull();
+
+            setNoteClipboard({ notes: [] });
+
+            expect(clipboardStore.value?.clipClipboard).toEqual([]);
+            expect(clipboardStore.value?.noteClipboard).toEqual({ notes: [] });
+
+            // setClipClipboard mirrors the fallback for noteClipboard.
+            clipboardStore.clear();
+            setClipClipboard([]);
+            expect(clipboardStore.value?.noteClipboard).toBeNull();
+            expect(clipboardStore.value?.clipClipboard).toEqual([]);
+        });
     });
 
     describe('gainEnvelopeStore', () => {
