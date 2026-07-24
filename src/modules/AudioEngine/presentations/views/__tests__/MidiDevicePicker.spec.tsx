@@ -123,4 +123,89 @@ describe('MidiDevicePicker', () => {
             expect(screen.getByText('Select a device...')).toBeInTheDocument();
         });
     });
+
+    // ── branch coverage: empty-inputs + detection states ─────────────────────
+
+    it('does not call initWebMidi on mount when Web MIDI is unsupported', async () => {
+        (useStore as ReturnType<typeof vi.fn>).mockReturnValue({
+            isSupported: false,
+            inputs: [],
+            selectedInputId: null,
+        });
+        render(<MidiDevicePicker />);
+        // useEffect returns early before calling initWebMidi.
+        await waitFor(() => {
+            expect(mockInitWebMidi).not.toHaveBeenCalled();
+        });
+    });
+
+    it('shows the detecting state and a disabled select while devices are empty and not initialised', async () => {
+        (useStore as ReturnType<typeof vi.fn>).mockReturnValue({
+            isSupported: true,
+            inputs: [],
+            selectedInputId: null,
+        });
+        // Block initWebMidi from settling so `initialised` stays false.
+        mockInitWebMidi.mockReturnValue(new Promise(() => {}));
+
+        render(<MidiDevicePicker />);
+        await waitFor(() => {
+            expect(screen.getByText('Detecting devices...')).toBeInTheDocument();
+        });
+        // Detection hint is shown while not initialised and inputs empty.
+        expect(screen.getByText('Detecting MIDI devices...')).toBeInTheDocument();
+        // The select is disabled when there are no inputs.
+        expect(screen.getByLabelText('MIDI input device')).toBeDisabled();
+    });
+
+    it('shows "No MIDI devices found" once initialised with an empty device list', async () => {
+        (useStore as ReturnType<typeof vi.fn>).mockReturnValue({
+            isSupported: true,
+            inputs: [],
+            selectedInputId: null,
+        });
+        // initWebMidi resolves ⇒ initialised becomes true.
+        mockInitWebMidi.mockResolvedValue(undefined);
+
+        render(<MidiDevicePicker />);
+        await waitFor(() => {
+            expect(screen.getByText('No MIDI devices found')).toBeInTheDocument();
+        });
+    });
+
+    it('omits the manufacturer parenthetical when it is "Unknown"', async () => {
+        (useStore as ReturnType<typeof vi.fn>).mockReturnValue({
+            isSupported: true,
+            inputs: [{ id: 'midiX', name: 'Generic Controller', manufacturer: 'Unknown' }],
+            selectedInputId: null,
+        });
+        render(<MidiDevicePicker />);
+        await waitFor(() => {
+            expect(screen.getByText('Generic Controller')).toBeInTheDocument();
+        });
+        // No "(Unknown)" suffix.
+        expect(screen.queryByText('Generic Controller (Unknown)')).not.toBeInTheDocument();
+    });
+
+    it('does not call selectMidiInput when the selection is cleared to an empty value', async () => {
+        render(<MidiDevicePicker />);
+        await waitFor(() => {
+            expect(screen.getByText('Select a device...')).toBeInTheDocument();
+        });
+        mockSelectMidiInput.mockClear();
+        fireEvent.change(screen.getByLabelText('MIDI input device'), { target: { value: '' } });
+        expect(mockSelectMidiInput).not.toHaveBeenCalled();
+    });
+
+    it('renders "Connected: Unknown" when the selected device is no longer in the input list', () => {
+        (useStore as ReturnType<typeof vi.fn>).mockReturnValue({
+            isSupported: true,
+            inputs: [{ id: 'midi1', name: 'MIDI Keyboard', manufacturer: 'Roland' }],
+            // selectedInputId refers to a device that is absent from inputs.
+            selectedInputId: 'disconnected',
+        });
+        render(<MidiDevicePicker />);
+        // find() returns undefined ⇒ `?? 'Unknown'` fallback ⇒ "Connected: Unknown".
+        expect(screen.getByText('Connected: Unknown')).toBeInTheDocument();
+    });
 });

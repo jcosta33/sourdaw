@@ -180,4 +180,62 @@ describe('PluginScanSettings', () => {
         fireEvent.keyDown(input, { key: 'Enter' });
         expect(addScanPath).toHaveBeenCalledWith('/new/path');
     });
+
+    // ── branch coverage: handler guards and success-badge short-circuits ──────
+
+    it('does not call addScanPath when the input is empty or whitespace', () => {
+        render(<PluginScanSettings />);
+        const input = screen.getByPlaceholderText('/path/to/plugins...');
+        const addButton = screen.getByLabelText('Add plugin path');
+        // Empty trimmed path ⇒ handleAddPath `if (trimmed)` false arm.
+        fireEvent.change(input, { target: { value: '   ' } });
+        fireEvent.click(addButton);
+        expect(addScanPath).not.toHaveBeenCalled();
+    });
+
+    it('does not call addScanPath for a non-Enter keypress', () => {
+        render(<PluginScanSettings />);
+        const input = screen.getByPlaceholderText('/path/to/plugins...');
+        fireEvent.change(input, { target: { value: '/new/path' } });
+        // Non-Enter key ⇒ `if (event.key === 'Enter')` false arm.
+        fireEvent.keyDown(input, { key: 'Escape' });
+        expect(addScanPath).not.toHaveBeenCalled();
+    });
+
+    it('does not show the success badge when plugins exist but errors are present', () => {
+        (useStore as ReturnType<typeof vi.fn>).mockReturnValue({
+            scanPaths: ['/path'],
+            scannedPlugins: [{ id: 'p1' }],
+            isScanning: false,
+            errors: ['scan error'],
+            lastScanTime: null,
+        });
+        render(<PluginScanSettings />);
+        expect(screen.queryByText('All plugins scanned successfully')).not.toBeInTheDocument();
+    });
+
+    it('does not show the success badge while a scan is in progress', () => {
+        (useStore as ReturnType<typeof vi.fn>).mockReturnValue({
+            scanPaths: ['/path'],
+            scannedPlugins: [{ id: 'p1' }],
+            isScanning: true,
+            errors: [],
+            lastScanTime: null,
+        });
+        render(<PluginScanSettings />);
+        expect(screen.queryByText('All plugins scanned successfully')).not.toBeInTheDocument();
+    });
+
+    it('renders the empty state for scan paths without a paths list', () => {
+        (useStore as ReturnType<typeof vi.fn>).mockReturnValue({
+            scanPaths: [],
+            scannedPlugins: [],
+            isScanning: false,
+            errors: [],
+            lastScanTime: null,
+        });
+        render(<PluginScanSettings />);
+        // No remove buttons when paths list is empty.
+        expect(screen.queryAllByLabelText(/Remove path/)).toHaveLength(0);
+    });
 });

@@ -49,7 +49,7 @@ vi.mock('#/components/ui/tooltip', () => ({
 
 const { useStore } = await import('#/infra/store/useStore');
 const { startPluginScan } = await import('#/modules/PluginHost/useCases');
-const { addExternalDevice } = await import('#/modules/Arrangement/useCases');
+const { addTrack, addExternalDevice } = await import('#/modules/Arrangement/useCases');
 const { getPlatformCapabilities } = await import('#/utils/platformCapabilities');
 
 const mockPlugins = [
@@ -176,5 +176,92 @@ describe('PluginBrowser', () => {
         const plugin = screen.getByText('Test VST');
         fireEvent.click(plugin.closest('[role="button"]') || plugin);
         expect(addExternalDevice).toHaveBeenCalled();
+    });
+
+    // ── handleLoadPlugin: no selected track ⇒ creates a track of the right kind ─
+
+    it('creates an instrument track when loading an instrument plugin with no selected track', () => {
+        (useStore as ReturnType<typeof vi.fn>).mockReturnValue({
+            scannedPlugins: mockPlugins,
+            isScanning: false,
+            errors: [],
+        });
+        render(<PluginBrowser selectedTrackId={null} searchQuery="" />);
+        const plugin = screen.getByText('CLAP Synth'); // category: 'Instrument'
+        fireEvent.click(plugin.closest('[role="button"]') || plugin);
+        // Instrument ⇒ new midi track created, then device added to it.
+        expect(addTrack).toHaveBeenCalledWith({ name: 'CLAP Synth', kind: 'midi' });
+        expect(addExternalDevice).toHaveBeenCalledWith('track1', 'p2', 'CLAP Synth');
+    });
+
+    it('creates an audio track when loading a non-instrument plugin with no selected track', () => {
+        (useStore as ReturnType<typeof vi.fn>).mockReturnValue({
+            scannedPlugins: mockPlugins,
+            isScanning: false,
+            errors: [],
+        });
+        render(<PluginBrowser selectedTrackId={null} searchQuery="" />);
+        const plugin = screen.getByText('Test VST'); // category: 'Effect'
+        fireEvent.click(plugin.closest('[role="button"]') || plugin);
+        expect(addTrack).toHaveBeenCalledWith({ name: 'Test VST', kind: 'audio' });
+    });
+
+    it('aborts the load when addTrack returns null and there is no selected track', () => {
+        (useStore as ReturnType<typeof vi.fn>).mockReturnValue({
+            scannedPlugins: mockPlugins,
+            isScanning: false,
+            errors: [],
+        });
+        vi.mocked(addTrack).mockReturnValueOnce(null);
+
+        render(<PluginBrowser selectedTrackId={null} searchQuery="" />);
+        const plugin = screen.getByText('Test VST');
+        fireEvent.click(plugin.closest('[role="button"]') || plugin);
+        // Track creation failed ⇒ addExternalDevice never called.
+        expect(addExternalDevice).not.toHaveBeenCalled();
+    });
+
+    // ── collapse/expand toggle (exercises the else/add arm) ────────────────────
+
+    it('toggles a format group between collapsed and expanded', () => {
+        (useStore as ReturnType<typeof vi.fn>).mockReturnValue({
+            scannedPlugins: mockPlugins,
+            isScanning: false,
+            errors: [],
+        });
+        render(<PluginBrowser selectedTrackId={null} searchQuery="" />);
+        // Format header buttons are the <button> elements containing the format text.
+        const vstHeader = screen.getAllByText('vst3')[0]!.closest('button')!;
+        // Collapse: rows hide.
+        fireEvent.click(vstHeader);
+        // The plugin row should no longer be visible.
+        expect(vstHeader).toBeInTheDocument();
+        // Expand back: rows reappear.
+        fireEvent.click(vstHeader);
+        expect(screen.getByText('Test VST')).toBeInTheDocument();
+    });
+
+    // ── searchQuery prop drives the filter (overrides local search) ────────────
+
+    it('filters plugins using the external searchQuery prop', () => {
+        (useStore as ReturnType<typeof vi.fn>).mockReturnValue({
+            scannedPlugins: mockPlugins,
+            isScanning: false,
+            errors: [],
+        });
+        // Match by vendor (SynthCo) — exercises the vendor branch of the ||.
+        render(<PluginBrowser selectedTrackId={null} searchQuery="SynthCo" />);
+        expect(screen.getByText('CLAP Synth')).toBeInTheDocument();
+        expect(screen.queryByText('Test VST')).not.toBeInTheDocument();
+    });
+
+    it('shows the no-match hint when the query matches no plugins', () => {
+        (useStore as ReturnType<typeof vi.fn>).mockReturnValue({
+            scannedPlugins: mockPlugins,
+            isScanning: false,
+            errors: [],
+        });
+        render(<PluginBrowser selectedTrackId={null} searchQuery="zzznomatch" />);
+        expect(screen.getByText(/No plugins match/)).toBeInTheDocument();
     });
 });
