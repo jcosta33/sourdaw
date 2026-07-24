@@ -99,4 +99,88 @@ describe('MarkovChain', () => {
     it('getCurrentState starts at 0', () => {
         expect(new MarkovChain('t8').getCurrentState()).toBe(0);
     });
+
+    it('re-normalizes the row so it still sums to ~1 after setTransition', () => {
+        const mc = new MarkovChain('norm');
+        mc.processMidi([noteOn(0, 60)], [], transport);
+        mc.setTransition(0, 0, 5.0);
+        const row = mc.getMatrix()[0]!;
+        const sum = row.reduce((a, b) => a + b, 0);
+        expect(sum).toBeCloseTo(1, 5);
+    });
+
+    it('ignores setTransition for out-of-bounds from/to indices', () => {
+        const mc = new MarkovChain('oob');
+        mc.processMidi([noteOn(0, 60)], [], transport); // stateCount becomes 1
+        const before = mc.getMatrix();
+        mc.setTransition(50, 50, 0.9); // from/to beyond stateCount → no-op
+        expect(mc.getMatrix()).toEqual(before);
+    });
+
+    it('passes through non-note events unchanged', () => {
+        const mc = new MarkovChain('cc');
+        const cc = {
+            timeSamples: 0,
+            kind: { type: 'cc', channel: 0, cc: 7, value: 64 },
+        } as MidiEvent;
+        const out: MidiEvent[] = [];
+        mc.processMidi([cc], out, transport);
+        expect(out[0]).toBe(cc);
+    });
+
+    it('clamps the velocity param into [1,127] on generated notes', () => {
+        const mc = new MarkovChain('params');
+        mc.setParam('velocity', 999); // → 127
+        mc.setParam('rate_denom', 1024); // fast rate so a step fits in a small block
+        mc.processMidi([noteOn(0, 60)], [], transport);
+        const out: MidiEvent[] = [];
+        mc.processMidi([], out, { ...transport, blockStartSamples: 0, blockEndSamples: 600 });
+        const on = out.find((e) => e.kind.type === 'noteOn');
+        expect(on).toBeDefined();
+        expect((on!.kind as { velocity: number }).velocity).toBe(127);
+    });
+
+    it('clamps the gate param into [0.01,2]', () => {
+        const mc = new MarkovChain('gate');
+        mc.setParam('gate', 99); // → 2
+        mc.setParam('rate_denom', 1024);
+        mc.processMidi([noteOn(0, 60)], [], transport);
+        const out: MidiEvent[] = [];
+        mc.processMidi([], out, { ...transport, blockStartSamples: 0, blockEndSamples: 600 });
+        const on = out.find((e) => e.kind.type === 'noteOn');
+        // noteLen = stepLen * gate(2) → durationSamples = stepLen * 2 (clamped gate)
+        expect(on?.durationSamples).toBeGreaterThan(0);
+    });
+
+    it('does not generate notes when transport is not playing', () => {
+        const mc = new MarkovChain('stopped');
+        mc.processMidi([noteOn(0, 60)], [], transport);
+        const out: MidiEvent[] = [];
+        mc.processMidi([], out, { ...transport, isPlaying: false, blockStartSamples: 0, blockEndSamples: 600 });
+        expect(out.filter((e) => e.kind.type === 'noteOn')).toHaveLength(0);
+    });
+
+    it('clamps the held-note state count to MAX_STATES (12)', () => {
+        const mc = new MarkovChain('max');
+        // hold 20 distinct notes → stateCount capped at 12
+        const ons: MidiEvent[] = [];
+        for (let n = 0; n < 20; n++) {
+            ons.push(noteOn(0, 60 + n));
+        }
+        mc.processMidi(ons, [], transport);
+        expect(mc.getStateCount()).toBe(12);
+    });
+
+    it('removes a held note on noteOff and keeps generating from the remaining set', () => {
+        const mc = new MarkovChain('release');
+        mc.setParam('rate_denom', 1024);
+        mc.processMidi([noteOn(0, 60), noteOn(0, 64)], [], transport);
+        expect(mc.getStateCount()).toBe(2);
+        // release note 64
+        mc.processMidi([{ timeSamples: 0, kind: { type: 'noteOff', channel: 0, note: 64 } }], [], transport);
+        // generation continues (does not throw / does not stop on release)
+        const out: MidiEvent[] = [];
+        mc.processMidi([], out, { ...transport, blockStartSamples: 0, blockEndSamples: 600 });
+        expect(out.some((e) => e.kind.type === 'noteOn')).toBe(true);
+    });
 });
