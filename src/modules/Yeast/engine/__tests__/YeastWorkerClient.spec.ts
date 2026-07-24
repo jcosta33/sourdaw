@@ -918,6 +918,85 @@ describe('createYeastWorker — processBlock lifecycle', () => {
                 ],
             },
         ],
+        [
+            'non-string track id',
+            {
+                type: 'processed',
+                requestId: 0,
+                events: [
+                    {
+                        timeSamples: 0,
+                        trackId: 5,
+                        kind: { type: 'noteOn', channel: 0, note: 60, velocity: 100 },
+                    },
+                ],
+            },
+        ],
+        [
+            'noteOff with an out-of-range channel',
+            {
+                type: 'processed',
+                requestId: 0,
+                events: [
+                    {
+                        timeSamples: 0,
+                        kind: { type: 'noteOff', channel: 16, note: 60 },
+                    },
+                ],
+            },
+        ],
+        [
+            'cc with a non-numeric controller',
+            {
+                type: 'processed',
+                requestId: 0,
+                events: [
+                    {
+                        timeSamples: 0,
+                        kind: { type: 'cc', channel: 0, cc: 'mod', value: 64 },
+                    },
+                ],
+            },
+        ],
+        [
+            'pitchBend with a non-finite value',
+            {
+                type: 'processed',
+                requestId: 0,
+                events: [
+                    {
+                        timeSamples: 0,
+                        kind: { type: 'pitchBend', channel: 0, value: Number.POSITIVE_INFINITY },
+                    },
+                ],
+            },
+        ],
+        [
+            'channelPressure with a missing channel',
+            {
+                type: 'processed',
+                requestId: 0,
+                events: [
+                    {
+                        timeSamples: 0,
+                        kind: { type: 'channelPressure', value: 10 },
+                    },
+                ],
+            },
+        ],
+        [
+            'unknown event kind',
+            {
+                type: 'processed',
+                requestId: 0,
+                events: [
+                    {
+                        timeSamples: 0,
+                        kind: { type: 'unknown' },
+                    },
+                ],
+            },
+        ],
     ] as const)('times out instead of accepting %s as silence', async (_label, message) => {
         const node = await createYeastWorker(makeContext());
         const promise = node.processBlock([], 0, 128, transport, 'track-a');
@@ -1531,5 +1610,57 @@ describe('createYeastWorker constructor lifecycle', () => {
         } as unknown as typeof Worker;
 
         await expect(createYeastWorkerClient(makeContext())).rejects.toThrow(error.message);
+    });
+});
+
+describe('createYeastWorker — late observer registration after a terminal state', () => {
+    it('fires onTerminalError immediately when registered after a runtime failure', async () => {
+        const node = await createYeastWorker(makeContext());
+        const worker = lastWorker();
+
+        triggerWorkerFailure(worker, 'error', 'runtime failed');
+
+        // A terminal failure must reach an observer that registers afterwards,
+        // otherwise a component mounting after the crash would silently miss it.
+        const lateTerminalError = vi.fn();
+        node.onTerminalError(lateTerminalError);
+
+        expect(lateTerminalError).toHaveBeenCalledTimes(1);
+        expect(lateTerminalError.mock.calls[0]![0]).toBeInstanceOf(Error);
+    });
+
+    it('does not fire onTerminalError when registered after an explicit destroy', async () => {
+        const node = await createYeastWorker(makeContext());
+
+        node.destroy();
+
+        // Destroy is an intentional teardown (notifyTerminalHandlers: false), not a
+        // failure, so a late observer must not be told the worker "failed".
+        const lateTerminalError = vi.fn();
+        node.onTerminalError(lateTerminalError);
+
+        expect(lateTerminalError).not.toHaveBeenCalled();
+    });
+
+    it('returns a no-op unsubscribe for late note-off and preview observers after a failure', async () => {
+        const node = await createYeastWorker(makeContext());
+        const worker = lastWorker();
+
+        triggerWorkerFailure(worker, 'error', 'runtime failed');
+
+        const lateNotesOff = vi.fn();
+        const latePreview = vi.fn();
+        const unsubscribeNotesOff = node.onNotesOff(lateNotesOff);
+        const unsubscribePreview = node.onPreview(latePreview);
+
+        // Observers registered after terminal never receive anything.
+        expect(lateNotesOff).not.toHaveBeenCalled();
+        expect(latePreview).not.toHaveBeenCalled();
+
+        // Their unsubscribers are safe no-ops.
+        expect(() => {
+            unsubscribeNotesOff();
+            unsubscribePreview();
+        }).not.toThrow();
     });
 });
