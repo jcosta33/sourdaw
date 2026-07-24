@@ -15,10 +15,11 @@ vi.mock('../../../stores/trackStore', () => ({
 }));
 
 let mockPixelsPerBeat = 12;
+let mockTimelineViewValue: { pixelsPerBeat: number } | null = { pixelsPerBeat: 12 };
 vi.mock('../../../stores/timelineViewStore', () => ({
     timelineViewStore: {
         get value() {
-            return { pixelsPerBeat: mockPixelsPerBeat };
+            return mockTimelineViewValue;
         },
     },
 }));
@@ -32,6 +33,7 @@ describe('snapToGridOrClips', () => {
     beforeEach(() => {
         mockTrackValue = null;
         mockPixelsPerBeat = 12;
+        mockTimelineViewValue = { pixelsPerBeat: mockPixelsPerBeat };
         mockSnapToGrid.mockReset();
     });
 
@@ -90,12 +92,12 @@ describe('snapToGridOrClips', () => {
 
         // SNAP_THRESHOLD_PX is 3. At 12px/beat the radius is 0.25 beats, so 0.2
         // snaps to the edge at 0.
-        mockPixelsPerBeat = 12;
+        mockTimelineViewValue = { pixelsPerBeat: 12 };
         expect(snapToGridOrClips(0.2, 't1')).toBe(0);
 
         // Zoom way in to 60px/beat: radius is 3/60 = 0.05 beats, so the same
         // 0.2-beat distance is now outside the radius and does NOT snap.
-        mockPixelsPerBeat = 60;
+        mockTimelineViewValue = { pixelsPerBeat: 60 };
         expect(snapToGridOrClips(0.2, 't1')).toBe(99);
     });
 
@@ -107,7 +109,31 @@ describe('snapToGridOrClips', () => {
         mockSnapToGrid.mockReturnValue(99);
 
         // Zoom out to 3px/beat: radius is 3/3 = 1 beat, so 0.9 beats away snaps.
-        mockPixelsPerBeat = 3;
+        mockTimelineViewValue = { pixelsPerBeat: 3 };
         expect(snapToGridOrClips(0.9, 't1')).toBe(0);
+    });
+
+    it('skips clip-edge snapping and delegates to grid when the track is not found', () => {
+        // Store holds t1, but we ask for an absent track id -> if(track) is false.
+        mockTrackValue = {
+            tracks: [{ id: 't1', clips: [{ id: 'a', startBeat: 0, endBeat: 4 }] }],
+            selectedTrackId: null,
+        };
+        mockSnapToGrid.mockReturnValue(42);
+
+        expect(snapToGridOrClips(0.1, 'absent-track')).toBe(42);
+    });
+
+    it('falls back to the default pixels-per-beat when the view store has not loaded', () => {
+        mockTrackValue = {
+            tracks: [{ id: 't1', clips: [{ id: 'a', startBeat: 0, endBeat: 4 }] }],
+            selectedTrackId: null,
+        };
+        // No view state -> DEFAULT_PIXELS_PER_BEAT (12) used for the radius.
+        mockTimelineViewValue = null;
+        // At 12px/beat the radius is 0.25 beats, so 0.2 snaps to edge 0.
+        mockSnapToGrid.mockReturnValue(99);
+
+        expect(snapToGridOrClips(0.2, 't1')).toBe(0);
     });
 });

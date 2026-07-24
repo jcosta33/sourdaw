@@ -7,7 +7,7 @@ type Track = { id: string; alternatives: Array<TrackAlternative> };
 type TrackStoreState = { tracks: Array<Track> };
 
 const mocks = vi.hoisted(() => ({
-    getTrackStoreState: vi.fn<() => TrackStoreState>(),
+    getTrackStoreState: vi.fn<() => TrackStoreState | null>(),
     setTrackStoreState: vi.fn<(state: TrackStoreState) => void>(),
 }));
 
@@ -83,5 +83,35 @@ describe('handleRenameTrackAlternative', () => {
         });
 
         expect(desc.inverseAction).toBeNull();
+    });
+
+    it('is a no-op when the track store has not loaded', () => {
+        mocks.getTrackStoreState.mockReturnValue(null);
+
+        void handleRenameTrackAlternative.execute({
+            type: 'renameTrackAlternative',
+            payload: { trackId: 't1', alternativeId: 'alt1', name: 'New' },
+        });
+
+        expect(mocks.setTrackStoreState).not.toHaveBeenCalled();
+    });
+
+    it('leaves unrelated tracks untouched while renaming the target track alternative', () => {
+        mocks.getTrackStoreState.mockReturnValue({
+            tracks: [
+                { id: 'other', alternatives: [{ id: 'alt-x', name: 'Untouched' }] },
+                { id: 't1', alternatives: [{ id: 'alt1', name: 'Old' }] },
+            ],
+        });
+
+        void handleRenameTrackAlternative.execute({
+            type: 'renameTrackAlternative',
+            payload: { trackId: 't1', alternativeId: 'alt1', name: 'New' },
+        });
+
+        const newState = mocks.setTrackStoreState.mock.calls[0]!;
+        // The unrelated track passes through the map short-circuit unchanged.
+        expect(newState[0].tracks[0]).toEqual({ id: 'other', alternatives: [{ id: 'alt-x', name: 'Untouched' }] });
+        expect(newState[0].tracks[1]?.alternatives[0]?.name).toBe('New');
     });
 });

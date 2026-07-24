@@ -59,4 +59,24 @@ describe('persistDevicePatch', () => {
         expect(set).not.toHaveBeenCalled();
         expect(trackStore.value).toEqual(before);
     });
+
+    it('leaves unrelated devices on the same track untouched while patching the target', () => {
+        const track = normalizeTrack({
+            id: 't1',
+            name: 't1',
+            kind: 'audio',
+            devices: [
+                { id: 'd-other', name: 'Other', type: 'effect', bypassed: false, parameterValues: { tone: 0.3 } },
+                { id: 'd1', name: 'Target', type: 'effect', bypassed: false, parameterValues: { gain: 0.1 } },
+            ],
+        });
+        trackStore.set({ ...defaultTrackState, tracks: [track] });
+
+        persistDevicePatch('d1', { gain: 0.9 });
+
+        const devices = trackStore.value?.tracks[0]?.devices ?? [];
+        // The unrelated device passes through the map short-circuit unchanged.
+        expect(devices[0]?.parameterValues).toEqual({ tone: 0.3 });
+        expect(devices[1]?.parameterValues).toEqual({ gain: 0.9 });
+    });
 });

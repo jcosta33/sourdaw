@@ -3,11 +3,15 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { reorderSection } from '../reorderSection';
 
 type SectionFixture = { id: string; startBeat: number; endBeat: number };
+type SectionState = { sections: SectionFixture[] };
 
-const mocks = vi.hoisted(() => ({
-    markerStoreValue: { value: { sections: [] as SectionFixture[] } },
-    markerStoreSet: vi.fn<(state: { sections: SectionFixture[] }) => void>(),
-}));
+const mocks = vi.hoisted(() => {
+    const holder: { value: SectionState | null } = { value: { sections: [] } };
+    return {
+        markerStoreValue: holder,
+        markerStoreSet: vi.fn<(state: SectionState) => void>(),
+    };
+});
 
 vi.mock('../../../../stores/markerStore', () => ({
     markerStore: {
@@ -68,5 +72,37 @@ describe('reorderSection', () => {
         expect(newState.sections[1]?.id).toBe('s1');
         expect(newState.sections[1]?.startBeat).toBe(24);
         expect(newState.sections[1]?.endBeat).toBe(32);
+    });
+
+    it('is a no-op when the marker store has not loaded', () => {
+        mocks.markerStoreValue.value = null;
+
+        reorderSection('s1', 'left');
+
+        expect(mocks.markerStoreSet).not.toHaveBeenCalled();
+    });
+
+    it('is a no-op when the section id is unknown', () => {
+        mocks.markerStoreValue.value = {
+            sections: [{ id: 's1', startBeat: 0, endBeat: 8 }],
+        };
+
+        reorderSection('missing', 'left');
+
+        expect(mocks.markerStoreSet).not.toHaveBeenCalled();
+    });
+
+    it('is a no-op when moving the first section left or the last section right (boundary)', () => {
+        mocks.markerStoreValue.value = {
+            sections: [
+                { id: 's1', startBeat: 0, endBeat: 8 },
+                { id: 's2', startBeat: 8, endBeat: 16 },
+            ],
+        };
+
+        reorderSection('s1', 'left'); // first section cannot move left
+        reorderSection('s2', 'right'); // last section cannot move right
+
+        expect(mocks.markerStoreSet).not.toHaveBeenCalled();
     });
 });
