@@ -76,6 +76,18 @@ describe('crossfadeClips', () => {
         expect(mocks.mapAllTracks).not.toHaveBeenCalled();
     });
 
+    it('rejects when clip A is ineligible before even resolving clip B', () => {
+        const clips = [makeClip('a', 0, 4), makeClip('b', 4, 8)];
+        mocks.getTrackState.mockReturnValue({ tracks: [makeTrack(clips)], selectedTrackId: 't1' });
+        mocks.resolveEligibleClipWriteTarget.mockReturnValueOnce({ status: 'ineligible' });
+
+        expect(crossfadeClips('a', 'b')).toBe(false);
+
+        // Clip B is never resolved because clip A short-circuits first.
+        expect(mocks.resolveEligibleClipWriteTarget).toHaveBeenCalledTimes(1);
+        expect(mocks.mapAllTracks).not.toHaveBeenCalled();
+    });
+
     it('rejects a non-finite clip A end beat before invoking the mapper', () => {
         const clips = [makeClip('a', 0, Number.NaN), makeClip('b', 4, 8)];
         mocks.getTrackState.mockReturnValue({ tracks: [makeTrack(clips)], selectedTrackId: 't1' });

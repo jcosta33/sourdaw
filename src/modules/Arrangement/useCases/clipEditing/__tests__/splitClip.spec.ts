@@ -234,4 +234,23 @@ describe('splitClip', () => {
         expect(splitClip('c1', 2)).toBeNull();
         expect(mocks.setTrackState).not.toHaveBeenCalled();
     });
+
+    it('leaves unrelated tracks untouched while splitting the owner track', () => {
+        const otherClip = makeClip('other', 10, 14);
+        mocks.getTrackState.mockReturnValue({
+            tracks: [
+                TrackDummy.create({ id: 't1', clips: [makeClip('c1', 0, 4)] }),
+                TrackDummy.create({ id: 't2', clips: [otherClip] }),
+            ],
+            selectedTrackId: 't1',
+        });
+
+        expect(splitClip('c1', 2)).toBe('new-clip-right');
+
+        const tracks = newTrackState().tracks;
+        // The non-owner track is returned verbatim (same clip list, no split).
+        const untouched = tracks.find((track) => track.id === 't2');
+        expect(untouched?.clips).toEqual([otherClip]);
+        expect(untouched?.clips).toHaveLength(1);
+    });
 });

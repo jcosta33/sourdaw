@@ -74,4 +74,33 @@ describe('snapToZeroCrossing use case', () => {
         expect(mocks.getCachedAudioBuffer).toHaveBeenCalledWith({ bufferId: 'missing' });
         expect(mocks.snapSplitBeatToZeroCrossing).not.toHaveBeenCalled();
     });
+
+    it('falls back to a 120 BPM default when the transport store has no tempo', () => {
+        const clip = ClipDummy.create({ type: 'audio', audioBufferId: 'buf-1' });
+        const channelData = new Float32Array([1, -1]);
+        const audioBuffer: AudioBuffer = {
+            copyFromChannel: vi.fn(),
+            copyToChannel: vi.fn(),
+            duration: 1,
+            getChannelData: vi.fn(() => channelData),
+            length: channelData.length,
+            numberOfChannels: 1,
+            sampleRate: 48000,
+        };
+        mocks.getCachedAudioBuffer.mockReturnValue(audioBuffer);
+        // Transport store present but missing a tempo field — must fall back
+        // to the 120 BPM hard-coded default rather than forwarding undefined.
+        mocks.transportStore.value = { tempo: undefined } as unknown as { tempo: number };
+        mocks.snapSplitBeatToZeroCrossing.mockReturnValue(2.25);
+
+        expect(snapToZeroCrossing(clip, 2)).toBe(2.25);
+
+        expect(mocks.snapSplitBeatToZeroCrossing).toHaveBeenCalledWith({
+            clip,
+            splitBeat: 2,
+            channelData,
+            sampleRate: 48000,
+            tempo: 120,
+        } satisfies SnapSplitBeatToZeroCrossingInput);
+    });
 });

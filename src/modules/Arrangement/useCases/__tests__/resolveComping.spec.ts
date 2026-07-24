@@ -165,4 +165,25 @@ describe('resolveClipsWithComping', () => {
             [4, 8],
         ]);
     });
+
+    it('emits no gap segment when comp regions fully cover a clip', () => {
+        mocks.takeLaneStoreValue.value = {
+            lanes: [
+                {
+                    id: 'lane-1',
+                    trackId: 't1',
+                    takes: [{ id: 'take-src', clipId: 'src', name: 'Src', startBeat: 0, endBeat: 8, selected: true }],
+                    // A single region spanning the whole clip leaves no uncovered tail.
+                    activeCompRegions: [{ startBeat: 0, endBeat: 8, takeId: 'take-src' }],
+                },
+            ],
+        };
+
+        const out = resolveClipsWithComping('t1', [testClip({ id: 'src', startBeat: 0, endBeat: 8 })]);
+
+        // Exactly the one resolved segment; no trailing gap is synthesized.
+        expect(out).toHaveLength(1);
+        expect(out[0]!.startBeat).toBe(0);
+        expect(out[0]!.endBeat).toBe(8);
+    });
 });

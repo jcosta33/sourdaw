@@ -242,4 +242,19 @@ describe('cutSelectedClip', () => {
         expect(mocks.mapAllTracks).not.toHaveBeenCalled();
         expect(clipboardStore.value?.clipClipboard).toEqual([]);
     });
+
+    it('returns false when the track store has been cleared after eligibility passed', () => {
+        // Eligibility passes, but the project/track store was torn down before
+        // the clip lookup ran (getTrackStoreState returns null).
+        mocks.clipSelectionStore.value = {
+            selectedClipId: 'clip-audio',
+            selectedClipIds: ['clip-audio'],
+        };
+        mocks.getTrackStoreState.mockReturnValue(null);
+
+        expect(cutSelectedClip()).toBe(false);
+
+        expect(mocks.mapAllTracks).not.toHaveBeenCalled();
+        expect(clipboardStore.value?.clipClipboard).toEqual([]);
+    });
 });
