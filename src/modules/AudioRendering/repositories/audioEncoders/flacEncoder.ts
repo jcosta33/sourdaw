@@ -1,8 +1,14 @@
 /**
  * FLAC encoder — FIXED linear predictor subframes (orders 0–4) with
- * partitioned Rice coding, 16-bit signed PCM, up to 2 channels.
+ * partitioned Rice coding, 16- or 24-bit signed PCM, up to 2 channels.
  * Falls back to verbatim per-block when prediction would be larger.
+ *
+ * The float→PCM conversion (gain, TPDF dither, quantization) is not done here:
+ * it comes from the shared stage every encoder consumes, so a FLAC export is
+ * the same master as the WAV and MP3 exports of the same render (OE-1).
  */
+
+import { convertFloatChannelsToPcm, type PcmDitherOptions } from './convertFloatChannelsToPcm';
 
 // ── Compact MD5 implementation ────────────────────────────────────────────────
 // Used to compute the STREAMINFO MD5 signature of the raw interleaved PCM data.
@@ -88,17 +94,23 @@ function md5(data: Uint8Array): Uint8Array {
     return result;
 }
 
-/** Compute FLAC STREAMINFO MD5: interleaved, little-endian int16 samples. */
-function computePcmMd5(channels: Float32Array[], totalSamples: number, numChannels: number): Uint8Array {
-    const pcm = new Uint8Array(totalSamples * numChannels * 2);
-    const view = new DataView(pcm.buffer);
+/** Compute FLAC STREAMINFO MD5: interleaved, little-endian signed samples. */
+function computePcmMd5(
+    channels: Int32Array[],
+    totalSamples: number,
+    numChannels: number,
+    bytesPerSample: number
+): Uint8Array {
+    const pcm = new Uint8Array(totalSamples * numChannels * bytesPerSample);
     let pos = 0;
     for (let index = 0; index < totalSamples; index++) {
         for (let ch = 0; ch < numChannels; ch++) {
-            const sample = Math.max(-1, Math.min(1, channels[ch]![index]!));
-            const int16 = sample < 0 ? Math.round(sample * 0x8000) : Math.round(sample * 0x7fff);
-            view.setInt16(pos, int16, true); // little-endian
-            pos += 2;
+            // Signed sample, little-endian, ceil(bps/8) bytes wide.
+            const sample = channels[ch]![index]!;
+            for (let byteIndex = 0; byteIndex < bytesPerSample; byteIndex++) {
+                pcm[pos + byteIndex] = (sample >> (byteIndex * 8)) & 0xff;
+            }
+            pos += bytesPerSample;
         }
     }
     return md5(pcm);
@@ -183,7 +195,16 @@ function encodeUtf8Number(node: number): number[] {
 }
 
 const FLAC_BLOCK_SIZE = 4096;
-const BITS_PER_SAMPLE = 16;
+
+/**
+ * Bit depths this encoder can actually write. 32-bit float has no lossless
+ * FLAC representation here, so it is rejected rather than silently downgraded
+ * (OE-8) — the export UI must not offer what the encoder cannot deliver.
+ */
+export type FlacBitDepth = 16 | 24;
+
+/** FLAC frame-header SAMPLE SIZE codes (spec §9.1.5). */
+const SAMPLE_SIZE_CODES: Record<FlacBitDepth, number> = { 16: 0x4, 24: 0x6 };
 
 // ── Bit writer (MSB-first) ────────────────────────────────────────────────────
 
@@ -249,22 +270,9 @@ class BitWriter {
 
 // ── FIXED predictor helpers ───────────────────────────────────────────────────
 
-/** Convert float32 channel data to int16 values stored in an Int32Array. */
-function toInt16Channel(floats: Float32Array, node: number): Int32Array {
-    const out = new Int32Array(node);
-    for (let index = 0; index < node; index++) {
-        const state = (() => {
-            if (floats[index]! < -1) {
-                return -1;
-            }
-            if (floats[index]! > 1) {
-                return 1;
-            }
-            return floats[index]!;
-        })();
-        out[index] = state < 0 ? Math.round(state * 0x8000) : Math.round(state * 0x7fff);
-    }
-    return out;
+/** Bit mask for one signed sample written verbatim at the stream's bit depth. */
+function sampleMask(bitsPerSample: number): number {
+    return 2 ** bitsPerSample - 1;
 }
 
 /** Compute FIXED predictor residuals for a single block.
@@ -332,39 +340,48 @@ function riceBits(res: Int32Array, start: number, count: number, kIndex: number)
 }
 
 /** Total bit cost for a FIXED subframe (header + warmup + Rice residuals). */
-function fixedSubframeBits(res: Int32Array, residualCount: number, order: number): number {
-    // 8 (header) + order*16 (warmup) + 2 (coding method) + 4 (partition order) + 4 (rice k) + rice bits
+function fixedSubframeBits(res: Int32Array, residualCount: number, order: number, bitsPerSample: number): number {
+    // 8 (header) + order*bps (warmup) + 2 (coding method) + 4 (partition order) + 4 (rice k) + rice bits
     const kIndex = bestRiceK(res, 0, residualCount);
-    return 8 + order * BITS_PER_SAMPLE + 2 + 4 + 4 + riceBits(res, 0, residualCount, kIndex);
+    return 8 + order * bitsPerSample + 2 + 4 + 4 + riceBits(res, 0, residualCount, kIndex);
 }
 
 /** Total bit cost for a verbatim subframe. */
-function verbatimSubframeBits(blockSize: number): number {
-    return 8 + blockSize * BITS_PER_SAMPLE;
+function verbatimSubframeBits(blockSize: number, bitsPerSample: number): number {
+    return 8 + blockSize * bitsPerSample;
 }
 
 // ── Subframe writers ──────────────────────────────────────────────────────────
 
-function writeSubframeVerbatim(bw: BitWriter, int16: Int32Array, blockStart: number, blockSize: number): void {
+function writeSubframeVerbatim(
+    bw: BitWriter,
+    samples: Int32Array,
+    blockStart: number,
+    blockSize: number,
+    bitsPerSample: number
+): void {
     bw.writeByte(0x02); // subframe type: verbatim, no wasted bits
+    const mask = sampleMask(bitsPerSample);
     for (let index = 0; index < blockSize; index++) {
-        bw.writeBits(int16[blockStart + index]! & 0xffff, BITS_PER_SAMPLE);
+        bw.writeBits(samples[blockStart + index]! & mask, bitsPerSample);
     }
 }
 
 function writeSubframeFixed(
     bw: BitWriter,
-    int16: Int32Array,
+    samples: Int32Array,
     blockStart: number,
     blockSize: number,
     order: number,
-    res: Int32Array
+    res: Int32Array,
+    bitsPerSample: number
 ): void {
     // Subframe header: 0 | 001kkk0 where kkk = order (FIXED predictor, no wasted bits)
     bw.writeByte((8 + order) << 1);
     // Warmup samples (verbatim at full bitsPerSample)
+    const mask = sampleMask(bitsPerSample);
     for (let index = 0; index < order; index++) {
-        bw.writeBits(int16[blockStart + index]! & 0xffff, BITS_PER_SAMPLE);
+        bw.writeBits(samples[blockStart + index]! & mask, bitsPerSample);
     }
     const residualCount = blockSize - order;
     // Residual coding: PARTITIONED_RICE, partition order 0 (single partition)
@@ -384,9 +401,15 @@ function writeSubframeFixed(
 }
 
 /** Pick and write the best subframe (FIXED or verbatim) for one channel block. */
-function encodeSubframe(bw: BitWriter, int16: Int32Array, blockStart: number, blockSize: number): void {
+function encodeSubframe(
+    bw: BitWriter,
+    samples: Int32Array,
+    blockStart: number,
+    blockSize: number,
+    bitsPerSample: number
+): void {
     let bestOrder = -1; // -1 = use verbatim
-    let bestBits = verbatimSubframeBits(blockSize);
+    let bestBits = verbatimSubframeBits(blockSize, bitsPerSample);
     let bestRes: Int32Array | null = null;
 
     for (let order = 0; order <= 4; order++) {
@@ -394,8 +417,8 @@ function encodeSubframe(bw: BitWriter, int16: Int32Array, blockStart: number, bl
         if (order > blockSize) {
             break;
         }
-        const res = fixedResiduals(int16, blockStart, blockSize, order);
-        const bits = fixedSubframeBits(res, blockSize - order, order);
+        const res = fixedResiduals(samples, blockStart, blockSize, order);
+        const bits = fixedSubframeBits(res, blockSize - order, order, bitsPerSample);
         if (bits < bestBits) {
             bestBits = bits;
             bestOrder = order;
@@ -404,34 +427,50 @@ function encodeSubframe(bw: BitWriter, int16: Int32Array, blockStart: number, bl
     }
 
     if (bestOrder >= 0 && bestRes !== null) {
-        writeSubframeFixed(bw, int16, blockStart, blockSize, bestOrder, bestRes);
+        writeSubframeFixed(bw, samples, blockStart, blockSize, bestOrder, bestRes, bitsPerSample);
     } else {
-        writeSubframeVerbatim(bw, int16, blockStart, blockSize);
+        writeSubframeVerbatim(bw, samples, blockStart, blockSize, bitsPerSample);
     }
 }
 
 // ── Main encoder ──────────────────────────────────────────────────────────────
 
-async function encodeFlac(buffer: AudioBuffer, onProgress?: (frac: number) => void): Promise<Uint8Array> {
+async function encodeFlac(
+    buffer: AudioBuffer,
+    bitsPerSample: FlacBitDepth,
+    onProgress?: (frac: number) => void,
+    dither?: PcmDitherOptions
+): Promise<Uint8Array> {
     const numChannels = Math.min(buffer.numberOfChannels, 2);
     const sampleRate = buffer.sampleRate;
     const totalSamples = buffer.length;
+    const bytesPerSample = bitsPerSample / 8;
 
     const floatChannels: Float32Array[] = [];
     for (let ch = 0; ch < numChannels; ch++) {
         floatChannels.push(buffer.getChannelData(ch));
     }
 
-    // Pre-convert all channels to int16 for predictor residual computation
-    const int16Channels = floatChannels.map((ch) => toInt16Channel(ch, totalSamples));
+    // Shared float→PCM stage: same gain, dither and quantization every other
+    // encoder gets, at the depth the user actually asked for (OE-1, OE-8).
+    const pcm = convertFloatChannelsToPcm({
+        channels: floatChannels,
+        length: totalSamples,
+        bitDepth: bitsPerSample,
+        dither,
+    });
+    if (pcm.encoding !== 'int') {
+        throw new Error(`FLAC requires integer PCM; the shared stage produced ${pcm.encoding}.`);
+    }
+    const sampleChannels = pcm.channels;
 
-    // MD5 over interleaved LE int16 PCM
-    const pcmMd5 = computePcmMd5(floatChannels, totalSamples, numChannels);
+    // MD5 over interleaved little-endian PCM at the stream's bit depth
+    const pcmMd5 = computePcmMd5(sampleChannels, totalSamples, numChannels, bytesPerSample);
 
     const frameCount = Math.ceil(totalSamples / FLAC_BLOCK_SIZE);
     // Budget: worst case is verbatim (FIXED never exceeds verbatim since we fall back).
     // Add small per-frame padding for Rice overhead and byte-alignment.
-    const maxFrameBytes = 20 + numChannels * (FLAC_BLOCK_SIZE * 2 + 4) + 2;
+    const maxFrameBytes = 20 + numChannels * (FLAC_BLOCK_SIZE * bytesPerSample + 4) + 2;
     const out = new Uint8Array(42 + frameCount * maxFrameBytes);
 
     // ── STREAMINFO ────────────────────────────────────────────────────────────
@@ -461,8 +500,8 @@ async function encodeFlac(buffer: AudioBuffer, onProgress?: (frac: number) => vo
     wbe24(0); // min/max frame size (unknown)
     wb((sampleRate >> 12) & 0xff);
     wb((sampleRate >> 4) & 0xff);
-    wb(((sampleRate & 0xf) << 4) | ((numChannels - 1) << 1) | ((BITS_PER_SAMPLE - 1) >> 4));
-    wb((((BITS_PER_SAMPLE - 1) & 0xf) << 4) | ((totalSamples >> 32) & 0xf));
+    wb(((sampleRate & 0xf) << 4) | ((numChannels - 1) << 1) | ((bitsPerSample - 1) >> 4));
+    wb((((bitsPerSample - 1) & 0xf) << 4) | ((totalSamples >> 32) & 0xf));
     out[pos++] = (totalSamples >>> 24) & 0xff;
     out[pos++] = (totalSamples >>> 16) & 0xff;
     out[pos++] = (totalSamples >>> 8) & 0xff;
@@ -493,7 +532,7 @@ async function encodeFlac(buffer: AudioBuffer, onProgress?: (frac: number) => vo
             blockSizeExtra = 16;
         }
         wb((blockSizeCode << 4) | 0x00); // block size code | sample rate code (0=from STREAMINFO)
-        wb(((numChannels - 1) << 4) | (0x4 << 1) | 0); // channel assignment | sample size (0=from STREAMINFO) | reserved
+        wb(((numChannels - 1) << 4) | (SAMPLE_SIZE_CODES[bitsPerSample] << 1) | 0); // channel assignment | sample size | reserved
         for (const b of encodeUtf8Number(frameNumber)) {
             wb(b);
         } // frame number (UTF-8 encoded)
@@ -507,7 +546,7 @@ async function encodeFlac(buffer: AudioBuffer, onProgress?: (frac: number) => vo
         // Subframes — written bit-by-bit
         const bw = new BitWriter(out, pos);
         for (let ch = 0; ch < numChannels; ch++) {
-            encodeSubframe(bw, int16Channels[ch]!, sampleOffset, blockSize);
+            encodeSubframe(bw, sampleChannels[ch]!, sampleOffset, blockSize, bitsPerSample);
         }
         bw.flush(); // pad to byte boundary
         pos = bw.pos;
@@ -528,6 +567,18 @@ async function encodeFlac(buffer: AudioBuffer, onProgress?: (frac: number) => vo
     return out.subarray(0, pos);
 }
 
-export async function audioBufferToFlac(buffer: AudioBuffer, onProgress?: (frac: number) => void): Promise<Uint8Array> {
-    return await encodeFlac(buffer, onProgress);
+/**
+ * Encode an `AudioBuffer` to FLAC at the requested bit depth.
+ *
+ * `bitDepth` is honoured, not advertised and ignored: only depths the encoder
+ * can actually write are in `FlacBitDepth`, so an unsupported selection is a
+ * type error at the call site instead of a silent downgrade (OE-8).
+ */
+export async function audioBufferToFlac(
+    buffer: AudioBuffer,
+    bitDepth: FlacBitDepth = 16,
+    onProgress?: (frac: number) => void,
+    dither?: PcmDitherOptions
+): Promise<Uint8Array> {
+    return await encodeFlac(buffer, bitDepth, onProgress, dither);
 }

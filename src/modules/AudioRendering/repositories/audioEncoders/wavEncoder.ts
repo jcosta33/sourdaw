@@ -1,7 +1,10 @@
+import { convertFloatChannelsToPcm, type PcmDitherOptions } from './convertFloatChannelsToPcm';
+
 export async function audioBufferToWav(
     buffer: AudioBuffer,
     bitDepth: 16 | 24 | 32 = 16,
-    onProgress?: (frac: number) => void
+    onProgress?: (frac: number) => void,
+    dither?: PcmDitherOptions
 ): Promise<ArrayBuffer> {
     const numChannels = buffer.numberOfChannels;
     const sampleRate = buffer.sampleRate;
@@ -47,73 +50,33 @@ export async function audioBufferToWav(
         channels.push(buffer.getChannelData(ch));
     }
 
-    function tpdfDither(): number {
-        return Math.random() - Math.random();
-    }
-
-    /**
-     * Degrade a non-finite sample so it can never poison the file:
-     * ±Infinity becomes full scale, NaN becomes silence. Finite samples
-     * pass through untouched.
-     */
-    function sanitizeSample(value: number): number {
-        if (Number.isFinite(value)) {
-            return value;
-        }
-        if (value === Number.POSITIVE_INFINITY) {
-            return 1;
-        }
-        if (value === Number.NEGATIVE_INFINITY) {
-            return -1;
-        }
-        return 0;
-    }
-
-    // Peak-normalization scan. Find the largest absolute FINITE sample across
-    // every channel so a hot mix can be scaled to full scale instead of
-    // hard-clipped to a flat top. Only attenuate when the peak exceeds full
-    // scale (peak > 1); sub-full-scale material keeps its authored level (it
-    // is never boosted up). Non-finite samples are excluded from the scan —
-    // a single ±Infinity sample would otherwise set gain = 1/Infinity = 0 and
-    // silently zero the entire export; they degrade per-sample at write time
-    // via sanitizeSample instead.
-    let peak = 0;
-    for (let ch = 0; ch < numChannels; ch++) {
-        const data = channels[ch]!;
-        for (let index = 0; index < buffer.length; index++) {
-            const abs = Math.abs(data[index]!);
-            if (Number.isFinite(abs) && abs > peak) {
-                peak = abs;
-            }
-        }
-    }
-    const gain = peak > 1 ? 1 / peak : 1;
+    // Gain/normalization, TPDF dither on bit-depth reduction, and quantization
+    // all live in the shared stage, so WAV, FLAC and MP3 deliver the same level
+    // and the same quantization treatment (OE-1).
+    const pcm = convertFloatChannelsToPcm({ channels, length: buffer.length, bitDepth, dither });
+    const pcmChannels: readonly (Int32Array | Float32Array)[] = pcm.channels;
 
     const YIELD_INTERVAL = 32768;
     const totalSamples = buffer.length * numChannels || 1;
     let processed = 0;
 
-    // Channel-outer / sample-inner: each channel's Float32Array is read
-    // sequentially (cache-friendly) rather than striding across N separate
-    // channel arrays every frame. Writes stride by blockAlign back into the
-    // same interleaved layout, so the emitted bytes are identical.
+    // Channel-outer / sample-inner: each channel's array is read sequentially
+    // (cache-friendly) rather than striding across N separate channel arrays
+    // every frame. Writes stride by blockAlign back into the same interleaved
+    // layout, so the emitted bytes are identical.
     for (let ch = 0; ch < numChannels; ch++) {
-        const data = channels[ch]!;
+        const data = pcmChannels[ch]!;
         let offset = dataOffset + 8 + ch * bytesPerSample;
         for (let index = 0; index < buffer.length; index++) {
-            const sample = sanitizeSample(data[index]! * gain);
+            const value = data[index]!;
             if (bitDepth === 16) {
-                const dithered = sample + tpdfDither() / 0x8000;
-                const clamped = Math.max(-1, Math.min(1, dithered));
-                view.setInt16(offset, clamped < 0 ? clamped * 0x8000 : clamped * 0x7fff, true);
+                view.setInt16(offset, value, true);
             } else if (bitDepth === 24) {
-                const val = sample < 0 ? sample * 0x800000 : sample * 0x7fffff;
-                const int = Math.round(val);
-                view.setUint8(offset, int & 0xff);
-                view.setUint8(offset + 1, (int >> 8) & 0xff);
-                view.setUint8(offset + 2, (int >> 16) & 0xff);
+                view.setUint8(offset, value & 0xff);
+                view.setUint8(offset + 1, (value >> 8) & 0xff);
+                view.setUint8(offset + 2, (value >> 16) & 0xff);
             } else {
-                view.setFloat32(offset, sample, true);
+                view.setFloat32(offset, value, true);
             }
             offset += blockAlign;
 

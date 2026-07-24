@@ -18,8 +18,8 @@ describe('audioBufferToWav', () => {
         const onProgress = vi.fn();
         vi.mocked(encode).mockResolvedValue(out);
 
-        await expect(audioBufferToWav(buffer, 24, onProgress)).resolves.toBe(out);
-        expect(encode).toHaveBeenCalledWith(buffer, 24, onProgress);
+        await expect(audioBufferToWav(buffer, 24, onProgress, { mode: 'tpdf', seed: 9 })).resolves.toBe(out);
+        expect(encode).toHaveBeenCalledWith(buffer, 24, onProgress, { mode: 'tpdf', seed: 9 });
     });
 
     it('should default bit depth to 16 and omit progress when not provided', async () => {
@@ -29,6 +29,6 @@ describe('audioBufferToWav', () => {
 
         await audioBufferToWav(buffer);
 
-        expect(encode).toHaveBeenCalledWith(buffer, 16, undefined);
+        expect(encode).toHaveBeenCalledWith(buffer, 16, undefined, undefined);
     });
 });

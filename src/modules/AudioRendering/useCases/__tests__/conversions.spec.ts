@@ -28,20 +28,20 @@ describe('Audio Buffer Conversion Use Cases', () => {
     it('audioBufferToMp3 delegates to encoder', async () => {
         const buffer = {} as unknown as AudioBuffer;
         function onProgress() {}
-        await audioBufferToMp3(buffer, 192, onProgress);
-        expect(mocks.mp3Encode).toHaveBeenCalledWith(buffer, 192, onProgress);
+        await audioBufferToMp3(buffer, 192, onProgress, { mode: 'tpdf', seed: 3 });
+        expect(mocks.mp3Encode).toHaveBeenCalledWith(buffer, 192, onProgress, { mode: 'tpdf', seed: 3 });
     });
 
     it('audioBufferToFlac delegates to encoder', async () => {
         const buffer = {} as unknown as AudioBuffer;
         function onProgress() {}
-        await audioBufferToFlac(buffer, onProgress);
-        expect(mocks.flacEncode).toHaveBeenCalledWith(buffer, onProgress);
+        await audioBufferToFlac(buffer, 24, onProgress, { mode: 'none' });
+        expect(mocks.flacEncode).toHaveBeenCalledWith(buffer, 24, onProgress, { mode: 'none' });
     });
 
     it('audioBufferToWav delegates to encoder', async () => {
         const buffer = {} as unknown as AudioBuffer;
         await audioBufferToWav(buffer);
-        expect(mocks.wavEncode).toHaveBeenCalledWith(buffer, 16, undefined);
+        expect(mocks.wavEncode).toHaveBeenCalledWith(buffer, 16, undefined, undefined);
     });
 });

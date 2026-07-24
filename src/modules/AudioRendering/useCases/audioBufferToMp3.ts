@@ -1,3 +1,4 @@
+import { type PcmDitherOptions } from '../repositories/audioEncoders/convertFloatChannelsToPcm';
 import { audioBufferToMp3 as encode } from '../repositories/audioEncoders/mp3Encoder';
 
 /**
@@ -9,7 +10,8 @@ import { audioBufferToMp3 as encode } from '../repositories/audioEncoders/mp3Enc
 export function audioBufferToMp3(
     buffer: AudioBuffer,
     bitRate = 128,
-    onProgress?: (frac: number) => void
+    onProgress?: (frac: number) => void,
+    dither?: PcmDitherOptions
 ): Promise<Uint8Array> {
-    return encode(buffer, bitRate, onProgress);
+    return encode(buffer, bitRate, onProgress, dither);
 }

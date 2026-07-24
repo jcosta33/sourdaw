@@ -41,6 +41,7 @@ import { renderToClip } from '../../useCases/renderToClip';
 
 import { deriveStemFileBaseNames } from './deriveStemFileBaseNames';
 import { loadExportSettings, saveExportSettings, type ExportFormat, type Mp3BitRate } from './exportSettings';
+import { resolveExportBitDepths } from './resolveExportBitDepths';
 
 type ExportMode = 'mixdown' | 'stems' | 'render-to-clip';
 type ExportRange = 'project' | 'loop' | 'marquee';
@@ -137,17 +138,19 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
     };
 
     const toggleFormat = (freq: ExportFormat) => {
-        setFormats((prev) => {
-            const next = new Set(prev);
-            // Don't allow empty selections
-            if (next.has(freq) && next.size > 1) {
-                next.delete(freq);
-            } else {
-                next.add(freq);
-            }
-            saveExportSettings({ formats: Array.from(next), sampleRate, bitDepth, mp3BitRate });
-            return next;
-        });
+        const next = new Set(formats);
+        // Don't allow empty selections
+        if (next.has(freq) && next.size > 1) {
+            next.delete(freq);
+        } else {
+            next.add(freq);
+        }
+        // A format change can withdraw a bit depth (FLAC has no 32-bit float),
+        // so the persisted depth follows what the new selection can deliver.
+        const nextBitDepth = resolveExportBitDepths({ formats: next, selectedBitDepth: bitDepth }).bitDepth;
+        setFormats(next);
+        setBitDepth(nextBitDepth);
+        saveExportSettings({ formats: Array.from(next), sampleRate, bitDepth: nextBitDepth, mp3BitRate });
     };
 
     const updateSampleRate = (sr: number) => {
@@ -283,7 +286,7 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
             const tracks = trackStore.value?.tracks ?? [];
             const { startBeat, durationBeats } = resolveRange();
             const tail = effectiveTailSeconds();
-            const bd = bitDepth as 16 | 24 | 32;
+            const bd = resolveExportBitDepths({ formats, selectedBitDepth: bitDepth }).bitDepth;
             const formatList = Array.from(formats);
 
             // We use fflate purely to zip multiple web stems / formats
@@ -312,7 +315,10 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                     if (freq === 'mp3') {
                         fileData = await encodeMp3(buffer, mp3BitRate, passProgress);
                     } else if (freq === 'flac') {
-                        fileData = await encodeFlac(buffer, passProgress);
+                        if (bd === 32) {
+                            throw new Error('FLAC export supports 16-bit or 24-bit only.');
+                        }
+                        fileData = await encodeFlac(buffer, bd, passProgress);
                     } else {
                         fileData = await encodeWav(buffer, bd, passProgress);
                     }
@@ -570,7 +576,11 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
     ];
 
     const sampleRates = [44100, 48000, 88200, 96000];
-    const bitDepths = [16, 24, 32];
+    // Only depths the selected formats can actually deliver are offered (OE-8).
+    const { availableBitDepths, bitDepth: effectiveBitDepth } = resolveExportBitDepths({
+        formats,
+        selectedBitDepth: bitDepth,
+    });
 
     const renderOvenStatus = (): ReactElement => {
         if (exporting || progress === 100) {
@@ -921,13 +931,13 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                                         Bit Depth
                                     </DawEyebrowLabel>
                                     <div className="flex flex-wrap gap-1">
-                                        {bitDepths.map((bd) => (
+                                        {availableBitDepths.map((bd) => (
                                             <Button
                                                 key={bd}
                                                 variant="ghost"
                                                 size="sm"
                                                 className={`h-6 rounded-md px-2 text-[10px] ${
-                                                    bitDepth === bd
+                                                    effectiveBitDepth === bd
                                                         ? 'bg-stone-800 text-stone-200'
                                                         : 'text-stone-500 hover:bg-stone-800/50 hover:text-stone-300'
                                                 }`}

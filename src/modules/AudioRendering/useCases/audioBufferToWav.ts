@@ -1,3 +1,4 @@
+import { type PcmDitherOptions } from '../repositories/audioEncoders/convertFloatChannelsToPcm';
 import { audioBufferToWav as encode } from '../repositories/audioEncoders/wavEncoder';
 
 /**
@@ -9,7 +10,8 @@ import { audioBufferToWav as encode } from '../repositories/audioEncoders/wavEnc
 export function audioBufferToWav(
     buffer: AudioBuffer,
     bitDepth: 16 | 24 | 32 = 16,
-    onProgress?: (frac: number) => void
+    onProgress?: (frac: number) => void,
+    dither?: PcmDitherOptions
 ): Promise<ArrayBuffer> {
-    return encode(buffer, bitDepth, onProgress);
+    return encode(buffer, bitDepth, onProgress, dither);
 }

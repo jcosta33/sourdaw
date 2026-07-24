@@ -5,7 +5,9 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { asBaseAudioContext, createMockAudioContext, MockAudioBuffer } from '#/helpers/__tests__/audioContext.mock';
 
+import { audioBufferToFlac } from '../../../useCases/audioBufferToFlac';
 import { ExportDialog } from '../ExportDialog';
+import { loadExportSettings } from '../exportSettings';
 
 type TestClip = {
     id: string;
@@ -303,5 +305,56 @@ describe('ExportDialog', () => {
         // overwrite the first 'Bass.wav' with the second.
         expect(new Set(fileNames).size).toBe(2);
         expect(fileNames).toContain('Bass.wav');
+    });
+
+    it('should stop offering 32-bit once FLAC is selected instead of downgrading it (OE-8)', () => {
+        vi.mocked(loadExportSettings).mockReturnValueOnce({
+            formats: ['wav', 'flac'],
+            sampleRate: 44100,
+            bitDepth: 32,
+            mp3BitRate: 128,
+        });
+
+        render(<ExportDialog open={true} onClose={vi.fn()} />);
+
+        expect(screen.queryByRole('button', { name: '32-bit' })).toBeNull();
+        expect(screen.getByRole('button', { name: '24-bit' })).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: '16-bit' })).toBeInTheDocument();
+    });
+
+    it('should encode FLAC at the selected bit depth rather than a hardcoded 16 (OE-8)', async () => {
+        vi.mocked(loadExportSettings).mockReturnValueOnce({
+            formats: ['flac'],
+            sampleRate: 44100,
+            bitDepth: 24,
+            mp3BitRate: 128,
+        });
+        vi.mocked(audioBufferToFlac).mockResolvedValue(new Uint8Array([7, 7, 7]));
+        mocks.selectNativeAudioExportFile.mockResolvedValue('/tmp/sourdaw-export.flac');
+
+        render(<ExportDialog open={true} onClose={vi.fn()} />);
+        fireEvent.click(screen.getByRole('button', { name: /start baking/i }));
+
+        await waitFor(() => {
+            expect(audioBufferToFlac).toHaveBeenCalledTimes(1);
+        });
+        expect(vi.mocked(audioBufferToFlac).mock.calls[0]![1]).toBe(24);
+    });
+
+    it('should fall back to 24-bit when FLAC is toggled on while 32-bit is chosen (OE-8)', () => {
+        vi.mocked(loadExportSettings).mockReturnValueOnce({
+            formats: ['wav'],
+            sampleRate: 44100,
+            bitDepth: 32,
+            mp3BitRate: 128,
+        });
+
+        render(<ExportDialog open={true} onClose={vi.fn()} />);
+        expect(screen.getByRole('button', { name: '32-bit' })).toBeInTheDocument();
+
+        fireEvent.click(screen.getByRole('checkbox', { name: /flac/i }));
+
+        expect(screen.queryByRole('button', { name: '32-bit' })).toBeNull();
+        expect(screen.getByRole('button', { name: '24-bit' })).toBeInTheDocument();
     });
 });
