@@ -1,0 +1,30 @@
+src/modules/AudioEngine/repositories/offlineScheduler/__tests__/offlineAutomationCoverage.spec.ts
+  s_0d39f3a4a4357a::t_ee8ae0fd89d8e9 6-8,15-18,104-147,150-154,157-159,161-172,174-202
+src/modules/AudioEngine/repositories/deviceStrategy/FaustDeviceStrategy.ts
+  s_0d39f3a4a4357a::t_5d810e31526f7d 27-34
+src/modules/AudioEngine/engine/ProofChamberNode.ts
+  s_0d39f3a4a4357a::t_e717c564e77a76 11
+src/modules/AudioEngine/repositories/deviceStrategy/__tests__/FaustDeviceStrategy.spec.ts
+  s_0d39f3a4a4357a::t_78f5032d833a6c 3-4,165-174
+  s_0d39f3a4a4357a::t_39442a426142ab 175-176
+src/modules/AudioEngine/engine/FermenterNode.ts
+  s_0d39f3a4a4357a::t_41ba0724da10c8 13
+src/modules/AudioEngine/engine/ToasterNode.ts
+  s_0d39f3a4a4357a::t_6d8ec6de5a5dba 14
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "fe7b1952134d37390d3fba26a9625db052337b42",
+  "prompts": {},
+  "sessions": {
+    "s_0d39f3a4a4357a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "60da6a2e-7d79-4d98-8624-e993f5a9f94e",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
