@@ -1,0 +1,66 @@
+src/modules/Arrangement/useCases/removeTrack.ts
+  s_0d39f3a4a4357a::t_c8424b46a376f9 2,11,33-43
+  s_0d39f3a4a4357a::t_1e56bc38a853b0 86-94
+src/modules/Routing/useCases/sidechain/addSidechainRoute.ts
+  s_0d39f3a4a4357a::t_d444c88517c222 3,6,9-12
+  s_0d39f3a4a4357a::t_92763c964c63c5 40-47
+src/modules/Arrangement/useCases/device/sendManagement/setSend.ts
+  s_0d39f3a4a4357a::t_8dd43281de016a 1-3,5,21-40
+src/utils/__tests__/routingCycle.spec.ts
+  s_0d39f3a4a4357a::t_bc1f7369a24708 1-65
+src/utils/routingCycle.ts
+  s_0d39f3a4a4357a::t_1cc92370dd90ab 69
+  s_0d39f3a4a4357a::t_8280529c6989ca 22-29,32-33
+  s_0d39f3a4a4357a::t_868cddd45d2e72 1-21,30-31,34-68,70-122
+src/modules/Arrangement/useCases/__tests__/removeTrack.spec.ts
+  s_0d39f3a4a4357a::t_3dbfd3674c7f03 283-404
+  s_0d39f3a4a4357a::t_c94046c9c4d0d9 90-91,116-133,141
+  s_0d39f3a4a4357a::t_25b49b30357d4e 169-170,202-203,225-226,248-249,269-270
+src/modules/Arrangement/useCases/toggleTrackState/setTrackOutput.ts
+  s_0d39f3a4a4357a::t_c8933a3a98d86e 1,3-4,22-39
+src/modules/AudioEngine/useCases/offlineRender/createOfflineTrackStrip.ts
+  s_0d39f3a4a4357a::t_7fda39e9b85c06 36-40
+src/utils/__tests__/audioLevelLaw.spec.ts
+  s_0d39f3a4a4357a::t_8bce19665c5972 1-95
+src/modules/Arrangement/services/reconcileRoutingAfterRemoval.ts
+  s_0d39f3a4a4357a::t_32e9b0b2ac3260 1-8,15-58,63-67,69-78,80-85
+  s_0d39f3a4a4357a::t_ab014f52342e6f 59-62
+  s_0d39f3a4a4357a::t_5003a20edaeebf 68,79
+  s_0d39f3a4a4357a::t_6b46ad4af5267d 9-14
+src/modules/MixerConsole/presentations/views/Mixer/SendsSection.tsx
+  s_0d39f3a4a4357a::t_43131a089c370e 33,36
+  s_0d39f3a4a4357a::t_07262528050a1f 6
+src/modules/TimelineEditor/presentations/views/Inspector/SendsEditor.tsx
+  s_0d39f3a4a4357a::t_8b8a383158d03c 23-33,87,90
+  s_0d39f3a4a4357a::t_13c3a5cb16a3c3 11,57
+src/modules/Arrangement/useCases/device/sendManagement/__tests__/setSend.spec.ts
+  s_0d39f3a4a4357a::t_7f4cb36289d9e7 7,10,17-20,28,32-36
+  s_0d39f3a4a4357a::t_9d68524752a756 101-165
+src/utils/audioLevelLaw.ts
+  s_0d39f3a4a4357a::t_c4f21b6571de91 1-74
+src/modules/Routing/presentations/views/RoutingMatrix.tsx
+  s_0d39f3a4a4357a::t_3238ac2ec597bd 126-141
+  s_0d39f3a4a4357a::t_24bf987d791d6a 29
+src/modules/Routing/presentations/views/__tests__/RoutingMatrix.spec.tsx
+  s_0d39f3a4a4357a::t_028777c6729c92 208-229,231,233-238,241-243,245
+  s_0d39f3a4a4357a::t_20587e7b3abca8 230,232,239-240,244
+src/modules/Arrangement/useCases/toggleTrackState/__tests__/setTrackOutput.spec.ts
+  s_0d39f3a4a4357a::t_57e1ad6e5e778d 98-142
+  s_0d39f3a4a4357a::t_d334e2ec1321f2 10-15,31
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "0ddc2f4e664900d141219029bd7af1c90ae850a2",
+  "prompts": {},
+  "sessions": {
+    "s_0d39f3a4a4357a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "60da6a2e-7d79-4d98-8624-e993f5a9f94e",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
