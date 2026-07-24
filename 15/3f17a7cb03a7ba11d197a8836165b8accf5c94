@@ -1,0 +1,100 @@
+crates/daw-dsp/src/grand_boule/mod.rs
+  s_0d39f3a4a4357a::t_0d08d3194b693d 28,39,55,126-128,132-136
+  s_0d39f3a4a4357a::t_c464cc171c3f47 137-138
+crates/daw-dsp/src/lib.rs
+  s_0d39f3a4a4357a::t_7d0e4ef40619f8 12-21
+Cargo.toml
+  s_0d39f3a4a4357a::t_12f2bd1ce3533b 21-38
+crates/daw-dsp/src/toaster/mod.rs
+  s_0d39f3a4a4357a::t_a5776ffbc8e09c 23,33,46,99-103,107-111
+  s_0d39f3a4a4357a::t_23190e2977b2bb 112-113
+crates/daw-dsp/src/grinder/mod.rs
+  s_0d39f3a4a4357a::t_92f52b65243070 23,38,52,90-92,112-114,118-122
+  s_0d39f3a4a4357a::t_4c182c0cbdd757 123-124
+crates/daw-dsp/src/knead/mod.rs
+  s_0d39f3a4a4357a::t_fcbb77964e7567 10,17,29,48-50,54-58
+  s_0d39f3a4a4357a::t_05ff9b5c61576c 59,112-120,128,131,134,140,143-144,147-151,154-160,163-165,168-175,177-205
+  s_0d39f3a4a4357a::t_881f9b641a148c 121-127,129-130,132-133,135-139,141-142,145-146,152-153,161-162,166-167,176
+  s_0d39f3a4a4357a::t_2e9611ffb2deb3 60
+crates/daw-dsp/src/levain/mod.rs
+  s_0d39f3a4a4357a::t_18ee185eb2d16f 25,33,45,188-190,194-198
+  s_0d39f3a4a4357a::t_ec60f2a4a1c154 199-200
+crates/daw-dsp/Cargo.toml
+  s_0d39f3a4a4357a::t_4ebe8eee0d296c 20-24
+crates/proof-chamber/Cargo.toml
+  s_0d39f3a4a4357a::t_8cafdbd91a760b 17-20
+crates/daw-dsp/src/primitives/sanitize.rs
+  s_0d39f3a4a4357a::t_d96abbb2256b18 1-58
+crates/daw-dsp/src/fermenter/mod.rs
+  s_0d39f3a4a4357a::t_e33757f9e33c64 29,55,67,103-105,109-113
+  s_0d39f3a4a4357a::t_04154008a86765 114-115
+crates/scoring/Cargo.toml
+  s_0d39f3a4a4357a::t_c3ee63327d1de0 20-23
+crates/daw-wasm-decoder/src/lib.rs
+  s_0d39f3a4a4357a::t_a2f4231b04dc81 12-21
+crates/scoring/src/lib.rs
+  s_0d39f3a4a4357a::t_25405cbae60184 23-40,419,430,444-445,449-454
+  s_0d39f3a4a4357a::t_3d9170d327b359 41-50
+  s_0d39f3a4a4357a::t_e704c757a45a24 455
+crates/daw-dsp/src/primitives/mod.rs
+  s_0d39f3a4a4357a::t_d6a3936af38762 3,5-6
+crates/daw-dsp/src/proof/mod.rs
+  s_0d39f3a4a4357a::t_fdbd2f6d5907f6 26,39,53,85-87,91-95
+  s_0d39f3a4a4357a::t_cc3ad967f05c53 96-97
+crates/daw-dsp/src/bacteria/mod.rs
+  s_0d39f3a4a4357a::t_9e4e609c1bc154 28,38,52,84-86,90-94
+  s_0d39f3a4a4357a::t_0b888c9c637b60 95-96
+crates/daw-dsp/src/gluten/mod.rs
+  s_0d39f3a4a4357a::t_3be3b82283411c 25,36,53,104-106,110-114
+  s_0d39f3a4a4357a::t_bbb2af997371b1 115-116
+crates/proof-chamber/src/lib.rs
+  s_0d39f3a4a4357a::t_eb2b0684246db9 25-42,78,92,194-196,200-205
+  s_0d39f3a4a4357a::t_c26d41a7d15281 43-52
+  s_0d39f3a4a4357a::t_442789564fc162 206
+crates/daw-wasm-decoder/Cargo.toml
+  s_0d39f3a4a4357a::t_b74a8b9a0afd2d 16-19
+Cargo.lock
+  s_0d39f3a4a4357a::t_5b9af12d55b0d7 1111-1120,1618,1659,1837,2095,4727,5301,5780,5907,6504,6563,6740,6884,8453,8484,9845
+public/wasm/daw-dsp/daw_dsp.d.ts
+  s_0d39f3a4a4357a::t_fc2e990e6f3bf5 44-49,80-85,145-150,193-198,263-268,289-294,345-350,405-410,439-444,489-496,513,525-541,543-552,554,567-593,600,613-626,634,644,646
+public/wasm/daw-dsp/daw_dsp.js
+  s_0d39f3a4a4357a::t_28fbe75c841989 82-91,162-171,299-308,401-410,580-589,715-724,863-872,1043-1052,1156-1165,1295-1304,1311-1332,1387-1394,1493
+public/wasm/daw-dsp/daw_dsp_bg.wasm.d.ts
+  s_0d39f3a4a4357a::t_bbaeae2ee61f32 16,28-44,46-55,57,70-96,103,116-129,137,147,149
+public/wasm/daw-wasm-decoder/daw_wasm_decoder.js
+  s_0d39f3a4a4357a::t_18bcbb81f6e041 72-81,92-113,139-146,174-210,231-243,251
+public/wasm/manifest.json
+  s_0d39f3a4a4357a::t_63ffd3e9adf538 12,15-18,20,26,29-32,34-35,40,43-44,48,54,57-58
+public/wasm/proof-chamber/proof_chamber.d.ts
+  s_0d39f3a4a4357a::t_5da61d2465d4df 14-19,32-39,45,47,58
+public/wasm/proof-chamber/proof_chamber.js
+  s_0d39f3a4a4357a::t_3a7c5473015def 25-34,108-117,124-145,166-173,272
+public/wasm/proof-chamber/proof_chamber_bg.wasm.d.ts
+  s_0d39f3a4a4357a::t_e650a5ab16029e 5,7,18
+public/wasm/scoring/scoring.js
+  s_0d39f3a4a4357a::t_b38ee8a40357a6 40-49,161-170,177-198,219-226,325
+src/modules/AudioEngine/wasm/daw_dsp.js
+  s_0d39f3a4a4357a::t_e893573fdbe1b7 125-134,205-214,342-351,444-453,623-632,758-767,906-915,1086-1095,1199-1208,1338-1347,1354-1375,1430-1437,1536
+src/modules/AudioEngine/wasm/proof_chamber.d.ts
+  s_0d39f3a4a4357a::t_f780e2714133b2 14-19,32-39,45,47,58
+src/modules/AudioEngine/wasm/proof_chamber.js
+  s_0d39f3a4a4357a::t_2d66ad03fbca61 68-77,151-160,167-188,209-216,315
+src/modules/AudioEngine/wasm/scoring.js
+  s_0d39f3a4a4357a::t_6d384cddeeadab 83-92,204-213,220-241,262-269,368
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "153f17a7cb03a7ba11d197a8836165b8accf5c94",
+  "prompts": {},
+  "sessions": {
+    "s_0d39f3a4a4357a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "60da6a2e-7d79-4d98-8624-e993f5a9f94e",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
