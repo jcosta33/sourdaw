@@ -7,7 +7,7 @@ import { asBaseAudioContext, createMockAudioContext, MockAudioBuffer } from '#/h
 
 import { audioBufferToFlac } from '../../../useCases/audioBufferToFlac';
 import { ExportDialog } from '../ExportDialog';
-import { loadExportSettings } from '../exportSettings';
+import { loadExportSettings, saveExportSettings } from '../exportSettings';
 
 type TestClip = {
     id: string;
@@ -344,7 +344,7 @@ describe('ExportDialog', () => {
         expect(vi.mocked(audioBufferToFlac).mock.calls[0]![1]).toBe(24);
     });
 
-    it('should fall back to 24-bit when FLAC is toggled on while 32-bit is chosen (OE-8)', () => {
+    it('should stop offering 32-bit when FLAC is toggled on while 32-bit is chosen (OE-8)', () => {
         vi.mocked(loadExportSettings).mockReturnValueOnce({
             formats: ['wav'],
             sampleRate: 44100,
@@ -359,5 +359,25 @@ describe('ExportDialog', () => {
 
         expect(screen.queryByRole('button', { name: '32-bit' })).toBeNull();
         expect(screen.getByRole('button', { name: '24-bit' })).toBeInTheDocument();
+    });
+
+    it('should keep the stored 32-bit preference intact across a FLAC toggle on and off (OE-8)', () => {
+        vi.mocked(loadExportSettings).mockReturnValueOnce({
+            formats: ['wav'],
+            sampleRate: 44100,
+            bitDepth: 32,
+            mp3BitRate: 128,
+        });
+
+        render(<ExportDialog open={true} onClose={vi.fn()} />);
+
+        fireEvent.click(screen.getByRole('checkbox', { name: /flac/i }));
+        fireEvent.click(screen.getByRole('checkbox', { name: /flac/i }));
+
+        // Withdrawing an option while FLAC is on must not rewrite what the user
+        // chose: unchecking FLAC has to restore 32-bit, in the UI and on disk.
+        expect(screen.getByRole('button', { name: '32-bit' })).toBeInTheDocument();
+        const persistedDepths = vi.mocked(saveExportSettings).mock.calls.map((call) => call[0].bitDepth);
+        expect(persistedDepths).toEqual([32, 32]);
     });
 });

@@ -31,6 +31,11 @@ function isExportBitDepth(value: number): value is ExportBitDepth {
 /**
  * Resolve which bit depths the chosen formats support, and which one the export
  * will actually use.
+ *
+ * Purely derived: the returned `bitDepth` is what the encode resolves to right
+ * now, never a replacement for the stored preference. Callers must not write it
+ * back to settings — a format toggle would otherwise permanently rewrite a
+ * choice the user still holds, and unchecking FLAC could not restore 32-bit.
  */
 export function resolveExportBitDepths(input: ResolveExportBitDepthsInput): ResolveExportBitDepthsOutput {
     const availableBitDepths = input.formats.has('flac') ? FLAC_BIT_DEPTHS : ALL_BIT_DEPTHS;

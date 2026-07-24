@@ -145,12 +145,11 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
         } else {
             next.add(freq);
         }
-        // A format change can withdraw a bit depth (FLAC has no 32-bit float),
-        // so the persisted depth follows what the new selection can deliver.
-        const nextBitDepth = resolveExportBitDepths({ formats: next, selectedBitDepth: bitDepth }).bitDepth;
+        // The stored bit depth is the user's own choice and stays untouched: a
+        // format change only constrains which depths are OFFERED and which one
+        // the encode resolves to, so unchecking FLAC restores 32-bit.
         setFormats(next);
-        setBitDepth(nextBitDepth);
-        saveExportSettings({ formats: Array.from(next), sampleRate, bitDepth: nextBitDepth, mp3BitRate });
+        saveExportSettings({ formats: Array.from(next), sampleRate, bitDepth, mp3BitRate });
     };
 
     const updateSampleRate = (sr: number) => {
