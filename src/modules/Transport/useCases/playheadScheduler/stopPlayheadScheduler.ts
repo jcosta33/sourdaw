@@ -1,6 +1,11 @@
 import { logger } from '#/infra/logger/appLogger';
 import { stopRecording } from '#/modules/Arrangement/useCases';
-import { stopAllScheduled, stopAudioRecording, getAudioContext } from '#/modules/AudioEngine/useCases';
+import {
+    stopAllScheduled,
+    stopAudioRecording,
+    getAudioContext,
+    cancelTrackAutomationRamps,
+} from '#/modules/AudioEngine/useCases';
 import { stopAutomationRecording } from '#/modules/Automation/useCases';
 
 import { resetMetronomeBeat } from '../scheduling/resetMetronomeBeat';
@@ -32,4 +37,8 @@ export function stopPlayheadScheduler(): void {
     const ctx = getAudioContext();
     stopActiveSources(schedulerSession.activeAudioSources, ctx);
     stopAllScheduled();
+    // RT-5: hold each track's fader gain/pan and drop pending automation ramps
+    // so a ramp scheduled toward a compensated future time cannot land after
+    // playback has stopped (the AudioParam analog of stopActiveSources).
+    cancelTrackAutomationRamps();
 }

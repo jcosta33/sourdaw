@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { resolveEligibleDeviceWriteTarget, trackStore } from '#/modules/Arrangement/stores';
+import { getEffectiveGain } from '#/modules/Arrangement/useCases';
 import {
     getCompensationDelay,
     getCurrentTime,
@@ -40,6 +41,13 @@ vi.mock('#/modules/Arrangement/stores', async (importOriginal) => {
             }
             return { status: 'eligible', trackId: track.id, deviceId };
         }),
+    };
+});
+vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => {
+    const mod = await importOriginal<typeof import('#/modules/Arrangement/useCases')>();
+    return {
+        ...mod,
+        getEffectiveGain: vi.fn((_id: string, gain: number) => gain),
     };
 });
 vi.mock('#/modules/Automation/stores', async (importOriginal) => {
@@ -132,6 +140,7 @@ describe('applyAutomation', () => {
         vi.mocked(isRecordingAutomation).mockReturnValue(false);
         vi.mocked(getCurrentTime).mockReturnValue(5);
         vi.mocked(getCompensationDelay).mockReturnValue(0);
+        vi.mocked(getEffectiveGain).mockImplementation((_id, gain) => gain);
     });
 
     it('should export applyAutomation', () => {
@@ -290,6 +299,36 @@ describe('applyAutomation', () => {
 
             expect(getCompensationDelay).toHaveBeenCalledTimes(1);
             expect(getCompensationDelay).toHaveBeenCalledWith('track-1');
+        });
+
+        it('composes the VCA multiplier into the gain write so a member lane scales with its group instead of nullifying it', () => {
+            seedDeviceLane({ devices: [], laneParameterId: 'gain' });
+            vi.mocked(getCurrentTime).mockReturnValue(2);
+            vi.mocked(getCompensationDelay).mockReturnValue(0);
+            vi.mocked(getEffectiveGain).mockImplementation((_id, base) => base * 0.5);
+
+            applyAutomation(0);
+
+            // Composed 0.75 × 0.5 = 0.375, NOT the un-composed 0.75 the pre-fix path
+            // wrote (whose VCA our cancelScheduledValues would then have erased).
+            expect(scheduleTrackGain).toHaveBeenCalledWith('track-1', 0.375, 2);
+            expect(scheduleTrackGain).not.toHaveBeenCalledWith('track-1', 0.75, 2);
+        });
+
+        it('returns the gain-owned track ids so applyVcaGains defers to the composed write', () => {
+            seedDeviceLane({ devices: [], laneParameterId: 'gain' });
+
+            const owned = applyAutomation(0);
+
+            expect(owned.has('track-1')).toBe(true);
+        });
+
+        it('does not claim gain ownership for a pan-only lane', () => {
+            seedDeviceLane({ devices: [], laneParameterId: 'pan' });
+
+            const owned = applyAutomation(0);
+
+            expect(owned.has('track-1')).toBe(false);
         });
     });
 });

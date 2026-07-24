@@ -318,8 +318,11 @@ export function startPlayheadScheduler(): void {
             current,
             currentTempo
         );
-        applyVcaGains();
-        applyAutomation(newPosition);
+        // applyAutomation runs first and returns the tracks whose fader gain it
+        // composed (VCA multiplier folded in); applyVcaGains then drives only the
+        // VCA-member tracks it did NOT write, so the two never race the fader.
+        const gainAutomatedTrackIds = applyAutomation(newPosition);
+        applyVcaGains(gainAutomatedTrackIds);
         applyModulation(newPosition);
         applyModulationToEngine(newPosition, schedulerSession.discontinuityEpoch);
         scheduleAdjustmentLayers(newPosition);

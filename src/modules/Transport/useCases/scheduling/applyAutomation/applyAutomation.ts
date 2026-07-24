@@ -1,4 +1,5 @@
 import { getTrackEligibility, resolveEligibleDeviceWriteTarget, trackStore } from '#/modules/Arrangement/stores';
+import { getEffectiveGain } from '#/modules/Arrangement/useCases';
 import {
     getCompensationDelay,
     getCurrentTime,
@@ -48,10 +49,14 @@ const automationState: {
     lastDiscontinuityEpoch: undefined,
 };
 
-export function applyAutomation(currentBeat: number): void {
+export function applyAutomation(currentBeat: number): Set<string> {
+    // Track ids whose fader gain this tick's automation composed and wrote.
+    // applyVcaGains skips these so the VCA writer defers to the composed value
+    // instead of racing it (see the gain branch below).
+    const gainAutomationTrackIds = new Set<string>();
     const autoState = automationStore.value;
     if (!autoState) {
-        return;
+        return gainAutomationTrackIds;
     }
 
     // A transport discontinuity (seek, loop-wrap, follow-action jump) advances
@@ -129,7 +134,15 @@ export function applyAutomation(currentBeat: number): void {
         // AudioParam-backed families only.
         if (lane.parameterId === 'gain') {
             const linearGain = lane.minValue < 0 ? 10 ** (value / 20) : value;
-            scheduleTrackGain(lane.trackId, linearGain, now + compensationFor(lane.trackId));
+            // Compose the VCA master multiplier so a gain lane on a VCA-member
+            // track scales WITH its group rather than nullifying it. getEffectiveGain
+            // with a base of 1 returns just the multiplier (1 for a non-VCA track).
+            // The track id is recorded so applyVcaGains skips its own write for it —
+            // the two writers compose instead of competing (our cancelScheduledValues
+            // would otherwise erase applyVcaGains' setTargetAtTime every tick).
+            const vcaMultiplier = getEffectiveGain(lane.trackId, 1);
+            scheduleTrackGain(lane.trackId, linearGain * vcaMultiplier, now + compensationFor(lane.trackId));
+            gainAutomationTrackIds.add(lane.trackId);
         } else if (lane.parameterId === 'pan') {
             scheduleTrackPan(lane.trackId, value * 50, now + compensationFor(lane.trackId));
         } else {
@@ -198,4 +211,6 @@ export function applyAutomation(currentBeat: number): void {
             }
         }
     }
+
+    return gainAutomationTrackIds;
 }

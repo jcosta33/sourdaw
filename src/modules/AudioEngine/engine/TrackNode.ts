@@ -220,6 +220,23 @@ export class TrackNode {
         param.linearRampToValueAtTime(value, landTime);
     }
 
+    /**
+     * RT-5: hold the fader gain and pan at their current value and drop any
+     * pending scheduled automation ramp. Wired to transport stop so a ramp
+     * scheduled toward a compensated future time does not keep gliding after
+     * playback ends — the AudioParam analog of stopActiveSources' source
+     * cleanup. Seek needs no equivalent: the scheduler keeps ticking, and the
+     * next tick's rampAutomationParam re-anchors (cancelScheduledValues(now)),
+     * dropping any stale ramp within one grain.
+     */
+    public cancelAutomationRamps(): void {
+        const now = this.deps.context.currentTime;
+        for (const param of [this.strip.faderNode.gain, this.strip.panNode.pan]) {
+            param.cancelScheduledValues(now);
+            param.setValueAtTime(param.value, now);
+        }
+    }
+
     public setMute(muted: boolean): void {
         this.strip.muted = muted;
         this.strip.postFaderGain.gain.setTargetAtTime(muted ? 0 : 1, this.deps.context.currentTime, 0.005);

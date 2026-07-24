@@ -227,6 +227,9 @@ export type AudioEngine = {
     scheduleTrackGain(trackId: string, gain: number, time: number): void;
     /** RT-5 companion for the panner. `pan` is the canonical −50..50 range. */
     scheduleTrackPan(trackId: string, pan: number, time: number): void;
+    /** RT-5: on transport stop, hold every track's fader gain/pan and drop any
+     *  pending automation ramp so none lands after playback ends. */
+    cancelTrackAutomationRamps(): void;
     setTrackMute(trackId: string, muted: boolean): void;
     getTrackPeakLevel(trackId: string): number;
     getMasterPeakLevel(): number;
