@@ -69,7 +69,9 @@ type ExportDialogMocks = {
     writeNativeAudioMixdownFile: ReturnType<typeof vi.fn>;
     exportStems: ReturnType<typeof vi.fn>;
     selectNativeAudioExportDirectory: ReturnType<typeof vi.fn>;
-    writeNativeAudioStemFile: ReturnType<typeof vi.fn<(input: { bytes: Uint8Array; directoryPath: string; fileName: string }) => Promise<void>>>;
+    writeNativeAudioStemFile: ReturnType<
+        typeof vi.fn<(input: { bytes: Uint8Array; directoryPath: string; fileName: string }) => Promise<void>>
+    >;
 };
 
 const mocks = vi.hoisted((): ExportDialogMocks => {
@@ -101,7 +103,8 @@ const mocks = vi.hoisted((): ExportDialogMocks => {
         writeNativeAudioMixdownFile: vi.fn(),
         exportStems: vi.fn(),
         selectNativeAudioExportDirectory: vi.fn(),
-        writeNativeAudioStemFile: vi.fn<(input: { bytes: Uint8Array; directoryPath: string; fileName: string }) => Promise<void>>(),
+        writeNativeAudioStemFile:
+            vi.fn<(input: { bytes: Uint8Array; directoryPath: string; fileName: string }) => Promise<void>>(),
     };
 });
 

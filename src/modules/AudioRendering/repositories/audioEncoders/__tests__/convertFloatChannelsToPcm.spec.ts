@@ -47,11 +47,15 @@ describe('convertFloatChannelsToPcm', () => {
 
     it('should produce identical samples for the same dither seed and different samples for another', () => {
         const source = [channelOf([0.1, -0.2, 0.3, -0.4])];
-        const convert = (seed: number) =>
-            Array.from(
-                convertFloatChannelsToPcm({ channels: source, length: 4, bitDepth: 16, dither: { mode: 'tpdf', seed } })
-                    .channels[0]!
-            );
+        function convert(seed: number): number[] {
+            const result = convertFloatChannelsToPcm({
+                channels: source,
+                length: 4,
+                bitDepth: 16,
+                dither: { mode: 'tpdf', seed },
+            });
+            return Array.from(result.channels[0]!);
+        }
 
         expect(convert(42)).toEqual(convert(42));
         expect(convert(42)).not.toEqual(convert(43));
