@@ -14,6 +14,8 @@ import {
     UNRESOLVED_DEVICE_AUTOMATION_TARGET,
 } from '#/utils/automationDeviceTarget';
 
+import { schedulerSession } from '../../playheadScheduler/schedulerSession';
+
 /**
  * Per-parameter exponential slew state for plugin automation.
  * Alpha = 0.4 → ~95% of target reached in ~9 scheduler ticks (~90ms at 100Hz).
@@ -32,9 +34,16 @@ function deviceAcceptsAutomationParameter(
 const automationState: {
     pluginParamSlew: Map<string, Map<string, number>>;
     trackIndex: Map<string, NonNullable<typeof trackStore.value>['tracks'][number]>;
+    /**
+     * The scheduler discontinuity epoch observed on the previous tick. When it
+     * advances (seek, loop-wrap, follow-action jump) the next apply snaps every
+     * plugin-param slew to its target instead of gliding from the pre-jump value.
+     */
+    lastDiscontinuityEpoch: number | undefined;
 } = {
     pluginParamSlew: new Map<string, Map<string, number>>(),
     trackIndex: new Map<string, NonNullable<typeof trackStore.value>['tracks'][number]>(),
+    lastDiscontinuityEpoch: undefined,
 };
 
 export function applyAutomation(currentBeat: number): void {
@@ -42,6 +51,15 @@ export function applyAutomation(currentBeat: number): void {
     if (!autoState) {
         return;
     }
+
+    // A transport discontinuity (seek, loop-wrap, follow-action jump) advances
+    // the scheduler's discontinuity epoch. On the first apply after it changes,
+    // snap the plugin-param slew straight to the target — a jump is a jump —
+    // rather than easing ~90ms from the now-stale pre-jump smoothed value.
+    const currentEpoch = schedulerSession.discontinuityEpoch;
+    const isDiscontinuity =
+        automationState.lastDiscontinuityEpoch !== undefined && currentEpoch !== automationState.lastDiscontinuityEpoch;
+    automationState.lastDiscontinuityEpoch = currentEpoch;
 
     const tracks = trackStore.value?.tracks;
 
@@ -108,9 +126,9 @@ export function applyAutomation(currentBeat: number): void {
                 }
 
                 const prev = laneSlew.get(device.id) ?? value;
-                const smoothed = prev + (value - prev) * SLEW_ALPHA;
+                const smoothed = isDiscontinuity ? value : prev + (value - prev) * SLEW_ALPHA;
                 laneSlew.set(device.id, smoothed);
-                if (Math.abs(smoothed - prev) > SLEW_EPSILON) {
+                if (isDiscontinuity || Math.abs(smoothed - prev) > SLEW_EPSILON) {
                     if (device.type === 'fermenter') {
                         // Fermenter params use camelCase ids that must be mapped to
                         // their snake_case DSP ids before reaching the WASM node —
@@ -139,9 +157,9 @@ export function applyAutomation(currentBeat: number): void {
                         automationState.pluginParamSlew.set(lane.id, laneSlew);
                     }
                     const prev = laneSlew.get(fx.id) ?? value;
-                    const smoothed = prev + (value - prev) * SLEW_ALPHA;
+                    const smoothed = isDiscontinuity ? value : prev + (value - prev) * SLEW_ALPHA;
                     laneSlew.set(fx.id, smoothed);
-                    if (Math.abs(smoothed - prev) > SLEW_EPSILON) {
+                    if (isDiscontinuity || Math.abs(smoothed - prev) > SLEW_EPSILON) {
                         updateMidiFxParam(lane.trackId, fx.id, lane.parameterId, smoothed);
                     }
                     break;

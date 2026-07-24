@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 
-import { rdpSimplify, interpolateAutomationValue, generateShapePoints } from '../automationTransformers';
+import { interpolateAutomationValue, generateShapePoints } from '../automationTransformers';
 
 import type { AutomationPoint } from '../../models/AutomationViewTypes';
 
@@ -9,35 +9,6 @@ const pt = (beat: number, value: number, curve: AutomationPoint['curve'] = 'line
     value,
     curve,
     tension,
-});
-
-describe('rdpSimplify', () => {
-    it('returns input unchanged for 2 or fewer points', () => {
-        const pts = [pt(0, 0), pt(4, 1)];
-        expect(rdpSimplify(pts, 0.1)).toBe(pts);
-        expect(rdpSimplify([pt(0, 0)], 0.1)).toEqual([pt(0, 0)]);
-    });
-
-    it('removes points within tolerance', () => {
-        const pts = [pt(0, 0), pt(1, 0.01), pt(2, 0), pt(3, 0.99), pt(4, 1)];
-        const result = rdpSimplify(pts, 0.1);
-        expect(result.length).toBeLessThan(pts.length);
-        expect(result[0]).toEqual(pts[0]);
-        expect(result[result.length - 1]).toEqual(pts[pts.length - 1]);
-    });
-
-    it('preserves endpoints when tolerance is 0', () => {
-        const pts = [pt(0, 0), pt(1, 0.5), pt(2, 1)];
-        const result = rdpSimplify(pts, 0);
-        expect(result[0]).toEqual(pts[0]);
-        expect(result[result.length - 1]).toEqual(pts[pts.length - 1]);
-    });
-
-    it('handles collinear points', () => {
-        const pts = [pt(0, 0), pt(1, 0.5), pt(2, 1), pt(3, 1.5)];
-        const result = rdpSimplify(pts, 0.01);
-        expect(result.length).toBe(2);
-    });
 });
 
 describe('interpolateAutomationValue', () => {

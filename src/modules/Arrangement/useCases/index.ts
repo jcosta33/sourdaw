@@ -221,7 +221,6 @@ export { updateWarpMarkerBeat } from './warp/updateWarpMarkerBeat';
 export { commitWarpMarkerBeatDrag } from './warp/commitWarpMarkerBeatDrag';
 
 export { interpolateAutomationValue } from './automationQueries/interpolateAutomationValue';
-export { rdpSimplify } from './automationQueries/rdpSimplify';
 export { getAutomationRegions } from './automationQueries/getAutomationRegions';
 export { getMarkerState } from './timelineQueries';
 export { detectAndApplySongStructure } from './detectAndApplySongStructure';
