@@ -4,6 +4,7 @@ import { REDO_NOT_APPLIED } from '#/modules/Command/useCases';
 import { LEGACY_MIDI_PROBABILITY_SEED } from '#/modules/MIDI/stores';
 import { getMidiStoreState, setMidiStoreState } from '#/modules/MIDI/useCases';
 
+import { TrackDummy } from '../../__tests__/TrackDummy';
 import { type TrackStoreState, trackStore } from '../../stores/trackStore';
 import { importMidiFile } from '../importMidiFile';
 
@@ -340,5 +341,82 @@ describe('importMidiFile', () => {
             'error'
         );
         randomUuidSpy.mockRestore();
+    });
+
+    it('completes without importing when the parsed MIDI has no tracks', async () => {
+        shouldInjectConcurrentTrack = false;
+        mocks.readMidiFile.mockResolvedValue([]);
+
+        await expect(importMidiFile(new File([], 'empty.mid'))).resolves.toBe('completed');
+
+        expect(trackStore.value?.tracks).toEqual([]);
+        expect(mocks.setTrackState).not.toHaveBeenCalled();
+        expect(mocks.pushUndoEntry).not.toHaveBeenCalled();
+    });
+
+    it('rounds the clip end up to the next 4-beat bar', async () => {
+        shouldInjectConcurrentTrack = false;
+        // A note ending at beat 1.5 must round the clip up to beat 4 (one bar).
+        mocks.readMidiFile.mockResolvedValue([{ name: 'Short', notes: [importedNote], endTick: 960 }]);
+
+        await importMidiFile(new File([], 'short.mid'));
+
+        const clip = trackStore.value?.tracks[0]?.clips[0];
+        expect(clip?.startBeat).toBe(0);
+        expect(clip?.endBeat).toBe(4);
+    });
+
+    it('extends the clip end across multiple bars when notes exceed one bar', async () => {
+        shouldInjectConcurrentTrack = false;
+        const longNote = { id: 'note-long', pitch: 60, startBeat: 5, duration: 2, velocity: 100 };
+        mocks.readMidiFile.mockResolvedValue([{ name: 'Long', notes: [longNote], endTick: 960 }]);
+
+        await importMidiFile(new File([], 'long.mid'));
+
+        // startBeat 5 + duration 2 = 7; ceil(7 / 4) * 4 = 8.
+        const clip = trackStore.value?.tracks[0]?.clips[0];
+        expect(clip?.endBeat).toBe(8);
+    });
+
+    it('labels the undo entry with the single track name', async () => {
+        shouldInjectConcurrentTrack = false;
+        mocks.readMidiFile.mockResolvedValue([{ name: 'Bass', notes: [importedNote], endTick: 960 }]);
+
+        await importMidiFile(new File([], 'bass.mid'));
+
+        expect(mocks.pushUndoEntry.mock.calls[0]?.[0]).toBe('Import MIDI: Bass');
+    });
+
+    it('labels the undo entry with the track count when importing multiple tracks', async () => {
+        shouldInjectConcurrentTrack = false;
+        mocks.readMidiFile.mockResolvedValue([
+            { name: 'Bass', notes: [importedNote], endTick: 960 },
+            { name: 'Lead', notes: [concurrentNote], endTick: 960 },
+        ]);
+
+        await importMidiFile(new File([], 'multi.mid'));
+
+        expect(mocks.pushUndoEntry.mock.calls[0]?.[0]).toBe('Import MIDI: 2 MIDI tracks');
+    });
+
+    it('preserves an unrelated selected track when undoing the import', async () => {
+        shouldInjectConcurrentTrack = false;
+        const existingTrack = {
+            ...TrackDummy.create({ id: 'keeper', name: 'Keeper' }),
+        };
+        trackStore.set({ tracks: [existingTrack], selectedTrackId: 'keeper' });
+
+        await importMidiFile(new File([], 'import.mid'));
+
+        const undoEntry = mocks.pushUndoEntry.mock.calls[0];
+        const undo = undoEntry?.[1];
+        if (!undo) {
+            throw new TypeError('Expected the import to register an undo entry');
+        }
+        undo();
+
+        // The imported tracks are gone, but the unrelated selection survives.
+        expect(trackStore.value?.tracks.map((track) => track.id)).toEqual(['keeper']);
+        expect(trackStore.value?.selectedTrackId).toBe('keeper');
     });
 });

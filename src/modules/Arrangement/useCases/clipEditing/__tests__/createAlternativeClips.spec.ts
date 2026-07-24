@@ -257,4 +257,84 @@ describe('createAlternativeClips', () => {
         expect(notes[0]).toMatchObject({ pitch: 127, velocity: 1, duration: 0.0625, startBeat: 4 });
         expect(notes[1]).toMatchObject({ pitch: 60, velocity: 80, duration: 0.5 });
     });
+
+    it.each([
+        ['null', null],
+        ['non-object primitive', 'not-a-note'],
+    ])('rejects a %s variation note without allocating or writing', (_label, badNote) => {
+        setState([ClipDummy.create({ id: 'c1', trackId: 't1', type: 'midi' })]);
+        const randomUuid = vi.spyOn(crypto, 'randomUUID');
+
+        // A single bad note invalidates the whole variation set.
+        expect(createAlternativeClips('c1', [[badNote as unknown as VariationNote]])).toBe(false);
+
+        expect(randomUuid).not.toHaveBeenCalled();
+        expect(mocks.setNotesForClip).not.toHaveBeenCalled();
+        expect(mocks.updateTrack).not.toHaveBeenCalled();
+    });
+
+    it.each([
+        ['pitch', { pitch: 'sixty', startBeat: 0, duration: 1, velocity: 80 }],
+        ['startBeat', { pitch: 60, startBeat: 'zero', duration: 1, velocity: 80 }],
+        ['duration', { pitch: 60, startBeat: 0, duration: 'one', velocity: 80 }],
+        ['velocity', { pitch: 60, startBeat: 0, duration: 1, velocity: 'loud' }],
+    ])('rejects a variation note with a non-number %s field', (_label, badNote) => {
+        setState([ClipDummy.create({ id: 'c1', trackId: 't1', type: 'midi' })]);
+
+        expect(createAlternativeClips('c1', [[badNote as unknown as VariationNote]])).toBe(false);
+
+        expect(mocks.setNotesForClip).not.toHaveBeenCalled();
+        expect(mocks.updateTrack).not.toHaveBeenCalled();
+    });
+
+    it('rejects a variation set that is not an array of arrays', () => {
+        setState([ClipDummy.create({ id: 'c1', trackId: 't1', type: 'midi' })]);
+
+        expect(createAlternativeClips('c1', 'not-variations' as unknown as VariationNote[][])).toBe(false);
+        expect(mocks.setNotesForClip).not.toHaveBeenCalled();
+        expect(mocks.updateTrack).not.toHaveBeenCalled();
+    });
+
+    it('rejects a variation whose element is not an array', () => {
+        setState([ClipDummy.create({ id: 'c1', trackId: 't1', type: 'midi' })]);
+
+        expect(createAlternativeClips('c1', [[note()], 'not-an-array' as unknown as VariationNote[]])).toBe(false);
+        expect(mocks.setNotesForClip).not.toHaveBeenCalled();
+        expect(mocks.updateTrack).not.toHaveBeenCalled();
+    });
+
+    it('treats a variation array of only empty note-arrays as a valid (silent) variation', () => {
+        setState([ClipDummy.create({ id: 'c1', name: 'Lead', startBeat: 0, endBeat: 4, type: 'midi' })]);
+
+        expect(createAlternativeClips('c1', [[]])).toBe(true);
+        // No notes to write for the silent variation, but the clip row is still appended.
+        expect(mocks.setNotesForClip).toHaveBeenCalledWith('clip-canonical-1', []);
+    });
+
+    it('preserves the original clip identity and overrides only name/position/mute/id', () => {
+        const original = ClipDummy.create({
+            id: 'c1',
+            trackId: 't1',
+            name: 'Lead',
+            startBeat: 0,
+            endBeat: 4,
+            type: 'midi',
+            gain: 0.9,
+            color: '#abc',
+            locked: true,
+        });
+        const track = setState([original]);
+
+        createAlternativeClips('c1', [[note()]]);
+
+        const updated = applyTrackUpdate(track);
+        const variationClip = updated.clips[1];
+        expect(variationClip).toMatchObject({
+            gain: 0.9,
+            color: '#abc',
+            locked: true,
+            type: 'midi',
+            trackId: 't1',
+        });
+    });
 });
