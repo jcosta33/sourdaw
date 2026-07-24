@@ -7,6 +7,8 @@ import {
     loadGrinderPatch,
     moveGrinderPedalInChain,
     recallGrinderSnapshot,
+    replaceGrinderPatchLocally,
+    setGrinderMicParam,
     setGrinderParam,
     setGrinderPedalParam,
 } from '../grinderStore';
@@ -170,5 +172,106 @@ describe('grinderStore', () => {
         expect(next?.gain).toBe(8);
         expect(next?.engineMode).toBe('hybrid');
         expect(typeof next?.engineMode).toBe('string');
+    });
+
+    it('moves a pedal right within the chain order', () => {
+        loadGrinderPatch(device_id, {
+            ...DEFAULT_PATCH,
+            prePedals: [
+                { id: 'od', type: 'overdrive', enabled: true, params: { drive: 1, tone: 1, level: 1 } },
+                { id: 'dist', type: 'distortion', enabled: true, params: { drive: 1, tone: 1, level: 1 } },
+            ],
+        });
+        moveGrinderPedalInChain(device_id, false, 'overdrive', 'right');
+        expect(getGrinderState(device_id).patch.prePedals.map((p) => p.type)).toEqual(['distortion', 'overdrive']);
+    });
+
+    it('leaves the chain unchanged when moving left would cross only unsupported pedal types', () => {
+        // wah is unsupported for chain moves; overdrive at index 0 can't move left.
+        loadGrinderPatch(device_id, {
+            ...DEFAULT_PATCH,
+            prePedals: [
+                { id: 'od', type: 'overdrive', enabled: true, params: { drive: 1, tone: 1, level: 1 } },
+                { id: 'wah', type: 'wah', enabled: true, params: {} },
+            ],
+        });
+        moveGrinderPedalInChain(device_id, false, 'overdrive', 'left');
+        // overdrive is already first → no swap
+        expect(getGrinderState(device_id).patch.prePedals.map((p) => p.type)).toEqual(['overdrive', 'wah']);
+    });
+
+    it('skips an unsupported pedal when moving right to find the next swappable one', () => {
+        // overdrive(0), wah(1, unsupported), distortion(2): moving overdrive right
+        // must skip wah and swap with distortion.
+        loadGrinderPatch(device_id, {
+            ...DEFAULT_PATCH,
+            prePedals: [
+                { id: 'od', type: 'overdrive', enabled: true, params: { drive: 1, tone: 1, level: 1 } },
+                { id: 'wah', type: 'wah', enabled: true, params: {} },
+                { id: 'dist', type: 'distortion', enabled: true, params: { drive: 1, tone: 1, level: 1 } },
+            ],
+        });
+        moveGrinderPedalInChain(device_id, false, 'overdrive', 'right');
+        expect(getGrinderState(device_id).patch.prePedals.map((p) => p.type)).toEqual([
+            'distortion',
+            'wah',
+            'overdrive',
+        ]);
+    });
+
+    it('returns null and leaves state unchanged when recalling a non-existent snapshot index', () => {
+        loadGrinderPatch(device_id, { ...DEFAULT_PATCH, snapshots: [] });
+        const before = getGrinderState(device_id).patch.activeSnapshot;
+        const result = recallGrinderSnapshot(device_id, 99);
+        expect(result).toBeNull();
+        expect(getGrinderState(device_id).patch.activeSnapshot).toBe(before);
+    });
+
+    it('updates an existing pedal’s numeric param rather than appending a duplicate', () => {
+        loadGrinderPatch(device_id, {
+            ...DEFAULT_PATCH,
+            prePedals: [{ id: 'od', type: 'overdrive', enabled: true, params: { drive: 1, tone: 5, level: 5 } }],
+        });
+        setGrinderPedalParam(device_id, false, 'overdrive', 'drive', 9, {
+            id: 'od',
+            type: 'overdrive',
+            enabled: true,
+            params: { drive: 1, tone: 5, level: 5 },
+        });
+        const pedals = getGrinderState(device_id).patch.prePedals;
+        expect(pedals).toHaveLength(1); // no duplicate appended
+        expect(pedals[0]?.params.drive).toBe(9);
+    });
+
+    it('sets a mic param on the targeted mic (mic2)', () => {
+        loadGrinderPatch(device_id, { ...DEFAULT_PATCH });
+        setGrinderMicParam(device_id, 2, 'gain', 3.5);
+        expect(getGrinderState(device_id).patch.mic2.gain).toBe(3.5);
+        // mic1 untouched
+        expect(getGrinderState(device_id).patch.mic1.gain).not.toBe(3.5);
+    });
+
+    it('replaceGrinderPatchLocally overwrites the live patch and resets the base', () => {
+        loadGrinderPatch(device_id, { ...DEFAULT_PATCH, gain: 3 });
+        replaceGrinderPatchLocally(device_id, { ...DEFAULT_PATCH, gain: 9 });
+        expect(getGrinderState(device_id).patch.gain).toBe(9);
+        expect(getGrinderState(device_id).basePatch.gain).toBe(9);
+    });
+
+    it('returns a default state for an unknown device id', () => {
+        const state = getGrinderState('never-loaded');
+        // default state is produced via migrateGrinderPatch(DEFAULT_PATCH)
+        expect(state.patch).toBeDefined();
+        expect(state.basePatch).toBeDefined();
+    });
+
+    it('leaves the chain unchanged when moving a pedal type that is not present', () => {
+        loadGrinderPatch(device_id, {
+            ...DEFAULT_PATCH,
+            prePedals: [{ id: 'od', type: 'overdrive', enabled: true, params: { drive: 1, tone: 1, level: 1 } }],
+        });
+        // fuzz is not in the chain → no-op, returns the (unchanged) patch
+        const result = moveGrinderPedalInChain(device_id, false, 'fuzz', 'left');
+        expect(result?.prePedals.map((p) => p.type)).toEqual(['overdrive']);
     });
 });
