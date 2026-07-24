@@ -58,7 +58,20 @@ pub fn notify_latency_change(instance_id: &str) {
 }
 
 fn runtime_for(engine_plugins: &EnginePlugins, instance_id: &str) -> Option<Arc<SharedClapPlugin>> {
-    let guard = engine_plugins.lock().ok()?;
+    let guard = match engine_plugins.lock() {
+        Ok(guard) => guard,
+        Err(error) => {
+            // Terminal for the push path, and invisible without this line: the
+            // thread keeps recv-looping so the watcher still looks alive, while
+            // every lookup misses forever and no latency change reaches the
+            // frontend again. Matches how the command layer reports this lock.
+            eprintln!(
+                "[Plugin] latency watcher failed to lock engine_plugins for instance {}: {}",
+                instance_id, error
+            );
+            return None;
+        }
+    };
     guard
         .get(instance_id)
         .map(|instance| Arc::clone(&instance.runtime))

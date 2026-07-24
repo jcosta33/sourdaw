@@ -144,6 +144,14 @@ describe('activateExternalPlugin', () => {
 
         expect(onLatencyMs).toHaveBeenLastCalledWith(21.5);
         expect(onLatencyMs).toHaveBeenCalledTimes(2);
+
+        // A second, independent change must land too — the subscription is not
+        // one-shot, and a restart that arrives while the host is still settling
+        // the previous one still ends up here.
+        emitLatencyChange({ instance_id: 'inst-1', latency_ms: 3 });
+
+        expect(onLatencyMs).toHaveBeenLastCalledWith(3);
+        expect(onLatencyMs).toHaveBeenCalledTimes(3);
     });
 
     it('routes each change only to the instance that reported it', async () => {

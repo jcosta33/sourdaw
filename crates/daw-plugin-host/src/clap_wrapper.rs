@@ -13,6 +13,12 @@ const MAX_MIDI: usize = 64;
 /// Maximum parameter events processed per audio block. Extra pending values remain host-side.
 const MAX_PARAMETER_EVENTS: usize = 64;
 
+/// How many deactivate/reactivate/re-query passes one `poll_latency_change` will
+/// make before giving up on settling. Each extra pass exists to catch a
+/// `request_restart()` that landed during the previous one; the cap keeps a
+/// plugin that re-flags from inside every `activate()` from spinning forever.
+const MAX_LATENCY_REQUERY_PASSES: u32 = 4;
+
 use crate::clap_host::{create_host_descriptor, HostCallbackState, LatencyChangeNotifier};
 use crate::params::PluginParameter;
 use crate::traits::AudioPlugin;
@@ -934,12 +940,39 @@ impl ClapWrapper {
         if !self.host_state.take_latency_dirty() {
             return Ok(None);
         }
-        let latency = self.reactivate_for_latency()?;
-        // Plugins are allowed to call changed() / request_restart() from inside
-        // activate(). The value just read already reflects whatever they set, so
-        // consume the flag rather than schedule another cycle — otherwise a
-        // plugin that always re-flags on activate would loop forever.
-        self.host_state.clear_latency_dirty();
+
+        let mut latency = self.reactivate_for_latency()?;
+
+        // A flag raised WHILE that cycle ran is ambiguous, and the two cases are
+        // indistinguishable from here:
+        //
+        //   a) the plugin re-flagged from inside its own activate() — the value
+        //      just read already covers it, another pass is wasted work;
+        //   b) an independent `request_restart()` landed from another thread
+        //      (CLAP allows it from any thread, unlike `changed()`) — CLAP cannot
+        //      report that latency until a FURTHER cycle completes.
+        //
+        // So re-query instead of clearing. Clearing blindly would resolve (b) as
+        // a lost update: the queued wake reads a false flag, no event fires, and
+        // compensation stays stale until some unrelated later change happens by.
+        // A wasted cycle is cheap; a dropped change is silent and long-lived.
+        for _ in 1..MAX_LATENCY_REQUERY_PASSES {
+            if !self.host_state.take_latency_dirty() {
+                return Ok(Some(latency));
+            }
+            latency = self.reactivate_for_latency()?;
+        }
+
+        // Bounded so case (a) cannot spin forever: a plugin that re-flags on every
+        // activate never lets the loop settle. Drop the flag and report the last
+        // value read — the alternative is an unbounded reactivation loop.
+        if self.host_state.take_latency_dirty() {
+            eprintln!(
+                "[CLAP] '{}' re-flagged a latency change on all {} re-query passes; \
+                 reporting the last value read and dropping the flag",
+                self.name, MAX_LATENCY_REQUERY_PASSES
+            );
+        }
         Ok(Some(latency))
     }
 
@@ -1195,6 +1228,33 @@ mod tests {
         true
     }
 
+    /// Models an INDEPENDENT `request_restart()` landing from another thread while
+    /// a re-query is already in flight. On the first activation it raises the flag
+    /// but leaves the reported latency alone — CLAP cannot surface the new value
+    /// until a further cycle completes — and only the second activation applies
+    /// it. A host that clears the flag after one pass loses this change entirely.
+    static RACE_TARGET: AtomicUsize = AtomicUsize::new(0);
+    static RACE_ACTIVATIONS: AtomicU32 = AtomicU32::new(0);
+    static RACE_PENDING_LATENCY: AtomicU32 = AtomicU32::new(0);
+
+    unsafe extern "C" fn stub_activate_racing(
+        _plugin: *const clap_plugin,
+        _sample_rate: f64,
+        _min_frames: u32,
+        _max_frames: u32,
+    ) -> bool {
+        let pass = RACE_ACTIVATIONS.fetch_add(1, Ordering::Relaxed);
+        if pass == 0 {
+            let target = RACE_TARGET.load(Ordering::Relaxed);
+            if target != 0 {
+                (*(target as *const HostCallbackState)).mark_latency_dirty();
+            }
+        } else if pass == 1 {
+            STUB_LATENCY.store(RACE_PENDING_LATENCY.load(Ordering::Relaxed), Ordering::Relaxed);
+        }
+        true
+    }
+
     unsafe extern "C" fn stub_deactivate(_plugin: *const clap_plugin) {}
     unsafe extern "C" fn stub_start_processing(_plugin: *const clap_plugin) -> bool {
         true
@@ -1322,6 +1382,45 @@ mod tests {
         );
 
         REFLAG_TARGET.store(0, Ordering::Relaxed);
+    }
+
+    #[test]
+    fn poll_latency_change_keeps_a_restart_that_landed_during_the_reactivation() {
+        let _guard = LATENCY_TEST_LOCK.lock().unwrap();
+        STUB_LATENCY.store(64, Ordering::Relaxed);
+        RACE_ACTIVATIONS.store(0, Ordering::Relaxed);
+        RACE_PENDING_LATENCY.store(900, Ordering::Relaxed);
+
+        let mut plugin: clap_plugin = unsafe { mem::zeroed() };
+        plugin.get_extension = Some(stub_get_extension);
+        plugin.activate = Some(stub_activate_racing);
+        plugin.deactivate = Some(stub_deactivate);
+        plugin.start_processing = Some(stub_start_processing);
+        plugin.stop_processing = Some(stub_stop_processing);
+        let mut wrapper = stub_wrapper(Box::into_raw(Box::new(plugin)) as *const clap_plugin);
+
+        RACE_TARGET.store(
+            (&*wrapper.host_state as *const HostCallbackState) as usize,
+            Ordering::Relaxed,
+        );
+        wrapper.host_callback_state().mark_latency_dirty();
+
+        // `request_restart()` is callable from ANY thread, so a second one can
+        // land mid-cycle. Clearing the flag after a single pass would report the
+        // stale 64 and drop the concurrent change on the floor: the queued wake
+        // would read a false flag and never emit.
+        assert_eq!(
+            wrapper.poll_latency_change().unwrap(),
+            Some(900),
+            "a restart raised during the reactivation window must still be re-queried"
+        );
+        assert_eq!(
+            wrapper.poll_latency_change().unwrap(),
+            None,
+            "once settled, the flag is consumed and the next poll is a no-op"
+        );
+
+        RACE_TARGET.store(0, Ordering::Relaxed);
     }
 
     #[test]
