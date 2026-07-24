@@ -1,0 +1,28 @@
+src/modules/Project/useCases/projectPersistence/loadProject.ts
+  s_0d39f3a4a4357a::t_65c078dfa74604 25-28
+  s_0d39f3a4a4357a::t_c5ad231666ffb9 29
+src/modules/Project/useCases/projectPersistence/helpers/runProjectLoadTransaction.ts
+  s_0d39f3a4a4357a::t_88e19a3a977ed2 9-15,47-50,62,65-73,77-80,88-89,91-96,98,107-109
+  s_0d39f3a4a4357a::t_4382746f88e20a 33-34,36-38,46,51-53,56-58
+  s_0d39f3a4a4357a::t_cefd839e388440 35,39-45
+  s_0d39f3a4a4357a::t_b4499156586c84 82-83
+  s_0d39f3a4a4357a::t_3923156c4b0773 81
+src/modules/Project/useCases/projectPersistence/helpers/__tests__/runProjectLoadTransactionLaunchRace.spec.ts
+  s_0d39f3a4a4357a::t_9b1c7f04252f91 1-81
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "a0456f203a0fb4e5ecbfca57dc98b69b17c9deb0",
+  "prompts": {},
+  "sessions": {
+    "s_0d39f3a4a4357a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "60da6a2e-7d79-4d98-8624-e993f5a9f94e",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
