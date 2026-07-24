@@ -1,7 +1,7 @@
 //! LR-4 crossover filter — 4th-order Linkwitz-Riley.
 //! Two cascaded Butterworth biquads per output. LP + HP sum to flat allpass.
 
-use super::biquad::{BiquadCoeffs, BiquadState};
+use super::biquad::{BiquadCoeffs, BiquadState, SmoothedBiquadCoeffs};
 
 const BUTTERWORTH_Q: f64 = std::f64::consts::FRAC_1_SQRT_2;
 
@@ -15,8 +15,11 @@ pub struct Lr4Crossover {
     lp2_r: BiquadState,
     hp1_r: BiquadState,
     hp2_r: BiquadState,
-    lp_coeffs: BiquadCoeffs,
-    hp_coeffs: BiquadCoeffs,
+    /// DSP-4: crossover frequencies are automatable (`dyn_xoverN` on the
+    /// multiband dynamics, `img_xoverN` / `img_mono_bass_freq` on the imager),
+    /// so these ramp rather than swapping under the running filters.
+    lp_coeffs: SmoothedBiquadCoeffs,
+    hp_coeffs: SmoothedBiquadCoeffs,
 }
 
 impl Lr4Crossover {
@@ -30,31 +33,36 @@ impl Lr4Crossover {
             lp2_r: BiquadState::new(),
             hp1_r: BiquadState::new(),
             hp2_r: BiquadState::new(),
-            lp_coeffs: BiquadCoeffs::lowpass(freq, BUTTERWORTH_Q, sr),
-            hp_coeffs: BiquadCoeffs::highpass(freq, BUTTERWORTH_Q, sr),
+            lp_coeffs: SmoothedBiquadCoeffs::new(
+                BiquadCoeffs::lowpass(freq, BUTTERWORTH_Q, sr),
+                sr,
+            ),
+            hp_coeffs: SmoothedBiquadCoeffs::new(
+                BiquadCoeffs::highpass(freq, BUTTERWORTH_Q, sr),
+                sr,
+            ),
         }
     }
 
     pub fn set_freq(&mut self, freq: f64, sr: f64) {
-        self.lp_coeffs = BiquadCoeffs::lowpass(freq, BUTTERWORTH_Q, sr);
-        self.hp_coeffs = BiquadCoeffs::highpass(freq, BUTTERWORTH_Q, sr);
+        self.lp_coeffs
+            .set_target(BiquadCoeffs::lowpass(freq, BUTTERWORTH_Q, sr));
+        self.hp_coeffs
+            .set_target(BiquadCoeffs::highpass(freq, BUTTERWORTH_Q, sr));
     }
 
     /// Process stereo sample, returns ((low_l, low_r), (high_l, high_r)).
     #[inline]
     pub fn process(&mut self, l: f32, r: f32) -> ((f32, f32), (f32, f32)) {
-        let low_l = self
-            .lp2_l
-            .process(self.lp1_l.process(l, &self.lp_coeffs), &self.lp_coeffs);
-        let low_r = self
-            .lp2_r
-            .process(self.lp1_r.process(r, &self.lp_coeffs), &self.lp_coeffs);
-        let high_l = self
-            .hp2_l
-            .process(self.hp1_l.process(l, &self.hp_coeffs), &self.hp_coeffs);
-        let high_r = self
-            .hp2_r
-            .process(self.hp1_r.process(r, &self.hp_coeffs), &self.hp_coeffs);
+        // One ramp step per sample, shared by both channels and both cascaded
+        // sections so the LR-4 pair stays matched.
+        let lp = self.lp_coeffs.next();
+        let hp = self.hp_coeffs.next();
+
+        let low_l = self.lp2_l.process(self.lp1_l.process(l, &lp), &lp);
+        let low_r = self.lp2_r.process(self.lp1_r.process(r, &lp), &lp);
+        let high_l = self.hp2_l.process(self.hp1_l.process(l, &hp), &hp);
+        let high_r = self.hp2_r.process(self.hp1_r.process(r, &hp), &hp);
         ((low_l, low_r), (high_l, high_r))
     }
 }

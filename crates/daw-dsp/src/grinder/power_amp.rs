@@ -2,6 +2,7 @@
 //!
 //! dV_B+/dt = (V_nominal - V_B+) / τ_sag - k·|x(t)|
 
+use super::oversample::StageOversampler2x;
 use crate::primitives::flush_denormal;
 
 /// Power tube family.
@@ -56,7 +57,7 @@ pub struct PowerAmp {
     sag_tau: f32,    // recovery time constant (seconds)
     base_sag_amount: f32,
     base_sag_tau: f32,
-    oversample_input_state: f32,
+    oversampler: StageOversampler2x,
 
     // Push-pull state
     bias: f32,
@@ -87,7 +88,7 @@ impl PowerAmp {
             sag_tau: 0.2,
             base_sag_amount: 0.4,
             base_sag_tau: 0.2,
-            oversample_input_state: 0.0,
+            oversampler: StageOversampler2x::new(),
             bias: 0.5,
             neg_feedback: 0.5,
             presence: 0.5,
@@ -258,15 +259,16 @@ impl PowerAmp {
         output
     }
 
+    /// DSP-3: two substeps as before, but behind a real half-band pair rather
+    /// than linear interpolation up and a 2-tap box average down.
     pub fn process_sample(&mut self, input: f32) -> f32 {
-        let intermediate = 0.5 * (self.oversample_input_state + input);
+        let (first_input, second_input) = self.oversampler.upsample(input);
         let substep_dt = 0.5 / self.sample_rate;
 
-        let first = self.process_substep(intermediate, substep_dt);
-        let second = self.process_substep(input, substep_dt);
-        self.oversample_input_state = input;
+        let first = self.process_substep(first_input, substep_dt);
+        let second = self.process_substep(second_input, substep_dt);
 
-        (first + second) * 0.5
+        self.oversampler.downsample(first, second)
     }
 
     pub fn sag_voltage(&self) -> f32 {
@@ -279,7 +281,7 @@ impl PowerAmp {
 
     pub fn reset(&mut self) {
         self.vb_plus = self.v_nominal;
-        self.oversample_input_state = 0.0;
+        self.oversampler.reset();
         self.feedback_state = 0.0;
         self.feedback_low_state = 0.0;
         self.load_envelope = 0.0;

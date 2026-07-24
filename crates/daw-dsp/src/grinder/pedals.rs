@@ -1,5 +1,6 @@
 //! Pedalboard DSP: compressor plus core drive pedals.
 
+use super::oversample::StageOversampler2x;
 use crate::primitives::flush_denormal;
 use std::f32::consts::PI;
 
@@ -101,7 +102,7 @@ pub struct DistortionPedal {
     enabled: bool,
     input_hp_state: f32,
     pre_shape_state: f32,
-    oversample_input_state: f32,
+    oversampler: StageOversampler2x,
     tone_lp_state: f32,
     tone_hp_state: f32,
     output_hp_state: f32,
@@ -117,7 +118,7 @@ impl DistortionPedal {
             enabled: false,
             input_hp_state: 0.0,
             pre_shape_state: 0.0,
-            oversample_input_state: 0.0,
+            oversampler: StageOversampler2x::new(),
             tone_lp_state: 0.0,
             tone_hp_state: 0.0,
             output_hp_state: 0.0,
@@ -157,9 +158,9 @@ impl DistortionPedal {
         let gain = 1.35 + self.drive * 7.2;
         let pushed = conditioned * gain;
         let drive = self.drive;
-        let clipped = process_2x_oversampled(&mut self.oversample_input_state, pushed, |sample| {
-            Self::rat_core(sample, drive)
-        });
+        let clipped = self
+            .oversampler
+            .process(pushed, |sample| Self::rat_core(sample, drive));
 
         let low_pass_hz = 1_000.0 + self.tone * 5_200.0;
         let low_pass_coeff = (2.0 * PI * low_pass_hz * dt).min(0.92);
@@ -205,7 +206,7 @@ impl DistortionPedal {
     pub fn reset(&mut self) {
         self.input_hp_state = 0.0;
         self.pre_shape_state = 0.0;
-        self.oversample_input_state = 0.0;
+        self.oversampler.reset();
         self.tone_lp_state = 0.0;
         self.tone_hp_state = 0.0;
         self.output_hp_state = 0.0;
@@ -219,7 +220,7 @@ pub struct FuzzPedal {
     enabled: bool,
     input_hp_state: f32,
     bias_state: f32,
-    oversample_input_state: f32,
+    oversampler: StageOversampler2x,
     tone_lp_state: f32,
     cleanup_state: f32,
     output_hp_state: f32,
@@ -235,7 +236,7 @@ impl FuzzPedal {
             enabled: false,
             input_hp_state: 0.0,
             bias_state: 0.0,
-            oversample_input_state: 0.0,
+            oversampler: StageOversampler2x::new(),
             tone_lp_state: 0.0,
             cleanup_state: 0.0,
             output_hp_state: 0.0,
@@ -276,11 +277,9 @@ impl FuzzPedal {
         let conditioned = (tightened + self.bias_state) * cleanup;
         let pushed = conditioned * (1.9 + self.fuzz * 10.5);
         let fuzz = self.fuzz;
-        let saturated = process_2x_oversampled(
-            &mut self.oversample_input_state,
-            pushed,
-            |sample| Self::fuzz_core(sample, fuzz),
-        );
+        let saturated = self
+            .oversampler
+            .process(pushed, |sample| Self::fuzz_core(sample, fuzz));
 
         let tone_freq = 420.0 + self.tone * 5_600.0;
         let tone_coeff = (2.0 * PI * tone_freq * dt).min(0.92);
@@ -317,23 +316,11 @@ impl FuzzPedal {
     pub fn reset(&mut self) {
         self.input_hp_state = 0.0;
         self.bias_state = 0.0;
-        self.oversample_input_state = 0.0;
+        self.oversampler.reset();
         self.tone_lp_state = 0.0;
         self.cleanup_state = 0.0;
         self.output_hp_state = 0.0;
     }
-}
-
-fn process_2x_oversampled(
-    previous_input: &mut f32,
-    current_input: f32,
-    mut shaper: impl FnMut(f32) -> f32,
-) -> f32 {
-    let midpoint = 0.5 * (*previous_input + current_input);
-    let first = shaper(midpoint);
-    let second = shaper(current_input);
-    *previous_input = current_input;
-    (first + second) * 0.5
 }
 
 /// Simple compressor pedal.
