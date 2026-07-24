@@ -182,6 +182,19 @@ each resolves either an `AudioParam` target or `acceptsScheduledParam===true` of
 ---
 
 ### OE-4 — Solo is ignored by offline export (live↔offline parity break) — **Major**
+**Status:** FIXED in #750 — **mixdown only.** Stems are deliberately excluded: their "always
+all content" `honorMuted:false` policy is the unresolved *Stem mute/solo policy intent* item in
+§5 Open Questions, so extending solo to stems awaits that ruling. Freeze/bounce runs the separate
+single-track renderer (`Arrangement/useCases/freezeBounce/renderOffline.ts`) owned by Wave 4 (WS-3),
+not the mixdown path fixed here.
+
+**PFL export ruling (orchestrator decision, user-vetoable).** Export stays WYSIWYG — it renders
+exactly what the app's live PFL model plays on the main bus, so under PFL a soloed track is exported
+even when individually muted (pinned by a `renderOffline` PFL integration test). Caveat: a
+classic-console PFL feeds a separate cue bus and does *not* shape the master; if the live PFL model is
+ever reworked that way, export follows automatically through the shared effective-audibility
+derivation — no export-side change needed.
+
 **Evidence.** Solo-in-place applies through `applySoloLogic.ts:45-55` → `setTrackGain`/`setTrackMute`,
 and `setTrackMute.ts:3-5` calls **`audioEngine.setTrackMute` only** — it does **not** write
 `track.muted` in the project store. Offline reads project-store state: mixdown filters

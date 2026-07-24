@@ -1,5 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 
+import { defaultWorkspaceState, workspaceStore } from '#/modules/WorkspaceShell/stores';
+
 import { renderOffline } from '../renderOffline';
 
 const offlineRenderMocks = vi.hoisted(() => ({
@@ -22,6 +24,7 @@ const offlineRenderMocks = vi.hoisted(() => ({
     resolveRenderContext: vi.fn(),
     createOfflineTrackStrip: vi.fn(),
     renderWithTimeout: vi.fn(),
+    scheduleTrackClips: vi.fn(),
 }));
 
 vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => {
@@ -102,6 +105,10 @@ vi.mock('../offlineRender/renderWithTimeout', () => ({
     renderWithTimeout: offlineRenderMocks.renderWithTimeout,
 }));
 
+vi.mock('../offlineRender/scheduleTrackClips', () => ({
+    scheduleTrackClips: offlineRenderMocks.scheduleTrackClips,
+}));
+
 describe('renderOffline', () => {
     beforeEach(() => {
         vi.clearAllMocks();
@@ -151,5 +158,119 @@ describe('renderOffline', () => {
 
         expect(result).toBe(rendered);
         expect(offlineRenderMocks.createOfflineTrackStrip).not.toHaveBeenCalled();
+    });
+});
+
+describe('renderOffline effective audibility (OE-4)', () => {
+    beforeEach(() => {
+        vi.clearAllMocks();
+        // Each case starts from the default solo mode (SIP); PFL cases opt in.
+        workspaceStore.set(defaultWorkspaceState);
+    });
+
+    const audioTrack = (over: { id: string; soloed?: boolean; muted?: boolean }) => ({
+        id: over.id,
+        kind: 'audio',
+        disabled: false,
+        muted: over.muted ?? false,
+        soloed: over.soloed ?? false,
+        soloSafe: false,
+        outputId: 'hw_out',
+        devices: [],
+        sends: [],
+    });
+
+    const renderContext = (tracks: ReturnType<typeof audioTrack>[]) => ({
+        tracks: { tracks },
+        midi: {},
+        transport: null,
+        defaultTempo: 120,
+        changes: [],
+        durationSeconds: 1,
+        projectMidiEvents: vi.fn(),
+        selectMidiEventProbability: vi.fn(() => true),
+        projectChordPitch: ({ pitch }: { pitch: number }) => pitch,
+        projectPpqEndpoints: vi.fn(),
+        processYeastMidi: vi.fn(),
+    });
+
+    function primeRender(): void {
+        offlineRenderMocks.createOfflineTrackStrip.mockImplementation(() =>
+            Promise.resolve({
+                inputNode: { connect: vi.fn() },
+                preFaderTap: { connect: vi.fn() },
+                faderNode: { connect: vi.fn() },
+                postFaderGain: { connect: vi.fn() },
+                panNode: { connect: vi.fn() },
+                outputNode: { connect: vi.fn() },
+                deviceEntries: [],
+            })
+        );
+        offlineRenderMocks.renderWithTimeout.mockResolvedValue({ sampleRate: 44_100 });
+        class TestOfflineAudioContext {
+            readonly destination = {};
+
+            createGain() {
+                return { gain: { value: 0 }, connect: vi.fn() };
+            }
+        }
+        vi.stubGlobal('OfflineAudioContext', TestOfflineAudioContext);
+    }
+
+    const scheduledTrackIds = (): string[] =>
+        offlineRenderMocks.scheduleTrackClips.mock.calls.map((call) => call[0].track.id);
+
+    it('schedules only the soloed track, dropping non-soloed content, when a solo is engaged', async () => {
+        offlineRenderMocks.resolveRenderContext.mockReturnValue(
+            renderContext([audioTrack({ id: 'solo', soloed: true }), audioTrack({ id: 'other' })])
+        );
+        primeRender();
+
+        await renderOffline(4);
+
+        expect(scheduledTrackIds()).toEqual(['solo']);
+    });
+
+    it('schedules every non-muted track when nothing is soloed', async () => {
+        offlineRenderMocks.resolveRenderContext.mockReturnValue(
+            renderContext([audioTrack({ id: 'a' }), audioTrack({ id: 'b', muted: true }), audioTrack({ id: 'c' })])
+        );
+        primeRender();
+
+        await renderOffline(4);
+
+        expect(scheduledTrackIds()).toEqual(['a', 'c']);
+    });
+
+    it('keeps a muted, soloed track audible in the mixdown under PFL (WYSIWYG export ruling)', async () => {
+        workspaceStore.set({ ...defaultWorkspaceState, soloMode: 'pfl' });
+        offlineRenderMocks.resolveRenderContext.mockReturnValue(
+            renderContext([audioTrack({ id: 'solo', soloed: true, muted: true }), audioTrack({ id: 'other' })])
+        );
+        primeRender();
+
+        await renderOffline(4);
+
+        // Live PFL plays the soloed track on the main bus even though it is muted;
+        // WYSIWYG export follows that model through the shared derivation, so the
+        // muted+soloed track is rendered and the non-soloed track is dropped.
+        expect(scheduledTrackIds()).toEqual(['solo']);
+    });
+
+    it('ignores solo owned by a duplicated track id, matching the live ambiguous-owner guard', async () => {
+        offlineRenderMocks.resolveRenderContext.mockReturnValue(
+            renderContext([
+                audioTrack({ id: 'dup', soloed: true }),
+                audioTrack({ id: 'dup' }),
+                audioTrack({ id: 'unique' }),
+            ])
+        );
+        primeRender();
+
+        await renderOffline(4);
+
+        // 'dup' appears twice, so it is not an unambiguous solo owner: no solo
+        // engages and 'unique' stays audible — exactly as the live path behaves.
+        expect(scheduledTrackIds()).toContain('unique');
     });
 });

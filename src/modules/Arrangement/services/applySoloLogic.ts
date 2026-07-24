@@ -40,6 +40,10 @@ function isRoutedToSoloedTrack(
     return isRoutedToSoloedTrack(outputTrack, allTracks, liveStripTrackIds, visited);
 }
 
+// Authoritative solo/mute planner for the live engine. The offline exporter does
+// not re-derive this math: `stores/effectiveAudibility` projects this same plan
+// into a per-track audibility read model that the export path consumes, so live
+// monitoring and export agree on which tracks are audible (OE-4).
 export function applySoloLogic({
     tracks,
     soloMode,

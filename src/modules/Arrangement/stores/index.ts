@@ -35,6 +35,12 @@ export { appendClipToTrack } from './appendClipToTrack';
 export { appendTrack } from './appendTrack';
 export { getTrackEligibility, shouldCreateLiveTrackStrip } from './trackEligibility';
 
+// Effective-audibility read model (mute ∪ solo): projects the authoritative live
+// solo planner into a per-track audibility map the offline exporter consumes,
+// closing the store-vs-engine solo split without duplicating the math (OE-4).
+export { deriveEffectiveAudibility, hasActiveSolo } from './effectiveAudibility';
+export type { EffectiveAudibility, EffectiveAudibilityInput } from './effectiveAudibility';
+
 export { adjustmentLayerStore, EFFECT_PRESETS, LAYER_COLORS } from './adjustmentLayer';
 export type {
     AdjustmentEffectType,
