@@ -24,7 +24,11 @@
  *     hash means the declaration went stale while the crate (and its `.js`/
  *     `.wasm`) regenerated — the WB-4 / #732 blind spot that byte integrity
  *     alone cannot see, since the freshly written manifest records the stale
- *     `.d.ts` hash without complaint.
+ *     `.d.ts` hash without complaint. This is a provenance check, not a content
+ *     proof: it attests the crate source is unchanged since the `.d.ts` was
+ *     generated, not that the file's body matches the bindings (only
+ *     regeneration proves that) — a hand-forged stamp over a stale body plus a
+ *     rebuilt manifest still passes.
  *
  * Exit code 0 = clean, 1 = drift (with a per-check report). Runnable locally and
  * by agents as part of verification; no rebuild, no network, no toolchain calls.

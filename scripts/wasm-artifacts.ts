@@ -423,10 +423,14 @@ function extractSchemaHash(relPath: string): string {
  * A generated `.d.ts` carries no wasm-bindgen schema id, so it cannot join the
  * schema-pairing check. Instead every declaration is prepended at generation
  * with the crate-source hash it was produced from; `pnpm wasm:verify` re-derives
- * the live crate hash and rejects any stamp that no longer matches. This closes
- * the WB-4 / #732 blind spot: a `.d.ts` left stale while the crate and its
- * `.js`/`.wasm` regenerated carries an old stamp and fails, even though the
- * freshly written manifest records its (stale) byte hash without complaint.
+ * the live crate hash and rejects any stamp that no longer matches, so a `.d.ts`
+ * left stale while the crate and its `.js`/`.wasm` regenerated carries an old
+ * stamp and fails, even though the freshly written manifest records its (stale)
+ * byte hash without complaint. Scope: this is a *provenance* check, not a content
+ * proof — the stamp attests the crate source is unchanged since this file was
+ * generated; it does NOT prove the body matches the current bindings (only
+ * regeneration does), so a hand-forged stamp over a stale body plus a rebuilt
+ * manifest still passes clean.
  */
 const declarationStampPrefix = '// @wasm-bindgen-dts crate-source: ';
 const declarationStampMarker = /^\/\/ @wasm-bindgen-dts crate-source: (sha256:[0-9a-f]{64})\n/;
