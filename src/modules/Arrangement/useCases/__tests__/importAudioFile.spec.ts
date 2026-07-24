@@ -42,6 +42,7 @@ describe('importAudioFile', () => {
             id: 'buf-1',
             buffer: { duration: 1 } as AudioBuffer,
         });
+        mocks.getAssetTransfer.mockReturnValue(null);
     });
 
     it('does not drop a concurrent track edit that lands during the asset-hash await', async () => {
@@ -75,5 +76,64 @@ describe('importAudioFile', () => {
         expect(ids).toContain('concurrent-track');
         // The imported audio track is also present (2 tracks total).
         expect(trackStore.value?.tracks).toHaveLength(2);
+    });
+
+    it('imports a file into an empty project creating a new bar-aligned audio track', async () => {
+        await importAudioFile(new File([], 'loop.wav'));
+
+        // A single new audio track is created and a clip placed on it.
+        expect(trackStore.value?.tracks).toHaveLength(1);
+        expect(mocks.addClip).toHaveBeenCalledTimes(1);
+        const clip = mocks.addClip.mock.calls[0]?.[0] as {
+            trackId: string;
+            startBeat: number;
+            endBeat: number;
+            type: string;
+            name: string;
+        };
+        expect(clip.type).toBe('audio');
+        expect(clip.name).toBe('loop');
+        expect(clip.startBeat).toBe(0);
+        // The clip length is rounded up to a whole bar (multiple of 4 beats).
+        expect(clip.endBeat % 4).toBe(0);
+        expect(clip.endBeat).toBeGreaterThanOrEqual(4);
+        // An undo entry is recorded so the import can be undone.
+        expect(mocks.pushUndoEntry).toHaveBeenCalledTimes(1);
+        expect(typeof mocks.pushUndoEntry.mock.calls[0]?.[1]).toBe('function');
+    });
+
+    it('aborts with an error notification when decoding fails', async () => {
+        mocks.decodeAudioFile.mockRejectedValue(new Error('unsupported'));
+
+        await importAudioFile(new File([], 'corrupt.wav'));
+
+        expect(mocks.notifyUser).toHaveBeenCalledWith(expect.stringContaining('corrupt.wav'), 'error');
+        expect(trackStore.value?.tracks).toHaveLength(0);
+        expect(mocks.addClip).not.toHaveBeenCalled();
+        expect(mocks.pushUndoEntry).not.toHaveBeenCalled();
+    });
+
+    it('records an undo function that restores the pre-import track state', async () => {
+        const before = trackStore.value;
+        await importAudioFile(new File([], 'loop.wav'));
+
+        const undo = mocks.pushUndoEntry.mock.calls[0]?.[1] as () => void;
+        undo();
+
+        // Undo must rewind the store to the snapshot captured before the import.
+        expect(trackStore.value).toEqual(before);
+    });
+
+    it('records a redo function that reapplies the post-import track state', async () => {
+        await importAudioFile(new File([], 'loop.wav'));
+
+        const snapshotAfterImport = trackStore.value;
+        // Simulate a later unrelated change.
+        trackStore.set({ tracks: [], selectedTrackId: null });
+
+        const redo = mocks.pushUndoEntry.mock.calls[0]?.[2] as () => void;
+        redo();
+
+        expect(trackStore.value).toEqual(snapshotAfterImport);
     });
 });
