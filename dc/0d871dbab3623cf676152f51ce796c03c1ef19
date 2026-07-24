@@ -1,0 +1,67 @@
+src/modules/AudioEngine/repositories/devices/modulation/__tests__/applyModulationParams.spec.ts
+  s_0d39f3a4a4357a::t_f972564b06e6d7 17,170,178,241,249
+src/modules/AudioEngine/services/__tests__/glutenProcessor.spec.ts
+  s_0d39f3a4a4357a::t_e820b93508ad18 1-309
+src/modules/AudioEngine/services/__tests__/grandBouleProcessor.spec.ts
+  s_0d39f3a4a4357a::t_17a6d131876e8f 14-16,20-30,42,52,160-233
+src/modules/AudioEngine/services/__tests__/recordingProcessor.spec.ts
+  s_0d39f3a4a4357a::t_63f3d51b83898f 1,3,5-8,10-13,15,17-24,26-28,30-37,39-40,42-44,46-56,59-64,66-71,73-82,84-93,99-109,111-113,118-122,124-125,127,129-132,135-139
+src/modules/AudioEngine/useCases/adjustmentLayer/__tests__/sharedAdjustmentLayerApplier.spec.ts
+  s_0d39f3a4a4357a::t_682639b349bc14 219-291
+src/modules/AudioEngine/engine/__tests__/AdjustmentBusNode.spec.ts
+  s_d84579a75be54f::t_3ab4f30882410f 4,192-343
+src/modules/AudioEngine/handlers/finalFeature/__tests__/transientHandlers.spec.ts
+  s_d84579a75be54f::t_c0c66bac01bf86 4,48,74
+src/modules/AudioEngine/repositories/deviceStrategy/__tests__/NativeDspDeviceStrategy.spec.ts
+  s_d84579a75be54f::t_a1c471504140e1 3-68,176-245
+src/modules/AudioEngine/repositories/devices/reverbDelay/__tests__/applyConvolutionReverbParams.spec.ts
+  s_d84579a75be54f::t_5ef3726f88c1b1 10,16,71
+src/modules/AudioEngine/repositories/devices/toneShaping/__tests__/applyToneShapingParams.spec.ts
+  s_d84579a75be54f::t_7fef6918a1f566 10-11,14
+src/modules/AudioEngine/services/__tests__/bacteriaProcessor.spec.ts
+  s_d84579a75be54f::t_996c5345d733a7 1-309
+src/modules/AudioEngine/services/__tests__/grinderProcessorProcessPaths.spec.ts
+  s_d84579a75be54f::t_ebafc3d9d8929e 31,75,94,121
+src/modules/AudioEngine/services/__tests__/kneadProcessor.spec.ts
+  s_d84579a75be54f::t_1e02f0c340bde1 284-430
+src/modules/AudioEngine/services/__tests__/proofChamberProcessor.spec.ts
+  s_d84579a75be54f::t_35dc318ddbe876 132,144-148,166-180,214-223
+src/modules/AudioEngine/services/__tests__/proofProcessor.spec.ts
+  s_88ffc5326d9b0b::t_2c1de10a880402 33-35,48-49,86-94,97-103,216-324
+src/modules/AudioEngine/services/__tests__/toasterProcessor.spec.ts
+  s_88ffc5326d9b0b::t_efd0da047300ac 36,50-52,339-507
+src/modules/AudioEngine/useCases/__tests__/audition.spec.ts
+  s_d84579a75be54f::t_239ddc5d5881e7 3-7,9-13,25-27,262-422
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "dc0d871dbab3623cf676152f51ce796c03c1ef19",
+  "prompts": {},
+  "sessions": {
+    "s_0d39f3a4a4357a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "60da6a2e-7d79-4d98-8624-e993f5a9f94e",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_88ffc5326d9b0b": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-ad18badee0d6bb8b2",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_d84579a75be54f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-ab77999985083d716",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
