@@ -9,6 +9,7 @@ const mocks = vi.hoisted(() => ({
     addClip: vi.fn(),
     pushUndoEntry: vi.fn(),
     notifyUser: vi.fn(),
+    transportValue: { value: null as { tempo: number } | null },
 }));
 
 vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
@@ -32,6 +33,15 @@ vi.mock('../clip/addClip', () => ({
 
 vi.mock('#/utils/Notification/notifyUser', () => ({
     notifyUser: mocks.notifyUser,
+}));
+
+vi.mock('#/modules/Transport/stores', async (importOriginal) => ({
+    ...(await importOriginal<any>()),
+    transportStore: {
+        get value() {
+            return mocks.transportValue.value;
+        },
+    },
 }));
 
 describe('importAudioFile', () => {
@@ -135,5 +145,47 @@ describe('importAudioFile', () => {
         redo();
 
         expect(trackStore.value).toEqual(snapshotAfterImport);
+    });
+
+    it('aborts silently when the track store has not loaded before decode', async () => {
+        trackStore.set(null);
+
+        await importAudioFile(new File([], 'loop.wav'));
+
+        // decode ran, but there is no state to write into
+        expect(mocks.addClip).not.toHaveBeenCalled();
+        expect(mocks.pushUndoEntry).not.toHaveBeenCalled();
+    });
+
+    it('aborts silently when the track store is cleared during the asset-hash await', async () => {
+        // Hold the hash await open, clear the store mid-flight, then resolve.
+        let releaseHash: (hash: string) => void = () => {};
+        const hashGate = new Promise<string>((resolve) => {
+            releaseHash = resolve;
+        });
+        mocks.getAssetTransfer.mockReturnValue({
+            addLocalAsset: vi.fn(() => hashGate),
+        });
+
+        const importPromise = importAudioFile(new File([], 'kick.wav'));
+        await Promise.resolve();
+        await Promise.resolve();
+
+        // Store torn down while the hash is in flight.
+        trackStore.set(null);
+        releaseHash('hash-1');
+        await importPromise;
+
+        expect(mocks.addClip).not.toHaveBeenCalled();
+        expect(mocks.pushUndoEntry).not.toHaveBeenCalled();
+    });
+
+    it('falls back to a 120 BPM tempo when the transport store is empty', async () => {
+        // transportStore.value is null by default (not mocked) → tempo ?? 120.
+        await importAudioFile(new File([], 'loop.wav'));
+
+        const clip = mocks.addClip.mock.calls[0]?.[0] as { endBeat: number };
+        // duration 1s at 120 BPM = 2 beats → ceil(2/4)*4 = 4 beats.
+        expect(clip.endBeat).toBe(4);
     });
 });
