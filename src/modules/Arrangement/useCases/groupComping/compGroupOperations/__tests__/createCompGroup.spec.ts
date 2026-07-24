@@ -5,8 +5,10 @@ import { createCompGroup } from '../createCompGroup';
 const mocks = vi.hoisted(() => {
     type Group = { id: string; name: string; trackIds: string[] };
     type State = { groups: Group[]; activeGroupId: string | null };
+    type StateHolder = { value: State | null };
+    const holder: StateHolder = { value: { groups: [], activeGroupId: null } };
     return {
-        groupCompingStoreValue: { value: { groups: [], activeGroupId: null } },
+        groupCompingStoreValue: holder,
         groupCompingStoreSet: vi.fn<(state: State) => void>(),
         getNextGroupId: vi.fn<() => string>(() => 'grp-123'),
     };
@@ -44,5 +46,15 @@ describe('createCompGroup', () => {
             trackIds: ['t1', 't2'],
         });
         expect(newState.activeGroupId).toBe('grp-123');
+    });
+
+    it('is a no-op when the group-comping store has not loaded', () => {
+        mocks.groupCompingStoreValue.value = null;
+
+        createCompGroup('Drums', ['t1']);
+
+        expect(mocks.groupCompingStoreSet).not.toHaveBeenCalled();
+        // The id generator is never consulted when there is no store.
+        expect(mocks.getNextGroupId).not.toHaveBeenCalled();
     });
 });

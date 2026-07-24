@@ -1,7 +1,9 @@
 import { vi, describe, it, expect, beforeEach } from 'vitest';
 
 vi.mock('../../../stores/trackStore', () => {
-    const internal = { value: { tracks: [], selectedTrackId: null } };
+    const internal = {
+        value: { tracks: [], selectedTrackId: null } as { tracks: unknown[]; selectedTrackId: string | null } | null,
+    };
     return {
         trackStore: {
             get value() {
@@ -31,5 +33,10 @@ describe('getAllTracks', () => {
         const tracks = [TrackDummy.create({ id: 't1' })];
         trackStore.set({ tracks, selectedTrackId: null });
         expect(getAllTracks()).toEqual(tracks);
+    });
+
+    it('should return an empty array when the store has not initialised', () => {
+        trackStore.set(null);
+        expect(getAllTracks()).toEqual([]);
     });
 });
