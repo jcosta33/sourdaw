@@ -156,8 +156,15 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
     'load-compile-hydration': {
         'src/app/bootstrap.ts': 1,
         'src/app/registerDependencies.ts': 1,
+        // Count provenance: doc-comment cross-reference to `compileAutomationEvents`
+        // in the editor-readout evaluator's AU-1 delegation note (#747) — the
+        // transformer computes curve values only, holds no device writes.
+        'src/modules/Arrangement/transformers/automationTransformers.ts': 1,
         'src/modules/Arrangement/useCases/device/addDevice.ts': 2,
         'src/modules/Arrangement/useCases/preset/presetLoading.ts': 2,
+        // Count provenance: doc-comment cross-reference to `compileAutomationEvents`
+        // in the live evaluator's AU-1 delegation note (#747) — not a sink.
+        'src/modules/Automation/services/automationPointAlgorithms.ts': 1,
         'src/modules/AudioEngine/engine/LevainNode.ts': 1,
         'src/modules/AudioEngine/engine/wasmDeviceRegistry.ts': 1,
         'src/modules/AudioEngine/repositories/faustDeviceFactory.ts': 3,
@@ -213,6 +220,10 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         'src/modules/Toaster/useCases/toasterSubscriber.ts': 2,
         'src/modules/Toaster/useCases/trigger16Level.ts': 5,
         'src/modules/Toaster/presentations/views/ToasterPanel.tsx': 2,
+        // Count provenance: doc-comment cross-reference to the sibling offline
+        // compiler `compileAutomationEvents` from the AU-1 shared curve kernel
+        // (#747) — a pure curve-math utility, not a device-write sink.
+        'src/utils/automationCurve.ts': 1,
     },
 };
 

@@ -3,24 +3,26 @@
  * seven automation curve shapes (linear / exponential / step / s-curve /
  * stairs / smooth / bezier).
  *
- * The two runtimes finding AU-1 audited — the paths whose divergence changes
- * what you hear versus what you bounce — evaluate automation through THIS
- * function:
+ * The three curve-value evaluators finding AU-1 audited — playback plus the
+ * editor readout, the paths whose divergence changes what you hear, bounce, or
+ * see under the cursor — evaluate automation through THIS function:
  *  - the live apply path (Transport scheduling → Automation
- *    `interpolateAutomationPointValue` → this evaluator), and
+ *    `interpolateAutomationPointValue` → this evaluator),
  *  - the offline compile path (AudioEngine offlineScheduler
- *    `compileAutomationEvents` → this evaluator).
+ *    `compileAutomationEvents` → this evaluator), and
+ *  - the editor playhead value readout (Arrangement transformers
+ *    `interpolateAutomationValue` → this evaluator).
  *
- * Audit finding AU-1 (AUDIT-automation.md): these two paths previously carried
+ * Audit finding AU-1 (AUDIT-automation.md): these paths previously carried
  * independently hand-maintained copies of this math and had already drifted
- * (documented `stairs` clamping divergence). Collapsing them onto one kernel
- * makes monitor == bounce by construction. Do not fork this math back into
- * either path; the automation curve-conformance specs guard re-divergence.
+ * (documented `stairs` clamping divergence; the editor copy also lacked a
+ * `bezier` branch entirely). Collapsing them onto one kernel makes monitor ==
+ * bounce == readout by construction. Do not fork this math back into any path;
+ * the automation curve-conformance specs guard re-divergence.
  *
- * Not (yet) unified: other, non-playback evaluators still carry their own curve
- * math — Arrangement's `interpolateAutomationValue` (editor playhead value
- * readout) and TimelineEditor's `buildCurvePath` (SVG rendering). They are
- * tracked as AU-1 residuals; route them here as they are addressed.
+ * Residual (follow-up): TimelineEditor's `buildCurvePath` still computes the
+ * curve as an SVG path (geometry, not a scalar value) for rendering — tracked
+ * as an AU-1 residual; reconcile its control-point handling with this kernel.
  *
  * This kernel lives in `src/utils/` because it is the only home both a module
  * `services/` file (live) and a module `repositories/` file (offline) may
