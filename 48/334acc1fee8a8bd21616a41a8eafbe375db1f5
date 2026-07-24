@@ -1,0 +1,45 @@
+src/modules/AudioEngine/repositories/deviceStrategy/__tests__/FaustDeviceStrategy.spec.ts
+  s_0d39f3a4a4357a::t_de5a132b4efb1c 119
+  s_0d39f3a4a4357a::t_154da8dcc7585c 3,5,100-118,120-194
+  s_0d39f3a4a4357a::t_035b903a83771b 195
+src/modules/AudioEngine/repositories/offlineScheduler/__tests__/automationScheduling.spec.ts
+  s_0d39f3a4a4357a::t_ef0eafe16c9275 514-519
+  s_0d39f3a4a4357a::t_e510337641c3b0 7,129-135,339,478,509-513,520-521,555-562,564,593,595
+src/modules/AudioEngine/repositories/offlineScheduler/automationScheduling.ts
+  s_0d39f3a4a4357a::t_a39b4092ab80f7 17,24,84-88,98,101
+src/modules/AudioEngine/useCases/__tests__/renderOfflineGraph.spec.ts
+  s_0d39f3a4a4357a::t_fc00bee0458d3c 296
+  s_0d39f3a4a4357a::t_9f4ff4a66d4384 352-356,408-412
+src/modules/AudioEngine/repositories/deviceStrategy/AudioDeviceStrategy.ts
+  s_0d39f3a4a4357a::t_70d9959808f340 11-29,33-39
+src/modules/AudioEngine/repositories/deviceStrategy/NativeDspDeviceStrategy.ts
+  s_0d39f3a4a4357a::t_6622c2289cd3b8 15-19,59-64
+  s_0d39f3a4a4357a::t_1f638f2a9b8a87 65-66
+src/modules/AudioEngine/useCases/offlineRender/__tests__/connectOfflineToasterPadRoutes.spec.ts
+  s_0d39f3a4a4357a::t_2ee8ea15448b2d 27-33
+src/modules/AudioEngine/repositories/deviceStrategy/WebAudioDeviceStrategy.ts
+  s_0d39f3a4a4357a::t_18c3e819808a47 2
+  s_0d39f3a4a4357a::t_5581814f52a708 6,17-23
+  s_0d39f3a4a4357a::t_ff6adc4c980b8f 24
+src/modules/AudioEngine/repositories/deviceStrategy/FaustDeviceStrategy.ts
+  s_0d39f3a4a4357a::t_a8de3d63a6e6df 6,10-12,15-34,41-42,46-48,57-69
+src/modules/AudioEngine/repositories/offlineScheduler/__tests__/offlineAutomationCoverage.spec.ts
+  s_0d39f3a4a4357a::t_0b3da82425e283 1-26,30-66,74-82,88-134
+  s_0d39f3a4a4357a::t_14a25bdfebe668 27-29,67-73,83-87
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "48334acc1fee8a8bd21616a41a8eafbe375db1f5",
+  "prompts": {},
+  "sessions": {
+    "s_0d39f3a4a4357a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "60da6a2e-7d79-4d98-8624-e993f5a9f94e",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
