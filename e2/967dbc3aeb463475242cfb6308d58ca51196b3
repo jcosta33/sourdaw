@@ -1,0 +1,31 @@
+src/modules/AudioEngine/useCases/renderOffline.ts
+  s_0d39f3a4a4357a::t_589bf886cd1579 103-113,115,117
+.agents/artifacts/sourdaw/audits/AUDIT-offline-export.md
+  s_0d39f3a4a4357a::t_79da7ae5d63c3e 185-197
+src/modules/AudioEngine/useCases/__tests__/renderOffline.spec.ts
+  s_1f9dea76e32196::t_082f53fc558626 3-4,167-168,244-275
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "e2967dbc3aeb463475242cfb6308d58ca51196b3",
+  "prompts": {},
+  "sessions": {
+    "s_0d39f3a4a4357a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "60da6a2e-7d79-4d98-8624-e993f5a9f94e",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_1f9dea76e32196": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-a4ba7914bcb00b285",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
