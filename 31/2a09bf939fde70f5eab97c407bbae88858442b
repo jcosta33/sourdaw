@@ -1,0 +1,27 @@
+src/modules/AudioRendering/repositories/audioExport/__tests__/writeNativeAudioMixdownFile.spec.ts
+  s_0d39f3a4a4357a::t_0fe68705f3b746 38-43
+src/modules/Project/repositories/nativeProjectFiles/saveProjectToFile.ts
+  s_0d39f3a4a4357a::t_8a468bce86ff9d 3
+  s_0d39f3a4a4357a::t_5449fd559943ff 4
+src/modules/Project/repositories/nativeProjectFiles/loadProjectFromFile.ts
+  s_0d39f3a4a4357a::t_42ba4a5f50bfb3 3
+  s_0d39f3a4a4357a::t_6aadeee3f4400c 4
+src/modules/Project/repositories/nativeProjectFiles/__tests__/nativeProjectFiles.spec.ts
+  s_0d39f3a4a4357a::t_e7d1b61a30f068 3-4
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "312a09bf939fde70f5eab97c407bbae88858442b",
+  "prompts": {},
+  "sessions": {
+    "s_0d39f3a4a4357a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "60da6a2e-7d79-4d98-8624-e993f5a9f94e",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
