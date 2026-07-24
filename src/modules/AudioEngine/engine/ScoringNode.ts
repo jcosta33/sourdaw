@@ -10,7 +10,7 @@ import { NOTE_NAMES } from '#/utils/noteNames';
 import scoringProcessorUrl from '../services/scoringProcessor.ts?worker&url';
 
 import { requireSharedArrayBuffer } from './pluginHostingErrors';
-import { telemetryAllocator, SCORING_IDX, type TelemetrySlot } from './telemetryAllocator';
+import { telemetryAllocator, createTelemetryReader, SCORING_IDX, type TelemetrySlot } from './telemetryAllocator';
 
 const DEFAULT_WASM_URL = '/wasm/scoring/scoring_bg.wasm';
 
@@ -24,6 +24,35 @@ export type TunerTelemetry = {
     noteName: string;
     active: boolean;
 };
+
+const INACTIVE_TUNER_TELEMETRY: TunerTelemetry = {
+    active: false,
+    frequency: 0,
+    cents: 0,
+    confidence: 0,
+    noteIndex: 0,
+    octave: 0,
+    midiNote: 0,
+    noteName: '',
+};
+
+/** Slot floats → tuner telemetry. Pure: the seqlock reader may re-run it on retry. */
+function projectTunerTelemetry(view: Float32Array): TunerTelemetry {
+    if (view[SCORING_IDX.active] === 0) {
+        return INACTIVE_TUNER_TELEMETRY;
+    }
+    const noteIndex = view[SCORING_IDX.noteIndex] ?? 0;
+    return {
+        active: true,
+        frequency: view[SCORING_IDX.frequency] ?? 0,
+        cents: view[SCORING_IDX.cents] ?? 0,
+        confidence: view[SCORING_IDX.confidence] ?? 0,
+        noteIndex,
+        octave: view[SCORING_IDX.octave] ?? 0,
+        midiNote: view[SCORING_IDX.midiNote] ?? 0,
+        noteName: NOTE_NAMES[noteIndex % 12] ?? 'C',
+    };
+}
 
 export type ScoringNodeResult = {
     workletNode: AudioWorkletNode;
@@ -93,33 +122,13 @@ export async function createScoringNode(ctx: BaseAudioContext): Promise<ScoringN
             if (!slot) {
                 return;
             }
-            const view = slot.view;
+            // Read under the slot seqlock (audit RT-2): the active flag and the pitch
+            // fields are published together, so without the retry the tuner can show
+            // `active` next to the previous detection's note. Built once, outside the
+            // poll, since it retains the last consistent snapshot.
+            const readTelemetry = createTelemetryReader({ slot, project: projectTunerTelemetry });
             const poll = () => {
-                const active = view[SCORING_IDX.active] !== 0;
-                if (active) {
-                    const noteIndex = view[SCORING_IDX.noteIndex] ?? 0;
-                    callback({
-                        active: true,
-                        frequency: view[SCORING_IDX.frequency] ?? 0,
-                        cents: view[SCORING_IDX.cents] ?? 0,
-                        confidence: view[SCORING_IDX.confidence] ?? 0,
-                        noteIndex,
-                        octave: view[SCORING_IDX.octave] ?? 0,
-                        midiNote: view[SCORING_IDX.midiNote] ?? 0,
-                        noteName: NOTE_NAMES[noteIndex % 12] ?? 'C',
-                    });
-                } else {
-                    callback({
-                        active: false,
-                        frequency: 0,
-                        cents: 0,
-                        confidence: 0,
-                        noteIndex: 0,
-                        octave: 0,
-                        midiNote: 0,
-                        noteName: '',
-                    });
-                }
+                callback(readTelemetry());
                 telemetryRafId = requestAnimationFrame(poll);
             };
             telemetryRafId = requestAnimationFrame(poll);

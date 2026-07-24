@@ -8,7 +8,7 @@ import { logger } from '#/infra/logger/appLogger';
 import grinderProcessorUrl from '../services/grinderProcessor.ts?worker&url';
 
 import { requireSharedArrayBuffer } from './pluginHostingErrors';
-import { telemetryAllocator, GRINDER_IDX, type TelemetrySlot } from './telemetryAllocator';
+import { telemetryAllocator, createTelemetryReader, GRINDER_IDX, type TelemetrySlot } from './telemetryAllocator';
 
 const DEFAULT_WASM_URL = '/wasm/daw-dsp/daw_dsp_bg.wasm';
 
@@ -38,6 +38,22 @@ export type GrinderMeterData = {
     neuralCpuPercent: number;
     neuralWarmupProgress: number;
 };
+
+/** Slot floats → meter snapshot. Pure: the seqlock reader may re-run it on retry. */
+function projectGrinderMeter(view: Float32Array): GrinderMeterData {
+    return {
+        inputDb: view[GRINDER_IDX.inputDb] ?? 0,
+        preampDb: view[GRINDER_IDX.preampDb] ?? 0,
+        powerAmpDb: view[GRINDER_IDX.powerAmpDb] ?? 0,
+        outputDb: view[GRINDER_IDX.outputDb] ?? 0,
+        gateOpen: view[GRINDER_IDX.gateOpen] ?? 0,
+        gateEnvelopeDb: view[GRINDER_IDX.gateEnvelopeDb] ?? 0,
+        sagVoltage: view[GRINDER_IDX.sagVoltage] ?? 0,
+        latency: view[GRINDER_IDX.latency] ?? 0,
+        neuralCpuPercent: view[GRINDER_IDX.neuralCpuPercent] ?? 0,
+        neuralWarmupProgress: view[GRINDER_IDX.neuralWarmupProgress] ?? 0,
+    };
+}
 
 export type GrinderNodeResult = {
     workletNode: AudioWorkletNode;
@@ -168,20 +184,12 @@ export async function createGrinderNode(ctx: BaseAudioContext, wasmUrl?: string)
             if (!slot) {
                 return;
             }
-            const view = slot.view;
+            // Read under the slot seqlock (audit RT-2): without it a poll could pair
+            // a gate state with a latency reported from a different quantum. Built
+            // once, outside the poll, since it retains the last consistent snapshot.
+            const readMeter = createTelemetryReader({ slot, project: projectGrinderMeter });
             const poll = () => {
-                cb({
-                    inputDb: view[GRINDER_IDX.inputDb] ?? 0,
-                    preampDb: view[GRINDER_IDX.preampDb] ?? 0,
-                    powerAmpDb: view[GRINDER_IDX.powerAmpDb] ?? 0,
-                    outputDb: view[GRINDER_IDX.outputDb] ?? 0,
-                    gateOpen: view[GRINDER_IDX.gateOpen] ?? 0,
-                    gateEnvelopeDb: view[GRINDER_IDX.gateEnvelopeDb] ?? 0,
-                    sagVoltage: view[GRINDER_IDX.sagVoltage] ?? 0,
-                    latency: view[GRINDER_IDX.latency] ?? 0,
-                    neuralCpuPercent: view[GRINDER_IDX.neuralCpuPercent] ?? 0,
-                    neuralWarmupProgress: view[GRINDER_IDX.neuralWarmupProgress] ?? 0,
-                });
+                cb(readMeter());
                 meterRafId = requestAnimationFrame(poll);
             };
             meterRafId = requestAnimationFrame(poll);

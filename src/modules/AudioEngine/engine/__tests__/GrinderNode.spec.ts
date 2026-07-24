@@ -192,7 +192,10 @@ describe('createGrinderNode', () => {
             sab: {} as SharedArrayBuffer,
             byteOffset: 0,
             view,
-            seqView: new Int32Array(6),
+            // Full-length seqlock view: the counter lives at the last slot index
+            // (31), so the reader needs the whole slot even when the float view
+            // under test is deliberately short.
+            seqView: new Int32Array(32),
         });
         const rafCallbacks: FrameRequestCallback[] = [];
         vi.stubGlobal('requestAnimationFrame', (cb: FrameRequestCallback) => {

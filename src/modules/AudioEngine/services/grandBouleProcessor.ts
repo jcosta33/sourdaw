@@ -19,7 +19,16 @@
 const WRITE_HEAD_IDX = 0;
 const READ_HEAD_IDX = 1;
 
-type GrandBouleMsg = { type: 'init'; sab: SharedArrayBuffer };
+/**
+ * Int32 slot indices of the shared dropout SAB (audit RT-10) — mirrored by
+ * literal from `engine/dropoutCounter.ts`, since worklet code stays isolated
+ * from app modules.
+ */
+const DROPOUT_BLOCKS_IDX = 0;
+const DROPOUT_SILENT_FRAMES_IDX = 1;
+const DROPOUT_LAST_FRAME_IDX = 2;
+
+type GrandBouleMsg = { type: 'init'; sab: SharedArrayBuffer; dropoutSab?: SharedArrayBuffer };
 
 /**
  * Acquire-read one block of stereo frames from the SPSC ring into `out0`/`out1`.
@@ -78,15 +87,39 @@ class GrandBouleProcessor extends AudioWorkletProcessor {
     _rightRing: Float32Array | null = null;
     _ringFrames = 0;
     _ready = false;
+    /** Shared dropout counters (audit RT-10); null when the host supplied none. */
+    _dropoutInts: Int32Array | null = null;
+    /**
+     * True once the ring has delivered at least one full block. Starvation
+     * before that is the startup pre-roll, not a dropout, and is not counted.
+     */
+    _hasDelivered = false;
 
     constructor() {
         super();
         this.port.onmessage = (event: MessageEvent<GrandBouleMsg>) => {
             const msg = event.data;
             if (msg.type === 'init' && !this._ready) {
+                if (msg.dropoutSab) {
+                    this._dropoutInts = new Int32Array(msg.dropoutSab);
+                }
                 this._initSab(msg.sab);
             }
         };
+    }
+
+    /**
+     * Record one detected underrun. RT-safe: three `Atomics` ops on an
+     * already-mapped view — no allocation, no lock, no port send.
+     */
+    _recordUnderrun(frames: number): void {
+        const counters = this._dropoutInts;
+        if (!counters) {
+            return;
+        }
+        Atomics.add(counters, DROPOUT_BLOCKS_IDX, 1);
+        Atomics.add(counters, DROPOUT_SILENT_FRAMES_IDX, frames);
+        Atomics.store(counters, DROPOUT_LAST_FRAME_IDX, currentFrame | 0);
     }
 
     _initSab(sab: SharedArrayBuffer): void {
@@ -132,9 +165,15 @@ class GrandBouleProcessor extends AudioWorkletProcessor {
         );
 
         if (consumed === 0) {
-            // Underrun — output silence. The engine worker will catch up.
+            // Underrun — output silence. The engine worker will catch up. This
+            // used to vanish without a trace; now it lands in the shared dropout
+            // counters so the glitch is diagnosable after the fact (audit RT-10).
+            if (this._hasDelivered) {
+                this._recordUnderrun(frames);
+            }
             return true;
         }
+        this._hasDelivered = true;
 
         // Release the read head only after the frames have been copied out.
         Atomics.store(this._controlInts, READ_HEAD_IDX, nextReadHead);

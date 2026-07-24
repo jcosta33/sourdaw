@@ -9,6 +9,7 @@
 
 import { BacteriaInstance, initSync } from '../wasm/daw_dsp.js';
 
+import { beginTelemetryPublish, endTelemetryPublish } from './telemetrySeqlock';
 import { WasmView } from './wasmView';
 
 /** Bacteria passes param names through as-is (Rust engine uses camelCase matching). */
@@ -62,6 +63,8 @@ class BacteriaProcessor extends AudioWorkletProcessor {
     _faulted = false;
     _meterCounter = 0;
     _sabView: Float32Array | null = null;
+    /** Int32 view over the same slot bytes — carries the seqlock counter (RT-2). */
+    _sabSeqView: Int32Array | null = null;
     // Cached WASM linear-memory views — reused across render quanta so process()
     // performs no per-block Float32Array allocation (audit RT-1); each revalidates
     // on a memory.grow() buffer-identity change (audit RT-7). See wasmView.ts.
@@ -83,6 +86,7 @@ class BacteriaProcessor extends AudioWorkletProcessor {
                     this._initWasm(msg.wasmBytes);
                 } else if (msg.type === 'init-sab') {
                     this._sabView = new Float32Array(msg.sab, msg.byteOffset, 32);
+                    this._sabSeqView = new Int32Array(msg.sab, msg.byteOffset, 32);
                 } else if (msg.type === 'param' && this._instance !== null && !this._faulted) {
                     const rustName = PARAM_MAP[msg.name] ?? msg.name;
                     const oldLatency = this._instance.get_latency_samples();
@@ -168,6 +172,11 @@ class BacteriaProcessor extends AudioWorkletProcessor {
             if (this._meterCounter >= 8) {
                 this._meterCounter = 0;
                 if (this._sabView) {
+                    // Seqlock publish (audit RT-2): counter odd, the header floats
+                    // plus the 6-band blit, counter even. Without the bracket a
+                    // poll could mix bands from two blocks — the exact tear the
+                    // slot layout documents.
+                    beginTelemetryPublish(this._sabSeqView);
                     this._sabView[0] = inst.get_input_db();
                     this._sabView[1] = inst.get_output_db();
                     this._sabView[2] = inst.get_latency_samples();
@@ -177,6 +186,7 @@ class BacteriaProcessor extends AudioWorkletProcessor {
                     const bandPtr = inst.get_band_levels_ptr();
                     const bandView = this._bandLevelsView.get(outMem, bandPtr, 6);
                     this._sabView.set(bandView, 3);
+                    endTelemetryPublish(this._sabSeqView);
                 }
             }
         } catch (error) {

@@ -13,6 +13,27 @@ export type AudioEngineState = {
  * `AudioContext.resume()` (so a gesture handler can re-arm / warn the user)
  * instead of those failures being swallowed.
  */
+/**
+ * Runtime dropout tally (audit RT-10) — dropouts the engine itself *detected*
+ * on the worklet side, not every glitch the user heard.
+ *
+ * Counted: render quanta where a device could not source audio and emitted
+ * silence (today: Grand Boule ring-buffer starvation, excluding startup
+ * pre-roll). Not counted: host/driver xruns, GC pauses, over-budget renders
+ * that still produced samples, or starvation inside a third-party plugin host —
+ * none of those are observable from `AudioWorkletGlobalScope`. Non-zero always
+ * means a real problem; zero is not a clean bill of health. See
+ * `engine/dropoutCounter.ts` for the full scope note.
+ */
+export type AudioEngineDropoutStats = {
+    /** Render quanta that emitted silence because the device had no audio to play. */
+    detectedUnderrunBlocks: number;
+    /** Total frames of silence emitted by those quanta. */
+    silentFrames: number;
+    /** `currentFrame` at the most recent detected underrun; 0 when there has been none. */
+    lastUnderrunAtFrame: number;
+};
+
 export type AudioEngineHealth = {
     /** True once every worklet module has loaded successfully. */
     workletReady: boolean;
@@ -20,6 +41,8 @@ export type AudioEngineHealth = {
     lastInitError: Error | null;
     /** The error from the last failed `resume()`, or `null` if the last attempt succeeded / none ran. */
     lastResumeError: Error | null;
+    /** Detected-dropout tally read straight from the shared counters (audit RT-10). */
+    dropouts: AudioEngineDropoutStats;
 };
 
 type ToasterScheduledPadParam = {

@@ -9,6 +9,7 @@
 
 import { initSync, GlutenInstance } from '../wasm/daw_dsp.js';
 
+import { beginTelemetryPublish, endTelemetryPublish } from './telemetrySeqlock';
 import { WasmView } from './wasmView';
 
 /** Map camelCase param names from TypeScript to snake_case for Rust. */
@@ -73,6 +74,8 @@ class GlutenProcessor extends AudioWorkletProcessor {
     _faulted = false;
     _meterCounter = 0;
     _sabView: Float32Array | null = null;
+    /** Int32 view over the same slot bytes — carries the seqlock counter (RT-2). */
+    _sabSeqView: Int32Array | null = null;
     // Cached WASM linear-memory views — reused across render quanta so process()
     // performs no per-block Float32Array allocation (audit RT-1); each revalidates
     // on a memory.grow() buffer-identity change (audit RT-7). See wasmView.ts.
@@ -95,6 +98,7 @@ class GlutenProcessor extends AudioWorkletProcessor {
                     this._initWasm(msg.wasmBytes);
                 } else if (msg.type === 'init-sab') {
                     this._sabView = new Float32Array(msg.sab, msg.byteOffset, 32);
+                    this._sabSeqView = new Int32Array(msg.sab, msg.byteOffset, 32);
                 } else if (msg.type === 'param' && this._instance !== null && !this._faulted) {
                     const rustName = PARAM_MAP[msg.name] ?? msg.name;
                     const oldLatency = this._instance.get_latency_samples();
@@ -196,12 +200,18 @@ class GlutenProcessor extends AudioWorkletProcessor {
             if (this._meterCounter >= 8) {
                 this._meterCounter = 0;
                 if (this._sabView) {
+                    // Seqlock publish (audit RT-2): counter odd, six non-atomic
+                    // float stores, counter even. A main-thread poll that lands
+                    // inside this window retries instead of consuming a snapshot
+                    // torn across two meter blocks.
+                    beginTelemetryPublish(this._sabSeqView);
                     this._sabView[0] = inst.get_gr_db();
                     this._sabView[1] = inst.get_input_db();
                     this._sabView[2] = inst.get_output_db();
                     this._sabView[3] = inst.get_crest();
                     this._sabView[4] = inst.get_phase_corr();
                     this._sabView[5] = inst.get_latency_samples();
+                    endTelemetryPublish(this._sabSeqView);
                 }
             }
         } catch (error) {

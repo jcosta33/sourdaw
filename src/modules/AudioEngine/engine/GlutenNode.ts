@@ -12,7 +12,7 @@ import { createReadyHandshake, ensureWorkletRegistered, fetchWasmBinary } from '
 import glutenProcessorUrl from '../services/glutenProcessor.ts?worker&url';
 
 import { requireSharedArrayBuffer } from './pluginHostingErrors';
-import { telemetryAllocator, GLUTEN_IDX, type TelemetrySlot } from './telemetryAllocator';
+import { telemetryAllocator, createTelemetryReader, GLUTEN_IDX, type TelemetrySlot } from './telemetryAllocator';
 
 // Canonical combined DSP build — the legacy /wasm/gluten/ snapshot goes stale
 // on every daw-dsp rebuild and its wasm-bindgen symbols stop matching the
@@ -27,6 +27,18 @@ export type GlutenMeterData = {
     phaseCorr: number;
     latency: number;
 };
+
+/** Slot floats → meter snapshot. Pure: the seqlock reader may re-run it on retry. */
+function projectGlutenMeter(view: Float32Array): GlutenMeterData {
+    return {
+        grDb: view[GLUTEN_IDX.grDb] ?? 0,
+        inputDb: view[GLUTEN_IDX.inputDb] ?? 0,
+        outputDb: view[GLUTEN_IDX.outputDb] ?? 0,
+        crest: view[GLUTEN_IDX.crest] ?? 0,
+        phaseCorr: view[GLUTEN_IDX.phaseCorr] ?? 0,
+        latency: view[GLUTEN_IDX.latency] ?? 0,
+    };
+}
 
 export type GlutenNodeResult = {
     workletNode: AudioWorkletNode;
@@ -107,16 +119,13 @@ export async function createGlutenNode(ctx: BaseAudioContext, wasmUrl?: string):
             if (!slot) {
                 return;
             }
-            const view = slot.view;
+            // Read under the slot seqlock (audit RT-2): the worklet publishes the
+            // six fields with non-atomic stores, so a raw read here could pair a
+            // GR value with a crest from a different meter block. Built once,
+            // outside the poll, since it retains the last consistent snapshot.
+            const readMeter = createTelemetryReader({ slot, project: projectGlutenMeter });
             const poll = () => {
-                cb({
-                    grDb: view[GLUTEN_IDX.grDb] ?? 0,
-                    inputDb: view[GLUTEN_IDX.inputDb] ?? 0,
-                    outputDb: view[GLUTEN_IDX.outputDb] ?? 0,
-                    crest: view[GLUTEN_IDX.crest] ?? 0,
-                    phaseCorr: view[GLUTEN_IDX.phaseCorr] ?? 0,
-                    latency: view[GLUTEN_IDX.latency] ?? 0,
-                });
+                cb(readMeter());
                 meterRafId = requestAnimationFrame(poll);
             };
             meterRafId = requestAnimationFrame(poll);

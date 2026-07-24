@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 import { createMockAudioContext, type MockAudioContext } from '../../../../helpers/__tests__/audioContext.mock';
+import { DROPOUT_IDX, dropoutCounters } from '../../engine/dropoutCounter';
 import { createAudioEngine } from '../createWebAudioEngine';
 
 import type { AdjustmentLayerTickInput, AudioEngine } from '../../models/AudioEngineState';
@@ -185,18 +186,42 @@ describe('AudioEngine — public API delegation and lifecycle', () => {
             }
         );
         engine = createAudioEngine(asAudioContext(mockCtx));
+        // The dropout counters are a process-wide singleton backed by one SAB —
+        // clear the tally so specs do not inherit each other's counts.
+        dropoutCounters.reset();
     });
 
     afterEach(() => {
         vi.unstubAllGlobals();
     });
 
-    it('getHealth starts clean: worklets not ready, no init or resume errors', () => {
+    it('getHealth starts clean: worklets not ready, no init or resume errors, no dropouts', () => {
         expect(engine.getHealth()).toEqual({
             workletReady: false,
             lastInitError: null,
             lastResumeError: null,
+            // Audit RT-10 — runtime dropout tally, zero before anything renders.
+            dropouts: { detectedUnderrunBlocks: 0, silentFrames: 0, lastUnderrunAtFrame: 0 },
         });
+    });
+
+    it('getHealth reports the dropout tally the render thread wrote to the shared counters', () => {
+        // Stand in for the worklet: write the shared SAB the same way
+        // grandBouleProcessor does on a detected ring-buffer underrun.
+        const workletView = new Int32Array(dropoutCounters.getSab()!);
+        Atomics.add(workletView, DROPOUT_IDX.detectedUnderrunBlocks, 2);
+        Atomics.add(workletView, DROPOUT_IDX.silentFrames, 256);
+        Atomics.store(workletView, DROPOUT_IDX.lastUnderrunAtFrame, 9_600);
+
+        // Read through the health surface — no message round-trip, no polling.
+        expect(engine.getHealth().dropouts).toEqual({
+            detectedUnderrunBlocks: 2,
+            silentFrames: 256,
+            lastUnderrunAtFrame: 9_600,
+        });
+
+        dropoutCounters.reset();
+        expect(engine.getHealth().dropouts.detectedUnderrunBlocks).toBe(0);
     });
 
     it('suspend suspends a running context and skips an already-suspended one', async () => {

@@ -10,6 +10,7 @@
 import { initSync, GrinderInstance } from '../wasm/daw_dsp.js';
 
 import grinderAudioParamContract from './grinderAudioParamContract.json';
+import { beginTelemetryPublish, endTelemetryPublish } from './telemetrySeqlock';
 
 type GrinderAudioParamDescriptor = {
     name: string;
@@ -250,6 +251,8 @@ class GrinderProcessor extends AudioWorkletProcessor {
     _faulted = false;
     _meterCounter = 0;
     _sabView: Float32Array | null = null;
+    /** Int32 view over the same slot bytes — carries the seqlock counter (RT-2). */
+    _sabSeqView: Int32Array | null = null;
 
     constructor() {
         super();
@@ -263,6 +266,7 @@ class GrinderProcessor extends AudioWorkletProcessor {
                     this._initWasm(msg.wasmBytes);
                 } else if (msg.type === 'init-sab') {
                     this._sabView = new Float32Array(msg.sab, msg.byteOffset, 32);
+                    this._sabSeqView = new Int32Array(msg.sab, msg.byteOffset, 32);
                 } else if (msg.type === 'param' && this._instance !== null && !this._faulted) {
                     const rustName = PARAM_MAP[msg.name] ?? msg.name;
                     const oldLatency = this._instance.get_latency_samples();
@@ -451,6 +455,10 @@ class GrinderProcessor extends AudioWorkletProcessor {
             if (this._meterCounter >= 8) {
                 this._meterCounter = 0;
                 if (this._sabView) {
+                    // Seqlock publish (audit RT-2): counter odd, ten non-atomic
+                    // float stores, counter even. Prevents a poll from pairing a
+                    // gate state with a latency from a different quantum.
+                    beginTelemetryPublish(this._sabSeqView);
                     this._sabView[0] = inst.get_input_db();
                     this._sabView[1] = inst.get_preamp_db();
                     this._sabView[2] = inst.get_power_amp_db();
@@ -461,6 +469,7 @@ class GrinderProcessor extends AudioWorkletProcessor {
                     this._sabView[7] = inst.get_latency_samples();
                     this._sabView[8] = inst.get_neural_cpu_percent();
                     this._sabView[9] = inst.get_neural_warmup_progress();
+                    endTelemetryPublish(this._sabSeqView);
                 }
             }
         } catch (error) {

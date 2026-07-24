@@ -4,6 +4,7 @@ import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { createAdjustmentLayerRuntime, type AdjustmentLayerRuntime } from '../engine/AdjustmentLayerRuntime';
 import { BusNode } from '../engine/BusNode';
+import { dropoutCounters } from '../engine/dropoutCounter';
 import { TrackNode } from '../engine/TrackNode';
 import meteringProcessorUrl from '../services/meteringProcessor.ts?worker&url';
 import recordingProcessorUrl from '../services/recordingProcessor.ts?worker&url';
@@ -331,6 +332,10 @@ class AudioEngineImpl implements AudioEngine {
             workletReady: this.workletReady,
             lastInitError: this.lastInitError,
             lastResumeError: this.lastResumeError,
+            // Read straight out of the shared counters (audit RT-10) — no message
+            // round-trip, no polling of the audio thread. See dropoutCounter.ts
+            // for exactly which dropouts this does and does not capture.
+            dropouts: dropoutCounters.read(),
         };
     }
 
