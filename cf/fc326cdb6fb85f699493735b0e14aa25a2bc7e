@@ -1,0 +1,19 @@
+src/modules/DawInterchange/useCases/__tests__/parseProjectXml.spec.ts
+  s_0d39f3a4a4357a::t_f3aaf1ac7c39f2 13-20,73-388
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "cffc326cdb6fb85f699493735b0e14aa25a2bc7e",
+  "prompts": {},
+  "sessions": {
+    "s_0d39f3a4a4357a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "60da6a2e-7d79-4d98-8624-e993f5a9f94e",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
