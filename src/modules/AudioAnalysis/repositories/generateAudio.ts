@@ -1,6 +1,6 @@
 import { inject } from '#/infra/di/inject';
 import { logger } from '#/infra/logger/appLogger';
-import { isTauri, tauriInvoke } from '#/utils/tauriBridge';
+import { isTauri, readFileBytes, tauriInvoke } from '#/utils/tauriBridge';
 
 type GenerateAudioResult = {
     wav_path: string;
@@ -31,8 +31,11 @@ export const generateAudio = inject({ logger })(
 
             logger.info(`[Audio AI] Generated: ${result.wav_path} (${String(result.duration_seconds)}s)`);
 
-            const fileBytes = (await tauriInvoke('read_audio_file', { path: result.wav_path })) as Uint8Array;
-            const wavBuffer = fileBytes.buffer as ArrayBuffer;
+            const fileBytes = await readFileBytes({ path: result.wav_path });
+            const wavBuffer = fileBytes.buffer.slice(
+                fileBytes.byteOffset,
+                fileBytes.byteOffset + fileBytes.byteLength
+            ) as ArrayBuffer;
             const audioContext = new AudioContext();
             const audioBuffer = await audioContext.decodeAudioData(wavBuffer);
             await audioContext.close();

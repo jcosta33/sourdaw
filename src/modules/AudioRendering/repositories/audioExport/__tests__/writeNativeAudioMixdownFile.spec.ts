@@ -28,13 +28,18 @@ describe('writeNativeAudioMixdownFile', () => {
             selectedFilePath: '/exports/Sourdaw_Bake_1.wav',
         });
 
-        expect(invoke).toHaveBeenNthCalledWith(1, 'write_audio_file', {
-            path: '/exports/Sourdaw_Bake_1.wav',
-            data: [1, 2, 3],
+        expect(invoke).toHaveBeenNthCalledWith(1, 'write_file_bytes', expect.any(ArrayBuffer), {
+            headers: { 'x-sourdaw-path': encodeURIComponent('/exports/Sourdaw_Bake_1.wav') },
         });
-        expect(invoke).toHaveBeenNthCalledWith(2, 'write_audio_file', {
-            path: '/exports/Sourdaw_Bake_1.mp3',
-            data: [4, 5, 6],
+        expect(invoke).toHaveBeenNthCalledWith(2, 'write_file_bytes', expect.any(ArrayBuffer), {
+            headers: { 'x-sourdaw-path': encodeURIComponent('/exports/Sourdaw_Bake_1.mp3') },
         });
+
+        const [firstCall, secondCall] = vi.mocked(invoke).mock.calls as unknown as [string, ArrayBuffer][];
+        if (!firstCall || !secondCall) {
+            throw new Error('Expected two native mixdown writes');
+        }
+        expect(new Uint8Array(firstCall[1])).toEqual(wavBytes);
+        expect(new Uint8Array(secondCall[1])).toEqual(mp3Bytes);
     });
 });

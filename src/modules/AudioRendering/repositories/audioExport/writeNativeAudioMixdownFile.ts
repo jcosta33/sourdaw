@@ -1,4 +1,4 @@
-import { invoke } from '@tauri-apps/api/core';
+import { writeFileBytes } from '#/utils/tauriBridge';
 
 type WriteNativeAudioMixdownFileInput = {
     bytes: Uint8Array;
@@ -14,5 +14,5 @@ export async function writeNativeAudioMixdownFile({
     selectedFilePath,
 }: WriteNativeAudioMixdownFileInput): WriteNativeAudioMixdownFileOutput {
     const adjustedPath = selectedFilePath.replace(/\.[a-z0-9]+$/i, `.${format}`);
-    await invoke('write_audio_file', { path: adjustedPath, data: Array.from(bytes) });
+    await writeFileBytes({ path: adjustedPath, bytes });
 }

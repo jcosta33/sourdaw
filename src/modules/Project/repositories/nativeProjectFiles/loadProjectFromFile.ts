@@ -1,6 +1,8 @@
+import { readFileBytes } from '#/utils/tauriBridge';
+
 import { type ProjectData } from '../../models/ProjectData';
 
-import { tauriInvoke } from './tauriInvoke';
+import { isTauriAvailable } from './helpers';
 
 /**
  * Load a project from the native filesystem.
@@ -9,8 +11,10 @@ import { tauriInvoke } from './tauriInvoke';
  * @returns Parsed project state
  */
 export async function loadProjectFromFile(path: string): Promise<ProjectData> {
-    const bytes = await tauriInvoke<number[]>('read_audio_file', { path });
-    const decoder = new TextDecoder();
-    const json = decoder.decode(new Uint8Array(bytes));
+    if (!isTauriAvailable()) {
+        throw new Error('Tauri not available');
+    }
+    const bytes = await readFileBytes({ path });
+    const json = new TextDecoder().decode(bytes);
     return JSON.parse(json) as ProjectData;
 }

@@ -30,9 +30,11 @@ describe('writeNativeAudioStemFile', () => {
         });
 
         expect(join).toHaveBeenCalledWith('/exports', 'Kick.wav');
-        expect(invoke).toHaveBeenCalledWith('write_audio_file', {
-            path: '/exports/Kick.wav',
-            data: [7, 8, 9],
+        expect(invoke).toHaveBeenCalledWith('write_file_bytes', expect.any(ArrayBuffer), {
+            headers: { 'x-sourdaw-path': encodeURIComponent('/exports/Kick.wav') },
         });
+
+        const [, body] = vi.mocked(invoke).mock.calls[0] as unknown as [string, ArrayBuffer];
+        expect(new Uint8Array(body)).toEqual(new Uint8Array([7, 8, 9]));
     });
 });

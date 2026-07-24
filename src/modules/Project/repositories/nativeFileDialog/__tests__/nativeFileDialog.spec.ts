@@ -1,9 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-import { invoke } from '@tauri-apps/api/core';
 import { save } from '@tauri-apps/plugin-dialog';
 
-import { isTauri } from '#/utils/tauriBridge';
+import { isTauri, readFileBytes } from '#/utils/tauriBridge';
 
 import { openViaBrowser } from '../helpers';
 import { openFileDialog } from '../openFileDialog';
@@ -13,6 +12,7 @@ import { saveFileDialog } from '../saveFileDialog';
 
 vi.mock('#/utils/tauriBridge', () => ({
     isTauri: vi.fn(),
+    readFileBytes: vi.fn().mockResolvedValue(new Uint8Array([1, 2, 3])),
 }));
 
 vi.mock('../helpers', () => ({
@@ -77,11 +77,14 @@ describe('nativeFileDialog', () => {
             vi.mocked(isTauri).mockReturnValue(true);
             vi.mocked(openViaTauri).mockResolvedValue(['/path/test.wav']);
 
+            vi.mocked(readFileBytes).mockResolvedValue(new Uint8Array([1, 2, 3]));
+
             const result = await pickFiles();
             expect(result).toHaveLength(1);
             expect(result![0]).toBeInstanceOf(File);
             expect(result![0]!.name).toBe('test.wav');
-            expect(invoke).toHaveBeenCalledWith('read_audio_file', { path: '/path/test.wav' });
+            expect(result![0]!.size).toBe(3);
+            expect(readFileBytes).toHaveBeenCalledWith({ path: '/path/test.wav' });
         });
 
         it('should derive File names from native Windows Tauri paths', async () => {
@@ -92,13 +95,13 @@ describe('nativeFileDialog', () => {
 
             expect(result).toHaveLength(1);
             expect(result![0]!.name).toBe('kick.wav');
-            expect(invoke).toHaveBeenCalledWith('read_audio_file', { path: 'C:\\Users\\jose\\Samples\\kick.wav' });
+            expect(readFileBytes).toHaveBeenCalledWith({ path: 'C:\\Users\\jose\\Samples\\kick.wav' });
         });
 
         it('should reject native read failures after a Tauri selection without opening a browser picker', async () => {
             vi.mocked(isTauri).mockReturnValue(true);
             vi.mocked(openViaTauri).mockResolvedValue(['/path/test.wav']);
-            vi.mocked(invoke).mockRejectedValue(new Error('native read denied'));
+            vi.mocked(readFileBytes).mockRejectedValue(new Error('native read denied'));
             const createElementSpy = vi.spyOn(document, 'createElement');
 
             try {

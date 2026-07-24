@@ -1,6 +1,8 @@
+import { writeFileBytes } from '#/utils/tauriBridge';
+
 import { type ProjectData } from '../../models/ProjectData';
 
-import { tauriInvoke } from './tauriInvoke';
+import { isTauriAvailable } from './helpers';
 
 /**
  * Save a project to the native filesystem.
@@ -9,8 +11,10 @@ import { tauriInvoke } from './tauriInvoke';
  * @param projectData - Serialized project state (the same JSON structure used by localStorage)
  */
 export async function saveProjectToFile(path: string, projectData: ProjectData): Promise<void> {
+    if (!isTauriAvailable()) {
+        throw new Error('Tauri not available');
+    }
     const json = JSON.stringify(projectData, null, 2);
-    const encoder = new TextEncoder();
-    const bytes = Array.from(encoder.encode(json));
-    await tauriInvoke('write_audio_file', { path, data: bytes });
+    const bytes = new TextEncoder().encode(json);
+    await writeFileBytes({ path, bytes });
 }

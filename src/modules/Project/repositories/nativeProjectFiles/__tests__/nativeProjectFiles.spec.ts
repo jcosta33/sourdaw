@@ -1,5 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+import { writeFileBytes } from '#/utils/tauriBridge';
+
 import { getProjectDirectory } from '../getProjectDirectory';
 import { isTauriAvailable } from '../helpers';
 import { isNativeFileSystemAvailable } from '../isNativeFileSystemAvailable';
@@ -11,6 +13,10 @@ vi.mock('../helpers', () => ({
 
 vi.mock('../tauriInvoke', () => ({
     tauriInvoke: vi.fn(),
+}));
+
+vi.mock('#/utils/tauriBridge', () => ({
+    writeFileBytes: vi.fn(),
 }));
 
 describe('nativeProjectFiles repository', () => {
@@ -38,7 +44,10 @@ describe('nativeProjectFiles repository', () => {
             expect(tauriInvoke).toHaveBeenCalledWith('list_directory', {
                 path: '/home/user/Documents/Sourdaw Projects',
             });
-            expect(tauriInvoke).toHaveBeenCalledWith('write_audio_file', expect.anything());
+            expect(writeFileBytes).toHaveBeenCalledWith({
+                path: '/home/user/Documents/Sourdaw Projects/.sourdaw-projects',
+                bytes: new TextEncoder().encode('Sourdaw Projects Directory'),
+            });
         });
 
         it('should not write a marker when the directory already exists', async () => {
@@ -62,7 +71,7 @@ describe('nativeProjectFiles repository', () => {
             expect(tauriInvoke).toHaveBeenCalledWith('list_directory', {
                 path: '/home/user/Documents/Sourdaw Projects',
             });
-            expect(tauriInvoke).not.toHaveBeenCalledWith('write_audio_file', expect.anything());
+            expect(writeFileBytes).not.toHaveBeenCalled();
         });
 
         it('should fallback to /tmp if home dir fails', async () => {
