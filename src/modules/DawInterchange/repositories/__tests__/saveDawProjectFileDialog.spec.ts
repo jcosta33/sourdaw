@@ -45,9 +45,11 @@ describe('DAWproject native repositories', () => {
 
         await writeDawProjectFile({ filePath: '/tmp/session.dawproject', bytes });
 
-        expect(invoke).toHaveBeenCalledWith('write_audio_file', {
-            path: '/tmp/session.dawproject',
-            data: [1, 2, 3],
+        expect(invoke).toHaveBeenCalledWith('write_file_bytes', expect.any(ArrayBuffer), {
+            headers: { 'x-sourdaw-path': encodeURIComponent('/tmp/session.dawproject') },
         });
+
+        const [, body] = vi.mocked(invoke).mock.calls[0] as unknown as [string, ArrayBuffer];
+        expect(new Uint8Array(body)).toEqual(bytes);
     });
 });

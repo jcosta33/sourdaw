@@ -3,13 +3,14 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { createMock } from '#/infra/di/testing/createMock';
 import { injectDependencies } from '#/infra/di/testing/injectDependencies';
 import { type Logger } from '#/infra/logger/types';
-import { isTauri, tauriInvoke } from '#/utils/tauriBridge';
+import { isTauri, readFileBytes, tauriInvoke } from '#/utils/tauriBridge';
 
 import { generateAudio } from '../generateAudio';
 
 vi.mock('#/utils/tauriBridge', () => ({
     isTauri: vi.fn(),
     tauriInvoke: vi.fn(),
+    readFileBytes: vi.fn(),
 }));
 
 type TestAudioContextInstance = {
@@ -60,13 +61,12 @@ describe('generateAudio', () => {
         const audioContexts = installAudioContextStub(decodedBuffer);
         const wavBytes = new Uint8Array([1, 2, 3, 4]);
 
-        vi.mocked(tauriInvoke)
-            .mockResolvedValueOnce({
-                wav_path: '/tmp/generated.wav',
-                duration_seconds: 8,
-                sample_rate: 48000,
-            })
-            .mockResolvedValueOnce(wavBytes);
+        vi.mocked(tauriInvoke).mockResolvedValueOnce({
+            wav_path: '/tmp/generated.wav',
+            duration_seconds: 8,
+            sample_rate: 48000,
+        });
+        vi.mocked(readFileBytes).mockResolvedValue(wavBytes);
 
         const logger = createMock<Logger>();
         injectDependencies(generateAudio, { logger });
@@ -81,13 +81,14 @@ describe('generateAudio', () => {
             durationBars: null,
             durationSeconds: 8,
         });
-        expect(tauriInvoke).toHaveBeenNthCalledWith(2, 'read_audio_file', { path: '/tmp/generated.wav' });
+        expect(readFileBytes).toHaveBeenCalledWith({ path: '/tmp/generated.wav' });
 
         const audioContext = audioContexts[0];
         if (!audioContext) {
             throw new Error('Expected generateAudio to create an AudioContext');
         }
-        expect(audioContext.decodeAudioData).toHaveBeenCalledWith(wavBytes.buffer);
+        const decodedArg = vi.mocked(audioContext.decodeAudioData).mock.calls[0]?.[0] as ArrayBuffer;
+        expect(new Uint8Array(decodedArg)).toEqual(wavBytes);
         expect(audioContext.close).toHaveBeenCalledTimes(1);
     });
 });

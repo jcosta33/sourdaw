@@ -3,7 +3,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { createMock } from '#/infra/di/testing/createMock';
 import { injectDependencies } from '#/infra/di/testing/injectDependencies';
 import { type Logger } from '#/infra/logger/types';
-import { isTauri, tauriInvoke } from '#/utils/tauriBridge';
+import { isTauri, readFileBytes, tauriInvoke, writeFileBytes } from '#/utils/tauriBridge';
 
 import { separateStemsBrowser } from '../browserStemSeparation';
 import { separateStems } from '../separateStems';
@@ -11,6 +11,8 @@ import { separateStems } from '../separateStems';
 vi.mock('#/utils/tauriBridge', () => ({
     isTauri: vi.fn(),
     tauriInvoke: vi.fn(),
+    readFileBytes: vi.fn(),
+    writeFileBytes: vi.fn(),
 }));
 
 vi.mock('../browserStemSeparation', () => ({
@@ -42,6 +44,9 @@ describe('separateStems', () => {
     beforeEach(() => {
         vi.mocked(isTauri).mockReset();
         vi.mocked(tauriInvoke).mockReset();
+        vi.mocked(readFileBytes).mockReset();
+        vi.mocked(writeFileBytes).mockReset();
+        vi.mocked(writeFileBytes).mockResolvedValue(undefined);
         vi.mocked(separateStemsBrowser).mockReset();
         vi.mocked(separateStemsBrowser).mockResolvedValue({});
     });
@@ -73,10 +78,7 @@ describe('separateStems', () => {
         const audioData = new Uint8Array([9, 8, 7, 6]).buffer;
         const vocalsBytes = new Uint8Array([1, 2, 3, 4]);
 
-        vi.mocked(tauriInvoke).mockImplementation((command, payload) => {
-            if (command === 'write_audio_file') {
-                return Promise.resolve(null);
-            }
+        vi.mocked(tauriInvoke).mockImplementation((command) => {
             if (command === 'separate_stems') {
                 return Promise.resolve({
                     stem_paths: {
@@ -86,13 +88,14 @@ describe('separateStems', () => {
                     processing_time_ms: 25,
                 });
             }
-            if (command === 'read_audio_file') {
-                if (payload?.path === '/tmp/vocals.wav') {
-                    return Promise.resolve(vocalsBytes);
-                }
-                return Promise.reject(new Error('missing drum stem'));
-            }
             return Promise.reject(new Error(`Unexpected command: ${command}`));
+        });
+
+        vi.mocked(readFileBytes).mockImplementation(({ path }) => {
+            if (path === '/tmp/vocals.wav') {
+                return Promise.resolve(vocalsBytes);
+            }
+            return Promise.reject(new Error('missing drum stem'));
         });
 
         const logger = createMock<Logger>();
@@ -101,18 +104,18 @@ describe('separateStems', () => {
         const result = await separateStems(audioData, ['vocals', 'drums']);
 
         expect(result).toEqual({ vocals: decodedBuffer });
-        expect(tauriInvoke).toHaveBeenNthCalledWith(1, 'write_audio_file', {
+        expect(writeFileBytes).toHaveBeenCalledWith({
             path: '__sourdaw_stems_input_42.wav',
-            data: new Uint8Array(audioData),
+            bytes: new Uint8Array(audioData),
         });
-        expect(tauriInvoke).toHaveBeenNthCalledWith(2, 'separate_stems', {
+        expect(tauriInvoke).toHaveBeenCalledWith('separate_stems', {
             request: {
                 audio_path: '__sourdaw_stems_input_42.wav',
                 stems: ['vocals', 'drums'],
             },
         });
-        expect(tauriInvoke).toHaveBeenNthCalledWith(3, 'read_audio_file', { path: '/tmp/vocals.wav' });
-        expect(tauriInvoke).toHaveBeenNthCalledWith(4, 'read_audio_file', { path: '/tmp/drums.wav' });
+        expect(readFileBytes).toHaveBeenNthCalledWith(1, { path: '/tmp/vocals.wav' });
+        expect(readFileBytes).toHaveBeenNthCalledWith(2, { path: '/tmp/drums.wav' });
 
         const audioContext = audioContexts[0];
         if (!audioContext) {

@@ -1,4 +1,4 @@
-import { invoke } from '@tauri-apps/api/core';
+import { writeFileBytes } from '#/utils/tauriBridge';
 
 type WriteDawProjectFileInput = {
     bytes: Uint8Array;
@@ -8,5 +8,5 @@ type WriteDawProjectFileInput = {
 type WriteDawProjectFileOutput = Promise<void>;
 
 export async function writeDawProjectFile({ bytes, filePath }: WriteDawProjectFileInput): WriteDawProjectFileOutput {
-    await invoke('write_audio_file', { path: filePath, data: Array.from(bytes) });
+    await writeFileBytes({ path: filePath, bytes });
 }

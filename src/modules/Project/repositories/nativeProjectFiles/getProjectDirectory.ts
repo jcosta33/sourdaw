@@ -1,3 +1,5 @@
+import { writeFileBytes } from '#/utils/tauriBridge';
+
 import { tauriInvoke } from './tauriInvoke';
 
 /**
@@ -26,9 +28,9 @@ export async function getProjectDirectory(): Promise<string> {
     // Create on demand by writing a hidden marker (the write also creates the
     // parent directory).
     try {
-        await tauriInvoke('write_audio_file', {
+        await writeFileBytes({
             path: `${projectDir}/.sourdaw-projects`,
-            data: Array.from(new TextEncoder().encode('Sourdaw Projects Directory')),
+            bytes: new TextEncoder().encode('Sourdaw Projects Directory'),
         });
     } catch {
         // Directory creation may fail — that's okay, will use fallback

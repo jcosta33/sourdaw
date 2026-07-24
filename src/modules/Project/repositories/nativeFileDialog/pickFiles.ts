@@ -1,7 +1,5 @@
-import { invoke } from '@tauri-apps/api/core';
-
 import { basename_from_path } from '#/utils/path-basename';
-import { isTauri } from '#/utils/tauriBridge';
+import { isTauri, readFileBytes } from '#/utils/tauriBridge';
 
 import { openViaTauri } from './openViaTauri';
 
@@ -60,33 +58,6 @@ function pickFilesViaBrowser(options: OpenFileOptions): Promise<File[] | null> {
     });
 }
 
-function parseNativeReadFileBytes(rawBytes: unknown): Uint8Array {
-    if (rawBytes instanceof ArrayBuffer) {
-        return new Uint8Array(rawBytes);
-    }
-
-    if (rawBytes instanceof Uint8Array) {
-        return rawBytes;
-    }
-
-    if (!Array.isArray(rawBytes)) {
-        throw new TypeError('read_audio_file returned a non-array payload');
-    }
-
-    const rawByteValues: readonly unknown[] = rawBytes;
-    const bytes = new Uint8Array(rawByteValues.length);
-    let byteIndex = 0;
-    for (const rawByte of rawByteValues) {
-        if (typeof rawByte !== 'number' || !Number.isInteger(rawByte) || rawByte < 0 || rawByte > 255) {
-            throw new TypeError('read_audio_file returned an invalid byte payload');
-        }
-        bytes[byteIndex] = rawByte;
-        byteIndex += 1;
-    }
-
-    return bytes;
-}
-
 function copyBytesToArrayBuffer(bytes: Uint8Array): ArrayBuffer {
     const buffer = new ArrayBuffer(bytes.byteLength);
     new Uint8Array(buffer).set(bytes);
@@ -108,7 +79,7 @@ export async function pickFiles(options: OpenFileOptions = {}): Promise<File[] |
 
         const files: File[] = [];
         for (const param of paths) {
-            const bytes = parseNativeReadFileBytes(await invoke('read_audio_file', { path: param }));
+            const bytes = await readFileBytes({ path: param });
             const name = basename_from_path(param);
             files.push(new File([copyBytesToArrayBuffer(bytes)], name));
         }

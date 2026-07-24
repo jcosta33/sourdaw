@@ -1,5 +1,5 @@
 import { basename_from_path } from '#/utils/path-basename';
-import { tauriInvoke } from '#/utils/tauriBridge';
+import { writeFileBytes } from '#/utils/tauriBridge';
 
 const CRUMBS_DROP_TEMP_DIR = 'crumbs-drops';
 const FALLBACK_FILE_NAME = 'audio-file';
@@ -41,10 +41,7 @@ export async function getDroppedCrumbsFilePath({
     const path = createUniqueCrumbsDropPath(file.name);
     const bytes = new Uint8Array(await file.arrayBuffer());
 
-    await tauriInvoke('write_audio_file', {
-        path,
-        data: Array.from(bytes),
-    });
+    await writeFileBytes({ path, bytes });
 
     return path;
 }

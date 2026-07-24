@@ -38,6 +38,93 @@ pub async fn write_audio_file(path: String, data: Vec<u8>) -> Result<(), String>
     std::fs::write(&file_path, &data).map_err(|e| format!("Failed to write file: {}", e))
 }
 
+/// Header carrying the percent-encoded destination path for `write_file_bytes`.
+const FILE_PATH_HEADER: &str = "x-sourdaw-path";
+
+/// Decode a percent-encoded (`encodeURIComponent`) header value back to a path.
+///
+/// Header values must be printable ASCII, but paths are arbitrary UTF-8, so the
+/// frontend percent-encodes them. Decoding is done here rather than pulling in a
+/// dependency: the grammar is three characters wide and fully specified.
+fn decode_percent_encoded(value: &str) -> Result<String, String> {
+    let raw = value.as_bytes();
+    let mut decoded = Vec::with_capacity(raw.len());
+    let mut index = 0;
+
+    while index < raw.len() {
+        if raw[index] != b'%' {
+            decoded.push(raw[index]);
+            index += 1;
+            continue;
+        }
+
+        if index + 2 >= raw.len() {
+            return Err("Malformed percent-encoded path: truncated escape".to_string());
+        }
+
+        let high = (raw[index + 1] as char)
+            .to_digit(16)
+            .ok_or_else(|| "Malformed percent-encoded path: invalid hex digit".to_string())?;
+        let low = (raw[index + 2] as char)
+            .to_digit(16)
+            .ok_or_else(|| "Malformed percent-encoded path: invalid hex digit".to_string())?;
+
+        decoded.push(((high << 4) | low) as u8);
+        index += 3;
+    }
+
+    String::from_utf8(decoded)
+        .map_err(|_| "Malformed percent-encoded path: not valid UTF-8".to_string())
+}
+
+/// Write raw bytes to a file, received over Tauri's binary IPC path.
+///
+/// The whole invoke message is the file's bytes (`InvokeBody::Raw`), so nothing
+/// is JSON-serialized: a multi-megabyte export crosses at exactly its byte
+/// length instead of inflating into a decimal number array. The destination
+/// path travels in the `x-sourdaw-path` header because the body is fully
+/// occupied by the payload.
+///
+/// Path resolution and directory creation match `write_audio_file` exactly, so
+/// the same bytes land at the same location.
+#[tauri::command]
+pub async fn write_file_bytes(request: tauri::ipc::Request<'_>) -> Result<(), String> {
+    let encoded_path = request
+        .headers()
+        .get(FILE_PATH_HEADER)
+        .ok_or_else(|| format!("Missing '{}' header", FILE_PATH_HEADER))?
+        .to_str()
+        .map_err(|_| format!("Header '{}' is not valid ASCII", FILE_PATH_HEADER))?;
+    let path = decode_percent_encoded(encoded_path)?;
+
+    let data = match request.body() {
+        tauri::ipc::InvokeBody::Raw(bytes) => bytes.as_slice(),
+        // Tauri falls back to a JSON body where raw bodies are unsupported.
+        tauri::ipc::InvokeBody::Json(_) => {
+            return Err("write_file_bytes requires a raw byte body".to_string())
+        }
+    };
+
+    let file_path = resolve_writable_file_path(&path)?;
+    if let Some(parent) = file_path.parent() {
+        std::fs::create_dir_all(parent)
+            .map_err(|e| format!("Failed to create directory: {}", e))?;
+    }
+    std::fs::write(&file_path, data).map_err(|e| format!("Failed to write file: {}", e))
+}
+
+/// Read a file's bytes, returned over Tauri's binary IPC path.
+///
+/// `tauri::ipc::Response` carries the bytes verbatim to the webview as an
+/// `ArrayBuffer`, avoiding the JSON number array that `read_audio_file`
+/// produces. Path resolution matches `read_audio_file` exactly.
+#[tauri::command]
+pub async fn read_file_bytes(path: String) -> Result<tauri::ipc::Response, String> {
+    let file_path = resolve_existing_file_path(&path)?;
+    let bytes = std::fs::read(&file_path).map_err(|e| format!("Failed to read file: {}", e))?;
+    Ok(tauri::ipc::Response::new(bytes))
+}
+
 #[tauri::command]
 pub async fn list_directory(path: String) -> Result<Vec<DirectoryEntry>, String> {
     let dir_path = resolve_existing_directory_path(&path)?;
@@ -253,6 +340,60 @@ mod tests {
         assert_eq!(
             result.unwrap_err(),
             "Path is outside allowed native file roots"
+        );
+    }
+
+    #[test]
+    fn should_decode_a_percent_encoded_ascii_path_unchanged() {
+        let decoded = decode_percent_encoded("/exports/Sourdaw_Bake_1.wav").unwrap();
+
+        assert_eq!(decoded, "/exports/Sourdaw_Bake_1.wav");
+    }
+
+    #[test]
+    fn should_decode_multibyte_utf8_escapes_produced_by_encode_uri_component() {
+        // encodeURIComponent('/Users/josé/Música/kick.wav')
+        let encoded = "%2FUsers%2Fjos%C3%A9%2FM%C3%BAsica%2Fkick.wav";
+
+        let decoded = decode_percent_encoded(encoded).unwrap();
+
+        assert_eq!(decoded, "/Users/josé/Música/kick.wav");
+    }
+
+    #[test]
+    fn should_decode_a_space_and_reserved_characters() {
+        let decoded = decode_percent_encoded("/exports/My%20Track%20%231.wav").unwrap();
+
+        assert_eq!(decoded, "/exports/My Track #1.wav");
+    }
+
+    #[test]
+    fn should_reject_a_truncated_percent_escape() {
+        let result = decode_percent_encoded("/exports/bad%4");
+
+        assert_eq!(
+            result.unwrap_err(),
+            "Malformed percent-encoded path: truncated escape"
+        );
+    }
+
+    #[test]
+    fn should_reject_a_non_hex_percent_escape() {
+        let result = decode_percent_encoded("/exports/bad%ZZ.wav");
+
+        assert_eq!(
+            result.unwrap_err(),
+            "Malformed percent-encoded path: invalid hex digit"
+        );
+    }
+
+    #[test]
+    fn should_reject_escapes_that_decode_to_invalid_utf8() {
+        let result = decode_percent_encoded("%FF%FE");
+
+        assert_eq!(
+            result.unwrap_err(),
+            "Malformed percent-encoded path: not valid UTF-8"
         );
     }
 }

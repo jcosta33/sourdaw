@@ -44,6 +44,8 @@ pub fn run() {
             commands::speech::get_asr_status,
             commands::filesystem::read_audio_file,
             commands::filesystem::write_audio_file,
+            commands::filesystem::read_file_bytes,
+            commands::filesystem::write_file_bytes,
             commands::filesystem::list_directory,
             commands::plugins::scan_plugins,
             commands::plugins::get_default_plugin_paths,

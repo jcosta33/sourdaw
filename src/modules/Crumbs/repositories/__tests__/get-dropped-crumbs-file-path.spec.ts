@@ -3,11 +3,11 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { getDroppedCrumbsFilePath } from '../get-dropped-crumbs-file-path';
 
 const mocks = vi.hoisted(() => ({
-    tauriInvoke: vi.fn<(cmd: string, args?: Record<string, unknown>) => Promise<unknown>>(),
+    writeFileBytes: vi.fn<(input: { bytes: Uint8Array; path: string }) => Promise<void>>(),
 }));
 
 vi.mock('#/utils/tauriBridge', () => ({
-    tauriInvoke: mocks.tauriInvoke,
+    writeFileBytes: mocks.writeFileBytes,
 }));
 
 function createFileWithPath(name: string, path: string): File {
@@ -19,14 +19,14 @@ function createFileWithPath(name: string, path: string): File {
 describe('getDroppedCrumbsFilePath', () => {
     beforeEach(() => {
         vi.clearAllMocks();
-        mocks.tauriInvoke.mockResolvedValue(undefined);
+        mocks.writeFileBytes.mockResolvedValue(undefined);
     });
 
     it('should prefer the desktop path attached to a dropped file', async () => {
         const file = createFileWithPath('loop.wav', '/Users/me/Loops/loop.wav');
 
         await expect(getDroppedCrumbsFilePath({ file })).resolves.toBe('/Users/me/Loops/loop.wav');
-        expect(mocks.tauriInvoke).not.toHaveBeenCalled();
+        expect(mocks.writeFileBytes).not.toHaveBeenCalled();
     });
 
     it('should write dropped bytes to a unique Crumbs IPC temp path when no desktop path exists', async () => {
@@ -43,13 +43,13 @@ describe('getDroppedCrumbsFilePath', () => {
         expect(firstPath).not.toBe(secondPath);
         expect(firstPath).not.toContain('..');
 
-        expect(mocks.tauriInvoke).toHaveBeenNthCalledWith(1, 'write_audio_file', {
+        expect(mocks.writeFileBytes).toHaveBeenNthCalledWith(1, {
             path: firstPath,
-            data: [1, 2, 3],
+            bytes: new Uint8Array([1, 2, 3]),
         });
-        expect(mocks.tauriInvoke).toHaveBeenNthCalledWith(2, 'write_audio_file', {
+        expect(mocks.writeFileBytes).toHaveBeenNthCalledWith(2, {
             path: secondPath,
-            data: [4, 5, 6],
+            bytes: new Uint8Array([4, 5, 6]),
         });
     });
 });

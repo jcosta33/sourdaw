@@ -1,6 +1,6 @@
 import { inject } from '#/infra/di/inject';
 import { logger } from '#/infra/logger/appLogger';
-import { isTauri, tauriInvoke } from '#/utils/tauriBridge';
+import { isTauri, readFileBytes, tauriInvoke, writeFileBytes } from '#/utils/tauriBridge';
 
 type StemResult = Record<string, AudioBuffer>;
 
@@ -8,7 +8,7 @@ export const separateStems = inject({ logger })(({ logger }) => {
     async function separateStemsNative(audioData: ArrayBuffer, stems: string[]): Promise<StemResult> {
         const tempPath = `__sourdaw_stems_input_${String(Date.now())}.wav`;
         const wavBytes = new Uint8Array(audioData);
-        await tauriInvoke('write_audio_file', { path: tempPath, data: wavBytes });
+        await writeFileBytes({ path: tempPath, bytes: wavBytes });
 
         logger.info(`[Audio AI] Starting native stem separation...`);
 
@@ -25,8 +25,11 @@ export const separateStems = inject({ logger })(({ logger }) => {
 
         for (const [name, filePath] of Object.entries(result.stem_paths)) {
             try {
-                const fileBytes = (await tauriInvoke('read_audio_file', { path: filePath })) as Uint8Array;
-                const wavBuffer = fileBytes.buffer as ArrayBuffer;
+                const fileBytes = await readFileBytes({ path: filePath });
+                const wavBuffer = fileBytes.buffer.slice(
+                    fileBytes.byteOffset,
+                    fileBytes.byteOffset + fileBytes.byteLength
+                ) as ArrayBuffer;
                 const audioContext = new AudioContext();
                 stemBuffers[name] = await audioContext.decodeAudioData(wavBuffer);
                 await audioContext.close();
