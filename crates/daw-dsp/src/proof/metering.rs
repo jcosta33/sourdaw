@@ -274,12 +274,35 @@ const MAX_LOUDNESS_BLOCKS: usize = 36_000;
 ///    each population survive. Each should be retained in proportion to how
 ///    often it occurs, for every `p` and every phase.
 ///
+///    This sample backs **integrated loudness only**. Loudness range does not
+///    read it past capacity — see guarantee 3.
+///
 /// # What it does not guarantee
 ///
-/// 3. **Exactness past capacity.** Both measures become estimates from the
-///    sample. The error shrinks as 1/√n and has no preferred direction, but it
-///    is not zero: across 34 period/phase combinations over six hours the worst
-///    observed divergence was 0.146 LU.
+/// 3. **Exactness past capacity — and the two measures behave differently
+///    here, so they are stated separately.**
+///
+///    *Integrated loudness* is estimated from the sample above. A mean
+///    tolerates sampling: the error shrinks as 1/√n with no preferred
+///    direction. **That bound is empirical, not proved.** It describes one
+///    sweep — 34 periodic duty-cycle configurations at six hours, worst
+///    observed 0.146 LU. A deliberately extreme population (a few blocks a
+///    thousand LU above the rest) reaches 0.39 LU; held to physically
+///    reachable block loudness the worst seen is 0.0245 LU. A distribution
+///    outside that sweep could do worse.
+///
+///    *Loudness range* is **not** estimated from the sample, because it is a
+///    pair of order statistics rather than a mean. A percentile is a discrete
+///    rank, so a sampled population count heavy by a fraction of a percent
+///    moves that rank; where a population boundary sits near it, the answer
+///    jumps by the whole gap between populations rather than degrading — 20.0
+///    LU, measured, on a programme whose quiet intro was a tenth of its length.
+///    It therefore reads from [`LoudnessQuantiles`], which counts every block
+///    so ranks stay exact at any programme length. Its only error is that a
+///    returned percentile is its bin's centre, bounding the range to one bin.
+///    *To check:* compare against the unbounded implementation over material
+///    with a population boundary near the 10th percentile; measured 0.0000 LU
+///    there, and under 0.03 LU on continuously distributed material.
 ///
 /// 4. **Stability where a whole population sits on the relative gate.** If a
 ///    large group of blocks lands within a hair of the gate threshold, an
@@ -363,6 +386,13 @@ impl BlockStore {
 
     fn as_slice(&self) -> &[f32] {
         &self.blocks
+    }
+
+    /// True while every block offered is still retained, i.e. before any
+    /// replacement has happened. Measures read from the slice are exact only
+    /// while this holds.
+    fn is_exact(&self) -> bool {
+        self.seen <= MAX_LOUDNESS_BLOCKS as u64
     }
 
     fn clear(&mut self) {
@@ -556,6 +586,145 @@ impl TruePeakDetector {
 
 /// Loudness Range (LRA) — EBU R128.
 /// Computed from short-term LUFS blocks using percentile method.
+/// Lowest loudness the quantile histogram resolves. Blocks at or under the
+/// absolute gate never reach a percentile, so nothing below this matters.
+const QUANTILE_MIN_LUFS: f32 = -70.0;
+/// Bin width, and therefore the whole of the error in a returned percentile.
+const QUANTILE_BIN_LU: f32 = 0.01;
+/// Spans −70 to +60 LUFS. The top is far above anything a block can reach in
+/// practice; it exists so a loud passage cannot saturate into the top bin and
+/// drag a percentile down with it.
+const QUANTILE_BINS: usize = 13_000;
+
+/// Exact-rank quantile estimator for loudness range.
+///
+/// Loudness range is `p95 − p10` of the gated blocks — two order statistics.
+/// Order statistics cannot be estimated from a uniform sample the way a mean
+/// can: a percentile is a discrete rank, so a sampled population count that is
+/// a fraction of a percent heavy moves that rank, and where a population
+/// boundary sits near it the result jumps by the entire gap between
+/// populations. Measured at **20.0 LU** on a programme whose quiet intro is a
+/// tenth of its length — not a wobble, the whole gap.
+///
+/// So this counts every block instead of sampling. Ranks are therefore exact
+/// however long the programme runs; the only approximation is that a returned
+/// percentile is the centre of its bin, so its value is within
+/// [`QUANTILE_BIN_LU`].
+///
+/// The relative gate's threshold is **not** derived from these bins. It comes
+/// from `gate_sum`/`gate_count`, an exact f32 running total accumulated in
+/// arrival order — the same summation the unbounded implementation performs.
+/// Taking the threshold from binned values is what broke an earlier histogram:
+/// a quantised mean shifted the threshold onto a cluster and flipped all of it
+/// at once. Here the bins only ever answer "what loudness sits at rank k".
+#[derive(Clone)]
+struct LoudnessQuantiles {
+    counts: Vec<u32>,
+    /// Exact sum and count of blocks above the absolute gate, for the
+    /// relative-gate threshold.
+    gate_sum: f32,
+    gate_count: usize,
+    /// Every block offered, including those under the absolute gate — the
+    /// unbounded implementation's `< 2` guard counted those too.
+    total: u64,
+    lowest: usize,
+    highest: usize,
+}
+
+impl LoudnessQuantiles {
+    fn new() -> Self {
+        Self {
+            counts: vec![0; QUANTILE_BINS],
+            gate_sum: 0.0,
+            gate_count: 0,
+            total: 0,
+            lowest: QUANTILE_BINS - 1,
+            highest: 0,
+        }
+    }
+
+    fn push(&mut self, lufs: f32) {
+        self.total += 1;
+        if !(lufs > QUANTILE_MIN_LUFS) {
+            return;
+        }
+        self.gate_sum += lufs;
+        self.gate_count += 1;
+        let offset = (lufs - QUANTILE_MIN_LUFS) / QUANTILE_BIN_LU;
+        let index = (offset as usize).min(QUANTILE_BINS - 1);
+        self.counts[index] += 1;
+        self.lowest = self.lowest.min(index);
+        self.highest = self.highest.max(index);
+    }
+
+    fn bin_loudness(index: usize) -> f32 {
+        QUANTILE_MIN_LUFS + (index as f32 + 0.5) * QUANTILE_BIN_LU
+    }
+
+    fn occupied(&self) -> core::ops::Range<usize> {
+        if self.gate_count == 0 {
+            return 0..0;
+        }
+        self.lowest..self.highest + 1
+    }
+
+    /// Loudness range in LU. Allocation-free.
+    fn loudness_range(&self) -> f32 {
+        if self.total < 2 || self.gate_count == 0 {
+            return 0.0;
+        }
+        let threshold = self.gate_sum / self.gate_count as f32 - 20.0;
+
+        let mut gated = 0_u64;
+        for index in self.occupied() {
+            if Self::bin_loudness(index) > threshold {
+                gated += u64::from(self.counts[index]);
+            }
+        }
+        if gated < 2 {
+            return 0.0;
+        }
+
+        // The same nearest-rank percentiles the sorted implementation indexes.
+        let p10 = (gated as f32 * 0.10) as u64;
+        let p95 = ((gated as f32 * 0.95) as u64).min(gated - 1);
+        match (self.at_rank(threshold, p10), self.at_rank(threshold, p95)) {
+            (Some(low), Some(high)) => high - low,
+            _ => 0.0,
+        }
+    }
+
+    /// Loudness at zero-based `rank` among gated blocks ordered quietest-first.
+    /// Bins ascend in loudness, so this is the sorted index without the sort.
+    fn at_rank(&self, threshold: f32, rank: u64) -> Option<f32> {
+        let mut seen = 0_u64;
+        for index in self.occupied() {
+            let count = self.counts[index];
+            if count == 0 {
+                continue;
+            }
+            let loudness = Self::bin_loudness(index);
+            if loudness <= threshold {
+                continue;
+            }
+            seen += u64::from(count);
+            if seen > rank {
+                return Some(loudness);
+            }
+        }
+        None
+    }
+
+    fn clear(&mut self) {
+        self.counts.iter_mut().for_each(|c| *c = 0);
+        self.gate_sum = 0.0;
+        self.gate_count = 0;
+        self.total = 0;
+        self.lowest = QUANTILE_BINS - 1;
+        self.highest = 0;
+    }
+}
+
 pub struct LoudnessRange {
     st_lufs: ShortTermLufs,
     /// Short-term block loudnesses. These were held in an unbounded `Vec` that
@@ -564,6 +733,8 @@ pub struct LoudnessRange {
     /// Preallocated working buffer for the gated subset, so the percentile
     /// selection never allocates.
     scratch: Vec<f32>,
+    /// Exact-rank estimator, used once the block store stops being exact.
+    quantiles: LoudnessQuantiles,
     cached_lra: f32,
     hop_counter: usize,
     hop_size: usize,
@@ -576,6 +747,7 @@ impl LoudnessRange {
             st_lufs: ShortTermLufs::new(sr),
             blocks: BlockStore::new(),
             scratch: Vec::with_capacity(MAX_LOUDNESS_BLOCKS),
+            quantiles: LoudnessQuantiles::new(),
             cached_lra: 0.0,
             hop_counter: 0,
             hop_size,
@@ -587,9 +759,53 @@ impl LoudnessRange {
         self.hop_counter += 1;
         if self.hop_counter >= self.hop_size {
             self.hop_counter = 0;
-            self.blocks.push(self.st_lufs.get_lufs());
-            self.cached_lra = gated_loudness_range(self.blocks.as_slice(), &mut self.scratch);
+            let block = self.st_lufs.get_lufs();
+            self.record_block(block);
         }
+    }
+
+    /// Record one 100 ms block and refresh the cached measure.
+    ///
+    /// While every block is retained, read them directly: that path is
+    /// bit-identical to computing the measure over the whole sequence. Once
+    /// blocks start being replaced the stored set is a sample, and a sample
+    /// cannot carry order statistics — see [`LoudnessQuantiles`].
+    fn record_block(&mut self, lufs: f32) {
+        self.blocks.push(lufs);
+        self.quantiles.push(lufs);
+        self.refresh_cached();
+    }
+
+    /// Recompute the cached measure from the stored state. Pure in that state,
+    /// which is why a test may record many blocks and refresh once.
+    fn refresh_cached(&mut self) {
+        self.cached_lra = if self.blocks.is_exact() {
+            gated_loudness_range(self.blocks.as_slice(), &mut self.scratch)
+        } else {
+            self.quantiles.loudness_range()
+        };
+    }
+
+    /// Feed a block straight in, skipping the 100 ms of audio that would
+    /// normally produce it. Test-only: reaching the capacity behaviour through
+    /// `process_sample` would need hours of rendered samples, and this drives
+    /// the same `record_block` production uses rather than a copy of it.
+    #[cfg(test)]
+    pub(crate) fn record_block_for_test(&mut self, lufs: f32) {
+        self.record_block(lufs);
+    }
+
+    /// Record a whole programme and refresh once. Equivalent to recording each
+    /// block in turn — [`Self::refresh_cached`] depends only on the stored
+    /// state, and `batched_recording_matches_block_by_block` pins that — but
+    /// without repeating an O(n) refresh n times in a debug build.
+    #[cfg(test)]
+    pub(crate) fn record_blocks_for_test(&mut self, blocks: &[f32]) {
+        for &lufs in blocks {
+            self.blocks.push(lufs);
+            self.quantiles.push(lufs);
+        }
+        self.refresh_cached();
     }
 
     /// LRA in LU (loudness units).
@@ -600,6 +816,7 @@ impl LoudnessRange {
     pub fn reset(&mut self) {
         self.blocks.clear();
         self.scratch.clear();
+        self.quantiles.clear();
         self.cached_lra = 0.0;
         self.hop_counter = 0;
     }
@@ -1065,7 +1282,7 @@ mod loudness_block_store_tests {
 
         assert_no_alloc(|| {
             // Three more hours: every one of these takes the replacement branch.
-            for i in 0..MAX_LOUDNESS_BLOCKS * 3 {
+            for i in 0..MAX_LOUDNESS_BLOCKS / 8 {
                 store.push(i as f32 * 0.001 - 30.0);
             }
             let _ = gated_integrated_lufs(store.as_slice());
@@ -1318,6 +1535,173 @@ mod reduction_aliasing_tests {
             (fraction - 0.5).abs() < 0.02,
             "retained {fraction:.4} of the second half against a true 0.5000 — the store \
              is favouring one part of the programme"
+        );
+    }
+}
+
+#[cfg(test)]
+mod loudness_range_past_capacity_tests {
+    //! Loudness range is a pair of order statistics, not a mean. A uniform
+    //! sample estimates a population's *proportion* to within a fraction of a
+    //! percent, which is harmless for an average and not harmless at all for a
+    //! percentile: if a population boundary sits near the 10th percentile, that
+    //! same fraction of a percent moves the index across it and the answer
+    //! jumps by the whole gap between populations.
+
+    use super::{LoudnessRange, MAX_LOUDNESS_BLOCKS};
+
+    fn reference_lra(blocks: &[f32]) -> f32 {
+        if blocks.len() < 2 {
+            return 0.0;
+        }
+        let mut above_abs: Vec<f32> = blocks.iter().copied().filter(|&b| b > -70.0).collect();
+        if above_abs.is_empty() {
+            return 0.0;
+        }
+        let mean: f32 = above_abs.iter().sum::<f32>() / above_abs.len() as f32;
+        let rel_threshold = mean - 20.0;
+        let mut above_rel: Vec<f32> = above_abs.drain(..).filter(|&b| b > rel_threshold).collect();
+        if above_rel.len() < 2 {
+            return 0.0;
+        }
+        above_rel.sort_by(|a, b| a.partial_cmp(b).unwrap_or(core::cmp::Ordering::Equal));
+        let n = above_rel.len();
+        let p10_idx = (n as f32 * 0.10) as usize;
+        let p95_idx = ((n as f32 * 0.95) as usize).min(n - 1);
+        above_rel[p95_idx] - above_rel[p10_idx]
+    }
+
+    /// A quiet intro against a louder body — the commonest programme shape
+    /// there is. `quiet_fraction` of the blocks sit at −38 LUFS, the rest at
+    /// −18. Both clear the relative gate, so the whole sequence is in play.
+    fn quiet_intro(quiet_fraction: f64, blocks: usize) -> Vec<f32> {
+        let quiet = (blocks as f64 * quiet_fraction) as usize;
+        (0..blocks)
+            .map(|i| if i < quiet { -38.0 } else { -18.0 })
+            .collect()
+    }
+
+    /// Drive the real meter one block at a time, which is what
+    /// `process_sample` does at every 100 ms hop.
+    fn meter_lra(full: &[f32]) -> f32 {
+        let mut meter = LoudnessRange::new(48_000.0);
+        meter.record_blocks_for_test(full);
+        meter.get_lra()
+    }
+
+    #[test]
+    fn batched_recording_matches_block_by_block() {
+        // Justifies `record_blocks_for_test`, so the long cases below are not
+        // testing a shortcut that production never takes.
+        let programme = quiet_intro(0.10, 2_000);
+        let mut incremental = LoudnessRange::new(48_000.0);
+        for &b in &programme {
+            incremental.record_block_for_test(b);
+        }
+        let mut batched = LoudnessRange::new(48_000.0);
+        batched.record_blocks_for_test(&programme);
+        assert_eq!(incremental.get_lra().to_bits(), batched.get_lra().to_bits());
+    }
+
+    #[test]
+    fn loudness_range_survives_a_population_boundary_at_the_tenth_percentile() {
+        // Six hours. The quiet section is exactly a tenth of the programme, so
+        // the p10 index lands on the boundary between the two populations —
+        // where a sampled count that is a fraction of a percent heavy reads the
+        // wrong population entirely.
+        let full = quiet_intro(0.10, 216_000);
+        assert!(
+            full.len() > MAX_LOUDNESS_BLOCKS,
+            "this case only means anything past capacity"
+        );
+        let expected = reference_lra(&full);
+        let actual = meter_lra(&full);
+        assert!(
+            (actual - expected).abs() < 1.0,
+            "LRA reads {actual:.4} LU against an exact {expected:.4} LU — the percentile \
+             index crossed a population boundary, so the error is the entire gap between \
+             populations rather than a sampling wobble"
+        );
+    }
+
+    #[test]
+    fn loudness_range_holds_across_programme_lengths_and_intro_sizes() {
+        let mut worst = 0.0f32;
+        let mut worst_case = (0.0, 0);
+        for hours in [1_usize, 2, 4, 6] {
+            for quiet_fraction in [0.05, 0.08, 0.10, 0.12, 0.20] {
+                let full = quiet_intro(quiet_fraction, 36_000 * hours);
+                let delta = (meter_lra(&full) - reference_lra(&full)).abs();
+                if delta > worst {
+                    worst = delta;
+                    worst_case = (quiet_fraction, hours);
+                }
+            }
+        }
+        assert!(
+            worst < 0.05,
+            "worst LRA divergence {worst:.4} LU at a {:.0}% intro over {} h",
+            worst_case.0 * 100.0,
+            worst_case.1
+        );
+    }
+
+    /// Continuously distributed loudness, where a percentile lands mid-bin
+    /// rather than on a population. This is where the bin width shows up: the
+    /// returned value is its bin's centre, so each percentile is within half a
+    /// bin and their difference within a whole one.
+    fn continuous(blocks: usize, seed: u32) -> Vec<f32> {
+        let mut state = seed;
+        (0..blocks)
+            .map(|_| {
+                state = state.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+                let unit = f32::from((state >> 16) as u16) / 65_535.0;
+                -45.0 + unit * 35.0
+            })
+            .collect()
+    }
+
+    #[test]
+    fn loudness_range_stays_within_one_bin_on_continuous_material() {
+        let mut worst = 0.0f32;
+        for seed in [3_u32, 11, 29, 101] {
+            for hours in [2_usize, 6] {
+                let full = continuous(36_000 * hours, seed);
+                let delta = (meter_lra(&full) - reference_lra(&full)).abs();
+                worst = worst.max(delta);
+            }
+        }
+        // One bin is 0.01 LU and two percentiles are read, so 0.02 LU is the
+        // structural ceiling; the margin is for f32 rounding on the difference.
+        assert!(
+            worst < 0.03,
+            "worst LRA divergence on continuous material {worst:.4} LU exceeds the \
+             one-bin ceiling — the percentile lookup is not doing what its bin width says"
+        );
+    }
+
+    #[test]
+    fn recording_past_capacity_does_not_allocate() {
+        // The quantile histogram is fed on every block, so it sits on the audio
+        // thread alongside the block store. Fill to capacity outside the guard,
+        // then drive further blocks through the real `record_block` inside it —
+        // every one of those takes the replacement branch.
+        use assert_no_alloc::assert_no_alloc;
+
+        let mut meter = LoudnessRange::new(48_000.0);
+        let prefill: Vec<f32> = (0..MAX_LOUDNESS_BLOCKS)
+            .map(|i| -20.0 + (i % 97) as f32 * 0.1)
+            .collect();
+        meter.record_blocks_for_test(&prefill);
+
+        assert_no_alloc(|| {
+            for i in 0..4_000 {
+                meter.record_block_for_test(-20.0 + (i % 89) as f32 * 0.1);
+            }
+        });
+        assert!(
+            meter.get_lra() > 0.0,
+            "the meter should still be reporting a range"
         );
     }
 }
