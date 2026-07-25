@@ -399,6 +399,15 @@ describe('importMidiFile', () => {
         expect(mocks.pushUndoEntry.mock.calls[0]?.[0]).toBe('Import MIDI: 2 MIDI tracks');
     });
 
+    it('falls back to a generic label when the single parsed track has no name', async () => {
+        shouldInjectConcurrentTrack = false;
+        mocks.readMidiFile.mockResolvedValue([{ name: undefined, notes: [importedNote], endTick: 960 }]);
+
+        await importMidiFile(new File([], 'nameless.mid'));
+
+        expect(mocks.pushUndoEntry.mock.calls[0]?.[0]).toBe('Import MIDI: MIDI file');
+    });
+
     it('preserves an unrelated selected track when undoing the import', async () => {
         shouldInjectConcurrentTrack = false;
         const existingTrack = {

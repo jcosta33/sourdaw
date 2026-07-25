@@ -119,6 +119,24 @@ describe('setDeviceParameter', () => {
         expect(didWrite).toBe(true);
     });
 
+    it('leaves sibling devices untouched while updating only the targeted device', () => {
+        const track = makeTrack('t1', 'target');
+        track.devices = [
+            { id: 'sibling', name: 'Sibling', type: 'device', bypassed: false, parameterValues: { gain: 0.2 } },
+            { id: 'target', name: 'Target', type: 'device', bypassed: false, parameterValues: { gain: 0.1 } },
+        ];
+        setTrackState([track]);
+
+        const didWrite = setDeviceParameter('target', 'gain', 0.9);
+
+        expect(didWrite).toBe(true);
+        const updater = mocks.updateTrack.mock.calls[0]![1];
+        const result = updater(track);
+        // Sibling device keeps its value; only the target device changes.
+        expect(result.devices[0]).toMatchObject({ id: 'sibling', parameterValues: { gain: 0.2 } });
+        expect(result.devices[1]).toMatchObject({ id: 'target', parameterValues: { gain: 0.9 } });
+    });
+
     it('records automation if playing and recording mode', () => {
         const track = makeTrack('t1');
         track.automationMode = 'write';

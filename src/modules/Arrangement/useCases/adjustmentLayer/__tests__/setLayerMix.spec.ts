@@ -5,9 +5,9 @@ import { setLayerMix } from '../setLayerMix';
 import type { AdjustmentLayer, AdjustmentLayerState } from '../../../stores/adjustmentLayer';
 
 const mocks = vi.hoisted(() => {
-    const initialState: AdjustmentLayerState = { layers: [] };
+    const adjustmentLayerStoreValue: { value: AdjustmentLayerState | null } = { value: { layers: [] } };
     return {
-        adjustmentLayerStoreValue: { value: initialState },
+        adjustmentLayerStoreValue,
         adjustmentLayerStoreSet: vi.fn<(state: AdjustmentLayerState) => void>(),
     };
 });
@@ -57,5 +57,28 @@ describe('setLayerMix', () => {
             throw new Error('expected second adjustmentLayerStore.set call');
         }
         expect(secondCall[0].layers[0]?.mix).toBe(1);
+    });
+
+    it('is a no-op when the store has not loaded', () => {
+        mocks.adjustmentLayerStoreValue.value = null;
+
+        setLayerMix('l1', 0.5);
+
+        expect(mocks.adjustmentLayerStoreSet).not.toHaveBeenCalled();
+    });
+
+    it('leaves unrelated layers untouched when updating the target', () => {
+        mocks.adjustmentLayerStoreValue.value = {
+            layers: [makeLayer({ id: 'l1', mix: 1 }), makeLayer({ id: 'l2', mix: 0.25 })],
+        };
+
+        setLayerMix('l1', 0.5);
+
+        const call = mocks.adjustmentLayerStoreSet.mock.calls[0]!;
+        // l1 is updated; l2 passes through the map short-circuit unchanged.
+        expect(call[0].layers.map((l) => ({ id: l.id, mix: l.mix }))).toEqual([
+            { id: 'l1', mix: 0.5 },
+            { id: 'l2', mix: 0.25 },
+        ]);
     });
 });

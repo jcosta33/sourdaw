@@ -3,11 +3,14 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { type AdjustmentLayerState } from '../../../stores/adjustmentLayer';
 import { createAdjustmentLayer } from '../createAdjustmentLayer';
 
-const mocks = vi.hoisted(() => ({
-    adjustmentLayerStoreValue: { value: { layers: [] } },
-    adjustmentLayerStoreSet: vi.fn<(value: AdjustmentLayerState | null) => void>(),
-    getNextLayerId: vi.fn(() => 'layer-123'),
-}));
+const mocks = vi.hoisted(() => {
+    const adjustmentLayerStoreValue: { value: AdjustmentLayerState | null } = { value: { layers: [] } };
+    return {
+        adjustmentLayerStoreValue,
+        adjustmentLayerStoreSet: vi.fn<(value: AdjustmentLayerState | null) => void>(),
+        getNextLayerId: vi.fn(() => 'layer-123'),
+    };
+});
 
 vi.mock('../../../stores/adjustmentLayer', () => ({
     adjustmentLayerStore: {
@@ -46,5 +49,24 @@ describe('createAdjustmentLayer', () => {
             effectType: 'eq',
             parameters: [{ name: 'Freq', value: 1000 }],
         });
+    });
+
+    it('uses an explicit layerId and insertionIndex when supplied', () => {
+        mocks.adjustmentLayerStoreValue.value = { layers: [] };
+
+        createAdjustmentLayer({ name: 'EQ', effectType: 'eq', insertionIndex: 3, layerId: 'custom-layer' });
+
+        expect(mocks.getNextLayerId).not.toHaveBeenCalled();
+        const setCall = mocks.adjustmentLayerStoreSet.mock.calls[0];
+        const layer = setCall?.[0]?.layers[0];
+        expect(layer).toMatchObject({ id: 'custom-layer', insertionIndex: 3 });
+    });
+
+    it('is a no-op when the store has not loaded', () => {
+        mocks.adjustmentLayerStoreValue.value = null;
+
+        createAdjustmentLayer({ name: 'EQ', effectType: 'eq' });
+
+        expect(mocks.adjustmentLayerStoreSet).not.toHaveBeenCalled();
     });
 });

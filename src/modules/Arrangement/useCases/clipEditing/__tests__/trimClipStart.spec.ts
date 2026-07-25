@@ -47,4 +47,15 @@ describe('trimClipStart', () => {
 
         expect(result).toBe(mockClip);
     });
+
+    it('defaults a missing audioOffsetBeats to zero when applying the trim delta', () => {
+        trimClipStart('c1', 3);
+        const updater = mocks.updateClip.mock.calls[0]![1];
+        // Clip carries no audioOffsetBeats — the updater must treat it as 0.
+        const mockClip = { startBeat: 0, endBeat: 10 } as unknown as Clip;
+        const result = updater(mockClip);
+
+        expect(result.startBeat).toBe(3);
+        expect(result.audioOffsetBeats).toBe(3);
+    });
 });

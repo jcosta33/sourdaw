@@ -126,4 +126,26 @@ describe('resolveEligibleDeviceWriteTarget', () => {
 
         expect(resolveEligibleDeviceWriteTarget('device-1')).toEqual({ status: 'ineligible' });
     });
+
+    it('skips a corrupted non-object track entry and resolves the valid owner', () => {
+        setTracks([null as unknown as Track, makeTrack('track-1', 'device-1')]);
+
+        expect(resolveEligibleDeviceWriteTarget('device-1')).toEqual({
+            status: 'eligible',
+            trackId: 'track-1',
+            deviceId: 'device-1',
+        });
+    });
+
+    it('skips a track whose devices field is not an array and resolves the valid owner', () => {
+        const trackWithBadDevices = makeTrackWithoutDevices('track-bad');
+        Reflect.set(trackWithBadDevices, 'devices', 'not-an-array');
+        setTracks([trackWithBadDevices, makeTrack('track-1', 'device-1')]);
+
+        expect(resolveEligibleDeviceWriteTarget('device-1')).toEqual({
+            status: 'eligible',
+            trackId: 'track-1',
+            deviceId: 'device-1',
+        });
+    });
 });

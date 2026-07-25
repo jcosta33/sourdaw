@@ -5,7 +5,7 @@ import { toggleAdjustmentLayer } from '../toggleAdjustmentLayer';
 import type { AdjustmentLayer, AdjustmentLayerState } from '#/modules/Arrangement/stores/adjustmentLayer';
 
 const mocks = vi.hoisted(() => {
-    const adjustmentLayerStoreValue: { value: AdjustmentLayerState } = { value: { layers: [] } };
+    const adjustmentLayerStoreValue: { value: AdjustmentLayerState | null } = { value: { layers: [] } };
     return {
         adjustmentLayerStoreValue,
         adjustmentLayerStoreSet: vi.fn<(state: AdjustmentLayerState) => void>(),
@@ -45,5 +45,31 @@ describe('toggleAdjustmentLayer', () => {
             throw new Error('expected second adjustmentLayerStore.set call');
         }
         expect(secondCall[0].layers[0]?.enabled).toBe(true);
+    });
+
+    it('is a no-op when the store has not loaded', () => {
+        mocks.adjustmentLayerStoreValue.value = null;
+
+        toggleAdjustmentLayer('l1');
+
+        expect(mocks.adjustmentLayerStoreSet).not.toHaveBeenCalled();
+    });
+
+    it('leaves unrelated layers untouched when toggling the target', () => {
+        mocks.adjustmentLayerStoreValue.value = {
+            layers: [
+                { id: 'l1', enabled: true } as Partial<AdjustmentLayer> as AdjustmentLayer,
+                { id: 'l2', enabled: false } as Partial<AdjustmentLayer> as AdjustmentLayer,
+            ],
+        };
+
+        toggleAdjustmentLayer('l1');
+
+        const call = mocks.adjustmentLayerStoreSet.mock.calls[0]!;
+        // l1 flips to disabled; l2 passes through the map short-circuit unchanged.
+        expect(call[0].layers.map((l) => ({ id: l.id, enabled: l.enabled }))).toEqual([
+            { id: 'l1', enabled: false },
+            { id: 'l2', enabled: false },
+        ]);
     });
 });

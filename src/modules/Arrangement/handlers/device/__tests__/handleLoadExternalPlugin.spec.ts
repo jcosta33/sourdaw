@@ -74,4 +74,45 @@ describe('handleLoadExternalPlugin', () => {
         expect(mocks.addExternalDevice).not.toHaveBeenCalled();
         expect(result).toEqual({ status: 'no-write' });
     });
+
+    it('creates a midi track for an instrument plugin when no track is provided', async () => {
+        mocks.findPluginByName.mockReturnValue({ name: 'Synth', category: 'Instrument' });
+        mocks.addTrack.mockReturnValue({ id: 'midi-track' });
+        mocks.addExternalDevice.mockReturnValue({ id: 'device-1' });
+
+        const result = await handleLoadExternalPlugin.execute({
+            type: 'loadExternalPlugin',
+            payload: { pluginId: 'plugin-1' },
+        });
+
+        expect(mocks.addTrack).toHaveBeenCalledWith({ name: 'Synth', kind: 'midi' });
+        expect(result).toEqual({ status: 'written' });
+    });
+
+    it('falls back to a default name and an audio track when the plugin is unknown', async () => {
+        mocks.findPluginByName.mockReturnValue(undefined);
+        mocks.addTrack.mockReturnValue({ id: 'audio-track' });
+        mocks.addExternalDevice.mockReturnValue({ id: 'device-1' });
+
+        await handleLoadExternalPlugin.execute({
+            type: 'loadExternalPlugin',
+            payload: { pluginId: 'plugin-1' },
+        });
+
+        expect(mocks.addTrack).toHaveBeenCalledWith({ name: 'Plugin', kind: 'audio' });
+        // addExternalDevice uses the raw pluginId as the name when no plugin is found.
+        expect(mocks.addExternalDevice).toHaveBeenCalledWith('audio-track', 'plugin-1', 'plugin-1');
+    });
+
+    it('provides a description naming the plugin id', () => {
+        const desc = handleLoadExternalPlugin.describe({
+            type: 'loadExternalPlugin',
+            payload: { pluginId: 'compressor-x' },
+        });
+        expect(desc.label).toBe('Load external plugin "compressor-x"');
+    });
+
+    it('is not undoable', () => {
+        expect(handleLoadExternalPlugin.undoable).toBe(false);
+    });
 });

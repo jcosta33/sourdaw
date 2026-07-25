@@ -44,4 +44,13 @@ describe('disableTrack', () => {
         disableTrack('t1', false);
         expect(mocks.engineSetTrackMute).toHaveBeenLastCalledWith('t1', false);
     });
+
+    it('defaults to unmuted when re-enabling an unknown track', () => {
+        // getTrackById returns undefined -> track?.muted is undefined -> ?? false.
+        mocks.getTrackById.mockReturnValue(undefined);
+
+        disableTrack('t1', false);
+
+        expect(mocks.engineSetTrackMute).toHaveBeenLastCalledWith('t1', false);
+    });
 });

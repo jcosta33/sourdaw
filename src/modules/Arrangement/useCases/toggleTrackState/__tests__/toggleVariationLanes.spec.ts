@@ -55,4 +55,42 @@ describe('toggleVariationLanes', () => {
         toggleVariationLanes('t1');
         expect(trackStore.value?.tracks[0]?.showVariationLanes).toBe(false);
     });
+
+    it('forces the lanes on when force=true is passed', () => {
+        // start true, force true → stays true (no toggle)
+        trackStore.set({
+            ...trackStore.value!,
+            tracks: [{ ...trackStore.value!.tracks[0]!, showVariationLanes: true }],
+        });
+
+        toggleVariationLanes('t1', true);
+        expect(trackStore.value?.tracks[0]?.showVariationLanes).toBe(true);
+    });
+
+    it('forces the lanes off when force=false is passed', () => {
+        // start true, force false → turns off (no toggle)
+        trackStore.set({
+            ...trackStore.value!,
+            tracks: [{ ...trackStore.value!.tracks[0]!, showVariationLanes: true }],
+        });
+
+        toggleVariationLanes('t1', false);
+        expect(trackStore.value?.tracks[0]?.showVariationLanes).toBe(false);
+    });
+
+    it('leaves other tracks untouched', () => {
+        const other = { ...trackStore.value!.tracks[0]!, id: 't2', showVariationLanes: false };
+        trackStore.set({ ...trackStore.value!, tracks: [trackStore.value!.tracks[0]!, other] });
+
+        toggleVariationLanes('t1');
+        expect(trackStore.value?.tracks[1]?.showVariationLanes).toBe(false);
+    });
+
+    it('is a no-op when the store has not loaded', () => {
+        trackStore.set(null);
+
+        toggleVariationLanes('t1');
+
+        expect(trackStore.value).toBeNull();
+    });
 });

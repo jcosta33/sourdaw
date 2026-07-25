@@ -49,4 +49,31 @@ describe('updateWarpMarkerBeat', () => {
 
         expect(warpStates.has('missing')).toBe(false);
     });
+
+    it('should be a no-op when the marker id is unknown', () => {
+        warpStates.set('c1', {
+            enabled: true,
+            markers: [{ id: 'm1', originalBeat: 1, warpedBeat: 1, origin: 'user' }],
+            stretchMode: 'complex',
+            originalTempo: null,
+        });
+
+        updateWarpMarkerBeat({ clipId: 'c1', markerId: 'nope', field: 'warpedBeat', beat: 9 });
+
+        // No marker matches, so nothing is rewritten.
+        expect(warpStates.get('c1')?.markers[0]?.warpedBeat).toBe(1);
+    });
+
+    it('should be a no-op when the new beat equals the existing value', () => {
+        warpStates.set('c1', {
+            enabled: true,
+            markers: [{ id: 'm1', originalBeat: 1, warpedBeat: 1.5, origin: 'user' }],
+            stretchMode: 'complex',
+            originalTempo: null,
+        });
+
+        updateWarpMarkerBeat({ clipId: 'c1', markerId: 'm1', field: 'warpedBeat', beat: 1.5 });
+
+        expect(warpStates.get('c1')?.markers[0]?.warpedBeat).toBe(1.5);
+    });
 });

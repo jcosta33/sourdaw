@@ -64,6 +64,39 @@ describe('handleSavePreset', () => {
         expect(desc.label).toBe('Save preset "P" from Lead');
     });
 
+    it('provides a generic description when the source track cannot be found', () => {
+        mocks.getTrackStoreState.mockReturnValue({ tracks: [] });
+        const desc = handleSavePreset.describe({
+            type: 'savePreset',
+            payload: { trackId: 'ghost', name: 'P', category: 'Synth' },
+        });
+        expect(desc.label).toBe('Save preset "P" from track');
+    });
+
+    it('classifies an audio-kind track as an audio preset', () => {
+        mocks.getTrackStoreState.mockReturnValue({
+            tracks: [
+                {
+                    id: 't1',
+                    kind: 'audio',
+                    devices: [{ type: 'Compressor', name: 'Comp', parameterValues: { threshold: -12 } }],
+                },
+            ],
+        });
+
+        void handleSavePreset.execute({
+            type: 'savePreset',
+            payload: { trackId: 't1', name: 'Drum Bus', category: 'Drums' },
+        });
+
+        expect(mocks.saveCurrentAsPreset).toHaveBeenCalledWith({
+            name: 'Drum Bus',
+            category: 'Drums',
+            trackKind: 'audio',
+            devices: [{ type: 'Compressor', name: 'Comp', parameterValues: { threshold: -12 } }],
+        });
+    });
+
     it('is not undoable', () => {
         expect(handleSavePreset.undoable).toBe(false);
     });

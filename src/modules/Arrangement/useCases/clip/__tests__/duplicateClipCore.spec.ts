@@ -275,4 +275,114 @@ describe('duplicateClipCore', () => {
         expect(duplicateClipCore({ clipId: 'c1', computeStartBeat: () => 4 })).toBe(true);
         expect(mocks.duplicateClipNotes).toHaveBeenCalledWith('c1', 'c2');
     });
+
+    describe('legacy string overload', () => {
+        it('accepts (clipId, computeStartBeat) and resolves source by clipId string', () => {
+            const source = {
+                id: 'c1',
+                trackId: 't1',
+                name: 'Take',
+                startBeat: 0,
+                endBeat: 4,
+                type: 'audio' as const,
+                fadeInBeats: 0,
+                fadeOutBeats: 0,
+            };
+            mocks.getTrackState.mockReturnValue({ tracks: [{ id: 't1', clips: [source] }] });
+            mocks.addClip.mockReturnValue({ id: 'c2', type: 'audio' });
+
+            expect(duplicateClipCore('c1', (clip) => clip.endBeat)).toBe(true);
+
+            // targetClipId was undefined in legacy form, so id comes from counter
+            expect(mocks.getNextClipId).toHaveBeenCalledOnce();
+            expect(mocks.addClip).toHaveBeenCalledWith(expect.objectContaining({ id: 'c2', startBeat: 4 }));
+        });
+
+        it('returns false when called with no computeStartBeat (missing 2nd arg)', () => {
+            // The runtime overload accepts the legacy form without a 2nd arg; emulate a caller
+            // that forgot to pass computeStartBeat.
+            expect((duplicateClipCore as unknown as (clipId: string) => boolean)('c1')).toBe(false);
+            expect(mocks.resolveEligibleClipWriteTarget).not.toHaveBeenCalled();
+            expect(mocks.addClip).not.toHaveBeenCalled();
+        });
+
+        it('returns false when object form omits computeStartBeat', () => {
+            // object form without computeStartBeat hits the same guard
+            expect(duplicateClipCore({ clipId: 'c1' } as never)).toBe(false);
+            expect(mocks.resolveEligibleClipWriteTarget).not.toHaveBeenCalled();
+        });
+    });
+
+    it('aborts when destination track write is not eligible', () => {
+        const computeStartBeat = vi.fn(() => 4);
+        mocks.resolveEligibleClipWriteTarget.mockImplementation((input: { clipId?: string; trackId?: string }) => {
+            if (input.clipId === 'c1') {
+                return { status: 'eligible', clipId: 'c1', trackId: 't1' };
+            }
+            // destination lookup by trackId returns ineligible
+            if (input.trackId === 't1') {
+                return { status: 'ineligible' };
+            }
+            return { status: 'missing' };
+        });
+
+        expect(
+            duplicateClipCore({
+                clipId: 'c1',
+                targetClipId: 'c2',
+                computeStartBeat,
+            })
+        ).toBe(false);
+
+        expect(computeStartBeat).not.toHaveBeenCalled();
+        expect(mocks.addClip).not.toHaveBeenCalled();
+    });
+
+    it('aborts when the generated target id is the empty string', () => {
+        const computeStartBeat = vi.fn(() => 4);
+        mocks.getNextClipId.mockReturnValue('');
+        mocks.getTrackState.mockReturnValue({ tracks: [{ id: 't1', clips: [] }] });
+
+        expect(
+            duplicateClipCore({
+                clipId: 'c1',
+                computeStartBeat,
+            })
+        ).toBe(false);
+
+        expect(computeStartBeat).not.toHaveBeenCalled();
+        expect(mocks.addClip).not.toHaveBeenCalled();
+    });
+
+    it('aborts when no track state is present', () => {
+        const computeStartBeat = vi.fn(() => 4);
+        mocks.getTrackState.mockReturnValue(null);
+
+        expect(
+            duplicateClipCore({
+                clipId: 'c1',
+                targetClipId: 'c2',
+                computeStartBeat,
+            })
+        ).toBe(false);
+
+        expect(computeStartBeat).not.toHaveBeenCalled();
+        expect(mocks.addClip).not.toHaveBeenCalled();
+    });
+
+    it('aborts when the source track no longer contains the clip', () => {
+        const computeStartBeat = vi.fn(() => 4);
+        mocks.getTrackState.mockReturnValue({ tracks: [{ id: 't1', clips: [] }] });
+
+        expect(
+            duplicateClipCore({
+                clipId: 'c1',
+                targetClipId: 'c2',
+                computeStartBeat,
+            })
+        ).toBe(false);
+
+        expect(computeStartBeat).not.toHaveBeenCalled();
+        expect(mocks.addClip).not.toHaveBeenCalled();
+    });
 });

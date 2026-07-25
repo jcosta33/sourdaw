@@ -1,7 +1,9 @@
 import { vi, describe, it, expect, beforeEach } from 'vitest';
 
 vi.mock('../../../stores/trackStore', () => {
-    const internal = { value: { tracks: [], selectedTrackId: null } };
+    const internal = {
+        value: { tracks: [], selectedTrackId: null } as { tracks: unknown[]; selectedTrackId: string | null } | null,
+    };
     return {
         trackStore: {
             get value() {
@@ -39,5 +41,13 @@ describe('mapAllTracks', () => {
         }
         expect(first.name).toBe('A!');
         expect(second.name).toBe('B!');
+    });
+
+    it('should be a no-op when the store has not initialised', () => {
+        trackStore.set(null);
+
+        mapAllTracks((time) => ({ ...time, name: 'changed' }));
+
+        expect(trackStore.value).toBeNull();
     });
 });

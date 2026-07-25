@@ -113,4 +113,31 @@ describe('handleDuplicateClip', () => {
             })
         ).toEqual({ status: 'no-write' });
     });
+
+    it('is a noop when the destination track is ineligible', () => {
+        const action = { type: 'duplicateClip' as const, payload: { clipId: 'c1' } };
+        // Source resolves eligible on track t1, but the destination target is ineligible.
+        mocks.resolveEligibleClipWriteTarget.mockImplementation((input: { clipId?: string; trackId?: string }) => {
+            if (input.clipId === 'c1') {
+                return { status: 'eligible', clipId: 'c1', trackId: 't1' };
+            }
+            return { status: 'ineligible' };
+        });
+
+        expect(handleDuplicateClip.isNoop?.(action)).toBe(true);
+        expect(mocks.prepareDuplicateClipTargetId).not.toHaveBeenCalled();
+    });
+
+    it('is not a noop and allocates a fresh target id when none is supplied', () => {
+        const action = { type: 'duplicateClip' as const, payload: { clipId: 'c1' } };
+
+        expect(handleDuplicateClip.isNoop?.(action)).toBe(false);
+    });
+
+    it('is a noop when an explicit empty target clip id is supplied', () => {
+        const action = { type: 'duplicateClip' as const, payload: { clipId: 'c1', targetClipId: '' } };
+
+        expect(handleDuplicateClip.isNoop?.(action)).toBe(true);
+        expect(mocks.prepareDuplicateClipTargetId).not.toHaveBeenCalled();
+    });
 });

@@ -35,4 +35,11 @@ describe('getGrooveOffsetAtBeat', () => {
         grooveStore.set({ ...grooveStore.value!, projectGrooveIntensity: 0.5 });
         expect(getGrooveOffsetAtBeat(0.5)).toBe(0.05);
     });
+
+    it('should return 0 when the active groove id references a missing template', () => {
+        // projectGrooveId is set, but no template matches -> no offset applied.
+        grooveStore.set({ ...grooveStore.value!, projectGrooveId: 'nonexistent' });
+
+        expect(getGrooveOffsetAtBeat(0.5)).toBe(0);
+    });
 });

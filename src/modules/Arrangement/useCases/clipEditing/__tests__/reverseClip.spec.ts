@@ -199,4 +199,28 @@ describe('reverseClip', () => {
         expect(mocks.updateClip).not.toHaveBeenCalled();
         expect(mocks.clearClipPitchContour).not.toHaveBeenCalled();
     });
+
+    it('rejects when the track store has not loaded', () => {
+        mocks.getTrackState.mockReturnValue(null);
+
+        const didWrite = reverseClip('c1');
+
+        expect(didWrite).toBe(false);
+        expect(mocks.getCachedAudioBuffer).not.toHaveBeenCalled();
+        expect(mocks.updateClip).not.toHaveBeenCalled();
+    });
+
+    it('rejects when the source buffer is not cached', () => {
+        mocks.getTrackState.mockReturnValue({
+            tracks: [{ id: 'track-1', clips: [{ id: 'c1', type: 'audio', audioBufferId: 'buf1', name: 'Sample' }] }],
+        });
+        mocks.getCachedAudioBuffer.mockReturnValue(null);
+
+        const didWrite = reverseClip('c1');
+
+        expect(didWrite).toBe(false);
+        expect(mockCtx.createBuffer).not.toHaveBeenCalled();
+        expect(mocks.cacheAudioBuffer).not.toHaveBeenCalled();
+        expect(mocks.updateClip).not.toHaveBeenCalled();
+    });
 });

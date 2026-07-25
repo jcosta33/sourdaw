@@ -183,6 +183,60 @@ describe('stripSilence', () => {
         expect(updated_track.clips.map((context) => context.id)).not.toContain('clip-1');
     });
 
+    it('merges adjacent regions whose silence gap is below minSilenceBeats and writes the trimmed clip set', () => {
+        // clipDurationBeats = 10 over 100 samples -> 0.1 beats/sample.
+        // Regions: loud 0-19, 22-41 (gap of 2 samples = 0.2 beats < 0.5 merges),
+        //          then a large 40-sample gap (4 beats, not merged) to loud 82-99.
+        // First pass yields 3 regions; merge collapses the first two into one.
+        const clip = ClipDummy.create({
+            id: 'clip-1',
+            audioBufferId: 'buf-1',
+            startBeat: 0,
+            endBeat: 10,
+        });
+        const track = create_track_with_clips([clip]);
+        const channel_data = new Float32Array(100);
+        channel_data.fill(0.5, 0, 20);
+        channel_data.fill(0.5, 22, 42);
+        channel_data.fill(0.5, 82, 100);
+        mocks.getTrackState.mockReturnValue(create_track_state(track));
+        mocks.getCachedAudioBuffer.mockReturnValue(create_test_audio_buffer(channel_data));
+
+        const didWrite = stripSilence('clip-1');
+
+        expect(didWrite).toBe(true);
+        const updater = mocks.updateTrack.mock.calls[0]?.[1];
+        if (!updater) {
+            throw new Error('Expected stripSilence to pass an updater to updateTrack');
+        }
+        const updated_track = updater(track);
+        // 3 detected regions, but the first two (gap 0.2 beats) merged -> 2 clips.
+        expect(updated_track.clips).toHaveLength(2);
+    });
+
+    it('returns no write when every silence gap is below minSilenceBeats (all regions merge into one)', () => {
+        // clipDurationBeats = 10 over 100 samples -> 0.1 beats/sample.
+        // Three loud blocks separated only by sub-threshold gaps (2-3 samples = 0.2-0.3 beats < 0.5),
+        // so the merge pass collapses them back to a single region.
+        const clip = ClipDummy.create({
+            id: 'clip-1',
+            audioBufferId: 'buf-1',
+            startBeat: 0,
+            endBeat: 10,
+        });
+        const channel_data = new Float32Array(100);
+        channel_data.fill(0.5, 0, 20);
+        channel_data.fill(0.5, 22, 42);
+        channel_data.fill(0.5, 45, 65);
+        mocks.getTrackState.mockReturnValue(create_track_state(create_track_with_clips([clip])));
+        mocks.getCachedAudioBuffer.mockReturnValue(create_test_audio_buffer(channel_data));
+
+        const didWrite = stripSilence('clip-1');
+
+        expect(didWrite).toBe(false);
+        expect(mocks.updateTrack).not.toHaveBeenCalled();
+    });
+
     it('rejects an ineligible owner before buffer scanning, UUID allocation, or track update', () => {
         const clip = ClipDummy.create({ id: 'clip-1', audioBufferId: 'buf-1' });
         mocks.getTrackState.mockReturnValue(create_track_state(create_track_with_clips([clip])));

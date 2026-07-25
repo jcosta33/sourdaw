@@ -278,4 +278,28 @@ describe('projectTrackToLiveStrip', () => {
         expect(mocks.setTrackOutput).not.toHaveBeenCalled();
         expect(mocks.setSend).not.toHaveBeenCalled();
     });
+
+    it('skips output and send wiring when the routing endpoint is ambiguous', () => {
+        // Two tracks share the output id: acceptsRoutingEndpoint cannot pick a
+        // unique owner, so neither the output nor the send is wired.
+        const track = createTrack({ id: 'audio-1', name: 'Audio', kind: 'audio' });
+        const firstMaster = createTrack({ id: 'master', name: 'First', kind: 'master' });
+        const secondMaster = createTrack({ id: 'master', name: 'Second', kind: 'master' });
+        track.outputId = firstMaster.id;
+        track.sends = [{ busId: firstMaster.id, level: 0.5, preFader: false }];
+        trackStore.set({ tracks: [track, firstMaster, secondMaster], selectedTrackId: null });
+
+        projectTrackToLiveStrip({ trackId: track.id });
+
+        expect(mocks.setTrackOutput).not.toHaveBeenCalled();
+        expect(mocks.setSend).not.toHaveBeenCalled();
+    });
+
+    it('is a no-op when the track store has not loaded', () => {
+        trackStore.set(null);
+
+        projectTrackToLiveStrip({ trackId: 'audio-1' });
+
+        expect(mocks.ensureTrackStrip).not.toHaveBeenCalled();
+    });
 });

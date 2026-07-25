@@ -82,4 +82,12 @@ describe('swipeGroupComp', () => {
         swipeGroupComp('missing', 'ts-new', 0, 4);
         expect(groupRegions('g1')).toEqual([]);
     });
+
+    it('is a no-op when the group-comping store holds no state', () => {
+        groupCompingStore.clear();
+
+        swipeGroupComp('g1', 'ts-new', 0, 4);
+
+        expect(groupCompingStore.value).toBeNull();
+    });
 });

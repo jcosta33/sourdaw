@@ -74,4 +74,10 @@ describe('hitTestTrack', () => {
     it('clamps negative positions to the first track', () => {
         expect(hitTestTrack(-25)).toBe('t1');
     });
+
+    it('returns null when the render model cannot be built (no tracks in state)', () => {
+        mocks.buildTimelineRenderModel.mockReturnValue(null as unknown as TimelineRenderModel);
+
+        expect(hitTestTrack(10)).toBeNull();
+    });
 });

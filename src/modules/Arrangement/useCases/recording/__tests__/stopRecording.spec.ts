@@ -109,4 +109,62 @@ describe('stopRecording', () => {
         }
         expect(newState.lanes[0]!.takes[0]!.endBeat).toBe(10);
     });
+
+    it('returns immediately when no clips are actively recording', () => {
+        mocks.activeRecordingRef.current = [];
+        mocks.getTrackState.mockReturnValue({ tracks: [{ clips: [] }] } as unknown as TrackState);
+        mocks.transportStoreValue = { playheadPosition: 8 } as unknown as TransportState;
+
+        stopRecording();
+
+        expect(mocks.setTrackState).not.toHaveBeenCalled();
+        expect(mocks.takeLaneStoreSet).not.toHaveBeenCalled();
+    });
+
+    it('returns without writing when the transport store has no state', () => {
+        mocks.getTrackState.mockReturnValue({ tracks: [{ clips: [] }] } as unknown as TrackState);
+        mocks.transportStoreValue = null;
+
+        stopRecording();
+
+        expect(mocks.setTrackState).not.toHaveBeenCalled();
+        expect(mocks.takeLaneStoreSet).not.toHaveBeenCalled();
+    });
+
+    it('leaves non-recording clips and takes untouched while finalising recording ones', () => {
+        mocks.getTrackState.mockReturnValue({
+            tracks: [
+                {
+                    clips: [
+                        { id: 'c1', type: 'audio', startBeat: 0, endBeat: 0 },
+                        { id: 'other', type: 'audio', startBeat: 0, endBeat: 2 },
+                    ],
+                },
+            ],
+        } as unknown as TrackState);
+        mocks.transportStoreValue = { playheadPosition: 6 } as unknown as TransportState;
+        mocks.takeLaneStoreValue.value = {
+            lanes: [
+                {
+                    id: 'l1',
+                    takes: [
+                        { clipId: 'c1', startBeat: 0, endBeat: 0 },
+                        { clipId: 'untouched', startBeat: 0, endBeat: 1 },
+                    ],
+                },
+            ],
+        } as unknown as TakeLaneStoreState;
+
+        stopRecording();
+
+        const trackState = mocks.setTrackState.mock.calls[0]![0];
+        // Recording clip is finalised; the sibling clip keeps its end beat.
+        expect(trackState.tracks[0]!.clips[0]!.endBeat).toBe(6);
+        expect(trackState.tracks[0]!.clips[1]!.endBeat).toBe(2);
+
+        const laneState = mocks.takeLaneStoreSet.mock.calls[0]![0] as TakeLaneStoreState;
+        // Recording take is finalised; the unrelated take is unchanged.
+        expect(laneState.lanes[0]!.takes[0]!.endBeat).toBe(6);
+        expect(laneState.lanes[0]!.takes[1]!.endBeat).toBe(1);
+    });
 });

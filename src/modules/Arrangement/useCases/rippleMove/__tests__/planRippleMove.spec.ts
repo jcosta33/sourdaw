@@ -75,4 +75,30 @@ describe('planRippleMove', () => {
         expect(plan?.gapClosedClips.map((state) => state.clipId)).toEqual(['c2']);
         expect(plan?.destinationOpenedClips.map((state) => state.clipId)).toEqual(['c3', 'c4']);
     });
+
+    it('returns null when the track store is not loaded', () => {
+        workspaceStoreMock.value = { rippleEditing: true };
+        vi.mocked(getTrackStoreState).mockReturnValue(null);
+
+        expect(
+            planRippleMove({ trackId: 't1', clipId: 'c1', oldStartBeat: 0, newStartBeat: 2, clipDuration: 2 })
+        ).toBeNull();
+    });
+
+    it('returns null when the target track cannot be found', () => {
+        workspaceStoreMock.value = { rippleEditing: true };
+        vi.mocked(getTrackStoreState).mockReturnValue({
+            tracks: [
+                {
+                    ...createTrack({ id: 't1', name: 'T1', kind: 'midi' }),
+                    clips: [makeClip('c1', 0, 2)],
+                },
+            ],
+            selectedTrackId: null,
+        });
+
+        expect(
+            planRippleMove({ trackId: 'missing', clipId: 'c1', oldStartBeat: 0, newStartBeat: 2, clipDuration: 2 })
+        ).toBeNull();
+    });
 });

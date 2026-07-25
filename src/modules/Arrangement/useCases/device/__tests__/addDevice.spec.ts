@@ -11,6 +11,7 @@ const mocks = vi.hoisted(() => ({
     compileFaustDSP: vi.fn(),
     loadPlugin: vi.fn(),
     projectTrackToLiveStrip: vi.fn(),
+    notifyUser: vi.fn(),
 }));
 
 vi.mock('../../../repositories/track/getTrackState', () => ({
@@ -41,6 +42,10 @@ vi.mock('#/modules/PluginHost/useCases', async (importOriginal) => ({
     loadPlugin: mocks.loadPlugin,
 }));
 
+vi.mock('#/utils/Notification/notifyUser', () => ({
+    notifyUser: mocks.notifyUser,
+}));
+
 describe('addDevice', () => {
     beforeEach(() => {
         vi.clearAllMocks();
@@ -58,6 +63,24 @@ describe('addDevice', () => {
         });
         expect(mocks.updateTrack).toHaveBeenCalledWith('t1', expect.any(Function));
         expect(mocks.addDeviceToStrip).not.toHaveBeenCalled();
+    });
+
+    it('returns null when the track store has not loaded', () => {
+        mocks.getTrackState.mockReturnValue(null);
+
+        expect(addDevice('t1', 'reverb')).toBeNull();
+        expect(mocks.updateTrack).not.toHaveBeenCalled();
+    });
+
+    it('rejects a crust device with a user notification before any state change', () => {
+        const result = addDevice('t1', 'crust');
+
+        expect(result).toBeNull();
+        expect(mocks.notifyUser).toHaveBeenCalledWith(
+            'PluginNotImplementedError: Crust is not fully implemented',
+            'error'
+        );
+        expect(mocks.updateTrack).not.toHaveBeenCalled();
     });
 
     it('adds a registered plugin and notifies engine', () => {

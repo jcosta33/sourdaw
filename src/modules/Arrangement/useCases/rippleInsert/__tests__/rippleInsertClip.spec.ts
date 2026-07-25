@@ -130,4 +130,17 @@ describe('rippleInsertClip', () => {
             ],
         });
     });
+
+    it('is a no-op when the track store holds no state', () => {
+        vi.mocked(getTrackStoreState).mockReturnValue(null);
+
+        rippleInsertClip({
+            trackId: 'track-target',
+            insertDuration: 1.5,
+            plan: { shiftedClips: [{ clipId: 'clip-planned', origStartBeat: 2, origEndBeat: 4 }] },
+        });
+
+        expect(setTrackState).not.toHaveBeenCalled();
+        expect(shiftClipAutomation).not.toHaveBeenCalled();
+    });
 });

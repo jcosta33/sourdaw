@@ -100,6 +100,19 @@ describe('startRecording', () => {
         expect(mocks.setTrackState).not.toHaveBeenCalled();
     });
 
+    it('creates a midi-typed clip for an armed midi track with no existing clip', () => {
+        mocks.getTrackState.mockReturnValue({
+            tracks: [{ id: 't1', armed: true, kind: 'midi', clips: [] }],
+        });
+        mocks.transportStoreValue = { playheadPosition: 4 };
+        mocks.getTakeLaneForTrack.mockReturnValue(null);
+
+        const newClips = startRecording();
+
+        expect(newClips).toHaveLength(1);
+        expect(newClips[0]).toMatchObject({ trackId: 't1', type: 'midi' });
+    });
+
     it('excludes an armed dormant VCA before clip, take, or store work', () => {
         mocks.getTrackState.mockReturnValue({
             tracks: [{ id: 'vca-1', armed: true, kind: 'vca', clips: [] }],
@@ -110,6 +123,44 @@ describe('startRecording', () => {
         expect(mocks.getTakeLaneForTrack).not.toHaveBeenCalled();
         expect(mocks.addTakeLane).not.toHaveBeenCalled();
         expect(mocks.addTake).not.toHaveBeenCalled();
+        expect(mocks.setTrackState).not.toHaveBeenCalled();
+    });
+
+    it('returns empty when the transport store has no state, even with armed tracks', () => {
+        mocks.getTrackState.mockReturnValue({
+            tracks: [{ id: 't1', armed: true, kind: 'audio', clips: [] }],
+        });
+        mocks.transportStoreValue = null;
+
+        expect(startRecording()).toEqual([]);
+        expect(mocks.getTakeLaneForTrack).not.toHaveBeenCalled();
+        expect(mocks.setTrackState).not.toHaveBeenCalled();
+    });
+
+    it('skips MIDI clip creation when overdubbing inside an active loop region', () => {
+        mocks.getTrackState.mockReturnValue({
+            tracks: [
+                {
+                    id: 't1',
+                    armed: true,
+                    kind: 'midi',
+                    // A midi clip that fits entirely inside the loop region.
+                    clips: [{ id: 'c1', type: 'midi', startBeat: 2, endBeat: 4 }],
+                },
+            ],
+        });
+        // Playhead is inside the loop region [0,8] but outside the clip [2,4],
+        // so no clip intersects the playhead directly — yet the loop-clip merge
+        // path still suppresses a fresh clip because the loop hosts the take.
+        mocks.transportStoreValue = {
+            playheadPosition: 6,
+            overdubEnabled: true,
+            isLooping: true,
+            loopStart: 0,
+            loopEnd: 8,
+        };
+
+        expect(startRecording()).toHaveLength(0);
         expect(mocks.setTrackState).not.toHaveBeenCalled();
     });
 });

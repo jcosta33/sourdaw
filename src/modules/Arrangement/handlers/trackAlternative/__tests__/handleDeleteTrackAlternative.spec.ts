@@ -60,6 +60,39 @@ describe('handleDeleteTrackAlternative', () => {
         expect(result).toEqual({ status: 'written' });
     });
 
+    it('passes sibling tracks through untouched when deleting on the target track', () => {
+        const sibling = {
+            id: 'sibling',
+            activeAlternativeId: 'sib-alt',
+            alternatives: [{ id: 'sib-alt', clips: [] }],
+        };
+        mocks.getTrackStoreState.mockReturnValue({
+            tracks: [
+                {
+                    id: 't1',
+                    activeAlternativeId: 'alt1',
+                    alternatives: [
+                        { id: 'alt1', clips: [] },
+                        { id: 'alt2', clips: [] },
+                    ],
+                },
+                sibling,
+            ],
+        });
+
+        handleDeleteTrackAlternative.execute({
+            type: 'deleteTrackAlternative',
+            payload: { trackId: 't1', alternativeId: 'alt2' },
+        });
+
+        const firstCall = mocks.setTrackStoreState.mock.calls[0];
+        if (!firstCall) {
+            throw new Error('expected setTrackStoreState to have been called');
+        }
+        // The sibling is the same object reference — untouched by the map.
+        expect(firstCall[0].tracks[1]).toBe(sibling);
+    });
+
     it('falls back to another alternative if deleting the active one', () => {
         const alt2Clips = [makeClip('c2')];
         mocks.getTrackStoreState.mockReturnValue({
@@ -324,5 +357,66 @@ describe('handleDeleteTrackAlternative', () => {
         expect(result).toEqual({ status: 'written' });
         const newState = mocks.setTrackStoreState.mock.calls[0]?.[0];
         expect(newState.tracks[0].activeAlternativeId).toBe('alt2');
+    });
+
+    it('falls back to the first remaining alternative when no fallback id is provided', () => {
+        mocks.getTrackStoreState.mockReturnValue({
+            tracks: [
+                {
+                    id: 't1',
+                    activeAlternativeId: 'alt3',
+                    clips: [],
+                    alternatives: [
+                        { id: 'alt1', clips: [] },
+                        { id: 'alt2', clips: [] },
+                        { id: 'alt3', clips: [] },
+                    ],
+                },
+            ],
+        });
+
+        const result = handleDeleteTrackAlternative.execute({
+            type: 'deleteTrackAlternative',
+            payload: { trackId: 't1', alternativeId: 'alt3' },
+        });
+
+        expect(result).toEqual({ status: 'written' });
+        const newState = mocks.setTrackStoreState.mock.calls[0]?.[0];
+        expect(newState.tracks[0].activeAlternativeId).toBe('alt1');
+    });
+
+    it('returns no-write when the track store is unavailable', () => {
+        mocks.getTrackStoreState.mockReturnValue(null);
+
+        const result = handleDeleteTrackAlternative.execute({
+            type: 'deleteTrackAlternative',
+            payload: { trackId: 't1', alternativeId: 'alt2' },
+        });
+
+        expect(result).toEqual({ status: 'no-write' });
+        expect(mocks.setTrackStoreState).not.toHaveBeenCalled();
+    });
+
+    it.each([
+        ['not an array', 'garbage'],
+        ['a non-object element', [{ id: 'alt1', clips: [] }, 'garbage']],
+    ])('returns no-write when the alternatives collection is %s', (_label, alternatives) => {
+        mocks.getTrackStoreState.mockReturnValue({
+            tracks: [
+                {
+                    id: 't1',
+                    activeAlternativeId: 'alt1',
+                    alternatives,
+                },
+            ],
+        });
+
+        const result = handleDeleteTrackAlternative.execute({
+            type: 'deleteTrackAlternative',
+            payload: { trackId: 't1', alternativeId: 'alt2' },
+        });
+
+        expect(result).toEqual({ status: 'no-write' });
+        expect(mocks.setTrackStoreState).not.toHaveBeenCalled();
     });
 });

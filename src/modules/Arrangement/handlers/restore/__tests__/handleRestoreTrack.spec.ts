@@ -167,4 +167,17 @@ describe('handleRestoreTrack', () => {
         expect(handleRestoreTrack.describe(createRestoreTrackAction())).toEqual({ label: 'Restore track' });
         expect(handleRestoreTrack.undoable).toBe(false);
     });
+
+    it('skips the take-lane merge when the take-lane store holds no state', () => {
+        const action = createRestoreTrackAction({
+            takeLaneSnapshots: [{ id: 'take-restored', trackId: 'track-1' }],
+        });
+        // Take-lane snapshots are present, but the store itself is absent.
+        mocks.takeLaneStoreState.value = null;
+
+        void handleRestoreTrack.execute(action);
+
+        // No merge attempted because there is no prior state to extend.
+        expect(mocks.setTakeLaneStore).not.toHaveBeenCalled();
+    });
 });

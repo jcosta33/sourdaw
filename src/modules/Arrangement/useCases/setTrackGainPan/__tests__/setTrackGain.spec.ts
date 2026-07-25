@@ -80,4 +80,18 @@ describe('setTrackGain', () => {
 
         expect(mocks.recordAutomationValue).toHaveBeenCalledWith('t1', 'gain', 0.8, 10);
     });
+
+    it('skips persistence and automation when the change is transient', () => {
+        // A transient (e.g. live drag) change still drives the engine live value
+        // but must not write the store or record automation until committed.
+        mocks.getTrackById.mockReturnValue({ id: 't1', automationMode: 'write' });
+        mocks.transportStoreValue = { isPlaying: true, playheadPosition: 10 };
+
+        setTrackGain('t1', 0.8, true);
+
+        expect(mocks.engineSetTrackGain).toHaveBeenCalledWith('t1', 0.8);
+        expect(mocks.updateTrack).not.toHaveBeenCalled();
+        expect(mocks.recordAutomationValue).not.toHaveBeenCalled();
+        expect(mocks.updateDeviceParam).not.toHaveBeenCalled();
+    });
 });

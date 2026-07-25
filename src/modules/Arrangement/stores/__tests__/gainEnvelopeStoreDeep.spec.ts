@@ -47,6 +47,30 @@ describe('gainEnvelopeStore', () => {
         expect(getAllEnvelopes()).toEqual([]);
     });
 
+    it('getAllEnvelopes returns empty when the store value is null', () => {
+        gainEnvelopeStore.set(null);
+
+        expect(getAllEnvelopes()).toEqual([]);
+    });
+
+    it('setEnvelope re-seeds from the default when the store value is null', () => {
+        gainEnvelopeStore.set(null);
+
+        const env = make_env('c1');
+        setEnvelope('c1', env);
+
+        expect(getEnvelope('c1')).toBe(env);
+    });
+
+    it('removeEnvelope re-seeds from the default and no-ops when the store value is null', () => {
+        gainEnvelopeStore.set(null);
+
+        // Should not throw and should leave the store in a valid state
+        removeEnvelope('c1');
+
+        expect(getAllEnvelopes()).toEqual([]);
+    });
+
     it('removeEnvelope removes by clipId', () => {
         setEnvelope('c1', make_env('c1'));
         setEnvelope('c2', make_env('c2'));

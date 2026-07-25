@@ -39,4 +39,12 @@ describe('addSection', () => {
             name: 'Intro',
         });
     });
+
+    it('is a no-op when the marker store holds no state (cleared/absent project)', () => {
+        mocks.markerStoreValue.value = null;
+
+        addSection(0, 32, 'Intro');
+
+        expect(mocks.markerStoreSet).not.toHaveBeenCalled();
+    });
 });

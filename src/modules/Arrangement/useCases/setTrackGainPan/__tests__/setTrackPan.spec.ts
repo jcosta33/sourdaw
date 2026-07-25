@@ -80,4 +80,18 @@ describe('setTrackPan', () => {
 
         expect(mocks.recordAutomationValue).toHaveBeenCalledWith('t1', 'pan', -10, 10);
     });
+
+    it('skips persistence and automation when the change is transient', () => {
+        // A transient change still drives the engine live value but must not
+        // write the store or record automation until committed.
+        mocks.getTrackById.mockReturnValue({ id: 't1', automationMode: 'write' });
+        mocks.transportStoreValue = { isPlaying: true, playheadPosition: 10 };
+
+        setTrackPan('t1', -10, true);
+
+        expect(mocks.engineSetTrackPan).toHaveBeenCalledWith('t1', -10);
+        expect(mocks.updateTrack).not.toHaveBeenCalled();
+        expect(mocks.recordAutomationValue).not.toHaveBeenCalled();
+        expect(mocks.updateDeviceParam).not.toHaveBeenCalled();
+    });
 });

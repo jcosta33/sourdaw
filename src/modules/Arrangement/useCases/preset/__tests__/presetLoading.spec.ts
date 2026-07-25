@@ -209,4 +209,17 @@ describe('loadPresetToTrack', () => {
         expect(updateDeviceParam).not.toHaveBeenCalled();
         expect(mocks.notifyUser).not.toHaveBeenCalled();
     });
+
+    it('skips parameter wiring for an effect device that fails to attach', () => {
+        vi.mocked(getTrackById).mockReturnValue(makeTrack('t4'));
+        // addDevice returns null (e.g. ineligible target) -> attachEffectDevice
+        // bails before setting any parameter values.
+        vi.mocked(addDevice).mockReturnValue(null);
+
+        loadPresetToTrack('t4', basePreset([{ type: 'delay', name: 'Delay', parameterValues: { mix: 0.5 } }]));
+
+        expect(addDevice).toHaveBeenCalledWith('t4', 'Delay');
+        expect(setDeviceParameter).not.toHaveBeenCalled();
+        expect(updateDeviceParam).not.toHaveBeenCalled();
+    });
 });

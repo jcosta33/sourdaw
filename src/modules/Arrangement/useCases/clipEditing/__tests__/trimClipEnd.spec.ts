@@ -4,10 +4,15 @@ import { trimClipEnd } from '../trimClipEnd';
 
 const mocks = vi.hoisted(() => ({
     updateClip: vi.fn(),
+    getTrackState: vi.fn<() => { tracks: unknown[] } | null>(),
 }));
 
 vi.mock('#/modules/Arrangement/repositories/track/updateClip', () => ({
     updateClip: mocks.updateClip,
+}));
+
+vi.mock('#/modules/Arrangement/repositories/track/getTrackState', () => ({
+    getTrackState: mocks.getTrackState,
 }));
 
 describe('trimClipEnd', () => {
@@ -42,5 +47,15 @@ describe('trimClipEnd', () => {
         const result = updater(mockClip);
 
         expect(result).toBe(mockClip);
+    });
+
+    it('skips the pre-check and still trims when the track store is absent', () => {
+        // state is null -> the startBeat pre-check is skipped, and the trim
+        // proceeds through updateClip's own guard.
+        mocks.getTrackState.mockReturnValue(null);
+        mocks.updateClip.mockReturnValue(true);
+
+        expect(trimClipEnd('c1', 15)).toBe(true);
+        expect(mocks.updateClip).toHaveBeenCalledWith('c1', expect.any(Function));
     });
 });

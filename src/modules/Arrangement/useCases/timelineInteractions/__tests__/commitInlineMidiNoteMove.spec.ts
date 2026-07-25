@@ -77,4 +77,21 @@ describe('commitInlineMidiNoteMove', () => {
         expect(mocks.setNotesForClip).not.toHaveBeenCalled();
         expect(mocks.pushUndoEntry).not.toHaveBeenCalled();
     });
+
+    it('rejects a note id that does not exist in the clip before any write', () => {
+        mocks.getNotesForClip.mockReturnValue([
+            { id: 'note-1', pitch: 60, startBeat: 1, duration: 0.5, velocity: 100 },
+        ]);
+
+        const committed = commitInlineMidiNoteMove({
+            clipId: 'clip-1',
+            noteId: 'missing-note',
+            pitch: 72,
+            startBeat: 4,
+        });
+
+        expect(committed).toBe(false);
+        expect(mocks.setNotesForClip).not.toHaveBeenCalled();
+        expect(mocks.pushUndoEntry).not.toHaveBeenCalled();
+    });
 });

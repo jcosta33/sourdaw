@@ -112,4 +112,40 @@ describe('fitClipToBeats', () => {
 
         expect(next.stretchMode).toBe('stretch');
     });
+
+    it('treats an absent stretchRatio as 1:1 when computing the base duration', () => {
+        mocks.getTrackState.mockReturnValue({
+            tracks: [
+                {
+                    id: 't1',
+                    clips: [
+                        {
+                            id: 'c1',
+                            startBeat: 0,
+                            endBeat: 4,
+                            stretchMode: 'off' as const,
+                            // stretchRatio intentionally omitted — a clip that
+                            // has never been stretched has no stored ratio and
+                            // fitClipToBeats must assume 1:1.
+                        },
+                    ],
+                },
+            ],
+        });
+
+        fitClipToBeats('c1', 8);
+
+        const updater = mocks.updateClip.mock.calls[0]![1] as (c: any) => any;
+        const next = updater({
+            id: 'c1',
+            startBeat: 0,
+            endBeat: 4,
+            stretchMode: 'off' as const,
+        });
+
+        // 4-beat clip with an implicit 1:1 ratio has a 4-beat base duration;
+        // fitting to 8 beats yields a 0.5 stretch ratio.
+        expect(next.stretchRatio).toBe(0.5);
+        expect(next.endBeat).toBe(8);
+    });
 });

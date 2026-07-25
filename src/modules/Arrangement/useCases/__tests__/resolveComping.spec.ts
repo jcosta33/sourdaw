@@ -89,4 +89,101 @@ describe('resolveClipsWithComping', () => {
             [6, 8, 0],
         ]);
     });
+
+    it('skips regions whose take is missing and regions whose source clip is absent', () => {
+        mocks.takeLaneStoreValue.value = {
+            lanes: [
+                {
+                    id: 'lane-1',
+                    trackId: 't1',
+                    takes: [
+                        // take-resolved exists for 'src'; the 'orphan-take' id has no take.
+                        { id: 'take-src', clipId: 'src', name: 'Src', startBeat: 0, endBeat: 8, selected: true },
+                    ],
+                    activeCompRegions: [
+                        { startBeat: 0, endBeat: 4, takeId: 'orphan-take' }, // no matching take -> skipped
+                        { startBeat: 0, endBeat: 4, takeId: 'take-src' }, // source clip 'src' not passed -> skipped
+                    ],
+                },
+            ],
+        };
+
+        // Pass a clip that none of the regions reference.
+        const out = resolveClipsWithComping('t1', [testClip({ id: 'other', startBeat: 0, endBeat: 8 })]);
+
+        // No region resolves; the passed clip falls through as a whole gap.
+        expect(out.map((c) => c.id)).toEqual(['other']);
+    });
+
+    it('skips regions that do not overlap their source clip', () => {
+        mocks.takeLaneStoreValue.value = {
+            lanes: [
+                {
+                    id: 'lane-1',
+                    trackId: 't1',
+                    takes: [{ id: 'take-src', clipId: 'src', name: 'Src', startBeat: 0, endBeat: 8, selected: true }],
+                    activeCompRegions: [
+                        // Region lies entirely outside the source clip [0,8): no overlap.
+                        { startBeat: 20, endBeat: 24, takeId: 'take-src' },
+                    ],
+                },
+            ],
+        };
+
+        const out = resolveClipsWithComping('t1', [testClip({ id: 'src', startBeat: 0, endBeat: 8 })]);
+
+        // The non-overlapping region is skipped; the clip falls through as a gap.
+        expect(out.map((c) => [c.id, c.startBeat, c.endBeat])).toEqual([['src', 0, 8]]);
+    });
+
+    it('ignores comp regions that fall entirely outside a clip when computing gaps', () => {
+        mocks.takeLaneStoreValue.value = {
+            lanes: [
+                {
+                    id: 'lane-1',
+                    trackId: 't1',
+                    takes: [{ id: 'take-src', clipId: 'src', name: 'Src', startBeat: 0, endBeat: 8, selected: true }],
+                    activeCompRegions: [
+                        // Region covers [2,4) inside the clip — resolves to a segment.
+                        { startBeat: 2, endBeat: 4, takeId: 'take-src' },
+                        // Disjoint region far outside the clip [0,8) — must be ignored.
+                        { startBeat: 100, endBeat: 200, takeId: 'take-src' },
+                    ],
+                },
+            ],
+        };
+
+        const out = resolveClipsWithComping('t1', [testClip({ id: 'src', startBeat: 0, endBeat: 8 })]);
+
+        // Resolved segment [2,4) plus gap segments [0,2) and [4,8); the disjoint
+        // region contributes nothing.
+        const spans = out.map((c): [number, number] => [c.startBeat, c.endBeat]);
+        spans.sort((a, b) => a[0] - b[0]);
+        expect(spans).toEqual([
+            [0, 2],
+            [2, 4],
+            [4, 8],
+        ]);
+    });
+
+    it('emits no gap segment when comp regions fully cover a clip', () => {
+        mocks.takeLaneStoreValue.value = {
+            lanes: [
+                {
+                    id: 'lane-1',
+                    trackId: 't1',
+                    takes: [{ id: 'take-src', clipId: 'src', name: 'Src', startBeat: 0, endBeat: 8, selected: true }],
+                    // A single region spanning the whole clip leaves no uncovered tail.
+                    activeCompRegions: [{ startBeat: 0, endBeat: 8, takeId: 'take-src' }],
+                },
+            ],
+        };
+
+        const out = resolveClipsWithComping('t1', [testClip({ id: 'src', startBeat: 0, endBeat: 8 })]);
+
+        // Exactly the one resolved segment; no trailing gap is synthesized.
+        expect(out).toHaveLength(1);
+        expect(out[0]!.startBeat).toBe(0);
+        expect(out[0]!.endBeat).toBe(8);
+    });
 });

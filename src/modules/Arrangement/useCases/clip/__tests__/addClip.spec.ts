@@ -122,6 +122,14 @@ describe('addClip', () => {
         expect(mocks.updateTrack).not.toHaveBeenCalled();
     });
 
+    it('returns null when startBeat or endBeat is non-finite', () => {
+        mocks.getTrackState.mockReturnValue({ tracks: [{ id: 't1', kind: 'audio', clips: [] }] });
+
+        expect(addClip({ trackId: 't1', startBeat: Number.NaN, endBeat: 4, name: 'nan' })).toBeNull();
+        expect(addClip({ trackId: 't1', startBeat: 0, endBeat: Number.POSITIVE_INFINITY, name: 'inf' })).toBeNull();
+        expect(mocks.updateTrack).not.toHaveBeenCalled();
+    });
+
     it('preserves passthrough source properties when provided', () => {
         mocks.getTrackState.mockReturnValue({ tracks: [{ id: 't1', kind: 'audio', clips: [] }] });
 

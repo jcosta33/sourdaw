@@ -45,6 +45,32 @@ describe('handleCreateAdjustmentLayer', () => {
         expect(desc.label).toBe('Create Adjustment Layer');
     });
 
+    it('throws on an unsupported adjustment effect type rather than silently dropping the action', () => {
+        expect(() =>
+            handleCreateAdjustmentLayer.execute({
+                type: 'createAdjustmentLayer',
+                payload: { name: 'Bad', effectType: 'not-a-real-effect' },
+            })
+        ).toThrow(/Unsupported adjustment effect type/);
+
+        expect(mocks.createAdjustmentLayer).not.toHaveBeenCalled();
+    });
+
+    it('honors a caller-supplied layer id instead of minting one', () => {
+        const action = {
+            type: 'createAdjustmentLayer' as const,
+            payload: { name: 'Master EQ', effectType: 'eq', layerId: 'layer-fixed' },
+        };
+
+        void handleCreateAdjustmentLayer.execute(action);
+
+        expect(mocks.createAdjustmentLayer).toHaveBeenCalledWith({
+            name: 'Master EQ',
+            effectType: 'eq',
+            layerId: 'layer-fixed',
+        });
+    });
+
     it('is undoable', () => {
         expect(handleCreateAdjustmentLayer.undoable).toBe(true);
     });

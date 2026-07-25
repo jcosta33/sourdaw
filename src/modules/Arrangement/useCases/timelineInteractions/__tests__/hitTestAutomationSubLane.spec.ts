@@ -143,4 +143,150 @@ describe('hitTestAutomationSubLane', () => {
 
         expect(hitTestAutomationSubLane(0, 0)).toBeNull();
     });
+
+    it('returns null when the render model cannot be built even though automation is visible', () => {
+        mockTimelineViewValue.value = { pixelsPerBeat: 10, scrollX: 0, scrollY: 0 };
+        mockTrackValue.value = { tracks: [], selectedTrackId: null };
+        mockWorkspaceValue.value = {
+            automationVisibility: 'overlay',
+            automationSubLanes: { t1: ['gain'] },
+        };
+        mockAutomationValue.value = { lanes: [] };
+        mockBuildTimelineRenderModel.mockReturnValue(null);
+
+        expect(hitTestAutomationSubLane(0, 0)).toBeNull();
+    });
+
+    it('returns null when the hit falls inside a track that has no automation sub-lanes', () => {
+        const model: TimelineRenderModel = {
+            dataDirty: false,
+            tracks: [
+                {
+                    id: 't1',
+                    name: 'One',
+                    index: 0,
+                    kind: 'midi',
+                    color: '#000',
+                    muted: false,
+                    soloed: false,
+                    height: 100,
+                    clips: [],
+                    automationMode: 'read',
+                },
+            ],
+            selectedTrackId: null,
+            selectedClipId: null,
+            selectedClipIds: [],
+            playheadPosition: 0,
+            viewportStartBeat: 0,
+            viewportEndBeat: 32,
+            beatsPerPixel: 0.1,
+            pixelsPerBeat: 10,
+            trackHeight: 48,
+            scrollY: 0,
+            tempo: 120,
+            timeSignatureNumerator: 4,
+            timeSignatureDenominator: 4,
+        };
+        mockTimelineViewValue.value = { pixelsPerBeat: 10, scrollX: 0, scrollY: 0 };
+        mockTrackValue.value = { tracks: [], selectedTrackId: null };
+        // Track t1 has no entry in the sub-lane map -> falls back to an empty list.
+        mockWorkspaceValue.value = {
+            automationVisibility: 'overlay',
+            automationSubLanes: {},
+        };
+        mockAutomationValue.value = { lanes: [] };
+        mockBuildTimelineRenderModel.mockReturnValue(model);
+
+        // Y inside the track body (100px tall) but no sub-lanes are defined.
+        expect(hitTestAutomationSubLane(50, 50)).toBeNull();
+    });
+
+    it('returns null when the sub-lane has no matching automation lane registered', () => {
+        const model: TimelineRenderModel = {
+            dataDirty: false,
+            tracks: [
+                {
+                    id: 't1',
+                    name: 'One',
+                    index: 0,
+                    kind: 'midi',
+                    color: '#000',
+                    muted: false,
+                    soloed: false,
+                    height: 100,
+                    clips: [],
+                    automationMode: 'read',
+                },
+            ],
+            selectedTrackId: null,
+            selectedClipId: null,
+            selectedClipIds: [],
+            playheadPosition: 0,
+            viewportStartBeat: 0,
+            viewportEndBeat: 32,
+            beatsPerPixel: 0.1,
+            pixelsPerBeat: 10,
+            trackHeight: 48,
+            scrollY: 0,
+            tempo: 120,
+            timeSignatureNumerator: 4,
+            timeSignatureDenominator: 4,
+        };
+        mockTimelineViewValue.value = { pixelsPerBeat: 10, scrollX: 0, scrollY: 0 };
+        mockTrackValue.value = { tracks: [], selectedTrackId: null };
+        mockWorkspaceValue.value = {
+            automationVisibility: 'overlay',
+            automationSubLanes: { t1: ['gain'] },
+        };
+        // No lane for t1/gain in the automation store -> hit is rejected.
+        mockAutomationValue.value = { lanes: [] };
+        mockBuildTimelineRenderModel.mockReturnValue(model);
+
+        expect(hitTestAutomationSubLane(50, 70)).toBeNull();
+    });
+
+    it('returns null when the y coordinate is below every track lane', () => {
+        const model: TimelineRenderModel = {
+            dataDirty: false,
+            tracks: [
+                {
+                    id: 't1',
+                    name: 'One',
+                    index: 0,
+                    kind: 'midi',
+                    color: '#000',
+                    muted: false,
+                    soloed: false,
+                    height: 100,
+                    clips: [],
+                    automationMode: 'read',
+                },
+            ],
+            selectedTrackId: null,
+            selectedClipId: null,
+            selectedClipIds: [],
+            playheadPosition: 0,
+            viewportStartBeat: 0,
+            viewportEndBeat: 32,
+            beatsPerPixel: 0.1,
+            pixelsPerBeat: 10,
+            trackHeight: 48,
+            scrollY: 0,
+            tempo: 120,
+            timeSignatureNumerator: 4,
+            timeSignatureDenominator: 4,
+        };
+        mockTimelineViewValue.value = { pixelsPerBeat: 10, scrollX: 0, scrollY: 0 };
+        mockTrackValue.value = { tracks: [], selectedTrackId: null };
+        mockWorkspaceValue.value = {
+            automationVisibility: 'overlay',
+            automationSubLanes: { t1: ['gain'] },
+        };
+        mockAutomationValue.value = { lanes: [] };
+        mockBuildTimelineRenderModel.mockReturnValue(model);
+
+        // Y far below the 100px-tall track -> no track lane contains it.
+        expect(hitTestAutomationSubLane(50, 500)).toBeNull();
+    });
 });

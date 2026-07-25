@@ -133,4 +133,13 @@ describe('addExternalDevice', () => {
         expect(mocks.addDeviceToStrip).not.toHaveBeenCalled();
         expect(mocks.activateExternalPlugin).not.toHaveBeenCalled();
     });
+
+    it('returns null when there is no track state (cleared/absent project)', () => {
+        mocks.getTrackState.mockReturnValue(null);
+
+        expect(addExternalDevice('audio-1', 'plugin-1', 'Plugin')).toBeNull();
+        expect(mocks.updateTrack).not.toHaveBeenCalled();
+        expect(mocks.addDeviceToStrip).not.toHaveBeenCalled();
+        expect(mocks.activateExternalPlugin).not.toHaveBeenCalled();
+    });
 });

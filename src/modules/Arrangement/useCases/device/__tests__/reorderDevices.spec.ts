@@ -48,4 +48,20 @@ describe('reorderDevices', () => {
 
         expect(mocks.updateTrack).not.toHaveBeenCalled();
     });
+
+    it('leaves devices unchanged when the source index is out of range', () => {
+        // No VCA mock carried over: an audio track is device-update eligible.
+        mocks.getTrackById.mockReturnValue({ id: 't1', kind: 'audio', devices: [] });
+
+        reorderDevices('t1', 5, 0);
+
+        const updater = mocks.updateTrack.mock.calls[0]?.[1];
+        if (!updater) {
+            throw new Error('expected updateTrack to have been called');
+        }
+        const mockTrack = { devices: [{ id: 'd1' }, { id: 'd2' }] };
+        // splice(5,1) returns [] -> moved is undefined -> no reinsertion.
+        const result = updater(mockTrack);
+        expect(result.devices.map((device) => device.id)).toEqual(['d1', 'd2']);
+    });
 });

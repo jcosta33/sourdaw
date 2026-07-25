@@ -150,6 +150,49 @@ describe('handleRemoveClip', () => {
             expect(desc).toEqual({ label: 'Remove clip' });
         });
 
+        it('returns simple label when state exists but no track owns the clip', () => {
+            mocks.getTrackStoreState.mockReturnValue({
+                tracks: [{ id: 't1', clips: [createTestClip({ id: 'other', startBeat: 0, endBeat: 1 })] }],
+            });
+
+            const desc = handleRemoveClip.describe({ type: 'removeClip', payload: { clipId: 'c1' } });
+
+            expect(desc).toEqual({ label: 'Remove clip' });
+        });
+
+        it('omits the ripple plan when ripple editing yields no plan', () => {
+            const clip = createTestClip({ id: 'c1', startBeat: 0, endBeat: 1 });
+            mocks.getTrackStoreState.mockReturnValue({ tracks: [{ id: 't1', clips: [clip] }] });
+            mocks.planRippleDelete.mockReturnValue(null);
+
+            const desc = handleRemoveClip.describe({ type: 'removeClip', payload: { clipId: 'c1' } });
+
+            if (!desc.inverseAction || desc.inverseAction.type !== 'restoreClip') {
+                throw new Error('Expected a restoreClip inverse action');
+            }
+            expect(desc.inverseAction.payload.ripplePlan).toBeNull();
+        });
+
+        it('records null MIDI snapshots when the clip has no MIDI data', () => {
+            const clip = createTestClip({ id: 'c1', startBeat: 0, endBeat: 1 });
+            mocks.getTrackStoreState.mockReturnValue({ tracks: [{ id: 't1', clips: [clip] }] });
+            mocks.planRippleDelete.mockReturnValue({
+                removedClips: [createTestClip({ id: 'c1', startBeat: 0, endBeat: 1 })],
+                shiftedClips: [],
+            });
+            // No MIDI store -> every snapshot falls through to null.
+            mocks.getMidiStoreState.mockReturnValue(null);
+
+            const desc = handleRemoveClip.describe({ type: 'removeClip', payload: { clipId: 'c1' } });
+
+            if (!desc.inverseAction || desc.inverseAction.type !== 'restoreClip') {
+                throw new Error('Expected a restoreClip inverse action');
+            }
+            expect(desc.inverseAction.payload.midiNotesSnapshot).toBeNull();
+            expect(desc.inverseAction.payload.midiCcSnapshot).toBeNull();
+            expect(desc.inverseAction.payload.midiPitchBendSnapshot).toBeNull();
+        });
+
         it('returns inverse action with full clip and MIDI snapshots', () => {
             const mockClip = createTestClip({ id: 'c1', startBeat: 0, endBeat: 1 });
             const rippleRemovedClip = createTestClip({ id: 'c1', startBeat: 0, endBeat: 1 });
