@@ -92,6 +92,53 @@ describe('sanitize_arrangement_store_state', () => {
         expect(sanitize_arrangement_store_state(valid)).toBe(valid);
     });
 
+    it('strips a retired virginTerritory key off automation lanes arriving from an older peer', () => {
+        // The sync path, not the file path. A peer still running a build from
+        // before `virginTerritory` was removed puts a lane that still carries it
+        // into an arrangement snapshot and writes that to the CRDT slot. This
+        // store validates lanes structurally and shallowly — an identified row
+        // counted as "exact" whatever extra fields it carried — so the field
+        // survived here for any arrangement that is not the active one (only the
+        // active arrangement is routed through automationStore's deep
+        // sanitizer). buildProjectData then shallow-spreads the snapshot and the
+        // saved .sourdaw writes the dead field straight back out: the same
+        // field-lives-forever failure the file import path strips, arriving over
+        // sync instead.
+        const snapshot = createValidSnapshot('alpha-1');
+        const withRetiredKey = {
+            ...snapshot,
+            automation: {
+                lanes: [
+                    {
+                        id: 'lane-1',
+                        trackId: 'track-1',
+                        parameterId: 'gain',
+                        parameterName: 'Gain',
+                        points: [],
+                        objects: [],
+                        visible: true,
+                        enabled: true,
+                        collapsed: false,
+                        virginTerritory: true,
+                        minValue: 0,
+                        maxValue: 1,
+                    },
+                ],
+            },
+        };
+
+        const sanitized = sanitize_arrangement_store_state({
+            arrangements: [withRetiredKey],
+            activeArrangementId: 'alpha-1',
+        });
+
+        const lane = sanitized.arrangements[0]?.automation.lanes[0];
+        expect(lane).not.toHaveProperty('virginTerritory');
+        // The rest of the lane must survive intact — this strips one retired
+        // key, it does not drop or rebuild the lane.
+        expect(lane).toMatchObject({ id: 'lane-1', parameterId: 'gain', enabled: true, maxValue: 1 });
+    });
+
     it('should preserve valid snapshots while dropping malformed entries', () => {
         const valid = createValidSnapshot('alpha-1');
 

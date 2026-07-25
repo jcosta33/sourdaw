@@ -523,10 +523,15 @@ function isAutomation(value: unknown): value is ProjectAutomation {
                 // *required* boolean, so dropping it from this list is what keeps
                 // older files loadable: a file written before the removal still
                 // carries the key, and an unlisted extra key is ignored rather
-                // than rejected. Nothing else needs to change — the removal is
-                // purely permissive, so no schema version bump (a bump would
-                // reject the very files this is meant to keep readable, since
-                // MIN_SUPPORTED_PROJECT_VERSION equals CURRENT_PROJECT_VERSION).
+                // than rejected.
+                //
+                // No schema version bump, because relaxing a required key to
+                // "ignored" is backward-compatible on its own — every file this
+                // build can read, it could read before. (A bump would not have
+                // broken old files either: `isSupportedProjectVersion` accepts
+                // the inclusive range [MIN_SUPPORTED, CURRENT], so raising
+                // CURRENT to 2 while MIN stays 1 keeps version-1 files loadable.
+                // The bump is simply unnecessary here, not unsafe.)
                 hasType({
                     record: lane,
                     keys: ['visible', 'enabled', 'collapsed'],
