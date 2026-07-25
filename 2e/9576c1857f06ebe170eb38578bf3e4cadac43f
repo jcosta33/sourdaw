@@ -1,0 +1,78 @@
+src/modules/Arrangement/models/DeviceTailTypes.ts
+  s_0d39f3a4a4357a::t_37f024c54b5278 1-44
+src/modules/AudioEngine/services/estimateRenderTailSeconds.ts
+  s_0d39f3a4a4357a::t_cf3b38a5807dd8 28
+  s_0d39f3a4a4357a::t_81f443b6710833 1-27,29-40,45-46,53-101,107,111-113,118
+src/modules/AudioEngine/services/__tests__/estimateRenderTailSeconds.spec.ts
+  s_0d39f3a4a4357a::t_8918d78ebf20a1 3-15,18,25,27-36,41-93,96-105,112-121,126-128,134,136,141,144,146-163,165-167,170-184,187-190,198,205-222
+  s_0d39f3a4a4357a::t_3e8e79ec0e751b 185-186
+src/modules/Arrangement/models/PluginDescriptors/FermenterDescriptor.ts
+  s_0d39f3a4a4357a::t_8189417d69ce35 185
+src/modules/Arrangement/models/PluginDescriptors/CrumbsDescriptor.ts
+  s_0d39f3a4a4357a::t_9792356a4c1caa 15-17
+src/modules/Arrangement/models/PluginDescriptors/BuiltinEffectDescriptors.ts
+  s_0d39f3a4a4357a::t_5e765f6325e86d 326-334
+  s_0d39f3a4a4357a::t_c6bef4c7c7e805 1006-1008
+  s_0d39f3a4a4357a::t_146e08dd6246bb 230
+  s_0d39f3a4a4357a::t_1257f76913e5f1 231-236
+src/modules/AudioRendering/presentations/views/__tests__/ExportDialog.spec.tsx
+  s_0d39f3a4a4357a::t_046ceb5c5504a1 159-163
+  s_0d39f3a4a4357a::t_c2412d09021f36 142
+  s_0d39f3a4a4357a::t_acfeb8b5b072da 199
+src/modules/Arrangement/models/PluginDescriptors/BuiltinInstrumentDescriptors.ts
+  s_0d39f3a4a4357a::t_48f12cfb6aee23 12-14
+src/modules/Arrangement/models/DeviceParameterTypes.ts
+  s_0d39f3a4a4357a::t_e7dee0416eafc5 11-12
+  s_0d39f3a4a4357a::t_2e38e3a30f6f09 64-69
+src/modules/AudioEngine/useCases/offlineRender/__tests__/getAutoDetectedTailSeconds.spec.ts
+  s_0d39f3a4a4357a::t_88c551d8ae82bd 122
+  s_0d39f3a4a4357a::t_7227fb69019210 83,89,92-94,98-111,116-121,123
+  s_0d39f3a4a4357a::t_839ada1857d0ca 13-35
+  s_0d39f3a4a4357a::t_0dcf54f897da55 124
+  s_29a49804dab875::t_854b1459abd6c1 64,75,80
+src/modules/AudioEngine/services/__tests__/deviceTailConformance.spec.ts
+  s_0d39f3a4a4357a::t_3c0d8fe67dafb7 1-93
+src/modules/AudioRendering/presentations/views/exportSettings.ts
+  s_0d39f3a4a4357a::t_4cf216148df0c3 15-21
+src/modules/Arrangement/models/PluginDescriptors/NativeDspDescriptors.ts
+  s_0d39f3a4a4357a::t_6c440facece6dc 13-19
+src/modules/Arrangement/models/PluginDescriptors/FaustEffectDescriptors.ts
+  s_0d39f3a4a4357a::t_d31fc6f1fa368b 45
+  s_0d39f3a4a4357a::t_e2b1e525a19821 105-113
+  s_0d39f3a4a4357a::t_976896de3cc0ab 139
+src/modules/AudioRendering/presentations/views/ExportDialog.tsx
+  s_0d39f3a4a4357a::t_eaa43eaeb90913 139-143
+  s_0d39f3a4a4357a::t_db60c1c0f16289 840-841
+  s_0d39f3a4a4357a::t_b18ade22499412 44-50
+  s_0d39f3a4a4357a::t_d72a526d8b0e9b 20
+  s_0d39f3a4a4357a::t_58faf46dc88cc1 146,148-150
+  s_0d39f3a4a4357a::t_71c2190cb52533 151
+src/modules/AudioEngine/useCases/offlineRender/getAutoDetectedTailSeconds.ts
+  s_0d39f3a4a4357a::t_3f451eb6e9a6f6 3-5
+  s_0d39f3a4a4357a::t_285f944087e704 6-16,23,25,33
+  s_0d39f3a4a4357a::t_17973a6859a2b0 19-22
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "2e9576c1857f06ebe170eb38578bf3e4cadac43f",
+  "prompts": {},
+  "sessions": {
+    "s_0d39f3a4a4357a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "60da6a2e-7d79-4d98-8624-e993f5a9f94e",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_29a49804dab875": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-aebd8c37a5fa0c2ad",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
