@@ -1,0 +1,45 @@
+crates/daw-dsp/src/bacteria/engine.rs
+  s_ad49f74ae1ff0b::t_e3c53074805106 20
+crates/daw-dsp/src/primitives/alias_probe.rs
+  s_08a3bf1627924d::t_a1eed2c8867a19 1-47
+crates/daw-dsp/src/grinder/oversample.rs
+  s_29a49804dab875::t_5a8d302f2caca9 12,25,84
+crates/daw-dsp/src/primitives/mod.rs
+  s_29a49804dab875::t_b09a0d373f264b 3-4,6
+crates/daw-dsp/src/primitives/oversample.rs
+  s_29a49804dab875::t_336ee9a04d0cc0 1,3-62,64-96,103-105,119,133-149,151-152,272-395,402-403,412-413,451,465-466,475,479-481,504,524,570-573,577-578,597-598
+crates/daw-dsp/src/proof/exciter.rs
+  s_29a49804dab875::t_a01386246ba881 5
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "6572c1bc9e5a2b04cb13547808ee444dc2fde49f",
+  "prompts": {},
+  "sessions": {
+    "s_08a3bf1627924d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "40397ccd-72a1-4ccb-bf1d-8c755d84f028",
+        "model": "claude-opus-5"
+      },
+      "human_author": null
+    },
+    "s_29a49804dab875": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-aebd8c37a5fa0c2ad",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_ad49f74ae1ff0b": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-ad72d7bf88b5c44e6",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
