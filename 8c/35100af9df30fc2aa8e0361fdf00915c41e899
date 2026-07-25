@@ -1,0 +1,43 @@
+src/modules/Project/stores/__tests__/arrangementStore.spec.ts
+  s_0d39f3a4a4357a::t_27027c0e18271f 142-230
+src/modules/Project/useCases/projectPersistence/helpers/isHydratableProjectData.ts
+  s_0d39f3a4a4357a::t_055c278831a8dc 522-523
+src/modules/Project/useCases/projectPersistence/fileIO/__tests__/applyImportedProjectData.roundTrip.spec.ts
+  s_0d39f3a4a4357a::t_5878c3d3e562a2 887
+src/modules/Project/useCases/projectPersistence/helpers/normalizeLegacyProjectData.ts
+  s_0d39f3a4a4357a::t_1adb19b12d662e 64
+src/modules/TimelineEditor/presentations/views/AutomationView/AutomationLaneRow.tsx
+  s_0d39f3a4a4357a::t_7b8e085645bce3 126
+src/modules/TimelineEditor/presentations/views/AutomationView/__tests__/AutomationLaneControls.spec.tsx
+  s_0d39f3a4a4357a::t_21d6a575d62adf 59,98
+src/modules/TimelineEditor/presentations/views/AutomationView/__tests__/AutomationLaneHeader.spec.tsx
+  s_0d39f3a4a4357a::t_71446751af57a6 62
+src/modules/TimelineEditor/presentations/views/AutomationView/__tests__/AutomationLaneRow.spec.tsx
+  s_0d39f3a4a4357a::t_de76a9aafb1f79 388
+src/modules/Transport/useCases/playheadScheduler/startPlayheadScheduler.ts
+  s_0d39f3a4a4357a::t_4b8fa0699d6af5 353
+src/modules/Transport/useCases/scheduling/applyAutomation/__tests__/applyAutomation.spec.ts
+  s_0d39f3a4a4357a::t_d2da68aca8eb62 580,671,774,786
+src/modules/Transport/useCases/scheduling/applyAutomation/appliedAutomationBases.ts
+  s_0d39f3a4a4357a::t_2e8e9ff3f20f65 2
+src/modules/Transport/useCases/scheduling/applyAutomation/applyAutomation.ts
+  s_0d39f3a4a4357a::t_55f0012a574618 54,72,125,164,201,243
+src/modules/Transport/useCases/scheduling/applyAutomation/restoreAutomationBaseValue.ts
+  s_0d39f3a4a4357a::t_626af0908c7016 37
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "8c35100af9df30fc2aa8e0361fdf00915c41e899",
+  "prompts": {},
+  "sessions": {
+    "s_0d39f3a4a4357a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "60da6a2e-7d79-4d98-8624-e993f5a9f94e",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
