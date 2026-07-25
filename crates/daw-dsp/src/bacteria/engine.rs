@@ -167,6 +167,21 @@ impl BandChain {
         }
     }
 
+    /// Group delay this band contributes, in base-rate samples.
+    ///
+    /// Derived from the configured oversampling factor, deliberately NOT from
+    /// the live `distortion_enabled` / `enabled` / `mute` flags. Those toggle
+    /// during performance, and renegotiating host PDC on every toggle is worse
+    /// than reporting a stable worst case. Over-reporting is the safe
+    /// direction; under-reporting slides the track early against everything
+    /// else.
+    ///
+    /// Both channel chains always share a factor (`set_param` sets them
+    /// together), so the left one speaks for the band.
+    fn latency_samples(&self) -> f32 {
+        self.oversampler_l.latency_samples()
+    }
+
     fn process_sample(&mut self, left: f32, right: f32, gain_offset: f32) -> (f32, f32) {
         if !self.enabled || self.mute {
             return (0.0, 0.0);
@@ -745,8 +760,29 @@ impl BacteriaEngine {
         &self.band_levels
     }
 
+    /// Latency reported to the host for plugin delay compensation.
+    ///
+    /// The LR4 crossover is zero-latency; a linear-phase mode would add its
+    /// own term here. The oversampled distortion path is not zero-latency:
+    /// `OversamplingChain` costs 6.5 / 9.75 / 11.375 base samples at 2x / 4x /
+    /// 8x, pinned against the impulse centroid in `oversample.rs`.
+    ///
+    /// Bands are summed, so the device's delay is the longest **active** band.
+    /// All six `BandChain`s are allocated up front while only `band_count`
+    /// run, so a stale factor on an inactive band must not inflate the report.
+    ///
+    /// **Deliberately not included:** `StftProcessor`'s windowing latency on
+    /// the spectral path. That omission predates the oversampler rewrite and
+    /// the type exposes no accessor to report it; folding in a guessed number
+    /// would be worse than a known, stated omission. It needs its own finding.
     pub fn latency_samples(&self) -> u32 {
-        0 // LR4 crossover is zero-latency; linear-phase would report latency here
+        let longest = self
+            .bands
+            .iter()
+            .take(self.band_count)
+            .map(BandChain::latency_samples)
+            .fold(0.0_f32, f32::max);
+        longest.round() as u32
     }
 
     /// Get current modulation source values (for UI visualization).
@@ -831,6 +867,47 @@ mod tests {
         assert!(
             diff_rms > 0.25 * input_rms,
             "2-band (high muted) output matches 1-band output — bandCount did not engage: diff_rms={diff_rms} input_rms={input_rms}"
+        );
+    }
+
+    /// The oversampled distortion path has real group delay — 6.5 / 9.75 /
+    /// 11.375 base samples at 2x / 4x / 8x, pinned in `oversample.rs` against
+    /// the impulse centroid. This reported a hardcoded 0 for every factor, and
+    /// Wave 3 feeds the number straight into host PDC, so it silently
+    /// miscompensated by up to ~11 samples whenever oversampling was on.
+    #[test]
+    fn reported_latency_tracks_the_oversampling_factor() {
+        for (factor, expected) in [(1.0_f32, 0_u32), (2.0, 7), (4.0, 10), (8.0, 11)] {
+            let mut engine = BacteriaEngine::new(48_000.0);
+            engine.set_param("oversampling", factor);
+            assert_eq!(
+                engine.latency_samples(),
+                expected,
+                "oversampling {factor}x must report {expected} samples of latency"
+            );
+        }
+    }
+
+    /// Bands are summed, so the report follows the longest ACTIVE band — and
+    /// a stale factor on a band beyond `bandCount` must not inflate it.
+    #[test]
+    fn reported_latency_follows_the_longest_active_band() {
+        let mut engine = BacteriaEngine::new(48_000.0);
+        engine.set_param("bandCount", 2.0);
+        engine.set_param("band0_oversampling", 2.0);
+        engine.set_param("band1_oversampling", 8.0);
+        assert_eq!(
+            engine.latency_samples(),
+            11,
+            "the report must follow the 8x band, not the 2x one"
+        );
+
+        engine.set_param("band1_oversampling", 2.0);
+        engine.set_param("band2_oversampling", 8.0);
+        assert_eq!(
+            engine.latency_samples(),
+            7,
+            "band 2 is beyond bandCount=2 and must not inflate the report"
         );
     }
 }
