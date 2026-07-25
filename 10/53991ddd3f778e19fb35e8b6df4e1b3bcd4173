@@ -1,0 +1,38 @@
+src/modules/Yeast/useCases/__tests__/hydrateYeastCrdtProjection.spec.ts
+  s_0d39f3a4a4357a::t_c92ce22534029f 16-22,26
+src/modules/CrdtDocument/useCases/projection/__tests__/projectProjection.spec.ts
+  s_0d39f3a4a4357a::t_de3bde2d076522 98,101-104,107-115
+src/modules/CrdtDocument/useCases/projection/__tests__/projectionIsReadOnly.spec.ts
+  s_0d39f3a4a4357a::t_c99e9ae433e500 1-2,7-8,10-225
+  s_0d39f3a4a4357a::t_7d8fe508f3883a 3-6,9
+src/modules/Yeast/useCases/hydrateYeastCrdtProjection.ts
+  s_0d39f3a4a4357a::t_5ac9081ac6a1cc 3-12
+src/modules/Yeast/useCases/commitYeastProjection.ts
+  s_0d39f3a4a4357a::t_879cdacb44fa3f 1-2,8,10-20,31-36
+src/modules/Yeast/useCases/__tests__/commitYeastProjection.spec.ts
+  s_0d39f3a4a4357a::t_905b0616173dda 25
+  s_0d39f3a4a4357a::t_e3a8748263cb04 5-15
+  s_0d39f3a4a4357a::t_330d018825134c 99
+  s_0d39f3a4a4357a::t_a5fdf0630c8516 67
+  s_0d39f3a4a4357a::t_913915d5108b25 1-2,16-24,26-39,44-48,50-66,68-98,100-113
+  s_0d39f3a4a4357a::t_083f8ecd84c58a 49
+  s_0d39f3a4a4357a::t_7512b0a1603480 40-43
+  s_0d39f3a4a4357a::t_c2f9ca09f320fa 3
+  s_0d39f3a4a4357a::t_9909d466d7a8a5 4
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "1053991ddd3f778e19fb35e8b6df4e1b3bcd4173",
+  "prompts": {},
+  "sessions": {
+    "s_0d39f3a4a4357a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "60da6a2e-7d79-4d98-8624-e993f5a9f94e",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
