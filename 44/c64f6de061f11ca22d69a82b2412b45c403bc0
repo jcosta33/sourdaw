@@ -1,0 +1,32 @@
+src/utils/frozenBufferTail.ts
+  s_0d39f3a4a4357a::t_cae4296933aa65 1-53
+src/modules/Arrangement/useCases/freezeBounce/flattenTrack.ts
+  s_0d39f3a4a4357a::t_ce7670773dae4e 55-59
+  s_0d39f3a4a4357a::t_9a86fe7bd70c21 2
+  s_0d39f3a4a4357a::t_1a2a04152c301b 47-49
+src/modules/Arrangement/useCases/freezeBounce/__tests__/flattenTrack.spec.ts
+  s_0d39f3a4a4357a::t_d5066c0a9c3ab5 3-4
+  s_0d39f3a4a4357a::t_85f84e3cec3217 196-200,202
+src/modules/AudioEngine/useCases/offlineRender/getAutoDetectedTailSeconds.ts
+  s_0d39f3a4a4357a::t_07d56b3fc35f3d 3
+  s_0d39f3a4a4357a::t_faab92efd73f8c 48,52-65
+src/modules/AudioEngine/useCases/offlineRender/__tests__/getAutoDetectedTailSeconds.spec.ts
+  s_0d39f3a4a4357a::t_56fe2bfaf275a8 154-189
+  s_0d39f3a4a4357a::t_0c542353fa629a 15
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "44c64f6de061f11ca22d69a82b2412b45c403bc0",
+  "prompts": {},
+  "sessions": {
+    "s_0d39f3a4a4357a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "60da6a2e-7d79-4d98-8624-e993f5a9f94e",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
