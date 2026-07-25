@@ -149,6 +149,74 @@ describe('trackStore', () => {
         ]);
     });
 
+    it('should drop non-object elements from nested collections while preserving valid siblings', () => {
+        // Each collection array mixes a non-object element (null / primitive)
+        // with a valid element; the normalizers must filter the bad one out
+        // and keep the good one rather than dropping the whole track.
+        fake_doc.tracks = {
+            tracks: [
+                {
+                    id: 'track-mixed',
+                    name: 'Mixed',
+                    kind: 'midi',
+                    clips: [null, create_valid_clip({ id: 'clip-good', trackId: 'track-mixed' })],
+                    devices: [
+                        'bad-device',
+                        { id: 'd1', name: 'Dev', type: 'eq', bypassed: false, parameterValues: {} },
+                    ],
+                    sends: [42, { busId: 'bus-1', level: 0.5, preFader: true }],
+                    midiFx: [null, { id: 'fx1', type: 'arp' }],
+                    alternatives: ['not-an-alternative', { id: 'alt-good', name: 'Good Alt', clips: [] }],
+                },
+            ],
+        };
+
+        trackStore.hydrate();
+
+        const track = trackStore.value?.tracks[0];
+        expect(track?.clips.map((context) => context.id)).toEqual(['clip-good']);
+        expect(track?.devices.map((device) => device.id)).toEqual(['d1']);
+        expect(track?.sends.map((send) => send.busId)).toEqual(['bus-1']);
+        expect(track?.midiFx.map((fx) => fx.id)).toEqual(['fx1']);
+        expect(track?.alternatives.map((alt) => alt.id)).toEqual(['alt-good']);
+    });
+
+    it('should drop non-object knead blobs while preserving valid siblings in knead state', () => {
+        const valid_blob = {
+            id: 'blob-good',
+            startTime: 0,
+            endTime: 1,
+            pitchCenterCents: 0,
+            pitchCurveCents: [0, 100],
+            voicedConfidence: 0.5,
+        };
+        fake_doc.tracks = {
+            tracks: [
+                {
+                    id: 'track-knead',
+                    name: 'Knead',
+                    kind: 'audio',
+                    clips: [
+                        {
+                            ...create_valid_clip({ id: 'clip-knead', trackId: 'track-knead' }),
+                            kneadState: {
+                                blobs: ['not-a-blob', valid_blob],
+                                retuneSpeedMs: 50,
+                                humanizePercent: 0,
+                                formantPreserve: true,
+                            },
+                        },
+                    ],
+                },
+            ],
+        };
+
+        trackStore.hydrate();
+
+        const clip = trackStore.value?.tracks[0]?.clips[0];
+        expect(clip?.kneadState?.blobs.map((blob) => blob.id)).toEqual(['blob-good']);
+    });
+
     it('should ignore legacy persisted transient fields while preserving cached live transients', () => {
         const live_ghost = create_valid_clip({ id: 'ghost-live', trackId: 'track-live' });
         const legacy_ghost = create_valid_clip({ id: 'ghost-legacy', trackId: 'track-legacy' });
