@@ -19,7 +19,7 @@ describe('estimateRenderTailSeconds', () => {
         const result = estimateRenderTailSeconds([
             { devices: [{ type: 'builtin-eq', parameterValues: {}, bypassed: false }] },
         ]);
-        expect(result).toBe(0);
+        expect(result.seconds).toBe(0);
     });
 
     it('reads a decay parameter as seconds', () => {
@@ -35,7 +35,7 @@ describe('estimateRenderTailSeconds', () => {
                 ],
             },
         ]);
-        expect(result).toBe(4.5);
+        expect(result.seconds).toBe(4.5);
     });
 
     it('adds a declared pre-delay to the decay time', () => {
@@ -56,7 +56,7 @@ describe('estimateRenderTailSeconds', () => {
                 ],
             },
         ]);
-        expect(result).toBe(3.2);
+        expect(result.seconds).toBe(3.2);
     });
 
     it('falls back to the declared default when the parameter is missing', () => {
@@ -72,7 +72,7 @@ describe('estimateRenderTailSeconds', () => {
                 ],
             },
         ]);
-        expect(result).toBe(2.5);
+        expect(result.seconds).toBe(2.5);
     });
 
     it('uses a declared fixed tail verbatim', () => {
@@ -88,7 +88,7 @@ describe('estimateRenderTailSeconds', () => {
                 ],
             },
         ]);
-        expect(result).toBe(6);
+        expect(result.seconds).toBe(6);
     });
 
     it('ignores bypassed devices', () => {
@@ -104,7 +104,7 @@ describe('estimateRenderTailSeconds', () => {
                 ],
             },
         ]);
-        expect(result).toBe(0);
+        expect(result.seconds).toBe(0);
     });
 
     it('picks the longest tail across tracks', () => {
@@ -120,7 +120,7 @@ describe('estimateRenderTailSeconds', () => {
                 ],
             },
         ]);
-        expect(result).toBe(6);
+        expect(result.seconds).toBe(6);
     });
 
     it('decays a millisecond feedback loop to -60 dB', () => {
@@ -138,7 +138,7 @@ describe('estimateRenderTailSeconds', () => {
                 ],
             },
         ]);
-        expect(result).toBeCloseTo(4.983, 3);
+        expect(result.seconds).toBeCloseTo(4.983, 3);
     });
 
     it('reads a feedback loop whose time parameter is already in seconds', () => {
@@ -164,7 +164,7 @@ describe('estimateRenderTailSeconds', () => {
         ]);
         // Same loop length and feedback as the millisecond case, so the unit
         // conversion has to land on the same tail rather than 1000x it.
-        expect(result).toBeCloseTo(4.983, 3);
+        expect(result.seconds).toBeCloseTo(4.983, 3);
     });
 
     it('clamps feedback to the declared maximum so a runaway loop stays finite', () => {
@@ -183,8 +183,8 @@ describe('estimateRenderTailSeconds', () => {
         // Clamped to 0.95: at unity the loop never decays and the formula would
         // divide by ln(1) = 0.
         // 0.1 s * ln(0.001)/ln(0.95) = 0.1 * 134.672
-        expect(result).toBeCloseTo(13.467, 3);
-        expect(Number.isFinite(result)).toBe(true);
+        expect(result.seconds).toBeCloseTo(13.467, 3);
+        expect(Number.isFinite(result.seconds)).toBe(true);
     });
 
     it('ignores a feedback loop with zero feedback', () => {
@@ -200,7 +200,7 @@ describe('estimateRenderTailSeconds', () => {
                 ],
             },
         ]);
-        expect(result).toBe(0);
+        expect(result.seconds).toBe(0);
     });
 
     it('sums tails within a track and takes the longest track', () => {
@@ -235,7 +235,7 @@ describe('estimateRenderTailSeconds', () => {
 
         // Track 1 cascades 3 s into 4 s, so it needs 7 s — more than the 5 s of
         // the longest single device anywhere in the project.
-        expect(chained).toBe(7);
+        expect(chained.seconds).toBe(7);
     });
 
     it('excludes a bypassed device from the chain total', () => {
@@ -248,7 +248,7 @@ describe('estimateRenderTailSeconds', () => {
             },
         ]);
 
-        expect(result).toBe(3);
+        expect(result.seconds).toBe(3);
     });
 
     it('caps a very long tail at the auto-detect ceiling', () => {
@@ -264,7 +264,7 @@ describe('estimateRenderTailSeconds', () => {
                 ],
             },
         ]);
-        expect(result).toBe(MAX_AUTO_TAIL_SECONDS);
+        expect(result.seconds).toBe(MAX_AUTO_TAIL_SECONDS);
         // The previous ceiling clipped long reverbs at 30 s.
         expect(MAX_AUTO_TAIL_SECONDS).toBeGreaterThan(30);
     });

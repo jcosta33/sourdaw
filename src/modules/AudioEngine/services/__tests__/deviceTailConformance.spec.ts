@@ -56,7 +56,7 @@ function tailForDevice(deviceType: string, parameterValues: Record<string, numbe
                 },
             ],
         },
-    ]);
+    ]).seconds;
 }
 
 /** Tail for one track carrying `deviceTypes` in series, at their declared defaults. */
@@ -70,7 +70,7 @@ function tailForChain(deviceTypes: readonly string[]): number {
                 tail: getPluginById(type)?.tail,
             })),
         },
-    ]);
+    ]).seconds;
 }
 
 /** Every parameter id a declaration reads, excluding pure constants. */

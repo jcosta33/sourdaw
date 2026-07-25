@@ -113,11 +113,25 @@ function evaluateDeclaration(device: DeviceLike, tail: TailDeclarationLike): num
  * track needs 1.9 + 2 s, not the 2 s a flat maximum would reserve. Taking the
  * maximum truncated exactly that difference off the end of the export.
  *
- * Summing is an upper bound rather than an exact figure: two cascaded -60 dB
- * decays reach -60 dB overall slightly sooner than the sum of their individual
- * times. Over-reserving costs a little trailing near-silence, whereas
- * under-reserving is an audible cut, so the estimate is deliberately biased to
- * the safe side and bounded by `MAX_AUTO_TAIL_SECONDS`.
+ * Summing is an upper bound, and how loose a bound depends on what is chained:
+ *
+ *  - **Discrete into continuous** (delay into reverb) is close to exact. The
+ *    delay's last audible echo arrives at the end of the delay's own tail, and
+ *    the reverb then needs its full decay to resolve *that* echo, so the two
+ *    genuinely run end to end.
+ *  - **Continuous into continuous** (reverb into reverb) over-reserves, and not
+ *    slightly. Two decaying impulse responses in series produce a decay
+ *    dominated by the slower time constant, not by the sum of the two: a 6 s
+ *    convolution reverb into a 6 s hall sums to 12 s where -60 dB actually
+ *    arrives nearer 6-8 s, so an ordinary double-reverb chain buys several
+ *    seconds of avoidable silence.
+ *
+ * The bias is kept because over-reserving costs trailing near-silence while
+ * under-reserving is an audible cut, and the result is bounded by
+ * `MAX_AUTO_TAIL_SECONDS`. The cheap improvement, if the waste matters, is to
+ * mark declarations as discrete or continuous and combine consecutive
+ * continuous ones with a maximum rather than a sum — that needs a field on the
+ * declaration, not a model of convolution, and is deliberately not built here.
  *
  * Tracks are taken as a maximum, not a sum: they render in parallel, so the
  * export must last as long as the slowest one, not their total.
@@ -130,7 +144,18 @@ function evaluateDeclaration(device: DeviceLike, tail: TailDeclarationLike): num
  * projection and a cycle-safe walk, which is a larger change than the defect
  * being fixed here.
  */
-export function estimateRenderTailSeconds(tracks: ReadonlyArray<TrackLike>): number {
+export type EstimateRenderTailSecondsOutput = {
+    /** Tail to reserve, already bounded by `MAX_AUTO_TAIL_SECONDS`. */
+    seconds: number;
+    /**
+     * True when the ceiling, not the project, decided the answer. Callers that
+     * show the figure must say so: a clamped 60.00 reads identically to a
+     * computed 60.00 otherwise.
+     */
+    clamped: boolean;
+};
+
+export function estimateRenderTailSeconds(tracks: ReadonlyArray<TrackLike>): EstimateRenderTailSecondsOutput {
     let longestChain = 0;
 
     for (const track of tracks) {
@@ -151,5 +176,9 @@ export function estimateRenderTailSeconds(tracks: ReadonlyArray<TrackLike>): num
         }
     }
 
-    return Math.min(MAX_AUTO_TAIL_SECONDS, Math.max(0, longestChain));
+    const uncapped = Math.max(0, longestChain);
+    return {
+        seconds: Math.min(MAX_AUTO_TAIL_SECONDS, uncapped),
+        clamped: uncapped > MAX_AUTO_TAIL_SECONDS,
+    };
 }

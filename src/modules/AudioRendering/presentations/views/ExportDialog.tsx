@@ -99,6 +99,26 @@ const resolveExportMime = (isZip: boolean, primaryExt: string): string => {
     return 'audio/mpeg';
 };
 
+/**
+ * Shows the auto-detected tail, and says when the ceiling decided it.
+ *
+ * A clamped 60.00 s is indistinguishable from a computed 60.00 s otherwise, and
+ * the difference matters: clamped means the render is shorter than the project
+ * actually needs, so the export gets cut.
+ */
+const DetectedTailLabel = ({ detected }: { detected: { seconds: number; clamped: boolean } }): ReactElement => {
+    if (detected.clamped) {
+        return (
+            <span className="text-[10px] text-amber-400">
+                capped at {detected.seconds.toFixed(2)}s — this project needs a longer tail than one export can reserve,
+                so it will be cut short
+            </span>
+        );
+    }
+
+    return <span className="text-[10px] text-orange-400/70">{detected.seconds.toFixed(2)}s detected</span>;
+};
+
 export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement => {
     const defaults = loadExportSettings();
     const transport = useStore(transportStore, defaultTransportState);
@@ -149,14 +169,22 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
     // AudioEngine instead would make the two modules mutually dependent.
     const deviceTailFor = (deviceType: string) => getPluginById(deviceType)?.tail;
 
-    const effectiveTailSeconds = (): number => {
+    /**
+     * `honorMuted` follows the export mode, matching how the strips are built:
+     * a mixdown silences muted tracks, a stem set deliberately does not, so a
+     * muted track's chain lengthens a stem render but not a mixdown.
+     */
+    const detectTail = (honorMuted: boolean) =>
+        getAutoDetectedTailSeconds({ tailForDeviceType: deviceTailFor, honorMuted });
+
+    const effectiveTailSeconds = (honorMuted: boolean): number => {
         if (!autoTail) {
             return Math.max(0, Math.min(MAX_MANUAL_TAIL_SECONDS, tailSeconds));
         }
         // The estimator already caps the detected tail at its own
         // ceiling. Re-clamping here to a second, lower number is what used to
         // truncate long reverbs back to 30 s.
-        return Math.max(0, getAutoDetectedTailSeconds({ tailForDeviceType: deviceTailFor }));
+        return Math.max(0, detectTail(honorMuted).seconds);
     };
 
     const toggleFormat = (freq: ExportFormat) => {
@@ -351,7 +379,9 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
 
             const tracks = trackStore.value?.tracks ?? [];
             const { startBeat, durationBeats } = resolveRange();
-            const tail = effectiveTailSeconds();
+            // Stems keep muted tracks, so they may need a longer tail than the
+            // mixdown of the same project.
+            const tail = effectiveTailSeconds(mode !== 'stems');
             const bd = resolveExportBitDepths({ formats, selectedBitDepth: bitDepth }).bitDepth;
             // Every encoder gets the same dither decision, so a seeded
             // or undithered export is reproducible in all selected formats.
@@ -909,12 +939,7 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                                 />
                                 Auto-detect
                             </label>
-                            {autoTail ? (
-                                <span className="text-[10px] text-orange-400/70">
-                                    {getAutoDetectedTailSeconds({ tailForDeviceType: deviceTailFor }).toFixed(2)}s
-                                    detected
-                                </span>
-                            ) : null}
+                            {autoTail ? <DetectedTailLabel detected={detectTail(mode !== 'stems')} /> : null}
                         </div>
                     </DawDialogSection>
 
