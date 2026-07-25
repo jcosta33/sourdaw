@@ -234,9 +234,9 @@ impl ShortTermLufs {
 /// Blocks retained for the gated loudness measures — one hour at one block per
 /// 100 ms.
 ///
-/// This is a *capacity*, not a measurement window: past it the store decimates
-/// rather than forgetting, so the programme stays represented (see
-/// [`BlockStore::push`]).
+/// This is a *capacity*, not a measurement window: past it the store keeps a
+/// uniform random sample rather than forgetting, so the whole programme stays
+/// represented (see [`BlockStore::push`]).
 const MAX_LOUDNESS_BLOCKS: usize = 36_000;
 
 /// Exact, fixed-capacity store of 100 ms block loudnesses (WB-7).
@@ -260,56 +260,78 @@ const MAX_LOUDNESS_BLOCKS: usize = 36_000;
 /// reference algorithm over a preallocated array, so equivalence is by
 /// construction rather than by tolerance.
 ///
-/// **Allocation-free.** The backing store is sized once in [`Self::new`] and
-/// `push` never grows it, because [`Self::decimate`] runs first whenever it
-/// would.
+/// **Beyond capacity the store holds a uniform random sample** of every block
+/// seen, by reservoir sampling (Vitter's Algorithm R).
+///
+/// The first shape of this used fixed-phase decimation — keep one block in
+/// every `stride`, and halve by keeping every other stored block — and claimed
+/// that accuracy degraded "in resolution, not in bias". **That claim was
+/// false**, and review round 2 measured it: both reductions select by
+/// *position*, so periodic material phase-locks. Six hours of alternating
+/// −40/0 LUFS blocks retained 27,000 samples that were **all quiet**, reading
+/// −40.0000 LUFS against an exact 0.0000 — the loud phase, which is the
+/// population that actually clears the relative gate, deleted outright. That is
+/// total bias, and it is the same defect as the histogram this replaced, one
+/// layer down: a classification decided for a group rather than per member.
+///
+/// Reservoir sampling selects independently of position, so no phase
+/// relationship in the input can bias which blocks survive. Both measures are
+/// distribution statistics — a gated mean and two gated percentiles — so a
+/// uniform sample of 36,000 estimates them with a sampling error that shrinks
+/// as 1/√n and carries no directional bias.
+///
+/// **Allocation-free.** The backing store is sized once in [`Self::new`]; past
+/// capacity `push` overwrites in place and never grows it.
 #[derive(Clone)]
 struct BlockStore {
     blocks: Vec<f32>,
-    /// Keep one block in every `stride`. 1 until the store first fills.
-    stride: u32,
-    since_kept: u32,
+    /// Total blocks offered, which is the reservoir's sampling denominator.
+    seen: u64,
+    /// xorshift64 state. Seeded to a constant so a given block sequence always
+    /// produces the same reading.
+    rng: u64,
 }
+
+/// Any nonzero constant; fixed so metering is reproducible run to run.
+const BLOCK_SAMPLER_SEED: u64 = 0x2545_F491_4F6C_DD1D;
 
 impl BlockStore {
     fn new() -> Self {
         Self {
             blocks: Vec::with_capacity(MAX_LOUDNESS_BLOCKS),
-            stride: 1,
-            since_kept: 0,
+            seen: 0,
+            rng: BLOCK_SAMPLER_SEED,
         }
+    }
+
+    /// xorshift64. Cheap, allocation-free, and good enough for choosing a
+    /// reservoir slot — this is not a security or audio-noise source.
+    fn next_random(&mut self) -> u64 {
+        let mut x = self.rng;
+        x ^= x << 13;
+        x ^= x >> 7;
+        x ^= x << 17;
+        self.rng = x;
+        x
     }
 
     /// Record one block.
     ///
-    /// Under capacity every block is kept, so the measures are exact. At
-    /// capacity the store halves itself — dropping every second block and
-    /// doubling the stride — which keeps a uniform sample of the whole
-    /// programme in fixed memory. Accuracy degrades in resolution, not in bias,
-    /// and only past an hour of continuous audio.
+    /// Under capacity every block is retained in order, so the measures are
+    /// exact and bit-identical to computing them over the whole sequence. Past
+    /// capacity the block replaces a uniformly chosen slot with probability
+    /// `capacity / seen`, which is Algorithm R: the retained set stays a
+    /// uniform random sample of everything seen, whatever order it arrived in.
     fn push(&mut self, lufs: f32) {
-        self.since_kept += 1;
-        if self.since_kept < self.stride {
+        self.seen += 1;
+        if self.blocks.len() < MAX_LOUDNESS_BLOCKS {
+            self.blocks.push(lufs);
             return;
         }
-        self.since_kept = 0;
-        if self.blocks.len() == MAX_LOUDNESS_BLOCKS {
-            self.decimate();
+        let slot = self.next_random() % self.seen;
+        if let Some(existing) = self.blocks.get_mut(slot as usize) {
+            *existing = lufs;
         }
-        self.blocks.push(lufs);
-    }
-
-    /// Halve the retained set in place. No allocation: this only ever shortens.
-    fn decimate(&mut self) {
-        let mut write = 0;
-        let mut read = 0;
-        while read < self.blocks.len() {
-            self.blocks[write] = self.blocks[read];
-            write += 1;
-            read += 2;
-        }
-        self.blocks.truncate(write);
-        self.stride = self.stride.saturating_mul(2);
     }
 
     fn as_slice(&self) -> &[f32] {
@@ -318,8 +340,8 @@ impl BlockStore {
 
     fn clear(&mut self) {
         self.blocks.clear();
-        self.stride = 1;
-        self.since_kept = 0;
+        self.seen = 0;
+        self.rng = BLOCK_SAMPLER_SEED;
     }
 }
 
@@ -943,46 +965,86 @@ mod loudness_block_store_tests {
     }
 
     #[test]
-    fn store_stays_within_capacity_and_decimates_uniformly() {
+    fn every_block_is_retained_up_to_capacity() {
         let mut store = BlockStore::new();
-        for i in 0..MAX_LOUDNESS_BLOCKS {
-            store.push(i as f32 * 0.001 - 30.0);
+        let offered: Vec<f32> = (0..MAX_LOUDNESS_BLOCKS)
+            .map(|i| i as f32 * 0.001 - 30.0)
+            .collect();
+        for &b in &offered {
+            store.push(b);
         }
-        assert_eq!(store.as_slice().len(), MAX_LOUDNESS_BLOCKS);
-        assert_eq!(store.stride, 1, "no decimation while under capacity");
-
-        // One past capacity: halve, then keep every second block.
-        store.push(0.0);
-        assert_eq!(store.stride, 2);
-        assert!(store.as_slice().len() <= MAX_LOUDNESS_BLOCKS);
-
-        for i in 0..MAX_LOUDNESS_BLOCKS * 3 {
-            store.push(i as f32 * 0.001 - 30.0);
-        }
-        assert!(
-            store.as_slice().len() <= MAX_LOUDNESS_BLOCKS,
-            "capacity is never exceeded, so `push` never reallocates"
+        assert_eq!(
+            store.as_slice(),
+            offered.as_slice(),
+            "under capacity the store is the sequence itself, in order — which is what \
+             makes the bit-identity assertions above meaningful"
         );
-        assert!(store.stride >= 4, "stride keeps doubling as the programme runs long");
     }
 
     #[test]
-    fn decimation_preserves_the_measured_loudness() {
-        // Past capacity the store holds a uniform sample rather than every
-        // block, so the measure degrades in resolution, not in bias.
-        let full: Vec<f32> = (0..MAX_LOUDNESS_BLOCKS * 4)
+    fn capacity_is_never_exceeded_however_long_the_programme_runs() {
+        let mut store = BlockStore::new();
+        for i in 0..MAX_LOUDNESS_BLOCKS * 6 {
+            store.push(i as f32 * 0.001 - 30.0);
+            assert!(
+                store.as_slice().len() <= MAX_LOUDNESS_BLOCKS,
+                "capacity exceeded at block {i}, so `push` would have reallocated"
+            );
+        }
+        assert_eq!(store.as_slice().len(), MAX_LOUDNESS_BLOCKS);
+    }
+
+    #[test]
+    fn the_retained_sample_tracks_the_true_proportions() {
+        // Past capacity the store is a uniform sample, so the *proportion* of
+        // each population it retains should match the programme's. Six hours at
+        // a 1-in-5 duty cycle.
+        let full: Vec<f32> = (0..MAX_LOUDNESS_BLOCKS * 6)
             .map(|i| if i % 5 == 0 { -12.0 } else { -26.0 })
             .collect();
         let mut store = BlockStore::new();
         for &b in &full {
             store.push(b);
         }
-        let decimated = gated_integrated_lufs(store.as_slice());
-        let exact = reference_integrated(&full);
+        let loud = store.as_slice().iter().filter(|&&b| b > -20.0).count();
+        let fraction = loud as f64 / store.as_slice().len() as f64;
         assert!(
-            (decimated - exact).abs() < 0.5,
-            "decimated {decimated:.3} LUFS vs exact {exact:.3} LUFS over four hours of audio"
+            (fraction - 0.2).abs() < 0.02,
+            "retained {fraction:.4} loud against a true 0.2000 — the sample is not uniform"
         );
+        assert!(
+            (gated_integrated_lufs(store.as_slice()) - reference_integrated(&full)).abs() < 0.5,
+            "sampled {:.3} LUFS vs exact {:.3} LUFS over six hours of audio",
+            gated_integrated_lufs(store.as_slice()),
+            reference_integrated(&full)
+        );
+    }
+
+    #[test]
+    fn sampling_past_capacity_does_not_allocate() {
+        // Review round 2: the chain-level RT test renders 30 s, which is 300
+        // blocks — it never reaches the 36,000-block capacity, so it asserted
+        // allocation-freedom for a path it never executed. Force the store well
+        // past capacity under the guard instead of waiting an hour of
+        // wall-clock for it.
+        use assert_no_alloc::assert_no_alloc;
+
+        let mut store = BlockStore::new();
+        let mut scratch: Vec<f32> = Vec::with_capacity(MAX_LOUDNESS_BLOCKS);
+        // Fill to capacity outside the guard; that part is the ordinary path.
+        for i in 0..MAX_LOUDNESS_BLOCKS {
+            store.push(i as f32 * 0.001 - 30.0);
+        }
+
+        assert_no_alloc(|| {
+            // Three more hours: every one of these takes the replacement branch.
+            for i in 0..MAX_LOUDNESS_BLOCKS * 3 {
+                store.push(i as f32 * 0.001 - 30.0);
+            }
+            let _ = gated_integrated_lufs(store.as_slice());
+            let _ = gated_loudness_range(store.as_slice(), &mut scratch);
+        });
+        assert_eq!(store.as_slice().len(), MAX_LOUDNESS_BLOCKS);
     }
 
     #[test]
@@ -1019,5 +1081,216 @@ mod loudness_block_store_tests {
         );
         meter.reset();
         assert_eq!(meter.get_lra(), 0.0);
+    }
+}
+
+#[cfg(test)]
+mod reduction_aliasing_tests {
+    //! Review round 2. Bounded memory means something is discarded past
+    //! capacity, and *which* blocks are discarded decides which population
+    //! survives the relative gate. A fixed-phase "keep every Nth" locks onto one
+    //! parity of periodic material and deletes the rest — measured at 40 LU of
+    //! bias on a period-2 sequence, in the wrong direction. Reservoir sampling
+    //! selects independently of position, so no phase relationship can bias it.
+
+    use super::{gated_integrated_lufs, BlockStore, MAX_LOUDNESS_BLOCKS};
+
+    fn reference_integrated(blocks: &[f32]) -> f32 {
+        if blocks.is_empty() {
+            return -100.0;
+        }
+        let above_absolute: Vec<f64> = blocks
+            .iter()
+            .map(|&b| f64::from(b))
+            .filter(|&b| b > -70.0)
+            .collect();
+        if above_absolute.is_empty() {
+            return -100.0;
+        }
+        let mean_abs = above_absolute.iter().sum::<f64>() / above_absolute.len() as f64;
+        let rel_threshold = mean_abs - 10.0;
+        let above_relative: Vec<f64> = above_absolute
+            .iter()
+            .copied()
+            .filter(|&b| b > rel_threshold)
+            .collect();
+        if above_relative.is_empty() {
+            return -100.0;
+        }
+        (above_relative.iter().sum::<f64>() / above_relative.len() as f64) as f32
+    }
+
+    /// How far the nearest block population sits from the relative gate. When
+    /// this approaches zero the measure is on a knife edge: an arbitrarily
+    /// small change to the input moves a whole population across the gate and
+    /// the answer jumps. That is a property of R128's gate, not of any
+    /// implementation of it.
+    fn gate_margin(blocks: &[f32]) -> f64 {
+        let above: Vec<f64> = blocks
+            .iter()
+            .map(|&b| f64::from(b))
+            .filter(|&b| b > -70.0)
+            .collect();
+        if above.is_empty() {
+            return f64::INFINITY;
+        }
+        let threshold = above.iter().sum::<f64>() / above.len() as f64 - 10.0;
+        above
+            .iter()
+            .map(|v| (v - threshold).abs())
+            .fold(f64::INFINITY, f64::min)
+    }
+
+    /// Stationary periodic loudness: one loud block every `period`, offset by
+    /// `phase`. Sidechain pumping, rhythmic gating, tremolo and a looped test
+    /// tone all produce this at a small multiple of the 100 ms block rate.
+    ///
+    /// Phase is swept as well as period because *which* phase survives is the
+    /// whole question. A period-2 sequence with the loud block at index 0
+    /// happens to phase-lock a keep-every-other reduction onto the loud parity
+    /// and looks fine; the same sequence offset by one loses the loud phase
+    /// entirely. Testing one phase would reproduce the blind spot under test.
+    fn periodic(period: usize, phase: usize, blocks: usize) -> Vec<f32> {
+        (0..blocks)
+            .map(|i| if i % period == phase { 0.0 } else { -40.0 })
+            .collect()
+    }
+
+    /// Six hours, so the store replaces its contents many times over.
+    const LONG_PROGRAMME: usize = 216_000;
+
+    #[test]
+    fn periodic_material_survives_the_capacity_reduction() {
+        let mut worst = 0.0f32;
+        let mut worst_case = (0, 0);
+        let mut compared = 0;
+        let mut degenerate = 0;
+
+        for period in [2_usize, 3, 4, 5, 8, 16] {
+            for phase in 0..period {
+                let full = periodic(period, phase, LONG_PROGRAMME);
+                // Skip configurations sitting on the gate's own discontinuity;
+                // `the_gate_is_discontinuous_where_a_population_sits_on_it`
+                // proves those are unstable for the reference too, so agreement
+                // there would be luck rather than correctness.
+                if gate_margin(&full) < 0.5 {
+                    degenerate += 1;
+                    continue;
+                }
+                compared += 1;
+
+                let mut store = BlockStore::new();
+                for &b in &full {
+                    store.push(b);
+                }
+                let delta = (gated_integrated_lufs(store.as_slice())
+                    - reference_integrated(&full))
+                .abs();
+                if delta > worst {
+                    worst = delta;
+                    worst_case = (period, phase);
+                }
+            }
+        }
+
+        assert!(
+            compared >= 20,
+            "only {compared} configurations were comparable ({degenerate} degenerate) — \
+             the sweep is not exercising enough of the space"
+        );
+        assert!(
+            worst < 1.0,
+            "periodic loudness at period {} phase {} diverges by {worst:.4} LU after the \
+             store reduces — a position-based reduction locks onto one phase and deletes \
+             the others, which is bias, not lost resolution ({compared} configurations \
+             compared, {degenerate} skipped as degenerate)",
+            worst_case.0,
+            worst_case.1
+        );
+    }
+
+    #[test]
+    fn a_two_block_cycle_keeps_both_phases() {
+        // The sharpest case: alternating quiet and loud, quiet first, so a
+        // keep-every-other reduction locks onto the quiet parity. The
+        // gate-relative population is the loud half, so losing it inverts the
+        // reading — measured at -40.0000 against an exact 0.0000.
+        let full = periodic(2, 1, LONG_PROGRAMME);
+        let mut store = BlockStore::new();
+        for &b in &full {
+            store.push(b);
+        }
+        let reduced = gated_integrated_lufs(store.as_slice());
+        let exact = reference_integrated(&full);
+
+        let loud_retained = store.as_slice().iter().filter(|&&b| b > -20.0).count();
+        assert!(
+            loud_retained > 0,
+            "every loud block was discarded: stored {} blocks, all quiet; \
+             reduced reads {reduced:.4} LUFS against an exact {exact:.4} LUFS",
+            store.as_slice().len()
+        );
+        // Half the blocks are loud, so a uniform sample should retain about half.
+        let fraction = loud_retained as f64 / store.as_slice().len() as f64;
+        assert!(
+            (fraction - 0.5).abs() < 0.02,
+            "retained {fraction:.4} loud blocks against a true 0.5000"
+        );
+        assert!(
+            (reduced - exact).abs() < 1.0,
+            "alternating programme reads {reduced:.4} LUFS against an exact {exact:.4} LUFS"
+        );
+    }
+
+    #[test]
+    fn the_gate_is_discontinuous_where_a_population_sits_on_it() {
+        // Justifies the skip above, rather than asserting it. At period 4 with
+        // these levels the quiet population lands exactly 10 LU below the mean,
+        // which is exactly the relative gate. Perturbing the *input* by 0.01 LU
+        // — nothing to do with how blocks are stored — moves the reference
+        // itself by tens of LU, because a whole population crosses the gate.
+        let at_the_edge = periodic(4, 1, 4_000);
+        assert!(
+            gate_margin(&at_the_edge) < 0.01,
+            "expected this configuration to sit on the gate, margin was {:.4} LU",
+            gate_margin(&at_the_edge)
+        );
+
+        let nudged: Vec<f32> = at_the_edge
+            .iter()
+            .map(|&b| if b < -20.0 { b + 0.01 } else { b })
+            .collect();
+
+        let before = reference_integrated(&at_the_edge);
+        let after = reference_integrated(&nudged);
+        assert!(
+            (after - before).abs() > 10.0,
+            "the reference moved only {:.4} LU for a 0.01 LU input change ({before:.4} -> \
+             {after:.4}); if the gate is not discontinuous here, the skip above is not \
+             justified and should be removed",
+            (after - before).abs()
+        );
+    }
+
+    #[test]
+    fn a_long_programme_is_sampled_not_truncated() {
+        // The store must keep representing the *whole* programme, not its first
+        // hour. A quiet first half followed by a loud second half would read as
+        // quiet-only if the store stopped accepting blocks at capacity.
+        let mut full = vec![-40.0f32; MAX_LOUDNESS_BLOCKS * 3];
+        for block in full.iter_mut().skip(MAX_LOUDNESS_BLOCKS * 3 / 2) {
+            *block = 0.0;
+        }
+        let mut store = BlockStore::new();
+        for &b in &full {
+            store.push(b);
+        }
+        let loud = store.as_slice().iter().filter(|&&b| b > -20.0).count();
+        let fraction = loud as f64 / store.as_slice().len() as f64;
+        assert!(
+            (fraction - 0.5).abs() < 0.02,
+            "retained {fraction:.4} of the second half against a true 0.5000 — the store \
+             is favouring one part of the programme"
+        );
     }
 }

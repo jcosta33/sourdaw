@@ -524,6 +524,13 @@ mod metering_rt_tests {
         assert_no_alloc(|| {
             // 30 s of audio crosses 300 hop boundaries in each meter, and the
             // getters are polled the way the worklet polls them.
+            //
+            // This covers the ordinary path only: the block stores hold an
+            // hour, so nothing here reaches capacity or takes the reservoir's
+            // replacement branch. That path is guarded separately by
+            // `metering::loudness_block_store_tests::sampling_past_capacity_does_not_allocate`,
+            // which forces the store three hours past capacity rather than
+            // waiting for wall-clock to get there.
             render_seconds(&mut chain, 30);
             let _ = chain.integrated_lufs.get_lufs();
             let _ = chain.lra.get_lra();
