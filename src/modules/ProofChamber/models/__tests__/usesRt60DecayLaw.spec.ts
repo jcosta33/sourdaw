@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest';
 
-import { ALGORITHM_MAP, DEFAULT_PARAMS, SPACE_PRESETS, expandSpacePreset, usesRt60DecayLaw } from '../ProofChamberState';
+import {
+    ALGORITHM_MAP,
+    DEFAULT_PARAMS,
+    SPACE_PRESETS,
+    expandSpacePreset,
+    usesRt60DecayLaw,
+} from '../ProofChamberState';
 
 /**
  * The Decay readout may only claim seconds for algorithms whose engine converts

@@ -32,6 +32,11 @@ describe('reverbDecayLaw', () => {
             const upperRatio = decayToRt60Seconds(0.75) / decayToRt60Seconds(0.5);
 
             expect(lowerRatio).toBeCloseTo(upperRatio, 6);
+            // Self-equality alone is an identity of ANY exponential and would
+            // survive a change to either endpoint, so pin the ratio's value:
+            // a quarter turn of the knob is the 4th root of the 300:1 span.
+            expect(lowerRatio).toBeCloseTo((MAX_RT60_SECONDS / MIN_RT60_SECONDS) ** 0.25, 6);
+            expect(lowerRatio).toBeCloseTo(4.1618, 4);
         });
 
         it('clamps rather than extrapolating outside the range', () => {

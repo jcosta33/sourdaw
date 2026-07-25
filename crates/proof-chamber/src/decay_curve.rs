@@ -89,6 +89,18 @@ mod tests {
 
         assert!((rt60_ratio - decay_to_rt60_seconds(0.75) / decay_to_rt60_seconds(0.5)).abs() < 1e-4);
         assert!((stretch_ratio - decay_to_ir_stretch(0.75) / decay_to_ir_stretch(0.5)).abs() < 1e-5);
+
+        // Self-equality alone is an identity of any exponential and survives a
+        // change to either endpoint, so pin each ratio's value: a quarter turn
+        // is the 4th root of the span (300:1 for RT60, 16:1 for the stretch).
+        assert!(
+            (rt60_ratio - 4.161_6).abs() < 1e-3,
+            "quarter-turn RT60 ratio drifted: {rt60_ratio}"
+        );
+        assert!(
+            (stretch_ratio - 2.0).abs() < 1e-5,
+            "quarter-turn stretch ratio drifted: {stretch_ratio}"
+        );
     }
 
     #[test]
