@@ -19,7 +19,6 @@ pub mod linear_phase_eq;
 pub mod match_eq;
 pub mod metering;
 pub mod multiband;
-pub mod oversample;
 pub mod true_peak;
 
 use chain::ProofChain;
