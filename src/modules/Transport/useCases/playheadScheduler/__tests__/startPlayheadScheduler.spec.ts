@@ -93,7 +93,7 @@ const evaluateFollowActionsMock = vi.fn<
     (tracks: unknown[], from: number, to: number) => { jumpToPosition: number | null; shouldStop: boolean }
 >(() => ({ jumpToPosition: null, shouldStop: false }));
 
-vi.mock('#/infra/logger/appLog', () => ({ logger: { error: vi.fn(), warn: vi.fn(), info: vi.fn() } }));
+vi.mock('#/infra/logger/appLogger', () => ({ logger: { error: vi.fn(), warn: vi.fn(), info: vi.fn() } }));
 vi.mock('#/modules/Arrangement/useCases', () => ({
     startRecording: (...args: unknown[]) => (arrangementMocks.startRecording as (...a: unknown[]) => unknown)(...args),
     stopRecording: (...args: unknown[]) => (arrangementMocks.stopRecording as (...a: unknown[]) => unknown)(...args),
@@ -141,7 +141,7 @@ vi.mock('../../scheduling/scheduleAudioClips', () => ({ scheduleAudioClips: vi.f
 vi.mock('../../scheduling/scheduleMetronome', () => ({ scheduleMetronome: vi.fn() }));
 vi.mock('../../scheduling/scheduleMidiNotes', () => ({ scheduleMidiNotes: vi.fn(async () => undefined) }));
 vi.mock('../../transportControls/panicYeastRuntime', () => ({ panicYeastRuntime: vi.fn(async () => undefined) }));
-vi.mock('../../repositories/transport/updateTransportState', () => ({ updateTransportState: vi.fn() }));
+vi.mock('../../../repositories/transport/updateTransportState', () => ({ updateTransportState: vi.fn() }));
 
 function playingState(overrides: Partial<typeof defaultTransportState> = {}): typeof defaultTransportState {
     return { ...defaultTransportState, isPlaying: true, playheadPosition: 0, ...overrides };
