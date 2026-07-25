@@ -1,0 +1,27 @@
+src/modules/Command/useCases/redo.ts
+  s_0d39f3a4a4357a::t_61ba8a045bcac0 63-76,78-79,86-88
+  s_0d39f3a4a4357a::t_9215ae29e783b4 15-26,28-44
+  s_0d39f3a4a4357a::t_8eb04f7459df97 1
+src/modules/Command/useCases/__tests__/undoRedoReplayConflicts.spec.ts
+  s_0d39f3a4a4357a::t_30b73573f1c34c 1-140
+src/modules/Command/useCases/undo.ts
+  s_0d39f3a4a4357a::t_f7c2324111e641 95-97,100,104-121,125-131,133,136,138-141,144,148-158,160,166-168
+  s_0d39f3a4a4357a::t_64fd6191c0e4e2 20-25,27-44,47,49-53,58-66
+  s_0d39f3a4a4357a::t_a0b7efd25deaf9 1
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "5a196ed01afc1794f4538132310d0d4f4dc6306b",
+  "prompts": {},
+  "sessions": {
+    "s_0d39f3a4a4357a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "60da6a2e-7d79-4d98-8624-e993f5a9f94e",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
