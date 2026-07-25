@@ -118,4 +118,54 @@ describe('rippleMoveClip', () => {
             })
         );
     });
+
+    it('returns after moveClip when the track store has not loaded', () => {
+        vi.mocked(getTrackStoreState).mockReturnValue(null);
+
+        rippleMoveClip({
+            trackId: 't1',
+            clipId: 'c1',
+            newStartBeat: 30,
+            clipDuration: 4,
+            plan: { gapClosedClips: [], destinationOpenedClips: [] },
+        });
+
+        expect(vi.mocked(moveClip)).toHaveBeenCalledTimes(1);
+        expect(setTrackState).not.toHaveBeenCalled();
+        expect(shiftClipAutomation).not.toHaveBeenCalled();
+    });
+
+    it('leaves unrelated tracks untouched while shifting clips on the target track', () => {
+        // A second track in the store must be returned by reference (the
+        // trackId guard short-circuits before mapping its clips).
+        const otherTrack = { id: 'other', clips: [{ id: 'oc1', startBeat: 0, endBeat: 2 }] };
+        const initialState = {
+            tracks: [
+                {
+                    id: 't1',
+                    clips: [
+                        { id: 'c1', startBeat: 0, endBeat: 4 },
+                        { id: 'c2', startBeat: 10, endBeat: 12 },
+                    ],
+                },
+                otherTrack,
+            ],
+        };
+        vi.mocked(getTrackStoreState).mockReturnValue(initialState as any);
+
+        rippleMoveClip({
+            trackId: 't1',
+            clipId: 'c1',
+            newStartBeat: 0,
+            clipDuration: 4,
+            plan: {
+                gapClosedClips: [{ clipId: 'c2', origStartBeat: 10, origEndBeat: 12 }],
+                destinationOpenedClips: [],
+            },
+        });
+
+        const newState = vi.mocked(setTrackState).mock.calls[0]?.[0] as { tracks: unknown[] };
+        // The unrelated track is returned verbatim (same reference).
+        expect(newState.tracks[1]).toBe(otherTrack);
+    });
 });

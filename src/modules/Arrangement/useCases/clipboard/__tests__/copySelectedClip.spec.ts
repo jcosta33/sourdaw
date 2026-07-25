@@ -9,6 +9,9 @@ const mocks = vi.hoisted(() => ({
             selectedClipIds: string[];
         } | null,
     },
+    midiStore: {
+        value: null as { notesByClipId: Record<string, unknown[]> } | null,
+    },
     getTrackStoreState: vi.fn(),
     resolveEligibleClipWriteTarget: vi.fn(),
     setClipClipboard: vi.fn(),
@@ -19,7 +22,7 @@ vi.mock('../../../stores/clipSelectionStore', () => ({
 }));
 
 vi.mock('#/modules/MIDI/stores', () => ({
-    midiStore: { value: null },
+    midiStore: mocks.midiStore,
 }));
 
 vi.mock('../../getTrackStoreState', () => ({
@@ -38,6 +41,7 @@ describe('copySelectedClip', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         mocks.clipSelectionStore.value = null;
+        mocks.midiStore.value = null;
         mocks.getTrackStoreState.mockReturnValue(null);
         mocks.resolveEligibleClipWriteTarget.mockImplementation((input: { clipId: string }) => ({
             status: 'eligible',
@@ -147,5 +151,23 @@ describe('copySelectedClip', () => {
 
         expect(copySelectedClip()).toBe(false);
         expect(mocks.setClipClipboard).not.toHaveBeenCalled();
+    });
+
+    it('deep-copies midi notes for a selected midi clip that carries them', () => {
+        // The midi ternary (L51) and the notes-clone ternary (L54) both fire:
+        // the clip is midi AND its notes entry exists in the midi store.
+        const sourceNote = { id: 'note-1', pitch: 60, startBeat: 0, duration: 1, velocity: 90 };
+        mocks.clipSelectionStore.value = { selectedClipId: 'midi-1', selectedClipIds: ['midi-1'] };
+        mocks.getTrackStoreState.mockReturnValue({
+            tracks: [{ id: 'track-1', clips: [{ id: 'midi-1', type: 'midi' }] }],
+        });
+        mocks.midiStore.value = { notesByClipId: { 'midi-1': [sourceNote] } };
+
+        expect(copySelectedClip()).toBe(true);
+
+        const entry = mocks.setClipClipboard.mock.calls[0]?.[0]?.[0];
+        expect(entry.midiNotes).toEqual([sourceNote]);
+        // The notes must be a deep copy, not the same reference.
+        expect(entry.midiNotes[0]).not.toBe(sourceNote);
     });
 });

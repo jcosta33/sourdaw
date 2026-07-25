@@ -139,4 +139,30 @@ describe('normalizeClip', () => {
         expect(mocks.computeNormalizationScale).not.toHaveBeenCalled();
         expect(mocks.updateClip).not.toHaveBeenCalled();
     });
+
+    it('rejects when the track store has not loaded', () => {
+        mocks.getTrackState.mockReturnValue(null);
+
+        const didWrite = normalizeClip('clip-1');
+
+        expect(didWrite).toBe(false);
+        expect(mocks.getCachedAudioBuffer).not.toHaveBeenCalled();
+        expect(mocks.updateClip).not.toHaveBeenCalled();
+    });
+
+    it.each([
+        ['a midi clip', ClipDummy.create({ id: 'clip-1', type: 'midi' })],
+        [
+            'an audio clip without a buffer id',
+            { ...ClipDummy.create({ id: 'clip-1', type: 'audio' }), audioBufferId: undefined },
+        ],
+    ])('rejects %s before buffer lookup', (_label, clip) => {
+        mocks.getTrackState.mockReturnValue(create_track_state(clip));
+
+        const didWrite = normalizeClip('clip-1');
+
+        expect(didWrite).toBe(false);
+        expect(mocks.getCachedAudioBuffer).not.toHaveBeenCalled();
+        expect(mocks.updateClip).not.toHaveBeenCalled();
+    });
 });
