@@ -9,6 +9,8 @@ import { ingestChannelControlChange } from '../../repositories/webMidi/ingestCha
 import { activeNotes, channelToNote } from '../../repositories/webMidi/state';
 
 import { midiMessageHandlerDependencies } from './midiMessageHandlerDependencies';
+import { resolveInputDispatchFrame } from './resolveInputDispatchFrame';
+import { resolveInputEventTime } from './resolveInputEventTime';
 
 const CC_CHANNEL_VOLUME = 7;
 const CC_PAN = 10;
@@ -20,7 +22,7 @@ const PAN_RANGE = 50;
 
 export const handleWebMidiCC = inject(midiMessageHandlerDependencies)(
     (deps) =>
-        function handleWebMidiCC(channel: number, cc: number, value: number): void {
+        function handleWebMidiCC(channel: number, cc: number, value: number, timeStamp?: number): void {
             const learnState = deps.getMidiLearnState();
             if (learnState?.isLearning && learnState.learningTarget) {
                 deps.completeMidiLearn(channel, cc);
@@ -68,6 +70,13 @@ export const handleWebMidiCC = inject(midiMessageHandlerDependencies)(
                                 pressure: noteData.pressure,
                                 slide: noteData.slide,
                             },
+                            // Expression now shares the note events' serial
+                            // tail (audit MD-3), so it can be voiced a turn or
+                            // more after it arrived. Addressing its own arrival
+                            // frame keeps it landing where it was performed.
+                            sampleFrame: resolveInputDispatchFrame({
+                                eventTime: resolveInputEventTime({ timeStamp }),
+                            }),
                         });
                     }
                 }
