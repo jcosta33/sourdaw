@@ -1,0 +1,34 @@
+src/modules/Automation/useCases/modulation/applyModulationToEngine.ts
+  s_0d39f3a4a4357a::t_1c7f5b7e364f21 232
+  s_0d39f3a4a4357a::t_b31b77f868ddb0 22
+src/modules/Automation/useCases/modulation/__tests__/applyModulationToEngine.spec.ts
+  s_0d39f3a4a4357a::t_2b13d3979b866f 429
+src/modules/Automation/useCases/automationRecording/resolveAutoMatchValue.ts
+  s_0d39f3a4a4357a::t_e349240baa1def 27
+src/modules/Automation/useCases/automationRecording/autoMatchState.ts
+  s_0d39f3a4a4357a::t_78aee040209395 2
+src/modules/Automation/useCases/automationRecording/releaseTouchAutomation.ts
+  s_0d39f3a4a4357a::t_43d5cd00e5ee03 17
+src/modules/Automation/models/__tests__/Automation.spec.ts
+  s_0d39f3a4a4357a::t_c9bc85d6e3cd0e 16
+src/modules/Automation/useCases/automationRecording/stopAutomationRecording.ts
+  s_0d39f3a4a4357a::t_256037a7cf1843 115
+src/modules/Automation/useCases/automationRecording/__tests__/resolveAutoMatchValue.spec.ts
+  s_0d39f3a4a4357a::t_e8fdae6f60fbe3 17
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "0c72170333b3a688ae3b612e633b4aef2d23da24",
+  "prompts": {},
+  "sessions": {
+    "s_0d39f3a4a4357a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "60da6a2e-7d79-4d98-8624-e993f5a9f94e",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
