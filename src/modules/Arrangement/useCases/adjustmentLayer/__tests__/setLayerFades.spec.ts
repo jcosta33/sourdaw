@@ -98,4 +98,30 @@ describe('setLayerFades', () => {
 
         expect(mocks.adjustmentLayerStoreSet).not.toHaveBeenCalled();
     });
+
+    it('updates only the matching region and leaves sibling regions on the same layer untouched', () => {
+        mocks.adjustmentLayerStoreValue.value = {
+            layers: [
+                {
+                    id: 'l1',
+                    regions: [
+                        { id: 'r1', startBeat: 0, endBeat: 4, fadeInBeats: 0.25, fadeOutBeats: 0.25 },
+                        { id: 'r2', startBeat: 4, endBeat: 8, fadeInBeats: 0.5, fadeOutBeats: 0.5 },
+                    ],
+                },
+            ],
+        };
+
+        setLayerFades('r1', 1, 2);
+
+        const setCall = mocks.adjustmentLayerStoreSet.mock.calls[0];
+        if (!setCall) {
+            throw new Error('expected adjustmentLayerStore.set to be called');
+        }
+        const state = setCall[0] as FadeState;
+        const regions = state.layers[0]!.regions;
+        expect(regions[0]).toMatchObject({ id: 'r1', fadeInBeats: 1, fadeOutBeats: 2 });
+        // Sibling region passes through unchanged.
+        expect(regions[1]).toMatchObject({ id: 'r2', fadeInBeats: 0.5, fadeOutBeats: 0.5 });
+    });
 });

@@ -136,4 +136,13 @@ describe('snapToGridOrClips', () => {
 
         expect(snapToGridOrClips(0.2, 't1')).toBe(0);
     });
+
+    it('delegates to the grid when the track store has not loaded', () => {
+        // Store holds nothing -> tracks falls back to [] -> no track to snap against.
+        mockTrackValue = null;
+        mockSnapToGrid.mockReturnValue(7);
+
+        expect(snapToGridOrClips(1.4, 't1')).toBe(7);
+        expect(mockSnapToGrid).toHaveBeenCalledWith(1.4);
+    });
 });

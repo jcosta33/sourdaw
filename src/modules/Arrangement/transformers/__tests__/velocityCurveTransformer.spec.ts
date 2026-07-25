@@ -53,4 +53,8 @@ describe('applyVelocityCurve', () => {
             }
         }
     });
+
+    it('throws on an unknown curve name', () => {
+        expect(() => applyVelocityCurve(0.5, 'glitch' as VelocityCurve)).toThrow('Unknown velocity curve: glitch');
+    });
 });

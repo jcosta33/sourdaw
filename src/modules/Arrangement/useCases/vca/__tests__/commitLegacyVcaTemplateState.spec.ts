@@ -94,4 +94,29 @@ describe('commitLegacyVcaTemplateState', () => {
         expect(getTrackById(existing.id)?.vcaGroupId).toBe('vca-existing');
         expect(getTrackById(incoming.id)).toBeUndefined();
     });
+
+    it('clears the vca group of a track that is not a member of any group', () => {
+        const member = createTrack({ id: 'track-member', name: 'Kick', kind: 'audio' });
+        // An unassigned track that previously carried a stale group id.
+        const unassigned = createTrack({ id: 'track-unassigned', name: 'Bass', kind: 'audio' });
+        unassigned.vcaGroupId = 'vca-stale';
+
+        commitLegacyVcaTemplateState({
+            tracks: [member, unassigned],
+            selectedTrackId: member.id,
+            groups: [
+                {
+                    id: 'vca-drums',
+                    name: 'Drums',
+                    gain: 1,
+                    muted: false,
+                    memberTrackIds: [member.id],
+                },
+            ],
+        });
+
+        expect(getTrackById(member.id)?.vcaGroupId).toBe('vca-drums');
+        // The unassigned track has no owner -> its group id resets to null.
+        expect(getTrackById(unassigned.id)?.vcaGroupId).toBeNull();
+    });
 });
