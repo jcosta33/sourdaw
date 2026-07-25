@@ -1,7 +1,15 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+type TempoState = { changes: { id: string; beat: number; tempo: number; curve: string }[] };
+type TimeSigState = { changes: { id: string; beat: number; numerator: number; denominator: number }[] };
+
 const { tempoMapStoreValue, timeSignatureMapStoreValue, tempoMapStoreSet, timeSignatureMapStoreSet } = vi.hoisted(
-    () => ({
+    (): {
+        tempoMapStoreValue: { value: TempoState | null };
+        timeSignatureMapStoreValue: { value: TimeSigState | null };
+        tempoMapStoreSet: ReturnType<typeof vi.fn>;
+        timeSignatureMapStoreSet: ReturnType<typeof vi.fn>;
+    } => ({
         tempoMapStoreValue: {
             value: {
                 changes: [

@@ -137,10 +137,10 @@ describe('stopPlayback', () => {
     });
 
     it('returns the recording flush without touching transport when no transport state exists', async () => {
-        // The transport store is the public read contract; an undefined snapshot
+        // The transport store is the public read contract; an absent snapshot
         // means there is nothing to halt. The recording flush (count-in cancel +
         // active recording teardown) must still run.
-        vi.mocked(getTransportState).mockReturnValue(undefined);
+        vi.mocked(getTransportState).mockReturnValue(null);
         vi.mocked(stopActiveRecording).mockResolvedValue(undefined);
 
         const result = stopPlayback();

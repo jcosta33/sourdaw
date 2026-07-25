@@ -11,9 +11,7 @@ import { resolveDrumKit } from '../resolveDrumKit';
 const sampleKit = {
     id: 'kit-0',
     name: 'Standard Kit',
-    voices: [
-        { name: 'kick', pitchRange: [0, 0] as [number, number], params: { gain: 1 } },
-    ],
+    voices: [{ name: 'kick', pitchRange: [0, 0] as [number, number], params: { gain: 1 } }],
 };
 
 describe('resolveDrumKit', () => {

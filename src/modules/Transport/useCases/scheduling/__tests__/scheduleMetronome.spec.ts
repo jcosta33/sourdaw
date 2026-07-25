@@ -6,10 +6,14 @@ import { defaultTransportState } from '../../../models/TransportState';
 import { resetMetronomeBeat } from '../resetMetronomeBeat';
 import { scheduleMetronome } from '../scheduleMetronome';
 
-const { tempoMapStore, timeSignatureMapStore } = vi.hoisted(() => ({
-    tempoMapStore: { value: { changes: [] as unknown[] } as { changes: unknown[] } | null },
-    timeSignatureMapStore: { value: { changes: [] as unknown[] } as { changes: unknown[] } | null },
-}));
+type MutableStore = { value: { changes: unknown[] } | null };
+
+const { tempoMapStore, timeSignatureMapStore } = vi.hoisted(
+    (): { tempoMapStore: MutableStore; timeSignatureMapStore: MutableStore } => ({
+        tempoMapStore: { value: { changes: [] } },
+        timeSignatureMapStore: { value: { changes: [] } },
+    })
+);
 
 vi.mock('../../../stores/tempoMapStore', () => ({ tempoMapStore }));
 vi.mock('../../../stores/timeSignatureMapStore', () => ({ timeSignatureMapStore }));

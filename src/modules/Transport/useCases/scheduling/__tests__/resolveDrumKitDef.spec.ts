@@ -11,9 +11,7 @@ import { resolveDrumKitDef } from '../resolveDrumKitDef';
 const sampleDef = {
     id: 'def-0',
     name: 'Standard',
-    voices: [
-        { name: 'kick', synth: { type: 'sine' as const, frequency: 60 } },
-    ],
+    voices: [{ name: 'kick', synth: { type: 'sine' as const, frequency: 60 } }],
 };
 
 describe('resolveDrumKitDef', () => {

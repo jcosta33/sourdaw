@@ -400,13 +400,10 @@ describe('toggleRecording', () => {
         mocks.getTrackStoreState.mockReturnValue({
             tracks: [{ id: 'track-audio', kind: 'audio', armed: true }],
         });
-        let invokeCallback: ((buffer: TestRecordingBuffer) => void) | undefined;
         mocks.startAudioRecording.mockReturnValueOnce(
-            new Promise<boolean>((resolve) => {
-                // Capture the callback without resolving yet so clips stay empty.
-                invokeCallback = undefined;
-                resolve(true);
-            })
+            // Resolve immediately so beginActualRecording proceeds, but the
+            // buffer-ready callback is invoked before startRecording() populates clips.
+            Promise.resolve(true)
         );
 
         toggleRecording();
