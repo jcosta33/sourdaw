@@ -34,19 +34,38 @@ type GetAutoDetectedTailSecondsInput = {
  * processing that no longer runs; reading nothing at all would cut the decay
  * the buffer actually carries.
  */
+function projectDevices(track: Track, tailForDeviceType: DeviceTailLookup) {
+    return track.devices.map((device) => ({
+        type: device.type,
+        parameterValues: device.parameterValues,
+        bypassed: device.bypassed,
+        tail: tailForDeviceType(device.type),
+    }));
+}
+
 function projectTrack(track: Track, tailForDeviceType: DeviceTailLookup) {
     if (track.freezeState.status === 'frozen') {
-        return { devices: [], bakedTailSeconds: track.freezeState.renderSettings?.tailLengthSeconds ?? 0 };
+        const recorded = track.freezeState.renderSettings?.tailLengthSeconds;
+        if (typeof recorded === 'number' && Number.isFinite(recorded)) {
+            return { devices: [], bakedTailSeconds: Math.max(0, recorded) };
+        }
+
+        // Frozen, but the buffer's baked tail is unrecorded — `isFreezeState`
+        // accepts `renderSettings: undefined`, so this loads from disk validly.
+        // Falling back to zero is the one answer known to be wrong: the buffer
+        // still carries a decay, and reserving nothing truncates it.
+        //
+        // Freeze bypasses the device chain but does not delete it, so the chain
+        // is the best available description of what was rendered into the
+        // buffer. It is also the pre-existing behaviour for this case, so the
+        // unknown shape is no worse off than before frozen tracks were given
+        // special handling. In practice it over-estimates — freeze bakes only a
+        // few beats — and over-reserving costs trailing silence where
+        // under-reserving costs audio.
+        return { devices: projectDevices(track, tailForDeviceType) };
     }
 
-    return {
-        devices: track.devices.map((device) => ({
-            type: device.type,
-            parameterValues: device.parameterValues,
-            bypassed: device.bypassed,
-            tail: tailForDeviceType(device.type),
-        })),
-    };
+    return { devices: projectDevices(track, tailForDeviceType) };
 }
 
 /**
@@ -97,6 +116,15 @@ export function getAutoDetectedTailSeconds({
         if (soloGatedByTrackId.get(track.id) ?? false) {
             return false;
         }
+        // A frozen buffer is wired to `trackGainNode` — the fader — which sits
+        // downstream of `preFaderTap`, so it bypasses the device chain and the
+        // tap the exception below depends on. Frozen and pre-fader-audible are
+        // mutually exclusive; a muted frozen track reaches the mix by neither
+        // path.
+        if (track.freezeState.status === 'frozen') {
+            return false;
+        }
+
         // Silenced by its own mute, but `postFaderGain` sits downstream of the
         // pre-fader send tap, so a cue send keeps feeding its bus and stays
         // audible. Post-fader-only sends sit after the mute and carry nothing.

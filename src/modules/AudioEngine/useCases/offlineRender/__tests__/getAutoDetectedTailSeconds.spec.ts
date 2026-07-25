@@ -52,6 +52,11 @@ type TrackOverrides = {
     frozen?: boolean;
     /** Tail seconds baked into the frozen buffer at freeze time. */
     frozenTailSeconds?: number;
+    /**
+     * Frozen but carrying no `renderSettings` at all. `isFreezeState` accepts
+     * this shape, so a project can legitimately load in it.
+     */
+    frozenWithoutRenderSettings?: boolean;
     kind?: string;
     id?: string;
     sends?: Array<{ busId: string; preFader: boolean }>;
@@ -61,20 +66,23 @@ function makeTrack(
     devices: Array<{ type: string; parameterValues?: Record<string, number>; bypassed?: boolean }>,
     overrides: TrackOverrides = {}
 ) {
-    const frozen = overrides.frozen === true;
+    const frozen = overrides.frozen === true || overrides.frozenWithoutRenderSettings === true;
     return {
         id: overrides.id ?? 'track-1',
         kind: overrides.kind ?? 'audio',
         muted: overrides.muted ?? false,
         soloed: overrides.soloed ?? false,
         disabled: overrides.disabled ?? false,
-        freezeState: frozen
-            ? {
-                  status: 'frozen',
-                  frozenBufferId: 'buffer-1',
-                  renderSettings: { tailLengthSeconds: overrides.frozenTailSeconds ?? 0 },
-              }
-            : { status: 'unfrozen' },
+        freezeState: !frozen
+            ? { status: 'unfrozen' }
+            : overrides.frozenWithoutRenderSettings === true
+              ? // The validator accepts a frozen track with no renderSettings.
+                { status: 'frozen', frozenBufferId: 'buffer-1' }
+              : {
+                    status: 'frozen',
+                    frozenBufferId: 'buffer-1',
+                    renderSettings: { tailLengthSeconds: overrides.frozenTailSeconds ?? 0 },
+                },
         sends: overrides.sends ?? [],
         devices: devices.map((d) => ({
             type: d.type,
@@ -140,6 +148,41 @@ describe('getAutoDetectedTailSeconds', () => {
         };
 
         expect(getAutoDetectedTailSeconds({ tailForDeviceType, honorMuted: true }).seconds).toBe(10);
+    });
+
+    it('falls back to the device chain when a frozen track records no baked tail', () => {
+        // `isFreezeState` accepts a frozen track with `renderSettings`
+        // undefined, so this shape loads from disk legitimately. Reading zero
+        // there reserves nothing for a buffer that still carries a decay — the
+        // round-4 defect, reached through the persistence layer instead.
+        mockTrackStore.value = {
+            tracks: [
+                makeTrack([{ type: 'builtin-reverb', parameterValues: { 'rev-decay': 20 } }], {
+                    frozenWithoutRenderSettings: true,
+                }),
+            ],
+        };
+
+        expect(getAutoDetectedTailSeconds({ tailForDeviceType, honorMuted: true }).seconds).toBe(20);
+    });
+
+    it('does not grant a muted frozen track the pre-fader send exception', () => {
+        // A frozen buffer is wired to `trackGainNode` (the fader), downstream of
+        // `preFaderTap`, so it bypasses the device chain and the tap the
+        // exception depends on. Frozen and pre-fader-audible are exclusive.
+        mockTrackStore.value = {
+            tracks: [
+                makeTrack([{ type: 'builtin-reverb', parameterValues: { 'rev-decay': 20 } }], {
+                    muted: true,
+                    frozen: true,
+                    frozenTailSeconds: 10,
+                    sends: [{ busId: 'bus-1', preFader: true }],
+                }),
+                makeTrack([], { id: 'bus-1', kind: 'bus' }),
+            ],
+        };
+
+        expect(getAutoDetectedTailSeconds({ tailForDeviceType, honorMuted: true }).seconds).toBe(0);
     });
 
     it('ignores a frozen track, whose device chain never runs', () => {
