@@ -17,6 +17,8 @@ vi.mock('@tauri-apps/api/event', () => ({
 
 import { isTauri, readFileBytes, tauriInvoke, tauriListen, writeFileBytes } from '../tauriBridge';
 
+import { serializeLikeTauri } from './serializeLikeTauri';
+
 describe('tauriBridge', () => {
     afterEach(() => {
         delete (window as unknown as Record<string, unknown>).__TAURI_INTERNALS__;
@@ -46,38 +48,6 @@ describe('tauriBridge', () => {
         expect(unlisten).toBe(unlistenMock);
     });
 });
-
-/**
- * Faithful reproduction of Tauri v2's own IPC serializer
- * (`tauri/scripts/process-ipc-message-fn.js`): a message that *is* an
- * ArrayBuffer / typed-array view / Array crosses as `application/octet-stream`
- * untransformed; anything else is `JSON.stringify`d with a replacer that turns
- * every **nested** `Uint8Array`/`ArrayBuffer` into a boxed `number[]` via
- * `Array.from`.
- */
-function serializeLikeTauri(message: unknown): { contentType: string; byteLength: number } {
-    if (message instanceof ArrayBuffer) {
-        return { contentType: 'application/octet-stream', byteLength: message.byteLength };
-    }
-    if (ArrayBuffer.isView(message)) {
-        return { contentType: 'application/octet-stream', byteLength: message.byteLength };
-    }
-    if (Array.isArray(message)) {
-        return { contentType: 'application/octet-stream', byteLength: message.length };
-    }
-
-    const json = JSON.stringify(message, (_key, value: unknown) => {
-        if (value instanceof Uint8Array) {
-            return Array.from(value);
-        }
-        if (value instanceof ArrayBuffer) {
-            return Array.from(new Uint8Array(value));
-        }
-        return value;
-    });
-
-    return { contentType: 'application/json', byteLength: new TextEncoder().encode(json).length };
-}
 
 /** One second of 48 kHz 16-bit stereo PCM — a small but representative export payload. */
 function createRepresentativeAudioBytes(): Uint8Array {

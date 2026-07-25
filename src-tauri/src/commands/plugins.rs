@@ -1,5 +1,6 @@
 //! Tauri commands for plugin scanning, loading, and parameter management.
 
+use crate::commands::binary_ipc::{raw_body_bytes, read_percent_encoded_header};
 use crate::host::native_bridge::{ClapPluginSlot, SharedClapPlugin};
 use crate::host::plugin_scan_policy::PluginScanPolicy;
 use crate::state::{AppState, PluginInstanceData, PluginRegistryEntry};
@@ -475,11 +476,23 @@ pub async fn get_plugin_parameters(
     Err(format!("No plugin instance: {}", instance_id.0))
 }
 
-#[tauri::command]
-#[specta::specta]
-pub async fn get_plugin_state(
-    instance_id: PluginInstanceId,
-    state: tauri::State<'_, AppState>,
+/// Header carrying the percent-encoded plugin instance id for
+/// `set_plugin_state_bytes`.
+///
+/// The raw-body IPC path makes the state chunk the *whole* invoke message, so
+/// the instance id cannot ride along as a sibling field — exactly the constraint
+/// that put the destination path in a header for `write_file_bytes`.
+const PLUGIN_INSTANCE_HEADER: &str = "x-sourdaw-plugin-instance";
+
+/// Read a loaded plugin instance's opaque state chunk.
+///
+/// Shared by the command layer so the transport can change without the lookup
+/// order (command-owned instances first, then engine-owned runtimes) changing
+/// with it. The instance lookup is the authorization gate: plugin state is keyed
+/// by instance id, not addressed by path, so no filesystem allowlist applies.
+fn read_plugin_state_chunk(
+    instance_id: &str,
+    state: &tauri::State<'_, AppState>,
 ) -> Result<Vec<u8>, String> {
     {
         let plugins = state
@@ -487,7 +500,7 @@ pub async fn get_plugin_state(
             .lock()
             .map_err(|e| format!("Failed to lock plugins: {}", e))?;
 
-        if let Some(instance) = plugins.get(&instance_id.0) {
+        if let Some(instance) = plugins.get(instance_id) {
             return Ok(instance.plugin.get_state());
         }
     }
@@ -498,22 +511,24 @@ pub async fn get_plugin_state(
             .lock()
             .map_err(|e| format!("Failed to lock engine_plugins: {}", e))?;
         engine_plugins
-            .get(&instance_id.0)
+            .get(instance_id)
             .map(|instance| Arc::clone(&instance.runtime))
     };
     if let Some(runtime) = runtime {
         return runtime.get_state_after_pending_parameters_drain(std::time::Duration::from_secs(2));
     }
 
-    Err(format!("No plugin instance: {}", instance_id.0))
+    Err(format!("No plugin instance: {}", instance_id))
 }
 
-#[tauri::command]
-#[specta::specta]
-pub async fn set_plugin_state(
-    instance_id: PluginInstanceId,
-    plugin_state: Vec<u8>,
-    state: tauri::State<'_, AppState>,
+/// Restore a loaded plugin instance's opaque state chunk.
+///
+/// Takes a borrowed slice so the raw IPC body can be handed straight through
+/// without a copy.
+fn write_plugin_state_chunk(
+    instance_id: &str,
+    plugin_state: &[u8],
+    state: &tauri::State<'_, AppState>,
 ) -> Result<(), String> {
     {
         let mut plugins = state
@@ -521,8 +536,8 @@ pub async fn set_plugin_state(
             .lock()
             .map_err(|e| format!("Failed to lock plugins: {}", e))?;
 
-        if let Some(instance) = plugins.get_mut(&instance_id.0) {
-            instance.plugin.set_state(&plugin_state)?;
+        if let Some(instance) = plugins.get_mut(instance_id) {
+            instance.plugin.set_state(plugin_state)?;
             return Ok(());
         }
     }
@@ -531,17 +546,54 @@ pub async fn set_plugin_state(
         .engine_plugins
         .lock()
         .map_err(|e| format!("Failed to lock engine_plugins: {}", e))?;
-    if let Some(instance) = engine_plugins.get_mut(&instance_id.0) {
+    if let Some(instance) = engine_plugins.get_mut(instance_id) {
         let refreshed_parameters = instance.runtime.set_state_invalidating_pending_parameters(
             std::time::Duration::from_secs(2),
-            &plugin_state,
+            plugin_state,
         )?;
         instance.parameters = refreshed_parameters;
         return Ok(());
     }
     drop(engine_plugins);
 
-    Err(format!("No plugin instance: {}", instance_id.0))
+    Err(format!("No plugin instance: {}", instance_id))
+}
+
+/// Read a plugin instance's opaque state chunk over Tauri's binary IPC path.
+///
+/// `tauri::ipc::Response` carries the bytes verbatim to the webview as an
+/// `ArrayBuffer`. The predecessor returned `Vec<u8>`, which Tauri serialized as
+/// a JSON array of decimal numbers — ~3.57x the raw length for the high-entropy
+/// bytes real plugin state is made of (OE-5 / WB-5 / M-109).
+///
+/// Only the *response* needs to be binary here: the request carries nothing but
+/// the instance id, so it stays an ordinary JSON argument exactly as
+/// `read_file_bytes` keeps its path.
+#[tauri::command]
+pub async fn get_plugin_state_bytes(
+    instance_id: PluginInstanceId,
+    state: tauri::State<'_, AppState>,
+) -> Result<tauri::ipc::Response, String> {
+    let chunk = read_plugin_state_chunk(&instance_id.0, &state)?;
+    Ok(tauri::ipc::Response::new(chunk))
+}
+
+/// Restore a plugin instance's opaque state chunk over Tauri's binary IPC path.
+///
+/// The whole invoke message is the chunk (`InvokeBody::Raw`), so nothing is
+/// JSON-serialized and the payload crosses at exactly its byte length. The
+/// instance id travels in the `x-sourdaw-plugin-instance` header because the
+/// body is fully occupied — through the same present / ASCII / percent-decode
+/// validation chain `write_file_bytes` uses for its path.
+#[tauri::command]
+pub async fn set_plugin_state_bytes(
+    request: tauri::ipc::Request<'_>,
+    state: tauri::State<'_, AppState>,
+) -> Result<(), String> {
+    let instance_id = read_percent_encoded_header(&request, PLUGIN_INSTANCE_HEADER)?;
+    let plugin_state = raw_body_bytes(&request, "set_plugin_state_bytes")?;
+
+    write_plugin_state_chunk(&instance_id, plugin_state, &state)
 }
 
 // ── Native audio engine ────────────────────────────────────────────────
@@ -805,16 +857,25 @@ mod tests {
         }
     }
 
+    /// Unwrap a command's `tauri::ipc::Response` into the bytes it will actually
+    /// put on the wire, failing the test if it degraded to a JSON body.
+    fn raw_response_bytes(response: tauri::ipc::Response) -> Vec<u8> {
+        let body = tauri::ipc::IpcResponse::body(response).expect("response body should resolve");
+        match body {
+            tauri::ipc::InvokeResponseBody::Raw(bytes) => bytes,
+            tauri::ipc::InvokeResponseBody::Json(json) => {
+                panic!("plugin state must cross as raw bytes, got a JSON body: {json}")
+            }
+        }
+    }
+
     #[test]
     fn get_plugin_state_reads_engine_owned_runtime_owner_through_command_state() {
         let app = command_test_app();
         let state = app.state::<AppState>();
         insert_engine_owned_fixture(&state, "engine-owned-fixture", vec![1, 2, 3]);
 
-        let result = tauri::async_runtime::block_on(get_plugin_state(
-            PluginInstanceId("engine-owned-fixture".to_string()),
-            app.state::<AppState>(),
-        ));
+        let result = read_plugin_state_chunk("engine-owned-fixture", &app.state::<AppState>());
 
         assert_eq!(result, Ok(vec![1, 2, 3]));
     }
@@ -825,18 +886,72 @@ mod tests {
         let state = app.state::<AppState>();
         insert_engine_owned_fixture(&state, "engine-owned-fixture", vec![1, 2, 3]);
 
-        let set_result = tauri::async_runtime::block_on(set_plugin_state(
-            PluginInstanceId("engine-owned-fixture".to_string()),
-            vec![9, 8, 7],
-            app.state::<AppState>(),
-        ));
-        let get_result = tauri::async_runtime::block_on(get_plugin_state(
-            PluginInstanceId("engine-owned-fixture".to_string()),
-            app.state::<AppState>(),
-        ));
+        let set_result =
+            write_plugin_state_chunk("engine-owned-fixture", &[9, 8, 7], &app.state::<AppState>());
+        let get_result = read_plugin_state_chunk("engine-owned-fixture", &app.state::<AppState>());
 
         assert_eq!(set_result, Ok(()));
         assert_eq!(get_result, Ok(vec![9, 8, 7]));
+    }
+
+    #[test]
+    fn get_plugin_state_bytes_returns_the_chunk_as_a_raw_body_not_a_json_number_array() {
+        let app = command_test_app();
+        let state = app.state::<AppState>();
+        insert_engine_owned_fixture(&state, "engine-owned-fixture", vec![1, 2, 3]);
+
+        let response = tauri::async_runtime::block_on(get_plugin_state_bytes(
+            PluginInstanceId("engine-owned-fixture".to_string()),
+            app.state::<AppState>(),
+        ))
+        .expect("state read should succeed");
+
+        assert_eq!(raw_response_bytes(response), vec![1, 2, 3]);
+    }
+
+    #[test]
+    fn get_plugin_state_bytes_preserves_zero_and_high_bytes_verbatim() {
+        let app = command_test_app();
+        let state = app.state::<AppState>();
+        let chunk = vec![0u8, 1, 127, 128, 200, 254, 255, 0];
+        insert_engine_owned_fixture(&state, "engine-owned-fixture", chunk.clone());
+
+        let response = tauri::async_runtime::block_on(get_plugin_state_bytes(
+            PluginInstanceId("engine-owned-fixture".to_string()),
+            app.state::<AppState>(),
+        ))
+        .expect("state read should succeed");
+
+        assert_eq!(raw_response_bytes(response), chunk);
+    }
+
+    #[test]
+    fn plugin_state_round_trips_every_byte_value_through_the_shared_chunk_accessors() {
+        let app = command_test_app();
+        let state = app.state::<AppState>();
+        insert_engine_owned_fixture(&state, "engine-owned-fixture", Vec::new());
+        let chunk: Vec<u8> = (0..=255u8).collect();
+
+        write_plugin_state_chunk("engine-owned-fixture", &chunk, &app.state::<AppState>())
+            .expect("state write should succeed");
+        let restored = read_plugin_state_chunk("engine-owned-fixture", &app.state::<AppState>())
+            .expect("state read should succeed");
+
+        assert_eq!(restored, chunk);
+    }
+
+    #[test]
+    fn plugin_state_accessors_reject_an_unknown_instance() {
+        let app = command_test_app();
+
+        let read = read_plugin_state_chunk("no-such-instance", &app.state::<AppState>());
+        let write = write_plugin_state_chunk("no-such-instance", &[1], &app.state::<AppState>());
+
+        assert_eq!(read, Err("No plugin instance: no-such-instance".to_string()));
+        assert_eq!(
+            write,
+            Err("No plugin instance: no-such-instance".to_string())
+        );
     }
 
     #[test]

@@ -7,7 +7,6 @@ import { onPluginLatencyChanged } from '../onPluginLatencyChanged';
 import { processAudioIPC } from '../processAudioIPC';
 import { scanPlugins } from '../scanPlugins';
 import { setPluginParameter } from '../setPluginParameter';
-import { setPluginState } from '../setPluginState';
 import { unloadPlugin } from '../unloadPlugin';
 
 import type { PluginLatencyChange } from '../types';
@@ -77,16 +76,9 @@ describe('pluginBridge repository', () => {
         });
     });
 
-    describe('setPluginState', () => {
-        it('should send the Rust command argument key in desktop', async () => {
-            vi.mocked(isTauri).mockReturnValue(true);
-            await setPluginState('i1', [1, 2, 3]);
-            expect(tauriInvoke).toHaveBeenCalledWith('set_plugin_state', {
-                instanceId: 'i1',
-                pluginState: [1, 2, 3],
-            });
-        });
-    });
+    // getPluginState / setPluginState no longer travel over `tauriInvoke` — they
+    // use the binary IPC path, whose wire shape (raw body, instance header, byte
+    // fidelity) is covered in `pluginStateBinaryIpc.spec.ts`.
 
     describe('processAudioIPC', () => {
         it('returns no processed bytes outside the desktop app', async () => {

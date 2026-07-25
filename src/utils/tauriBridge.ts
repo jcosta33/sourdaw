@@ -31,60 +31,65 @@ export async function tauriListen(event: string, handler: (payload: unknown) => 
     return tauriListenRaw(event, handler);
 }
 
-/**
- * Header carrying the destination path for `write_file_bytes`.
- *
- * The raw-body IPC path requires the *whole* invoke message to be the buffer
- * (see `writeFileBytes`), so the path cannot ride along as a sibling field and
- * travels as a header instead. Header values must be printable ASCII, so the
- * path is percent-encoded; Rust decodes it back to UTF-8.
- */
-const FILE_PATH_HEADER = 'x-sourdaw-path';
-
-type WriteFileBytesInput = {
+type InvokeWithBinaryBodyInput = {
+    command: string;
     bytes: Uint8Array;
-    path: string;
+    headers: Record<string, string>;
 };
 
-type WriteFileBytesOutput = Promise<void>;
+type InvokeWithBinaryBodyOutput = Promise<void>;
 
 /**
- * Write raw bytes to a native file over Tauri's binary IPC path.
+ * Invoke a command whose entire payload is a byte buffer.
  *
  * Tauri v2 only skips JSON when the invoke message *is* an ArrayBuffer or a
  * typed-array view (`tauri/scripts/process-ipc-message-fn.js`). Anything nested
  * inside an args object — including a bare `Uint8Array` — is run through
  * `JSON.stringify` with a replacer that calls `Array.from` on it, so every byte
- * becomes a decimal string plus a separator. Passing the buffer as the entire
- * message keeps a multi-megabyte export at exactly its raw byte length.
+ * becomes a decimal string plus a separator (~3.57x for high-entropy data).
+ * Passing the buffer as the entire message keeps the payload at exactly its raw
+ * byte length.
+ *
+ * Because the body is fully occupied, everything that addresses the payload (a
+ * destination path, a plugin instance id) has to travel in `headers`. Header
+ * values must be printable ASCII, so callers percent-encode them and Rust's
+ * shared `binary_ipc` decoder validates and decodes them back to UTF-8.
  *
  * The bytes are sliced to the view window, so a `subarray` of a larger backing
  * buffer transfers only its own range.
  */
-export async function writeFileBytes({ bytes, path }: WriteFileBytesInput): WriteFileBytesOutput {
+export async function invokeWithBinaryBody({
+    command,
+    bytes,
+    headers,
+}: InvokeWithBinaryBodyInput): InvokeWithBinaryBodyOutput {
     const body = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
-    await invoke('write_file_bytes', body, {
-        headers: { [FILE_PATH_HEADER]: encodeURIComponent(path) },
-    });
+    await invoke(command, body, { headers });
 }
 
-type ReadFileBytesInput = {
-    path: string;
+type InvokeForBinaryResponseInput = {
+    command: string;
+    args?: Record<string, unknown>;
 };
 
-type ReadFileBytesOutput = Promise<Uint8Array>;
+type InvokeForBinaryResponseOutput = Promise<Uint8Array>;
 
 /**
- * Read a native file's bytes over Tauri's binary IPC path.
+ * Invoke a command that answers with a `tauri::ipc::Response`, which arrives as
+ * an `ArrayBuffer` with no JSON in between.
  *
- * `read_file_bytes` returns a `tauri::ipc::Response`, which arrives as an
- * `ArrayBuffer` with no JSON in between. The `number[]` branch is retained
- * because Tauri falls back to a JSON body where raw bodies are unsupported
- * (notably Android), and it keeps the helper correct against the legacy
- * `read_audio_file` shape.
+ * Only the response is binary — the request stays an ordinary JSON args object,
+ * because a command that merely names what to read has nothing large to send.
+ *
+ * The `number[]` branch is retained because Tauri falls back to a JSON body
+ * where raw bodies are unsupported (notably Android), and it keeps the helper
+ * correct against the legacy `Vec<u8>`-returning command shapes.
  */
-export async function readFileBytes({ path }: ReadFileBytesInput): ReadFileBytesOutput {
-    const payload: unknown = await invoke('read_file_bytes', { path });
+export async function invokeForBinaryResponse({
+    command,
+    args,
+}: InvokeForBinaryResponseInput): InvokeForBinaryResponseOutput {
+    const payload: unknown = await invoke(command, args);
 
     if (payload instanceof ArrayBuffer) {
         return new Uint8Array(payload);
@@ -100,7 +105,7 @@ export async function readFileBytes({ path }: ReadFileBytesInput): ReadFileBytes
         let index = 0;
         for (const rawByte of rawBytes) {
             if (typeof rawByte !== 'number' || !Number.isInteger(rawByte) || rawByte < 0 || rawByte > 255) {
-                throw new TypeError('read_file_bytes returned an invalid byte payload');
+                throw new TypeError(`${command} returned an invalid byte payload`);
             }
             bytes[index] = rawByte;
             index += 1;
@@ -108,7 +113,43 @@ export async function readFileBytes({ path }: ReadFileBytesInput): ReadFileBytes
         return bytes;
     }
 
-    throw new TypeError('read_file_bytes returned an unsupported payload');
+    throw new TypeError(`${command} returned an unsupported payload`);
+}
+
+/**
+ * Header carrying the destination path for `write_file_bytes`.
+ *
+ * The raw-body IPC path requires the *whole* invoke message to be the buffer
+ * (see `invokeWithBinaryBody`), so the path cannot ride along as a sibling field
+ * and travels as a header instead, percent-encoded.
+ */
+const FILE_PATH_HEADER = 'x-sourdaw-path';
+
+type WriteFileBytesInput = {
+    bytes: Uint8Array;
+    path: string;
+};
+
+type WriteFileBytesOutput = Promise<void>;
+
+/** Write raw bytes to a native file over Tauri's binary IPC path. */
+export async function writeFileBytes({ bytes, path }: WriteFileBytesInput): WriteFileBytesOutput {
+    await invokeWithBinaryBody({
+        command: 'write_file_bytes',
+        bytes,
+        headers: { [FILE_PATH_HEADER]: encodeURIComponent(path) },
+    });
+}
+
+type ReadFileBytesInput = {
+    path: string;
+};
+
+type ReadFileBytesOutput = Promise<Uint8Array>;
+
+/** Read a native file's bytes over Tauri's binary IPC path. */
+export async function readFileBytes({ path }: ReadFileBytesInput): ReadFileBytesOutput {
+    return invokeForBinaryResponse({ command: 'read_file_bytes', args: { path } });
 }
 
 /**

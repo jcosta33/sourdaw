@@ -18,6 +18,6 @@ export function readPluginState(instanceId: string): Promise<string> {
         if (bytes.length === 0) {
             return '';
         }
-        return bytesToBase64(Uint8Array.from(bytes));
+        return bytesToBase64(bytes);
     });
 }
