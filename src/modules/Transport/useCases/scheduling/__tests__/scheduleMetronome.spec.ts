@@ -6,12 +6,13 @@ import { defaultTransportState } from '../../../models/TransportState';
 import { resetMetronomeBeat } from '../resetMetronomeBeat';
 import { scheduleMetronome } from '../scheduleMetronome';
 
-vi.mock('../../../stores/tempoMapStore', () => ({
-    tempoMapStore: { value: { changes: [] } },
+const { tempoMapStore, timeSignatureMapStore } = vi.hoisted(() => ({
+    tempoMapStore: { value: { changes: [] as unknown[] } as { changes: unknown[] } | null },
+    timeSignatureMapStore: { value: { changes: [] as unknown[] } as { changes: unknown[] } | null },
 }));
-vi.mock('../../../stores/timeSignatureMapStore', () => ({
-    timeSignatureMapStore: { value: { changes: [] } },
-}));
+
+vi.mock('../../../stores/tempoMapStore', () => ({ tempoMapStore }));
+vi.mock('../../../stores/timeSignatureMapStore', () => ({ timeSignatureMapStore }));
 vi.mock('../../../models/TempoMap', () => ({
     getTempoAtBeat: vi.fn(() => 120),
 }));
@@ -32,6 +33,8 @@ const metronomeOn = { ...defaultTransportState, metronomeEnabled: true };
 describe('scheduleMetronome', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        tempoMapStore.value = { changes: [] };
+        timeSignatureMapStore.value = { changes: [] };
         mockGetCurrentTime.mockReturnValue(0);
         // A reset far in the future prunes any dedup entries left by a prior test
         // (entries with a click time below now-epsilon are dropped) without relying
@@ -89,5 +92,37 @@ describe('scheduleMetronome', () => {
         scheduleMetronome(-0.0001, 0.2, 0, metronomeOn, 120);
         expect(mockScheduleClick).toHaveBeenCalledTimes(2);
         expect(mockScheduleClick.mock.calls[1]![0]).toBeCloseTo(2.0, 6);
+    });
+
+    it('skips beats already scheduled on a prior tick (the lastBeat dedup continue)', () => {
+        // First call advances lastBeat through beats 1..4.
+        mockGetCurrentTime.mockReturnValue(0);
+        scheduleMetronome(0.5, 4.2, 0, metronomeOn, 120);
+        const firstRun = mockScheduleClick.mock.calls.length;
+        expect(firstRun).toBe(4);
+
+        // A second overlapping call covering beats 3..6 must NOT re-fire beats 3 and 4
+        // (they are <= lastBeat) — only the genuinely-new beats 5 and 6 sound.
+        scheduleMetronome(2.5, 6.2, 0, metronomeOn, 120);
+        expect(mockScheduleClick.mock.calls.length).toBe(firstRun + 2);
+        // With a 4-beat meter, accents fall on beats divisible by 4 (0, 4, 8...).
+        // Beats 5 and 6 are both non-accent.
+        expect(mockScheduleClick.mock.calls[firstRun]![1]).toBe(false);
+        expect(mockScheduleClick.mock.calls[firstRun + 1]![1]).toBe(false);
+    });
+
+    it('schedules clicks when the time-sig and tempo stores are null (fallback paths)', () => {
+        // Both stores can be null before initial load. The `?? []` fallbacks must
+        // yield empty change lists so getTimeSignatureAtBeat/getTempoAtBeat fall
+        // back to the transport's flat meter/tempo — clicks still schedule.
+        tempoMapStore.value = null;
+        timeSignatureMapStore.value = null;
+        mockGetCurrentTime.mockReturnValue(0);
+        resetMetronomeBeat(0);
+
+        scheduleMetronome(0.5, 2.2, 0, metronomeOn, 120);
+
+        // beats 1, 2 — both fire despite null stores.
+        expect(mockScheduleClick).toHaveBeenCalledTimes(2);
     });
 });
