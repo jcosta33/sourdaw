@@ -744,6 +744,23 @@ describe('executeGlobalTimeOperation supplied replay plan validation', () => {
         expect(result).toEqual(REJECTED);
     });
 
+    it('rejects a supplied replay plan whose insert duration differs from the requested insert', () => {
+        setStates({ tracks: [] });
+        registerDependencies();
+        // Same type (insert) and matching atBeat, but a different durationBeats —
+        // operationsMatch must reject the replay plan.
+        const result = executeGlobalTimeOperation({
+            operation: { type: 'insert', atBeat: 4, durationBeats: 2 },
+            replayPlan: {
+                version: 1,
+                operation: { type: 'insert', atBeat: 4, durationBeats: 99 },
+                clips: [],
+                midi: { version: 1, notes: [] },
+            } as never,
+        });
+        expect(result).toEqual(REJECTED);
+    });
+
     it('rejects a supplied replay plan whose clips array length mismatches requests', () => {
         const inside = createClip({ id: 'inside', startBeat: 4, endBeat: 6 });
         setStates({ tracks: [createTrack('track-1', 'midi', [inside])] });
