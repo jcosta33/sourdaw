@@ -321,6 +321,45 @@ describe('bounceSelection', () => {
         expect(redoNotes).toMatchObject([{ id: 'n-out', startBeat: 1 }]);
     });
 
+    it('captures and restores control-change and pitch-bend snapshots alongside notes', async () => {
+        // The midi snapshot must freeze cc/pitch-bend when present (truthy
+        // branches in captureMidiClipData), and undo must reinstate them.
+        midiMocks.state.value = {
+            notesByClipId: {
+                'right-crossing': [{ id: 'n-in', pitch: 60, startBeat: 0.5, duration: 0.5, velocity: 100 }],
+            },
+            ccByClipId: { 'right-crossing': [{ id: 'cc-1', controller: 1, value: 64, beat: 0, channel: 0 }] },
+            pitchBendByClipId: { 'right-crossing': [{ id: 'pb-1', value: 128, beat: 0, channel: 0 }] },
+        };
+        const rightCrossing = createAudioClip({ id: 'right-crossing', startBeat: 6, endBeat: 10, type: 'midi' });
+        const track: Track = normalizeTrack({
+            id: 'track-1',
+            name: 'Track 1',
+            kind: 'midi',
+            muted: false,
+            clips: [rightCrossing],
+        } as unknown as Track);
+        mocks.trackStore.value = { tracks: [track], selectedTrackId: 'track-1', ghostClips: [] };
+        mocks.renderTrackOffline.mockResolvedValue(createTestAudioBuffer());
+
+        const result = await bounceSelection('track-1', 2, 8);
+        expect(result).toBe(true);
+
+        // Undo reinstates the frozen cc and pitch-bend alongside the notes.
+        const undoCallback = mocks.pushUndoEntry.mock.calls[0]?.[1];
+        if (!undoCallback) {
+            throw new Error('expected an undo entry');
+        }
+        undoCallback();
+
+        expect(midiMocks.state.value?.ccByClipId['right-crossing']).toEqual([
+            { id: 'cc-1', controller: 1, value: 64, beat: 0, channel: 0 },
+        ]);
+        expect(midiMocks.state.value?.pitchBendByClipId['right-crossing']).toEqual([
+            { id: 'pb-1', value: 128, beat: 0, channel: 0 },
+        ]);
+    });
+
     beforeEach(() => {
         vi.clearAllMocks();
         vi.useFakeTimers();
