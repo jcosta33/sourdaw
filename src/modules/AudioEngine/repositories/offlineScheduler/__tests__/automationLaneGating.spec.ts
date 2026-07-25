@@ -104,6 +104,43 @@ describe('offline gain automation obeys the fader level law (AU-10)', () => {
         expect(rampValues(gain).at(-1)).toBeCloseTo(1, 10);
     });
 
+    it('applies the law after linkScale, so an inverted gain link floors at silence', () => {
+        // The AU-3 link tests observe the linkScale algebra on `pan`, which has no
+        // level law. This is the gain-side counterpart: the composition. An
+        // inverting link resolves the source 0.6 to -0.6, and the fader floor
+        // turns that into silence rather than a phase-inverted signal — which is
+        // exactly what live playback does, since TrackNode clamps every fader
+        // write. Pre-AU-10 the bounce scheduled a literal -0.6 gain.
+        const gain = makeParam();
+        const source = makeLane({
+            id: 'link-source',
+            trackId: 'other-track',
+            points: [
+                { beat: 0, value: 0.6, curve: 'linear', tension: 0 },
+                { beat: 4, value: 0.6, curve: 'linear', tension: 0 },
+            ],
+        });
+        const follower: AutomationLane = {
+            ...makeLane({ id: 'link-follower', trackId: 'track-1', points: [] }),
+            linkedLaneId: 'link-source',
+            linkScale: -1,
+        };
+
+        scheduleTrackAutomation(
+            [follower, source],
+            'track-1',
+            { gain } as unknown as GainNode,
+            { pan: makeParam() } as unknown as StereoPannerNode,
+            [],
+            10,
+            120,
+            []
+        );
+
+        expect(gain.setValueAtTime).toHaveBeenCalledWith(0, 0);
+        expect(rampValues(gain).every((value) => value >= 0)).toBe(true);
+    });
+
     it('converts a decibel-ranged gain lane to linear amplitude, as the live path does', () => {
         // Live applyAutomation treats a lane with minValue < 0 as a dB lane and
         // writes dbToGain(value); offline read the raw dB number as a linear

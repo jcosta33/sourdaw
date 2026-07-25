@@ -519,9 +519,17 @@ function isAutomation(value: unknown): value is ProjectAutomation {
                 Array.isArray(lane.objects) &&
                 lane.objects.every(isAutomationObject) &&
                 hasType({ record: lane, keys: ['id', 'trackId', 'parameterId', 'parameterName'], type: 'string' }) &&
+                // `virginTerritory` was removed here (AU-8). It used to be a
+                // *required* boolean, so dropping it from this list is what keeps
+                // older files loadable: a file written before the removal still
+                // carries the key, and an unlisted extra key is ignored rather
+                // than rejected. Nothing else needs to change — the removal is
+                // purely permissive, so no schema version bump (a bump would
+                // reject the very files this is meant to keep readable, since
+                // MIN_SUPPORTED_PROJECT_VERSION equals CURRENT_PROJECT_VERSION).
                 hasType({
                     record: lane,
-                    keys: ['visible', 'enabled', 'collapsed', 'virginTerritory'],
+                    keys: ['visible', 'enabled', 'collapsed'],
                     type: 'boolean',
                 }) &&
                 hasType({ record: lane, keys: ['minValue', 'maxValue'], type: 'number' }) &&

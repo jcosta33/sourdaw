@@ -36,7 +36,6 @@ function createLane(id: string, overrides: Partial<AutomationLane> = {}): Automa
         visible: true,
         enabled: true,
         collapsed: false,
-        virginTerritory: true,
         minValue: 0,
         maxValue: 1,
         ...overrides,

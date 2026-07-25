@@ -30,7 +30,6 @@ const AUTOMATION_LANE_REQUIRED_KEYS = [
     'visible',
     'enabled',
     'collapsed',
-    'virginTerritory',
     'minValue',
     'maxValue',
 ] as const;
@@ -303,8 +302,6 @@ function is_valid_automation_lane(value: unknown): value is AutomationLane {
         typeof value.enabled === 'boolean' &&
         'collapsed' in value &&
         typeof value.collapsed === 'boolean' &&
-        'virginTerritory' in value &&
-        typeof value.virginTerritory === 'boolean' &&
         'minValue' in value &&
         is_finite_number(value.minValue) &&
         'maxValue' in value &&
@@ -356,7 +353,6 @@ function normalize_automation_lane(lane: AutomationLane): AutomationLane {
         visible: lane.visible,
         enabled: lane.enabled,
         collapsed: lane.collapsed,
-        virginTerritory: lane.virginTerritory,
         minValue: lane.minValue,
         maxValue: lane.maxValue,
     };

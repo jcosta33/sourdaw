@@ -68,7 +68,6 @@ function lane(overrides: Partial<AutomationLane> = {}): AutomationLane {
         collapsed: false,
         linkedLaneId: 'lane-source',
         linkScale: -1,
-        virginTerritory: true,
         minValue: 0,
         maxValue: 1,
         viewMinValue: 0.1,

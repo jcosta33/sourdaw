@@ -30,7 +30,6 @@ function create_valid_state(): AutomationStoreState {
                 visible: true,
                 enabled: true,
                 collapsed: false,
-                virginTerritory: true,
                 minValue: 0,
                 maxValue: 1,
             },

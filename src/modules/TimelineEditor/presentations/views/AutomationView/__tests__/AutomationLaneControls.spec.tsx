@@ -30,10 +30,8 @@ const renderWithTooltip = (ui: React.ReactElement) => {
 describe('AutomationLaneControls', () => {
     const defaultProps = {
         laneId: 'lane-1',
-        isVirginTerritory: false,
         isVisible: true,
         selectedCount: 0,
-        onToggleVirginTerritory: vi.fn(),
         onZoomToUsedRange: vi.fn(),
         onToggleVisibility: vi.fn(),
         onClose: vi.fn(),
@@ -45,7 +43,7 @@ describe('AutomationLaneControls', () => {
 
     it('should render without crashing', () => {
         renderWithTooltip(<AutomationLaneControls {...defaultProps} />);
-        expect(screen.getByLabelText('Enable virgin territory')).toBeInTheDocument();
+        expect(screen.getByLabelText('Zoom to used range')).toBeInTheDocument();
     });
 
     it('should display selected count when greater than 0', () => {
@@ -58,21 +56,9 @@ describe('AutomationLaneControls', () => {
         expect(screen.queryByText(/sel/)).not.toBeInTheDocument();
     });
 
-    it('should call onToggleVirginTerritory when VT button is clicked', () => {
+    it('no longer offers a virgin-territory control (AU-8, flag removed)', () => {
         renderWithTooltip(<AutomationLaneControls {...defaultProps} />);
-        const vtButton = screen.getByLabelText('Enable virgin territory');
-        fireEvent.click(vtButton);
-        expect(defaultProps.onToggleVirginTerritory).toHaveBeenCalled();
-    });
-
-    it('should show different aria-label for VT button when virgin territory is enabled', () => {
-        renderWithTooltip(<AutomationLaneControls {...defaultProps} isVirginTerritory={true} />);
-        expect(screen.getByLabelText('Disable virgin territory')).toBeInTheDocument();
-    });
-
-    it('should show different aria-label for VT button when virgin territory is disabled', () => {
-        renderWithTooltip(<AutomationLaneControls {...defaultProps} isVirginTerritory={false} />);
-        expect(screen.getByLabelText('Enable virgin territory')).toBeInTheDocument();
+        expect(screen.queryByLabelText(/virgin territory/i)).not.toBeInTheDocument();
     });
 
     it('should call onZoomToUsedRange when zoom button is clicked', () => {
@@ -109,6 +95,7 @@ describe('AutomationLaneControls', () => {
     it('should have correct button count', () => {
         renderWithTooltip(<AutomationLaneControls {...defaultProps} />);
         const buttons = screen.getAllByRole('button');
-        expect(buttons).toHaveLength(4);
+        // Three, not four: the virgin-territory toggle was removed with the flag (AU-8).
+        expect(buttons).toHaveLength(3);
     });
 });

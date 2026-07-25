@@ -20,7 +20,6 @@ describe('AutomationLaneHeader', () => {
         curveColor: '#ff0000',
         currentValue: 75,
         isDrawMode: false,
-        isVirginTerritory: false,
         isYZoomed: false,
         viewMin: 0,
         viewMax: 100,
@@ -60,13 +59,8 @@ describe('AutomationLaneHeader', () => {
         expect(screen.queryByText('DRAW')).not.toBeInTheDocument();
     });
 
-    it('should show VT badge when virgin territory is enabled', () => {
-        render(<AutomationLaneHeader {...defaultProps} isVirginTerritory={true} />);
-        expect(screen.getByText('VT')).toBeInTheDocument();
-    });
-
-    it('should not show VT badge when virgin territory is disabled', () => {
-        render(<AutomationLaneHeader {...defaultProps} isVirginTerritory={false} />);
+    it('never shows a VT badge (AU-8, flag removed)', () => {
+        render(<AutomationLaneHeader {...defaultProps} />);
         expect(screen.queryByText('VT')).not.toBeInTheDocument();
     });
 

@@ -54,7 +54,6 @@ export { deleteSelectedPoints } from './automationSelection/deleteSelectedPoints
 export { getSelectionBounds } from './automationSelection/getSelectionBounds';
 export { adjustYZoom } from './automationZoom/adjustYZoom';
 export { zoomToUsedRange } from './automationZoom/zoomToUsedRange';
-export { toggleVirginTerritory } from './automationZoom/toggleVirginTerritory';
 
 // Helper for playheadScheduler
 export { getAutomationValueAtBeat } from './automation/getAutomationValueAtBeat';

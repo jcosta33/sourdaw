@@ -877,10 +877,42 @@ describe('applyImportedProjectData round-trip hydration', () => {
             visible: true,
             enabled: true,
             collapsed: false,
-            virginTerritory: true,
             minValue: 0,
             maxValue: 1,
         });
+    });
+
+    it('loads a project written before virginTerritory was removed, and drops the field', async () => {
+        // A file saved by an older build: the automation lane still carries the
+        // retired `virginTerritory` flag (AU-8). Removing the field made it an
+        // unknown extra key rather than a required one, so the strict validator
+        // must ignore it instead of rejecting the file — and it must not survive
+        // into the hydrated store, or a re-save would write it back out.
+        const project = makeProject();
+        Reflect.set(project, 'automation', {
+            lanes: [
+                {
+                    id: 'lane-1',
+                    trackId: 'track-audio',
+                    parameterId: 'gain',
+                    parameterName: 'Gain',
+                    points: [{ beat: 0, value: 0.5, curve: 'linear', tension: 0 }],
+                    objects: [],
+                    visible: true,
+                    enabled: true,
+                    collapsed: false,
+                    virginTerritory: true,
+                    minValue: 0,
+                    maxValue: 1,
+                },
+            ],
+        });
+
+        await expect(applyImportedProjectData({ data: project })).resolves.toBe(true);
+
+        const hydratedLane = arrangementStore.value?.arrangements[0]?.automation.lanes[0];
+        expect(hydratedLane).toMatchObject({ id: 'lane-1', enabled: true, minValue: 0, maxValue: 1 });
+        expect(hydratedLane).not.toHaveProperty('virginTerritory');
     });
 
     it('migrates the original version-1 root shape without losing owned state', async () => {

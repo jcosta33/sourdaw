@@ -51,17 +51,25 @@ function normalizeAutomation(value: unknown): unknown {
                 const entries: unknown[] = objects;
                 objects = entries.map(normalizeAutomationObject);
             }
-            return {
+            const normalizedLane: UnknownRecord = {
                 ...lane,
                 points: lane.points.map(normalizeAutomationPoint),
                 objects,
                 visible: lane.visible === undefined ? true : lane.visible,
                 enabled: lane.enabled === undefined ? true : lane.enabled,
                 collapsed: lane.collapsed === undefined ? false : lane.collapsed,
-                virginTerritory: lane.virginTerritory === undefined ? true : lane.virginTerritory,
                 minValue: lane.minValue === undefined ? 0 : lane.minValue,
                 maxValue: lane.maxValue === undefined ? 1 : lane.maxValue,
             };
+            // AU-8: `virginTerritory` was removed from the lane model. A file
+            // written by an older build still carries it, and the spread above
+            // would carry it straight through into the hydrated store — so this
+            // build would write the retired field back out on the next save,
+            // keeping it alive in user projects forever. Strip it here, where
+            // the other legacy shape migrations live. Loading is unaffected:
+            // the validator no longer requires the key, it just ignores it.
+            Reflect.deleteProperty(normalizedLane, 'virginTerritory');
+            return normalizedLane;
         }),
     };
 }

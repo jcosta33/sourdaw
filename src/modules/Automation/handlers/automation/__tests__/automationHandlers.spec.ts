@@ -45,7 +45,6 @@ describe('Automation Handlers', () => {
                     visible: true,
                     enabled: true,
                     collapsed: false,
-                    virginTerritory: true,
                     color: '#fff',
                 },
             ],

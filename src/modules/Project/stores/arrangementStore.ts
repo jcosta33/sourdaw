@@ -260,7 +260,6 @@ export type ProjectAutomationLane = {
     visible: boolean;
     enabled: boolean;
     collapsed: boolean;
-    virginTerritory: boolean;
     minValue: number;
     maxValue: number;
     viewMinValue?: number;

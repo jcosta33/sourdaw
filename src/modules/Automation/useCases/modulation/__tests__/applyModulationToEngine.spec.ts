@@ -84,7 +84,6 @@ function createAutomationLaneFixture(input: {
         visible: true,
         enabled: true,
         collapsed: false,
-        virginTerritory: false,
         minValue: input.minValue,
         maxValue: input.maxValue,
     };
