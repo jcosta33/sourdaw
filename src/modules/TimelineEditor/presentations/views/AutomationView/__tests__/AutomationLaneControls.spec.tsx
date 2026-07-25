@@ -56,7 +56,7 @@ describe('AutomationLaneControls', () => {
         expect(screen.queryByText(/sel/)).not.toBeInTheDocument();
     });
 
-    it('no longer offers a virgin-territory control (AU-8, flag removed)', () => {
+    it('no longer offers a virgin-territory control now the flag is removed', () => {
         renderWithTooltip(<AutomationLaneControls {...defaultProps} />);
         expect(screen.queryByLabelText(/virgin territory/i)).not.toBeInTheDocument();
     });
@@ -95,7 +95,7 @@ describe('AutomationLaneControls', () => {
     it('should have correct button count', () => {
         renderWithTooltip(<AutomationLaneControls {...defaultProps} />);
         const buttons = screen.getAllByRole('button');
-        // Three, not four: the virgin-territory toggle was removed with the flag (AU-8).
+        // Three, not four: the virgin-territory toggle was removed with the flag.
         expect(buttons).toHaveLength(3);
     });
 });

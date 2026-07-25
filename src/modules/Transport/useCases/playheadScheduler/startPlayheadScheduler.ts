@@ -350,7 +350,7 @@ export function startPlayheadScheduler(): void {
         // grain instead of holding a stale value for the rest of the session.
         refreshSidechainAlignment();
         applyModulation(newPosition);
-        // AU-11: hand modulation the values applyAutomation just applied, so a
+        // Hand modulation the values applyAutomation just applied, so a
         // param both automated and modulated combines onto the value the engine
         // actually holds rather than a separately recomputed raw curve value.
         applyModulationToEngine(newPosition, schedulerSession.discontinuityEpoch, appliedAutomationBases);

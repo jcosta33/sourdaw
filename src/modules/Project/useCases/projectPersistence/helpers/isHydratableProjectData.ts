@@ -519,8 +519,8 @@ function isAutomation(value: unknown): value is ProjectAutomation {
                 Array.isArray(lane.objects) &&
                 lane.objects.every(isAutomationObject) &&
                 hasType({ record: lane, keys: ['id', 'trackId', 'parameterId', 'parameterName'], type: 'string' }) &&
-                // `virginTerritory` was removed here (AU-8). It used to be a
-                // *required* boolean, so dropping it from this list is what keeps
+                // `virginTerritory` was removed from the lane model. It used to be a
+                // *required* boolean here, so dropping it from this list is what keeps
                 // older files loadable: a file written before the removal still
                 // carries the key, and an unlisted extra key is ignored rather
                 // than rejected.

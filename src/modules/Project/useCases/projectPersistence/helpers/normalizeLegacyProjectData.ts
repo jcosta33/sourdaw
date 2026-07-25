@@ -61,7 +61,7 @@ function normalizeAutomation(value: unknown): unknown {
                 minValue: lane.minValue === undefined ? 0 : lane.minValue,
                 maxValue: lane.maxValue === undefined ? 1 : lane.maxValue,
             };
-            // AU-8: `virginTerritory` was removed from the lane model. A file
+            // `virginTerritory` was removed from the lane model. A file
             // written by an older build still carries it, and the spread above
             // would carry it straight through into the hydrated store — so this
             // build would write the retired field back out on the next save,

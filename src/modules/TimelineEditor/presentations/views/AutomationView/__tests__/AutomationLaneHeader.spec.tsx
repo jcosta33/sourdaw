@@ -59,7 +59,7 @@ describe('AutomationLaneHeader', () => {
         expect(screen.queryByText('DRAW')).not.toBeInTheDocument();
     });
 
-    it('never shows a VT badge (AU-8, flag removed)', () => {
+    it('never shows a VT badge now the flag is removed', () => {
         render(<AutomationLaneHeader {...defaultProps} />);
         expect(screen.queryByText('VT')).not.toBeInTheDocument();
     });

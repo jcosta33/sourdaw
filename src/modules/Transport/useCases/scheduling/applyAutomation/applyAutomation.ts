@@ -51,7 +51,7 @@ const automationState: {
      */
     lastDiscontinuityEpoch: number | undefined;
     /**
-     * Lane ids that wrote their parameter on the previous tick (AU-7). The
+     * Lane ids that wrote their parameter on the previous tick. The
      * driving → not-driving edge is what triggers the one-shot restore of the
      * manual base; without it a gated lane would either strand the parameter or
      * fight the UI by rewriting the base every tick.
@@ -69,7 +69,7 @@ export function applyAutomation(currentBeat: number): Set<string> {
     // applyVcaGains skips these so the VCA writer defers to the composed value
     // instead of racing it (see the gain branch below).
     const gainAutomationTrackIds = new Set<string>();
-    // AU-11: this tick's device writes, handed to applyModulationToEngine so a
+    // This tick's device writes, handed to applyModulationToEngine so a
     // param that is both automated and modulated combines onto the value
     // automation actually applied rather than a separately recomputed one.
     clearAppliedAutomationBases();
@@ -122,7 +122,7 @@ export function applyAutomation(currentBeat: number): Set<string> {
             continue;
         }
 
-        // AU-7 / AU-9. Two gates stop a lane driving without the project's own
+        // Two gates stop a lane driving without the project's own
         // value changing: the track's automationMode going to 'off', and the
         // lane being marked disabled. `enabled` is compared against `false`
         // rather than falsy so a lane persisted before the flag existed (which
@@ -161,7 +161,7 @@ export function applyAutomation(currentBeat: number): Set<string> {
             continue;
         }
 
-        // AU-6: a control released from a touch/latch ride glides back to the
+        // A control released from a touch/latch ride glides back to the
         // curve over the AutoMatch time instead of being handed straight back to
         // it. With no pending release this returns the curve value unchanged.
         const autoMatch = resolveAutoMatchValue({
@@ -198,7 +198,7 @@ export function applyAutomation(currentBeat: number): Set<string> {
         // (scheduleAutomationOnParam); this closes the live half for the
         // AudioParam-backed families only.
         if (lane.parameterId === 'gain') {
-            // AU-10: one shared level law. A lane with `minValue < 0` is a
+            // One shared level law. A lane with `minValue < 0` is a
             // decibel lane; `dbToGain` is the same conversion the offline
             // scheduler now applies, so the bounce matches the monitor.
             const linearGain = lane.minValue < 0 ? dbToGain(value) : value;
@@ -240,7 +240,7 @@ export function applyAutomation(currentBeat: number): Set<string> {
                 const prev = laneSlew.get(device.id) ?? value;
                 const smoothed = isDiscontinuity ? value : slewStep(prev, value, AUTOMATION_SLEW_ALPHA);
                 laneSlew.set(device.id, smoothed);
-                // AU-11: record the applied value even when the dispatch below
+                // Record the applied value even when the dispatch below
                 // is suppressed as sub-epsilon — the engine still holds this
                 // value (within epsilon), so it is the correct base for the
                 // modulation write that follows in this same tick.

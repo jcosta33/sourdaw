@@ -1,5 +1,5 @@
 /**
- * AU-11 — the device-parameter values the live automation pass actually wrote
+ * The device-parameter values the live automation pass actually wrote
  * on the current tick, indexed `deviceId → parameterId → value`.
  *
  * `applyAutomation` and `applyModulationToEngine` both write the same device

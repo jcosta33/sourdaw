@@ -385,7 +385,7 @@ describe('AutomationLaneRow', () => {
         expect(adjustYZoom).toHaveBeenCalledWith('lane-1', 1);
     });
 
-    it('renders the curve geometry the virgin-territory branch used to produce (AU-8)', () => {
+    it('renders the curve geometry the virgin-territory branch used to produce', () => {
         // Deleting the virgin-territory drawing branch had to be output-identical,
         // not assumed to be. Before the deletion this exact case was rendered
         // twice — flag on and flag off, against the REAL getAutomationRegions

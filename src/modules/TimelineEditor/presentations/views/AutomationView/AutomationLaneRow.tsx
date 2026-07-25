@@ -123,7 +123,7 @@ export const AutomationLaneRow = ({
     //
     // This used to be two branches, one per virginTerritory state, and they
     // were provably identical for any lane with two or more visible points
-    // (AU-8): `getAutomationRegions`' default `maxGap` is Infinity, so it always
+    // — `getAutomationRegions`' default `maxGap` is Infinity, so it always
     // returned exactly one region spanning first point to last, and filtering
     // the visible points by that region is a no-op. The flag is gone; this is
     // the surviving single builder.

@@ -884,7 +884,7 @@ describe('applyImportedProjectData round-trip hydration', () => {
 
     it('loads a project written before virginTerritory was removed, and drops the field', async () => {
         // A file saved by an older build: the automation lane still carries the
-        // retired `virginTerritory` flag (AU-8). Removing the field made it an
+        // retired `virginTerritory` flag. Removing the field made it an
         // unknown extra key rather than a required one, so the strict validator
         // must ignore it instead of rejecting the file — and it must not survive
         // into the hydrated store, or a re-save would write it back out.

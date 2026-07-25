@@ -34,7 +34,7 @@ function deviceAcceptsAutomationParameter(device: { parameterValues: Record<stri
 }
 
 /**
- * AU-7 — write a lane's target parameter back to its manual (persisted) value.
+ * Write a lane's target parameter back to its manual (persisted) value.
  *
  * Called once, on the tick a lane stops driving because the track's
  * `automationMode` went to `'off'` or the lane was disabled. Skipping a lane

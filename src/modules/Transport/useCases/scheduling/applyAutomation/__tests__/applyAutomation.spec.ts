@@ -577,7 +577,7 @@ describe('applyAutomation', () => {
         });
     });
 
-    describe('lane.enabled gating (AU-9)', () => {
+    describe('lane.enabled gating', () => {
         function seedGatingTrack(devices: SeedDevice[]): void {
             mutableTrackStore.value = {
                 tracks: [
@@ -668,7 +668,7 @@ describe('applyAutomation', () => {
         });
     });
 
-    describe('restores the manual base when a lane stops driving (AU-7)', () => {
+    describe('restores the manual base when a lane stops driving', () => {
         type GateTrack = { automationMode: string };
 
         function seedRestorableDeviceLane(laneId: string): void {
@@ -771,7 +771,7 @@ describe('applyAutomation', () => {
             expect(owned.has('track-1')).toBe(false);
         });
 
-        it('restores when the lane itself is disabled mid-ride (AU-9 must not strand it)', () => {
+        it('restores when the lane itself is disabled mid-ride and does not strand the parameter', () => {
             seedRestorableDeviceLane('lane-restore-disabled');
             applyAutomation(0);
             applyAutomation(1);
@@ -783,7 +783,7 @@ describe('applyAutomation', () => {
         });
     });
 
-    describe('AutoMatch release ramp (AU-6)', () => {
+    describe('AutoMatch release ramp', () => {
         it('writes the AutoMatch blend instead of the raw curve value while a release is gliding', () => {
             mutableTrackStore.value = {
                 tracks: [
