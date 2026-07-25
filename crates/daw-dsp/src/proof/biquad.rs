@@ -1,16 +1,23 @@
 //! Shared biquad filter — used across EQ, crossovers, and sidechain filters.
 //! RBJ Audio EQ Cookbook coefficients. f64 for coefficient computation, f32 for processing.
 
-use crate::primitives::flush_denormal;
+use crate::primitives::DENORMAL_THRESHOLD;
 use core::f64::consts::PI;
 
+/// RBJ coefficients, stored in f64.
+///
+/// DSP-5: f32 storage moved the pole enough to cost 0.26 dB of a written
+/// +18 dB / 20 Hz / Q=10 band. Near that corner `a1 ≈ −2` and `a2 ≈ 1`, where
+/// an f32 ULP is ~2.4e-7 against a pole sitting 4.6e-5 inside the unit circle,
+/// so the quantization is a measurable fraction of the pole's distance from
+/// the circle. See `low_frequency_precision_tests` for the full error budget.
 #[derive(Clone, Copy)]
 pub struct BiquadCoeffs {
-    pub b0: f32,
-    pub b1: f32,
-    pub b2: f32,
-    pub a1: f32,
-    pub a2: f32,
+    pub b0: f64,
+    pub b1: f64,
+    pub b2: f64,
+    pub a1: f64,
+    pub a2: f64,
 }
 
 impl BiquadCoeffs {
@@ -109,11 +116,11 @@ impl BiquadCoeffs {
     fn normalize(b0: f64, b1: f64, b2: f64, a0: f64, a1: f64, a2: f64) -> Self {
         let inv = 1.0 / a0;
         Self {
-            b0: (b0 * inv) as f32,
-            b1: (b1 * inv) as f32,
-            b2: (b2 * inv) as f32,
-            a1: (a1 * inv) as f32,
-            a2: (a2 * inv) as f32,
+            b0: b0 * inv,
+            b1: b1 * inv,
+            b2: b2 * inv,
+            a1: a1 * inv,
+            a2: a2 * inv,
         }
     }
 }
@@ -158,7 +165,7 @@ pub struct SmoothedBiquadCoeffs {
 const COEFF_SMOOTHING_SECONDS: f64 = 0.005;
 
 #[inline]
-fn lerp_coeffs(from: &BiquadCoeffs, to: &BiquadCoeffs, t: f32) -> BiquadCoeffs {
+fn lerp_coeffs(from: &BiquadCoeffs, to: &BiquadCoeffs, t: f64) -> BiquadCoeffs {
     BiquadCoeffs {
         b0: from.b0 + (to.b0 - from.b0) * t,
         b1: from.b1 + (to.b1 - from.b1) * t,
@@ -215,7 +222,7 @@ impl SmoothedBiquadCoeffs {
             return self.current;
         }
 
-        let progress = 1.0 - self.remaining as f32 / self.ramp_samples as f32;
+        let progress = 1.0 - f64::from(self.remaining) / f64::from(self.ramp_samples);
         self.current = lerp_coeffs(&self.start, &self.target, progress);
         self.current
     }
@@ -225,12 +232,25 @@ impl SmoothedBiquadCoeffs {
     }
 }
 
+/// Direct-Form-I state, carried in f64.
+///
+/// DSP-5: the recursion `−a1·y1 − a2·y2` subtracts two large near-equal terms
+/// once `a1 ≈ −2` and `a2 ≈ 1`, so an f32 accumulator loses the difference to
+/// cancellation. Measured on a +18 dB / 20 Hz / Q=10 band that cost 2.121 dB
+/// of realized gain at 96 kHz and left a −55 dB roundoff floor at 48 kHz.
+///
+/// The topology stays Direct-Form-I on purpose. Transposed Direct Form II was
+/// measured as the alternative and rejected: it recovers 1.93 dB at the 96 kHz
+/// corner but gives up 15.96 dB of noise floor at the 48 kHz cut corner, and
+/// DF-I's state — actual past inputs and outputs — stays bounded by signal
+/// level under the per-sample coefficient ramping #787 added. Widening fixes
+/// both corners without trading either.
 #[derive(Clone)]
 pub struct BiquadState {
-    x1: f32,
-    x2: f32,
-    y1: f32,
-    y2: f32,
+    x1: f64,
+    x2: f64,
+    y1: f64,
+    y2: f64,
 }
 
 impl BiquadState {
@@ -245,16 +265,30 @@ impl BiquadState {
 
     #[inline]
     pub fn process(&mut self, input: f32, c: &BiquadCoeffs) -> f32 {
+        let input = f64::from(input);
         let raw = c.b0 * input + c.b1 * self.x1 + c.b2 * self.x2 - c.a1 * self.y1 - c.a2 * self.y2;
         // DSP-2: the recursive y-state decays geometrically into the subnormal
         // range once input goes silent. Flushing `raw` once keeps both the
         // stored state and the returned sample out of microcode-trap territory.
-        let out = flush_denormal(raw);
+        //
+        // The threshold stays `DENORMAL_THRESHOLD` (f32::MIN_POSITIVE) even
+        // though the accumulator is now f64. A value in the f32-subnormal range
+        // is a perfectly normal f64 and traps nothing internally — but this
+        // function returns f32 and every downstream consumer is f32, so it is
+        // still exactly the boundary that must not be crossed. Flushing at
+        // f64::MIN_POSITIVE instead would let the state ring ~270 orders of
+        // magnitude below audibility and would emit subnormal f32 the whole
+        // way down, which is the trap DSP-2 closed.
+        let out = if raw.abs() < f64::from(DENORMAL_THRESHOLD) {
+            0.0
+        } else {
+            raw
+        };
         self.x2 = self.x1;
         self.x1 = input;
         self.y2 = self.y1;
         self.y1 = out;
-        out
+        out as f32
     }
 
     pub fn reset(&mut self) {
@@ -262,6 +296,12 @@ impl BiquadState {
         self.x2 = 0.0;
         self.y1 = 0.0;
         self.y2 = 0.0;
+    }
+
+    /// The stored recursive state, for tests that assert the DSP-2 flush.
+    #[cfg(test)]
+    pub(crate) fn recursive_state(&self) -> (f64, f64) {
+        (self.y1, self.y2)
     }
 }
 
@@ -400,7 +440,7 @@ mod coefficient_smoothing_tests {
     }
 
     /// Pole radius of `1 + a1·z⁻¹ + a2·z⁻²`; < 1 means stable.
-    fn pole_radius(coeffs: &BiquadCoeffs) -> f32 {
+    fn pole_radius(coeffs: &BiquadCoeffs) -> f64 {
         let discriminant = coeffs.a1 * coeffs.a1 - 4.0 * coeffs.a2;
         if discriminant >= 0.0 {
             let root = discriminant.sqrt();
@@ -457,23 +497,30 @@ mod denormal_tests {
     /// Unguarded Direct-Form-I recursion — what `BiquadState::process` was
     /// before DSP-2. Kept in the test so the failure mode is demonstrated, not
     /// asserted from memory.
+    ///
+    /// It carries f64 state because production does (DSP-5). This reference
+    /// exists to isolate exactly one difference from production — the denormal
+    /// flush — so it has to track every other change. Holding it at f32 would
+    /// turn `guard_is_bit_exact_while_the_signal_stays_in_normal_range` into a
+    /// precision comparison, which is not what that test guards.
     #[derive(Default)]
     struct UnguardedDf1 {
-        x1: f32,
-        x2: f32,
-        y1: f32,
-        y2: f32,
+        x1: f64,
+        x2: f64,
+        y1: f64,
+        y2: f64,
     }
 
     impl UnguardedDf1 {
         fn process(&mut self, input: f32, c: &BiquadCoeffs) -> f32 {
+            let input = f64::from(input);
             let out =
                 c.b0 * input + c.b1 * self.x1 + c.b2 * self.x2 - c.a1 * self.y1 - c.a2 * self.y2;
             self.x2 = self.x1;
             self.x1 = input;
             self.y2 = self.y1;
             self.y1 = out;
-            out
+            out as f32
         }
     }
 
@@ -508,8 +555,11 @@ mod denormal_tests {
         );
         assert!(value != 0.0, "raw unguarded state must be a nonzero subnormal");
         assert!(
-            !unguarded.y1.is_normal(),
-            "the stored state itself ends subnormal, not just one output sample"
+            unguarded.y1 != 0.0 && !(unguarded.y1 as f32).is_normal(),
+            "the stored state itself narrows to a subnormal f32 ({:e}), not just one \
+             output sample — this is why the flush threshold is f32::MIN_POSITIVE and \
+             not f64::MIN_POSITIVE",
+            unguarded.y1
         );
     }
 
@@ -527,8 +577,9 @@ mod denormal_tests {
             );
         }
 
-        assert_eq!(guarded.y1, 0.0, "recursive state must reach exact zero");
-        assert_eq!(guarded.y2, 0.0);
+        let (y1, y2) = guarded.recursive_state();
+        assert_eq!(y1, 0.0, "recursive state must reach exact zero");
+        assert_eq!(y2, 0.0);
     }
 
     #[test]
@@ -560,6 +611,262 @@ mod denormal_tests {
         assert!(
             compared > 100,
             "expected a long normal-range run to compare, got {compared} samples"
+        );
+    }
+}
+
+
+
+
+#[cfg(test)]
+mod low_frequency_precision_tests {
+    //! DSP-5. The audit filed this as "Proof mastering biquads are
+    //! Direct-Form-I (topology note)" and proposed migrating off DF-I. These
+    //! tests measure the actual error budget instead of accepting that framing,
+    //! because the measurement does not support it.
+    //!
+    //! Three error terms were separated at the parameter extremes reachable
+    //! from `MasteringEq::set_param` (freq clamps to 20 Hz, Q to 10, gain to
+    //! ±18 dB), by comparing the shipped filter against the same difference
+    //! equation evaluated in f64, tone-by-tone with a single-bin DFT after
+    //! settling 20 pole time constants:
+    //!
+    //! | case (peak, Q=10, +18 dB, 20 Hz)  | DF-I f32 | TDF-II f32 | coeff quantization |
+    //! |-----------------------------------|----------|------------|--------------------|
+    //! | realized gain error @ 48 kHz      | −0.230 dB| −0.238 dB  | −0.256 dB          |
+    //! | realized gain error @ 96 kHz      | −2.121 dB| −0.195 dB  | −0.154 dB          |
+    //! | noise floor @ 48 kHz, rel. tone   | −55.45 dB| −55.16 dB  | (f64: −194.65 dB)  |
+    //! | noise floor @ 48 kHz, −18 dB cut  | −64.84 dB| −48.88 dB  | (f64: −186.00 dB)  |
+    //!
+    //! **The topology swap is not the fix, and this is measured, not assumed.**
+    //! Transposed Direct Form II — the standard "better for float" alternative —
+    //! is worth 1.93 dB of realized gain at the 96 kHz corner but *costs*
+    //! 15.96 dB of noise floor at the 48 kHz −18 dB corner, and is within
+    //! 0.007 dB of DF-I on realized gain everywhere at 48 kHz. Swapping
+    //! topologies trades one reachable corner for another.
+    //!
+    //! What the error budget actually says is that both remaining terms are
+    //! **precision**, not arrangement: f32 state loses the recursion to
+    //! catastrophic cancellation (`a1 ≈ −2`, `a2 ≈ 1`, so `−a1·y1 − a2·y2`
+    //! subtracts two large near-equal terms), and f32 coefficient storage moves
+    //! the pole. Both are fixed by widening, which keeps Direct-Form-I — and so
+    //! keeps DF-I's bounded state under the coefficient modulation #787
+    //! introduced, and keeps that PR's convexity stability proof applicable
+    //! unchanged, since it is a statement about pole locations and not about
+    //! how they are realized.
+    //!
+    //! These tests are bidirectional guards. Narrowing `BiquadCoeffs` or
+    //! `BiquadState` back to f32 puts the numbers in the table back and trips
+    //! them; so does a topology change that regresses either corner.
+
+    use super::{BiquadCoeffs, BiquadState};
+    use core::f64::consts::PI;
+
+    /// Complex amplitude of `signal` at `hz` via a single-bin DFT.
+    /// Returns (magnitude, phase_radians).
+    fn bin(signal: &[f64], hz: f64, sr: f64) -> (f64, f64) {
+        let (mut re, mut im) = (0.0f64, 0.0f64);
+        for (n, &s) in signal.iter().enumerate() {
+            let w = 2.0 * PI * hz * n as f64 / sr;
+            re += s * w.cos();
+            im -= s * w.sin();
+        }
+        let n = signal.len() as f64;
+        ((re * re + im * im).sqrt() * 2.0 / n, im.atan2(re))
+    }
+
+    fn rms(v: &[f64]) -> f64 {
+        (v.iter().map(|s| s * s).sum::<f64>() / v.len() as f64).sqrt()
+    }
+
+    /// Everything in `signal` that is not the tone at `hz`, in dB relative to
+    /// the tone: subtract the best-fit sinusoid and measure what is left.
+    fn noise_floor_db(signal: &[f64], hz: f64, sr: f64) -> f64 {
+        let (mag, phase) = bin(signal, hz, sr);
+        assert!(mag > 0.0, "probe tone vanished — the filter output is silent");
+        let residual: Vec<f64> = signal
+            .iter()
+            .enumerate()
+            .map(|(n, &s)| s - mag * (2.0 * PI * hz * n as f64 / sr + phase).cos())
+            .collect();
+        let r = rms(&residual);
+        if r <= 0.0 {
+            return -300.0;
+        }
+        20.0 * (r / (mag / 2.0_f64.sqrt())).log10()
+    }
+
+    /// Pole radius of the coefficient set, used to size the settling run.
+    fn pole_radius(c: &BiquadCoeffs) -> f64 {
+        let (a1, a2) = (c.a1 as f64, c.a2 as f64);
+        let disc = a1 * a1 - 4.0 * a2;
+        if disc < 0.0 {
+            a2.sqrt()
+        } else {
+            ((-a1 + disc.sqrt()) / 2.0)
+                .abs()
+                .max(((-a1 - disc.sqrt()) / 2.0).abs())
+        }
+    }
+
+    /// Drive the **production** `BiquadState` with a −6 dBFS tone, discard 20
+    /// pole time constants of transient, and return the settled tail.
+    fn settled_response(coeffs: &BiquadCoeffs, tone_hz: f64, sr: f64) -> (Vec<f64>, f64) {
+        let settle = (20.0 / (1.0 - pole_radius(coeffs))).ceil() as usize;
+        let analyse = (200.0 * sr / tone_hz).round() as usize;
+        let mut state = BiquadState::new();
+        let mut out = Vec::with_capacity(analyse);
+        let mut input_tail = Vec::with_capacity(analyse);
+        for n in 0..settle + analyse {
+            let x = 0.5 * (2.0 * PI * tone_hz * n as f64 / sr).sin();
+            let y = state.process(x as f32, coeffs) as f64;
+            if n >= settle {
+                out.push(y);
+                input_tail.push(x);
+            }
+        }
+        let (m_in, _) = bin(&input_tail, tone_hz, sr);
+        (out, m_in)
+    }
+
+    fn realized_gain_db(coeffs: &BiquadCoeffs, tone_hz: f64, sr: f64) -> f64 {
+        let (out, m_in) = settled_response(coeffs, tone_hz, sr);
+        let (m_out, _) = bin(&out, tone_hz, sr);
+        20.0 * (m_out / m_in).log10()
+    }
+
+    /// The band a mastering engineer can actually dial: the freq floor, the Q
+    /// ceiling and the gain ceiling at once. This is the worst conditioned
+    /// coefficient set `MasteringEq` can be asked to realize.
+    const EXTREME_HZ: f64 = 20.0;
+    const EXTREME_Q: f64 = 10.0;
+    const EXTREME_GAIN_DB: f64 = 18.0;
+
+    /// A mastering EQ must land the gain it was written. 0.05 dB is far below
+    /// audibility and far above the residual of a correctly conditioned filter.
+    const GAIN_TOLERANCE_DB: f64 = 0.05;
+
+    #[test]
+    fn extreme_low_band_realizes_its_written_gain_at_48k() {
+        let sr = 48_000.0;
+        let coeffs = BiquadCoeffs::peak(EXTREME_HZ, EXTREME_GAIN_DB, EXTREME_Q, sr);
+        let realized = realized_gain_db(&coeffs, EXTREME_HZ, sr);
+        let error = realized - EXTREME_GAIN_DB;
+        assert!(
+            error.abs() < GAIN_TOLERANCE_DB,
+            "a +{EXTREME_GAIN_DB} dB / {EXTREME_HZ} Hz / Q={EXTREME_Q} band realized \
+             {realized:.3} dB ({error:+.3} dB error) at {sr} Hz; f32 DF-I measured −0.230 dB \
+             before the widening"
+        );
+    }
+
+    #[test]
+    fn extreme_low_band_realizes_its_written_gain_at_96k() {
+        // The conditioning gets strictly worse with sample rate: w0 halves, so
+        // the poles crowd the unit circle. This corner is where f32 DF-I lost
+        // 2.121 dB of an 18 dB boost — the single worst number in the audit's
+        // whole precision claim.
+        let sr = 96_000.0;
+        let coeffs = BiquadCoeffs::peak(EXTREME_HZ, EXTREME_GAIN_DB, EXTREME_Q, sr);
+        let realized = realized_gain_db(&coeffs, EXTREME_HZ, sr);
+        let error = realized - EXTREME_GAIN_DB;
+        assert!(
+            error.abs() < GAIN_TOLERANCE_DB,
+            "a +{EXTREME_GAIN_DB} dB / {EXTREME_HZ} Hz / Q={EXTREME_Q} band realized \
+             {realized:.3} dB ({error:+.3} dB error) at {sr} Hz; f32 DF-I measured −2.121 dB \
+             before the widening"
+        );
+    }
+
+    /// An ideal realization: the same coefficients evaluated in f64, fed the
+    /// same f32 sample stream the engine delivers, emitting f32. Nothing that
+    /// consumes and produces f32 samples can do better than this, so it is the
+    /// floor to measure the shipped filter against — rather than a hand-picked
+    /// dB constant that would need re-tuning whenever the probe changes.
+    fn ideal_reference_response(coeffs: &BiquadCoeffs, tone_hz: f64, sr: f64) -> Vec<f64> {
+        let settle = (20.0 / (1.0 - pole_radius(coeffs))).ceil() as usize;
+        let analyse = (200.0 * sr / tone_hz).round() as usize;
+        let (mut x1, mut x2, mut y1, mut y2) = (0.0f64, 0.0f64, 0.0f64, 0.0f64);
+        let mut out = Vec::with_capacity(analyse);
+        for n in 0..settle + analyse {
+            let x = f64::from((0.5 * (2.0 * PI * tone_hz * n as f64 / sr).sin()) as f32);
+            let y = coeffs.b0 * x + coeffs.b1 * x1 + coeffs.b2 * x2 - coeffs.a1 * y1
+                - coeffs.a2 * y2;
+            x2 = x1;
+            x1 = x;
+            y2 = y1;
+            y1 = y;
+            if n >= settle {
+                out.push(f64::from(y as f32));
+            }
+        }
+        out
+    }
+
+    /// Headroom over the ideal reference. The shipped filter is expected to sit
+    /// *on* the reference (measured: 0.00 dB in every case below); 1 dB leaves
+    /// room for probe jitter without leaving room for a precision regression,
+    /// which costs tens of dB.
+    const EXCESS_NOISE_TOLERANCE_DB: f64 = 1.0;
+
+    fn assert_adds_no_noise(coeffs: &BiquadCoeffs, tone_hz: f64, sr: f64, pre_fix: &str) {
+        let (shipped, _) = settled_response(coeffs, tone_hz, sr);
+        let shipped_floor = noise_floor_db(&shipped, tone_hz, sr);
+        let ideal_floor = noise_floor_db(&ideal_reference_response(coeffs, tone_hz, sr), tone_hz, sr);
+        let excess = shipped_floor - ideal_floor;
+        assert!(
+            excess < EXCESS_NOISE_TOLERANCE_DB,
+            "filter adds {excess:.2} dB of roundoff over an ideal f64 realization on the \
+             same f32 transport (shipped {shipped_floor:.2} dB, ideal {ideal_floor:.2} dB, \
+             both rel. tone); f32 DF-I measured {pre_fix} before the widening"
+        );
+    }
+
+    #[test]
+    fn extreme_low_band_adds_no_roundoff_above_the_sample_format_on_boost() {
+        let sr = 48_000.0;
+        assert_adds_no_noise(
+            &BiquadCoeffs::peak(EXTREME_HZ, EXTREME_GAIN_DB, EXTREME_Q, sr),
+            EXTREME_HZ,
+            sr,
+            "−55.45 dB against a −153.18 dB ideal (97.7 dB of excess)",
+        );
+    }
+
+    #[test]
+    fn extreme_low_band_adds_no_roundoff_above_the_sample_format_on_cut() {
+        // Kept as its own case because the cut direction is where TDF-II
+        // measured 15.96 dB *worse* than DF-I — the measurement that rules the
+        // topology swap out. Its ideal floor is 17 dB higher than the boost
+        // case's because a 20 Hz notch attenuates the tone by 18 dB while
+        // passing the input's own f32 quantization noise at full level; that
+        // is the sample format, not the filter, which is exactly why this
+        // asserts against the ideal rather than an absolute number.
+        let sr = 48_000.0;
+        assert_adds_no_noise(
+            &BiquadCoeffs::peak(EXTREME_HZ, -EXTREME_GAIN_DB, EXTREME_Q, sr),
+            EXTREME_HZ,
+            sr,
+            "−64.84 dB against a −135.24 dB ideal (70.4 dB of excess)",
+        );
+    }
+
+    #[test]
+    fn ordinary_midband_band_was_already_accurate_and_stays_so() {
+        // Guards against "fixing" the extremes by disturbing the common case:
+        // f32 DF-I already realized this within 0.000 dB at a −118.50 dB floor.
+        let sr = 48_000.0;
+        let coeffs = BiquadCoeffs::peak(1_000.0, 6.0, 1.0, sr);
+        let realized = realized_gain_db(&coeffs, 1_000.0, sr);
+        assert!(
+            (realized - 6.0).abs() < 0.01,
+            "a +6 dB / 1 kHz / Q=1 band realized {realized:.4} dB"
+        );
+        assert_adds_no_noise(
+            &coeffs,
+            1_000.0,
+            sr,
+            "−118.50 dB against a −156.13 dB ideal (37.6 dB of excess)",
         );
     }
 }
