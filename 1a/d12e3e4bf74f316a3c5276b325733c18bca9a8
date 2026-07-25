@@ -1,0 +1,43 @@
+src/modules/AudioEngine/services/__tests__/deviceTailConformance.spec.ts
+  s_0d39f3a4a4357a::t_a57846d6de75fc 73
+  s_0d39f3a4a4357a::t_8cb8fdbdacad44 59
+src/modules/AudioEngine/useCases/offlineRender/getAutoDetectedTailSeconds.ts
+  s_0d39f3a4a4357a::t_41fa4bddd09b43 23
+  s_0d39f3a4a4357a::t_19f96a2e179438 1
+  s_0d39f3a4a4357a::t_7a42b86f72c77d 16-20,24-56,58,61-63,65-68,70-71,73-75,77-82
+  s_0d39f3a4a4357a::t_ee41f9d267cf59 76
+src/modules/AudioEngine/useCases/offlineRender/__tests__/getAutoDetectedTailSeconds.spec.ts
+  s_0d39f3a4a4357a::t_75af1f695511f1 39-51,53-58
+  s_0d39f3a4a4357a::t_c326ce920dee06 73-173
+  s_0d39f3a4a4357a::t_9e36c6d2681068 183,194,199,208,240
+src/modules/AudioEngine/services/estimateRenderTailSeconds.ts
+  s_0d39f3a4a4357a::t_e8d9af73e6ae84 147-158,179-183
+  s_0d39f3a4a4357a::t_9a01becc093b56 116-134
+src/modules/AudioRendering/presentations/views/ExportDialog.tsx
+  s_0d39f3a4a4357a::t_f5c5fbe2fafc5d 113-114
+  s_0d39f3a4a4357a::t_1dc127648c2eea 942
+  s_0d39f3a4a4357a::t_6b026db09e17ec 172-180,187
+  s_0d39f3a4a4357a::t_8a02af458d3824 382-384
+  s_0d39f3a4a4357a::t_804233b4bc4169 102-112,115-121
+src/modules/AudioEngine/services/__tests__/estimateRenderTailSeconds.spec.ts
+  s_0d39f3a4a4357a::t_e0d0c6d907526f 187
+  s_0d39f3a4a4357a::t_e87da60432bfb3 22,38,59,75,91,107,123,141,167,186,203,238,251,267
+src/modules/AudioRendering/presentations/views/__tests__/ExportDialog.spec.tsx
+  s_0d39f3a4a4357a::t_b4c7b3f1683b00 140
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "1ad12e3e4bf74f316a3c5276b325733c18bca9a8",
+  "prompts": {},
+  "sessions": {
+    "s_0d39f3a4a4357a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "60da6a2e-7d79-4d98-8624-e993f5a9f94e",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
