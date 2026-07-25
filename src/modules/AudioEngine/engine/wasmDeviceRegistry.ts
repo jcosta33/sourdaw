@@ -824,6 +824,12 @@ const faustDescriptor: WasmDeviceDescriptor = {
                         scheduleParam: controls.scheduleParam,
                         keyOn: controls.keyOn,
                         keyOff: controls.keyOff,
+                        // A Faust instrument voices through its `gate` param
+                        // (see `useCases/faustScheduler/scheduleFaustNote.ts`),
+                        // so closing the gate is its all-notes-off. Without it
+                        // a Faust instrument was the one device kind the stop /
+                        // panic sweep could not silence (audit MD-6).
+                        allNotesOff: () => controls.setParam('gate', 0),
                         destroy: controls.destroy,
                     },
                 });

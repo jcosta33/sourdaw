@@ -6,6 +6,7 @@ import {
     getAudioContext,
     getCompensationDelay,
     getCurrentTime,
+    registerScheduledSource,
     scheduleFaustNote,
 } from '#/modules/AudioEngine/useCases';
 import { automationStore } from '#/modules/Automation/stores';
@@ -461,7 +462,7 @@ export async function scheduleMidiNotes(
                                 noteGain
                             );
                         } else if (drumKit) {
-                            scheduleKitNote(
+                            const kitVoice = scheduleKitNote(
                                 ctx,
                                 strip.gainNode,
                                 drumKit,
@@ -471,6 +472,9 @@ export async function scheduleMidiNotes(
                                 projectedNote.velocity,
                                 noteGain
                             );
+                            if (kitVoice) {
+                                registerScheduledSource(kitVoice);
+                            }
                         } else if (workletSynthControls && workletSynthEntry) {
                             const rawVel = projectedNote.velocity;
                             const vel = workletSynthEntry.velocityTransform
@@ -509,7 +513,7 @@ export async function scheduleMidiNotes(
                                 note.pressure !== undefined || note.slide !== undefined || note.pitchBend !== undefined
                                     ? { pressure: note.pressure, slide: note.slide, pitchBend: note.pitchBend }
                                     : undefined;
-                            scheduleNote(
+                            const synthVoice = scheduleNote(
                                 ctx,
                                 strip.gainNode,
                                 pitch,
@@ -520,6 +524,11 @@ export async function scheduleMidiNotes(
                                 mpe,
                                 noteGain
                             );
+                            // Built-in synth and kit voices are bare
+                            // oscillators; nothing else holds their handle, so
+                            // without this a stop or a panic leaves them ringing
+                            // for the rest of their programmed duration (MD-6).
+                            registerScheduledSource(synthVoice);
                         }
                     }
                 }

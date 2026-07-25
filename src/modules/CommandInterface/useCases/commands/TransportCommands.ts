@@ -1,4 +1,5 @@
-import { seekPlayhead } from '#/modules/Transport/useCases';
+import { logger } from '#/infra/logger/appLogger';
+import { panicAllNotes, seekPlayhead } from '#/modules/Transport/useCases';
 
 import { type CallableCommandEntry } from '../searchCommandRegistry';
 import { getLastClipEndBeat } from '../selectionHelpers/getLastClipEndBeat';
@@ -85,6 +86,18 @@ export const transportCommands: CallableCommandEntry[] = [
         shortcut: '[',
         action: () => {
             goToPreviousMarker();
+        },
+    },
+    {
+        id: 'panic-all-notes',
+        label: 'MIDI Panic — All Notes Off',
+        description: 'Force every held note to release: live MIDI input, every instrument, Yeast racks and Crumbs',
+        category: 'Transport',
+        shortcut: 'Shift+Esc',
+        action: () => {
+            void panicAllNotes().catch((error: unknown) => {
+                logger.error(new Error('MIDI panic failed', { cause: error }));
+            });
         },
     },
 ];

@@ -149,6 +149,7 @@ export { setMidiInputTrack } from './webMidiInput/setMidiInputTrack';
 export { getMidiInputTrack } from './webMidiInput/getMidiInputTrack';
 export { selectMidiInput } from './webMidiInput/selectMidiInput';
 export { resetMidiState } from './webMidiInput/resetMidiState';
+export { panicLiveNotes } from './webMidiInput/panicLiveNotes';
 export { triggerLiveNoteOn } from './triggerLiveNoteOn';
 export { triggerLiveNoteOff } from './triggerLiveNoteOff';
 export { getWebMidiInputHandlers } from './getWebMidiInputHandlers';

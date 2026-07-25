@@ -1178,36 +1178,42 @@ class AudioEngineImpl implements AudioEngine {
         }
         this.scheduledNodes.length = 0;
 
-        // Release held notes on every synth device. Fermenter and Toaster now
-        // honor a single `allNotesOff` worklet message, so post that once per
-        // device instead of fanning out 128 Fermenter / 16 Toaster note-off
-        // structured clones (640 postMessages with five Fermenter tracks). The
-        // message goes to the device's worklet node port directly — mirroring
-        // postShutdownToWorklets — because the fermenterControls/toasterControls
-        // surfaces do not carry an allNotesOff method.
-        const hasWorkletNode = typeof AudioWorkletNode !== 'undefined';
+        // Release held notes on every device that can hold one, through the
+        // generic `controller.allNotesOff` every instrument descriptor already
+        // publishes (`engine/wasmDeviceRegistry.ts`). This used to be a
+        // hand-kept branch per device kind — a raw worklet postMessage for
+        // Fermenter/Toaster plus explicit Grand Boule and Levain calls — which
+        // meant every new instrument had to remember to add itself here or its
+        // voices would keep sounding through a stop (audit MD-6). Reading the
+        // registry's own surface instead means it cannot drift.
+        //
+        // One message per device, not a 128-note fan-out: each engine's
+        // `allNotesOff` releases every voice internally. Levain in particular
+        // uses it to skip the per-note realism release burst that 128 note-offs
+        // would turn into an audible "ksshh".
         for (const [, trackNode] of this.trackNodes) {
             for (const dn of trackNode.strip.deviceNodes) {
-                if (dn.fermenterControls || dn.toasterControls) {
-                    for (const node of dn.nodes) {
-                        if (hasWorkletNode && node instanceof AudioWorkletNode) {
-                            node.port.postMessage({ type: 'allNotesOff' });
-                        }
-                    }
-                }
-                if (dn.grandBouleControls) {
-                    dn.grandBouleControls.allNotesOff();
-                }
-                if (dn.levainControls) {
-                    // Levain has a realism-layer release burst per noteOff
-                    // (bow-lift noise on strings). A 128-note fan-out would
-                    // retrigger that burst 128 times and produce an audible
-                    // "ksshh" on every stop. Route through the dedicated
-                    // silent all-notes-off path instead.
-                    dn.levainControls.allNotesOff();
-                }
+                dn.controller?.allNotesOff?.();
             }
         }
+    }
+
+    public registerScheduledSource(node: AudioScheduledSourceNode): void {
+        if (this.fallbackMode) {
+            return;
+        }
+        // Built-in synth and kit voices are bare oscillators written straight
+        // into the strip; the scheduled path discarded the handle, so a stop or
+        // a panic could not silence them and they rang on for the rest of their
+        // programmed duration (audit MD-6). Tracking them here puts them under
+        // the same `stopAllScheduled` sweep as the metronome.
+        this.scheduledNodes.push(node);
+        node.addEventListener('ended', () => {
+            const index = this.scheduledNodes.indexOf(node);
+            if (index >= 0) {
+                this.scheduledNodes.splice(index, 1);
+            }
+        });
     }
 
     public resetGraph(): void {

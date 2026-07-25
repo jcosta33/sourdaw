@@ -1,22 +1,33 @@
 import { inject } from '#/infra/di/inject';
 import { applyNoteExpression, audioEngine } from '#/modules/AudioEngine/useCases';
 
+import { MPE_FIRST_MEMBER_CHANNEL } from '../../models/MidiControllerState';
 import { getMpeEnabled } from '../../repositories/webMidi/getMpeEnabled';
 import { getTargetTrackId } from '../../repositories/webMidi/getTargetTrackId';
 import { activeNotes, channelToNote } from '../../repositories/webMidi/state';
 
 import { midiMessageHandlerDependencies } from './midiMessageHandlerDependencies';
+import { resolveBendRangeSemitones } from './resolveBendRangeSemitones';
 
-const STANDARD_BEND_RANGE_CENTS = 200;
-const STANDARD_BEND_RANGE_SEMITONES = STANDARD_BEND_RANGE_CENTS / 100;
-const MPE_BEND_RANGE_CENTS = 48 * 100;
+const PITCH_BEND_CENTER = 8192;
+const CENTS_PER_SEMITONE = 100;
 
 export const handleWebMidiPitchBend = inject(midiMessageHandlerDependencies)(
     (deps) =>
         function handleWebMidiPitchBend(channel: number, lsb: number, msb: number): void {
-            const bendValue = ((msb << 7) | lsb) - 8192;
+            const bendValue = ((msb << 7) | lsb) - PITCH_BEND_CENTER;
+            const mpeEnabled = getMpeEnabled();
+            // The range used to be two hard-coded constants here (±2 and ±48),
+            // restated a third time in cents for the fallback oscillator. It is
+            // now resolved once from whatever the controller declared through
+            // RPN 0 (audit MD-8), and that one number feeds both the engine
+            // expression surface and the oscillator detune.
+            const bendRangeSemitones = resolveBendRangeSemitones({ channel, mpeEnabled });
+            const bendCents = (bendValue / PITCH_BEND_CENTER) * bendRangeSemitones * CENTS_PER_SEMITONE;
+            const targetTrackId = getTargetTrackId();
+            const baseDetune = targetTrackId ? deps.getSynthParamsForTrack(targetTrackId).detune : 0;
 
-            if (getMpeEnabled() && channel >= 1) {
+            if (mpeEnabled && channel >= MPE_FIRST_MEMBER_CHANNEL) {
                 const noteForChannel = channelToNote.get(channel);
                 if (noteForChannel === undefined) {
                     return;
@@ -37,22 +48,19 @@ export const handleWebMidiPitchBend = inject(midiMessageHandlerDependencies)(
                         pressure: noteData.pressure,
                         slide: noteData.slide,
                     },
+                    bendRangeSemitones,
                 });
                 if (noteData.osc) {
-                    const bendCents = (bendValue / 8192) * MPE_BEND_RANGE_CENTS;
-                    const baseDetune = getTargetTrackId() ? deps.getSynthParamsForTrack(getTargetTrackId()!).detune : 0;
                     noteData.osc.detune.setTargetAtTime(baseDetune + bendCents, audioEngine.context.currentTime, 0.003);
                 }
                 return;
             }
 
-            const bendCents = (bendValue / 8192) * STANDARD_BEND_RANGE_CENTS;
-            const baseDetune = getTargetTrackId() ? deps.getSynthParamsForTrack(getTargetTrackId()!).detune : 0;
             const now = audioEngine.context.currentTime;
             for (const noteData of activeNotes.values()) {
                 // A channel-wide bend is not MPE, but it reaches the instrument
                 // through the same surface — applied to every sounding note at
-                // the standard ±2 semitone range rather than the MPE member range.
+                // the arriving channel's own range rather than the MPE member range.
                 // It is deliberately *not* written back onto the note record:
                 // only MPE member-channel bend is per-note data worth recording.
                 applyNoteExpression({
@@ -64,7 +72,7 @@ export const handleWebMidiPitchBend = inject(midiMessageHandlerDependencies)(
                         pressure: noteData.pressure,
                         slide: noteData.slide,
                     },
-                    bendRangeSemitones: STANDARD_BEND_RANGE_SEMITONES,
+                    bendRangeSemitones,
                 });
                 if (noteData.osc) {
                     noteData.osc.detune.setTargetAtTime(baseDetune + bendCents, now, 0.003);

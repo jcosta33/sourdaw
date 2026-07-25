@@ -28,6 +28,7 @@ import { scheduleFrozenTrack } from '../scheduleFrozenTrack';
 import { scheduleMidiNotes, type SchedulerCancellation } from '../scheduleMidiNotes';
 
 const shouldPlayProbability = vi.hoisted(() => vi.fn((_input: { eventId: string }) => true));
+const registerScheduledSourceMock = vi.hoisted(() => vi.fn<(node: AudioScheduledSourceNode) => void>());
 
 vi.mock('#/modules/Arrangement/stores', () => ({
     trackStore: { value: { tracks: [] } },
@@ -62,6 +63,7 @@ vi.mock('#/modules/Arrangement/useCases', () => ({
 }));
 vi.mock('#/modules/AudioEngine/useCases', () => ({
     applyNoteExpression: vi.fn(),
+    registerScheduledSource: registerScheduledSourceMock,
     getCompensationDelay: vi.fn(() => 0),
     ensureTrackStrip: vi.fn(() => ({ gainNode: {}, preFaderTap: { connect: vi.fn() } })),
     getCurrentTime: vi.fn(() => 0),
@@ -205,6 +207,24 @@ describe('scheduleMidiNotes', () => {
         expect(vi.mocked(scheduleFrozenTrack)).toHaveBeenCalledTimes(2);
         expect(scheduledFrozenTracks.has('track-1:frozen-buffer-1')).toBe(true);
         expect(scheduledFrozenTracks.has('track-1:frozen-buffer-2')).toBe(true);
+    });
+
+    // audit MD-6 — the built-in synth voice is a bare oscillator written into
+    // the strip. Its handle used to be discarded, so neither transport stop nor
+    // a panic could silence it before its programmed stop time.
+    it('registers a scheduled built-in synth voice so a stop or panic can silence it', async () => {
+        const voice = { stop: vi.fn() } as unknown as OscillatorNode & { _env: GainNode };
+        vi.mocked(scheduleNote).mockReturnValueOnce(voice);
+        const track = midiTrack({ clips: [midiClip()] });
+        (trackStore as { value: unknown }).value = { tracks: [track] };
+        (midiStore as { value: unknown }).value = {
+            notesByClipId: { 'clip-1': [{ id: 'n1', pitch: 60, startBeat: 0.25, duration: 0.25, velocity: 100 }] },
+        };
+
+        await scheduleMidiNotes(0, 4, 0, -1, new Set<string>(), [], defaultTransportState, 120);
+
+        expect(scheduleNote).toHaveBeenCalledTimes(1);
+        expect(registerScheduledSourceMock).toHaveBeenCalledExactlyOnceWith(voice);
     });
 
     it('does not schedule synth when MIDI store is uninitialized', async () => {

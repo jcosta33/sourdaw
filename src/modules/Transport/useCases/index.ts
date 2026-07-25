@@ -26,6 +26,7 @@ export { updateTempoChange } from './tempoMap/updateTempoChange';
 export { detectProjectTempo } from './tempoMapping/operations/detectProjectTempo';
 export { adjustTempoPoint } from './tempoMapping/operations/adjustTempoPoint';
 
+export { panicAllNotes } from './transportControls/panicAllNotes';
 export { seekPlayhead } from './transportControls/seekPlayhead';
 export { setCountInBars } from './transportControls/setCountInBars';
 export { setLoopRegion } from './transportControls/setLoopRegion';

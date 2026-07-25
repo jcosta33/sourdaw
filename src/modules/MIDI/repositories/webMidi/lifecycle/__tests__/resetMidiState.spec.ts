@@ -42,6 +42,7 @@ function makeOscWithEnv() {
 beforeEach(() => {
     activeNotes.clear();
     channelToNote.clear();
+    get_track_strip.mockReset();
 });
 
 describe('resetMidiState — smooth release on active notes', () => {
@@ -122,5 +123,71 @@ describe('resetMidiState — smooth release on active notes', () => {
         expect(noteOffA).toHaveBeenCalledExactlyOnceWith(0);
         expect(noteOffB).toHaveBeenCalledExactlyOnceWith(3);
         expect(activeNotes.size).toBe(0);
+    });
+
+    // audit MD-6 — reset released Toaster pads and raw oscillators only, then
+    // cleared the map. A Fermenter / Grand Boule / Levain voice was left
+    // sounding with nothing left that knew about it, so the later real note-off
+    // found no record and never reached the engine.
+    describe('worklet instrument voices', () => {
+        it('releases a held Fermenter voice before forgetting the note', () => {
+            const noteOff = vi.fn<(note: number, sampleFrame?: number) => void>();
+            get_track_strip.mockReturnValue({
+                deviceNodes: [{ deviceId: 'ferm-1', type: 'fermenter', fermenterControls: { noteOff } }],
+            });
+            activeNotes.set(createWebMidiNoteKey(0, 60), {
+                startTime: 0,
+                startBeat: 0,
+                channel: 0,
+                note: 60,
+                trackId: 'track-1',
+                instrumentTrackId: 'track-1',
+                fermenterDeviceId: 'ferm-1',
+            });
+
+            resetMidiState(reset_deps);
+
+            expect(noteOff).toHaveBeenCalledExactlyOnceWith(60);
+        });
+
+        it('releases a held Grand Boule voice', () => {
+            const noteOff = vi.fn<(midiNote: number) => void>();
+            get_track_strip.mockReturnValue({
+                deviceNodes: [{ deviceId: 'gb-1', type: 'grand-boule', grandBouleControls: { noteOff } }],
+            });
+            activeNotes.set(createWebMidiNoteKey(0, 48), {
+                startTime: 0,
+                startBeat: 0,
+                channel: 0,
+                note: 48,
+                trackId: 'track-1',
+                instrumentTrackId: 'track-1',
+                grandBouleDeviceId: 'gb-1',
+            });
+
+            resetMidiState(reset_deps);
+
+            expect(noteOff).toHaveBeenCalledExactlyOnceWith(48);
+        });
+
+        it('releases a held Levain voice', () => {
+            const noteOff = vi.fn<(note: number) => void>();
+            get_track_strip.mockReturnValue({
+                deviceNodes: [{ deviceId: 'lev-1', type: 'levain', levainControls: { noteOff } }],
+            });
+            activeNotes.set(createWebMidiNoteKey(0, 72), {
+                startTime: 0,
+                startBeat: 0,
+                channel: 0,
+                note: 72,
+                trackId: 'track-1',
+                instrumentTrackId: 'track-1',
+                levainDeviceId: 'lev-1',
+            });
+
+            resetMidiState(reset_deps);
+
+            expect(noteOff).toHaveBeenCalledExactlyOnceWith(72);
+        });
     });
 });

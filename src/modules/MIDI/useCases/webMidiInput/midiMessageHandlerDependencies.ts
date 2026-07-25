@@ -21,6 +21,8 @@ import { createMidiNote } from '../createMidiNote';
 import { stepRecordNoteOff } from '../stepRecording/stepRecordNoteOff';
 import { stepRecordNoteOn } from '../stepRecording/stepRecordNoteOn';
 
+import { panicLiveNotes } from './panicLiveNotes';
+
 function getTrackStoreState(): TrackStoreState | null {
     return trackStore.value;
 }
@@ -47,6 +49,7 @@ export const midiMessageHandlerDependencies = {
     getSynthParamsForTrack,
     getTrackStoreState,
     getTransportStoreValue,
+    panicLiveNotes,
     playheadPositionRef,
     processRealtimeMidiInput,
     scheduleDrumKitNote,

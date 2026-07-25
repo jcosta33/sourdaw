@@ -50,6 +50,7 @@ const {
     loggerMock,
     shortcutStoreMock,
     stopPlaybackMock,
+    panicAllNotesMock,
     trackStoreMock,
     clipSelectionStoreMock,
     loopStationStoreMock,
@@ -65,6 +66,7 @@ const {
         },
     },
     stopPlaybackMock: vi.fn(() => Promise.resolve()),
+    panicAllNotesMock: vi.fn(() => Promise.resolve()),
     trackStoreMock: {
         value: {
             selectedTrackId: null as string | null,
@@ -120,6 +122,7 @@ vi.mock('#/modules/SessionLauncher/useCases', () => ({
 
 vi.mock('#/modules/Transport/useCases', () => ({
     stopPlayback: stopPlaybackMock,
+    panicAllNotes: panicAllNotesMock,
     seekPlayhead: vi.fn(),
     setLoopRegion: vi.fn(),
 }));
@@ -265,6 +268,64 @@ describe('handleKeydown', () => {
         expect(startOrder).toBeLessThan(selectOrder);
 
         performanceNow.mockRestore();
+    });
+
+    // audit MD-6 — a stuck note previously had no user-triggered recovery at all.
+    describe('MIDI panic shortcut', () => {
+        function bindPanic(): void {
+            shortcutStoreMock.value.definitions = [
+                callbackDefinition({ id: 'transport.panicAllNotes', key: 'shift+Escape', callbackId: 'panicAllNotes' }),
+                callbackDefinition({ id: 'transport.stopPlayback', key: 'Escape', callbackId: 'stopPlayback' }),
+            ];
+        }
+
+        it('panics on shift+Escape and consumes the key', () => {
+            bindPanic();
+
+            const prevent = handleKeydown(descriptor({ key: 'Escape', shift: true }));
+
+            expect(prevent).toBe(true);
+            expect(panicAllNotesMock).toHaveBeenCalledTimes(1);
+            expect(stopPlaybackMock).not.toHaveBeenCalled();
+        });
+
+        it('fires even with a clip selected, which swallows the plain Escape stop', () => {
+            bindPanic();
+            clipSelectionStoreMock.value = {
+                selectedClipId: 'clip-1',
+                selectedClipIds: ['clip-1'],
+                marqueeSelection: null,
+            };
+
+            handleKeydown(descriptor({ key: 'Escape', shift: true }));
+
+            expect(panicAllNotesMock).toHaveBeenCalledTimes(1);
+        });
+
+        it('leaves a bare Escape as stop, not panic', () => {
+            bindPanic();
+
+            handleKeydown(descriptor({ key: 'Escape' }));
+
+            expect(panicAllNotesMock).not.toHaveBeenCalled();
+            expect(stopPlaybackMock).toHaveBeenCalledTimes(1);
+        });
+
+        it('reports a failed panic rather than silently reporting success', async () => {
+            const panicError = new Error('worker gone');
+            panicAllNotesMock.mockRejectedValueOnce(panicError);
+            bindPanic();
+
+            handleKeydown(descriptor({ key: 'Escape', shift: true }));
+
+            await vi.waitFor(() => expect(loggerMock.error).toHaveBeenCalledTimes(1));
+            expect(loggerMock.error).toHaveBeenCalledWith(
+                expect.objectContaining({
+                    message: 'Keyboard shortcut MIDI panic failed',
+                    cause: panicError,
+                })
+            );
+        });
     });
 
     it('reports a rejected stopPlayback promise from the shortcut', async () => {
