@@ -154,6 +154,48 @@ describe('flattenTrack', () => {
         expect(clip.endBeat).toBe(5); // 1 (default end) + 2s * (120 BPM / 60) = 1 + 4 beats
     });
 
+    it('adds no tail beats when the freeze state has no render settings', () => {
+        trackStore.set({
+            tracks: [
+                {
+                    id: 't1',
+                    name: 'Synth',
+                    color: '#ff0000',
+                    clips: [
+                        { startBeat: 2, endBeat: 6 },
+                        // A clip whose startBeat is not a new minimum exercises the
+                        // "no new min" branch, and whose endBeat is not a new max
+                        // exercises the "no new max" branch.
+                        { startBeat: 4, endBeat: 5 },
+                    ],
+                    freezeState: {
+                        status: 'frozen',
+                        frozenBufferId: 'buf-123',
+                    },
+                } as any,
+            ],
+            selectedTrackId: null,
+        });
+
+        flattenTrack('t1');
+        const updateCall = vi.mocked(updateTrack).mock.calls[0];
+        if (!updateCall) {
+            throw new Error('expected updateTrack to have been called');
+        }
+        const track = trackStore.value!.tracks[0];
+        if (!track) {
+            throw new Error('expected track in store');
+        }
+        const updatedTrack = updateCall[1](track);
+        const clip = updatedTrack.clips[0];
+        if (!clip) {
+            throw new Error('expected flattened clip');
+        }
+        // No renderSettings => tailLengthSeconds is undefined => tail contribution is 0.
+        expect(clip.startBeat).toBe(2);
+        expect(clip.endBeat).toBe(6);
+    });
+
     it('rejects an ineligible destination before transport reads, UUID allocation, or replacement', () => {
         mocks.resolveEligibleClipWriteTarget.mockReturnValue({ status: 'ineligible' });
         trackStore.set({

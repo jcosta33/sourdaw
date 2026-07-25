@@ -461,4 +461,52 @@ describe('bounceTrack', () => {
         expect(didWrite).toBe(false);
         expect(mocks.pushUndoEntry).not.toHaveBeenCalled();
     });
+
+    it('renders the union span of multiple clips and applies it to a single bounced clip', async () => {
+        const renderedBuffer = createTestAudioBuffer();
+        // Order the clips so the first sets both the min start and max end; the
+        // second clip establishes neither a new min nor a new max.
+        const wide = createAudioClip({ id: 'wide', startBeat: 0, endBeat: 10 });
+        const inner = createAudioClip({ id: 'inner', startBeat: 4, endBeat: 6 });
+        const sourceTrack = createAudioTrack({ clips: [wide, inner] });
+        setTrackStoreState({ tracks: [sourceTrack], selectedTrackId: 'track-1' });
+        mocks.renderTrackOffline.mockResolvedValue(renderedBuffer);
+
+        await bounceTrack('track-1', {
+            includeInserts: false,
+            includeSends: false,
+            includeAutomation: false,
+            normalization: 'off',
+            tailHandling: 'off',
+            destination: 'replace',
+        });
+
+        // The bounce spans the union [0, 10] of both clips.
+        expect(mocks.renderTrackOffline).toHaveBeenCalledWith(sourceTrack, 0, 10, expect.any(Object));
+        const bouncedTrack = mocks.trackStore.value?.tracks[0];
+        expect(bouncedTrack?.clips[0]).toEqual(expect.objectContaining({ startBeat: 0, endBeat: 10 }));
+    });
+
+    it('undo is a no-op when the store is cleared before the undo runs', async () => {
+        const renderedBuffer = createTestAudioBuffer();
+        const sourceTrack = createAudioTrack();
+        setTrackStoreState({ tracks: [sourceTrack], selectedTrackId: 'track-1' });
+        mocks.renderTrackOffline.mockResolvedValue(renderedBuffer);
+
+        await bounceTrack('track-1', {
+            includeInserts: false,
+            includeSends: false,
+            includeAutomation: false,
+            normalization: 'off',
+            tailHandling: 'off',
+            destination: 'replace',
+        });
+
+        const [, undo, redo] = getFirstUndoEntry();
+        // Tear the store down so both undo and redo hit their guard and become no-ops.
+        mocks.trackStore.value = null;
+        expect(() => undo()).not.toThrow();
+        expect(() => redo()).not.toThrow();
+        expect(mocks.trackStore.value).toBeNull();
+    });
 });

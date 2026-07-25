@@ -632,4 +632,81 @@ describe('bounceSelection', () => {
         expect(mocks.pushUndoEntry).not.toHaveBeenCalled();
         expect(didWrite).toBe(false);
     });
+
+    it('trims an audio clip crossing the left edge without producing a midi discard id', async () => {
+        const leftCrossing = createAudioClip({
+            id: 'left-audio',
+            startBeat: 0,
+            endBeat: 6,
+            type: 'audio',
+            audioOffsetBeats: 1,
+        });
+        const inside = createAudioClip({ id: 'inside', startBeat: 3, endBeat: 5, type: 'audio' });
+        const track: Track = normalizeTrack({
+            id: 'track-1',
+            name: 'Track 1',
+            kind: 'audio',
+            muted: false,
+            clips: [leftCrossing, inside],
+        } as unknown as Track);
+        setTrackStoreState({ tracks: [track], selectedTrackId: 'track-1' });
+        mocks.renderTrackOffline.mockResolvedValue(createTestAudioBuffer());
+
+        const result = await bounceSelection('track-1', 2, 6);
+
+        expect(result).toBe(true);
+        const written = mocks.trackStore.set.mock.calls.at(-1)?.[0];
+        const clips = written!.tracks[0]!.clips;
+        // Audio left-edge clip is trimmed, no split/discard id generated.
+        expect(clips.find((clip) => clip.id === 'left-audio')).toMatchObject({ startBeat: 0, endBeat: 2 });
+        expect(clips.find((clip) => clip.id.startsWith('clip-bsel-discard'))).toBeUndefined();
+        expect(midiMocks.splitMidiNotesAtBeat).not.toHaveBeenCalled();
+    });
+
+    it('keeps the right part of an audio clip crossing the right edge without midi partitioning', async () => {
+        const rightCrossing = createAudioClip({
+            id: 'right-audio',
+            startBeat: 4,
+            endBeat: 10,
+            type: 'audio',
+            audioOffsetBeats: 2,
+        });
+        const inside = createAudioClip({ id: 'inside', startBeat: 2, endBeat: 4, type: 'audio' });
+        const track: Track = normalizeTrack({
+            id: 'track-1',
+            name: 'Track 1',
+            kind: 'audio',
+            muted: false,
+            clips: [inside, rightCrossing],
+        } as unknown as Track);
+        setTrackStoreState({ tracks: [track], selectedTrackId: 'track-1' });
+        mocks.renderTrackOffline.mockResolvedValue(createTestAudioBuffer());
+
+        const result = await bounceSelection('track-1', 2, 6);
+
+        expect(result).toBe(true);
+        const written = mocks.trackStore.set.mock.calls.at(-1)?.[0];
+        const clips = written!.tracks[0]!.clips;
+        // Right part kept on a fresh id at the selection end, audio offset rebased.
+        const keptRight = clips.find((clip) => clip.id.startsWith('clip-bsel-'));
+        expect(keptRight).toMatchObject({ startBeat: 6, endBeat: 10, midiOffsetBeats: 0 });
+        expect(keptRight?.audioOffsetBeats).toBe(2 + (6 - 4));
+        expect(midiMocks.splitMidiNotesAtBeat).not.toHaveBeenCalled();
+    });
+
+    it('undo and redo are no-ops on the project tracks when the store is cleared first', async () => {
+        const selectedClip = createAudioClip({ id: 'clip-selected', startBeat: 2, endBeat: 6 });
+        const sourceTrack = createAudioTrack({ clips: [selectedClip] });
+        setTrackStoreState({ tracks: [sourceTrack], selectedTrackId: 'track-1' });
+        mocks.renderTrackOffline.mockResolvedValue(createTestAudioBuffer());
+
+        await bounceSelection('track-1', 2, 6);
+
+        const [, undo, redo] = getFirstUndoEntry();
+        // Tear the store down so both undo and redo guards short-circuit on the tracks write.
+        mocks.trackStore.value = null;
+        expect(() => undo()).not.toThrow();
+        expect(() => redo()).not.toThrow();
+        expect(mocks.trackStore.value).toBeNull();
+    });
 });
