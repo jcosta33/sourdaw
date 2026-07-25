@@ -118,11 +118,28 @@ vi.mock('#/modules/AiRuntime/useCases', () => ({
 
 vi.mock('#/modules/WorkspaceShell/useCases', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/WorkspaceShell/useCases')>()),
+    setWorkspaceMode: vi.fn(),
 }));
 
 vi.mock('#/modules/Preferences/useCases', () => ({
     defaultPreferences: { trackHeight: 'normal' },
     setTrackHeight: vi.fn(),
+}));
+
+vi.mock('#/utils/Notification/confirmUser', () => ({
+    confirmUser: vi.fn(),
+}));
+
+vi.mock('../../../useCases/getTrackTemplates', () => ({
+    getTrackTemplates: vi.fn(() => []),
+}));
+
+vi.mock('../../../useCases/loadTrackTemplate', () => ({
+    loadTrackTemplate: vi.fn(),
+}));
+
+vi.mock('../TakeLanesView', () => ({
+    TakeLanePanel: () => null,
 }));
 
 const renderWithTooltip = (ui: ReactElement) => {
@@ -277,5 +294,161 @@ describe('TrackListView', () => {
         expect(setScrollY).toHaveBeenCalledTimes(1);
 
         rafSpy.mockRestore();
+    });
+
+    it('selects the first track on ArrowDown when nothing is selected', () => {
+        const mockedUseTracks = vi.mocked(useTracks);
+        mockedUseTracks.mockReturnValue({
+            tracks: [
+                normalizeTrack({ id: 't1', name: 'A', kind: 'audio', parentId: null, collapsed: false, height: 64 }),
+                normalizeTrack({ id: 't2', name: 'B', kind: 'midi', parentId: null, collapsed: false, height: 64 }),
+            ],
+            selectedTrackId: null,
+        });
+        renderWithTooltip(<TrackListView />);
+        fireEvent.keyDown(screen.getByRole('grid'), { key: 'ArrowDown' });
+        expect(selectTrack).toHaveBeenCalledWith('t1');
+    });
+
+    it('selects the last track on ArrowUp when nothing is selected', () => {
+        const mockedUseTracks = vi.mocked(useTracks);
+        mockedUseTracks.mockReturnValue({
+            tracks: [
+                normalizeTrack({ id: 't1', name: 'A', kind: 'audio', parentId: null, collapsed: false, height: 64 }),
+                normalizeTrack({ id: 't2', name: 'B', kind: 'midi', parentId: null, collapsed: false, height: 64 }),
+            ],
+            selectedTrackId: null,
+        });
+        renderWithTooltip(<TrackListView />);
+        fireEvent.keyDown(screen.getByRole('grid'), { key: 'ArrowUp' });
+        expect(selectTrack).toHaveBeenCalledWith('t2');
+    });
+
+    it('does nothing on ArrowDown at the last track', () => {
+        const mockedUseTracks = vi.mocked(useTracks);
+        mockedUseTracks.mockReturnValue({
+            tracks: [
+                normalizeTrack({ id: 't1', name: 'A', kind: 'audio', parentId: null, collapsed: false, height: 64 }),
+                normalizeTrack({ id: 't2', name: 'B', kind: 'midi', parentId: null, collapsed: false, height: 64 }),
+            ],
+            selectedTrackId: 't2',
+        });
+        renderWithTooltip(<TrackListView />);
+        fireEvent.keyDown(screen.getByRole('grid'), { key: 'ArrowDown' });
+        expect(selectTrack).not.toHaveBeenCalled();
+    });
+
+    it('enters clip mode on Enter when a track is selected', async () => {
+        const { setWorkspaceMode } = await import('#/modules/WorkspaceShell/useCases');
+        renderWithTooltip(<TrackListView />);
+        fireEvent.keyDown(screen.getByRole('grid'), { key: 'Enter' });
+        expect(setWorkspaceMode).toHaveBeenCalledWith('clip');
+    });
+
+    it('removes the selected track on Delete after user confirmation', async () => {
+        const { removeTrack } = await import('../../../useCases/removeTrack');
+        const { confirmUser } = await import('#/utils/Notification/confirmUser');
+        vi.mocked(confirmUser).mockResolvedValue(true);
+        renderWithTooltip(<TrackListView />);
+        fireEvent.keyDown(screen.getByRole('grid'), { key: 'Delete' });
+        // confirmUser is async; flush microtasks.
+        await Promise.resolve();
+        await Promise.resolve();
+        expect(removeTrack).toHaveBeenCalledWith('t1');
+    });
+
+    it('keeps the track when the user cancels deletion', async () => {
+        const { removeTrack } = await import('../../../useCases/removeTrack');
+        const { confirmUser } = await import('#/utils/Notification/confirmUser');
+        vi.mocked(confirmUser).mockResolvedValue(false);
+        renderWithTooltip(<TrackListView />);
+        fireEvent.keyDown(screen.getByRole('grid'), { key: 'Backspace' });
+        await Promise.resolve();
+        await Promise.resolve();
+        expect(removeTrack).not.toHaveBeenCalled();
+    });
+
+    it('reorders a track via drag and drop', async () => {
+        const { reorderTrack } = await import('../../../useCases/toggleTrackState/reorderTrack');
+        const { container } = renderWithTooltip(<TrackListView />);
+        const rows = container.querySelectorAll('[role="row"]');
+        const dataTransfer = { setData: vi.fn(), effectAllowed: '', dropEffect: '' };
+        // Drag the second row onto the first.
+        fireEvent.dragStart(rows[1]!, { dataTransfer });
+        fireEvent.dragOver(rows[0]!, { dataTransfer });
+        fireEvent.drop(rows[0]!, { dataTransfer });
+
+        expect(reorderTrack).toHaveBeenCalledWith('t2', 0);
+    });
+
+    it('cycles track height on the height button click', async () => {
+        const { setTrackHeight } = await import('#/modules/Preferences/useCases');
+        renderWithTooltip(<TrackListView />);
+        fireEvent.click(screen.getByLabelText(/Track height/));
+        // 'normal' -> next in [compact, normal, large] = 'large'.
+        expect(setTrackHeight).toHaveBeenCalledWith('large');
+    });
+
+    it('creates a folder on the add-folder button click', async () => {
+        const { createFolder } = await import('../../../useCases/folder/createFolder');
+        renderWithTooltip(<TrackListView />);
+        fireEvent.click(screen.getByLabelText('Add folder'));
+        expect(createFolder).toHaveBeenCalledWith('Folder 1');
+    });
+
+    it('injects the auto-organize prompt on the AI button click', async () => {
+        const { injectPromptCommand } = await import('#/modules/AiRuntime/useCases');
+        renderWithTooltip(<TrackListView />);
+        fireEvent.click(screen.getByLabelText('Auto-organize with AI'));
+        expect(injectPromptCommand).toHaveBeenCalledWith(expect.stringContaining('Auto-organize'));
+    });
+
+    it('hides children of a collapsed folder from the visible list', () => {
+        const mockedUseTracks = vi.mocked(useTracks);
+        mockedUseTracks.mockReturnValue({
+            tracks: [
+                normalizeTrack({
+                    id: 'f1',
+                    name: 'Folder',
+                    kind: 'folder',
+                    parentId: null,
+                    collapsed: true,
+                    height: 26,
+                }),
+                normalizeTrack({
+                    id: 'child',
+                    name: 'Child',
+                    kind: 'audio',
+                    parentId: 'f1',
+                    collapsed: false,
+                    height: 64,
+                }),
+            ],
+            selectedTrackId: null,
+        });
+        renderWithTooltip(<TrackListView />);
+        expect(screen.getByTestId('track-f1')).toBeInTheDocument();
+        expect(screen.queryByTestId('track-child')).not.toBeInTheDocument();
+    });
+
+    it('hides the master track from the visible list', () => {
+        const mockedUseTracks = vi.mocked(useTracks);
+        mockedUseTracks.mockReturnValue({
+            tracks: [
+                normalizeTrack({ id: 't1', name: 'A', kind: 'audio', parentId: null, collapsed: false, height: 64 }),
+                normalizeTrack({
+                    id: 'master',
+                    name: 'Master',
+                    kind: 'master',
+                    parentId: null,
+                    collapsed: false,
+                    height: 64,
+                }),
+            ],
+            selectedTrackId: 't1',
+        });
+        renderWithTooltip(<TrackListView />);
+        expect(screen.getByTestId('track-t1')).toBeInTheDocument();
+        expect(screen.queryByTestId('track-master')).not.toBeInTheDocument();
     });
 });

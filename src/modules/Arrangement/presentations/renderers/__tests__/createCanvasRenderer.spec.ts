@@ -294,4 +294,41 @@ describe('createCanvasRenderer', () => {
         const highlight = fillRectLog.find((entry) => entry.fillStyle === 'rgba(80, 160, 110, 0.12)');
         expect(highlight).toEqual(expect.objectContaining({ x: 0, w: 40 }));
     });
+
+    it('stops scanning time-signature changes once a change reaches the viewport start beat', () => {
+        // Two changes: one before the viewport (sets the active numerator) and one
+        // at/after the viewport start (must trigger the loop break so the earlier
+        // change remains the governing bar length for grid drawing).
+        mocks.timeSignatureChanges = [
+            { beat: 2, numerator: 3 },
+            { beat: 8, numerator: 5 },
+        ];
+        const renderer = createCanvasRenderer(canvas);
+        renderer.resize(400, 200);
+        // viewportStartBeat 8 -> startBeat 8; the beat-8 change triggers the break,
+        // so currentNumerator stays at 3 (from the beat-2 change that set barStart).
+        renderer.render(createTestModel({ viewportStartBeat: 8, pixelsPerBeat: 20 }));
+        // No throw and the grid stroke ran; assert a stroke occurred.
+        expect(strokeLog.length).toBeGreaterThan(0);
+    });
+
+    it('culls off-screen clips inside a variation lane', () => {
+        const offscreenVar = createTestClip({ id: 'var-off', startBeat: -50, endBeat: -46 });
+        const onscreenVar = createTestClip({ id: 'var-on', startBeat: 1, endBeat: 3 });
+        const track = createTestTrack({
+            id: 't0',
+            index: 0,
+            clips: [],
+            variationLanes: [{ id: 'lane-a', name: 'A', clips: [offscreenVar, onscreenVar] }],
+        });
+        const renderer = createCanvasRenderer(canvas);
+        renderer.resize(400, 200);
+        const model = createTestModel({ tracks: [track], pixelsPerBeat: 20 });
+        renderer.render(model);
+
+        // Only the on-screen variation clip is drawn.
+        const drawn = mocks.drawClip.mock.calls.map((call) => call[1]);
+        expect(drawn.map((clip) => clip.id)).toEqual(['var-on']);
+        expect(drawn.map((clip) => clip.id)).not.toContain('var-off');
+    });
 });

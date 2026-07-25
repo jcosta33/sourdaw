@@ -60,4 +60,48 @@ describe('InputSelector', () => {
 
         expect(setTrackInput).toHaveBeenCalledWith('t1', 'dev2');
     });
+
+    it('should clear the track input when the Default option is selected', async () => {
+        // Selecting the empty-value Default option drives the
+        // `event.target.value || null` falsy branch, passing null to
+        // setTrackInput so the track returns to its default source.
+        render(<InputSelector trackId="t1" inputId="dev1" />);
+
+        const select = await screen.findByLabelText('Audio input device');
+        fireEvent.change(select, { target: { value: '' } });
+
+        expect(setTrackInput).toHaveBeenCalledWith('t1', null);
+    });
+
+    it('should filter out non-input devices', async () => {
+        // Output devices must not appear as selectable inputs.
+        vi.mocked(getAudioDevices).mockResolvedValue([
+            { id: 'in1', kind: 'audioinput', label: 'Mic' },
+            { id: 'out1', kind: 'audiooutput', label: 'Speakers' },
+        ]);
+
+        render(<InputSelector trackId="t1" inputId={null} />);
+
+        await screen.findByLabelText('Audio input device');
+        // Only the input device is offered; the output device is filtered out.
+        expect(screen.getByText('Mic')).toBeInTheDocument();
+        expect(screen.queryByText('Speakers')).toBeNull();
+    });
+
+    it('should render nothing while devices have not loaded', () => {
+        vi.mocked(getAudioDevices).mockReturnValue(new Promise(() => {}));
+        const { container } = render(<InputSelector trackId="t1" inputId={null} />);
+        // Before the device list resolves the component renders an empty fragment.
+        expect(container.querySelector('[aria-label="Audio input device"]')).toBeNull();
+    });
+
+    it('should render nothing when no input devices are available', async () => {
+        vi.mocked(getAudioDevices).mockResolvedValue([{ id: 'out1', kind: 'audiooutput', label: 'Speakers' }]);
+        const { container } = render(<InputSelector trackId="t1" inputId={null} />);
+        // After filtering, zero input devices remain → empty fragment.
+        await waitFor(() => {
+            expect(getAudioDevices).toHaveBeenCalled();
+        });
+        expect(container.querySelector('[aria-label="Audio input device"]')).toBeNull();
+    });
 });

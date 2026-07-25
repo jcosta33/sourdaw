@@ -296,4 +296,68 @@ describe('renderTrackOffline', () => {
 
         await expect(renderTrackOffline(track, 0, 4)).rejects.toThrow('Render aborted');
     });
+
+    it('prepends the target when it is absent from the project tracks', async () => {
+        const target = TrackDummy.create({ id: 'lonely-target', kind: 'audio' });
+        // Store holds unrelated tracks; the target is provided only as the call argument.
+        const other = TrackDummy.create({ id: 'other', kind: 'audio' });
+        mocks.trackStore.value = { tracks: [other], selectedTrackId: other.id, ghostClips: [] };
+        mocks.getUpstreamSubgraph.mockReturnValue(new Set<string>());
+
+        await renderTrackOffline(target, 0, 4);
+
+        expect(mocks.renderTrackSubgraphOffline.mock.calls[0]?.[0].renderTracks.map((track) => track.id)).toEqual([
+            'lonely-target',
+        ]);
+    });
+
+    it('returns the auto-tail buffer untouched when there is no trailing silence to trim', async () => {
+        const track = TrackDummy.create({ id: 'track-1', kind: 'audio' });
+        mocks.trackStore.value = { tracks: [track], selectedTrackId: track.id, ghostClips: [] };
+        // A buffer whose last sample is active stays full-length: finalLength === length.
+        const fullBuffer = createAudioBuffer([0.5, 0.4, 0.3], 40);
+        mocks.renderTrackSubgraphOffline.mockResolvedValue(fullBuffer);
+
+        const result = await renderTrackOffline(track, 0, 4, { autoTail: true });
+
+        expect(result).toBe(fullBuffer);
+        expect(result?.length).toBe(3);
+    });
+
+    it('returns the buffer untouched when full normalization sees an all-silent render', async () => {
+        const track = TrackDummy.create({ id: 'track-1', kind: 'audio' });
+        mocks.trackStore.value = { tracks: [track], selectedTrackId: track.id, ghostClips: [] };
+        const silent = createAudioBuffer([0, 0, 0]);
+        mocks.renderTrackSubgraphOffline.mockResolvedValue(silent);
+
+        const result = await renderTrackOffline(track, 0, 4, { normalization: 'full' });
+
+        expect(result).toBe(silent);
+    });
+
+    it('scales a clipping peak down to the protection target', async () => {
+        const track = TrackDummy.create({ id: 'track-1', kind: 'audio' });
+        mocks.trackStore.value = { tracks: [track], selectedTrackId: track.id, ghostClips: [] };
+        mocks.renderTrackSubgraphOffline.mockResolvedValue(createAudioBuffer([1.2]));
+
+        const result = await renderTrackOffline(track, 0, 4, { normalization: 'protection' });
+
+        // Peak 1.2 scaled to -0.2 dB (0.98): 0.98 / 1.2 = 0.81666...
+        expect(result?.getChannelData(0)[0]).toBeCloseTo(0.98, 5);
+    });
+
+    it('includes an upstream non-target routing endpoint via the subgraph membership branch', async () => {
+        const target = TrackDummy.create({ id: 'target', kind: 'audio' });
+        const upstream = TrackDummy.create({ id: 'upstream', kind: 'audio', outputId: target.id });
+        mocks.trackStore.value = { tracks: [upstream, target], selectedTrackId: target.id, ghostClips: [] };
+        // upstream is not the target, but belongs to the subgraph via upstreamIds.
+        mocks.getUpstreamSubgraph.mockReturnValue(new Set([upstream.id]));
+
+        await renderTrackOffline(target, 0, 4);
+
+        expect(mocks.renderTrackSubgraphOffline.mock.calls[0]?.[0].renderTracks.map((track) => track.id)).toEqual([
+            'upstream',
+            'target',
+        ]);
+    });
 });

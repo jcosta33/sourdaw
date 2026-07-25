@@ -533,4 +533,83 @@ describe('useTimelineFileDrop', () => {
             );
         });
     });
+
+    it('aborts an AI-render drop onto a non-audio track when no new audio track can be created', async () => {
+        const { result } = renderHook(() => useTimelineFileDrop({ getCanvasCoords, getBeatFromX }));
+
+        const mockEvent = {
+            preventDefault: vi.fn(),
+            dataTransfer: {
+                getData: (type: string) =>
+                    type === 'application/x-sourdaw-ai-render'
+                        ? JSON.stringify({ name: 'Pad', bufferId: 'buf-ai', durationSeconds: 4 })
+                        : '',
+                files: [],
+            },
+        };
+
+        // No track hit, no selected track, and addTrack returns null (e.g. max
+        // track limit reached) -> the drop must abort without creating a clip.
+        mocks.hitTestTrack.mockReturnValue(null);
+        mocks.trackStoreValue.value = { tracks: [], selectedTrackId: null };
+        mocks.addTrack.mockReturnValue(null);
+
+        await act(async () => {
+            await result.current.handleFileDrop(mockEvent as any);
+        });
+
+        expect(mocks.addClip).not.toHaveBeenCalled();
+    });
+
+    it('recognizes an audio file by extension when the MIME type is empty', async () => {
+        const { result } = renderHook(() => useTimelineFileDrop({ getCanvasCoords, getBeatFromX }));
+
+        // A file whose type is '' (common for OS-level drops) but whose name
+        // carries an audio extension must still be treated as audio.
+        const mockFile = new File([''], 'loop.flac', { type: '' });
+        const mockEvent = {
+            preventDefault: vi.fn(),
+            dataTransfer: {
+                getData: () => '',
+                files: [mockFile],
+            },
+        };
+
+        mocks.hitTestTrack.mockReturnValue('t1');
+        mocks.trackStoreValue.value = { tracks: [{ id: 't1', kind: 'audio' }] } as any;
+        mocks.decodeAudioFile.mockResolvedValue({ id: 'buf-flac', buffer: { duration: 1 } });
+
+        await act(async () => {
+            await result.current.handleFileDrop(mockEvent as any);
+        });
+
+        await waitFor(() => {
+            expect(mocks.decodeAudioFile).toHaveBeenCalledWith(mockFile);
+            expect(mocks.addClip).toHaveBeenCalledWith(expect.objectContaining({ audioBufferId: 'buf-flac' }));
+        });
+    });
+
+    it('aborts a raw audio file drop when no new audio track could be created', async () => {
+        const { result } = renderHook(() => useTimelineFileDrop({ getCanvasCoords, getBeatFromX }));
+
+        const mockFile = new File([''], 'kick.wav', { type: 'audio/wav' });
+        const mockEvent = {
+            preventDefault: vi.fn(),
+            dataTransfer: {
+                getData: () => '',
+                files: [mockFile],
+            },
+        };
+
+        // No eligible track and addTrack returns null -> abort, no clip.
+        mocks.hitTestTrack.mockReturnValue(null);
+        mocks.trackStoreValue.value = { tracks: [], selectedTrackId: null };
+        mocks.addTrack.mockReturnValue(null);
+
+        await act(async () => {
+            await result.current.handleFileDrop(mockEvent as any);
+        });
+
+        expect(mocks.addClip).not.toHaveBeenCalled();
+    });
 });
