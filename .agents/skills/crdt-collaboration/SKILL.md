@@ -41,7 +41,25 @@ export async function commitSomething(input: Input): Promise<void> {
 
 Worked example: `src/modules/Knead/useCases/pitch/commitPitchEdit.ts`. Capture is explicit rather than implicit because browsers have no async context propagation — keeping the transaction installed across an `await` would also capture writes made by unrelated code in that window, and this app dispatches many actions without awaiting them.
 
-Nothing enforces this today: it is not caught by types, lint, or `deps:validate`. Audit finding CC-10 tracks the handlers that still need converting.
+**`scope(callback)` takes a synchronous callback.** `scope` restores the previous ambient transaction in a `finally` that runs as soon as the callback's synchronous portion returns — for an `async` callback, that is its first `await`. Writes after that await are unscoped again. Putting the `await` inside `scope` reproduces the exact bug `scope` exists to fix:
+
+```ts
+// ❌ Wrong — the await inside scope re-opens the same hole.
+scope(async () => {
+    const rendered = await render(input);
+    trackStore.set(rendered); // unscoped again
+});
+
+// ✅ Correct — await outside, write inside.
+const rendered = await render(input);
+scope(() => {
+    trackStore.set(rendered);
+});
+```
+
+Two writes separated by an `await` need two `scope(...)` calls, one per synchronous run.
+
+**Both mistakes fail silently.** Capturing *after* an `await` finds no active transaction and returns a pass-through; awaiting *inside* `scope` un-scopes at that await. Neither raises an error, fails a type check, or trips lint — the code looks fixed and behaves exactly as it did before. Audit finding CC-10 tracks the handlers that still need converting, and carries a proposal to make the second case loud (a dev-mode assertion when the callback returns a thenable).
 
 ### 2. CrdtDocument owns the document; modules own projections
 

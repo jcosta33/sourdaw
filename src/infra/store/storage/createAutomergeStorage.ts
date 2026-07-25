@@ -219,6 +219,14 @@ function commitAutomergeStorageMutations(mutations: readonly AutomergeStorageMut
  * With no transaction active the returned function simply runs the callback,
  * which is the correct unscoped behaviour for a handler invoked outside
  * `executeAppAction`.
+ *
+ * The returned function takes a **synchronous** callback. It restores the
+ * previous ambient transaction in a `finally` that runs as soon as the
+ * callback's synchronous portion returns, so `scope(async () => …)` un-scopes
+ * at that callback's own first `await` and silently reproduces the bug this
+ * exists to fix. Await outside, write inside; two writes separated by an
+ * `await` need two calls. Capturing after an `await` degrades the same silent
+ * way, since there is no longer a transaction to capture.
  */
 export function captureAutomergeStorageTransactionScope(): AutomergeStorageTransactionScope {
     const capturedTransaction = activeAutomergeStorageTransaction;
