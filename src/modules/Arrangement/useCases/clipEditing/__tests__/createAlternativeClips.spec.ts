@@ -400,4 +400,66 @@ describe('createAlternativeClips', () => {
         expect(mocks.setNotesForClip).not.toHaveBeenCalled();
         expect(mocks.updateTrack).not.toHaveBeenCalled();
     });
+
+    it('rejects when a sibling track is not an object when scanning occupied ids', () => {
+        const original = ClipDummy.create({ id: 'c1', trackId: 't1', type: 'midi' });
+        mocks.getTrackState.mockReturnValue({
+            tracks: [TrackDummy.create({ id: 't1', clips: [original] }), null as unknown as Track],
+            selectedTrackId: 't1',
+        });
+
+        expect(createAlternativeClips('c1', [[note()]])).toBe(false);
+
+        expect(mocks.setNotesForClip).not.toHaveBeenCalled();
+        expect(mocks.updateTrack).not.toHaveBeenCalled();
+    });
+
+    it('rejects when a sibling track alternatives field is not an array', () => {
+        const original = ClipDummy.create({ id: 'c1', trackId: 't1', type: 'midi' });
+        const malformedTrack = TrackDummy.create({ id: 't2', clips: [] });
+        // Corrupt the alternatives field so collectProjectClipIds aborts.
+        Reflect.set(malformedTrack, 'alternatives', 'not-an-array');
+        mocks.getTrackState.mockReturnValue({
+            tracks: [TrackDummy.create({ id: 't1', clips: [original] }), malformedTrack],
+            selectedTrackId: 't1',
+        });
+
+        expect(createAlternativeClips('c1', [[note()]])).toBe(false);
+
+        expect(mocks.setNotesForClip).not.toHaveBeenCalled();
+        expect(mocks.updateTrack).not.toHaveBeenCalled();
+    });
+
+    it('rejects when a sibling track holds a null alternative entry', () => {
+        const original = ClipDummy.create({ id: 'c1', trackId: 't1', type: 'midi' });
+        const malformedTrack = TrackDummy.create({
+            id: 't2',
+            clips: [],
+            alternatives: [{ id: 'alt-1', name: 'Alt', clips: [] }],
+        });
+        // Replace the valid alternative with a null entry.
+        malformedTrack.alternatives[0] = null as unknown as (typeof malformedTrack.alternatives)[number];
+        mocks.getTrackState.mockReturnValue({
+            tracks: [TrackDummy.create({ id: 't1', clips: [original] }), malformedTrack],
+            selectedTrackId: 't1',
+        });
+
+        expect(createAlternativeClips('c1', [[note()]])).toBe(false);
+
+        expect(mocks.setNotesForClip).not.toHaveBeenCalled();
+        expect(mocks.updateTrack).not.toHaveBeenCalled();
+    });
+
+    it('rejects when a variation clip start or end becomes non-finite during staging', () => {
+        // A clip with an endBeat of Infinity makes currentEnd (start + duration)
+        // non-finite once the original end is added, hitting the finite guard.
+        setState([
+            ClipDummy.create({ id: 'c1', trackId: 't1', type: 'midi', startBeat: 0, endBeat: Number.MAX_VALUE }),
+        ]);
+
+        expect(createAlternativeClips('c1', [[note()]])).toBe(false);
+
+        expect(mocks.setNotesForClip).not.toHaveBeenCalled();
+        expect(mocks.updateTrack).not.toHaveBeenCalled();
+    });
 });
