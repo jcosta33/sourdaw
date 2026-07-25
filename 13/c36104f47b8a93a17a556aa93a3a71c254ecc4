@@ -1,0 +1,70 @@
+src/modules/AudioEngine/engine/__tests__/TrackNode.spec.ts
+  s_0d39f3a4a4357a::t_59e772383b764a 163-211
+src/modules/AudioEngine/engine/TrackNode.ts
+  s_0d39f3a4a4357a::t_dda7d568f151d3 120,246-268
+  s_0d39f3a4a4357a::t_f685a08df63490 269-270
+src/modules/AudioEngine/useCases/renderOffline.ts
+  s_0d39f3a4a4357a::t_e605ca4e523d68 115,211-233,235
+src/modules/AudioEngine/useCases/__tests__/renderOffline.spec.ts
+  s_0d39f3a4a4357a::t_12002d3ebe4403 335-337
+  s_0d39f3a4a4357a::t_b1101d158a102b 289-297,299,304-334,338-376
+  s_0d39f3a4a4357a::t_961662c2aa5f08 176-184,186,193
+  s_0d39f3a4a4357a::t_a96bd64e90a6c7 298,300-303
+src/modules/Arrangement/services/__tests__/applySoloLogic.spec.ts
+  s_0d39f3a4a4357a::t_3f852205caeea9 235
+  s_0d39f3a4a4357a::t_a5c11589979d43 122,144-234,236-246
+src/modules/AudioEngine/useCases/index.ts
+  s_0d39f3a4a4357a::t_06c85cef004e08 128
+src/modules/AudioEngine/useCases/exportStems.ts
+  s_0d39f3a4a4357a::t_a9be25e0ccf995 232-252,273-297,355,357-358
+  s_0d39f3a4a4357a::t_502686d2671281 1
+  s_0d39f3a4a4357a::t_65d554674fefcd 58-60
+  s_0d39f3a4a4357a::t_7d93adcf202d8a 2,5-6,9
+  s_0d39f3a4a4357a::t_10a205c69c2aed 35-57,61-117
+  s_0d39f3a4a4357a::t_abf9445ada8ad8 158-160,327-354
+  s_0d39f3a4a4357a::t_4191adbd6a4792 356
+  s_0d39f3a4a4357a::t_68bcdcd5569d84 359
+src/modules/Arrangement/stores/effectiveAudibility.ts
+  s_0d39f3a4a4357a::t_02a5a25752ee4b 41-47,69,77,81,85
+src/modules/Arrangement/useCases/toggleTrackState/applySoloLogic.ts
+  s_0d39f3a4a4357a::t_9e274bb96bb6de 1,57-69
+  s_0d39f3a4a4357a::t_886aa31ff2c1f7 70-71
+src/modules/Arrangement/useCases/toggleTrackState/__tests__/applySoloLogic.spec.ts
+  s_0d39f3a4a4357a::t_095d8b9f18be21 12,24,50,55,88,103-107,115-165
+src/modules/AudioEngine/useCases/__tests__/exportStems.spec.ts
+  s_0d39f3a4a4357a::t_6b880f61b2fa18 614,623-650
+  s_0d39f3a4a4357a::t_970ca3d33f2b38 30-33,118-132
+  s_0d39f3a4a4357a::t_311613f14ea25d 665-667
+  s_0d39f3a4a4357a::t_b5638c01c993b2 516-523
+  s_0d39f3a4a4357a::t_c4686b45598e46 160,504-515,524-560,566-576,580-613,615-622,651-664,668-690
+  s_0d39f3a4a4357a::t_4d7adcfb2e1527 561-565
+  s_0d39f3a4a4357a::t_be23fafea63efa 577-579
+  s_0d39f3a4a4357a::t_5937d8caeb6d7c 133,691
+src/modules/Arrangement/useCases/__tests__/projectTrackToLiveStrip.spec.ts
+  s_0d39f3a4a4357a::t_5e00ad7affb674 187-190
+  s_0d39f3a4a4357a::t_b64ca4ac378810 14,39
+src/modules/AudioEngine/models/AudioEngineState.ts
+  s_0d39f3a4a4357a::t_87c4133c03fff9 236-238,244-245,251-254,305-307
+src/modules/AudioEngine/repositories/createWebAudioEngine.ts
+  s_0d39f3a4a4357a::t_547962a795064b 642-646
+src/modules/AudioEngine/useCases/trackAudioControls/setTrackSoloGate.ts
+  s_0d39f3a4a4357a::t_7f38eadf9f31e1 1-13
+src/modules/Arrangement/services/applySoloLogic.ts
+  s_0d39f3a4a4357a::t_cebf1a9f3d6336 18-32,70,111-117,120
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "13c36104f47b8a93a17a556aa93a3a71c254ecc4",
+  "prompts": {},
+  "sessions": {
+    "s_0d39f3a4a4357a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "60da6a2e-7d79-4d98-8624-e993f5a9f94e",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
