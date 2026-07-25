@@ -1,0 +1,70 @@
+src/modules/MIDI/useCases/webMidiInput/handleWebMidiNoteOff.ts
+  s_0d39f3a4a4357a::t_7f7b30511382b4 11-12,59-60,62-66
+  s_0d39f3a4a4357a::t_58e3be98a47ccf 88,128,140,154,159,186
+src/modules/MIDI/useCases/webMidiInput/__tests__/handleWebMidiPitchBend.spec.ts
+  s_0d39f3a4a4357a::t_34178860954227 20
+  s_0d39f3a4a4357a::t_1b916a5876e5ba 28-35,98,122,160,222,373-374
+src/modules/MIDI/useCases/webMidiInput/handleWebMidiPitchBend.ts
+  s_0d39f3a4a4357a::t_49c0a3bb54cb07 11-12,19-25,64,67,88,91
+src/modules/MIDI/useCases/webMidiInput/handleWebMidiChannelPressure.ts
+  s_0d39f3a4a4357a::t_0537cf86af44fc 6-9,33-36
+src/modules/MIDI/useCases/webMidiInput/handleWebMidiCC.ts
+  s_0d39f3a4a4357a::t_91f5be4a74efde 12-13,25,73-79
+src/modules/MIDI/repositories/webMidi/messageHandlers.ts
+  s_0d39f3a4a4357a::t_3dfe4532b13fde 9,40-50,52,69,77,85,92,100
+src/modules/MIDI/useCases/webMidiInput/__tests__/handleWebMidiMessage.spec.ts
+  s_0d39f3a4a4357a::t_63043f048e4b5e 31-35,46-48,54,85
+  s_0d39f3a4a4357a::t_217012a1fa8d53 86-149
+src/modules/MIDI/useCases/webMidiInput/handleWebMidiMessage.ts
+  s_0d39f3a4a4357a::t_e8d418b39c7c75 11-24,67-68,74-76,79,82
+  s_0d39f3a4a4357a::t_f7fc6648869f81 71,85
+src/modules/MIDI/useCases/webMidiInput/handleWebMidiNoteOn.ts
+  s_0d39f3a4a4357a::t_1a33f56699ed19 13-14,22-27,29,40,55-60,62,65
+  s_0d39f3a4a4357a::t_8dfeb6df11a77e 61
+  s_0d39f3a4a4357a::t_355d91718ef3b9 92,200,223,239,256,280,291,303
+src/modules/MIDI/useCases/webMidiInput/__tests__/handleWebMidiToasterLifecycle.spec.ts
+  s_0d39f3a4a4357a::t_5aa2dda87e2568 36-42,194,224-225
+src/modules/MIDI/useCases/webMidiInput/__tests__/handleWebMidiChannelPressure.spec.ts
+  s_0d39f3a4a4357a::t_fe9f52a8cdd5ac 23-29,60
+  s_0d39f3a4a4357a::t_605a64b5c1dc3f 14-16
+src/modules/MIDI/useCases/webMidiInput/__tests__/handleWebMidiNoteOn.spec.ts
+  s_0d39f3a4a4357a::t_f9786e1cfb25a3 80,549-591
+  s_0d39f3a4a4357a::t_501a97b8d9832f 319,370,395,417,453,480
+  s_0d39f3a4a4357a::t_635d6be2d7dde6 269-271,279
+  s_0d39f3a4a4357a::t_96ca446131e446 11,30
+  s_0d39f3a4a4357a::t_c74e2bb1c19a2f 66-71,272,275-277
+  s_0d39f3a4a4357a::t_1ce350154a8834 592
+src/modules/MIDI/useCases/webMidiInput/resolveInputEventTime.ts
+  s_0d39f3a4a4357a::t_b0bc8602baa45e 50
+  s_0d39f3a4a4357a::t_5c2d7af934af8b 49
+  s_0d39f3a4a4357a::t_7db344bfb80ed7 1-2,15-48,51-55
+  s_0d39f3a4a4357a::t_091abc6581e281 3-14
+src/modules/MIDI/useCases/webMidiInput/resolveInputDispatchFrame.ts
+  s_0d39f3a4a4357a::t_8964eb8307823b 1-39
+src/modules/MIDI/useCases/webMidiInput/__tests__/handleWebMidiNoteOff.spec.ts
+  s_0d39f3a4a4357a::t_dc80250f89defa 71-76,327,380-381
+  s_0d39f3a4a4357a::t_810224478d1e73 77-78,285-287
+  s_0d39f3a4a4357a::t_3a3a20381e8696 616
+  s_0d39f3a4a4357a::t_583067bc3dc812 7,20,85
+  s_0d39f3a4a4357a::t_11b2b39d4310e5 614-615,620-645
+  s_0d39f3a4a4357a::t_3b4f9039d0d5c2 617-619
+src/modules/MIDI/useCases/webMidiInput/__tests__/handleWebMidiCC.spec.ts
+  s_0d39f3a4a4357a::t_f08e0e28c9aa2a 39-45,150
+  s_0d39f3a4a4357a::t_c48e595b968808 23
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "4046b224435564b92bb952ad1bc427beffed39a1",
+  "prompts": {},
+  "sessions": {
+    "s_0d39f3a4a4357a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "60da6a2e-7d79-4d98-8624-e993f5a9f94e",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
