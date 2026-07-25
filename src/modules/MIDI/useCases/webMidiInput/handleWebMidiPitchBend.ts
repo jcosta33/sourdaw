@@ -8,13 +8,21 @@ import { activeNotes, channelToNote } from '../../repositories/webMidi/state';
 
 import { midiMessageHandlerDependencies } from './midiMessageHandlerDependencies';
 import { resolveBendRangeSemitones } from './resolveBendRangeSemitones';
+import { resolveInputDispatchFrame } from './resolveInputDispatchFrame';
+import { resolveInputEventTime } from './resolveInputEventTime';
 
 const PITCH_BEND_CENTER = 8192;
 const CENTS_PER_SEMITONE = 100;
 
 export const handleWebMidiPitchBend = inject(midiMessageHandlerDependencies)(
     (deps) =>
-        function handleWebMidiPitchBend(channel: number, lsb: number, msb: number): void {
+        function handleWebMidiPitchBend(channel: number, lsb: number, msb: number, timeStamp?: number): void {
+            // Expression now shares the note events' serial tail (audit MD-3),
+            // so it can be voiced a turn or more after it arrived. Addressing
+            // its own arrival frame keeps it landing where it was performed.
+            const eventTime = resolveInputEventTime({ timeStamp });
+            const dispatchFrame = resolveInputDispatchFrame({ eventTime });
+            const dispatchTime = dispatchFrame / audioEngine.context.sampleRate;
             const bendValue = ((msb << 7) | lsb) - PITCH_BEND_CENTER;
             const mpeEnabled = getMpeEnabled();
             // The range used to be two hard-coded constants here (±2 and ±48),
@@ -53,14 +61,14 @@ export const handleWebMidiPitchBend = inject(midiMessageHandlerDependencies)(
                         slide: noteData.slide,
                     },
                     bendRangeSemitones,
+                    sampleFrame: dispatchFrame,
                 });
                 if (noteData.osc) {
-                    noteData.osc.detune.setTargetAtTime(baseDetune + bendCents, audioEngine.context.currentTime, 0.003);
+                    noteData.osc.detune.setTargetAtTime(baseDetune + bendCents, dispatchTime, 0.003);
                 }
                 return;
             }
 
-            const now = audioEngine.context.currentTime;
             for (const noteData of activeNotes.values()) {
                 // A channel-wide bend is not MPE, but it reaches the instrument
                 // through the same surface — applied to every sounding note at
@@ -77,9 +85,10 @@ export const handleWebMidiPitchBend = inject(midiMessageHandlerDependencies)(
                         slide: noteData.slide,
                     },
                     bendRangeSemitones,
+                    sampleFrame: dispatchFrame,
                 });
                 if (noteData.osc) {
-                    noteData.osc.detune.setTargetAtTime(baseDetune + bendCents, now, 0.003);
+                    noteData.osc.detune.setTargetAtTime(baseDetune + bendCents, dispatchTime, 0.003);
                 }
             }
         }
