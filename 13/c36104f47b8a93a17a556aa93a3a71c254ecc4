@@ -13,6 +13,7 @@ src/modules/AudioEngine/useCases/__tests__/renderOffline.spec.ts
 src/modules/Arrangement/services/__tests__/applySoloLogic.spec.ts
   s_0d39f3a4a4357a::t_3f852205caeea9 235
   s_0d39f3a4a4357a::t_a5c11589979d43 122,144-234,236-246
+  s_0d39f3a4a4357a::t_4119c9557d463f 143
 src/modules/AudioEngine/useCases/index.ts
   s_0d39f3a4a4357a::t_06c85cef004e08 128
 src/modules/AudioEngine/useCases/exportStems.ts
