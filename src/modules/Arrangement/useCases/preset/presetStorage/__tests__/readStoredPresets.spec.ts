@@ -85,6 +85,11 @@ describe('readStoredPresets', () => {
                         },
                     ],
                 },
+                {
+                    ...valid_preset,
+                    id: 'bad-non-record-params',
+                    devices: [{ type: 'synth', name: 'Bad', parameterValues: 'not-a-record' }],
+                },
             ])
         );
 
