@@ -60,6 +60,39 @@ describe('handleDeleteTrackAlternative', () => {
         expect(result).toEqual({ status: 'written' });
     });
 
+    it('passes sibling tracks through untouched when deleting on the target track', () => {
+        const sibling = {
+            id: 'sibling',
+            activeAlternativeId: 'sib-alt',
+            alternatives: [{ id: 'sib-alt', clips: [] }],
+        };
+        mocks.getTrackStoreState.mockReturnValue({
+            tracks: [
+                {
+                    id: 't1',
+                    activeAlternativeId: 'alt1',
+                    alternatives: [
+                        { id: 'alt1', clips: [] },
+                        { id: 'alt2', clips: [] },
+                    ],
+                },
+                sibling,
+            ],
+        });
+
+        handleDeleteTrackAlternative.execute({
+            type: 'deleteTrackAlternative',
+            payload: { trackId: 't1', alternativeId: 'alt2' },
+        });
+
+        const firstCall = mocks.setTrackStoreState.mock.calls[0];
+        if (!firstCall) {
+            throw new Error('expected setTrackStoreState to have been called');
+        }
+        // The sibling is the same object reference — untouched by the map.
+        expect(firstCall[0].tracks[1]).toBe(sibling);
+    });
+
     it('falls back to another alternative if deleting the active one', () => {
         const alt2Clips = [makeClip('c2')];
         mocks.getTrackStoreState.mockReturnValue({

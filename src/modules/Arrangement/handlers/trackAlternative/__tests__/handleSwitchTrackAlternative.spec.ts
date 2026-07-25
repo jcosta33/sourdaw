@@ -80,6 +80,41 @@ describe('handleSwitchTrackAlternative', () => {
         expect(result).toEqual({ status: 'written' });
     });
 
+    it('passes sibling tracks through untouched when switching on the target track', () => {
+        const sibling = {
+            id: 'sibling',
+            activeAlternativeId: 'sib-alt',
+            clips: [makeClip('sib-clip', 'sibling')],
+            alternatives: [{ id: 'sib-alt', clips: [makeClip('sib-clip', 'sibling')] }],
+        };
+        mocks.getTrackStoreState.mockReturnValue({
+            tracks: [
+                {
+                    id: 't1',
+                    activeAlternativeId: 'alt1',
+                    clips: [makeClip('c1')],
+                    alternatives: [
+                        { id: 'alt1', clips: [] },
+                        { id: 'alt2', clips: [makeClip('c2')] },
+                    ],
+                },
+                sibling,
+            ],
+        });
+
+        handleSwitchTrackAlternative.execute({
+            type: 'switchTrackAlternative',
+            payload: { trackId: 't1', alternativeId: 'alt2' },
+        });
+
+        const newState = mocks.setTrackStoreState.mock.calls[0]?.[0];
+        if (!newState) {
+            throw new Error('expected setTrackStoreState to have been called');
+        }
+        // The sibling is the same object reference — untouched by the map.
+        expect(newState.tracks[1]).toBe(sibling);
+    });
+
     it('rejects a malformed selected-alternative clip without publishing', () => {
         const targetClips = [makeClip('c2')];
         Object.defineProperty(targetClips, 0, { value: null });
@@ -351,7 +386,7 @@ describe('handleSwitchTrackAlternative', () => {
         ['an alternative id is empty', { id: 't1', activeAlternativeId: 'alt1', alternatives: [{ id: '' }] }],
         [
             'an alternative clips field is not an array',
-            { id: 't1', activeAlternativeId: 'alt1', alternatives: [{ id: 'alt2', clips: 'nope' as unknown }] },
+            { id: 't1', activeAlternativeId: 'alt1', alternatives: [{ id: 'alt2', clips: 'nope' }] },
         ],
     ] as const)('rejects without publishing when %s', (_label, trackOverride) => {
         mocks.getTrackStoreState.mockReturnValue({

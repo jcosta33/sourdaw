@@ -65,6 +65,38 @@ describe('handleCreateTrackAlternative', () => {
         expect(result).toEqual({ status: 'written' });
     });
 
+    it('passes sibling tracks through untouched when creating on the target track', () => {
+        const sibling = {
+            id: 'sibling',
+            activeAlternativeId: 'sib-alt',
+            clips: [{ id: 'sib-clip' }],
+            alternatives: [{ id: 'sib-alt', name: 'Sib', clips: [] }],
+        };
+        mocks.getTrackStoreState.mockReturnValue({
+            tracks: [
+                {
+                    id: 't1',
+                    activeAlternativeId: 'alt1',
+                    clips: [{ id: 'clip1' }],
+                    alternatives: [{ id: 'alt1', name: 'Alt 1', clips: [] }],
+                },
+                sibling,
+            ],
+        });
+
+        handleCreateTrackAlternative.execute({
+            type: 'createTrackAlternative',
+            payload: { trackId: 't1', name: 'New Alt', duplicateActive: false },
+        });
+
+        const firstCall = mocks.setTrackStoreState.mock.calls[0];
+        if (!firstCall) {
+            throw new Error('expected setTrackStoreState to have been called');
+        }
+        // The sibling is the same object reference — untouched by the map.
+        expect(firstCall[0].tracks[1]).toBe(sibling);
+    });
+
     it('rejects an ineligible track before allocating ids or publishing', () => {
         mocks.resolveEligibleClipWriteTarget.mockReturnValue({ status: 'ineligible' });
         const randomUuid = vi.spyOn(crypto, 'randomUUID');
