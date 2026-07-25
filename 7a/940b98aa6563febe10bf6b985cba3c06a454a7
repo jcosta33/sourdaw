@@ -1,0 +1,32 @@
+src/modules/AudioEngine/useCases/offlineRender/getAutoDetectedTailSeconds.ts
+  s_0d39f3a4a4357a::t_cb3f0cd69c1758 1-2,6
+  s_0d39f3a4a4357a::t_aa1120eeb0b81f 27,29-35,37,39,42-49
+  s_0d39f3a4a4357a::t_5b0ffbb50fe3b2 66-73,75-83,85-106
+  s_0d39f3a4a4357a::t_334019151b31e1 7
+src/modules/AudioEngine/services/estimateRenderTailSeconds.ts
+  s_0d39f3a4a4357a::t_46920c97625bc9 169
+  s_0d39f3a4a4357a::t_a6c0b0364615a9 51-57
+src/modules/AudioEngine/useCases/offlineRender/__tests__/getAutoDetectedTailSeconds.spec.ts
+  s_0d39f3a4a4357a::t_d0fc052f4986b5 45-47
+  s_0d39f3a4a4357a::t_d44680a817d451 90
+  s_0d39f3a4a4357a::t_19493fd3d5d224 50,53-54,64,69,71-77
+  s_0d39f3a4a4357a::t_ffc39c58cd54b2 134-139
+  s_0d39f3a4a4357a::t_e23fd5650f47d9 8-12,14
+  s_0d39f3a4a4357a::t_5c4d7f2e7661a9 94-133,140-144
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "7a940b98aa6563febe10bf6b985cba3c06a454a7",
+  "prompts": {},
+  "sessions": {
+    "s_0d39f3a4a4357a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "60da6a2e-7d79-4d98-8624-e993f5a9f94e",
+        "model": "claude-opus-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
