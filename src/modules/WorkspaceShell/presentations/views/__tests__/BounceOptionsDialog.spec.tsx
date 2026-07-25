@@ -112,4 +112,67 @@ describe('BounceOptionsDialog', () => {
         expect(onOpenChange).toHaveBeenCalledWith(false);
         expect(onConfirm).not.toHaveBeenCalled();
     });
+
+    it('toggles include-automation when its checkbox is clicked', () => {
+        const onConfirm = vi.fn();
+        renderDialog({ onConfirm });
+
+        fireEvent.click(screen.getByRole('checkbox', { name: /Include Automation/ }));
+        fireEvent.click(screen.getByRole('button', { name: 'Render' }));
+
+        expect(onConfirm).toHaveBeenCalledWith(expect.objectContaining({ includeAutomation: false }));
+    });
+
+    it('switches destination back to New Track after selecting Replace', () => {
+        const onConfirm = vi.fn();
+        renderDialog({ onConfirm });
+
+        fireEvent.click(screen.getByRole('button', { name: /Replace/ }));
+        fireEvent.click(screen.getByRole('button', { name: /New Track/ }));
+        fireEvent.click(screen.getByRole('button', { name: 'Render' }));
+
+        expect(onConfirm).toHaveBeenCalledWith(expect.objectContaining({ destination: 'new-track' }));
+    });
+
+    it('ignores invalid normalization values (guards against unknown select options)', () => {
+        const onConfirm = vi.fn();
+        renderDialog({ onConfirm });
+
+        // Fire a change with a value that doesn't match any valid option.
+        fireEvent.change(screen.getByDisplayValue('Peak Protection'), { target: { value: 'bogus' } });
+        fireEvent.click(screen.getByRole('button', { name: 'Render' }));
+
+        // The normalization stays at the default 'protection' because the guard rejected 'bogus'.
+        expect(onConfirm).toHaveBeenCalledWith(expect.objectContaining({ normalization: 'protection' }));
+    });
+
+    it('ignores invalid tail-handling values (guards against unknown select options)', () => {
+        const onConfirm = vi.fn();
+        renderDialog({ onConfirm });
+
+        fireEvent.change(screen.getByDisplayValue('Auto (Detect)'), { target: { value: 'bogus' } });
+        fireEvent.click(screen.getByRole('button', { name: 'Render' }));
+
+        expect(onConfirm).toHaveBeenCalledWith(expect.objectContaining({ tailHandling: 'auto' }));
+    });
+
+    it('switches normalization to off', () => {
+        const onConfirm = vi.fn();
+        renderDialog({ onConfirm });
+
+        fireEvent.change(screen.getByDisplayValue('Peak Protection'), { target: { value: 'off' } });
+        fireEvent.click(screen.getByRole('button', { name: 'Render' }));
+
+        expect(onConfirm).toHaveBeenCalledWith(expect.objectContaining({ normalization: 'off' }));
+    });
+
+    it('switches tail handling to off', () => {
+        const onConfirm = vi.fn();
+        renderDialog({ onConfirm });
+
+        fireEvent.change(screen.getByDisplayValue('Auto (Detect)'), { target: { value: 'off' } });
+        fireEvent.click(screen.getByRole('button', { name: 'Render' }));
+
+        expect(onConfirm).toHaveBeenCalledWith(expect.objectContaining({ tailHandling: 'off' }));
+    });
 });
