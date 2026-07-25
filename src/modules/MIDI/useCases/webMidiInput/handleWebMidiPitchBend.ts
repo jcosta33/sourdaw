@@ -37,6 +37,10 @@ export const handleWebMidiPitchBend = inject(midiMessageHandlerDependencies)(
                     return;
                 }
                 noteData.pitchBend = bendValue;
+                // The wire delta alone has no depth. Capture the range it was
+                // performed against so recording can persist it and playback
+                // can sound the bend the player heard (audit MD-8).
+                noteData.pitchBendRangeSemitones = bendRangeSemitones;
                 // Reach the instrument voice through the one expression surface
                 // the scheduled path also uses (audit MD-2).
                 applyNoteExpression({

@@ -6,6 +6,7 @@ import {
     getAudioContext,
     getCompensationDelay,
     getCurrentTime,
+    getDefaultBendRangeSemitones,
     registerScheduledSource,
     scheduleFaustNote,
 } from '#/modules/AudioEngine/useCases';
@@ -482,6 +483,11 @@ export async function scheduleMidiNotes(
                                 : rawVel;
                             const noteChannel = note.channel ?? 0;
                             workletSynthControls.noteOn(pitch, vel, sampleFrame, noteChannel);
+                            // The depth the bend was recorded at. Absent on
+                            // notes captured before RPN 0 was decoded, which
+                            // resolves to the MPE member default — the range
+                            // they were actually performed under (audit MD-8).
+                            const noteBendRange = note.pitchBendRangeSemitones ?? getDefaultBendRangeSemitones();
                             // MPE per-note expression (audit MD-2). Same
                             // surface the live Web MIDI handlers call, at the
                             // note's own start frame so the worklet applies it
@@ -496,6 +502,7 @@ export async function scheduleMidiNotes(
                                     pitchBend: note.pitchBend,
                                 },
                                 sampleFrame,
+                                bendRangeSemitones: noteBendRange,
                             });
                             workletSynthControls.noteOff(pitch, endSampleFrame, noteChannel);
                         } else if (faustDevice) {
@@ -509,10 +516,20 @@ export async function scheduleMidiNotes(
                                 noteGain
                             );
                         } else {
-                            const mpe =
-                                note.pressure !== undefined || note.slide !== undefined || note.pitchBend !== undefined
-                                    ? { pressure: note.pressure, slide: note.slide, pitchBend: note.pitchBend }
-                                    : undefined;
+                            const hasNoteExpression =
+                                note.pressure !== undefined || note.slide !== undefined || note.pitchBend !== undefined;
+                            const mpe = hasNoteExpression
+                                ? {
+                                      pressure: note.pressure,
+                                      slide: note.slide,
+                                      pitchBend: note.pitchBend,
+                                      // The built-in synth holds no range of
+                                      // its own; it bends by the depth the note
+                                      // was recorded at (audit MD-8).
+                                      pitchBendRangeSemitones:
+                                          note.pitchBendRangeSemitones ?? getDefaultBendRangeSemitones(),
+                                  }
+                                : undefined;
                             const synthVoice = scheduleNote(
                                 ctx,
                                 strip.gainNode,

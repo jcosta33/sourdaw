@@ -482,6 +482,67 @@ describe('handleWebMidiNoteOff', () => {
         expect(captured[0]?.note.pitchBend).toBe(-100);
     });
 
+    // audit MD-8, review round 1 — the wire delta alone has no depth. Without
+    // the range beside it, playback re-interprets every recorded bend at the
+    // MPE default: perform on a controller set to ±12 and it plays back four
+    // times deeper than it sounded.
+    it('records the bend range the note was performed under', async () => {
+        mpe_enabled.value = true;
+        const captured: Array<{ note: Record<string, unknown> }> = [];
+        const create_midi_note = vi.fn(() => ({ id: 'n', pitch: 60, startBeat: 4, duration: 2, velocity: 80 }));
+        const append_recorded_midi_note = vi.fn<(input: { clipId: string; note: Record<string, unknown> }) => void>(
+            (input) => {
+                captured.push({ note: input.note });
+            }
+        );
+        const fn = handleWebMidiNoteOff._factory(
+            make_dependencies({ createMidiNote: create_midi_note, appendRecordedMidiNote: append_recorded_midi_note })
+        );
+        activeNotes.set(createWebMidiNoteKey(1, 60), {
+            channel: 1,
+            note: 60,
+            velocity: 80,
+            trackId: 'track-1',
+            instrumentTrackId: 'track-1',
+            startTime: 1,
+            startBeat: 4,
+            pitchBend: -4096,
+            pitchBendRangeSemitones: 12,
+        });
+
+        await fn(1, 60, 0);
+
+        expect(captured[0]?.note.pitchBendRangeSemitones).toBe(12);
+    });
+
+    it('leaves the range absent when the note carries no bend at all', async () => {
+        mpe_enabled.value = true;
+        const captured: Array<{ note: Record<string, unknown> }> = [];
+        const create_midi_note = vi.fn(() => ({ id: 'n', pitch: 60, startBeat: 4, duration: 2, velocity: 80 }));
+        const append_recorded_midi_note = vi.fn<(input: { clipId: string; note: Record<string, unknown> }) => void>(
+            (input) => {
+                captured.push({ note: input.note });
+            }
+        );
+        const fn = handleWebMidiNoteOff._factory(
+            make_dependencies({ createMidiNote: create_midi_note, appendRecordedMidiNote: append_recorded_midi_note })
+        );
+        activeNotes.set(createWebMidiNoteKey(1, 60), {
+            channel: 1,
+            note: 60,
+            velocity: 80,
+            trackId: 'track-1',
+            instrumentTrackId: 'track-1',
+            startTime: 1,
+            startBeat: 4,
+            pressure: 42,
+        });
+
+        await fn(1, 60, 0);
+
+        expect(captured[0]?.note.pitchBendRangeSemitones).toBeUndefined();
+    });
+
     it('does not attach MPE expression when MPE is disabled', async () => {
         mpe_enabled.value = false;
         const captured: Array<{ note: Record<string, unknown> }> = [];

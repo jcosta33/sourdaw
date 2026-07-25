@@ -23,8 +23,6 @@ function getNoiseBuffer(ctx: BaseAudioContext): AudioBuffer {
     return buf;
 }
 
-const MPE_BEND_RANGE_SEMITONES = 48;
-
 type ScheduleBuiltinSynthNoteInput = {
     ctx: BaseAudioContext;
     destination: AudioNode;
@@ -60,8 +58,12 @@ export function scheduleBuiltinSynthNote({
     const sustainLevel = peakGain * params.sustain;
 
     let frequency = baseFrequency;
-    if (mpe?.pitchBend !== undefined) {
-        const bendSemitones = (mpe.pitchBend / 8192) * MPE_BEND_RANGE_SEMITONES;
+    // The range comes from the caller, never from a constant here. This file
+    // used to hold its own `MPE_BEND_RANGE_SEMITONES = 48`, which is how a bend
+    // recorded on a controller set to ±12 played back four times too deep
+    // (audit MD-8).
+    if (mpe?.pitchBend !== undefined && mpe.pitchBendRangeSemitones !== undefined) {
+        const bendSemitones = (mpe.pitchBend / 8192) * mpe.pitchBendRangeSemitones;
         frequency = baseFrequency * 2 ** (bendSemitones / 12);
     }
 

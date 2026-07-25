@@ -30,4 +30,12 @@ export type BuiltinSynthMpeParams = {
     pressure?: number;
     slide?: number;
     pitchBend?: number;
+    /**
+     * Semitone range `pitchBend` is expressed in, resolved by the caller
+     * (audit MD-8). Required whenever `pitchBend` is set: the raw wire delta
+     * carries no depth, and this module deliberately holds no default of its
+     * own — a second copy of the MPE ±48 constant here is exactly how the live
+     * and playback paths drifted apart.
+     */
+    pitchBendRangeSemitones?: number;
 };

@@ -269,6 +269,47 @@ describe('handleWebMidiPitchBend', () => {
             expect(apply_note_expression).toHaveBeenCalledWith(expect.objectContaining({ bendRangeSemitones: 12 }));
         });
 
+        it('captures the range onto the note so recording can persist the depth performed', () => {
+            // The raw wire delta carries no depth. Without this, playback
+            // re-interprets the recorded bend at the MPE default and sounds
+            // four times deeper than it was played (audit MD-8, review r1).
+            const key = createWebMidiNoteKey(2, 64);
+            activeNotes.set(key, {
+                channel: 2,
+                note: 64,
+                trackId: 'track-1',
+                instrumentTrackId: 'instrument-track',
+                startTime: 0,
+                startBeat: 0,
+            });
+            channelToNote.set(2, key);
+            declare_bend_range(2, 12);
+            const fn = handleWebMidiPitchBend._factory(make_dependencies());
+
+            fn(2, 0, 96);
+
+            expect(activeNotes.get(key)?.pitchBend).toBe(4096);
+            expect(activeNotes.get(key)?.pitchBendRangeSemitones).toBe(12);
+        });
+
+        it('captures the MPE default onto the note when the controller declared nothing', () => {
+            const key = createWebMidiNoteKey(2, 64);
+            activeNotes.set(key, {
+                channel: 2,
+                note: 64,
+                trackId: 'track-1',
+                instrumentTrackId: 'instrument-track',
+                startTime: 0,
+                startBeat: 0,
+            });
+            channelToNote.set(2, key);
+            const fn = handleWebMidiPitchBend._factory(make_dependencies());
+
+            fn(2, 0, 96);
+
+            expect(activeNotes.get(key)?.pitchBendRangeSemitones).toBe(48);
+        });
+
         it('does not leak one channel declaration onto another in non-MPE mode', () => {
             mpe_enabled.value = false;
             activeNotes.set(createWebMidiNoteKey(5, 60), {

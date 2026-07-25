@@ -64,6 +64,9 @@ vi.mock('#/modules/Arrangement/useCases', () => ({
 vi.mock('#/modules/AudioEngine/useCases', () => ({
     applyNoteExpression: vi.fn(),
     registerScheduledSource: registerScheduledSourceMock,
+    // The one definition of the MPE member default, as the production barrel
+    // exports it (audit MD-8).
+    getDefaultBendRangeSemitones: () => 48,
     getCompensationDelay: vi.fn(() => 0),
     ensureTrackStrip: vi.fn(() => ({ gainNode: {}, preFaderTap: { connect: vi.fn() } })),
     getCurrentTime: vi.fn(() => 0),
@@ -225,6 +228,101 @@ describe('scheduleMidiNotes', () => {
 
         expect(scheduleNote).toHaveBeenCalledTimes(1);
         expect(registerScheduledSourceMock).toHaveBeenCalledExactlyOnceWith(voice);
+    });
+
+    // audit MD-8, review round 1 — MD-8 made the live path RPN-aware and left
+    // playback pinned at the MPE default. Declare ±12, record a bend, play it
+    // back: live sounded +6 semitones, playback +24. The note now carries the
+    // range it was performed under and both scheduled sites read it.
+    describe('recorded pitch-bend depth (live↔playback parity)', () => {
+        function bentNote(overrides: Record<string, unknown>) {
+            return {
+                id: 'n1',
+                pitch: 60,
+                startBeat: 0.25,
+                duration: 0.25,
+                velocity: 100,
+                // Half-scale bend: +4096 of 8192.
+                pitchBend: 4096,
+                ...overrides,
+            };
+        }
+
+        function scheduleBentNote(note: Record<string, unknown>, devices?: unknown[]) {
+            const track = midiTrack({ clips: [midiClip()], ...(devices ? { devices } : {}) });
+            (trackStore as { value: unknown }).value = { tracks: [track] };
+            (midiStore as { value: unknown }).value = { notesByClipId: { 'clip-1': [note] } };
+        }
+
+        it('plays a built-in synth bend at the range it was recorded under', async () => {
+            scheduleBentNote(bentNote({ pitchBendRangeSemitones: 12 }));
+
+            await scheduleMidiNotes(0, 4, 0, -1, new Set<string>(), [], defaultTransportState, 120);
+
+            // scheduleNote(ctx, dest, pitch, time, duration, velocity, params, mpe, gain)
+            const mpe = vi.mocked(scheduleNote).mock.calls[0]?.[7];
+            expect(mpe?.pitchBend).toBe(4096);
+            expect(mpe?.pitchBendRangeSemitones).toBe(12);
+        });
+
+        it('sounds that bend at the depth performed, not four times deeper', async () => {
+            scheduleBentNote(bentNote({ pitchBendRangeSemitones: 12 }));
+
+            await scheduleMidiNotes(0, 4, 0, -1, new Set<string>(), [], defaultTransportState, 120);
+
+            const mpe = vi.mocked(scheduleNote).mock.calls[0]?.[7];
+            const soundedSemitones = ((mpe?.pitchBend ?? 0) / 8192) * (mpe?.pitchBendRangeSemitones ?? 0);
+            // Half-scale bend at ±12 st. Re-interpreted at the MPE default it
+            // would be +24 — the divergence this closes.
+            expect(soundedSemitones).toBeCloseTo(6, 10);
+        });
+
+        it('falls back to the MPE default for a note recorded before the range was captured', async () => {
+            // Existing recordings carry no range and were performed at ±48.
+            scheduleBentNote(bentNote({}));
+
+            await scheduleMidiNotes(0, 4, 0, -1, new Set<string>(), [], defaultTransportState, 120);
+
+            expect(vi.mocked(scheduleNote).mock.calls[0]?.[7]?.pitchBendRangeSemitones).toBe(48);
+        });
+
+        it('passes the recorded range to the worklet-synth expression surface', async () => {
+            scheduleBentNote(bentNote({ pitchBendRangeSemitones: 12 }), [{ id: 'ferm-1', type: 'fermenter' }]);
+            vi.mocked(ensureTrackStrip).mockReturnValue({
+                gainNode: {},
+                preFaderTap: { connect: vi.fn() },
+                deviceNodes: [
+                    {
+                        deviceId: 'ferm-1',
+                        type: 'fermenter',
+                        fermenterControls: { ready: true, noteOn: vi.fn(), noteOff: vi.fn() },
+                    },
+                ],
+            } as never);
+
+            await scheduleMidiNotes(0, 4, 0, -1, new Set<string>(), [], defaultTransportState, 120);
+
+            expect(applyNoteExpression).toHaveBeenCalledWith(expect.objectContaining({ bendRangeSemitones: 12 }));
+        });
+
+        it('defaults the worklet-synth range for a note with no recorded range', async () => {
+            scheduleBentNote(bentNote({}), [{ id: 'ferm-1', type: 'fermenter' }]);
+            vi.mocked(ensureTrackStrip).mockReturnValue({
+                gainNode: {},
+                preFaderTap: { connect: vi.fn() },
+                deviceNodes: [
+                    {
+                        deviceId: 'ferm-1',
+                        type: 'fermenter',
+                        fermenterControls: { ready: true, noteOn: vi.fn(), noteOff: vi.fn() },
+                    },
+                ],
+            } as never);
+
+            await scheduleMidiNotes(0, 4, 0, -1, new Set<string>(), [], defaultTransportState, 120);
+
+            expect(applyNoteExpression).toHaveBeenCalledWith(expect.objectContaining({ bendRangeSemitones: 48 }));
+        });
     });
 
     it('does not schedule synth when MIDI store is uninitialized', async () => {
@@ -932,6 +1030,9 @@ describe('scheduleMidiNotes', () => {
                 channel: 3,
                 expression: { pressure: 90, slide: 20, pitchBend: -4096 },
                 sampleFrame: noteSampleFrame,
+                // This note carries no recorded range, so it plays at the depth
+                // it was performed at before RPN 0 was decoded (audit MD-8).
+                bendRangeSemitones: 48,
             });
             // The note-on and note-off carry the same member channel, so the
             // engine can address this note rather than the pitch.
@@ -959,6 +1060,7 @@ describe('scheduleMidiNotes', () => {
                 channel: 0,
                 expression: { pressure: undefined, slide: undefined, pitchBend: undefined },
                 sampleFrame: expect.any(Number),
+                bendRangeSemitones: 48,
             });
         });
     });
