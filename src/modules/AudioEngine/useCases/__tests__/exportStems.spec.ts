@@ -27,6 +27,10 @@ const offlineRenderMocks = vi.hoisted(() => ({
     renderWithTimeout: vi.fn(),
     resolveRenderContext: vi.fn(),
     scheduleTrackClips: vi.fn(),
+    sidechainStore: { value: { routes: [] as Array<Record<string, unknown>> } },
+    connectOfflineSidechainRoutes: vi.fn(),
+    prepareOfflineSidechainCompressor: vi.fn(() => Promise.resolve()),
+    getSidechainKeyDelay: vi.fn(() => 0),
 }));
 
 vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => {
@@ -111,6 +115,22 @@ vi.mock('../offlineRender/resolveRenderContext', () => ({
     resolveRenderContext: offlineRenderMocks.resolveRenderContext,
 }));
 
+vi.mock('#/modules/Routing/stores', () => ({
+    sidechainStore: offlineRenderMocks.sidechainStore,
+}));
+
+vi.mock('../../repositories/offlineRouting/connectOfflineSidechainRoutes', () => ({
+    connectOfflineSidechainRoutes: offlineRenderMocks.connectOfflineSidechainRoutes,
+}));
+
+vi.mock('../../repositories/devices/dynamics/prepareOfflineSidechainCompressor', () => ({
+    prepareOfflineSidechainCompressor: offlineRenderMocks.prepareOfflineSidechainCompressor,
+}));
+
+vi.mock('../latencyCompensation/compensation/getSidechainKeyDelay', () => ({
+    getSidechainKeyDelay: offlineRenderMocks.getSidechainKeyDelay,
+}));
+
 vi.mock('../offlineRender/scheduleTrackClips', () => ({
     scheduleTrackClips: offlineRenderMocks.scheduleTrackClips,
 }));
@@ -137,6 +157,7 @@ describe('exportStems', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         offlineRenderMocks.resolveRenderContext.mockReturnValue(createRenderContext(null));
+        offlineRenderMocks.sidechainStore.value = { routes: [] };
         configureOfflineMidiEventProjection({
             createProjector:
                 () =>
@@ -479,6 +500,194 @@ describe('exportStems', () => {
         expect(offlineRenderMocks.scheduleTrackClips).toHaveBeenCalledWith(
             expect.objectContaining({ track: { ...frozenPad, clips: [] }, allTracks: frozenTopology })
         );
+    });
+
+    // FX-9 — a sidechain compressor is an insert on the stem's *own* track, so its
+    // ducking is part of that track's processed output. Each stem renders in its
+    // own OfflineAudioContext holding only that track, so the key source was
+    // absent and the compressor ran with a dead sidechain input: the stem carried
+    // the compressor but none of its gain reduction, and no sum of the stems could
+    // reproduce the mixdown. The key source is now built into the stem's context
+    // as a silent auxiliary — it drives the detector and never reaches the output.
+    describe('sidechain keys in stems (FX-9)', () => {
+        const compressorDevice = { id: 'comp-1', type: 'builtin-sidechain-compressor', bypassed: false };
+
+        const keyedPair = () => [
+            {
+                id: 'kick',
+                kind: 'audio',
+                disabled: false,
+                muted: false,
+                devices: [],
+                freezeState: { status: 'unfrozen' },
+            },
+            {
+                id: 'bass',
+                kind: 'audio',
+                disabled: false,
+                muted: false,
+                devices: [compressorDevice],
+                freezeState: { status: 'unfrozen' },
+            },
+        ];
+
+        function primeStemRender() {
+            offlineRenderMocks.buildDeviceChain.mockResolvedValue([]);
+            offlineRenderMocks.createOfflineTrackStrip.mockImplementation(() =>
+                Promise.resolve({
+                    inputNode: { connect: vi.fn() },
+                    preFaderTap: { connect: vi.fn() },
+                    faderNode: {},
+                    postFaderGain: {},
+                    panNode: {},
+                    outputNode: { connect: vi.fn() },
+                    deviceEntries: [],
+                })
+            );
+            offlineRenderMocks.renderWithTimeout.mockResolvedValue({ id: 'stem' });
+            vi.stubGlobal(
+                'OfflineAudioContext',
+                vi.fn(function OfflineContext() {
+                    return { destination: { id: 'destination' } };
+                })
+            );
+        }
+
+        const stripsForStem = (stemTrackId: string) =>
+            offlineRenderMocks.connectOfflineSidechainRoutes.mock.calls
+                .map((call) => call[0] as { trackStripsById: Map<string, unknown> })
+                .find((input) => input.trackStripsById.has(stemTrackId))?.trackStripsById;
+
+        const scheduleCountFor = (trackId: string) =>
+            offlineRenderMocks.scheduleTrackClips.mock.calls.filter(
+                (call) => (call[0] as { track: { id: string } }).track.id === trackId
+            ).length;
+
+        it('wires the key source into the keyed track’s stem so its ducking survives the export', async () => {
+            offlineRenderMocks.sidechainStore.value = {
+                routes: [{ sourceTrackId: 'kick', targetTrackId: 'bass', targetDeviceId: 'comp-1' }],
+            };
+            offlineRenderMocks.resolveRenderContext.mockReturnValue(createRenderContext(keyedPair()));
+            primeStemRender();
+
+            await exportStems(4);
+
+            const bassStrips = stripsForStem('bass');
+            expect(bassStrips?.has('kick')).toBe(true);
+            // 'kick' is scheduled twice: once as its own stem, once as the key
+            // driving the compressor in the 'bass' stem's context.
+            expect(scheduleCountFor('kick')).toBe(2);
+        });
+
+        it('keeps the key source out of the stem’s audio, so only the keyed track is heard', async () => {
+            offlineRenderMocks.sidechainStore.value = {
+                routes: [{ sourceTrackId: 'kick', targetTrackId: 'bass', targetDeviceId: 'comp-1' }],
+            };
+            offlineRenderMocks.resolveRenderContext.mockReturnValue(createRenderContext(keyedPair()));
+            primeStemRender();
+
+            await exportStems(4);
+
+            const bassStrips = stripsForStem('bass');
+            const keyStrip = bassStrips?.get('kick') as { outputNode: { connect: ReturnType<typeof vi.fn> } };
+            const stemStrip = bassStrips?.get('bass') as { outputNode: { connect: ReturnType<typeof vi.fn> } };
+            // The keyed track reaches the destination; its key source never does.
+            expect(stemStrip.outputNode.connect).toHaveBeenCalledWith({ id: 'destination' });
+            expect(keyStrip.outputNode.connect).not.toHaveBeenCalled();
+        });
+
+        it('aligns the stem key with the same delay resolver the mixdown uses', async () => {
+            offlineRenderMocks.sidechainStore.value = {
+                routes: [{ sourceTrackId: 'kick', targetTrackId: 'bass', targetDeviceId: 'comp-1' }],
+            };
+            offlineRenderMocks.resolveRenderContext.mockReturnValue(createRenderContext(keyedPair()));
+            primeStemRender();
+
+            await exportStems(4);
+
+            const call = offlineRenderMocks.connectOfflineSidechainRoutes.mock.calls
+                .map((entry) => entry[0] as { keyDelaySecFor: unknown })
+                .at(0);
+            expect(call?.keyDelaySecFor).toBe(offlineRenderMocks.getSidechainKeyDelay);
+        });
+
+        it('does the key wiring only for the stem that owns the compressor, not for the source track’s own stem', async () => {
+            offlineRenderMocks.sidechainStore.value = {
+                routes: [{ sourceTrackId: 'kick', targetTrackId: 'bass', targetDeviceId: 'comp-1' }],
+            };
+            offlineRenderMocks.resolveRenderContext.mockReturnValue(createRenderContext(keyedPair()));
+            primeStemRender();
+
+            await exportStems(4);
+
+            // Two stems render; only 'bass' hosts a keyed device, so only its
+            // context is prepared and wired. 'kick' stays a plain single-track stem.
+            expect(offlineRenderMocks.connectOfflineSidechainRoutes).toHaveBeenCalledTimes(1);
+            expect(offlineRenderMocks.prepareOfflineSidechainCompressor).toHaveBeenCalledTimes(1);
+            expect(scheduleCountFor('bass')).toBe(1);
+        });
+
+        it('builds one shared key strip when two compressors on the stem share a source', async () => {
+            const tracks = keyedPair();
+            tracks[1]!.devices = [
+                compressorDevice,
+                { id: 'comp-2', type: 'builtin-sidechain-compressor', bypassed: false },
+            ];
+            offlineRenderMocks.sidechainStore.value = {
+                routes: [
+                    { sourceTrackId: 'kick', targetTrackId: 'bass', targetDeviceId: 'comp-1' },
+                    { sourceTrackId: 'kick', targetTrackId: 'bass', targetDeviceId: 'comp-2' },
+                ],
+            };
+            offlineRenderMocks.resolveRenderContext.mockReturnValue(createRenderContext(tracks));
+            primeStemRender();
+
+            await exportStems(4);
+
+            const bassStrips = stripsForStem('bass');
+            expect(bassStrips?.size).toBe(2);
+            // Scheduled twice overall: once as its own stem, once as the shared key.
+            expect(scheduleCountFor('kick')).toBe(2);
+        });
+
+        it('ignores a route whose target device is bypassed, leaving that stem unducked', async () => {
+            const tracks = keyedPair();
+            tracks[1]!.devices = [{ ...compressorDevice, bypassed: true }];
+            offlineRenderMocks.sidechainStore.value = {
+                routes: [{ sourceTrackId: 'kick', targetTrackId: 'bass', targetDeviceId: 'comp-1' }],
+            };
+            offlineRenderMocks.resolveRenderContext.mockReturnValue(createRenderContext(tracks));
+            primeStemRender();
+
+            await exportStems(4);
+
+            expect(offlineRenderMocks.connectOfflineSidechainRoutes).not.toHaveBeenCalled();
+            // 'kick' is still scheduled once, as its own stem — but never a second
+            // time as a key, because a bypassed compressor needs none.
+            expect(scheduleCountFor('kick')).toBe(1);
+        });
+
+        it('does no sidechain work at all for a project with no routes', async () => {
+            offlineRenderMocks.resolveRenderContext.mockReturnValue(createRenderContext(keyedPair()));
+            primeStemRender();
+
+            await exportStems(4);
+
+            expect(offlineRenderMocks.connectOfflineSidechainRoutes).not.toHaveBeenCalled();
+            expect(offlineRenderMocks.prepareOfflineSidechainCompressor).not.toHaveBeenCalled();
+        });
+
+        it('drops a route whose key source is missing from the project', async () => {
+            offlineRenderMocks.sidechainStore.value = {
+                routes: [{ sourceTrackId: 'ghost', targetTrackId: 'bass', targetDeviceId: 'comp-1' }],
+            };
+            offlineRenderMocks.resolveRenderContext.mockReturnValue(createRenderContext(keyedPair()));
+            primeStemRender();
+
+            await exportStems(4);
+
+            expect(offlineRenderMocks.connectOfflineSidechainRoutes).not.toHaveBeenCalled();
+        });
     });
 });
 

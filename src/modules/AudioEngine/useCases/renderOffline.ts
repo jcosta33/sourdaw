@@ -112,7 +112,7 @@ export const renderOffline: RenderOfflineFn = async function renderOffline(
                 .filter((track) => projectTracks.filter((candidate) => candidate.id === track.id).length === 1)
                 .map((track) => track.id)
         );
-        const { audibleByTrackId } = deriveEffectiveAudibility({
+        const { audibleByTrackId, soloGatedByTrackId } = deriveEffectiveAudibility({
             tracks: projectTracks,
             soloMode: workspaceStore.value?.soloMode ?? 'sip',
             stripTrackIds,
@@ -208,9 +208,31 @@ export const renderOffline: RenderOfflineFn = async function renderOffline(
             }
         }
 
-        // Schedule only audible source tracks, but keep the full routing graph alive so
+        // FX-8 — a muted track is silenced by its own `postFaderGain`, which sits
+        // downstream of the pre-fader send tap. Live, that leaves its pre-fader
+        // (cue) sends still feeding their buses, which is the defining property of
+        // a pre-fader tap. The mixdown expressed the mute a second time by refusing
+        // to schedule the track at all, so export silently lost cue-send content the
+        // engineer was monitoring. Those tracks are scheduled again; their strip's
+        // mute node still keeps their direct output out of the mix.
+        //
+        // Solo gating is the opposite case and stays excluded: solo-in-place means
+        // "play me only this", so a gated track must feed nothing, return buses
+        // included. A muted track with no live pre-fader send is also still skipped,
+        // so the render never does work whose output cannot reach the mix.
+        const sourceTrackIds = new Set(sourceTracks.map((track) => track.id));
+        const cueSendOnlyTracks = allRenderableTracks.filter((track) => {
+            if (sourceTrackIds.has(track.id) || (soloGatedByTrackId.get(track.id) ?? false)) {
+                return false;
+            }
+            return track.sends.some((send) => send.preFader && busStripsById.has(send.busId));
+        });
+        const scheduledTracks = [...sourceTracks, ...cueSendOnlyTracks];
+
+        // Schedule the tracks that can still reach the mix — audible ones plus the
+        // cue-send-only ones above — while keeping the full routing graph alive so
         // buses, targets, and the master strip behave like live playback.
-        for (const track of sourceTracks) {
+        for (const track of scheduledTracks) {
             checkCancel();
 
             const strip = trackStripsById.get(track.id);

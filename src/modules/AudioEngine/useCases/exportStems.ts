@@ -1,8 +1,12 @@
-import { shouldCreateLiveTrackStrip } from '#/modules/Arrangement/stores';
+import { shouldCreateLiveTrackStrip, type getTrackEligibility } from '#/modules/Arrangement/stores';
+import { sidechainStore } from '#/modules/Routing/stores';
 
 import { createExportError } from '../errors/ExportError';
+import { prepareOfflineSidechainCompressor } from '../repositories/devices/dynamics/prepareOfflineSidechainCompressor';
+import { connectOfflineSidechainRoutes } from '../repositories/offlineRouting/connectOfflineSidechainRoutes';
 
 import { type DeviceNodeEntry } from './buildDeviceChain';
+import { getSidechainKeyDelay } from './latencyCompensation/compensation/getSidechainKeyDelay';
 import { acquireRenderLock } from './offlineRender/acquireRenderLock';
 import { checkCancel } from './offlineRender/checkCancel';
 import { connectOfflineToasterPadRoutes } from './offlineRender/connectOfflineToasterPadRoutes';
@@ -27,6 +31,89 @@ type ExportStemsFn = {
     (opts: OfflineRenderOptions): Promise<Map<string, AudioBuffer>>;
     (durationBeats: number, sampleRate?: number): Promise<Map<string, AudioBuffer>>;
 };
+
+/**
+ * FX-9 — which sidechain keys a single stem has to reproduce, and which extra
+ * tracks must exist in that stem's context to drive them.
+ *
+ * A sidechain compressor is an insert on the stem's *own* track, so its gain
+ * reduction is part of that track's processed output — not a property of the
+ * mix around it. Rendering the insert without its key left the stem carrying a
+ * compressor that never compressed, so the stems could not be summed back into
+ * the mixdown they came from. Each stem gets its own `OfflineAudioContext`
+ * containing only that track, so the key source has to be rebuilt inside it.
+ *
+ * The key source is an auxiliary, never a second voice: the caller builds a
+ * strip for it and wires it to the detector, but never to the destination.
+ */
+type StemSidechainRoute = {
+    sourceTrackId: string;
+    targetTrackId: string;
+    targetDeviceId: string;
+};
+
+type StemSidechainTrack = {
+    id: string;
+    disabled: boolean;
+    // Same eligibility kind `shouldCreateOfflineStrip` takes, so the key source
+    // is filtered by the one strip-eligibility rule rather than a parallel one.
+    kind: Parameters<typeof getTrackEligibility>[0];
+    devices: readonly { id: string; type: string; bypassed: boolean }[];
+};
+
+type PlanStemSidechainInput<TTrack extends StemSidechainTrack> = {
+    routes: readonly StemSidechainRoute[];
+    /** The tracks this stem already renders — its own track plus grouped pads. */
+    stemTrackIds: ReadonlySet<string>;
+    allTracks: readonly TTrack[];
+};
+
+type PlanStemSidechainOutput<TTrack extends StemSidechainTrack> = {
+    routes: StemSidechainRoute[];
+    targetDevices: Set<object>;
+    keySourceTracks: TTrack[];
+};
+
+function planStemSidechain<TTrack extends StemSidechainTrack>({
+    routes,
+    stemTrackIds,
+    allTracks,
+}: PlanStemSidechainInput<TTrack>): PlanStemSidechainOutput<TTrack> {
+    const stemRoutes: StemSidechainRoute[] = [];
+    const targetDevices = new Set<object>();
+    const keySourceTracks: TTrack[] = [];
+    const seenKeySourceIds = new Set<string>();
+
+    for (const route of routes) {
+        if (!stemTrackIds.has(route.targetTrackId)) {
+            continue;
+        }
+        const targetTrack = allTracks.find((candidate) => candidate.id === route.targetTrackId);
+        const targetDevice = targetTrack?.devices.find(
+            (device) => device.id === route.targetDeviceId && !device.bypassed
+        );
+        if (targetDevice?.type !== 'builtin-sidechain-compressor') {
+            continue;
+        }
+        const sourceTrack = allTracks.find((candidate) => candidate.id === route.sourceTrackId);
+        // A key whose source left the project (or cannot own a strip) is dropped
+        // rather than rendered silent, matching the mixdown's route filter.
+        if (!sourceTrack || sourceTrack.disabled || !shouldCreateLiveTrackStrip(sourceTrack)) {
+            continue;
+        }
+
+        stemRoutes.push(route);
+        targetDevices.add(targetDevice);
+        // A track can key a compressor on itself; it is already in the stem, so
+        // it needs no second strip.
+        if (!stemTrackIds.has(sourceTrack.id) && !seenKeySourceIds.has(sourceTrack.id)) {
+            seenKeySourceIds.add(sourceTrack.id);
+            keySourceTracks.push(sourceTrack);
+        }
+    }
+
+    return { routes: stemRoutes, targetDevices, keySourceTracks };
+}
 
 export const exportStems: ExportStemsFn = async function exportStems(
     optsOrBeats: OfflineRenderOptions | number,
@@ -68,6 +155,9 @@ export const exportStems: ExportStemsFn = async function exportStems(
             sampleRate,
         });
         const stems = new Map<string, AudioBuffer>();
+        // FX-9 — read once; each stem then plans only the routes that key a device
+        // it actually renders.
+        const sidechainRoutes = sidechainStore.value?.routes ?? [];
 
         if (!tracks || !midi) {
             onProgress?.(1);
@@ -139,6 +229,27 @@ export const exportStems: ExportStemsFn = async function exportStems(
             ];
             const trackStripsById = new Map<string, OfflineTrackStrip>();
             const deviceEntriesByTrack = new Map<string, DeviceNodeEntry[]>();
+
+            // FX-9 — plan the keys before any strip exists: the compressor node is
+            // built by `createOfflineTrackStrip`, and it only becomes a keyable
+            // worklet if this context was prepared first (same order as the mixdown).
+            const stemSidechain = planStemSidechain({
+                routes: sidechainRoutes,
+                stemTrackIds: new Set(groupedTracks.map((groupedTrack) => groupedTrack.id)),
+                allTracks: tracks.tracks,
+            });
+            if (stemSidechain.targetDevices.size > 0) {
+                try {
+                    await prepareOfflineSidechainCompressor({
+                        offlineCtx,
+                        onWarning,
+                        targetDevices: stemSidechain.targetDevices,
+                    });
+                } catch (error) {
+                    const reason = error instanceof Error ? error.message : String(error);
+                    onWarning?.(`Sidechain processor unavailable; using the offline compressor fallback. ${reason}`);
+                }
+            }
             for (const groupedTrack of groupedTracks) {
                 // Stems carry the track's content even when muted (see the
                 // eligibility comment above) — only the mixdown bakes mute in.
@@ -159,6 +270,31 @@ export const exportStems: ExportStemsFn = async function exportStems(
             }
             strip.outputNode.connect(offlineCtx.destination);
 
+            // FX-9 — the key sources: built and scheduled so the detector sees real
+            // program, but deliberately never connected to `offlineCtx.destination`.
+            // They shape this stem through the compressor's sidechain input only;
+            // their own audio must not appear in it.
+            //
+            // Mute and solo are ignored here for the same reason the stem itself
+            // ignores them (`honorMuted: false`): a stem set is "the session's full
+            // content, track by track", so its keys are derived from that same full
+            // content rather than from the monitoring state at export time.
+            for (const keySourceTrack of stemSidechain.keySourceTracks) {
+                const keyStrip = await createOfflineTrackStrip(offlineCtx, keySourceTrack, { honorMuted: false });
+                trackStripsById.set(keySourceTrack.id, keyStrip);
+                deviceEntriesByTrack.set(keySourceTrack.id, keyStrip.deviceEntries);
+            }
+            if (stemSidechain.routes.length > 0) {
+                connectOfflineSidechainRoutes({
+                    offlineCtx,
+                    routes: stemSidechain.routes,
+                    trackStripsById,
+                    deviceEntriesByTrack,
+                    // FX-5 — the same alignment resolver the mixdown and the live
+                    // graph use, so a stem ducks on the phase it was monitored at.
+                    keyDelaySecFor: getSidechainKeyDelay,
+                });
+            }
             for (const groupedTrack of groupedTracks) {
                 const groupedStrip = trackStripsById.get(groupedTrack.id)!;
                 await scheduleTrackClips({
@@ -183,6 +319,39 @@ export const exportStems: ExportStemsFn = async function exportStems(
                     onWarning,
                     pendingWorkletEvents,
                     allTracks: groupedTopology,
+                    deviceEntriesByTrack,
+                    regionStartBeat: startBeat,
+                });
+            }
+
+            // FX-9 — a key strip with no program would duck nothing, so the key
+            // sources are scheduled like any other track. `destination` is still the
+            // context's, matching the grouped calls: it is the scheduler's reference
+            // for tail/limit handling, not a connection of this strip's output.
+            for (const keySourceTrack of stemSidechain.keySourceTracks) {
+                const keyStrip = trackStripsById.get(keySourceTrack.id)!;
+                await scheduleTrackClips({
+                    offlineCtx,
+                    track: keySourceTrack,
+                    midi,
+                    trackInputNode: keyStrip.inputNode,
+                    trackGainNode: keyStrip.faderNode,
+                    trackPanNode: keyStrip.panNode,
+                    destination: offlineCtx.destination,
+                    durationSeconds,
+                    defaultTempo,
+                    changes,
+                    projections: {
+                        projectMidiEvents,
+                        projectPpqEndpoints,
+                        processYeastMidi,
+                        selectMidiEventProbability,
+                        projectChordPitch,
+                        evaluateAutomationValue,
+                    },
+                    onWarning,
+                    pendingWorkletEvents,
+                    allTracks: tracks.tracks,
                     deviceEntriesByTrack,
                     regionStartBeat: startBeat,
                 });

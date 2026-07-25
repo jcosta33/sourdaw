@@ -9,6 +9,7 @@ const mocks = vi.hoisted(() => ({
     getTrackStoreState: vi.fn(),
     setTrackGain: vi.fn(),
     setTrackMute: vi.fn(),
+    setTrackSoloGate: vi.fn(),
     calculateSoloLogic: vi.fn(),
     workspaceStore: { value: null as { soloMode: 'sip' | 'afl' | 'pfl' } | null },
 }));
@@ -20,6 +21,7 @@ vi.mock('../../getTrackStoreState', () => ({
 vi.mock('#/modules/AudioEngine/useCases', () => ({
     setTrackGain: mocks.setTrackGain,
     setTrackMute: mocks.setTrackMute,
+    setTrackSoloGate: mocks.setTrackSoloGate,
 }));
 
 vi.mock('#/modules/WorkspaceShell/stores', () => ({
@@ -45,10 +47,12 @@ describe('applySoloLogic use case', () => {
                 { type: 'setMute', trackId: 't1', muted: false },
             ],
             savedGains: new Map([['t1', 0.5]]),
+            soloGatedTrackIds: new Set(),
         };
         const secondResult: ApplySoloLogicOutput = {
             actions: [{ type: 'setGain', trackId: 't1', gain: 0.5 }],
             savedGains: new Map(),
+            soloGatedTrackIds: new Set(),
         };
         mocks.getTrackStoreState.mockReturnValue(state);
         mocks.calculateSoloLogic.mockReturnValueOnce(firstResult).mockReturnValueOnce(secondResult);
@@ -81,6 +85,7 @@ describe('applySoloLogic use case', () => {
         expect(mocks.calculateSoloLogic).not.toHaveBeenCalled();
         expect(mocks.setTrackGain).not.toHaveBeenCalled();
         expect(mocks.setTrackMute).not.toHaveBeenCalled();
+        expect(mocks.setTrackSoloGate).not.toHaveBeenCalled();
     });
 
     it('passes only live-strip track ids into the solo calculation', () => {
@@ -95,12 +100,67 @@ describe('applySoloLogic use case', () => {
             tracks: [audio, ordinaryFolder, toasterFolder],
             selectedTrackId: null,
         });
-        mocks.calculateSoloLogic.mockReturnValue({ actions: [], savedGains: new Map() });
+        mocks.calculateSoloLogic.mockReturnValue({
+            actions: [],
+            savedGains: new Map(),
+            soloGatedTrackIds: new Set(),
+        });
 
         applySoloLogic();
 
         expect(mocks.calculateSoloLogic).toHaveBeenCalledWith(
             expect.objectContaining({ liveStripTrackIds: new Set(['audio-1', 'toaster-1']) })
         );
+    });
+
+    // FX-8 — the planner's gate has to reach the engine, and it has to reach
+    // *every* strip track: applying it only to the gated ones would leave a tap
+    // closed after the solo is released.
+    it('gates the non-soloed strips at the engine and reopens the ones solo no longer silences', () => {
+        const lead = TrackDummy.create({ id: 'lead', soloed: true });
+        const strings = TrackDummy.create({ id: 'strings' });
+        mocks.getTrackStoreState.mockReturnValue({ tracks: [lead, strings], selectedTrackId: null });
+        mocks.calculateSoloLogic.mockReturnValue({
+            actions: [],
+            savedGains: new Map(),
+            soloGatedTrackIds: new Set(['strings']),
+        });
+
+        applySoloLogic();
+
+        expect(mocks.setTrackSoloGate).toHaveBeenCalledWith('strings', true);
+        expect(mocks.setTrackSoloGate).toHaveBeenCalledWith('lead', false);
+    });
+
+    it('writes no gate when the caller only wants the calculation', () => {
+        mocks.getTrackStoreState.mockReturnValue({
+            tracks: [TrackDummy.create({ id: 'lead' })],
+            selectedTrackId: null,
+        });
+        mocks.calculateSoloLogic.mockReturnValue({
+            actions: [],
+            savedGains: new Map(),
+            soloGatedTrackIds: new Set(['lead']),
+        });
+
+        applySoloLogic({ applyActions: false });
+
+        expect(mocks.setTrackSoloGate).not.toHaveBeenCalled();
+    });
+
+    it('restricts the gate write to the requested track when one is named', () => {
+        const lead = TrackDummy.create({ id: 'lead', soloed: true });
+        const strings = TrackDummy.create({ id: 'strings' });
+        mocks.getTrackStoreState.mockReturnValue({ tracks: [lead, strings], selectedTrackId: null });
+        mocks.calculateSoloLogic.mockReturnValue({
+            actions: [],
+            savedGains: new Map(),
+            soloGatedTrackIds: new Set(['strings']),
+        });
+
+        applySoloLogic({ trackId: 'strings' });
+
+        expect(mocks.setTrackSoloGate).toHaveBeenCalledTimes(1);
+        expect(mocks.setTrackSoloGate).toHaveBeenCalledWith('strings', true);
     });
 });

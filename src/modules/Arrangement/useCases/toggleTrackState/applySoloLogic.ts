@@ -1,4 +1,4 @@
-import { setTrackGain, setTrackMute } from '#/modules/AudioEngine/useCases';
+import { setTrackGain, setTrackMute, setTrackSoloGate } from '#/modules/AudioEngine/useCases';
 import { workspaceStore } from '#/modules/WorkspaceShell/stores';
 
 import { applySoloLogic as calculateSoloLogic } from '../../services/applySoloLogic';
@@ -52,6 +52,21 @@ export function applySoloLogic({
         }
 
         setTrackMute(action.trackId, action.muted);
+    }
+
+    // FX-8 — the mute actions above cannot carry solo-in-place on their own. They
+    // land on `postFaderGain`, which is downstream of the pre-fader send tap, so a
+    // track solo had "muted" went on feeding its pre-fader sends into the return
+    // buses — a solo that still played the reverb of everything it was isolating.
+    // The gate closes the pre-fader tap instead, and is applied to every strip
+    // track (not just the gated ones) so releasing a solo reopens the tap.
+    if (applyActions) {
+        for (const stripTrackId of liveStripTrackIds) {
+            if (trackId && stripTrackId !== trackId) {
+                continue;
+            }
+            setTrackSoloGate(stripTrackId, result.soloGatedTrackIds.has(stripTrackId));
+        }
     }
 
     savedGains = new Map(result.savedGains);

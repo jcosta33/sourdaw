@@ -117,6 +117,7 @@ export class TrackNode {
             meterNode,
             analyserNode,
             muted: false,
+            soloGated: false,
             soloed: false,
             deviceNodes: [],
             midiFxNodes: [],
@@ -240,6 +241,31 @@ export class TrackNode {
     public setMute(muted: boolean): void {
         this.strip.muted = muted;
         this.strip.postFaderGain.gain.setTargetAtTime(muted ? 0 : 1, this.deps.context.currentTime, 0.005);
+    }
+
+    /**
+     * FX-8 — solo-in-place silencing, which is a different thing from the mute
+     * button and must act at a different point of the strip.
+     *
+     * `setMute` zeroes `postFaderGain`, which sits downstream of `preFaderTap`.
+     * That is deliberate: a pre-fader send is defined by tapping ahead of the
+     * fader, and keeping it alive under mute is exactly what makes cue/monitor
+     * sends work. But solo-in-place reuses that same mute path to silence every
+     * track the engineer is *not* listening to, and those tracks then went on
+     * feeding their pre-fader sends into the return buses — so soloing a vocal
+     * still played the reverb tails of every "muted" track.
+     *
+     * The gate therefore closes `preFaderTap` itself. That node is upstream of
+     * both send taps (`preFaderTap` / `analyserNode`), upstream of the sidechain
+     * key tap, and — critically — upstream of where `scheduleFrozenTrack`
+     * injects a frozen track's baked buffer, so a frozen track is gated by the
+     * same single node as a live one. It is held separately from `muted` so the
+     * two reasons never overwrite each other: releasing solo restores the tap
+     * without touching a mute the user actually pressed.
+     */
+    public setSoloGate(gated: boolean): void {
+        this.strip.soloGated = gated;
+        this.strip.preFaderTap.gain.setTargetAtTime(gated ? 0 : 1, this.deps.context.currentTime, 0.005);
     }
 
     public getPeakLevel(): number {

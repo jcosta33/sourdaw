@@ -38,6 +38,13 @@ export type EffectiveAudibility = {
     anySoloed: boolean;
     /** trackId → is the track's content audible in the resulting mix. */
     audibleByTrackId: ReadonlyMap<string, boolean>;
+    /**
+     * FX-8 — trackId → is the track silenced by solo-in-place rather than by its
+     * own mute button. Audibility alone collapses the two, and export needs them
+     * apart: a track the user muted still feeds its pre-fader (cue) sends, while
+     * a solo-gated track must feed nothing at all.
+     */
+    soloGatedByTrackId: ReadonlyMap<string, boolean>;
 };
 
 export function hasActiveSolo({
@@ -59,7 +66,7 @@ export function deriveEffectiveAudibility({
     // a live-only concern, so audibility is derived from a plan with no carried
     // gain state. Each eligible strip track receives exactly one `setMute`, whose
     // negation is that track's audibility.
-    const { actions } = applySoloLogic({
+    const { actions, soloGatedTrackIds } = applySoloLogic({
         tracks,
         soloMode,
         savedGains: new Map(),
@@ -67,11 +74,13 @@ export function deriveEffectiveAudibility({
     });
 
     const audibleByTrackId = new Map<string, boolean>();
+    const soloGatedByTrackId = new Map<string, boolean>();
     for (const action of actions) {
         if (action.type === 'setMute') {
             audibleByTrackId.set(action.trackId, !action.muted);
+            soloGatedByTrackId.set(action.trackId, soloGatedTrackIds.has(action.trackId));
         }
     }
 
-    return { anySoloed: hasActiveSolo({ tracks, stripTrackIds }), audibleByTrackId };
+    return { anySoloed: hasActiveSolo({ tracks, stripTrackIds }), audibleByTrackId, soloGatedByTrackId };
 }

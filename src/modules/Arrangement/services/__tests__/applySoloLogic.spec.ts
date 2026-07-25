@@ -140,4 +140,108 @@ describe('applySoloLogic', () => {
             { type: 'setMute', trackId: 'orphan', muted: true },
         ]);
     });
+
+    // FX-8 — solo-in-place must silence a non-soloed track *everywhere*, including
+    // the pre-fader send tap that sits upstream of the mute node. `setMute` alone
+    // cannot express that: it carries `soloMuted || track.muted`, so a consumer
+    // cannot tell a user mute (pre-fader sends survive it — cue-send semantics)
+    // from a solo-implied one (pre-fader sends must stop feeding the bus).
+    describe('solo gating of pre-fader sends (FX-8)', () => {
+        it('gates only the non-soloed tracks, leaving soloed, solo-safe and bus-routed ones ungated', () => {
+            const tracks = [
+                TrackDummy.create({ id: 'bus', kind: 'bus', soloed: true }),
+                TrackDummy.create({ id: 'src', outputId: 'bus' }),
+                TrackDummy.create({ id: 'safe', soloSafe: true }),
+                TrackDummy.create({ id: 'other' }),
+            ];
+
+            const result = applySoloLogic({
+                tracks,
+                soloMode: 'sip',
+                savedGains: new Map(),
+                liveStripTrackIds: new Set(['bus', 'src', 'safe', 'other']),
+            });
+
+            expect([...result.soloGatedTrackIds]).toEqual(['other']);
+        });
+
+        it('gates nothing while no solo is engaged, even for an individually muted track', () => {
+            const tracks = [
+                TrackDummy.create({ id: 't1', muted: false }),
+                TrackDummy.create({ id: 't2', muted: true }),
+            ];
+
+            const result = applySoloLogic({
+                tracks,
+                soloMode: 'sip',
+                savedGains: new Map(),
+                liveStripTrackIds: new Set(['t1', 't2']),
+            });
+
+            expect([...result.soloGatedTrackIds]).toEqual([]);
+        });
+
+        it('separates a user mute from a solo gate on the same non-soloed track', () => {
+            const tracks = [
+                TrackDummy.create({ id: 'solo', soloed: true }),
+                TrackDummy.create({ id: 'muted-and-gated', muted: true }),
+            ];
+
+            const result = applySoloLogic({
+                tracks,
+                soloMode: 'sip',
+                savedGains: new Map(),
+                liveStripTrackIds: new Set(['solo', 'muted-and-gated']),
+            });
+
+            expect(result.actions).toContainEqual({ type: 'setMute', trackId: 'muted-and-gated', muted: true });
+            expect([...result.soloGatedTrackIds]).toEqual(['muted-and-gated']);
+        });
+
+        it('gates non-soloed tracks in PFL mode too', () => {
+            const tracks = [
+                TrackDummy.create({ id: 't1', gain: 0.5, soloed: true }),
+                TrackDummy.create({ id: 't2', gain: 0.8 }),
+            ];
+
+            const result = applySoloLogic({
+                tracks,
+                soloMode: 'pfl',
+                savedGains: new Map(),
+                liveStripTrackIds: new Set(['t1', 't2']),
+            });
+
+            expect([...result.soloGatedTrackIds]).toEqual(['t2']);
+        });
+
+        it('leaves a PFL track routed to the soloed bus ungated', () => {
+            const tracks = [
+                TrackDummy.create({ id: 'bus', kind: 'bus', soloed: true }),
+                TrackDummy.create({ id: 'feeder', outputId: 'bus' }),
+                TrackDummy.create({ id: 'stranger' }),
+            ];
+
+            const result = applySoloLogic({
+                tracks,
+                soloMode: 'pfl',
+                savedGains: new Map(),
+                liveStripTrackIds: new Set(['bus', 'feeder', 'stranger']),
+            });
+
+            expect([...result.soloGatedTrackIds]).toEqual(['stranger']);
+        });
+
+        it('ignores solo state on tracks that own no strip in the target runtime', () => {
+            const tracks = [TrackDummy.create({ id: 'ghost', soloed: true }), TrackDummy.create({ id: 'live-1' })];
+
+            const result = applySoloLogic({
+                tracks,
+                soloMode: 'sip',
+                savedGains: new Map(),
+                liveStripTrackIds: new Set(['live-1']),
+            });
+
+            expect([...result.soloGatedTrackIds]).toEqual([]);
+        });
+    });
 });
