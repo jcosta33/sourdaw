@@ -103,21 +103,53 @@ function evaluateDeclaration(device: DeviceLike, tail: TailDeclarationLike): num
     return evaluateFeedbackLoop(device, tail);
 }
 
+/**
+ * Composition rule: **sum along a track's chain, then take the longest track.**
+ *
+ * `buildDeviceChain` wires a track's devices in genuine series
+ * (`prev.connect(dn.inputNode); prev = dn.outputNode`), so their tails cascade
+ * rather than overlap. A delay ringing for 1.9 s feeds a reverb, and that reverb
+ * then needs its own full decay to resolve the delay's *last* echo — so the
+ * track needs 1.9 + 2 s, not the 2 s a flat maximum would reserve. Taking the
+ * maximum truncated exactly that difference off the end of the export.
+ *
+ * Summing is an upper bound rather than an exact figure: two cascaded -60 dB
+ * decays reach -60 dB overall slightly sooner than the sum of their individual
+ * times. Over-reserving costs a little trailing near-silence, whereas
+ * under-reserving is an audible cut, so the estimate is deliberately biased to
+ * the safe side and bounded by `MAX_AUTO_TAIL_SECONDS`.
+ *
+ * Tracks are taken as a maximum, not a sum: they render in parallel, so the
+ * export must last as long as the slowest one, not their total.
+ *
+ * Known limit — routing cascades are not summed. A track feeding a bus whose own
+ * chain has a reverb is also a cascade, but this service receives only each
+ * track's device list, with no routing edges, so track-into-bus is scored as two
+ * independent chains. That under-reserves the same way a flat maximum did, on
+ * send/bus-heavy sessions specifically. Closing it needs routing in the
+ * projection and a cycle-safe walk, which is a larger change than the defect
+ * being fixed here.
+ */
 export function estimateRenderTailSeconds(tracks: ReadonlyArray<TrackLike>): number {
-    let maxTail = 0;
+    let longestChain = 0;
 
     for (const track of tracks) {
+        let chainTail = 0;
         for (const device of track.devices) {
             if (device.bypassed || !device.tail) {
                 continue;
             }
 
             const tailSeconds = evaluateDeclaration(device, device.tail);
-            if (Number.isFinite(tailSeconds) && tailSeconds > maxTail) {
-                maxTail = tailSeconds;
+            if (Number.isFinite(tailSeconds) && tailSeconds > 0) {
+                chainTail += tailSeconds;
             }
+        }
+
+        if (chainTail > longestChain) {
+            longestChain = chainTail;
         }
     }
 
-    return Math.min(MAX_AUTO_TAIL_SECONDS, Math.max(0, maxTail));
+    return Math.min(MAX_AUTO_TAIL_SECONDS, Math.max(0, longestChain));
 }

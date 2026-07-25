@@ -1,3 +1,6 @@
+import { existsSync, readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+
 import { beforeAll, describe, expect, it } from 'vitest';
 
 import { asBaseAudioContext, createMockAudioContext, MockAudioBuffer } from '#/helpers/__tests__/audioContext.mock';
@@ -56,6 +59,20 @@ function tailForDevice(deviceType: string, parameterValues: Record<string, numbe
     ]);
 }
 
+/** Tail for one track carrying `deviceTypes` in series, at their declared defaults. */
+function tailForChain(deviceTypes: readonly string[]): number {
+    return estimateRenderTailSeconds([
+        {
+            devices: deviceTypes.map((type) => ({
+                type,
+                parameterValues: {},
+                bypassed: false,
+                tail: getPluginById(type)?.tail,
+            })),
+        },
+    ]);
+}
+
 /** Every parameter id a declaration reads, excluding pure constants. */
 function citedParameterIds(tail: NonNullable<ReturnType<typeof getPluginById>>['tail']): string[] {
     if (!tail) {
@@ -95,21 +112,44 @@ function snapshotNode(nodes: readonly object[]): string {
 
 /**
  * Devices whose DSP runs outside the Web Audio graph (Rust crates, Faust, wasm)
- * cannot be exercised here. Each names where its tail parameter is consumed, so
- * the claim is at least written down and reviewable rather than assumed.
+ * cannot be driven by guard (a), so each names the file and the exact text that
+ * consumes its tail parameter — and the spec opens that file and looks for it.
+ *
+ * Naming the source in prose alone would go stale silently on any Rust or Faust
+ * rename; reading it turns the claim into a check.
  */
-const OFF_GRAPH_TAIL_ATTESTATION: Record<string, string> = {
-    'dutch-oven': 'crates/proof-chamber/src/fdn.rs set_param, arm "rt60" | "decay" (see DSP-11)',
-    'faust-zita-rev1-reverb': 'src/modules/PluginHost/useCases/faustEngine/dsp/zita-rev1.dsp',
-    'faust-spring-reverb': 'src/modules/PluginHost/useCases/faustEngine/dsp/spring-reverb.dsp',
-    'faust-tape-delay': 'src/modules/PluginHost/useCases/faustEngine/dsp/tape-delay.dsp',
-    fermenter: 'crates/daw-dsp/src/fermenter/layer.rs set_param "amp_release" (ampRelease maps to it)',
-    'builtin-crumbs': 'crates/daw-dsp/src/crumbs — native sampler release stage',
-    'builtin-synth': 'AudioEngine synth voice envelope (release stage)',
-    'builtin-synth-mellotron': 'inherits builtin-synth',
-    'builtin-synth-strings': 'inherits builtin-synth',
-    'builtin-synth-808bass': 'inherits builtin-synth',
-    'builtin-synth-brass': 'inherits builtin-synth',
+const OFF_GRAPH_TAIL_ATTESTATION: Record<string, { file: string; consumes: string }> = {
+    // The FDN reads this value as an RT60 in seconds, clamped to 0.1..30, while
+    // the descriptor declares the same parameter as unitless 0..0.999 — so the
+    // knob's full travel reaches only about 0.1..1 s of reverb time. That is a
+    // known device defect, tracked outside this repository. The tail below
+    // deliberately matches what the engine does today rather than rescaling the
+    // value here: a rescale would change the sound of every saved project that
+    // uses this reverb, so it belongs with the device fix, not with export.
+    'dutch-oven': { file: 'crates/proof-chamber/src/fdn.rs', consumes: '"rt60" | "decay"' },
+    'faust-zita-rev1-reverb': {
+        file: 'src/modules/PluginHost/useCases/faustEngine/dsp/zita-rev1.dsp',
+        consumes: 'hslider("decay_time"',
+    },
+    'faust-spring-reverb': {
+        file: 'src/modules/PluginHost/useCases/faustEngine/dsp/spring-reverb.dsp',
+        consumes: 'hslider("decay"',
+    },
+    'faust-tape-delay': {
+        file: 'src/modules/PluginHost/useCases/faustEngine/dsp/tape-delay.dsp',
+        consumes: 'hslider("feedback"',
+    },
+    // `ampRelease` on the descriptor reaches the engine as snake_case.
+    fermenter: { file: 'crates/daw-dsp/src/fermenter/layer.rs', consumes: '"amp_release"' },
+    'builtin-crumbs': { file: 'crates/daw-dsp/src/crumbs/engine.rs', consumes: 'CrumbsParam::Release' },
+    'builtin-synth': { file: 'src/modules/Synth/useCases/getSynthParamsFromDevices.ts', consumes: "'release'" },
+    'builtin-synth-mellotron': {
+        file: 'src/modules/Synth/useCases/getSynthParamsFromDevices.ts',
+        consumes: "'release'",
+    },
+    'builtin-synth-strings': { file: 'src/modules/Synth/useCases/getSynthParamsFromDevices.ts', consumes: "'release'" },
+    'builtin-synth-808bass': { file: 'src/modules/Synth/useCases/getSynthParamsFromDevices.ts', consumes: "'release'" },
+    'builtin-synth-brass': { file: 'src/modules/Synth/useCases/getSynthParamsFromDevices.ts', consumes: "'release'" },
 };
 
 /**
@@ -210,8 +250,9 @@ describe('device tail declarations — descriptor/estimator conformance', () => 
         expect(inert).toEqual([]);
     });
 
-    it('records where every off-graph tail parameter is consumed', () => {
+    it('proves every off-graph tail parameter is still consumed by the source it cites', () => {
         const undocumented: string[] = [];
+        const stale: string[] = [];
 
         for (const plugin of getBuiltinPlugins()) {
             if (!plugin.tail || citedParameterIds(plugin.tail).length === 0) {
@@ -224,13 +265,30 @@ describe('device tail declarations — descriptor/estimator conformance', () => 
                     device: {},
                     deviceType: plugin.id,
                 }) !== null;
+            if (isGraphDevice) {
+                continue;
+            }
 
-            if (!isGraphDevice && OFF_GRAPH_TAIL_ATTESTATION[plugin.id] === undefined) {
+            const attestation = OFF_GRAPH_TAIL_ATTESTATION[plugin.id];
+            if (attestation === undefined) {
                 undocumented.push(plugin.id);
+                continue;
+            }
+
+            // Open the cited file. A Rust or Faust rename that orphans the
+            // parameter fails here instead of leaving a comment that reads true.
+            const absolute = resolve(process.cwd(), attestation.file);
+            if (!existsSync(absolute)) {
+                stale.push(`${plugin.id}: missing file ${attestation.file}`);
+                continue;
+            }
+            if (!readFileSync(absolute, 'utf8').includes(attestation.consumes)) {
+                stale.push(`${plugin.id}: ${attestation.file} no longer contains ${attestation.consumes}`);
             }
         }
 
         expect(undocumented).toEqual([]);
+        expect(stale).toEqual([]);
     });
 
     it('makes every device with a release-shaped parameter either declare a tail or be exempt', () => {
@@ -286,6 +344,32 @@ describe('device tail declarations — descriptor/estimator conformance', () => 
         expect(tailForDevice('faust-tape-delay', { delay: 0.4, feedback: 0.5 })).toBeCloseTo(3.986, 3);
         expect(tailForDevice('builtin-convolution-reverb')).toBe(6);
         expect(tailForDevice('builtin-crumbs', { release: 2 })).toBe(2);
+    });
+
+    it('adds the tails of devices chained in series on one track', () => {
+        // `buildDeviceChain` wires same-track devices in genuine series
+        // (`prev.connect(dn.inputNode); prev = dn.outputNode`), so a delay feeding
+        // a reverb is cascaded audio: the delay rings for its own tail, and the
+        // reverb then needs its full decay to resolve the delay's LAST echo.
+        const delayOnly = tailForChain(['builtin-delay']);
+        const reverbOnly = tailForChain(['builtin-reverb']);
+
+        // 0.25 s * ln(0.001)/ln(0.4) = 0.25 * 7.5388
+        expect(delayOnly).toBeCloseTo(1.885, 3);
+        expect(reverbOnly).toBe(2);
+
+        // An entirely ordinary FX chain. Taking the max here truncates the export
+        // by ~1.9 s, cutting the reverb's decay of the final echo.
+        expect(tailForChain(['builtin-delay', 'builtin-reverb'])).toBeCloseTo(delayOnly + reverbOnly, 6);
+        expect(tailForChain(['builtin-delay', 'builtin-reverb'])).toBeCloseTo(3.885, 3);
+    });
+
+    it('composes in chain order-independently and ignores untailed devices in the chain', () => {
+        const both = tailForChain(['builtin-delay', 'builtin-reverb']);
+
+        expect(tailForChain(['builtin-reverb', 'builtin-delay'])).toBeCloseTo(both, 6);
+        // An EQ between them declares no tail and must not change the total.
+        expect(tailForChain(['builtin-delay', 'builtin-eq', 'builtin-reverb'])).toBeCloseTo(both, 6);
     });
 
     it('leaves devices with no tail declaration at zero', () => {

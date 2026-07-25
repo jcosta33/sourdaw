@@ -203,6 +203,54 @@ describe('estimateRenderTailSeconds', () => {
         expect(result).toBe(0);
     });
 
+    it('sums tails within a track and takes the longest track', () => {
+        const chained = estimateRenderTailSeconds([
+            {
+                devices: [
+                    {
+                        type: 'builtin-reverb',
+                        parameterValues: { 'rev-decay': 3 },
+                        bypassed: false,
+                        tail: { kind: 'fixed', seconds: 3 },
+                    },
+                    {
+                        type: 'builtin-convolution-reverb',
+                        parameterValues: {},
+                        bypassed: false,
+                        tail: { kind: 'fixed', seconds: 4 },
+                    },
+                ],
+            },
+            {
+                devices: [
+                    {
+                        type: 'builtin-reverb',
+                        parameterValues: {},
+                        bypassed: false,
+                        tail: { kind: 'fixed', seconds: 5 },
+                    },
+                ],
+            },
+        ]);
+
+        // Track 1 cascades 3 s into 4 s, so it needs 7 s — more than the 5 s of
+        // the longest single device anywhere in the project.
+        expect(chained).toBe(7);
+    });
+
+    it('excludes a bypassed device from the chain total', () => {
+        const result = estimateRenderTailSeconds([
+            {
+                devices: [
+                    { type: 'a', parameterValues: {}, bypassed: false, tail: { kind: 'fixed', seconds: 3 } },
+                    { type: 'b', parameterValues: {}, bypassed: true, tail: { kind: 'fixed', seconds: 4 } },
+                ],
+            },
+        ]);
+
+        expect(result).toBe(3);
+    });
+
     it('caps a very long tail at the auto-detect ceiling', () => {
         const result = estimateRenderTailSeconds([
             {
