@@ -5,11 +5,20 @@ import { type Store } from '#/infra/store/types';
 export type ExportFormat = 'wav' | 'mp3' | 'flac';
 export type Mp3BitRate = 96 | 128 | 192 | 320;
 
+/**
+ * Dither applied when quantizing to a fixed bit depth.
+ *
+ * `random` is the historical behaviour and stays the default; `seeded` and
+ * `none` exist so an export can be reproduced byte for byte (OE-10).
+ */
+export type ExportDither = 'random' | 'seeded' | 'none';
+
 export type ExportSettings = {
     formats: ExportFormat[];
     sampleRate: number;
     bitDepth: number;
     mp3BitRate: Mp3BitRate;
+    dither: ExportDither;
 };
 
 /**
@@ -20,7 +29,13 @@ export type ExportSettings = {
 export const MAX_MANUAL_TAIL_SECONDS = 60;
 
 const EXPORT_SETTINGS_KEY = 'sourdaw:export-settings';
-const DEFAULT_EXPORT_SETTINGS: ExportSettings = { formats: ['wav'], sampleRate: 44100, bitDepth: 24, mp3BitRate: 128 };
+const DEFAULT_EXPORT_SETTINGS: ExportSettings = {
+    formats: ['wav'],
+    sampleRate: 44100,
+    bitDepth: 24,
+    mp3BitRate: 128,
+    dither: 'random',
+};
 
 const validExportFormats: readonly string[] = ['wav', 'mp3', 'flac'];
 const validSampleRates: readonly number[] = [44100, 48000, 88200, 96000];
@@ -55,6 +70,13 @@ function readMp3BitRate(value: unknown): Mp3BitRate {
     return DEFAULT_EXPORT_SETTINGS.mp3BitRate;
 }
 
+function readDither(value: unknown): ExportDither {
+    if (value === 'random' || value === 'seeded' || value === 'none') {
+        return value;
+    }
+    return DEFAULT_EXPORT_SETTINGS.dither;
+}
+
 function readFormats(parsed: Record<string, unknown>): ExportFormat[] {
     if (Array.isArray(parsed.formats)) {
         const formats = parsed.formats.filter(isExportFormat);
@@ -84,6 +106,7 @@ function sanitizeExportSettings(value: unknown): ExportSettings {
             fallback: DEFAULT_EXPORT_SETTINGS.bitDepth,
         }),
         mp3BitRate: readMp3BitRate(value.mp3BitRate),
+        dither: readDither(value.dither),
     };
 }
 

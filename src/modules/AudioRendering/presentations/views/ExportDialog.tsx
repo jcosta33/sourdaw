@@ -45,10 +45,12 @@ import {
     loadExportSettings,
     MAX_MANUAL_TAIL_SECONDS,
     saveExportSettings,
+    type ExportDither,
     type ExportFormat,
     type Mp3BitRate,
 } from './exportSettings';
 import { resolveExportBitDepths } from './resolveExportBitDepths';
+import { resolveExportDither } from './resolveExportDither';
 
 type ExportMode = 'mixdown' | 'stems' | 'render-to-clip';
 type ExportRange = 'project' | 'loop' | 'marquee';
@@ -107,6 +109,7 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
     const [sampleRate, setSampleRate] = useState(defaults.sampleRate);
     const [bitDepth, setBitDepth] = useState(defaults.bitDepth);
     const [mp3BitRate, setMp3BitRate] = useState<Mp3BitRate>(defaults.mp3BitRate);
+    const [dither, setDither] = useState<ExportDither>(defaults.dither);
     const [exporting, setExporting] = useState(false);
     const [progress, setProgress] = useState(0);
     const [statusText, setStatusText] = useState('');
@@ -163,22 +166,27 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
         // format change only constrains which depths are OFFERED and which one
         // the encode resolves to, so unchecking FLAC restores 32-bit.
         setFormats(next);
-        saveExportSettings({ formats: Array.from(next), sampleRate, bitDepth, mp3BitRate });
+        saveExportSettings({ formats: Array.from(next), sampleRate, bitDepth, mp3BitRate, dither });
     };
 
     const updateSampleRate = (sr: number) => {
         setSampleRate(sr);
-        saveExportSettings({ formats: Array.from(formats), sampleRate: sr, bitDepth, mp3BitRate });
+        saveExportSettings({ formats: Array.from(formats), sampleRate: sr, bitDepth, mp3BitRate, dither });
     };
 
     const updateBitDepth = (bd: number) => {
         setBitDepth(bd);
-        saveExportSettings({ formats: Array.from(formats), sampleRate, bitDepth: bd, mp3BitRate });
+        saveExportSettings({ formats: Array.from(formats), sampleRate, bitDepth: bd, mp3BitRate, dither });
     };
 
     const updateMp3BitRate = (br: Mp3BitRate) => {
         setMp3BitRate(br);
-        saveExportSettings({ formats: Array.from(formats), sampleRate, bitDepth, mp3BitRate: br });
+        saveExportSettings({ formats: Array.from(formats), sampleRate, bitDepth, mp3BitRate: br, dither });
+    };
+
+    const updateDither = (next: ExportDither) => {
+        setDither(next);
+        saveExportSettings({ formats: Array.from(formats), sampleRate, bitDepth, mp3BitRate, dither: next });
     };
 
     const handleCancel = () => {
@@ -300,6 +308,9 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
             const { startBeat, durationBeats } = resolveRange();
             const tail = effectiveTailSeconds();
             const bd = resolveExportBitDepths({ formats, selectedBitDepth: bitDepth }).bitDepth;
+            // OE-10 — every encoder gets the same dither decision, so a seeded
+            // or undithered export is reproducible in all selected formats.
+            const ditherOptions = resolveExportDither(dither);
             const formatList = Array.from(formats);
 
             // We use fflate purely to zip multiple web stems / formats
@@ -326,14 +337,14 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                     let fileData: Uint8Array | ArrayBuffer;
 
                     if (freq === 'mp3') {
-                        fileData = await encodeMp3(buffer, mp3BitRate, passProgress);
+                        fileData = await encodeMp3(buffer, mp3BitRate, passProgress, ditherOptions);
                     } else if (freq === 'flac') {
                         if (bd === 32) {
                             throw new Error('FLAC export supports 16-bit or 24-bit only.');
                         }
-                        fileData = await encodeFlac(buffer, bd, passProgress);
+                        fileData = await encodeFlac(buffer, bd, passProgress, ditherOptions);
                     } else {
-                        fileData = await encodeWav(buffer, bd, passProgress);
+                        fileData = await encodeWav(buffer, bd, passProgress, ditherOptions);
                     }
 
                     const uint8Data = fileData instanceof ArrayBuffer ? new Uint8Array(fileData) : fileData;
@@ -962,6 +973,43 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                                             </Button>
                                         ))}
                                     </div>
+                                </div>
+
+                                <div className="rounded-lg border border-stone-800/50 bg-stone-950/55 p-3">
+                                    <DawEyebrowLabel
+                                        size="sm"
+                                        className="mb-2 block font-bold tracking-widest text-stone-600"
+                                    >
+                                        Dither
+                                    </DawEyebrowLabel>
+                                    <div className="flex flex-wrap gap-1">
+                                        {(
+                                            [
+                                                { value: 'random', label: 'Random' },
+                                                { value: 'seeded', label: 'Repeatable' },
+                                                { value: 'none', label: 'Off' },
+                                            ] as const
+                                        ).map((option) => (
+                                            <Button
+                                                key={option.value}
+                                                variant="ghost"
+                                                size="sm"
+                                                className={`h-6 rounded-md px-2 text-[10px] ${
+                                                    dither === option.value
+                                                        ? 'bg-stone-800 text-stone-200'
+                                                        : 'text-stone-500 hover:bg-stone-800/50 hover:text-stone-300'
+                                                }`}
+                                                onClick={() => updateDither(option.value)}
+                                                disabled={exporting}
+                                            >
+                                                {option.label}
+                                            </Button>
+                                        ))}
+                                    </div>
+                                    <p className="mt-1.5 text-[10px] text-stone-600">
+                                        Repeatable re-exports the same project to identical bytes. Off skips dither
+                                        entirely for a bit-exact bounce.
+                                    </p>
                                 </div>
 
                                 {formats.has('mp3') ? (

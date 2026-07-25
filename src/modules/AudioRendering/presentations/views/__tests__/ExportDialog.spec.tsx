@@ -322,6 +322,7 @@ describe('ExportDialog', () => {
             sampleRate: 44100,
             bitDepth: 32,
             mp3BitRate: 128,
+            dither: 'random',
         });
 
         render(<ExportDialog open={true} onClose={vi.fn()} />);
@@ -337,6 +338,7 @@ describe('ExportDialog', () => {
             sampleRate: 44100,
             bitDepth: 24,
             mp3BitRate: 128,
+            dither: 'random',
         });
         vi.mocked(audioBufferToFlac).mockResolvedValue(new Uint8Array([7, 7, 7]));
         mocks.selectNativeAudioExportFile.mockResolvedValue('/tmp/sourdaw-export.flac');
@@ -350,12 +352,55 @@ describe('ExportDialog', () => {
         expect(vi.mocked(audioBufferToFlac).mock.calls[0]![1]).toBe(24);
     });
 
+    it('should hand the encoder a seeded dither when repeatable export is selected (OE-10)', async () => {
+        vi.mocked(loadExportSettings).mockReturnValueOnce({
+            formats: ['wav'],
+            sampleRate: 44100,
+            bitDepth: 16,
+            mp3BitRate: 128,
+            dither: 'seeded',
+        });
+        mocks.selectNativeAudioExportFile.mockResolvedValue('/tmp/sourdaw-export.wav');
+
+        render(<ExportDialog open={true} onClose={vi.fn()} />);
+        fireEvent.click(screen.getByRole('button', { name: /start baking/i }));
+
+        await waitFor(() => {
+            expect(mocks.encodeWav).toHaveBeenCalledTimes(1);
+        });
+        // Without a seed reaching the encoder the export still succeeds, it is
+        // just irreproducible — so the seed itself is the assertion.
+        const ditherArgument = mocks.encodeWav.mock.calls[0]![3] as { mode: string; seed?: number };
+        expect(ditherArgument.mode).toBe('tpdf');
+        expect(typeof ditherArgument.seed).toBe('number');
+    });
+
+    it('should hand the encoder an off-dither setting for a bit-exact bounce (OE-10)', async () => {
+        vi.mocked(loadExportSettings).mockReturnValueOnce({
+            formats: ['wav'],
+            sampleRate: 44100,
+            bitDepth: 16,
+            mp3BitRate: 128,
+            dither: 'none',
+        });
+        mocks.selectNativeAudioExportFile.mockResolvedValue('/tmp/sourdaw-export.wav');
+
+        render(<ExportDialog open={true} onClose={vi.fn()} />);
+        fireEvent.click(screen.getByRole('button', { name: /start baking/i }));
+
+        await waitFor(() => {
+            expect(mocks.encodeWav).toHaveBeenCalledTimes(1);
+        });
+        expect(mocks.encodeWav.mock.calls[0]![3]).toEqual({ mode: 'none' });
+    });
+
     it('should stop offering 32-bit when FLAC is toggled on while 32-bit is chosen (OE-8)', () => {
         vi.mocked(loadExportSettings).mockReturnValueOnce({
             formats: ['wav'],
             sampleRate: 44100,
             bitDepth: 32,
             mp3BitRate: 128,
+            dither: 'random',
         });
 
         render(<ExportDialog open={true} onClose={vi.fn()} />);
@@ -373,6 +418,7 @@ describe('ExportDialog', () => {
             sampleRate: 44100,
             bitDepth: 32,
             mp3BitRate: 128,
+            dither: 'random',
         });
 
         render(<ExportDialog open={true} onClose={vi.fn()} />);
