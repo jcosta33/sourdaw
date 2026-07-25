@@ -1037,7 +1037,7 @@ impl BacteriaEngine {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::grinder::oversample::alias_probe::bin_magnitude;
+    use crate::primitives::alias_probe::bin_magnitude;
     use std::f32::consts::PI;
 
     /// Deterministic pseudo-white noise (LCG) in [-1, 1).
