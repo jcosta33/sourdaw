@@ -11,6 +11,7 @@ import {
     merge,
     change,
     getChanges,
+    getMissingDeps,
     view,
     getHeads,
     clone,
@@ -279,7 +280,10 @@ class AutomergeRepository {
     /** Create a new empty project with a root document. */
     createProject(_name: string): DocId {
         this.docs.clear();
-
+        // The worker replica is deliberately NOT dropped here. saveAllOffThread's
+        // ancestry check already reseeds the new root, which keeps the next full
+        // save off-thread; nulling would force it back onto the main thread at
+        // exactly the moment compaction is most likely to run.
         this.rootId = DOC_PREFIX_ROOT;
         this.docs.set(this.rootId, init<AnyDoc>());
         this.markDocumentIdentityMutation();
@@ -433,17 +437,19 @@ class AutomergeRepository {
             const heads = getHeads(doc);
             expectedHeads.push([id, heads]);
             const replicaHeads = shadowHeads.get(id);
-            if (!replicaHeads) {
+            // A delta is only meaningful when the replica's heads are ancestors
+            // of this document. `saveSince` does NOT report a violation: given
+            // heads from an unrelated lineage it returns a delta anyway, which
+            // the worker would `loadIncremental` onto the wrong replica and
+            // silently merge two projects into one document. Checked here so
+            // every lineage replacement — `createProject`, `insertDoc`, a
+            // branch-switch `replaceDoc` — reseeds instead, without each
+            // mutation site having to remember to invalidate.
+            if (!replicaHeads || getMissingDeps(doc, replicaHeads).length > 0) {
                 seeds.push([id, save(doc)]);
                 continue;
             }
-            try {
-                deltas.push([id, saveSince(doc, replicaHeads)]);
-            } catch {
-                // The replica's heads are not in this document's history (the
-                // document was replaced with a different lineage) — reseed it.
-                seeds.push([id, save(doc)]);
-            }
+            deltas.push([id, saveSince(doc, replicaHeads)]);
         }
         const removedDocIds = Array.from(shadowHeads.keys()).filter((id) => !this.docs.has(id));
 
@@ -917,6 +923,10 @@ class AutomergeRepository {
     /** Clear all documents and listeners. */
     reset(): void {
         this.docs.clear();
+        // Teardown boundary: no documents remain to compact, so dropping the
+        // replica costs nothing and stops recorded heads outliving the session
+        // that produced them.
+        crdtWorkerState.shadowHeads = null;
         this.rootId = DOC_PREFIX_ROOT;
         this.markDocumentIdentityMutation();
         // Drop change listeners too: otherwise projection-bridge subscriptions

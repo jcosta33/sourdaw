@@ -1,4 +1,4 @@
-import { load, loadIncremental } from '@automerge/automerge';
+import { clone, load, loadIncremental } from '@automerge/automerge';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
@@ -162,6 +162,71 @@ describe('AutomergeRepository off-thread full save (CC-8)', () => {
         expect(exchange.compactRequests[0]?.seeds.map(([id]) => id)).toEqual(['branch_new']);
         expect(load<ProjectDoc>(bundle.get('branch_new')!)).toMatchObject({ branch: true });
         expect(load<ProjectDoc>(bundle.get('root')!)).toMatchObject({ seed: true });
+    });
+
+    /**
+     * A lineage replacement leaves the replica describing a document the
+     * repository no longer holds. `saveSince` does not report that: given heads
+     * from an unrelated lineage it returns a delta anyway, which the worker
+     * would merge onto the wrong replica. The heads check would still refuse
+     * the result, but the whole off-thread benefit would be forfeited at
+     * exactly the new-project and branch-switch moments.
+     */
+    it.each([
+        [
+            'a new project replaces the root document',
+            (repository: AutomergeRepository) => {
+                repository.createProject('replacement');
+                repository.changeDoc('root', (doc: ProjectDoc) => {
+                    doc.freshProject = true;
+                });
+            },
+            { freshProject: true },
+        ],
+        [
+            'branching replaces the root document via insertDoc',
+            (repository: AutomergeRepository) => {
+                repository.createChildDoc('branch_source');
+                repository.changeDoc('branch_source', (doc: ProjectDoc) => {
+                    doc.branchTruth = true;
+                });
+                repository.insertDoc('root', clone(repository.getDoc('branch_source')!));
+            },
+            { branchTruth: true },
+        ],
+        [
+            'a branch switch replaces the root document via replaceDoc',
+            (repository: AutomergeRepository) => {
+                repository.createChildDoc('branch_target');
+                repository.changeDoc('branch_target', (doc: ProjectDoc) => {
+                    doc.switchedIn = true;
+                });
+                repository.replaceDoc('root', clone(repository.getDoc('branch_target')!));
+            },
+            { switchedIn: true },
+        ],
+    ])('stays off-thread and correct when %s', async (_case, replaceLineage, expected) => {
+        const exchange = serveWorker();
+        const automergeRepository = await loadRepositoryFromWorker();
+        // Warm the replica so a stale delta would be possible.
+        await automergeRepository.saveAllOffThread();
+        expect(exchange.compactRequests).toHaveLength(1);
+
+        replaceLineage(automergeRepository);
+        const bundle = await automergeRepository.saveAllOffThread();
+
+        // Reseeded rather than delta'd, so the worker never merges the old
+        // lineage into the new document...
+        expect(exchange.compactRequests[1]?.seeds.map(([id]) => id)).toContain('root');
+        expect(exchange.compactRequests[1]?.deltas.map(([id]) => id)).not.toContain('root');
+        // ...and the save still ran off-thread rather than falling back.
+        expect(exchange.compactRequests).toHaveLength(2);
+        expect(bundle.get('root')).toBe(exchange.lastCompactedBundle.find(([id]) => id === 'root')?.[1]);
+
+        const persistedRoot = load<ProjectDoc>(bundle.get('root')!);
+        expect(persistedRoot).toMatchObject(expected);
+        // The replaced project's truth must not survive in the new document.
+        expect(persistedRoot).not.toHaveProperty('seed');
     });
 
     it('drops a locally removed document from the compacted bundle', async () => {
