@@ -347,5 +347,68 @@ describe('MarkerLane', () => {
             });
             expect(screen.queryByText('Delete Marker')).not.toBeInTheDocument();
         });
+
+        it('keeps the context menu open when a mousedown lands inside it', () => {
+            renderWithTooltip(<MarkerLane pixelsPerBeat={10} scrollX={0} />);
+            const lane = screen.getByTestId('lane-surface');
+            openMarkerMenu(lane, 100);
+            expect(screen.getByText('Delete Marker')).toBeInTheDocument();
+            // A mousedown on a node inside the menu ref does not dismiss it.
+            const menu = screen.getByText('Delete Marker').closest('div');
+            act(() => {
+                menu?.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
+            });
+            expect(screen.getByText('Delete Marker')).toBeInTheDocument();
+        });
+
+        it('ignores a non-left-button mousedown on the drag handle', () => {
+            const listeners = captureWindowListeners();
+            try {
+                const { container } = renderWithTooltip(<MarkerLane pixelsPerBeat={10} scrollX={0} />);
+                const dragHandle = container.querySelector('.cursor-ew-resize') as HTMLElement;
+                // Right-button mousedown must bail before attaching drag listeners.
+                act(() => {
+                    fireEvent.mouseDown(dragHandle, { button: 2, clientX: 100 });
+                });
+                listeners.move(200);
+                listeners.up();
+                expect(moveMarker).not.toHaveBeenCalled();
+            } finally {
+                listeners.restore();
+            }
+        });
+
+        it('suppresses the lane context menu while a marker drag is in progress', () => {
+            const listeners = captureWindowListeners();
+            try {
+                const { container } = renderWithTooltip(<MarkerLane pixelsPerBeat={10} scrollX={0} />);
+                const lane = screen.getByTestId('lane-surface');
+                lane.getBoundingClientRect = vi.fn(() => ({ left: 0, top: 0, width: 1000, height: 20 }) as never);
+                const dragHandle = container.querySelector('.cursor-ew-resize') as HTMLElement;
+                // Start a drag (no mouseup yet) so dragRef.current is set.
+                act(() => {
+                    fireEvent.mouseDown(dragHandle, { button: 0, clientX: 100 });
+                });
+                // A right-click during the drag must be ignored.
+                fireEvent.contextMenu(lane, { clientX: 120, clientY: 10 });
+                expect(screen.queryByText(/Add Marker at Beat/)).not.toBeInTheDocument();
+                expect(screen.queryByText('Rename Marker')).not.toBeInTheDocument();
+            } finally {
+                listeners.restore();
+            }
+        });
+    });
+
+    it('culls a marker scrolled fully out of the lane to the left', () => {
+        // scrollX past the marker's pixel position drives `left` below -50, so
+        // the marker is culled from the render. With laneWidth still 0
+        // (ResizeObserver not yet fired) the rightBound falls back to Infinity.
+        mockMarkerState = {
+            markers: [{ id: 'm1', name: 'Far Left', beat: 0, color: 'oklch(0.40 0.07 200)' }],
+            sections: [],
+        };
+        renderWithTooltip(<MarkerLane pixelsPerBeat={10} scrollX={100} />);
+        expect(screen.queryByText('FarLeft')).not.toBeInTheDocument();
+        expect(screen.queryByText('Far Left')).not.toBeInTheDocument();
     });
 });
