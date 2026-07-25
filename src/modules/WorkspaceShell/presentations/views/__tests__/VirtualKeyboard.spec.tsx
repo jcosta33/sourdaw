@@ -214,6 +214,35 @@ describe('VirtualKeyboard', () => {
             expect(setOctaveMock).toHaveBeenCalledWith(5);
         });
 
+        it('shifts the octave down once per Z press and ignores key-repeat', () => {
+            render(<VirtualKeyboard />);
+            fireEvent.keyDown(panel(), { code: 'KeyZ' }); // octave down: real press
+            fireEvent.keyDown(panel(), { code: 'KeyZ', repeat: true }); // OS auto-repeat
+            expect(setOctaveMock).toHaveBeenCalledTimes(1);
+            expect(setOctaveMock).toHaveBeenCalledWith(3);
+        });
+
+        // A held key must not re-fire noteOn on OS key-repeat (heldKeys dedup).
+        it('does not re-trigger a note when a mapped key auto-repeats while held', () => {
+            render(<VirtualKeyboard />);
+            fireEvent.keyDown(panel(), { code: 'KeyA' });
+            expect(onMock).toHaveBeenCalledTimes(1);
+            // OS auto-repeat on the same physical key — heldKeys guard suppresses it.
+            fireEvent.keyDown(panel(), { code: 'KeyA', repeat: true });
+            fireEvent.keyDown(panel(), { code: 'KeyA', repeat: true });
+            expect(onMock).toHaveBeenCalledTimes(1);
+        });
+
+        it('ignores keyUp events that bubble from the velocity slider', () => {
+            render(<VirtualKeyboard />);
+            fireEvent.keyDown(panel(), { code: 'KeyA' });
+            offMock.mockClear();
+            const slider = screen.getByTestId('velocity-slider');
+            fireEvent.keyUp(slider, { code: 'KeyA', bubbles: true });
+            // The note stays held because the keyUp originated from the slider.
+            expect(offMock).not.toHaveBeenCalled();
+        });
+
         // Fix #3a: keys are matched on physical position (event.code), so a non-QWERTY
         // event.key value does not break the mapping.
         it('maps notes by physical key code, not the produced character', () => {
@@ -527,6 +556,31 @@ describe('VirtualKeyboard', () => {
             expect(onMock).toHaveBeenCalledWith(0, 61, 100);
             fireEvent.pointerUp(cs4, { pointerId: 1 });
             expect(offMock).toHaveBeenCalledWith(0, 61);
+        });
+
+        it('releases the prior white-key note when pressing a black key', () => {
+            render(<VirtualKeyboard />);
+            const c4 = screen.getByLabelText('C4 (MIDI 60)');
+            const cs4 = screen.getByLabelText('MIDI 61');
+            fireEvent.pointerDown(c4, { pointerId: 1 });
+            offMock.mockClear();
+            // Pressing C#4 while C4 is held releases C4 first.
+            fireEvent.pointerDown(cs4, { pointerId: 2 });
+            expect(offMock).toHaveBeenCalledWith(0, 60);
+            expect(onMock).toHaveBeenLastCalledWith(0, 61, 100);
+        });
+
+        it('glides from a white key to a black key while dragging', () => {
+            render(<VirtualKeyboard />);
+            const c4 = screen.getByLabelText('C4 (MIDI 60)');
+            const cs4 = screen.getByLabelText('MIDI 61');
+            fireEvent.pointerDown(c4, { pointerId: 1 });
+            offMock.mockClear();
+            onMock.mockClear();
+            // Glide onto the black key while button is held.
+            fireEvent.pointerEnter(cs4, { buttons: 1 });
+            expect(offMock).toHaveBeenCalledWith(0, 60);
+            expect(onMock).toHaveBeenCalledWith(0, 61, 100);
         });
 
         it('releases the held mouse note on a global pointerup outside the panel', () => {
