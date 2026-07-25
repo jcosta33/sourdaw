@@ -531,6 +531,7 @@ export const createAutomergeStorage = <TData>(
     const rebasePending = options?.rebasePending;
     type AdapterPendingWrite = {
         baseValue: TData | null;
+        createdWithoutPort: boolean;
         message: string | undefined;
         rafId: number | null;
         revision: number;
@@ -673,8 +674,14 @@ export const createAutomergeStorage = <TData>(
             return { status: 'defer' };
         }
         if (!port.hasDoc(docId)) {
-            // Audit CC-5 — the document this write targets is gone (authority
-            // reset between projects). The optimistic value is not truth.
+            // A seed created before bootstrap had no authority to target. Its
+            // terminal must not change because the port happened to appear
+            // before its deferred frame ran; keep that local default visible.
+            if (pending.createdWithoutPort) {
+                return { status: 'defer' };
+            }
+            // Audit CC-5 — a write created while authority existed but whose
+            // document is now gone belongs to the outgoing project.
             return { status: 'abandon' };
         }
 
@@ -768,6 +775,7 @@ export const createAutomergeStorage = <TData>(
         };
         pending = {
             baseValue: cachedValue,
+            createdWithoutPort: getAutomergeStoragePort() === null,
             message: getSemanticMessage(),
             rafId: null,
             revision: cachedRevision,

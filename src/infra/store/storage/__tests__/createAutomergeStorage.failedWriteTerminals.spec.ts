@@ -85,6 +85,29 @@ describe('createAutomergeStorage — non-committing write terminals', () => {
         vi.unstubAllGlobals();
     });
 
+    describe('deferred pre-authority seed', () => {
+        it('keeps a seed visible when the port appears before a document exists', () => {
+            const { doc, port, setHasDoc } = createTestPort();
+            const storage = createAutomergeStorage<{ count: number }>('root', 'state');
+
+            storage.set({ count: 1 });
+            setHasDoc(false);
+            configureAutomergeStoragePort(port);
+
+            flushAutomergeStorageWrites();
+
+            expect(Object.hasOwn(doc, 'state')).toBe(false);
+            expect(storage.get()).toEqual({ count: 1 });
+
+            setHasDoc(true);
+            storage.set({ count: 2 });
+            runArmedFrames();
+
+            expect(doc.state).toEqual({ count: 2 });
+            expect(storage.get()).toEqual({ count: 2 });
+        });
+    });
+
     describe('discarded write (audit CC-5)', () => {
         it('rolls the cache back to the last committed value when the document is absent', () => {
             const { doc, port, setHasDoc } = createTestPort();
