@@ -21,7 +21,7 @@ type RedoOutcome =
     | { readonly status: 'applied' }
     | { readonly status: 'not-applied' }
     | { readonly status: 'conflict' }
-    | { readonly status: 'committed'; readonly error: unknown };
+    | { readonly status: 'committed'; readonly error: AppActionCommittedError };
 
 async function executeRedo(entry: UndoEntry): Promise<RedoOutcome> {
     if (entry.kind === 'callback') {

@@ -32,7 +32,7 @@ type UndoOutcome =
     /** The transaction aborted; nothing was written and the entry stands. */
     | { readonly status: 'conflict' }
     /** The write landed but its bookkeeping failed; the stack must advance. */
-    | { readonly status: 'committed'; readonly error: unknown };
+    | { readonly status: 'committed'; readonly error: AppActionCommittedError };
 
 /**
  * Performs the undo side-effect for one entry and reports what happened.
@@ -93,7 +93,7 @@ async function undoImpl(): Promise<void> {
 
             const undoneEntries: UndoEntry[] = [];
             let retainedEntries: UndoEntry[] = [];
-            let committedError: unknown;
+            let committedError: AppActionCommittedError | undefined;
 
             for (let groupIndex = groupEntries.length - 1; groupIndex >= 0; groupIndex--) {
                 const entry = groupEntries[groupIndex]!;
