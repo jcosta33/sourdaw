@@ -8,11 +8,21 @@ export const RENDER_TIMEOUT_MULTIPLIER = 10;
 
 export const YIELD_EVERY_N_NOTES = 200;
 
-/** Shared easing coefficient for simulated render-phase progress. */
-export const PROGRESS_EASE_COEFF = 0.025;
-
 /**
  * Maximum OfflineAudioContext frame length. Chrome enforces 2^30; Firefox is
  * higher but we cap conservatively to avoid OOM on both.
  */
 export const MAX_OFFLINE_FRAMES = 2 ** 30;
+
+/** Web Audio render quantum. `suspend()` only accepts times on this frame grid. */
+export const RENDER_QUANTUM_FRAMES = 128;
+
+/**
+ * Render-time distance between offline cancel/progress checkpoints.
+ *
+ * Each checkpoint costs one suspend/resume round trip through the main thread,
+ * so this trades abort latency against render throughput: one second of audio
+ * keeps cancel responsive on long exports while leaving the per-segment
+ * overhead negligible next to the work of rendering that second.
+ */
+export const RENDER_SEGMENT_SECONDS = 1;
