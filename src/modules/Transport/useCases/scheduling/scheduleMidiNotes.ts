@@ -70,6 +70,40 @@ type GetSourceOccurrenceOffsetInput = {
     loopEnabled: boolean;
 };
 
+/** Local view of the built-in synth's MPE params (cross-module model isolation). */
+type ScheduledMpeParams = {
+    pressure?: number;
+    slide?: number;
+    pitchBend?: number;
+    pitchBendRangeSemitones?: number;
+};
+
+/**
+ * The built-in synth's MPE params for a scheduled note, or `undefined` when the
+ * note carries no expression at all.
+ *
+ * The bend range rides along only when there is a bend to interpret. A range on
+ * a note that never bent describes nothing, the synth never reads it, and
+ * emitting it anyway makes every exact-shape assertion downstream pin a
+ * fallback instead of a decision (audit MD-8).
+ */
+function resolveScheduledMpeParams(note: ScheduledMpeParams): ScheduledMpeParams | undefined {
+    const hasExpression = note.pressure !== undefined || note.slide !== undefined || note.pitchBend !== undefined;
+    if (!hasExpression) {
+        return undefined;
+    }
+
+    const params: ScheduledMpeParams = {
+        pressure: note.pressure,
+        slide: note.slide,
+        pitchBend: note.pitchBend,
+    };
+    if (note.pitchBend !== undefined) {
+        params.pitchBendRangeSemitones = note.pitchBendRangeSemitones ?? getDefaultBendRangeSemitones();
+    }
+    return params;
+}
+
 function getSourceOccurrenceOffset({
     sourceStartBeat,
     segmentStartBeat,
@@ -483,11 +517,12 @@ export async function scheduleMidiNotes(
                                 : rawVel;
                             const noteChannel = note.channel ?? 0;
                             workletSynthControls.noteOn(pitch, vel, sampleFrame, noteChannel);
-                            // The depth the bend was recorded at. Absent on
-                            // notes captured before RPN 0 was decoded, which
-                            // resolves to the MPE member default — the range
-                            // they were actually performed under (audit MD-8).
-                            const noteBendRange = note.pitchBendRangeSemitones ?? getDefaultBendRangeSemitones();
+                            // The depth the bend was recorded at, and only when
+                            // there is a bend. Absent on notes captured before
+                            // RPN 0 was decoded, which resolves to the MPE
+                            // member default — the range they were actually
+                            // performed under (audit MD-8).
+                            const noteBendRange = resolveScheduledMpeParams(note)?.pitchBendRangeSemitones;
                             // MPE per-note expression (audit MD-2). Same
                             // surface the live Web MIDI handlers call, at the
                             // note's own start frame so the worklet applies it
@@ -516,20 +551,10 @@ export async function scheduleMidiNotes(
                                 noteGain
                             );
                         } else {
-                            const hasNoteExpression =
-                                note.pressure !== undefined || note.slide !== undefined || note.pitchBend !== undefined;
-                            const mpe = hasNoteExpression
-                                ? {
-                                      pressure: note.pressure,
-                                      slide: note.slide,
-                                      pitchBend: note.pitchBend,
-                                      // The built-in synth holds no range of
-                                      // its own; it bends by the depth the note
-                                      // was recorded at (audit MD-8).
-                                      pitchBendRangeSemitones:
-                                          note.pitchBendRangeSemitones ?? getDefaultBendRangeSemitones(),
-                                  }
-                                : undefined;
+                            // The built-in synth holds no range of its own; it
+                            // bends by the depth the note was recorded at
+                            // (audit MD-8).
+                            const mpe = resolveScheduledMpeParams(note);
                             const synthVoice = scheduleNote(
                                 ctx,
                                 strip.gainNode,

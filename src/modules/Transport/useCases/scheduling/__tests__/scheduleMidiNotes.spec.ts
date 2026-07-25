@@ -277,6 +277,19 @@ describe('scheduleMidiNotes', () => {
             expect(soundedSemitones).toBeCloseTo(6, 10);
         });
 
+        it('omits the range entirely for a note that carries expression but never bent', async () => {
+            // A range on a note with no bend describes nothing and the synth
+            // never reads it. Emitting it would make every exact-shape
+            // assertion downstream pin a fallback instead of a decision.
+            scheduleBentNote({ id: 'n1', pitch: 60, startBeat: 0.25, duration: 0.25, velocity: 100, pressure: 64 });
+
+            await scheduleMidiNotes(0, 4, 0, -1, new Set<string>(), [], defaultTransportState, 120);
+
+            const mpe = vi.mocked(scheduleNote).mock.calls[0]?.[7];
+            expect(mpe?.pressure).toBe(64);
+            expect(mpe).not.toHaveProperty('pitchBendRangeSemitones');
+        });
+
         it('falls back to the MPE default for a note recorded before the range was captured', async () => {
             // Existing recordings carry no range and were performed at ±48.
             scheduleBentNote(bentNote({}));
@@ -1060,7 +1073,8 @@ describe('scheduleMidiNotes', () => {
                 channel: 0,
                 expression: { pressure: undefined, slide: undefined, pitchBend: undefined },
                 sampleFrame: expect.any(Number),
-                bendRangeSemitones: 48,
+                // No bend, so no range — this assertion keeps its original
+                // exact shape rather than gaining a pinned fallback.
             });
         });
     });
