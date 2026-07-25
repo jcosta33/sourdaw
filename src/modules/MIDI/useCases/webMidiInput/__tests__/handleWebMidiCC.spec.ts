@@ -443,6 +443,15 @@ describe('handleWebMidiCC', () => {
             expect(panic).toHaveBeenCalledTimes(1);
         });
 
+        it('does not echo the panic back out, which a loopback port would repeat forever', () => {
+            const panic = vi.fn<(input?: { notifyOutputs?: boolean }) => void>();
+            const fn = handleWebMidiCC._factory(make_dependencies({ panicLiveNotes: panic }));
+
+            fn(0, 123, 0);
+
+            expect(panic).toHaveBeenCalledWith({ notifyOutputs: false });
+        });
+
         it('does not panic on an ordinary controller', () => {
             const panic = vi.fn();
             const fn = handleWebMidiCC._factory(make_dependencies({ panicLiveNotes: panic }));

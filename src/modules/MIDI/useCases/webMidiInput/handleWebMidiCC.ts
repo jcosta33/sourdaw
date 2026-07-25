@@ -45,7 +45,9 @@ export const handleWebMidiCC = inject(midiMessageHandlerDependencies)(
             // dropped, so the one recovery a keyboard offers did nothing
             // (audit MD-6). They never drive a mapped parameter.
             if (controlChange.cc === CC_ALL_SOUND_OFF || controlChange.cc === CC_ALL_NOTES_OFF) {
-                deps.panicLiveNotes();
+                // No outbound echo: the device that sent this already knows, and
+                // a loopback port feeding our own input would panic forever.
+                deps.panicLiveNotes({ notifyOutputs: false });
                 return;
             }
 
