@@ -17,7 +17,7 @@ const apply_note_expression = vi.hoisted(() => vi.fn());
 
 vi.mock('#/modules/AudioEngine/useCases', () => ({
     audioEngine: {
-        context: { currentTime: 2 },
+        context: { currentTime: 2, sampleRate: 48000 },
     },
     applyNoteExpression: apply_note_expression,
     getDefaultBendRangeSemitones: () => 48,
@@ -25,6 +25,14 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     getFactoryDrumKitByIndex: () => null,
 }));
 
+/**
+ * Frame live expression lands on with the harness clock at 2 s / 48 kHz and no
+ * event timestamp: the arrival frame plus the one-render-quantum scheduling
+ * budget `resolveInputDispatchFrame` applies (audit MD-1).
+ */
+const LIVE_DISPATCH_FRAME = 96_128;
+/** The same instant in seconds, for the fallback oscillator's detune ramp. */
+const LIVE_DISPATCH_TIME = LIVE_DISPATCH_FRAME / 48_000;
 const { handleWebMidiPitchBend } = await import('../handleWebMidiPitchBend');
 const { activeNotes, channelToNote } = await import('../../../repositories/webMidi/state');
 const { ingestChannelControlChange } = await import('../../../repositories/webMidi/ingestChannelControlChange');
@@ -87,6 +95,7 @@ describe('handleWebMidiPitchBend', () => {
             // No RPN 0 declared, so the MPE member default the expression
             // surface itself defines (audit MD-8).
             bendRangeSemitones: 48,
+            sampleFrame: LIVE_DISPATCH_FRAME,
         });
     });
 
@@ -110,6 +119,7 @@ describe('handleWebMidiPitchBend', () => {
             channel: 0,
             expression: { pitchBend: 4096, pressure: undefined, slide: undefined },
             bendRangeSemitones: 2,
+            sampleFrame: LIVE_DISPATCH_FRAME,
         });
         // Channel-wide bend is performance, not per-note data: it must not be
         // written onto the note record that recording later reads.
@@ -147,7 +157,7 @@ describe('handleWebMidiPitchBend', () => {
 
         expect(activeNotes.get(matchingKey)?.pitchBend).toBe(128);
         expect(activeNotes.get(otherKey)?.pitchBend).toBeUndefined();
-        expect(set_target_at_time).toHaveBeenCalledWith(80, 2, 0.003);
+        expect(set_target_at_time).toHaveBeenCalledWith(80, LIVE_DISPATCH_TIME, 0.003);
     });
 
     it('parses pitch bend as a 14-bit value centered at 8192 (no-bend center)', () => {
@@ -209,7 +219,7 @@ describe('handleWebMidiPitchBend', () => {
             expect(apply_note_expression).toHaveBeenCalledWith(expect.objectContaining({ bendRangeSemitones: 12 }));
             // Fallback oscillator reads the same range: 4096/8192 * 12 st * 100
             // cents = 600, plus the track's 5-cent base detune.
-            expect(set_target).toHaveBeenCalledWith(605, 2, 0.003);
+            expect(set_target).toHaveBeenCalledWith(605, LIVE_DISPATCH_TIME, 0.003);
         });
 
         it('applies the cents half of RPN 0 to the resolved range', () => {
@@ -360,8 +370,8 @@ describe('handleWebMidiPitchBend', () => {
         // Global range = 200 cents. bendCents = (8191/8192)*200 ≈ 199.98. baseDetune 5 -> ~205.
         fn(0, 127, 127);
 
-        expect(set_target_a).toHaveBeenCalledWith(expect.closeTo(205, 0), 2, 0.003);
-        expect(set_target_b).toHaveBeenCalledWith(expect.closeTo(205, 0), 2, 0.003);
+        expect(set_target_a).toHaveBeenCalledWith(expect.closeTo(205, 0), LIVE_DISPATCH_TIME, 0.003);
+        expect(set_target_b).toHaveBeenCalledWith(expect.closeTo(205, 0), LIVE_DISPATCH_TIME, 0.003);
     });
 
     it('skips retuning active notes that have no oscillator', () => {

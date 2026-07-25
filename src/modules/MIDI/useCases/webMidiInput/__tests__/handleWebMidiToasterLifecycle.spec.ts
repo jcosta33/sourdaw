@@ -33,6 +33,13 @@ const { handleWebMidiNoteOn } = await import('../handleWebMidiNoteOn');
 const { handleWebMidiNoteOff } = await import('../handleWebMidiNoteOff');
 const { activeNotes, channelToNote } = await import('../../../repositories/webMidi/state');
 
+/**
+ * Frame a live pad hit lands on with the harness clock at 2 s / 48 kHz and no
+ * event timestamp: the arrival frame plus the one-render-quantum scheduling
+ * budget `resolveInputDispatchFrame` applies (audit MD-1).
+ */
+const LIVE_DISPATCH_FRAME = 96_128;
+
 type NoteOnDependencies = Parameters<typeof handleWebMidiNoteOn._factory>[0];
 type NoteOffDependencies = Parameters<typeof handleWebMidiNoteOff._factory>[0];
 
@@ -184,7 +191,7 @@ describe('Web MIDI Toaster note lifecycle', () => {
 
         await noteOn(1, 61, 100);
 
-        expect(toasterANoteOn).toHaveBeenCalledWith(0, 100, 61);
+        expect(toasterANoteOn).toHaveBeenCalledWith(0, 100, 61, LIVE_DISPATCH_FRAME);
         expect(activeNotes.get(createWebMidiNoteKey(1, 61))).toEqual(
             expect.objectContaining({
                 trackId: 'child-a-0',
@@ -214,8 +221,8 @@ describe('Web MIDI Toaster note lifecycle', () => {
         targetTrackId.value = 'child-b-0';
         await noteOn(2, 61, 80);
 
-        expect(toasterANoteOn).toHaveBeenCalledWith(1, 90, 61);
-        expect(toasterBNoteOn).toHaveBeenCalledWith(0, 80, 61);
+        expect(toasterANoteOn).toHaveBeenCalledWith(1, 90, 61, LIVE_DISPATCH_FRAME);
+        expect(toasterBNoteOn).toHaveBeenCalledWith(0, 80, 61, LIVE_DISPATCH_FRAME);
 
         trackState.value.selectedTrackId = 'child-a-0';
         await noteOff(2, 61);

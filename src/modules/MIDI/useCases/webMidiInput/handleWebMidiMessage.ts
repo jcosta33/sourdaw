@@ -8,6 +8,20 @@ import { handleWebMidiNoteOff } from './handleWebMidiNoteOff';
 import { handleWebMidiNoteOn } from './handleWebMidiNoteOn';
 import { handleWebMidiPitchBend } from './handleWebMidiPitchBend';
 
+/**
+ * Serial tail every live MIDI event is dispatched through.
+ *
+ * Note events can await a Yeast worker round-trip, so they queue. Expression
+ * events used to bypass the tail and run synchronously, which inverted their
+ * order against the note they belong to: an MPE controller sends the opening
+ * bend with the note-on, the bend ran first, found no entry in the
+ * channel->note map the note-on had not yet written, and returned early — the
+ * note's opening expression was silently dropped (audit MD-3).
+ *
+ * Everything now goes through here, so arrival order is preserved end to end.
+ * When the tail is idle the handler still runs synchronously, so the common
+ * case costs nothing.
+ */
 let midiInputTail: Promise<void> | null = null;
 
 function dispatchMidiHandler(handler: () => void | Promise<void>): void {
@@ -50,21 +64,25 @@ export function handleWebMidiMessage(event: MIDIMessageEvent): void {
         return;
     }
 
+    const timeStamp = message.timeStamp;
+
     switch (message.type) {
         case 'noteOn':
-            dispatchMidiHandler(() => handleWebMidiNoteOn(message.channel, message.note, message.velocity));
+            dispatchMidiHandler(() => handleWebMidiNoteOn(message.channel, message.note, message.velocity, timeStamp));
             break;
         case 'noteOff':
-            dispatchMidiHandler(() => handleWebMidiNoteOff(message.channel, message.note, message.releaseVelocity));
+            dispatchMidiHandler(() =>
+                handleWebMidiNoteOff(message.channel, message.note, message.releaseVelocity, timeStamp)
+            );
             break;
         case 'cc':
-            handleWebMidiCC(message.channel, message.cc, message.value);
+            dispatchMidiHandler(() => handleWebMidiCC(message.channel, message.cc, message.value, timeStamp));
             break;
         case 'channelPressure':
-            handleWebMidiChannelPressure(message.channel, message.pressure);
+            dispatchMidiHandler(() => handleWebMidiChannelPressure(message.channel, message.pressure, timeStamp));
             break;
         case 'pitchBend':
-            handleWebMidiPitchBend(message.channel, message.lsb, message.msb);
+            dispatchMidiHandler(() => handleWebMidiPitchBend(message.channel, message.lsb, message.msb, timeStamp));
             break;
     }
 }

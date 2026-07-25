@@ -11,11 +11,21 @@ vi.mock('../../../repositories/webMidi/getMpeEnabled', () => ({
 }));
 
 vi.mock('#/modules/AudioEngine/useCases', () => ({
+    audioEngine: {
+        context: { currentTime: 2, sampleRate: 48000 },
+    },
     applyNoteExpression: apply_note_expression,
 }));
 
 const { handleWebMidiChannelPressure } = await import('../handleWebMidiChannelPressure');
 const { activeNotes, channelToNote } = await import('../../../repositories/webMidi/state');
+
+/**
+ * Frame live expression lands on with the harness clock at 2 s / 48 kHz and no
+ * event timestamp: the arrival frame plus the one-render-quantum scheduling
+ * budget `resolveInputDispatchFrame` applies (audit MD-1).
+ */
+const LIVE_DISPATCH_FRAME = 96_128;
 
 describe('handleWebMidiChannelPressure', () => {
     beforeEach(() => {
@@ -47,6 +57,7 @@ describe('handleWebMidiChannelPressure', () => {
             note: 62,
             channel: 3,
             expression: { pitchBend: -2048, pressure: 96, slide: undefined },
+            sampleFrame: LIVE_DISPATCH_FRAME,
         });
     });
 

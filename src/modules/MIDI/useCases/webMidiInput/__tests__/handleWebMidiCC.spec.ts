@@ -20,6 +20,7 @@ const apply_note_expression = vi.hoisted(() => vi.fn());
 
 vi.mock('#/modules/AudioEngine/useCases', () => ({
     audioEngine: {
+        context: { currentTime: 2, sampleRate: 48000 },
         getTrackStrip: get_track_strip,
         setTrackGain: set_track_gain,
         setTrackPan: set_track_pan,
@@ -34,6 +35,13 @@ const { activeNotes, channelToNote } = await import('../../../repositories/webMi
 const { resetChannelControllerState } = await import('../../../repositories/webMidi/resetChannelControllerState');
 
 type HandleWebMidiCCDependencies = Parameters<typeof handleWebMidiCC._factory>[0];
+
+/**
+ * Frame live expression lands on with the harness clock at 2 s / 48 kHz and no
+ * event timestamp: the arrival frame plus the one-render-quantum scheduling
+ * budget `resolveInputDispatchFrame` applies (audit MD-1).
+ */
+const LIVE_DISPATCH_FRAME = 96_128;
 
 function make_dependencies(overrides: Partial<HandleWebMidiCCDependencies> = {}): HandleWebMidiCCDependencies {
     return {
@@ -139,6 +147,7 @@ describe('handleWebMidiCC', () => {
             note: 60,
             channel: 4,
             expression: { pitchBend: undefined, pressure: undefined, slide: 52 },
+            sampleFrame: LIVE_DISPATCH_FRAME,
         });
     });
 

@@ -10,6 +10,8 @@ import { activeNotes, channelToNote } from '../../repositories/webMidi/state';
 
 import { handleWebMidiNoteOff } from './handleWebMidiNoteOff';
 import { midiMessageHandlerDependencies } from './midiMessageHandlerDependencies';
+import { resolveInputDispatchFrame } from './resolveInputDispatchFrame';
+import { resolveInputEventTime } from './resolveInputEventTime';
 import { resolveInstrumentTrack } from './resolveInstrumentTrack';
 
 export const handleWebMidiNoteOn = inject({
@@ -17,9 +19,14 @@ export const handleWebMidiNoteOn = inject({
     handleWebMidiNoteOff,
 })(
     ({ handleWebMidiNoteOff, ...deps }) =>
-        async function handleWebMidiNoteOn(channel: number, note: number, velocity: number): Promise<void> {
+        async function handleWebMidiNoteOn(
+            channel: number,
+            note: number,
+            velocity: number,
+            timeStamp?: number
+        ): Promise<void> {
             if (velocity === 0) {
-                await handleWebMidiNoteOff(channel, note, 0);
+                await handleWebMidiNoteOff(channel, note, 0, timeStamp);
                 return;
             }
 
@@ -30,7 +37,7 @@ export const handleWebMidiNoteOn = inject({
                 activeNotes.get(noteKey) ??
                 (channelNoteKey === undefined ? undefined : activeNotes.get(channelNoteKey));
             if (noteToRelease) {
-                await handleWebMidiNoteOff(noteToRelease.channel, noteToRelease.note, 0);
+                await handleWebMidiNoteOff(noteToRelease.channel, noteToRelease.note, 0, timeStamp);
             } else if (channelNoteKey !== undefined) {
                 channelToNote.delete(channel);
             }
@@ -45,11 +52,17 @@ export const handleWebMidiNoteOn = inject({
 
             const transport = deps.getTransportStoreValue();
             const engine = audioEngine;
-            const now = engine.context.currentTime;
-            const noteInstanceId = `${targetTrackId}:${channel}:${note}:${Math.round(now * engine.context.sampleRate)}`;
+            // When the key was struck, not when this handler got its turn on
+            // the main thread (audit MD-1). Everything downstream — the voice
+            // dispatch frame and the recorded note length — is measured from
+            // this instant instead of the clock reading at handler-run time.
+            const eventTime = resolveInputEventTime({ timeStamp });
+            const dispatchFrame = resolveInputDispatchFrame({ eventTime });
+            const dispatchTime = dispatchFrame / engine.context.sampleRate;
+            const noteInstanceId = `${targetTrackId}:${channel}:${note}:${Math.round(eventTime * engine.context.sampleRate)}`;
 
             const noteData: ActiveNoteData = {
-                startTime: now,
+                startTime: eventTime,
                 startBeat: transport ? deps.playheadPositionRef.current : 0,
                 channel,
                 note,
@@ -76,7 +89,7 @@ export const handleWebMidiNoteOn = inject({
 
             const yeastDevice = instrumentTrack?.devices.find((device) => device.type === 'yeast');
             if (yeastDevice) {
-                const sampleTime = Math.round(now * engine.context.sampleRate);
+                const sampleTime = dispatchFrame;
                 let processedEvents;
                 try {
                     processedEvents = await deps.processRealtimeMidiInput({
@@ -184,7 +197,7 @@ export const handleWebMidiNoteOn = inject({
                     (candidate) => candidate.deviceId === fermenterDevice.id || candidate.type === 'fermenter'
                 );
                 if (deviceNode?.fermenterControls?.ready) {
-                    deviceNode.fermenterControls.noteOn(note, velocity, undefined, channel);
+                    deviceNode.fermenterControls.noteOn(note, velocity, dispatchFrame, channel);
                     noteData.fermenterDeviceId = fermenterDevice.id;
                 }
                 return;
@@ -207,7 +220,7 @@ export const handleWebMidiNoteOn = inject({
                         pitchNote = 60;
                     }
                     if (pad >= 0 && pad < 16) {
-                        deviceNode.toasterControls.noteOn(pad, velocity, pitchNote);
+                        deviceNode.toasterControls.noteOn(pad, velocity, pitchNote, dispatchFrame);
                         noteData.toasterRoute = { deviceId: toasterDevice.id, pad };
                     }
                 }
@@ -223,7 +236,7 @@ export const handleWebMidiNoteOn = inject({
                     const grandBouleStore = createGrandBouleStore(grandBouleDevice.id);
                     const calibration = grandBouleStore.value?.midiCalibration;
                     const finalVelocity = calibration ? applyVelocityCurve(velocity, calibration) : velocity / 127;
-                    deviceNode.grandBouleControls.noteOn(note, finalVelocity, undefined, channel);
+                    deviceNode.grandBouleControls.noteOn(note, finalVelocity, dispatchFrame, channel);
                     noteData.grandBouleDeviceId = grandBouleDevice.id;
                     void deps.eventBus.emit('midi.noteOn', {
                         deviceId: grandBouleDevice.id,
@@ -240,7 +253,7 @@ export const handleWebMidiNoteOn = inject({
                     (candidate) => candidate.deviceId === levainDevice.id || candidate.type === 'levain'
                 );
                 if (deviceNode?.levainControls?.ready) {
-                    deviceNode.levainControls.noteOn(note, velocity, undefined, channel);
+                    deviceNode.levainControls.noteOn(note, velocity, dispatchFrame, channel);
                     noteData.levainDeviceId = levainDevice.id;
                     return;
                 }
@@ -264,7 +277,7 @@ export const handleWebMidiNoteOn = inject({
                         strip.gainNode,
                         kitDefinition,
                         note,
-                        engine.context.currentTime,
+                        dispatchTime,
                         velocity
                     );
                 } else {
@@ -275,7 +288,7 @@ export const handleWebMidiNoteOn = inject({
                             strip.gainNode,
                             kit,
                             note,
-                            engine.context.currentTime,
+                            dispatchTime,
                             60,
                             velocity
                         );
@@ -287,7 +300,7 @@ export const handleWebMidiNoteOn = inject({
                     engine.context,
                     strip.gainNode,
                     note,
-                    engine.context.currentTime,
+                    dispatchTime,
                     60,
                     velocity,
                     synthParams
