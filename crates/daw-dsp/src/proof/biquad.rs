@@ -870,3 +870,245 @@ mod low_frequency_precision_tests {
         );
     }
 }
+
+#[cfg(test)]
+mod rejected_topology_measurement {
+    //! DSP-5's rejected alternative, kept measurable.
+    //!
+    //! The finding proposed migrating Proof off Direct-Form-I. That was
+    //! rejected on measurement rather than opinion, but the measurement lived
+    //! only in a comment — so a reviewer had to rebuild Transposed Direct Form
+    //! II from scratch to check it, and so would anyone revisiting the choice.
+    //! Both f32 topologies are implemented here as fixtures and compared on the
+    //! corners that decided it. Neither is production code: production is
+    //! Direct-Form-I with f64 coefficients and state.
+    //!
+    //! The result, re-derived on every run:
+    //!
+    //! | corner | f32 DF-I | f32 TDF-II | production (f64 DF-I) |
+    //! |---|---|---|---|
+    //! | gain error, 20 Hz Q=10 +18 dB @ 96 kHz | −2.121 dB | −0.195 dB | ~0 dB |
+    //! | gain error, same band @ 48 kHz | −0.230 dB | −0.238 dB | ~0 dB |
+    //! | noise floor, 48 kHz −18 dB cut | −64.84 dB | −48.88 dB | at the f32 transport floor |
+    //!
+    //! TDF-II buys ~1.9 dB at the 96 kHz corner and gives up ~16 dB of noise
+    //! floor at the 48 kHz cut corner. Widening wins both.
+
+    use super::BiquadCoeffs;
+    use core::f64::consts::PI;
+
+    /// Direct-Form-I with f32 coefficients and f32 state — Proof before the
+    /// DSP-5 widening.
+    #[derive(Default)]
+    struct Df1F32 {
+        x1: f32,
+        x2: f32,
+        y1: f32,
+        y2: f32,
+    }
+
+    /// Transposed Direct Form II with f32 coefficients and f32 state — the
+    /// migration DSP-5 proposed.
+    #[derive(Default)]
+    struct Tdf2F32 {
+        s1: f32,
+        s2: f32,
+    }
+
+    /// The five coefficients narrowed to f32, as both rejected topologies would
+    /// have stored them.
+    struct NarrowCoeffs {
+        b0: f32,
+        b1: f32,
+        b2: f32,
+        a1: f32,
+        a2: f32,
+    }
+
+    impl NarrowCoeffs {
+        fn of(c: &BiquadCoeffs) -> Self {
+            Self {
+                b0: c.b0 as f32,
+                b1: c.b1 as f32,
+                b2: c.b2 as f32,
+                a1: c.a1 as f32,
+                a2: c.a2 as f32,
+            }
+        }
+    }
+
+    impl Df1F32 {
+        fn process(&mut self, x: f32, c: &NarrowCoeffs) -> f32 {
+            let y = c.b0 * x + c.b1 * self.x1 + c.b2 * self.x2 - c.a1 * self.y1 - c.a2 * self.y2;
+            self.x2 = self.x1;
+            self.x1 = x;
+            self.y2 = self.y1;
+            self.y1 = y;
+            y
+        }
+    }
+
+    impl Tdf2F32 {
+        fn process(&mut self, x: f32, c: &NarrowCoeffs) -> f32 {
+            let y = c.b0 * x + self.s1;
+            self.s1 = c.b1 * x - c.a1 * y + self.s2;
+            self.s2 = c.b2 * x - c.a2 * y;
+            y
+        }
+    }
+
+    fn bin(signal: &[f64], hz: f64, sr: f64) -> (f64, f64) {
+        let (mut re, mut im) = (0.0f64, 0.0f64);
+        for (n, &s) in signal.iter().enumerate() {
+            let w = 2.0 * PI * hz * n as f64 / sr;
+            re += s * w.cos();
+            im -= s * w.sin();
+        }
+        let n = signal.len() as f64;
+        ((re * re + im * im).sqrt() * 2.0 / n, im.atan2(re))
+    }
+
+    fn noise_floor_db(signal: &[f64], hz: f64, sr: f64) -> f64 {
+        let (mag, phase) = bin(signal, hz, sr);
+        let residual: Vec<f64> = signal
+            .iter()
+            .enumerate()
+            .map(|(n, &s)| s - mag * (2.0 * PI * hz * n as f64 / sr + phase).cos())
+            .collect();
+        let rms = (residual.iter().map(|s| s * s).sum::<f64>() / residual.len() as f64).sqrt();
+        20.0 * (rms / (mag / 2.0_f64.sqrt())).log10()
+    }
+
+    fn settle_samples(c: &BiquadCoeffs) -> usize {
+        let disc = c.a1 * c.a1 - 4.0 * c.a2;
+        let radius = if disc < 0.0 {
+            c.a2.sqrt()
+        } else {
+            ((-c.a1 + disc.sqrt()) / 2.0)
+                .abs()
+                .max(((-c.a1 - disc.sqrt()) / 2.0).abs())
+        };
+        (20.0 / (1.0 - radius)).ceil() as usize
+    }
+
+    /// Render a −6 dBFS tone through `step`, discard the transient, and return
+    /// (realized gain in dB, noise floor in dB relative to the tone).
+    fn measure(coeffs: &BiquadCoeffs, tone_hz: f64, sr: f64, mut step: impl FnMut(f32) -> f32)
+        -> (f64, f64)
+    {
+        let settle = settle_samples(coeffs);
+        let analyse = (200.0 * sr / tone_hz).round() as usize;
+        let mut out = Vec::with_capacity(analyse);
+        let mut input = Vec::with_capacity(analyse);
+        for n in 0..settle + analyse {
+            let x = 0.5 * (2.0 * PI * tone_hz * n as f64 / sr).sin();
+            let y = f64::from(step(x as f32));
+            if n >= settle {
+                out.push(y);
+                input.push(x);
+            }
+        }
+        let (m_in, _) = bin(&input, tone_hz, sr);
+        let (m_out, _) = bin(&out, tone_hz, sr);
+        (
+            20.0 * (m_out / m_in).log10(),
+            noise_floor_db(&out, tone_hz, sr),
+        )
+    }
+
+    fn df1(coeffs: &BiquadCoeffs, tone_hz: f64, sr: f64) -> (f64, f64) {
+        let narrow = NarrowCoeffs::of(coeffs);
+        let mut state = Df1F32::default();
+        measure(coeffs, tone_hz, sr, |x| state.process(x, &narrow))
+    }
+
+    fn tdf2(coeffs: &BiquadCoeffs, tone_hz: f64, sr: f64) -> (f64, f64) {
+        let narrow = NarrowCoeffs::of(coeffs);
+        let mut state = Tdf2F32::default();
+        measure(coeffs, tone_hz, sr, |x| state.process(x, &narrow))
+    }
+
+    const HZ: f64 = 20.0;
+    const Q: f64 = 10.0;
+    const GAIN_DB: f64 = 18.0;
+
+    #[test]
+    fn tdf2_beats_df1_on_realized_gain_at_96k_but_only_there() {
+        let sr = 96_000.0;
+        let coeffs = BiquadCoeffs::peak(HZ, GAIN_DB, Q, sr);
+        let (df1_gain, _) = df1(&coeffs, HZ, sr);
+        let (tdf2_gain, _) = tdf2(&coeffs, HZ, sr);
+        let advantage = (tdf2_gain - GAIN_DB).abs();
+        let deficit = (df1_gain - GAIN_DB).abs();
+        assert!(
+            deficit - advantage > 1.5,
+            "TDF-II's 96 kHz advantage collapsed: f32 DF-I error {deficit:.3} dB vs \
+             f32 TDF-II {advantage:.3} dB (measured 2.121 vs 0.195, a 1.93 dB advantage)"
+        );
+    }
+
+    #[test]
+    fn tdf2_costs_more_noise_than_it_saves_at_the_48k_cut_corner() {
+        // The measurement that rejects the migration. Same band, cut instead of
+        // boost, at the rate the app actually runs.
+        let sr = 48_000.0;
+        let coeffs = BiquadCoeffs::peak(HZ, -GAIN_DB, Q, sr);
+        let (_, df1_floor) = df1(&coeffs, HZ, sr);
+        let (_, tdf2_floor) = tdf2(&coeffs, HZ, sr);
+        let cost = tdf2_floor - df1_floor;
+        assert!(
+            cost > 10.0,
+            "TDF-II's noise penalty at the 48 kHz cut corner has changed: DF-I floor \
+             {df1_floor:.2} dB, TDF-II floor {tdf2_floor:.2} dB, penalty {cost:.2} dB \
+             (measured 15.96 dB). If this ever goes away the topology swap deserves \
+             re-examining."
+        );
+    }
+
+    #[test]
+    fn the_two_topologies_are_indistinguishable_on_gain_at_48k() {
+        let sr = 48_000.0;
+        let coeffs = BiquadCoeffs::peak(HZ, GAIN_DB, Q, sr);
+        let (df1_gain, _) = df1(&coeffs, HZ, sr);
+        let (tdf2_gain, _) = tdf2(&coeffs, HZ, sr);
+        assert!(
+            (df1_gain - tdf2_gain).abs() < 0.02,
+            "the topologies differ by {:.4} dB on realized gain at 48 kHz (measured 0.007 dB)",
+            (df1_gain - tdf2_gain).abs()
+        );
+    }
+
+    #[test]
+    fn widening_beats_both_rejected_topologies_on_every_corner() {
+        // The payoff: production is not a compromise between the two, it
+        // dominates both. `BiquadState` is the shipped f64 Direct-Form-I.
+        use super::BiquadState;
+        for (sr, gain_db) in [(96_000.0, GAIN_DB), (48_000.0, GAIN_DB), (48_000.0, -GAIN_DB)] {
+            let coeffs = BiquadCoeffs::peak(HZ, gain_db, Q, sr);
+            let (df1_gain, df1_floor) = df1(&coeffs, HZ, sr);
+            let (tdf2_gain, tdf2_floor) = tdf2(&coeffs, HZ, sr);
+
+            let mut shipped = BiquadState::new();
+            let (gain, floor) = measure(&coeffs, HZ, sr, |x| shipped.process(x, &coeffs));
+
+            let error = (gain - gain_db).abs();
+            assert!(
+                error < (df1_gain - gain_db).abs() || error < 0.05,
+                "at {sr} Hz / {gain_db:+} dB the shipped filter's gain error {error:.4} dB \
+                 is not better than f32 DF-I's {:.4} dB",
+                (df1_gain - gain_db).abs()
+            );
+            assert!(
+                error < (tdf2_gain - gain_db).abs() || error < 0.05,
+                "at {sr} Hz / {gain_db:+} dB the shipped filter's gain error {error:.4} dB \
+                 is not better than f32 TDF-II's {:.4} dB",
+                (tdf2_gain - gain_db).abs()
+            );
+            assert!(
+                floor < df1_floor && floor < tdf2_floor,
+                "at {sr} Hz / {gain_db:+} dB the shipped floor {floor:.2} dB is not below \
+                 f32 DF-I {df1_floor:.2} dB and f32 TDF-II {tdf2_floor:.2} dB"
+            );
+        }
+    }
+}
