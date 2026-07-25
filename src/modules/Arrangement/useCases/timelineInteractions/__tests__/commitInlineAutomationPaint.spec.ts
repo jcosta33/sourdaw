@@ -220,4 +220,92 @@ describe('commitInlineAutomationPaint', () => {
         const thinned = mocks.simplifyGesturePoints.mock.results[0]!.value;
         expect(mocks.batchAddAutomationPoints).toHaveBeenCalledWith('lane-1', thinned);
     });
+
+    it('rejects an empty stroke before reading or mutating any automation lane', () => {
+        expect(
+            commitInlineAutomationPaint({
+                laneId: 'lane-1',
+                trackId: 'track-1',
+                parameterId: 'gain',
+                parameterName: 'Gain',
+                points: [],
+            })
+        ).toBe(false);
+
+        expect(mocks.batchAddAutomationPoints).not.toHaveBeenCalled();
+        expect(mocks.addAutomationLane).not.toHaveBeenCalled();
+        expect(mocks.pushUndoEntry).not.toHaveBeenCalled();
+    });
+
+    it('rejects an explicit lane id that does not resolve to a known lane', () => {
+        mocks.getAutomationLanes.mockReturnValue([]);
+
+        expect(
+            commitInlineAutomationPaint({
+                laneId: 'missing-lane',
+                trackId: 'track-1',
+                parameterId: 'gain',
+                parameterName: 'Gain',
+                points: [{ beat: 1, value: 0.5, curve: 'linear', tension: 0 }],
+            })
+        ).toBe(false);
+
+        // With an explicit lane id that is absent, no lane is created — the
+        // caller pinned the destination and it does not exist.
+        expect(mocks.addAutomationLane).not.toHaveBeenCalled();
+        expect(mocks.batchAddAutomationPoints).not.toHaveBeenCalled();
+        expect(mocks.pushUndoEntry).not.toHaveBeenCalled();
+    });
+
+    it('uses the singular undo label for a one-point stroke and rebuilds the lane on redo', () => {
+        // No existing lane and no explicit laneId: commit creates a fresh lane.
+        // The lane resolves on creation, then a follow-up lookup returns null so
+        // the commit falls back to the drawn (thinned) points for redo.
+        mocks.getAutomationLanes
+            .mockReturnValueOnce([])
+            .mockReturnValueOnce([
+                {
+                    id: 'lane-created',
+                    trackId: 'track-1',
+                    parameterId: 'gain',
+                    parameterName: 'Gain',
+                    points: [],
+                },
+            ])
+            // Post-commit lookup returns nothing -> nextPoints falls back to `points`.
+            .mockReturnValueOnce([]);
+
+        const point: AutomationPoint = { beat: 1, value: 0.5, curve: 'linear', tension: 0 };
+        expect(
+            commitInlineAutomationPaint({
+                trackId: 'track-1',
+                parameterId: 'gain',
+                parameterName: 'Gain',
+                points: [point],
+            })
+        ).toBe(true);
+
+        const undoEntryCall = mocks.pushUndoEntry.mock.calls[0];
+        if (!undoEntryCall) {
+            throw new Error('expected pushUndoEntry to have been called');
+        }
+        // Singular label: one point -> no trailing 's'.
+        expect(undoEntryCall[0]).toBe('Draw 1 automation point');
+
+        // Redo with no prior snapshot recreates the lane and replays the points.
+        // Configure createTargetLane's second lookup to resolve a fresh lane id.
+        mocks.getAutomationLanes.mockReturnValueOnce([
+            {
+                id: 'lane-redone',
+                trackId: 'track-1',
+                parameterId: 'gain',
+                parameterName: 'Gain',
+                points: [],
+            },
+        ]);
+        const redo = undoEntryCall[2];
+        redo();
+
+        expect(mocks.replaceAutomationLanePoints).toHaveBeenCalledWith({ laneId: 'lane-redone', points: [point] });
+    });
 });
