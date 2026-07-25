@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { audioBufferToWav } from '../../../repositories/audioEncoders/wavEncoder';
+import { audioBufferToWav } from '../../../useCases';
 import { REPRODUCIBLE_DITHER_SEED, resolveExportDither } from '../resolveExportDither';
 
 const SAMPLE_RATE = 48_000;

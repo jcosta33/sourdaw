@@ -95,7 +95,7 @@ export function measureIntegratedLoudness({
     }
 
     // Absolute gate.
-    const absoluteGatePower = Math.pow(10, (ABSOLUTE_GATE_LUFS - LOUDNESS_OFFSET) / 10);
+    const absoluteGatePower = 10 ** ((ABSOLUTE_GATE_LUFS - LOUDNESS_OFFSET) / 10);
     let gatedSum = 0;
     let gatedCount = 0;
     for (const power of blockPower) {
@@ -109,7 +109,7 @@ export function measureIntegratedLoudness({
     }
 
     // Relative gate, referenced to the absolute-gated mean.
-    const relativeGatePower = (gatedSum / gatedCount) * Math.pow(10, RELATIVE_GATE_LU / 10);
+    const relativeGatePower = (gatedSum / gatedCount) * 10 ** (RELATIVE_GATE_LU / 10);
     let finalSum = 0;
     let finalCount = 0;
     for (const power of blockPower) {

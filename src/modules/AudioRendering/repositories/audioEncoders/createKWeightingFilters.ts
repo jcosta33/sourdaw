@@ -22,8 +22,8 @@ export function createKWeightingFilters(sampleRate: number): KWeightingFilters {
     const shelfQ = 0.7071752369554196;
 
     const shelfK = Math.tan((Math.PI * shelfF0) / sampleRate);
-    const vh = Math.pow(10, shelfGainDb / 20);
-    const vb = Math.pow(vh, 0.4996667741545416);
+    const vh = 10 ** (shelfGainDb / 20);
+    const vb = vh ** 0.4996667741545416;
     const shelfDenominator = 1 + shelfK / shelfQ + shelfK * shelfK;
 
     const highPassF0 = 38.13547087602444;

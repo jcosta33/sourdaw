@@ -61,7 +61,7 @@ describe('measureIntegratedLoudness', () => {
     // stereo programme must read -20 LUFS. This is the check that catches a
     // wrong offset, wrong channel weighting, or a mis-derived filter.
     it.each([48_000, 44_100, 96_000])('reads a -20 dBFS 1 kHz stereo sine as -20 LUFS at %i Hz', (sampleRate) => {
-        const amplitude = Math.pow(10, -20 / 20);
+        const amplitude = 10 ** (-20 / 20);
         const channel = createSine({ frequency: 1000, amplitude, seconds: 5, sampleRate });
 
         const lufs = measureIntegratedLoudness({
@@ -76,7 +76,7 @@ describe('measureIntegratedLoudness', () => {
 
     it('tracks a level change of a known size', () => {
         const sampleRate = 48_000;
-        const quiet = createSine({ frequency: 1000, amplitude: Math.pow(10, -26 / 20), seconds: 5, sampleRate });
+        const quiet = createSine({ frequency: 1000, amplitude: 10 ** (-26 / 20), seconds: 5, sampleRate });
 
         const lufs = measureIntegratedLoudness({ channels: [quiet, quiet], length: quiet.length, sampleRate });
 
@@ -102,7 +102,7 @@ describe('measureIntegratedLoudness', () => {
 
     it('gates out a quiet passage so it cannot drag the programme loudness down', () => {
         const sampleRate = 48_000;
-        const loud = createSine({ frequency: 1000, amplitude: Math.pow(10, -20 / 20), seconds: 5, sampleRate });
+        const loud = createSine({ frequency: 1000, amplitude: 10 ** (-20 / 20), seconds: 5, sampleRate });
         const withSilentTail = new Float32Array(loud.length * 2);
         withSilentTail.set(loud, 0);
 

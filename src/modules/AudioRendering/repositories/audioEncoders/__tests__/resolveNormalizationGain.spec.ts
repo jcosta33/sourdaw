@@ -50,7 +50,7 @@ describe('resolveNormalizationGain', () => {
 
     it('pulls an over-ceiling mix down to the ceiling even when it is already loud enough', () => {
         // +2 dBTP of inter-sample overshoot at exactly the target loudness.
-        const truePeak = Math.pow(10, 2 / 20);
+        const truePeak = 10 ** (2 / 20);
 
         const { gain, limitedByCeiling } = resolveNormalizationGain({
             integratedLufs: TARGET_LUFS,

@@ -139,7 +139,6 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     getAudioContext: mocks.getAudioContext,
     getAutoDetectedTailSeconds: vi.fn(() => 2),
     isExportActive: mocks.isExportActive,
-    MAX_AUTO_TAIL_SECONDS: 60,
     renderOffline: mocks.renderOffline,
     restoreCachedAudioBuffersFromIdb: mocks.restoreCachedAudioBuffersFromIdb,
 }));
@@ -421,7 +420,7 @@ describe('ExportDialog', () => {
         // One second of a -20 dBFS 1 kHz tone: long enough for the gating
         // blocks, and a known loudness to correct from.
         const buffer = MockAudioBuffer.create(2, 44100, 44100);
-        const amplitude = Math.pow(10, -20 / 20);
+        const amplitude = 10 ** (-20 / 20);
         for (let channel = 0; channel < 2; channel++) {
             const samples = buffer.getChannelData(channel);
             for (let index = 0; index < samples.length; index++) {
@@ -452,7 +451,7 @@ describe('ExportDialog', () => {
 
     it('should leave the exported audio at its authored level when normalization is off', async () => {
         const buffer = MockAudioBuffer.create(2, 44100, 44100);
-        const amplitude = Math.pow(10, -20 / 20);
+        const amplitude = 10 ** (-20 / 20);
         for (let channel = 0; channel < 2; channel++) {
             const samples = buffer.getChannelData(channel);
             for (let index = 0; index < samples.length; index++) {

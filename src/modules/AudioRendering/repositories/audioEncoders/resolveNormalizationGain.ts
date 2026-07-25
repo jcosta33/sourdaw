@@ -44,8 +44,8 @@ export function resolveNormalizationGain({
         return { gain: 1, limitedByCeiling: false };
     }
 
-    const loudnessGain = Math.pow(10, (targetLufs - integratedLufs) / 20);
-    const ceilingLinear = Math.pow(10, ceilingDbTp / 20);
+    const loudnessGain = 10 ** ((targetLufs - integratedLufs) / 20);
+    const ceilingLinear = 10 ** (ceilingDbTp / 20);
 
     if (truePeak <= 0 || !Number.isFinite(truePeak)) {
         return { gain: loudnessGain, limitedByCeiling: false };
